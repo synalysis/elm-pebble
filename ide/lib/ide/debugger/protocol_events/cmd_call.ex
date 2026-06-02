@@ -21,12 +21,19 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall do
   def events_from_cmd_call(state, target_surface, cmd_call, model, message_value, ctx)
 
   def events_from_cmd_call(state, :watch, cmd_call, model, message_value, ctx)
-       when is_map(cmd_call) and is_map(ctx) do
+      when is_map(cmd_call) and is_map(ctx) do
     name = (Map.get(cmd_call, "name") || Map.get(cmd_call, :name) || "") |> to_string()
     target = (Map.get(cmd_call, "target") || Map.get(cmd_call, :target) || "") |> to_string()
 
     {message, protocol_value} =
-      protocol_message_payload_for_cmd_call(state, cmd_call, model, :watch_to_phone, message_value, ctx)
+      protocol_message_payload_for_cmd_call(
+        state,
+        cmd_call,
+        model,
+        :watch_to_phone,
+        message_value,
+        ctx
+      )
 
     if name == "sendWatchToPhone" or String.ends_with?(target, ".sendWatchToPhone") do
       Ide.Debugger.Types.ProtocolTxRxPayload.tx_rx_events(
@@ -42,12 +49,19 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall do
   end
 
   def events_from_cmd_call(state, target_surface, cmd_call, model, message_value, ctx)
-       when target_surface in [:companion, :phone] and is_map(cmd_call) and is_map(ctx) do
+      when target_surface in [:companion, :phone] and is_map(cmd_call) and is_map(ctx) do
     name = (Map.get(cmd_call, "name") || Map.get(cmd_call, :name) || "") |> to_string()
     target = (Map.get(cmd_call, "target") || Map.get(cmd_call, :target) || "") |> to_string()
 
     {message, protocol_value} =
-      protocol_message_payload_for_cmd_call(state, cmd_call, model, :phone_to_watch, message_value, ctx)
+      protocol_message_payload_for_cmd_call(
+        state,
+        cmd_call,
+        model,
+        :phone_to_watch,
+        message_value,
+        ctx
+      )
 
     if name == "sendPhoneToWatch" or String.ends_with?(target, ".sendPhoneToWatch") do
       Ide.Debugger.Types.ProtocolTxRxPayload.tx_rx_events(
@@ -73,16 +87,15 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall do
           ctx()
         ) :: [Types.protocol_timeline_event()]
   def events_for_model_commands(state, model, target, message, message_value, ctx)
-       when is_map(state) and is_map(model) and target in [:watch, :companion, :phone] and
-              is_binary(message) and is_map(ctx) do
+      when is_map(state) and is_map(model) and target in [:watch, :companion, :phone] and
+             is_binary(message) and is_map(ctx) do
     ctx.cmd_calls_for_message.(state, target, message)
-    |> Enum.flat_map(
-      &events_from_cmd_call(state, target, &1, model, message_value, ctx)
-    )
+    |> Enum.flat_map(&events_from_cmd_call(state, target, &1, model, message_value, ctx))
   end
 
   def events_for_model_commands(_state, _model, _target, _message, _message_value, _ctx),
     do: []
+
   @spec protocol_message_payload_for_cmd_call(
           map(),
           map(),
@@ -92,10 +105,25 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall do
           ctx()
         ) ::
           {String.t() | nil, Types.protocol_message_wire_value()}
-  defp protocol_message_payload_for_cmd_call(state, cmd_call, model, direction, message_value, events_ctx)
+  defp protocol_message_payload_for_cmd_call(
+         state,
+         cmd_call,
+         model,
+         direction,
+         message_value,
+         events_ctx
+       )
 
-  defp protocol_message_payload_for_cmd_call(state, cmd_call, model, direction, message_value, events_ctx)
-       when is_map(cmd_call) and direction in [:watch_to_phone, :phone_to_watch] and is_map(events_ctx) do
+  defp protocol_message_payload_for_cmd_call(
+         state,
+         cmd_call,
+         model,
+         direction,
+         message_value,
+         events_ctx
+       )
+       when is_map(cmd_call) and direction in [:watch_to_phone, :phone_to_watch] and
+              is_map(events_ctx) do
     case protocol_schema_from_state_or_model(state, model, events_ctx) do
       {:ok, schema} ->
         resolution_ctx =
@@ -114,8 +142,15 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall do
     end
   end
 
-  defp protocol_message_payload_for_cmd_call(_state, _cmd_call, _model, _direction, _message_value, _events_ctx),
-    do: {nil, nil}
+  defp protocol_message_payload_for_cmd_call(
+         _state,
+         _cmd_call,
+         _model,
+         _direction,
+         _message_value,
+         _events_ctx
+       ),
+       do: {nil, nil}
 
   @spec protocol_message_payload_from_cmd_call(
           Types.cmd_call(),
@@ -124,13 +159,15 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall do
           map()
         ) :: {String.t() | nil, Types.protocol_message_wire_value()}
   defp protocol_message_payload_from_cmd_call(cmd_call, schema, direction, ctx)
-       when is_map(cmd_call) and is_map(schema) and direction in [:watch_to_phone, :phone_to_watch] and
+       when is_map(cmd_call) and is_map(schema) and
+              direction in [:watch_to_phone, :phone_to_watch] and
               is_map(ctx) do
     callback =
       Map.get(cmd_call, "callback_constructor") || Map.get(cmd_call, :callback_constructor)
 
     case resolve_protocol_message_from_cmd_call(cmd_call, schema, direction, ctx) do
-      {message, protocol_value} when is_binary(message) and message != "" and is_map(protocol_value) ->
+      {message, protocol_value}
+      when is_binary(message) and message != "" and is_map(protocol_value) ->
         wrap_watch_to_phone_protocol_payload(direction, message, protocol_value)
 
       _ ->
@@ -206,7 +243,12 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall do
           :watch_to_phone | :phone_to_watch,
           ProtocolResolutionCtx.t()
         ) :: {String.t(), Types.protocol_ctor_value() | map()} | :error
-  defp resolve_protocol_message_from_cmd_call(cmd_call, schema, direction, %ProtocolResolutionCtx{} = ctx)
+  defp resolve_protocol_message_from_cmd_call(
+         cmd_call,
+         schema,
+         direction,
+         %ProtocolResolutionCtx{} = ctx
+       )
        when is_map(cmd_call) and is_map(schema) and
               direction in [:watch_to_phone, :phone_to_watch] do
     with {:ok, ctor, inner_args} <- protocol_ctor_from_cmd_call(cmd_call),
@@ -370,14 +412,22 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall do
           Types.protocol_schema(),
           Types.protocol_wire_type()
         ) :: Types.protocol_wire_arg() | nil
-  defp normalize_temperature_value(%{"ctor" => "Celsius", "args" => [arg | _]}, _schema, _wire_type) do
+  defp normalize_temperature_value(
+         %{"ctor" => "Celsius", "args" => [arg | _]},
+         _schema,
+         _wire_type
+       ) do
     case DebuggerSimulatorSettings.temperature_scalar(arg) do
       nil -> %{"ctor" => "Celsius", "args" => [0]}
       int -> %{"ctor" => "Celsius", "args" => [int]}
     end
   end
 
-  defp normalize_temperature_value(%{"ctor" => "Fahrenheit", "args" => [arg | _]}, _schema, _wire_type) do
+  defp normalize_temperature_value(
+         %{"ctor" => "Fahrenheit", "args" => [arg | _]},
+         _schema,
+         _wire_type
+       ) do
     case DebuggerSimulatorSettings.temperature_scalar(arg) do
       nil -> %{"ctor" => "Fahrenheit", "args" => [0]}
       int -> %{"ctor" => "Fahrenheit", "args" => [int]}
@@ -447,8 +497,9 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall do
     end
   end
 
-  defp resolve_protocol_arg_expr(value, _ctx) when is_integer(value) or is_boolean(value) or is_binary(value),
-    do: value
+  defp resolve_protocol_arg_expr(value, _ctx)
+       when is_integer(value) or is_boolean(value) or is_binary(value),
+       do: value
 
   defp resolve_protocol_arg_expr(%{"$ctor" => ctor, "$args" => args}, ctx)
        when is_binary(ctor) and is_list(args) and is_map(ctx) do
@@ -549,7 +600,8 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall do
 
   defp protocol_binding_record_from_runtime_model(_runtime_model), do: nil
 
-  defp protocol_update_payload_record(%{"ctor" => _ctor, "args" => [inner | _]}) when is_map(inner) do
+  defp protocol_update_payload_record(%{"ctor" => _ctor, "args" => [inner | _]})
+       when is_map(inner) do
     case protocol_ok_inner_record(inner) do
       %{} = record -> record
       _ -> protocol_connectivity_record(inner)
@@ -572,21 +624,27 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall do
 
   @spec protocol_ok_inner_record(Types.subscription_payload()) ::
           Types.protocol_binding_record() | nil
-  defp protocol_ok_inner_record(%{"ctor" => "Ok", "args" => [value | _]}) when is_map(value), do: value
+  defp protocol_ok_inner_record(%{"ctor" => "Ok", "args" => [value | _]}) when is_map(value),
+    do: value
 
   defp protocol_ok_inner_record(%{ctor: "Ok", args: [value | _]}) when is_map(value), do: value
 
-  defp protocol_ok_inner_record(%{"ctor" => ctor, "args" => _}) when ctor in ["Online", "Offline"],
+  defp protocol_ok_inner_record(%{"ctor" => ctor, "args" => _})
+       when ctor in ["Online", "Offline"],
+       do: nil
+
+  defp protocol_ok_inner_record(%{ctor: ctor, args: _}) when ctor in ["Online", "Offline"],
     do: nil
 
-  defp protocol_ok_inner_record(%{ctor: ctor, args: _}) when ctor in ["Online", "Offline"], do: nil
   defp protocol_ok_inner_record(value) when is_map(value), do: value
+
   @spec resolve_protocol_arg_fallback(
           Types.protocol_wire_type(),
           Types.protocol_schema(),
           resolution_ctx()
         ) :: Types.protocol_wire_arg() | nil
-  defp resolve_protocol_arg_fallback(wire_type, schema, ctx) when is_map(schema) and is_map(ctx) do
+  defp resolve_protocol_arg_fallback(wire_type, schema, ctx)
+       when is_map(schema) and is_map(ctx) do
     record =
       protocol_update_payload_record(Map.get(ctx, :message_value)) ||
         protocol_binding_record_from_runtime_model(Map.get(ctx, :runtime_model)) ||
@@ -595,7 +653,11 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall do
     value =
       case wire_type do
         :int ->
-          WireValues.map_get_first_present(record, ["percent", "batteryPercent", "battery_percent"])
+          WireValues.map_get_first_present(record, [
+            "percent",
+            "batteryPercent",
+            "battery_percent"
+          ])
 
         :bool ->
           protocol_bool_fallback_value(ctx, record)
@@ -732,11 +794,17 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall do
   defp protocol_bool_fallback_value(_ctx, _record), do: nil
 
   @spec protocol_bool_simulator_value(resolution_ctx()) :: boolean() | nil
-  defp protocol_bool_simulator_value(%{protocol_ctor: "ProvideConnectivity", simulator_settings: settings})
+  defp protocol_bool_simulator_value(%{
+         protocol_ctor: "ProvideConnectivity",
+         simulator_settings: settings
+       })
        when is_map(settings),
        do: Map.get(settings, "network_online")
 
-  defp protocol_bool_simulator_value(%{protocol_ctor: "ProvideBattery", simulator_settings: settings})
+  defp protocol_bool_simulator_value(%{
+         protocol_ctor: "ProvideBattery",
+         simulator_settings: settings
+       })
        when is_map(settings),
        do: Map.get(settings, "charging")
 
@@ -789,7 +857,11 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall do
     end
   end
 
-  @spec protocol_message_from_schema(Types.protocol_schema(), :watch_to_phone | :phone_to_watch, String.t()) ::
+  @spec protocol_message_from_schema(
+          Types.protocol_schema(),
+          :watch_to_phone | :phone_to_watch,
+          String.t()
+        ) ::
           String.t() | nil
   defp protocol_message_from_schema(schema, direction, callback) when is_map(schema) do
     messages =
@@ -816,7 +888,11 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall do
     end)
   end
 
-  @spec protocol_message_value_from_schema(Types.protocol_schema(), :watch_to_phone | :phone_to_watch, String.t()) ::
+  @spec protocol_message_value_from_schema(
+          Types.protocol_schema(),
+          :watch_to_phone | :phone_to_watch,
+          String.t()
+        ) ::
           map() | nil
   defp protocol_message_value_from_schema(schema, direction, callback)
        when is_map(schema) and is_binary(callback) and callback != "" do
@@ -941,7 +1017,7 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall do
           ctx()
         ) :: [Types.protocol_timeline_event()]
   def normalize_from_schema(protocol_events, state, events_ctx)
-       when is_list(protocol_events) and is_map(state) and is_map(events_ctx) do
+      when is_list(protocol_events) and is_map(state) and is_map(events_ctx) do
     case project_schema(state, events_ctx) do
       {:ok, schema} ->
         Enum.map(protocol_events, &normalize_protocol_event_from_schema(&1, schema))
@@ -1008,7 +1084,7 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall do
           Types.protocol_wire_arg()
         ) :: {String.t(), Types.protocol_ctor_value() | map()} | :error
   def normalize_protocol_message_value_from_schema(schema, direction, message_value, message)
-       when direction in [:watch_to_phone, :phone_to_watch] and is_map(schema) do
+      when direction in [:watch_to_phone, :phone_to_watch] and is_map(schema) do
     ctor = protocol_message_ctor(message_value) || message_constructor(message)
 
     with ctor when is_binary(ctor) and ctor != "" <- ctor,
@@ -1029,12 +1105,12 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall do
   end
 
   def normalize_protocol_message_value_from_schema(
-         _schema,
-         _direction,
-         _message_value,
-         _message
-       ),
-       do: :error
+        _schema,
+        _direction,
+        _message_value,
+        _message
+      ),
+      do: :error
 
   @spec protocol_schema_message(
           Types.protocol_schema(),
@@ -1179,5 +1255,4 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall do
   end
 
   defp normalize_protocol_wire_value(_schema, value, _wire_type), do: value
-
 end

@@ -3,7 +3,8 @@ defmodule Ide.Debugger.HttpExecutor do
   Executes evaluated `elm/http` command descriptors for the debugger.
   """
 
-  alias ElmExecutor.Runtime.CoreIREvaluator
+  alias Elmx.Runtime.Json.Decode, as: JsonDecode
+  alias Elmx.Runtime.Values
   alias Ide.Debugger.HttpSimulator
   alias Ide.Debugger.Types
 
@@ -16,13 +17,12 @@ defmodule Ide.Debugger.HttpExecutor do
         }
   @type result :: {:ok, execute_result()} | {:error, Types.http_executor_error()}
 
-  @spec execute(command(), Types.core_ir_eval_context()) :: result()
+  @spec execute(command(), map()) :: result()
   def execute(command, eval_context \\ %{})
 
   def execute(command, eval_context) when is_map(command) and is_map(eval_context) do
     with {:ok, response} <- request(command, eval_context),
-         {:ok, message_value} <-
-           CoreIREvaluator.decode_http_response(command, response, eval_context) do
+         {:ok, message_value} <- decode_http_response(command, response) do
       {:ok,
        %{
          "message_value" => message_value,
@@ -34,10 +34,11 @@ defmodule Ide.Debugger.HttpExecutor do
 
   def execute(_command, _eval_context), do: {:error, :invalid_http_command}
 
-  @spec request(command(), Types.core_ir_eval_context()) ::
+  @spec request(command(), map()) ::
           {:ok, http_response()} | {:error, Types.http_executor_error()}
   defp request(command, eval_context) when is_map(eval_context) do
-    weather = Map.get(eval_context, :simulator_weather) || Map.get(eval_context, "simulator_weather")
+    weather =
+      Map.get(eval_context, :simulator_weather) || Map.get(eval_context, "simulator_weather")
 
     case HttpSimulator.simulated_response(command, weather) do
       {:ok, response} ->
@@ -48,7 +49,8 @@ defmodule Ide.Debugger.HttpExecutor do
     end
   end
 
-  @spec configured_request(command()) :: {:ok, http_response()} | {:error, Types.http_executor_error()}
+  @spec configured_request(command()) ::
+          {:ok, http_response()} | {:error, Types.http_executor_error()}
   defp configured_request(command) do
     request_fun = Application.get_env(:ide, __MODULE__, []) |> Keyword.get(:request_fun)
 
@@ -174,6 +176,88 @@ defmodule Ide.Debugger.HttpExecutor do
       _ -> to_string(body || "")
     end
   end
+
+  @spec decode_http_response(command(), http_response()) ::
+          {:ok, Types.protocol_message_wire_value()} | {:error, Types.http_executor_error()}
+  defp decode_http_response(command, response) when is_map(command) and is_map(response) do
+    expect = map_value(command, "expect") || %{}
+    to_msg = message_name(map_value(expect, "to_msg") || map_value(command, "message"))
+    kind = map_value(expect, "kind") || "string"
+    decoder = map_value(expect, "decoder")
+
+    {:ok, %{"ctor" => to_msg, "args" => [http_result(kind, response, decoder)]}}
+  end
+
+  defp decode_http_response(_command, _response), do: {:error, :invalid_http_command}
+
+  @spec http_result(String.t(), http_response(), term()) :: map()
+  defp http_result(kind, response, decoder) when is_map(response) do
+    case map_value(response, "error") do
+      %{} = error ->
+        %{"ctor" => "Err", "args" => [http_error(error)]}
+
+      _ ->
+        status = map_value(response, "status") || 0
+        body = map_value(response, "body") || ""
+
+        if is_integer(status) and status >= 200 and status < 300 do
+          %{"ctor" => "Ok", "args" => [http_success_body(kind, body, decoder)]}
+        else
+          %{
+            "ctor" => "Err",
+            "args" => [
+              %{
+                "ctor" => "BadStatus",
+                "args" => [
+                  %{"url" => "", "status" => %{"code" => status, "message" => ""}, "body" => body}
+                ]
+              }
+            ]
+          }
+        end
+    end
+  end
+
+  defp http_result(_kind, _response, _decoder),
+    do: %{"ctor" => "Err", "args" => [%{"ctor" => "NetworkError", "args" => []}]}
+
+  @spec http_success_body(String.t(), String.t(), term()) :: Types.wire_value()
+  defp http_success_body(kind, body, decoder) when kind in ["json", :json] do
+    cond do
+      match?({:json_decoder, _}, decoder) ->
+        case JsonDecode.decode_value(decoder, to_string(body || "")) do
+          {:Ok, decoded} -> Values.wire_value(decoded)
+          {:Err, _} -> to_string(body || "")
+        end
+
+      true ->
+        case Jason.decode(to_string(body || "")) do
+          {:ok, decoded} -> decoded
+          _ -> to_string(body || "")
+        end
+    end
+  end
+
+  defp http_success_body(_kind, body, _decoder), do: to_string(body || "")
+
+  @spec http_error(map()) :: map()
+  defp http_error(%{"ctor" => ctor, "args" => args}) when is_binary(ctor) and is_list(args),
+    do: %{"ctor" => ctor, "args" => args}
+
+  defp http_error(%{ctor: ctor, args: args}) when is_atom(ctor) and is_list(args),
+    do: %{"ctor" => Atom.to_string(ctor), "args" => args}
+
+  defp http_error(error) when is_map(error),
+    do: %{"ctor" => "NetworkError", "args" => [inspect(error)]}
+
+  @spec message_name(term()) :: String.t()
+  defp message_name({:function_ref, name}) when is_binary(name), do: name
+  defp message_name({:function_ref, _module, name}) when is_binary(name), do: name
+  defp message_name(%{"ctor" => ctor}) when is_binary(ctor), do: ctor
+  defp message_name(%{ctor: ctor}) when is_atom(ctor), do: Atom.to_string(ctor)
+  defp message_name(value) when is_binary(value), do: value
+  defp message_name(value) when is_atom(value), do: Atom.to_string(value)
+  defp message_name(_value), do: "HttpResponse"
 
   @spec display_message(Types.protocol_message_wire_value() | String.t() | nil) :: String.t()
   defp display_message(%{"ctor" => ctor, "args" => args})

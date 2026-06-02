@@ -57,10 +57,10 @@ defmodule Ide.Mcp.Handlers.Build do
   end
 
   def call("screenshots.read", %{
-         "slug" => slug,
-         "emulator_target" => emulator_target,
-         "filename" => filename
-       }) do
+        "slug" => slug,
+        "emulator_target" => emulator_target,
+        "filename" => filename
+      }) do
     screenshots = screenshots_module()
 
     with {:ok, _project} <- ToolSupport.fetch_project(slug),
@@ -191,12 +191,26 @@ defmodule Ide.Mcp.Handlers.Build do
 
   defp screenshot_mime_type(_filename), do: "application/octet-stream"
 
-  @spec screenshots_capture_payload(String.t(), map(), String.t(), integer(), String.t(), String.t()) ::
+  @spec screenshots_capture_payload(
+          String.t(),
+          map(),
+          String.t(),
+          integer(),
+          String.t(),
+          String.t()
+        ) ::
           ToolTypes.screenshots_capture_result()
   defp screenshots_capture_payload(slug, screenshot, output, exit_code, command, cwd)
        when is_binary(slug) and is_binary(output) and is_integer(exit_code) and is_binary(command) and
               is_binary(cwd) do
-    %{slug: slug, screenshot: screenshot, output: output, exit_code: exit_code, command: command, cwd: cwd}
+    %{
+      slug: slug,
+      screenshot: screenshot,
+      output: output,
+      exit_code: exit_code,
+      command: command,
+      cwd: cwd
+    }
   end
 
   @spec screenshots_list_payload(String.t(), [map()]) :: ToolTypes.screenshots_list_result()

@@ -112,13 +112,21 @@ defmodule IdeWeb.SettingsLive do
 
   def handle_event("set-emulator-setup-target", _params, socket), do: {:noreply, socket}
 
-  def handle_event("refresh-emulator-installation", _params, %{assigns: %{auth_mode: :local}} = socket) do
+  def handle_event(
+        "refresh-emulator-installation",
+        _params,
+        %{assigns: %{auth_mode: :local}} = socket
+      ) do
     {:noreply, check_emulator_installation(socket)}
   end
 
   def handle_event("refresh-emulator-installation", _params, socket), do: {:noreply, socket}
 
-  def handle_event("install-emulator-dependencies", _params, %{assigns: %{auth_mode: :local}} = socket) do
+  def handle_event(
+        "install-emulator-dependencies",
+        _params,
+        %{assigns: %{auth_mode: :local}} = socket
+      ) do
     emulator_target = socket.assigns.selected_emulator_target
 
     {:noreply,
@@ -395,7 +403,10 @@ defmodule IdeWeb.SettingsLive do
         </div>
       </section>
 
-      <section :if={@auth_mode == :local} class="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+      <section
+        :if={@auth_mode == :local}
+        class="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm"
+      >
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 class="text-base font-semibold">Embedded Emulator Setup</h2>
@@ -1055,7 +1066,8 @@ defmodule IdeWeb.SettingsLive do
     "Could not start GitHub connect flow: #{inspect(reason)}"
   end
 
-  @spec maybe_check_emulator_installation(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
+  @spec maybe_check_emulator_installation(Phoenix.LiveView.Socket.t()) ::
+          Phoenix.LiveView.Socket.t()
   defp maybe_check_emulator_installation(%{assigns: %{auth_mode: :local}} = socket),
     do: check_emulator_installation(socket)
 

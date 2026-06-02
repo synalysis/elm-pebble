@@ -40,4 +40,29 @@ defmodule Elmx.ExecutorIntegrationTest do
     stepped = step_patch["runtime_model"] || step_patch[:runtime_model]
     assert stepped["value"] == 1 or stepped[:value] == 1
   end
+
+  test "view uses launch_context screen when runtime_model screen dimensions are zero" do
+    revision = "exec-screen-" <> Integer.to_string(:erlang.unique_integer([:positive]))
+
+    assert {:ok, %Elmx.CompileResult{entry_module: module}} =
+             Elmx.compile_in_memory(@project_dir, %{
+               entry_module: "Main",
+               revision: revision,
+               mode: :ide_runtime
+             })
+
+    assert {:ok, payload} =
+             Elmx.Runtime.Executor.execute_generated(module, %{
+               "current_model" => %{
+                 "launch_context" => %{
+                   "screen" => %{"width" => 144, "height" => 168}
+                 },
+                 "runtime_model" => %{"screenW" => 0, "screenH" => 0, "value" => 0}
+               },
+               "message" => nil
+             })
+
+    view_output = payload[:view_output] || payload["view_output"]
+    assert length(view_output) > 2
+  end
 end

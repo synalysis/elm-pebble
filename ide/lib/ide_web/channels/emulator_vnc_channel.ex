@@ -130,7 +130,12 @@ defmodule IdeWeb.EmulatorVncChannel do
   end
 
   defp connect_vnc(port) do
-    case :gen_tcp.connect(~c"127.0.0.1", port, [:binary, active: false, nodelay: true, packet: :raw], @vnc_connect_timeout) do
+    case :gen_tcp.connect(
+           ~c"127.0.0.1",
+           port,
+           [:binary, active: false, nodelay: true, packet: :raw],
+           @vnc_connect_timeout
+         ) do
       {:ok, tcp} -> {:ok, tcp}
       {:error, reason} -> {:error, {:vnc_connect_failed, reason}}
     end

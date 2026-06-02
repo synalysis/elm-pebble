@@ -70,7 +70,8 @@ defmodule Ide.SimulatorCapabilities.Detect do
 
   def companion_caps(_), do: MapSet.new()
 
-  @spec add_watch_module_caps(MapSet.t(String.t()), Types.elm_introspect()) :: MapSet.t(String.t())
+  @spec add_watch_module_caps(MapSet.t(String.t()), Types.elm_introspect()) ::
+          MapSet.t(String.t())
   defp add_watch_module_caps(set, introspect) do
     Enum.reduce(@watch_module_caps, set, fn {cap, module_name}, acc ->
       maybe_put(acc, cap, watch_module?(introspect, module_name))

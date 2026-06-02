@@ -11,7 +11,7 @@ defmodule Ide.DatabaseConfig do
         url
         |> Ecto.Repo.Supervisor.parse_url()
         |> apply_database_ssl_settings()
-        |> Keyword.merge([pool_size: pool_size(), priv: "priv/repo"])
+        |> Keyword.merge(pool_size: pool_size(), priv: "priv/repo")
 
       _ ->
         raise """

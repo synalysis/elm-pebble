@@ -47,7 +47,9 @@ defmodule ElmEx.DebuggerContract.Payload do
           optional(:msg_constructor_arg_types) => map(),
           optional(:update_case_branches) => [String.t()],
           optional(:update_case_subject) => String.t() | nil,
-          optional(:update_ctor_model_fields) => %{optional(String.t()) => %{optional(String.t()) => String.t()}},
+          optional(:update_ctor_model_fields) => %{
+            optional(String.t()) => %{optional(String.t()) => String.t()}
+          },
           optional(:update_cmd_ops) => [cmd_op_row()],
           optional(:update_cmd_calls) => [cmd_op_row()],
           optional(:update_params) => [String.t()],
@@ -70,7 +72,8 @@ defmodule ElmEx.DebuggerContract.Payload do
           optional(atom()) => json_value()
         }
 
-  @type wire_payload :: t() | %{optional(String.t()) => json_value(), optional(atom()) => json_value()}
+  @type wire_payload ::
+          t() | %{optional(String.t()) => json_value(), optional(atom()) => json_value()}
 
   @type snapshot :: %{
           optional(:elm_introspect) => wire_payload(),

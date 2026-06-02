@@ -84,7 +84,9 @@ defmodule Ide.Debugger.DigitalPreviewLayoutTest do
              })
 
     execution_model = Ide.Debugger.RuntimeArtifacts.execution_model(state.watch)
-    view_tree = StepExecution.introspect_parser_view_tree(execution_model, state.watch[:view_tree] || %{})
+
+    view_tree =
+      StepExecution.introspect_parser_view_tree(execution_model, state.watch[:view_tree] || %{})
 
     runtime_model =
       get_in(state, [:watch, :model, "runtime_model"]) ||
@@ -137,6 +139,7 @@ defmodule Ide.Debugger.DigitalPreviewLayoutTest do
     round_rect = Enum.find(rows, &(&1["kind"] == "round_rect"))
 
     assert round_rect
+
     assert round_rect["y"] < screen_h * 0.45,
            "expected fresh layout, not stale y=#{round_rect["y"]}"
   end

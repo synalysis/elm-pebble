@@ -52,7 +52,8 @@ defmodule Ide.StoreListingUrls do
   Returns `https://github.com/owner/repo` when GitHub visibility is public and owner/repo are set.
   """
   @spec public_github_repo_url(map()) :: String.t() | nil
-  def public_github_repo_url(%Project{} = project), do: public_github_repo_url(project.github || %{})
+  def public_github_repo_url(%Project{} = project),
+    do: public_github_repo_url(project.github || %{})
 
   def public_github_repo_url(project) when is_map(project) do
     github = Map.get(project, :github) || Map.get(project, "github") || %{}

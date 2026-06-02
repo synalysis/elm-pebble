@@ -11,31 +11,41 @@ defmodule Ide.Debugger.ProtocolContexts do
   alias Ide.Debugger.Types
 
   @type events_host :: %{
-          required(:introspect_for) =>
-            (Types.runtime_state(), Types.surface_target() -> Types.elm_introspect()),
-          required(:simulator_settings_from_state) =>
-            (Types.runtime_state() -> Types.simulator_settings()),
+          required(:introspect_for) => (Types.runtime_state(), Types.surface_target() ->
+                                          Types.elm_introspect()),
+          required(:simulator_settings_from_state) => (Types.runtime_state() ->
+                                                         Types.simulator_settings()),
           required(:session_key_from_state) => (Types.runtime_state() -> String.t() | nil),
-          required(:surface_app_model) =>
-            (Types.runtime_state(), Types.surface_target() -> Types.app_model())
+          required(:surface_app_model) => (Types.runtime_state(), Types.surface_target() ->
+                                             Types.app_model())
         }
 
   @type rx_host :: %{
-          required(:append_event) =>
-            (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() ->
-               Types.runtime_state()),
-          required(:append_debugger_event) =>
-            (Types.runtime_state(), String.t(), Types.surface_target(), String.t(), String.t() ->
-               Types.runtime_state()),
-          required(:append_runtime_exec_event_for_target) =>
-            (Types.runtime_state(), Types.surface_target(), Types.debugger_timeline_payload() ->
-               Types.runtime_state()),
+          required(:append_event) => (Types.runtime_state(),
+                                      String.t(),
+                                      Types.debugger_timeline_payload() ->
+                                        Types.runtime_state()),
+          required(:append_debugger_event) => (Types.runtime_state(),
+                                               String.t(),
+                                               Types.surface_target(),
+                                               String.t(),
+                                               String.t() ->
+                                                 Types.runtime_state()),
+          required(:append_runtime_exec_event_for_target) => (Types.runtime_state(),
+                                                              Types.surface_target(),
+                                                              Types.debugger_timeline_payload() ->
+                                                                Types.runtime_state()),
           required(:source_root_for_target) => (Types.surface_target() -> String.t()),
-          required(:introspect_for) =>
-            (Types.runtime_state(), Types.surface_target() -> Types.elm_introspect()),
-          required(:apply_step_once) =>
-            (Types.runtime_state(), Types.surface_target(), String.t(),
-             Types.subscription_payload() | nil, String.t(), String.t() -> Types.runtime_state()),
+          required(:introspect_for) => (Types.runtime_state(), Types.surface_target() ->
+                                          Types.elm_introspect()),
+          required(:apply_step_once) => (Types.runtime_state(),
+                                         Types.surface_target(),
+                                         String.t(),
+                                         Types.subscription_payload()
+                                         | nil,
+                                         String.t(),
+                                         String.t() ->
+                                           Types.runtime_state()),
           required(:protocol_events_ctx) => (-> ProtocolEvents.ctx())
         }
 
@@ -78,7 +88,15 @@ defmodule Ide.Debugger.ProtocolContexts do
       introspect_for: host.introspect_for,
       introspect_cmd_calls: &IntrospectAccess.cmd_calls/2,
       apply_step_once: fn st, target, message, message_value, source, trigger ->
-        rx_apply_step_once(st, target, message, message_value, source, trigger, host.apply_step_once)
+        rx_apply_step_once(
+          st,
+          target,
+          message,
+          message_value,
+          source,
+          trigger,
+          host.apply_step_once
+        )
       end,
       refresh_runtime_fingerprints: &StepExecution.refresh_runtime_fingerprints/3,
       protocol_events_ctx: host.protocol_events_ctx,
@@ -93,8 +111,14 @@ defmodule Ide.Debugger.ProtocolContexts do
           Types.subscription_payload() | nil,
           String.t(),
           String.t(),
-          (Types.runtime_state(), Types.surface_target(), String.t(),
-           Types.subscription_payload() | nil, String.t(), String.t() -> Types.runtime_state())
+          (Types.runtime_state(),
+           Types.surface_target(),
+           String.t(),
+           Types.subscription_payload()
+           | nil,
+           String.t(),
+           String.t() ->
+             Types.runtime_state())
         ) :: Types.runtime_state()
   def rx_apply_step_once(st, target, message, message_value, source, trigger, apply_step_once)
       when is_function(apply_step_once, 6) do

@@ -29,8 +29,8 @@ defmodule Ide.Debugger.Types.CompileIngestBridge do
           optional(:warning_count) => non_neg_integer(),
           optional(:detail) => String.t(),
           optional(:source_root) => String.t(),
-          optional(:elm_executor_core_ir_b64) => String.t(),
-          optional(:elm_executor_metadata) => map(),
+          optional(:elmx_manifest) => map(),
+          optional(:elmx_revision) => String.t(),
           optional(atom()) => Types.wire_input(),
           optional(String.t()) => Types.wire_input()
         }
@@ -88,10 +88,6 @@ defmodule Ide.Debugger.Types.CompileIngestBridge do
       detail: Map.get(result, :detail) || Map.get(result, "detail"),
       source_root: Map.get(result, :source_root) || Map.get(result, "source_root"),
       diagnostics: diagnostics_field(result),
-      elm_executor_core_ir_b64:
-        Map.get(result, :elm_executor_core_ir_b64) || Map.get(result, "elm_executor_core_ir_b64"),
-      elm_executor_metadata:
-        Map.get(result, :elm_executor_metadata) || Map.get(result, "elm_executor_metadata"),
       elmx_manifest: Map.get(result, :elmx_manifest) || Map.get(result, "elmx_manifest"),
       elmx_revision: Map.get(result, :elmx_revision) || Map.get(result, "elmx_revision")
     }

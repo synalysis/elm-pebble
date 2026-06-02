@@ -450,7 +450,22 @@ defmodule Elmc.Backend.Pebble do
     """
   end
 
-  @spec pebble_source([map()], map(), boolean(), String.t(), integer(), integer(), integer(), integer(), integer(), integer(), integer(), integer(), integer(), integer()) ::
+  @spec pebble_source(
+          [map()],
+          map(),
+          boolean(),
+          String.t(),
+          integer(),
+          integer(),
+          integer(),
+          integer(),
+          integer(),
+          integer(),
+          integer(),
+          integer(),
+          integer(),
+          integer()
+        ) ::
           String.t()
   defp pebble_source(
          msg_constructors,
@@ -776,13 +791,24 @@ defmodule Elmc.Backend.Pebble do
       if (!offset_and_rotation || offset_and_rotation->tag != ELMC_TAG_TUPLE2 || offset_and_rotation->payload == NULL) return -4;
       ElmcTuple2 *off1 = (ElmcTuple2 *)offset_and_rotation->payload;
       if (!off1->first || !off1->second) return -5;
-      out_cmd->path_offset_x = elmc_as_int(off1->first);
 
-      if (off1->second->tag != ELMC_TAG_TUPLE2 || off1->second->payload == NULL) return -6;
-      ElmcTuple2 *off2 = (ElmcTuple2 *)off1->second->payload;
-      if (!off2->first || !off2->second) return -7;
-      out_cmd->path_offset_y = elmc_as_int(off2->first);
-      out_cmd->path_rotation = elmc_as_int(off2->second);
+      if (off1->first->tag == ELMC_TAG_TUPLE2 && off1->first->payload != NULL) {
+        /* Pebble.Ui.path: tuple2(points, tuple2(tuple2(offset_x, offset_y), rotation)) */
+        ElmcTuple2 *xy = (ElmcTuple2 *)off1->first->payload;
+        if (!xy->first || !xy->second) return -6;
+        out_cmd->path_offset_x = elmc_as_int(xy->first);
+        out_cmd->path_offset_y = elmc_as_int(xy->second);
+        out_cmd->path_rotation = elmc_as_int(off1->second);
+      } else {
+        /* path_expr: tuple2(points, tuple2(offset_x, tuple2(offset_y, rotation))) */
+        out_cmd->path_offset_x = elmc_as_int(off1->first);
+
+        if (off1->second->tag != ELMC_TAG_TUPLE2 || off1->second->payload == NULL) return -6;
+        ElmcTuple2 *off2 = (ElmcTuple2 *)off1->second->payload;
+        if (!off2->first || !off2->second) return -7;
+        out_cmd->path_offset_y = elmc_as_int(off2->first);
+        out_cmd->path_rotation = elmc_as_int(off2->second);
+      }
 
       int count = 0;
       ElmcValue *cursor = points;
@@ -2882,7 +2908,8 @@ defmodule Elmc.Backend.Pebble do
     )
   end
 
-  @spec unobstructed_will_change_target_tag(IR.t(), [{String.t(), non_neg_integer()}]) :: integer()
+  @spec unobstructed_will_change_target_tag(IR.t(), [{String.t(), non_neg_integer()}]) ::
+          integer()
   defp unobstructed_will_change_target_tag(%IR{} = ir, msg_constructors) do
     target_tag_from_subscription(
       ir,
@@ -3029,15 +3056,26 @@ defmodule Elmc.Backend.Pebble do
     |> Map.new()
   end
 
-  defp accel_config_from_node(%{op: :qualified_call, target: "Pebble.Accel.onData", args: [config | _]}, acc, bindings) do
+  defp accel_config_from_node(
+         %{op: :qualified_call, target: "Pebble.Accel.onData", args: [config | _]},
+         acc,
+         bindings
+       ) do
     resolved = resolve_accel_config_expr(config, bindings)
 
     acc
-    |> Map.put(:samples_per_update, accel_config_int(resolved, "samplesPerUpdate", acc[:samples_per_update]))
+    |> Map.put(
+      :samples_per_update,
+      accel_config_int(resolved, "samplesPerUpdate", acc[:samples_per_update])
+    )
     |> Map.put(:sampling_hz, accel_config_sampling_hz(resolved, acc[:sampling_hz]))
   end
 
-  defp accel_config_from_node(%{op: :qualified_call, target: "Elm.Kernel.PebbleWatch.onAccelData", args: [hz | _]}, acc, _bindings)
+  defp accel_config_from_node(
+         %{op: :qualified_call, target: "Elm.Kernel.PebbleWatch.onAccelData", args: [hz | _]},
+         acc,
+         _bindings
+       )
        when is_integer(hz) or is_map(hz) do
     case hz do
       %{op: :int_literal, value: value} when is_integer(value) ->
@@ -3072,7 +3110,8 @@ defmodule Elmc.Backend.Pebble do
 
   defp resolve_accel_config_expr(expr, _bindings), do: expr
 
-  defp accel_config_int(%{op: :record_literal, fields: fields}, field, default) when is_list(fields) do
+  defp accel_config_int(%{op: :record_literal, fields: fields}, field, default)
+       when is_list(fields) do
     case Enum.find(fields, &(&1.name == field)) do
       %{expr: %{op: :int_literal, value: value}} when is_integer(value) and value > 0 -> value
       _ -> default
@@ -3083,7 +3122,8 @@ defmodule Elmc.Backend.Pebble do
 
   defp accel_config_int(_, _, default), do: default
 
-  defp accel_config_sampling_hz(%{op: :record_literal, fields: fields}, default) when is_list(fields) do
+  defp accel_config_sampling_hz(%{op: :record_literal, fields: fields}, default)
+       when is_list(fields) do
     case Enum.find(fields, &(&1.name == "samplingRate")) do
       %{expr: %{op: :int_literal, value: value}} when value in 1..4 ->
         accel_sampling_hz_from_tag(value)

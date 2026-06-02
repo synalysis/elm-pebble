@@ -61,7 +61,13 @@ defmodule IdeWeb.WorkspaceLive.EditorFlow do
     add-companion-app
   )
 
-  @editor_asyncs [:open_file, :editor_check, :format_file, :refresh_editor_dependencies, :refresh_editor_dependency_usage]
+  @editor_asyncs [
+    :open_file,
+    :editor_check,
+    :format_file,
+    :refresh_editor_dependencies,
+    :refresh_editor_dependency_usage
+  ]
 
   @spec editor_events() :: [String.t()]
   def editor_events, do: @editor_events
@@ -852,7 +858,11 @@ defmodule IdeWeb.WorkspaceLive.EditorFlow do
     end
   end
 
-  defp do_handle_async(:open_file, {:ok, {{:error, reason}, token, _source_root, _rel_path}}, socket) do
+  defp do_handle_async(
+         :open_file,
+         {:ok, {{:error, reason}, token, _source_root, _rel_path}},
+         socket
+       ) do
     if socket.assigns.file_open_token == token do
       {:noreply,
        socket
@@ -909,7 +919,11 @@ defmodule IdeWeb.WorkspaceLive.EditorFlow do
     {:noreply, socket}
   end
 
-  defp do_handle_async(:editor_check, {:ok, {{:ok, result}, token, source_root, rel_path}}, socket) do
+  defp do_handle_async(
+         :editor_check,
+         {:ok, {{:ok, result}, token, source_root, rel_path}},
+         socket
+       ) do
     if socket.assigns.editor_check_token == token do
       {:noreply,
        socket
@@ -925,7 +939,11 @@ defmodule IdeWeb.WorkspaceLive.EditorFlow do
     end
   end
 
-  defp do_handle_async(:editor_check, {:ok, {{:error, reason}, token, source_root, rel_path}}, socket) do
+  defp do_handle_async(
+         :editor_check,
+         {:ok, {{:error, reason}, token, source_root, rel_path}},
+         socket
+       ) do
     if socket.assigns.editor_check_token == token do
       diagnostics = [
         %{
@@ -980,10 +998,10 @@ defmodule IdeWeb.WorkspaceLive.EditorFlow do
     do: BuildFlow.handle_async(:run_manifest, result, socket)
 
   defp do_handle_async(
-        :format_file,
-        {:ok, {:ok, %{tab: tab, result: result, write_result: :ok}}},
-        socket
-      ) do
+         :format_file,
+         {:ok, {:ok, %{tab: tab, result: result, write_result: :ok}}},
+         socket
+       ) do
     socket =
       socket
       |> assign(:format_status, :ok)
@@ -1026,10 +1044,10 @@ defmodule IdeWeb.WorkspaceLive.EditorFlow do
   end
 
   defp do_handle_async(
-        :format_file,
-        {:ok, {:ok, %{tab: _tab, write_result: {:error, reason}}}},
-        socket
-      ) do
+         :format_file,
+         {:ok, {:ok, %{tab: _tab, write_result: {:error, reason}}}},
+         socket
+       ) do
     {:noreply,
      socket
      |> assign(:format_status, :error)
@@ -1103,8 +1121,19 @@ defmodule IdeWeb.WorkspaceLive.EditorFlow do
   defdelegate restore_editor_state(socket, state), to: EditorSupport
   defdelegate focus_diagnostic(socket, direction), to: EditorSupport
   defdelegate elm_source_file?(rel_path), to: EditorSupport
-  defdelegate format_source(project, tab, formatter_backend, parser_payload, tokens), to: EditorSupport
-  defdelegate prepare_content_for_save(project, tab, auto_format_enabled, formatter_backend, parser_payload, tokens), to: EditorSupport
+
+  defdelegate format_source(project, tab, formatter_backend, parser_payload, tokens),
+    to: EditorSupport
+
+  defdelegate prepare_content_for_save(
+                project,
+                tab,
+                auto_format_enabled,
+                formatter_backend,
+                parser_payload,
+                tokens
+              ), to: EditorSupport
+
   defdelegate default_editor_state(), to: EditorSupport
   defdelegate update_editor_state_tab(socket, tab_id, updater), to: EditorSupport
   defdelegate clear_editor_check(socket, tab), to: EditorSupport
@@ -1114,6 +1143,9 @@ defmodule IdeWeb.WorkspaceLive.EditorFlow do
   defdelegate maybe_regenerate_phone_preferences_after_save(socket, tab), to: EditorSupport
   defdelegate capability_sync_source?(source_root, rel_path), to: EditorSupport
   defdelegate refresh_detected_capabilities(socket), to: EditorSupport
-  defdelegate push_editor_check_lint_diagnostics(socket, source_root, rel_path, diagnostics), to: EditorSupport
+
+  defdelegate push_editor_check_lint_diagnostics(socket, source_root, rel_path, diagnostics),
+    to: EditorSupport
+
   defdelegate schedule_compiler_check(socket), to: BuildFlow
 end

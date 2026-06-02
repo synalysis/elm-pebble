@@ -12,7 +12,8 @@ defmodule Ide.Emulator.VncReady do
   end
 
   @spec wait_banner(pos_integer(), timeout()) :: :ok | {:error, Types.vnc_error()}
-  def wait_banner(port, timeout_ms) when is_integer(port) and port > 0 and is_integer(timeout_ms) do
+  def wait_banner(port, timeout_ms)
+      when is_integer(port) and port > 0 and is_integer(timeout_ms) do
     case capture_banner(port, timeout_ms) do
       {:ok, _banner} -> :ok
       {:error, reason} -> {:error, reason}
@@ -20,7 +21,8 @@ defmodule Ide.Emulator.VncReady do
   end
 
   @spec capture_banner(pos_integer(), timeout()) :: {:ok, binary()} | {:error, Types.vnc_error()}
-  def capture_banner(port, timeout_ms) when is_integer(port) and port > 0 and is_integer(timeout_ms) do
+  def capture_banner(port, timeout_ms)
+      when is_integer(port) and port > 0 and is_integer(timeout_ms) do
     case capture_banner_open(port, timeout_ms) do
       {:ok, banner, socket} ->
         :gen_tcp.close(socket)

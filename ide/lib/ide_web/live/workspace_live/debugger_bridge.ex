@@ -7,7 +7,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridge do
   alias IdeWeb.WorkspaceLive.DebuggerSupport
 
   @type socket :: Phoenix.LiveView.Socket.t()
-  @type compiler_result :: Ide.Compiler.check_result() | Ide.Compiler.compile_result() | Ide.Compiler.manifest_result() | map()
+  @type compiler_result ::
+          Ide.Compiler.check_result()
+          | Ide.Compiler.compile_result()
+          | Ide.Compiler.manifest_result()
+          | map()
 
   @spec sync_check(Phoenix.LiveView.Socket.t(), map()) :: Phoenix.LiveView.Socket.t()
   def sync_check(socket, result) do

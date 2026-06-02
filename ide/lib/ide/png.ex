@@ -82,13 +82,14 @@ defmodule Ide.Png do
 
   defp parse_chunks(<<>>, _width, _height, _meta, _idat), do: {:error, :invalid_png}
 
-  defp parse_chunks(<<length::unsigned-big-32, type::binary-size(4), data::binary-size(length),
-                      crc::unsigned-big-32, rest::binary>>,
-                     width,
-                     height,
-                     meta,
-                     idat
-                   ) do
+  defp parse_chunks(
+         <<length::unsigned-big-32, type::binary-size(4), data::binary-size(length),
+           crc::unsigned-big-32, rest::binary>>,
+         width,
+         height,
+         meta,
+         idat
+       ) do
     _ = crc
 
     case type do
@@ -237,7 +238,11 @@ defmodule Ide.Png do
   defp unfilter_paeth_row(<<current, rest::binary>>, prev, acc, row_bytes, index) do
     left = if rem(index, row_bytes) == 0, do: 0, else: :binary.at(acc, byte_size(acc) - 1)
     up = if byte_size(prev) == 0, do: 0, else: :binary.at(prev, index)
-    up_left = if rem(index, row_bytes) == 0 or byte_size(prev) == 0, do: 0, else: :binary.at(prev, index - 1)
+
+    up_left =
+      if rem(index, row_bytes) == 0 or byte_size(prev) == 0,
+        do: 0,
+        else: :binary.at(prev, index - 1)
 
     predictor =
       [left, up, up_left]
@@ -287,7 +292,8 @@ defmodule Ide.Png do
   end
 
   @doc false
-  @spec encode_rgba(binary(), pos_integer(), pos_integer()) :: {:ok, binary()} | {:error, png_error()}
+  @spec encode_rgba(binary(), pos_integer(), pos_integer()) ::
+          {:ok, binary()} | {:error, png_error()}
   def encode_rgba(rgba, width, height) do
     expected = width * height * 4
 

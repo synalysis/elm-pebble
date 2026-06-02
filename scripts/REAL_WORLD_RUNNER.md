@@ -3,7 +3,7 @@
 This runner exercises public Elm packages against both compilers:
 
 - `elmc`
-- `elm_executor`
+- `elmx`
 
 It is resumable and stores progress under:
 
@@ -44,14 +44,14 @@ For each package:
 3. Install and cache package source locally.
 4. Run:
    - `elmc check <package_dir>`
-   - `elm_executor check <package_dir>`
+   - `elmx` compile/runtime checks where applicable
 5. If docs include Elm code blocks, generate a synthetic doctest module and compile-check it with both compilers.
 6. Record failures in `todos.json`.
 
 ### Special handling for `elm/core`
 
 - `elm/core` is handled as a dedicated docs/runtime suite instead of regular package-source download.
-- The runner builds a local synthetic project from `elm/core` docs snippets and validates it with `elmc` and `elm_executor`.
+- The runner builds a local synthetic project from `elm/core` docs snippets and validates it with `elmc` and `elmx`.
 - Runtime value comparison uses the in-repo evaluator pipeline (no JavaScript execution).
 
 ## Notes

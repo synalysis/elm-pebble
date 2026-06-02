@@ -135,7 +135,12 @@ defmodule Ide.Resources.ResourceStore do
   recorded in `bitmaps.json`. Existing ctors are left unchanged; duplicate file bytes are skipped.
   """
   @spec import_bitmaps_from_directory(Project.t(), String.t() | nil, keyword()) ::
-          {:ok, %{imported: non_neg_integer(), skipped: non_neg_integer(), duplicates: non_neg_integer()}}
+          {:ok,
+           %{
+             imported: non_neg_integer(),
+             skipped: non_neg_integer(),
+             duplicates: non_neg_integer()
+           }}
   def import_bitmaps_from_directory(%Project{} = project, dir \\ nil, opts \\ []) do
     workspace = Projects.project_workspace_path(project)
     assets_dir = dir || Path.join(workspace, @assets_rel_dir)
@@ -221,7 +226,13 @@ defmodule Ide.Resources.ResourceStore do
 
   @spec import_bitmap_variant(Project.t(), String.t(), String.t(), String.t(), String.t() | nil) ::
           {:ok, map()} | {:error, Types.resource_error()}
-  defp import_bitmap_variant(%Project{} = project, upload_path, original_name, color_mode, ctor_hint) do
+  defp import_bitmap_variant(
+         %Project{} = project,
+         upload_path,
+         original_name,
+         color_mode,
+         ctor_hint
+       ) do
     workspace = Projects.project_workspace_path(project)
     assets_dir = Path.join(workspace, @assets_rel_dir)
     manifest_path = Path.join(workspace, @manifest_rel_path)
@@ -361,7 +372,8 @@ defmodule Ide.Resources.ResourceStore do
   def import_vector(%Project{} = project, upload_path, original_name, opts)
       when is_binary(upload_path) and is_binary(original_name) and is_list(opts) do
     with {:ok, safe_name, mime, source_kind} <- normalized_vector_filename(original_name),
-         {:ok, pdc_bytes, extras} <- vector_bytes_from_upload(upload_path, safe_name, source_kind, opts) do
+         {:ok, pdc_bytes, extras} <-
+           vector_bytes_from_upload(upload_path, safe_name, source_kind, opts) do
       persist_vector_bytes(project, pdc_bytes, safe_name, mime, source_kind, extras)
     end
   end
@@ -373,6 +385,7 @@ defmodule Ide.Resources.ResourceStore do
     with {:ok, svg} <- File.read(upload_path),
          {:ok, result} <- SvgConverter.convert(svg, opts),
          :ok <- SvgConverter.validate_pdc_bytes(result.bytes),
+         :ok <- PdcDecoder.validate_watch_compatible(result.bytes),
          {:ok, preview_svg} <- PdcDecoder.preview_svg(result.bytes) do
       safe_name =
         original_name
@@ -395,6 +408,7 @@ defmodule Ide.Resources.ResourceStore do
       when is_list(frames) and is_binary(original_name) do
     with {:ok, result} <- SvgConverter.convert_svg_sequence(frames, opts),
          :ok <- SvgConverter.validate_pdc_bytes(result.bytes),
+         :ok <- PdcDecoder.validate_watch_compatible(result.bytes),
          {:ok, preview_svg} <- PdcDecoder.preview_svg(result.bytes) do
       safe_name =
         original_name
@@ -499,7 +513,8 @@ defmodule Ide.Resources.ResourceStore do
     end)
   end
 
-  @spec delete_vector(Project.t(), String.t()) :: {:ok, [map()]} | {:error, Types.resource_error()}
+  @spec delete_vector(Project.t(), String.t()) ::
+          {:ok, [map()]} | {:error, Types.resource_error()}
   def delete_vector(%Project{} = project, ctor) when is_binary(ctor) do
     workspace = Projects.project_workspace_path(project)
     manifest_path = Path.join(workspace, @vector_manifest_rel_path)
@@ -523,7 +538,8 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec vector_file_path(Project.t(), String.t()) :: {:ok, String.t()} | {:error, Types.resource_error()}
+  @spec vector_file_path(Project.t(), String.t()) ::
+          {:ok, String.t()} | {:error, Types.resource_error()}
   def vector_file_path(%Project{} = project, ctor) when is_binary(ctor) do
     workspace = Projects.project_workspace_path(project)
     assets_dir = Path.join(workspace, @vector_assets_rel_dir)
@@ -537,7 +553,8 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec delete_bitmap(Project.t(), String.t()) :: {:ok, [map()]} | {:error, Types.resource_error()}
+  @spec delete_bitmap(Project.t(), String.t()) ::
+          {:ok, [map()]} | {:error, Types.resource_error()}
   def delete_bitmap(%Project{} = project, ctor) when is_binary(ctor) do
     workspace = Projects.project_workspace_path(project)
     manifest_path = Path.join(workspace, @manifest_rel_path)
@@ -584,16 +601,17 @@ defmodule Ide.Resources.ResourceStore do
     manifest_path = Path.join(workspace, @manifest_rel_path)
 
     with {:ok, manifest} <- read_bitmap_manifest(workspace),
-         %{} = row <- existing_row(manifest, old_ctor),
-         new_ctor <-
-           {:ok,
-            CtorNaming.unique_ctor(
-              :bitmap_static,
-              new_base,
-              manifest["entries"] || [],
-              exclude_ctor: old_ctor
-            )},
-         migrated_row <- {:ok, migrate_bitmap_row_files(assets_dir, row, old_ctor, new_ctor)} do
+         %{} = row <- existing_row(manifest, old_ctor) do
+      new_ctor =
+        CtorNaming.unique_ctor(
+          :bitmap_static,
+          new_base,
+          manifest["entries"] || [],
+          exclude_ctor: old_ctor
+        )
+
+      migrated_row = migrate_bitmap_row_files(assets_dir, row, old_ctor, new_ctor, new_base)
+
       entries =
         (manifest["entries"] || [])
         |> Enum.reject(&(Map.get(&1, "ctor") == old_ctor))
@@ -619,12 +637,14 @@ defmodule Ide.Resources.ResourceStore do
     manifest_path = Path.join(workspace, @vector_manifest_rel_path)
 
     with {:ok, manifest} <- read_vector_manifest(workspace),
-         %{} = row <- Enum.find(manifest["entries"] || [], &(Map.get(&1, "ctor") == old_ctor)),
-         kind <- {:ok, CtorNaming.vector_kind_from_row(row)},
-         new_ctor <-
-           {:ok,
-            CtorNaming.unique_ctor(kind, new_base, manifest["entries"] || [], exclude_ctor: old_ctor)},
-         migrated_row <- {:ok, migrate_vector_row_files(assets_dir, row, old_ctor, new_ctor, kind)} do
+         %{} = row <- Enum.find(manifest["entries"] || [], &(Map.get(&1, "ctor") == old_ctor)) do
+      kind = CtorNaming.vector_kind_from_row(row)
+
+      new_ctor =
+        CtorNaming.unique_ctor(kind, new_base, manifest["entries"] || [], exclude_ctor: old_ctor)
+
+      migrated_row = migrate_vector_row_files(assets_dir, row, old_ctor, new_ctor, kind, new_base)
+
       entries =
         (manifest["entries"] || [])
         |> Enum.reject(&(Map.get(&1, "ctor") == old_ctor))
@@ -641,7 +661,8 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec bitmap_file_path(Project.t(), String.t()) :: {:ok, String.t()} | {:error, Types.resource_error()}
+  @spec bitmap_file_path(Project.t(), String.t()) ::
+          {:ok, String.t()} | {:error, Types.resource_error()}
   def bitmap_file_path(%Project{} = project, ctor) when is_binary(ctor) do
     bitmap_file_path(project, ctor, nil)
   end
@@ -689,7 +710,8 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec list_font_sources(Project.t()) :: {:ok, [font_source()]} | {:error, Types.resource_error()}
+  @spec list_font_sources(Project.t()) ::
+          {:ok, [font_source()]} | {:error, Types.resource_error()}
   def list_font_sources(%Project{} = project) do
     workspace = Projects.project_workspace_path(project)
 
@@ -708,7 +730,8 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec import_font(Project.t(), String.t(), String.t()) :: {:ok, map()} | {:error, Types.resource_error()}
+  @spec import_font(Project.t(), String.t(), String.t()) ::
+          {:ok, map()} | {:error, Types.resource_error()}
   def import_font(%Project{} = project, upload_path, original_name)
       when is_binary(upload_path) and is_binary(original_name) do
     workspace = Projects.project_workspace_path(project)
@@ -780,7 +803,8 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec update_font_variant(Project.t(), String.t(), map()) :: {:ok, map()} | {:error, Types.resource_error()}
+  @spec update_font_variant(Project.t(), String.t(), map()) ::
+          {:ok, map()} | {:error, Types.resource_error()}
   def update_font_variant(%Project{} = project, ctor, params)
       when is_binary(ctor) and is_map(params) do
     workspace = Projects.project_workspace_path(project)
@@ -827,7 +851,8 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec delete_font_source(Project.t(), String.t()) :: {:ok, map()} | {:error, Types.resource_error()}
+  @spec delete_font_source(Project.t(), String.t()) ::
+          {:ok, map()} | {:error, Types.resource_error()}
   def delete_font_source(%Project{} = project, source_id) when is_binary(source_id) do
     workspace = Projects.project_workspace_path(project)
     manifest_path = Path.join(workspace, @font_manifest_rel_path)
@@ -854,7 +879,8 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec font_file_path(Project.t(), String.t()) :: {:ok, String.t()} | {:error, Types.resource_error()}
+  @spec font_file_path(Project.t(), String.t()) ::
+          {:ok, String.t()} | {:error, Types.resource_error()}
   def font_file_path(%Project{} = project, ctor) when is_binary(ctor) do
     workspace = Projects.project_workspace_path(project)
     assets_dir = Path.join(workspace, @font_assets_rel_dir)
@@ -869,7 +895,8 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec bitmap_file_path_by_id(Project.t(), integer()) :: {:ok, String.t()} | {:error, Types.resource_error()}
+  @spec bitmap_file_path_by_id(Project.t(), integer()) ::
+          {:ok, String.t()} | {:error, Types.resource_error()}
   def bitmap_file_path_by_id(%Project{} = project, id) when is_integer(id) and id >= 1 do
     with {:ok, entries} <- list(project),
          %{} = row <- Enum.at(entries, id - 1) do
@@ -881,7 +908,8 @@ defmodule Ide.Resources.ResourceStore do
 
   def bitmap_file_path_by_id(_project, _), do: {:error, :bitmap_not_found}
 
-  @spec vector_file_path_by_id(Project.t(), integer()) :: {:ok, String.t()} | {:error, Types.resource_error()}
+  @spec vector_file_path_by_id(Project.t(), integer()) ::
+          {:ok, String.t()} | {:error, Types.resource_error()}
   def vector_file_path_by_id(%Project{} = project, id) when is_integer(id) and id >= 1 do
     with {:ok, entries} <- list_vectors(project),
          %{} = row <- Enum.at(entries, id - 1) do
@@ -893,7 +921,8 @@ defmodule Ide.Resources.ResourceStore do
 
   def vector_file_path_by_id(_project, _), do: {:error, :vector_not_found}
 
-  @spec animation_file_path_by_id(Project.t(), integer()) :: {:ok, String.t()} | {:error, Types.resource_error()}
+  @spec animation_file_path_by_id(Project.t(), integer()) ::
+          {:ok, String.t()} | {:error, Types.resource_error()}
   def animation_file_path_by_id(%Project{} = project, id) when is_integer(id) and id >= 1 do
     with {:ok, entries} <- AnimationStore.list(project),
          %{} = row <- Enum.at(entries, id - 1) do
@@ -905,13 +934,15 @@ defmodule Ide.Resources.ResourceStore do
 
   def animation_file_path_by_id(_project, _), do: {:error, :not_found}
 
-  @spec read_bitmap_manifest(Types.workspace_path()) :: {:ok, Types.manifest()} | {:error, Types.resource_error()}
+  @spec read_bitmap_manifest(Types.workspace_path()) ::
+          {:ok, Types.manifest()} | {:error, Types.resource_error()}
   defp read_bitmap_manifest(workspace) do
     path = Path.join(workspace, @manifest_rel_path)
     read_manifest(path, strict: true)
   end
 
-  @spec read_font_manifest(Types.workspace_path()) :: {:ok, Types.manifest()} | {:error, Types.resource_error()}
+  @spec read_font_manifest(Types.workspace_path()) ::
+          {:ok, Types.manifest()} | {:error, Types.resource_error()}
   defp read_font_manifest(workspace) do
     path = Path.join(workspace, @font_manifest_rel_path)
 
@@ -921,7 +952,8 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec read_manifest(Path.t(), keyword()) :: {:ok, Types.manifest()} | {:error, Types.manifest_io_error()}
+  @spec read_manifest(Path.t(), keyword()) ::
+          {:ok, Types.manifest()} | {:error, Types.manifest_io_error()}
   defp read_manifest(path, opts \\ []) do
     path = Path.expand(path)
     strict? = Keyword.get(opts, :strict, false)
@@ -933,7 +965,9 @@ defmodule Ide.Resources.ResourceStore do
             {:ok, Map.put_new(decoded, "entries", [])}
 
           _ ->
-            if strict?, do: {:error, :invalid_manifest}, else: {:ok, %{"schema_version" => 1, "entries" => []}}
+            if strict?,
+              do: {:error, :invalid_manifest},
+              else: {:ok, %{"schema_version" => 1, "entries" => []}}
         end
 
       {:error, :enoent} ->
@@ -986,7 +1020,12 @@ defmodule Ide.Resources.ResourceStore do
          :ok <-
            File.write(
              path,
-             generated_module_source(bitmap_entries, font_entries, vector_entries, animation_entries)
+             generated_module_source(
+               bitmap_entries,
+               font_entries,
+               vector_entries,
+               animation_entries
+             )
            ) do
       _ = File.rm(legacy)
       :ok
@@ -1265,7 +1304,15 @@ defmodule Ide.Resources.ResourceStore do
     info_decl =
       case rows do
         [] ->
-          empty_info_decl(type_name, nil_ctor, info_type, info_fn, record_field, dimension_fields?, animation_fields?)
+          empty_info_decl(
+            type_name,
+            nil_ctor,
+            info_type,
+            info_fn,
+            record_field,
+            dimension_fields?,
+            animation_fields?
+          )
 
         row_list ->
           cases =
@@ -1273,15 +1320,44 @@ defmodule Ide.Resources.ResourceStore do
               info_case_row(row, record_field, dimension_fields?, animation_fields?)
             end)
 
-          populated_info_decl(type_name, info_type, info_fn, record_field, dimension_fields?, animation_fields?, cases)
+          populated_info_decl(
+            type_name,
+            info_type,
+            info_fn,
+            record_field,
+            dimension_fields?,
+            animation_fields?,
+            cases
+          )
       end
 
     {type_decl, all_decl, info_decl}
   end
 
-  defp empty_info_decl(type_name, nil_ctor, info_type, info_fn, record_field, dimension_fields?, animation_fields?) do
-    record_fields = info_record_fields(type_name, record_field, dimension_fields?, animation_fields?)
-    nil_record = info_record_literal(record_field, nil_ctor, nil_ctor, 0, 0, 0, 0, dimension_fields?, animation_fields?)
+  defp empty_info_decl(
+         type_name,
+         nil_ctor,
+         info_type,
+         info_fn,
+         record_field,
+         dimension_fields?,
+         animation_fields?
+       ) do
+    record_fields =
+      info_record_fields(type_name, record_field, dimension_fields?, animation_fields?)
+
+    nil_record =
+      info_record_literal(
+        record_field,
+        nil_ctor,
+        nil_ctor,
+        0,
+        0,
+        0,
+        0,
+        dimension_fields?,
+        animation_fields?
+      )
 
     """
     type alias #{info_type} =
@@ -1296,8 +1372,17 @@ defmodule Ide.Resources.ResourceStore do
     """
   end
 
-  defp populated_info_decl(type_name, info_type, info_fn, record_field, dimension_fields?, animation_fields?, cases) do
-    record_fields = info_record_fields(type_name, record_field, dimension_fields?, animation_fields?)
+  defp populated_info_decl(
+         type_name,
+         info_type,
+         info_fn,
+         record_field,
+         dimension_fields?,
+         animation_fields?,
+         cases
+       ) do
+    record_fields =
+      info_record_fields(type_name, record_field, dimension_fields?, animation_fields?)
 
     """
     type alias #{info_type} =
@@ -1345,7 +1430,17 @@ defmodule Ide.Resources.ResourceStore do
     """
   end
 
-  defp info_record_literal(record_field, value_ctor, name, width, height, frame_count, duration_ms, dimension_fields?, animation_fields?) do
+  defp info_record_literal(
+         record_field,
+         value_ctor,
+         name,
+         width,
+         height,
+         frame_count,
+         duration_ms,
+         dimension_fields?,
+         animation_fields?
+       ) do
     parts =
       ["#{record_field} = #{value_ctor}", ~s(name = "#{elm_string(name)}")]
       |> maybe_add_info_literal(dimension_fields?, "width = #{width}")
@@ -1360,7 +1455,8 @@ defmodule Ide.Resources.ResourceStore do
   defp maybe_add_info_literal(parts, false, _field), do: parts
 
   @spec sort_generated_resource_rows([map()], :bitmap | :font | :vector | :animation) :: [map()]
-  defp sort_generated_resource_rows(rows, kind) when is_list(rows) and kind in [:bitmap, :font, :vector, :animation] do
+  defp sort_generated_resource_rows(rows, kind)
+       when is_list(rows) and kind in [:bitmap, :font, :vector, :animation] do
     Enum.sort_by(rows, &resource_row_sort_key(&1, kind))
   end
 
@@ -1385,7 +1481,8 @@ defmodule Ide.Resources.ResourceStore do
     {rank, ctor}
   end
 
-  defp resource_prefix_rank(ctor, expected_prefix) when is_binary(ctor) and is_binary(expected_prefix) do
+  defp resource_prefix_rank(ctor, expected_prefix)
+       when is_binary(ctor) and is_binary(expected_prefix) do
     if String.starts_with?(ctor, expected_prefix), do: 0, else: 1
   end
 
@@ -1439,7 +1536,8 @@ defmodule Ide.Resources.ResourceStore do
     }
   end
 
-  @spec read_vector_manifest(Types.workspace_path()) :: {:ok, Types.manifest()} | {:error, Types.resource_error()}
+  @spec read_vector_manifest(Types.workspace_path()) ::
+          {:ok, Types.manifest()} | {:error, Types.resource_error()}
   defp read_vector_manifest(workspace) do
     path = Path.join(workspace, @vector_manifest_rel_path)
     read_manifest(path)
@@ -1484,12 +1582,15 @@ defmodule Ide.Resources.ResourceStore do
   defp vector_bytes_from_upload(upload_path, _safe_name, "pdc", _opts) do
     case File.read(upload_path) do
       {:ok, bytes} ->
-        extras = %{
-          kind: vector_kind_from_bytes(bytes),
-          preview_svg: preview_svg_for_bytes(bytes)
-        }
+        with :ok <- SvgConverter.validate_pdc_bytes(bytes),
+             :ok <- PdcDecoder.validate_watch_compatible(bytes) do
+          extras = %{
+            kind: vector_kind_from_bytes(bytes),
+            preview_svg: preview_svg_for_bytes(bytes)
+          }
 
-        {:ok, bytes, extras}
+          {:ok, bytes, extras}
+        end
 
       {:error, reason} ->
         {:error, reason}
@@ -1501,9 +1602,9 @@ defmodule Ide.Resources.ResourceStore do
       {:ok, svg} ->
         with {:ok, result} <- SvgConverter.convert(svg, opts),
              :ok <- SvgConverter.validate_pdc_bytes(result.bytes),
+             :ok <- PdcDecoder.validate_watch_compatible(result.bytes),
              {:ok, preview_svg} <- PdcDecoder.preview_svg(result.bytes) do
-          {:ok, result.bytes,
-           %{report: result.report, preview_svg: preview_svg, kind: "image"}}
+          {:ok, result.bytes, %{report: result.report, preview_svg: preview_svg, kind: "image"}}
         else
           {:error, reason} -> {:error, reason}
         end
@@ -2125,7 +2226,8 @@ defmodule Ide.Resources.ResourceStore do
 
   defp string_list(_), do: []
 
-  @spec migrate_resource_ctor_names(Types.workspace_path()) :: :ok | {:error, Types.resource_error()}
+  @spec migrate_resource_ctor_names(Types.workspace_path()) ::
+          :ok | {:error, Types.resource_error()}
   defp migrate_resource_ctor_names(workspace) do
     with :ok <- migrate_bitmap_manifest(workspace),
          :ok <- migrate_vector_manifest(workspace),
@@ -2181,7 +2283,7 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  defp migrate_bitmap_row_files(assets_dir, row, old_ctor \\ nil, new_ctor \\ nil) do
+  defp migrate_bitmap_row_files(assets_dir, row, old_ctor \\ nil, new_ctor \\ nil, new_base \\ nil) do
     old_ctor = old_ctor || Map.get(row, "ctor", "")
     ensured = CtorNaming.ensure_row!(row, :bitmap_static)
     new_ctor = new_ctor || Map.get(ensured, "ctor", "")
@@ -2200,10 +2302,11 @@ defmodule Ide.Resources.ResourceStore do
 
       ensured
       |> rewrite_ctor_in_row_filenames(old_ctor, new_ctor)
+      |> CtorNaming.row_with_ctor(:bitmap_static, new_ctor, new_base)
     end
   end
 
-  defp migrate_vector_row_files(assets_dir, row, old_ctor, new_ctor, kind) do
+  defp migrate_vector_row_files(assets_dir, row, old_ctor, new_ctor, kind, new_base \\ nil) do
     old_ctor = old_ctor || Map.get(row, "ctor", "")
     ensured = CtorNaming.ensure_row!(row, kind)
     new_ctor = new_ctor || Map.get(ensured, "ctor", "")
@@ -2222,6 +2325,7 @@ defmodule Ide.Resources.ResourceStore do
 
       ensured
       |> Map.put("filename", new_filename)
+      |> CtorNaming.row_with_ctor(kind, new_ctor, new_base)
     end
   end
 

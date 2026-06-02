@@ -6,8 +6,15 @@ defmodule Ide.Debugger.DebuggerStep do
   alias Ide.Debugger.Types
 
   @type apply_step_fn ::
-          (Types.runtime_state(), Types.surface_target(), String.t() | nil, Types.subscription_payload() | nil,
-           String.t(), String.t() -> Types.runtime_state())
+          (Types.runtime_state(),
+           Types.surface_target(),
+           String.t()
+           | nil,
+           Types.subscription_payload()
+           | nil,
+           String.t(),
+           String.t() ->
+             Types.runtime_state())
 
   @type normalize_target_fn :: (Types.wire_input() -> Types.surface_target())
 
@@ -23,8 +30,12 @@ defmodule Ide.Debugger.DebuggerStep do
       message = Map.get(attrs, :message) || Map.get(attrs, "message")
       count = Attrs.parse_step_count(Map.get(attrs, :count) || Map.get(attrs, "count"))
 
+      explicit_message_value = Map.get(attrs, :message_value) || Map.get(attrs, "message_value")
+
       Enum.reduce(1..count, state, fn _, acc ->
-        {_step_message, message_value} = TimelineMessage.message_value_for_step(message || "")
+        {_step_message, message_value} =
+          TimelineMessage.message_value_for_step(message || "", explicit_message_value)
+
         host.apply_step_once.(acc, target, message, message_value, nil, "step")
       end)
     else

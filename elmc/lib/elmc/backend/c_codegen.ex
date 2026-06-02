@@ -8,7 +8,8 @@ defmodule Elmc.Backend.CCodegen do
   alias Elmc.Backend.CCodegen.Emit
   alias Elmc.Backend.CCodegen.Types
 
-  @spec write_project(IR.t(), String.t(), Types.codegen_opts()) :: :ok | {:error, Types.file_error()}
+  @spec write_project(IR.t(), String.t(), Types.codegen_opts()) ::
+          :ok | {:error, Types.file_error()}
   def write_project(%IR{} = ir, out_dir, opts \\ %{}) do
     c_dir = Path.join(out_dir, "c")
 
@@ -1709,11 +1710,13 @@ defmodule Elmc.Backend.CCodegen do
     collect_var_contexts_for_function_args(name, args, [:boxed, :boxed, :boxed, :boxed], context)
   end
 
-  defp text_command_var_contexts(name, "Pebble.Ui.textLabel", args, context) when length(args) == 3 do
+  defp text_command_var_contexts(name, "Pebble.Ui.textLabel", args, context)
+       when length(args) == 3 do
     collect_var_contexts_for_function_args(name, args, [:boxed, :boxed, :boxed], context)
   end
 
-  defp text_command_var_contexts(name, "Pebble.Ui.textInt", args, context) when length(args) == 3 do
+  defp text_command_var_contexts(name, "Pebble.Ui.textInt", args, context)
+       when length(args) == 3 do
     collect_var_contexts_for_function_args(name, args, [:boxed, :boxed, :native], context)
   end
 
@@ -1905,6 +1908,38 @@ defmodule Elmc.Backend.CCodegen do
   defp binding_key(%{"op" => :var, "name" => name}), do: binding_key(name)
   defp binding_key(%{"op" => "var", "name" => name}), do: binding_key(name)
   defp binding_key(value), do: value
+
+  # Load an `ElmcValue *` for a name: local env binding, or zero-arity top-level value.
+  @spec elmc_value_source(map(), String.t(), non_neg_integer()) ::
+          {String.t(), String.t(), non_neg_integer()}
+  defp elmc_value_source(env, name, counter) do
+    case Map.fetch(env, name) do
+      {:ok, source} when is_binary(source) ->
+        {"", source, counter}
+
+      :error ->
+        module_name = Map.get(env, :__module__, "Main")
+        function_arities = Map.get(env, :__function_arities__, %{})
+        arity = Map.get(function_arities, {module_name, name}, 0)
+
+        if arity > 0 do
+          next = counter + 1
+          tmp = "tmp_#{next}"
+          {closure_code, _, next} = top_level_function_closure(module_name, name, arity, tmp, next)
+          {closure_code, tmp, next}
+        else
+          next = counter + 1
+          tmp = "tmp_#{next}"
+          c_name = module_fn_name(module_name, name)
+
+          {
+            "ElmcValue *#{tmp} = #{c_name}(NULL, 0);\n",
+            tmp,
+            next
+          }
+        end
+    end
+  end
 
   defp top_level_function_closure(module_name, name, arity, out, next) do
     c_name = module_fn_name(module_name, name)
@@ -2264,10 +2299,12 @@ defmodule Elmc.Backend.CCodegen do
         counter
       )
     else
-      source = Map.get(env, name, name)
+      {prefix, source, counter} = elmc_value_source(env, name, counter)
       next = counter + 1
       var = "tmp_#{next}"
-      {"ElmcValue *#{var} = elmc_new_int(elmc_as_int(#{source}) + #{value});", var, next}
+
+      {prefix <> "ElmcValue *#{var} = elmc_new_int(elmc_as_int(#{source}) + #{value});", var,
+       next}
     end
   end
 
@@ -2283,13 +2320,17 @@ defmodule Elmc.Backend.CCodegen do
         counter
       )
     else
-      left_ref = Map.get(env, left, left)
-      right_ref = Map.get(env, right, right)
+      {left_prefix, left_ref, counter} = elmc_value_source(env, left, counter)
+      {right_prefix, right_ref, counter} = elmc_value_source(env, right, counter)
       next = counter + 1
       var = "tmp_#{next}"
 
-      {"ElmcValue *#{var} = elmc_new_int(elmc_as_int(#{left_ref}) + elmc_as_int(#{right_ref}));",
-       var, next}
+      code =
+        left_prefix <>
+          right_prefix <>
+          "ElmcValue *#{var} = elmc_new_int(elmc_as_int(#{left_ref}) + elmc_as_int(#{right_ref}));"
+
+      {code, var, next}
     end
   end
 
@@ -2305,10 +2346,12 @@ defmodule Elmc.Backend.CCodegen do
         counter
       )
     else
-      source = Map.get(env, name, name)
+      {prefix, source, counter} = elmc_value_source(env, name, counter)
       next = counter + 1
       var = "tmp_#{next}"
-      {"ElmcValue *#{var} = elmc_new_int(elmc_as_int(#{source}) - #{value});", var, next}
+
+      {prefix <> "ElmcValue *#{var} = elmc_new_int(elmc_as_int(#{source}) - #{value});", var,
+       next}
     end
   end
 
@@ -4384,13 +4427,22 @@ defmodule Elmc.Backend.CCodegen do
            ] ->
         true
 
-      {target, [%{op: :qualified_call, target: path_target, args: path_args}]}
+      {target, [path_arg]}
       when target in [
              "Pebble.Ui.pathFilled",
              "Pebble.Ui.pathOutline",
              "Pebble.Ui.pathOutlineOpen"
            ] ->
-        direct_path_supported?(normalize_special_target(path_target), path_args)
+        case path_arg do
+          %{op: :qualified_call, target: path_target, args: path_args} ->
+            direct_path_supported?(normalize_special_target(path_target), path_args)
+
+          %{op: :var} ->
+            true
+
+          _ ->
+            false
+        end
 
       {target, _args} ->
         case direct_qualified_function_target(target, decl_map) do
@@ -5282,6 +5334,7 @@ defmodule Elmc.Backend.CCodegen do
       "Pebble.Ui.textLabel",
       "Pebble.Ui.text",
       "Pebble.Ui.group",
+      "Pebble.Ui.path",
       "Pebble.Ui.pathFilled",
       "Pebble.Ui.pathOutline",
       "Pebble.Ui.pathOutlineOpen",
@@ -5712,8 +5765,21 @@ defmodule Elmc.Backend.CCodegen do
         counter
       )
 
-  defp direct_emit_qualified("Pebble.Ui.drawRotatedBitmap", args, env, counter),
-    do: direct_append_command(draw_kind(:rotated_bitmap), args, env, counter)
+  defp direct_emit_qualified("Pebble.Ui.drawRotatedBitmap", [bitmap, bounds, rotation, center], env, counter),
+    do:
+      direct_append_command(
+        draw_kind(:rotated_bitmap),
+        [
+          bitmap,
+          field_access_expr(bounds, "w"),
+          field_access_expr(bounds, "h"),
+          rotation,
+          field_access_expr(center, "x"),
+          field_access_expr(center, "y")
+        ],
+        env,
+        counter
+      )
 
   defp direct_emit_qualified("Pebble.Ui.pathFilled", [path], env, counter),
     do: direct_path_command(draw_kind(:path_filled), path, env, counter)
@@ -6182,8 +6248,33 @@ defmodule Elmc.Backend.CCodegen do
     """
   end
 
-  defp direct_path_command(kind, %{op: :qualified_call, target: target, args: args}, env, counter) do
-    with "Pebble.Ui.path" <- normalize_special_target(target),
+  defp direct_path_command(kind, path, env, counter) do
+    case resolve_direct_path_source(path, env) do
+      {:ok, target, args} ->
+        emit_direct_path_command(kind, target, args, env, counter)
+
+      :error ->
+        :error
+    end
+  end
+
+  defp resolve_direct_path_source(%{op: :qualified_call, target: target, args: args}, _env),
+    do: {:ok, normalize_special_target(target), args}
+
+  defp resolve_direct_path_source(%{op: :var, name: name}, env) do
+    case Map.get(env, name) do
+      {:direct_fragment, %{op: :qualified_call, target: target, args: args}} ->
+        {:ok, normalize_special_target(target), args}
+
+      _ ->
+        :error
+    end
+  end
+
+  defp resolve_direct_path_source(_, _), do: :error
+
+  defp emit_direct_path_command(kind, target, args, env, counter) do
+    with "Pebble.Ui.path" <- target,
          [%{op: :list_literal, items: points}, offset, rotation] <- args,
          true <- length(points) <= 16 do
       {code, point_assignments, counter} =
@@ -6233,8 +6324,6 @@ defmodule Elmc.Backend.CCodegen do
       _ -> :error
     end
   end
-
-  defp direct_path_command(_, _, _, _), do: :error
 
   defp direct_range_bounds(
          %{op: :qualified_call, target: target, args: [first, last]},
@@ -7674,13 +7763,13 @@ defmodule Elmc.Backend.CCodegen do
       ])
 
   defp special_value_from_target("Pebble.Health.sum", [metric, start_seconds, end_seconds, to_msg]),
-    do:
-      special_value_from_target("Elm.Kernel.PebbleWatch.healthSum", [
-        health_metric_to_kernel_expr(metric),
-        start_seconds,
-        end_seconds,
-        to_msg
-      ])
+       do:
+         special_value_from_target("Elm.Kernel.PebbleWatch.healthSum", [
+           health_metric_to_kernel_expr(metric),
+           start_seconds,
+           end_seconds,
+           to_msg
+         ])
 
   defp special_value_from_target("Pebble.Health.accessible", [
          metric,
@@ -7739,10 +7828,12 @@ defmodule Elmc.Backend.CCodegen do
     do: %{op: :int_literal, value: 4_194_304}
 
   defp special_value_from_target("Pebble.UnobstructedArea.currentBounds", [to_msg]),
-    do: encoded_cmd_expr(command_kind(:unobstructed_bounds_peek), [constructor_tag_expr(to_msg)], 1)
+    do:
+      encoded_cmd_expr(command_kind(:unobstructed_bounds_peek), [constructor_tag_expr(to_msg)], 1)
 
   defp special_value_from_target("Elm.Kernel.PebbleWatch.unobstructedCurrentBounds", [to_msg]),
-    do: encoded_cmd_expr(command_kind(:unobstructed_bounds_peek), [constructor_tag_expr(to_msg)], 1)
+    do:
+      encoded_cmd_expr(command_kind(:unobstructed_bounds_peek), [constructor_tag_expr(to_msg)], 1)
 
   defp special_value_from_target("Companion.Watch.onPhoneToWatch", _args),
     do: %{op: :int_literal, value: 4096}
@@ -9083,7 +9174,11 @@ defmodule Elmc.Backend.CCodegen do
     do: %{op: :runtime_call, function: "elmc_json_decode_map6", args: [f, d1, d2, d3, d4, d5, d6]}
 
   defp special_value_from_target("Json.Decode.map7", [f, d1, d2, d3, d4, d5, d6, d7]),
-    do: %{op: :runtime_call, function: "elmc_json_decode_map7", args: [f, d1, d2, d3, d4, d5, d6, d7]}
+    do: %{
+      op: :runtime_call,
+      function: "elmc_json_decode_map7",
+      args: [f, d1, d2, d3, d4, d5, d6, d7]
+    }
 
   defp special_value_from_target("Json.Decode.succeed", [value]),
     do: %{op: :runtime_call, function: "elmc_json_decode_succeed", args: [value]}
@@ -10138,7 +10233,8 @@ defmodule Elmc.Backend.CCodegen do
 
   defp record_shape_for_type(_type, _env), do: nil
 
-  defp lookup_record_field_type(type_name, field, env) when is_binary(type_name) and is_binary(field) do
+  defp lookup_record_field_type(type_name, field, env)
+       when is_binary(type_name) and is_binary(field) do
     types_map = Process.get(:elmc_record_field_types, %{})
     current_module = Map.get(env, :__module__, "Main")
     normalized = normalize_type_name(type_name)
@@ -10315,7 +10411,12 @@ defmodule Elmc.Backend.CCodegen do
     }
   end
 
-  @spec compile_builtin_operator_call(String.t(), [Types.ir_expr()], Types.compile_env(), Types.compile_counter()) ::
+  @spec compile_builtin_operator_call(
+          String.t(),
+          [Types.ir_expr()],
+          Types.compile_env(),
+          Types.compile_counter()
+        ) ::
           Types.compile_result_or_nil()
   defp compile_builtin_operator_call("e", [], env, counter),
     do: compile_expr(%{op: :float_literal, value: 2.718281828459045}, env, counter)
@@ -10560,7 +10661,12 @@ defmodule Elmc.Backend.CCodegen do
 
   defp compile_builtin_operator_call(_name, _args, _env, _counter), do: nil
 
-  @spec compile_curried_binary_builtin(String.t(), [Types.ir_expr()], Types.compile_env(), Types.compile_counter()) ::
+  @spec compile_curried_binary_builtin(
+          String.t(),
+          [Types.ir_expr()],
+          Types.compile_env(),
+          Types.compile_counter()
+        ) ::
           Types.compile_result()
   defp compile_curried_binary_builtin(name, [], env, counter) do
     compile_expr(
@@ -10590,7 +10696,13 @@ defmodule Elmc.Backend.CCodegen do
     )
   end
 
-  @spec compile_int_binop(Types.ir_expr(), Types.ir_expr(), String.t(), Types.compile_env(), Types.compile_counter()) ::
+  @spec compile_int_binop(
+          Types.ir_expr(),
+          Types.ir_expr(),
+          String.t(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) ::
           Types.compile_result()
   defp compile_int_binop(
          %{op: :int_literal, value: left},
@@ -10654,7 +10766,12 @@ defmodule Elmc.Backend.CCodegen do
     end
   end
 
-  @spec compile_int_idiv(Types.ir_expr(), Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
+  @spec compile_int_idiv(
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) ::
           Types.compile_result()
   defp compile_int_idiv(left, right, env, counter) do
     {left_code, left_var, counter} = compile_native_int_expr(left, env, counter)
@@ -11348,8 +11465,8 @@ defmodule Elmc.Backend.CCodegen do
   defp pebble_bound_trig_expr(_expr, _env), do: nil
 
   defp pebble_bound_trig_round_expr?(%{op: :call, name: "__mul__", args: [left, right]}, env) do
-    (pebble_bound_trig_expr(left, env) && match?({:ok, _}, to_float_arg(right))) ||
-      (pebble_bound_trig_expr(right, env) && match?({:ok, _}, to_float_arg(left)))
+    !!(pebble_bound_trig_expr(left, env) && match?({:ok, _}, to_float_arg(right))) ||
+        (pebble_bound_trig_expr(right, env) && match?({:ok, _}, to_float_arg(left)))
   end
 
   defp pebble_bound_trig_round_expr?(_expr, _env), do: false
@@ -11874,7 +11991,12 @@ defmodule Elmc.Backend.CCodegen do
     if typed_bool_expr?(expr, env), do: "elmc_as_bool(#{var})", else: "elmc_as_int(#{var}) != 0"
   end
 
-  @spec compile_float_div(Types.ir_expr(), Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
+  @spec compile_float_div(
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) ::
           Types.compile_result()
   defp compile_float_div(left, right, env, counter) do
     if native_float_expr?(left, env) and native_float_expr?(right, env) do

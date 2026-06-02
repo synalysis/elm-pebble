@@ -14,9 +14,9 @@ defmodule Ide.Debugger.RuntimeExecEventTypesTest do
   update _ model = ( model, Cmd.none )
   """
 
-  test "from_runtime maps elm_executor snapshot fields" do
+  test "from_runtime maps runtime_execution snapshot fields" do
     runtime = %{
-      "engine" => "elm_executor_runtime_v1",
+      "engine" => "elmx_runtime_v1",
       "source_byte_size" => 42,
       "msg_constructor_count" => 1,
       "update_case_branch_count" => 2,
@@ -36,7 +36,7 @@ defmodule Ide.Debugger.RuntimeExecEventTypesTest do
     payload = RuntimeExecEventPayload.from_runtime(runtime, "watch", %{trigger: "reload"})
 
     assert payload.target == "watch"
-    assert payload.engine == "elm_executor_runtime_v1"
+    assert payload.engine == "elmx_runtime_v1"
     assert payload.runtime_model_source == "init_model"
     assert payload.trigger == "reload"
     assert payload.runtime_model_sha256 == String.duplicate("a", 64)

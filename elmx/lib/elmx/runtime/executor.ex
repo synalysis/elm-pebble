@@ -7,10 +7,42 @@ defmodule Elmx.Runtime.Executor do
   alias Elmx.Runtime.LaunchContext
   alias Elmx.Runtime.MessageDecode
   alias Elmx.Runtime.Values
+  alias Elmx.Runtime.ViewOutput
   alias Elmx.Runtime.ViewShape
   alias Elmx.Types
 
   @contract "elmx.runtime_executor.v1"
+
+  @doc """
+  Evaluates `view/1` for the current runtime model without running `init/1` or `update/2`.
+  """
+  @spec view_generated(module(), map()) :: {:ok, map()} | {:error, term()}
+  def view_generated(module, request) when is_atom(module) and is_map(request) do
+    current_model = Map.get(request, :current_model) || Map.get(request, "current_model") || %{}
+
+    launch_context =
+      current_model
+      |> Map.get("launch_context", Map.get(current_model, :launch_context, %{}))
+      |> LaunchContext.normalize()
+
+    runtime_model =
+      current_model
+      |> Map.get("runtime_model", Map.get(current_model, :runtime_model, %{}))
+      |> merge_launch_screen(launch_context)
+
+    try do
+      view_tree = safe_view(module, runtime_model)
+
+      {:ok,
+       %{
+         view_tree: view_tree,
+         view_output: preview_rows(view_tree, request, runtime_model)
+       }}
+    rescue
+      e ->
+        {:error, {:elmx_execution_failed, Exception.message(e)}}
+    end
+  end
 
   @spec execute_generated(module(), map()) :: {:ok, Types.execution_payload()} | {:error, term()}
   def execute_generated(module, request) when is_atom(module) and is_map(request) do
@@ -24,7 +56,9 @@ defmodule Elmx.Runtime.Executor do
       |> LaunchContext.normalize()
 
     runtime_model =
-      Map.get(current_model, "runtime_model") || Map.get(current_model, :runtime_model) || %{}
+      current_model
+      |> Map.get("runtime_model", Map.get(current_model, :runtime_model, %{}))
+      |> merge_launch_screen(launch_context)
 
     try do
       {runtime_model, runtime_model_source, commands} =
@@ -35,14 +69,14 @@ defmodule Elmx.Runtime.Executor do
         end
 
       view_tree = safe_view(module, runtime_model)
-      view_output = preview_rows(view_tree)
+      view_output = preview_rows(view_tree, request, runtime_model)
 
       {:ok,
        %{
          model_patch: %{
            "runtime_model" => runtime_model,
            "runtime_model_source" => runtime_model_source,
-           "elm_executor_mode" => "runtime_executed"
+           "runtime_execution_mode" => "runtime_executed"
          },
          view_tree: view_tree,
          view_output: view_output,
@@ -117,11 +151,43 @@ defmodule Elmx.Runtime.Executor do
 
   defp stringify_view_tree(other), do: %{"type" => "node", "kind" => "node", "label" => inspect(other), "children" => []}
 
-  defp preview_rows(%{"type" => _} = tree), do: [tree]
-  defp preview_rows(%{type: type} = tree) when is_binary(type) or is_atom(type),
-    do: [stringify_view_tree(Values.wire_value(tree))]
+  defp preview_rows(tree, request, runtime_model)
 
-  defp preview_rows(_), do: []
+  defp preview_rows(%{"type" => _} = tree, request, runtime_model),
+    do: ViewOutput.from_view_tree(tree, preview_output_opts(request, runtime_model))
+
+  defp preview_rows(%{type: type} = tree, request, runtime_model)
+       when is_binary(type) or is_atom(type),
+       do:
+         tree
+         |> stringify_view_tree()
+         |> Values.wire_value()
+         |> ViewOutput.from_view_tree(preview_output_opts(request, runtime_model))
+
+  defp preview_rows(_tree, _request, _runtime_model), do: []
+
+  defp preview_output_opts(request, runtime_model) when is_map(request) and is_map(runtime_model) do
+    [
+      vector_resource_indices: resource_indices(request, :vector_resource_indices),
+      bitmap_resource_indices: resource_indices(request, :bitmap_resource_indices),
+      animation_resource_indices: resource_indices(request, :animation_resource_indices),
+      screen_w: screen_dimension(runtime_model, "screenW"),
+      screen_h: screen_dimension(runtime_model, "screenH"),
+      runtime_model: runtime_model
+    ]
+  end
+
+  defp resource_indices(request, key) when is_map(request) do
+    Map.get(request, key) || Map.get(request, Atom.to_string(key)) || %{}
+  end
+
+  defp screen_dimension(model, key) when is_map(model) do
+    case Map.get(model, key) || Map.get(model, String.to_atom(key)) do
+      n when is_integer(n) and n > 0 -> n
+      n when is_float(n) -> trunc(n)
+      _ -> nil
+    end
+  end
 
   defp commands_to_followups(cmd, source_root) when is_map(cmd) do
     Followups.from_commands(cmd, source_root: source_root || "watch")
@@ -185,4 +251,27 @@ defmodule Elmx.Runtime.Executor do
   end
 
   defp merge_runtime_model(_previous, model), do: model
+
+  defp merge_launch_screen(runtime_model, launch_context)
+       when is_map(runtime_model) and is_map(launch_context) do
+    screen = Map.get(launch_context, "screen") || Map.get(launch_context, :screen) || %{}
+
+    width = Map.get(screen, "width") || Map.get(screen, :width)
+    height = Map.get(screen, "height") || Map.get(screen, :height)
+
+    runtime_model
+    |> put_new_int_field("screenW", width)
+    |> put_new_int_field("screenH", height)
+  end
+
+  defp merge_launch_screen(runtime_model, _), do: runtime_model
+
+  defp put_new_int_field(model, key, value) when is_map(model) and is_integer(value) do
+    case Map.get(model, key) || Map.get(model, String.to_atom(key)) do
+      existing when is_integer(existing) and existing > 0 -> model
+      _ -> Map.put(model, key, value)
+    end
+  end
+
+  defp put_new_int_field(model, _key, _value), do: model
 end

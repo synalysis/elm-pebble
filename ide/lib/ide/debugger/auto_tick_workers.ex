@@ -8,7 +8,8 @@ defmodule Ide.Debugger.AutoTickWorkers do
   alias Ide.Debugger.Types
 
   @type tick_fn :: (String.t(), map() -> {:ok, Types.runtime_state()} | any())
-  @type update_fn :: (String.t(), (Types.runtime_state() -> Types.runtime_state()) -> {:ok, Types.runtime_state()})
+  @type update_fn :: (String.t(), (Types.runtime_state() -> Types.runtime_state()) ->
+                        {:ok, Types.runtime_state()})
 
   @type fire_ctx :: AutoFireRuntime.apply_ctx()
 
@@ -24,9 +25,11 @@ defmodule Ide.Debugger.AutoTickWorkers do
     Map.put(state, :auto_tick, SessionDefaults.default_auto_tick())
   end
 
-  @spec tick_loop(String.t(), pos_integer(), [Types.surface_target()], pos_integer(), tick_fn()) :: :ok
+  @spec tick_loop(String.t(), pos_integer(), [Types.surface_target()], pos_integer(), tick_fn()) ::
+          :ok
   def tick_loop(project_slug, interval_ms, targets, count, tick_fn)
-      when is_binary(project_slug) and is_integer(interval_ms) and interval_ms >= 100 and is_function(tick_fn, 2) do
+      when is_binary(project_slug) and is_integer(interval_ms) and interval_ms >= 100 and
+             is_function(tick_fn, 2) do
     receive do
       :stop -> :ok
     after
@@ -39,16 +42,27 @@ defmodule Ide.Debugger.AutoTickWorkers do
     end
   end
 
-  @spec fire_loop(String.t(), pos_integer(), [Types.surface_target()], non_neg_integer(), update_fn(), fire_ctx()) ::
+  @spec fire_loop(
+          String.t(),
+          pos_integer(),
+          [Types.surface_target()],
+          non_neg_integer(),
+          update_fn(),
+          fire_ctx()
+        ) ::
           :ok
   def fire_loop(project_slug, interval_ms, targets, cursor, update_fn, fire_ctx)
-      when is_binary(project_slug) and is_integer(interval_ms) and interval_ms >= 100 and is_integer(cursor) and
+      when is_binary(project_slug) and is_integer(interval_ms) and interval_ms >= 100 and
+             is_integer(cursor) and
              cursor >= 0 and is_function(update_fn, 2) and is_map(fire_ctx) do
     receive do
       :stop -> :ok
     after
       interval_ms ->
-        update_fn.(project_slug, fn state -> AutoFireRuntime.apply_fire(state, targets, fire_ctx) end)
+        update_fn.(project_slug, fn state ->
+          AutoFireRuntime.apply_fire(state, targets, fire_ctx)
+        end)
+
         fire_loop(project_slug, interval_ms, targets, cursor + 1, update_fn, fire_ctx)
     end
   end

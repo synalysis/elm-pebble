@@ -13,6 +13,7 @@ defmodule Ide.DebuggerIntegrationHelpers do
     assert telemetry.used_live_query == expected.used_live_query
     assert telemetry.used_frozen_preview == expected.used_frozen_preview
   end
+
   def compile_health_template_preview(slug, source, revision) do
     workspace_root =
       Path.join([
@@ -34,8 +35,8 @@ defmodule Ide.DebuggerIntegrationHelpers do
       status: :ok,
       compiled_path: "watch",
       revision: revision || "health-preview",
-      elm_executor_core_ir_b64: compile_result.elm_executor_core_ir_b64,
-      elm_executor_metadata: compile_result.elm_executor_metadata || %{}
+      elmx_manifest: compile_result.elmx_manifest,
+      elmx_revision: compile_result.elmx_revision
     })
   end
 
@@ -88,14 +89,14 @@ defmodule Ide.DebuggerIntegrationHelpers do
     end
   end
 
+  def weather_preview_label(_), do: nil
+
   def weather_ctor_label(1), do: "Clear"
   def weather_ctor_label(2), do: "Cloudy"
   def weather_ctor_label(4), do: "Drizzle"
   def weather_ctor_label(5), do: "Rain"
   def weather_ctor_label(6), do: "Snow"
   def weather_ctor_label(_), do: "Weather"
-
-  def weather_preview_label(_), do: nil
 
   def wait_until_stable_minute do
     if NaiveDateTime.local_now().second > 50 do
@@ -107,7 +108,7 @@ defmodule Ide.DebuggerIntegrationHelpers do
   end
 
   def synthetic_step_protocol_event?(%{type: type, payload: payload})
-       when type in ["debugger.protocol_tx", "debugger.protocol_rx"] and is_map(payload) do
+      when type in ["debugger.protocol_tx", "debugger.protocol_rx"] and is_map(payload) do
     message = Map.get(payload, :message) || Map.get(payload, "message") || ""
     trigger = Map.get(payload, :trigger) || Map.get(payload, "trigger")
 

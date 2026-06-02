@@ -32,4 +32,11 @@ defmodule Ide.Resources.CtorNamingTest do
 
     assert CtorNaming.unique_ctor(:bitmap_static, "Logo", entries) == "BitmapStaticLogo1"
   end
+
+  test "row_with_ctor updates ctor and base_name together" do
+    row = %{"ctor" => "BitmapStatic249", "base_name" => "249", "filename" => "BitmapStatic249.png"}
+
+    assert %{"ctor" => "BitmapStaticImage", "base_name" => "Image"} =
+             CtorNaming.row_with_ctor(row, :bitmap_static, "BitmapStaticImage", "Image")
+  end
 end

@@ -17,7 +17,8 @@ defmodule Ide.Debugger.DeviceData do
   }
 
   @spec settings_from_model(Types.app_model()) :: Types.simulator_settings()
-  defp settings_from_model(model) when is_map(model), do: DebuggerSimulatorSettings.from_model(model)
+  defp settings_from_model(model) when is_map(model),
+    do: DebuggerSimulatorSettings.from_model(model)
 
   @spec now_from_model(Types.app_model(), String.t() | nil) :: NaiveDateTime.t()
   defp now_from_model(model, current_message) when is_map(model) do
@@ -51,7 +52,8 @@ defmodule Ide.Debugger.DeviceData do
 
   @spec apply_subscription_clock_overrides(NaiveDateTime.t(), %{String.t() => integer()}) ::
           NaiveDateTime.t()
-  def apply_subscription_clock_overrides(%NaiveDateTime{} = now, overrides) when is_map(overrides) do
+  def apply_subscription_clock_overrides(%NaiveDateTime{} = now, overrides)
+      when is_map(overrides) do
     Enum.reduce(overrides, now, fn
       {"year", value}, acc when is_integer(value) -> %{acc | year: value}
       {"month", value}, acc when is_integer(value) -> %{acc | month: value}
@@ -127,11 +129,11 @@ defmodule Ide.Debugger.DeviceData do
 
   @spec response_message(Types.cmd_call()) :: String.t() | nil
   def response_message(%{
-         response_message: ctor,
-         kind: "current_time_string",
-         preview: preview
-       })
-       when is_binary(ctor) and ctor != "" and is_map(preview) do
+        response_message: ctor,
+        kind: "current_time_string",
+        preview: preview
+      })
+      when is_binary(ctor) and ctor != "" and is_map(preview) do
     case Map.get(preview, "string") do
       value when is_binary(value) ->
         escaped =
@@ -147,20 +149,20 @@ defmodule Ide.Debugger.DeviceData do
   end
 
   def response_message(%{
-         response_message: ctor,
-         kind: "current_date_time",
-         preview: preview
-       })
-       when is_binary(ctor) and ctor != "" and is_map(preview) do
+        response_message: ctor,
+        kind: "current_date_time",
+        preview: preview
+      })
+      when is_binary(ctor) and ctor != "" and is_map(preview) do
     "#{ctor} #{Jason.encode!(current_date_time_message_payload(preview))}"
   end
 
   def response_message(%{
-         response_message: ctor,
-         kind: kind,
-         preview: preview
-       })
-       when is_binary(ctor) and ctor != "" and kind in ["battery_level", "connection_status"] do
+        response_message: ctor,
+        kind: kind,
+        preview: preview
+      })
+      when is_binary(ctor) and ctor != "" and kind in ["battery_level", "connection_status"] do
     value =
       case {kind, preview} do
         {"battery_level", %{"batteryLevel" => level}} -> level
@@ -178,18 +180,18 @@ defmodule Ide.Debugger.DeviceData do
   end
 
   def response_message(%{
-         response_message: ctor,
-         kind: kind,
-         preview: preview
-       })
-       when is_binary(ctor) and ctor != "" and
-              kind in [
-                "health_value",
-                "health_sum_today",
-                "health_sum",
-                "health_accessible",
-                "health_supported"
-              ] do
+        response_message: ctor,
+        kind: kind,
+        preview: preview
+      })
+      when is_binary(ctor) and ctor != "" and
+             kind in [
+               "health_value",
+               "health_sum_today",
+               "health_sum",
+               "health_accessible",
+               "health_supported"
+             ] do
     value =
       case preview do
         %{"value" => metric_value} -> metric_value
@@ -253,7 +255,8 @@ defmodule Ide.Debugger.DeviceData do
         calls when is_list(calls) ->
           kind =
             Enum.find_value(calls, fn call ->
-              callback = Map.get(call, "callback_constructor") || Map.get(call, :callback_constructor)
+              callback =
+                Map.get(call, "callback_constructor") || Map.get(call, :callback_constructor)
 
               if callback == ctor do
                 case DeviceRequest.from_cmd_call(call) do
@@ -327,12 +330,18 @@ defmodule Ide.Debugger.DeviceData do
 
   def response_wire_value(%{response_message: ctor, kind: "watch_model", preview: preview})
       when is_binary(ctor) and ctor != "" do
-    %{"ctor" => ctor, "args" => [%{"ctor" => watch_info_model_ctor_literal(preview), "args" => []}]}
+    %{
+      "ctor" => ctor,
+      "args" => [%{"ctor" => watch_info_model_ctor_literal(preview), "args" => []}]
+    }
   end
 
   def response_wire_value(%{response_message: ctor, kind: "watch_color", preview: preview})
       when is_binary(ctor) and ctor != "" do
-    %{"ctor" => ctor, "args" => [%{"ctor" => watch_info_color_ctor_literal(preview), "args" => []}]}
+    %{
+      "ctor" => ctor,
+      "args" => [%{"ctor" => watch_info_color_ctor_literal(preview), "args" => []}]
+    }
   end
 
   def response_wire_value(%{response_message: ctor, kind: "firmware_version", preview: preview})
@@ -361,7 +370,8 @@ defmodule Ide.Debugger.DeviceData do
 
   @spec health_metric_request_disabled?(Types.app_model(), Types.device_request()) :: boolean()
   def health_metric_request_disabled?(model, %{kind: kind})
-       when is_map(model) and kind in ["health_value", "health_sum_today", "health_sum", "health_accessible"] do
+      when is_map(model) and
+             kind in ["health_value", "health_sum_today", "health_sum", "health_accessible"] do
     launch_context = Map.get(model, "launch_context") || %{}
 
     health_runtime_disabled?(Map.get(model, "runtime_model") || %{}) or
@@ -376,11 +386,12 @@ defmodule Ide.Debugger.DeviceData do
   def health_runtime_disabled?(_runtime_model), do: false
   @spec init_request_already_satisfied?(Types.app_model(), Types.device_request()) :: boolean()
   def init_request_already_satisfied?(model, %{kind: kind})
-       when is_map(model) and is_binary(kind) do
+      when is_map(model) and is_binary(kind) do
     Map.has_key?(model, "debugger_device_#{kind}")
   end
 
   def init_request_already_satisfied?(_model, _req), do: false
+
   @spec finalize_request(Types.device_request(), Types.app_model(), String.t() | nil) ::
           Types.device_request()
   def finalize_request(%{kind: "current_time_string"} = req, model, current_message) do
@@ -441,12 +452,14 @@ defmodule Ide.Debugger.DeviceData do
     Map.put(req, :preview, tz)
   end
 
-  def finalize_request(%{kind: "watch_model"} = req, model, _current_message) when is_map(model) do
+  def finalize_request(%{kind: "watch_model"} = req, model, _current_message)
+      when is_map(model) do
     launch_context = Map.get(model, "launch_context") || %{}
     Map.put(req, :preview, launch_context)
   end
 
-  def finalize_request(%{kind: "watch_color"} = req, model, _current_message) when is_map(model) do
+  def finalize_request(%{kind: "watch_color"} = req, model, _current_message)
+      when is_map(model) do
     launch_context = Map.get(model, "launch_context") || %{}
     Map.put(req, :preview, launch_context)
   end
@@ -505,7 +518,7 @@ defmodule Ide.Debugger.DeviceData do
   def requests_for_message(ei, model, current_message, opts)
 
   def requests_for_message(ei, model, current_message, opts)
-       when is_map(model) and is_binary(current_message) and is_list(opts) do
+      when is_map(model) and is_binary(current_message) and is_list(opts) do
     current_ctor = Keyword.get(opts, :message_constructor, fn msg -> msg end).(current_message)
 
     update_requests =
@@ -516,12 +529,16 @@ defmodule Ide.Debugger.DeviceData do
       |> Enum.flat_map(&DeviceRequest.from_cmd_call/1)
 
     init_requests =
-      ei
-      |> cmd_calls_for("init_cmd_calls")
-      |> expand_cmd_calls(ei, Keyword.get(opts, :expand_cmd_calls))
-      |> Enum.flat_map(&DeviceRequest.from_cmd_call/1)
-      |> Enum.reject(&init_request_deferred?/1)
-      |> Enum.reject(&init_request_already_satisfied?(model, &1))
+      if current_ctor == "init" do
+        ei
+        |> cmd_calls_for("init_cmd_calls")
+        |> expand_cmd_calls(ei, Keyword.get(opts, :expand_cmd_calls))
+        |> Enum.flat_map(&DeviceRequest.from_cmd_call/1)
+        |> Enum.reject(&init_request_deferred?/1)
+        |> Enum.reject(&init_request_already_satisfied?(model, &1))
+      else
+        []
+      end
 
     (update_requests ++ init_requests)
     |> Enum.reject(&health_metric_request_disabled?(model, &1))
@@ -569,7 +586,8 @@ defmodule Ide.Debugger.DeviceData do
 
   defp watch_info_color_ctor_literal(preview) when is_binary(preview), do: preview
 
-  @spec firmware_version_wire_record(String.t() | Types.wire_map() | nil) :: Types.wire_map() | nil
+  @spec firmware_version_wire_record(String.t() | Types.wire_map() | nil) ::
+          Types.wire_map() | nil
   def firmware_version_wire_record(version) when is_binary(version) do
     trimmed =
       version
@@ -603,5 +621,4 @@ defmodule Ide.Debugger.DeviceData do
       _ -> nil
     end
   end
-
 end

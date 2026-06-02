@@ -14,7 +14,10 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport.Types do
           optional(:cursor_start) => non_neg_integer(),
           optional(:cursor_end) => non_neg_integer()
         }
-  @type fold_range :: %{required(:start_line) => pos_integer(), required(:end_line) => pos_integer()}
+  @type fold_range :: %{
+          required(:start_line) => pos_integer(),
+          required(:end_line) => pos_integer()
+        }
   @type diagnostic :: map()
   @type tokenizer_token :: map()
   @type parser_payload :: map() | nil

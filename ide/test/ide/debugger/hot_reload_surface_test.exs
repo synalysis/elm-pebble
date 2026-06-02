@@ -11,6 +11,7 @@ defmodule Ide.Debugger.HotReloadSurfaceTest do
         "rev",
         "watch"
       )
+
     assert get_in(state, [:watch, :view_tree, "label"]) == "src/Main.elm"
   end
 

@@ -22,7 +22,8 @@ defmodule Ide.Resources.PdcEncoder do
 
   def encode(_), do: {:error, :invalid_image}
 
-  @spec encode_sequence([PdcDecoder.image()], keyword()) :: {:ok, binary()} | {:error, encode_error()}
+  @spec encode_sequence([PdcDecoder.image()], keyword()) ::
+          {:ok, binary()} | {:error, encode_error()}
   def encode_sequence(frames, opts \\ [])
 
   def encode_sequence([], _opts), do: {:error, :invalid_image}

@@ -15,18 +15,29 @@ defmodule Ide.Debugger.RuntimeFollowups do
   alias Ide.Debugger.Types
 
   @type apply_ctx :: %{
-          required(:append_event) =>
-            (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() ->
-               Types.runtime_state()),
-          required(:append_debugger_event) =>
-            (Types.runtime_state(), String.t(), Types.surface_target(), String.t(), String.t() | nil,
-             Types.timeline_step_message_value() -> Types.runtime_state()),
-          required(:apply_step_once) =>
-            (Types.runtime_state(), Types.surface_target(), String.t(),
-             Types.subscription_payload() | nil, String.t(), String.t() -> Types.runtime_state()),
+          required(:append_event) => (Types.runtime_state(),
+                                      String.t(),
+                                      Types.debugger_timeline_payload() ->
+                                        Types.runtime_state()),
+          required(:append_debugger_event) => (Types.runtime_state(),
+                                               String.t(),
+                                               Types.surface_target(),
+                                               String.t(),
+                                               String.t()
+                                               | nil,
+                                               Types.timeline_step_message_value() ->
+                                                 Types.runtime_state()),
+          required(:apply_step_once) => (Types.runtime_state(),
+                                         Types.surface_target(),
+                                         String.t(),
+                                         Types.subscription_payload()
+                                         | nil,
+                                         String.t(),
+                                         String.t() ->
+                                           Types.runtime_state()),
           required(:source_root_for_target) => (Types.surface_target() -> String.t()),
-          required(:track_http_command) =>
-            (Types.runtime_state(), Types.tracked_http_command() -> Types.runtime_state()),
+          required(:track_http_command) => (Types.runtime_state(), Types.tracked_http_command() ->
+                                              Types.runtime_state()),
           required(:simulator_settings) => (Types.runtime_state() -> Types.simulator_settings())
         }
 
@@ -68,6 +79,9 @@ defmodule Ide.Debugger.RuntimeFollowups do
     |> Enum.filter(&is_map/1)
     |> Enum.filter(fn row ->
       cond do
+        cross_surface_protocol_followup?(row, target) ->
+          false
+
         shadowed_by_device_data?(state, target, message, row) ->
           false
 
@@ -91,7 +105,6 @@ defmodule Ide.Debugger.RuntimeFollowups do
         package == "elm/http" and is_map(command) and PendingHttpFollowups.async?() ->
           acc
           |> track_http_command(command)
-          |> append_debugger_http_pending(target, followup_message, command, ctx)
           |> PendingHttpFollowups.enqueue(
             target,
             target_name,
@@ -101,7 +114,15 @@ defmodule Ide.Debugger.RuntimeFollowups do
           )
 
         package == "elm/http" and is_map(command) ->
-          apply_runtime_http_followup(acc, target, target_name, package, command, followup_message, ctx)
+          apply_runtime_http_followup(
+            acc,
+            target,
+            target_name,
+            package,
+            command,
+            followup_message,
+            ctx
+          )
 
         true ->
           apply_runtime_package_followup(acc, target, target_name, package, row, message, ctx)
@@ -111,6 +132,31 @@ defmodule Ide.Debugger.RuntimeFollowups do
 
   defp apply_runtime(state, _target, _message, _message_source, _followups, _ctx),
     do: state
+
+  @spec init_device_followup_shadowed?(Surface.t() | Surface.surface_map(), String.t(), String.t()) ::
+          boolean()
+  defp init_device_followup_shadowed?(surface, "init", followup_message)
+       when is_binary(followup_message) and followup_message != "" do
+    surface
+    |> Surface.introspect()
+    |> init_device_callback_messages()
+    |> MapSet.member?(followup_message)
+  end
+
+  defp init_device_followup_shadowed?(_surface, _message, _followup_message), do: false
+
+  @spec init_device_callback_messages(Types.elm_introspect()) :: MapSet.t(String.t())
+  defp init_device_callback_messages(ei) when is_map(ei) do
+    ei
+    |> IntrospectAccess.cmd_calls("init_cmd_calls")
+    |> CmdCall.expand_helpers(ei)
+    |> Enum.flat_map(&DeviceRequest.from_cmd_call/1)
+    |> Enum.map(&DeviceData.response_message/1)
+    |> Enum.reject(&(&1 in [nil, ""]))
+    |> MapSet.new()
+  end
+
+  defp init_device_callback_messages(_), do: MapSet.new()
 
   defp shadowed_by_device_data?(state, target, message, row)
        when is_map(state) and target in [:watch, :companion, :phone] and is_binary(message) and
@@ -124,11 +170,53 @@ defmodule Ide.Debugger.RuntimeFollowups do
       followup_message = Map.get(row, "message") || Map.get(row, :message)
 
       package == "elm-pebble/elm-watch" and is_binary(followup_message) and
-        Enum.any?(DeviceDataResponses.requests_for_surface(state, target, message), fn req ->
-          DeviceData.response_message(req) == followup_message or
-            RuntimeModelMessages.wire_constructor(DeviceData.response_message(req)) ==
-              followup_message
-        end)
+        (init_device_followup_shadowed?(surface, message, followup_message) or
+           Enum.any?(DeviceDataResponses.requests_for_surface(state, target, message), fn req ->
+             DeviceData.response_message(req) == followup_message or
+               RuntimeModelMessages.wire_constructor(DeviceData.response_message(req)) ==
+                 followup_message
+           end))
+    end
+  end
+
+  defp shadowed_by_device_data?(_state, _target, _message, _row), do: false
+
+  @spec cross_surface_protocol_followup?(map(), Types.surface_target()) :: boolean()
+  defp cross_surface_protocol_followup?(row, target) when is_map(row) and is_atom(target) do
+    package = Map.get(row, "package") || Map.get(row, :package)
+    command = Map.get(row, "command") || Map.get(row, :command)
+
+    package == "companion-protocol" and is_map(command) and
+      case protocol_command_direction(command) do
+        :watch_to_phone when target == :watch -> true
+        :phone_to_watch when target in [:companion, :phone] -> true
+        _ -> false
+      end
+  end
+
+  defp cross_surface_protocol_followup?(_row, _target), do: false
+
+  @spec protocol_command_direction(map()) :: :watch_to_phone | :phone_to_watch | nil
+  defp protocol_command_direction(command) when is_map(command) do
+    direction = Map.get(command, "direction") || Map.get(command, :direction)
+
+    cond do
+      direction in ["watch_to_phone", :watch_to_phone] ->
+        :watch_to_phone
+
+      direction in ["phone_to_watch", :phone_to_watch] ->
+        :phone_to_watch
+
+      Map.get(command, "from") in ["watch", :watch] and
+          Map.get(command, "to") in ["companion", "phone", :companion, :phone] ->
+        :watch_to_phone
+
+      Map.get(command, "from") in ["companion", "phone", :companion, :phone] and
+          Map.get(command, "to") in ["watch", :watch] ->
+        :phone_to_watch
+
+      true ->
+        nil
     end
   end
 
@@ -138,8 +226,6 @@ defmodule Ide.Debugger.RuntimeFollowups do
       _ -> true
     end
   end
-
-  defp shadowed_by_device_data?(_state, _target, _message, _row), do: false
 
   defp apply_static_task(
          state,
@@ -154,7 +240,7 @@ defmodule Ide.Debugger.RuntimeFollowups do
   defp apply_static_task(state, target, message, message_value, _message_source, ctx)
        when is_map(state) and target in [:watch, :companion, :phone] and is_binary(message) and
               is_map(ctx) do
-    ei = (Surface.from_state(state, target) |> Surface.introspect())
+    ei = Surface.from_state(state, target) |> Surface.introspect()
     current_ctor = RuntimeModelMessages.wire_constructor(message)
     target_name = ctx.source_root_for_target.(target)
 
@@ -192,7 +278,8 @@ defmodule Ide.Debugger.RuntimeFollowups do
     end)
   end
 
-  defp apply_static_task(state, _target, _message, _message_value, _message_source, _ctx), do: state
+  defp apply_static_task(state, _target, _message, _message_value, _message_source, _ctx),
+    do: state
 
   @spec static_task_followup_rows(Types.elm_introspect(), String.t() | nil) :: [Types.cmd_call()]
   defp static_task_followup_rows(ei, current_ctor)
@@ -305,7 +392,8 @@ defmodule Ide.Debugger.RuntimeFollowups do
           apply_ctx()
         ) :: Ide.Debugger.HttpExecutor.result()
   def execute_http_command(state, target, command, ctx)
-      when is_map(state) and target in [:watch, :companion, :phone] and is_map(command) and is_map(ctx) do
+      when is_map(state) and target in [:watch, :companion, :phone] and is_map(command) and
+             is_map(ctx) do
     model = Surface.app_model(Surface.from_state(state, target))
     eval_context = http_eval_context(model, ctx.simulator_settings.(state))
     HttpExecutor.execute(command, eval_context)
@@ -360,7 +448,7 @@ defmodule Ide.Debugger.RuntimeFollowups do
           target,
           response_message,
           message_value,
-          "http",
+          "runtime_followup",
           "runtime_followup"
         )
 
@@ -387,7 +475,15 @@ defmodule Ide.Debugger.RuntimeFollowups do
           String.t() | nil,
           apply_ctx()
         ) :: Types.runtime_state()
-  defp apply_runtime_http_followup(state, target, target_name, package, command, followup_message, ctx)
+  defp apply_runtime_http_followup(
+         state,
+         target,
+         target_name,
+         package,
+         command,
+         followup_message,
+         ctx
+       )
        when target in [:watch, :companion, :phone] and is_map(command) and is_map(ctx) do
     result = execute_http_command(state, target, command, ctx)
 
@@ -403,8 +499,16 @@ defmodule Ide.Debugger.RuntimeFollowups do
     )
   end
 
-  defp apply_runtime_http_followup(state, _target, _target_name, _package, _command, _message, _ctx),
-    do: state
+  defp apply_runtime_http_followup(
+         state,
+         _target,
+         _target_name,
+         _package,
+         _command,
+         _message,
+         _ctx
+       ),
+       do: state
 
   @spec apply_runtime_package_followup(
           Types.runtime_state(),
@@ -415,7 +519,15 @@ defmodule Ide.Debugger.RuntimeFollowups do
           String.t(),
           apply_ctx()
         ) :: Types.runtime_state()
-  defp apply_runtime_package_followup(state, target, target_name, package, row, parent_message, ctx)
+  defp apply_runtime_package_followup(
+         state,
+         target,
+         target_name,
+         package,
+         row,
+         parent_message,
+         ctx
+       )
        when target in [:watch, :companion, :phone] and is_map(row) and is_binary(parent_message) do
     case Ide.Debugger.PackageCommandHandler.handle(state, target_name, package, row) do
       {:handled, next_state, event_payload, %{message: message, message_value: message_value}} ->
@@ -472,8 +584,16 @@ defmodule Ide.Debugger.RuntimeFollowups do
     end
   end
 
-  defp apply_runtime_package_followup(state, _target, _target_name, _package, _row, _parent_message, _ctx),
-    do: state
+  defp apply_runtime_package_followup(
+         state,
+         _target,
+         _target_name,
+         _package,
+         _row,
+         _parent_message,
+         _ctx
+       ),
+       do: state
 
   @spec resolve_runtime_followup_step(
           Types.runtime_state(),
@@ -534,7 +654,8 @@ defmodule Ide.Debugger.RuntimeFollowups do
           map()
         ) :: map() | nil
   defp device_command_wire_value(state, target, parent_message, followup_message, row)
-       when is_map(state) and is_binary(parent_message) and is_binary(followup_message) and is_map(row) do
+       when is_map(state) and is_binary(parent_message) and is_binary(followup_message) and
+              is_map(row) do
     command = Map.get(row, "command") || Map.get(row, :command)
 
     with %{"kind" => kind} when is_binary(kind) <- command,
@@ -559,7 +680,8 @@ defmodule Ide.Debugger.RuntimeFollowups do
     end
   end
 
-  defp device_command_wire_value(_state, _target, _parent_message, _followup_message, _row), do: nil
+  defp device_command_wire_value(_state, _target, _parent_message, _followup_message, _row),
+    do: nil
 
   @spec device_request_row(map(), String.t()) :: Types.cmd_call()
   defp device_request_row(row, followup_message) when is_map(row) do
@@ -611,7 +733,8 @@ defmodule Ide.Debugger.RuntimeFollowups do
           String.t()
         ) :: map() | nil
   defp callback_wire_from_surface(state, target, ctor, current_message)
-       when is_map(state) and target in [:watch, :companion, :phone] and is_binary(ctor) and ctor != "" do
+       when is_map(state) and target in [:watch, :companion, :phone] and is_binary(ctor) and
+              ctor != "" do
     surface = Surface.from_state(state, target)
     model = Surface.app_model(surface)
     introspect = Surface.introspect(surface)
@@ -634,8 +757,7 @@ defmodule Ide.Debugger.RuntimeFollowups do
     div(local_seconds - utc_seconds, 60)
   end
 
-  @spec http_eval_context(Types.execution_model(), Types.simulator_settings()) ::
-          Types.core_ir_eval_context()
+  @spec http_eval_context(Types.execution_model(), Types.simulator_settings()) :: map()
   defp http_eval_context(model, settings) when is_map(model) and is_map(settings) do
     weather = Map.get(settings, "weather")
 
@@ -644,7 +766,7 @@ defmodule Ide.Debugger.RuntimeFollowups do
         do: [simulator_weather: weather],
         else: []
 
-    RuntimeArtifacts.core_ir_eval_context(model, extras)
+    RuntimeArtifacts.eval_context(model, extras)
   end
 
   defp http_eval_context(_model, _settings), do: %{}
@@ -686,7 +808,9 @@ defmodule Ide.Debugger.RuntimeFollowups do
     tracked =
       state
       |> tracked_http_commands()
-      |> Enum.reject(fn existing -> {Map.get(existing, "method"), Map.get(existing, "url")} == key end)
+      |> Enum.reject(fn existing ->
+        {Map.get(existing, "method"), Map.get(existing, "url")} == key
+      end)
 
     update_in(state, [:companion], fn companion ->
       companion = if is_map(companion), do: companion, else: %{}
@@ -695,29 +819,6 @@ defmodule Ide.Debugger.RuntimeFollowups do
   end
 
   def track_http_command(state, _command), do: state
-
-  @spec append_debugger_http_pending(
-          Types.runtime_state(),
-          Types.surface_target(),
-          String.t() | nil,
-          Types.cmd_call(),
-          apply_ctx()
-        ) :: Types.runtime_state()
-  defp append_debugger_http_pending(state, target, followup_message, command, ctx)
-       when target in [:watch, :companion, :phone] and is_map(command) and is_map(ctx) do
-    method = Map.get(command, "method") || "GET"
-    url = Map.get(command, "url") || ""
-    callback = if is_binary(followup_message) and followup_message != "", do: followup_message, else: "?"
-
-    ctx.append_debugger_event.(
-      state,
-      "http",
-      target,
-      "#{method} #{url} → #{callback}",
-      "http_pending",
-      nil
-    )
-  end
 
   @spec reapply_tracked_http_commands(Types.runtime_state(), apply_ctx()) :: Types.runtime_state()
   def reapply_tracked_http_commands(state, ctx) when is_map(state) and is_map(ctx) do

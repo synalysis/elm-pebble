@@ -16,7 +16,9 @@ defmodule Ide.Debugger.TriggerQueries do
 
   @spec normalize_optional_target(trigger_attrs()) :: Types.surface_target() | nil
   def normalize_optional_target(attrs) when is_map(attrs) do
-    TriggerDiscovery.normalize_optional_target(Map.get(attrs, :target) || Map.get(attrs, "target"))
+    TriggerDiscovery.normalize_optional_target(
+      Map.get(attrs, :target) || Map.get(attrs, "target")
+    )
   end
 
   @spec injection_modal_supported?(

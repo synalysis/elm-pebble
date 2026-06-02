@@ -40,7 +40,6 @@ defmodule Ide.Debugger.TemplateWatchfaceIntegrationTest do
     refute Map.has_key?(runtime_model, "screenHeight")
   end
 
-
   test "tutorial watchface source-only init hydrates static constructors without inventing launch fields" do
     slug = "sim-tutorial-init-hydration-#{System.unique_integer([:positive])}"
 
@@ -80,7 +79,6 @@ defmodule Ide.Debugger.TemplateWatchfaceIntegrationTest do
     refute Map.has_key?(runtime_model, "dayOfWeek")
   end
 
-
   test "tangram watchface runtime model stays free of weather and message ctor pollution" do
     slug = "sim-tangram-model-purity-#{System.unique_integer([:positive])}"
 
@@ -91,7 +89,14 @@ defmodule Ide.Debugger.TemplateWatchfaceIntegrationTest do
 
     companion_source =
       File.read!(
-        Path.join(["priv", "project_templates", "watchface_tangram_time", "phone", "src", "CompanionApp.elm"])
+        Path.join([
+          "priv",
+          "project_templates",
+          "watchface_tangram_time",
+          "phone",
+          "src",
+          "CompanionApp.elm"
+        ])
       )
 
     {:ok, _} = Debugger.start_session(slug)
@@ -120,19 +125,21 @@ defmodule Ide.Debugger.TemplateWatchfaceIntegrationTest do
                source_root: "phone"
              })
 
-    companion_runtime_model = get_in(companion_reloaded, [:companion, :model, "runtime_model"]) || %{}
+    companion_runtime_model =
+      get_in(companion_reloaded, [:companion, :model, "runtime_model"]) || %{}
 
     assert Map.get(companion_runtime_model, "figure") in [0, nil]
 
     if Map.has_key?(companion_runtime_model, "names") do
-      assert is_list(companion_runtime_model["names"]) or is_binary(companion_runtime_model["names"])
+      assert is_list(companion_runtime_model["names"]) or
+               is_binary(companion_runtime_model["names"])
     end
+
     refute Map.has_key?(companion_runtime_model, "ctor")
     refute Map.has_key?(companion_runtime_model, "args")
     refute Map.has_key?(companion_runtime_model, "$ctor")
     refute Map.has_key?(companion_runtime_model, "$args")
   end
-
 
   test "tangram debugger bootstrap order yields a single watch init" do
     slug = "sim-tangram-bootstrap-order-#{System.unique_integer([:positive])}"
@@ -144,7 +151,14 @@ defmodule Ide.Debugger.TemplateWatchfaceIntegrationTest do
 
     companion_source =
       File.read!(
-        Path.join(["priv", "project_templates", "watchface_tangram_time", "phone", "src", "CompanionApp.elm"])
+        Path.join([
+          "priv",
+          "project_templates",
+          "watchface_tangram_time",
+          "phone",
+          "src",
+          "CompanionApp.elm"
+        ])
       )
 
     {:ok, _} = Debugger.start_session(slug)
@@ -173,7 +187,7 @@ defmodule Ide.Debugger.TemplateWatchfaceIntegrationTest do
     current_date_time_updates =
       reloaded.debugger_timeline
       |> Enum.filter(&(&1.type == "update" and &1.target == "watch"))
-      |> Enum.filter(&(String.contains?(&1.message, "CurrentDateTime")))
+      |> Enum.filter(&String.contains?(&1.message, "CurrentDateTime"))
       |> Enum.map(& &1.seq)
 
     assert watch_inits == [1]
@@ -188,7 +202,6 @@ defmodule Ide.Debugger.TemplateWatchfaceIntegrationTest do
     refute AppMessageQueue.pending?(reloaded, :companion)
     refute AppMessageQueue.pending?(reloaded, :watch)
   end
-
 
   test "tangram companion init schedules catalog http follow-up on debugger timeline" do
     previous_async_http = Application.get_env(:ide, :debugger_async_http_followups)
@@ -207,7 +220,14 @@ defmodule Ide.Debugger.TemplateWatchfaceIntegrationTest do
 
     companion_source =
       File.read!(
-        Path.join(["priv", "project_templates", "watchface_tangram_time", "phone", "src", "CompanionApp.elm"])
+        Path.join([
+          "priv",
+          "project_templates",
+          "watchface_tangram_time",
+          "phone",
+          "src",
+          "CompanionApp.elm"
+        ])
       )
 
     {:ok, _} = Debugger.start_session(slug)
@@ -220,12 +240,10 @@ defmodule Ide.Debugger.TemplateWatchfaceIntegrationTest do
                source_root: "phone"
              })
 
-    pending_http =
-      reloaded.debugger_timeline
-      |> Enum.filter(&(Map.get(&1, :message_source) == "http_pending"))
-
-    assert pending_http != [],
-           "expected http_pending timeline row when catalog GET is enqueued, got: #{inspect(reloaded.debugger_timeline)}"
+    refute Enum.any?(reloaded.debugger_timeline || [], fn row ->
+             row.type == "http" or Map.get(row, :message_source) in ["http", "http_pending"]
+           end),
+           "HTTP GET pending rows must not appear in the user timeline"
 
     assert :ok = Debugger.RuntimeBackgroundDrains.await_idle(slug, 120_000)
 
@@ -235,7 +253,8 @@ defmodule Ide.Debugger.TemplateWatchfaceIntegrationTest do
       reloaded.debugger_timeline
       |> Enum.filter(fn row ->
         row.target == "phone" and
-          ((row.type == "update" and row.message_source == "http") or
+          ((row.type == "update" and
+              String.contains?(to_string(row.message || ""), "CatalogReceived")) or
              (row.type == "runtime_exec_error" and
                 String.contains?(to_string(row.message || ""), "CatalogReceived")))
       end)
@@ -246,10 +265,12 @@ defmodule Ide.Debugger.TemplateWatchfaceIntegrationTest do
     assert Enum.any?(reloaded.events, fn event ->
              event.type == "debugger.package_cmd" and
                get_in(event, [:payload, :package]) == "elm/http" and
-               String.contains?(get_in(event, [:payload, :response_message]) || "", "CatalogReceived")
+               String.contains?(
+                 get_in(event, [:payload, :response_message]) || "",
+                 "CatalogReceived"
+               )
            end)
   end
-
 
   test "tutorial watchface init emits platform and companion command events" do
     slug = "sim-tutorial-init-events-#{System.unique_integer([:positive])}"
@@ -279,7 +300,12 @@ defmodule Ide.Debugger.TemplateWatchfaceIntegrationTest do
              _ -> false
            end)
 
-    assert TimelineAssertions.has_entry?(timeline, "watch", "ConnectionStatusChanged", "init_device_data")
+    assert TimelineAssertions.has_entry?(
+             timeline,
+             "watch",
+             "ConnectionStatusChanged",
+             "init_device_data"
+           )
 
     assert Enum.any?(reloaded.events, fn event ->
              event.type in ["debugger.protocol_tx", "debugger.protocol_rx"]
@@ -289,7 +315,6 @@ defmodule Ide.Debugger.TemplateWatchfaceIntegrationTest do
     assert runtime_model["batteryLevel"] == %{"ctor" => "Just", "args" => [88]}
     assert runtime_model["connected"] == %{"ctor" => "Just", "args" => [true]}
   end
-
 
   test "watch demo health template reports unsupported on aplite in debugger" do
     slug = "sim-watch-demo-health-aplite-#{System.unique_integer([:positive])}"
@@ -324,7 +349,6 @@ defmodule Ide.Debugger.TemplateWatchfaceIntegrationTest do
     assert "Health API not supported on this watch" in texts
   end
 
-
   test "watch demo watch-info template loads device info in debugger" do
     slug = "sim-watch-demo-watch-info-#{System.unique_integer([:positive])}"
 
@@ -349,7 +373,6 @@ defmodule Ide.Debugger.TemplateWatchfaceIntegrationTest do
     assert get_in(runtime_model, ["color", "ctor"]) == "Just"
     assert get_in(runtime_model, ["firmware", "ctor"]) == "Just"
   end
-
 
   test "tutorial watchface request weather carries structured protocol payload" do
     slug = "sim-tutorial-weather-roundtrip-#{System.unique_integer([:positive])}"
@@ -389,14 +412,14 @@ defmodule Ide.Debugger.TemplateWatchfaceIntegrationTest do
       |> Enum.map(& &1.payload)
 
     assert Enum.any?(protocol_events, fn payload ->
-             payload[:from] == "watch" and payload[:to] == "companion" and
-               match?(
-                 %{
-                   "ctor" => "RequestWeather",
-                   "args" => [%{"$ctor" => "CurrentLocation", "$args" => []}]
-                 },
-                 payload[:message_value]
-               ) or
+             (payload[:from] == "watch" and payload[:to] == "companion" and
+                match?(
+                  %{
+                    "ctor" => "RequestWeather",
+                    "args" => [%{"$ctor" => "CurrentLocation", "$args" => []}]
+                  },
+                  payload[:message_value]
+                )) or
                match?(
                  %{
                    "ctor" => "RequestWeather",
@@ -420,7 +443,6 @@ defmodule Ide.Debugger.TemplateWatchfaceIntegrationTest do
     assert String.contains?(companion_runtime["protocol_last_inbound_message"], "RequestWeather")
     assert String.contains?(companion_runtime["protocol_last_inbound_message"], "CurrentLocation")
   end
-
 
   test "tutorial watchface minute subscription does not replay sibling device commands" do
     slug = "sim-tutorial-minute-no-sibling-device-#{System.unique_integer([:positive])}"
@@ -462,7 +484,6 @@ defmodule Ide.Debugger.TemplateWatchfaceIntegrationTest do
              _ -> false
            end)
   end
-
 
   test "tutorial watchface normalizes runtime Maybe tuple for currentDateTime" do
     previous_config = Application.get_env(:ide, Debugger, [])
@@ -511,7 +532,6 @@ defmodule Ide.Debugger.TemplateWatchfaceIntegrationTest do
            } = runtime_model["currentDateTime"]
   end
 
-
   test "tutorial watchface hydrates battery Maybe when runtime reports nil" do
     previous_config = Application.get_env(:ide, Debugger, [])
 
@@ -543,7 +563,6 @@ defmodule Ide.Debugger.TemplateWatchfaceIntegrationTest do
     runtime_model = get_in(reloaded, [:watch, :model, "runtime_model"]) || %{}
     assert runtime_model["batteryLevel"] == %{"ctor" => "Just", "args" => [88]}
   end
-
 
   test "tutorial watchface normalizes optimized Maybe fields from runtime model contract" do
     previous_config = Application.get_env(:ide, Debugger, [])
@@ -589,5 +608,4 @@ defmodule Ide.Debugger.TemplateWatchfaceIntegrationTest do
              "args" => [%{"ctor" => "Celsius", "args" => [4]}]
            }
   end
-
 end

@@ -47,7 +47,8 @@ defmodule ElmEx.DebuggerContract.EffectNormalize do
   end
 
   @spec normalize_callback(map(), map()) :: map()
-  defp normalize_callback(%{"callback_constructor" => nil} = row, msg_tag_index) when is_map(msg_tag_index) do
+  defp normalize_callback(%{"callback_constructor" => nil} = row, msg_tag_index)
+       when is_map(msg_tag_index) do
     row
     |> then(fn r ->
       case callback_from_row_args(r, msg_tag_index) do
@@ -110,7 +111,8 @@ defmodule ElmEx.DebuggerContract.EffectNormalize do
        when is_binary(t),
        do: t
 
-  defp msg_ctor_from_value(%{op: :constructor_call, target: t}, _msg_tag_index) when is_binary(t), do: t
+  defp msg_ctor_from_value(%{op: :constructor_call, target: t}, _msg_tag_index) when is_binary(t),
+    do: t
 
   defp msg_ctor_from_value(_, _), do: nil
 

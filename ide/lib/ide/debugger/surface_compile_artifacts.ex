@@ -1,9 +1,6 @@
 defmodule Ide.Debugger.SurfaceCompileArtifacts do
   @moduledoc false
 
-  alias ElmEx.CoreIR
-  alias ElmEx.Frontend.Bridge
-  alias ElmEx.IR.Lowerer
   alias Ide.Compiler
   alias Ide.Debugger.CompileContract
   alias Ide.Debugger.RuntimeArtifacts
@@ -17,9 +14,10 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
   @type attach_ctx :: %{
           required(:session_key_from_state) => (Types.runtime_state() -> String.t() | nil),
           required(:source_root_for_target) => (Types.surface_target() -> String.t()),
-          required(:merge_runtime_artifacts) =>
-            (Types.runtime_state(), Types.surface_target(), Types.elm_introspect() ->
-               Types.runtime_state())
+          required(:merge_runtime_artifacts) => (Types.runtime_state(),
+                                                 Types.surface_target(),
+                                                 Types.elm_introspect() ->
+                                                   Types.runtime_state())
         }
 
   @spec ensure_attached(Types.runtime_state(), Types.surface_target(), attach_ctx()) ::
@@ -56,20 +54,17 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
 
   def maybe_attach_for_parser_view(state, _target, _ctx), do: state
 
-  @spec surface_has_core_ir?(Types.runtime_state(), Types.surface_target()) :: boolean()
-  def surface_has_core_ir?(state, target),
-    do: surface_has_versioned_core_ir?(state, target)
-
-  @spec surface_has_versioned_core_ir?(Types.runtime_state(), Types.surface_target()) :: boolean()
-  def surface_has_versioned_core_ir?(state, target)
+  @spec surface_has_versioned_runtime_artifacts?(Types.runtime_state(), Types.surface_target()) ::
+          boolean()
+  def surface_has_versioned_runtime_artifacts?(state, target)
       when is_map(state) and target in [:watch, :companion, :phone] do
     state
     |> Map.get(target, %{})
     |> RuntimeArtifacts.execution_model()
-    |> RuntimeArtifacts.versioned_core_ir?()
+    |> RuntimeArtifacts.versioned_elmx_artifacts?()
   end
 
-  def surface_has_versioned_core_ir?(_state, _target), do: false
+  def surface_has_versioned_runtime_artifacts?(_state, _target), do: false
 
   @spec artifacts_for_source_root(Types.runtime_state(), String.t(), attach_ctx()) ::
           Types.runtime_artifacts()
@@ -99,7 +94,8 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
       end
 
     cond do
-      inline_source_present?(state, source_root) and versioned_runtime_artifacts?(inline_artifacts) ->
+      inline_source_present?(state, source_root) and
+          versioned_runtime_artifacts?(inline_artifacts) ->
         inline_artifacts
 
       versioned_runtime_artifacts?(project_artifacts) ->
@@ -144,20 +140,13 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
       |> Projects.project_workspace_path()
       |> Path.join(source_root)
 
-    result =
-      case Compiler.compile(Projects.compiler_cache_key(session_key, source_root),
-             workspace_root: workspace_root
-           ) do
-        {:ok, compile_result} when is_map(compile_result) ->
-          compile_result
-
-        {:error, _} ->
-          %{status: :error}
-      end
+    {:ok, result} =
+      Compiler.compile(Projects.compiler_cache_key(session_key, source_root),
+        workspace_root: workspace_root
+      )
 
     result
     |> ElmcSurfaceFields.optional_runtime_artifacts()
-    |> maybe_merge_lenient_core_ir(workspace_root)
   rescue
     _ -> %{}
   end
@@ -174,40 +163,19 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
     end
   end
 
-  @spec versioned_core_ir_artifacts?(Types.runtime_artifacts()) :: boolean()
   defp versioned_runtime_artifacts?(artifacts) when is_map(artifacts) do
-    versioned_core_ir_artifacts?(artifacts) or versioned_elmx_artifacts?(artifacts)
-  end
-
-  defp versioned_core_ir_artifacts?(artifacts) when is_map(artifacts) do
-    b64 = Map.get(artifacts, "elm_executor_core_ir_b64")
-
-    is_binary(b64) and b64 != "" and
-      RuntimeArtifacts.versioned_core_ir?(%{"elm_executor_core_ir_b64" => b64})
+    versioned_elmx_artifacts?(artifacts)
   end
 
   @spec versioned_elmx_artifacts?(Types.runtime_artifacts()) :: boolean()
   defp versioned_elmx_artifacts?(artifacts) when is_map(artifacts),
     do: RuntimeArtifacts.versioned_elmx_artifacts?(artifacts)
 
-  @spec versioned_runtime_artifacts?(Types.runtime_state(), Types.surface_target()) :: boolean()
-  defp versioned_runtime_artifacts?(state, target)
-       when is_map(state) and target in [:watch, :companion, :phone] do
-    execution_model =
-      state
-      |> Map.get(target, %{})
-      |> RuntimeArtifacts.execution_model()
-
-    RuntimeArtifacts.versioned_core_ir?(execution_model) or
-      RuntimeArtifacts.versioned_elmx_artifacts?(execution_model)
-  end
-
-  @spec surface_has_versioned_runtime_artifacts?(Types.runtime_state(), Types.surface_target()) ::
-          boolean()
-  defp surface_has_versioned_runtime_artifacts?(state, target),
-    do: versioned_runtime_artifacts?(state, target)
-
-  @spec attach_missing_debugger_contract(Types.runtime_state(), Types.surface_target(), attach_ctx()) ::
+  @spec attach_missing_debugger_contract(
+          Types.runtime_state(),
+          Types.surface_target(),
+          attach_ctx()
+        ) ::
           Types.runtime_state()
   defp attach_missing_debugger_contract(state, target, ctx)
        when is_map(state) and target in [:watch, :companion, :phone] and is_map(ctx) do
@@ -300,7 +268,8 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
       _ -> :error
     end
   rescue
-    DBConnection.OwnershipError -> :error
+    DBConnection.OwnershipError ->
+      :error
 
     error in RuntimeError ->
       if String.contains?(Exception.message(error), "could not lookup Ecto repo") do
@@ -346,23 +315,15 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
         {:ok, result} when is_map(result) ->
           result
           |> ElmcSurfaceFields.optional_runtime_artifacts()
-          |> maybe_merge_lenient_core_ir(phone_root)
 
-        {:error, _reason} ->
-          lenient_core_ir_artifact_fields(phone_root, entry_module_from_path(dest))
+        _ ->
+          %{}
       end
 
-    if map_size(compile_artifacts) > 0 do
-      compile_artifacts
-    else
-      lenient_core_ir_artifact_fields(phone_root, entry_module_from_path(dest))
-    end
+    compile_artifacts
   rescue
     _error ->
-      session_key
-      |> ephemeral_workspace_path(source, rel_path)
-      |> Path.join("phone")
-      |> lenient_core_ir_artifact_fields(entry_module_from_rel_path(rel_path))
+      %{}
   end
 
   defp ephemeral_entrypoint_artifacts(session_key, source, rel_path, "watch")
@@ -404,89 +365,20 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
         {:ok, result} when is_map(result) ->
           result
           |> ElmcSurfaceFields.optional_runtime_artifacts()
-          |> maybe_merge_lenient_core_ir(watch_dir)
 
-        {:error, _reason} ->
-          lenient_core_ir_artifact_fields(watch_dir, entry_module_from_path(dest))
+        _ ->
+          %{}
       end
 
-    if map_size(compile_artifacts) > 0 do
-      compile_artifacts
-    else
-      lenient_core_ir_artifact_fields(watch_dir, entry_module_from_path(dest))
-    end
+    compile_artifacts
   rescue
     _error ->
-      session_key
-      |> ephemeral_workspace_path(source, rel_path)
-      |> Path.join("watch")
-      |> lenient_core_ir_artifact_fields(entry_module_from_rel_path(rel_path))
+      %{}
   end
 
   @spec entry_module_from_path(String.t()) :: String.t()
   defp entry_module_from_path(path) when is_binary(path) do
     path |> Path.basename() |> Path.rootname()
-  end
-
-  @spec entry_module_from_rel_path(String.t()) :: String.t()
-  defp entry_module_from_rel_path(rel_path) when is_binary(rel_path) do
-    rel_path
-    |> normalize_watch_rel_path()
-    |> Path.basename()
-    |> Path.rootname()
-  end
-
-  @spec maybe_merge_lenient_core_ir(Types.runtime_artifacts(), String.t()) :: Types.runtime_artifacts()
-  defp maybe_merge_lenient_core_ir(artifacts, project_dir) when is_map(artifacts) and is_binary(project_dir) do
-    b64 = Map.get(artifacts, "elm_executor_core_ir_b64")
-
-    if is_binary(b64) and b64 != "" do
-      artifacts
-    else
-      Map.merge(artifacts, lenient_core_ir_artifact_fields(project_dir, default_entry_module(project_dir)))
-    end
-  end
-
-  @spec default_entry_module(String.t()) :: String.t()
-  defp default_entry_module(project_dir) when is_binary(project_dir),
-    do: Ide.Compiler.default_elmx_entry_module(project_dir)
-
-  @spec lenient_core_ir_artifact_fields(String.t(), String.t()) :: Types.runtime_artifacts()
-  defp lenient_core_ir_artifact_fields(project_dir, entry_module)
-       when is_binary(project_dir) and is_binary(entry_module) do
-    with {:ok, project} <- Bridge.load_project(project_dir),
-         {:ok, ir} <- Lowerer.lower_project(project),
-         {:ok, core_ir, validation_mode} <- core_ir_from_lowered_ir(ir) do
-      _ = project
-
-      %{
-        "elm_executor_core_ir_b64" => core_ir |> :erlang.term_to_binary() |> Base.encode64(),
-        "elm_executor_metadata" => %{
-          "compiler" => "elm_executor",
-          "contract" => "elm_executor.runtime_executor.v1",
-          "mode" => "ide_runtime",
-          "entry_module" => to_string(entry_module),
-          "core_ir_validation" => validation_mode
-        }
-      }
-    else
-      _ -> %{}
-    end
-  end
-
-  @spec core_ir_from_lowered_ir(map()) ::
-          {:ok, CoreIR.t() | map(), String.t()} | {:error, term()}
-  defp core_ir_from_lowered_ir(ir) when is_map(ir) do
-    case CoreIR.from_ir(ir, strict?: true) do
-      {:ok, core_ir} ->
-        {:ok, core_ir, "strict"}
-
-      {:error, _} ->
-        case CoreIR.from_ir(ir, strict?: false) do
-          {:ok, core_ir} -> {:ok, core_ir, "lenient"}
-          {:error, reason} -> {:error, reason}
-        end
-    end
   end
 
   @spec ephemeral_workspace_path(String.t(), String.t(), String.t()) :: String.t()

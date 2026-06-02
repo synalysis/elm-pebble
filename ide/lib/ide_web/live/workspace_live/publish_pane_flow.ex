@@ -67,7 +67,8 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
     socket =
       case Map.get(params, "release_summary") do
         %{} = release_params ->
-          summary = PublishFlow.merge_release_summary(socket.assigns.release_summary, release_params)
+          summary =
+            PublishFlow.merge_release_summary(socket.assigns.release_summary, release_params)
 
           socket
           |> assign(:release_summary, summary)
@@ -80,7 +81,9 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
     socket =
       case Map.get(params, "publish_submit") do
         %{} = submit_params ->
-          options = merge_publish_submit_options(socket.assigns.publish_submit_options, submit_params)
+          options =
+            merge_publish_submit_options(socket.assigns.publish_submit_options, submit_params)
+
           assign(socket, :publish_submit_options, options)
 
         _ ->
@@ -374,6 +377,7 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
          end)}
     end
   end
+
   defp do_handle_async(:prepare_release, {:ok, {:ok, result}}, socket) do
     warnings =
       PublishFlow.publish_warnings(result.project, result.readiness, result.release_summary)
@@ -628,9 +632,10 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
      |> assign(:release_notes_status, :error)
      |> assign(:release_notes_output, "Release notes export task exited: #{inspect(reason)}")}
   end
+
   @spec merge_publish_submit_options(map(), map()) :: map()
   def merge_publish_submit_options(existing, updates)
-       when is_map(existing) and is_map(updates) do
+      when is_map(existing) and is_map(updates) do
     existing
     |> Map.merge(%{
       "is_published" => to_bool(Map.get(updates, "is_published")),
@@ -638,6 +643,7 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
       "generate_store_graphics" => to_bool(Map.get(updates, "generate_store_graphics"))
     })
   end
+
   def missing_new_app_description?(project) do
     blank?(project.store_app_id) and blank?(publish_app_description(project))
   end
@@ -660,18 +666,18 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
   defp to_bool(_), do: false
   @spec persist_project_publish_metadata(Project.t(), map(), map()) :: Project.t()
   def persist_project_publish_metadata(
-         %Project{} = project,
-         submitted_release_summary,
-         next_release_summary
-       ) do
+        %Project{} = project,
+        submitted_release_summary,
+        next_release_summary
+      ) do
     attrs =
       project
       |> PublishFlow.publish_project_attrs_from_submit(submitted_release_summary)
       |> Map.update!("release_defaults", fn defaults ->
         defaults
-      |> Map.put("version_label", next_release_summary["version_label"] || "")
-      |> Map.put("tags", next_release_summary["tags"] || "")
-      |> Map.put("changelog", next_release_summary["changelog"] || "")
+        |> Map.put("version_label", next_release_summary["version_label"] || "")
+        |> Map.put("tags", next_release_summary["tags"] || "")
+        |> Map.put("changelog", next_release_summary["changelog"] || "")
       end)
 
     case Projects.update_project(project, attrs) do

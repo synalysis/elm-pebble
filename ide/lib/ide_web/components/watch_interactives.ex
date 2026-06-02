@@ -17,8 +17,15 @@ defmodule IdeWeb.WatchInteractives do
   )
 
   @doc false
-  @spec show_accel_tap?(map() | nil, map() | nil, :debugger | :emulator, list(), list()) :: boolean()
-  def show_accel_tap?(project, debugger_state, mode, watch_trigger_buttons \\ [], disabled_subscriptions \\ []) do
+  @spec show_accel_tap?(map() | nil, map() | nil, :debugger | :emulator, list(), list()) ::
+          boolean()
+  def show_accel_tap?(
+        project,
+        debugger_state,
+        mode,
+        watch_trigger_buttons \\ [],
+        disabled_subscriptions \\ []
+      ) do
     caps = SimulatorSettings.capabilities_for(project, debugger_state, mode)
 
     MapSet.member?(caps, "watch_accel_tap") or
@@ -39,14 +46,19 @@ defmodule IdeWeb.WatchInteractives do
 
   @spec watch_interactives_panel(assigns()) :: rendered()
   def watch_interactives_panel(assigns) do
-    caps = SimulatorSettings.capabilities_for(assigns.project, assigns.debugger_state, assigns.mode)
+    caps =
+      SimulatorSettings.capabilities_for(assigns.project, assigns.debugger_state, assigns.mode)
+
     settings = SimulatorSettings.values_for(assigns.project, assigns.debugger_state)
 
     assigns =
       assigns
       |> assign(:caps, caps)
       |> assign(:settings, settings)
-      |> assign(:accel_control, accel_control(assigns.watch_trigger_buttons, assigns.disabled_subscriptions))
+      |> assign(
+        :accel_control,
+        accel_control(assigns.watch_trigger_buttons, assigns.disabled_subscriptions)
+      )
       |> assign(
         :show_tap?,
         show_accel_tap?(
@@ -98,10 +110,7 @@ defmodule IdeWeb.WatchInteractives do
         running={@running}
       />
 
-      <.watch_focus_notice
-        :if={MapSet.member?(@caps, "watch_app_focus")}
-        settings={@settings}
-      />
+      <.watch_focus_notice :if={MapSet.member?(@caps, "watch_app_focus")} settings={@settings} />
 
       <.watch_dictation_sim
         :if={MapSet.member?(@caps, "watch_dictation") and @mode == :debugger}
@@ -420,8 +429,9 @@ defmodule IdeWeb.WatchInteractives do
     key = {to_string(target), to_string(trigger)}
 
     not Enum.any?(disabled_subscriptions, fn entry ->
-      is_map(entry) and {Map.get(entry, :target) || Map.get(entry, "target"),
-                          Map.get(entry, :trigger) || Map.get(entry, "trigger")} == key
+      is_map(entry) and
+        {Map.get(entry, :target) || Map.get(entry, "target"),
+         Map.get(entry, :trigger) || Map.get(entry, "trigger")} == key
     end)
   end
 

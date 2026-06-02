@@ -13,12 +13,14 @@ defmodule Ide.Debugger.RuntimeSurfaceMergeTest do
     merged =
       RuntimeSurfaceMerge.merge_fields(surface, %{
         "elmc_check_status" => "ok",
-        "elm_executor_metadata" => %{"engine" => "v1"}
+        "elmx_manifest" => %{"contract" => "elmx.runtime_executor.v1"},
+        "elmx_revision" => "rev1"
       })
 
     assert merged.model["elmc_check_status"] == "ok"
     assert merged.model["runtime_model"]["n"] == 1
-    assert merged.shell["elm_executor_metadata"]["engine"] == "v1"
+    assert merged.shell["elmx_manifest"]["contract"] == "elmx.runtime_executor.v1"
+    assert merged.shell["elmx_revision"] == "rev1"
     assert merged.shell["debugger_contract"]["module"] == "Main"
   end
 

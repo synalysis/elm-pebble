@@ -3,13 +3,10 @@ defmodule Ide.Debugger.Types do
   Shared types for debugger runtime state, timeline rows, and compiler ingest payloads.
   """
 
-  alias ElmEx.CoreIR
-  alias ElmEx.CoreIR.Types, as: CoreIRTypes
-  alias ElmExecutor.Runtime.SemanticExecutor.Types.ViewOutputRow
-  alias ElmExecutor.Runtime.SemanticExecutor.Types.ViewTreeNode
   alias ElmEx.DebuggerContract.Payload
   alias Ide.Debugger.Protocol.{ConstructorValue, Event, Schema}
   alias Ide.Debugger.RuntimeArtifacts.Types, as: RuntimeArtifactsTypes
+
   alias Ide.Debugger.Types.{
     ProtocolTxRxPayload,
     CompanionConfiguration,
@@ -69,8 +66,8 @@ defmodule Ide.Debugger.Types do
     WatchProfile
   }
 
-  @type core_ir :: CoreIR.t() | CoreIRTypes.wire_map() | map() | nil
-  @type core_ir_expr :: CoreIRTypes.Expr.t() | CoreIRTypes.Expr.wire_expr()
+  @type core_ir :: map() | nil
+  @type core_ir_expr :: map()
   @type introspect_snapshot :: Payload.snapshot()
 
   @type launch_context :: LaunchContext.t() | LaunchContext.wire_map()
@@ -351,7 +348,7 @@ defmodule Ide.Debugger.Types do
 
   @type api_suffix_contract :: %{required(:target_suffixes) => [String.t()]}
 
-  @type core_ir_eval_context :: wire_map()
+  @type eval_context :: wire_map()
 
   @type protocol_var_bindings :: wire_map()
 
@@ -374,9 +371,9 @@ defmodule Ide.Debugger.Types do
 
   @type subscription_payload :: map() | protocol_ctor_value() | wire_scalar()
 
-  @type view_output_node :: ViewOutputRow.t() | ViewOutputRow.wire_row()
+  @type view_output_node :: wire_map()
 
-  @type view_output_tree :: ViewTreeNode.view_tree() | ViewTreeNode.t()
+  @type view_output_tree :: wire_map()
 
   @type runtime_step_result :: RuntimeStepResult.t() | RuntimeStepResult.wire_result()
 
@@ -416,7 +413,7 @@ defmodule Ide.Debugger.Types do
           :invalid_execution_input
           | :invalid_http_command
           | {:core_ir_execution_failed, execution_fallback_reason()}
-          | {:invalid_elm_executor_result, execution_fallback_reason()}
+          | {:invalid_runtime_executor_result, execution_fallback_reason()}
           | {:elmc_runtime_executor_failed, execution_fallback_reason()}
           | {:invalid_elmc_runtime_result, execution_fallback_reason()}
           | {:elmc_runtime_unavailable, execution_fallback_reason()}

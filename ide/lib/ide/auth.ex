@@ -137,7 +137,8 @@ defmodule Ide.Auth do
 
   def upsert_firebase_user(_payload), do: {:error, :missing_firebase_uid}
 
-  @spec verify_firebase_id_token(String.t()) :: {:ok, AuthTypes.firebase_user()} | {:error, AuthTypes.firebase_token_error()}
+  @spec verify_firebase_id_token(String.t()) ::
+          {:ok, AuthTypes.firebase_user()} | {:error, AuthTypes.firebase_token_error()}
   def verify_firebase_id_token(token) when is_binary(token) do
     token = String.trim(token)
 

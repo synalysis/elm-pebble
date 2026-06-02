@@ -16,11 +16,16 @@ defmodule Ide.Debugger.RuntimeExecutor.CompiledElixirAdapter do
   @type execution_result :: Ide.Debugger.RuntimeExecutor.execution_result()
 
   @impl true
-  @spec execute(execution_input()) :: {:ok, execution_result()} | {:error, Types.execution_error()}
+  @spec execute(execution_input()) ::
+          {:ok, execution_result()} | {:error, Types.execution_error()}
   def execute(input) when is_map(input) do
     with :ok <- require_elmx_manifest(input),
          {:ok, module} <- resolve_compiled_module(input),
-         {:ok, payload} <- Executor.execute_generated(module, Map.put(input, :debugger_contract, "elmx.runtime_executor.v1")),
+         {:ok, payload} <-
+           Executor.execute_generated(
+             module,
+             Map.put(input, :debugger_contract, "elmx.runtime_executor.v1")
+           ),
          :ok <- validate_runtime_model(payload) do
       {:ok, ResultNormalizer.normalize(payload)}
     else

@@ -89,9 +89,7 @@ defmodule Ide.Projects do
               get_project!(bootstrapped.id)
 
             {:error, %Ecto.Changeset{} = changeset} ->
-              rollback_bootstrap(project, :create, changeset,
-                template: template_key(attrs)
-              )
+              rollback_bootstrap(project, :create, changeset, template: template_key(attrs))
 
             {:error, reason} ->
               rollback_bootstrap(project, :create, reason, template: template_key(attrs))
@@ -173,7 +171,8 @@ defmodule Ide.Projects do
     end
   end
 
-  @spec clone_path_for_import(map(), keyword()) :: {:ok, String.t()} | {:error, Types.project_error()}
+  @spec clone_path_for_import(map(), keyword()) ::
+          {:ok, String.t()} | {:error, Types.project_error()}
   defp clone_path_for_import(repo_ref, opts) do
     case Keyword.get(opts, :clone_path) do
       path when is_binary(path) -> {:ok, path}
@@ -183,9 +182,16 @@ defmodule Ide.Projects do
 
   @spec resolve_github_repo_ref(map()) :: {:ok, map()} | {:error, Types.project_error()}
   defp resolve_github_repo_ref(params) when is_map(params) do
-    owner = params |> Map.get("owner", Map.get(params, :owner, "")) |> to_string() |> String.trim()
+    owner =
+      params |> Map.get("owner", Map.get(params, :owner, "")) |> to_string() |> String.trim()
+
     repo = params |> Map.get("repo", Map.get(params, :repo, "")) |> to_string() |> String.trim()
-    branch = params |> Map.get("branch", Map.get(params, :branch, "main")) |> to_string() |> String.trim()
+
+    branch =
+      params
+      |> Map.get("branch", Map.get(params, :branch, "main"))
+      |> to_string()
+      |> String.trim()
 
     repo_url =
       params
@@ -296,7 +302,8 @@ defmodule Ide.Projects do
   @doc """
   Persists a Pebble app UUID on the project and in `elm-pebble.project.json`.
   """
-  @spec persist_app_uuid(Project.t(), String.t()) :: {:ok, Project.t()} | {:error, Types.project_error()}
+  @spec persist_app_uuid(Project.t(), String.t()) ::
+          {:ok, Project.t()} | {:error, Types.project_error()}
   def persist_app_uuid(%Project{} = project, uuid) when is_binary(uuid) do
     case normalize_app_uuid(uuid) do
       nil -> {:ok, project}
@@ -512,7 +519,8 @@ defmodule Ide.Projects do
   @doc """
   Updates Pebble package capabilities from Elm API usage in project sources.
   """
-  @spec sync_detected_capabilities(Project.t()) :: {:ok, Project.t()} | {:error, Types.project_error()}
+  @spec sync_detected_capabilities(Project.t()) ::
+          {:ok, Project.t()} | {:error, Types.project_error()}
   def sync_detected_capabilities(%Project{} = project) do
     project = Repo.get(Project, project.id) || project
     workspace_root = project_workspace_path(project)
@@ -775,7 +783,8 @@ defmodule Ide.Projects do
   @doc """
   Deletes one bitmap resource and regenerates the generated resources Elm module.
   """
-  @spec delete_bitmap_resource(Project.t(), String.t()) :: {:ok, [map()]} | {:error, Types.project_error()}
+  @spec delete_bitmap_resource(Project.t(), String.t()) ::
+          {:ok, [map()]} | {:error, Types.project_error()}
   def delete_bitmap_resource(%Project{} = project, ctor) do
     ResourceStore.delete_bitmap(project, ctor)
   end
@@ -801,13 +810,15 @@ defmodule Ide.Projects do
   @doc """
   Deletes one vector graphic resource and regenerates the generated resources Elm module.
   """
-  @spec delete_vector_resource(Project.t(), String.t()) :: {:ok, [map()]} | {:error, Types.project_error()}
+  @spec delete_vector_resource(Project.t(), String.t()) ::
+          {:ok, [map()]} | {:error, Types.project_error()}
   def delete_vector_resource(%Project{} = project, ctor) do
     ResourceStore.delete_vector(project, ctor)
   end
 
   @spec list_animation_resources(Project.t()) ::
-          {:ok, [Ide.Resources.AnimationStore.animation_entry()]} | {:error, Types.project_error()}
+          {:ok, [Ide.Resources.AnimationStore.animation_entry()]}
+          | {:error, Types.project_error()}
   def list_animation_resources(%Project{} = project) do
     Ide.Resources.AnimationStore.list(project)
   end
@@ -818,7 +829,8 @@ defmodule Ide.Projects do
     Ide.Resources.AnimationStore.import_animation(project, upload_path, original_name)
   end
 
-  @spec delete_animation_resource(Project.t(), String.t()) :: {:ok, [map()]} | {:error, Types.project_error()}
+  @spec delete_animation_resource(Project.t(), String.t()) ::
+          {:ok, [map()]} | {:error, Types.project_error()}
   def delete_animation_resource(%Project{} = project, ctor) do
     Ide.Resources.AnimationStore.delete_animation(project, ctor)
   end
@@ -927,7 +939,8 @@ defmodule Ide.Projects do
   @doc """
   Deletes one font resource and regenerates the generated resources Elm module.
   """
-  @spec delete_font_resource(Project.t(), String.t()) :: {:ok, [map()]} | {:error, Types.project_error()}
+  @spec delete_font_resource(Project.t(), String.t()) ::
+          {:ok, [map()]} | {:error, Types.project_error()}
   def delete_font_resource(%Project{} = project, ctor) do
     ResourceStore.delete_font(project, ctor)
   end
@@ -935,12 +948,14 @@ defmodule Ide.Projects do
   @doc """
   Deletes an uploaded source font and its generated variants.
   """
-  @spec delete_font_source(Project.t(), String.t()) :: {:ok, map()} | {:error, Types.project_error()}
+  @spec delete_font_source(Project.t(), String.t()) ::
+          {:ok, map()} | {:error, Types.project_error()}
   def delete_font_source(%Project{} = project, source_id) when is_binary(source_id) do
     ResourceStore.delete_font_source(project, source_id)
   end
 
-  @spec maybe_activate_first(Project.t()) :: :ok | {:ok, Project.t()} | {:error, Types.project_error()}
+  @spec maybe_activate_first(Project.t()) ::
+          :ok | {:ok, Project.t()} | {:error, Types.project_error()}
   defp maybe_activate_first(project) do
     if is_nil(active_project(%{id: project.owner_id})) do
       activate_project(project)
@@ -1020,7 +1035,12 @@ defmodule Ide.Projects do
     end
   end
 
-  @spec rollback_bootstrap(Project.t(), BootstrapError.operation(), BootstrapError.bootstrap_reason(), keyword()) ::
+  @spec rollback_bootstrap(
+          Project.t(),
+          BootstrapError.operation(),
+          BootstrapError.bootstrap_reason(),
+          keyword()
+        ) ::
           no_return()
   defp rollback_bootstrap(%Project{} = project, operation, reason, context) do
     workspace = project_workspace_path(project)
@@ -1127,5 +1147,4 @@ defmodule Ide.Projects do
         |> Enum.any?(&String.starts_with?(&1, "."))
     end
   end
-
 end

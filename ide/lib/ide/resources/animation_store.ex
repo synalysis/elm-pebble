@@ -68,7 +68,8 @@ defmodule Ide.Resources.AnimationStore do
     end
   end
 
-  @spec delete_animation(Project.t(), String.t()) :: {:ok, [map()]} | {:error, Types.resource_error()}
+  @spec delete_animation(Project.t(), String.t()) ::
+          {:ok, [map()]} | {:error, Types.resource_error()}
   def delete_animation(%Project{} = project, ctor) when is_binary(ctor) do
     workspace = Projects.project_workspace_path(project)
     manifest_path = Path.join(workspace, @manifest_rel_path)
@@ -92,7 +93,8 @@ defmodule Ide.Resources.AnimationStore do
     end
   end
 
-  @spec animation_file_path(Project.t(), String.t()) :: {:ok, String.t()} | {:error, Types.resource_error()}
+  @spec animation_file_path(Project.t(), String.t()) ::
+          {:ok, String.t()} | {:error, Types.resource_error()}
   def animation_file_path(%Project{} = project, ctor) when is_binary(ctor) do
     workspace = Projects.project_workspace_path(project)
     assets_dir = Path.join(workspace, @assets_rel_dir)
@@ -137,9 +139,15 @@ defmodule Ide.Resources.AnimationStore do
        when frames <= @max_frames and width <= @max_dimension and height <= @max_dimension,
        do: :ok
 
-  defp validate_probe(%{frame_count: frames}) when frames > @max_frames, do: {:error, :too_many_frames}
-  defp validate_probe(%{width: width}) when width > @max_dimension, do: {:error, :dimensions_too_large}
-  defp validate_probe(%{height: height}) when height > @max_dimension, do: {:error, :dimensions_too_large}
+  defp validate_probe(%{frame_count: frames}) when frames > @max_frames,
+    do: {:error, :too_many_frames}
+
+  defp validate_probe(%{width: width}) when width > @max_dimension,
+    do: {:error, :dimensions_too_large}
+
+  defp validate_probe(%{height: height}) when height > @max_dimension,
+    do: {:error, :dimensions_too_large}
+
   defp validate_probe(_), do: {:error, :invalid_animation}
 
   defp persist_animation(project, bytes, original_name, probe) do
@@ -152,7 +160,8 @@ defmodule Ide.Resources.AnimationStore do
     with :ok <- File.mkdir_p(assets_dir),
          {:ok, manifest} <- read_manifest(workspace),
          nil <- duplicate_entry(manifest["entries"] || [], assets_dir, bytes),
-         unique_ctor = CtorNaming.unique_ctor(:bitmap_animated, base_name, manifest["entries"] || []),
+         unique_ctor =
+           CtorNaming.unique_ctor(:bitmap_animated, base_name, manifest["entries"] || []),
          basename = "#{unique_ctor}.png",
          :ok <- File.write(Path.join(assets_dir, basename), bytes) do
       play_count =
@@ -248,16 +257,17 @@ defmodule Ide.Resources.AnimationStore do
     manifest_path = Path.join(workspace, @manifest_rel_path)
 
     with {:ok, manifest} <- read_manifest(workspace),
-         %{} = row <- Enum.find(manifest["entries"] || [], &(Map.get(&1, "ctor") == old_ctor)),
-         new_ctor <-
-           {:ok,
-            CtorNaming.unique_ctor(
-              :bitmap_animated,
-              new_base,
-              manifest["entries"] || [],
-              exclude_ctor: old_ctor
-            )},
-         migrated_row <- {:ok, migrate_animation_row(assets_dir, row, old_ctor, new_ctor)} do
+         %{} = row <- Enum.find(manifest["entries"] || [], &(Map.get(&1, "ctor") == old_ctor)) do
+      new_ctor =
+        CtorNaming.unique_ctor(
+          :bitmap_animated,
+          new_base,
+          manifest["entries"] || [],
+          exclude_ctor: old_ctor
+        )
+
+      migrated_row = migrate_animation_row(assets_dir, row, old_ctor, new_ctor, new_base)
+
       entries =
         (manifest["entries"] || [])
         |> Enum.reject(&(Map.get(&1, "ctor") == old_ctor))
@@ -274,7 +284,7 @@ defmodule Ide.Resources.AnimationStore do
     end
   end
 
-  defp migrate_animation_row(assets_dir, row, old_ctor \\ nil, new_ctor \\ nil) do
+  defp migrate_animation_row(assets_dir, row, old_ctor \\ nil, new_ctor \\ nil, new_base \\ nil) do
     old_ctor = old_ctor || Map.get(row, "ctor", "")
     ensured = CtorNaming.ensure_row!(row, :bitmap_animated)
     new_ctor = new_ctor || Map.get(ensured, "ctor", "")
@@ -292,6 +302,7 @@ defmodule Ide.Resources.AnimationStore do
 
       ensured
       |> Map.put("filename", new_filename)
+      |> CtorNaming.row_with_ctor(:bitmap_animated, new_ctor, new_base)
     end
   end
 
@@ -345,5 +356,4 @@ defmodule Ide.Resources.AnimationStore do
       :ok
     end
   end
-
 end

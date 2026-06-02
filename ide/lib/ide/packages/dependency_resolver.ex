@@ -258,7 +258,10 @@ defmodule Ide.Packages.DependencyResolver do
     end
   end
 
-  @spec compatible_assignments?(Types.dependency_assignments_map(), Types.dependency_requirements_map()) ::
+  @spec compatible_assignments?(
+          Types.dependency_assignments_map(),
+          Types.dependency_requirements_map()
+        ) ::
           boolean()
   defp compatible_assignments?(assigned, requirements) do
     Enum.all?(assigned, fn {package, version} ->

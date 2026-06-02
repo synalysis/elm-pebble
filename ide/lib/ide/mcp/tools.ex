@@ -122,9 +122,15 @@ defmodule Ide.Mcp.Tools do
   defp do_call("debugger." <> _rest = name, args), do: DebuggerHandler.call(name, args)
   defp do_call("resources.vectors.list", %{"slug" => slug}), do: VectorResources.list(slug)
   defp do_call("resources.vectors.convert", args), do: VectorResources.convert(args)
-  defp do_call("resources.vectors.convert_sequence", args), do: VectorResources.convert_sequence(args)
+
+  defp do_call("resources.vectors.convert_sequence", args),
+    do: VectorResources.convert_sequence(args)
+
   defp do_call("resources.vectors.import", args), do: VectorResources.import(args)
-  defp do_call("resources.vectors.import_sequence", args), do: VectorResources.import_sequence(args)
+
+  defp do_call("resources.vectors.import_sequence", args),
+    do: VectorResources.import_sequence(args)
+
   defp do_call("resources.vectors.preview", args), do: VectorResources.preview(args)
   defp do_call("resources.vectors.delete", args), do: VectorResources.delete(args)
   defp do_call(name, _args), do: {:error, "unknown tool: #{name}"}

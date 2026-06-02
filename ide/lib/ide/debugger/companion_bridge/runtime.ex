@@ -10,20 +10,28 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
   @companion_bridge_targets [:companion, :phone]
 
   @type ctx :: %{
-          required(:introspect) =>
-            (Types.runtime_state(), Types.surface_target() -> Types.elm_introspect()),
+          required(:introspect) => (Types.runtime_state(), Types.surface_target() ->
+                                      Types.elm_introspect()),
           required(:cmd_calls) => (Types.elm_introspect(), String.t() -> [Types.cmd_call()]),
-          required(:bridge_requests_from_init) =>
-            (Types.runtime_state(), Types.surface_target() -> [Types.companion_bridge_request()]),
-          required(:bridge_requests_from_update) =>
-            (Types.runtime_state(), Types.surface_target(), String.t() ->
-               [Types.companion_bridge_request()]),
-          required(:append_event) =>
-            (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() ->
-               Types.runtime_state()),
-          required(:apply_step) =>
-            (Types.runtime_state(), Types.surface_target(), String.t(),
-             Types.subscription_payload() | nil, String.t(), String.t() -> Types.runtime_state()),
+          required(:bridge_requests_from_init) => (Types.runtime_state(),
+                                                   Types.surface_target() ->
+                                                     [Types.companion_bridge_request()]),
+          required(:bridge_requests_from_update) => (Types.runtime_state(),
+                                                     Types.surface_target(),
+                                                     String.t() ->
+                                                       [Types.companion_bridge_request()]),
+          required(:append_event) => (Types.runtime_state(),
+                                      String.t(),
+                                      Types.debugger_timeline_payload() ->
+                                        Types.runtime_state()),
+          required(:apply_step) => (Types.runtime_state(),
+                                    Types.surface_target(),
+                                    String.t(),
+                                    Types.subscription_payload()
+                                    | nil,
+                                    String.t(),
+                                    String.t() ->
+                                      Types.runtime_state()),
           required(:deliver_weather_to_watch) => (Types.runtime_state() -> Types.runtime_state()),
           required(:settings) => (Types.runtime_state() -> Types.simulator_settings())
         }
@@ -62,7 +70,8 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
     end
   end
 
-  def maybe_apply_command_responses(state, _target, _message, _model, _message_source, _ctx), do: state
+  def maybe_apply_command_responses(state, _target, _message, _model, _message_source, _ctx),
+    do: state
 
   @spec maybe_apply_responses(Types.runtime_state(), Types.surface_target(), String.t(), ctx()) ::
           Types.runtime_state()
@@ -77,10 +86,16 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
 
   def maybe_apply_responses(state, _target, _message_source, _ctx), do: state
 
-  @spec maybe_apply_subscription_responses(Types.runtime_state(), Types.surface_target(), String.t(), ctx()) ::
+  @spec maybe_apply_subscription_responses(
+          Types.runtime_state(),
+          Types.surface_target(),
+          String.t(),
+          ctx()
+        ) ::
           Types.runtime_state()
   def maybe_apply_subscription_responses(state, target, source, ctx)
-      when target in @companion_bridge_targets and is_map(state) and is_binary(source) and is_map(ctx) do
+      when target in @companion_bridge_targets and is_map(state) and is_binary(source) and
+             is_map(ctx) do
     Enum.reduce(CompanionBridge.subscription_contracts(), state, fn contract, acc ->
       callback = subscription_callback_from_state(acc, target, contract, ctx)
 
@@ -99,7 +114,15 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
               payload
             )
           )
-          |> apply_subscription_response(target, callback, payload, source, trigger, contract, ctx)
+          |> apply_subscription_response(
+            target,
+            callback,
+            payload,
+            source,
+            trigger,
+            contract,
+            ctx
+          )
 
         _ ->
           acc
@@ -141,7 +164,8 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
           ctx()
         ) :: String.t() | nil
   def subscription_callback_from_state(state, target, contract, ctx)
-      when is_map(state) and target in [:watch, :companion, :phone] and is_map(contract) and is_map(ctx) do
+      when is_map(state) and target in [:watch, :companion, :phone] and is_map(contract) and
+             is_map(ctx) do
     state
     |> ctx.introspect.(target)
     |> subscription_callback(contract, ctx)
@@ -154,7 +178,8 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
           Types.companion_subscription_contract() | Types.api_suffix_contract(),
           ctx()
         ) :: String.t() | nil
-  def subscription_callback(ei, contract, ctx) when is_map(ei) and is_map(contract) and is_map(ctx) do
+  def subscription_callback(ei, contract, ctx)
+      when is_map(ei) and is_map(contract) and is_map(ctx) do
     target_suffixes = Map.get(contract, :target_suffixes, []) |> List.wrap()
 
     ei
@@ -203,7 +228,8 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
   end
 
   defp apply_request(state, target, %{api: "preferences"} = request, source, ctx) do
-    callback = bridge_callback(request, state, target, CompanionBridge.preferences_contract(), ctx)
+    callback =
+      bridge_callback(request, state, target, CompanionBridge.preferences_contract(), ctx)
 
     case callback do
       value when is_binary(value) and value != "" ->
@@ -217,7 +243,8 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
   end
 
   defp apply_request(state, target, %{api: "geolocation"} = request, source, ctx) do
-    callback = bridge_callback(request, state, target, CompanionBridge.geolocation_contract(), ctx)
+    callback =
+      bridge_callback(request, state, target, CompanionBridge.geolocation_contract(), ctx)
 
     case callback do
       value when is_binary(value) and value != "" ->
@@ -340,7 +367,8 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
       )
       when is_map(state) and is_binary(callback) and is_binary(source) and is_binary(trigger) and
              is_map(contract) and is_map(ctx) do
-    state = maybe_apply_companion_subscription_step(state, callback, payload, source, trigger, ctx)
+    state =
+      maybe_apply_companion_subscription_step(state, callback, payload, source, trigger, ctx)
 
     {step_target, step_trigger, message, message_value} =
       phone_to_watch_step(state, callback, payload, contract, trigger, ctx)
@@ -359,7 +387,8 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
           String.t(),
           ctx()
         ) ::
-          {:watch | :companion | :phone, String.t(), String.t(), Types.phone_to_watch_message_value()}
+          {:watch | :companion | :phone, String.t(), String.t(),
+           Types.phone_to_watch_message_value()}
   defp phone_to_watch_step(state, callback, payload, %{source: source} = contract, _trigger, _ctx)
        when is_map(state) and callback in ["FromPhone" | @companion_phone_status_callbacks] and
               source in @phone_to_watch_contract_sources do
@@ -444,7 +473,9 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
   end
 
   defp phone_to_watch_message_value(_contract, payload) when is_map(payload), do: payload
-  defp phone_to_watch_message_value(_contract, payload), do: %{"ctor" => "FromPhone", "args" => [payload]}
+
+  defp phone_to_watch_message_value(_contract, payload),
+    do: %{"ctor" => "FromPhone", "args" => [payload]}
 
   defp phone_to_watch_connectivity_value(online) when is_boolean(online) do
     %{
@@ -507,7 +538,8 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
   end
 
   defp apply_callback(state, target, callback, result, source, api, request, ctx)
-       when is_map(state) and is_binary(callback) and is_binary(source) and is_binary(api) and is_map(ctx) do
+       when is_map(state) and is_binary(callback) and is_binary(source) and is_binary(api) and
+              is_map(ctx) do
     plain? = Map.get(request, :plain_result) == true
 
     {result_ctor, payload} =
@@ -561,10 +593,22 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
     )
   end
 
-  defp maybe_apply_companion_subscription_step(state, _callback, _payload, _source, _trigger, _ctx),
-    do: state
+  defp maybe_apply_companion_subscription_step(
+         state,
+         _callback,
+         _payload,
+         _source,
+         _trigger,
+         _ctx
+       ),
+       do: state
 
-  @spec bridge_payload(Types.runtime_state(), atom(), Types.CompanionBridgeRequest.wire_map(), ctx()) ::
+  @spec bridge_payload(
+          Types.runtime_state(),
+          atom(),
+          Types.CompanionBridgeRequest.wire_map(),
+          ctx()
+        ) ::
           Types.companion_bridge_payload()
   defp bridge_payload(state, kind, request, ctx) when is_map(state) and is_map(ctx) do
     CompanionBridge.payload(ctx.settings.(state), kind, request)
@@ -572,7 +616,8 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
 
   @spec storage_result(Types.runtime_state(), Types.wire_map(), ctx()) ::
           {Types.runtime_state(), {:ok, Types.wire_map()} | {:error, String.t()}}
-  defp storage_result(state, request, ctx) when is_map(state) and is_map(request) and is_map(ctx) do
+  defp storage_result(state, request, ctx)
+       when is_map(state) and is_map(request) and is_map(ctx) do
     settings = ctx.settings.(state)
     {next_settings, result} = SimulatorStore.storage_result(settings, request)
     {Map.put(state, :simulator_settings, next_settings), result}
@@ -580,14 +625,16 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
 
   @spec preferences_result(Types.runtime_state(), Types.wire_map(), ctx()) ::
           {Types.runtime_state(), {:ok, {String.t(), Types.wire_input()}} | {:error, String.t()}}
-  defp preferences_result(state, request, ctx) when is_map(state) and is_map(request) and is_map(ctx) do
+  defp preferences_result(state, request, ctx)
+       when is_map(state) and is_map(request) and is_map(ctx) do
     settings = ctx.settings.(state)
     {next_settings, result} = SimulatorStore.preferences_result(settings, request)
     {Map.put(state, :simulator_settings, next_settings), result}
   end
 
   @spec companion_app_step_target(Types.runtime_state(), ctx(), String.t()) :: :companion | :phone
-  defp companion_app_step_target(state, ctx, callback) when is_map(state) and is_map(ctx) and is_binary(callback) do
+  defp companion_app_step_target(state, ctx, callback)
+       when is_map(state) and is_map(ctx) and is_binary(callback) do
     if callback_known_on_surface?(state, ctx, :phone, callback) do
       :phone
     else
@@ -595,7 +642,12 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
     end
   end
 
-  @spec callback_known_on_surface?(Types.runtime_state(), ctx(), Types.surface_target(), String.t()) ::
+  @spec callback_known_on_surface?(
+          Types.runtime_state(),
+          ctx(),
+          Types.surface_target(),
+          String.t()
+        ) ::
           boolean()
   defp callback_known_on_surface?(state, ctx, target, callback)
        when is_map(state) and is_map(ctx) and is_binary(callback) do

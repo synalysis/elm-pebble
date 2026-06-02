@@ -18,7 +18,8 @@ defmodule Ide.GitHub.Client do
   def oauth_scope, do: @oauth_scope
 
   @type http_method :: :get | :post
-  @type mock_response :: {:ok, %{status: integer(), body: Types.http_body()}} | {:error, Types.api_error()}
+  @type mock_response ::
+          {:ok, %{status: integer(), body: Types.http_body()}} | {:error, Types.api_error()}
 
   @spec start_device_flow(String.t() | nil) :: {:ok, map()} | {:error, Types.api_error()}
   def start_device_flow(scope \\ @oauth_scope) do
@@ -138,7 +139,7 @@ defmodule Ide.GitHub.Client do
   @spec api_request(String.t(), keyword(), http_method(), String.t(), map() | nil) ::
           {:ok, map()} | {:error, Types.api_error()}
   defp api_request(access_token, opts, method, path, body) do
-  headers = [
+    headers = [
       {"accept", "application/vnd.github+json"},
       {"authorization", "Bearer #{access_token}"},
       {"x-github-api-version", "2022-11-28"},
@@ -167,9 +168,13 @@ defmodule Ide.GitHub.Client do
   end
 
   @spec normalize_fun_response(mock_response() | Types.req_transport_error()) ::
-          {:ok, map()} | {:error, Types.api_error()} | mock_response() | Types.req_transport_error()
-  defp normalize_fun_response({:ok, %{status: status, body: body}}) when status in 200..299 and is_map(body),
-    do: {:ok, body}
+          {:ok, map()}
+          | {:error, Types.api_error()}
+          | mock_response()
+          | Types.req_transport_error()
+  defp normalize_fun_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_map(body),
+       do: {:ok, body}
 
   defp normalize_fun_response({:ok, %{status: status, body: body}}),
     do: {:error, {:http_error, status, body}}

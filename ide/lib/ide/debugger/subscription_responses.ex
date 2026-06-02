@@ -5,10 +5,14 @@ defmodule Ide.Debugger.SubscriptionResponses do
   alias Ide.Debugger.Types
 
   @type apply_ctx :: %{
-          required(:apply_step_once) =>
-            (Types.runtime_state(), Types.surface_target(), String.t(),
-             Types.subscription_payload() | map(), String.t(), String.t() ->
-               Types.runtime_state())
+          required(:apply_step_once) => (Types.runtime_state(),
+                                         Types.surface_target(),
+                                         String.t(),
+                                         Types.subscription_payload()
+                                         | map(),
+                                         String.t(),
+                                         String.t() ->
+                                           Types.runtime_state())
         }
 
   @spec ok_wire_value(String.t(), Types.subscription_payload()) :: Types.protocol_ctor_value()

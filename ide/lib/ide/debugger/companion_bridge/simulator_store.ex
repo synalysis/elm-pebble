@@ -37,7 +37,8 @@ defmodule Ide.Debugger.CompanionBridge.SimulatorStore do
   end
 
   @spec preferences_result(Types.simulator_settings(), Types.wire_map()) ::
-          {Types.simulator_settings(), {:ok, {String.t(), Types.wire_input()}} | {:error, String.t()}}
+          {Types.simulator_settings(),
+           {:ok, {String.t(), Types.wire_input()}} | {:error, String.t()}}
   def preferences_result(settings, request) when is_map(settings) and is_map(request) do
     values = Map.get(settings, "preferences", %{})
     key = Map.get(request, :key)

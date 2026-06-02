@@ -44,7 +44,8 @@ defmodule Ide.Debugger.Types.RuntimeExecEventPayload do
     %{
       target: target_label,
       engine: Map.get(runtime, "engine") || Map.get(runtime, :engine) || "unknown",
-      source_byte_size: Map.get(runtime, "source_byte_size") || Map.get(runtime, :source_byte_size),
+      source_byte_size:
+        Map.get(runtime, "source_byte_size") || Map.get(runtime, :source_byte_size),
       msg_constructor_count:
         Map.get(runtime, "msg_constructor_count") || Map.get(runtime, :msg_constructor_count),
       update_case_branch_count:
@@ -54,7 +55,8 @@ defmodule Ide.Debugger.Types.RuntimeExecEventPayload do
         Map.get(runtime, "view_case_branch_count") || Map.get(runtime, :view_case_branch_count),
       runtime_model_source:
         Map.get(runtime, "runtime_model_source") || Map.get(runtime, :runtime_model_source),
-      view_tree_source: Map.get(runtime, "view_tree_source") || Map.get(runtime, :view_tree_source),
+      view_tree_source:
+        Map.get(runtime, "view_tree_source") || Map.get(runtime, :view_tree_source),
       execution_backend:
         Map.get(runtime, "execution_backend") || Map.get(runtime, :execution_backend),
       runtime_mode: Map.get(runtime, "runtime_mode") || Map.get(runtime, :runtime_mode),
@@ -71,7 +73,8 @@ defmodule Ide.Debugger.Types.RuntimeExecEventPayload do
         Map.get(runtime, "view_tree_node_count") || Map.get(runtime, :view_tree_node_count),
       runtime_model_sha256:
         Map.get(runtime, "runtime_model_sha256") || Map.get(runtime, :runtime_model_sha256),
-      view_tree_sha256: Map.get(runtime, "view_tree_sha256") || Map.get(runtime, :view_tree_sha256)
+      view_tree_sha256:
+        Map.get(runtime, "view_tree_sha256") || Map.get(runtime, :view_tree_sha256)
     }
     |> Map.merge(extra)
   end

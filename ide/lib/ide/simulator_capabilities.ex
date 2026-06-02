@@ -73,8 +73,9 @@ defmodule Ide.SimulatorCapabilities do
   defp runtime_introspect(%{companion: companion} = _state, :companion) when is_map(companion),
     do: model_introspect(companion)
 
-  defp runtime_introspect(%{"companion" => companion} = _state, :companion) when is_map(companion),
-    do: model_introspect(companion)
+  defp runtime_introspect(%{"companion" => companion} = _state, :companion)
+       when is_map(companion),
+       do: model_introspect(companion)
 
   defp runtime_introspect(%{simulator_settings: _} = state, :watch),
     do: runtime_introspect(Map.drop(state, [:simulator_settings]), :watch)
@@ -134,9 +135,14 @@ defmodule Ide.SimulatorCapabilities do
   defp merge_introspect(existing, introspect, surface) do
     merged_caps =
       case surface do
-        :watch -> Detect.watch_caps(existing) |> MapSet.union(Detect.watch_caps(introspect))
-        :phone -> Detect.phone_caps(existing) |> MapSet.union(Detect.phone_caps(introspect))
-        :companion -> Detect.companion_caps(existing) |> MapSet.union(Detect.companion_caps(introspect))
+        :watch ->
+          Detect.watch_caps(existing) |> MapSet.union(Detect.watch_caps(introspect))
+
+        :phone ->
+          Detect.phone_caps(existing) |> MapSet.union(Detect.phone_caps(introspect))
+
+        :companion ->
+          Detect.companion_caps(existing) |> MapSet.union(Detect.companion_caps(introspect))
       end
 
     if MapSet.equal?(merged_caps, MapSet.new()) do

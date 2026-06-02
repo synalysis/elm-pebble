@@ -34,9 +34,7 @@ defmodule Ide.Debugger.CmdCall do
           helpers when is_map(helpers) -> Map.get(helpers, helper_name, [])
           _ -> []
         end
-        |> Enum.any?(
-          &(name?(&1, "currentPosition") or target_ends_with?(&1, ".currentPosition"))
-        )
+        |> Enum.any?(&(name?(&1, "currentPosition") or target_ends_with?(&1, ".currentPosition")))
     end
   end
 

@@ -22,7 +22,7 @@ defmodule Ide.ProjectTemplates do
           | File.posix()
           | Jason.EncodeError.t()
 
-  @template_keys ~w(starter watchface-digital watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time watchface-weather-animated watchface-poke-battle companion-demo-phone-status companion-demo-weather-env companion-demo-calendar companion-demo-geolocation companion-demo-storage companion-demo-settings companion-demo-websocket companion-demo-timeline watch-demo-accel watch-demo-vibes watch-demo-data-log watch-demo-app-focus watch-demo-compass watch-demo-dictation watch-demo-health watch-demo-light watch-demo-watch-info game-basic game-tiny-bird game-jump-n-run game-2048)
+  @template_keys ~w(starter watchface-digital watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time watchface-weather-animated watchface-poke-battle companion-demo-phone-status companion-demo-weather-env companion-demo-calendar companion-demo-geolocation companion-demo-storage companion-demo-settings companion-demo-websocket companion-demo-timeline watch-demo-accel watch-demo-vibes watch-demo-data-log watch-demo-app-focus watch-demo-compass watch-demo-dictation watch-demo-health watch-demo-light watch-demo-watch-info watch-demo-drawing-showcase game-basic game-tiny-bird game-jump-n-run game-2048)
 
   @template_dirs %{
     "starter" => "starter_watch",
@@ -50,6 +50,7 @@ defmodule Ide.ProjectTemplates do
     "watch-demo-health" => "watch_demo_health",
     "watch-demo-light" => "watch_demo_light",
     "watch-demo-watch-info" => "watch_demo_watch_info",
+    "watch-demo-drawing-showcase" => "watch_demo_drawing_showcase",
     "game-basic" => "game_basic",
     "game-tiny-bird" => "game_tiny_bird",
     "game-jump-n-run" => "game_jump_n_run",
@@ -65,7 +66,8 @@ defmodule Ide.ProjectTemplates do
   @doc """
   Absolute path to `priv/project_templates/<dir>` for a template key.
   """
-  @spec template_priv_root(String.t()) :: {:ok, String.t()} | {:error, {:unknown_template, String.t()}}
+  @spec template_priv_root(String.t()) ::
+          {:ok, String.t()} | {:error, {:unknown_template, String.t()}}
   def template_priv_root(template_key) when is_binary(template_key) do
     case Map.fetch(@template_dirs, template_key) do
       {:ok, dir} ->
@@ -151,9 +153,11 @@ defmodule Ide.ProjectTemplates do
       {"Watchface tutorial: Complete", "watchface-tutorial-complete"},
       {"Watchface: YES (watch, protocol, phone)", "watchface-yes"},
       {"Watchface: Tangram Time (watch, protocol, phone)", "watchface-tangram-time"},
-      {"Watchface: Weather Animated (watch, protocol, phone, vectors)", "watchface-weather-animated"},
+      {"Watchface: Weather Animated (watch, protocol, phone, vectors)",
+       "watchface-weather-animated"},
       {"Watchface: Poke Battle (watch-only, health steps)", "watchface-poke-battle"},
-      {"Companion demo: Phone status (battery, locale, network, notifications)", "companion-demo-phone-status"},
+      {"Companion demo: Phone status (battery, locale, network, notifications)",
+       "companion-demo-phone-status"},
       {"Companion demo: Weather & environment", "companion-demo-weather-env"},
       {"Companion demo: Calendar", "companion-demo-calendar"},
       {"Companion demo: Geolocation (lat/long watchface)", "companion-demo-geolocation"},
@@ -170,6 +174,7 @@ defmodule Ide.ProjectTemplates do
       {"Watch demo: Health (app, Time+)", "watch-demo-health"},
       {"Watch demo: Backlight (app)", "watch-demo-light"},
       {"Watch demo: Watch info (app)", "watch-demo-watch-info"},
+      {"Watch demo: Drawing showcase (all render ops)", "watch-demo-drawing-showcase"},
       {"Game: Basic", "game-basic"},
       {"Game: Tiny Bird", "game-tiny-bird"},
       {"Game: Jump'n Run", "game-jump-n-run"},
@@ -269,6 +274,9 @@ defmodule Ide.ProjectTemplates do
 
       "watch-demo-watch-info" ->
         seed_watch_only_workspace(workspace_path, "watch_demo_watch_info")
+
+      "watch-demo-drawing-showcase" ->
+        seed_watch_only_workspace(workspace_path, "watch_demo_drawing_showcase")
 
       "game-basic" ->
         seed_watch_only_workspace(workspace_path, "game_basic")

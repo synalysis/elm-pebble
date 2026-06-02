@@ -35,7 +35,10 @@ defmodule ElmEx.IR.DeadCodeTest do
     visible_tiles_body = %{
       op: :qualified_call,
       target: "List.concatMap",
-      args: [%{op: :var, name: "genPlatforms"}, %{op: :call, name: "visibleSlots", args: [%{op: :var, name: "offset"}]}]
+      args: [
+        %{op: :var, name: "genPlatforms"},
+        %{op: :call, name: "visibleSlots", args: [%{op: :var, name: "offset"}]}
+      ]
     }
 
     step_body = %{

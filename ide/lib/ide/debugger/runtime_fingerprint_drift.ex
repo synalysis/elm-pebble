@@ -131,7 +131,10 @@ defmodule Ide.Debugger.RuntimeFingerprintDrift do
   def merge_drift_detail(_backend_detail, _key_target_detail), do: nil
 
   @spec surface_rows(Types.fingerprint_compare_result()) ::
-          [{Types.surface_target() | atom() | String.t(), Types.fingerprint_compare_surface_row()}]
+          [
+            {Types.surface_target() | atom() | String.t(),
+             Types.fingerprint_compare_surface_row()}
+          ]
   defp surface_rows(compare) when is_map(compare) do
     case map_value(compare, :surfaces) do
       surfaces when is_map(surfaces) ->
@@ -185,7 +188,10 @@ defmodule Ide.Debugger.RuntimeFingerprintDrift do
 
   defp row_compare_value(_row, _keys), do: nil
 
-  @spec map_value(Types.fingerprint_compare_surface_row() | Types.fingerprint_compare_result(), atom() | String.t()) ::
+  @spec map_value(
+          Types.fingerprint_compare_surface_row() | Types.fingerprint_compare_result(),
+          atom() | String.t()
+        ) ::
           row_value()
   defp map_value(map, key) when is_map(map) do
     case fetch_value(map, key) do

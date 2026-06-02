@@ -6,13 +6,21 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
 
   alias Phoenix.LiveView.Rendered
 
-  @type pane :: :editor | :build | :debugger | :emulator | :publish | :settings | :resources | :packages | atom()
+  @type pane ::
+          :editor
+          | :build
+          | :debugger
+          | :emulator
+          | :publish
+          | :settings
+          | :resources
+          | :packages
+          | atom()
   @type assigns :: map()
   @type rendered :: Rendered.t()
   @type tab :: map()
   @type tree_node :: map()
   @type diagnostic :: Ide.Compiler.diagnostic() | map()
-  @type wire_input :: String.t() | integer() | boolean() | nil
 
   @protected_editor_rel_paths [
     "src/Main.elm",
@@ -78,7 +86,6 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
   attr(:editor_active_line_highlight, :boolean, default: true)
   attr(:editor_check_diagnostics, :list, default: [])
   attr(:format_output, :any, default: nil)
-  attr(:diagnostics, :list, default: [])
   attr(:token_summary, :any, default: nil)
   attr(:tokenizer_mode, :atom, default: :fast)
   attr(:token_diagnostics, :list, default: [])
@@ -92,603 +99,567 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
         class="relative grid min-h-0 flex-1 gap-4"
         style={editor_pane_style(@editor_docs_panel_open, @editor_docs_col_px)}
       >
-      <aside class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
-        <div class="min-h-0 flex-1 overflow-auto p-3">
-          <h2 class="text-sm font-semibold">Files</h2>
-          <p class="mt-1 text-[11px] text-zinc-500">Elm module files for each source root.</p>
-          <div class="mt-3 space-y-3">
-            <div :for={root <- editor_files_tree(@tree)}>
-              <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                {root.source_root}
-              </h3>
-              <.tree_nodes
-                nodes={root.nodes}
-                source_root={root.source_root}
-                active_tab_id={@active_tab_id}
-                opening_file_id={@opening_file_id}
-                expanded_tree_dirs={@expanded_tree_dirs}
-              />
-            </div>
-          </div>
-        </div>
-        <div class="shrink-0 space-y-2 border-t border-zinc-200 p-3">
-          <p class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Operations</p>
-          <% active_editor_tab = active_tab(@tabs, @active_tab_id) %>
-          <div class="flex flex-col gap-2">
-            <button
-              type="button"
-              phx-click="open-create-file-modal"
-              class="rounded bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700"
-            >
-              Create file…
-            </button>
-            <button
-              :if={!@companion_app_present}
-              type="button"
-              phx-click="add-companion-app"
-              class="rounded bg-emerald-100 px-3 py-2 text-xs font-medium text-emerald-900 hover:bg-emerald-200"
-            >
-              Add companion app
-            </button>
-            <button
-              type="button"
-              phx-click="open-rename-file-modal"
-              class="rounded bg-zinc-100 px-3 py-2 text-xs font-medium text-zinc-800 hover:bg-zinc-200 disabled:opacity-60"
-              disabled={
-                is_nil(active_editor_tab) or read_only_tab?(active_editor_tab) or
-                  protected_editor_source_file?(active_editor_tab.rel_path)
-              }
-            >
-              Rename active file…
-            </button>
-            <button
-              type="button"
-              phx-click="delete-file"
-              data-confirm={
-                if active_editor_tab do
-                  "Delete #{editor_source_display_path(active_editor_tab.rel_path)}?"
-                else
-                  "Delete active file?"
-                end
-              }
-              class="rounded bg-rose-100 px-3 py-2 text-xs font-medium text-rose-800 hover:bg-rose-200 disabled:opacity-60"
-              disabled={
-                is_nil(active_editor_tab) or read_only_tab?(active_editor_tab) or
-                  protected_editor_source_file?(active_editor_tab.rel_path)
-              }
-            >
-              Delete active file…
-            </button>
-          </div>
-        </div>
-      </aside>
-
-      <main class="relative flex min-h-0 flex-col rounded-lg border border-zinc-200 bg-white p-3 shadow-sm">
-        <div class="mb-3 flex flex-wrap items-center gap-2 border-b border-zinc-200 pb-2">
-          <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-            <button
-              :for={tab <- @tabs}
-              type="button"
-              phx-click="select-tab"
-              phx-value-id={tab.id}
-              class={[
-                "inline-flex items-center gap-1 rounded px-2 py-1 text-xs",
-                @active_tab_id == tab.id && "bg-blue-100 text-blue-800",
-                @active_tab_id != tab.id && "bg-zinc-100"
-              ]}
-            >
-              <span>
-                {editor_source_display_path(tab.rel_path)}{if tab.dirty, do: "*", else: ""}
-              </span>
-              <span
-                phx-click="close-tab"
-                phx-value-id={tab.id}
-                class="cursor-pointer rounded bg-zinc-200 px-1 text-zinc-700"
-              >
-                x
-              </span>
-            </button>
-          </div>
-          <button
-            type="button"
-            phx-click="toggle-editor-docs-panel"
-            class="shrink-0 rounded bg-zinc-100 px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-200"
-          >
-            {if @editor_docs_panel_open, do: "Hide documentation", else: "Show documentation"}
-          </button>
-        </div>
-
-        <div
-          :if={active = active_tab(@tabs, @active_tab_id)}
-          class="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden"
-        >
-          <% editor_check_visible =
-            editor_check_visible?(
-              @editor_check_status,
-              @editor_check_source_root,
-              @editor_check_rel_path,
-              @editor_check_diagnostics,
-              active
-            ) %>
-
-          <div class="flex flex-wrap gap-2">
-            <.button
-              type="submit"
-              form={"token-editor-form-#{active.id}"}
-              name="editor_action"
-              value="save"
-              disabled={editor_read_only?(active)}
-            >
-              Save
-            </.button>
-            <.button
-              type="submit"
-              form={"token-editor-form-#{active.id}"}
-              name="editor_action"
-              value="format"
-              disabled={@format_status == :running or editor_read_only?(active)}
-            >
-              {if @format_status == :running, do: "Formatting...", else: "Format"}
-            </.button>
-            <.link
-              navigate={settings_path_with_return_to("/projects/#{@project.slug}/#{@pane}")}
-              class="rounded bg-zinc-100 px-3 py-2 text-sm font-medium text-zinc-800"
-            >
-              Auto-format: {if @auto_format_on_save, do: "On", else: "Off"}
-            </.link>
-            <button
-              :if={@debug_mode}
-              type="button"
-              phx-click="tokenize-active-file"
-              class="rounded bg-zinc-100 px-3 py-2 text-sm font-medium text-zinc-800"
-            >
-              Refresh tokens
-            </button>
-            <span
-              :if={
-                editor_check_running_for_active?(
-                  @editor_check_status,
-                  @editor_check_source_root,
-                  @editor_check_rel_path,
-                  active
-                )
-              }
-              class="inline-flex items-center rounded bg-blue-50 px-3 py-2 text-sm font-medium text-blue-800"
-            >
-              Checking saved file…
-            </span>
-          </div>
-          <.form
-            for={to_form(%{"content" => active.content}, as: :editor)}
-            id={"token-editor-form-#{active.id}"}
-            phx-change="editor-change"
-            phx-submit="editor-submit"
-            class={[
-              "flex-1",
-              editor_check_visible && "min-h-0",
-              !editor_check_visible && "min-h-[26rem]"
-            ]}
-          >
-            <div
-              id={"token-editor-#{active.id}"}
-              phx-hook="TokenEditor"
-              phx-update="ignore"
-              data-tokenize-idle-event="tokenize-compiler-idle"
-              data-focus-next-event="focus-next-diagnostic"
-              data-focus-prev-event="focus-prev-diagnostic"
-              data-save-event="save-file"
-              data-format-event="format-file"
-              data-context-menu-event="editor-context-menu"
-              data-tab-id={active.id}
-              data-project-slug={@project.slug}
-              data-source-root={active.source_root}
-              data-rel-path={active.rel_path}
-              data-editor-mode={Atom.to_string(@editor_mode)}
-              data-editor-readonly={to_string(editor_read_only?(active))}
-              data-editor-theme={Atom.to_string(@editor_theme)}
-              data-editor-line-numbers={to_string(@editor_line_numbers)}
-              data-editor-active-line-highlight={to_string(@editor_active_line_highlight)}
-              data-restore-cursor-offset={editor_state_value(active.editor_state, :cursor_offset)}
-              data-restore-scroll-top={editor_state_value(active.editor_state, :scroll_top)}
-              data-restore-scroll-left={editor_state_value(active.editor_state, :scroll_left)}
-              class="relative h-full min-h-0 overflow-hidden rounded border border-zinc-800 bg-zinc-950"
-            >
-              <div data-role="cm-root" class="absolute inset-0"></div>
-              <textarea
-                data-role="input"
-                name="editor[content]"
-                spellcheck="false"
-                readonly={editor_read_only?(active)}
-                class="sr-only"
-              ><%= active.content %></textarea>
-            </div>
-          </.form>
-          <p :if={editor_read_only?(active)} class="text-xs text-zinc-500">
-            This generated file is read-only.
-          </p>
-          <section
-            :if={editor_check_visible}
-            class="flex max-h-72 shrink-0 flex-col overflow-hidden rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-950"
-          >
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <h3 class="font-semibold">Compile errors</h3>
-              <span class="text-xs text-rose-800">
-                {editor_check_engine_label(@editor_check_source_root)} · {editor_source_display_path(
-                  @editor_check_rel_path || active.rel_path
-                )}
-              </span>
-            </div>
-            <ul
-              :if={@editor_check_diagnostics != []}
-              class="mt-3 min-h-0 space-y-2 overflow-auto pr-1"
-            >
-              <li
-                :for={{diag, index} <- Enum.with_index(@editor_check_diagnostics)}
-                phx-click={if diagnostic_editor_jumpable?(diag, active), do: "jump-to-diagnostic"}
-                phx-value-line={phx_value_int(diagnostic_line(diag))}
-                phx-value-column={phx_value_int(diagnostic_column(diag) || 1)}
-                phx-value-index={phx_value_int(index + 1)}
-                class={[
-                  "rounded border border-rose-200 bg-white/70 px-3 py-2",
-                  diagnostic_editor_jumpable?(diag, active) &&
-                    "cursor-pointer transition hover:border-rose-300 hover:bg-white focus:outline-none focus:ring-2 focus:ring-rose-300"
-                ]}
-                tabindex={if diagnostic_editor_jumpable?(diag, active), do: "0"}
-                role={if diagnostic_editor_jumpable?(diag, active), do: "button"}
-              >
-                <p class="text-xs font-semibold uppercase tracking-wide text-rose-700">
-                  {diag.severity} · {diag.source}
-                  <span :if={diagnostic_file_position_label(diag)} class="font-mono normal-case">
-                    · {diagnostic_file_position_label(diag)}
-                  </span>
-                </p>
-                <p class="mt-1 whitespace-pre-wrap text-sm">{diag.message}</p>
-                <p
-                  :if={diagnostic_editor_jumpable?(diag, active)}
-                  class="mt-2 text-xs font-medium text-rose-800"
-                >
-                  Click to jump to this location
-                </p>
-              </li>
-            </ul>
-            <pre
-              :if={@editor_check_diagnostics == [] and @editor_check_output}
-              class="mt-3 max-h-56 overflow-auto rounded bg-rose-950 p-3 text-xs text-rose-50"
-            ><%= @editor_check_output %></pre>
-          </section>
-          <section :if={@debug_mode and @editor_inline_diagnostics != []} class="space-y-2">
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-              Inline diagnostics
-            </h3>
-            <div class="flex items-center gap-2">
-              <button
-                type="button"
-                phx-click="focus-prev-diagnostic"
-                class="rounded bg-zinc-100 px-2 py-1 text-[11px] font-medium text-zinc-800 hover:bg-zinc-200"
-              >
-                Prev diagnostic
-              </button>
-              <button
-                type="button"
-                phx-click="focus-next-diagnostic"
-                class="rounded bg-zinc-100 px-2 py-1 text-[11px] font-medium text-zinc-800 hover:bg-zinc-200"
-              >
-                Next diagnostic
-              </button>
-              <span class="text-[11px] text-zinc-600">Alt+ArrowUp / Alt+ArrowDown</span>
-            </div>
-            <ul class="space-y-2">
-              <li
-                :for={{diag, index} <- Enum.with_index(@editor_inline_diagnostics)}
-                class={[
-                  "rounded border px-3 py-2 text-xs",
-                  @active_diagnostic_index == index &&
-                    "border-amber-400 bg-amber-100 shadow-[0_0_0_1px_rgba(245,158,11,0.35)]",
-                  @active_diagnostic_index != index && "border-amber-200 bg-amber-50"
-                ]}
-              >
-                <p class="font-semibold text-amber-900">
-                  {diag.severity} · line {diag.line || "?"}:{diag.column || "?"}
-                </p>
-                <p class="text-amber-900">{diag.message}</p>
-                <p :if={diag.snippet} class="mt-1 truncate font-mono text-amber-800">
-                  {diag.snippet}
-                </p>
-                <button
-                  :if={diag.line}
-                  type="button"
-                  phx-click="jump-to-diagnostic"
-                  phx-value-line={phx_value_int(diag.line)}
-                  phx-value-column={phx_value_int(diag[:column] || 1)}
-                  phx-value-index={phx_value_int(index + 1)}
-                  class="mt-2 rounded bg-amber-100 px-2 py-1 text-[11px] font-medium text-amber-900 hover:bg-amber-200"
-                >
-                  Jump to location
-                </button>
-              </li>
-            </ul>
-          </section>
-          <section :if={@debug_mode and @format_output} class="space-y-2">
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-              Formatter
-            </h3>
-            <pre class="max-h-40 overflow-auto rounded border border-zinc-200 bg-zinc-50 p-2 text-xs text-zinc-700"><%= @format_output %></pre>
-          </section>
-        </div>
-        <p :if={!active_tab(@tabs, @active_tab_id)} class="text-sm text-zinc-500">
-          Open a file from the tree to start editing.
-        </p>
-
-        <section
-          :if={!@editor_docs_panel_open and @debug_mode}
-          class="mt-4 space-y-4 border-t border-zinc-200 pt-3"
-        >
-          <div>
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Diagnostics</h3>
-            <ul class="mt-2 max-h-48 space-y-2 overflow-auto">
-              <li
-                :for={item <- visible_diagnostics(@diagnostics, @debug_mode)}
-                class="rounded border border-zinc-200 bg-zinc-50 p-2 text-xs"
-              >
-                <p class="font-semibold">{item.severity} · {item.source}</p>
-                <p :if={item[:file]} class="font-mono text-[11px] text-zinc-600">
-                  {item.file}:{item[:line] || "?"}:{item[:column] || "?"}
-                </p>
-                <p class="text-zinc-600">{item.message}</p>
-              </li>
-            </ul>
-          </div>
-          <div :if={@debug_mode}>
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Tokenizer</h3>
-            <div
-              :if={@token_summary}
-              class="mt-2 rounded border border-zinc-200 bg-zinc-50 p-2 text-xs"
-            >
-              <p>Total tokens: {@token_summary.total}</p>
-              <p class="mt-1 text-zinc-600">mode: {tokenizer_mode_label(@tokenizer_mode)}</p>
-            </div>
-            <ul class="mt-2 max-h-32 space-y-2 overflow-auto">
-              <li
-                :for={diag <- @token_diagnostics}
-                class="rounded border border-zinc-200 bg-zinc-50 p-2 text-xs"
-              >
-                <p class="font-semibold">{diag.severity} · {diag.source}</p>
-                <p :if={diagnostic_position_label(diag)} class="font-mono text-[11px] text-zinc-600">
-                  {diagnostic_position_label(diag)}
-                </p>
-                <p class="text-zinc-600">{diag.message}</p>
-              </li>
-            </ul>
-          </div>
-        </section>
-
-        <div
-          :if={@editor_context_menu}
-          class="fixed z-[60] rounded-md border border-zinc-200 bg-white py-1 text-xs shadow-lg"
-          style={"left: #{@editor_context_menu.x}px; top: #{@editor_context_menu.y}px;"}
-        >
-          <button
-            type="button"
-            phx-click="editor-context-open-docs"
-            phx-value-offset={@editor_context_menu.offset}
-            class="block w-full px-3 py-2 text-left hover:bg-zinc-100"
-          >
-            Open documentation
-          </button>
-          <button
-            type="button"
-            phx-click="editor-context-dismiss"
-            class="block w-full px-3 py-2 text-left text-zinc-500 hover:bg-zinc-50"
-          >
-            Dismiss
-          </button>
-        </div>
-      </main>
-
-      <div
-        :if={@editor_docs_panel_open}
-        id="editor-docs-resizer"
-        phx-hook="EditorDocsResizer"
-        data-width={@editor_docs_col_px}
-        data-min="200"
-        data-max="720"
-        class="group relative z-10 -mx-1 min-h-0 w-1.5 shrink-0 cursor-col-resize select-none rounded-full bg-zinc-200/80 hover:bg-sky-400/70"
-        title="Drag to resize documentation panel"
-      >
-      </div>
-
-      <aside
-        :if={@editor_docs_panel_open}
-        class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm"
-      >
-        <div class="flex min-h-0 flex-1 flex-col overflow-hidden p-3">
-          <div class="shrink-0">
-            <h2 class="text-sm font-semibold">Documentation</h2>
-            <p class="mt-1 text-[11px] text-zinc-600">
-              Platform and <span class="font-mono">elm.json</span>
-              packages. Manage dependencies on the
-              <.link
-                patch={~p"/projects/#{@project.slug}/packages"}
-                class="font-medium text-blue-700 hover:underline"
-              >
-                Packages
-              </.link>
-              page.
-            </p>
-
-            <form id="editor-doc-package-form" phx-change="editor-doc-package" class="mt-3 block">
-              <label class="block text-xs font-medium text-zinc-700">Package</label>
-              <select
-                name="doc_pkg"
-                class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-xs text-zinc-900"
-              >
-                <option
-                  :for={row <- @editor_doc_packages}
-                  value={row.package}
-                  selected={row.package == @editor_doc_package}
-                >
-                  {row.label}
-                </option>
-              </select>
-            </form>
-
-            <form id="editor-doc-module-form" phx-change="editor-doc-module" class="mt-3 block">
-              <label class="block text-xs font-medium text-zinc-700">Module</label>
-              <div class="mt-2 block">
-                <input
-                  type="search"
-                  name="doc_q"
-                  value={@editor_doc_query}
-                  placeholder="Search modules..."
-                  class="w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-xs text-zinc-900"
-                  phx-change="editor-doc-search"
+        <aside class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
+          <div class="min-h-0 flex-1 overflow-auto p-3">
+            <h2 class="text-sm font-semibold">Files</h2>
+            <p class="mt-1 text-[11px] text-zinc-500">Elm module files for each source root.</p>
+            <div class="mt-3 space-y-3">
+              <div :for={root <- editor_files_tree(@tree)}>
+                <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                  {root.source_root}
+                </h3>
+                <.tree_nodes
+                  nodes={root.nodes}
+                  source_root={root.source_root}
+                  active_tab_id={@active_tab_id}
+                  opening_file_id={@opening_file_id}
+                  expanded_tree_dirs={@expanded_tree_dirs}
                 />
               </div>
-              <select
-                name="doc_mod"
-                class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-xs text-zinc-900 disabled:opacity-50"
-                disabled={@editor_doc_package == nil}
+            </div>
+          </div>
+          <div class="shrink-0 space-y-2 border-t border-zinc-200 p-3">
+            <p class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Operations</p>
+            <% active_editor_tab = active_tab(@tabs, @active_tab_id) %>
+            <div class="flex flex-col gap-2">
+              <button
+                type="button"
+                phx-click="open-create-file-modal"
+                class="rounded bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700"
               >
-                <option value="">—</option>
-                <option
-                  :for={
-                    mod <-
-                      editor_doc_modules_for_package(
-                        @editor_doc_packages,
-                        @editor_doc_package,
-                        @editor_doc_query
-                      )
-                  }
-                  value={mod}
-                  selected={mod == @editor_doc_module}
+                Create file…
+              </button>
+              <button
+                :if={!@companion_app_present}
+                type="button"
+                phx-click="add-companion-app"
+                class="rounded bg-emerald-100 px-3 py-2 text-xs font-medium text-emerald-900 hover:bg-emerald-200"
+              >
+                Add companion app
+              </button>
+              <button
+                type="button"
+                phx-click="open-rename-file-modal"
+                class="rounded bg-zinc-100 px-3 py-2 text-xs font-medium text-zinc-800 hover:bg-zinc-200 disabled:opacity-60"
+                disabled={
+                  is_nil(active_editor_tab) or read_only_tab?(active_editor_tab) or
+                    protected_editor_source_file?(active_editor_tab.rel_path)
+                }
+              >
+                Rename active file…
+              </button>
+              <button
+                type="button"
+                phx-click="delete-file"
+                data-confirm={
+                  if active_editor_tab do
+                    "Delete #{editor_source_display_path(active_editor_tab.rel_path)}?"
+                  else
+                    "Delete active file?"
+                  end
+                }
+                class="rounded bg-rose-100 px-3 py-2 text-xs font-medium text-rose-800 hover:bg-rose-200 disabled:opacity-60"
+                disabled={
+                  is_nil(active_editor_tab) or read_only_tab?(active_editor_tab) or
+                    protected_editor_source_file?(active_editor_tab.rel_path)
+                }
+              >
+                Delete active file…
+              </button>
+            </div>
+          </div>
+        </aside>
+
+        <main class="relative flex min-h-0 flex-col rounded-lg border border-zinc-200 bg-white p-3 shadow-sm">
+          <div class="mb-3 flex flex-wrap items-center gap-2 border-b border-zinc-200 pb-2">
+            <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+              <button
+                :for={tab <- @tabs}
+                type="button"
+                phx-click="select-tab"
+                phx-value-id={tab.id}
+                class={[
+                  "inline-flex items-center gap-1 rounded px-2 py-1 text-xs",
+                  @active_tab_id == tab.id && "bg-blue-100 text-blue-800",
+                  @active_tab_id != tab.id && "bg-zinc-100"
+                ]}
+              >
+                <span>
+                  {editor_source_display_path(tab.rel_path)}{if tab.dirty, do: "*", else: ""}
+                </span>
+                <span
+                  phx-click="close-tab"
+                  phx-value-id={tab.id}
+                  class="cursor-pointer rounded bg-zinc-200 px-1 text-zinc-700"
                 >
-                  {mod}
-                </option>
-              </select>
-            </form>
+                  x
+                </span>
+              </button>
+            </div>
+            <button
+              type="button"
+              phx-click="toggle-editor-docs-panel"
+              class="shrink-0 rounded bg-zinc-100 px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-200"
+            >
+              {if @editor_docs_panel_open, do: "Hide documentation", else: "Show documentation"}
+            </button>
           </div>
 
-          <div class="ide-readme-markdown mt-3 min-h-0 flex-1 overflow-auto rounded border border-zinc-200 bg-white p-3">
-            {raw(@editor_doc_html)}
+          <div
+            :if={active = active_tab(@tabs, @active_tab_id)}
+            class="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden"
+          >
+            <% editor_check_visible =
+              editor_check_visible?(
+                @editor_check_status,
+                @editor_check_source_root,
+                @editor_check_rel_path,
+                @editor_check_diagnostics,
+                active
+              ) %>
+
+            <div class="flex flex-wrap gap-2">
+              <.button
+                type="submit"
+                form={"token-editor-form-#{active.id}"}
+                name="editor_action"
+                value="save"
+                disabled={editor_read_only?(active)}
+              >
+                Save
+              </.button>
+              <.button
+                type="submit"
+                form={"token-editor-form-#{active.id}"}
+                name="editor_action"
+                value="format"
+                disabled={@format_status == :running or editor_read_only?(active)}
+              >
+                {if @format_status == :running, do: "Formatting...", else: "Format"}
+              </.button>
+              <.link
+                navigate={settings_path_with_return_to("/projects/#{@project.slug}/#{@pane}")}
+                class="rounded bg-zinc-100 px-3 py-2 text-sm font-medium text-zinc-800"
+              >
+                Auto-format: {if @auto_format_on_save, do: "On", else: "Off"}
+              </.link>
+              <button
+                :if={@debug_mode}
+                type="button"
+                phx-click="tokenize-active-file"
+                class="rounded bg-zinc-100 px-3 py-2 text-sm font-medium text-zinc-800"
+              >
+                Refresh tokens
+              </button>
+              <span
+                :if={
+                  editor_check_running_for_active?(
+                    @editor_check_status,
+                    @editor_check_source_root,
+                    @editor_check_rel_path,
+                    active
+                  )
+                }
+                class="inline-flex items-center rounded bg-blue-50 px-3 py-2 text-sm font-medium text-blue-800"
+              >
+                Checking saved file…
+              </span>
+            </div>
+            <.form
+              for={to_form(%{"content" => active.content}, as: :editor)}
+              id={"token-editor-form-#{active.id}"}
+              phx-change="editor-change"
+              phx-submit="editor-submit"
+              class={[
+                "flex-1",
+                editor_check_visible && "min-h-0",
+                !editor_check_visible && "min-h-[26rem]"
+              ]}
+            >
+              <div
+                id={"token-editor-#{active.id}"}
+                phx-hook="TokenEditor"
+                phx-update="ignore"
+                data-tokenize-idle-event="tokenize-compiler-idle"
+                data-focus-next-event="focus-next-diagnostic"
+                data-focus-prev-event="focus-prev-diagnostic"
+                data-save-event="save-file"
+                data-format-event="format-file"
+                data-context-menu-event="editor-context-menu"
+                data-tab-id={active.id}
+                data-project-slug={@project.slug}
+                data-source-root={active.source_root}
+                data-rel-path={active.rel_path}
+                data-editor-mode={Atom.to_string(@editor_mode)}
+                data-editor-readonly={to_string(editor_read_only?(active))}
+                data-editor-theme={Atom.to_string(@editor_theme)}
+                data-editor-line-numbers={to_string(@editor_line_numbers)}
+                data-editor-active-line-highlight={to_string(@editor_active_line_highlight)}
+                data-restore-cursor-offset={editor_state_value(active.editor_state, :cursor_offset)}
+                data-restore-scroll-top={editor_state_value(active.editor_state, :scroll_top)}
+                data-restore-scroll-left={editor_state_value(active.editor_state, :scroll_left)}
+                class="relative h-full min-h-0 overflow-hidden rounded border border-zinc-800 bg-zinc-950"
+              >
+                <div data-role="cm-root" class="absolute inset-0"></div>
+                <textarea
+                  data-role="input"
+                  name="editor[content]"
+                  spellcheck="false"
+                  readonly={editor_read_only?(active)}
+                  class="sr-only"
+                ><%= active.content %></textarea>
+              </div>
+            </.form>
+            <p :if={editor_read_only?(active)} class="text-xs text-zinc-500">
+              This generated file is read-only.
+            </p>
+            <section
+              :if={editor_check_visible}
+              class="flex max-h-72 shrink-0 flex-col overflow-hidden rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-950"
+            >
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <h3 class="font-semibold">Compile errors</h3>
+                <span class="text-xs text-rose-800">
+                  {editor_check_engine_label(@editor_check_source_root)} · {editor_source_display_path(
+                    @editor_check_rel_path || active.rel_path
+                  )}
+                </span>
+              </div>
+              <ul
+                :if={@editor_check_diagnostics != []}
+                class="mt-3 min-h-0 space-y-2 overflow-auto pr-1"
+              >
+                <li
+                  :for={{diag, index} <- Enum.with_index(@editor_check_diagnostics)}
+                  phx-click={if diagnostic_editor_jumpable?(diag, active), do: "jump-to-diagnostic"}
+                  phx-value-line={phx_value_int(diagnostic_line(diag))}
+                  phx-value-column={phx_value_int(diagnostic_column(diag) || 1)}
+                  phx-value-index={phx_value_int(index + 1)}
+                  class={[
+                    "rounded border border-rose-200 bg-white/70 px-3 py-2",
+                    diagnostic_editor_jumpable?(diag, active) &&
+                      "cursor-pointer transition hover:border-rose-300 hover:bg-white focus:outline-none focus:ring-2 focus:ring-rose-300"
+                  ]}
+                  tabindex={if diagnostic_editor_jumpable?(diag, active), do: "0"}
+                  role={if diagnostic_editor_jumpable?(diag, active), do: "button"}
+                >
+                  <p class="text-xs font-semibold uppercase tracking-wide text-rose-700">
+                    {diag.severity} · {diag.source}
+                    <span :if={diagnostic_file_position_label(diag)} class="font-mono normal-case">
+                      · {diagnostic_file_position_label(diag)}
+                    </span>
+                  </p>
+                  <p class="mt-1 whitespace-pre-wrap text-sm">{diag.message}</p>
+                  <p
+                    :if={diagnostic_editor_jumpable?(diag, active)}
+                    class="mt-2 text-xs font-medium text-rose-800"
+                  >
+                    Click to jump to this location
+                  </p>
+                </li>
+              </ul>
+              <pre
+                :if={@editor_check_diagnostics == [] and @editor_check_output}
+                class="mt-3 max-h-56 overflow-auto rounded bg-rose-950 p-3 text-xs text-rose-50"
+              ><%= @editor_check_output %></pre>
+            </section>
+            <section :if={@debug_mode and @editor_inline_diagnostics != []} class="space-y-2">
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                Inline diagnostics
+              </h3>
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  phx-click="focus-prev-diagnostic"
+                  class="rounded bg-zinc-100 px-2 py-1 text-[11px] font-medium text-zinc-800 hover:bg-zinc-200"
+                >
+                  Prev diagnostic
+                </button>
+                <button
+                  type="button"
+                  phx-click="focus-next-diagnostic"
+                  class="rounded bg-zinc-100 px-2 py-1 text-[11px] font-medium text-zinc-800 hover:bg-zinc-200"
+                >
+                  Next diagnostic
+                </button>
+                <span class="text-[11px] text-zinc-600">Alt+ArrowUp / Alt+ArrowDown</span>
+              </div>
+              <ul class="space-y-2">
+                <li
+                  :for={{diag, index} <- Enum.with_index(@editor_inline_diagnostics)}
+                  class={[
+                    "rounded border px-3 py-2 text-xs",
+                    @active_diagnostic_index == index &&
+                      "border-amber-400 bg-amber-100 shadow-[0_0_0_1px_rgba(245,158,11,0.35)]",
+                    @active_diagnostic_index != index && "border-amber-200 bg-amber-50"
+                  ]}
+                >
+                  <p class="font-semibold text-amber-900">
+                    {diag.severity} · line {diag.line || "?"}:{diag.column || "?"}
+                  </p>
+                  <p class="text-amber-900">{diag.message}</p>
+                  <p :if={diag.snippet} class="mt-1 truncate font-mono text-amber-800">
+                    {diag.snippet}
+                  </p>
+                  <button
+                    :if={diag.line}
+                    type="button"
+                    phx-click="jump-to-diagnostic"
+                    phx-value-line={phx_value_int(diag.line)}
+                    phx-value-column={phx_value_int(diag[:column] || 1)}
+                    phx-value-index={phx_value_int(index + 1)}
+                    class="mt-2 rounded bg-amber-100 px-2 py-1 text-[11px] font-medium text-amber-900 hover:bg-amber-200"
+                  >
+                    Jump to location
+                  </button>
+                </li>
+              </ul>
+            </section>
+            <section :if={@debug_mode and @format_output} class="space-y-2">
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                Formatter
+              </h3>
+              <pre class="max-h-40 overflow-auto rounded border border-zinc-200 bg-zinc-50 p-2 text-xs text-zinc-700"><%= @format_output %></pre>
+            </section>
           </div>
-        </div>
+          <p :if={!active_tab(@tabs, @active_tab_id)} class="text-sm text-zinc-500">
+            Open a file from the tree to start editing.
+          </p>
+
+          <section
+            :if={!@editor_docs_panel_open and @debug_mode}
+            class="mt-4 space-y-4 border-t border-zinc-200 pt-3"
+          >
+            <div>
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Tokenizer</h3>
+              <div
+                :if={@token_summary}
+                class="mt-2 rounded border border-zinc-200 bg-zinc-50 p-2 text-xs"
+              >
+                <p>Total tokens: {@token_summary.total}</p>
+                <p class="mt-1 text-zinc-600">mode: {tokenizer_mode_label(@tokenizer_mode)}</p>
+              </div>
+              <ul class="mt-2 max-h-32 space-y-2 overflow-auto">
+                <li
+                  :for={diag <- @token_diagnostics}
+                  class="rounded border border-zinc-200 bg-zinc-50 p-2 text-xs"
+                >
+                  <p class="font-semibold">{diag.severity} · {diag.source}</p>
+                  <p :if={diagnostic_position_label(diag)} class="font-mono text-[11px] text-zinc-600">
+                    {diagnostic_position_label(diag)}
+                  </p>
+                  <p class="text-zinc-600">{diag.message}</p>
+                </li>
+              </ul>
+            </div>
+          </section>
+
+          <div
+            :if={@editor_context_menu}
+            class="fixed z-[60] rounded-md border border-zinc-200 bg-white py-1 text-xs shadow-lg"
+            style={"left: #{@editor_context_menu.x}px; top: #{@editor_context_menu.y}px;"}
+          >
+            <button
+              type="button"
+              phx-click="editor-context-open-docs"
+              phx-value-offset={@editor_context_menu.offset}
+              class="block w-full px-3 py-2 text-left hover:bg-zinc-100"
+            >
+              Open documentation
+            </button>
+            <button
+              type="button"
+              phx-click="editor-context-dismiss"
+              class="block w-full px-3 py-2 text-left text-zinc-500 hover:bg-zinc-50"
+            >
+              Dismiss
+            </button>
+          </div>
+        </main>
 
         <div
-          :if={@debug_mode}
-          class="max-h-48 shrink-0 space-y-3 overflow-auto border-t border-zinc-200 p-3"
+          :if={@editor_docs_panel_open}
+          id="editor-docs-resizer"
+          phx-hook="EditorDocsResizer"
+          data-width={@editor_docs_col_px}
+          data-min="200"
+          data-max="720"
+          class="group relative z-10 -mx-1 min-h-0 w-1.5 shrink-0 cursor-col-resize select-none rounded-full bg-zinc-200/80 hover:bg-sky-400/70"
+          title="Drag to resize documentation panel"
         >
-          <div>
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Diagnostics</h3>
-            <ul class="mt-2 space-y-2">
-              <li
-                :for={item <- visible_diagnostics(@diagnostics, @debug_mode)}
-                class="rounded border border-zinc-200 bg-zinc-50 p-2 text-xs"
-              >
-                <p class="font-semibold">{item.severity} · {item.source}</p>
-                <p :if={item[:file]} class="font-mono text-[11px] text-zinc-600">
-                  {item.file}:{item[:line] || "?"}:{item[:column] || "?"}
-                </p>
-                <p class="text-zinc-600">{item.message}</p>
-                <p
-                  :for={detail <- diagnostic_structured_lines(item)}
-                  class="font-mono text-[11px] text-zinc-500"
+        </div>
+
+        <aside
+          :if={@editor_docs_panel_open}
+          class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm"
+        >
+          <div class="flex min-h-0 flex-1 flex-col overflow-hidden p-3">
+            <div class="shrink-0">
+              <h2 class="text-sm font-semibold">Documentation</h2>
+              <p class="mt-1 text-[11px] text-zinc-600">
+                Platform and <span class="font-mono">elm.json</span>
+                packages. Manage dependencies on the
+                <.link
+                  patch={~p"/projects/#{@project.slug}/packages"}
+                  class="font-medium text-blue-700 hover:underline"
                 >
-                  {detail}
-                </p>
-              </li>
-            </ul>
-          </div>
-          <div :if={@debug_mode}>
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Tokenizer</h3>
-            <div
-              :if={@token_summary}
-              class="mt-2 rounded border border-zinc-200 bg-zinc-50 p-2 text-xs"
-            >
-              <p>Total tokens: {@token_summary.total}</p>
-              <p class="mt-1 text-zinc-600">
-                mode: {tokenizer_mode_label(@tokenizer_mode)}
+                  Packages
+                </.link>
+                page.
               </p>
-              <p class="mt-1 text-zinc-600">
-                {Enum.map_join(@token_summary.classes, ", ", fn {klass, count} ->
-                  "#{klass}=#{count}"
-                end)}
-              </p>
+
+              <form id="editor-doc-package-form" phx-change="editor-doc-package" class="mt-3 block">
+                <label class="block text-xs font-medium text-zinc-700">Package</label>
+                <select
+                  name="doc_pkg"
+                  class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-xs text-zinc-900"
+                >
+                  <option
+                    :for={row <- @editor_doc_packages}
+                    value={row.package}
+                    selected={row.package == @editor_doc_package}
+                  >
+                    {row.label}
+                  </option>
+                </select>
+              </form>
+
+              <form id="editor-doc-module-form" phx-change="editor-doc-module" class="mt-3 block">
+                <label class="block text-xs font-medium text-zinc-700">Module</label>
+                <div class="mt-2 block">
+                  <input
+                    type="search"
+                    name="doc_q"
+                    value={@editor_doc_query}
+                    placeholder="Search modules..."
+                    class="w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-xs text-zinc-900"
+                    phx-change="editor-doc-search"
+                  />
+                </div>
+                <select
+                  name="doc_mod"
+                  class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-xs text-zinc-900 disabled:opacity-50"
+                  disabled={@editor_doc_package == nil}
+                >
+                  <option value="">—</option>
+                  <option
+                    :for={
+                      mod <-
+                        editor_doc_modules_for_package(
+                          @editor_doc_packages,
+                          @editor_doc_package,
+                          @editor_doc_query
+                        )
+                    }
+                    value={mod}
+                    selected={mod == @editor_doc_module}
+                  >
+                    {mod}
+                  </option>
+                </select>
+              </form>
             </div>
-            <ul class="mt-2 space-y-2">
-              <li
-                :for={diag <- @token_diagnostics}
-                class="rounded border border-zinc-200 bg-zinc-50 p-2 text-xs"
+
+            <div class="ide-readme-markdown mt-3 min-h-0 flex-1 overflow-auto rounded border border-zinc-200 bg-white p-3">
+              {raw(@editor_doc_html)}
+            </div>
+          </div>
+
+          <div
+            :if={@debug_mode}
+            class="max-h-48 shrink-0 space-y-3 overflow-auto border-t border-zinc-200 p-3"
+          >
+            <div>
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Tokenizer</h3>
+              <div
+                :if={@token_summary}
+                class="mt-2 rounded border border-zinc-200 bg-zinc-50 p-2 text-xs"
               >
-                <p class="font-semibold">{diag.severity} · {diag.source}</p>
-                <p :if={diagnostic_position_label(diag)} class="font-mono text-[11px] text-zinc-600">
-                  {diagnostic_position_label(diag)}
+                <p>Total tokens: {@token_summary.total}</p>
+                <p class="mt-1 text-zinc-600">
+                  mode: {tokenizer_mode_label(@tokenizer_mode)}
                 </p>
-                <p class="text-zinc-600">{diag.message}</p>
-              </li>
-            </ul>
+                <p class="mt-1 text-zinc-600">
+                  {Enum.map_join(@token_summary.classes, ", ", fn {klass, count} ->
+                    "#{klass}=#{count}"
+                  end)}
+                </p>
+              </div>
+              <ul class="mt-2 space-y-2">
+                <li
+                  :for={diag <- @token_diagnostics}
+                  class="rounded border border-zinc-200 bg-zinc-50 p-2 text-xs"
+                >
+                  <p class="font-semibold">{diag.severity} · {diag.source}</p>
+                  <p :if={diagnostic_position_label(diag)} class="font-mono text-[11px] text-zinc-600">
+                    {diagnostic_position_label(diag)}
+                  </p>
+                  <p class="text-zinc-600">{diag.message}</p>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </aside>
+
+        <div :if={@create_file_modal_open} class="fixed inset-0 z-50 grid place-items-center p-4">
+          <div class="absolute inset-0 bg-black/40" phx-click="close-create-file-modal"></div>
+          <div class="relative z-10 w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
+            <h3 class="text-sm font-semibold">Create file</h3>
+            <.form for={@new_file_form} phx-submit="new-file" class="mt-3 space-y-2">
+              <.input
+                field={@new_file_form[:source_root]}
+                type="select"
+                label="Source root"
+                options={@create_file_source_roots}
+              />
+              <.input
+                field={@new_file_form[:rel_path]}
+                type="text"
+                label="New file path"
+                placeholder="Example.elm"
+              />
+              <p class="text-xs text-zinc-500">
+                Use a `.elm` file path where each module segment starts with a capital letter (example: `Pages/Home.elm`).
+              </p>
+              <div class="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  phx-click="close-create-file-modal"
+                  class="rounded px-3 py-2 text-xs text-zinc-600"
+                >
+                  Cancel
+                </button>
+                <.button>Create file</.button>
+              </div>
+            </.form>
           </div>
         </div>
-      </aside>
 
-      <div :if={@create_file_modal_open} class="fixed inset-0 z-50 grid place-items-center p-4">
-        <div class="absolute inset-0 bg-black/40" phx-click="close-create-file-modal"></div>
-        <div class="relative z-10 w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
-          <h3 class="text-sm font-semibold">Create file</h3>
-          <.form for={@new_file_form} phx-submit="new-file" class="mt-3 space-y-2">
-            <.input
-              field={@new_file_form[:source_root]}
-              type="select"
-              label="Source root"
-              options={@create_file_source_roots}
-            />
-            <.input
-              field={@new_file_form[:rel_path]}
-              type="text"
-              label="New file path"
-              placeholder="Example.elm"
-            />
-            <p class="text-xs text-zinc-500">
-              Use a `.elm` file path where each module segment starts with a capital letter (example: `Pages/Home.elm`).
-            </p>
-            <div class="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                phx-click="close-create-file-modal"
-                class="rounded px-3 py-2 text-xs text-zinc-600"
-              >
-                Cancel
-              </button>
-              <.button>Create file</.button>
-            </div>
-          </.form>
+        <div :if={@rename_file_modal_open} class="fixed inset-0 z-50 grid place-items-center p-4">
+          <div class="absolute inset-0 bg-black/40" phx-click="close-rename-file-modal"></div>
+          <div class="relative z-10 w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
+            <h3 class="text-sm font-semibold">Rename active file</h3>
+            <.form for={@rename_form} phx-submit="rename-file" class="mt-3 space-y-2">
+              <.input
+                field={@rename_form[:new_rel_path]}
+                type="text"
+                label="New path"
+                placeholder="MainRenamed.elm"
+              />
+              <div class="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  phx-click="close-rename-file-modal"
+                  class="rounded px-3 py-2 text-xs text-zinc-600"
+                >
+                  Cancel
+                </button>
+                <.button>Rename</.button>
+              </div>
+            </.form>
+          </div>
         </div>
-      </div>
-
-      <div :if={@rename_file_modal_open} class="fixed inset-0 z-50 grid place-items-center p-4">
-        <div class="absolute inset-0 bg-black/40" phx-click="close-rename-file-modal"></div>
-        <div class="relative z-10 w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
-          <h3 class="text-sm font-semibold">Rename active file</h3>
-          <.form for={@rename_form} phx-submit="rename-file" class="mt-3 space-y-2">
-            <.input
-              field={@rename_form[:new_rel_path]}
-              type="text"
-              label="New path"
-              placeholder="MainRenamed.elm"
-            />
-            <div class="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                phx-click="close-rename-file-modal"
-                class="rounded px-3 py-2 text-xs text-zinc-600"
-              >
-                Cancel
-              </button>
-              <.button>Rename</.button>
-            </div>
-          </.form>
-        </div>
-      </div>
-    </section>
+      </section>
     <% end %>
     """
   end
@@ -757,7 +728,13 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
     """
   end
 
-  @spec tree_contains_tab?(tree_node(), String.t(), String.t() | nil, String.t() | nil, MapSet.t() | nil) :: boolean()
+  @spec tree_contains_tab?(
+          tree_node(),
+          String.t(),
+          String.t() | nil,
+          String.t() | nil,
+          MapSet.t() | nil
+        ) :: boolean()
   defp tree_contains_tab?(
          %{type: :file, rel_path: rel_path},
          source_root,
@@ -914,61 +891,6 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
   defp tokenizer_mode_label(:plain), do: "plain"
   defp tokenizer_mode_label(_), do: "fast"
 
-  @spec diagnostic_structured_lines(diagnostic()) :: [String.t()]
-  defp diagnostic_structured_lines(diag) when is_map(diag) do
-    []
-    |> maybe_diag_detail(
-      "code",
-      diag[:warning_code] || diag["warning_code"] || diag[:code] || diag["code"]
-    )
-    |> maybe_diag_detail(
-      "constructor",
-      diag[:warning_constructor] || diag["warning_constructor"] || diag[:constructor] ||
-        diag["constructor"]
-    )
-    |> maybe_diag_detail(
-      "expected",
-      diag[:warning_expected_kind] || diag["warning_expected_kind"] || diag[:expected_kind] ||
-        diag["expected_kind"]
-    )
-    |> maybe_diag_detail(
-      "has_arg_pattern",
-      diag[:warning_has_arg_pattern] || diag["warning_has_arg_pattern"] || diag[:has_arg_pattern] ||
-        diag["has_arg_pattern"]
-    )
-  end
-
-  defp diagnostic_structured_lines(_), do: []
-
-  @spec visible_diagnostics([diagnostic()], boolean()) :: [diagnostic()]
-  defp visible_diagnostics(diagnostics, true) when is_list(diagnostics), do: diagnostics
-
-  defp visible_diagnostics(diagnostics, false) when is_list(diagnostics) do
-    Enum.reject(diagnostics, fn diag ->
-      source =
-        diag[:source] ||
-          diag["source"] ||
-          ""
-
-      source == "tokenizer"
-    end)
-  end
-
-  defp visible_diagnostics(_diagnostics, _debug_mode), do: []
-
-  @spec maybe_diag_detail([String.t()], String.t(), wire_input()) :: [String.t()]
-  defp maybe_diag_detail(lines, _label, nil), do: lines
-
-  defp maybe_diag_detail(lines, label, value) do
-    rendered =
-      case value do
-        atom when is_atom(atom) -> Atom.to_string(atom)
-        other -> to_string(other)
-      end
-
-    lines ++ ["#{label}=#{rendered}"]
-  end
-
   @spec diagnostic_position_label(diagnostic()) :: String.t() | nil
   defp diagnostic_position_label(diag) do
     line = diagnostic_line(diag)
@@ -1004,7 +926,13 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
     end
   end
 
-  @spec editor_check_visible?(atom(), String.t() | nil, String.t() | nil, [diagnostic()] | nil, tab() | nil) :: boolean()
+  @spec editor_check_visible?(
+          atom(),
+          String.t() | nil,
+          String.t() | nil,
+          [diagnostic()] | nil,
+          tab() | nil
+        ) :: boolean()
   defp editor_check_visible?(:error, source_root, rel_path, diagnostics, active)
        when is_map(active) do
     active_source_root = active[:source_root] || active["source_root"]
@@ -1017,7 +945,8 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
 
   defp editor_check_visible?(_status, _source_root, _rel_path, _diagnostics, _active), do: false
 
-  @spec editor_check_running_for_active?(atom(), tab() | nil, String.t() | nil, String.t() | nil) :: boolean()
+  @spec editor_check_running_for_active?(atom(), tab() | nil, String.t() | nil, String.t() | nil) ::
+          boolean()
   defp editor_check_running_for_active?(:running, source_root, rel_path, active)
        when is_map(active) do
     active_source_root = active[:source_root] || active["source_root"]

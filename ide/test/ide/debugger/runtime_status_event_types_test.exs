@@ -3,7 +3,7 @@ defmodule Ide.Debugger.RuntimeStatusEventTypesTest do
 
   alias Ide.Debugger.Types.RuntimeStatusEventPayload
 
-  test "from_runtime maps status fields from elm_executor snapshot" do
+  test "from_runtime maps status fields from runtime_execution snapshot" do
     runtime = %{
       "execution_backend" => "external",
       "runtime_mode" => "hybrid",

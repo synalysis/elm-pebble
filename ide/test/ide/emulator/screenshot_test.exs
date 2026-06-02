@@ -7,5 +7,4 @@ defmodule Ide.Emulator.ScreenshotTest do
     assert Screenshot.capture_timeout_ms("chalk") >= 20_000
     assert Screenshot.capture_timeout_ms("unknown-platform") >= 20_000
   end
-
 end

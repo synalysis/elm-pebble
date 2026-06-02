@@ -5,8 +5,6 @@ defmodule Ide.Debugger.Types.StepExecutionContract do
   `StepInput` → `RuntimeExecutor.Request` → `execution_result` → `RuntimeStepResult`.
   """
 
-  alias ElmExecutor.Runtime.SemanticExecutor.Types.ExecutionResult, as: ExecutorExecutionResult
-  alias ElmExecutor.Runtime.SemanticExecutor.Types.ViewTreeNode
   alias Ide.Debugger.RuntimeExecutor.Request
   alias Ide.Debugger.RuntimeExecutor.Types, as: ExecutorTypes
   alias Ide.Debugger.StepInput
@@ -28,14 +26,14 @@ defmodule Ide.Debugger.Types.StepExecutionContract do
     RuntimeStepResult.from_executor_result(result)
   end
 
-  @spec step_result_from_wire(ExecutorExecutionResult.wire_map()) :: step_result()
+  @spec step_result_from_wire(map()) :: step_result()
   def step_result_from_wire(wire) when is_map(wire) do
     RuntimeStepResult.from_executor_wire(wire)
   end
 
   @spec step_result_from_local_fallback(
           RuntimeStepResult.model_patch(),
-          ViewTreeNode.view_tree() | ViewTreeNode.t() | nil,
+          Types.view_output_tree() | nil,
           keyword()
         ) ::
           step_result()

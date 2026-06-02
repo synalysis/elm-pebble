@@ -3,8 +3,8 @@ defmodule ElmEx.CoreIR.Types.Expr do
   Normalized Core IR expression maps use string keys at runtime (`"op"`, `"name"`, …).
 
   Typespecs use atom keys for Dialyzer compatibility; normalized output from
-  `ElmEx.CoreIR.from_ir/2` stringifies all keys. `elm_executor` reads string keys and
-  may coerce known `"op"` values to atoms at evaluation time.
+  `ElmEx.CoreIR.from_ir/2` stringifies all keys. Downstream backends read string
+  keys and may coerce known `"op"` values to atoms at evaluation time.
   """
 
   alias ElmEx.CoreIR.Types
@@ -67,9 +67,21 @@ defmodule ElmEx.CoreIR.Types.Expr do
   @type var_expr :: %{required(:op) => op_name(), required(:name) => String.t()}
   @type var_resolved :: %{required(:op) => op_name(), required(:value_expr) => t() | map()}
 
-  @type add_const :: %{required(:op) => op_name(), required(:var) => String.t(), required(:value) => number()}
-  @type sub_const :: %{required(:op) => op_name(), required(:var) => String.t(), required(:value) => number()}
-  @type add_vars :: %{required(:op) => op_name(), required(:left) => String.t(), required(:right) => String.t()}
+  @type add_const :: %{
+          required(:op) => op_name(),
+          required(:var) => String.t(),
+          required(:value) => number()
+        }
+  @type sub_const :: %{
+          required(:op) => op_name(),
+          required(:var) => String.t(),
+          required(:value) => number()
+        }
+  @type add_vars :: %{
+          required(:op) => op_name(),
+          required(:left) => String.t(),
+          required(:right) => String.t()
+        }
 
   @type compare :: %{
           required(:op) => op_name(),
@@ -94,7 +106,11 @@ defmodule ElmEx.CoreIR.Types.Expr do
   @type record_fields :: [{String.t(), t() | map()} | map()] | map()
 
   @type record_literal :: %{required(:op) => op_name(), required(:fields) => record_fields()}
-  @type record_update :: %{required(:op) => op_name(), required(:base) => t() | map(), required(:fields) => record_fields()}
+  @type record_update :: %{
+          required(:op) => op_name(),
+          required(:base) => t() | map(),
+          required(:fields) => record_fields()
+        }
 
   @type list_literal :: %{
           required(:op) => op_name(),
@@ -102,7 +118,11 @@ defmodule ElmEx.CoreIR.Types.Expr do
           optional(:elements) => [t() | map()]
         }
 
-  @type tuple2 :: %{required(:op) => op_name(), required(:left) => t() | map(), required(:right) => t() | map()}
+  @type tuple2 :: %{
+          required(:op) => op_name(),
+          required(:left) => t() | map(),
+          required(:right) => t() | map()
+        }
   @type tuple_expr :: %{required(:op) => op_name(), optional(:elements) => [t() | map()]}
 
   @type tuple_first_expr :: %{required(:op) => op_name(), required(:arg) => t() | map()}
@@ -159,7 +179,11 @@ defmodule ElmEx.CoreIR.Types.Expr do
           optional(:args) => [t() | map()]
         }
 
-  @type call :: %{required(:op) => op_name(), required(:name) => String.t(), optional(:args) => [t() | map()]}
+  @type call :: %{
+          required(:op) => op_name(),
+          required(:name) => String.t(),
+          optional(:args) => [t() | map()]
+        }
 
   @type record_alias :: %{
           required(:op) => op_name(),

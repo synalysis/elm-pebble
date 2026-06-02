@@ -39,13 +39,7 @@ Track parity with `elmc` C codegen. Update matrix rows as backend support lands.
 | `ide/test/ide/mcp/game_jump_elmx_compile_test.exs` | game jump (corpus env) |
 | `ide/test/ide/mcp/debugger_template_corpus_compiled_elixir_test.exs` | multi-template corpus |
 | `ide/test/ide/mcp/debugger_template_compile_gate_test.exs` | all-template compile sweep |
-| `ide/test/ide/debugger/compiled_elixir_template_parity_test.exs` | dual-run init + companion wire-step parity vs Core IR |
-| `ide/test/ide/debugger/core_ir_phone_connectivity_test.exs` | Core IR-only `GotConnectivity` step |
-| `ide/test/ide/debugger/core_ir_phone_environment_test.exs` | Core IR-only `GotEnvironment` step (`Just`-wrapped sun/moon wire) |
-| `ide/test/ide/debugger/core_ir_phone_settings_test.exs` | Core IR-only `LifecycleChanged` / `ConfigurationClosed` phone steps |
-| `ide/test/ide/debugger/core_ir_phone_timeline_test.exs` | Core IR-only `GotToken` / `PinInserted` phone steps |
 | `ide/test/ide/mcp/debugger_template_compile_gate_test.exs` | `ELMX_TEMPLATE_COMPILE_GATE=1` — all template watch + phone workspaces |
-| `elm_executor/test/wire_message_normalize_semantic_test.exs` | wire normalize + semantic `GotConnectivity` step |
 | `elmx/test/values_wire_test.exs` | union atom → ctor wire maps; Maybe/Result tuples → wire |
 | `elmx/test/datalog_dictation_special_values_test.exs` | `Pebble.DataLog.*` + `Pebble.Dictation.start/stop` |
 | `elmx/test/append_emit_test.exs` | Elm `++` via `Core.append/2` (strings and lists) |
@@ -70,8 +64,6 @@ Track parity with `elmc` C codegen. Update matrix rows as backend support lands.
 | `elmx/test/health_kernel_runtime_test.exs` | `Pebble.Health.*` kernel calls emit `cmd.device.health_*` (not `Cmd.none`) |
 | `elmx/test/compass_peek_runtime_test.exs` | `Pebble.Compass.current` → `cmd.device.compass_peek` + `GotHeading (Ok heading)` decode |
 | `elmx/test/unobstructed_bounds_peek_runtime_test.exs` | `Pebble.UnobstructedArea.currentBounds` → `cmd.device.unobstructed_bounds_peek` + rect decode |
-| `elm_executor/test/pebble_watch_peek_builtin_test.exs` | Core IR `compassCurrent` / `unobstructedCurrentBounds` → matching `cmd.device.*_peek` wire |
-| `elm_executor/test/pebble_dictation_builtin_test.exs` | Core IR `dictationStart` / `dictationStop` → `cmd.dictation.followup` batch wire |
 | `elmx/test/datalog_dictation_special_values_test.exs` | `Dictation.start/stop` → batched `cmd.dictation.followup` rows for debugger stepping |
 | `elmx/test/pebble_ui_helper_emit_test.exs` | unqualified `Pebble.Ui` / `Pebble.Cmd` surface calls via `rewrite_unqualified_special` |
 | `elmx/test/simple_project_compile_source_test.exs` | `compile_in_memory` Main `view` emits `elmx_ui_window_stack` |
@@ -90,8 +82,8 @@ Run corpus: `ELMX_TEMPLATE_CORPUS=1 mix test --only compiled_elixir_corpus` (fro
 
 ## Missing vs elmc (remaining)
 
-- ~~Core IR dual-run parity for phone `GotConnectivity` and watch `FromPhone` nested-tuple steps~~ fixed via `CoreIREvaluator.normalize_wire_message_value/2` + tuple2 flat-arg matching
-- ~~`GotEnvironment` phone steps~~ wire helpers use `Just` for `Maybe SunInfo`/`MoonInfo`; Core IR + elmx parity on `sunriseMin`/`moonPhaseE6`
+- ~~Phone `GotConnectivity` and watch `FromPhone` nested-tuple steps~~ handled by `elmx` message decode + tuple2 flat-arg matching
+- ~~`GotEnvironment` phone steps~~ wire helpers use `Just` for `Maybe SunInfo`/`MoonInfo`; elmx runtime covers `sunriseMin`/`moonPhaseE6`
 - ~~Full RC runtime parity (`elmc` `Runtime.Generator`)~~ — **done**: `Elmx.Runtime.Generator` + `Intrinsics` registry covers all 249 `elmc_*` symbols from `c_codegen`; `runtime_dispatch` / `compile_runtime_call` wired
 - ~~`special_values_elmc_conformance_test.exs`~~ — in-scope `elmc` `special_value_from_target` names rewrite via `SpecialValues` / kernel / emit
 - ~~`ELMX_TEMPLATE_CORPUS=1` compiled_elixir corpus~~ — **164** tests green (watch + phone steps, init/step/followup parity; re-verified after String/partial emit, ~10 min)

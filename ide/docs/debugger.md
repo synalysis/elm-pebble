@@ -52,9 +52,9 @@ Core IR at compile time — see [debugger_contract.md](debugger_contract.md). Le
 
 AppMessage delivery (`FromWatch` / `FromPhone` subscription steps) is deferred the same way by default: only `protocol_tx` is logged when the watch sends; `protocol_rx` and the recipient `update` run after the phone/watch surface has finished `init` (queued in `AppMessageQueue` until then, then delivered in a background task when async). Set `config :ide, :debugger_async_protocol_delivery, false` for synchronous delivery (tests). LiveView subscribes to `debugger:runtime:<scope_key>` and refreshes when background HTTP or protocol work completes.
 
-Watch bootstrap may still defer `InitSurfaceEffects` and protocol queue drain (`DeferredCompanionInit`) while async companion loading is enabled, but **init and step always require versioned Core IR** via `ElmExecutorAdapter`. There is no parser-only model mutation fallback. Missing Core IR or failed `update`/`view` evaluation surfaces `debugger.runtime_exec_error` on the timeline. Compile ingest is strict-only (`Ide.Compiler`); `config :ide, :debugger_lazy_elmc` defaults to `false` so Core IR is built during reload.
+Watch bootstrap may still defer `InitSurfaceEffects` and protocol queue drain (`DeferredCompanionInit`) while async companion loading is enabled, but **init and step always require versioned `elmx` artifacts** (`elmx_manifest` plus `elmx_revision`). There is no parser-only model mutation fallback. Missing `elmx` artifacts or failed `update`/`view` execution surfaces `debugger.runtime_exec_error` on the timeline.
 
-`SurfaceCompileArtifacts` prefers the project workspace compile when it yields versioned Core IR; inline ephemeral compile (health-stub workspace + lenient Core IR fallback) is used for editor-only sources without a project row. A failed project DB lookup does not block inline attach. Companion/phone surfaces use the `phone` source root; lazy background `CompanionPhoneCompile` only runs when versioned Core IR is still missing (and optional `debugger_lazy_elmc` parser-expression heuristics apply). The template corpus asserts versioned Core IR on both watch and companion after bootstrap for phone-shipping templates. **Copy for agent** re-reads the debugger Agent snapshot so the exported timeline is not stale socket assigns.
+`SurfaceCompileArtifacts` prefers the project workspace compile when it yields versioned `elmx` artifacts. Inline ephemeral compile is used for editor-only sources without a project row. A failed project DB lookup does not block inline attach. Companion/phone surfaces use the `phone` source root; lazy background `CompanionPhoneCompile` only runs when versioned `elmx` artifacts are still missing. The template corpus asserts versioned `elmx` artifacts on both watch and companion after bootstrap for phone-shipping templates. **Copy for agent** re-reads the debugger Agent snapshot so the exported timeline is not stale socket assigns.
 
 ## Template corpus tests (MCP)
 
@@ -79,9 +79,9 @@ UPDATE_DEBUGGER_TEMPLATE_SNAPSHOTS=1 mix test test/ide/mcp/debugger_template_cor
 
 The debugger watch SVG preview is **view-only**: it does not re-run `init` or `update` when refreshing layout. Given the surface `model` at the timeline cursor:
 
-1. **Core IR only** — When `elm_executor_core_ir` (`elm_ex.core_ir.v1`) is on the execution model, `SemanticExecutor.derive_view_output_for_runtime_model/2` evaluates `Main.view(model)` and produces drawable rows for `DebuggerPreview.svg_ops/2`.
-2. **Missing Core IR** — Preview is empty and diagnostics report `missing_core_ir` (no parser-tree merge or label heuristics).
-3. **Core IR present but view eval fails** — Preview is `previewUnavailable`; diagnostics include the executor error (for example unknown function or invalid record update). Fix the contract or evaluator; the IDE does not infer draw ops from parser trees.
+1. **`elmx` runtime view** — When the compiled runtime returns a view tree or view output rows, `DebuggerPreview.svg_ops/2` renders those concrete runtime values.
+2. **Missing runtime view** — Preview is empty or `previewUnavailable`; the IDE does not infer draw ops from parser trees.
+3. **Runtime view eval fails** — Preview is `previewUnavailable`; diagnostics include the runtime error. Fix the contract or generated runtime; the IDE does not infer draw ops from parser trees.
 
 If the watch **runtime model** shows parser artifacts (`$var`, `call`, `$opaque`) on fields like `layout` or `player`, `Main.init` did not evaluate through Core IR (missing compile artifacts or init eval failure). The Models panel and agent export hide those fields; `debugger.preview_diagnostics` reports `runtime_model_has_parser_artifacts` and the agent export adds a **Runtime model warnings** section when any remain on the raw model.
 

@@ -1,12 +1,11 @@
 defmodule Ide.Debugger.RuntimeArtifacts do
   @moduledoc """
-  Shared helpers for debugger runtime model artifacts (`debugger_contract`, Core IR, resource indices).
+  Shared helpers for debugger runtime model artifacts (`debugger_contract`, `elmx`, resource indices).
 
-  Centralizes decoding and evaluation-context construction so watch/companion models stay
-  consistent across the debugger session, semantic executor requests, and preview rendering.
+  Centralizes shell artifact handling so watch/companion models stay consistent across
+  debugger sessions, runtime executor requests, and preview rendering.
   """
 
-  alias ElmEx.CoreIR
   alias Ide.Debugger.RuntimeArtifacts.Types, as: ArtifactTypes
   alias Ide.Debugger.Surface
   alias Ide.Debugger.Types
@@ -40,9 +39,6 @@ defmodule Ide.Debugger.RuntimeArtifacts do
     "debugger_contract_b64",
     "debugger_contract_version",
     "elm_introspect",
-    "elm_executor_core_ir",
-    "elm_executor_core_ir_b64",
-    "elm_executor_metadata",
     "elmx_manifest",
     "elmx_revision"
   ]
@@ -125,8 +121,8 @@ defmodule Ide.Debugger.RuntimeArtifacts do
     "runtime_view_tree_sha256",
     "runtime_model_sha256",
     "runtime_model_source",
-    "elm_executor_mode",
-    "elm_executor",
+    "runtime_execution_mode",
+    "runtime_execution",
     "elmc_check",
     "elmc_compile",
     "elmc_diagnostic_preview"
@@ -155,7 +151,8 @@ defmodule Ide.Debugger.RuntimeArtifacts do
 
   def execution_model(_surface), do: %{}
 
-  @spec introspect(Surface.t() | Surface.surface_map() | execution_model()) :: Types.elm_introspect() | nil
+  @spec introspect(Surface.t() | Surface.surface_map() | execution_model()) ::
+          Types.elm_introspect() | nil
   def introspect(%Surface{} = surface) do
     surface |> shell_map() |> Ide.Debugger.CompileContract.from_shell()
   end
@@ -167,7 +164,8 @@ defmodule Ide.Debugger.RuntimeArtifacts do
 
   def introspect(_), do: nil
 
-  @spec require_introspect(Surface.t() | Surface.surface_map() | execution_model()) :: Types.elm_introspect()
+  @spec require_introspect(Surface.t() | Surface.surface_map() | execution_model()) ::
+          Types.elm_introspect()
   def require_introspect(surface_or_execution_model) when is_map(surface_or_execution_model) do
     case introspect(surface_or_execution_model) do
       ei when is_map(ei) -> ei
@@ -200,48 +198,6 @@ defmodule Ide.Debugger.RuntimeArtifacts do
 
   def normalize_surface(surface), do: surface
 
-  @spec decode_core_ir(execution_model()) :: Types.core_ir()
-  def decode_core_ir(model) when is_map(model) do
-    case Map.get(model, "elm_executor_core_ir") do
-      %CoreIR{} = value ->
-        value
-
-      value when is_map(value) ->
-        value
-
-      _ ->
-        case Map.get(model, "elm_executor_core_ir_b64") do
-          encoded when is_binary(encoded) and encoded != "" ->
-            with {:ok, binary} <- Base.decode64(encoded) do
-              case :erlang.binary_to_term(binary, [:safe]) do
-                %CoreIR{} = value -> value
-                value when is_map(value) -> value
-                _ -> nil
-              end
-            else
-              _ -> nil
-            end
-
-          _ ->
-            nil
-        end
-    end
-  end
-
-  def decode_core_ir(_model), do: nil
-
-  @spec versioned_core_ir?(execution_model() | Types.core_ir() | nil) :: boolean()
-  def versioned_core_ir?(model) when is_map(model) do
-    case decode_core_ir(model) do
-      %CoreIR{version: "elm_ex.core_ir.v1"} -> true
-      %{"version" => "elm_ex.core_ir.v1"} -> true
-      %{version: "elm_ex.core_ir.v1"} -> true
-      _ -> false
-    end
-  end
-
-  def versioned_core_ir?(_), do: false
-
   @spec versioned_elmx_artifacts?(execution_model()) :: boolean()
   def versioned_elmx_artifacts?(model) when is_map(model) do
     manifest = Map.get(model, "elmx_manifest") || Map.get(model, :elmx_manifest)
@@ -268,9 +224,11 @@ defmodule Ide.Debugger.RuntimeArtifacts do
 
   @spec entry_module_name(execution_model()) :: String.t() | nil
   def entry_module_name(model) when is_map(model) do
-    case Map.get(model, "elm_executor_metadata") || Map.get(model, :elm_executor_metadata) do
+    case get_in(model, ["elmx_manifest", "entry_module"]) ||
+           get_in(model, [:elmx_manifest, "entry_module"]) do
       %{"entry_module" => name} when is_binary(name) and name != "" -> name
       %{entry_module: name} when is_binary(name) and name != "" -> name
+      name when is_binary(name) and name != "" -> name
       _ -> nil
     end
   end
@@ -306,43 +264,26 @@ defmodule Ide.Debugger.RuntimeArtifacts do
 
   @spec execution_artifacts(execution_model()) :: ArtifactTypes.t()
   def execution_artifacts(model) when is_map(model) do
-    metadata = wire_field(model, "elm_executor_metadata")
-    core_ir = decode_core_ir(model)
     elmx_manifest = wire_field(model, "elmx_manifest")
     elmx_revision = wire_field(model, "elmx_revision")
 
     %{}
-    |> maybe_put_artifact(:elm_executor_metadata, metadata)
-    |> maybe_put_artifact(:elm_executor_core_ir, core_ir)
     |> maybe_put_artifact(:elmx_manifest, elmx_manifest)
     |> maybe_put_artifact(:elmx_revision, elmx_revision)
   end
 
   def execution_artifacts(_model), do: %{}
 
-  @spec core_ir_eval_context(execution_model(), keyword()) :: Types.core_ir_eval_context()
-  def core_ir_eval_context(model, extras \\ [])
+  @spec eval_context(execution_model(), keyword()) :: map()
+  def eval_context(model, extras \\ [])
 
-  def core_ir_eval_context(model, extras) when is_map(model) and is_list(extras) do
+  def eval_context(model, extras) when is_map(model) and is_list(extras) do
     module = entry_module_name(model) || module_name(model)
     vector_indices = vector_resource_indices(model)
     bitmap_indices = bitmap_resource_indices(model)
     animation_indices = animation_resource_indices(model)
 
-    base =
-      case decode_core_ir(model) do
-        core_ir when is_map(core_ir) ->
-          %{
-            functions: ElmExecutor.Runtime.CoreIREvaluator.index_functions(core_ir),
-            record_aliases: ElmExecutor.Runtime.CoreIREvaluator.index_record_aliases(core_ir),
-            constructor_tags: ElmExecutor.Runtime.CoreIREvaluator.index_constructor_tags(core_ir),
-            module: module,
-            source_module: module
-          }
-
-        _ ->
-          %{module: module, source_module: module}
-      end
+    base = %{module: module, source_module: module}
 
     base =
       if map_size(vector_indices) > 0 do
@@ -371,7 +312,7 @@ defmodule Ide.Debugger.RuntimeArtifacts do
     end)
   end
 
-  def core_ir_eval_context(_model, _extras), do: %{}
+  def eval_context(_model, _extras), do: %{}
 
   @spec merge_shell_artifacts(execution_model(), shell()) :: execution_model()
   def merge_shell_artifacts(base, shell) when is_map(base) and is_map(shell) do
@@ -386,7 +327,10 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   def merge_shell_artifacts(base, _shell) when is_map(base), do: base
   def merge_shell_artifacts(_base, _shell), do: %{}
 
-  @spec put_vector_resource_indices_on_request(execution_model(), ArtifactTypes.resource_indices()) ::
+  @spec put_vector_resource_indices_on_request(
+          execution_model(),
+          ArtifactTypes.resource_indices()
+        ) ::
           execution_model()
   def put_vector_resource_indices_on_request(request, model)
       when is_map(request) and is_map(model) do
@@ -402,7 +346,10 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   def put_vector_resource_indices_on_request(request, _model) when is_map(request), do: request
   def put_vector_resource_indices_on_request(request, _model), do: request
 
-  @spec put_bitmap_resource_indices_on_request(execution_model(), ArtifactTypes.resource_indices()) ::
+  @spec put_bitmap_resource_indices_on_request(
+          execution_model(),
+          ArtifactTypes.resource_indices()
+        ) ::
           execution_model()
   def put_bitmap_resource_indices_on_request(request, model)
       when is_map(request) and is_map(model) do
@@ -418,7 +365,10 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   def put_bitmap_resource_indices_on_request(request, _model) when is_map(request), do: request
   def put_bitmap_resource_indices_on_request(request, _model), do: request
 
-  @spec put_animation_resource_indices_on_request(execution_model(), ArtifactTypes.resource_indices()) ::
+  @spec put_animation_resource_indices_on_request(
+          execution_model(),
+          ArtifactTypes.resource_indices()
+        ) ::
           execution_model()
   def put_animation_resource_indices_on_request(request, model)
       when is_map(request) and is_map(model) do
@@ -481,7 +431,7 @@ defmodule Ide.Debugger.RuntimeArtifacts do
     Map.get(map, key) || Map.get(map, String.to_atom(key))
   end
 
-  @spec maybe_put_artifact(ArtifactTypes.t(), atom(), Types.core_ir() | Types.wire_map() | nil) ::
+  @spec maybe_put_artifact(ArtifactTypes.t(), atom(), Types.wire_input() | nil) ::
           ArtifactTypes.t()
   defp maybe_put_artifact(map, key, value)
        when is_map(map) and is_atom(key) and is_map(value) do

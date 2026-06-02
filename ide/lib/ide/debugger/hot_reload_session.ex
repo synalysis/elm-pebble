@@ -16,7 +16,8 @@ defmodule Ide.Debugger.HotReloadSession do
           required(:contexts) => (-> RuntimeContexts.t())
         }
 
-  @spec apply(Types.runtime_state(), String.t(), Types.reload_attrs(), host()) :: Types.runtime_state()
+  @spec apply(Types.runtime_state(), String.t(), Types.reload_attrs(), host()) ::
+          Types.runtime_state()
   def apply(state, project_slug, attrs, host)
       when is_map(state) and is_binary(project_slug) and is_map(attrs) and is_map(host) do
     rel_path = Map.get(attrs, :rel_path) || Map.get(attrs, "rel_path")

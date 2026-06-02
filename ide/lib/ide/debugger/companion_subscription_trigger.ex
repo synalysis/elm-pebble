@@ -28,7 +28,13 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
       trigger_slugs: ["on_battery"],
       payload: :battery,
       fields: [
-        %{key: "percent", label: "Percent", type: :integer, setting: "battery_percent", default: 88},
+        %{
+          key: "percent",
+          label: "Percent",
+          type: :integer,
+          setting: "battery_percent",
+          default: 88
+        },
         %{key: "charging", label: "Charging", type: :boolean, setting: "charging", default: false}
       ]
     },
@@ -41,7 +47,13 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
         %{key: "locale", label: "Locale", type: :string, setting: "locale", default: "en-US"},
         %{key: "language", label: "Language", type: :string, setting: "language", default: "en"},
         %{key: "region", label: "Region", type: :string, setting: "region", default: "US"},
-        %{key: "uses24h", label: "24-hour clock", type: :boolean, setting: "clock_24h", default: false}
+        %{
+          key: "uses24h",
+          label: "24-hour clock",
+          type: :boolean,
+          setting: "clock_24h",
+          default: false
+        }
       ]
     },
     %{
@@ -51,7 +63,13 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
       payload: :network,
       plain_result: true,
       fields: [
-        %{key: "online", label: "Online", type: :boolean, setting: "network_online", default: true}
+        %{
+          key: "online",
+          label: "Online",
+          type: :boolean,
+          setting: "network_online",
+          default: true
+        }
       ]
     },
     %{
@@ -150,7 +168,8 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
     },
     %{
       source: "calendar",
-      target_suffixes: ApiSuffixes.suffixes("Calendar", ["onCalendar", "onCurrent", "onUpcoming"]),
+      target_suffixes:
+        ApiSuffixes.suffixes("Calendar", ["onCalendar", "onCurrent", "onUpcoming"]),
       trigger_slugs: ["on_calendar", "on_calendar_current", "on_calendar_upcoming"],
       payload: :calendar,
       fields: [
@@ -184,7 +203,8 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
 
   def companion_trigger?(_trigger), do: false
 
-  @spec contract_for_trigger(String.t()) :: {:ok, Types.companion_subscription_contract()} | :error
+  @spec contract_for_trigger(String.t()) ::
+          {:ok, Types.companion_subscription_contract()} | :error
   def contract_for_trigger(trigger) when is_binary(trigger) do
     case Enum.find(@contracts, &trigger_matches_contract?(trigger, &1)) do
       %{} = contract -> {:ok, contract}
@@ -242,7 +262,9 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
 
   @spec message_value(Types.wire_map()) :: Types.protocol_ctor_value() | nil
   def message_value(params) when is_map(params) do
-    contract_source = Map.get(params, "companion_contract") || Map.get(params, :companion_contract)
+    contract_source =
+      Map.get(params, "companion_contract") || Map.get(params, :companion_contract)
+
     constructor = Map.get(params, "message_constructor") || Map.get(params, :message_constructor)
 
     with source when is_binary(source) <- contract_source,
@@ -251,7 +273,12 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
          true <- constructor != "" do
       if Map.get(contract, :plain_result) == true do
         online = field_param(params, "online") in [true, "true", "True", "1", 1]
-        connectivity = if(online, do: %{"ctor" => "Online", "args" => []}, else: %{"ctor" => "Offline", "args" => []})
+
+        connectivity =
+          if(online,
+            do: %{"ctor" => "Online", "args" => []},
+            else: %{"ctor" => "Offline", "args" => []}
+          )
 
         %{
           "ctor" => constructor,
@@ -265,7 +292,10 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
         result_payload =
           case result do
             "Err" ->
-              error = Map.get(params, "error_message") || Map.get(params, :error_message) || "Unavailable"
+              error =
+                Map.get(params, "error_message") || Map.get(params, :error_message) ||
+                  "Unavailable"
+
               %{"ctor" => "Err", "args" => [to_string(error)]}
 
             _ ->
@@ -284,7 +314,8 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
 
   def message_value(_params), do: nil
 
-  @spec trigger_matches_contract?(String.t(), Types.companion_subscription_contract()) :: boolean()
+  @spec trigger_matches_contract?(String.t(), Types.companion_subscription_contract()) ::
+          boolean()
   defp trigger_matches_contract?(trigger, contract) when is_binary(trigger) do
     normalized = normalize_trigger(trigger)
     suffixes = Map.get(contract, :target_suffixes, []) |> List.wrap()
@@ -377,7 +408,9 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
   defp calendar_event_setting_value(_settings, _key), do: nil
 
   @spec encode_field_value(atom(), raw_value()) :: String.t()
-  defp encode_field_value(:boolean, value), do: if(value in [true, "true", "1", 1], do: "true", else: "false")
+  defp encode_field_value(:boolean, value),
+    do: if(value in [true, "true", "1", 1], do: "true", else: "false")
+
   defp encode_field_value(:integer, value) when is_integer(value), do: Integer.to_string(value)
   defp encode_field_value(_type, value), do: to_string(value)
 
@@ -439,7 +472,8 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
   end
 
   @spec drop_blank_calendar_location(Types.wire_map()) :: Types.wire_map()
-  defp drop_blank_calendar_location(%{"location" => location} = event) when location in [nil, ""] do
+  defp drop_blank_calendar_location(%{"location" => location} = event)
+       when location in [nil, ""] do
     Map.delete(event, "location")
   end
 

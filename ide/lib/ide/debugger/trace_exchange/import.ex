@@ -14,7 +14,8 @@ defmodule Ide.Debugger.TraceExchange.Import do
           parse_cursor_seq: (Types.wire_input() -> non_neg_integer() | nil)
         ]
 
-  @spec decode_body(Types.import_trace_input()) :: {:ok, Types.import_trace_body()} | {:error, Types.protocol_error()}
+  @spec decode_body(Types.import_trace_input()) ::
+          {:ok, Types.import_trace_body()} | {:error, Types.protocol_error()}
   def decode_body(json) when is_binary(json) do
     case Jason.decode(json) do
       {:ok, body} when is_map(body) -> {:ok, body}
@@ -37,7 +38,8 @@ defmodule Ide.Debugger.TraceExchange.Import do
     end
   end
 
-  @spec maybe_match_slug(Types.import_trace_body(), String.t(), keyword()) :: :ok | {:error, Types.protocol_error()}
+  @spec maybe_match_slug(Types.import_trace_body(), String.t(), keyword()) ::
+          :ok | {:error, Types.protocol_error()}
   def maybe_match_slug(body, project_slug, opts) do
     if Keyword.get(opts, :strict_slug, true) do
       if Map.get(body, "project_slug") == project_slug do

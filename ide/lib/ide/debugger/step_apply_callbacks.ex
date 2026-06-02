@@ -22,8 +22,14 @@ defmodule Ide.Debugger.StepApplyCallbacks do
           required(:source_root_for_target) => (Types.surface_target() -> String.t()),
           required(:append_runtime_exec) => (map(), Types.surface_target(), map() -> map()),
           required(:append_event) => (map(), String.t(), map() -> map()),
-          required(:append_debugger_event) =>
-            (map(), String.t(), Types.surface_target(), String.t(), String.t(), map() | nil -> map()),
+          required(:append_debugger_event) => (map(),
+                                               String.t(),
+                                               Types.surface_target(),
+                                               String.t(),
+                                               String.t(),
+                                               map()
+                                               | nil ->
+                                                 map()),
           required(:maybe_append_runtime_status) => (map(), Types.surface_target() -> map())
         }
 
@@ -128,7 +134,14 @@ defmodule Ide.Debugger.StepApplyCallbacks do
           String.t(),
           CompanionBridgeRuntime.ctx()
         ) :: Types.runtime_state()
-  def companion_bridge_command_responses(state, target, message, model, message_source, companion_bridge) do
+  def companion_bridge_command_responses(
+        state,
+        target,
+        message,
+        model,
+        message_source,
+        companion_bridge
+      ) do
     Ide.Debugger.CompanionBridgeEffects.apply_command_responses(
       state,
       target,
@@ -146,7 +159,12 @@ defmodule Ide.Debugger.StepApplyCallbacks do
           CompanionBridgeRuntime.ctx()
         ) :: Types.runtime_state()
   def companion_bridge_responses(state, target, message_source, companion_bridge) do
-    Ide.Debugger.CompanionBridgeEffects.apply_responses(state, target, message_source, companion_bridge)
+    Ide.Debugger.CompanionBridgeEffects.apply_responses(
+      state,
+      target,
+      message_source,
+      companion_bridge
+    )
   end
 
   @spec static_task_followups(
@@ -177,6 +195,13 @@ defmodule Ide.Debugger.StepApplyCallbacks do
           RuntimeFollowups.apply_ctx()
         ) :: Types.runtime_state()
   def runtime_followups_after_step(state, target, message, source, followups, runtime_followups) do
-    RuntimeFollowups.apply_after_step(state, target, message, source, followups, runtime_followups)
+    RuntimeFollowups.apply_after_step(
+      state,
+      target,
+      message,
+      source,
+      followups,
+      runtime_followups
+    )
   end
 end

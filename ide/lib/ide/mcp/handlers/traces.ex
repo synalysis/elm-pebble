@@ -71,8 +71,7 @@ defmodule Ide.Mcp.Handlers.Traces do
          absolute_path <- Path.join(trace_export_dir(), file_name),
          :ok <- File.write(absolute_path, export.export_json),
          {:ok, stat} <- File.stat(absolute_path) do
-      {:ok,
-       traces_export_write_payload(export, stat.size, absolute_path, file_name)}
+      {:ok, traces_export_write_payload(export, stat.size, absolute_path, file_name)}
     else
       {:error, reason} -> {:error, "trace export write failed: #{inspect(reason)}"}
     end
@@ -96,15 +95,19 @@ defmodule Ide.Mcp.Handlers.Traces do
         end)
         |> Enum.reverse()
 
-      {:ok, traces_exports_prune_payload(keep_latest, deleted, max(length(files) - length(deleted), 0))}
+      {:ok,
+       traces_exports_prune_payload(keep_latest, deleted, max(length(files) - length(deleted), 0))}
     else
       {:error, reason} -> {:error, "trace exports prune failed: #{inspect(reason)}"}
     end
   end
 
   def call("traces.maintenance", args) do
-    warn_count = ToolSupport.parse_positive_integer(Map.get(args, "warn_count"), default_warn_count())
-    warn_bytes = ToolSupport.parse_positive_integer(Map.get(args, "warn_bytes"), default_warn_bytes())
+    warn_count =
+      ToolSupport.parse_positive_integer(Map.get(args, "warn_count"), default_warn_count())
+
+    warn_bytes =
+      ToolSupport.parse_positive_integer(Map.get(args, "warn_bytes"), default_warn_bytes())
 
     target_keep_latest =
       parse_prune_keep_latest(Map.get(args, "target_keep_latest", default_target_keep_latest()))
@@ -169,7 +172,9 @@ defmodule Ide.Mcp.Handlers.Traces do
         Projects.list_projects()
         |> maybe_filter_projects(requested_slug)
         |> Enum.map(fn project ->
-          checks = CheckCache.recent(limit, ToolSupport.project_session_key(project)) |> ToolSupport.filter_since(since)
+          checks =
+            CheckCache.recent(limit, ToolSupport.project_session_key(project))
+            |> ToolSupport.filter_since(since)
 
           latest_check =
             case CheckCache.latest(ToolSupport.project_session_key(project)) do
@@ -206,8 +211,12 @@ defmodule Ide.Mcp.Handlers.Traces do
             latest_manifest: latest_manifest,
             latest_manifest_strict: latest_manifest_strict,
             recent_checks: checks,
-            recent_compiles: CompileCache.recent(limit, ToolSupport.project_session_key(project)) |> ToolSupport.filter_since(since),
-            recent_manifests: ManifestCache.recent(limit, ToolSupport.project_session_key(project)) |> ToolSupport.filter_since(since),
+            recent_compiles:
+              CompileCache.recent(limit, ToolSupport.project_session_key(project))
+              |> ToolSupport.filter_since(since),
+            recent_manifests:
+              ManifestCache.recent(limit, ToolSupport.project_session_key(project))
+              |> ToolSupport.filter_since(since),
             recent_actions: recent_project_actions(project.slug, limit, since)
           }
         end)
@@ -230,8 +239,11 @@ defmodule Ide.Mcp.Handlers.Traces do
   end
 
   def call("sessions.trace_health", args) do
-    warn_count = ToolSupport.parse_positive_integer(Map.get(args, "warn_count"), default_warn_count())
-    warn_bytes = ToolSupport.parse_positive_integer(Map.get(args, "warn_bytes"), default_warn_bytes())
+    warn_count =
+      ToolSupport.parse_positive_integer(Map.get(args, "warn_count"), default_warn_count())
+
+    warn_bytes =
+      ToolSupport.parse_positive_integer(Map.get(args, "warn_bytes"), default_warn_bytes())
 
     policy = %{
       warn_count: warn_count,
@@ -265,7 +277,10 @@ defmodule Ide.Mcp.Handlers.Traces do
   @spec session_project_summary(Ide.Projects.Project.t(), DateTime.t() | nil) ::
           ToolTypes.sessions_summary_entry()
   defp session_project_summary(%Ide.Projects.Project{} = project, since) do
-    recent_checks = CheckCache.recent(50, ToolSupport.project_session_key(project)) |> ToolSupport.filter_since(since)
+    recent_checks =
+      CheckCache.recent(50, ToolSupport.project_session_key(project))
+      |> ToolSupport.filter_since(since)
+
     recent_actions = recent_project_actions(project.slug, 100, since)
 
     %{
@@ -273,20 +288,49 @@ defmodule Ide.Mcp.Handlers.Traces do
       active: project.active,
       target_type: project.target_type,
       latest_check_status:
-        ToolSupport.cache_latest_result_field(CheckCache, ToolSupport.project_session_key(project), since, :status),
+        ToolSupport.cache_latest_result_field(
+          CheckCache,
+          ToolSupport.project_session_key(project),
+          since,
+          :status
+        ),
       latest_compile_status:
-        ToolSupport.cache_latest_result_field(CompileCache, ToolSupport.project_session_key(project), since, :status),
+        ToolSupport.cache_latest_result_field(
+          CompileCache,
+          ToolSupport.project_session_key(project),
+          since,
+          :status
+        ),
       latest_manifest_status:
-        ToolSupport.cache_latest_result_field(ManifestCache, ToolSupport.project_session_key(project), since, :status),
+        ToolSupport.cache_latest_result_field(
+          ManifestCache,
+          ToolSupport.project_session_key(project),
+          since,
+          :status
+        ),
       latest_manifest_strict:
-        ToolSupport.cache_latest_result_field(ManifestCache, ToolSupport.project_session_key(project), since, :strict?),
+        ToolSupport.cache_latest_result_field(
+          ManifestCache,
+          ToolSupport.project_session_key(project),
+          since,
+          :strict?
+        ),
       checks_count: length(recent_checks),
-      compiles_count: length(CompileCache.recent(50, ToolSupport.project_session_key(project)) |> ToolSupport.filter_since(since)),
-      manifests_count: length(ManifestCache.recent(50, ToolSupport.project_session_key(project)) |> ToolSupport.filter_since(since)),
+      compiles_count:
+        length(
+          CompileCache.recent(50, ToolSupport.project_session_key(project))
+          |> ToolSupport.filter_since(since)
+        ),
+      manifests_count:
+        length(
+          ManifestCache.recent(50, ToolSupport.project_session_key(project))
+          |> ToolSupport.filter_since(since)
+        ),
       actions_count: length(recent_actions),
       screenshots_count: screenshot_count(project)
     }
   end
+
   defp sessions_recent_activity_payload(projects, limit, slug, since) do
     %{projects: projects, limit: limit, slug: slug, since: ToolSupport.format_since(since)}
   end
@@ -300,14 +344,18 @@ defmodule Ide.Mcp.Handlers.Traces do
     %{projects: summaries, slug: slug, since: ToolSupport.format_since(since)}
   end
 
-  @spec sessions_trace_health_payload(ToolTypes.trace_health_status_result(), ToolTypes.policy_validation_result()) ::
+  @spec sessions_trace_health_payload(
+          ToolTypes.trace_health_status_result(),
+          ToolTypes.policy_validation_result()
+        ) ::
           ToolTypes.sessions_trace_health_result()
   defp sessions_trace_health_payload(health, policy_validation)
        when is_map(health) and is_map(policy_validation) do
     Map.put(health, :policy_validation, policy_validation)
   end
 
-  @spec trace_export_file_entry(ToolTypes.trace_export_file_internal()) :: ToolTypes.trace_export_file_entry()
+  @spec trace_export_file_entry(ToolTypes.trace_export_file_internal()) ::
+          ToolTypes.trace_export_file_entry()
   defp trace_export_file_entry(file) when is_map(file) do
     %{
       file_name: Map.fetch!(file, :file_name),
@@ -337,7 +385,8 @@ defmodule Ide.Mcp.Handlers.Traces do
     }
   end
 
-  @spec traces_export_payload(ToolTypes.trace_bundle(), String.t(), String.t()) :: ToolTypes.traces_export_result()
+  @spec traces_export_payload(ToolTypes.trace_bundle(), String.t(), String.t()) ::
+          ToolTypes.traces_export_result()
   defp traces_export_payload(bundle, export_json, export_sha256)
        when is_map(bundle) and is_binary(export_json) and is_binary(export_sha256) do
     %{
@@ -364,7 +413,11 @@ defmodule Ide.Mcp.Handlers.Traces do
     }
   end
 
-  @spec traces_exports_list_payload([ToolTypes.trace_export_file_entry()], pos_integer(), non_neg_integer()) ::
+  @spec traces_exports_list_payload(
+          [ToolTypes.trace_export_file_entry()],
+          pos_integer(),
+          non_neg_integer()
+        ) ::
           ToolTypes.traces_exports_list_result()
   defp traces_exports_list_payload(entries, limit, total_available) do
     %{entries: entries, limit: limit, total_available: total_available}
@@ -420,7 +473,8 @@ defmodule Ide.Mcp.Handlers.Traces do
 
   @spec traces_maintenance_prune_skipped_payload(non_neg_integer()) ::
           ToolTypes.traces_maintenance_prune_skipped()
-  defp traces_maintenance_prune_skipped_payload(remaining_count) when is_integer(remaining_count) do
+  defp traces_maintenance_prune_skipped_payload(remaining_count)
+       when is_integer(remaining_count) do
     %{deleted_count: 0, deleted_files: [], remaining_count: remaining_count}
   end
 
@@ -490,7 +544,9 @@ defmodule Ide.Mcp.Handlers.Traces do
 
       check_entries = CheckCache.recent(limit, session_key) |> ToolSupport.filter_since(since)
       compile_entries = CompileCache.recent(limit, session_key) |> ToolSupport.filter_since(since)
-      manifest_entries = ManifestCache.recent(limit, session_key) |> ToolSupport.filter_since(since)
+
+      manifest_entries =
+        ManifestCache.recent(limit, session_key) |> ToolSupport.filter_since(since)
 
       {:ok,
        %{
@@ -514,6 +570,7 @@ defmodule Ide.Mcp.Handlers.Traces do
        }}
     end
   end
+
   defp maybe_filter_projects(projects, nil), do: projects
   defp maybe_filter_projects(projects, slug), do: Enum.filter(projects, &(&1.slug == slug))
 
@@ -527,6 +584,7 @@ defmodule Ide.Mcp.Handlers.Traces do
     |> ToolSupport.filter_since(since)
     |> Enum.take(limit)
   end
+
   defp screenshot_count(%Projects.Project{} = project) do
     case Screenshots.list(project, []) do
       {:ok, shots} -> length(shots)
@@ -540,6 +598,7 @@ defmodule Ide.Mcp.Handlers.Traces do
       {:error, _reason} -> 0
     end
   end
+
   defp parse_prune_keep_latest(value) when is_integer(value), do: max(value, 0)
 
   defp parse_prune_keep_latest(value) when is_binary(value) do
@@ -638,6 +697,7 @@ defmodule Ide.Mcp.Handlers.Traces do
   end
 
   defp encode_canonical_json(value), do: Jason.encode!(value)
+
   defp trace_export_filename(export) do
     slug = sanitize_segment(export.slug || "all")
     trace = sanitize_segment(export.trace_id || "all")
@@ -661,7 +721,8 @@ defmodule Ide.Mcp.Handlers.Traces do
   end
 
   @spec read_trace_export_files() ::
-          {:ok, [ToolTypes.trace_export_file_internal()]} | {:error, ToolTypes.tool_persist_error()}
+          {:ok, [ToolTypes.trace_export_file_internal()]}
+          | {:error, ToolTypes.tool_persist_error()}
   defp read_trace_export_files do
     case File.ls(trace_export_dir()) do
       {:ok, names} ->
@@ -808,7 +869,8 @@ defmodule Ide.Mcp.Handlers.Traces do
   end
 
   @spec maybe_add_finding([map()], boolean(), String.t(), String.t(), String.t()) :: [map()]
-  defp maybe_add_finding(findings, condition, severity, code, message) when is_boolean(condition) do
+  defp maybe_add_finding(findings, condition, severity, code, message)
+       when is_boolean(condition) do
     if condition do
       findings ++ [%{severity: severity, code: code, message: message}]
     else

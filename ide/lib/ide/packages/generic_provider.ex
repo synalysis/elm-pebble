@@ -8,7 +8,8 @@ defmodule Ide.Packages.GenericProvider do
   alias Ide.Packages.Types
 
   @impl true
-  @spec search(String.t(), keyword()) :: {:ok, [Types.search_entry()]} | {:error, Types.catalog_error()}
+  @spec search(String.t(), keyword()) ::
+          {:ok, [Types.search_entry()]} | {:error, Types.catalog_error()}
   def search(query, opts) do
     with {:ok, entries} <- load_search_index(opts) do
       filtered =
@@ -29,7 +30,8 @@ defmodule Ide.Packages.GenericProvider do
   end
 
   @impl true
-  @spec package_details(String.t(), keyword()) :: {:ok, Types.package_details()} | {:error, Types.catalog_error()}
+  @spec package_details(String.t(), keyword()) ::
+          {:ok, Types.package_details()} | {:error, Types.catalog_error()}
   def package_details(package, opts) do
     with {:ok, summaries} <- load_search_index(opts),
          {:ok, versions} <- versions(package, opts),
@@ -73,7 +75,8 @@ defmodule Ide.Packages.GenericProvider do
   end
 
   @impl true
-  @spec readme(String.t(), String.t(), keyword()) :: {:ok, String.t()} | {:error, Types.catalog_error()}
+  @spec readme(String.t(), String.t(), keyword()) ::
+          {:ok, String.t()} | {:error, Types.catalog_error()}
   def readme(package, version, opts) do
     encoded = encode_package(package)
     path = "/packages/#{encoded}/#{version}/README.md"
@@ -99,7 +102,8 @@ defmodule Ide.Packages.GenericProvider do
   end
 
   @impl true
-  @spec package_release(String.t(), String.t(), keyword()) :: {:ok, map()} | {:error, Types.catalog_error()}
+  @spec package_release(String.t(), String.t(), keyword()) ::
+          {:ok, map()} | {:error, Types.catalog_error()}
   def package_release(package, version, opts) do
     package_elm_json(package, version, opts)
   end

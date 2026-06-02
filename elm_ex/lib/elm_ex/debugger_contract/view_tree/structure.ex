@@ -8,7 +8,7 @@ defmodule ElmEx.DebuggerContract.ViewTree.Structure do
 
   @spec function_type_key(String.t(), String.t(), non_neg_integer()) :: String.t()
   def function_type_key(module_name, function_name, arity)
-       when is_binary(module_name) and is_binary(function_name) and is_integer(arity) do
+      when is_binary(module_name) and is_binary(function_name) and is_integer(arity) do
     module_name <> "|" <> function_name <> "|" <> Integer.to_string(arity)
   end
 
@@ -20,6 +20,7 @@ defmodule ElmEx.DebuggerContract.ViewTree.Structure do
     |> to_string()
     |> String.trim()
   end
+
   @spec render_op_function_return_type?(String.t()) :: boolean()
   def render_op_function_return_type?(signature) when is_binary(signature) do
     normalized =
@@ -31,6 +32,7 @@ defmodule ElmEx.DebuggerContract.ViewTree.Structure do
   end
 
   def render_op_function_return_type?(_signature), do: false
+
   @spec view_tree_call_returns_ui_node_from_target?(
           String.t() | nil,
           non_neg_integer(),
@@ -38,7 +40,7 @@ defmodule ElmEx.DebuggerContract.ViewTree.Structure do
         ) ::
           boolean()
   def view_tree_call_returns_ui_node_from_target?(target, arity, ei)
-       when is_binary(target) and is_integer(arity) and is_map(ei) do
+      when is_binary(target) and is_integer(arity) and is_map(ei) do
     with types when is_map(types) <- Map.get(ei, "function_types"),
          {module_name, function_name} <- resolve_view_tree_call_target(target, ei),
          key <- function_type_key(module_name, function_name, arity),
@@ -56,7 +58,7 @@ defmodule ElmEx.DebuggerContract.ViewTree.Structure do
   @spec view_tree_call_return_kind(String.t(), non_neg_integer(), Types.elm_introspect()) ::
           String.t() | nil
   def view_tree_call_return_kind(target, arity, api_metadata)
-       when is_binary(target) and is_integer(arity) and is_map(api_metadata) do
+      when is_binary(target) and is_integer(arity) and is_map(api_metadata) do
     cond do
       view_tree_call_returns_ui_node_from_target?(target, arity, api_metadata) ->
         "ui_node"
@@ -81,7 +83,8 @@ defmodule ElmEx.DebuggerContract.ViewTree.Structure do
     with %Module{} = mod <- Map.get(api_metadata, :module_ref),
          {module_name, function_name} <- resolve_view_tree_call_target(target, api_metadata),
          true <- module_name == mod.name,
-         %{args: args, expr: expr} <- ElmEx.DebuggerContract.find_function_definition(mod, function_name),
+         %{args: args, expr: expr} <-
+           ElmEx.DebuggerContract.find_function_definition(mod, function_name),
          true <- length(List.wrap(args)) == arity do
       infer_expr_return_kind(expr, api_metadata)
     else
@@ -113,7 +116,8 @@ defmodule ElmEx.DebuggerContract.ViewTree.Structure do
 
   defp infer_expr_return_kind(_expr, _api_metadata), do: nil
 
-  @spec render_op_call_from_target?(String.t(), non_neg_integer(), Types.elm_introspect()) :: boolean()
+  @spec render_op_call_from_target?(String.t(), non_neg_integer(), Types.elm_introspect()) ::
+          boolean()
   defp render_op_call_from_target?(target, arity, api_metadata)
        when is_binary(target) and is_integer(arity) and is_map(api_metadata) do
     with types when is_map(types) <- Map.get(api_metadata, "function_types"),
@@ -129,10 +133,12 @@ defmodule ElmEx.DebuggerContract.ViewTree.Structure do
 
   defp render_op_call_from_target?(_target, _arity, _api_metadata), do: false
 
-  @spec scene_root_call_return_kind?(String.t(), non_neg_integer(), Types.elm_introspect()) :: boolean()
+  @spec scene_root_call_return_kind?(String.t(), non_neg_integer(), Types.elm_introspect()) ::
+          boolean()
   defp scene_root_call_return_kind?(target, arity, api_metadata)
        when is_binary(target) and is_integer(arity) and is_map(api_metadata) do
-    with types when is_map(types) <- Map.get(api_metadata, "function_types") || Map.get(api_metadata, :function_types),
+    with types when is_map(types) <-
+           Map.get(api_metadata, "function_types") || Map.get(api_metadata, :function_types),
          {module_name, function_name} <- resolve_view_tree_call_target(target, api_metadata),
          key <- function_type_key(module_name, function_name, arity),
          type when is_binary(type) <-
@@ -147,8 +153,10 @@ defmodule ElmEx.DebuggerContract.ViewTree.Structure do
 
   defp scene_root_call_return_kind?(_target, _arity, _api_metadata), do: false
 
-  @spec resolve_view_tree_call_target(String.t(), Types.elm_introspect()) :: {String.t(), String.t()} | nil
-  def resolve_view_tree_call_target(target, metadata) when is_binary(target) and is_map(metadata) do
+  @spec resolve_view_tree_call_target(String.t(), Types.elm_introspect()) ::
+          {String.t(), String.t()} | nil
+  def resolve_view_tree_call_target(target, metadata)
+      when is_binary(target) and is_map(metadata) do
     resolution =
       case metadata do
         %{aliases: _} -> metadata
@@ -178,7 +186,7 @@ defmodule ElmEx.DebuggerContract.ViewTree.Structure do
           Types.elm_introspect()
         ) :: Types.view_tree_node()
   def maybe_put_view_tree_return_kind(node, target, arity, api_metadata)
-       when is_map(node) and is_binary(target) and is_map(api_metadata) do
+      when is_map(node) and is_binary(target) and is_map(api_metadata) do
     case view_tree_call_return_kind(target, arity, api_metadata) do
       kind when is_binary(kind) -> Map.put(node, "return_kind", kind)
       _ -> node
@@ -188,7 +196,8 @@ defmodule ElmEx.DebuggerContract.ViewTree.Structure do
   def maybe_put_view_tree_return_kind(node, _target, _arity, _api_metadata), do: node
 
   @spec view_tree_call_target_name(String.t(), Types.elm_introspect()) :: String.t()
-  def view_tree_call_target_name(name, api_metadata) when is_binary(name) and is_map(api_metadata) do
+  def view_tree_call_target_name(name, api_metadata)
+      when is_binary(name) and is_map(api_metadata) do
     if String.contains?(name, ".") do
       name
     else
@@ -274,8 +283,9 @@ defmodule ElmEx.DebuggerContract.ViewTree.Structure do
       if is_binary(key) and String.starts_with?(key, prefix), do: type
     end)
   end
+
   def source_call_arg_names(target, arity, api_metadata)
-       when is_binary(target) and is_integer(arity) and is_map(api_metadata) do
+      when is_binary(target) and is_integer(arity) and is_map(api_metadata) do
     case resolve_source_call(target, api_metadata) do
       {module_name, function_name} when is_binary(module_name) and is_binary(function_name) ->
         Map.get(Map.get(api_metadata, :functions, %{}), {module_name, function_name, arity}, [])
@@ -287,9 +297,10 @@ defmodule ElmEx.DebuggerContract.ViewTree.Structure do
 
   def source_call_arg_names(_target, _arity, _api_metadata), do: []
 
-  @spec resolve_source_call(String.t(), Types.view_build_metadata()) :: {String.t(), String.t()} | nil
+  @spec resolve_source_call(String.t(), Types.view_build_metadata()) ::
+          {String.t(), String.t()} | nil
   def resolve_source_call(target, api_metadata)
-       when is_binary(target) and is_map(api_metadata) do
+      when is_binary(target) and is_map(api_metadata) do
     parts = String.split(target, ".")
 
     cond do
@@ -307,7 +318,7 @@ defmodule ElmEx.DebuggerContract.ViewTree.Structure do
   @spec resolve_qualified_source_call([String.t()], Types.view_build_metadata()) ::
           {String.t(), String.t()} | nil
   def resolve_qualified_source_call(parts, api_metadata)
-       when is_list(parts) and is_map(api_metadata) do
+      when is_list(parts) and is_map(api_metadata) do
     aliases = Map.get(api_metadata, :aliases, %{})
 
     1..(length(parts) - 1)

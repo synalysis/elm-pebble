@@ -4,6 +4,7 @@ defmodule Ide.Debugger.Types.SessionAttrs do
   """
 
   alias Ide.Debugger.Types
+
   @type t :: %{
           optional(:watch_profile_id) => String.t(),
           optional(:launch_reason) => String.t(),

@@ -40,9 +40,9 @@ defmodule Ide.Mcp.Handlers.Compiler do
   end
 
   def call("compiler.check_source_root", %{
-         "slug" => slug,
-         "source_root" => source_root
-       }) do
+        "slug" => slug,
+        "source_root" => source_root
+      }) do
     compiler = compiler_module()
 
     with {:ok, project} <- ToolSupport.fetch_project(slug) do
@@ -55,7 +55,8 @@ defmodule Ide.Mcp.Handlers.Compiler do
           diagnostics = Diagnostics.normalize_list(result.diagnostics || [])
           counts = Diagnostics.summary(diagnostics)
 
-          {:ok, compiler_check_source_root_payload(slug, source_root, result, diagnostics, counts)}
+          {:ok,
+           compiler_check_source_root_payload(slug, source_root, result, diagnostics, counts)}
         else
           {:error, reason} -> {:error, "check source root failed: #{inspect(reason)}"}
         end
@@ -66,6 +67,7 @@ defmodule Ide.Mcp.Handlers.Compiler do
       {:error, reason} -> {:error, "check source root failed: #{inspect(reason)}"}
     end
   end
+
   def call("compiler.compile", %{"slug" => slug}) do
     compiler = compiler_module()
 
@@ -216,7 +218,11 @@ defmodule Ide.Mcp.Handlers.Compiler do
 
     with {:ok, since} <- ToolSupport.parse_since(Map.get(args, "since")) do
       slug = Map.get(args, "slug")
-      entries = CompileCache.recent(limit, ToolSupport.project_session_key(slug)) |> ToolSupport.filter_since(since)
+
+      entries =
+        CompileCache.recent(limit, ToolSupport.project_session_key(slug))
+        |> ToolSupport.filter_since(since)
+
       {:ok, compiler_recent_payload(entries, limit, slug, since)}
     end
   end
@@ -239,7 +245,11 @@ defmodule Ide.Mcp.Handlers.Compiler do
 
     with {:ok, since} <- ToolSupport.parse_since(Map.get(args, "since")) do
       slug = Map.get(args, "slug")
-      entries = ManifestCache.recent(limit, ToolSupport.project_session_key(slug)) |> ToolSupport.filter_since(since)
+
+      entries =
+        ManifestCache.recent(limit, ToolSupport.project_session_key(slug))
+        |> ToolSupport.filter_since(since)
+
       {:ok, compiler_recent_payload(entries, limit, slug, since)}
     end
   end
@@ -262,7 +272,11 @@ defmodule Ide.Mcp.Handlers.Compiler do
 
     with {:ok, since} <- ToolSupport.parse_since(Map.get(args, "since")) do
       slug = Map.get(args, "slug")
-      entries = CheckCache.recent(limit, ToolSupport.project_session_key(slug)) |> ToolSupport.filter_since(since)
+
+      entries =
+        CheckCache.recent(limit, ToolSupport.project_session_key(slug))
+        |> ToolSupport.filter_since(since)
+
       {:ok, compiler_recent_payload(entries, limit, slug, since)}
     end
   end
@@ -278,6 +292,7 @@ defmodule Ide.Mcp.Handlers.Compiler do
       {:ok, audit_recent_payload(entries, limit, since)}
     end
   end
+
   defp compiler_recent_payload(entries, limit, slug, since) do
     %{
       entries: entries,
@@ -565,7 +580,6 @@ defmodule Ide.Mcp.Handlers.Compiler do
   end
 
   defp publish_defaults(project), do: Map.get(project, :release_defaults) || %{}
-
 
   defp pebble_toolchain_module do
     mcp_tools_config()

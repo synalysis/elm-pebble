@@ -174,7 +174,13 @@ defmodule Ide.Tokenizer do
 
   defp dot_access_left_token?(_), do: false
 
-  @spec scan(Types.source(), Types.line(), Types.column(), Types.tokens_acc(), Types.diagnostics_acc()) ::
+  @spec scan(
+          Types.source(),
+          Types.line(),
+          Types.column(),
+          Types.tokens_acc(),
+          Types.diagnostics_acc()
+        ) ::
           Types.scan_result()
   defp scan("", _line, _column, tokens, diagnostics), do: {tokens, diagnostics}
 
@@ -476,7 +482,13 @@ defmodule Ide.Tokenizer do
     scan(rest, line, column + String.length(text), [token | tokens], diagnostics)
   end
 
-  @spec unterminated_token_diagnostic(Types.unterminated_kind(), integer(), integer(), integer(), integer()) :: diagnostic()
+  @spec unterminated_token_diagnostic(
+          Types.unterminated_kind(),
+          integer(),
+          integer(),
+          integer(),
+          integer()
+        ) :: diagnostic()
   defp unterminated_token_diagnostic(kind, line, column, next_line, next_column) do
     eof_column = max(next_column - 1, 1)
 
@@ -582,7 +594,9 @@ defmodule Ide.Tokenizer do
     malformed_prefix ++ malformed_body
   end
 
-  @spec number_literal_diagnostics(String.t(), String.t(), String.t(), integer(), integer()) :: [diagnostic()]
+  @spec number_literal_diagnostics(String.t(), String.t(), String.t(), integer(), integer()) :: [
+          diagnostic()
+        ]
   defp number_literal_diagnostics(input, num, tail, line, column)
        when is_binary(input) and is_binary(num) and is_binary(tail) do
     diagnostics = []
@@ -658,7 +672,8 @@ defmodule Ide.Tokenizer do
   defp take_until_newline(<<char::utf8, rest::binary>>, acc),
     do: take_until_newline(rest, acc <> <<char::utf8>>)
 
-  @spec take_block_comment(String.t(), String.t(), non_neg_integer()) :: Types.take_literal_result()
+  @spec take_block_comment(String.t(), String.t(), non_neg_integer()) ::
+          Types.take_literal_result()
   defp take_block_comment("", acc, _depth), do: {acc, "", false}
 
   defp take_block_comment(<<"{-", rest::binary>>, acc, depth),
@@ -857,7 +872,8 @@ defmodule Ide.Tokenizer do
 
   defp take_backtick_operator("", _acc), do: :error
 
-  @spec take_parenthesized_field_accessor(String.t(), String.t()) :: {:ok, String.t(), String.t()} | :error
+  @spec take_parenthesized_field_accessor(String.t(), String.t()) ::
+          {:ok, String.t(), String.t()} | :error
   defp take_parenthesized_field_accessor(<<")", rest::binary>>, acc) do
     if acc != "", do: {:ok, acc, rest}, else: :error
   end
@@ -872,7 +888,8 @@ defmodule Ide.Tokenizer do
 
   defp take_parenthesized_field_accessor("", _acc), do: :error
 
-  @spec take_parenthesized_field_accessor_with_ws(String.t()) :: {:ok, String.t(), String.t()} | :error
+  @spec take_parenthesized_field_accessor_with_ws(String.t()) ::
+          {:ok, String.t(), String.t()} | :error
   defp take_parenthesized_field_accessor_with_ws(rest) when is_binary(rest) do
     {leading_ws, after_leading_ws} = take_while(rest, &ws_char?/1)
 
@@ -962,7 +979,13 @@ defmodule Ide.Tokenizer do
 
   defp compact_pipeline_operator_token?(_), do: false
 
-  @spec split_compact_field_accessor_operator(String.t(), String.t(), Types.tokens(), integer(), integer()) :: Types.compact_split()
+  @spec split_compact_field_accessor_operator(
+          String.t(),
+          String.t(),
+          Types.tokens(),
+          integer(),
+          integer()
+        ) :: Types.compact_split()
   defp split_compact_field_accessor_operator(op, tail, tokens, line, column)
        when is_binary(op) and is_binary(tail) do
     cond do
@@ -1116,7 +1139,9 @@ defmodule Ide.Tokenizer do
     do_record_field_label_tokens(tokens, 0, [])
   end
 
-  @spec do_record_field_label_tokens(Types.tokens(), non_neg_integer(), Types.tokens()) :: [token()]
+  @spec do_record_field_label_tokens(Types.tokens(), non_neg_integer(), Types.tokens()) :: [
+          token()
+        ]
   defp do_record_field_label_tokens([], _brace_depth, acc), do: Enum.reverse(acc)
 
   defp do_record_field_label_tokens([token | rest], brace_depth, acc) do
@@ -1140,7 +1165,8 @@ defmodule Ide.Tokenizer do
     end
   end
 
-  @spec reduce_closing(String.t(), token(), Types.delimiter_stack(), [diagnostic()]) :: {Types.delimiter_stack(), [diagnostic()]}
+  @spec reduce_closing(String.t(), token(), Types.delimiter_stack(), [diagnostic()]) ::
+          {Types.delimiter_stack(), [diagnostic()]}
   defp reduce_closing(closing, _token, [{closing, _opening_token} | rest], diagnostics) do
     {rest, diagnostics}
   end
@@ -1572,51 +1598,52 @@ defmodule Ide.Tokenizer do
        when is_binary(trimmed) and is_binary(line_text) and is_integer(line_no) and
               is_integer(line_indent) and is_list(indexed_lines) do
     cond do
-        trimmed == "" or String.starts_with?(trimmed, "--") ->
-          []
+      trimmed == "" or String.starts_with?(trimmed, "--") ->
+        []
 
-        String.starts_with?(trimmed, "module ") or String.starts_with?(trimmed, "import ") or
-          String.starts_with?(trimmed, "type ") or String.starts_with?(trimmed, "port ") ->
-          []
+      String.starts_with?(trimmed, "module ") or String.starts_with?(trimmed, "import ") or
+        String.starts_with?(trimmed, "type ") or String.starts_with?(trimmed, "port ") ->
+        []
 
-        assignment_header_line?(trimmed) ->
-          {_lhs, rhs} = split_once_text(trimmed, "=")
-          rhs_trimmed = String.trim(rhs)
+      assignment_header_line?(trimmed) ->
+        {_lhs, rhs} = split_once_text(trimmed, "=")
+        rhs_trimmed = String.trim(rhs)
 
-          if rhs_trimmed == "" do
-            if multiline_assignment_continues?(indexed_lines, line_no, line_indent) do
-              []
-            else
-              [
-                parser_diagnostic("expr_parser", line_no, %{
-                  message: "Missing expression after =",
-                  elm_title: :missing_expression
-                })
-              ]
-            end
+        if rhs_trimmed == "" do
+          if multiline_assignment_continues?(indexed_lines, line_no, line_indent) do
+            []
           else
-            parse_expression_snippet(rhs_trimmed, line_no, expr_lexer_mod, expr_parser_mod)
+            [
+              parser_diagnostic("expr_parser", line_no, %{
+                message: "Missing expression after =",
+                elm_title: :missing_expression
+              })
+            ]
           end
+        else
+          parse_expression_snippet(rhs_trimmed, line_no, expr_lexer_mod, expr_parser_mod)
+        end
 
-        String.starts_with?(trimmed, "case ") and String.ends_with?(trimmed, " of") ->
-          []
+      String.starts_with?(trimmed, "case ") and String.ends_with?(trimmed, " of") ->
+        []
 
-        trimmed == "let" ->
-          []
+      trimmed == "let" ->
+        []
 
-        String.starts_with?(trimmed, "let ") and not String.contains?(trimmed, " in ") ->
-          []
+      String.starts_with?(trimmed, "let ") and not String.contains?(trimmed, " in ") ->
+        []
 
-        inline_if_expression?(trimmed) or String.starts_with?(trimmed, "case ") ->
-          parse_expression_snippet(trimmed, line_no, expr_lexer_mod, expr_parser_mod)
+      inline_if_expression?(trimmed) or String.starts_with?(trimmed, "case ") ->
+        parse_expression_snippet(trimmed, line_no, expr_lexer_mod, expr_parser_mod)
 
-        true ->
-          []
-      end
+      true ->
+        []
+    end
   end
 
   @spec let_layout_diagnostic_for_line(String.t(), integer()) :: [Types.parser_line_diagnostic()]
-  defp let_layout_diagnostic_for_line(line_text, line_no) when is_binary(line_text) and is_integer(line_no) do
+  defp let_layout_diagnostic_for_line(line_text, line_no)
+       when is_binary(line_text) and is_integer(line_no) do
     case LetLayout.validate(line_text) do
       :ok ->
         []
@@ -1671,7 +1698,9 @@ defmodule Ide.Tokenizer do
     |> length()
   end
 
-  @spec parse_expression_snippet(String.t(), integer(), atom(), atom()) :: [Types.parser_diagnostic_map()]
+  @spec parse_expression_snippet(String.t(), integer(), atom(), atom()) :: [
+          Types.parser_diagnostic_map()
+        ]
   defp parse_expression_snippet(snippet, line_no, expr_lexer_mod, expr_parser_mod)
        when is_binary(snippet) and is_integer(line_no) do
     case apply(expr_lexer_mod, :string, [String.to_charlist(snippet)]) do
@@ -1734,7 +1763,9 @@ defmodule Ide.Tokenizer do
     end
   end
 
-  @spec type_declaration_header_diagnostics(String.t(), integer()) :: [Types.parser_diagnostic_map()]
+  @spec type_declaration_header_diagnostics(String.t(), integer()) :: [
+          Types.parser_diagnostic_map()
+        ]
   defp type_declaration_header_diagnostics(trimmed, line_no)
        when is_binary(trimmed) and is_integer(line_no) do
     header =
@@ -1754,7 +1785,9 @@ defmodule Ide.Tokenizer do
     end
   end
 
-  @spec type_constructor_line_diagnostics(String.t(), integer()) :: [Types.parser_diagnostic_map()]
+  @spec type_constructor_line_diagnostics(String.t(), integer()) :: [
+          Types.parser_diagnostic_map()
+        ]
   defp type_constructor_line_diagnostics(trimmed, line_no)
        when is_binary(trimmed) and is_integer(line_no) do
     constructor_head =
@@ -1797,7 +1830,9 @@ defmodule Ide.Tokenizer do
     end
   end
 
-  @spec validate_type_header_shape(String.t(), String.t(), integer()) :: [Types.parser_diagnostic_map()]
+  @spec validate_type_header_shape(String.t(), String.t(), integer()) :: [
+          Types.parser_diagnostic_map()
+        ]
   defp validate_type_header_shape(header, prefix, line_no)
        when is_binary(header) and is_binary(prefix) and is_integer(line_no) do
     remainder = String.replace_prefix(header, prefix, "")
@@ -1826,7 +1861,8 @@ defmodule Ide.Tokenizer do
     end
   end
 
-  @spec parser_diagnostic(String.t(), integer() | nil, map() | String.t()) :: Types.parser_diagnostic_map()
+  @spec parser_diagnostic(String.t(), integer() | nil, map() | String.t()) ::
+          Types.parser_diagnostic_map()
   defp parser_diagnostic(source_name, line, reason) do
     reason_map =
       case reason do
@@ -1985,7 +2021,9 @@ defmodule Ide.Tokenizer do
     do_mark_record_field_identifiers(tokens, 0, [])
   end
 
-  @spec do_mark_record_field_identifiers(Types.tokens(), non_neg_integer(), Types.tokens()) :: [token()]
+  @spec do_mark_record_field_identifiers(Types.tokens(), non_neg_integer(), Types.tokens()) :: [
+          token()
+        ]
   defp do_mark_record_field_identifiers([], _brace_depth, acc), do: Enum.reverse(acc)
 
   defp do_mark_record_field_identifiers([token | rest], brace_depth, acc) do
@@ -2334,7 +2372,12 @@ defmodule Ide.Tokenizer do
     end
   end
 
-  @spec do_mark_type_annotation_record_extension_pipes(Types.tokens(), Types.annotation_context(), non_neg_integer(), Types.tokens()) :: [token()]
+  @spec do_mark_type_annotation_record_extension_pipes(
+          Types.tokens(),
+          Types.annotation_context(),
+          non_neg_integer(),
+          Types.tokens()
+        ) :: [token()]
   defp do_mark_type_annotation_record_extension_pipes([], _context_by_line, _brace_depth, acc),
     do: Enum.reverse(acc)
 
@@ -2519,7 +2562,9 @@ defmodule Ide.Tokenizer do
     "#{gutter}#{source_line}\n#{caret_padding}^"
   end
 
-  @spec type_declaration_continuation_lines(Types.lines_map(), integer(), [integer()]) :: [integer()]
+  @spec type_declaration_continuation_lines(Types.lines_map(), integer(), [integer()]) :: [
+          integer()
+        ]
   defp type_declaration_continuation_lines(lines_map, start_line, sorted_lines) do
     remaining =
       sorted_lines
@@ -2545,7 +2590,12 @@ defmodule Ide.Tokenizer do
     Enum.reverse(cont)
   end
 
-  @spec do_mark_type_alias_field_colons(Types.tokens(), MapSet.t(integer()), non_neg_integer(), Types.tokens()) :: [token()]
+  @spec do_mark_type_alias_field_colons(
+          Types.tokens(),
+          MapSet.t(integer()),
+          non_neg_integer(),
+          Types.tokens()
+        ) :: [token()]
   defp do_mark_type_alias_field_colons([], _alias_lines, _brace_depth, acc), do: Enum.reverse(acc)
 
   defp do_mark_type_alias_field_colons([token | rest], alias_lines, brace_depth, acc) do
@@ -2578,7 +2628,13 @@ defmodule Ide.Tokenizer do
     do_mark_type_alias_field_colons(rest, alias_lines, next_depth, [marked | acc])
   end
 
-  @spec do_mark_type_alias_record_identifiers(Types.tokens(), MapSet.t(integer()), non_neg_integer(), boolean(), Types.tokens()) :: [token()]
+  @spec do_mark_type_alias_record_identifiers(
+          Types.tokens(),
+          MapSet.t(integer()),
+          non_neg_integer(),
+          boolean(),
+          Types.tokens()
+        ) :: [token()]
   defp do_mark_type_alias_record_identifiers([], _alias_lines, _brace_depth, _in_field_type, acc),
     do: Enum.reverse(acc)
 
@@ -2699,7 +2755,8 @@ defmodule Ide.Tokenizer do
     end
   end
 
-  @spec next_matching_lex_class(Types.elmc_lex_state(), integer(), String.t()) :: {String.t() | nil, Types.elmc_lex_state()}
+  @spec next_matching_lex_class(Types.elmc_lex_state(), integer(), String.t()) ::
+          {String.t() | nil, Types.elmc_lex_state()}
   defp next_matching_lex_class(state, line, token_text) do
     case Map.get(state, line, []) do
       [%{"text" => ^token_text} = tok | rest] ->

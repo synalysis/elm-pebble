@@ -33,7 +33,8 @@ defmodule Ide.Debugger.StepInput do
 
   @spec from_surface(Types.surface_target(), Surface.t(), String.t(), keyword()) :: t()
   def from_surface(target, %Surface{} = surface, requested_message, opts \\ [])
-      when target in [:watch, :companion, :phone] and is_binary(requested_message) and is_list(opts) do
+      when target in [:watch, :companion, :phone] and is_binary(requested_message) and
+             is_list(opts) do
     app_model = Surface.app_model(surface)
 
     %__MODULE__{

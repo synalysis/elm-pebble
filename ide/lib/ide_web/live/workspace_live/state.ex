@@ -296,7 +296,12 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> capabilities_form_value()
   end
 
-  @spec assign_project(Phoenix.LiveView.Socket.t(), Project.t(), settings(), project_assign_data()) ::
+  @spec assign_project(
+          Phoenix.LiveView.Socket.t(),
+          Project.t(),
+          settings(),
+          project_assign_data()
+        ) ::
           Phoenix.LiveView.Socket.t()
   def assign_project(socket, %Project{} = project, settings, data) when is_map(data) do
     publish_readiness = Map.fetch!(data, :publish_readiness)

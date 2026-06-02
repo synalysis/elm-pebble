@@ -20,8 +20,15 @@ defmodule Ide.Debugger.SubscriptionAutoFireState do
           boolean(),
           (Types.surface_target() -> String.t())
         ) :: [subscription_row()]
-  def update_disabled_subscription(disabled_subscriptions, target, trigger, enabled?, source_root_for_target)
-      when is_list(disabled_subscriptions) and is_binary(trigger) and is_function(source_root_for_target, 1) do
+  def update_disabled_subscription(
+        disabled_subscriptions,
+        target,
+        trigger,
+        enabled?,
+        source_root_for_target
+      )
+      when is_list(disabled_subscriptions) and is_binary(trigger) and
+             is_function(source_root_for_target, 1) do
     source_root = source_root_for_target.(target)
     trigger = String.trim(to_string(trigger))
 
@@ -50,8 +57,15 @@ defmodule Ide.Debugger.SubscriptionAutoFireState do
           boolean(),
           (Types.surface_target() -> String.t())
         ) :: [subscription_row()]
-  def update_auto_fire_subscriptions(subscriptions, target, trigger, enabled?, source_root_for_target)
-      when is_list(subscriptions) and is_binary(trigger) and is_function(source_root_for_target, 1) do
+  def update_auto_fire_subscriptions(
+        subscriptions,
+        target,
+        trigger,
+        enabled?,
+        source_root_for_target
+      )
+      when is_list(subscriptions) and is_binary(trigger) and
+             is_function(source_root_for_target, 1) do
     source_root = source_root_for_target.(target)
     trigger = String.trim(to_string(trigger))
 
@@ -101,7 +115,8 @@ defmodule Ide.Debugger.SubscriptionAutoFireState do
     |> Enum.uniq()
   end
 
-  @spec auto_fire_targets_from_subscriptions([subscription_row()], (String.t() -> Types.surface_target())) ::
+  @spec auto_fire_targets_from_subscriptions([subscription_row()], (String.t() ->
+                                                                      Types.surface_target())) ::
           [:watch | :companion | :phone]
   def auto_fire_targets_from_subscriptions(subscriptions, normalize_target)
       when is_list(subscriptions) and is_function(normalize_target, 1) do
@@ -168,7 +183,8 @@ defmodule Ide.Debugger.SubscriptionAutoFireState do
     end)
   end
 
-  @spec target_label([Types.surface_target()], (Types.surface_target() -> String.t())) :: String.t()
+  @spec target_label([Types.surface_target()], (Types.surface_target() -> String.t())) ::
+          String.t()
   def target_label([single], source_root_for_target), do: source_root_for_target.(single)
   def target_label(_targets, _source_root_for_target), do: "selected"
 

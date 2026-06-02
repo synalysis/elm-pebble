@@ -26,7 +26,8 @@ defmodule Ide.AppStore.Types do
           | {:generate_store_graphics, boolean()}
           | {:website, String.t()}
           | {:source, String.t()}
-          | {:request_fun, (atom(), String.t(), list(), http_body(), pos_integer() -> http_response())}
+          | {:request_fun,
+             (atom(), String.t(), list(), http_body(), pos_integer() -> http_response())}
           | keyword()
         ]
 

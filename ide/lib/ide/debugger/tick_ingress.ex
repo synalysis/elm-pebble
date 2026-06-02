@@ -9,8 +9,14 @@ defmodule Ide.Debugger.TickIngress do
   alias Ide.Debugger.Types
 
   @type apply_step_fn ::
-          (Types.runtime_state(), Types.surface_target(), String.t(), Types.subscription_payload() | nil,
-           String.t(), String.t() -> Types.runtime_state())
+          (Types.runtime_state(),
+           Types.surface_target(),
+           String.t(),
+           Types.subscription_payload()
+           | nil,
+           String.t(),
+           String.t() ->
+             Types.runtime_state())
 
   @type append_event_fn :: (Types.runtime_state(), String.t(), map() -> Types.runtime_state())
 
@@ -23,7 +29,8 @@ defmodule Ide.Debugger.TickIngress do
   @type normalize_target_fn :: (Types.wire_input() -> Types.surface_target())
 
   @type update_fn ::
-          (String.t(), (Types.runtime_state() -> Types.runtime_state()) -> {:ok, Types.runtime_state()})
+          (String.t(), (Types.runtime_state() -> Types.runtime_state()) ->
+             {:ok, Types.runtime_state()})
 
   @type host :: %{
           required(:apply_step_once) => apply_step_fn(),
@@ -40,15 +47,25 @@ defmodule Ide.Debugger.TickIngress do
   def tick(state, attrs, host) when is_map(state) and is_map(attrs) and is_map(host) do
     if Map.get(state, :running, false) do
       count = Attrs.parse_step_count(Map.get(attrs, :count) || Map.get(attrs, "count"))
+
       target =
         SurfaceTargets.normalize_optional(Map.get(attrs, :target) || Map.get(attrs, "target"))
+
       targets = SurfaceTargets.tick_targets(target)
 
       ticked =
         Enum.reduce(1..count, state, fn _, acc ->
           Enum.reduce(targets, acc, fn surface_target, next_state ->
             message = host.tick_message_for_surface.(next_state, surface_target)
-            host.apply_step_once.(next_state, surface_target, message, nil, "subscription_tick", "tick")
+
+            host.apply_step_once.(
+              next_state,
+              surface_target,
+              message,
+              nil,
+              "subscription_tick",
+              "tick"
+            )
           end)
         end)
 
@@ -66,16 +83,21 @@ defmodule Ide.Debugger.TickIngress do
     end
   end
 
-  @spec start_auto_tick(Types.runtime_state(), String.t(), Types.step_attrs(), host()) :: Types.runtime_state()
+  @spec start_auto_tick(Types.runtime_state(), String.t(), Types.step_attrs(), host()) ::
+          Types.runtime_state()
   def start_auto_tick(state, project_slug, attrs, host)
       when is_map(state) and is_binary(project_slug) and is_map(attrs) and is_map(host) do
     if Map.get(state, :running, false) do
       interval_ms =
-        Attrs.parse_tick_interval_ms(Map.get(attrs, :interval_ms) || Map.get(attrs, "interval_ms"))
+        Attrs.parse_tick_interval_ms(
+          Map.get(attrs, :interval_ms) || Map.get(attrs, "interval_ms")
+        )
 
       count = Attrs.parse_step_count(Map.get(attrs, :count) || Map.get(attrs, "count"))
+
       target =
         SurfaceTargets.normalize_optional(Map.get(attrs, :target) || Map.get(attrs, "target"))
+
       targets = SurfaceTargets.tick_targets(target)
 
       state = AutoTickWorkers.stop_worker(state)
@@ -84,14 +106,18 @@ defmodule Ide.Debugger.TickIngress do
         host.update.(slug, fn inner -> tick(inner, tick_attrs, host) end)
       end
 
-      worker = spawn(fn -> AutoTickWorkers.tick_loop(project_slug, interval_ms, targets, count, tick_fn) end)
+      worker =
+        spawn(fn ->
+          AutoTickWorkers.tick_loop(project_slug, interval_ms, targets, count, tick_fn)
+        end)
 
       state
       |> Map.put(:auto_tick, %{
         enabled: true,
         interval_ms: interval_ms,
         target: host.replay_label.(target),
-        targets: Enum.map(targets, fn surface_target -> host.source_root_for_target.(surface_target) end),
+        targets:
+          Enum.map(targets, fn surface_target -> host.source_root_for_target.(surface_target) end),
         count: count,
         worker_pid: worker
       })
@@ -116,7 +142,8 @@ defmodule Ide.Debugger.TickIngress do
     |> append_event.("debugger.tick_auto", Types.TickAutoEventPayload.stop())
   end
 
-  @spec set_auto_fire(Types.runtime_state(), String.t(), Types.step_attrs(), host()) :: Types.runtime_state()
+  @spec set_auto_fire(Types.runtime_state(), String.t(), Types.step_attrs(), host()) ::
+          Types.runtime_state()
   def set_auto_fire(state, project_slug, attrs, host)
       when is_map(state) and is_binary(project_slug) and is_map(attrs) and is_map(host) do
     if Map.get(state, :running, false) do
@@ -142,7 +169,10 @@ defmodule Ide.Debugger.TickIngress do
         end
 
       targets =
-        SubscriptionAutoFireState.auto_fire_targets_from_subscriptions(subscriptions, host.normalize_target)
+        SubscriptionAutoFireState.auto_fire_targets_from_subscriptions(
+          subscriptions,
+          host.normalize_target
+        )
 
       ctx = host.contexts.()
 
@@ -168,5 +198,4 @@ defmodule Ide.Debugger.TickIngress do
       state
     end
   end
-
 end

@@ -4,6 +4,7 @@ defmodule Ide.Debugger.Types.MessageInEventPayload do
   """
 
   alias Ide.Debugger.Types
+
   @type t :: %{
           optional(:target) => String.t(),
           optional(:message) => String.t(),

@@ -33,6 +33,17 @@ defmodule Ide.Resources.PdcDecoder do
           frames: [sequence_frame()]
         }
   @type decode_error :: :invalid_pdc | :unsupported_pdc_format
+  @type watch_validate_error ::
+          :invalid_pdc
+          | :unsupported_pdc_format
+          | :invalid_watch_pdc
+          | :pdc_too_large
+          | :pdc_dimensions_too_large
+          | :pdc_too_many_frames
+
+  @max_watch_bytes 65_536
+  @max_watch_dimension 200
+  @max_watch_frames 64
 
   @command_type_path 1
   @command_type_circle 2
@@ -150,10 +161,12 @@ defmodule Ide.Resources.PdcDecoder do
   @spec preview_svg(binary()) :: {:ok, String.t()} | {:error, decode_error()}
   def preview_svg(bytes) when is_binary(bytes) do
     case pdc_magic(bytes) do
-      "PDCS" -> decode_sequence_frame(bytes, 0) |> then(fn
-        {:ok, image} -> {:ok, to_svg(image)}
-        error -> error
-      end)
+      "PDCS" ->
+        decode_sequence_frame(bytes, 0)
+        |> then(fn
+          {:ok, image} -> {:ok, to_svg(image)}
+          error -> error
+        end)
 
       _ ->
         case decode(bytes) do
@@ -318,7 +331,12 @@ defmodule Ide.Resources.PdcDecoder do
 
   defp decode_points(<<>>, 0, _precise, acc), do: Enum.reverse(acc)
 
-  defp decode_points(<<x::16-little-signed, y::16-little-signed, rest::binary>>, count, false, acc) do
+  defp decode_points(
+         <<x::16-little-signed, y::16-little-signed, rest::binary>>,
+         count,
+         false,
+         acc
+       ) do
     decode_points(rest, count - 1, false, [%{x: x, y: y} | acc])
   end
 
@@ -493,5 +511,55 @@ defmodule Ide.Resources.PdcDecoder do
     |> Kernel.*(85)
     |> Integer.to_string(16)
     |> String.pad_leading(2, "0")
+  end
+
+  @spec validate_watch_compatible(binary()) :: :ok | {:error, watch_validate_error()}
+  def validate_watch_compatible(bytes) when is_binary(bytes) do
+    with {:ok, summary} <- watch_summary(bytes),
+         :ok <- validate_watch_summary(summary, bytes) do
+      :ok
+    end
+  end
+
+  def validate_watch_compatible(_), do: {:error, :invalid_pdc}
+
+  defp watch_summary(bytes) do
+    case decode_sequence(bytes) do
+      {:ok, %{width: width, height: height, frames: frames}} ->
+        {:ok,
+         %{
+           width: abs(width),
+           height: abs(height),
+           frame_count: length(frames)
+         }}
+
+      {:error, _} ->
+        case decode(bytes) do
+          {:ok, %{width: width, height: height}} ->
+            {:ok, %{width: abs(width), height: abs(height), frame_count: 1}}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+    end
+  end
+
+  defp validate_watch_summary(summary, bytes) do
+    cond do
+      byte_size(bytes) > @max_watch_bytes ->
+        {:error, :pdc_too_large}
+
+      summary.width > @max_watch_dimension or summary.height > @max_watch_dimension ->
+        {:error, :pdc_dimensions_too_large}
+
+      summary.frame_count > @max_watch_frames ->
+        {:error, :pdc_too_many_frames}
+
+      summary.width < 1 or summary.height < 1 ->
+        {:error, :invalid_watch_pdc}
+
+      true ->
+        :ok
+    end
   end
 end

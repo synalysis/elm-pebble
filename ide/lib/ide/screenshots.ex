@@ -31,7 +31,8 @@ defmodule Ide.Screenshots do
           results: [{String.t(), {:ok, capture_result()} | {:error, screenshot_error()}}],
           captured: [screenshot()],
           failed: [{String.t(), screenshot_error()}],
-          close_result: {:ok, PebbleToolchain.command_result()} | {:error, screenshot_error()} | nil
+          close_result:
+            {:ok, PebbleToolchain.command_result()} | {:error, screenshot_error()} | nil
         }
 
   @type screenshot_error :: atom() | String.t() | tuple()
@@ -39,18 +40,23 @@ defmodule Ide.Screenshots do
   @callback list(project_slug(), opts()) :: {:ok, [screenshot()]} | {:error, screenshot_error()}
   @callback list_grouped_by_emulator(project_slug(), opts()) ::
               {:ok, [{String.t(), [screenshot()]}]} | {:error, screenshot_error()}
-  @callback latest(project_slug(), opts()) :: {:ok, screenshot() | nil} | {:error, screenshot_error()}
-  @callback capture(project_slug(), opts()) :: {:ok, capture_result()} | {:error, screenshot_error()}
+  @callback latest(project_slug(), opts()) ::
+              {:ok, screenshot() | nil} | {:error, screenshot_error()}
+  @callback capture(project_slug(), opts()) ::
+              {:ok, capture_result()} | {:error, screenshot_error()}
   @callback capture_all_targets(project_slug(), opts()) ::
               {:ok, capture_all_result()} | {:error, screenshot_error()}
-  @callback delete(project_slug(), String.t(), String.t(), opts()) :: :ok | {:error, screenshot_error()}
-  @callback delete_target(project_slug(), String.t(), opts()) :: :ok | {:error, screenshot_error()}
+  @callback delete(project_slug(), String.t(), String.t(), opts()) ::
+              :ok | {:error, screenshot_error()}
+  @callback delete_target(project_slug(), String.t(), opts()) ::
+              :ok | {:error, screenshot_error()}
 
   @doc """
   Captures a screenshot from the configured emulator target.
   """
   @spec capture(project_ref(), opts()) :: {:ok, capture_result()} | {:error, screenshot_error()}
-  def capture(%Project{} = project, opts), do: capture(project.slug, Keyword.put(opts, :project, project))
+  def capture(%Project{} = project, opts),
+    do: capture(project.slug, Keyword.put(opts, :project, project))
 
   def capture(project_slug, opts) when is_binary(project_slug) do
     if embedded_capture_backend?() do
@@ -285,7 +291,8 @@ defmodule Ide.Screenshots do
   @doc """
   Deletes a single screenshot by emulator target and filename.
   """
-  @spec delete(project_ref(), String.t(), String.t(), opts()) :: :ok | {:error, screenshot_error()}
+  @spec delete(project_ref(), String.t(), String.t(), opts()) ::
+          :ok | {:error, screenshot_error()}
   def delete(project_ref, emulator_target, filename, opts \\ [])
 
   def delete(%Project{} = project, emulator_target, filename, opts),
@@ -338,7 +345,8 @@ defmodule Ide.Screenshots do
   @spec list(project_ref(), opts()) :: {:ok, [screenshot()]} | {:error, screenshot_error()}
   def list(project_ref, opts \\ [])
 
-  def list(%Project{} = project, opts), do: list(project.slug, Keyword.put(opts, :project, project))
+  def list(%Project{} = project, opts),
+    do: list(project.slug, Keyword.put(opts, :project, project))
 
   def list(project_slug, opts) when is_binary(project_slug) do
     with {:ok, project_dir} <- project_storage_dir(project_slug, opts) do
@@ -473,7 +481,8 @@ defmodule Ide.Screenshots do
     end
   end
 
-  @spec project_storage_dir(project_slug(), opts()) :: {:ok, String.t()} | {:error, screenshot_error()}
+  @spec project_storage_dir(project_slug(), opts()) ::
+          {:ok, String.t()} | {:error, screenshot_error()}
   defp project_storage_dir(project_slug, opts) do
     case Keyword.get(opts, :project) do
       %Project{} = project ->
@@ -725,7 +734,10 @@ defmodule Ide.Screenshots do
     screenshot_retries = max(Keyword.get(opts, :screenshot_retries, 3), 1)
     retry_delay_ms = max(Keyword.get(opts, :retry_delay_ms, 1_500), 0)
 
-    case timed_step(fn -> launch_embedded_session(project_slug, target, opts) end, install_timeout_ms) do
+    case timed_step(
+           fn -> launch_embedded_session(project_slug, target, opts) end,
+           install_timeout_ms
+         ) do
       {:ok, session} ->
         try do
           with :ok <- wait_session_ready(session.id),
@@ -802,7 +814,12 @@ defmodule Ide.Screenshots do
   defp resolve_capture_package(_project_slug, target, opts) do
     case Keyword.get(opts, :package_path) do
       path when is_binary(path) and path != "" ->
-        {:ok, %{artifact_path: Path.expand(path), has_phone_companion: false, has_companion_preferences: false}}
+        {:ok,
+         %{
+           artifact_path: Path.expand(path),
+           has_phone_companion: false,
+           has_companion_preferences: false
+         }}
 
       _ ->
         workspace_root = Keyword.get(opts, :workspace_root)
@@ -877,7 +894,8 @@ defmodule Ide.Screenshots do
     end)
   end
 
-  @spec resolve_package_path(project_slug(), opts()) :: {:ok, String.t()} | {:error, screenshot_error()}
+  @spec resolve_package_path(project_slug(), opts()) ::
+          {:ok, String.t()} | {:error, screenshot_error()}
   defp resolve_package_path(_project_slug, opts) do
     provided = Keyword.get(opts, :package_path)
 
@@ -979,7 +997,8 @@ defmodule Ide.Screenshots do
   def normalize_filename_public(name), do: normalize_filename(name)
 
   @doc false
-  @spec normalize_emulator_target_public(String.t()) :: {:ok, String.t()} | {:error, screenshot_error()}
+  @spec normalize_emulator_target_public(String.t()) ::
+          {:ok, String.t()} | {:error, screenshot_error()}
   def normalize_emulator_target_public(target), do: normalize_emulator_target(target)
 
   @doc false

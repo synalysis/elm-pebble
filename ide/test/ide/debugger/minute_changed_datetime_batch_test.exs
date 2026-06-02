@@ -76,7 +76,7 @@ defmodule Ide.Debugger.MinuteChangedDateTimeBatchTest do
       |> DebuggerSupport.debugger_rows(500)
       |> Enum.filter(&(&1.target == "watch" and &1.type == "update"))
 
-    assert Enum.any?(rows, &(String.contains?(&1.message || "", "MinuteChanged")))
-    assert Enum.any?(rows, &(String.contains?(&1.message || "", "CurrentDateTime")))
+    assert Enum.any?(rows, &String.contains?(&1.message || "", "MinuteChanged"))
+    assert Enum.any?(rows, &String.contains?(&1.message || "", "CurrentDateTime"))
   end
 end

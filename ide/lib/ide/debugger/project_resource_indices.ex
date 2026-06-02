@@ -40,7 +40,10 @@ defmodule Ide.Debugger.ProjectResourceIndices do
     case RuntimeArtifacts.animation_resource_indices_for_project(project_slug) do
       indices when is_map(indices) and map_size(indices) > 0 ->
         Surface.update_in_state(state, :watch, fn surface ->
-          Surface.put_shell(surface, Map.put(surface.shell, "animation_resource_indices", indices))
+          Surface.put_shell(
+            surface,
+            Map.put(surface.shell, "animation_resource_indices", indices)
+          )
         end)
 
       _ ->

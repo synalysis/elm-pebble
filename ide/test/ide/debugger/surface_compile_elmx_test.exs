@@ -40,13 +40,10 @@ defmodule Ide.Debugger.SurfaceCompileElmxTest do
     assert Elmx.module_for_revision(cached.elmx_revision)
   end
 
-  test "Compiler.compile attaches elmx artifacts when attach_elmx_on_compile even on core_ir backend" do
-    Application.put_env(:ide, Ide.Debugger.RuntimeExecutor, execution_backend: :core_ir)
-    refute RuntimeExecutor.compiled_elixir_backend?()
-    assert Application.get_env(:ide, :attach_elmx_on_compile)
-
+  test "Compiler.compile always attaches elmx artifacts" do
+    assert RuntimeExecutor.compiled_elixir_backend?()
     workspace = Path.expand("../../../../elmx/test/fixtures/minimal", __DIR__)
-    slug = "elmx-coreir-attach-" <> Integer.to_string(:erlang.unique_integer([:positive]))
+    slug = "elmx-runtime-attach-" <> Integer.to_string(:erlang.unique_integer([:positive]))
 
     assert {:ok, result} = Compiler.compile(slug, workspace_root: workspace)
     assert result.status == :ok

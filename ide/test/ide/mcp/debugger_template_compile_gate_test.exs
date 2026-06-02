@@ -57,16 +57,18 @@ defmodule Ide.Mcp.DebuggerTemplateCompileGateTest do
          :ok <- ProjectTemplates.apply_template(template_key, workspace),
          watch_dir when is_binary(watch_dir) <- watch_workspace_dir(workspace) do
       try do
-        revision = "gate-" <> template_key <> "-" <> Integer.to_string(:erlang.unique_integer([:positive]))
+        revision =
+          "gate-" <> template_key <> "-" <> Integer.to_string(:erlang.unique_integer([:positive]))
 
         case Ide.Compiler.build_elmx_artifacts_in_memory(watch_dir,
                revision: revision,
                strip_dead_code: true
              ) do
           {:ok, %{elmx_manifest: manifest}} ->
-            if manifest["contract"] == "elmx.runtime_executor.v1" and Elmx.module_for_revision(revision),
-              do: :ok,
-              else: {:error, :bad_manifest}
+            if manifest["contract"] == "elmx.runtime_executor.v1" and
+                 Elmx.module_for_revision(revision),
+               do: :ok,
+               else: {:error, :bad_manifest}
 
           {:error, reason} ->
             if Corpus.corpus_compile_smoke_failure?(reason), do: :ok, else: {:error, reason}
@@ -103,7 +105,8 @@ defmodule Ide.Mcp.DebuggerTemplateCompileGateTest do
          phone_dir when is_binary(phone_dir) <- phone_workspace_dir(workspace) do
       try do
         revision =
-          "gate-phone-" <> template_key <> "-" <> Integer.to_string(:erlang.unique_integer([:positive]))
+          "gate-phone-" <>
+            template_key <> "-" <> Integer.to_string(:erlang.unique_integer([:positive]))
 
         case Ide.Compiler.build_elmx_artifacts_in_memory(phone_dir,
                revision: revision,
@@ -111,9 +114,10 @@ defmodule Ide.Mcp.DebuggerTemplateCompileGateTest do
                strip_dead_code: true
              ) do
           {:ok, %{elmx_manifest: manifest}} ->
-            if manifest["contract"] == "elmx.runtime_executor.v1" and Elmx.module_for_revision(revision),
-              do: :ok,
-              else: {:error, :bad_manifest}
+            if manifest["contract"] == "elmx.runtime_executor.v1" and
+                 Elmx.module_for_revision(revision),
+               do: :ok,
+               else: {:error, :bad_manifest}
 
           {:error, reason} ->
             if Corpus.corpus_compile_smoke_failure?(reason), do: :ok, else: {:error, reason}

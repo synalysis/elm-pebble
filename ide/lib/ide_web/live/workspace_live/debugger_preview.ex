@@ -2,6 +2,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   @moduledoc false
 
   alias Ide.Debugger.RuntimeArtifacts
+  alias Ide.Debugger.RuntimePreview
   alias Ide.Projects.Project
   alias Ide.Resources.ApngProbe
   alias Ide.Resources.PdcDecoder
@@ -79,9 +80,17 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   @spec svg_ops(view_tree(), runtime_input()) :: [svg_op()]
   def svg_ops(tree, runtime) when is_map(tree) do
-    runtime_ops = runtime_compact_scene_output(runtime)
-
     model = runtime_model(runtime)
+    vector_indices = Ide.Debugger.RuntimeArtifacts.vector_resource_indices(model)
+    bitmap_indices = Ide.Debugger.RuntimeArtifacts.bitmap_resource_indices(model)
+    animation_indices = Ide.Debugger.RuntimeArtifacts.animation_resource_indices(model)
+
+    runtime_ops =
+      runtime
+      |> runtime_compact_scene_output()
+      |> Enum.map(&resolve_vector_svg_op_id(&1, vector_indices))
+      |> Enum.map(&resolve_bitmap_svg_op_id(&1, bitmap_indices, animation_indices))
+
     primary_int = primary_int_model_value(model)
 
     tree_ops =
@@ -96,21 +105,42 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     tree_animation_ops =
       Enum.filter(tree_ops, &(&1.kind == :bitmap_sequence_at))
 
+    tree_bitmap_ops =
+      Enum.filter(tree_ops, &(&1.kind in [:bitmap_in_rect, :rotated_bitmap]))
+
     runtime_has_vectors? =
-      Enum.any?(runtime_ops, &(&1.kind in [:vector_at, :vector_sequence_at]))
+      Enum.any?(runtime_ops, fn op ->
+        op.kind in [:vector_at, :vector_sequence_at] and Map.get(op, :vector_id, 0) >= 1
+      end)
 
     runtime_has_animations? =
       Enum.any?(runtime_ops, &(&1.kind == :bitmap_sequence_at))
 
-    cond do
-      runtime_ops == [] ->
-        tree_ops
+    runtime_has_bitmaps? =
+      Enum.any?(runtime_ops, &(&1.kind in [:bitmap_in_rect, :rotated_bitmap]))
 
-      true ->
-        runtime_ops
-        |> maybe_append_tree_ops(not runtime_has_vectors?, tree_vector_ops)
-        |> maybe_append_tree_ops(not runtime_has_animations?, tree_animation_ops)
-    end
+    tree_path_ops =
+      Enum.filter(tree_ops, &(&1.kind in [:path_filled, :path_outline, :path_outline_open]))
+
+    runtime_has_paths? =
+      Enum.any?(runtime_ops, &(&1.kind in [:path_filled, :path_outline, :path_outline_open]))
+
+    ops =
+      cond do
+        runtime_ops == [] ->
+          tree_ops
+
+        true ->
+          runtime_ops
+          |> maybe_append_tree_ops(not runtime_has_vectors?, tree_vector_ops)
+          |> maybe_append_tree_ops(not runtime_has_bitmaps?, tree_bitmap_ops)
+          |> maybe_append_tree_ops(not runtime_has_animations?, tree_animation_ops)
+          |> maybe_append_tree_ops(not runtime_has_paths?, tree_path_ops)
+      end
+
+    ops
+    |> Enum.map(&resolve_vector_svg_op_id(&1, vector_indices))
+    |> Enum.map(&resolve_bitmap_svg_op_id(&1, bitmap_indices, animation_indices))
   end
 
   def svg_ops(_tree, runtime), do: runtime_compact_scene_output(runtime)
@@ -120,7 +150,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   @spec hydrate_vector_svg_ops([svg_op()], Project.t() | map() | nil) :: [svg_op()]
   def hydrate_vector_svg_ops(rows, %Project{} = project) when is_list(rows) do
-    Enum.flat_map(rows, fn
+    indices = Ide.Debugger.RuntimeArtifacts.vector_resource_indices_for_project(project.slug)
+
+    rows
+    |> Enum.map(&resolve_vector_svg_op_id(&1, indices))
+    |> Enum.flat_map(fn
       %{kind: :vector_at, vector_id: vector_id, x: x, y: y} when vector_id >= 1 ->
         hydrate_static_vector(project, vector_id, x, y)
 
@@ -137,6 +171,112 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   def hydrate_vector_svg_ops(rows, _project) when is_list(rows), do: rows
 
+  @spec resolve_vector_svg_op_id(svg_op(), map()) :: svg_op()
+  defp resolve_vector_svg_op_id(%{kind: kind} = op, indices)
+       when kind in [:vector_at, :vector_sequence_at] and is_map(indices) do
+    case Map.get(op, :vector_id) do
+      id when is_integer(id) and id > 0 ->
+        op
+
+      _ ->
+        resource = Map.get(op, :resource) || Map.get(op, "resource")
+        id = vector_resource_index(resource, indices)
+        if id > 0, do: Map.put(op, :vector_id, id), else: op
+    end
+  end
+
+  defp resolve_vector_svg_op_id(op, _indices), do: op
+
+  @spec resolve_bitmap_svg_ops([svg_op()], Ide.Projects.Project.t() | map()) :: [svg_op()]
+  def resolve_bitmap_svg_ops(rows, %Ide.Projects.Project{} = project) when is_list(rows) do
+    bitmap_indices = Ide.Debugger.RuntimeArtifacts.bitmap_resource_indices_for_project(project.slug)
+    animation_indices = Ide.Debugger.RuntimeArtifacts.animation_resource_indices_for_project(project.slug)
+    Enum.map(rows, &resolve_bitmap_svg_op_id(&1, bitmap_indices, animation_indices))
+  end
+
+  def resolve_bitmap_svg_ops(rows, runtime) when is_list(rows) do
+    model = runtime_model(runtime)
+    bitmap_indices = Ide.Debugger.RuntimeArtifacts.bitmap_resource_indices(model)
+    animation_indices = Ide.Debugger.RuntimeArtifacts.animation_resource_indices(model)
+    Enum.map(rows, &resolve_bitmap_svg_op_id(&1, bitmap_indices, animation_indices))
+  end
+
+  @spec resolve_bitmap_svg_op_id(svg_op(), map(), map()) :: svg_op()
+  def resolve_bitmap_svg_op_id(%{kind: :bitmap_in_rect} = op, bitmap_indices, _animation_indices) do
+    case Map.get(op, :bitmap_id) do
+      id when is_integer(id) and id > 0 ->
+        op
+
+      _ ->
+        resource = Map.get(op, :resource) || Map.get(op, "resource")
+        id = bitmap_resource_index(resource, bitmap_indices)
+        if id > 0, do: Map.put(op, :bitmap_id, id), else: op
+    end
+  end
+
+  def resolve_bitmap_svg_op_id(%{kind: :rotated_bitmap} = op, bitmap_indices, _animation_indices) do
+    case Map.get(op, :bitmap_id) do
+      id when is_integer(id) and id > 0 ->
+        op
+
+      _ ->
+        resource = Map.get(op, :resource) || Map.get(op, "resource")
+        id = bitmap_resource_index(resource, bitmap_indices)
+        if id > 0, do: Map.put(op, :bitmap_id, id), else: op
+    end
+  end
+
+  def resolve_bitmap_svg_op_id(%{kind: :bitmap_sequence_at} = op, _bitmap_indices, animation_indices) do
+    case Map.get(op, :animation_id) do
+      id when is_integer(id) and id > 0 ->
+        op
+
+      _ ->
+        resource = Map.get(op, :resource) || Map.get(op, "resource")
+        id = animation_resource_index(resource, animation_indices)
+        if id > 0, do: Map.put(op, :animation_id, id), else: op
+    end
+  end
+
+  def resolve_bitmap_svg_op_id(op, _bitmap_indices, _animation_indices), do: op
+
+  @spec bitmap_resource_index(term(), map()) :: non_neg_integer()
+  defp bitmap_resource_index(resource, indices), do: named_resource_index(resource, indices)
+
+  @spec animation_resource_index(term(), map()) :: non_neg_integer()
+  defp animation_resource_index(resource, indices), do: named_resource_index(resource, indices)
+
+  @spec named_resource_index(term(), map()) :: non_neg_integer()
+  defp named_resource_index(resource, indices) when is_map(indices) do
+    name = vector_resource_name(resource)
+
+    case Map.get(indices, name) || Map.get(indices, String.to_atom(name)) do
+      id when is_integer(id) and id > 0 -> id
+      _ -> 0
+    end
+  end
+
+  defp named_resource_index(_resource, _indices), do: 0
+
+  @spec vector_resource_index(term(), map()) :: non_neg_integer()
+  defp vector_resource_index(resource, indices) when is_map(indices) do
+    name = vector_resource_name(resource)
+
+    case Map.get(indices, name) || Map.get(indices, String.to_atom(name)) do
+      id when is_integer(id) and id > 0 -> id
+      _ -> 0
+    end
+  end
+
+  defp vector_resource_index(_resource, _indices), do: 0
+
+  @spec vector_resource_name(term()) :: String.t()
+  defp vector_resource_name(resource) when is_binary(resource), do: resource
+  defp vector_resource_name(resource) when is_atom(resource), do: Atom.to_string(resource)
+  defp vector_resource_name(%{"ctor" => ctor}), do: to_string(ctor)
+  defp vector_resource_name(%{ctor: ctor}), do: to_string(ctor)
+  defp vector_resource_name(_), do: ""
+
   @spec hydrate_animation_svg_ops([svg_op()], Project.t() | map() | nil) :: [svg_op()]
   def hydrate_animation_svg_ops(rows, %Project{} = project) when is_list(rows) do
     Enum.map(rows, fn
@@ -146,9 +286,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
           %{} = hydrated -> Map.merge(row, hydrated)
           nil -> row
         end
-
-      %{kind: :bitmap_sequence_at, animation_id: 0} ->
-        []
 
       other ->
         other
@@ -286,7 +423,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     end
   end
 
-  @spec read_vector_bytes(Project.t(), pos_integer()) :: {:ok, binary()} | {:error, File.posix() | atom()}
+  @spec read_vector_bytes(Project.t(), pos_integer()) ::
+          {:ok, binary()} | {:error, File.posix() | atom()}
   defp read_vector_bytes(project, vector_id) do
     with {:ok, path} <- ResourceStore.vector_file_path_by_id(project, vector_id),
          {:ok, bytes} <- File.read(path) do
@@ -308,29 +446,39 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   @spec vector_sequence_anim_id(pos_integer(), integer(), integer()) :: String.t()
   defp vector_sequence_anim_id(vector_id, x, y), do: "debugger-vseq-#{vector_id}-#{x}-#{y}"
 
+  @path_drawable_kinds ~w(path_filled path_outline path_outline_open)
+
   @spec compact_scene(runtime_input()) :: map()
-  def compact_scene(runtime) when is_map(runtime) do
+  def compact_scene(runtime) when is_map(runtime), do: compact_scene(runtime, :watch)
+  def compact_scene(_runtime), do: build_compact_scene([])
+
+  @spec compact_scene(runtime_input(), :watch | :companion | :phone) :: map()
+  def compact_scene(runtime, target)
+      when is_map(runtime) and target in [:watch, :companion, :phone] do
     model = Map.get(runtime, :model) || Map.get(runtime, "model") || %{}
+    rows = RuntimePreview.effective_runtime_view_output_rows(runtime, model, target)
 
     case Map.get(model, "compact_scene") || Map.get(model, :compact_scene) ||
            Map.get(model, "runtime_compact_scene") || Map.get(model, :runtime_compact_scene) do
       scene when is_map(scene) ->
-        normalize_compact_scene(scene)
+        normalized = normalize_compact_scene(scene)
+
+        if compact_scene_missing_path_drawables?(normalized, rows) or
+             compact_scene_missing_bitmap_drawables?(normalized, rows) do
+          build_compact_scene_from_view_output_rows(runtime, model, rows)
+        else
+          normalized
+        end
 
       _ ->
-        ops =
-          model
-          |> runtime_view_output_rows()
-          |> Enum.map(&normalize_svg_op/1)
-          |> Enum.reject(&is_nil/1)
-
-        build_compact_scene(ops)
+        build_compact_scene_from_view_output_rows(runtime, model, rows)
     end
   end
 
-  def compact_scene(_runtime), do: build_compact_scene([])
+  def compact_scene(_runtime, _target), do: build_compact_scene([])
 
-  @spec compact_scene_diff(compact_scene() | runtime_input(), compact_scene() | runtime_input()) :: map()
+  @spec compact_scene_diff(compact_scene() | runtime_input(), compact_scene() | runtime_input()) ::
+          map()
   def compact_scene_diff(previous, current) do
     previous_scene = normalize_compact_scene_map(previous)
     current_scene = normalize_compact_scene_map(current)
@@ -540,6 +688,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     type = (Map.get(node, "type") || Map.get(node, :type) || "") |> to_string()
     label = (Map.get(node, "label") || Map.get(node, :label) || "") |> to_string()
 
+    target =
+      to_string(Map.get(node, "qualified_target") || Map.get(node, :qualified_target) || "")
+
     cond do
       label == "__append__" ->
         values = node_children(node) |> Enum.map(&resolve_text_label_value(&1, env))
@@ -556,6 +707,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
       normalize_text_value(value) != nil ->
         normalize_text_value(value)
+
+      type == "WaitingForCompanion" or
+          String.ends_with?(target, "WaitingForCompanion") ->
+        "Waiting for companion app"
 
       op == "field_access" ->
         resolve_field_access_text(node, env)
@@ -681,12 +836,144 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     |> apply_svg_style_state()
   end
 
-  @spec runtime_view_output_rows(map()) :: [map()]
-  defp runtime_view_output_rows(model) when is_map(model) do
-    model
-    |> Map.get("runtime_view_output", Map.get(model, :runtime_view_output, []))
+  @spec build_compact_scene_from_view_output_rows(runtime_input(), map(), [map()]) :: map()
+  defp build_compact_scene_from_view_output_rows(runtime, model, rows)
+       when is_map(runtime) and is_map(model) and is_list(rows) do
+    indices = RuntimeArtifacts.vector_resource_indices(runtime_model(runtime))
+
+    bitmap_indices = RuntimeArtifacts.bitmap_resource_indices(runtime_model(runtime))
+
+    ops =
+      rows
+      |> Elmx.Runtime.ViewOutput.apply_resource_indices(
+        vector_resource_indices: indices,
+        bitmap_resource_indices: bitmap_indices,
+        animation_resource_indices:
+          RuntimeArtifacts.animation_resource_indices(runtime_model(runtime))
+      )
+      |> Enum.map(&normalize_svg_op/1)
+      |> Enum.reject(&is_nil/1)
+
+    build_compact_scene(ops)
+  end
+
+  @spec compact_scene_missing_path_drawables?(map(), [map()]) :: boolean()
+  defp compact_scene_missing_path_drawables?(scene, rows) when is_map(scene) and is_list(rows) do
+    rows_need_paths? =
+      Enum.any?(rows, fn row ->
+        kind = view_output_row_kind(row)
+        kind in ["path_filled", "path_outline", "path_outline_open"]
+      end)
+
+    rows_need_paths? and not compact_scene_has_path_drawables?(scene)
+  end
+
+  defp compact_scene_missing_path_drawables?(_scene, _rows), do: false
+
+  @spec compact_scene_missing_bitmap_drawables?(map(), [map()]) :: boolean()
+  defp compact_scene_missing_bitmap_drawables?(scene, rows) when is_map(scene) and is_list(rows) do
+    rows_need_bitmaps? =
+      Enum.any?(rows, fn row ->
+        kind = view_output_row_kind(row)
+
+        kind in ["bitmap_in_rect", "rotated_bitmap", "bitmap_sequence_at"] and
+          view_output_row_has_resolved_resource_id?(row, kind)
+      end)
+
+    rows_need_bitmaps? and not compact_scene_has_bitmap_drawables?(scene)
+  end
+
+  defp compact_scene_missing_bitmap_drawables?(_scene, _rows), do: false
+
+  defp view_output_row_has_resolved_resource_id?(row, "bitmap_in_rect"),
+    do: view_output_row_int(row, "bitmap_id", 0) > 0
+
+  defp view_output_row_has_resolved_resource_id?(row, "rotated_bitmap"),
+    do: view_output_row_int(row, "bitmap_id", 0) > 0
+
+  defp view_output_row_has_resolved_resource_id?(row, "bitmap_sequence_at"),
+    do: view_output_row_int(row, "animation_id", 0) > 0
+
+  defp view_output_row_has_resolved_resource_id?(_row, _kind), do: false
+
+  defp view_output_row_int(row, key, default) when is_map(row) do
+    case Map.get(row, key) || Map.get(row, String.to_atom(key)) do
+      n when is_integer(n) -> n
+      n when is_float(n) -> trunc(n)
+      _ -> default
+    end
+  end
+
+  @spec compact_scene_has_bitmap_drawables?(map()) :: boolean()
+  defp compact_scene_has_bitmap_drawables?(scene) when is_map(scene) do
+    scene
+    |> Map.get(:ops, Map.get(scene, "ops", []))
     |> List.wrap()
-    |> Enum.filter(&is_map/1)
+    |> Enum.any?(fn entry ->
+      op = Map.get(entry, :op) || Map.get(entry, "op") || %{}
+      kind = to_string(Map.get(op, :kind) || Map.get(op, "kind") || "")
+
+      kind in ["bitmap_in_rect", "rotated_bitmap", "bitmap_sequence_at"] and
+        compact_op_has_resolved_resource_id?(op, kind)
+    end)
+  end
+
+  defp compact_op_has_resolved_resource_id?(op, "bitmap_in_rect"),
+    do: compact_op_int(op, "bitmap_id", 0) > 0
+
+  defp compact_op_has_resolved_resource_id?(op, "rotated_bitmap"),
+    do: compact_op_int(op, "bitmap_id", 0) > 0
+
+  defp compact_op_has_resolved_resource_id?(op, "bitmap_sequence_at"),
+    do: compact_op_int(op, "animation_id", 0) > 0
+
+  defp compact_op_has_resolved_resource_id?(_op, _kind), do: false
+
+  defp compact_op_int(op, key, default) when is_map(op) do
+    case Map.get(op, key) || Map.get(op, String.to_atom(key)) do
+      n when is_integer(n) -> n
+      n when is_float(n) -> trunc(n)
+      _ -> default
+    end
+  end
+
+  defp compact_scene_text_label(op) when is_map(op) do
+    text =
+      to_string(
+        Map.get(op, "text") || Map.get(op, :text) || Map.get(op, "label") || Map.get(op, :label) ||
+          ""
+      )
+
+    case text do
+      "" ->
+        case compact_op_int(op, "label_tag", -1) do
+          0 -> "Waiting for companion app"
+          _ -> ""
+        end
+
+      "WaitingForCompanion" ->
+        "Waiting for companion app"
+
+      other ->
+        other
+    end
+  end
+
+  @spec compact_scene_has_path_drawables?(map()) :: boolean()
+  defp compact_scene_has_path_drawables?(scene) when is_map(scene) do
+    scene
+    |> Map.get(:ops, Map.get(scene, "ops", []))
+    |> List.wrap()
+    |> Enum.any?(fn entry ->
+      op = Map.get(entry, :op) || Map.get(entry, "op") || %{}
+      kind = Map.get(op, :kind) || Map.get(op, "kind")
+      to_string(kind) in @path_drawable_kinds
+    end)
+  end
+
+  @spec view_output_row_kind(map()) :: String.t()
+  defp view_output_row_kind(row) when is_map(row) do
+    to_string(Map.get(row, "kind") || Map.get(row, :kind) || "")
   end
 
   @spec normalize_compact_scene(map()) :: map()
@@ -1120,6 +1407,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
           case map_integers_required(op, ["bitmap_id", "x", "y", "w", "h"]) do
             {:ok, [bitmap_id, x, y, w, h]} ->
               %{kind: :bitmap_in_rect, bitmap_id: bitmap_id, x: x, y: y, w: w, h: h}
+              |> maybe_put_svg_resource(op)
 
             :error ->
               unresolved_svg_op("bitmap_in_rect", ["bitmap_id", "x", "y", "w", "h"], op)
@@ -1144,6 +1432,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
                 center_x: center_x,
                 center_y: center_y
               }
+              |> maybe_put_svg_resource(op)
 
             :error ->
               unresolved_svg_op(
@@ -1157,6 +1446,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
           case map_integers_required(op, ["vector_id", "x", "y"]) do
             {:ok, [vector_id, x, y]} ->
               %{kind: :vector_at, vector_id: vector_id, x: x, y: y}
+              |> maybe_put_svg_resource(op)
 
             :error ->
               unresolved_svg_op("vector_at", ["vector_id", "x", "y"], op)
@@ -1166,6 +1456,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
           case map_integers_required(op, ["vector_id", "x", "y"]) do
             {:ok, [vector_id, x, y]} ->
               %{kind: :vector_sequence_at, vector_id: vector_id, x: x, y: y}
+              |> maybe_put_svg_resource(op)
 
             :error ->
               unresolved_svg_op("vector_sequence_at", ["vector_id", "x", "y"], op)
@@ -1175,6 +1466,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
           case map_integers_required(op, ["animation_id", "x", "y"]) do
             {:ok, [animation_id, x, y]} ->
               %{kind: :bitmap_sequence_at, animation_id: animation_id, x: x, y: y}
+              |> maybe_put_svg_resource(op)
 
             :error ->
               unresolved_svg_op("bitmap_sequence_at", ["animation_id", "x", "y"], op)
@@ -1196,7 +1488,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
         "text_label" ->
           case map_integers_required(op, ["x", "y"]) do
             {:ok, [x, y]} ->
-              text = to_string(Map.get(op, "text") || Map.get(op, :text) || "")
+              text = compact_scene_text_label(op)
 
               if text == "",
                 do: unresolved_svg_op("text_label", ["x", "y", "text"], op),
@@ -1245,6 +1537,18 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   defp maybe_put_svg_source(normalized, _original), do: normalized
 
+  @spec maybe_put_svg_resource(svg_op(), map()) :: svg_op()
+  defp maybe_put_svg_resource(op, original) when is_map(op) and is_map(original) do
+    case Map.get(original, "resource") || Map.get(original, :resource) do
+      value when is_binary(value) or is_atom(value) -> Map.put(op, :resource, value)
+      %{"ctor" => ctor} -> Map.put(op, :resource, ctor)
+      %{ctor: ctor} -> Map.put(op, :resource, ctor)
+      _ -> op
+    end
+  end
+
+  defp maybe_put_svg_resource(op, _original), do: op
+
   @spec text_box_svg_op(map(), integer(), integer(), String.t()) :: map()
   defp text_box_svg_op(op, x, y, text) when is_map(op) and is_integer(x) and is_integer(y) do
     base = %{kind: :text_label, x: x, y: y, text: text}
@@ -1266,8 +1570,18 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     end
   end
 
+  defp normalized_text_alignment(value) when is_integer(value) do
+    case value do
+      0 -> "left"
+      2 -> "right"
+      _ -> "center"
+    end
+  end
+
   defp normalized_text_alignment(value) do
     case to_string(value || "center") do
+      "0" -> "left"
+      "2" -> "right"
       "left" -> "left"
       "right" -> "right"
       _ -> "center"
@@ -1483,6 +1797,18 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   defp normalize_point_pair(%{x: x, y: y}) when is_integer(x) and is_integer(y), do: {:ok, [x, y]}
   defp normalize_point_pair(_), do: :error
+
+  @spec node_rect_fields(map()) :: {integer() | nil, integer() | nil, integer() | nil, integer() | nil}
+  defp node_rect_fields(node) when is_map(node) do
+    bounds = Map.get(node, "bounds") || Map.get(node, :bounds) || %{}
+
+    {
+      map_integer(node, "x", map_integer(bounds, "x", nil)),
+      map_integer(node, "y", map_integer(bounds, "y", nil)),
+      map_integer(node, "w", map_integer(bounds, "w", nil)),
+      map_integer(node, "h", map_integer(bounds, "h", nil))
+    }
+  end
 
   @spec unresolved_svg_op(String.t(), [String.t()], map()) :: svg_op()
   defp unresolved_svg_op(node_type, required_keys, op) do
@@ -1770,14 +2096,35 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
             "y" => Map.get(node, "y") || Map.get(node, :y)
           }
 
+        "drawVectorAt" ->
+          %{
+            "kind" => "vector_at",
+            "resource" => Map.get(node, "resource") || Map.get(node, :resource),
+            "vector_id" => Map.get(node, "vector_id") || Map.get(node, :vector_id),
+            "x" => Map.get(node, "x") || Map.get(node, :x),
+            "y" => Map.get(node, "y") || Map.get(node, :y)
+          }
+
+        "drawVectorSequenceAt" ->
+          %{
+            "kind" => "vector_sequence_at",
+            "vector_id" => Map.get(node, "vector_id") || Map.get(node, :vector_id),
+            "x" => Map.get(node, "x") || Map.get(node, :x),
+            "y" => Map.get(node, "y") || Map.get(node, :y)
+          }
+
         "text" ->
+          {x, y, w, h} = node_rect_fields(node)
+
           %{
             "kind" => "text",
-            "x" => Map.get(node, "x") || Map.get(node, :x),
-            "y" => Map.get(node, "y") || Map.get(node, :y),
-            "w" => Map.get(node, "w") || Map.get(node, :w),
-            "h" => Map.get(node, "h") || Map.get(node, :h),
-            "text" => Map.get(node, "text") || Map.get(node, :text),
+            "x" => x,
+            "y" => y,
+            "w" => w,
+            "h" => h,
+            "text" =>
+              Map.get(node, "text") || Map.get(node, :text) || Map.get(node, "label") ||
+                Map.get(node, :label),
             "text_align" =>
               normalized_text_alignment(Map.get(node, "text_align") || Map.get(node, :text_align)),
             "text_overflow" =>
@@ -1823,7 +2170,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     end
   end
 
-  @spec svg_op_from_node_children(map(), String.t(), [integer()], integer() | nil, model_map()) :: [map()]
+  @spec svg_op_from_node_children(map(), String.t(), [integer()], integer() | nil, model_map()) ::
+          [map()]
   defp svg_op_from_node_children(node, type, ints, primary_int, model) do
     case type do
       "clear" ->
@@ -2138,6 +2486,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
             ]
         end
 
+      kind when kind in ["drawRotatedBitmap"] ->
+        rotated_bitmap_svg_ops_from_children(node, model, length(ints))
+
       kind when kind in ["drawBitmapInRect", "bitmapInRect"] ->
         case node_children(node) do
           [bitmap_node, bounds_node | _] ->
@@ -2236,43 +2587,71 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
             end
         end
 
-      kind when kind in ["drawBitmapSequenceAt", "bitmapSequenceAt"] ->
-        case require_ints(ints, 3) do
-          {:ok, [animation_id, x, y]} ->
-            if animation_id == 0 do
-              []
-            else
-              [%{kind: :bitmap_sequence_at, animation_id: animation_id, x: x, y: y}]
-            end
+      kind when kind in ["RotatedBitmap", "rotatedBitmap"] ->
+        case require_ints(ints, 6) do
+          {:ok, [bitmap_id, src_w, src_h, angle, center_x, center_y]} when bitmap_id > 0 ->
+            [
+              %{
+                kind: :rotated_bitmap,
+                bitmap_id: bitmap_id,
+                src_w: src_w,
+                src_h: src_h,
+                angle: angle,
+                center_x: center_x,
+                center_y: center_y
+              }
+            ]
+
+          {:ok, _} ->
+            rotated_bitmap_svg_ops_from_children(node, model, length(ints))
 
           :error ->
-            case node_children(node) do
-              [animation_node, x_node, y_node | _] ->
-                with animation_id when is_integer(animation_id) <-
-                       animation_node_id(animation_node, model),
-                     x when is_integer(x) <- node_int_value(x_node, model),
-                     y when is_integer(y) <- node_int_value(y_node, model),
-                     true <- animation_id != 0 do
-                  [%{kind: :bitmap_sequence_at, animation_id: animation_id, x: x, y: y}]
-                else
-                  _ ->
-                    unresolved_node("drawBitmapSequenceAt", length(ints), 3)
-                end
+            rotated_bitmap_svg_ops_from_children(node, model, length(ints))
+        end
 
-              [animation_node, point_node | _] ->
-                with animation_id when is_integer(animation_id) <-
-                       animation_node_id(animation_node, model),
-                     {:ok, [x, y]} <- point_pair_from_point_node(point_node),
-                     true <- animation_id != 0 do
-                  [%{kind: :bitmap_sequence_at, animation_id: animation_id, x: x, y: y}]
-                else
-                  _ ->
-                    unresolved_node("drawBitmapSequenceAt", length(ints), 3)
-                end
+      kind when kind in ["BitmapInRect", "bitmapInRect"] ->
+        case require_ints(ints, 5) do
+          {:ok, [bitmap_id, x, y, w, h]} when bitmap_id > 0 ->
+            [
+              %{
+                kind: :bitmap_in_rect,
+                bitmap_id: bitmap_id,
+                x: x,
+                y: y,
+                w: w,
+                h: h
+              }
+            ]
 
-              _ ->
-                unresolved_node("drawBitmapSequenceAt", length(ints), 3)
-            end
+          {:ok, _} ->
+            bitmap_in_rect_svg_ops_from_children(node, model, length(ints))
+
+          :error ->
+            bitmap_in_rect_svg_ops_from_children(node, model, length(ints))
+        end
+
+      kind when kind in ["BitmapSequenceAt", "bitmapSequenceAt"] ->
+        case require_ints(ints, 3) do
+          {:ok, [animation_id, x, y]} when animation_id > 0 ->
+            [%{kind: :bitmap_sequence_at, animation_id: animation_id, x: x, y: y}]
+
+          {:ok, _} ->
+            bitmap_sequence_svg_ops_from_children(node, model, length(ints))
+
+          :error ->
+            bitmap_sequence_svg_ops_from_children(node, model, length(ints))
+        end
+
+      kind when kind in ["drawBitmapSequenceAt", "bitmapSequenceAt"] ->
+        case require_ints(ints, 3) do
+          {:ok, [animation_id, x, y]} when animation_id > 0 ->
+            [%{kind: :bitmap_sequence_at, animation_id: animation_id, x: x, y: y}]
+
+          {:ok, _} ->
+            bitmap_sequence_svg_ops_from_children(node, model, length(ints))
+
+          :error ->
+            bitmap_sequence_svg_ops_from_children(node, model, length(ints))
         end
 
       "text" ->
@@ -2556,12 +2935,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   defp node_int_value(_node, _model), do: nil
 
   @spec evaluated_node_value(view_node(), model_map()) :: wire_value()
-  defp evaluated_node_value(node, model) when is_map(node) and is_map(model) do
-    ElmExecutor.Runtime.SemanticExecutor.evaluate_view_tree_value(
-      node,
-      model,
-      RuntimeArtifacts.core_ir_eval_context(model)
-    )
+  defp evaluated_node_value(node, _model) when is_map(node) do
+    Map.get(node, "value") ||
+      Map.get(node, :value) ||
+      Map.get(node, "evaluated_value") ||
+      Map.get(node, :evaluated_value)
   end
 
   defp evaluated_node_value(_node, _model), do: nil
@@ -2569,6 +2947,88 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   @spec node_color_value(map(), model_map()) :: integer() | nil
   defp node_color_value(node, model) when is_map(node) do
     node_int_value(node, model) || color_constructor_value(node, model)
+  end
+
+  @spec bitmap_in_rect_svg_ops_from_children(map(), model_map(), non_neg_integer()) :: [svg_op()]
+  defp bitmap_in_rect_svg_ops_from_children(node, model, int_count) do
+    case node_children(node) do
+      [bitmap_node, bounds_node | _] ->
+        with bitmap_id when is_integer(bitmap_id) <- bitmap_node_id(bitmap_node, model),
+             {:ok, [x, y, w, h]} <- rect_node_ints(bounds_node, model),
+             true <- bitmap_id > 0 do
+          [
+            %{
+              kind: :bitmap_in_rect,
+              bitmap_id: bitmap_id,
+              x: clamp(x, 0, @default_screen_w - 1),
+              y: clamp(y, 0, @default_screen_h - 1),
+              w: clamp(w, 1, @default_screen_w),
+              h: clamp(h, 1, @default_screen_h)
+            }
+          ]
+        else
+          _ -> unresolved_node("BitmapInRect", int_count, 5)
+        end
+
+      _ ->
+        unresolved_node("BitmapInRect", int_count, 5)
+    end
+  end
+
+  @spec rotated_bitmap_svg_ops_from_children(map(), model_map(), non_neg_integer()) :: [svg_op()]
+  defp rotated_bitmap_svg_ops_from_children(node, model, int_count) do
+    case node_children(node) do
+      [bitmap_node, bounds_node, rotation_node, center_node | _] ->
+        with bitmap_id when is_integer(bitmap_id) <- bitmap_node_id(bitmap_node, model),
+             {:ok, [src_w, src_h, _x, _y]} <- rect_node_ints(bounds_node, model),
+             angle when is_integer(angle) <- node_int_value(rotation_node, model),
+             {:ok, [center_x, center_y]} <- point_pair_from_point_node(center_node),
+             true <- bitmap_id > 0 do
+          [
+            %{
+              kind: :rotated_bitmap,
+              bitmap_id: bitmap_id,
+              src_w: src_w,
+              src_h: src_h,
+              angle: angle,
+              center_x: center_x,
+              center_y: center_y
+            }
+          ]
+        else
+          _ -> unresolved_node("RotatedBitmap", int_count, 6)
+        end
+
+      _ ->
+        unresolved_node("RotatedBitmap", int_count, 6)
+    end
+  end
+
+  @spec bitmap_sequence_svg_ops_from_children(map(), model_map(), non_neg_integer()) :: [svg_op()]
+  defp bitmap_sequence_svg_ops_from_children(node, model, int_count) do
+    case node_children(node) do
+      [animation_node, x_node, y_node | _] ->
+        with animation_id when is_integer(animation_id) <- animation_node_id(animation_node, model),
+             x when is_integer(x) <- node_int_value(x_node, model),
+             y when is_integer(y) <- node_int_value(y_node, model),
+             true <- animation_id > 0 do
+          [%{kind: :bitmap_sequence_at, animation_id: animation_id, x: x, y: y}]
+        else
+          _ -> unresolved_node("BitmapSequenceAt", int_count, 3)
+        end
+
+      [animation_node, point_node | _] ->
+        with animation_id when is_integer(animation_id) <- animation_node_id(animation_node, model),
+             {:ok, [x, y]} <- point_pair_from_point_node(point_node),
+             true <- animation_id > 0 do
+          [%{kind: :bitmap_sequence_at, animation_id: animation_id, x: x, y: y}]
+        else
+          _ -> unresolved_node("BitmapSequenceAt", int_count, 3)
+        end
+
+      _ ->
+        unresolved_node("BitmapSequenceAt", int_count, 3)
+    end
   end
 
   @spec bitmap_node_id(map(), model_map()) :: integer() | nil
@@ -2585,14 +3045,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
         evaluated
 
       is_integer(Map.get(node, "tag") || Map.get(node, :tag)) ->
-        Map.get(node, "tag") || Map.get(node, :tag)
+        (Map.get(node, "tag") || Map.get(node, :tag)) + 1
 
       target in [
-            "Resources.NoBitmap",
-            "Pebble.Ui.Resources.NoBitmap",
-            "Resources.NoStaticBitmap",
-            "Pebble.Ui.Resources.NoStaticBitmap"
-          ] or type in ["NoBitmap", "NoStaticBitmap"] ->
+        "Resources.NoBitmap",
+        "Pebble.Ui.Resources.NoBitmap",
+        "Resources.NoStaticBitmap",
+        "Pebble.Ui.Resources.NoStaticBitmap"
+      ] or type in ["NoBitmap", "NoStaticBitmap"] ->
         0
 
       true ->
@@ -2613,21 +3073,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
       is_integer(evaluated) ->
         evaluated
 
-      is_map(evaluated) ->
-        case ElmExecutor.Runtime.CoreIREvaluator.animation_resource_id_from_value(
-               evaluated,
-               RuntimeArtifacts.core_ir_eval_context(model)
-             ) do
-          {:ok, id} -> id
-          :error -> nil
-        end
-
       target in [
-            "Resources.NoAnimation",
-            "Pebble.Ui.Resources.NoAnimation",
-            "Resources.NoAnimatedBitmap",
-            "Pebble.Ui.Resources.NoAnimatedBitmap"
-          ] or type in ["NoAnimation", "NoAnimatedBitmap"] ->
+        "Resources.NoAnimation",
+        "Pebble.Ui.Resources.NoAnimation",
+        "Resources.NoAnimatedBitmap",
+        "Pebble.Ui.Resources.NoAnimatedBitmap"
+      ] or type in ["NoAnimation", "NoAnimatedBitmap"] ->
         0
 
       is_integer(Map.get(node, "tag") || Map.get(node, :tag)) ->
@@ -2651,23 +3102,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
       is_integer(evaluated) ->
         evaluated
 
-      is_map(evaluated) ->
-        case ElmExecutor.Runtime.CoreIREvaluator.vector_resource_id_from_value(
-               evaluated,
-               RuntimeArtifacts.core_ir_eval_context(model)
-             ) do
-          {:ok, id} -> id
-          :error -> nil
-        end
-
       target in [
-            "Resources.NoVectorGraphic",
-            "Pebble.Ui.Resources.NoVectorGraphic",
-            "Resources.NoStaticVector",
-            "Pebble.Ui.Resources.NoStaticVector",
-            "Resources.NoAnimatedVector",
-            "Pebble.Ui.Resources.NoAnimatedVector"
-          ] or type in ["NoVectorGraphic", "NoStaticVector", "NoAnimatedVector"] ->
+        "Resources.NoVectorGraphic",
+        "Pebble.Ui.Resources.NoVectorGraphic",
+        "Resources.NoStaticVector",
+        "Pebble.Ui.Resources.NoStaticVector",
+        "Resources.NoAnimatedVector",
+        "Pebble.Ui.Resources.NoAnimatedVector"
+      ] or type in ["NoVectorGraphic", "NoStaticVector", "NoAnimatedVector"] ->
         0
 
       is_integer(Map.get(node, "tag") || Map.get(node, :tag)) ->
@@ -2823,6 +3265,17 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   @spec path_from_view_node(view_node()) :: {:ok, map()} | :error
   defp path_from_view_node(node) when is_map(node) do
+    case map_path_required(node) do
+      {:ok, path} ->
+        {:ok, path}
+
+      :error ->
+        path_from_view_node_children(node)
+    end
+  end
+
+  @spec path_from_view_node_children(view_node()) :: {:ok, map()} | :error
+  defp path_from_view_node_children(node) when is_map(node) do
     children = node_children(node)
 
     case children do
@@ -2958,4 +3411,71 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   @spec clamp(integer(), integer(), integer()) :: integer()
   defp clamp(value, min, max) when is_integer(value), do: max(min, min(value, max))
+
+  @doc """
+  Converts Pebble color integers to CSS colors for the debugger SVG preview.
+
+  Supports indexed black/white (`0`/`1`), 8-bit `GColor8`, and 32-bit `GColor` ARGB8.
+  """
+  @spec pebble_color_to_svg(integer() | nil, String.t()) :: String.t()
+  def pebble_color_to_svg(value, fallback \\ "#111111")
+
+  def pebble_color_to_svg(0, _fallback), do: "white"
+  def pebble_color_to_svg(1, _fallback), do: "#111111"
+
+  def pebble_color_to_svg(value, _fallback) when is_integer(value) and value >= 0x100 do
+    argb8_to_svg(value)
+  end
+
+  def pebble_color_to_svg(value, _fallback) when is_integer(value) do
+    gcolor8_to_svg(value)
+  end
+
+  def pebble_color_to_svg(_value, fallback), do: fallback
+
+  @spec argb8_to_svg(integer()) :: String.t()
+  defp argb8_to_svg(argb) when is_integer(argb) do
+    alpha = Bitwise.band(Bitwise.bsr(argb, 24), 0xFF)
+    red = Bitwise.band(Bitwise.bsr(argb, 16), 0xFF)
+    green = Bitwise.band(Bitwise.bsr(argb, 8), 0xFF)
+    blue = Bitwise.band(argb, 0xFF)
+
+    if alpha >= 255 do
+      hex_rgb(red, green, blue)
+    else
+      a = Float.round(alpha / 255.0, 2)
+      "rgba(#{red}, #{green}, #{blue}, #{a})"
+    end
+  end
+
+  @spec gcolor8_to_svg(integer()) :: String.t()
+  defp gcolor8_to_svg(packed) when is_integer(packed) do
+    alpha = Bitwise.band(Bitwise.bsr(packed, 6), 0x03)
+    red = Bitwise.band(Bitwise.bsr(packed, 4), 0x03)
+    green = Bitwise.band(Bitwise.bsr(packed, 2), 0x03)
+    blue = Bitwise.band(packed, 0x03)
+
+    gcolor8_rgba_float(red, green, blue, alpha)
+  end
+
+  @spec gcolor8_rgba_float(integer(), integer(), integer(), integer()) :: String.t()
+  defp gcolor8_rgba_float(red2, green2, blue2, alpha2) do
+    red = gcolor8_channel_to_8bit(red2)
+    green = gcolor8_channel_to_8bit(green2)
+    blue = gcolor8_channel_to_8bit(blue2)
+    alpha = Float.round(gcolor8_channel_to_8bit(alpha2) / 255.0, 2)
+    "rgba(#{red}, #{green}, #{blue}, #{alpha})"
+  end
+
+  @spec gcolor8_channel_to_8bit(integer()) :: integer()
+  defp gcolor8_channel_to_8bit(value) when is_integer(value), do: max(0, min(3, value)) * 85
+
+  @spec hex_rgb(integer(), integer(), integer()) :: String.t()
+  defp hex_rgb(red, green, blue)
+       when is_integer(red) and is_integer(green) and is_integer(blue) do
+    "#" <>
+      (red |> Integer.to_string(16) |> String.pad_leading(2, "0")) <>
+      (green |> Integer.to_string(16) |> String.pad_leading(2, "0")) <>
+      (blue |> Integer.to_string(16) |> String.pad_leading(2, "0"))
+  end
 end

@@ -32,9 +32,14 @@ defmodule Ide.Debugger.TraceExchange.FingerprintCompare do
           current_view_sha = WireValues.map_value(current, "view_tree_sha256")
           baseline_view_sha = WireValues.map_value(baseline, "view_tree_sha256")
           current_protocol_inbound_count = WireValues.map_value(current, "protocol_inbound_count")
-          baseline_protocol_inbound_count = WireValues.map_value(baseline, "protocol_inbound_count")
+
+          baseline_protocol_inbound_count =
+            WireValues.map_value(baseline, "protocol_inbound_count")
+
           current_protocol_message_count = WireValues.map_value(current, "protocol_message_count")
-          baseline_protocol_message_count = WireValues.map_value(baseline, "protocol_message_count")
+
+          baseline_protocol_message_count =
+            WireValues.map_value(baseline, "protocol_message_count")
 
           current_protocol_last_inbound_message =
             WireValues.map_value(current, "protocol_last_inbound_message")
@@ -44,20 +49,39 @@ defmodule Ide.Debugger.TraceExchange.FingerprintCompare do
 
           current_execution_backend = WireValues.map_value(current, "execution_backend")
           baseline_execution_backend = WireValues.map_value(baseline, "execution_backend")
-          current_external_fallback_reason = WireValues.map_value(current, "external_fallback_reason")
-          baseline_external_fallback_reason = WireValues.map_value(baseline, "external_fallback_reason")
+
+          current_external_fallback_reason =
+            WireValues.map_value(current, "external_fallback_reason")
+
+          baseline_external_fallback_reason =
+            WireValues.map_value(baseline, "external_fallback_reason")
+
           current_target_numeric_key = WireValues.map_value(current, "target_numeric_key")
           baseline_target_numeric_key = WireValues.map_value(baseline, "target_numeric_key")
-          current_target_numeric_key_source = WireValues.map_value(current, "target_numeric_key_source")
-          baseline_target_numeric_key_source = WireValues.map_value(baseline, "target_numeric_key_source")
+
+          current_target_numeric_key_source =
+            WireValues.map_value(current, "target_numeric_key_source")
+
+          baseline_target_numeric_key_source =
+            WireValues.map_value(baseline, "target_numeric_key_source")
+
           current_target_boolean_key = WireValues.map_value(current, "target_boolean_key")
           baseline_target_boolean_key = WireValues.map_value(baseline, "target_boolean_key")
-          current_target_boolean_key_source = WireValues.map_value(current, "target_boolean_key_source")
-          baseline_target_boolean_key_source = WireValues.map_value(baseline, "target_boolean_key_source")
+
+          current_target_boolean_key_source =
+            WireValues.map_value(current, "target_boolean_key_source")
+
+          baseline_target_boolean_key_source =
+            WireValues.map_value(baseline, "target_boolean_key_source")
+
           current_active_target_key = WireValues.map_value(current, "active_target_key")
           baseline_active_target_key = WireValues.map_value(baseline, "active_target_key")
-          current_active_target_key_source = WireValues.map_value(current, "active_target_key_source")
-          baseline_active_target_key_source = WireValues.map_value(baseline, "active_target_key_source")
+
+          current_active_target_key_source =
+            WireValues.map_value(current, "active_target_key_source")
+
+          baseline_active_target_key_source =
+            WireValues.map_value(baseline, "active_target_key_source")
 
           backend_changed =
             current_execution_backend != baseline_execution_backend or
@@ -117,7 +141,8 @@ defmodule Ide.Debugger.TraceExchange.FingerprintCompare do
     %{
       "current_cursor_seq" => current_seq,
       "baseline_cursor_seq" => baseline_seq,
-      "changed_surface_count" => Enum.count(Map.values(surfaces), &WireValues.map_value(&1, "changed")),
+      "changed_surface_count" =>
+        Enum.count(Map.values(surfaces), &WireValues.map_value(&1, "changed")),
       "backend_changed_surface_count" =>
         Enum.count(Map.values(surfaces), &WireValues.map_value(&1, "backend_changed")),
       "key_target_changed_surface_count" =>
@@ -166,15 +191,17 @@ defmodule Ide.Debugger.TraceExchange.FingerprintCompare do
   defp runtime_fingerprint_from_surface(surface) when is_map(surface) do
     model = Map.get(surface, :model)
     model = if is_map(model), do: model, else: %{}
-    runtime = Map.get(model, "elm_executor")
+    runtime = Map.get(model, "runtime_execution")
     runtime = if is_map(runtime), do: runtime, else: %{}
 
     fingerprint = %{
       "runtime_model_sha256" =>
-        WireValues.map_value(model, "runtime_model_sha256") || WireValues.map_value(runtime, "runtime_model_sha256"),
+        WireValues.map_value(model, "runtime_model_sha256") ||
+          WireValues.map_value(runtime, "runtime_model_sha256"),
       "view_tree_sha256" =>
-        WireValues.map_value(model, "runtime_view_tree_sha256") || WireValues.map_value(runtime, "view_tree_sha256"),
-      "runtime_mode" => WireValues.map_value(model, "elm_executor_mode"),
+        WireValues.map_value(model, "runtime_view_tree_sha256") ||
+          WireValues.map_value(runtime, "view_tree_sha256"),
+      "runtime_mode" => WireValues.map_value(model, "runtime_execution_mode"),
       "engine" => WireValues.map_value(runtime, "engine"),
       "execution_backend" => WireValues.map_value(runtime, "execution_backend"),
       "external_fallback_reason" => WireValues.map_value(runtime, "external_fallback_reason"),
@@ -186,7 +213,10 @@ defmodule Ide.Debugger.TraceExchange.FingerprintCompare do
       "active_target_key_source" => WireValues.map_value(runtime, "active_target_key_source"),
       "protocol_inbound_count" =>
         WireValues.map_value(model, "protocol_inbound_count") ||
-          WireValues.map_value(WireValues.map_value(model, "runtime_model"), "protocol_inbound_count"),
+          WireValues.map_value(
+            WireValues.map_value(model, "runtime_model"),
+            "protocol_inbound_count"
+          ),
       "protocol_message_count" =>
         case Map.get(surface, :protocol_messages) do
           xs when is_list(xs) and xs != [] -> length(xs)
@@ -194,7 +224,10 @@ defmodule Ide.Debugger.TraceExchange.FingerprintCompare do
         end,
       "protocol_last_inbound_message" =>
         WireValues.map_value(model, "protocol_last_inbound_message") ||
-          WireValues.map_value(WireValues.map_value(model, "runtime_model"), "protocol_last_inbound_message")
+          WireValues.map_value(
+            WireValues.map_value(model, "runtime_model"),
+            "protocol_last_inbound_message"
+          )
     }
 
     if Enum.any?(Map.values(fingerprint), &(!is_nil(&1))), do: fingerprint, else: nil

@@ -54,7 +54,7 @@ defmodule Ide.Resources.BitmapVariants do
   def platforms_label(color_mode) when is_binary(color_mode) do
     WatchModels.ordered_ids()
     |> Enum.filter(&(Map.get(WatchModels.profile_for(&1), "color_mode") == color_mode))
-    |> Enum.map(&(Map.get(WatchModels.profile_for(&1), "name", &1)))
+    |> Enum.map(&Map.get(WatchModels.profile_for(&1), "name", &1))
     |> Enum.join(", ")
   end
 

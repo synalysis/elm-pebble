@@ -56,7 +56,6 @@ defmodule Elmx.Runtime.Pebble do
       "elmx_ui_canvas_layer" -> apply_ui(:canvas_layer, args)
       "elmx_ui_group" -> apply_ui(:group, args)
       "elmx_ui_context" -> apply_ui(:context, args)
-      "elmx_ui_to_ui_node" -> apply_ui(:to_ui_node, args)
       "elmx_ui_draw_bitmap_in_rect" -> apply_ui(:draw_bitmap_in_rect, args)
       "elmx_ui_clear" -> apply_ui(:clear, args)
       "elmx_ui_fill_rect" -> apply_ui(:fill_rect, args)
@@ -64,7 +63,7 @@ defmodule Elmx.Runtime.Pebble do
       "elmx_ui_text_int" -> apply_ui(:text_int, args)
       "elmx_ui_text_label" -> apply_ui(:text_label, args)
       "elmx_ui_rect" -> apply_ui(:rect, args)
-      "elmx_ui_line" -> apply_ui(:line, args)
+      "elmx_ui_line" -> apply_ui_line(args)
       "elmx_ui_circle" -> apply_ui(:circle, args)
       "elmx_ui_fill_circle" -> apply_ui(:fill_circle, args)
       "elmx_ui_fill_radial" -> apply_ui(:fill_radial, args)
@@ -196,6 +195,11 @@ defmodule Elmx.Runtime.Pebble do
   defp apply_ui(fun, args) do
     apply(Elmx.Runtime.Pebble.Ui, fun, args)
   end
+
+  defp apply_ui_line([x1, y1, x2, y2, color]) when is_integer(x1),
+    do: apply_ui(:line, [%{x: x1, y: y1}, %{x: x2, y: y2}, color])
+
+  defp apply_ui_line(args), do: apply_ui(:line, args)
 
   defp apply_core(fun, args), do: apply(Elmx.Runtime.Core, fun, args)
 
@@ -494,6 +498,11 @@ defmodule Elmx.Runtime.Pebble do
   defp device_stub_value("firmware_version"), do: %{"major" => 4, "minor" => 4, "patch" => 0}
   defp device_stub_value("watch_color"), do: %{"ctor" => "Black", "args" => []}
   defp device_stub_value("battery_level"), do: 88
+  defp device_stub_value("health_supported"), do: false
+  defp device_stub_value("health_value"), do: %{"value" => 0}
+  defp device_stub_value("health_sum_today"), do: %{"value" => 0}
+  defp device_stub_value("health_sum"), do: %{"value" => 0}
+  defp device_stub_value("health_accessible"), do: true
   defp device_stub_value("connection_status"), do: true
 
   defp device_stub_value("unobstructed_bounds"),

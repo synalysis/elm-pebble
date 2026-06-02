@@ -5,8 +5,8 @@ defmodule Ide.Debugger.SubscriptionPayload do
   alias Ide.Debugger.Types
 
   @type attach_ctx :: %{
-          optional(:introspect) =>
-            (map(), Types.surface_target() -> Types.elm_introspect() | map() | nil),
+          optional(:introspect) => (map(), Types.surface_target() ->
+                                      Types.elm_introspect() | map() | nil),
           optional(:settings) => (map() -> map())
         }
 
@@ -24,7 +24,13 @@ defmodule Ide.Debugger.SubscriptionPayload do
     end
   end
 
-  @spec attach(Types.runtime_state(), Types.surface_target(), String.t(), String.t(), attach_ctx() | nil) ::
+  @spec attach(
+          Types.runtime_state(),
+          Types.surface_target(),
+          String.t(),
+          String.t(),
+          attach_ctx() | nil
+        ) ::
           String.t()
   def attach(state, target, message, trigger, ctx \\ nil)
 
@@ -155,7 +161,8 @@ defmodule Ide.Debugger.SubscriptionPayload do
     end
   end
 
-  @spec simulator_now_for_target(Types.runtime_state(), :watch | :companion | :phone) :: NaiveDateTime.t()
+  @spec simulator_now_for_target(Types.runtime_state(), :watch | :companion | :phone) ::
+          NaiveDateTime.t()
   def simulator_now_for_target(state, target)
       when is_map(state) and target in [:watch, :companion, :phone] do
     state
@@ -163,7 +170,11 @@ defmodule Ide.Debugger.SubscriptionPayload do
     |> simulator_now_from_model()
   end
 
-  @spec subscription_compass_heading(Types.runtime_state(), Types.surface_target(), attach_ctx() | nil) ::
+  @spec subscription_compass_heading(
+          Types.runtime_state(),
+          Types.surface_target(),
+          attach_ctx() | nil
+        ) ::
           map()
   defp subscription_compass_heading(state, _target, ctx) when is_map(state) do
     settings = resolve_settings(state, ctx)
@@ -174,7 +185,11 @@ defmodule Ide.Debugger.SubscriptionPayload do
     }
   end
 
-  @spec subscription_app_focus_state(Types.runtime_state(), Types.surface_target(), attach_ctx() | nil) ::
+  @spec subscription_app_focus_state(
+          Types.runtime_state(),
+          Types.surface_target(),
+          attach_ctx() | nil
+        ) ::
           String.t()
   defp subscription_app_focus_state(state, _target, ctx) when is_map(state) do
     settings = resolve_settings(state, ctx)
@@ -182,7 +197,11 @@ defmodule Ide.Debugger.SubscriptionPayload do
     if Map.get(settings, "app_in_focus", true) == true, do: "InFocus", else: "OutOfFocus"
   end
 
-  @spec subscription_unobstructed_rect(Types.runtime_state(), Types.surface_target(), attach_ctx() | nil) ::
+  @spec subscription_unobstructed_rect(
+          Types.runtime_state(),
+          Types.surface_target(),
+          attach_ctx() | nil
+        ) ::
           map()
   defp subscription_unobstructed_rect(state, _target, ctx) when is_map(state) do
     settings = resolve_settings(state, ctx)
@@ -207,7 +226,11 @@ defmodule Ide.Debugger.SubscriptionPayload do
   @spec subscription_unobstructed_progress(Types.runtime_state()) :: integer()
   defp subscription_unobstructed_progress(_state), do: 255
 
-  @spec subscription_dictation_status(Types.runtime_state(), Types.surface_target(), attach_ctx() | nil) ::
+  @spec subscription_dictation_status(
+          Types.runtime_state(),
+          Types.surface_target(),
+          attach_ctx() | nil
+        ) ::
           String.t()
   defp subscription_dictation_status(state, _target, ctx) when is_map(state) do
     settings = resolve_settings(state, ctx)
@@ -218,7 +241,11 @@ defmodule Ide.Debugger.SubscriptionPayload do
     end
   end
 
-  @spec subscription_dictation_result_payload(Types.runtime_state(), Types.surface_target(), attach_ctx() | nil) ::
+  @spec subscription_dictation_result_payload(
+          Types.runtime_state(),
+          Types.surface_target(),
+          attach_ctx() | nil
+        ) ::
           map()
   defp subscription_dictation_result_payload(state, _target, ctx) when is_map(state) do
     settings = resolve_settings(state, ctx)
@@ -239,7 +266,12 @@ defmodule Ide.Debugger.SubscriptionPayload do
   defp blank_string?(value) when is_binary(value), do: String.trim(value) == ""
   defp blank_string?(_value), do: true
 
-  @spec subscription_simulated_arg(Types.runtime_state(), Types.surface_target(), String.t(), attach_ctx() | nil) ::
+  @spec subscription_simulated_arg(
+          Types.runtime_state(),
+          Types.surface_target(),
+          String.t(),
+          attach_ctx() | nil
+        ) ::
           {:ok, String.t()} | :error
   defp subscription_simulated_arg(state, target, constructor, ctx)
        when is_map(state) and is_binary(constructor) do
@@ -252,7 +284,12 @@ defmodule Ide.Debugger.SubscriptionPayload do
     end
   end
 
-  @spec simulated_value_for_msg_arg_type(String.t(), Types.runtime_state(), Types.surface_target(), attach_ctx() | nil) ::
+  @spec simulated_value_for_msg_arg_type(
+          String.t(),
+          Types.runtime_state(),
+          Types.surface_target(),
+          attach_ctx() | nil
+        ) ::
           {:ok, String.t()} | :error
   defp simulated_value_for_msg_arg_type(type, state, target, ctx) when is_binary(type) do
     normalized =
@@ -269,7 +306,12 @@ defmodule Ide.Debugger.SubscriptionPayload do
     end
   end
 
-  @spec subscription_message_arity(Types.runtime_state(), Types.surface_target(), String.t(), attach_ctx() | nil) ::
+  @spec subscription_message_arity(
+          Types.runtime_state(),
+          Types.surface_target(),
+          String.t(),
+          attach_ctx() | nil
+        ) ::
           non_neg_integer()
   defp subscription_message_arity(state, target, message, ctx)
        when is_map(state) and is_binary(message) do
@@ -305,7 +347,8 @@ defmodule Ide.Debugger.SubscriptionPayload do
     String.contains?(normalized, "frame") or String.contains?(normalized, "onframe")
   end
 
-  @spec subscription_frame_payload(Types.runtime_state(), Types.surface_target()) :: Types.wire_map()
+  @spec subscription_frame_payload(Types.runtime_state(), Types.surface_target()) ::
+          Types.wire_map()
   defp subscription_frame_payload(state, target) when is_map(state) do
     model =
       case target do
@@ -332,7 +375,11 @@ defmodule Ide.Debugger.SubscriptionPayload do
     }
   end
 
-  @spec subscription_battery_level(Types.runtime_state(), Types.surface_target(), attach_ctx() | nil) ::
+  @spec subscription_battery_level(
+          Types.runtime_state(),
+          Types.surface_target(),
+          attach_ctx() | nil
+        ) ::
           integer()
   defp subscription_battery_level(state, target, ctx) when is_map(state) do
     settings = resolve_settings(state, ctx)
@@ -345,7 +392,11 @@ defmodule Ide.Debugger.SubscriptionPayload do
     |> max(0)
   end
 
-  @spec subscription_connection_status(Types.runtime_state(), Types.surface_target(), attach_ctx() | nil) ::
+  @spec subscription_connection_status(
+          Types.runtime_state(),
+          Types.surface_target(),
+          attach_ctx() | nil
+        ) ::
           String.t()
   defp subscription_connection_status(state, target, ctx) when is_map(state) do
     settings = resolve_settings(state, ctx)
@@ -441,8 +492,10 @@ defmodule Ide.Debugger.SubscriptionPayload do
 
   defp parse_simulated_time(_value, fallback), do: fallback
 
-  @spec advance_simulator_clock_for_auto_fire(Types.runtime_state(), String.t()) :: Types.runtime_state()
-  def advance_simulator_clock_for_auto_fire(state, trigger) when is_map(state) and is_binary(trigger) do
+  @spec advance_simulator_clock_for_auto_fire(Types.runtime_state(), String.t()) ::
+          Types.runtime_state()
+  def advance_simulator_clock_for_auto_fire(state, trigger)
+      when is_map(state) and is_binary(trigger) do
     settings = DebuggerSimulatorSettings.from_state(state)
 
     if settings["use_simulated_time"] == true do
@@ -471,7 +524,8 @@ defmodule Ide.Debugger.SubscriptionPayload do
 
   def advance_simulator_clock_for_auto_fire(state, _trigger) when is_map(state), do: state
 
-  @spec clock_unit_for_trigger(String.t()) :: :second | :minute | :hour | :day | :month | :year | nil
+  @spec clock_unit_for_trigger(String.t()) ::
+          :second | :minute | :hour | :day | :month | :year | nil
   defp clock_unit_for_trigger(trigger) when is_binary(trigger) do
     t =
       trigger
@@ -489,12 +543,20 @@ defmodule Ide.Debugger.SubscriptionPayload do
     end
   end
 
-  @spec advance_naive_datetime(NaiveDateTime.t(), :second | :minute | :hour | :day | :month | :year) ::
+  @spec advance_naive_datetime(
+          NaiveDateTime.t(),
+          :second | :minute | :hour | :day | :month | :year
+        ) ::
           NaiveDateTime.t()
-  defp advance_naive_datetime(%NaiveDateTime{} = now, :second), do: NaiveDateTime.add(now, 1, :second)
-  defp advance_naive_datetime(%NaiveDateTime{} = now, :minute), do: NaiveDateTime.add(now, 1, :minute)
+  defp advance_naive_datetime(%NaiveDateTime{} = now, :second),
+    do: NaiveDateTime.add(now, 1, :second)
+
+  defp advance_naive_datetime(%NaiveDateTime{} = now, :minute),
+    do: NaiveDateTime.add(now, 1, :minute)
+
   defp advance_naive_datetime(%NaiveDateTime{} = now, :hour), do: NaiveDateTime.add(now, 1, :hour)
   defp advance_naive_datetime(%NaiveDateTime{} = now, :day), do: NaiveDateTime.add(now, 1, :day)
+
   defp advance_naive_datetime(%NaiveDateTime{} = now, :month) do
     shift_naive_date(now, month: 1)
   end

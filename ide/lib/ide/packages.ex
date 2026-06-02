@@ -23,7 +23,8 @@ defmodule Ide.Packages do
 
   @blocked_package_families ~w(elm/browser elm/bytes elm/file elm/html elm/http)
 
-  @spec search(String.t(), keyword()) :: {:ok, Types.search_result()} | {:error, Types.package_error()}
+  @spec search(String.t(), keyword()) ::
+          {:ok, Types.search_result()} | {:error, Types.package_error()}
   def search(query, opts \\ []) do
     page = parse_positive(opts[:page], 1)
     per_page = parse_positive(opts[:per_page], 25)
@@ -55,7 +56,8 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec package_details(String.t(), keyword()) :: {:ok, Types.package_details()} | {:error, Types.package_error()}
+  @spec package_details(String.t(), keyword()) ::
+          {:ok, Types.package_details()} | {:error, Types.package_error()}
   def package_details(package, opts \\ []) do
     with {:ok, provider, details} <-
            with_provider(opts, &call_provider(&1, :package_details, [package])) do
@@ -112,7 +114,8 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec versions(String.t(), keyword()) :: {:ok, Types.versions_result()} | {:error, Types.package_error()}
+  @spec versions(String.t(), keyword()) ::
+          {:ok, Types.versions_result()} | {:error, Types.package_error()}
   def versions(package, opts \\ []) do
     with {:ok, provider, versions} <-
            with_provider(opts, &call_provider(&1, :versions, [package])) do
@@ -120,7 +123,8 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec readme(String.t(), String.t(), keyword()) :: {:ok, Types.readme_result()} | {:error, Types.package_error()}
+  @spec readme(String.t(), String.t(), keyword()) ::
+          {:ok, Types.readme_result()} | {:error, Types.package_error()}
   def readme(package, version \\ "latest", opts \\ []) do
     with {:ok, provider, readme} <-
            with_provider(opts, &call_provider(&1, :readme, [package, version])) do
@@ -171,7 +175,8 @@ defmodule Ide.Packages do
   end
 
   @spec builtin_docs_source_root(String.t()) ::
-          {:ok, String.t()} | {:error, :not_builtin_source_backed | :builtin_module_docs_not_available}
+          {:ok, String.t()}
+          | {:error, :not_builtin_source_backed | :builtin_module_docs_not_available}
   defp builtin_docs_source_root("elm-pebble/elm-watch"),
     do: {:ok, Ide.InternalPackages.pebble_elm_src_abs()}
 
@@ -207,7 +212,8 @@ defmodule Ide.Packages do
     Keyword.merge(defaults, provider.opts)
   end
 
-  @spec preview_add_to_project(map(), String.t(), keyword()) :: {:ok, map()} | {:error, Types.package_error()}
+  @spec preview_add_to_project(map(), String.t(), keyword()) ::
+          {:ok, map()} | {:error, Types.package_error()}
   def preview_add_to_project(project, package, opts \\ []) when is_map(project) do
     with :ok <- validate_add_package_target(package, opts),
          {:ok, provider, _details} <-
@@ -218,7 +224,8 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec add_to_project(map(), String.t(), keyword()) :: {:ok, map()} | {:error, Types.package_error()}
+  @spec add_to_project(map(), String.t(), keyword()) ::
+          {:ok, map()} | {:error, Types.package_error()}
   def add_to_project(project, package, opts \\ []) when is_map(project) do
     with :ok <- validate_add_package_target(package, opts),
          {:ok, provider, details} <-
@@ -231,7 +238,8 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec validate_add_package_target(String.t(), keyword()) :: :ok | {:error, Types.package_error()}
+  @spec validate_add_package_target(String.t(), keyword()) ::
+          :ok | {:error, Types.package_error()}
   defp validate_add_package_target(package, opts) when is_binary(package) and is_list(opts) do
     if Keyword.get(opts, :source_root) == "phone" and phone_forbidden_package?(package) do
       {:error, {:package_not_supported_for_phone, package}}
@@ -282,7 +290,8 @@ defmodule Ide.Packages do
 
   def pebble_builtin_packages(_source_root), do: pebble_builtin_packages()
 
-  @spec remove_from_project(map(), String.t(), keyword()) :: {:ok, map()} | {:error, Types.package_error()}
+  @spec remove_from_project(map(), String.t(), keyword()) ::
+          {:ok, map()} | {:error, Types.package_error()}
   def remove_from_project(project, package, opts \\ []) when is_map(project) do
     source_root = Keyword.get(opts, :source_root)
 
@@ -833,7 +842,8 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec exposed_modules_from_source_root(String.t()) :: {:ok, [String.t()]} | {:error, Types.package_error()}
+  @spec exposed_modules_from_source_root(String.t()) ::
+          {:ok, [String.t()]} | {:error, Types.package_error()}
   defp exposed_modules_from_source_root(source_root) when is_binary(source_root) do
     source_root
     |> Path.dirname()

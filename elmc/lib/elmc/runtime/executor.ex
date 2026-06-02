@@ -83,9 +83,7 @@ defmodule Elmc.Runtime.Executor do
          "runtime_model" => runtime_model,
          "runtime_model_source" => runtime_model_source,
          "runtime_model_sha256" => runtime["runtime_model_sha256"],
-         "runtime_view_tree_sha256" => runtime["view_tree_sha256"],
-         "elm_executor_mode" => "runtime_executed",
-         "elm_executor" => runtime
+         "runtime_view_tree_sha256" => runtime["view_tree_sha256"]
        },
        view_tree: if(map_size(runtime_view_tree) > 0, do: runtime_view_tree, else: nil),
        view_output: [],
@@ -211,7 +209,13 @@ defmodule Elmc.Runtime.Executor do
       String.starts_with?(String.downcase(to_string(constructor_hint(text) || "")), "set")
   end
 
-  @spec mutate_runtime_model(Types.runtime_model(), Types.message(), Types.operation(), Types.runtime_model(), String.t() | nil) :: Types.runtime_model()
+  @spec mutate_runtime_model(
+          Types.runtime_model(),
+          Types.message(),
+          Types.operation(),
+          Types.runtime_model(),
+          String.t() | nil
+        ) :: Types.runtime_model()
   defp mutate_runtime_model(model, message, op, init_model, matched_branch)
        when is_map(model) and is_binary(message) and is_atom(op) and is_map(init_model) do
     {numeric_key, bool_key} = resolve_target_keys(model, message, matched_branch)
@@ -253,7 +257,8 @@ defmodule Elmc.Runtime.Executor do
     end
   end
 
-  @spec resolve_target_keys(Types.runtime_model(), Types.message(), String.t() | nil) :: Types.key_pair()
+  @spec resolve_target_keys(Types.runtime_model(), Types.message(), String.t() | nil) ::
+          Types.key_pair()
   defp resolve_target_keys(model, message, matched_branch)
        when is_map(model) and is_binary(message) do
     fallback_numeric = primary_numeric_key(model)
@@ -270,7 +275,8 @@ defmodule Elmc.Runtime.Executor do
     }
   end
 
-  @spec model_key_hint_from_branch_or_message(String.t() | nil, Types.message()) :: String.t() | nil
+  @spec model_key_hint_from_branch_or_message(String.t() | nil, Types.message()) ::
+          String.t() | nil
   defp model_key_hint_from_branch_or_message(matched_branch, message)
        when is_binary(message) do
     ctor =
@@ -323,7 +329,8 @@ defmodule Elmc.Runtime.Executor do
     String.slice(ctor, prefix_len, len)
   end
 
-  @spec hinted_model_key(Types.runtime_model(), String.t() | nil, :integer | :boolean) :: Types.model_key()
+  @spec hinted_model_key(Types.runtime_model(), String.t() | nil, :integer | :boolean) ::
+          Types.model_key()
   defp hinted_model_key(_model, nil, _type), do: nil
 
   defp hinted_model_key(model, hint, :integer) when is_map(model) and is_binary(hint) do
@@ -334,7 +341,8 @@ defmodule Elmc.Runtime.Executor do
     find_matching_model_key(model, hint, fn value -> is_boolean(value) end)
   end
 
-  @spec find_matching_model_key(Types.runtime_model(), String.t(), Types.value_predicate()) :: Types.model_key()
+  @spec find_matching_model_key(Types.runtime_model(), String.t(), Types.value_predicate()) ::
+          Types.model_key()
   defp find_matching_model_key(model, hint, value_predicate)
        when is_map(model) and is_binary(hint) and is_function(value_predicate, 1) do
     hint_norm = normalize_identifier(hint)
@@ -361,7 +369,13 @@ defmodule Elmc.Runtime.Executor do
     |> String.replace(~r/[^a-z0-9]/, "")
   end
 
-  @spec apply_set_mutation(Types.runtime_model(), Types.model_key(), Types.model_key(), Types.message(), Types.set_payload_type()) :: Types.runtime_model()
+  @spec apply_set_mutation(
+          Types.runtime_model(),
+          Types.model_key(),
+          Types.model_key(),
+          Types.message(),
+          Types.set_payload_type()
+        ) :: Types.runtime_model()
   defp apply_set_mutation(model, numeric_key, bool_key, message, preferred_set_type)
        when is_map(model) and is_binary(message) do
     case preferred_set_type do
@@ -448,7 +462,11 @@ defmodule Elmc.Runtime.Executor do
       end
   end
 
-  @spec set_selected_numeric_from_message(Types.runtime_model(), Types.model_key(), Types.message()) :: Types.runtime_model()
+  @spec set_selected_numeric_from_message(
+          Types.runtime_model(),
+          Types.model_key(),
+          Types.message()
+        ) :: Types.runtime_model()
   defp set_selected_numeric_from_message(model, nil, _message), do: model
 
   defp set_selected_numeric_from_message(model, key, message)
@@ -464,7 +482,11 @@ defmodule Elmc.Runtime.Executor do
     end
   end
 
-  @spec set_selected_boolean_from_message(Types.runtime_model(), Types.model_key(), Types.message()) :: Types.runtime_model()
+  @spec set_selected_boolean_from_message(
+          Types.runtime_model(),
+          Types.model_key(),
+          Types.message()
+        ) :: Types.runtime_model()
   defp set_selected_boolean_from_message(model, nil, _message), do: model
 
   defp set_selected_boolean_from_message(model, key, message)
@@ -764,7 +786,8 @@ defmodule Elmc.Runtime.Executor do
     consume_group(rest, [closer], <<open>>, "")
   end
 
-  @spec consume_group(String.t(), Types.closer_stack(), String.t(), String.t()) :: Types.argument_pair()
+  @spec consume_group(String.t(), Types.closer_stack(), String.t(), String.t()) ::
+          Types.argument_pair()
   defp consume_group(<<>>, _stack, acc, _last_rest), do: {acc, ""}
 
   defp consume_group(rest, [], acc, _last_rest), do: {acc, rest}
@@ -926,7 +949,8 @@ defmodule Elmc.Runtime.Executor do
     Enum.find(values, &is_boolean/1)
   end
 
-  @spec first_boolean_from_segments(Types.segments(), Types.segment_extractor()) :: boolean() | nil
+  @spec first_boolean_from_segments(Types.segments(), Types.segment_extractor()) ::
+          boolean() | nil
   defp first_boolean_from_segments(segments, extractor)
        when is_list(segments) and is_function(extractor, 1) do
     Enum.reduce_while(segments, nil, fn segment, _acc ->
@@ -956,7 +980,8 @@ defmodule Elmc.Runtime.Executor do
     end
   end
 
-  @spec mutate_selected_numeric(Types.runtime_model(), Types.model_key(), Types.numeric_mutator()) :: Types.runtime_model()
+  @spec mutate_selected_numeric(Types.runtime_model(), Types.model_key(), Types.numeric_mutator()) ::
+          Types.runtime_model()
   defp mutate_selected_numeric(model, nil, _fun), do: model
 
   defp mutate_selected_numeric(model, key, fun) when is_map(model) and is_function(fun, 1) do
@@ -964,7 +989,8 @@ defmodule Elmc.Runtime.Executor do
     if is_integer(value), do: Map.put(model, key, fun.(value)), else: model
   end
 
-  @spec mutate_selected_boolean(Types.runtime_model(), Types.model_key(), Types.boolean_mutator()) :: Types.runtime_model()
+  @spec mutate_selected_boolean(Types.runtime_model(), Types.model_key(), Types.boolean_mutator()) ::
+          Types.runtime_model()
   defp mutate_selected_boolean(model, nil, _fun), do: model
 
   defp mutate_selected_boolean(model, key, fun) when is_map(model) and is_function(fun, 1) do
@@ -972,7 +998,8 @@ defmodule Elmc.Runtime.Executor do
     if is_boolean(value), do: Map.put(model, key, fun.(value)), else: model
   end
 
-  @spec reset_selected_numeric(Types.runtime_model(), Types.model_key(), Types.runtime_model()) :: Types.runtime_model()
+  @spec reset_selected_numeric(Types.runtime_model(), Types.model_key(), Types.runtime_model()) ::
+          Types.runtime_model()
   defp reset_selected_numeric(model, nil, _init_model), do: model
 
   defp reset_selected_numeric(model, key, init_model) when is_map(model) and is_map(init_model) do
@@ -986,7 +1013,8 @@ defmodule Elmc.Runtime.Executor do
     if is_integer(value), do: Map.put(model, key, reset_to), else: model
   end
 
-  @spec reset_selected_boolean(Types.runtime_model(), Types.model_key(), Types.runtime_model()) :: Types.runtime_model()
+  @spec reset_selected_boolean(Types.runtime_model(), Types.model_key(), Types.runtime_model()) ::
+          Types.runtime_model()
   defp reset_selected_boolean(model, nil, _init_model), do: model
 
   defp reset_selected_boolean(model, key, init_model) when is_map(model) and is_map(init_model) do
@@ -997,7 +1025,14 @@ defmodule Elmc.Runtime.Executor do
     if is_boolean(value), do: Map.put(model, key, reset_to), else: model
   end
 
-  @spec derive_view_tree(Types.view_tree(), Types.introspect(), Types.message() | nil, Types.operation() | nil, String.t(), Types.runtime_model()) :: Types.view_tree()
+  @spec derive_view_tree(
+          Types.view_tree(),
+          Types.introspect(),
+          Types.message() | nil,
+          Types.operation() | nil,
+          String.t(),
+          Types.runtime_model()
+        ) :: Types.view_tree()
   defp derive_view_tree(current_view_tree, introspect, message, op, source_root, runtime_model) do
     introspect_view =
       case map_value(introspect, :view_tree) do
@@ -1041,7 +1076,12 @@ defmodule Elmc.Runtime.Executor do
     end
   end
 
-  @spec view_tree_source(Types.view_tree(), Types.introspect(), Types.message() | nil, Types.view_tree()) :: Types.view_tree_source_label()
+  @spec view_tree_source(
+          Types.view_tree(),
+          Types.introspect(),
+          Types.message() | nil,
+          Types.view_tree()
+        ) :: Types.view_tree_source_label()
   defp view_tree_source(current_view_tree, introspect, message, runtime_view_tree)
        when is_map(runtime_view_tree) do
     cond do

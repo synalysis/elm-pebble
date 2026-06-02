@@ -285,8 +285,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow do
   def handle_event("debugger-trigger-form-change", %{"debugger_trigger" => params}, socket) do
     merged = merge_debugger_trigger_form(socket, params)
 
-    {:noreply,
-     assign(socket, debugger_trigger_form: to_form(merged, as: :debugger_trigger))}
+    {:noreply, assign(socket, debugger_trigger_form: to_form(merged, as: :debugger_trigger))}
   end
 
   def handle_event("debugger-submit-trigger", %{"debugger_trigger" => params}, socket) do
@@ -349,9 +348,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow do
   end
 
   def handle_event("debugger-sim-dictation", _params, socket) do
-    with {:ok, socket} <- inject_simulator_watch_trigger(socket, "dictation_status", nil, flash: false),
+    with {:ok, socket} <-
+           inject_simulator_watch_trigger(socket, "dictation_status", nil, flash: false),
          {:ok, socket} <-
-           inject_simulator_watch_trigger(socket, "dictation_result", "Dictation simulation sent.") do
+           inject_simulator_watch_trigger(
+             socket,
+             "dictation_result",
+             "Dictation simulation sent."
+           ) do
       {:noreply, socket}
     else
       {:noreply, socket} -> {:noreply, socket}
@@ -372,7 +376,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow do
         if is_list(segments) and segments != [] do
           {:noreply, put_flash(socket, :info, "Vibration pattern queued in simulator settings.")}
         else
-          {:noreply, put_flash(socket, :warning, "Configure a vibration pattern in simulator settings first.")}
+          {:noreply,
+           put_flash(
+             socket,
+             :warning,
+             "Configure a vibration pattern in simulator settings first."
+           )}
         end
     end
   end
@@ -403,6 +412,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow do
   def handle_event("debugger-keydown", %{"key" => "k"}, socket) do
     {:noreply, DebuggerSupport.step_forward(socket)}
   end
+
   defp handle_simulator_save_settings(socket, values) when is_map(values) do
     case socket.assigns.project do
       nil ->
@@ -411,6 +421,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow do
       project ->
         existing = SimulatorSettings.raw_settings_for(project, socket.assigns[:debugger_state])
         simulator_settings = SimulatorSettings.save_from_form(existing, values)
+
         focus_changed? =
           normalize_boolean_setting(Map.get(existing, "app_in_focus", true)) !=
             normalize_boolean_setting(Map.get(simulator_settings, "app_in_focus"))
@@ -537,7 +548,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow do
     {:noreply, complete_debugger_bootstrap(socket, result)}
   end
 
-  def handle_async(:debugger_bootstrap, {:ok, {:error, message}}, socket) when is_binary(message) do
+  def handle_async(:debugger_bootstrap, {:ok, {:error, message}}, socket)
+      when is_binary(message) do
     {:noreply,
      socket
      |> clear_debugger_bootstrap_busy()
@@ -550,7 +562,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow do
      |> clear_debugger_bootstrap_busy()
      |> put_flash(:error, "Debugger start failed: #{inspect(reason)}")}
   end
-  @spec handle_info(Types.info_message() | Types.liveview_system_message(), socket()) :: lv_noreply()
+
+  @spec handle_info(Types.info_message() | Types.liveview_system_message(), socket()) ::
+          lv_noreply()
   def handle_info({:companion_debugger_bootstrapped, scope_key, result}, socket) do
     project = socket.assigns[:project]
 
@@ -590,7 +604,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow do
     end
   end
 
-  def handle_info({:debugger_companion_bootstrap_progress, message}, socket) when is_binary(message) do
+  def handle_info({:debugger_companion_bootstrap_progress, message}, socket)
+      when is_binary(message) do
     {:noreply,
      socket
      |> assign(:debugger_companion_bootstrap_progress, message)
@@ -660,8 +675,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow do
 
     if debugger_sync_bootstrap?() do
       case DebuggerBootstrapFlow.run(project, run_opts) do
-        {:ok, result} -> complete_debugger_bootstrap(socket, result)
-        {:error, message} -> socket |> clear_debugger_bootstrap_busy() |> put_flash(:error, message)
+        {:ok, result} ->
+          complete_debugger_bootstrap(socket, result)
+
+        {:error, message} ->
+          socket |> clear_debugger_bootstrap_busy() |> put_flash(:error, message)
       end
     else
       start_async(socket, :debugger_bootstrap, fn ->
@@ -958,7 +976,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow do
       case Ide.Debugger.CompanionSubscriptionTrigger.form_data(debugger_state, trigger, message) do
         %{} = companion_form ->
           companion_form
-          |> Map.merge(%{"target" => target, "trigger" => trigger, "trigger_display" => trigger_display})
+          |> Map.merge(%{
+            "target" => target,
+            "trigger" => trigger,
+            "trigger_display" => trigger_display
+          })
 
         _ ->
           default_debugger_trigger_form(trigger, target, message, trigger_display)
@@ -1030,7 +1052,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow do
   defp ensure_debugger_trigger_error_message(%{"result" => "Err"} = params) do
     case Map.get(params, "error_message") do
       msg when is_binary(msg) ->
-        if String.trim(msg) != "", do: params, else: Map.put(params, "error_message", "Unavailable")
+        if String.trim(msg) != "",
+          do: params,
+          else: Map.put(params, "error_message", "Unavailable")
 
       _ ->
         Map.put(params, "error_message", "Unavailable")

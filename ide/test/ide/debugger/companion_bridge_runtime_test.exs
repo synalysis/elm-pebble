@@ -1,7 +1,12 @@
 defmodule Ide.Debugger.CompanionBridgeRuntimeTest do
   use ExUnit.Case, async: true
 
-  alias Ide.Debugger.{CompanionBridgeContext, CompileContract, InitSurfaceEffects, RuntimeSurfaces}
+  alias Ide.Debugger.{
+    CompanionBridgeContext,
+    CompileContract,
+    InitSurfaceEffects,
+    RuntimeSurfaces
+  }
 
   @timeline_init_elm """
   module TimelineInit exposing (..)

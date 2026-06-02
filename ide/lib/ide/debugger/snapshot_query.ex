@@ -13,7 +13,8 @@ defmodule Ide.Debugger.SnapshotQuery do
         }
 
   @spec fetch(String.t(), Types.snapshot_opts(), host()) :: Types.runtime_state()
-  def fetch(project_slug, opts, host) when is_binary(project_slug) and is_list(opts) and is_map(host) do
+  def fetch(project_slug, opts, host)
+      when is_binary(project_slug) and is_list(opts) and is_map(host) do
     limit = Keyword.get(opts, :event_limit, Map.get(host, :default_event_limit, 50))
     types = Keyword.get(opts, :types)
     since_seq = Keyword.get(opts, :since_seq)

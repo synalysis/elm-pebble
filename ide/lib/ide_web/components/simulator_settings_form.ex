@@ -22,7 +22,9 @@ defmodule IdeWeb.SimulatorSettingsForm do
 
   @spec simulator_settings_form(assigns()) :: rendered()
   def simulator_settings_form(assigns) do
-    groups = SimulatorSettings.active_groups(assigns.project, assigns.debugger_state, assigns.mode)
+    groups =
+      SimulatorSettings.active_groups(assigns.project, assigns.debugger_state, assigns.mode)
+
     settings = SimulatorSettings.values_for(assigns.project, assigns.debugger_state)
 
     assigns =
@@ -50,7 +52,10 @@ defmodule IdeWeb.SimulatorSettingsForm do
         </div>
       </div>
 
-      <p :if={@empty?} class="mt-3 rounded border border-dashed border-zinc-200 bg-zinc-50 px-3 py-4 text-[11px] text-zinc-500">
+      <p
+        :if={@empty?}
+        class="mt-3 rounded border border-dashed border-zinc-200 bg-zinc-50 px-3 py-4 text-[11px] text-zinc-500"
+      >
         No simulator controls apply to this project yet. Add watch or companion API usage in Elm to enable settings here.
       </p>
 
@@ -62,7 +67,10 @@ defmodule IdeWeb.SimulatorSettingsForm do
           @group_columns != 1 && "md:grid-cols-2"
         ]}
       >
-        <div :for={{_group_id, title, fields} <- @groups} class="min-w-0 rounded border border-zinc-100 bg-zinc-50 p-2">
+        <div
+          :for={{_group_id, title, fields} <- @groups}
+          class="min-w-0 rounded border border-zinc-100 bg-zinc-50 p-2"
+        >
           <h4 class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{title}</h4>
           <div class="mt-2 space-y-2">
             <.field

@@ -43,7 +43,12 @@ defmodule Ide.Mcp.Handlers.Debugger do
 
       if replay_metadata_only? do
         {:ok,
-         debugger_state_replay_payload(slug, length(events), runtime_fingerprint_digest, snapshot_refs)
+         debugger_state_replay_payload(
+           slug,
+           length(events),
+           runtime_fingerprint_digest,
+           snapshot_refs
+         )
          |> maybe_put_runtime_fingerprint_compare(runtime_fingerprint_compare)
          |> maybe_put_replay_metadata(replay_metadata)}
       else
@@ -76,7 +81,8 @@ defmodule Ide.Mcp.Handlers.Debugger do
          {:ok, compare_cursor_seq} <-
            parse_compare_cursor_seq(Map.get(args, "compare_cursor_seq")),
          {:ok, _project} <- ToolSupport.fetch_project(slug),
-         {:ok, state} <- Debugger.snapshot(ToolSupport.project_session_key(slug), event_limit: event_limit) do
+         {:ok, state} <-
+           Debugger.snapshot(ToolSupport.project_session_key(slug), event_limit: event_limit) do
       events = Map.get(state, :events) || []
       snapshot_refs = Debugger.snapshot_reference_rows(events)
 
@@ -183,7 +189,8 @@ defmodule Ide.Mcp.Handlers.Debugger do
 
     with {:ok, target_atom} <- parse_render_tree_target(target),
          {:ok, _project} <- ToolSupport.fetch_project(slug),
-         {:ok, state} <- Debugger.snapshot(ToolSupport.project_session_key(slug), event_limit: event_limit),
+         {:ok, state} <-
+           Debugger.snapshot(ToolSupport.project_session_key(slug), event_limit: event_limit),
          {:ok, runtime} <- debugger_surface_runtime(state, target_atom) do
       events = Map.get(state, :events) || []
       cursor_seq = resolve_cursor_seq(events, nil)
@@ -248,7 +255,8 @@ defmodule Ide.Mcp.Handlers.Debugger do
 
     with {:ok, target_atom} <- parse_render_tree_target(target),
          {:ok, _project} <- ToolSupport.fetch_project(slug),
-         {:ok, state} <- Debugger.snapshot(ToolSupport.project_session_key(slug), event_limit: 100),
+         {:ok, state} <-
+           Debugger.snapshot(ToolSupport.project_session_key(slug), event_limit: 100),
          {:ok, runtime} <- debugger_surface_runtime(state, target_atom) do
       events = Map.get(state, :events) || []
       screen = debugger_surface_screen(state, runtime, target_atom)
@@ -344,12 +352,12 @@ defmodule Ide.Mcp.Handlers.Debugger do
   end
 
   def call(
-         "debugger.set_watch_profile",
-         %{
-           "slug" => slug,
-           "watch_profile_id" => watch_profile_id
-         } = args
-       ) do
+        "debugger.set_watch_profile",
+        %{
+          "slug" => slug,
+          "watch_profile_id" => watch_profile_id
+        } = args
+      ) do
     attrs = %{
       watch_profile_id: watch_profile_id,
       launch_reason: Map.get(args, "launch_reason")
@@ -364,11 +372,12 @@ defmodule Ide.Mcp.Handlers.Debugger do
   end
 
   def call("debugger.set_simulator_settings", %{"slug" => slug, "settings" => settings})
-       when is_map(settings) do
+      when is_map(settings) do
     with {:ok, project} <- ToolSupport.fetch_project(slug),
          normalized <- ToolSupport.normalize_mcp_simulator_settings(settings),
          :ok <- maybe_persist_project_debugger_setting(project, "simulator", normalized),
-         {:ok, state} <- Debugger.set_simulator_settings(ToolSupport.project_session_key(slug), normalized) do
+         {:ok, state} <-
+           Debugger.set_simulator_settings(ToolSupport.project_session_key(slug), normalized) do
       {:ok, debugger_simulator_settings_state_payload(slug, normalized, state)}
     else
       {:error, reason} -> {:error, "debugger set_simulator_settings failed: #{inspect(reason)}"}
@@ -376,12 +385,13 @@ defmodule Ide.Mcp.Handlers.Debugger do
   end
 
   def call("debugger.save_configuration", %{"slug" => slug, "values" => values})
-       when is_map(values) do
+      when is_map(values) do
     with {:ok, project} <- ToolSupport.fetch_project(slug),
          values <- normalize_configuration_values(values),
          {:ok, _project} <-
            persist_project_debugger_setting(project, "configuration_values", values),
-         {:ok, state} <- Debugger.save_configuration(ToolSupport.project_session_key(slug), values) do
+         {:ok, state} <-
+           Debugger.save_configuration(ToolSupport.project_session_key(slug), values) do
       {:ok, debugger_configuration_values_state_payload(slug, values, state)}
     else
       {:error, reason} -> {:error, "debugger save_configuration failed: #{inspect(reason)}"}
@@ -421,7 +431,8 @@ defmodule Ide.Mcp.Handlers.Debugger do
 
     with {:ok, project} <- ToolSupport.fetch_project(slug),
          {:ok, project} <- persist_project_disabled_subscription_setting(project, attrs),
-         {:ok, state} <- Debugger.set_subscription_enabled(ToolSupport.project_session_key(slug), attrs) do
+         {:ok, state} <-
+           Debugger.set_subscription_enabled(ToolSupport.project_session_key(slug), attrs) do
       settings = project.debugger_settings || %{}
 
       {:ok,
@@ -437,7 +448,7 @@ defmodule Ide.Mcp.Handlers.Debugger do
   end
 
   def call("debugger.reload", %{"slug" => slug, "rel_path" => rel_path} = args)
-       when is_binary(rel_path) do
+      when is_binary(rel_path) do
     reason = Map.get(args, "reason") || "mcp_reload"
     source_root = Map.get(args, "source_root") || "watch"
 
@@ -494,7 +505,8 @@ defmodule Ide.Mcp.Handlers.Debugger do
     }
 
     with {:ok, _project} <- ToolSupport.fetch_project(slug),
-         {:ok, state} <- Debugger.start_auto_tick(ToolSupport.project_session_key(slug), tick_attrs) do
+         {:ok, state} <-
+           Debugger.start_auto_tick(ToolSupport.project_session_key(slug), tick_attrs) do
       {:ok, debugger_slug_state_payload(slug, state)}
     else
       {:error, reason} -> {:error, "debugger auto_tick_start failed: #{inspect(reason)}"}
@@ -582,7 +594,7 @@ defmodule Ide.Mcp.Handlers.Debugger do
   end
 
   def call("debugger.import_trace", %{"slug" => slug, "export_json" => json} = args)
-       when is_binary(json) do
+      when is_binary(json) do
     strict? =
       case Map.get(args, "strict_slug", true) do
         value when value in [false, "false"] -> false
@@ -600,7 +612,9 @@ defmodule Ide.Mcp.Handlers.Debugger do
       {:error, reason} -> {:error, "debugger import_trace failed: #{inspect(reason)}"}
     end
   end
-  @spec debugger_auto_fire_payload(String.t(), map(), map()) :: ToolTypes.debugger_auto_fire_result()
+
+  @spec debugger_auto_fire_payload(String.t(), map(), map()) ::
+          ToolTypes.debugger_auto_fire_result()
   defp debugger_auto_fire_payload(slug, settings, state)
        when is_binary(slug) and is_map(settings) and is_map(state) do
     %{
@@ -616,7 +630,12 @@ defmodule Ide.Mcp.Handlers.Debugger do
   defp debugger_auto_fire_settings_state_payload(slug, auto_fire, auto_fire_subscriptions, state)
        when is_binary(slug) and is_map(auto_fire) and is_list(auto_fire_subscriptions) and
               is_map(state) do
-    %{slug: slug, auto_fire: auto_fire, auto_fire_subscriptions: auto_fire_subscriptions, state: state}
+    %{
+      slug: slug,
+      auto_fire: auto_fire,
+      auto_fire_subscriptions: auto_fire_subscriptions,
+      state: state
+    }
   end
 
   @spec debugger_configuration_payload(String.t(), map(), map()) ::
@@ -691,7 +710,12 @@ defmodule Ide.Mcp.Handlers.Debugger do
           [map()]
         ) :: ToolTypes.debugger_cursor_inspect_replay_result()
   defp debugger_cursor_inspect_replay_payload(slug, cursor_seq, event_window, snapshot_refs) do
-    %{slug: slug, cursor_seq: cursor_seq, event_window: event_window, snapshot_refs: snapshot_refs}
+    %{
+      slug: slug,
+      cursor_seq: cursor_seq,
+      event_window: event_window,
+      snapshot_refs: snapshot_refs
+    }
   end
 
   @spec debugger_disabled_subscriptions_payload(String.t(), map(), map()) ::
@@ -712,7 +736,8 @@ defmodule Ide.Mcp.Handlers.Debugger do
     %{slug: slug, disabled_subscriptions: disabled_subscriptions, state: state}
   end
 
-  @spec debugger_export_trace_payload(String.t(), map()) :: ToolTypes.debugger_export_trace_result()
+  @spec debugger_export_trace_payload(String.t(), map()) ::
+          ToolTypes.debugger_export_trace_result()
   defp debugger_export_trace_payload(slug, export) when is_binary(slug) and is_map(export) do
     %{
       slug: slug,
@@ -836,7 +861,8 @@ defmodule Ide.Mcp.Handlers.Debugger do
       screen: screen,
       model: model,
       last_message: ToolSupport.map_get_any(runtime, [:last_message, "last_message"], nil),
-      protocol_messages: ToolSupport.map_get_any(runtime, [:protocol_messages, "protocol_messages"], []),
+      protocol_messages:
+        ToolSupport.map_get_any(runtime, [:protocol_messages, "protocol_messages"], []),
       runtime_fingerprint:
         events
         |> DebuggerSupport.runtime_fingerprints_at_cursor(nil)
@@ -869,7 +895,11 @@ defmodule Ide.Mcp.Handlers.Debugger do
     |> ToolSupport.normalize_mcp_simulator_settings()
   end
 
-  @spec maybe_persist_project_debugger_setting(map(), String.t(), WireTypes.debugger_setting_value()) ::
+  @spec maybe_persist_project_debugger_setting(
+          map(),
+          String.t(),
+          WireTypes.debugger_setting_value()
+        ) ::
           :ok
   defp maybe_persist_project_debugger_setting(project, key, value)
        when is_map(project) and is_binary(key) do
@@ -946,7 +976,9 @@ defmodule Ide.Mcp.Handlers.Debugger do
     })
   end
 
-  @spec update_project_auto_fire_subscriptions([map()], String.t(), String.t(), boolean()) :: [map()]
+  @spec update_project_auto_fire_subscriptions([map()], String.t(), String.t(), boolean()) :: [
+          map()
+        ]
   defp update_project_auto_fire_subscriptions(subscriptions, target, trigger, enabled?) do
     trigger = String.trim(to_string(trigger))
 
@@ -954,7 +986,10 @@ defmodule Ide.Mcp.Handlers.Debugger do
       subscriptions
       |> List.wrap()
       |> Enum.filter(&is_map/1)
-      |> Enum.reject(&(ToolSupport.map_value(&1, "target") == target and ToolSupport.map_value(&1, "trigger") == trigger))
+      |> Enum.reject(
+        &(ToolSupport.map_value(&1, "target") == target and
+            ToolSupport.map_value(&1, "trigger") == trigger)
+      )
 
     if enabled? and trigger != "" do
       [%{"target" => target, "trigger" => trigger} | subscriptions]
@@ -964,7 +999,9 @@ defmodule Ide.Mcp.Handlers.Debugger do
     |> Enum.uniq_by(&{ToolSupport.map_value(&1, "target"), ToolSupport.map_value(&1, "trigger")})
   end
 
-  @spec update_project_disabled_subscriptions([map()], String.t(), String.t(), boolean()) :: [map()]
+  @spec update_project_disabled_subscriptions([map()], String.t(), String.t(), boolean()) :: [
+          map()
+        ]
   defp update_project_disabled_subscriptions(subscriptions, target, trigger, enabled?)
        when is_binary(trigger) and trigger != "" do
     trigger = String.trim(trigger)
@@ -973,7 +1010,10 @@ defmodule Ide.Mcp.Handlers.Debugger do
       subscriptions
       |> List.wrap()
       |> Enum.filter(&is_map/1)
-      |> Enum.reject(&(ToolSupport.map_value(&1, "target") == target and ToolSupport.map_value(&1, "trigger") == trigger))
+      |> Enum.reject(
+        &(ToolSupport.map_value(&1, "target") == target and
+            ToolSupport.map_value(&1, "trigger") == trigger)
+      )
 
     if enabled? do
       subscriptions
@@ -1015,7 +1055,8 @@ defmodule Ide.Mcp.Handlers.Debugger do
 
   defp parse_since_seq(_), do: nil
 
-  @spec parse_render_tree_target(WireTypes.render_tree_target_input()) :: {:ok, :watch | :companion | :phone} | {:error, atom()}
+  @spec parse_render_tree_target(WireTypes.render_tree_target_input()) ::
+          {:ok, :watch | :companion | :phone} | {:error, atom()}
   defp parse_render_tree_target(nil), do: {:ok, :watch}
   defp parse_render_tree_target(""), do: {:ok, :watch}
   defp parse_render_tree_target("watch"), do: {:ok, :watch}
@@ -1087,12 +1128,6 @@ defmodule Ide.Mcp.Handlers.Debugger do
   defp compact_debugger_model(model, include_view_output?) when is_map(model) do
     drop_keys =
       [
-        "elm_executor_core_ir",
-        :elm_executor_core_ir,
-        "elm_executor_core_ir_b64",
-        :elm_executor_core_ir_b64,
-        "elm_executor_metadata",
-        :elm_executor_metadata,
         "elm_introspect",
         :elm_introspect,
         "debugger_contract",
@@ -1170,22 +1205,30 @@ defmodule Ide.Mcp.Handlers.Debugger do
     ei = Ide.Debugger.RuntimeArtifacts.require_introspect(model)
 
     render_source = preview_render_source(runtime_output, view_tree, rendered_tree, ei)
+
     nodes =
       if is_map(rendered_tree) do
         preview_nodes(rendered_tree, screen)
       else
         []
       end
+
     root_type = rendered_node_type(rendered_tree)
+
     runtime_fingerprint =
       case Map.get(runtime_fingerprints, target) do
         %{} = fp -> fp
         _ -> nil
       end
+
     surface_tree_sha256 = if is_map(view_tree), do: stable_term_sha256(view_tree), else: nil
 
     fingerprint_view_tree_sha256 =
-      ToolSupport.map_get_any(runtime_fingerprint || %{}, [:view_tree_sha256, "view_tree_sha256"], nil)
+      ToolSupport.map_get_any(
+        runtime_fingerprint || %{},
+        [:view_tree_sha256, "view_tree_sha256"],
+        nil
+      )
 
     %{
       slug: slug,
@@ -1718,13 +1761,15 @@ defmodule Ide.Mcp.Handlers.Debugger do
     Map.put(payload, :runtime_fingerprint_compare, compare)
   end
 
-  @spec parse_replay_mode_arg(WireTypes.replay_mode_input()) :: {:ok, String.t() | nil} | {:error, String.t()}
+  @spec parse_replay_mode_arg(WireTypes.replay_mode_input()) ::
+          {:ok, String.t() | nil} | {:error, String.t()}
   defp parse_replay_mode_arg(nil), do: {:ok, nil}
   defp parse_replay_mode_arg("frozen"), do: {:ok, "frozen"}
   defp parse_replay_mode_arg("live"), do: {:ok, "live"}
   defp parse_replay_mode_arg(_), do: {:error, "invalid replay_mode (expected frozen|live)"}
 
-  @spec parse_replay_drift_seq(WireTypes.cursor_seq_input()) :: {:ok, non_neg_integer() | nil} | {:error, String.t()}
+  @spec parse_replay_drift_seq(WireTypes.cursor_seq_input()) ::
+          {:ok, non_neg_integer() | nil} | {:error, String.t()}
   defp parse_replay_drift_seq(nil), do: {:ok, nil}
 
   defp parse_replay_drift_seq(n) when is_integer(n) and n >= 0, do: {:ok, n}
@@ -1764,7 +1809,8 @@ defmodule Ide.Mcp.Handlers.Debugger do
 
   defp parse_cursor_inspect_event_limit(_), do: 500
 
-  @spec parse_cursor_seq(WireTypes.cursor_seq_input()) :: {:ok, non_neg_integer() | nil} | {:error, String.t()}
+  @spec parse_cursor_seq(WireTypes.cursor_seq_input()) ::
+          {:ok, non_neg_integer() | nil} | {:error, String.t()}
   defp parse_cursor_seq(nil), do: {:ok, nil}
 
   defp parse_cursor_seq(n) when is_integer(n) and n >= 0, do: {:ok, n}

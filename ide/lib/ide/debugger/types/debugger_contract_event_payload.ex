@@ -4,6 +4,7 @@ defmodule Ide.Debugger.Types.DebuggerContractEventPayload do
   """
 
   alias Ide.Debugger.Types
+
   @type t :: %{
           optional(:module) => String.t() | nil,
           optional(:rel_path) => String.t() | nil,

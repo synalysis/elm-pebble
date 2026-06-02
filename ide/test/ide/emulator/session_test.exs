@@ -311,7 +311,10 @@ defmodule Ide.Emulator.SessionTest do
     assert source =~ "simulator_settings_update"
     assert source =~ "schedule_simulator_weather_to_watch"
     assert source =~ "weather_temperatureC"
-    assert source =~ "send_simulator_weather_to_watch(runner, \"simulator_settings_update\", ws=ws)"
+
+    assert source =~
+             "send_simulator_weather_to_watch(runner, \"simulator_settings_update\", ws=ws)"
+
     assert source =~ "simulator_settings_update_retry"
     assert source =~ "normalize_ws_message"
     assert source =~ "gevent.spawn(go_apply)"

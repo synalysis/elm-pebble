@@ -300,7 +300,13 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec expand_inline_if_expression(String.t(), non_neg_integer(), String.t(), non_neg_integer(), String.t()) :: Types.line_list()
+  @spec expand_inline_if_expression(
+          String.t(),
+          non_neg_integer(),
+          String.t(),
+          non_neg_integer(),
+          String.t()
+        ) :: Types.line_list()
   defp expand_inline_if_expression(if_expression, indent, prefix, else_indent, fallback_line) do
     case split_if_then_else(if_expression) do
       {:ok, condition, then_expr, else_expr} ->
@@ -573,7 +579,8 @@ defmodule Ide.Formatter.Printer.Expression do
 
   defp rewrite_nested_call_block_indentation([line]), do: [line]
 
-  @spec collect_nested_call_block_lines(Types.line_list(), Types.line_list()) :: nested_block_collect_result()
+  @spec collect_nested_call_block_lines(Types.line_list(), Types.line_list()) ::
+          nested_block_collect_result()
   defp collect_nested_call_block_lines([], _acc), do: :error
 
   defp collect_nested_call_block_lines([line | rest], acc) do
@@ -628,7 +635,8 @@ defmodule Ide.Formatter.Printer.Expression do
     has_list_open? and comma_lines_are_tuple_items? and has_scalar_tail?
   end
 
-  @spec parse_multiline_nested_call_start(String.t()) :: {:ok, non_neg_integer(), String.t(), String.t(), String.t()} | :error
+  @spec parse_multiline_nested_call_start(String.t()) ::
+          {:ok, non_neg_integer(), String.t(), String.t(), String.t()} | :error
   defp parse_multiline_nested_call_start(line) do
     indent = leading_indent(line)
     trimmed = String.trim_leading(line)
@@ -663,7 +671,8 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec collect_multiline_nested_call(Types.line_list(), [String.t()]) :: nested_call_collect_result()
+  @spec collect_multiline_nested_call(Types.line_list(), [String.t()]) ::
+          nested_call_collect_result()
   defp collect_multiline_nested_call([], _items), do: :error
 
   defp collect_multiline_nested_call([line | rest], items) do
@@ -714,7 +723,9 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec emit_multiline_nested_call(non_neg_integer(), String.t(), String.t(), [String.t()], [String.t()]) :: Types.line_list()
+  @spec emit_multiline_nested_call(non_neg_integer(), String.t(), String.t(), [String.t()], [
+          String.t()
+        ]) :: Types.line_list()
   defp emit_multiline_nested_call(indent, outer, inner_head, items, trailing_args) do
     base = String.duplicate(" ", indent)
     inner_base = String.duplicate(" ", indent + 4)
@@ -742,7 +753,8 @@ defmodule Ide.Formatter.Printer.Expression do
     Enum.reject(parts, &(&1 == ""))
   end
 
-  @spec do_split_top_level_csv(String.t(), [String.t()], String.t(), list(), boolean(), boolean()) :: {[String.t()], String.t(), list(), boolean(), boolean()}
+  @spec do_split_top_level_csv(String.t(), [String.t()], String.t(), list(), boolean(), boolean()) ::
+          {[String.t()], String.t(), list(), boolean(), boolean()}
   defp do_split_top_level_csv("", parts, current, stack, in_string, escape_next),
     do: {parts, current, stack, in_string, escape_next}
 
@@ -963,7 +975,14 @@ defmodule Ide.Formatter.Printer.Expression do
     do_top_level_keyword_index(value, keyword, [], false, false, 0)
   end
 
-  @spec do_top_level_keyword_index(String.t(), String.t(), list(), boolean(), boolean(), non_neg_integer()) :: non_neg_integer() | nil
+  @spec do_top_level_keyword_index(
+          String.t(),
+          String.t(),
+          list(),
+          boolean(),
+          boolean(),
+          non_neg_integer()
+        ) :: non_neg_integer() | nil
   defp do_top_level_keyword_index("", _keyword, _stack, _in_string, _escape_next, _idx), do: nil
 
   defp do_top_level_keyword_index(
@@ -1073,7 +1092,15 @@ defmodule Ide.Formatter.Printer.Expression do
     |> Enum.reverse()
   end
 
-  @spec scan_top_level_for_char(String.t(), list(), boolean(), boolean(), pos_integer(), non_neg_integer(), [pos_integer()]) :: [pos_integer()]
+  @spec scan_top_level_for_char(
+          String.t(),
+          list(),
+          boolean(),
+          boolean(),
+          pos_integer(),
+          non_neg_integer(),
+          [pos_integer()]
+        ) :: [pos_integer()]
   defp scan_top_level_for_char("", _stack, _in_string, _escape_next, _col, _char_code, acc),
     do: acc
 

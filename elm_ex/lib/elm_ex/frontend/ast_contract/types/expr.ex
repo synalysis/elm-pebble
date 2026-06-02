@@ -9,12 +9,27 @@ defmodule ElmEx.Frontend.AstContract.Types.Expr do
   @type int_literal :: %{required(:op) => :int_literal, required(:value) => integer()}
   @type string_literal :: %{required(:op) => :string_literal, required(:value) => String.t()}
   @type char_literal :: %{required(:op) => :char_literal, required(:value) => integer()}
-  @type float_literal :: %{required(:op) => :float_literal, required(:value) => float() | integer()}
+  @type float_literal :: %{
+          required(:op) => :float_literal,
+          required(:value) => float() | integer()
+        }
   @type var_expr :: %{required(:op) => :var, required(:name) => String.t()}
   @type cmd_none :: %{required(:op) => :cmd_none}
-  @type add_const :: %{required(:op) => :add_const, required(:var) => String.t(), required(:value) => integer()}
-  @type add_vars :: %{required(:op) => :add_vars, required(:left) => String.t(), required(:right) => String.t()}
-  @type sub_const :: %{required(:op) => :sub_const, required(:var) => String.t(), required(:value) => integer()}
+  @type add_const :: %{
+          required(:op) => :add_const,
+          required(:var) => String.t(),
+          required(:value) => integer()
+        }
+  @type add_vars :: %{
+          required(:op) => :add_vars,
+          required(:left) => String.t(),
+          required(:right) => String.t()
+        }
+  @type sub_const :: %{
+          required(:op) => :sub_const,
+          required(:var) => String.t(),
+          required(:value) => integer()
+        }
   @type compare :: %{
           required(:op) => :compare,
           required(:left) => t(),
@@ -49,8 +64,16 @@ defmodule ElmEx.Frontend.AstContract.Types.Expr do
           required(:field) => String.t(),
           required(:args) => [t()]
         }
-  @type compose_left :: %{required(:op) => :compose_left, required(:f) => String.t(), required(:g) => String.t()}
-  @type compose_right :: %{required(:op) => :compose_right, required(:f) => String.t(), required(:g) => String.t()}
+  @type compose_left :: %{
+          required(:op) => :compose_left,
+          required(:f) => String.t(),
+          required(:g) => String.t()
+        }
+  @type compose_right :: %{
+          required(:op) => :compose_right,
+          required(:f) => String.t(),
+          required(:g) => String.t()
+        }
   @type lambda :: %{
           required(:op) => :lambda,
           required(:args) => [String.t()],
@@ -73,7 +96,10 @@ defmodule ElmEx.Frontend.AstContract.Types.Expr do
           required(:subject) => t() | String.t(),
           required(:branches) => [CaseBranch.t()]
         }
-  @type record_literal :: %{required(:op) => :record_literal, required(:fields) => [RecordField.t()]}
+  @type record_literal :: %{
+          required(:op) => :record_literal,
+          required(:fields) => [RecordField.t()]
+        }
   @type record_update :: %{
           required(:op) => :record_update,
           required(:base) => t(),

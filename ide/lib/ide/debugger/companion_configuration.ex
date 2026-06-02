@@ -100,7 +100,8 @@ defmodule Ide.Debugger.CompanionConfiguration do
     end
   end
 
-  @spec project_debugger_values(Project.t() | Types.wire_map()) :: Types.companion_configuration_values() | nil
+  @spec project_debugger_values(Project.t() | Types.wire_map()) ::
+          Types.companion_configuration_values() | nil
   defp project_debugger_values(%{debugger_settings: settings}) when is_map(settings) do
     case Map.get(settings, "configuration_values") do
       values when is_map(values) -> values
@@ -115,7 +116,8 @@ defmodule Ide.Debugger.CompanionConfiguration do
     Enum.map(sections, fn section ->
       %{
         "title" => Map.get(section, :title) || Map.get(section, "title") || "",
-        "fields" => fields_from_schema(Map.get(section, :fields) || Map.get(section, "fields") || [])
+        "fields" =>
+          fields_from_schema(Map.get(section, :fields) || Map.get(section, "fields") || [])
       }
     end)
   end
@@ -145,8 +147,11 @@ defmodule Ide.Debugger.CompanionConfiguration do
           Types.app_model()
   defp put_values_at(model, path, values) when is_map(model) and is_list(path) do
     case get_in(model, path) do
-      %{} = configuration -> put_in(model, path, put_values_in_configuration(configuration, values))
-      _ -> model
+      %{} = configuration ->
+        put_in(model, path, put_values_in_configuration(configuration, values))
+
+      _ ->
+        model
     end
   end
 

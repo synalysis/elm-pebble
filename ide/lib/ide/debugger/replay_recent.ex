@@ -10,8 +10,14 @@ defmodule Ide.Debugger.ReplayRecent do
   @type replay_label_fn :: (Types.surface_target() | nil -> String.t())
 
   @type apply_step_fn ::
-          (Types.runtime_state(), Types.surface_target(), String.t(), Types.subscription_payload() | nil,
-           String.t(), String.t() -> Types.runtime_state())
+          (Types.runtime_state(),
+           Types.surface_target(),
+           String.t(),
+           Types.subscription_payload()
+           | nil,
+           String.t(),
+           String.t() ->
+             Types.runtime_state())
 
   @type append_event_fn :: (Types.runtime_state(), String.t(), map() -> Types.runtime_state())
 
@@ -26,13 +32,17 @@ defmodule Ide.Debugger.ReplayRecent do
   def apply(state, attrs, host) when is_map(state) and is_map(attrs) and is_map(host) do
     if Map.get(state, :running, false) do
       count = Attrs.parse_step_count(Map.get(attrs, :count) || Map.get(attrs, "count"))
+
       target =
         SurfaceTargets.normalize_optional(Map.get(attrs, :target) || Map.get(attrs, "target"))
 
       cursor_seq =
-        Attrs.parse_optional_cursor_seq(Map.get(attrs, :cursor_seq) || Map.get(attrs, "cursor_seq"))
+        Attrs.parse_optional_cursor_seq(
+          Map.get(attrs, :cursor_seq) || Map.get(attrs, "cursor_seq")
+        )
 
-      replay_mode = ReplaySession.parse_mode(Map.get(attrs, :replay_mode) || Map.get(attrs, "replay_mode"))
+      replay_mode =
+        ReplaySession.parse_mode(Map.get(attrs, :replay_mode) || Map.get(attrs, "replay_mode"))
 
       replay_drift_seq =
         Attrs.parse_optional_cursor_seq(
@@ -51,8 +61,13 @@ defmodule Ide.Debugger.ReplayRecent do
         if replay_rows? do
           {replay_rows, "frozen_preview"}
         else
-          {ReplaySession.recent_update_messages(state, target, count, cursor_seq, host.normalize_target),
-           "recent_query"}
+          {ReplaySession.recent_update_messages(
+             state,
+             target,
+             count,
+             cursor_seq,
+             host.normalize_target
+           ), "recent_query"}
         end
 
       replayed =
@@ -86,5 +101,4 @@ defmodule Ide.Debugger.ReplayRecent do
       state
     end
   end
-
 end

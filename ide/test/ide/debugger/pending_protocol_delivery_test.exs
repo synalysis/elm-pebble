@@ -4,15 +4,15 @@ defmodule Ide.Debugger.PendingProtocolDeliveryTest do
   alias Ide.Debugger.PendingProtocolDelivery
 
   test "enqueue stores payload for async drain" do
-  state = %{
-    companion: %{}
-  }
+    state = %{
+      companion: %{}
+    }
 
-  payload = %{"from" => "watch", "to" => "companion", "message" => "Ping"}
+    payload = %{"from" => "watch", "to" => "companion", "message" => "Ping"}
 
-  next = PendingProtocolDelivery.enqueue(state, :companion, payload)
+    next = PendingProtocolDelivery.enqueue(state, :companion, payload)
 
-  assert [%{"recipient" => "companion", "payload" => ^payload}] =
-           PendingProtocolDelivery.pending(next)
+    assert [%{"recipient" => "companion", "payload" => ^payload}] =
+             PendingProtocolDelivery.pending(next)
   end
 end

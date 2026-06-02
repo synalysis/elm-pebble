@@ -33,6 +33,7 @@ defmodule Ide.Debugger.CompiledElixirExecuteTest do
 
     assert {:ok, payload} = CompiledElixirAdapter.execute(request)
     assert get_in(payload.model_patch, ["runtime_model", "value"]) != nil
+
     assert payload.runtime["execution_backend"] == "compiled_elixir" or
              get_in(payload.runtime, [:execution_backend]) == "compiled_elixir"
   end

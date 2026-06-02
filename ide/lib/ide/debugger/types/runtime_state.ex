@@ -5,6 +5,7 @@ defmodule Ide.Debugger.Types.RuntimeState do
 
   alias Ide.Debugger.Surface
   alias Ide.Debugger.Types
+
   alias Ide.Debugger.Types.{
     AutoTick,
     DebuggerTimelineRow,

@@ -5,7 +5,9 @@ defmodule Ide.WasmEmulator.FirmwareSyncTest do
   alias Ide.WasmEmulator.FirmwareSync
 
   setup do
-    root = Path.join(System.tmp_dir!(), "wasm-firmware-sync-#{System.unique_integer([:positive])}")
+    root =
+      Path.join(System.tmp_dir!(), "wasm-firmware-sync-#{System.unique_integer([:positive])}")
+
     sdk_root = Path.join(root, "sdk-pebble")
     wasm_root = Path.join(root, "wasm")
     qemu_dir = Path.join(sdk_root, "basalt/qemu")
@@ -39,10 +41,17 @@ defmodule Ide.WasmEmulator.FirmwareSyncTest do
   end
 
   test "sync_sdk_firmware converts ELF micro flash using the SDK objcopy", %{wasm_root: wasm_root} do
-    data_root = Path.join(System.tmp_dir!(), "wasm-firmware-elf-#{System.unique_integer([:positive])}")
+    data_root =
+      Path.join(System.tmp_dir!(), "wasm-firmware-elf-#{System.unique_integer([:positive])}")
+
     sdk_pebble_root = Path.join(data_root, ".pebble-sdk/SDKs/current/sdk-core/pebble")
     qemu_dir = Path.join(sdk_pebble_root, "chalk/qemu")
-    objcopy = Path.join(data_root, ".pebble-sdk/SDKs/current/toolchain/arm-none-eabi/bin/arm-none-eabi-objcopy")
+
+    objcopy =
+      Path.join(
+        data_root,
+        ".pebble-sdk/SDKs/current/toolchain/arm-none-eabi/bin/arm-none-eabi-objcopy"
+      )
 
     File.mkdir_p!(Path.dirname(objcopy))
     File.mkdir_p!(qemu_dir)
@@ -58,7 +67,9 @@ defmodule Ide.WasmEmulator.FirmwareSyncTest do
     System.put_env("ELM_PEBBLE_QEMU_IMAGE_ROOT", sdk_pebble_root)
 
     on_exit(fn ->
-      if previous_data_root, do: System.put_env("IDE_DATA_ROOT", previous_data_root), else: System.delete_env("IDE_DATA_ROOT")
+      if previous_data_root,
+        do: System.put_env("IDE_DATA_ROOT", previous_data_root),
+        else: System.delete_env("IDE_DATA_ROOT")
 
       if previous_image_root,
         do: System.put_env("ELM_PEBBLE_QEMU_IMAGE_ROOT", previous_image_root),

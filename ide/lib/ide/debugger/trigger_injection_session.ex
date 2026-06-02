@@ -10,7 +10,8 @@ defmodule Ide.Debugger.TriggerInjectionSession do
           required(:contexts) => (-> RuntimeContexts.t())
         }
 
-  @spec apply(Types.runtime_state(), Types.inject_trigger_attrs(), host()) :: Types.runtime_state()
+  @spec apply(Types.runtime_state(), Types.inject_trigger_attrs(), host()) ::
+          Types.runtime_state()
   def apply(state, attrs, host) when is_map(state) and is_map(attrs) and is_map(host) do
     if Map.get(state, :running, false) do
       target = SurfaceTargets.normalize(Map.get(attrs, :target) || Map.get(attrs, "target"))

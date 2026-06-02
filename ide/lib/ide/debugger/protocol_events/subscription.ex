@@ -15,8 +15,8 @@ defmodule Ide.Debugger.ProtocolEvents.Subscription do
           ctx()
         ) :: Types.subscription_payload()
   def normalize_subscription_message_value(state, recipient, message_value, events_ctx)
-       when is_map(state) and recipient in [:watch, :companion, :phone] and is_map(message_value) and
-              is_map(events_ctx) do
+      when is_map(state) and recipient in [:watch, :companion, :phone] and is_map(message_value) and
+             is_map(events_ctx) do
     normalize_subscription_message_value(
       state,
       recipient,
@@ -34,15 +34,19 @@ defmodule Ide.Debugger.ProtocolEvents.Subscription do
           ctx()
         ) :: Types.subscription_payload()
   def normalize_subscription_message_value(state, recipient, message_value, app_model, events_ctx)
-       when is_map(state) and recipient in [:watch, :companion, :phone] and is_map(message_value) and
-              is_map(app_model) and is_map(events_ctx) do
+      when is_map(state) and recipient in [:watch, :companion, :phone] and is_map(message_value) and
+             is_map(app_model) and is_map(events_ctx) do
     direction =
       case recipient do
         :watch -> :phone_to_watch
         _ -> :watch_to_phone
       end
 
-    case Ide.Debugger.ProtocolEvents.CmdCall.protocol_schema_from_state_or_model(state, app_model, events_ctx) do
+    case Ide.Debugger.ProtocolEvents.CmdCall.protocol_schema_from_state_or_model(
+           state,
+           app_model,
+           events_ctx
+         ) do
       {:ok, schema} ->
         normalize_protocol_subscription_callback_value(schema, direction, message_value)
 
@@ -51,8 +55,14 @@ defmodule Ide.Debugger.ProtocolEvents.Subscription do
     end
   end
 
-  def normalize_subscription_message_value(_state, _recipient, message_value, _app_model, _events_ctx),
-    do: message_value
+  def normalize_subscription_message_value(
+        _state,
+        _recipient,
+        message_value,
+        _app_model,
+        _events_ctx
+      ),
+      do: message_value
 
   @spec parenthesize_elm_arg(String.t()) :: String.t()
   def parenthesize_elm_arg(value) when is_binary(value) do
@@ -71,8 +81,13 @@ defmodule Ide.Debugger.ProtocolEvents.Subscription do
           :watch_to_phone | :phone_to_watch,
           Types.subscription_payload()
         ) :: Types.subscription_payload()
-  defp normalize_protocol_subscription_callback_value(schema, direction, %{"ctor" => callback, "args" => [inner | _]} = wrapped)
-       when is_binary(callback) and is_map(schema) and direction in [:watch_to_phone, :phone_to_watch] do
+  defp normalize_protocol_subscription_callback_value(
+         schema,
+         direction,
+         %{"ctor" => callback, "args" => [inner | _]} = wrapped
+       )
+       when is_binary(callback) and is_map(schema) and
+              direction in [:watch_to_phone, :phone_to_watch] do
     normalized_inner = normalize_protocol_subscription_payload(schema, direction, inner)
 
     if normalized_inner == inner do
@@ -90,7 +105,11 @@ defmodule Ide.Debugger.ProtocolEvents.Subscription do
           :watch_to_phone | :phone_to_watch,
           Types.subscription_payload()
         ) :: Types.subscription_payload()
-  defp normalize_protocol_subscription_payload(schema, direction, %{"ctor" => "Ok", "args" => [inner | _]} = value)
+  defp normalize_protocol_subscription_payload(
+         schema,
+         direction,
+         %{"ctor" => "Ok", "args" => [inner | _]} = value
+       )
        when is_map(schema) and is_map(inner) do
     normalized_inner = normalize_protocol_subscription_payload(schema, direction, inner)
 
@@ -104,7 +123,12 @@ defmodule Ide.Debugger.ProtocolEvents.Subscription do
   defp normalize_protocol_subscription_payload(schema, direction, inner) when is_map(inner) do
     ctor = Ide.Debugger.ProtocolEvents.CmdCall.protocol_message_ctor(inner) || ""
 
-    case Ide.Debugger.ProtocolEvents.CmdCall.normalize_protocol_message_value_from_schema(schema, direction, inner, ctor) do
+    case Ide.Debugger.ProtocolEvents.CmdCall.normalize_protocol_message_value_from_schema(
+           schema,
+           direction,
+           inner,
+           ctor
+         ) do
       {_message, normalized_inner} -> normalized_inner
       :error -> inner
     end
@@ -143,7 +167,8 @@ defmodule Ide.Debugger.ProtocolEvents.Subscription do
 
   defp protocol_wire_message_display(_message_value), do: nil
 
-  @spec protocol_wire_message_value(Types.subscription_payload()) :: Types.protocol_ctor_value() | nil
+  @spec protocol_wire_message_value(Types.subscription_payload()) ::
+          Types.protocol_ctor_value() | nil
   defp protocol_wire_message_value(%{"ctor" => ctor, "args" => args})
        when ctor in @protocol_subscription_wrapper_ctors and is_list(args) do
     case List.wrap(args) do

@@ -117,6 +117,7 @@ defmodule IdeWeb.WorkspaceLive.PublishFlowTest do
              PublishFlow.publish_ready_screenshot_groups([{"basalt", [first, second]}])
 
     assert length(shots) == 2
+
     assert Enum.map(shots, & &1.absolute_path) |> Enum.sort() ==
              [first_path, second_path] |> Enum.sort()
   end
@@ -142,6 +143,7 @@ defmodule IdeWeb.WorkspaceLive.PublishFlowTest do
              ])
 
     assert length(staged) == 2
+
     assert Enum.sort(Enum.map(staged, &Path.basename/1)) == [
              "basalt_shot_a.png",
              "basalt_shot_b.png"

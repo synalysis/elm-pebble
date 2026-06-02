@@ -35,7 +35,8 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.CmdCalls do
 
   def init_cmd_ops_outline(_, _), do: []
 
-  @spec init_cmd_calls_outline(Types.ast_expr() | nil, Types.param_list()) :: Types.cmd_call_list()
+  @spec init_cmd_calls_outline(Types.ast_expr() | nil, Types.param_list()) ::
+          Types.cmd_call_list()
   def init_cmd_calls_outline(nil, _), do: []
 
   def init_cmd_calls_outline(expr, init_params) when is_list(init_params) do
@@ -96,7 +97,8 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.CmdCalls do
 
   def update_cmd_ops_outline(_, _), do: []
 
-  @spec update_cmd_calls_outline(Types.ast_expr() | nil, Types.param_list()) :: Types.cmd_call_list()
+  @spec update_cmd_calls_outline(Types.ast_expr() | nil, Types.param_list()) ::
+          Types.cmd_call_list()
   def update_cmd_calls_outline(nil, _), do: []
 
   def update_cmd_calls_outline(expr, update_params) when is_list(update_params) do
@@ -174,16 +176,17 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.CmdCalls do
 
   @spec maybe_put_branch_constructor(Types.cmd_call_row(), String.t()) :: Types.cmd_call_row()
   def maybe_put_branch_constructor(row, constructor)
-       when is_map(row) and is_binary(constructor) and constructor != "" do
+      when is_map(row) and is_binary(constructor) and constructor != "" do
     Map.put(row, "branch_constructor", constructor)
   end
 
   def maybe_put_branch_constructor(row, _constructor), do: row
+
   def extract_cmd_op_items(%{
-         op: :qualified_call,
-         args: [%{op: :list_literal, items: items}]
-       })
-       when is_list(items) do
+        op: :qualified_call,
+        args: [%{op: :list_literal, items: items}]
+      })
+      when is_list(items) do
     Enum.flat_map(items, &extract_cmd_op_items/1)
   end
 
@@ -192,11 +195,11 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.CmdCalls do
   end
 
   def extract_cmd_op_items(%{
-         op: :call,
-         name: name,
-         args: [%{op: :list_literal, items: items}]
-       })
-       when is_list(items) and is_binary(name) do
+        op: :call,
+        name: name,
+        args: [%{op: :list_literal, items: items}]
+      })
+      when is_list(items) and is_binary(name) do
     items
     |> Enum.flat_map(&extract_cmd_op_items/1)
     |> then(fn xs -> if xs != [], do: xs, else: [name <> "(…)"] end)
@@ -220,26 +223,26 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.CmdCalls do
   def extract_cmd_calls(expr), do: extract_cmd_calls(expr, %{})
 
   def extract_cmd_calls(
-         %{
-           op: :qualified_call,
-           target: "Cmd.batch",
-           args: [%{op: :list_literal, items: items}]
-         },
-         bindings
-       )
-       when is_list(items) and is_map(bindings) do
+        %{
+          op: :qualified_call,
+          target: "Cmd.batch",
+          args: [%{op: :list_literal, items: items}]
+        },
+        bindings
+      )
+      when is_list(items) and is_map(bindings) do
     Enum.flat_map(items, &extract_cmd_calls(&1, bindings))
   end
 
   def extract_cmd_calls(
-         %{
-           op: :qualified_call,
-           target: target,
-           args: args
-         },
-         bindings
-       )
-       when is_binary(target) and is_list(args) and is_map(bindings) do
+        %{
+          op: :qualified_call,
+          target: target,
+          args: args
+        },
+        bindings
+      )
+      when is_binary(target) and is_list(args) and is_map(bindings) do
     [
       %{
         "target" => target,
@@ -260,14 +263,14 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.CmdCalls do
   end
 
   def extract_cmd_calls(
-         %{
-           op: :call,
-           name: name,
-           args: args
-         },
-         bindings
-       )
-       when is_binary(name) and is_list(args) and is_map(bindings) do
+        %{
+          op: :call,
+          name: name,
+          args: args
+        },
+        bindings
+      )
+      when is_binary(name) and is_list(args) and is_map(bindings) do
     [
       %{
         "target" => name,
@@ -288,10 +291,10 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.CmdCalls do
   end
 
   def extract_cmd_calls(
-         %{op: :let_in, name: name, value_expr: value_expr, in_expr: inner},
-         bindings
-       )
-       when is_binary(name) and is_map(bindings) do
+        %{op: :let_in, name: name, value_expr: value_expr, in_expr: inner},
+        bindings
+      )
+      when is_binary(name) and is_map(bindings) do
     extract_cmd_calls(inner, Map.put(bindings, name, value_expr))
   end
 
@@ -299,11 +302,11 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.CmdCalls do
     do: extract_cmd_calls(inner, bindings)
 
   def extract_cmd_calls(%{op: :list_literal, items: items}, bindings)
-       when is_list(items) and is_map(bindings),
-       do: Enum.flat_map(items, &extract_cmd_calls(&1, bindings))
+      when is_list(items) and is_map(bindings),
+      do: Enum.flat_map(items, &extract_cmd_calls(&1, bindings))
 
   def extract_cmd_calls(%{op: :var, name: name}, bindings)
-       when is_binary(name) and is_map(bindings) do
+      when is_binary(name) and is_map(bindings) do
     case Map.get(bindings, name) do
       nil ->
         [%{"target" => name, "name" => name}]
@@ -317,7 +320,7 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.CmdCalls do
     do: extract_cmd_calls(right, bindings)
 
   def extract_cmd_calls(%{op: :case, branches: branches}, bindings)
-       when is_list(branches) and is_map(bindings) do
+      when is_list(branches) and is_map(bindings) do
     Enum.flat_map(branches, fn
       %{expr: expr} -> extract_cmd_calls(expr, bindings)
       _ -> []
@@ -328,7 +331,7 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.CmdCalls do
 
   @spec callback_constructor_from_args(list(), Types.binding_map()) :: String.t() | nil
   def callback_constructor_from_args(args, bindings)
-       when is_list(args) and is_map(bindings) do
+      when is_list(args) and is_map(bindings) do
     args
     |> Enum.reverse()
     |> Enum.find_value(&callback_constructor_from_expr(&1, bindings, MapSet.new(), 0))
@@ -338,7 +341,7 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.CmdCalls do
 
   @spec callback_arg_count_from_args(list(), Types.binding_map()) :: non_neg_integer()
   def callback_arg_count_from_args(args, bindings)
-       when is_list(args) and is_map(bindings) do
+      when is_list(args) and is_map(bindings) do
     args
     |> Enum.reverse()
     |> Enum.find_value(&callback_arg_count_from_expr(&1, bindings, MapSet.new(), 0))
@@ -350,23 +353,28 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.CmdCalls do
 
   def callback_arg_count_from_args(_, _), do: 0
 
-  @spec callback_arg_count_from_expr(Types.ast_expr(), Types.binding_map(), MapSet.t(String.t()), non_neg_integer()) ::
+  @spec callback_arg_count_from_expr(
+          Types.ast_expr(),
+          Types.binding_map(),
+          MapSet.t(String.t()),
+          non_neg_integer()
+        ) ::
           non_neg_integer() | nil
   def callback_arg_count_from_expr(_expr, _bindings, _seen, depth) when depth > 10, do: nil
 
   def callback_arg_count_from_expr(
-         %{op: :constructor_call, args: args},
-         _bindings,
-         _seen,
-         _depth
-       )
-       when is_list(args),
-       do: length(args)
+        %{op: :constructor_call, args: args},
+        _bindings,
+        _seen,
+        _depth
+      )
+      when is_list(args),
+      do: length(args)
 
   def callback_arg_count_from_expr(%{op: :constructor_call}, _bindings, _seen, _depth), do: 0
 
   def callback_arg_count_from_expr(%{op: :var, name: name}, bindings, seen, depth)
-       when is_binary(name) and is_map(bindings) do
+      when is_binary(name) and is_map(bindings) do
     if MapSet.member?(seen, name) do
       nil
     else
@@ -388,12 +396,12 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.CmdCalls do
 
   @spec qualified_call_targets(Types.ast_expr()) :: [String.t()]
   def qualified_call_targets(%{op: :qualified_call, target: target, args: args})
-       when is_binary(target) and is_list(args) do
+      when is_binary(target) and is_list(args) do
     [target | Enum.flat_map(args, &qualified_call_targets/1)]
   end
 
   def qualified_call_targets(%{op: :call, name: name, args: args})
-       when is_binary(name) and is_list(args) do
+      when is_binary(name) and is_list(args) do
     [name | Enum.flat_map(args, &qualified_call_targets/1)]
   end
 
@@ -417,21 +425,26 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.CmdCalls do
 
   def callback_preferred_over_result_mapper?(_ctor), do: false
 
-  @spec callback_constructor_from_expr(Types.ast_expr(), Types.binding_map(), MapSet.t(String.t()), non_neg_integer()) ::
+  @spec callback_constructor_from_expr(
+          Types.ast_expr(),
+          Types.binding_map(),
+          MapSet.t(String.t()),
+          non_neg_integer()
+        ) ::
           String.t() | nil
   def callback_constructor_from_expr(_expr, _bindings, _seen, depth) when depth > 10, do: nil
 
   def callback_constructor_from_expr(
-         %{op: :constructor_call, target: target},
-         _bindings,
-         _seen,
-         _depth
-       )
-       when is_binary(target),
-       do: Support.view_type_name(target)
+        %{op: :constructor_call, target: target},
+        _bindings,
+        _seen,
+        _depth
+      )
+      when is_binary(target),
+      do: Support.view_type_name(target)
 
   def callback_constructor_from_expr(%{op: :var, name: name}, bindings, seen, depth)
-       when is_binary(name) and is_map(bindings) do
+      when is_binary(name) and is_map(bindings) do
     if MapSet.member?(seen, name) do
       nil
     else
@@ -443,12 +456,12 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.CmdCalls do
   end
 
   def callback_constructor_from_expr(
-         %{op: :record_literal, fields: fields},
-         bindings,
-         seen,
-         depth
-       )
-       when is_list(fields) do
+        %{op: :record_literal, fields: fields},
+        bindings,
+        seen,
+        depth
+      )
+      when is_list(fields) do
     expect_expr =
       Enum.find_value(fields, fn
         %{name: "expect", expr: expr} -> expr
@@ -468,12 +481,12 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.CmdCalls do
   end
 
   def callback_constructor_from_expr(%{op: :qualified_call, args: args}, bindings, seen, depth)
-       when is_list(args) do
+      when is_list(args) do
     Enum.find_value(args, &callback_constructor_from_expr(&1, bindings, seen, depth + 1))
   end
 
   def callback_constructor_from_expr(%{op: :call, name: name, args: args}, bindings, seen, depth)
-       when is_binary(name) and is_list(args) do
+      when is_binary(name) and is_list(args) do
     cond do
       constructor_like_name?(name) and callback_preferred_over_result_mapper?(name) ->
         Support.view_type_name(name)
@@ -484,27 +497,27 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.CmdCalls do
   end
 
   def callback_constructor_from_expr(%{op: :call, args: args}, bindings, seen, depth)
-       when is_list(args) do
+      when is_list(args) do
     Enum.find_value(args, &callback_constructor_from_expr(&1, bindings, seen, depth + 1))
   end
 
   def callback_constructor_from_expr(
-         %{op: :let_in, name: name, value_expr: value_expr, in_expr: inner},
-         bindings,
-         seen,
-         depth
-       )
-       when is_binary(name) and is_map(bindings) do
+        %{op: :let_in, name: name, value_expr: value_expr, in_expr: inner},
+        bindings,
+        seen,
+        depth
+      )
+      when is_binary(name) and is_map(bindings) do
     next_bindings = Map.put(bindings, name, value_expr)
     callback_constructor_from_expr(inner, next_bindings, seen, depth + 1)
   end
 
   def callback_constructor_from_expr(
-         %{op: :tuple2, left: left, right: right},
-         bindings,
-         seen,
-         depth
-       ) do
+        %{op: :tuple2, left: left, right: right},
+        bindings,
+        seen,
+        depth
+      ) do
     left_ctor = callback_constructor_from_expr(left, bindings, seen, depth + 1)
     right_ctor = callback_constructor_from_expr(right, bindings, seen, depth + 1)
 
@@ -524,7 +537,7 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.CmdCalls do
   end
 
   def callback_constructor_from_expr(%{op: :list_literal, items: items}, bindings, seen, depth)
-       when is_list(items) do
+      when is_list(items) do
     Enum.find_value(items, &callback_constructor_from_expr(&1, bindings, seen, depth + 1))
   end
 

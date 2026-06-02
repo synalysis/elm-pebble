@@ -523,7 +523,9 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
     end
   end
 
-  @spec group_screenshots([Screenshots.screenshot()]) :: [{String.t(), [Screenshots.screenshot()]}]
+  @spec group_screenshots([Screenshots.screenshot()]) :: [
+          {String.t(), [Screenshots.screenshot()]}
+        ]
   defp group_screenshots(shots) do
     shots
     |> Enum.group_by(& &1.emulator_target)

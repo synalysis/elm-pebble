@@ -106,10 +106,10 @@ defmodule Ide.Mcp.Handlers.Projects do
   end
 
   def call("files.read", %{
-         "slug" => slug,
-         "source_root" => source_root,
-         "rel_path" => rel_path
-       }) do
+        "slug" => slug,
+        "source_root" => source_root,
+        "rel_path" => rel_path
+      }) do
     with {:ok, project} <- ToolSupport.fetch_project(slug),
          {:ok, content} <- Projects.read_source_file(project, source_root, rel_path) do
       {:ok, files_read_payload(slug, source_root, rel_path, content)}
@@ -119,10 +119,10 @@ defmodule Ide.Mcp.Handlers.Projects do
   end
 
   def call("files.stat", %{
-         "slug" => slug,
-         "source_root" => source_root,
-         "rel_path" => rel_path
-       }) do
+        "slug" => slug,
+        "source_root" => source_root,
+        "rel_path" => rel_path
+      }) do
     with {:ok, project} <- ToolSupport.fetch_project(slug),
          {:ok, absolute_path} <- project_source_file_path(project, source_root, rel_path),
          {:ok, stat} <- File.stat(absolute_path),
@@ -142,12 +142,12 @@ defmodule Ide.Mcp.Handlers.Projects do
   end
 
   def call("files.read_range", %{
-         "slug" => slug,
-         "source_root" => source_root,
-         "rel_path" => rel_path,
-         "offset" => offset,
-         "limit" => limit
-       }) do
+        "slug" => slug,
+        "source_root" => source_root,
+        "rel_path" => rel_path,
+        "offset" => offset,
+        "limit" => limit
+      }) do
     with {:ok, project} <- ToolSupport.fetch_project(slug),
          {:ok, content} <- Projects.read_source_file(project, source_root, rel_path) do
       lines = String.split(content, "\n")
@@ -177,7 +177,7 @@ defmodule Ide.Mcp.Handlers.Projects do
   end
 
   def call("files.search", %{"slug" => slug, "query" => query} = args)
-       when is_binary(query) do
+      when is_binary(query) do
     with {:ok, project} <- ToolSupport.fetch_project(slug),
          {:ok, roots} <- search_source_roots(project, Map.get(args, "source_root")) do
       limit = args |> Map.get("limit", 50) |> ToolSupport.parse_limit()
@@ -568,7 +568,8 @@ defmodule Ide.Mcp.Handlers.Projects do
 
   defp replace_once(_content, _old_string, _new_string), do: {:error, :invalid_patch}
 
-  @spec search_source_roots(map(), WireTypes.json_value()) :: {:ok, [String.t()]} | {:error, atom()}
+  @spec search_source_roots(map(), WireTypes.json_value()) ::
+          {:ok, [String.t()]} | {:error, atom()}
   defp search_source_roots(project, nil), do: {:ok, project.source_roots}
   defp search_source_roots(project, ""), do: {:ok, project.source_roots}
 

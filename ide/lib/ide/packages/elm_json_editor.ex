@@ -8,7 +8,8 @@ defmodule Ide.Packages.ElmJsonEditor do
   @type elm_json_map :: map()
   @type preview_map :: map()
 
-  @spec preview_add(map(), String.t(), keyword()) :: {:ok, map()} | {:error, Types.project_package_error()}
+  @spec preview_add(map(), String.t(), keyword()) ::
+          {:ok, map()} | {:error, Types.project_package_error()}
   def preview_add(project, package, opts) do
     with {:ok, root, decoded} <- load_elm_json(project, opts[:source_root]),
          section <- normalize_section(opts[:section]),
@@ -34,7 +35,8 @@ defmodule Ide.Packages.ElmJsonEditor do
     end
   end
 
-  @spec preview_remove(map(), String.t(), keyword()) :: {:ok, map()} | {:error, Types.project_package_error()}
+  @spec preview_remove(map(), String.t(), keyword()) ::
+          {:ok, map()} | {:error, Types.project_package_error()}
   def preview_remove(project, package, opts) do
     with {:ok, root, decoded} <- load_elm_json(project, opts[:source_root]),
          section <- normalize_section(opts[:section] || "dependencies"),
@@ -55,7 +57,8 @@ defmodule Ide.Packages.ElmJsonEditor do
     end
   end
 
-  @spec remove_package(map(), String.t(), keyword()) :: {:ok, map()} | {:error, Types.project_package_error()}
+  @spec remove_package(map(), String.t(), keyword()) ::
+          {:ok, map()} | {:error, Types.project_package_error()}
   def remove_package(project, package, opts) do
     with {:ok, root, decoded, original_json} <-
            load_elm_json(project, opts[:source_root], include_text: true),
@@ -77,7 +80,8 @@ defmodule Ide.Packages.ElmJsonEditor do
     end
   end
 
-  @spec add_package(map(), String.t(), keyword()) :: {:ok, map()} | {:error, Types.project_package_error()}
+  @spec add_package(map(), String.t(), keyword()) ::
+          {:ok, map()} | {:error, Types.project_package_error()}
   def add_package(project, package, opts) do
     with {:ok, root, decoded, original_json} <-
            load_elm_json(project, opts[:source_root], include_text: true),
@@ -117,7 +121,8 @@ defmodule Ide.Packages.ElmJsonEditor do
     project |> candidate_roots() |> Enum.reject(&(&1 == "protocol"))
   end
 
-  @spec maybe_write(map(), String.t(), String.t(), String.t()) :: :ok | {:error, Types.project_package_error()}
+  @spec maybe_write(map(), String.t(), String.t(), String.t()) ::
+          :ok | {:error, Types.project_package_error()}
   defp maybe_write(_project, _root, encoded, original) when encoded == original, do: :ok
 
   defp maybe_write(project, root, encoded, _original) do

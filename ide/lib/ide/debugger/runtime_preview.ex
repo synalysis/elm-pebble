@@ -75,19 +75,42 @@ defmodule Ide.Debugger.RuntimePreview do
     introspect = RuntimeArtifacts.introspect(execution_model)
 
     if is_map(introspect) and map_size(introspect) > 0 do
-      parser_view_tree =
-        StepExecution.introspect_parser_view_tree(
-          execution_model,
-          Map.get(surface, :view_tree) || %{}
-        )
+      surface_view_tree = Map.get(surface, :view_tree) || %{}
 
       preview_model =
         model
         |> RuntimeArtifacts.preview_runtime_model()
         |> preview_model_for_message(Map.get(model, "runtime_last_message"))
 
+      stored_rows =
+        Map.get(model, "runtime_view_output") || Map.get(model, :runtime_view_output) || []
+
+      ei = RuntimeArtifacts.require_introspect(execution_model)
+
+      executor_refresh =
+        StepExecution.maybe_executor_view_preview(
+          execution_model,
+          model,
+          target,
+          stored_rows
+        )
+
       preview =
-        StepExecution.derive_preview_view_output(execution_model, parser_view_tree, preview_model)
+        case executor_refresh do
+          {:ok, fresh} ->
+            fresh
+
+          :skip ->
+            preview_from_surface_trees(
+              surface_view_tree,
+              preview_model,
+              stored_rows,
+              ei,
+              execution_model,
+              model,
+              target
+            )
+        end
 
       view_output = Map.get(preview, :view_output) || []
       derived_view_tree = Map.get(preview, :view_tree)
@@ -136,36 +159,152 @@ defmodule Ide.Debugger.RuntimePreview do
 
   def render_view_from_surface(_surface_runtime, _target), do: nil
 
+  @doc """
+  View-output rows for SVG preview: same executor refresh and resolution as rendered tree.
+  """
+  @spec effective_runtime_view_output_rows(map(), map(), Types.surface_target()) :: [map()]
+  def effective_runtime_view_output_rows(runtime, model, target)
+      when is_map(runtime) and is_map(model) and target in [:watch, :companion, :phone] do
+    stored_rows =
+      Map.get(model, "runtime_view_output") || Map.get(model, :runtime_view_output) || []
+
+    execution_model = RuntimeArtifacts.execution_model(runtime)
+    view_tree = Map.get(runtime, :view_tree) || Map.get(runtime, "view_tree") || %{}
+
+    preview_model =
+      case Map.get(model, "runtime_model") || Map.get(model, :runtime_model) do
+        %{} = runtime_model -> runtime_model
+        _ -> model
+      end
+
+    {rows, view_tree} =
+      case StepExecution.maybe_executor_view_preview(
+             execution_model,
+             model,
+             target,
+             stored_rows
+           ) do
+        {:ok, %{view_output: rows, view_tree: fresh_tree}} ->
+          {rows, fresh_tree || view_tree}
+
+        :skip ->
+          {stored_rows, view_tree}
+      end
+
+    StepExecution.resolve_runtime_view_output(
+      execution_model,
+      view_tree,
+      preview_model,
+      rows
+    )
+  end
+
   @spec enrich_surface_resource_indices(Surface.surface_map(), Types.runtime_state()) ::
           Surface.surface_map()
   defp enrich_surface_resource_indices(surface, state)
        when is_map(surface) and is_map(state) do
+    project_slug = Map.get(state, :project_slug) || Map.get(state, :scope_key)
+
+    surface
+    |> enrich_shell_resource_indices(
+      project_slug,
+      :bitmap_resource_indices,
+      &RuntimeArtifacts.bitmap_resource_indices/1,
+      &RuntimeArtifacts.bitmap_resource_indices_for_project/1
+    )
+    |> enrich_shell_resource_indices(
+      project_slug,
+      :vector_resource_indices,
+      &RuntimeArtifacts.vector_resource_indices/1,
+      &RuntimeArtifacts.vector_resource_indices_for_project/1
+    )
+    |> enrich_shell_resource_indices(
+      project_slug,
+      :animation_resource_indices,
+      &RuntimeArtifacts.animation_resource_indices/1,
+      &RuntimeArtifacts.animation_resource_indices_for_project/1
+    )
+  end
+
+  defp enrich_surface_resource_indices(surface, _state), do: surface
+
+  defp enrich_shell_resource_indices(surface, project_slug, key, get_fn, load_fn) do
     execution_model = RuntimeArtifacts.execution_model(surface)
 
-    if map_size(RuntimeArtifacts.bitmap_resource_indices(execution_model)) > 0 do
+    if map_size(get_fn.(execution_model)) > 0 do
       surface
     else
-      project_slug = Map.get(state, :project_slug) || Map.get(state, :scope_key)
-
       indices =
         if is_binary(project_slug) do
-          RuntimeArtifacts.bitmap_resource_indices_for_project(project_slug)
+          load_fn.(project_slug)
         else
           %{}
         end
 
       if map_size(indices) > 0 do
-        Surface.put_shell(surface, Map.put(Surface.shell(surface), "bitmap_resource_indices", indices))
+        Surface.put_shell(surface, Map.put(Surface.shell(surface), Atom.to_string(key), indices))
       else
         surface
       end
     end
   end
 
-  defp enrich_surface_resource_indices(surface, _state), do: surface
+  @spec preview_from_surface_trees(
+          Types.view_output_tree(),
+          Types.inner_runtime_model(),
+          Types.runtime_view_nodes(),
+          Types.elm_introspect(),
+          Types.execution_model(),
+          Types.app_model(),
+          Types.surface_target()
+        ) :: Types.preview_view_derivation()
+  defp preview_from_surface_trees(
+         surface_view_tree,
+         preview_model,
+         stored_rows,
+         ei,
+         execution_model,
+         model,
+         target
+       ) do
+    cond do
+      StepExecution.usable_runtime_view_tree?(
+        surface_view_tree,
+        preview_model,
+        ei,
+        execution_model
+      ) ->
+        %{
+          view_tree: surface_view_tree,
+          view_output:
+            StepExecution.supplemental_view_output_rows(surface_view_tree, execution_model)
+        }
+
+      StepExecution.stale_runtime_view_output?(preview_model, stored_rows) ->
+        case StepExecution.executor_view_preview(execution_model, model, target) do
+          {:ok, fresh} ->
+            fresh
+
+          :error ->
+            StepExecution.derive_preview_view_output(
+              execution_model,
+              surface_view_tree,
+              preview_model
+            )
+        end
+
+      true ->
+        StepExecution.derive_preview_view_output(
+          execution_model,
+          surface_view_tree,
+          preview_model
+        )
+    end
+  end
 
   @spec preview_model_for_message(Types.app_model(), String.t() | nil) :: Types.app_model()
-  defp preview_model_for_message(preview_model, _message) when is_map(preview_model), do: preview_model
+  defp preview_model_for_message(preview_model, _message) when is_map(preview_model),
+    do: preview_model
 
   @spec put_debugger_view_tree(Surface.surface_map(), Types.view_output_tree() | nil) ::
           Surface.surface_map()
@@ -223,7 +362,8 @@ defmodule Ide.Debugger.RuntimePreview do
     end)
   end
 
-  @spec preview_unavailable_view_tree(Types.surface_target(), String.t()) :: Types.view_output_tree()
+  @spec preview_unavailable_view_tree(Types.surface_target(), String.t()) ::
+          Types.view_output_tree()
   def preview_unavailable_view_tree(target, reason) do
     %{
       "type" => "previewUnavailable",

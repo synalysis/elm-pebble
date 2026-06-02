@@ -69,8 +69,7 @@ defmodule Ide.Settings do
       editor_theme: parse_editor_theme(Map.get(merged, "editor_theme", "system")),
       editor_line_numbers: Map.get(merged, "editor_line_numbers", true) == true,
       editor_active_line_highlight: Map.get(merged, "editor_active_line_highlight", true) == true,
-      mcp_http_enabled:
-        Auth.mcp_enabled?() and Map.get(merged, "mcp_http_enabled", true) == true,
+      mcp_http_enabled: Auth.mcp_enabled?() and Map.get(merged, "mcp_http_enabled", true) == true,
       mcp_http_port: parse_port(Map.get(merged, "mcp_http_port", 4000)),
       mcp_http_capabilities:
         parse_capabilities(Map.get(merged, "mcp_http_capabilities", ["read"])),
@@ -372,7 +371,8 @@ defmodule Ide.Settings do
 
   defp parse_port(_), do: 4000
 
-  @spec normalize_port(wire_input()) :: {:ok, pos_integer()} | {:error, {:invalid_port, wire_input()}}
+  @spec normalize_port(wire_input()) ::
+          {:ok, pos_integer()} | {:error, {:invalid_port, wire_input()}}
   defp normalize_port(value) when is_integer(value) and value >= 1 and value <= 65_535,
     do: {:ok, value}
 

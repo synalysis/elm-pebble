@@ -24,7 +24,6 @@ defmodule Elmc.MixProject do
   defp deps do
     [
       {:elm_ex, path: "../elm_ex"},
-      {:elm_executor, path: "../elm_executor"},
       {:jason, "~> 1.4"},
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false}
     ]

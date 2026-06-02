@@ -65,22 +65,22 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
       {:noreply, put_flash(socket, :error, external_emulator_disabled_message())}
     else
       project = socket.assigns.project
-    emulator_target = socket.assigns.selected_emulator_target
-    package_path = socket.assigns.publish_artifact_path
-    workspace_root = Projects.project_workspace_path(project)
+      emulator_target = socket.assigns.selected_emulator_target
+      package_path = socket.assigns.publish_artifact_path
+      workspace_root = Projects.project_workspace_path(project)
 
-    {:noreply,
-     socket
-     |> assign(:pebble_install_status, :running)
-     |> assign(:pebble_install_output, nil)
-     |> start_async(:run_emulator_install, fn ->
-       run_emulator_install_flow(
-         project,
-         workspace_root,
-         emulator_target,
-         package_path
-       )
-     end)}
+      {:noreply,
+       socket
+       |> assign(:pebble_install_status, :running)
+       |> assign(:pebble_install_output, nil)
+       |> start_async(:run_emulator_install, fn ->
+         run_emulator_install_flow(
+           project,
+           workspace_root,
+           emulator_target,
+           package_path
+         )
+       end)}
     end
   end
 
@@ -90,13 +90,13 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
     else
       project = socket.assigns.project
 
-    {:noreply,
-     socket
-     |> assign(:emulator_stop_status, :running)
-     |> assign(:emulator_stop_output, nil)
-     |> start_async(:stop_emulator, fn ->
-       PebbleToolchain.stop_emulator(project.slug, force: true)
-     end)}
+      {:noreply,
+       socket
+       |> assign(:emulator_stop_status, :running)
+       |> assign(:emulator_stop_output, nil)
+       |> start_async(:stop_emulator, fn ->
+         PebbleToolchain.stop_emulator(project.slug, force: true)
+       end)}
     end
   end
 
@@ -125,15 +125,15 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
       {:noreply, put_flash(socket, :error, external_emulator_disabled_message())}
     else
       project = socket.assigns.project
-    emulator_target = socket.assigns.selected_emulator_target
+      emulator_target = socket.assigns.selected_emulator_target
 
-    {:noreply,
-     socket
-     |> assign(:emulator_stop_status, :running)
-     |> assign(:emulator_stop_output, nil)
-     |> start_async(:external_emulator_control, fn ->
-       PebbleToolchain.run_emulator_control(project.slug, emulator_target, params)
-     end)}
+      {:noreply,
+       socket
+       |> assign(:emulator_stop_status, :running)
+       |> assign(:emulator_stop_output, nil)
+       |> start_async(:external_emulator_control, fn ->
+         PebbleToolchain.run_emulator_control(project.slug, emulator_target, params)
+       end)}
     end
   end
 
@@ -161,11 +161,11 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
       emulator_target = socket.assigns.selected_emulator_target
 
       {:noreply,
-     socket
-     |> assign(:screenshot_status, :running)
-     |> start_async(:capture_screenshot, fn ->
-       Screenshots.capture(project, emulator_target: emulator_target)
-     end)}
+       socket
+       |> assign(:screenshot_status, :running)
+       |> start_async(:capture_screenshot, fn ->
+         Screenshots.capture(project, emulator_target: emulator_target)
+       end)}
     end
   end
 
@@ -291,6 +291,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
         {:noreply, put_flash(socket, :error, "Could not delete screenshots: #{inspect(reason)}")}
     end
   end
+
   def handle_event("set-emulator-target", %{"emulator" => params}, socket) do
     target = normalize_emulator_target(Map.get(params, "target"))
     mode = normalize_emulator_mode(target, Map.get(params, "mode"))
@@ -608,6 +609,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
     target = project_emulator_target(project)
     normalize_emulator_mode(target, Map.get(settings, "emulator_mode"))
   end
+
   def atomize_screenshot(screenshot) when is_map(screenshot) do
     %{
       filename: Map.get(screenshot, "filename") || Map.get(screenshot, :filename),
@@ -618,6 +620,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
       captured_at: Map.get(screenshot, "captured_at") || Map.get(screenshot, :captured_at)
     }
   end
+
   def default_emulator_target do
     Application.get_env(:ide, Ide.PebbleToolchain, [])
     |> Keyword.get(:emulator_target, "basalt")
@@ -645,7 +648,8 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
           | {:close, {:ok, map()} | {:error, String.t() | atom() | map()}}
   @type target_statuses :: %{String.t() => String.t()}
   @type screenshot_row :: Screenshots.screenshot() | map()
-  @type screenshot_identity :: {:path, String.t()} | {:filename, String.t()} | {:fallback, String.t()}
+  @type screenshot_identity ::
+          {:path, String.t()} | {:filename, String.t()} | {:fallback, String.t()}
   @type screenshot_sort_key :: integer() | String.t()
   @type install_error :: atom() | tuple() | String.t()
 
@@ -781,7 +785,8 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
     end
   end
 
-  @spec keep_capture_terminal_status(target_statuses(), String.t(), String.t()) :: target_statuses()
+  @spec keep_capture_terminal_status(target_statuses(), String.t(), String.t()) ::
+          target_statuses()
   def keep_capture_terminal_status(statuses, target, next_status) do
     case Map.get(statuses, target) do
       "done" -> statuses
@@ -790,7 +795,10 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
     end
   end
 
-  @spec merge_capture_all_result_statuses(target_statuses(), Screenshots.capture_all_result() | map()) ::
+  @spec merge_capture_all_result_statuses(
+          target_statuses(),
+          Screenshots.capture_all_result() | map()
+        ) ::
           target_statuses()
   def merge_capture_all_result_statuses(statuses, result) when is_map(result) do
     results = Map.get(result, :results, [])
@@ -834,7 +842,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
   def handle_async(_async, _result, socket), do: {:noreply, socket}
 
   defdelegate run_emulator_install_flow(project, workspace_root, emulator_target, package_path),
-              to: BuildFlow
+    to: BuildFlow
 
   defdelegate load_screenshots(project), to: ResourcesFlow
 end

@@ -49,7 +49,8 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
     companion_from_phone_inner(inner_ctor, [])
   end
 
-  defp companion_from_phone_inner(inner_ctor, args) when is_binary(inner_ctor) and is_list(args) do
+  defp companion_from_phone_inner(inner_ctor, args)
+       when is_binary(inner_ctor) and is_list(args) do
     %{
       "ctor" => "FromPhone",
       "args" => [
@@ -64,7 +65,10 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   defp companion_wire_arg(value) when is_binary(value), do: value
   defp companion_wire_arg(value) when is_integer(value), do: value
   defp companion_wire_arg(value) when is_boolean(value), do: value
-  defp companion_wire_arg(ctor) when is_atom(ctor), do: %{"ctor" => Atom.to_string(ctor), "args" => []}
+
+  defp companion_wire_arg(ctor) when is_atom(ctor),
+    do: %{"ctor" => Atom.to_string(ctor), "args" => []}
+
   defp companion_wire_arg(%{"ctor" => _, "args" => _} = map), do: map
 
   @doc """
@@ -383,17 +387,17 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   @spec companion_lifecycle_changed_value(String.t(), keyword()) :: map()
   def companion_lifecycle_changed_value(event_ctor, opts \\ [])
       when is_binary(event_ctor) and is_list(opts) do
-  event_args =
-    case event_ctor do
-      "WebViewClosed" ->
-        [Keyword.get(opts, :response, companion_wire_nothing())]
+    event_args =
+      case event_ctor do
+        "WebViewClosed" ->
+          [Keyword.get(opts, :response, companion_wire_nothing())]
 
-      "VisibilityChanged" ->
-        [Keyword.get(opts, :visible, true)]
+        "VisibilityChanged" ->
+          [Keyword.get(opts, :visible, true)]
 
-      _ ->
-        []
-    end
+        _ ->
+          []
+      end
 
     %{
       "ctor" => "LifecycleChanged",
@@ -471,7 +475,13 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   @spec corpus_phone_init_execute!(String.t(), keyword()) ::
           {:ok, map(), map()} | {:compile_error, term()}
   def corpus_phone_init_execute!(phone_workspace, opts \\ []) when is_binary(phone_workspace) do
-    revision = Keyword.get(opts, :revision, "corpus-phone-" <> Integer.to_string(:erlang.unique_integer([:positive])))
+    revision =
+      Keyword.get(
+        opts,
+        :revision,
+        "corpus-phone-" <> Integer.to_string(:erlang.unique_integer([:positive]))
+      )
+
     strip? = Keyword.get(opts, :strip_dead_code, true)
     entry_module = Keyword.get(opts, :entry_module, "CompanionApp")
     rel_path = Keyword.get(opts, :rel_path, "src/#{entry_module}.elm")
@@ -500,7 +510,12 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
 
             runtime_model =
               if Keyword.get(opts, :apply_companion_bridge_followups, false) do
-                corpus_apply_companion_bridge_init_followups(init_request, runtime_model, payload, opts)
+                corpus_apply_companion_bridge_init_followups(
+                  init_request,
+                  runtime_model,
+                  payload,
+                  opts
+                )
               else
                 runtime_model
               end
@@ -520,7 +535,13 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
           {:ok, map(), map()} | {:compile_error, term()}
   def corpus_phone_step_execute!(phone_workspace, message, opts \\ [])
       when is_binary(phone_workspace) and is_binary(message) do
-    revision = Keyword.get(opts, :revision, "corpus-phone-step-" <> Integer.to_string(:erlang.unique_integer([:positive])))
+    revision =
+      Keyword.get(
+        opts,
+        :revision,
+        "corpus-phone-step-" <> Integer.to_string(:erlang.unique_integer([:positive]))
+      )
+
     strip? = Keyword.get(opts, :strip_dead_code, true)
     entry_module = Keyword.get(opts, :entry_module, "CompanionApp")
     rel_path = Keyword.get(opts, :rel_path, "src/#{entry_module}.elm")
@@ -576,7 +597,13 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   @spec corpus_compile_and_execute_init!(String.t(), keyword()) ::
           {:ok, map(), map()} | {:compile_error, term()}
   def corpus_compile_and_execute_init!(workspace, opts \\ []) when is_binary(workspace) do
-    revision = Keyword.get(opts, :revision, "corpus-" <> Integer.to_string(:erlang.unique_integer([:positive])))
+    revision =
+      Keyword.get(
+        opts,
+        :revision,
+        "corpus-" <> Integer.to_string(:erlang.unique_integer([:positive]))
+      )
+
     strip? = Keyword.get(opts, :strip_dead_code, true)
     watch_profile_id = Keyword.get(opts, :watch_profile_id, "basalt")
 
@@ -615,7 +642,12 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   def corpus_compile_and_execute_step!(workspace, message, opts \\ [])
       when is_binary(workspace) and is_binary(message) do
     revision =
-      Keyword.get(opts, :revision, "corpus-step-" <> Integer.to_string(:erlang.unique_integer([:positive])))
+      Keyword.get(
+        opts,
+        :revision,
+        "corpus-step-" <> Integer.to_string(:erlang.unique_integer([:positive]))
+      )
+
     strip? = Keyword.get(opts, :strip_dead_code, true)
     watch_profile_id = Keyword.get(opts, :watch_profile_id, "basalt")
 
@@ -673,7 +705,12 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   def corpus_compile_and_execute_steps!(workspace, messages, opts \\ [])
       when is_binary(workspace) and is_list(messages) do
     revision =
-      Keyword.get(opts, :revision, "corpus-steps-" <> Integer.to_string(:erlang.unique_integer([:positive])))
+      Keyword.get(
+        opts,
+        :revision,
+        "corpus-steps-" <> Integer.to_string(:erlang.unique_integer([:positive]))
+      )
+
     strip? = Keyword.get(opts, :strip_dead_code, true)
     watch_profile_id = Keyword.get(opts, :watch_profile_id, "basalt")
 
@@ -708,7 +745,7 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
                 "launch_context" => launch_context,
                 "runtime_model" => model
               })
-            |> Map.put(:message, message)
+              |> Map.put(:message, message)
               |> maybe_put_message_value(Keyword.get(opts, :message_value))
 
             case Ide.Debugger.RuntimeExecutor.execute(step_request) do
@@ -738,7 +775,12 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   debugger simulator bridge responses (subscription-style APIs, storage, preferences).
   """
   @spec corpus_apply_companion_bridge_init_followups(map(), map(), map(), keyword()) :: map()
-  def corpus_apply_companion_bridge_init_followups(init_request, runtime_model, init_payload, opts \\ [])
+  def corpus_apply_companion_bridge_init_followups(
+        init_request,
+        runtime_model,
+        init_payload,
+        opts \\ []
+      )
       when is_map(init_request) and is_map(runtime_model) and is_map(init_payload) do
     settings = Keyword.get(opts, :simulator_settings, DebuggerSimulatorSettings.default())
 
@@ -775,12 +817,16 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
 
     if source == "companion_bridge_command" or package == "pebble/companion" do
       command = Map.get(row, "command") || Map.get(row, :command) || %{}
-      callback = Map.get(command, "callback_constructor") || Map.get(row, "message") || Map.get(row, :message)
+
+      callback =
+        Map.get(command, "callback_constructor") || Map.get(row, "message") ||
+          Map.get(row, :message)
 
       existing_value = Map.get(row, "message_value") || Map.get(row, :message_value)
 
       with true <- is_binary(callback) and callback != "",
-           {:ok, message_value} <- companion_bridge_message_value(callback, command, existing_value, settings) do
+           {:ok, message_value} <-
+             companion_bridge_message_value(callback, command, existing_value, settings) do
         {callback, message_value}
       else
         _ -> nil
@@ -806,9 +852,11 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
 
   @spec companion_bridge_callback_result(map(), map()) ::
           {:ok, {:ok, term()} | {:error, String.t()}} | :error
-  defp companion_bridge_callback_result(command, settings) when is_map(command) and is_map(settings) do
+  defp companion_bridge_callback_result(command, settings)
+       when is_map(command) and is_map(settings) do
     api = Map.get(command, "api") || Map.get(command, :api)
     op = Map.get(command, "op") || Map.get(command, :op)
+
     request = %{
       op: op,
       key: Map.get(command, "key") || Map.get(command, :key),
@@ -843,5 +891,7 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   end
 
   defp maybe_put_message_value(request, nil), do: request
-  defp maybe_put_message_value(request, message_value), do: Map.put(request, :message_value, message_value)
+
+  defp maybe_put_message_value(request, message_value),
+    do: Map.put(request, :message_value, message_value)
 end

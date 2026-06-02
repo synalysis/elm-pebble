@@ -14,16 +14,24 @@ defmodule Ide.Debugger.InitSurfaceEffects do
   alias Ide.Debugger.Types
 
   @type ctx :: %{
-          required(:append_event) => (Types.runtime_state(), String.t(), map() -> Types.runtime_state()),
-          required(:apply_step_once) =>
-            (Types.runtime_state(), Types.surface_target(), String.t(), Types.subscription_payload() | map() | nil,
-             String.t(), String.t() -> Types.runtime_state()),
-          required(:apply_device_data_followups) =>
-            (Types.runtime_state(), Types.surface_target(), String.t(), map(), String.t() ->
-               Types.runtime_state()),
-          required(:apply_subscription_ok_response) =>
-            (Types.runtime_state(), Types.surface_target(), String.t(), map(), String.t(), String.t() ->
-               Types.runtime_state()),
+          required(:append_event) => (Types.runtime_state(), String.t(), map() ->
+                                        Types.runtime_state()),
+          required(:apply_step_once) => (Types.runtime_state(),
+                                         Types.surface_target(),
+                                         String.t(),
+                                         Types.subscription_payload()
+                                         | map()
+                                         | nil,
+                                         String.t(),
+                                         String.t() ->
+                                           Types.runtime_state()),
+          required(:apply_subscription_ok_response) => (Types.runtime_state(),
+                                                        Types.surface_target(),
+                                                        String.t(),
+                                                        map(),
+                                                        String.t(),
+                                                        String.t() ->
+                                                          Types.runtime_state()),
           required(:protocol_events_ctx) => (-> ProtocolEvents.ctx()),
           required(:protocol_rx_ctx) => (-> ProtocolRx.ctx()),
           required(:companion_bridge_ctx) => (-> CompanionBridgeRuntime.ctx()),
@@ -73,7 +81,6 @@ defmodule Ide.Debugger.InitSurfaceEffects do
           "init_device_data",
           "device_data"
         )
-        |> apply_init_device_data_followups(target, req, ctx)
         |> DeviceDataHints.apply_to_state(target, req)
       end)
     else
@@ -82,25 +89,6 @@ defmodule Ide.Debugger.InitSurfaceEffects do
   end
 
   def apply_device_data_responses(state, _target, _ctx), do: state
-
-  @spec apply_init_device_data_followups(
-          Types.runtime_state(),
-          Types.surface_target(),
-          Types.device_request(),
-          ctx()
-        ) :: Types.runtime_state()
-  defp apply_init_device_data_followups(state, target, req, ctx) when is_map(state) and is_map(req) and is_map(ctx) do
-    message = DeviceData.response_message(req)
-
-    if is_binary(message) and message != "" do
-      surface = Surface.from_state(state, target)
-      model = Surface.app_model(surface)
-
-      ctx.apply_device_data_followups.(state, target, message, model, "init_device_data")
-    else
-      state
-    end
-  end
 
   @spec apply_protocol_events(Types.runtime_state(), Types.surface_target(), ctx()) ::
           Types.runtime_state()
@@ -114,7 +102,14 @@ defmodule Ide.Debugger.InitSurfaceEffects do
       ei
       |> IntrospectAccess.cmd_calls("init_cmd_calls")
       |> Enum.flat_map(
-        &ProtocolEvents.events_from_cmd_call(state, target, &1, model, nil, ctx.protocol_events_ctx.())
+        &ProtocolEvents.events_from_cmd_call(
+          state,
+          target,
+          &1,
+          model,
+          nil,
+          ctx.protocol_events_ctx.()
+        )
       )
       |> Enum.reduce(state, fn event, acc ->
         case event.type do

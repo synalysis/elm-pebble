@@ -43,7 +43,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
 
         assert {:ok, _manifest, runtime_model} =
                  Corpus.corpus_compile_and_execute_init!(workspace,
-                   revision: "corpus-jump-" <> Integer.to_string(:erlang.unique_integer([:positive]))
+                   revision:
+                     "corpus-jump-" <> Integer.to_string(:erlang.unique_integer([:positive]))
                  )
 
         assert Map.has_key?(runtime_model, "alive")
@@ -99,7 +100,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
         workspace = project |> Ide.Projects.project_workspace_path() |> Path.join("watch")
 
         case Corpus.corpus_compile_and_execute_init!(workspace,
-               revision: "corpus-starter-" <> Integer.to_string(:erlang.unique_integer([:positive]))
+               revision:
+                 "corpus-starter-" <> Integer.to_string(:erlang.unique_integer([:positive]))
              ) do
           {:ok, _manifest, runtime_model} ->
             assert runtime_model["value"] == 1
@@ -128,7 +130,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
         workspace = project |> Ide.Projects.project_workspace_path() |> Path.join("watch")
 
         case Corpus.corpus_compile_and_execute_init!(workspace,
-               revision: "corpus-digital-" <> Integer.to_string(:erlang.unique_integer([:positive]))
+               revision:
+                 "corpus-digital-" <> Integer.to_string(:erlang.unique_integer([:positive]))
              ) do
           {:ok, _manifest, runtime_model} ->
             assert runtime_model["screenW"] == 144
@@ -201,7 +204,11 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
   test "watch-demo-dictation compiles and executes init when enabled" do
     corpus_init_execute!("watch-demo-dictation", "corpus-dictation-", fn model ->
       assert model["hasMicrophone"] == false
-      assert model["status"] == %{"ctor" => "Just", "args" => [%{"ctor" => "Finished", "args" => []}]}
+
+      assert model["status"] == %{
+               "ctor" => "Just",
+               "args" => [%{"ctor" => "Finished", "args" => []}]
+             }
 
       assert model["result"] == %{
                "ctor" => "Err",
@@ -271,7 +278,9 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
         workspace = project |> Ide.Projects.project_workspace_path() |> Path.join("watch")
 
         case Corpus.corpus_compile_and_execute_init!(workspace,
-               revision: "corpus-compass-aplite-" <> Integer.to_string(:erlang.unique_integer([:positive])),
+               revision:
+                 "corpus-compass-aplite-" <>
+                   Integer.to_string(:erlang.unique_integer([:positive])),
                watch_profile_id: "aplite"
              ) do
           {:ok, _manifest, runtime_model} ->
@@ -372,21 +381,31 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
   @tag :compiled_elixir_corpus
   @tag timeout: 180_000
   test "game-basic FrameTick step advances vy when enabled" do
-    corpus_step_execute!("game-basic", Corpus.frame_tick_message(), "corpus-basic-frame-", fn model ->
-      assert model["vy"] == 1
-      assert model["y"] == 60
-    end)
+    corpus_step_execute!(
+      "game-basic",
+      Corpus.frame_tick_message(),
+      "corpus-basic-frame-",
+      fn model ->
+        assert model["vy"] == 1
+        assert model["y"] == 60
+      end
+    )
   end
 
   @tag :compiled_elixir_corpus
   @tag timeout: 180_000
   test "game-tiny-bird FrameTick step advances score when enabled" do
-    corpus_step_execute!("game-tiny-bird", Corpus.frame_tick_message(), "corpus-tiny-frame-", fn model ->
-      assert model["score"] == 1
-      assert model["birdY"] == 60
-      assert model["velocity"] == 1
-      assert model["alive"] == true
-    end)
+    corpus_step_execute!(
+      "game-tiny-bird",
+      Corpus.frame_tick_message(),
+      "corpus-tiny-frame-",
+      fn model ->
+        assert model["score"] == 1
+        assert model["birdY"] == 60
+        assert model["velocity"] == 1
+        assert model["alive"] == true
+      end
+    )
   end
 
   @tag :compiled_elixir_corpus
@@ -400,10 +419,15 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
   @tag :compiled_elixir_corpus
   @tag timeout: 180_000
   test "watchface-poke-battle SelectPressed step sets animating when enabled" do
-    corpus_step_execute!("watchface-poke-battle", "SelectPressed", "corpus-poke-select-", fn model ->
-      assert model["animating"] == true
-      assert model["scene"]["ctor"] == "Waiting"
-    end)
+    corpus_step_execute!(
+      "watchface-poke-battle",
+      "SelectPressed",
+      "corpus-poke-select-",
+      fn model ->
+        assert model["animating"] == true
+        assert model["scene"]["ctor"] == "Waiting"
+      end
+    )
   end
 
   @tag :compiled_elixir_corpus
@@ -429,7 +453,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
         case Corpus.corpus_compile_and_execute_steps!(
                workspace,
                ["RandomGenerated 12345", "LeftPressed"],
-               revision: "corpus-2048-steps-" <> Integer.to_string(:erlang.unique_integer([:positive]))
+               revision:
+                 "corpus-2048-steps-" <> Integer.to_string(:erlang.unique_integer([:positive]))
              ) do
           {:ok, _manifest, runtime_model} ->
             assert runtime_model["turn"] == 1
@@ -535,7 +560,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
         workspace = project |> Ide.Projects.project_workspace_path() |> Path.join("watch")
 
         case Corpus.corpus_compile_and_execute_steps!(workspace, ["Increment", "Decrement"],
-               revision: "corpus-starter-id-" <> Integer.to_string(:erlang.unique_integer([:positive]))
+               revision:
+                 "corpus-starter-id-" <> Integer.to_string(:erlang.unique_integer([:positive]))
              ) do
           {:ok, _manifest, runtime_model} ->
             assert runtime_model["value"] == 1
@@ -554,18 +580,28 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
   @tag :compiled_elixir_corpus
   @tag timeout: 180_000
   test "game-jump-n-run FrameTick step advances offset when enabled" do
-    corpus_step_execute!("game-jump-n-run", Corpus.frame_tick_message(), "corpus-jump-frame-", fn model ->
-      assert model["alive"] == true
-      assert is_integer(model["offset"])
-    end)
+    corpus_step_execute!(
+      "game-jump-n-run",
+      Corpus.frame_tick_message(),
+      "corpus-jump-frame-",
+      fn model ->
+        assert model["alive"] == true
+        assert is_integer(model["offset"])
+      end
+    )
   end
 
   @tag :compiled_elixir_corpus
   @tag timeout: 180_000
   test "watchface-digital CurrentTimeString step updates timeString when enabled" do
-    corpus_step_execute!("watchface-digital", "CurrentTimeString 12:34", "corpus-digital-time-", fn model ->
-      assert model["timeString"] == "12:34"
-    end)
+    corpus_step_execute!(
+      "watchface-digital",
+      "CurrentTimeString 12:34",
+      "corpus-digital-time-",
+      fn model ->
+        assert model["timeString"] == "12:34"
+      end
+    )
   end
 
   @tag :compiled_elixir_corpus
@@ -575,7 +611,9 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
       Corpus.ensure_compiled_elixir_backend!()
 
       assert {:ok, %{project: project}} =
-               DebuggerTemplateCorpus.bootstrap_template("companion-demo-websocket", cleanup: false)
+               DebuggerTemplateCorpus.bootstrap_template("companion-demo-websocket",
+                 cleanup: false
+               )
 
       try do
         phone_workspace =
@@ -584,7 +622,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
         message_value = Corpus.companion_connected_ok_value()
 
         case Corpus.corpus_phone_step_execute!(phone_workspace, "Connected",
-               revision: "corpus-ws-connected-" <> Integer.to_string(:erlang.unique_integer([:positive])),
+               revision:
+                 "corpus-ws-connected-" <> Integer.to_string(:erlang.unique_integer([:positive])),
                message_value: message_value
              ) do
           {:ok, _manifest, runtime_model} ->
@@ -608,7 +647,9 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
       Corpus.ensure_compiled_elixir_backend!()
 
       assert {:ok, %{project: project}} =
-               DebuggerTemplateCorpus.bootstrap_template("companion-demo-websocket", cleanup: false)
+               DebuggerTemplateCorpus.bootstrap_template("companion-demo-websocket",
+                 cleanup: false
+               )
 
       try do
         phone_workspace =
@@ -617,7 +658,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
         message_value = Corpus.companion_websocket_event_value("Opened")
 
         case Corpus.corpus_phone_step_execute!(phone_workspace, "WebSocketEvent",
-               revision: "corpus-ws-event-" <> Integer.to_string(:erlang.unique_integer([:positive])),
+               revision:
+                 "corpus-ws-event-" <> Integer.to_string(:erlang.unique_integer([:positive])),
                message_value: message_value
              ) do
           {:ok, _manifest, runtime_model} ->
@@ -677,7 +719,9 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
       Corpus.ensure_compiled_elixir_backend!()
 
       assert {:ok, %{project: project}} =
-               DebuggerTemplateCorpus.bootstrap_template("companion-demo-phone-status", cleanup: false)
+               DebuggerTemplateCorpus.bootstrap_template("companion-demo-phone-status",
+                 cleanup: false
+               )
 
       try do
         phone_workspace =
@@ -686,7 +730,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
         message_value = Corpus.companion_got_battery_ok_value(55, true)
 
         case Corpus.corpus_phone_step_execute!(phone_workspace, "GotBattery",
-               revision: "corpus-phone-got-bat-" <> Integer.to_string(:erlang.unique_integer([:positive])),
+               revision:
+                 "corpus-phone-got-bat-" <> Integer.to_string(:erlang.unique_integer([:positive])),
                message_value: message_value
              ) do
           {:ok, _manifest, runtime_model} ->
@@ -711,7 +756,9 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
       Corpus.ensure_compiled_elixir_backend!()
 
       assert {:ok, %{project: project}} =
-               DebuggerTemplateCorpus.bootstrap_template("companion-demo-phone-status", cleanup: false)
+               DebuggerTemplateCorpus.bootstrap_template("companion-demo-phone-status",
+                 cleanup: false
+               )
 
       try do
         phone_workspace =
@@ -720,7 +767,9 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
         message_value = Corpus.companion_got_locale_ok_value("de-DE")
 
         case Corpus.corpus_phone_step_execute!(phone_workspace, "GotLocale",
-               revision: "corpus-phone-locale-step-" <> Integer.to_string(:erlang.unique_integer([:positive])),
+               revision:
+                 "corpus-phone-locale-step-" <>
+                   Integer.to_string(:erlang.unique_integer([:positive])),
                message_value: message_value
              ) do
           {:ok, _manifest, runtime_model} ->
@@ -744,7 +793,9 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
       Corpus.ensure_compiled_elixir_backend!()
 
       assert {:ok, %{project: project}} =
-               DebuggerTemplateCorpus.bootstrap_template("companion-demo-phone-status", cleanup: false)
+               DebuggerTemplateCorpus.bootstrap_template("companion-demo-phone-status",
+                 cleanup: false
+               )
 
       try do
         phone_workspace =
@@ -753,7 +804,9 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
         message_value = Corpus.companion_got_connectivity_value("Online")
 
         case Corpus.corpus_phone_step_execute!(phone_workspace, "GotConnectivity",
-               revision: "corpus-phone-net-step-" <> Integer.to_string(:erlang.unique_integer([:positive])),
+               revision:
+                 "corpus-phone-net-step-" <>
+                   Integer.to_string(:erlang.unique_integer([:positive])),
                message_value: message_value
              ) do
           {:ok, _manifest, runtime_model} ->
@@ -810,17 +863,22 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
       Corpus.ensure_compiled_elixir_backend!()
 
       assert {:ok, %{project: project}} =
-               DebuggerTemplateCorpus.bootstrap_template("companion-demo-geolocation", cleanup: false)
+               DebuggerTemplateCorpus.bootstrap_template("companion-demo-geolocation",
+                 cleanup: false
+               )
 
       try do
         phone_workspace =
           project |> Ide.Projects.project_workspace_path() |> Path.join("phone")
 
-        location = Corpus.companion_location_info(latitude: 12.345, longitude: -98.765, accuracy: 25.0)
+        location =
+          Corpus.companion_location_info(latitude: 12.345, longitude: -98.765, accuracy: 25.0)
+
         message_value = Corpus.companion_got_position_ok_value(location)
 
         case Corpus.corpus_phone_step_execute!(phone_workspace, "GotPosition",
-               revision: "corpus-geo-got-" <> Integer.to_string(:erlang.unique_integer([:positive])),
+               revision:
+                 "corpus-geo-got-" <> Integer.to_string(:erlang.unique_integer([:positive])),
                message_value: message_value
              ) do
           {:ok, _manifest, runtime_model} ->
@@ -954,7 +1012,9 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
       Corpus.ensure_compiled_elixir_backend!()
 
       assert {:ok, %{project: project}} =
-               DebuggerTemplateCorpus.bootstrap_template("companion-demo-settings", cleanup: false)
+               DebuggerTemplateCorpus.bootstrap_template("companion-demo-settings",
+                 cleanup: false
+               )
 
       try do
         phone_workspace =
@@ -963,7 +1023,9 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
         message_value = Corpus.companion_lifecycle_changed_value("Ready")
 
         case Corpus.corpus_phone_step_execute!(phone_workspace, "LifecycleChanged",
-               revision: "corpus-settings-lifecycle-" <> Integer.to_string(:erlang.unique_integer([:positive])),
+               revision:
+                 "corpus-settings-lifecycle-" <>
+                   Integer.to_string(:erlang.unique_integer([:positive])),
                message_value: message_value
              ) do
           {:ok, _manifest, runtime_model} ->
@@ -987,7 +1049,9 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
       Corpus.ensure_compiled_elixir_backend!()
 
       assert {:ok, %{project: project}} =
-               DebuggerTemplateCorpus.bootstrap_template("companion-demo-settings", cleanup: false)
+               DebuggerTemplateCorpus.bootstrap_template("companion-demo-settings",
+                 cleanup: false
+               )
 
       try do
         phone_workspace =
@@ -996,7 +1060,9 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
         message_value = Corpus.companion_configuration_closed_value("saved")
 
         case Corpus.corpus_phone_step_execute!(phone_workspace, "ConfigurationClosed",
-               revision: "corpus-settings-config-" <> Integer.to_string(:erlang.unique_integer([:positive])),
+               revision:
+                 "corpus-settings-config-" <>
+                   Integer.to_string(:erlang.unique_integer([:positive])),
                message_value: message_value
              ) do
           {:ok, _manifest, runtime_model} ->
@@ -1030,7 +1096,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
         message_value = Corpus.companion_got_storage_string_ok_value("light")
 
         case Corpus.corpus_phone_step_execute!(phone_workspace, "GotStorage",
-               revision: "corpus-storage-got-" <> Integer.to_string(:erlang.unique_integer([:positive])),
+               revision:
+                 "corpus-storage-got-" <> Integer.to_string(:erlang.unique_integer([:positive])),
                message_value: message_value
              ) do
           {:ok, _manifest, runtime_model} ->
@@ -1063,7 +1130,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
         message_value = Corpus.companion_got_preference_ok_value("units", "imperial")
 
         case Corpus.corpus_phone_step_execute!(phone_workspace, "GotPreference",
-               revision: "corpus-storage-pref-" <> Integer.to_string(:erlang.unique_integer([:positive])),
+               revision:
+                 "corpus-storage-pref-" <> Integer.to_string(:erlang.unique_integer([:positive])),
                message_value: message_value
              ) do
           {:ok, _manifest, runtime_model} ->
@@ -1087,7 +1155,9 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
       Corpus.ensure_compiled_elixir_backend!()
 
       assert {:ok, %{project: project}} =
-               DebuggerTemplateCorpus.bootstrap_template("companion-demo-weather-env", cleanup: false)
+               DebuggerTemplateCorpus.bootstrap_template("companion-demo-weather-env",
+                 cleanup: false
+               )
 
       try do
         phone_workspace =
@@ -1097,7 +1167,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
         message_value = Corpus.companion_got_weather_current_ok_value(info)
 
         case Corpus.corpus_phone_step_execute!(phone_workspace, "GotWeather",
-               revision: "corpus-weather-got-" <> Integer.to_string(:erlang.unique_integer([:positive])),
+               revision:
+                 "corpus-weather-got-" <> Integer.to_string(:erlang.unique_integer([:positive])),
                message_value: message_value
              ) do
           {:ok, _manifest, runtime_model} ->
@@ -1122,17 +1193,22 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
       Corpus.ensure_compiled_elixir_backend!()
 
       assert {:ok, %{project: project}} =
-               DebuggerTemplateCorpus.bootstrap_template("companion-demo-weather-env", cleanup: false)
+               DebuggerTemplateCorpus.bootstrap_template("companion-demo-weather-env",
+                 cleanup: false
+               )
 
       try do
         phone_workspace =
           project |> Ide.Projects.project_workspace_path() |> Path.join("phone")
 
-        info = Corpus.companion_environment_info(sunrise_min: 360, sunset_min: 1140, phase_e6: 750_000)
+        info =
+          Corpus.companion_environment_info(sunrise_min: 360, sunset_min: 1140, phase_e6: 750_000)
+
         message_value = Corpus.companion_got_environment_ok_value(info)
 
         case Corpus.corpus_phone_step_execute!(phone_workspace, "GotEnvironment",
-               revision: "corpus-env-got-" <> Integer.to_string(:erlang.unique_integer([:positive])),
+               revision:
+                 "corpus-env-got-" <> Integer.to_string(:erlang.unique_integer([:positive])),
                message_value: message_value
              ) do
           {:ok, _manifest, runtime_model} ->
@@ -1158,7 +1234,9 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
       Corpus.ensure_compiled_elixir_backend!()
 
       assert {:ok, %{project: project}} =
-               DebuggerTemplateCorpus.bootstrap_template("companion-demo-calendar", cleanup: false)
+               DebuggerTemplateCorpus.bootstrap_template("companion-demo-calendar",
+                 cleanup: false
+               )
 
       try do
         phone_workspace =
@@ -1175,7 +1253,9 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
         message_value = Corpus.companion_got_calendar_ok_events([event])
 
         case Corpus.corpus_phone_step_execute!(phone_workspace, "GotCalendar",
-               revision: "corpus-calendar-phone-" <> Integer.to_string(:erlang.unique_integer([:positive])),
+               revision:
+                 "corpus-calendar-phone-" <>
+                   Integer.to_string(:erlang.unique_integer([:positive])),
                message_value: message_value
              ) do
           {:ok, _manifest, runtime_model} ->
@@ -1234,7 +1314,9 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
       Corpus.ensure_compiled_elixir_backend!()
 
       assert {:ok, %{project: project}} =
-               DebuggerTemplateCorpus.bootstrap_template("companion-demo-timeline", cleanup: false)
+               DebuggerTemplateCorpus.bootstrap_template("companion-demo-timeline",
+                 cleanup: false
+               )
 
       try do
         phone_workspace =
@@ -1244,7 +1326,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
         message_value = Corpus.companion_got_token_ok_value(token)
 
         case Corpus.corpus_phone_step_execute!(phone_workspace, "GotToken",
-               revision: "corpus-timeline-got-" <> Integer.to_string(:erlang.unique_integer([:positive])),
+               revision:
+                 "corpus-timeline-got-" <> Integer.to_string(:erlang.unique_integer([:positive])),
                message_value: message_value
              ) do
           {:ok, _manifest, runtime_model} ->
@@ -1268,7 +1351,9 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
       Corpus.ensure_compiled_elixir_backend!()
 
       assert {:ok, %{project: project}} =
-               DebuggerTemplateCorpus.bootstrap_template("companion-demo-timeline", cleanup: false)
+               DebuggerTemplateCorpus.bootstrap_template("companion-demo-timeline",
+                 cleanup: false
+               )
 
       try do
         phone_workspace =
@@ -1278,7 +1363,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
         message_value = Corpus.companion_pin_inserted_ok_value()
 
         case Corpus.corpus_phone_step_execute!(phone_workspace, "PinInserted",
-               revision: "corpus-timeline-pin-" <> Integer.to_string(:erlang.unique_integer([:positive])),
+               revision:
+                 "corpus-timeline-pin-" <> Integer.to_string(:erlang.unique_integer([:positive])),
                message_value: message_value,
                current_runtime_model: %{"token" => token}
              ) do
@@ -1345,7 +1431,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
                workspace,
                message,
                Keyword.merge(step_opts,
-                 revision: revision_prefix <> Integer.to_string(:erlang.unique_integer([:positive]))
+                 revision:
+                   revision_prefix <> Integer.to_string(:erlang.unique_integer([:positive]))
                )
              ) do
           {:ok, _manifest, runtime_model} ->
@@ -1362,7 +1449,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
     end
   end
 
-  defp corpus_init_execute!(template_key, revision_prefix, assert_model) when is_function(assert_model, 1) do
+  defp corpus_init_execute!(template_key, revision_prefix, assert_model)
+       when is_function(assert_model, 1) do
     if @enabled? and template_key in DebuggerTemplateCorpus.template_keys() do
       Corpus.ensure_compiled_elixir_backend!()
 
@@ -1398,7 +1486,10 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
         workspace = project |> Ide.Projects.project_workspace_path() |> Path.join("watch")
         revision = revision_prefix <> Integer.to_string(:erlang.unique_integer([:positive]))
 
-        case Ide.Compiler.build_elmx_artifacts_in_memory(workspace, revision: revision, strip_dead_code: true) do
+        case Ide.Compiler.build_elmx_artifacts_in_memory(workspace,
+               revision: revision,
+               strip_dead_code: true
+             ) do
           {:ok, %{elmx_manifest: manifest}} ->
             assert manifest["contract"] == "elmx.runtime_executor.v1"
 

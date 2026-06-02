@@ -54,7 +54,11 @@ defmodule Ide.Debugger.PendingProtocolDelivery do
     end
   end
 
-  @spec enqueue(Types.runtime_state(), :watch | :companion | :phone, Types.protocol_tx_rx_payload()) ::
+  @spec enqueue(
+          Types.runtime_state(),
+          :watch | :companion | :phone,
+          Types.protocol_tx_rx_payload()
+        ) ::
           Types.runtime_state()
   def enqueue(state, recipient, payload)
       when is_map(state) and recipient in [:watch, :companion, :phone] and is_map(payload) do
@@ -66,7 +70,8 @@ defmodule Ide.Debugger.PendingProtocolDelivery do
     Map.update(state, @pending_key, [item], &(&1 ++ [item]))
   end
 
-  @spec run_drain_batch(String.t(), [Types.pending_protocol_delivery_item()], ProtocolRx.ctx()) :: :ok
+  @spec run_drain_batch(String.t(), [Types.pending_protocol_delivery_item()], ProtocolRx.ctx()) ::
+          :ok
   def run_drain_batch(project_slug, items, ctx)
       when is_binary(project_slug) and is_list(items) and is_map(ctx) do
     state =

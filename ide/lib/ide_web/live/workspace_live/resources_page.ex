@@ -3,7 +3,9 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
   use IdeWeb, :html
 
   import IdeWeb.WorkspaceLive.ProjectSettingsPage, only: [settings_nav: 1, settings_tab_class: 2]
-  import IdeWeb.WorkspaceLive.ResourcesFlow, only: [filter_vectors: 2, format_upload_error: 1, upload_ready?: 1]
+
+  import IdeWeb.WorkspaceLive.ResourcesFlow,
+    only: [filter_vectors: 2, format_upload_error: 1, upload_ready?: 1]
 
   alias Phoenix.LiveView.Rendered
 
@@ -33,15 +35,27 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
         <.resources_nav resource_view={@resource_view} project={@project} class="mt-4" />
 
         <div class="mt-4">
-          <.bitmap_upload_sidebar :if={@resource_view == "bitmaps-static"} uploads={@uploads} output={@bitmap_upload_output} />
-          <.animation_upload_sidebar :if={@resource_view == "bitmaps-animated"} uploads={@uploads} output={@animation_upload_output} />
+          <.bitmap_upload_sidebar
+            :if={@resource_view == "bitmaps-static"}
+            uploads={@uploads}
+            output={@bitmap_upload_output}
+          />
+          <.animation_upload_sidebar
+            :if={@resource_view == "bitmaps-animated"}
+            uploads={@uploads}
+            output={@animation_upload_output}
+          />
           <.vector_upload_sidebar
             :if={@resource_view in ["vectors-static", "vectors-animated"]}
             uploads={@uploads}
             output={@vector_upload_output}
             resource_view={@resource_view}
           />
-          <.font_upload_sidebar :if={@resource_view == "fonts"} uploads={@uploads} output={@font_upload_output} />
+          <.font_upload_sidebar
+            :if={@resource_view == "fonts"}
+            uploads={@uploads}
+            output={@font_upload_output}
+          />
         </div>
       </aside>
 
@@ -79,17 +93,29 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
     ~H"""
     <nav class={[@class, "space-y-3"]}>
       <div class="flex flex-wrap gap-2 text-sm">
-        <.link patch={~p"/projects/#{@project.slug}/resources/bitmaps-static"} class={resource_family_class(@resource_view, "bitmaps")}>
+        <.link
+          patch={~p"/projects/#{@project.slug}/resources/bitmaps-static"}
+          class={resource_family_class(@resource_view, "bitmaps")}
+        >
           Bitmaps
         </.link>
-        <.link patch={~p"/projects/#{@project.slug}/resources/vectors-static"} class={resource_family_class(@resource_view, "vectors")}>
+        <.link
+          patch={~p"/projects/#{@project.slug}/resources/vectors-static"}
+          class={resource_family_class(@resource_view, "vectors")}
+        >
           Vectors
         </.link>
-        <.link patch={~p"/projects/#{@project.slug}/resources/fonts"} class={settings_tab_class(@resource_view, "fonts")}>
+        <.link
+          patch={~p"/projects/#{@project.slug}/resources/fonts"}
+          class={settings_tab_class(@resource_view, "fonts")}
+        >
           Fonts
         </.link>
       </div>
-      <div :if={resource_family(@resource_view) in ["bitmaps", "vectors"]} class="flex flex-wrap gap-2 text-sm">
+      <div
+        :if={resource_family(@resource_view) in ["bitmaps", "vectors"]}
+        class="flex flex-wrap gap-2 text-sm"
+      >
         <.link
           patch={resource_static_path(@project.slug, @resource_view)}
           class={resource_subtab_class(@resource_view, :static)}
@@ -163,7 +189,8 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
     <div class="rounded border border-zinc-200 bg-zinc-50 p-3">
       <h3 class="text-sm font-semibold text-zinc-700">Animation file</h3>
       <p class="mt-1 text-xs text-zinc-500">
-        Upload a GIF to convert to APNG, or an existing APNG (.png). Requires <span class="font-mono">gif2apng</span>
+        Upload a GIF to convert to APNG, or an existing APNG (.png). Requires
+        <span class="font-mono">gif2apng</span>
         on the IDE host for GIF imports.
       </p>
       <.form
@@ -189,7 +216,9 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
         <%= for err <- upload_errors(@uploads.animation) do %>
           <p class="text-xs text-rose-700">{format_upload_error(err)}</p>
         <% end %>
-        <.button type="submit" disabled={not upload_ready?(@uploads.animation)}>Upload animation</.button>
+        <.button type="submit" disabled={not upload_ready?(@uploads.animation)}>
+          Upload animation
+        </.button>
       </.form>
       <p :if={@output} class="mt-2 text-xs text-zinc-600">{@output}</p>
     </div>
@@ -319,10 +348,7 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
           </div>
 
           <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div
-              :for={slot <- bmp.variant_slots}
-              class="rounded border border-zinc-200 bg-white p-2"
-            >
+            <div :for={slot <- bmp.variant_slots} class="rounded border border-zinc-200 bg-white p-2">
               <p class="font-medium text-zinc-800">{slot.label}</p>
               <p class="mt-0.5 text-[10px] leading-snug text-zinc-500">{slot.platforms}</p>
               <img
@@ -598,10 +624,7 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
               </label>
               <label class="flex flex-col gap-1">
                 <span class="font-medium text-zinc-600">Compatibility</span>
-                <select
-                  name="variant[compatibility]"
-                  class="rounded border border-zinc-300 px-2 py-1"
-                >
+                <select name="variant[compatibility]" class="rounded border border-zinc-300 px-2 py-1">
                   <option value="2.7" selected={font.compatibility == "2.7"}>
                     2.7 and earlier
                   </option>
@@ -707,13 +730,19 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
 
   defp resource_base_name_form(assigns) do
     ~H"""
-    <.form for={%{}} phx-submit={@submit_event} class="min-w-0 flex-1">
+    <.form
+      for={%{}}
+      phx-submit={@submit_event}
+      id={"resource-base-name-form-#{@ctor}"}
+      class="min-w-0 flex-1"
+    >
       <input type="hidden" name="ctor" value={@ctor} />
       <label class="flex flex-col gap-1">
         <span class="text-[10px] font-medium uppercase tracking-wide text-zinc-500">Elm name</span>
         <div class="flex min-w-0 items-center gap-1">
           <span class="shrink-0 font-mono text-[11px] text-zinc-500">{@ctor_prefix}</span>
           <input
+            id={"resource-base-name-input-#{@ctor}"}
             name="base_name"
             value={@base_name}
             required

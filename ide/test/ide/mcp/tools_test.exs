@@ -808,12 +808,13 @@ defmodule Ide.Mcp.ToolsTest do
       |> Enum.map(&{&1.target, &1.message, &1.message_source})
 
     assert Enum.any?(timeline, fn
-           {"phone", msg, "configuration"} when is_binary(msg) ->
-             String.starts_with?(msg, "FromConfiguration")
+             {"phone", msg, "configuration"} when is_binary(msg) ->
+               String.starts_with?(msg, "FromConfiguration")
 
-           _ ->
-             false
-         end)
+             _ ->
+               false
+           end)
+
     refute {"phone", "FromBridge", "configuration"} in timeline
   end
 
@@ -862,24 +863,31 @@ defmodule Ide.Mcp.ToolsTest do
       |> Enum.map(&{&1.target, &1.message, &1.message_source})
 
     assert Enum.any?(timeline, fn
-           {"phone", msg, source} when is_binary(msg) and source in ["init_geolocation", "geolocation"] ->
-             String.starts_with?(msg, "CurrentPosition")
+             {"phone", msg, source}
+             when is_binary(msg) and source in ["init_geolocation", "geolocation"] ->
+               String.starts_with?(msg, "CurrentPosition")
 
-           _ ->
-             false
-         end) or
+             _ ->
+               false
+           end) or
              Enum.any?(state.events, fn event -> event.type == "debugger.geolocation" end)
 
     assert Enum.any?(timeline, fn
-           {"phone", msg, source} when is_binary(msg) and source in ["init_geolocation", "geolocation", "runtime_followup"] ->
-             String.starts_with?(msg, "CurrentPosition") or
-               String.starts_with?(msg, "SendLocationSnapshot")
+             {"phone", msg, source}
+             when is_binary(msg) and
+                    source in ["init_geolocation", "geolocation", "runtime_followup"] ->
+               String.starts_with?(msg, "CurrentPosition") or
+                 String.starts_with?(msg, "SendLocationSnapshot")
 
-           _ ->
-             false
-         end) or
+             _ ->
+               false
+           end) or
              Enum.any?(state.events, fn event ->
-               event.type in ["debugger.geolocation", "debugger.protocol_rx", "debugger.protocol_tx"]
+               event.type in [
+                 "debugger.geolocation",
+                 "debugger.protocol_rx",
+                 "debugger.protocol_tx"
+               ]
              end)
 
     watch_model = get_in(state, [:watch, :model, "runtime_model"]) || %{}
@@ -889,7 +897,12 @@ defmodule Ide.Mcp.ToolsTest do
     assert get_in(watch_model, ["homeLonE6", "ctor"]) in ["Just", "Nothing"]
 
     case watch_model["sun"] do
-      %{"ctor" => "Just", "args" => [%{"mode" => %{"ctor" => "SunCycle"}, "sunriseMin" => sunrise, "sunsetMin" => sunset}]} ->
+      %{
+        "ctor" => "Just",
+        "args" => [
+          %{"mode" => %{"ctor" => "SunCycle"}, "sunriseMin" => sunrise, "sunsetMin" => sunset}
+        ]
+      } ->
         assert is_integer(sunrise) and sunrise > 0
         assert is_integer(sunset) and sunset > sunrise
 
@@ -2237,11 +2250,11 @@ defmodule Ide.Mcp.ToolsTest do
     assert is_map(replay_fps)
     assert is_map(replay_fps.watch)
     assert replay_fps.watch.runtime_mode == "runtime_executed"
-    assert replay_fps.watch.engine == "elm_executor_runtime_v1"
+    assert replay_fps.watch.engine == "elmx_runtime_v1"
     assert is_map(replay_fp_digest)
     assert is_map(replay_fp_digest.watch)
     assert replay_fp_digest.watch.runtime_mode == "runtime_executed"
-    assert replay_fp_digest.watch.engine == "elm_executor_runtime_v1"
+    assert replay_fp_digest.watch.engine == "elmx_runtime_v1"
     assert replay_fp_digest.watch.execution_backend == "external"
     assert Map.has_key?(replay_fp_digest.watch, :target_numeric_key_source)
     assert Map.has_key?(replay_fp_digest.watch, :target_boolean_key_source)
@@ -2391,7 +2404,7 @@ defmodule Ide.Mcp.ToolsTest do
     assert is_map(inspect_replay.runtime_fingerprint_digest)
     assert is_map(inspect_replay.runtime_fingerprints.watch)
     assert inspect_replay.runtime_fingerprints.watch.runtime_mode == "runtime_executed"
-    assert inspect_replay.runtime_fingerprints.watch.engine == "elm_executor_runtime_v1"
+    assert inspect_replay.runtime_fingerprints.watch.engine == "elmx_runtime_v1"
     assert inspect_replay.runtime_fingerprints.watch.execution_backend == "external"
     assert is_binary(inspect_replay.runtime_fingerprints.watch.runtime_model_sha256)
     assert is_binary(inspect_replay.runtime_fingerprints.watch.view_tree_sha256)
@@ -3218,21 +3231,34 @@ defmodule Ide.Mcp.ToolsTest do
     assert {:ok, _} =
              Tools.call(
                "projects.create",
-               %{"name" => "Vectors", "slug" => slug, "target_type" => "watchface", "template" => "starter"},
+               %{
+                 "name" => "Vectors",
+                 "slug" => slug,
+                 "target_type" => "watchface",
+                 "template" => "starter"
+               },
                [:edit]
              )
 
-    svg = ~s(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><rect x="2" y="2" width="16" height="16" fill="black"/></svg>)
+    svg =
+      ~s(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><rect x="2" y="2" width="16" height="16" fill="black"/></svg>)
 
     assert {:ok, converted} =
-             Tools.call("resources.vectors.convert", %{"svg" => svg, "color_mode" => "truncate"}, [:read])
+             Tools.call(
+               "resources.vectors.convert",
+               %{"svg" => svg, "color_mode" => "truncate"},
+               [:read]
+             )
 
     assert converted["magic"] == "PDCI"
     assert is_binary(converted["bytes_base64"])
     assert converted["report"]["stats"]["commands"] == 1
 
-    frame_a = ~s(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect x="1" y="1" width="4" height="4" fill="black"/></svg>)
-    frame_b = ~s(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect x="5" y="5" width="4" height="4" fill="black"/></svg>)
+    frame_a =
+      ~s(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect x="1" y="1" width="4" height="4" fill="black"/></svg>)
+
+    frame_b =
+      ~s(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect x="5" y="5" width="4" height="4" fill="black"/></svg>)
 
     assert {:ok, sequence} =
              Tools.call(
@@ -3275,7 +3301,9 @@ defmodule Ide.Mcp.ToolsTest do
     assert "Anim" in ctors
 
     assert {:ok, preview} =
-             Tools.call("resources.vectors.preview", %{"slug" => slug, "ctor" => "Square"}, [:read])
+             Tools.call("resources.vectors.preview", %{"slug" => slug, "ctor" => "Square"}, [
+               :read
+             ])
 
     assert preview["kind"] == "image"
     assert String.contains?(preview["svg"], "<svg")

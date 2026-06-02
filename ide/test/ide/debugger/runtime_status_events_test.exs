@@ -27,7 +27,11 @@ defmodule Ide.Debugger.RuntimeStatusEventsTest do
   test "status_message is nil when init cmd has a planned device-data followup" do
     introspect = %{
       "init_cmd_calls" => [
-        %{"name" => "getCurrentTimeString", "target" => "Pebble.Cmd", "callback_constructor" => "CurrentTimeString"}
+        %{
+          "name" => "getCurrentTimeString",
+          "target" => "Pebble.Cmd",
+          "callback_constructor" => "CurrentTimeString"
+        }
       ]
     }
 
@@ -36,7 +40,8 @@ defmodule Ide.Debugger.RuntimeStatusEventsTest do
       "runtime_model_source" => "init_model",
       "init_cmd_count" => 1,
       "followup_message_count" => 0,
-      "planned_init_followup_count" => RuntimeStatusEvents.planned_init_followup_count(%{}, introspect)
+      "planned_init_followup_count" =>
+        RuntimeStatusEvents.planned_init_followup_count(%{}, introspect)
     }
 
     assert RuntimeStatusEvents.status_message(runtime) == nil

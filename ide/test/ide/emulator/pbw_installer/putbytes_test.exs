@@ -21,6 +21,8 @@ defmodule Ide.Emulator.PBWInstaller.PutbytesTest do
 
     assert :ok = Packets.putbytes_ack?(response, [42, 0])
     assert {:error, {:wrong_cookie, [1], 42}} = Packets.putbytes_ack?(response, [1])
-    assert {:error, {:nack, 7}} = Packets.putbytes_ack?(%{ack?: false, result: :nack, cookie: 7}, nil)
+
+    assert {:error, {:nack, 7}} =
+             Packets.putbytes_ack?(%{ack?: false, result: :nack, cookie: 7}, nil)
   end
 end

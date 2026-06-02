@@ -331,6 +331,7 @@ static int64_t s_vector_sequence_anim_start_ms = 0;
 static int s_vector_sequence_anim_origin_seq = 0;
 static AppTimer *s_vector_sequence_timer = NULL;
 static uint32_t s_cached_sequence_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
+static uint32_t s_failed_vector_sequence_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
 static GDrawCommandSequence *s_cached_sequence = NULL;
 #endif
 #if ELMC_PEBBLE_FEATURE_DRAW_BITMAP_SEQUENCE_AT
@@ -338,9 +339,12 @@ static int64_t s_bitmap_sequence_anim_start_ms = 0;
 static int s_bitmap_sequence_anim_origin_seq = 0;
 static AppTimer *s_bitmap_sequence_timer = NULL;
 static uint32_t s_cached_bitmap_sequence_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
+static uint32_t s_failed_bitmap_sequence_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
 static GBitmapSequence *s_cached_bitmap_sequence = NULL;
-static GBitmap s_bitmap_sequence_frame;
-static bool s_bitmap_sequence_frame_initialized = false;
+static GBitmap *s_bitmap_sequence_frame = NULL;
+static uint32_t s_cached_bitmap_sequence_duration_ms = 0;
+static uint32_t s_bitmap_sequence_last_elapsed_ms = UINT32_MAX;
+static uint32_t s_bitmap_sequence_last_elapsed_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
 #endif
 #if ELMC_PEBBLE_FEATURE_DRAW_VECTOR_AT
 #define VECTOR_IMAGE_CACHE_CAPACITY 8
@@ -1468,6 +1472,16 @@ static bool draw_cmd_bounds(const ElmcPebbleDrawCmd *cmd, GRect *out_rect) {
   case ELMC_PEBBLE_DRAW_BITMAP_IN_RECT:
     *out_rect = GRect((int16_t)cmd->p1, (int16_t)cmd->p2, (int16_t)cmd->p3, (int16_t)cmd->p4);
     return !rect_is_empty(*out_rect);
+#if ELMC_PEBBLE_FEATURE_DRAW_ROTATED_BITMAP
+  case ELMC_PEBBLE_DRAW_ROTATED_BITMAP: {
+    int src_w = cmd->p1 < 0 ? 0 : cmd->p1;
+    int src_h = cmd->p2 < 0 ? 0 : cmd->p2;
+    int cx = cmd->p4;
+    int cy = cmd->p5;
+    *out_rect = GRect((int16_t)(cx - src_w / 2), (int16_t)(cy - src_h / 2), (int16_t)src_w, (int16_t)src_h);
+    return !rect_is_empty(*out_rect);
+  }
+#endif
   default:
     return false;
   }
@@ -1508,10 +1522,14 @@ static void vector_sequence_cache_clear(void) {
     s_cached_sequence = NULL;
   }
   s_cached_sequence_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
+  s_failed_vector_sequence_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
 }
 
 static GDrawCommandSequence *vector_sequence_cached(uint32_t resource_id) {
   if (resource_id == ELM_PEBBLE_RESOURCE_ID_MISSING) {
+    return NULL;
+  }
+  if (resource_id == s_failed_vector_sequence_resource_id) {
     return NULL;
   }
   if (s_cached_sequence && s_cached_sequence_resource_id == resource_id) {
@@ -1521,6 +1539,7 @@ static GDrawCommandSequence *vector_sequence_cached(uint32_t resource_id) {
   s_cached_sequence_resource_id = resource_id;
   s_cached_sequence = gdraw_command_sequence_create_with_resource(resource_id);
   if (!s_cached_sequence) {
+    s_failed_vector_sequence_resource_id = resource_id;
     APP_LOG(APP_LOG_LEVEL_WARNING, "vector sequence load failed resource_id=%lu", (unsigned long)resource_id);
   }
   return s_cached_sequence;
@@ -1535,19 +1554,87 @@ static void bitmap_sequence_timer_callback(void *data) {
 }
 
 static void bitmap_sequence_cache_clear(void) {
+  if (s_bitmap_sequence_timer) {
+    app_timer_cancel(s_bitmap_sequence_timer);
+    s_bitmap_sequence_timer = NULL;
+  }
   if (s_cached_bitmap_sequence) {
     gbitmap_sequence_destroy(s_cached_bitmap_sequence);
     s_cached_bitmap_sequence = NULL;
   }
-  if (s_bitmap_sequence_frame_initialized) {
-    gbitmap_destroy(&s_bitmap_sequence_frame);
-    s_bitmap_sequence_frame_initialized = false;
+  if (s_bitmap_sequence_frame) {
+    gbitmap_destroy(s_bitmap_sequence_frame);
+    s_bitmap_sequence_frame = NULL;
   }
   s_cached_bitmap_sequence_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
+  s_failed_bitmap_sequence_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
+  s_cached_bitmap_sequence_duration_ms = 0;
+  s_bitmap_sequence_last_elapsed_ms = UINT32_MAX;
+  s_bitmap_sequence_last_elapsed_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
+}
+
+static uint32_t bitmap_sequence_total_duration_ms(GBitmapSequence *sequence) {
+  if (!sequence) {
+    return 0;
+  }
+
+  uint16_t frame_count = gbitmap_sequence_get_total_num_frames(sequence);
+  if (frame_count == 0) {
+    return 0;
+  }
+
+  GSize size = gbitmap_sequence_get_bitmap_size(sequence);
+  if (size.w <= 0 || size.h <= 0) {
+    return 0;
+  }
+
+  GBitmap *scratch = gbitmap_create_blank(size, GBitmapFormat8Bit);
+  if (!scratch) {
+    return 0;
+  }
+
+  gbitmap_sequence_restart(sequence);
+  uint32_t total_ms = 0;
+  uint32_t delay_ms = 0;
+
+  for (uint16_t frame = 0; frame < frame_count; frame++) {
+    if (!gbitmap_sequence_update_bitmap_next_frame(sequence, scratch, &delay_ms)) {
+      break;
+    }
+    total_ms += delay_ms;
+  }
+
+  gbitmap_destroy(scratch);
+  gbitmap_sequence_restart(sequence);
+  return total_ms;
+}
+
+static bool bitmap_sequence_frame_ensure(GBitmapSequence *sequence) {
+  if (s_bitmap_sequence_frame) {
+    return true;
+  }
+  if (!sequence) {
+    return false;
+  }
+
+  GSize size = gbitmap_sequence_get_bitmap_size(sequence);
+  if (size.w <= 0 || size.h <= 0) {
+    return false;
+  }
+
+  s_bitmap_sequence_frame = gbitmap_create_blank(size, GBitmapFormat8Bit);
+  return s_bitmap_sequence_frame != NULL;
+}
+
+static bool sequence_play_loops(uint16_t play_count) {
+  return play_count == 0 || play_count == 0xFFFF;
 }
 
 static GBitmapSequence *bitmap_sequence_cached(uint32_t resource_id) {
   if (resource_id == ELM_PEBBLE_RESOURCE_ID_MISSING) {
+    return NULL;
+  }
+  if (resource_id == s_failed_bitmap_sequence_resource_id) {
     return NULL;
   }
   if (s_cached_bitmap_sequence && s_cached_bitmap_sequence_resource_id == resource_id) {
@@ -1557,7 +1644,16 @@ static GBitmapSequence *bitmap_sequence_cached(uint32_t resource_id) {
   s_cached_bitmap_sequence_resource_id = resource_id;
   s_cached_bitmap_sequence = gbitmap_sequence_create_with_resource(resource_id);
   if (!s_cached_bitmap_sequence) {
+    s_failed_bitmap_sequence_resource_id = resource_id;
     APP_LOG(APP_LOG_LEVEL_WARNING, "bitmap sequence load failed resource_id=%lu", (unsigned long)resource_id);
+    return NULL;
+  }
+
+  s_cached_bitmap_sequence_duration_ms =
+      bitmap_sequence_total_duration_ms(s_cached_bitmap_sequence);
+  if (s_cached_bitmap_sequence_duration_ms == 0) {
+    APP_LOG(APP_LOG_LEVEL_WARNING, "bitmap sequence has no playable frames resource_id=%lu",
+            (unsigned long)resource_id);
   }
   return s_cached_bitmap_sequence;
 }
@@ -2085,6 +2181,30 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         break;
       }
 #endif
+#if ELMC_PEBBLE_FEATURE_DRAW_ROTATED_BITMAP
+      case ELMC_PEBBLE_DRAW_ROTATED_BITMAP: {
+        uint32_t resource_id = elm_pebble_bitmap_resource_id(cmd->p0);
+        if (resource_id == ELM_PEBBLE_RESOURCE_ID_MISSING) {
+          break;
+        }
+        GBitmap *bitmap = gbitmap_create_with_resource(resource_id);
+        if (!bitmap) {
+          break;
+        }
+        int16_t src_w = (int16_t)cmd->p1;
+        int16_t src_h = (int16_t)cmd->p2;
+        if (src_w > 0 && src_h > 0) {
+          graphics_draw_rotated_bitmap(
+              ctx,
+              bitmap,
+              GPoint(src_w / 2, src_h / 2),
+              (int32_t)cmd->p3,
+              GPoint((int16_t)cmd->p4, (int16_t)cmd->p5));
+        }
+        gbitmap_destroy(bitmap);
+        break;
+      }
+#endif
 #if ELMC_PEBBLE_FEATURE_DRAW_VECTOR_AT
       case ELMC_PEBBLE_DRAW_VECTOR_AT: {
         uint32_t resource_id = elm_pebble_vector_resource_id(cmd->p0);
@@ -2106,6 +2226,10 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         if (s_vector_sequence_anim_origin_seq != s_render_sequence) {
           s_vector_sequence_anim_start_ms = monotonic_ms();
           s_vector_sequence_anim_origin_seq = s_render_sequence;
+          if (s_vector_sequence_timer) {
+            app_timer_cancel(s_vector_sequence_timer);
+            s_vector_sequence_timer = NULL;
+          }
         }
         uint32_t elapsed = (uint32_t)(monotonic_ms() - s_vector_sequence_anim_start_ms);
         GDrawCommandFrame *frame = gdraw_command_sequence_get_frame_by_elapsed(sequence, elapsed);
@@ -2115,15 +2239,16 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         uint32_t total_duration = gdraw_command_sequence_get_total_duration(sequence);
         uint16_t play_count = gdraw_command_sequence_get_play_count(sequence);
         bool animating = false;
-        if (play_count == 0xFFFF && total_duration > 0) {
+        if (sequence_play_loops(play_count) && total_duration > 0) {
           animating = true;
         } else if (play_count > 0 && total_duration > 0) {
           animating = elapsed < (uint32_t)total_duration * (uint32_t)play_count;
         }
         if (animating && !s_vector_sequence_timer) {
           s_vector_sequence_timer = app_timer_register(33, vector_sequence_timer_callback, NULL);
-        } else if (!animating) {
-          vector_sequence_cache_clear();
+        } else if (!animating && s_vector_sequence_timer) {
+          app_timer_cancel(s_vector_sequence_timer);
+          s_vector_sequence_timer = NULL;
         }
         break;
       }
@@ -2136,33 +2261,55 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
           break;
         }
         if (s_bitmap_sequence_anim_origin_seq != s_render_sequence) {
+          gbitmap_sequence_restart(sequence);
           s_bitmap_sequence_anim_start_ms = monotonic_ms();
           s_bitmap_sequence_anim_origin_seq = s_render_sequence;
+          s_bitmap_sequence_last_elapsed_ms = UINT32_MAX;
+          s_bitmap_sequence_last_elapsed_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
+        }
+        if (s_bitmap_sequence_last_elapsed_resource_id != resource_id) {
+          s_bitmap_sequence_last_elapsed_ms = UINT32_MAX;
+          s_bitmap_sequence_last_elapsed_resource_id = resource_id;
         }
         uint32_t elapsed = (uint32_t)(monotonic_ms() - s_bitmap_sequence_anim_start_ms);
-        if (!s_bitmap_sequence_frame_initialized) {
-          gbitmap_sequence_update_bitmap_by_elapsed(sequence, &s_bitmap_sequence_frame, elapsed, true);
-          s_bitmap_sequence_frame_initialized = true;
-        } else {
-          gbitmap_sequence_update_bitmap_by_elapsed(sequence, &s_bitmap_sequence_frame, elapsed, false);
+        if (s_bitmap_sequence_last_elapsed_ms != UINT32_MAX &&
+            elapsed <= s_bitmap_sequence_last_elapsed_ms) {
+          gbitmap_sequence_restart(sequence);
+          s_bitmap_sequence_anim_start_ms = monotonic_ms();
+          elapsed = 0;
         }
-        GRect frame_bounds = gbitmap_get_bounds(&s_bitmap_sequence_frame);
+        if (!bitmap_sequence_frame_ensure(sequence)) {
+          break;
+        }
+        if (!gbitmap_sequence_update_bitmap_by_elapsed(sequence, s_bitmap_sequence_frame, elapsed)) {
+          gbitmap_sequence_restart(sequence);
+          s_bitmap_sequence_anim_start_ms = monotonic_ms();
+          elapsed = 0;
+          if (!gbitmap_sequence_update_bitmap_by_elapsed(sequence, s_bitmap_sequence_frame, elapsed)) {
+            APP_LOG(APP_LOG_LEVEL_WARNING, "bitmap sequence update failed resource_id=%lu",
+                    (unsigned long)resource_id);
+            break;
+          }
+        }
+        s_bitmap_sequence_last_elapsed_ms = elapsed;
+        GRect frame_bounds = gbitmap_get_bounds(s_bitmap_sequence_frame);
         graphics_draw_bitmap_in_rect(
             ctx,
-            &s_bitmap_sequence_frame,
+            s_bitmap_sequence_frame,
             GRect(cmd->p1, cmd->p2, frame_bounds.size.w, frame_bounds.size.h));
-        uint32_t total_duration = gbitmap_sequence_get_total_duration(sequence);
+        uint32_t total_duration = s_cached_bitmap_sequence_duration_ms;
         uint16_t play_count = gbitmap_sequence_get_play_count(sequence);
         bool animating = false;
-        if (play_count == 0xFFFF && total_duration > 0) {
+        if (sequence_play_loops(play_count) && total_duration > 0) {
           animating = true;
         } else if (play_count > 0 && total_duration > 0) {
           animating = elapsed < (uint32_t)total_duration * (uint32_t)play_count;
         }
         if (animating && !s_bitmap_sequence_timer) {
           s_bitmap_sequence_timer = app_timer_register(33, bitmap_sequence_timer_callback, NULL);
-        } else if (!animating) {
-          bitmap_sequence_cache_clear();
+        } else if (!animating && s_bitmap_sequence_timer) {
+          app_timer_cancel(s_bitmap_sequence_timer);
+          s_bitmap_sequence_timer = NULL;
         }
         break;
       }

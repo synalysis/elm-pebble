@@ -27,7 +27,11 @@ defmodule Ide.Debugger.SimulatorSurfaceSettings do
 
     case Map.get(model, "runtime_model") || Map.get(model, :runtime_model) do
       runtime_model when is_map(runtime_model) ->
-        Map.put(model, "runtime_model", RuntimeModelPreview.merge_matching_fields(runtime_model, preview(settings)))
+        Map.put(
+          model,
+          "runtime_model",
+          RuntimeModelPreview.merge_matching_fields(runtime_model, preview(settings))
+        )
 
       _ ->
         model

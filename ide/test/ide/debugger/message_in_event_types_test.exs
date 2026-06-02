@@ -34,7 +34,8 @@ defmodule Ide.Debugger.MessageInEventTypesTest do
                "source" => @mini_elm
              })
 
-    assert {:ok, state} = Debugger.step(slug, %{"target" => "watch", "message" => "Tick", "count" => 1})
+    assert {:ok, state} =
+             Debugger.step(slug, %{"target" => "watch", "message" => "Tick", "count" => 1})
 
     update_event = Enum.find(state.events, &(&1.type == "debugger.update_in"))
     assert update_event.payload.message == "Tick"

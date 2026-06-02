@@ -16,7 +16,8 @@ defmodule Ide.Debugger.TraceExchange.Export do
         ]
 
   @spec payload(String.t(), runtime_state(), export_opts()) :: Types.import_trace_body()
-  def payload(project_slug, state, opts) when is_binary(project_slug) and is_map(state) and is_list(opts) do
+  def payload(project_slug, state, opts)
+      when is_binary(project_slug) and is_map(state) and is_list(opts) do
     events =
       state.events
       |> Enum.sort_by(& &1.seq)
@@ -33,7 +34,8 @@ defmodule Ide.Debugger.TraceExchange.Export do
       "companion" => Wire.normalize_term(Surface.to_map(Surface.from_state(state, :companion))),
       "debugger_seq" => Map.get(state, :debugger_seq, 0),
       "debugger_timeline" => Wire.normalize_term(Map.get(state, :debugger_timeline, [])),
-      "disabled_subscriptions" => Wire.normalize_term(Keyword.fetch!(opts, :disabled_subscriptions)),
+      "disabled_subscriptions" =>
+        Wire.normalize_term(Keyword.fetch!(opts, :disabled_subscriptions)),
       "events" => events,
       "export_version" => 1,
       "phone" => Wire.normalize_term(Surface.to_map(Surface.from_state(state, :phone))),

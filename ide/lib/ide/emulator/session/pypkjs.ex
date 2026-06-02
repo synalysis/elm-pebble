@@ -17,7 +17,8 @@ defmodule Ide.Emulator.Session.Pypkjs do
     |> maybe_append_layout_arg(state)
   end
 
-  @spec command(String.t()) :: {:ok, String.t(), [String.t()]} | {:error, Types.session_atom_error()}
+  @spec command(String.t()) ::
+          {:ok, String.t(), [String.t()]} | {:error, Types.session_atom_error()}
   def command(pypkjs_bin) do
     wrapper_path = Path.expand("../../../../priv/python/embedded_pypkjs.py", __DIR__)
 
@@ -32,7 +33,10 @@ defmodule Ide.Emulator.Session.Pypkjs do
 
   @spec local_port_call_timeout(:phone | :vnc) :: pos_integer()
   def local_port_call_timeout(:phone) do
-    Config.config(:phone_local_port_timeout_ms, Config.config(:pypkjs_ready_timeout_ms, 30_000) + 5_000)
+    Config.config(
+      :phone_local_port_timeout_ms,
+      Config.config(:pypkjs_ready_timeout_ms, 30_000) + 5_000
+    )
   end
 
   def local_port_call_timeout(_kind), do: 5_000
@@ -41,7 +45,9 @@ defmodule Ide.Emulator.Session.Pypkjs do
           {:ok, Types.session_state() | Types.pypkjs_start_state()}
           | {:error, Types.session_error()}
   def maybe_start(%{pypkjs_pid: pid} = state) when is_pid(pid) do
-    if ProcessHost.live_pid?(pid), do: {:ok, state}, else: maybe_start(Map.put(state, :pypkjs_pid, nil))
+    if ProcessHost.live_pid?(pid),
+      do: {:ok, state},
+      else: maybe_start(Map.put(state, :pypkjs_pid, nil))
   end
 
   def maybe_start(state) do

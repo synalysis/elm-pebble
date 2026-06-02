@@ -48,4 +48,21 @@ defmodule IdeWeb.WorkspaceLive.EditorSupportTest do
     assert tab.saved_content == baseline
     refute EditorSupport.editor_content_dirty?(tab, baseline)
   end
+
+  test "prepare_content_for_save skips auto-format when source matches saved baseline" do
+    source = "module Main exposing (main)\n\nmain = 1\n"
+    tab = tab(source)
+    project = %{slug: "demo"}
+
+    assert {^source, "Saved Main.elm", nil, %{status: :unchanged, rel_path: "src/Main.elm"}} =
+             EditorSupport.prepare_content_for_save(
+               project,
+               tab,
+               true,
+               :elm_format,
+               nil,
+               []
+             )
+  end
+
 end

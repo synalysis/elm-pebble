@@ -29,7 +29,9 @@ defmodule Ide.StoreListingUrlsTest do
     }
 
     assert StoreListingUrls.source_url(project) == "https://github.com/my-org/my-watchface"
-    assert StoreListingUrls.public_github_repo_url(project) == "https://github.com/my-org/my-watchface"
+
+    assert StoreListingUrls.public_github_repo_url(project) ==
+             "https://github.com/my-org/my-watchface"
   end
 
   test "source_url falls back to synalysis repo when GitHub is private or unset" do
@@ -39,6 +41,7 @@ defmodule Ide.StoreListingUrlsTest do
     }
 
     assert StoreListingUrls.source_url(private) == "https://github.com/synalysis/elm-pebble"
+
     assert StoreListingUrls.source_url(%{release_defaults: %{}, github: %{}}) ==
              "https://github.com/synalysis/elm-pebble"
   end

@@ -39,7 +39,10 @@ defmodule Ide.ScreenshotsTest do
     {:ok, root: root, projects_root: projects_root, project: project}
   end
 
-  test "stores screenshots under project workspace screenshots/", %{project: project, projects_root: projects_root} do
+  test "stores screenshots under project workspace screenshots/", %{
+    project: project,
+    projects_root: projects_root
+  } do
     png = sample_png(180, 180)
 
     assert {:ok, stored} = Screenshots.store_png(project, "chalk", png)

@@ -18,8 +18,10 @@ defmodule Ide.Debugger.TraceApi do
     end)
   end
 
-  @spec continue_from_snapshot(String.t(), Types.snapshot_continue_attrs()) :: {:ok, runtime_state()}
-  def continue_from_snapshot(project_slug, attrs \\ %{}) when is_binary(project_slug) and is_map(attrs) do
+  @spec continue_from_snapshot(String.t(), Types.snapshot_continue_attrs()) ::
+          {:ok, runtime_state()}
+  def continue_from_snapshot(project_slug, attrs \\ %{})
+      when is_binary(project_slug) and is_map(attrs) do
     AgentSession.with_hosts(fn hosts ->
       AgentSession.mutate(project_slug, fn state ->
         SnapshotContinueSession.apply(state, attrs, hosts.append_event)
@@ -32,13 +34,17 @@ defmodule Ide.Debugger.TraceApi do
 
   @spec export_trace(String.t(), Types.export_trace_opts()) :: {:ok, Types.export_trace_result()}
   def export_trace(project_slug, opts \\ []) when is_binary(project_slug) do
-    AgentSession.with_hosts(fn hosts -> TraceExchangeSession.export(project_slug, opts, hosts.trace_export) end)
+    AgentSession.with_hosts(fn hosts ->
+      TraceExchangeSession.export(project_slug, opts, hosts.trace_export)
+    end)
   end
 
   @spec import_trace(String.t(), Types.import_trace_input(), keyword()) ::
           {:ok, runtime_state()} | {:error, Types.protocol_error() | atom() | String.t() | map()}
   def import_trace(session_key, input, opts \\ []) when is_binary(session_key) do
-    AgentSession.with_hosts(fn hosts -> TraceExchangeSession.import(session_key, input, opts, hosts.trace_import) end)
+    AgentSession.with_hosts(fn hosts ->
+      TraceExchangeSession.import(session_key, input, opts, hosts.trace_import)
+    end)
   end
 
   @spec snapshot(String.t(), Types.snapshot_opts()) :: {:ok, runtime_state()}

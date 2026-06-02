@@ -7,7 +7,9 @@ defmodule Ide.ScopeIsolationTest do
   alias Ide.Projects
 
   setup do
-    root = Path.join(System.tmp_dir!(), "ide_scope_isolation_#{System.unique_integer([:positive])}")
+    root =
+      Path.join(System.tmp_dir!(), "ide_scope_isolation_#{System.unique_integer([:positive])}")
+
     Application.put_env(:ide, Ide.Projects, projects_root: root)
     on_exit(fn -> File.rm_rf(root) end)
     :ok

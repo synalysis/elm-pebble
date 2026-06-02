@@ -8,24 +8,38 @@ defmodule Ide.Debugger.StepFollowupContexts do
   alias Ide.Debugger.Types
 
   @type host :: %{
-          required(:append_event) =>
-            (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() ->
-               Types.runtime_state()),
+          required(:append_event) => (Types.runtime_state(),
+                                      String.t(),
+                                      Types.debugger_timeline_payload() ->
+                                        Types.runtime_state()),
           required(:source_root_for_target) => (Types.surface_target() -> String.t()),
-          required(:apply_step_without_value) =>
-            (Types.runtime_state(), Types.surface_target(), String.t(), String.t(), String.t() ->
-               Types.runtime_state()),
-          required(:apply_step_with_value) =>
-            (Types.runtime_state(), Types.surface_target(), String.t(),
-             Types.subscription_payload() | nil, String.t(), String.t() -> Types.runtime_state()),
-          optional(:introspect_for) =>
-            (Types.runtime_state(), Types.surface_target() -> Types.elm_introspect()),
+          required(:apply_step_without_value) => (Types.runtime_state(),
+                                                  Types.surface_target(),
+                                                  String.t(),
+                                                  String.t(),
+                                                  String.t() ->
+                                                    Types.runtime_state()),
+          required(:apply_step_with_value) => (Types.runtime_state(),
+                                               Types.surface_target(),
+                                               String.t(),
+                                               Types.subscription_payload()
+                                               | nil,
+                                               String.t(),
+                                               String.t() ->
+                                                 Types.runtime_state()),
+          optional(:introspect_for) => (Types.runtime_state(), Types.surface_target() ->
+                                          Types.elm_introspect()),
           optional(:simulator_settings) => (Types.runtime_state() -> Types.simulator_settings()),
-          optional(:track_http_command) =>
-            (Types.runtime_state(), Types.tracked_http_command() -> Types.runtime_state()),
-          optional(:append_debugger_event) =>
-            (Types.runtime_state(), String.t(), Types.surface_target(), String.t(), String.t() | nil,
-             Types.timeline_step_message_value() -> Types.runtime_state())
+          optional(:track_http_command) => (Types.runtime_state(), Types.tracked_http_command() ->
+                                              Types.runtime_state()),
+          optional(:append_debugger_event) => (Types.runtime_state(),
+                                               String.t(),
+                                               Types.surface_target(),
+                                               String.t(),
+                                               String.t()
+                                               | nil,
+                                               Types.timeline_step_message_value() ->
+                                                 Types.runtime_state())
         }
 
   @spec device_data(host()) :: DeviceDataResponses.apply_ctx()

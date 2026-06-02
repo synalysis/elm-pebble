@@ -5,7 +5,9 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
   """
 
   import Phoenix.Component, only: [assign: 2, assign: 3, to_form: 2]
-  import Phoenix.LiveView, only: [consume_uploaded_entries: 3, put_flash: 3, push_event: 3, start_async: 3]
+
+  import Phoenix.LiveView,
+    only: [consume_uploaded_entries: 3, put_flash: 3, push_event: 3, start_async: 3]
 
   alias Ide.AppStore.Listing, as: AppStoreListing
   alias Ide.Auth
@@ -142,6 +144,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
      |> assign(:store_listing_sync_status, :error)
      |> assign(:store_listing_sync_output, "App Store sync task exited: #{inspect(reason)}")}
   end
+
   defp do_handle_async(:github_repo_status_check, {:ok, status}, socket) do
     {:noreply, assign(socket, :github_repo_status, status)}
   end
@@ -169,7 +172,11 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
      |> assign(:github_push_output, "Create task exited: #{inspect(reason)}")}
   end
 
-  defp do_handle_async(:create_github_repository_and_push, {:ok, {:ok, %{create: created, push: push}}}, socket) do
+  defp do_handle_async(
+         :create_github_repository_and_push,
+         {:ok, {:ok, %{create: created, push: push}}},
+         socket
+       ) do
     message =
       "Created #{created.owner}/#{created.repo}\n#{created.html_url}\n\nPushed @#{push.branch}\ncommit: #{push.commit_sha}"
 
@@ -179,7 +186,11 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
      |> assign(:github_push_status, :ok)}
   end
 
-  defp do_handle_async(:create_github_repository_and_push, {:ok, {:error, {:create, reason}}}, socket) do
+  defp do_handle_async(
+         :create_github_repository_and_push,
+         {:ok, {:error, {:create, reason}}},
+         socket
+       ) do
     {:noreply,
      socket
      |> assign(:github_create_status, :error)
@@ -187,13 +198,20 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
      |> assign(:github_push_output, "Create failed: #{format_github_push_error(reason)}")}
   end
 
-  defp do_handle_async(:create_github_repository_and_push, {:ok, {:error, {:push, reason}}}, socket) do
+  defp do_handle_async(
+         :create_github_repository_and_push,
+         {:ok, {:error, {:push, reason}}},
+         socket
+       ) do
     {:noreply,
      socket
      |> assign(:github_create_status, :ok)
      |> assign(:github_repo_status, :exists)
      |> assign(:github_push_status, :error)
-     |> assign(:github_push_output, "Repository created, but push failed: #{format_github_push_error(reason)}")}
+     |> assign(
+       :github_push_output,
+       "Repository created, but push failed: #{format_github_push_error(reason)}"
+     )}
   end
 
   defp do_handle_async(:create_github_repository_and_push, {:exit, reason}, socket) do
@@ -203,6 +221,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
      |> assign(:github_push_status, :error)
      |> assign(:github_push_output, "Create and push task exited: #{inspect(reason)}")}
   end
+
   def settings_save_section(:settings), do: :release
   def settings_save_section(:settings_store), do: :store
   def settings_save_section(:settings_github), do: :github
@@ -216,6 +235,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
   def save_project_settings(socket, project, params, workspace_root, opts) do
     sync_store_listing =
       Keyword.get(opts, :sync_store_listing, false) and Auth.app_store_publish_enabled?()
+
     section = Keyword.get(opts, :section, :release)
     defaults = project.release_defaults || %{}
     github = project.github || %{}
@@ -232,7 +252,10 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
       {:ok, updated} ->
         release_summary =
           socket.assigns.release_summary
-          |> Map.put("version_label", Map.get(updated.release_defaults || %{}, "version_label", ""))
+          |> Map.put(
+            "version_label",
+            Map.get(updated.release_defaults || %{}, "version_label", "")
+          )
           |> Map.put("tags", Map.get(updated.release_defaults || %{}, "tags", ""))
 
         readiness = PublishFlow.publish_readiness(updated, socket.assigns.screenshots)
@@ -276,10 +299,22 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
 
   defp merge_release_defaults(defaults, params, :release, workspace_root) do
     defaults
-    |> Map.put("version_label", String.trim(params["version_label"] || Map.get(defaults, "version_label", "")))
-    |> Map.put("description", String.trim(params["description"] || Map.get(defaults, "description", "")))
-    |> Map.put("website_url", String.trim(params["website_url"] || Map.get(defaults, "website_url", "")))
-    |> Map.put("source_url", String.trim(params["source_url"] || Map.get(defaults, "source_url", "")))
+    |> Map.put(
+      "version_label",
+      String.trim(params["version_label"] || Map.get(defaults, "version_label", ""))
+    )
+    |> Map.put(
+      "description",
+      String.trim(params["description"] || Map.get(defaults, "description", ""))
+    )
+    |> Map.put(
+      "website_url",
+      String.trim(params["website_url"] || Map.get(defaults, "website_url", ""))
+    )
+    |> Map.put(
+      "source_url",
+      String.trim(params["source_url"] || Map.get(defaults, "source_url", ""))
+    )
     |> Map.put("tags", String.trim(params["tags"] || Map.get(defaults, "tags", "")))
     |> Map.put(
       "target_platforms",
@@ -289,7 +324,11 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
   end
 
   defp merge_release_defaults(defaults, params, :store, _workspace_root) do
-    Map.put(defaults, "generate_store_graphics", to_bool(Map.get(params, "generate_store_graphics")))
+    Map.put(
+      defaults,
+      "generate_store_graphics",
+      to_bool(Map.get(params, "generate_store_graphics"))
+    )
   end
 
   defp merge_release_defaults(defaults, _params, _section, _workspace_root), do: defaults
@@ -298,7 +337,10 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
     github
     |> Map.put("owner", String.trim(params["github_owner"] || Map.get(github, "owner", "")))
     |> Map.put("repo", String.trim(params["github_repo"] || Map.get(github, "repo", "")))
-    |> Map.put("branch", String.trim(params["github_branch"] || Map.get(github, "branch", "main")))
+    |> Map.put(
+      "branch",
+      String.trim(params["github_branch"] || Map.get(github, "branch", "main"))
+    )
     |> Map.put(
       "visibility",
       visibility_param(params, Map.get(github, "visibility", "private"))
@@ -435,6 +477,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
         {:error, "Could not save store icon: #{inspect(reason)}"}
     end
   end
+
   def refresh_github_repo_status(socket) do
     socket = assign(socket, :github_connected?, Ide.GitHub.Credentials.connected?())
 
@@ -469,7 +512,11 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
     cond do
       not socket.assigns.github_connected? ->
         {:noreply,
-         put_flash(socket, :error, "Connect GitHub from IDE Settings before creating a repository.")}
+         put_flash(
+           socket,
+           :error,
+           "Connect GitHub from IDE Settings before creating a repository."
+         )}
 
       socket.assigns.github_repo_status != :not_found ->
         {:noreply,

@@ -1,6 +1,6 @@
 defmodule ElmEx.CoreIR do
   @moduledoc """
-  Backend-stable normalized IR contract used by non-C backends (e.g. elm_executor).
+  Backend-stable normalized IR contract used by non-C backends.
   """
 
   alias ElmEx.IR

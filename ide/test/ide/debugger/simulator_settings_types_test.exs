@@ -2,6 +2,7 @@ defmodule Ide.Debugger.SimulatorSettingsTypesTest do
   use ExUnit.Case, async: true
 
   alias Ide.Debugger
+
   test "default_simulator_settings includes canonical weather and geolocation fields" do
     settings = Debugger.default_simulator_settings()
 

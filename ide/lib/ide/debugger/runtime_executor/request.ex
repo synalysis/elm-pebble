@@ -3,12 +3,13 @@ defmodule Ide.Debugger.RuntimeExecutor.Request do
   Builds validated runtime executor requests from debugger surfaces.
 
   `validate!/1` checks shape (introspect, model). `validate_execution_ready!/1` also
-  requires versioned Core IR — used by `RuntimeExecutor.execute/1` on `%Request{}`.
+  requires compiled `elmx` artifacts — used by `RuntimeExecutor.execute/1` on `%Request{}`.
   """
 
   alias ElmEx.DebuggerContract.Payload
   alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Debugger.RuntimeExecutor.Types, as: ExecutorTypes
+  alias Ide.Debugger.RuntimeModelHydrate
   alias Ide.Debugger.Surface
   alias Ide.Debugger.Types
 
@@ -30,8 +31,6 @@ defmodule Ide.Debugger.RuntimeExecutor.Request do
     :message,
     :message_value,
     :update_branches,
-    :elm_executor_core_ir,
-    :elm_executor_metadata,
     :elmx_manifest,
     :elmx_revision,
     :vector_resource_indices,
@@ -49,8 +48,6 @@ defmodule Ide.Debugger.RuntimeExecutor.Request do
           message: String.t() | nil,
           message_value: Types.protocol_message() | map() | nil,
           update_branches: [String.t()] | nil,
-          elm_executor_core_ir: Types.core_ir(),
-          elm_executor_metadata: map() | nil,
           elmx_manifest: map() | nil,
           elmx_revision: String.t() | nil,
           vector_resource_indices: map() | nil,
@@ -64,7 +61,13 @@ defmodule Ide.Debugger.RuntimeExecutor.Request do
   def build(opts) when is_list(opts) do
     surface = Keyword.fetch!(opts, :surface)
     execution_model = Surface.execution_model(surface)
-    app_model = Surface.app_model(surface)
+    message = Keyword.get(opts, :message)
+
+    app_model =
+      surface
+      |> Surface.app_model()
+      |> RuntimeModelHydrate.for_message(message, [])
+
     introspect = RuntimeArtifacts.require_introspect(execution_model)
 
     attrs = %{
@@ -74,7 +77,7 @@ defmodule Ide.Debugger.RuntimeExecutor.Request do
       introspect: introspect,
       current_model: app_model,
       current_view_tree: Keyword.get(opts, :view_tree) || surface.view_tree || %{},
-      message: Keyword.get(opts, :message),
+      message: message,
       message_value: Keyword.get(opts, :message_value),
       update_branches: Keyword.get(opts, :update_branches)
     }
@@ -124,28 +127,11 @@ defmodule Ide.Debugger.RuntimeExecutor.Request do
   def validate_execution_ready!(request) do
     request = validate!(request)
 
-    cond do
-      Ide.Debugger.RuntimeExecutor.compiled_elixir_backend?() ->
-        unless elmx_execution_ready?(request) do
-          raise ArgumentError, "runtime executor request requires elmx_manifest and elmx_revision"
-        end
-
-      versioned_core_ir?(request) ->
-        :ok
-
-      true ->
-        raise ArgumentError, "runtime executor request requires versioned elm_executor Core IR"
+    unless elmx_execution_ready?(request) do
+      raise ArgumentError, "runtime executor request requires elmx_manifest and elmx_revision"
     end
 
     request
-  end
-
-  @spec versioned_core_ir?(t()) :: boolean()
-  defp versioned_core_ir?(%__MODULE__{} = request) do
-    RuntimeArtifacts.versioned_core_ir?(%{
-      "elm_executor_core_ir" => request.elm_executor_core_ir,
-      "elm_executor_metadata" => request.elm_executor_metadata
-    })
   end
 
   @spec elmx_execution_ready?(t()) :: boolean()

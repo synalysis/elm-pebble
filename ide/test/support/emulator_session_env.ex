@@ -34,13 +34,13 @@ defmodule Ide.TestSupport.EmulatorSessionEnv do
     :global.trans(@lock, fn ->
       previous = Application.get_env(:ide, Ide.Emulator.Session)
 
-      Application.put_env(:ide, Ide.Emulator.Session, [
+      Application.put_env(:ide, Ide.Emulator.Session,
         enabled: true,
         validate_runtime: false,
         start_processes: true,
         qemu_image_root: System.tmp_dir!(),
         idle_timeout_ms: 60_000
-      ])
+      )
 
       try do
         fun.()

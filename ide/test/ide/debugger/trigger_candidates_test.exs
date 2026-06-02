@@ -6,8 +6,11 @@ defmodule Ide.Debugger.TriggerCandidatesTest do
   test "best_message_for_trigger maps on_minute_change to MinuteChanged before CurrentDateTime" do
     known = ["CurrentDateTime", "MinuteChanged", "FromPhone"]
 
-    assert TriggerCandidates.best_message_for_trigger(known, "on_minute_change") == "MinuteChanged"
-    assert TriggerCandidates.best_message_for_trigger(known, "Events.onMinuteChange") == "MinuteChanged"
+    assert TriggerCandidates.best_message_for_trigger(known, "on_minute_change") ==
+             "MinuteChanged"
+
+    assert TriggerCandidates.best_message_for_trigger(known, "Events.onMinuteChange") ==
+             "MinuteChanged"
   end
 
   test "best_message_for_trigger maps on_hour_change to HourChanged before CurrentDateTime" do

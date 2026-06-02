@@ -10,7 +10,8 @@ defmodule Ide.Debugger.HttpSimulatorTest do
                        [
                          {:json_decoder, {:field, "temperature_2m", {:json_decoder, :float}}},
                          {:json_decoder,
-                          {:field, "weather_code", {:json_decoder, {:and_then, nil, {:json_decoder, :int}}}}}
+                          {:field, "weather_code",
+                           {:json_decoder, {:and_then, nil, {:json_decoder, :int}}}}}
                        ]}}}}
 
   @weather_settings %{
@@ -77,7 +78,10 @@ defmodule Ide.Debugger.HttpSimulatorTest do
                "weather_code" => 2
              }
            } =
-             HttpSimulator.build_json_body(@weather_decoder, Map.put(@weather_settings, "condition", "cloudy"))
+             HttpSimulator.build_json_body(
+               @weather_decoder,
+               Map.put(@weather_settings, "condition", "cloudy")
+             )
   end
 
   test "build_json_body maps snow simulator setting to Open-Meteo weather_code 71" do
@@ -87,7 +91,10 @@ defmodule Ide.Debugger.HttpSimulatorTest do
                "weather_code" => 71
              }
            } =
-             HttpSimulator.build_json_body(@weather_decoder, Map.put(@weather_settings, "condition", "snow"))
+             HttpSimulator.build_json_body(
+               @weather_decoder,
+               Map.put(@weather_settings, "condition", "snow")
+             )
   end
 
   test "build_json_body handles Decode.map on leaf decoders inside fields" do
@@ -99,8 +106,7 @@ defmodule Ide.Debugger.HttpSimulatorTest do
           [
             {:json_decoder, {:field, "temperature_2m", {:json_decoder, :float}}},
             {:json_decoder,
-             {:field, "weather_code",
-              {:json_decoder, {:map, nil, [{:json_decoder, :int}]}}}}
+             {:field, "weather_code", {:json_decoder, {:map, nil, [{:json_decoder, :int}]}}}}
           ]}}}}
 
     assert %{
@@ -108,6 +114,10 @@ defmodule Ide.Debugger.HttpSimulatorTest do
                "temperature_2m" => 21.0,
                "weather_code" => 0
              }
-           } = HttpSimulator.build_json_body(decoder, %{"temperatureC" => 21, "condition" => "clear"})
+           } =
+             HttpSimulator.build_json_body(decoder, %{
+               "temperatureC" => 21,
+               "condition" => "clear"
+             })
   end
 end

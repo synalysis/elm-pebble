@@ -69,7 +69,12 @@ defmodule Ide.Resources.AnimationStoreTest do
     assert Map.fetch!(row, :ctor) == "BitmapAnimatedSparkle"
     assert Map.fetch!(row, :frame_count) >= 2
 
-    generated = Path.join(Projects.project_workspace_path(project), ResourceStore.generated_module_rel_path())
+    generated =
+      Path.join(
+        Projects.project_workspace_path(project),
+        ResourceStore.generated_module_rel_path()
+      )
+
     assert File.exists?(generated)
     source = File.read!(generated)
     assert source =~ "type AnimatedBitmap"

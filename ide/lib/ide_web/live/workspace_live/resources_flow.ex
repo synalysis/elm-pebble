@@ -114,6 +114,12 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
       :not_animated ->
         "File is not an animated PNG (APNG). Upload a GIF or a multi-frame APNG."
 
+      :requires_apng8 ->
+        "Animation must be APNG8 (8-bit indexed palette). Upload a GIF to convert automatically, or re-export the PNG as palette APNG8."
+
+      :malformed_apng ->
+        "Animated PNG is missing frame metadata (fcTL chunks). Re-export the APNG or upload a GIF."
+
       :unsupported_format ->
         "Unsupported file type. Use .gif or animated .png."
 
@@ -134,6 +140,18 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
 
       :invalid_manifest ->
         "animations.json is invalid."
+
+      :invalid_watch_pdc ->
+        "Vector file is not a valid Pebble PDC/PDCS image for the watch."
+
+      :pdc_too_large ->
+        "Vector file is too large (max 64 KB)."
+
+      :pdc_dimensions_too_large ->
+        "Vector canvas is too large (max 200×200 px)."
+
+      :pdc_too_many_frames ->
+        "Vector sequence has too many frames (max 64)."
 
       other when is_binary(other) ->
         other
@@ -404,7 +422,10 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
 
   defp animation_loop_label(%{play_count: :infinite}), do: "loops forever"
   defp animation_loop_label(%{play_count: 1}), do: "plays once"
-  defp animation_loop_label(%{play_count: count}) when is_integer(count), do: "plays #{count} times"
+
+  defp animation_loop_label(%{play_count: count}) when is_integer(count),
+    do: "plays #{count} times"
+
   defp animation_loop_label(_), do: nil
 
   @spec animation_preview_data_url(String.t()) :: String.t() | nil
@@ -445,7 +466,9 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
     end
   end
 
-  @spec group_screenshots([Screenshots.screenshot()]) :: [{String.t(), [Screenshots.screenshot()]}]
+  @spec group_screenshots([Screenshots.screenshot()]) :: [
+          {String.t(), [Screenshots.screenshot()]}
+        ]
   def group_screenshots(shots) do
     shots
     |> Enum.group_by(& &1.emulator_target)
@@ -457,10 +480,13 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
     clear-bitmap-variant
     validate-resource-upload
     delete-bitmap-resource
+    update-bitmap-base-name
     upload-vector-resource
     delete-vector-resource
+    update-vector-base-name
     upload-animation-resource
     delete-animation-resource
+    update-animation-base-name
     upload-font-resource
     add-font-variant
     update-font-variant
@@ -677,7 +703,11 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
     end
   end
 
-  def handle_event("update-animation-base-name", %{"ctor" => ctor, "base_name" => base_name}, socket) do
+  def handle_event(
+        "update-animation-base-name",
+        %{"ctor" => ctor, "base_name" => base_name},
+        socket
+      ) do
     project = socket.assigns.project
 
     case Projects.update_animation_resource_base_name(project, ctor, base_name) do
@@ -803,9 +833,14 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
 
     uploaded? =
       Enum.any?(results, fn
-        {:ok, row} when is_map(row) -> not Map.has_key?(row, :error) and Map.get(row, :duplicate) != true
-        row when is_map(row) -> not Map.has_key?(row, :error) and Map.get(row, :duplicate) != true
-        _ -> false
+        {:ok, row} when is_map(row) ->
+          not Map.has_key?(row, :error) and Map.get(row, :duplicate) != true
+
+        row when is_map(row) ->
+          not Map.has_key?(row, :error) and Map.get(row, :duplicate) != true
+
+        _ ->
+          false
       end)
 
     cond do

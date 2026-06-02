@@ -130,18 +130,16 @@ defmodule IdeWeb.UserSocketWsTest do
       end
     end
 
-    defp decode_push_binary(
-           <<
-             0,
-             join_ref_size,
-             topic_size,
-             event_size,
-             _join_ref::binary-size(join_ref_size),
-             _topic::binary-size(topic_size),
-             event::binary-size(event_size),
-             data::binary
-           >>
-         ) do
+    defp decode_push_binary(<<
+           0,
+           join_ref_size,
+           topic_size,
+           event_size,
+           _join_ref::binary-size(join_ref_size),
+           _topic::binary-size(topic_size),
+           event::binary-size(event_size),
+           data::binary
+         >>) do
       {:ok, event, data}
     end
 

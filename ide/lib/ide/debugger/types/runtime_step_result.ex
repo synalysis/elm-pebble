@@ -3,9 +3,6 @@ defmodule Ide.Debugger.Types.RuntimeStepResult do
   Normalized output from a debugger runtime step (`RuntimeExecutor.execute/1` and adapters).
   """
 
-  alias ElmExecutor.Runtime.SemanticExecutor.Types.ExecutionResult, as: ExecutorExecutionResult
-  alias ElmExecutor.Runtime.SemanticExecutor.Types.ViewOutputRow
-  alias ElmExecutor.Runtime.SemanticExecutor.Types.ViewTreeNode
   alias Ide.Debugger.Protocol.Event
   alias Ide.Debugger.RuntimeExecutor.Types, as: ExecutorTypes
   alias Ide.Debugger.Types
@@ -19,8 +16,8 @@ defmodule Ide.Debugger.Types.RuntimeStepResult do
 
   @type t :: %{
           optional(:model_patch) => model_patch(),
-          optional(:view_tree) => ViewTreeNode.view_tree() | ViewTreeNode.t() | nil,
-          optional(:view_output) => ViewOutputRow.view_output(),
+          optional(:view_tree) => Types.view_output_tree() | nil,
+          optional(:view_output) => Types.runtime_view_nodes(),
           optional(:runtime) => runtime_snapshot(),
           optional(:protocol_events) => [Event.t() | map()],
           optional(:followup_messages) => [followup_message() | String.t()],
@@ -35,7 +32,7 @@ defmodule Ide.Debugger.Types.RuntimeStepResult do
     Ide.Debugger.RuntimeExecutor.ResultNormalizer.normalize_step_result(result)
   end
 
-  @spec from_executor_wire(ExecutorExecutionResult.wire_map()) :: t()
+  @spec from_executor_wire(map()) :: t()
   def from_executor_wire(wire) when is_map(wire) do
     wire
     |> Ide.Debugger.RuntimeExecutor.ResultNormalizer.normalize()
@@ -44,12 +41,18 @@ defmodule Ide.Debugger.Types.RuntimeStepResult do
 
   @spec from_local_fallback(
           model_patch(),
-          ViewTreeNode.view_tree() | ViewTreeNode.t() | nil,
-          ViewOutputRow.view_output(),
+          Types.view_output_tree() | nil,
+          Types.runtime_view_nodes(),
           [Event.t() | map()],
           [followup_message()]
         ) :: t()
-  def from_local_fallback(model_patch, view_tree, view_output \\ [], protocol_events \\ [], followup_messages \\ [])
+  def from_local_fallback(
+        model_patch,
+        view_tree,
+        view_output \\ [],
+        protocol_events \\ [],
+        followup_messages \\ []
+      )
       when is_map(model_patch) do
     %{
       model_patch: model_patch,

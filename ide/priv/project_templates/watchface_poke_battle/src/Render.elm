@@ -179,7 +179,7 @@ drawPlayer layout model =
         player =
             model.player
     in
-    drawTrainerCard layout nameX nameY player.displayName player.levelTag model.batteryPercent False
+    drawTrainerCard layout nameX nameY player.displayName player.levelTag (toFloat model.batteryPercent / 100) False
         ++ [ Ui.drawBitmapInRect player.bitmap { x = player.x, y = player.y, w = 56, h = 48 } ]
 
 
@@ -324,7 +324,15 @@ healthBarWidth health =
         0
 
     else
-        round (toFloat fillable * health) + 2
+        let
+            fraction =
+                if health > 1.0 then
+                    health / 100.0
+
+                else
+                    health
+        in
+        round (toFloat fillable * fraction) + 2
 
 
 healthColor : Float -> Color.Color

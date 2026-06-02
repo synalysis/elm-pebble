@@ -3434,8 +3434,8 @@ ElmcValue *elmc_dict_diff(ElmcValue *a, ElmcValue *b) {
   return out;
 }
 
-ElmcValue *elmc_dict_merge(ElmcValue *lf, ElmcValue *bf, ElmcValue *rf, ElmcValue *a, ElmcValue *b) {
-  (void)lf; (void)bf; (void)rf;
+ElmcValue *elmc_dict_merge(ElmcValue *lf, ElmcValue *bf, ElmcValue *rf, ElmcValue *a, ElmcValue *b, ElmcValue *result) {
+  (void)lf; (void)bf; (void)rf; (void)result;
   /* Stub: return union */
   return elmc_dict_union(a, b);
 }

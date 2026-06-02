@@ -86,7 +86,8 @@ defmodule Ide.Emulator.Session.InstallCalls do
     state = %{state | installing?: false, last_ping_ms: Lifecycle.now_ms()}
 
     state =
-      if Map.get(state, :has_phone_companion, false) and not ProcessHost.live_pid?(state.pypkjs_pid) do
+      if Map.get(state, :has_phone_companion, false) and
+           not ProcessHost.live_pid?(state.pypkjs_pid) do
         case Startup.maybe_start_pypkjs(state) do
           {:ok, state} -> state
           {:error, _reason} -> state

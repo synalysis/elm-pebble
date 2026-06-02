@@ -11,7 +11,12 @@ defmodule Ide.Auth.DeleteUserDataTest do
 
   setup do
     root = Path.join(System.tmp_dir!(), "ide_delete_user_#{System.unique_integer([:positive])}")
-    data_root = Path.join(System.tmp_dir!(), "ide_delete_user_settings_#{System.unique_integer([:positive])}")
+
+    data_root =
+      Path.join(
+        System.tmp_dir!(),
+        "ide_delete_user_settings_#{System.unique_integer([:positive])}"
+      )
 
     Application.put_env(:ide, Ide.Projects, projects_root: root)
     Application.put_env(:ide, Ide.Settings, data_root: data_root)

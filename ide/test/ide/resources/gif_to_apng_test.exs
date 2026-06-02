@@ -10,14 +10,20 @@ defmodule Ide.Resources.GifToApngTest do
         :ok
 
       _bin ->
-        src = Path.join(System.tmp_dir!(), "gif2apng_abs_in_#{System.unique_integer([:positive])}")
+        src =
+          Path.join(System.tmp_dir!(), "gif2apng_abs_in_#{System.unique_integer([:positive])}")
+
         File.mkdir_p!(src)
         gif = Path.join(src, "sprite.gif")
 
         fixture = Path.join(__DIR__, "../../fixtures/animations/simple.gif")
         File.cp!(fixture, gif)
 
-        out = Path.join(System.tmp_dir!(), "gif2apng_abs_out_#{System.unique_integer([:positive])}.png")
+        out =
+          Path.join(
+            System.tmp_dir!(),
+            "gif2apng_abs_out_#{System.unique_integer([:positive])}.png"
+          )
 
         assert :ok = GifToApng.convert(gif, out)
         assert File.exists?(out)

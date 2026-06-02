@@ -13,8 +13,8 @@ defmodule Ide.Debugger.SubscriptionWireContexts do
 
   @type tick_resolution_host :: %{
           required(:introspect_for) => (map(), Types.surface_target() -> map()),
-          required(:attach_payload) =>
-            (map(), Types.surface_target(), String.t(), String.t() -> String.t())
+          required(:attach_payload) => (map(), Types.surface_target(), String.t(), String.t() ->
+                                          String.t())
         }
 
   @type payload_host :: %{
@@ -25,19 +25,32 @@ defmodule Ide.Debugger.SubscriptionWireContexts do
         }
 
   @type auto_fire_host :: %{
-          required(:trigger_candidates) =>
-            (Types.runtime_state(), Types.surface_target() -> [Types.trigger_candidate()]),
-          required(:trigger_message) =>
-            (Types.runtime_state(), Types.surface_target(), String.t(), String.t() | nil -> String.t()),
-          required(:apply_step) =>
-            (Types.runtime_state(), Types.surface_target(), String.t(), map() | nil, String.t(), String.t() ->
-               Types.runtime_state()),
-          required(:subscription_row_enabled?) =>
-            (Types.runtime_state(), Types.surface_target(), map() -> boolean()),
-          required(:auto_fire_row_enabled?) =>
-            (Types.runtime_state(), Types.surface_target(), map() -> boolean()),
-          required(:simulator_now) =>
-            (Types.runtime_state(), Types.surface_target() -> NaiveDateTime.t()),
+          required(:trigger_candidates) => (Types.runtime_state(), Types.surface_target() ->
+                                              [Types.trigger_candidate()]),
+          required(:trigger_message) => (Types.runtime_state(),
+                                         Types.surface_target(),
+                                         String.t(),
+                                         String.t()
+                                         | nil ->
+                                           String.t()),
+          required(:apply_step) => (Types.runtime_state(),
+                                    Types.surface_target(),
+                                    String.t(),
+                                    map()
+                                    | nil,
+                                    String.t(),
+                                    String.t() ->
+                                      Types.runtime_state()),
+          required(:subscription_row_enabled?) => (Types.runtime_state(),
+                                                   Types.surface_target(),
+                                                   map() ->
+                                                     boolean()),
+          required(:auto_fire_row_enabled?) => (Types.runtime_state(),
+                                                Types.surface_target(),
+                                                map() ->
+                                                  boolean()),
+          required(:simulator_now) => (Types.runtime_state(), Types.surface_target() ->
+                                         NaiveDateTime.t()),
           required(:source_root_for_target) => (Types.surface_target() -> String.t()),
           optional(:default_interval_ms) => pos_integer()
         }

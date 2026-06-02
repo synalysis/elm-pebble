@@ -214,8 +214,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
             placeholder={Ide.StoreListingUrls.default_source_repo_url()}
           />
           <span class="mt-1 block text-zinc-500">
-            Sent as the App Store source link on first publish. Defaults to
-            {Ide.StoreListingUrls.default_source_repo_url()}, or your public GitHub repository when configured on the GitHub tab.
+            Sent as the App Store source link on first publish. Defaults to {Ide.StoreListingUrls.default_source_repo_url()}, or your public GitHub repository when configured on the GitHub tab.
           </span>
         </label>
         <label class="text-xs md:col-span-2">
@@ -296,8 +295,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
       <h3 class="text-sm font-semibold">App Store graphics</h3>
       <p class="mt-1 text-xs text-zinc-600">
         PNG icons are sent on the first App Store listing (watchapps). Watchfaces can omit them.
-        Platform banners ({Ide.StoreAssets.banner_size_label()}) are added per device in the
-        <a
+        Platform banners ({Ide.StoreAssets.banner_size_label()}) are added per device in the <a
           href="https://developer.repebble.com/dashboard"
           class="font-medium text-blue-700 hover:underline"
           target="_blank"
@@ -320,7 +318,9 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
             class="mt-0.5"
           />
           <span>
-            <span class="block font-medium text-zinc-900">Generate App Store icons with AI on first publish</span>
+            <span class="block font-medium text-zinc-900">
+              Generate App Store icons with AI on first publish
+            </span>
             <span class="mt-1 block text-zinc-600">
               When no icons are uploaded above, the IDE can send your app name and App Store description to Rebble as an AI prompt on the first listing. Save this setting, then publish from the Publish tab.
             </span>
@@ -337,7 +337,10 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
             alt={spec.label}
             class={["mt-2 rounded border border-zinc-200 bg-white object-contain", spec.preview_class]}
           />
-          <p :if={@store_assets[spec.key].present and @store_assets[spec.key].valid} class="mt-2 text-xs text-emerald-700">
+          <p
+            :if={@store_assets[spec.key].present and @store_assets[spec.key].valid}
+            class="mt-2 text-xs text-emerald-700"
+          >
             Saved.
           </p>
           <p
@@ -424,11 +427,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
         <p class="mt-2 text-xs text-zinc-600">
           GitHub access is limited to public repositories. New repositories are created as public.
         </p>
-        <input
-          type="hidden"
-          name={@project_settings_form["github_visibility"].name}
-          value="public"
-        />
+        <input type="hidden" name={@project_settings_form["github_visibility"].name} value="public" />
       </fieldset>
       <div
         :if={@github_connected? and @github_repo_status == :not_found}
@@ -448,7 +447,9 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
           disabled={@github_create_status == :running or @github_push_status == :running}
           class={github_action_button_class(@github_push_status == :running)}
         >
-          {if @github_push_status == :running, do: "Creating and pushing…", else: "Create repository & push snapshot"}
+          {if @github_push_status == :running,
+            do: "Creating and pushing…",
+            else: "Create repository & push snapshot"}
         </button>
       </div>
     </section>
@@ -472,12 +473,15 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
     do:
       "Version and release notes for exports and PBW download. App Store listing sync is not available in this deployment."
 
-  defp release_metadata_intro(_), do: "Version and release metadata used when preparing a release."
+  defp release_metadata_intro(_),
+    do: "Version and release metadata used when preparing a release."
 
   defp settings_intro(:settings),
     do: "Release metadata for publish and App Store listing sync."
 
-  defp settings_intro(:settings_store), do: "Listing icons and optional AI-generated store graphics."
+  defp settings_intro(:settings_store),
+    do: "Listing icons and optional AI-generated store graphics."
+
   defp settings_intro(:settings_github), do: "Repository linkage and snapshot push."
   defp settings_intro(_), do: "Configure project settings."
 
@@ -543,14 +547,16 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
   defp github_repo_status_class(_), do: "font-medium text-zinc-700"
 
   defp github_action_button_class(true),
-    do: "cursor-not-allowed rounded border border-zinc-200 bg-zinc-100 px-3 py-1.5 text-xs text-zinc-500"
+    do:
+      "cursor-not-allowed rounded border border-zinc-200 bg-zinc-100 px-3 py-1.5 text-xs text-zinc-500"
 
   defp github_action_button_class(false),
     do:
       "rounded border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-800 hover:bg-zinc-50"
 
   defp store_listing_sync_button_class(true),
-    do: "cursor-not-allowed rounded bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white opacity-60"
+    do:
+      "cursor-not-allowed rounded bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white opacity-60"
 
   defp store_listing_sync_button_class(false),
     do: "rounded bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"

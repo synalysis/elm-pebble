@@ -11,8 +11,11 @@ defmodule Ide.Resources.SvgConverterTest do
   end
 
   test "convert_svg_to_pdc produces a PDC file" do
-    svg_path = Path.join(System.tmp_dir!(), "svg_converter_#{System.unique_integer([:positive])}.svg")
-    pdc_path = Path.join(System.tmp_dir!(), "svg_converter_#{System.unique_integer([:positive])}.pdc")
+    svg_path =
+      Path.join(System.tmp_dir!(), "svg_converter_#{System.unique_integer([:positive])}.svg")
+
+    pdc_path =
+      Path.join(System.tmp_dir!(), "svg_converter_#{System.unique_integer([:positive])}.pdc")
 
     File.write!(
       svg_path,
@@ -38,7 +41,9 @@ defmodule Ide.Resources.SvgConverterTest do
       </svg>
     )
 
-    assert {:ok, %SvgConverter.ConversionResult{bytes: bytes}} = SvgConverter.convert_svg_string(svg)
+    assert {:ok, %SvgConverter.ConversionResult{bytes: bytes}} =
+             SvgConverter.convert_svg_string(svg)
+
     assert {:ok, image} = PdcDecoder.decode(bytes)
     [%{fill_color: fill_color}] = image.commands
     assert fill_color == 0xCB
@@ -51,7 +56,9 @@ defmodule Ide.Resources.SvgConverterTest do
       </svg>
     )
 
-    assert {:ok, %SvgConverter.ConversionResult{bytes: bytes}} = SvgConverter.convert_svg_string(svg)
+    assert {:ok, %SvgConverter.ConversionResult{bytes: bytes}} =
+             SvgConverter.convert_svg_string(svg)
+
     assert {:ok, image} = PdcDecoder.decode(bytes)
     [%{fill_color: fill_color}] = image.commands
     assert fill_color == 0xC0
@@ -70,7 +77,9 @@ defmodule Ide.Resources.SvgConverterTest do
       </svg>
     )
 
-    assert {:ok, %SvgConverter.ConversionResult{bytes: bytes}} = SvgConverter.convert_svg_string(svg)
+    assert {:ok, %SvgConverter.ConversionResult{bytes: bytes}} =
+             SvgConverter.convert_svg_string(svg)
+
     assert {:ok, converted} = PdcDecoder.decode(bytes)
     assert converted.width == 132
     assert converted.height == 126
@@ -107,7 +116,8 @@ defmodule Ide.Resources.SvgConverterTest do
   end
 
   test "nearest color mode can differ from truncate for mid-range channel values" do
-    svg = ~s(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect x="1" y="1" width="4" height="4" fill="#424242"/></svg>)
+    svg =
+      ~s(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect x="1" y="1" width="4" height="4" fill="#424242"/></svg>)
 
     assert {:ok, %{bytes: truncate_bytes}} = SvgConverter.convert(svg, color_mode: :truncate)
     assert {:ok, %{bytes: nearest_bytes}} = SvgConverter.convert(svg, color_mode: :nearest)

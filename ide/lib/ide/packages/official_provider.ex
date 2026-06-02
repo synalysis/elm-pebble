@@ -8,11 +8,13 @@ defmodule Ide.Packages.OfficialProvider do
   @default_base_url "https://package.elm-lang.org"
 
   @impl true
-  @spec search(String.t(), keyword()) :: {:ok, [Types.search_entry()]} | {:error, Types.catalog_error()}
+  @spec search(String.t(), keyword()) ::
+          {:ok, [Types.search_entry()]} | {:error, Types.catalog_error()}
   def search(query, opts), do: GenericProvider.search(query, with_defaults(opts))
 
   @impl true
-  @spec package_details(String.t(), keyword()) :: {:ok, Types.package_details()} | {:error, Types.catalog_error()}
+  @spec package_details(String.t(), keyword()) ::
+          {:ok, Types.package_details()} | {:error, Types.catalog_error()}
   def package_details(package, opts),
     do: GenericProvider.package_details(package, with_defaults(opts))
 
@@ -21,12 +23,14 @@ defmodule Ide.Packages.OfficialProvider do
   def versions(package, opts), do: GenericProvider.versions(package, with_defaults(opts))
 
   @impl true
-  @spec readme(String.t(), String.t(), keyword()) :: {:ok, String.t()} | {:error, Types.catalog_error()}
+  @spec readme(String.t(), String.t(), keyword()) ::
+          {:ok, String.t()} | {:error, Types.catalog_error()}
   def readme(package, version, opts),
     do: GenericProvider.readme(package, version, with_defaults(opts))
 
   @impl true
-  @spec package_release(String.t(), String.t(), keyword()) :: {:ok, map()} | {:error, Types.catalog_error()}
+  @spec package_release(String.t(), String.t(), keyword()) ::
+          {:ok, map()} | {:error, Types.catalog_error()}
   def package_release(package, version, opts),
     do: GenericProvider.package_release(package, version, with_defaults(opts))
 

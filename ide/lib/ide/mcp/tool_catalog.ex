@@ -83,12 +83,20 @@ defmodule Ide.Mcp.ToolCatalog do
     %{
       name: "templates.list",
       description: "List available project templates with labels and implied target types.",
-      inputSchema: %{type: "object", additionalProperties: JsonSchema.disallow_extra_properties(), properties: %{}}
+      inputSchema: %{
+        type: "object",
+        additionalProperties: JsonSchema.disallow_extra_properties(),
+        properties: %{}
+      }
     },
     %{
       name: "projects.list",
       description: "List known IDE projects.",
-      inputSchema: %{type: "object", additionalProperties: JsonSchema.disallow_extra_properties(), properties: %{}}
+      inputSchema: %{
+        type: "object",
+        additionalProperties: JsonSchema.disallow_extra_properties(),
+        properties: %{}
+      }
     },
     %{
       name: "projects.settings",
@@ -292,7 +300,11 @@ defmodule Ide.Mcp.ToolCatalog do
     %{
       name: "projects.graph",
       description: "Return project context graph with workspace and file counts.",
-      inputSchema: %{type: "object", additionalProperties: JsonSchema.disallow_extra_properties(), properties: %{}}
+      inputSchema: %{
+        type: "object",
+        additionalProperties: JsonSchema.disallow_extra_properties(),
+        properties: %{}
+      }
     },
     %{
       name: "audit.recent",
@@ -474,12 +486,20 @@ defmodule Ide.Mcp.ToolCatalog do
     %{
       name: "traces.policy",
       description: "Read effective trace retention policy defaults.",
-      inputSchema: %{type: "object", additionalProperties: JsonSchema.disallow_extra_properties(), properties: %{}}
+      inputSchema: %{
+        type: "object",
+        additionalProperties: JsonSchema.disallow_extra_properties(),
+        properties: %{}
+      }
     },
     %{
       name: "traces.policy_validate",
       description: "Validate effective trace retention policy and return safety findings.",
-      inputSchema: %{type: "object", additionalProperties: JsonSchema.disallow_extra_properties(), properties: %{}}
+      inputSchema: %{
+        type: "object",
+        additionalProperties: JsonSchema.disallow_extra_properties(),
+        properties: %{}
+      }
     },
     %{
       name: "debugger.state",
@@ -744,7 +764,11 @@ defmodule Ide.Mcp.ToolCatalog do
     %{
       name: "debugger.watch_profiles",
       description: "List watch profiles available to debugger launch contexts.",
-      inputSchema: %{type: "object", additionalProperties: JsonSchema.disallow_extra_properties(), properties: %{}}
+      inputSchema: %{
+        type: "object",
+        additionalProperties: JsonSchema.disallow_extra_properties(),
+        properties: %{}
+      }
     },
     %{
       name: "resources.vectors.list",
@@ -1579,5 +1603,4 @@ defmodule Ide.Mcp.ToolCatalog do
         tool
     end)
   end
-
 end

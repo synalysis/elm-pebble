@@ -206,8 +206,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Diagnostics do
         compare_external_fallback_reason =
           Util.map_scalar_string(compare_fp || %{}, :external_fallback_reason)
 
-        current_target_numeric_key = Util.map_scalar_string(current_fp || %{}, :target_numeric_key)
-        compare_target_numeric_key = Util.map_scalar_string(compare_fp || %{}, :target_numeric_key)
+        current_target_numeric_key =
+          Util.map_scalar_string(current_fp || %{}, :target_numeric_key)
+
+        compare_target_numeric_key =
+          Util.map_scalar_string(compare_fp || %{}, :target_numeric_key)
 
         current_target_numeric_key_source =
           Util.map_scalar_string(current_fp || %{}, :target_numeric_key_source)
@@ -215,8 +218,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Diagnostics do
         compare_target_numeric_key_source =
           Util.map_scalar_string(compare_fp || %{}, :target_numeric_key_source)
 
-        current_target_boolean_key = Util.map_scalar_string(current_fp || %{}, :target_boolean_key)
-        compare_target_boolean_key = Util.map_scalar_string(compare_fp || %{}, :target_boolean_key)
+        current_target_boolean_key =
+          Util.map_scalar_string(current_fp || %{}, :target_boolean_key)
+
+        compare_target_boolean_key =
+          Util.map_scalar_string(compare_fp || %{}, :target_boolean_key)
 
         current_target_boolean_key_source =
           Util.map_scalar_string(current_fp || %{}, :target_boolean_key_source)
@@ -334,17 +340,18 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Diagnostics do
 
   defp runtime_fingerprint(%{} = rt) do
     model = Map.get(rt, :model) || %{}
-    runtime = Map.get(model, "elm_executor") || Map.get(model, :elm_executor) || %{}
+    runtime = Map.get(model, "runtime_execution") || Map.get(model, :runtime_execution) || %{}
     protocol_messages = Map.get(rt, :protocol_messages)
     protocol_messages = if is_list(protocol_messages), do: protocol_messages, else: []
 
     fingerprint = %{
-      runtime_mode: Util.map_string(model, :elm_executor_mode),
+      runtime_mode: Util.map_string(model, :runtime_execution_mode),
       engine: Util.map_string(runtime, :engine),
       execution_backend: Util.map_scalar_string(runtime, :execution_backend),
       external_fallback_reason: Util.map_scalar_string(runtime, :external_fallback_reason),
       runtime_model_source:
-        Util.map_string(model, :runtime_model_source) || Util.map_string(runtime, :runtime_model_source),
+        Util.map_string(model, :runtime_model_source) ||
+          Util.map_string(runtime, :runtime_model_source),
       view_tree_source: Util.map_string(runtime, :view_tree_source),
       runtime_model_entry_count: Util.map_integer(runtime, :runtime_model_entry_count),
       view_tree_node_count: Util.map_integer(runtime, :view_tree_node_count),
@@ -363,9 +370,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Diagnostics do
         Util.map_string(model, :protocol_last_inbound_message) ||
           Util.map_string(Map.get(model, "runtime_model") || %{}, :protocol_last_inbound_message),
       runtime_model_sha256:
-        Util.map_string(model, :runtime_model_sha256) || Util.map_string(runtime, :runtime_model_sha256),
+        Util.map_string(model, :runtime_model_sha256) ||
+          Util.map_string(runtime, :runtime_model_sha256),
       view_tree_sha256:
-        Util.map_string(model, :runtime_view_tree_sha256) || Util.map_string(runtime, :view_tree_sha256)
+        Util.map_string(model, :runtime_view_tree_sha256) ||
+          Util.map_string(runtime, :view_tree_sha256)
     }
 
     if Enum.any?(Map.values(fingerprint), &(!is_nil(&1))), do: fingerprint, else: nil

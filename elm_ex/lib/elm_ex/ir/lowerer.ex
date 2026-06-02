@@ -17,11 +17,11 @@ defmodule ElmEx.IR.Lowerer do
   @typep payload_kind() :: :none | :single | :multi | :function_like
   @typep diagnostic() :: map()
   @typep constructor_lookup() :: %{
-          required(:local) => map(),
-          required(:unqualified) => map(),
-          required(:qualified) => map(),
-          optional(:alias_map) => map()
-        }
+           required(:local) => map(),
+           required(:unqualified) => map(),
+           required(:qualified) => map(),
+           optional(:alias_map) => map()
+         }
 
   @pebble_ui_window_stack_tag 1000
   @pebble_ui_window_node_tag 1001
@@ -1158,14 +1158,25 @@ defmodule ElmEx.IR.Lowerer do
     case qualify_constructor_target(resolved_target, lookup) do
       "Pebble.Ui.WindowStack" ->
         case rewritten_args do
-          [windows] -> tagged_constructor_value(@pebble_ui_window_stack_tag, [windows], "Pebble.Ui.WindowStack")
-          _ -> nil
+          [windows] ->
+            tagged_constructor_value(
+              @pebble_ui_window_stack_tag,
+              [windows],
+              "Pebble.Ui.WindowStack"
+            )
+
+          _ ->
+            nil
         end
 
       "Pebble.Ui.WindowNode" ->
         case rewritten_args do
           [window_id, layers] ->
-            tagged_constructor_value(@pebble_ui_window_node_tag, [window_id, layers], "Pebble.Ui.WindowNode")
+            tagged_constructor_value(
+              @pebble_ui_window_node_tag,
+              [window_id, layers],
+              "Pebble.Ui.WindowNode"
+            )
 
           _ ->
             nil
@@ -1174,7 +1185,11 @@ defmodule ElmEx.IR.Lowerer do
       "Pebble.Ui.CanvasLayer" ->
         case rewritten_args do
           [layer_id, ops] ->
-            tagged_constructor_value(@pebble_ui_canvas_layer_tag, [layer_id, ops], "Pebble.Ui.CanvasLayer")
+            tagged_constructor_value(
+              @pebble_ui_canvas_layer_tag,
+              [layer_id, ops],
+              "Pebble.Ui.CanvasLayer"
+            )
 
           _ ->
             nil

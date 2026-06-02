@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "bitmap_bitmapstaticbticon",
+      "base_name": "BtIcon",
+      "ctor": "BitmapStaticBtIcon",
+      "filename": "BitmapStaticBtIcon.png",
+      "mime": "image/png",
+      "bytes": 238,
+      "width": 30,
+      "height": 30
+    }
+  ]
+}

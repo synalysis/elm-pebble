@@ -18,7 +18,11 @@ defmodule Ide.GitHub.RepositoriesTest do
       Jason.encode!(%{"access_token" => "test-token", "user_login" => "pebbledev"})
     )
 
-    Application.put_env(:ide, Ide.GitHub, Keyword.put(original_github, :credentials_path, credentials_path))
+    Application.put_env(
+      :ide,
+      Ide.GitHub,
+      Keyword.put(original_github, :credentials_path, credentials_path)
+    )
 
     on_exit(fn ->
       Application.put_env(:ide, Ide.GitHub, original_github)
@@ -66,6 +70,7 @@ defmodule Ide.GitHub.RepositoriesTest do
     request_fun = fn method, url, _headers, body, _timeout ->
       assert method == :post
       assert url == "https://api.github.com/user/repos"
+
       assert Jason.decode!(body) == %{
                "name" => "counter-app",
                "private" => false,
@@ -105,7 +110,10 @@ defmodule Ide.GitHub.RepositoriesTest do
       assert Jason.decode!(body)["name"] == "counter-app"
 
       {:ok,
-       %{status: 201, body: %{"html_url" => "https://github.com/my-org/counter-app", "private" => false}}}
+       %{
+         status: 201,
+         body: %{"html_url" => "https://github.com/my-org/counter-app", "private" => false}
+       }}
     end
 
     assert {:ok, created} =

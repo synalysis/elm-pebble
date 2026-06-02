@@ -55,14 +55,14 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusTest do
   for template <- DebuggerTemplateCorpus.subscription_step_template_keys() do
     @tag :template_corpus_step
     @tag timeout: 180_000
-    test "subscription step uses Core IR for #{template}" do
+    test "subscription step uses runtime execution for #{template}" do
       template = unquote(template)
 
       assert {:ok, %{slug: slug, project: project}} =
                DebuggerTemplateCorpus.bootstrap_template(template, cleanup: false)
 
       try do
-        assert :ok = DebuggerTemplateCorpus.assert_subscription_steps_core_ir!(slug, template)
+        assert :ok = DebuggerTemplateCorpus.assert_subscription_steps_runtime!(slug, template)
       after
         _ = Ide.Projects.delete_project(project)
       end

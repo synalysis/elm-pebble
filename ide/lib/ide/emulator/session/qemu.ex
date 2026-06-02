@@ -65,7 +65,11 @@ defmodule Ide.Emulator.Session.Qemu do
   end
 
   @spec machine_args(String.t(), String.t() | nil, features()) :: [String.t()]
-  def machine_args(platform, spi_image_path, qemu_features \\ %{new_qemu?: false, machines: MapSet.new()}) do
+  def machine_args(
+        platform,
+        spi_image_path,
+        qemu_features \\ %{new_qemu?: false, machines: MapSet.new()}
+      ) do
     spi_pflash =
       if qemu_features.new_qemu? do
         ["-drive", "if=none,id=spi-flash,file=#{spi_image_path},format=raw"]
@@ -153,7 +157,8 @@ defmodule Ide.Emulator.Session.Qemu do
     ])
   end
 
-  @spec make_persist_dir(String.t(), String.t()) :: {:ok, String.t()} | {:error, Types.session_tuple_error()}
+  @spec make_persist_dir(String.t(), String.t()) ::
+          {:ok, String.t()} | {:error, Types.session_tuple_error()}
   def make_persist_dir(platform, project_slug) do
     dir = Path.join(emulator_state_dir(project_slug, platform), "pypkjs")
 
@@ -163,7 +168,8 @@ defmodule Ide.Emulator.Session.Qemu do
     end
   end
 
-  @spec make_spi_image(String.t(), String.t()) :: {:ok, String.t()} | {:error, Types.session_error()}
+  @spec make_spi_image(String.t(), String.t()) ::
+          {:ok, String.t()} | {:error, Types.session_error()}
   def make_spi_image(platform, project_slug) do
     source_dir = image_dir(platform)
     raw = Path.join(source_dir, "qemu_spi_flash.bin")
@@ -189,7 +195,8 @@ defmodule Ide.Emulator.Session.Qemu do
     end
   end
 
-  @spec reset_spi_image(String.t(), String.t()) :: {:ok, String.t()} | {:error, Types.session_error()}
+  @spec reset_spi_image(String.t(), String.t()) ::
+          {:ok, String.t()} | {:error, Types.session_error()}
   def reset_spi_image(platform, path) do
     source_dir = image_dir(platform)
     raw = Path.join(source_dir, "qemu_spi_flash.bin")

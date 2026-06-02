@@ -293,9 +293,9 @@ defmodule Ide.ProjectsTest do
 
     File.write!(
       tmp_pdc,
-      <<0x50, 0x44, 0x43, 0x49, 0x1D, 0x00, 0x00, 0x00, 0x01, 0x00, 0x14, 0x00, 0x14, 0x00,
-        0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0xC0, 0x00, 0x00, 0x03, 0x00, 0x02, 0x00, 0x12,
-        0x00, 0x0A, 0x00, 0x02, 0x00, 0x12, 0x00, 0x02, 0x00>>
+      <<0x50, 0x44, 0x43, 0x49, 0x1D, 0x00, 0x00, 0x00, 0x01, 0x00, 0x14, 0x00, 0x14, 0x00, 0x01,
+        0x00, 0x01, 0x00, 0x00, 0x00, 0xC0, 0x00, 0x00, 0x03, 0x00, 0x02, 0x00, 0x12, 0x00, 0x0A,
+        0x00, 0x02, 0x00, 0x12, 0x00, 0x02, 0x00>>
     )
 
     on_exit(fn -> File.rm(tmp_pdc) end)
@@ -381,7 +381,8 @@ defmodule Ide.ProjectsTest do
     assert {:ok, vector_entries} = Projects.list_vector_resources(project)
     assert [%{ctor: "VectorStaticPiece"}] = vector_entries
 
-    svg_path = Path.join(System.tmp_dir!(), "vector_upload_#{System.unique_integer([:positive])}.svg")
+    svg_path =
+      Path.join(System.tmp_dir!(), "vector_upload_#{System.unique_integer([:positive])}.svg")
 
     File.write!(
       svg_path,
@@ -510,7 +511,11 @@ defmodule Ide.ProjectsTest do
     assert "../protocol/src" in phone_dirs
     refute Enum.any?(phone_dirs, &String.ends_with?(&1, "phone-pebble-stubs/src"))
     refute Enum.any?(phone_dirs, &String.ends_with?(&1, "shared/elm-companion"))
-    assert Enum.any?(phone_dirs, &(&1 == Ide.InternalPackages.pebble_companion_core_elm_src_abs()))
+
+    assert Enum.any?(
+             phone_dirs,
+             &(&1 == Ide.InternalPackages.pebble_companion_core_elm_src_abs())
+           )
 
     assert Enum.any?(
              phone_dirs,
@@ -667,7 +672,11 @@ defmodule Ide.ProjectsTest do
     phone_dirs = Map.fetch!(phone_decoded, "source-directories")
     refute Enum.any?(phone_dirs, &String.ends_with?(&1, "phone-pebble-stubs/src"))
     refute Enum.any?(phone_dirs, &String.ends_with?(&1, "shared/elm-companion"))
-    assert Enum.any?(phone_dirs, &(&1 == Ide.InternalPackages.pebble_companion_core_elm_src_abs()))
+
+    assert Enum.any?(
+             phone_dirs,
+             &(&1 == Ide.InternalPackages.pebble_companion_core_elm_src_abs())
+           )
 
     assert Enum.any?(
              phone_dirs,
@@ -1117,7 +1126,10 @@ defmodule Ide.ProjectsTest do
              })
 
     assert {:error, :protected_path} = Projects.delete_source_path(project, "watch", "src")
-    assert {:error, :protected_path} = Projects.delete_source_path(project, "watch", "src/Main.elm")
+
+    assert {:error, :protected_path} =
+             Projects.delete_source_path(project, "watch", "src/Main.elm")
+
     assert {:ok, _} = Projects.read_source_file(project, "watch", "src/Main.elm")
   end
 
@@ -1126,7 +1138,10 @@ defmodule Ide.ProjectsTest do
 
     assert {:ok, user} =
              %User{}
-             |> User.changeset(%{firebase_uid: "legacy-artifacts", email: "legacy-artifacts@example.test"})
+             |> User.changeset(%{
+               firebase_uid: "legacy-artifacts",
+               email: "legacy-artifacts@example.test"
+             })
              |> Repo.insert()
 
     legacy = Path.join(Projects.projects_root(), slug)
@@ -1150,7 +1165,11 @@ defmodule Ide.ProjectsTest do
     File.rm_rf!(Path.join(scoped, "watch/src"))
     File.rm!(Path.join(scoped, "watch/elm.json"))
     File.mkdir_p!(Path.join(scoped, "watch/resources"))
-    File.write!(Path.join(scoped, "watch/resources/bitmaps.json"), ~s({"schema_version":2,"entries":[]}))
+
+    File.write!(
+      Path.join(scoped, "watch/resources/bitmaps.json"),
+      ~s({"schema_version":2,"entries":[]})
+    )
 
     File.mkdir_p!(Path.join(legacy, "watch/src"))
     File.write!(Path.join(legacy, "watch/elm.json"), ~s({"type":"application"}))
@@ -1337,6 +1356,7 @@ defmodule Ide.ProjectsTest do
 
     assert project.name == "Github Import"
     assert project.slug == "github-import"
+
     assert project.github == %{
              "owner" => "pebbledev",
              "repo" => "my-watchface",
@@ -1391,7 +1411,10 @@ defmodule Ide.ProjectsTest do
              })
 
     assert {:ok, watch_source} = Projects.read_source_file(project, "watch", "src/Main.elm")
-    assert {:ok, companion_source} = Projects.read_source_file(project, "phone", "src/CompanionApp.elm")
+
+    assert {:ok, companion_source} =
+             Projects.read_source_file(project, "phone", "src/CompanionApp.elm")
+
     assert {:ok, _} = Debugger.start_session(slug)
 
     assert {:ok, after_watch} =

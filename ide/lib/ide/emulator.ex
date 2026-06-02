@@ -55,7 +55,8 @@ defmodule Ide.Emulator do
   @spec runtime_status(String.t() | nil) :: Types.runtime_status()
   def runtime_status(platform \\ nil), do: RuntimeSetup.runtime_status(platform)
 
-  @spec install_runtime_dependencies(String.t() | nil) :: {:ok, Types.install_dependencies_result()}
+  @spec install_runtime_dependencies(String.t() | nil) ::
+          {:ok, Types.install_dependencies_result()}
   def install_runtime_dependencies(platform \\ nil),
     do: RuntimeSetup.install_runtime_dependencies(platform)
 

@@ -50,7 +50,8 @@ defmodule Ide.Debugger.Types.ElmcSurfaceFields do
     end
   end
 
-  @spec manifest_fields(CompileIngestAttrs.t() | CompileIngestAttrs.wire_map()) :: manifest_fields()
+  @spec manifest_fields(CompileIngestAttrs.t() | CompileIngestAttrs.wire_map()) ::
+          manifest_fields()
   def manifest_fields(attrs) when is_map(attrs) do
     strict = field(attrs, :strict) || false
     cached = field(attrs, :cached) || false
@@ -75,7 +76,10 @@ defmodule Ide.Debugger.Types.ElmcSurfaceFields do
     end
   end
 
-  @spec merge_diagnostic_preview(wire_map(), CompileIngestAttrs.t() | CompileIngestAttrs.wire_map()) ::
+  @spec merge_diagnostic_preview(
+          wire_map(),
+          CompileIngestAttrs.t() | CompileIngestAttrs.wire_map()
+        ) ::
           wire_map()
   def merge_diagnostic_preview(fields, attrs) when is_map(fields) and is_map(attrs) do
     cond do
@@ -89,17 +93,18 @@ defmodule Ide.Debugger.Types.ElmcSurfaceFields do
     end
   end
 
-  @spec ingest_check_fields(CompileIngestAttrs.t() | CompileIngestAttrs.wire_map()) :: check_fields()
+  @spec ingest_check_fields(CompileIngestAttrs.t() | CompileIngestAttrs.wire_map()) ::
+          check_fields()
   def ingest_check_fields(attrs) when is_map(attrs) do
     attrs |> check_fields() |> merge_diagnostic_preview(attrs)
   end
 
-  @spec ingest_compile_fields(CompileIngestAttrs.t() | CompileIngestAttrs.wire_map()) :: compile_fields()
+  @spec ingest_compile_fields(CompileIngestAttrs.t() | CompileIngestAttrs.wire_map()) ::
+          compile_fields()
   def ingest_compile_fields(attrs) when is_map(attrs) do
     attrs
     |> compile_fields()
     |> merge_diagnostic_preview(attrs)
-    |> Map.drop(["elm_executor_metadata", "elm_executor_core_ir_b64"])
   end
 
   @spec ingest_manifest_fields(CompileIngestAttrs.t() | CompileIngestAttrs.wire_map()) ::
@@ -112,8 +117,6 @@ defmodule Ide.Debugger.Types.ElmcSurfaceFields do
           artifact_fields()
   def optional_runtime_artifacts(attrs) when is_map(attrs) do
     %{}
-    |> maybe_put_artifact("elm_executor_metadata", field(attrs, :elm_executor_metadata))
-    |> maybe_put_artifact("elm_executor_core_ir_b64", field(attrs, :elm_executor_core_ir_b64))
     |> maybe_put_artifact("debugger_contract", field(attrs, :debugger_contract))
     |> maybe_put_artifact("debugger_contract_b64", field(attrs, :debugger_contract_b64))
     |> maybe_put_artifact("debugger_contract_version", field(attrs, :debugger_contract_version))
@@ -154,7 +157,8 @@ defmodule Ide.Debugger.Types.ElmcSurfaceFields do
   def compile_source_root_to_target(:phone), do: :companion
   def compile_source_root_to_target(_value), do: nil
 
-  @spec field(CompileIngestAttrs.t() | CompileIngestAttrs.wire_map(), atom()) :: Types.wire_input() | nil
+  @spec field(CompileIngestAttrs.t() | CompileIngestAttrs.wire_map(), atom()) ::
+          Types.wire_input() | nil
   defp field(attrs, key) when is_map(attrs) and is_atom(key) do
     Map.get(attrs, key) || Map.get(attrs, Atom.to_string(key))
   end
@@ -163,7 +167,8 @@ defmodule Ide.Debugger.Types.ElmcSurfaceFields do
   defp bool_wire(true), do: "true"
   defp bool_wire(false), do: "false"
 
-  @spec maybe_put_artifact(artifact_fields(), String.t(), map() | String.t() | nil) :: artifact_fields()
+  @spec maybe_put_artifact(artifact_fields(), String.t(), map() | String.t() | nil) ::
+          artifact_fields()
   defp maybe_put_artifact(map, key, value) when is_map(map) and is_binary(key) do
     case value do
       v when is_map(v) or is_binary(v) -> Map.put(map, key, v)

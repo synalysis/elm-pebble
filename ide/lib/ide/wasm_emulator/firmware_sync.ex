@@ -30,7 +30,9 @@ defmodule Ide.WasmEmulator.FirmwareSync do
         |> Enum.count(&copy_platform_firmware/1)
 
       if copied > 0 do
-        Logger.info("[WasmEmulator] synced SDK firmware for #{copied} platform(s) into #{WasmEmulator.asset_root()}")
+        Logger.info(
+          "[WasmEmulator] synced SDK firmware for #{copied} platform(s) into #{WasmEmulator.asset_root()}"
+        )
       else
         Logger.warning("[WasmEmulator] no SDK firmware found under #{sdk_root}")
       end
@@ -141,8 +143,12 @@ defmodule Ide.WasmEmulator.FirmwareSync do
 
       File.regular?(compressed) ->
         case System.cmd("bunzip2", ["-ck", compressed], stderr_to_stdout: true) do
-          {output, 0} -> File.write!(dest, output); :ok
-          {output, _} -> {:error, {:bunzip2_failed, output}}
+          {output, 0} ->
+            File.write!(dest, output)
+            :ok
+
+          {output, _} ->
+            {:error, {:bunzip2_failed, output}}
         end
 
       true ->
@@ -169,8 +175,12 @@ defmodule Ide.WasmEmulator.FirmwareSync do
     path = Path.join(dest_dir, "manifest.json")
 
     case Jason.encode(payload) do
-      {:ok, json} -> File.write!(path, json <> "\n"); :ok
-      {:error, reason} -> {:error, reason}
+      {:ok, json} ->
+        File.write!(path, json <> "\n")
+        :ok
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -245,6 +255,8 @@ defmodule Ide.WasmEmulator.FirmwareSync do
   defp cpu_for_platform(_), do: "cortex-m4"
 
   @spec storage_for_platform(String.t()) :: String.t()
-  defp storage_for_platform(platform) when platform in ["aplite", "diorite", "flint"], do: "mtdblock"
+  defp storage_for_platform(platform) when platform in ["aplite", "diorite", "flint"],
+    do: "mtdblock"
+
   defp storage_for_platform(_), do: "pflash"
 end

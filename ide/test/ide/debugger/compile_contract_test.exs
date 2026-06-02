@@ -63,7 +63,11 @@ defmodule Ide.Debugger.CompileContractTest do
 
   test "RuntimeArtifacts.introspect prefers debugger_contract on shell" do
     legacy = %{"msg_constructors" => ["Legacy"]}
-    contract = %{"msg_constructors" => ["Contract"], "contract_version" => CompileContract.version()}
+
+    contract = %{
+      "msg_constructors" => ["Contract"],
+      "contract_version" => CompileContract.version()
+    }
 
     shell = %{
       "debugger_contract" => contract,

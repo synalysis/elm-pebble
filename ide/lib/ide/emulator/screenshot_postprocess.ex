@@ -189,7 +189,7 @@ defmodule Ide.Emulator.ScreenshotPostprocess do
   end
 
   defp component(value, shift, max) do
-    raw = (value >>> shift) &&& 0xFF
+    raw = value >>> shift &&& 0xFF
     if max == 255, do: raw, else: div(raw * 255, max)
   end
 

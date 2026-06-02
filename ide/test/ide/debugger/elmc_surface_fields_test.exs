@@ -19,30 +19,32 @@ defmodule Ide.Debugger.ElmcSurfaceFieldsTest do
     assert length(fields["elmc_diagnostic_preview"]) == 1
   end
 
-  test "compile_fields strips artifact keys from ingest_compile_fields" do
+  test "compile_fields includes elmx artifact keys from ingest_compile_fields" do
+    manifest = %{"contract" => "elmx.runtime_executor.v1"}
+
     fields =
       ElmcSurfaceFields.ingest_compile_fields(%{
         status: :ok,
         compiled_path: "watch/src/Main.elm",
         revision: "rev1",
-        elm_executor_metadata: %{"engine" => "test"},
-        elm_executor_core_ir_b64: "abc"
+        elmx_manifest: manifest,
+        elmx_revision: "rev1"
       })
 
     assert fields["elmc_compile_status"] == "ok"
-    refute Map.has_key?(fields, "elm_executor_metadata")
-    refute Map.has_key?(fields, "elm_executor_core_ir_b64")
+    assert fields["elmx_manifest"] == manifest
+    assert fields["elmx_revision"] == "rev1"
   end
 
   test "optional_runtime_artifacts and compile_artifact_target route by source_root" do
     artifacts =
       ElmcSurfaceFields.optional_runtime_artifacts(%{
-        elm_executor_metadata: %{"n" => 1},
-        elm_executor_core_ir_b64: "ir"
+        elmx_manifest: %{"contract" => "elmx.runtime_executor.v1"},
+        elmx_revision: "rev1"
       })
 
-    assert artifacts["elm_executor_metadata"]["n"] == 1
-    assert artifacts["elm_executor_core_ir_b64"] == "ir"
+    assert artifacts["elmx_manifest"]["contract"] == "elmx.runtime_executor.v1"
+    assert artifacts["elmx_revision"] == "rev1"
 
     contract = %{"msg_constructors" => ["A"]}
 
@@ -55,6 +57,7 @@ defmodule Ide.Debugger.ElmcSurfaceFieldsTest do
              "debugger_contract_b64" => "abc",
              "debugger_contract_version" => "debugger_contract.v1"
            }
+
     assert ElmcSurfaceFields.compile_artifact_target(%{source_root: "watch"}) == :watch
     assert ElmcSurfaceFields.compile_artifact_target(%{source_root: "protocol"}) == nil
     assert ElmcSurfaceFields.compile_artifact_target(%{source_root: "phone"}) == :companion

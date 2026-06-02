@@ -185,7 +185,12 @@ defmodule Elmc.Runtime.Generator do
     do_find_matching_brace(source, open_idx, byte_size(source), 0)
   end
 
-  @spec do_find_matching_brace(Types.runtime_source(), non_neg_integer(), non_neg_integer(), non_neg_integer()) ::
+  @spec do_find_matching_brace(
+          Types.runtime_source(),
+          non_neg_integer(),
+          non_neg_integer(),
+          non_neg_integer()
+        ) ::
           Types.brace_result()
   defp do_find_matching_brace(_source, idx, source_size, _depth) when idx >= source_size,
     do: {:error, :unbalanced_braces}
@@ -288,7 +293,8 @@ defmodule Elmc.Runtime.Generator do
     preamble <> kept_bodies <> "\n"
   end
 
-  @spec maybe_drop_process_globals(Types.runtime_source(), Types.keep_set()) :: Types.runtime_source()
+  @spec maybe_drop_process_globals(Types.runtime_source(), Types.keep_set()) ::
+          Types.runtime_source()
   defp maybe_drop_process_globals(preamble, kept_names) do
     process_api =
       MapSet.new([

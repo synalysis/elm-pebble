@@ -6,6 +6,7 @@ defmodule Ide.Emulator.Session do
   require Logger
 
   alias Ide.Emulator.{InstallPrep, SlotLimiter, Types}
+
   alias Ide.Emulator.Session.{
     Config,
     Control,
@@ -79,7 +80,8 @@ defmodule Ide.Emulator.Session do
     :exit, _ -> {:error, :not_ready}
   end
 
-  @spec claim_vnc_tcp(pid()) :: {:ok, port(), binary()} | {:error, Types.session_atom_error() | :not_ready}
+  @spec claim_vnc_tcp(pid()) ::
+          {:ok, port(), binary()} | {:error, Types.session_atom_error() | :not_ready}
   def claim_vnc_tcp(pid) do
     GenServer.call(pid, :claim_vnc_tcp, 5_000)
   catch
@@ -165,7 +167,6 @@ defmodule Ide.Emulator.Session do
       {:ok, state}
     else
       {:error, reason} ->
-  
         {:stop, reason}
     end
   end
@@ -185,7 +186,8 @@ defmodule Ide.Emulator.Session do
     if ProcessHost.live_pid?(pid) do
       {:reply, {:ok, pid}, state}
     else
-      {:reply, {:error, :embedded_protocol_router_not_started}, %{state | protocol_router_pid: nil}}
+      {:reply, {:error, :embedded_protocol_router_not_started},
+       %{state | protocol_router_pid: nil}}
     end
   end
 
@@ -273,8 +275,12 @@ defmodule Ide.Emulator.Session do
   def pypkjs_args(state), do: Pypkjs.args(state)
 
   @spec machine_args(String.t(), String.t() | nil, Qemu.features()) :: [String.t()]
-  def machine_args(platform, spi_image_path, qemu_features \\ %{new_qemu?: false, machines: MapSet.new()}),
-    do: Qemu.machine_args(platform, spi_image_path, qemu_features)
+  def machine_args(
+        platform,
+        spi_image_path,
+        qemu_features \\ %{new_qemu?: false, machines: MapSet.new()}
+      ),
+      do: Qemu.machine_args(platform, spi_image_path, qemu_features)
 
   @spec pypkjs_command(String.t()) ::
           {:ok, String.t(), [String.t()]} | {:error, Types.session_atom_error()}
@@ -286,7 +292,8 @@ defmodule Ide.Emulator.Session do
   @spec runtime_status(String.t() | nil) :: Types.runtime_status()
   def runtime_status(platform \\ nil), do: RuntimeSetup.runtime_status(platform)
 
-  @spec install_runtime_dependencies(String.t() | nil) :: {:ok, Types.install_dependencies_result()}
+  @spec install_runtime_dependencies(String.t() | nil) ::
+          {:ok, Types.install_dependencies_result()}
   def install_runtime_dependencies(platform \\ nil),
     do: RuntimeSetup.install_runtime_dependencies(platform)
 
@@ -296,4 +303,3 @@ defmodule Ide.Emulator.Session do
 
   defp config(key, default), do: Config.config(key, default)
 end
-

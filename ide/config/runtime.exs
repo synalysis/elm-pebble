@@ -165,7 +165,8 @@ if config_env() == :prod do
     if public_mode do
       %{}
     else
-      settings_path = System.get_env("SETTINGS_FILE") || Path.join(data_root, "config/settings.json")
+      settings_path =
+        System.get_env("SETTINGS_FILE") || Path.join(data_root, "config/settings.json")
 
       case File.read(settings_path) do
         {:ok, content} ->

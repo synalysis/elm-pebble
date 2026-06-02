@@ -116,13 +116,16 @@ defmodule ElmExTest do
     File.mkdir_p!(Path.join(override, "Companion"))
     File.mkdir_p!(Path.join(defaults, "Companion"))
 
-    File.write!(Path.join(root, "elm.json"), Jason.encode!(%{
-      "type" => "application",
-      "source-directories" => ["src", "override", "defaults"],
-      "elm-version" => "0.19.1",
-      "dependencies" => %{"direct" => %{}, "indirect" => %{}},
-      "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
-    }))
+    File.write!(
+      Path.join(root, "elm.json"),
+      Jason.encode!(%{
+        "type" => "application",
+        "source-directories" => ["src", "override", "defaults"],
+        "elm-version" => "0.19.1",
+        "dependencies" => %{"direct" => %{}, "indirect" => %{}},
+        "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
+      })
+    )
 
     File.write!(Path.join(src, "Main.elm"), """
     module Main exposing (main)
@@ -163,17 +166,22 @@ defmodule ElmExTest do
   end
 
   test "generated frontend keeps outer update branches after nested case expression" do
-    root = Path.join(System.tmp_dir!(), "elm-ex-nested-case-#{System.unique_integer([:positive])}")
+    root =
+      Path.join(System.tmp_dir!(), "elm-ex-nested-case-#{System.unique_integer([:positive])}")
+
     src = Path.join(root, "src")
     File.mkdir_p!(src)
 
-    File.write!(Path.join(root, "elm.json"), Jason.encode!(%{
-      "type" => "application",
-      "source-directories" => ["src"],
-      "elm-version" => "0.19.1",
-      "dependencies" => %{"direct" => %{}, "indirect" => %{}},
-      "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
-    }))
+    File.write!(
+      Path.join(root, "elm.json"),
+      Jason.encode!(%{
+        "type" => "application",
+        "source-directories" => ["src"],
+        "elm-version" => "0.19.1",
+        "dependencies" => %{"direct" => %{}, "indirect" => %{}},
+        "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
+      })
+    )
 
     File.write!(Path.join(src, "Main.elm"), """
     module Main exposing (..)
@@ -202,7 +210,11 @@ defmodule ElmExTest do
     update = Enum.find(main.declarations, &(&1.name == "update"))
     %{op: :case, branches: branches} = update.expr
 
-    assert Enum.map(branches, & &1.pattern.name) == ["CatalogReceived", "CatalogReceived", "SvgReceived"]
+    assert Enum.map(branches, & &1.pattern.name) == [
+             "CatalogReceived",
+             "CatalogReceived",
+             "SvgReceived"
+           ]
   end
 
   # ---------------------------------------------------------------------------
@@ -641,13 +653,16 @@ defmodule ElmExTest do
     src = Path.join(root, "src")
     File.mkdir_p!(src)
 
-    File.write!(Path.join(root, "elm.json"), Jason.encode!(%{
-      "type" => "application",
-      "source-directories" => ["src"],
-      "elm-version" => "0.19.1",
-      "dependencies" => %{"direct" => %{}, "indirect" => %{}},
-      "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
-    }))
+    File.write!(
+      Path.join(root, "elm.json"),
+      Jason.encode!(%{
+        "type" => "application",
+        "source-directories" => ["src"],
+        "elm-version" => "0.19.1",
+        "dependencies" => %{"direct" => %{}, "indirect" => %{}},
+        "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
+      })
+    )
 
     File.write!(Path.join(src, "Main.elm"), main_source)
     on_exit(fn -> File.rm_rf(root) end)

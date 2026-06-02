@@ -80,11 +80,15 @@ defmodule Ide.AppStore.Publisher do
   end
 
   def publish(project, opts) when is_map(project) do
-    publish(%Project{
-      name: Map.get(project, :name) || Map.get(project, "name"),
-      slug: Map.get(project, :slug) || Map.get(project, "slug") || "project",
-      release_defaults: Map.get(project, :release_defaults) || Map.get(project, "release_defaults")
-    }, opts)
+    publish(
+      %Project{
+        name: Map.get(project, :name) || Map.get(project, "name"),
+        slug: Map.get(project, :slug) || Map.get(project, "slug") || "project",
+        release_defaults:
+          Map.get(project, :release_defaults) || Map.get(project, "release_defaults")
+      },
+      opts
+    )
   end
 
   def publish(_project, _opts), do: {:error, :invalid_project}
@@ -104,23 +108,23 @@ defmodule Ide.AppStore.Publisher do
       uploaded_output = upload_summary(response)
 
       {:ok,
-       output ++
-         [
-           "Developer link check successful.",
-           "PBW Metadata",
-           "Using PBW: #{ctx.artifact_path}",
-           "PBW app UUID: #{metadata.app_uuid}",
-           "Name: #{metadata.app_name}",
-           "PBW Version: #{metadata.version}",
-           "Publish Version: #{ctx.version}",
-           publish_version_warning(metadata.version, ctx.version),
-           PublishFlags.visibility_line(ctx.visibility),
-           release_notes_line(ctx.release_notes),
-           store_icons_line(ctx),
-           "Platforms: #{Enum.join(metadata.platforms, ", ")}"
-         ]
-         |> Enum.reject(&is_nil/1)
-         |> Kernel.++(action_output ++ uploaded_output)}
+       (output ++
+          [
+            "Developer link check successful.",
+            "PBW Metadata",
+            "Using PBW: #{ctx.artifact_path}",
+            "PBW app UUID: #{metadata.app_uuid}",
+            "Name: #{metadata.app_name}",
+            "PBW Version: #{metadata.version}",
+            "Publish Version: #{ctx.version}",
+            publish_version_warning(metadata.version, ctx.version),
+            PublishFlags.visibility_line(ctx.visibility),
+            release_notes_line(ctx.release_notes),
+            store_icons_line(ctx),
+            "Platforms: #{Enum.join(metadata.platforms, ", ")}"
+          ])
+       |> Enum.reject(&is_nil/1)
+       |> Kernel.++(action_output ++ uploaded_output)}
     end
   end
 

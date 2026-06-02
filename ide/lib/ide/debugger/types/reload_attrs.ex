@@ -4,6 +4,7 @@ defmodule Ide.Debugger.Types.ReloadAttrs do
   """
 
   alias Ide.Debugger.Types
+
   @type t :: %{
           optional(:rel_path) => String.t() | nil,
           optional(:reason) => String.t(),

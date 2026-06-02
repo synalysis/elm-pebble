@@ -9,8 +9,14 @@ defmodule Ide.Debugger.ConfigurationSession do
   alias Ide.Debugger.Types
 
   @type apply_step_fn ::
-          (Types.runtime_state(), Types.surface_target(), String.t(), Types.subscription_payload() | map(),
-           String.t(), String.t() -> Types.runtime_state())
+          (Types.runtime_state(),
+           Types.surface_target(),
+           String.t(),
+           Types.subscription_payload()
+           | map(),
+           String.t(),
+           String.t() ->
+             Types.runtime_state())
 
   @type ensure_phone_fn :: (Types.runtime_state() -> Types.runtime_state())
 

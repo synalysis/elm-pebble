@@ -12,6 +12,11 @@ defmodule Elmx.MessageDecodeTest do
     assert MessageDecode.decode("Tick 7") == {:Tick, 7}
   end
 
+  test "decode message with True or False suffix" do
+    assert MessageDecode.decode("ClockStyle24h True") == {:ClockStyle24h, true}
+    assert MessageDecode.decode("HealthSupported False") == {:HealthSupported, false}
+  end
+
   test "decode FrameTick with JSON payload" do
     msg = "FrameTick " <> Jason.encode!(%{"dtMs" => 16, "elapsedMs" => 32, "frame" => 2})
     assert MessageDecode.decode(msg) == {:FrameTick, %{"dtMs" => 16, "elapsedMs" => 32, "frame" => 2}}
@@ -229,6 +234,23 @@ defmodule Elmx.MessageDecodeTest do
     wire = %{"ctor" => "MinuteChanged", "args" => [6]}
 
     assert MessageDecode.decode("MinuteChanged 6", wire) == {:MinuteChanged, 6}
+  end
+
+  test "decode bare CurrentDateTime record map using parent message label" do
+    wire = %{
+      "year" => 2026,
+      "month" => 6,
+      "day" => 1,
+      "hour" => 22,
+      "minute" => 5,
+      "second" => 10,
+      "utcOffsetMinutes" => 120,
+      "dayOfWeek" => %{"ctor" => "Monday", "args" => []}
+    }
+
+    assert {:CurrentDateTime, payload} = MessageDecode.decode("CurrentDateTime", wire)
+    assert Map.get(payload, "dayOfWeek") == :Monday
+    assert Map.get(payload, "minute") == 5
   end
 
   test "decode CurrentDateTime wire record matches parent ctor" do

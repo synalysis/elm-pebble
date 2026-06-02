@@ -18,7 +18,8 @@ defmodule Ide.Debugger.WireValuesTest do
 
       assert WireValues.map_get_first_present(record, ["latitudeE6", "battery_percent"]) == 0
 
-      assert WireValues.map_get_first_present(%{"online" => false}, ["online", "charging"]) == false
+      assert WireValues.map_get_first_present(%{"online" => false}, ["online", "charging"]) ==
+               false
 
       assert WireValues.map_get_first_present(%{}, ["missing"]) == nil
     end

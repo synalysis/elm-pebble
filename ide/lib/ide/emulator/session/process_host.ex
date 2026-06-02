@@ -4,7 +4,8 @@ defmodule Ide.Emulator.Session.ProcessHost do
   alias Ide.Emulator.Session.Qemu
   alias Ide.Emulator.Types
 
-  @spec start_daemon(String.t(), [String.t()], String.t()) :: {:ok, pid()} | {:error, Types.session_tuple_error()}
+  @spec start_daemon(String.t(), [String.t()], String.t()) ::
+          {:ok, pid()} | {:error, Types.session_tuple_error()}
   def start_daemon(command, args, prefix) do
     case MuonTrap.Daemon.start_link(command, args,
            log_output: :debug,
@@ -16,13 +17,15 @@ defmodule Ide.Emulator.Session.ProcessHost do
     end
   end
 
-  @spec wait_for_daemon(pid(), pos_integer(), timeout()) :: :ok | {:error, Types.session_tuple_error()}
+  @spec wait_for_daemon(pid(), pos_integer(), timeout()) ::
+          :ok | {:error, Types.session_tuple_error()}
   def wait_for_daemon(pid, port, timeout_ms) do
     deadline = System.monotonic_time(:millisecond) + timeout_ms
     wait_for_daemon(pid, port, deadline, nil)
   end
 
-  @spec wait_for_qemu_boot(pid(), pos_integer(), timeout()) :: :ok | {:error, Types.session_error()}
+  @spec wait_for_qemu_boot(pid(), pos_integer(), timeout()) ::
+          :ok | {:error, Types.session_error()}
   def wait_for_qemu_boot(pid, console_port, timeout_ms) do
     deadline = System.monotonic_time(:millisecond) + timeout_ms
     markers = Qemu.boot_markers()
@@ -32,7 +35,8 @@ defmodule Ide.Emulator.Session.ProcessHost do
     end
   end
 
-  @spec allocate_ports(pos_integer()) :: {:ok, [pos_integer()]} | {:error, Types.session_tuple_error()}
+  @spec allocate_ports(pos_integer()) ::
+          {:ok, [pos_integer()]} | {:error, Types.session_tuple_error()}
   def allocate_ports(count) do
     ports =
       Enum.map(1..count, fn _ ->

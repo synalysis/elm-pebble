@@ -38,4 +38,3 @@ defmodule Ide.Debugger.SurfaceTargets do
     end
   end
 end
-

@@ -2,6 +2,7 @@ defmodule Elmc.Runtime.ExecutionResultTypesTest do
   use ExUnit.Case, async: true
 
   alias Elmc.Runtime.Executor
+
   test "execute returns execution result contract keys" do
     request = %{
       source_root: "watch",
@@ -21,6 +22,7 @@ defmodule Elmc.Runtime.ExecutionResultTypesTest do
     }
 
     assert {:ok, result} = Executor.execute(request)
+
     assert match?(
              %{
                model_patch: _,
@@ -32,6 +34,7 @@ defmodule Elmc.Runtime.ExecutionResultTypesTest do
              },
              result
            )
+
     assert is_map(result.model_patch)
     assert is_map(result.runtime)
     assert is_list(result.protocol_events)

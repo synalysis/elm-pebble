@@ -14,7 +14,11 @@ defmodule Ide.Debugger.EventLogFiltersTest do
 
   test "by_types and since_seq trim event log on state" do
     state = %{
-      events: [event(1, "debugger.tick"), event(2, "debugger.update_in"), event(3, "debugger.tick")]
+      events: [
+        event(1, "debugger.tick"),
+        event(2, "debugger.update_in"),
+        event(3, "debugger.tick")
+      ]
     }
 
     assert EventLogFilters.by_types(state, ["debugger.tick"]).events ==

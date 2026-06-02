@@ -61,10 +61,14 @@ defmodule Ide.PebbleToolchain do
   @type toolchain_error :: atom() | String.t() | tuple()
 
   @callback build(project_slug(), opts()) :: {:ok, command_result()} | {:error, toolchain_error()}
-  @callback package(project_slug(), opts()) :: {:ok, package_result()} | {:error, toolchain_error()}
-  @callback publish(project_slug(), opts()) :: {:ok, command_result()} | {:error, toolchain_error()}
-  @callback run_emulator(project_slug(), opts()) :: {:ok, command_result()} | {:error, toolchain_error()}
-  @callback stop_emulator(project_slug(), opts()) :: {:ok, command_result()} | {:error, toolchain_error()}
+  @callback package(project_slug(), opts()) ::
+              {:ok, package_result()} | {:error, toolchain_error()}
+  @callback publish(project_slug(), opts()) ::
+              {:ok, command_result()} | {:error, toolchain_error()}
+  @callback run_emulator(project_slug(), opts()) ::
+              {:ok, command_result()} | {:error, toolchain_error()}
+  @callback stop_emulator(project_slug(), opts()) ::
+              {:ok, command_result()} | {:error, toolchain_error()}
   @callback run_emulator_control(project_slug(), String.t(), map()) ::
               {:ok, command_result()} | {:error, toolchain_error()}
   @callback run_screenshot(project_slug(), String.t(), String.t()) ::
@@ -185,7 +189,8 @@ defmodule Ide.PebbleToolchain do
   @doc """
   Runs `pebble wipe` and then `pebble install --emulator` for a specific `.pbw` artifact.
   """
-  @spec run_emulator(project_slug(), opts()) :: {:ok, command_result()} | {:error, toolchain_error()}
+  @spec run_emulator(project_slug(), opts()) ::
+          {:ok, command_result()} | {:error, toolchain_error()}
   def run_emulator(_project_slug, opts) do
     with :ok <- ensure_external_emulator_allowed() do
       do_run_emulator(opts)
@@ -222,7 +227,8 @@ defmodule Ide.PebbleToolchain do
   @doc """
   Stops running Pebble emulator processes via `pebble kill`.
   """
-  @spec stop_emulator(project_slug(), opts()) :: {:ok, command_result()} | {:error, toolchain_error()}
+  @spec stop_emulator(project_slug(), opts()) ::
+          {:ok, command_result()} | {:error, toolchain_error()}
   def stop_emulator(_project_slug, opts \\ []) do
     with :ok <- ensure_external_emulator_allowed() do
       do_stop_emulator(opts)
@@ -428,7 +434,7 @@ defmodule Ide.PebbleToolchain do
   end
 
   defp do_run_emulator_control(emulator_target, %{} = params)
-      when is_binary(emulator_target) do
+       when is_binary(emulator_target) do
     with {:ok, args} <- emulator_control_args(emulator_target, params) do
       run_pebble_with_timeout(args, 10, [])
     end
@@ -443,7 +449,8 @@ defmodule Ide.PebbleToolchain do
     |> Keyword.get(:emulator_targets, WatchModels.ordered_ids())
   end
 
-  @spec emulator_control_args(String.t(), map()) :: {:ok, [String.t()]} | {:error, toolchain_error()}
+  @spec emulator_control_args(String.t(), map()) ::
+          {:ok, [String.t()]} | {:error, toolchain_error()}
   defp emulator_control_args(emulator_target, %{"control" => "button"} = params) do
     action = params |> Map.get("action", "click") |> normalize_button_action()
     button = params |> Map.get("button") |> normalize_emulator_button()
@@ -564,7 +571,8 @@ defmodule Ide.PebbleToolchain do
 
   defp normalize_percent(_), do: {:error, :invalid_percent}
 
-  defp normalize_compass_heading(value) when is_integer(value) and value in 0..359, do: {:ok, value}
+  defp normalize_compass_heading(value) when is_integer(value) and value in 0..359,
+    do: {:ok, value}
 
   defp normalize_compass_heading(value) when is_binary(value) do
     case Integer.parse(value) do
@@ -586,7 +594,8 @@ defmodule Ide.PebbleToolchain do
     template_app_root()
   end
 
-  @spec run_pebble([String.t()], pebble_opts()) :: {:ok, command_result()} | {:error, toolchain_error()}
+  @spec run_pebble([String.t()], pebble_opts()) ::
+          {:ok, command_result()} | {:error, toolchain_error()}
   defp run_pebble(args, opts) do
     with {:ok, pebble_bin} <- pebble_bin(),
          {:ok, cwd} <- command_cwd(opts) do
@@ -676,7 +685,8 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec ensure_linux_bzip2_compat_dir() :: {:ok, String.t()} | {:error, toolchain_error()} | :ignore
+  @spec ensure_linux_bzip2_compat_dir() ::
+          {:ok, String.t()} | {:error, toolchain_error()} | :ignore
   defp ensure_linux_bzip2_compat_dir do
     cond do
       :os.type() != {:unix, :linux} ->
@@ -889,7 +899,8 @@ defmodule Ide.PebbleToolchain do
 
   defp normalize_package_target_type(_), do: "app"
 
-  @spec normalize_workspace_root(String.t() | nil) :: {:ok, String.t()} | {:error, toolchain_error()}
+  @spec normalize_workspace_root(String.t() | nil) ::
+          {:ok, String.t()} | {:error, toolchain_error()}
   defp normalize_workspace_root(path) when is_binary(path) and path != "" do
     abs = Path.expand(path)
     if File.dir?(abs), do: {:ok, abs}, else: {:error, {:workspace_root_not_found, abs}}
@@ -917,7 +928,8 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec copy_pebble_template(String.t(), String.t(), boolean()) :: :ok | {:error, toolchain_error()}
+  @spec copy_pebble_template(String.t(), String.t(), boolean()) ::
+          :ok | {:error, toolchain_error()}
   defp copy_pebble_template(template_root, app_root, _has_phone_companion) do
     mappings = [
       {Path.join(template_root, "wscript"), Path.join(app_root, "wscript")},
@@ -1111,7 +1123,13 @@ defmodule Ide.PebbleToolchain do
 
   @spec write_resource_id_header(String.t(), [map()], [map()], [map()], [map()]) ::
           :ok | {:error, toolchain_error()}
-  defp write_resource_id_header(app_root, bitmap_entries, font_entries, vector_entries, animation_entries) do
+  defp write_resource_id_header(
+         app_root,
+         bitmap_entries,
+         font_entries,
+         vector_entries,
+         animation_entries
+       ) do
     header_path = Path.join(app_root, "src/c/generated/resource_ids.h")
 
     bitmap_cases =
@@ -1229,7 +1247,8 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec stage_bitmap_resources(String.t(), String.t()) :: {:ok, [map()]} | {:error, toolchain_error()}
+  @spec stage_bitmap_resources(String.t(), String.t()) ::
+          {:ok, [map()]} | {:error, toolchain_error()}
   defp stage_bitmap_resources(workspace_root, app_root) do
     manifest_path = Path.join(workspace_root, "watch/resources/bitmaps.json")
     assets_root = Path.join(workspace_root, "watch/resources/bitmaps")
@@ -1258,7 +1277,8 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec stage_font_resources(String.t(), String.t()) :: {:ok, [map()]} | {:error, toolchain_error()}
+  @spec stage_font_resources(String.t(), String.t()) ::
+          {:ok, [map()]} | {:error, toolchain_error()}
   defp stage_font_resources(workspace_root, app_root) do
     manifest_path = Path.join(workspace_root, "watch/resources/fonts.json")
     assets_root = Path.join(workspace_root, "watch/resources/fonts")
@@ -1324,7 +1344,8 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec stage_vector_resources(String.t(), String.t()) :: {:ok, [map()]} | {:error, toolchain_error()}
+  @spec stage_vector_resources(String.t(), String.t()) ::
+          {:ok, [map()]} | {:error, toolchain_error()}
   defp stage_vector_resources(workspace_root, app_root) do
     manifest_path = Path.join(workspace_root, "watch/resources/vectors.json")
     assets_root = Path.join(workspace_root, "watch/resources/vectors")
@@ -1373,7 +1394,8 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec stage_animation_resources(String.t(), String.t()) :: {:ok, [map()]} | {:error, toolchain_error()}
+  @spec stage_animation_resources(String.t(), String.t()) ::
+          {:ok, [map()]} | {:error, toolchain_error()}
   defp stage_animation_resources(workspace_root, app_root) do
     manifest_path = Path.join(workspace_root, "watch/resources/animations.json")
     assets_root = Path.join(workspace_root, "watch/resources/animations")
@@ -1511,7 +1533,8 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec generate_elmc_sources(String.t(), String.t(), String.t()) :: :ok | {:error, toolchain_error()}
+  @spec generate_elmc_sources(String.t(), String.t(), String.t()) ::
+          :ok | {:error, toolchain_error()}
   defp generate_elmc_sources(project_root, app_root, _workspace_root) do
     compile_out_dir = Path.join(project_root, ".elmc-build")
     stage_out_dir = Path.join(app_root, "src/c/elmc")
@@ -1622,7 +1645,8 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec companion_protocol_message_keys(String.t() | nil) :: {:ok, map()} | {:error, toolchain_error()}
+  @spec companion_protocol_message_keys(String.t() | nil) ::
+          {:ok, map()} | {:error, toolchain_error()}
   defp companion_protocol_message_keys(nil), do: {:ok, %{}}
 
   defp companion_protocol_message_keys(protocol_elm) do
@@ -1676,7 +1700,8 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec generate_companion_protocol_elm_internal(String.t() | nil) :: :ok | {:error, toolchain_error()}
+  @spec generate_companion_protocol_elm_internal(String.t() | nil) ::
+          :ok | {:error, toolchain_error()}
   defp generate_companion_protocol_elm_internal(nil), do: :ok
 
   defp generate_companion_protocol_elm_internal(protocol_elm) do
@@ -1895,7 +1920,8 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec normalize_publish_app_root(String.t() | nil) :: {:ok, String.t()} | {:error, toolchain_error()}
+  @spec normalize_publish_app_root(String.t() | nil) ::
+          {:ok, String.t()} | {:error, toolchain_error()}
   defp normalize_publish_app_root(path) when is_binary(path) and path != "" do
     abs = Path.expand(path)
     if File.dir?(abs), do: {:ok, abs}, else: {:error, {:publish_app_root_not_found, abs}}
@@ -2037,7 +2063,8 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec mtime_sort(String.t()) :: {{integer(), integer(), integer()}, {integer(), integer(), integer()}}
+  @spec mtime_sort(String.t()) ::
+          {{integer(), integer(), integer()}, {integer(), integer(), integer()}}
   defp mtime_sort(path) do
     case File.stat(path) do
       {:ok, stat} -> stat.mtime
@@ -2045,7 +2072,8 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec normalize_package_path(String.t() | nil) :: {:ok, String.t()} | {:error, toolchain_error()}
+  @spec normalize_package_path(String.t() | nil) ::
+          {:ok, String.t()} | {:error, toolchain_error()}
   defp normalize_package_path(path) when is_binary(path) do
     abs = Path.expand(path)
 

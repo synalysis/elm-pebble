@@ -6,6 +6,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
   alias IdeWeb.WorkspaceLive.DebuggerPreview
   alias IdeWeb.WorkspaceLive.DebuggerSupport
 
+  test "pebble_color_to_svg maps ARGB8 watchface colors" do
+    assert DebuggerPreview.pebble_color_to_svg(0xFF000000, "#111111") == "#000000"
+    assert DebuggerPreview.pebble_color_to_svg(0xFFFFFFFF, "white") == "#FFFFFF"
+    assert DebuggerPreview.pebble_color_to_svg(0, "white") == "white"
+    assert DebuggerPreview.pebble_color_to_svg(1, "#111111") == "#111111"
+  end
+
   test "view_tree_outline renders nested watch view_tree" do
     runtime = %{
       view_tree: %{
@@ -513,6 +520,47 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert DebuggerSupport.filter_debugger_rows_for_display(rows, true) == rows
   end
 
+  test "http and http_pending rows are hidden from timeline unless debug mode is enabled" do
+    rows = [
+      %{seq: 1, target: "companion", type: "init", message: "init", message_source: "init"},
+      %{
+        seq: 2,
+        target: "companion",
+        type: "http",
+        message: "GET https://example.test/data.json → CatalogReceived",
+        message_source: "http_pending"
+      },
+      %{
+        seq: 3,
+        target: "companion",
+        type: "update",
+        message: "CatalogReceived",
+        message_source: "http"
+      },
+      %{
+        seq: 4,
+        target: "companion",
+        type: "update",
+        message: "CatalogReceived",
+        message_source: "runtime_followup"
+      }
+    ]
+
+    assert DebuggerSupport.filter_debugger_rows_for_display(rows, false) ==
+             [
+               %{seq: 1, target: "companion", type: "init", message: "init", message_source: "init"},
+               %{
+                 seq: 4,
+                 target: "companion",
+                 type: "update",
+                 message: "CatalogReceived",
+                 message_source: "runtime_followup"
+               }
+             ]
+
+    assert DebuggerSupport.filter_debugger_rows_for_display(rows, true) == rows
+  end
+
   test "subscription trigger modal support rejects opaque gateway payloads" do
     state = %{
       watch: %{
@@ -833,7 +881,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
 
   test "debugger preview resolves structured view tree primitives" do
     tree = %{
-      "type" => "toUiNode",
+      "type" => "windowStack",
       "children" => [
         %{
           "type" => "clear",
@@ -846,7 +894,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
           "type" => "drawBitmapInRect",
           "arg_names" => ["bitmap", "bounds"],
           "children" => [
-            %{"type" => "NoStaticBitmap", "qualified_target" => "Resources.NoStaticBitmap", "children" => []},
+            %{
+              "type" => "NoStaticBitmap",
+              "qualified_target" => "Resources.NoStaticBitmap",
+              "children" => []
+            },
             %{
               "type" => "record",
               "children" => [
@@ -1674,8 +1726,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
         "debugger_contract" => %{
           "view_return_type" => "Ui.UiNode",
           "view_tree" => %{
-            "type" => "toUiNode",
-            "qualified_target" => "PebbleUi.toUiNode",
+            "type" => "packUi",
+            "return_kind" => "ui_node",
             "children" => [%{"type" => "append", "children" => []}]
           }
         }
@@ -1685,14 +1737,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     rendered = DebuggerSupport.rendered_tree(runtime)
 
     assert rendered["type"] == "windowStack"
-    refute rendered["type"] == "toUiNode"
+    refute rendered["type"] == "packUi"
   end
 
   test "rendered_tree derives runtime output tree instead of parser wrapper outline" do
     runtime = %{
       view_tree: %{
-        "type" => "toUiNode",
-        "qualified_target" => "Ui.toUiNode",
+        "type" => "buildScene",
+        "return_kind" => "ui_node",
         "children" => [%{"type" => "if", "children" => []}]
       },
       model: %{
@@ -1721,8 +1773,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
         "debugger_contract" => %{
           "view_return_type" => "Ui.UiNode",
           "view_tree" => %{
-            "type" => "toUiNode",
-            "qualified_target" => "Ui.toUiNode",
+            "type" => "buildScene",
+            "return_kind" => "ui_node",
             "children" => [%{"type" => "if", "children" => []}]
           }
         }
@@ -1732,7 +1784,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     rendered = DebuggerSupport.rendered_tree(runtime)
 
     assert rendered["type"] == "windowStack"
-    refute rendered["type"] == "toUiNode"
+    refute rendered["type"] == "buildScene"
 
     text_node =
       get_in(rendered, [
@@ -1768,7 +1820,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
 
   test "rendered_tree includes vector draw ops from runtime_view_output" do
     runtime = %{
-      view_tree: %{"type" => "toUiNode", "children" => []},
+      view_tree: %{"type" => "buildScene", "return_kind" => "ui_node", "children" => []},
       model: %{
         "runtime_model" => %{"screenW" => 144, "screenH" => 168},
         "runtime_view_output" => [
@@ -1785,7 +1837,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
             "vector_id" => 3,
             "x" => 48,
             "y" => 102,
-            "source" => %{"call" => "Ui.drawVectorAt", "path" => "watch/src/Main.elm", "line" => 146}
+            "source" => %{
+              "call" => "Ui.drawVectorAt",
+              "path" => "watch/src/Main.elm",
+              "line" => 146
+            }
           },
           %{
             "kind" => "vector_sequence_at",
@@ -1806,7 +1862,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     ops = get_in(rendered, ["children", Access.at(0), "children", Access.at(0), "children"])
 
     assert Enum.any?(ops, fn op ->
-             op["type"] == "drawVectorAt" and op["vector_id"] == 3 and op["x"] == 48 and op["y"] == 102
+             op["type"] == "drawVectorAt" and op["vector_id"] == 3 and op["x"] == 48 and
+               op["y"] == 102
            end)
 
     assert Enum.any?(ops, fn op ->
@@ -1909,13 +1966,107 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert [%{"type" => "text", "text" => "OK"}] = group["children"]
   end
 
+  test "rendered_tree includes path ops from runtime_view_output rows" do
+    runtime = %{
+      model: %{
+        "runtime_model" => %{"screenW" => 144, "screenH" => 168, "pageIndex" => 1},
+        "runtime_view_output" => [
+          %{"kind" => "clear", "color" => 255},
+          %{"kind" => "text", "x" => 0, "y" => 2, "w" => 144, "h" => 18, "text" => "Paths 2/8"},
+          %{"kind" => "stroke_color", "color" => 192},
+          %{"kind" => "fill_color", "color" => 248},
+          %{
+            "kind" => "path_filled",
+            "points" => [[20, 70], [60, 70], [40, 30]],
+            "offset_x" => 0,
+            "offset_y" => 0,
+            "rotation" => 0
+          },
+          %{
+            "kind" => "path_outline",
+            "points" => [[20, 70], [60, 70], [40, 30]],
+            "offset_x" => 0,
+            "offset_y" => 0,
+            "rotation" => 0
+          }
+        ]
+      }
+    }
+
+    rendered = DebuggerSupport.rendered_tree(runtime)
+
+    canvas_children =
+      get_in(rendered, [
+        "children",
+        Access.at(0),
+        "children",
+        Access.at(0),
+        "children"
+      ])
+
+    types = Enum.map(canvas_children, & &1["type"])
+
+    assert "clear" in types
+    assert "text" in types
+    assert "pathFilled" in types
+    assert "pathOutline" in types
+
+    svg_ops = DebuggerPreview.svg_ops(rendered, runtime)
+    assert Enum.any?(svg_ops, &(&1.kind == :path_filled))
+    path = Enum.find(svg_ops, &(&1.kind == :path_filled))
+    assert DebuggerPreview.svg_path_d(path, true) =~ "M"
+  end
+
+  test "svg_ops recovers path drawables when stored compact scene omits paths" do
+    runtime = %{
+      model: %{
+        "runtime_model" => %{"screenW" => 200, "screenH" => 228, "pageIndex" => 1},
+        "compact_scene" => %{
+          "version" => 1,
+          "ops" => [
+            %{"op" => %{"kind" => "clear", "color" => 255}},
+            %{
+              "op" => %{
+                "kind" => "text",
+                "x" => 0,
+                "y" => 2,
+                "w" => 200,
+                "h" => 18,
+                "text" => "Paths 2/8"
+              }
+            }
+          ]
+        },
+        "runtime_view_output" => [
+          %{"kind" => "clear", "color" => 255},
+          %{"kind" => "text", "x" => 0, "y" => 2, "w" => 200, "h" => 18, "text" => "Paths 2/8"},
+          %{"kind" => "stroke_color", "color" => 192},
+          %{"kind" => "fill_color", "color" => 248},
+          %{
+            "kind" => "path_filled",
+            "points" => [[20, 70], [60, 70], [40, 30]],
+            "offset_x" => 0,
+            "offset_y" => 0,
+            "rotation" => 0
+          }
+        ]
+      }
+    }
+
+    rendered = DebuggerSupport.rendered_tree(runtime)
+    svg_ops = DebuggerPreview.svg_ops(rendered, runtime)
+
+    assert Enum.any?(svg_ops, &(&1.kind == :path_filled))
+    assert DebuggerPreview.svg_path_d(Enum.find(svg_ops, &(&1.kind == :path_filled)), true) =~ "M"
+  end
+
   test "rendered_tree does not expose parser expression outline as rendered output" do
     runtime = %{
       model: %{
         "debugger_contract" => %{
           "view_tree" => %{
-            "type" => "toUiNode",
-            "qualified_target" => "Ui.toUiNode",
+            "type" => "buildScene",
+            "return_kind" => "ui_node",
             "children" => [%{"type" => "if", "children" => []}]
           }
         }
@@ -2193,7 +2344,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
   test "format_debugger_contract_brief summarizes debugger contract on a runtime map" do
     rt = %{
       model: %{
-        "elm_executor_mode" => "runtime_executed",
+        "runtime_execution_mode" => "runtime_executed",
         "debugger_contract" => %{
           "module" => "M",
           "source_byte_size" => 2048,
@@ -2356,11 +2507,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
         payload: %{},
         watch: %{
           model: %{
-            "elm_executor_mode" => "runtime_executed",
+            "runtime_execution_mode" => "runtime_executed",
             "runtime_model_source" => "init_model",
             "runtime_model_sha256" => String.duplicate("a", 64),
             "runtime_view_tree_sha256" => String.duplicate("b", 64),
-            "elm_executor" => %{
+            "runtime_execution" => %{
               "engine" => "elm_introspect_runtime_v1",
               "execution_backend" => "default",
               "view_tree_source" => "parser_view_tree",
@@ -2475,7 +2626,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
           model: %{
             "runtime_model_sha256" => String.duplicate("a", 64),
             "runtime_view_tree_sha256" => String.duplicate("b", 64),
-            "elm_executor" => %{
+            "runtime_execution" => %{
               "execution_backend" => "external",
               "external_fallback_reason" => "{:external_runtime_executor_failed, :boom}"
             }
@@ -2490,7 +2641,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
           model: %{
             "runtime_model_sha256" => String.duplicate("a", 64),
             "runtime_view_tree_sha256" => String.duplicate("b", 64),
-            "elm_executor" => %{"execution_backend" => "default"}
+            "runtime_execution" => %{"execution_backend" => "default"}
           }
         }
       }
@@ -2525,7 +2676,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
           model: %{
             "runtime_model_sha256" => String.duplicate("a", 64),
             "runtime_view_tree_sha256" => String.duplicate("b", 64),
-            "elm_executor" => %{
+            "runtime_execution" => %{
               "target_numeric_key" => "count",
               "target_numeric_key_source" => "var_hint",
               "active_target_key" => "count",
@@ -2542,7 +2693,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
           model: %{
             "runtime_model_sha256" => String.duplicate("a", 64),
             "runtime_view_tree_sha256" => String.duplicate("b", 64),
-            "elm_executor" => %{
+            "runtime_execution" => %{
               "target_numeric_key" => "total",
               "target_numeric_key_source" => "primary_fallback",
               "active_target_key" => "total",
@@ -2578,7 +2729,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
           model: %{
             "runtime_model_sha256" => String.duplicate("a", 64),
             "runtime_view_tree_sha256" => String.duplicate("b", 64),
-            "elm_executor" => %{
+            "runtime_execution" => %{
               "active_target_key" => false,
               "active_target_key_source" => "field_hint"
             }

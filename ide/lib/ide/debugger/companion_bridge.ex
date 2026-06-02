@@ -54,13 +54,15 @@ defmodule Ide.Debugger.CompanionBridge do
       },
       %{
         source: "weather",
-        target_suffixes: ApiSuffixes.suffixes("Weather", ["onWeather", "onCurrent", "onForecast"]),
+        target_suffixes:
+          ApiSuffixes.suffixes("Weather", ["onWeather", "onCurrent", "onForecast"]),
         payload: :weather,
         ok_result_variant: "Current"
       },
       %{
         source: "calendar",
-        target_suffixes: ApiSuffixes.suffixes("Calendar", ["onCalendar", "onCurrent", "onUpcoming"]),
+        target_suffixes:
+          ApiSuffixes.suffixes("Calendar", ["onCalendar", "onCurrent", "onUpcoming"]),
         payload: :calendar
       },
       %{
@@ -86,7 +88,8 @@ defmodule Ide.Debugger.CompanionBridge do
     Enum.find(subscription_contracts(), &(Map.fetch!(&1, :source) == source))
   end
 
-  @spec payload(Types.simulator_settings(), atom(), Types.wire_map()) :: Types.companion_bridge_payload()
+  @spec payload(Types.simulator_settings(), atom(), Types.wire_map()) ::
+          Types.companion_bridge_payload()
   def payload(settings, :calendar, request) when is_map(settings) and is_map(request) do
     events = settings["calendar_events"]
 
@@ -153,7 +156,12 @@ defmodule Ide.Debugger.CompanionBridge do
 
   def weather_info(_weather), do: %{}
 
-  @spec subscription_message_value(String.t(), String.t(), String.t(), Types.companion_bridge_payload()) ::
+  @spec subscription_message_value(
+          String.t(),
+          String.t(),
+          String.t(),
+          Types.companion_bridge_payload()
+        ) ::
           map()
   def subscription_message_value("weather", callback, result_ctor, payload) do
     wrapped_payload = wrap_weather_ok_payload(result_ctor, payload, "Current")

@@ -2,7 +2,13 @@ defmodule Ide.Debugger.ElmcCliIngestBridgeTest do
   use ExUnit.Case, async: true
 
   alias Ide.Debugger
-  alias Ide.Debugger.Types.{CompileIngestBridge, ElmcCliIngestBridge, ElmcEventPayload, ElmcSurfaceFields}
+
+  alias Ide.Debugger.Types.{
+    CompileIngestBridge,
+    ElmcCliIngestBridge,
+    ElmcEventPayload,
+    ElmcSurfaceFields
+  }
 
   test "to_check_result maps CLI warnings into compiler check_result" do
     result =
@@ -44,19 +50,17 @@ defmodule Ide.Debugger.ElmcCliIngestBridgeTest do
     assert event.error_count == 1
   end
 
-  test "from_compile_run preserves optional executor artifacts from opts" do
+  test "from_compile_run maps compile metadata" do
     attrs =
       ElmcCliIngestBridge.from_compile_run(
         %{status: :ok, output: "compile: ok", warnings: []},
         compiled_path: "watch/.elmc-build",
         revision: "rev-1",
-        source_root: "watch",
-        elm_executor_metadata: %{"contract" => "v1"}
+        source_root: "watch"
       )
 
     assert attrs.compiled_path == "watch/.elmc-build"
-    assert ElmcSurfaceFields.optional_runtime_artifacts(attrs)["elm_executor_metadata"]["contract"] ==
-             "v1"
+    assert ElmcSurfaceFields.optional_runtime_artifacts(attrs) == %{}
   end
 
   test "from_manifest_run reads schema_version from manifest map" do

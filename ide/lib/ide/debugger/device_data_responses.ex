@@ -9,12 +9,17 @@ defmodule Ide.Debugger.DeviceDataResponses do
   alias Ide.Debugger.Types
 
   @type apply_ctx :: %{
-          required(:append_event) =>
-            (Types.runtime_state(), String.t(), map() -> Types.runtime_state()),
-          required(:apply_step_once) =>
-            (Types.runtime_state(), Types.surface_target(), String.t(),
-             Types.subscription_payload() | map() | nil, String.t(), String.t() ->
-               Types.runtime_state()),
+          required(:append_event) => (Types.runtime_state(), String.t(), map() ->
+                                        Types.runtime_state()),
+          required(:apply_step_once) => (Types.runtime_state(),
+                                         Types.surface_target(),
+                                         String.t(),
+                                         Types.subscription_payload()
+                                         | map()
+                                         | nil,
+                                         String.t(),
+                                         String.t() ->
+                                           Types.runtime_state()),
           required(:source_root_for_target) => (Types.surface_target() -> String.t())
         }
 
@@ -101,7 +106,8 @@ defmodule Ide.Debugger.DeviceDataResponses do
           Types.device_request(),
           apply_ctx()
         ) :: Types.runtime_state()
-  defp apply_device_response_step(state, target, req, ctx) when is_map(state) and is_map(req) and is_map(ctx) do
+  defp apply_device_response_step(state, target, req, ctx)
+       when is_map(state) and is_map(req) and is_map(ctx) do
     surface = Surface.from_state(state, target)
     model = Surface.app_model(surface)
     introspect = Surface.introspect(surface)
@@ -116,7 +122,14 @@ defmodule Ide.Debugger.DeviceDataResponses do
         ctx.apply_step_once.(state, target, ctor, wire_value, "device_data", "device_data")
 
       is_binary(response_message = DeviceData.response_message(req)) and response_message != "" ->
-        ctx.apply_step_once.(state, target, response_message, wire_value, "device_data", "device_data")
+        ctx.apply_step_once.(
+          state,
+          target,
+          response_message,
+          wire_value,
+          "device_data",
+          "device_data"
+        )
 
       true ->
         state

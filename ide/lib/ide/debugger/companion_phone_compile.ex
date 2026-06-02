@@ -1,8 +1,7 @@
 defmodule Ide.Debugger.CompanionPhoneCompile do
   @moduledoc """
   Lazy phone `elmc` compile for the debugger: only when the companion surface still
-  needs Core IR (e.g. parser view is an unevaluated expression). Never blocks companion
-  reload or the LiveView bootstrap banner.
+  needs runtime artifacts. Never blocks companion reload or the LiveView bootstrap banner.
   """
 
   alias Ide.Compiler
@@ -45,7 +44,7 @@ defmodule Ide.Debugger.CompanionPhoneCompile do
       phone_root(project) == nil ->
         false
 
-      SurfaceCompileArtifacts.surface_has_versioned_core_ir?(state, :companion) ->
+      SurfaceCompileArtifacts.surface_has_versioned_runtime_artifacts?(state, :companion) ->
         false
 
       not lazy_elmc?() ->
@@ -69,33 +68,19 @@ defmodule Ide.Debugger.CompanionPhoneCompile do
         :ok
 
       {label, root_path} ->
-        case Compiler.compile(Projects.compiler_cache_key(project, label),
-               workspace_root: root_path,
-               source_roots: project.source_roots
-             ) do
-          {:ok, result} ->
-            ingest_result(scope_key, result)
+        {:ok, result} =
+          Compiler.compile(Projects.compiler_cache_key(project, label),
+            workspace_root: root_path,
+            source_roots: project.source_roots
+          )
 
-            if Map.get(result, :status) == :error do
-              {:error, "Companion compile failed: #{Map.get(result, :output, "elmc error")}"}
-            else
-              RuntimeBackgroundNotify.broadcast(scope_key)
-              :ok
-            end
+        ingest_result(scope_key, result)
 
-          {:error, reason} ->
-            ingest_result(scope_key, %{
-              status: :error,
-              compiled_path: Projects.project_workspace_path(project),
-              revision: "—",
-              cached?: false,
-              error_count: 1,
-              warning_count: 0,
-              output: inspect(reason),
-              diagnostics: []
-            })
-
-            {:error, "Companion compile failed: #{inspect(reason)}"}
+        if Map.get(result, :status) == :error do
+          {:error, "Companion compile failed: #{Map.get(result, :output, "elmc error")}"}
+        else
+          RuntimeBackgroundNotify.broadcast(scope_key)
+          :ok
         end
     end
   end
@@ -106,8 +91,11 @@ defmodule Ide.Debugger.CompanionPhoneCompile do
 
   defp companion_parser_expression_view?(state) do
     case SurfaceAccess.introspect(state, :companion) do
-      ei when is_map(ei) -> ElmEx.DebuggerContract.parser_expression_view?(%{"debugger_contract" => ei})
-      _ -> false
+      ei when is_map(ei) ->
+        ElmEx.DebuggerContract.parser_expression_view?(%{"debugger_contract" => ei})
+
+      _ ->
+        false
     end
   end
 

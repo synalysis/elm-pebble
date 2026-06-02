@@ -45,7 +45,7 @@ defmodule ElmEx.DebuggerContract.ViewTree.Operators do
   end
 
   def expr_to_view_tree(%{op: op} = expr, d, max, api_metadata)
-       when d < max and (op == :list_literal or op == "list_literal") do
+      when d < max and (op == :list_literal or op == "list_literal") do
     items =
       Support.first_non_nil([
         Map.get(expr, :items),
@@ -65,7 +65,7 @@ defmodule ElmEx.DebuggerContract.ViewTree.Operators do
   end
 
   def expr_to_view_tree(%{op: :tuple2, left: left, right: right}, d, max, api_metadata)
-       when d < max do
+      when d < max do
     %{
       "type" => "expr",
       "label" => "tuple2",
@@ -78,7 +78,7 @@ defmodule ElmEx.DebuggerContract.ViewTree.Operators do
   end
 
   def expr_to_view_tree(%{op: :qualified_call, target: t, args: args}, d, max, api_metadata)
-       when d < max do
+      when d < max do
     arity = length(args)
 
     %{
@@ -92,7 +92,7 @@ defmodule ElmEx.DebuggerContract.ViewTree.Operators do
   end
 
   def expr_to_view_tree(%{op: :constructor_call, target: t, args: args}, d, max, api_metadata)
-       when d < max do
+      when d < max do
     arity = length(args)
 
     %{
@@ -106,7 +106,7 @@ defmodule ElmEx.DebuggerContract.ViewTree.Operators do
   end
 
   def expr_to_view_tree(%{op: :call, name: name, args: args}, d, max, api_metadata)
-       when d < max do
+      when d < max do
     arity = length(args)
     target = Structure.view_tree_call_target_name(name, api_metadata)
 
@@ -124,8 +124,13 @@ defmodule ElmEx.DebuggerContract.ViewTree.Operators do
     expr_to_view_tree(body, d + 1, max, api_metadata)
   end
 
-  def expr_to_view_tree(%{op: :let_in, name: name, value_expr: value, in_expr: inner}, d, max, api_metadata)
-       when d < max do
+  def expr_to_view_tree(
+        %{op: :let_in, name: name, value_expr: value, in_expr: inner},
+        d,
+        max,
+        api_metadata
+      )
+      when d < max do
     %{
       "type" => "let",
       "label" => to_string(name),
@@ -137,7 +142,7 @@ defmodule ElmEx.DebuggerContract.ViewTree.Operators do
   end
 
   def expr_to_view_tree(%{op: :if, cond: cond, then_expr: t, else_expr: e}, d, max, api_metadata)
-       when d < max do
+      when d < max do
     %{
       "type" => "if",
       "label" => "",
@@ -150,7 +155,7 @@ defmodule ElmEx.DebuggerContract.ViewTree.Operators do
   end
 
   def expr_to_view_tree(%{op: :if, then_expr: t, else_expr: e}, d, max, api_metadata)
-       when d < max do
+      when d < max do
     %{
       "type" => "if",
       "label" => "",
@@ -162,7 +167,7 @@ defmodule ElmEx.DebuggerContract.ViewTree.Operators do
   end
 
   def expr_to_view_tree(%{op: :case, subject: s, branches: branches}, d, max, api_metadata)
-       when d < max and is_list(branches) do
+      when d < max and is_list(branches) do
     %{
       "type" => "case",
       "label" => "",
@@ -182,7 +187,7 @@ defmodule ElmEx.DebuggerContract.ViewTree.Operators do
   end
 
   def expr_to_view_tree(%{op: :record_literal, fields: fields}, d, max, api_metadata)
-       when d < max do
+      when d < max do
     %{
       "type" => "record",
       "label" => "#{length(fields)} fields",
@@ -198,12 +203,12 @@ defmodule ElmEx.DebuggerContract.ViewTree.Operators do
   end
 
   def expr_to_view_tree(
-         %{op: :var_resolved, name: n, value_expr: value_expr},
-         d,
-         max,
-         api_metadata
-       )
-       when d < max do
+        %{op: :var_resolved, name: n, value_expr: value_expr},
+        d,
+        max,
+        api_metadata
+      )
+      when d < max do
     %{
       "type" => "var",
       "label" => n,
@@ -218,7 +223,7 @@ defmodule ElmEx.DebuggerContract.ViewTree.Operators do
   end
 
   def expr_to_view_tree(%{op: :add_const, var: var, value: value}, d, max, api_metadata)
-       when d < max do
+      when d < max do
     expr_to_view_tree(
       %{
         op: :call,
@@ -232,7 +237,7 @@ defmodule ElmEx.DebuggerContract.ViewTree.Operators do
   end
 
   def expr_to_view_tree(%{op: :sub_const, var: var, value: value}, d, max, api_metadata)
-       when d < max do
+      when d < max do
     expr_to_view_tree(
       %{
         op: :call,
@@ -246,7 +251,7 @@ defmodule ElmEx.DebuggerContract.ViewTree.Operators do
   end
 
   def expr_to_view_tree(%{op: :add_vars, left: left, right: right}, d, max, api_metadata)
-       when d < max do
+      when d < max do
     expr_to_view_tree(
       %{
         op: :call,
@@ -270,7 +275,7 @@ defmodule ElmEx.DebuggerContract.ViewTree.Operators do
   end
 
   def expr_to_view_tree(%{op: :float_literal, value: v}, _, _, _api_metadata)
-       when is_number(v) do
+      when is_number(v) do
     %{
       "type" => "expr",
       "label" => to_string(v),
@@ -281,7 +286,7 @@ defmodule ElmEx.DebuggerContract.ViewTree.Operators do
   end
 
   def expr_to_view_tree(%{op: :string_literal, value: v}, _, _, _api_metadata)
-       when is_binary(v) do
+      when is_binary(v) do
     %{
       "type" => "expr",
       "label" => inspect(v),
@@ -302,11 +307,11 @@ defmodule ElmEx.DebuggerContract.ViewTree.Operators do
   end
 
   def expr_to_view_tree(
-         %{op: :field_access, arg: _arg, field: _field} = expr,
-         _,
-         _,
-         _api_metadata
-       ) do
+        %{op: :field_access, arg: _arg, field: _field} = expr,
+        _,
+        _,
+        _api_metadata
+      ) do
     %{
       "type" => "expr",
       "label" => Support.field_access_label(expr),
@@ -316,7 +321,7 @@ defmodule ElmEx.DebuggerContract.ViewTree.Operators do
   end
 
   def expr_to_view_tree(%{op: :tuple_first_expr, arg: arg}, d, max, api_metadata)
-       when d < max do
+      when d < max do
     %{
       "type" => "expr",
       "label" => "tuple_first_expr",
@@ -326,7 +331,7 @@ defmodule ElmEx.DebuggerContract.ViewTree.Operators do
   end
 
   def expr_to_view_tree(%{op: :tuple_second_expr, arg: arg}, d, max, api_metadata)
-       when d < max do
+      when d < max do
     %{
       "type" => "expr",
       "label" => "tuple_second_expr",

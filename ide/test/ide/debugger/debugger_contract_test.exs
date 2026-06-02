@@ -446,7 +446,11 @@ defmodule Ide.Debugger.DebuggerContractTest do
   end
 
   test "analyze_source resolves callback constructor through Http.send request binding" do
-    ei = ContractTestSupport.analyze_contract!(fixture_source("cmd_calls_http.elm"), "CmdCallsHttp.elm")
+    ei =
+      ContractTestSupport.analyze_contract!(
+        fixture_source("cmd_calls_http.elm"),
+        "CmdCallsHttp.elm"
+      )
 
     calls = ei["update_cmd_calls"]
     assert is_list(calls)
@@ -459,7 +463,8 @@ defmodule Ide.Debugger.DebuggerContractTest do
   end
 
   test "analyze_source inlines let-bound weather temperature for protocol cmd arg_values" do
-    ei = ContractTestSupport.analyze_contract!(fixture_source("weather_cmd.elm"), "WeatherCmd.elm")
+    ei =
+      ContractTestSupport.analyze_contract!(fixture_source("weather_cmd.elm"), "WeatherCmd.elm")
 
     calls = ei["update_cmd_calls"]
     assert is_list(calls)
@@ -1128,7 +1133,8 @@ defmodule Ide.Debugger.DebuggerContractTest do
   """
 
   test "analyze_source does not extract update_cmd_ops from case when subject is not a recognized update scrutinee" do
-    ei = ContractTestSupport.analyze_contract!(@update_case_disallowed_subject, "UpdBadSubject.elm")
+    ei =
+      ContractTestSupport.analyze_contract!(@update_case_disallowed_subject, "UpdBadSubject.elm")
 
     assert ei["update_case_branches"] == []
     assert ei["update_cmd_ops"] == []
@@ -1415,7 +1421,10 @@ defmodule Ide.Debugger.DebuggerContractTest do
 
     assert Enum.any?(
              calls,
-             &match?(%{"event_kind" => "on_minute_change", "callback_constructor" => "MinuteChanged"}, &1)
+             &match?(
+               %{"event_kind" => "on_minute_change", "callback_constructor" => "MinuteChanged"},
+               &1
+             )
            )
 
     assert Enum.any?(

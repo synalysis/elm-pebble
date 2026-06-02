@@ -45,7 +45,8 @@ defmodule Ide.Debugger.IntrospectAccess do
       "callback_constructor" =>
         Map.get(row, "callback_constructor") || Map.get(row, :callback_constructor),
       "branch" => Map.get(row, "branch") || Map.get(row, :branch),
-      "branch_constructor" => Map.get(row, "branch_constructor") || Map.get(row, :branch_constructor),
+      "branch_constructor" =>
+        Map.get(row, "branch_constructor") || Map.get(row, :branch_constructor),
       "event_kind" => Map.get(row, "event_kind") || Map.get(row, :event_kind),
       "label" => Map.get(row, "label") || Map.get(row, :label),
       "arg_snippets" => Map.get(row, "arg_snippets") || Map.get(row, :arg_snippets) || [],

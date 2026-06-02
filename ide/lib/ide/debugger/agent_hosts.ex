@@ -29,7 +29,8 @@ defmodule Ide.Debugger.AgentHosts do
              Types.runtime_state())
 
   @type update_fn ::
-          (String.t(), (Types.runtime_state() -> Types.runtime_state()) -> {:ok, Types.runtime_state()})
+          (String.t(), (Types.runtime_state() -> Types.runtime_state()) ->
+             {:ok, Types.runtime_state()})
 
   @type ensure_phone_fn :: (Types.runtime_state() -> Types.runtime_state())
 
@@ -126,7 +127,10 @@ defmodule Ide.Debugger.AgentHosts do
         contexts: fn -> RuntimeHub.contexts(hub) end
       },
       configuration_reload: %{ensure_phone_state: ensure_phone},
-      hot_reload: %{ensure_phone_state: ensure_phone, contexts: fn -> RuntimeHub.contexts(hub) end},
+      hot_reload: %{
+        ensure_phone_state: ensure_phone,
+        contexts: fn -> RuntimeHub.contexts(hub) end
+      },
       trigger_injection: %{contexts: fn -> RuntimeHub.contexts(hub) end},
       trigger_discovery: %{trigger_surface: fn -> RuntimeHub.contexts(hub).trigger_surface end},
       append_event: append_event,

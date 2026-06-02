@@ -30,7 +30,8 @@ defmodule Ide.Debugger.InitCmdFollowups do
     |> dedupe_http_followups()
   end
 
-  def merge_followups(executor_followups, _ei) when is_list(executor_followups), do: executor_followups
+  def merge_followups(executor_followups, _ei) when is_list(executor_followups),
+    do: executor_followups
 
   @spec http_cmd_call?(Types.cmd_call()) :: boolean()
   defp http_cmd_call?(%{} = row) do

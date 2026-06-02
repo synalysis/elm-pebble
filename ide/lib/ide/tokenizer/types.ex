@@ -99,5 +99,6 @@ defmodule Ide.Tokenizer.Types do
 
   @type elmc_raw_token ::
           {atom(), integer(), elmc_value()} | {atom(), integer()} | map() | atom() | String.t()
-  @type elmc_value :: String.t() | charlist() | atom() | number() | boolean() | list() | map() | nil
+  @type elmc_value ::
+          String.t() | charlist() | atom() | number() | boolean() | list() | map() | nil
 end

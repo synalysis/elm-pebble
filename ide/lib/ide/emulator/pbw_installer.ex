@@ -187,7 +187,12 @@ defmodule Ide.Emulator.PBWInstaller do
     )
 
     with :ok <-
-           BlobDb.insert_app_metadata(router, pbw.app_metadata, timeout, blob_post_insert_settle_ms),
+           BlobDb.insert_app_metadata(
+             router,
+             pbw.app_metadata,
+             timeout,
+             blob_post_insert_settle_ms
+           ),
          {:ok, fetch} <- AppFetch.request_app_fetch(router, pbw.uuid, timeout),
          :ok <- AppFetch.verify_fetch_uuid(fetch.uuid, pbw.uuid),
          {:ok, parts} <-

@@ -84,9 +84,12 @@ defmodule Ide.Debugger.SimulatorSettings do
         |> normalize_integer(defaults["battery_percent"])
         |> min(100)
         |> max(0),
-      "charging" => normalize_boolean(WireValues.map_value(settings, "charging"), defaults["charging"]),
-      "connected" => normalize_boolean(WireValues.map_value(settings, "connected"), defaults["connected"]),
-      "clock_24h" => normalize_boolean(WireValues.map_value(settings, "clock_24h"), defaults["clock_24h"]),
+      "charging" =>
+        normalize_boolean(WireValues.map_value(settings, "charging"), defaults["charging"]),
+      "connected" =>
+        normalize_boolean(WireValues.map_value(settings, "connected"), defaults["connected"]),
+      "clock_24h" =>
+        normalize_boolean(WireValues.map_value(settings, "clock_24h"), defaults["clock_24h"]),
       "use_simulated_time" =>
         normalize_boolean(
           WireValues.map_value(settings, "use_simulated_time"),
@@ -109,10 +112,14 @@ defmodule Ide.Debugger.SimulatorSettings do
         |> WireValues.map_value("timezone_offset_min")
         |> normalize_integer(defaults["timezone_offset_min"]),
       "locale" => normalize_string(WireValues.map_value(settings, "locale"), defaults["locale"]),
-      "language" => normalize_string(WireValues.map_value(settings, "language"), defaults["language"]),
+      "language" =>
+        normalize_string(WireValues.map_value(settings, "language"), defaults["language"]),
       "region" => normalize_string(WireValues.map_value(settings, "region"), defaults["region"]),
       "network_online" =>
-        normalize_boolean(WireValues.map_value(settings, "network_online"), defaults["network_online"]),
+        normalize_boolean(
+          WireValues.map_value(settings, "network_online"),
+          defaults["network_online"]
+        ),
       "notifications_enabled" =>
         normalize_boolean(
           WireValues.map_value(settings, "notifications_enabled"),
@@ -123,21 +130,45 @@ defmodule Ide.Debugger.SimulatorSettings do
       "weather" =>
         normalize_weather_settings(WireValues.map_value(settings, "weather"), defaults["weather"]),
       "calendar_events" =>
-        normalize_json_list(WireValues.map_value(settings, "calendar_events"), defaults["calendar_events"]),
+        normalize_json_list(
+          WireValues.map_value(settings, "calendar_events"),
+          defaults["calendar_events"]
+        ),
       "storage_values" =>
-        normalize_json_map(WireValues.map_value(settings, "storage_values"), defaults["storage_values"]),
+        normalize_json_map(
+          WireValues.map_value(settings, "storage_values"),
+          defaults["storage_values"]
+        ),
       "preferences" =>
         normalize_json_map(WireValues.map_value(settings, "preferences"), defaults["preferences"]),
       "environment" =>
         normalize_json_map(WireValues.map_value(settings, "environment"), defaults["environment"]),
       "latitude" =>
-        normalize_float(WireValues.map_value(settings, "latitude"), defaults["latitude"], -90.0, 90.0),
+        normalize_float(
+          WireValues.map_value(settings, "latitude"),
+          defaults["latitude"],
+          -90.0,
+          90.0
+        ),
       "longitude" =>
-        normalize_float(WireValues.map_value(settings, "longitude"), defaults["longitude"], -180.0, 180.0),
+        normalize_float(
+          WireValues.map_value(settings, "longitude"),
+          defaults["longitude"],
+          -180.0,
+          180.0
+        ),
       "accuracy" =>
-        normalize_float(WireValues.map_value(settings, "accuracy"), defaults["accuracy"], 0.0, 100_000.0),
+        normalize_float(
+          WireValues.map_value(settings, "accuracy"),
+          defaults["accuracy"],
+          0.0,
+          100_000.0
+        ),
       "timeline_peek" =>
-        normalize_boolean(WireValues.map_value(settings, "timeline_peek"), defaults["timeline_peek"]),
+        normalize_boolean(
+          WireValues.map_value(settings, "timeline_peek"),
+          defaults["timeline_peek"]
+        ),
       "companion_timeline_token" =>
         normalize_string(
           WireValues.map_value(settings, "companion_timeline_token"),
@@ -150,9 +181,15 @@ defmodule Ide.Debugger.SimulatorSettings do
         |> min(360)
         |> max(0),
       "compass_valid" =>
-        normalize_boolean(WireValues.map_value(settings, "compass_valid"), defaults["compass_valid"]),
+        normalize_boolean(
+          WireValues.map_value(settings, "compass_valid"),
+          defaults["compass_valid"]
+        ),
       "app_in_focus" =>
-        normalize_boolean(WireValues.map_value(settings, "app_in_focus"), defaults["app_in_focus"]),
+        normalize_boolean(
+          WireValues.map_value(settings, "app_in_focus"),
+          defaults["app_in_focus"]
+        ),
       "health_steps" =>
         settings
         |> WireValues.map_value("health_steps")
@@ -169,9 +206,15 @@ defmodule Ide.Debugger.SimulatorSettings do
           defaults["dictation_transcript"]
         ),
       "dictation_error" =>
-        normalize_string(WireValues.map_value(settings, "dictation_error"), defaults["dictation_error"]),
+        normalize_string(
+          WireValues.map_value(settings, "dictation_error"),
+          defaults["dictation_error"]
+        ),
       "vibe_pattern_ms" =>
-        normalize_json_list(WireValues.map_value(settings, "vibe_pattern_ms"), defaults["vibe_pattern_ms"])
+        normalize_json_list(
+          WireValues.map_value(settings, "vibe_pattern_ms"),
+          defaults["vibe_pattern_ms"]
+        )
     }
   end
 
@@ -257,7 +300,10 @@ defmodule Ide.Debugger.SimulatorSettings do
   defp normalize_json_list(value, _default) when is_list(value), do: value
   defp normalize_json_list(_value, default) when is_list(default), do: default
 
-  @spec normalize_weather_settings(Types.SimulatorSettings.wire_map() | nil, Types.SimulatorSettings.weather()) ::
+  @spec normalize_weather_settings(
+          Types.SimulatorSettings.wire_map() | nil,
+          Types.SimulatorSettings.weather()
+        ) ::
           Types.SimulatorSettings.weather()
   defp normalize_weather_settings(value, default) when is_map(value) and is_map(default) do
     weather =
@@ -282,7 +328,7 @@ defmodule Ide.Debugger.SimulatorSettings do
     do: value |> max(min_value) |> min(max_value)
 
   defp normalize_float(value, _default, min_value, max_value) when is_integer(value),
-    do: value * 1.0 |> max(min_value) |> min(max_value)
+    do: (value * 1.0) |> max(min_value) |> min(max_value)
 
   defp normalize_float(value, default, min_value, max_value) when is_binary(value) do
     case Float.parse(value) do

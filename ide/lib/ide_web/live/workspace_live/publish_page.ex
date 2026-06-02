@@ -256,7 +256,12 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
           :if={IdeWeb.WorkspaceLive.PublishFlow.offers_ai_store_graphics?(@project, @store_assets)}
           class="mt-3 rounded border border-blue-200 bg-blue-50 p-3 text-xs text-zinc-700"
         >
-          <input type="hidden" form="publish-form" name="publish_submit[generate_store_graphics]" value="false" />
+          <input
+            type="hidden"
+            form="publish-form"
+            name="publish_submit[generate_store_graphics]"
+            value="false"
+          />
           <label class="flex items-start gap-2">
             <input
               type="checkbox"
@@ -267,7 +272,9 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
               class="mt-0.5"
             />
             <span>
-              <span class="block font-medium text-zinc-900">Generate App Store icons with AI on first publish</span>
+              <span class="block font-medium text-zinc-900">
+                Generate App Store icons with AI on first publish
+              </span>
               <span class="mt-1 block text-zinc-600">
                 Uses your App Store description from Project Settings. Only applies when creating a new listing without uploaded icons.
               </span>
@@ -284,7 +291,8 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
               name="publish_submit[is_published]"
               value="true"
               checked={@publish_submit_options["is_published"] == true}
-            /> Make release visible immediately (unchecked uploads a draft; the store keeps showing the previous public version)
+            />
+            Make release visible immediately (unchecked uploads a draft; the store keeps showing the previous public version)
           </label>
 
           <input type="hidden" form="publish-form" name="publish_submit[all_platforms]" value="false" />
@@ -321,10 +329,7 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
         ><%= @publish_submit_output %></pre>
       </div>
 
-      <div
-        :if={@debug_mode}
-        class="mt-4 rounded border border-zinc-200 p-3 text-xs text-zinc-700"
-      >
+      <div :if={@debug_mode} class="mt-4 rounded border border-zinc-200 p-3 text-xs text-zinc-700">
         <h3 class="text-sm font-semibold">Flow Metrics</h3>
         <p class="mt-1">Last run duration: {@publish_metrics.last_duration_ms || "n/a"} ms</p>
         <p>Last run finished: {@publish_metrics.last_finished_at || "n/a"}</p>
@@ -367,7 +372,8 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
   defp status_label(_), do: "unknown"
 
   defp release_summary_help(:public_custom),
-    do: "Changelog is saved in the project for your release notes export. Version and tags are edited in Project Settings."
+    do:
+      "Changelog is saved in the project for your release notes export. Version and tags are edited in Project Settings."
 
   defp release_summary_help(_),
     do:

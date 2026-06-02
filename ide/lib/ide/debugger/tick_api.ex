@@ -15,9 +15,13 @@ defmodule Ide.Debugger.TickApi do
   end
 
   @spec start_auto_tick(String.t(), Types.step_attrs()) :: {:ok, runtime_state()}
-  def start_auto_tick(project_slug, attrs \\ %{}) when is_binary(project_slug) and is_map(attrs) do
+  def start_auto_tick(project_slug, attrs \\ %{})
+      when is_binary(project_slug) and is_map(attrs) do
     AgentSession.with_hosts(fn hosts ->
-      AgentSession.mutate(project_slug, &TickIngress.start_auto_tick(&1, project_slug, attrs, hosts.tick_ingress))
+      AgentSession.mutate(
+        project_slug,
+        &TickIngress.start_auto_tick(&1, project_slug, attrs, hosts.tick_ingress)
+      )
     end)
   end
 
@@ -31,7 +35,10 @@ defmodule Ide.Debugger.TickApi do
   @spec set_auto_fire(String.t(), Types.step_attrs()) :: {:ok, runtime_state()}
   def set_auto_fire(project_slug, attrs \\ %{}) when is_binary(project_slug) and is_map(attrs) do
     AgentSession.with_hosts(fn hosts ->
-      AgentSession.mutate(project_slug, &TickIngress.set_auto_fire(&1, project_slug, attrs, hosts.tick_ingress))
+      AgentSession.mutate(
+        project_slug,
+        &TickIngress.set_auto_fire(&1, project_slug, attrs, hosts.tick_ingress)
+      )
     end)
   end
 end

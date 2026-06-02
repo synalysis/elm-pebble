@@ -5,10 +5,13 @@ defmodule Ide.Debugger.TickMessageResolution do
   alias Ide.Debugger.Types
 
   @type resolve_ctx :: %{
-          required(:introspect_for) =>
-            (Types.runtime_state(), Types.surface_target() -> Types.elm_introspect() | map()),
-          required(:attach_payload) =>
-            (Types.runtime_state(), Types.surface_target(), String.t(), String.t() -> String.t())
+          required(:introspect_for) => (Types.runtime_state(), Types.surface_target() ->
+                                          Types.elm_introspect() | map()),
+          required(:attach_payload) => (Types.runtime_state(),
+                                        Types.surface_target(),
+                                        String.t(),
+                                        String.t() ->
+                                          String.t())
         }
 
   @spec message_for_surface(Types.runtime_state(), Types.surface_target(), resolve_ctx()) ::
@@ -26,7 +29,9 @@ defmodule Ide.Debugger.TickMessageResolution do
         "Tick"
 
       subscription_ops != [] ->
-        {message, matched_op} = pick_subscription_message(known_messages, subscription_ops, "tick")
+        {message, matched_op} =
+          pick_subscription_message(known_messages, subscription_ops, "tick")
+
         ctx.attach_payload.(state, target, message, matched_op || "tick")
 
       true ->

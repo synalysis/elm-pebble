@@ -12,7 +12,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
   def runtime_json(runtime) when is_map(runtime), do: Jason.encode!(runtime, pretty: true)
   def runtime_json(_runtime), do: "{}"
 
-  @spec rendered_tree(Ide.Debugger.Types.execution_model()) :: Ide.Debugger.Types.rendered_tree() | nil
+  @spec rendered_tree(Ide.Debugger.Types.execution_model()) ::
+          Ide.Debugger.Types.rendered_tree() | nil
   def rendered_tree(%{} = runtime) do
     model = runtime_model(runtime)
 
@@ -34,14 +35,49 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
   @spec runtime_rendered_tree(map(), map()) :: map() | nil
   defp runtime_rendered_tree(runtime, model) when is_map(runtime) and is_map(model) do
     view_tree = Map.get(runtime, :view_tree) || Map.get(runtime, "view_tree")
+    ei = RuntimeArtifacts.require_introspect(model)
 
-    output_tree = runtime_view_output_tree(model)
+    stored_rows =
+      Map.get(model, "runtime_view_output") || Map.get(model, :runtime_view_output) || []
+
+    preview_model =
+      case Map.get(model, "runtime_model") || Map.get(model, :runtime_model) do
+        %{} = runtime_model -> runtime_model
+        _ -> model
+      end
+
+    execution_model = RuntimeArtifacts.execution_model(runtime)
+
+    {stored_rows, view_tree} =
+      case Ide.Debugger.StepExecution.maybe_executor_view_preview(
+             execution_model,
+             model,
+             :watch,
+             stored_rows
+           ) do
+        {:ok, %{view_output: rows, view_tree: fresh_tree}} ->
+          {rows, fresh_tree || view_tree || %{}}
+
+        :skip ->
+          {stored_rows, view_tree || %{}}
+      end
+
+    refreshed_rows =
+      Ide.Debugger.StepExecution.resolve_runtime_view_output(
+        execution_model,
+        view_tree,
+        preview_model,
+        stored_rows
+      )
+
+    output_tree = runtime_view_output_tree(Map.put(model, "runtime_view_output", refreshed_rows))
 
     cond do
-      output_tree != nil ->
+      output_tree != nil and
+          not Ide.Debugger.StepExecution.stale_runtime_view_output?(preview_model, refreshed_rows) ->
         output_tree
 
-      concrete_rendered_view_tree?(view_tree, RuntimeArtifacts.require_introspect(model)) ->
+      concrete_rendered_view_tree?(view_tree, ei) ->
         view_tree
 
       true ->
@@ -277,8 +313,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
           "h" => map_integer_value(row, "h", 0),
           "font_id" => map_integer_value(row, "font_id", 0),
           "text" => to_string(Map.get(row, "text") || Map.get(row, :text) || ""),
-          "text_align" =>
-            to_string(Map.get(row, "text_align") || Map.get(row, :text_align) || "center"),
+          "text_align" => rendered_text_alignment(Map.get(row, "text_align") || Map.get(row, :text_align)),
           "text_overflow" =>
             to_string(
               Map.get(row, "text_overflow") || Map.get(row, :text_overflow) || "word_wrap"
@@ -418,6 +453,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
           "type" => "drawVectorAt",
           "label" => "",
           "children" => [],
+          "resource" => Map.get(row, "resource") || Map.get(row, :resource),
           "vector_id" => map_integer_value(row, "vector_id", 0),
           "x" => map_integer_value(row, "x", 0),
           "y" => map_integer_value(row, "y", 0)
@@ -446,10 +482,26 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
         }
         |> maybe_put_rendered_source(row)
 
+      kind when kind in ["path_filled", "path_outline", "path_outline_open"] ->
+        %{
+          "type" => path_rendered_type(kind),
+          "label" => "",
+          "children" => [],
+          "points" => Map.get(row, "points") || Map.get(row, :points) || [],
+          "offset_x" => map_integer_value(row, "offset_x", 0),
+          "offset_y" => map_integer_value(row, "offset_y", 0),
+          "rotation" => map_integer_value(row, "rotation", 0)
+        }
+        |> maybe_put_rendered_source(row)
+
       _ ->
         nil
     end
   end
+
+  defp path_rendered_type("path_filled"), do: "pathFilled"
+  defp path_rendered_type("path_outline"), do: "pathOutline"
+  defp path_rendered_type("path_outline_open"), do: "pathOutlineOpen"
 
   @spec maybe_put_rendered_source(map(), map()) :: map()
   defp maybe_put_rendered_source(node, row) when is_map(node) and is_map(row) do
@@ -618,7 +670,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
   @spec vector_canvas_size(map(), Project.t() | nil, :image | :sequence) ::
           {:ok, {integer(), integer()}} | :error
   defp vector_canvas_size(node, %Project{} = project, kind) when is_map(node) do
-    with vector_id when is_integer(vector_id) and vector_id >= 1 <- Util.map_integer(node, :vector_id),
+    with vector_id when is_integer(vector_id) and vector_id >= 1 <-
+           Util.map_integer(node, :vector_id),
          {:ok, path} <- ResourceStore.vector_file_path_by_id(project, vector_id),
          {:ok, bytes} <- File.read(path),
          {:ok, {w, h}} <- PdcDecoder.decode_canvas_size(bytes, kind) do
@@ -978,6 +1031,39 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
     end
   end
 
+  defp promote_rendered_node_args(%{"type" => "line", "children" => [from, to, color]} = node) do
+    with {:ok, {x1, y1}} <- rendered_point_child(from),
+         {:ok, {x2, y2}} <- rendered_point_child(to),
+         stroke when is_integer(stroke) <- rendered_scalar_color(color) do
+      node
+      |> Map.put("children", [])
+      |> Map.put("x1", x1)
+      |> Map.put("y1", y1)
+      |> Map.put("x2", x2)
+      |> Map.put("y2", y2)
+      |> Map.put("color", stroke)
+    else
+      _ -> node
+    end
+  end
+
+  defp promote_rendered_node_args(%{"type" => "roundRect", "children" => [bounds, radius, color]} = node) do
+    with {:ok, {x, y, w, h}} <- rendered_rect_child(bounds),
+         radius when is_integer(radius) <- rendered_scalar_int(radius),
+         fill when is_integer(fill) <- rendered_scalar_color(color) do
+      node
+      |> Map.put("children", [])
+      |> Map.put("x", x)
+      |> Map.put("y", y)
+      |> Map.put("w", w)
+      |> Map.put("h", h)
+      |> Map.put("radius", radius)
+      |> Map.put("fill", fill)
+    else
+      _ -> node
+    end
+  end
+
   defp promote_rendered_node_args(%{"children" => children} = node) when is_list(children) do
     fields = rendered_node_arg_fields(Map.get(node, "type"))
 
@@ -1059,6 +1145,70 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
 
   defp normalize_rendered_text(_value), do: nil
 
+  @spec rendered_point_child(Types.runtime_value()) :: {:ok, {integer(), integer()}} | :error
+  defp rendered_point_child(%{"x" => x, "y" => y}),
+    do: {:ok, {rendered_scalar_int(x), rendered_scalar_int(y)}}
+
+  defp rendered_point_child(%{x: x, y: y}),
+    do: {:ok, {rendered_scalar_int(x), rendered_scalar_int(y)}}
+
+  defp rendered_point_child(%{"type" => "expr", "value" => %{"x" => _} = point}),
+    do: rendered_point_child(point)
+
+  defp rendered_point_child(%{"type" => "expr"} = node) do
+    case rendered_expr_scalar(node) do
+      %{"x" => _, "y" => _} = point -> rendered_point_child(point)
+      _ -> :error
+    end
+  end
+
+  defp rendered_point_child(_), do: :error
+
+  @spec rendered_rect_child(Types.runtime_value()) :: {:ok, {integer(), integer(), integer(), integer()}} | :error
+  defp rendered_rect_child(%{"x" => x, "y" => y, "w" => w, "h" => h}),
+    do: {:ok, {rendered_scalar_int(x), rendered_scalar_int(y), rendered_scalar_int(w), rendered_scalar_int(h)}}
+
+  defp rendered_rect_child(%{x: x, y: y, w: w, h: h}),
+    do: {:ok, {rendered_scalar_int(x), rendered_scalar_int(y), rendered_scalar_int(w), rendered_scalar_int(h)}}
+
+  defp rendered_rect_child(%{"type" => "expr", "value" => %{"x" => _} = bounds}),
+    do: rendered_rect_child(bounds)
+
+  defp rendered_rect_child(%{"type" => "expr"} = node) do
+    case rendered_expr_scalar(node) do
+      %{"x" => _, "y" => _, "w" => _, "h" => _} = bounds -> rendered_rect_child(bounds)
+      _ -> :error
+    end
+  end
+
+  defp rendered_rect_child(_), do: :error
+
+  @spec rendered_scalar_int(Types.runtime_value()) :: integer() | nil
+  defp rendered_scalar_int(value) when is_integer(value), do: value
+  defp rendered_scalar_int(value) when is_float(value), do: trunc(value)
+
+  defp rendered_scalar_int(%{"type" => "expr"} = node) do
+    case rendered_expr_scalar(node) do
+      n when is_integer(n) -> n
+      n when is_float(n) -> trunc(n)
+      _ -> nil
+    end
+  end
+
+  defp rendered_scalar_int(_), do: nil
+
+  @spec rendered_scalar_color(Types.runtime_value()) :: integer() | nil
+  defp rendered_scalar_color(value) when is_integer(value), do: value
+
+  defp rendered_scalar_color(%{"type" => "expr"} = node) do
+    case rendered_expr_scalar(node) do
+      n when is_integer(n) -> n
+      _ -> nil
+    end
+  end
+
+  defp rendered_scalar_color(_), do: nil
+
   @spec rendered_expr_scalar(Types.runtime_value()) :: Types.runtime_value()
   defp rendered_expr_scalar(%{"type" => "expr"} = node) do
     cond do
@@ -1095,7 +1245,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
     end
   end
 
-  @spec normalize_rendered_list([Types.runtime_value()], (Types.runtime_value() -> {:ok, map()} | :error)) ::
+  @spec normalize_rendered_list([Types.runtime_value()], (Types.runtime_value() ->
+                                                            {:ok, map()} | :error)) ::
           {:ok, [map()]} | :error
   defp normalize_rendered_list(values, fun) when is_list(values) and is_function(fun, 1) do
     values
@@ -1111,7 +1262,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
     end
   end
 
-  @spec normalized_tagged_tuple(Types.runtime_value()) :: {:ok, integer(), Types.runtime_value()} | :error
+  @spec normalized_tagged_tuple(Types.runtime_value()) ::
+          {:ok, integer(), Types.runtime_value()} | :error
   defp normalized_tagged_tuple(%{"type" => "tuple2", "children" => [tag_node, payload]}) do
     case normalized_expr_value(tag_node) do
       tag when is_integer(tag) -> {:ok, tag, payload}
@@ -1132,12 +1284,15 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
   defp normalized_list_values(values) when is_list(values), do: {:ok, values}
   defp normalized_list_values(_values), do: :error
 
-  @spec normalized_payload_args(Types.runtime_value(), pos_integer()) :: {:ok, [Types.runtime_value()]} | :error
+  @spec normalized_payload_args(Types.runtime_value(), pos_integer()) ::
+          {:ok, [Types.runtime_value()]} | :error
   defp normalized_payload_args(payload, arity) when is_integer(arity) and arity > 1 do
     flatten_normalized_payload(payload, arity, [])
   end
 
-  @spec flatten_normalized_payload(Types.runtime_value(), non_neg_integer(), [Types.runtime_value()]) ::
+  @spec flatten_normalized_payload(Types.runtime_value(), non_neg_integer(), [
+          Types.runtime_value()
+        ]) ::
           {:ok, [Types.runtime_value()]} | :error
   defp flatten_normalized_payload(value, 1, acc), do: {:ok, Enum.reverse([value | acc])}
 
@@ -1171,6 +1326,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
         nil
     end
   end
+
   @spec rendered_view_preview(map() | nil) :: String.t()
   def rendered_view_preview(nil), do: "(no snapshot)"
 
@@ -1191,7 +1347,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
 
   def rendered_view_preview(_), do: "(no snapshot)"
 
-  @spec format_rendered_node(Types.rendered_node(), non_neg_integer(), map(), String.t() | nil) :: String.t()
+  @spec format_rendered_node(Types.rendered_node(), non_neg_integer(), map(), String.t() | nil) ::
+          String.t()
   defp format_rendered_node(node, depth, model, arg_name)
        when is_map(node) and is_integer(depth) and is_map(model) do
     indent = String.duplicate("  ", max(depth, 0))
@@ -1624,9 +1781,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
   end
 
   @spec evaluated_rendered_scalar_hint(Types.runtime_value(), map()) :: String.t() | nil
-  defp evaluated_rendered_scalar_hint(node, model) when is_map(node) and is_map(model) do
-    ElmExecutor.Runtime.SemanticExecutor
-    |> apply(:evaluate_view_tree_value, [node, model, %{}])
+  defp evaluated_rendered_scalar_hint(node, _model) when is_map(node) do
+    (Map.get(node, "value") ||
+       Map.get(node, :value) ||
+       Map.get(node, "evaluated_value") ||
+       Map.get(node, :evaluated_value))
     |> rendered_scalar_hint()
   end
 

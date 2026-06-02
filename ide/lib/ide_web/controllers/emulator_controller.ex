@@ -33,11 +33,9 @@ defmodule IdeWeb.EmulatorController do
       json(conn, info)
     else
       nil ->
-  
         conn |> put_status(:not_found) |> json(%{error: "Project not found"})
 
       {:error, reason} ->
-  
         conn |> put_status(:unprocessable_entity) |> json(%{error: launch_error_message(reason)})
     end
   end
@@ -49,11 +47,9 @@ defmodule IdeWeb.EmulatorController do
   defp package_for_launch(project, workspace_root, platform) do
     case BuildFlow.package_for_emulator_session(project, workspace_root, platform) do
       {:ok, package_result} ->
-  
         {:ok, package_result, platform}
 
       {:error, reason} ->
-  
         fallback_platform = WatchModels.default_id()
 
         if aplite_app_overflow?(platform, reason) and platform != fallback_platform do
@@ -257,10 +253,8 @@ defmodule IdeWeb.EmulatorController do
   end
 
   defp do_proxy(conn, id, kind) do
-
     with {:ok, info} <- Emulator.info(id),
          {:ok, target} <- proxy_target(info, kind) do
-
       conn
       |> WebSockAdapter.upgrade(IdeWeb.EmulatorProxySocket, %{target: target},
         timeout: 86_400_000
@@ -275,7 +269,6 @@ defmodule IdeWeb.EmulatorController do
           "embedded emulator websocket proxy failed id=#{id} kind=#{kind}: #{inspect(reason)}"
         )
 
-  
         conn |> put_status(:bad_request) |> json(%{error: inspect(reason)})
     end
   end
@@ -368,7 +361,8 @@ defmodule IdeWeb.EmulatorController do
   end
 
   defp install_error_message(:emulator_session_unresponsive),
-    do: "Embedded emulator session did not respond during install (it may still be uploading). Try again or relaunch the emulator."
+    do:
+      "Embedded emulator session did not respond during install (it may still be uploading). Try again or relaunch the emulator."
 
   defp install_error_message(reason), do: inspect(reason)
 end

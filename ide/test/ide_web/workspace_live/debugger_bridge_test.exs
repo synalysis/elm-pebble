@@ -105,7 +105,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridgeTest do
 
     socket = debugger_socket(project)
     workspace = Projects.project_workspace_path(project)
-    core_ir = %{"modules" => [%{"name" => "CompanionApp"}]}
 
     _updated_compile =
       DebuggerBridge.sync_compile(socket, %{
@@ -114,15 +113,15 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridgeTest do
         revision: "rev-phone",
         cached?: false,
         diagnostics: nil,
-        elm_executor_core_ir_b64: :erlang.term_to_binary(core_ir) |> Base.encode64(),
-        elm_executor_metadata: %{"target" => "phone"}
+        elmx_manifest: %{"contract" => "elmx.runtime_executor.v1"},
+        elmx_revision: "rev-phone"
       })
 
     assert {:ok, state} = Debugger.snapshot(project.slug, event_limit: 10)
-    assert get_in(state.companion, [:shell, "elm_executor_core_ir_b64"])
-    refute get_in(state.watch, [:shell, "elm_executor_core_ir_b64"])
-    refute get_in(state.companion, [:model, "elm_executor_core_ir_b64"])
-    refute get_in(state.watch, [:model, "elm_executor_core_ir_b64"])
+    assert get_in(state.companion, [:shell, "elmx_revision"]) == "rev-phone"
+    refute get_in(state.watch, [:shell, "elmx_revision"])
+    refute get_in(state.companion, [:model, "elmx_revision"])
+    refute get_in(state.watch, [:model, "elmx_revision"])
   end
 
   defp debugger_socket(project) do

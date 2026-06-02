@@ -43,7 +43,8 @@ defmodule Ide.Debugger.Geolocation do
     }
   end
 
-  @spec watch_from_phone_message_value(Types.simulator_settings()) :: Types.phone_to_watch_message_value()
+  @spec watch_from_phone_message_value(Types.simulator_settings()) ::
+          Types.phone_to_watch_message_value()
   def watch_from_phone_message_value(settings) when is_map(settings) do
     {lat_e6, lon_e6, accuracy_m} = wire_triplet(settings)
 
@@ -58,7 +59,7 @@ defmodule Ide.Debugger.Geolocation do
     }
   end
 
-  @spec simulator_wire_int(Types.core_ir_eval_context() | ProtocolResolutionCtx.t()) :: integer() | nil
+  @spec simulator_wire_int(Types.eval_context() | ProtocolResolutionCtx.t()) :: integer() | nil
   def simulator_wire_int(ctx) when is_map(ctx) do
     with %{} = settings <- Map.get(ctx, :simulator_settings),
          index when is_integer(index) <- Map.get(ctx, :arg_index) do
@@ -86,7 +87,8 @@ defmodule Ide.Debugger.Geolocation do
     init_requested? or is_binary(subscription_callback)
   end
 
-  def init_requested?(_init_cmd_calls, subscription_callback), do: is_binary(subscription_callback)
+  def init_requested?(_init_cmd_calls, subscription_callback),
+    do: is_binary(subscription_callback)
 
   @spec update_branch_requests_command?([Types.cmd_call()], Types.elm_introspect()) :: boolean()
   def update_branch_requests_command?(update_cmd_calls, ei)

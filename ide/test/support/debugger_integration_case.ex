@@ -10,7 +10,6 @@ defmodule Ide.DebuggerIntegrationCase do
       alias Ide.Debugger
       alias Ide.Debugger.AppMessageQueue
       alias Ide.Debugger.RuntimeExecutor
-      alias Ide.Debugger.RuntimeExecutor.ElmcAdapter
       alias Ide.Test.TimelineAssertions
 
       import Ide.DebuggerIntegrationHelpers

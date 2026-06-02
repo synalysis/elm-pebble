@@ -17,7 +17,9 @@ defmodule Ide.Emulator.SlotLimiterTest do
   end
 
   test "acquire and release embedded slots" do
-    assert {:ok, "session-a"} = SlotLimiter.acquire("session-a", kind: :embedded, platform: "basalt")
+    assert {:ok, "session-a"} =
+             SlotLimiter.acquire("session-a", kind: :embedded, platform: "basalt")
+
     assert %{used_slots: 1} = SlotLimiter.status()
     SlotLimiter.release("session-a")
     assert %{used_slots: 0} = SlotLimiter.status()

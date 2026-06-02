@@ -60,7 +60,8 @@ defmodule Ide.PackageDocs.Exporter do
     ]
   end
 
-  @spec export_package(package_spec(), String.t()) :: {:ok, map()} | {:error, Types.export_error()}
+  @spec export_package(package_spec(), String.t()) ::
+          {:ok, map()} | {:error, Types.export_error()}
   defp export_package(%{name: package_name, root: package_root}, output_root) do
     with {:ok, elm_json} <- Extractor.read_elm_json(package_root),
          :ok <- validate_package_name(package_name, elm_json),
@@ -91,7 +92,8 @@ defmodule Ide.PackageDocs.Exporter do
   @spec promote_output_root(String.t(), String.t()) :: :ok | {:error, Types.export_error()}
   defp promote_output_root(staging_root, output_root)
        when is_binary(staging_root) and is_binary(output_root) do
-    backup_root = output_root <> ".backup-" <> Integer.to_string(System.unique_integer([:positive]))
+    backup_root =
+      output_root <> ".backup-" <> Integer.to_string(System.unique_integer([:positive]))
 
     with :ok <- move_path(staging_root, output_root, backup_root),
          :ok <- cleanup_backup(backup_root) do
@@ -144,7 +146,8 @@ defmodule Ide.PackageDocs.Exporter do
     :ok
   end
 
-  @spec write_package(String.t(), String.t(), map(), [map()]) :: :ok | {:error, Types.export_error()}
+  @spec write_package(String.t(), String.t(), map(), [map()]) ::
+          :ok | {:error, Types.export_error()}
   defp write_package(output_root, package_name, elm_json, docs) do
     version = elm_json["version"] || "latest"
 

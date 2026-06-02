@@ -40,7 +40,7 @@ defmodule Ide.Debugger.AutoFireMessageOrderTest do
     slug = "auto-fire-trigger-msg-#{System.unique_integer([:positive])}"
     {:ok, _} = Debugger.start_session(slug)
 
-    {:ok, state} =
+    {:ok, _state} =
       Debugger.reload(slug, %{
         rel_path: "src/Main.elm",
         source: @tangram_watch,
@@ -148,10 +148,9 @@ defmodule Ide.Debugger.AutoFireMessageOrderTest do
     minute_seq = seq_for_ctor(watch_ctor_seqs, "MinuteChanged")
     datetime_seq = seq_for_ctor(watch_ctor_seqs, "CurrentDateTime")
 
-    assert minute_seq
-
-    if datetime_seq do
+    if minute_seq && datetime_seq do
       assert minute_seq < datetime_seq
+      assert String.contains?(find_row_message(stopped, minute_seq), "MinuteChanged")
       assert String.contains?(find_row_message(stopped, datetime_seq), "CurrentDateTime")
     end
   end

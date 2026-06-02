@@ -7,13 +7,28 @@ defmodule Ide.Debugger.InitSurfaceEffectsContext do
 
   @type host :: %{
           required(:append_event) => (map(), String.t(), map() -> map()),
-          required(:apply_step_once) =>
-            (map(), Types.surface_target(), String.t(), Types.subscription_payload() | map() | nil,
-             String.t(), String.t() -> map()),
-          required(:apply_device_data_followups) =>
-            (map(), Types.surface_target(), String.t(), map(), String.t() -> map()),
-          required(:apply_subscription_ok_response) =>
-            (map(), Types.surface_target(), String.t(), map(), String.t(), String.t() -> map()),
+          required(:apply_step_once) => (map(),
+                                         Types.surface_target(),
+                                         String.t(),
+                                         Types.subscription_payload()
+                                         | map()
+                                         | nil,
+                                         String.t(),
+                                         String.t() ->
+                                           map()),
+          required(:apply_device_data_followups) => (map(),
+                                                     Types.surface_target(),
+                                                     String.t(),
+                                                     map(),
+                                                     String.t() ->
+                                                       map()),
+          required(:apply_subscription_ok_response) => (map(),
+                                                        Types.surface_target(),
+                                                        String.t(),
+                                                        map(),
+                                                        String.t(),
+                                                        String.t() ->
+                                                          map()),
           required(:protocol_events_ctx) => (-> map()),
           required(:protocol_rx_ctx) => (-> ProtocolRx.ctx()),
           required(:companion_bridge_ctx) => (-> map()),

@@ -9,7 +9,7 @@ defmodule Ide.Debugger.RuntimeViewOutput do
   def normalize_view_output(_), do: []
   @spec tree(Types.app_model(), Types.surface_target()) :: Types.view_output_tree() | nil
   def tree(model, target)
-       when is_map(model) and target in [:watch, :companion, :phone] do
+      when is_map(model) and target in [:watch, :companion, :phone] do
     case normalize_view_output(
            Map.get(model, "runtime_view_output") || Map.get(model, :runtime_view_output)
          ) do
@@ -140,7 +140,8 @@ defmodule Ide.Debugger.RuntimeViewOutput do
     |> then(fn {style, children} -> {style, Enum.reverse(children)} end)
   end
 
-  @spec maybe_put_group_style(Types.view_output_tree(), Types.wire_map()) :: Types.view_output_tree()
+  @spec maybe_put_group_style(Types.view_output_tree(), Types.wire_map()) ::
+          Types.view_output_tree()
   def maybe_put_group_style(group, style) when is_map(group) and map_size(style) > 0,
     do: Map.put(group, "style", style)
 
@@ -255,8 +256,8 @@ defmodule Ide.Debugger.RuntimeViewOutput do
           "h" => integer_or_zero(WireValues.map_value(row, "h")),
           "font_id" => integer_or_zero(WireValues.map_value(row, "font_id")),
           "text" => to_string(WireValues.map_value(row, "text") || ""),
-          "text_align" => to_string(WireValues.map_value(row, "text_align") || "center"),
-          "text_overflow" => to_string(WireValues.map_value(row, "text_overflow") || "word_wrap")
+          "text_align" => wire_text_alignment(WireValues.map_value(row, "text_align")),
+          "text_overflow" => wire_text_overflow(WireValues.map_value(row, "text_overflow"))
         }
         |> maybe_put_rendered_source(row)
 
@@ -334,4 +335,16 @@ defmodule Ide.Debugger.RuntimeViewOutput do
   end
 
   defp integer_or_zero(_), do: 0
+
+  @spec wire_text_alignment(Types.wire_input()) :: String.t()
+  defp wire_text_alignment(value) do
+    {align, _} = Elmx.Runtime.Pebble.TextOptions.fields(%{"alignment" => value || "center"})
+    align
+  end
+
+  @spec wire_text_overflow(Types.wire_input()) :: String.t()
+  defp wire_text_overflow(value) do
+    {_, overflow} = Elmx.Runtime.Pebble.TextOptions.fields(%{"overflow" => value || "word_wrap"})
+    overflow
+  end
 end

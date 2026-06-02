@@ -55,14 +55,14 @@ defmodule ElmEx.Frontend.GeneratedDeclarationParser do
         if name in ["type", "module", "import", "port", "effect", "infix"] do
           {:error, :invalid_function_header}
         else
-        args = split_top_level_spaces(arg_source)
+          args = split_top_level_spaces(arg_source)
 
-        if args == [] do
-          {:error, :invalid_function_header}
-        else
-          lambda_body = "\\" <> Enum.join(args, " ") <> " -> " <> right
-          {:ok, %{name: name, args: [], body: String.trim(lambda_body)}}
-        end
+          if args == [] do
+            {:error, :invalid_function_header}
+          else
+            lambda_body = "\\" <> Enum.join(args, " ") <> " -> " <> right
+            {:ok, %{name: name, args: [], body: String.trim(lambda_body)}}
+          end
         end
 
       _ ->
@@ -78,7 +78,13 @@ defmodule ElmEx.Frontend.GeneratedDeclarationParser do
     |> Enum.reverse()
   end
 
-  @spec do_split_top_level_spaces(String.t(), [String.t()], String.t(), integer(), nil | String.t()) ::
+  @spec do_split_top_level_spaces(
+          String.t(),
+          [String.t()],
+          String.t(),
+          integer(),
+          nil | String.t()
+        ) ::
           [String.t()]
   defp do_split_top_level_spaces(<<>>, acc, current, _depth, _quote) do
     token = String.trim(current)

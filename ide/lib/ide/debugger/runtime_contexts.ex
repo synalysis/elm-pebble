@@ -27,13 +27,26 @@ defmodule Ide.Debugger.RuntimeContexts do
   # Host callbacks use map() for runtime state so Dialyzer accepts ctx maps from RuntimeHost.
   @type host :: %{
           required(:append_event) => (map(), String.t(), map() -> map()),
-          required(:append_debugger_event) =>
-            (map(), String.t(), Types.surface_target(), String.t(), String.t() -> map()),
-          required(:apply_step_once) =>
-            (map(), Types.surface_target(), String.t(), Types.subscription_payload() | nil, String.t(),
-             String.t() -> map()),
-          required(:apply_step_without_value) =>
-            (map(), Types.surface_target(), String.t(), String.t(), String.t() -> map()),
+          required(:append_debugger_event) => (map(),
+                                               String.t(),
+                                               Types.surface_target(),
+                                               String.t(),
+                                               String.t() ->
+                                                 map()),
+          required(:apply_step_once) => (map(),
+                                         Types.surface_target(),
+                                         String.t(),
+                                         Types.subscription_payload()
+                                         | nil,
+                                         String.t(),
+                                         String.t() ->
+                                           map()),
+          required(:apply_step_without_value) => (map(),
+                                                  Types.surface_target(),
+                                                  String.t(),
+                                                  String.t(),
+                                                  String.t() ->
+                                                    map()),
           required(:source_root_for_target) => (Types.surface_target() -> String.t()),
           required(:session_key_from_state) => (map() -> String.t() | nil),
           required(:simulator_settings_from_state) => (map() -> Types.simulator_settings()),
@@ -41,22 +54,38 @@ defmodule Ide.Debugger.RuntimeContexts do
           required(:surface_app_model) => (map(), Types.surface_target() -> map()),
           required(:normalize_step_target) => (Types.wire_input() -> Types.surface_target()),
           required(:model_active?) => (map(), Types.surface_target(), map() -> boolean()),
-          required(:subscription_row_enabled?) => (map(), Types.surface_target(), map() -> boolean()),
+          required(:subscription_row_enabled?) => (map(), Types.surface_target(), map() ->
+                                                     boolean()),
           required(:auto_fire_row_enabled?) => (map(), Types.surface_target(), map() -> boolean()),
           required(:simulator_now) => (map(), Types.surface_target() -> map()),
           required(:append_runtime_exec) => (map(), Types.surface_target(), map() -> map()),
-          required(:trigger_message_for_surface) =>
-            (map(), Types.surface_target(), String.t(), String.t() | nil -> String.t()),
-          required(:attach_subscription_payload) =>
-            (map(), Types.surface_target(), String.t(), String.t() -> String.t()),
+          required(:trigger_message_for_surface) => (map(),
+                                                     Types.surface_target(),
+                                                     String.t(),
+                                                     String.t()
+                                                     | nil ->
+                                                       String.t()),
+          required(:attach_subscription_payload) => (map(),
+                                                     Types.surface_target(),
+                                                     String.t(),
+                                                     String.t() ->
+                                                       String.t()),
           required(:merge_runtime_artifacts) => (map(), Types.surface_target(), map() -> map()),
-          required(:apply_subscription_ok_response) =>
-            (map(), Types.surface_target(), String.t(), Types.subscription_payload(), String.t(),
-             String.t() -> map()),
-          required(:maybe_attach_compile_artifacts) => (map(), Types.surface_target(), map() -> map()),
+          required(:apply_subscription_ok_response) => (map(),
+                                                        Types.surface_target(),
+                                                        String.t(),
+                                                        Types.subscription_payload(),
+                                                        String.t(),
+                                                        String.t() ->
+                                                          map()),
+          required(:maybe_attach_compile_artifacts) => (map(), Types.surface_target(), map() ->
+                                                          map()),
           required(:maybe_append_runtime_status) => (map(), Types.surface_target() -> map()),
-          required(:maybe_append_runtime_status_after_init) =>
-            (map(), Types.surface_target(), map(), map() -> map()),
+          required(:maybe_append_runtime_status_after_init) => (map(),
+                                                                Types.surface_target(),
+                                                                map(),
+                                                                map() ->
+                                                                  map()),
           required(:maybe_append_contract) => (map(), map() | nil -> map()),
           required(:maybe_append_runtime_exec) => (map(), String.t() -> map()),
           required(:maybe_append_phone_view_render) => (map(), String.t() -> map()),
@@ -210,7 +239,14 @@ defmodule Ide.Debugger.RuntimeContexts do
               followups
             end
 
-          RuntimeFollowups.apply_after_step(st, target, message, source, followups, runtime_followups)
+          RuntimeFollowups.apply_after_step(
+            st,
+            target,
+            message,
+            source,
+            followups,
+            runtime_followups
+          )
         end,
         protocol_rx_ctx: protocol_rx_fn
       })
@@ -265,7 +301,14 @@ defmodule Ide.Debugger.RuntimeContexts do
           trigger_message: host.trigger_message_for_surface,
           apply_step: host.apply_step_once,
           apply_device_data_responses: fn st, target, message ->
-            DeviceDataResponses.apply_after_step(st, target, message, nil, "subscription_auto_fire", device_data)
+            DeviceDataResponses.apply_after_step(
+              st,
+              target,
+              message,
+              nil,
+              "subscription_auto_fire",
+              device_data
+            )
           end,
           subscription_row_enabled?: host.subscription_row_enabled?,
           auto_fire_row_enabled?: host.auto_fire_row_enabled?,
@@ -286,11 +329,22 @@ defmodule Ide.Debugger.RuntimeContexts do
   end
 
   @spec hot_reload_context(t(), String.t() | nil, String.t(), String.t()) :: HotReload.ctx()
-  def hot_reload_context(%{introspect_merge: introspect_merge, hot_reload_events: hot_reload_events}, rel_path, source, source_root) do
+  def hot_reload_context(
+        %{introspect_merge: introspect_merge, hot_reload_events: hot_reload_events},
+        rel_path,
+        source,
+        source_root
+      ) do
     HotReloadContext.build(rel_path, source, %{
       put_placeholder_views: &HotReloadSurface.put_view_trees/4,
       merge_introspect: fn st ->
-        Ide.Debugger.DebuggerContractSnapshot.merge_from_source(st, rel_path, source, source_root, introspect_merge)
+        Ide.Debugger.DebuggerContractSnapshot.merge_from_source(
+          st,
+          rel_path,
+          source,
+          source_root,
+          introspect_merge
+        )
       end,
       append_reload_events: fn st, reason, rp, revision, root, intro_payload ->
         HotReloadEvents.append(st, reason, rp, revision, root, intro_payload, hot_reload_events)

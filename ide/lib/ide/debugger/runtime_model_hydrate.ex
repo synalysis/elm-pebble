@@ -155,7 +155,7 @@ defmodule Ide.Debugger.RuntimeModelHydrate do
 
   @spec for_message(Types.app_model(), String.t() | nil, skip_fields()) :: Types.app_model()
   def for_message(model, message, skip_fields)
-       when is_map(model) and is_list(skip_fields) do
+      when is_map(model) and is_list(skip_fields) do
     runtime_model = Map.get(model, "runtime_model") || Map.get(model, :runtime_model)
 
     if is_map(runtime_model) do
@@ -193,9 +193,11 @@ defmodule Ide.Debugger.RuntimeModelHydrate do
   def wire_list_to_elixir(value), do: elm_list_wire_to_elixir(value)
 
   @spec normalize_boolean_string(String.t()) :: boolean() | String.t()
-  def normalize_boolean_string(value) when is_binary(value), do: normalize_runtime_boolean_string(value)
+  def normalize_boolean_string(value) when is_binary(value),
+    do: normalize_runtime_boolean_string(value)
 
-  @spec hydrate_static_runtime_model_values(Types.inner_runtime_model()) :: Types.inner_runtime_model()
+  @spec hydrate_static_runtime_model_values(Types.inner_runtime_model()) ::
+          Types.inner_runtime_model()
   defp hydrate_static_runtime_model_values(runtime_model) when is_map(runtime_model) do
     runtime_model
     |> Enum.map(fn {key, value} ->
@@ -278,7 +280,9 @@ defmodule Ide.Debugger.RuntimeModelHydrate do
     [hydrate_static_runtime_value(head) | elm_list_wire_to_elixir(tail)]
   end
 
-  defp elm_list_wire_to_elixir(list) when is_list(list), do: Enum.map(list, &hydrate_static_runtime_value/1)
+  defp elm_list_wire_to_elixir(list) when is_list(list),
+    do: Enum.map(list, &hydrate_static_runtime_value/1)
+
   defp elm_list_wire_to_elixir(value), do: [hydrate_static_runtime_value(value)]
 
   @spec normalize_runtime_boolean_string(String.t()) :: boolean() | String.t()
@@ -351,6 +355,9 @@ defmodule Ide.Debugger.RuntimeModelHydrate do
       nil ->
         Map.put(runtime_model, key, value)
 
+      current when key in ["screenW", "screenH"] and is_integer(current) and current <= 0 ->
+        Map.put(runtime_model, key, value)
+
       current when is_map(current) ->
         if unresolved_runtime_value?(current),
           do: Map.put(runtime_model, key, value),
@@ -367,7 +374,10 @@ defmodule Ide.Debugger.RuntimeModelHydrate do
 
   @spec unresolved_runtime_value?(Types.wire_input()) :: boolean()
   defp unresolved_runtime_value?(%{"$field" => field, "$on" => _}) when is_binary(field), do: true
-  defp unresolved_runtime_value?(%{:"$field" => field, :"$on" => _}) when is_binary(field), do: true
+
+  defp unresolved_runtime_value?(%{:"$field" => field, :"$on" => _}) when is_binary(field),
+    do: true
+
   defp unresolved_runtime_value?(value), do: RuntimeModelQuality.unresolved_value?(value)
 
   @spec launch_context_display_shape(Types.launch_context()) :: String.t() | nil
@@ -399,7 +409,8 @@ defmodule Ide.Debugger.RuntimeModelHydrate do
 
   defp launch_context_display_shape(_launch_context), do: nil
 
-  @spec launch_context_display_shape_ctor(Types.launch_context()) :: Types.protocol_ctor_value() | nil
+  @spec launch_context_display_shape_ctor(Types.launch_context()) ::
+          Types.protocol_ctor_value() | nil
   defp launch_context_display_shape_ctor(launch_context) when is_map(launch_context) do
     case launch_context_display_shape(launch_context) do
       "Round" -> %{"ctor" => "Round", "args" => []}
@@ -410,7 +421,8 @@ defmodule Ide.Debugger.RuntimeModelHydrate do
 
   defp launch_context_display_shape_ctor(_launch_context), do: nil
 
-  @spec launch_context_color_capability(Types.launch_context()) :: Types.protocol_ctor_value() | nil
+  @spec launch_context_color_capability(Types.launch_context()) ::
+          Types.protocol_ctor_value() | nil
   defp launch_context_color_capability(launch_context) when is_map(launch_context) do
     case RuntimeSurfaces.launch_context_color_mode(launch_context) do
       "BlackWhite" -> %{"ctor" => "BlackWhite", "args" => []}

@@ -33,9 +33,13 @@ defmodule Ide.Debugger.TraceExchange do
           integer() | nil,
           integer() | nil
         ) :: Types.fingerprint_compare_result()
-  defdelegate build_runtime_fingerprint_compare_payload(events, compare_cursor_seq, baseline_cursor_seq),
-    to: FingerprintCompare,
-    as: :build
+  defdelegate build_runtime_fingerprint_compare_payload(
+                events,
+                compare_cursor_seq,
+                baseline_cursor_seq
+              ),
+              to: FingerprintCompare,
+              as: :build
 
   @spec event_at_seq([runtime_event()], integer() | nil) :: runtime_event() | nil
   defdelegate event_at_seq(events, seq), to: Events

@@ -119,7 +119,8 @@ defmodule Ide.Debugger.RuntimeSurfaces do
   end
 
   @spec apply_launch_context(Types.runtime_state(), String.t()) :: Types.runtime_state()
-  def apply_launch_context(state, launch_reason) when is_map(state) and is_binary(launch_reason) do
+  def apply_launch_context(state, launch_reason)
+      when is_map(state) and is_binary(launch_reason) do
     watch_profile_id = parse_watch_profile_id(Map.get(state, :watch_profile_id))
     launch_reason = parse_launch_reason(launch_reason)
     launch_context = launch_context_for(watch_profile_id, launch_reason)

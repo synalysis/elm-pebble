@@ -134,7 +134,7 @@ defmodule Ide.ProjectCapabilities.Detect do
   defp configuration_subscription?(row) do
     call_name(row) in @configuration_subscriptions or
       String.ends_with?(call_target(row), ".onConfiguration") or
-        String.ends_with?(call_target(row), ".onClosed")
+      String.ends_with?(call_target(row), ".onClosed")
   end
 
   @spec health_command?(map()) :: boolean()
@@ -147,7 +147,7 @@ defmodule Ide.ProjectCapabilities.Detect do
   defp health_subscription?(row) do
     target = call_target(row)
 
-    health_target?(target) and call_name(row) == "onEvent" or
+    (health_target?(target) and call_name(row) == "onEvent") or
       String.contains?(target, "onHealthEvent")
   end
 

@@ -47,7 +47,8 @@ defmodule Ide.Emulator.SdkScreenshotStyleTest do
     assert {:ok, rgba} =
              SdkScreenshotStyle.build_rgba("diorite", white, 2, 2, normalize: false)
 
-    assert rgba == <<255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255>>
+    assert rgba ==
+             <<255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255>>
   end
 
   test "gabbro roundify clears corner pixels" do

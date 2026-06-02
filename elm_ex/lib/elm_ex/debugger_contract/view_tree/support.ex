@@ -69,7 +69,10 @@ defmodule ElmEx.DebuggerContract.ViewTree.Support do
 
   @spec field_access_label(Types.ast_expr()) :: String.t()
   def field_access_label(%{op: :field_access, arg: arg, field: field}) when is_binary(field) do
-    case ElmEx.DebuggerContract.resolve_case_subject_expr(%{op: :field_access, arg: arg, field: field}, %{}) do
+    case ElmEx.DebuggerContract.resolve_case_subject_expr(
+           %{op: :field_access, arg: arg, field: field},
+           %{}
+         ) do
       value when is_binary(value) and value != "" -> value
       _ -> field
     end

@@ -11,7 +11,9 @@ defmodule Ide.Mcp.GameJumpElmxCompileTest do
       _ = Application.ensure_all_started(:elmx)
 
       assert {:ok, %{project: project}} =
-               Ide.Mcp.DebuggerTemplateCorpus.bootstrap_template("game-jump-n-run", cleanup: false)
+               Ide.Mcp.DebuggerTemplateCorpus.bootstrap_template("game-jump-n-run",
+                 cleanup: false
+               )
 
       try do
         workspace =

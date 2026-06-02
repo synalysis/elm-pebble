@@ -4,6 +4,7 @@ defmodule Ide.Debugger.Types.SnapshotContinueAttrs do
   """
 
   alias Ide.Debugger.Types
+
   @type t :: %{
           optional(:cursor_seq) => non_neg_integer() | String.t() | nil,
           optional(String.t()) => Types.wire_input(),

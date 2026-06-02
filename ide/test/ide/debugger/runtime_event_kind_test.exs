@@ -26,7 +26,10 @@ defmodule Ide.Debugger.RuntimeEventKindTest do
     assert RuntimeEventPayload.payload_module_for(:update_in) == MessageInEventPayload
     assert RuntimeEventPayload.payload_module_for(:runtime_exec) == RuntimeExecEventPayload
     assert RuntimeEventPayload.payload_module_for(:hot_reload) == HotReloadEventPayload
-    assert RuntimeEventPayload.payload_module_for(:package_cmd_error) == PackageCmdErrorEventPayload
+
+    assert RuntimeEventPayload.payload_module_for(:package_cmd_error) ==
+             PackageCmdErrorEventPayload
+
     assert RuntimeEventPayload.payload_module_for(:protocol_tx_rx) == ProtocolTxRxPayload
     assert RuntimeEventPayload.payload_module_for(:runtime_status) == RuntimeStatusEventPayload
     assert RuntimeEventPayload.payload_module_for(:package_cmd) == PackageCmdEventPayload
@@ -35,11 +38,13 @@ defmodule Ide.Debugger.RuntimeEventKindTest do
     assert RuntimeEventPayload.payload_module_for(:device_data) == DeviceDataEventPayload
     assert RuntimeEventPayload.payload_module_for(:replay) == ReplayEventPayload
     assert RuntimeEventPayload.payload_module_for(:elmc) == Ide.Debugger.Types.ElmcEventPayload
+
     assert RuntimeEventPayload.payload_module_for(:contract) ==
              Ide.Debugger.Types.DebuggerContractEventPayload
 
     assert RuntimeEventPayload.payload_module_for(:elm_introspect) ==
              Ide.Debugger.Types.DebuggerContractEventPayload
+
     assert RuntimeEventPayload.payload_module_for(:generic) == nil
   end
 
@@ -60,6 +65,7 @@ defmodule Ide.Debugger.RuntimeEventKindTest do
     assert RuntimeEventPayload.known_event_type?("debugger.package_cmd_error")
     refute RuntimeEventPayload.known_event_type?("debugger.not_a_real_type")
     assert RuntimeEventPayload.contract_complete?()
+
     assert RuntimeEventPayload.payload_module_for_type("debugger.watch_profile_set") !=
              nil
   end

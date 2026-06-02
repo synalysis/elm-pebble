@@ -157,7 +157,11 @@ defmodule Mix.Tasks.Ide.McpTemplateHealth do
     if acc.status == :error do
       acc
     else
-      case mcp("files.stat", %{"slug" => slug, "source_root" => "phone", "rel_path" => "src/CompanionApp.elm"}) do
+      case mcp("files.stat", %{
+             "slug" => slug,
+             "source_root" => "phone",
+             "rel_path" => "src/CompanionApp.elm"
+           }) do
         {:ok, _} ->
           case mcp("debugger.reload", %{
                  "slug" => slug,
@@ -224,10 +228,22 @@ defmodule Mix.Tasks.Ide.McpTemplateHealth do
 
         cond do
           root == "previewUnavailable" and app_template? ->
-            Map.put(acc, :render, Map.merge(Map.take(payload, ["root_type", "node_count", "screen"]), %{note: "app preview unavailable in debugger"}))
+            Map.put(
+              acc,
+              :render,
+              Map.merge(Map.take(payload, ["root_type", "node_count", "screen"]), %{
+                note: "app preview unavailable in debugger"
+              })
+            )
 
           root == "previewUnavailable" and preview_diagnostics_ok?(acc.slug) ->
-            Map.put(acc, :render, Map.merge(Map.take(payload, ["root_type", "node_count", "screen"]), %{note: "runtime view output available"}))
+            Map.put(
+              acc,
+              :render,
+              Map.merge(Map.take(payload, ["root_type", "node_count", "screen"]), %{
+                note: "runtime view output available"
+              })
+            )
 
           root == "previewUnavailable" ->
             fail(acc, "render_tree", "preview unavailable")
@@ -258,7 +274,11 @@ defmodule Mix.Tasks.Ide.McpTemplateHealth do
         Map.put(acc, :pbw, path)
 
       {:ok, payload} ->
-        fail(acc, "pebble.package", "missing artifact_path: #{inspect(Map.take(payload, ["status", "artifact_path", "package_path"]))}")
+        fail(
+          acc,
+          "pebble.package",
+          "missing artifact_path: #{inspect(Map.take(payload, ["status", "artifact_path", "package_path"]))}"
+        )
 
       {:error, reason} ->
         fail(acc, "pebble.package", reason)
@@ -347,7 +367,12 @@ defmodule Mix.Tasks.Ide.McpTemplateHealth do
 
   defp preview_diagnostics_ok?(slug) do
     case mcp("debugger.preview_diagnostics", %{"slug" => slug, "target" => "watch"}) do
-      {:ok, %{"status" => "ok", "render_source" => "runtime_view_output", "runtime_view_output_count" => count}}
+      {:ok,
+       %{
+         "status" => "ok",
+         "render_source" => "runtime_view_output",
+         "runtime_view_output_count" => count
+       }}
       when is_integer(count) and count > 0 ->
         true
 

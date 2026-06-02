@@ -20,7 +20,8 @@ defmodule Ide.Debugger.RuntimeEventPayloadTypesTest do
                "reason" => "runtime_event_payload_test"
              })
 
-    assert {:ok, _} = Debugger.step(slug, %{"target" => "watch", "message" => "Tick", "count" => 1})
+    assert {:ok, _} =
+             Debugger.step(slug, %{"target" => "watch", "message" => "Tick", "count" => 1})
 
     assert {:ok, st} = Debugger.snapshot(slug, event_limit: 200)
 

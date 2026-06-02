@@ -18,35 +18,53 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
 
   @type apply_ctx :: %{
           required(:executor) => executor(),
-          required(:attach_compile_artifacts) =>
-            (Types.runtime_state(), Types.surface_target(), Types.elm_introspect() ->
-               Types.runtime_state()),
-          required(:hydrate_runtime_model) =>
-            (Types.app_model(), String.t() | nil, [String.t()] -> Types.app_model()),
-          required(:append_event) =>
-            (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() ->
-               Types.runtime_state()),
-          required(:append_debugger_event) =>
-            (Types.runtime_state(), String.t(), Types.surface_target(), String.t(), String.t(),
-             Types.timeline_step_message_value() -> Types.runtime_state()),
-          required(:runtime_status_after_init) =>
-            (Types.runtime_state(), Types.surface_target(), Types.step_executor_result() | map(),
-             Types.elm_introspect() -> Types.runtime_state()),
-          required(:apply_runtime_followups) =>
-            (Types.runtime_state(), Types.surface_target(), String.t(), String.t(),
-             [Types.runtime_followup_row()] -> Types.runtime_state()),
-          required(:drain_app_message_queue) =>
-            (Types.runtime_state(), Types.surface_target() -> Types.runtime_state())
+          required(:attach_compile_artifacts) => (Types.runtime_state(),
+                                                  Types.surface_target(),
+                                                  Types.elm_introspect() ->
+                                                    Types.runtime_state()),
+          required(:hydrate_runtime_model) => (Types.app_model(),
+                                               String.t()
+                                               | nil,
+                                               [String.t()] ->
+                                                 Types.app_model()),
+          required(:append_event) => (Types.runtime_state(),
+                                      String.t(),
+                                      Types.debugger_timeline_payload() ->
+                                        Types.runtime_state()),
+          required(:append_debugger_event) => (Types.runtime_state(),
+                                               String.t(),
+                                               Types.surface_target(),
+                                               String.t(),
+                                               String.t(),
+                                               Types.timeline_step_message_value() ->
+                                                 Types.runtime_state()),
+          required(:runtime_status_after_init) => (Types.runtime_state(),
+                                                   Types.surface_target(),
+                                                   Types.step_executor_result()
+                                                   | map(),
+                                                   Types.elm_introspect() ->
+                                                     Types.runtime_state()),
+          required(:apply_runtime_followups) => (Types.runtime_state(),
+                                                 Types.surface_target(),
+                                                 String.t(),
+                                                 String.t(),
+                                                 [Types.runtime_followup_row()] ->
+                                                   Types.runtime_state()),
+          required(:drain_app_message_queue) => (Types.runtime_state(), Types.surface_target() ->
+                                                   Types.runtime_state())
         }
 
   @type merge_ctx :: %{
           required(:apply_snapshot) => apply_ctx(),
           required(:surface_compile) => Ide.Debugger.SurfaceCompileArtifacts.attach_ctx(),
-          required(:after_apply) =>
-            (Types.runtime_state(), Types.surface_target(), String.t() -> Types.runtime_state()),
+          required(:after_apply) => (Types.runtime_state(), Types.surface_target(), String.t() ->
+                                       Types.runtime_state()),
           required(:apply_simulator_settings) => (Types.runtime_state() -> Types.runtime_state()),
-          required(:introspect_event_payload) =>
-            (Types.elm_introspect(), String.t() | nil, String.t() -> DebuggerContractEventPayload.t() | nil)
+          required(:introspect_event_payload) => (Types.elm_introspect(),
+                                                  String.t()
+                                                  | nil,
+                                                  String.t() ->
+                                                    DebuggerContractEventPayload.t() | nil)
         }
 
   @spec elm_introspect?(String.t() | nil, String.t() | nil, String.t()) :: boolean()
@@ -91,7 +109,13 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
       port_mod or StepExecution.introspect_view_usable?(vt, ei)
   end
 
-  @spec merge_from_source(Types.runtime_state(), String.t() | nil, String.t(), String.t(), merge_ctx()) ::
+  @spec merge_from_source(
+          Types.runtime_state(),
+          String.t() | nil,
+          String.t(),
+          String.t(),
+          merge_ctx()
+        ) ::
           {Types.runtime_state(), DebuggerContractEventPayload.t() | nil}
   def merge_from_source(state, rel_path, source, source_root, ctx)
       when is_map(state) and is_binary(source) and is_binary(source_root) and is_map(ctx) do
@@ -136,7 +160,11 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
 
     cond do
       CompileContract.entrypoint_path?(source_root, rel_path) ->
-        case SurfaceCompileArtifacts.debugger_contract_for_reload(state, target, ctx.surface_compile) do
+        case SurfaceCompileArtifacts.debugger_contract_for_reload(
+               state,
+               target,
+               ctx.surface_compile
+             ) do
           %{} = contract -> {:ok, contract}
           _ -> analyze_contract_fallback(source, virtual_path)
         end
@@ -164,7 +192,8 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
           apply_ctx()
         ) :: Types.runtime_state()
   def apply(state, ei, target, source, rel_path, ctx)
-      when is_map(ei) and target in [:watch, :companion, :phone] and is_binary(source) and is_map(ctx) do
+      when is_map(ei) and target in [:watch, :companion, :phone] and is_binary(source) and
+             is_map(ctx) do
     state = ctx.attach_compile_artifacts.(state, target, ei)
     surface = Map.get(state, target) || %{}
     model = Map.get(surface, :model) || %{}
@@ -194,7 +223,7 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
 
     model =
       model
-      |> Map.put("elm_executor_mode", "runtime_executed")
+      |> Map.put("runtime_execution_mode", "runtime_executed")
       |> Map.merge(model_patch)
       |> StepExecution.put_runtime_view_output(Map.get(execution, :view_output))
       |> ctx.hydrate_runtime_model.(nil, [])
@@ -220,7 +249,9 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
         StepExecution.introspect_view_usable?(output_vt, ei) ->
           put_in(state, [target, :view_tree], output_vt)
 
-        StepExecution.introspect_view_usable?(runtime_vt, ei) and RuntimePreview.has_drawable_output?(model) ->
+        StepExecution.introspect_view_usable?(runtime_vt, ei) and
+            (RuntimePreview.has_drawable_output?(model) or
+               StepExecution.view_tree_has_draw_ops?(runtime_vt)) ->
           put_in(state, [target, :view_tree], runtime_vt)
 
         parser_view? and not StepExecution.introspect_view_usable?(output_vt, ei) and
@@ -331,7 +362,9 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
   end
 
   @spec current_model_for_execution(Types.execution_model()) :: Types.execution_model()
-  def current_model_for_execution(model) when is_map(model), do: Map.delete(model, "runtime_model")
+  def current_model_for_execution(model) when is_map(model),
+    do: Map.delete(model, "runtime_model")
+
   def current_model_for_execution(_model), do: %{}
 
   @spec source_root_for_target(Types.surface_target()) :: String.t()

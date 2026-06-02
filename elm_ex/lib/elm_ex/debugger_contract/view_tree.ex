@@ -23,7 +23,8 @@ defmodule ElmEx.DebuggerContract.ViewTree do
 
   Uses declared return types and structural shapes from introspection metadata, not helper names.
   """
-  @spec parser_expression_view_tree_node?(Types.view_tree_node(), Types.elm_introspect()) :: boolean()
+  @spec parser_expression_view_tree_node?(Types.view_tree_node(), Types.elm_introspect()) ::
+          boolean()
   def parser_expression_view_tree_node?(node, ei) when is_map(node) and is_map(ei) do
     type = Map.get(node, "type")
 
@@ -47,26 +48,10 @@ defmodule ElmEx.DebuggerContract.ViewTree do
 
   def parser_expression_view_tree_node?(_, _), do: false
 
-  @spec parser_ui_node_wrapper_type?(Types.view_tree_node()) :: boolean()
-  defp parser_ui_node_wrapper_type?(node) when is_map(node) do
-    case Map.get(node, "type") do
-      "toUiNode" ->
-        true
-
-      type when is_binary(type) ->
-        String.ends_with?(type, "toUiNode")
-
-      _ ->
-        qualified = Map.get(node, "qualified_target") || Map.get(node, "target")
-
-        is_binary(qualified) and String.ends_with?(qualified, "toUiNode")
-    end
-  end
-
   @spec ui_node_call_with_unevaluated_children?(Types.view_tree_node(), Types.elm_introspect()) ::
           boolean()
   defp ui_node_call_with_unevaluated_children?(node, ei) when is_map(node) and is_map(ei) do
-    (view_tree_call_returns_ui_node?(node, ei) or parser_ui_node_wrapper_type?(node)) and
+    view_tree_call_returns_ui_node?(node, ei) and
       not parser_expression_structural_type?(Map.get(node, "type")) and
       Enum.any?(List.wrap(Map.get(node, "children")), fn child ->
         is_map(child) and parser_expression_view_tree_node?(child, ei)
@@ -154,11 +139,16 @@ defmodule ElmEx.DebuggerContract.ViewTree do
 
   def function_render_trees(_mod, _api_metadata), do: %{}
 
-  @spec view_tree_call_returns_ui_node?(Types.view_tree_node(), Types.elm_introspect()) :: boolean()
+  @spec view_tree_call_returns_ui_node?(Types.view_tree_node(), Types.elm_introspect()) ::
+          boolean()
   defp view_tree_call_returns_ui_node?(node, ei) when is_map(node) and is_map(ei) do
     case Map.get(node, "return_kind") do
-      "ui_node" -> true
-      "render_op" -> false
+      "ui_node" ->
+        true
+
+      "render_op" ->
+        false
+
       _ ->
         Structure.view_tree_call_returns_ui_node_from_target?(
           Structure.view_tree_call_target(node),
@@ -214,7 +204,12 @@ defmodule ElmEx.DebuggerContract.ViewTree do
     end
   end
 
-  @spec view_case_subject_allowed?(Types.case_subject(), Types.param_list(), Types.param_list(), Types.binding_map()) ::
+  @spec view_case_subject_allowed?(
+          Types.case_subject(),
+          Types.param_list(),
+          Types.param_list(),
+          Types.binding_map()
+        ) ::
           boolean()
   defp view_case_subject_allowed?(subj, allowed, view_params, bindings)
        when is_list(allowed) and is_list(view_params) and is_map(bindings) do
@@ -234,13 +229,13 @@ defmodule ElmEx.DebuggerContract.ViewTree do
 
   defp view_case_param_prefix?(_subj, _param), do: false
 
-
   @spec view_tree_unknown() :: Types.view_tree()
   def view_tree_unknown, do: %{"type" => "unknown", "label" => "", "children" => []}
 
-  @spec annotate_view_tree_sources(Types.view_tree(), Types.view_build_metadata()) :: Types.view_tree()
+  @spec annotate_view_tree_sources(Types.view_tree(), Types.view_build_metadata()) ::
+          Types.view_tree()
   def annotate_view_tree_sources(tree, api_metadata)
-       when is_map(tree) and is_map(api_metadata) do
+      when is_map(tree) and is_map(api_metadata) do
     {annotated, _counters} = annotate_view_tree_sources(tree, api_metadata, %{})
     annotated
   end
@@ -423,7 +418,6 @@ defmodule ElmEx.DebuggerContract.ViewTree do
   end
 
   def output_source_locations(_api_metadata), do: %{}
-
 
   defdelegate from_view_expr(expr, api_metadata), to: Operators
   defdelegate unknown(), to: Operators

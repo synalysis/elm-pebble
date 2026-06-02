@@ -6,6 +6,7 @@ defmodule Ide.Debugger.Types.RuntimeEventPayload do
   """
 
   alias Ide.Debugger.Types
+
   alias Ide.Debugger.Types.{
     CompanionBridgeEventPayload,
     DeviceDataEventPayload,
@@ -186,7 +187,10 @@ defmodule Ide.Debugger.Types.RuntimeEventPayload do
 
   @type elmc :: ElmcEventPayload.t()
 
-  @type generic :: %{optional(atom()) => Types.wire_input(), optional(String.t()) => Types.wire_input()}
+  @type generic :: %{
+          optional(atom()) => Types.wire_input(),
+          optional(String.t()) => Types.wire_input()
+        }
 
   @type t ::
           start()

@@ -43,7 +43,8 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
 
   def read_only_tab?(_), do: false
 
-  @spec ensure_can_modify_editor_file(EditorTypes.tab()) :: :ok | {:error, EditorTypes.modify_error()}
+  @spec ensure_can_modify_editor_file(EditorTypes.tab()) ::
+          :ok | {:error, EditorTypes.modify_error()}
   def ensure_can_modify_editor_file(%{rel_path: rel_path} = tab) do
     cond do
       read_only_tab?(tab) ->
@@ -171,7 +172,13 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
     end
   end
 
-  @spec maybe_start_editor_dependencies_refresh(EditorTypes.socket(), map(), String.t(), String.t(), integer()) ::
+  @spec maybe_start_editor_dependencies_refresh(
+          EditorTypes.socket(),
+          map(),
+          String.t(),
+          String.t(),
+          integer()
+        ) ::
           EditorTypes.socket()
   defp maybe_start_editor_dependencies_refresh(socket, project, packages_root, doc_root, token) do
     if connected?(socket) do
@@ -293,7 +300,8 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
     "module #{module_name} exposing (..)\n\n"
   end
 
-  @spec maybe_initialize_forms(EditorTypes.socket(), EditorTypes.project()) :: EditorTypes.socket()
+  @spec maybe_initialize_forms(EditorTypes.socket(), EditorTypes.project()) ::
+          EditorTypes.socket()
   def maybe_initialize_forms(socket, project) do
     source_root = List.first(project.source_roots) || "watch"
 
@@ -418,7 +426,8 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
       inserted <> String.slice(content, to, String.length(content) - to)
   end
 
-  @spec identity_edit_patch(String.t(), non_neg_integer(), non_neg_integer()) :: EditorTypes.edit_patch()
+  @spec identity_edit_patch(String.t(), non_neg_integer(), non_neg_integer()) ::
+          EditorTypes.edit_patch()
   def identity_edit_patch(content, start_offset, end_offset) when is_binary(content) do
     %{
       replace_from: start_offset,
@@ -529,7 +538,9 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
 
   def diagnostic_structured_lines(_), do: []
 
-  @spec maybe_diag_detail([String.t()], String.t(), EditorTypes.diagnostic_field()) :: [String.t()]
+  @spec maybe_diag_detail([String.t()], String.t(), EditorTypes.diagnostic_field()) :: [
+          String.t()
+        ]
   def maybe_diag_detail(lines, _label, nil), do: lines
 
   def maybe_diag_detail(lines, label, value) do
@@ -592,7 +603,8 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
     assign_tokenization(socket, content, "", opts)
   end
 
-  def assign_tokenization(socket, content, rel_path, opts) when is_binary(content) and is_binary(rel_path) do
+  def assign_tokenization(socket, content, rel_path, opts)
+      when is_binary(content) and is_binary(rel_path) do
     tokenized = tokenize_content(content, rel_path, opts)
 
     tokenizer_mode =
@@ -668,7 +680,12 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
     end
   end
 
-  @spec push_editor_fold_ranges(EditorTypes.socket(), String.t(), [map()], EditorTypes.parser_payload()) :: EditorTypes.socket()
+  @spec push_editor_fold_ranges(
+          EditorTypes.socket(),
+          String.t(),
+          [map()],
+          EditorTypes.parser_payload()
+        ) :: EditorTypes.socket()
   def push_editor_fold_ranges(socket, content, tokens, parser_payload)
       when is_binary(content) and is_list(tokens) do
     if connected?(socket) do
@@ -705,7 +722,8 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
 
   def push_editor_fold_ranges(socket, _content, _tokens, _parser_payload), do: socket
 
-  @spec push_editor_lint_diagnostics(EditorTypes.socket(), [EditorTypes.diagnostic()]) :: EditorTypes.socket()
+  @spec push_editor_lint_diagnostics(EditorTypes.socket(), [EditorTypes.diagnostic()]) ::
+          EditorTypes.socket()
   def push_editor_lint_diagnostics(socket, diagnostics) when is_list(diagnostics) do
     if connected?(socket) do
       payload =
@@ -927,9 +945,9 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
 
   @spec delimiter_match?(String.t(), String.t()) :: boolean()
   def delimiter_match?(open, close) when is_binary(open) and is_binary(close) do
-    open == "(" and close == ")" or
-      open == "[" and close == "]" or
-      open == "{" and close == "}"
+    (open == "(" and close == ")") or
+      (open == "[" and close == "]") or
+      (open == "{" and close == "}")
   end
 
   def delimiter_match?(_, _), do: false
@@ -940,7 +958,9 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
 
   def elm_source_file?(_), do: false
 
-  @spec annotate_tokens_with_diagnostics([EditorTypes.tokenizer_token()], [EditorTypes.diagnostic()]) :: [EditorTypes.tokenizer_token()]
+  @spec annotate_tokens_with_diagnostics([EditorTypes.tokenizer_token()], [
+          EditorTypes.diagnostic()
+        ]) :: [EditorTypes.tokenizer_token()]
   def annotate_tokens_with_diagnostics(tokens, diagnostics) do
     Enum.map(tokens, fn token ->
       messages =
@@ -1000,7 +1020,8 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
 
   def parse_non_negative_number(_), do: nil
 
-  @spec completion_replace_range(String.t(), integer()) :: {non_neg_integer(), non_neg_integer(), String.t()}
+  @spec completion_replace_range(String.t(), integer()) ::
+          {non_neg_integer(), non_neg_integer(), String.t()}
   def completion_replace_range(content, cursor) when is_binary(content) and is_integer(cursor) do
     safe_cursor = min(max(cursor, 0), String.length(content))
     prefix = String.slice(content, 0, safe_cursor)
@@ -1087,7 +1108,8 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
   def normalize_active_diagnostic_index(_index, diagnostics),
     do: if(diagnostics == [], do: nil, else: 0)
 
-  @spec diagnostic_hits_token?(EditorTypes.diagnostic(), EditorTypes.tokenizer_token()) :: boolean()
+  @spec diagnostic_hits_token?(EditorTypes.diagnostic(), EditorTypes.tokenizer_token()) ::
+          boolean()
   def diagnostic_hits_token?(diag, token) do
     diag_line = diag[:line]
     token_line = token[:line]
@@ -1116,7 +1138,14 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
     max(a_start, b_start) <= min(a_end, b_end)
   end
 
-  @spec prepare_content_for_save(EditorTypes.project(), EditorTypes.tab(), boolean(), atom(), EditorTypes.parser_payload(), list()) :: EditorTypes.save_prep_result()
+  @spec prepare_content_for_save(
+          EditorTypes.project(),
+          EditorTypes.tab(),
+          boolean(),
+          atom(),
+          EditorTypes.parser_payload(),
+          list()
+        ) :: EditorTypes.save_prep_result()
   def prepare_content_for_save(
         project,
         tab,
@@ -1127,29 +1156,31 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
       ) do
     disp = editor_source_display_path(tab.rel_path)
 
-    if auto_format_enabled and elm_source_file?(tab.rel_path) do
-      case format_source(project, tab, formatter_backend, parser_payload, tokens) do
-        {:ok, result} ->
-          message =
-            if result.changed? do
-              "Saved #{disp} and applied auto-format."
-            else
-              "Saved #{disp}"
-            end
+    cond do
+      not auto_format_enabled or not elm_source_file?(tab.rel_path) ->
+        {tab.content, "Saved #{disp}", nil, %{status: :inactive, rel_path: tab.rel_path}}
 
-          status = if result.changed?, do: :applied, else: :unchanged
+      not editor_content_dirty?(tab, tab.content) ->
+        {tab.content, "Saved #{disp}", nil, %{status: :unchanged, rel_path: tab.rel_path}}
 
-          {result.formatted_source, message, nil, %{status: status, rel_path: tab.rel_path}}
+      true ->
+        case format_source(project, tab, formatter_backend, parser_payload, tokens) do
+          {:ok, result} ->
+            message =
+              if result.changed? do
+                "Saved #{disp} and applied auto-format."
+              else
+                "Saved #{disp}"
+              end
 
-        {:error, reason} ->
-          output =
-            "Auto-format skipped on save. Saved unchanged source.\n#{inspect(reason)}"
+            status = if result.changed?, do: :applied, else: :unchanged
 
-          {tab.content, "Saved #{disp} (auto-format failed, kept original source).", output,
-           %{status: :failed, rel_path: tab.rel_path}}
-      end
-    else
-      {tab.content, "Saved #{disp}", nil, %{status: :inactive, rel_path: tab.rel_path}}
+            {result.formatted_source, message, nil, %{status: status, rel_path: tab.rel_path}}
+
+          {:error, _reason} ->
+            {tab.content, "Saved #{disp}", nil,
+             %{status: :skipped, rel_path: tab.rel_path}}
+        end
     end
   end
 
@@ -1200,7 +1231,8 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
   @spec split_lines(String.t()) :: [String.t()]
   defp split_lines(content) when is_binary(content), do: :binary.split(content, "\n", [:global])
 
-  @spec update_tab_by_id(EditorTypes.socket(), String.t(), (EditorTypes.tab() -> EditorTypes.tab())) ::
+  @spec update_tab_by_id(EditorTypes.socket(), String.t(), (EditorTypes.tab() ->
+                                                              EditorTypes.tab())) ::
           EditorTypes.socket()
   def update_tab_by_id(socket, tab_id, updater)
       when is_binary(tab_id) and is_function(updater, 1) do
@@ -1545,7 +1577,13 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
     end
   end
 
-  @spec editor_module_doc_readme_fallback(String.t(), String.t(), String.t(), String.t(), keyword()) ::
+  @spec editor_module_doc_readme_fallback(
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          keyword()
+        ) ::
           {String.t(), String.t()}
   defp editor_module_doc_readme_fallback(package, version, module, ver_display, opts) do
     readme = editor_package_readme_slice(package, version, opts)

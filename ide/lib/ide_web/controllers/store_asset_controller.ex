@@ -4,7 +4,10 @@ defmodule IdeWeb.StoreAssetController do
   alias Ide.Projects
   alias Ide.StoreAssets
 
-  @allowed_assets MapSet.new([StoreAssets.public_path(:icon_small), StoreAssets.public_path(:icon_large)])
+  @allowed_assets MapSet.new([
+                    StoreAssets.public_path(:icon_small),
+                    StoreAssets.public_path(:icon_large)
+                  ])
 
   @spec show(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def show(conn, %{"slug" => slug, "name" => name}) do

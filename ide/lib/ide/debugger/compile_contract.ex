@@ -38,7 +38,9 @@ defmodule Ide.Debugger.CompileContract do
           {:ok, wire_snapshot()} | {:error, Types.parse_error()}
   def analyze_source(source, virtual_path \\ "Main.elm")
       when is_binary(source) and is_binary(virtual_path) do
-    case DebuggerContract.analyze_source(source, virtual_path, extra_source_roots: package_source_roots()) do
+    case DebuggerContract.analyze_source(source, virtual_path,
+           extra_source_roots: package_source_roots()
+         ) do
       {:ok, snapshot} ->
         case DebuggerContract.contract_payload(snapshot) do
           %{} = contract -> {:ok, snapshot_from_contract(contract)}
@@ -53,7 +55,8 @@ defmodule Ide.Debugger.CompileContract do
   @doc """
   Builds a contract from the watch (or phone) entry `Main.elm` under a compiler workspace root.
   """
-  @spec build_for_project_dir(String.t()) :: {:ok, contract()} | {:error, :entry_not_found | :parse_error}
+  @spec build_for_project_dir(String.t()) ::
+          {:ok, contract()} | {:error, :entry_not_found | :parse_error}
   def build_for_project_dir(project_dir) when is_binary(project_dir) do
     case build_from_project_dir(project_dir) do
       {:ok, contract} -> {:ok, contract}
@@ -65,7 +68,8 @@ defmodule Ide.Debugger.CompileContract do
   @doc """
   Builds a contract from an already-loaded `ElmEx.Frontend.Project` (same parse as IR lowering).
   """
-  @spec build_from_project(Project.t()) :: {:ok, contract()} | {:error, :entry_not_found | :parse_error}
+  @spec build_from_project(Project.t()) ::
+          {:ok, contract()} | {:error, :entry_not_found | :parse_error}
   def build_from_project(%Project{} = project) do
     build_from_project(project, nil)
   end
@@ -98,7 +102,8 @@ defmodule Ide.Debugger.CompileContract do
     end
   end
 
-  @spec build_from_project_dir(String.t()) :: {:ok, contract()} | {:error, :entry_not_found | :parse_error}
+  @spec build_from_project_dir(String.t()) ::
+          {:ok, contract()} | {:error, :entry_not_found | :parse_error}
   defp build_from_project_dir(project_dir) do
     opts = [extra_source_roots: package_source_roots()]
 
@@ -209,7 +214,8 @@ defmodule Ide.Debugger.CompileContract do
   Overlays subscription/cmd effect fields extracted from Core IR onto a project-derived contract.
   """
   @spec merge_core_ir_effects(contract(), map()) :: contract()
-  def merge_core_ir_effects(%{} = contract, %{} = core_ir) when is_map(contract) and is_map(core_ir) do
+  def merge_core_ir_effects(%{} = contract, %{} = core_ir)
+      when is_map(contract) and is_map(core_ir) do
     entry = default_entry_module_name(core_ir)
     effects = EffectsFromCoreIR.effect_fields(core_ir, entry)
 

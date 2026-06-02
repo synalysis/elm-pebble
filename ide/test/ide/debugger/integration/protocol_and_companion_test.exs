@@ -25,7 +25,14 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
 
     companion_source =
       File.read!(
-        Path.join(["priv", "project_templates", "watchface_tangram_time", "phone", "src", "CompanionApp.elm"])
+        Path.join([
+          "priv",
+          "project_templates",
+          "watchface_tangram_time",
+          "phone",
+          "src",
+          "CompanionApp.elm"
+        ])
       )
 
     {:ok, _} = Debugger.start_session(slug)
@@ -76,7 +83,6 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
              end)
   end
 
-
   test "inject_trigger applies subscription-style button trigger with deterministic events" do
     slug = "sim-trigger-#{System.unique_integer([:positive])}"
 
@@ -126,7 +132,6 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
     assert Enum.any?(triggered.events, &(&1.type == "debugger.update_in"))
     assert Enum.any?(triggered.events, &(&1.type == "debugger.view_render"))
   end
-
 
   test "inject_trigger applies structured accelerometer subscription payload" do
     previous_config = Application.get_env(:ide, Debugger, [])
@@ -207,7 +212,6 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
     assert get_in(triggered, [:watch, :model, "runtime_last_message"]) == "AccelData"
   end
 
-
   test "normalize_simulator_settings includes tier 1 watch sensor fields" do
     settings =
       Debugger.normalize_simulator_settings(%{
@@ -223,7 +227,6 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
     assert settings["dictation_transcript"] == "hello"
     assert settings["vibe_pattern_ms"] == [100, 50]
   end
-
 
   test "frame subscription trigger auto-fire sends frame payload" do
     previous_config = Application.get_env(:ide, Debugger, [])
@@ -311,6 +314,7 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
     assert {:ok, triggered} = Debugger.stop_auto_tick(slug)
 
     runtime_model = get_in(triggered, [:watch, :model, "runtime_model"]) || %{}
+
     frame_fields =
       case Map.get(runtime_model, "frame") do
         %{} = frame -> frame
@@ -336,7 +340,6 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
                String.starts_with?(message, "FrameTick ")
            end)
   end
-
 
   test "conditional frame subscription auto-fire respects model activation guards" do
     previous_config = Application.get_env(:ide, Debugger, [])
@@ -447,7 +450,6 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
            end)
   end
 
-
   test "conditional frame subscription auto-fire treats lowercase false strings as inactive" do
     source = """
     module FrameGuardString exposing (..)
@@ -494,7 +496,6 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
 
     refute Debugger.subscription_model_active?(state, :watch, row)
   end
-
 
   test "disabled subscription trigger cannot be injected until re-enabled" do
     slug = "sim-disabled-subscription-#{System.unique_integer([:positive])}"
@@ -571,7 +572,6 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
            end)
   end
 
-
   test "available_triggers prefers structured subscription callback constructors" do
     slug = "sim-trigger-subscription-callbacks-#{System.unique_integer([:positive])}"
 
@@ -614,7 +614,6 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
     assert Enum.all?(trigger_rows, &(&1.source == "subscription"))
     refute Enum.any?(trigger_rows, &(&1.trigger == "button_up"))
   end
-
 
   test "inject_trigger attaches local hour to HourChanged when trigger is on_hour_change" do
     slug = "sim-hour-change-payload-#{System.unique_integer([:positive])}"
@@ -683,7 +682,6 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
     {hour, ""} = Integer.parse(hour_str)
     assert hour in 0..23
   end
-
 
   test "inject_trigger attaches system payloads for battery and connection subscriptions" do
     slug = "sim-system-subscription-payloads-#{System.unique_integer([:positive])}"
@@ -770,7 +768,6 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
              "ConnectionChanged True"
   end
 
-
   test "subscription trigger candidates ignore Sub.none" do
     slug = "sim-trigger-sub-none-#{System.unique_integer([:positive])}"
 
@@ -804,7 +801,6 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
     refute Enum.any?(trigger_rows, &(&1.source == "subscription"))
   end
 
-
   test "elmc ingest attaches diagnostic_preview to event payload for timeline export" do
     slug = "sim-evp-#{System.unique_integer([:positive])}"
     {:ok, _} = Debugger.start_session(slug)
@@ -825,7 +821,6 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
     assert is_list(prev)
     assert hd(prev)["message"] == "all good"
   end
-
 
   test "ingest_elmc_check stores elmc_diagnostic_preview when diagnostics given" do
     slug = "sim-diag-#{System.unique_integer([:positive])}"
@@ -866,7 +861,6 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
     assert row["warning_has_arg_pattern"] == false
   end
 
-
   test "ingest_elmc_check merges model fields and appends event when running" do
     slug = "sim-elmc-#{System.unique_integer([:positive])}"
     {:ok, _} = Debugger.start_session(slug)
@@ -885,7 +879,6 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
     assert get_in(st.watch, [:model, "elmc_warning_count"]) == 2
     assert get_in(st.watch, [:model, "elmc_checked_path"]) == "/tmp/ws"
   end
-
 
   test "ingest_elmc_compile merges model fields and appends event when running" do
     slug = "sim-elmc-compile-#{System.unique_integer([:positive])}"
@@ -908,46 +901,40 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
     assert get_in(st.watch, [:model, "elmc_compile_cached"]) == "true"
   end
 
-
-  test "ingest_elmc_compile scopes runtime artifacts to compiled source root" do
+  test "ingest_elmc_compile scopes elmx runtime artifacts to compiled source root" do
     slug = "sim-elmc-compile-artifacts-#{System.unique_integer([:positive])}"
     {:ok, _} = Debugger.start_session(slug)
-
-    companion_core = %{"modules" => [%{"name" => "CompanionApp"}]}
-    watch_core = %{"modules" => [%{"name" => "Main"}]}
 
     assert {:ok, _} =
              Debugger.ingest_elmc_compile(slug, %{
                status: :ok,
                compiled_path: "phone",
                revision: "companion",
-               elm_executor_core_ir_b64:
-                 :erlang.term_to_binary(companion_core) |> Base.encode64(),
-               elm_executor_metadata: %{"target" => "phone"}
+               elmx_manifest: %{"contract" => "elmx.runtime_executor.v1"},
+               elmx_revision: "companion"
              })
 
     assert {:ok, st_after_companion} = Debugger.snapshot(slug, event_limit: 10)
-    assert get_in(st_after_companion.companion, [:shell, "elm_executor_core_ir_b64"])
-    refute get_in(st_after_companion.watch, [:shell, "elm_executor_core_ir_b64"])
-    refute get_in(st_after_companion.companion, [:model, "elm_executor_core_ir_b64"])
-    refute get_in(st_after_companion.watch, [:model, "elm_executor_core_ir_b64"])
+    assert get_in(st_after_companion.companion, [:shell, "elmx_revision"]) == "companion"
+    refute get_in(st_after_companion.watch, [:shell, "elmx_revision"])
+    refute get_in(st_after_companion.companion, [:model, "elmx_revision"])
+    refute get_in(st_after_companion.watch, [:model, "elmx_revision"])
 
     assert {:ok, st_after_watch} =
              Debugger.ingest_elmc_compile(slug, %{
                status: :ok,
                compiled_path: "watch",
                revision: "watch",
-               elm_executor_core_ir_b64: :erlang.term_to_binary(watch_core) |> Base.encode64(),
-               elm_executor_metadata: %{"target" => "watch"}
+               elmx_manifest: %{"contract" => "elmx.runtime_executor.v1"},
+               elmx_revision: "watch"
              })
 
-    assert get_in(st_after_watch.watch, [:shell, "elm_executor_core_ir_b64"])
-    refute get_in(st_after_watch.watch, [:model, "elm_executor_core_ir_b64"])
+    assert get_in(st_after_watch.watch, [:shell, "elmx_revision"]) == "watch"
+    refute get_in(st_after_watch.watch, [:model, "elmx_revision"])
 
-    assert get_in(st_after_watch.companion, [:shell, "elm_executor_core_ir_b64"]) ==
-             get_in(st_after_companion.companion, [:shell, "elm_executor_core_ir_b64"])
+    assert get_in(st_after_watch.companion, [:shell, "elmx_revision"]) ==
+             get_in(st_after_companion.companion, [:shell, "elmx_revision"])
   end
-
 
   test "ingest_elmc_manifest merges model fields and appends event when running" do
     slug = "sim-elmc-manifest-#{System.unique_integer([:positive])}"
@@ -972,7 +959,6 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
     assert get_in(st.watch, [:model, "elmc_manifest_strict"]) == "true"
   end
 
-
   test "ingest_elmc_check is a no-op when session is not running" do
     slug = "sim-elmc-idle-#{System.unique_integer([:positive])}"
 
@@ -987,7 +973,6 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
     assert st.running == false
     assert st.events == []
   end
-
 
   test "companion elm/http command executes and feeds structured callback message" do
     previous_debugger_config = Application.get_env(:ide, Debugger, [])
@@ -1028,7 +1013,10 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
              })
 
     assert {:ok, stepped} = Debugger.step(slug, %{target: "phone", message: "Tick", count: 1})
-    assert get_in(reloaded, [:companion, :shell, "debugger_contract", "module"]) == "CompanionSnap"
+
+    assert get_in(reloaded, [:companion, :shell, "debugger_contract", "module"]) ==
+             "CompanionSnap"
+
     refute get_in(reloaded, [:companion, :model, "debugger_contract"])
     assert String.starts_with?(stepped.companion.last_message, "WeatherReceived ")
     assert get_in(stepped.companion.model, ["runtime_model", "lastResponse"]) == 1
@@ -1045,7 +1033,6 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
                String.starts_with?(event.payload.response_message, "WeatherReceived ")
            end)
   end
-
 
   test "init runtime followups are applied and shown in debugger timeline" do
     previous_debugger_config = Application.get_env(:ide, Debugger, [])
@@ -1083,10 +1070,11 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
       |> Enum.map(&{&1.target, &1.message, &1.message_source})
 
     assert {"watch", "init", "init"} in timeline
+
     assert Enum.any?(timeline, fn
-           {"watch", "RandomGenerated" <> _, "runtime_followup"} -> true
-           _ -> false
-         end)
+             {"watch", "RandomGenerated" <> _, "runtime_followup"} -> true
+             _ -> false
+           end)
 
     assert Enum.any?(reloaded.events, fn event ->
              event.type == "debugger.package_cmd" and
@@ -1095,7 +1083,6 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
                String.starts_with?(event.payload.response_message || "", "RandomGenerated")
            end)
   end
-
 
   test "runtime storage writes are read again after debugger restart" do
     previous_debugger_config = Application.get_env(:ide, Debugger, [])
@@ -1153,17 +1140,17 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
     assert get_in(reloaded.watch.model, ["runtime_model", "best"]) == 9124
   end
 
-
   test "runtime executor failure surfaces on debugger timeline without heuristic fallback" do
-    previous_runtime_executor_config = Application.get_env(:ide, RuntimeExecutor, [])
+    previous_debugger_config = Application.get_env(:ide, Debugger, [])
 
-    Application.put_env(:ide, RuntimeExecutor,
-      external_executor_module: FailingExternalRuntimeExecutor,
-      external_executor_strict: true
+    Application.put_env(
+      :ide,
+      Debugger,
+      Keyword.put(previous_debugger_config, :runtime_executor_module, FailingExternalRuntimeExecutor)
     )
 
     on_exit(fn ->
-      Application.put_env(:ide, RuntimeExecutor, previous_runtime_executor_config)
+      Application.put_env(:ide, Debugger, previous_debugger_config)
     end)
 
     slug = "sim-runtime-exec-error-visible-#{System.unique_integer([:positive])}"
@@ -1185,14 +1172,14 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
 
     assert {:ok, stepped} = Debugger.step(slug, %{target: "watch", message: "Tick", count: 1})
 
-    refute get_in(stepped.watch.model, ["elm_executor", "execution_backend"]) == "fallback_default"
+    refute get_in(stepped.watch.model, ["runtime_execution", "execution_backend"]) ==
+             "fallback_default"
 
     assert Enum.any?(stepped.debugger_timeline, fn row ->
              row.type == "runtime_exec_error" and row.target == "watch"
            end) or
              Enum.any?(stepped.events, &(&1.type == "debugger.runtime_exec_error"))
   end
-
 
   test "init commands without runtime followups are visible in debugger timeline" do
     previous_debugger_config = Application.get_env(:ide, Debugger, [])
@@ -1233,7 +1220,6 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
                row.message == "runtime no followups for 1 init cmd(s)"
            end)
   end
-
 
   test "protocol rx normalizes temperature union wire tag one into watch model updates" do
     slug = "sim-weather-temp-wire-code-#{System.unique_integer([:positive])}"
@@ -1282,7 +1268,6 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
            )
   end
 
-
   test "protocol rx normalizes clear weather condition wire code one into watch model updates" do
     slug = "sim-weather-clear-wire-code-#{System.unique_integer([:positive])}"
     template_root = Path.join(["priv", "project_templates", "watchface_weather_animated"])
@@ -1324,7 +1309,6 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
              get_in(cleared, [:watch, :model, "runtime_model", "condition"])
            )
   end
-
 
   test "protocol rx normalizes weather condition enum wire codes into watch model updates" do
     slug = "sim-weather-condition-wire-code-#{System.unique_integer([:positive])}"
@@ -1368,7 +1352,6 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
            )
   end
 
-
   test "protocol rx normalizes rain weather condition wire code into watch model updates" do
     slug = "sim-weather-rain-wire-code-#{System.unique_integer([:positive])}"
     template_root = Path.join(["priv", "project_templates", "watchface_weather_animated"])
@@ -1410,7 +1393,6 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
              get_in(rained, [:watch, :model, "runtime_model", "condition"])
            )
   end
-
 
   test "weather animated watchface receives drizzle temperature from simulator settings via companion bridge" do
     slug = "sim-weather-bridge-drizzle-#{System.unique_integer([:positive])}"
@@ -1461,15 +1443,16 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
 
     text_nodes =
       collect_view_text(view_tree) ++
-        (for row <- get_in(state, [:watch, :model, "runtime_view_output"]) || [],
-             row["kind"] == "text",
-             is_binary(row["text"]),
-             do: row["text"]) ++ List.wrap(weather_preview_label(runtime_model))
+        for(
+          row <- get_in(state, [:watch, :model, "runtime_view_output"]) || [],
+          row["kind"] == "text",
+          is_binary(row["text"]),
+          do: row["text"]
+        ) ++ List.wrap(weather_preview_label(runtime_model))
 
     assert Enum.any?(text_nodes, &String.contains?(&1, "26C Drizzle"))
     refute Enum.any?(text_nodes, &String.contains?(&1, "Loading..."))
   end
-
 
   test "weather settings with string temperatureC deliver Celsius temperature to watch model" do
     slug = "sim-weather-string-temp-#{System.unique_integer([:positive])}"
@@ -1513,7 +1496,6 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
              runtime_model["condition"]
            )
   end
-
 
   test "weather condition updates apply after weather transitions are enabled" do
     slug = "sim-weather-transitions-#{System.unique_integer([:positive])}"

@@ -9,22 +9,37 @@ defmodule Ide.Debugger.AutoFireRuntime do
   alias Ide.Debugger.Types
 
   @type apply_ctx :: %{
-          required(:trigger_candidates) =>
-            (Types.runtime_state(), Types.surface_target() -> [Types.trigger_candidate()]),
-          required(:trigger_message) =>
-            (Types.runtime_state(), Types.surface_target(), String.t(), String.t() | nil -> String.t()),
-          required(:apply_step) =>
-            (Types.runtime_state(), Types.surface_target(), String.t(), map() | nil, String.t(), String.t() ->
-               Types.runtime_state()),
-          required(:subscription_row_enabled?) =>
-            (Types.runtime_state(), Types.surface_target(), map() -> boolean()),
-          required(:auto_fire_row_enabled?) =>
-            (Types.runtime_state(), Types.surface_target(), map() -> boolean()),
-          required(:simulator_now) =>
-            (Types.runtime_state(), Types.surface_target() -> NaiveDateTime.t()),
+          required(:trigger_candidates) => (Types.runtime_state(), Types.surface_target() ->
+                                              [Types.trigger_candidate()]),
+          required(:trigger_message) => (Types.runtime_state(),
+                                         Types.surface_target(),
+                                         String.t(),
+                                         String.t()
+                                         | nil ->
+                                           String.t()),
+          required(:apply_step) => (Types.runtime_state(),
+                                    Types.surface_target(),
+                                    String.t(),
+                                    map()
+                                    | nil,
+                                    String.t(),
+                                    String.t() ->
+                                      Types.runtime_state()),
+          required(:subscription_row_enabled?) => (Types.runtime_state(),
+                                                   Types.surface_target(),
+                                                   map() ->
+                                                     boolean()),
+          required(:auto_fire_row_enabled?) => (Types.runtime_state(),
+                                                Types.surface_target(),
+                                                map() ->
+                                                  boolean()),
+          required(:simulator_now) => (Types.runtime_state(), Types.surface_target() ->
+                                         NaiveDateTime.t()),
           required(:source_root_for_target) => (Types.surface_target() -> String.t()),
-          optional(:apply_device_data_responses) =>
-            (Types.runtime_state(), Types.surface_target(), String.t() -> Types.runtime_state()),
+          optional(:apply_device_data_responses) => (Types.runtime_state(),
+                                                     Types.surface_target(),
+                                                     String.t() ->
+                                                       Types.runtime_state()),
           optional(:default_interval_ms) => pos_integer()
         }
 
@@ -45,7 +60,8 @@ defmodule Ide.Debugger.AutoFireRuntime do
             ctx.trigger_message.(row_acc, target, trigger, message)
             |> resolved_auto_fire_message(message)
 
-          {_step_message, message_value} = TimelineMessage.message_value_for_step(resolved_message)
+          {_step_message, message_value} =
+            TimelineMessage.message_value_for_step(resolved_message)
 
           row_acc
           |> apply_auto_fire_step(target, resolved_message, message_value, trigger, ctx)
@@ -107,7 +123,8 @@ defmodule Ide.Debugger.AutoFireRuntime do
   end
 
   defp device_data_response_appended?(state, before_seq, target, ctx)
-       when is_map(state) and is_integer(before_seq) and target in [:watch, :companion, :phone] and is_map(ctx) do
+       when is_map(state) and is_integer(before_seq) and target in [:watch, :companion, :phone] and
+              is_map(ctx) do
     source_root = ctx.source_root_for_target.(target)
 
     state
@@ -116,7 +133,8 @@ defmodule Ide.Debugger.AutoFireRuntime do
       %{seq: seq, target: ^source_root, message_source: "device_data"} when is_integer(seq) ->
         seq > before_seq
 
-      %{"seq" => seq, "target" => ^source_root, "message_source" => "device_data"} when is_integer(seq) ->
+      %{"seq" => seq, "target" => ^source_root, "message_source" => "device_data"}
+      when is_integer(seq) ->
         seq > before_seq
 
       _ ->
@@ -200,7 +218,8 @@ defmodule Ide.Debugger.AutoFireRuntime do
 
   @spec initialize_clocks(Types.runtime_state(), [:watch | :companion | :phone], apply_ctx()) ::
           Types.runtime_state()
-  def initialize_clocks(state, targets, ctx) when is_map(state) and is_list(targets) and is_map(ctx) do
+  def initialize_clocks(state, targets, ctx)
+      when is_map(state) and is_list(targets) and is_map(ctx) do
     Enum.reduce(targets, state, fn target, acc ->
       now = ctx.simulator_now.(acc, target)
       seed = clock_seed(acc, target, now, ctx)
@@ -210,7 +229,8 @@ defmodule Ide.Debugger.AutoFireRuntime do
 
   @spec clock_seed(Types.runtime_state(), Types.surface_target(), NaiveDateTime.t(), apply_ctx()) ::
           NaiveDateTime.t()
-  defp clock_seed(state, target, %NaiveDateTime{} = now, ctx) when is_map(state) and is_map(ctx) do
+  defp clock_seed(state, target, %NaiveDateTime{} = now, ctx)
+       when is_map(state) and is_map(ctx) do
     if simulated_time_for_target?(state, target) do
       NaiveDateTime.add(now, -1, :minute)
     else
@@ -218,7 +238,8 @@ defmodule Ide.Debugger.AutoFireRuntime do
     end
   end
 
-  @spec clock_snapshot(Types.runtime_state(), Types.surface_target(), apply_ctx()) :: NaiveDateTime.t()
+  @spec clock_snapshot(Types.runtime_state(), Types.surface_target(), apply_ctx()) ::
+          NaiveDateTime.t()
   defp clock_snapshot(state, target, ctx) when is_map(state) and is_map(ctx) do
     now = ctx.simulator_now.(state, target)
 
@@ -230,7 +251,8 @@ defmodule Ide.Debugger.AutoFireRuntime do
   end
 
   @spec simulated_time_for_target?(Types.runtime_state(), Types.surface_target()) :: boolean()
-  defp simulated_time_for_target?(state, target) when is_map(state) and target in [:watch, :companion, :phone] do
+  defp simulated_time_for_target?(state, target)
+       when is_map(state) and target in [:watch, :companion, :phone] do
     state
     |> Map.get(target, %{})
     |> Map.get(:model, %{})

@@ -15,10 +15,12 @@ defmodule Ide.Debugger.CompileIngestApply do
           optional(:refresh_from_artifacts) => (Types.runtime_state() -> Types.runtime_state())
         }
 
-  @spec check(Types.runtime_state(), Types.compile_ingest_attrs(), host()) :: Types.runtime_state()
+  @spec check(Types.runtime_state(), Types.compile_ingest_attrs(), host()) ::
+          Types.runtime_state()
   def check(state, attrs, host) when is_map(state) and is_map(attrs) and is_map(host) do
     if Map.get(state, :running, false) do
-      %{fields: fields, event_type: type, event_payload: payload} = CompileIngest.check_plan(attrs)
+      %{fields: fields, event_type: type, event_payload: payload} =
+        CompileIngest.check_plan(attrs)
 
       state
       |> CompileIngest.merge_fields_into_all_targets(fields)
@@ -28,7 +30,8 @@ defmodule Ide.Debugger.CompileIngestApply do
     end
   end
 
-  @spec compile(Types.runtime_state(), Types.compile_ingest_attrs(), host()) :: Types.runtime_state()
+  @spec compile(Types.runtime_state(), Types.compile_ingest_attrs(), host()) ::
+          Types.runtime_state()
   def compile(state, attrs, host) when is_map(state) and is_map(attrs) and is_map(host) do
     if Map.get(state, :running, false) do
       %{
@@ -49,10 +52,12 @@ defmodule Ide.Debugger.CompileIngestApply do
     end
   end
 
-  @spec manifest(Types.runtime_state(), Types.compile_ingest_attrs(), host()) :: Types.runtime_state()
+  @spec manifest(Types.runtime_state(), Types.compile_ingest_attrs(), host()) ::
+          Types.runtime_state()
   def manifest(state, attrs, host) when is_map(state) and is_map(attrs) and is_map(host) do
     if Map.get(state, :running, false) do
-      %{fields: fields, event_type: type, event_payload: payload} = CompileIngest.manifest_plan(attrs)
+      %{fields: fields, event_type: type, event_payload: payload} =
+        CompileIngest.manifest_plan(attrs)
 
       state
       |> CompileIngest.merge_fields_into_all_targets(fields)

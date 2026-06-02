@@ -39,7 +39,9 @@ defmodule Ide.SimulatorCapabilitiesTest do
 
   test "detects watch and companion simulator capabilities from Elm source" do
     {:ok, watch} = Ide.Debugger.CompileContract.analyze_source(@phone_status_watch, "Main.elm")
-    {:ok, phone} = Ide.Debugger.CompileContract.analyze_source(@phone_status_phone, "CompanionApp.elm")
+
+    {:ok, phone} =
+      Ide.Debugger.CompileContract.analyze_source(@phone_status_phone, "CompanionApp.elm")
 
     watch_caps = Detect.watch_caps(Map.fetch!(watch, "debugger_contract"))
     phone_caps = Detect.phone_caps(Map.fetch!(phone, "debugger_contract"))
@@ -133,7 +135,11 @@ defmodule Ide.SimulatorCapabilitiesTest do
     caps = Detect.watch_caps(introspect)
 
     groups =
-      SimulatorSettings.active_groups(nil, %{watch: %{model: %{"debugger_contract" => introspect}}}, :debugger)
+      SimulatorSettings.active_groups(
+        nil,
+        %{watch: %{model: %{"debugger_contract" => introspect}}},
+        :debugger
+      )
 
     titles = Enum.map(groups, fn {_id, title, _fields} -> title end)
 
@@ -228,7 +234,11 @@ defmodule Ide.SimulatorCapabilitiesTest do
       )
 
     {:ok, watch} = Ide.Debugger.CompileContract.analyze_source(source, "Main.elm")
-    refute MapSet.member?(Detect.watch_caps(Map.fetch!(watch, "debugger_contract")), "watch_accel_tap")
+
+    refute MapSet.member?(
+             Detect.watch_caps(Map.fetch!(watch, "debugger_contract")),
+             "watch_accel_tap"
+           )
   end
 
   test "tangram companion hides weather simulator settings" do
@@ -250,7 +260,10 @@ defmodule Ide.SimulatorCapabilitiesTest do
     refute MapSet.member?(Detect.companion_caps(introspect), "weather")
 
     debugger_state = %{
-      companion: %{model: %{"debugger_contract" => introspect}, shell: %{"debugger_contract" => introspect}}
+      companion: %{
+        model: %{"debugger_contract" => introspect},
+        shell: %{"debugger_contract" => introspect}
+      }
     }
 
     groups = SimulatorSettings.active_groups(nil, debugger_state, :debugger)
@@ -261,6 +274,7 @@ defmodule Ide.SimulatorCapabilitiesTest do
 
   test "emulator page exposes simulator capabilities for weather gating" do
     source = File.read!("lib/ide_web/live/workspace_live/emulator_page.ex")
+
     embedded_js =
       case File.read("assets/js/emulator/embedded_emulator.js") do
         {:ok, contents} -> contents

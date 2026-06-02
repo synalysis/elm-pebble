@@ -6,15 +6,15 @@ defmodule Ide.Debugger.InitCmdFollowupsTest do
   alias Ide.Debugger.Surface
 
   @companion_source File.read!(
-                       Path.join([
-                         "priv",
-                         "project_templates",
-                         "watchface_tangram_time",
-                         "phone",
-                         "src",
-                         "CompanionApp.elm"
-                       ])
-                     )
+                      Path.join([
+                        "priv",
+                        "project_templates",
+                        "watchface_tangram_time",
+                        "phone",
+                        "src",
+                        "CompanionApp.elm"
+                      ])
+                    )
 
   test "runtime_followup_rows derives Http.get catalog follow-up from init_cmd_calls" do
     assert {:ok, %{"debugger_contract" => ei}} =
@@ -37,7 +37,13 @@ defmodule Ide.Debugger.InitCmdFollowupsTest do
 
     merged =
       InitCmdFollowups.merge_followups(
-        [%{"message" => "Other", "package" => "elm/http", "command" => %{"url" => "https://example.test"}}],
+        [
+          %{
+            "message" => "Other",
+            "package" => "elm/http",
+            "command" => %{"url" => "https://example.test"}
+          }
+        ],
         ei
       )
 

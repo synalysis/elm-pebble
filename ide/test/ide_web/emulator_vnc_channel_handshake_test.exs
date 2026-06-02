@@ -20,7 +20,10 @@ defmodule IdeWeb.EmulatorVncChannelHandshakeTest do
         assert info.display_ready == true
         {:ok, pid} = Emulator.lookup(info.id)
         port = Session.local_port(pid, :vnc)
-        assert {:ok, {width, height}} = EmulatorProxyHandshake.through_proxy(port, @handshake_timeout_ms)
+
+        assert {:ok, {width, height}} =
+                 EmulatorProxyHandshake.through_proxy(port, @handshake_timeout_ms)
+
         assert width > 0 and height > 0
       after
         assert :ok = Emulator.kill(info.id)

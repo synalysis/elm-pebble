@@ -19,7 +19,9 @@ defmodule Ide.Debugger.RuntimeModelPreviewTest do
   test "merge_matching_fields wraps nil fields as Just constructors" do
     runtime_model = %{"timezone" => nil}
 
-    assert RuntimeModelPreview.merge_matching_fields(runtime_model, %{"timezone" => "Europe/Berlin"}) ==
+    assert RuntimeModelPreview.merge_matching_fields(runtime_model, %{
+             "timezone" => "Europe/Berlin"
+           }) ==
              %{"timezone" => %{"ctor" => "Just", "args" => ["Europe/Berlin"]}}
   end
 end

@@ -12,7 +12,10 @@ defmodule Ide.Debugger.HttpSimulator do
 
   @spec simulated_response(Types.TrackedHttpCommand.wire_map(), Types.simulator_settings() | nil) ::
           {:ok, Types.http_simulated_response()} | :skip
-  def simulated_response(%{"expect" => %{"kind" => "json", "decoder" => decoder}} = _command, weather)
+  def simulated_response(
+        %{"expect" => %{"kind" => "json", "decoder" => decoder}} = _command,
+        weather
+      )
       when is_map(weather) and map_size(weather) > 0 and not is_nil(decoder) do
     case build_json_body(decoder, weather) do
       body when is_map(body) and map_size(body) > 0 ->
@@ -88,7 +91,10 @@ defmodule Ide.Debugger.HttpSimulator do
   @spec leaf_value(String.t() | nil, atom(), weather_map()) :: json_leaf()
   defp leaf_value(field, :float, weather), do: float_value(field, weather)
   defp leaf_value(field, :int, weather), do: int_value(field, weather)
-  defp leaf_value(_field, :string, weather), do: to_string(Map.get(weather, "condition") || "clear")
+
+  defp leaf_value(_field, :string, weather),
+    do: to_string(Map.get(weather, "condition") || "clear")
+
   defp leaf_value(_field, :bool, _weather), do: true
   defp leaf_value(_field, :value, weather), do: weather
 

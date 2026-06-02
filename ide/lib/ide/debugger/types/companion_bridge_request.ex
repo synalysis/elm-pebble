@@ -4,6 +4,7 @@ defmodule Ide.Debugger.Types.CompanionBridgeRequest do
   """
 
   alias Ide.Debugger.Types
+
   @type t :: %{
           required(:api) => String.t(),
           required(:op) => String.t(),

@@ -58,7 +58,7 @@ defmodule Ide.AppStore.PublishFlags do
 
   @spec visibility_from_flag(publish_flag_input()) :: visibility()
   defp visibility_from_flag(value) do
-    truthy?(value) && :published || :draft
+    (truthy?(value) && :published) || :draft
   end
 
   @spec visibility_from_publish_flags(Project.t(), keyword()) :: visibility()

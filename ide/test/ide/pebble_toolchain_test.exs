@@ -257,7 +257,10 @@ defmodule Ide.PebbleToolchainTest do
     assert source =~ "__elmPebbleCompanionSimulatorSettings"
     assert source =~ "function applyPendingCompanionSimulatorSettings()"
     assert source =~ "function companionGlobalRoot()"
-    assert source =~ "companionGlobalRoot().companionApplySimulatorSettings = companionApplySimulatorSettings"
+
+    assert source =~
+             "companionGlobalRoot().companionApplySimulatorSettings = companionApplySimulatorSettings"
+
     assert source =~ "companionSimulatorSettingsReady"
     assert source =~ "function bootElmCompanionWhenReady"
     assert source =~ "lastDeliveredCompanionWeatherSignature"
@@ -285,7 +288,8 @@ defmodule Ide.PebbleToolchainTest do
   end
 
   test "Platform.setup registers bridge handlers before subscribe commands" do
-    source = File.read!("priv/bundled_elm/pebble-companion-core-src/Pebble/Companion/Platform.elm")
+    source =
+      File.read!("priv/bundled_elm/pebble-companion-core-src/Pebble/Companion/Platform.elm")
 
     {register_at, _} = :binary.match(source, "Phone.registerHandler")
     {subscribe_at, _} = :binary.match(source, "Phone.sendBridgeCommand")
@@ -312,7 +316,8 @@ defmodule Ide.PebbleToolchainTest do
   end
 
   test "Calendar bridge routes one-shot responses through onCalendar" do
-    source = File.read!("priv/bundled_elm/pebble-companion-core-src/Pebble/Companion/Calendar.elm")
+    source =
+      File.read!("priv/bundled_elm/pebble-companion-core-src/Pebble/Companion/Calendar.elm")
 
     assert source =~ ~s/resultIdPrefixes = [ "calendar-" ]/
     assert source =~ ~s/String.startsWith "calendar-next" envelope.id/
@@ -340,7 +345,10 @@ defmodule Ide.PebbleToolchainTest do
 
     assert push_idx < launch_idx
     assert launch_idx < init_idx
-    refute template =~ ~s/} else {\n    APP_LOG(APP_LOG_LEVEL_ERROR, "elmc_pebble_init failed: %d", rc);\n  }\n\n  window_stack_push(s_main_window, true);/
+
+    refute template =~
+             ~s/} else {\n    APP_LOG(APP_LOG_LEVEL_ERROR, "elmc_pebble_init failed: %d", rc);\n  }\n\n  window_stack_push(s_main_window, true);/
+
     assert template =~ "display_bounds"
   end
 

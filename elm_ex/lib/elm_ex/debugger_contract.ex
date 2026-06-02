@@ -25,7 +25,8 @@ defmodule ElmEx.DebuggerContract do
   Parses an on-disk Elm module and returns debugger-friendly snapshots derived from the
   elmc frontend AST (static — does not execute Elm).
   """
-  @spec analyze_file(Path.t()) :: {:ok, Types.introspect_snapshot()} | {:error, Types.parse_error()}
+  @spec analyze_file(Path.t()) ::
+          {:ok, Types.introspect_snapshot()} | {:error, Types.parse_error()}
   def analyze_file(path) when is_binary(path) do
     case GeneratedParser.parse_file(path) do
       {:ok, %Module{} = mod} -> {:ok, build_snapshot(mod)}
@@ -81,7 +82,12 @@ defmodule ElmEx.DebuggerContract do
   @spec from_project(Project.t(), keyword()) ::
           {:ok, Types.introspect_snapshot()} | {:error, :entry_not_found | term()}
   def from_project(%Project{} = project, opts \\ []) do
-    opts = Keyword.put_new(opts, :extra_source_roots, Application.get_env(:elm_ex, :package_source_roots, []))
+    opts =
+      Keyword.put_new(
+        opts,
+        :extra_source_roots,
+        Application.get_env(:elm_ex, :package_source_roots, [])
+      )
 
     case find_entry_module(project) do
       %Module{} = mod ->
@@ -170,7 +176,12 @@ defmodule ElmEx.DebuggerContract do
 
   @spec build_snapshot(Module.t(), String.t() | nil, String.t() | nil, keyword()) ::
           Types.introspect_snapshot()
-  defp build_snapshot(%Module{} = mod, source_path_override \\ nil, source_text_override \\ nil, opts \\ []) do
+  defp build_snapshot(
+         %Module{} = mod,
+         source_path_override \\ nil,
+         source_text_override \\ nil,
+         opts \\ []
+       ) do
     init_params = function_param_names(find_function_definition(mod, "init"))
     init_e = find_init_expr(mod)
     init_model = map_expr(init_e, &EffectAnalysis.init_model_value(&1, mod), nil)
@@ -199,6 +210,7 @@ defmodule ElmEx.DebuggerContract do
 
     update_params = function_param_names(find_function_declaration(mod, "update"))
     update_e = find_update_expr(mod)
+
     {update_branches, update_case_subject} =
       EffectAnalysis.update_case_analysis(update_e, update_params)
 
@@ -220,7 +232,11 @@ defmodule ElmEx.DebuggerContract do
       map_expr(sub_e, &EffectAnalysis.subscriptions_outline(&1, subscriptions_params), [])
 
     subscription_calls =
-      map_expr(sub_e, &EffectAnalysis.extract_subscription_calls(&1, subscriptions_params, mod), [])
+      map_expr(
+        sub_e,
+        &EffectAnalysis.extract_subscription_calls(&1, subscriptions_params, mod),
+        []
+      )
 
     main_e = find_main_expr(mod)
     main_program = EffectAnalysis.main_program_outline(main_e)
@@ -244,48 +260,48 @@ defmodule ElmEx.DebuggerContract do
     function_cmd_calls = EffectAnalysis.function_cmd_calls(mod)
 
     inner = %{
-        "source" => snapshot_source_tag(source_path_override, source_text_override),
-        "source_byte_size" => source_byte_size,
-        "source_line_count" => source_line_count,
-        "module" => mod.name,
-        "module_exposing" => module_exposing,
-        "imported_modules" => imported_modules,
-        "import_entries" => import_entries,
-        "type_aliases" => type_aliases,
-        "unions" => unions,
-        "functions" => functions,
-        "function_cmd_calls" => function_cmd_calls,
-        "init_model" => init_model,
-        "init_case_branches" => init_case_branches,
-        "init_case_subject" => init_case_subject,
-        "init_cmd_ops" => init_cmd_ops,
-        "init_cmd_calls" => init_cmd_calls,
-        "init_params" => init_params,
-        "msg_constructors" => msg_constructors(mod),
-        "msg_constructor_arities" => msg_constructor_arities(mod),
-        "msg_constructor_arg_types" => msg_constructor_arg_types(mod),
-        "update_case_branches" => update_branches,
-        "update_case_subject" => update_case_subject,
-        "update_ctor_model_fields" => update_ctor_model_fields,
-        "update_cmd_ops" => update_cmd_ops,
-        "update_cmd_calls" => update_cmd_calls,
-        "update_params" => update_params,
-        "subscription_ops" => subscription_ops,
-        "subscription_calls" => subscription_calls,
-        "subscriptions_case_branches" => subscriptions_case_branches,
-        "subscriptions_case_subject" => subscriptions_case_subject,
-        "subscriptions_params" => subscriptions_params,
-        "view_params" => view_params,
-        "view_case_branches" => view_case_branches,
-        "view_case_subject" => view_case_subject,
-        "main_program" => main_program,
-        "ports" => ports,
-        "port_module" => port_module,
-        "view_tree" => view_tree,
-        "view_source_locations" => view_source_locations,
-        "view_return_type" => view_return_type,
-        "function_types" => function_types,
-        "function_view_trees" => function_view_trees
+      "source" => snapshot_source_tag(source_path_override, source_text_override),
+      "source_byte_size" => source_byte_size,
+      "source_line_count" => source_line_count,
+      "module" => mod.name,
+      "module_exposing" => module_exposing,
+      "imported_modules" => imported_modules,
+      "import_entries" => import_entries,
+      "type_aliases" => type_aliases,
+      "unions" => unions,
+      "functions" => functions,
+      "function_cmd_calls" => function_cmd_calls,
+      "init_model" => init_model,
+      "init_case_branches" => init_case_branches,
+      "init_case_subject" => init_case_subject,
+      "init_cmd_ops" => init_cmd_ops,
+      "init_cmd_calls" => init_cmd_calls,
+      "init_params" => init_params,
+      "msg_constructors" => msg_constructors(mod),
+      "msg_constructor_arities" => msg_constructor_arities(mod),
+      "msg_constructor_arg_types" => msg_constructor_arg_types(mod),
+      "update_case_branches" => update_branches,
+      "update_case_subject" => update_case_subject,
+      "update_ctor_model_fields" => update_ctor_model_fields,
+      "update_cmd_ops" => update_cmd_ops,
+      "update_cmd_calls" => update_cmd_calls,
+      "update_params" => update_params,
+      "subscription_ops" => subscription_ops,
+      "subscription_calls" => subscription_calls,
+      "subscriptions_case_branches" => subscriptions_case_branches,
+      "subscriptions_case_subject" => subscriptions_case_subject,
+      "subscriptions_params" => subscriptions_params,
+      "view_params" => view_params,
+      "view_case_branches" => view_case_branches,
+      "view_case_subject" => view_case_subject,
+      "main_program" => main_program,
+      "ports" => ports,
+      "port_module" => port_module,
+      "view_tree" => view_tree,
+      "view_source_locations" => view_source_locations,
+      "view_return_type" => view_return_type,
+      "function_types" => function_types,
+      "function_view_trees" => function_view_trees
     }
 
     %{"debugger_contract" => inner}
@@ -504,7 +520,9 @@ defmodule ElmEx.DebuggerContract do
   end
 
   @spec function_return_type(Types.ast_declaration() | nil) :: String.t() | nil
-  defp function_return_type(%{type: type}) when is_binary(type), do: return_type_from_signature(type)
+  defp function_return_type(%{type: type}) when is_binary(type),
+    do: return_type_from_signature(type)
+
   defp function_return_type(_), do: nil
 
   @spec return_type_from_signature(String.t()) :: String.t()
@@ -515,7 +533,6 @@ defmodule ElmEx.DebuggerContract do
     |> to_string()
     |> String.trim()
   end
-
 
   @spec function_param_names(Types.ast_declaration()) :: [String.t()]
   defp function_param_names(%{args: args}) when is_list(args), do: args
@@ -565,10 +582,10 @@ defmodule ElmEx.DebuggerContract do
   def peel_lets_with_bindings(expr), do: peel_lets_with_bindings(expr, %{})
 
   def peel_lets_with_bindings(
-         %{op: :let_in, name: name, value_expr: value_expr, in_expr: inner},
-         bindings
-       )
-       when is_binary(name) do
+        %{op: :let_in, name: name, value_expr: value_expr, in_expr: inner},
+        bindings
+      )
+      when is_binary(name) do
     resolved_value = resolve_case_subject_expr(value_expr, bindings)
     peel_lets_with_bindings(inner, Map.put(bindings, name, resolved_value))
   end
@@ -590,7 +607,8 @@ defmodule ElmEx.DebuggerContract do
   defp resolve_case_subject(_, _), do: ""
 
   @spec case_subject_text(Types.case_subject(), Types.binding_map()) :: String.t()
-  def case_subject_text(subj, bindings) when is_binary(subj), do: resolve_case_subject(subj, bindings)
+  def case_subject_text(subj, bindings) when is_binary(subj),
+    do: resolve_case_subject(subj, bindings)
 
   def case_subject_text(subj, bindings) when is_map(subj),
     do: resolve_case_subject_expr(subj, bindings)
@@ -599,7 +617,7 @@ defmodule ElmEx.DebuggerContract do
 
   @spec resolve_case_subject_expr(Types.ast_expr(), Types.binding_map()) :: String.t()
   def resolve_case_subject_expr(%{op: :field_access, arg: arg, field: field}, bindings)
-       when is_binary(field) do
+      when is_binary(field) do
     resolved_arg = resolve_case_subject_expr(arg, bindings)
 
     if is_binary(resolved_arg) and resolved_arg != "" do
@@ -622,15 +640,15 @@ defmodule ElmEx.DebuggerContract do
   def pattern_branch_label(%{kind: :var, name: n}) when is_binary(n), do: n
 
   def pattern_branch_label(%{kind: :constructor, name: n, bind: nil, arg_pattern: nil})
-       when is_binary(n),
-       do: n
+      when is_binary(n),
+      do: n
 
   def pattern_branch_label(%{kind: :constructor, name: n, bind: b, arg_pattern: nil})
-       when is_binary(n) and is_binary(b) and b != "",
-       do: "#{n} #{b}"
+      when is_binary(n) and is_binary(b) and b != "",
+      do: "#{n} #{b}"
 
   def pattern_branch_label(%{kind: :constructor, name: n, arg_pattern: ap})
-       when is_binary(n) and not is_nil(ap) do
+      when is_binary(n) and not is_nil(ap) do
     inner = pattern_branch_label(ap)
     "#{n} #{inner}"
   end
@@ -719,6 +737,4 @@ defmodule ElmEx.DebuggerContract do
   end
 
   defp msg_union(_), do: nil
-
-
 end

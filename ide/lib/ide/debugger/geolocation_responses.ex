@@ -9,14 +9,18 @@ defmodule Ide.Debugger.GeolocationResponses do
   alias Ide.Debugger.Types
 
   @type apply_ctx :: %{
-          required(:introspect_for) =>
-            (Types.runtime_state(), Types.surface_target() -> Types.elm_introspect()),
-          required(:append_event) =>
-            (Types.runtime_state(), String.t(), map() -> Types.runtime_state()),
-          required(:apply_step_once) =>
-            (Types.runtime_state(), Types.surface_target(), String.t(),
-             Types.subscription_payload() | map(), String.t(), String.t() ->
-               Types.runtime_state()),
+          required(:introspect_for) => (Types.runtime_state(), Types.surface_target() ->
+                                          Types.elm_introspect()),
+          required(:append_event) => (Types.runtime_state(), String.t(), map() ->
+                                        Types.runtime_state()),
+          required(:apply_step_once) => (Types.runtime_state(),
+                                         Types.surface_target(),
+                                         String.t(),
+                                         Types.subscription_payload()
+                                         | map(),
+                                         String.t(),
+                                         String.t() ->
+                                           Types.runtime_state()),
           required(:source_root_for_target) => (Types.surface_target() -> String.t())
         }
 

@@ -18,7 +18,8 @@ defmodule Ide.Debugger.Types.PackageCmdErrorEventPayload do
 
   @type wire_map :: t() | map()
 
-  @spec from_error(String.t(), String.t(), command_map(), Types.execution_fallback_reason()) :: t()
+  @spec from_error(String.t(), String.t(), command_map(), Types.execution_fallback_reason()) ::
+          t()
   def from_error(target, package, command, reason)
       when is_binary(target) and is_binary(package) and is_map(command) do
     %{

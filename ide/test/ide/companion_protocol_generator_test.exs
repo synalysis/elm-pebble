@@ -85,16 +85,22 @@ defmodule Ide.CompanionProtocolGeneratorTest do
       assert File.read!(source) =~ "companion_protocol_new_union_value"
       assert File.read!(source) =~ "companion_protocol_new_phone_to_watch_message"
       assert File.read!(source) =~ "*out = decoder->message;"
+
       assert File.read!(source) =~
                "out->kind = COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_PROVIDE_TEMPERATURE"
+
       refute File.read!(source) =~
                "out->kind = COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_PROVIDE_TEMPERATURE;\n      *out = decoder->message;"
+
       assert File.read!(source) =~ "case 1: return 41;"
       assert File.read!(source) =~ "case 2: return 52;"
       refute File.read!(source) =~ "tag + 1"
       assert File.read!(source) =~ "decoder->message.int_fields[0] = 1;"
       assert File.read!(source) =~ "decoder->message.union_value_fields[0] = 0;"
-      assert File.read!(source) =~ "CompanionProtocolPhoneToWatchDecoder *decoder, CompanionProtocolPhoneToWatchMessage *out)"
+
+      assert File.read!(source) =~
+               "CompanionProtocolPhoneToWatchDecoder *decoder, CompanionProtocolPhoneToWatchMessage *out)"
+
       refute File.read!(source) =~ "const CompanionProtocolPhoneToWatchDecoder *decoder"
       assert File.read!(header) =~ "COMPANION_PROTOCOL_KEY_PROVIDE_TEMPERATURE_FIELD1_TAG"
       assert File.read!(header) =~ "COMPANION_PROTOCOL_KEY_PROVIDE_TEMPERATURE_FIELD1_VALUE"

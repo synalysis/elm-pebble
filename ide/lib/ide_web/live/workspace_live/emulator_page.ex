@@ -100,7 +100,9 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
           emulator_simulator_capabilities_json(@project, @debugger_state)
         }
         data-emulator-simulator-settings={emulator_simulator_settings_json(@project, @debugger_state)}
-        data-emulator-installation-status={emulator_feedback_installation_json(@emulator_installation_status)}
+        data-emulator-installation-status={
+          emulator_feedback_installation_json(@emulator_installation_status)
+        }
         data-emulator-ui-build="delegate-v4"
         class="mt-6 rounded-lg border border-zinc-200 bg-zinc-50 p-4"
       >
@@ -111,7 +113,11 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
               CloudPebble-style noVNC display with phone bridge controls.
             </p>
           </div>
-          <div id="embedded-emulator-toolbar" phx-update="ignore" class="flex flex-wrap items-center gap-2">
+          <div
+            id="embedded-emulator-toolbar"
+            phx-update="ignore"
+            class="flex flex-wrap items-center gap-2"
+          >
             <button
               type="button"
               data-emulator-launch

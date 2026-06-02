@@ -9,7 +9,8 @@ defmodule Ide.Debugger.RuntimeStatusEvents do
   alias Ide.Debugger.Types
 
   @type append_event_fn ::
-          (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() -> Types.runtime_state())
+          (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() ->
+             Types.runtime_state())
 
   @type append_debugger_event_fn ::
           (map(), String.t(), Types.surface_target(), String.t(), String.t() -> map())
@@ -22,9 +23,10 @@ defmodule Ide.Debugger.RuntimeStatusEvents do
           (Types.surface_target() -> String.t())
         ) :: map()
   def append_runtime_exec(state, target, extra, append_event, source_root_for_target)
-      when target in [:watch, :companion, :phone] and is_map(extra) and is_function(append_event, 3) and
+      when target in [:watch, :companion, :phone] and is_map(extra) and
+             is_function(append_event, 3) and
              is_function(source_root_for_target, 1) do
-    runtime = get_in(state, [target, :model, "elm_executor"])
+    runtime = get_in(state, [target, :model, "runtime_execution"])
 
     if is_map(runtime) and map_size(runtime) > 0 do
       payload =
@@ -40,7 +42,8 @@ defmodule Ide.Debugger.RuntimeStatusEvents do
     end
   end
 
-  def append_runtime_exec(state, _target, _extra, _append_event, _source_root_for_target), do: state
+  def append_runtime_exec(state, _target, _extra, _append_event, _source_root_for_target),
+    do: state
 
   @spec append_runtime_exec_for_source_root(
           map(),
@@ -49,9 +52,21 @@ defmodule Ide.Debugger.RuntimeStatusEvents do
           (Types.surface_target() -> String.t()),
           (String.t() -> Types.surface_target())
         ) :: map()
-  def append_runtime_exec_for_source_root(state, source_root, append_event, source_root_for_target, target_key)
+  def append_runtime_exec_for_source_root(
+        state,
+        source_root,
+        append_event,
+        source_root_for_target,
+        target_key
+      )
       when is_binary(source_root) do
-    append_runtime_exec(state, target_key.(source_root), %{}, append_event, source_root_for_target)
+    append_runtime_exec(
+      state,
+      target_key.(source_root),
+      %{},
+      append_event,
+      source_root_for_target
+    )
   end
 
   @spec maybe_append_simple_status(
@@ -62,7 +77,7 @@ defmodule Ide.Debugger.RuntimeStatusEvents do
   def maybe_append_simple_status(state, target, append_debugger_event)
       when target in [:watch, :companion, :phone] and
              (is_function(append_debugger_event, 5) or is_function(append_debugger_event, 6)) do
-    runtime = get_in(state, [target, :model, "elm_executor"])
+    runtime = get_in(state, [target, :model, "runtime_execution"])
 
     case status_message(runtime) do
       nil -> state
@@ -94,7 +109,7 @@ defmodule Ide.Debugger.RuntimeStatusEvents do
     runtime =
       case Map.get(execution, :runtime) || Map.get(execution, "runtime") do
         value when is_map(value) -> value
-        _ -> get_in(state, [target, :model, "elm_executor"]) || %{}
+        _ -> get_in(state, [target, :model, "runtime_execution"]) || %{}
       end
       |> Map.put("init_cmd_count", meaningful_init_cmd_count(introspect))
       |> Map.put(
@@ -105,7 +120,10 @@ defmodule Ide.Debugger.RuntimeStatusEvents do
         |> StepExecution.normalize_followup_messages()
         |> length()
       )
-      |> Map.put("planned_init_followup_count", planned_init_followup_count(execution, introspect))
+      |> Map.put(
+        "planned_init_followup_count",
+        planned_init_followup_count(execution, introspect)
+      )
 
     case status_message(runtime) do
       nil ->
@@ -127,7 +145,9 @@ defmodule Ide.Debugger.RuntimeStatusEvents do
 
   def maybe_append_after_execution(state, _target, _execution, _introspect, _, _, _), do: state
 
-  @spec followup_messages(Types.runtime_step_result()) :: [Types.RuntimeStepResult.followup_message()]
+  @spec followup_messages(Types.runtime_step_result()) :: [
+          Types.RuntimeStepResult.followup_message()
+        ]
   def followup_messages(execution) when is_map(execution) do
     case Map.get(execution, :followup_messages) || Map.get(execution, "followup_messages") do
       messages when is_list(messages) -> messages

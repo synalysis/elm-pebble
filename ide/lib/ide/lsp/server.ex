@@ -469,9 +469,11 @@ defmodule Ide.Lsp.Server do
   end
 
   # `end_idx` is the 0-based line of the next boundary (`in`, next decl, etc.), not folded.
-  @spec folding_end_line([String.t()], non_neg_integer(), pos_integer()) :: non_neg_integer() | nil
+  @spec folding_end_line([String.t()], non_neg_integer(), pos_integer()) ::
+          non_neg_integer() | nil
   defp folding_end_line(lines, start_idx, end_idx)
-       when is_list(lines) and is_integer(start_idx) and is_integer(end_idx) and end_idx > start_idx do
+       when is_list(lines) and is_integer(start_idx) and is_integer(end_idx) and
+              end_idx > start_idx do
     last_idx = min(end_idx - 1, max(length(lines) - 1, 0))
 
     if last_idx < start_idx do

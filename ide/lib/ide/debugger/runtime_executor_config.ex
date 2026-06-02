@@ -17,7 +17,8 @@ defmodule Ide.Debugger.RuntimeExecutorConfig do
   end
 
   @spec refresh_for_target(Types.runtime_state(), Types.surface_target()) :: Types.runtime_state()
-  def refresh_for_target(state, target) when is_map(state) and target in [:watch, :companion, :phone] do
+  def refresh_for_target(state, target)
+      when is_map(state) and target in [:watch, :companion, :phone] do
     RuntimePreview.refresh_for_target(state, target, module())
   end
 end

@@ -7,7 +7,8 @@ defmodule Ide.AppStore do
   alias Ide.Packages.Types
   alias Ide.AppStore.Types, as: AppStoreTypes
 
-  @spec fetch_app_by_id(String.t(), keyword()) :: {:ok, map()} | {:error, AppStoreTypes.fetch_app_error()}
+  @spec fetch_app_by_id(String.t(), keyword()) ::
+          {:ok, map()} | {:error, AppStoreTypes.fetch_app_error()}
   def fetch_app_by_id(app_id, opts \\ []) when is_binary(app_id) do
     app_id = String.trim(app_id)
     hardware = Keyword.get(opts, :hardware, "basalt")

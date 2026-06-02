@@ -48,16 +48,40 @@ defmodule Ide.Debugger.DeviceDataHints do
           put_boolean_device_response(runtime_model, execution_model, req, value)
 
         {"timezone", value} when is_binary(value) ->
-          merge_declared_scalar_device_response(runtime_model, execution_model, req, value, :string)
+          merge_declared_scalar_device_response(
+            runtime_model,
+            execution_model,
+            req,
+            value,
+            :string
+          )
 
         {"watch_model", value} when is_binary(value) ->
-          merge_declared_scalar_device_response(runtime_model, execution_model, req, value, :string)
+          merge_declared_scalar_device_response(
+            runtime_model,
+            execution_model,
+            req,
+            value,
+            :string
+          )
 
         {"watch_color", value} when is_binary(value) ->
-          merge_declared_scalar_device_response(runtime_model, execution_model, req, value, :string)
+          merge_declared_scalar_device_response(
+            runtime_model,
+            execution_model,
+            req,
+            value,
+            :string
+          )
 
         {"firmware_version", value} when is_binary(value) ->
-          merge_declared_scalar_device_response(runtime_model, execution_model, req, value, :string)
+          merge_declared_scalar_device_response(
+            runtime_model,
+            execution_model,
+            req,
+            value,
+            :string
+          )
 
         {_kind, value} when is_map(value) ->
           RuntimeModelPreview.merge_matching_fields(runtime_model, value)
@@ -95,7 +119,8 @@ defmodule Ide.Debugger.DeviceDataHints do
        when is_map(runtime_model) and is_map(model) and is_map(req) and
               kind in [:string, :integer, :boolean] do
     with true <- device_response_constructor_declared?(model, Map.get(req, :response_message)),
-         {:ok, key} <- scalar_runtime_model_key_for_device_response(model, runtime_model, req, kind) do
+         {:ok, key} <-
+           scalar_runtime_model_key_for_device_response(model, runtime_model, req, kind) do
       Map.put(runtime_model, key, value)
     else
       _ -> runtime_model
@@ -150,7 +175,8 @@ defmodule Ide.Debugger.DeviceDataHints do
 
   defp device_kind_runtime_model_key(_model, _runtime_model, _device_kind, _kind), do: :error
 
-  @spec device_response_constructor_declared?(Types.execution_model(), String.t() | nil) :: boolean()
+  @spec device_response_constructor_declared?(Types.execution_model(), String.t() | nil) ::
+          boolean()
   defp device_response_constructor_declared?(model, constructor)
        when is_map(model) and is_binary(constructor) and constructor != "" do
     case RuntimeArtifacts.introspect(model) do
@@ -230,7 +256,8 @@ defmodule Ide.Debugger.DeviceDataHints do
   end
 
   @spec boolean_fields_for_update_ctor(Types.execution_model(), String.t() | nil) :: [String.t()]
-  defp boolean_fields_for_update_ctor(model, ctor) when is_map(model) and is_binary(ctor) and ctor != "" do
+  defp boolean_fields_for_update_ctor(model, ctor)
+       when is_map(model) and is_binary(ctor) and ctor != "" do
     init = RuntimeModelNormalize.init_model(model)
 
     case RuntimeArtifacts.introspect(model) do
@@ -252,7 +279,8 @@ defmodule Ide.Debugger.DeviceDataHints do
     bindings
     |> Map.values()
     |> Enum.filter(fn field ->
-      is_binary(field) and (Map.has_key?(init, field) or Map.has_key?(init, String.to_atom(field)))
+      is_binary(field) and
+        (Map.has_key?(init, field) or Map.has_key?(init, String.to_atom(field)))
     end)
   end
 

@@ -13,12 +13,16 @@ defmodule Ide.Mcp.Protocol do
 
   @type capabilities :: [Tools.capability()]
   @type json_rpc_id :: integer() | String.t() | nil
-  @type json_rpc_request :: %{required(String.t()) => WireTypes.json_value(), optional(String.t()) => WireTypes.json_value()}
+  @type json_rpc_request :: %{
+          required(String.t()) => WireTypes.json_value(),
+          optional(String.t()) => WireTypes.json_value()
+        }
   @type json_rpc_error :: %{
           required(String.t()) => integer() | String.t()
         }
   @type json_rpc_response :: %{
-          required(String.t()) => String.t() | json_rpc_id() | WireTypes.json_value() | json_rpc_error()
+          required(String.t()) =>
+            String.t() | json_rpc_id() | WireTypes.json_value() | json_rpc_error()
         }
   @type request_result :: {:ok, WireTypes.json_value()} | {:error, integer(), String.t()}
 

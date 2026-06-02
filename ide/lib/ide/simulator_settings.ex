@@ -559,7 +559,9 @@ defmodule Ide.SimulatorSettings do
     caps = capabilities_for(project, debugger_state, mode)
 
     @fields
-    |> Enum.filter(fn field -> field_active?(field, caps) and field_visible_in_mode?(field, mode) end)
+    |> Enum.filter(fn field ->
+      field_active?(field, caps) and field_visible_in_mode?(field, mode)
+    end)
     |> Enum.group_by(& &1.group)
     |> Enum.sort_by(fn {group, _} -> group_order(group) end)
     |> Enum.map(fn {group, fields} ->

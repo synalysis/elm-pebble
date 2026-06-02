@@ -81,7 +81,10 @@ defmodule Ide.Debugger.TraceExchange.Wire do
     rows
   end
 
-  @spec maybe_put_snapshot_refs(Types.trace_export_event_row(), Types.trace_export_snapshot_refs()) ::
+  @spec maybe_put_snapshot_refs(
+          Types.trace_export_event_row(),
+          Types.trace_export_snapshot_refs()
+        ) ::
           Types.trace_export_event_row()
   defp maybe_put_snapshot_refs(row, refs) when map_size(refs) == 0, do: row
   defp maybe_put_snapshot_refs(row, refs), do: Map.put(row, "snapshot_refs", refs)

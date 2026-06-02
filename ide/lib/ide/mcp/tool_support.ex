@@ -117,7 +117,8 @@ defmodule Ide.Mcp.ToolSupport do
 
   def parse_since(_), do: {:error, "invalid since timestamp (expected ISO8601)"}
 
-  @spec parse_trace_id(WireTypes.trace_id_input()) :: {:ok, String.t() | nil} | {:error, String.t()}
+  @spec parse_trace_id(WireTypes.trace_id_input()) ::
+          {:ok, String.t() | nil} | {:error, String.t()}
   def parse_trace_id(nil), do: {:ok, nil}
   def parse_trace_id(""), do: {:ok, nil}
   def parse_trace_id(value) when is_binary(value), do: {:ok, value}
@@ -177,7 +178,8 @@ defmodule Ide.Mcp.ToolSupport do
 
   @spec cache_latest_result_field(module(), String.t(), maybe_since(), atom()) ::
           WireTypes.json_value() | nil
-  def cache_latest_result_field(cache, slug, since, field) when is_binary(slug) and is_atom(field) do
+  def cache_latest_result_field(cache, slug, since, field)
+      when is_binary(slug) and is_atom(field) do
     case cache.latest(slug) do
       {:ok, entry} ->
         if keep_since?(entry, since) do

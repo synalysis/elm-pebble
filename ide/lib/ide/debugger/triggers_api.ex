@@ -19,7 +19,8 @@ defmodule Ide.Debugger.TriggersApi do
 
   @spec available_triggers(String.t(), Types.available_triggers_attrs()) ::
           {:ok, [Types.trigger_candidate()]}
-  def available_triggers(project_slug, attrs \\ %{}) when is_binary(project_slug) and is_map(attrs) do
+  def available_triggers(project_slug, attrs \\ %{})
+      when is_binary(project_slug) and is_map(attrs) do
     target = TriggerQueries.normalize_optional_target(attrs)
     {:ok, state} = TraceApi.snapshot(project_slug, event_limit: 1)
     {:ok, trigger_candidates(state, target)}
@@ -28,20 +29,29 @@ defmodule Ide.Debugger.TriggersApi do
   @spec inject_trigger(String.t(), Types.inject_trigger_attrs()) :: {:ok, runtime_state()}
   def inject_trigger(project_slug, attrs \\ %{}) when is_binary(project_slug) and is_map(attrs) do
     AgentSession.with_hosts(fn hosts ->
-      AgentSession.mutate(project_slug, &TriggerInjectionSession.apply(&1, attrs, hosts.trigger_injection))
+      AgentSession.mutate(
+        project_slug,
+        &TriggerInjectionSession.apply(&1, attrs, hosts.trigger_injection)
+      )
     end)
   end
 
   @spec subscription_trigger_injection_modal_supported?(runtime_state(), Types.replay_row()) ::
           boolean()
   def subscription_trigger_injection_modal_supported?(state, row) do
-    AgentSession.with_hosts(fn hosts -> TriggerQueries.injection_modal_supported?(state, row, hosts) end)
+    AgentSession.with_hosts(fn hosts ->
+      TriggerQueries.injection_modal_supported?(state, row, hosts)
+    end)
   end
 
   @spec set_subscription_enabled(String.t(), Types.step_attrs()) :: {:ok, runtime_state()}
-  def set_subscription_enabled(project_slug, attrs \\ %{}) when is_binary(project_slug) and is_map(attrs) do
+  def set_subscription_enabled(project_slug, attrs \\ %{})
+      when is_binary(project_slug) and is_map(attrs) do
     AgentSession.with_hosts(fn hosts ->
-      AgentSession.mutate(project_slug, &SubscriptionToggle.apply(&1, attrs, hosts.subscription_toggle))
+      AgentSession.mutate(
+        project_slug,
+        &SubscriptionToggle.apply(&1, attrs, hosts.subscription_toggle)
+      )
     end)
   end
 
@@ -54,5 +64,7 @@ defmodule Ide.Debugger.TriggersApi do
 
   @spec subscription_model_active?(runtime_state(), Types.surface_target(), Types.replay_row()) ::
           boolean()
-  defdelegate subscription_model_active?(state, target, row), to: SubscriptionApi, as: :model_active?
+  defdelegate subscription_model_active?(state, target, row),
+    to: SubscriptionApi,
+    as: :model_active?
 end

@@ -84,6 +84,20 @@ defmodule Ide.Resources.CtorNaming do
     |> Map.put("ctor", ctor)
   end
 
+  @spec row_with_ctor(map(), kind(), String.t(), String.t() | nil) :: map()
+  def row_with_ctor(row, kind, new_ctor, new_base \\ nil)
+      when is_map(row) and is_binary(new_ctor) and is_map_key(@prefixes, kind) do
+    base_name =
+      case new_base do
+        base when is_binary(base) and base != "" -> normalize_base_name(base)
+        _ -> legacy_base_from_ctor(new_ctor, kind)
+      end
+
+    row
+    |> Map.put("ctor", new_ctor)
+    |> Map.put("base_name", base_name)
+  end
+
   @spec unique_ctor(kind(), String.t(), [map()], keyword()) :: String.t()
   def unique_ctor(kind, base_name, entries, opts \\ []) when is_list(entries) do
     exclude = Keyword.get(opts, :exclude_ctor)

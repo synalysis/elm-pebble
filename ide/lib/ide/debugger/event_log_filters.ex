@@ -29,7 +29,8 @@ defmodule Ide.Debugger.EventLogFilters do
           Types.runtime_state()
   def since_seq(state, nil), do: state
 
-  def since_seq(state, since_seq) when is_map(state) and is_integer(since_seq) and since_seq >= 0 do
+  def since_seq(state, since_seq)
+      when is_map(state) and is_integer(since_seq) and since_seq >= 0 do
     %{state | events: Enum.filter(state.events, &(&1.seq > since_seq))}
   end
 

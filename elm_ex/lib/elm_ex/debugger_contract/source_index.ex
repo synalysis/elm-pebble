@@ -7,7 +7,8 @@ defmodule ElmEx.DebuggerContract.SourceIndex do
 
   @spec function_type_index(Module.t(), [Types.import_entry()], keyword()) ::
           Types.function_types_index()
-  def function_type_index(%Module{} = mod, import_entries, opts \\ []) when is_list(import_entries) do
+  def function_type_index(%Module{} = mod, import_entries, opts \\ [])
+      when is_list(import_entries) do
     roots = source_roots_for_module(mod, opts)
 
     imported =
@@ -209,5 +210,4 @@ defmodule ElmEx.DebuggerContract.SourceIndex do
   @spec function_param_names(Types.ast_declaration() | map()) :: [String.t()]
   defp function_param_names(%{args: args}) when is_list(args), do: args
   defp function_param_names(_), do: []
-
 end

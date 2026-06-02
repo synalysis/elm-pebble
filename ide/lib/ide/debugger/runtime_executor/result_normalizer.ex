@@ -1,6 +1,6 @@
 defmodule Ide.Debugger.RuntimeExecutor.ResultNormalizer do
   @moduledoc """
-  Normalizes elm_executor / external executor wire results into `RuntimeExecutor.Types.execution_result/0`.
+  Normalizes runtime executor wire results into `RuntimeExecutor.Types.execution_result/0`.
   """
 
   alias Ide.Debugger.RuntimeExecutor.Types, as: ExecutorTypes
@@ -18,7 +18,10 @@ defmodule Ide.Debugger.RuntimeExecutor.ResultNormalizer do
     }
   end
 
-  @spec normalize_elmc_loose(ExecutorTypes.executor_wire_result(), ExecutorTypes.execution_input()) ::
+  @spec normalize_elmc_loose(
+          ExecutorTypes.executor_wire_result(),
+          ExecutorTypes.execution_input()
+        ) ::
           ExecutorTypes.execution_result()
   def normalize_elmc_loose(payload, input) when is_map(payload) and is_map(input) do
     runtime_model = map_field(payload, :runtime_model)
@@ -34,9 +37,9 @@ defmodule Ide.Debugger.RuntimeExecutor.ResultNormalizer do
     model_patch =
       %{
         "runtime_model" => runtime_model,
-        "elm_executor_mode" => "runtime_executed",
+        "runtime_execution_mode" => "runtime_executed",
         "runtime_model_source" => "elmc_runtime",
-        "elm_executor" => runtime
+        "runtime_execution" => runtime
       }
       |> put_runtime_view_output(view_output)
 
@@ -50,7 +53,11 @@ defmodule Ide.Debugger.RuntimeExecutor.ResultNormalizer do
     }
   end
 
-  @spec annotate_backend(ExecutorTypes.execution_result(), String.t(), Types.execution_fallback_reason() | nil) ::
+  @spec annotate_backend(
+          ExecutorTypes.execution_result(),
+          String.t(),
+          Types.execution_fallback_reason() | nil
+        ) ::
           ExecutorTypes.execution_result()
   def annotate_backend(%{} = payload, backend, reason \\ nil)
       when is_binary(backend) do
@@ -64,7 +71,7 @@ defmodule Ide.Debugger.RuntimeExecutor.ResultNormalizer do
     model_patch =
       payload
       |> Map.get(:model_patch, %{})
-      |> Map.put("elm_executor", runtime)
+      |> Map.put("runtime_execution", runtime)
       |> maybe_put_fallback_reason(reason)
 
     %{payload | model_patch: model_patch, runtime: runtime}
@@ -72,15 +79,13 @@ defmodule Ide.Debugger.RuntimeExecutor.ResultNormalizer do
 
   @spec runtime_mode_string() :: String.t()
   defp runtime_mode_string do
-    case Application.get_env(:ide, Ide.Debugger.RuntimeExecutor, [])
-         |> Keyword.get(:runtime_mode, :runtime_first) do
-      :legacy -> "legacy"
-      :hybrid -> "hybrid"
-      _ -> "runtime_first"
-    end
+    "runtime_first"
   end
 
-  @spec maybe_put_fallback_reason(Types.ExecutionRuntimeSnapshot.wire_map(), Types.execution_fallback_reason() | nil) ::
+  @spec maybe_put_fallback_reason(
+          Types.ExecutionRuntimeSnapshot.wire_map(),
+          Types.execution_fallback_reason() | nil
+        ) ::
           Types.ExecutionRuntimeSnapshot.wire_map()
   defp maybe_put_fallback_reason(map, nil) when is_map(map), do: map
 

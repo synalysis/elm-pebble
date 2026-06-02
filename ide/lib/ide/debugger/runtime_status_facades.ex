@@ -6,7 +6,8 @@ defmodule Ide.Debugger.RuntimeStatusFacades do
   alias Ide.Debugger.Types
 
   @type append_event_fn ::
-          (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() -> Types.runtime_state())
+          (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() ->
+             Types.runtime_state())
 
   @type append_debugger_event_fn ::
           (Types.runtime_state(), String.t(), Types.surface_target(), String.t(), String.t() ->
@@ -33,7 +34,8 @@ defmodule Ide.Debugger.RuntimeStatusFacades do
 
   def maybe_append_contract(_host, state, _payload), do: state
 
-  @spec maybe_append_runtime_exec(host(), Types.runtime_state(), String.t()) :: Types.runtime_state()
+  @spec maybe_append_runtime_exec(host(), Types.runtime_state(), String.t()) ::
+          Types.runtime_state()
   def maybe_append_runtime_exec(host, state, source_root)
       when is_map(host) and is_map(state) and is_binary(source_root) do
     RuntimeStatusEvents.append_runtime_exec_for_source_root(
@@ -52,7 +54,8 @@ defmodule Ide.Debugger.RuntimeStatusFacades do
           map()
         ) :: Types.runtime_state()
   def append_runtime_exec_for_target(host, state, target, extra)
-      when is_map(host) and is_map(state) and target in [:watch, :companion, :phone] and is_map(extra) do
+      when is_map(host) and is_map(state) and target in [:watch, :companion, :phone] and
+             is_map(extra) do
     RuntimeStatusEvents.append_runtime_exec(
       state,
       target,
@@ -79,7 +82,8 @@ defmodule Ide.Debugger.RuntimeStatusFacades do
           Types.elm_introspect() | map()
         ) :: Types.runtime_state()
   def maybe_append_after_execution(host, state, target, execution, introspect)
-      when is_map(host) and is_map(state) and target in [:watch, :companion, :phone] and is_map(execution) do
+      when is_map(host) and is_map(state) and target in [:watch, :companion, :phone] and
+             is_map(execution) do
     RuntimeStatusEvents.maybe_append_after_execution(
       state,
       target,

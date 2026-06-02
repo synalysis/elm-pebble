@@ -4,9 +4,10 @@ defmodule Ide.DatabaseConfigTest do
   alias Ide.DatabaseConfig
 
   setup do
-    original_env = for key <- ~w(DATABASE_URL DATABASE_PATH IDE_DATA_ROOT DATABASE_SSL POOL_SIZE) do
-      {key, System.get_env(key)}
-    end
+    original_env =
+      for key <- ~w(DATABASE_URL DATABASE_PATH IDE_DATA_ROOT DATABASE_SSL POOL_SIZE) do
+        {key, System.get_env(key)}
+      end
 
     on_exit(fn ->
       Enum.each(original_env, fn

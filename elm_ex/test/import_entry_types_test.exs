@@ -14,7 +14,9 @@ defmodule ElmEx.ImportEntryTypesTest do
     main = 0
     """
 
-    assert {:ok, %Module{import_entries: entries}} = GeneratedParser.parse_source("Main.elm", source)
+    assert {:ok, %Module{import_entries: entries}} =
+             GeneratedParser.parse_source("Main.elm", source)
+
     assert length(entries) >= 2
 
     assert %{"module" => "Json.Decode", "as" => "Decode"} =

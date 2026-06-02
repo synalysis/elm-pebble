@@ -5,6 +5,7 @@ defmodule Ide.Debugger.CompileIngest do
   """
 
   alias Ide.Debugger.Types
+
   alias Ide.Debugger.Types.{
     CompileIngestAttrs,
     ElmcEventPayload,
@@ -54,7 +55,8 @@ defmodule Ide.Debugger.CompileIngest do
     }
   end
 
-  @spec merge_fields_into_all_targets(Types.runtime_state(), ingest_fields()) :: Types.runtime_state()
+  @spec merge_fields_into_all_targets(Types.runtime_state(), ingest_fields()) ::
+          Types.runtime_state()
   def merge_fields_into_all_targets(state, fields) when is_map(state) and is_map(fields) do
     state
     |> merge_target(:watch, fields)

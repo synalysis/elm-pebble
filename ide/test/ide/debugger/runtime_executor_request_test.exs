@@ -1,7 +1,7 @@
 defmodule Ide.Debugger.RuntimeExecutorRequestTest do
   use ExUnit.Case, async: true
 
-  alias Ide.Debugger.{CoreIRFixtures, RuntimeExecutor, Surface}
+  alias Ide.Debugger.Surface
   alias Ide.Debugger.RuntimeExecutor.Request
 
   test "build returns struct and to_map feeds executor" do
@@ -11,7 +11,10 @@ defmodule Ide.Debugger.RuntimeExecutorRequestTest do
         shell:
           Map.merge(
             %{"debugger_contract" => %{"module" => "Main"}},
-            CoreIRFixtures.step_input_attrs()
+            %{
+              "elmx_manifest" => %{"contract" => "elmx.runtime_executor.v1"},
+              "elmx_revision" => "request-test"
+            }
           )
       })
 
@@ -21,8 +24,8 @@ defmodule Ide.Debugger.RuntimeExecutorRequestTest do
     wire = Request.to_map(request)
     assert wire.source_root == "watch"
     assert wire.introspect["module"] == "Main"
-    assert {:ok, result} = RuntimeExecutor.execute(request)
-    assert is_map(result.model_patch)
+    assert wire.elmx_manifest["contract"] == "elmx.runtime_executor.v1"
+    assert wire.elmx_revision == "request-test"
   end
 
   test "validate! accepts wire maps with string keys" do
@@ -38,7 +41,7 @@ defmodule Ide.Debugger.RuntimeExecutorRequestTest do
     assert %Request{source_root: "watch"} = Request.validate!(wire)
   end
 
-  test "validate_execution_ready! requires versioned Core IR" do
+  test "validate_execution_ready! requires versioned elmx artifacts" do
     wire = %{
       "source_root" => "watch",
       "rel_path" => nil,
@@ -48,14 +51,14 @@ defmodule Ide.Debugger.RuntimeExecutorRequestTest do
       "current_view_tree" => %{}
     }
 
-    assert_raise ArgumentError, ~r/versioned elm_executor Core IR/, fn ->
+    assert_raise ArgumentError, ~r/elmx_manifest and elmx_revision/, fn ->
       Request.validate_execution_ready!(wire)
     end
 
     ready =
       Map.merge(wire, %{
-        "elm_executor_core_ir" => CoreIRFixtures.fixture_core_ir(),
-        "elm_executor_metadata" => CoreIRFixtures.fixture_metadata()
+        "elmx_manifest" => %{"contract" => "elmx.runtime_executor.v1"},
+        "elmx_revision" => "request-test"
       })
 
     assert %Request{} = Request.validate_execution_ready!(ready)

@@ -4,6 +4,7 @@ defmodule Ide.Debugger.Types.HotReloadEventPayload do
   """
 
   alias Ide.Debugger.Types
+
   @type t :: %{
           optional(:reason) => String.t(),
           optional(:rel_path) => String.t() | nil,

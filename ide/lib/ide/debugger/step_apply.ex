@@ -17,11 +17,13 @@ defmodule Ide.Debugger.StepApply do
   # in StepApplyCallbacks; named implementations there keep precise @specs.
   @type ctx :: %{
           required(:ensure_compile_artifacts) => (map(), Types.surface_target() -> map()),
-          required(:hydrate_runtime_model) =>
-            (map(), String.t() | nil, [String.t()] -> map()),
-          required(:normalize_message_value) =>
-            (map(), Types.surface_target(), Types.subscription_payload() | nil, map() ->
-               Types.subscription_payload() | nil),
+          required(:hydrate_runtime_model) => (map(), String.t() | nil, [String.t()] -> map()),
+          required(:normalize_message_value) => (map(),
+                                                 Types.surface_target(),
+                                                 Types.subscription_payload()
+                                                 | nil,
+                                                 map() ->
+                                                   Types.subscription_payload() | nil),
           required(:normalize_runtime_patch) => (map(), map() -> map()),
           required(:patched_runtime_model_fields) => (map() -> [String.t()]),
           required(:preserve_protocol_metadata) => (map(), map() -> map()),
@@ -32,21 +34,47 @@ defmodule Ide.Debugger.StepApply do
           required(:source_root_for_target) => (Types.surface_target() -> String.t()),
           required(:append_runtime_exec) => (map(), Types.surface_target(), map() -> map()),
           required(:append_event) => (map(), String.t(), map() -> map()),
-          required(:append_debugger_event) =>
-            (map(), String.t(), Types.surface_target(), String.t(), String.t(), map() | nil -> map()),
+          required(:append_debugger_event) => (map(),
+                                               String.t(),
+                                               Types.surface_target(),
+                                               String.t(),
+                                               String.t(),
+                                               map()
+                                               | nil ->
+                                                 map()),
           required(:maybe_append_runtime_status) => (map(), Types.surface_target() -> map()),
-          required(:device_data_responses) =>
-            (map(), Types.surface_target(), String.t(), map(), String.t() -> map()),
-          required(:geolocation_response) =>
-            (map(), Types.surface_target(), String.t(), map(), String.t() -> map()),
-          required(:companion_bridge_command_responses) =>
-            (map(), Types.surface_target(), String.t(), map(), String.t() -> map()),
+          required(:device_data_responses) => (map(),
+                                               Types.surface_target(),
+                                               String.t(),
+                                               map(),
+                                               String.t() ->
+                                                 map()),
+          required(:geolocation_response) => (map(),
+                                              Types.surface_target(),
+                                              String.t(),
+                                              map(),
+                                              String.t() ->
+                                                map()),
+          required(:companion_bridge_command_responses) => (map(),
+                                                            Types.surface_target(),
+                                                            String.t(),
+                                                            map(),
+                                                            String.t() ->
+                                                              map()),
           required(:companion_bridge_responses) => (map(), Types.surface_target() -> map()),
-          required(:static_task_followups) =>
-            (map(), Types.surface_target(), String.t(), Types.subscription_payload() | nil, String.t() ->
-               map()),
-          required(:runtime_followups) =>
-            (map(), Types.surface_target(), String.t(), String.t(), list() -> map())
+          required(:static_task_followups) => (map(),
+                                               Types.surface_target(),
+                                               String.t(),
+                                               Types.subscription_payload()
+                                               | nil,
+                                               String.t() ->
+                                                 map()),
+          required(:runtime_followups) => (map(),
+                                           Types.surface_target(),
+                                           String.t(),
+                                           String.t(),
+                                           list() ->
+                                             map())
         }
 
   @spec apply(
@@ -203,6 +231,7 @@ defmodule Ide.Debugger.StepApply do
       |> Map.put("runtime_known_messages", known_messages)
       |> Map.put("runtime_update_branches", update_branches)
       |> Map.put("runtime_view_output", runtime_view_output)
+      |> StepExecution.tag_runtime_view_output_capture()
       |> Map.update("_debugger_steps", 1, &(&1 + 1))
 
     rendered_view_tree =
@@ -260,7 +289,11 @@ defmodule Ide.Debugger.StepApply do
         timeline_message_value
       )
       |> ctx.maybe_append_runtime_status.(target)
-      |> ProtocolRx.apply_side_effects(protocol_events, suppress_protocol_events?, ctx.protocol_rx_ctx.())
+      |> ProtocolRx.apply_side_effects(
+        protocol_events,
+        suppress_protocol_events?,
+        ctx.protocol_rx_ctx.()
+      )
       |> ctx.append_event.(
         "debugger.view_render",
         Ide.Debugger.Types.ViewRenderEventPayload.from_render(target_name, root)
@@ -303,7 +336,8 @@ defmodule Ide.Debugger.StepApply do
     ProtocolEvents.tx_rx_events("companion", "watch", message, trigger, message_value)
   end
 
-  defp phone_to_watch_delivery_protocol_events(_target, _message, _message_value, _trigger), do: []
+  defp phone_to_watch_delivery_protocol_events(_target, _message, _message_value, _trigger),
+    do: []
 
   defp timeline_message_value(requested_message, message, message_value) do
     case TimelineMessage.message_value_for_step(requested_message || "", message_value) do

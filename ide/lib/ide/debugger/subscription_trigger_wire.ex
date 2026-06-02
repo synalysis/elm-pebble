@@ -50,7 +50,8 @@ defmodule Ide.Debugger.SubscriptionTriggerWire do
 
   def debugger_simulated_payload_trigger?(_trigger), do: false
 
-  @spec message_value(String.t(), Types.subscription_payload()) :: Types.subscription_payload() | nil
+  @spec message_value(String.t(), Types.subscription_payload()) ::
+          Types.subscription_payload() | nil
   def message_value(message, %{} = value) when is_binary(message) do
     cond do
       Map.has_key?(value, "ctor") or Map.has_key?(value, :ctor) ->
@@ -75,12 +76,16 @@ defmodule Ide.Debugger.SubscriptionTriggerWire do
   def message_value(_message, _value), do: nil
 
   @type injection_modal_ctx :: %{
-          required(:introspect_for) =>
-            (Types.runtime_state(), Types.surface_target() -> Types.elm_introspect() | map()),
+          required(:introspect_for) => (Types.runtime_state(), Types.surface_target() ->
+                                          Types.elm_introspect() | map()),
           required(:normalize_target) => (String.t() -> Types.surface_target())
         }
 
-  @spec injection_modal_supported?(Types.runtime_state(), Types.replay_row(), injection_modal_ctx()) ::
+  @spec injection_modal_supported?(
+          Types.runtime_state(),
+          Types.replay_row(),
+          injection_modal_ctx()
+        ) ::
           boolean()
   def injection_modal_supported?(state, row, ctx)
       when is_map(state) and is_map(row) and is_map(ctx) do

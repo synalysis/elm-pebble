@@ -32,7 +32,11 @@ defmodule Ide.Emulator.VncScreenshotTest do
         assert {:ok, <<3, 0, 0, 0, 0, 0, 0, 144, 0, 168>>} = :gen_tcp.recv(socket, 10, 5_000)
 
         :gen_tcp.send(socket, <<0, 0, 0, 1>>)
-        :gen_tcp.send(socket, <<0, 0, 144::unsigned-big-16, 168::unsigned-big-16, 0::signed-big-32>>)
+
+        :gen_tcp.send(
+          socket,
+          <<0, 0, 144::unsigned-big-16, 168::unsigned-big-16, 0::signed-big-32>>
+        )
 
         pixels = :binary.copy(<<0, 0, 255, 255>>, 144 * 168)
         :gen_tcp.send(socket, pixels)

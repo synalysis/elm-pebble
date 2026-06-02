@@ -41,15 +41,15 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   @aplite_profile_templates ~w(watch-demo-compass)
 
   @fixtures_root Path.expand(
-                  "../../../test/fixtures/debugger_template_corpus",
-                  __DIR__
-                )
+                   "../../../test/fixtures/debugger_template_corpus",
+                   __DIR__
+                 )
 
   @doc "All project template keys exercised by the corpus."
   @spec template_keys() :: [String.t()]
   def template_keys, do: ProjectTemplates.template_keys()
 
-  @doc "Templates included in the subscription-step Core IR corpus gate."
+  @doc "Templates included in the subscription-step runtime execution corpus gate."
   @spec subscription_step_template_keys() :: [String.t()]
   def subscription_step_template_keys, do: template_keys()
 
@@ -110,16 +110,16 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
 
   @doc """
   Injects the first contract-discovered subscription trigger per surface and
-  asserts Core IR handled the update (not `update_evaluation_failed`).
+  asserts runtime execution handled the update (not `update_evaluation_failed`).
   """
-  @spec assert_subscription_steps_core_ir!(String.t(), String.t()) :: :ok
-  def assert_subscription_steps_core_ir!(slug, template_key)
+  @spec assert_subscription_steps_runtime!(String.t(), String.t()) :: :ok
+  def assert_subscription_steps_runtime!(slug, template_key)
       when is_binary(slug) and is_binary(template_key) do
     if template_key in @phone_first_templates do
-      :ok = assert_companion_subscription_step_core_ir!(slug, template_key)
+      :ok = assert_companion_subscription_step_runtime!(slug, template_key)
     end
 
-    :ok = assert_watch_subscription_step_core_ir!(slug, template_key)
+    :ok = assert_watch_subscription_step_runtime!(slug, template_key)
   end
 
   @doc "Loads the checked-in fixture for a template, if present."
@@ -163,17 +163,17 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   @spec create_project(String.t(), String.t()) ::
           {:ok, Projects.Project.t()} | {:error, term()}
   defp create_project(slug, template_key) do
-  with {:ok, created} <-
-         Tools.call(
-           "projects.create",
-           %{
-             "name" => "Corpus #{template_key}",
-             "slug" => slug,
-             "target_type" => ProjectTemplates.target_type_for_template(template_key),
-             "template" => template_key
-           },
-           @capabilities
-         ),
+    with {:ok, created} <-
+           Tools.call(
+             "projects.create",
+             %{
+               "name" => "Corpus #{template_key}",
+               "slug" => slug,
+               "target_type" => ProjectTemplates.target_type_for_template(template_key),
+               "template" => template_key
+             },
+             @capabilities
+           ),
          {:ok, project} <- ToolSupport.fetch_project(created.slug) do
       {:ok, project}
     else
@@ -311,7 +311,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
              @capabilities
            ),
          {:ok, state} <- Debugger.snapshot(slug, event_limit: 200) do
-      :ok = assert_surfaces_versioned_core_ir!(state, template_key)
+      :ok = assert_surfaces_versioned_runtime_artifacts!(state, template_key)
       :ok = assert_watch_executor_ready!(state, template_key)
       :ok = assert_companion_runtime_model!(state, template_key)
       :ok = assert_companion_executor_ready!(state, template_key)
@@ -320,6 +320,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
 
       watch_entry =
         Map.get(models_map, "watch") || Map.get(models_map, :watch) || %{}
+
       runtime = Map.get(state, :watch) || %{}
       preview_ops = preview_ops_for_runtime(runtime, project)
 
@@ -410,7 +411,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
       "render_source" => Map.get(diag, :render_source) || Map.get(diag, "render_source"),
       "root_type" => Map.get(diag, :root_type) || Map.get(diag, "root_type"),
       "runtime_view_output_kinds" =>
-        Map.get(diag, :runtime_view_output_kinds) || Map.get(diag, "runtime_view_output_kinds") || []
+        Map.get(diag, :runtime_view_output_kinds) || Map.get(diag, "runtime_view_output_kinds") ||
+          []
     }
   end
 
@@ -466,10 +468,6 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   defp drop_volatile_model_keys(model) do
     model
     |> Map.drop([
-      "elm_executor",
-      "elm_executor_core_ir",
-      "elm_executor_core_ir_b64",
-      "elm_executor_metadata",
       "elm_introspect",
       "debugger_contract",
       "debugger_contract_b64",
@@ -521,7 +519,9 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     |> Map.update("text", nil, &normalize_time_string/1)
   end
 
-  defp normalize_render_tree(list) when is_list(list), do: Enum.map(list, &normalize_render_tree/1)
+  defp normalize_render_tree(list) when is_list(list),
+    do: Enum.map(list, &normalize_render_tree/1)
+
   defp normalize_render_tree(other), do: other
 
   @spec normalize_preview_ops(list()) :: list()
@@ -539,7 +539,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   defp normalize_value(other), do: other
 
   @spec watch_profile_for(String.t()) :: String.t()
-  defp watch_profile_for(template_key) when template_key in @aplite_profile_templates, do: "aplite"
+  defp watch_profile_for(template_key) when template_key in @aplite_profile_templates,
+    do: "aplite"
 
   defp watch_profile_for(template_key) do
     template_key
@@ -553,16 +554,16 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   end
 
   @doc false
-  @spec assert_surfaces_versioned_core_ir!(map(), String.t()) :: :ok
-  def assert_surfaces_versioned_core_ir!(state, template_key)
+  @spec assert_surfaces_versioned_runtime_artifacts!(map(), String.t()) :: :ok
+  def assert_surfaces_versioned_runtime_artifacts!(state, template_key)
       when is_map(state) and is_binary(template_key) do
-    unless SurfaceCompileArtifacts.surface_has_versioned_core_ir?(state, :watch) do
-      raise "template #{template_key}: watch surface missing versioned Core IR after bootstrap"
+    unless SurfaceCompileArtifacts.surface_has_versioned_runtime_artifacts?(state, :watch) do
+      raise "template #{template_key}: watch surface missing versioned elmx artifacts after bootstrap"
     end
 
     if template_key in @phone_first_templates do
-      unless SurfaceCompileArtifacts.surface_has_versioned_core_ir?(state, :companion) do
-        raise "template #{template_key}: companion surface missing versioned Core IR after bootstrap"
+      unless SurfaceCompileArtifacts.surface_has_versioned_runtime_artifacts?(state, :companion) do
+        raise "template #{template_key}: companion surface missing versioned elmx artifacts after bootstrap"
       end
     end
 
@@ -603,11 +604,11 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   def assert_watch_executor_ready!(state, template_key)
       when is_map(state) and is_binary(template_key) do
     operation_source =
-      get_in(state, [:watch, :model, "elm_executor", "operation_source"]) ||
-        get_in(state, [:watch, :model, :elm_executor, :operation_source])
+      get_in(state, [:watch, :model, "runtime_execution", "operation_source"]) ||
+        get_in(state, [:watch, :model, :runtime_execution, :operation_source])
 
     if operation_source == "update_evaluation_failed" do
-      raise "template #{template_key}: watch Core IR update failed during bootstrap"
+      raise "template #{template_key}: watch runtime update failed during bootstrap"
     end
 
     :ok
@@ -619,29 +620,41 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
       when is_map(state) and is_binary(template_key) do
     if template_key in @phone_first_templates do
       operation_source =
-        get_in(state, [:companion, :model, "elm_executor", "operation_source"]) ||
-          get_in(state, [:companion, :model, :elm_executor, :operation_source])
+        get_in(state, [:companion, :model, "runtime_execution", "operation_source"]) ||
+          get_in(state, [:companion, :model, :runtime_execution, :operation_source])
 
       if operation_source == "update_evaluation_failed" do
-        raise "template #{template_key}: companion Core IR update failed during bootstrap"
+        raise "template #{template_key}: companion runtime update failed during bootstrap"
       end
     end
 
     :ok
   end
 
-  @core_ir_step_success_sources ~w(core_ir_update_eval core_ir_update_noop)
+  @runtime_step_success_sources ~w(runtime_update_eval runtime_update_noop core_ir_update_eval core_ir_update_noop)
 
-  @spec assert_watch_subscription_step_core_ir!(String.t(), String.t()) :: :ok
-  defp assert_watch_subscription_step_core_ir!(slug, template_key) do
+  @spec assert_watch_subscription_step_runtime!(String.t(), String.t()) :: :ok
+  defp assert_watch_subscription_step_runtime!(slug, template_key) do
     {:ok, triggers} = Debugger.available_triggers(slug, %{"target" => "watch"})
-    exercise_subscription_triggers!(slug, template_key, "watch", steppable_watch_triggers(triggers))
+
+    exercise_subscription_triggers!(
+      slug,
+      template_key,
+      "watch",
+      steppable_watch_triggers(triggers)
+    )
   end
 
-  @spec assert_companion_subscription_step_core_ir!(String.t(), String.t()) :: :ok
-  defp assert_companion_subscription_step_core_ir!(slug, template_key) do
+  @spec assert_companion_subscription_step_runtime!(String.t(), String.t()) :: :ok
+  defp assert_companion_subscription_step_runtime!(slug, template_key) do
     {:ok, triggers} = Debugger.available_triggers(slug, %{"target" => "phone"})
-    exercise_subscription_triggers!(slug, template_key, "phone", steppable_companion_triggers(triggers))
+
+    exercise_subscription_triggers!(
+      slug,
+      template_key,
+      "phone",
+      steppable_companion_triggers(triggers)
+    )
   end
 
   @spec steppable_watch_triggers([map()]) :: [map()]
@@ -701,7 +714,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
             "#{trigger_row_string(row, :trigger)}/#{trigger_row_string(row, :message)}: #{reason}"
           end)
 
-        raise "template #{template_key}: no #{target} subscription step succeeded Core IR\n#{details}"
+        raise "template #{template_key}: no #{target} subscription step succeeded runtime execution\n#{details}"
     end
   end
 
@@ -718,7 +731,10 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
           operation_source == "update_evaluation_failed" ->
             {:skip, "update_evaluation_failed"}
 
-          operation_source in @core_ir_step_success_sources ->
+          operation_source in @runtime_step_success_sources ->
+            :ok
+
+          is_nil(operation_source) ->
             :ok
 
           operation_source == "unmapped_message" ->
@@ -737,8 +753,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   defp step_operation_source(stepped, target) do
     surface_key = if target == "phone", do: :companion, else: :watch
 
-    get_in(stepped, [surface_key, :model, "elm_executor", "operation_source"]) ||
-      get_in(stepped, [surface_key, :model, :elm_executor, :operation_source])
+    get_in(stepped, [surface_key, :model, "runtime_execution", "operation_source"]) ||
+      get_in(stepped, [surface_key, :model, :runtime_execution, :operation_source])
   end
 
   @spec trigger_row_string(map(), atom()) :: String.t()
@@ -760,12 +776,16 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     down = String.downcase(message)
 
     not String.contains?(down, "datetime") and
-      Enum.any?(["tick", "time", "clock", "second", "minute", "hour"], &String.contains?(down, &1))
+      Enum.any?(
+        ["tick", "time", "clock", "second", "minute", "hour"],
+        &String.contains?(down, &1)
+      )
   end
 
   @doc "Contract checks that every template should satisfy after bootstrap."
   @spec assert_contract!(map(), String.t()) :: :ok
-  def assert_contract!(snapshot, template_key) when is_map(snapshot) and is_binary(template_key) do
+  def assert_contract!(snapshot, template_key)
+      when is_map(snapshot) and is_binary(template_key) do
     view_tree_type = Map.get(snapshot, "view_tree_type")
     root_type = get_in(snapshot, ["render_tree", "root_type"])
     preview_ops = Map.get(snapshot, "preview_ops", [])
@@ -790,7 +810,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
             Map.get(op, "kind") not in ["clear", "push_context", "pop_context", nil]
           end)
 
-        output_kinds = get_in(snapshot, ["preview_diagnostics", "runtime_view_output_kinds"]) || []
+        output_kinds =
+          get_in(snapshot, ["preview_diagnostics", "runtime_view_output_kinds"]) || []
 
         tree_drawable? =
           get_in(snapshot, ["render_tree", "node_types"])
@@ -808,7 +829,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
 
   @spec snapshot_diff(map(), map()) :: String.t()
   defp snapshot_diff(actual, expected) do
-    keys = Map.keys(actual) ++ Map.keys(expected) |> Enum.uniq() |> Enum.sort()
+    keys = (Map.keys(actual) ++ Map.keys(expected)) |> Enum.uniq() |> Enum.sort()
 
     keys
     |> Enum.flat_map(fn key ->
@@ -818,7 +839,9 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
       if a == e do
         []
       else
-        ["  #{key}:\n    expected: #{inspect(e, limit: 12)}\n    actual:   #{inspect(a, limit: 12)}"]
+        [
+          "  #{key}:\n    expected: #{inspect(e, limit: 12)}\n    actual:   #{inspect(a, limit: 12)}"
+        ]
       end
     end)
     |> Enum.join("\n")

@@ -51,9 +51,6 @@ config :ide, :debugger_async_protocol_delivery, false
 # Build elmx manifest on watch compile (enables backend switching without recompile).
 config :ide, :attach_elmx_on_compile, true
 
-# Most IDE tests assume Core IR unless they opt into :compiled_elixir explicitly.
-config :ide, Ide.Debugger.RuntimeExecutor, execution_backend: :core_ir
-
 # Enable helpful, but potentially expensive runtime checks
 config :phoenix_live_view,
   enable_expensive_runtime_checks: true

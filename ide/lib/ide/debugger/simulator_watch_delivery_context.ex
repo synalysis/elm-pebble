@@ -6,17 +6,25 @@ defmodule Ide.Debugger.SimulatorWatchDeliveryContext do
   alias Ide.Debugger.Types
 
   @type host :: %{
-          required(:apply_step_once) =>
-            (Types.runtime_state(), Types.surface_target(), String.t(),
-             Types.subscription_payload() | map() | nil, String.t(), String.t() ->
-               Types.runtime_state()),
-          required(:trigger_candidates) =>
-            (Types.runtime_state(), Types.surface_target() -> [Types.trigger_candidate()]),
-          required(:model_active?) =>
-            (Types.runtime_state(), Types.surface_target(), map() -> boolean()),
-          required(:trigger_message_for_surface) =>
-            (Types.runtime_state(), Types.surface_target(), String.t(), String.t() | nil ->
-               String.t()),
+          required(:apply_step_once) => (Types.runtime_state(),
+                                         Types.surface_target(),
+                                         String.t(),
+                                         Types.subscription_payload()
+                                         | map()
+                                         | nil,
+                                         String.t(),
+                                         String.t() ->
+                                           Types.runtime_state()),
+          required(:trigger_candidates) => (Types.runtime_state(), Types.surface_target() ->
+                                              [Types.trigger_candidate()]),
+          required(:model_active?) => (Types.runtime_state(), Types.surface_target(), map() ->
+                                         boolean()),
+          required(:trigger_message_for_surface) => (Types.runtime_state(),
+                                                     Types.surface_target(),
+                                                     String.t(),
+                                                     String.t()
+                                                     | nil ->
+                                                       String.t()),
           required(:simulator_settings) => (Types.runtime_state() -> map()),
           required(:protocol_events_ctx) => (-> ProtocolEvents.ctx())
         }

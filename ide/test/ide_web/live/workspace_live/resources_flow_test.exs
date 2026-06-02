@@ -30,7 +30,11 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlowTest do
     assert {[%{} = row], nil} = ResourcesFlow.load_bitmap_resources(project)
     assert row.ctor == "Sprite"
     assert length(row.variant_slots) == 2
-    assert Enum.any?(row.variant_slots, &(&1.color_mode == "Color" and &1.filename == "Sprite~color.png"))
+
+    assert Enum.any?(
+             row.variant_slots,
+             &(&1.color_mode == "Color" and &1.filename == "Sprite~color.png")
+           )
   end
 
   test "bitmap_upload_output handles successful import without duplicate flag" do
@@ -38,7 +42,8 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlowTest do
   end
 
   test "resource_import_error_message explains missing gif2apng" do
-    assert ResourcesFlow.resource_import_error_message(:gif_converter_missing) =~ "mix ide.install_gif2apng"
+    assert ResourcesFlow.resource_import_error_message(:gif_converter_missing) =~
+             "mix ide.install_gif2apng"
   end
 
   test "upload_ready? enables submit when a valid file is selected without auto_upload" do

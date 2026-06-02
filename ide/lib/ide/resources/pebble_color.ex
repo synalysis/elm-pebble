@@ -135,7 +135,9 @@ defmodule Ide.Resources.PebbleColor do
     |> triplet_to_argb8()
   end
 
-  @spec triplet_to_argb8({non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()}) ::
+  @spec triplet_to_argb8(
+          {non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()}
+        ) ::
           argb8()
   def triplet_to_argb8({r, g, b, a}) do
     a = Bitwise.bsr(a, 6)
@@ -153,7 +155,9 @@ defmodule Ide.Resources.PebbleColor do
   @spec band_argb8(non_neg_integer()) :: argb8()
   defp band_argb8(value), do: Bitwise.band(value, 0xFF)
 
-  @spec truncate_to_palette({non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()}) ::
+  @spec truncate_to_palette(
+          {non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()}
+        ) ::
           {non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()}
   def truncate_to_palette({r, g, b, a}) do
     a = div(a, 85) * 85
@@ -165,7 +169,9 @@ defmodule Ide.Resources.PebbleColor do
     end
   end
 
-  @spec nearest_to_palette({non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()}) ::
+  @spec nearest_to_palette(
+          {non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()}
+        ) ::
           {non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()}
   def nearest_to_palette({r, g, b, a}) do
     a = nearest_step(a)
@@ -181,7 +187,7 @@ defmodule Ide.Resources.PebbleColor do
   defp quantize_to_palette(rgba, _), do: truncate_to_palette(rgba)
 
   defp nearest_step(value) when is_integer(value) do
-    ((value + 42) / 85 |> trunc()) * 85
+    (((value + 42) / 85) |> trunc()) * 85
   end
 
   defp parse_hex("#" <> hex) do

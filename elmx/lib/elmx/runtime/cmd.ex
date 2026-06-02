@@ -1,6 +1,6 @@
 defmodule Elmx.Runtime.Cmd do
   @moduledoc """
-  Wire-format `Cmd` values aligned with `ElmExecutor` runtime command maps.
+  Wire-format `Cmd` values for debugger runtime command maps.
   """
 
   alias Elmx.Runtime.Values
@@ -36,7 +36,7 @@ defmodule Elmx.Runtime.Cmd do
 
   @spec storage_read_int(integer(), term(), term()) :: Types.wire_cmd()
   def storage_read_int(key, callback, default) when is_integer(key) do
-    {message, message_value} = message_wire(callback)
+    {message, message_value} = callback_message_value(callback, default)
 
     %{
       "kind" => "cmd.storage.read_int",
@@ -50,7 +50,7 @@ defmodule Elmx.Runtime.Cmd do
 
   @spec storage_read_string(integer(), term(), term()) :: Types.wire_cmd()
   def storage_read_string(key, callback, default) when is_integer(key) do
-    {message, message_value} = message_wire(callback)
+    {message, message_value} = callback_message_value(callback, default)
 
     %{
       "kind" => "cmd.storage.read_string",
@@ -203,7 +203,7 @@ defmodule Elmx.Runtime.Cmd do
 
   @spec device(String.t(), term(), term()) :: Types.wire_cmd()
   def device(kind, callback, value) when is_binary(kind) do
-    {message, message_value} = message_wire(callback)
+    {message, message_value} = callback_message_value(callback, value)
 
     %{
       "kind" => "cmd.device." <> kind,
@@ -312,6 +312,31 @@ defmodule Elmx.Runtime.Cmd do
 
   def message_wire(other),
     do: {"Unknown", %{"ctor" => "Unknown", "args" => [Values.wire_value(other)]}}
+
+  @doc """
+  Builds `message` + `message_value` for device/storage followups.
+
+  Nullary callback constructors (e.g. `ClockStyle24h`) get the command payload in `args`
+  so debugger steps decode to `{:ClockStyle24h, true}` instead of `:ClockStyle24h`.
+  """
+  @spec callback_message_value(term(), term()) :: {String.t(), Types.wire_ctor()}
+  def callback_message_value(callback, payload) do
+    {message, message_value} = message_wire(callback)
+
+    message_value =
+      case message_value do
+        %{"ctor" => ctor, "args" => []} when not is_nil(payload) ->
+          %{"ctor" => ctor, "args" => [Values.wire_value(payload)]}
+
+        %{ctor: ctor, args: []} when not is_nil(payload) ->
+          %{"ctor" => to_string(ctor), "args" => [Values.wire_value(payload)]}
+
+        other ->
+          other
+      end
+
+    {message, message_value}
+  end
 
   @doc """
   Pebble backlight cmd from `Maybe Bool` (Nothing → interaction, Just False → disable, Just True → enable).

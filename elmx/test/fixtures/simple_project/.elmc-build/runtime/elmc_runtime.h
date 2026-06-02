@@ -294,7 +294,7 @@ ElmcValue *elmc_dict_partition(ElmcValue *f, ElmcValue *dict);
 ElmcValue *elmc_dict_union(ElmcValue *a, ElmcValue *b);
 ElmcValue *elmc_dict_intersect(ElmcValue *a, ElmcValue *b);
 ElmcValue *elmc_dict_diff(ElmcValue *a, ElmcValue *b);
-ElmcValue *elmc_dict_merge(ElmcValue *lf, ElmcValue *bf, ElmcValue *rf, ElmcValue *a, ElmcValue *b);
+ElmcValue *elmc_dict_merge(ElmcValue *lf, ElmcValue *bf, ElmcValue *rf, ElmcValue *a, ElmcValue *b, ElmcValue *result);
 ElmcValue *elmc_dict_update(ElmcValue *key, ElmcValue *f, ElmcValue *dict);
 ElmcValue *elmc_dict_singleton(ElmcValue *key, ElmcValue *value);
 

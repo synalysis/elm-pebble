@@ -101,7 +101,15 @@ defmodule Ide.Debugger.Types.ReplayEventPayload do
           replay_telemetry(),
           [Types.replay_row()]
         ) :: t()
-  def build(target, requested_count, replayed_count, replay_source, cursor_seq, telemetry, messages)
+  def build(
+        target,
+        requested_count,
+        replayed_count,
+        replay_source,
+        cursor_seq,
+        telemetry,
+        messages
+      )
       when is_integer(requested_count) and is_integer(replayed_count) and is_binary(replay_source) and
              is_map(telemetry) and is_list(messages) do
     %{
@@ -124,7 +132,10 @@ defmodule Ide.Debugger.Types.ReplayEventPayload do
 
   @spec replay_target_label(Types.surface_target() | String.t() | atom() | nil) :: String.t()
   defp replay_target_label(nil), do: "all"
-  defp replay_target_label(target) when target in [:watch, :companion, :phone], do: Atom.to_string(target)
+
+  defp replay_target_label(target) when target in [:watch, :companion, :phone],
+    do: Atom.to_string(target)
+
   defp replay_target_label(target) when is_binary(target), do: target
   defp replay_target_label(target) when is_atom(target), do: Atom.to_string(target)
   defp replay_target_label(_target), do: "all"

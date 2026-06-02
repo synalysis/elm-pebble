@@ -120,12 +120,12 @@ defmodule Ide.Debugger.SubscriptionGuards do
     Enum.find_value(subscriptions_params, fn param ->
       prefix = param <> "."
 
-      if is_binary(param) and param != "_" and param != "" and String.starts_with?(subject, prefix) do
+      if is_binary(param) and param != "_" and param != "" and
+           String.starts_with?(subject, prefix) do
         String.replace_prefix(subject, prefix, "")
       end
     end) || ""
   end
 
   defp runtime_field_key(_subject, _subscriptions_params), do: ""
-
 end

@@ -108,7 +108,10 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
      socket
      |> assign(:manifest_status, :running)
      |> start_async(:run_manifest, fn ->
-       Compiler.manifest(Projects.scope_key(project), workspace_root: workspace_root, strict: strict?)
+       Compiler.manifest(Projects.scope_key(project),
+         workspace_root: workspace_root,
+         strict: strict?
+       )
      end)}
   end
 
@@ -451,7 +454,9 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     root_results =
       roots
       |> Enum.map(fn {label, root_path} ->
-        {:ok, single} = run_build_pipeline_for_root(Projects.scope_key(project), label, root_path, strict?)
+        {:ok, single} =
+          run_build_pipeline_for_root(Projects.scope_key(project), label, root_path, strict?)
+
         single
       end)
 

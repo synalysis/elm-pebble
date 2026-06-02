@@ -7,13 +7,15 @@ defmodule Ide.Debugger.ProtocolEvents do
   @type resolution_ctx :: ProtocolResolutionCtx.t()
 
   @type ctx :: %{
-          required(:cmd_calls_for_message) =>
-            (Types.runtime_state(), Types.surface_target(), String.t() -> [Types.cmd_call()]),
-          required(:simulator_settings_from_state) =>
-            (Types.runtime_state() -> Types.simulator_settings()),
+          required(:cmd_calls_for_message) => (Types.runtime_state(),
+                                               Types.surface_target(),
+                                               String.t() ->
+                                                 [Types.cmd_call()]),
+          required(:simulator_settings_from_state) => (Types.runtime_state() ->
+                                                         Types.simulator_settings()),
           required(:session_key_from_state) => (Types.runtime_state() -> String.t() | nil),
-          required(:surface_app_model) =>
-            (Types.runtime_state(), Types.surface_target() -> Types.app_model())
+          required(:surface_app_model) => (Types.runtime_state(), Types.surface_target() ->
+                                             Types.app_model())
         }
 
   alias Ide.Debugger.ProtocolEvents.CmdCall
@@ -32,7 +34,13 @@ defmodule Ide.Debugger.ProtocolEvents do
   end
 
   def normalize_subscription_message_value(state, recipient, message_value, app_model, events_ctx) do
-    Subscription.normalize_subscription_message_value(state, recipient, message_value, app_model, events_ctx)
+    Subscription.normalize_subscription_message_value(
+      state,
+      recipient,
+      message_value,
+      app_model,
+      events_ctx
+    )
   end
 
   defdelegate project_schema(state, events_ctx), to: CmdCall
@@ -41,7 +49,13 @@ defmodule Ide.Debugger.ProtocolEvents do
   defdelegate parenthesize_elm_arg(value), to: Subscription
   defdelegate inbound_display_message(message, message_value), to: Subscription
 
-  @spec tx_rx_events(String.t(), String.t(), String.t() | nil, String.t(), Types.protocol_message_wire_value()) ::
+  @spec tx_rx_events(
+          String.t(),
+          String.t(),
+          String.t() | nil,
+          String.t(),
+          Types.protocol_message_wire_value()
+        ) ::
           [Types.protocol_timeline_event()]
   def tx_rx_events(from, to, message, trigger, message_value) do
     Ide.Debugger.Types.ProtocolTxRxPayload.tx_rx_events(
@@ -55,7 +69,7 @@ defmodule Ide.Debugger.ProtocolEvents do
 
   @spec enrich([Types.protocol_event()], String.t(), String.t()) :: [Types.protocol_event()]
   def enrich(protocol_events, trigger, message_source)
-       when is_list(protocol_events) and is_binary(trigger) do
+      when is_list(protocol_events) and is_binary(trigger) do
     Enum.map(protocol_events, fn event ->
       type = Map.get(event, :type) || Map.get(event, "type")
       payload = Map.get(event, :payload) || Map.get(event, "payload")

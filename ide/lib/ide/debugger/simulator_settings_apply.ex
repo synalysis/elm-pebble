@@ -38,7 +38,11 @@ defmodule Ide.Debugger.SimulatorSettingsApply do
     |> CompanionBridgeEffects.apply_simulator_settings_responses(ctx.companion_bridge)
     |> RuntimeFollowups.reapply_tracked_http_commands(ctx.runtime_followups)
     |> InitSurfaceEffects.apply_companion_bridge_commands(:companion, ctx.init_surface_effects)
-    |> SimulatorWatchDelivery.inject_unobstructed_triggers(previous_settings, settings, ctx.simulator_watch_delivery)
+    |> SimulatorWatchDelivery.inject_unobstructed_triggers(
+      previous_settings,
+      settings,
+      ctx.simulator_watch_delivery
+    )
     |> SimulatorWatchDelivery.inject_weather_on_settings_change(
       previous_settings,
       settings,

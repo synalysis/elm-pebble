@@ -5,7 +5,11 @@ defmodule Ide.Mcp.ConversionOpts do
   def schema do
     %{
       "precise" => %{type: "boolean", default: false},
-      "color_mode" => %{type: "string", enum: ["truncate", "nearest", "indexed"], default: "truncate"},
+      "color_mode" => %{
+        type: "string",
+        enum: ["truncate", "nearest", "indexed"],
+        default: "truncate"
+      },
       "flatten_curves" => %{type: "boolean", default: false},
       "flatten_tolerance" => %{type: "number", default: 0.5},
       "frame_duration_ms" => %{type: "integer", default: 100, minimum: 1},
@@ -46,7 +50,9 @@ defmodule Ide.Mcp.ConversionOpts do
 
   defp int_arg(args, key, default) do
     case Map.get(args, key) || Map.get(args, String.to_atom(key)) do
-      n when is_integer(n) -> n
+      n when is_integer(n) ->
+        n
+
       n when is_binary(n) ->
         case Integer.parse(n) do
           {value, _} -> value
@@ -74,7 +80,9 @@ defmodule Ide.Mcp.ConversionOpts do
 
   defp float_arg(args, key, default) do
     case Map.get(args, key) || Map.get(args, String.to_atom(key)) do
-      n when is_number(n) -> n * 1.0
+      n when is_number(n) ->
+        n * 1.0
+
       n when is_binary(n) ->
         case Float.parse(n) do
           {value, _} -> value

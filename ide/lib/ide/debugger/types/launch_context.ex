@@ -4,6 +4,7 @@ defmodule Ide.Debugger.Types.LaunchContext do
   """
 
   alias Ide.Debugger.Types
+
   @type screen :: %{
           optional(:width) => pos_integer(),
           optional(:height) => pos_integer(),

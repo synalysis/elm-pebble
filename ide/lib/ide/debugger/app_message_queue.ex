@@ -12,7 +12,11 @@ defmodule Ide.Debugger.AppMessageQueue do
   @queue_targets [:watch, :companion, :phone]
 
   @type queue_entry :: Types.protocol_tx_rx_payload() | map()
-  @type queues :: %{optional(:watch) => [queue_entry()], optional(:companion) => [queue_entry()], optional(:phone) => [queue_entry()]}
+  @type queues :: %{
+          optional(:watch) => [queue_entry()],
+          optional(:companion) => [queue_entry()],
+          optional(:phone) => [queue_entry()]
+        }
 
   @spec empty() :: queues()
   def empty do
@@ -29,7 +33,8 @@ defmodule Ide.Debugger.AppMessageQueue do
     {Map.put(state, :app_message_queues, queues), queues}
   end
 
-  @spec enqueue(Types.runtime_state(), Types.surface_target(), queue_entry()) :: Types.runtime_state()
+  @spec enqueue(Types.runtime_state(), Types.surface_target(), queue_entry()) ::
+          Types.runtime_state()
   def enqueue(state, target, payload)
       when is_map(state) and target in @queue_targets and is_map(payload) do
     {state, queues} = ensure(state)

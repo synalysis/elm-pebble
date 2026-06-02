@@ -23,8 +23,16 @@ defmodule Ide.Resources.ResourceStoreTest do
     File.mkdir_p!(Path.join(workspace, "watch/resources/bitmaps"))
     File.mkdir_p!(Path.join(workspace, "watch/resources/vectors"))
 
-    File.write!(Path.join(workspace, "watch/resources/bitmaps/BitmapStaticZulu.png"), <<137, 80, 78, 71>>)
-    File.write!(Path.join(workspace, "watch/resources/bitmaps/BitmapStaticAlpha.png"), <<137, 80, 78, 71>>)
+    File.write!(
+      Path.join(workspace, "watch/resources/bitmaps/BitmapStaticZulu.png"),
+      <<137, 80, 78, 71>>
+    )
+
+    File.write!(
+      Path.join(workspace, "watch/resources/bitmaps/BitmapStaticAlpha.png"),
+      <<137, 80, 78, 71>>
+    )
+
     File.write!(Path.join(workspace, "watch/resources/vectors/VectorAnimatedRain.pdc"), "pdc")
     File.write!(Path.join(workspace, "watch/resources/vectors/VectorStaticSun.pdc"), "pdc")
 
@@ -78,8 +86,15 @@ defmodule Ide.Resources.ResourceStoreTest do
       ]
     }
 
-    File.write!(Path.join(workspace, "watch/resources/bitmaps.json"), Jason.encode!(bitmaps, pretty: true))
-    File.write!(Path.join(workspace, "watch/resources/vectors.json"), Jason.encode!(vectors, pretty: true))
+    File.write!(
+      Path.join(workspace, "watch/resources/bitmaps.json"),
+      Jason.encode!(bitmaps, pretty: true)
+    )
+
+    File.write!(
+      Path.join(workspace, "watch/resources/vectors.json"),
+      Jason.encode!(vectors, pretty: true)
+    )
 
     assert :ok = ResourceStore.ensure_generated_workspace(workspace)
 
@@ -108,5 +123,54 @@ defmodule Ide.Resources.ResourceStoreTest do
     {first_pos, _} = :binary.match(fragment, first_ctor)
     {second_pos, _} = :binary.match(fragment, second_ctor)
     first_pos < second_pos
+  end
+
+  test "update_bitmap_base_name renames files and updates manifest ctor and base_name" do
+    slug = "bitmap-rename-#{System.unique_integer([:positive])}"
+    project = %Ide.Projects.Project{slug: slug}
+    workspace = Projects.project_workspace_path(project)
+    assets = Path.join(workspace, "watch/resources/bitmaps")
+    on_exit(fn -> File.rm_rf!(workspace) end)
+
+    File.mkdir_p!(assets)
+
+    File.write!(Path.join(assets, "BitmapStatic249.png"), <<137, 80, 78, 71>>)
+
+    manifest = %{
+      "schema_version" => 1,
+      "entries" => [
+        %{
+          "ctor" => "BitmapStatic249",
+          "base_name" => "249",
+          "filename" => "BitmapStatic249.png",
+          "mime" => "image/png",
+          "bytes" => 4,
+          "width" => 1,
+          "height" => 1
+        }
+      ]
+    }
+
+    File.write!(
+      Path.join(workspace, "watch/resources/bitmaps.json"),
+      Jason.encode!(manifest, pretty: true)
+    )
+
+    assert {:ok, %{entry: entry}} =
+             ResourceStore.update_bitmap_base_name(project, "BitmapStatic249", "Image")
+
+    assert entry["ctor"] == "BitmapStaticImage"
+    assert entry["base_name"] == "Image"
+    assert entry["filename"] == "BitmapStaticImage.png"
+    assert File.exists?(Path.join(assets, "BitmapStaticImage.png"))
+    refute File.exists?(Path.join(assets, "BitmapStatic249.png"))
+
+    {:ok, decoded} =
+      workspace
+      |> Path.join("watch/resources/bitmaps.json")
+      |> File.read!()
+      |> Jason.decode()
+
+    assert [%{"ctor" => "BitmapStaticImage", "base_name" => "Image"}] = decoded["entries"]
   end
 end

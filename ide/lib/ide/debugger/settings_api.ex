@@ -23,7 +23,8 @@ defmodule Ide.Debugger.SettingsApi do
           Types.simulator_settings(),
           SimulatorSettingsApply.host()
         ) :: Types.runtime_state()
-  def apply_to_state(state, settings, host) when is_map(state) and is_map(settings) and is_map(host) do
+  def apply_to_state(state, settings, host)
+      when is_map(state) and is_map(settings) and is_map(host) do
     state
     |> SessionDefaults.ensure_phone_state()
     |> then(fn prepared ->

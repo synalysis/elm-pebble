@@ -24,7 +24,10 @@ defmodule Ide.Debugger.WatchProfileTypesTest do
     on_exit(fn -> Debugger.forget_project(slug) end)
 
     assert {:ok, state} =
-             Debugger.start_session(slug, %{"watch_profile_id" => "chalk", "launch_reason" => "LaunchUser"})
+             Debugger.start_session(slug, %{
+               "watch_profile_id" => "chalk",
+               "launch_reason" => "LaunchUser"
+             })
 
     ctx = state.launch_context
 

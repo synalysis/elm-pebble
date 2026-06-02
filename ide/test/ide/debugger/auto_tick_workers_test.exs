@@ -5,7 +5,12 @@ defmodule Ide.Debugger.AutoTickWorkersTest do
   alias Ide.Debugger.SessionDefaults
 
   test "stop_worker clears worker pid and resets auto_tick" do
-    worker = spawn(fn -> receive do :stop -> :ok end end)
+    worker =
+      spawn(fn ->
+        receive do
+          :stop -> :ok
+        end
+      end)
 
     state = %{
       auto_tick: Map.put(SessionDefaults.default_auto_tick(), :worker_pid, worker)

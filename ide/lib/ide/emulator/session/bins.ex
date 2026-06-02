@@ -15,12 +15,22 @@ defmodule Ide.Emulator.Session.Bins do
 
   @spec pypkjs_bin() :: {:ok, String.t()} | {:error, atom()}
   def pypkjs_bin do
-    resolve_bin(Config.config(:pypkjs_bin, nil), ["pypkjs"], pypkjs_candidates(), :pypkjs_not_found)
+    resolve_bin(
+      Config.config(:pypkjs_bin, nil),
+      ["pypkjs"],
+      pypkjs_candidates(),
+      :pypkjs_not_found
+    )
   end
 
   @spec pebble_bin() :: {:ok, String.t()} | {:error, atom()}
   def pebble_bin do
-    resolve_bin(Config.config(:pebble_bin, nil), ["pebble"], pebble_candidates(), :pebble_cli_not_found)
+    resolve_bin(
+      Config.config(:pebble_bin, nil),
+      ["pebble"],
+      pebble_candidates(),
+      :pebble_cli_not_found
+    )
   end
 
   @spec sdk_roots() :: [String.t()]

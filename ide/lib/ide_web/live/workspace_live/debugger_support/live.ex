@@ -97,7 +97,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Live do
 
   @spec set_debugger_timeline_mode(Types.socket(), Types.wire_input()) :: Types.socket()
   def set_debugger_timeline_mode(socket, value) do
-    Component.assign(socket, :debugger_timeline_mode, Util.normalize_debugger_timeline_mode(value))
+    Component.assign(
+      socket,
+      :debugger_timeline_mode,
+      Util.normalize_debugger_timeline_mode(value)
+    )
   end
 
   @spec jump_latest(Types.socket()) :: Types.socket()
@@ -144,6 +148,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Live do
         refresh(socket)
     end
   end
+
   @spec parse_since_seq(Types.wire_input()) :: Types.maybe_non_neg_integer()
   defp parse_since_seq(value) when is_integer(value) and value >= 0, do: value
 
@@ -403,6 +408,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Live do
       watch_view_runtime: watch_view_runtime
     }
   end
+
   defp normalize_debugger_cursor_seq(debugger_state, events, cursor_seq) do
     case Timeline.normalize_cursor_seq(events, cursor_seq) do
       seq when is_integer(seq) ->
@@ -540,8 +546,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Live do
         ) ::
           map() | nil
   def nearest_surface_runtime_at_or_before(events, upper_seq, surface)
-       when is_list(events) and is_integer(upper_seq) and upper_seq >= 0 and
-              surface in [:watch, :companion, :phone] do
+      when is_list(events) and is_integer(upper_seq) and upper_seq >= 0 and
+             surface in [:watch, :companion, :phone] do
     events
     |> Enum.filter(fn event ->
       seq = Map.get(event, :seq)
@@ -555,5 +561,4 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Live do
       end
     end)
   end
-
 end

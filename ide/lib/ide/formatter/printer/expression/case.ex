@@ -12,7 +12,11 @@ defmodule Ide.Formatter.Printer.Expression.Case do
     |> normalize_branch_head_spacing()
   end
 
-  @spec do_normalize_case_arrow_indentation(Types.line_list(), non_neg_integer() | nil, Types.line_list()) ::
+  @spec do_normalize_case_arrow_indentation(
+          Types.line_list(),
+          non_neg_integer() | nil,
+          Types.line_list()
+        ) ::
           Types.line_list()
   defp do_normalize_case_arrow_indentation([], _prev_indent, acc), do: Enum.reverse(acc)
 
@@ -50,7 +54,12 @@ defmodule Ide.Formatter.Printer.Expression.Case do
     end
   end
 
-  @spec shift_case_branch_followers(Types.line_list(), non_neg_integer(), non_neg_integer(), Types.line_list()) ::
+  @spec shift_case_branch_followers(
+          Types.line_list(),
+          non_neg_integer(),
+          non_neg_integer(),
+          Types.line_list()
+        ) ::
           {Types.line_list(), Types.line_list()}
   defp shift_case_branch_followers([], _threshold_indent, _delta, acc),
     do: {Enum.reverse(acc), []}

@@ -45,6 +45,9 @@ defmodule Elmx.Runtime.MessageDecode do
       parent_wraps_payload?(message, ctor) ->
         {String.to_atom(message), wire_to_runtime_value(wire)}
 
+      is_binary(message) and message != "" and (is_nil(ctor) or ctor == "") ->
+        {String.to_atom(message_ctor(message)), wire_to_runtime_value(wire)}
+
       true ->
         wire_to_runtime_value(wire)
     end
@@ -75,6 +78,12 @@ defmodule Elmx.Runtime.MessageDecode do
           {:ok, payload} when is_map(payload) -> {atom, payload}
           _ -> atom
         end
+
+      rest == "True" or rest == "true" ->
+        {atom, true}
+
+      rest == "False" or rest == "false" ->
+        {atom, false}
 
       true ->
         case Integer.parse(rest) do
@@ -172,13 +181,6 @@ defmodule Elmx.Runtime.MessageDecode do
     |> List.first()
     |> to_string()
   end
-
-  @spec subscription_ctor_matches_message?(String.t(), term()) :: boolean()
-  defp subscription_ctor_matches_message?(message, ctor) when is_binary(message) and is_binary(ctor) do
-    String.downcase(ctor) == String.downcase(message_ctor(message))
-  end
-
-  defp subscription_ctor_matches_message?(_message, _ctor), do: false
 
   defp parent_wraps_payload?(_message, ctor) when ctor in ["Ok", "Err", "Nothing", "Just"], do: true
   defp parent_wraps_payload?(_message, _ctor), do: false

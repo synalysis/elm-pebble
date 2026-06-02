@@ -4,6 +4,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Export do
 
   alias Ide.Debugger.RuntimeArtifacts
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Types
+
   def copy_json(term) do
     case Jason.encode(term, pretty: true) do
       {:ok, json} -> json
@@ -133,13 +134,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Export do
   def format_debugger_contract_brief(%{} = runtime) do
     model = Map.get(runtime, :model) || Map.get(runtime, "model") || %{}
     ei = RuntimeArtifacts.introspect(runtime)
-    mode = Map.get(model, "elm_executor_mode") || Map.get(model, :elm_executor_mode)
+    mode = Map.get(model, "runtime_execution_mode") || Map.get(model, :runtime_execution_mode)
 
     case ei do
       %{} = m ->
         prefix =
           if is_binary(mode) and mode != "",
-            do: "elm_executor_mode: #{mode}\n",
+            do: "runtime_execution_mode: #{mode}\n",
             else: ""
 
         prefix <> format_debugger_contract_inner(m)
@@ -548,5 +549,4 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Export do
         "…"
     end
   end
-
 end

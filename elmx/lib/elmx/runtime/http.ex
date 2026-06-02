@@ -1,6 +1,6 @@
 defmodule Elmx.Runtime.Http do
   @moduledoc """
-  Builds `elm/http` wire commands for debugger execution (aligned with `ElmExecutor` HTTP builtins).
+  Builds `elm/http` wire commands for debugger execution.
   """
 
   alias Elmx.Runtime.Values

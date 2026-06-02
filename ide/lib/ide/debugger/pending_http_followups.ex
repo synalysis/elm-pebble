@@ -73,13 +73,18 @@ defmodule Ide.Debugger.PendingHttpFollowups do
     Map.update(state, @pending_key, [item], &(&1 ++ [item]))
   end
 
-  @spec launch_flight(String.t(), Types.pending_http_followup_item(), RuntimeFollowups.apply_ctx()) :: :ok
+  @spec launch_flight(
+          String.t(),
+          Types.pending_http_followup_item(),
+          RuntimeFollowups.apply_ctx()
+        ) :: :ok
   def launch_flight(project_slug, item, ctx)
       when is_binary(project_slug) and is_map(item) and is_map(ctx) do
     RuntimeBackgroundWork.spawn(project_slug, fn -> run_flight(project_slug, item, ctx) end)
   end
 
-  @spec run_flight(String.t(), Types.pending_http_followup_item(), RuntimeFollowups.apply_ctx()) :: :ok
+  @spec run_flight(String.t(), Types.pending_http_followup_item(), RuntimeFollowups.apply_ctx()) ::
+          :ok
   def run_flight(project_slug, item, ctx)
       when is_binary(project_slug) and is_map(item) and is_map(ctx) do
     {target, target_name, package, command, followup_message} = flight_fields(item)
@@ -116,12 +121,12 @@ defmodule Ide.Debugger.PendingHttpFollowups do
       |> Map.get("target")
       |> SurfaceTargets.normalize()
 
-  target_name = Map.get(item, "target_name") || ""
-  package = Map.get(item, "package") || "elm/http"
-  command = Map.get(item, "command") || %{}
-  followup_message = Map.get(item, "followup_message")
+    target_name = Map.get(item, "target_name") || ""
+    package = Map.get(item, "package") || "elm/http"
+    command = Map.get(item, "command") || %{}
+    followup_message = Map.get(item, "followup_message")
 
-  {target, target_name, package, command, followup_message}
+    {target, target_name, package, command, followup_message}
   end
 
   defp put_pending(state, items) when is_map(state) and is_list(items) do
@@ -140,9 +145,14 @@ defmodule Ide.Debugger.PendingHttpFollowups do
 
   defp drop_legacy_companion_pending(state) do
     update_in(state, [:companion], fn
-      %{@pending_key => _} = companion -> Map.delete(companion, @pending_key)
-      %{"pending_http_followups" => _} = companion -> Map.delete(companion, "pending_http_followups")
-      other -> other
+      %{@pending_key => _} = companion ->
+        Map.delete(companion, @pending_key)
+
+      %{"pending_http_followups" => _} = companion ->
+        Map.delete(companion, "pending_http_followups")
+
+      other ->
+        other
     end)
   end
 end

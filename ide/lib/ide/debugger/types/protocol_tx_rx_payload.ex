@@ -73,4 +73,3 @@ defmodule Ide.Debugger.Types.ProtocolTxRxPayload do
 
   def tx_rx_events(_from, _to, _message, _trigger, _message_value), do: []
 end
-

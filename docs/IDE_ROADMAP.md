@@ -31,8 +31,7 @@ Primary source areas:
   publish builds
 - `elmc/` - Elm-to-C compiler, Pebble backend, manifests, and runtime generator
 - `elm_ex/` - Elm parser/tokenizer bridge used by editor/compiler features
-- `elm_executor/` - Elixir runtime execution path used by debugger experiments and
-  semantic execution work
+- `elmx/` - compiled Elixir debugger/runtime execution path
 - `packages/elm-pebble/elm-watch/` - watch-side Elm package
 - `packages/elm-pebble-companion-core/` - companion bridge contracts/codecs
 - `shared/` - generated/shared protocol modules and bridge schemas
@@ -56,11 +55,11 @@ The IDE has three major loops:
   protocol, view render, replay, tick, snapshot, and runtime execution events.
   MCP exposes the same state and control surface for agent-driven workflows.
 
-The debugger uses parser introspection for structure (messages, cmds, subscriptions)
-and **Core IR execution** for `init`, `update`, and watch preview (`elm_executor`).
-Parser-only model/view mutation and preview fallbacks are removed; missing Core IR
+The debugger uses contracts for structure (messages, cmds, subscriptions) and
+compiled `elmx` execution for `init`, `update`, and watch preview. Parser-only
+model/view mutation and preview fallbacks are removed; missing runtime artifacts
 or eval failures surface as timeline errors or `previewUnavailable`. See
-`ide/docs/debugger.md` and `docs/ELM_EXECUTOR_FIDELITY_MATRIX.md`.
+`ide/docs/debugger.md`.
 
 ## Package Model
 
@@ -90,7 +89,7 @@ surface supported/blocked status. The current companion package shape is
 
 ### 2. Debugger Runtime Fidelity
 
-- Harden Core IR coverage in `elm_executor` (expression forms, stdlib, record updates).
+- Harden `elmx` runtime coverage (expression forms, stdlib, record updates).
 - Keep snapshot continuation, replay, tick, and protocol events deterministic.
 - Preserve trace export/import and MCP cursor inspection as stable contracts.
 - Gate changes with `ide/test/ide/mcp/debugger_template_corpus_test.exs` and
@@ -146,7 +145,7 @@ Before publishing a cleaned public repository:
 - Run `.github/workflows/debugger-strict.yml` suites (executor + IDE debugger + template corpus).
 - Run `mix test` in `ide/` if time permits and document any known unrelated
   failures.
-- Run `mix test` in `elm_executor/` for runtime executor changes.
+- Run `mix test` in `elmx/` for runtime executor changes.
 - Verify `./start-ide-local.sh` starts the IDE and serves `/projects`.
 - Search for local absolute paths and generated artifacts.
 - Confirm docs do not refer to removed directories or old package identities.

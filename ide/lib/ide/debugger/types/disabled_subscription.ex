@@ -6,6 +6,7 @@ defmodule Ide.Debugger.Types.DisabledSubscription do
   """
 
   alias Ide.Debugger.Types
+
   @type t :: %{
           optional(:target) => String.t(),
           optional(:trigger) => String.t(),

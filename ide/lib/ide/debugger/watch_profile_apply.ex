@@ -22,7 +22,9 @@ defmodule Ide.Debugger.WatchProfileApply do
       )
 
     launch_reason =
-      RuntimeSurfaces.parse_launch_reason(Map.get(attrs, :launch_reason) || Map.get(attrs, "launch_reason"))
+      RuntimeSurfaces.parse_launch_reason(
+        Map.get(attrs, :launch_reason) || Map.get(attrs, "launch_reason")
+      )
 
     state
     |> host.ensure_phone_state.()

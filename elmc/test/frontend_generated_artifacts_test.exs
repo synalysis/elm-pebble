@@ -156,9 +156,7 @@ defmodule Elmc.FrontendGeneratedArtifactsTest do
     assert message4 =~ "on its own line"
 
     assert {:ok, tokens4, _} =
-             :elm_ex_expr_lexer.string(
-               String.to_charlist("let\nbase = helper n\nin\nbase + 1")
-             )
+             :elm_ex_expr_lexer.string(String.to_charlist("let\nbase = helper n\nin\nbase + 1"))
 
     assert {:ok, expr4} = :elm_ex_expr_parser.parse(tokens4)
     assert expr4[:op] == :let_in

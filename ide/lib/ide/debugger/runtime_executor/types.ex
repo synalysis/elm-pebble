@@ -4,12 +4,8 @@ defmodule Ide.Debugger.RuntimeExecutor.Types do
   alias ElmEx.DebuggerContract.Payload
   alias Ide.Debugger.RuntimeArtifacts.Types, as: ArtifactTypes
   alias Ide.Debugger.Types
-  alias ElmExecutor.Runtime.SemanticExecutor.Types.ExecutionResult, as: ExecutorExecutionResult
   alias Ide.Debugger.RuntimeExecutor.Request
-  alias Ide.Debugger.RuntimeExecutor.Types.RuntimeMode
   alias Ide.Debugger.Types.RuntimeStepResult
-
-  @type runtime_mode :: RuntimeMode.t()
 
   @type execution_input_map :: %{
           required(:source_root) => String.t(),
@@ -21,8 +17,8 @@ defmodule Ide.Debugger.RuntimeExecutor.Types do
           optional(:message) => String.t() | nil,
           optional(:message_value) => Types.protocol_message() | map() | nil,
           optional(:update_branches) => [String.t()] | nil,
-          optional(:elm_executor_core_ir) => Types.core_ir(),
-          optional(:elm_executor_metadata) => map() | nil,
+          optional(:elmx_manifest) => map(),
+          optional(:elmx_revision) => String.t(),
           optional(:vector_resource_indices) => ArtifactTypes.resource_indices(),
           optional(:bitmap_resource_indices) => ArtifactTypes.resource_indices()
         }
@@ -38,7 +34,7 @@ defmodule Ide.Debugger.RuntimeExecutor.Types do
           optional(:view_tree) => Types.view_output_tree() | nil
         }
 
-  @type executor_wire_result :: ExecutorExecutionResult.t() | ExecutorExecutionResult.wire_map()
+  @type executor_wire_result :: map()
 
   @type adapter_request_map :: %{
           optional(:source_root) => String.t(),
@@ -50,8 +46,8 @@ defmodule Ide.Debugger.RuntimeExecutor.Types do
           optional(:message) => String.t() | nil,
           optional(:update_branches) => [String.t()] | nil,
           optional(:debugger_contract) => String.t(),
-          optional(:elm_executor_core_ir) => Types.core_ir(),
-          optional(:elm_executor_metadata) => map() | nil,
+          optional(:elmx_manifest) => map(),
+          optional(:elmx_revision) => String.t(),
           optional(atom()) => term()
         }
 end

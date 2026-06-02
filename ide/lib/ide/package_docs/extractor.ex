@@ -98,7 +98,8 @@ defmodule Ide.PackageDocs.Extractor do
     end
   end
 
-  @spec validate_docs_references(map(), [String.t()], map(), map()) :: :ok | {:error, Types.export_error()}
+  @spec validate_docs_references(map(), [String.t()], map(), map()) ::
+          :ok | {:error, Types.export_error()}
   defp validate_docs_references(metadata, docs, declarations, exposed) do
     Enum.reduce_while(docs, :ok, fn doc_name, :ok ->
       name = exposed_name(doc_name)

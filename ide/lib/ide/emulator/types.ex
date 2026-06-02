@@ -308,7 +308,8 @@ defmodule Ide.Emulator.Types do
           | {:invalid_rgb_buffer, non_neg_integer(), non_neg_integer()}
           | {:invalid_rgba_buffer, non_neg_integer(), non_neg_integer()}
           | {:vnc_incomplete_framebuffer, non_neg_integer(), non_neg_integer()}
-          | {:vnc_framebuffer_too_small, pos_integer(), pos_integer(), pos_integer(), pos_integer()}
+          | {:vnc_framebuffer_too_small, pos_integer(), pos_integer(), pos_integer(),
+             pos_integer()}
           | {:vnc_unsupported_pixel_format, map()}
           | {:vnc_rectangle_too_large, non_neg_integer()}
           | {:vnc_unsupported_encoding, non_neg_integer()}
@@ -328,7 +329,8 @@ defmodule Ide.Emulator.Types do
           | pbw_error()
           | packet_decode_error()
           | :timeout
-          | {:putbytes_failed, putbytes_phase_meta(), packet_decode_error() | :timeout | {:timeout, map() | non_neg_integer()}}
+          | {:putbytes_failed, putbytes_phase_meta(),
+             packet_decode_error() | :timeout | {:timeout, map() | non_neg_integer()}}
           | {:blob_insert_failed, non_neg_integer()}
           | {:wrong_blob_token, non_neg_integer(), non_neg_integer()}
           | {:wrong_app_fetch_uuid, String.t(), String.t()}

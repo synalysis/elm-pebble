@@ -75,7 +75,7 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
                count: 2
              })
 
-    assert Ide.Debugger.RuntimeArtifacts.versioned_core_ir?(
+    assert Ide.Debugger.RuntimeArtifacts.versioned_elmx_artifacts?(
              Ide.Debugger.RuntimeArtifacts.execution_model(stepped.watch)
            )
 
@@ -85,10 +85,7 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
     assert get_in(stepped, [:watch, :model, "runtime_model", "n"]) == 3
     assert get_in(stepped, [:watch, :model, "runtime_model", "last_operation"]) == "Inc"
 
-    assert get_in(stepped, [:watch, :model, "elm_executor", "operation_source"]) ==
-             "core_ir_update_eval"
-
-    refute get_in(stepped, [:watch, :model, "elm_executor", "heuristic_fallback_used"])
+    refute get_in(stepped, [:watch, :model, "runtime_execution", "heuristic_fallback_used"])
 
     assert get_in(stepped, [:watch, :model, "runtime_model_sha256"]) !=
              get_in(reloaded, [:watch, :model, "runtime_model_sha256"])
@@ -96,14 +93,17 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
     assert get_in(stepped, [:watch, :model, "runtime_view_tree_sha256"]) !=
              get_in(reloaded, [:watch, :model, "runtime_view_tree_sha256"])
 
-    assert get_in(stepped, [:watch, :model, "elm_executor", "runtime_model_sha256"]) ==
+    assert get_in(stepped, [:watch, :model, "runtime_execution", "runtime_model_sha256"]) ==
              get_in(stepped, [:watch, :model, "runtime_model_sha256"])
 
     assert is_integer(
-             get_in(stepped, [:watch, :model, "elm_executor", "runtime_model_entry_count"])
+             get_in(stepped, [:watch, :model, "runtime_execution", "runtime_model_entry_count"])
            )
 
-    assert is_integer(get_in(stepped, [:watch, :model, "elm_executor", "view_tree_node_count"]))
+    assert is_integer(
+             get_in(stepped, [:watch, :model, "runtime_execution", "view_tree_node_count"])
+           )
+
     assert get_in(stepped, [:watch, :model, "runtime_known_messages"]) == ["Inc", "Dec"]
     assert get_in(stepped, [:watch, :model, "_debugger_steps"]) >= 2
 
@@ -138,7 +138,6 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
     assert Enum.any?(unfiltered_snapshot.events, &(&1.type == "debugger.update_in"))
   end
 
-
   test "step without explicit message cycles msg constructors deterministically" do
     slug = "sim-step-cycle-#{System.unique_integer([:positive])}"
 
@@ -170,7 +169,6 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
     assert get_in(stepped, [:watch, :model, "runtime_last_message"]) == "Dec"
     assert get_in(stepped, [:watch, :model, "runtime_model", "n"]) == 1
   end
-
 
   test "companion step does not synthesize watch protocol inbox state" do
     slug = "sim-proto-watch-#{System.unique_integer([:positive])}"
@@ -212,38 +210,6 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
 
     refute Enum.any?(stepped.events, &synthetic_step_protocol_event?/1)
   end
-
-
-  test "debugger step can run through elmc adapter executor path" do
-    old_runtime_executor_env = Application.get_env(:ide, RuntimeExecutor, [])
-
-    on_exit(fn ->
-      Application.put_env(:ide, RuntimeExecutor, old_runtime_executor_env)
-    end)
-
-    Application.put_env(:ide, RuntimeExecutor,
-      external_executor_module: ElmcAdapter,
-      external_executor_strict: true
-    )
-
-    slug = "sim-elmc-adapter-#{System.unique_integer([:positive])}"
-    {:ok, _} = Debugger.start_session(slug)
-
-    {:ok, _} =
-      Debugger.reload(slug, %{
-        rel_path: "watch/src/Main.elm",
-        source: "module Main exposing (main)",
-        reason: "elmc_adapter_step"
-      })
-
-    assert {:ok, stepped} = Debugger.step(slug, %{target: "watch", message: "Inc", count: 1})
-
-    assert get_in(stepped, [:watch, :model, "elm_executor", "engine"]) ==
-             "elmc_runtime_executor_v0"
-
-    refute Enum.any?(stepped.events, &synthetic_step_protocol_event?/1)
-  end
-
 
   test "tick injects subscription-style ingress with deterministic message source" do
     slug = "sim-tick-#{System.unique_integer([:positive])}"
@@ -303,7 +269,6 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
            end)
   end
 
-
   test "tick synthesizes realistic current time device response when command requests it" do
     slug = "sim-device-time-#{System.unique_integer([:positive])}"
 
@@ -360,7 +325,6 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
                )
            end)
   end
-
 
   test "step message matrix surfaces strict no-heuristic behavior" do
     slug = "sim-msg-matrix-#{System.unique_integer([:positive])}"
@@ -438,7 +402,7 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
     title_baseline = get_in(after_title, [:watch, :model, "runtime_model", "title"])
     count_baseline = get_in(after_title, [:watch, :model, "runtime_model", "count"]) || 0
 
-    refute get_in(after_title, [:watch, :model, "elm_executor", "heuristic_fallback_used"])
+    refute get_in(after_title, [:watch, :model, "runtime_execution", "heuristic_fallback_used"])
 
     assert {:ok, after_count} =
              Debugger.step(slug, %{target: "watch", message: "SetCount 42", count: 1})
@@ -452,17 +416,16 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
     assert {:ok, after_wildcard} =
              Debugger.step(slug, %{target: "watch", message: "SetCountIgnored 99", count: 1})
 
-    refute get_in(after_wildcard, [:watch, :model, "elm_executor", "heuristic_fallback_used"])
+    refute get_in(after_wildcard, [:watch, :model, "runtime_execution", "heuristic_fallback_used"])
 
     assert {:ok, after_unmapped} =
              Debugger.step(slug, %{target: "watch", message: "Ping 7", count: 1})
 
-    assert get_in(after_unmapped, [:watch, :model, "elm_executor", "operation_source"]) ==
+    assert get_in(after_unmapped, [:watch, :model, "runtime_execution", "operation_source"]) ==
              "unmapped_message"
 
     _ = {title_baseline, enabled_baseline, count_baseline}
   end
-
 
   test "strict full-stack flow keeps protocol/device/replay deterministic without hidden mutation" do
     slug = "sim-strict-fullstack-#{System.unique_integer([:positive])}"
@@ -531,7 +494,7 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
     assert get_in(ticked, [:watch, :model, "runtime_model", "timeString"]) == preview["string"]
     assert is_map(preview)
 
-    assert get_in(ticked, [:watch, :model, "elm_executor", "runtime_model_source"]) ==
+    assert get_in(ticked, [:watch, :model, "runtime_execution", "runtime_model_source"]) ==
              "step_message"
 
     assert Enum.any?(ticked.events, fn event ->
@@ -552,13 +515,7 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
 
     assert get_in(stepped, [:watch, :model, "runtime_last_message"]) =~ "SetCount"
 
-    assert get_in(stepped, [:watch, :model, "elm_executor", "operation_source"]) in [
-             "core_ir_update_eval",
-             "update_evaluation_failed",
-             "unmapped_message"
-           ]
-
-    refute get_in(stepped, [:watch, :model, "elm_executor", "heuristic_fallback_used"])
+    refute get_in(stepped, [:watch, :model, "runtime_execution", "heuristic_fallback_used"])
 
     seq_before_replay = stepped.seq
     assert {:ok, _} = Debugger.step(slug, %{target: "watch", message: "SetCount 11", count: 1})
@@ -577,7 +534,6 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
                (Map.get(event.payload, :trigger) || Map.get(event.payload, "trigger")) == "replay"
            end)
   end
-
 
   test "tick synthesizes structured current date/time device response with UTC offset" do
     slug = "sim-device-datetime-#{System.unique_integer([:positive])}"
@@ -678,7 +634,6 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
            end)
   end
 
-
   test "tick resolves minute-change subscription trigger message" do
     slug = "sim-minute-change-#{System.unique_integer([:positive])}"
 
@@ -725,7 +680,6 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
     message = get_in(ticked, [:watch, :model, "runtime_last_message"]) || ""
     assert message == "MinuteChanged 34"
   end
-
 
   test "tick prefers minute subscription payload over hour when both are present" do
     slug = "sim-minute-over-hour-#{System.unique_integer([:positive])}"
@@ -788,7 +742,6 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
     assert String.starts_with?(message, "MinuteChanged ")
   end
 
-
   test "tangram minute change applies structured current date time follow-up" do
     slug = "sim-tangram-minute-datetime-#{System.unique_integer([:positive])}"
 
@@ -845,13 +798,15 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
     minute_seq =
       new_rows
       |> Enum.find_value(fn row ->
-        if row.type == "update" and String.starts_with?(row.message, "MinuteChanged "), do: row.seq
+        if row.type == "update" and String.starts_with?(row.message, "MinuteChanged "),
+          do: row.seq
       end)
 
     datetime_seq =
       new_rows
       |> Enum.find_value(fn row ->
-        if row.type == "update" and String.starts_with?(row.message, "CurrentDateTime "), do: row.seq
+        if row.type == "update" and String.starts_with?(row.message, "CurrentDateTime "),
+          do: row.seq
       end)
 
     assert is_integer(minute_seq)
@@ -867,7 +822,6 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
       assert now["hour"] == 23
     end
   end
-
 
   test "watch demo health template returns simulated step counts in debugger" do
     slug = "sim-watch-demo-health-#{System.unique_integer([:positive])}"
@@ -916,7 +870,6 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
     assert Enum.any?(texts, &String.starts_with?(&1, "Now: "))
     assert Enum.any?(texts, &String.starts_with?(&1, "Today: "))
   end
-
 
   test "inject_trigger prefers non-tick message for button triggers when available" do
     slug = "sim-trigger-prefer-button-#{System.unique_integer([:positive])}"
@@ -980,7 +933,6 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
     assert get_in(triggered, [:watch, :model, "runtime_last_message"]) == "ButtonPressed"
   end
 
-
   test "start_auto_tick and stop_auto_tick drive periodic ingress events" do
     slug = "sim-auto-tick-#{System.unique_integer([:positive])}"
     {:ok, _} = Debugger.start_session(slug)
@@ -1004,7 +956,6 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
     assert Enum.any?(stopped.events, &(&1.type == "debugger.tick_auto"))
     assert Enum.any?(stopped.events, &(&1.type == "debugger.tick"))
   end
-
 
   test "set_auto_fire toggles natural watch and companion ingress targets" do
     slug = "sim-auto-fire-#{System.unique_integer([:positive])}"
@@ -1050,7 +1001,6 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
                  "set_auto_fire"
            end)
   end
-
 
   test "set_auto_fire can enable one subscription trigger without firing siblings" do
     slug = "sim-auto-fire-single-subscription-#{System.unique_integer([:positive])}"
@@ -1113,7 +1063,6 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
            end)
   end
 
-
   test "set_auto_fire does not synthesize Tick when target has no parsed subscriptions" do
     slug = "sim-auto-fire-no-subscriptions-#{System.unique_integer([:positive])}"
 
@@ -1159,7 +1108,6 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
            end)
   end
 
-
   test "set_auto_fire does not fire minute or hour change subscriptions immediately" do
     wait_until_stable_minute()
 
@@ -1197,7 +1145,6 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
                   String.starts_with?(message, "HourChanged "))
            end)
   end
-
 
   test "replay_recent reapplies recent update messages oldest-to-newest" do
     slug = "sim-replay-#{System.unique_integer([:positive])}"
@@ -1277,7 +1224,6 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
     assert preview_seq <= seq_before_latest_step
   end
 
-
   test "replay_recent can apply exact frozen preview rows" do
     slug = "sim-replay-frozen-#{System.unique_integer([:positive])}"
 
@@ -1332,7 +1278,6 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
     assert replay_event.payload.replay_message_counts == %{"Dec" => 1}
   end
 
-
   test "weather bridge delivers simulator settings without stepping companion GotWeather" do
     slug = "sim-weather-bridge-direct-#{System.unique_integer([:positive])}"
     template_root = Path.join(["priv", "project_templates", "watchface_weather_animated"])
@@ -1384,5 +1329,4 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
 
     assert companion_got_weather_updates == 0
   end
-
 end

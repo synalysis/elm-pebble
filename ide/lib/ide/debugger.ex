@@ -77,8 +77,10 @@ defmodule Ide.Debugger do
   defdelegate ingest_elmc_manifest(project_slug, attrs), to: CompileIngestApi
 
   # Runtime stepping and preview
-  @spec render_runtime_preview_for_debugger(map() | nil, map() | nil, Types.surface_target()) :: map() | nil
-  defdelegate render_runtime_preview_for_debugger(snapshot_runtime, latest_runtime, target), to: RuntimeApi
+  @spec render_runtime_preview_for_debugger(map() | nil, map() | nil, Types.surface_target()) ::
+          map() | nil
+  defdelegate render_runtime_preview_for_debugger(snapshot_runtime, latest_runtime, target),
+    to: RuntimeApi
 
   @spec reload(String.t(), Types.reload_attrs()) :: {:ok, runtime_state()}
   defdelegate reload(project_slug, attrs \\ %{}), to: RuntimeApi
@@ -97,7 +99,8 @@ defmodule Ide.Debugger do
   @spec replay_recent(String.t(), Types.replay_attrs()) :: {:ok, runtime_state()}
   defdelegate replay_recent(project_slug, attrs \\ %{}), to: TraceApi
 
-  @spec continue_from_snapshot(String.t(), Types.snapshot_continue_attrs()) :: {:ok, runtime_state()}
+  @spec continue_from_snapshot(String.t(), Types.snapshot_continue_attrs()) ::
+          {:ok, runtime_state()}
   defdelegate continue_from_snapshot(project_slug, attrs \\ %{}), to: TraceApi
 
   @spec snapshot_reference_rows([runtime_event()]) :: [map()]
@@ -133,7 +136,8 @@ defmodule Ide.Debugger do
   @spec subscription_trigger_display(map(), String.t()) :: String.t()
   defdelegate subscription_trigger_display(op, trigger), to: TriggersApi
 
-  @spec subscription_trigger_display_for(runtime_state() | map(), String.t(), String.t()) :: String.t()
+  @spec subscription_trigger_display_for(runtime_state() | map(), String.t(), String.t()) ::
+          String.t()
   defdelegate subscription_trigger_display_for(state, trigger, target_name), to: TriggersApi
 
   @spec subscription_model_active?(runtime_state(), Types.surface_target(), map()) :: boolean()

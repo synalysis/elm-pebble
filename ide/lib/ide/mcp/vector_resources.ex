@@ -194,6 +194,7 @@ defmodule Ide.Mcp.VectorResources do
 
   defp write_temp_svg(svg) do
     path = Path.join(System.tmp_dir!(), "mcp_vector_#{System.unique_integer([:positive])}.svg")
+
     case File.write(path, svg) do
       :ok -> {:ok, path}
       error -> error

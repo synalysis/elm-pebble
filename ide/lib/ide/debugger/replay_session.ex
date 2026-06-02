@@ -10,7 +10,10 @@ defmodule Ide.Debugger.ReplaySession do
   def parse_mode("frozen"), do: "frozen"
   def parse_mode(_), do: "unknown"
 
-  @spec normalize_rows_input([Types.replay_row() | Types.ReplayRow.wire_map()], normalize_target_fn()) ::
+  @spec normalize_rows_input(
+          [Types.replay_row() | Types.ReplayRow.wire_map()],
+          normalize_target_fn()
+        ) ::
           [Types.replay_row()]
   def normalize_rows_input(rows, normalize_target) when is_function(normalize_target, 1) do
     rows

@@ -11,11 +11,18 @@ defmodule Ide.Debugger.OperationHosts do
   alias Ide.Debugger.Types
 
   @type append_event_fn ::
-          (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() -> Types.runtime_state())
+          (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() ->
+             Types.runtime_state())
 
   @type apply_step_fn ::
-          (Types.runtime_state(), Types.surface_target(), String.t(), Types.subscription_payload() | nil,
-           String.t(), String.t() -> Types.runtime_state())
+          (Types.runtime_state(),
+           Types.surface_target(),
+           String.t(),
+           Types.subscription_payload()
+           | nil,
+           String.t(),
+           String.t() ->
+             Types.runtime_state())
 
   @type normalize_target_fn :: (Types.wire_input() -> Types.surface_target())
 
@@ -26,7 +33,8 @@ defmodule Ide.Debugger.OperationHosts do
   @type tick_message_fn :: (Types.runtime_state(), Types.surface_target() -> String.t())
 
   @type update_fn ::
-          (String.t(), (Types.runtime_state() -> Types.runtime_state()) -> {:ok, Types.runtime_state()})
+          (String.t(), (Types.runtime_state() -> Types.runtime_state()) ->
+             {:ok, Types.runtime_state()})
 
   @type merge_artifacts_fn ::
           (Types.runtime_state(), Types.surface_target() | nil, Types.elm_introspect() ->

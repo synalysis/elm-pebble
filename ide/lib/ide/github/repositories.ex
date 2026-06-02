@@ -60,8 +60,10 @@ defmodule Ide.GitHub.Repositories do
   def status_label(:unconfigured), do: "Set repository name (owner defaults to your GitHub user)"
   def status_label(:exists), do: "Repository exists on GitHub"
   def status_label(:not_found), do: "Repository not found on GitHub"
+
   def status_label(:forbidden),
     do: "No access (repository may be private or belong to another account)"
+
   def status_label(:error), do: "Could not check repository status"
 
   def status_label({:error, :github_not_connected}),

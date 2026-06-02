@@ -16,7 +16,9 @@ defmodule Ide.Debugger.DeviceDataClockOverrideTest do
 
     adjusted =
       base
-      |> DeviceData.apply_subscription_clock_overrides(DeviceData.subscription_clock_overrides("MinuteChanged 54"))
+      |> DeviceData.apply_subscription_clock_overrides(
+        DeviceData.subscription_clock_overrides("MinuteChanged 54")
+      )
 
     assert adjusted.minute == 54
     assert adjusted.hour == 8

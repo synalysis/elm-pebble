@@ -11,21 +11,33 @@ defmodule Ide.Debugger.IntrospectContexts do
 
   @type snapshot_host :: %{
           required(:executor) => module(),
-          required(:attach_compile_artifacts) =>
-            (Types.runtime_state(), Types.surface_target(), Types.elm_introspect() ->
-               Types.runtime_state()),
-          required(:append_event) =>
-            (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() ->
-               Types.runtime_state()),
-          required(:append_debugger_event) =>
-            (Types.runtime_state(), String.t(), Types.surface_target(), String.t(), String.t(),
-             Types.timeline_step_message_value() -> Types.runtime_state()),
-          required(:runtime_status_after_init) =>
-            (Types.runtime_state(), Types.surface_target(), Types.step_executor_result() | map(),
-             Types.elm_introspect() -> Types.runtime_state()),
-          required(:apply_runtime_followups) =>
-            (Types.runtime_state(), Types.surface_target(), String.t(), String.t(),
-             [Types.runtime_followup_row()] -> Types.runtime_state()),
+          required(:attach_compile_artifacts) => (Types.runtime_state(),
+                                                  Types.surface_target(),
+                                                  Types.elm_introspect() ->
+                                                    Types.runtime_state()),
+          required(:append_event) => (Types.runtime_state(),
+                                      String.t(),
+                                      Types.debugger_timeline_payload() ->
+                                        Types.runtime_state()),
+          required(:append_debugger_event) => (Types.runtime_state(),
+                                               String.t(),
+                                               Types.surface_target(),
+                                               String.t(),
+                                               String.t(),
+                                               Types.timeline_step_message_value() ->
+                                                 Types.runtime_state()),
+          required(:runtime_status_after_init) => (Types.runtime_state(),
+                                                   Types.surface_target(),
+                                                   Types.step_executor_result()
+                                                   | map(),
+                                                   Types.elm_introspect() ->
+                                                     Types.runtime_state()),
+          required(:apply_runtime_followups) => (Types.runtime_state(),
+                                                 Types.surface_target(),
+                                                 String.t(),
+                                                 String.t(),
+                                                 [Types.runtime_followup_row()] ->
+                                                   Types.runtime_state()),
           required(:protocol_rx_ctx) => (-> ProtocolRx.ctx())
         }
 
@@ -33,8 +45,9 @@ defmodule Ide.Debugger.IntrospectContexts do
           required(:snapshot_apply_ctx) => DebuggerContractSnapshot.apply_ctx(),
           required(:surface_compile) => Ide.Debugger.SurfaceCompileArtifacts.attach_ctx(),
           required(:init_surface_effects_ctx) => (-> InitSurfaceEffects.ctx()),
-          required(:refresh_runtime_preview_for_target) =>
-            (Types.runtime_state(), Types.surface_target() -> Types.runtime_state()),
+          required(:refresh_runtime_preview_for_target) => (Types.runtime_state(),
+                                                            Types.surface_target() ->
+                                                              Types.runtime_state()),
           required(:apply_simulator_settings) => (Types.runtime_state() -> Types.runtime_state())
         }
 

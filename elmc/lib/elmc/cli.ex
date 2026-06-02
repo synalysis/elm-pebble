@@ -14,8 +14,7 @@ defmodule Elmc.CLI do
   @type manifest_run :: Types.manifest_run()
   @type warning_dedupe_key ::
           {String.t(), String.t() | nil, String.t(), String.t() | nil, String.t() | nil,
-           integer() | nil, String.t() | nil, String.t() | nil, boolean() | nil,
-           String.t() | nil}
+           integer() | nil, String.t() | nil, String.t() | nil, boolean() | nil, String.t() | nil}
           | {:unknown, String.t()}
 
   @spec main([String.t()]) :: no_return() | :ok

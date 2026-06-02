@@ -11,7 +11,12 @@ defmodule Ide.StoreAssets do
   @banner {720, 320}
 
   @type icon_key :: :icon_small | :icon_large
-  @type icon_spec :: %{key: icon_key(), filename: String.t(), width: pos_integer(), height: pos_integer()}
+  @type icon_spec :: %{
+          key: icon_key(),
+          filename: String.t(),
+          width: pos_integer(),
+          height: pos_integer()
+        }
 
   @type store_asset_error ::
           :invalid_icon_key
@@ -21,8 +26,18 @@ defmodule Ide.StoreAssets do
           | File.posix()
 
   @icon_specs [
-    %{key: :icon_small, filename: @icon_small_filename, width: elem(@icon_small, 0), height: elem(@icon_small, 1)},
-    %{key: :icon_large, filename: @icon_large_filename, width: elem(@icon_large, 0), height: elem(@icon_large, 1)}
+    %{
+      key: :icon_small,
+      filename: @icon_small_filename,
+      width: elem(@icon_small, 0),
+      height: elem(@icon_small, 1)
+    },
+    %{
+      key: :icon_large,
+      filename: @icon_large_filename,
+      width: elem(@icon_large, 0),
+      height: elem(@icon_large, 1)
+    }
   ]
 
   @spec assets_dir() :: String.t()
@@ -65,7 +80,8 @@ defmodule Ide.StoreAssets do
     do: Path.join(workspace_root, @assets_dir)
 
   @spec icon_path(String.t(), icon_key()) :: String.t()
-  def icon_path(workspace_root, key) when is_binary(workspace_root) and key in [:icon_small, :icon_large] do
+  def icon_path(workspace_root, key)
+      when is_binary(workspace_root) and key in [:icon_small, :icon_large] do
     filename =
       case key do
         :icon_small -> @icon_small_filename
@@ -123,7 +139,8 @@ defmodule Ide.StoreAssets do
 
   @spec save_icon(String.t(), icon_key(), String.t()) :: :ok | {:error, store_asset_error()}
   def save_icon(workspace_root, key, source_path)
-      when is_binary(workspace_root) and key in [:icon_small, :icon_large] and is_binary(source_path) do
+      when is_binary(workspace_root) and key in [:icon_small, :icon_large] and
+             is_binary(source_path) do
     case Enum.find(@icon_specs, &(&1.key == key)) do
       nil ->
         {:error, :invalid_icon_key}
@@ -145,7 +162,8 @@ defmodule Ide.StoreAssets do
     validate_png_dimensions(source_path, spec)
   end
 
-  def validate_png_dimensions(source_path, %{width: width, height: height}) when is_binary(source_path) do
+  def validate_png_dimensions(source_path, %{width: width, height: height})
+      when is_binary(source_path) do
     case png_dimensions(source_path) do
       {:ok, ^width, ^height} ->
         :ok
@@ -183,7 +201,12 @@ defmodule Ide.StoreAssets do
     if File.regular?(path) do
       case png_dimensions(path) do
         {:ok, width, height} ->
-          Map.merge(base, %{present: true, actual_width: width, actual_height: height, valid: width == spec.width and height == spec.height})
+          Map.merge(base, %{
+            present: true,
+            actual_width: width,
+            actual_height: height,
+            valid: width == spec.width and height == spec.height
+          })
 
         :error ->
           Map.merge(base, %{present: true, valid: false})

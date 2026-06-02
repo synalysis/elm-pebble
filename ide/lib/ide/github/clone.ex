@@ -126,7 +126,8 @@ defmodule Ide.GitHub.Clone do
     end
   end
 
-  @spec run_clone(String.t(), String.t(), String.t(), keyword()) :: :ok | {:error, Types.git_error()}
+  @spec run_clone(String.t(), String.t(), String.t(), keyword()) ::
+          :ok | {:error, Types.git_error()}
   defp run_clone(dest, url, branch, opts) do
     args =
       if Keyword.get(opts, :full_clone, false) do

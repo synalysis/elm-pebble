@@ -46,6 +46,7 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis do
       _ -> "unknown"
     end
   end
+
   def scrutinee_case_analysis(nil, _), do: {[], nil}
 
   def scrutinee_case_analysis(expr, params) when is_list(params) do
@@ -76,7 +77,8 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis do
 
   def scrutinee_case_analysis(_, _), do: {[], nil}
 
-  @spec update_case_analysis(Types.ast_expr() | nil, Types.param_list()) :: Types.case_branch_labels()
+  @spec update_case_analysis(Types.ast_expr() | nil, Types.param_list()) ::
+          Types.case_branch_labels()
   def update_case_analysis(nil, _), do: {[], nil}
 
   def update_case_analysis(expr, update_params) when is_list(update_params) do
@@ -186,7 +188,6 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis do
     end)
   end
 
-
   @spec init_model_value(Types.ast_expr() | nil, Types.module_ref()) :: Types.json_value() | nil
   def init_model_value(nil, _mod), do: nil
 
@@ -204,8 +205,16 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis do
   defdelegate update_cmd_ops_outline(expr, update_params), to: CmdCalls
   defdelegate update_cmd_calls_outline(expr, update_params), to: CmdCalls
   defdelegate subscriptions_outline(expr, subscriptions_params), to: Subscriptions
-  defdelegate extract_subscription_calls(expr, subscriptions_params, mod \\ nil), to: Subscriptions
 
-  defdelegate extract_subscription_calls(expr, bindings, guards, subscriptions_params, mod \\ nil),
+  defdelegate extract_subscription_calls(expr, subscriptions_params, mod \\ nil),
+    to: Subscriptions
+
+  defdelegate extract_subscription_calls(
+                expr,
+                bindings,
+                guards,
+                subscriptions_params,
+                mod \\ nil
+              ),
               to: Subscriptions
 end

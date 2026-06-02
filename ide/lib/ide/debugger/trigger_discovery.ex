@@ -5,7 +5,8 @@ defmodule Ide.Debugger.TriggerDiscovery do
   alias Ide.Debugger.TriggerSurface
   alias Ide.Debugger.Types
 
-  @type trigger_surface_ctx :: TriggerSurface.candidates_ctx() | (-> TriggerSurface.candidates_ctx())
+  @type trigger_surface_ctx ::
+          TriggerSurface.candidates_ctx() | (-> TriggerSurface.candidates_ctx())
 
   @type host :: %{required(:trigger_surface) => trigger_surface_ctx()}
 

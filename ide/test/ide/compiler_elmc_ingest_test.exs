@@ -12,9 +12,10 @@ defmodule Ide.CompilerElmcIngestTest do
       |> Elmc.CLI.check_project()
       |> ElmcCliIngestBridge.from_check_run(checked_path: dir)
 
-    assert {:ok, compiler_result} = Compiler.check("elmc-ingest-#{System.unique_integer([:positive])}",
-             workspace_root: dir
-           )
+    assert {:ok, compiler_result} =
+             Compiler.check("elmc-ingest-#{System.unique_integer([:positive])}",
+               workspace_root: dir
+             )
 
     bridge_attrs = CompileIngestBridge.from_compiler_check_result(compiler_result)
 

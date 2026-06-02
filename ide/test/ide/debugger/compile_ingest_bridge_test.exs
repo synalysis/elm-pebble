@@ -23,7 +23,7 @@ defmodule Ide.Debugger.CompileIngestBridgeTest do
     assert length(fields["elmc_diagnostic_preview"]) == 1
   end
 
-  test "from_compile_result preserves executor artifacts for surface merge" do
+  test "from_compile_result preserves elmx artifacts for surface merge" do
     attrs =
       CompileIngestBridge.from_compile_result(%{
         status: :ok,
@@ -31,14 +31,16 @@ defmodule Ide.Debugger.CompileIngestBridgeTest do
         revision: "rev",
         cached?: true,
         source_root: "watch",
-        elm_executor_metadata: %{"n" => 1}
+        elmx_manifest: %{"contract" => "elmx.runtime_executor.v1"},
+        elmx_revision: "rev"
       })
 
     artifacts = ElmcSurfaceFields.optional_runtime_artifacts(attrs)
     fields = ElmcSurfaceFields.ingest_compile_fields(attrs)
 
-    assert artifacts["elm_executor_metadata"]["n"] == 1
-    refute Map.has_key?(fields, "elm_executor_metadata")
+    assert artifacts["elmx_manifest"]["contract"] == "elmx.runtime_executor.v1"
+    assert artifacts["elmx_revision"] == "rev"
+    assert fields["elmx_manifest"]["contract"] == "elmx.runtime_executor.v1"
   end
 
   test "from_manifest_result maps strict? and schema_version" do

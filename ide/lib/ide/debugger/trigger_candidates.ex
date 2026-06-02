@@ -44,7 +44,8 @@ defmodule Ide.Debugger.TriggerCandidates do
     unit =
       cond do
         contains_any?(trigger_down, ["secondchange", "onsecond"]) or
-            (contains_any?(trigger_down, ["second"]) and not contains_any?(trigger_down, ["minute"])) ->
+            (contains_any?(trigger_down, ["second"]) and
+               not contains_any?(trigger_down, ["minute"])) ->
           "second"
 
         contains_any?(trigger_down, ["minutechange", "onminute", "minute"]) ->
@@ -92,7 +93,7 @@ defmodule Ide.Debugger.TriggerCandidates do
   def for_surface(ei, target_name, model_active_fn \\ fn _ -> true end)
 
   def for_surface(ei, target_name, model_active_fn)
-       when is_map(ei) and is_binary(target_name) and is_function(model_active_fn, 1) do
+      when is_map(ei) and is_binary(target_name) and is_function(model_active_fn, 1) do
     msg_constructors = IntrospectAccess.list(ei, "msg_constructors")
     update_branches = IntrospectAccess.list(ei, "update_case_branches")
     subscription_ops = IntrospectAccess.list(ei, "subscription_ops")
@@ -114,6 +115,7 @@ defmodule Ide.Debugger.TriggerCandidates do
             best_message_for_trigger(known_messages, to_string(trigger || "")) ||
             List.first(known_messages) ||
             "Tick"
+
         metadata =
           op
           |> button_subscription_metadata()
@@ -345,7 +347,7 @@ defmodule Ide.Debugger.TriggerCandidates do
 
   @spec best_message_for_trigger([String.t()], String.t()) :: String.t() | nil
   def best_message_for_trigger(known_messages, trigger)
-       when is_list(known_messages) and is_binary(trigger) do
+      when is_list(known_messages) and is_binary(trigger) do
     normalized = normalize_trigger_id(trigger)
 
     exact =

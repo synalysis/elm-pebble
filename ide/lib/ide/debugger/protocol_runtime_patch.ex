@@ -64,7 +64,8 @@ defmodule Ide.Debugger.ProtocolRuntimePatch do
     end
   end
 
-  @spec reject_protocol_result_wrapper_patch_values(Types.runtime_model_patch()) :: Types.runtime_model_patch()
+  @spec reject_protocol_result_wrapper_patch_values(Types.runtime_model_patch()) ::
+          Types.runtime_model_patch()
   defp reject_protocol_result_wrapper_patch_values(patch) when is_map(patch) do
     patch
     |> Enum.reject(fn {_key, value} -> protocol_result_wrapper_patch_value?(value) end)
@@ -88,7 +89,10 @@ defmodule Ide.Debugger.ProtocolRuntimePatch do
 
   defp noop_provide_position_patch?(_patch), do: false
 
-  @spec align_protocol_patch_to_init_model(Types.runtime_model_patch(), Types.elm_introspect() | nil) ::
+  @spec align_protocol_patch_to_init_model(
+          Types.runtime_model_patch(),
+          Types.elm_introspect() | nil
+        ) ::
           Types.runtime_model_patch()
   defp align_protocol_patch_to_init_model(patch, introspect)
        when is_map(patch) and is_map(introspect) do
@@ -171,7 +175,7 @@ defmodule Ide.Debugger.ProtocolRuntimePatch do
       |> String.split("_")
       |> Enum.map_join("", &String.capitalize/1)
 
-  if suffix == "" do
+    if suffix == "" do
       nil
     else
       Enum.find(init_keys, fn model_key ->
@@ -304,7 +308,8 @@ defmodule Ide.Debugger.ProtocolRuntimePatch do
     patch =
       case patch do
         %{"condition" => condition} ->
-          if Map.has_key?(init, "displayedCondition") and not Map.has_key?(patch, "displayedCondition") do
+          if Map.has_key?(init, "displayedCondition") and
+               not Map.has_key?(patch, "displayedCondition") do
             Map.put(patch, "displayedCondition", condition)
           else
             patch
@@ -366,7 +371,8 @@ defmodule Ide.Debugger.ProtocolRuntimePatch do
 
   defp provide_ctor_field_from_init_keys(_ctor, _init_keys), do: nil
 
-  @spec wrap_protocol_patch_value(Types.elm_introspect(), String.t(), Types.wire_input()) :: Types.wire_input()
+  @spec wrap_protocol_patch_value(Types.elm_introspect(), String.t(), Types.wire_input()) ::
+          Types.wire_input()
   defp wrap_protocol_patch_value(introspect, field, value)
        when is_map(introspect) and is_binary(field) do
     case value do
@@ -401,7 +407,10 @@ defmodule Ide.Debugger.ProtocolRuntimePatch do
 
   defp wrap_protocol_patch_value_for_init(_introspect, _field, value), do: value
 
-  @spec wrap_protocol_patch_fields_to_init_model(Types.runtime_model_patch(), Types.elm_introspect() | nil) ::
+  @spec wrap_protocol_patch_fields_to_init_model(
+          Types.runtime_model_patch(),
+          Types.elm_introspect() | nil
+        ) ::
           Types.runtime_model_patch()
   defp wrap_protocol_patch_fields_to_init_model(patch, introspect)
        when is_map(patch) and is_map(introspect) do
@@ -412,7 +421,10 @@ defmodule Ide.Debugger.ProtocolRuntimePatch do
 
   defp wrap_protocol_patch_fields_to_init_model(patch, _introspect), do: patch
 
-  @spec subscription_payload_model_patch(Types.elm_introspect() | nil, Types.subscription_payload()) ::
+  @spec subscription_payload_model_patch(
+          Types.elm_introspect() | nil,
+          Types.subscription_payload()
+        ) ::
           Types.runtime_model_patch()
   defp subscription_payload_model_patch(introspect, %{"ctor" => _ctor, "args" => args})
        when is_map(introspect) and is_list(args) do
@@ -464,7 +476,9 @@ defmodule Ide.Debugger.ProtocolRuntimePatch do
 
   defp apply_update_branch_field_aliases(patch, _introspect, _ctor), do: patch
 
-  @spec update_branch_field_aliases(Types.elm_introspect(), String.t()) :: %{String.t() => String.t()}
+  @spec update_branch_field_aliases(Types.elm_introspect(), String.t()) :: %{
+          String.t() => String.t()
+        }
   defp update_branch_field_aliases(introspect, ctor)
        when is_map(introspect) and is_binary(ctor) do
     introspect
@@ -487,7 +501,8 @@ defmodule Ide.Debugger.ProtocolRuntimePatch do
     |> Map.new(fn [_full, target, _binding, source] -> {source, target} end)
   end
 
-  @spec promote_protocol_result_record_patch(Types.runtime_model_patch()) :: Types.runtime_model_patch()
+  @spec promote_protocol_result_record_patch(Types.runtime_model_patch()) ::
+          Types.runtime_model_patch()
   defp promote_protocol_result_record_patch(patch) when is_map(patch) do
     case patch do
       %{"info" => wrapper} ->
@@ -542,7 +557,9 @@ defmodule Ide.Debugger.ProtocolRuntimePatch do
     end
   end
 
-  @spec protocol_update_binding_names(Types.elm_introspect(), String.t(), String.t()) :: [String.t()]
+  @spec protocol_update_binding_names(Types.elm_introspect(), String.t(), String.t()) :: [
+          String.t()
+        ]
   defp protocol_update_binding_names(introspect, callback, ctor)
        when is_map(introspect) and is_binary(callback) and is_binary(ctor) do
     prefix = callback <> " " <> ctor

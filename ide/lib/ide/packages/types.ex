@@ -163,7 +163,8 @@ defmodule Ide.Packages.Types do
 
   @type watch_compat_callbacks :: %{
           required(:versions) => (String.t() -> {:ok, [String.t()]} | {:error, package_error()}),
-          required(:release) => (String.t(), String.t() -> {:ok, map()} | {:error, package_error()})
+          required(:release) => (String.t(), String.t() ->
+                                   {:ok, map()} | {:error, package_error()})
         }
 
   @type provider_payload ::

@@ -16,7 +16,8 @@ defmodule Ide.Debugger.SessionStartReset do
           required(:ensure_phone_state) => ensure_phone_fn()
         }
 
-  @spec start(Types.runtime_state(), String.t(), Types.session_attrs(), host()) :: Types.runtime_state()
+  @spec start(Types.runtime_state(), String.t(), Types.session_attrs(), host()) ::
+          Types.runtime_state()
   def start(state, project_slug, attrs, host)
       when is_map(state) and is_binary(project_slug) and is_map(attrs) and is_map(host) do
     requested_profile_id =
@@ -25,7 +26,9 @@ defmodule Ide.Debugger.SessionStartReset do
       )
 
     launch_reason =
-      RuntimeSurfaces.parse_launch_reason(Map.get(attrs, :launch_reason) || Map.get(attrs, "launch_reason"))
+      RuntimeSurfaces.parse_launch_reason(
+        Map.get(attrs, :launch_reason) || Map.get(attrs, "launch_reason")
+      )
 
     state = state |> host.ensure_phone_state.() |> AutoTickWorkers.stop_worker()
 
@@ -45,7 +48,8 @@ defmodule Ide.Debugger.SessionStartReset do
   end
 
   @spec reset(Types.runtime_state(), String.t(), host()) :: Types.runtime_state()
-  def reset(state, project_slug, host) when is_map(state) and is_binary(project_slug) and is_map(host) do
+  def reset(state, project_slug, host)
+      when is_map(state) and is_binary(project_slug) and is_map(host) do
     bundle = SessionLifecycle.launch_bundle_from_state(state)
 
     state

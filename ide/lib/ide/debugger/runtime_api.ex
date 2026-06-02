@@ -30,7 +30,10 @@ defmodule Ide.Debugger.RuntimeApi do
   def reload(project_slug, attrs \\ %{}) when is_binary(project_slug) and is_map(attrs) do
     AgentSession.with_hosts(fn hosts ->
       with {:ok, state} <-
-             AgentSession.mutate(project_slug, &HotReloadSession.apply(&1, project_slug, attrs, hosts.hot_reload)) do
+             AgentSession.mutate(
+               project_slug,
+               &HotReloadSession.apply(&1, project_slug, attrs, hosts.hot_reload)
+             ) do
         RuntimeBackgroundDrains.schedule_all(project_slug, state)
         {:ok, state}
       end

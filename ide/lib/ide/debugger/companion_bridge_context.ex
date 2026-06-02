@@ -10,12 +10,18 @@ defmodule Ide.Debugger.CompanionBridgeContext do
   alias Ide.Debugger.Types
 
   @type host :: %{
-          required(:introspect_for) =>
-            (Types.runtime_state(), Types.surface_target() -> Types.elm_introspect() | map()),
+          required(:introspect_for) => (Types.runtime_state(), Types.surface_target() ->
+                                          Types.elm_introspect() | map()),
           required(:append_event) => (map(), String.t(), map() -> map()),
-          required(:apply_step_once) =>
-            (map(), Types.surface_target(), String.t(), Types.subscription_payload() | map() | nil,
-             String.t(), String.t() -> map()),
+          required(:apply_step_once) => (map(),
+                                         Types.surface_target(),
+                                         String.t(),
+                                         Types.subscription_payload()
+                                         | map()
+                                         | nil,
+                                         String.t(),
+                                         String.t() ->
+                                           map()),
           required(:deliver_weather_to_watch) => (map() -> map()),
           required(:settings) => (map() -> map())
         }

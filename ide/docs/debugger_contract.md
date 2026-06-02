@@ -11,9 +11,9 @@ Debugger metadata (subscriptions, cmd outlines, msg constructors, etc.) must com
 | `debugger_contract_b64` | Term-encoded artifact from `Ide.Compiler` |
 | `elm_introspect` | Legacy key (migrated to `debugger_contract` on read; do not write) |
 
-Core IR (`elm_executor_core_ir_b64`) remains the source of truth for **execution**
-(init / update / view). The debugger contract is the source of truth for **declared
-effects** until those fields live on Core IR itself.
+`elmx_manifest` plus `elmx_revision` are the source of truth for **execution**
+(init / update / view). The debugger contract is the source of truth for declared
+messages, subscriptions, commands, and view metadata used by the IDE.
 
 ## APIs
 

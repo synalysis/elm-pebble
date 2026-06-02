@@ -2,6 +2,7 @@ defmodule Ide.Debugger.DeviceRequestTypesTest do
   use ExUnit.Case, async: true
 
   alias Ide.Debugger.DeviceRequest
+
   test "from_cmd_call maps Pebble time and battery introspect rows" do
     time_call = %{
       "name" => "getCurrentTimeString",

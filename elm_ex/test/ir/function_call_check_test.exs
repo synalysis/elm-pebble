@@ -12,18 +12,16 @@ defmodule ElmEx.IR.FunctionCallCheckTest do
       elm_json: %{"source-directories" => ["src"]},
       modules: [
         ui_module(),
-        main_module(
-          %{
-            op: :qualified_call,
-            target: "Ui.textInt",
-            args: [
-              %{op: :qualified_call1, target: "Ui.defaultTextOptions"},
-              %{op: :record_literal, fields: [%{name: "x", expr: %{op: :int_literal, value: 4}}]},
-              %{op: :int_literal, value: 1},
-              %{op: :int_literal, value: 2}
-            ]
-          }
-        )
+        main_module(%{
+          op: :qualified_call,
+          target: "Ui.textInt",
+          args: [
+            %{op: :qualified_call1, target: "Ui.defaultTextOptions"},
+            %{op: :record_literal, fields: [%{name: "x", expr: %{op: :int_literal, value: 4}}]},
+            %{op: :int_literal, value: 1},
+            %{op: :int_literal, value: 2}
+          ]
+        })
       ]
     }
 
@@ -39,23 +37,80 @@ defmodule ElmEx.IR.FunctionCallCheckTest do
            )
   end
 
+  test "allows integer literals for Float parameters like Elm" do
+    project = %Project{
+      project_dir: "/tmp",
+      elm_json: %{"source-directories" => ["src"]},
+      modules: [
+        ui_module_with_rotation_from_degrees(),
+        main_module(%{
+          op: :qualified_call,
+          target: "Ui.rotationFromDegrees",
+          args: [%{op: :int_literal, value: 0}]
+        })
+      ]
+    }
+
+    assert {:ok, ir} = Lowerer.lower_project(project)
+
+    refute Enum.any?(ir.diagnostics, &(&1.code == "function_call_type"))
+  end
+
+  test "still rejects Int variables passed to Float parameters" do
+    diagnostics =
+      FunctionCallCheck.collect_project_diagnostics(
+        [
+          ui_module_with_rotation_from_degrees(),
+          %FrontendModule{
+            name: "Main",
+            path: "/tmp/src/Main.elm",
+            imports: ["Pebble.Ui"],
+            import_entries: [%{"module" => "Pebble.Ui", "as" => "Ui", "exposing" => nil}],
+            module_exposing: "main",
+            declarations: [
+              %{
+                kind: :function_definition,
+                name: "useAngle",
+                args: ["angle"],
+                type: "Int -> Rotation",
+                expr: %{
+                  op: :qualified_call,
+                  target: "Ui.rotationFromDegrees",
+                  args: [%{op: :var, name: "angle"}]
+                },
+                span: %{start_line: 10, end_line: 10}
+              }
+            ]
+          }
+        ],
+        %{"Pebble.Ui" => %{names: ["rotationFromDegrees"], types: ["Rotation"], union_constructors: %{}}},
+        "/tmp",
+        ["src"]
+      )
+
+    assert Enum.any?(
+             diagnostics,
+             &(&1.code == "function_call_type" and
+                 &1.expected_type == "Float" and
+                 &1.inferred_type == "Int")
+           )
+  end
+
   test "reports incompatible argument types for imported function calls" do
     project = %Project{
       project_dir: "/tmp",
       elm_json: %{"source-directories" => ["src"]},
       modules: [
         ui_module(),
-        main_module(
-          %{
-            op: :qualified_call,
-            target: "Ui.textInt",
-            args: [
-              %{op: :qualified_call1, target: "Resources.DefaultFont"},
-              %{op: :qualified_call1, target: "Ui.defaultTextOptions"},
-              %{op: :int_literal, value: 1}
-            ]
-          }
-        )
+        main_module(%{
+          op: :qualified_call,
+          target: "Ui.textInt",
+          args: [
+            %{op: :qualified_call1, target: "Resources.DefaultFont"},
+            %{op: :qualified_call1, target: "Ui.defaultTextOptions"},
+            %{op: :int_literal, value: 1}
+          ]
+        })
       ]
     }
 
@@ -159,9 +214,21 @@ defmodule ElmEx.IR.FunctionCallCheckTest do
                   op: :qualified_call,
                   target: "Ui.line",
                   args: [
-                    %{op: :call, name: "midpoint", args: [%{op: :var, name: "a"}, %{op: :var, name: "b"}]},
-                    %{op: :call, name: "midpoint", args: [%{op: :var, name: "b"}, %{op: :var, name: "c"}]},
-                    %{op: :call, name: "midpoint", args: [%{op: :var, name: "c"}, %{op: :var, name: "a"}]}
+                    %{
+                      op: :call,
+                      name: "midpoint",
+                      args: [%{op: :var, name: "a"}, %{op: :var, name: "b"}]
+                    },
+                    %{
+                      op: :call,
+                      name: "midpoint",
+                      args: [%{op: :var, name: "b"}, %{op: :var, name: "c"}]
+                    },
+                    %{
+                      op: :call,
+                      name: "midpoint",
+                      args: [%{op: :var, name: "c"}, %{op: :var, name: "a"}]
+                    }
                   ]
                 },
                 span: %{start_line: 10, end_line: 10}
@@ -223,9 +290,21 @@ defmodule ElmEx.IR.FunctionCallCheckTest do
                   op: :qualified_call,
                   target: "Gfx.line",
                   args: [
-                    %{op: :call, name: "midpoint", args: [%{op: :var, name: "a"}, %{op: :var, name: "b"}]},
-                    %{op: :call, name: "midpoint", args: [%{op: :var, name: "b"}, %{op: :var, name: "c"}]},
-                    %{op: :call, name: "midpoint", args: [%{op: :var, name: "c"}, %{op: :var, name: "a"}]}
+                    %{
+                      op: :call,
+                      name: "midpoint",
+                      args: [%{op: :var, name: "a"}, %{op: :var, name: "b"}]
+                    },
+                    %{
+                      op: :call,
+                      name: "midpoint",
+                      args: [%{op: :var, name: "b"}, %{op: :var, name: "c"}]
+                    },
+                    %{
+                      op: :call,
+                      name: "midpoint",
+                      args: [%{op: :var, name: "c"}, %{op: :var, name: "a"}]
+                    }
                   ]
                 },
                 span: %{start_line: 10, end_line: 10}
@@ -248,7 +327,9 @@ defmodule ElmEx.IR.FunctionCallCheckTest do
   end
 
   test "call-site line numbers follow source file lines when function bodies contain blank lines" do
-    tmp_dir = Path.join(System.tmp_dir!(), "function-call-line-#{System.unique_integer([:positive])}")
+    tmp_dir =
+      Path.join(System.tmp_dir!(), "function-call-line-#{System.unique_integer([:positive])}")
+
     src_dir = Path.join(tmp_dir, "src")
     File.mkdir_p!(src_dir)
     main_path = Path.join(src_dir, "Main.elm")
@@ -295,7 +376,10 @@ defmodule ElmEx.IR.FunctionCallCheckTest do
                   target: "Ui.textInt",
                   args: [
                     %{op: :qualified_call1, target: "Ui.defaultTextOptions"},
-                    %{op: :record_literal, fields: [%{name: "x", expr: %{op: :int_literal, value: 0}}]},
+                    %{
+                      op: :record_literal,
+                      fields: [%{name: "x", expr: %{op: :int_literal, value: 0}}]
+                    },
                     %{op: :int_literal, value: 1},
                     %{op: :int_literal, value: 2},
                     %{op: :int_literal, value: 3}
@@ -321,6 +405,20 @@ defmodule ElmEx.IR.FunctionCallCheckTest do
 
     assert [%{line: 11, code: "function_call_arity"}] =
              Enum.filter(diagnostics, &(&1.code == "function_call_arity"))
+  end
+
+  defp ui_module_with_rotation_from_degrees do
+    Map.update!(ui_module(), :declarations, fn decls ->
+      decls ++
+        [
+          %{
+            kind: :function_signature,
+            name: "rotationFromDegrees",
+            type: "Float -> Rotation",
+            span: %{start_line: 5, end_line: 5}
+          }
+        ]
+    end)
   end
 
   defp ui_module_with_line do

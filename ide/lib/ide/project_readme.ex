@@ -26,7 +26,7 @@ defmodule Ide.ProjectReadme do
 
     #{description_block(description)}
 
-    This repository contains an **Elm Pebble** #{kind} created in the [Elm Pebble IDE](#{ @site_url }).
+    This repository contains an **Elm Pebble** #{kind} created in the [Elm Pebble IDE](#{@site_url}).
 
     ## Develop and publish
 

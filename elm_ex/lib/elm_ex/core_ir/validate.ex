@@ -44,7 +44,11 @@ defmodule ElmEx.CoreIR.Validate do
   defp validate_version(%{version: "elm_ex.core_ir.v1"}, _path), do: []
 
   defp validate_version(core_ir, path) do
-    [error(:version, "expected version elm_ex.core_ir.v1", path ++ ["version"], op: inspect(Map.get(core_ir, "version") || Map.get(core_ir, :version)))]
+    [
+      error(:version, "expected version elm_ex.core_ir.v1", path ++ ["version"],
+        op: inspect(Map.get(core_ir, "version") || Map.get(core_ir, :version))
+      )
+    ]
   end
 
   defp validate_modules(%{"modules" => modules}, path) when is_list(modules) do
@@ -101,7 +105,8 @@ defmodule ElmEx.CoreIR.Validate do
   defp validate_declaration_expr(nil, _path), do: []
   defp validate_declaration_expr(expr, path), do: validate_expr(expr, path ++ ["expr"])
 
-  defp validate_diagnostics_list(%{"diagnostics" => diagnostics}, path) when is_list(diagnostics) do
+  defp validate_diagnostics_list(%{"diagnostics" => diagnostics}, path)
+       when is_list(diagnostics) do
     Enum.with_index(diagnostics)
     |> Enum.flat_map(fn {diag, idx} ->
       validate_diagnostic(diag, path ++ ["diagnostics", idx])
@@ -134,7 +139,11 @@ defmodule ElmEx.CoreIR.Validate do
         validate_expr_op(expr, op, path)
 
       _ ->
-        [error(:expr, ~s(missing or invalid "op"), path, op: inspect(Map.get(expr, "op") || Map.get(expr, :op)))]
+        [
+          error(:expr, ~s(missing or invalid "op"), path,
+            op: inspect(Map.get(expr, "op") || Map.get(expr, :op))
+          )
+        ]
     end
   end
 
@@ -323,7 +332,9 @@ defmodule ElmEx.CoreIR.Validate do
   end
 
   defp require_key(map, key, path) when is_map(map) do
-    if Map.has_key?(map, key), do: [], else: [error(:invalid_core_ir_shape, "missing key #{key}", path ++ [key])]
+    if Map.has_key?(map, key),
+      do: [],
+      else: [error(:invalid_core_ir_shape, "missing key #{key}", path ++ [key])]
   end
 
   defp maybe_add(acc, more) when is_list(acc) and is_list(more), do: acc ++ more
@@ -346,7 +357,8 @@ defmodule ElmEx.CoreIR.Validate do
     }
   end
 
-  defp normalize_wire_map(%CoreIR{} = core_ir), do: core_ir_to_map(core_ir) |> stringify_keys_deep()
+  defp normalize_wire_map(%CoreIR{} = core_ir),
+    do: core_ir_to_map(core_ir) |> stringify_keys_deep()
 
   defp normalize_wire_map(map) when is_map(map), do: stringify_keys_deep(map)
 

@@ -4,8 +4,11 @@ defmodule Ide.Resources.BitmapVariantsTest do
   alias Ide.Resources.BitmapVariants
 
   test "variant filenames use Pebble tilde tags" do
-    assert BitmapVariants.variant_filename("Charmander", "BlackWhite", ".png") == "Charmander~bw.png"
-    assert BitmapVariants.variant_filename("Charmander", "Color", ".png") == "Charmander~color.png"
+    assert BitmapVariants.variant_filename("Charmander", "BlackWhite", ".png") ==
+             "Charmander~bw.png"
+
+    assert BitmapVariants.variant_filename("Charmander", "Color", ".png") ==
+             "Charmander~color.png"
   end
 
   test "normalize_row keeps variants and legacy filename" do

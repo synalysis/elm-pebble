@@ -9,28 +9,43 @@ defmodule Ide.Debugger.ProtocolRx do
   alias Ide.Debugger.Types
 
   @type ctx :: %{
-          required(:append_event) =>
-            (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() ->
-               Types.runtime_state()),
-          required(:append_debugger_event) =>
-            (Types.runtime_state(), String.t(), Types.surface_target(), String.t(), String.t(),
-             Types.debugger_timeline_payload() | nil -> Types.runtime_state()),
-          required(:append_runtime_exec_event_for_target) =>
-            (Types.runtime_state(), Types.surface_target(), Types.debugger_timeline_payload() ->
-               Types.runtime_state()),
+          required(:append_event) => (Types.runtime_state(),
+                                      String.t(),
+                                      Types.debugger_timeline_payload() ->
+                                        Types.runtime_state()),
+          required(:append_debugger_event) => (Types.runtime_state(),
+                                               String.t(),
+                                               Types.surface_target(),
+                                               String.t(),
+                                               String.t(),
+                                               Types.debugger_timeline_payload()
+                                               | nil ->
+                                                 Types.runtime_state()),
+          required(:append_runtime_exec_event_for_target) => (Types.runtime_state(),
+                                                              Types.surface_target(),
+                                                              Types.debugger_timeline_payload() ->
+                                                                Types.runtime_state()),
           required(:source_root_for_target) => (Types.surface_target() -> String.t()),
-          required(:introspect_for) =>
-            (Types.runtime_state(), Types.surface_target() -> Types.elm_introspect()),
-          required(:introspect_cmd_calls) =>
-            (Types.elm_introspect(), String.t() -> [Types.cmd_call()]),
-          required(:apply_step_once) =>
-            (Types.runtime_state(), Types.surface_target(), String.t(),
-             Types.subscription_payload() | nil, String.t(), String.t() -> Types.runtime_state()),
-          required(:refresh_runtime_fingerprints) =>
-            (Types.execution_model(), Types.app_model(), Types.app_model() -> Types.execution_model()),
+          required(:introspect_for) => (Types.runtime_state(), Types.surface_target() ->
+                                          Types.elm_introspect()),
+          required(:introspect_cmd_calls) => (Types.elm_introspect(), String.t() ->
+                                                [Types.cmd_call()]),
+          required(:apply_step_once) => (Types.runtime_state(),
+                                         Types.surface_target(),
+                                         String.t(),
+                                         Types.subscription_payload()
+                                         | nil,
+                                         String.t(),
+                                         String.t() ->
+                                           Types.runtime_state()),
+          required(:refresh_runtime_fingerprints) => (Types.execution_model(),
+                                                      Types.app_model(),
+                                                      Types.app_model() ->
+                                                        Types.execution_model()),
           required(:protocol_events_ctx) => (-> ProtocolEvents.ctx()),
-          required(:runtime_ready_for_delivery?) =>
-            (Types.runtime_state(), Types.surface_target() -> boolean())
+          required(:runtime_ready_for_delivery?) => (Types.runtime_state(),
+                                                     Types.surface_target() ->
+                                                       boolean())
         }
 
   @init_complete_key "debugger_init_complete"
@@ -47,7 +62,8 @@ defmodule Ide.Debugger.ProtocolRx do
   def runtime_ready_for_delivery?(_state, _target), do: false
 
   @spec mark_init_complete(Types.runtime_state(), Types.surface_target()) :: Types.runtime_state()
-  def mark_init_complete(state, target) when is_map(state) and target in [:watch, :companion, :phone] do
+  def mark_init_complete(state, target)
+      when is_map(state) and target in [:watch, :companion, :phone] do
     put_in(state, [target, :model, @init_complete_key], true)
   end
 
@@ -62,7 +78,7 @@ defmodule Ide.Debugger.ProtocolRx do
   def apply_side_effects(state, _protocol_events, true, _ctx), do: state
 
   def apply_side_effects(state, protocol_events, false, rx_ctx)
-       when is_list(protocol_events) and is_map(rx_ctx) do
+      when is_list(protocol_events) and is_map(rx_ctx) do
     state
     |> append_transport_events(protocol_events, rx_ctx)
     |> apply_state_effects(protocol_events, rx_ctx)
@@ -78,7 +94,8 @@ defmodule Ide.Debugger.ProtocolRx do
 
   @spec append_transport_events(Types.runtime_state(), [Types.protocol_timeline_event()], ctx()) ::
           Types.runtime_state()
-  def append_transport_events(state, protocol_events, rx_ctx) when is_list(protocol_events) and is_map(rx_ctx) do
+  def append_transport_events(state, protocol_events, rx_ctx)
+      when is_list(protocol_events) and is_map(rx_ctx) do
     Enum.reduce(protocol_events, state, fn event, acc ->
       if event.type == "debugger.protocol_tx" and is_map(event.payload) do
         rx_ctx.append_event.(acc, event.type, event.payload)
@@ -90,7 +107,8 @@ defmodule Ide.Debugger.ProtocolRx do
 
   @spec apply_state_effects(Types.runtime_state(), [Types.protocol_timeline_event()], ctx()) ::
           Types.runtime_state()
-  def apply_state_effects(state, protocol_events, rx_ctx) when is_list(protocol_events) and is_map(rx_ctx) do
+  def apply_state_effects(state, protocol_events, rx_ctx)
+      when is_list(protocol_events) and is_map(rx_ctx) do
     Enum.reduce(protocol_events, state, fn event, acc ->
       if event.type == "debugger.protocol_rx" and is_map(event.payload) do
         handle_protocol_rx_event(acc, event.payload, rx_ctx)
@@ -124,7 +142,8 @@ defmodule Ide.Debugger.ProtocolRx do
           Types.protocol_tx_rx_payload(),
           ctx()
         ) :: Types.runtime_state()
-  def deliver_payload(state, payload, rx_ctx) when is_map(state) and is_map(payload) and is_map(rx_ctx) do
+  def deliver_payload(state, payload, rx_ctx)
+      when is_map(state) and is_map(payload) and is_map(rx_ctx) do
     deliver_protocol_rx_to_surface(state, payload, rx_ctx)
   end
 
@@ -297,7 +316,7 @@ defmodule Ide.Debugger.ProtocolRx do
   @spec drain_message_queue(Types.runtime_state(), Types.surface_target(), ctx()) ::
           Types.runtime_state()
   def drain_message_queue(state, target, rx_ctx)
-       when is_map(state) and target in [:watch, :companion, :phone] and is_map(rx_ctx) do
+      when is_map(state) and target in [:watch, :companion, :phone] and is_map(rx_ctx) do
     {state, entries} = AppMessageQueue.drain_entries(state, target)
 
     Enum.reduce(entries, state, fn payload, acc ->
@@ -353,7 +372,8 @@ defmodule Ide.Debugger.ProtocolRx do
   end
 
   defp protocol_rx_subscription_message(state, recipient, meta, rx_ctx)
-       when is_map(state) and is_map(rx_ctx) and recipient in [:watch, :companion, :phone] and is_map(meta) do
+       when is_map(state) and is_map(rx_ctx) and recipient in [:watch, :companion, :phone] and
+              is_map(meta) do
     from = Map.get(meta, :from)
     message = Map.get(meta, :message)
     message_value = Map.get(meta, :message_value)
@@ -364,13 +384,15 @@ defmodule Ide.Debugger.ProtocolRx do
 
       recipient == :watch and from in ["companion", "phone"] ->
         callback =
-          protocol_rx_subscription_callback(state, recipient, "on_phone_to_watch", rx_ctx) || "FromPhone"
+          protocol_rx_subscription_callback(state, recipient, "on_phone_to_watch", rx_ctx) ||
+            "FromPhone"
 
         protocol_callback_message(callback, message, message_value, false)
 
       recipient in [:companion, :phone] and from == "watch" ->
         callback =
-          protocol_rx_subscription_callback(state, recipient, "on_watch_to_phone", rx_ctx) || "FromWatch"
+          protocol_rx_subscription_callback(state, recipient, "on_watch_to_phone", rx_ctx) ||
+            "FromWatch"
 
         protocol_callback_message(callback, message, message_value, true)
 
@@ -382,7 +404,8 @@ defmodule Ide.Debugger.ProtocolRx do
   defp protocol_rx_subscription_message(_state, _recipient, _meta, _ctx), do: nil
 
   defp protocol_rx_subscription_callback(state, recipient, event_kind, rx_ctx)
-       when is_map(state) and is_map(rx_ctx) and recipient in [:watch, :companion, :phone] and is_binary(event_kind) do
+       when is_map(state) and is_map(rx_ctx) and recipient in [:watch, :companion, :phone] and
+              is_binary(event_kind) do
     state
     |> rx_ctx.introspect_for.(recipient)
     |> rx_ctx.introspect_cmd_calls.("subscription_calls")
@@ -396,7 +419,12 @@ defmodule Ide.Debugger.ProtocolRx do
 
   defp protocol_rx_subscription_callback(_state, _recipient, _event_kind, _ctx), do: nil
 
-  @spec protocol_callback_message(String.t() | nil, String.t(), Types.subscription_payload(), boolean()) ::
+  @spec protocol_callback_message(
+          String.t() | nil,
+          String.t(),
+          Types.subscription_payload(),
+          boolean()
+        ) ::
           {String.t(), Types.protocol_message_wire_value()} | String.t() | nil
   defp protocol_callback_message(callback, message, message_value, wrap_result?)
        when is_binary(callback) and callback != "" and is_binary(message) and message != "" do
@@ -446,11 +474,20 @@ defmodule Ide.Debugger.ProtocolRx do
   @spec wrap_protocol_callback_value(String.t(), Types.subscription_payload()) ::
           Types.protocol_ctor_value() | nil
   defp wrap_protocol_callback_value(callback, value)
-       when is_binary(callback) and callback != "" and is_map(value) do
-    %{"ctor" => callback, "args" => [value]}
+       when is_binary(callback) and callback != "" do
+    %{"ctor" => callback, "args" => [protocol_callback_arg(value)]}
   end
 
   defp wrap_protocol_callback_value(_callback, _value), do: nil
+
+  @spec protocol_callback_arg(Types.subscription_payload()) :: Types.protocol_wire_arg()
+  defp protocol_callback_arg(%{"ctor" => _, "args" => _} = value), do: value
+  defp protocol_callback_arg(%{ctor: _, args: _} = value), do: value
+  defp protocol_callback_arg(value) when is_integer(value), do: value
+  defp protocol_callback_arg(value) when is_binary(value), do: value
+  defp protocol_callback_arg(value) when is_boolean(value), do: value
+  defp protocol_callback_arg(value) when is_list(value), do: value
+  defp protocol_callback_arg(_value), do: nil
 
   @spec update_recipient_protocol_messages(
           Types.runtime_state(),

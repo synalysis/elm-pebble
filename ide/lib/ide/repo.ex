@@ -3,11 +3,12 @@ defmodule Ide.Repo do
   Delegates to the runtime-selected repo (`Ide.Repo.Postgres` or `Ide.Repo.Sqlite`).
   """
 
-  @delegated_functions Ide.Repo.Sqlite.__info__(:functions) -- [
-                        {:__info__, 1},
-                        {:module_info, 0},
-                        {:module_info, 1}
-                      ]
+  @delegated_functions Ide.Repo.Sqlite.__info__(:functions) --
+                         [
+                           {:__info__, 1},
+                           {:module_info, 0},
+                           {:module_info, 1}
+                         ]
 
   for {name, arity} <- @delegated_functions do
     args = Macro.generate_arguments(arity, __MODULE__)

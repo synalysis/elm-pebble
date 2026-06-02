@@ -103,7 +103,10 @@ defmodule IdeWeb.ProjectsLive do
            |> put_flash(:info, "Project imported from GitHub.")
            |> load_projects()
            |> assign(:show_import_form, false)
-           |> assign(:github_import_form, to_form(default_github_import_attrs(), as: :github_import))
+           |> assign(
+             :github_import_form,
+             to_form(default_github_import_attrs(), as: :github_import)
+           )
            |> push_navigate(to: ~p"/projects/#{project.slug}/editor")}
 
         {:error, %Ecto.Changeset{} = changeset} ->
@@ -111,11 +114,16 @@ defmodule IdeWeb.ProjectsLive do
            put_flash(socket, :error, "Import failed: #{format_changeset_errors(changeset)}")}
 
         {:error, reason} ->
-          {:noreply, put_flash(socket, :error, "GitHub import failed: #{format_import_error(reason)}")}
+          {:noreply,
+           put_flash(socket, :error, "GitHub import failed: #{format_import_error(reason)}")}
       end
     else
       {:noreply,
-       put_flash(socket, :error, "Connect GitHub from IDE Settings before importing a repository.")}
+       put_flash(
+         socket,
+         :error,
+         "Connect GitHub from IDE Settings before importing a repository."
+       )}
     end
   end
 
@@ -132,7 +140,8 @@ defmodule IdeWeb.ProjectsLive do
     {:noreply, assign(socket, :show_import_form, not socket.assigns.show_import_form)}
   end
 
-  def handle_event("set-import-mode", %{"mode" => mode}, socket) when mode in ["local", "github"] do
+  def handle_event("set-import-mode", %{"mode" => mode}, socket)
+      when mode in ["local", "github"] do
     {:noreply, assign(socket, :import_mode, String.to_existing_atom(mode))}
   end
 

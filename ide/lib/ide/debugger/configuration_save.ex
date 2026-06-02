@@ -22,7 +22,8 @@ defmodule Ide.Debugger.ConfigurationSave do
     }
   end
 
-  def closed_bridge_event(_encoded_values), do: %{"event" => "configuration.closed", "payload" => %{}}
+  def closed_bridge_event(_encoded_values),
+    do: %{"event" => "configuration.closed", "payload" => %{}}
 
   @spec message_payload(
           Types.runtime_state(),
@@ -31,7 +32,8 @@ defmodule Ide.Debugger.ConfigurationSave do
           bridge_ctx()
         ) :: {String.t(), Types.subscription_payload()}
   def message_payload(state, encoded_values, bridge_event, bridge_ctx)
-      when is_map(state) and is_map(encoded_values) and is_map(bridge_event) and is_map(bridge_ctx) do
+      when is_map(state) and is_map(encoded_values) and is_map(bridge_event) and
+             is_map(bridge_ctx) do
     case subscription_callback(state, bridge_ctx) do
       callback when is_binary(callback) and callback != "" ->
         {callback, SubscriptionResponses.ok_wire_value(callback, encoded_values)}
@@ -61,7 +63,8 @@ defmodule Ide.Debugger.ConfigurationSave do
     end
   end
 
-  def maybe_apply_protocol_messages(state, _configuration, _values, _seq_before, _rx_ctx), do: state
+  def maybe_apply_protocol_messages(state, _configuration, _values, _seq_before, _rx_ctx),
+    do: state
 
   @spec subscription_callback(Types.runtime_state(), bridge_ctx()) :: String.t() | nil
   def subscription_callback(state, %{introspect: introspect} = bridge_ctx)

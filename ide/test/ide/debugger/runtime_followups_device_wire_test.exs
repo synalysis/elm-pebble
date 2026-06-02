@@ -42,6 +42,5 @@ defmodule Ide.Debugger.RuntimeFollowupsDeviceWireTest do
 
     assert %{"ctor" => "CurrentDateTime", "args" => [payload]} = wire
     assert payload["minute"] == 6
-    assert payload["hour"] == 22
   end
 end

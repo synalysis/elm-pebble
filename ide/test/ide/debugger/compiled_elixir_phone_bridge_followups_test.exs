@@ -14,13 +14,16 @@ defmodule Ide.Debugger.CompiledElixirPhoneBridgeFollowupsTest do
       Corpus.ensure_compiled_elixir_backend!()
 
       assert {:ok, %{project: project}} =
-               DebuggerTemplateCorpus.bootstrap_template("companion-demo-websocket", cleanup: false)
+               DebuggerTemplateCorpus.bootstrap_template("companion-demo-websocket",
+                 cleanup: false
+               )
 
       try do
         phone_workspace =
           project |> Projects.project_workspace_path() |> Path.join("phone")
 
-        revision = "corpus-ws-followups-" <> Integer.to_string(:erlang.unique_integer([:positive]))
+        revision =
+          "corpus-ws-followups-" <> Integer.to_string(:erlang.unique_integer([:positive]))
 
         init_request = %{
           current_model: %{},

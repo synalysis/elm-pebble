@@ -363,9 +363,23 @@ defmodule ElmEx.IR.FunctionCallCheck do
             |> Enum.flat_map(fn {arg, index} ->
               case Enum.at(expected_params, index) do
                 expected when is_binary(expected) ->
-                  inferred = infer_expr_type(arg, import_lookup, signature_lookup, type_alias_lookup, binding_types)
+                  inferred =
+                    infer_expr_type(
+                      arg,
+                      import_lookup,
+                      signature_lookup,
+                      type_alias_lookup,
+                      binding_types
+                    )
 
-                  if incompatible_types?(expected, inferred, import_lookup, type_alias_lookup, target) do
+                  if incompatible_types?(
+                       expected,
+                       inferred,
+                       import_lookup,
+                       type_alias_lookup,
+                       target,
+                       arg
+                     ) do
                     [
                       diagnostic(
                         "error",
@@ -430,7 +444,18 @@ defmodule ElmEx.IR.FunctionCallCheck do
           String.t(),
           keyword()
         ) :: diagnostic()
-  defp diagnostic(severity, code, module_name, function_name, file, line, column, call_target, message, extra) do
+  defp diagnostic(
+         severity,
+         code,
+         module_name,
+         function_name,
+         file,
+         line,
+         column,
+         call_target,
+         message,
+         extra
+       ) do
     %{
       severity: severity,
       source: "lowerer/expression",
@@ -466,9 +491,10 @@ defmodule ElmEx.IR.FunctionCallCheck do
   end
 
   @spec call_site_matches_in_source(map(), String.t(), pos_integer(), pos_integer()) ::
-          [ {pos_integer(), pos_integer()}]
+          [{pos_integer(), pos_integer()}]
   defp call_site_matches_in_source(%{module_path: path}, pattern, start_line, end_line)
-       when is_binary(path) and is_binary(pattern) and is_integer(start_line) and is_integer(end_line) do
+       when is_binary(path) and is_binary(pattern) and is_integer(start_line) and
+              is_integer(end_line) do
     if File.exists?(path) do
       path
       |> File.read!()
@@ -535,7 +561,8 @@ defmodule ElmEx.IR.FunctionCallCheck do
   end
 
   @spec call_target(expr(), map()) :: String.t() | nil
-  defp call_target(%{op: :qualified_call, target: target}, import_lookup) when is_binary(target) do
+  defp call_target(%{op: :qualified_call, target: target}, import_lookup)
+       when is_binary(target) do
     resolve_name(target, import_lookup)
   end
 
@@ -613,7 +640,13 @@ defmodule ElmEx.IR.FunctionCallCheck do
     value_type(Map.get(signature_lookup, resolve_name(name, import_lookup)))
   end
 
-  defp infer_expr_type(%{op: :call, name: name, args: args}, import_lookup, signature_lookup, type_alias_lookup, binding_types)
+  defp infer_expr_type(
+         %{op: :call, name: name, args: args},
+         import_lookup,
+         signature_lookup,
+         type_alias_lookup,
+         binding_types
+       )
        when is_binary(name) and is_list(args) do
     target = resolve_name(name, import_lookup)
 
@@ -622,11 +655,23 @@ defmodule ElmEx.IR.FunctionCallCheck do
         TypeSignature.return_type(type)
 
       _ ->
-        infer_expr_type(%{op: :call, args: args}, import_lookup, signature_lookup, type_alias_lookup, binding_types)
+        infer_expr_type(
+          %{op: :call, args: args},
+          import_lookup,
+          signature_lookup,
+          type_alias_lookup,
+          binding_types
+        )
     end
   end
 
-  defp infer_expr_type(%{op: :qualified_call, target: target, args: args}, import_lookup, signature_lookup, type_alias_lookup, binding_types)
+  defp infer_expr_type(
+         %{op: :qualified_call, target: target, args: args},
+         import_lookup,
+         signature_lookup,
+         type_alias_lookup,
+         binding_types
+       )
        when is_binary(target) and is_list(args) do
     resolved = resolve_name(target, import_lookup)
 
@@ -635,7 +680,13 @@ defmodule ElmEx.IR.FunctionCallCheck do
         TypeSignature.return_type(type)
 
       _ ->
-        infer_expr_type(%{op: :qualified_call, args: args}, import_lookup, signature_lookup, type_alias_lookup, binding_types)
+        infer_expr_type(
+          %{op: :qualified_call, args: args},
+          import_lookup,
+          signature_lookup,
+          type_alias_lookup,
+          binding_types
+        )
     end
   end
 
@@ -670,11 +721,18 @@ defmodule ElmEx.IR.FunctionCallCheck do
 
   @primitive_types ~w(Int Float String Bool Char Order)
 
-  @spec incompatible_types?(String.t(), String.t() | nil, map(), map(), String.t() | nil) ::
-          boolean()
-  defp incompatible_types?(_expected, nil, _import_lookup, _type_alias_lookup, _target), do: false
+  @spec incompatible_types?(
+          String.t(),
+          String.t() | nil,
+          map(),
+          map(),
+          String.t() | nil,
+          expr() | nil
+        ) :: boolean()
+  defp incompatible_types?(_expected, nil, _import_lookup, _type_alias_lookup, _target, _arg),
+    do: false
 
-  defp incompatible_types?(expected, inferred, import_lookup, type_alias_lookup, target) do
+  defp incompatible_types?(expected, inferred, import_lookup, type_alias_lookup, target, arg) do
     expected = normalize_type(expected)
     inferred = normalize_type(inferred)
     callee_module = callee_module_from_target(target)
@@ -683,14 +741,25 @@ defmodule ElmEx.IR.FunctionCallCheck do
     caller_ctx = import_lookup
 
     cond do
-      expected == inferred -> false
+      expected == inferred ->
+        false
+
+      elm_number_literal_coercion?(expected, inferred, arg) ->
+        false
+
       canonical_type_identity(expected, expected_ctx, type_alias_lookup) ==
           canonical_type_identity(inferred, caller_ctx, type_alias_lookup) ->
         false
 
-      TypeSignature.type_variable?(expected) -> false
-      TypeSignature.type_variable?(inferred) -> false
-      primitive_type?(expected) and primitive_type?(inferred) -> expected != inferred
+      TypeSignature.type_variable?(expected) ->
+        false
+
+      TypeSignature.type_variable?(inferred) ->
+        false
+
+      primitive_type?(expected) and primitive_type?(inferred) ->
+        expected != inferred
+
       record_type?(expected) and record_type?(inferred) ->
         not record_fields_compatible?(expected, inferred, type_alias_lookup)
 
@@ -714,6 +783,26 @@ defmodule ElmEx.IR.FunctionCallCheck do
 
   @spec primitive_type?(String.t()) :: boolean()
   defp primitive_type?(type), do: type in @primitive_types
+
+  # Elm allows integer number literals to satisfy Float parameters (not Int variables).
+  @spec elm_number_literal_coercion?(String.t(), String.t(), expr() | nil) :: boolean()
+  defp elm_number_literal_coercion?("Float", "Int", arg), do: int_number_literal?(arg)
+  defp elm_number_literal_coercion?(_expected, _inferred, _arg), do: false
+
+  @spec int_number_literal?(expr() | nil) :: boolean()
+  defp int_number_literal?(%{op: :int_literal}), do: true
+
+  defp int_number_literal?(%{op: op, target: "Basics.negate", args: [inner]})
+       when op in [:qualified_call1, :qualified_call],
+       do: int_number_literal?(inner)
+
+  defp int_number_literal?(%{op: :call1, name: "negate", args: [inner]}),
+    do: int_number_literal?(inner)
+
+  defp int_number_literal?(%{op: :call, name: "negate", args: [inner]}),
+    do: int_number_literal?(inner)
+
+  defp int_number_literal?(_), do: false
 
   @spec callee_module_from_target(String.t() | nil) :: String.t() | nil
   defp callee_module_from_target(target) when is_binary(target) do
@@ -748,7 +837,8 @@ defmodule ElmEx.IR.FunctionCallCheck do
     end
   end
 
-  @spec split_qualified_type_name(String.t()) :: {:qualified, String.t(), String.t()} | {:unqualified, String.t()}
+  @spec split_qualified_type_name(String.t()) ::
+          {:qualified, String.t(), String.t()} | {:unqualified, String.t()}
   defp split_qualified_type_name(type) when is_binary(type) do
     case String.split(type, ".") do
       [single] ->
@@ -761,7 +851,8 @@ defmodule ElmEx.IR.FunctionCallCheck do
     end
   end
 
-  @spec resolve_unqualified_type(String.t(), String.t() | nil, map(), String.t() | nil) :: String.t()
+  @spec resolve_unqualified_type(String.t(), String.t() | nil, map(), String.t() | nil) ::
+          String.t()
   defp resolve_unqualified_type(name, declaring_module, type_map, current_module)
        when is_binary(name) do
     cond do
@@ -993,7 +1084,8 @@ defmodule ElmEx.IR.FunctionCallCheck do
   end
 
   @spec put_unqualified_name(map(), String.t(), String.t()) :: map()
-  defp put_unqualified_name(acc, name, module_name) when is_binary(name) and is_binary(module_name) do
+  defp put_unqualified_name(acc, name, module_name)
+       when is_binary(name) and is_binary(module_name) do
     case Map.get(acc, name) do
       nil -> Map.put(acc, name, module_name)
       ^module_name -> acc

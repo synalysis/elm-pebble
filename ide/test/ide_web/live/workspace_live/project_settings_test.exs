@@ -265,7 +265,10 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
 
     {:ok, user} =
       %Ide.Auth.User{}
-      |> Ide.Auth.User.changeset(%{firebase_uid: "store-listing-sync", email: "store@example.test"})
+      |> Ide.Auth.User.changeset(%{
+        firebase_uid: "store-listing-sync",
+        email: "store@example.test"
+      })
       |> Ide.Repo.insert()
 
     conn = Plug.Test.init_test_session(conn, user_id: user.id)

@@ -9,8 +9,15 @@ defmodule Ide.Debugger.HotReloadContext do
   @type host :: %{
           required(:put_placeholder_views) => (map(), String.t(), String.t(), String.t() -> map()),
           required(:merge_introspect) => (map() -> {map(), map() | nil}),
-          required(:append_reload_events) =>
-            (map(), String.t(), String.t() | nil, String.t(), String.t(), map() | nil -> map())
+          required(:append_reload_events) => (map(),
+                                              String.t(),
+                                              String.t()
+                                              | nil,
+                                              String.t(),
+                                              String.t(),
+                                              map()
+                                              | nil ->
+                                                map())
         }
 
   @spec build(String.t() | nil, String.t(), host()) :: HotReload.ctx()

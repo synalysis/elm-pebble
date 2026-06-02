@@ -81,9 +81,6 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified do
 
   def compile_pebble_ui_qualified(target, args, env, counter) do
     case {target, args} do
-      {"Pebble.Ui.toUiNode", [ops]} ->
-        pebble_ui_call(:to_ui_node, [ops], env, counter)
-
       {"Pebble.Ui.windowStack", [windows]} ->
         pebble_ui_call(:window_stack, [windows], env, counter)
 

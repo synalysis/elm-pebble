@@ -1205,7 +1205,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    refute generated_c =~ "const elmc_int_t text_ = (argc > 0 && args[0]) ? elmc_as_int(args[0]) : 0;"
+    refute generated_c =~
+             "const elmc_int_t text_ = (argc > 0 && args[0]) ? elmc_as_int(args[0]) : 0;"
+
     assert generated_c =~ "ElmcValue *text_ = (argc > 0) ? args[0] : NULL;"
     assert generated_c =~ "elmc_new_string(\"Next event\")"
   end

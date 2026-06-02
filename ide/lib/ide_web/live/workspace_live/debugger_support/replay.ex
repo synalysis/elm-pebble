@@ -142,7 +142,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Replay do
       latest_seq > preview_seq
   end
 
-  @spec replay_live_drift(String.t(), Types.maybe_non_neg_integer(), [map()]) :: non_neg_integer() | nil
+  @spec replay_live_drift(String.t(), Types.maybe_non_neg_integer(), [map()]) ::
+          non_neg_integer() | nil
   def replay_live_drift(mode, preview_seq, events) when is_binary(mode) and is_list(events) do
     latest_seq =
       case events do
@@ -207,7 +208,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Replay do
 
   defp normalize_replay_row(_), do: %{seq: 0, target: "watch", message: "Tick"}
 
-  @spec maybe_filter_preview_events_at_or_before_seq(Types.events(), Types.maybe_non_neg_integer()) :: Types.events()
+  @spec maybe_filter_preview_events_at_or_before_seq(
+          Types.events(),
+          Types.maybe_non_neg_integer()
+        ) :: Types.events()
   defp maybe_filter_preview_events_at_or_before_seq(events, nil) when is_list(events), do: events
 
   defp maybe_filter_preview_events_at_or_before_seq(events, cursor_seq)

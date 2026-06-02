@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "vector_vectorstaticweatherclear",
+      "base_name": "WeatherClear",
+      "ctor": "VectorStaticWeatherClear",
+      "filename": "VectorStaticWeatherClear.pdc",
+      "bytes": 165,
+      "kind": "image",
+      "mime": "application/octet-stream",
+      "source": "pdc"
+    },
+    {
+      "id": "vector_vectoranimatedtransitioncleartocloudy",
+      "base_name": "TransitionClearToCloudy",
+      "ctor": "VectorAnimatedTransitionClearToCloudy",
+      "filename": "VectorAnimatedTransitionClearToCloudy.pdc",
+      "bytes": 214,
+      "frame_duration_ms": 100,
+      "frames": 2,
+      "kind": "sequence",
+      "mime": "application/octet-stream",
+      "source": "pdc"
+    }
+  ]
+}

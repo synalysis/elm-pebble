@@ -12,7 +12,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
   alias Ide.Projects.Project
   alias IdeWeb.WorkspaceLive.BuildFlow
 
-  @type bootstrap_tab :: %{optional(:rel_path) => String.t(), optional(:content) => String.t(), optional(:source_root) => String.t()} | nil
+  @type bootstrap_tab ::
+          %{
+            optional(:rel_path) => String.t(),
+            optional(:content) => String.t(),
+            optional(:source_root) => String.t()
+          }
+          | nil
   @type progress :: (String.t() -> :ok)
   @type compile_results :: [{String.t(), {:ok, map()} | {:error, term()}}]
   @type primary_compile :: {String.t(), {:ok, map()} | {:error, term()}} | nil
@@ -97,7 +103,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
     end
   end
 
-  defp with_companion_fast_bootstrap(scope_key, fun) when is_binary(scope_key) and is_function(fun, 0) do
+  defp with_companion_fast_bootstrap(scope_key, fun)
+       when is_binary(scope_key) and is_function(fun, 0) do
     {:ok, _} = AgentSession.mutate(scope_key, &BootstrapInit.with_companion_bootstrap_flags/1)
 
     try do
@@ -155,7 +162,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
   defp start_session(project, watch_profile_id, progress) do
     progress.("Starting debugger session...")
 
-    case Ide.Debugger.start_session(Projects.scope_key(project), %{watch_profile_id: watch_profile_id}) do
+    case Ide.Debugger.start_session(Projects.scope_key(project), %{
+           watch_profile_id: watch_profile_id
+         }) do
       {:ok, _} -> :ok
       {:error, reason} -> {:error, "Could not start debugger: #{inspect(reason)}"}
     end
@@ -191,25 +200,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
         else
           :ok
         end
-
-      {:error, reason} ->
-        ingest_phone_compile(scope_key, %{
-          status: :error,
-          compiled_path: Projects.project_workspace_path(project),
-          revision: "—",
-          cached?: false,
-          error_count: 1,
-          warning_count: 0,
-          output: inspect(reason),
-          diagnostics: []
-        })
-
-        {:error, "Companion compile failed: #{inspect(reason)}"}
     end
   end
 
-  @spec compile_phone_root(Project.t()) ::
-          :skipped | {:ok, map()} | {:error, term()}
+  @spec compile_phone_root(Project.t()) :: :skipped | {:ok, map()}
   defp compile_phone_root(%Project{} = project) do
     workspace_root = Projects.project_workspace_path(project)
     roots = BuildFlow.build_roots(workspace_root, project.source_roots || [])

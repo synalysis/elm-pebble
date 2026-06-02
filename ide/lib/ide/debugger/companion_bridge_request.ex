@@ -10,7 +10,7 @@ defmodule Ide.Debugger.CompanionBridgeRequest do
     |> Enum.flat_map(&from_cmd_call/1)
     |> Enum.uniq_by(
       &{Map.get(&1, :api), Map.get(&1, :op), Map.get(&1, :key), Map.get(&1, :callback),
-        inspect(Map.get(&1, :value))}
+       inspect(Map.get(&1, :value))}
     )
   end
 
@@ -46,7 +46,8 @@ defmodule Ide.Debugger.CompanionBridgeRequest do
       companion_call_target?(normalized, "weather") and name in ["current", "forecast"] ->
         [Map.merge(%{api: "weather", op: name}, meta)]
 
-      companion_call_target?(normalized, "calendar") and name in ["current", "nextEvent", "upcoming"] ->
+      companion_call_target?(normalized, "calendar") and
+          name in ["current", "nextEvent", "upcoming"] ->
         [
           Map.merge(
             %{api: "calendar", op: if(name == "current", do: "nextEvent", else: name)},
@@ -178,7 +179,12 @@ defmodule Ide.Debugger.CompanionBridgeRequest do
   end
 
   defp envelope_fields(%{api: api, op: op} = map) when is_binary(api) and is_binary(op) do
-    envelope_fields(%{"api" => api, "op" => op, "id" => Map.get(map, :id), "payload" => Map.get(map, :payload)})
+    envelope_fields(%{
+      "api" => api,
+      "op" => op,
+      "id" => Map.get(map, :id),
+      "payload" => Map.get(map, :payload)
+    })
   end
 
   defp envelope_fields(_), do: nil

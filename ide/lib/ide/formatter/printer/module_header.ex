@@ -357,7 +357,8 @@ defmodule Ide.Formatter.Printer.ModuleHeader do
     do_take_bridge_to_open_paren(value, [])
   end
 
-  @spec do_take_bridge_to_open_paren(String.t(), [String.t()]) :: {String.t(), String.t(), boolean()}
+  @spec do_take_bridge_to_open_paren(String.t(), [String.t()]) ::
+          {String.t(), String.t(), boolean()}
   defp do_take_bridge_to_open_paren("", acc),
     do: {acc |> Enum.reverse() |> Enum.join(), "", false}
 
@@ -382,7 +383,15 @@ defmodule Ide.Formatter.Printer.ModuleHeader do
   defp do_take_bridge_to_open_paren(value, acc),
     do: {acc |> Enum.reverse() |> Enum.join(), value, false}
 
-  @spec take_balanced_paren_content(String.t(), list(), list(), boolean(), boolean(), boolean(), boolean()) ::
+  @spec take_balanced_paren_content(
+          String.t(),
+          list(),
+          list(),
+          boolean(),
+          boolean(),
+          boolean(),
+          boolean()
+        ) ::
           {:ok, String.t(), String.t()} | :error
   defp take_balanced_paren_content(
          "",

@@ -7,16 +7,28 @@ defmodule Ide.Debugger.HotReload do
   @type ctx :: %{
           required(:compute_revision) => (String.t() | nil, String.t() -> String.t()),
           required(:prepare_running_state) => (Types.runtime_state() -> Types.runtime_state()),
-          required(:put_reload_fields) =>
-            (Types.runtime_state(), Types.surface_target(), String.t() | nil, String.t(), String.t() ->
-               Types.runtime_state()),
-          required(:put_placeholder_views) =>
-            (Types.runtime_state(), String.t(), String.t(), String.t() -> Types.runtime_state()),
-          required(:merge_introspect) =>
-            (Types.runtime_state() -> {Types.runtime_state(), Types.elm_introspect() | nil}),
-          required(:append_reload_events) =>
-            (Types.runtime_state(), String.t(), String.t() | nil, String.t(), String.t(), String.t() ->
-               Types.runtime_state())
+          required(:put_reload_fields) => (Types.runtime_state(),
+                                           Types.surface_target(),
+                                           String.t()
+                                           | nil,
+                                           String.t(),
+                                           String.t() ->
+                                             Types.runtime_state()),
+          required(:put_placeholder_views) => (Types.runtime_state(),
+                                               String.t(),
+                                               String.t(),
+                                               String.t() ->
+                                                 Types.runtime_state()),
+          required(:merge_introspect) => (Types.runtime_state() ->
+                                            {Types.runtime_state(), Types.elm_introspect() | nil}),
+          required(:append_reload_events) => (Types.runtime_state(),
+                                              String.t(),
+                                              String.t()
+                                              | nil,
+                                              String.t(),
+                                              String.t(),
+                                              String.t() ->
+                                                Types.runtime_state())
         }
 
   @spec apply(
@@ -41,7 +53,15 @@ defmodule Ide.Debugger.HotReload do
     |> ctx.put_placeholder_views.(path, revision, source_root)
     |> then(fn st ->
       {next_state, intro_payload} = ctx.merge_introspect.(st)
-      ctx.append_reload_events.(next_state, reason, rel_path, revision, source_root, intro_payload)
+
+      ctx.append_reload_events.(
+        next_state,
+        reason,
+        rel_path,
+        revision,
+        source_root,
+        intro_payload
+      )
     end)
   end
 

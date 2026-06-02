@@ -105,6 +105,158 @@ defmodule Ide.Debugger.CompiledElixirDeviceFollowupsTest do
   end
 
   @tag timeout: 180_000
+  test "watchface-poke-battle init device followups execute without clause errors" do
+    assert "watchface-poke-battle" in DebuggerTemplateCorpus.template_keys()
+
+    slug = "poke-followups-" <> Integer.to_string(:erlang.unique_integer([:positive]))
+
+    assert {:ok, %{project: project}} =
+             DebuggerTemplateCorpus.bootstrap_template("watchface-poke-battle",
+               slug: slug,
+               cleanup: false
+             )
+
+    try do
+      workspace = project |> Ide.Projects.project_workspace_path() |> Path.join("watch")
+      revision = slug <> "-rev"
+
+      assert {:ok, %{elmx_manifest: manifest, elmx_revision: ^revision}} =
+               Ide.Compiler.build_elmx_artifacts_in_memory(workspace,
+                 revision: revision,
+                 strip_dead_code: true
+               )
+
+      launch_context = Corpus.corpus_launch_context_for("basalt")
+
+      init_request = %{
+        elmx_manifest: manifest,
+        elmx_revision: revision,
+        current_model: %{"launch_context" => launch_context},
+        message: nil,
+        introspect: %{},
+        source: "",
+        source_root: "watch",
+        rel_path: "src/Main.elm",
+        current_view_tree: %{}
+      }
+
+      assert {:ok, init_payload} = Ide.Debugger.RuntimeExecutor.execute(init_request)
+
+      init_model = get_in(init_payload.model_patch, ["runtime_model"]) || %{}
+      assert get_in(init_model, ["scene", "ctor"]) == "Waiting"
+
+      followups = init_payload[:followup_messages] || []
+
+      {final_model, view_tree} =
+        Enum.reduce(followups, {init_model, nil}, fn row, {runtime_model, _view} ->
+          step_request =
+            Map.merge(init_request, %{
+              current_model: %{
+                "launch_context" => launch_context,
+                "runtime_model" => runtime_model
+              },
+              message: Map.get(row, "message"),
+              message_value: Map.get(row, "message_value")
+            })
+
+          assert {:ok, step_payload} =
+                   Ide.Debugger.RuntimeExecutor.execute(step_request),
+                 "followup #{inspect(Map.get(row, "message"))} failed"
+
+          next_model =
+            get_in(step_payload.model_patch, ["runtime_model"])
+            |> then(&Map.merge(runtime_model, &1 || %{}))
+
+          {next_model, step_payload[:view_tree] || step_payload["view_tree"]}
+        end)
+
+      assert get_in(final_model, ["use24Hour"]) == true
+
+      assert get_in(final_model, ["batteryLevel", "ctor"]) == "Just" and
+               get_in(final_model, ["batteryLevel", "args", Access.at(0)]) == 88
+
+      assert get_in(final_model, ["now", "ctor"]) == "Just"
+      assert is_map(get_in(final_model, ["now", "args", Access.at(0)]))
+      refute is_nil(view_tree)
+    after
+      _ = Ide.Projects.delete_project(project)
+    end
+  end
+
+  @tag timeout: 180_000
+  test "watchface-poke-battle Debugger.reload attaches elmx and applies init device followups" do
+    alias Ide.Debugger
+    alias Ide.Projects
+    alias IdeWeb.WorkspaceLive.DebuggerSupport
+
+    slug = "poke-reload-" <> Integer.to_string(:erlang.unique_integer([:positive]))
+
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "PokeReload",
+               "slug" => slug,
+               "target_type" => "watchface",
+               "template" => "watchface-poke-battle"
+             })
+
+    on_exit(fn -> Projects.delete_project(project) end)
+
+    workspace = Projects.project_workspace_path(project) |> Path.join("watch")
+    main_src = File.read!(Path.join(workspace, "src/Main.elm"))
+
+    assert {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, _} =
+             Debugger.set_watch_profile(slug, %{"watch_profile_id" => "aplite"})
+
+    assert {:ok, state} =
+             Debugger.reload(slug, %{
+               rel_path: "src/Main.elm",
+               source: main_src,
+               reason: "test_poke_reload",
+               source_root: "watch"
+             })
+
+    runtime_model = get_in(state, [:watch, :model, "runtime_model"]) || %{}
+    assert get_in(runtime_model, ["scene", "ctor"]) == "Waiting"
+
+    refute Enum.any?(state.debugger_timeline || [], fn row ->
+             row.target == "watch" and row.type == "runtime_exec_error"
+           end)
+
+    assert get_in(runtime_model, ["use24Hour"]) == true
+    assert get_in(runtime_model, ["batteryLevel", "ctor"]) == "Just"
+    assert get_in(runtime_model, ["now", "ctor"]) == "Just"
+
+    rows = DebuggerSupport.debugger_rows(state, 50) |> Enum.filter(&(&1.target == "watch"))
+
+    refute Enum.any?(rows, fn row ->
+             get_in(row, [:view_tree, "type"]) == "previewUnavailable" or
+               get_in(row, [:preview, "type"]) == "previewUnavailable"
+           end)
+
+    watch_surface = Map.get(state, :watch) || %{}
+
+    rendered =
+      IdeWeb.WorkspaceLive.DebuggerSupport.rendered_tree(%{
+        model: Map.get(watch_surface, :model) || Map.get(watch_surface, "model") || %{},
+        view_tree: Map.get(watch_surface, :view_tree) || Map.get(watch_surface, "view_tree") || %{},
+        shell: Map.get(watch_surface, :shell) || Map.get(watch_surface, "shell") || %{}
+      })
+
+    assert rendered["type"] == "windowStack"
+    assert rendered_tree_contains_type?(rendered, "bitmapInRect")
+    refute rendered_tree_contains_type?(rendered, "previewUnavailable")
+  end
+
+  defp rendered_tree_contains_type?(%{"type" => type} = node, wanted) when is_binary(wanted) do
+    type == wanted or
+      Enum.any?(Map.get(node, "children") || [], &rendered_tree_contains_type?(&1, wanted))
+  end
+
+  defp rendered_tree_contains_type?(_node, _wanted), do: false
+
+  @tag timeout: 180_000
   test "watchface-analog init returns non-empty runtime_model on compiled_elixir" do
     assert "watchface-analog" in DebuggerTemplateCorpus.template_keys()
 
@@ -246,5 +398,4 @@ defmodule Ide.Debugger.CompiledElixirDeviceFollowupsTest do
            ]) != %{},
            "expected CompanionApp fields on phone runtime_model, got: #{inspect(phone_runtime_model)}"
   end
-
 end

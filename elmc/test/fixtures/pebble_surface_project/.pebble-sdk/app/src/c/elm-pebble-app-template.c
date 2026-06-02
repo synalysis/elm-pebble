@@ -544,7 +544,7 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         GBitmap *bitmap = bitmap_cache_get(resource_id);
         if (bitmap) {
           graphics_draw_rotated_bitmap(
-              ctx, bitmap, GRect(0, 0, src_w, src_h), angle, GPoint(center_x, center_y));
+              ctx, bitmap, GPoint(src_w / 2, src_h / 2), angle, GPoint(center_x, center_y));
         }
         break;
       }

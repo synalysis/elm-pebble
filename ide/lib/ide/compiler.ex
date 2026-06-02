@@ -4,9 +4,7 @@ defmodule Ide.Compiler do
   alias Ide.Debugger.Types.ElmcCliIngestBridge
   alias Ide.Compiler.ManifestCache
   alias Ide.PebbleToolchain
-  alias ElmEx.CoreIR
   alias ElmEx.Frontend.Bridge
-  alias ElmEx.IR.Lowerer
 
   @moduledoc """
   Boundary for compiler job orchestration and diagnostics streaming.
@@ -39,8 +37,6 @@ defmodule Ide.Compiler do
           required(:compiled_path) => String.t(),
           required(:revision) => String.t(),
           required(:cached?) => boolean(),
-          optional(:elm_executor_core_ir_b64) => String.t(),
-          optional(:elm_executor_metadata) => map(),
           optional(:elmx_manifest) => map(),
           optional(:elmx_revision) => String.t()
         }
@@ -64,8 +60,10 @@ defmodule Ide.Compiler do
         }
 
   @callback check(project_slug(), opts()) :: {:ok, check_result()} | {:error, compiler_error()}
-  @callback compile(project_slug(), opts()) :: {:ok, compile_result()} | {:error, compiler_error()}
-  @callback manifest(project_slug(), opts()) :: {:ok, manifest_result()} | {:error, compiler_error()}
+  @callback compile(project_slug(), opts()) ::
+              {:ok, compile_result()} | {:error, compiler_error()}
+  @callback manifest(project_slug(), opts()) ::
+              {:ok, manifest_result()} | {:error, compiler_error()}
 
   @doc """
   Runs `elmc check` for a workspace and returns parsed diagnostics.
@@ -113,7 +111,8 @@ defmodule Ide.Compiler do
   The companion phone app is validated with the upstream Elm compiler. Watch-side
   roots are validated with elmc so the editor matches the Pebble runtime compiler.
   """
-  @spec check_source_root(project_slug(), opts()) :: {:ok, check_result()} | {:error, compiler_error()}
+  @spec check_source_root(project_slug(), opts()) ::
+          {:ok, check_result()} | {:error, compiler_error()}
   def check_source_root(project_slug, opts) do
     workspace_root = Keyword.fetch!(opts, :workspace_root)
     source_root = opts |> Keyword.get(:source_root, "watch") |> to_string()
@@ -251,14 +250,9 @@ defmodule Ide.Compiler do
             {:ok, maybe_attach_runtime_artifacts(cached_result, project_dir, revision)}
 
           {:error, :not_found} ->
-            case run_elmc_compile(project_dir, revision) do
-              {:ok, result} ->
-                :ok = Cache.put(project_slug, revision, result)
-                {:ok, result}
-
-              {:error, reason} ->
-                {:error, reason}
-            end
+            {:ok, result} = run_elmc_compile(project_dir, revision)
+            :ok = Cache.put(project_slug, revision, result)
+            {:ok, result}
         end
     end
   end
@@ -484,50 +478,71 @@ defmodule Ide.Compiler do
     |> Enum.join("\n\n")
   end
 
-  @spec run_elmc_compile(String.t(), String.t()) :: {:ok, compile_result()} | {:error, compiler_error()}
+  @spec run_elmc_compile(String.t(), String.t()) :: {:ok, compile_result()}
   defp run_elmc_compile(project_dir, revision) do
     out_dir = Path.join(project_dir, ".elmc-build")
 
     result =
-      project_dir
-      |> Elmc.CLI.compile_project(out_dir)
-      |> ElmcCliIngestBridge.to_compile_result(compiled_path: out_dir, revision: revision)
+      try do
+        project_dir
+        |> Elmc.CLI.compile_project(out_dir)
+        |> ElmcCliIngestBridge.to_compile_result(compiled_path: out_dir, revision: revision)
+      rescue
+        error -> compile_result_from_exception(error, out_dir, revision)
+      end
 
     {:ok, maybe_attach_runtime_artifacts(result, project_dir, revision)}
-  rescue
-    error -> {:error, error}
   end
 
-  @spec maybe_attach_runtime_artifacts(compile_result(), String.t(), String.t()) :: compile_result()
+  @spec compile_result_from_exception(term(), String.t(), String.t()) :: compile_result()
+  defp compile_result_from_exception(error, compiled_path, revision) do
+    message = Exception.message(error)
+
+    diagnostics =
+      Diagnostics.normalize_list([
+        %{
+          severity: "error",
+          source: "elmc",
+          message: message,
+          file: nil,
+          line: nil,
+          column: nil
+        }
+      ])
+
+    counts = Diagnostics.summary(diagnostics)
+
+    %{
+      status: :error,
+      compiled_path: compiled_path,
+      revision: revision,
+      cached?: false,
+      output: message,
+      diagnostics: diagnostics,
+      error_count: counts.error_count,
+      warning_count: counts.warning_count
+    }
+  end
+
+  @spec maybe_attach_runtime_artifacts(compile_result(), String.t(), String.t()) ::
+          compile_result()
   defp maybe_attach_runtime_artifacts(result, project_dir, revision)
        when is_map(result) and is_binary(project_dir) do
-    if Map.get(result, :status) == :ok do
-      result
-      |> maybe_attach_elm_executor_artifacts(project_dir)
-      |> maybe_attach_elmx_artifacts(project_dir, revision)
-    else
-      result
-    end
+    result
+    |> maybe_attach_debugger_contract(project_dir)
+    |> maybe_attach_elmx_artifacts(project_dir, revision)
   end
 
   defp maybe_attach_runtime_artifacts(result, _project_dir, _revision), do: result
 
-  @spec maybe_attach_elm_executor_artifacts(compile_result(), String.t()) :: compile_result()
-  defp maybe_attach_elm_executor_artifacts(result, project_dir)
+  @spec maybe_attach_debugger_contract(compile_result(), String.t()) :: compile_result()
+  defp maybe_attach_debugger_contract(result, project_dir)
        when is_map(result) and is_binary(project_dir) do
-    case build_elm_executor_artifacts(project_dir) do
-      {:ok, %{core_ir: core_ir, metadata: metadata, contract_fields: contract_fields}} ->
-        Map.merge(result, %{
-          elm_executor_core_ir_b64:
-            core_ir
-            |> :erlang.term_to_binary()
-            |> Base.encode64(),
-          elm_executor_metadata: metadata
-        })
-        |> Map.merge(contract_fields)
-
-      _ ->
-        result
+    with {:ok, project} <- Bridge.load_project(project_dir),
+         {:ok, contract} <- Ide.Debugger.CompileContract.build_from_project(project) do
+      Map.merge(result, Ide.Debugger.CompileContract.artifact_fields(contract))
+    else
+      _ -> result
     end
   end
 
@@ -544,10 +559,7 @@ defmodule Ide.Compiler do
     end
   end
 
-  defp attach_elmx_artifacts? do
-    Ide.Debugger.RuntimeExecutor.compiled_elixir_backend?() or
-      Application.get_env(:ide, :attach_elmx_on_compile, false)
-  end
+  defp attach_elmx_artifacts?, do: true
 
   @doc """
   Resolves the Elm entry module for in-memory `elmx` compiles from `src/*.elm` layout.
@@ -586,53 +598,6 @@ defmodule Ide.Compiler do
          elmx_revision: rev
        }}
     end
-  end
-
-  @spec build_elm_executor_artifacts(String.t()) ::
-          {:ok, %{core_ir: CoreIR.t(), metadata: map()}} | {:error, atom()}
-  defp build_elm_executor_artifacts(project_dir) when is_binary(project_dir) do
-    with {:ok, project} <- Bridge.load_project(project_dir),
-         {:ok, ir} <- Lowerer.lower_project(project) do
-      case build_core_ir_artifact(ir) do
-        {:ok, %{core_ir: core_ir, metadata: metadata}} ->
-          contract_fields =
-            case Ide.Debugger.CompileContract.build_from_project(project, core_ir) do
-              {:ok, contract} -> Ide.Debugger.CompileContract.artifact_fields(contract)
-              _ -> %{}
-            end
-
-          {:ok, %{core_ir: core_ir, metadata: metadata, contract_fields: contract_fields}}
-
-        {:error, _} = err ->
-          err
-      end
-    else
-      _ -> {:error, :elm_executor_artifacts_unavailable}
-    end
-  end
-
-  @spec build_core_ir_artifact(map()) ::
-          {:ok, %{core_ir: map(), metadata: map()}} | {:error, atom()}
-  defp build_core_ir_artifact(ir) do
-    case CoreIR.from_ir(ir, strict?: true) do
-      {:ok, core_ir} ->
-        {:ok, %{core_ir: core_ir, metadata: elm_executor_artifact_metadata("strict", [])}}
-
-      {:error, _error} ->
-        {:error, :elm_executor_artifacts_unavailable}
-    end
-  end
-
-  @spec elm_executor_artifact_metadata(String.t(), [map()]) :: map()
-  defp elm_executor_artifact_metadata(validation_mode, diagnostics) do
-    %{
-      "compiler" => "elm_executor",
-      "contract" => "elm_executor.runtime_executor.v1",
-      "mode" => "ide_runtime",
-      "entry_module" => "Main",
-      "core_ir_validation" => validation_mode,
-      "core_ir_diagnostics" => diagnostics
-    }
   end
 
   @spec run_elmc_manifest(String.t(), String.t(), boolean()) ::

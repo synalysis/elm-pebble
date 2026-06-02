@@ -136,6 +136,7 @@ defmodule Ide.AppStore.ListingTest do
              )
 
     assert result.status == :ok
+
     assert result.project_attrs == %{
              "store_app_id" => "manifest-resolved-id",
              "app_uuid" => uuid

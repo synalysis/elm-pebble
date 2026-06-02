@@ -32,4 +32,3 @@ defmodule Ide.Debugger.SurfaceTargetsTest do
     assert SurfaceTargets.tick_targets(:watch) == [:watch]
   end
 end
-

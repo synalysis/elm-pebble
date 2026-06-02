@@ -20,7 +20,9 @@ defmodule Ide.Debugger.StepInputTest do
   end
 
   test "to_executor_request uses phone source_root for companion target" do
-    surface = Surface.from_map(%{model: %{}, shell: %{"debugger_contract" => %{"module" => "Main"}}})
+    surface =
+      Surface.from_map(%{model: %{}, shell: %{"debugger_contract" => %{"module" => "Main"}}})
+
     input = StepInput.from_surface(:companion, surface, "Tick")
 
     request = StepInput.to_executor_request(input)

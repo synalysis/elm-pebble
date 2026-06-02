@@ -15,7 +15,10 @@
         {assigns[:current_user].email || assigns[:current_user].display_name || "Logged in"}
       </span>
       <.link
-        :if={is_nil(assigns[:current_user]) and assigns[:auth_mode] in [:public_pebble, :public_custom]}
+        :if={
+          is_nil(assigns[:current_user]) and
+            assigns[:auth_mode] in [:public_pebble, :public_custom]
+        }
         navigate={~p"/login"}
         class="font-medium text-blue-700"
       >

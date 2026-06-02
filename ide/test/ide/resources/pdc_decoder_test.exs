@@ -13,6 +13,22 @@ defmodule Ide.Resources.PdcDecoderTest do
                         __DIR__
                       )
 
+  @drawing_vector_sequence Path.expand(
+                             "../../../priv/project_templates/watch_demo_drawing_showcase/resources/vectors/VectorAnimatedTransitionClearToCloudy.pdc",
+                             __DIR__
+                           )
+
+  test "validate_watch_compatible accepts template vector assets" do
+    for path <- [@tangram_bird, @weather_transition, @drawing_vector_sequence] do
+      bytes = File.read!(path)
+      assert :ok = PdcDecoder.validate_watch_compatible(bytes)
+    end
+  end
+
+  test "validate_watch_compatible rejects empty bytes" do
+    assert {:error, :invalid_pdc} = PdcDecoder.validate_watch_compatible(<<>>)
+  end
+
   test "decode VectorStaticTangramBird.pdc and render preview svg" do
     bytes = File.read!(@tangram_bird)
 

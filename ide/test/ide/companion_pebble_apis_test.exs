@@ -45,7 +45,10 @@ defmodule Ide.CompanionPebbleApisTest do
     end
 
     refute "Pebble.Companion" in exposed
-    refute File.exists?(Path.join(@root, "packages/elm-pebble-companion-core/src/Pebble/Companion.elm"))
+
+    refute File.exists?(
+             Path.join(@root, "packages/elm-pebble-companion-core/src/Pebble/Companion.elm")
+           )
 
     lifecycle = File.read!(Path.join(@core_src, "Lifecycle.elm"))
     assert String.contains?(lifecycle, "onLifecycle : (Event -> msg) -> Sub msg")
@@ -425,7 +428,9 @@ defmodule Ide.CompanionPebbleApisTest do
     assert {:ok, rows} = Debugger.available_triggers(slug, %{"target" => "phone"})
     battery = Enum.find(rows, &(&1.trigger == "on_battery"))
     assert battery.trigger_display == "Battery.onBattery"
-    assert Debugger.subscription_trigger_display_for(state, "on_battery", "phone") == "Battery.onBattery"
+
+    assert Debugger.subscription_trigger_display_for(state, "on_battery", "phone") ==
+             "Battery.onBattery"
   end
 
   test "inject_trigger applies companion onBattery payload from structured message_value" do
@@ -469,12 +474,9 @@ defmodule Ide.CompanionPebbleApisTest do
 
     assert runtime_model["batteryPercent"] == 55
     assert runtime_model["charging"] == true
-
-    assert get_in(triggered, [:companion, :model, "elm_executor", "operation_source"]) ==
-             "core_ir_update_eval"
   end
 
-  test "inject_trigger applies companion onLocale payload via Core IR update" do
+  test "inject_trigger applies companion onLocale payload via runtime update" do
     slug = "companion-phone-status-locale-inject-#{System.unique_integer([:positive])}"
 
     template_root =
@@ -520,9 +522,6 @@ defmodule Ide.CompanionPebbleApisTest do
 
     runtime_model = get_in(triggered, [:companion, :model, "runtime_model"]) || %{}
     assert runtime_model["locale"] == "de-DE"
-
-    assert get_in(triggered, [:companion, :model, "elm_executor", "operation_source"]) ==
-             "core_ir_update_eval"
   end
 
   test "debugger forwards phone status protocol values to the watch surface" do
@@ -573,8 +572,14 @@ defmodule Ide.CompanionPebbleApisTest do
 
     assert Enum.any?(watch_state.events, fn event ->
              event.type in ["debugger.protocol_tx", "debugger.protocol_rx"] and
-               (match?("ProvideBattery 42" <> _, to_string(Map.get(event.payload, :message) || "")) or
-                  String.contains?(to_string(Map.get(event.payload, :message) || ""), "ProvideBattery"))
+               (match?(
+                  "ProvideBattery 42" <> _,
+                  to_string(Map.get(event.payload, :message) || "")
+                ) or
+                  String.contains?(
+                    to_string(Map.get(event.payload, :message) || ""),
+                    "ProvideBattery"
+                  ))
            end)
 
     assert get_in(watch_state, [:watch, :model, "runtime_model", "charging"]) == true
@@ -625,7 +630,10 @@ defmodule Ide.CompanionPebbleApisTest do
 
     assert Enum.any?(watch_state.events, fn event ->
              event.type in ["debugger.protocol_tx", "debugger.protocol_rx"] and
-               String.contains?(to_string(Map.get(event.payload, :message) || ""), "ProvideConnectivity") and
+               String.contains?(
+                 to_string(Map.get(event.payload, :message) || ""),
+                 "ProvideConnectivity"
+               ) and
                String.contains?(to_string(Map.get(event.payload, :message) || ""), "false")
            end)
 
@@ -633,7 +641,10 @@ defmodule Ide.CompanionPebbleApisTest do
 
     assert Enum.any?(updated.events, fn event ->
              event.type in ["debugger.protocol_tx", "debugger.protocol_rx"] and
-               String.contains?(to_string(Map.get(event.payload, :message) || ""), "ProvideConnectivity") and
+               String.contains?(
+                 to_string(Map.get(event.payload, :message) || ""),
+                 "ProvideConnectivity"
+               ) and
                String.contains?(to_string(Map.get(event.payload, :message) || ""), "true")
            end)
   end
@@ -673,7 +684,9 @@ defmodule Ide.CompanionPebbleApisTest do
              event.type == "debugger.update_in" and
                match?(
                  "CurrentTimeString \"" <> _,
-                 to_string(Map.get(event.payload, :message) || Map.get(event.payload, "message") || "")
+                 to_string(
+                   Map.get(event.payload, :message) || Map.get(event.payload, "message") || ""
+                 )
                )
            end)
 

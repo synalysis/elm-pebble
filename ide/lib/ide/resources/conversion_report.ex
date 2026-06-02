@@ -3,7 +3,11 @@ defmodule Ide.Resources.ConversionReport do
 
   @type warning :: %{code: atom(), element: String.t(), detail: String.t()}
   @type unsupported :: %{tag: String.t(), reason: atom()}
-  @type stats :: %{commands: non_neg_integer(), width: non_neg_integer(), height: non_neg_integer()}
+  @type stats :: %{
+          commands: non_neg_integer(),
+          width: non_neg_integer(),
+          height: non_neg_integer()
+        }
 
   @type t :: %__MODULE__{
           warnings: [warning()],

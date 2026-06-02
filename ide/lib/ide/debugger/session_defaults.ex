@@ -28,7 +28,9 @@ defmodule Ide.Debugger.SessionDefaults do
   def session_key_from_state(_), do: nil
 
   @spec parse_watch_profile_id(Types.wire_input()) :: String.t() | nil
-  def parse_watch_profile_id(value) when is_binary(value), do: RuntimeSurfaces.parse_watch_profile_id(value)
+  def parse_watch_profile_id(value) when is_binary(value),
+    do: RuntimeSurfaces.parse_watch_profile_id(value)
+
   def parse_watch_profile_id(_), do: nil
 
   @spec persisted_watch_profile_id(String.t()) :: String.t() | nil

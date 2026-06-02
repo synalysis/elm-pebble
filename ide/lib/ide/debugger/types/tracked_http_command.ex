@@ -4,6 +4,7 @@ defmodule Ide.Debugger.Types.TrackedHttpCommand do
   """
 
   alias Ide.Debugger.Types
+
   @type t :: %{
           optional(:kind) => String.t(),
           optional(:method) => String.t(),

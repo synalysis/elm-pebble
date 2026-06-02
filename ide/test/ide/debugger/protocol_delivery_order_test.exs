@@ -51,7 +51,12 @@ defmodule Ide.Debugger.ProtocolDeliveryOrderTest do
       runtime_ready_for_delivery?: &ProtocolRx.runtime_ready_for_delivery?/2
     }
 
-    queued = ProtocolRx.apply_state_effects(state, [%{type: "debugger.protocol_rx", payload: payload}], rx_ctx)
+    queued =
+      ProtocolRx.apply_state_effects(
+        state,
+        [%{type: "debugger.protocol_rx", payload: payload}],
+        rx_ctx
+      )
 
     assert AppMessageQueue.pending?(queued, :companion)
     refute ProtocolRx.runtime_ready_for_delivery?(queued, :companion)

@@ -33,7 +33,8 @@ defmodule Ide.Emulator.ScreenshotCaptureRepair do
   @doc """
   Post-SDK touch-ups for emulator captures (after `correct_colours` and `roundify`).
   """
-  @spec repair_rgba(binary(), pos_integer(), pos_integer(), String.t() | Types.watch_profile()) :: binary()
+  @spec repair_rgba(binary(), pos_integer(), pos_integer(), String.t() | Types.watch_profile()) ::
+          binary()
   def repair_rgba(rgba, width, height, platform) when is_binary(platform) do
     profile = Ide.WatchModels.profile_for(platform)
 
@@ -202,7 +203,7 @@ defmodule Ide.Emulator.ScreenshotCaptureRepair do
 
   defp border_connected_black(width, height, rgba) do
     seeds =
-      (for x <- 0..(width - 1), y <- [0, height - 1], do: {x, y}) ++
+      for(x <- 0..(width - 1), y <- [0, height - 1], do: {x, y}) ++
         for(y <- 1..(height - 2)//1, x <- [0, width - 1], do: {x, y})
 
     seeds =

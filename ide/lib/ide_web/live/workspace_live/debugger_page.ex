@@ -74,8 +74,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
           disabled={debugger_bootstrap_busy?(@debugger_bootstrap_status)}
           class={[
             "rounded px-2 py-1 text-xs font-medium text-white",
-            debugger_bootstrap_busy?(@debugger_bootstrap_status) &&
-              "cursor-not-allowed bg-zinc-400" || "bg-zinc-800 hover:bg-zinc-700"
+            (debugger_bootstrap_busy?(@debugger_bootstrap_status) &&
+               "cursor-not-allowed bg-zinc-400") || "bg-zinc-800 hover:bg-zinc-700"
           ]}
         >
           {debugger_start_button_label(@debugger_state, @debugger_bootstrap_status)}
@@ -88,7 +88,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
               disabled={debugger_bootstrap_busy?(@debugger_bootstrap_status)}
               class={[
                 "min-w-[12rem] max-w-full rounded border border-zinc-300 bg-white py-1 pl-2 pr-8 text-xs",
-                debugger_bootstrap_busy?(@debugger_bootstrap_status) && "cursor-not-allowed opacity-60"
+                debugger_bootstrap_busy?(@debugger_bootstrap_status) &&
+                  "cursor-not-allowed opacity-60"
               ]}
             >
               <option
@@ -113,7 +114,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
         <p class="text-xs text-zinc-600">
           {@debugger_bootstrap_progress || "Starting debugger…"}
         </p>
-        <div class="mt-1 h-1.5 overflow-hidden rounded-full bg-zinc-200" role="progressbar" aria-busy="true">
+        <div
+          class="mt-1 h-1.5 overflow-hidden rounded-full bg-zinc-200"
+          role="progressbar"
+          aria-busy="true"
+        >
           <div class="h-full w-1/3 animate-pulse rounded-full bg-zinc-600" />
         </div>
       </div>
@@ -125,7 +130,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
         <p class="text-xs text-zinc-600">
           {@debugger_companion_bootstrap_progress || "Loading companion app…"}
         </p>
-        <div class="mt-1 h-1.5 overflow-hidden rounded-full bg-zinc-200" role="progressbar" aria-busy="true">
+        <div
+          class="mt-1 h-1.5 overflow-hidden rounded-full bg-zinc-200"
+          role="progressbar"
+          aria-busy="true"
+        >
           <div class="h-full w-1/3 animate-pulse rounded-full bg-zinc-500" />
         </div>
       </div>
@@ -637,8 +646,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   defp debugger_model_scalar(nil), do: "null"
   defp debugger_model_scalar(value) when is_binary(value), do: inspect(value)
+
   defp debugger_model_scalar(value) when is_boolean(value),
     do: if(value, do: "True", else: "False")
+
   defp debugger_model_scalar(value) when is_number(value), do: to_string(value)
   defp debugger_model_scalar(value) when is_atom(value), do: Atom.to_string(value)
   defp debugger_model_scalar(value), do: inspect(value)
@@ -780,7 +791,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   end
 
   @spec companion_protocol_placeholder_model?(map(), map() | nil) :: boolean()
-  defp companion_protocol_placeholder_model?(runtime_model, %{} = runtime) when is_map(runtime_model) do
+  defp companion_protocol_placeholder_model?(runtime_model, %{} = runtime)
+       when is_map(runtime_model) do
     app_bootstrapped? =
       case RuntimeArtifacts.introspect(runtime) do
         ei when is_map(ei) and map_size(ei) > 0 ->
@@ -823,19 +835,26 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
       timeline_mode: Map.get(assigns, :debugger_timeline_mode, "mixed"),
       timeline_text: timeline_text,
       runtime_model_warnings: runtime_model_warnings_text(watch_runtime),
-      watch_model_json:
-        DebuggerSupport.copy_json(debugger_debugger_model(watch_runtime)),
+      watch_model_json: DebuggerSupport.copy_json(debugger_debugger_model(watch_runtime)),
       companion_model_json:
         DebuggerSupport.copy_json(
           debugger_debugger_model(
-            debugger_export_companion_runtime(state, selected_seq, Map.get(assigns, :debugger_cursor_seq)) ||
+            debugger_export_companion_runtime(
+              state,
+              selected_seq,
+              Map.get(assigns, :debugger_cursor_seq)
+            ) ||
               Map.get(assigns, :debugger_companion_runtime)
           )
         ),
       rendered_view_json:
         DebuggerSupport.copy_json(
           debugger_rendered_tree(
-            debugger_export_watch_view_runtime(state, selected_seq, Map.get(assigns, :debugger_cursor_seq)) ||
+            debugger_export_watch_view_runtime(
+              state,
+              selected_seq,
+              Map.get(assigns, :debugger_cursor_seq)
+            ) ||
               Map.get(assigns, :debugger_watch_view_runtime)
           )
         ),
@@ -860,7 +879,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     end
   end
 
-  @spec debugger_export_watch_runtime(map() | nil, non_neg_integer() | nil, non_neg_integer() | nil) ::
+  @spec debugger_export_watch_runtime(
+          map() | nil,
+          non_neg_integer() | nil,
+          non_neg_integer() | nil
+        ) ::
           map() | nil
   defp debugger_export_watch_runtime(%{} = state, selected_seq, cursor_seq) do
     debugger_export_surface_runtime(state, selected_seq, cursor_seq, :watch)
@@ -868,7 +891,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   defp debugger_export_watch_runtime(_state, _selected_seq, _cursor_seq), do: nil
 
-  @spec debugger_export_companion_runtime(map() | nil, non_neg_integer() | nil, non_neg_integer() | nil) ::
+  @spec debugger_export_companion_runtime(
+          map() | nil,
+          non_neg_integer() | nil,
+          non_neg_integer() | nil
+        ) ::
           map() | nil
   defp debugger_export_companion_runtime(%{} = state, selected_seq, cursor_seq) do
     debugger_export_surface_runtime(state, selected_seq, cursor_seq, :companion)
@@ -876,7 +903,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   defp debugger_export_companion_runtime(_state, _selected_seq, _cursor_seq), do: nil
 
-  @spec debugger_export_watch_view_runtime(map() | nil, non_neg_integer() | nil, non_neg_integer() | nil) ::
+  @spec debugger_export_watch_view_runtime(
+          map() | nil,
+          non_neg_integer() | nil,
+          non_neg_integer() | nil
+        ) ::
           map() | nil
   defp debugger_export_watch_view_runtime(%{} = state, selected_seq, cursor_seq) do
     case debugger_export_surface_runtime(state, selected_seq, cursor_seq, :watch) do
@@ -894,7 +925,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   defp debugger_export_watch_view_runtime(_state, _selected_seq, _cursor_seq), do: nil
 
-  @spec debugger_export_surface_runtime(map(), non_neg_integer() | nil, non_neg_integer() | nil, atom()) ::
+  @spec debugger_export_surface_runtime(
+          map(),
+          non_neg_integer() | nil,
+          non_neg_integer() | nil,
+          atom()
+        ) ::
           map() | nil
   defp debugger_export_surface_runtime(state, selected_seq, cursor_seq, surface)
        when surface in [:watch, :companion, :phone] do
@@ -913,8 +949,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
     row_runtime ||
       case DebuggerSupport.snapshot_runtime_at_cursor(Map.get(state, :events, []), seq) do
-        %{watch: rt} when surface == :watch -> rt
-        %{phone: rt} when surface == :phone -> rt
+        %{watch: rt} when surface == :watch ->
+          rt
+
+        %{phone: rt} when surface == :phone ->
+          rt
+
         %{companion: companion, phone: phone} when surface == :companion ->
           DebuggerUtil.companion_or_phone_runtime(companion, phone)
 
@@ -942,12 +982,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     timeline_mode = Map.get(assigns, :debugger_timeline_mode, "mixed")
     event_limit = Map.get(assigns, :debugger_event_limit, 500)
 
-    {:ok, state} = project |> Projects.scope_key() |> Ide.Debugger.snapshot(event_limit: event_limit)
+    {:ok, state} =
+      project |> Projects.scope_key() |> Ide.Debugger.snapshot(event_limit: event_limit)
 
     timeline_text =
       state
       |> DebuggerSupport.debugger_rows(event_limit)
       |> DebuggerSupport.debugger_rows_for_mode(timeline_mode)
+      |> DebuggerSupport.filter_debugger_rows_for_display(Map.get(assigns, :debug_mode, false))
       |> DebuggerSupport.debugger_timeline_text()
 
     {timeline_text, state, selected_seq}
@@ -964,7 +1006,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     timeline_text =
       assigns
       |> Map.get(:debugger_rows, [])
-      |> DebuggerSupport.debugger_rows_for_mode(Map.get(assigns, :debugger_timeline_mode, "mixed"))
+      |> DebuggerSupport.debugger_rows_for_mode(
+        Map.get(assigns, :debugger_timeline_mode, "mixed")
+      )
+      |> DebuggerSupport.filter_debugger_rows_for_display(Map.get(assigns, :debug_mode, false))
       |> DebuggerSupport.debugger_timeline_text()
 
     {timeline_text, Map.get(assigns, :debugger_state), selected_seq}
@@ -1223,7 +1268,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
         </select>
       </label>
     </div>
-    <label :if={@json_payload? and @form[:result].value != "Err"} class="flex flex-col gap-1 text-xs text-zinc-600">
+    <label
+      :if={@json_payload? and @form[:result].value != "Err"}
+      class="flex flex-col gap-1 text-xs text-zinc-600"
+    >
       <span>Payload (JSON)</span>
       <textarea
         name="debugger_trigger[payload_json]"
@@ -1411,6 +1459,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     svg_ops =
       tree
       |> debugger_watch_svg_ops(assigns.runtime)
+      |> DebuggerPreview.resolve_bitmap_svg_ops(assigns.project)
       |> hydrate_bitmap_svg_ops(assigns.project)
       |> DebuggerPreview.hydrate_animation_svg_ops(assigns.project)
       |> DebuggerPreview.hydrate_vector_svg_ops(assigns.project)
@@ -1419,8 +1468,15 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
     hover_box =
       case {assigns.hover_scope, assigns.hovered_rendered_path} do
-        {scope, path} when scope != nil and scope == assigns.hovered_rendered_scope and is_binary(path) ->
-          DebuggerSupport.rendered_node_bounds(rendered_tree, path, screen_w, screen_h, assigns.project)
+        {scope, path}
+        when scope != nil and scope == assigns.hovered_rendered_scope and is_binary(path) ->
+          DebuggerSupport.rendered_node_bounds(
+            rendered_tree,
+            path,
+            screen_w,
+            screen_h,
+            assigns.project
+          )
 
         _ ->
           nil
@@ -2248,37 +2304,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   defp debugger_text_svg_baseline(_op), do: nil
 
   @spec debugger_svg_color(integer() | nil, String.t()) :: String.t()
-  defp debugger_svg_color(value, _fallback) when is_integer(value) do
-    case value do
-      1 ->
-        "#111111"
-
-      0 ->
-        "white"
-
-      packed ->
-        alpha = Bitwise.band(Bitwise.bsr(packed, 6), 0x03)
-        red = Bitwise.band(Bitwise.bsr(packed, 4), 0x03)
-        green = Bitwise.band(Bitwise.bsr(packed, 2), 0x03)
-        blue = Bitwise.band(packed, 0x03)
-
-        rgba_float(red, green, blue, alpha)
-    end
-  end
-
-  defp debugger_svg_color(_value, fallback), do: fallback
-
-  @spec rgba_float(number(), number(), number(), number()) :: String.t()
-  defp rgba_float(r2, g2, b2, a2) do
-    r = color_2bit_to_8bit(r2)
-    g = color_2bit_to_8bit(g2)
-    b = color_2bit_to_8bit(b2)
-    a = Float.round(color_2bit_to_8bit(a2) / 255.0, 2)
-    "rgba(#{r}, #{g}, #{b}, #{a})"
-  end
-
-  @spec color_2bit_to_8bit(integer()) :: integer()
-  defp color_2bit_to_8bit(value) when is_integer(value), do: max(0, min(3, value)) * 85
+  defp debugger_svg_color(value, fallback),
+    do: DebuggerPreview.pebble_color_to_svg(value, fallback)
 
   @spec debugger_runtime_model(assigns()) :: map()
   defp debugger_runtime_model(runtime), do: DebuggerPreview.runtime_model(runtime)

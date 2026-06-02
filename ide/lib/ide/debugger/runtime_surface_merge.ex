@@ -29,7 +29,8 @@ defmodule Ide.Debugger.RuntimeSurfaceMerge do
     })
   end
 
-  @spec merge_into_state(Types.runtime_state(), surface_target(), fields()) :: Types.runtime_state()
+  @spec merge_into_state(Types.runtime_state(), surface_target(), fields()) ::
+          Types.runtime_state()
   def merge_into_state(state, target, fields)
       when is_map(state) and target in [:watch, :companion, :phone] and is_map(fields) do
     state

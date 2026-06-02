@@ -58,8 +58,9 @@ defmodule Ide.Emulator.VncHandshake do
   end
 
   defp read_server_init(socket, timeout) do
-    with {:ok, <<width::unsigned-big-16, height::unsigned-big-16, _pf::binary-size(16),
-                  name_len::unsigned-big-32>>} <-
+    with {:ok,
+          <<width::unsigned-big-16, height::unsigned-big-16, _pf::binary-size(16),
+            name_len::unsigned-big-32>>} <-
            recv_exact(socket, 24, timeout),
          {:ok, _name} <- recv_exact(socket, name_len, timeout) do
       {:ok, width, height, nil}

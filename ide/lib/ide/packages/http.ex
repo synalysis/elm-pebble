@@ -9,7 +9,9 @@ defmodule Ide.Packages.Http do
           optional(:last_modified) => String.t() | nil
         }
   @type header_list :: [{String.t() | atom(), String.t()}]
-  @type download_progress :: ({:phase, atom() | {atom(), non_neg_integer()}} | {:bytes, non_neg_integer(), non_neg_integer() | nil} -> :ok)
+  @type download_progress :: ({:phase, atom() | {atom(), non_neg_integer()}}
+                              | {:bytes, non_neg_integer(), non_neg_integer() | nil} ->
+                                :ok)
 
   @type stream_acc :: %{
           status: nil | integer(),
@@ -44,7 +46,9 @@ defmodule Ide.Packages.Http do
   Returns `{:ok, decoded, cache_meta}` on 200, `:not_modified` on 304, or `{:error, reason}`.
   """
   @spec get_json_conditional(String.t(), keyword(), conditional()) ::
-          {:ok, map() | list(), response_cache()} | :not_modified | {:error, Types.catalog_error()}
+          {:ok, map() | list(), response_cache()}
+          | :not_modified
+          | {:error, Types.catalog_error()}
   def get_json_conditional(path, opts, conditional \\ %{})
       when is_binary(path) and is_list(opts) do
     case Keyword.get(opts, :download_progress) do
@@ -153,7 +157,12 @@ defmodule Ide.Packages.Http do
     Finch.build(:get, url, headers)
   end
 
-  @spec stream_text_conditional(String.t(), Types.catalog_http_opts(), conditional(), download_progress()) ::
+  @spec stream_text_conditional(
+          String.t(),
+          Types.catalog_http_opts(),
+          conditional(),
+          download_progress()
+        ) ::
           {:ok, String.t(), response_cache()} | :not_modified | {:error, Types.catalog_error()}
   defp stream_text_conditional(path, opts, conditional, progress)
        when is_binary(path) and is_list(opts) and is_map(conditional) and is_function(progress, 1) do

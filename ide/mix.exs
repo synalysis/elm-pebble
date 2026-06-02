@@ -9,7 +9,7 @@ defmodule Ide.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       dialyzer: [
-        plt_add_apps: [:mix, :elm_ex, :elm_executor, :elmc, :elmx],
+        plt_add_apps: [:mix, :elm_ex, :elmc, :elmx],
         ignore_warnings: ".dialyzer_ignore.exs"
       ],
       aliases: aliases(),
@@ -73,7 +73,6 @@ defmodule Ide.MixProject do
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
       {:elmc, path: "../elmc"},
       {:elm_ex, path: "../elm_ex"},
-      {:elm_executor, path: "../elm_executor"},
       {:elmx, path: "../elmx"}
     ]
   end

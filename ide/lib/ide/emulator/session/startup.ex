@@ -9,7 +9,8 @@ defmodule Ide.Emulator.Session.Startup do
 
   @default_idle_timeout_ms 5 * 60 * 1000
 
-  @spec build_state(Types.session_launch_opts()) :: {:ok, Types.session_state()} | {:error, term()}
+  @spec build_state(Types.session_launch_opts()) ::
+          {:ok, Types.session_state()} | {:error, term()}
   def build_state(opts) do
     platform = Keyword.fetch!(opts, :platform)
     project_slug = Keyword.get(opts, :project_slug, "")
@@ -67,7 +68,11 @@ defmodule Ide.Emulator.Session.Startup do
              ProcessHost.start_daemon(qemu_bin, Qemu.args(state), "qemu:#{state.id}") do
         case ProcessHost.wait_for_qemu_boot(pid, state.console_port, 60_000) do
           :ok ->
-            with :ok <- Vnc.wait_for_tcp_port(state.vnc_port, Config.config(:vnc_ready_timeout_ms, 30_000)),
+            with :ok <-
+                   Vnc.wait_for_tcp_port(
+                     state.vnc_port,
+                     Config.config(:vnc_ready_timeout_ms, 30_000)
+                   ),
                  {:ok, vnc_rfb_banner, vnc_tcp} <-
                    Vnc.capture_rfb_connection(
                      state.vnc_port,
@@ -151,7 +156,8 @@ defmodule Ide.Emulator.Session.Startup do
     end
   end
 
-  @spec reset_for_install(Types.session_state()) :: {:ok, Types.session_state()} | {:error, term()}
+  @spec reset_for_install(Types.session_state()) ::
+          {:ok, Types.session_state()} | {:error, term()}
   def reset_for_install(state) do
     Vnc.close_tcp_port(state.vnc_tcp)
 
@@ -181,7 +187,8 @@ defmodule Ide.Emulator.Session.Startup do
     end
   end
 
-  @spec ensure_protocol_router(Types.session_state()) :: {:ok, Types.session_state()} | {:error, term()}
+  @spec ensure_protocol_router(Types.session_state()) ::
+          {:ok, Types.session_state()} | {:error, term()}
   def ensure_protocol_router(%{protocol_router_pid: pid} = state) when is_pid(pid) do
     if ProcessHost.live_pid?(pid),
       do: {:ok, state},

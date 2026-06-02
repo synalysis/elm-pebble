@@ -450,7 +450,7 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
                "watch" => %{
                  "model" => %{
                    "runtime_model" => %{
-                     "elm_executor_core_ir_b64" => String.duplicate("abc123", 20),
+                     "elmx_revision" => "trace-fixture",
                      "currentDateTime" => %{
                        "ctor" => "Just",
                        "args" => [
@@ -623,6 +623,7 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
     refute get_in(reset_state.companion, [:model, "configuration", "values", "backgroundColor"])
 
     messages = Enum.map(saved_state.debugger_timeline, & &1.message)
+
     assert Enum.any?(messages, fn msg ->
              String.contains?(msg, "SetShowDate true") or
                (String.contains?(msg, "FromBridge") and String.contains?(msg, "showDate"))
@@ -696,7 +697,9 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
 
     assert watch_model["last_path"] == "src/Main.elm"
     assert watch_model["source_root"] == "watch"
-    assert get_in(state.companion, [:model, "elm_executor", "execution_backend"]) == "external"
+
+    assert get_in(state.companion, [:model, "runtime_execution", "execution_backend"]) ==
+             "external"
 
     timeline =
       state.debugger_timeline
@@ -706,11 +709,12 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
     assert {"watch", "init"} in timeline
     assert Enum.any?(timeline, &(&1 == {"watch", "init_device_data"}))
     assert Enum.any?(timeline, &(&1 == {"phone", "protocol_rx"}))
+
     assert Enum.any?(timeline, fn
-           {"watch", "protocol_rx"} -> true
-           {"watch", "init_cmd"} -> true
-           _ -> false
-         end) or
+             {"watch", "protocol_rx"} -> true
+             {"watch", "init_cmd"} -> true
+             _ -> false
+           end) or
              Enum.any?(state.events, fn event ->
                event.type in ["debugger.protocol_tx", "debugger.protocol_rx"]
              end)

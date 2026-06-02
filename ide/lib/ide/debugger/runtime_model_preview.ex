@@ -6,7 +6,8 @@ defmodule Ide.Debugger.RuntimeModelPreview do
   @type preview :: %{optional(String.t()) => Types.protocol_wire_arg()}
   @type model_key :: String.t() | atom()
 
-  @spec merge_matching_fields(Types.inner_runtime_model(), preview()) :: Types.inner_runtime_model()
+  @spec merge_matching_fields(Types.inner_runtime_model(), preview()) ::
+          Types.inner_runtime_model()
   def merge_matching_fields(runtime_model, preview)
       when is_map(runtime_model) and is_map(preview) do
     Enum.reduce(preview, runtime_model, fn {key, value}, acc ->

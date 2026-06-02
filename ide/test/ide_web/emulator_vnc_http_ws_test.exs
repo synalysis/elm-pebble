@@ -60,9 +60,9 @@ defmodule IdeWeb.EmulatorVncHttpWsTest do
                  WebSockex.start_link(
                    vnc_ws_url(info.id),
                    __MODULE__.HandshakeClient,
-                 %{owner: owner, acc: <<>>, phase: :await_banner},
-                 async_connect: true
-               )
+                   %{owner: owner, acc: <<>>, phase: :await_banner},
+                   async_connect: true
+                 )
 
         assert_receive {:vnc_ws_handshake_ok, width, height}, @handshake_timeout_ms
         assert width > 0 and height > 0
@@ -187,5 +187,4 @@ defmodule IdeWeb.EmulatorVncHttpWsTest do
       end
     end
   end
-
 end

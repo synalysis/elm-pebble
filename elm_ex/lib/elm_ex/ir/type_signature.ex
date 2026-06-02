@@ -75,7 +75,14 @@ defmodule ElmEx.IR.TypeSignature do
     do_split_top_level(source, separator, acc, "", 0, nil)
   end
 
-  @spec do_split_top_level(String.t(), String.t(), [String.t()], String.t(), integer(), nil | integer()) ::
+  @spec do_split_top_level(
+          String.t(),
+          String.t(),
+          [String.t()],
+          String.t(),
+          integer(),
+          nil | integer()
+        ) ::
           [String.t()]
   defp do_split_top_level(<<>>, _separator, acc, current, _depth, _quote) do
     finalize_token(acc, current)

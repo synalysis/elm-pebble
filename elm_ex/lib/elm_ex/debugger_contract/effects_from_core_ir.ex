@@ -70,10 +70,14 @@ defmodule ElmEx.DebuggerContract.EffectsFromCoreIR do
       "subscription_calls" => subscription_calls,
       "subscription_ops" =>
         calls_or_empty(sub_e, &EffectAnalysis.subscriptions_outline(&1, subscriptions_params)),
-      "init_cmd_ops" => calls_or_empty(init_e, &EffectAnalysis.init_cmd_ops_outline(&1, init_params)),
-      "init_cmd_calls" => calls_or_empty(init_e, &EffectAnalysis.init_cmd_calls_outline(&1, init_params)),
-      "update_cmd_ops" => calls_or_empty(update_e, &EffectAnalysis.update_cmd_ops_outline(&1, update_params)),
-      "update_cmd_calls" => calls_or_empty(update_e, &EffectAnalysis.update_cmd_calls_outline(&1, update_params))
+      "init_cmd_ops" =>
+        calls_or_empty(init_e, &EffectAnalysis.init_cmd_ops_outline(&1, init_params)),
+      "init_cmd_calls" =>
+        calls_or_empty(init_e, &EffectAnalysis.init_cmd_calls_outline(&1, init_params)),
+      "update_cmd_ops" =>
+        calls_or_empty(update_e, &EffectAnalysis.update_cmd_ops_outline(&1, update_params)),
+      "update_cmd_calls" =>
+        calls_or_empty(update_e, &EffectAnalysis.update_cmd_calls_outline(&1, update_params))
     }
     |> Enum.reject(fn {_k, v} -> v in [nil, []] end)
     |> Map.new()
@@ -103,7 +107,8 @@ defmodule ElmEx.DebuggerContract.EffectsFromCoreIR do
   end
 
   @spec declaration_to_frontend(map()) :: map() | nil
-  defp declaration_to_frontend(%{"kind" => "function", "name" => name} = decl) when is_binary(name) do
+  defp declaration_to_frontend(%{"kind" => "function", "name" => name} = decl)
+       when is_binary(name) do
     %{
       kind: :function_definition,
       name: name,

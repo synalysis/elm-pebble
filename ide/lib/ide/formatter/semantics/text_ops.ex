@@ -47,7 +47,9 @@ defmodule Ide.Formatter.Semantics.TextOps do
     |> Enum.join()
   end
 
-  @spec do_normalize_comma_spacing([String.t()], [String.t()], boolean(), boolean()) :: [String.t()]
+  @spec do_normalize_comma_spacing([String.t()], [String.t()], boolean(), boolean()) :: [
+          String.t()
+        ]
   defp do_normalize_comma_spacing([], acc, _in_string, _escape_next), do: acc
 
   defp do_normalize_comma_spacing([char | rest], acc, in_string, escape_next)

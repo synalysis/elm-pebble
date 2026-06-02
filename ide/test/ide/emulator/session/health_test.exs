@@ -23,8 +23,20 @@ defmodule Ide.Emulator.Session.HealthTest do
 
   test "child_role/2 identifies session children" do
     qemu = self()
-    router = spawn(fn -> receive do :stop -> :ok end end)
-    pypkjs = spawn(fn -> receive do :stop -> :ok end end)
+
+    router =
+      spawn(fn ->
+        receive do
+          :stop -> :ok
+        end
+      end)
+
+    pypkjs =
+      spawn(fn ->
+        receive do
+          :stop -> :ok
+        end
+      end)
 
     on_exit(fn ->
       Process.exit(router, :kill)

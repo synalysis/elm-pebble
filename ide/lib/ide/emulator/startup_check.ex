@@ -12,9 +12,7 @@ defmodule Ide.Emulator.StartupCheck do
     target = default_emulator_target()
     status = Emulator.runtime_status(target)
 
-    Logger.info(
-      "[embedded-emulator] startup check for #{status.platform}: #{summary(status)}"
-    )
+    Logger.info("[embedded-emulator] startup check for #{status.platform}: #{summary(status)}")
 
     for component <- status.components do
       Logger.info(

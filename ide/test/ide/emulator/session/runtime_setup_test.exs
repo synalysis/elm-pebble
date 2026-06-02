@@ -18,7 +18,9 @@ defmodule Ide.Emulator.Session.RuntimeSetupTest do
 
   for platform <- ["basalt", "emery"] do
     @tag platform: platform
-    test "runtime_status/1 for #{platform} lists standard dependency components", %{platform: platform} do
+    test "runtime_status/1 for #{platform} lists standard dependency components", %{
+      platform: platform
+    } do
       status = RuntimeSetup.runtime_status(platform)
 
       assert %{status: _, platform: ^platform, components: components, missing: _, installable: _} =

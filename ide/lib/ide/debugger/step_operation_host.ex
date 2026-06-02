@@ -7,11 +7,18 @@ defmodule Ide.Debugger.StepOperationHost do
   alias Ide.Debugger.Types
 
   @type apply_step_fn ::
-          (Types.runtime_state(), Types.surface_target(), String.t(), Types.subscription_payload() | nil,
-           String.t(), String.t() -> Types.runtime_state())
+          (Types.runtime_state(),
+           Types.surface_target(),
+           String.t(),
+           Types.subscription_payload()
+           | nil,
+           String.t(),
+           String.t() ->
+             Types.runtime_state())
 
   @type append_event_fn ::
-          (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() -> Types.runtime_state())
+          (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() ->
+             Types.runtime_state())
 
   @type normalize_target_fn :: (Types.wire_input() -> Types.surface_target())
 
@@ -28,10 +35,10 @@ defmodule Ide.Debugger.StepOperationHost do
         }
 
   @type tick_extras :: %{
-          required(:tick_message_for_surface) =>
-            (Types.runtime_state(), Types.surface_target() -> String.t()),
-          required(:update) =>
-            (String.t(), (Types.runtime_state() -> Types.runtime_state()) -> {:ok, Types.runtime_state()}),
+          required(:tick_message_for_surface) => (Types.runtime_state(), Types.surface_target() ->
+                                                    String.t()),
+          required(:update) => (String.t(), (Types.runtime_state() -> Types.runtime_state()) ->
+                                  {:ok, Types.runtime_state()}),
           required(:contexts) => (-> RuntimeContexts.t())
         }
 

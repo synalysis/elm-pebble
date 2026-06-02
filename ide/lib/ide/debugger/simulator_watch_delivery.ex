@@ -15,17 +15,25 @@ defmodule Ide.Debugger.SimulatorWatchDelivery do
   )
 
   @type apply_ctx :: %{
-          required(:apply_step_once) =>
-            (Types.runtime_state(), Types.surface_target(), String.t(),
-             Types.subscription_payload() | map() | nil, String.t(), String.t() ->
-               Types.runtime_state()),
-          required(:trigger_candidates) =>
-            (Types.runtime_state(), Types.surface_target() -> [Types.trigger_candidate()]),
-          required(:model_active?) =>
-            (Types.runtime_state(), Types.surface_target(), map() -> boolean()),
-          required(:trigger_message_for_surface) =>
-            (Types.runtime_state(), Types.surface_target(), String.t(), String.t() | nil ->
-               String.t()),
+          required(:apply_step_once) => (Types.runtime_state(),
+                                         Types.surface_target(),
+                                         String.t(),
+                                         Types.subscription_payload()
+                                         | map()
+                                         | nil,
+                                         String.t(),
+                                         String.t() ->
+                                           Types.runtime_state()),
+          required(:trigger_candidates) => (Types.runtime_state(), Types.surface_target() ->
+                                              [Types.trigger_candidate()]),
+          required(:model_active?) => (Types.runtime_state(), Types.surface_target(), map() ->
+                                         boolean()),
+          required(:trigger_message_for_surface) => (Types.runtime_state(),
+                                                     Types.surface_target(),
+                                                     String.t(),
+                                                     String.t()
+                                                     | nil ->
+                                                       String.t()),
           required(:simulator_settings) => (Types.runtime_state() -> map()),
           required(:protocol_events_ctx) => (-> map()),
           required(:protocol_supports_weather?) => (Types.runtime_state() -> boolean())

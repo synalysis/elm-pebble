@@ -15,7 +15,8 @@ defmodule Ide.Debugger.SnapshotContinue do
           Types.wire_input(),
           append_event_fn()
         ) :: Types.runtime_state()
-  def apply(state, cursor_seq, append_event) when is_map(state) and is_function(append_event, 3) do
+  def apply(state, cursor_seq, append_event)
+      when is_map(state) and is_function(append_event, 3) do
     events = Map.get(state, :events, [])
     resolved_seq = CursorSeq.resolve_at_or_before(events, cursor_seq)
     selected_event = TraceExchange.event_at_seq(events, resolved_seq)
@@ -49,7 +50,10 @@ defmodule Ide.Debugger.SnapshotContinue do
     state
     |> Map.put(
       :watch,
-      TraceExchange.snapshot_surface(Map.get(selected_event, :watch), RuntimeSurfaces.default_watch())
+      TraceExchange.snapshot_surface(
+        Map.get(selected_event, :watch),
+        RuntimeSurfaces.default_watch()
+      )
     )
     |> Map.put(
       :companion,
@@ -60,7 +64,10 @@ defmodule Ide.Debugger.SnapshotContinue do
     )
     |> Map.put(
       :phone,
-      TraceExchange.snapshot_surface(Map.get(selected_event, :phone), RuntimeSurfaces.default_phone())
+      TraceExchange.snapshot_surface(
+        Map.get(selected_event, :phone),
+        RuntimeSurfaces.default_phone()
+      )
     )
   end
 end

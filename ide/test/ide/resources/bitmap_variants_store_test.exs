@@ -39,12 +39,25 @@ defmodule Ide.Resources.BitmapVariantsStoreTest do
     manifest =
       Jason.decode!(File.read!(Path.join(workspace, "watch/resources/bitmaps.json")))
 
-    assert [%{"ctor" => "BitmapStaticCharmander", "base_name" => "Charmander", "variants" => variants}] =
+    assert [
+             %{
+               "ctor" => "BitmapStaticCharmander",
+               "base_name" => "Charmander",
+               "variants" => variants
+             }
+           ] =
              manifest["entries"]
+
     assert variants["BlackWhite"]["filename"] == "BitmapStaticCharmander~bw.png"
     assert variants["Color"]["filename"] == "BitmapStaticCharmander~color.png"
-    assert File.exists?(Path.join(workspace, "watch/resources/bitmaps/BitmapStaticCharmander~bw.png"))
-    assert File.exists?(Path.join(workspace, "watch/resources/bitmaps/BitmapStaticCharmander~color.png"))
+
+    assert File.exists?(
+             Path.join(workspace, "watch/resources/bitmaps/BitmapStaticCharmander~bw.png")
+           )
+
+    assert File.exists?(
+             Path.join(workspace, "watch/resources/bitmaps/BitmapStaticCharmander~color.png")
+           )
   end
 
   test "import_bitmaps_from_directory registers each png in assets dir" do
@@ -90,6 +103,7 @@ defmodule Ide.Resources.BitmapVariantsStoreTest do
 
     assert [%{"ctor" => "BitmapStaticLogo", "filename" => "BitmapStaticLogo.png"} = entry] =
              manifest["entries"]
+
     refute Ide.Resources.BitmapVariants.has_variants?(entry)
   end
 

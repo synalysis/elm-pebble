@@ -61,11 +61,13 @@ defmodule ElmEx.DebuggerContractFromProjectTest do
     """
 
     assert {:ok, mod} = GeneratedParser.parse_source("Main.elm", source)
-    assert {:ok, %{"debugger_contract" => contract}} = DebuggerContract.from_project(%Project{
-             project_dir: "/tmp/test",
-             elm_json: %{"source-directories" => ["src"]},
-             modules: [mod]
-           })
+
+    assert {:ok, %{"debugger_contract" => contract}} =
+             DebuggerContract.from_project(%Project{
+               project_dir: "/tmp/test",
+               elm_json: %{"source-directories" => ["src"]},
+               modules: [mod]
+             })
 
     assert contract["update_ctor_model_fields"] == %{"ClockStyle24h" => %{"value" => "on"}}
   end

@@ -8,7 +8,9 @@ defmodule Ide.Debugger.ReplaySnapshotTypesTest do
     on_exit(fn -> Debugger.forget_project(slug) end)
 
     assert {:ok, _} = Debugger.start_session(slug)
-    assert {:ok, _} = Debugger.step(slug, %{"target" => "watch", "message" => "Tick", "count" => 2})
+
+    assert {:ok, _} =
+             Debugger.step(slug, %{"target" => "watch", "message" => "Tick", "count" => 2})
 
     assert {:ok, _} =
              Debugger.replay_recent(slug, %{

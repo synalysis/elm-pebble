@@ -8,7 +8,11 @@ defmodule Ide.Emulator.ScreenshotPostprocessTest do
     inside = <<0, 0, 255, 255>>
     pixels = :binary.copy(inside, width * height)
 
-    profile = %{"shape" => "round", "color_mode" => "Color", "screen" => %{"width" => width, "height" => height}}
+    profile = %{
+      "shape" => "round",
+      "color_mode" => "Color",
+      "screen" => %{"width" => width, "height" => height}
+    }
 
     assert {:ok, masked} = ScreenshotPostprocess.apply_shape_mask(pixels, width, height, profile)
 
@@ -25,9 +29,15 @@ defmodule Ide.Emulator.ScreenshotPostprocessTest do
         if x == 0 or y == 0, do: blank, else: content
       end
 
-    profile = %{"shape" => "rect", "color_mode" => "Color", "screen" => %{"width" => 6, "height" => 6}}
+    profile = %{
+      "shape" => "rect",
+      "color_mode" => "Color",
+      "screen" => %{"width" => 6, "height" => 6}
+    }
 
-    assert {:ok, trimmed, 5, 5} = ScreenshotPostprocess.trim_content_margins(pixels, 6, 6, profile)
+    assert {:ok, trimmed, 5, 5} =
+             ScreenshotPostprocess.trim_content_margins(pixels, 6, 6, profile)
+
     assert byte_size(trimmed) == 5 * 5 * 4
     assert :binary.part(trimmed, 0, 4) == content
   end
@@ -41,9 +51,15 @@ defmodule Ide.Emulator.ScreenshotPostprocessTest do
         if x == 0 or y == 0, do: margin, else: content
       end
 
-    profile = %{"shape" => "rect", "color_mode" => "BlackWhite", "screen" => %{"width" => 6, "height" => 6}}
+    profile = %{
+      "shape" => "rect",
+      "color_mode" => "BlackWhite",
+      "screen" => %{"width" => 6, "height" => 6}
+    }
 
-    assert {:ok, trimmed, 5, 5} = ScreenshotPostprocess.trim_content_margins(pixels, 6, 6, profile)
+    assert {:ok, trimmed, 5, 5} =
+             ScreenshotPostprocess.trim_content_margins(pixels, 6, 6, profile)
+
     assert byte_size(trimmed) == 5 * 5 * 4
   end
 
@@ -64,10 +80,17 @@ defmodule Ide.Emulator.ScreenshotPostprocessTest do
         end
       end
 
-    profile = %{"shape" => "round", "color_mode" => "Color", "screen" => %{"width" => 180, "height" => 180}}
+    profile = %{
+      "shape" => "round",
+      "color_mode" => "Color",
+      "screen" => %{"width" => 180, "height" => 180}
+    }
+
     fb = side + 2 * margin
 
-    assert {:ok, trimmed, trim_w, trim_h} = ScreenshotPostprocess.trim_content_margins(pixels, fb, fb, profile)
+    assert {:ok, trimmed, trim_w, trim_h} =
+             ScreenshotPostprocess.trim_content_margins(pixels, fb, fb, profile)
+
     assert trim_w == 180
     assert trim_h == 180
     assert {:ok, resized} = ScreenshotPostprocess.resize_bgrx(trimmed, trim_w, trim_h, 180, 180)
@@ -89,7 +112,9 @@ defmodule Ide.Emulator.ScreenshotPostprocessTest do
         <<x, y, 0, 255>>
       end
 
-    assert {:ok, cropped} = ScreenshotPostprocess.crop_framebuffer(pixels, src_w, src_h, dst_w, dst_h)
+    assert {:ok, cropped} =
+             ScreenshotPostprocess.crop_framebuffer(pixels, src_w, src_h, dst_w, dst_h)
+
     assert byte_size(cropped) == dst_w * dst_h * 4
     assert :binary.part(cropped, 0, 4) == <<0, 0, 0, 255>>
     assert :binary.part(cropped, 4, 4) == <<1, 0, 0, 255>>

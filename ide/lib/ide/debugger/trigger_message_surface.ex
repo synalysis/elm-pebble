@@ -7,15 +7,18 @@ defmodule Ide.Debugger.TriggerMessageSurface do
   alias Ide.Debugger.Types
 
   @type resolve_ctx :: %{
-          required(:introspect_for) =>
-            (Types.runtime_state(), Types.surface_target() -> Types.elm_introspect() | map()),
-          required(:attach_payload) =>
-            (Types.runtime_state(), Types.surface_target(), String.t(), String.t() -> String.t())
+          required(:introspect_for) => (Types.runtime_state(), Types.surface_target() ->
+                                          Types.elm_introspect() | map()),
+          required(:attach_payload) => (Types.runtime_state(),
+                                        Types.surface_target(),
+                                        String.t(),
+                                        String.t() ->
+                                          String.t())
         }
 
   @type payload_ctx :: %{
-          optional(:introspect) =>
-            (Types.runtime_state(), Types.surface_target() -> Types.elm_introspect() | map()),
+          optional(:introspect) => (Types.runtime_state(), Types.surface_target() ->
+                                      Types.elm_introspect() | map()),
           optional(:settings) => (Types.runtime_state() -> map())
         }
 
@@ -27,7 +30,8 @@ defmodule Ide.Debugger.TriggerMessageSurface do
           resolve_ctx()
         ) :: String.t()
   def resolve(state, target, trigger, requested_message, ctx)
-      when is_map(state) and target in [:watch, :companion, :phone] and is_binary(trigger) and is_map(ctx) do
+      when is_map(state) and target in [:watch, :companion, :phone] and is_binary(trigger) and
+             is_map(ctx) do
     message =
       if is_binary(requested_message) and requested_message != "" do
         requested_message
@@ -45,10 +49,12 @@ defmodule Ide.Debugger.TriggerMessageSurface do
     ctx.attach_payload.(state, target, message, trigger)
   end
 
-  def resolve(_state, _target, _trigger, requested_message, _ctx) when is_binary(requested_message),
-    do: requested_message
+  def resolve(_state, _target, _trigger, requested_message, _ctx)
+      when is_binary(requested_message),
+      do: requested_message
 
-  def resolve(_state, _target, trigger, _requested_message, ctx) when is_binary(trigger) and is_map(ctx) do
+  def resolve(_state, _target, trigger, _requested_message, ctx)
+      when is_binary(trigger) and is_map(ctx) do
     ctx.attach_payload.(
       %{},
       :watch,
@@ -64,7 +70,8 @@ defmodule Ide.Debugger.TriggerMessageSurface do
           String.t(),
           payload_ctx()
         ) :: String.t()
-  def attach_payload(state, target, message, trigger, ctx) when is_binary(message) and is_binary(trigger) do
+  def attach_payload(state, target, message, trigger, ctx)
+      when is_binary(message) and is_binary(trigger) do
     SubscriptionPayload.attach(state, target, message, trigger, ctx)
   end
 end

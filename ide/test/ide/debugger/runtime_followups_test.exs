@@ -19,7 +19,7 @@ defmodule Ide.Debugger.RuntimeFollowupsTest do
   end
 
   describe "async http enqueue" do
-    test "appends http_pending row to debugger timeline" do
+    test "tracks http command without debugger timeline row" do
       previous_async_http = Application.get_env(:ide, :debugger_async_http_followups)
 
       Application.put_env(:ide, :debugger_async_http_followups, true)
@@ -54,15 +54,13 @@ defmodule Ide.Debugger.RuntimeFollowupsTest do
       updated =
         RuntimeFollowups.apply_after_step(state, :phone, "init", "init", followups, ctx)
 
-      pending =
-        Enum.find(updated.debugger_timeline, fn row ->
-          row.message_source == "http_pending"
-        end)
+      refute Enum.any?(Map.get(updated, :debugger_timeline, []), fn row ->
+               row.type == "http" or row.message_source in ["http", "http_pending"]
+             end)
 
-      assert pending
-      assert pending.type == "http"
-      assert pending.message =~ "GET https://example.test/dense10.json"
-      assert pending.message =~ "CatalogReceived"
+      assert [%{"followup_message" => "CatalogReceived"}] =
+               Map.get(updated, :pending_http_followups) ||
+                 Map.get(updated, "pending_http_followups")
     end
   end
 

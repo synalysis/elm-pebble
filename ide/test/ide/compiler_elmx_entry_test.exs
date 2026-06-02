@@ -7,7 +7,11 @@ defmodule Ide.CompilerElmxEntryTest do
     tmp = System.tmp_dir!() |> Path.join("elmx-entry-#{System.unique_integer([:positive])}")
     File.mkdir_p!(Path.join(tmp, "src"))
     File.write!(Path.join(tmp, "src/Main.elm"), "module Main exposing (main)\nmain = 0\n")
-    File.write!(Path.join(tmp, "src/CompanionApp.elm"), "module CompanionApp exposing (main)\nmain = 0\n")
+
+    File.write!(
+      Path.join(tmp, "src/CompanionApp.elm"),
+      "module CompanionApp exposing (main)\nmain = 0\n"
+    )
 
     on_exit(fn -> File.rm_rf!(tmp) end)
 

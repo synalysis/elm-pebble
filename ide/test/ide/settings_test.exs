@@ -100,7 +100,8 @@ defmodule Ide.SettingsTest do
   end
 
   test "public mode stores settings per user" do
-    data_root = Path.join(System.tmp_dir!(), "ide_settings_users_#{System.unique_integer([:positive])}")
+    data_root =
+      Path.join(System.tmp_dir!(), "ide_settings_users_#{System.unique_integer([:positive])}")
 
     original_config = Application.get_env(:ide, Ide.Settings, [])
     original_auth = Application.get_env(:ide, Ide.Auth, [])

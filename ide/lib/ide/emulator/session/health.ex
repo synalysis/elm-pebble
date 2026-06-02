@@ -24,7 +24,8 @@ defmodule Ide.Emulator.Session.Health do
       not ProcessHost.tcp_port_open?(state.vnc_port) ->
         {:error, {:port_not_ready, :vnc, state.vnc_port}}
 
-      ProcessHost.live_pid?(state.pypkjs_pid) and not ProcessHost.tcp_port_open?(state.phone_ws_port) ->
+      ProcessHost.live_pid?(state.pypkjs_pid) and
+          not ProcessHost.tcp_port_open?(state.phone_ws_port) ->
         {:error, {:port_not_ready, :phone, state.phone_ws_port}}
 
       true ->

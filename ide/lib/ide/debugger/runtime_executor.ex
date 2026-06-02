@@ -1,25 +1,25 @@
 defmodule Ide.Debugger.RuntimeExecutor do
   @moduledoc """
-  Strict Core IR runtime execution for the debugger.
+  Strict `elmx` runtime execution for the debugger.
 
-  All stepping and init go through the configured external executor (typically
-  `ElmExecutorAdapter`). There is no parser-introspect or heuristic model mutation
-  fallback.
+  All stepping and init go through the compiled Elixir `elmx` executor. There is no
+  Core IR, parser-introspect, or heuristic model mutation fallback.
   """
 
   alias Ide.Debugger.RuntimeExecutor.Request
   alias Ide.Debugger.RuntimeExecutor.ResultNormalizer
   alias Ide.Debugger.RuntimeExecutor.Types, as: ExecutorTypes
-  alias Ide.Debugger.RuntimeExecutor.Types.RuntimeMode
   alias Ide.Debugger.Types
 
   @type execution_input :: ExecutorTypes.execution_input()
   @type execution_result :: ExecutorTypes.execution_result()
   @type execute_request :: execution_input()
 
-  @callback execute(execution_input()) :: {:ok, execution_result()} | {:error, Types.execution_error()}
+  @callback execute(execution_input()) ::
+              {:ok, execution_result()} | {:error, Types.execution_error()}
 
-  @spec execute(execution_input()) :: {:ok, execution_result()} | {:error, Types.execution_error()}
+  @spec execute(execution_input()) ::
+          {:ok, execution_result()} | {:error, Types.execution_error()}
   def execute(%Request{} = input) do
     input
     |> Request.validate_execution_ready!()
@@ -28,44 +28,49 @@ defmodule Ide.Debugger.RuntimeExecutor do
   end
 
   def execute(input) when is_map(input) do
-    case runtime_mode() do
-      :legacy ->
-        {:error, {:core_ir_execution_failed, :legacy_runtime_mode_disabled}}
-
-      _ ->
-        execute_external_strict(input)
-    end
+    execute_compiled_elmx(input)
   end
 
   def execute(_), do: {:error, {:core_ir_execution_failed, :invalid_execution_input}}
 
-  @doc false
-  @spec execute_introspect_only(execution_input()) :: {:error, Types.execution_error()}
-  def execute_introspect_only(_input) do
-    {:error, {:core_ir_execution_failed, :parser_only_execution_disabled}}
+  @doc """
+  Re-evaluates Elm `view/1` for the current model without stepping `init/1` or `update/2`.
+  """
+  @spec view(execution_input()) :: {:ok, map()} | {:error, Types.execution_error()}
+  def view(input) when is_map(input) do
+    with :ok <- require_elmx_manifest(input),
+         {:ok, module} <- resolve_view_module(input),
+         {:ok, payload} <- Elmx.Runtime.Executor.view_generated(module, input) do
+      {:ok,
+       %{
+         view_tree: map_or_nil_field(payload, :view_tree),
+         view_output: map_or_nil_field(payload, :view_output) || []
+       }}
+    else
+      {:error, {:core_ir_execution_failed, _} = err} -> {:error, err}
+      {:error, {:elmx_execution_failed, _} = err} -> {:error, {:core_ir_execution_failed, err}}
+      {:error, reason} -> {:error, {:core_ir_execution_failed, reason}}
+    end
   end
 
-  @spec execute_external_strict(execution_input()) ::
+  def view(_), do: {:error, {:core_ir_execution_failed, :invalid_execution_input}}
+
+  @spec execute_compiled_elmx(execution_input()) ::
           {:ok, execution_result()} | {:error, Types.execution_error()}
   @doc false
-  @spec execution_backend() :: :core_ir | :compiled_elixir
+  @spec execution_backend() :: :compiled_elixir
   def execution_backend do
-    Application.get_env(:ide, __MODULE__, [])
-    |> Keyword.get(:execution_backend, :core_ir)
-    |> normalize_execution_backend()
+    :compiled_elixir
   end
 
   @doc false
   @spec compiled_elixir_backend?() :: boolean()
-  def compiled_elixir_backend?, do: execution_backend() == :compiled_elixir
+  def compiled_elixir_backend?, do: true
 
-  defp execute_external_strict(input) when is_map(input) do
-    module = external_executor_module()
+  defp execute_compiled_elmx(input) when is_map(input) do
+    module = Ide.Debugger.RuntimeExecutor.CompiledElixirAdapter
 
     cond do
-      not is_atom(module) ->
-        {:error, {:core_ir_execution_failed, :no_external_executor_module}}
-
       not module_supports_execute?(module) ->
         {:error, {:core_ir_execution_failed, {:external_executor_not_loaded, module}}}
 
@@ -74,7 +79,11 @@ defmodule Ide.Debugger.RuntimeExecutor do
           {:ok, payload} when is_map(payload) ->
             case validate_execution_payload(payload) do
               :ok ->
-                {:ok, annotate_execution_backend(normalize_execution_result(payload), execution_backend_label())}
+                {:ok,
+                 annotate_execution_backend(
+                   normalize_execution_result(payload),
+                   execution_backend_label()
+                 )}
 
               {:error, reason} ->
                 {:error, {:core_ir_execution_failed, reason}}
@@ -129,48 +138,37 @@ defmodule Ide.Debugger.RuntimeExecutor do
     ResultNormalizer.annotate_backend(payload, backend, nil)
   end
 
-  @spec external_executor_module() :: module() | nil
-  defp external_executor_module do
-    case execution_backend() do
-      :compiled_elixir ->
-        Ide.Debugger.RuntimeExecutor.CompiledElixirAdapter
-
-      _ ->
-        Application.get_env(:ide, __MODULE__, [])
-        |> Keyword.get(:external_executor_module, Ide.Debugger.RuntimeExecutor.ElmExecutorAdapter)
-    end
-  end
-
   @spec execution_backend_label() :: String.t()
-  defp execution_backend_label do
-    case execution_backend() do
-      :compiled_elixir -> "compiled_elixir"
-      _ -> "external"
+  defp execution_backend_label, do: "compiled_elixir"
+
+  @spec require_elmx_manifest(execution_input()) :: :ok | {:error, Types.execution_error()}
+  defp require_elmx_manifest(input) do
+    manifest = Map.get(input, :elmx_manifest) || Map.get(input, "elmx_manifest")
+
+    if is_map(manifest) and Map.get(manifest, "contract") == "elmx.runtime_executor.v1" do
+      :ok
+    else
+      {:error, {:core_ir_execution_failed, :missing_elmx_manifest}}
     end
   end
 
-  @spec normalize_execution_backend(term()) :: :core_ir | :compiled_elixir
-  defp normalize_execution_backend(:compiled_elixir), do: :compiled_elixir
-  defp normalize_execution_backend("compiled_elixir"), do: :compiled_elixir
-  defp normalize_execution_backend(:core_ir), do: :core_ir
-  defp normalize_execution_backend("core_ir"), do: :core_ir
-  defp normalize_execution_backend(_), do: :core_ir
+  @spec resolve_view_module(execution_input()) :: {:ok, module()} | {:error, Types.execution_error()}
+  defp resolve_view_module(input) do
+    revision = Map.get(input, :elmx_revision) || Map.get(input, "elmx_revision")
 
-  @spec runtime_mode() :: RuntimeMode.t()
-  defp runtime_mode do
-    mode =
-      Application.get_env(:ide, __MODULE__, [])
-      |> Keyword.get(:runtime_mode, :runtime_first)
+    cond do
+      is_binary(revision) and revision != "" ->
+        case Elmx.module_for_revision(revision) do
+          mod when is_atom(mod) and not is_nil(mod) -> {:ok, mod}
+          _ -> {:error, {:core_ir_execution_failed, {:elmx_module_not_registered, revision}}}
+        end
 
-    case mode do
-      :legacy -> :legacy
-      "legacy" -> :legacy
-      :hybrid -> :hybrid
-      "hybrid" -> :hybrid
-      :runtime_first -> :runtime_first
-      "runtime_first" -> :runtime_first
-      "runtime-first" -> :runtime_first
-      _ -> :runtime_first
+      true ->
+        {:error, {:core_ir_execution_failed, :missing_elmx_revision}}
     end
+  end
+
+  defp map_or_nil_field(map, key) when is_map(map) do
+    Map.get(map, key) || Map.get(map, to_string(key))
   end
 end

@@ -50,7 +50,9 @@ defmodule Ide.StoreAssetsTest do
     assert StoreAssets.banner_size_label() == "720×320 px"
   end
 
-  test "icons_uploaded? and ai_graphics_available? reflect workspace files", %{workspace_root: root} do
+  test "icons_uploaded? and ai_graphics_available? reflect workspace files", %{
+    workspace_root: root
+  } do
     refute StoreAssets.icons_uploaded?(root)
     assert StoreAssets.ai_graphics_available?(root)
 

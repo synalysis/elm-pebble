@@ -33,7 +33,8 @@ defmodule Ide.Emulator.FirmwareScreenshot do
           |> WatchModels.profile_for()
           |> Map.get("screen", %{})
           |> then(fn
-            %{"width" => width, "height" => height} when is_integer(width) and is_integer(height) ->
+            %{"width" => width, "height" => height}
+            when is_integer(width) and is_integer(height) ->
               width * height
 
             _ ->
@@ -47,8 +48,10 @@ defmodule Ide.Emulator.FirmwareScreenshot do
     end
   end
 
-  @spec capture(pid(), String.t(), keyword()) :: {:ok, binary()} | {:error, Types.session_error() | Types.screenshot_error()}
-  def capture(session_pid, platform, opts \\ []) when is_pid(session_pid) and is_binary(platform) do
+  @spec capture(pid(), String.t(), keyword()) ::
+          {:ok, binary()} | {:error, Types.session_error() | Types.screenshot_error()}
+  def capture(session_pid, platform, opts \\ [])
+      when is_pid(session_pid) and is_binary(platform) do
     timeout = Keyword.get(opts, :timeout, capture_timeout_ms(platform))
 
     with {:ok, router} <- GenServer.call(session_pid, :protocol_router_pid),
@@ -146,7 +149,9 @@ defmodule Ide.Emulator.FirmwareScreenshot do
 
   defp expected_bytes(1, width, height), do: {:ok, div(width * height, 8)}
   defp expected_bytes(2, width, height), do: {:ok, width * height}
-  defp expected_bytes(version, _width, _height), do: {:error, {:unknown_screenshot_version, version}}
+
+  defp expected_bytes(version, _width, _height),
+    do: {:error, {:unknown_screenshot_version, version}}
 
   defp decode_image(%{version: 1, width: width, height: height}, data) do
     {:ok, decode_1bpp(width, height, data)}
@@ -162,7 +167,7 @@ defmodule Ide.Emulator.FirmwareScreenshot do
     for y <- 0..(height - 1), x <- 0..(width - 1), into: <<>> do
       byte_idx = y * row_bytes + div(x, 8)
       bit_idx = rem(x, 8)
-      on = ((:binary.at(data, byte_idx) >>> bit_idx) &&& 1) == 1
+      on = (:binary.at(data, byte_idx) >>> bit_idx &&& 1) == 1
       level = if on, do: 255, else: 0
       <<level, level, level>>
     end
@@ -172,8 +177,8 @@ defmodule Ide.Emulator.FirmwareScreenshot do
   def decode_8bpp(width, height, data) do
     for y <- 0..(height - 1), x <- 0..(width - 1), into: <<>> do
       pixel = :binary.at(data, y * width + x)
-      r = ((pixel >>> 4) &&& 3) * 85
-      g = ((pixel >>> 2) &&& 3) * 85
+      r = (pixel >>> 4 &&& 3) * 85
+      g = (pixel >>> 2 &&& 3) * 85
       b = (pixel &&& 3) * 85
       <<r, g, b>>
     end

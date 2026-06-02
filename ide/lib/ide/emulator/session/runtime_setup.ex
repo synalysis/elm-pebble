@@ -73,7 +73,8 @@ defmodule Ide.Emulator.Session.RuntimeSetup do
     }
   end
 
-  @spec install_runtime_dependencies(String.t() | nil) :: {:ok, Types.install_dependencies_result()}
+  @spec install_runtime_dependencies(String.t() | nil) ::
+          {:ok, Types.install_dependencies_result()}
   def install_runtime_dependencies(platform \\ nil) do
     platform = normalize_platform(platform)
     before_status = runtime_status(platform)

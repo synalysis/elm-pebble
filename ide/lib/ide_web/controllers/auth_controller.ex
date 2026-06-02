@@ -210,7 +210,9 @@ defmodule IdeWeb.AuthController do
   defp custom_login_step(_), do: :email
 
   defp custom_login_email(%{"email" => email}) when is_binary(email) do
-    email |> String.trim() |> case do
+    email
+    |> String.trim()
+    |> case do
       "" -> nil
       value -> Ide.Auth.User.normalize_email(value)
     end

@@ -8,33 +8,9 @@ on:
       - master
 
 jobs:
-  elm_executor-runtime:
-    name: elm_executor runtime suites
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v5
-
-      - name: Set up Erlang/Elixir
-        uses: erlef/setup-beam@v1
-        with:
-          otp-version: "27.1"
-          elixir-version: "1.17.3"
-
-      - name: Install elm_executor dependencies
-        working-directory: elm_executor
-        run: mix deps.get
-
-      - name: Run elm_executor strict runtime suites
-        working-directory: elm_executor
-        run: |
-          mix test test/runtime_semantic_executor_test.exs
-          mix test test/runtime_core_ir_evaluator_test.exs
-
   ide-debugger:
     name: IDE debugger/runtime suites
     runs-on: ubuntu-latest
-    needs: elm_executor-runtime
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
@@ -53,13 +29,9 @@ jobs:
         working-directory: ide
         run: |
           mix test test/ide/debugger_test.exs \
-            test/ide/debugger/runtime_executor_test.exs \
-            test/ide/debugger/runtime_executor_parity_test.exs \
             test/ide/debugger/runtime_executor_request_test.exs \
-            test/ide/debugger/surface_compile_ephemeral_test.exs \
-            test/ide/debugger/surface_compile_project_test.exs \
-            test/ide/debugger/surface_compile_phone_test.exs \
-            test/ide/debugger/runtime_preview_test.exs
+            test/ide/debugger/surface_compile_elmx_test.exs \
+            test/ide/debugger/auto_fire_message_order_test.exs
 
       - name: Run debugger template corpus
         working-directory: ide
@@ -72,7 +44,6 @@ jobs:
   elmx-compiled-elixir:
     name: elmx compile + compiled_elixir corpus
     runs-on: ubuntu-latest
-    needs: elm_executor-runtime
     timeout-minutes: 45
     steps:
       - name: Check out repository
@@ -101,9 +72,7 @@ jobs:
         env:
           ELMX_TEMPLATE_CORPUS: "1"
         run: |
-          mix test test/ide/mcp/debugger_template_corpus_compiled_elixir_test.exs \
-            test/ide/debugger/compiled_elixir_template_parity_test.exs \
-            --only compiled_elixir_corpus
+          mix test test/ide/mcp/debugger_template_corpus_compiled_elixir_test.exs --only compiled_elixir_corpus
 
       - name: Run elmx template compile gate
         working-directory: ide

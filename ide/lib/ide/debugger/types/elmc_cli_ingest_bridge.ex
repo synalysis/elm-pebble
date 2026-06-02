@@ -13,7 +13,8 @@ defmodule Ide.Debugger.Types.ElmcCliIngestBridge do
   @type ingest_opts :: keyword()
 
   @spec to_check_result(CliTypes.project_run(), ingest_opts()) :: Compiler.check_result()
-  def to_check_result(%{status: status, output: output, warnings: warnings}, opts) when is_list(opts) do
+  def to_check_result(%{status: status, output: output, warnings: warnings}, opts)
+      when is_list(opts) do
     path = Keyword.fetch!(opts, :checked_path)
     diagnostics = diagnostics_from_warnings(warnings)
     counts = Diagnostics.summary(diagnostics)
@@ -29,7 +30,8 @@ defmodule Ide.Debugger.Types.ElmcCliIngestBridge do
   end
 
   @spec to_compile_result(CliTypes.project_run(), ingest_opts()) :: Compiler.compile_result()
-  def to_compile_result(%{status: status, output: output, warnings: warnings}, opts) when is_list(opts) do
+  def to_compile_result(%{status: status, output: output, warnings: warnings}, opts)
+      when is_list(opts) do
     path = Keyword.fetch!(opts, :compiled_path)
     diagnostics = diagnostics_from_warnings(warnings)
     counts = Diagnostics.summary(diagnostics)
@@ -42,9 +44,7 @@ defmodule Ide.Debugger.Types.ElmcCliIngestBridge do
       output: output,
       diagnostics: diagnostics,
       error_count: counts.error_count,
-      warning_count: counts.warning_count,
-      elm_executor_core_ir_b64: Keyword.get(opts, :elm_executor_core_ir_b64),
-      elm_executor_metadata: Keyword.get(opts, :elm_executor_metadata)
+      warning_count: counts.warning_count
     }
     |> drop_nil_optional_fields()
   end
@@ -94,7 +94,10 @@ defmodule Ide.Debugger.Types.ElmcCliIngestBridge do
     attrs =
       run
       |> to_manifest_result(opts)
-      |> Map.put(:schema_version, manifest_schema_version(Keyword.get(opts, :manifest, run.manifest)))
+      |> Map.put(
+        :schema_version,
+        manifest_schema_version(Keyword.get(opts, :manifest, run.manifest))
+      )
       |> Map.put(:detail, manifest_detail(run.status, run.output))
 
     CompileIngestBridge.from_manifest_result(attrs)
@@ -105,7 +108,8 @@ defmodule Ide.Debugger.Types.ElmcCliIngestBridge do
     Diagnostics.normalize_list(warnings)
   end
 
-  @spec manifest_schema_version(Compiler.manifest_data() | nil) :: String.t() | integer() | map() | nil
+  @spec manifest_schema_version(Compiler.manifest_data() | nil) ::
+          String.t() | integer() | map() | nil
   defp manifest_schema_version(%{"schema_version" => v}), do: v
   defp manifest_schema_version(%{schema_version: v}), do: v
   defp manifest_schema_version(_), do: nil
@@ -118,11 +122,9 @@ defmodule Ide.Debugger.Types.ElmcCliIngestBridge do
   defp manifest_detail(:error, output) when is_binary(output), do: String.slice(output, 0, 240)
   defp manifest_detail(_status, _output), do: nil
 
-  @spec drop_nil_optional_fields(CompileIngestBridge.compile_result()) :: CompileIngestBridge.compile_result()
+  @spec drop_nil_optional_fields(CompileIngestBridge.compile_result()) ::
+          CompileIngestBridge.compile_result()
   defp drop_nil_optional_fields(map) when is_map(map) do
-    Map.reject(map, fn
-      {key, nil} when key in [:elm_executor_core_ir_b64, :elm_executor_metadata] -> true
-      _ -> false
-    end)
+    Map.reject(map, fn {_key, value} -> is_nil(value) end)
   end
 end

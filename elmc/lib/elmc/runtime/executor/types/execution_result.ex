@@ -1,17 +1,21 @@
 defmodule Elmc.Runtime.Executor.Types.ExecutionResult do
   @moduledoc """
   Successful return map from `Elmc.Runtime.Executor.execute/1`.
-
-  Mirrors `ElmExecutor.Runtime.SemanticExecutor.Types.ExecutionResult` for IDE adapter parity.
   """
 
-  alias ElmExecutor.Runtime.SemanticExecutor.Types.ExecutionResult, as: ExecutorExecutionResult
+  @type model_patch :: map()
+  @type runtime_snapshot :: map()
 
-  @type t :: ExecutorExecutionResult.t()
+  @type t :: %{
+          required(:model_patch) => model_patch(),
+          required(:view_output) => [map()],
+          required(:runtime) => runtime_snapshot(),
+          required(:protocol_events) => [map()],
+          required(:followup_messages) => [map() | String.t()],
+          optional(:view_tree) => map() | nil,
+          optional(atom()) => term(),
+          optional(String.t()) => term()
+        }
 
-  @type wire_map :: ExecutorExecutionResult.wire_map()
-
-  @type model_patch :: ExecutorExecutionResult.model_patch()
-
-  @type runtime_snapshot :: ExecutorExecutionResult.runtime_snapshot()
+  @type wire_map :: t() | map()
 end

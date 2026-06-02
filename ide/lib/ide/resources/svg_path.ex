@@ -225,21 +225,31 @@ defmodule Ide.Resources.SvgPath do
   end
 
   defp sample_quad({x0, y0}, {x1, y1}, {x2, y2}, tolerance) do
-    sample_curve(fn t ->
-      u = 1 - t
-      {u * u * x0 + 2 * u * t * x1 + t * t * x2, u * u * y0 + 2 * u * t * y1 + t * t * y2}
-    end, {x0, y0}, {x2, y2}, tolerance)
+    sample_curve(
+      fn t ->
+        u = 1 - t
+        {u * u * x0 + 2 * u * t * x1 + t * t * x2, u * u * y0 + 2 * u * t * y1 + t * t * y2}
+      end,
+      {x0, y0},
+      {x2, y2},
+      tolerance
+    )
   end
 
   defp sample_cubic({x0, y0}, {x1, y1}, {x2, y2}, {x3, y3}, tolerance) do
-    sample_curve(fn t ->
-      u = 1 - t
+    sample_curve(
+      fn t ->
+        u = 1 - t
 
-      {
-        u * u * u * x0 + 3 * u * u * t * x1 + 3 * u * t * t * x2 + t * t * t * x3,
-        u * u * u * y0 + 3 * u * u * t * y1 + 3 * u * t * t * y2 + t * t * t * y3
-      }
-    end, {x0, y0}, {x3, y3}, tolerance)
+        {
+          u * u * u * x0 + 3 * u * u * t * x1 + 3 * u * t * t * x2 + t * t * t * x3,
+          u * u * u * y0 + 3 * u * u * t * y1 + 3 * u * t * t * y2 + t * t * t * y3
+        }
+      end,
+      {x0, y0},
+      {x3, y3},
+      tolerance
+    )
   end
 
   defp sample_curve(point_fn, start, finish, tolerance) do

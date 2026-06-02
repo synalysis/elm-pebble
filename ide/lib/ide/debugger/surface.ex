@@ -12,7 +12,6 @@ defmodule Ide.Debugger.Surface do
   Prefer these helpers over `get_in(state, [target, :model])` or raw `Map.get(..., "elm_introspect")`.
   """
 
-  alias ElmExecutor.Runtime.SemanticExecutor.Types.ViewTreeNode
   alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Debugger.Types
 
@@ -22,7 +21,7 @@ defmodule Ide.Debugger.Surface do
   @type t :: %__MODULE__{
           model: Types.app_model(),
           shell: Types.shell(),
-          view_tree: ViewTreeNode.view_tree() | ViewTreeNode.t() | nil,
+          view_tree: Types.view_output_tree() | nil,
           last_message: String.t() | nil,
           protocol_messages: list() | nil
         }
@@ -93,7 +92,8 @@ defmodule Ide.Debugger.Surface do
   def shell(surface) when is_map(surface), do: from_map(surface).shell
 
   @spec execution_model(t() | surface_map()) :: RuntimeArtifacts.execution_model()
-  def execution_model(%__MODULE__{} = surface), do: RuntimeArtifacts.execution_model(to_map(surface))
+  def execution_model(%__MODULE__{} = surface),
+    do: RuntimeArtifacts.execution_model(to_map(surface))
 
   def execution_model(surface) when is_map(surface), do: RuntimeArtifacts.execution_model(surface)
 

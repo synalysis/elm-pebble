@@ -91,7 +91,8 @@ defmodule Ide.Emulator.PebbleProtocol.Packets do
   def frame({endpoint, payload}), do: Frame.encode(endpoint, payload)
 
   @spec decode_app_fetch_request(binary()) ::
-          {:ok, %{uuid: String.t(), app_id: non_neg_integer()}} | {:error, Types.packet_decode_error()}
+          {:ok, %{uuid: String.t(), app_id: non_neg_integer()}}
+          | {:error, Types.packet_decode_error()}
   def decode_app_fetch_request(<<0x01, uuid::binary-size(16), app_id::little-32>>) do
     {:ok, %{uuid: format_uuid(uuid), app_id: app_id}}
   end

@@ -11,16 +11,22 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.Support do
       last -> last
     end
   end
+
   def init_case_subjects(init_params) when is_list(init_params) do
     init_params
     |> Enum.filter(&(is_binary(&1) and &1 != "" and &1 != "_"))
     |> Enum.uniq()
   end
 
-  @spec init_case_subject_allowed?(Types.case_subject(), Types.param_list(), Types.param_list(), Types.binding_map()) ::
+  @spec init_case_subject_allowed?(
+          Types.case_subject(),
+          Types.param_list(),
+          Types.param_list(),
+          Types.binding_map()
+        ) ::
           boolean()
   def init_case_subject_allowed?(subj, allowed, init_params, bindings)
-       when is_list(allowed) and is_list(init_params) and is_map(bindings) do
+      when is_list(allowed) and is_list(init_params) and is_map(bindings) do
     case ElmEx.DebuggerContract.case_subject_text(subj, bindings) do
       text when is_binary(text) and text != "" ->
         text in allowed or
@@ -32,8 +38,9 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.Support do
         false
     end
   end
+
   def update_case_subject_allowed?(subj, allowed, update_params, bindings)
-       when is_list(allowed) and is_list(update_params) and is_map(bindings) do
+      when is_list(allowed) and is_list(update_params) and is_map(bindings) do
     case ElmEx.DebuggerContract.case_subject_text(subj, bindings) do
       "" ->
         false
@@ -58,12 +65,13 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.Support do
         base
     end
   end
+
   def peel_lets(%{op: :let_in, in_expr: inner}), do: peel_lets(inner)
   def peel_lets(other), do: other
   def inline_let_bindings(expr, _bindings, _seen, depth) when depth > 12, do: expr
 
   def inline_let_bindings(%{op: :var, name: name}, bindings, seen, depth)
-       when is_binary(name) and is_map(bindings) do
+      when is_binary(name) and is_map(bindings) do
     if MapSet.member?(seen, name) do
       %{op: :var, name: name}
     else
@@ -129,11 +137,17 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.Support do
 
   def inline_let_bindings(expr, _bindings, _seen, _depth), do: expr
 
-  @spec expr_to_json_value(Types.ast_expr(), non_neg_integer(), non_neg_integer(), Types.module_ref() | nil) ::
+  @spec expr_to_json_value(
+          Types.ast_expr(),
+          non_neg_integer(),
+          non_neg_integer(),
+          Types.module_ref() | nil
+        ) ::
           Types.json_value()
   def expr_to_json_value(expr, depth, max, mod \\ nil)
 
-  def expr_to_json_value(%{op: :record_literal, fields: fields}, depth, max, mod) when depth < max do
+  def expr_to_json_value(%{op: :record_literal, fields: fields}, depth, max, mod)
+      when depth < max do
     Enum.into(fields, %{}, fn %{name: n, expr: e} ->
       {n, expr_to_json_value(e, depth + 1, max, mod)}
     end)
@@ -146,7 +160,7 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.Support do
   def expr_to_json_value(%{op: :char_literal, value: v}, _, _, _), do: v
 
   def expr_to_json_value(%{op: :constructor_call, target: t, args: args}, depth, max, mod)
-       when depth < max do
+      when depth < max do
     %{
       "$ctor" => t,
       "$args" => Enum.map(args, &expr_to_json_value(&1, depth + 1, max, mod))
@@ -154,12 +168,12 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.Support do
   end
 
   def expr_to_json_value(%{op: :qualified_call, target: t, args: args}, depth, max, mod)
-       when depth < max do
+      when depth < max do
     %{"$call" => t, "$args" => Enum.map(args, &expr_to_json_value(&1, depth + 1, max, mod))}
   end
 
   def expr_to_json_value(%{op: :call, name: name, args: args}, depth, max, mod)
-       when is_binary(name) and depth < max do
+      when is_binary(name) and depth < max do
     %{"$call" => name, "$args" => Enum.map(args, &expr_to_json_value(&1, depth + 1, max, mod))}
   end
 
@@ -173,7 +187,7 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.Support do
   def expr_to_json_value(%{op: :var, name: n}, _, _, _), do: %{"$var" => n}
 
   def expr_to_json_value(%{op: :field_access, arg: arg, field: field}, depth, max, mod)
-       when is_binary(field) and depth < max do
+      when is_binary(field) and depth < max do
     on_expr =
       cond do
         is_binary(arg) -> %{"$var" => arg}
@@ -222,9 +236,15 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.Support do
 
   @spec peel_update_result_model(Types.ast_expr()) :: Types.ast_expr() | nil
   defp peel_update_result_model(%{op: :tuple2, left: left}), do: peel_update_result_model(left)
-  defp peel_update_result_model(%{op: :tuple2, left: left, right: _}), do: peel_update_result_model(left)
 
-  defp peel_update_result_model(%{op: :record_update, base: %{op: :var, name: base}, fields: fields})
+  defp peel_update_result_model(%{op: :tuple2, left: left, right: _}),
+    do: peel_update_result_model(left)
+
+  defp peel_update_result_model(%{
+         op: :record_update,
+         base: %{op: :var, name: base},
+         fields: fields
+       })
        when base in ["model", "state"] and is_list(fields),
        do: fields
 

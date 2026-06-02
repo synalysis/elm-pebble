@@ -18,7 +18,10 @@ defmodule Ide.Emulator.QemuControl do
 
   @type command :: %{required(:protocol) => non_neg_integer(), required(:payload) => binary()}
 
-  @type external_cli_command :: %{required(:control) => String.t(), optional(String.t()) => String.t()}
+  @type external_cli_command :: %{
+          required(:control) => String.t(),
+          optional(String.t()) => String.t()
+        }
 
   @doc """
   Control names exposed on the session API (browser toolbar / HTTP control).
@@ -110,12 +113,14 @@ defmodule Ide.Emulator.QemuControl do
   def encode_accel(x, y, z) do
     %{
       protocol: @protocol_accel,
-      payload: <<signed_int16(x)::16-signed, signed_int16(y)::16-signed, signed_int16(z)::16-signed>>
+      payload:
+        <<signed_int16(x)::16-signed, signed_int16(y)::16-signed, signed_int16(z)::16-signed>>
     }
   end
 
   @spec encode_button(non_neg_integer()) :: command()
-  def encode_button(button_state) when is_integer(button_state) and button_state >= 0 and button_state <= 255 do
+  def encode_button(button_state)
+      when is_integer(button_state) and button_state >= 0 and button_state <= 255 do
     %{protocol: @protocol_button, payload: <<button_state>>}
   end
 
@@ -126,7 +131,13 @@ defmodule Ide.Emulator.QemuControl do
 
   defp maybe_battery_command(commands, settings) do
     if Map.has_key?(settings, "battery_percent") or Map.has_key?(settings, "charging") do
-      [encode_battery(Map.get(settings, "battery_percent", 88), Map.get(settings, "charging", false)) | commands]
+      [
+        encode_battery(
+          Map.get(settings, "battery_percent", 88),
+          Map.get(settings, "charging", false)
+        )
+        | commands
+      ]
     else
       commands
     end
@@ -174,7 +185,10 @@ defmodule Ide.Emulator.QemuControl do
   defp maybe_external_bluetooth(commands, settings) do
     if Map.has_key?(settings, "connected") do
       [
-        %{"control" => "bluetooth", "connected" => bool_string(Map.get(settings, "connected", false))}
+        %{
+          "control" => "bluetooth",
+          "connected" => bool_string(Map.get(settings, "connected", false))
+        }
         | commands
       ]
     else
@@ -184,7 +198,13 @@ defmodule Ide.Emulator.QemuControl do
 
   defp maybe_external_time_format(commands, settings) do
     if Map.has_key?(settings, "clock_24h") do
-      [%{"control" => "time_format", "enabled" => bool_string(Map.get(settings, "clock_24h", false))} | commands]
+      [
+        %{
+          "control" => "time_format",
+          "enabled" => bool_string(Map.get(settings, "clock_24h", false))
+        }
+        | commands
+      ]
     else
       commands
     end
@@ -193,7 +213,10 @@ defmodule Ide.Emulator.QemuControl do
   defp maybe_external_timeline_peek(commands, settings) do
     if Map.has_key?(settings, "timeline_peek") do
       [
-        %{"control" => "timeline_quick_view", "enabled" => bool_string(Map.get(settings, "timeline_peek", false))}
+        %{
+          "control" => "timeline_quick_view",
+          "enabled" => bool_string(Map.get(settings, "timeline_peek", false))
+        }
         | commands
       ]
     else
@@ -234,8 +257,12 @@ defmodule Ide.Emulator.QemuControl do
 
   defp external_set_time_value(settings) do
     fallback = NaiveDateTime.local_now()
-    date = parse_simulated_date(Map.get(settings, "simulated_date"), NaiveDateTime.to_date(fallback))
-    time = parse_simulated_time(Map.get(settings, "simulated_time"), NaiveDateTime.to_time(fallback))
+
+    date =
+      parse_simulated_date(Map.get(settings, "simulated_date"), NaiveDateTime.to_date(fallback))
+
+    time =
+      parse_simulated_time(Map.get(settings, "simulated_time"), NaiveDateTime.to_time(fallback))
 
     {:ok, naive} = NaiveDateTime.new(date, time)
     {:ok, Calendar.strftime(naive, "%H:%M:%S")}
@@ -262,7 +289,10 @@ defmodule Ide.Emulator.QemuControl do
   defp maybe_compass_command(commands, settings) do
     if Map.has_key?(settings, "compass_heading_deg") or Map.has_key?(settings, "compass_valid") do
       [
-        encode_compass(Map.get(settings, "compass_heading_deg", 0), Map.get(settings, "compass_valid", true))
+        encode_compass(
+          Map.get(settings, "compass_heading_deg", 0),
+          Map.get(settings, "compass_valid", true)
+        )
         | commands
       ]
     else

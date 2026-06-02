@@ -29,5 +29,4 @@ defmodule Ide.Debugger.CompanionPhoneCompileTest do
 
     refute CompanionPhoneCompile.needs_compile?(state, %{})
   end
-
 end

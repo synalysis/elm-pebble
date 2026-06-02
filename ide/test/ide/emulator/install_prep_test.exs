@@ -41,6 +41,11 @@ defmodule Ide.Emulator.InstallPrepTest do
   end
 
   test "Session.install_reset_needed? delegates to InstallPrep" do
-    assert Session.install_reset_needed?(%{qemu_pid: nil, protocol_router_pid: nil, last_boot_ms: 0, bt_port: 1})
+    assert Session.install_reset_needed?(%{
+             qemu_pid: nil,
+             protocol_router_pid: nil,
+             last_boot_ms: 0,
+             bt_port: 1
+           })
   end
 end

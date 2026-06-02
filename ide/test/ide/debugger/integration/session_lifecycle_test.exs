@@ -47,7 +47,6 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     assert hd(reset_state.events).type == "debugger.reset"
   end
 
-
   test "start_session restarts raw and semantic timelines" do
     slug = "debugger-restart-#{System.unique_integer([:positive])}"
 
@@ -70,7 +69,6 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     assert restarted.debugger_seq == 0
     assert restarted.debugger_timeline == []
   end
-
 
   test "second start_session clears defer bootstrap flags so watch init device data runs" do
     alias Ide.Debugger.AgentSession
@@ -107,7 +105,6 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
            end)
   end
 
-
   test "start_session exposes companion and phone runtime models" do
     slug = "debugger-protocol-models-#{System.unique_integer([:positive])}"
 
@@ -118,7 +115,6 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     assert get_in(state, [:companion, :model, "runtime_model", "protocol_message_count"]) == 0
     assert get_in(state, [:phone, :model, "runtime_model", "status"]) == "idle"
   end
-
 
   test "set_watch_profile updates launch context and watch screen metadata" do
     slug = "sim-watch-profile-#{System.unique_integer([:positive])}"
@@ -133,7 +129,6 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     assert get_in(updated, [:watch, :model, "supports_color"]) == true
   end
 
-
   test "set_watch_profile exposes Round display shape on launch screen contract" do
     slug = "sim-watch-profile-is-round-#{System.unique_integer([:positive])}"
 
@@ -147,7 +142,6 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     assert get_in(updated, [:launch_context, "has_microphone"]) == false
   end
 
-
   test "set_watch_profile on aplite exposes BlackWhite color mode on launch screen" do
     slug = "sim-watch-profile-aplite-color-#{System.unique_integer([:positive])}"
 
@@ -157,7 +151,6 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     assert get_in(updated, [:launch_context, "screen", "color_mode"]) == "BlackWhite"
     assert get_in(updated, [:launch_context, "supports_health"]) == false
   end
-
 
   test "start_session preserves selected watch profile when no profile override is provided" do
     slug = "sim-watch-profile-preserve-#{System.unique_integer([:positive])}"
@@ -171,7 +164,6 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     assert get_in(restarted, [:launch_context, "watch_profile_id"]) == "chalk"
     assert get_in(restarted, [:watch, :model, "screen_width"]) == 180
   end
-
 
   test "watch reload merges parser snapshot into watch model and view tree" do
     slug = "sim-introspect-#{System.unique_integer([:positive])}"
@@ -198,8 +190,8 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
                reason: "introspect_test"
              })
 
-    assert get_in(st, [:watch, :model, "elm_executor_mode"]) == "runtime_executed"
-    assert get_in(st, [:watch, :model, "elm_executor", "engine"]) == "elm_executor_runtime_v1"
+    assert get_in(st, [:watch, :model, "runtime_execution_mode"]) == "runtime_executed"
+    assert get_in(st, [:watch, :model, "runtime_execution", "engine"]) == "elmx_runtime_v1"
     assert is_binary(get_in(st, [:watch, :model, "runtime_model_sha256"]))
     assert String.length(get_in(st, [:watch, :model, "runtime_model_sha256"])) == 64
     assert is_binary(get_in(st, [:watch, :model, "runtime_view_tree_sha256"]))
@@ -210,16 +202,16 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     view_type = get_in(st, [:watch, :view_tree, "type"])
 
     assert view_type in ["windowStack", "window", "previewUnavailable"],
-           "expected Core IR-derived or unavailable preview, got #{inspect(view_type)}"
+           "expected runtime-derived or unavailable preview, got #{inspect(view_type)}"
 
     refute view_type == "Window",
-           "parser-only Window view tree must not be shown when Core IR preview is strict"
+           "parser-only Window view tree must not be shown when runtime preview is strict"
 
     assert Enum.any?(st.events, &(&1.type in ["debugger.contract", "debugger.elm_introspect"]))
     assert Enum.any?(st.events, &(&1.type == "debugger.runtime_exec"))
     runtime_exec = Enum.find(st.events, &(&1.type == "debugger.runtime_exec"))
     assert runtime_exec.payload.target == "watch"
-    assert runtime_exec.payload.engine == "elm_executor_runtime_v1"
+    assert runtime_exec.payload.engine == "elmx_runtime_v1"
     assert runtime_exec.payload.runtime_model_source == "init_model"
     assert runtime_exec.payload.view_tree_source == "parser_view_tree"
     assert runtime_exec.payload.runtime_model_entry_count >= 1
@@ -233,7 +225,6 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     assert is_map(p) && (Map.get(p, :module) == "Snap" || Map.get(p, "module") == "Snap")
     assert Map.get(p, :target) == "watch" || Map.get(p, "target") == "watch"
   end
-
 
   test "watch reload replaces stale sample tree when parser preview is not renderable" do
     slug = "sim-preview-unavailable-#{System.unique_integer([:positive])}"
@@ -283,7 +274,6 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     refute get_in(st, [:watch, :view_tree, "type"]) == "Window"
   end
 
-
   test "phone reload merges parser snapshot into companion model and view tree" do
     slug = "sim-intro-proto-#{System.unique_integer([:positive])}"
 
@@ -315,7 +305,6 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     refute get_in(st, [:watch, :shell, "debugger_contract"])
     refute get_in(st, [:watch, :model, "debugger_contract"])
   end
-
 
   test "phone reload simulates companion geolocation on init" do
     slug = "sim-intro-geolocation-#{System.unique_integer([:positive])}"
@@ -365,9 +354,7 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
                get_in(event.payload, [:response_value, "longitude"]) == 11.576124 and
                get_in(event.payload, [:response_value, "accuracy"]) == 25
            end)
-
   end
-
 
   test "watch reload applies init device data when introspect lives on shell" do
     slug = "sim-watch-device-data-shell-#{System.unique_integer([:positive])}"
@@ -394,7 +381,6 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
              event.type == "debugger.device_data" and get_in(event.payload, [:target]) == "watch"
            end)
   end
-
 
   test "simulator settings drive companion geolocation payload" do
     slug = "sim-intro-geolocation-settings-#{System.unique_integer([:positive])}"
@@ -447,7 +433,6 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
            end)
   end
 
-
   test "phone reload drives the visible companion surface" do
     slug = "sim-intro-phone-#{System.unique_integer([:positive])}"
 
@@ -478,7 +463,6 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     assert get_in(st, [:companion, :view_tree, "type"]) == "CompanionRoot"
   end
 
-
   test "snapshot trims event list while preserving sequence" do
     slug = "debugger-limit-#{System.unique_integer([:positive])}"
     {:ok, _} = Debugger.start_session(slug)
@@ -497,7 +481,6 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     assert snapshot.seq == 36
   end
 
-
   test "snapshot auto-starts debugger process when missing" do
     if pid = Process.whereis(Debugger) do
       Process.exit(pid, :kill)
@@ -509,7 +492,6 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     assert snapshot.running == false
     assert is_pid(Process.whereis(Debugger))
   end
-
 
   test "snapshot supports event type and sequence filters" do
     slug = "debugger-filters-#{System.unique_integer([:positive])}"
@@ -531,7 +513,6 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     assert {:ok, seq_filtered} = Debugger.snapshot(slug, event_limit: 20, since_seq: 4)
     assert Enum.all?(seq_filtered.events, &(&1.seq > 4))
   end
-
 
   test "export_trace returns deterministic JSON and checksum" do
     slug = "sim-export-#{System.unique_integer([:positive])}"
@@ -569,7 +550,6 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
              Enum.sort(Enum.map(decoded["events"], & &1["seq"]))
   end
 
-
   test "export_trace includes snapshot references for unchanged surfaces" do
     slug = "sim-export-snapshot-refs-#{System.unique_integer([:positive])}"
     {:ok, _} = Debugger.start_session(slug)
@@ -596,7 +576,6 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
            end)
   end
 
-
   test "snapshot_reference_rows returns lightweight per-event refs" do
     slug = "sim-snapshot-rows-#{System.unique_integer([:positive])}"
     {:ok, _} = Debugger.start_session(slug)
@@ -618,7 +597,6 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     assert Enum.all?(rows, &is_map(&1["snapshot_refs"]))
   end
 
-
   test "continue_from_snapshot materializes selected snapshot into live tip" do
     slug = "sim-continue-snapshot-#{System.unique_integer([:positive])}"
     {:ok, _} = Debugger.start_session(slug)
@@ -638,7 +616,6 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     assert continued.seq > second_step.seq
   end
 
-
   test "import_trace restores state for round-trip export" do
     slug = "sim-import-#{System.unique_integer([:positive])}"
     {:ok, _} = Debugger.start_session(slug)
@@ -657,7 +634,6 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     assert {:ok, exp2} = Debugger.export_trace(slug, event_limit: 500)
     assert exp2.sha256 == exp.sha256
   end
-
 
   test "export_trace supports explicit runtime compare cursor bounds" do
     slug = "sim-export-compare-#{System.unique_integer([:positive])}"
@@ -696,7 +672,6 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     assert Map.has_key?(compare["surfaces"]["watch"], "baseline_active_target_key_source")
   end
 
-
   test "import_trace rejects slug mismatch when strict" do
     slug_a = "sim-slug-a-#{System.unique_integer([:positive])}"
     slug_b = "sim-slug-b-#{System.unique_integer([:positive])}"
@@ -706,12 +681,10 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     assert {:ok, _} = Debugger.import_trace(slug_b, exp.json, strict_slug: false)
   end
 
-
   test "import_trace rejects invalid json" do
     slug = "sim-bad-json-#{System.unique_integer([:positive])}"
     assert {:error, :invalid_json} = Debugger.import_trace(slug, "not json")
   end
-
 
   test "reload with phone source_root emits phone render without synthetic update" do
     slug = "sim-phone-#{System.unique_integer([:positive])}"
@@ -736,7 +709,6 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     assert get_in(st.phone, [:view_tree, "type"]) == "PhoneRoot"
   end
 
-
   test "reload with protocol source_root labels companion tree" do
     slug = "sim-proto-#{System.unique_integer([:positive])}"
     {:ok, _} = Debugger.start_session(slug)
@@ -754,7 +726,6 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     [status | _] = get_in(st.companion, [:view_tree, "children"])
     assert String.starts_with?(status["label"], "protocol:")
   end
-
 
   test "reload fulfills init current date/time device requests before steady-state minute ticks" do
     slug = "sim-init-current-datetime-#{System.unique_integer([:positive])}"
@@ -825,7 +796,6 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     assert preview["minute"] in 0..59
   end
 
-
   test "reload refires init current date/time device requests even after previous init response" do
     slug = "sim-init-current-datetime-refire-#{System.unique_integer([:positive])}"
 
@@ -868,7 +838,6 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
                )
            end)
   end
-
 
   test "semantic debugger timeline keeps contiguous numbering and after-call snapshots" do
     slug = "sim-debugger-timeline-#{System.unique_integer([:positive])}"
@@ -937,7 +906,6 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     assert is_map(watch_row.companion)
   end
 
-
   test "snapshot normalizes legacy agent state missing :phone" do
     slug = "sim-legacy-phone-#{System.unique_integer([:positive])}"
     {:ok, _} = Debugger.start_session(slug)
@@ -967,5 +935,4 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     assert {:ok, snap} = Debugger.snapshot(slug, event_limit: 10)
     assert get_in(snap.phone, [:view_tree, "type"]) == "PhoneRoot"
   end
-
 end

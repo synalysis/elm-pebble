@@ -12,7 +12,8 @@ defmodule Ide.Emulator.VncScreenshot do
   @default_timeout 15_000
   @max_raw_rectangle_bytes 50_000_000
 
-  @spec capture(pos_integer(), keyword()) :: {:ok, binary()} | {:error, Types.screenshot_error() | :timeout}
+  @spec capture(pos_integer(), keyword()) ::
+          {:ok, binary()} | {:error, Types.screenshot_error() | :timeout}
   def capture(port, opts \\ []) when is_integer(port) and port > 0 do
     platform = Keyword.fetch!(opts, :platform)
     timeout = Keyword.get(opts, :timeout, @default_timeout)
@@ -36,14 +37,23 @@ defmodule Ide.Emulator.VncScreenshot do
            :ok <- security,
            :ok <- :gen_tcp.send(socket, <<1>>),
            {:ok, vnc_w, vnc_h, pixel_format} <- read_server_init(socket, timeout),
-           {fb_w, fb_h} = ScreenshotPostprocess.capture_framebuffer_size(vnc_w, vnc_h, exp_w, exp_h),
+           {fb_w, fb_h} =
+             ScreenshotPostprocess.capture_framebuffer_size(vnc_w, vnc_h, exp_w, exp_h),
            request_w = max(fb_w, ScreenshotPostprocess.row_stride_width_pixels(exp_w)),
            request_h = fb_h,
            :ok <- request_framebuffer(socket, request_w, request_h, timeout),
            {:ok, raw_pixels, fb_w, fb_h} <-
              read_framebuffer_update(socket, fb_w, fb_h, profile, timeout),
            {:ok, pixels} <-
-             crop_trim_and_normalize_vnc(raw_pixels, fb_w, fb_h, exp_w, exp_h, pixel_format, profile),
+             crop_trim_and_normalize_vnc(
+               raw_pixels,
+               fb_w,
+               fb_h,
+               exp_w,
+               exp_h,
+               pixel_format,
+               profile
+             ),
            {:ok, rgb} <- ScreenshotPostprocess.bgrx_to_rgb(pixels, exp_w, exp_h),
            rgb = PebblePalette.quantize_rgb(rgb),
            {:ok, png} <- SdkScreenshotStyle.process(platform, rgb, exp_w, exp_h) do
@@ -78,8 +88,9 @@ defmodule Ide.Emulator.VncScreenshot do
   end
 
   defp read_server_init(socket, timeout) do
-    with {:ok, <<width::unsigned-big-16, height::unsigned-big-16, pf::binary-size(16),
-                  name_len::unsigned-big-32>>} <-
+    with {:ok,
+          <<width::unsigned-big-16, height::unsigned-big-16, pf::binary-size(16),
+            name_len::unsigned-big-32>>} <-
            recv_exact(socket, 24, timeout),
          {:ok, pixel_format} <- ScreenshotPostprocess.parse_pixel_format(pf),
          {:ok, _name} <- recv_exact(socket, name_len, timeout) do
@@ -117,7 +128,15 @@ defmodule Ide.Emulator.VncScreenshot do
   end
 
   defp composite_rectangles(socket, count, fb_w, fb_h, profile, timeout) when count > 0 do
-    composite_rectangles_loop(socket, count, fb_w, fb_h, timeout, blank_buffer(fb_w, fb_h, profile), profile)
+    composite_rectangles_loop(
+      socket,
+      count,
+      fb_w,
+      fb_h,
+      timeout,
+      blank_buffer(fb_w, fb_h, profile),
+      profile
+    )
   end
 
   defp composite_rectangles_loop(_socket, 0, fb_w, fb_h, _timeout, buffer, _profile),
@@ -157,7 +176,19 @@ defmodule Ide.Emulator.VncScreenshot do
     end
   end
 
-  defp apply_rectangle(socket, fb_width, fb_height, x, y, rect_w, rect_h, 0, timeout, buffer, profile) do
+  defp apply_rectangle(
+         socket,
+         fb_width,
+         fb_height,
+         x,
+         y,
+         rect_w,
+         rect_h,
+         0,
+         timeout,
+         buffer,
+         profile
+       ) do
     wire_bytes = rect_w * rect_h * 4
 
     cond do
@@ -180,7 +211,16 @@ defmodule Ide.Emulator.VncScreenshot do
               {:ok, buffer, fb_width, fb_height}
 
             {:clip, dst_x, dst_y, clip_w, clip_h, src_x, src_y} ->
-              pixels = extract_rectangle_pixels(wire_pixels, rect_w, rect_h, src_x, src_y, clip_w, clip_h)
+              pixels =
+                extract_rectangle_pixels(
+                  wire_pixels,
+                  rect_w,
+                  rect_h,
+                  src_x,
+                  src_y,
+                  clip_w,
+                  clip_h
+                )
 
               with {:ok, buffer} <-
                      blit_raw(buffer, fb_width, fb_height, dst_x, dst_y, clip_w, clip_h, pixels) do
@@ -191,11 +231,35 @@ defmodule Ide.Emulator.VncScreenshot do
     end
   end
 
-  defp apply_rectangle(_socket, fb_w, fb_h, _x, _y, _rect_w, _rect_h, -223, _timeout, buffer, _profile) do
+  defp apply_rectangle(
+         _socket,
+         fb_w,
+         fb_h,
+         _x,
+         _y,
+         _rect_w,
+         _rect_h,
+         -223,
+         _timeout,
+         buffer,
+         _profile
+       ) do
     {:ok, buffer, fb_w, fb_h}
   end
 
-  defp apply_rectangle(socket, fb_w, fb_h, _x, _y, rect_w, rect_h, -239, timeout, buffer, _profile) do
+  defp apply_rectangle(
+         socket,
+         fb_w,
+         fb_h,
+         _x,
+         _y,
+         rect_w,
+         rect_h,
+         -239,
+         timeout,
+         buffer,
+         _profile
+       ) do
     pixels = rect_w * rect_h * 4
     mask_bytes = div(rect_w * rect_h + 7, 8)
 
@@ -204,12 +268,36 @@ defmodule Ide.Emulator.VncScreenshot do
     end
   end
 
-  defp apply_rectangle(_socket, fb_w, fb_h, _x, _y, _rect_w, _rect_h, encoding, _timeout, buffer, _profile)
+  defp apply_rectangle(
+         _socket,
+         fb_w,
+         fb_h,
+         _x,
+         _y,
+         _rect_w,
+         _rect_h,
+         encoding,
+         _timeout,
+         buffer,
+         _profile
+       )
        when encoding < 0 do
     {:ok, buffer, fb_w, fb_h}
   end
 
-  defp apply_rectangle(_socket, _fb_w, _fb_h, _x, _y, _w, _h, encoding, _timeout, _buffer, _profile) do
+  defp apply_rectangle(
+         _socket,
+         _fb_w,
+         _fb_h,
+         _x,
+         _y,
+         _w,
+         _h,
+         encoding,
+         _timeout,
+         _buffer,
+         _profile
+       ) do
     {:error, {:vnc_unsupported_encoding, encoding}}
   end
 
@@ -317,7 +405,8 @@ defmodule Ide.Emulator.VncScreenshot do
 
   # SDK uses firmware screenshots, not VNC. Trim QEMU margins, then SDK styling on RGB.
   defp crop_trim_and_normalize_vnc(raw_pixels, fb_w, fb_h, exp_w, exp_h, pixel_format, profile) do
-    with {:ok, pixels} <- ScreenshotPostprocess.crop_framebuffer(raw_pixels, fb_w, fb_h, exp_w, exp_h),
+    with {:ok, pixels} <-
+           ScreenshotPostprocess.crop_framebuffer(raw_pixels, fb_w, fb_h, exp_w, exp_h),
          {:ok, pixels} <-
            ScreenshotPostprocess.normalize_pixels_to_bgrx(pixels, pixel_format, exp_w, exp_h),
          {:ok, pixels, trim_w, trim_h} <-

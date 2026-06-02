@@ -177,7 +177,9 @@ defmodule Ide.AppStore.PublisherTest do
 
     assert result.status == :ok
     assert result.output =~ "Creating a new app"
-    assert result.output =~ "Store icons: uploaded 80×80 px (small icon) and 144×144 px (large icon)"
+
+    assert result.output =~
+             "Store icons: uploaded 80×80 px (small icon) and 144×144 px (large icon)"
 
     calls = Agent.get(agent, &Enum.reverse/1)
     assert [_me_call, {:post, create_url, _headers, create_body}] = calls

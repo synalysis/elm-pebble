@@ -99,11 +99,13 @@ defmodule Ide.Debugger.ConfigurationProtocol do
           String.t(),
           CompanionConfiguration.field_control()
         ) :: Types.wire_input()
-  defp field_value(values, id, control) when is_map(values) and is_binary(id) and is_map(control) do
+  defp field_value(values, id, control)
+       when is_map(values) and is_binary(id) and is_map(control) do
     if Map.has_key?(values, id), do: Map.get(values, id), else: Map.get(control, "default")
   end
 
-  @spec encode_value(CompanionConfiguration.field_control(), Types.wire_input()) :: Types.wire_input()
+  @spec encode_value(CompanionConfiguration.field_control(), Types.wire_input()) ::
+          Types.wire_input()
   defp encode_value(%{"type" => "toggle"}, value), do: truthy?(value)
 
   defp encode_value(%{"type" => type}, value) when type in ["number", "slider"] do

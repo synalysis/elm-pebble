@@ -44,7 +44,8 @@ defmodule Ide.Packages.ElmSourceDocs do
     end
   end
 
-  @spec module_doc_markdown(String.t(), String.t()) :: {:ok, String.t()} | {:error, source_error()}
+  @spec module_doc_markdown(String.t(), String.t()) ::
+          {:ok, String.t()} | {:error, source_error()}
   def module_doc_markdown(source_root, module_name)
       when is_binary(source_root) and is_binary(module_name) do
     with {:ok, path} <- source_module_path(source_root, module_name),

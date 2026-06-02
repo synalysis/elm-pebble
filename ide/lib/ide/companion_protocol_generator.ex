@@ -319,7 +319,7 @@ defmodule Ide.CompanionProtocolGenerator do
 
         """
             case COMPANION_PROTOCOL_TAG_#{macro_name(msg.name)}:
-      #{missing_field_defaults}      if (!(#{required})) return false;
+        #{missing_field_defaults}      if (!(#{required})) return false;
               *out = decoder->message;
               out->kind = COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_#{macro_name(msg.name)};
               return true;
@@ -868,7 +868,9 @@ defmodule Ide.CompanionProtocolGenerator do
   end
 
   defp elm_decoder(%{wire_type: :bool}),
-    do: "(Decode.andThen (\\value -> if value == #{@wire_true_code} then Decode.succeed True else if value == #{@wire_false_code} then Decode.succeed False else Decode.fail \"Invalid bool wire code\") Decode.int)"
+    do:
+      "(Decode.andThen (\\value -> if value == #{@wire_true_code} then Decode.succeed True else if value == #{@wire_false_code} then Decode.succeed False else Decode.fail \"Invalid bool wire code\") Decode.int)"
+
   defp elm_decoder(%{wire_type: :string}), do: "Decode.string"
   defp elm_decoder(_field), do: "Decode.int"
 

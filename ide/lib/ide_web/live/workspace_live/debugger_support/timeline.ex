@@ -82,9 +82,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Timeline do
 
   def event_summaries(_events), do: []
 
-  @spec protocol_exchange_at_cursor(Types.events(), Types.maybe_non_neg_integer(), pos_integer()) :: [
-          Types.protocol_row()
-        ]
+  @spec protocol_exchange_at_cursor(Types.events(), Types.maybe_non_neg_integer(), pos_integer()) ::
+          [
+            Types.protocol_row()
+          ]
   def protocol_exchange_at_cursor(events, cursor_seq, limit \\ 40)
 
   def protocol_exchange_at_cursor(events, cursor_seq, limit)
@@ -113,9 +114,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Timeline do
 
   def protocol_exchange_at_cursor(_events, _cursor_seq, _limit), do: []
 
-  @spec update_messages_at_cursor(Types.events(), Types.maybe_non_neg_integer(), pos_integer()) :: [
-          Types.update_message_row()
-        ]
+  @spec update_messages_at_cursor(Types.events(), Types.maybe_non_neg_integer(), pos_integer()) ::
+          [
+            Types.update_message_row()
+          ]
   def update_messages_at_cursor(events, cursor_seq, limit \\ 40)
 
   def update_messages_at_cursor(events, cursor_seq, limit)
@@ -184,7 +186,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Timeline do
         target: target,
         message: Util.protocol_payload_field(payload, :message) || "",
         message_source: Util.protocol_payload_field(payload, :message_source),
-        selected_runtime: Util.debugger_target_runtime(target, watch_runtime, companion_app_runtime),
+        selected_runtime:
+          Util.debugger_target_runtime(target, watch_runtime, companion_app_runtime),
         other_runtime: Util.debugger_other_runtime(target, watch_runtime, companion_app_runtime),
         watch_runtime: watch_runtime,
         companion_runtime: companion_app_runtime,
@@ -221,11 +224,15 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Timeline do
   Hides internal runtime executor diagnostics from the user-facing timeline unless
   IDE debug mode is enabled.
   """
-  @spec filter_debugger_rows_for_display([Types.debugger_row()], boolean()) :: [Types.debugger_row()]
+  @spec filter_debugger_rows_for_display([Types.debugger_row()], boolean()) :: [
+          Types.debugger_row()
+        ]
   def filter_debugger_rows_for_display(rows, true) when is_list(rows), do: rows
 
   def filter_debugger_rows_for_display(rows, _debug_mode) when is_list(rows) do
-    Enum.reject(rows, &debugger_runtime_status_row?/1)
+    Enum.reject(rows, fn row ->
+      debugger_runtime_status_row?(row) or debugger_http_row?(row)
+    end)
   end
 
   def filter_debugger_rows_for_display(_rows, _debug_mode), do: []
@@ -238,6 +245,16 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Timeline do
   end
 
   def debugger_runtime_status_row?(_row), do: false
+
+  @spec debugger_http_row?(Types.debugger_row()) :: boolean()
+  def debugger_http_row?(row) when is_map(row) do
+    type = Map.get(row, :type) || Map.get(row, "type")
+    source = Map.get(row, :message_source) || Map.get(row, "message_source")
+
+    type == "http" or source in ["http", "http_pending"]
+  end
+
+  def debugger_http_row?(_row), do: false
 
   @spec debugger_timeline_text([Types.debugger_row()]) :: String.t()
   def debugger_timeline_text(rows) when is_list(rows) do
@@ -291,7 +308,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Timeline do
       target: target,
       message: Map.get(row, :message) || Map.get(row, "message") || "",
       message_source: Map.get(row, :message_source) || Map.get(row, "message_source"),
-      selected_runtime: Util.debugger_target_runtime(target, watch_runtime, companion_app_runtime),
+      selected_runtime:
+        Util.debugger_target_runtime(target, watch_runtime, companion_app_runtime),
       other_runtime: Util.debugger_other_runtime(target, watch_runtime, companion_app_runtime),
       watch_runtime: watch_runtime,
       companion_runtime: companion_app_runtime,
@@ -338,7 +356,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Timeline do
     select_debugger_row(debugger_rows(source, 500), cursor_seq)
   end
 
-  @spec select_debugger_row([Types.debugger_row()], Types.maybe_non_neg_integer()) :: Types.debugger_row() | nil
+  @spec select_debugger_row([Types.debugger_row()], Types.maybe_non_neg_integer()) ::
+          Types.debugger_row() | nil
   def select_debugger_row(rows, cursor_seq) when is_list(rows) do
     newest_rows = Enum.sort_by(rows, &Map.get(&1, :seq, 0), :desc)
     oldest_rows = Enum.reverse(newest_rows)
@@ -389,9 +408,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Timeline do
 
   def render_events_at_cursor(_events, _cursor_seq, _limit), do: []
 
-  @spec lifecycle_events_at_cursor(Types.events(), Types.maybe_non_neg_integer(), pos_integer()) :: [
-          Types.lifecycle_row()
-        ]
+  @spec lifecycle_events_at_cursor(Types.events(), Types.maybe_non_neg_integer(), pos_integer()) ::
+          [
+            Types.lifecycle_row()
+          ]
   def lifecycle_events_at_cursor(events, cursor_seq, limit \\ 12)
 
   def lifecycle_events_at_cursor(events, cursor_seq, limit)
@@ -674,7 +694,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Timeline do
       nil -> 0
     end
   end
-  @spec normalize_cursor_seq([map()], Types.maybe_non_neg_integer()) :: Types.maybe_non_neg_integer()
+
+  @spec normalize_cursor_seq([map()], Types.maybe_non_neg_integer()) ::
+          Types.maybe_non_neg_integer()
   def normalize_cursor_seq(events, cursor_seq) do
     CursorSeq.resolve_at_or_before(events, cursor_seq)
   end

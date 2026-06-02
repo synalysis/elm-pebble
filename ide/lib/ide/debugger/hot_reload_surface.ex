@@ -5,7 +5,8 @@ defmodule Ide.Debugger.HotReloadSurface do
   alias Ide.Debugger.SampleViewTrees
   alias Ide.Debugger.Types
 
-  @spec put_view_trees(Types.runtime_state(), String.t(), String.t(), String.t()) :: Types.runtime_state()
+  @spec put_view_trees(Types.runtime_state(), String.t(), String.t(), String.t()) ::
+          Types.runtime_state()
   def put_view_trees(state, path, revision, "phone") when is_map(state) do
     state
     |> put_in([:watch, :view_tree], SampleViewTrees.watch(path, revision))

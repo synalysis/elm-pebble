@@ -100,7 +100,10 @@ defmodule IdeWeb.EmulatorPhoneProxyIntegrationTest do
       try do
         {:ok, pid} = Emulator.lookup(info.id)
         port = Session.local_port(pid, :vnc)
-        assert {:ok, {width, height}} = EmulatorProxyHandshake.through_proxy(port, @connect_timeout_ms)
+
+        assert {:ok, {width, height}} =
+                 EmulatorProxyHandshake.through_proxy(port, @connect_timeout_ms)
+
         assert width > 0 and height > 0
       after
         assert :ok = Emulator.kill(info.id)
@@ -124,7 +127,9 @@ defmodule IdeWeb.EmulatorPhoneProxyIntegrationTest do
         assert info.display_ready == true
         port = Session.local_port(pid, :vnc)
         assert ProcessHost.tcp_port_open?(port)
-        assert {:ok, socket} = :gen_tcp.connect(~c"127.0.0.1", port, [:binary, active: false], 5_000)
+
+        assert {:ok, socket} =
+                 :gen_tcp.connect(~c"127.0.0.1", port, [:binary, active: false], 5_000)
 
         try do
           assert {:ok, "RFB "} = :gen_tcp.recv(socket, 4, @connect_timeout_ms)
@@ -173,11 +178,12 @@ defmodule IdeWeb.EmulatorPhoneProxyIntegrationTest do
            async_connect: true
          ) do
       {:ok, client} ->
-        result = receive do
-          :pypkjs_ws_connected -> true
-        after
-          timeout_ms -> false
-        end
+        result =
+          receive do
+            :pypkjs_ws_connected -> true
+          after
+            timeout_ms -> false
+          end
 
         Process.exit(client, :normal)
         result

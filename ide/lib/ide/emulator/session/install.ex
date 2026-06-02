@@ -17,7 +17,8 @@ defmodule Ide.Emulator.Session.Install do
     )
   end
 
-  @spec do_install(pid(), non_neg_integer()) :: {:ok, Types.pbw_install_result()} | {:error, Types.session_error()}
+  @spec do_install(pid(), non_neg_integer()) ::
+          {:ok, Types.pbw_install_result()} | {:error, Types.session_error()}
   def do_install(pid, retries_left) do
     with {:ok, context} <- GenServer.call(pid, :install_context, 5_000) do
       case install_with_router(context) do

@@ -79,11 +79,13 @@ defmodule ElmEx.IR.DeadCode do
   end
 
   @spec call_reference_targets(map(), String.t()) :: [String.t()]
-  defp call_reference_targets(%{op: :qualified_call, target: target}, _mod) when is_binary(target),
-    do: [target]
+  defp call_reference_targets(%{op: :qualified_call, target: target}, _mod)
+       when is_binary(target),
+       do: [target]
 
-  defp call_reference_targets(%{op: :qualified_call1, target: target}, _mod) when is_binary(target),
-    do: [target]
+  defp call_reference_targets(%{op: :qualified_call1, target: target}, _mod)
+       when is_binary(target),
+       do: [target]
 
   defp call_reference_targets(%{op: :call, name: name}, mod) when is_binary(name) do
     [local_call_target(name, mod)]

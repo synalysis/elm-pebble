@@ -263,7 +263,8 @@ defmodule Ide.ProjectBundle do
   @doc """
   Resolves the source directory to copy based on import root and manifest import path.
   """
-  @spec resolve_import_source(String.t(), map()) :: {:ok, String.t()} | {:error, import_source_error()}
+  @spec resolve_import_source(String.t(), map()) ::
+          {:ok, String.t()} | {:error, import_source_error()}
   def resolve_import_source(import_root, attrs) do
     import_path =
       attrs

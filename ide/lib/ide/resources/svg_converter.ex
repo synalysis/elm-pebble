@@ -46,7 +46,8 @@ defmodule Ide.Resources.SvgConverter do
     end
   end
 
-  @spec convert_svg_string(String.t(), keyword()) :: {:ok, ConversionResult.t()} | {:error, convert_error()}
+  @spec convert_svg_string(String.t(), keyword()) ::
+          {:ok, ConversionResult.t()} | {:error, convert_error()}
   def convert_svg_string(svg, opts \\ []) when is_binary(svg), do: convert(svg, opts)
 
   @spec convert(String.t(), keyword()) :: {:ok, ConversionResult.t()} | {:error, convert_error()}
@@ -235,7 +236,11 @@ defmodule Ide.Resources.SvgConverter do
       {[], ctx.report}
     else
       layer_translate = layer_translate_offset(attrs)
-      child_translate = {elem(ctx.translate, 0) + elem(layer_translate, 0), elem(ctx.translate, 1) + elem(layer_translate, 1)}
+
+      child_translate =
+        {elem(ctx.translate, 0) + elem(layer_translate, 0),
+         elem(ctx.translate, 1) + elem(layer_translate, 1)}
+
       collect_node_commands({"g", attrs, children}, %{ctx | translate: child_translate})
     end
   end
@@ -296,7 +301,16 @@ defmodule Ide.Resources.SvgConverter do
       {stroke_color, stroke_width} = normalize_stroke(stroke_color, stroke_width)
 
       with {:ok, command} <-
-             shape_command(tag, attrs, ctx.translate, precise, stroke_color, stroke_width, fill_color, ctx.opts) do
+             shape_command(
+               tag,
+               attrs,
+               ctx.translate,
+               precise,
+               stroke_color,
+               stroke_width,
+               fill_color,
+               ctx.opts
+             ) do
         command
       else
         _ -> nil
@@ -304,7 +318,16 @@ defmodule Ide.Resources.SvgConverter do
     end
   end
 
-  defp shape_command("path", attrs, translate, precise, stroke_color, stroke_width, fill_color, opts) do
+  defp shape_command(
+         "path",
+         attrs,
+         translate,
+         precise,
+         stroke_color,
+         stroke_width,
+         fill_color,
+         opts
+       ) do
     path_opts = [
       flatten_curves: opts[:flatten_curves],
       flatten_tolerance: opts[:flatten_tolerance]
@@ -335,39 +358,85 @@ defmodule Ide.Resources.SvgConverter do
     end
   end
 
-  defp shape_command("polygon", attrs, translate, precise, stroke_color, stroke_width, fill_color, _opts) do
+  defp shape_command(
+         "polygon",
+         attrs,
+         translate,
+         precise,
+         stroke_color,
+         stroke_width,
+         fill_color,
+         _opts
+       ) do
     points = points_from_attr(attrs)
 
     if points == [] do
       :error
     else
-      {:ok, path_command(points, false, translate, precise, stroke_color, stroke_width, fill_color)}
+      {:ok,
+       path_command(points, false, translate, precise, stroke_color, stroke_width, fill_color)}
     end
   end
 
-  defp shape_command("polyline", attrs, translate, precise, stroke_color, stroke_width, fill_color, _opts) do
+  defp shape_command(
+         "polyline",
+         attrs,
+         translate,
+         precise,
+         stroke_color,
+         stroke_width,
+         fill_color,
+         _opts
+       ) do
     points = points_from_attr(attrs)
 
     if points == [] do
       :error
     else
-      {:ok, path_command(points, true, translate, precise, stroke_color, stroke_width, fill_color)}
+      {:ok,
+       path_command(points, true, translate, precise, stroke_color, stroke_width, fill_color)}
     end
   end
 
-  defp shape_command("line", attrs, translate, precise, stroke_color, stroke_width, fill_color, _opts) do
+  defp shape_command(
+         "line",
+         attrs,
+         translate,
+         precise,
+         stroke_color,
+         stroke_width,
+         fill_color,
+         _opts
+       ) do
     with {x1, ""} <- float_attr(attrs, "x1"),
          {y1, ""} <- float_attr(attrs, "y1"),
          {x2, ""} <- float_attr(attrs, "x2"),
          {y2, ""} <- float_attr(attrs, "y2") do
       {:ok,
-       path_command([{x1, y1}, {x2, y2}], true, translate, precise, stroke_color, stroke_width, fill_color)}
+       path_command(
+         [{x1, y1}, {x2, y2}],
+         true,
+         translate,
+         precise,
+         stroke_color,
+         stroke_width,
+         fill_color
+       )}
     else
       _ -> :error
     end
   end
 
-  defp shape_command("rect", attrs, translate, precise, stroke_color, stroke_width, fill_color, _opts) do
+  defp shape_command(
+         "rect",
+         attrs,
+         translate,
+         precise,
+         stroke_color,
+         stroke_width,
+         fill_color,
+         _opts
+       ) do
     with {x, ""} <- float_attr(attrs, "x", "0"),
          {y, ""} <- float_attr(attrs, "y", "0"),
          {w, ""} <- float_attr(attrs, "width"),
@@ -381,7 +450,16 @@ defmodule Ide.Resources.SvgConverter do
     end
   end
 
-  defp shape_command("circle", attrs, translate, _precise, stroke_color, stroke_width, fill_color, _opts) do
+  defp shape_command(
+         "circle",
+         attrs,
+         translate,
+         _precise,
+         stroke_color,
+         stroke_width,
+         fill_color,
+         _opts
+       ) do
     with {cx, ""} <- float_attr(attrs, "cx"),
          {cy, ""} <- float_attr(attrs, "cy"),
          {radius, ""} <- float_attr(attrs, "r", attr(attrs, "z")) do
@@ -403,7 +481,8 @@ defmodule Ide.Resources.SvgConverter do
     end
   end
 
-  defp shape_command(_tag, _attrs, _translate, _precise, _stroke, _width, _fill, _opts), do: :error
+  defp shape_command(_tag, _attrs, _translate, _precise, _stroke, _width, _fill, _opts),
+    do: :error
 
   defp hidden?(attrs) do
     String.downcase(to_string(attr_list(attrs, "display") || "")) == "none"
@@ -519,7 +598,9 @@ defmodule Ide.Resources.SvgConverter do
   defp add_translate({x, y}, attrs) do
     {x, y}
     |> apply_transform(attr_list(attrs, "transform"))
-    |> apply_transform(attr_list(attrs, "translate") && "translate(#{attr_list(attrs, "translate")})")
+    |> apply_transform(
+      attr_list(attrs, "translate") && "translate(#{attr_list(attrs, "translate")})"
+    )
   end
 
   defp apply_transform({x, y}, nil), do: {x, y}
