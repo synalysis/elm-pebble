@@ -1053,7 +1053,7 @@ defmodule Elmc.PebbleShimTest do
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
-    assert String.contains?(generated, "elmc_fn_Main_view_commands_from")
+    assert String.contains?(generated, "static ElmcValue *elmc_fn_Main_pointAt_native")
 
     point_at_body =
       generated

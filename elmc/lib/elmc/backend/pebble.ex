@@ -3168,7 +3168,6 @@ defmodule Elmc.Backend.Pebble do
   defp accel_sampling_hz_from_name("100", _), do: 100
   defp accel_sampling_hz_from_name(_, default), do: default
 
-  defp accel_sampling_hz_from_tag(0), do: 10
   defp accel_sampling_hz_from_tag(1), do: 10
   defp accel_sampling_hz_from_tag(2), do: 25
   defp accel_sampling_hz_from_tag(3), do: 50

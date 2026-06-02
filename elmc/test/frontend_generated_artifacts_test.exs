@@ -150,10 +150,18 @@ defmodule Elmc.FrontendGeneratedArtifactsTest do
     assert expr3[:args] == ["tag"]
     assert expr3[:body][:op] == :field_call
 
-    assert {:error, {1, :elm_ex_expr_parser, [message4, ~c"in_kw"]}} =
+    assert {:ok,
+            %{
+              name: "base",
+              op: :let_in,
+              value_expr: %{
+                args: [%{name: "n", op: :var}],
+                name: "helper",
+                op: :call
+              },
+              in_expr: %{value: 1, op: :add_const, var: "base"}
+            }} =
              ElmEx.Frontend.GeneratedExpressionParser.parse("let base = helper n in base + 1")
-
-    assert message4 =~ "on its own line"
 
     assert {:ok, tokens4, _} =
              :elm_ex_expr_lexer.string(String.to_charlist("let\nbase = helper n\nin\nbase + 1"))
@@ -199,12 +207,14 @@ defmodule Elmc.FrontendGeneratedArtifactsTest do
     assert Enum.at(expr6b[:branches], 0)[:pattern][:kind] == :tuple
     assert Enum.at(expr6b[:branches], 0)[:pattern][:elements] |> length() == 2
 
-    assert {:error, {1, :elm_ex_expr_parser, [message6d, ~c"in_kw"]}} =
+    assert {:ok, expr6d_inline} =
              ElmEx.Frontend.GeneratedExpressionParser.parse(
                "let maybeTemp = temperatureOf model in case maybeTemp of\nJust temperature -> Pebble.Draw.textInt 0 28 temperature\nNothing -> Pebble.Draw.textLabel 0 28 Pebble.Draw.WaitingForCompanion"
              )
 
-    assert message6d =~ "on its own line"
+    assert expr6d_inline[:op] == :let_in
+    assert expr6d_inline[:in_expr][:op] == :case
+    assert length(expr6d_inline[:in_expr][:branches]) == 2
 
     assert {:ok, expr6d} =
              ElmEx.Frontend.GeneratedExpressionParser.parse(

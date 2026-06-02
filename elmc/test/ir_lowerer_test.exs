@@ -1009,7 +1009,7 @@ defmodule Elmc.IRLowererTest do
 
     assert f_decl.expr.op == :case
     assert f_decl.expr.subject.op == :tuple2
-    assert f_decl.expr.subject.left == %{op: :int_literal, value: 2}
+    assert f_decl.expr.subject.left == %{op: :int_literal, value: 2, union_ctor: "Yep"}
   end
 
   test "lowerer rewrites constructor calls inside field access arguments" do
@@ -1064,7 +1064,7 @@ defmodule Elmc.IRLowererTest do
 
     assert f_decl.expr.op == :tuple_first
     assert f_decl.expr.arg.op == :tuple2
-    assert f_decl.expr.arg.left == %{op: :int_literal, value: 2}
+    assert f_decl.expr.arg.left == %{op: :int_literal, value: 2, union_ctor: "Yep"}
   end
 
   test "lowerer rewrites constructor calls inside field call receiver and args" do
@@ -1122,9 +1122,9 @@ defmodule Elmc.IRLowererTest do
 
     assert f_decl.expr.op == :field_call
     assert f_decl.expr.arg.op == :tuple2
-    assert f_decl.expr.arg.left == %{op: :int_literal, value: 2}
+    assert f_decl.expr.arg.left == %{op: :int_literal, value: 2, union_ctor: "Yep"}
     assert Enum.at(f_decl.expr.args, 0)[:op] == :tuple2
-    assert Enum.at(f_decl.expr.args, 0)[:left] == %{op: :int_literal, value: 2}
+    assert Enum.at(f_decl.expr.args, 0)[:left] == %{op: :int_literal, value: 2, union_ctor: "Yep"}
   end
 
   test "lowerer includes top-level function definitions without signatures" do
