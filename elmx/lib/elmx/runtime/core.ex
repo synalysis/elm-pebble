@@ -96,12 +96,12 @@ defmodule Elmx.Runtime.Core do
     end
   end
 
+  def random_int(%{"low" => low, "high" => high}), do: random_int(%{low: low, high: high})
+
   defp corpus_fixed_random_int do
     Process.get(:elmx_corpus_fixed_random_int) ||
       Application.get_env(:elmx, :corpus_fixed_random_int)
   end
-
-  def random_int(%{"low" => low, "high" => high}), do: random_int(%{low: low, high: high})
 
   defp clamp_int(n, low, high) when is_integer(n) and is_integer(low) and is_integer(high) do
     min(max(n, low), high)
