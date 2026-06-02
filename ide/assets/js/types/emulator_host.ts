@@ -26,6 +26,13 @@ export type EmbeddedEmulatorHostSurface = {
   sessionAlive: boolean
   displayConnected: boolean
   phoneBridgeReady: boolean
+  phoneBridgeActive: boolean
+  phoneCompanionCacheInstalled: boolean
+  phoneCompanionInstalledAt: number
+  phoneBridgeReconnectInFlight: boolean
+  phoneBridgeReconnectAttempts: number
+  phoneBridgeReconnectWindowStartedAt: number
+  phoneBridgeLastReconnectedAt: number
   launching: boolean
   installing: boolean
   stopping: boolean
