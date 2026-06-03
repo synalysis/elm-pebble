@@ -13,6 +13,8 @@ defmodule Ide.Debugger.Types.StepExecutionContract do
 
   @type executor_request :: Request.t()
   @type executor_request_wire :: ExecutorTypes.execution_input_map()
+  @type elmx_executor_wire :: Types.elmx_executor_request()
+  @type elmx_execution_payload :: Types.elmx_execution_payload()
   @type executor_result :: ExecutorTypes.execution_result()
   @type step_result :: RuntimeStepResult.t()
 

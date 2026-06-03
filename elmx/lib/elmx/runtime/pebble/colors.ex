@@ -5,6 +5,8 @@ defmodule Elmx.Runtime.Pebble.Colors do
   Values match `Elmc.Backend.CCodegen.Constants.pebble_color_constants/0`.
   """
 
+  alias Elmx.Types
+
   import Bitwise
 
   @named_constants %{
@@ -80,7 +82,7 @@ defmodule Elmx.Runtime.Pebble.Colors do
     Map.get(@named_constants, name, @named_constants["black"])
   end
 
-  @spec to_int(term()) :: integer()
+  @spec to_int(Types.ui_color()) :: integer()
   def to_int(color) when is_integer(color) and color >= 0 and color <= 0xFF, do: color
 
   def to_int(0xFFFFFFFF), do: @named_constants["white"]
@@ -111,7 +113,8 @@ defmodule Elmx.Runtime.Pebble.Colors do
 
   def to_int(_), do: @named_constants["black"]
 
-  @spec pack_rgba8(term(), term(), term(), term()) :: integer()
+  @spec pack_rgba8(Types.ui_coord(), Types.ui_coord(), Types.ui_coord(), Types.ui_coord()) ::
+          integer()
   defp pack_rgba8(r, g, b, a) do
     rr = channel_to_2bit(r)
     gg = channel_to_2bit(g)

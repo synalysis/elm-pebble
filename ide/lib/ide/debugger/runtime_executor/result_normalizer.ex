@@ -6,7 +6,8 @@ defmodule Ide.Debugger.RuntimeExecutor.ResultNormalizer do
   alias Ide.Debugger.RuntimeExecutor.Types, as: ExecutorTypes
   alias Ide.Debugger.Types
 
-  @spec normalize(ExecutorTypes.executor_wire_result()) :: ExecutorTypes.execution_result()
+  @spec normalize(ExecutorTypes.elmx_execution_payload() | ExecutorTypes.executor_wire_result()) ::
+          ExecutorTypes.execution_result()
   def normalize(result) when is_map(result) do
     %{
       model_patch: map_field(result, :model_patch),

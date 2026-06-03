@@ -798,6 +798,7 @@ static void apply_pending_cmd(void) {
       status_t status = persist_write_int(key, value);
       ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "cmd storage_write key=%lu value=%ld status=%ld",
               (unsigned long)key, (long)value, (long)status);
+      (void)status;
       break;
     }
 #endif
@@ -819,6 +820,7 @@ static void apply_pending_cmd(void) {
       status_t status = persist_write_string(key, cmd.text);
       ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "cmd storage_write_string key=%lu value=%s status=%ld",
               (unsigned long)key, cmd.text, (long)status);
+      (void)status;
       break;
     }
 #endif
@@ -859,6 +861,7 @@ static void apply_pending_cmd(void) {
       status_t status = persist_delete(key);
       ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "cmd storage_delete key=%lu status=%ld",
               (unsigned long)key, (long)status);
+      (void)status;
       break;
     }
 #endif

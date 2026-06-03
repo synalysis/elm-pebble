@@ -4,6 +4,24 @@ defmodule Ide.Debugger.StepExecutionContractTest do
   alias Ide.Debugger.{StepInput, Surface}
   alias Ide.Debugger.Types.StepExecutionContract
 
+  test "request_from wire map aligns with elmx executor_request fields" do
+    surface =
+      Surface.from_map(%{
+        model: %{"last_path" => "src/Main.elm"},
+        shell: %{"debugger_contract" => %{"module" => "Main"}}
+      })
+
+    step = StepInput.from_surface(:watch, surface, "Tick")
+    request = StepExecutionContract.request_from(step)
+    wire = Ide.Debugger.RuntimeExecutor.Request.to_map(request)
+
+    assert wire.source_root == "watch"
+    assert is_map(wire.current_model)
+    assert is_map(wire.current_view_tree)
+    assert wire.message == "Tick"
+    assert wire.introspect["module"] == "Main"
+  end
+
   test "request_from builds executor request for watch surface" do
     surface =
       Surface.from_map(%{

@@ -54,11 +54,34 @@ defmodule Elmx.PartialQualifiedEmitTest do
     assert source =~ "Core.foldl"
   end
 
+  test "emit fallback string path delegates to Stdlib.qualified_call" do
+    args = [%{op: :var, name: "text"}]
+
+    {code, _, _} =
+      QualifiedEmit.compile_qualified_call_fallback_string("String.lines", args, env(), 0)
+
+    assert IO.iodata_to_binary(code) =~ "lines"
+    assert Stdlib.handles_qualified?("String.lines")
+  end
+
   test "Stdlib.qualified_call partial Json.Decode.andThen and list" do
     assert {:ok, code} = Stdlib.qualified_call("Json.Decode.andThen", "step")
     assert code == "fn elmx_dec -> Elmx.Runtime.Json.Decode.and_then(step, elmx_dec) end"
 
     assert {:ok, code} = Stdlib.qualified_call("Json.Decode.list", "")
     assert code == "fn elmx_inner -> Elmx.Runtime.Json.Decode.list(elmx_inner) end"
+  end
+
+  test "emit fallback delegates Result.mapError to Stdlib.qualified_call" do
+    args = [%{op: :var, name: "f"}, %{op: :var, name: "result"}]
+
+    {code, _, _} =
+      QualifiedEmit.compile_qualified_call_fallback_string("Result.mapError", args, env(), 0)
+
+    source = IO.iodata_to_binary(code)
+    assert source =~ "result_map_error"
+    assert Stdlib.handles_qualified?("Result.mapError")
+    assert {:ok, special} = Stdlib.qualified_call("Result.mapError", "f, result")
+    assert special =~ "result_map_error"
   end
 end

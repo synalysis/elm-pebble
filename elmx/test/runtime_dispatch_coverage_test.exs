@@ -2,18 +2,18 @@ defmodule Elmx.RuntimeDispatchCoverageTest do
   use ExUnit.Case, async: true
 
   alias Elmx.Runtime.Pebble
+  alias Elmx.Runtime.Pebble.Registry
 
   @special_values_glob Path.expand("../lib/elmx/runtime/pebble/special_values/**/*.ex", __DIR__)
-  @pebble_ex Path.expand("../lib/elmx/runtime/pebble.ex", __DIR__)
+  @dispatch_ex Path.expand("../lib/elmx/runtime/pebble/dispatch.ex", __DIR__)
 
   @ui_call_re ~r/ui_call\("(elmx_[a-z0-9_]+)"/
   @runtime_call_re ~r/function: "(elmx_[a-z0-9_]+)"/
-  @dispatch_clause_re ~r/"(elmx_[a-z0-9_]+)"\s*->/
 
   test "static SpecialValues runtime functions are handled by runtime_dispatch" do
     emitted = emitted_runtime_functions()
-    handled = explicit_dispatch_functions()
-    kernel_fallback? = File.read!(@pebble_ex) =~ "kernel_runtime_function?(other)"
+    handled = Registry.handlers() |> Map.keys() |> MapSet.new()
+    kernel_fallback? = File.read!(@dispatch_ex) =~ "def kernel_runtime_stub"
 
     missing =
       emitted
@@ -41,6 +41,12 @@ defmodule Elmx.RuntimeDispatchCoverageTest do
     assert cmd["callback_constructor"] == "GotConnectivity"
   end
 
+  test "registry handlers apply without raising for a sample of symbols" do
+    assert Registry.apply("elmx_light_enable", [])["kind"] == "cmd.effect.light"
+    assert Registry.apply("elmx_math_clamp", [0, 10, 20]) == 10
+    assert is_map(Registry.apply("elmx_ui_window_stack", [[]]))
+  end
+
   defp emitted_runtime_functions do
     @special_values_glob
     |> Path.wildcard()
@@ -57,14 +63,6 @@ defmodule Elmx.RuntimeDispatchCoverageTest do
         Regex.scan(@runtime_call_re, text, capture: :all_but_first)
     end)
     |> List.flatten()
-  end
-
-  defp explicit_dispatch_functions do
-    @pebble_ex
-    |> File.read!()
-    |> then(&Regex.scan(@dispatch_clause_re, &1, capture: :all_but_first))
-    |> List.flatten()
-    |> MapSet.new()
   end
 
   defp kernel_function?(name), do: String.starts_with?(name, "elmx_kernel_pebble_")

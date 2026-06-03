@@ -33,14 +33,14 @@ defmodule Elmx.StringQualifiedEmitTest do
            ]) =~ "Strings.contains"
   end
 
-  test "Basics.compare rewrites to runtime_dispatch" do
+  test "Basics.compare rewrites to Core.basics_compare" do
     source =
       emit("Basics.compare", [
         %{op: :int_literal, value: 1},
         %{op: :int_literal, value: 2}
       ])
 
-    assert source =~ "runtime_dispatch(\"elmx_basics_compare\""
+    assert source =~ "Elmx.Runtime.Core.basics_compare(1, 2)"
     assert Core.basics_compare(1, 2) == -1
   end
 

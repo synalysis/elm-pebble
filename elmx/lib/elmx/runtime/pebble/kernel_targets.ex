@@ -5,11 +5,12 @@ defmodule Elmx.Runtime.Pebble.KernelTargets do
 
   alias Elmx.Runtime.Pebble.Subscriptions
   alias Elmx.Runtime.Pebble.Subscriptions.Frame, as: FrameMask
+  alias Elmx.Types
 
   @watch_prefix "Elm.Kernel.PebbleWatch."
   @phone_prefix "Elm.Kernel.PebblePhone."
 
-  @spec rewrite(String.t(), list()) :: {:ok, map()} | :error
+  @spec rewrite(String.t(), Types.ir_arg_list()) :: Types.rewrite_result()
   def rewrite(target, args) when is_binary(target) and is_list(args) do
     cond do
       String.starts_with?(target, @watch_prefix) ->

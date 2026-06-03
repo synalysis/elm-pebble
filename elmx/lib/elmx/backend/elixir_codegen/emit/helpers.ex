@@ -67,6 +67,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Helpers do
     end
   end
 
+  def function_reference_uncurried(_module, "identity", _env), do: "fn x -> x end"
+
   def function_reference_uncurried(module, name, env) do
     fn_sym = module_fn(module, name)
     zero_arity = Map.get(env, :zero_arity_fns, MapSet.new())
@@ -160,7 +162,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Helpers do
   @spec record_pattern_key(String.t() | atom()) :: String.t()
   def record_pattern_key(name) when is_binary(name) or is_atom(name), do: inspect(name)
 
-  @spec param_name(term()) :: String.t()
+  @spec param_name(Types.ir_expr() | atom() | String.t() | map()) :: String.t()
   def param_name(arg) when is_binary(arg), do: arg
   def param_name(arg) when is_atom(arg), do: Atom.to_string(arg)
   def param_name(%{name: name}), do: to_string(name)

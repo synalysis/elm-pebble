@@ -230,6 +230,74 @@ defmodule Elmc.PebbleShimTest do
     assert run_code == 0
   end
 
+  test "scene command stream resumes mid-cell when chunk splits rect and text" do
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available for pebble shim C test")
+
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/scene_grid_chunk_project", __DIR__)
+    out_dir = Path.expand("tmp/scene_grid_chunk_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(source_fixture, project_dir)
+    write_grid_scene_app!(project_dir)
+
+    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    harness_path = Path.join(out_dir, "c/scene_grid_chunk_harness.c")
+
+    File.write!(
+      harness_path,
+      """
+      #include "elmc_pebble.h"
+
+      int main(void) {
+        ElmcPebbleApp app = {0};
+        ElmcValue *flags = elmc_new_int(0);
+        if (elmc_pebble_init(&app, flags) != 0) return 2;
+        elmc_release(flags);
+
+        ElmcPebbleDrawCmd cmds[64];
+        const int total = elmc_pebble_scene_command_count(&app);
+        if (total != 38) return 3;
+        if (elmc_pebble_scene_commands_from(&app, cmds, 32, 0) != 32) return 4;
+        if (elmc_pebble_scene_commands_from(&app, cmds, 8, 32) != 6) return 5;
+        if (elmc_pebble_scene_commands_from(&app, cmds, 1, 32) != 1) return 6;
+        if (cmds[0].kind != ELMC_PEBBLE_DRAW_TEXT) return 7;
+        if (cmds[0].text[0] == '\\0') return 8;
+
+        elmc_pebble_deinit(&app);
+        return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 9;
+      }
+      """
+    )
+
+    binary_path = Path.join(out_dir, "scene_grid_chunk_harness")
+
+    {compile_out, compile_code} =
+      System.cmd(cc, [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-I#{Path.join(out_dir, "runtime")}",
+        "-I#{Path.join(out_dir, "ports")}",
+        "-I#{Path.join(out_dir, "c")}",
+        Path.join(out_dir, "runtime/elmc_runtime.c"),
+        Path.join(out_dir, "ports/elmc_ports.c"),
+        Path.join(out_dir, "c/elmc_generated.c"),
+        Path.join(out_dir, "c/elmc_worker.c"),
+        Path.join(out_dir, "c/elmc_pebble.c"),
+        harness_path,
+        "-o",
+        binary_path
+      ])
+
+    assert compile_code == 0, compile_out
+
+    {_run_out, run_code} = System.cmd(binary_path, [])
+    assert run_code == 0
+  end
+
   test "scene dirty rect tracks moved visual command" do
     cc = System.find_executable("cc")
     if is_nil(cc), do: flunk("cc not available for pebble shim C test")
@@ -741,7 +809,9 @@ defmodule Elmc.PebbleShimTest do
 
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     assert String.contains?(generated, "elmc_fn_Main_view_commands_from")
-    assert String.contains?(generated, "elmc_fn_Main_cell_commands_append")
+    assert String.contains?(generated, "elmc_fn_Main_view_commands_append")
+    assert String.contains?(generated, "direct_index_")
+    refute String.contains?(generated, "elmc_fn_Main_cell_commands_append")
 
     harness_path = Path.join(out_dir, "c/indexed_map_harness.c")
 
@@ -1306,7 +1376,9 @@ defmodule Elmc.PebbleShimTest do
     assert draw_feature?(header, "RECT")
     assert draw_feature?(header, "STROKE_COLOR")
     assert draw_feature?(header, "TEXT_COLOR")
-    assert String.contains?(generated, "elmc_fn_Main_drawCell_commands_append")
+    assert String.contains?(generated, "elmc_fn_Main_view_commands_append")
+    assert String.contains?(generated, "ELMC_RENDER_OP_RECT")
+    refute String.contains?(generated, "elmc_fn_Main_drawCell_commands_append")
   end
 
   test "fillRadial references enable radial draw runtime feature" do
@@ -1909,6 +1981,89 @@ defmodule Elmc.PebbleShimTest do
 
     view _ =
         Ui.toUiNode [ Ui.clear Color.white ]
+    """)
+  end
+
+  defp write_grid_scene_app!(project_dir) do
+    File.write!(Path.join(project_dir, "src/Main.elm"), """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        { cells : List Int }
+
+
+    type Msg
+        = NoOp
+
+
+    main : Program Decode.Value Model Msg
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( { cells = List.repeat 16 2 }, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view model =
+        let
+            layout =
+                { x = 10, y = 26, cell = 28, gap = 3 }
+        in
+        Ui.clear Color.white
+            :: (Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 4, w = 132, h = 16 } "2048"
+                    :: List.indexedMap (drawCell layout) model.cells
+               )
+            |> Ui.toUiNode
+
+
+    drawCell : { x : Int, y : Int, cell : Int, gap : Int } -> Int -> Int -> Ui.RenderOp
+    drawCell layout index value =
+        let
+            x =
+                layout.x + modBy 4 index * (layout.cell + layout.gap)
+
+            y =
+                layout.y + (index // 4) * (layout.cell + layout.gap)
+
+            label =
+                if value == 0 then
+                    "."
+
+                else
+                    String.fromInt value
+
+            textY =
+                y + ((layout.cell - 18) // 2)
+        in
+        Ui.context
+            [ Ui.strokeColor Color.black
+            , Ui.textColor Color.black
+            ]
+            [ Ui.rect { x = x, y = y, w = layout.cell, h = layout.cell } Color.black
+            , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = x, y = textY, w = layout.cell, h = 18 } label
+            ]
+            |> Ui.group
     """)
   end
 

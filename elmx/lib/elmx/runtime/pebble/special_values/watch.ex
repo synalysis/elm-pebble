@@ -1,6 +1,8 @@
 defmodule Elmx.Runtime.Pebble.SpecialValues.Watch do
   @moduledoc false
 
+  @behaviour Elmx.Runtime.Pebble.SpecialValues.Dispatcher
+
   import Elmx.Runtime.Pebble.SpecialValues.Helpers
 
   alias Elmx.Types

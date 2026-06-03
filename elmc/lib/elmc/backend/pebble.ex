@@ -2302,7 +2302,7 @@ defmodule Elmc.Backend.Pebble do
     }
 
     static int elmc_pebble_view_commands_impl(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip, int dedupe);
-    static int elmc_pebble_view_commands_raw_impl(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip, int dedupe);
+    static int elmc_pebble_view_commands_raw_impl(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip, int dedupe, int *out_emitted_end);
 
     int elmc_pebble_view_command(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmd) {
       int count = elmc_pebble_view_commands(app, out_cmd, 1);
@@ -2316,7 +2316,7 @@ defmodule Elmc.Backend.Pebble do
     }
 
     int elmc_pebble_view_commands_from(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip) {
-      int count = elmc_pebble_view_commands_raw_impl(app, out_cmds, max_cmds, skip, 0);
+      int count = elmc_pebble_view_commands_raw_impl(app, out_cmds, max_cmds, skip, 0, NULL);
       if (count < max_cmds) {
         elmc_pebble_clear_view_cache(app);
       }
@@ -2378,7 +2378,8 @@ defmodule Elmc.Backend.Pebble do
         // #region agent log
         if (chunk == 0 && skip == 0) elmc_agent_scene_probe(0xED997A00);
         // #endregion
-        int count = elmc_pebble_view_commands_raw_impl(app, cmds, build_chunk_capacity, skip, 0);
+        int emitted_end = 0;
+        int count = elmc_pebble_view_commands_raw_impl(app, cmds, build_chunk_capacity, skip, 0, &emitted_end);
         // #region agent log
         if (chunk == 0 && skip == 0) {
           uint32_t encoded_count = count < 0 ? (uint32_t)(128 + ((-count) & 0x7F)) : (uint32_t)(count > 127 ? 127 : count);
@@ -2412,7 +2413,7 @@ defmodule Elmc.Backend.Pebble do
             ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", rc);
           }
         }
-        skip += count;
+        skip = emitted_end;
         if (count < build_chunk_capacity) break;
       }
       elmc_pebble_clear_view_cache(app);
@@ -2451,18 +2452,18 @@ defmodule Elmc.Backend.Pebble do
     #endif
     }
 
-    static int elmc_pebble_view_commands_raw_impl(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip, int dedupe);
+    static int elmc_pebble_view_commands_raw_impl(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip, int dedupe, int *out_emitted_end);
 
     int elmc_pebble_scene_commands_from(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip) {
       ELMC_PEBBLE_GENERATED_TRACE_ENTER("elmc_pebble_scene_commands_from");
       if (!app || !out_cmds || max_cmds <= 0 || skip < 0) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_from", -1);
     #if !ELMC_PEBBLE_SCENE_CACHE_ENABLED
-      int direct_count = elmc_pebble_view_commands_raw_impl(app, out_cmds, max_cmds, skip, 0);
+      int direct_count = elmc_pebble_view_commands_raw_impl(app, out_cmds, max_cmds, skip, 0, NULL);
       ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_from", direct_count);
     #endif
       int rc = elmc_pebble_ensure_scene(app);
       if (rc == -2) {
-        int fallback_count = elmc_pebble_view_commands_raw_impl(app, out_cmds, max_cmds, skip, 0);
+        int fallback_count = elmc_pebble_view_commands_raw_impl(app, out_cmds, max_cmds, skip, 0, NULL);
         // #region agent log
         elmc_agent_scene_probe(0xED998100 | (fallback_count < 0 ? (uint32_t)(0x80 | ((-fallback_count) & 0x7F)) : (uint32_t)(fallback_count > 0x7F ? 0x7F : fallback_count)));
         // #endregion
@@ -2488,7 +2489,7 @@ defmodule Elmc.Backend.Pebble do
       if (!app || !app->initialized || !out_cmds || max_cmds <= 0) return -1;
       if (skip < 0) return -1;
     #if !ELMC_PEBBLE_SCENE_CACHE_ENABLED
-      return elmc_pebble_view_commands_raw_impl(app, out_cmds, max_cmds, skip, dedupe);
+      return elmc_pebble_view_commands_raw_impl(app, out_cmds, max_cmds, skip, dedupe, NULL);
     #endif
       int rc = elmc_pebble_ensure_scene(app);
       if (rc != 0) return rc;
@@ -2504,9 +2505,10 @@ defmodule Elmc.Backend.Pebble do
       return elmc_pebble_scene_commands_from(app, out_cmds, max_cmds, skip);
     }
 
-    static int elmc_pebble_view_commands_raw_impl(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip, int dedupe) {
+    static int elmc_pebble_view_commands_raw_impl(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip, int dedupe, int *out_emitted_end) {
       if (!app || !app->initialized || !out_cmds || max_cmds <= 0) return -1;
       if (skip < 0) return -1;
+      if (out_emitted_end) *out_emitted_end = skip;
     #if !defined(#{direct_view_macro})
       int count = 0;
       ElmcValue *result = NULL;
@@ -2525,10 +2527,12 @@ defmodule Elmc.Backend.Pebble do
             ElmcValue *direct_model = elmc_worker_model(&app->worker);
             if (!direct_model) return -2;
             ElmcValue *direct_args[] = { direct_model };
-            int direct_count = #{entry_view_commands_from}(direct_args, 1, out_cmds, max_cmds, skip);
+            int emitted_end = 0;
+            int direct_count = #{entry_view_commands_from}(direct_args, 1, out_cmds, max_cmds, skip, &emitted_end);
             elmc_release(direct_model);
             elmc_pebble_heap_log("view:direct:end");
             if (direct_count < 0) return direct_count;
+            if (out_emitted_end) *out_emitted_end = emitted_end;
             // #region agent log
             elmc_agent_scene_probe(direct_count == 0 ? 0xED996120 : 0xED996121);
             // #endregion

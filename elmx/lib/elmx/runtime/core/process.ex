@@ -1,13 +1,15 @@
 defmodule Elmx.Runtime.Core.Process do
   @moduledoc false
 
-  @spec spawn(term()) :: {:Ok, integer()}
+  alias Elmx.Types
+
+  @spec spawn(Types.elm_hof()) :: Types.result_native()
   def spawn(_task), do: {:Ok, next_pid()}
 
-  @spec sleep(integer()) :: {:Ok, integer()}
+  @spec sleep(integer()) :: Types.result_native()
   def sleep(_milliseconds), do: {:Ok, 0}
 
-  @spec kill(integer()) :: {:Ok, integer()}
+  @spec kill(integer()) :: Types.result_native()
   def kill(_pid), do: {:Ok, 0}
 
   defp next_pid do

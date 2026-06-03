@@ -248,7 +248,7 @@ defmodule Ide.Debugger.Types do
 
   @type wire_scalar :: String.t() | integer() | float() | boolean() | nil
 
-  @type wire_input :: wire_scalar() | list() | map()
+  @type wire_input :: Elmx.Types.wire_input()
 
   @type wire_map :: %{optional(String.t()) => wire_input(), optional(atom()) => wire_input()}
 
@@ -371,9 +371,101 @@ defmodule Ide.Debugger.Types do
 
   @type subscription_payload :: map() | protocol_ctor_value() | wire_scalar()
 
-  @type view_output_node :: wire_map()
+  @type view_output_row :: Elmx.Types.view_output_row()
 
-  @type view_output_tree :: wire_map()
+  @type view_output_node :: view_output_row() | Elmx.Types.view_output_tree()
+
+  @type view_output_tree :: Elmx.Types.view_output_tree()
+
+  @type elm_msg :: Elmx.Types.elm_msg()
+
+  @type json_value :: Elmx.Types.json_value()
+
+  @type runtime_protocol_event :: Elmx.Types.protocol_event()
+
+  @type comparable :: Elmx.Types.comparable()
+
+  @type wire_cmd :: Elmx.Types.wire_cmd()
+
+  @type wire_value :: Elmx.Types.wire_value()
+
+  @type elmx_executor_request :: Elmx.Types.executor_request()
+
+  @type elmx_execution_payload :: Elmx.Types.execution_payload()
+
+  @type elmx_view_preview_payload :: Elmx.Types.view_preview_payload()
+
+  @type elmx_execution_error :: Elmx.Types.execution_error()
+
+  @type elmx_runtime_model :: Elmx.Types.runtime_model()
+
+  @type elm_dict :: Elmx.Types.elm_dict()
+
+  @type elm_set :: Elmx.Types.elm_set()
+
+  @type elm_array :: Elmx.Types.elm_array()
+
+  @type elm_list :: Elmx.Types.elm_list()
+
+  @type elm_char_list :: Elmx.Types.elm_char_list()
+
+  @type ui_node :: Elmx.Types.ui_node()
+
+  @type ui_point :: Elmx.Types.ui_point()
+
+  @type ui_bounds :: Elmx.Types.ui_bounds()
+
+  @type ui_color :: Elmx.Types.ui_color()
+
+  @type ui_path :: Elmx.Types.ui_path()
+
+  @type string_like :: Elmx.Types.string_like()
+
+  @type launch_reason_like :: Elmx.Types.launch_reason_like()
+
+  @type view_shape_input :: Elmx.Types.view_shape_input()
+
+  @type render_op_input :: Elmx.Types.render_op_input()
+
+  @type numeric_input :: Elmx.Types.numeric_input()
+
+  @type maybe_like :: Elmx.Types.maybe_like()
+
+  @type result_like :: Elmx.Types.result_like()
+
+  @type json_object_pair :: Elmx.Types.json_object_pair()
+
+  @type storage_value_input :: Elmx.Types.storage_value_input()
+
+  @type elm_value :: Elmx.Types.elm_value()
+
+  @type wire_cmd_input :: Elmx.Types.wire_cmd_input()
+
+  @type data_log_tag :: Elmx.Types.data_log_tag()
+
+  @type subscription_mask_item :: Elmx.Types.subscription_mask_item()
+
+  @type display_shape_like :: Elmx.Types.display_shape_like()
+
+  @type elm_hof :: Elmx.Types.elm_hof()
+
+  @type color_mode_like :: Elmx.Types.color_mode_like()
+
+  @type json_decoder_spec :: Elmx.Types.json_decoder_spec()
+
+  @type compile_failure_detail :: Elmx.Types.compile_failure_detail()
+
+  @type elm_tuple_like :: Elmx.Types.elm_tuple_like()
+
+  @type dict_entry_input :: Elmx.Types.dict_entry_input()
+
+  @type wire_ctor :: Elmx.Types.wire_ctor()
+
+  @type elmx_wire_map :: Elmx.Types.wire_map()
+
+  @type followup_row :: Elmx.Types.followup_row()
+
+  @type frame_tick_payload :: Elmx.Types.frame_tick_payload()
 
   @type runtime_step_result :: RuntimeStepResult.t() | RuntimeStepResult.wire_result()
 
@@ -389,7 +481,7 @@ defmodule Ide.Debugger.Types do
 
   @type static_task_result :: map() | integer() | {map(), map()}
 
-  @type runtime_view_nodes :: [view_output_node()]
+  @type runtime_view_nodes :: [view_output_row()]
 
   @type auto_fire_candidate :: trigger_candidate()
 

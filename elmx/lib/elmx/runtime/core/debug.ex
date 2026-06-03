@@ -1,18 +1,21 @@
 defmodule Elmx.Runtime.Core.Debug do
   @moduledoc false
 
+  alias Elmx.Types
+
   require Logger
 
-  @spec log(term(), term()) :: term()
+  @doc "Elm `Debug.log` — returns `value` unchanged after logging."
+  @spec log(Types.string_like() | term(), value) :: value when value: var
   def log(label, value) do
     Logger.debug(fn -> "#{inspect(label)}: #{inspect(value)}" end)
     value
   end
 
-  @spec todo(term()) :: no_return()
+  @spec todo(Types.string_like() | term()) :: no_return()
   def todo(label), do: raise "Debug.todo: #{inspect(label)}"
 
-  @spec to_string(term()) :: binary()
+  @spec to_string(Types.string_like() | Types.wire_input()) :: String.t()
   def to_string(value), do: format_value(value)
 
   defp format_value(value) do

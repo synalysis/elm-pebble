@@ -63,6 +63,10 @@ jobs:
         working-directory: elmx
         run: mix test
 
+      - name: Run elmx Dialyzer
+        working-directory: elmx
+        run: mix dialyzer
+
       - name: Run elmx coverage and qualified-call gate tests
         working-directory: elmx
         run: |

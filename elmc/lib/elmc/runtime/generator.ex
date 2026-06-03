@@ -387,6 +387,12 @@ defmodule Elmc.Runtime.Generator do
     #define ELMC_RECORD_GET_INDEX_INT(record, index) \\
       elmc_as_int(((ElmcRecord *)((record)->payload))->field_values[(index)])
 
+    #define ELMC_RECORD_GET_INDEX_FLOAT(record, index) \\
+      elmc_as_float(((ElmcRecord *)((record)->payload))->field_values[(index)])
+
+    #define ELMC_RECORD_GET_INDEX_BOOL(record, index) \\
+      elmc_as_bool(((ElmcRecord *)((record)->payload))->field_values[(index)])
+
     typedef struct ElmcClosure {
       ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count);
       int arity;

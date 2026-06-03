@@ -19,17 +19,18 @@ defmodule Elmx.CoreResultTest do
   end
 
   test "runtime_call_parts emits result_andThen with (function, result) order" do
+    mr = "Elmx.Runtime.Core.MaybeResult"
     fun = "unitsFromString"
-    result = "Elmx.Runtime.Core.result_map_error(f, decoded)"
+    result = "#{mr}.result_map_error(f, decoded)"
 
     code = Elmx.Runtime.Stdlib.runtime_call_parts("elmx_core_result_and_then", [fun, result])
 
     assert code ==
-             "Elmx.Runtime.Core.result_and_then(unitsFromString, Elmx.Runtime.Core.result_map_error(f, decoded))"
+             "#{mr}.result_and_then(unitsFromString, #{mr}.result_map_error(f, decoded))"
   end
 
   test "runtime_call_parts emits result_map with (function, result) order" do
     assert Elmx.Runtime.Stdlib.runtime_call_parts("elmx_core_result_map", ["f", "decoded"]) ==
-             "Elmx.Runtime.Core.result_map(f, decoded)"
+             "Elmx.Runtime.Core.MaybeResult.result_map(f, decoded)"
   end
 end

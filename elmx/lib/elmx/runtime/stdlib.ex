@@ -1,8 +1,14 @@
 defmodule Elmx.Runtime.Stdlib do
   @moduledoc """
   Stdlib and runtime intrinsic dispatch for generated Elixir code.
+
+  Qualified Elm calls resolve through `qualified_call/2`: `special_call/2` first (Maybe/Result,
+  `Debug`, `Time`, Pebble stubs), then `Stdlib.Qualified.call/2`. IR emit uses the same path via
+  `Emit.Qualified.compile_qualified_call_fallback_string/4`. Registry intrinsics use
+  `Generator.compile_call/2` and `CodegenRefs` module paths instead.
   """
 
+  alias Elmx.Runtime.CodegenRefs
   alias Elmx.Runtime.Generator
   alias Elmx.Runtime.Pebble
   alias Elmx.Runtime.Stdlib.Qualified, as: QualifiedCalls
@@ -19,50 +25,16 @@ defmodule Elmx.Runtime.Stdlib do
     {:ok, "fn _other -> #{arg_code} end"}
   end
 
-  def special_call("Maybe.withDefault", arg_code) do
-    parts = split_top_level_args(arg_code)
+  @maybe_result_special_targets ~w(
+    Maybe.withDefault
+    Maybe.map
+    Maybe.andThen
+    Result.mapError
+    Result.andThen
+  )
 
-    case parts do
-      [default, maybe] ->
-        {:ok,
-         "Elmx.Runtime.Core.maybe_with_default(#{default}, #{maybe})"}
-
-      _ ->
-        :error
-    end
-  end
-
-  def special_call("Maybe.map", arg_code) do
-    case split_top_level_args(arg_code) do
-      [fun, maybe] ->
-        {:ok, "Elmx.Runtime.Core.maybe_map(#{fun}, #{maybe})"}
-
-      _ ->
-        :error
-    end
-  end
-
-  def special_call("Maybe.andThen", arg_code) do
-    case split_top_level_args(arg_code) do
-      [fun, maybe] ->
-        {:ok, "Elmx.Runtime.Core.maybe_and_then(#{fun}, #{maybe})"}
-
-      _ ->
-        :error
-    end
-  end
-
-  def special_call("Result.mapError", arg_code) do
-    case split_top_level_args(arg_code) do
-      [fun] ->
-        {:ok, "fn result -> Elmx.Runtime.Core.result_map_error(#{fun}, result) end"}
-
-      [fun, result] ->
-        {:ok, "Elmx.Runtime.Core.result_map_error(#{fun}, #{result})"}
-
-      _ ->
-        :error
-    end
+  def special_call(target, arg_code) when target in @maybe_result_special_targets do
+    QualifiedCalls.call(target, IO.iodata_to_binary(arg_code))
   end
 
   def special_call("List.head", arg_code), do: {:ok, "List.first(#{arg_code})"}
@@ -74,7 +46,7 @@ defmodule Elmx.Runtime.Stdlib do
         {:ok, "Enum.reduce(#{list}, #{acc}, fn a, b -> a + b end)"}
 
       [fun, acc, list] ->
-        {:ok, "Elmx.Runtime.Core.foldl(#{fun}, #{acc}, #{list})"}
+        {:ok, "#{CodegenRefs.core()}.foldl(#{fun}, #{acc}, #{list})"}
 
       _ ->
         :error
@@ -89,67 +61,64 @@ defmodule Elmx.Runtime.Stdlib do
   def special_call("String.fromInt", arg_code), do: {:ok, "Integer.to_string(#{arg_code})"}
   def special_call("fromInt", arg_code), do: {:ok, "Integer.to_string(#{arg_code})"}
 
-  def special_call("Basics.modBy", arg_code), do: mod_by(arg_code)
-  def special_call("modBy", arg_code), do: mod_by(arg_code)
-  def special_call("Basics.remainderBy", arg_code), do: remainder_by(arg_code)
-  def special_call("remainderBy", arg_code), do: remainder_by(arg_code)
+  @basics_qualified_special_targets ~w(
+    Basics.modBy
+    Basics.remainderBy
+    Basics.abs
+    Basics.min
+    Basics.max
+    Basics.not
+    Basics.negate
+  )
 
-  def special_call("Basics.abs", arg_code), do: {:ok, "abs(#{arg_code})"}
-  def special_call("abs", arg_code), do: {:ok, "abs(#{arg_code})"}
+  def special_call(target, arg_code) when target in @basics_qualified_special_targets do
+    QualifiedCalls.call(target, IO.iodata_to_binary(arg_code))
+  end
 
-  def special_call("Basics.min", arg_code), do: binary_op_special("min", arg_code)
-  def special_call("min", arg_code), do: binary_op_special("min", arg_code)
-  def special_call("Basics.max", arg_code), do: binary_op_special("max", arg_code)
-  def special_call("max", arg_code), do: binary_op_special("max", arg_code)
+  def special_call("modBy", arg_code), do: special_call("Basics.modBy", arg_code)
+  def special_call("remainderBy", arg_code), do: special_call("Basics.remainderBy", arg_code)
+  def special_call("abs", arg_code), do: special_call("Basics.abs", arg_code)
+  def special_call("min", arg_code), do: special_call("Basics.min", arg_code)
+  def special_call("max", arg_code), do: special_call("Basics.max", arg_code)
 
   def special_call("Platform.Cmd.batch", arg_code),
-    do: {:ok, "Elmx.Runtime.Values.cmd_batch([#{arg_code}])"}
+    do: {:ok, "#{CodegenRefs.values()}.cmd_batch([#{arg_code}])"}
 
   def special_call("Pebble.Cmd.batch", arg_code), do: special_call("Platform.Cmd.batch", arg_code)
 
   def special_call("Json.Decode.errorToString", _arg_code),
-    do: {:ok, "&Elmx.Runtime.Json.Decode.error_to_string/1"}
+    do: {:ok, "&#{CodegenRefs.json_decode()}.error_to_string/1"}
 
   def special_call("Debug.log", arg_code) do
     case split_top_level_args(arg_code) do
-      [label, value] -> {:ok, "Elmx.Runtime.Core.Debug.log(#{label}, #{value})"}
+      [label, value] -> {:ok, "#{CodegenRefs.core_debug()}.log(#{label}, #{value})"}
       _ -> :error
     end
   end
 
   def special_call("Debug.todo", arg_code) do
     case split_top_level_args(arg_code) do
-      [label] -> {:ok, "Elmx.Runtime.Core.Debug.todo(#{label})"}
+      [label] -> {:ok, "#{CodegenRefs.core_debug()}.todo(#{label})"}
       _ -> :error
     end
   end
 
-  def special_call("Time.now", _arg_code), do: {:ok, "Elmx.Runtime.Core.Time.now()"}
-  def special_call("Time.getZoneName", _arg_code), do: {:ok, "Elmx.Runtime.Core.Time.get_zone_name()"}
+  def special_call("Time.now", _arg_code), do: {:ok, "#{CodegenRefs.core_time()}.now()"}
+  def special_call("Time.getZoneName", _arg_code), do: {:ok, "#{CodegenRefs.core_time()}.get_zone_name()"}
 
   def special_call("Debug.toString", arg_code) do
     case split_top_level_args(arg_code) do
-      [value] -> {:ok, "Elmx.Runtime.Core.Debug.to_string(#{value})"}
+      [value] -> {:ok, "#{CodegenRefs.core_debug()}.to_string(#{value})"}
       _ -> :error
-    end
-  end
-
-  def special_call("Result.andThen", arg_code) do
-    case split_top_level_args(arg_code) do
-      [fun] ->
-        {:ok, "fn result -> Elmx.Runtime.Core.result_and_then(#{fun}, result) end"}
-
-      [fun, result] ->
-        {:ok, "Elmx.Runtime.Core.result_and_then(#{fun}, #{result})"}
-
-      _ ->
-        :error
     end
   end
 
   def special_call(target, _arg_code) do
     if Pebble.special_call?(target), do: Pebble.special_call_code(target), else: :error
   end
+
+  @spec handles_qualified?(String.t()) :: boolean()
+  def handles_qualified?(target) when is_binary(target), do: QualifiedCalls.handles?(target)
 
   @spec qualified_call(String.t(), String.t()) :: {:ok, String.t()} | :error
   def qualified_call(target, arg_code) when is_binary(target) and is_binary(arg_code) do
@@ -175,64 +144,23 @@ defmodule Elmx.Runtime.Stdlib do
     arg_code
     |> IO.iodata_to_binary()
     |> split_top_level_args()
-    |> then(&runtime_call_dispatch(function, &1))
+    |> then(&runtime_call_parts(function, &1))
   end
 
   defp runtime_call_dispatch(function, args) when is_binary(function) and is_list(args) do
     args = Enum.map(args, &IO.iodata_to_binary/1)
 
-    case function do
-      "elmc_basics_not" -> unary("not", args)
-      "elmc_basics_negate" -> unary("-", args)
-      "elmc_basics_abs" -> "abs(#{pick(args, 0, "0")})"
-      "elmc_basics_max" -> binary("max", args)
-      "elmc_basics_min" -> binary("min", args)
-      "elmc_basics_mod_by" -> binary("rem", args)
-      "elmc_basics_clamp" -> clamp(args)
-      "elmx_cmd_batch" -> "Elmx.Runtime.Values.cmd_batch([#{Enum.join(args, ", ")}])"
-      "elmx_ui_named_color" -> "Elmx.Runtime.Pebble.Ui.named_color(#{pick(args, 0, ~s("black"))})"
-      "elmx_core_maybe_with_default" -> "Elmx.Runtime.Core.maybe_with_default(#{pick(args, 0, "0")}, #{pick(args, 1, ":Nothing")})"
-      "elmx_core_maybe_map" -> "Elmx.Runtime.Core.maybe_map(#{pick(args, 0, "&Function.identity/1")}, #{pick(args, 1, ":Nothing")})"
-      "elmx_core_maybe_and_then" -> "Elmx.Runtime.Core.maybe_and_then(#{pick(args, 0, "&Function.identity/1")}, #{pick(args, 1, ":Nothing")})"
-      "elmx_core_maybe_map2" -> "Elmx.Runtime.Core.maybe_map2(#{pick(args, 1, ":Nothing")}, #{pick(args, 2, ":Nothing")}, #{pick(args, 0, "&Function.identity/2")})"
-      "elmx_core_result_map" ->
-        "Elmx.Runtime.Core.result_map(#{pick(args, 0, "&Function.identity/1")}, #{pick(args, 1, "{:Err, nil}")})"
+    case Generator.compile_call(function, args) do
+      {:ok, code} ->
+        code
 
-      "elmx_core_result_with_default" -> "Elmx.Runtime.Core.result_with_default(#{pick(args, 0, "0")}, #{pick(args, 1, "{:Err, nil}")})"
-      "elmx_core_result_and_then" ->
-        "Elmx.Runtime.Core.result_and_then(#{pick(args, 0, "&Function.identity/1")}, #{pick(args, 1, "{:Err, nil}")})"
-      "elmx_core_result_map_error" -> "Elmx.Runtime.Core.result_map_error(#{pick(args, 0, "&Function.identity/1")}, #{pick(args, 1, "{:Err, nil}")})"
-      "elmx_core_task_map" -> "Elmx.Runtime.Core.Task.map(#{pick(args, 0, "&Function.identity/1")}, #{pick(args, 1, "{:Err, nil}")})"
-      "elmx_core_task_map2" -> "Elmx.Runtime.Core.Task.map2(#{pick(args, 0, "&Function.identity/2")}, #{pick(args, 1, "{:Err, nil}")}, #{pick(args, 2, "{:Err, nil}")})"
-      "elmx_core_task_and_then" -> "Elmx.Runtime.Core.Task.and_then(#{pick(args, 0, "&Function.identity/1")}, #{pick(args, 1, "{:Err, nil}")})"
-      "elmx_core_random_generator" -> "Elmx.Runtime.Core.random_generator(#{pick(args, 0, "0")}, #{pick(args, 1, "1")})"
-      "elmx_cmd_random_generate" ->
-        "Elmx.Runtime.Pebble.runtime_dispatch(\"elmx_cmd_random_generate\", [#{Enum.join(args, ", ")}])"
+      :error ->
+        joined = Enum.join(args, ", ")
 
-      "elmx_list_repeat" ->
-        "Elmx.Runtime.Pebble.runtime_dispatch(\"elmx_list_repeat\", [#{Enum.join(args, ", ")}])"
-
-      "elmx_basics_to_float" ->
-        "Elmx.Runtime.Pebble.runtime_dispatch(\"elmx_basics_to_float\", [#{Enum.join(args, ", ")}])"
-
-      "elmx_basics_floor" -> unary("floor", args)
-      "elmx_basics_ceiling" -> unary("ceil", args)
-      "elmx_basics_round" -> unary("round", args)
-      "elmx_basics_truncate" -> unary("trunc", args)
-
-      other ->
-        case Generator.compile_call(other, args) do
-          {:ok, code} ->
-            code
-
-          :error ->
-            joined = Enum.join(args, ", ")
-
-            if String.starts_with?(other, "elmx_") do
-              "Elmx.Runtime.Pebble.runtime_dispatch(#{inspect(other)}, [#{joined}])"
-            else
-              "Elmx.Runtime.Pebble.runtime_call(#{inspect(other)}, #{joined})"
-            end
+        if String.starts_with?(function, "elmx_") do
+          "#{CodegenRefs.pebble()}.runtime_dispatch(#{inspect(function)}, [#{joined}])"
+        else
+          "#{CodegenRefs.pebble()}.runtime_call(#{inspect(function)}, #{joined})"
         end
     end
   end
@@ -251,20 +179,6 @@ defmodule Elmx.Runtime.Stdlib do
       [left, right] -> "(#{left} #{op} #{right})"
       _ -> "raise \"bad arity for #{op}\""
     end
-  end
-
-  defp unary(op, args), do: "(#{op}(#{pick(args, 0, "false")}))"
-  defp binary(op, args), do: "(#{op}(#{pick(args, 0, "0")}, #{pick(args, 1, "0")}))"
-
-  defp clamp(args) do
-    case args do
-      [lo, x, hi] -> "min(max(#{x}, #{lo}), #{hi})"
-      _ -> "0"
-    end
-  end
-
-  defp pick(args, index, default) do
-    Enum.at(args, index) || default
   end
 
   @doc false
@@ -296,26 +210,5 @@ defmodule Elmx.Runtime.Stdlib do
       end
 
     split_top_level_commas(rest, parts, next_depth, current ++ [char])
-  end
-
-  defp mod_by(arg_code) do
-    case split_top_level_args(arg_code) do
-      [divisor, value] -> {:ok, "Integer.mod(#{value}, #{divisor})"}
-      _ -> :error
-    end
-  end
-
-  defp remainder_by(arg_code) do
-    case split_top_level_args(arg_code) do
-      [divisor, value] -> {:ok, "rem(#{value}, #{divisor})"}
-      _ -> :error
-    end
-  end
-
-  defp binary_op_special(op, arg_code) do
-    case split_top_level_args(arg_code) do
-      [left, right] -> {:ok, "#{op}(#{left}, #{right})"}
-      _ -> :error
-    end
   end
 end

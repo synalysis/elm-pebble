@@ -3,7 +3,9 @@ defmodule Elmx.Runtime.Intrinsics do
   Registry and dispatch for `elmc_*` runtime intrinsics emitted by `elmc` codegen.
   """
 
+  alias Elmx.Runtime.Handler
   alias Elmx.Runtime.Intrinsics.Registry
+  alias Elmx.Types
 
   @handlers Registry.handlers()
 
@@ -17,42 +19,19 @@ defmodule Elmx.Runtime.Intrinsics do
   def compile_call(name, arg_codes) when is_binary(name) and is_list(arg_codes) do
     case Map.get(@handlers, name) do
       nil -> :error
-      handler -> {:ok, compile_handler(handler, arg_codes)}
+      handler -> {:ok, Handler.compile(handler, arg_codes)}
     end
   end
 
-  @spec apply(String.t(), list()) :: {:ok, term()} | :error
+  @spec apply(String.t(), Types.registry_args()) ::
+          {:ok, Types.runtime_dispatch_result()} | :error
   def apply(name, args) when is_binary(name) and is_list(args) do
     case Map.get(@handlers, name) do
       nil ->
         :error
 
       handler ->
-        {:ok, apply_handler(handler, args)}
+        {:ok, Handler.invoke(handler, args)}
     end
-  end
-
-  defp compile_handler({mod, fun}, arg_codes) do
-    args = Enum.map(arg_codes, &IO.iodata_to_binary/1)
-    "#{module_ref(mod)}.#{fun}(#{Enum.join(args, ", ")})"
-  end
-
-  defp compile_handler({mod, fun, opts}, arg_codes) do
-    args = reorder(arg_codes, opts[:args]) |> Enum.map(&IO.iodata_to_binary/1)
-    "#{module_ref(mod)}.#{fun}(#{Enum.join(args, ", ")})"
-  end
-
-  defp module_ref(mod) when is_atom(mod), do: mod |> Module.split() |> Enum.join(".")
-
-  defp apply_handler({mod, fun}, args), do: apply(mod, fun, args)
-
-  defp apply_handler({mod, fun, opts}, args) do
-    apply(mod, fun, reorder(args, opts[:args]))
-  end
-
-  defp reorder(items, nil), do: items
-
-  defp reorder(items, order) when is_list(order) do
-    Enum.map(order, &Enum.at(items, &1))
   end
 end

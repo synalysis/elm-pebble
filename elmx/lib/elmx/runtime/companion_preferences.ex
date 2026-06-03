@@ -1,9 +1,15 @@
 defmodule Elmx.Runtime.CompanionPreferences do
-  @moduledoc false
+  @moduledoc """
+  Decodes companion preference responses from wire `Maybe` wrappers and JSON strings.
+  """
 
   alias Elmx.Runtime.Json.Decode
+  alias Elmx.Types
 
-  @spec decode_response(term(), term()) :: {:Ok, map()} | {:Err, atom() | String.t()}
+  @spec decode_response(
+          Elmx.Runtime.Json.Decode.decoder(),
+          Types.maybe_like() | Types.wire_value() | String.t() | map()
+        ) :: Types.result_like()
   def decode_response(_schema, response) do
     case normalize_response(response) do
       :nothing -> {:Err, :MissingResponse}

@@ -361,7 +361,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     [native_bool_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
 
-    assert native_bool_body =~ "if (elmc_record_get_index_bool(model, 0 /* isRound */))"
+    assert native_bool_body =~ "if (ELMC_RECORD_GET_INDEX_BOOL(model, 0 /* isRound */))"
     refute native_bool_body =~ "elmc_record_get(model, \"isRound\")"
     refute native_bool_body =~ "elmc_as_int(tmp_"
 
@@ -646,11 +646,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute boxed_string_if_body =~ "elmc_append("
     refute boxed_string_if_body =~ "&& tmp_"
 
-    assert Regex.match?(
-             ~r/const char \*native_string_\d+ = \(const char \*\)tmp_\d+->payload;/,
-             boxed_string_if_body
-           )
-
+    assert boxed_string_if_body =~ "snprintf(native_string_buf_"
     assert boxed_string_if_body =~ "elmc_string_append_native(native_string_"
   end
 
@@ -1028,14 +1024,19 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     assert generated_c =~
              "static int elmc_fn_Main_nativeTextAt_commands_append_native(const elmc_int_t color, const char * const value"
 
-    assert generated_c =~
-             "static int elmc_fn_Main_nativeTextAtAlias_commands_append_native(const elmc_int_t color, const char * const value"
+    # Single-call render helpers are inlined into their sole caller (no separate def).
+    refute generated_c =~ "elmc_fn_Main_nativeTextAtAlias_commands_append_native"
+    refute generated_c =~ "elmc_fn_Main_nativeTextAtExplicitAlias_commands_append_native"
+    refute generated_c =~ "elmc_fn_Main_nativeTextAtExposedType_commands_append_native"
 
-    assert generated_c =~
-             "static int elmc_fn_Main_nativeTextAtExplicitAlias_commands_append_native(const elmc_int_t color, const char * const value"
+    alias_if_body =
+      generated_c
+      |> String.split("static int elmc_fn_Main_nativeTextAliasIf_commands_append")
+      |> List.last()
+      |> String.split("static int elmc_fn_", parts: 2)
+      |> hd()
 
-    assert generated_c =~
-             "static int elmc_fn_Main_nativeTextAtExposedType_commands_append_native(const elmc_int_t color, const char * const value"
+    assert alias_if_body =~ "ELMC_RENDER_OP_TEXT"
 
     body =
       generated_c
@@ -3445,4 +3446,1954 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute static_body =~ "elmc_new_int(31)"
     refute static_body =~ "VectorAnimatedTransitionClearToCloudy"
   end
+
+  test "direct List.map over List.range uses native append without boxing loop items" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_map_range_native_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_map_range_native_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_map_range_native_source())
+
+    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body =
+      generated_c
+      |> String.split("static int elmc_fn_Main_view_commands_append")
+      |> List.last()
+      |> String.split("static int elmc_fn_", parts: 2)
+      |> hd()
+
+    assert view_body =~ "direct_item_i_"
+    assert view_body =~ "elmc_generated_draw_init"
+    refute view_body =~ "elmc_new_int(direct_item_i_"
+    refute view_body =~ "ELMC_TAG_LIST"
+    refute view_body =~ "_commands_append(direct_call_args_"
+  end
+
+  test "direct textAt with defaultTextOptions is supported in view" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_textat_default_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_textat_default_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_textat_default_options_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               prune_runtime: true,
+               prune_native_wrappers: true
+             })
+  end
+
+  test "direct view composes helpers that call other direct command targets" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_helper_chain_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_helper_chain_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_helper_chain_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               prune_runtime: true,
+               prune_native_wrappers: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    assert generated_c =~ "view_commands_append"
+    refute generated_c =~ "ELMC_TAG_LIST"
+    # Single-call chain: view -> chrome -> dial (no separate chrome/dial defs).
+    refute generated_c =~ "elmc_fn_Main_chrome_commands_append"
+    refute generated_c =~ "elmc_fn_Main_dial_commands_append"
+  end
+
+  test "direct List.concatMap over range inlines watchface-style hour ticks" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_concatmap_ticks_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_concatmap_ticks_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_concatmap_range_ticks_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               prune_runtime: true,
+               prune_native_wrappers: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    assert generated_c =~ "view_commands_append"
+    refute generated_c =~ "ELMC_TAG_LIST"
+  end
+
+  test "direct List.concatMap over range inlines tick lines from lambda" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_concatmap_range_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_concatmap_range_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_concatmap_range_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               prune_runtime: true,
+               prune_native_wrappers: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body =
+      generated_c
+      |> String.split("static int elmc_fn_Main_view_commands_append")
+      |> List.last()
+      |> String.split("static int elmc_fn_", parts: 2)
+      |> hd()
+
+    assert view_body =~ "direct_item_i_"
+    assert view_body =~ "ELMC_RENDER_OP_LINE"
+    refute view_body =~ "ELMC_TAG_LIST"
+  end
+
+  test "direct List.map over range inlines affine textInt draw commands" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_map_affine_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_map_affine_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_map_affine_source())
+
+    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body =
+      generated_c
+      |> String.split("static int elmc_fn_Main_view_commands_append")
+      |> List.last()
+      |> String.split("static int elmc_fn_", parts: 2)
+      |> hd()
+
+    assert view_body =~ "direct_item_i_"
+    assert view_body =~ "elmc_generated_draw_init"
+    assert view_body =~ "direct_item_i_"
+    refute view_body =~ "elmc_fn_Main_row_commands_append_native"
+  end
+
+  test "direct List.indexedMap over range inlines affine textInt draw commands" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_indexed_affine_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_indexed_affine_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_indexed_map_affine_source())
+
+    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body =
+      generated_c
+      |> String.split("static int elmc_fn_Main_view_commands_append")
+      |> List.last()
+      |> String.split("static int elmc_fn_", parts: 2)
+      |> hd()
+
+    assert view_body =~ "direct_index_"
+    assert view_body =~ "direct_item_i_"
+    assert view_body =~ "elmc_generated_draw_init"
+    refute view_body =~ "elmc_fn_Main_row_commands_append_native"
+    refute view_body =~ "elmc_new_int(direct_index_"
+  end
+
+  test "direct List.indexedMap over model field list inlines affine drawCell body" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_indexed_affine_cells_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_indexed_affine_cells_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_indexed_map_affine_cells_source())
+
+    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body =
+      generated_c
+      |> String.split("static int elmc_fn_Main_view_commands_append")
+      |> List.last()
+      |> String.split("static int elmc_fn_", parts: 2)
+      |> hd()
+
+    assert view_body =~ "direct_index_"
+    assert view_body =~ "ELMC_RENDER_OP_PUSH_CONTEXT"
+    assert view_body =~ "ELMC_RENDER_OP_RECT"
+    refute view_body =~ "elmc_fn_Main_drawCell_commands_append_native"
+    refute generated_c =~ "elmc_fn_Main_drawCell_commands_append"
+
+    assert view_body |> String.split("ELMC_RENDER_OP_PUSH_CONTEXT") |> length() == 2
+    assert view_body |> String.split("ELMC_RENDER_OP_POP_CONTEXT") |> length() == 2
+  end
+
+  test "direct List.indexedMap over model field list inlines affine text from int label" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_indexed_affine_cells_text_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_indexed_affine_cells_text_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_indexed_map_affine_cells_text_source())
+
+    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body =
+      generated_c
+      |> String.split("static int elmc_fn_Main_view_commands_append")
+      |> List.last()
+      |> String.split("static int elmc_fn_", parts: 2)
+      |> hd()
+
+    assert view_body =~ "ELMC_RENDER_OP_TEXT"
+    assert view_body =~ "snprintf(out_cmds[*count].text"
+    refute view_body =~ "elmc_fn_Main_drawCell_commands_append_native"
+  end
+
+  test "direct view List.cons and append compose chrome with inlined indexedMap cells" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_view_cons_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_view_cons_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_view_cons_cells_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               prune_native_wrappers: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body =
+      generated_c
+      |> String.split("static int elmc_fn_Main_view_commands_append")
+      |> List.last()
+      |> String.split("static int elmc_fn_", parts: 2)
+      |> hd()
+
+    assert view_body =~ "direct_index_"
+    assert view_body =~ "ELMC_RENDER_OP_CLEAR"
+    refute view_body =~ "elmc_fn_Main_drawCell_commands_append_native"
+  end
+
+  test "direct List.indexedMap with layout prefix inlines grid affine drawCell body" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_indexed_affine_layout_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_indexed_affine_layout_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_indexed_map_affine_layout_cells_source())
+
+    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body =
+      generated_c
+      |> String.split("static int elmc_fn_Main_view_commands_append")
+      |> List.last()
+      |> String.split("static int elmc_fn_", parts: 2)
+      |> hd()
+
+    assert view_body =~ "direct_index_"
+    assert view_body =~ "direct_native_record_layout_cell_"
+    assert view_body =~ "% 4"
+    assert view_body =~ "/ 4)"
+    assert view_body =~ "ELMC_RENDER_OP_RECT"
+    refute view_body =~ "elmc_fn_Main_drawCell_commands_append_native"
+    refute generated_c =~ "elmc_fn_Main_boardLayout("
+    assert view_body =~ "direct_native_record_layout_x_"
+    assert view_body =~ "direct_native_record_layout_cell_"
+    refute view_body =~ "elmc_record_new_ints"
+    refute view_body =~ "ELMC_RECORD_GET_INDEX_INT(,"
+    assert view_body =~ "direct_native_record_layout_cell_"
+    assert view_body =~ "ELMC_RENDER_OP_TEXT"
+    assert view_body =~ "out_cmds[*count].p1 = (direct_native_record_layout_x_"
+    assert view_body =~ "out_cmds[*count].p2 = ((direct_native_record_layout_y_"
+    refute view_body =~ "out_cmds[*count].p1 = (ELMC_TEXT_ALIGN_CENTER"
+
+    cell_loop =
+      view_body
+      |> String.split("while (!direct_stop && direct_cursor_", parts: 2)
+      |> Enum.at(1, "")
+      |> String.split("elmc_release", parts: 2)
+      |> hd()
+
+    assert length(String.split(cell_loop, "*emitted += 1")) >= 3,
+           "expected per-command emitted increments in affine indexedMap loop"
+  end
+
+  test "direct view reuses hoisted displayShapeIsRound across layout and chrome lets" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_display_shape_hoist_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_display_shape_hoist_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_display_shape_hoist_view_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               prune_runtime: true,
+               prune_native_wrappers: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body =
+      generated_c
+      |> String.split("static int elmc_fn_Main_view_commands_append")
+      |> List.last()
+      |> String.split("static int elmc_fn_", parts: 2)
+      |> hd()
+
+    display_shape_calls =
+      view_body
+      |> String.split("elmc_fn_Pebble_Platform_displayShapeIsRound")
+      |> length()
+      |> Kernel.-(1)
+
+    assert display_shape_calls == 1
+    assert view_body =~ "if (native_b_"
+  end
+
+  test "direct view reuses hoisted min screen dimensions across layout and chrome" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_min_hoist_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_min_hoist_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_min_hoist_view_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               prune_runtime: true,
+               prune_native_wrappers: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body =
+      generated_c
+      |> String.split("static int elmc_fn_Main_view_commands_append")
+      |> List.last()
+      |> String.split("static int elmc_fn_", parts: 2)
+      |> hd()
+
+    min_results =
+      Regex.scan(~r/const elmc_int_t (native_min_\d+) =/, view_body)
+      |> Enum.map(&List.last/1)
+      |> Enum.uniq()
+
+    assert min_results == ["native_min_5"]
+    assert Regex.scan(~r/const elmc_int_t native_min_left_\d+ =/, view_body) |> length() == 1
+    assert view_body =~ "(native_min_5 * 4)"
+    refute view_body =~ "native_min_11"
+  end
+
+  test "direct view uses native packed textOptions without record allocation" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_text_options_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_text_options_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_text_options_view_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               prune_runtime: true,
+               prune_native_wrappers: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body =
+      generated_c
+      |> String.split("static int elmc_fn_Main_view_commands_append")
+      |> List.last()
+      |> String.split("static int elmc_fn_", parts: 2)
+      |> hd()
+
+    assert view_body =~ "direct_native_let_textOptions_"
+    assert view_body =~ "ELMC_TEXT_OVERFLOW_SHIFT"
+    refute view_body =~ "elmc_record_new_ints"
+    refute view_body =~ "elmc_record_update"
+  end
+
+  test "direct view inlines boardLayout helper into native record layout fields" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_board_layout_helper_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_board_layout_helper_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_board_layout_helper_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               prune_runtime: true,
+               prune_native_wrappers: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body =
+      generated_c
+      |> String.split("static int elmc_fn_Main_view_commands_append")
+      |> List.last()
+      |> String.split("static int elmc_fn_", parts: 2)
+      |> hd()
+
+    refute view_body =~ "elmc_fn_Main_boardLayout("
+    refute generated_c =~ "ElmcValue *elmc_fn_Main_boardLayout("
+    assert view_body =~ "direct_native_record_layout_x_"
+    assert view_body =~ "direct_native_record_layout_cell_"
+    assert view_body =~ "ELMC_RENDER_OP_RECT"
+  end
+
+  test "direct List.indexedMap over range inlines affine rect through group context" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_indexed_affine_rect_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_indexed_affine_rect_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_indexed_map_affine_rect_source())
+
+    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body =
+      generated_c
+      |> String.split("static int elmc_fn_Main_view_commands_append")
+      |> List.last()
+      |> String.split("static int elmc_fn_", parts: 2)
+      |> hd()
+
+    assert view_body =~ "direct_index_"
+    assert view_body =~ "(10 + direct_index_"
+    assert view_body =~ "elmc_generated_draw_init"
+    refute view_body =~ "elmc_fn_Main_cell_commands_append_native"
+  end
+
+  test "direct List.indexedMap with transparent forwarder uses static draw command table" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_indexed_pass_through_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_indexed_pass_through_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_indexed_pass_through_source())
+
+    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body =
+      generated_c
+      |> String.split("static int elmc_fn_Main_view_commands_append")
+      |> List.last()
+      |> String.split("static int elmc_fn_", parts: 2)
+      |> hd()
+
+    assert view_body =~ "direct_static_draw_table_"
+    refute view_body =~ "_commands_append(direct_call_args_"
+    refute view_body =~ "ELMC_TAG_LIST"
+  end
+
+  test "direct List.concat of literals uses static draw command table" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_static_table_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_static_table_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_static_table_source())
+
+    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body =
+      generated_c
+      |> String.split("static int elmc_fn_Main_view_commands_append")
+      |> List.last()
+      |> String.split("static int elmc_fn_", parts: 2)
+      |> hd()
+
+    assert view_body =~ "direct_static_draw_table_"
+    refute view_body =~ "ELMC_TAG_LIST"
+  end
+
+  test "direct List.concat of literals avoids list cursor walk in view" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_concat_literal_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_concat_literal_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_concat_literal_source())
+
+    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body =
+      generated_c
+      |> String.split("static int elmc_fn_Main_view_commands_append")
+      |> List.last()
+      |> String.split("static int elmc_fn_", parts: 2)
+      |> hd()
+
+    refute view_body =~ "direct_cursor_"
+    refute view_body =~ "ELMC_TAG_LIST"
+  end
+
+  test "constructor tag switch requires at least four branches" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/constructor_switch_threshold_project", __DIR__)
+    out_dir = Path.expand("tmp/constructor_switch_threshold_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    main_path = Path.join(project_dir, "src/Main.elm")
+    File.write!(main_path, File.read!(main_path) <> constructor_switch_threshold_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: false
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    small_body =
+      generated_c
+      |> String.split("ElmcValue *elmc_fn_Main_smallTagCase")
+      |> List.last()
+      |> String.split("ElmcValue *elmc_fn_", parts: 2)
+      |> hd()
+
+    large_body =
+      generated_c
+      |> String.split("ElmcValue *elmc_fn_Main_largeTagCase")
+      |> List.last()
+      |> String.split("ElmcValue *elmc_fn_", parts: 2)
+      |> hd()
+
+    refute small_body =~ "switch (case_msg_tag_"
+    assert large_body =~ "switch (case_msg_tag_"
+  end
+
+  test "Result constructors keep boxed case dispatch" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/result_case_boxed_project", __DIR__)
+    out_dir = Path.expand("tmp/result_case_boxed_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/CoreCompliance.elm"), File.read!(Path.join(source_fixture, "src/CoreCompliance.elm")))
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "CoreCompliance",
+               strip_dead_code: false
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    body =
+      generated_c
+      |> String.split("ElmcValue *elmc_fn_CoreCompliance_resultInc")
+      |> List.last()
+      |> String.split("ElmcValue *elmc_fn_", parts: 2)
+      |> hd()
+
+    refute body =~ "switch (case_msg_tag_"
+  end
+
+  test "generated runtime exposes float and bool record index macros" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/record_index_macro_project", __DIR__)
+    out_dir = Path.expand("tmp/record_index_macro_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+
+    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    runtime_h = File.read!(Path.join(out_dir, "runtime/elmc_runtime.h"))
+
+    assert runtime_h =~ "#define ELMC_RECORD_GET_INDEX_FLOAT"
+    assert runtime_h =~ "#define ELMC_RECORD_GET_INDEX_BOOL"
+  end
+
+  defp direct_indexed_pass_through_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        {}
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( {}, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view _ =
+        Ui.toUiNode
+            (List.indexedMap passThrough
+                [ Ui.textInt Resources.DefaultFont { x = 0, y = 0 } 1
+                , Ui.textInt Resources.DefaultFont { x = 8, y = 0 } 2
+                ]
+            )
+
+
+    passThrough : Int -> Ui.RenderOp -> Ui.RenderOp
+    passThrough _ op =
+        op
+    """
+  end
+
+  defp direct_indexed_map_affine_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        {}
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( {}, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view _ =
+        Ui.toUiNode (List.indexedMap row (List.range 0 3))
+
+
+    row : Int -> Int -> Ui.RenderOp
+    row i n =
+        Ui.textInt Resources.DefaultFont { x = i * 10, y = n } n
+    """
+  end
+
+  defp direct_indexed_map_affine_cells_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        { cells : List Int }
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( { cells = [ 0, 2, 4 ] }, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view model =
+        Ui.toUiNode (List.indexedMap drawCell model.cells)
+
+
+    drawCell : Int -> Int -> Ui.RenderOp
+    drawCell index _ =
+        let
+            x =
+                10 + index * 31
+        in
+        Ui.group
+            (Ui.context
+                [ Ui.strokeColor Color.black ]
+                [ Ui.rect { x = x, y = 42, w = 28, h = 28 } Color.black ]
+            )
+    """
+  end
+
+  defp direct_indexed_map_affine_cells_text_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        { cells : List Int }
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( { cells = [ 0, 2, 4 ] }, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view model =
+        Ui.toUiNode (List.indexedMap drawCell model.cells)
+
+
+    drawCell : Int -> Int -> Ui.RenderOp
+    drawCell index value =
+        let
+            x =
+                10 + index * 31
+
+            label =
+                if value == 0 then
+                    "."
+
+                else
+                    String.fromInt value
+        in
+        Ui.group
+            (Ui.context
+                [ Ui.strokeColor Color.black
+                , Ui.textColor Color.black
+                ]
+                [ Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = x + 2, y = 47, w = 24, h = 18 } label
+                ]
+            )
+    """
+  end
+
+  defp direct_view_cons_cells_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias BoardLayout =
+        { x : Int
+        , y : Int
+        , cell : Int
+        , gap : Int
+        }
+
+
+    type alias Model =
+        { cells : List Int
+        , best : Int
+        }
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( { cells = [ 0, 2 ], best = 42 }, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view model =
+        let
+            layout =
+                { x = 10, y = 20, cell = 28, gap = 2 }
+
+            chromeOps =
+                [ Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 4, w = 120, h = 14 } ("Best " ++ String.fromInt model.best)
+                ]
+        in
+        Ui.toUiNode
+            (Ui.clear Color.white
+                :: (chromeOps
+                        ++ List.indexedMap (drawCell layout) model.cells
+                   )
+            )
+
+
+    drawCell : BoardLayout -> Int -> Int -> Ui.RenderOp
+    drawCell layout index _ =
+        Ui.rect
+            { x = layout.x + modBy 4 index * (layout.cell + layout.gap)
+            , y = layout.y + (index // 4) * (layout.cell + layout.gap)
+            , w = layout.cell
+            , h = layout.cell
+            }
+            Color.black
+    """
+  end
+
+  defp direct_text_options_view_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        { displayShape : Platform.DisplayShape }
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( { displayShape = Platform.DisplayShapeRound }, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view model =
+        let
+            textOptions =
+                if Platform.displayShapeIsRound model.displayShape then
+                    Ui.alignCenter Ui.defaultTextOptions
+
+                else
+                    Ui.defaultTextOptions
+        in
+        Ui.toUiNode
+            [ Ui.text Resources.DefaultFont textOptions { x = 4, y = 4, w = 40, h = 12 } "Hi" ]
+    """
+  end
+
+  defp direct_board_layout_helper_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias BoardLayout =
+        { x : Int
+        , y : Int
+        , cell : Int
+        , gap : Int
+        }
+
+
+    type alias Model =
+        { screenW : Int
+        , screenH : Int
+        , displayShape : Platform.DisplayShape
+        , cells : List Int
+        }
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( { screenW = 144, screenH = 168, displayShape = Platform.DisplayShapeRound, cells = [ 0, 2 ] }, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view model =
+        let
+            layout =
+                boardLayout model
+        in
+        Ui.toUiNode (List.indexedMap (drawCell layout) model.cells)
+
+
+    boardLayout : Model -> BoardLayout
+    boardLayout model =
+        if Platform.displayShapeIsRound model.displayShape then
+            let
+                diameter =
+                    min model.screenW model.screenH
+
+                gap =
+                    2
+
+                cell =
+                    ((diameter * 2) // 3 - gap * 3) // 4
+
+                boardSize =
+                    cell * 4 + gap * 3
+            in
+            { x = (model.screenW - boardSize) // 2
+            , y = (model.screenH - boardSize) // 2
+            , cell = cell
+            , gap = gap
+            }
+
+        else
+            { x = 10, y = 26, cell = 28, gap = 3 }
+
+
+    drawCell : BoardLayout -> Int -> Int -> Ui.RenderOp
+    drawCell layout index value =
+        let
+            x =
+                layout.x + modBy 2 index * (layout.cell + layout.gap)
+
+            y =
+                layout.y + (index // 2) * (layout.cell + layout.gap)
+        in
+        Ui.rect { x = x, y = y, w = layout.cell, h = layout.cell } Color.black
+    """
+  end
+
+  defp direct_min_hoist_view_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias BoardLayout =
+        { x : Int
+        , y : Int
+        }
+
+
+    type alias Model =
+        { screenW : Int
+        , screenH : Int
+        , displayShape : Platform.DisplayShape
+        }
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( { screenW = 144, screenH = 168, displayShape = Platform.DisplayShapeRound }, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view model =
+        let
+            layout =
+                boardLayout model
+
+            chromeOps =
+                if Platform.displayShapeIsRound model.displayShape then
+                    let
+                        textW =
+                            (min model.screenW model.screenH * 4) // 9
+                    in
+                    [ Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 0, y = 10, w = textW, h = 12 } "Hi" ]
+
+                else
+                    []
+        in
+        Ui.toUiNode (chromeOps ++ [ Ui.rect { x = layout.x, y = layout.y, w = 8, h = 8 } Color.black ])
+
+
+    boardLayout : Model -> BoardLayout
+    boardLayout model =
+        if Platform.displayShapeIsRound model.displayShape then
+            { x = 0, y = 0 }
+
+        else
+            let
+                gap =
+                    max 3 (min model.screenW model.screenH // 48)
+            in
+            { x = gap, y = 26 }
+    """
+  end
+
+  defp direct_display_shape_hoist_view_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias BoardLayout =
+        { x : Int
+        , y : Int
+        , cell : Int
+        , gap : Int
+        }
+
+
+    type alias Model =
+        { screenW : Int
+        , screenH : Int
+        , displayShape : Platform.DisplayShape
+        }
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( { screenW = 144, screenH = 168, displayShape = Platform.DisplayShapeRound }, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view model =
+        let
+            layout =
+                boardLayout model
+
+            chromeOps =
+                if Platform.displayShapeIsRound model.displayShape then
+                    [ Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 10, y = 10, w = 40, h = 12 } "Hi" ]
+
+                else
+                    []
+        in
+        Ui.toUiNode (chromeOps ++ [ Ui.rect { x = layout.x, y = layout.y, w = layout.cell, h = layout.cell } Color.black ])
+
+
+    boardLayout : Model -> BoardLayout
+    boardLayout model =
+        if Platform.displayShapeIsRound model.displayShape then
+            { x = 0, y = 0, cell = 20, gap = 2 }
+
+        else
+            { x = 10, y = 26, cell = 28, gap = 3 }
+    """
+  end
+
+  defp direct_indexed_map_affine_layout_cells_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias BoardLayout =
+        { x : Int
+        , y : Int
+        , cell : Int
+        , gap : Int
+        }
+
+
+    type alias Model =
+        { cells : List Int }
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( { cells = [ 0, 2, 4, 8 ] }, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view model =
+        let
+            layout =
+                { x = 10, y = 20, cell = 28, gap = 2 }
+        in
+        Ui.toUiNode (List.indexedMap (drawCell layout) model.cells)
+
+
+    drawCell : BoardLayout -> Int -> Int -> Ui.RenderOp
+    drawCell layout index value =
+        let
+            x =
+                layout.x + modBy 4 index * (layout.cell + layout.gap)
+
+            y =
+                layout.y + (index // 4) * (layout.cell + layout.gap)
+
+            label =
+                if value == 0 then
+                    "."
+
+                else
+                    String.fromInt value
+
+            textY =
+                y + ((layout.cell - 18) // 2)
+        in
+        Ui.group
+            (Ui.context
+                [ Ui.strokeColor Color.black ]
+                [ Ui.rect { x = x, y = y, w = layout.cell, h = layout.cell } Color.black
+                , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = x, y = textY, w = layout.cell, h = 18 } label
+                ]
+            )
+    """
+  end
+
+  defp direct_indexed_map_affine_rect_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+
+    type alias Model =
+        {}
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( {}, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view _ =
+        Ui.toUiNode (List.indexedMap cell (List.range 0 2))
+
+
+    cell : Int -> Int -> Ui.RenderOp
+    cell index _ =
+        let
+            x =
+                10 + index * 31
+        in
+        Ui.group
+            (Ui.context
+                [ Ui.strokeColor Color.black ]
+                [ Ui.rect { x = x, y = 42, w = 28, h = 28 } Color.black ]
+            )
+    """
+  end
+
+  defp direct_map_affine_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        {}
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( {}, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view _ =
+        Ui.toUiNode (List.map row (List.range 0 3))
+
+
+    row : Int -> Ui.RenderOp
+    row n =
+        Ui.textInt Resources.DefaultFont { x = n * 10, y = 4 } n
+    """
+  end
+
+  defp direct_static_table_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        {}
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( {}, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view _ =
+        Ui.toUiNode
+            [ Ui.textInt Resources.DefaultFont { x = 0, y = 0 } 1
+            , Ui.textInt Resources.DefaultFont { x = 8, y = 0 } 2
+            ]
+    """
+  end
+
+  defp direct_helper_chain_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+
+    type alias Model =
+        { screenW : Int
+        , screenH : Int
+        }
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( { screenW = 144, screenH = 168 }, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view model =
+        Ui.toUiNode (chrome model)
+
+
+    chrome model =
+        let
+            body =
+                dial model
+        in
+        [ Ui.clear Color.black ]
+            ++ body
+
+
+    dial model =
+        let
+            cx =
+                model.screenW // 2
+
+            cy =
+                model.screenH // 2
+
+            radius =
+                (min model.screenW model.screenH // 2) - 10
+        in
+        [ Ui.fillCircle { x = cx, y = cy } radius Color.black ]
+            ++ ticks cx cy radius
+
+
+    ticks cx cy radius =
+        List.concatMap
+            (\\i ->
+                [ Ui.line { x = cx, y = cy } { x = cx + i, y = cy + radius } Color.white ]
+            )
+            (List.range 0 2)
+    """
+  end
+
+  defp direct_textat_default_options_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        {}
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( {}, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view _ =
+        Ui.toUiNode
+            [ textAt Color.white { x = 4, y = 4, w = 40, h = 16 } "Hi" ]
+
+
+    textAt : Color.Color -> Ui.Rect -> String -> Ui.RenderOp
+    textAt color bounds value =
+        Ui.group
+            (Ui.context
+                [ Ui.textColor color ]
+                [ Ui.text Resources.DefaultFont Ui.defaultTextOptions bounds value ]
+            )
+    """
+  end
+
+  defp direct_concatmap_range_ticks_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        {}
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( {}, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view _ =
+        Ui.toUiNode
+            (List.concatMap
+                (\\hour ->
+                    let
+                        inner =
+                            pointAt 72 84 60 (angleFromMinute (hour * 60))
+
+                        outer =
+                            pointAt 72 84
+                                (60
+                                    + (if modBy 2 hour == 0 then
+                                        5
+
+                                       else
+                                        9
+                                      )
+                                )
+                                (angleFromMinute (hour * 60))
+
+                        labelPoint =
+                            pointAt 72 84 (60 + 16) (angleFromMinute (hour * 60))
+
+                        label =
+                            if hour == 0 then
+                                "24"
+
+                            else
+                                String.fromInt hour
+                    in
+                    if modBy 2 hour == 0 then
+                        [ Ui.line outer inner Color.white
+                        , textAt Color.lightGray { x = labelPoint.x - 6, y = labelPoint.y - 4, w = 12, h = 8 } label
+                        ]
+
+                    else
+                        [ Ui.line outer inner Color.lightGray ]
+                )
+                (List.range 0 23)
+            )
+
+
+    textAt : Color.Color -> Ui.Rect -> String -> Ui.RenderOp
+    textAt color bounds value =
+        Ui.group
+            (Ui.context
+                [ Ui.textColor color ]
+                [ Ui.text Resources.DefaultFont Ui.defaultTextOptions bounds value ]
+            )
+
+
+    pointAt : Int -> Int -> Int -> Int -> Ui.Point
+    pointAt cx cy radius angle =
+        { x = cx + radius, y = cy + radius }
+
+
+    angleFromMinute : Int -> Int
+    angleFromMinute minute =
+        minute * 6 // 60
+    """
+  end
+
+  defp direct_concatmap_range_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        {}
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( {}, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view _ =
+        Ui.toUiNode
+            (List.concatMap
+                (\\hour ->
+                    let
+                        inner =
+                            { x = hour * 4, y = 0 }
+
+                        outer =
+                            { x = hour * 4, y = 8 }
+                    in
+                    [ Ui.line outer inner Color.white
+                    , textAt Color.white { x = 0, y = 0, w = 8, h = 8 } (String.fromInt hour)
+                    ]
+                )
+                (List.range 0 3)
+            )
+
+
+    textAt : Color.Color -> Ui.Rect -> String -> Ui.RenderOp
+    textAt color bounds value =
+        Ui.group
+            (Ui.context
+                [ Ui.textColor color ]
+                [ Ui.text Resources.DefaultFont Ui.defaultTextOptions bounds value ]
+            )
+    """
+  end
+
+  defp direct_map_range_native_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        {}
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( {}, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view _ =
+        Ui.toUiNode (List.map row (List.range 0 2))
+
+
+    row : Int -> Ui.RenderOp
+    row n =
+        Ui.textInt Resources.DefaultFont { x = n * 8, y = 0 } n
+    """
+  end
+
+  defp direct_concat_literal_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        {}
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( {}, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view _ =
+        Ui.toUiNode
+            (List.concat
+                [ [ Ui.clear Color.white ]
+                , [ Ui.textInt Resources.DefaultFont { x = 0, y = 0 } 1
+                  , Ui.textInt Resources.DefaultFont { x = 8, y = 0 } 2
+                  ]
+                ]
+            )
+    """
+  end
+
+  defp constructor_switch_threshold_source do
+    """
+
+
+    type SmallTag
+        = TagA
+        | TagB
+
+
+    type LargeTag
+        = LargeA
+        | LargeB
+        | LargeC
+        | LargeD
+
+
+    smallTagCase : SmallTag -> Int
+    smallTagCase tag =
+        case tag of
+            TagA ->
+                1
+
+            TagB ->
+                2
+
+
+    largeTagCase : LargeTag -> Int
+    largeTagCase tag =
+        case tag of
+            LargeA ->
+                1
+
+            LargeB ->
+                2
+
+            LargeC ->
+                3
+
+            LargeD ->
+                4
+    """
+  end
+
 end

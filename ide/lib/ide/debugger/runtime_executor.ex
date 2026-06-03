@@ -36,7 +36,8 @@ defmodule Ide.Debugger.RuntimeExecutor do
   @doc """
   Re-evaluates Elm `view/1` for the current model without stepping `init/1` or `update/2`.
   """
-  @spec view(execution_input()) :: {:ok, map()} | {:error, Types.execution_error()}
+  @spec view(execution_input()) ::
+          {:ok, Types.elmx_view_preview_payload()} | {:error, Types.execution_error()}
   def view(input) when is_map(input) do
     with :ok <- require_elmx_manifest(input),
          {:ok, module} <- resolve_view_module(input),
