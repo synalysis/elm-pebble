@@ -3800,13 +3800,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       |> String.split("static int elmc_fn_", parts: 2)
       |> hd()
 
-    display_shape_calls =
-      view_body
-      |> String.split("elmc_fn_Pebble_Platform_displayShapeIsRound")
-      |> length()
-      |> Kernel.-(1)
-
-    assert display_shape_calls == 1
+    refute view_body =~ "elmc_fn_Pebble_Platform_displayShapeIsRound"
     assert view_body =~ "if (native_b_"
   end
 
@@ -3843,9 +3837,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       |> Enum.map(&List.last/1)
       |> Enum.uniq()
 
-    assert min_results == ["native_min_5"]
+    assert min_results == ["native_min_4"]
     assert Regex.scan(~r/const elmc_int_t native_min_left_\d+ =/, view_body) |> length() == 1
-    assert view_body =~ "(native_min_5 * 4)"
+    assert view_body =~ "(native_min_4 * 4)"
     refute view_body =~ "native_min_11"
   end
 
@@ -3913,6 +3907,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     refute view_body =~ "elmc_fn_Main_boardLayout("
     refute generated_c =~ "ElmcValue *elmc_fn_Main_boardLayout("
+    refute generated_c =~ "elmc_fn_Pebble_Platform_displayShapeIsRound"
     assert view_body =~ "direct_native_record_layout_x_"
     assert view_body =~ "direct_native_record_layout_cell_"
     assert view_body =~ "ELMC_RENDER_OP_RECT"
@@ -5394,6 +5389,59 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
             LargeD ->
                 4
     """
+  end
+
+  test "game elmtris template compiles displayShapeIsRound case subjects to valid C" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    elmtris_main = Path.expand("../../ide/priv/project_templates/game_elmtris/src/Main.elm", __DIR__)
+    project_dir = Path.expand("tmp/game_elmtris_project", __DIR__)
+    out_dir = Path.expand("tmp/game_elmtris_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(elmtris_main))
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    refute generated_c =~ "%{arg:"
+    assert generated_c =~ "elmc_fn_Main_gameOverOps"
+
+    File.write!(Path.join(out_dir, "c/game_elmtris_harness.c"), "int main(void) { return 0; }\n")
+
+    cc = System.find_executable("cc") || System.find_executable("gcc")
+    assert is_binary(cc)
+
+    {compile_out, compile_code} =
+      System.cmd(
+        cc,
+        [
+          "-std=c11",
+          "-Wall",
+          "-Wextra",
+          "-Iruntime",
+          "-Iports",
+          "-Ic",
+          "runtime/elmc_runtime.c",
+          "ports/elmc_ports.c",
+          "c/elmc_generated.c",
+          "c/elmc_worker.c",
+          "c/elmc_pebble.c",
+          "c/game_elmtris_harness.c",
+          "-o",
+          "game_elmtris_harness"
+        ],
+        cd: out_dir,
+        stderr_to_stdout: true
+      )
+
+    assert compile_code == 0, compile_out
   end
 
 end

@@ -11,6 +11,11 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
 
   def branch_pattern(%{pattern: %{kind: :wildcard}}, _env), do: "_"
 
+  def branch_pattern(%{pattern: %{kind: :var, name: name}}, %{maybe_unwrap_just: true} = env)
+       when is_binary(name) and name not in ["_", ""] do
+    "{:Just, #{Helpers.binding_ref(name, env)}}"
+  end
+
   def branch_pattern(%{pattern: %{kind: :var, name: name}}, _env) when is_binary(name),
     do: Helpers.binding_ref(name, %{})
 
@@ -19,6 +24,12 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
 
   def branch_pattern(%{pattern: %{kind: :int, value: value}}, _env) when is_integer(value),
     do: Integer.to_string(value)
+
+  def branch_pattern(%{pattern: %{kind: :bool, value: value}}, _env) when is_boolean(value),
+    do: if(value, do: "true", else: "false")
+
+  def branch_pattern(%{pattern: %{op: :bool_literal, value: value}}, _env) when is_boolean(value),
+    do: if(value, do: "true", else: "false")
 
   def branch_pattern(%{pattern: %{kind: :list, elements: []}}, _env), do: "[]"
 
@@ -151,6 +162,13 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
 
   def pattern_arg(%{kind: :string, value: value}, _env) when is_binary(value), do: inspect(value)
   def pattern_arg(%{kind: :int, value: value}, _env) when is_integer(value), do: Integer.to_string(value)
+
+  def pattern_arg(%{kind: :bool, value: value}, _env) when is_boolean(value),
+    do: if(value, do: "true", else: "false")
+
+  def pattern_arg(%{op: :bool_literal, value: value}, _env) when is_boolean(value),
+    do: if(value, do: "true", else: "false")
+
   def pattern_arg(%{kind: :list, elements: []}, _env), do: "[]"
 
   def pattern_arg(%{kind: :cons, head: head, tail: tail}, env),
@@ -172,8 +190,11 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
 
       nil ->
         case Map.get(pat, :bind) do
-          bind when is_binary(bind) and bind != "" -> "{:#{ctor}, #{bind}}"
-          _ -> ":#{ctor}"
+          bind when is_binary(bind) and bind != "" ->
+            bool_case_pattern(ctor, "{:#{ctor}, #{bind}}")
+
+          _ ->
+            bool_case_pattern(ctor, ":#{ctor}")
         end
 
       other ->

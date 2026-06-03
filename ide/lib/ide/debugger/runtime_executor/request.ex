@@ -9,7 +9,6 @@ defmodule Ide.Debugger.RuntimeExecutor.Request do
   alias ElmEx.DebuggerContract.Payload
   alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Debugger.RuntimeExecutor.Types, as: ExecutorTypes
-  alias Ide.Debugger.RuntimeModelHydrate
   alias Ide.Debugger.Surface
   alias Ide.Debugger.Types
 
@@ -63,10 +62,7 @@ defmodule Ide.Debugger.RuntimeExecutor.Request do
     execution_model = Surface.execution_model(surface)
     message = Keyword.get(opts, :message)
 
-    app_model =
-      surface
-      |> Surface.app_model()
-      |> RuntimeModelHydrate.for_message(message, [])
+    app_model = Surface.app_model(surface)
 
     introspect = RuntimeArtifacts.require_introspect(execution_model)
 

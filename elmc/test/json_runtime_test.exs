@@ -59,6 +59,44 @@ defmodule Elmc.JsonRuntimeTest do
       return elmc_new_int(elmc_as_int(args[0]) + elmc_as_int(args[1]));
     }
 
+    static ElmcValue *sum3(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
+      (void)captures;
+      (void)capture_count;
+      if (argc < 3) return elmc_new_int(0);
+      return elmc_new_int(elmc_as_int(args[0]) + elmc_as_int(args[1]) + elmc_as_int(args[2]));
+    }
+
+    static ElmcValue *sum6(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
+      (void)captures;
+      (void)capture_count;
+      if (argc < 6) return elmc_new_int(0);
+      return elmc_new_int(elmc_as_int(args[0]) + elmc_as_int(args[1]) + elmc_as_int(args[2]) +
+                          elmc_as_int(args[3]) + elmc_as_int(args[4]) + elmc_as_int(args[5]));
+    }
+
+    static ElmcValue *sum7(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
+      (void)captures;
+      (void)capture_count;
+      if (argc < 7) return elmc_new_int(0);
+      return elmc_new_int(elmc_as_int(args[0]) + elmc_as_int(args[1]) + elmc_as_int(args[2]) +
+                          elmc_as_int(args[3]) + elmc_as_int(args[4]) + elmc_as_int(args[5]) +
+                          elmc_as_int(args[6]));
+    }
+
+    static ElmcValue *identity(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
+      (void)captures;
+      (void)capture_count;
+      if (argc < 1 || !args[0]) return elmc_int_zero();
+      return elmc_retain(args[0]);
+    }
+
+    static ElmcValue *encode_int_value(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
+      (void)captures;
+      (void)capture_count;
+      if (argc < 1 || !args[0]) return elmc_new_string("0");
+      return elmc_json_encode_int(args[0]);
+    }
+
     static ElmcValue *name_decoder(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
       (void)args;
       (void)argc;
@@ -200,6 +238,28 @@ defmodule Elmc.JsonRuntimeTest do
       elmc_release(field_a);
       elmc_release(field_b);
 
+      field_a = elmc_new_string("a");
+      field_b = elmc_new_string("b");
+      ElmcValue *field_c = elmc_new_string("c");
+      int_decoder = elmc_json_decode_int_decoder();
+      a_decoder = elmc_json_decode_field(field_a, int_decoder);
+      b_decoder = elmc_json_decode_field(field_b, int_decoder);
+      ElmcValue *c_decoder = elmc_json_decode_field(field_c, int_decoder);
+      ElmcValue *sum3_closure = elmc_closure_new(sum3, 0, 0, NULL);
+      ElmcValue *map3_decoder = elmc_json_decode_map3(sum3_closure, a_decoder, b_decoder, c_decoder);
+      ElmcValue *r7b = decode(map3_decoder, "{\\"a\\":1,\\"b\\":2,\\"c\\":3}");
+      if (result_int(r7b) != 6) return 15;
+      elmc_release(r7b);
+      elmc_release(map3_decoder);
+      elmc_release(sum3_closure);
+      elmc_release(c_decoder);
+      elmc_release(a_decoder);
+      elmc_release(b_decoder);
+      elmc_release(int_decoder);
+      elmc_release(field_a);
+      elmc_release(field_b);
+      elmc_release(field_c);
+
       ElmcValue *kind = elmc_new_string("kind");
       int_decoder = elmc_json_decode_int_decoder();
       ElmcValue *kind_decoder = elmc_json_decode_field(kind, int_decoder);
@@ -255,6 +315,112 @@ defmodule Elmc.JsonRuntimeTest do
       elmc_release(pair);
       elmc_release(key);
       elmc_release(raw);
+
+      ElmcValue *field_d;
+      ElmcValue *field_e;
+      ElmcValue *field_f;
+      ElmcValue *d_decoder;
+      ElmcValue *e_decoder;
+      ElmcValue *f_decoder;
+      field_a = elmc_new_string("a");
+      field_b = elmc_new_string("b");
+      field_c = elmc_new_string("c");
+      field_d = elmc_new_string("d");
+      field_e = elmc_new_string("e");
+      field_f = elmc_new_string("f");
+      int_decoder = elmc_json_decode_int_decoder();
+      a_decoder = elmc_json_decode_field(field_a, int_decoder);
+      b_decoder = elmc_json_decode_field(field_b, int_decoder);
+      c_decoder = elmc_json_decode_field(field_c, int_decoder);
+      d_decoder = elmc_json_decode_field(field_d, int_decoder);
+      e_decoder = elmc_json_decode_field(field_e, int_decoder);
+      f_decoder = elmc_json_decode_field(field_f, int_decoder);
+      ElmcValue *sum6_closure = elmc_closure_new(sum6, 0, 0, NULL);
+      ElmcValue *map6_decoder = elmc_json_decode_map6(sum6_closure, a_decoder, b_decoder, c_decoder, d_decoder, e_decoder, f_decoder);
+      ElmcValue *r15 = decode(map6_decoder, "{\\"a\\":1,\\"b\\":2,\\"c\\":3,\\"d\\":4,\\"e\\":5,\\"f\\":6}");
+      if (result_int(r15) != 21) return 16;
+      elmc_release(r15);
+      elmc_release(map6_decoder);
+      elmc_release(sum6_closure);
+      elmc_release(f_decoder);
+      elmc_release(e_decoder);
+      elmc_release(d_decoder);
+      elmc_release(c_decoder);
+      elmc_release(b_decoder);
+      elmc_release(a_decoder);
+      elmc_release(int_decoder);
+      elmc_release(field_f);
+      elmc_release(field_e);
+      elmc_release(field_d);
+      elmc_release(field_c);
+      elmc_release(field_b);
+      elmc_release(field_a);
+
+      int_decoder = elmc_json_decode_int_decoder();
+      ElmcValue *kvp_decoder = elmc_json_decode_key_value_pairs(int_decoder);
+      ElmcValue *r16 = decode(kvp_decoder, "{\\"one\\":1,\\"two\\":2}");
+      if (!r16 || r16->tag != ELMC_TAG_RESULT || !r16->payload || !((ElmcResult *)r16->payload)->is_ok) return 17;
+      ElmcValue *kvp_list = ((ElmcResult *)r16->payload)->value;
+      if (!kvp_list || kvp_list->tag != ELMC_TAG_LIST) return 17;
+      elmc_release(r16);
+      elmc_release(kvp_decoder);
+      elmc_release(int_decoder);
+
+      {
+        ElmcValue *fa = elmc_new_string("a");
+        ElmcValue *fb = elmc_new_string("b");
+        ElmcValue *fc = elmc_new_string("c");
+        ElmcValue *fd = elmc_new_string("d");
+        ElmcValue *fe = elmc_new_string("e");
+        ElmcValue *ff = elmc_new_string("f");
+        ElmcValue *fg = elmc_new_string("g");
+        ElmcValue *int_dec = elmc_json_decode_int_decoder();
+        ElmcValue *da = elmc_json_decode_field(fa, int_dec);
+        ElmcValue *db = elmc_json_decode_field(fb, int_dec);
+        ElmcValue *dc = elmc_json_decode_field(fc, int_dec);
+        ElmcValue *dd = elmc_json_decode_field(fd, int_dec);
+        ElmcValue *de = elmc_json_decode_field(fe, int_dec);
+        ElmcValue *df = elmc_json_decode_field(ff, int_dec);
+        ElmcValue *dg = elmc_json_decode_field(fg, int_dec);
+        ElmcValue *sum7_closure = elmc_closure_new(sum7, 0, 0, NULL);
+        ElmcValue *map7_decoder = elmc_json_decode_map7(sum7_closure, da, db, dc, dd, de, df, dg);
+        ElmcValue *r17 = decode(map7_decoder, "{\\"a\\":1,\\"b\\":2,\\"c\\":3,\\"d\\":4,\\"e\\":5,\\"f\\":6,\\"g\\":7}");
+        if (result_int(r17) != 28) return 18;
+        elmc_release(r17);
+        elmc_release(map7_decoder);
+        elmc_release(sum7_closure);
+        elmc_release(dg);
+        elmc_release(df);
+        elmc_release(de);
+        elmc_release(dd);
+        elmc_release(dc);
+        elmc_release(db);
+        elmc_release(da);
+        elmc_release(int_dec);
+        elmc_release(fg);
+        elmc_release(ff);
+        elmc_release(fe);
+        elmc_release(fd);
+        elmc_release(fc);
+        elmc_release(fb);
+        elmc_release(fa);
+      }
+
+      ElmcValue *dict_key = elmc_new_string("x");
+      ElmcValue *dict_val = elmc_new_int(9);
+      ElmcValue *dict_pair = elmc_tuple2(dict_key, dict_val);
+      ElmcValue *dict_list = elmc_list_cons(dict_pair, elmc_list_nil());
+      ElmcValue *id_closure = elmc_closure_new(identity, 0, 0, NULL);
+      ElmcValue *encode_int_closure = elmc_closure_new(encode_int_value, 0, 0, NULL);
+      ElmcValue *encoded_dict = elmc_json_encode_dict(id_closure, encode_int_closure, dict_list);
+      if (!encoded_dict || encoded_dict->tag != ELMC_TAG_STRING || strcmp((const char *)encoded_dict->payload, "{\\"x\\":9}") != 0) return 19;
+      elmc_release(encoded_dict);
+      elmc_release(encode_int_closure);
+      elmc_release(id_closure);
+      elmc_release(dict_list);
+      elmc_release(dict_pair);
+      elmc_release(dict_val);
+      elmc_release(dict_key);
 
       printf("json-runtime-ok\\n");
       return 0;

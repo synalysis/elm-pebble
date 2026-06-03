@@ -4,7 +4,6 @@ defmodule Ide.Debugger.IntrospectContexts do
   alias Ide.Debugger.DebuggerContractSnapshot
   alias Ide.Debugger.InitSurfaceEffects
   alias Ide.Debugger.ProtocolRx
-  alias Ide.Debugger.RuntimeModelHydrate
   alias Ide.Debugger.StepExecution
   alias Ide.Debugger.Types
   alias Ide.Debugger.Types.DebuggerContractEventPayload
@@ -56,7 +55,6 @@ defmodule Ide.Debugger.IntrospectContexts do
     %{
       executor: host.executor,
       attach_compile_artifacts: host.attach_compile_artifacts,
-      hydrate_runtime_model: &RuntimeModelHydrate.for_message/3,
       append_event: host.append_event,
       append_debugger_event: host.append_debugger_event,
       runtime_status_after_init: host.runtime_status_after_init,

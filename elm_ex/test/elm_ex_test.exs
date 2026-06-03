@@ -334,7 +334,7 @@ defmodule ElmExTest do
 
     {:ok, %IR{modules: [mod]}} = Lowerer.lower_project(project)
     func = Enum.find(mod.declarations, &(&1.name == "icon" and &1.kind == :function))
-    assert func.expr == %{op: :int_literal, value: 1}
+    assert %{op: :int_literal, value: 1} = func.expr
   end
 
   test "lowerer rewrites single-arg constructor to tagged tuple" do

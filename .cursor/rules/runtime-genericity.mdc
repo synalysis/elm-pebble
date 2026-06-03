@@ -18,6 +18,16 @@ These rules apply to all code changes in this repository.
 - If data cannot be resolved from the contract, surface it as unmapped/unsupported instead of guessing.
 - Keep implementation names generic when logic is generic; use domain-specific names only for domain-specific behavior.
 
+## Import Aliases and Name Resolution
+
+Import aliases (`import Pebble.Platform as Platform`, `PebblePlatform`, etc.) are **app-specific**. Generic compiler, IR, dead-code, and codegen code must not encode them.
+
+- Resolve aliases and unqualified imports **once** during lowering (`ElmEx.IR.ImportResolution` / lowerer), not in dead-code, reachability, codegen, or runtime adapters.
+- After lowering, IR and all downstream passes must use **fully qualified** `Module.name` targets (for example `Pebble.Platform.displayShapeIsRound`, not `Platform.displayShapeIsRound`).
+- Do not add alias maps, alias candidate lists, or “try these module prefixes” logic in generic modules.
+- Do not branch on short module names (`Platform`, `Ui`, `Cmd`) unless they are the canonical module identity from the contract, not a user-chosen alias.
+- Kernel/platform modules keep their real names (for example `Platform.worker` from `import Platform` is not `Pebble.Platform.worker`).
+
 ## Required When Changing Runtime Paths
 
 - Add or update tests that prove behavior works across at least two different templates/fixtures.
@@ -28,5 +38,8 @@ These rules apply to all code changes in this repository.
 
 - Bad: `if project_slug == "wf-analog" do ... end`
 - Bad: `if key contains "hour" then ...`
+- Bad: `@pebble_qualified_aliases %{"Platform" => "Pebble.Platform", ...}` in `DeadCode`, codegen `Util`, or reachability.
+- Bad: `special_value_from_target("Platform.displayShapeIsRound", ...)` delegating to a Pebble-qualified name.
 - Good: add `CurrentDateTime` payload type and map by declared fields.
 - Good: dispatch by constructor/contract metadata, not by template identity.
+- Good: normalize call targets in the lowerer; dead-code and codegen match `Pebble.Platform.*` as stored in IR.

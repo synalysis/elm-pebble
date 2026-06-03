@@ -1,0 +1,263 @@
+defmodule Elmc.Backend.CCodegen.Hoist do
+  @moduledoc false
+
+  alias Elmc.Backend.CCodegen.EnvBindings
+  alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.Types
+
+  @spec put_hoisted_native_bool(Types.compile_env(), Types.ir_expr(), String.t()) ::
+          Types.compile_env()
+  def put_hoisted_native_bool(env, expr, ref) when is_binary(ref) do
+    hoisted = Map.get(env, :__hoisted_native_bools__, %{})
+    Map.put(env, :__hoisted_native_bools__, Map.put(hoisted, hoisted_native_bool_key(expr), ref))
+  end
+
+  def put_hoisted_native_bool(env, _expr, _ref), do: env
+
+  @spec hoisted_native_bool_ref(Types.compile_env(), Types.ir_expr()) :: String.t() | nil
+  def hoisted_native_bool_ref(env, expr) do
+    env
+    |> Map.get(:__hoisted_native_bools__, %{})
+    |> Map.get(hoisted_native_bool_key(expr))
+  end
+
+  defp hoisted_native_bool_key(%{op: :qualified_call, target: target, args: args}) when is_binary(target) do
+    {:qualified, Host.normalize_special_target(target),
+     Enum.map(args || [], &hoisted_native_bool_key/1)}
+  end
+
+  defp hoisted_native_bool_key(%{op: :call, name: name, args: args}) when is_binary(name) do
+    {:call, name, Enum.map(args || [], &hoisted_native_bool_key/1)}
+  end
+
+  defp hoisted_native_bool_key(%{op: :field_access, arg: arg, field: field}) when is_binary(field) do
+    {:field, hoisted_native_bool_arg_key(arg), field}
+  end
+
+  defp hoisted_native_bool_key(%{op: :var, name: name}) when is_binary(name) or is_atom(name),
+    do: {:var, EnvBindings.binding_key(name)}
+
+  defp hoisted_native_bool_key(%{op: :int_literal, value: value}), do: {:int, value}
+  defp hoisted_native_bool_key(%{op: :char_literal, value: value}), do: {:char, value}
+  defp hoisted_native_bool_key(other) when is_map(other), do: {:other, Map.get(other, :op)}
+
+  defp hoisted_native_bool_key(other), do: other
+
+  defp hoisted_native_bool_arg_key(name) when is_binary(name) or is_atom(name),
+    do: {:var, EnvBindings.binding_key(name)}
+
+  defp hoisted_native_bool_arg_key(%{op: :var, name: name}) when is_binary(name) or is_atom(name),
+    do: {:var, EnvBindings.binding_key(name)}
+
+  defp hoisted_native_bool_arg_key(other), do: hoisted_native_bool_key(other)
+
+  @spec hoisted_native_ints_enabled?(Types.compile_env()) :: boolean()
+  def hoisted_native_ints_enabled?(env) do
+    Map.get(env, :__hoisted_native_ints_enabled__, false) or
+      Process.get(:elmc_hoisted_native_ints_scope, false)
+  end
+
+  defp hoisted_native_int_key(expr), do: expr |> hoisted_native_int_key_raw() |> normalize_hoist_key()
+
+  defp hoisted_native_int_key_raw(%{op: :call, name: name, args: args}) when name in ["min", "max"] do
+    {:minmax, name, minmax_arg_keys(args)}
+  end
+
+  defp hoisted_native_int_key_raw(%{op: :runtime_call, function: function, args: args})
+       when function in ["elmc_basics_min", "elmc_basics_max"] do
+    {:minmax, Host.native_min_max_name(function), minmax_arg_keys(args)}
+  end
+
+  defp hoisted_native_int_key_raw(%{op: :qualified_call, target: target, args: args})
+       when target in ["Basics.min", "Basics.max"] do
+    name = target |> String.split(".") |> List.last()
+    {:minmax, name, minmax_arg_keys(args)}
+  end
+
+  defp hoisted_native_int_key_raw(expr), do: hoisted_native_bool_key(expr)
+
+  defp minmax_arg_keys(args) do
+    args
+    |> List.wrap()
+    |> Enum.map(&hoisted_native_int_key/1)
+    |> Enum.sort()
+  end
+
+  defp normalize_hoist_key({:minmax, name, keys}) when is_list(keys),
+    do: {:minmax, name, Enum.sort(Enum.map(keys, &normalize_hoist_key/1))}
+
+  defp normalize_hoist_key({:field, arg, field}), do: {:field, normalize_hoist_arg_key(arg), field}
+
+  defp normalize_hoist_key({:var, name}), do: {:var, EnvBindings.binding_key(name)}
+
+  defp normalize_hoist_key({:call, name, args}),
+    do: {:call, name, Enum.map(args || [], &normalize_hoist_key/1)}
+
+  defp normalize_hoist_key({:qualified, target, args}),
+    do: {:qualified, target, Enum.map(args || [], &normalize_hoist_key/1)}
+
+  defp normalize_hoist_key({:int, value}), do: {:int, value}
+  defp normalize_hoist_key({:char, value}), do: {:char, value}
+  defp normalize_hoist_key(other), do: other
+
+  defp normalize_hoist_arg_key(name) when is_binary(name) or is_atom(name),
+    do: {:var, EnvBindings.binding_key(name)}
+
+  defp normalize_hoist_arg_key(%{op: :var, name: name}), do: {:var, EnvBindings.binding_key(name)}
+  defp normalize_hoist_arg_key(other), do: normalize_hoist_key(other)
+
+  @spec register_hoisted_native_int(Types.ir_expr(), String.t()) :: :ok
+  def register_hoisted_native_int(expr, ref) when is_binary(ref) do
+    hoisted =
+      Enum.reduce(hoisted_native_int_key_aliases(expr), Process.get(:elmc_hoisted_native_ints, %{}), fn
+        key, acc -> Map.put(acc, key, ref)
+      end)
+
+    Process.put(:elmc_hoisted_native_ints, hoisted)
+  end
+
+  defp hoisted_native_int_key_aliases(expr) do
+    [hoisted_native_int_key(expr) | minmax_cross_form_keys(expr)]
+    |> Enum.uniq()
+  end
+
+  @spec minmax_cross_form_keys(Types.ir_expr()) :: [term()]
+  defp minmax_cross_form_keys(expr) when is_map(expr) do
+    case Map.get(expr, :op) do
+      :call ->
+        case expr do
+          %{name: name, args: args} when name in ["min", "max"] ->
+            [hoisted_native_int_key(%{op: :runtime_call, function: "elmc_basics_#{name}", args: args})]
+
+          _ ->
+            []
+        end
+
+      :runtime_call ->
+        case expr do
+          %{function: function, args: args} when function in ["elmc_basics_min", "elmc_basics_max"] ->
+            [hoisted_native_int_key(%{op: :call, name: Host.native_min_max_name(function), args: args})]
+
+          _ ->
+            []
+        end
+
+      :qualified_call ->
+        case expr do
+          %{target: target, args: args} when target in ["Basics.min", "Basics.max"] ->
+            name = target |> String.split(".") |> List.last()
+
+            [
+              hoisted_native_int_key(%{op: :call, name: name, args: args}),
+              hoisted_native_int_key(%{op: :runtime_call, function: "elmc_basics_#{name}", args: args})
+            ]
+
+          _ ->
+            []
+        end
+
+      _ ->
+        []
+    end
+  end
+
+  @spec hoisted_native_int_lookup(Types.compile_env(), Types.ir_expr()) ::
+          {:ok, String.t()} | :error
+  def hoisted_native_int_lookup(env, expr) do
+    if hoisted_native_ints_enabled?(env) do
+      key = hoisted_native_int_key(expr)
+      hoisted = hoisted_native_int_map(env)
+
+      case Map.get(hoisted, key) do
+        ref when is_binary(ref) ->
+          {:ok, ref}
+
+        _ ->
+          hoisted_minmax_lookup(hoisted, expr)
+      end
+    else
+      :error
+    end
+  end
+
+  defp hoisted_native_int_map(env) do
+    Map.merge(
+      Map.get(env, :__hoisted_native_ints__, %{}),
+      Process.get(:elmc_hoisted_native_ints, %{})
+    )
+  end
+
+  defp hoisted_minmax_lookup(hoisted, %{op: :call, name: name, args: args})
+       when name in ["min", "max"] do
+    lookup_minmax_keys(hoisted, name, minmax_arg_keys(args))
+  end
+
+  defp hoisted_minmax_lookup(hoisted, %{op: :runtime_call, function: function, args: args})
+       when function in ["elmc_basics_min", "elmc_basics_max"] do
+    lookup_minmax_keys(hoisted, Host.native_min_max_name(function), minmax_arg_keys(args))
+  end
+
+  defp hoisted_minmax_lookup(hoisted, %{op: :qualified_call, target: target, args: args})
+       when target in ["Basics.min", "Basics.max"] do
+    name = target |> String.split(".") |> List.last()
+    lookup_minmax_keys(hoisted, name, minmax_arg_keys(args))
+  end
+
+  defp hoisted_minmax_lookup(_hoisted, _expr), do: :error
+
+  defp lookup_minmax_keys(hoisted, name, arg_keys) do
+    case Map.get(hoisted, {:minmax, name, arg_keys}) do
+      ref when is_binary(ref) ->
+        {:ok, ref}
+
+      _ ->
+        Enum.find_value(hoisted, fn
+          {{:minmax, ^name, keys}, ref} when is_list(keys) and is_binary(ref) ->
+            if Enum.sort(Enum.map(keys, &normalize_hoist_key/1)) == arg_keys,
+              do: {:ok, ref}
+
+          _ ->
+            nil
+        end) || :error
+    end
+  end
+
+  @spec merge_process_hoisted_native_ints(Types.compile_env()) :: Types.compile_env()
+  def merge_process_hoisted_native_ints(env) do
+    case Process.get(:elmc_hoisted_native_ints) do
+      hoisted when is_map(hoisted) and map_size(hoisted) > 0 ->
+        Map.put(
+          env,
+          :__hoisted_native_ints__,
+          Map.merge(Map.get(env, :__hoisted_native_ints__, %{}), hoisted)
+        )
+
+      _ ->
+        env
+    end
+  end
+
+  @spec maybe_promote_hoisted_native_int(
+          Types.ir_expr(),
+          Types.compile_env(),
+          String.t(),
+          String.t(),
+          Types.compile_counter()
+        ) :: {String.t(), String.t(), Types.compile_counter()}
+  def maybe_promote_hoisted_native_int(expr, env, code, ref, counter) do
+    if hoisted_native_ints_enabled?(env) do
+      case hoisted_native_int_lookup(env, expr) do
+        {:ok, hoisted} ->
+          {"", hoisted, counter}
+
+        :error ->
+          next = counter + 1
+          hoisted = "direct_hoisted_int_#{next}"
+          register_hoisted_native_int(expr, hoisted)
+          {code <> "  const elmc_int_t #{hoisted} = #{ref};\n", hoisted, next}
+      end
+    else
+      {code, ref, counter}
+    end
+  end
+end

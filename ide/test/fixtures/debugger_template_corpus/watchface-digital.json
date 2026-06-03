@@ -150,143 +150,16 @@
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
-    "last_source": "module Main exposing (main)\n\nimport Pebble.Events as PebbleEvents\nimport Pebble.Platform as PebblePlatform\nimport Pebble.Ui as PebbleUi\nimport Pebble.Ui.Color as PebbleColor\nimport Pebble.Ui.Resources as UiResources\nimport Pebble.Cmd as PebbleCmd\nimport Json.Decode as Decode\n\n\ntype alias Model =\n    { timeString : String\n    , screenW : Int\n    , screenH : Int\n    , displayShape : PebblePlatform.DisplayShape\n    }\n\n\ntype Msg\n    = MinuteChanged Int\n    | CurrentTimeString String\n\n\ninit : PebblePlatform.LaunchContext -> ( Model, Cmd Msg )\ninit context =\n    ( { timeString = \"--:--\"\n      , screenW = context.screen.width\n      , screenH = context.screen.height\n      , displayShape = context.screen.shape\n      }\n    , PebbleCmd.getCurrentTimeString CurrentTimeString\n    )\n\n\nupdate : Msg -> Model -> ( Model, Cmd Msg )\nupdate msg model =\n    case msg of\n        MinuteChanged _ ->\n            ( model, PebbleCmd.getCurrentTimeString CurrentTimeString )\n\n        CurrentTimeString value ->\n            ( { model | timeString = value }, Cmd.none )\n\n\nsubscriptions : Model -> Sub Msg\nsubscriptions _ =\n    PebbleEvents.onMinuteChange MinuteChanged\n\n\nview : Model -> PebbleUi.UiNode\nview model =\n    let\n        cardW =\n            (model.screenW * 17) // 20\n\n        cardH =\n            max 66 ((model.screenH * 70) // 168)\n\n        cardX =\n            (model.screenW - cardW) // 2\n\n        cardY =\n            (model.screenH - cardH) // 2\n\n        cornerRadius =\n            max 6 (min cardW cardH // 8)\n\n        timeH =\n            min 52 (cardH - 8)\n\n        textY =\n            cardY + ((cardH - timeH) // 2)\n    in\n    PebbleUi.windowStack\n        [ PebbleUi.window 1\n            [ PebbleUi.canvasLayer 1\n                [ PebbleUi.clear PebbleColor.white\n                , PebbleUi.roundRect { x = cardX, y = cardY, w = cardW, h = cardH } cornerRadius PebbleColor.black\n                , PebbleUi.text UiResources.DefaultFont (PebbleUi.alignCenter PebbleUi.defaultTextOptions) { x = cardX, y = textY, w = cardW, h = timeH } model.timeString\n                ]\n            ]\n        ]\n\n\nmain : Program Decode.Value Model Msg\nmain =\n    PebblePlatform.watchface\n        { init = init\n        , update = update\n        , view = view\n        , subscriptions = subscriptions\n        }\n",
-    "launch_context": {
-      "has_compass": true,
-      "has_microphone": false,
-      "launch_reason": "LaunchUser",
-      "screen": {
-        "color_mode": "BlackWhite",
-        "height": 168,
-        "shape": "Rectangular",
-        "width": 144
-      },
-      "shape": "rect",
-      "supports_health": false,
-      "watch_model": "Aplite",
-      "watch_profile_id": "aplite"
-    },
-    "revision": "c4e0ad511ae0",
-    "runtime_execution": {
-      "compiler": "elmx",
-      "contract": "elmx.runtime_executor.v1",
-      "engine": "elmx_runtime_v1",
-      "execution_backend": "compiled_elixir",
-      "runtime_mode": "runtime_first",
-      "runtime_model_entry_count": 4,
-      "runtime_model_sha256": "9965661e158addf68262f5dc8e65b3484cdfddeb68b036e4f2fb5617f03f34e6",
-      "runtime_model_source": "step_message",
-      "view_tree_node_count": 7,
-      "view_tree_sha256": "6596f44faee47e81860325b81d513f7b83251479008dfa623bed791acbd7b88e"
-    },
-    "runtime_execution_mode": "runtime_executed",
-    "runtime_known_messages": [
-      "MinuteChanged",
-      "CurrentTimeString"
-    ],
-    "runtime_message_cursor": 1,
-    "runtime_message_source": "init_device_data",
     "runtime_model": {
       "displayShape": {
         "args": [],
         "ctor": "Rectangular"
       },
-      "runtime_view_output_model_sha256": "8454bb871c70fc03907c1c1ee972eaebe96421cef95099f658020a04c5ae4b8d",
       "screenH": 168,
       "screenW": 144,
       "timeString": "08:53"
     },
-    "runtime_model_source": "step_message",
-    "runtime_update_branches": [
-      "MinuteChanged _",
-      "CurrentTimeString value"
-    ],
-    "runtime_view_output": [
-      {
-        "color": 255,
-        "kind": "clear",
-        "text": null
-      },
-      {
-        "fill": 192,
-        "h": 70,
-        "kind": "round_rect",
-        "radius": 8,
-        "text": null,
-        "w": 122,
-        "x": 11,
-        "y": 49
-      },
-      {
-        "font_id": 0,
-        "h": 52,
-        "kind": "text",
-        "text": "<TIME>",
-        "text_align": "center",
-        "text_overflow": "word_wrap",
-        "w": 122,
-        "x": 11,
-        "y": 58
-      }
-    ],
-    "screen_height": 168,
-    "screen_width": 144,
-    "simulator_settings": {
-      "calendar_events": [],
-      "storage_values": {},
-      "charging": false,
-      "timezone_id": "Europe/Berlin",
-      "compass_valid": true,
-      "use_simulated_time": true,
-      "simulated_date": "2026-05-27",
-      "compass_heading_deg": 0,
-      "latitude": 48.14,
-      "companion_timeline_token": "demo-timeline-token",
-      "notifications_enabled": true,
-      "health_steps_today": 9100,
-      "language": "en",
-      "connected": true,
-      "preferences": {},
-      "battery_percent": 88,
-      "dictation_error": "",
-      "environment": {
-        "moon": {
-          "moonriseMin": 900,
-          "moonsetMin": 300,
-          "phaseE6": 500000
-        },
-        "sun": {
-          "polarDay": false,
-          "sunriseMin": 420,
-          "sunsetMin": 1200
-        },
-        "tide": null
-      },
-      "timezone_offset_min": 0,
-      "weather": {
-        "condition": "clear",
-        "humidityPercent": 50,
-        "pressureHpa": 1013,
-        "temperatureC": 21,
-        "windKph": 8
-      },
-      "region": "US",
-      "clock_24h": true,
-      "longitude": 11.58,
-      "vibe_pattern_ms": [],
-      "accuracy": 25.0,
-      "app_in_focus": true,
-      "locale": "en-US",
-      "network_online": true,
-      "timeline_peek": false,
-      "health_steps": 4200,
-      "dictation_transcript": "",
-      "simulated_time": "08:53:00",
-      "quiet_hours": false
-    },
-    "source_root": "watch",
-    "status": "idle",
-    "supports_color": false,
+    "runtime_view_output": [],
     "timeString": null,
     "watch_profile_id": "aplite"
   }

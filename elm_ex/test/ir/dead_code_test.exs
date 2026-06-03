@@ -93,4 +93,60 @@ defmodule ElmEx.IR.DeadCodeTest do
     assert MapSet.member?(kept, "drawTile")
     refute MapSet.member?(kept, "orphan")
   end
+
+  test "keeps Pebble.Platform helpers referenced by fully qualified call targets" do
+    view_body = %{
+      op: :let_in,
+      name: "layout",
+      value_expr: %{
+        op: :call,
+        name: "boardLayout",
+        args: [%{op: :var, name: "model"}]
+      },
+      in_expr: %{
+        op: :qualified_call,
+        target: "Pebble.Platform.displayShapeIsRound",
+        args: [%{op: :field_access, arg: %{op: :var, name: "model"}, field: "displayShape"}]
+      }
+    }
+
+    board_layout_body = %{
+      op: :qualified_call,
+      target: "Pebble.Platform.displayShapeIsRound",
+      args: [%{op: :field_access, arg: %{op: :var, name: "model"}, field: "displayShape"}]
+    }
+
+    ir = %IR{
+      modules: [
+        %{
+          name: "Main",
+          declarations: [
+            %{kind: :function, name: "view", expr: view_body},
+            %{kind: :function, name: "boardLayout", expr: board_layout_body}
+          ]
+        },
+        %{
+          name: "Pebble.Platform",
+          declarations: [
+            %{kind: :function, name: "displayShapeIsRound", expr: %{op: :int_literal, value: 0}},
+            %{kind: :function, name: "orphan", expr: %{op: :int_literal, value: 0}}
+          ]
+        }
+      ],
+      diagnostics: []
+    }
+
+    stripped = DeadCode.strip(ir, "Main")
+
+    platform_decls =
+      stripped.modules
+      |> Enum.find(&(&1.name == "Pebble.Platform"))
+      |> Map.fetch!(:declarations)
+      |> Enum.filter(&(&1.kind == :function))
+      |> Enum.map(& &1.name)
+      |> MapSet.new()
+
+    assert MapSet.member?(platform_decls, "displayShapeIsRound")
+    refute MapSet.member?(platform_decls, "orphan")
+  end
 end

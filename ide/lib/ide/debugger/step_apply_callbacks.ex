@@ -8,7 +8,6 @@ defmodule Ide.Debugger.StepApplyCallbacks do
   alias Ide.Debugger.ProtocolRx
   alias Ide.Debugger.ProtocolRuntimeMetadata
   alias Ide.Debugger.RuntimeFollowups
-  alias Ide.Debugger.RuntimeModelHydrate
   alias Ide.Debugger.RuntimeModelNormalize
   alias Ide.Debugger.SampleViewTrees
   alias Ide.Debugger.StepMessageValue
@@ -58,10 +57,8 @@ defmodule Ide.Debugger.StepApplyCallbacks do
 
     %{
       ensure_compile_artifacts: &ensure_compile_artifacts(&1, &2, surface_compile),
-      hydrate_runtime_model: &RuntimeModelHydrate.for_message/3,
       normalize_message_value: &normalize_message_value(&1, &2, &3, &4, protocol_events),
       normalize_runtime_patch: &RuntimeModelNormalize.patch_values/2,
-      patched_runtime_model_fields: &RuntimeModelHydrate.patched_fields/1,
       preserve_protocol_metadata: &ProtocolRuntimeMetadata.preserve/2,
       default_view_tree: &SampleViewTrees.default_for_target/1,
       introspect_for: host.introspect_for,

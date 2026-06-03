@@ -17,7 +17,6 @@ defmodule Ide.Debugger.StepApply do
   # in StepApplyCallbacks; named implementations there keep precise @specs.
   @type ctx :: %{
           required(:ensure_compile_artifacts) => (map(), Types.surface_target() -> map()),
-          required(:hydrate_runtime_model) => (map(), String.t() | nil, [String.t()] -> map()),
           required(:normalize_message_value) => (map(),
                                                  Types.surface_target(),
                                                  Types.subscription_payload()
@@ -25,7 +24,6 @@ defmodule Ide.Debugger.StepApply do
                                                  map() ->
                                                    Types.subscription_payload() | nil),
           required(:normalize_runtime_patch) => (map(), map() -> map()),
-          required(:patched_runtime_model_fields) => (map() -> [String.t()]),
           required(:preserve_protocol_metadata) => (map(), map() -> map()),
           required(:default_view_tree) => (Types.surface_target() -> map()),
           required(:introspect_for) => (map(), Types.surface_target() -> map()),
@@ -93,11 +91,7 @@ defmodule Ide.Debugger.StepApply do
     state = ctx.ensure_compile_artifacts.(state, target)
     surface = Surface.from_state(state, target)
 
-    model =
-      surface
-      |> Surface.app_model()
-      |> ctx.hydrate_runtime_model.(nil, [])
-
+    model = Surface.app_model(surface)
     surface = Surface.put_app_model(surface, model)
     execution_model = Surface.execution_model(surface)
 
@@ -170,9 +164,7 @@ defmodule Ide.Debugger.StepApply do
     runtime_protocol_events = Map.get(runtime_result, :protocol_events, [])
 
     model_for_protocol =
-      model
-      |> Types.StepExecutionContract.merge_model_patch(runtime_patch)
-      |> ctx.hydrate_runtime_model.(message, [])
+      Types.StepExecutionContract.merge_model_patch(model, runtime_patch)
 
     command_protocol_events =
       cond do
@@ -212,7 +204,6 @@ defmodule Ide.Debugger.StepApply do
         protocol_runtime_patch,
         ctx.introspect_for.(state, target)
       )
-      |> ctx.hydrate_runtime_model.(message, ctx.patched_runtime_model_fields.(runtime_patch))
       |> then(fn m -> ctx.preserve_protocol_metadata.(m, model) end)
 
     runtime_view_output =

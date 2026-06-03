@@ -2,7 +2,7 @@ defmodule Ide.Debugger.RuntimeModelNormalize do
   @moduledoc ""
 
   alias Ide.Debugger.RuntimeArtifacts
-  alias Ide.Debugger.RuntimeModelHydrate
+  alias Ide.Debugger.RuntimeModelWire
   alias Ide.Debugger.Types
 
   @type patch :: Types.runtime_model_patch()
@@ -47,7 +47,7 @@ defmodule Ide.Debugger.RuntimeModelNormalize do
       shape = normalize_runtime_shape(previous_value, initial_value)
       {key, normalize_runtime_value(shape, value)}
     end)
-    |> RuntimeModelHydrate.static_model_values()
+    |> RuntimeModelWire.static_model_values()
   end
 
   @spec against_introspect(Types.inner_runtime_model(), Types.execution_model()) ::
@@ -108,7 +108,7 @@ defmodule Ide.Debugger.RuntimeModelNormalize do
       end
 
     case init_model do
-      value when is_map(value) -> RuntimeModelHydrate.static_model_values(value)
+      value when is_map(value) -> RuntimeModelWire.static_model_values(value)
       _ -> %{}
     end
   end
@@ -214,7 +214,7 @@ defmodule Ide.Debugger.RuntimeModelNormalize do
     do: Enum.map(values, &normalize_runtime_value(nil, &1))
 
   defp normalize_runtime_value(_previous, %{"ctor" => "::", "args" => [head, tail]}),
-    do: RuntimeModelHydrate.wire_list_to_elixir(%{"ctor" => "::", "args" => [head, tail]})
+    do: RuntimeModelWire.wire_list_to_elixir(%{"ctor" => "::", "args" => [head, tail]})
 
   defp normalize_runtime_value(_previous, %{"ctor" => "[]", "args" => []}), do: []
 
@@ -236,7 +236,7 @@ defmodule Ide.Debugger.RuntimeModelNormalize do
   defp coerce_runtime_scalar(value, shape) do
     value =
       value
-      |> RuntimeModelHydrate.static_value()
+      |> RuntimeModelWire.static_value()
       |> coerce_invalid_nil_ctor(shape)
       |> unwrap_just_scalar(shape)
       |> coerce_char_list_string(shape)

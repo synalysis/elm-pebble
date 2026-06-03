@@ -40,6 +40,17 @@ defmodule Ide.Debugger.RuntimeArtifactsTest do
 
       assert RuntimeArtifacts.public_model(model) == %{"weather" => "fog"}
     end
+
+    test "preview_runtime_model drops runtime view capture metadata" do
+      model = %{
+        "now" => %{"hour" => 12},
+        "runtime_view_output" => [%{"kind" => "text", "text" => "12"}],
+        "runtime_view_output_model_sha256" => "abc",
+        "runtime_view_tree" => %{"type" => "empty", "children" => []}
+      }
+
+      assert RuntimeArtifacts.preview_runtime_model(model) == %{"now" => %{"hour" => 12}}
+    end
   end
 
   describe "normalize_surface/1 and introspect/1" do

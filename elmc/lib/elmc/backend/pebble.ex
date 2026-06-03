@@ -4,170 +4,39 @@ defmodule Elmc.Backend.Pebble do
   """
 
   alias ElmEx.IR
-
-  @draw_kinds [
-    none: 0,
-    clear: 2,
-    pixel: 3,
-    line: 4,
-    rect: 5,
-    fill_rect: 6,
-    circle: 7,
-    fill_circle: 8,
-    push_context: 10,
-    pop_context: 11,
-    stroke_width: 12,
-    antialiased: 13,
-    stroke_color: 14,
-    fill_color: 15,
-    text_color: 16,
-    round_rect: 17,
-    arc: 18,
-    context_group: 19,
-    path_filled: 20,
-    path_outline: 21,
-    path_outline_open: 22,
-    fill_radial: 23,
-    compositing_mode: 24,
-    bitmap_in_rect: 25,
-    rotated_bitmap: 26,
-    text_int_with_font: 27,
-    text_label_with_font: 28,
-    text: 29,
-    vector_at: 30,
-    vector_sequence_at: 31,
-    bitmap_sequence_at: 32
-  ]
-
-  @command_kinds [
-    none: 0,
-    timer_after_ms: 1,
-    storage_write_int: 2,
-    storage_read_int: 3,
-    storage_delete: 4,
-    companion_send: 5,
-    backlight: 6,
-    get_current_time_string: 7,
-    get_clock_style_24h: 8,
-    get_timezone_is_set: 9,
-    get_timezone: 10,
-    get_watch_model: 11,
-    get_firmware_version: 12,
-    vibes_cancel: 13,
-    vibes_short_pulse: 14,
-    vibes_long_pulse: 15,
-    vibes_double_pulse: 16,
-    get_watch_color: 17,
-    wakeup_schedule_after_seconds: 18,
-    wakeup_cancel: 19,
-    log_info_code: 20,
-    log_warn_code: 21,
-    log_error_code: 22,
-    get_current_date_time: 23,
-    get_battery_level: 24,
-    get_connection_status: 25,
-    storage_write_string: 26,
-    storage_read_string: 27,
-    random_generate: 28,
-    health_value: 29,
-    health_sum_today: 30,
-    health_sum: 31,
-    health_accessible: 32,
-    vibes_custom_pattern: 33,
-    data_log_bytes: 34,
-    data_log_int32: 35,
-    compass_peek: 36,
-    dictation_start: 37,
-    dictation_stop: 38,
-    unobstructed_bounds_peek: 39,
-    health_supported: 40
-  ]
-
-  @run_modes [
-    app: 0,
-    watchface: 1
-  ]
-
-  @button_ids [
-    back: 0,
-    up: 1,
-    select: 2,
-    down: 3
-  ]
-
-  @accel_axes [
-    x: 1,
-    y: 2,
-    z: 3
-  ]
-
-  @ui_node_kinds [
-    window_stack: 1000,
-    window_node: 1001,
-    canvas_layer: 1002
-  ]
-
-  @draw_kind_ids Map.new(@draw_kinds)
-  @command_kind_ids Map.new(@command_kinds)
-  @run_mode_ids Map.new(@run_modes)
-  @button_id_ids Map.new(@button_ids)
-  @accel_axis_ids Map.new(@accel_axes)
-  @ui_node_kind_ids Map.new(@ui_node_kinds)
-
-  @spec draw_kind_id!(atom()) :: non_neg_integer()
-  def draw_kind_id!(kind), do: Map.fetch!(@draw_kind_ids, kind)
-
-  @spec draw_kind_c_name!(atom() | integer()) :: String.t()
-  def draw_kind_c_name!(kind) when is_atom(kind) do
-    "ELMC_PEBBLE_DRAW_#{macro_name(Atom.to_string(kind))}"
-  end
-
-  def draw_kind_c_name!(id) when is_integer(id) do
-    case Enum.find(@draw_kinds, fn {_kind, value} -> value == id end) do
-      {kind, _value} -> draw_kind_c_name!(kind)
-      nil -> raise KeyError, key: id, term: @draw_kinds
-    end
-  end
-
-  @spec command_kind_id!(atom()) :: non_neg_integer()
-  def command_kind_id!(kind), do: Map.fetch!(@command_kind_ids, kind)
-
-  @spec run_mode_id!(atom()) :: non_neg_integer()
-  def run_mode_id!(mode), do: Map.fetch!(@run_mode_ids, mode)
-
-  @spec button_id!(atom()) :: non_neg_integer()
-  def button_id!(button), do: Map.fetch!(@button_id_ids, button)
-
-  @spec accel_axis_id!(atom()) :: non_neg_integer()
-  def accel_axis_id!(axis), do: Map.fetch!(@accel_axis_ids, axis)
-
-  @spec ui_node_kind_id!(atom()) :: non_neg_integer()
-  def ui_node_kind_id!(kind), do: Map.fetch!(@ui_node_kind_ids, kind)
-
   alias Elmc.Backend.CCodegen.Types, as: CCodegenTypes
+  alias Elmc.Backend.Pebble.{IRAnalysis, Kinds, Util}
   alias Elmc.Types
+
+  defdelegate draw_kind_id!(kind), to: Kinds
+  defdelegate draw_kind_c_name!(kind), to: Kinds
+  defdelegate command_kind_id!(kind), to: Kinds
+  defdelegate run_mode_id!(mode), to: Kinds
+  defdelegate button_id!(button), to: Kinds
+  defdelegate accel_axis_id!(axis), to: Kinds
+  defdelegate ui_node_kind_id!(kind), to: Kinds
 
   @spec write_pebble_shim(IR.t(), String.t(), String.t()) :: :ok | {:error, Types.file_error()}
   def write_pebble_shim(%IR{} = ir, out_dir, entry_module) do
     c_dir = Path.join(out_dir, "c")
-    msg_constructors = msg_constructors(ir, entry_module)
-    msg_constructor_arities = msg_constructor_arities(ir, entry_module)
-    msg_constructor_payload_specs = msg_constructor_payload_specs(ir, entry_module)
-    watch_model_tags = union_constructors(ir, "Pebble.WatchInfo", "WatchModel")
-    watch_color_tags = union_constructors(ir, "Pebble.WatchInfo", "WatchColor")
-    has_view = has_view?(ir, entry_module)
+    msg_constructors = IRAnalysis.msg_constructors(ir, entry_module)
+    msg_constructor_arities = IRAnalysis.msg_constructor_arities(ir, entry_module)
+    msg_constructor_payload_specs = IRAnalysis.msg_constructor_payload_specs(ir, entry_module)
+    watch_model_tags = IRAnalysis.union_constructors(ir, "Pebble.WatchInfo", "WatchModel")
+    watch_color_tags = IRAnalysis.union_constructors(ir, "Pebble.WatchInfo", "WatchColor")
+    has_view = IRAnalysis.has_view?(ir, entry_module)
     feature_flags = feature_flags(ir, msg_constructors, entry_module)
-    random_generate_tag = random_generate_target_tag(ir, msg_constructors)
-    health_event_tag = health_event_target_tag(ir, msg_constructors)
-    app_focus_change_tag = app_focus_change_target_tag(ir, msg_constructors)
-    compass_change_tag = compass_change_target_tag(ir, msg_constructors)
-    dictation_status_tag = dictation_status_target_tag(ir, msg_constructors)
-    dictation_result_tag = dictation_result_target_tag(ir, msg_constructors)
-    unobstructed_will_change_tag = unobstructed_will_change_target_tag(ir, msg_constructors)
-    unobstructed_changing_tag = unobstructed_changing_target_tag(ir, msg_constructors)
-    unobstructed_did_change_tag = unobstructed_did_change_target_tag(ir, msg_constructors)
-    unobstructed_bounds_tag = unobstructed_bounds_target_tag(ir, msg_constructors)
-    accel_config = accel_config_from_ir(ir, entry_module)
+    random_generate_tag = IRAnalysis.random_generate_target_tag(ir, msg_constructors)
+    health_event_tag = IRAnalysis.health_event_target_tag(ir, msg_constructors)
+    app_focus_change_tag = IRAnalysis.app_focus_change_target_tag(ir, msg_constructors)
+    compass_change_tag = IRAnalysis.compass_change_target_tag(ir, msg_constructors)
+    dictation_status_tag = IRAnalysis.dictation_status_target_tag(ir, msg_constructors)
+    dictation_result_tag = IRAnalysis.dictation_result_target_tag(ir, msg_constructors)
+    unobstructed_will_change_tag = IRAnalysis.unobstructed_will_change_target_tag(ir, msg_constructors)
+    unobstructed_changing_tag = IRAnalysis.unobstructed_changing_target_tag(ir, msg_constructors)
+    unobstructed_did_change_tag = IRAnalysis.unobstructed_did_change_target_tag(ir, msg_constructors)
+    unobstructed_bounds_tag = IRAnalysis.unobstructed_bounds_target_tag(ir, msg_constructors)
+    accel_config = IRAnalysis.accel_config_from_ir(ir, entry_module)
 
     with :ok <- File.mkdir_p(c_dir),
          :ok <-
@@ -218,27 +87,27 @@ defmodule Elmc.Backend.Pebble do
     msg_enum_members =
       msg_constructors
       |> Enum.map_join("\n", fn {name, tag} ->
-        "  ELMC_PEBBLE_MSG_#{macro_name(name)} = #{tag},"
+        "  ELMC_PEBBLE_MSG_#{Util.macro_name(name)} = #{tag},"
       end)
 
     msg_presence_macros =
       msg_constructors
       |> Enum.map_join("\n", fn {name, _tag} ->
-        "#define ELMC_PEBBLE_HAS_MSG_#{macro_name(name)} 1"
+        "#define ELMC_PEBBLE_HAS_MSG_#{Util.macro_name(name)} 1"
       end)
 
     watch_model_macros = constructor_tag_macros("ELMC_PEBBLE_WATCH_MODEL", watch_model_tags)
     watch_color_macros = constructor_tag_macros("ELMC_PEBBLE_WATCH_COLOR", watch_color_tags)
     feature_macros = feature_flag_macros(feature_flags)
-    run_mode_enum = c_enum("ElmcPebbleRunMode", "ELMC_PEBBLE_MODE", @run_modes)
-    button_id_enum = c_enum("ElmcPebbleButtonId", "ELMC_PEBBLE_BUTTON", @button_ids)
-    accel_axis_enum = c_enum("ElmcPebbleAccelAxis", "ELMC_PEBBLE_ACCEL_AXIS", @accel_axes)
-    draw_kind_enum = c_enum("ElmcPebbleDrawKind", "ELMC_PEBBLE_DRAW", @draw_kinds)
-    command_kind_enum = c_enum("ElmcPebbleCommandKind", "ELMC_PEBBLE_CMD", @command_kinds)
-    ui_node_kind_enum = c_enum("ElmcPebbleUiNodeKind", "ELMC_PEBBLE_UI", @ui_node_kinds)
+    run_mode_enum = c_enum("ElmcPebbleRunMode", "ELMC_PEBBLE_MODE", Kinds.run_modes())
+    button_id_enum = c_enum("ElmcPebbleButtonId", "ELMC_PEBBLE_BUTTON", Kinds.button_ids())
+    accel_axis_enum = c_enum("ElmcPebbleAccelAxis", "ELMC_PEBBLE_ACCEL_AXIS", Kinds.accel_axes())
+    draw_kind_enum = c_enum("ElmcPebbleDrawKind", "ELMC_PEBBLE_DRAW", Kinds.draw_kinds())
+    command_kind_enum = c_enum("ElmcPebbleCommandKind", "ELMC_PEBBLE_CMD", Kinds.command_kinds())
+    ui_node_kind_enum = c_enum("ElmcPebbleUiNodeKind", "ELMC_PEBBLE_UI", Kinds.ui_node_kinds())
 
     phone_to_watch_target =
-      phone_to_watch_msg_target(msg_constructors, msg_constructor_payload_specs)
+      IRAnalysis.phone_to_watch_msg_target(msg_constructors, msg_constructor_payload_specs)
 
     """
     #ifndef ELMC_PEBBLE_H
@@ -487,17 +356,17 @@ defmodule Elmc.Backend.Pebble do
     value_decode_cases =
       msg_constructors
       |> Enum.map_join("\n", fn {name, tag} ->
-        "      case ELMC_PEBBLE_MSG_#{macro_name(name)}: *out_tag = #{tag}; return 0;"
+        "      case ELMC_PEBBLE_MSG_#{Util.macro_name(name)}: *out_tag = #{tag}; return 0;"
       end)
 
     key_decode_cases =
       msg_constructors
       |> Enum.map_join("\n", fn {name, tag} ->
-        "      case ELMC_PEBBLE_MSG_#{macro_name(name)}: *out_tag = #{tag}; return 0;"
+        "      case ELMC_PEBBLE_MSG_#{Util.macro_name(name)}: *out_tag = #{tag}; return 0;"
       end)
 
-    tick_tag = pick_tag(msg_constructors, ["Tick", "Increment", "UpPressed"], fallback: 1)
-    tick_constructor_name = constructor_name_for_tag(msg_constructors, tick_tag)
+    tick_tag = IRAnalysis.pick_tag(msg_constructors, ["Tick", "Increment", "UpPressed"], fallback: 1)
+    tick_constructor_name = IRAnalysis.constructor_name_for_tag(msg_constructors, tick_tag)
     tick_constructor_arity = Map.get(msg_constructor_arities, tick_constructor_name, 0)
 
     current_second_helper =
@@ -523,37 +392,37 @@ defmodule Elmc.Backend.Pebble do
         ""
       end
 
-    button_back_tag = pick_tag(msg_constructors, ["BackPressed", "LeftPressed"])
-    button_up_tag = pick_tag(msg_constructors, ["UpPressed", "Increment"])
-    button_select_tag = pick_tag(msg_constructors, ["SelectPressed", "RightPressed", "Increment"])
-    button_down_tag = pick_tag(msg_constructors, ["DownPressed", "Decrement"])
-    button_back_released_tag = pick_tag(msg_constructors, ["BackReleased", "LeftReleased"])
-    button_up_released_tag = pick_tag(msg_constructors, ["UpReleased"])
-    button_select_released_tag = pick_tag(msg_constructors, ["SelectReleased"])
-    button_down_released_tag = pick_tag(msg_constructors, ["DownReleased"])
-    frame_tag = pick_tag(msg_constructors, ["FrameTick", "Frame", "GameFrame"])
-    accel_data_tag = pick_tag(msg_constructors, ["AccelData", "AccelSample", "GotAccel"])
+    button_back_tag = IRAnalysis.pick_tag(msg_constructors, ["BackPressed", "LeftPressed"])
+    button_up_tag = IRAnalysis.pick_tag(msg_constructors, ["UpPressed", "Increment"])
+    button_select_tag = IRAnalysis.pick_tag(msg_constructors, ["SelectPressed", "RightPressed", "Increment"])
+    button_down_tag = IRAnalysis.pick_tag(msg_constructors, ["DownPressed", "Decrement"])
+    button_back_released_tag = IRAnalysis.pick_tag(msg_constructors, ["BackReleased", "LeftReleased"])
+    button_up_released_tag = IRAnalysis.pick_tag(msg_constructors, ["UpReleased"])
+    button_select_released_tag = IRAnalysis.pick_tag(msg_constructors, ["SelectReleased"])
+    button_down_released_tag = IRAnalysis.pick_tag(msg_constructors, ["DownReleased"])
+    frame_tag = IRAnalysis.pick_tag(msg_constructors, ["FrameTick", "Frame", "GameFrame"])
+    accel_data_tag = IRAnalysis.pick_tag(msg_constructors, ["AccelData", "AccelSample", "GotAccel"])
 
     storage_string_tag =
-      pick_tag(msg_constructors, ["StorageStringLoaded", "GotStorageString", "GotString"])
+      IRAnalysis.pick_tag(msg_constructors, ["StorageStringLoaded", "GotStorageString", "GotString"])
 
-    accel_tap_tag = pick_tag(msg_constructors, ["Shake", "AccelTap", "Tapped", "Increment"])
+    accel_tap_tag = IRAnalysis.pick_tag(msg_constructors, ["Shake", "AccelTap", "Tapped", "Increment"])
 
     battery_tag =
-      pick_tag(msg_constructors, ["BatteryLevelChanged", "BatteryChanged", "BatteryUpdate"])
+      IRAnalysis.pick_tag(msg_constructors, ["BatteryLevelChanged", "BatteryChanged", "BatteryUpdate"])
 
     connection_tag =
-      pick_tag(msg_constructors, [
+      IRAnalysis.pick_tag(msg_constructors, [
         "ConnectionStatusChanged",
         "ConnectionChanged",
         "BluetoothChanged"
       ])
 
-    hour_tag = pick_tag(msg_constructors, ["HourChanged"])
-    minute_tag = pick_tag(msg_constructors, ["MinuteChanged"])
-    day_tag = pick_tag(msg_constructors, ["DayChanged"])
-    month_tag = pick_tag(msg_constructors, ["MonthChanged"])
-    year_tag = pick_tag(msg_constructors, ["YearChanged"])
+    hour_tag = IRAnalysis.pick_tag(msg_constructors, ["HourChanged"])
+    minute_tag = IRAnalysis.pick_tag(msg_constructors, ["MinuteChanged"])
+    day_tag = IRAnalysis.pick_tag(msg_constructors, ["DayChanged"])
+    month_tag = IRAnalysis.pick_tag(msg_constructors, ["MonthChanged"])
+    year_tag = IRAnalysis.pick_tag(msg_constructors, ["YearChanged"])
     direct_view_macro = direct_command_macro(entry_module, "view")
 
     entry_view_commands_from =
@@ -2740,510 +2609,12 @@ defmodule Elmc.Backend.Pebble do
     """
   end
 
-  @spec msg_constructors(ElmEx.IR.t(), String.t()) :: [map()]
-  defp msg_constructors(ir, entry_module) do
-    module = Enum.find(ir.modules, &(&1.name == entry_module))
-
-    union =
-      if module do
-        module.unions["Msg"]
-      else
-        nil
-      end
-
-    tags = if union, do: union.tags, else: %{}
-
-    tags
-    |> Map.to_list()
-    |> Enum.sort_by(fn {_name, tag} -> tag end)
-  end
-
-  @spec msg_constructor_arities(ElmEx.IR.t(), String.t()) :: %{
-          optional(String.t()) => non_neg_integer()
-        }
-  defp msg_constructor_arities(ir, entry_module) do
-    module = Enum.find(ir.modules, &(&1.name == entry_module))
-    union = if module, do: module.unions["Msg"], else: nil
-    constructors = if union, do: Map.get(union, :constructors, []), else: []
-
-    constructors
-    |> Enum.reduce(%{}, fn constructor, acc ->
-      name = Map.get(constructor, :name)
-      spec = Map.get(constructor, :arg)
-
-      if is_binary(name) and name != "" do
-        Map.put(acc, name, payload_arity_for_spec(spec))
-      else
-        acc
-      end
-    end)
-  end
-
-  @spec msg_constructor_payload_specs(ElmEx.IR.t(), String.t()) :: %{
-          optional(String.t()) => String.t() | nil
-        }
-  defp msg_constructor_payload_specs(ir, entry_module) do
-    module = Enum.find(ir.modules, &(&1.name == entry_module))
-    union = if module, do: module.unions["Msg"], else: nil
-    constructors = if union, do: Map.get(union, :constructors, []), else: []
-
-    constructors
-    |> Map.new(fn constructor ->
-      {Map.get(constructor, :name), Map.get(constructor, :arg)}
-    end)
-  end
-
-  @spec random_generate_target_tag(IR.t(), [{String.t(), non_neg_integer()}]) :: integer()
-  defp random_generate_target_tag(%IR{} = ir, msg_constructors) do
-    ir.modules
-    |> Enum.flat_map(fn mod -> Map.get(mod, :declarations, []) end)
-    |> Enum.flat_map(fn declaration ->
-      random_generate_target_names(Map.get(declaration, :expr) || Map.get(declaration, :body))
-    end)
-    |> Enum.find_value(-1, fn
-      {:tag, tag} when is_integer(tag) ->
-        tag
-
-      name ->
-        Enum.find_value(msg_constructors, fn
-          {^name, tag} -> tag
-          _ -> nil
-        end)
-    end)
-  end
-
-  defp random_generate_target_names(%{
-         op: :qualified_call,
-         target: target,
-         args: [to_msg, _generator]
-       })
-       when target in ["Random.generate", "Elm.Kernel.Random.generate"] do
-    callback_tagger_names(to_msg)
-  end
-
-  defp random_generate_target_names(%{} = node) do
-    node
-    |> Map.values()
-    |> Enum.flat_map(&random_generate_target_names/1)
-  end
-
-  defp random_generate_target_names(list) when is_list(list),
-    do: Enum.flat_map(list, &random_generate_target_names/1)
-
-  defp random_generate_target_names(_), do: []
-
-  defp callback_tagger_names(%{op: :var, name: name}) when is_binary(name), do: [name]
-
-  defp callback_tagger_names(%{op: :int_literal, value: tag}) when is_integer(tag),
-    do: [{:tag, tag}]
-
-  defp callback_tagger_names(%{op: :qualified_var, target: target})
-       when is_binary(target) do
-    [target |> String.split(".") |> List.last()]
-  end
-
-  defp callback_tagger_names(%{op: :qualified_call, target: target, args: []})
-       when is_binary(target) do
-    [target |> String.split(".") |> List.last()]
-  end
-
-  defp callback_tagger_names(_), do: []
-
-  @spec health_event_target_tag(IR.t(), [{String.t(), non_neg_integer()}]) :: integer()
-  defp health_event_target_tag(%IR{} = ir, msg_constructors) do
-    ir.modules
-    |> Enum.flat_map(fn mod -> Map.get(mod, :declarations, []) end)
-    |> Enum.flat_map(fn declaration ->
-      health_event_target_names(Map.get(declaration, :expr) || Map.get(declaration, :body))
-    end)
-    |> Enum.find_value(-1, fn
-      {:tag, tag} when is_integer(tag) ->
-        tag
-
-      name ->
-        Enum.find_value(msg_constructors, fn
-          {^name, tag} -> tag
-          _ -> nil
-        end)
-    end)
-  end
-
-  defp health_event_target_names(%{op: :qualified_call, target: target, args: [to_msg]})
-       when target in ["Pebble.Health.onEvent", "Elm.Kernel.PebbleWatch.onHealthEvent"] do
-    callback_tagger_names(to_msg)
-  end
-
-  defp health_event_target_names(%{} = node) do
-    node
-    |> Map.values()
-    |> Enum.flat_map(&health_event_target_names/1)
-  end
-
-  defp health_event_target_names(list) when is_list(list),
-    do: Enum.flat_map(list, &health_event_target_names/1)
-
-  defp health_event_target_names(_), do: []
-
-  @spec app_focus_change_target_tag(IR.t(), [{String.t(), non_neg_integer()}]) :: integer()
-  defp app_focus_change_target_tag(%IR{} = ir, msg_constructors) do
-    target_tag_from_subscription(
-      ir,
-      msg_constructors,
-      ["Pebble.AppFocus.onChange", "Elm.Kernel.PebbleWatch.onAppFocusChange"]
-    )
-  end
-
-  @spec compass_change_target_tag(IR.t(), [{String.t(), non_neg_integer()}]) :: integer()
-  defp compass_change_target_tag(%IR{} = ir, msg_constructors) do
-    target_tag_from_subscription(
-      ir,
-      msg_constructors,
-      ["Pebble.Compass.onChange", "Elm.Kernel.PebbleWatch.onCompassChange"]
-    )
-  end
-
-  @spec dictation_status_target_tag(IR.t(), [{String.t(), non_neg_integer()}]) :: integer()
-  defp dictation_status_target_tag(%IR{} = ir, msg_constructors) do
-    target_tag_from_subscription(
-      ir,
-      msg_constructors,
-      ["Pebble.Dictation.onStatus", "Elm.Kernel.PebbleWatch.onDictationStatus"]
-    )
-  end
-
-  @spec dictation_result_target_tag(IR.t(), [{String.t(), non_neg_integer()}]) :: integer()
-  defp dictation_result_target_tag(%IR{} = ir, msg_constructors) do
-    target_tag_from_subscription(
-      ir,
-      msg_constructors,
-      ["Pebble.Dictation.onResult", "Elm.Kernel.PebbleWatch.onDictationResult"]
-    )
-  end
-
-  @spec unobstructed_will_change_target_tag(IR.t(), [{String.t(), non_neg_integer()}]) ::
-          integer()
-  defp unobstructed_will_change_target_tag(%IR{} = ir, msg_constructors) do
-    target_tag_from_subscription(
-      ir,
-      msg_constructors,
-      [
-        "Pebble.UnobstructedArea.onWillChange",
-        "Elm.Kernel.PebbleWatch.onUnobstructedWillChange"
-      ]
-    )
-  end
-
-  @spec unobstructed_changing_target_tag(IR.t(), [{String.t(), non_neg_integer()}]) :: integer()
-  defp unobstructed_changing_target_tag(%IR{} = ir, msg_constructors) do
-    target_tag_from_subscription(
-      ir,
-      msg_constructors,
-      [
-        "Pebble.UnobstructedArea.onChanging",
-        "Elm.Kernel.PebbleWatch.onUnobstructedChanging"
-      ]
-    )
-  end
-
-  @spec unobstructed_did_change_target_tag(IR.t(), [{String.t(), non_neg_integer()}]) :: integer()
-  defp unobstructed_did_change_target_tag(%IR{} = ir, msg_constructors) do
-    target_tag_from_subscription(
-      ir,
-      msg_constructors,
-      [
-        "Pebble.UnobstructedArea.onDidChange",
-        "Elm.Kernel.PebbleWatch.onUnobstructedDidChange"
-      ]
-    )
-  end
-
-  @spec unobstructed_bounds_target_tag(IR.t(), [{String.t(), non_neg_integer()}]) :: integer()
-  defp unobstructed_bounds_target_tag(%IR{} = ir, msg_constructors) do
-    target_tag_from_cmd(
-      ir,
-      msg_constructors,
-      [
-        "Pebble.UnobstructedArea.currentBounds",
-        "Elm.Kernel.PebbleWatch.unobstructedCurrentBounds"
-      ]
-    )
-  end
-
-  @spec target_tag_from_cmd(IR.t(), [{String.t(), non_neg_integer()}], [String.t()]) :: integer()
-  defp target_tag_from_cmd(%IR{} = ir, msg_constructors, targets) do
-    ir.modules
-    |> Enum.flat_map(fn mod -> Map.get(mod, :declarations, []) end)
-    |> Enum.flat_map(fn declaration ->
-      cmd_target_names(Map.get(declaration, :expr) || Map.get(declaration, :body), targets)
-    end)
-    |> Enum.find_value(-1, fn
-      {:tag, tag} when is_integer(tag) -> tag
-      name -> Enum.find_value(msg_constructors, fn {^name, tag} -> tag end)
-    end)
-  end
-
-  defp cmd_target_names(%{op: :qualified_call, target: target, args: [to_msg]}, targets) do
-    if target in targets, do: callback_tagger_names(to_msg), else: []
-  end
-
-  defp cmd_target_names(%{} = node, targets) do
-    node |> Map.values() |> Enum.flat_map(&cmd_target_names(&1, targets))
-  end
-
-  defp cmd_target_names(list, targets) when is_list(list),
-    do: Enum.flat_map(list, &cmd_target_names(&1, targets))
-
-  defp cmd_target_names(_, _), do: []
-
-  @spec target_tag_from_subscription(IR.t(), [{String.t(), non_neg_integer()}], [String.t()]) ::
-          integer()
-  defp target_tag_from_subscription(%IR{} = ir, msg_constructors, targets) do
-    ir.modules
-    |> Enum.flat_map(fn mod -> Map.get(mod, :declarations, []) end)
-    |> Enum.flat_map(fn declaration ->
-      subscription_target_names(
-        Map.get(declaration, :expr) || Map.get(declaration, :body),
-        targets
-      )
-    end)
-    |> Enum.find_value(-1, fn
-      {:tag, tag} when is_integer(tag) ->
-        tag
-
-      name ->
-        Enum.find_value(msg_constructors, fn
-          {^name, tag} -> tag
-          _ -> nil
-        end)
-    end)
-  end
-
-  defp subscription_target_names(%{op: :qualified_call, target: target, args: [to_msg]}, targets) do
-    if target in targets, do: callback_tagger_names(to_msg), else: []
-  end
-
-  defp subscription_target_names(%{} = node, targets) do
-    node
-    |> Map.values()
-    |> Enum.flat_map(&subscription_target_names(&1, targets))
-  end
-
-  defp subscription_target_names(list, targets) when is_list(list),
-    do: Enum.flat_map(list, &subscription_target_names(&1, targets))
-
-  defp subscription_target_names(_, _), do: []
-
-  @spec accel_config_from_ir(IR.t(), String.t()) :: map()
-  defp accel_config_from_ir(%IR{} = ir, _entry_module) do
-    bindings = accel_config_bindings(ir)
-
-    ir.modules
-    |> Enum.flat_map(fn mod -> Map.get(mod, :declarations, []) end)
-    |> Enum.reduce(%{samples_per_update: 1, sampling_hz: 25}, fn declaration, acc ->
-      accel_config_from_node(
-        Map.get(declaration, :expr) || Map.get(declaration, :body),
-        acc,
-        bindings
-      )
-    end)
-  end
-
-  defp accel_config_bindings(%IR{} = ir) do
-    ir.modules
-    |> Enum.flat_map(fn mod ->
-      mod.declarations
-      |> Enum.filter(fn decl -> Map.get(decl, :kind) in [:value, :function] end)
-      |> Enum.flat_map(fn decl ->
-        expr = Map.get(decl, :expr) || Map.get(decl, :body)
-
-        case expr do
-          %{op: :record_literal} = record ->
-            [{decl.name, record}, {"#{mod.name}.#{decl.name}", record}]
-
-          _ ->
-            []
-        end
-      end)
-    end)
-    |> Map.new()
-  end
-
-  defp accel_config_from_node(
-         %{op: :qualified_call, target: "Pebble.Accel.onData", args: [config | _]},
-         acc,
-         bindings
-       ) do
-    resolved = resolve_accel_config_expr(config, bindings)
-
-    acc
-    |> Map.put(
-      :samples_per_update,
-      accel_config_int(resolved, "samplesPerUpdate", acc[:samples_per_update])
-    )
-    |> Map.put(:sampling_hz, accel_config_sampling_hz(resolved, acc[:sampling_hz]))
-  end
-
-  defp accel_config_from_node(
-         %{op: :qualified_call, target: "Elm.Kernel.PebbleWatch.onAccelData", args: [hz | _]},
-         acc,
-         _bindings
-       )
-       when is_integer(hz) or is_map(hz) do
-    case hz do
-      %{op: :int_literal, value: value} when is_integer(value) ->
-        Map.put(acc, :sampling_hz, value)
-
-      _ ->
-        acc
-    end
-  end
-
-  defp accel_config_from_node(%{} = node, acc, bindings) do
-    node
-    |> Map.values()
-    |> Enum.reduce(acc, &accel_config_from_node(&1, &2, bindings))
-  end
-
-  defp accel_config_from_node(list, acc, bindings) when is_list(list),
-    do: Enum.reduce(list, acc, &accel_config_from_node(&1, &2, bindings))
-
-  defp accel_config_from_node(_, acc, _bindings), do: acc
-
-  defp resolve_accel_config_expr(%{op: :var, name: name}, bindings) do
-    Map.get(bindings, name, %{op: :unknown})
-  end
-
-  defp resolve_accel_config_expr(%{op: :qualified_var, target: target}, bindings) do
-    target
-    |> String.split(".")
-    |> List.last()
-    |> then(&Map.get(bindings, &1, %{op: :unknown}))
-  end
-
-  defp resolve_accel_config_expr(expr, _bindings), do: expr
-
-  defp accel_config_int(%{op: :record_literal, fields: fields}, field, default)
-       when is_list(fields) do
-    case Enum.find(fields, &(&1.name == field)) do
-      %{expr: %{op: :int_literal, value: value}} when is_integer(value) and value > 0 -> value
-      _ -> default
-    end
-  end
-
-  defp accel_config_int(%{op: :var, name: _name}, _field, default), do: default
-
-  defp accel_config_int(_, _, default), do: default
-
-  defp accel_config_sampling_hz(%{op: :record_literal, fields: fields}, default)
-       when is_list(fields) do
-    case Enum.find(fields, &(&1.name == "samplingRate")) do
-      %{expr: %{op: :int_literal, value: value}} when value in 1..4 ->
-        accel_sampling_hz_from_tag(value)
-
-      %{expr: %{op: :int_literal, value: value}} when value in [10, 25, 50, 100] ->
-        value
-
-      %{expr: %{op: :qualified_var, target: target}} ->
-        target |> String.split(".") |> List.last() |> accel_sampling_hz_from_name(default)
-
-      %{expr: %{op: :qualified_ref, target: target}} ->
-        target |> String.split(".") |> List.last() |> accel_sampling_hz_from_name(default)
-
-      %{expr: %{op: :qualified_call, target: target, args: []}} ->
-        target |> String.split(".") |> List.last() |> accel_sampling_hz_from_name(default)
-
-      %{expr: %{op: :constructor_call, target: target, args: []}} when is_binary(target) ->
-        target |> String.split(".") |> List.last() |> accel_sampling_hz_from_name(default)
-
-      _ ->
-        default
-    end
-  end
-
-  defp accel_config_sampling_hz(_, default), do: default
-
-  defp accel_sampling_hz_from_name("Hz10", _), do: 10
-  defp accel_sampling_hz_from_name("Hz25", _), do: 25
-  defp accel_sampling_hz_from_name("Hz50", _), do: 50
-  defp accel_sampling_hz_from_name("Hz100", _), do: 100
-  defp accel_sampling_hz_from_name("10", _), do: 10
-  defp accel_sampling_hz_from_name("25", _), do: 25
-  defp accel_sampling_hz_from_name("50", _), do: 50
-  defp accel_sampling_hz_from_name("100", _), do: 100
-  defp accel_sampling_hz_from_name(_, default), do: default
-
-  defp accel_sampling_hz_from_tag(1), do: 10
-  defp accel_sampling_hz_from_tag(2), do: 25
-  defp accel_sampling_hz_from_tag(3), do: 50
-  defp accel_sampling_hz_from_tag(4), do: 100
-  defp accel_sampling_hz_from_tag(_), do: 25
-
-  @spec phone_to_watch_msg_target([{String.t(), non_neg_integer()}], map()) :: integer()
-  defp phone_to_watch_msg_target(msg_constructors, payload_specs) do
-    Enum.find_value(msg_constructors, -1, fn {name, tag} ->
-      case Map.get(payload_specs, name) do
-        "PhoneToWatch" -> tag
-        "Companion.Types.PhoneToWatch" -> tag
-        _ -> nil
-      end
-    end)
-  end
-
-  @spec constructor_name_for_tag([{String.t(), non_neg_integer()}], non_neg_integer()) ::
-          String.t() | nil
-  defp constructor_name_for_tag(constructors, tag) when is_integer(tag) do
-    Enum.find_value(constructors, fn
-      {name, ^tag} -> name
-      _ -> nil
-    end)
-  end
-
-  @spec has_view?(ElmEx.IR.t(), String.t()) :: boolean()
-  defp has_view?(ir, entry_module) do
-    ir.modules
-    |> Enum.find(&(&1.name == entry_module))
-    |> case do
-      nil -> false
-      mod -> Enum.any?(mod.declarations, &(&1.kind == :function and &1.name == "view"))
-    end
-  end
-
-  @spec pick_tag([map()], [String.t()], keyword()) :: non_neg_integer()
-  defp pick_tag(msg_constructors, names, opts \\ []) do
-    fallback = Keyword.get(opts, :fallback, -1)
-
-    Enum.find_value(names, fallback, fn name ->
-      Enum.find_value(msg_constructors, fn
-        {^name, tag} -> tag
-        _ -> nil
-      end)
-    end)
-  end
-
-  @spec union_constructors(ElmEx.IR.t(), String.t(), String.t()) :: [
-          {String.t(), non_neg_integer()}
-        ]
-  defp union_constructors(ir, module_name, union_name) do
-    ir.modules
-    |> Enum.find(&(&1.name == module_name))
-    |> case do
-      nil ->
-        []
-
-      mod ->
-        mod.unions
-        |> Map.get(union_name, %{tags: %{}})
-        |> Map.get(:tags, %{})
-        |> Map.to_list()
-        |> Enum.sort_by(fn {_ctor, tag} -> tag end)
-    end
-  end
 
   @spec constructor_tag_macros(String.t(), [{String.t(), non_neg_integer()}]) :: String.t()
   defp constructor_tag_macros(prefix, constructors) do
     constructors
     |> Enum.map_join("\n", fn {name, tag} ->
-      "#define #{prefix}_#{macro_name(name)} #{tag}"
+      "#define #{prefix}_#{Util.macro_name(name)} #{tag}"
     end)
   end
 
@@ -3252,7 +2623,7 @@ defmodule Elmc.Backend.Pebble do
     members =
       entries
       |> Enum.map_join(",\n", fn {name, value} ->
-        "  #{prefix}_#{macro_name(Atom.to_string(name))} = #{value}"
+        "  #{prefix}_#{Util.macro_name(Atom.to_string(name))} = #{value}"
       end)
 
     """
@@ -3278,7 +2649,7 @@ defmodule Elmc.Backend.Pebble do
         uses_time_every or
           uses_target?(targets, "Pebble.Events.onSecondChange") or
           uses_target?(targets, "Elm.Kernel.PebbleWatch.onSecondChange") or
-          pick_tag(msg_constructors, ["Tick", "Increment", "UpPressed"], fallback: -1) > 0,
+          IRAnalysis.pick_tag(msg_constructors, ["Tick", "Increment", "UpPressed"], fallback: -1) > 0,
       hour_events:
         uses_target?(targets, "Pebble.Events.onHourChange") or
           uses_target?(targets, "Elm.Kernel.PebbleWatch.onHourChange"),
@@ -3347,16 +2718,16 @@ defmodule Elmc.Backend.Pebble do
       msg_current_time:
         has_any_constructor?(msg_constructors, ["CurrentTime", "CurrentTimeString", "GotTime"]),
       msg_current_time_target:
-        pick_tag(msg_constructors, ["CurrentTime", "CurrentTimeString", "GotTime"]),
+        IRAnalysis.pick_tag(msg_constructors, ["CurrentTime", "CurrentTimeString", "GotTime"]),
       msg_current_date_time:
         uses_target?(targets, "Pebble.Time.currentDateTime") or
           uses_target?(targets, "Pebble.Cmd.getCurrentDateTime"),
       msg_current_date_time_target:
-        pick_tag(msg_constructors, ["CurrentDateTime", "GotCurrentDateTime"]),
+        IRAnalysis.pick_tag(msg_constructors, ["CurrentDateTime", "GotCurrentDateTime"]),
       msg_battery_level_target:
-        pick_tag(msg_constructors, ["BatteryLevelChanged", "BatteryLevel", "GotBatteryLevel"]),
+        IRAnalysis.pick_tag(msg_constructors, ["BatteryLevelChanged", "BatteryLevel", "GotBatteryLevel"]),
       msg_connection_status_target:
-        pick_tag(msg_constructors, [
+        IRAnalysis.pick_tag(msg_constructors, [
           "ConnectionStatusChanged",
           "ConnectionStatus",
           "GotConnectionStatus"
@@ -3683,13 +3054,6 @@ defmodule Elmc.Backend.Pebble do
   @spec uses_target?(MapSet.t(String.t()), String.t()) :: boolean()
   defp uses_target?(targets, target), do: MapSet.member?(targets, target)
 
-  @spec macro_name(String.t()) :: String.t()
-  defp macro_name(name) do
-    name
-    |> String.replace(~r/[^A-Za-z0-9]/, "_")
-    |> String.upcase()
-  end
-
   @spec direct_command_macro(String.t(), String.t()) :: String.t()
   defp direct_command_macro(module_name, decl_name) do
     safe =
@@ -3698,26 +3062,5 @@ defmodule Elmc.Backend.Pebble do
       |> String.upcase()
 
     "ELMC_HAVE_DIRECT_COMMANDS_#{safe}"
-  end
-
-  @spec payload_arity_for_spec(String.t() | nil) :: non_neg_integer()
-  defp payload_arity_for_spec(nil), do: 0
-
-  defp payload_arity_for_spec(spec) when is_binary(spec) do
-    normalized = spec |> String.trim() |> String.trim_leading("(") |> String.trim_trailing(")")
-
-    cond do
-      normalized == "" ->
-        0
-
-      String.contains?(normalized, "->") ->
-        1
-
-      String.contains?(normalized, ",") ->
-        normalized |> String.split(",") |> length()
-
-      true ->
-        1
-    end
   end
 end

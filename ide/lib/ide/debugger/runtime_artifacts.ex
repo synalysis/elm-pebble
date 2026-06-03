@@ -113,6 +113,9 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   @runtime_preview_envelope_keys [
     "runtime_model",
     "runtime_view_output",
+    "runtime_view_output_model_sha256",
+    "runtime_view_tree",
+    "runtime_view_tree_source",
     "runtime_last_message",
     "runtime_message_source",
     "runtime_message_cursor",

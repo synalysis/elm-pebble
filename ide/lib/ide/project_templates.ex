@@ -22,7 +22,7 @@ defmodule Ide.ProjectTemplates do
           | File.posix()
           | Jason.EncodeError.t()
 
-  @template_keys ~w(starter watchface-digital watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time watchface-weather-animated watchface-poke-battle companion-demo-phone-status companion-demo-weather-env companion-demo-calendar companion-demo-geolocation companion-demo-storage companion-demo-settings companion-demo-websocket companion-demo-timeline watch-demo-accel watch-demo-vibes watch-demo-data-log watch-demo-app-focus watch-demo-compass watch-demo-dictation watch-demo-health watch-demo-light watch-demo-watch-info watch-demo-drawing-showcase game-basic game-tiny-bird game-jump-n-run game-2048)
+  @template_keys ~w(starter watchface-digital watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time watchface-weather-animated watchface-poke-battle companion-demo-phone-status companion-demo-weather-env companion-demo-calendar companion-demo-geolocation companion-demo-storage companion-demo-settings companion-demo-websocket companion-demo-timeline watch-demo-accel watch-demo-vibes watch-demo-data-log watch-demo-app-focus watch-demo-compass watch-demo-dictation watch-demo-health watch-demo-light watch-demo-watch-info watch-demo-drawing-showcase game-basic game-tiny-bird game-jump-n-run game-2048 game-elmtris)
 
   @template_dirs %{
     "starter" => "starter_watch",
@@ -54,7 +54,8 @@ defmodule Ide.ProjectTemplates do
     "game-basic" => "game_basic",
     "game-tiny-bird" => "game_tiny_bird",
     "game-jump-n-run" => "game_jump_n_run",
-    "game-2048" => "game_2048"
+    "game-2048" => "game_2048",
+    "game-elmtris" => "game_elmtris"
   }
 
   @doc """
@@ -178,7 +179,8 @@ defmodule Ide.ProjectTemplates do
       {"Game: Basic", "game-basic"},
       {"Game: Tiny Bird", "game-tiny-bird"},
       {"Game: Jump'n Run", "game-jump-n-run"},
-      {"Game: 2048", "game-2048"}
+      {"Game: 2048", "game-2048"},
+      {"Game: Elmtris (Tetris)", "game-elmtris"}
     ]
   end
 
@@ -289,6 +291,9 @@ defmodule Ide.ProjectTemplates do
 
       "game-2048" ->
         seed_watch_only_workspace(workspace_path, "game_2048")
+
+      "game-elmtris" ->
+        seed_watch_only_workspace(workspace_path, "game_elmtris")
     end
   end
 

@@ -3,6 +3,7 @@ defmodule ElmEx.IR.DeadCode do
   Dead-code elimination for function declarations in IR.
 
   Keeps only functions reachable from entry module roots plus qualified calls.
+  Call targets in IR must already be fully qualified (see `ElmEx.IR.ImportResolution`).
   """
 
   alias ElmEx.IR

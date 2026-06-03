@@ -342,42 +342,6 @@
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
-    "last_source": "module Main exposing (main)\n\nimport Companion.Types exposing (Location(..), PhoneToWatch(..), Temperature(..), TutorialColor(..), WatchToPhone(..), WeatherCondition(..))\nimport Companion.Watch as CompanionWatch\nimport Json.Decode as Decode\nimport Pebble.Events as PebbleEvents\nimport Pebble.Platform as PebblePlatform\nimport Pebble.System as PebbleSystem\nimport Pebble.Time as PebbleTime\nimport Pebble.Ui as PebbleUi\nimport Pebble.Ui.Color as PebbleColor\nimport Pebble.Ui.Resources as UiResources\nimport Pebble.Vibes as PebbleVibes\n\n\ntype alias Model =\n    { screenW : Int\n    , screenH : Int\n    , displayShape : PebblePlatform.DisplayShape\n    , currentDateTime : Maybe PebbleTime.CurrentDateTime\n    , batteryLevel : Maybe Int\n    , connected : Maybe Bool\n    , temperature : Maybe Temperature\n    , condition : Maybe WeatherCondition\n    , backgroundColor : Maybe TutorialColor\n    , textColor : Maybe TutorialColor\n    , showDate : Maybe Bool\n    }\n\n\ntype Msg\n    = CurrentDateTime PebbleTime.CurrentDateTime\n    | FromPhone PhoneToWatch\n    | MinuteChanged Int\n    | HourChanged Int\n    | BatteryLevelChanged Int\n    | ConnectionStatusChanged Bool\n\n\ninit : PebblePlatform.LaunchContext -> ( Model, Cmd Msg )\ninit context =\n    ( { screenW = context.screen.width\n      , screenH = context.screen.height\n      , displayShape = context.screen.shape\n      , currentDateTime = Nothing\n      , batteryLevel = Nothing\n      , connected = Nothing\n      , temperature = Nothing\n      , condition = Nothing\n      , backgroundColor = Nothing\n      , textColor = Nothing\n      , showDate = Nothing\n      }\n    , Cmd.batch\n        [ PebbleTime.currentDateTime CurrentDateTime\n        , PebbleSystem.batteryLevel BatteryLevelChanged\n        , PebbleSystem.connectionStatus ConnectionStatusChanged\n        , CompanionWatch.sendWatchToPhone (RequestWeather CurrentLocation)\n        ]\n    )\n\n\nupdate : Msg -> Model -> ( Model, Cmd Msg )\nupdate msg model =\n    case msg of\n        CurrentDateTime value ->\n            ( { model | currentDateTime = Just value }, Cmd.none )\n\n        FromPhone message ->\n            updateFromPhone message model\n\n        MinuteChanged minute ->\n            ( { model | currentDateTime = updateMinute minute model.currentDateTime }\n            , if modBy 30 minute == 0 then\n                  CompanionWatch.sendWatchToPhone (RequestWeather CurrentLocation)\n\n              else\n                  Cmd.none\n            )\n\n        HourChanged _ ->\n            ( model, PebbleTime.currentDateTime CurrentDateTime )\n\n        BatteryLevelChanged level ->\n            ( { model | batteryLevel = Just (clamp 0 100 level) }, Cmd.none )\n\n        ConnectionStatusChanged connected ->\n            ( { model | connected = Just connected }\n            , if connected then\n                  Cmd.none\n\n              else\n                  PebbleVibes.doublePulse\n            )\n\n\nupdateFromPhone : PhoneToWatch -> Model -> ( Model, Cmd Msg )\nupdateFromPhone message model =\n    case message of\n        ProvideTemperature temperature ->\n            ( { model | temperature = Just temperature }, Cmd.none )\n\n        ProvideCondition condition ->\n            ( { model | condition = Just condition }, Cmd.none )\n\n        SetBackgroundColor color ->\n            ( { model | backgroundColor = Just color }, Cmd.none )\n\n        SetTextColor color ->\n            ( { model | textColor = Just color }, Cmd.none )\n\n        SetShowDate value ->\n            ( { model | showDate = Just value }, Cmd.none )\n\n\nsubscriptions : Model -> Sub Msg\nsubscriptions _ =\n    PebbleEvents.batch\n        [ PebbleEvents.onMinuteChange MinuteChanged\n        , PebbleEvents.onHourChange HourChanged\n        , PebbleSystem.onBatteryChange BatteryLevelChanged\n        , PebbleSystem.onConnectionChange ConnectionStatusChanged\n        , CompanionWatch.onPhoneToWatch FromPhone\n        ]\n\n\nview : Model -> PebbleUi.UiNode\nview model =\n    let\n        w =\n            model.screenW\n\n        h =\n            model.screenH\n\n        timeY =\n            (h // 2) - 38\n\n        dateY =\n            timeY + 48\n\n        weatherY =\n            h\n                - (if PebblePlatform.displayShapeIsRound model.displayShape then\n                    42\n\n                   else\n                    32\n                  )\n\n        batteryW =\n            w // 2\n\n        batteryX =\n            (w - batteryW) // 2\n\n        batteryY =\n            if PebblePlatform.displayShapeIsRound model.displayShape then\n                h // 8\n\n            else\n                h // 28\n\n        backgroundColor =\n            Maybe.withDefault Black model.backgroundColor\n                |> pebbleColor\n\n        textColor =\n            Maybe.withDefault White model.textColor\n                |> pebbleColor\n\n        batteryOps =\n            case model.batteryLevel of\n                Nothing ->\n                    []\n\n                Just batteryLevel ->\n                    let\n                        batteryFill =\n                            ((batteryW - 4) * batteryLevel) // 100\n\n                        batteryColor =\n                            if batteryLevel <= 20 then\n                                PebbleColor.red\n\n                            else if batteryLevel <= 40 then\n                                PebbleColor.chromeYellow\n\n                            else\n                                PebbleColor.green\n                    in\n                    [ PebbleUi.group\n                        (PebbleUi.context\n                            [ PebbleUi.strokeColor textColor\n                            , PebbleUi.fillColor batteryColor\n                            , PebbleUi.textColor textColor\n                            ]\n                            [ PebbleUi.roundRect { x = batteryX, y = batteryY, w = batteryW, h = 8 } 2 textColor\n                            , PebbleUi.fillRect { x = batteryX + 2, y = batteryY + 2, w = batteryFill, h = 4 } batteryColor\n                            ]\n                        )\n                    ]\n\n        btIcon =\n            case model.connected of\n                Just False ->\n                    [ PebbleUi.drawBitmapInRect UiResources.BitmapStaticBtIcon { x = (w - 30) // 2, y = batteryY + 12, w = 30, h = 30 } ]\n\n                _ ->\n                    []\n\n        dateOps =\n            if Maybe.withDefault False model.showDate then\n                case model.currentDateTime of\n                    Just currentDateTime ->\n                        [ drawCentered model textColor dateY 24 (dateString currentDateTime) ]\n\n                    Nothing ->\n                        []\n\n            else\n                []\n    in\n    [ PebbleUi.clear backgroundColor\n    ]\n        ++ batteryOps\n        ++ [ drawCentered model textColor timeY 56 (timeString model)\n           , drawCentered model textColor weatherY 22 (weatherString model)\n           ]\n        ++ btIcon\n        ++ dateOps\n        |> PebbleUi.toUiNode\n\n\ndrawCentered : Model -> PebbleColor.Color -> Int -> Int -> String -> PebbleUi.RenderOp\ndrawCentered model textColor y height value =\n    PebbleUi.group\n        (PebbleUi.context\n            [ PebbleUi.textColor textColor ]\n            [ PebbleUi.text UiResources.Jersey PebbleUi.defaultTextOptions { x = 0, y = y, w = model.screenW, h = height } value ]\n        )\n\n\ntimeString : Model -> String\ntimeString model =\n    case model.currentDateTime of\n        Nothing ->\n            \"--:--\"\n\n        Just currentDateTime ->\n            pad2 currentDateTime.hour ++ \":\" ++ pad2 currentDateTime.minute\n\n\ndateString : PebbleTime.CurrentDateTime -> String\ndateString currentDateTime =\n    weekdayString currentDateTime.dayOfWeek ++ \" \" ++ monthString currentDateTime.month ++ \" \" ++ String.fromInt currentDateTime.day\n\n\nupdateMinute : Int -> Maybe PebbleTime.CurrentDateTime -> Maybe PebbleTime.CurrentDateTime\nupdateMinute minute maybeCurrentDateTime =\n    case maybeCurrentDateTime of\n        Nothing ->\n            Nothing\n\n        Just currentDateTime ->\n            Just { currentDateTime | minute = minute }\n\n\nweatherString : Model -> String\nweatherString model =\n    case ( model.temperature, model.condition ) of\n        ( Just temperature, Just condition ) ->\n            temperatureString temperature ++ \" \" ++ conditionString condition\n\n        _ ->\n            \"Loading...\"\n\n\ntemperatureString : Temperature -> String\ntemperatureString temperature =\n    case temperature of\n        Celsius value ->\n            String.fromInt value ++ \"C\"\n\n        Fahrenheit value ->\n            String.fromInt value ++ \"F\"\n\n\npebbleColor : TutorialColor -> PebbleColor.Color\npebbleColor color =\n    case color of\n        Black ->\n            PebbleColor.black\n\n        White ->\n            PebbleColor.white\n\n        Green ->\n            PebbleColor.green\n\n        Blue ->\n            PebbleColor.blue\n\n        Yellow ->\n            PebbleColor.chromeYellow\n\n\nconditionString : WeatherCondition -> String\nconditionString condition =\n    case condition of\n        Clear ->\n            \"Clear\"\n\n        Cloudy ->\n            \"Cloudy\"\n\n        Fog ->\n            \"Fog\"\n\n        Drizzle ->\n            \"Drizzle\"\n\n        Rain ->\n            \"Rain\"\n\n        Snow ->\n            \"Snow\"\n\n        Showers ->\n            \"Showers\"\n\n        Storm ->\n            \"Storm\"\n\n        UnknownWeather ->\n            \"Weather\"\n\n\nweekdayString : PebbleTime.DayOfWeek -> String\nweekdayString day =\n    case day of\n        PebbleTime.Monday ->\n            \"Mon\"\n\n        PebbleTime.Tuesday ->\n            \"Tue\"\n\n        PebbleTime.Wednesday ->\n            \"Wed\"\n\n        PebbleTime.Thursday ->\n            \"Thu\"\n\n        PebbleTime.Friday ->\n            \"Fri\"\n\n        PebbleTime.Saturday ->\n            \"Sat\"\n\n        PebbleTime.Sunday ->\n            \"Sun\"\n\n\nmonthString : Int -> String\nmonthString month =\n    case month of\n        1 ->\n            \"Jan\"\n\n        2 ->\n            \"Feb\"\n\n        3 ->\n            \"Mar\"\n\n        4 ->\n            \"Apr\"\n\n        5 ->\n            \"May\"\n\n        6 ->\n            \"Jun\"\n\n        7 ->\n            \"Jul\"\n\n        8 ->\n            \"Aug\"\n\n        9 ->\n            \"Sep\"\n\n        10 ->\n            \"Oct\"\n\n        11 ->\n            \"Nov\"\n\n        _ ->\n            \"Dec\"\n\n\npad2 : Int -> String\npad2 value =\n    if value < 10 then\n        \"0\" ++ String.fromInt value\n\n    else\n        String.fromInt value\n\n\nmain : Program Decode.Value Model Msg\nmain =\n    PebblePlatform.watchface\n        { init = init\n        , update = update\n        , view = view\n        , subscriptions = subscriptions\n        }\n",
-    "launch_context": {
-      "has_compass": true,
-      "has_microphone": false,
-      "launch_reason": "LaunchUser",
-      "screen": {
-        "color_mode": "BlackWhite",
-        "height": 168,
-        "shape": "Rectangular",
-        "width": 144
-      },
-      "shape": "rect",
-      "supports_health": false,
-      "watch_model": "Aplite",
-      "watch_profile_id": "aplite"
-    },
-    "revision": "a8bc9bb95055",
-    "runtime_execution": {
-      "compiler": "elmx",
-      "contract": "elmx.runtime_executor.v1",
-      "engine": "elmx_runtime_v1",
-      "execution_backend": "compiled_elixir",
-      "runtime_mode": "runtime_first",
-      "runtime_model_source": "step_message"
-    },
-    "runtime_execution_mode": "runtime_executed",
-    "runtime_known_messages": [
-      "CurrentDateTime",
-      "FromPhone",
-      "MinuteChanged",
-      "HourChanged",
-      "BatteryLevelChanged",
-      "ConnectionStatusChanged"
-    ],
-    "runtime_message_cursor": 5,
-    "runtime_message_source": "simulator_settings",
     "runtime_model": {
       "backgroundColor": {
         "args": [],
@@ -430,7 +394,6 @@
         "args": [],
         "ctor": "Rectangular"
       },
-      "runtime_view_output_model_sha256": "c4df3c71fc7be744e37e408b9774ed6a2fe0bd7ea672dcf23b0a279cbee2953a",
       "screenH": 168,
       "screenW": 144,
       "showDate": {
@@ -453,146 +416,7 @@
         "ctor": "Nothing"
       }
     },
-    "runtime_model_source": "step_message",
-    "runtime_update_branches": [
-      "CurrentDateTime value",
-      "FromPhone message",
-      "MinuteChanged minute",
-      "HourChanged _",
-      "BatteryLevelChanged level",
-      "ConnectionStatusChanged connected"
-    ],
-    "runtime_view_output": [
-      {
-        "color": 192,
-        "kind": "clear",
-        "text": null
-      },
-      {
-        "color": 255,
-        "kind": "stroke_color",
-        "text": null
-      },
-      {
-        "color": 204,
-        "kind": "fill_color",
-        "text": null
-      },
-      {
-        "color": 255,
-        "kind": "text_color",
-        "text": null
-      },
-      {
-        "fill": 255,
-        "h": 8,
-        "kind": "round_rect",
-        "radius": 2,
-        "text": null,
-        "w": 72,
-        "x": 36,
-        "y": 6
-      },
-      {
-        "fill": 204,
-        "h": 4,
-        "kind": "fill_rect",
-        "text": null,
-        "w": 59,
-        "x": 38,
-        "y": 8
-      },
-      {
-        "color": 255,
-        "kind": "text_color",
-        "text": null
-      },
-      {
-        "font_id": 0,
-        "h": 56,
-        "kind": "text",
-        "text": "<TIME>",
-        "text_align": "center",
-        "text_overflow": "word_wrap",
-        "w": 144,
-        "x": 0,
-        "y": 46
-      },
-      {
-        "color": 255,
-        "kind": "text_color",
-        "text": null
-      },
-      {
-        "font_id": 0,
-        "h": 22,
-        "kind": "text",
-        "text": "21C Clear",
-        "text_align": "center",
-        "text_overflow": "word_wrap",
-        "w": 144,
-        "x": 0,
-        "y": 136
-      }
-    ],
-    "screen_height": 168,
-    "screen_width": 144,
-    "simulator_settings": {
-      "calendar_events": [],
-      "storage_values": {},
-      "charging": false,
-      "timezone_id": "Europe/Berlin",
-      "compass_valid": true,
-      "use_simulated_time": true,
-      "simulated_date": "2026-05-27",
-      "compass_heading_deg": 0,
-      "latitude": 48.14,
-      "companion_timeline_token": "demo-timeline-token",
-      "notifications_enabled": true,
-      "health_steps_today": 9100,
-      "language": "en",
-      "connected": true,
-      "preferences": {},
-      "battery_percent": 88,
-      "dictation_error": "",
-      "environment": {
-        "moon": {
-          "moonriseMin": 900,
-          "moonsetMin": 300,
-          "phaseE6": 500000
-        },
-        "sun": {
-          "polarDay": false,
-          "sunriseMin": 420,
-          "sunsetMin": 1200
-        },
-        "tide": null
-      },
-      "timezone_offset_min": 0,
-      "weather": {
-        "condition": "clear",
-        "humidityPercent": 50,
-        "pressureHpa": 1013,
-        "temperatureC": 21,
-        "windKph": 8
-      },
-      "region": "US",
-      "clock_24h": true,
-      "longitude": 11.58,
-      "vibe_pattern_ms": [],
-      "accuracy": 25.0,
-      "app_in_focus": true,
-      "locale": "en-US",
-      "network_online": true,
-      "timeline_peek": false,
-      "health_steps": 4200,
-      "dictation_transcript": "",
-      "simulated_time": "08:53:00",
-      "quiet_hours": false
-    },
-    "source_root": "watch",
-    "status": "idle",
-    "supports_color": false,
+    "runtime_view_output": [],
     "timeString": null,
     "watch_profile_id": "aplite"
   }

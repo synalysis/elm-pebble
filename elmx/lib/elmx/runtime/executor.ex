@@ -95,7 +95,6 @@ defmodule Elmx.Runtime.Executor do
     runtime_model =
       current_model
       |> Map.get("runtime_model", Map.get(current_model, :runtime_model, %{}))
-      |> Model.merge_launch_screen(launch_context)
 
     {launch_context, runtime_model}
   end

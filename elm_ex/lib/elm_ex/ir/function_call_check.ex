@@ -5,6 +5,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
   """
 
   alias ElmEx.Frontend.DefaultImports
+  alias ElmEx.IR.ImportResolution
   alias ElmEx.IR.TypeSignature
 
   @typep expr() :: map()
@@ -563,45 +564,14 @@ defmodule ElmEx.IR.FunctionCallCheck do
   @spec call_target(expr(), map()) :: String.t() | nil
   defp call_target(%{op: :qualified_call, target: target}, import_lookup)
        when is_binary(target) do
-    resolve_name(target, import_lookup)
+    ImportResolution.resolve(target, import_lookup)
   end
 
   defp call_target(%{op: :call, name: name}, import_lookup) when is_binary(name) do
-    resolve_name(name, import_lookup)
+    ImportResolution.resolve(name, import_lookup)
   end
 
   defp call_target(_, _), do: nil
-
-  @spec resolve_name(String.t(), map()) :: String.t()
-  defp resolve_name(target, import_lookup) when is_binary(target) do
-    alias_map = Map.get(import_lookup, :alias_map, %{})
-    import_unqualified_map = Map.get(import_lookup, :import_unqualified_map, %{})
-    local_call_names = Map.get(import_lookup, :local_call_names, MapSet.new())
-    current_module = Map.get(import_lookup, :current_module)
-
-    case String.split(target, ".", parts: 2) do
-      [prefix, rest] ->
-        case Map.get(alias_map, prefix) do
-          nil -> target
-          real_module -> "#{real_module}.#{rest}"
-        end
-
-      [single] ->
-        cond do
-          MapSet.member?(local_call_names, single) and is_binary(current_module) ->
-            "#{current_module}.#{single}"
-
-          true ->
-            case Map.get(import_unqualified_map, single) do
-              module when is_binary(module) and module != "" -> "#{module}.#{single}"
-              _ -> target
-            end
-        end
-
-      _ ->
-        target
-    end
-  end
 
   @spec infer_expr_type(expr(), map(), map(), map(), map()) :: String.t() | nil
   defp infer_expr_type(expr, import_lookup, signature_lookup, type_alias_lookup, binding_types)
@@ -632,12 +602,12 @@ defmodule ElmEx.IR.FunctionCallCheck do
 
   defp infer_expr_type(%{op: op, target: target}, import_lookup, signature_lookup, _, _)
        when op in [:qualified_call1, :qualified_call] and is_binary(target) do
-    value_type(Map.get(signature_lookup, resolve_name(target, import_lookup)))
+    value_type(Map.get(signature_lookup, ImportResolution.resolve(target, import_lookup)))
   end
 
   defp infer_expr_type(%{op: :call1, name: name}, import_lookup, signature_lookup, _, _)
        when is_binary(name) do
-    value_type(Map.get(signature_lookup, resolve_name(name, import_lookup)))
+    value_type(Map.get(signature_lookup, ImportResolution.resolve(name, import_lookup)))
   end
 
   defp infer_expr_type(
@@ -648,7 +618,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
          binding_types
        )
        when is_binary(name) and is_list(args) do
-    target = resolve_name(name, import_lookup)
+    target = ImportResolution.resolve(name, import_lookup)
 
     case Map.get(signature_lookup, target) do
       type when is_binary(type) ->
@@ -673,7 +643,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
          binding_types
        )
        when is_binary(target) and is_list(args) do
-    resolved = resolve_name(target, import_lookup)
+    resolved = ImportResolution.resolve(target, import_lookup)
 
     case Map.get(signature_lookup, resolved) do
       type when is_binary(type) ->

@@ -7,18 +7,20 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Case do
   @type env :: Types.emit_env()
 
   def compile_case(%{subject: subject, branches: branches}, env, counter) when is_binary(subject) do
+    case_env = maybe_unwrap_just_env(branches, env)
+
     subj =
-      if Elmx.Backend.ElixirCodegen.Emit.Helpers.parameter_binding?(subject, env) do
-        Elmx.Backend.ElixirCodegen.Emit.Helpers.binding_ref(subject, env)
+      if Elmx.Backend.ElixirCodegen.Emit.Helpers.parameter_binding?(subject, case_env) do
+        Elmx.Backend.ElixirCodegen.Emit.Helpers.binding_ref(subject, case_env)
       else
-        Elmx.Backend.ElixirCodegen.Emit.Helpers.var_ref(subject, env)
+        Elmx.Backend.ElixirCodegen.Emit.Helpers.var_ref(subject, case_env)
       end
 
     clauses =
       branches
       |> order_case_branches()
       |> Enum.map(fn branch ->
-        pattern = Match.branch_pattern(branch, env)
+        pattern = Match.branch_pattern(branch, case_env)
         {body, _, _} = Elmx.Backend.ElixirCodegen.Emit.compile_expr(branch.expr, Match.branch_env(branch, env), 0)
         "  #{pattern} ->\n    #{IO.iodata_to_binary(body)}"
       end)
@@ -27,13 +29,14 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Case do
   end
 
   def compile_case(%{subject: subject, branches: branches}, env, counter) do
-    {subj, env, c1} = Elmx.Backend.ElixirCodegen.Emit.compile_expr(subject, env, counter)
+    case_env = maybe_unwrap_just_env(branches, env)
+    {subj, env, c1} = Elmx.Backend.ElixirCodegen.Emit.compile_expr(subject, case_env, counter)
 
     clauses =
       branches
       |> order_case_branches()
       |> Enum.map(fn branch ->
-        pattern = Match.branch_pattern(branch, env)
+        pattern = Match.branch_pattern(branch, case_env)
         {body, _, _} = Elmx.Backend.ElixirCodegen.Emit.compile_expr(branch.expr, Match.branch_env(branch, env), 0)
         "  #{pattern} ->\n    #{IO.iodata_to_binary(body)}"
       end)
@@ -64,6 +67,39 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Case do
   def constructor_wildcard_arg_branch?(branch) do
     case Match.branch_pattern_root(branch) do
       %{kind: :constructor, arg_pattern: %{kind: :wildcard}} -> true
+      _ -> false
+    end
+  end
+
+  # Elm `case maybe of Nothing -> ...; value -> ...` binds the Just payload, not the wrapper.
+  @spec maybe_unwrap_just_env([map()], env()) :: env()
+  defp maybe_unwrap_just_env(branches, env) when is_list(branches) do
+    if maybe_unwrap_just_case?(branches) do
+      Map.put(env, :maybe_unwrap_just, true)
+    else
+      env
+    end
+  end
+
+  @spec maybe_unwrap_just_case?([map()]) :: boolean()
+  defp maybe_unwrap_just_case?(branches) when is_list(branches) do
+    Enum.any?(branches, &nothing_branch?/1) and
+      Enum.any?(branches, &var_branch?/1) and
+      Enum.all?(branches, fn branch -> nothing_branch?(branch) or var_branch?(branch) end)
+  end
+
+  @spec nothing_branch?(map()) :: boolean()
+  defp nothing_branch?(branch) do
+    case Match.branch_pattern_root(branch) do
+      %{kind: :constructor, name: name} when name in ["Nothing", "Maybe.Nothing"] -> true
+      _ -> false
+    end
+  end
+
+  @spec var_branch?(map()) :: boolean()
+  defp var_branch?(branch) do
+    case Match.branch_pattern_root(branch) do
+      %{kind: :var, name: name} when is_binary(name) and name not in ["_", ""] -> true
       _ -> false
     end
   end

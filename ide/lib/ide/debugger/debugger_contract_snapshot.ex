@@ -22,11 +22,6 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
                                                   Types.surface_target(),
                                                   Types.elm_introspect() ->
                                                     Types.runtime_state()),
-          required(:hydrate_runtime_model) => (Types.app_model(),
-                                               String.t()
-                                               | nil,
-                                               [String.t()] ->
-                                                 Types.app_model()),
           required(:append_event) => (Types.runtime_state(),
                                       String.t(),
                                       Types.debugger_timeline_payload() ->
@@ -226,7 +221,6 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
       |> Map.put("runtime_execution_mode", "runtime_executed")
       |> Map.merge(model_patch)
       |> StepExecution.put_runtime_view_output(Map.get(execution, :view_output))
-      |> ctx.hydrate_runtime_model.(nil, [])
 
     next_shell =
       shell

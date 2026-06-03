@@ -19,7 +19,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
 
     case runtime_rendered_tree(runtime, model) do
       %{} = tree ->
-        normalize_rendered_tree(tree)
+        tree
+        |> reject_placeholder_rendered_tree()
+        |> normalize_rendered_tree_or_nil()
 
       _ ->
         ei = Ide.Debugger.RuntimeArtifacts.require_introspect(model)
@@ -27,6 +29,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
         model
         |> parser_view_tree()
         |> discard_parser_expression_view_tree(ei)
+        |> reject_placeholder_rendered_tree()
+        |> normalize_rendered_tree_or_nil()
     end
   end
 
@@ -35,6 +39,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
   @spec runtime_rendered_tree(map(), map()) :: map() | nil
   defp runtime_rendered_tree(runtime, model) when is_map(runtime) and is_map(model) do
     view_tree = Map.get(runtime, :view_tree) || Map.get(runtime, "view_tree")
+
+    view_tree =
+      if Ide.Debugger.StepExecution.placeholder_view_tree?(view_tree), do: %{}, else: view_tree
+
     ei = RuntimeArtifacts.require_introspect(model)
 
     stored_rows =
@@ -91,8 +99,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
   defp concrete_rendered_view_tree?(%{"type" => "tuple2"} = tree, _ei),
     do: match?({:ok, _node}, normalize_rendered_ui_value(tree))
 
-  defp concrete_rendered_view_tree?(tree, ei) when is_map(tree) and map_size(tree) > 0,
-    do: not parser_expression_view_tree?(tree, ei)
+  defp concrete_rendered_view_tree?(tree, ei) when is_map(tree) and map_size(tree) > 0 do
+    not Ide.Debugger.StepExecution.placeholder_view_tree?(tree) and
+      not parser_expression_view_tree?(tree, ei)
+  end
 
   defp concrete_rendered_view_tree?(_tree, _ei), do: false
 
@@ -924,11 +934,26 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
     end)
   end
 
-  @spec normalize_rendered_tree(map()) :: map()
-  defp normalize_rendered_tree(tree) when is_map(tree) do
+  @spec reject_placeholder_rendered_tree(map() | nil) :: map() | nil
+  defp reject_placeholder_rendered_tree(tree) do
+    if Ide.Debugger.StepExecution.placeholder_view_tree?(tree), do: nil, else: tree
+  end
+
+  @spec normalize_rendered_tree_or_nil(map() | nil) :: map() | nil
+  defp normalize_rendered_tree_or_nil(nil), do: nil
+
+  defp normalize_rendered_tree_or_nil(%{} = tree) do
     case normalize_rendered_ui_value(tree) do
       {:ok, node} -> node
       :error -> tree
+    end
+  end
+
+  @spec normalize_rendered_tree(map()) :: map()
+  defp normalize_rendered_tree(tree) when is_map(tree) do
+    case normalize_rendered_tree_or_nil(tree) do
+      %{} = node -> node
+      nil -> tree
     end
   end
 

@@ -32,6 +32,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     runtime_last_message
     runtime_message_source
     runtime_model_source
+    runtime_view_output
+    runtime_view_output_model_sha256
+    runtime_view_tree
+    runtime_view_tree_source
+    runtime_view_tree_sha256
+    runtime_model_sha256
     protocol_last_inbound_message
     protocol_last_inbound_from
     protocol_inbound_count
@@ -751,6 +757,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     protocol_outbound_count
     protocol_last_inbound_message
     protocol_last_inbound_from
+    screenW
+    screenH
+    displayShape
+    colorMode
   )
 
   @spec runtime_model_warnings_text(map() | nil) :: String.t() | nil

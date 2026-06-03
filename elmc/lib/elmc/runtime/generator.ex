@@ -348,7 +348,8 @@ defmodule Elmc.Runtime.Generator do
       ELMC_TAG_PORT_PAYLOAD = 9,
       ELMC_TAG_FLOAT = 10,
       ELMC_TAG_RECORD = 11,
-      ELMC_TAG_CLOSURE = 12
+      ELMC_TAG_CLOSURE = 12,
+      ELMC_TAG_FORWARD_REF = 13
     } ElmcTag;
 
     typedef struct ElmcValue {
@@ -451,6 +452,7 @@ defmodule Elmc.Runtime.Generator do
     ElmcValue *elmc_dict_insert(ElmcValue *key, ElmcValue *value, ElmcValue *dict);
     ElmcValue *elmc_dict_get(ElmcValue *key, ElmcValue *dict);
     elmc_int_t elmc_dict_get_with_default_int(elmc_int_t default_val, elmc_int_t key, ElmcValue *dict);
+    elmc_int_t elmc_dict_get_with_default_int_value(elmc_int_t default_val, ElmcValue *key, ElmcValue *dict);
     ElmcValue *elmc_dict_member(ElmcValue *key, ElmcValue *dict);
     ElmcValue *elmc_dict_size(ElmcValue *dict);
     ElmcValue *elmc_set_from_list(ElmcValue *items);
@@ -690,6 +692,16 @@ defmodule Elmc.Runtime.Generator do
     ElmcValue *elmc_closure_new(ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count), int arity, int capture_count, ElmcValue **captures);
     ElmcValue *elmc_closure_call(ElmcValue *closure, ElmcValue **args, int argc);
     ElmcValue *elmc_apply_extra(ElmcValue *value, ElmcValue **args, int argc);
+
+    typedef struct ElmcForwardRef {
+      ElmcValue *value;
+    } ElmcForwardRef;
+
+    ElmcForwardRef *elmc_forward_ref_new(void);
+    void elmc_forward_ref_set(ElmcForwardRef *ref, ElmcValue *value);
+    ElmcValue *elmc_forward_ref_get(ElmcForwardRef *ref);
+    void elmc_forward_ref_free(ElmcForwardRef *ref);
+    ElmcValue *elmc_forward_ref_capture(ElmcForwardRef *ref);
 
     uint64_t elmc_rc_allocated_count(void);
     uint64_t elmc_rc_released_count(void);
@@ -1503,8 +1515,11 @@ defmodule Elmc.Runtime.Generator do
       return out;
     }
 
+    static int elmc_dict_keys_equal(ElmcValue *left, ElmcValue *right) {
+      return left && right && elmc_value_equal(left, right);
+    }
+
     ElmcValue *elmc_dict_insert(ElmcValue *key, ElmcValue *value, ElmcValue *dict) {
-      int64_t wanted = elmc_as_int(key);
       ElmcValue *cursor = dict;
       ElmcValue *rev = elmc_list_nil();
       int inserted = 0;
@@ -1517,7 +1532,7 @@ defmodule Elmc.Runtime.Generator do
 
         if (head && head->tag == ELMC_TAG_TUPLE2 && head->payload != NULL) {
           ElmcTuple2 *pair = (ElmcTuple2 *)head->payload;
-          if (pair->first && elmc_as_int(pair->first) == wanted) {
+          if (pair->first && elmc_dict_keys_equal(pair->first, key)) {
             if (!inserted) {
               head = elmc_tuple2(key, value);
               owns_head = 1;
@@ -1554,13 +1569,12 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_dict_get(ElmcValue *key, ElmcValue *dict) {
-      int64_t wanted = elmc_as_int(key);
       ElmcValue *cursor = dict;
       while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
         ElmcCons *node = (ElmcCons *)cursor->payload;
         if (node->head && node->head->tag == ELMC_TAG_TUPLE2 && node->head->payload != NULL) {
           ElmcTuple2 *pair = (ElmcTuple2 *)node->head->payload;
-          if (pair->first && elmc_as_int(pair->first) == wanted) {
+          if (pair->first && elmc_dict_keys_equal(pair->first, key)) {
             return elmc_maybe_just(pair->second);
           }
         }
@@ -1582,6 +1596,18 @@ defmodule Elmc.Runtime.Generator do
         cursor = node->tail;
       }
       return default_val;
+    }
+
+    elmc_int_t elmc_dict_get_with_default_int_value(elmc_int_t default_val, ElmcValue *key, ElmcValue *dict) {
+      if (!key) return default_val;
+      ElmcValue *found = elmc_dict_get(key, dict);
+      elmc_int_t out = default_val;
+      if (found && found->tag == ELMC_TAG_MAYBE && found->payload != NULL) {
+        ElmcMaybe *maybe = (ElmcMaybe *)found->payload;
+        if (maybe->is_just && maybe->value) out = elmc_as_int(maybe->value);
+      }
+      elmc_release(found);
+      return out;
     }
 
     ElmcValue *elmc_dict_member(ElmcValue *key, ElmcValue *dict) {
@@ -2089,6 +2115,37 @@ defmodule Elmc.Runtime.Generator do
       return elmc_retain(value);
     }
 
+    ElmcForwardRef *elmc_forward_ref_new(void) {
+      ElmcForwardRef *ref = (ElmcForwardRef *)elmc_malloc(sizeof(ElmcForwardRef), __func__);
+      if (ref) ref->value = NULL;
+      return ref;
+    }
+
+    void elmc_forward_ref_set(ElmcForwardRef *ref, ElmcValue *value) {
+      if (!ref) return;
+      if (ref->value) elmc_release(ref->value);
+      ref->value = value ? elmc_retain(value) : NULL;
+    }
+
+    ElmcValue *elmc_forward_ref_get(ElmcForwardRef *ref) {
+      if (!ref || !ref->value) return elmc_int_zero();
+      return elmc_retain(ref->value);
+    }
+
+    void elmc_forward_ref_free(ElmcForwardRef *ref) {
+      if (!ref) return;
+      if (ref->value) elmc_release(ref->value);
+      free(ref);
+    }
+
+    ElmcValue *elmc_forward_ref_capture(ElmcForwardRef *ref) {
+      if (!ref) return elmc_int_zero();
+      ElmcForwardRef **payload = (ElmcForwardRef **)elmc_malloc(sizeof(ElmcForwardRef *), __func__);
+      if (!payload) return elmc_int_zero();
+      *payload = ref;
+      return elmc_alloc(ELMC_TAG_FORWARD_REF, payload);
+    }
+
     /* ================================================================
        Standard Library – List operations
        ================================================================ */
@@ -2421,16 +2478,82 @@ defmodule Elmc.Runtime.Generator do
       return sorted;
     }
 
+    static int elmc_order_cmp(ElmcValue *order) {
+      if (!order) return 0;
+      return (int)elmc_as_int(order);
+    }
+
+    static int elmc_list_sort_compare(ElmcValue *left, ElmcValue *right, ElmcValue *f, int sort_by) {
+      if (sort_by) {
+        ElmcValue *args_left[1] = { left };
+        ElmcValue *args_right[1] = { right };
+        ElmcValue *key_left = elmc_closure_call(f, args_left, 1);
+        ElmcValue *key_right = elmc_closure_call(f, args_right, 1);
+        ElmcValue *order = elmc_basics_compare(key_left, key_right);
+        int cmp = elmc_order_cmp(order);
+        elmc_release(key_left);
+        elmc_release(key_right);
+        elmc_release(order);
+        return cmp;
+      }
+      ElmcValue *args[2] = { left, right };
+      ElmcValue *order = elmc_closure_call(f, args, 2);
+      int cmp = elmc_order_cmp(order);
+      elmc_release(order);
+      return cmp;
+    }
+
+    static ElmcValue *elmc_list_insert_sorted(ElmcValue *item, ElmcValue *sorted, ElmcValue *f, int sort_by) {
+      ElmcValue *item_copy = elmc_retain(item);
+      ElmcValue *rev = elmc_list_nil();
+      ElmcValue *cursor = sorted;
+      int inserted = 0;
+      while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
+        ElmcCons *node = (ElmcCons *)cursor->payload;
+        if (!inserted && elmc_list_sort_compare(item_copy, node->head, f, sort_by) <= 0) {
+          ElmcValue *next = elmc_list_cons(item_copy, rev);
+          elmc_release(rev);
+          rev = next;
+          inserted = 1;
+        }
+        ElmcValue *next = elmc_list_cons(elmc_retain(node->head), rev);
+        elmc_release(rev);
+        rev = next;
+        cursor = node->tail;
+      }
+      if (!inserted) {
+        ElmcValue *next = elmc_list_cons(item_copy, rev);
+        elmc_release(rev);
+        rev = next;
+      } else {
+        elmc_release(item_copy);
+      }
+      ElmcValue *out = elmc_list_reverse_copy(rev);
+      elmc_release(rev);
+      return out;
+    }
+
+    static ElmcValue *elmc_list_sort_with_fn(ElmcValue *list, ElmcValue *f, int sort_by) {
+      ElmcValue *sorted = elmc_list_nil();
+      ElmcValue *cursor = list;
+      while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
+        ElmcCons *node = (ElmcCons *)cursor->payload;
+        ElmcValue *next_sorted = elmc_list_insert_sorted(node->head, sorted, f, sort_by);
+        if (sorted) elmc_release(sorted);
+        sorted = next_sorted;
+        cursor = node->tail;
+      }
+      return sorted;
+    }
+
     ElmcValue *elmc_list_sort_by(ElmcValue *f, ElmcValue *list) {
-      (void)f;
-      /* Stub: return copy of list */
-      return elmc_list_reverse_copy(elmc_list_reverse_copy(list));
+      if (!list || list->tag != ELMC_TAG_LIST) return elmc_list_nil();
+      return elmc_list_sort_with_fn(list, f, 1);
     }
 
     ElmcValue *elmc_list_sort_with(ElmcValue *f, ElmcValue *list) {
-      (void)f;
-      /* Stub: return copy of list */
-      return elmc_list_reverse_copy(elmc_list_reverse_copy(list));
+      if (!list || list->tag != ELMC_TAG_LIST) return elmc_list_nil();
+      return elmc_list_sort_with_fn(list, f, 0);
     }
 
     ElmcValue *elmc_list_singleton(ElmcValue *value) {
@@ -2797,9 +2920,51 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_string_replace(ElmcValue *old_s, ElmcValue *new_s, ElmcValue *s) {
-      (void)old_s; (void)new_s;
-      if (!s || s->tag != ELMC_TAG_STRING) return &ELMC_EMPTY_STRING;
-      return elmc_retain(s);
+      if (!s || s->tag != ELMC_TAG_STRING || !s->payload) return &ELMC_EMPTY_STRING;
+      if (!old_s || old_s->tag != ELMC_TAG_STRING || !old_s->payload) return elmc_retain(s);
+      if (!new_s || new_s->tag != ELMC_TAG_STRING || !new_s->payload) new_s = &ELMC_EMPTY_STRING;
+      const char *haystack = (const char *)s->payload;
+      const char *needle = (const char *)old_s->payload;
+      const char *replacement = (const char *)new_s->payload;
+      size_t needle_len = strlen(needle);
+      if (needle_len == 0) return elmc_retain(s);
+      size_t repl_len = strlen(replacement);
+      size_t cap = strlen(haystack) + 1;
+      char *buf = (char *)elmc_malloc(cap, __func__);
+      if (!buf) return &ELMC_EMPTY_STRING;
+      size_t out_len = 0;
+      const char *p = haystack;
+      while (*p) {
+        if (strncmp(p, needle, needle_len) == 0) {
+          size_t needed = out_len + repl_len + strlen(p) + 1;
+          if (needed > cap) {
+            cap = needed * 2;
+            char *grown = (char *)elmc_malloc(cap, __func__);
+            if (!grown) { free(buf); return &ELMC_EMPTY_STRING; }
+            memcpy(grown, buf, out_len);
+            free(buf);
+            buf = grown;
+          }
+          memcpy(buf + out_len, replacement, repl_len);
+          out_len += repl_len;
+          p += needle_len;
+        } else {
+          size_t needed = out_len + strlen(p) + 2;
+          if (needed > cap) {
+            cap = needed * 2;
+            char *grown = (char *)elmc_malloc(cap, __func__);
+            if (!grown) { free(buf); return &ELMC_EMPTY_STRING; }
+            memcpy(grown, buf, out_len);
+            free(buf);
+            buf = grown;
+          }
+          buf[out_len++] = *p++;
+        }
+      }
+      buf[out_len] = '\\0';
+      ElmcValue *out = elmc_alloc(ELMC_TAG_STRING, buf);
+      if (!out) { free(buf); return &ELMC_EMPTY_STRING; }
+      return out;
     }
 
     ElmcValue *elmc_string_from_int(ElmcValue *n) {
@@ -3862,7 +4027,6 @@ defmodule Elmc.Runtime.Generator do
        ================================================================ */
 
     ElmcValue *elmc_dict_remove(ElmcValue *key, ElmcValue *dict) {
-      int64_t wanted = elmc_as_int(key);
       ElmcValue *rev = elmc_list_nil();
       ElmcValue *cursor = dict;
       while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
@@ -3870,7 +4034,7 @@ defmodule Elmc.Runtime.Generator do
         int skip = 0;
         if (node->head && node->head->tag == ELMC_TAG_TUPLE2 && node->head->payload != NULL) {
           ElmcTuple2 *pair = (ElmcTuple2 *)node->head->payload;
-          if (pair->first && elmc_as_int(pair->first) == wanted) skip = 1;
+          if (pair->first && elmc_dict_keys_equal(pair->first, key)) skip = 1;
         }
         if (!skip) {
           ElmcValue *next = elmc_list_cons(node->head, rev);
@@ -4107,10 +4271,141 @@ defmodule Elmc.Runtime.Generator do
       return out;
     }
 
+    static ElmcValue *elmc_dict_pair_key(ElmcValue *pair) {
+      if (!pair || pair->tag != ELMC_TAG_TUPLE2 || !pair->payload) return NULL;
+      return ((ElmcTuple2 *)pair->payload)->first;
+    }
+
+    static ElmcValue *elmc_dict_pair_value(ElmcValue *pair) {
+      if (!pair || pair->tag != ELMC_TAG_TUPLE2 || !pair->payload) return NULL;
+      return ((ElmcTuple2 *)pair->payload)->second;
+    }
+
+    static int elmc_dict_key_cmp(ElmcValue *left_key, ElmcValue *right_key) {
+      ElmcValue *order = elmc_basics_compare(left_key, right_key);
+      int cmp = (int)elmc_as_int(order);
+      elmc_release(order);
+      return cmp;
+    }
+
+    static ElmcValue *elmc_dict_sort_by_key(ElmcValue *dict) {
+      ElmcValue *sorted = elmc_list_nil();
+      ElmcValue *cursor = dict;
+      while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
+        ElmcCons *node = (ElmcCons *)cursor->payload;
+        ElmcValue *key = elmc_dict_pair_key(node->head);
+        ElmcValue *rev_before = elmc_list_nil();
+        ElmcValue *rest = sorted;
+        int inserted = 0;
+        while (rest && rest->tag == ELMC_TAG_LIST && rest->payload != NULL) {
+          ElmcCons *sn = (ElmcCons *)rest->payload;
+          ElmcValue *rest_key = elmc_dict_pair_key(sn->head);
+          if (!inserted && key && rest_key && elmc_dict_key_cmp(key, rest_key) <= 0) {
+            ElmcValue *new_node = elmc_list_cons(node->head, rest);
+            ElmcValue *rebuilt = new_node;
+            ElmcValue *rb_cursor = rev_before;
+            while (rb_cursor && rb_cursor->tag == ELMC_TAG_LIST && rb_cursor->payload != NULL) {
+              ElmcCons *rbn = (ElmcCons *)rb_cursor->payload;
+              ElmcValue *tmp = elmc_list_cons(rbn->head, rebuilt);
+              elmc_release(rebuilt);
+              rebuilt = tmp;
+              rb_cursor = rbn->tail;
+            }
+            elmc_release(rev_before);
+            elmc_release(sorted);
+            sorted = rebuilt;
+            inserted = 1;
+            break;
+          }
+          ElmcValue *next_rb = elmc_list_cons(sn->head, rev_before);
+          elmc_release(rev_before);
+          rev_before = next_rb;
+          rest = sn->tail;
+        }
+        if (!inserted) {
+          ElmcValue *new_tail = elmc_list_cons(node->head, elmc_list_nil());
+          ElmcValue *rebuilt = new_tail;
+          ElmcValue *rb_cursor = rev_before;
+          while (rb_cursor && rb_cursor->tag == ELMC_TAG_LIST && rb_cursor->payload != NULL) {
+            ElmcCons *rbn = (ElmcCons *)rb_cursor->payload;
+            ElmcValue *tmp = elmc_list_cons(rbn->head, rebuilt);
+            elmc_release(rebuilt);
+            rebuilt = tmp;
+            rb_cursor = rbn->tail;
+          }
+          elmc_release(rev_before);
+          elmc_release(sorted);
+          sorted = rebuilt;
+        }
+        cursor = node->tail;
+      }
+      return sorted;
+    }
+
     ElmcValue *elmc_dict_merge(ElmcValue *lf, ElmcValue *bf, ElmcValue *rf, ElmcValue *a, ElmcValue *b, ElmcValue *result) {
-      (void)lf; (void)bf; (void)rf; (void)result;
-      /* Stub: return union */
-      return elmc_dict_union(a, b);
+      if (!a) a = elmc_list_nil();
+      if (!b) b = elmc_list_nil();
+      if (!result) result = elmc_list_nil();
+      ElmcValue *left = elmc_dict_sort_by_key(a);
+      ElmcValue *right = elmc_dict_sort_by_key(b);
+      ElmcValue *acc = elmc_retain(result);
+      ElmcValue *l_cursor = left;
+      ElmcValue *r_cursor = right;
+      while (l_cursor && l_cursor->tag == ELMC_TAG_LIST && l_cursor->payload != NULL &&
+             r_cursor && r_cursor->tag == ELMC_TAG_LIST && r_cursor->payload != NULL) {
+        ElmcCons *l_node = (ElmcCons *)l_cursor->payload;
+        ElmcCons *r_node = (ElmcCons *)r_cursor->payload;
+        ElmcValue *l_key = elmc_dict_pair_key(l_node->head);
+        ElmcValue *r_key = elmc_dict_pair_key(r_node->head);
+        int cmp = (l_key && r_key) ? elmc_dict_key_cmp(l_key, r_key) : 0;
+        if (cmp < 0) {
+          ElmcValue *l_val = elmc_dict_pair_value(l_node->head);
+          ElmcValue *args[3] = { l_key, l_val, acc };
+          ElmcValue *next = elmc_closure_call(lf, args, 3);
+          elmc_release(acc);
+          acc = next;
+          l_cursor = l_node->tail;
+        } else if (cmp > 0) {
+          ElmcValue *r_val = elmc_dict_pair_value(r_node->head);
+          ElmcValue *args[3] = { r_key, r_val, acc };
+          ElmcValue *next = elmc_closure_call(rf, args, 3);
+          elmc_release(acc);
+          acc = next;
+          r_cursor = r_node->tail;
+        } else {
+          ElmcValue *l_val = elmc_dict_pair_value(l_node->head);
+          ElmcValue *r_val = elmc_dict_pair_value(r_node->head);
+          ElmcValue *args[4] = { l_key, l_val, r_val, acc };
+          ElmcValue *next = elmc_closure_call(bf, args, 4);
+          elmc_release(acc);
+          acc = next;
+          l_cursor = l_node->tail;
+          r_cursor = r_node->tail;
+        }
+      }
+      while (l_cursor && l_cursor->tag == ELMC_TAG_LIST && l_cursor->payload != NULL) {
+        ElmcCons *l_node = (ElmcCons *)l_cursor->payload;
+        ElmcValue *l_key = elmc_dict_pair_key(l_node->head);
+        ElmcValue *l_val = elmc_dict_pair_value(l_node->head);
+        ElmcValue *args[3] = { l_key, l_val, acc };
+        ElmcValue *next = elmc_closure_call(lf, args, 3);
+        elmc_release(acc);
+        acc = next;
+        l_cursor = l_node->tail;
+      }
+      while (r_cursor && r_cursor->tag == ELMC_TAG_LIST && r_cursor->payload != NULL) {
+        ElmcCons *r_node = (ElmcCons *)r_cursor->payload;
+        ElmcValue *r_key = elmc_dict_pair_key(r_node->head);
+        ElmcValue *r_val = elmc_dict_pair_value(r_node->head);
+        ElmcValue *args[3] = { r_key, r_val, acc };
+        ElmcValue *next = elmc_closure_call(rf, args, 3);
+        elmc_release(acc);
+        acc = next;
+        r_cursor = r_node->tail;
+      }
+      elmc_release(left);
+      elmc_release(right);
+      return acc;
     }
 
     ElmcValue *elmc_dict_update(ElmcValue *key, ElmcValue *f, ElmcValue *dict) {
@@ -4496,6 +4791,8 @@ defmodule Elmc.Runtime.Generator do
           return;
         }
         free(clo->captures);
+      } else if (value->tag == ELMC_TAG_FORWARD_REF && value->payload != NULL) {
+        free(value->payload);
       }
       if (value->tag == ELMC_TAG_LIST && elmc_list_cell_release(value)) {
         ELMC_RELEASED += 1;

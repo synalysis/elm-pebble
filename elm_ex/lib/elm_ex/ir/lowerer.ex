@@ -8,6 +8,7 @@ defmodule ElmEx.IR.Lowerer do
   alias ElmEx.IR
   alias ElmEx.IR.Declaration
   alias ElmEx.IR.FunctionCallCheck
+  alias ElmEx.IR.ImportResolution
   alias ElmEx.IR.Module
 
   @typep expr() :: map()
@@ -275,6 +276,12 @@ defmodule ElmEx.IR.Lowerer do
                Map.get(signature_by_name, name) || Map.get(definition_only_by_name, name)
              end)
              |> Enum.reject(&is_nil/1))
+          |> Enum.map(fn decl ->
+            case Map.get(decl, :expr) do
+              nil -> decl
+              expr -> %{decl | expr: ImportResolution.normalize_expr(expr, rewrite_lookup)}
+            end
+          end)
 
         %Module{
           name: frontend_module.name,
@@ -695,38 +702,8 @@ defmodule ElmEx.IR.Lowerer do
   defp builtin_type_name?(_name), do: false
 
   @spec resolve_alias(String.t(), map()) :: String.t()
-  defp resolve_alias(target, lookup) when is_binary(target) do
-    alias_map = Map.get(lookup, :alias_map, %{})
-    import_unqualified_map = Map.get(lookup, :import_unqualified_map, %{})
-    local_call_names = Map.get(lookup, :local_call_names, MapSet.new())
-
-    case String.split(target, ".", parts: 2) do
-      [prefix, rest] ->
-        case Map.get(alias_map, prefix) do
-          nil -> target
-          real_module -> "#{real_module}.#{rest}"
-        end
-
-      [single] ->
-        if MapSet.member?(local_call_names, single) do
-          target
-        else
-          case Map.get(import_unqualified_map, single) do
-            module when is_binary(module) and module != "" ->
-              "#{module}.#{single}"
-
-            :ambiguous ->
-              target
-
-            _ ->
-              target
-          end
-        end
-
-      _other ->
-        target
-    end
-  end
+  defp resolve_alias(target, lookup) when is_binary(target),
+    do: ImportResolution.resolve(target, lookup)
 
   defp resolve_alias(target, _lookup), do: target
 

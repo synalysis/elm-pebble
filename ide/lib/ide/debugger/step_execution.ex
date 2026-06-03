@@ -777,22 +777,27 @@ defmodule Ide.Debugger.StepExecution do
     end)
   end
 
+  @placeholder_view_tree_types ~w(root unknown previewUnavailable empty)
+
+  @doc false
+  @spec placeholder_view_tree?(Types.view_output_tree() | nil) :: boolean()
+  def placeholder_view_tree?(%{"type" => type}) when is_binary(type),
+    do: type in @placeholder_view_tree_types
+
+  def placeholder_view_tree?(%{type: type}) when is_atom(type),
+    do: Atom.to_string(type) in @placeholder_view_tree_types
+
+  def placeholder_view_tree?(_), do: false
+
   @spec introspect_parser_view_tree(Types.execution_model(), Types.view_output_tree()) ::
           Types.view_output_tree()
   def introspect_parser_view_tree(execution_model, view_tree) when is_map(execution_model) do
     case introspect_view_tree(RuntimeArtifacts.introspect(execution_model)) do
-      %{} = tree ->
-        tree
+      %{} = tree = introspect_tree ->
+        if placeholder_view_tree?(introspect_tree), do: %{}, else: tree
 
       _ ->
-        case view_tree do
-          %{"type" => type} = tree
-          when is_binary(type) and type not in ["root", "unknown", "previewUnavailable"] ->
-            tree
-
-          _ ->
-            %{}
-        end
+        if placeholder_view_tree?(view_tree), do: %{}, else: view_tree
     end
   end
 
@@ -884,6 +889,12 @@ defmodule Ide.Debugger.StepExecution do
     output_view_tree = runtime_view_output_tree(model, target, runtime_view_tree, opts)
     ei = RuntimeArtifacts.require_introspect(model)
 
+    runtime_view_tree =
+      if placeholder_view_tree?(runtime_view_tree), do: %{}, else: runtime_view_tree
+
+    contract_view_tree =
+      introspect_parser_view_tree(Keyword.get(opts, :execution_model, %{}), runtime_view_tree)
+
     base =
       cond do
         is_map(output_view_tree) ->
@@ -891,6 +902,9 @@ defmodule Ide.Debugger.StepExecution do
 
         concrete_runtime_view_tree?(runtime_view_tree, ei) ->
           runtime_view_tree
+
+        concrete_runtime_view_tree?(contract_view_tree, ei) ->
+          contract_view_tree
 
         parser_expression_view_tree?(runtime_view_tree, ei) ->
           preview_unavailable_view_tree(target, "runtime view did not produce drawable output")
@@ -975,9 +989,12 @@ defmodule Ide.Debugger.StepExecution do
   @spec introspect_view_usable?(Types.view_output_tree(), Types.elm_introspect()) :: boolean()
   def introspect_view_usable?(%{"type" => "unknown", "children" => []}, _ei), do: false
 
+  def introspect_view_usable?(%{"type" => type}, _ei)
+      when is_binary(type) and type in @placeholder_view_tree_types,
+      do: false
+
   def introspect_view_usable?(%{"type" => type} = tree, ei) when is_binary(type) do
-    type not in ["root", "unknown", "previewUnavailable"] and
-      not unresolved_parser_view_root?(tree, ei)
+    not unresolved_parser_view_root?(tree, ei)
   end
 
   def introspect_view_usable?(%{"children" => children}, _ei)

@@ -548,4 +548,35 @@ defmodule Elmx.CasePatternEmitTest do
     {code, _, _} = Emit.compile_expr(expr, env, 0)
     assert IO.iodata_to_binary(code) == "{:ProvidePosition, 12345000, -98765000, 25}"
   end
+
+  test "Nothing + bare var branches match {:Just, payload} for Maybe unwrapping" do
+    expr = %{
+      op: :case,
+      subject: "piece",
+      branches: [
+        %{
+          pattern: %{kind: :constructor, name: "Nothing", bind: nil, arg_pattern: nil},
+          expr: %{op: :int_literal, value: 0}
+        },
+        %{
+          pattern: %{kind: :var, name: "active"},
+          expr: %{op: :field_access, arg: "active", field: "kind"}
+        }
+      ]
+    }
+
+    env =
+      Emit.function_env("Main", ["piece"])
+      |> Map.put(:module, "Main")
+      |> Map.put(:emit_mode, :ide_runtime)
+      |> Map.put(:zero_arity_fns, MapSet.new())
+      |> Map.put(:function_arities, %{})
+
+    {code, _, _} = Emit.compile_expr(expr, env, 0)
+    source = IO.iodata_to_binary(code)
+
+    assert source =~ ":Nothing ->"
+    assert source =~ "{:Just, active} ->"
+    refute source =~ "\n  active ->"
+  end
 end
