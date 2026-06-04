@@ -7,6 +7,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
   alias Elmc.Backend.CCodegen.Emit
   alias Elmc.Backend.CCodegen.FunctionEmit
   alias Elmc.Backend.CCodegen.IRQueries
+  alias Elmc.Backend.CCodegen.Tuple2CaseTable
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
@@ -71,6 +72,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     Process.put(:elmc_vector_resource_slots, IRQueries.pebble_vector_resource_slot_map(ir))
     Process.put(:elmc_bitmap_resource_slots, IRQueries.pebble_bitmap_resource_slot_map(ir))
     Process.put(:elmc_animation_resource_slots, IRQueries.pebble_animation_resource_slot_map(ir))
+    Process.put(:elmc_font_resource_slots, IRQueries.pebble_font_resource_slot_map(ir))
     Process.put(:elmc_enum_types, IRQueries.enum_type_set(ir))
     Process.put(:elmc_record_alias_shapes, IRQueries.record_alias_shape_map(ir))
     Process.put(:elmc_record_field_types, IRQueries.record_alias_field_types_map(ir))
@@ -98,6 +100,11 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
         |> Enum.filter(
           &(&1.kind == :function && MapSet.member?(generic_targets, {mod.name, &1.name}))
         )
+        |> Enum.sort_by(fn decl ->
+          if match?({:ok, _}, Tuple2CaseTable.try_emit(mod.name, decl.name, decl.expr)),
+            do: 0,
+            else: 1
+        end)
         |> Enum.map(fn decl ->
           c_name = Util.module_fn_name(mod.name, decl.name)
           emit_wrapper? = MapSet.member?(wrapper_targets, {mod.name, decl.name})
@@ -128,6 +135,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     Process.delete(:elmc_vector_resource_slots)
     Process.delete(:elmc_bitmap_resource_slots)
     Process.delete(:elmc_animation_resource_slots)
+    Process.delete(:elmc_font_resource_slots)
     Process.delete(:elmc_enum_types)
 
     trig_fallback_prelude =

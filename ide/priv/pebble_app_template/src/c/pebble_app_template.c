@@ -2545,7 +2545,9 @@ static void schedule_render_model(void) {
 
 static void render_model(void) {
   ELMC_PEBBLE_TRACE_ENTER("render_model");
+#ifdef ELMC_WATCHFACE_MODE
   ensure_draw_layer_size();
+#endif
   // #region agent log
   ELMC_AGENT_INIT_PROBE(s_agent_after_companion_dispatch ? 0xED992101 : 0xED992001);
   // #endregion
@@ -4137,7 +4139,14 @@ static void init(void) {
 #endif
   // #endregion
 
+#ifdef ELMC_WATCHFACE_MODE
   schedule_elm_init();
+#else
+  // Apps: initialize Elm on the window-load draw layer immediately. Deferred
+  // init and draw-layer rebuild are for watchfaces where Diorite/silk can report
+  // undersized root bounds during early QEMU layout.
+  complete_elm_init();
+#endif
 
   // #region agent probe
 #if ELMC_AGENT_PROBE_INIT_STAGE == 3

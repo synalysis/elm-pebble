@@ -140,6 +140,11 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
     pebble_resource_union_slot_map(ir, ["AnimatedBitmap"])
   end
 
+  @spec pebble_font_resource_slot_map(IR.t()) :: %{String.t() => pos_integer()}
+  def pebble_font_resource_slot_map(%IR{} = ir) do
+    pebble_resource_union_slot_map(ir, ["Font"])
+  end
+
   @spec pebble_resource_union_slot_map(IR.t(), [String.t()]) :: %{String.t() => pos_integer()}
   defp pebble_resource_union_slot_map(%IR{} = ir, union_names) when is_list(union_names) do
     ir.modules

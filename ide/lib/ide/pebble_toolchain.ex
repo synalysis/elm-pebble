@@ -985,6 +985,7 @@ defmodule Ide.PebbleToolchain do
         """
         #define ELMC_PEBBLE_EMULATOR_STORAGE_LOGS 1
         #define ELMC_PEBBLE_RUNTIME_LOGS 1
+        #define ELMC_PEBBLE_DEBUG_LOGS 1
         """
       else
         ""

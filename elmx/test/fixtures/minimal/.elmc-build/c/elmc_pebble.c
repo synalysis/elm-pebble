@@ -230,13 +230,24 @@ static int elmc_decode_path_payload(ElmcValue *payload, ElmcPebbleDrawCmd *out_c
   if (!offset_and_rotation || offset_and_rotation->tag != ELMC_TAG_TUPLE2 || offset_and_rotation->payload == NULL) return -4;
   ElmcTuple2 *off1 = (ElmcTuple2 *)offset_and_rotation->payload;
   if (!off1->first || !off1->second) return -5;
-  out_cmd->path_offset_x = elmc_as_int(off1->first);
 
-  if (off1->second->tag != ELMC_TAG_TUPLE2 || off1->second->payload == NULL) return -6;
-  ElmcTuple2 *off2 = (ElmcTuple2 *)off1->second->payload;
-  if (!off2->first || !off2->second) return -7;
-  out_cmd->path_offset_y = elmc_as_int(off2->first);
-  out_cmd->path_rotation = elmc_as_int(off2->second);
+  if (off1->first->tag == ELMC_TAG_TUPLE2 && off1->first->payload != NULL) {
+    /* Pebble.Ui.path: tuple2(points, tuple2(tuple2(offset_x, offset_y), rotation)) */
+    ElmcTuple2 *xy = (ElmcTuple2 *)off1->first->payload;
+    if (!xy->first || !xy->second) return -6;
+    out_cmd->path_offset_x = elmc_as_int(xy->first);
+    out_cmd->path_offset_y = elmc_as_int(xy->second);
+    out_cmd->path_rotation = elmc_as_int(off1->second);
+  } else {
+    /* path_expr: tuple2(points, tuple2(offset_x, tuple2(offset_y, rotation))) */
+    out_cmd->path_offset_x = elmc_as_int(off1->first);
+
+    if (off1->second->tag != ELMC_TAG_TUPLE2 || off1->second->payload == NULL) return -6;
+    ElmcTuple2 *off2 = (ElmcTuple2 *)off1->second->payload;
+    if (!off2->first || !off2->second) return -7;
+    out_cmd->path_offset_y = elmc_as_int(off2->first);
+    out_cmd->path_rotation = elmc_as_int(off2->second);
+  }
 
   int count = 0;
   ElmcValue *cursor = points;
@@ -393,6 +404,13 @@ static void elmc_pebble_scene_mark_full_dirty(ElmcPebbleApp *app) {
   app->dirty_rect.h = 0;
 }
 #endif
+
+void elmc_pebble_invalidate_scene(ElmcPebbleApp *app) {
+  if (!app) return;
+#if ELMC_PEBBLE_DIRTY_REGION_ENABLED
+  elmc_pebble_scene_mark_full_dirty(app);
+#endif
+}
 
 static int elmc_pebble_scene_reserve(ElmcPebbleApp *app, int extra) {
   if (!app || extra < 0) return -1;
@@ -1722,7 +1740,7 @@ int elmc_pebble_take_cmd(ElmcPebbleApp *app, ElmcPebbleCmd *out_cmd) {
 }
 
 static int elmc_pebble_view_commands_impl(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip, int dedupe);
-static int elmc_pebble_view_commands_raw_impl(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip, int dedupe);
+static int elmc_pebble_view_commands_raw_impl(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip, int dedupe, int *out_emitted_end);
 
 int elmc_pebble_view_command(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmd) {
   int count = elmc_pebble_view_commands(app, out_cmd, 1);
@@ -1736,7 +1754,7 @@ int elmc_pebble_view_commands(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, i
 }
 
 int elmc_pebble_view_commands_from(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip) {
-  int count = elmc_pebble_view_commands_raw_impl(app, out_cmds, max_cmds, skip, 0);
+  int count = elmc_pebble_view_commands_raw_impl(app, out_cmds, max_cmds, skip, 0, NULL);
   if (count < max_cmds) {
     elmc_pebble_clear_view_cache(app);
   }
@@ -1798,7 +1816,8 @@ int elmc_pebble_ensure_scene(ElmcPebbleApp *app) {
     // #region agent log
     if (chunk == 0 && skip == 0) elmc_agent_scene_probe(0xED997A00);
     // #endregion
-    int count = elmc_pebble_view_commands_raw_impl(app, cmds, build_chunk_capacity, skip, 0);
+    int emitted_end = 0;
+    int count = elmc_pebble_view_commands_raw_impl(app, cmds, build_chunk_capacity, skip, 0, &emitted_end);
     // #region agent log
     if (chunk == 0 && skip == 0) {
       uint32_t encoded_count = count < 0 ? (uint32_t)(128 + ((-count) & 0x7F)) : (uint32_t)(count > 127 ? 127 : count);
@@ -1832,7 +1851,7 @@ int elmc_pebble_ensure_scene(ElmcPebbleApp *app) {
         ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", rc);
       }
     }
-    skip += count;
+    skip = emitted_end;
     if (count < build_chunk_capacity) break;
   }
   elmc_pebble_clear_view_cache(app);
@@ -1871,18 +1890,18 @@ int elmc_pebble_scene_dirty_rect(ElmcPebbleApp *app, ElmcPebbleRect *out_rect, i
 #endif
 }
 
-static int elmc_pebble_view_commands_raw_impl(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip, int dedupe);
+static int elmc_pebble_view_commands_raw_impl(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip, int dedupe, int *out_emitted_end);
 
 int elmc_pebble_scene_commands_from(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip) {
   ELMC_PEBBLE_GENERATED_TRACE_ENTER("elmc_pebble_scene_commands_from");
   if (!app || !out_cmds || max_cmds <= 0 || skip < 0) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_from", -1);
 #if !ELMC_PEBBLE_SCENE_CACHE_ENABLED
-  int direct_count = elmc_pebble_view_commands_raw_impl(app, out_cmds, max_cmds, skip, 0);
+  int direct_count = elmc_pebble_view_commands_raw_impl(app, out_cmds, max_cmds, skip, 0, NULL);
   ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_from", direct_count);
 #endif
   int rc = elmc_pebble_ensure_scene(app);
   if (rc == -2) {
-    int fallback_count = elmc_pebble_view_commands_raw_impl(app, out_cmds, max_cmds, skip, 0);
+    int fallback_count = elmc_pebble_view_commands_raw_impl(app, out_cmds, max_cmds, skip, 0, NULL);
     // #region agent log
     elmc_agent_scene_probe(0xED998100 | (fallback_count < 0 ? (uint32_t)(0x80 | ((-fallback_count) & 0x7F)) : (uint32_t)(fallback_count > 0x7F ? 0x7F : fallback_count)));
     // #endregion
@@ -1908,7 +1927,7 @@ static int elmc_pebble_view_commands_impl(ElmcPebbleApp *app, ElmcPebbleDrawCmd 
   if (!app || !app->initialized || !out_cmds || max_cmds <= 0) return -1;
   if (skip < 0) return -1;
 #if !ELMC_PEBBLE_SCENE_CACHE_ENABLED
-  return elmc_pebble_view_commands_raw_impl(app, out_cmds, max_cmds, skip, dedupe);
+  return elmc_pebble_view_commands_raw_impl(app, out_cmds, max_cmds, skip, dedupe, NULL);
 #endif
   int rc = elmc_pebble_ensure_scene(app);
   if (rc != 0) return rc;
@@ -1924,9 +1943,10 @@ static int elmc_pebble_view_commands_impl(ElmcPebbleApp *app, ElmcPebbleDrawCmd 
   return elmc_pebble_scene_commands_from(app, out_cmds, max_cmds, skip);
 }
 
-static int elmc_pebble_view_commands_raw_impl(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip, int dedupe) {
+static int elmc_pebble_view_commands_raw_impl(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip, int dedupe, int *out_emitted_end) {
   if (!app || !app->initialized || !out_cmds || max_cmds <= 0) return -1;
   if (skip < 0) return -1;
+  if (out_emitted_end) *out_emitted_end = skip;
 #if !defined(ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW)
   int count = 0;
   ElmcValue *result = NULL;

@@ -45,7 +45,8 @@ defmodule Elmc.Backend.CCodegen.ResourceUnion do
       [
         :elmc_vector_resource_slots,
         :elmc_bitmap_resource_slots,
-        :elmc_animation_resource_slots
+        :elmc_animation_resource_slots,
+        :elmc_font_resource_slots
       ],
       %{},
       fn key, acc ->

@@ -105,7 +105,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     assert generated_c =~ "elmc_fn_Main_dropStep"
     assert generated_c =~ @just_payload_borrow
-    assert generated_c =~ "list_hof_cursor_"
+    assert generated_c =~ "elmc_fn_Main_canPlace_offset_fits"
     assert generated_c =~ "elmc_list_nth_maybe"
     refute generated_c =~ "elmc_list_drop("
     refute generated_c =~ ~r/elmc_record_get\(tmp_2, "y"\)/
@@ -116,8 +116,59 @@ defmodule Elmc.CCodegenPatternsTest do
     assert stack_report =~ "\"functions\""
     assert stack_report =~ "\"summary\""
     assert stack_report =~ "\"code_size_indicators\""
-    assert generated_c =~ "list_tuple2_values_"
     assert generated_c =~ "elmc_list_from_tuple2_int_array"
+    assert generated_c =~ "pieceOffsets_table[k][r]"
+    assert generated_c =~ "elmc_fn_Main_canPlace_offset_fits"
+    refute generated_c =~ "list_hof_cursor_2 = tmp_1"
+    refute generated_c =~ "elmc_fn_Pebble_Ui_Resources_DefaultFont"
+    assert generated_c =~ ~r/out_cmds\[\*count\]\.p0 = 1;\s*\n\s*out_cmds\[\*count\]\.p1 = direct_native_let_textX/
+  end
+
+  test "List.map over tuple2 offsets uses cursor loop instead of elmc_list_map closure" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    type alias Piece = { x : Int, y : Int, kind : Int, rot : Int }
+
+    offsets : Int -> Int -> List ( Int, Int )
+    offsets _ _ =
+        [ ( 0, 0 ), ( 1, 0 ), ( 0, 1 ), ( 1, 1 ) ]
+
+    slots : Piece -> List Int
+    slots piece =
+        List.map
+            (\\( dx, dy ) ->
+                (piece.y + dy) * 10 + (piece.x + dx)
+            )
+            (offsets piece.kind piece.rot)
+
+    init _ = ( { label = slots { x = 3, y = 0, kind = 1, rot = 0 } }, Platform.Cmd.none )
+    update _ m = ( m, Platform.Cmd.none )
+    view m = Ui.toUiNode [ Ui.clear Color.white, Ui.text (String.fromInt (List.length m.label)) ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/tuple_map_cursor", __DIR__)
+    out_dir = Path.expand("tmp/tuple_map_cursor_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert generated_c =~ "list_map_cursor_"
+    assert generated_c =~ "elmc_fn_Main_slots"
+    refute generated_c =~ "elmc_list_map("
+    refute generated_c =~ "elmc_lambda_"
   end
 
   test "game elmtris init and view run on host pebble shim with basalt launch context" do
@@ -150,7 +201,15 @@ defmodule Elmc.CCodegenPatternsTest do
     assert makefile =~ "-Wl,--gc-sections"
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    assert generated_c =~ "pieceOffsets_table[k][r]"
+    assert generated_c =~ "list_map_cursor_"
+    assert generated_c =~ "elmc_fn_Main_canPlace_native"
+    refute generated_c =~ "native_let_board"
+    assert generated_c =~ "elmc_record_literal_helper_Main_freshModel_1"
+    assert generated_c =~ "tmp_10 = tmp_4 ? elmc_retain(tmp_4)"
     assert generated_c =~ "elmc_list_replace_nth_int"
+    assert generated_c =~
+             ~r/elmc_fn_Main_pieceOffsets_native\(const elmc_int_t kind, const elmc_int_t rot\) \{\s*elmc_int_t k = kind % 7;[\s\S]*?pieceOffsets_table\[k\]\[r\];\s*return elmc_list_from_tuple2_int_array/
     refute generated_c =~ "elmc_list_indexed_map("
     assert generated_c =~ "elmc_case_branch_helper_Main_rotateActive"
     assert generated_c =~ "elmc_let_body_helper_Main_lockPiece"

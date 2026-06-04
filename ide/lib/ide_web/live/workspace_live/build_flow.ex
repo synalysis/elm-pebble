@@ -829,7 +829,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
              project_name: project.name,
              target_platforms: [emulator_target],
              source_roots: project.source_roots,
-             emulator_storage_logs: false
+             emulator_storage_logs: true
            ) do
       {:ok, packaged}
     end

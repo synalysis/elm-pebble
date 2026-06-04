@@ -16,8 +16,10 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   def expr?(%{op: :field_access, arg: arg, field: field}, env),
     do: RecordFields.int_field?(env, arg, field)
 
+  # Tuple accessors yield boxed Elm values (lists, records, nested tuples). Treating them as
+  # native ints would truncate pointers on 32-bit targets.
   def expr?(%{op: op, arg: _arg}, _env) when op in [:tuple_first, :tuple_first_expr, :tuple_second_expr],
-    do: true
+    do: false
 
   def expr?(%{op: :c_int_expr}, _env), do: true
 
@@ -361,21 +363,9 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     end
   end
 
-  defp dispatch(%{op: op, arg: %{op: :var, name: name}}, env, counter)
-       when op in [:tuple_first, :tuple_first_expr, :tuple_second_expr] do
-    case Map.fetch(env, name) do
-      {:ok, source} when is_binary(source) ->
-        compile_tuple_int_source(source, tuple_accessor(op), counter)
-
-      _ ->
-        compile_tuple_int_expr(%{op: :var, name: name}, tuple_accessor(op), env, counter)
-    end
-  end
-
-  defp dispatch(%{op: op, arg: arg_expr}, env, counter)
-       when op in [:tuple_first, :tuple_first_expr, :tuple_second_expr] do
-    compile_tuple_int_expr(arg_expr, tuple_accessor(op), env, counter)
-  end
+  defp dispatch(%{op: op} = expr, env, counter)
+       when op in [:tuple_first, :tuple_first_expr, :tuple_second_expr],
+       do: compile_fallback(expr, env, counter)
 
   defp dispatch(%{op: :var, name: name} = expr, env, counter) do
     case EnvBindings.native_int_binding(env, name) do
