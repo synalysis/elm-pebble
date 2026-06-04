@@ -32,6 +32,9 @@ defmodule Ide.Emulator.PebbleProtocol.Packets do
   @spec app_run_state_start(String.t()) :: {non_neg_integer(), binary()}
   def app_run_state_start(uuid), do: {@endpoint_app_run_state, <<0x01, uuid_bytes(uuid)::binary>>}
 
+  @spec app_run_state_stop(String.t()) :: {non_neg_integer(), binary()}
+  def app_run_state_stop(uuid), do: {@endpoint_app_run_state, <<0x02, uuid_bytes(uuid)::binary>>}
+
   @spec app_fetch_start_response() :: {non_neg_integer(), binary()}
   def app_fetch_start_response, do: {@endpoint_app_fetch, <<0x01, 0x01>>}
 

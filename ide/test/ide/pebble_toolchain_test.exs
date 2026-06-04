@@ -113,6 +113,8 @@ defmodule Ide.PebbleToolchainTest do
     assert source =~ "elmc_emulator_build_flags.h"
     assert source =~ "ELMC_PEBBLE_EMULATOR_STORAGE_LOGS 1"
     assert source =~ "ELMC_PEBBLE_RUNTIME_LOGS 1"
+    assert source =~ "emulator_agent_probes"
+    refute source =~ "emulator_storage_logs, \"ELMC_AGENT_PROBES\""
     assert template =~ ~s(#include "elmc_emulator_build_flags.h")
     assert template =~ "emulator_storage_snapshot_callback"
     assert template =~ "companion_inbox_log"

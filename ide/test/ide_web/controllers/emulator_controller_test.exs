@@ -58,6 +58,20 @@ defmodule IdeWeb.EmulatorControllerTest do
     Process.exit(pid, :kill)
   end
 
+  test "GET ws/phone without upgrade headers returns 426", %{conn: conn} do
+    EmulatorSessionEnv.run(fn ->
+      assert {:ok, info} =
+               EmulatorLaunch.launch(project_slug: "wf", platform: "basalt", artifact_path: nil)
+
+      assert %{"error" => "WebSocket upgrade required"} =
+               conn
+               |> get(~p"/api/emulator/#{info.id}/ws/phone")
+               |> json_response(426)
+
+      assert :ok = Emulator.kill(info.id)
+    end)
+  end
+
   test "GET ws/vnc without upgrade headers returns 426", %{conn: conn} do
     EmulatorSessionEnv.run(fn ->
       assert {:ok, info} =

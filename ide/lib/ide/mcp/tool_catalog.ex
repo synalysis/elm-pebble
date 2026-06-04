@@ -9,7 +9,7 @@ defmodule Ide.Mcp.ToolCatalog do
   @type capability :: :read | :edit | :build | :publish
 
   @tool_version "1.0.0"
-  @catalog_version "2026-05-28"
+  @catalog_version "2026-06-04"
 
   @simulator_settings_schema %{
     type: "object",
@@ -1340,6 +1340,111 @@ defmodule Ide.Mcp.ToolCatalog do
       }
     },
     %{
+      name: "emulator.launch",
+      description:
+        "Launch the embedded IDE Pebble emulator for a project (same path as the UI Launch button): package PBW, start QEMU session, optionally wait for display_ready.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: JsonSchema.disallow_extra_properties(),
+        required: ["slug"],
+        properties: %{
+          slug: %{type: "string"},
+          platform: %{type: "string", description: "Watch model id (e.g. basalt, diorite)."},
+          emulator_target: %{type: "string", description: "Alias for platform."},
+          wait_display_ready: %{type: "boolean"},
+          display_ready_timeout_ms: %{type: "integer", minimum: 1_000, maximum: 600_000}
+        }
+      }
+    },
+    %{
+      name: "emulator.install",
+      description:
+        "Install the session PBW into a running embedded emulator (same path as the UI Install / Send PBW button).",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: JsonSchema.disallow_extra_properties(),
+        required: ["session_id"],
+        properties: %{
+          session_id: %{type: "string"},
+          wait_display_ready: %{type: "boolean"},
+          display_ready_timeout_ms: %{type: "integer", minimum: 1_000, maximum: 600_000},
+          logs_snapshot_seconds: %{type: "integer", minimum: 1, maximum: 30}
+        }
+      }
+    },
+    %{
+      name: "emulator.ping",
+      description: "Ping an embedded emulator session and return public session state.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: JsonSchema.disallow_extra_properties(),
+        required: ["session_id"],
+        properties: %{
+          session_id: %{type: "string"}
+        }
+      }
+    },
+    %{
+      name: "emulator.logs",
+      description:
+        "Capture embedded emulator diagnostics (QEMU serial console + Pebble protocol AppLog/system frames) from a running session.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: JsonSchema.disallow_extra_properties(),
+        required: ["session_id"],
+        properties: %{
+          session_id: %{type: "string"},
+          logs_snapshot_seconds: %{type: "integer", minimum: 1, maximum: 30}
+        }
+      }
+    },
+    %{
+      name: "emulator.kill",
+      description: "Stop an embedded emulator session (same path as the UI Stop button).",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: JsonSchema.disallow_extra_properties(),
+        required: ["session_id"],
+        properties: %{
+          session_id: %{type: "string"}
+        }
+      }
+    },
+    %{
+      name: "emulator.run",
+      description:
+        "End-to-end embedded emulator workflow: launch, wait for display, install PBW, capture logs, optionally stop session. Mirrors Launch then Install in the IDE.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: JsonSchema.disallow_extra_properties(),
+        required: ["slug"],
+        properties: %{
+          slug: %{type: "string"},
+          platform: %{type: "string"},
+          emulator_target: %{type: "string"},
+          install: %{type: "boolean", description: "Install PBW after launch (default true)."},
+          wait_display_ready: %{type: "boolean"},
+          display_ready_timeout_ms: %{type: "integer", minimum: 1_000, maximum: 600_000},
+          boot_wait_ms: %{
+            type: "integer",
+            minimum: 0,
+            maximum: 60_000,
+            description: "Sleep after install before log capture."
+          },
+          logs_snapshot_seconds: %{type: "integer", minimum: 1, maximum: 30},
+          kill_after: %{
+            type: "boolean",
+            description: "Stop the session when the workflow finishes (default true)."
+          },
+          open_from_launcher: %{
+            type: "boolean",
+            description:
+              "After install, press Select once to open the app from the launcher menu (useful for games)."
+          }
+        }
+      }
+    },
+    %{
       name: "publish.prepare",
       description:
         "Build the PBW, validate publish readiness, and export publish manifest plus release notes.",
@@ -1578,6 +1683,12 @@ defmodule Ide.Mcp.ToolCatalog do
   def authorized?("resources.vectors.delete", capabilities), do: :edit in capabilities
   def authorized?("pebble.package", capabilities), do: :build in capabilities
   def authorized?("pebble.install", capabilities), do: :build in capabilities
+  def authorized?("emulator.launch", capabilities), do: :build in capabilities
+  def authorized?("emulator.install", capabilities), do: :build in capabilities
+  def authorized?("emulator.ping", capabilities), do: :build in capabilities
+  def authorized?("emulator.kill", capabilities), do: :build in capabilities
+  def authorized?("emulator.logs", capabilities), do: :build in capabilities
+  def authorized?("emulator.run", capabilities), do: :build in capabilities
   def authorized?("screenshots.capture", capabilities), do: :build in capabilities
   def authorized?("compiler.check", capabilities), do: :build in capabilities
   def authorized?("compiler.check_source_root", capabilities), do: :build in capabilities

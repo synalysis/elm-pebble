@@ -866,7 +866,16 @@ export class EmulatorVnc {
       fbWidth > screen.width + 1 ||
       fbHeight > screen.height + 1
     const configKey = `${fbWidth}x${fbHeight}:${screen.width}x${screen.height}`
-    if (this.host.vncViewportConfigKey === configKey) return
+    const refreshFramebuffer = this.shouldRequestVncFramebufferRefresh(reason)
+    const configUnchanged = this.host.vncViewportConfigKey === configKey
+
+    if (configUnchanged) {
+      if (refreshFramebuffer) {
+        this.requestVncFramebufferRefresh(rfb, fbWidth, fbHeight, reason)
+      }
+      return
+    }
+
     this.host.vncViewportConfigKey = configKey
 
     // Always clip at 1:1. scaleViewport scales the entire padded QEMU surface into
@@ -883,6 +892,36 @@ export class EmulatorVnc {
       `VNC viewport ${reason}: framebuffer ${fbWidth}x${fbHeight}, screen ${screen.width}x${screen.height}, clip${oversized ? " (padded fb)" : ""}${canvasNote}`,
       {flushTransfers: false, flushSystemLogs: false}
     )
+
+    if (refreshFramebuffer) {
+      this.requestVncFramebufferRefresh(rfb, fbWidth, fbHeight, reason)
+    }
+  }
+
+  shouldRequestVncFramebufferRefresh(reason: string): boolean {
+    return /install|app_start|framebufferresize|appmessage/i.test(reason)
+  }
+
+  requestVncFramebufferRefresh(rfb: RFB, width: number, height: number, reason: string): void {
+    if (width <= 0 || height <= 0) return
+
+    const connection = (rfb as unknown as {_rfb_connection?: {sendFramebufferUpdateRequest?: Function}})
+      ._rfb_connection
+
+    if (typeof connection?.sendFramebufferUpdateRequest !== "function") return
+
+    try {
+      connection.sendFramebufferUpdateRequest(false, 0, 0, width, height)
+      this.host.appendLog(`VNC framebuffer refresh (${reason}) ${width}x${height}`, {
+        flushTransfers: false,
+        flushSystemLogs: false
+      })
+    } catch (error: unknown) {
+      this.host.appendLog(`VNC framebuffer refresh failed (${reason}): ${errMessage(error)}`, {
+        flushTransfers: false,
+        flushSystemLogs: false
+      })
+    }
   }
 
   scheduleVncCanvasSample(label: string, delayMs = 0): void {

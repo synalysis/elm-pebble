@@ -6,7 +6,9 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   alias Elmc.Backend.CCodegen.Expr
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.LetAnalysis
+  alias Elmc.Backend.CCodegen.Native.Bool, as: NativeBool
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
+  alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.TypeParsing
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
@@ -39,12 +41,31 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         emit_wrapper?
       )
     else
+      Process.put(:elmc_generic_helper_defs, [])
+      Process.put(:elmc_generic_helper_counter, 0)
+      body = emit_body(decl, module_name, function_arities, decl_map)
+      helper_defs = generic_helper_defs()
+      Process.delete(:elmc_generic_helper_defs)
+      Process.delete(:elmc_generic_helper_counter)
+
       """
+      #{helper_defs}
       ElmcValue *#{c_name}(ElmcValue ** const args, const int argc) {
         /* Ownership policy: #{Enum.join(decl.ownership, ", ")} */
-        #{emit_body(decl, module_name, function_arities, decl_map)}
+        #{body}
       }
       """
+    end
+  end
+
+  defp generic_helper_defs do
+    :elmc_generic_helper_defs
+    |> Process.get([])
+    |> Enum.reverse()
+    |> Enum.join("\n")
+    |> case do
+      "" -> ""
+      defs -> defs <> "\n"
     end
   end
 
@@ -129,7 +150,34 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       )
       |> Enum.map(fn decl ->
         c_name = Util.module_fn_name(mod.name, decl.name)
-        "static ElmcValue *#{c_name}_native(#{NativeFunctionCall.params(decl, mod.name, decl_map)});"
+        return_kind = NativeFunctionCall.return_kind(decl, mod.name, decl_map)
+
+        "static #{native_return_prefix(return_kind)}#{c_name}_native(#{NativeFunctionCall.params(decl, mod.name, decl_map)});"
+      end)
+    end)
+    |> Enum.join("\n")
+  end
+
+  @spec generic_function_prototypes(
+          ElmEx.IR.t(),
+          MapSet.t(Types.function_decl_key()),
+          MapSet.t(Types.function_decl_key()),
+          Types.function_decl_map()
+        ) :: String.t()
+  def generic_function_prototypes(ir, generic_targets, wrapper_targets, decl_map) do
+    ir.modules
+    |> Enum.flat_map(fn mod ->
+      mod.declarations
+      |> Enum.filter(fn decl ->
+        target = {mod.name, decl.name}
+
+        decl.kind == :function and MapSet.member?(generic_targets, target) and
+          (MapSet.member?(wrapper_targets, target) or
+             not NativeFunctionCall.native_args?(decl, mod.name, decl_map))
+      end)
+      |> Enum.map(fn decl ->
+        c_name = Util.module_fn_name(mod.name, decl.name)
+        "ElmcValue *#{c_name}(ElmcValue ** const args, const int argc);"
       end)
     end)
     |> Enum.join("\n")
@@ -163,8 +211,12 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
       acc =
         case normalized_type do
-          "Int" -> EnvBindings.put_boxed_int_binding(acc, arg, true)
-          "Bool" -> EnvBindings.put_boxed_bool_binding(acc, arg, true)
+          "Int" ->
+            EnvBindings.put_boxed_int_binding(acc, arg, true)
+
+          "Bool" ->
+            EnvBindings.put_boxed_bool_binding(acc, arg, true)
+
           _other ->
             if TypeParsing.enum_type?(arg_type),
               do: EnvBindings.put_boxed_int_binding(acc, arg, true),
@@ -226,36 +278,33 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       |> Enum.map(fn {_arg, c_arg, _index} -> c_arg end)
       |> Enum.join(", ")
 
-    native_env =
-      c_arg_bindings
-      |> Enum.zip(arg_kinds)
-      |> Enum.reduce(%{__module__: module_name}, fn {{source_arg, c_arg, _index}, kind}, acc ->
-        case kind do
-          :native_int -> EnvBindings.put_native_int_binding(acc, source_arg, c_arg)
-          :native_bool -> EnvBindings.put_native_bool_binding(acc, source_arg, c_arg)
-          :boxed -> Map.put(acc, source_arg, c_arg)
-        end
-      end)
-      |> put_typed_arg_bindings(c_arg_bindings, decl.type)
-      |> Map.put(:__function_name__, decl.name)
-      |> Map.put(:__function_arities__, function_arities)
-      |> Map.put(:__program_decls__, decl_map)
-      |> Map.put(
-        :__function_analysis__,
-        LetAnalysis.analyze_function_expr(
-          decl.expr || %{op: :int_literal, value: 0},
-          module_name,
-          decl_map
-        )
-      )
+    native_env = native_env(decl, module_name, function_arities, decl_map)
+    return_kind = NativeFunctionCall.return_kind(decl, module_name, decl_map)
 
     unused_casts =
       c_arg_bindings
       |> Enum.map(fn {_arg, c_arg, _index} -> c_arg end)
       |> Enum.map_join("\n  ", fn name -> "(void)#{name};" end)
 
+    collect_generic_helpers? = return_kind == :boxed
+
+    if collect_generic_helpers? do
+      Process.put(:elmc_generic_helper_defs, [])
+      Process.put(:elmc_generic_helper_counter, 0)
+    end
+
     {body_code, body_var, _counter} =
-      Host.compile_expr(decl.expr || %{op: :int_literal, value: 0}, native_env, 0)
+      compile_native_body(decl, module_name, native_env, return_kind, arg_kinds)
+
+    helper_defs =
+      if collect_generic_helpers? do
+        defs = generic_helper_defs()
+        Process.delete(:elmc_generic_helper_defs)
+        Process.delete(:elmc_generic_helper_counter)
+        defs
+      else
+        ""
+      end
 
     wrapper_def =
       if emit_wrapper? do
@@ -265,7 +314,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           (void)args;
           (void)argc;
           #{wrapper_bindings}
-          return #{c_name}_native(#{native_args});
+          #{wrapper_return(c_name, native_args, return_kind)}
         }
         """
       else
@@ -274,7 +323,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
     """
     #{wrapper_def}
-    static ElmcValue *#{c_name}_native(#{NativeFunctionCall.params(decl, module_name, decl_map)}) {
+    #{helper_defs}static #{native_return_prefix(return_kind)}#{c_name}_native(#{NativeFunctionCall.params(decl, module_name, decl_map)}) {
       #{unused_casts}
       #{entry_probe}
       #{body_code}
@@ -283,4 +332,188 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     }
     """
   end
+
+  @spec native_env(
+          Types.function_declaration(),
+          String.t(),
+          %{optional({String.t(), String.t()}) => non_neg_integer()},
+          Types.function_decl_map()
+        ) :: Types.compile_env()
+  defp native_env(decl, module_name, function_arities, decl_map) do
+    c_arg_bindings = c_arg_bindings(decl.args || [])
+    arg_kinds = NativeFunctionCall.arg_kinds(decl, module_name, decl_map)
+
+    c_arg_bindings
+    |> Enum.zip(arg_kinds)
+    |> Enum.reduce(%{__module__: module_name}, fn {{source_arg, c_arg, _index}, kind}, acc ->
+      case kind do
+        :native_int -> EnvBindings.put_native_int_binding(acc, source_arg, c_arg)
+        :native_bool -> EnvBindings.put_native_bool_binding(acc, source_arg, c_arg)
+        :boxed -> Map.put(acc, source_arg, c_arg)
+      end
+    end)
+    |> put_typed_arg_bindings(c_arg_bindings, decl.type)
+    |> Map.put(:__function_name__, decl.name)
+    |> Map.put(:__function_arities__, function_arities)
+    |> Map.put(:__program_decls__, decl_map)
+    |> Map.put(
+      :__function_analysis__,
+      LetAnalysis.analyze_function_expr(
+        decl.expr || %{op: :int_literal, value: 0},
+        module_name,
+        decl_map
+      )
+    )
+  end
+
+  defp compile_native_body(decl, module_name, env, return_kind, arg_kinds)
+       when return_kind in [:native_int, :native_bool] do
+    expr = decl.expr || %{op: :int_literal, value: 0}
+
+    case compile_tail_recursive_native(decl, module_name, env, return_kind, arg_kinds) do
+      {:ok, code, result_var} ->
+        {code, result_var, 0}
+
+      :error ->
+        compile_scalar_native_expr(expr, env, return_kind, 0)
+    end
+  end
+
+  defp compile_native_body(decl, _module_name, env, :boxed, _arg_kinds),
+    do: Host.compile_expr(decl.expr || %{op: :int_literal, value: 0}, env, 0)
+
+  defp compile_scalar_native_expr(expr, env, :native_int, counter),
+    do: NativeInt.compile_expr(expr, env, counter)
+
+  defp compile_scalar_native_expr(expr, env, :native_bool, counter),
+    do: NativeBool.compile_expr(expr, env, counter)
+
+  defp compile_tail_recursive_native(decl, module_name, env, return_kind, arg_kinds) do
+    arg_names = decl.args || []
+
+    with true <- arg_names != [],
+         true <- Enum.all?(arg_kinds, &(&1 in [:native_int, :native_bool])),
+         {:if_tail, cond_expr, base_expr, recursive_args, recurse_on_truthy?} <-
+           tail_recursive_if(decl.expr, decl.name),
+         true <- length(recursive_args) == length(arg_names) do
+      c_arg_bindings = c_arg_bindings(arg_names)
+
+      loop_bindings =
+        c_arg_bindings
+        |> Enum.zip(arg_kinds)
+        |> Enum.map_join("\n  ", fn {{_arg, c_arg, _index}, kind} ->
+          "elmc_int_t #{loop_arg_name(c_arg)} = #{c_arg}; /* #{kind} */"
+        end)
+
+      loop_env =
+        c_arg_bindings
+        |> Enum.zip(arg_kinds)
+        |> Enum.reduce(env, fn {{source_arg, c_arg, _index}, kind}, acc ->
+          case kind do
+            :native_int ->
+              EnvBindings.put_native_int_binding(acc, source_arg, loop_arg_name(c_arg))
+
+            :native_bool ->
+              EnvBindings.put_native_bool_binding(acc, source_arg, loop_arg_name(c_arg))
+          end
+        end)
+
+      {cond_code, cond_ref, _} = NativeBool.compile_expr(cond_expr, loop_env, 0)
+      {base_code, base_ref, _} = compile_scalar_native_expr(base_expr, loop_env, return_kind, 0)
+
+      updates =
+        recursive_args
+        |> Enum.zip(c_arg_bindings)
+        |> Enum.zip(arg_kinds)
+        |> Enum.reduce({"", []}, fn {{arg_expr, {_source_arg, c_arg, _index}}, kind},
+                                    {code_acc, refs_acc} ->
+          {arg_code, arg_ref, _} =
+            compile_scalar_native_expr(arg_expr, loop_env, kind, length(refs_acc))
+
+          next_ref = "#{loop_arg_name(c_arg)}_next"
+          code = code_acc <> "\n" <> arg_code <> "\n      elmc_int_t #{next_ref} = #{arg_ref};"
+          {code, refs_acc ++ [{loop_arg_name(c_arg), next_ref}]}
+        end)
+
+      {update_code, update_refs} = updates
+
+      assignments =
+        update_refs
+        |> Enum.map_join("\n      ", fn {target, next_ref} -> "#{target} = #{next_ref};" end)
+
+      result_var = "tail_result"
+      continue_branch = tail_continue_branch(update_code, assignments)
+      base_branch = tail_base_branch(base_code, result_var, base_ref)
+
+      {then_branch, else_branch} =
+        if recurse_on_truthy?,
+          do: {continue_branch, base_branch},
+          else: {base_branch, continue_branch}
+
+      code = """
+      #{loop_bindings}
+        elmc_int_t #{result_var} = 0;
+        while (1) {
+      #{Util.indent(cond_code, 4)}
+          if (#{cond_ref}) {
+      #{Util.indent(then_branch, 6)}
+          } else {
+      #{Util.indent(else_branch, 6)}
+          }
+        }
+      """
+
+      _ = module_name
+      {:ok, code, result_var}
+    else
+      _ -> :error
+    end
+  end
+
+  defp tail_recursive_if(%{op: :if, cond: cond, then_expr: then_expr, else_expr: else_expr}, name) do
+    cond do
+      self_call?(then_expr, name) ->
+        {:if_tail, cond, else_expr, then_expr.args || [], true}
+
+      self_call?(else_expr, name) ->
+        {:if_tail, cond, then_expr, else_expr.args || [], false}
+
+      true ->
+        :error
+    end
+  end
+
+  defp tail_recursive_if(_expr, _name), do: :error
+
+  defp self_call?(%{op: :call, name: name}, name), do: true
+  defp self_call?(_expr, _name), do: false
+
+  defp loop_arg_name(c_arg), do: "#{c_arg}_loop"
+
+  defp tail_continue_branch(update_code, assignments) do
+    """
+    #{update_code}
+      #{assignments}
+      continue;
+    """
+  end
+
+  defp tail_base_branch(base_code, result_var, base_ref) do
+    """
+    #{base_code}
+      #{result_var} = #{base_ref};
+      break;
+    """
+  end
+
+  defp wrapper_return(c_name, native_args, :native_int),
+    do: "return elmc_new_int(#{c_name}_native(#{native_args}));"
+
+  defp wrapper_return(c_name, native_args, :native_bool),
+    do: "return elmc_new_bool(#{c_name}_native(#{native_args}));"
+
+  defp wrapper_return(c_name, native_args, :boxed), do: "return #{c_name}_native(#{native_args});"
+
+  defp native_return_prefix(:boxed), do: "ElmcValue *"
+  defp native_return_prefix(return_kind), do: "#{NativeFunctionCall.c_return_type(return_kind)} "
 end

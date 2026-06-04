@@ -44,8 +44,8 @@ defmodule Elmc.Backend.CCodegen.VarAnalysis do
     Enum.reduce(args, MapSet.new(), fn arg, acc -> MapSet.union(acc, used_vars(arg)) end)
   end
 
-  def used_vars(%{op: :field_call, args: args}) do
-    Enum.reduce(args, MapSet.new(), fn arg, acc -> MapSet.union(acc, used_vars(arg)) end)
+  def used_vars(%{op: :field_call, arg: arg, args: args}) do
+    Enum.reduce(args, field_arg_vars(arg), fn arg, acc -> MapSet.union(acc, used_vars(arg)) end)
   end
 
   def used_vars(%{op: :lambda, body: body}) do
@@ -95,4 +95,7 @@ defmodule Elmc.Backend.CCodegen.VarAnalysis do
 
   def used_vars(_), do: MapSet.new()
 
+  defp field_arg_vars(arg) when is_binary(arg), do: MapSet.new([arg])
+  defp field_arg_vars(arg) when is_map(arg), do: used_vars(arg)
+  defp field_arg_vars(_arg), do: MapSet.new()
 end

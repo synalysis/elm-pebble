@@ -1,9 +1,12 @@
 defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
+
+  @type native_return_kind :: :native_int | :native_bool | :boxed
 
   @spec call?({String.t(), String.t()}, Types.compile_env()) :: boolean()
   def call?({module_name, name}, env) do
@@ -21,6 +24,74 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
   def compile(module_name, name, args, env, counter) do
     decl = env |> Map.get(:__program_decls__, %{}) |> Map.fetch!({module_name, name})
     decl_map = Map.get(env, :__program_decls__, %{})
+    return_kind = return_kind(decl, module_name, decl_map)
+
+    case compile_native_result(module_name, name, args, env, counter, decl, decl_map, return_kind) do
+      {code, ref, counter, :boxed} ->
+        {code, ref, counter}
+
+      {code, ref, counter, :native_int} ->
+        next = counter + 1
+        out = "tmp_#{next}"
+
+        {
+          """
+          #{code}
+            ElmcValue *#{out} = elmc_new_int(#{ref});
+          """,
+          out,
+          next
+        }
+
+      {code, ref, counter, :native_bool} ->
+        next = counter + 1
+        out = "tmp_#{next}"
+
+        {
+          """
+          #{code}
+            ElmcValue *#{out} = elmc_new_bool(#{ref});
+          """,
+          out,
+          next
+        }
+    end
+  end
+
+  @spec compile_scalar(
+          String.t(),
+          String.t(),
+          [Types.ir_expr()],
+          Types.compile_env(),
+          Types.compile_counter(),
+          :native_int | :native_bool
+        ) :: Types.native_scalar_compile_result() | :error
+  def compile_scalar(module_name, name, args, env, counter, expected_kind)
+      when expected_kind in [:native_int, :native_bool] do
+    decl = env |> Map.get(:__program_decls__, %{}) |> Map.get({module_name, name})
+    decl_map = Map.get(env, :__program_decls__, %{})
+
+    if decl && return_kind(decl, module_name, decl_map) == expected_kind do
+      {code, ref, counter, ^expected_kind} =
+        compile_native_result(module_name, name, args, env, counter, decl, decl_map, expected_kind)
+
+      {code, ref, counter}
+    else
+      :error
+    end
+  end
+
+  @spec compile_native_result(
+          String.t(),
+          String.t(),
+          [Types.ir_expr()],
+          Types.compile_env(),
+          Types.compile_counter(),
+          Types.function_declaration(),
+          Types.function_decl_map(),
+          native_return_kind()
+        ) :: {String.t(), String.t(), Types.compile_counter(), native_return_kind()}
+  defp compile_native_result(module_name, name, args, env, counter, decl, decl_map, return_kind) do
     arg_kinds = arg_kinds(decl, module_name, decl_map)
 
     {arg_code, arg_refs, release_refs, counter} =
@@ -44,7 +115,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
       end)
 
     next = counter + 1
-    out = "tmp_#{next}"
+    out = native_call_out(return_kind, next)
     c_name = Util.module_fn_name(module_name, name)
     arg_list = Enum.join(arg_refs, ", ")
 
@@ -54,11 +125,11 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
 
     code = """
     #{arg_code}
-      ElmcValue *#{out} = #{c_name}_native(#{arg_list});
+      #{native_call_decl(return_kind)}#{out} = #{c_name}_native(#{arg_list});
       #{releases}
     """
 
-    {code, out, next}
+    {code, out, next, return_kind}
   end
 
   @spec native_args?(Types.function_declaration(), String.t(), Types.function_decl_map()) ::
@@ -68,6 +139,34 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
     |> arg_kinds(module_name, decl_map)
     |> Enum.any?(&(&1 in [:native_int, :native_bool]))
   end
+
+  @spec return_kind(Types.function_declaration(), String.t(), Types.function_decl_map()) ::
+          native_return_kind()
+  def return_kind(%{type: type, expr: expr} = decl, module_name, decl_map) when is_binary(type) do
+    env = callee_env(decl, module_name, decl_map)
+
+    case Host.function_return_type(type) do
+      "Int" ->
+        if Host.native_int_expr?(expr || %{op: :int_literal, value: 0}, env),
+          do: :native_int,
+          else: :boxed
+
+      "Bool" ->
+        if Host.native_bool_expr?(expr || %{op: :int_literal, value: 0}, env),
+          do: :native_bool,
+          else: :boxed
+
+      _other ->
+        :boxed
+    end
+  end
+
+  def return_kind(_decl, _module_name, _decl_map), do: :boxed
+
+  @spec c_return_type(native_return_kind()) :: String.t()
+  def c_return_type(:native_int), do: "elmc_int_t"
+  def c_return_type(:native_bool), do: "elmc_int_t"
+  def c_return_type(:boxed), do: "ElmcValue *"
 
   @spec params(Types.function_declaration(), String.t(), Types.function_decl_map()) ::
           String.t()
@@ -144,5 +243,39 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
   defp bool_arg_safe?(arg, expr, module_name, decl_map) do
     usage = Host.native_bool_usage(arg, expr || %{op: :int_literal, value: 0}, module_name, decl_map)
     (usage.total == 0 or usage.boxed == 0) and not Host.binding_used_in_lambda?(arg, expr)
+  end
+
+  defp native_call_out(:native_int, next), do: "native_call_#{next}"
+  defp native_call_out(:native_bool, next), do: "native_bool_call_#{next}"
+  defp native_call_out(:boxed, next), do: "tmp_#{next}"
+
+  defp native_call_decl(:native_int), do: "const elmc_int_t "
+  defp native_call_decl(:native_bool), do: "const elmc_int_t "
+  defp native_call_decl(:boxed), do: "ElmcValue *"
+
+  defp callee_env(decl, module_name, decl_map) do
+    arg_names = decl.args || []
+    arg_types = if is_binary(decl.type), do: Host.function_arg_types(decl.type), else: []
+
+    Host.c_arg_bindings(arg_names)
+    |> Enum.zip(arg_kinds(decl, module_name, decl_map))
+    |> Enum.zip(arg_types)
+    |> Enum.reduce(
+      %{__module__: module_name, __program_decls__: decl_map, __function_name__: decl.name},
+      fn {{{source_arg, c_arg, _index}, kind}, arg_type}, acc ->
+        acc =
+          case kind do
+            :native_int -> EnvBindings.put_native_int_binding(acc, source_arg, c_arg)
+            :native_bool -> EnvBindings.put_native_bool_binding(acc, source_arg, c_arg)
+            :boxed -> Map.put(acc, source_arg, c_arg)
+          end
+
+        case Host.normalize_type_name(arg_type) do
+          "Int" -> EnvBindings.put_boxed_int_binding(acc, source_arg, true)
+          "Bool" -> EnvBindings.put_boxed_bool_binding(acc, source_arg, true)
+          _other -> acc
+        end
+      end
+    )
   end
 end

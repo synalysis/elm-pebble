@@ -7,6 +7,9 @@ defmodule Elmc.Backend.CCodegen.BuildArtifacts do
     cmake_minimum_required(VERSION 3.20)
     project(elmc_generated C)
 
+    add_compile_options(-ffunction-sections -fdata-sections)
+    add_link_options(-Wl,--gc-sections)
+
     add_library(elmc_runtime runtime/elmc_runtime.c)
     add_library(elmc_ports ports/elmc_ports.c)
     add_library(elmc_generated c/elmc_generated.c)
@@ -31,13 +34,14 @@ defmodule Elmc.Backend.CCodegen.BuildArtifacts do
   def makefile do
     """
     CC ?= cc
-    CFLAGS ?= -std=c11 -Wall -Wextra -Iruntime -Iports -Ic
+    CFLAGS ?= -std=c11 -Wall -Wextra -ffunction-sections -fdata-sections -Iruntime -Iports -Ic
+    LDFLAGS ?= -Wl,--gc-sections
     SOURCES := runtime/elmc_runtime.c ports/elmc_ports.c c/elmc_generated.c c/elmc_worker.c c/elmc_pebble.c c/host_harness.c
 
     all: elmc_host
 
     elmc_host: $(SOURCES)
-    \t$(CC) $(CFLAGS) $(SOURCES) -o elmc_host
+    \t$(CC) $(CFLAGS) $(SOURCES) $(LDFLAGS) -o elmc_host
 
     clean:
     \trm -f elmc_host

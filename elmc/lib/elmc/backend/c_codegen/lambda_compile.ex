@@ -130,6 +130,7 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
       |> Map.put(:__function_name__, Map.get(env, :__function_name__))
       |> Map.put(:__function_arities__, Map.get(env, :__function_arities__, %{}))
       |> Map.put(:__program_decls__, Map.get(env, :__program_decls__, %{}))
+      |> Map.put(:__inside_lambda__, true)
 
     {body_code, body_var, _body_counter} = Host.compile_expr(body, body_env, 0)
 
@@ -167,19 +168,18 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
     capture_list = Enum.join(capture_refs, ", ")
     out = "tmp_#{next}"
 
-    capture_array_code =
+    {capture_array_code, capture_arg} =
       if capture_count > 0 do
-        "ElmcValue *cap_#{next}[#{capture_count}] = { #{capture_list} };"
+        {"ElmcValue *cap_#{next}[#{capture_count}] = { #{capture_list} };", "cap_#{next}"}
       else
-        "ElmcValue *cap_#{next}[1] = { NULL };"
+        {"", "NULL"}
       end
 
     code = """
       #{capture_array_code}
-      ElmcValue *#{out} = elmc_closure_new(#{closure_fn_name}, #{length(lambda_arg_names)}, #{capture_count}, cap_#{next});
+      ElmcValue *#{out} = elmc_closure_new(#{closure_fn_name}, #{length(lambda_arg_names)}, #{capture_count}, #{capture_arg});
     """
 
     {code, out, next}
   end
-
 end

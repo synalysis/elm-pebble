@@ -331,6 +331,8 @@ defmodule Ide.Mcp.ToolsTest do
     assert "debugger_export_trace" in tool_names
     assert "pebble_package" in tool_names
     assert "pebble_install" in tool_names
+    assert "emulator_launch" in tool_names
+    assert "emulator_run" in tool_names
     assert "screenshots_capture" in tool_names
     refute "traces_export_write" in tool_names
     refute "traces_exports_prune" in tool_names

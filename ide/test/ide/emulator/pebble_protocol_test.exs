@@ -56,6 +56,15 @@ defmodule Ide.Emulator.PebbleProtocolTest do
                "013278ae249885427f90e7791ac2450e78"
     end
 
+    test "golden app_run_state_stop payload (libpebble2 AppRunStateStop)" do
+      {ep, payload} = Packets.app_run_state_stop("3278ae24-9885-427f-90e7-791ac2450e78")
+
+      assert ep == 52
+
+      assert Base.encode16(payload, case: :lower) ==
+               "023278ae249885427f90e7791ac2450e78"
+    end
+
     test "golden app_fetch_start_response" do
       {ep, payload} = Packets.app_fetch_start_response()
       assert ep == Packets.endpoint(:app_fetch)

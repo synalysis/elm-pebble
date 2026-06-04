@@ -69,6 +69,8 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     constructor_tags = IRQueries.constructor_tag_map(ir)
     Process.put(:elmc_constructor_tags, constructor_tags)
     Process.put(:elmc_vector_resource_slots, IRQueries.pebble_vector_resource_slot_map(ir))
+    Process.put(:elmc_bitmap_resource_slots, IRQueries.pebble_bitmap_resource_slot_map(ir))
+    Process.put(:elmc_animation_resource_slots, IRQueries.pebble_animation_resource_slot_map(ir))
     Process.put(:elmc_enum_types, IRQueries.enum_type_set(ir))
     Process.put(:elmc_record_alias_shapes, IRQueries.record_alias_shape_map(ir))
     Process.put(:elmc_record_field_types, IRQueries.record_alias_field_types_map(ir))
@@ -85,6 +87,9 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
     generic_native_prototypes =
       FunctionEmit.generic_native_function_prototypes(ir, generic_targets, decl_map)
+
+    generic_function_prototypes =
+      FunctionEmit.generic_function_prototypes(ir, generic_targets, wrapper_targets, decl_map)
 
     function_defs =
       ir.modules
@@ -121,6 +126,8 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     Process.delete(:elmc_lambda_defs)
     Process.delete(:elmc_constructor_tags)
     Process.delete(:elmc_vector_resource_slots)
+    Process.delete(:elmc_bitmap_resource_slots)
+    Process.delete(:elmc_animation_resource_slots)
     Process.delete(:elmc_enum_types)
 
     trig_fallback_prelude =
@@ -143,6 +150,8 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     #{DirectRenderRegistry.prelude(direct_command_defs != "")}
 
     #{generic_native_prototypes}
+
+    #{generic_function_prototypes}
 
     #{lambda_defs}
 

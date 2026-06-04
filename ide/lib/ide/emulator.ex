@@ -90,6 +90,51 @@ defmodule Ide.Emulator do
     end
   end
 
+  @spec request_app_logs(String.t()) :: :ok | {:error, Types.session_error()}
+  def request_app_logs(id) when is_binary(id) do
+    with {:ok, pid} <- lookup(id) do
+      Session.request_app_logs(pid)
+    end
+  end
+
+  @spec log_capture_context(String.t()) :: {:ok, map()} | {:error, Types.session_error()}
+  def log_capture_context(id) when is_binary(id) do
+    with {:ok, pid} <- lookup(id) do
+      Session.log_capture_context(pid)
+    end
+  end
+
+  @doc """
+  Sends `AppRunStateStart` on the session protocol router (install / AppFetch handshake).
+
+  See `Ide.Emulator.Session.start_app/2`. Prefer `install/1` for PBW delivery; avoid calling
+  this immediately after a successful install.
+  """
+  @spec start_app(String.t(), String.t()) :: :ok | {:error, Types.session_error()}
+  def start_app(id, uuid) when is_binary(id) and is_binary(uuid) do
+    with {:ok, pid} <- lookup(id) do
+      Session.start_app(pid, uuid)
+    end
+  end
+
+  @spec capture_logs(String.t(), keyword()) :: Ide.Emulator.LogCapture.snapshot()
+  def capture_logs(id, opts \\ []) when is_binary(id) do
+    with {:ok, pid} <- lookup(id) do
+      Session.capture_logs(pid, opts)
+    else
+      {:error, :not_found} ->
+        %{
+          source: "embedded",
+          duration_ms: 0,
+          output: "emulator session not found",
+          lines: [],
+          fault_detected: false,
+          console: %{output: "", error: :not_found},
+          protocol: %{lines: [], error: :not_found}
+        }
+    end
+  end
+
   @spec install(String.t()) :: {:ok, Types.pbw_install_result()} | {:error, Types.session_error()}
   def install(id) when is_binary(id) do
     with {:ok, pid} <- lookup(id) do

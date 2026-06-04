@@ -716,13 +716,15 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
       await this.installPbwViaNativeInstaller(installSessionId)
       if (this.session?.id !== installSessionId) return
       if (this.session?.backend_enabled) {
-        try {
-          await this.ensurePhoneBridge()
-          if (this.session?.id !== installSessionId) return
-          this.enableAppLogs()
-        } catch (error) {
-          if (this.session?.id === installSessionId) {
-            this.appendLog(`phone bridge connect failed: ${errMessage(error)}`)
+        this.enableAppLogs()
+        if (this.session?.has_phone_companion) {
+          try {
+            await this.ensurePhoneBridge()
+            if (this.session?.id !== installSessionId) return
+          } catch (error) {
+            if (this.session?.id === installSessionId) {
+              this.appendLog(`phone bridge connect failed: ${errMessage(error)}`)
+            }
           }
         }
       }

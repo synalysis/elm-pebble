@@ -96,9 +96,9 @@ defmodule Elmc.BundledPebbleSurfaceCodegenTest do
 
     init_fn =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_init", parts: 2)
+      |> String.split("ElmcValue *elmc_fn_Main_init(ElmcValue ** const args, const int argc) {", parts: 2)
       |> Enum.at(1, "")
-      |> String.split("ElmcValue *elmc_fn_Main_update", parts: 2)
+      |> String.split("ElmcValue *elmc_fn_Main_update(ElmcValue ** const args, const int argc) {", parts: 2)
       |> hd()
 
     refute init_fn =~ "elmc_fn_Pebble_Platform_LaunchWakeup("

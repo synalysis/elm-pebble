@@ -95,17 +95,29 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
   defp direct_render_only?(opts), do: opts[:direct_render_only] == true
 
   defp direct_render_excluded_targets(opts, direct_targets, decl_map) do
-    if direct_render_only?(opts) do
-      {_def_targets, _emit_targets, pruned} = Host.direct_command_target_sets(decl_map, opts)
+    cond do
+      direct_render_only?(opts) ->
+        {_def_targets, _emit_targets, pruned} = Host.direct_command_target_sets(decl_map, opts)
 
-      decl_map
-      |> Map.keys()
-      |> Enum.filter(&render_helper_target?/1)
-      |> MapSet.new()
-      |> MapSet.union(direct_targets)
-      |> MapSet.union(pruned)
-    else
-      MapSet.new()
+        decl_map
+        |> Map.keys()
+        |> Enum.filter(&render_helper_target?/1)
+        |> MapSet.new()
+        |> MapSet.union(direct_targets)
+        |> MapSet.union(pruned)
+
+      opts[:prune_direct_generic] == true and MapSet.size(direct_targets) > 0 ->
+        {def_targets, _emit_targets, pruned} = Host.direct_command_target_sets(decl_map, opts)
+
+        decl_map
+        |> Map.keys()
+        |> Enum.filter(&render_helper_target?/1)
+        |> MapSet.new()
+        |> MapSet.union(def_targets)
+        |> MapSet.union(pruned)
+
+      true ->
+        MapSet.new()
     end
   end
 

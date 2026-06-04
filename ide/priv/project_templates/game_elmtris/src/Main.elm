@@ -1,5 +1,6 @@
 module Main exposing (main)
 
+import Elm.Kernel.PebbleWatch as Kernel
 import Json.Decode as Decode
 import Pebble.Button as Button
 import Pebble.Events as Events
@@ -93,7 +94,7 @@ withPiece model piece =
                 , pieceSlots = []
             }
 
-        active ->
+        Just active ->
             { model
                 | pieceKind = active.kind
                 , pieceRot = active.rot
@@ -406,22 +407,25 @@ spawnPiece board seed =
         ( board, Nothing, nextSeed )
 
 
+offsetFits : Int -> Int -> Int -> Int -> List Int -> Bool
+offsetFits x y dx dy board =
+    let
+        cellX =
+            x + dx
+
+        cellY =
+            y + dy
+    in
+    cellX >= 0
+        && cellX < boardCols
+        && cellY < boardRows
+        && (cellY < 0 || cellAt cellX cellY board == 0)
+
+
 canPlace : Int -> Int -> Int -> Int -> List Int -> Bool
 canPlace kind rot x y board =
     List.all
-        (\( dx, dy ) ->
-            let
-                cellX =
-                    x + dx
-
-                cellY =
-                    y + dy
-            in
-            cellX >= 0
-                && cellX < boardCols
-                && cellY < boardRows
-                && (cellY < 0 || cellAt cellX cellY board == 0)
-        )
+        (\( dx, dy ) -> offsetFits x y dx dy board)
         (pieceOffsets kind rot)
 
 
@@ -474,7 +478,11 @@ rowCells row board =
 
 cellAt : Int -> Int -> List Int -> Int
 cellAt x y board =
-    Maybe.withDefault 0 (listAt (y * boardCols + x) board)
+    if y < 0 then
+        0
+
+    else
+        Maybe.withDefault 0 (listAt (y * boardCols + x) board)
 
 
 setCell : Int -> Int -> Int -> List Int -> List Int
@@ -670,7 +678,6 @@ boardLayout model =
         , y = (model.screenH - boardW) // 2 + 8
         , cell = cell
         , gap = gap
-        , pieceKind = model.pieceKind
         }
 
     else

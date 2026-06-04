@@ -386,13 +386,19 @@ defmodule Elmc.Runtime.Generator do
     } ElmcRecord;
 
     #define ELMC_RECORD_GET_INDEX_INT(record, index) \\
-      elmc_as_int(((ElmcRecord *)((record)->payload))->field_values[(index)])
+      (((record) && (record)->tag == ELMC_TAG_RECORD && (record)->payload && \\
+        (index) >= 0 && (index) < ((ElmcRecord *)(record)->payload)->field_count) ? \\
+       elmc_as_int(((ElmcRecord *)(record)->payload)->field_values[(index)]) : 0)
 
     #define ELMC_RECORD_GET_INDEX_FLOAT(record, index) \\
-      elmc_as_float(((ElmcRecord *)((record)->payload))->field_values[(index)])
+      (((record) && (record)->tag == ELMC_TAG_RECORD && (record)->payload && \\
+        (index) >= 0 && (index) < ((ElmcRecord *)(record)->payload)->field_count) ? \\
+       elmc_as_float(((ElmcRecord *)(record)->payload)->field_values[(index)]) : 0.0)
 
     #define ELMC_RECORD_GET_INDEX_BOOL(record, index) \\
-      elmc_as_bool(((ElmcRecord *)((record)->payload))->field_values[(index)])
+      (((record) && (record)->tag == ELMC_TAG_RECORD && (record)->payload && \\
+        (index) >= 0 && (index) < ((ElmcRecord *)(record)->payload)->field_count) ? \\
+       elmc_as_bool(((ElmcRecord *)(record)->payload)->field_values[(index)]) : 0)
 
     typedef struct ElmcClosure {
       ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count);
@@ -412,8 +418,13 @@ defmodule Elmc.Runtime.Generator do
     ElmcValue *elmc_list_cons(ElmcValue *head, ElmcValue *tail);
     ElmcValue *elmc_list_from_values(ElmcValue **items, int count);
     ElmcValue *elmc_list_from_values_take(ElmcValue **items, int count);
+    ElmcValue *elmc_list_from_int_array(const elmc_int_t *items, int count);
+    ElmcValue *elmc_list_from_tuple2_int_array(const elmc_int_t items[][2], int count);
+    ElmcValue *elmc_list_replace_nth_int(ElmcValue *list, elmc_int_t index, elmc_int_t value);
     ElmcValue *elmc_maybe_nothing(void);
     ElmcValue *elmc_maybe_just(ElmcValue *value);
+    ElmcValue *elmc_maybe_or_tuple_just_payload(ElmcValue *maybe);
+    ElmcValue *elmc_maybe_or_tuple_just_payload_borrow(ElmcValue *maybe);
     ElmcValue *elmc_result_ok(ElmcValue *value);
     ElmcValue *elmc_result_err(ElmcValue *value);
     ElmcValue *elmc_tuple2(ElmcValue *first, ElmcValue *second);
@@ -425,6 +436,9 @@ defmodule Elmc.Runtime.Generator do
     int elmc_value_equal(ElmcValue *left, ElmcValue *right);
     int elmc_string_length(ElmcValue *value);
     ElmcValue *elmc_list_head(ElmcValue *list);
+    ElmcValue *elmc_list_nth_maybe(ElmcValue *list, ElmcValue *index);
+    elmc_int_t elmc_list_nth_int_default(ElmcValue *list, elmc_int_t index, elmc_int_t default_value);
+    ElmcValue *elmc_list_nth_int_default_boxed(ElmcValue *list, ElmcValue *index, ElmcValue *default_value);
     elmc_int_t elmc_list_head_with_default_int(elmc_int_t default_val, ElmcValue *list);
     ElmcValue *elmc_tuple_first(ElmcValue *tuple);
     ElmcValue *elmc_tuple_second(ElmcValue *tuple);
@@ -1119,6 +1133,56 @@ defmodule Elmc.Runtime.Generator do
       return out;
     }
 
+    ElmcValue *elmc_list_from_int_array(const elmc_int_t *items, int count) {
+      ElmcValue *out = elmc_list_nil();
+      if (!items || count <= 0) return out;
+      for (int i = count - 1; i >= 0; i--) {
+        ElmcValue *item = elmc_new_int(items[i]);
+        ElmcValue *next = elmc_list_cons(item, out);
+        elmc_release(item);
+        elmc_release(out);
+        out = next;
+      }
+      return out;
+    }
+
+    ElmcValue *elmc_list_from_tuple2_int_array(const elmc_int_t items[][2], int count) {
+      ElmcValue *out = elmc_list_nil();
+      if (!items || count <= 0) return out;
+      for (int i = count - 1; i >= 0; i--) {
+        ElmcValue *item = elmc_tuple2_ints(items[i][0], items[i][1]);
+        ElmcValue *next = elmc_list_cons(item, out);
+        elmc_release(item);
+        elmc_release(out);
+        out = next;
+      }
+      return out;
+    }
+
+    ElmcValue *elmc_list_replace_nth_int(ElmcValue *list, elmc_int_t index, elmc_int_t value) {
+      ElmcValue *rev = elmc_list_nil();
+      ElmcValue *cursor = list;
+      elmc_int_t i = 0;
+      while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
+        ElmcCons *node = (ElmcCons *)cursor->payload;
+        ElmcValue *item = NULL;
+        if (i == index) {
+          item = elmc_new_int(value);
+        } else {
+          item = node->head ? elmc_retain(node->head) : elmc_int_zero();
+        }
+        ElmcValue *next = elmc_list_cons(item, rev);
+        elmc_release(item);
+        elmc_release(rev);
+        rev = next;
+        cursor = node->tail;
+        i++;
+      }
+      ElmcValue *out = elmc_list_reverse_copy(rev);
+      elmc_release(rev);
+      return out;
+    }
+
     ElmcValue *elmc_maybe_nothing(void) {
       return &ELMC_MAYBE_NOTHING;
     }
@@ -1134,6 +1198,26 @@ defmodule Elmc.Runtime.Generator do
       cell->value.scalar = ELMC_MAYBE_CELL_SCALAR;
       ELMC_ALLOCATED += 1;
       return &cell->value;
+    }
+
+    ElmcValue *elmc_maybe_or_tuple_just_payload_borrow(ElmcValue *maybe) {
+      if (!maybe || !maybe->payload) return elmc_int_zero();
+      if (maybe->tag == ELMC_TAG_MAYBE) {
+        ElmcMaybe *m = (ElmcMaybe *)maybe->payload;
+        return m->is_just && m->value ? m->value : elmc_int_zero();
+      }
+      if (maybe->tag == ELMC_TAG_TUPLE2) {
+        ElmcTuple2 *t = (ElmcTuple2 *)maybe->payload;
+        if (elmc_as_int(t->first) != 1) return elmc_int_zero();
+        return t->second ? t->second : elmc_int_zero();
+      }
+      return elmc_int_zero();
+    }
+
+    ElmcValue *elmc_maybe_or_tuple_just_payload(ElmcValue *maybe) {
+      ElmcValue *borrowed = elmc_maybe_or_tuple_just_payload_borrow(maybe);
+      if (!borrowed || borrowed->tag == ELMC_TAG_INT) return borrowed;
+      return elmc_retain(borrowed);
     }
 
     ElmcValue *elmc_result_ok(ElmcValue *value) {
@@ -1314,6 +1398,37 @@ defmodule Elmc.Runtime.Generator do
       if (!list || list->tag != ELMC_TAG_LIST || list->payload == NULL) return elmc_maybe_nothing();
       ElmcCons *node = (ElmcCons *)list->payload;
       return elmc_maybe_just(node->head);
+    }
+
+    ElmcValue *elmc_list_nth_maybe(ElmcValue *list, ElmcValue *index) {
+      elmc_int_t idx = elmc_as_int(index);
+      if (idx < 0 || !list || list->tag != ELMC_TAG_LIST) return elmc_maybe_nothing();
+      ElmcValue *cursor = list;
+      while (idx > 0) {
+        if (!cursor || cursor->tag != ELMC_TAG_LIST || cursor->payload == NULL) return elmc_maybe_nothing();
+        cursor = ((ElmcCons *)cursor->payload)->tail;
+        idx--;
+      }
+      if (!cursor || cursor->tag != ELMC_TAG_LIST || cursor->payload == NULL) return elmc_maybe_nothing();
+      ElmcCons *node = (ElmcCons *)cursor->payload;
+      return elmc_maybe_just(node->head);
+    }
+
+    elmc_int_t elmc_list_nth_int_default(ElmcValue *list, elmc_int_t index, elmc_int_t default_value) {
+      if (index < 0 || !list || list->tag != ELMC_TAG_LIST) return default_value;
+      ElmcValue *cursor = list;
+      while (index > 0) {
+        if (!cursor || cursor->tag != ELMC_TAG_LIST || cursor->payload == NULL) return default_value;
+        cursor = ((ElmcCons *)cursor->payload)->tail;
+        index--;
+      }
+      if (!cursor || cursor->tag != ELMC_TAG_LIST || cursor->payload == NULL) return default_value;
+      ElmcCons *node = (ElmcCons *)cursor->payload;
+      return node->head ? elmc_as_int(node->head) : default_value;
+    }
+
+    ElmcValue *elmc_list_nth_int_default_boxed(ElmcValue *list, ElmcValue *index, ElmcValue *default_value) {
+      return elmc_new_int(elmc_list_nth_int_default(list, elmc_as_int(index), elmc_as_int(default_value)));
     }
 
     elmc_int_t elmc_list_head_with_default_int(elmc_int_t default_val, ElmcValue *list) {

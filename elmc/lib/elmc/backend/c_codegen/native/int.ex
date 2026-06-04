@@ -3,6 +3,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Native.TypedReturn
   alias Elmc.Backend.CCodegen.Native.RecordFields, as: RecordFields
   alias Elmc.Backend.CCodegen.Types
@@ -14,6 +15,9 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
   def expr?(%{op: :field_access, arg: arg, field: field}, env),
     do: RecordFields.int_field?(env, arg, field)
+
+  def expr?(%{op: op, arg: _arg}, _env) when op in [:tuple_first, :tuple_first_expr, :tuple_second_expr],
+    do: true
 
   def expr?(%{op: :c_int_expr}, _env), do: true
 
@@ -46,6 +50,12 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
   def expr?(%{op: :runtime_call, function: "elmc_maybe_with_default", args: [default_val, _maybe]}, env),
     do: expr?(default_val, env)
+
+  def expr?(
+        %{op: :runtime_call, function: "elmc_list_nth_int_default_boxed", args: [_list, index, default_val]},
+        env
+      ),
+      do: expr?(index, env) and expr?(default_val, env)
 
   def expr?(%{op: :runtime_call, function: function, args: [value]}, env)
       when function in ["elmc_basics_abs", "elmc_basics_negate"] do
@@ -351,6 +361,22 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     end
   end
 
+  defp dispatch(%{op: op, arg: %{op: :var, name: name}}, env, counter)
+       when op in [:tuple_first, :tuple_first_expr, :tuple_second_expr] do
+    case Map.fetch(env, name) do
+      {:ok, source} when is_binary(source) ->
+        compile_tuple_int_source(source, tuple_accessor(op), counter)
+
+      _ ->
+        compile_tuple_int_expr(%{op: :var, name: name}, tuple_accessor(op), env, counter)
+    end
+  end
+
+  defp dispatch(%{op: op, arg: arg_expr}, env, counter)
+       when op in [:tuple_first, :tuple_first_expr, :tuple_second_expr] do
+    compile_tuple_int_expr(arg_expr, tuple_accessor(op), env, counter)
+  end
+
   defp dispatch(%{op: :var, name: name} = expr, env, counter) do
     case EnvBindings.native_int_binding(env, name) do
       native_ref when is_binary(native_ref) ->
@@ -538,7 +564,11 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
     case inline_function({module_name, name}, args, env, counter) do
       {:ok, code, value_ref, counter} -> {code, value_ref, counter}
-      :error -> compile_fallback(expr, env, counter)
+      :error ->
+        case NativeFunctionCall.compile_scalar(module_name, name, args, env, counter, :native_int) do
+          {code, value_ref, counter} -> {code, value_ref, counter}
+          :error -> compile_fallback(expr, env, counter)
+        end
     end
   end
 
@@ -568,7 +598,20 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
               target_key ->
                 case inline_function(target_key, args, env, counter) do
                   {:ok, code, value_ref, counter} -> {code, value_ref, counter}
-                  :error -> compile_fallback(expr, env, counter)
+                  :error ->
+                    {target_module, target_name} = target_key
+
+                    case NativeFunctionCall.compile_scalar(
+                           target_module,
+                           target_name,
+                           args,
+                           env,
+                           counter,
+                           :native_int
+                         ) do
+                      {code, value_ref, counter} -> {code, value_ref, counter}
+                      :error -> compile_fallback(expr, env, counter)
+                    end
                 end
             end
         end
@@ -608,6 +651,26 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
       env,
       counter
     )
+  end
+
+  defp dispatch(
+         %{op: :runtime_call, function: "elmc_list_nth_int_default_boxed", args: [list, index, default_val]},
+         env,
+         counter
+       ) do
+    {list_code, list_var, counter} = Host.compile_expr(list, env, counter)
+    {index_code, index_ref, counter} = compile_expr(index, env, counter)
+    {default_code, default_ref, counter} = compile_expr(default_val, env, counter)
+    next = counter + 1
+    out = "native_list_nth_#{next}"
+
+    code = """
+    #{list_code}#{index_code}#{default_code}
+      const elmc_int_t #{out} = elmc_list_nth_int_default(#{list_var}, #{index_ref}, #{default_ref});
+      elmc_release(#{list_var});
+    """
+
+    {code, out, next}
   end
 
   defp dispatch(
@@ -891,6 +954,36 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     do: {:ok, value}
 
   defp to_float_arg(_expr), do: :error
+
+  defp compile_tuple_int_expr(arg_expr, accessor, env, counter) do
+    {arg_code, arg_var, counter} = Host.compile_expr(arg_expr, env, counter)
+    {access_code, out, counter} = compile_tuple_int_source(arg_var, accessor, counter)
+
+    code = """
+    #{arg_code}
+    #{access_code}
+      elmc_release(#{arg_var});
+    """
+
+    {code, out, counter}
+  end
+
+  defp compile_tuple_int_source(source, accessor, counter) do
+    next = counter + 1
+    tuple_value = "native_tuple_value_#{next}"
+    out = "native_tuple_int_#{next}"
+
+    code = """
+      ElmcValue *#{tuple_value} = #{accessor}(#{source});
+      const elmc_int_t #{out} = elmc_as_int(#{tuple_value});
+      elmc_release(#{tuple_value});
+    """
+
+    {code, out, next}
+  end
+
+  defp tuple_accessor(:tuple_second_expr), do: "elmc_tuple_second"
+  defp tuple_accessor(_op), do: "elmc_tuple_first"
 
   defp pebble_angle_source(%{
          op: :call,

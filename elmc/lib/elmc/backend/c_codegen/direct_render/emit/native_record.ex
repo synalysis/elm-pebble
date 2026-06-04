@@ -10,6 +10,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
   alias Elmc.Backend.CCodegen.Native.RecordFields
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
+  alias Elmc.Backend.CCodegen.VarAnalysis
 
   @spec helper_let?(Types.binding_name(), Types.ir_expr(), Types.compile_env()) :: boolean()
   def helper_let?(_name, value_expr, env) do
@@ -37,7 +38,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
     case field_entries(value_expr, env) do
       {:ok, field_entries} ->
         emit_field_entries_result(name, value_expr, field_entries, env, counter)
-      :error -> :error
+
+      :error ->
+        :error
     end
   end
 
@@ -135,7 +138,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
   end
 
   defp field_names_from_expr_body(%{op: :if, then_expr: then_expr, else_expr: else_expr}) do
-    field_names_from_expr_body(then_expr) ++ field_names_from_expr_body(else_expr) |> Enum.uniq()
+    (field_names_from_expr_body(then_expr) ++ field_names_from_expr_body(else_expr))
+    |> Enum.uniq()
   end
 
   defp field_names_from_expr_body(%{op: :record_literal, fields: fields}) when is_list(fields) do
@@ -183,7 +187,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
         record_type = record_type_for_entries(field_entries, env)
 
         Enum.all?(field_entries, fn
-          {field, %{op: :direct_native_if, cond: ^cond, then_expr: then_expr, else_expr: else_expr}} ->
+          {field,
+           %{op: :direct_native_if, cond: ^cond, then_expr: then_expr, else_expr: else_expr}} ->
             native_record_field_expr?(then_expr, field, record_type, env) and
               native_record_field_expr?(else_expr, field, record_type, env) and
               field_kind(record_type, field, then_expr, env) ==
@@ -214,6 +219,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
         {code, var, c} = Host.compile_expr(cond, env, counter)
         {code, "elmc_as_int(#{var}) != 0", "  elmc_release(#{var});\n", c}
       end
+
+    counter = counter_after_emitted_code(cond_code <> cond_cleanup, counter)
 
     then_entries =
       Enum.map(field_entries, fn {field, %{op: :direct_native_if, then_expr: then_expr}} ->
@@ -271,8 +278,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
           case emit_native_field_value(field_expr, kind, var, env, c) do
             {:ok, code, ref, c2} ->
               {:cont,
-               {:ok, code_acc <> code, Map.put(refs_acc, field, ref), Map.put(kinds_acc, field, kind),
-                c2}}
+               {:ok, code_acc <> code, Map.put(refs_acc, field, ref),
+                Map.put(kinds_acc, field, kind), c2}}
 
             :error ->
               {:halt, :error}
@@ -302,7 +309,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
 
     deps =
       Map.new(field_entries, fn {field, expr} ->
-        {field, branch_field_zero_arg_call_deps(expr, names, []) |> Enum.uniq() |> List.delete(field)}
+        {field,
+         branch_field_zero_arg_call_deps(expr, names, []) |> Enum.uniq() |> List.delete(field)}
       end)
 
     sort_branch_field_entries_by_deps(field_entries, deps, [])
@@ -335,7 +343,11 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
     if MapSet.member?(names, name), do: [name | acc], else: acc
   end
 
-  defp branch_field_zero_arg_call_deps(%{op: :qualified_call, target: target, args: args}, names, acc)
+  defp branch_field_zero_arg_call_deps(
+         %{op: :qualified_call, target: target, args: args},
+         names,
+         acc
+       )
        when is_binary(target) and args in [[], nil] do
     case Util.split_qualified_function_target(Host.normalize_special_target(target)) do
       {_mod, name} -> if MapSet.member?(names, name), do: [name | acc], else: acc
@@ -430,11 +442,257 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
 
     case result do
       {:ok, field_code, field_map, counter} ->
+        field_code =
+          maybe_extract_int_record_helper(
+            name,
+            value_expr,
+            field_entries,
+            record_type,
+            env,
+            field_code,
+            field_map,
+            counter
+          )
+
         {:ok, field_code,
          put_native_record_binding(env, name, field_map, value_expr, field_entries), counter}
 
       :error ->
         :error
+    end
+  end
+
+  defp maybe_extract_int_record_helper(
+         name,
+         value_expr,
+         field_entries,
+         record_type,
+         env,
+         field_code,
+         field_map,
+         counter
+       ) do
+    if extractable_int_record_helper?(field_entries, record_type, env, field_code) do
+      case helper_params(value_expr, env) do
+        {:ok, params} ->
+          case per_field_int_record_helpers(
+                 name,
+                 field_entries,
+                 record_type,
+                 env,
+                 field_map,
+                 params,
+                 counter
+               ) do
+            nil ->
+              drop_hoists_declared_in_code(field_code)
+              combined_int_record_helper(name, env, field_code, field_map, params, counter)
+
+            code ->
+              drop_hoists_declared_in_code(field_code)
+              code
+          end
+
+        :error ->
+          field_code
+      end
+    else
+      field_code
+    end
+  end
+
+  defp per_field_int_record_helpers(
+         name,
+         field_entries,
+         record_type,
+         env,
+         field_map,
+         params,
+         counter
+       ) do
+    module_suffix = Util.safe_c_suffix(Map.get(env, :__module__, "Main"))
+    name_suffix = Util.safe_c_suffix(name)
+    helper_params = params |> helper_param_decls() |> Enum.join(", ")
+    call_args = Enum.map_join(params, ", ", fn {_source, c_var} -> c_var end)
+
+    result =
+      field_entries
+      |> Enum.with_index()
+      |> Enum.reduce_while({[], []}, fn {{field, field_expr}, index}, {defs, calls} ->
+        var = Map.fetch!(field_map, field)
+
+        helper_name =
+          "elmc_direct_native_record_#{module_suffix}_#{name_suffix}_#{Util.safe_c_suffix(field)}_#{counter}_#{index}"
+
+        case emit_native_record_field_isolated(
+               name,
+               field,
+               field_expr,
+               record_type,
+               env,
+               counter + index + 1
+             ) do
+          {:ok, code, ref, _counter} ->
+            helper_def = """
+            static elmc_int_t #{helper_name}(#{helper_params}) {
+            #{Util.indent(code, 2)}
+              return #{ref};
+            }
+            """
+
+            call =
+              if call_args == "" do
+                "  elmc_int_t #{var} = #{helper_name}();"
+              else
+                "  elmc_int_t #{var} = #{helper_name}(#{call_args});"
+              end
+
+            {:cont, {[helper_def | defs], [call | calls]}}
+
+          :error ->
+            {:halt, :error}
+        end
+      end)
+
+    case result do
+      {defs, calls} ->
+        Process.put(
+          :elmc_direct_helper_defs,
+          Enum.reverse(defs) ++ Process.get(:elmc_direct_helper_defs, [])
+        )
+
+        Enum.reverse(calls) |> Enum.join("\n")
+
+      :error ->
+        nil
+    end
+  end
+
+  defp combined_int_record_helper(name, env, field_code, field_map, params, counter) do
+    helper_name =
+      "elmc_direct_native_record_#{Util.safe_c_suffix(Map.get(env, :__module__, "Main"))}_#{Util.safe_c_suffix(name)}_#{counter}"
+
+    output_params =
+      field_map
+      |> Enum.sort_by(fn {field, _var} -> field end)
+      |> Enum.map(fn {field, _var} ->
+        "elmc_int_t * const out_#{Util.safe_c_suffix(field)}"
+      end)
+
+    param_decls = helper_param_decls(params)
+    helper_params = Enum.join(param_decls ++ output_params, ", ")
+
+    assignments =
+      field_map
+      |> Enum.sort_by(fn {field, _var} -> field end)
+      |> Enum.map_join("\n  ", fn {field, var} ->
+        "*out_#{Util.safe_c_suffix(field)} = #{var};"
+      end)
+
+    helper_def = """
+    static void #{helper_name}(#{helper_params}) {
+    #{Util.indent(field_code, 2)}
+      #{assignments}
+    }
+    """
+
+    Process.put(
+      :elmc_direct_helper_defs,
+      [helper_def | Process.get(:elmc_direct_helper_defs, [])]
+    )
+
+    declarations =
+      field_map
+      |> Enum.sort_by(fn {field, _var} -> field end)
+      |> Enum.map_join("\n", fn {_field, var} -> "  elmc_int_t #{var} = 0;" end)
+
+    call_args =
+      params
+      |> Enum.map(fn {_source, c_var} -> c_var end)
+      |> Kernel.++(
+        field_map
+        |> Enum.sort_by(fn {field, _var} -> field end)
+        |> Enum.map(fn {_field, var} -> "&#{var}" end)
+      )
+      |> Enum.join(", ")
+
+    """
+    #{declarations}
+      #{helper_name}(#{call_args});
+    """
+  end
+
+  defp helper_param_decls(params) do
+    Enum.map(params, fn {_source, c_var} -> "ElmcValue * const #{c_var}" end)
+  end
+
+  defp drop_hoists_declared_in_code(code) when is_binary(code) do
+    declared_refs =
+      ~r/const elmc_int_t (native_(?:min|max)_\d+) =/
+      |> Regex.scan(code)
+      |> Enum.map(&List.last/1)
+      |> MapSet.new()
+
+    if MapSet.size(declared_refs) > 0 do
+      hoisted =
+        :elmc_hoisted_native_ints
+        |> Process.get(%{})
+        |> Enum.reject(fn {_key, ref} -> MapSet.member?(declared_refs, ref) end)
+        |> Map.new()
+
+      Process.put(:elmc_hoisted_native_ints, hoisted)
+    end
+
+    :ok
+  end
+
+  defp emit_native_record_field_isolated(name, field, field_expr, record_type, env, counter) do
+    hoisted_native_ints = Process.get(:elmc_hoisted_native_ints)
+
+    try do
+      Process.put(:elmc_hoisted_native_ints, %{})
+      emit_native_record_field(name, field, field_expr, record_type, env, counter)
+    after
+      case hoisted_native_ints do
+        nil -> Process.delete(:elmc_hoisted_native_ints)
+        value -> Process.put(:elmc_hoisted_native_ints, value)
+      end
+    end
+  end
+
+  defp extractable_int_record_helper?(field_entries, record_type, env, field_code) do
+    line_count = emitted_line_count(field_code)
+
+    line_count >= 80 and
+      (length(field_entries) >= 3 or line_count >= 160) and
+      Enum.all?(field_entries, fn
+        {_field, nil} ->
+          false
+
+        {field, field_expr} ->
+          field_kind(record_type, field, field_expr, env) == "Int"
+      end)
+  end
+
+  defp emitted_line_count(code) when is_binary(code), do: code |> String.split("\n") |> length()
+
+  defp helper_params(value_expr, env) do
+    vars =
+      value_expr
+      |> VarAnalysis.used_vars()
+      |> Enum.sort()
+
+    params =
+      Enum.reduce_while(vars, [], fn var, acc ->
+        case Map.get(env, var) do
+          c_var when is_binary(c_var) -> {:cont, [{var, c_var} | acc]}
+          _other -> {:halt, :error}
+        end
+      end)
+
+    case params do
+      :error -> :error
+      params -> {:ok, Enum.reverse(params)}
     end
   end
 
@@ -531,7 +789,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
     var = "direct_native_record_#{Util.safe_c_suffix(name)}_#{field}_#{next}"
 
     case emit_native_field_value(field_expr, kind, var, env, counter) do
-      {:ok, code, ref, _} -> {:ok, code, ref, next}
+      {:ok, code, ref, c2} -> {:ok, code, ref, max(next, counter_after_emitted_code(code, c2))}
       :error -> :error
     end
   end
@@ -541,7 +799,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
       "String" ->
         if Host.native_string_expr?(field_expr, env) do
           {code, ref, _cleanup, c2} = Host.compile_native_string_expr(field_expr, env, counter)
-          {:ok, code <> "  const char *#{var} = #{ref};\n", var, c2}
+          {:ok, scoped_field_value(code, "const char *", var, ref, "NULL"), var, c2}
         else
           :error
         end
@@ -549,7 +807,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
       "Bool" ->
         if Host.native_bool_expr?(field_expr, env) do
           {code, ref, c2} = Host.compile_native_bool_expr(field_expr, env, counter)
-          {:ok, code <> "  const elmc_int_t #{var} = #{ref};\n", var, c2}
+          {:ok, scoped_field_value(code, "elmc_int_t", var, ref, "0"), var, c2}
         else
           :error
         end
@@ -557,16 +815,89 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
       "Float" ->
         if Host.native_float_expr?(field_expr, env) do
           {code, ref, c2} = Host.compile_native_float_expr(field_expr, env, counter)
-          {:ok, code <> "  const double #{var} = #{ref};\n", var, c2}
+          {:ok, scoped_field_value(code, "double", var, ref, "0.0"), var, c2}
         else
           :error
         end
 
       _ ->
         case Host.direct_int_value(field_expr, env, counter) do
-          {code, ref, c2} -> {:ok, code <> "  const elmc_int_t #{var} = #{ref};\n", var, c2}
+          {code, ref, c2} -> {:ok, scoped_field_value(code, "elmc_int_t", var, ref, "0"), var, c2}
           :error -> :error
         end
     end
   end
+
+  defp scoped_field_value("", c_type, var, ref, default) do
+    "  #{c_type} #{var} = #{default};\n  #{var} = #{ref};\n"
+  end
+
+  defp scoped_field_value(code, c_type, var, ref, _default) when is_binary(code) do
+    {hoisted_code, scoped_code} = split_reusable_native_hoists(code)
+    hoisted_code <> scoped_isolated_field_value(scoped_code, c_type, var, ref)
+  end
+
+  defp scoped_isolated_field_value(code, c_type, var, ref) do
+    default =
+      case c_type do
+        "const char *" -> "NULL"
+        "double" -> "0.0"
+        _ -> "0"
+      end
+
+    """
+      #{c_type} #{var} = #{default};
+      {
+    #{Util.indent(code, 4)}
+        #{var} = #{ref};
+      }
+    """
+  end
+
+  defp split_reusable_native_hoists(code) do
+    lines = String.split(code, "\n", trim: false)
+    {hoisted, scoped} = split_reusable_native_hoists(lines, [], [])
+
+    if hoisted != [] do
+      {Enum.reverse(hoisted) |> Enum.join("\n") |> then(&(&1 <> "\n")),
+       Enum.reverse(scoped) |> Enum.join("\n")}
+    else
+      {"", code}
+    end
+  end
+
+  defp split_reusable_native_hoists([], hoisted, scoped), do: {hoisted, scoped}
+
+  defp split_reusable_native_hoists([line | rest], hoisted, scoped) do
+    if reusable_native_hoist_decl?(line) do
+      split_reusable_native_hoists(rest, [line | hoisted], scoped)
+    else
+      split_reusable_native_hoists(rest, hoisted, [line | scoped])
+    end
+  end
+
+  defp reusable_native_hoist_decl?(line) do
+    Regex.match?(
+      ~r/^\s*const elmc_int_t native_(?:min|max)(?:_left|_right)?_\d+ = /,
+      line
+    ) and not Regex.match?(~r/\b(?:tmp|native_i|direct_i|__den|direct_den)_\d+\b/, line)
+  end
+
+  defp counter_after_emitted_code(code, counter) when is_binary(code) do
+    code
+    |> then(
+      &Regex.scan(
+        ~r/\b(?:tmp|native_i|native_b|native_if|native_min|native_max|direct_i|__den|direct_den)_(\d+)\b/,
+        &1
+      )
+    )
+    |> Enum.reduce(counter, fn [_match, suffix], acc ->
+      case Integer.parse(suffix) do
+        {n, ""} -> max(acc, n + 1)
+        _ -> acc
+      end
+    end)
+  end
+
+  defp counter_after_emitted_code(_code, counter), do: counter
 end

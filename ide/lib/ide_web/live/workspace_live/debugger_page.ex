@@ -1503,17 +1503,20 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   defp debugger_view_preview(assigns) do
     tree = debugger_preview_tree(assigns.runtime)
     rendered_tree = debugger_rendered_tree(assigns.runtime)
-    {screen_w, screen_h} = debugger_preview_dimensions(assigns.runtime, tree)
+    preview_tree = debugger_svg_preview_tree(rendered_tree, tree)
+    {screen_w, screen_h} = debugger_preview_dimensions(assigns.runtime, preview_tree)
     screen_round? = DebuggerPreview.screen_round?(assigns.runtime, tree)
     clip_radius = min(screen_w, screen_h) / 2
     clip_id = debugger_preview_clip_id(assigns, screen_w, screen_h, screen_round?)
     svg_id = debugger_preview_svg_id(assigns)
 
+    color_mode = debugger_watch_color_mode(assigns.runtime)
+
     svg_ops =
-      tree
+      preview_tree
       |> debugger_watch_svg_ops(assigns.runtime)
       |> DebuggerPreview.resolve_bitmap_svg_ops(assigns.project)
-      |> hydrate_bitmap_svg_ops(assigns.project)
+      |> hydrate_bitmap_svg_ops(assigns.project, color_mode)
       |> DebuggerPreview.hydrate_animation_svg_ops(assigns.project)
       |> DebuggerPreview.hydrate_vector_svg_ops(assigns.project)
 
@@ -2111,21 +2114,21 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   @spec debugger_watch_svg_ops(map() | nil, map() | nil) :: [svg_op()]
   defp debugger_watch_svg_ops(tree, runtime), do: DebuggerPreview.svg_ops(tree, runtime)
 
-  @spec hydrate_bitmap_svg_ops([svg_op()], map()) :: [svg_op()]
-  defp hydrate_bitmap_svg_ops(rows, %Project{} = project) when is_list(rows) do
+  @spec hydrate_bitmap_svg_ops([svg_op()], map(), String.t() | nil) :: [svg_op()]
+  defp hydrate_bitmap_svg_ops(rows, %Project{} = project, color_mode) when is_list(rows) do
     Enum.map(rows, fn
-      %{kind: :bitmap_in_rect, bitmap_id: bitmap_id} = row ->
-        Map.put(row, :href, bitmap_href_for(project, bitmap_id))
+      %{kind: :bitmap_in_rect, bitmap_id: bitmap_id} = row when bitmap_id > 0 ->
+        Map.put(row, :href, bitmap_href_for(project, bitmap_id, color_mode))
 
-      %{kind: :rotated_bitmap, bitmap_id: bitmap_id} = row ->
-        Map.put(row, :href, bitmap_href_for(project, bitmap_id))
+      %{kind: :rotated_bitmap, bitmap_id: bitmap_id} = row when bitmap_id > 0 ->
+        Map.put(row, :href, bitmap_href_for(project, bitmap_id, color_mode))
 
       other ->
         other
     end)
   end
 
-  defp hydrate_bitmap_svg_ops(rows, _project), do: rows
+  defp hydrate_bitmap_svg_ops(rows, _project, _color_mode), do: rows
 
   attr(:op, :map, required: true)
 
@@ -2169,9 +2172,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     """
   end
 
-  @spec bitmap_href_for(map(), assigns()) :: String.t() | nil
-  defp bitmap_href_for(%Project{} = project, bitmap_id) when is_integer(bitmap_id) do
-    with {:ok, path} <- ResourceStore.bitmap_file_path_by_id(project, bitmap_id),
+  @spec bitmap_href_for(Project.t(), pos_integer(), String.t() | nil) :: String.t() | nil
+  defp bitmap_href_for(%Project{} = project, bitmap_id, color_mode)
+       when is_integer(bitmap_id) and bitmap_id > 0 do
+    with {:ok, entries} <- ResourceStore.list(project),
+         %{} = row <- Enum.at(entries, bitmap_id - 1),
+         {:ok, path} <- ResourceStore.bitmap_file_path(project, row.ctor, color_mode),
          {:ok, bytes} <- File.read(path) do
       "data:#{bitmap_mime_for_path(path)};base64," <> Base.encode64(bytes)
     else
@@ -2179,7 +2185,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     end
   end
 
-  defp bitmap_href_for(_project, _bitmap_id), do: nil
+  defp bitmap_href_for(_project, _bitmap_id, _color_mode), do: nil
 
   @spec bitmap_mime_for_path(String.t()) :: String.t()
   defp bitmap_mime_for_path(path) when is_binary(path) do
@@ -2244,6 +2250,29 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   end
 
   defp debugger_preview_tree(_runtime), do: nil
+
+  @spec debugger_svg_preview_tree(map() | nil, map() | nil) :: map() | nil
+  defp debugger_svg_preview_tree(%{} = rendered_tree, _fallback) when map_size(rendered_tree) > 0,
+    do: rendered_tree
+
+  defp debugger_svg_preview_tree(_rendered_tree, fallback), do: fallback
+
+  @spec debugger_watch_color_mode(map()) :: String.t() | nil
+  defp debugger_watch_color_mode(%{} = runtime) do
+    model = Map.get(runtime, :model) || Map.get(runtime, "model") || %{}
+
+    launch_context =
+      Map.get(model, "launch_context") || Map.get(model, :launch_context) ||
+        get_in(model, ["runtime_model", "launch_context"]) ||
+        get_in(model, [:runtime_model, :launch_context])
+
+    case launch_context do
+      %{} = ctx -> Ide.Debugger.RuntimeSurfaces.launch_context_color_mode(ctx)
+      _ -> nil
+    end
+  end
+
+  defp debugger_watch_color_mode(_runtime), do: nil
 
   @spec debugger_preview_dimensions(map() | nil, map() | nil) :: {integer(), integer()}
   defp debugger_preview_dimensions(runtime, tree),

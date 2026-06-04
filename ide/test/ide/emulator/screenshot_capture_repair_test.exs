@@ -30,6 +30,22 @@ defmodule Ide.Emulator.ScreenshotCaptureRepairTest do
     assert pixel_rgb(repaired, width, 3, 3) == {255, 0, 0}
   end
 
+  test "repair_rgba preserves interior black that touches a border beyond letterbox depth" do
+    width = 16
+    height = 16
+
+    rgba =
+      for y <- 0..(height - 1), x <- 0..(width - 1), into: <<>> do
+        cond do
+          x >= div(width, 2) and y >= div(height, 2) -> <<0, 0, 0, 255>>
+          true -> <<255, 255, 255, 255>>
+        end
+      end
+
+    out = ScreenshotCaptureRepair.repair_rgba(rgba, width, height, "diorite")
+    assert pixel_rgba(out, width, 10, 10) == {0, 0, 0, 255}
+  end
+
   test "repair_rgba floods rect monochrome corner letterbox to white" do
     width = 4
     height = 4

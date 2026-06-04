@@ -4,6 +4,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Hoist
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Native.RecordFields
   alias Elmc.Backend.CCodegen.Native.TypedReturn
   alias Elmc.Backend.CCodegen.Types
@@ -170,6 +171,16 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
     compile_compare(left, right, name, env, counter)
   end
 
+  defp compile_expr_uncached(%{op: :call, name: name, args: args} = expr, env, counter)
+       when is_binary(name) do
+    module_name = Map.get(env, :__module__, "Main")
+
+    case NativeFunctionCall.compile_scalar(module_name, name, args, env, counter, :native_bool) do
+      {code, value_ref, counter} -> {code, value_ref, counter}
+      :error -> compile_fallback(expr, env, counter)
+    end
+  end
+
   defp compile_expr_uncached(%{op: :qualified_call, target: target, args: args} = expr, env, counter) do
     case Host.special_value_from_target(target, args) do
       nil ->
@@ -179,7 +190,23 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
             compile_expr(%{op: :call, name: builtin, args: args}, env, counter)
 
           _ ->
-            compile_fallback(expr, env, counter)
+            case Host.split_qualified_function_target(Host.normalize_special_target(target)) do
+              {target_module, target_name} ->
+                case NativeFunctionCall.compile_scalar(
+                       target_module,
+                       target_name,
+                       args,
+                       env,
+                       counter,
+                       :native_bool
+                     ) do
+                  {code, value_ref, counter} -> {code, value_ref, counter}
+                  :error -> compile_fallback(expr, env, counter)
+                end
+
+              nil ->
+                compile_fallback(expr, env, counter)
+            end
         end
 
       rewritten ->

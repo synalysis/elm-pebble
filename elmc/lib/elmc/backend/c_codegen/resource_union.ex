@@ -41,7 +41,20 @@ defmodule Elmc.Backend.CCodegen.ResourceUnion do
 
   @spec slot_map() :: %{String.t() => pos_integer()}
   defp slot_map do
-    Process.get(:elmc_vector_resource_slots, %{})
+    Enum.reduce(
+      [
+        :elmc_vector_resource_slots,
+        :elmc_bitmap_resource_slots,
+        :elmc_animation_resource_slots
+      ],
+      %{},
+      fn key, acc ->
+        case Process.get(key, %{}) do
+          %{} = slots -> Map.merge(acc, slots)
+          _ -> acc
+        end
+      end
+    )
   end
 
   @spec ctor_name(String.t()) :: String.t()

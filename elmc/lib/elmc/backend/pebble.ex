@@ -126,11 +126,9 @@ defmodule Elmc.Backend.Pebble do
     #endif
 
     #ifndef ELMC_PEBBLE_SCENE_CACHE_ENABLED
-    #if defined(PBL_PLATFORM_APLITE)
+    /* Scene byte cache is disabled until incremental dirty regions are reliable on all
+       targets; direct view command emission is used instead (lower RAM, simpler draw). */
     #define ELMC_PEBBLE_SCENE_CACHE_ENABLED 0
-    #else
-    #define ELMC_PEBBLE_SCENE_CACHE_ENABLED 1
-    #endif
     #endif
 
     typedef struct {

@@ -108,11 +108,13 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
 
     Process.delete(:elmc_hoisted_native_ints)
     Process.put(:elmc_hoisted_native_ints_scope, true)
+    Process.put(:elmc_direct_helper_defs, [])
 
     try do
       case Host.direct_emit_expr(decl.expr, env, 0) do
         {:ok, body_code, _counter} ->
-          boxed_body(c_name, arg_bindings, unused_casts, body_code)
+          helper_defs = direct_helper_defs()
+          helper_defs <> boxed_body(c_name, arg_bindings, unused_casts, body_code)
 
         :error ->
           raise ArgumentError,
@@ -121,6 +123,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
     after
       Process.delete(:elmc_hoisted_native_ints_scope)
       Process.delete(:elmc_hoisted_native_ints)
+      Process.delete(:elmc_direct_helper_defs)
     end
   end
 
@@ -219,11 +222,15 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
 
     Process.delete(:elmc_hoisted_native_ints)
     Process.put(:elmc_hoisted_native_ints_scope, true)
+    Process.put(:elmc_direct_helper_defs, [])
 
     try do
       case Host.direct_emit_expr(decl.expr, native_env, 0) do
         {:ok, body_code, _counter} ->
-          native_body(c_name, wrapper_bindings, native_args, decl, unused_casts, body_code)
+          helper_defs = direct_helper_defs()
+
+          helper_defs <>
+            native_body(c_name, wrapper_bindings, native_args, decl, unused_casts, body_code)
 
         :error ->
           raise ArgumentError,
@@ -232,6 +239,18 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
     after
       Process.delete(:elmc_hoisted_native_ints_scope)
       Process.delete(:elmc_hoisted_native_ints)
+      Process.delete(:elmc_direct_helper_defs)
+    end
+  end
+
+  defp direct_helper_defs do
+    :elmc_direct_helper_defs
+    |> Process.get([])
+    |> Enum.reverse()
+    |> Enum.join("\n")
+    |> case do
+      "" -> ""
+      defs -> defs <> "\n"
     end
   end
 

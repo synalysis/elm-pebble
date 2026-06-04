@@ -51,8 +51,8 @@ defmodule Ide.Emulator.Session.ProcessHost do
     error -> {:error, {:port_allocation_failed, error}}
   end
 
-  @spec tcp_port_open?(pos_integer()) :: boolean()
-  def tcp_port_open?(port) when is_integer(port) do
+  @spec tcp_port_open?(pos_integer() | term()) :: boolean()
+  def tcp_port_open?(port) when is_integer(port) and port > 0 do
     case :gen_tcp.connect(~c"127.0.0.1", port, [:binary, active: false], 250) do
       {:ok, socket} ->
         :gen_tcp.close(socket)
@@ -62,6 +62,8 @@ defmodule Ide.Emulator.Session.ProcessHost do
         false
     end
   end
+
+  def tcp_port_open?(_port), do: false
 
   @spec cleanup_process(pid() | nil) :: :ok
   def cleanup_process(nil), do: :ok

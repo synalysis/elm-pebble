@@ -227,7 +227,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.UseSites do
           pruned_acc
 
         single_other_call_only?(target, use_sites) and
-            single_call_inlineable?(target, emit_targets, decl_map) ->
+            single_call_inlineable?(target, emit_targets, decl_map, opts) ->
           MapSet.put(pruned_acc, target)
 
         true ->
@@ -252,15 +252,19 @@ defmodule Elmc.Backend.CCodegen.DirectRender.UseSites do
   @spec single_call_inlineable?(
           Types.function_decl_key(),
           MapSet.t(Types.function_decl_key()),
-          Types.function_decl_map()
+          Types.function_decl_map(),
+          Types.codegen_opts()
         ) :: boolean()
-  defp single_call_inlineable?({module_name, _decl_name} = target, emit_targets, decl_map) do
+  defp single_call_inlineable?({module_name, _decl_name} = target, emit_targets, decl_map, opts) do
     decl = Map.fetch!(decl_map, target)
     env = Host.direct_emit_check_env(decl, module_name, emit_targets, decl_map)
+    max_lines = opts[:direct_single_call_inline_max_lines] || 100
 
     case Host.direct_emit_expr(decl.expr, env, 0) do
-      {:ok, _code, _counter} -> true
+      {:ok, code, _counter} -> emitted_line_count(code) <= max_lines
       :error -> false
     end
   end
+
+  defp emitted_line_count(code) when is_binary(code), do: code |> String.split("\n") |> length()
 end

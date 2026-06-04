@@ -241,28 +241,41 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
   def emit_expr(%{op: :case, subject: subject, branches: branches}, env, counter) do
     subject_ref = Map.get(env, subject, subject)
 
+    case_env =
+      if Patterns.maybe_unwrap_just_case?(branches),
+        do: Map.put(env, :maybe_unwrap_just, true),
+        else: env
+
     result =
       Enum.reduce_while(branches, {:ok, "", counter}, fn branch, {:ok, acc, c} ->
+        {branch_env, unwrap_setup, unwrap_release, c} =
+          Patterns.maybe_unwrap_var_branch(case_env, branch, subject_ref, c)
+
         branch_env =
-          env
-          |> Patterns.bind_pattern(branch.pattern, subject_ref)
-          |> Map.put(:__direct_targets__, Map.get(env, :__direct_targets__, MapSet.new()))
+          Map.put(branch_env, :__direct_targets__, Map.get(env, :__direct_targets__, MapSet.new()))
 
         case emit_expr(branch.expr, branch_env, c) do
           {:ok, expr_code, c2} ->
             cond_code = Patterns.pattern_condition(subject_ref, branch.pattern)
+
+            branch_body =
+              """
+              #{Util.indent(unwrap_setup, 4)}
+              #{Util.indent(expr_code, 4)}
+              #{Util.indent(unwrap_release, 4)}
+              """
 
             cond do
               cond_code == "0" ->
                 {:cont, {:ok, acc, c2}}
 
               cond_code == "1" and acc == "" ->
-                {:halt, {:ok, acc <> expr_code, c2}}
+                {:halt, {:ok, acc <> branch_body, c2}}
 
               cond_code == "1" ->
                 snippet = """
                 else {
-                #{Util.indent(expr_code, 4)}
+                #{branch_body}
                 }
                 """
 
@@ -271,7 +284,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
               true ->
                 snippet = """
                 #{if acc == "", do: "if", else: "else if"} (#{cond_code}) {
-                #{Util.indent(expr_code, 4)}
+                #{branch_body}
                 }
                 """
 
@@ -697,18 +710,32 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
   end
 
   defp fragment_expr?(%{op: :qualified_call, target: target, args: args}, env) do
-    case {Host.normalize_special_target(target), args} do
+    normalized_target = Host.normalize_special_target(target)
+
+    case {normalized_target, args} do
       {"List.cons", [head, tail]} ->
         fragment_expr?(head, env) and fragment_expr?(tail, env)
 
       _ ->
-        fragment_expr_target?(target)
+        fragment_expr_target?(normalized_target) or qualified_direct_fragment?(normalized_target, env)
     end
   end
 
   defp fragment_expr?(_, _env), do: false
 
   defp inline_render_expr?(expr, env), do: render_list_expr?(expr, env)
+
+  defp qualified_direct_fragment?(target, env) do
+    targets = Map.get(env, :__direct_targets__, MapSet.new())
+
+    case Elmc.Backend.CCodegen.DirectRender.Support.qualified_function_target(
+           target,
+           Map.get(env, :__program_decls__, %{})
+         ) do
+      nil -> false
+      target_key -> MapSet.member?(targets, target_key)
+    end
+  end
 
   defp render_list_expr?(expr, env) do
     module_name = Map.get(env, :__module__, "Main")

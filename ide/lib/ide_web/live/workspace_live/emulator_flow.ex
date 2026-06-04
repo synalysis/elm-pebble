@@ -407,7 +407,15 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
      |> assign(:emulator_stop_output, "Emulator stop task exited: #{inspect(reason)}")}
   end
 
-  defp do_handle_async(:external_emulator_control, {:ok, {:ok, result}}, socket) do
+  defp do_handle_async(:external_emulator_control, {:ok, {:ok, :synced}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:emulator_stop_status, :ok)
+     |> assign(:emulator_stop_output, "Simulator settings synced.")}
+  end
+
+  defp do_handle_async(:external_emulator_control, {:ok, {:ok, result}}, socket)
+       when is_map(result) do
     {:noreply,
      socket
      |> assign(:emulator_stop_status, result.status)

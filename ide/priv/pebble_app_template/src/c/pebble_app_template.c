@@ -39,7 +39,15 @@
 static uint32_t s_agent_probe_tags[ELMC_AGENT_PROBE_SESSION_LIMIT];
 static int s_agent_probe_session_count = 0;
 static bool agent_init_probe_enabled(uint32_t marker) {
-  return marker == 0xED993051 ||
+  return marker == 0xED990001 ||
+         marker == 0xED990002 ||
+         marker == 0xED990003 ||
+         marker == 0xED990A01 ||
+         marker == 0xED991001 ||
+         marker == 0xED991002 ||
+         marker == 0xED991003 ||
+         marker == 0xED998100 ||
+         marker == 0xED993051 ||
          marker == 0xED993052 ||
          marker == 0xED993152 ||
          marker == 0xED993020 ||
@@ -257,6 +265,9 @@ static void emulator_storage_snapshot_callback(void *data) {
 static Window *s_main_window;
 static Layer *s_draw_layer;
 static bool s_render_pending = false;
+#define ELMC_DEFERRED_INIT_MAX_ATTEMPTS 40
+#define ELMC_DEFERRED_INIT_RETRY_MS 50
+static int s_elm_init_attempts = 0;
 static AppTimer *s_render_coalesce_timer = NULL;
 static GFont s_font;
 static ElmcPebbleApp s_elm_app;
@@ -409,6 +420,12 @@ static void render_coalesce_callback(void *data);
 static void apply_pending_cmd(void);
 static void startup_cmd_callback(void *data);
 static ElmcValue *build_launch_context(AppLaunchReason launch);
+static GRect compile_display_bounds(void);
+static bool display_bounds_ready(void);
+static void ensure_draw_layer_size(void);
+static void complete_elm_init(void);
+static void deferred_elm_init_callback(void *data);
+static void schedule_elm_init(void);
 static GRect display_bounds(void);
 #if ELMC_PEBBLE_FEATURE_CMD_GET_CURRENT_DATE_TIME
 static bool deliver_current_date_time(const char *reason);
@@ -1883,6 +1900,11 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
   // #region agent log
   ELMC_AGENT_INIT_PROBE(0xED993001);
   // #endregion
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+  if (!s_logged_first_draw) {
+    companion_inbox_log("draw_update_proc begin seq=%d", s_render_sequence);
+  }
+#endif
   if (!layer || !ctx) {
     APP_LOG(APP_LOG_LEVEL_WARNING, "draw skipped null layer/context");
     ELMC_PEBBLE_TRACE_EXIT("draw_update_proc");
@@ -1895,6 +1917,14 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
     ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "draw begin seq=%d", s_render_sequence);
   }
   GRect bounds = layer_get_bounds(layer);
+#ifdef ELMC_WATCHFACE_MODE
+  {
+    GRect compile = compile_display_bounds();
+    if (compile.size.w > bounds.size.w || compile.size.h > bounds.size.h) {
+      bounds = compile;
+    }
+  }
+#endif
   // #region agent log
   ELMC_AGENT_INIT_PROBE(0xED993011);
   // #endregion
@@ -1956,31 +1986,11 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
 
   enum {
     DRAW_HEAP_CHUNK_CAPACITY = 32,
-    DRAW_MEDIUM_HEAP_CHUNK_CAPACITY = 16,
-    DRAW_SMALL_HEAP_CHUNK_CAPACITY = 8,
-    DRAW_TINY_HEAP_CHUNK_CAPACITY = 1,
     DRAW_CHUNK_GUARD = 128
   };
-  int draw_chunk_capacity = DRAW_HEAP_CHUNK_CAPACITY;
-  ElmcPebbleDrawCmd *draw_chunk =
-      (ElmcPebbleDrawCmd *)malloc(sizeof(ElmcPebbleDrawCmd) * draw_chunk_capacity);
-  if (!draw_chunk) {
-    draw_chunk_capacity = DRAW_MEDIUM_HEAP_CHUNK_CAPACITY;
-    draw_chunk = (ElmcPebbleDrawCmd *)malloc(sizeof(ElmcPebbleDrawCmd) * draw_chunk_capacity);
-  }
-  if (!draw_chunk) {
-    draw_chunk_capacity = DRAW_SMALL_HEAP_CHUNK_CAPACITY;
-    draw_chunk = (ElmcPebbleDrawCmd *)malloc(sizeof(ElmcPebbleDrawCmd) * draw_chunk_capacity);
-  }
-  if (!draw_chunk) {
-    draw_chunk_capacity = DRAW_TINY_HEAP_CHUNK_CAPACITY;
-    draw_chunk = (ElmcPebbleDrawCmd *)malloc(sizeof(ElmcPebbleDrawCmd) * draw_chunk_capacity);
-  }
-  if (!draw_chunk) {
-    APP_LOG(APP_LOG_LEVEL_WARNING, "draw skipped: unable to allocate command chunk");
-    ELMC_PEBBLE_TRACE_EXIT("draw_update_proc");
-    return;
-  }
+  static ElmcPebbleDrawCmd s_draw_chunk_storage[DRAW_HEAP_CHUNK_CAPACITY];
+  const int draw_chunk_capacity = DRAW_HEAP_CHUNK_CAPACITY;
+  ElmcPebbleDrawCmd *draw_chunk = s_draw_chunk_storage;
   // #region agent log
   ELMC_AGENT_INIT_PROBE(0xED993040);
   // #endregion
@@ -2494,7 +2504,6 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
       break;
     }
   }
-  free(draw_chunk);
 
   if (s_last_logged_draw_sequence != s_render_sequence && s_last_render_request_ms > 0) {
     int64_t latency_ms = monotonic_ms() - s_last_render_request_ms;
@@ -2536,6 +2545,7 @@ static void schedule_render_model(void) {
 
 static void render_model(void) {
   ELMC_PEBBLE_TRACE_ENTER("render_model");
+  ensure_draw_layer_size();
   // #region agent log
   ELMC_AGENT_INIT_PROBE(s_agent_after_companion_dispatch ? 0xED992101 : 0xED992001);
   // #endregion
@@ -3698,6 +3708,15 @@ static void main_window_load(Window *window) {
   if (!s_font) {
     s_font = fonts_get_system_font(FONT_KEY_GOTHIC_24);
   }
+#ifdef ELMC_WATCHFACE_MODE
+  s_draw_layer = window_get_root_layer(window);
+  if (!s_draw_layer) {
+    APP_LOG(APP_LOG_LEVEL_ERROR, "draw root layer unavailable");
+    ELMC_PEBBLE_TRACE_EXIT("main_window_load");
+    return;
+  }
+  layer_set_update_proc(s_draw_layer, draw_update_proc);
+#else
   s_draw_layer = layer_create(bounds);
   if (!s_draw_layer) {
     APP_LOG(APP_LOG_LEVEL_ERROR, "draw layer create failed");
@@ -3706,6 +3725,7 @@ static void main_window_load(Window *window) {
   }
   layer_set_update_proc(s_draw_layer, draw_update_proc);
   layer_add_child(window_get_root_layer(window), s_draw_layer);
+#endif
   if (s_render_pending) {
     s_render_pending = false;
     layer_mark_dirty(s_draw_layer);
@@ -3713,246 +3733,158 @@ static void main_window_load(Window *window) {
     companion_inbox_log("render flushed after window load");
 #endif
   }
+#ifdef ELMC_WATCHFACE_MODE
+  if (s_elm_app.initialized) {
+    render_model();
+  }
+#endif
   ELMC_PEBBLE_TRACE_EXIT("main_window_load");
 }
 
 static void main_window_unload(Window *window) {
   ELMC_PEBBLE_TRACE_ENTER("main_window_unload");
   (void)window;
-  layer_destroy(s_draw_layer);
-  s_draw_layer = NULL;
+  if (s_draw_layer) {
+#ifndef ELMC_WATCHFACE_MODE
+    layer_destroy(s_draw_layer);
+#endif
+    s_draw_layer = NULL;
+  }
   ELMC_PEBBLE_TRACE_EXIT("main_window_unload");
 }
 
 static int launch_reason_to_elm_tag(AppLaunchReason launch) {
-  switch (launch) {
-    case APP_LAUNCH_SYSTEM:
-      return 1;
-    case APP_LAUNCH_USER:
-      return 2;
-    case APP_LAUNCH_PHONE:
-      return 3;
-    case APP_LAUNCH_WAKEUP:
-      return 4;
-    case APP_LAUNCH_WORKER:
-      return 5;
-    case APP_LAUNCH_QUICK_LAUNCH:
-      return 6;
-    case APP_LAUNCH_TIMELINE_ACTION:
-      return 7;
-    case APP_LAUNCH_SMARTSTRAP:
-      return 8;
-    default:
-      return 9;
+  /* Pebble SDK AppLaunchReason ordinals match Pebble.Platform.launchReasonFromTag. */
+  return (int)launch;
+}
+
+static GRect compile_display_bounds(void) {
+#ifdef PBL_DISPLAY_WIDTH
+  const int16_t compile_w = PBL_DISPLAY_WIDTH;
+#else
+  const int16_t compile_w = PBL_IF_ROUND_ELSE(180, 144);
+#endif
+#ifdef PBL_DISPLAY_HEIGHT
+  const int16_t compile_h = PBL_DISPLAY_HEIGHT;
+#else
+  const int16_t compile_h = PBL_IF_ROUND_ELSE(180, 168);
+#endif
+  return GRect(0, 0, compile_w, compile_h);
+}
+
+static bool display_bounds_ready(void) {
+#ifdef ELMC_WATCHFACE_MODE
+  return s_main_window != NULL;
+#else
+  if (!s_main_window) {
+    return false;
   }
+
+  GRect layer = layer_get_bounds(window_get_root_layer(s_main_window));
+  GRect compile = compile_display_bounds();
+  return layer.size.w >= compile.size.w && layer.size.h >= compile.size.h;
+#endif
 }
 
 static GRect display_bounds(void) {
+  GRect compile = compile_display_bounds();
+#ifdef ELMC_WATCHFACE_MODE
+  // Watchfaces target the full physical display. The root layer can report a
+  // reduced height during early layout on some platforms (notably Diorite/silk
+  // in QEMU) while the framebuffer is still the compile-time size.
+  (void)s_main_window;
+  return compile;
+#else
   GRect layer = GRectZero;
   if (s_main_window) {
     layer = layer_get_bounds(window_get_root_layer(s_main_window));
   }
-#ifdef PBL_DISPLAY_WIDTH
-  const int16_t compile_w = PBL_DISPLAY_WIDTH;
-#else
-  const int16_t compile_w = PBL_IF_ROUND_ELSE(180, 144);
-#endif
-#ifdef PBL_DISPLAY_HEIGHT
-  const int16_t compile_h = PBL_DISPLAY_HEIGHT;
-#else
-  const int16_t compile_h = PBL_IF_ROUND_ELSE(180, 168);
-#endif
 
   if (layer.size.w <= 0 || layer.size.h <= 0) {
     ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO,
-                          "display bounds unavailable; using compile w=%d h=%d", (int)compile_w,
-                          (int)compile_h);
+                          "display bounds unavailable; using compile w=%d h=%d",
+                          (int)compile.size.w, (int)compile.size.h);
 #if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
-    companion_inbox_log("display bounds unavailable; using compile w=%d h=%d", (int)compile_w,
-                      (int)compile_h);
+    companion_inbox_log("display bounds unavailable; using compile w=%d h=%d", (int)compile.size.w,
+                        (int)compile.size.h);
 #else
     APP_LOG(APP_LOG_LEVEL_INFO, "display bounds unavailable; using compile w=%d h=%d",
-            (int)compile_w, (int)compile_h);
+            (int)compile.size.w, (int)compile.size.h);
 #endif
-    return GRect(0, 0, compile_w, compile_h);
+    return compile;
   }
 
-  // Before the window is pushed, some targets report undersized bounds. Once the
-  // window is on-screen, trust the layer size even when QEMU reports a larger
-  // framebuffer than PBL_DISPLAY_* (forcing compile size leaves a small draw
-  // layer in the top-left of a bigger surface).
-  if (layer.size.w < compile_w || layer.size.h < compile_h) {
+  int16_t w = layer.size.w;
+  int16_t h = layer.size.h;
+  if (w > compile.size.w) {
+    w = compile.size.w;
+  }
+  if (h > compile.size.h) {
+    h = compile.size.h;
+  }
+
+  if (w != layer.size.w || h != layer.size.h) {
     ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO,
-                          "display bounds layer w=%d h=%d smaller than compile w=%d h=%d; using compile",
-                          (int)layer.size.w, (int)layer.size.h, (int)compile_w, (int)compile_h);
-#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
-    companion_inbox_log(
-        "display bounds layer w=%d h=%d smaller than compile w=%d h=%d; using compile",
-        (int)layer.size.w, (int)layer.size.h, (int)compile_w, (int)compile_h);
-#else
-    APP_LOG(APP_LOG_LEVEL_INFO,
-            "display bounds layer w=%d h=%d smaller than compile w=%d h=%d; using compile",
-            (int)layer.size.w, (int)layer.size.h, (int)compile_w, (int)compile_h);
-#endif
-    return GRect(0, 0, compile_w, compile_h);
+                          "display bounds layer w=%d h=%d capped to w=%d h=%d (compile w=%d h=%d)",
+                          (int)layer.size.w, (int)layer.size.h, (int)w, (int)h,
+                          (int)compile.size.w, (int)compile.size.h);
+  } else {
+    ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO,
+                          "display bounds layer w=%d h=%d (compile w=%d h=%d)", (int)w, (int)h,
+                          (int)compile.size.w, (int)compile.size.h);
   }
 
-  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO,
-                        "display bounds layer w=%d h=%d (compile w=%d h=%d)", (int)layer.size.w,
-                        (int)layer.size.h, (int)compile_w, (int)compile_h);
-#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
-  companion_inbox_log("display bounds layer w=%d h=%d (compile w=%d h=%d)", (int)layer.size.w,
-                      (int)layer.size.h, (int)compile_w, (int)compile_h);
-#else
-  APP_LOG(APP_LOG_LEVEL_INFO, "display bounds layer w=%d h=%d (compile w=%d h=%d)",
-          (int)layer.size.w, (int)layer.size.h, (int)compile_w, (int)compile_h);
+  return GRect(0, 0, w, h);
 #endif
-  return GRect(0, 0, layer.size.w, layer.size.h);
 }
 
-#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
-static void display_bounds_diag_callback(void *data) {
-  (void)data;
-  GRect bounds = display_bounds();
-#ifdef PBL_DISPLAY_WIDTH
-  const int16_t compile_w = PBL_DISPLAY_WIDTH;
-#else
-  const int16_t compile_w = PBL_IF_ROUND_ELSE(180, 144);
-#endif
-#ifdef PBL_DISPLAY_HEIGHT
-  const int16_t compile_h = PBL_DISPLAY_HEIGHT;
-#else
-  const int16_t compile_h = PBL_IF_ROUND_ELSE(180, 168);
-#endif
-  APP_LOG(APP_LOG_LEVEL_INFO, "display diag layer w=%d h=%d compile w=%d h=%d",
-          (int)bounds.size.w, (int)bounds.size.h, (int)compile_w, (int)compile_h);
-  companion_inbox_log("display diag layer w=%d h=%d compile w=%d h=%d", (int)bounds.size.w,
-                      (int)bounds.size.h, (int)compile_w, (int)compile_h);
-}
-#endif
-
-static ElmcValue *build_launch_context(AppLaunchReason launch) {
-  ELMC_PEBBLE_TRACE_ENTER("build_launch_context");
-  GRect bounds = display_bounds();
-
-  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "launch context screen w=%d h=%d",
-                        (int)bounds.size.w, (int)bounds.size.h);
-
-  ElmcValue *screen_width = elmc_new_int(bounds.size.w);
-  ElmcValue *screen_height = elmc_new_int(bounds.size.h);
-  ElmcValue *screen_shape = elmc_new_string(PBL_IF_ROUND_ELSE("Round", "Rectangular"));
-  ElmcValue *screen_color_mode = elmc_new_string(PBL_IF_COLOR_ELSE("Color", "BlackWhite"));
-  const char *screen_names[] = {"color_mode", "height", "shape", "width"};
-  ElmcValue *screen_values[] = {screen_color_mode, screen_height, screen_shape, screen_width};
-  ElmcValue *screen = elmc_record_new(4, screen_names, screen_values);
-  elmc_release(screen_width);
-  elmc_release(screen_height);
-  elmc_release(screen_shape);
-  elmc_release(screen_color_mode);
-
-  ElmcValue *reason = elmc_new_int(launch_reason_to_elm_tag(launch));
-  ElmcValue *watch_model = elmc_new_string("");
-  ElmcValue *watch_profile_id = elmc_new_string("");
-  ElmcValue *has_microphone = elmc_new_bool(
-#ifdef PBL_MICROPHONE
-      1
-#else
-      0
-#endif
-  );
-  ElmcValue *has_compass = elmc_new_bool(
-#ifdef PBL_COMPASS
-      1
-#else
-      0
-#endif
-  );
-  ElmcValue *supports_health = elmc_new_bool(
-#ifdef PBL_HEALTH
-      1
-#else
-      0
-#endif
-  );
-  const char *context_names[] = {
-      "has_compass", "has_microphone", "reason", "screen", "supports_health", "watchModel",
-      "watchProfileId"};
-  ElmcValue *context_values[] = {has_compass, has_microphone, reason, screen, supports_health,
-                                 watch_model, watch_profile_id};
-  ElmcValue *context = elmc_record_new(7, context_names, context_values);
-  elmc_release(reason);
-  elmc_release(screen);
-  elmc_release(watch_model);
-  elmc_release(watch_profile_id);
-  elmc_release(has_microphone);
-  elmc_release(has_compass);
-  elmc_release(supports_health);
-  ELMC_PEBBLE_TRACE_EXIT("build_launch_context");
-  return context;
-}
-
-static void init(void) {
-  ELMC_PEBBLE_TRACE_ENTER("init");
-  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "app init start");
+static void ensure_draw_layer_size(void) {
 #ifdef ELMC_WATCHFACE_MODE
-  s_run_mode = ELMC_PEBBLE_MODE_WATCHFACE;
-#else
-  s_run_mode = ELMC_PEBBLE_MODE_APP;
-#endif
-
-  s_main_window = window_create();
-  if (!s_main_window) {
-    APP_LOG(APP_LOG_LEVEL_ERROR, "window create failed");
-    ELMC_PEBBLE_TRACE_EXIT("init");
+  if (!s_main_window || s_draw_layer) {
     return;
   }
-  window_set_window_handlers(s_main_window, (WindowHandlers){
-                                               .load = main_window_load,
-                                               .unload = main_window_unload,
-                                           });
-#if ELMC_PEBBLE_FEATURE_RAW_BUTTON_EVENTS
-  if (s_run_mode == ELMC_PEBBLE_MODE_APP) {
-    window_set_click_config_provider(s_main_window, raw_click_config_provider);
-  }
-#elif ELMC_PEBBLE_FEATURE_BUTTON_EVENTS
-  if (s_run_mode == ELMC_PEBBLE_MODE_APP) {
-    window_set_click_config_provider(s_main_window, click_config_provider);
-  }
-#endif
-  // #region agent probe
-#if ELMC_AGENT_PROBE_INIT_STAGE == 1
-  window_stack_push(s_main_window, true);
-  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "window pushed");
-  ELMC_PEBBLE_TRACE_EXIT("init");
-  return;
-#endif
-  // #endregion
+  main_window_load(s_main_window);
+#else
+  GRect target = display_bounds();
+  GRect have = GRectZero;
 
-  window_stack_push(s_main_window, true);
-  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "window pushed");
+  if (!s_main_window) {
+    return;
+  }
+
+  if (s_draw_layer) {
+    have = layer_get_bounds(s_draw_layer);
+  }
+
+  if (!s_draw_layer || have.size.w < target.size.w || have.size.h < target.size.h) {
+    if (s_draw_layer) {
+      layer_destroy(s_draw_layer);
+      s_draw_layer = NULL;
+    }
+    main_window_load(s_main_window);
+  }
+#endif
+}
+
+static void complete_elm_init(void) {
+  if (s_elm_app.initialized) {
+    return;
+  }
 
   AppLaunchReason launch = launch_reason();
   ElmcValue *flags = build_launch_context(launch);
-  // #region agent probe
-#if ELMC_AGENT_PROBE_INIT_STAGE == 2
-  elmc_release(flags);
-  ELMC_PEBBLE_TRACE_EXIT("init");
-  return;
-#endif
-  // #endregion
   ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "elmc init begin");
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+  companion_inbox_log("elmc init begin");
+#endif
   int rc = elmc_pebble_init_with_mode(&s_elm_app, flags, s_run_mode);
   elmc_release(flags);
-  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "elmc init rc=%d launch_reason=%d mode=%d", rc, (int)launch, (int)s_run_mode);
-  // #region agent log
-  ELMC_AGENT_INIT_PROBE(rc == 0 ? 0xED980302 : 0xED98E302);
-  // #endregion
-  // #region agent probe
-#if ELMC_AGENT_PROBE_INIT_STAGE == 3
-  ELMC_PEBBLE_TRACE_EXIT("init");
-  return;
+  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "elmc init rc=%d launch_reason=%d mode=%d", rc,
+                        (int)launch, (int)s_run_mode);
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+  companion_inbox_log("elmc init rc=%d", rc);
 #endif
-  // #endregion
+  ELMC_AGENT_INIT_PROBE(rc == 0 ? 0xED980302 : 0xED98E302);
 
   if (rc == 0) {
 #if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
@@ -4050,6 +3982,169 @@ static void init(void) {
   } else {
     APP_LOG(APP_LOG_LEVEL_ERROR, "elmc_pebble_init failed: %d", rc);
   }
+}
+
+static void deferred_elm_init_callback(void *data) {
+  (void)data;
+
+  if (!display_bounds_ready() && s_elm_init_attempts < ELMC_DEFERRED_INIT_MAX_ATTEMPTS) {
+    s_elm_init_attempts += 1;
+    app_timer_register(ELMC_DEFERRED_INIT_RETRY_MS, deferred_elm_init_callback, NULL);
+    return;
+  }
+
+  ensure_draw_layer_size();
+  complete_elm_init();
+}
+
+static void schedule_elm_init(void) {
+  if (display_bounds_ready()) {
+    ensure_draw_layer_size();
+    complete_elm_init();
+    return;
+  }
+
+  s_elm_init_attempts = 0;
+  app_timer_register(ELMC_DEFERRED_INIT_RETRY_MS, deferred_elm_init_callback, NULL);
+}
+
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+static void display_bounds_diag_callback(void *data) {
+  (void)data;
+  GRect bounds = display_bounds();
+#ifdef PBL_DISPLAY_WIDTH
+  const int16_t compile_w = PBL_DISPLAY_WIDTH;
+#else
+  const int16_t compile_w = PBL_IF_ROUND_ELSE(180, 144);
+#endif
+#ifdef PBL_DISPLAY_HEIGHT
+  const int16_t compile_h = PBL_DISPLAY_HEIGHT;
+#else
+  const int16_t compile_h = PBL_IF_ROUND_ELSE(180, 168);
+#endif
+  APP_LOG(APP_LOG_LEVEL_INFO, "display diag layer w=%d h=%d compile w=%d h=%d",
+          (int)bounds.size.w, (int)bounds.size.h, (int)compile_w, (int)compile_h);
+  companion_inbox_log("display diag layer w=%d h=%d compile w=%d h=%d", (int)bounds.size.w,
+                      (int)bounds.size.h, (int)compile_w, (int)compile_h);
+}
+#endif
+
+static ElmcValue *build_launch_context(AppLaunchReason launch) {
+  ELMC_PEBBLE_TRACE_ENTER("build_launch_context");
+  GRect bounds = display_bounds();
+
+  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "launch context screen w=%d h=%d",
+                        (int)bounds.size.w, (int)bounds.size.h);
+
+  ElmcValue *screen_width = elmc_new_int(bounds.size.w);
+  ElmcValue *screen_height = elmc_new_int(bounds.size.h);
+  /* DisplayShape constructor tags (Round=2, Rectangular=1) match elmc codegen. */
+  ElmcValue *screen_shape = elmc_new_int(PBL_IF_ROUND_ELSE(2, 1));
+  ElmcValue *screen_color_mode = elmc_new_string(PBL_IF_COLOR_ELSE("Color", "BlackWhite"));
+  const char *screen_names[] = {"color_mode", "height", "shape", "width"};
+  ElmcValue *screen_values[] = {screen_color_mode, screen_height, screen_shape, screen_width};
+  ElmcValue *screen = elmc_record_new(4, screen_names, screen_values);
+  elmc_release(screen_width);
+  elmc_release(screen_height);
+  elmc_release(screen_shape);
+  elmc_release(screen_color_mode);
+
+  ElmcValue *reason = elmc_new_int(launch_reason_to_elm_tag(launch));
+  ElmcValue *watch_model = elmc_new_string("");
+  ElmcValue *watch_profile_id = elmc_new_string("");
+  ElmcValue *has_microphone = elmc_new_bool(
+#ifdef PBL_MICROPHONE
+      1
+#else
+      0
+#endif
+  );
+  ElmcValue *has_compass = elmc_new_bool(
+#ifdef PBL_COMPASS
+      1
+#else
+      0
+#endif
+  );
+  ElmcValue *supports_health = elmc_new_bool(
+#ifdef PBL_HEALTH
+      1
+#else
+      0
+#endif
+  );
+  const char *context_names[] = {
+      "has_compass", "has_microphone", "reason", "screen", "supports_health", "watchModel",
+      "watchProfileId"};
+  ElmcValue *context_values[] = {has_compass, has_microphone, reason, screen, supports_health,
+                                 watch_model, watch_profile_id};
+  ElmcValue *context = elmc_record_new(7, context_names, context_values);
+  elmc_release(reason);
+  elmc_release(screen);
+  elmc_release(watch_model);
+  elmc_release(watch_profile_id);
+  elmc_release(has_microphone);
+  elmc_release(has_compass);
+  elmc_release(supports_health);
+  ELMC_PEBBLE_TRACE_EXIT("build_launch_context");
+  return context;
+}
+
+static void init(void) {
+  ELMC_PEBBLE_TRACE_ENTER("init");
+  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "app init start");
+#ifdef ELMC_WATCHFACE_MODE
+  s_run_mode = ELMC_PEBBLE_MODE_WATCHFACE;
+#else
+  s_run_mode = ELMC_PEBBLE_MODE_APP;
+#endif
+
+  s_main_window = window_create();
+  if (!s_main_window) {
+    APP_LOG(APP_LOG_LEVEL_ERROR, "window create failed");
+    ELMC_PEBBLE_TRACE_EXIT("init");
+    return;
+  }
+  window_set_window_handlers(s_main_window, (WindowHandlers){
+                                               .load = main_window_load,
+                                               .unload = main_window_unload,
+                                           });
+#if ELMC_PEBBLE_FEATURE_RAW_BUTTON_EVENTS
+  if (s_run_mode == ELMC_PEBBLE_MODE_APP) {
+    window_set_click_config_provider(s_main_window, raw_click_config_provider);
+  }
+#elif ELMC_PEBBLE_FEATURE_BUTTON_EVENTS
+  if (s_run_mode == ELMC_PEBBLE_MODE_APP) {
+    window_set_click_config_provider(s_main_window, click_config_provider);
+  }
+#endif
+  // #region agent probe
+#if ELMC_AGENT_PROBE_INIT_STAGE == 1
+  window_stack_push(s_main_window, true);
+  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "window pushed");
+  ELMC_PEBBLE_TRACE_EXIT("init");
+  return;
+#endif
+  // #endregion
+
+  window_stack_push(s_main_window, true);
+  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "window pushed");
+
+  // #region agent probe
+#if ELMC_AGENT_PROBE_INIT_STAGE == 2
+  ELMC_PEBBLE_TRACE_EXIT("init");
+  return;
+#endif
+  // #endregion
+
+  schedule_elm_init();
+
+  // #region agent probe
+#if ELMC_AGENT_PROBE_INIT_STAGE == 3
+  ELMC_PEBBLE_TRACE_EXIT("init");
+  return;
+#endif
+  // #endregion
 
   // #region agent log
   ELMC_AGENT_INIT_PROBE(0xED990A01);

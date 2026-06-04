@@ -5,6 +5,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   alias Ide.Debugger.RuntimePreview
   alias Ide.Projects.Project
   alias Ide.Resources.ApngProbe
+  alias Ide.Resources.ApngStaticPreview
   alias Ide.Resources.PdcDecoder
   alias Ide.Resources.ResourceStore
 
@@ -114,10 +115,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
       end)
 
     runtime_has_animations? =
-      Enum.any?(runtime_ops, &(&1.kind == :bitmap_sequence_at))
+      Enum.any?(runtime_ops, fn op ->
+        op.kind == :bitmap_sequence_at and Map.get(op, :animation_id, 0) > 0
+      end)
 
     runtime_has_bitmaps? =
-      Enum.any?(runtime_ops, &(&1.kind in [:bitmap_in_rect, :rotated_bitmap]))
+      Enum.any?(runtime_ops, fn op ->
+        op.kind in [:bitmap_in_rect, :rotated_bitmap] and Map.get(op, :bitmap_id, 0) > 0
+      end)
 
     tree_path_ops =
       Enum.filter(tree_ops, &(&1.kind in [:path_filled, :path_outline, :path_outline_open]))
@@ -298,8 +303,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   defp animation_preview_op(project, animation_id, x, y) do
     with {:ok, path} <- ResourceStore.animation_file_path_by_id(project, animation_id),
          {:ok, bytes} <- File.read(path),
-         {:ok, probe} <- ApngProbe.probe_bytes(bytes) do
-      href = "data:image/png;base64," <> Base.encode64(bytes)
+         {:ok, probe} <- ApngProbe.probe_bytes(bytes),
+         {:ok, preview_bytes} <- ApngStaticPreview.static_png_bytes(bytes) do
+      href = "data:image/png;base64," <> Base.encode64(preview_bytes)
 
       play_count =
         case probe.play_count do
@@ -1810,6 +1816,16 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     }
   end
 
+  @spec node_point_xy(map(), String.t()) :: {integer() | nil, integer() | nil}
+  defp node_point_xy(node, key) when is_map(node) and is_binary(key) do
+    point = Map.get(node, key) || Map.get(node, String.to_atom(key)) || %{}
+
+    {
+      map_integer(point, "x", map_integer(node, "x", nil)),
+      map_integer(point, "y", map_integer(node, "y", nil))
+    }
+  end
+
   @spec unresolved_svg_op(String.t(), [String.t()], map()) :: svg_op()
   defp unresolved_svg_op(node_type, required_keys, op) do
     %{
@@ -2088,12 +2104,43 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
             "h" => Map.get(node, "h") || Map.get(node, :h)
           }
 
+        "drawBitmapInRect" ->
+          {x, y, w, h} = node_rect_fields(node)
+
+          %{
+            "kind" => "bitmap_in_rect",
+            "resource" => Map.get(node, "resource") || Map.get(node, :resource),
+            "bitmap_id" => Map.get(node, "bitmap_id") || Map.get(node, :bitmap_id) || 0,
+            "x" => x,
+            "y" => y,
+            "w" => w,
+            "h" => h
+          }
+
+        "drawRotatedBitmap" ->
+          {src_w, src_h, _, _} = node_rect_fields(node)
+          {center_x, center_y} = node_point_xy(node, "origin")
+
+          %{
+            "kind" => "rotated_bitmap",
+            "resource" => Map.get(node, "resource") || Map.get(node, :resource),
+            "bitmap_id" => Map.get(node, "bitmap_id") || Map.get(node, :bitmap_id) || 0,
+            "src_w" => src_w,
+            "src_h" => src_h,
+            "angle" => Map.get(node, "rotation") || Map.get(node, :rotation) || Map.get(node, "angle") || Map.get(node, :angle),
+            "center_x" => center_x,
+            "center_y" => center_y
+          }
+
         "drawBitmapSequenceAt" ->
+          {x, y} = node_point_xy(node, "origin")
+
           %{
             "kind" => "bitmap_sequence_at",
-            "animation_id" => Map.get(node, "animation_id") || Map.get(node, :animation_id),
-            "x" => Map.get(node, "x") || Map.get(node, :x),
-            "y" => Map.get(node, "y") || Map.get(node, :y)
+            "resource" => Map.get(node, "resource") || Map.get(node, :resource),
+            "animation_id" => Map.get(node, "animation_id") || Map.get(node, :animation_id) || 0,
+            "x" => x,
+            "y" => y
           }
 
         "drawVectorAt" ->

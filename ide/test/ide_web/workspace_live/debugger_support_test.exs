@@ -1142,6 +1142,45 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert op.y == 6
   end
 
+  test "debugger preview derives flat drawBitmapInRect and drawRotatedBitmap nodes" do
+    tree = %{
+      "type" => "root",
+      "children" => [
+        %{
+          "type" => "drawBitmapInRect",
+          "resource" => "BitmapStaticBtIcon",
+          "bounds" => %{"x" => 8, "y" => 30, "w" => 30, "h" => 30}
+        },
+        %{
+          "type" => "drawRotatedBitmap",
+          "resource" => "BitmapStaticBtIcon",
+          "bounds" => %{"x" => 0, "y" => 0, "w" => 30, "h" => 30},
+          "rotation" => 24_576,
+          "origin" => %{"x" => 72, "y" => 95}
+        }
+      ]
+    }
+
+    runtime = %{
+      model: %{
+        "bitmap_resource_indices" => %{"BitmapStaticBtIcon" => 1}
+      }
+    }
+
+    [in_rect, rotated] = DebuggerPreview.svg_ops(tree, runtime)
+
+    assert in_rect.kind == :bitmap_in_rect
+    assert in_rect.bitmap_id == 1
+    assert in_rect.x == 8
+    assert in_rect.y == 30
+
+    assert rotated.kind == :rotated_bitmap
+    assert rotated.bitmap_id == 1
+    assert rotated.center_x == 72
+    assert rotated.center_y == 95
+    assert rotated.angle == 24_576
+  end
+
   test "debugger preview supplements runtime output with tree drawVectorAt ops" do
     tree = %{
       "type" => "root",

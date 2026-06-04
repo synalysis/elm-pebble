@@ -1185,5 +1185,38 @@ patch_runner_lifecycle_logging()
 patch_embedded_geolocation()
 
 
+def patch_pebble_manager_connect_retry():
+    """QEMU can be slow to answer WatchVersion right after boot or PBW install."""
+    try:
+        from libpebble2.exceptions import TimeoutError as PebbleTimeoutError
+        from pypkjs.runner.pebble_manager import PebbleManager
+    except Exception:
+        return
+
+    original_connect = PebbleManager.connect
+
+    def connect_with_retry(self):
+        delays = (0.0, 0.75, 1.5, 3.0, 5.0)
+        last_error = None
+
+        for delay in delays:
+            if delay:
+                time.sleep(delay)
+            try:
+                return original_connect(self)
+            except PebbleTimeoutError as exc:
+                last_error = exc
+
+        if last_error is not None:
+            raise last_error
+
+        return original_connect(self)
+
+    PebbleManager.connect = connect_with_retry
+
+
+patch_pebble_manager_connect_retry()
+
+
 if __name__ == "__main__":
     sys.exit(run_tool())

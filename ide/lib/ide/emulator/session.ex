@@ -5,7 +5,8 @@ defmodule Ide.Emulator.Session do
 
   require Logger
 
-  alias Ide.Emulator.{InstallPrep, SlotLimiter, Types}
+  alias Ide.Emulator.{InstallPrep, LogCapture, SlotLimiter, Types}
+  alias Ide.Emulator.PebbleProtocol.{Packets, Router}
 
   alias Ide.Emulator.Session.{
     Config,
@@ -132,6 +133,64 @@ defmodule Ide.Emulator.Session do
     :exit, _ -> {:error, :emulator_session_unavailable}
   end
 
+  @app_log_endpoint 0x07D6
+
+  @spec request_app_logs(pid()) :: :ok | {:error, Types.session_error()}
+  def request_app_logs(pid) do
+    GenServer.call(pid, :request_app_logs, 5_000)
+  catch
+    :exit, reason -> {:error, reason}
+  end
+
+  @spec log_capture_context(pid()) ::
+          {:ok, map()} | {:error, Types.session_atom_error()}
+  def log_capture_context(pid) do
+    GenServer.call(pid, :log_capture_context, 5_000)
+  catch
+    :exit, reason -> {:error, reason}
+  end
+
+  @doc """
+  Sends `AppRunStateStart` (phone → watch), which begins the AppFetch / PutBytes install handshake.
+
+  PBW install already does this once at the start of `PBWInstaller.install/4`; do not call again
+  immediately after a successful install — it retriggers AppFetch and can destabilize the app.
+  """
+  @spec start_app(pid(), String.t()) :: :ok | {:error, Types.session_error()}
+  def start_app(pid, uuid) when is_binary(uuid) do
+    GenServer.call(pid, {:start_app, uuid}, 5_000)
+  catch
+    :exit, reason -> {:error, reason}
+  end
+
+  @spec capture_logs(pid(), keyword()) :: LogCapture.snapshot()
+  def capture_logs(pid, opts \\ []) do
+    timeout_ms = log_capture_call_timeout(opts)
+    GenServer.call(pid, {:capture_logs, opts}, timeout_ms)
+  catch
+    :exit, {:timeout, _} ->
+      %{
+        source: "embedded",
+        duration_ms: Keyword.get(opts, :duration_ms, 5_000),
+        output: "log capture timed out",
+        lines: [],
+        fault_detected: false,
+        console: %{output: "", error: :timeout},
+        protocol: %{lines: [], error: :timeout}
+      }
+
+    :exit, _ ->
+      %{
+        source: "embedded",
+        duration_ms: Keyword.get(opts, :duration_ms, 5_000),
+        output: "log capture unavailable",
+        lines: [],
+        fault_detected: false,
+        console: %{output: "", error: :emulator_session_unavailable},
+        protocol: %{lines: [], error: :emulator_session_unavailable}
+      }
+  end
+
   @spec health_check(pid()) :: :ok | {:error, Types.session_atom_error()}
   def health_check(pid) do
     GenServer.call(pid, :health_check, 1_000)
@@ -228,6 +287,55 @@ defmodule Ide.Emulator.Session do
 
   def handle_call(:restart_pypkjs, _from, state), do: InstallCalls.restart_pypkjs(state)
 
+  def handle_call(:request_app_logs, _from, %{protocol_router_pid: pid} = state) when is_pid(pid) do
+    if ProcessHost.live_pid?(pid) do
+      :ok = Router.send_packet(pid, @app_log_endpoint, <<1>>)
+      {:reply, :ok, state}
+    else
+      {:reply, {:error, :embedded_protocol_router_not_started},
+       %{state | protocol_router_pid: nil}}
+    end
+  end
+
+  def handle_call(:request_app_logs, _from, state),
+    do: {:reply, {:error, :embedded_protocol_router_not_started}, state}
+
+  def handle_call(:log_capture_context, _from, state) do
+    {:reply,
+     {:ok,
+      %{
+        console_port: state.console_port,
+        protocol_router_pid: state.protocol_router_pid
+      }}, state}
+  end
+
+  def handle_call({:start_app, uuid}, _from, %{protocol_router_pid: pid} = state) when is_pid(pid) do
+    if ProcessHost.live_pid?(pid) do
+      {endpoint, payload} = Packets.app_run_state_start(uuid)
+      :ok = Router.send_packet(pid, endpoint, payload)
+      {:reply, :ok, state}
+    else
+      {:reply, {:error, :embedded_protocol_router_not_started},
+       %{state | protocol_router_pid: nil}}
+    end
+  end
+
+  def handle_call({:start_app, _uuid}, _from, state),
+    do: {:reply, {:error, :embedded_protocol_router_not_started}, state}
+
+  def handle_call({:capture_logs, opts}, _from, state) do
+    snapshot =
+      LogCapture.snapshot(
+        %{
+          console_port: state.console_port,
+          protocol_router_pid: state.protocol_router_pid
+        },
+        opts
+      )
+
+    {:reply, snapshot, state}
+  end
+
   def handle_call(:health_check, _from, state), do: {:reply, Health.check(state), state}
 
   def handle_call(:ping, _from, %{installing?: true} = state) do
@@ -302,4 +410,22 @@ defmodule Ide.Emulator.Session do
   defp via(id), do: {:via, Registry, {Ide.Emulator.Registry, id}}
 
   defp config(key, default), do: Config.config(key, default)
+
+  defp log_capture_call_timeout(opts) do
+    duration_ms =
+      case Keyword.get(opts, :duration_ms) do
+        ms when is_integer(ms) and ms > 0 -> ms
+        _ -> nil
+      end
+
+    duration_ms =
+      duration_ms ||
+        case Keyword.get(opts, :logs_snapshot_seconds) do
+          seconds when is_integer(seconds) and seconds > 0 -> seconds * 1_000
+          _ -> nil
+        end
+
+    duration_ms = duration_ms || 5_000
+    min(duration_ms, 30_000) + 10_000
+  end
 end

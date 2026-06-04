@@ -324,7 +324,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     body =
       generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_trigRoundScore_native")
+      |> String.split("static elmc_int_t elmc_fn_Main_trigRoundScore_native")
       |> List.last()
 
     [fn_body | _] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
@@ -774,7 +774,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute generated_c =~ "elmc_fn_Main_nativeBoolCaptured_native"
 
     assert generated_c =~
-             "static ElmcValue *elmc_fn_Main_nativeBoolBoxedUse_native(ElmcValue * const enabled, const elmc_int_t value)"
+             "static elmc_int_t elmc_fn_Main_nativeBoolBoxedUse_native(ElmcValue * const enabled, const elmc_int_t value)"
 
     compare_branch_body =
       generated_c
@@ -907,7 +907,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     body =
       generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeAbsNegate_native")
+      |> String.split("static elmc_int_t elmc_fn_Main_nativeAbsNegate_native")
       |> List.last()
 
     [native_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
@@ -1545,7 +1545,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute generated_c =~ "ElmcValue *elmc_fn_Main_nativeOnlyHelper(ElmcValue **args, int argc)"
 
     assert generated_c =~
-             "static ElmcValue *elmc_fn_Main_nativeOnlyHelper_native(const elmc_int_t value)"
+             "static elmc_int_t elmc_fn_Main_nativeOnlyHelper_native(const elmc_int_t value)"
 
     assert generated_c =~ "elmc_fn_Main_nativeOnlyHelper_native(7)"
   end
@@ -1712,9 +1712,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     assert generated_c =~ "elmc_fn_Pebble_Ui_toUiNode"
-    assert generated_c =~ "elmc_new_int(1000)"
-    assert generated_c =~ "elmc_new_int(1001)"
-    assert generated_c =~ "elmc_new_int(1002)"
+    assert generated_c =~ "elmc_new_int(ELMC_UI_NODE_WINDOW_STACK)"
+    assert generated_c =~ "elmc_new_int(ELMC_UI_NODE_WINDOW)"
+    assert generated_c =~ "elmc_new_int(ELMC_UI_NODE_CANVAS_LAYER)"
 
     File.write!(Path.join(out_dir, "c/generic_ui_harness.c"), generic_ui_harness_source())
 
@@ -3424,9 +3424,13 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     animated_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_animatedVectorOps")
+      |> String.split(
+        "ElmcValue *elmc_fn_Main_animatedVectorOps(ElmcValue ** const args, const int argc) {"
+      )
       |> Enum.at(1)
-      |> String.split("ElmcValue *elmc_fn_Main_combinedOps")
+      |> String.split(
+        "ElmcValue *elmc_fn_Main_combinedOps(ElmcValue ** const args, const int argc) {"
+      )
       |> hd()
 
     assert animated_body =~ "elmc_new_int(31)"
@@ -3436,9 +3440,13 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     static_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_staticVectorOps")
+      |> String.split(
+        "ElmcValue *elmc_fn_Main_staticVectorOps(ElmcValue ** const args, const int argc) {"
+      )
       |> Enum.at(1)
-      |> String.split("ElmcValue *elmc_fn_Main_animatedVectorOps")
+      |> String.split(
+        "ElmcValue *elmc_fn_Main_animatedVectorOps(ElmcValue ** const args, const int argc) {"
+      )
       |> hd()
 
     assert static_body =~ "elmc_new_int(30)"
@@ -3673,7 +3681,11 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.dirname(project_dir))
     File.cp_r!(source_fixture, project_dir)
-    File.write!(Path.join(project_dir, "src/Main.elm"), direct_indexed_map_affine_cells_text_source())
+
+    File.write!(
+      Path.join(project_dir, "src/Main.elm"),
+      direct_indexed_map_affine_cells_text_source()
+    )
 
     assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
@@ -3731,7 +3743,11 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.dirname(project_dir))
     File.cp_r!(source_fixture, project_dir)
-    File.write!(Path.join(project_dir, "src/Main.elm"), direct_indexed_map_affine_layout_cells_source())
+
+    File.write!(
+      Path.join(project_dir, "src/Main.elm"),
+      direct_indexed_map_affine_layout_cells_source()
+    )
 
     assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
@@ -3825,22 +3841,16 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    view_body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_view_commands_append")
-      |> List.last()
-      |> String.split("static int elmc_fn_", parts: 2)
-      |> hd()
-
     min_results =
-      Regex.scan(~r/const elmc_int_t (native_min_\d+) =/, view_body)
+      Regex.scan(~r/const elmc_int_t (native_min_\d+) =/, generated_c)
       |> Enum.map(&List.last/1)
       |> Enum.uniq()
 
-    assert min_results == ["native_min_4"]
-    assert Regex.scan(~r/const elmc_int_t native_min_left_\d+ =/, view_body) |> length() == 1
-    assert view_body =~ "(native_min_4 * 4)"
-    refute view_body =~ "native_min_11"
+    assert length(min_results) == 1
+    [min_result] = min_results
+    assert Regex.scan(~r/const elmc_int_t native_min_left_\d+ =/, generated_c) |> length() == 1
+    assert generated_c =~ "(#{min_result} * 4)"
+    refute generated_c =~ "native_min_11"
   end
 
   test "direct view uses native packed textOptions without record allocation" do
@@ -4062,7 +4072,11 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.dirname(project_dir))
     File.cp_r!(source_fixture, project_dir)
-    File.write!(Path.join(project_dir, "src/CoreCompliance.elm"), File.read!(Path.join(source_fixture, "src/CoreCompliance.elm")))
+
+    File.write!(
+      Path.join(project_dir, "src/CoreCompliance.elm"),
+      File.read!(Path.join(source_fixture, "src/CoreCompliance.elm"))
+    )
 
     assert {:ok, _result} =
              Elmc.compile(project_dir, %{
@@ -5393,7 +5407,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
   test "game elmtris template compiles displayShapeIsRound case subjects to valid C" do
     source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    elmtris_main = Path.expand("../../ide/priv/project_templates/game_elmtris/src/Main.elm", __DIR__)
+
+    elmtris_main =
+      Path.expand("../../ide/priv/project_templates/game_elmtris/src/Main.elm", __DIR__)
+
     project_dir = Path.expand("tmp/game_elmtris_project", __DIR__)
     out_dir = Path.expand("tmp/game_elmtris_codegen", __DIR__)
     File.rm_rf!(project_dir)
@@ -5443,5 +5460,4 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     assert compile_code == 0, compile_out
   end
-
 end

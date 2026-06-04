@@ -39,35 +39,10 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
   end
 
   def compile(%{op: :list_literal, items: items}, env, counter) do
-    {item_code, item_vars, counter} =
-      Enum.reduce(items, {"", [], counter}, fn item, {acc_code, vars, c} ->
-        {code, var, c1} = Host.compile_expr(item, env, c)
-        {acc_code <> "\n  " <> code, vars ++ [var], c1}
-      end)
-
-    next = counter + 1
-    out = "tmp_#{next}"
-    count = length(item_vars)
-    array_name = "list_items_#{next}"
-    item_list = Enum.join(item_vars, ", ")
-    list_probe = DebugProbes.list_literal_probe(env, out, next)
-
-    code =
-      if count == 0 do
-        """
-        ElmcValue *#{out} = elmc_list_nil();
-          #{list_probe}
-        """
-      else
-        """
-        #{item_code}
-          ElmcValue *#{array_name}[#{count}] = { #{item_list} };
-          ElmcValue *#{out} = elmc_list_from_values_take(#{array_name}, #{count});
-          #{list_probe}
-        """
-      end
-
-    {code, out, next}
+    case static_list_literal(items, env, counter) do
+      {:ok, result} -> result
+      :error -> compile_dynamic_list_literal(items, env, counter)
+    end
   end
 
   def compile(%{op: :tuple_second, arg: arg}, env, counter) when is_binary(arg) do
@@ -117,6 +92,108 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
   def compile(%{op: :char_from_code_expr, arg: arg_expr}, env, counter) do
     compile_expr_unary(arg_expr, "elmc_new_char(elmc_as_int", env, counter)
   end
+
+  defp compile_dynamic_list_literal(items, env, counter) do
+    {item_code, item_vars, counter} =
+      Enum.reduce(items, {"", [], counter}, fn item, {acc_code, vars, c} ->
+        {code, var, c1} = Host.compile_expr(item, env, c)
+        {acc_code <> "\n  " <> code, vars ++ [var], c1}
+      end)
+
+    next = counter + 1
+    out = "tmp_#{next}"
+    count = length(item_vars)
+    array_name = "list_items_#{next}"
+    item_list = Enum.join(item_vars, ", ")
+    list_probe = DebugProbes.list_literal_probe(env, out, next)
+
+    code =
+      if count == 0 do
+        """
+        ElmcValue *#{out} = elmc_list_nil();
+          #{list_probe}
+        """
+      else
+        """
+        #{item_code}
+          ElmcValue *#{array_name}[#{count}] = { #{item_list} };
+          ElmcValue *#{out} = elmc_list_from_values_take(#{array_name}, #{count});
+          #{list_probe}
+        """
+      end
+
+    {code, out, next}
+  end
+
+  defp static_list_literal(items, env, counter) when length(items) >= 4 do
+    cond do
+      Enum.all?(items, &static_int_literal?/1) ->
+        {:ok, compile_static_int_list(items, env, counter)}
+
+      Enum.all?(items, &static_tuple2_int_literal?/1) ->
+        {:ok, compile_static_tuple2_int_list(items, env, counter)}
+
+      true ->
+        :error
+    end
+  end
+
+  defp static_list_literal(_items, _env, _counter), do: :error
+
+  defp compile_static_int_list(items, env, counter) do
+    next = counter + 1
+    out = "tmp_#{next}"
+    count = length(items)
+    values_name = "list_int_values_#{next}"
+    list_probe = DebugProbes.list_literal_probe(env, out, next)
+
+    values =
+      items
+      |> Enum.map(&Integer.to_string(&1.value))
+      |> Enum.join(", ")
+
+    code = """
+      static const elmc_int_t #{values_name}[#{count}] = { #{values} };
+      ElmcValue *#{out} = elmc_list_from_int_array(#{values_name}, #{count});
+      #{list_probe}
+    """
+
+    {code, out, next}
+  end
+
+  defp compile_static_tuple2_int_list(items, env, counter) do
+    next = counter + 1
+    out = "tmp_#{next}"
+    count = length(items)
+    values_name = "list_tuple2_values_#{next}"
+    list_probe = DebugProbes.list_literal_probe(env, out, next)
+
+    values =
+      items
+      |> Enum.map(fn %{left: left, right: right} -> "{ #{left.value}, #{right.value} }" end)
+      |> Enum.join(", ")
+
+    code = """
+      static const elmc_int_t #{values_name}[#{count}][2] = { #{values} };
+      ElmcValue *#{out} = elmc_list_from_tuple2_int_array(#{values_name}, #{count});
+      #{list_probe}
+    """
+
+    {code, out, next}
+  end
+
+  defp static_int_literal?(%{op: :int_literal, value: value}) when is_integer(value), do: true
+  defp static_int_literal?(_), do: false
+
+  defp static_tuple2_int_literal?(%{
+         op: :tuple2,
+         left: %{op: :int_literal, value: left},
+         right: %{op: :int_literal, value: right}
+       })
+       when is_integer(left) and is_integer(right),
+       do: true
+
+  defp static_tuple2_int_literal?(_), do: false
 
   @spec env_source_ref(Types.compile_env(), String.t()) :: Types.env_source_ref()
   defp env_source_ref(env, name), do: Map.get(env, name, name)

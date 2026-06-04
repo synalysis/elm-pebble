@@ -141,7 +141,8 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
     <div class="rounded border border-zinc-200 bg-zinc-50 p-3">
       <h3 class="text-sm font-semibold text-zinc-700">Bitmap file</h3>
       <p class="mt-1 text-xs text-zinc-500">
-        PNG (and other static raster formats). Use the Animated tab for GIF sequences.
+        PNG (and other static raster formats). Color uploads automatically get a monochrome (~bw)
+        preview when ImageMagick is available. Use the Animated tab for GIF sequences.
       </p>
       <.form
         for={%{}}

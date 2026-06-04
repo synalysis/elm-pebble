@@ -191,57 +191,65 @@ defmodule Ide.Emulator.ScreenshotCaptureRepair do
         do: {nx, ny}
   end
 
+  # Peel only a thin black bezel from the edges; do not flood large interior black regions
+  # that touch a border (for example checkerboard quadrants).
+  @rect_letterbox_max_depth 4
+
   defp maybe_flood_rect_letterbox(rgba, width, height, %{
          "shape" => "rect",
          "color_mode" => "BlackWhite"
        }) do
-    background = border_connected_black(width, height, rgba)
+    background = border_letterbox_black(width, height, rgba, @rect_letterbox_max_depth)
     paint_indices(rgba, width, background, <<255, 255, 255, 255>>)
   end
 
   defp maybe_flood_rect_letterbox(rgba, _width, _height, _profile), do: rgba
 
-  defp border_connected_black(width, height, rgba) do
+  defp border_letterbox_black(width, height, rgba, max_depth) when max_depth >= 0 do
     seeds =
-      for(x <- 0..(width - 1), y <- [0, height - 1], do: {x, y}) ++
-        for(y <- 1..(height - 2)//1, x <- [0, width - 1], do: {x, y})
+      for(x <- 0..(width - 1), y <- [0, height - 1], do: {x, y, 0}) ++
+        for(y <- 1..(height - 2)//1, x <- [0, width - 1], do: {x, y, 0})
 
     seeds =
-      Enum.filter(seeds, fn {x, y} -> pixel_black?(rgba, width, x, y) end)
+      Enum.filter(seeds, fn {x, y, _depth} -> pixel_black?(rgba, width, x, y) end)
 
-    flood_black(width, height, rgba, seeds)
+    flood_black_within_depth(width, height, rgba, seeds, max_depth)
   end
 
-  defp flood_black(_width, _height, _rgba, []), do: MapSet.new()
+  defp flood_black_within_depth(_width, _height, _rgba, [], _max_depth), do: MapSet.new()
 
-  defp flood_black(width, height, rgba, seeds) do
+  defp flood_black_within_depth(width, height, rgba, seeds, max_depth) do
     {queue, visited} =
       Enum.reduce(seeds, {:queue.new(), MapSet.new()}, fn coord, {q, vis} ->
         {:queue.in(coord, q), MapSet.put(vis, coord)}
       end)
 
-    flood_loop(queue, width, height, rgba, visited)
+    flood_depth_loop(queue, width, height, rgba, visited, MapSet.new(), max_depth)
   end
 
-  defp flood_loop(queue, width, height, rgba, visited) do
+  defp flood_depth_loop(queue, width, height, rgba, visited, painted, max_depth) do
     case :queue.out(queue) do
       {:empty, _} ->
-        visited
+        painted
 
-      {{:value, {x, y}}, queue} ->
+      {{:value, {x, y, depth}}, queue} ->
+        painted = MapSet.put(painted, {x, y})
         neighbors = [{x + 1, y}, {x - 1, y}, {x, y + 1}, {x, y - 1}]
 
         {queue, visited} =
           Enum.reduce(neighbors, {queue, visited}, fn {nx, ny}, {q, vis} ->
-            if nx >= 0 and nx < width and ny >= 0 and ny < height and
-                 not MapSet.member?(vis, {nx, ny}) and pixel_black?(rgba, width, nx, ny) do
-              {:queue.in({nx, ny}, q), MapSet.put(vis, {nx, ny})}
+            next_depth = depth + 1
+
+            if next_depth <= max_depth and nx >= 0 and nx < width and ny >= 0 and ny < height and
+                 not MapSet.member?(vis, {nx, ny, next_depth}) and
+                 pixel_black?(rgba, width, nx, ny) do
+              {:queue.in({nx, ny, next_depth}, q), MapSet.put(vis, {nx, ny, next_depth})}
             else
               {q, vis}
             end
           end)
 
-        flood_loop(queue, width, height, rgba, visited)
+        flood_depth_loop(queue, width, height, rgba, visited, painted, max_depth)
     end
   end
 

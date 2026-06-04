@@ -118,6 +118,18 @@ defmodule Elmc.Backend.CCodegen.Patterns do
           Types.compile_env()
   def bind_pattern(env, %{kind: :wildcard}, _subject_ref), do: env
 
+  def bind_pattern(env, %{kind: :var, name: bind}, subject_ref)
+      when bind not in ["_", ""] do
+    ref =
+      if Map.get(env, :maybe_unwrap_just) do
+        just_payload_ref(subject_ref)
+      else
+        pattern_subject_ref(subject_ref)
+      end
+
+    Map.put(env, bind, ref)
+  end
+
   def bind_pattern(env, %{kind: :var, name: bind}, subject_ref) do
     Map.put(env, bind, pattern_subject_ref(subject_ref))
   end
@@ -159,8 +171,7 @@ defmodule Elmc.Backend.CCodegen.Patterns do
        ) do
     subject_ref = pattern_subject_ref(subject_ref)
 
-    value_ref =
-      "((#{subject_ref}->tag == ELMC_TAG_MAYBE) ? ((ElmcMaybe *)#{subject_ref}->payload)->value : ((ElmcTuple2 *)#{subject_ref}->payload)->second)"
+    value_ref = just_payload_ref(subject_ref)
 
     env = if is_binary(bind), do: Map.put(env, bind, value_ref), else: env
     if arg, do: bind_pattern(env, arg, value_ref), else: env
@@ -219,6 +230,63 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   end
 
   def bind_pattern(env, _pattern, _subject_ref), do: env
+
+  @doc false
+  @spec maybe_unwrap_just_case?(list()) :: boolean()
+  def maybe_unwrap_just_case?(branches) when is_list(branches) do
+    Enum.any?(branches, &nothing_branch?/1) and
+      Enum.any?(branches, &var_branch?/1) and
+      Enum.all?(branches, fn branch -> nothing_branch?(branch) or var_branch?(branch) end)
+  end
+
+  def maybe_unwrap_just_case?(_branches), do: false
+
+  @doc """
+  For `Nothing` + bare-var Maybe cases, bind the var to a single borrowed temp
+  per branch so field reads do not leak one payload per `elmc_record_get` call.
+  The borrow is valid while the case subject remains alive.
+  """
+  @spec maybe_unwrap_var_branch(Types.compile_env(), map(), Types.subject_ref(), integer()) ::
+          {Types.compile_env(), String.t(), String.t(), integer()}
+  def maybe_unwrap_var_branch(env, branch, subject_ref, counter) do
+    if Map.get(env, :maybe_unwrap_just, false) and var_branch?(branch) do
+      %{pattern: %{kind: :var, name: bind}} = branch
+      next = counter + 1
+      temp = "tmp_#{next}"
+      subject = pattern_subject_ref(subject_ref)
+
+      setup = "ElmcValue *#{temp} = elmc_maybe_or_tuple_just_payload_borrow(#{subject});"
+      release = ""
+
+      branch_env =
+        env
+        |> Map.put(bind, temp)
+        |> Map.delete(:maybe_unwrap_just)
+
+      {branch_env, setup, release, next}
+    else
+      {bind_pattern(env, branch.pattern, subject_ref), "", "", counter}
+    end
+  end
+
+  @spec nothing_branch?(map()) :: boolean()
+  defp nothing_branch?(%{pattern: %{kind: :constructor, name: name}})
+       when name in ["Nothing", "Maybe.Nothing"],
+       do: true
+
+  defp nothing_branch?(_), do: false
+
+  @spec var_branch?(map()) :: boolean()
+  defp var_branch?(%{pattern: %{kind: :var, name: name}})
+       when is_binary(name) and name not in ["_", ""],
+       do: true
+
+  defp var_branch?(_), do: false
+
+  @spec just_payload_ref(Types.subject_ref()) :: String.t()
+  defp just_payload_ref(subject_ref) do
+    "elmc_maybe_or_tuple_just_payload_borrow(#{pattern_subject_ref(subject_ref)})"
+  end
 
   @spec pattern_subject_ref(Types.subject_ref()) :: String.t()
   defp pattern_subject_ref(subject_ref) when is_binary(subject_ref), do: subject_ref

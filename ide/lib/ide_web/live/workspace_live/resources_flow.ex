@@ -82,6 +82,9 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
     duplicates =
       Enum.count(ok_rows, &(is_map(&1) and Map.get(&1, :duplicate, false) == true))
 
+    auto_monochrome =
+      Enum.count(ok_rows, &(is_map(&1) and Map.get(&1, :auto_black_white) == true))
+
     failure_messages =
       failed_rows
       |> Enum.map(fn
@@ -94,6 +97,8 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
 
     [
       "Uploaded #{uploaded} #{if uploaded == 1, do: singular, else: plural}.",
+      auto_monochrome > 0 &&
+        "Generated monochrome (~bw) previews for #{auto_monochrome} color #{if auto_monochrome == 1, do: singular, else: plural}.",
       duplicates > 0 &&
         "Skipped #{duplicates} duplicate #{if duplicates == 1, do: singular, else: plural}.",
       failure_messages != [] && Enum.join(failure_messages, " ")
@@ -105,6 +110,12 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
   @spec resource_import_error_message(term()) :: String.t()
   def resource_import_error_message(reason) do
     case reason do
+      :monochrome_converter_missing ->
+        "Could not generate a monochrome (~bw) preview: ImageMagick (`magick` or `convert`) is not on PATH."
+
+      :monochrome_conversion_failed ->
+        "Could not generate a monochrome (~bw) preview from the color image."
+
       :gif_converter_missing ->
         "GIF import requires gif2apng (run `mix ide.install_gif2apng` in ide/, or install on PATH)."
 
@@ -430,7 +441,12 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
 
   @spec animation_preview_data_url(String.t()) :: String.t() | nil
   defp animation_preview_data_url(path) when is_binary(path) do
-    bitmap_preview_data_url(path, "image/png")
+    with {:ok, bytes} <- File.read(path),
+         {:ok, preview_bytes} <- Ide.Resources.ApngStaticPreview.static_png_bytes(bytes) do
+      bitmap_preview_data_url_bytes(preview_bytes, "image/png")
+    else
+      _ -> nil
+    end
   end
 
   @spec vector_preview_svg(String.t()) :: String.t() | nil
@@ -448,7 +464,7 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
     with {:ok, %File.Stat{size: size}} <- File.stat(path),
          true <- size <= @bitmap_preview_max_bytes,
          {:ok, bytes} <- File.read(path) do
-      "data:#{mime};base64," <> Base.encode64(bytes)
+      bitmap_preview_data_url_bytes(bytes, mime)
     else
       {:ok, %File.Stat{size: size}} when size > @bitmap_preview_max_bytes ->
         nil
@@ -456,6 +472,12 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
       _ ->
         nil
     end
+  end
+
+  @spec bitmap_preview_data_url_bytes(binary(), String.t()) :: String.t()
+  defp bitmap_preview_data_url_bytes(bytes, mime)
+       when is_binary(bytes) and is_binary(mime) do
+    "data:#{mime};base64," <> Base.encode64(bytes)
   end
 
   @spec load_screenshots(Screenshots.project_ref()) :: [Screenshots.screenshot()]

@@ -3,10 +3,23 @@
 #
 # Feel free to customize this to your needs.
 #
+import json
 import os.path
 
 top = '.'
 out = 'build'
+
+
+def package_watchface_mode():
+    package_path = os.path.join(top, 'package.json')
+    if not os.path.exists(package_path):
+        return False
+    try:
+        with open(package_path, 'r', encoding='utf-8') as handle:
+            package = json.load(handle)
+    except (OSError, ValueError):
+        return False
+    return package.get('pebble', {}).get('watchapp', {}).get('watchface') is True
 
 
 def options(ctx):
@@ -21,6 +34,9 @@ def configure(ctx):
     Universal configuration: add your change prior to calling ctx.load('pebble_sdk').
     """
     ctx.load('pebble_sdk')
+    for env in ctx.all_envs.values():
+        env.append_value('CFLAGS', ['-ffunction-sections', '-fdata-sections'])
+        env.append_value('LINKFLAGS', ['-Wl,--gc-sections'])
     if os.environ.get('ELMC_PEBBLE_TRACE_FUNCTIONS') in ('1', 'true', 'TRUE', 'yes', 'YES'):
         for env in ctx.all_envs.values():
             env.append_value('CFLAGS', ['-DELMC_PEBBLE_TRACE_FUNCTIONS=1'])
@@ -39,6 +55,16 @@ def configure(ctx):
     if os.environ.get('ELMC_AGENT_PROBES') in ('1', 'true', 'TRUE', 'yes', 'YES'):
         for env in ctx.all_envs.values():
             env.append_value('CFLAGS', ['-DELMC_AGENT_PROBES=1'])
+    init_stage = os.environ.get('ELMC_AGENT_PROBE_INIT_STAGE')
+    if init_stage:
+        for env in ctx.all_envs.values():
+            env.append_value('CFLAGS', ['-DELMC_AGENT_PROBE_INIT_STAGE={}'.format(init_stage)])
+    watchface_mode = os.environ.get('ELMC_WATCHFACE_MODE') in ('1', 'true', 'TRUE', 'yes', 'YES')
+    if not watchface_mode:
+        watchface_mode = package_watchface_mode()
+    if watchface_mode:
+        for env in ctx.all_envs.values():
+            env.append_value('CFLAGS', ['-DELMC_WATCHFACE_MODE=1'])
 
 def build(ctx):
     ctx.load('pebble_sdk')

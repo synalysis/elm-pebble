@@ -138,9 +138,11 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
 
           {:ok, {:direct_fragment, fragment}} ->
             {frag_code, frag_var, next2} = Host.compile_expr(fragment, env, counter)
+            retain_next = next2 + 1
+            retain_var = "tmp_#{retain_next}"
 
-            {"#{frag_code}  ElmcValue *#{var} = elmc_retain(#{frag_var});\n  elmc_release(#{frag_var});",
-             var, next2}
+            {"#{frag_code}  ElmcValue *#{retain_var} = elmc_retain(#{frag_var});\n  elmc_release(#{frag_var});",
+             retain_var, retain_next}
 
           {:ok, source} when is_binary(source) ->
             if EnvBindings.boxed_int_binding?(env, name) or

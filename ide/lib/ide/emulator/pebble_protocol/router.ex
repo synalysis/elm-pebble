@@ -5,7 +5,7 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
 
   require Logger
 
-  alias Ide.Emulator.PebbleProtocol.{Frame, Trace}
+  alias Ide.Emulator.PebbleProtocol.{Frame, LogLines, Trace}
 
   @qemu_header 0xFEED
   @qemu_footer 0xBEEF
@@ -43,6 +43,16 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
   @spec release(pid()) :: :ok
   def release(pid), do: GenServer.call(pid, :release)
 
+  @doc """
+  Collects decoded inbound Pebble protocol lines for a duration (for MCP/agent diagnostics).
+  """
+  @spec collect_inbound(pid(), pos_integer()) ::
+          {:ok, [String.t()]} | {:error, Ide.Emulator.Types.router_error()}
+  def collect_inbound(pid, duration_ms)
+      when is_pid(pid) and is_integer(duration_ms) and duration_ms > 0 do
+    GenServer.call(pid, {:collect_inbound, duration_ms}, duration_ms + 5_000)
+  end
+
   @impl true
   def init(opts) do
     qemu_port = Keyword.fetch!(opts, :qemu_port)
@@ -62,7 +72,10 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
          pypkjs_buffer: <<>>,
          waiters: [],
          locked?: false,
-         pypkjs_queue: :queue.new()
+         pypkjs_queue: :queue.new(),
+         collect_from: nil,
+         collect_timer: nil,
+         collect_buffer: []
        }}
     end
   end
@@ -103,6 +116,21 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
     state = %{state | locked?: false} |> flush_pypkjs_queue()
     {:reply, :ok, state}
   end
+
+  def handle_call({:collect_inbound, duration_ms}, from, state) when is_nil(state.collect_from) do
+    timer = Process.send_after(self(), {:collect_done, from}, duration_ms)
+
+    {:noreply,
+     %{
+       state
+       | collect_from: from,
+         collect_timer: timer,
+         collect_buffer: []
+     }}
+  end
+
+  def handle_call({:collect_inbound, _duration_ms}, _from, state),
+    do: {:reply, {:error, :busy}, state}
 
   @impl true
   def handle_info(:accept_proxy, state) do
@@ -149,6 +177,19 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
     {:noreply, %{state | pypkjs: nil, pypkjs_buffer: <<>>}}
   end
 
+  def handle_info({:collect_done, from}, %{collect_from: from} = state) do
+    if state.collect_timer, do: Process.cancel_timer(state.collect_timer)
+
+    lines = state.collect_buffer |> Enum.reverse() |> Enum.flat_map(&LogLines.format_frame/1)
+
+    GenServer.reply(from, {:ok, lines})
+
+    {:noreply,
+     %{state | collect_from: nil, collect_timer: nil, collect_buffer: []}}
+  end
+
+  def handle_info({:collect_done, _from}, state), do: {:noreply, state}
+
   def handle_info({:waiter_timeout, from}, state) do
     {timed_out, waiters} = Enum.split_with(state.waiters, &(&1.from == from))
 
@@ -164,6 +205,12 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
 
   @impl true
   def terminate(_reason, state) do
+    if state[:collect_timer], do: Process.cancel_timer(state.collect_timer)
+
+    if from = state[:collect_from] do
+      GenServer.reply(from, {:error, :router_stopped})
+    end
+
     close_socket(state[:qemu])
     close_socket(state[:pypkjs])
     close_socket(state[:listener])
@@ -212,6 +259,13 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
 
   defp handle_qemu_frame(frame, state) do
     trace_inbound(frame)
+
+    state =
+      if state.collect_from do
+        %{state | collect_buffer: [frame | state.collect_buffer]}
+      else
+        state
+      end
 
     {matched, waiters} = Enum.split_with(state.waiters, fn waiter -> waiter.matcher.(frame) end)
     waiters = Enum.map(waiters, &observe_waiter_frame(&1, frame))

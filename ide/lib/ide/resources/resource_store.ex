@@ -6,7 +6,15 @@ defmodule Ide.Resources.ResourceStore do
   alias Ide.Projects
   alias Ide.Projects.Project
   alias Ide.PebbleToolchain
-  alias Ide.Resources.{AnimationStore, BitmapVariants, CtorNaming, PdcDecoder, SvgConverter}
+  alias Ide.Resources.{
+    AnimationStore,
+    BitmapMonochrome,
+    BitmapVariants,
+    CtorNaming,
+    PdcDecoder,
+    PngInfo,
+    SvgConverter
+  }
   alias Ide.Resources.Types
 
   @manifest_rel_path "watch/resources/bitmaps.json"
@@ -184,6 +192,18 @@ defmodule Ide.Resources.ResourceStore do
   @spec import_bitmap_legacy(Project.t(), String.t(), String.t()) ::
           {:ok, map()} | {:error, Types.resource_error()}
   defp import_bitmap_legacy(%Project{} = project, upload_path, original_name) do
+    with {:ok, bytes} <- File.read(upload_path),
+         {:ok, _safe_name, mime} <- normalized_filename_and_mime(original_name),
+         true <- mime == "image/png" and PngInfo.color_palette_image?(bytes),
+         {:ok, result} <-
+           import_bitmap_variant(project, upload_path, original_name, "Color", nil) do
+      {:ok, result}
+    else
+      _ -> import_bitmap_legacy_universal(project, upload_path, original_name)
+    end
+  end
+
+  defp import_bitmap_legacy_universal(%Project{} = project, upload_path, original_name) do
     workspace = Projects.project_workspace_path(project)
     assets_dir = Path.join(workspace, @assets_rel_dir)
     manifest_path = Path.join(workspace, @manifest_rel_path)
@@ -273,7 +293,18 @@ defmodule Ide.Resources.ResourceStore do
         |> Map.drop(["filename", "mime", "bytes", "width", "height"])
         |> BitmapVariants.normalize_row()
 
-      persist_bitmap_entries(workspace, manifest_path, manifest, entry)
+      with {:ok, %{entry: entry} = result} <-
+             persist_bitmap_entries(workspace, manifest_path, manifest, entry) do
+        finalize_color_bitmap_import(
+          workspace,
+          assets_dir,
+          manifest_path,
+          result,
+          entry,
+          bytes,
+          Path.extname(safe_name)
+        )
+      end
     else
       %{} = duplicate ->
         {:ok, %{duplicate: true, entry: duplicate}}
@@ -1656,6 +1687,97 @@ defmodule Ide.Resources.ResourceStore do
     with :ok <- write_manifest(manifest_path, payload),
          :ok <- write_generated_module(workspace) do
       {:ok, %{entry: entry, entries: entries}}
+    end
+  end
+
+  defp finalize_color_bitmap_import(
+         workspace,
+         assets_dir,
+         manifest_path,
+         result,
+         entry,
+         color_bytes,
+         ext
+       )
+       when is_map(result) and is_map(entry) and is_binary(color_bytes) and is_binary(ext) do
+    entries = Map.get(result, :entries) || Map.get(result, "entries") || []
+
+    case append_auto_black_white_variant(
+           workspace,
+           assets_dir,
+           manifest_path,
+           entries,
+           entry,
+           color_bytes,
+           ext
+         ) do
+      {:ok, updated_entry} ->
+        {:ok, result |> Map.put(:entry, updated_entry) |> Map.put(:auto_black_white, true)}
+
+      :skip ->
+        {:ok, result}
+
+      {:error, reason} ->
+        {:ok, Map.put(result, :auto_black_white_error, reason)}
+    end
+  end
+
+  defp append_auto_black_white_variant(
+         workspace,
+         assets_dir,
+         manifest_path,
+         entries,
+         entry,
+         color_bytes,
+         ext
+       )
+       when is_list(entries) and is_map(entry) and is_binary(color_bytes) and is_binary(ext) do
+    normalized = BitmapVariants.normalize_row(entry)
+
+    if Map.has_key?(Map.get(normalized, "variants", %{}), "BlackWhite") do
+      :skip
+    else
+      with {:ok, bw_bytes} <- BitmapMonochrome.convert_bytes(color_bytes),
+           basename <-
+             BitmapVariants.variant_filename(
+               Map.get(normalized, "ctor", ""),
+               "BlackWhite",
+               ext
+             ),
+           :ok <- File.write(Path.join(assets_dir, basename), bw_bytes) do
+        {width, height} = bitmap_dimensions(bw_bytes, "image/png")
+
+        variants =
+          Map.put(Map.get(normalized, "variants", %{}), "BlackWhite", %{
+            "filename" => basename,
+            "mime" => "image/png",
+            "bytes" => byte_size(bw_bytes),
+            "width" => width,
+            "height" => height
+          })
+
+        updated =
+          normalized
+          |> Map.put("variants", variants)
+          |> BitmapVariants.normalize_row()
+
+        updated_entries =
+          entries
+          |> Enum.reject(&(Map.get(&1, "ctor") == Map.get(updated, "ctor")))
+          |> Kernel.++([updated])
+          |> Enum.sort_by(&Map.get(&1, "ctor", ""))
+
+        payload = %{"schema_version" => 2, "entries" => updated_entries}
+
+        with :ok <- write_manifest(manifest_path, payload),
+             :ok <- write_generated_module(workspace) do
+          {:ok, updated}
+        end
+      else
+        {:error, :converter_missing} -> {:error, :monochrome_converter_missing}
+        {:error, :conversion_failed} -> {:error, :monochrome_conversion_failed}
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 

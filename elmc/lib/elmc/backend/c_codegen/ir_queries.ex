@@ -127,20 +127,27 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
 
   @spec pebble_vector_resource_slot_map(IR.t()) :: %{String.t() => pos_integer()}
   def pebble_vector_resource_slot_map(%IR{} = ir) do
+    pebble_resource_union_slot_map(ir, ["StaticVector", "AnimatedVector"])
+  end
+
+  @spec pebble_bitmap_resource_slot_map(IR.t()) :: %{String.t() => pos_integer()}
+  def pebble_bitmap_resource_slot_map(%IR{} = ir) do
+    pebble_resource_union_slot_map(ir, ["StaticBitmap"])
+  end
+
+  @spec pebble_animation_resource_slot_map(IR.t()) :: %{String.t() => pos_integer()}
+  def pebble_animation_resource_slot_map(%IR{} = ir) do
+    pebble_resource_union_slot_map(ir, ["AnimatedBitmap"])
+  end
+
+  @spec pebble_resource_union_slot_map(IR.t(), [String.t()]) :: %{String.t() => pos_integer()}
+  defp pebble_resource_union_slot_map(%IR{} = ir, union_names) when is_list(union_names) do
     ir.modules
     |> Enum.find_value(%{}, fn mod ->
       if mod.name in ["Pebble.Ui.Resources", "Resources"] do
-        static =
-          mod
-          |> union_ctor_names("StaticVector")
-          |> Enum.reject(&no_resource_ctor?/1)
-
-        animated =
-          mod
-          |> union_ctor_names("AnimatedVector")
-          |> Enum.reject(&no_resource_ctor?/1)
-
-        (static ++ animated)
+        union_names
+        |> Enum.flat_map(&union_ctor_names(mod, &1))
+        |> Enum.reject(&no_resource_ctor?/1)
         |> Enum.with_index(1)
         |> Map.new(fn {name, index} -> {name, index} end)
       end

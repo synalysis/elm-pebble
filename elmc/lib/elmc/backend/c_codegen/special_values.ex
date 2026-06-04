@@ -468,6 +468,14 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
   def special_value_from_target("Elm.Kernel.PebbleWatch.storageReadInt", [key, to_msg]),
     do: encoded_cmd_expr(command_kind(:storage_read_int), [key, constructor_tag_expr(to_msg)], 2)
 
+  def special_value_from_target("Elm.Kernel.PebbleWatch.listNthInt", [index, list]) do
+    %{
+      op: :runtime_call,
+      function: "elmc_list_nth_int_default_boxed",
+      args: [list, index, %{op: :int_literal, value: 0}]
+    }
+  end
+
   def special_value_from_target("Pebble.Cmd.storageDelete", args),
     do: encoded_cmd_expr(command_kind(:storage_delete), args, 1)
 
@@ -1240,6 +1248,9 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
   def special_value_from_target("Pebble.Platform.application", _args),
     do: %{op: :int_literal, value: 0}
 
+  def special_value_from_target("Platform.worker", _args),
+    do: %{op: :int_literal, value: 0}
+
   def special_value_from_target("Pebble.Platform.watchface", _args),
     do: %{op: :int_literal, value: 0}
 
@@ -1740,6 +1751,18 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
     }
 
   # --- elm/core: List ---
+  def special_value_from_target("List.head", [
+        %{op: :call, target: {mod, "drop"}, args: [index, list]}
+      ])
+      when mod in ["List"],
+      do: %{op: :runtime_call, function: "elmc_list_nth_maybe", args: [list, index]}
+
+  def special_value_from_target("List.head", [
+        %{op: :qualified_call, target: target, args: [index, list]}
+      ])
+      when target in ["List.drop", "drop"],
+      do: %{op: :runtime_call, function: "elmc_list_nth_maybe", args: [list, index]}
+
   def special_value_from_target("List.head", [list]),
     do: %{op: :runtime_call, function: "elmc_list_head", args: [list]}
 
@@ -1843,6 +1866,33 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
     do: %{op: :runtime_call, function: "elmc_list_map3", args: [f, a, b, c]}
 
   # --- elm/core: Maybe ---
+  def special_value_from_target("Maybe.withDefault", [
+        %{op: default_op} = default_val,
+        %{
+          op: :qualified_call,
+          target: head_target,
+          args: [
+            %{
+              op: :qualified_call,
+              target: drop_target,
+              args: [index, list]
+            }
+          ]
+        }
+      ])
+      when default_op in [:int_literal, :c_int_expr, :char_literal] and head_target in ["List.head", "head"] and
+             drop_target in ["List.drop", "drop"] do
+    %{op: :runtime_call, function: "elmc_list_nth_int_default_boxed", args: [list, index, default_val]}
+  end
+
+  def special_value_from_target("Maybe.withDefault", [
+        %{op: default_op} = default_val,
+        %{op: :runtime_call, function: "elmc_list_nth_maybe", args: [list, index]}
+      ])
+      when default_op in [:int_literal, :c_int_expr, :char_literal] do
+    %{op: :runtime_call, function: "elmc_list_nth_int_default_boxed", args: [list, index, default_val]}
+  end
+
   def special_value_from_target("Maybe.withDefault", [default_val, maybe]),
     do: %{op: :runtime_call, function: "elmc_maybe_with_default", args: [default_val, maybe]}
 

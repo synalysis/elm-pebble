@@ -77,6 +77,11 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     {subject_setup, subject_ref, counter} =
       ConstructorTagCase.compile_subject_ref(subject, env, counter)
 
+    case_env =
+      if Patterns.maybe_unwrap_just_case?(branches),
+        do: Map.put(env, :maybe_unwrap_just, true),
+        else: env
+
     next = counter + 1
     out = "tmp_#{next}"
 
@@ -85,7 +90,9 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
       |> Enum.with_index()
       |> Enum.reduce_while({"", next}, fn {branch, branch_index}, {acc, c} ->
         last_branch? = branch_index == length(branches) - 1
-        branch_env = Patterns.bind_pattern(env, branch.pattern, subject_ref)
+
+        {branch_env, unwrap_setup, unwrap_release, c} =
+          Patterns.maybe_unwrap_var_branch(case_env, branch, subject_ref, c)
 
         {expr_code, assignment_code, c2} =
           branch_assignment(branch.expr, out, branch_env, c)
@@ -98,12 +105,19 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
         after_expr_probe =
           env |> battery_alert_case_probe(branch_index, :after_expr) |> Host.agent_probe_region()
 
-        branch_body = """
-        #{Util.indent(enter_probe, 4)}
-        #{Util.indent(expr_code, 4)}
-        #{Util.indent(after_expr_probe, 4)}
-            #{assignment_code}
-        """
+        branch_body =
+          maybe_extract_branch_helper(
+            branch,
+            branch_env,
+            subject_ref,
+            out,
+            enter_probe,
+            unwrap_setup,
+            expr_code,
+            after_expr_probe,
+            assignment_code,
+            unwrap_release
+          )
 
         cond do
           cond_code == "0" ->
@@ -160,6 +174,184 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
 
     {code, out, final_counter}
   end
+
+  defp maybe_extract_branch_helper(
+         branch,
+         branch_env,
+         subject_ref,
+         out,
+         enter_probe,
+         unwrap_setup,
+         expr_code,
+         after_expr_probe,
+         assignment_code,
+         unwrap_release
+       ) do
+    inline_body = """
+    #{Util.indent(enter_probe, 4)}
+    #{Util.indent(unwrap_setup, 4)}
+    #{Util.indent(expr_code, 4)}
+    #{Util.indent(after_expr_probe, 4)}
+        #{assignment_code}
+    #{Util.indent(unwrap_release, 4)}
+    """
+
+    if extract_branch_helper?(inline_body) do
+      case branch_helper_params(branch, branch_env, subject_ref) do
+        {:ok, params} ->
+          helper_id = Process.get(:elmc_generic_helper_counter, 0) + 1
+          Process.put(:elmc_generic_helper_counter, helper_id)
+
+          helper_name =
+            "elmc_case_branch_helper_#{Util.safe_c_suffix(Map.get(branch_env, :__module__, "Main"))}_#{Util.safe_c_suffix(Map.get(branch_env, :__function_name__, "fn"))}_#{helper_id}"
+
+          helper_out = "branch_out"
+          helper_assignment = String.replace(assignment_code, "#{out} =", "#{helper_out} =")
+
+          helper_param_decls =
+            params
+            |> Enum.map_join(", ", fn {_key, c_ref} -> "ElmcValue *#{c_ref}" end)
+
+          helper_def = """
+          static ElmcValue *#{helper_name}(#{helper_param_decls}) {
+            ElmcValue *#{helper_out} = NULL;
+          #{Util.indent(enter_probe, 2)}
+          #{Util.indent(unwrap_setup, 2)}
+          #{Util.indent(expr_code, 2)}
+          #{Util.indent(after_expr_probe, 2)}
+            #{helper_assignment}
+          #{Util.indent(unwrap_release, 2)}
+            return #{helper_out};
+          }
+          """
+
+          Process.put(
+            :elmc_generic_helper_defs,
+            [helper_def | Process.get(:elmc_generic_helper_defs, [])]
+          )
+
+          call_args = Enum.map_join(params, ", ", fn {_key, c_ref} -> c_ref end)
+
+          """
+              #{out} = #{helper_name}(#{call_args});
+          """
+
+        :error ->
+          inline_body
+      end
+    else
+      inline_body
+    end
+  end
+
+  defp extract_branch_helper?(body) do
+    Process.get(:elmc_generic_helper_defs) != nil and emitted_line_count(body) >= 60
+  end
+
+  defp emitted_line_count(code), do: code |> String.split("\n") |> length()
+
+  defp branch_helper_params(branch, branch_env, subject_ref) do
+    excluded =
+      case branch.pattern do
+        %{kind: :var, name: name} when is_binary(name) -> MapSet.new([name])
+        _ -> MapSet.new()
+      end
+
+    vars =
+      branch.expr
+      |> external_vars()
+      |> Enum.reject(&MapSet.member?(excluded, &1))
+      |> Enum.sort()
+
+    params =
+      vars
+      |> Enum.reduce_while([], fn var, acc ->
+        case Map.get(branch_env, var) do
+          c_ref when is_binary(c_ref) ->
+            if c_identifier?(c_ref), do: {:cont, [{var, c_ref} | acc]}, else: {:halt, :error}
+
+          _other ->
+            if zero_arg_function_var?(branch_env, var), do: {:cont, acc}, else: {:halt, :error}
+        end
+      end)
+
+    case params do
+      :error ->
+        :error
+
+      params ->
+        params =
+          params
+          |> maybe_add_subject_param(subject_ref)
+          |> Enum.reverse()
+          |> Enum.uniq_by(fn {_key, c_ref} -> c_ref end)
+
+        {:ok, params}
+    end
+  end
+
+  defp maybe_add_subject_param(params, subject_ref) when is_binary(subject_ref) do
+    if c_identifier?(subject_ref), do: [{:__case_subject__, subject_ref} | params], else: params
+  end
+
+  defp maybe_add_subject_param(params, _subject_ref), do: params
+
+  defp c_identifier?(value) when is_binary(value),
+    do: Regex.match?(~r/^[A-Za-z_][A-Za-z0-9_]*$/, value)
+
+  defp zero_arg_function_var?(env, var) do
+    module_name = Map.get(env, :__module__, "Main")
+
+    case Map.get(env, :__program_decls__, %{}) do
+      %{} = decl_map ->
+        case Map.get(decl_map, {module_name, var}) do
+          %{args: args} when args in [[], nil] -> true
+          _ -> false
+        end
+
+      _ ->
+        false
+    end
+  end
+
+  defp external_vars(expr), do: external_vars(expr, MapSet.new())
+
+  defp external_vars(%{op: :var, name: name}, bound) when is_binary(name) do
+    if MapSet.member?(bound, name), do: MapSet.new(), else: MapSet.new([name])
+  end
+
+  defp external_vars(%{op: :let_in, name: name, value_expr: value_expr, in_expr: in_expr}, bound) do
+    value_vars = external_vars(value_expr, bound)
+    in_vars = external_vars(in_expr, MapSet.put(bound, name))
+    MapSet.union(value_vars, in_vars)
+  end
+
+  defp external_vars(%{op: :lambda, args: args, body: body}, bound) when is_list(args) do
+    lambda_bound = Enum.reduce(args, bound, &MapSet.put(&2, &1))
+    external_vars(body, lambda_bound)
+  end
+
+  defp external_vars(%{op: :field_access, arg: arg}, bound) when is_binary(arg) do
+    if MapSet.member?(bound, arg), do: MapSet.new(), else: MapSet.new([arg])
+  end
+
+  defp external_vars(expr, bound) when is_map(expr) do
+    Enum.reduce(expr, MapSet.new(), fn
+      {_key, value}, acc when is_map(value) or is_list(value) ->
+        MapSet.union(acc, external_vars(value, bound))
+
+      {_key, _value}, acc ->
+        acc
+    end)
+  end
+
+  defp external_vars(values, bound) when is_list(values) do
+    Enum.reduce(values, MapSet.new(), fn value, acc ->
+      MapSet.union(acc, external_vars(value, bound))
+    end)
+  end
+
+  defp external_vars(_expr, _bound), do: MapSet.new()
 
   @spec battery_alert_case_probe(Types.compile_env(), term(), atom()) :: String.t()
   defp battery_alert_case_probe(_env, _branch_index, _position), do: ""

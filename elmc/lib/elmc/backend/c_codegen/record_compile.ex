@@ -2,11 +2,13 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.DebugProbes
+  alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Expr
   alias Elmc.Backend.CCodegen.FunctionCallCompile
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
+  alias Elmc.Backend.CCodegen.VarAnalysis
 
   @spec compile(Types.ir_record_expr(), Types.compile_env(), Types.compile_counter()) ::
           Types.compile_result()
@@ -41,7 +43,11 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     compile_field_access_expr(arg_expr, field, env, counter)
   end
 
-  def compile(%{op: :field_call, arg: %{op: :var, name: name}, field: field, args: args}, env, counter)
+  def compile(
+        %{op: :field_call, arg: %{op: :var, name: name}, field: field, args: args},
+        env,
+        counter
+      )
       when is_binary(name) do
     compile(%{op: :field_call, arg: name, field: field, args: args}, env, counter)
   end
@@ -70,7 +76,9 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     field_count = length(ordered_fields)
 
     names_array =
-      ordered_fields |> Enum.map(fn f -> "\"#{Util.escape_c_string(f.name)}\"" end) |> Enum.join(", ")
+      ordered_fields
+      |> Enum.map(fn f -> "\"#{Util.escape_c_string(f.name)}\"" end)
+      |> Enum.join(", ")
 
     if field_count > 0 and Enum.all?(ordered_fields, &Host.native_int_expr?(&1.expr, env)) do
       compile_native_int_literal(ordered_fields, names_array, field_count, env, counter)
@@ -115,6 +123,22 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
           Types.compile_counter()
         ) :: Types.compile_result()
   defp compile_boxed_literal(ordered_fields, names_array, field_count, env, counter) do
+    case maybe_extract_boxed_record_literal_helper(
+           ordered_fields,
+           names_array,
+           field_count,
+           env,
+           counter
+         ) do
+      {:ok, code, out, counter} ->
+        {code, out, counter}
+
+      :error ->
+        compile_inline_boxed_literal(ordered_fields, names_array, field_count, env, counter)
+    end
+  end
+
+  defp compile_inline_boxed_literal(ordered_fields, names_array, field_count, env, counter) do
     {field_code, field_vars, counter} =
       Enum.reduce(ordered_fields, {"", [], counter}, fn field, {code_acc, vars_acc, c} ->
         {code, var, c2} = Host.compile_expr(field.expr, env, c)
@@ -133,6 +157,109 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     """
 
     {code, out, next}
+  end
+
+  defp maybe_extract_boxed_record_literal_helper(
+         ordered_fields,
+         names_array,
+         field_count,
+         env,
+         counter
+       ) do
+    if extract_boxed_record_literal_helper?(field_count) do
+      case record_literal_helper_params(ordered_fields, env) do
+        {:ok, params} ->
+          helper_id = Process.get(:elmc_generic_helper_counter, 0) + 1
+          Process.put(:elmc_generic_helper_counter, helper_id)
+
+          helper_name =
+            "elmc_record_literal_helper_#{Util.safe_c_suffix(Map.get(env, :__module__, "Main"))}_#{Util.safe_c_suffix(Map.get(env, :__function_name__, "fn"))}_#{helper_id}"
+
+          helper_param_decls =
+            params
+            |> Enum.map_join(", ", fn
+              {_key, c_ref, :boxed} -> "ElmcValue *#{c_ref}"
+              {_key, c_ref, :native_int} -> "elmc_int_t #{c_ref}"
+              {_key, c_ref, :native_bool} -> "bool #{c_ref}"
+            end)
+
+          {field_code, field_vars, _counter} =
+            Enum.reduce(ordered_fields, {"", [], counter}, fn field, {code_acc, vars_acc, c} ->
+              {code, var, c2} = Host.compile_expr(field.expr, env, c)
+              {code_acc <> "\n  " <> code, vars_acc ++ [{field.name, var}], c2}
+            end)
+
+          values_array = field_vars |> Enum.map(fn {_name, var} -> var end) |> Enum.join(", ")
+
+          helper_def = """
+          static ElmcValue *#{helper_name}(#{helper_param_decls}) {
+          #{Util.indent(field_code, 2)}
+            const char *rec_names[#{field_count}] = { #{names_array} };
+            ElmcValue *rec_values[#{field_count}] = { #{values_array} };
+            return elmc_record_new_take(#{field_count}, rec_names, rec_values);
+          }
+          """
+
+          Process.put(
+            :elmc_generic_helper_defs,
+            [helper_def | Process.get(:elmc_generic_helper_defs, [])]
+          )
+
+          next = counter + 1
+          out = "tmp_#{next}"
+          call_args = Enum.map_join(params, ", ", fn {_key, c_ref, _kind} -> c_ref end)
+
+          {:ok, "  ElmcValue *#{out} = #{helper_name}(#{call_args});\n", out, next}
+
+        :error ->
+          :error
+      end
+    else
+      :error
+    end
+  end
+
+  defp extract_boxed_record_literal_helper?(field_count) do
+    field_count >= 12 and Process.get(:elmc_generic_helper_defs) != nil
+  end
+
+  defp record_literal_helper_params(ordered_fields, env) do
+    params =
+      ordered_fields
+      |> Enum.flat_map(fn field -> VarAnalysis.used_vars(field.expr) end)
+      |> Enum.uniq()
+      |> Enum.sort()
+      |> Enum.reduce_while([], fn var, acc ->
+        case resolve_record_helper_param(env, var) do
+          :skip -> {:cont, acc}
+          {:ok, param} -> {:cont, [param | acc]}
+          :error -> {:halt, :error}
+        end
+      end)
+
+    case params do
+      :error -> :error
+      params -> {:ok, params |> Enum.reverse() |> Enum.uniq_by(fn {_key, c_ref, _kind} -> c_ref end)}
+    end
+  end
+
+  defp resolve_record_helper_param(env, var) do
+    cond do
+      is_binary(c_ref = Map.get(env, var)) and c_identifier?(c_ref) ->
+        {:ok, {var, c_ref, :boxed}}
+
+      is_binary(ref = EnvBindings.native_int_binding(env, var)) ->
+        {:ok, {var, ref, :native_int}}
+
+      is_binary(ref = EnvBindings.native_bool_binding(env, var)) ->
+        {:ok, {var, ref, :native_bool}}
+
+      zero_arg_function_var?(env, var) ->
+        :skip
+
+      true ->
+        :error
+    end
   end
 
   @spec compile_update(
@@ -160,7 +287,104 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
         {code_acc <> "\n  " <> code, out, next}
       end)
 
-    {base_code <> update_code, current_var, counter}
+    full_code = base_code <> update_code
+
+    case maybe_extract_chained_update_helper(base, fields, env, full_code, current_var, counter) do
+      {:ok, code, out, counter} -> {code, out, counter}
+      :error -> {full_code, current_var, counter}
+    end
+  end
+
+  defp maybe_extract_chained_update_helper(base, fields, env, update_code, result_var, counter) do
+    if extract_chained_update_helper?(length(fields), update_code) do
+      case chained_update_helper_params(base, fields, env) do
+        {:ok, params} ->
+          helper_id = Process.get(:elmc_generic_helper_counter, 0) + 1
+          Process.put(:elmc_generic_helper_counter, helper_id)
+
+          helper_name =
+            "elmc_record_update_helper_#{Util.safe_c_suffix(Map.get(env, :__module__, "Main"))}_#{Util.safe_c_suffix(Map.get(env, :__function_name__, "fn"))}_#{helper_id}"
+
+          helper_param_decls =
+            params
+            |> Enum.map_join(", ", fn
+              {_key, c_ref, :boxed} -> "ElmcValue *#{c_ref}"
+              {_key, c_ref, :native_int} -> "elmc_int_t #{c_ref}"
+              {_key, c_ref, :native_bool} -> "bool #{c_ref}"
+            end)
+
+          helper_def = """
+          static ElmcValue *#{helper_name}(#{helper_param_decls}) {
+          #{Util.indent(update_code, 2)}
+            return #{result_var};
+          }
+          """
+
+          Process.put(
+            :elmc_generic_helper_defs,
+            [helper_def | Process.get(:elmc_generic_helper_defs, [])]
+          )
+
+          next = counter + 1
+          out = "tmp_#{next}"
+          call_args = Enum.map_join(params, ", ", fn {_key, c_ref, _kind} -> c_ref end)
+
+          {:ok, "  ElmcValue *#{out} = #{helper_name}(#{call_args});\n", out, next}
+
+        :error ->
+          :error
+      end
+    else
+      :error
+    end
+  end
+
+  defp extract_chained_update_helper?(field_count, code) do
+    Process.get(:elmc_generic_helper_defs) != nil and
+      (field_count >= 8 or
+         (field_count >= 5 and emitted_line_count(code) >= 50))
+  end
+
+  defp emitted_line_count(code), do: code |> String.split("\n") |> length()
+
+  defp chained_update_helper_params(base, fields, env) do
+    vars =
+      [base | Enum.map(fields, & &1.expr)]
+      |> Enum.flat_map(&VarAnalysis.used_vars/1)
+      |> Enum.uniq()
+      |> Enum.sort()
+
+    params =
+      Enum.reduce_while(vars, [], fn var, acc ->
+        case resolve_record_helper_param(env, var) do
+          :skip -> {:cont, acc}
+          {:ok, param} -> {:cont, [param | acc]}
+          :error -> {:halt, :error}
+        end
+      end)
+
+    case params do
+      :error -> :error
+      params -> {:ok, params |> Enum.reverse() |> Enum.uniq_by(fn {_key, c_ref, _kind} -> c_ref end)}
+    end
+  end
+
+  defp c_identifier?(value) when is_binary(value),
+    do: Regex.match?(~r/^[A-Za-z_][A-Za-z0-9_]*$/, value)
+
+  defp zero_arg_function_var?(env, var) do
+    module_name = Map.get(env, :__module__, "Main")
+
+    case Map.get(env, :__program_decls__, %{}) do
+      %{} = decl_map ->
+        case Map.get(decl_map, {module_name, var}) do
+          %{args: args} when args in [[], nil] -> true
+          _ -> false
+        end
+
+      _ ->
+        false
+    end
   end
 
   @spec compile_field_access_var(
@@ -279,7 +503,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     before_probe =
       env |> DebugProbes.field_probe(record_name, field, :before) |> DebugProbes.region()
 
-    after_probe = env |> DebugProbes.field_probe(record_name, field, :after) |> DebugProbes.region()
+    after_probe =
+      env |> DebugProbes.field_probe(record_name, field, :after) |> DebugProbes.region()
 
     code = """
     #{before_probe}
@@ -301,6 +526,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     case Map.fetch(env, arg) do
       {:ok, {:native_record, _fields}} ->
         {box_code, box_var, counter} = FunctionCallCompile.compile_var(arg, env, counter)
+
         compile_bound_field_call(box_var, field, args, env, counter)
         |> then(fn {call_code, out, next} ->
           {box_code <> call_code <> "  elmc_release(#{box_var});\n", out, next}

@@ -5,6 +5,7 @@ defmodule Elmc.Backend.CCodegen.ProjectWriter do
   alias Elmc.Backend.CCodegen.BuildArtifacts
   alias Elmc.Backend.CCodegen.GeneratedSource
   alias Elmc.Backend.CCodegen.PerModuleArtifacts
+  alias Elmc.Backend.CCodegen.StackEstimate
   alias Elmc.Backend.CCodegen.Types
 
   @spec write(IR.t(), String.t(), Types.codegen_opts()) :: :ok | {:error, Types.file_error()}
@@ -13,7 +14,9 @@ defmodule Elmc.Backend.CCodegen.ProjectWriter do
 
     with :ok <- File.mkdir_p(c_dir),
          :ok <- File.write(Path.join(c_dir, "elmc_generated.h"), GeneratedSource.header(ir, opts)),
-         :ok <- File.write(Path.join(c_dir, "elmc_generated.c"), GeneratedSource.source(ir, opts)),
+         generated_source <- GeneratedSource.source(ir, opts),
+         :ok <- File.write(Path.join(c_dir, "elmc_generated.c"), generated_source),
+         :ok <- write_stack_report(out_dir, ir, generated_source),
          :ok <- File.write(Path.join(c_dir, "host_harness.c"), BuildArtifacts.host_harness()),
          :ok <- File.write(Path.join(out_dir, "CMakeLists.txt"), BuildArtifacts.cmake()),
          :ok <- File.write(Path.join(out_dir, "Makefile"), BuildArtifacts.makefile()) do
@@ -29,12 +32,23 @@ defmodule Elmc.Backend.CCodegen.ProjectWriter do
          :ok <- PerModuleArtifacts.write_headers(ir, c_dir),
          :ok <- PerModuleArtifacts.write_sources(ir, c_dir),
          :ok <- File.write(Path.join(c_dir, "elmc_generated.h"), GeneratedSource.header(ir, opts)),
-         :ok <- File.write(Path.join(c_dir, "elmc_generated.c"), GeneratedSource.source(ir, opts)),
+         generated_source <- GeneratedSource.source(ir, opts),
+         :ok <- File.write(Path.join(c_dir, "elmc_generated.c"), generated_source),
+         :ok <- write_stack_report(out_dir, ir, generated_source),
          :ok <- File.write(Path.join(c_dir, "host_harness.c"), BuildArtifacts.host_harness()),
          :ok <- File.write(Path.join(out_dir, "CMakeLists.txt"), BuildArtifacts.cmake()),
          :ok <- File.write(Path.join(out_dir, "Makefile"), BuildArtifacts.makefile()),
          :ok <- File.write(Path.join(out_dir, "link_manifest.json"), PerModuleArtifacts.link_manifest(ir)) do
       :ok
     end
+  end
+
+  defp write_stack_report(out_dir, ir, generated_source) do
+    report =
+      ir
+      |> StackEstimate.report(generated_source)
+      |> Jason.encode!(pretty: true)
+
+    File.write(Path.join(out_dir, "elmc_stack_report.json"), report)
   end
 end
