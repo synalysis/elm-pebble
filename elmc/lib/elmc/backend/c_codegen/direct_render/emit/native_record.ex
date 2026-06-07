@@ -204,60 +204,65 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
   end
 
   defp emit_hoisted_if_fields(name, value_expr, field_entries, env, counter) do
-    [{_field, %{op: :direct_native_if, cond: cond}} | _] = field_entries
+    hoisted_before = Process.get(:elmc_hoisted_native_ints, %{})
 
-    record_type =
-      Expr.record_type_for_expr(value_expr, env) ||
-        record_type_for_entries(field_entries, env) ||
-        helper_record_type(value_expr, env)
+    try do
+      [{_field, %{op: :direct_native_if, cond: cond}} | _] = field_entries
 
-    {cond_code, cond_ref, cond_cleanup, counter} =
-      if Host.native_bool_expr?(cond, env) do
-        {code, ref, c} = Host.compile_native_bool_expr(cond, env, counter)
-        {code, ref, "", c}
-      else
-        {code, var, c} = Host.compile_expr(cond, env, counter)
-        {code, "elmc_as_int(#{var}) != 0", "  elmc_release(#{var});\n", c}
-      end
+      record_type =
+        Expr.record_type_for_expr(value_expr, env) ||
+          record_type_for_entries(field_entries, env) ||
+          helper_record_type(value_expr, env)
 
-    counter = counter_after_emitted_code(cond_code <> cond_cleanup, counter)
+      {cond_code, cond_ref, cond_cleanup, counter} =
+        if Host.native_bool_expr?(cond, env) do
+          {code, ref, c} = Host.compile_native_bool_expr(cond, env, counter)
+          {code, ref, "", c}
+        else
+          {code, var, c} = Host.compile_expr(cond, env, counter)
+          {code, "elmc_as_int(#{var}) != 0", "  elmc_release(#{var});\n", c}
+        end
 
-    then_entries =
-      Enum.map(field_entries, fn {field, %{op: :direct_native_if, then_expr: then_expr}} ->
-        {field, then_expr}
-      end)
+      counter = counter_after_emitted_code(cond_code <> cond_cleanup, counter)
 
-    else_entries =
-      Enum.map(field_entries, fn {field, %{op: :direct_native_if, else_expr: else_expr}} ->
-        {field, else_expr}
-      end)
-
-    with {:ok, then_code, then_refs, then_kinds, counter} <-
-           emit_branch_fields("_then", then_entries, record_type, env, counter),
-         {:ok, else_code, else_refs, _else_kinds, counter} <-
-           emit_branch_fields("_else", else_entries, record_type, env, counter) do
-      {field_code, field_map, counter} =
-        Enum.reduce(field_entries, {"", %{}, counter}, fn
-          {field, %{op: :direct_native_if}}, {code_acc, map_acc, c} ->
-            next = c + 1
-            var = "direct_native_record_#{Util.safe_c_suffix(name)}_#{field}_#{next}"
-            then_ref = Map.fetch!(then_refs, field)
-            else_ref = Map.fetch!(else_refs, field)
-            kind = Map.fetch!(then_kinds, field)
-
-            merge_code = branch_merge_decl(kind, var, cond_ref, then_ref, else_ref)
-            {code_acc <> merge_code, Map.put(map_acc, field, var), next}
+      then_entries =
+        Enum.map(field_entries, fn {field, %{op: :direct_native_if, then_expr: then_expr}} ->
+          {field, then_expr}
         end)
 
-      body_env =
-        env
-        |> put_native_record_binding(name, field_map, value_expr, then_entries ++ else_entries)
-        |> Hoist.put_hoisted_native_bool(cond, cond_ref)
-        |> Hoist.merge_process_hoisted_native_ints()
+      else_entries =
+        Enum.map(field_entries, fn {field, %{op: :direct_native_if, else_expr: else_expr}} ->
+          {field, else_expr}
+        end)
 
-      {:ok, cond_code <> cond_cleanup <> then_code <> else_code <> field_code, body_env, counter}
-    else
-      :error -> :error
+      with {:ok, then_code, then_refs, then_kinds, counter} <-
+             emit_branch_fields("_then", then_entries, record_type, env, counter),
+           {:ok, else_code, else_refs, _else_kinds, counter} <-
+             emit_branch_fields("_else", else_entries, record_type, env, counter) do
+        {field_code, field_map, counter} =
+          Enum.reduce(field_entries, {"", %{}, counter}, fn
+            {field, %{op: :direct_native_if}}, {code_acc, map_acc, c} ->
+              next = c + 1
+              var = "direct_native_record_#{Util.safe_c_suffix(name)}_#{field}_#{next}"
+              then_ref = Map.fetch!(then_refs, field)
+              else_ref = Map.fetch!(else_refs, field)
+              kind = Map.fetch!(then_kinds, field)
+
+              merge_code = branch_merge_decl(kind, var, cond_ref, then_ref, else_ref)
+              {code_acc <> merge_code, Map.put(map_acc, field, var), next}
+          end)
+
+        body_env =
+          env
+          |> put_native_record_binding(name, field_map, value_expr, then_entries ++ else_entries)
+          |> Hoist.put_hoisted_native_bool(cond, cond_ref)
+
+        {:ok, cond_code <> cond_cleanup <> then_code <> else_code <> field_code, body_env, counter}
+      else
+        :error -> :error
+      end
+    after
+      Process.put(:elmc_hoisted_native_ints, hoisted_before)
     end
   end
 

@@ -35,7 +35,7 @@ config :ide, Ide.Packages,
 
 config :ide, Ide.PebbleToolchain,
   template_app_root: Path.expand("../priv/pebble_app_template", __DIR__),
-  emulator_target: "emery",
+  emulator_target: "basalt",
   emulator_targets: ~w(aplite basalt chalk diorite emery flint gabbro)
 
 config :ide, Ide.Emulator.SlotLimiter,

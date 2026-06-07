@@ -127,8 +127,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     tree_path_ops =
       Enum.filter(tree_ops, &(&1.kind in [:path_filled, :path_outline, :path_outline_open]))
 
+    tree_text_ops =
+      Enum.filter(tree_ops, &(&1.kind in [:text, :text_label, :text_int]))
+
     runtime_has_paths? =
       Enum.any?(runtime_ops, &(&1.kind in [:path_filled, :path_outline, :path_outline_open]))
+
+    runtime_has_text? =
+      Enum.any?(runtime_ops, &(&1.kind in [:text, :text_label, :text_int]))
 
     ops =
       cond do
@@ -141,6 +147,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
           |> maybe_append_tree_ops(not runtime_has_bitmaps?, tree_bitmap_ops)
           |> maybe_append_tree_ops(not runtime_has_animations?, tree_animation_ops)
           |> maybe_append_tree_ops(not runtime_has_paths?, tree_path_ops)
+          |> maybe_append_tree_ops(not runtime_has_text?, tree_text_ops)
       end
 
     ops

@@ -138,19 +138,31 @@ headerOps model page =
     in
     if Platform.displayShapeIsRound model.displayShape then
         let
+            diameter =
+                min model.screenW model.screenH
+
+            inset =
+                diameter // 12
+
             textW =
-                (min model.screenW model.screenH * 4) // 9
+                (diameter * 4) // 9
 
             textX =
                 (model.screenW - textW) // 2
+
+            titleY =
+                inset
+
+            hintY =
+                model.screenH - chromeBottom model - 16
         in
         [ Ui.clear Color.white
         , Ui.text Resources.DefaultFont textOptions
-            { x = textX, y = 10, w = textW, h = 14 }
+            { x = textX, y = titleY, w = textW, h = 16 }
             title
         , Ui.text Resources.DefaultFont
             (Ui.alignLeft textOptions |> Ui.trailingEllipsis)
-            { x = textX, y = model.screenH - 24, w = textW, h = 14 }
+            { x = textX, y = hintY, w = textW, h = 16 }
             "Up/Down: page"
         ]
 
@@ -346,11 +358,14 @@ staticBitmapOps model =
 animatedBitmapOps : Model -> List Ui.RenderOp
 animatedBitmapOps model =
     let
+        spriteSize =
+            60
+
         cx =
-            model.screenW // 2 - 8
+            model.screenW // 2 - spriteSize // 2
 
         cy =
-            (model.screenH + contentTop model) // 2 - 8
+            (model.screenH + contentTop model) // 2 - spriteSize // 2
     in
     [ Ui.drawBitmapSequenceAt Resources.BitmapAnimatedSparkle { x = cx, y = cy } ]
 
@@ -378,6 +393,12 @@ combinedOps model =
     let
         y0 =
             contentTop model + 4
+
+        spriteSize =
+            60
+
+        spriteY =
+            y0 + 36
     in
     [ Ui.fillRect { x = 4, y = y0, w = 40, h = 20 } Color.cobaltBlue
     , Ui.text Resources.DefaultFont
@@ -385,11 +406,14 @@ combinedOps model =
         { x = 48, y = y0, w = 88, h = 20 }
         "All kinds"
     , Ui.drawBitmapInRect Resources.BitmapStaticBtIcon { x = 4, y = y0 + 28, w = 20, h = 20 }
-    , Ui.drawBitmapSequenceAt Resources.BitmapAnimatedSparkle { x = 30, y = y0 + 28 }
-    , Ui.drawVectorAt Resources.VectorStaticWeatherClear { x = 56, y = y0 + 24 }
-    , Ui.drawVectorSequenceAt Resources.VectorAnimatedTransitionClearToCloudy { x = 96, y = y0 + 24 }
-    , Ui.line { x = 4, y = y0 + 56 } { x = model.screenW - 4, y = y0 + 56 } Color.black
-    , Ui.fillCircle { x = model.screenW // 2, y = y0 + 80 } 14 Color.green
+    , Ui.drawVectorAt Resources.VectorStaticWeatherClear { x = 32, y = y0 + 24 }
+    , Ui.drawVectorSequenceAt Resources.VectorAnimatedTransitionClearToCloudy { x = 72, y = y0 + 24 }
+    , Ui.drawBitmapSequenceAt Resources.BitmapAnimatedSparkle
+        { x = model.screenW // 2 - spriteSize // 2, y = spriteY }
+    , Ui.line { x = 4, y = spriteY + spriteSize + 4 }
+        { x = model.screenW - 4, y = spriteY + spriteSize + 4 }
+        Color.black
+    , Ui.fillCircle { x = model.screenW // 2, y = spriteY + spriteSize + 20 } 10 Color.green
     ]
 
 

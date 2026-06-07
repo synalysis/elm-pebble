@@ -120,8 +120,16 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.StaticDrawTable do
 
   defp row_int(expr, env, counter) do
     {code, ref, counter} = Host.direct_int_value(expr, env, counter)
-    {:ok, code, ref, counter}
+
+    if static_int_ref?(ref) do
+      {:ok, code, ref, counter}
+    else
+      :error
+    end
   end
+
+  defp static_int_ref?(ref) when is_binary(ref), do: Regex.match?(~r/^-?\d+$/, ref)
+  defp static_int_ref?(_), do: false
 
   @spec static_record_int_fields(
           Types.ir_expr(),
@@ -130,9 +138,11 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.StaticDrawTable do
           Types.compile_counter()
         ) :: Types.static_record_fields_result()
   defp static_record_int_fields(record, field_names, env, counter) do
-    Enum.reduce(field_names, {:ok, "", [], counter}, fn field, {:ok, setup, refs, c} ->
-      {:ok, code, ref, c2} = row_int(Host.record_field_expr(record, field), env, c)
-      {:ok, setup <> code, refs ++ [ref], c2}
+    Enum.reduce_while(field_names, {:ok, "", [], counter}, fn field, {:ok, setup, refs, c} ->
+      case row_int(Host.record_field_expr(record, field), env, c) do
+        {:ok, code, ref, c2} -> {:cont, {:ok, setup <> code, refs ++ [ref], c2}}
+        :error -> {:halt, :error}
+      end
     end)
   end
 

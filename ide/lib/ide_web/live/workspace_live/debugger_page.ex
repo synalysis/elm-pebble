@@ -2356,24 +2356,20 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   defp debugger_text_svg_x(_op), do: 0
 
   @spec debugger_text_svg_y(svg_op()) :: number()
+  defp debugger_text_svg_y(%{y: y, w: w, h: h})
+       when is_number(y) and is_number(w) and is_number(h) and h > 0,
+       do: y + 1
+
   defp debugger_text_svg_y(%{y: y, h: h}) when is_number(y) and is_number(h), do: y + h / 2
   defp debugger_text_svg_y(%{y: y}) when is_number(y), do: y
   defp debugger_text_svg_y(_op), do: 0
 
   @spec debugger_text_svg_font_size(svg_op()) :: pos_integer()
-  defp debugger_text_svg_font_size(%{font_size: size}) when is_integer(size) and size > 0,
-    do: debugger_system_font_size(size)
+  defp debugger_text_svg_font_size(%{font_size: size}) when is_integer(size) and size > 0, do: size
 
-  defp debugger_text_svg_font_size(%{h: height}) when is_integer(height) and height > 0,
-    do: debugger_system_font_size(height)
+  defp debugger_text_svg_font_size(%{h: height}) when is_integer(height) and height > 0, do: height
 
   defp debugger_text_svg_font_size(_op), do: 11
-
-  @spec debugger_system_font_size(pos_integer()) :: pos_integer()
-  defp debugger_system_font_size(requested_height) when requested_height <= 18, do: 18
-  defp debugger_system_font_size(requested_height) when requested_height <= 28, do: 24
-  defp debugger_system_font_size(requested_height) when requested_height <= 36, do: 28
-  defp debugger_system_font_size(_requested_height), do: 42
 
   @spec debugger_text_svg_anchor(svg_op()) :: String.t() | nil
   defp debugger_text_svg_anchor(%{text_align: "left", w: w}) when is_number(w), do: "start"
@@ -2382,6 +2378,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   defp debugger_text_svg_anchor(_op), do: nil
 
   @spec debugger_text_svg_baseline(svg_op()) :: String.t() | nil
+  defp debugger_text_svg_baseline(%{w: w, h: h}) when is_number(w) and is_number(h) and h > 0,
+    do: "hanging"
+
   defp debugger_text_svg_baseline(%{h: h}) when is_number(h), do: "middle"
   defp debugger_text_svg_baseline(_op), do: nil
 

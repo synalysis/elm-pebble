@@ -3,6 +3,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
 
   alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.EnvBindings
+  alias Elmc.Backend.CCodegen.HelperParams
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.String, as: NativeString
   alias Elmc.Backend.CCodegen.Types
@@ -146,7 +147,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
 
     if extract_if_branch_helper?(env, inline_body) do
       case if_branch_helper_params(expr, env) do
-        {:ok, params} ->
+        {:ok, params} when params != [] ->
           helper_id = Process.get(:elmc_generic_helper_counter, 0) + 1
           Process.put(:elmc_generic_helper_counter, helper_id)
 
@@ -156,9 +157,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
           helper_out = "branch_out"
           helper_assignment = String.replace(assignment_code, "#{out} =", "#{helper_out} =")
 
-          helper_param_decls =
-            params
-            |> Enum.map_join(", ", fn {_key, c_ref} -> "ElmcValue *#{c_ref}" end)
+          helper_param_decls = HelperParams.param_decls(params)
 
           helper_def = """
           static ElmcValue *#{helper_name}(#{helper_param_decls}) {
@@ -174,13 +173,13 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
             [helper_def | Process.get(:elmc_generic_helper_defs, [])]
           )
 
-          call_args = Enum.map_join(params, ", ", fn {_key, c_ref} -> c_ref end)
+          call_args = HelperParams.call_args(params)
 
           """
               #{out} = #{helper_name}(#{call_args});
           """
 
-        :error ->
+        _ ->
           inline_body
       end
     else
@@ -196,45 +195,10 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
   defp emitted_line_count(code), do: code |> String.split("\n") |> length()
 
   defp if_branch_helper_params(expr, env) do
-    params =
-      expr
-      |> external_vars()
-      |> Enum.sort()
-      |> Enum.reduce_while([], fn var, acc ->
-        case Map.get(env, var) do
-          c_ref when is_binary(c_ref) ->
-            if c_identifier?(c_ref), do: {:cont, [{var, c_ref} | acc]}, else: {:halt, :error}
-
-          _other ->
-            if zero_arg_function_var?(env, var), do: {:cont, acc}, else: {:halt, :error}
-        end
-      end)
-
-    case params do
-      :error ->
-        :error
-
-      params ->
-        {:ok, params |> Enum.reverse() |> Enum.uniq_by(fn {_key, c_ref} -> c_ref end)}
-    end
-  end
-
-  defp c_identifier?(value) when is_binary(value),
-    do: Regex.match?(~r/^[A-Za-z_][A-Za-z0-9_]*$/, value)
-
-  defp zero_arg_function_var?(env, var) do
-    module_name = Map.get(env, :__module__, "Main")
-
-    case Map.get(env, :__program_decls__, %{}) do
-      %{} = decl_map ->
-        case Map.get(decl_map, {module_name, var}) do
-          %{args: args} when args in [[], nil] -> true
-          _ -> false
-        end
-
-      _ ->
-        false
-    end
+    expr
+    |> external_vars()
+    |> MapSet.to_list()
+    |> HelperParams.collect(env)
   end
 
   defp external_vars(expr), do: external_vars(expr, MapSet.new())

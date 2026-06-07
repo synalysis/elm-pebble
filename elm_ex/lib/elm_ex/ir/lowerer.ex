@@ -463,24 +463,13 @@ defmodule ElmEx.IR.Lowerer do
   end
 
   defp rewrite_expr(%{op: :let_in, value_expr: value_expr, in_expr: in_expr} = expr, lookup) do
-    local_name = Map.get(expr, :name) || Map.get(expr, "name")
-
-    scoped_lookup =
-      if is_binary(local_name) and local_name != "" do
-        Map.update(
-          lookup,
-          :local_call_names,
-          MapSet.new([local_name]),
-          &MapSet.put(&1, local_name)
-        )
-      else
-        lookup
-      end
-
+  # Let-bound names (including local functions) must stay as unqualified :call ops so
+  # codegen can resolve them from the compile env. Adding them to local_call_names would
+  # rewrite `label x y z` into `Main.label`, which is wrong for let-bound lambdas.
     %{
       expr
-      | value_expr: rewrite_expr(value_expr, scoped_lookup),
-        in_expr: rewrite_expr(in_expr, scoped_lookup)
+      | value_expr: rewrite_expr(value_expr, lookup),
+        in_expr: rewrite_expr(in_expr, lookup)
     }
   end
 
@@ -572,21 +561,7 @@ defmodule ElmEx.IR.Lowerer do
   end
 
   defp rewrite_expr(%{op: :lambda, body: body} = expr, lookup) do
-    lambda_args =
-      Map.get(expr, :args) || Map.get(expr, "args") || Map.get(expr, :params) ||
-        Map.get(expr, "params") ||
-        []
-
-    scoped_lookup =
-      Enum.reduce(lambda_args, lookup, fn arg_name, acc ->
-        if is_binary(arg_name) and arg_name != "" do
-          Map.update(acc, :local_call_names, MapSet.new([arg_name]), &MapSet.put(&1, arg_name))
-        else
-          acc
-        end
-      end)
-
-    %{expr | body: rewrite_expr(body, scoped_lookup)}
+    %{expr | body: rewrite_expr(body, lookup)}
   end
 
   defp rewrite_expr(%{op: :compose_left, f: f, g: g}, lookup) do

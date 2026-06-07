@@ -560,31 +560,37 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
     {list_code, list_var, counter} = Host.compile_expr(list_expr, env, counter)
     prefix_count = length(prefix_vars)
 
-    prefix_bindings =
-      prefix_vars
+    {prefix_setup_code, prefix_slots, prefix_boxed_release_code, counter} =
+      boxed_prefix_call_args(prefix_vars, next, counter)
+
+    prefix_arg_bindings =
+      prefix_slots
       |> Enum.with_index()
-      |> Enum.map_join("\n", fn {var, index} ->
-        "      direct_call_args_#{next}[#{index}] = #{var};"
+      |> Enum.map_join("\n", fn {slot, index} ->
+        "      direct_call_args_#{next}[#{index}] = #{slot};"
       end)
+
+    loop_prefix_release_code = prefix_release_code <> prefix_boxed_release_code
 
     {:ok,
      """
      #{list_code}
      #{prefix_code}
+     #{prefix_setup_code}
      ElmcValue *direct_cursor_#{next} = #{list_var};
         elmc_int_t direct_index_#{next} = 0;
      while (direct_rc == 0 && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
        ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
        ElmcValue *direct_index_value_#{next} = elmc_new_int(direct_index_#{next});
        ElmcValue *direct_call_args_#{next}[#{max(prefix_count + 2, 1)}] = {0};
-     #{prefix_bindings}
+     #{prefix_arg_bindings}
        direct_call_args_#{next}[#{prefix_count}] = direct_index_value_#{next};
        direct_call_args_#{next}[#{prefix_count + 1}] = direct_node_#{next}->head;
        int direct_rc_#{next} = #{c_name}_commands_append(direct_call_args_#{next}, #{prefix_count + 2}, writer);
        elmc_release(direct_index_value_#{next});
        if (direct_rc_#{next} < 0) {
          elmc_release(#{list_var});
-     #{prefix_release_code}
+     #{loop_prefix_release_code}
          return direct_rc_#{next};
        }
        #{Catch.soft_stop_if("direct_rc_#{next}")}
@@ -592,7 +598,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
        direct_cursor_#{next} = direct_node_#{next}->tail;
      }
      elmc_release(#{list_var});
-     #{prefix_release_code}
+     #{loop_prefix_release_code}
      """, counter}
   end
 
@@ -835,7 +841,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
          false,
          prefix_code,
          prefix_vars,
-         _prefix_release_code,
+         prefix_release_code,
          list_expr,
          c_name,
          next,
@@ -845,36 +851,40 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
     {list_code, list_var, counter} = Host.compile_expr(list_expr, env, counter)
     prefix_count = length(prefix_vars)
 
-    prefix_bindings =
-      prefix_vars
+    {prefix_setup_code, prefix_slots, prefix_boxed_release_code, counter} =
+      boxed_prefix_call_args(prefix_vars, next, counter)
+
+    prefix_arg_bindings =
+      prefix_slots
       |> Enum.with_index()
-      |> Enum.map_join("\n", fn {var, index} ->
-        "      direct_call_args_#{next}[#{index}] = #{var};"
+      |> Enum.map_join("\n", fn {slot, index} ->
+        "      direct_call_args_#{next}[#{index}] = #{slot};"
       end)
 
-    prefix_releases = Release.release_vars(prefix_vars, "        ")
+    loop_prefix_release_code = prefix_release_code <> prefix_boxed_release_code
 
     {:ok,
      """
      #{list_code}
      #{prefix_code}
+     #{prefix_setup_code}
      ElmcValue *direct_cursor_#{next} = #{list_var};
      while (direct_rc == 0 && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
        ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
        ElmcValue *direct_call_args_#{next}[#{max(prefix_count + 1, 1)}] = {0};
-     #{prefix_bindings}
+     #{prefix_arg_bindings}
        direct_call_args_#{next}[#{prefix_count}] = direct_node_#{next}->head;
        int direct_rc_#{next} = #{c_name}_commands_append(direct_call_args_#{next}, #{prefix_count + 1}, writer);
        if (direct_rc_#{next} < 0) {
          elmc_release(#{list_var});
-     #{prefix_releases}
+     #{loop_prefix_release_code}
          return direct_rc_#{next};
        }
        #{Catch.soft_stop_if("direct_rc_#{next}")}
        direct_cursor_#{next} = direct_node_#{next}->tail;
      }
      elmc_release(#{list_var});
-     #{prefix_releases}
+     #{loop_prefix_release_code}
      """, counter}
   end
 
@@ -1088,4 +1098,31 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
         end
     end
   end
+
+  defp boxed_prefix_call_args(prefix_vars, loop_id, counter) do
+    Enum.reduce(prefix_vars, {"", [], "", counter}, fn var, {setup_acc, slots_acc, release_acc, c} ->
+      if boxed_elmc_value_ref?(var) do
+        {setup_acc, slots_acc ++ [var], release_acc, c}
+      else
+        next = c + 1
+        boxed = "direct_prefix_boxed_#{loop_id}_#{next}"
+
+        setup =
+          setup_acc <>
+            "  ElmcValue *#{boxed} = elmc_new_int(#{var});\n"
+
+        release =
+          release_acc <> Release.release_vars([boxed], "        ")
+
+        {setup, slots_acc ++ [boxed], release, next}
+      end
+    end)
+    |> then(fn {setup, slots, release, c} -> {setup, slots, release, c} end)
+  end
+
+  defp boxed_elmc_value_ref?(ref) when is_binary(ref) do
+    Regex.match?(~r/^(tmp_\d+|model|elmc_|direct_node_|direct_cursor_|direct_item_|direct_index_)/, ref)
+  end
+
+  defp boxed_elmc_value_ref?(_), do: false
 end

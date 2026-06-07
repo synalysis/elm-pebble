@@ -31,7 +31,19 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
   defp do_reachable([target | rest], decl_map, excluded_targets, seen) do
     cond do
       MapSet.member?(excluded_targets, target) ->
-        do_reachable(rest, decl_map, excluded_targets, seen)
+        callees =
+          case Map.fetch(decl_map, target) do
+            {:ok, decl} ->
+              case FusedNativeReachability.callees(elem(target, 0), elem(target, 1), decl.expr, decl_map) do
+                keys when is_list(keys) -> keys
+                nil -> expr_callees(decl.expr, elem(target, 0), decl_map)
+              end
+
+            :error ->
+              []
+          end
+
+        do_reachable(rest ++ callees, decl_map, excluded_targets, seen)
 
       MapSet.member?(seen, target) ->
         do_reachable(rest, decl_map, excluded_targets, seen)
@@ -62,7 +74,19 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
   defp do_wrapper_reachable([target | rest], decl_map, excluded_targets, seen) do
     cond do
       MapSet.member?(excluded_targets, target) ->
-        do_wrapper_reachable(rest, decl_map, excluded_targets, seen)
+        callees =
+          case Map.fetch(decl_map, target) do
+            {:ok, decl} ->
+              case FusedNativeReachability.callees(elem(target, 0), elem(target, 1), decl.expr, decl_map) do
+                keys when is_list(keys) -> keys
+                nil -> expr_wrapper_callees(decl.expr, elem(target, 0), decl_map)
+              end
+
+            :error ->
+              []
+          end
+
+        do_wrapper_reachable(rest ++ callees, decl_map, excluded_targets, seen)
 
       MapSet.member?(seen, target) ->
         do_wrapper_reachable(rest, decl_map, excluded_targets, seen)

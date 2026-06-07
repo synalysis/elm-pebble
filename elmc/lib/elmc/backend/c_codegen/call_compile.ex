@@ -19,14 +19,20 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
             Host.compile_expr(ResourceUnion.index_expr(target), env, counter)
 
           true ->
-            case BuiltinOperators.qualified_operator_name(target) do
-              nil ->
-                FunctionCallCompile.compile_cross_module(target, args, env, counter)
+            case let_bound_closure_call(target, args, env, counter) do
+              {:ok, result} ->
+                result
 
-              builtin_name ->
-                case BuiltinOperators.call(builtin_name, args, env, counter) do
-                  nil -> FunctionCallCompile.compile_cross_module(target, args, env, counter)
-                  result -> result
+              :error ->
+                case BuiltinOperators.qualified_operator_name(target) do
+                  nil ->
+                    FunctionCallCompile.compile_cross_module(target, args, env, counter)
+
+                  builtin_name ->
+                    case BuiltinOperators.call(builtin_name, args, env, counter) do
+                      nil -> FunctionCallCompile.compile_cross_module(target, args, env, counter)
+                      result -> result
+                    end
                 end
             end
         end
@@ -53,17 +59,36 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
   def compile(%{op: :call, name: name, args: args}, env, counter) do
     case BuiltinOperators.call(name, args, env, counter) do
       nil ->
-        case Map.fetch(env, name) do
-          {:ok, closure_var} when is_binary(closure_var) ->
+        case let_bound_closure_var(env, name) do
+          closure_var when is_binary(closure_var) ->
             FunctionCallCompile.compile_closure(closure_var, args, env, counter)
 
-          :error ->
+          _ ->
             module_name = Map.get(env, :__module__, "Main")
             FunctionCallCompile.compile(module_name, name, args, env, counter)
         end
 
       result ->
         result
+    end
+  end
+
+  defp let_bound_closure_call(target, args, env, counter) do
+  with {module_name, name} <- Host.split_qualified_function_target(target),
+       true <- module_name == Map.get(env, :__module__, "Main"),
+       closure_var when is_binary(closure_var) <- let_bound_closure_var(env, name) do
+      {:ok, FunctionCallCompile.compile_closure(closure_var, args, env, counter)}
+    else
+      _ -> :error
+    end
+  end
+
+  defp let_bound_closure_var(env, name) do
+    key = Host.binding_key(name)
+
+    case Map.get(env, key) do
+      closure_var when is_binary(closure_var) -> closure_var
+      _ -> nil
     end
   end
 

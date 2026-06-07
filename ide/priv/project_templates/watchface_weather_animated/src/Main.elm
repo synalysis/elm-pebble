@@ -19,6 +19,8 @@ type alias Model =
     , displayedCondition : Maybe WeatherCondition
     , activeTransition : Maybe Resources.AnimatedVector
     , suppressWeatherTransitions : Bool
+    , warmupTicksRemaining : Int
+    , transitionTicksRemaining : Maybe Int
     , screenW : Int
     , screenH : Int
     }
@@ -28,6 +30,7 @@ type Msg
     = CurrentDateTime Time.CurrentDateTime
     | FromPhone PhoneToWatch
     | MinuteChanged Int
+    | SecondElapsed
     | TransitionFinished
     | EnableWeatherTransitions
 
@@ -40,13 +43,14 @@ init context =
       , displayedCondition = Nothing
       , activeTransition = Nothing
       , suppressWeatherTransitions = True
+      , warmupTicksRemaining = msToWholeSeconds weatherTransitionWarmupMs
+      , transitionTicksRemaining = Nothing
       , screenW = context.screen.width
       , screenH = context.screen.height
       }
     , Cmd.batch
         [ Time.currentDateTime CurrentDateTime
         , CompanionWatch.sendWatchToPhone (RequestWeather CurrentLocation)
-        , Cmd.timerAfter weatherTransitionWarmupMs EnableWeatherTransitions
         ]
     )
 
@@ -67,6 +71,29 @@ update msg model =
                 , CompanionWatch.sendWatchToPhone (RequestWeather CurrentLocation)
                 ]
             )
+
+        SecondElapsed ->
+            case model.transitionTicksRemaining of
+                Just 1 ->
+                    update TransitionFinished model
+
+                Just ticks ->
+                    ( { model | transitionTicksRemaining = Just (ticks - 1) }, Cmd.none )
+
+                Nothing ->
+                    if model.warmupTicksRemaining > 0 then
+                        let
+                            next =
+                                model.warmupTicksRemaining - 1
+                        in
+                        if next == 0 then
+                            update EnableWeatherTransitions { model | warmupTicksRemaining = 0 }
+
+                        else
+                            ( { model | warmupTicksRemaining = next }, Cmd.none )
+
+                    else
+                        ( model, Cmd.none )
 
         TransitionFinished ->
             ( { model
@@ -110,15 +137,20 @@ updateFromPhone message model =
                                 ( { nextModel | displayedCondition = Just newCondition }, Cmd.none )
 
                             Just vector ->
-                                ( { nextModel | activeTransition = Just vector }
-                                , Cmd.timerAfter transitionDurationMs TransitionFinished
+                                ( { nextModel
+                                    | activeTransition = Just vector
+                                    , transitionTicksRemaining =
+                                        Just (msToWholeSeconds transitionDurationMs)
+                                  }
+                                , Cmd.none
                                 )
 
 
 subscriptions : Model -> Sub Msg
 subscriptions _ =
     Events.batch
-        [ Events.onMinuteChange MinuteChanged
+        [ Events.onSecondChange (\_ -> SecondElapsed)
+        , Events.onMinuteChange MinuteChanged
         , CompanionWatch.onPhoneToWatch FromPhone
         ]
 
@@ -500,6 +532,11 @@ transitionDurationMs =
 weatherTransitionWarmupMs : Int
 weatherTransitionWarmupMs =
     2500
+
+
+msToWholeSeconds : Int -> Int
+msToWholeSeconds ms =
+    (ms + 999) // 1000
 
 
 pad2 : Int -> String

@@ -4,6 +4,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
   alias Elmc.Backend.CCodegen.DebugProbes
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Expr
+  alias Elmc.Backend.CCodegen.HelperParams
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.LetAnalysis
   alias Elmc.Backend.CCodegen.LetRecCompile
@@ -219,6 +220,11 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
           Types.compile_counter()
         ) :: Types.compile_result()
   defp compile_boxed_let(name, value_expr, in_expr, env, counter) do
+    env =
+      if match?(%{op: :lambda}, value_expr),
+        do: Map.put(env, :__skip_let_body_helper__, true),
+        else: env
+
     {value_code, value_var, counter, native_ref} =
       compile_boxed_let_value(value_expr, env, counter)
 
@@ -294,16 +300,14 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
   defp maybe_extract_boxed_let_body(in_expr, body_env, body_code, body_var, counter) do
     if extract_boxed_let_body?(body_env, body_code) do
       case boxed_let_body_helper_params(in_expr, body_env) do
-        {:ok, params} ->
+        {:ok, params} when params != [] ->
           helper_id = Process.get(:elmc_generic_helper_counter, 0) + 1
           Process.put(:elmc_generic_helper_counter, helper_id)
 
           helper_name =
             "elmc_let_body_helper_#{Util.safe_c_suffix(Map.get(body_env, :__module__, "Main"))}_#{Util.safe_c_suffix(Map.get(body_env, :__function_name__, "fn"))}_#{helper_id}"
 
-          helper_param_decls =
-            params
-            |> Enum.map_join(", ", fn {_key, c_ref} -> "ElmcValue *#{c_ref}" end)
+          helper_param_decls = HelperParams.param_decls(params)
 
           helper_def = """
           static ElmcValue *#{helper_name}(#{helper_param_decls}) {
@@ -319,7 +323,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
 
           next = counter + 1
           out = "tmp_#{next}"
-          call_args = Enum.map_join(params, ", ", fn {_key, c_ref} -> c_ref end)
+          call_args = HelperParams.call_args(params)
 
           code = """
             ElmcValue *#{out} = #{helper_name}(#{call_args});
@@ -327,7 +331,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
 
           {code, out, next}
 
-        :error ->
+        _ ->
           {body_code, body_var, counter}
       end
     else
@@ -337,52 +341,46 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
 
   defp extract_boxed_let_body?(env, body_code) do
     not Map.get(env, :__inside_lambda__, false) and
+      not Map.get(env, :__skip_let_body_helper__, false) and
       Process.get(:elmc_generic_helper_defs) != nil and emitted_line_count(body_code) >= 100
   end
 
   defp emitted_line_count(code), do: code |> String.split("\n") |> length()
 
   defp boxed_let_body_helper_params(expr, env) do
-    params =
+    vars =
       expr
       |> external_vars()
-      |> Enum.sort()
-      |> Enum.reduce_while([], fn var, acc ->
-        case Map.get(env, var) do
-          c_ref when is_binary(c_ref) ->
-            if c_identifier?(c_ref), do: {:cont, [{var, c_ref} | acc]}, else: {:halt, :error}
+      |> MapSet.union(case_subject_vars(expr))
+      |> MapSet.to_list()
 
-          _other ->
-            if zero_arg_function_var?(env, var), do: {:cont, acc}, else: {:halt, :error}
-        end
-      end)
-
-    case params do
-      :error ->
-        :error
-
-      params ->
-        {:ok, params |> Enum.reverse() |> Enum.uniq_by(fn {_key, c_ref} -> c_ref end)}
+    case HelperParams.collect(vars, env) do
+      :error -> :error
+      {:ok, params} -> {:ok, params}
     end
   end
 
-  defp c_identifier?(value) when is_binary(value),
-    do: Regex.match?(~r/^[A-Za-z_][A-Za-z0-9_]*$/, value)
+  defp case_subject_vars(expr) when is_map(expr) do
+    own =
+      case expr do
+        %{op: :case, subject: subject} when is_binary(subject) -> MapSet.new([subject])
+        _ -> MapSet.new()
+      end
 
-  defp zero_arg_function_var?(env, var) do
-    module_name = Map.get(env, :__module__, "Main")
-
-    case Map.get(env, :__program_decls__, %{}) do
-      %{} = decl_map ->
-        case Map.get(decl_map, {module_name, var}) do
-          %{args: args} when args in [[], nil] -> true
-          _ -> false
-        end
-
-      _ ->
-        false
-    end
+    expr
+    |> Map.values()
+    |> Enum.reduce(own, fn value, acc ->
+      MapSet.union(acc, case_subject_vars(value))
+    end)
   end
+
+  defp case_subject_vars(values) when is_list(values) do
+    Enum.reduce(values, MapSet.new(), fn value, acc ->
+      MapSet.union(acc, case_subject_vars(value))
+    end)
+  end
+
+  defp case_subject_vars(_), do: MapSet.new()
 
   defp external_vars(expr), do: external_vars(expr, MapSet.new())
 

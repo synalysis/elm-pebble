@@ -41,9 +41,16 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
        ) do
     cond do
       native_int_let?(name, value_expr, in_expr, env) ->
-        env = Host.merge_process_hoisted_native_ints(env)
+        hoisted_before = Process.get(:elmc_hoisted_native_ints, %{})
 
-        {value_code, value_ref, counter} = Host.compile_native_int_expr(value_expr, env, counter)
+        {value_code, value_ref, counter} =
+          try do
+            compile_env = Host.merge_process_hoisted_native_ints(env)
+            Host.compile_native_int_expr(value_expr, compile_env, counter)
+          after
+            Process.put(:elmc_hoisted_native_ints, hoisted_before)
+          end
+
         next = counter + 1
         native_var = "direct_native_let_#{Util.safe_c_suffix(name)}_#{next}"
 
@@ -312,6 +319,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
           _ -> :error
         end
 
+      let_bound_closure_call?(env, name) ->
+        emit_closure_command_call(name, args, env, counter)
+
       MapSet.member?(targets, {module_name, name}) ->
         Host.direct_emit_command_call({module_name, name}, args, env, counter)
 
@@ -333,6 +343,39 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
 
   def emit_expr(_expr, _env, _counter), do: :error
 
+  defp let_bound_closure_call?(env, name) do
+    case Map.get(env, Host.binding_key(name)) do
+      closure_var when is_binary(closure_var) -> true
+      _ -> false
+    end
+  end
+
+  defp emit_closure_command_call(name, args, env, counter) do
+    closure_var = Map.fetch!(env, Host.binding_key(name))
+
+    {arg_code, arg_refs, release_refs, counter} =
+      Enum.reduce(args, {"", [], [], counter}, fn arg_expr, {code_acc, refs_acc, releases_acc, c} ->
+        {code, ref, c2} = Host.compile_expr(arg_expr, env, c)
+        {code_acc <> "\n  " <> code, refs_acc ++ [ref], releases_acc ++ [ref], c2}
+      end)
+
+    next = counter + 1
+    argc = length(arg_refs)
+    arg_list = Enum.join(arg_refs, ", ")
+
+    releases =
+      release_refs
+      |> Enum.map_join("\n  ", fn ref -> "elmc_release(#{ref});" end)
+
+    {:ok,
+     """
+     #{arg_code}
+       ElmcValue *direct_call_args_#{next}[#{max(argc, 1)}] = { #{arg_list} };
+       ElmcValue *direct_closure_result_#{next} = elmc_closure_call(#{closure_var}, direct_call_args_#{next}, #{argc});
+       #{releases}
+     """, next}
+  end
+
   defp emit_direct_command_native_int_let(name, value_expr, in_expr, env, counter)
        when is_binary(name) or is_atom(name) do
     usage = native_int_usage(name, in_expr, env)
@@ -341,8 +384,15 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
          Host.binding_used_in_lambda?(name, in_expr) or usage.boxed > 0 do
       :error
     else
-      env = Host.merge_process_hoisted_native_ints(env)
-      {value_code, value_ref, counter} = Host.compile_native_int_expr(value_expr, env, counter)
+      hoisted_before = Process.get(:elmc_hoisted_native_ints, %{})
+
+      {value_code, value_ref, counter} =
+        try do
+          compile_env = Host.merge_process_hoisted_native_ints(env)
+          Host.compile_native_int_expr(value_expr, compile_env, counter)
+        after
+          Process.put(:elmc_hoisted_native_ints, hoisted_before)
+        end
 
       if direct_command_native_int_ref?(value_ref) do
         next = counter + 1

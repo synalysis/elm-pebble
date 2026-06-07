@@ -162,8 +162,8 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
           </div>
         </div>
         <div class="mt-4 grid gap-4 lg:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)] lg:items-start">
-          <div class="w-fit rounded border border-zinc-300 bg-black p-1">
-            <div class="flex items-center gap-1.5">
+          <div class="w-fit max-w-full rounded border border-zinc-300 bg-black p-1">
+            <div class="flex items-start gap-1.5">
               <button
                 type="button"
                 data-emulator-button="back"
@@ -171,16 +171,24 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
               >
                 Back
               </button>
-              <div class="relative shrink-0">
-                <div
-                  id="embedded-emulator-display"
-                  data-emulator-canvas
-                  phx-update="ignore"
-                  class="overflow-hidden rounded bg-zinc-950"
-                  style={emulator_canvas_style(@selected_emulator_target)}
-                >
+              <div class="flex min-w-0 shrink-0 flex-col items-stretch gap-2">
+                <div class="relative">
+                  <div
+                    id="embedded-emulator-display"
+                    data-emulator-canvas
+                    phx-update="ignore"
+                    class="overflow-hidden rounded bg-zinc-950"
+                    style={emulator_canvas_style(@selected_emulator_target)}
+                  >
+                  </div>
+                  <.emulator_display_tap_button show?={@show_accel_tap?} data_tap="emulator-tap" />
                 </div>
-                <.emulator_display_tap_button show?={@show_accel_tap?} data_tap="emulator-tap" />
+                <p
+                  data-emulator-status
+                  class="min-w-0 rounded bg-white px-2 py-1.5 text-center text-[11px] leading-snug break-words text-zinc-700"
+                >
+                  Embedded emulator is idle.
+                </p>
               </div>
               <div class="flex flex-col gap-1.5">
                 <button
@@ -206,12 +214,6 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
                 </button>
               </div>
             </div>
-            <p
-              data-emulator-status
-              class="mt-2 rounded bg-white px-2 py-1.5 text-center text-[11px] text-zinc-700"
-            >
-              Embedded emulator is idle.
-            </p>
           </div>
           <div class="space-y-3">
             <.simulator_settings_form

@@ -275,11 +275,21 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
         update_call =
           Expr.record_update_expr(current, field.name, field_var, record_shape)
 
+        field_release =
+          if boxed_release_var?(field_var),
+            do: "elmc_release(#{field_var});",
+            else: ""
+
+        current_release =
+          if boxed_release_var?(current),
+            do: "elmc_release(#{current});",
+            else: ""
+
         code = """
         #{field_code}
         ElmcValue *#{out} = #{update_call};
-        elmc_release(#{current});
-        elmc_release(#{field_var});
+        #{current_release}
+        #{field_release}
         """
 
         {code_acc <> "\n" <> code, out, next}
@@ -624,4 +634,9 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   end
 
   defp subexpr_key(other), do: other
+
+  defp boxed_release_var?(var) when is_binary(var),
+    do: Regex.match?(~r/^tmp_\d+$/, var)
+
+  defp boxed_release_var?(_), do: false
 end

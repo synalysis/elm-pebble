@@ -15,7 +15,7 @@ defmodule Ide.Resources.ApngStaticPreviewTest do
 
   test "static_png_bytes strips animation chunks from watch APNG" do
     bytes = File.read!(@sparkle)
-    assert {:ok, %{frame_count: 3, width: 32, height: 32}} = ApngProbe.probe_bytes(bytes)
+    assert {:ok, %{frame_count: 21, width: 60, height: 60}} = ApngProbe.probe_bytes(bytes)
 
     assert {:ok, static_bytes} = ApngStaticPreview.static_png_bytes(bytes)
     assert static_bytes != bytes
