@@ -112,7 +112,7 @@ defmodule Ide.Resources.AnimationStoreTest do
         width::32-big,
         height::32-big,
         8,
-        6,
+        3,
         0,
         0,
         0
@@ -120,20 +120,24 @@ defmodule Ide.Resources.AnimationStoreTest do
 
     actl = png_chunk("acTL", <<frames::32-big, 0::32-big>>)
 
-    fctl =
-      png_chunk("fcTL", <<
-        0::32-big,
-        width::32-big,
-        height::32-big,
-        0::32,
-        0::32,
-        delay_num::16-big,
-        delay_den::16-big,
-        0,
-        0
-      >>)
+    fctls =
+      for seq <- 0..(frames - 2) do
+        png_chunk("fcTL", <<
+          seq::32-big,
+          width::32-big,
+          height::32-big,
+          0::32,
+          0::32,
+          delay_num::16-big,
+          delay_den::16-big,
+          0,
+          0
+        >>)
+      end
 
-    <<137, 80, 78, 71, 13, 10, 26, 10, ihdr::binary, actl::binary, fctl::binary,
+    fctl_data = Enum.reduce(fctls, <<>>, fn chunk, acc -> acc <> chunk end)
+
+    <<137, 80, 78, 71, 13, 10, 26, 10, ihdr::binary, actl::binary, fctl_data::binary,
       png_chunk("IEND", "")::binary>>
   end
 

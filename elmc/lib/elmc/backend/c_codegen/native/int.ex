@@ -1,17 +1,25 @@
 defmodule Elmc.Backend.CCodegen.Native.Int do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.ConstantInt
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.ListLoopCodegen
+  alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
+  alias Elmc.Backend.CCodegen.Native.IntCase, as: NativeIntCase
   alias Elmc.Backend.CCodegen.Native.TypedReturn
   alias Elmc.Backend.CCodegen.Native.RecordFields, as: RecordFields
+  alias Elmc.Backend.CCodegen.Native.UsageAnalysis, as: NativeUsageAnalysis
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
 
   @spec expr?(Types.ir_expr(), Types.compile_env()) :: boolean()
-  def expr?(%{op: :var, name: name}, env) when is_binary(name) or is_atom(name),
-    do: EnvBindings.boxed_int_binding?(env, name) or is_binary(EnvBindings.native_int_binding(env, name))
+  def expr?(%{op: :var, name: name}, env) when is_binary(name) or is_atom(name) do
+    EnvBindings.boxed_int_binding?(env, name) or
+      is_binary(EnvBindings.native_int_binding(env, name)) or
+      ConstantInt.native_let_value?(%{op: :var, name: name}, env)
+  end
 
   def expr?(%{op: :field_access, arg: arg, field: field}, env),
     do: RecordFields.int_field?(env, arg, field)
@@ -22,12 +30,45 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     do: false
 
   def expr?(%{op: :c_int_expr}, _env), do: true
+  def expr?(%{op: :msg_tag_expr}, _env), do: true
 
   def expr?(%{op: :if, then_expr: then_expr, else_expr: else_expr}, env),
     do: expr?(then_expr, env) and expr?(else_expr, env)
 
+  def expr?(%{op: :case, subject: subject, branches: branches}, env) do
+    subject_expr = CaseCompile.subject_expr(subject)
+
+    NativeIntCase.branches?(branches) and NativeIntCase.subject_expr?(subject_expr, env) and
+      Enum.all?(branches, fn %{expr: branch_expr} -> expr?(branch_expr, env) end)
+  end
+
+  def expr?(%{op: :let_in, name: name, value_expr: value_expr, in_expr: in_expr}, env)
+      when is_binary(name) or is_atom(name) do
+    value_native? = expr?(value_expr, env)
+
+    body_env =
+      env
+      |> Map.delete(name)
+      |> then(fn body_env ->
+        if value_native? and NativeUsageAnalysis.int_let?(name, value_expr, in_expr, env) do
+          EnvBindings.put_native_int_binding(body_env, name, "_native_let")
+        else
+          body_env
+        end
+      end)
+
+    value_native? and expr?(in_expr, body_env)
+  end
+
+  def expr?(%{op: :call, name: "__sub__", args: [left, right]}, env) do
+    case ListLoopCodegen.unwrap_list_length_expr(right) do
+      {:ok, _} -> expr?(left, env)
+      :error -> expr?(left, env) and expr?(right, env)
+    end
+  end
+
   def expr?(%{op: :call, name: name, args: [left, right]}, env)
-      when name in ["__add__", "__sub__", "__mul__", "__idiv__", "modBy", "remainderBy"] do
+      when name in ["__add__", "__sub__", "__mul__", "__idiv__", "modBy", "remainderBy", "min", "max"] do
     expr?(left, env) and expr?(right, env)
   end
 
@@ -36,7 +77,9 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
   def expr?(%{op: :call, name: name, args: args}, env) when is_binary(name) do
     module_name = Map.get(env, :__module__, "Main")
-    inline_function_expr?({module_name, name}, args, env) or
+
+    ConstantInt.native_let_value?(%{op: :call, name: name, args: args}, env) or
+      inline_function_expr?({module_name, name}, args, env) or
       typed_expr?(%{op: :call, name: name, args: args}, env)
   end
 
@@ -94,7 +137,9 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
             "__mul__",
             "__idiv__",
             "modBy",
-            "remainderBy"
+            "remainderBy",
+            "min",
+            "max"
           ]) and length(args) == 2 ->
             Enum.all?(args, &expr?(&1, env))
 
@@ -147,6 +192,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     with %{args: arg_names, expr: body} when is_list(arg_names) <- Map.get(decl_map, target_key),
          true <- length(arg_names) == length(args),
          false <- MapSet.member?(inline_stack, target_key),
+         false <- fused_native_helper?(target_key, body, decl_map),
          substituted <- Host.substitute_expr(body, Map.new(Enum.zip(arg_names, args))) do
       env =
         Map.put(
@@ -160,6 +206,8 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
       _ -> false
     end
   end
+
+  defp fused_native_helper?(_target_key, _body, _decl_map), do: false
 
   @spec structural_expr?(Types.ir_expr()) :: boolean()
   def structural_expr?(%{op: op})
@@ -232,7 +280,13 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
         {"", ref, counter}
 
       :error ->
-        dispatch(expr, env, counter)
+        case ConstantInt.literal_value(expr, env) do
+          {:ok, value} ->
+            {"", Integer.to_string(value), counter}
+
+          :error ->
+            dispatch(expr, env, counter)
+        end
     end
   end
 
@@ -242,6 +296,10 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   defp dispatch(%{op: :c_int_expr, value: value}, _env, counter)
        when is_binary(value),
        do: {"", value, counter}
+
+  defp dispatch(%{op: :msg_tag_expr, name: name}, _env, counter) when is_binary(name) do
+    {"", "ELMC_PEBBLE_MSG_#{Elmc.Backend.Pebble.Util.macro_name(name)}", counter}
+  end
 
   defp dispatch(%{op: :char_literal, value: value}, _env, counter),
     do: {"", "#{value}", counter}
@@ -334,29 +392,36 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     end
   end
 
-  defp dispatch(%{op: :field_access, arg: arg_expr, field: field}, env, counter)
+  defp dispatch(%{op: :field_access, arg: arg_expr, field: field} = expr, env, counter)
        when is_map(arg_expr) do
     case Host.inline_record_field_expr(arg_expr, field, env) do
       nil ->
-        {arg_code, arg_var, counter} = Host.compile_expr(arg_expr, env, counter)
-        next = counter + 1
-        out = "native_field_#{next}"
-        getter = Host.record_get_int_expr(arg_var, field, Host.record_shape(arg_expr, env))
+        case Host.nested_record_get_int_expr(expr, env) do
+          getter when is_binary(getter) ->
+            {"", getter, counter}
 
-        before_probe =
-          env |> Host.battery_alert_field_probe(nil, field, :before) |> Host.agent_probe_region()
+          nil ->
+            {arg_code, arg_var, counter} = Host.compile_expr(arg_expr, env, counter)
+            next = counter + 1
+            out = "native_field_#{next}"
+            getter = Host.record_get_int_expr(arg_var, field, Host.record_shape(arg_expr, env))
 
-        after_probe = env |> Host.battery_alert_field_probe(nil, field, :after) |> Host.agent_probe_region()
+            before_probe =
+              env |> Host.battery_alert_field_probe(nil, field, :before) |> Host.agent_probe_region()
 
-        code = """
-        #{arg_code}
-        #{before_probe}
-          const elmc_int_t #{out} = #{getter};
-        #{after_probe}
-          elmc_release(#{arg_var});
-        """
+            after_probe =
+              env |> Host.battery_alert_field_probe(nil, field, :after) |> Host.agent_probe_region()
 
-        {code, out, next}
+            code = """
+            #{arg_code}
+            #{before_probe}
+              const elmc_int_t #{out} = #{getter};
+            #{after_probe}
+              elmc_release(#{arg_var});
+            """
+
+            {code, out, next}
+        end
 
       field_expr ->
         compile_expr(field_expr, env, counter)
@@ -382,33 +447,48 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
             end
 
           _ ->
-            compile_fallback(expr, env, counter)
+            case ConstantInt.native_ref(expr, env) do
+              {:ok, ref} -> {"", ref, counter}
+              :error -> compile_fallback(expr, env, counter)
+            end
         end
     end
   end
 
-  defp dispatch(%{op: :add_const, var: name, value: value}, env, counter) do
-    compile_expr(
-      %{
-        op: :call,
-        name: "__add__",
-        args: [%{op: :var, name: name}, %{op: :int_literal, value: value}]
-      },
-      env,
-      counter
-    )
+  defp dispatch(%{op: :add_const, var: name, value: value} = expr, env, counter) do
+    case ConstantInt.native_ref(expr, env) do
+      {:ok, ref} ->
+        {"", ref, counter}
+
+      :error ->
+        compile_expr(
+          %{
+            op: :call,
+            name: "__add__",
+            args: [%{op: :var, name: name}, %{op: :int_literal, value: value}]
+          },
+          env,
+          counter
+        )
+    end
   end
 
-  defp dispatch(%{op: :sub_const, var: name, value: value}, env, counter) do
-    compile_expr(
-      %{
-        op: :call,
-        name: "__sub__",
-        args: [%{op: :var, name: name}, %{op: :int_literal, value: value}]
-      },
-      env,
-      counter
-    )
+  defp dispatch(%{op: :sub_const, var: name, value: value} = expr, env, counter) do
+    case ConstantInt.native_ref(expr, env) do
+      {:ok, ref} ->
+        {"", ref, counter}
+
+      :error ->
+        compile_expr(
+          %{
+            op: :call,
+            name: "__sub__",
+            args: [%{op: :var, name: name}, %{op: :int_literal, value: value}]
+          },
+          env,
+          counter
+        )
+    end
   end
 
   defp dispatch(%{op: :add_vars, left: left, right: right}, env, counter) do
@@ -419,32 +499,44 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     )
   end
 
+  defp dispatch(%{op: :call, name: "__sub__", args: [left, right]}, env, counter) do
+    case compile_sub_with_list_length(left, right, env, counter) do
+      {:ok, code, ref, c} -> {code, ref, c}
+      :error -> compile_binary_int_op("-", left, right, env, counter)
+    end
+  end
+
   defp dispatch(%{op: :call, name: name, args: [left, right]}, env, counter)
-       when name in ["__add__", "__sub__", "__mul__"] do
-    op = %{"__add__" => "+", "__sub__" => "-", "__mul__" => "*"}[name]
-    {left_code, left_ref, counter} = compile_expr(left, env, counter)
-    {right_code, right_ref, counter} = compile_expr(right, env, counter)
-    {left_code <> right_code, "(#{left_ref} #{op} #{right_ref})", counter}
+       when name in ["__add__", "__mul__"] do
+    op = %{"__add__" => "+", "__mul__" => "*"}[name]
+    compile_binary_int_op(op, left, right, env, counter)
   end
 
   defp dispatch(%{op: :call, name: "__idiv__", args: [left, right]}, env, counter) do
     {left_code, left_ref, counter} = compile_expr(left, env, counter)
 
-    case static_nonzero_int_value(right) do
+    case static_nonzero_int_value(right, env) do
       value when is_integer(value) ->
         {left_code, "(#{left_ref} / #{value})", counter}
 
       nil ->
         {right_code, right_ref, counter} = compile_expr(right, env, counter)
-        next = counter + 1
-        denom = "native_den_#{next}"
 
-        code = """
-        #{left_code}#{right_code}
-          const elmc_int_t #{denom} = #{right_ref};
-        """
+        case parse_compile_time_int_ref(right_ref) do
+          value when is_integer(value) ->
+            {left_code <> right_code, "(#{left_ref} / #{value})", counter}
 
-        {code, "(#{denom} == 0 ? 0 : (#{left_ref} / #{denom}))", next}
+          nil ->
+            next = counter + 1
+            denom = "native_den_#{next}"
+
+            code = """
+            #{left_code}#{right_code}
+              const elmc_int_t #{denom} = #{right_ref};
+            """
+
+            {code, "(#{denom} == 0 ? 0 : (#{left_ref} / #{denom}))", next}
+        end
     end
   end
 
@@ -494,7 +586,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   end
 
   defp dispatch(%{op: :call, name: "modBy", args: [base, value]}, env, counter) do
-    case static_nonzero_int_value(base) do
+    case static_nonzero_int_value(base, env) do
       base_value when is_integer(base_value) ->
         {value_code, value_ref, counter} = compile_expr(value, env, counter)
         next = counter + 1
@@ -552,12 +644,18 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
        when is_binary(name) do
     module_name = Map.get(env, :__module__, "Main")
 
-    case inline_function({module_name, name}, args, env, counter) do
-      {:ok, code, value_ref, counter} -> {code, value_ref, counter}
+    case ConstantInt.native_ref(%{op: :call, name: name, args: args}, Map.put(env, :__module__, module_name)) do
+      {:ok, ref} ->
+        {"", ref, counter}
+
       :error ->
-        case NativeFunctionCall.compile_scalar(module_name, name, args, env, counter, :native_int) do
-          {code, value_ref, counter} -> {code, value_ref, counter}
-          :error -> compile_fallback(expr, env, counter)
+        case inline_function({module_name, name}, args, env, counter) do
+          {:ok, code, value_ref, counter} -> {code, value_ref, counter}
+          :error ->
+            case NativeFunctionCall.compile_scalar(module_name, name, args, env, counter, :native_int) do
+              {code, value_ref, counter} -> {code, value_ref, counter}
+              :error -> compile_fallback(expr, env, counter)
+            end
         end
     end
   end
@@ -586,21 +684,32 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
                 compile_fallback(expr, env, counter)
 
               target_key ->
-                case inline_function(target_key, args, env, counter) do
-                  {:ok, code, value_ref, counter} -> {code, value_ref, counter}
-                  :error ->
-                    {target_module, target_name} = target_key
+                {target_module, target_name} = target_key
 
-                    case NativeFunctionCall.compile_scalar(
-                           target_module,
-                           target_name,
-                           args,
-                           env,
-                           counter,
-                           :native_int
-                         ) do
-                      {code, value_ref, counter} -> {code, value_ref, counter}
-                      :error -> compile_fallback(expr, env, counter)
+                case ConstantInt.native_ref(
+                       %{op: :qualified_call, target: target, args: args},
+                       Map.put(env, :__module__, target_module)
+                     ) do
+                  {:ok, ref} ->
+                    {"", ref, counter}
+
+                  :error ->
+                    case inline_function(target_key, args, env, counter) do
+                      {:ok, code, value_ref, counter} ->
+                        {code, value_ref, counter}
+
+                      :error ->
+                        case NativeFunctionCall.compile_scalar(
+                               target_module,
+                               target_name,
+                               args,
+                               env,
+                               counter,
+                               :native_int
+                             ) do
+                          {code, value_ref, counter} -> {code, value_ref, counter}
+                          :error -> compile_fallback(expr, env, counter)
+                        end
                     end
                 end
             end
@@ -797,8 +906,169 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     {code, out, next}
   end
 
+  defp dispatch(%{op: :case, subject: subject, branches: branches} = expr, env, counter) do
+    subject_expr = CaseCompile.subject_expr(subject)
+
+    if expr?(expr, env) do
+      NativeIntCase.compile_scalar(subject_expr, branches, env, counter)
+    else
+      compile_fallback(expr, env, counter)
+    end
+  end
+
+  defp dispatch(
+         %{op: :let_in, name: name, value_expr: value_expr, in_expr: in_expr} = expr,
+         env,
+         counter
+       )
+       when is_binary(name) or is_atom(name) do
+    if expr?(expr, env) do
+      compile_native_int_let(name, value_expr, in_expr, env, counter)
+    else
+      compile_fallback(expr, env, counter)
+    end
+  end
+
   defp dispatch(expr, env, counter),
     do: compile_fallback(expr, env, counter)
+
+  defp compile_native_int_let(name, value_expr, in_expr, env, counter) do
+    let_expr = %{op: :let_in, name: name, value_expr: value_expr, in_expr: in_expr}
+
+    case ConstantInt.literal_value(let_expr, env) do
+      {:ok, value} ->
+        {"", Integer.to_string(value), counter}
+
+      :error ->
+        case ConstantInt.literal_value(value_expr, env) do
+          {:ok, bound} ->
+            bindings =
+              env
+              |> Map.get(:__literal_int_bindings__, %{})
+              |> Map.put(EnvBindings.binding_key(name), bound)
+
+            case ConstantInt.literal_value(in_expr, Map.put(env, :__literal_int_bindings__, bindings)) do
+              {:ok, value} ->
+                {"", Integer.to_string(value), counter}
+
+              :error ->
+                compile_native_int_let_body(name, value_expr, in_expr, env, counter)
+            end
+
+          :error ->
+            compile_native_int_let_body(name, value_expr, in_expr, env, counter)
+        end
+    end
+  end
+
+  defp compile_native_int_let_body(name, value_expr, in_expr, env, counter) do
+    {value_code, value_ref, counter} = compile_expr(value_expr, env, counter)
+
+    case Integer.parse(value_ref) do
+      {bound, ""} ->
+        bindings =
+          env
+          |> Map.get(:__literal_int_bindings__, %{})
+          |> Map.put(EnvBindings.binding_key(name), bound)
+
+        case ConstantInt.literal_value(in_expr, Map.put(env, :__literal_int_bindings__, bindings)) do
+          {:ok, value} ->
+            if value_code == "" do
+              {"", Integer.to_string(value), counter}
+            else
+              next = counter + 1
+              out = "native_let_#{Util.safe_c_suffix(name)}_#{next}"
+
+              code = """
+              #{value_code}
+                const elmc_int_t #{out} = #{value};
+              """
+
+              {code, out, counter}
+            end
+
+          :error ->
+            compile_native_int_let_bindings(
+              name,
+              value_code,
+              value_ref,
+              in_expr,
+              env,
+              counter
+            )
+        end
+
+      :error ->
+        compile_native_int_let_bindings(name, value_code, value_ref, in_expr, env, counter)
+    end
+  end
+
+  defp compile_native_int_let_bindings(name, value_code, value_ref, in_expr, env, counter) do
+    next = counter + 1
+    native_var = "native_let_#{Util.safe_c_suffix(name)}_#{next}"
+
+    body_env =
+      env
+      |> Map.delete(name)
+      |> EnvBindings.put_native_int_binding(name, native_var)
+      |> EnvBindings.remove_native_bool_binding(name)
+      |> EnvBindings.remove_native_float_binding(name)
+      |> EnvBindings.put_boxed_int_binding(name, false)
+
+    {body_code, body_ref, counter} = compile_expr(in_expr, body_env, counter)
+
+    code = """
+    #{value_code}
+      const elmc_int_t #{native_var} = #{value_ref};
+    #{body_code}
+    """
+
+    {code, body_ref, counter}
+  end
+
+  @spec compile_binary_int_op(
+          String.t(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
+  defp compile_binary_int_op(op, left, right, env, counter) do
+    case ConstantInt.literal_binop(op, left, right, env) do
+      {:ok, value} ->
+        {"", Integer.to_string(value), counter}
+
+      :error ->
+        {left_code, left_ref, counter} = compile_expr(left, env, counter)
+        {right_code, right_ref, counter} = compile_expr(right, env, counter)
+        {left_code <> right_code, "(#{left_ref} #{op} #{right_ref})", counter}
+    end
+  end
+
+  @spec compile_sub_with_list_length(
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: {:ok, String.t(), String.t(), Types.compile_counter()} | :error
+  defp compile_sub_with_list_length(left, right, env, counter) do
+    with {:ok, list} <- ListLoopCodegen.unwrap_list_length_expr(right),
+         {:ok, left_code, left_ref, counter} <- ConstantInt.compile_native_operand(left, env, counter) do
+      {list_code, list_var, counter} = Host.compile_expr(list, env, counter)
+      loop_id = counter + 1
+      {length_code, count} = ListLoopCodegen.emit_length_native_count(list_var, loop_id)
+
+      code = """
+      #{left_code}#{list_code}
+      #{length_code}
+        elmc_release(#{list_var});
+      """
+
+      {:ok, code, "(#{left_ref} - #{count})", counter}
+    else
+      _ -> :error
+    end
+  end
 
   defp float_to_int_expr(function, value, env, counter) do
     if Host.native_float_expr?(value, env) do
@@ -945,36 +1215,6 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
   defp to_float_arg(_expr), do: :error
 
-  defp compile_tuple_int_expr(arg_expr, accessor, env, counter) do
-    {arg_code, arg_var, counter} = Host.compile_expr(arg_expr, env, counter)
-    {access_code, out, counter} = compile_tuple_int_source(arg_var, accessor, counter)
-
-    code = """
-    #{arg_code}
-    #{access_code}
-      elmc_release(#{arg_var});
-    """
-
-    {code, out, counter}
-  end
-
-  defp compile_tuple_int_source(source, accessor, counter) do
-    next = counter + 1
-    tuple_value = "native_tuple_value_#{next}"
-    out = "native_tuple_int_#{next}"
-
-    code = """
-      ElmcValue *#{tuple_value} = #{accessor}(#{source});
-      const elmc_int_t #{out} = elmc_as_int(#{tuple_value});
-      elmc_release(#{tuple_value});
-    """
-
-    {code, out, next}
-  end
-
-  defp tuple_accessor(:tuple_second_expr), do: "elmc_tuple_second"
-  defp tuple_accessor(_op), do: "elmc_tuple_first"
-
   defp pebble_angle_source(%{
          op: :call,
          name: "__fdiv__",
@@ -1019,6 +1259,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     with %{args: arg_names, expr: body} when is_list(arg_names) <- Map.get(decl_map, target_key),
          true <- length(arg_names) == length(args),
          false <- MapSet.member?(inline_stack, target_key),
+         false <- fused_native_helper?(target_key, body, decl_map),
          substituted <- Host.substitute_expr(body, Map.new(Enum.zip(arg_names, args))),
          true <- expr?(substituted, env) do
       env =
@@ -1030,16 +1271,10 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
       {code, value_ref, counter} = dispatch(substituted, env, counter)
       code = code <> "  // inlined #{format_function_target(target_key)}\n"
-      expr = %{op: :call, name: elem(target_key, 1), args: args}
+      call_expr = %{op: :call, name: elem(target_key, 1), args: args}
 
-      {code, value_ref, counter} =
-        if args == [] do
-          Host.maybe_promote_hoisted_native_int(expr, env, code, value_ref, counter)
-        else
-          {code, value_ref, counter}
-        end
-
-      {:ok, code, value_ref, counter}
+      Host.maybe_promote_hoisted_native_int(call_expr, env, code, value_ref, counter)
+      |> then(fn {code, value_ref, counter} -> {:ok, code, value_ref, counter} end)
     else
       _ -> :error
     end
@@ -1055,12 +1290,27 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   def native_unary_int_name("elmc_basics_abs"), do: "abs"
   def native_unary_int_name("elmc_basics_negate"), do: "negate"
 
-  @spec static_nonzero_int_value(Types.ir_expr()) :: integer() | nil
-  def static_nonzero_int_value(%{op: op, value: value})
-       when op in [:int_literal, :char_literal] and is_integer(value) and value != 0,
-       do: value
+  @spec static_nonzero_int_value(Types.ir_expr(), Types.compile_env()) :: integer() | nil
+  def static_nonzero_int_value(expr, env \\ %{})
 
-  def static_nonzero_int_value(_expr), do: nil
+  def static_nonzero_int_value(%{op: op, value: value}, _env)
+      when op in [:int_literal, :char_literal] and is_integer(value) and value != 0,
+      do: value
+
+  def static_nonzero_int_value(expr, env) do
+    case ConstantInt.literal_value(expr, env) do
+      {:ok, value} when value != 0 -> value
+      _ -> nil
+    end
+  end
+
+  @spec parse_compile_time_int_ref(String.t()) :: integer() | nil
+  defp parse_compile_time_int_ref(ref) when is_binary(ref) do
+    case Integer.parse(ref) do
+      {value, ""} -> value
+      _ -> nil
+    end
+  end
 
   @spec pi_expr?(Types.ir_expr()) :: boolean()
   defp pi_expr?(%{op: :qualified_call, target: target, args: []})
@@ -1078,6 +1328,22 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
         {"", ref, counter}
 
       :error ->
+        case ConstantInt.native_ref(expr, env) do
+          {:ok, ref} ->
+            {"", ref, counter}
+
+          :error ->
+            compile_fallback_boxed(expr, env, counter)
+        end
+    end
+  end
+
+  @spec compile_fallback_boxed(
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.native_scalar_compile_result()
+  defp compile_fallback_boxed(expr, env, counter) do
         {code, var, counter} = Host.compile_expr(expr, env, counter)
         next = counter + 1
         out = "native_i_#{next}"
@@ -1097,7 +1363,6 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
           _ ->
             result
         end
-    end
   end
 
   defp compile_dict_get_with_default(default_ref, key, dict, env, counter) do

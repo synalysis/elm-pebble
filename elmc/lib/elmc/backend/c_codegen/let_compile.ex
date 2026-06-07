@@ -219,13 +219,16 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
           Types.compile_counter()
         ) :: Types.compile_result()
   defp compile_boxed_let(name, value_expr, in_expr, env, counter) do
-    {value_code, value_var, counter} = Host.compile_expr(value_expr, env, counter)
+    {value_code, value_var, counter, native_ref} =
+      compile_boxed_let_value(value_expr, env, counter)
+
     before_probe = DebugProbes.let_probe(env, name, :before)
     after_probe = DebugProbes.let_probe(env, name, :after)
 
     body_env =
       env
       |> Map.put(name, value_var)
+      |> put_hybrid_loop_native_ref(name, native_ref)
       |> EnvBindings.remove_native_int_binding(name)
       |> EnvBindings.remove_native_bool_binding(name)
       |> EnvBindings.remove_native_float_binding(name)
@@ -251,6 +254,41 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
     """
 
     {code, body_var, counter}
+  end
+
+  @spec compile_boxed_let_value(
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: {String.t(), String.t(), Types.compile_counter(), String.t() | nil}
+  defp compile_boxed_let_value(value_expr, env, counter) do
+    if Host.native_int_expr?(value_expr, env) do
+      {native_code, native_ref, counter} = Host.compile_native_int_expr(value_expr, env, counter)
+      counter = counter + 1
+      value_var = "tmp_#{counter}"
+
+      value_code = """
+      #{native_code}ElmcValue *#{value_var} = elmc_new_int(#{native_ref});
+      """
+
+      {value_code, value_var, counter, native_ref}
+    else
+      {value_code, value_var, counter} = Host.compile_expr(value_expr, env, counter)
+      {value_code, value_var, counter, nil}
+    end
+  end
+
+  @spec put_hybrid_loop_native_ref(
+          Types.compile_env(),
+          Types.binding_name(),
+          String.t() | nil
+        ) :: Types.compile_env()
+  defp put_hybrid_loop_native_ref(env, name, nil) do
+    EnvBindings.remove_hybrid_loop_native_ref(env, name)
+  end
+
+  defp put_hybrid_loop_native_ref(env, name, native_ref) when is_binary(native_ref) do
+    EnvBindings.put_hybrid_loop_native_ref(env, name, native_ref)
   end
 
   defp maybe_extract_boxed_let_body(in_expr, body_env, body_code, body_var, counter) do

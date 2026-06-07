@@ -1,10 +1,14 @@
 defmodule Elmc.Backend.CCodegen.StackEstimate do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.Util
+
   @risk_runtime_calls %{
     "elmc_list_all" => :list_hof_runtime,
     "elmc_list_any" => :list_hof_runtime,
     "elmc_list_map" => :list_hof_runtime,
+    "elmc_list_filter" => :list_hof_runtime,
+    "elmc_list_filter_map" => :list_hof_runtime,
     "elmc_list_drop" => :list_drop
   }
 
@@ -26,7 +30,12 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
         |> Map.merge(c_entry)
         |> Map.put(:function, name)
         |> Map.put(:score, score)
-        |> Map.put(:level, level(score))
+        |> adjust_fused_ir_entry(name, c_source)
+        |> adjust_cursor_loop_entry(name, c_source)
+        |> then(fn entry ->
+          score = Map.get(entry, :score, 0)
+          entry |> Map.put(:score, score) |> Map.put(:level, level(score))
+        end)
         |> Map.update(:reasons, [], &Enum.sort(Enum.uniq(&1)))
       end)
 
@@ -100,7 +109,7 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
     {child_score, child_reasons} = score_many(args || [], function_name, depth + 1)
 
     cond do
-      target in ["List.all", "List.any", "List.map"] ->
+      target in ["List.all", "List.any", "List.map", "List.filter", "List.filterMap"] ->
         {child_score + 4 + depth_score(depth), [:list_hof | child_reasons]}
 
       target in ["List.drop", "drop"] ->
@@ -209,4 +218,85 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
   defp level(_score), do: :ok
 
   defp base_entry(name), do: %{function: name, score: 0, reasons: []}
+
+  defp adjust_fused_ir_entry(entry, name, c_source) do
+    with [module, function] <- String.split(name, ".", parts: 2),
+         true <- fused_native_defined?(module, function, c_source) do
+      reasons = entry[:reasons] || entry["reasons"] || []
+      score = entry[:score] || entry["score"] || 0
+
+      %{
+        entry
+        | score: max(0, score - 6),
+          reasons: reasons -- [:list_hof, :lambda, :list_hof_runtime]
+      }
+    else
+      _ -> entry
+    end
+  end
+
+  defp fused_native_defined?(module, function, c_source) do
+    native = "elmc_fn_#{Util.safe_c_suffix(module)}_#{Util.safe_c_suffix(function)}_native"
+    String.contains?(c_source, native)
+  end
+
+  @cursor_loop_markers ~w(
+    list_map_cursor_
+    list_filter_map_cursor_
+    list_filter_map_i_
+    list_all_cursor_
+    list_any_cursor_
+    list_filter_cursor_
+    list_foldl_cursor_
+    list_length_cursor_
+    list_repeat_acc_
+    list_fwd_head_
+    list_concat_acc_
+    list_concat_flat_acc_
+  )
+
+  defp adjust_cursor_loop_entry(entry, name, c_source) do
+    c_fn =
+      case String.split(name, ".", parts: 2) do
+        [module, function] -> "elmc_fn_#{Util.safe_c_suffix(module)}_#{Util.safe_c_suffix(function)}"
+        _ -> nil
+      end
+
+    with c_fn when is_binary(c_fn) <- c_fn,
+         true <- String.contains?(c_source, c_fn),
+         body when is_binary(body) <- function_c_body(c_source, c_fn),
+         true <- cursor_loop_optimized?(body) do
+      reasons = entry[:reasons] || entry["reasons"] || []
+      score = entry[:score] || entry["score"] || 0
+
+      %{
+        entry
+        | score: max(0, score - 6),
+          reasons: reasons -- [:list_hof, :lambda, :list_hof_runtime]
+      }
+    else
+      _ -> entry
+    end
+  end
+
+  defp function_c_body(source, c_fn) do
+    case :binary.match(source, "#{c_fn}(") do
+      {start, _} ->
+        source
+        |> binary_part(start, byte_size(source) - start)
+        |> String.split("{", parts: 2)
+        |> case do
+          [_sig, body] -> String.trim_leading(body)
+          _ -> nil
+        end
+
+      :nomatch ->
+        nil
+    end
+  end
+
+  defp cursor_loop_optimized?(body) do
+    Enum.any?(@cursor_loop_markers, &String.contains?(body, &1)) and
+      not Enum.any?(Map.keys(@risk_runtime_calls), &String.contains?(body, &1))
+  end
 end

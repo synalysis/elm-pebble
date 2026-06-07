@@ -97,6 +97,7 @@ defmodule IdeWeb.Router do
     post "/emulator/launch", EmulatorController, :launch
     post "/emulator/:id/ping", EmulatorController, :ping
     post "/emulator/:id/install", EmulatorController, :install
+    post "/emulator/:id/request-app-logs", EmulatorController, :request_app_logs
     post "/emulator/:id/control", EmulatorController, :control
     post "/emulator/:id/simulator-settings", EmulatorController, :simulator_settings
     post "/emulator/:id/kill", EmulatorController, :kill

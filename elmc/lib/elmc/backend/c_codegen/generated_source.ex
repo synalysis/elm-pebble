@@ -11,6 +11,11 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
+  alias Elmc.Backend.Pebble.IRAnalysis
+
+  defp finalize_source(source) do
+    source |> Util.collapse_extra_newlines() |> String.trim_trailing() |> Kernel.<>("\n")
+  end
 
   @spec header(ElmEx.IR.t(), Types.codegen_opts()) :: String.t()
   def header(ir, opts) do
@@ -76,6 +81,17 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     Process.put(:elmc_enum_types, IRQueries.enum_type_set(ir))
     Process.put(:elmc_record_alias_shapes, IRQueries.record_alias_shape_map(ir))
     Process.put(:elmc_record_field_types, IRQueries.record_alias_field_types_map(ir))
+
+    entry_module = opts[:entry_module] || "Main"
+
+    msg_names =
+      ir
+      |> IRAnalysis.msg_constructors(entry_module)
+      |> Enum.map(&elem(&1, 0))
+      |> MapSet.new()
+
+    Process.put(:elmc_pebble_msg_names, msg_names)
+
     decl_map = IRQueries.function_decl_map(ir)
     generic_targets = GenericTargets.function_targets(ir, opts)
 
@@ -101,7 +117,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
           &(&1.kind == :function && MapSet.member?(generic_targets, {mod.name, &1.name}))
         )
         |> Enum.sort_by(fn decl ->
-          if match?({:ok, _}, Tuple2CaseTable.try_emit(mod.name, decl.name, decl.expr)),
+          if match?({:ok, _, _}, Tuple2CaseTable.try_emit(mod.name, decl.name, decl.expr)),
             do: 0,
             else: 1
         end)
@@ -119,7 +135,9 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
           )
         end)
       end)
-      |> Enum.join("\n")
+      |> Enum.map(&String.trim_trailing/1)
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.join("\n\n")
 
     direct_command_defs = DirectRenderRegistry.defs(ir, opts)
 
@@ -132,6 +150,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     Process.delete(:elmc_lambda_counter)
     Process.delete(:elmc_lambda_defs)
     Process.delete(:elmc_constructor_tags)
+    Process.delete(:elmc_pebble_msg_names)
     Process.delete(:elmc_vector_resource_slots)
     Process.delete(:elmc_bitmap_resource_slots)
     Process.delete(:elmc_animation_resource_slots)
@@ -143,6 +162,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
     """
     #include "elmc_generated.h"
+    #include "elmc_pebble.h"
     #include <stdio.h>
 
     #if defined(__GNUC__)
@@ -155,8 +175,6 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
     #{trig_fallback_prelude}
 
-    #{DirectRenderRegistry.prelude(direct_command_defs != "")}
-
     #{generic_native_prototypes}
 
     #{generic_function_prototypes}
@@ -167,5 +185,6 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
     #{direct_command_defs}
     """
+    |> finalize_source()
   end
 end

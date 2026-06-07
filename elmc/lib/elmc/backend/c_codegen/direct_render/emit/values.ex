@@ -81,7 +81,10 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
             {"", "elmc_as_int(#{source})", counter}
 
           _ ->
-            runtime_int_value(expr, env, counter)
+            case Elmc.Backend.CCodegen.ConstantInt.native_ref(expr, env) do
+              {:ok, ref} -> {"", ref, counter}
+              :error -> runtime_int_value(expr, env, counter)
+            end
         end
     end
   end

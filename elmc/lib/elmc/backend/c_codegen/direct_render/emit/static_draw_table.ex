@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.CCodegen.DirectRender.Emit.StaticDrawTable do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.DirectRender.Emit.Commands
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Types
 
@@ -158,19 +159,15 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.StaticDrawTable do
       |> Enum.with_index()
       |> Enum.map_join("\n", fn {_row, index} ->
         """
-        if (!direct_stop && *emitted >= skip && *count < max_cmds) {
-          elmc_generated_draw_init(&out_cmds[*count], (int64_t)#{table_name}[#{index}].kind);
-          out_cmds[*count].p0 = #{table_name}[#{index}].p0;
-          out_cmds[*count].p1 = #{table_name}[#{index}].p1;
-          out_cmds[*count].p2 = #{table_name}[#{index}].p2;
-          out_cmds[*count].p3 = #{table_name}[#{index}].p3;
-          out_cmds[*count].p4 = #{table_name}[#{index}].p4;
-          *count += 1;
-        }
-        if (!direct_stop) {
-          *emitted += 1;
-          if (*count >= max_cmds) direct_stop = 1;
-        }
+        #{Commands.scene_emit_guard_open()}
+          elmc_draw_cmd_init(&scene_cmd, (int32_t)#{table_name}[#{index}].kind);
+          scene_cmd.p0 = #{table_name}[#{index}].p0;
+          scene_cmd.p1 = #{table_name}[#{index}].p1;
+          scene_cmd.p2 = #{table_name}[#{index}].p2;
+          scene_cmd.p3 = #{table_name}[#{index}].p3;
+          scene_cmd.p4 = #{table_name}[#{index}].p4;
+          #{Elmc.Backend.CCodegen.DirectRender.Emit.Catch.push_cmd_check()}
+        #{Commands.scene_emit_guard_close()}
         """
       end)
 

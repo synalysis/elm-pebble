@@ -12,6 +12,13 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
 
   
   defp command_kind(kind), do: Elmc.Backend.Pebble.command_kind_id!(kind)
+
+  defp command_kind_expr(kind),
+    do: %{op: :c_int_expr, value: Elmc.Backend.Pebble.command_kind_c_name!(kind)}
+
+  defp encoded_to_msg_cmd(kind, to_msg),
+    do: encoded_cmd_expr(command_kind(kind), [constructor_tag_expr(to_msg)], 1)
+
   defp ui_node_kind_expr(kind), do: %{op: :c_int_expr, value: generated_ui_node_kind_macro(kind)}
   defp context_kind_expr(kind), do: %{op: :c_int_expr, value: generated_context_kind_macro(kind)}
 
@@ -46,13 +53,38 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
   defp text_options_special_arg(options),
     do: Elmc.Backend.CCodegen.Host.text_options_expr(options)
 
+  defp subscription_special_value(target, args) do
+    case Subscriptions.subscription_sub_expr(target, args) do
+      nil -> %{op: :unsupported}
+      expr -> expr
+    end
+  end
+
+  @spec msg_tag_param(Types.ir_expr()) :: Types.ir_expr()
+  def msg_tag_param(expr), do: constructor_tag_expr(expr)
+
+  @spec subscription_to_msg_params([Types.ir_expr()]) :: [Types.ir_expr()]
+  def subscription_to_msg_params(args) when is_list(args) do
+    case List.last(args) do
+      nil -> []
+      to_msg -> [constructor_tag_expr(to_msg)]
+    end
+  end
+
+  @spec encoded_sub_as_tuple(map(), [map()]) :: map()
+  def encoded_sub_as_tuple(mask_expr, args) when is_list(args) do
+    arity = length(args)
+    payload = args ++ List.duplicate(%{op: :int_literal, value: 0}, max(0, 6 - arity))
+    %{op: :tuple2, left: mask_expr, right: tuple_chain(payload)}
+  end
+
   @spec special_value_from_target(String.t(), [Types.ir_expr()]) :: Types.ir_expr() | nil
   def special_value_from_target("Pebble.Ui.clear", args),
     do: encoded_draw_cmd_expr(draw_kind(:clear), args, 1)
 
   def special_value_from_target("Pebble.Ui.pixel", [pos, color]),
     do:
-      encoded_cmd_expr(
+      encoded_draw_field_cmd_expr(
         draw_kind(:pixel),
         [field_access_expr(pos, "x"), field_access_expr(pos, "y"), color],
         3
@@ -63,7 +95,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
 
   def special_value_from_target("Pebble.Ui.line", [start_pos, end_pos, color]),
     do:
-      encoded_cmd_expr(
+      encoded_draw_field_cmd_expr(
         draw_kind(:line),
         [
           field_access_expr(start_pos, "x"),
@@ -80,7 +112,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
 
   def special_value_from_target("Pebble.Ui.rect", [bounds, color]),
     do:
-      encoded_cmd_expr(
+      encoded_draw_field_cmd_expr(
         draw_kind(:rect),
         [
           field_access_expr(bounds, "x"),
@@ -97,7 +129,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
 
   def special_value_from_target("Pebble.Ui.fillRect", [bounds, color]),
     do:
-      encoded_cmd_expr(
+      encoded_draw_field_cmd_expr(
         draw_kind(:fill_rect),
         [
           field_access_expr(bounds, "x"),
@@ -114,7 +146,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
 
   def special_value_from_target("Pebble.Ui.circle", [center, radius, color]),
     do:
-      encoded_cmd_expr(
+      encoded_draw_field_cmd_expr(
         draw_kind(:circle),
         [field_access_expr(center, "x"), field_access_expr(center, "y"), radius, color],
         4
@@ -125,7 +157,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
 
   def special_value_from_target("Pebble.Ui.fillCircle", [center, radius, color]),
     do:
-      encoded_cmd_expr(
+      encoded_draw_field_cmd_expr(
         draw_kind(:fill_circle),
         [field_access_expr(center, "x"), field_access_expr(center, "y"), radius, color],
         4
@@ -136,7 +168,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
 
   def special_value_from_target("Pebble.Ui.textInt", [font_id, pos, value]),
     do:
-      encoded_cmd_expr(
+      encoded_draw_field_cmd_expr(
         draw_kind(:text_int_with_font),
         [font_id, field_access_expr(pos, "x"), field_access_expr(pos, "y"), value],
         4
@@ -291,7 +323,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
 
   def special_value_from_target("Pebble.Ui.roundRect", [bounds, radius, color]),
     do:
-      encoded_cmd_expr(
+      encoded_draw_field_cmd_expr(
         draw_kind(:round_rect),
         [
           field_access_expr(bounds, "x"),
@@ -309,7 +341,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
 
   def special_value_from_target("Pebble.Ui.arc", [bounds, start_angle, end_angle]),
     do:
-      encoded_cmd_expr(
+      encoded_draw_field_cmd_expr(
         draw_kind(:arc),
         [
           field_access_expr(bounds, "x"),
@@ -327,7 +359,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
 
   def special_value_from_target("Pebble.Ui.fillRadial", [bounds, start_angle, end_angle]),
     do:
-      encoded_cmd_expr(
+      encoded_draw_field_cmd_expr(
         draw_kind(:fill_radial),
         [
           field_access_expr(bounds, "x"),
@@ -345,7 +377,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
 
   def special_value_from_target("Pebble.Ui.drawBitmapInRect", [bitmap, bounds]),
     do:
-      encoded_cmd_expr(
+      encoded_draw_field_cmd_expr(
         draw_kind(:bitmap_in_rect),
         [
           bitmap,
@@ -359,7 +391,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
 
   def special_value_from_target("Pebble.Ui.drawVectorAt", [vector, origin]),
     do:
-      encoded_cmd_expr(
+      encoded_draw_field_cmd_expr(
         draw_kind(:vector_at),
         [
           vector,
@@ -371,7 +403,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
 
   def special_value_from_target("Pebble.Ui.drawVectorSequenceAt", [vector, origin]),
     do:
-      encoded_cmd_expr(
+      encoded_draw_field_cmd_expr(
         draw_kind(:vector_sequence_at),
         [
           vector,
@@ -383,7 +415,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
 
   def special_value_from_target("Pebble.Ui.drawBitmapSequenceAt", [animation, origin]),
     do:
-      encoded_cmd_expr(
+      encoded_draw_field_cmd_expr(
         draw_kind(:bitmap_sequence_at),
         [
           animation,
@@ -398,7 +430,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
 
   def special_value_from_target("Pebble.Ui.drawRotatedBitmap", [bitmap, bounds, rotation, center]),
     do:
-      encoded_cmd_expr(
+      encoded_draw_field_cmd_expr(
         draw_kind(:rotated_bitmap),
         [
           bitmap,
@@ -439,10 +471,10 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
     do: %{op: :runtime_call, function: "elmc_list_cons", args: [head, tail]}
 
   def special_value_from_target("Pebble.Cmd.none", _args),
-    do: %{op: :int_literal, value: command_kind(:none)}
+    do: command_kind_expr(:none)
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.none", _args),
-    do: %{op: :int_literal, value: command_kind(:none)}
+    do: command_kind_expr(:none)
 
   def special_value_from_target("Pebble.Cmd.timerAfter", args),
     do: encoded_cmd_expr(command_kind(:timer_after_ms), args, 1)
@@ -517,35 +549,35 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
   def special_value_from_target("Elm.Kernel.PebbleWatch.backlight", [mode]),
     do: %{op: :runtime_call, function: "elmc_cmd_backlight_from_maybe", args: [mode]}
 
-  def special_value_from_target("Pebble.Cmd.getCurrentTimeString", [_to_msg]),
-    do: %{op: :int_literal, value: command_kind(:get_current_time_string)}
+  def special_value_from_target("Pebble.Cmd.getCurrentTimeString", [to_msg]),
+    do: encoded_to_msg_cmd(:get_current_time_string, to_msg)
 
-  def special_value_from_target("Pebble.Time.currentTimeString", [_to_msg]),
-    do: %{op: :int_literal, value: command_kind(:get_current_time_string)}
+  def special_value_from_target("Pebble.Time.currentTimeString", [to_msg]),
+    do: encoded_to_msg_cmd(:get_current_time_string, to_msg)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.getCurrentTimeString", [_to_msg]),
-    do: %{op: :int_literal, value: command_kind(:get_current_time_string)}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.getCurrentTimeString", [to_msg]),
+    do: encoded_to_msg_cmd(:get_current_time_string, to_msg)
 
-  def special_value_from_target("Pebble.Cmd.getCurrentDateTime", [_to_msg]),
-    do: %{op: :int_literal, value: command_kind(:get_current_date_time)}
+  def special_value_from_target("Pebble.Cmd.getCurrentDateTime", [to_msg]),
+    do: encoded_to_msg_cmd(:get_current_date_time, to_msg)
 
-  def special_value_from_target("Pebble.Time.currentDateTime", [_to_msg]),
-    do: %{op: :int_literal, value: command_kind(:get_current_date_time)}
+  def special_value_from_target("Pebble.Time.currentDateTime", [to_msg]),
+    do: encoded_to_msg_cmd(:get_current_date_time, to_msg)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.getCurrentDateTime", [_to_msg]),
-    do: %{op: :int_literal, value: command_kind(:get_current_date_time)}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.getCurrentDateTime", [to_msg]),
+    do: encoded_to_msg_cmd(:get_current_date_time, to_msg)
 
-  def special_value_from_target("Pebble.System.batteryLevel", [_to_msg]),
-    do: %{op: :int_literal, value: command_kind(:get_battery_level)}
+  def special_value_from_target("Pebble.System.batteryLevel", [to_msg]),
+    do: encoded_to_msg_cmd(:get_battery_level, to_msg)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.getBatteryLevel", [_to_msg]),
-    do: %{op: :int_literal, value: command_kind(:get_battery_level)}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.getBatteryLevel", [to_msg]),
+    do: encoded_to_msg_cmd(:get_battery_level, to_msg)
 
-  def special_value_from_target("Pebble.System.connectionStatus", [_to_msg]),
-    do: %{op: :int_literal, value: command_kind(:get_connection_status)}
+  def special_value_from_target("Pebble.System.connectionStatus", [to_msg]),
+    do: encoded_to_msg_cmd(:get_connection_status, to_msg)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.getConnectionStatus", [_to_msg]),
-    do: %{op: :int_literal, value: command_kind(:get_connection_status)}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.getConnectionStatus", [to_msg]),
+    do: encoded_to_msg_cmd(:get_connection_status, to_msg)
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.healthSupported", [to_msg]),
     do:
@@ -597,56 +629,56 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
            4
          )
 
-  def special_value_from_target("Pebble.Cmd.getClockStyle24h", [_to_msg]),
-    do: %{op: :int_literal, value: command_kind(:get_clock_style_24h)}
+  def special_value_from_target("Pebble.Cmd.getClockStyle24h", [to_msg]),
+    do: encoded_to_msg_cmd(:get_clock_style_24h, to_msg)
 
-  def special_value_from_target("Pebble.Time.clockStyle24h", [_to_msg]),
-    do: %{op: :int_literal, value: command_kind(:get_clock_style_24h)}
+  def special_value_from_target("Pebble.Time.clockStyle24h", [to_msg]),
+    do: encoded_to_msg_cmd(:get_clock_style_24h, to_msg)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.getClockStyle24h", [_to_msg]),
-    do: %{op: :int_literal, value: command_kind(:get_clock_style_24h)}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.getClockStyle24h", [to_msg]),
+    do: encoded_to_msg_cmd(:get_clock_style_24h, to_msg)
 
-  def special_value_from_target("Pebble.Cmd.getTimezoneIsSet", [_to_msg]),
-    do: %{op: :int_literal, value: command_kind(:get_timezone_is_set)}
+  def special_value_from_target("Pebble.Cmd.getTimezoneIsSet", [to_msg]),
+    do: encoded_to_msg_cmd(:get_timezone_is_set, to_msg)
 
-  def special_value_from_target("Pebble.Time.timezoneIsSet", [_to_msg]),
-    do: %{op: :int_literal, value: command_kind(:get_timezone_is_set)}
+  def special_value_from_target("Pebble.Time.timezoneIsSet", [to_msg]),
+    do: encoded_to_msg_cmd(:get_timezone_is_set, to_msg)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.getTimezoneIsSet", [_to_msg]),
-    do: %{op: :int_literal, value: command_kind(:get_timezone_is_set)}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.getTimezoneIsSet", [to_msg]),
+    do: encoded_to_msg_cmd(:get_timezone_is_set, to_msg)
 
-  def special_value_from_target("Pebble.Cmd.getTimezone", [_to_msg]),
-    do: %{op: :int_literal, value: command_kind(:get_timezone)}
+  def special_value_from_target("Pebble.Cmd.getTimezone", [to_msg]),
+    do: encoded_to_msg_cmd(:get_timezone, to_msg)
 
-  def special_value_from_target("Pebble.Time.timezone", [_to_msg]),
-    do: %{op: :int_literal, value: command_kind(:get_timezone)}
+  def special_value_from_target("Pebble.Time.timezone", [to_msg]),
+    do: encoded_to_msg_cmd(:get_timezone, to_msg)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.getTimezone", [_to_msg]),
-    do: %{op: :int_literal, value: command_kind(:get_timezone)}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.getTimezone", [to_msg]),
+    do: encoded_to_msg_cmd(:get_timezone, to_msg)
 
-  def special_value_from_target("Pebble.Cmd.getWatchModel", [_to_msg]),
-    do: %{op: :int_literal, value: command_kind(:get_watch_model)}
+  def special_value_from_target("Pebble.Cmd.getWatchModel", [to_msg]),
+    do: encoded_to_msg_cmd(:get_watch_model, to_msg)
 
-  def special_value_from_target("Pebble.WatchInfo.getModel", [_to_msg]),
-    do: %{op: :int_literal, value: command_kind(:get_watch_model)}
+  def special_value_from_target("Pebble.WatchInfo.getModel", [to_msg]),
+    do: encoded_to_msg_cmd(:get_watch_model, to_msg)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.getWatchModel", [_to_msg]),
-    do: %{op: :int_literal, value: command_kind(:get_watch_model)}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.getWatchModel", [to_msg]),
+    do: encoded_to_msg_cmd(:get_watch_model, to_msg)
 
-  def special_value_from_target("Pebble.Cmd.getFirmwareVersion", [_to_msg]),
-    do: %{op: :int_literal, value: command_kind(:get_firmware_version)}
+  def special_value_from_target("Pebble.Cmd.getFirmwareVersion", [to_msg]),
+    do: encoded_to_msg_cmd(:get_firmware_version, to_msg)
 
-  def special_value_from_target("Pebble.WatchInfo.getFirmwareVersion", [_to_msg]),
-    do: %{op: :int_literal, value: command_kind(:get_firmware_version)}
+  def special_value_from_target("Pebble.WatchInfo.getFirmwareVersion", [to_msg]),
+    do: encoded_to_msg_cmd(:get_firmware_version, to_msg)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.getFirmwareVersion", [_to_msg]),
-    do: %{op: :int_literal, value: command_kind(:get_firmware_version)}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.getFirmwareVersion", [to_msg]),
+    do: encoded_to_msg_cmd(:get_firmware_version, to_msg)
 
-  def special_value_from_target("Pebble.WatchInfo.getColor", [_to_msg]),
-    do: %{op: :int_literal, value: command_kind(:get_watch_color)}
+  def special_value_from_target("Pebble.WatchInfo.getColor", [to_msg]),
+    do: encoded_to_msg_cmd(:get_watch_color, to_msg)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.getColor", [_to_msg]),
-    do: %{op: :int_literal, value: command_kind(:get_watch_color)}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.getColor", [to_msg]),
+    do: encoded_to_msg_cmd(:get_watch_color, to_msg)
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.wakeupScheduleAfterSeconds", args),
     do: encoded_cmd_expr(command_kind(:wakeup_schedule_after_seconds), args, 1)
@@ -664,40 +696,40 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
     do: encoded_cmd_expr(command_kind(:log_error_code), args, 1)
 
   def special_value_from_target("Pebble.Cmd.vibesCancel", _args),
-    do: %{op: :int_literal, value: command_kind(:vibes_cancel)}
+    do: command_kind_expr(:vibes_cancel)
 
   def special_value_from_target("Pebble.Vibes.cancel", _args),
-    do: %{op: :int_literal, value: command_kind(:vibes_cancel)}
+    do: command_kind_expr(:vibes_cancel)
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.vibesCancel", _args),
-    do: %{op: :int_literal, value: command_kind(:vibes_cancel)}
+    do: command_kind_expr(:vibes_cancel)
 
   def special_value_from_target("Pebble.Cmd.vibesShortPulse", _args),
-    do: %{op: :int_literal, value: command_kind(:vibes_short_pulse)}
+    do: command_kind_expr(:vibes_short_pulse)
 
   def special_value_from_target("Pebble.Vibes.shortPulse", _args),
-    do: %{op: :int_literal, value: command_kind(:vibes_short_pulse)}
+    do: command_kind_expr(:vibes_short_pulse)
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.vibesShortPulse", _args),
-    do: %{op: :int_literal, value: command_kind(:vibes_short_pulse)}
+    do: command_kind_expr(:vibes_short_pulse)
 
   def special_value_from_target("Pebble.Cmd.vibesLongPulse", _args),
-    do: %{op: :int_literal, value: command_kind(:vibes_long_pulse)}
+    do: command_kind_expr(:vibes_long_pulse)
 
   def special_value_from_target("Pebble.Vibes.longPulse", _args),
-    do: %{op: :int_literal, value: command_kind(:vibes_long_pulse)}
+    do: command_kind_expr(:vibes_long_pulse)
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.vibesLongPulse", _args),
-    do: %{op: :int_literal, value: command_kind(:vibes_long_pulse)}
+    do: command_kind_expr(:vibes_long_pulse)
 
   def special_value_from_target("Pebble.Cmd.vibesDoublePulse", _args),
-    do: %{op: :int_literal, value: command_kind(:vibes_double_pulse)}
+    do: command_kind_expr(:vibes_double_pulse)
 
   def special_value_from_target("Pebble.Vibes.doublePulse", _args),
-    do: %{op: :int_literal, value: command_kind(:vibes_double_pulse)}
+    do: command_kind_expr(:vibes_double_pulse)
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.vibesDoublePulse", _args),
-    do: %{op: :int_literal, value: command_kind(:vibes_double_pulse)}
+    do: command_kind_expr(:vibes_double_pulse)
 
   def special_value_from_target("Pebble.Vibes.pattern", [segments]),
     do: encoded_cmd_expr(command_kind(:vibes_custom_pattern), [segments], 1)
@@ -724,142 +756,124 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
     do: encoded_cmd_expr(command_kind(:compass_peek), [constructor_tag_expr(to_msg)], 1)
 
   def special_value_from_target("Pebble.Dictation.start", _args),
-    do: %{op: :int_literal, value: command_kind(:dictation_start)}
+    do: command_kind_expr(:dictation_start)
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.dictationStart", _args),
-    do: %{op: :int_literal, value: command_kind(:dictation_start)}
+    do: command_kind_expr(:dictation_start)
 
   def special_value_from_target("Pebble.Dictation.stop", _args),
-    do: %{op: :int_literal, value: command_kind(:dictation_stop)}
+    do: command_kind_expr(:dictation_stop)
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.dictationStop", _args),
-    do: %{op: :int_literal, value: command_kind(:dictation_stop)}
+    do: command_kind_expr(:dictation_stop)
 
-  def special_value_from_target("Pebble.Events.onSecondChange", _args),
-    do: %{op: :int_literal, value: 1}
+  def special_value_from_target("Pebble.Events.onSecondChange", args),
+    do: subscription_special_value("Pebble.Events.onSecondChange", args)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.onSecondChange", _args),
-    do: %{op: :int_literal, value: 1}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.onSecondChange", args),
+    do: subscription_special_value("Elm.Kernel.PebbleWatch.onSecondChange", args)
 
-  def special_value_from_target("Pebble.Frame.every", [%{op: :int_literal, value: ms}, _to_msg])
-       when is_integer(ms),
-       do: %{op: :int_literal, value: 8192 + Bitwise.bsl(clamp_frame_interval_ms(ms), 16)}
+  def special_value_from_target("Pebble.Frame.every", args),
+    do: subscription_special_value("Pebble.Frame.every", args)
 
-  def special_value_from_target("Pebble.Frame.every", _args),
-    do: %{op: :int_literal, value: 8192 + Bitwise.bsl(33, 16)}
+  def special_value_from_target("Pebble.Frame.atFps", args),
+    do: subscription_special_value("Pebble.Frame.atFps", args)
 
-  def special_value_from_target("Pebble.Frame.atFps", [%{op: :int_literal, value: fps}, _to_msg])
-       when is_integer(fps),
-       do: %{
-         op: :int_literal,
-         value: 8192 + Bitwise.bsl(clamp_frame_interval_ms(div(1000, max(fps, 1))), 16)
-       }
+  def special_value_from_target("Elm.Kernel.PebbleWatch.onFrame", args),
+    do: subscription_special_value("Elm.Kernel.PebbleWatch.onFrame", args)
 
-  def special_value_from_target("Pebble.Frame.atFps", _args),
-    do: %{op: :int_literal, value: 8192 + Bitwise.bsl(33, 16)}
+  def special_value_from_target("Pebble.Events.onHourChange", args),
+    do: subscription_special_value("Pebble.Events.onHourChange", args)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.onFrame", [
-         %{op: :int_literal, value: ms},
-         _to_msg
-       ])
-       when is_integer(ms),
-       do: %{op: :int_literal, value: 8192 + Bitwise.bsl(clamp_frame_interval_ms(ms), 16)}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.onHourChange", args),
+    do: subscription_special_value("Elm.Kernel.PebbleWatch.onHourChange", args)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.onFrame", _args),
-    do: %{op: :int_literal, value: 8192 + Bitwise.bsl(33, 16)}
+  def special_value_from_target("Pebble.Events.onMinuteChange", args),
+    do: subscription_special_value("Pebble.Events.onMinuteChange", args)
 
-  def special_value_from_target("Pebble.Events.onHourChange", _args),
-    do: %{op: :int_literal, value: 1024}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.onMinuteChange", args),
+    do: subscription_special_value("Elm.Kernel.PebbleWatch.onMinuteChange", args)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.onHourChange", _args),
-    do: %{op: :int_literal, value: 1024}
+  def special_value_from_target("Pebble.Events.onDayChange", args),
+    do: subscription_special_value("Pebble.Events.onDayChange", args)
 
-  def special_value_from_target("Pebble.Events.onMinuteChange", _args),
-    do: %{op: :int_literal, value: 2048}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.onDayChange", args),
+    do: subscription_special_value("Elm.Kernel.PebbleWatch.onDayChange", args)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.onMinuteChange", _args),
-    do: %{op: :int_literal, value: 2048}
+  def special_value_from_target("Pebble.Events.onMonthChange", args),
+    do: subscription_special_value("Pebble.Events.onMonthChange", args)
 
-  def special_value_from_target("Pebble.Events.onDayChange", _args),
-    do: %{op: :int_literal, value: 65_536}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.onMonthChange", args),
+    do: subscription_special_value("Elm.Kernel.PebbleWatch.onMonthChange", args)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.onDayChange", _args),
-    do: %{op: :int_literal, value: 65_536}
+  def special_value_from_target("Pebble.Events.onYearChange", args),
+    do: subscription_special_value("Pebble.Events.onYearChange", args)
 
-  def special_value_from_target("Pebble.Events.onMonthChange", _args),
-    do: %{op: :int_literal, value: 131_072}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.onYearChange", args),
+    do: subscription_special_value("Elm.Kernel.PebbleWatch.onYearChange", args)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.onMonthChange", _args),
-    do: %{op: :int_literal, value: 131_072}
+  def special_value_from_target("Pebble.Button.onPress", args),
+    do: subscription_special_value("Pebble.Button.onPress", args)
 
-  def special_value_from_target("Pebble.Events.onYearChange", _args),
-    do: %{op: :int_literal, value: 262_144}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.onButtonUp", args),
+    do: subscription_special_value("Elm.Kernel.PebbleWatch.onButtonUp", args)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.onYearChange", _args),
-    do: %{op: :int_literal, value: 262_144}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.onButtonSelect", args),
+    do: subscription_special_value("Elm.Kernel.PebbleWatch.onButtonSelect", args)
 
-  def special_value_from_target("Pebble.Button.onPress", _args),
-    do: %{op: :int_literal, value: 16384}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.onButtonDown", args),
+    do: subscription_special_value("Elm.Kernel.PebbleWatch.onButtonDown", args)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.onButtonUp", _args),
-    do: %{op: :int_literal, value: 2}
+  def special_value_from_target("Pebble.Button.on", args),
+    do: subscription_special_value("Pebble.Button.on", args)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.onButtonSelect", _args),
-    do: %{op: :int_literal, value: 4}
+  def special_value_from_target("Pebble.Button.onRelease", args),
+    do: subscription_special_value("Pebble.Button.onRelease", args)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.onButtonDown", _args),
-    do: %{op: :int_literal, value: 8}
+  def special_value_from_target("Pebble.Button.onLongPress", args),
+    do: subscription_special_value("Pebble.Button.onLongPress", args)
 
-  def special_value_from_target("Pebble.Button.on", _args),
-    do: %{op: :int_literal, value: 16384}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.onButtonRaw", args),
+    do: subscription_special_value("Elm.Kernel.PebbleWatch.onButtonRaw", args)
 
-  def special_value_from_target("Pebble.Button.onRelease", _args),
-    do: %{op: :int_literal, value: 16384}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.onButtonLongUp", args),
+    do: subscription_special_value("Elm.Kernel.PebbleWatch.onButtonLongUp", args)
 
-  def special_value_from_target("Pebble.Button.onLongPress", _args),
-    do: %{op: :int_literal, value: 16384}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.onButtonLongSelect", args),
+    do: subscription_special_value("Elm.Kernel.PebbleWatch.onButtonLongSelect", args)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.onButtonRaw", _args),
-    do: %{op: :int_literal, value: 16384}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.onButtonLongDown", args),
+    do: subscription_special_value("Elm.Kernel.PebbleWatch.onButtonLongDown", args)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.onButtonLongUp", _args),
-    do: %{op: :int_literal, value: 128}
+  def special_value_from_target("Pebble.Accel.onTap", args),
+    do: subscription_special_value("Pebble.Accel.onTap", args)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.onButtonLongSelect", _args),
-    do: %{op: :int_literal, value: 256}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.onAccelTap", args),
+    do: subscription_special_value("Elm.Kernel.PebbleWatch.onAccelTap", args)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.onButtonLongDown", _args),
-    do: %{op: :int_literal, value: 512}
+  def special_value_from_target("Pebble.Accel.onData", args),
+    do: subscription_special_value("Pebble.Accel.onData", args)
 
-  def special_value_from_target("Pebble.Accel.onTap", _args),
-    do: %{op: :int_literal, value: 16}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.onAccelData", args),
+    do: subscription_special_value("Elm.Kernel.PebbleWatch.onAccelData", args)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.onAccelTap", _args),
-    do: %{op: :int_literal, value: 16}
+  def special_value_from_target("Pebble.System.onBatteryChange", args),
+    do: subscription_special_value("Pebble.System.onBatteryChange", args)
 
-  def special_value_from_target("Pebble.Accel.onData", _args),
-    do: %{op: :int_literal, value: 32768}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.onBatteryChange", args),
+    do: subscription_special_value("Elm.Kernel.PebbleWatch.onBatteryChange", args)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.onAccelData", _args),
-    do: %{op: :int_literal, value: 32768}
+  def special_value_from_target("Pebble.System.onConnectionChange", args),
+    do: subscription_special_value("Pebble.System.onConnectionChange", args)
 
-  def special_value_from_target("Pebble.System.onBatteryChange", _args),
-    do: %{op: :int_literal, value: 32}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.onConnectionChange", args),
+    do: subscription_special_value("Elm.Kernel.PebbleWatch.onConnectionChange", args)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.onBatteryChange", _args),
-    do: %{op: :int_literal, value: 32}
+  def special_value_from_target("Pebble.Health.onEvent", args),
+    do: subscription_special_value("Pebble.Health.onEvent", args)
 
-  def special_value_from_target("Pebble.System.onConnectionChange", _args),
-    do: %{op: :int_literal, value: 64}
-
-  def special_value_from_target("Elm.Kernel.PebbleWatch.onConnectionChange", _args),
-    do: %{op: :int_literal, value: 64}
-
-  def special_value_from_target("Pebble.Health.onEvent", _args),
-    do: %{op: :int_literal, value: 2_147_483_648}
-
-  def special_value_from_target("Elm.Kernel.PebbleWatch.onHealthEvent", _args),
-    do: %{op: :int_literal, value: 2_147_483_648}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.onHealthEvent", args),
+    do: subscription_special_value("Elm.Kernel.PebbleWatch.onHealthEvent", args)
 
   def special_value_from_target("Pebble.Health.supported", args),
     do: special_value_from_target("Elm.Kernel.PebbleWatch.healthSupported", args)
@@ -901,47 +915,47 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
            to_msg
          ])
 
-  def special_value_from_target("Pebble.AppFocus.onChange", _args),
-    do: %{op: :int_literal, value: 524_288}
+  def special_value_from_target("Pebble.AppFocus.onChange", args),
+    do: subscription_special_value("Pebble.AppFocus.onChange", args)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.onAppFocusChange", _args),
-    do: %{op: :int_literal, value: 524_288}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.onAppFocusChange", args),
+    do: subscription_special_value("Elm.Kernel.PebbleWatch.onAppFocusChange", args)
 
-  def special_value_from_target("Pebble.Compass.onChange", _args),
-    do: %{op: :int_literal, value: 1_048_576}
+  def special_value_from_target("Pebble.Compass.onChange", args),
+    do: subscription_special_value("Pebble.Compass.onChange", args)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.onCompassChange", _args),
-    do: %{op: :int_literal, value: 1_048_576}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.onCompassChange", args),
+    do: subscription_special_value("Elm.Kernel.PebbleWatch.onCompassChange", args)
 
-  def special_value_from_target("Pebble.Dictation.onStatus", _args),
-    do: %{op: :int_literal, value: 2_097_152}
+  def special_value_from_target("Pebble.Dictation.onStatus", args),
+    do: subscription_special_value("Pebble.Dictation.onStatus", args)
 
-  def special_value_from_target("Pebble.Dictation.onResult", _args),
-    do: %{op: :int_literal, value: 2_097_152}
+  def special_value_from_target("Pebble.Dictation.onResult", args),
+    do: subscription_special_value("Pebble.Dictation.onResult", args)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.onDictationStatus", _args),
-    do: %{op: :int_literal, value: 2_097_152}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.onDictationStatus", args),
+    do: subscription_special_value("Elm.Kernel.PebbleWatch.onDictationStatus", args)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.onDictationResult", _args),
-    do: %{op: :int_literal, value: 2_097_152}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.onDictationResult", args),
+    do: subscription_special_value("Elm.Kernel.PebbleWatch.onDictationResult", args)
 
-  def special_value_from_target("Pebble.UnobstructedArea.onWillChange", _args),
-    do: %{op: :int_literal, value: 4_194_304}
+  def special_value_from_target("Pebble.UnobstructedArea.onWillChange", args),
+    do: subscription_special_value("Pebble.UnobstructedArea.onWillChange", args)
 
-  def special_value_from_target("Pebble.UnobstructedArea.onChanging", _args),
-    do: %{op: :int_literal, value: 4_194_304}
+  def special_value_from_target("Pebble.UnobstructedArea.onChanging", args),
+    do: subscription_special_value("Pebble.UnobstructedArea.onChanging", args)
 
-  def special_value_from_target("Pebble.UnobstructedArea.onDidChange", _args),
-    do: %{op: :int_literal, value: 4_194_304}
+  def special_value_from_target("Pebble.UnobstructedArea.onDidChange", args),
+    do: subscription_special_value("Pebble.UnobstructedArea.onDidChange", args)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.onUnobstructedWillChange", _args),
-    do: %{op: :int_literal, value: 4_194_304}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.onUnobstructedWillChange", args),
+    do: subscription_special_value("Elm.Kernel.PebbleWatch.onUnobstructedWillChange", args)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.onUnobstructedChanging", _args),
-    do: %{op: :int_literal, value: 4_194_304}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.onUnobstructedChanging", args),
+    do: subscription_special_value("Elm.Kernel.PebbleWatch.onUnobstructedChanging", args)
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.onUnobstructedDidChange", _args),
-    do: %{op: :int_literal, value: 4_194_304}
+  def special_value_from_target("Elm.Kernel.PebbleWatch.onUnobstructedDidChange", args),
+    do: subscription_special_value("Elm.Kernel.PebbleWatch.onUnobstructedDidChange", args)
 
   def special_value_from_target("Pebble.UnobstructedArea.currentBounds", [to_msg]),
     do:
@@ -951,8 +965,8 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
     do:
       encoded_cmd_expr(command_kind(:unobstructed_bounds_peek), [constructor_tag_expr(to_msg)], 1)
 
-  def special_value_from_target("Companion.Watch.onPhoneToWatch", _args),
-    do: %{op: :int_literal, value: 4096}
+  def special_value_from_target("Companion.Watch.onPhoneToWatch", args),
+    do: subscription_special_value("Companion.Watch.onPhoneToWatch", args)
 
   def special_value_from_target("Pebble.Events.batch", args),
     do: Subscriptions.subscription_batch_expr(args)
@@ -2539,12 +2553,58 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
   @spec encoded_cmd_expr(non_neg_integer(), [map()], non_neg_integer()) :: map()
   defp encoded_cmd_expr(kind, args, arity) do
     if length(args) == arity do
-      payload = args ++ List.duplicate(%{op: :int_literal, value: 0}, max(0, 6 - arity))
-      %{op: :tuple2, left: %{op: :int_literal, value: kind}, right: tuple_chain(payload)}
+      if pebble_cmd_eligible?(args) do
+        %{op: :pebble_cmd, kind: command_kind_expr(kind), params: args}
+      else
+        encoded_cmd_as_tuple(command_kind_expr(kind), args)
+      end
     else
       %{op: :unsupported}
     end
   end
+
+  # Draw op ids overlap runtime command ids (e.g. fill_circle and get_clock_style_24h are
+  # both 8). Field-expanded draw args must always encode as render-op tuples, never
+  # :pebble_cmd with command_kind_expr/1.
+  @spec encoded_draw_field_cmd_expr(non_neg_integer(), [map()], non_neg_integer()) :: map()
+  defp encoded_draw_field_cmd_expr(kind, args, arity) do
+    if length(args) == arity do
+      encoded_cmd_as_tuple(draw_kind_expr(kind), args)
+    else
+      %{op: :unsupported}
+    end
+  end
+
+  @spec encoded_cmd_as_tuple(map(), [map()]) :: map()
+  def encoded_cmd_as_tuple(kind_expr, args) when is_list(args) do
+    arity = length(args)
+    payload = args ++ List.duplicate(%{op: :int_literal, value: 0}, max(0, 6 - arity))
+    %{op: :tuple2, left: kind_expr, right: tuple_chain(payload)}
+  end
+
+  defp pebble_cmd_eligible?(args) do
+    length(args) <= 5 and Enum.all?(args, &pebble_cmd_param?/1)
+  end
+
+  defp pebble_cmd_param?(%{op: op}) when op in [:int_literal, :c_int_expr, :msg_tag_expr], do: true
+  defp pebble_cmd_param?(%{op: :var}), do: true
+  defp pebble_cmd_param?(%{op: :call}), do: true
+  defp pebble_cmd_param?(%{op: :runtime_call}), do: true
+  defp pebble_cmd_param?(%{op: :field_access}), do: true
+  defp pebble_cmd_param?(%{op: :if}), do: true
+  defp pebble_cmd_param?(%{op: :case}), do: true
+  defp pebble_cmd_param?(%{op: :let_in}), do: true
+  defp pebble_cmd_param?(%{op: :compare}), do: true
+  defp pebble_cmd_param?(%{op: :add_const}), do: true
+  defp pebble_cmd_param?(%{op: :add_vars}), do: true
+  defp pebble_cmd_param?(%{op: :sub_const}), do: true
+  defp pebble_cmd_param?(%{op: :constructor_call, args: args}) when is_list(args),
+    do: Enum.all?(args, &pebble_cmd_param?/1)
+
+  defp pebble_cmd_param?(%{op: :qualified_call, args: args}) when is_list(args),
+    do: Enum.all?(args, &pebble_cmd_param?/1)
+
+  defp pebble_cmd_param?(_), do: false
 
   @spec encoded_draw_cmd_expr(non_neg_integer(), [Types.ir_expr()], non_neg_integer()) ::
           Types.ir_expr()
@@ -2594,13 +2654,6 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
 
   defp health_metric_to_kernel_expr(metric) when is_map(metric), do: metric
 
-  @spec clamp_frame_interval_ms(integer()) :: pos_integer()
-  defp clamp_frame_interval_ms(ms) when is_integer(ms) do
-    ms
-    |> max(1)
-    |> min(32_767)
-  end
-
   @spec http_request_constructor_expr(String.t(), Types.ir_expr(), Types.ir_expr()) ::
           Types.ir_expr()
   defp http_request_constructor_expr(method_ctor, url, to_msg) do
@@ -2622,33 +2675,45 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
   end
 
   @spec constructor_tag_expr(map()) :: map()
+  defp constructor_tag_expr(%{op: :int_literal, union_ctor: ctor}) when is_binary(ctor) do
+    msg_tag_expr(ctor)
+  end
+
   defp constructor_tag_expr(%{op: :int_literal, value: value}) when is_integer(value) do
     %{op: :int_literal, value: value}
   end
 
   defp constructor_tag_expr(%{op: :var, name: name}) when is_binary(name) do
-    %{op: :int_literal, value: constructor_tag(name)}
+    msg_tag_expr(name)
   end
 
   defp constructor_tag_expr(%{op: :qualified_ref, target: target}) when is_binary(target) do
-    %{op: :int_literal, value: constructor_tag(target)}
+    msg_tag_expr(target)
   end
 
   defp constructor_tag_expr(%{op: :qualified_var, target: target}) when is_binary(target) do
-    %{op: :int_literal, value: constructor_tag(target)}
+    msg_tag_expr(target)
   end
 
   defp constructor_tag_expr(%{op: :constructor_call, target: target, args: []})
        when is_binary(target) do
-    %{op: :int_literal, value: constructor_tag(target)}
+    msg_tag_expr(target)
   end
 
   defp constructor_tag_expr(%{op: :qualified_call, target: target, args: []})
        when is_binary(target) do
-    %{op: :int_literal, value: constructor_tag(target)}
+    msg_tag_expr(target)
   end
 
   defp constructor_tag_expr(_), do: %{op: :int_literal, value: 0}
+
+  defp msg_tag_expr(name) when is_binary(name) do
+    %{op: :msg_tag_expr, name: constructor_short_name(name)}
+  end
+
+  defp constructor_short_name(name) do
+    name |> String.split(".") |> List.last()
+  end
 
   @spec constructor_tag(String.t()) :: non_neg_integer()
   def constructor_tag(name) do

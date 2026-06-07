@@ -11,27 +11,185 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
     |> min(32_767)
   end
 
+  @spec single_subscription_expr(String.t(), [Types.ir_expr()]) :: Types.ir_expr() | nil
+  def single_subscription_expr(target, args \\ []) when is_binary(target) do
+    subscription_sub_expr(target, args)
+  end
+
+  @spec subscription_sub_expr(String.t(), [Types.ir_expr()]) :: Types.ir_expr() | nil
+  def subscription_sub_expr(target, args \\ []) when is_binary(target) do
+    case subscription_mask_c_expr(target, args) do
+      nil ->
+        nil
+
+      mask_c_expr ->
+        params = subscription_sub_params(target, args)
+
+        if subscription_params_valid?(args, params) and pebble_sub_eligible?(params) do
+          %{
+            op: :pebble_sub,
+            mask: %{op: :c_int_expr, value: mask_c_expr},
+            params: params
+          }
+        else
+          nil
+        end
+    end
+  end
+
   @spec subscription_batch_expr([Types.ir_expr()]) :: Types.ir_expr()
   def subscription_batch_expr([%{op: :list_literal, items: items}]) do
-    exprs =
-      items
-      |> Enum.map(&subscription_item_c_expr/1)
-      |> Enum.reject(&is_nil/1)
-      |> Enum.uniq()
+    sub_exprs = Enum.map(items, &subscription_item_sub_expr/1)
 
-    if length(exprs) == length(items) and exprs != [] do
-      %{op: :c_int_expr, value: exprs |> Enum.map(&"(#{&1})") |> Enum.join(" | ")}
+    if sub_exprs != [] and Enum.all?(sub_exprs, & &1) do
+      %{op: :list_literal, items: sub_exprs}
     else
-      mask =
-        Enum.reduce(items, 0, fn item, acc ->
-          Bitwise.bor(acc, subscription_item_mask(item))
-        end)
-
-      %{op: :int_literal, value: mask}
+      %{op: :unsupported}
     end
   end
 
   def subscription_batch_expr(_), do: %{op: :unsupported}
+
+  defp subscription_item_sub_expr(%{op: :qualified_call, target: target, args: args})
+       when is_binary(target) and is_list(args) do
+    case SpecialValues.normalize_special_target(target) do
+      "Pebble.Frame.every" ->
+        subscription_sub_expr("Pebble.Frame.every", args)
+
+      "Pebble.Frame.atFps" ->
+        subscription_sub_expr("Pebble.Frame.atFps", args)
+
+      "Elm.Kernel.PebbleWatch.onFrame" ->
+        subscription_sub_expr("Elm.Kernel.PebbleWatch.onFrame", args)
+
+      normalized ->
+        subscription_sub_expr(normalized, args)
+    end
+  end
+
+  defp subscription_item_sub_expr(_), do: nil
+
+  @button_event_sub_targets ~w(
+    Pebble.Button.onPress
+    Pebble.Button.onRelease
+    Pebble.Button.onLongPress
+  )
+
+  @spec subscription_sub_params(String.t(), [Types.ir_expr()]) :: [Types.ir_expr()]
+  def subscription_sub_params(target, args) when is_binary(target) and is_list(args) do
+    case SpecialValues.normalize_special_target(target) do
+      normalized when normalized in @button_event_sub_targets ->
+        button_event_sub_params(args, button_event_for_target(normalized))
+
+      "Pebble.Button.on" ->
+        button_raw_sub_params(args)
+
+      "Elm.Kernel.PebbleWatch.onButtonRaw" ->
+        button_raw_sub_params(args)
+
+      _ ->
+        case List.last(args) do
+          nil -> []
+          to_msg -> [SpecialValues.msg_tag_param(to_msg)]
+        end
+    end
+  end
+
+  defp button_event_for_target("Pebble.Button.onPress"), do: :pressed
+  defp button_event_for_target("Pebble.Button.onRelease"), do: :released
+  defp button_event_for_target("Pebble.Button.onLongPress"), do: :long_pressed
+
+  defp button_event_sub_params([button, msg], event) do
+    with btn when not is_nil(btn) <- button_int_expr(button),
+         %{op: :msg_tag_expr} = tag <- SpecialValues.msg_tag_param(msg) do
+      [btn, button_event_expr(event), tag]
+    else
+      _ -> []
+    end
+  end
+
+  defp button_raw_sub_params([button, event, msg]) do
+    with btn when not is_nil(btn) <- button_int_expr(button),
+         evt when not is_nil(evt) <- button_event_int_expr(event),
+         %{op: :msg_tag_expr} = tag <- SpecialValues.msg_tag_param(msg) do
+      [btn, evt, tag]
+    else
+      _ -> []
+    end
+  end
+
+  defp button_raw_sub_params(_), do: []
+
+  defp button_event_expr(:pressed), do: %{op: :c_int_expr, value: "ELMC_BUTTON_EVENT_PRESSED"}
+  defp button_event_expr(:released), do: %{op: :c_int_expr, value: "ELMC_BUTTON_EVENT_RELEASED"}
+  defp button_event_expr(:long_pressed), do: %{op: :c_int_expr, value: "ELMC_BUTTON_EVENT_LONG_PRESSED"}
+
+  defp button_int_expr(%{op: :c_int_expr, value: value}) when is_binary(value),
+    do: %{op: :c_int_expr, value: value}
+
+  defp button_int_expr(expr) do
+    case button_ctor_short_name(expr) do
+      "Back" -> %{op: :c_int_expr, value: "ELMC_BUTTON_BACK"}
+      "Up" -> %{op: :c_int_expr, value: "ELMC_BUTTON_UP"}
+      "Select" -> %{op: :c_int_expr, value: "ELMC_BUTTON_SELECT"}
+      "Down" -> %{op: :c_int_expr, value: "ELMC_BUTTON_DOWN"}
+      _ -> button_plain_int_expr(expr)
+    end
+  end
+
+  defp button_plain_int_expr(%{op: :int_literal, value: value}) when is_integer(value),
+    do: %{op: :int_literal, value: value}
+
+  defp button_plain_int_expr(_), do: nil
+
+  defp button_event_int_expr(%{op: :int_literal, value: value}) when is_integer(value),
+    do: %{op: :int_literal, value: value}
+
+  defp button_event_int_expr(expr) do
+    case button_ctor_short_name(expr) do
+      "Pressed" -> button_event_expr(:pressed)
+      "Released" -> button_event_expr(:released)
+      "LongPressed" -> button_event_expr(:long_pressed)
+      _ -> nil
+    end
+  end
+
+  defp button_ctor_short_name(%{op: :int_literal, union_ctor: ctor}) when is_binary(ctor),
+    do: ctor |> String.split(".") |> List.last()
+
+  defp button_ctor_short_name(%{op: :qualified_call, target: target, args: []})
+       when is_binary(target),
+       do: target |> String.split(".") |> List.last()
+
+  defp button_ctor_short_name(%{op: :qualified_var, target: target}) when is_binary(target),
+    do: target |> String.split(".") |> List.last()
+
+  defp button_ctor_short_name(%{op: :constructor_call, target: target, args: []})
+       when is_binary(target),
+       do: target |> String.split(".") |> List.last()
+
+  defp button_ctor_short_name(%{op: :var, name: name}) when is_binary(name), do: name
+  defp button_ctor_short_name(_), do: nil
+
+  defp subscription_mask_c_expr(target, args) do
+    subscription_item_c_expr(%{op: :qualified_call, target: target, args: args})
+  end
+
+  defp subscription_params_valid?([], []), do: true
+
+  defp subscription_params_valid?(args, params) when args != [] do
+    case List.last(params) do
+      %{op: :msg_tag_expr} -> true
+      _ -> false
+    end
+  end
+
+  defp pebble_sub_eligible?(params) do
+    length(params) <= 5 and Enum.all?(params, &pebble_sub_param?/1)
+  end
+
+  defp pebble_sub_param?(%{op: op}) when op in [:int_literal, :c_int_expr, :msg_tag_expr], do: true
+  defp pebble_sub_param?(_), do: false
 
   defp subscription_item_c_expr(%{op: :qualified_call, target: target, args: args})
        when is_binary(target) and is_list(args) do
@@ -77,6 +235,29 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
       "Elm.Kernel.PebbleWatch.onButtonLongDown" -> "ELMC_SUBSCRIPTION_BUTTON_LONG_DOWN"
       "Pebble.Accel.onTap" -> "ELMC_SUBSCRIPTION_ACCEL_TAP"
       "Elm.Kernel.PebbleWatch.onAccelTap" -> "ELMC_SUBSCRIPTION_ACCEL_TAP"
+      "Pebble.Accel.onData" -> "ELMC_SUBSCRIPTION_ACCEL_DATA"
+      "Elm.Kernel.PebbleWatch.onAccelData" -> "ELMC_SUBSCRIPTION_ACCEL_DATA"
+      "Pebble.System.onBatteryChange" -> "ELMC_SUBSCRIPTION_BATTERY"
+      "Elm.Kernel.PebbleWatch.onBatteryChange" -> "ELMC_SUBSCRIPTION_BATTERY"
+      "Pebble.System.onConnectionChange" -> "ELMC_SUBSCRIPTION_CONNECTION"
+      "Elm.Kernel.PebbleWatch.onConnectionChange" -> "ELMC_SUBSCRIPTION_CONNECTION"
+      "Pebble.Health.onEvent" -> "ELMC_SUBSCRIPTION_HEALTH"
+      "Elm.Kernel.PebbleWatch.onHealthEvent" -> "ELMC_SUBSCRIPTION_HEALTH"
+      "Pebble.AppFocus.onChange" -> "ELMC_SUBSCRIPTION_APP_FOCUS"
+      "Elm.Kernel.PebbleWatch.onAppFocusChange" -> "ELMC_SUBSCRIPTION_APP_FOCUS"
+      "Pebble.Compass.onChange" -> "ELMC_SUBSCRIPTION_COMPASS"
+      "Elm.Kernel.PebbleWatch.onCompassChange" -> "ELMC_SUBSCRIPTION_COMPASS"
+      "Pebble.Dictation.onStatus" -> "ELMC_SUBSCRIPTION_DICTATION"
+      "Pebble.Dictation.onResult" -> "ELMC_SUBSCRIPTION_DICTATION"
+      "Elm.Kernel.PebbleWatch.onDictationStatus" -> "ELMC_SUBSCRIPTION_DICTATION"
+      "Elm.Kernel.PebbleWatch.onDictationResult" -> "ELMC_SUBSCRIPTION_DICTATION"
+      "Pebble.UnobstructedArea.onWillChange" -> "ELMC_SUBSCRIPTION_UNOBSTRUCTED_AREA"
+      "Pebble.UnobstructedArea.onChanging" -> "ELMC_SUBSCRIPTION_UNOBSTRUCTED_AREA"
+      "Pebble.UnobstructedArea.onDidChange" -> "ELMC_SUBSCRIPTION_UNOBSTRUCTED_AREA"
+      "Elm.Kernel.PebbleWatch.onUnobstructedWillChange" -> "ELMC_SUBSCRIPTION_UNOBSTRUCTED_AREA"
+      "Elm.Kernel.PebbleWatch.onUnobstructedChanging" -> "ELMC_SUBSCRIPTION_UNOBSTRUCTED_AREA"
+      "Elm.Kernel.PebbleWatch.onUnobstructedDidChange" -> "ELMC_SUBSCRIPTION_UNOBSTRUCTED_AREA"
+      "Companion.Watch.onPhoneToWatch" -> "ELMC_SUBSCRIPTION_APPMESSAGE"
       _ -> nil
     end
   end
@@ -87,86 +268,13 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
     "(ELMC_SUBSCRIPTION_FRAME_BASE + (#{clamp_frame_interval_ms(ms)} << 16))"
   end
 
-  defp frame_subscription_c_expr(_args), do: "(ELMC_SUBSCRIPTION_FRAME_BASE + (33 << 16))"
+  defp frame_subscription_c_expr(_args), do: nil
 
   defp frame_fps_subscription_c_expr([%{op: :int_literal, value: fps}, _to_msg])
        when is_integer(fps) do
     "(ELMC_SUBSCRIPTION_FRAME_BASE + (#{clamp_frame_interval_ms(div(1000, max(fps, 1)))} << 16))"
   end
 
-  defp frame_fps_subscription_c_expr(_args), do: "(ELMC_SUBSCRIPTION_FRAME_BASE + (33 << 16))"
-
-  @spec subscription_item_mask(Types.ir_expr()) :: non_neg_integer()
-  defp subscription_item_mask(%{op: :int_literal, value: value}) when is_integer(value), do: value
-
-  defp subscription_item_mask(%{op: :qualified_call, target: target, args: args})
-       when is_binary(target) and is_list(args) do
-    case SpecialValues.special_value_from_target(target, args) do
-      %{op: :int_literal, value: value} when is_integer(value) ->
-        value
-
-      _ ->
-        subscription_item_mask(%{op: :qualified_call, target: target})
-    end
-  end
-
-  defp subscription_item_mask(%{op: :qualified_call, target: target}) when is_binary(target) do
-    case SpecialValues.normalize_special_target(target) do
-      "Pebble.Events.onSecondChange" -> 1
-      "Pebble.Frame.every" -> 8192
-      "Pebble.Frame.atFps" -> 8192
-      "Pebble.Events.onHourChange" -> 1024
-      "Pebble.Events.onMinuteChange" -> 2048
-      "Pebble.Events.onDayChange" -> 65_536
-      "Pebble.Events.onMonthChange" -> 131_072
-      "Pebble.Events.onYearChange" -> 262_144
-      "Pebble.Button.on" -> 16384
-      "Pebble.Button.onPress" -> 16384
-      "Pebble.Button.onRelease" -> 16384
-      "Pebble.Button.onLongPress" -> 16384
-      "Pebble.Accel.onTap" -> 16
-      "Pebble.Accel.onData" -> 32768
-      "Pebble.System.onBatteryChange" -> 32
-      "Pebble.System.onConnectionChange" -> 64
-      "Pebble.Health.onEvent" -> 2_147_483_648
-      "Elm.Kernel.PebbleWatch.onBatteryChange" -> 32
-      "Elm.Kernel.PebbleWatch.onConnectionChange" -> 64
-      "Elm.Kernel.PebbleWatch.onHealthEvent" -> 2_147_483_648
-      "Pebble.AppFocus.onChange" -> 524_288
-      "Elm.Kernel.PebbleWatch.onAppFocusChange" -> 524_288
-      "Pebble.Compass.onChange" -> 1_048_576
-      "Elm.Kernel.PebbleWatch.onCompassChange" -> 1_048_576
-      "Pebble.Dictation.onStatus" -> 2_097_152
-      "Pebble.Dictation.onResult" -> 2_097_152
-      "Elm.Kernel.PebbleWatch.onDictationStatus" -> 2_097_152
-      "Elm.Kernel.PebbleWatch.onDictationResult" -> 2_097_152
-      "Pebble.UnobstructedArea.onWillChange" -> 4_194_304
-      "Pebble.UnobstructedArea.onChanging" -> 4_194_304
-      "Pebble.UnobstructedArea.onDidChange" -> 4_194_304
-      "Elm.Kernel.PebbleWatch.onUnobstructedWillChange" -> 4_194_304
-      "Elm.Kernel.PebbleWatch.onUnobstructedChanging" -> 4_194_304
-      "Elm.Kernel.PebbleWatch.onUnobstructedDidChange" -> 4_194_304
-      "Elm.Kernel.PebbleWatch.onFrame" -> 8192
-      "Elm.Kernel.PebbleWatch.onButtonUp" -> 2
-      "Elm.Kernel.PebbleWatch.onButtonSelect" -> 4
-      "Elm.Kernel.PebbleWatch.onButtonDown" -> 8
-      "Elm.Kernel.PebbleWatch.onButtonLongUp" -> 128
-      "Elm.Kernel.PebbleWatch.onButtonLongSelect" -> 256
-      "Elm.Kernel.PebbleWatch.onButtonLongDown" -> 512
-      "Elm.Kernel.PebbleWatch.onButtonRaw" -> 16384
-      "Elm.Kernel.PebbleWatch.onAccelTap" -> 16
-      "Elm.Kernel.PebbleWatch.onAccelData" -> 32768
-      "Companion.Watch.onPhoneToWatch" -> 4096
-      "Elm.Kernel.PebbleWatch.onHourChange" -> 1024
-      "Elm.Kernel.PebbleWatch.onMinuteChange" -> 2048
-      "Elm.Kernel.PebbleWatch.onSecondChange" -> 1
-      "Elm.Kernel.PebbleWatch.onDayChange" -> 65_536
-      "Elm.Kernel.PebbleWatch.onMonthChange" -> 131_072
-      "Elm.Kernel.PebbleWatch.onYearChange" -> 262_144
-      "Elm.Kernel.Time.every" -> 1
-      _ -> 0
-    end
-  end
-
-  defp subscription_item_mask(_), do: 0
+  defp frame_fps_subscription_c_expr(_args), do: nil
 end
+

@@ -23,7 +23,8 @@ defmodule Elmc.Backend.CCodegen.Native.String do
           {:ok, source} when is_binary(source) ->
             next = counter + 1
             out = "native_string_#{next}"
-            {value_code(expr, env, source, out), out, [], next}
+            {value_lines, value_cleanup} = value_code(expr, env, source, out)
+            {value_lines, out, value_cleanup, next}
 
           _ ->
             compile_fallback(expr, env, counter)
@@ -240,29 +241,48 @@ defmodule Elmc.Backend.CCodegen.Native.String do
     {code, var, counter} = Host.compile_expr(expr, env, counter)
     next = counter + 1
     out = "native_string_#{next}"
+    {value_lines, value_cleanup} = value_code(expr, env, var, out)
 
     {
       """
       #{code}
-      #{value_code(expr, env, var, out)}
+      #{value_lines}
       """,
       out,
-      [var],
+      [var | value_cleanup],
       next
     }
   end
 
-  @spec value_code(Types.ir_expr(), Types.compile_env(), String.t(), String.t()) :: String.t()
+  @spec value_code(Types.ir_expr(), Types.compile_env(), String.t(), String.t()) ::
+          {String.t(), [String.t()]}
   defp value_code(expr, env, var, out) do
-    if TypedReturn.string_expr?(expr, env) or boxed_expr?(expr, env) do
-      "  const char *#{out} = (const char *)#{var}->payload;"
+    if TypedReturn.string_expr?(expr, env) do
+      boxed = "#{out}_boxed"
+
+      {
+        """
+          ElmcValue *#{boxed} = NULL;
+          const char *#{out} = "";
+          if (#{var} && #{var}->tag == ELMC_TAG_STRING && #{var}->payload) {
+            #{out} = (const char *)#{var}->payload;
+          } else if (#{var} && #{var}->tag == ELMC_TAG_LIST) {
+            #{boxed} = elmc_string_from_list(#{var});
+            #{out} = (#{boxed} && #{boxed}->payload) ? (const char *)#{boxed}->payload : "";
+          }
+        """,
+        [boxed]
+      }
     else
-      """
-        const char *#{out} =
-          (#{var} && #{var}->tag == ELMC_TAG_STRING && #{var}->payload)
-            ? (const char *)#{var}->payload
-            : "";
-      """
+      {
+        """
+          const char *#{out} =
+            (#{var} && #{var}->tag == ELMC_TAG_STRING && #{var}->payload)
+              ? (const char *)#{var}->payload
+              : "";
+        """,
+        []
+      }
     end
   end
 end

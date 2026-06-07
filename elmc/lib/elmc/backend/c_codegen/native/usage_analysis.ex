@@ -132,7 +132,11 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
         Map.get(env, :__program_decls__, %{})
       )
 
-    Host.native_int_expr?(value_expr, env) and usage.total > 0 and usage.boxed == 0 and
+    value_native? =
+      Host.native_int_expr?(value_expr, env) or
+        Elmc.Backend.CCodegen.ConstantInt.native_let_value?(value_expr, env)
+
+    value_native? and usage.total > 0 and usage.boxed == 0 and
       (usage.native_container > 0 or usage.native > 0)
   end
 

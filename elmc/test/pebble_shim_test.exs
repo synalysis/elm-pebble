@@ -230,6 +230,146 @@ defmodule Elmc.PebbleShimTest do
     assert run_code == 0
   end
 
+  test "streamed fallback scene build advances past first draw command" do
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available for pebble shim C test")
+
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/scene_stream_fallback_project", __DIR__)
+    out_dir = Path.expand("tmp/scene_stream_fallback_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(source_fixture, project_dir)
+    write_non_direct_multi_command_view_app!(project_dir)
+
+    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    refute File.read!(Path.join(out_dir, "c/elmc_pebble.h")) =~
+             "ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW"
+
+    harness_path = Path.join(out_dir, "c/scene_stream_fallback_harness.c")
+
+    File.write!(
+      harness_path,
+      """
+      #include "elmc_pebble.h"
+
+      int main(void) {
+        ElmcPebbleApp app = {0};
+        ElmcValue *flags = elmc_new_int(0);
+        if (elmc_pebble_init(&app, flags) != 0) return 2;
+        elmc_release(flags);
+
+        if (elmc_pebble_scene_command_count(&app) != 4) return 3;
+
+        ElmcPebbleDrawCmd cmds[8];
+        if (elmc_pebble_scene_commands_from(&app, cmds, 8, 0) != 4) return 4;
+        if (cmds[0].kind != ELMC_PEBBLE_DRAW_CLEAR) return 5;
+        if (cmds[1].kind != ELMC_PEBBLE_DRAW_FILL_RECT) return 6;
+        if (cmds[2].kind != ELMC_PEBBLE_DRAW_FILL_RECT) return 7;
+        if (cmds[3].kind != ELMC_PEBBLE_DRAW_FILL_RECT) return 8;
+
+        elmc_pebble_deinit(&app);
+        return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 9;
+      }
+      """
+    )
+
+    binary_path = Path.join(out_dir, "scene_stream_fallback_harness")
+
+    {compile_out, compile_code} =
+      System.cmd(cc, [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-I#{Path.join(out_dir, "runtime")}",
+        "-I#{Path.join(out_dir, "ports")}",
+        "-I#{Path.join(out_dir, "c")}",
+        Path.join(out_dir, "runtime/elmc_runtime.c"),
+        Path.join(out_dir, "ports/elmc_ports.c"),
+        Path.join(out_dir, "c/elmc_generated.c"),
+        Path.join(out_dir, "c/elmc_worker.c"),
+        Path.join(out_dir, "c/elmc_pebble.c"),
+        harness_path,
+        "-o",
+        binary_path
+      ])
+
+    assert compile_code == 0, compile_out
+
+    {_run_out, run_code} = System.cmd(binary_path, [])
+    assert run_code == 0
+  end
+
+  test "scene draw cursor advances without re-decoding from byte zero" do
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available for pebble shim C test")
+
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/scene_cursor_project", __DIR__)
+    out_dir = Path.expand("tmp/scene_cursor_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(source_fixture, project_dir)
+    write_many_draw_commands_app!(project_dir, 99)
+
+    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    harness_path = Path.join(out_dir, "c/scene_cursor_harness.c")
+
+    File.write!(
+      harness_path,
+      """
+      #include "elmc_pebble.h"
+
+      int main(void) {
+        ElmcPebbleApp app = {0};
+        ElmcValue *flags = elmc_new_int(0);
+        if (elmc_pebble_init(&app, flags) != 0) return 2;
+        elmc_release(flags);
+
+        if (elmc_pebble_scene_command_count(&app) != 99) return 3;
+
+        ElmcPebbleDrawCmd cmds[64];
+        elmc_pebble_scene_reset_draw_cursor(&app);
+        if (elmc_pebble_scene_commands_next(&app, cmds, 64) != 64) return 4;
+        if (app.scene_draw_byte_offset <= 0) return 5;
+        if (elmc_pebble_scene_commands_next(&app, cmds, 64) != 35) return 6;
+        if (app.scene_draw_byte_offset != app.scene.byte_count) return 7;
+        if (elmc_pebble_scene_commands_next(&app, cmds, 64) != 0) return 8;
+
+        elmc_pebble_deinit(&app);
+        return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 9;
+      }
+      """
+    )
+
+    binary_path = Path.join(out_dir, "scene_cursor_harness")
+
+    {compile_out, compile_code} =
+      System.cmd(cc, [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-I#{Path.join(out_dir, "runtime")}",
+        "-I#{Path.join(out_dir, "ports")}",
+        "-I#{Path.join(out_dir, "c")}",
+        Path.join(out_dir, "runtime/elmc_runtime.c"),
+        Path.join(out_dir, "ports/elmc_ports.c"),
+        Path.join(out_dir, "c/elmc_generated.c"),
+        Path.join(out_dir, "c/elmc_worker.c"),
+        Path.join(out_dir, "c/elmc_pebble.c"),
+        harness_path,
+        "-o",
+        binary_path
+      ])
+
+    assert compile_code == 0, compile_out
+
+    {_run_out, run_code} = System.cmd(binary_path, [])
+    assert run_code == 0
+  end
+
   test "scene command stream resumes mid-cell when chunk splits rect and text" do
     cc = System.find_executable("cc")
     if is_nil(cc), do: flunk("cc not available for pebble shim C test")
@@ -444,6 +584,166 @@ defmodule Elmc.PebbleShimTest do
     assert run_code == 0
   end
 
+  test "direct renderer encodes clear, round rect, and model text in one scene" do
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available for pebble shim C test")
+
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/digital_watchface_scene_project", __DIR__)
+    out_dir = Path.expand("tmp/digital_watchface_scene_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(source_fixture, project_dir)
+    write_digital_watchface_scene_app!(project_dir)
+
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               prune_runtime: true,
+               prune_native_wrappers: true,
+               pebble_int32: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    assert generated_c =~ "static ElmcPebbleDrawCmd scene_cmd;"
+
+    harness_path = Path.join(out_dir, "c/digital_watchface_scene_harness.c")
+
+    File.write!(
+      harness_path,
+      """
+      #include "elmc_pebble.h"
+
+      int main(void) {
+        ElmcPebbleApp app = {0};
+        ElmcValue *flags = elmc_new_int(0);
+        if (elmc_pebble_init(&app, flags) != 0) return 2;
+        elmc_release(flags);
+
+        if (elmc_pebble_scene_command_count(&app) != 3) return 3;
+
+        ElmcPebbleDrawCmd cmds[4] = {0};
+        if (elmc_pebble_scene_commands_next(&app, cmds, 4) != 3) return 4;
+        if (cmds[0].kind != ELMC_PEBBLE_DRAW_CLEAR) return 5;
+        if (cmds[1].kind != ELMC_PEBBLE_DRAW_ROUND_RECT) return 6;
+        if (cmds[2].kind != ELMC_PEBBLE_DRAW_TEXT) return 7;
+        if (cmds[2].text[0] != '-' || cmds[2].text[1] != '-') return 8;
+
+        elmc_pebble_deinit(&app);
+        return 0;
+      }
+      """
+    )
+
+    binary_path = Path.join(out_dir, "digital_watchface_scene_harness")
+
+    {compile_out, compile_code} =
+      System.cmd(cc, [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-I#{Path.join(out_dir, "runtime")}",
+        "-I#{Path.join(out_dir, "ports")}",
+        "-I#{Path.join(out_dir, "c")}",
+        Path.join(out_dir, "runtime/elmc_runtime.c"),
+        Path.join(out_dir, "ports/elmc_ports.c"),
+        Path.join(out_dir, "c/elmc_generated.c"),
+        Path.join(out_dir, "c/elmc_worker.c"),
+        Path.join(out_dir, "c/elmc_pebble.c"),
+        harness_path,
+        "-o",
+        binary_path
+      ])
+
+    assert compile_code == 0, compile_out
+
+    {_run_out, run_code} = System.cmd(binary_path, [])
+    assert run_code == 0
+  end
+
+  test "scene draw cursor splits three clears text and round rect across chunk boundary" do
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available for pebble shim C test")
+
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/digital_watch_chunk_boundary_project", __DIR__)
+    out_dir = Path.expand("tmp/digital_watch_chunk_boundary_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(source_fixture, project_dir)
+    write_digital_watch_multi_clear_scene_app!(project_dir, 3)
+
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               prune_runtime: true,
+               prune_native_wrappers: true,
+               pebble_int32: true
+             })
+
+    harness_path = Path.join(out_dir, "c/digital_watch_chunk_boundary_harness.c")
+
+    File.write!(
+      harness_path,
+      """
+      #include "elmc_pebble.h"
+
+      int main(void) {
+        ElmcPebbleApp app = {0};
+        ElmcValue *flags = elmc_new_int(0);
+        if (elmc_pebble_init(&app, flags) != 0) return 2;
+        elmc_release(flags);
+
+        if (elmc_pebble_scene_command_count(&app) != 5) return 3;
+
+        ElmcPebbleDrawCmd chunk[4] = {0};
+        elmc_pebble_scene_reset_draw_cursor(&app);
+        if (elmc_pebble_scene_commands_next(&app, chunk, 4) != 4) return 4;
+        if (chunk[0].kind != ELMC_PEBBLE_DRAW_CLEAR) return 5;
+        if (chunk[3].kind != ELMC_PEBBLE_DRAW_TEXT) return 6;
+        if (chunk[3].text[0] != '-' || chunk[3].text[1] != '-') return 7;
+
+        app.scene.dirty = 1;
+        if (elmc_pebble_scene_commands_next(&app, chunk, 4) != 1) return 8;
+        if (chunk[0].kind != ELMC_PEBBLE_DRAW_ROUND_RECT) return 9;
+        if (app.scene_draw_byte_offset != app.scene.byte_count) return 10;
+
+        elmc_pebble_deinit(&app);
+        return 0;
+      }
+      """
+    )
+
+    binary_path = Path.join(out_dir, "digital_watch_chunk_boundary_harness")
+
+    {compile_out, compile_code} =
+      System.cmd(cc, [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-I#{Path.join(out_dir, "runtime")}",
+        "-I#{Path.join(out_dir, "ports")}",
+        "-I#{Path.join(out_dir, "c")}",
+        Path.join(out_dir, "runtime/elmc_runtime.c"),
+        Path.join(out_dir, "ports/elmc_ports.c"),
+        Path.join(out_dir, "c/elmc_generated.c"),
+        Path.join(out_dir, "c/elmc_worker.c"),
+        Path.join(out_dir, "c/elmc_pebble.c"),
+        harness_path,
+        "-o",
+        binary_path
+      ])
+
+    assert compile_code == 0, compile_out
+
+    {_run_out, run_code} = System.cmd(binary_path, [])
+    assert run_code == 0
+  end
+
   test "direct renderer preserves centered text options through record updates" do
     cc = System.find_executable("cc")
     if is_nil(cc), do: flunk("cc not available for pebble shim C test")
@@ -473,7 +773,7 @@ defmodule Elmc.PebbleShimTest do
     assert generated_c =~ "#define ELMC_TEXT_ALIGN_CENTER 1"
     assert generated_c =~ "#define ELMC_TEXT_OVERFLOW_WORD_WRAP 0"
 
-    assert generated_c =~ "elmc_generated_draw_init(&out_cmds[*count], ELMC_RENDER_OP_TEXT);"
+    assert generated_c =~ "elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_TEXT);"
 
     assert generated_c =~
              "ELMC_TEXT_ALIGN_CENTER + (ELMC_TEXT_OVERFLOW_WORD_WRAP * (1 << ELMC_TEXT_OVERFLOW_SHIFT))"
@@ -740,7 +1040,7 @@ defmodule Elmc.PebbleShimTest do
 
     assert String.contains?(
              generated,
-             "elmc_new_int(((ELMC_SUBSCRIPTION_FRAME_BASE + (33 << 16))))"
+             "elmc_sub1((ELMC_SUBSCRIPTION_FRAME_BASE + (33 << 16)), ELMC_PEBBLE_MSG_FRAMETICK)"
            )
 
     harness_path = Path.join(out_dir, "c/frame_harness.c")
@@ -808,8 +1108,9 @@ defmodule Elmc.PebbleShimTest do
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
-    assert String.contains?(generated, "elmc_fn_Main_view_commands_from")
+    assert String.contains?(generated, "elmc_fn_Main_view_scene_append")
     assert String.contains?(generated, "elmc_fn_Main_view_commands_append")
+    refute String.contains?(generated, "elmc_direct_commands_from")
     assert String.contains?(generated, "direct_index_")
     refute String.contains?(generated, "elmc_fn_Main_cell_commands_append")
 
@@ -1056,6 +1357,154 @@ defmodule Elmc.PebbleShimTest do
     )
 
     binary_path = Path.join(out_dir, "compact_scene_harness")
+
+    {compile_out, compile_code} =
+      System.cmd(cc, [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-I#{Path.join(out_dir, "runtime")}",
+        "-I#{Path.join(out_dir, "ports")}",
+        "-I#{Path.join(out_dir, "c")}",
+        Path.join(out_dir, "runtime/elmc_runtime.c"),
+        Path.join(out_dir, "ports/elmc_ports.c"),
+        Path.join(out_dir, "c/elmc_generated.c"),
+        Path.join(out_dir, "c/elmc_worker.c"),
+        Path.join(out_dir, "c/elmc_pebble.c"),
+        harness_path,
+        "-o",
+        binary_path
+      ])
+
+    assert compile_code == 0, compile_out
+
+    {_run_out, run_code} = System.cmd(binary_path, [])
+    assert run_code == 0
+  end
+
+  test "scene rebuild is lazy until ensure_scene after invalidation" do
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available for pebble shim C test")
+
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/scene_dispatch_dirty_project", __DIR__)
+    out_dir = Path.expand("tmp/scene_dispatch_dirty_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(source_fixture, project_dir)
+    write_grid_scene_app!(project_dir)
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    harness_path = Path.join(out_dir, "c/scene_dispatch_dirty_harness.c")
+
+    File.write!(
+      harness_path,
+      """
+      #include "elmc_pebble.h"
+
+      int main(void) {
+        ElmcPebbleApp app = {0};
+        ElmcValue *flags = elmc_new_int(0);
+        if (elmc_pebble_init(&app, flags) != 0) return 2;
+        elmc_release(flags);
+
+        if (!app.scene.dirty) return 3;
+        if (elmc_pebble_ensure_scene(&app) != 0) return 4;
+        if (app.scene.command_count != 38) return 5;
+        int bytes = app.scene.byte_count;
+        if (bytes <= 0) return 6;
+
+        elmc_pebble_invalidate_scene(&app);
+        if (!app.scene.dirty) return 7;
+
+        if (elmc_pebble_ensure_scene(&app) != 0) return 8;
+        if (app.scene.command_count != 38) return 9;
+        if (app.scene.byte_count != bytes) return 10;
+
+        ElmcPebbleDrawCmd cmds[64];
+        if (elmc_pebble_scene_commands_from(&app, cmds, 64, 0) != 38) return 11;
+
+        elmc_pebble_deinit(&app);
+        return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 12;
+      }
+      """
+    )
+
+    binary_path = Path.join(out_dir, "scene_dispatch_dirty_harness")
+
+    {compile_out, compile_code} =
+      System.cmd(cc, [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-I#{Path.join(out_dir, "runtime")}",
+        "-I#{Path.join(out_dir, "ports")}",
+        "-I#{Path.join(out_dir, "c")}",
+        Path.join(out_dir, "runtime/elmc_runtime.c"),
+        Path.join(out_dir, "ports/elmc_ports.c"),
+        Path.join(out_dir, "c/elmc_generated.c"),
+        Path.join(out_dir, "c/elmc_worker.c"),
+        Path.join(out_dir, "c/elmc_pebble.c"),
+        harness_path,
+        "-o",
+        binary_path
+      ])
+
+    assert compile_code == 0, compile_out
+
+    {_run_out, run_code} = System.cmd(binary_path, [])
+    assert run_code == 0
+  end
+
+  test "dirty scene rebuilds via ensure_scene when commands_next runs" do
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available for pebble shim C test")
+
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/scene_dirty_direct_project", __DIR__)
+    out_dir = Path.expand("tmp/scene_dirty_direct_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(source_fixture, project_dir)
+    write_grid_scene_app!(project_dir)
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    harness_path = Path.join(out_dir, "c/scene_dirty_direct_harness.c")
+
+    File.write!(
+      harness_path,
+      """
+      #include "elmc_pebble.h"
+
+      int main(void) {
+        ElmcPebbleApp app = {0};
+        ElmcValue *flags = elmc_new_int(0);
+        if (elmc_pebble_init(&app, flags) != 0) return 2;
+        elmc_release(flags);
+
+        if (elmc_pebble_ensure_scene(&app) != 0) return 3;
+        if (app.scene.byte_count <= 0) return 4;
+
+        elmc_pebble_invalidate_scene(&app);
+        if (!app.scene.dirty) return 5;
+
+        ElmcPebbleDrawCmd cmds[64];
+        elmc_pebble_scene_reset_draw_cursor(&app);
+        if (elmc_pebble_scene_commands_next(&app, cmds, 64) != 38) return 6;
+        if (app.scene.byte_count <= 0) return 7;
+        if (app.scene.dirty) return 8;
+
+        elmc_pebble_deinit(&app);
+        return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 9;
+      }
+      """
+    )
+
+    binary_path = Path.join(out_dir, "scene_dirty_direct_harness")
 
     {compile_out, compile_code} =
       System.cmd(cc, [
@@ -2067,6 +2516,51 @@ defmodule Elmc.PebbleShimTest do
     """)
   end
 
+  defp write_non_direct_multi_command_view_app!(project_dir) do
+    File.write!(Path.join(project_dir, "src/Main.elm"), """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+
+    type Msg
+        = NoOp
+
+
+    main : Program Decode.Value Int Msg
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( 3, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view model =
+        Ui.toUiNode <|
+            Ui.clear Color.white
+                :: List.map
+                    (\\_ -> Ui.fillRect { x = 4, y = 4, w = 8, h = 8 } Color.black)
+                    (List.repeat model 3)
+    """)
+  end
+
   defp write_many_draw_commands_app!(project_dir, count) do
     commands =
       0..(count - 1)
@@ -2224,6 +2718,171 @@ defmodule Elmc.PebbleShimTest do
         { x = (a.x + b.x) // 2
         , y = (a.y + b.y) // 2
         }
+    """)
+  end
+
+  defp write_digital_watch_multi_clear_scene_app!(project_dir, clear_count)
+       when is_integer(clear_count) and clear_count >= 1 and clear_count <= 4 do
+    colors =
+      case clear_count do
+        1 -> ["Color.white"]
+        2 -> ["Color.white", "Color.yellow"]
+        3 -> ["Color.white", "Color.yellow", "Color.red"]
+        4 -> ["Color.white", "Color.yellow", "Color.red", "Color.blue"]
+      end
+
+    clear_lines =
+      colors
+      |> Enum.map(fn color -> "            , Ui.clear #{color}" end)
+      |> Enum.join("\n")
+      |> String.replace_prefix("            , ", "            ")
+
+    File.write!(Path.join(project_dir, "src/Main.elm"), """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        { timeString : String
+        , screenW : Int
+        , screenH : Int
+        }
+
+
+    type Msg
+        = NoOp
+
+
+    main : Program Decode.Value Model Msg
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( { timeString = "--:--", screenW = 144, screenH = 168 }, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view model =
+        let
+            cardW =
+                (model.screenW * 17) // 20
+
+            cardH =
+                max 66 ((model.screenH * 70) // 168)
+
+            cardX =
+                (model.screenW - cardW) // 2
+
+            cardY =
+                (model.screenH - cardH) // 2
+
+            cornerRadius =
+                max 6 (min cardW cardH // 8)
+
+            timeH =
+                min 52 (cardH - 8)
+
+            textY =
+                cardY + ((cardH - timeH) // 2)
+        in
+        Ui.toUiNode
+            [ #{clear_lines}
+            , Ui.text Resources.DefaultFont (Ui.alignCenter Ui.defaultTextOptions) { x = cardX, y = textY, w = cardW, h = timeH } model.timeString
+            , Ui.roundRect { x = cardX, y = cardY, w = cardW, h = cardH } cornerRadius Color.black
+            ]
+    """)
+  end
+
+  defp write_digital_watchface_scene_app!(project_dir) do
+    File.write!(Path.join(project_dir, "src/Main.elm"), """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        { timeString : String
+        , screenW : Int
+        , screenH : Int
+        }
+
+
+    type Msg
+        = NoOp
+
+
+    main : Program Decode.Value Model Msg
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( { timeString = "--:--", screenW = 144, screenH = 168 }, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view model =
+        let
+            cardW =
+                (model.screenW * 17) // 20
+
+            cardH =
+                max 66 ((model.screenH * 70) // 168)
+
+            cardX =
+                (model.screenW - cardW) // 2
+
+            cardY =
+                (model.screenH - cardH) // 2
+
+            cornerRadius =
+                max 6 (min cardW cardH // 8)
+
+            timeH =
+                min 52 (cardH - 8)
+
+            textY =
+                cardY + ((cardH - timeH) // 2)
+        in
+        Ui.toUiNode
+            [ Ui.clear Color.white
+            , Ui.roundRect { x = cardX, y = cardY, w = cardW, h = cardH } cornerRadius Color.black
+            , Ui.text Resources.DefaultFont (Ui.alignCenter Ui.defaultTextOptions) { x = cardX, y = textY, w = cardW, h = timeH } model.timeString
+            ]
     """)
   end
 

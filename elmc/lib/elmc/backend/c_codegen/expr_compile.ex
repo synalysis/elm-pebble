@@ -3,6 +3,8 @@ defmodule Elmc.Backend.CCodegen.ExprCompile do
 
   alias Elmc.Backend.CCodegen.CallCompile
   alias Elmc.Backend.CCodegen.CaseCompile
+  alias Elmc.Backend.CCodegen.CmdCompile
+  alias Elmc.Backend.CCodegen.SubCompile
   alias Elmc.Backend.CCodegen.CollectionCompile
   alias Elmc.Backend.CCodegen.CompareCompile
   alias Elmc.Backend.CCodegen.IfCompile
@@ -15,7 +17,18 @@ defmodule Elmc.Backend.CCodegen.ExprCompile do
   alias Elmc.Backend.CCodegen.VarArithCompile
   alias Elmc.Backend.CCodegen.VarCompile
 
-  @literal_ops [:int_literal, :c_int_expr, :string_literal, :char_literal, :float_literal, :cmd_none]
+  @literal_ops [
+    :int_literal,
+    :c_int_expr,
+    :msg_tag_expr,
+    :string_literal,
+    :char_literal,
+    :float_literal,
+    :cmd_none
+  ]
+
+  @cmd_ops [:pebble_cmd]
+  @sub_ops [:pebble_sub]
   @var_arith_ops [:add_const, :add_vars, :sub_const]
   @collection_ops [
     :tuple2,
@@ -37,6 +50,12 @@ defmodule Elmc.Backend.CCodegen.ExprCompile do
   @spec compile(nil, Types.compile_env(), Types.compile_counter()) :: Types.compile_result()
   def compile(%{op: op} = expr, env, counter) when op in @literal_ops,
     do: LiteralCompile.compile(expr, env, counter)
+
+  def compile(%{op: op} = expr, env, counter) when op in @cmd_ops,
+    do: CmdCompile.compile(expr, env, counter)
+
+  def compile(%{op: op} = expr, env, counter) when op in @sub_ops,
+    do: SubCompile.compile(expr, env, counter)
 
   def compile(%{op: op} = expr, env, counter) when op in @var_arith_ops,
     do: VarArithCompile.compile(expr, env, counter)

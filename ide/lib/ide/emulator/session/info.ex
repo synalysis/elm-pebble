@@ -20,6 +20,7 @@ defmodule Ide.Emulator.Session.Info do
       has_phone_companion: state.has_phone_companion,
       has_companion_preferences: state.has_companion_preferences,
       install_path: "/api/emulator/#{state.id}/install",
+      request_app_logs_path: "/api/emulator/#{state.id}/request-app-logs",
       vnc_path: "/api/emulator/#{state.id}/ws/vnc",
       phone_path: "/api/emulator/#{state.id}/ws/phone",
       ping_path: "/api/emulator/#{state.id}/ping",

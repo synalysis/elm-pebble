@@ -49,6 +49,75 @@ defmodule Elmc.Backend.CCodegen.Util do
     end)
   end
 
+  @spec format_c_block(String.t(), non_neg_integer()) :: String.t()
+  def format_c_block(code, base_indent \\ 2) when is_binary(code) do
+    base_pad = String.duplicate(" ", base_indent)
+
+    code
+    |> String.split("\n", trim: false)
+    |> Enum.map(&String.trim_trailing/1)
+    |> trim_blank_edges()
+    |> collapse_blank_lines(1)
+    |> reindent_lines(base_pad)
+    |> Enum.join("\n")
+  end
+
+  defp trim_blank_edges(lines) do
+    lines
+    |> Enum.drop_while(&(String.trim(&1) == ""))
+    |> Enum.reverse()
+    |> Enum.drop_while(&(String.trim(&1) == ""))
+    |> Enum.reverse()
+  end
+
+  defp collapse_blank_lines(lines, max_run) when is_integer(max_run) and max_run >= 0 do
+    Enum.reduce(lines, {[], 0}, fn line, {acc, blank_run} ->
+      if String.trim(line) == "" do
+        if blank_run < max_run do
+          {["" | acc], blank_run + 1}
+        else
+          {acc, blank_run + 1}
+        end
+      else
+        {[line | acc], 0}
+      end
+    end)
+    |> elem(0)
+    |> Enum.reverse()
+  end
+
+  defp reindent_lines(lines, base_pad) do
+    min_indent =
+      lines
+      |> Enum.filter(&(String.trim(&1) != ""))
+      |> Enum.map(&leading_spaces/1)
+      |> case do
+        [] -> 0
+        indents -> Enum.min(indents)
+      end
+
+    Enum.map(lines, fn
+      "" ->
+        ""
+
+      line ->
+        extra = max(leading_spaces(line) - min_indent, 0)
+        base_pad <> String.duplicate(" ", extra) <> String.trim_leading(line)
+    end)
+  end
+
+  defp leading_spaces(line) do
+    line
+    |> String.graphemes()
+    |> Enum.take_while(&(&1 == " "))
+    |> length()
+  end
+
+  @spec collapse_extra_newlines(String.t()) :: String.t()
+  def collapse_extra_newlines(text) when is_binary(text) do
+    Regex.replace(~r/\n{3,}/, text, "\n\n")
+  end
+
   @spec escape_c_string(String.t()) :: String.t()
   def escape_c_string(value) do
     value

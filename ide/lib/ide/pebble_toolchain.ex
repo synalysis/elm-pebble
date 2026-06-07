@@ -680,13 +680,19 @@ defmodule Ide.PebbleToolchain do
   defp build_env(opts) do
     []
     |> maybe_build_env_flag(opts, :emulator_storage_logs, "ELMC_PEBBLE_EMULATOR_STORAGE_LOGS")
-    |> maybe_build_env_flag(opts, :emulator_storage_logs, "ELMC_PEBBLE_RUNTIME_LOGS")
-    |> maybe_build_env_flag(opts, :emulator_agent_probes, "ELMC_AGENT_PROBES")
+    |> maybe_build_env_agent_probes(opts)
     |> maybe_build_env_watchface(opts)
   end
 
   defp maybe_build_env_flag(env, opts, key, name) do
     if Keyword.get(opts, key, false), do: [{name, "1"} | env], else: env
+  end
+
+  # Always pin agent probes for Pebble builds. A leaked ELMC_AGENT_PROBES=1 in the
+  # parent shell (for example from local bisect scripts) must not ship in emulator PBWs.
+  defp maybe_build_env_agent_probes(env, opts) do
+    value = if Keyword.get(opts, :emulator_agent_probes, false), do: "1", else: "0"
+    [{"ELMC_AGENT_PROBES", value} | env]
   end
 
   defp maybe_build_env_watchface(env, opts) do
@@ -982,11 +988,7 @@ defmodule Ide.PebbleToolchain do
 
     storage_log_defines =
       if Keyword.get(opts, :emulator_storage_logs, false) do
-        """
-        #define ELMC_PEBBLE_EMULATOR_STORAGE_LOGS 1
-        #define ELMC_PEBBLE_RUNTIME_LOGS 1
-        #define ELMC_PEBBLE_DEBUG_LOGS 1
-        """
+        "#define ELMC_PEBBLE_EMULATOR_STORAGE_LOGS 1\n"
       else
         ""
       end
@@ -995,7 +997,7 @@ defmodule Ide.PebbleToolchain do
       if Keyword.get(opts, :emulator_agent_probes, false) do
         "#define ELMC_AGENT_PROBES 1\n"
       else
-        ""
+        "#define ELMC_AGENT_PROBES 0\n"
       end
 
     content = """

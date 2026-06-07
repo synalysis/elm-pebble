@@ -186,6 +186,18 @@ defmodule Elmc.Backend.Pebble.Kinds do
   @spec command_kind_id!(command_kind()) :: non_neg_integer()
   def command_kind_id!(kind), do: Map.fetch!(@command_kind_ids, kind)
 
+  @spec command_kind_c_name!(command_kind() | non_neg_integer()) :: String.t()
+  def command_kind_c_name!(kind) when is_atom(kind) do
+    "ELMC_PEBBLE_CMD_#{Util.macro_name(Atom.to_string(kind))}"
+  end
+
+  def command_kind_c_name!(id) when is_integer(id) do
+    case Enum.find(@command_kinds, fn {_kind, value} -> value == id end) do
+      {kind, _value} -> command_kind_c_name!(kind)
+      nil -> raise KeyError, key: id, term: @command_kinds
+    end
+  end
+
   @spec run_mode_id!(run_mode()) :: non_neg_integer()
   def run_mode_id!(mode), do: Map.fetch!(@run_mode_ids, mode)
 

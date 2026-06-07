@@ -52,9 +52,8 @@ def configure(ctx):
     if os.environ.get('ELMC_PEBBLE_RUNTIME_LOGS') in ('1', 'true', 'TRUE', 'yes', 'YES'):
         for env in ctx.all_envs.values():
             env.append_value('CFLAGS', ['-DELMC_PEBBLE_RUNTIME_LOGS=1'])
-    if os.environ.get('ELMC_AGENT_PROBES') in ('1', 'true', 'TRUE', 'yes', 'YES'):
-        for env in ctx.all_envs.values():
-            env.append_value('CFLAGS', ['-DELMC_AGENT_PROBES=1'])
+    # ELMC_AGENT_PROBES is controlled by src/c/elmc_emulator_build_flags.h (IDE-generated).
+    # Do not read ELMC_AGENT_PROBES from the shell here — a leaked env var must not override it.
     init_stage = os.environ.get('ELMC_AGENT_PROBE_INIT_STAGE')
     if init_stage:
         for env in ctx.all_envs.values():

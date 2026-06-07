@@ -3,6 +3,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
 
   alias Elmc.Backend.CCodegen.DirectRender.CommandDef
   alias Elmc.Backend.CCodegen.DirectRender.Emit.If
+  alias Elmc.Backend.CCodegen.DirectRender.Emit.Qualified.Draws, as: QualifiedDraws
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Patterns
@@ -39,12 +40,6 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
          counter
        ) do
     cond do
-      fragment_expr?(value_expr, env) ->
-        emit_expr(in_expr, Map.put(env, name, {:direct_fragment, value_expr}), counter)
-
-      inline_render_expr?(value_expr, env) ->
-        emit_expr(in_expr, Map.put(env, name, {:direct_fragment, value_expr}), counter)
-
       native_int_let?(name, value_expr, in_expr, env) ->
         env = Host.merge_process_hoisted_native_ints(env)
 
@@ -63,11 +58,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
           {:ok, body_code, counter} ->
             {:ok,
              """
-             if (!direct_stop) {
-             #{Util.indent(value_code, 2)}
+             #{value_code}
                const elmc_int_t #{native_var} = #{value_ref};
-             #{Util.indent(body_code, 2)}
-             }
+             #{body_code}
              """, counter}
 
           :error ->
@@ -91,11 +84,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
           {:ok, body_code, counter} ->
             {:ok,
              """
-             if (!direct_stop) {
-             #{Util.indent(value_code, 2)}
-             #{Util.indent(body_code, 2)}
+             #{value_code}
+             #{body_code}
                #{cleanup_code}
-             }
              """, counter}
 
           :error ->
@@ -117,11 +108,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
           {:ok, body_code, counter} ->
             {:ok,
              """
-             if (!direct_stop) {
-             #{Util.indent(value_code, 2)}
+             #{value_code}
                const double #{native_var} = #{value_ref};
-             #{Util.indent(body_code, 2)}
-             }
+             #{body_code}
              """, counter}
 
           :error ->
@@ -154,11 +143,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
               {:ok, body_code, counter} ->
                 {:ok,
                  """
-                 if (!direct_stop) {
-                 #{Util.indent(value_code, 2)}
+                 #{value_code}
                    const elmc_int_t #{native_var} = #{value_ref};
-                 #{Util.indent(body_code, 2)}
-                 }
+                 #{body_code}
                  """, counter}
 
               :error ->
@@ -176,10 +163,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
               {:ok, body_code, counter} ->
                 {:ok,
                  """
-                 if (!direct_stop) {
-                 #{Util.indent(field_code, 2)}
-                 #{Util.indent(body_code, 2)}
-                 }
+                 #{field_code}
+                 #{body_code}
                  """, counter}
 
               :error ->
@@ -190,28 +175,38 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
             :error
         end
 
+      fragment_expr?(value_expr, env) ->
+        emit_expr(in_expr, Map.put(env, name, {:direct_fragment, value_expr}), counter)
+
+      inline_render_expr?(value_expr, env) ->
+        emit_expr(in_expr, Map.put(env, name, {:direct_fragment, value_expr}), counter)
+
       true ->
-        {value_code, value_var, counter} = Host.compile_expr(value_expr, env, counter)
-
-        body_env =
-          env
-          |> Map.put(name, value_var)
-          |> EnvBindings.put_boxed_int_binding(name, Host.native_int_expr?(value_expr, env))
-          |> EnvBindings.put_record_shape(name, Host.record_shape(value_expr, env))
-
-        case emit_expr(in_expr, body_env, counter) do
-          {:ok, body_code, counter} ->
-            {:ok,
-             """
-             if (!direct_stop) {
-             #{Util.indent(value_code, 2)}
-               #{body_code}
-               elmc_release(#{value_var});
-             }
-             """, counter}
+        case emit_direct_command_native_int_let(name, value_expr, in_expr, env, counter) do
+          {:ok, code, counter} ->
+            {:ok, code, counter}
 
           :error ->
-            :error
+            {value_code, value_var, counter} = Host.compile_expr(value_expr, env, counter)
+
+            body_env =
+              env
+              |> Map.put(name, value_var)
+              |> EnvBindings.put_boxed_int_binding(name, Host.native_int_expr?(value_expr, env))
+              |> EnvBindings.put_record_shape(name, Host.record_shape(value_expr, env))
+
+            case emit_expr(in_expr, body_env, counter) do
+              {:ok, body_code, counter} ->
+                {:ok,
+                 """
+                 #{value_code}
+                   #{body_code}
+                   elmc_release(#{value_var});
+                 """, counter}
+
+              :error ->
+                :error
+            end
         end
     end
   end
@@ -338,14 +333,63 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
 
   def emit_expr(_expr, _env, _counter), do: :error
 
+  defp emit_direct_command_native_int_let(name, value_expr, in_expr, env, counter)
+       when is_binary(name) or is_atom(name) do
+    usage = native_int_usage(name, in_expr, env)
+
+    if not Map.get(env, :__hoisted_native_ints_enabled__, false) or
+         Host.binding_used_in_lambda?(name, in_expr) or usage.boxed > 0 do
+      :error
+    else
+      env = Host.merge_process_hoisted_native_ints(env)
+      {value_code, value_ref, counter} = Host.compile_native_int_expr(value_expr, env, counter)
+
+      if direct_command_native_int_ref?(value_ref) do
+        next = counter + 1
+        native_var = "direct_native_let_#{Util.safe_c_suffix(name)}_#{next}"
+
+        body_env =
+          env
+          |> Map.delete(name)
+          |> EnvBindings.put_native_int_binding(name, native_var)
+          |> EnvBindings.remove_native_bool_binding(name)
+          |> EnvBindings.put_boxed_int_binding(name, false)
+
+        case emit_expr(in_expr, body_env, next) do
+          {:ok, body_code, counter} ->
+            {:ok,
+             """
+             #{value_code}
+               const elmc_int_t #{native_var} = #{value_ref};
+             #{body_code}
+             """, counter}
+
+          :error ->
+            :error
+        end
+      else
+        :error
+      end
+    end
+  end
+
+  defp emit_direct_command_native_int_let(_name, _value_expr, _in_expr, _env, _counter), do: :error
+
+  defp direct_command_native_int_ref?(ref) when is_binary(ref) do
+    ref != "" and not String.starts_with?(ref, "tmp_")
+  end
+
+  defp direct_command_native_int_ref?(_ref), do: false
+
   @spec native_int_let?(Types.binding_name(), Types.ir_expr(), Types.ir_expr(), Types.compile_env()) ::
           boolean()
   defp native_int_let?(name, value_expr, in_expr, env)
        when is_binary(name) or is_atom(name) do
     usage = native_int_usage(name, in_expr, env)
+    value_native? = Host.native_int_expr?(value_expr, env)
+    lambda? = Host.binding_used_in_lambda?(name, in_expr)
 
-    Host.native_int_expr?(value_expr, env) and usage.total > 0 and usage.boxed == 0 and
-      not Host.binding_used_in_lambda?(name, in_expr)
+    value_native? and usage.total > 0 and usage.boxed == 0 and not lambda?
   end
 
   defp native_int_let?(_name, _value_expr, _in_expr, _env), do: false
@@ -499,13 +543,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
     case Host.special_value_from_target(normalized, args) do
       nil ->
         cond do
-          normalized == "Pebble.Ui.text" and length(args) == 4 ->
-            collect_direct_function_arg_contexts(
-              name,
-              args,
-              [:boxed, :boxed, :boxed, :native_string],
-              env
-            )
+          match?({:ok, _arg_kinds}, QualifiedDraws.usage_arg_kinds(normalized, args)) ->
+            {:ok, arg_kinds} = QualifiedDraws.usage_arg_kinds(normalized, args)
+            collect_direct_function_arg_contexts(name, args, arg_kinds, env)
 
           Host.qualified_builtin_operator_member?(normalized, [
             "__add__",
@@ -618,6 +658,25 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
     end
   end
 
+  defp collect_direct_var_contexts(
+         name,
+         %{op: :case, subject: subject, branches: branches},
+         context,
+         env
+       ) do
+    subject_contexts =
+      if EnvBindings.same_binding?(name, subject),
+        do: [:boxed],
+        else: collect_direct_var_contexts(name, subject, context, env)
+
+    branch_contexts =
+      Enum.flat_map(branches, fn %{expr: expr} ->
+        collect_direct_var_contexts(name, expr, context, env)
+      end)
+
+    subject_contexts ++ branch_contexts
+  end
+
   defp collect_direct_var_contexts(name, expr, context, env) when is_map(expr),
     do: collect_direct_var_contexts_from_map(name, expr, context, env)
 
@@ -680,9 +739,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
       "Pebble.Ui.fillRadial",
       "Pebble.Ui.drawBitmapInRect",
       "Pebble.Ui.drawRotatedBitmap",
-      "String.fromInt",
-      "Basics.min",
-      "Basics.max"
+      "String.fromInt"
     ]
   end
 

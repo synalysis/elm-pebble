@@ -47,6 +47,7 @@ defmodule Ide.Emulator.PBWInstaller do
       Keyword.get(opts, :blob_post_insert_settle_ms, @default_blob_post_insert_settle_ms)
 
     with {:ok, pbw} <- PBW.load(pbw_path, platform),
+         :ok <- validate_pbw_platform(pbw, platform),
          :ok <- Router.acquire(router, timeout) do
       try do
         do_install_with_retries(
@@ -160,6 +161,12 @@ defmodule Ide.Emulator.PBWInstaller do
       _ ->
         result
     end
+  end
+
+  defp validate_pbw_platform(%{variant: variant}, platform) when variant == platform, do: :ok
+
+  defp validate_pbw_platform(%{variant: variant}, platform) do
+    {:error, {:pbw_platform_mismatch, %{expected: platform, got: variant}}}
   end
 
   defp handshake_retryable?(:timeout), do: true

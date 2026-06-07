@@ -130,31 +130,13 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
             {:halt, {acc <> branch_body, c2}}
 
           cond_code == "1" ->
-            snippet = """
-            else {
-            #{branch_body}
-            }
-            """
-
-            {:halt, {acc <> snippet, c2}}
+            {:halt, {acc <> else_branch_snippet(branch_body), c2}}
 
           last_branch? and acc != "" ->
-            snippet = """
-            else {
-            #{branch_body}
-            }
-            """
-
-            {:halt, {acc <> snippet, c2}}
+            {:halt, {acc <> else_branch_snippet(branch_body), c2}}
 
           true ->
-            snippet = """
-            #{if acc == "", do: "if", else: "else if"} (#{cond_code}) {
-            #{branch_body}
-            }
-            """
-
-            {:cont, {acc <> snippet, c2}}
+            {:cont, {acc <> if_branch_snippet(cond_code, branch_body, acc == ""), c2}}
         end
       end)
 
@@ -164,15 +146,42 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     after_branches_probe =
       env |> battery_alert_case_probe(:case, :after_branches) |> Host.agent_probe_region()
 
-    code = """
-    #{subject_setup}
-      ElmcValue *#{out};
-      #{after_setup_probe}
-      #{branch_code}
-      #{after_branches_probe}
-    """
+    code =
+      Enum.join(
+        [
+          subject_setup,
+          "ElmcValue *#{out};",
+          after_setup_probe,
+          branch_code,
+          after_branches_probe
+        ],
+        "\n"
+      )
 
     {code, out, final_counter}
+  end
+
+  defp if_branch_snippet(cond_code, branch_body, first_branch?) do
+    keyword = if first_branch?, do: "if", else: "else if"
+    prefix = if first_branch?, do: "", else: "} "
+
+    """
+    #{prefix}#{keyword} (#{cond_code}) {
+    #{format_branch_body(branch_body)}
+
+    """
+  end
+
+  defp else_branch_snippet(branch_body) do
+    """
+    } else {
+    #{format_branch_body(branch_body)}
+    }
+    """
+  end
+
+  defp format_branch_body(body) do
+    Util.format_c_block(body, 4)
   end
 
   defp maybe_extract_branch_helper(
@@ -187,14 +196,13 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
          assignment_code,
          unwrap_release
        ) do
-    inline_body = """
-    #{Util.indent(enter_probe, 4)}
-    #{Util.indent(unwrap_setup, 4)}
-    #{Util.indent(expr_code, 4)}
-    #{Util.indent(after_expr_probe, 4)}
-        #{assignment_code}
-    #{Util.indent(unwrap_release, 4)}
-    """
+    inline_body =
+      format_branch_body(
+        Enum.join(
+          [enter_probe, unwrap_setup, expr_code, after_expr_probe, assignment_code, unwrap_release],
+          "\n"
+        )
+      )
 
     if extract_branch_helper?(inline_body) do
       case branch_helper_params(branch, branch_env, subject_ref) do

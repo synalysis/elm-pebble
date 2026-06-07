@@ -6,6 +6,9 @@
 #define ELMC_PEBBLE_FEATURE_TICK_EVENTS 1
 #define ELMC_PEBBLE_FEATURE_HOUR_EVENTS 1
 #define ELMC_PEBBLE_FEATURE_MINUTE_EVENTS 1
+#define ELMC_PEBBLE_FEATURE_DAY_EVENTS 1
+#define ELMC_PEBBLE_FEATURE_MONTH_EVENTS 1
+#define ELMC_PEBBLE_FEATURE_YEAR_EVENTS 1
 #define ELMC_PEBBLE_FEATURE_FRAME_EVENTS 1
 #define ELMC_PEBBLE_FEATURE_BUTTON_EVENTS 1
 #define ELMC_PEBBLE_FEATURE_RAW_BUTTON_EVENTS 1
@@ -14,8 +17,11 @@
 #define ELMC_PEBBLE_FEATURE_BATTERY_EVENTS 1
 #define ELMC_PEBBLE_FEATURE_CONNECTION_EVENTS 1
 #define ELMC_PEBBLE_FEATURE_HEALTH_EVENTS 1
+#define ELMC_PEBBLE_FEATURE_APP_FOCUS_EVENTS 1
+#define ELMC_PEBBLE_FEATURE_COMPASS_EVENTS 1
+#define ELMC_PEBBLE_FEATURE_DICTATION_EVENTS 1
+#define ELMC_PEBBLE_FEATURE_UNOBSTRUCTED_AREA_EVENTS 0
 #define ELMC_PEBBLE_FEATURE_INBOX_EVENTS 0
-#define ELMC_PEBBLE_FEATURE_MSG_CURRENT_TIME 1
 #define ELMC_PEBBLE_FEATURE_CMD_TIMER_AFTER_MS 1
 #define ELMC_PEBBLE_FEATURE_CMD_STORAGE_WRITE_INT 0
 #define ELMC_PEBBLE_FEATURE_CMD_STORAGE_READ_INT 0
@@ -48,6 +54,14 @@
 #define ELMC_PEBBLE_FEATURE_CMD_HEALTH_SUM_TODAY 1
 #define ELMC_PEBBLE_FEATURE_CMD_HEALTH_SUM 1
 #define ELMC_PEBBLE_FEATURE_CMD_HEALTH_ACCESSIBLE 1
+#define ELMC_PEBBLE_FEATURE_CMD_HEALTH_SUPPORTED 0
+#define ELMC_PEBBLE_FEATURE_CMD_VIBES_CUSTOM_PATTERN 1
+#define ELMC_PEBBLE_FEATURE_CMD_DATA_LOG_BYTES 1
+#define ELMC_PEBBLE_FEATURE_CMD_DATA_LOG_INT32 1
+#define ELMC_PEBBLE_FEATURE_CMD_COMPASS_PEEK 1
+#define ELMC_PEBBLE_FEATURE_CMD_DICTATION_START 1
+#define ELMC_PEBBLE_FEATURE_CMD_DICTATION_STOP 1
+#define ELMC_PEBBLE_FEATURE_CMD_UNOBSTRUCTED_BOUNDS_PEEK 0
 #define ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT 1
 #define ELMC_PEBBLE_FEATURE_DRAW_CLEAR 1
 #define ELMC_PEBBLE_FEATURE_DRAW_PIXEL 0
@@ -69,6 +83,9 @@
 #define ELMC_PEBBLE_FEATURE_DRAW_FILL_RADIAL 0
 #define ELMC_PEBBLE_FEATURE_DRAW_COMPOSITING_MODE 0
 #define ELMC_PEBBLE_FEATURE_DRAW_BITMAP_IN_RECT 0
+#define ELMC_PEBBLE_FEATURE_DRAW_VECTOR_AT 0
+#define ELMC_PEBBLE_FEATURE_DRAW_VECTOR_SEQUENCE_AT 0
+#define ELMC_PEBBLE_FEATURE_DRAW_BITMAP_SEQUENCE_AT 0
 #define ELMC_PEBBLE_FEATURE_DRAW_ROTATED_BITMAP 0
 #define ELMC_PEBBLE_FEATURE_DRAW_TEXT 0
 
@@ -78,6 +95,12 @@
 #else
 #define ELMC_PEBBLE_DIRTY_REGION_ENABLED 1
 #endif
+#endif
+
+#ifndef ELMC_PEBBLE_SCENE_CACHE_ENABLED
+/* Encode the view once into a compact byte stream; draw decodes with a cursor.
+   Incremental dirty regions (prev_scene diff) stay off on Pebble targets until reliable. */
+#define ELMC_PEBBLE_SCENE_CACHE_ENABLED 1
 #endif
 
 typedef struct {
@@ -106,6 +129,11 @@ typedef struct {
   uint64_t prev_ops_hash;
   ElmcValue *stream_view_result;
   ElmcPebbleSceneBuffer scene;
+#if ELMC_PEBBLE_SCENE_CACHE_ENABLED
+  int scene_draw_byte_offset;
+  int scene_draw_fallback_skip;
+  int scene_draw_use_direct;
+#endif
 #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
   ElmcPebbleSceneBuffer prev_scene;
   ElmcPebbleRect dirty_rect;
@@ -134,27 +162,35 @@ typedef enum {
   ELMC_PEBBLE_MSG_CONNECTIONCHANGED = 10,
   ELMC_PEBBLE_MSG_HOURCHANGED = 11,
   ELMC_PEBBLE_MSG_MINUTECHANGED = 12,
-  ELMC_PEBBLE_MSG_GOTCURRENTDATETIME = 13,
-  ELMC_PEBBLE_MSG_GOTTIME = 14,
-  ELMC_PEBBLE_MSG_GOTCLOCKSTYLE24H = 15,
-  ELMC_PEBBLE_MSG_GOTTIMEZONEISSET = 16,
-  ELMC_PEBBLE_MSG_GOTTIMEZONE = 17,
-  ELMC_PEBBLE_MSG_GOTSTOREDINT = 18,
-  ELMC_PEBBLE_MSG_GOTSTORAGESTRING = 19,
-  ELMC_PEBBLE_MSG_FRAMETICK = 20,
-  ELMC_PEBBLE_MSG_UPPRESSED = 21,
-  ELMC_PEBBLE_MSG_UPRELEASED = 22,
-  ELMC_PEBBLE_MSG_ACCELDATA = 23,
-  ELMC_PEBBLE_MSG_GOTWATCHMODEL = 24,
-  ELMC_PEBBLE_MSG_GOTWATCHCOLOR = 25,
-  ELMC_PEBBLE_MSG_GOTFIRMWAREVERSION = 26,
-  ELMC_PEBBLE_MSG_GOTBATTERYLEVEL = 27,
-  ELMC_PEBBLE_MSG_GOTCONNECTIONSTATUS = 28,
-  ELMC_PEBBLE_MSG_GOTHEALTHVALUE = 29,
-  ELMC_PEBBLE_MSG_GOTHEALTHSUMTODAY = 30,
-  ELMC_PEBBLE_MSG_GOTHEALTHSUM = 31,
-  ELMC_PEBBLE_MSG_GOTHEALTHACCESSIBLE = 32,
-  ELMC_PEBBLE_MSG_HEALTHEVENT = 33,
+  ELMC_PEBBLE_MSG_DAYCHANGED = 13,
+  ELMC_PEBBLE_MSG_MONTHCHANGED = 14,
+  ELMC_PEBBLE_MSG_YEARCHANGED = 15,
+  ELMC_PEBBLE_MSG_GOTCURRENTDATETIME = 16,
+  ELMC_PEBBLE_MSG_GOTTIME = 17,
+  ELMC_PEBBLE_MSG_GOTCLOCKSTYLE24H = 18,
+  ELMC_PEBBLE_MSG_GOTTIMEZONEISSET = 19,
+  ELMC_PEBBLE_MSG_GOTTIMEZONE = 20,
+  ELMC_PEBBLE_MSG_GOTSTOREDINT = 21,
+  ELMC_PEBBLE_MSG_GOTSTORAGESTRING = 22,
+  ELMC_PEBBLE_MSG_FRAMETICK = 23,
+  ELMC_PEBBLE_MSG_UPPRESSED = 24,
+  ELMC_PEBBLE_MSG_UPRELEASED = 25,
+  ELMC_PEBBLE_MSG_ACCELDATA = 26,
+  ELMC_PEBBLE_MSG_GOTWATCHMODEL = 27,
+  ELMC_PEBBLE_MSG_GOTWATCHCOLOR = 28,
+  ELMC_PEBBLE_MSG_GOTFIRMWAREVERSION = 29,
+  ELMC_PEBBLE_MSG_GOTBATTERYLEVEL = 30,
+  ELMC_PEBBLE_MSG_GOTCONNECTIONSTATUS = 31,
+  ELMC_PEBBLE_MSG_GOTHEALTHVALUE = 32,
+  ELMC_PEBBLE_MSG_GOTHEALTHSUMTODAY = 33,
+  ELMC_PEBBLE_MSG_GOTHEALTHSUM = 34,
+  ELMC_PEBBLE_MSG_GOTHEALTHACCESSIBLE = 35,
+  ELMC_PEBBLE_MSG_HEALTHEVENT = 36,
+  ELMC_PEBBLE_MSG_APPFOCUSCHANGED = 37,
+  ELMC_PEBBLE_MSG_COMPASSCHANGED = 38,
+  ELMC_PEBBLE_MSG_GOTCOMPASSHEADING = 39,
+  ELMC_PEBBLE_MSG_DICTATIONSTATUS = 40,
+  ELMC_PEBBLE_MSG_DICTATIONRESULT = 41,
 } ElmcPebbleMsgTag;
 
 #define ELMC_PEBBLE_HAS_MSG_TICK 1
@@ -169,6 +205,9 @@ typedef enum {
 #define ELMC_PEBBLE_HAS_MSG_CONNECTIONCHANGED 1
 #define ELMC_PEBBLE_HAS_MSG_HOURCHANGED 1
 #define ELMC_PEBBLE_HAS_MSG_MINUTECHANGED 1
+#define ELMC_PEBBLE_HAS_MSG_DAYCHANGED 1
+#define ELMC_PEBBLE_HAS_MSG_MONTHCHANGED 1
+#define ELMC_PEBBLE_HAS_MSG_YEARCHANGED 1
 #define ELMC_PEBBLE_HAS_MSG_GOTCURRENTDATETIME 1
 #define ELMC_PEBBLE_HAS_MSG_GOTTIME 1
 #define ELMC_PEBBLE_HAS_MSG_GOTCLOCKSTYLE24H 1
@@ -190,6 +229,11 @@ typedef enum {
 #define ELMC_PEBBLE_HAS_MSG_GOTHEALTHSUM 1
 #define ELMC_PEBBLE_HAS_MSG_GOTHEALTHACCESSIBLE 1
 #define ELMC_PEBBLE_HAS_MSG_HEALTHEVENT 1
+#define ELMC_PEBBLE_HAS_MSG_APPFOCUSCHANGED 1
+#define ELMC_PEBBLE_HAS_MSG_COMPASSCHANGED 1
+#define ELMC_PEBBLE_HAS_MSG_GOTCOMPASSHEADING 1
+#define ELMC_PEBBLE_HAS_MSG_DICTATIONSTATUS 1
+#define ELMC_PEBBLE_HAS_MSG_DICTATIONRESULT 1
 
 typedef enum {
   ELMC_PEBBLE_BUTTON_BACK = 0,
@@ -268,7 +312,10 @@ typedef enum {
   ELMC_PEBBLE_DRAW_ROTATED_BITMAP = 26,
   ELMC_PEBBLE_DRAW_TEXT_INT_WITH_FONT = 27,
   ELMC_PEBBLE_DRAW_TEXT_LABEL_WITH_FONT = 28,
-  ELMC_PEBBLE_DRAW_TEXT = 29
+  ELMC_PEBBLE_DRAW_TEXT = 29,
+  ELMC_PEBBLE_DRAW_VECTOR_AT = 30,
+  ELMC_PEBBLE_DRAW_VECTOR_SEQUENCE_AT = 31,
+  ELMC_PEBBLE_DRAW_BITMAP_SEQUENCE_AT = 32
 } ElmcPebbleDrawKind;
 
 
@@ -305,7 +352,15 @@ typedef enum {
   ELMC_PEBBLE_CMD_HEALTH_VALUE = 29,
   ELMC_PEBBLE_CMD_HEALTH_SUM_TODAY = 30,
   ELMC_PEBBLE_CMD_HEALTH_SUM = 31,
-  ELMC_PEBBLE_CMD_HEALTH_ACCESSIBLE = 32
+  ELMC_PEBBLE_CMD_HEALTH_ACCESSIBLE = 32,
+  ELMC_PEBBLE_CMD_VIBES_CUSTOM_PATTERN = 33,
+  ELMC_PEBBLE_CMD_DATA_LOG_BYTES = 34,
+  ELMC_PEBBLE_CMD_DATA_LOG_INT32 = 35,
+  ELMC_PEBBLE_CMD_COMPASS_PEEK = 36,
+  ELMC_PEBBLE_CMD_DICTATION_START = 37,
+  ELMC_PEBBLE_CMD_DICTATION_STOP = 38,
+  ELMC_PEBBLE_CMD_UNOBSTRUCTED_BOUNDS_PEEK = 39,
+  ELMC_PEBBLE_CMD_HEALTH_SUPPORTED = 40
 } ElmcPebbleCommandKind;
 
 
@@ -316,10 +371,6 @@ typedef enum {
 } ElmcPebbleUiNodeKind;
 
 
-#define ELMC_PEBBLE_MSG_CURRENT_TIME_TARGET 14
-#define ELMC_PEBBLE_MSG_CURRENT_DATE_TIME_TARGET 13
-#define ELMC_PEBBLE_MSG_BATTERY_LEVEL_TARGET 27
-#define ELMC_PEBBLE_MSG_CONNECTION_STATUS_TARGET 28
 #define ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET -1
 #define ELMC_PEBBLE_WATCH_MODEL_UNKNOWNMODEL 1
 #define ELMC_PEBBLE_WATCH_MODEL_PEBBLEORIGINAL 2
@@ -389,7 +440,21 @@ typedef enum {
 #define ELMC_PEBBLE_SUB_FRAME (1 << 13)
 #define ELMC_PEBBLE_SUB_BUTTON_RAW (1 << 14)
 #define ELMC_PEBBLE_SUB_ACCEL_DATA (1 << 15)
+#define ELMC_PEBBLE_SUB_DAY (1 << 16)
+#define ELMC_PEBBLE_SUB_MONTH (1 << 17)
+#define ELMC_PEBBLE_SUB_YEAR (1 << 18)
+#define ELMC_PEBBLE_SUB_APP_FOCUS (1 << 19)
+#define ELMC_PEBBLE_SUB_COMPASS (1 << 20)
+#define ELMC_PEBBLE_SUB_DICTATION (1 << 21)
+#define ELMC_PEBBLE_SUB_UNOBSTRUCTED_AREA (1 << 22)
 #define ELMC_PEBBLE_SUB_HEALTH (1LL << 31)
+
+#ifndef ELMC_PEBBLE_ACCEL_SAMPLES_PER_UPDATE
+#define ELMC_PEBBLE_ACCEL_SAMPLES_PER_UPDATE 2
+#endif
+#ifndef ELMC_PEBBLE_ACCEL_SAMPLING_HZ
+#define ELMC_PEBBLE_ACCEL_SAMPLING_HZ 100
+#endif
 
 int elmc_pebble_init(ElmcPebbleApp *app, ElmcValue *flags);
 int elmc_pebble_init_with_mode(ElmcPebbleApp *app, ElmcValue *flags, int run_mode);
@@ -422,17 +487,30 @@ int elmc_pebble_dispatch_random_int(ElmcPebbleApp *app, int32_t value);
 int elmc_pebble_dispatch_battery(ElmcPebbleApp *app, int level);
 int elmc_pebble_dispatch_connection(ElmcPebbleApp *app, int connected);
 int elmc_pebble_dispatch_health(ElmcPebbleApp *app, int event);
+int elmc_pebble_dispatch_app_focus(ElmcPebbleApp *app, int in_focus);
+int elmc_pebble_dispatch_compass_heading(ElmcPebbleApp *app, double degrees, int is_valid);
+int elmc_pebble_dispatch_dictation_status(ElmcPebbleApp *app, int status);
+int elmc_pebble_dispatch_dictation_result(ElmcPebbleApp *app, int is_ok, int error_code, const char *text);
+int elmc_pebble_dispatch_unobstructed_will_change(ElmcPebbleApp *app, int x, int y, int w, int h);
+int elmc_pebble_dispatch_unobstructed_changing(ElmcPebbleApp *app, int progress);
+int elmc_pebble_dispatch_unobstructed_did_change(ElmcPebbleApp *app);
 int elmc_pebble_dispatch_frame(ElmcPebbleApp *app, int64_t dt_ms, int64_t elapsed_ms, int64_t frame);
 int elmc_pebble_dispatch_hour(ElmcPebbleApp *app, int hour);
 int elmc_pebble_dispatch_minute(ElmcPebbleApp *app, int minute);
+int elmc_pebble_dispatch_day(ElmcPebbleApp *app, int day);
+int elmc_pebble_dispatch_month(ElmcPebbleApp *app, int month);
+int elmc_pebble_dispatch_year(ElmcPebbleApp *app, int year);
 int elmc_pebble_take_cmd(ElmcPebbleApp *app, ElmcPebbleCmd *out_cmd);
 int elmc_pebble_view_command(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmd);
 int elmc_pebble_view_commands(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds);
 int elmc_pebble_view_commands_from(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip);
 int elmc_pebble_scene_commands_from(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip);
+void elmc_pebble_scene_reset_draw_cursor(ElmcPebbleApp *app);
+int elmc_pebble_scene_commands_next(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds);
 int elmc_pebble_ensure_scene(ElmcPebbleApp *app);
 int elmc_pebble_scene_command_count(ElmcPebbleApp *app);
 int elmc_pebble_scene_dirty_rect(ElmcPebbleApp *app, ElmcPebbleRect *out_rect, int *out_full);
+void elmc_pebble_invalidate_scene(ElmcPebbleApp *app);
 void elmc_pebble_clear_view_cache(ElmcPebbleApp *app);
 int elmc_pebble_tick(ElmcPebbleApp *app);
 int64_t elmc_pebble_active_subscriptions(ElmcPebbleApp *app);

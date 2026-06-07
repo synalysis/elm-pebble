@@ -1,5 +1,6 @@
 #include <pebble.h>
 #include <stdio.h>
+#include <string.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -38,7 +39,15 @@
 static uint32_t s_agent_probe_tags[ELMC_AGENT_PROBE_SESSION_LIMIT];
 static int s_agent_probe_session_count = 0;
 static bool agent_init_probe_enabled(uint32_t marker) {
-  return marker == 0xED993051 ||
+  return marker == 0xED990001 ||
+         marker == 0xED990002 ||
+         marker == 0xED990003 ||
+         marker == 0xED990A01 ||
+         marker == 0xED991001 ||
+         marker == 0xED991002 ||
+         marker == 0xED991003 ||
+         marker == 0xED998100 ||
+         marker == 0xED993051 ||
          marker == 0xED993052 ||
          marker == 0xED993152 ||
          marker == 0xED993020 ||
@@ -221,6 +230,17 @@ static void emulator_storage_snapshot_callback(void *data) {
 #define ELMC_PEBBLE_FEATURE_DRAW_TEXT 1
 #endif
 
+#if ELMC_PEBBLE_FEATURE_DRAW_STROKE_COLOR || ELMC_PEBBLE_FEATURE_DRAW_FILL_COLOR || \
+    ELMC_PEBBLE_FEATURE_DRAW_TEXT_COLOR || ELMC_PEBBLE_FEATURE_DRAW_CLEAR || \
+    ELMC_PEBBLE_FEATURE_DRAW_LINE || ELMC_PEBBLE_FEATURE_DRAW_RECT || \
+    ELMC_PEBBLE_FEATURE_DRAW_FILL_RECT || ELMC_PEBBLE_FEATURE_DRAW_ROUND_RECT || \
+    ELMC_PEBBLE_FEATURE_DRAW_CIRCLE || ELMC_PEBBLE_FEATURE_DRAW_FILL_CIRCLE || \
+    ELMC_PEBBLE_FEATURE_DRAW_PIXEL
+#define ELMC_PEBBLE_NEEDS_COLOR_FROM_CODE 1
+#else
+#define ELMC_PEBBLE_NEEDS_COLOR_FROM_CODE 0
+#endif
+
 #ifndef ELMC_PEBBLE_APP_MESSAGE_INBOX_SIZE
 #define ELMC_PEBBLE_APP_MESSAGE_INBOX_SIZE 128
 #endif
@@ -245,6 +265,15 @@ static void emulator_storage_snapshot_callback(void *data) {
 static Window *s_main_window;
 static Layer *s_draw_layer;
 static bool s_render_pending = false;
+#ifdef ELMC_WATCHFACE_MODE
+#define ELMC_DEFERRED_INIT_MAX_ATTEMPTS 40
+#define ELMC_DEFERRED_INIT_RETRY_MS 50
+static int s_elm_init_attempts = 0;
+#endif
+static AppTimer *s_render_coalesce_timer = NULL;
+#if ELMC_PEBBLE_SCENE_CACHE_ENABLED
+static AppTimer *s_scene_prep_timer = NULL;
+#endif
 static GFont s_font;
 static ElmcPebbleApp s_elm_app;
 static AppTimer *s_timer = NULL;
@@ -267,7 +296,31 @@ enum {
 
 enum {
   ELMC_INBOX_MAX_TUPLES = 16,
+  ELMC_INBOX_STRING_MAX = 128,
+  ELMC_INBOX_TUPLE_WIRE_BYTES = 12,
+  ELMC_INBOX_CSTRING_NONE = 0,
+  ELMC_INBOX_CSTRING_INBOX = 1,
 };
+
+typedef struct {
+  uint32_t key;
+  uint8_t type;
+  uint16_t length;
+  int32_t int_value;
+  uint8_t cstring_kind;
+} ElmcInboxTupleSnapshot;
+
+#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
+static ElmcInboxTupleSnapshot s_inbox_snapshots[ELMC_INBOX_MAX_TUPLES];
+static int s_inbox_snapshot_count = 0;
+static char s_inbox_cstring_snapshot[ELMC_INBOX_STRING_MAX];
+static uint8_t s_inbox_tuple_wire[ELMC_INBOX_MAX_TUPLES][ELMC_INBOX_TUPLE_WIRE_BYTES];
+static uint8_t s_inbox_cstring_tuple_wire[ELMC_INBOX_STRING_MAX + 8];
+#endif
+#if ELMC_PEBBLE_FEATURE_INBOX_EVENTS
+static ElmcInboxTupleSnapshot s_companion_pending[ELMC_INBOX_MAX_TUPLES];
+static uint8_t s_companion_pending_wire[ELMC_INBOX_MAX_TUPLES][ELMC_INBOX_TUPLE_WIRE_BYTES];
+#endif
 
 enum {
   ELMC_DEBUG_STORAGE_OP_WRITE = 1,
@@ -291,8 +344,33 @@ static int s_render_sequence = 0;
 static int s_last_logged_draw_sequence = 0;
 #if ELMC_PEBBLE_FEATURE_DRAW_VECTOR_SEQUENCE_AT
 static int64_t s_vector_sequence_anim_start_ms = 0;
-static int s_vector_sequence_anim_origin_seq = 0;
+static uint32_t s_vector_sequence_anim_origin_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
 static AppTimer *s_vector_sequence_timer = NULL;
+static uint32_t s_cached_sequence_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
+static uint32_t s_failed_vector_sequence_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
+static uint32_t s_cached_vector_sequence_duration_ms = 0;
+static GDrawCommandSequence *s_cached_sequence = NULL;
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_BITMAP_SEQUENCE_AT
+static int64_t s_bitmap_sequence_anim_start_ms = 0;
+static AppTimer *s_bitmap_sequence_timer = NULL;
+static uint32_t s_cached_bitmap_sequence_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
+static uint32_t s_failed_bitmap_sequence_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
+static GBitmapSequence *s_cached_bitmap_sequence = NULL;
+static GBitmap *s_bitmap_sequence_frame = NULL;
+static uint32_t s_cached_bitmap_sequence_duration_ms = 0;
+static uint32_t s_bitmap_sequence_playback_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
+static int64_t s_bitmap_sequence_next_advance_ms = INT64_MAX;
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_VECTOR_AT
+#define VECTOR_IMAGE_CACHE_CAPACITY 8
+
+typedef struct {
+  uint32_t resource_id;
+  GDrawCommandImage *image;
+} VectorImageCacheEntry;
+
+static VectorImageCacheEntry s_vector_image_cache[VECTOR_IMAGE_CACHE_CAPACITY];
 #endif
 #if ELMC_PEBBLE_FEATURE_CMD_BACKLIGHT
 static bool s_forced_backlight = false;
@@ -340,9 +418,36 @@ static int64_t monotonic_ms(void) {
 }
 
 static void render_model(void);
+#if ELMC_PEBBLE_SCENE_CACHE_ENABLED
+static void scene_prep_timer_callback(void *data);
+static void schedule_scene_prep(void);
+#endif
+#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
+static void schedule_render_model(void);
+static void render_coalesce_callback(void *data);
+#endif
 static void apply_pending_cmd(void);
 static void startup_cmd_callback(void *data);
 static ElmcValue *build_launch_context(AppLaunchReason launch);
+static GRect compile_display_bounds(void);
+static void complete_elm_init(void);
+#ifdef ELMC_WATCHFACE_MODE
+static bool display_bounds_ready(void);
+static void ensure_draw_layer_size(void);
+static void deferred_elm_init_callback(void *data);
+static void schedule_elm_init(void);
+#endif
+static GRect display_bounds(void);
+#if ELMC_PEBBLE_FEATURE_CMD_GET_CURRENT_DATE_TIME
+static bool deliver_current_date_time(int msg_tag, const char *reason);
+static int s_last_current_date_time_msg_tag = 0;
+#endif
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+static void display_bounds_diag_callback(void *data);
+#endif
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS && ELMC_PEBBLE_FEATURE_CMD_GET_CURRENT_DATE_TIME
+static void deferred_datetime_callback(void *data);
+#endif
 #if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND
 static bool send_companion_request(int request_tag, int request_value);
 static void flush_pending_companion_request(void);
@@ -374,6 +479,7 @@ static TimeUnits subscribed_time_units(void) {
 }
 #endif
 
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT
 static GFont system_font_for_height(int64_t requested_height) {
   GFont font = NULL;
   if (requested_height <= 18) font = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
@@ -385,6 +491,7 @@ static GFont system_font_for_height(int64_t requested_height) {
   if (!font) font = fonts_get_system_font(FONT_KEY_GOTHIC_24);
   return font;
 }
+#endif
 
 #if ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
 static GFont font_from_id(int64_t font_id, bool *should_unload) {
@@ -398,6 +505,7 @@ static GFont font_from_id(int64_t font_id, bool *should_unload) {
 }
 #endif
 
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT
 static GFont font_from_id_for_height(int64_t font_id, int64_t requested_height, bool *should_unload) {
   uint32_t resource_id = elm_pebble_font_resource_id(font_id);
 
@@ -409,6 +517,7 @@ static GFont font_from_id_for_height(int64_t font_id, int64_t requested_height, 
   if (should_unload) *should_unload = true;
   return fonts_load_custom_font(resource_get_handle(resource_id));
 }
+#endif
 #if ELMC_PEBBLE_FEATURE_CMD_GET_WATCH_MODEL
 static int64_t watch_model_to_elm_tag(WatchInfoModel model);
 #endif
@@ -439,10 +548,14 @@ static HealthMetric health_metric_from_code(int64_t value) {
 }
 #endif
 
+#if ELMC_PEBBLE_FEATURE_CMD_HEALTH_SUM || ELMC_PEBBLE_FEATURE_CMD_HEALTH_ACCESSIBLE
+#ifdef PBL_HEALTH
 static time_t health_time_from_seconds(int64_t seconds) {
   if (seconds < 0) return (time_t)0;
   return (time_t)seconds;
 }
+#endif
+#endif
 #endif
 
 #if ELMC_PEBBLE_FEATURE_COMPASS_EVENTS || ELMC_PEBBLE_FEATURE_CMD_COMPASS_PEEK
@@ -635,6 +748,50 @@ static void frame_timer_callback(void *data) {
 }
 #endif
 
+#if ELMC_PEBBLE_FEATURE_CMD_GET_CURRENT_DATE_TIME
+static bool deliver_current_date_time(int msg_tag, const char *reason) {
+  time_t now = time(NULL);
+  struct tm *local = localtime(&now);
+  if (!local) {
+    APP_LOG(APP_LOG_LEVEL_WARNING, "current_date_time unavailable (%s)", reason ? reason : "unknown");
+    return false;
+  }
+
+  int64_t day_of_week = local->tm_wday == 0 ? 6 : local->tm_wday - 1;
+  const char *field_names[] = {
+      "year", "month", "day", "dayOfWeek", "hour", "minute", "second", "utcOffsetMinutes"};
+  int64_t field_values[] = {
+      local->tm_year + 1900,
+      local->tm_mon + 1,
+      local->tm_mday,
+      day_of_week,
+      local->tm_hour,
+      local->tm_min,
+      local->tm_sec,
+      0};
+  int rc = elmc_pebble_dispatch_tag_record_int_fields(
+      &s_elm_app,
+      msg_tag,
+      8,
+      field_names,
+      field_values);
+  APP_LOG(APP_LOG_LEVEL_INFO, "current_date_time (%s) hour=%d minute=%d rc=%d",
+          reason ? reason : "unknown", local->tm_hour, local->tm_min, rc);
+  if (rc == 0) {
+    apply_pending_cmd();
+    render_model();
+  }
+  return rc == 0;
+}
+
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+static void deferred_datetime_callback(void *data) {
+  (void)data;
+  (void)deliver_current_date_time(s_last_current_date_time_msg_tag, "deferred");
+}
+#endif
+#endif
+
 static void apply_pending_cmd(void) {
   ELMC_PEBBLE_TRACE_ENTER("apply_pending_cmd");
   for (int cmd_guard = 0; cmd_guard < 32; cmd_guard++) {
@@ -670,6 +827,7 @@ static void apply_pending_cmd(void) {
       status_t status = persist_write_int(key, value);
       ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "cmd storage_write key=%lu value=%ld status=%ld",
               (unsigned long)key, (long)value, (long)status);
+      (void)status;
       break;
     }
 #endif
@@ -679,6 +837,7 @@ static void apply_pending_cmd(void) {
       int64_t target = cmd.p1;
       int32_t value = persist_read_int(key);
       int rc = target > 0 ? elmc_pebble_dispatch_tag_value(&s_elm_app, target, value) : -6;
+      (void)rc;
       ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "cmd storage_read key=%lu value=%ld rc=%d",
               (unsigned long)key, (long)value, rc);
       break;
@@ -690,6 +849,7 @@ static void apply_pending_cmd(void) {
       status_t status = persist_write_string(key, cmd.text);
       ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "cmd storage_write_string key=%lu value=%s status=%ld",
               (unsigned long)key, cmd.text, (long)status);
+      (void)status;
       break;
     }
 #endif
@@ -702,6 +862,7 @@ static void apply_pending_cmd(void) {
         persist_read_string(key, value, sizeof(value));
       }
       int rc = target > 0 ? elmc_pebble_dispatch_tag_string(&s_elm_app, target, value) : -6;
+      (void)rc;
       ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "cmd storage_read_string key=%lu value=%s rc=%d",
               (unsigned long)key, value, rc);
       break;
@@ -729,6 +890,7 @@ static void apply_pending_cmd(void) {
       status_t status = persist_delete(key);
       ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "cmd storage_delete key=%lu status=%ld",
               (unsigned long)key, (long)status);
+      (void)status;
       break;
     }
 #endif
@@ -770,66 +932,27 @@ static void apply_pending_cmd(void) {
     case ELMC_PEBBLE_CMD_GET_CURRENT_TIME_STRING: {
       char time_buffer[16] = {0};
       clock_copy_time_string(time_buffer, sizeof(time_buffer));
-#if ELMC_PEBBLE_FEATURE_MSG_CURRENT_TIME
-      int rc =
-          elmc_pebble_dispatch_tag_string(&s_elm_app, ELMC_PEBBLE_MSG_CURRENT_TIME_TARGET, time_buffer);
-      APP_LOG(APP_LOG_LEVEL_INFO, "cmd current_time=%s rc=%d", time_buffer, rc);
+      int rc = elmc_pebble_dispatch_tag_string(&s_elm_app, (int)cmd.p0, time_buffer);
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd current_time=%s tag=%ld rc=%d", time_buffer, (long)cmd.p0, rc);
       if (rc == 0) {
         apply_pending_cmd();
         render_model();
       }
-#else
-      APP_LOG(APP_LOG_LEVEL_INFO, "cmd current_time ignored (no msg tag)");
-#endif
       break;
     }
 #endif
 #if ELMC_PEBBLE_FEATURE_CMD_GET_CURRENT_DATE_TIME
     case ELMC_PEBBLE_CMD_GET_CURRENT_DATE_TIME: {
-      time_t now = time(NULL);
-      struct tm *local = localtime(&now);
-      if (!local || ELMC_PEBBLE_MSG_CURRENT_DATE_TIME_TARGET <= 0) {
-        APP_LOG(APP_LOG_LEVEL_WARNING, "cmd current_date_time unavailable");
-        break;
-      }
-
-      int64_t day_of_week = local->tm_wday == 0 ? 6 : local->tm_wday - 1;
-      const char *field_names[] = {
-          "year", "month", "day", "dayOfWeek", "hour", "minute", "second", "utcOffsetMinutes"};
-      int64_t field_values[] = {
-          local->tm_year + 1900,
-          local->tm_mon + 1,
-          local->tm_mday,
-          day_of_week,
-          local->tm_hour,
-          local->tm_min,
-          local->tm_sec,
-          0};
-      int rc = elmc_pebble_dispatch_tag_record_int_fields(
-          &s_elm_app,
-          ELMC_PEBBLE_MSG_CURRENT_DATE_TIME_TARGET,
-          8,
-          field_names,
-          field_values);
-      APP_LOG(APP_LOG_LEVEL_INFO, "cmd current_date_time rc=%d", rc);
-      if (rc == 0) {
-        apply_pending_cmd();
-        render_model();
-      }
+      s_last_current_date_time_msg_tag = (int)cmd.p0;
+      (void)deliver_current_date_time((int)cmd.p0, "cmd");
       break;
     }
 #endif
 #if ELMC_PEBBLE_FEATURE_CMD_GET_BATTERY_LEVEL
     case ELMC_PEBBLE_CMD_GET_BATTERY_LEVEL: {
       BatteryChargeState state = battery_state_service_peek();
-      int rc = -6;
-      if (ELMC_PEBBLE_MSG_BATTERY_LEVEL_TARGET > 0) {
-        rc = elmc_pebble_dispatch_tag_value(
-            &s_elm_app,
-            ELMC_PEBBLE_MSG_BATTERY_LEVEL_TARGET,
-            state.charge_percent);
-      }
-      APP_LOG(APP_LOG_LEVEL_INFO, "cmd battery_level=%d rc=%d", state.charge_percent, rc);
+      int rc = elmc_pebble_dispatch_tag_value(&s_elm_app, (int)cmd.p0, state.charge_percent);
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd battery_level=%d tag=%ld rc=%d", state.charge_percent, (long)cmd.p0, rc);
       if (rc == 0) {
         apply_pending_cmd();
         render_model();
@@ -840,14 +963,23 @@ static void apply_pending_cmd(void) {
 #if ELMC_PEBBLE_FEATURE_CMD_GET_CONNECTION_STATUS
     case ELMC_PEBBLE_CMD_GET_CONNECTION_STATUS: {
       bool connected = connection_service_peek_pebble_app_connection();
-      int rc = -6;
-      if (ELMC_PEBBLE_MSG_CONNECTION_STATUS_TARGET > 0) {
-        rc = elmc_pebble_dispatch_tag_bool(
-            &s_elm_app,
-            ELMC_PEBBLE_MSG_CONNECTION_STATUS_TARGET,
-            connected);
+      int rc = elmc_pebble_dispatch_tag_bool(&s_elm_app, (int)cmd.p0, connected);
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd connection_status=%d tag=%ld rc=%d", connected ? 1 : 0, (long)cmd.p0, rc);
+      if (rc == 0) {
+        apply_pending_cmd();
+        render_model();
       }
-      APP_LOG(APP_LOG_LEVEL_INFO, "cmd connection_status=%d rc=%d", connected ? 1 : 0, rc);
+      break;
+    }
+#endif
+#if ELMC_PEBBLE_FEATURE_CMD_HEALTH_SUPPORTED
+    case ELMC_PEBBLE_CMD_HEALTH_SUPPORTED: {
+      bool supported = false;
+#ifdef PBL_HEALTH
+      supported = true;
+#endif
+      int rc = cmd.p0 > 0 ? elmc_pebble_dispatch_tag_bool(&s_elm_app, cmd.p0, supported) : -6;
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd health_supported=%d rc=%d", supported ? 1 : 0, rc);
       if (rc == 0) {
         apply_pending_cmd();
         render_model();
@@ -928,39 +1060,74 @@ static void apply_pending_cmd(void) {
 #endif
 #if ELMC_PEBBLE_FEATURE_CMD_GET_CLOCK_STYLE_24H
     case ELMC_PEBBLE_CMD_GET_CLOCK_STYLE_24H: {
-      APP_LOG(APP_LOG_LEVEL_INFO, "cmd get_clock_style_24h ignored (no msg tag)");
+      bool style24h = clock_is_24h_style();
+      int rc = elmc_pebble_dispatch_tag_bool(&s_elm_app, (int)cmd.p0, style24h);
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd clock_style_24h=%d tag=%ld rc=%d", style24h ? 1 : 0, (long)cmd.p0, rc);
+      if (rc == 0) {
+        apply_pending_cmd();
+        render_model();
+      }
       break;
     }
 #endif
 #if ELMC_PEBBLE_FEATURE_CMD_GET_TIMEZONE_IS_SET
     case ELMC_PEBBLE_CMD_GET_TIMEZONE_IS_SET: {
-      APP_LOG(APP_LOG_LEVEL_INFO, "cmd get_timezone_is_set ignored (no msg tag)");
+      bool timezone_is_set = time(NULL) != (time_t)-1;
+      int rc = elmc_pebble_dispatch_tag_bool(&s_elm_app, (int)cmd.p0, timezone_is_set);
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd timezone_is_set=%d tag=%ld rc=%d", timezone_is_set ? 1 : 0, (long)cmd.p0, rc);
+      if (rc == 0) {
+        apply_pending_cmd();
+        render_model();
+      }
       break;
     }
 #endif
 #if ELMC_PEBBLE_FEATURE_CMD_GET_TIMEZONE
     case ELMC_PEBBLE_CMD_GET_TIMEZONE: {
-      APP_LOG(APP_LOG_LEVEL_INFO, "cmd get_timezone ignored (no msg tag)");
+      char timezone_buffer[64] = {0};
+      int rc = elmc_pebble_dispatch_tag_string(&s_elm_app, (int)cmd.p0, timezone_buffer);
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd timezone tag=%ld rc=%d", (long)cmd.p0, rc);
+      if (rc == 0) {
+        apply_pending_cmd();
+        render_model();
+      }
       break;
     }
 #endif
 #if ELMC_PEBBLE_FEATURE_CMD_GET_WATCH_MODEL
     case ELMC_PEBBLE_CMD_GET_WATCH_MODEL: {
       int64_t model_tag = watch_model_to_elm_tag(watch_info_get_model());
-      APP_LOG(APP_LOG_LEVEL_INFO, "cmd watch_model_tag=%ld ignored (no msg tag)", (long)model_tag);
+      int rc = elmc_pebble_dispatch_tag_value(&s_elm_app, (int)cmd.p0, model_tag);
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd watch_model_tag=%ld tag=%ld rc=%d", (long)model_tag, (long)cmd.p0, rc);
+      if (rc == 0) {
+        apply_pending_cmd();
+        render_model();
+      }
       break;
     }
 #endif
 #if ELMC_PEBBLE_FEATURE_CMD_GET_WATCH_COLOR
     case ELMC_PEBBLE_CMD_GET_WATCH_COLOR: {
       int64_t color_tag = watch_color_to_elm_tag(watch_info_get_color());
-      APP_LOG(APP_LOG_LEVEL_INFO, "cmd watch_color_tag=%ld ignored (no msg tag)", (long)color_tag);
+      int rc = elmc_pebble_dispatch_tag_value(&s_elm_app, (int)cmd.p0, color_tag);
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd watch_color_tag=%ld tag=%ld rc=%d", (long)color_tag, (long)cmd.p0, rc);
+      if (rc == 0) {
+        apply_pending_cmd();
+        render_model();
+      }
       break;
     }
 #endif
 #if ELMC_PEBBLE_FEATURE_CMD_GET_FIRMWARE_VERSION
     case ELMC_PEBBLE_CMD_GET_FIRMWARE_VERSION: {
-      APP_LOG(APP_LOG_LEVEL_INFO, "cmd get_firmware_version ignored (no msg tag)");
+      char firmware_buffer[32] = {0};
+      watch_info_get_firmware_version(false, firmware_buffer, sizeof(firmware_buffer));
+      int rc = elmc_pebble_dispatch_tag_string(&s_elm_app, (int)cmd.p0, firmware_buffer);
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd firmware=%s tag=%ld rc=%d", firmware_buffer, (long)cmd.p0, rc);
+      if (rc == 0) {
+        apply_pending_cmd();
+        render_model();
+      }
       break;
     }
 #endif
@@ -1030,9 +1197,18 @@ static void apply_pending_cmd(void) {
 #if ELMC_PEBBLE_FEATURE_CMD_VIBES_CUSTOM_PATTERN
     case ELMC_PEBBLE_CMD_VIBES_CUSTOM_PATTERN: {
       int32_t segments[64];
+      uint32_t durations[64];
       int count = parse_int_list(cmd.text, segments, 64);
       if (count > 0) {
-        vibes_enqueue_custom_pattern(segments, count);
+        for (int i = 0; i < count; i++) {
+          int32_t value = segments[i];
+          durations[i] = value < 0 ? 0U : (uint32_t)value;
+        }
+        VibePattern pattern = {
+          .durations = durations,
+          .num_segments = (uint32_t)count,
+        };
+        vibes_enqueue_custom_pattern(pattern);
       }
       APP_LOG(APP_LOG_LEVEL_INFO, "cmd vibes_custom_pattern count=%d", count);
       break;
@@ -1081,7 +1257,7 @@ static void apply_pending_cmd(void) {
 #ifdef PBL_COMPASS
       CompassHeadingData heading;
       CompassStatus status = compass_service_peek(&heading);
-      if (status == CompassStatusAvailable) {
+      if (status == CompassStatusCalibrated || status == CompassStatusCalibrating) {
         degrees = (double)heading.true_heading * 360.0 / TRIG_MAX_ANGLE;
         is_valid = true;
       } else if (status == CompassStatusDataInvalid) {
@@ -1181,6 +1357,7 @@ static void startup_cmd_callback(void *data) {
   ELMC_PEBBLE_TRACE_EXIT("startup_cmd_callback");
 }
 
+#if ELMC_PEBBLE_NEEDS_COLOR_FROM_CODE
 static GColor color_from_code(int64_t value) {
   int code = (int)(value & 0xff);
   int red = ((code >> 4) & 0x3) * 85;
@@ -1193,6 +1370,7 @@ static GColor color_from_code(int64_t value) {
   return luminance >= 128 ? GColorWhite : GColorBlack;
 #endif
 }
+#endif
 
 #if ELMC_PEBBLE_FEATURE_DRAW_TEXT
 static GTextAlignment text_alignment_from_options(int32_t options) {
@@ -1261,6 +1439,10 @@ static void apply_draw_style(GContext *ctx, const DrawStyleState *style) {
   graphics_context_set_stroke_width(ctx, style->stroke_width > 0 ? style->stroke_width : 1);
 }
 
+#if ELMC_PEBBLE_FEATURE_DRAW_FILL_RECT || ELMC_PEBBLE_FEATURE_DRAW_RECT || \
+    ELMC_PEBBLE_FEATURE_DRAW_ROUND_RECT || ELMC_PEBBLE_FEATURE_DRAW_ARC || \
+    ELMC_PEBBLE_FEATURE_DRAW_FILL_RADIAL || ELMC_PEBBLE_FEATURE_DRAW_TEXT || \
+    ELMC_PEBBLE_FEATURE_DRAW_BITMAP_IN_RECT
 static bool rect_params_are_valid(int64_t w, int64_t h) {
   return w > 0 && h > 0;
 }
@@ -1268,6 +1450,7 @@ static bool rect_params_are_valid(int64_t w, int64_t h) {
 static GRect rect_from_params(int64_t x, int64_t y, int64_t w, int64_t h) {
   return GRect((int16_t)x, (int16_t)y, (int16_t)w, (int16_t)h);
 }
+#endif
 
 #if ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
 static GRect text_point_rect(GRect bounds, int64_t x, int64_t y) {
@@ -1340,6 +1523,16 @@ static bool draw_cmd_bounds(const ElmcPebbleDrawCmd *cmd, GRect *out_rect) {
   case ELMC_PEBBLE_DRAW_BITMAP_IN_RECT:
     *out_rect = GRect((int16_t)cmd->p1, (int16_t)cmd->p2, (int16_t)cmd->p3, (int16_t)cmd->p4);
     return !rect_is_empty(*out_rect);
+#if ELMC_PEBBLE_FEATURE_DRAW_ROTATED_BITMAP
+  case ELMC_PEBBLE_DRAW_ROTATED_BITMAP: {
+    int src_w = cmd->p1 < 0 ? 0 : cmd->p1;
+    int src_h = cmd->p2 < 0 ? 0 : cmd->p2;
+    int cx = cmd->p4;
+    int cy = cmd->p5;
+    *out_rect = GRect((int16_t)(cx - src_w / 2), (int16_t)(cy - src_h / 2), (int16_t)src_w, (int16_t)src_h);
+    return !rect_is_empty(*out_rect);
+  }
+#endif
   default:
     return false;
   }
@@ -1367,11 +1560,369 @@ static bool draw_cmd_should_execute(const ElmcPebbleDrawCmd *cmd, bool dirty_ful
 }
 #endif
 
+#if ELMC_PEBBLE_FEATURE_DRAW_VECTOR_SEQUENCE_AT || ELMC_PEBBLE_FEATURE_DRAW_BITMAP_SEQUENCE_AT
+static bool sequence_play_loops(uint32_t play_count) {
+  return play_count == 0 || play_count == PLAY_COUNT_INFINITE || play_count == 0xFFFF;
+}
+#endif
+
+#if ELMC_PEBBLE_FEATURE_DRAW_BITMAP_SEQUENCE_AT
+static void bitmap_sequence_normalize_play_count(GBitmapSequence *sequence) {
+  if (!sequence) {
+    return;
+  }
+
+  if (gbitmap_sequence_get_play_count(sequence) == 0) {
+    gbitmap_sequence_set_play_count(sequence, PLAY_COUNT_INFINITE);
+  }
+}
+
+static void bitmap_sequence_playback_reset(uint32_t resource_id) {
+  s_bitmap_sequence_playback_resource_id = resource_id;
+  s_bitmap_sequence_next_advance_ms = INT64_MAX;
+}
+
+static bool bitmap_sequence_advance_playback(
+    GBitmapSequence *sequence,
+    GBitmap *bitmap,
+    int64_t now_ms,
+    bool force_first_frame) {
+  bitmap_sequence_normalize_play_count(sequence);
+
+  if (force_first_frame) {
+    gbitmap_sequence_restart(sequence);
+    bitmap_sequence_normalize_play_count(sequence);
+    uint32_t delay_ms = 0;
+    if (!gbitmap_sequence_update_bitmap_next_frame(sequence, bitmap, &delay_ms)) {
+      return false;
+    }
+    if (delay_ms == 0) {
+      delay_ms = 1;
+    }
+    s_bitmap_sequence_next_advance_ms = now_ms + (int64_t)delay_ms;
+    return true;
+  }
+
+  if (s_bitmap_sequence_next_advance_ms == INT64_MAX) {
+    return bitmap_sequence_advance_playback(sequence, bitmap, now_ms, true);
+  }
+
+  while (now_ms >= s_bitmap_sequence_next_advance_ms) {
+    uint32_t delay_ms = 0;
+    if (gbitmap_sequence_update_bitmap_next_frame(sequence, bitmap, &delay_ms)) {
+      if (delay_ms == 0) {
+        delay_ms = 1;
+      }
+      s_bitmap_sequence_next_advance_ms += (int64_t)delay_ms;
+      continue;
+    }
+
+    uint32_t play_count = gbitmap_sequence_get_play_count(sequence);
+    if (!sequence_play_loops(play_count)) {
+      s_bitmap_sequence_next_advance_ms = INT64_MAX;
+      return true;
+    }
+
+    gbitmap_sequence_restart(sequence);
+    bitmap_sequence_normalize_play_count(sequence);
+    delay_ms = 0;
+    if (!gbitmap_sequence_update_bitmap_next_frame(sequence, bitmap, &delay_ms)) {
+      return false;
+    }
+    if (delay_ms == 0) {
+      delay_ms = 1;
+    }
+    s_bitmap_sequence_next_advance_ms = now_ms + (int64_t)delay_ms;
+  }
+
+  return true;
+}
+#endif
+
 #if ELMC_PEBBLE_FEATURE_DRAW_VECTOR_SEQUENCE_AT
 static void vector_sequence_timer_callback(void *data) {
   (void)data;
   s_vector_sequence_timer = NULL;
+  elmc_pebble_invalidate_scene(&s_elm_app);
   layer_mark_dirty(s_draw_layer);
+}
+
+static void vector_sequence_cache_clear(void) {
+  if (s_cached_sequence) {
+    gdraw_command_sequence_destroy(s_cached_sequence);
+    s_cached_sequence = NULL;
+  }
+  s_cached_sequence_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
+  s_failed_vector_sequence_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
+  s_cached_vector_sequence_duration_ms = 0;
+}
+
+static uint32_t vector_sequence_total_duration_ms(GDrawCommandSequence *sequence) {
+  if (!sequence) {
+    return 0;
+  }
+
+  uint32_t frame_count = gdraw_command_sequence_get_num_frames(sequence);
+  if (frame_count == 0) {
+    return 0;
+  }
+
+  uint32_t total_ms = 0;
+  for (uint32_t index = 0; index < frame_count; index++) {
+    GDrawCommandFrame *frame = gdraw_command_sequence_get_frame_by_index(sequence, index);
+    if (!frame) {
+      continue;
+    }
+    total_ms += gdraw_command_frame_get_duration(frame);
+  }
+
+  return total_ms;
+}
+
+static uint32_t vector_sequence_playable_duration_ms(GDrawCommandSequence *sequence) {
+  if (!sequence) {
+    return 0;
+  }
+
+  uint32_t total_ms = gdraw_command_sequence_get_total_duration(sequence);
+  if (total_ms > 0) {
+    return total_ms;
+  }
+
+  return vector_sequence_total_duration_ms(sequence);
+}
+
+static GDrawCommandFrame *vector_sequence_frame_at_elapsed(
+    GDrawCommandSequence *sequence,
+    uint32_t elapsed_ms,
+    uint32_t total_duration_ms,
+    uint16_t play_count) {
+  if (!sequence) {
+    return NULL;
+  }
+
+  uint32_t frame_count = gdraw_command_sequence_get_num_frames(sequence);
+  if (frame_count == 0) {
+    return NULL;
+  }
+
+  if (total_duration_ms == 0) {
+    total_duration_ms = vector_sequence_playable_duration_ms(sequence);
+  }
+
+  if (total_duration_ms > 0) {
+    if (sequence_play_loops(play_count)) {
+      elapsed_ms = elapsed_ms % total_duration_ms;
+    } else if (play_count > 0) {
+      uint32_t max_elapsed = total_duration_ms * (uint32_t)play_count;
+      if (elapsed_ms >= max_elapsed) {
+        elapsed_ms = max_elapsed > 0 ? max_elapsed - 1 : 0;
+      }
+    }
+
+    uint32_t remaining = elapsed_ms;
+    for (uint32_t index = 0; index < frame_count; index++) {
+      GDrawCommandFrame *frame = gdraw_command_sequence_get_frame_by_index(sequence, index);
+      if (!frame) {
+        continue;
+      }
+      uint32_t frame_duration = gdraw_command_frame_get_duration(frame);
+      if (frame_duration == 0) {
+        frame_duration = total_duration_ms / frame_count;
+        if (frame_duration == 0) {
+          frame_duration = 100;
+        }
+      }
+      if (remaining < frame_duration || index + 1 == frame_count) {
+        return frame;
+      }
+      remaining -= frame_duration;
+    }
+  }
+
+  return gdraw_command_sequence_get_frame_by_index(sequence, frame_count - 1);
+}
+
+static GDrawCommandSequence *vector_sequence_cached(uint32_t resource_id) {
+  if (resource_id == ELM_PEBBLE_RESOURCE_ID_MISSING) {
+    return NULL;
+  }
+  if (resource_id == s_failed_vector_sequence_resource_id) {
+    return NULL;
+  }
+  if (s_cached_sequence && s_cached_sequence_resource_id == resource_id) {
+    return s_cached_sequence;
+  }
+  vector_sequence_cache_clear();
+  s_cached_sequence_resource_id = resource_id;
+  s_cached_sequence = gdraw_command_sequence_create_with_resource(resource_id);
+  if (!s_cached_sequence) {
+    s_failed_vector_sequence_resource_id = resource_id;
+    APP_LOG(APP_LOG_LEVEL_WARNING, "vector sequence load failed resource_id=%lu", (unsigned long)resource_id);
+    return NULL;
+  }
+
+  s_cached_vector_sequence_duration_ms = vector_sequence_playable_duration_ms(s_cached_sequence);
+  if (s_cached_vector_sequence_duration_ms == 0) {
+    APP_LOG(APP_LOG_LEVEL_WARNING, "vector sequence has no playable frames resource_id=%lu",
+            (unsigned long)resource_id);
+  }
+  return s_cached_sequence;
+}
+#endif
+
+#if ELMC_PEBBLE_FEATURE_DRAW_BITMAP_SEQUENCE_AT
+static void bitmap_sequence_timer_callback(void *data) {
+  (void)data;
+  s_bitmap_sequence_timer = NULL;
+  elmc_pebble_invalidate_scene(&s_elm_app);
+  layer_mark_dirty(s_draw_layer);
+}
+
+static void bitmap_sequence_cache_clear(void) {
+  if (s_bitmap_sequence_timer) {
+    app_timer_cancel(s_bitmap_sequence_timer);
+    s_bitmap_sequence_timer = NULL;
+  }
+  if (s_cached_bitmap_sequence) {
+    gbitmap_sequence_destroy(s_cached_bitmap_sequence);
+    s_cached_bitmap_sequence = NULL;
+  }
+  if (s_bitmap_sequence_frame) {
+    gbitmap_destroy(s_bitmap_sequence_frame);
+    s_bitmap_sequence_frame = NULL;
+  }
+  s_cached_bitmap_sequence_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
+  s_failed_bitmap_sequence_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
+  s_cached_bitmap_sequence_duration_ms = 0;
+  s_bitmap_sequence_playback_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
+  s_bitmap_sequence_next_advance_ms = INT64_MAX;
+}
+
+static uint32_t bitmap_sequence_total_duration_ms(GBitmapSequence *sequence) {
+  if (!sequence) {
+    return 0;
+  }
+
+  uint16_t frame_count = gbitmap_sequence_get_total_num_frames(sequence);
+  if (frame_count == 0) {
+    return 0;
+  }
+
+  GSize size = gbitmap_sequence_get_bitmap_size(sequence);
+  if (size.w <= 0 || size.h <= 0) {
+    return 0;
+  }
+
+  GBitmap *scratch = gbitmap_create_blank(size, GBitmapFormat8Bit);
+  if (!scratch) {
+    return 0;
+  }
+
+  gbitmap_sequence_restart(sequence);
+  uint32_t total_ms = 0;
+  uint32_t delay_ms = 0;
+
+  for (uint16_t frame = 0; frame < frame_count; frame++) {
+    if (!gbitmap_sequence_update_bitmap_next_frame(sequence, scratch, &delay_ms)) {
+      break;
+    }
+    total_ms += delay_ms;
+  }
+
+  gbitmap_destroy(scratch);
+  gbitmap_sequence_restart(sequence);
+  return total_ms;
+}
+
+static bool bitmap_sequence_frame_ensure(GBitmapSequence *sequence) {
+  if (s_bitmap_sequence_frame) {
+    return true;
+  }
+  if (!sequence) {
+    return false;
+  }
+
+  GSize size = gbitmap_sequence_get_bitmap_size(sequence);
+  if (size.w <= 0 || size.h <= 0) {
+    return false;
+  }
+
+  s_bitmap_sequence_frame = gbitmap_create_blank(size, GBitmapFormat8Bit);
+  return s_bitmap_sequence_frame != NULL;
+}
+
+static GBitmapSequence *bitmap_sequence_cached(uint32_t resource_id) {
+  if (resource_id == ELM_PEBBLE_RESOURCE_ID_MISSING) {
+    return NULL;
+  }
+  if (resource_id == s_failed_bitmap_sequence_resource_id) {
+    return NULL;
+  }
+  if (s_cached_bitmap_sequence && s_cached_bitmap_sequence_resource_id == resource_id) {
+    return s_cached_bitmap_sequence;
+  }
+  bitmap_sequence_cache_clear();
+  s_cached_bitmap_sequence_resource_id = resource_id;
+  s_cached_bitmap_sequence = gbitmap_sequence_create_with_resource(resource_id);
+  if (!s_cached_bitmap_sequence) {
+    s_failed_bitmap_sequence_resource_id = resource_id;
+    APP_LOG(APP_LOG_LEVEL_WARNING, "bitmap sequence load failed resource_id=%lu", (unsigned long)resource_id);
+    return NULL;
+  }
+
+  bitmap_sequence_normalize_play_count(s_cached_bitmap_sequence);
+
+  s_cached_bitmap_sequence_duration_ms =
+      bitmap_sequence_total_duration_ms(s_cached_bitmap_sequence);
+  bitmap_sequence_normalize_play_count(s_cached_bitmap_sequence);
+  if (s_cached_bitmap_sequence_duration_ms == 0) {
+    APP_LOG(APP_LOG_LEVEL_WARNING, "bitmap sequence has no playable frames resource_id=%lu",
+            (unsigned long)resource_id);
+  }
+  return s_cached_bitmap_sequence;
+}
+#endif
+
+#if ELMC_PEBBLE_FEATURE_DRAW_VECTOR_AT
+static void vector_image_cache_clear(void) {
+  for (int i = 0; i < VECTOR_IMAGE_CACHE_CAPACITY; i++) {
+    if (s_vector_image_cache[i].image) {
+      gdraw_command_image_destroy(s_vector_image_cache[i].image);
+      s_vector_image_cache[i].image = NULL;
+    }
+    s_vector_image_cache[i].resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
+  }
+}
+
+static GDrawCommandImage *vector_image_cached(uint32_t resource_id) {
+  int empty_slot = -1;
+
+  if (resource_id == ELM_PEBBLE_RESOURCE_ID_MISSING) {
+    return NULL;
+  }
+
+  for (int i = 0; i < VECTOR_IMAGE_CACHE_CAPACITY; i++) {
+    if (s_vector_image_cache[i].resource_id == resource_id && s_vector_image_cache[i].image) {
+      return s_vector_image_cache[i].image;
+    }
+    if (empty_slot < 0 && s_vector_image_cache[i].image == NULL) {
+      empty_slot = i;
+    }
+  }
+
+  {
+    int slot = empty_slot >= 0 ? empty_slot : 0;
+    if (s_vector_image_cache[slot].image) {
+      gdraw_command_image_destroy(s_vector_image_cache[slot].image);
+    }
+    s_vector_image_cache[slot].resource_id = resource_id;
+    s_vector_image_cache[slot].image = gdraw_command_image_create_with_resource(resource_id);
+    if (!s_vector_image_cache[slot].image) {
+      APP_LOG(APP_LOG_LEVEL_WARNING, "vector image load failed resource_id=%lu", (unsigned long)resource_id);
+    }
+    return s_vector_image_cache[slot].image;
+  }
 }
 #endif
 
@@ -1380,6 +1931,11 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
   // #region agent log
   ELMC_AGENT_INIT_PROBE(0xED993001);
   // #endregion
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+  if (!s_logged_first_draw) {
+    companion_inbox_log("draw_update_proc begin seq=%d", s_render_sequence);
+  }
+#endif
   if (!layer || !ctx) {
     APP_LOG(APP_LOG_LEVEL_WARNING, "draw skipped null layer/context");
     ELMC_PEBBLE_TRACE_EXIT("draw_update_proc");
@@ -1392,6 +1948,14 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
     ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "draw begin seq=%d", s_render_sequence);
   }
   GRect bounds = layer_get_bounds(layer);
+#ifdef ELMC_WATCHFACE_MODE
+  {
+    GRect compile = compile_display_bounds();
+    if (compile.size.w > bounds.size.w || compile.size.h > bounds.size.h) {
+      bounds = compile;
+    }
+  }
+#endif
   // #region agent log
   ELMC_AGENT_INIT_PROBE(0xED993011);
   // #endregion
@@ -1452,47 +2016,28 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
   }
 
   enum {
-    DRAW_HEAP_CHUNK_CAPACITY = 32,
-    DRAW_MEDIUM_HEAP_CHUNK_CAPACITY = 16,
-    DRAW_SMALL_HEAP_CHUNK_CAPACITY = 8,
-    DRAW_TINY_HEAP_CHUNK_CAPACITY = 1,
+    DRAW_CHUNK_CAPACITY = 4,
     DRAW_CHUNK_GUARD = 128
   };
-  int draw_chunk_capacity = DRAW_HEAP_CHUNK_CAPACITY;
-  ElmcPebbleDrawCmd *draw_chunk =
-      (ElmcPebbleDrawCmd *)malloc(sizeof(ElmcPebbleDrawCmd) * draw_chunk_capacity);
-  if (!draw_chunk) {
-    draw_chunk_capacity = DRAW_MEDIUM_HEAP_CHUNK_CAPACITY;
-    draw_chunk = (ElmcPebbleDrawCmd *)malloc(sizeof(ElmcPebbleDrawCmd) * draw_chunk_capacity);
-  }
-  if (!draw_chunk) {
-    draw_chunk_capacity = DRAW_SMALL_HEAP_CHUNK_CAPACITY;
-    draw_chunk = (ElmcPebbleDrawCmd *)malloc(sizeof(ElmcPebbleDrawCmd) * draw_chunk_capacity);
-  }
-  if (!draw_chunk) {
-    draw_chunk_capacity = DRAW_TINY_HEAP_CHUNK_CAPACITY;
-    draw_chunk = (ElmcPebbleDrawCmd *)malloc(sizeof(ElmcPebbleDrawCmd) * draw_chunk_capacity);
-  }
-  if (!draw_chunk) {
-    APP_LOG(APP_LOG_LEVEL_WARNING, "draw skipped: unable to allocate command chunk");
-    ELMC_PEBBLE_TRACE_EXIT("draw_update_proc");
-    return;
-  }
+  /* Small stack chunk: scene cache decodes via byte cursor; avoid heap malloc and large .bss. */
+  ElmcPebbleDrawCmd draw_chunk[DRAW_CHUNK_CAPACITY];
+  const int draw_chunk_capacity = DRAW_CHUNK_CAPACITY;
   // #region agent log
   ELMC_AGENT_INIT_PROBE(0xED993040);
   // #endregion
   int draw_skip = 0;
   int chunks_processed = 0;
 
+  elmc_pebble_scene_reset_draw_cursor(&s_elm_app);
+
   for (int chunk = 0; chunk < DRAW_CHUNK_GUARD; chunk++) {
     // #region agent log
     ELMC_AGENT_INIT_PROBE(0xED993050);
     // #endregion
-    int chunk_count = elmc_pebble_scene_commands_from(
+    int chunk_count = elmc_pebble_scene_commands_next(
         &s_elm_app,
         draw_chunk,
-        draw_chunk_capacity,
-        draw_skip);
+        draw_chunk_capacity);
     // #region agent log
     ELMC_AGENT_INIT_PROBE(0xED993051);
     if (chunk == 0 && draw_skip == 0) {
@@ -1855,52 +2400,124 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         break;
       }
 #endif
-#if ELMC_PEBBLE_FEATURE_DRAW_VECTOR_AT
-      case ELMC_PEBBLE_DRAW_VECTOR_AT: {
-        uint32_t resource_id = elm_pebble_vector_resource_id(cmd->p0);
+#if ELMC_PEBBLE_FEATURE_DRAW_ROTATED_BITMAP
+      case ELMC_PEBBLE_DRAW_ROTATED_BITMAP: {
+        uint32_t resource_id = elm_pebble_bitmap_resource_id(cmd->p0);
         if (resource_id == ELM_PEBBLE_RESOURCE_ID_MISSING) {
           break;
         }
-        GDrawCommandImage *image = gdraw_command_image_create_with_resource(resource_id);
+        GBitmap *bitmap = gbitmap_create_with_resource(resource_id);
+        if (!bitmap) {
+          break;
+        }
+        int16_t src_w = (int16_t)cmd->p1;
+        int16_t src_h = (int16_t)cmd->p2;
+        if (src_w > 0 && src_h > 0) {
+          graphics_draw_rotated_bitmap(
+              ctx,
+              bitmap,
+              GPoint(src_w / 2, src_h / 2),
+              (int32_t)cmd->p3,
+              GPoint((int16_t)cmd->p4, (int16_t)cmd->p5));
+        }
+        gbitmap_destroy(bitmap);
+        break;
+      }
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_VECTOR_AT
+      case ELMC_PEBBLE_DRAW_VECTOR_AT: {
+        uint32_t resource_id = elm_pebble_vector_resource_id(cmd->p0);
+        GDrawCommandImage *image = vector_image_cached(resource_id);
         if (!image) {
           break;
         }
         gdraw_command_image_draw(ctx, image, GPoint(cmd->p1, cmd->p2));
-        gdraw_command_image_destroy(image);
         break;
       }
 #endif
 #if ELMC_PEBBLE_FEATURE_DRAW_VECTOR_SEQUENCE_AT
       case ELMC_PEBBLE_DRAW_VECTOR_SEQUENCE_AT: {
         uint32_t resource_id = elm_pebble_vector_resource_id(cmd->p0);
-        if (resource_id == ELM_PEBBLE_RESOURCE_ID_MISSING) {
-          break;
-        }
-        GDrawCommandSequence *sequence = gdraw_command_sequence_create_with_resource(resource_id);
+        GDrawCommandSequence *sequence = vector_sequence_cached(resource_id);
         if (!sequence) {
           break;
         }
-        if (s_vector_sequence_anim_origin_seq != s_render_sequence) {
+        if (s_vector_sequence_anim_origin_resource_id != resource_id) {
           s_vector_sequence_anim_start_ms = monotonic_ms();
-          s_vector_sequence_anim_origin_seq = s_render_sequence;
+          s_vector_sequence_anim_origin_resource_id = resource_id;
+          if (s_vector_sequence_timer) {
+            app_timer_cancel(s_vector_sequence_timer);
+            s_vector_sequence_timer = NULL;
+          }
         }
         uint32_t elapsed = (uint32_t)(monotonic_ms() - s_vector_sequence_anim_start_ms);
-        GDrawCommandFrame *frame = gdraw_command_sequence_get_frame_by_elapsed(sequence, elapsed);
+        uint32_t total_duration = vector_sequence_playable_duration_ms(sequence);
+        if (total_duration == 0 && s_cached_vector_sequence_duration_ms > 0) {
+          total_duration = s_cached_vector_sequence_duration_ms;
+        }
+        uint32_t play_count = gdraw_command_sequence_get_play_count(sequence);
+        GDrawCommandFrame *frame =
+            vector_sequence_frame_at_elapsed(sequence, elapsed, total_duration, (uint16_t)play_count);
         if (frame) {
           gdraw_command_frame_draw(ctx, sequence, frame, GPoint(cmd->p1, cmd->p2));
         }
-        uint32_t total_duration = gdraw_command_sequence_get_total_duration(sequence);
-        uint16_t play_count = gdraw_command_sequence_get_play_count(sequence);
         bool animating = false;
-        if (play_count == 0xFFFF && total_duration > 0) {
+        if (sequence_play_loops(play_count) && total_duration > 0) {
           animating = true;
         } else if (play_count > 0 && total_duration > 0) {
           animating = elapsed < (uint32_t)total_duration * (uint32_t)play_count;
         }
         if (animating && !s_vector_sequence_timer) {
           s_vector_sequence_timer = app_timer_register(33, vector_sequence_timer_callback, NULL);
+        } else if (!animating && s_vector_sequence_timer) {
+          app_timer_cancel(s_vector_sequence_timer);
+          s_vector_sequence_timer = NULL;
         }
-        gdraw_command_sequence_destroy(sequence);
+        break;
+      }
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_BITMAP_SEQUENCE_AT
+      case ELMC_PEBBLE_DRAW_BITMAP_SEQUENCE_AT: {
+        uint32_t resource_id = elm_pebble_animation_resource_id(cmd->p0);
+        GBitmapSequence *sequence = bitmap_sequence_cached(resource_id);
+        if (!sequence) {
+          break;
+        }
+        int64_t now_ms = monotonic_ms();
+        bool force_first_frame = s_bitmap_sequence_playback_resource_id != resource_id;
+        if (force_first_frame) {
+          bitmap_sequence_playback_reset(resource_id);
+        }
+        if (!bitmap_sequence_frame_ensure(sequence)) {
+          break;
+        }
+        if (!bitmap_sequence_advance_playback(
+                sequence, s_bitmap_sequence_frame, now_ms, force_first_frame)) {
+          APP_LOG(APP_LOG_LEVEL_WARNING, "bitmap sequence update failed resource_id=%lu",
+                  (unsigned long)resource_id);
+          break;
+        }
+        GRect frame_bounds = gbitmap_get_bounds(s_bitmap_sequence_frame);
+        graphics_draw_bitmap_in_rect(
+            ctx,
+            s_bitmap_sequence_frame,
+            GRect(cmd->p1, cmd->p2, frame_bounds.size.w, frame_bounds.size.h));
+        uint32_t total_duration = s_cached_bitmap_sequence_duration_ms;
+        uint32_t play_count = gbitmap_sequence_get_play_count(sequence);
+        bool animating = sequence_play_loops(play_count) && total_duration > 0;
+        if (!animating && play_count > 0 && play_count != PLAY_COUNT_INFINITE && total_duration > 0) {
+          uint32_t wall_elapsed = (uint32_t)(now_ms - s_bitmap_sequence_anim_start_ms);
+          animating = wall_elapsed < total_duration * play_count;
+        }
+        if (force_first_frame) {
+          s_bitmap_sequence_anim_start_ms = now_ms;
+        }
+        if (animating && !s_bitmap_sequence_timer) {
+          s_bitmap_sequence_timer = app_timer_register(33, bitmap_sequence_timer_callback, NULL);
+        } else if (!animating && s_bitmap_sequence_timer) {
+          app_timer_cancel(s_bitmap_sequence_timer);
+          s_bitmap_sequence_timer = NULL;
+        }
         break;
       }
 #endif
@@ -1919,7 +2536,6 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
       break;
     }
   }
-  free(draw_chunk);
 
   if (s_last_logged_draw_sequence != s_render_sequence && s_last_render_request_ms > 0) {
     int64_t latency_ms = monotonic_ms() - s_last_render_request_ms;
@@ -1942,8 +2558,47 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
   ELMC_PEBBLE_TRACE_EXIT("draw_update_proc");
 }
 
+#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
+static void render_coalesce_callback(void *data) {
+  ELMC_PEBBLE_TRACE_ENTER("render_coalesce_callback");
+  (void)data;
+  s_render_coalesce_timer = NULL;
+  render_model();
+  ELMC_PEBBLE_TRACE_EXIT("render_coalesce_callback");
+}
+
+static void schedule_render_model(void) {
+  if (s_render_coalesce_timer) {
+    return;
+  }
+  s_render_coalesce_timer = app_timer_register(16, render_coalesce_callback, NULL);
+}
+#endif
+
+#if ELMC_PEBBLE_SCENE_CACHE_ENABLED
+static void scene_prep_timer_callback(void *data) {
+  ELMC_PEBBLE_TRACE_ENTER("scene_prep_timer_callback");
+  (void)data;
+  s_scene_prep_timer = NULL;
+  if (elmc_pebble_ensure_scene(&s_elm_app) == 0 && s_draw_layer) {
+    layer_mark_dirty(s_draw_layer);
+  }
+  ELMC_PEBBLE_TRACE_EXIT("scene_prep_timer_callback");
+}
+
+static void schedule_scene_prep(void) {
+  if (s_scene_prep_timer) {
+    return;
+  }
+  s_scene_prep_timer = app_timer_register(0, scene_prep_timer_callback, NULL);
+}
+#endif
+
 static void render_model(void) {
   ELMC_PEBBLE_TRACE_ENTER("render_model");
+#ifdef ELMC_WATCHFACE_MODE
+  ensure_draw_layer_size();
+#endif
   // #region agent log
   ELMC_AGENT_INIT_PROBE(s_agent_after_companion_dispatch ? 0xED992101 : 0xED992001);
   // #endregion
@@ -1962,12 +2617,18 @@ static void render_model(void) {
     return;
   }
   s_render_pending = false;
+#if ELMC_PEBBLE_SCENE_CACHE_ENABLED
+  if (s_elm_app.scene.dirty) {
+    schedule_scene_prep();
+  }
+#endif
   layer_mark_dirty(s_draw_layer);
   ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "elmc render seq=%d model=%lld", s_render_sequence, (long long)value);
   (void)value;
   ELMC_PEBBLE_TRACE_EXIT("render_model");
 }
 
+#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && (ELMC_PEBBLE_FEATURE_TICK_EVENTS || ELMC_PEBBLE_FEATURE_HOUR_EVENTS || ELMC_PEBBLE_FEATURE_MINUTE_EVENTS || ELMC_PEBBLE_FEATURE_DAY_EVENTS || ELMC_PEBBLE_FEATURE_MONTH_EVENTS || ELMC_PEBBLE_FEATURE_YEAR_EVENTS)
 static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   ELMC_PEBBLE_TRACE_ENTER("tick_handler");
 #if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND
@@ -2036,6 +2697,7 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
 #endif
   ELMC_PEBBLE_TRACE_EXIT("tick_handler");
 }
+#endif
 
 #if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND
 static bool send_companion_request(int request_tag, int request_value) {
@@ -2085,58 +2747,156 @@ static void companion_resync_callback(void *data) {
 }
 #endif
 
+#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
 static bool debug_storage_tuple_int(Tuple *tuple, int32_t *out) {
   if (!tuple || !out) {
     return false;
   }
   if (tuple->type == TUPLE_INT) {
-    *out = tuple->value->int32;
+    if (tuple->length == sizeof(int8_t)) {
+      *out = tuple->value->int8;
+    } else if (tuple->length == sizeof(int16_t)) {
+      *out = tuple->value->int16;
+    } else {
+      *out = tuple->value->int32;
+    }
     return true;
   }
   if (tuple->type == TUPLE_UINT) {
-    *out = (int32_t)tuple->value->uint32;
+    if (tuple->length == sizeof(uint8_t)) {
+      *out = (int32_t)tuple->value->uint8;
+    } else if (tuple->length == sizeof(uint16_t)) {
+      *out = (int32_t)tuple->value->uint16;
+    } else {
+      *out = (int32_t)tuple->value->uint32;
+    }
     return true;
   }
   return false;
 }
 
-static int inbox_snapshot_tuples(DictionaryIterator *iter, Tuple *out, int max_count) {
-  if (!iter || !out || max_count <= 0) {
-    return 0;
+static bool elmc_inbox_snapshot_from_tuple(ElmcInboxTupleSnapshot *snap, const Tuple *source) {
+  if (!snap || !source) {
+    return false;
   }
 
-  int count = 0;
-  Tuple *tuple = dict_read_first(iter);
-  while (tuple && count < max_count) {
-    out[count++] = *tuple;
-    tuple = dict_read_next(iter);
+  memset(snap, 0, sizeof(*snap));
+  snap->key = source->key;
+  snap->type = (uint8_t)source->type;
+  snap->length = source->length;
+  snap->cstring_kind = ELMC_INBOX_CSTRING_NONE;
+
+  switch (source->type) {
+    case TUPLE_INT:
+      if (source->length == sizeof(int8_t)) {
+        snap->int_value = source->value->int8;
+      } else if (source->length == sizeof(int16_t)) {
+        snap->int_value = source->value->int16;
+      } else {
+        snap->int_value = source->value->int32;
+      }
+      return true;
+    case TUPLE_UINT:
+      if (source->length == sizeof(uint8_t)) {
+        snap->int_value = (int32_t)source->value->uint8;
+      } else if (source->length == sizeof(uint16_t)) {
+        snap->int_value = (int32_t)source->value->uint16;
+      } else {
+        snap->int_value = (int32_t)source->value->uint32;
+      }
+      return true;
+    case TUPLE_CSTRING: {
+      size_t copy_len = source->length > 0 ? (size_t)source->length : 1;
+      if (copy_len > ELMC_INBOX_STRING_MAX) {
+        copy_len = ELMC_INBOX_STRING_MAX;
+      }
+      memcpy(s_inbox_cstring_snapshot, source->value->cstring, copy_len);
+      s_inbox_cstring_snapshot[ELMC_INBOX_STRING_MAX - 1] = '\0';
+      snap->length = (uint16_t)(strlen(s_inbox_cstring_snapshot) + 1);
+      snap->cstring_kind = ELMC_INBOX_CSTRING_INBOX;
+      return true;
+    }
+    default:
+      return false;
   }
-  return count;
 }
 
-static Tuple *inbox_find_tuple(const Tuple *tuples, int count, uint32_t key) {
-  if (!tuples || count <= 0) {
+static Tuple *elmc_inbox_materialize_tuple(const ElmcInboxTupleSnapshot *snap, uint8_t *int_wire) {
+  if (!snap) {
     return NULL;
   }
 
-  for (int i = 0; i < count; i++) {
-    if (tuples[i].key == key) {
-      return (Tuple *)&tuples[i];
+  if (snap->type == TUPLE_CSTRING && snap->cstring_kind == ELMC_INBOX_CSTRING_INBOX) {
+    Tuple *tuple = (Tuple *)s_inbox_cstring_tuple_wire;
+    memset(s_inbox_cstring_tuple_wire, 0, sizeof(s_inbox_cstring_tuple_wire));
+    tuple->key = snap->key;
+    tuple->type = TUPLE_CSTRING;
+    tuple->length = snap->length;
+    memcpy(tuple->value->cstring, s_inbox_cstring_snapshot, snap->length);
+    return tuple;
+  }
+
+  if (!int_wire) {
+    return NULL;
+  }
+
+  Tuple *tuple = (Tuple *)int_wire;
+  memset(int_wire, 0, ELMC_INBOX_TUPLE_WIRE_BYTES);
+  tuple->key = snap->key;
+  tuple->type = (TupleType)snap->type;
+  tuple->length = snap->length;
+  if (snap->type == TUPLE_INT) {
+    tuple->value->int32 = snap->int_value;
+  } else if (snap->type == TUPLE_UINT) {
+    tuple->value->uint32 = (uint32_t)snap->int_value;
+  }
+  return tuple;
+}
+
+static int inbox_snapshot_tuples(DictionaryIterator *iter) {
+  s_inbox_snapshot_count = 0;
+  if (!iter) {
+    return 0;
+  }
+
+  Tuple *tuple = dict_read_first(iter);
+  while (tuple && s_inbox_snapshot_count < ELMC_INBOX_MAX_TUPLES) {
+    if (elmc_inbox_snapshot_from_tuple(&s_inbox_snapshots[s_inbox_snapshot_count], tuple)) {
+      s_inbox_snapshot_count++;
+    }
+    tuple = dict_read_next(iter);
+  }
+  return s_inbox_snapshot_count;
+}
+
+static Tuple *inbox_find_tuple(uint32_t key) {
+  for (int i = 0; i < s_inbox_snapshot_count; i++) {
+    if (s_inbox_snapshots[i].key == key) {
+      return elmc_inbox_materialize_tuple(&s_inbox_snapshots[i], s_inbox_tuple_wire[i]);
     }
   }
   return NULL;
 }
 
-static bool handle_debug_storage(const Tuple *tuples, int tuple_count) {
+#if ELMC_PEBBLE_FEATURE_COMPASS_EVENTS || ELMC_PEBBLE_FEATURE_CMD_COMPASS_PEEK || ELMC_PEBBLE_FEATURE_DICTATION_EVENTS || ELMC_PEBBLE_FEATURE_CMD_DICTATION_START || ELMC_PEBBLE_FEATURE_CMD_DICTATION_STOP || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
+static Tuple *inbox_tuple_at(int index) {
+  if (index < 0 || index >= s_inbox_snapshot_count) {
+    return NULL;
+  }
+  return elmc_inbox_materialize_tuple(&s_inbox_snapshots[index], s_inbox_tuple_wire[index]);
+}
+#endif
+
+static bool handle_debug_storage(void) {
   ELMC_PEBBLE_TRACE_ENTER("handle_debug_storage");
   // #region agent log
   ELMC_AGENT_INIT_PROBE(0xED995100);
   // #endregion
-  Tuple *op_tuple = inbox_find_tuple(tuples, tuple_count, ELMC_DEBUG_STORAGE_KEY_OP);
+  Tuple *op_tuple = inbox_find_tuple(ELMC_DEBUG_STORAGE_KEY_OP);
   // #region agent log
   ELMC_AGENT_INIT_PROBE(0xED995111);
   // #endregion
-  Tuple *key_tuple = inbox_find_tuple(tuples, tuple_count, ELMC_DEBUG_STORAGE_KEY_KEY);
+  Tuple *key_tuple = inbox_find_tuple(ELMC_DEBUG_STORAGE_KEY_KEY);
   // #region agent log
   ELMC_AGENT_INIT_PROBE(0xED995112);
   // #endregion
@@ -2182,7 +2942,7 @@ static bool handle_debug_storage(const Tuple *tuples, int tuple_count) {
 
   int32_t type = 0;
   if (op != ELMC_DEBUG_STORAGE_OP_WRITE ||
-      !debug_storage_tuple_int(inbox_find_tuple(tuples, tuple_count, ELMC_DEBUG_STORAGE_KEY_TYPE), &type)) {
+      !debug_storage_tuple_int(inbox_find_tuple(ELMC_DEBUG_STORAGE_KEY_TYPE), &type)) {
     // #region agent log
     ELMC_AGENT_INIT_PROBE(0xED9951E1);
     // #endregion
@@ -2197,7 +2957,7 @@ static bool handle_debug_storage(const Tuple *tuples, int tuple_count) {
     ELMC_AGENT_INIT_PROBE(0xED9951E2);
     // #endregion
     int32_t value = 0;
-    if (!debug_storage_tuple_int(inbox_find_tuple(tuples, tuple_count, ELMC_DEBUG_STORAGE_KEY_INT_VALUE), &value)) {
+    if (!debug_storage_tuple_int(inbox_find_tuple(ELMC_DEBUG_STORAGE_KEY_INT_VALUE), &value)) {
       ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_WARNING, "debug storage_write missing int key=%lu",
               (unsigned long)key);
       ELMC_PEBBLE_TRACE_EXIT("handle_debug_storage");
@@ -2215,7 +2975,7 @@ static bool handle_debug_storage(const Tuple *tuples, int tuple_count) {
     // #region agent log
     ELMC_AGENT_INIT_PROBE(0xED9951E3);
     // #endregion
-    Tuple *value_tuple = inbox_find_tuple(tuples, tuple_count, ELMC_DEBUG_STORAGE_KEY_STRING_VALUE);
+    Tuple *value_tuple = inbox_find_tuple(ELMC_DEBUG_STORAGE_KEY_STRING_VALUE);
     const char *value = value_tuple && value_tuple->type == TUPLE_CSTRING ? value_tuple->value->cstring : "";
     status_t status = persist_write_string(key, value);
     ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "debug storage_write_string key=%lu value=%s status=%ld",
@@ -2228,44 +2988,327 @@ static bool handle_debug_storage(const Tuple *tuples, int tuple_count) {
   APP_LOG(APP_LOG_LEVEL_WARNING, "debug storage ignored type=%ld key=%lu",
           (long)type, (unsigned long)key);
   ELMC_PEBBLE_TRACE_EXIT("handle_debug_storage");
-  return true;
+  return false;
 }
+#endif
 
-static bool companion_simulator_weather_tuple(const Tuple *tuple) {
 #if ELMC_PEBBLE_FEATURE_INBOX_EVENTS
-  if (!tuple || (tuple->type != TUPLE_INT && tuple->type != TUPLE_UINT)) {
+static void companion_pending_clear(void);
+#endif
+
+#if ELMC_PEBBLE_FEATURE_INBOX_EVENTS
+static bool companion_simulator_weather_tuple(const Tuple *tuple) {
+#if ELMC_PEBBLE_FEATURE_INBOX_EVENTS && defined(ELMC_COMPANION_SIMULATOR_WEATHER) && ELMC_COMPANION_SIMULATOR_WEATHER
+  static int32_t s_pending_temp_c = 0;
+  static int32_t s_pending_condition_wire = 0;
+  static bool s_has_pending_temp = false;
+  static bool s_has_pending_condition = false;
+
+  int32_t wire_value = 0;
+  CompanionProtocolPhoneToWatchMessage message = {0};
+  bool ready_to_dispatch = false;
+
+  if (!tuple || !debug_storage_tuple_int((Tuple *)tuple, &wire_value)) {
     return false;
   }
 
-  CompanionProtocolPhoneToWatchMessage message = {0};
+#if defined(ELMC_COMPANION_SIMULATOR_WEATHER_MODE_UNIFIED) && ELMC_COMPANION_SIMULATOR_WEATHER_MODE_UNIFIED
+  if (tuple->key == ELMC_DEBUG_SIMULATOR_KEY_WEATHER_TEMPERATURE_C) {
+    s_pending_temp_c = wire_value;
+    s_has_pending_temp = true;
+  } else if (tuple->key == ELMC_DEBUG_SIMULATOR_KEY_WEATHER_CONDITION_WIRE) {
+    s_pending_condition_wire = wire_value;
+    s_has_pending_condition = true;
+  } else {
+    return false;
+  }
+
+  if (!s_has_pending_temp || !s_has_pending_condition) {
+    return true;
+  }
+
+  message.kind = COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_PROVIDE_WEATHER;
+  message.int_fields[0] = s_pending_temp_c;
+  message.int_fields[1] = s_pending_condition_wire;
+  s_has_pending_temp = false;
+  s_has_pending_condition = false;
+  ready_to_dispatch = true;
+#elif defined(ELMC_COMPANION_SIMULATOR_WEATHER_MODE_LEGACY_SPLIT) && ELMC_COMPANION_SIMULATOR_WEATHER_MODE_LEGACY_SPLIT
   if (tuple->key == ELMC_DEBUG_SIMULATOR_KEY_WEATHER_TEMPERATURE_C) {
     message.kind = COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_PROVIDE_TEMPERATURE;
-    message.int_fields[0] = 1; /* Celsius wire code */
-    message.union_value_fields[0] = tuple->value->int32;
+#if ELMC_COMPANION_PROTOCOL_HAS_UNION_PAYLOADS
+    message.int_fields[0] = 1;
+    message.union_value_fields[0] = wire_value;
+#else
+    message.int_fields[0] = wire_value;
+#endif
+    ready_to_dispatch = true;
   } else if (tuple->key == ELMC_DEBUG_SIMULATOR_KEY_WEATHER_CONDITION_WIRE) {
     message.kind = COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_PROVIDE_CONDITION;
-    message.int_fields[0] = tuple->value->int32;
+    message.int_fields[0] = wire_value;
+    ready_to_dispatch = true;
   } else {
+    return false;
+  }
+#elif defined(ELMC_COMPANION_SIMULATOR_WEATHER_MODE_TEMPERATURE_ONLY) && ELMC_COMPANION_SIMULATOR_WEATHER_MODE_TEMPERATURE_ONLY
+  if (tuple->key != ELMC_DEBUG_SIMULATOR_KEY_WEATHER_TEMPERATURE_C) {
+    return false;
+  }
+
+  message.kind = COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_PROVIDE_TEMPERATURE;
+#if ELMC_COMPANION_PROTOCOL_HAS_UNION_PAYLOADS
+  message.int_fields[0] = 1;
+  message.union_value_fields[0] = wire_value;
+#else
+  message.int_fields[0] = wire_value;
+#endif
+  ready_to_dispatch = true;
+#else
+  (void)wire_value;
+  return false;
+#endif
+
+  if (!ready_to_dispatch) {
     return false;
   }
 
   int rc = companion_protocol_dispatch_phone_to_watch(&s_elm_app, &message);
 #if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
-  companion_inbox_log("simulator weather key=%lu rc=%d", (unsigned long)tuple->key, rc);
+  companion_inbox_log("simulator weather key=%lu value=%ld rc=%d",
+                      (unsigned long)tuple->key, (long)wire_value, rc);
 #endif
+  if (rc == 0) {
+    companion_pending_clear();
+    s_agent_after_companion_dispatch = true;
+    apply_pending_cmd();
+  }
   return rc == 0;
 #else
   (void)tuple;
   return false;
 #endif
 }
+#endif
 
-static bool handle_debug_simulator_settings(const Tuple *tuples, int tuple_count) {
+#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
+static bool companion_decode_and_dispatch_snapshots(const ElmcInboxTupleSnapshot *snapshots, uint8_t wire[][ELMC_INBOX_TUPLE_WIRE_BYTES], int tuple_count) {
+  CompanionProtocolPhoneToWatchDecoder decoder;
+  companion_protocol_phone_to_watch_decoder_init(&decoder);
+
+  for (int i = 0; i < tuple_count; i++) {
+    Tuple *tuple = elmc_inbox_materialize_tuple(&snapshots[i], wire[i]);
+    if (!tuple) {
+      continue;
+    }
+    companion_protocol_phone_to_watch_decoder_push_tuple(&decoder, tuple);
+  }
+
+  CompanionProtocolPhoneToWatchMessage message = {0};
+  if (companion_protocol_phone_to_watch_decoder_finish(&decoder, &message) &&
+      message.kind != COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_UNKNOWN) {
+    int rc = companion_protocol_dispatch_phone_to_watch(&s_elm_app, &message);
+    APP_LOG(APP_LOG_LEVEL_INFO, "companion response kind=%d rc=%d", (int)message.kind, rc);
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+    companion_inbox_log("companion dispatch kind=%d rc=%d", (int)message.kind, rc);
+#endif
+    if (rc == 0) {
+      s_agent_after_companion_dispatch = true;
+      apply_pending_cmd();
+      schedule_render_model();
+      return true;
+    }
+    layer_mark_dirty(s_draw_layer);
+    return false;
+  }
+
+  APP_LOG(APP_LOG_LEVEL_WARNING, "companion decode failed saw_tag=%d tag=%ld tuples=%d",
+          decoder.saw_tag ? 1 : 0, (long)decoder.tag, tuple_count);
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+  companion_inbox_log("companion decode failed saw_tag=%d tag=%ld tuples=%d",
+                      decoder.saw_tag ? 1 : 0, (long)decoder.tag, tuple_count);
+#endif
+
+  for (int i = 0; i < tuple_count; i++) {
+    Tuple *tuple = elmc_inbox_materialize_tuple(&snapshots[i], wire[i]);
+    if (!tuple || (tuple->type != TUPLE_INT && tuple->type != TUPLE_UINT)) {
+      continue;
+    }
+    int32_t wire_value = 0;
+    if (!debug_storage_tuple_int(tuple, &wire_value)) {
+      continue;
+    }
+    int rc = elmc_pebble_dispatch_appmessage(&s_elm_app, tuple->key, wire_value);
+    APP_LOG(APP_LOG_LEVEL_INFO, "appmessage key=%lu value=%ld rc=%d",
+            (unsigned long)tuple->key, (long)wire_value, rc);
+    if (rc == 0) {
+      apply_pending_cmd();
+      schedule_render_model();
+    }
+  }
+  return false;
+}
+#endif
+
+#if ELMC_PEBBLE_FEATURE_INBOX_EVENTS
+#define COMPANION_PENDING_FLUSH_MS 250
+#define COMPANION_PENDING_MAX_AGE_MS 2500
+
+static int s_companion_pending_count = 0;
+static int64_t s_companion_pending_first_ms = 0;
+static AppTimer *s_companion_pending_timer = NULL;
+
+static void schedule_companion_pending_flush(void);
+static int32_t companion_pending_message_tag(void);
+
+static void companion_pending_clear(void) {
+  s_companion_pending_count = 0;
+  s_companion_pending_first_ms = 0;
+  if (s_companion_pending_timer) {
+    app_timer_cancel(s_companion_pending_timer);
+    s_companion_pending_timer = NULL;
+  }
+}
+
+static bool companion_try_decode_pending(void) {
+  if (s_companion_pending_count <= 0) {
+    return false;
+  }
+
+  CompanionProtocolPhoneToWatchDecoder decoder;
+  companion_protocol_phone_to_watch_decoder_init(&decoder);
+
+  for (int i = 0; i < s_companion_pending_count; i++) {
+    Tuple *tuple = elmc_inbox_materialize_tuple(&s_companion_pending[i], s_companion_pending_wire[i]);
+    if (!tuple) {
+      continue;
+    }
+    companion_protocol_phone_to_watch_decoder_push_tuple(&decoder, tuple);
+  }
+
+  CompanionProtocolPhoneToWatchMessage message = {0};
+  if (!companion_protocol_phone_to_watch_decoder_finish(&decoder, &message) ||
+      message.kind == COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_UNKNOWN) {
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+    companion_inbox_log("companion pending decode failed saw_tag=%d tag=%ld tuples=%d",
+                        decoder.saw_tag ? 1 : 0, (long)decoder.tag, s_companion_pending_count);
+#endif
+    return false;
+  }
+
+  int rc = companion_protocol_dispatch_phone_to_watch(&s_elm_app, &message);
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+  companion_inbox_log("companion pending dispatch kind=%d rc=%d tuples=%d",
+                      (int)message.kind, rc, s_companion_pending_count);
+#endif
+  if (rc != 0) {
+    return false;
+  }
+
+  s_agent_after_companion_dispatch = true;
+  apply_pending_cmd();
+  schedule_render_model();
+  return true;
+}
+
+static void companion_pending_flush(void *data) {
+  (void)data;
+  s_companion_pending_timer = NULL;
+  if (s_companion_pending_count <= 0) {
+    return;
+  }
+
+  if (companion_try_decode_pending()) {
+    companion_pending_clear();
+    return;
+  }
+
+  int64_t age_ms = monotonic_ms() - s_companion_pending_first_ms;
+  if (age_ms >= COMPANION_PENDING_MAX_AGE_MS) {
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+    companion_inbox_log("companion pending expired age=%lld count=%d tag=%ld",
+                        (long long)age_ms, s_companion_pending_count,
+                        (long)companion_pending_message_tag());
+#endif
+    companion_pending_clear();
+    return;
+  }
+
+  schedule_companion_pending_flush();
+}
+
+static void schedule_companion_pending_flush(void) {
+  if (s_companion_pending_timer) {
+    app_timer_cancel(s_companion_pending_timer);
+  }
+  s_companion_pending_timer = app_timer_register(COMPANION_PENDING_FLUSH_MS, companion_pending_flush, NULL);
+}
+
+static int32_t companion_pending_message_tag(void) {
+  for (int i = 0; i < s_companion_pending_count; i++) {
+    if (s_companion_pending[i].key == COMPANION_PROTOCOL_KEY_MESSAGE_TAG) {
+      return s_companion_pending[i].int_value;
+    }
+  }
+  return 0;
+}
+
+static void companion_pending_append(void) {
+  if (s_inbox_snapshot_count <= 0) {
+    return;
+  }
+
+  for (int i = 0; i < s_inbox_snapshot_count; i++) {
+    const ElmcInboxTupleSnapshot *snap = &s_inbox_snapshots[i];
+
+    if (snap->key == COMPANION_PROTOCOL_KEY_MESSAGE_TAG && s_companion_pending_count > 0) {
+      int32_t pending_tag = companion_pending_message_tag();
+      if (pending_tag != 0 && pending_tag != snap->int_value) {
+        if (!companion_try_decode_pending()) {
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+          companion_inbox_log("companion pending tag switch %ld -> %ld dropped=%d",
+                              (long)pending_tag, (long)snap->int_value, s_companion_pending_count);
+#endif
+        }
+        companion_pending_clear();
+      }
+    }
+
+    if (s_companion_pending_count >= ELMC_INBOX_MAX_TUPLES) {
+      companion_pending_clear();
+    }
+
+    if (s_companion_pending_count == 0) {
+      s_companion_pending_first_ms = monotonic_ms();
+    }
+
+    s_companion_pending[s_companion_pending_count] = *snap;
+    s_companion_pending[s_companion_pending_count].cstring_kind = ELMC_INBOX_CSTRING_NONE;
+    memcpy(
+        s_companion_pending_wire[s_companion_pending_count],
+        s_inbox_tuple_wire[i],
+        ELMC_INBOX_TUPLE_WIRE_BYTES);
+    s_companion_pending_count++;
+
+    if (companion_try_decode_pending()) {
+      companion_pending_clear();
+      continue;
+    }
+
+    schedule_companion_pending_flush();
+  }
+}
+#endif
+
+#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
+static bool handle_debug_simulator_settings(void) {
 #if ELMC_PEBBLE_FEATURE_COMPASS_EVENTS || ELMC_PEBBLE_FEATURE_CMD_COMPASS_PEEK || ELMC_PEBBLE_FEATURE_DICTATION_EVENTS || ELMC_PEBBLE_FEATURE_CMD_DICTATION_START || ELMC_PEBBLE_FEATURE_CMD_DICTATION_STOP || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
   bool handled = false;
 
-  for (int i = 0; i < tuple_count; i++) {
-    const Tuple *tuple = &tuples[i];
+  for (int i = 0; i < s_inbox_snapshot_count; i++) {
+    const Tuple *tuple = inbox_tuple_at(i);
+    if (!tuple) {
+      continue;
+    }
 #if ELMC_PEBBLE_FEATURE_INBOX_EVENTS
     if (companion_simulator_weather_tuple(tuple)) {
       handled = true;
@@ -2288,108 +3331,54 @@ static bool handle_debug_simulator_settings(const Tuple *tuples, int tuple_count
 
   return handled;
 #else
-  (void)tuples;
-  (void)tuple_count;
   return false;
 #endif
 }
+#endif
 
+#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
 static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   ELMC_PEBBLE_TRACE_ENTER("inbox_received_handler");
   // #region agent log
   ELMC_AGENT_INIT_PROBE(0xED995001);
   // #endregion
   (void)context;
-  Tuple inbox_tuples[ELMC_INBOX_MAX_TUPLES];
-  int inbox_tuple_count = inbox_snapshot_tuples(iter, inbox_tuples, ELMC_INBOX_MAX_TUPLES);
-#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
-  companion_inbox_log("inbox tuples=%d", inbox_tuple_count);
-  for (int i = 0; i < inbox_tuple_count; i++) {
-    companion_inbox_log("  key=%lu type=%d", (unsigned long)inbox_tuples[i].key, (int)inbox_tuples[i].type);
-  }
-#endif
+  inbox_snapshot_tuples(iter);
 
-  if (handle_debug_storage(inbox_tuples, inbox_tuple_count)) {
+  if (handle_debug_storage()) {
     ELMC_PEBBLE_TRACE_EXIT("inbox_received_handler");
     return;
   }
-  if (handle_debug_simulator_settings(inbox_tuples, inbox_tuple_count)) {
+  if (handle_debug_simulator_settings()) {
+    apply_pending_cmd();
     render_model();
     ELMC_PEBBLE_TRACE_EXIT("inbox_received_handler");
     return;
   }
 
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+  companion_inbox_log("inbox tuples=%d", s_inbox_snapshot_count);
+  for (int i = 0; i < s_inbox_snapshot_count; i++) {
+    companion_inbox_log("  key=%lu type=%d value=%ld",
+                        (unsigned long)s_inbox_snapshots[i].key,
+                        (int)s_inbox_snapshots[i].type,
+                        (long)s_inbox_snapshots[i].int_value);
+  }
+#endif
+
 #if ELMC_PEBBLE_FEATURE_INBOX_EVENTS
   // #region agent log
   ELMC_AGENT_INIT_PROBE(0xED995201);
   // #endregion
-  CompanionProtocolPhoneToWatchDecoder decoder;
-  companion_protocol_phone_to_watch_decoder_init(&decoder);
-
-  for (int i = 0; i < inbox_tuple_count; i++) {
-    companion_protocol_phone_to_watch_decoder_push_tuple(&decoder, &inbox_tuples[i]);
-  }
-  // #region agent log
-  ELMC_AGENT_INIT_PROBE(0xED995202);
-  // #endregion
-
-  CompanionProtocolPhoneToWatchMessage message = {0};
-  if (companion_protocol_phone_to_watch_decoder_finish(&decoder, &message) &&
-      message.kind != COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_UNKNOWN) {
-    // #region agent log
-    ELMC_AGENT_INIT_PROBE(0xED995002);
-    // #endregion
-    int rc = companion_protocol_dispatch_phone_to_watch(&s_elm_app, &message);
-    // #region agent log
-    ELMC_AGENT_INIT_PROBE(rc == 0 ? 0xED995003 : 0xED99E503);
-    // #endregion
-    APP_LOG(APP_LOG_LEVEL_INFO, "companion response kind=%d rc=%d", (int)message.kind, rc);
-#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
-    companion_inbox_log("companion dispatch kind=%d rc=%d", (int)message.kind, rc);
-#endif
-    if (rc == 0) {
-      // #region agent log
-      s_agent_after_companion_dispatch = true;
-      // #endregion
-      apply_pending_cmd();
-      // #region agent log
-      ELMC_AGENT_INIT_PROBE(0xED995004);
-      // #endregion
-      render_model();
-      // #region agent log
-      ELMC_AGENT_INIT_PROBE(0xED995005);
-      // #endregion
-    } else {
-      layer_mark_dirty(s_draw_layer);
-    }
+  if (s_inbox_snapshot_count > 1 &&
+      companion_decode_and_dispatch_snapshots(
+          s_inbox_snapshots, s_inbox_tuple_wire, s_inbox_snapshot_count)) {
+    companion_pending_clear();
     ELMC_PEBBLE_TRACE_EXIT("inbox_received_handler");
     return;
   }
-  // #region agent log
-  ELMC_AGENT_INIT_PROBE(0xED9950F2);
-  // #endregion
-  APP_LOG(APP_LOG_LEVEL_WARNING, "companion decode failed saw_tag=%d tag=%ld tuples=%d",
-          decoder.saw_tag ? 1 : 0, (long)decoder.tag, inbox_tuple_count);
-#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
-  companion_inbox_log("companion decode failed saw_tag=%d tag=%ld tuples=%d",
-                      decoder.saw_tag ? 1 : 0, (long)decoder.tag, inbox_tuple_count);
-#endif
-
-  for (int i = 0; i < inbox_tuple_count; i++) {
-    const Tuple *tuple = &inbox_tuples[i];
-    if (tuple->type == TUPLE_INT || tuple->type == TUPLE_UINT) {
-      int rc = elmc_pebble_dispatch_appmessage(&s_elm_app, tuple->key, tuple->value->int32);
-      APP_LOG(APP_LOG_LEVEL_INFO, "appmessage key=%lu value=%ld rc=%d",
-              (unsigned long)tuple->key, (long)tuple->value->int32, rc);
-      if (rc == 0) {
-        apply_pending_cmd();
-        render_model();
-      }
-    }
-  }
-#else
-  (void)inbox_tuples;
-  (void)inbox_tuple_count;
+  companion_pending_append();
+  schedule_companion_pending_flush();
 #endif
   ELMC_PEBBLE_TRACE_EXIT("inbox_received_handler");
 }
@@ -2414,8 +3403,15 @@ static void outbox_failed_handler(DictionaryIterator *iter, AppMessageResult rea
   (void)iter;
   (void)context;
   APP_LOG(APP_LOG_LEVEL_WARNING, "outbox failed: %d", reason);
+#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND
+  if (s_pending_companion_request || s_last_companion_request_valid) {
+    AppTimer *retry_timer = app_timer_register(250, companion_resync_callback, NULL);
+    (void)retry_timer;
+  }
+#endif
   ELMC_PEBBLE_TRACE_EXIT("outbox_failed_handler");
 }
+#endif
 
 #if ELMC_PEBBLE_FEATURE_BUTTON_EVENTS || ELMC_PEBBLE_FEATURE_RAW_BUTTON_EVENTS
 static void note_user_interaction(void) {
@@ -2715,7 +3711,8 @@ static void compass_handler(CompassHeadingData heading) {
   ELMC_PEBBLE_TRACE_ENTER("compass_handler");
   double degrees = simulator_compass_heading_degrees();
   bool is_valid = simulator_compass_heading_is_valid();
-  if (heading.compass_status == CompassStatusAvailable) {
+  if (heading.compass_status == CompassStatusCalibrated ||
+      heading.compass_status == CompassStatusCalibrating) {
     degrees = (double)heading.true_heading * 360.0 / TRIG_MAX_ANGLE;
     is_valid = true;
   } else if (heading.compass_status == CompassStatusDataInvalid) {
@@ -2761,21 +3758,24 @@ static void dictation_session_callback(DictationSessionStatus status, char *tran
 static void main_window_load(Window *window) {
   ELMC_PEBBLE_TRACE_ENTER("main_window_load");
   ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "window load");
-  Layer *window_layer = window_get_root_layer(window);
-  GRect bounds = layer_get_bounds(window_layer);
 
   s_font = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
   if (!s_font) {
     s_font = fonts_get_system_font(FONT_KEY_GOTHIC_24);
   }
-  s_draw_layer = layer_create(bounds);
+  {
+    GRect bounds = display_bounds();
+    ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "draw layer bounds w=%d h=%d", (int)bounds.size.w,
+                          (int)bounds.size.h);
+    s_draw_layer = layer_create(bounds);
+  }
   if (!s_draw_layer) {
     APP_LOG(APP_LOG_LEVEL_ERROR, "draw layer create failed");
     ELMC_PEBBLE_TRACE_EXIT("main_window_load");
     return;
   }
   layer_set_update_proc(s_draw_layer, draw_update_proc);
-  layer_add_child(window_layer, s_draw_layer);
+  layer_add_child(window_get_root_layer(window), s_draw_layer);
   if (s_render_pending) {
     s_render_pending = false;
     layer_mark_dirty(s_draw_layer);
@@ -2783,59 +3783,286 @@ static void main_window_load(Window *window) {
     companion_inbox_log("render flushed after window load");
 #endif
   }
+#ifdef ELMC_WATCHFACE_MODE
+  if (s_elm_app.initialized) {
+    render_model();
+  }
+#endif
   ELMC_PEBBLE_TRACE_EXIT("main_window_load");
 }
 
 static void main_window_unload(Window *window) {
   ELMC_PEBBLE_TRACE_ENTER("main_window_unload");
   (void)window;
-  layer_destroy(s_draw_layer);
-  s_draw_layer = NULL;
+  if (s_draw_layer) {
+    layer_destroy(s_draw_layer);
+    s_draw_layer = NULL;
+  }
   ELMC_PEBBLE_TRACE_EXIT("main_window_unload");
 }
 
 static int launch_reason_to_elm_tag(AppLaunchReason launch) {
-  switch (launch) {
-    case APP_LAUNCH_SYSTEM:
-      return 1;
-    case APP_LAUNCH_USER:
-      return 2;
-    case APP_LAUNCH_PHONE:
-      return 3;
-    case APP_LAUNCH_WAKEUP:
-      return 4;
-    case APP_LAUNCH_WORKER:
-      return 5;
-    case APP_LAUNCH_QUICK_LAUNCH:
-      return 6;
-    case APP_LAUNCH_TIMELINE_ACTION:
-      return 7;
-    case APP_LAUNCH_SMARTSTRAP:
-      return 8;
-    default:
-      return 9;
+  /* Pebble SDK AppLaunchReason ordinals match Pebble.Platform.launchReasonFromTag. */
+  return (int)launch;
+}
+
+static GRect compile_display_bounds(void) {
+#ifdef PBL_DISPLAY_WIDTH
+  const int16_t compile_w = PBL_DISPLAY_WIDTH;
+#else
+  const int16_t compile_w = PBL_IF_ROUND_ELSE(180, 144);
+#endif
+#ifdef PBL_DISPLAY_HEIGHT
+  const int16_t compile_h = PBL_DISPLAY_HEIGHT;
+#else
+  const int16_t compile_h = PBL_IF_ROUND_ELSE(180, 168);
+#endif
+  return GRect(0, 0, compile_w, compile_h);
+}
+
+#ifdef ELMC_WATCHFACE_MODE
+static bool display_bounds_ready(void) {
+  return s_main_window != NULL;
+}
+#endif
+
+static GRect display_bounds(void) {
+  GRect compile = compile_display_bounds();
+#ifdef ELMC_WATCHFACE_MODE
+  // Watchfaces target the full physical display. The root layer can report a
+  // reduced height during early layout on some platforms (notably Diorite/silk
+  // in QEMU) while the framebuffer is still the compile-time size.
+  (void)s_main_window;
+  return compile;
+#else
+  GRect layer = GRectZero;
+  if (s_main_window) {
+    layer = layer_get_bounds(window_get_root_layer(s_main_window));
+  }
+
+  if (layer.size.w <= 0 || layer.size.h <= 0) {
+    ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO,
+                          "display bounds unavailable; using compile w=%d h=%d",
+                          (int)compile.size.w, (int)compile.size.h);
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+    companion_inbox_log("display bounds unavailable; using compile w=%d h=%d", (int)compile.size.w,
+                        (int)compile.size.h);
+#else
+    APP_LOG(APP_LOG_LEVEL_INFO, "display bounds unavailable; using compile w=%d h=%d",
+            (int)compile.size.w, (int)compile.size.h);
+#endif
+    return compile;
+  }
+
+  int16_t w = layer.size.w;
+  int16_t h = layer.size.h;
+  if (w > compile.size.w) {
+    w = compile.size.w;
+  }
+  if (h > compile.size.h) {
+    h = compile.size.h;
+  }
+
+  if (w != layer.size.w || h != layer.size.h) {
+    ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO,
+                          "display bounds layer w=%d h=%d capped to w=%d h=%d (compile w=%d h=%d)",
+                          (int)layer.size.w, (int)layer.size.h, (int)w, (int)h,
+                          (int)compile.size.w, (int)compile.size.h);
+  } else {
+    ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO,
+                          "display bounds layer w=%d h=%d (compile w=%d h=%d)", (int)w, (int)h,
+                          (int)compile.size.w, (int)compile.size.h);
+  }
+
+  return GRect(0, 0, w, h);
+#endif
+}
+
+#ifdef ELMC_WATCHFACE_MODE
+static void ensure_draw_layer_size(void) {
+  if (!s_main_window || s_draw_layer) {
+    return;
+  }
+  main_window_load(s_main_window);
+}
+#endif
+
+static void complete_elm_init(void) {
+  if (s_elm_app.initialized) {
+    return;
+  }
+
+  AppLaunchReason launch = launch_reason();
+  ElmcValue *flags = build_launch_context(launch);
+  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "elmc init begin");
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+  companion_inbox_log("elmc init begin");
+#endif
+  int rc = elmc_pebble_init_with_mode(&s_elm_app, flags, s_run_mode);
+  elmc_release(flags);
+  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "elmc init rc=%d launch_reason=%d mode=%d", rc,
+                        (int)launch, (int)s_run_mode);
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+  companion_inbox_log("elmc init rc=%d", rc);
+#endif
+  ELMC_AGENT_INIT_PROBE(rc == 0 ? 0xED980302 : 0xED98E302);
+
+  if (rc == 0) {
+#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
+    app_message_register_inbox_received(inbox_received_handler);
+    app_message_register_inbox_dropped(inbox_dropped_handler);
+    app_message_register_outbox_sent(outbox_sent_handler);
+    app_message_register_outbox_failed(outbox_failed_handler);
+    AppMessageResult app_message_rc = app_message_open(ELMC_PEBBLE_APP_MESSAGE_INBOX_SIZE, ELMC_PEBBLE_APP_MESSAGE_OUTBOX_SIZE);
+    (void)app_message_rc;
+#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND
+    AppTimer *companion_resync_timer = app_timer_register(500, companion_resync_callback, NULL);
+    (void)companion_resync_timer;
+    companion_resync_timer = app_timer_register(1500, companion_resync_callback, NULL);
+    (void)companion_resync_timer;
+#endif
+#endif
+    AppTimer *startup_timer = app_timer_register(1, startup_cmd_callback, NULL);
+    (void)startup_timer;
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+    AppTimer *storage_snapshot_timer = app_timer_register(1500, emulator_storage_snapshot_callback, NULL);
+    (void)storage_snapshot_timer;
+    AppTimer *display_diag_timer = app_timer_register(2000, display_bounds_diag_callback, NULL);
+    (void)display_diag_timer;
+#if ELMC_PEBBLE_FEATURE_CMD_GET_CURRENT_DATE_TIME
+    AppTimer *datetime_timer = app_timer_register(2500, deferred_datetime_callback, NULL);
+    (void)datetime_timer;
+#endif
+#endif
+#if ELMC_PEBBLE_FEATURE_FRAME_EVENTS
+    if (s_run_mode == ELMC_PEBBLE_MODE_APP) {
+      s_frame_interval_ms = frame_interval_from_subscriptions();
+    }
+#endif
+#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && (ELMC_PEBBLE_FEATURE_TICK_EVENTS || ELMC_PEBBLE_FEATURE_HOUR_EVENTS || ELMC_PEBBLE_FEATURE_MINUTE_EVENTS || ELMC_PEBBLE_FEATURE_DAY_EVENTS || ELMC_PEBBLE_FEATURE_MONTH_EVENTS || ELMC_PEBBLE_FEATURE_YEAR_EVENTS)
+    tick_timer_service_subscribe(subscribed_time_units(), tick_handler);
+#endif
+#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_ACCEL_EVENTS
+    if (s_run_mode == ELMC_PEBBLE_MODE_APP) {
+      accel_tap_service_subscribe(accel_tap_handler);
+    }
+#endif
+#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_ACCEL_DATA_EVENTS
+    if (s_run_mode == ELMC_PEBBLE_MODE_APP) {
+      accel_data_service_subscribe(ELMC_PEBBLE_ACCEL_SAMPLES_PER_UPDATE, accel_data_handler);
+      accel_service_set_sampling_rate(accel_sampling_rate_from_hz(ELMC_PEBBLE_ACCEL_SAMPLING_HZ));
+    }
+#endif
+#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_BATTERY_EVENTS
+    battery_state_service_subscribe(battery_handler);
+#endif
+#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_CONNECTION_EVENTS
+    connection_service_subscribe((ConnectionHandlers){
+        .pebble_app_connection_handler = connection_handler,
+    });
+#endif
+#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_HEALTH_EVENTS
+#ifdef PBL_HEALTH
+    health_service_events_subscribe(health_handler, NULL);
+#endif
+#endif
+#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_APP_FOCUS_EVENTS
+    app_focus_service_subscribe_handlers((AppFocusHandlers){
+        .will_focus = app_focus_handler,
+        .did_focus = app_focus_handler,
+    });
+#endif
+#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_COMPASS_EVENTS
+#ifdef PBL_COMPASS
+    compass_service_subscribe(compass_handler);
+#endif
+#endif
+#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_UNOBSTRUCTED_AREA_EVENTS
+    unobstructed_area_service_subscribe((UnobstructedAreaHandlers){
+        .will_change = unobstructed_will_change_handler,
+        .change = unobstructed_change_handler,
+        .did_change = unobstructed_did_change_handler,
+    }, NULL);
+    {
+      GRect bounds = current_unobstructed_bounds();
+      unobstructed_change_handler(0, NULL);
+      unobstructed_did_change_handler(NULL);
+      (void)bounds;
+    }
+#endif
+#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_DICTATION_EVENTS
+#ifdef PBL_DICTATION
+    if (!s_dictation_session) {
+      s_dictation_session = dictation_session_create(30000, dictation_session_callback, NULL);
+    }
+#endif
+#endif
+#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND
+    flush_pending_companion_request();
+#endif
+  } else {
+    APP_LOG(APP_LOG_LEVEL_ERROR, "elmc_pebble_init failed: %d", rc);
   }
 }
 
-static ElmcValue *build_launch_context(AppLaunchReason launch) {
-  ELMC_PEBBLE_TRACE_ENTER("build_launch_context");
-  GRect bounds = layer_get_bounds(window_get_root_layer(s_main_window));
-  if (bounds.size.w <= 0 || bounds.size.h <= 0) {
+#ifdef ELMC_WATCHFACE_MODE
+static void deferred_elm_init_callback(void *data) {
+  (void)data;
+
+  if (!display_bounds_ready() && s_elm_init_attempts < ELMC_DEFERRED_INIT_MAX_ATTEMPTS) {
+    s_elm_init_attempts += 1;
+    app_timer_register(ELMC_DEFERRED_INIT_RETRY_MS, deferred_elm_init_callback, NULL);
+    return;
+  }
+
+  ensure_draw_layer_size();
+  complete_elm_init();
+}
+
+static void schedule_elm_init(void) {
+  if (display_bounds_ready()) {
+    ensure_draw_layer_size();
+    complete_elm_init();
+    return;
+  }
+
+  s_elm_init_attempts = 0;
+  app_timer_register(ELMC_DEFERRED_INIT_RETRY_MS, deferred_elm_init_callback, NULL);
+}
+#endif
+
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+static void display_bounds_diag_callback(void *data) {
+  (void)data;
+  GRect bounds = display_bounds();
 #ifdef PBL_DISPLAY_WIDTH
-    bounds.size.w = PBL_DISPLAY_WIDTH;
+  const int16_t compile_w = PBL_DISPLAY_WIDTH;
 #else
-    bounds.size.w = PBL_IF_ROUND_ELSE(180, 144);
+  const int16_t compile_w = PBL_IF_ROUND_ELSE(180, 144);
 #endif
 #ifdef PBL_DISPLAY_HEIGHT
-    bounds.size.h = PBL_DISPLAY_HEIGHT;
+  const int16_t compile_h = PBL_DISPLAY_HEIGHT;
 #else
-    bounds.size.h = PBL_IF_ROUND_ELSE(180, 168);
+  const int16_t compile_h = PBL_IF_ROUND_ELSE(180, 168);
 #endif
-  }
+  APP_LOG(APP_LOG_LEVEL_INFO, "display diag layer w=%d h=%d compile w=%d h=%d",
+          (int)bounds.size.w, (int)bounds.size.h, (int)compile_w, (int)compile_h);
+  companion_inbox_log("display diag layer w=%d h=%d compile w=%d h=%d", (int)bounds.size.w,
+                      (int)bounds.size.h, (int)compile_w, (int)compile_h);
+}
+#endif
+
+static ElmcValue *build_launch_context(AppLaunchReason launch) {
+  ELMC_PEBBLE_TRACE_ENTER("build_launch_context");
+  GRect bounds = display_bounds();
+
+  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "launch context screen w=%d h=%d",
+                        (int)bounds.size.w, (int)bounds.size.h);
 
   ElmcValue *screen_width = elmc_new_int(bounds.size.w);
   ElmcValue *screen_height = elmc_new_int(bounds.size.h);
-  ElmcValue *screen_shape = elmc_new_string(PBL_IF_ROUND_ELSE("Round", "Rectangular"));
+  /* DisplayShape constructor tags (Round=2, Rectangular=1) match elmc codegen. */
+  ElmcValue *screen_shape = elmc_new_int(PBL_IF_ROUND_ELSE(2, 1));
   ElmcValue *screen_color_mode = elmc_new_string(PBL_IF_COLOR_ELSE("Color", "BlackWhite"));
   const char *screen_names[] = {"color_mode", "height", "shape", "width"};
   ElmcValue *screen_values[] = {screen_color_mode, screen_height, screen_shape, screen_width};
@@ -2914,31 +4141,34 @@ static void init(void) {
     window_set_click_config_provider(s_main_window, click_config_provider);
   }
 #endif
-  window_stack_push(s_main_window, true);
-  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "window pushed");
   // #region agent probe
 #if ELMC_AGENT_PROBE_INIT_STAGE == 1
+  window_stack_push(s_main_window, true);
+  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "window pushed");
   ELMC_PEBBLE_TRACE_EXIT("init");
   return;
 #endif
   // #endregion
 
-  AppLaunchReason launch = launch_reason();
-  ElmcValue *flags = build_launch_context(launch);
+  window_stack_push(s_main_window, true);
+  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "window pushed");
+
   // #region agent probe
 #if ELMC_AGENT_PROBE_INIT_STAGE == 2
-  elmc_release(flags);
   ELMC_PEBBLE_TRACE_EXIT("init");
   return;
 #endif
   // #endregion
-  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "elmc init begin");
-  int rc = elmc_pebble_init_with_mode(&s_elm_app, flags, s_run_mode);
-  elmc_release(flags);
-  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "elmc init rc=%d launch_reason=%d mode=%d", rc, (int)launch, (int)s_run_mode);
-  // #region agent log
-  ELMC_AGENT_INIT_PROBE(rc == 0 ? 0xED980302 : 0xED98E302);
-  // #endregion
+
+#ifdef ELMC_WATCHFACE_MODE
+  schedule_elm_init();
+#else
+  // Apps: initialize Elm on the window-load draw layer immediately. Deferred
+  // init and draw-layer rebuild are for watchfaces where Diorite/silk can report
+  // undersized root bounds during early QEMU layout.
+  complete_elm_init();
+#endif
+
   // #region agent probe
 #if ELMC_AGENT_PROBE_INIT_STAGE == 3
   ELMC_PEBBLE_TRACE_EXIT("init");
@@ -2946,96 +4176,6 @@ static void init(void) {
 #endif
   // #endregion
 
-  if (rc == 0) {
-#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
-    app_message_register_inbox_received(inbox_received_handler);
-    app_message_register_inbox_dropped(inbox_dropped_handler);
-    app_message_register_outbox_sent(outbox_sent_handler);
-    app_message_register_outbox_failed(outbox_failed_handler);
-    AppMessageResult app_message_rc = app_message_open(ELMC_PEBBLE_APP_MESSAGE_INBOX_SIZE, ELMC_PEBBLE_APP_MESSAGE_OUTBOX_SIZE);
-    (void)app_message_rc;
-#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND
-    AppTimer *companion_resync_timer = app_timer_register(500, companion_resync_callback, NULL);
-    (void)companion_resync_timer;
-    companion_resync_timer = app_timer_register(1500, companion_resync_callback, NULL);
-    (void)companion_resync_timer;
-#endif
-#endif
-    AppTimer *startup_timer = app_timer_register(1, startup_cmd_callback, NULL);
-    (void)startup_timer;
-#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
-    AppTimer *storage_snapshot_timer = app_timer_register(1500, emulator_storage_snapshot_callback, NULL);
-    (void)storage_snapshot_timer;
-#endif
-#if ELMC_PEBBLE_FEATURE_FRAME_EVENTS
-    if (s_run_mode == ELMC_PEBBLE_MODE_APP) {
-      s_frame_interval_ms = frame_interval_from_subscriptions();
-    }
-#endif
-#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && (ELMC_PEBBLE_FEATURE_TICK_EVENTS || ELMC_PEBBLE_FEATURE_HOUR_EVENTS || ELMC_PEBBLE_FEATURE_MINUTE_EVENTS || ELMC_PEBBLE_FEATURE_DAY_EVENTS || ELMC_PEBBLE_FEATURE_MONTH_EVENTS || ELMC_PEBBLE_FEATURE_YEAR_EVENTS)
-    tick_timer_service_subscribe(subscribed_time_units(), tick_handler);
-#endif
-#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_ACCEL_EVENTS
-    if (s_run_mode == ELMC_PEBBLE_MODE_APP) {
-      accel_tap_service_subscribe(accel_tap_handler);
-    }
-#endif
-#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_ACCEL_DATA_EVENTS
-    if (s_run_mode == ELMC_PEBBLE_MODE_APP) {
-      accel_data_service_subscribe(ELMC_PEBBLE_ACCEL_SAMPLES_PER_UPDATE, accel_data_handler);
-      accel_service_set_sampling_rate(accel_sampling_rate_from_hz(ELMC_PEBBLE_ACCEL_SAMPLING_HZ));
-    }
-#endif
-#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_BATTERY_EVENTS
-    battery_state_service_subscribe(battery_handler);
-#endif
-#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_CONNECTION_EVENTS
-    connection_service_subscribe((ConnectionHandlers){
-        .pebble_app_connection_handler = connection_handler,
-    });
-#endif
-#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_HEALTH_EVENTS
-#ifdef PBL_HEALTH
-    health_service_events_subscribe(health_handler, NULL);
-#endif
-#endif
-#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_APP_FOCUS_EVENTS
-    app_focus_service_subscribe((AppFocusHandlers){
-        .did_focus = app_focus_handler,
-        .will_blur = app_focus_handler,
-    });
-#endif
-#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_COMPASS_EVENTS
-#ifdef PBL_COMPASS
-    compass_service_subscribe(compass_handler);
-#endif
-#endif
-#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_UNOBSTRUCTED_AREA_EVENTS
-    unobstructed_area_service_subscribe((UnobstructedAreaHandlers){
-        .will_change = unobstructed_will_change_handler,
-        .change = unobstructed_change_handler,
-        .did_change = unobstructed_did_change_handler,
-    }, NULL);
-    {
-      GRect bounds = current_unobstructed_bounds();
-      unobstructed_change_handler(0, NULL);
-      unobstructed_did_change_handler(NULL);
-      (void)bounds;
-    }
-#endif
-#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_DICTATION_EVENTS
-#ifdef PBL_DICTATION
-    if (!s_dictation_session) {
-      s_dictation_session = dictation_session_create(30000, dictation_session_callback, NULL);
-    }
-#endif
-#endif
-#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND
-    flush_pending_companion_request();
-#endif
-  } else {
-    APP_LOG(APP_LOG_LEVEL_ERROR, "elmc_pebble_init failed: %d", rc);
-  }
   // #region agent log
   ELMC_AGENT_INIT_PROBE(0xED990A01);
   // #endregion
@@ -3051,6 +4191,10 @@ static void deinit(void) {
   if (s_timer) {
     app_timer_cancel(s_timer);
     s_timer = NULL;
+  }
+  if (s_render_coalesce_timer) {
+    app_timer_cancel(s_render_coalesce_timer);
+    s_render_coalesce_timer = NULL;
   }
 #if ELMC_PEBBLE_FEATURE_FRAME_EVENTS
   if (s_frame_timer) {
@@ -3101,6 +4245,23 @@ static void deinit(void) {
     light_enable(false);
     s_forced_backlight = false;
   }
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_VECTOR_AT
+  vector_image_cache_clear();
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_VECTOR_SEQUENCE_AT
+  if (s_vector_sequence_timer) {
+    app_timer_cancel(s_vector_sequence_timer);
+    s_vector_sequence_timer = NULL;
+  }
+  vector_sequence_cache_clear();
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_BITMAP_SEQUENCE_AT
+  if (s_bitmap_sequence_timer) {
+    app_timer_cancel(s_bitmap_sequence_timer);
+    s_bitmap_sequence_timer = NULL;
+  }
+  bitmap_sequence_cache_clear();
 #endif
   elmc_pebble_deinit(&s_elm_app);
   // #region agent log

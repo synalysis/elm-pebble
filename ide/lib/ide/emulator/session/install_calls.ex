@@ -3,8 +3,8 @@ defmodule Ide.Emulator.Session.InstallCalls do
 
   require Logger
 
-  alias Ide.Emulator.{InstallPrep, Types}
-  alias Ide.Emulator.Session.{Lifecycle, ProcessHost, Startup}
+  alias Ide.Emulator.{InstallPrep, Types, Workflow}
+  alias Ide.Emulator.Session.{Config, Lifecycle, ProcessHost, Startup}
 
   @spec install_context(Types.session_state()) ::
           {:reply, {:ok, Types.install_context()} | {:error, Types.session_atom_error()},
@@ -16,14 +16,6 @@ defmodule Ide.Emulator.Session.InstallCalls do
     do: {:reply, {:error, :embedded_protocol_router_not_started}, state}
 
   def install_context(state) do
-    state =
-      if Map.get(state, :has_phone_companion, false) do
-        state
-      else
-        ProcessHost.cleanup_process(state.pypkjs_pid)
-        %{state | pypkjs_pid: nil}
-      end
-
     {:reply,
      {:ok,
       %{
@@ -62,6 +54,15 @@ defmodule Ide.Emulator.Session.InstallCalls do
       "embedded emulator prepare_for_install session=#{state.id} platform=#{state.platform} reuse_qemu=#{reuse?}"
     )
 
+    with {:ok, state} <- Workflow.refresh_session_artifact(state) do
+      prepare_for_install_after_refresh(state, reuse?)
+    else
+      {:error, reason} ->
+        {:reply, {:error, reason}, %{state | installing?: false}}
+    end
+  end
+
+  defp prepare_for_install_after_refresh(state, reuse?) do
     result =
       if reuse? do
         Startup.prepare_running_session_for_install(state)
@@ -83,20 +84,23 @@ defmodule Ide.Emulator.Session.InstallCalls do
 
   @spec install_finished(Types.session_state()) :: {:reply, :ok, Types.session_state()}
   def install_finished(state) do
-    state = %{state | installing?: false, last_ping_ms: Lifecycle.now_ms()}
+    if Config.start_processes?() and not ProcessHost.live_pid?(state.pypkjs_pid) do
+      send(self(), :restart_pypkjs_after_install)
+    end
 
-    state =
-      if Map.get(state, :has_phone_companion, false) and
-           not ProcessHost.live_pid?(state.pypkjs_pid) do
-        case Startup.maybe_start_pypkjs(state) do
-          {:ok, state} -> state
-          {:error, _reason} -> state
-        end
-      else
-        state
+    {:reply, :ok, %{state | installing?: false, last_ping_ms: Lifecycle.now_ms()}}
+  end
+
+  @spec restart_pypkjs_after_install(Types.session_state()) :: Types.session_state()
+  def restart_pypkjs_after_install(state) do
+    if Config.start_processes?() and not ProcessHost.live_pid?(state.pypkjs_pid) do
+      case Startup.maybe_start_pypkjs(state) do
+        {:ok, state} -> state
+        {:error, _reason} -> state
       end
-
-    {:reply, :ok, state}
+    else
+      state
+    end
   end
 
   @spec reset_for_install(Types.session_state()) ::

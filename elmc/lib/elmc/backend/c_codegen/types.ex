@@ -6,10 +6,14 @@ defmodule Elmc.Backend.CCodegen.Types do
   @type ir_literal_op ::
           :int_literal
           | :c_int_expr
+          | :msg_tag_expr
           | :string_literal
           | :char_literal
           | :float_literal
           | :cmd_none
+
+  @type ir_cmd_op :: :pebble_cmd
+  @type ir_sub_op :: :pebble_sub
 
   @type ir_var_arith_op :: :add_const | :add_vars | :sub_const
 
@@ -33,6 +37,7 @@ defmodule Elmc.Backend.CCodegen.Types do
 
   @type ir_op ::
           ir_literal_op()
+          | ir_cmd_op()
           | ir_var_arith_op()
           | ir_collection_op()
           | ir_call_op()

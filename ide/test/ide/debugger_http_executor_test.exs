@@ -45,7 +45,23 @@ defmodule Ide.Debugger.HttpExecutorTest do
 
     assert result["message_value"] == %{
              "ctor" => "WeatherReceived",
-             "args" => [%{"ctor" => "Err", "args" => [%{"ctor" => "BadStatus", "args" => [503]}]}]
+             "args" => [
+               %{
+                 "ctor" => "Err",
+                 "args" => [
+                   %{
+                     "ctor" => "BadStatus",
+                     "args" => [
+                       %{
+                         "url" => "",
+                         "status" => %{"code" => 503, "message" => ""},
+                         "body" => "unavailable"
+                       }
+                     ]
+                   }
+                 ]
+               }
+             ]
            }
   end
 

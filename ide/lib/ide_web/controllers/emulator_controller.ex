@@ -74,6 +74,7 @@ defmodule IdeWeb.EmulatorController do
   def install(conn, %{"id" => id}) do
     case Emulator.install(id) do
       {:ok, result} ->
+        _ = Emulator.request_app_logs(id)
         json(conn, %{status: "ok", result: result})
 
       {:error, :not_found} ->
@@ -83,6 +84,25 @@ defmodule IdeWeb.EmulatorController do
         conn
         |> put_status(:unprocessable_entity)
         |> json(%{error: Workflow.install_error_message(reason)})
+    end
+  end
+
+  @spec request_app_logs(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  def request_app_logs(conn, %{"id" => id}) do
+    case Emulator.request_app_logs(id) do
+      :ok ->
+        json(conn, %{status: "ok"})
+
+      {:error, :not_found} ->
+        conn |> put_status(:not_found) |> json(%{error: "Emulator not found"})
+
+      {:error, :embedded_protocol_router_not_started} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "Embedded emulator protocol router is not running."})
+
+      {:error, reason} ->
+        conn |> put_status(:unprocessable_entity) |> json(%{error: inspect(reason)})
     end
   end
 

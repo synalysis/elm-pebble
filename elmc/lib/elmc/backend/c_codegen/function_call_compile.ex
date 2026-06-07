@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.BuiltinOperators
+  alias Elmc.Backend.CCodegen.ConstantInt
   alias Elmc.Backend.CCodegen.DebugProbes
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Expr
@@ -73,6 +74,16 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     arity = Map.get(function_arities, {module_name, name}, length(args))
     c_name = Util.module_fn_name(module_name, name)
 
+    case ConstantInt.compile_boxed_call(module_name, name, args, env, counter) do
+      {:ok, code, out, c} ->
+        {code, out, c}
+
+      :error ->
+        compile_function_call(module_name, name, args, env, counter, arity, c_name)
+    end
+  end
+
+  defp compile_function_call(module_name, name, args, env, counter, arity, c_name) do
     if length(args) == arity and NativeFunctionCall.call?({module_name, name}, env) do
       NativeFunctionCall.compile(module_name, name, args, env, counter)
     else
@@ -163,14 +174,28 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
                 if arity > 0 do
                   top_level_closure(module_name, name, arity, var, next)
                 else
-                  c_name = Util.module_fn_name(module_name, name)
-                  {"ElmcValue *#{var} = #{c_name}(NULL, 0);", var, next}
+                  compile_zero_arg_constant(module_name, name, env, counter, var, next)
                 end
 
               result ->
                 result
             end
         end
+    end
+  end
+
+  @spec compile_zero_arg_constant(
+          String.t(),
+          String.t(),
+          Types.compile_env(),
+          Types.compile_counter(),
+          String.t(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
+  defp compile_zero_arg_constant(module_name, name, env, counter, var, next) do
+    case ConstantInt.compile_boxed_call(module_name, name, [], env, counter) do
+      {:ok, code, out, c} -> {code, out, c}
+      :error -> {"ElmcValue *#{var} = #{Util.module_fn_name(module_name, name)}(NULL, 0);", var, next}
     end
   end
 

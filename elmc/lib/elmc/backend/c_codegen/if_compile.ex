@@ -81,15 +81,19 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
     then_body = maybe_extract_if_branch_helper(then_expr, env, out, then_code, then_assignment)
     else_body = maybe_extract_if_branch_helper(else_expr, env, out, else_code, else_assignment)
 
-    code = """
-    #{cond_code}
-      ElmcValue *#{out};
-      if (#{cond_ref}) {
-    #{then_body}
-      } else {
-    #{else_body}
-      }
-    """
+    code =
+      Enum.join(
+        [
+          cond_code,
+          "ElmcValue *#{out};",
+          "if (#{cond_ref}) {",
+          format_if_branch_body(then_body),
+          "} else {",
+          format_if_branch_body(else_body),
+          "}"
+        ],
+        "\n"
+      )
 
     {code, out, counter}
   end
@@ -115,25 +119,30 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
     then_body = maybe_extract_if_branch_helper(then_expr, env, out, then_code, then_assignment)
     else_body = maybe_extract_if_branch_helper(else_expr, env, out, else_code, else_assignment)
 
-    code = """
-    #{cond_code}
-          ElmcValue *#{out};
-      if (elmc_as_int(#{cond_var}) != 0) {
-    #{then_body}
-      } else {
-    #{else_body}
-      }
-      elmc_release(#{cond_var});
-    """
+    code =
+      Enum.join(
+        [
+          cond_code,
+          "ElmcValue *#{out};",
+          "if (elmc_as_int(#{cond_var}) != 0) {",
+          format_if_branch_body(then_body),
+          "} else {",
+          format_if_branch_body(else_body),
+          "}",
+          "elmc_release(#{cond_var});"
+        ],
+        "\n"
+      )
 
     {code, out, counter}
   end
 
+  defp format_if_branch_body(body) do
+    Util.format_c_block(body, 4)
+  end
+
   defp maybe_extract_if_branch_helper(expr, env, out, branch_code, assignment_code) do
-    inline_body = """
-    #{Util.indent(branch_code, 4)}
-        #{assignment_code}
-    """
+    inline_body = format_if_branch_body(Enum.join([branch_code, assignment_code], "\n"))
 
     if extract_if_branch_helper?(env, inline_body) do
       case if_branch_helper_params(expr, env) do

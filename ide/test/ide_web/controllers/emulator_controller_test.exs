@@ -121,6 +121,20 @@ defmodule IdeWeb.EmulatorControllerTest do
     end)
   end
 
+  test "request-app-logs reports missing protocol router in dry-run sessions", %{conn: conn} do
+    EmulatorSessionEnv.run(fn ->
+      assert {:ok, info} =
+               EmulatorLaunch.launch(project_slug: "wf", platform: "basalt", artifact_path: nil)
+
+      assert %{"error" => "Embedded emulator protocol router is not running."} =
+               conn
+               |> post(~p"/api/emulator/#{info.id}/request-app-logs")
+               |> json_response(422)
+
+      assert :ok = Emulator.kill(info.id)
+    end)
+  end
+
   test "control reports missing protocol router in dry-run sessions", %{conn: conn} do
     EmulatorSessionEnv.run(fn ->
       assert {:ok, info} =

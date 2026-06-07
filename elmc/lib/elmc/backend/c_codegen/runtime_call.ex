@@ -1,7 +1,10 @@
 defmodule Elmc.Backend.CCodegen.RuntimeCall do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.CodegenListHelpers
+  alias Elmc.Backend.CCodegen.ConstantInt
   alias Elmc.Backend.CCodegen.DebugProbes
+  alias Elmc.Backend.CCodegen.ListLoopCodegen
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.Bool, as: NativeBool
@@ -16,17 +19,44 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall do
     elmc_basics_sqrt elmc_basics_abs elmc_basics_negate
   )a
 
+  @min_list_append_concat_segments 3
+  @compare_ops ~w(__eq__ __neq__ __lt__ __lte__ __gt__ __gte__)
+
+  @spec flatten_append_ir(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  def flatten_append_ir(left, right) do
+    append_expr = %{op: :runtime_call, function: "elmc_append", args: [left, right]}
+
+    case collect_append_segments(append_expr) do
+      {:ok, segments} when length(segments) >= @min_list_append_concat_segments ->
+        %{op: :runtime_call, function: "elmc_list_concat", args: [%{op: :list_literal, items: segments}]}
+
+      _ ->
+        append_expr
+    end
+  end
+
   @spec compile(Types.ir_runtime_call_expr(), Types.compile_env(), Types.compile_counter()) ::
           Types.compile_result()
   def compile(%{op: :runtime_call, function: "elmc_append", args: [left, right]}, env, counter) do
-    if NativeString.expr?(left, env) and NativeString.expr?(right, env) do
-      compile_native_append(left, right, env, counter)
-    else
-      compile_generic(
-        %{op: :runtime_call, function: "elmc_append", args: [left, right]},
-        env,
-        counter
-      )
+    append_expr = %{op: :runtime_call, function: "elmc_append", args: [left, right]}
+
+    cond do
+      NativeString.expr?(left, env) and NativeString.expr?(right, env) ->
+        compile_native_append(left, right, env, counter)
+
+      true ->
+        case collect_append_segments(append_expr) do
+          {:ok, segments} ->
+            if length(segments) >= @min_list_append_concat_segments and
+                 list_append_concat_segments?(segments, env) do
+              compile_list_concat(segments, env, counter)
+            else
+              compile_generic(append_expr, env, counter)
+            end
+
+          :error ->
+            compile_generic(append_expr, env, counter)
+        end
     end
   end
 
@@ -34,26 +64,18 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall do
         %{
           op: :runtime_call,
           function: function,
-          args: [%{op: :lambda, args: [arg], body: body}, list]
-        },
+          args: [predicate, list]
+        } = expr,
         env,
         counter
       )
-      when function in ["elmc_list_all", "elmc_list_any"] and is_binary(arg) do
-    case compile_list_bool_loop(function, arg, body, list, env, counter) do
+      when function in ["elmc_list_all", "elmc_list_any"] do
+    case compile_list_bool_expr(function, predicate, list, env, counter) do
       {:ok, code, out, counter} ->
         {code, out, counter}
 
       :error ->
-        compile_generic(
-          %{
-            op: :runtime_call,
-            function: function,
-            args: [%{op: :lambda, args: [arg], body: body}, list]
-          },
-          env,
-          counter
-        )
+        compile_generic(expr, env, counter)
     end
   end
 
@@ -91,7 +113,12 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall do
                   :error ->
                     case compile_list_map_native_int_cursor_loop(arg, body, list, env, counter) do
                       {:ok, code, out, counter} -> {code, out, counter}
-                      :error -> compile_generic(expr, env, counter)
+
+                      :error ->
+                        {:ok, code, out, counter} =
+                          compile_list_map_boxed_cursor_loop(arg, body, list, env, counter)
+
+                        {code, out, counter}
                     end
                 end
             end
@@ -116,7 +143,21 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall do
            compile_list_indexed_map_int_loop(index_arg, item_arg, body, list, env, counter) do
       {code, out, counter}
     else
-      _ -> compile_generic(expr, env, counter)
+      _ ->
+        with {:ok, index_arg, item_arg, body} <- two_arg_lambda(lambda),
+             {:ok, code, out, counter} <-
+               compile_list_indexed_map_boxed_cursor_loop(
+                 index_arg,
+                 item_arg,
+                 body,
+                 list,
+                 env,
+                 counter
+               ) do
+          {code, out, counter}
+        else
+          _ -> compile_generic(expr, env, counter)
+        end
     end
   end
 
@@ -124,17 +165,114 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall do
         %{
           op: :runtime_call,
           function: "elmc_list_foldl",
-          args: [%{op: :lambda} = lambda, acc, list]
+          args: [lambda, acc, list]
         } = expr,
         env,
         counter
       ) do
-    with {:ok, item_arg, acc_arg, body} <- two_arg_lambda(lambda),
-         {:ok, code, out, counter} <-
-           compile_list_foldl_int_range_loop(item_arg, acc_arg, body, acc, list, env, counter) do
-      {code, out, counter}
-    else
-      _ -> compile_generic(expr, env, counter)
+    case normalize_foldl_lambda(lambda) do
+      {:ok, item_arg, acc_arg, body} ->
+        case compile_list_foldl_int_range_loop(item_arg, acc_arg, body, acc, list, env, counter, false) do
+          {:ok, code, out, counter} ->
+            {code, out, counter}
+
+          :error ->
+            {:ok, code, out, counter} =
+              compile_list_foldl_list_cursor_loop(item_arg, acc_arg, body, acc, list, env, counter)
+
+            {code, out, counter}
+        end
+
+      :error ->
+        compile_generic(expr, env, counter)
+    end
+  end
+
+  def compile(
+        %{
+          op: :runtime_call,
+          function: "elmc_list_filter",
+          args: [predicate, list]
+        } = expr,
+        env,
+        counter
+      ) do
+    case compile_list_filter_expr(predicate, list, env, counter) do
+      {:ok, code, out, counter} -> {code, out, counter}
+      :error -> compile_generic(expr, env, counter)
+    end
+  end
+
+  def compile(
+        %{
+          op: :runtime_call,
+          function: "elmc_list_filter_map",
+          args: [lambda, list]
+        } = expr,
+        env,
+        counter
+      ) do
+    case compile_list_filter_map_expr(lambda, list, env, counter) do
+      {:ok, code, out, counter} -> {code, out, counter}
+      :error -> compile_generic(expr, env, counter)
+    end
+  end
+
+  def compile(
+        %{
+          op: :runtime_call,
+          function: "elmc_list_repeat",
+          args: [n, value]
+        } = expr,
+        env,
+        counter
+      ) do
+    case compile_list_repeat_int(n, value, env, counter) do
+      {:ok, code, out, counter} -> {code, out, counter}
+      :error -> compile_generic(expr, env, counter)
+    end
+  end
+
+  def compile(
+        %{
+          op: :runtime_call,
+          function: "elmc_list_length",
+          args: [list]
+        },
+        env,
+        counter
+      ) do
+    {:ok, code, out, counter} = compile_list_length_int(list, env, counter)
+    {code, out, counter}
+  end
+
+  def compile(
+        %{
+          op: :runtime_call,
+          function: "elmc_list_reverse",
+          args: [list_expr]
+        } = expr,
+        env,
+        counter
+      ) do
+    case compile_list_reverse_expr(list_expr, env, counter) do
+      {:ok, code, out, counter} -> {code, out, counter}
+      :error -> compile_generic(expr, env, counter)
+    end
+  end
+
+  def compile(
+        %{
+          op: :runtime_call,
+          function: "elmc_list_concat",
+          args: [lists_expr]
+        } = expr,
+        env,
+        counter
+      ) do
+    case compile_list_concat_expr(lists_expr, env, counter) do
+      {:ok, code, out, counter} -> {code, out, counter}
+      :error -> compile_generic(expr, env, counter)
     end
   end
 
@@ -233,6 +371,94 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall do
           Types.compile_env(),
           Types.compile_counter()
         ) :: Types.compile_result()
+  defp collect_append_segments(expr) do
+    case unwrap_append(expr) do
+      {:append, left, right} ->
+        with {:ok, left_segments} <- collect_append_segments(left),
+             {:ok, right_segments} <- collect_append_segments(right) do
+          {:ok, left_segments ++ right_segments}
+        end
+
+      {:leaf, leaf} ->
+        {:ok, [leaf]}
+    end
+  end
+
+  defp unwrap_append(%{op: :runtime_call, function: "elmc_append", args: [left, right]}),
+    do: {:append, left, right}
+
+  defp unwrap_append(%{op: :call, name: "__append__", args: [left, right]}),
+    do: {:append, left, right}
+
+  defp unwrap_append(expr), do: {:leaf, expr}
+
+  defp list_append_concat_segments?(segments, env) do
+    Enum.all?(segments, fn segment ->
+      not NativeString.expr?(segment, env)
+    end)
+  end
+
+  defp compile_list_concat(segments, env, counter) do
+    case compile_list_concat_segments_flatten(segments, env, counter) do
+      {:ok, code, out, counter} ->
+        {code, out, counter}
+
+      :error ->
+        compile_generic(
+          %{
+            op: :runtime_call,
+            function: "elmc_list_concat",
+            args: [%{op: :list_literal, items: segments}]
+          },
+          env,
+          counter
+        )
+    end
+  end
+
+  @spec compile_list_concat_segments_flatten(
+          [Types.ir_expr()],
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: {:ok, String.t(), String.t(), Types.compile_counter()} | :error
+  defp compile_list_concat_segments_flatten(segments, env, counter) do
+    if list_append_concat_segments?(segments, env) do
+      {segment_code, segment_vars, counter} =
+        Enum.reduce(segments, {"", [], counter}, fn segment, {code_acc, vars_acc, c} ->
+          {code, var, c2} = Host.compile_expr(segment, env, c)
+          {code_acc <> code, vars_acc ++ [var], c2}
+        end)
+
+      next = counter + 1
+      out = "tmp_#{next}"
+
+      {cons_code, lists_var, _counter} =
+        Enum.reduce(Enum.reverse(segment_vars), {"", "elmc_list_nil()", next}, fn seg_var,
+                                                                                 {acc, rev,
+                                                                                  node_counter} ->
+          node = "list_concat_node_#{node_counter}"
+
+          line = """
+          ElmcValue *#{node} = elmc_list_cons(#{seg_var} ? elmc_retain(#{seg_var}) : elmc_list_nil(), #{rev});
+          elmc_release(#{seg_var});
+          """
+
+          {acc <> line, node, node_counter + 1}
+        end)
+
+      code = """
+      #{segment_code}#{cons_code}
+        ElmcValue *#{out} = elmc_list_concat(#{lists_var});
+        elmc_release(#{lists_var});
+        #{DebugProbes.append_probe(env, "elmc_list_concat", out, next)}
+      """
+
+      {:ok, code, out, next}
+    else
+      :error
+    end
+  end
+
   defp compile_native_append(left, right, env, counter) do
     {left_code, left_ref, left_cleanup, counter} = NativeString.compile_expr(left, env, counter)
 
@@ -256,6 +482,111 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall do
     {code, out, next}
   end
 
+  defp compile_list_bool_expr(function, predicate, list, env, counter) do
+    with {:ok, arg, body} <- normalize_list_bool_predicate(predicate),
+         {:ok, code, out, counter} <-
+           compile_list_bool_body_loop(function, arg, body, list, env, counter) do
+      {:ok, code, out, counter}
+    else
+      :error ->
+        case two_arg_lambda(predicate) do
+          {:ok, left, right, body} ->
+            compile_list_bool_tuple2_loop(function, left, right, body, list, env, counter)
+
+          :error ->
+            :error
+        end
+    end
+  end
+
+  defp normalize_list_bool_predicate(%{op: :lambda, args: [arg], body: body})
+       when is_binary(arg),
+       do: {:ok, arg, body}
+
+  defp normalize_list_bool_predicate(%{op: :call, name: op, args: [fixed]})
+       when op in @compare_ops,
+       do:
+         {:ok, "__item",
+          %{op: :call, name: op, args: [fixed, %{op: :var, name: "__item"}]}}
+
+  defp normalize_list_bool_predicate(%{
+         op: :lambda,
+         args: ["__right"],
+         body: %{op: :call, name: op, args: [fixed, %{op: :var, name: "__right"}]}
+       })
+       when op in @compare_ops,
+       do:
+         {:ok, "__item",
+          %{op: :call, name: op, args: [fixed, %{op: :var, name: "__item"}]}}
+
+  defp normalize_list_bool_predicate(_predicate), do: :error
+
+  defp compile_list_bool_body_loop(function, arg, body, list, env, counter) do
+    case unwrap_tuple2_lambda_body(body, arg) do
+      {:ok, left, right, inner} ->
+        compile_list_bool_tuple2_loop(function, left, right, inner, list, env, counter)
+
+      :error ->
+        compile_list_bool_loop(function, arg, body, list, env, counter)
+    end
+  end
+
+  defp compile_list_bool_tuple2_loop(function, left, right, body, list, env, counter) do
+    {body, substitutions} = Host.unwrap_let_chain(body, %{})
+    body = if map_size(substitutions) > 0, do: Host.substitute_expr(body, substitutions), else: body
+
+    {list_code, list_var, counter} = Host.compile_expr(list, env, counter)
+    next = counter + 1
+    cursor = "list_hof_cursor_#{next}"
+    node = "list_hof_node_#{next}"
+    head = "list_hof_head_#{next}"
+    dx = "list_hof_dx_#{next}"
+    dy = "list_hof_dy_#{next}"
+    result = "list_hof_result_#{next}"
+    out = "tmp_#{next}"
+
+    body_env =
+      env
+      |> EnvBindings.put_native_int_binding(left, dx)
+      |> EnvBindings.put_native_int_binding(right, dy)
+      |> EnvBindings.put_boxed_int_binding(left, false)
+      |> EnvBindings.put_boxed_int_binding(right, false)
+      |> augment_zero_arg_int_constants(body)
+
+    if NativeBool.expr?(body, body_env) do
+      {body_code, body_ref, counter} = NativeBool.compile_expr(body, body_env, next)
+      {initial, break_condition, break_value} = list_loop_polarity(function, body_ref)
+
+      code = """
+      #{list_code}
+        elmc_int_t #{result} = #{initial};
+        ElmcValue *#{cursor} = #{list_var};
+        while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
+          ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
+          ElmcValue *#{head} = #{node}->head;
+          ElmcValue *#{left}_tuple = elmc_tuple_first(#{head});
+          const elmc_int_t #{dx} = elmc_as_int(#{left}_tuple);
+          elmc_release(#{left}_tuple);
+          ElmcValue *#{right}_tuple = elmc_tuple_second(#{head});
+          const elmc_int_t #{dy} = elmc_as_int(#{right}_tuple);
+          elmc_release(#{right}_tuple);
+      #{indent_loop_body(body_code)}
+          if (#{break_condition}) {
+            #{result} = #{break_value};
+            break;
+          }
+          #{cursor} = #{node}->tail;
+        }
+        ElmcValue *#{out} = elmc_new_bool(#{result});
+        elmc_release(#{list_var});
+      """
+
+      {:ok, code, out, counter}
+    else
+      :error
+    end
+  end
+
   @spec compile_list_bool_loop(
           String.t(),
           String.t(),
@@ -264,6 +595,423 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall do
           Types.compile_env(),
           Types.compile_counter()
         ) :: {:ok, String.t(), String.t(), Types.compile_counter()} | :error
+  defp compile_list_filter_expr(predicate, list, env, counter) do
+    with {:ok, arg, body} <- normalize_list_bool_predicate(predicate),
+         {:ok, code, out, counter} <-
+           compile_list_filter_body_loop(arg, body, list, env, counter) do
+      {:ok, code, out, counter}
+    else
+      :error ->
+        case two_arg_lambda(predicate) do
+          {:ok, left, right, body} ->
+            compile_list_filter_tuple2_loop(left, right, body, list, env, counter)
+
+          :error ->
+            :error
+        end
+    end
+  end
+
+  defp compile_list_filter_body_loop(arg, body, list, env, counter) do
+    case unwrap_tuple2_lambda_body(body, arg) do
+      {:ok, left, right, inner} ->
+        compile_list_filter_tuple2_loop(left, right, inner, list, env, counter)
+
+      :error ->
+        compile_list_filter_loop(arg, body, list, env, counter)
+    end
+  end
+
+  defp compile_list_filter_loop(arg, body, list, env, counter) do
+    {body, substitutions} = Host.unwrap_let_chain(body, %{})
+
+    body =
+      if map_size(substitutions) > 0 do
+        Host.substitute_expr(body, substitutions)
+      else
+        body
+      end
+
+    {list_code, list_var, counter} = Host.compile_expr(list, env, counter)
+    loop_id = counter + 1
+    cursor = "list_filter_cursor_#{loop_id}"
+    node = "list_filter_node_#{loop_id}"
+    head = "list_filter_head_#{loop_id}"
+    {forward_init, _forward_head} = ListLoopCodegen.emit_forward_list_init(loop_id)
+
+    body_env =
+      env
+      |> Map.put(arg, head)
+      |> maybe_put_native_int_arg(arg, body, head)
+
+    if NativeBool.expr?(body, body_env) do
+      {body_code, body_ref, counter} = NativeBool.compile_expr(body, body_env, loop_id)
+      counter = counter + 1
+      out = "tmp_#{counter}"
+
+      code = """
+      #{list_code}
+      #{forward_init}
+        ElmcValue *#{cursor} = #{list_var};
+        while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
+          ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
+          ElmcValue *#{head} = #{node}->head;
+      #{indent_loop_body(body_code)}
+          if (#{body_ref}) {
+      #{ListLoopCodegen.emit_forward_list_append(loop_id, "#{head} ? elmc_retain(#{head}) : elmc_int_zero()")}
+          }
+          #{cursor} = #{node}->tail;
+        }
+    #{ListLoopCodegen.finalize_forward_cursor_list(loop_id, out)}
+        elmc_release(#{list_var});
+      """
+
+      {:ok, code, out, counter}
+    else
+      :error
+    end
+  end
+
+  defp compile_list_filter_tuple2_loop(left, right, body, list, env, counter) do
+    {body, substitutions} = Host.unwrap_let_chain(body, %{})
+    body = if map_size(substitutions) > 0, do: Host.substitute_expr(body, substitutions), else: body
+
+    {list_code, list_var, counter} = Host.compile_expr(list, env, counter)
+    loop_id = counter + 1
+    cursor = "list_filter_cursor_#{loop_id}"
+    node = "list_filter_node_#{loop_id}"
+    head = "list_filter_head_#{loop_id}"
+    dx = "list_filter_dx_#{loop_id}"
+    dy = "list_filter_dy_#{loop_id}"
+    {forward_init, _forward_head} = ListLoopCodegen.emit_forward_list_init(loop_id)
+
+    body_env =
+      env
+      |> EnvBindings.put_native_int_binding(left, dx)
+      |> EnvBindings.put_native_int_binding(right, dy)
+      |> EnvBindings.put_boxed_int_binding(left, false)
+      |> EnvBindings.put_boxed_int_binding(right, false)
+      |> augment_zero_arg_int_constants(body)
+
+    if NativeBool.expr?(body, body_env) do
+      {body_code, body_ref, counter} = NativeBool.compile_expr(body, body_env, loop_id)
+      counter = counter + 1
+      out = "tmp_#{counter}"
+
+      code = """
+      #{list_code}
+      #{forward_init}
+        ElmcValue *#{cursor} = #{list_var};
+        while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
+          ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
+          ElmcValue *#{head} = #{node}->head;
+          ElmcValue *#{left}_tuple = elmc_tuple_first(#{head});
+          const elmc_int_t #{dx} = elmc_as_int(#{left}_tuple);
+          elmc_release(#{left}_tuple);
+          ElmcValue *#{right}_tuple = elmc_tuple_second(#{head});
+          const elmc_int_t #{dy} = elmc_as_int(#{right}_tuple);
+          elmc_release(#{right}_tuple);
+      #{indent_loop_body(body_code)}
+          if (#{body_ref}) {
+      #{ListLoopCodegen.emit_forward_list_append(loop_id, "#{head} ? elmc_retain(#{head}) : elmc_int_zero()")}
+          }
+          #{cursor} = #{node}->tail;
+        }
+    #{ListLoopCodegen.finalize_forward_cursor_list(loop_id, out)}
+        elmc_release(#{list_var});
+      """
+
+      {:ok, code, out, counter}
+    else
+      :error
+    end
+  end
+
+  defp compile_list_filter_map_expr(%{op: :lambda, args: [arg], body: body}, list, env, counter)
+       when is_binary(arg) do
+    {body, substitutions} = Host.unwrap_let_chain(body, %{})
+
+    body =
+      if map_size(substitutions) > 0 do
+        Host.substitute_expr(body, substitutions)
+      else
+        body
+      end
+
+    case filter_map_if_pattern(body) do
+      {:ok, cond, just_value, :skip_on_true} ->
+        compile_list_filter_map_if_loop(arg, cond, just_value, :skip_on_true, list, env, counter)
+
+      {:ok, cond, just_value, :keep_on_true} ->
+        compile_list_filter_map_if_loop(arg, cond, just_value, :keep_on_true, list, env, counter)
+
+      :error ->
+        compile_list_filter_map_boxed_loop(arg, body, list, env, counter)
+    end
+  end
+
+  defp compile_list_filter_map_expr(_lambda, _list, _env, _counter), do: :error
+
+  defp filter_map_if_pattern(%{op: :if, cond: cond, then_expr: then_expr, else_expr: else_expr}) do
+    cond do
+      nothing_branch?(then_expr) ->
+        case just_branch(else_expr) do
+          {:ok, value} -> {:ok, cond, value, :skip_on_true}
+          :error -> :error
+        end
+
+      nothing_branch?(else_expr) ->
+        case just_branch(then_expr) do
+          {:ok, value} -> {:ok, cond, value, :keep_on_true}
+          :error -> :error
+        end
+
+      true ->
+        :error
+    end
+  end
+
+  defp filter_map_if_pattern(_body), do: :error
+
+  defp nothing_branch?(%{op: :constructor_call, target: target, args: []})
+       when target in ["Nothing", "Maybe.Nothing"],
+       do: true
+
+  defp nothing_branch?(%{op: :int_literal, value: 0}), do: true
+  defp nothing_branch?(_expr), do: false
+
+  defp just_branch(%{op: :constructor_call, target: target, args: [value]})
+       when target in ["Just", "Maybe.Just"],
+       do: {:ok, value}
+
+  defp just_branch(%{op: :tuple2, left: %{op: :int_literal, value: 1}, right: value}),
+    do: {:ok, value}
+
+  defp just_branch(_expr), do: :error
+
+  defp compile_list_filter_map_if_loop(arg, cond, just_value, polarity, list, env, counter) do
+    with {:ok, range_code, first_ref, last_ref, counter} <- range_bounds(list, env, counter) do
+      loop_id = counter + 1
+      item_var = "list_filter_map_i_#{loop_id}"
+      step_var = "list_filter_map_step_#{loop_id}"
+      rev = "list_filter_map_rev_#{loop_id}"
+      cons = "list_filter_map_cons_#{loop_id}"
+
+      body_env =
+        env
+        |> EnvBindings.put_native_int_binding(arg, item_var)
+        |> EnvBindings.put_boxed_int_binding(arg, false)
+
+      {cond_code, cond_ref, counter} = NativeBool.compile_expr(cond, body_env, loop_id)
+      {just_code, just_var, counter} = Host.compile_expr(just_value, body_env, counter)
+      counter = counter + 1
+      out = "tmp_#{counter}"
+
+      keep_cond =
+        case polarity do
+          :skip_on_true -> "!(#{cond_ref})"
+          :keep_on_true -> cond_ref
+        end
+
+      loop_body = """
+      #{indent_loop_body(cond_code)}
+            if (#{keep_cond}) {
+      #{indent_loop_body(just_code)}
+              ElmcValue *#{cons} = elmc_list_cons(#{just_var} ? elmc_retain(#{just_var}) : elmc_int_zero(), #{rev});
+              elmc_release(#{just_var});
+              elmc_release(#{rev});
+              #{rev} = #{cons};
+            }
+      """
+
+      code = """
+      #{range_code}
+        ElmcValue *#{rev} = elmc_list_nil();
+      #{ListLoopCodegen.emit_descending_int_range_loop(first_ref, last_ref, item_var, step_var, loop_body)}
+        ElmcValue *#{out} = #{rev};
+      """
+
+      {:ok, code, out, counter}
+    else
+      _ ->
+        compile_list_filter_map_if_list_loop(arg, cond, just_value, polarity, list, env, counter)
+    end
+  end
+
+  defp compile_list_filter_map_if_list_loop(arg, cond, just_value, polarity, list, env, counter) do
+    {list_code, list_var, counter} = Host.compile_expr(list, env, counter)
+    loop_id = counter + 1
+    cursor = "list_filter_map_cursor_#{loop_id}"
+    node = "list_filter_map_node_#{loop_id}"
+    head = "list_filter_map_head_#{loop_id}"
+    {forward_init, _forward_head} = ListLoopCodegen.emit_forward_list_init(loop_id)
+
+    body_env =
+      env
+      |> Map.put(arg, head)
+      |> maybe_put_native_int_arg(arg, cond, head)
+      |> maybe_put_native_int_arg(arg, just_value, head)
+
+    {cond_code, cond_ref, counter} = NativeBool.compile_expr(cond, body_env, loop_id)
+    {just_code, just_var, counter} = Host.compile_expr(just_value, body_env, counter)
+    counter = counter + 1
+    out = "tmp_#{counter}"
+
+    keep_cond =
+      case polarity do
+        :skip_on_true -> "!(#{cond_ref})"
+        :keep_on_true -> cond_ref
+      end
+
+    code = """
+    #{list_code}
+    #{forward_init}
+      ElmcValue *#{cursor} = #{list_var};
+      while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
+        ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
+        ElmcValue *#{head} = #{node}->head;
+    #{indent_loop_body(cond_code)}
+        if (#{keep_cond}) {
+    #{indent_loop_body(just_code)}
+    #{ListLoopCodegen.emit_forward_list_append(loop_id, "#{just_var} ? elmc_retain(#{just_var}) : elmc_int_zero()")}
+          elmc_release(#{just_var});
+        }
+        #{cursor} = #{node}->tail;
+      }
+    #{ListLoopCodegen.finalize_forward_cursor_list(loop_id, out)}
+      elmc_release(#{list_var});
+    """
+
+    {:ok, code, out, counter}
+  end
+
+  defp compile_list_filter_map_boxed_loop(arg, body, list, env, counter) do
+    {body, substitutions} = Host.unwrap_let_chain(body, %{})
+
+    body =
+      if map_size(substitutions) > 0 do
+        Host.substitute_expr(body, substitutions)
+      else
+        body
+      end
+
+    {list_code, list_var, counter} = Host.compile_expr(list, env, counter)
+    loop_id = counter + 1
+    cursor = "list_filter_map_cursor_#{loop_id}"
+    node = "list_filter_map_node_#{loop_id}"
+    head = "list_filter_map_head_#{loop_id}"
+    maybe_var = "list_filter_map_maybe_#{loop_id}"
+    payload = "list_filter_map_payload_#{loop_id}"
+    keep_flag = "list_filter_map_keep_#{loop_id}"
+    {forward_init, _forward_head} = ListLoopCodegen.emit_forward_list_init(loop_id)
+
+    body_env =
+      env
+      |> Map.put(arg, head)
+      |> maybe_put_native_int_arg(arg, body, head)
+
+    {body_code, body_var, counter} = Host.compile_expr(body, body_env, loop_id)
+    counter = counter + 1
+    out = "tmp_#{counter}"
+
+    code = """
+    #{list_code}
+    #{forward_init}
+      ElmcValue *#{cursor} = #{list_var};
+      while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
+        ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
+        ElmcValue *#{head} = #{node}->head;
+    #{indent_loop_body(body_code)}
+        ElmcValue *#{maybe_var} = #{body_var};
+        ElmcValue *#{payload} = NULL;
+        int #{keep_flag} = 0;
+        if (#{maybe_var} && #{maybe_var}->tag == ELMC_TAG_MAYBE && #{maybe_var}->payload != NULL) {
+          ElmcMaybe *#{maybe_var}_m = (ElmcMaybe *)#{maybe_var}->payload;
+          if (#{maybe_var}_m->is_just && #{maybe_var}_m->value) {
+            #{payload} = #{maybe_var}_m->value;
+            #{keep_flag} = 1;
+          }
+        } else if (#{maybe_var} && #{maybe_var}->tag == ELMC_TAG_TUPLE2 && #{maybe_var}->payload != NULL) {
+          ElmcTuple2 *#{maybe_var}_t = (ElmcTuple2 *)#{maybe_var}->payload;
+          if (#{maybe_var}_t->first && elmc_as_int(#{maybe_var}_t->first) == 1 && #{maybe_var}_t->second) {
+            #{payload} = #{maybe_var}_t->second;
+            #{keep_flag} = 1;
+          }
+        }
+        if (#{keep_flag}) {
+    #{ListLoopCodegen.emit_forward_list_append(loop_id, "#{payload} ? elmc_retain(#{payload}) : elmc_int_zero()")}
+        }
+        elmc_release(#{body_var});
+        #{cursor} = #{node}->tail;
+      }
+    #{ListLoopCodegen.finalize_forward_cursor_list(loop_id, out)}
+      elmc_release(#{list_var});
+    """
+
+    {:ok, code, out, counter}
+  end
+
+  defp compile_list_indexed_map_boxed_cursor_loop(
+         index_arg,
+         item_arg,
+         body,
+         list,
+         env,
+         counter
+       ) do
+    {body, substitutions} = Host.unwrap_let_chain(body, %{})
+
+    body =
+      if map_size(substitutions) > 0 do
+        Host.substitute_expr(body, substitutions)
+      else
+        body
+      end
+
+    {list_code, list_var, counter} = Host.compile_expr(list, env, counter)
+    loop_id = counter + 1
+    cursor = "list_indexed_map_cursor_#{loop_id}"
+    node = "list_indexed_map_node_#{loop_id}"
+    item_head = "list_indexed_map_head_#{loop_id}"
+    index_var = "list_indexed_map_index_#{loop_id}"
+    item_value = "list_indexed_map_item_#{loop_id}"
+    {forward_init, _forward_head} = ListLoopCodegen.emit_forward_list_init(loop_id)
+
+    body_env =
+      env
+      |> Map.put(item_arg, item_head)
+      |> EnvBindings.put_native_int_binding(item_arg, "elmc_as_int(#{item_head})")
+      |> EnvBindings.put_boxed_int_binding(item_arg, false)
+      |> EnvBindings.put_native_int_binding(index_arg, index_var)
+      |> EnvBindings.put_boxed_int_binding(index_arg, false)
+
+    {body_code, body_var, counter} = Host.compile_expr(body, body_env, loop_id)
+    counter = counter + 1
+    out = "tmp_#{counter}"
+
+    code = """
+    #{list_code}
+    #{forward_init}
+      ElmcValue *#{cursor} = #{list_var};
+      elmc_int_t #{index_var} = 0;
+      while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
+        ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
+        ElmcValue *#{item_head} = #{node}->head;
+    #{indent_loop_body(body_code)}
+        ElmcValue *#{item_value} = #{body_var} ? elmc_retain(#{body_var}) : elmc_int_zero();
+        elmc_release(#{body_var});
+    #{ListLoopCodegen.emit_forward_list_append(loop_id, item_value)}
+        elmc_release(#{item_value});
+        #{index_var} += 1;
+        #{cursor} = #{node}->tail;
+      }
+    #{ListLoopCodegen.finalize_forward_cursor_list(loop_id, out)}
+      elmc_release(#{list_var});
+    """
+
+    {:ok, code, out, counter}
+  end
+
   defp compile_list_bool_loop(function, arg, body, list, env, counter) do
     {body, substitutions} = Host.unwrap_let_chain(body, %{})
 
@@ -357,9 +1105,8 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall do
     dx = "list_map_dx_#{next}"
     dy = "list_map_dy_#{next}"
     item_value = "list_map_item_#{next}"
-    cons = "list_map_cons_#{next}"
-    rev = "list_map_rev_#{next}"
     out = "tmp_#{next}"
+    {forward_init, _forward_head} = ListLoopCodegen.emit_forward_list_init(next)
 
     body_env =
       env
@@ -374,7 +1121,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall do
 
       code = """
     #{list_code}
-      ElmcValue *#{rev} = elmc_list_nil();
+    #{forward_init}
       ElmcValue *#{cursor} = #{list_var};
       while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
         ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
@@ -387,14 +1134,11 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall do
         elmc_release(#{right}_tuple);
     #{indent_loop_body(body_code)}
         ElmcValue *#{item_value} = elmc_new_int(#{body_ref});
-        ElmcValue *#{cons} = elmc_list_cons(#{item_value}, #{rev});
+    #{ListLoopCodegen.emit_forward_list_append(next, item_value)}
         elmc_release(#{item_value});
-        elmc_release(#{rev});
-        #{rev} = #{cons};
         #{cursor} = #{node}->tail;
       }
-      ElmcValue *#{out} = elmc_list_reverse(#{rev});
-      elmc_release(#{rev});
+    #{ListLoopCodegen.finalize_forward_cursor_list(next, out)}
       elmc_release(#{list_var});
     """
 
@@ -476,9 +1220,8 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall do
     node = "list_map_node_#{next}"
     head = "list_map_head_#{next}"
     item_value = "list_map_item_#{next}"
-    cons = "list_map_cons_#{next}"
-    rev = "list_map_rev_#{next}"
     out = "tmp_#{next}"
+    {forward_init, _forward_head} = ListLoopCodegen.emit_forward_list_init(next)
 
     body_env =
       env
@@ -491,21 +1234,18 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall do
 
       code = """
       #{list_code}
-        ElmcValue *#{rev} = elmc_list_nil();
+      #{forward_init}
         ElmcValue *#{cursor} = #{list_var};
         while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
           ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
           ElmcValue *#{head} = #{node}->head;
       #{indent_loop_body(body_code)}
           ElmcValue *#{item_value} = elmc_new_int(#{body_ref});
-          ElmcValue *#{cons} = elmc_list_cons(#{item_value}, #{rev});
+      #{ListLoopCodegen.emit_forward_list_append(next, item_value)}
           elmc_release(#{item_value});
-          elmc_release(#{rev});
-          #{rev} = #{cons};
           #{cursor} = #{node}->tail;
         }
-        ElmcValue *#{out} = elmc_list_reverse(#{rev});
-        elmc_release(#{rev});
+    #{ListLoopCodegen.finalize_forward_cursor_list(next, out)}
         elmc_release(#{list_var});
       """
 
@@ -513,6 +1253,54 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall do
     else
       :error
     end
+  end
+
+  defp compile_list_map_boxed_cursor_loop(arg, body, list, env, counter) do
+    {body, substitutions} = Host.unwrap_let_chain(body, %{})
+
+    body =
+      if map_size(substitutions) > 0 do
+        Host.substitute_expr(body, substitutions)
+      else
+        body
+      end
+
+    {list_code, list_var, counter} = Host.compile_expr(list, env, counter)
+    loop_id = counter + 1
+    cursor = "list_map_cursor_#{loop_id}"
+    node = "list_map_node_#{loop_id}"
+    head = "list_map_head_#{loop_id}"
+    item_value = "list_map_item_#{loop_id}"
+    {forward_init, _forward_head} = ListLoopCodegen.emit_forward_list_init(loop_id)
+
+    body_env =
+      env
+      |> Map.put(arg, head)
+      |> maybe_put_native_int_arg(arg, body, head)
+
+    {body_code, body_var, counter} = Host.compile_expr(body, body_env, loop_id)
+    counter = counter + 1
+    out = "tmp_#{counter}"
+
+    code = """
+    #{list_code}
+    #{forward_init}
+      ElmcValue *#{cursor} = #{list_var};
+      while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
+        ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
+        ElmcValue *#{head} = #{node}->head;
+    #{indent_loop_body(body_code)}
+        ElmcValue *#{item_value} = #{body_var} ? elmc_retain(#{body_var}) : elmc_int_zero();
+        elmc_release(#{body_var});
+    #{ListLoopCodegen.emit_forward_list_append(loop_id, item_value)}
+        elmc_release(#{item_value});
+        #{cursor} = #{node}->tail;
+      }
+    #{ListLoopCodegen.finalize_forward_cursor_list(loop_id, out)}
+      elmc_release(#{list_var});
+    """
+
+    {:ok, code, out, counter}
   end
 
   defp augment_zero_arg_int_constants(env, body) do
@@ -533,12 +1321,12 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall do
 
   defp compile_list_map_int_range_loop(arg, body, list, env, counter) do
     with {:ok, range_code, first_ref, last_ref, counter} <- range_bounds(list, env, counter) do
-      next = counter + 1
-      item_var = "list_map_i_#{next}"
-      step_var = "list_map_step_#{next}"
-      item_value = "list_map_item_#{next}"
-      rev = "list_map_rev_#{next}"
-      out = "tmp_#{next}"
+      loop_id = counter + 1
+      item_var = "list_map_i_#{loop_id}"
+      step_var = "list_map_step_#{loop_id}"
+      item_value = "list_map_item_#{loop_id}"
+      rev = "list_map_rev_#{loop_id}"
+      cons = "list_map_cons_#{loop_id}"
 
       body_env =
         env
@@ -546,25 +1334,24 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall do
         |> EnvBindings.put_boxed_int_binding(arg, false)
 
       if NativeInt.expr?(body, body_env) do
-        {body_code, body_ref, counter} = NativeInt.compile_expr(body, body_env, next)
+        {body_code, body_ref, counter} = NativeInt.compile_expr(body, body_env, loop_id)
+        counter = counter + 1
+        out = "tmp_#{counter}"
+
+        loop_body = """
+        #{indent_loop_body(body_code)}
+              ElmcValue *#{item_value} = elmc_new_int(#{body_ref});
+              ElmcValue *#{cons} = elmc_list_cons(#{item_value}, #{rev});
+              elmc_release(#{item_value});
+              elmc_release(#{rev});
+              #{rev} = #{cons};
+        """
 
         code = """
         #{range_code}
           ElmcValue *#{rev} = elmc_list_nil();
-          if (#{first_ref} <= #{last_ref}) {
-            elmc_int_t #{step_var} = 1;
-            for (elmc_int_t #{item_var} = #{first_ref}; ; #{item_var} += #{step_var}) {
-        #{indent_loop_body(body_code)}
-              ElmcValue *#{item_value} = elmc_new_int(#{body_ref});
-              ElmcValue *#{out} = elmc_list_cons(#{item_value}, #{rev});
-              elmc_release(#{item_value});
-              elmc_release(#{rev});
-              #{rev} = #{out};
-              if (#{item_var} == #{last_ref}) break;
-            }
-          }
-          ElmcValue *#{out} = elmc_list_reverse(#{rev});
-          elmc_release(#{rev});
+        #{ListLoopCodegen.emit_descending_int_range_loop(first_ref, last_ref, item_var, step_var, loop_body)}
+          ElmcValue *#{out} = #{rev};
         """
 
         {:ok, code, out, counter}
@@ -645,8 +1432,8 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall do
     item_head = "list_indexed_map_head_#{next}"
     index_var = "list_indexed_map_index_#{next}"
     item_value = "list_indexed_map_item_#{next}"
-    rev = "list_indexed_map_rev_#{next}"
     out = "tmp_#{next}"
+    {forward_init, _forward_head} = ListLoopCodegen.emit_forward_list_init(next)
 
     body_env =
       env
@@ -661,7 +1448,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall do
 
       code = """
       #{list_code}
-        ElmcValue *#{rev} = elmc_list_nil();
+      #{forward_init}
         ElmcValue *#{cursor} = #{list_var};
         elmc_int_t #{index_var} = 0;
         while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
@@ -669,15 +1456,12 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall do
           ElmcValue *#{item_head} = #{node}->head;
       #{indent_loop_body(body_code)}
           ElmcValue *#{item_value} = elmc_new_int(#{body_ref});
-          ElmcValue *#{out} = elmc_list_cons(#{item_value}, #{rev});
+      #{ListLoopCodegen.emit_forward_list_append(next, item_value)}
           elmc_release(#{item_value});
-          elmc_release(#{rev});
-          #{rev} = #{out};
           #{index_var} += 1;
           #{cursor} = #{node}->tail;
         }
-        ElmcValue *#{out} = elmc_list_reverse(#{rev});
-        elmc_release(#{rev});
+    #{ListLoopCodegen.finalize_forward_cursor_list(next, out)}
         elmc_release(#{list_var});
       """
 
@@ -687,43 +1471,320 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall do
     end
   end
 
-  defp compile_list_foldl_int_range_loop(item_arg, acc_arg, body, acc, list, env, counter) do
-    with true <- NativeInt.expr?(acc, env),
-         {:ok, range_code, first_ref, last_ref, counter} <- range_bounds(list, env, counter) do
-      {acc_code, acc_ref, counter} = NativeInt.compile_expr(acc, env, counter)
-      next = counter + 1
-      item_var = "list_foldl_i_#{next}"
-      step_var = "list_foldl_step_#{next}"
-      acc_var = "list_foldl_acc_#{next}"
-      out = "tmp_#{next}"
+  defp normalize_foldl_lambda(%{op: :lambda, args: [left, right], body: body})
+       when is_binary(left) and is_binary(right),
+       do: {:ok, left, right, body}
 
-      body_env =
+  defp normalize_foldl_lambda(%{
+         op: :lambda,
+         args: [left],
+         body: %{op: :lambda, args: [right], body: body}
+       })
+       when is_binary(left) and is_binary(right),
+       do: {:ok, left, right, body}
+
+  defp normalize_foldl_lambda(%{op: :lambda, args: [item], body: body}) when is_binary(item) do
+    {body, substitutions} = Host.unwrap_let_chain(body, %{})
+
+    body =
+      if map_size(substitutions) > 0 do
+        Host.substitute_expr(body, substitutions)
+      else
+        body
+      end
+
+    case body do
+      %{op: :lambda, args: [acc], body: inner} when is_binary(acc) ->
+        {:ok, item, acc, inner}
+
+      _ ->
+        :error
+    end
+  end
+
+  defp normalize_foldl_lambda(_lambda), do: :error
+
+  defp compile_list_foldl_list_cursor_loop(item_arg, acc_arg, body, acc, list, env, counter) do
+    case unwrap_tuple2_lambda_body(body, item_arg) do
+      {:ok, left, right, inner} ->
+        compile_list_foldl_tuple2_list_cursor_loop(
+          left,
+          right,
+          inner,
+          acc_arg,
+          acc,
+          list,
+          env,
+          counter
+        )
+
+      :error ->
+        compile_list_foldl_single_item_list_cursor_loop(
+          item_arg,
+          acc_arg,
+          body,
+          acc,
+          list,
+          env,
+          counter
+        )
+    end
+  end
+
+  defp compile_list_foldl_single_item_list_cursor_loop(
+         item_arg,
+         acc_arg,
+         body,
+         acc,
+         list,
+         env,
+         counter
+       ) do
+    {body, substitutions} = Host.unwrap_let_chain(body, %{})
+
+    body =
+      if map_size(substitutions) > 0 do
+        Host.substitute_expr(body, substitutions)
+      else
+        body
+      end
+
+    {acc_code, acc_var, counter} = Host.compile_expr(acc, env, counter)
+    {list_code, list_var, counter} = Host.compile_expr(list, env, counter)
+    loop_id = counter + 1
+    cursor = "list_foldl_cursor_#{loop_id}"
+    node = "list_foldl_node_#{loop_id}"
+    head = "list_foldl_head_#{loop_id}"
+    acc_ref = "list_foldl_acc_#{loop_id}"
+
+    body_env =
+      env
+      |> Map.put(item_arg, head)
+      |> maybe_put_native_int_arg(item_arg, body, head)
+      |> Map.put(acc_arg, acc_ref)
+
+    {body_code, body_var, counter} = Host.compile_expr(body, body_env, loop_id)
+    counter = counter + 1
+    out = "tmp_#{counter}"
+
+    code = """
+    #{acc_code}#{list_code}
+      ElmcValue *#{acc_ref} = #{acc_var} ? elmc_retain(#{acc_var}) : elmc_list_nil();
+      ElmcValue *#{cursor} = #{list_var};
+      while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
+        ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
+        ElmcValue *#{head} = #{node}->head;
+    #{indent_loop_body(body_code)}
+        elmc_release(#{acc_ref});
+        #{acc_ref} = #{body_var} ? elmc_retain(#{body_var}) : elmc_list_nil();
+        elmc_release(#{body_var});
+        #{cursor} = #{node}->tail;
+      }
+      ElmcValue *#{out} = #{acc_ref};
+      elmc_release(#{list_var});
+      elmc_release(#{acc_var});
+    """
+
+    {:ok, code, out, counter}
+  end
+
+  defp compile_list_foldl_tuple2_list_cursor_loop(
+         left,
+         right,
+         body,
+         acc_arg,
+         acc,
+         list,
+         env,
+         counter
+       ) do
+    {body, substitutions} = Host.unwrap_let_chain(body, %{})
+
+    body =
+      if map_size(substitutions) > 0 do
+        Host.substitute_expr(body, substitutions)
+      else
+        body
+      end
+
+    {acc_code, acc_var, counter} = Host.compile_expr(acc, env, counter)
+    {list_code, list_var, counter} = Host.compile_expr(list, env, counter)
+    loop_id = counter + 1
+    cursor = "list_foldl_cursor_#{loop_id}"
+    node = "list_foldl_node_#{loop_id}"
+    head = "list_foldl_head_#{loop_id}"
+    dx = "list_foldl_dx_#{loop_id}"
+    dy = "list_foldl_dy_#{loop_id}"
+    acc_ref = "list_foldl_acc_#{loop_id}"
+
+    body_env =
+      env
+      |> EnvBindings.put_native_int_binding(left, dx)
+      |> EnvBindings.put_native_int_binding(right, dy)
+      |> EnvBindings.put_boxed_int_binding(left, false)
+      |> EnvBindings.put_boxed_int_binding(right, false)
+      |> Map.put(acc_arg, acc_ref)
+      |> augment_zero_arg_int_constants(body)
+
+    {body_code, body_var, counter} = Host.compile_expr(body, body_env, loop_id)
+    counter = counter + 1
+    out = "tmp_#{counter}"
+
+    code = """
+    #{acc_code}#{list_code}
+      ElmcValue *#{acc_ref} = #{acc_var} ? elmc_retain(#{acc_var}) : elmc_list_nil();
+      ElmcValue *#{cursor} = #{list_var};
+      while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
+        ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
+        ElmcValue *#{head} = #{node}->head;
+        ElmcValue *#{left}_tuple = elmc_tuple_first(#{head});
+        const elmc_int_t #{dx} = elmc_as_int(#{left}_tuple);
+        elmc_release(#{left}_tuple);
+        ElmcValue *#{right}_tuple = elmc_tuple_second(#{head});
+        const elmc_int_t #{dy} = elmc_as_int(#{right}_tuple);
+        elmc_release(#{right}_tuple);
+    #{indent_loop_body(body_code)}
+        elmc_release(#{acc_ref});
+        #{acc_ref} = #{body_var} ? elmc_retain(#{body_var}) : elmc_list_nil();
+        elmc_release(#{body_var});
+        #{cursor} = #{node}->tail;
+      }
+      ElmcValue *#{out} = #{acc_ref};
+      elmc_release(#{list_var});
+      elmc_release(#{acc_var});
+    """
+
+    {:ok, code, out, counter}
+  end
+
+  @spec compile_list_reverse_expr(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
+          {:ok, String.t(), String.t(), Types.compile_counter()} | :error
+  defp compile_list_reverse_expr(list_expr, env, counter) do
+    case unwrap_reverse_foldl_range(list_expr) do
+      {:ok, item_arg, acc_arg, body, acc, range} ->
+        compile_list_foldl_int_range_loop(item_arg, acc_arg, body, acc, range, env, counter, true)
+
+      :error ->
+        :error
+    end
+  end
+
+  @spec unwrap_reverse_foldl_range(Types.ir_expr()) ::
+          {:ok, Types.binding_name(), Types.binding_name(), Types.ir_expr(), Types.ir_expr(),
+           Types.ir_expr()}
+          | :error
+  defp unwrap_reverse_foldl_range(%{op: :runtime_call, function: "elmc_list_foldl", args: [lambda, acc, range]}) do
+    reverse_foldl_range_args(lambda, acc, range)
+  end
+
+  defp unwrap_reverse_foldl_range(%{op: :qualified_call, target: target, args: [lambda, acc, range]})
+       when target in ["List.foldl", "Elm.Kernel.List.foldl"] do
+    reverse_foldl_range_args(lambda, acc, range)
+  end
+
+  defp unwrap_reverse_foldl_range(_expr), do: :error
+
+  defp reverse_foldl_range_args(lambda, acc, range) do
+    case normalize_foldl_lambda(lambda) do
+      {:ok, item_arg, acc_arg, body} -> {:ok, item_arg, acc_arg, body, acc, range}
+      :error -> :error
+    end
+  end
+
+  defp compile_list_foldl_int_range_loop(item_arg, acc_arg, body, acc, list, env, counter, descending?) do
+    with {:ok, range_code, first_ref, last_ref, counter} <- range_bounds(list, env, counter) do
+      loop_id = counter + 1
+      item_var = "list_foldl_i_#{loop_id}"
+      step_var = "list_foldl_step_#{loop_id}"
+      acc_var = "list_foldl_acc_#{loop_id}"
+
+      body_env_int_acc =
         env
         |> EnvBindings.put_native_int_binding(item_arg, item_var)
         |> EnvBindings.put_boxed_int_binding(item_arg, false)
         |> EnvBindings.put_native_int_binding(acc_arg, acc_var)
         |> EnvBindings.put_boxed_int_binding(acc_arg, false)
 
-      if NativeInt.expr?(body, body_env) do
-        {body_code, body_ref, counter} = NativeInt.compile_expr(body, body_env, next)
+      cond do
+        NativeInt.expr?(acc, env) and NativeInt.expr?(body, body_env_int_acc) ->
+          {acc_code, acc_ref, _counter} = NativeInt.compile_expr(acc, env, counter)
+          {body_code, body_ref, counter} = NativeInt.compile_expr(body, body_env_int_acc, loop_id)
+          counter = counter + 1
+          out = "tmp_#{counter}"
 
-        code = """
-        #{range_code}#{acc_code}
-          elmc_int_t #{acc_var} = #{acc_ref};
-          if (#{first_ref} <= #{last_ref}) {
-            elmc_int_t #{step_var} = 1;
-            for (elmc_int_t #{item_var} = #{first_ref}; ; #{item_var} += #{step_var}) {
-        #{indent_loop_body(body_code)}
-              #{acc_var} = #{body_ref};
-              if (#{item_var} == #{last_ref}) break;
+          code = """
+          #{range_code}#{acc_code}
+            elmc_int_t #{acc_var} = #{acc_ref};
+            if (#{first_ref} <= #{last_ref}) {
+              elmc_int_t #{step_var} = 1;
+              for (elmc_int_t #{item_var} = #{first_ref}; ; #{item_var} += #{step_var}) {
+          #{indent_loop_body(body_code)}
+                #{acc_var} = #{body_ref};
+                if (#{item_var} == #{last_ref}) break;
+              }
             }
-          }
-          ElmcValue *#{out} = elmc_new_int(#{acc_var});
-        """
+            ElmcValue *#{out} = elmc_new_int(#{acc_var});
+          """
 
-        {:ok, code, out, counter}
-      else
-        :error
+          {:ok, code, out, counter}
+
+        true ->
+          {acc_code, acc_init_var, _counter} = Host.compile_expr(acc, env, counter)
+
+          body_env =
+            env
+            |> EnvBindings.put_native_int_binding(item_arg, item_var)
+            |> EnvBindings.put_boxed_int_binding(item_arg, false)
+            |> Map.put(acc_arg, acc_var)
+
+          {body, substitutions} = Host.unwrap_let_chain(body, %{})
+
+          body =
+            if map_size(substitutions) > 0 do
+              Host.substitute_expr(body, substitutions)
+            else
+              body
+            end
+
+          {body_code, body_var, counter} = Host.compile_expr(body, body_env, loop_id)
+          counter = counter + 1
+          out = "tmp_#{counter}"
+
+          loop_body = """
+          #{indent_loop_body(body_code)}
+                elmc_release(#{acc_var});
+                #{acc_var} = #{body_var} ? elmc_retain(#{body_var}) : elmc_list_nil();
+                elmc_release(#{body_var});
+          """
+
+          range_loop =
+            if descending? do
+              ListLoopCodegen.emit_descending_int_range_loop(
+                first_ref,
+                last_ref,
+                item_var,
+                step_var,
+                loop_body
+              )
+            else
+              ListLoopCodegen.emit_ascending_int_range_loop(
+                first_ref,
+                last_ref,
+                item_var,
+                step_var,
+                loop_body
+              )
+            end
+
+          code = """
+          #{range_code}#{acc_code}
+            ElmcValue *#{acc_var} = #{acc_init_var} ? elmc_retain(#{acc_init_var}) : elmc_list_nil();
+          #{range_loop}
+            ElmcValue *#{out} = #{acc_var};
+            elmc_release(#{acc_init_var});
+          """
+
+          {:ok, code, out, counter}
       end
     else
       _ -> :error
@@ -754,6 +1815,308 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall do
   end
 
   defp range_bounds(_expr, _env, _counter), do: :error
+
+  defp compile_list_repeat_int(n, value, env, counter) do
+    case unwrap_list_repeat_expr(value) do
+      {:ok, inner_n, inner_value} ->
+        with {:ok, inner_code, inner_var, counter} <-
+               compile_list_repeat_int(inner_n, inner_value, env, counter) do
+          compile_list_repeat_from_value(n, inner_code, inner_var, env, counter)
+        end
+
+      :error ->
+        {value_code, value_ref, counter} = compile_repeat_element(value, env, counter)
+        compile_list_repeat_from_value(n, value_code, value_ref, env, counter)
+    end
+  end
+
+  @type int_loop_count :: {:ok, String.t(), String.t(), Types.compile_counter(), String.t() | nil}
+
+  @spec compile_int_loop_count(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
+          int_loop_count | :error
+  defp compile_int_loop_count(n, env, counter) do
+    case constant_int_loop_count(n, env, counter) do
+      {:ok, _, _, _, _} = ok ->
+        ok
+
+      :error ->
+        case native_int_loop_count(n, env, counter) do
+          {:ok, _, _, _, _} = ok ->
+            ok
+
+          :error ->
+            {code, var, c} = Host.compile_expr(n, env, counter)
+            {:ok, code, "elmc_as_int(#{var})", c, var}
+        end
+    end
+  end
+
+  @spec native_int_loop_count(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
+          int_loop_count() | :error
+  defp native_int_loop_count(%{op: :var, name: name}, env, counter)
+       when is_binary(name) or is_atom(name) do
+    cond do
+      is_binary(ref = EnvBindings.hybrid_loop_native_ref(env, name)) ->
+        {:ok, "", ref, counter, nil}
+
+      is_binary(ref = EnvBindings.native_int_binding(env, name)) ->
+        {:ok, "", ref, counter, nil}
+
+      true ->
+        :error
+    end
+  end
+
+  defp native_int_loop_count(n, env, counter) do
+    if NativeInt.expr?(n, env) do
+      {code, ref, c} = NativeInt.compile_expr(n, env, counter)
+      {:ok, code, ref, c, nil}
+    else
+      :error
+    end
+  end
+
+  @spec constant_int_loop_count(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
+          int_loop_count | :error
+  defp constant_int_loop_count(expr, env, counter) do
+    case ConstantInt.literal_value(expr, env) do
+      {:ok, value} -> {:ok, "", Integer.to_string(value), counter, nil}
+      :error -> :error
+    end
+  end
+
+  defp compile_repeat_element(%{op: :int_literal, value: 0}, _env, counter),
+    do: {"", "elmc_int_zero()", counter}
+
+  defp compile_repeat_element(value, env, counter) do
+    if NativeInt.expr?(value, env) do
+      {code, ref, c} = NativeInt.compile_expr(value, env, counter)
+      {code, "elmc_new_int(#{ref})", c}
+    else
+      {code, var, c} = Host.compile_expr(value, env, counter)
+      {code, "#{var} ? elmc_retain(#{var}) : elmc_int_zero()", c}
+    end
+  end
+
+  defp compile_list_repeat_from_value(n, value_code, value_ref, env, counter) do
+    with {:ok, count_code, count_ref, counter, count_var} <- compile_int_loop_count(n, env, counter) do
+      compile_list_repeat_from_count(
+        count_code,
+        count_ref,
+        count_var,
+        value_code,
+        value_ref,
+        counter
+      )
+    end
+  end
+
+  @spec compile_list_repeat_from_count(
+          String.t(),
+          String.t(),
+          String.t() | nil,
+          String.t(),
+          String.t(),
+          Types.compile_counter()
+        ) :: {:ok, String.t(), String.t(), Types.compile_counter()}
+  defp compile_list_repeat_from_count(
+         count_code,
+         count_ref,
+         count_var,
+         value_code,
+         value_ref,
+         counter
+       ) do
+    value_release =
+      if value_ref =~ ~r/^tmp_\d+$/ do
+        "  elmc_release(#{value_ref});\n"
+      else
+        ""
+      end
+
+    count_release =
+      if is_binary(count_var) do
+        "  elmc_release(#{count_var});\n"
+      else
+        ""
+      end
+
+    loop_id = counter + 1
+
+    {:inline, inline_code, inline_out} =
+      CodegenListHelpers.repeat_codegen(count_ref, value_ref, loop_id)
+
+    code = """
+    #{count_code}#{value_code}
+    #{inline_code}#{value_release}#{count_release}
+    """
+
+    {:ok, code, inline_out, counter}
+  end
+
+  @spec compile_int_sub_list_length(
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: {:ok, String.t(), String.t(), Types.compile_counter()} | :error
+  def compile_int_sub_list_length(left, right, env, counter) do
+    with {:ok, list} <- ListLoopCodegen.unwrap_list_length_expr(right),
+         {:ok, left_code, left_ref, counter} <- ConstantInt.compile_native_operand(left, env, counter) do
+      {list_code, list_var, counter} = Host.compile_expr(list, env, counter)
+      loop_id = counter + 1
+      {length_code, count} = ListLoopCodegen.emit_length_native_count(list_var, loop_id)
+      counter = counter + 1
+      out = "tmp_#{counter}"
+
+      code = """
+      #{left_code}#{list_code}
+      #{length_code}
+        elmc_release(#{list_var});
+        ElmcValue *#{out} = elmc_new_int(#{left_ref} - #{count});
+      """
+
+      {:ok, code, out, counter}
+    else
+      _ -> :error
+    end
+  end
+
+  defp compile_list_length_int(list, env, counter) do
+    {list_code, list_var, counter} = Host.compile_expr(list, env, counter)
+    loop_id = counter + 1
+    {length_code, count} = ListLoopCodegen.emit_length_native_count(list_var, loop_id)
+    counter = counter + 1
+    out = "tmp_#{counter}"
+
+    code = """
+    #{list_code}
+    #{length_code}
+      ElmcValue *#{out} = elmc_new_int(#{count});
+      elmc_release(#{list_var});
+    """
+
+    {:ok, code, out, counter}
+  end
+
+  defp compile_list_concat_expr(lists_expr, env, counter) do
+    lists_expr = unwrap_concat_lists_arg(lists_expr)
+
+    case unwrap_concat_append_repeat(lists_expr) do
+      {:ok, n, item, rest} ->
+        compile_concat_repeat_append_flatten(n, item, rest, env, counter)
+
+      :error ->
+        case concat_literal_segments(lists_expr) do
+          {:ok, segments} when length(segments) >= 2 ->
+            compile_list_concat_segments_flatten(segments, env, counter)
+
+          _ ->
+            case collect_append_segments(lists_expr) do
+              {:ok, segments} when length(segments) >= @min_list_append_concat_segments ->
+                compile_list_concat(segments, env, counter)
+
+              _ ->
+                :error
+            end
+        end
+    end
+  end
+
+  defp concat_literal_segments(%{op: :list_literal, items: items})
+       when is_list(items) and length(items) >= 2,
+       do: {:ok, items}
+
+  defp concat_literal_segments(_expr), do: :error
+
+  defp unwrap_concat_lists_arg(%{op: :list_literal, items: [single]}), do: single
+  defp unwrap_concat_lists_arg(expr), do: expr
+
+  defp unwrap_concat_append_repeat(expr) do
+    case unwrap_append_pair(expr) do
+      {:ok, left, right} ->
+        case unwrap_list_repeat_expr(left) do
+          {:ok, n, item} -> {:ok, n, item, right}
+          :error -> :error
+        end
+
+      :error ->
+        :error
+    end
+  end
+
+  defp unwrap_append_pair(%{op: :runtime_call, function: "elmc_append", args: [left, right]}),
+    do: {:ok, left, right}
+
+  defp unwrap_append_pair(%{op: :call, name: "__append__", args: [left, right]}),
+    do: {:ok, left, right}
+
+  defp unwrap_append_pair(_expr), do: :error
+
+  defp unwrap_list_repeat_expr(%{op: :runtime_call, function: "elmc_list_repeat", args: [n, item]}),
+    do: {:ok, n, item}
+
+  defp unwrap_list_repeat_expr(%{op: :qualified_call, target: target, args: [n, item]})
+       when target in ["List.repeat", "Elm.Kernel.List.repeat"],
+       do: {:ok, n, item}
+
+  defp unwrap_list_repeat_expr(%{op: :call, name: "repeat", args: [n, item]}),
+    do: {:ok, n, item}
+
+  defp unwrap_list_repeat_expr(_expr), do: :error
+
+  @spec compile_concat_repeat_append_flatten(
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: {:ok, String.t(), String.t(), Types.compile_counter()} | :error
+  defp compile_concat_repeat_append_flatten(n, item, rest, env, counter) do
+    with {:ok, count_code, count_ref, counter, count_var} <- compile_int_loop_count(n, env, counter),
+         {:ok, item_code, item_var, counter} <- compile_concat_item(item, env, counter) do
+      {rest_code, rest_var, counter} = Host.compile_expr(rest, env, counter)
+      loop_id = counter + 1
+      lists = "list_concat_repeat_lists_#{loop_id}"
+      counter = counter + 1
+      out = "tmp_#{counter}"
+
+      count_release =
+        if is_binary(count_var), do: "  elmc_release(#{count_var});\n", else: ""
+
+      {:inline, repeat_code, repeat_out} =
+        CodegenListHelpers.repeat_codegen(count_ref, item_var, loop_id)
+
+      code = """
+      #{count_code}#{item_code}#{rest_code}
+      #{repeat_code}
+        elmc_release(#{item_var});
+        ElmcValue *#{lists} = elmc_list_cons(#{rest_var}, elmc_list_cons(#{repeat_out}, elmc_list_nil()));
+        elmc_release(#{rest_var});
+        ElmcValue *#{out} = elmc_list_concat(#{lists});
+        elmc_release(#{lists});
+      #{count_release}
+      """
+
+      {:ok, code, out, counter}
+    else
+      _ -> :error
+    end
+  end
+
+  defp compile_concat_item(item, env, counter) do
+    case unwrap_list_repeat_expr(item) do
+      {:ok, n, inner} ->
+        case compile_list_repeat_int(n, inner, env, counter) do
+          {:ok, code, var, c} -> {:ok, code, var, c}
+          :error -> :error
+        end
+
+      :error ->
+        {code, var, c} = Host.compile_expr(item, env, counter)
+        {:ok, code, var, c}
+    end
+  end
 
   @spec compile_generic(
           %{

@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.CommandCall do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.DirectRender.CommandDef
+  alias Elmc.Backend.CCodegen.DirectRender.Emit.Catch
   alias Elmc.Backend.CCodegen.DirectRender.Emit.Release
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
@@ -53,11 +54,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.CommandCall do
 
       {:ok,
        """
-       if (!direct_stop) {
        #{arg_code}
        #{body_code}
        #{releases}
-       }
        """, counter}
     else
       _ -> :error
@@ -142,25 +141,19 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.CommandCall do
     if Enum.any?(arg_kinds, &(&1 != :boxed)) do
       {:ok,
        """
-       if (!direct_stop) {
        #{arg_code}
-         int direct_rc_#{next} = #{c_name}_commands_append_native(#{arg_list}, out_cmds, max_cmds, skip, count, emitted);
+         int direct_rc_#{next} = #{c_name}_commands_append_native(#{arg_list}, writer);
        #{releases}
-         if (direct_rc_#{next} < 0) return direct_rc_#{next};
-         if (*count >= max_cmds) direct_stop = 1;
-       }
+         #{Catch.handle_child_rc("direct_rc_#{next}")}
        """, next}
     else
       {:ok,
        """
-       if (!direct_stop) {
        #{arg_code}
          ElmcValue *direct_call_args_#{next}[#{max(argc, 1)}] = { #{arg_list} };
-         int direct_rc_#{next} = #{c_name}_commands_append(direct_call_args_#{next}, #{argc}, out_cmds, max_cmds, skip, count, emitted);
+         int direct_rc_#{next} = #{c_name}_commands_append(direct_call_args_#{next}, #{argc}, writer);
        #{releases}
-         if (direct_rc_#{next} < 0) return direct_rc_#{next};
-         if (*count >= max_cmds) direct_stop = 1;
-       }
+         #{Catch.handle_child_rc("direct_rc_#{next}")}
        """, next}
     end
   end

@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.CCodegen.GenericReachability do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.FusedNativeReachability
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
@@ -40,7 +41,12 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
 
       true ->
         decl = Map.fetch!(decl_map, target)
-        callees = expr_callees(decl.expr, elem(target, 0), decl_map)
+
+        callees =
+          case FusedNativeReachability.callees(elem(target, 0), elem(target, 1), decl.expr, decl_map) do
+            keys when is_list(keys) -> keys
+            nil -> expr_callees(decl.expr, elem(target, 0), decl_map)
+          end
 
         do_reachable(
           rest ++ callees,
@@ -66,7 +72,12 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
 
       true ->
         decl = Map.fetch!(decl_map, target)
-        callees = expr_wrapper_callees(decl.expr, elem(target, 0), decl_map)
+
+        callees =
+          case FusedNativeReachability.callees(elem(target, 0), elem(target, 1), decl.expr, decl_map) do
+            keys when is_list(keys) -> keys
+            nil -> expr_wrapper_callees(decl.expr, elem(target, 0), decl_map)
+          end
 
         do_wrapper_reachable(
           rest ++ callees,

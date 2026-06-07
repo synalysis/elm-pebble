@@ -9,21 +9,27 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Registry do
 
   @spec decls(IR.t(), Types.codegen_opts()) :: String.t()
   def decls(%IR{} = ir, opts) do
+    alias Elmc.Backend.CCodegen.DirectRender.Emit.Catch
+
     decl_map = IRQueries.function_decl_map(ir)
 
-    ir
-    |> Host.direct_command_targets(opts, decl_map)
-    |> Enum.map(fn {module_name, decl_name} ->
-      c_name = Util.module_fn_name(module_name, decl_name)
-      macro = Util.direct_command_macro(module_name, decl_name)
+    command_macros =
+      ir
+      |> Host.direct_command_targets(opts, decl_map)
+      |> Enum.map(fn {module_name, decl_name} ->
+        macro = Util.direct_command_macro(module_name, decl_name)
 
-      """
-      #define #{macro} 1
-      int #{c_name}_commands(ElmcValue ** const args, const int argc, void * const out_cmds, const int max_cmds);
-      int #{c_name}_commands_from(ElmcValue ** const args, const int argc, void * const out_cmds, const int max_cmds, const int skip, int *out_emitted);
-      """
-    end)
-    |> Enum.join("\n")
+        """
+        #define #{macro} 1
+        """
+      end)
+      |> Enum.join("\n")
+
+    if command_macros == "" do
+      ""
+    else
+      Catch.header_macros() <> "\n" <> command_macros
+    end
   end
 
   @spec defs(IR.t(), Types.codegen_opts()) :: String.t()
@@ -49,12 +55,12 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Registry do
 
           native_proto =
             if Host.native_direct_command_args?(decl) do
-              "\nstatic int #{c_name}_commands_append_native(#{Host.native_direct_command_params(decl)}, ElmcGeneratedPebbleDrawCmd * const out_cmds, const int max_cmds, const int skip, int * const count, int * const emitted);"
+              "\nstatic int #{c_name}_commands_append_native(#{Host.native_direct_command_params(decl)}, ElmcSceneWriter * const writer);"
             else
               ""
             end
 
-          "static int #{c_name}_commands_append(ElmcValue ** const args, const int argc, ElmcGeneratedPebbleDrawCmd * const out_cmds, const int max_cmds, const int skip, int * const count, int * const emitted);#{native_proto}"
+          "static int #{c_name}_commands_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer);#{native_proto}"
         end)
 
       defs =
@@ -67,20 +73,4 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Registry do
     end
   end
 
-  @spec prelude(boolean()) :: String.t()
-  def prelude(false), do: ""
-
-  def prelude(true) do
-    """
-    #include "elmc_pebble.h"
-    #include <string.h>
-
-    typedef ElmcPebbleDrawCmd ElmcGeneratedPebbleDrawCmd;
-
-    static void elmc_generated_draw_init(ElmcGeneratedPebbleDrawCmd *cmd, int64_t kind) {
-      memset(cmd, 0, sizeof(*cmd));
-      cmd->kind = kind;
-    }
-    """
-  end
 end

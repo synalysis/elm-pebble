@@ -777,6 +777,50 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   defp resolve_field_access_text(_node, _env), do: nil
 
+  @spec resolve_field_access_int(map(), model_map()) :: integer() | nil
+  defp resolve_field_access_int(node, model) when is_map(node) and is_map(model) do
+    label = (Map.get(node, "label") || Map.get(node, :label) || "") |> to_string()
+
+    field =
+      (Map.get(node, "field") || Map.get(node, :field) ||
+         label |> String.split(".") |> List.last())
+      |> to_string()
+
+    source_value =
+      case node_children(node) do
+        [source_node | _] ->
+          resolve_raw_value(source_node, model)
+
+        _ ->
+          source_name = label |> String.split(".") |> List.first() |> to_string()
+
+          cond do
+            source_name == "model" ->
+              model
+
+            source_name != "" and source_name != field ->
+              map_value_by_key(model, source_name)
+
+            true ->
+              nil
+          end
+      end
+
+    value =
+      case source_value do
+        map when is_map(map) -> map_value_by_key(map, field)
+        other -> other
+      end
+
+    case value do
+      n when is_integer(n) -> n
+      n when is_float(n) -> trunc(n)
+      _ -> nil
+    end
+  end
+
+  defp resolve_field_access_int(_node, _model), do: nil
+
   @spec resolve_raw_value(view_node(), map()) :: wire_value()
   defp resolve_raw_value(node, env) when is_map(node) and is_map(env) do
     value = Map.get(node, "value") || Map.get(node, :value)
@@ -2952,6 +2996,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   defp node_int_value(node, model) when is_map(node) do
     evaluated = evaluated_node_value(node, model)
     value = Map.get(node, "value") || Map.get(node, :value)
+    op = to_string(Map.get(node, "op") || Map.get(node, :op) || "")
 
     cond do
       is_integer(evaluated) ->
@@ -2959,6 +3004,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
       is_float(evaluated) ->
         trunc(evaluated)
+
+      op == "field_access" ->
+        resolve_field_access_int(node, model)
 
       is_integer(value) ->
         value

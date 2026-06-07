@@ -227,6 +227,7 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
   weatherDebugInFlight = false
   weatherDebugInFlightAt = 0
   weatherDebugAckTimer: ReturnType<typeof setTimeout> | null = null
+  deferredStorageSnapshotTimer: ReturnType<typeof setTimeout> | null = null
   weatherDebugFallbackTimer: ReturnType<typeof setTimeout> | null = null
   pendingWeatherRetry: WeatherSimulatorSettings | null = null
   lastSentWeatherJson: string | null = null
@@ -510,6 +511,10 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
       window.clearTimeout(this.weatherDebugAckTimer)
       this.weatherDebugAckTimer = null
     }
+    if (this.deferredStorageSnapshotTimer != null) {
+      window.clearTimeout(this.deferredStorageSnapshotTimer)
+      this.deferredStorageSnapshotTimer = null
+    }
     this.weatherDebugQueue = []
     this.weatherDebugInFlight = false
     this.pendingWeatherRetry = null
@@ -681,6 +686,7 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
       this.phoneOpenedAt = Date.now()
       this.phoneBridgeReady = true
       this.appendLog("phone websocket open")
+      if (this.appInstalled) void this.requestWatchAppLogs()
       if (this.buttonState !== 0) this.sendQemu(QEMU.button, [this.buttonState])
     })
     socket.addEventListener("error", () => {
@@ -716,17 +722,19 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
       await this.installPbwViaNativeInstaller(installSessionId)
       if (this.session?.id !== installSessionId) return
       if (this.session?.backend_enabled) {
-        this.enableAppLogs()
-        if (this.session?.has_phone_companion) {
-          try {
-            await this.ensurePhoneBridge()
+        try {
+          await this.waitForSessionAlive(30_000)
+          if (this.session?.has_phone_companion) {
+            await this.ensurePhoneBridge(45_000)
             if (this.session?.id !== installSessionId) return
-          } catch (error) {
-            if (this.session?.id === installSessionId) {
-              this.appendLog(`phone bridge connect failed: ${errMessage(error)}`)
-            }
+          }
+        } catch (error) {
+          if (this.session?.id === installSessionId) {
+            this.appendLog(`phone bridge connect failed after install: ${errMessage(error)}`)
           }
         }
+        if (this.session?.id !== installSessionId) return
+        await this.requestWatchAppLogs()
       }
       if (this.session?.has_phone_companion && this.session?.backend_enabled && this.session?.artifact_path) {
         try {
@@ -813,6 +821,7 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
       if (this.destroyed || !this.session) return
       this.phoneBridgeLastReconnectedAt = Date.now()
       this.appendLog("phone bridge reconnected")
+      if (this.appInstalled) await this.requestWatchAppLogs()
       if (this.phoneCompanionCacheInstalled) {
         this.sendSimulatorSettingsToPhoneBridge({quiet: true})
       } else if (this.session.has_phone_companion && this.session.artifact_path) {
@@ -940,11 +949,11 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
         break
       case 0x08:
         this.appendLog(data[1] === 0xff ? "phone bridge connected to watch" : "phone bridge disconnected")
-        if (data[1] === 0xff && this.appInstalled) this.enableAppLogs()
+        if (data[1] === 0xff && this.appInstalled) void this.requestWatchAppLogs()
         break
       case 0x09:
         this.appendLog(data[1] === 0 ? "phone bridge authenticated" : "phone bridge authentication failed")
-        if (data[1] === 0 && this.appInstalled) this.enableAppLogs()
+        if (data[1] === 0 && this.appInstalled) void this.requestWatchAppLogs()
         if (data[1] === 0) this.sendSimulatorSettingsToPhoneBridge()
         break
       case 0x0a:
@@ -1264,14 +1273,34 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
     return true
   }
 
+  async requestWatchAppLogs(): Promise<void> {
+    if (this.session?.request_app_logs_path) {
+      try {
+        await postJSON(this.session.request_app_logs_path)
+        this.appendLog("requested watch AppLog shipping via emulator session")
+      } catch (error) {
+        this.appendLog(`watch AppLog enable via session failed: ${errMessage(error)}`)
+      }
+    }
+    this.enableAppLogs()
+  }
+
   enableAppLogs(): void {
     const sent = this.sendPebbleFrame(ENDPOINT_APP_LOG, new Uint8Array([1]))
     if (sent) {
-      this.appendLog("requested watch AppLog shipping")
-      window.setTimeout(() => this.requestStorageSnapshot(), 250)
-    } else {
+      this.appendLog("requested watch AppLog shipping via phone bridge")
+      this.scheduleDeferredStorageSnapshot()
+    } else if (!this.session?.request_app_logs_path) {
       this.appendLog("skipped watch AppLog shipping: phone bridge is not connected")
     }
+  }
+
+  scheduleDeferredStorageSnapshot(delayMs = 3000): void {
+    if (this.deferredStorageSnapshotTimer != null) return
+    this.deferredStorageSnapshotTimer = window.setTimeout(() => {
+      this.deferredStorageSnapshotTimer = null
+      this.requestStorageSnapshot()
+    }, delayMs)
   }
 
   requestStorageSnapshot(): void {
@@ -1361,7 +1390,12 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
     this.flushPutBytesSummary()
     this.flushSystemLogSummary()
     const message = this.describePebbleFrame(direction, frame)
-    if (message) this.appendLog(message)
+    if (message) {
+      this.appendLog(message)
+      if (message.includes("draw rendered") && this.rfb) {
+        this.scheduleVncViewportConfig(this.rfb, "draw_rendered", 50)
+      }
+    }
   }
 
   pebbleFrameEndpoint(frame: Uint8Array): number | null {
@@ -2099,6 +2133,11 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
     if (!sessionScreen?.width || !sessionScreen?.height) return target
     if (sessionScreen.width !== target.width || sessionScreen.height !== target.height) return target
     return {width: sessionScreen.width, height: sessionScreen.height}
+  }
+
+  displayShape(): "round" | "rect" {
+    const shape = this.el.dataset.emulatorDisplayShape
+    return shape === "round" ? "round" : "rect"
   }
 
   cropCanvasToScreen(canvas: HTMLCanvasElement, screen: EmulatorScreen): string {

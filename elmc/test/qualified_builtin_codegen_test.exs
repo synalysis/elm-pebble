@@ -197,27 +197,21 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     body =
       generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeIntCase_native")
+      |> String.split("static elmc_int_t elmc_fn_Main_nativeIntCase_native")
       |> List.last()
 
-    [native_case_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
+    [native_case_body | _rest] = String.split(body, "\n\nElmcValue *elmc_fn_", parts: 2)
 
-    assert native_case_body =~ "elmc_int_t native_let_caseSubject_"
-    assert native_case_body =~ "switch (native_let_caseSubject_"
-    assert native_case_body =~ "case 0:"
-    assert native_case_body =~ "default:"
+    assert native_case_body =~ "const elmc_int_t native_let_caseSubject_"
+    assert native_case_body =~ ~r/const elmc_int_t native_lut_\d+\[4\] = \{ 1, 2, 3, 4 \};/
+    assert native_case_body =~ ~r/native_case_\d+ = native_lut_\d+\[\(\(native_let_caseSubject_/
+    refute native_case_body =~ "switch (native_let_caseSubject_"
     refute native_case_body =~ " = elmc_int_zero();\n  switch"
-    assert native_case_body =~ " = elmc_new_int(1);"
-    assert native_case_body =~ " = elmc_new_int(2);"
+    refute native_case_body =~ "elmc_new_int("
     refute native_case_body =~ "elmc_release(tmp_"
     refute native_case_body =~ "->tag == ELMC_TAG_INT"
     refute native_case_body =~ "elmc_as_int(native_let_caseSubject_"
     refute native_case_body =~ "elmc_new_int(native_mod_"
-
-    refute Regex.match?(
-             ~r/ElmcValue \*tmp_\d+ = elmc_new_int\(1\);\s+tmp_\d+ = tmp_\d+;/,
-             native_case_body
-           )
   end
 
   test "native Int case string branches assign result directly" do
@@ -982,8 +976,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     [use_body | _rest] = String.split(body, "int elmc_fn_", parts: 2)
 
     refute use_body =~ "elmc_fn_Main_helperRecordFieldBounds"
-    assert use_body =~ "out_cmds[*count].p0 = (x + 1);"
-    assert use_body =~ "out_cmds[*count].p3 = 12;"
+    assert use_body =~ "scene_cmd.p0 = (x + 1);"
+    assert use_body =~ "scene_cmd.p3 = 12;"
   end
 
   test "typed Color and String arguments use native direct command parameters" do
@@ -1111,19 +1105,19 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     [native_bounds_body | _rest] = String.split(bounds_body, "int elmc_fn_", parts: 2)
 
     assert native_bounds_body =~
-             "out_cmds[*count].p1 = ELMC_RECORD_GET_INDEX_INT(bounds, 2 /* x */)"
+             "scene_cmd.p1 = ELMC_RECORD_GET_INDEX_INT(bounds, 2 /* x */)"
 
     assert native_bounds_body =~
-             "out_cmds[*count].p2 = ELMC_RECORD_GET_INDEX_INT(bounds, 3 /* y */)"
+             "scene_cmd.p2 = ELMC_RECORD_GET_INDEX_INT(bounds, 3 /* y */)"
 
     assert native_bounds_body =~
-             "out_cmds[*count].p3 = ELMC_RECORD_GET_INDEX_INT(bounds, 1 /* w */)"
+             "scene_cmd.p3 = ELMC_RECORD_GET_INDEX_INT(bounds, 1 /* w */)"
 
     assert native_bounds_body =~
-             "out_cmds[*count].p4 = ELMC_RECORD_GET_INDEX_INT(bounds, 0 /* h */)"
+             "scene_cmd.p4 = ELMC_RECORD_GET_INDEX_INT(bounds, 0 /* h */)"
 
-    refute native_bounds_body =~ "out_cmds[*count].p1 = 0;"
-    refute native_bounds_body =~ "out_cmds[*count].p3 = 0;"
+    refute native_bounds_body =~ "scene_cmd.p1 = 0;"
+    refute native_bounds_body =~ "scene_cmd.p3 = 0;"
 
     helper_body =
       generated_c
@@ -1162,13 +1156,13 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~
-             "out_cmds[*count].p5 = (ELMC_TEXT_ALIGN_LEFT + (ELMC_TEXT_OVERFLOW_WORD_WRAP * (1 << ELMC_TEXT_OVERFLOW_SHIFT)));"
+             "scene_cmd.p5 = (ELMC_TEXT_ALIGN_LEFT + (ELMC_TEXT_OVERFLOW_WORD_WRAP * (1 << ELMC_TEXT_OVERFLOW_SHIFT)));"
 
     assert generated_c =~
-             "out_cmds[*count].p5 = (ELMC_TEXT_ALIGN_CENTER + (ELMC_TEXT_OVERFLOW_TRAILING_ELLIPSIS * (1 << ELMC_TEXT_OVERFLOW_SHIFT)));"
+             "scene_cmd.p5 = (ELMC_TEXT_ALIGN_CENTER + (ELMC_TEXT_OVERFLOW_TRAILING_ELLIPSIS * (1 << ELMC_TEXT_OVERFLOW_SHIFT)));"
 
     assert generated_c =~
-             "out_cmds[*count].p5 = (ELMC_TEXT_ALIGN_RIGHT + (ELMC_TEXT_OVERFLOW_FILL * (1 << ELMC_TEXT_OVERFLOW_SHIFT)));"
+             "scene_cmd.p5 = (ELMC_TEXT_ALIGN_RIGHT + (ELMC_TEXT_OVERFLOW_FILL * (1 << ELMC_TEXT_OVERFLOW_SHIFT)));"
   end
 
   test "direct command Int lets stay native inside bounds records" do
@@ -1201,10 +1195,162 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     assert use_body =~ "elmc_int_t direct_native_let_x_"
     assert use_body =~ "elmc_int_t direct_native_let_y_"
-    assert use_body =~ "out_cmds[*count].p1 = direct_native_let_x_"
-    assert use_body =~ "out_cmds[*count].p2 = direct_native_let_y_"
+    assert use_body =~ "scene_cmd.p1 = direct_native_let_x_"
+    assert use_body =~ "scene_cmd.p2 = direct_native_let_y_"
     refute use_body =~ "elmc_new_int((screenW - 64))"
     refute use_body =~ "elmc_new_int((screenH - 36))"
+  end
+
+  test "direct command Int lets stay native for circle radius args" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_native_let_circle_radius_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_native_let_circle_radius_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+
+    main_path = Path.join(project_dir, "src/Main.elm")
+    File.write!(main_path, File.read!(main_path) <> direct_native_let_circle_radius_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: false
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    body =
+      generated_c
+      |> String.split("static int elmc_fn_Main_directNativeLetCircleRadius_commands_append_native")
+      |> List.last()
+
+    [use_body | _rest] = String.split(body, "int elmc_fn_", parts: 2)
+
+    assert use_body =~ ~r/direct_native_let_radius_\d+ = native_max_/
+    assert use_body =~ ~r/out_cmds\[\*count\]\.p2 = direct_native_let_radius_/
+    refute use_body =~ "elmc_basics_max("
+    refute use_body =~ "elmc_new_int("
+  end
+
+  test "direct command radius lets hoist for analog marker hand positions" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_native_let_analog_markers_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_native_let_analog_markers_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+
+    main_path = Path.join(project_dir, "src/Main.elm")
+    File.write!(main_path, File.read!(main_path) <> direct_native_let_analog_markers_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: false
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    body =
+      generated_c
+      |> String.split("static int elmc_fn_Main_directNativeLetAnalogMarkers_commands_append")
+      |> List.last()
+
+    [use_body | _rest] = String.split(body, "int elmc_fn_", parts: 2)
+
+    assert use_body =~ ~r/direct_native_let_radius_\d+ = native_max_/
+    assert use_body =~ "direct_native_let_markerTopX_"
+    assert use_body =~ ~r/direct_native_let_radius_\d+\) \/ 1000\)/
+    refute use_body =~ "elmc_fn_Main_handX_native"
+    refute use_body =~ "elmc_new_int(native_max"
+    refute use_body =~ "elmc_fn_Main_unit12X_native"
+    refute use_body =~ "elmc_as_int(tmp_"
+  end
+
+  test "native lookup tables return elmc_int_t without boxing case branches" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/native_unit12_lookup_project", __DIR__)
+    out_dir = Path.expand("tmp/native_unit12_lookup_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+
+    main_path = Path.join(project_dir, "src/Main.elm")
+    File.write!(main_path, File.read!(main_path) <> native_unit12_lookup_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: false
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    body =
+      generated_c
+      |> String.split("static elmc_int_t elmc_fn_Main_unit12X_native")
+      |> List.last()
+
+    [unit12_body | _rest] = String.split(body, "ElmcValue *elmc_fn_Main_unit12Y", parts: 2)
+
+    assert unit12_body =~ ~r/const elmc_int_t native_lut_\d+\[\d+\] = \{/
+    assert unit12_body =~ "500"
+    assert unit12_body =~ "1000"
+    assert unit12_body =~ "-500"
+    refute unit12_body =~ "switch (native_let_caseSubject_"
+    refute unit12_body =~ "elmc_new_int("
+    refute unit12_body =~ "elmc_int_zero()"
+  end
+
+  test "direct render folds literal unit12 lookups and hoists variable ones" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_unit12_dedup_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_unit12_dedup_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+
+    main_path = Path.join(project_dir, "src/Main.elm")
+    File.write!(main_path, File.read!(main_path) <> direct_unit12_dedup_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: false
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    body =
+      generated_c
+      |> String.split("static int elmc_fn_Main_directUnit12Dedup_commands_append")
+      |> List.last()
+
+    [use_body | _rest] = String.split(body, "int elmc_fn_", parts: 2)
+
+    assert use_body =~ "direct_hoisted_int_"
+    assert use_body =~ ~r/const elmc_int_t direct_hoisted_int_\d+ = 0;/
+    assert use_body =~ ~r/const elmc_int_t direct_hoisted_int_\d+ = -1000;/
+    assert use_body =~
+             ~r/direct_native_let_markerTopX_\d+ = direct_hoisted_int_\d+;\n.*direct_native_let_markerTopY_\d+ = direct_hoisted_int_\d+;/s
+
+    lut_count =
+      use_body
+      |> String.split("const elmc_int_t native_lut_")
+      |> length()
+      |> Kernel.-(1)
+
+    assert lut_count <= 4
+    refute use_body =~ "switch (native_let_caseSubject_"
   end
 
   test "curried let-bound Ui.text helpers keep string args boxed in lambdas" do
@@ -1256,7 +1402,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     assert generated_c =~ "static int elmc_fn_Main_selfReferentialOps_commands_append_native"
-    assert generated_c =~ "out_cmds[*count].p0 = ((x - 1) - 1);"
+    assert generated_c =~ "scene_cmd.p0 = ((x - 1) - 1);"
   end
 
   test "direct command Int if lets stay native through both branches" do
@@ -1289,7 +1435,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     assert use_body =~ "elmc_int_t native_if_"
     assert use_body =~ "native_negate_"
-    assert use_body =~ "out_cmds[*count].p0 = (cx + direct_native_let_offset_"
+    assert use_body =~ "scene_cmd.p0 = (cx + direct_native_let_offset_"
     refute Regex.match?(~r/elmc_int_t native_if_\d+ = 0;/, use_body)
     refute use_body =~ "ElmcValue *tmp_"
     refute use_body =~ "elmc_basics_negate"
@@ -1324,8 +1470,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     [condition_body | _rest] = String.split(body, "int elmc_fn_", parts: 2)
 
     assert condition_body =~ "if (elmc_as_bool(enabled))"
-    assert condition_body =~ "elmc_generated_draw_init(&out_cmds[*count], ELMC_RENDER_OP_CLEAR)"
-    refute condition_body =~ "elmc_generated_draw_init(&out_cmds[*count], 2)"
+    assert condition_body =~ "elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_CLEAR)"
+    refute condition_body =~ "elmc_draw_cmd_init(&scene_cmd, 2)"
     refute condition_body =~ "elmc_retain(enabled)"
     refute condition_body =~ "elmc_release(enabled)"
     refute condition_body =~ "ElmcValue *tmp_"
@@ -2907,6 +3053,140 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     """
   end
 
+  defp direct_native_let_circle_radius_source do
+    """
+
+
+    directNativeLetCircleRadius : Int -> Int -> List PebbleUi.RenderOp
+    directNativeLetCircleRadius screenW screenH =
+        let
+            centerX =
+                screenW // 2
+
+            centerY =
+                screenH // 2
+
+            radius =
+                max 22 ((min screenW screenH // 2) - 14)
+        in
+        [ PebbleUi.circle { x = centerX, y = centerY } radius PebbleColor.black ]
+    """
+  end
+
+  defp native_unit12_lookup_source do
+    """
+
+
+    unit12X : Int -> Int
+    unit12X index =
+        case modBy 12 index of
+            0 -> 0
+            1 -> 500
+            3 -> 1000
+            _ -> -500
+
+    unit12Y : Int -> Int
+    unit12Y index =
+        case modBy 12 index of
+            0 -> -1000
+            3 -> 0
+            _ -> -500
+    """
+  end
+
+  defp direct_native_let_analog_markers_source do
+    """
+
+
+    unit12X : Int -> Int
+    unit12X index =
+        case modBy 12 index of
+            0 -> 0
+            3 -> 1000
+            _ -> 500
+
+    unit12Y : Int -> Int
+    unit12Y index =
+        case modBy 12 index of
+            0 -> -1000
+            3 -> 0
+            _ -> -500
+
+    handX : Int -> Int -> Int -> Int
+    handX centerX handRadius index =
+        centerX + ((unit12X index * handRadius) // 1000)
+
+    handY : Int -> Int -> Int -> Int
+    handY centerY handRadius index =
+        centerY + ((unit12Y index * handRadius) // 1000)
+
+    directNativeLetAnalogMarkers : Int -> Int -> List PebbleUi.RenderOp
+    directNativeLetAnalogMarkers screenW screenH =
+        let
+            centerX =
+                screenW // 2
+
+            centerY =
+                screenH // 2
+
+            radius =
+                max 22 ((min screenW screenH // 2) - 14)
+
+            markerTopX =
+                handX centerX radius 0
+
+            markerTopY =
+                handY centerY radius 0
+        in
+        [ PebbleUi.pixel { x = markerTopX, y = markerTopY } PebbleColor.black ]
+    """
+  end
+
+  defp direct_unit12_dedup_source do
+    direct_native_let_analog_markers_source() <>
+      """
+
+
+    directUnit12Dedup : Int -> Int -> Int -> Int -> List PebbleUi.RenderOp
+    directUnit12Dedup screenW screenH minute hour =
+        let
+            centerX =
+                screenW // 2
+
+            centerY =
+                screenH // 2
+
+            radius =
+                max 22 ((min screenW screenH // 2) - 14)
+
+            minuteIndex =
+                modBy 12 (minute // 5)
+
+            hourIndex =
+                modBy 12 (hour + (minute // 30))
+
+            minuteX =
+                handX centerX radius minuteIndex
+
+            minuteY =
+                handY centerY radius minuteIndex
+
+            hourX =
+                handX centerX radius hourIndex
+
+            markerTopX =
+                handX centerX radius 0
+
+            markerTopY =
+                handY centerY radius 0
+        in
+        [ PebbleUi.pixel { x = markerTopX, y = markerTopY } PebbleColor.black
+        , PebbleUi.line { x = centerX, y = centerY } { x = minuteX, y = minuteY } PebbleColor.black
+        , PebbleUi.line { x = centerX, y = centerY } { x = hourX, y = centerY } PebbleColor.black
+        ]
+    """
+  end
+
   defp direct_native_let_bounds_source do
     """
 
@@ -3477,7 +3757,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       |> hd()
 
     assert view_body =~ "direct_item_i_"
-    assert view_body =~ "elmc_generated_draw_init"
+    assert view_body =~ "elmc_scene_writer_push_cmd"
     refute view_body =~ "elmc_new_int(direct_item_i_"
     refute view_body =~ "ELMC_TAG_LIST"
     refute view_body =~ "_commands_append(direct_call_args_"
@@ -3609,7 +3889,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       |> hd()
 
     assert view_body =~ "direct_item_i_"
-    assert view_body =~ "elmc_generated_draw_init"
+    assert view_body =~ "elmc_scene_writer_push_cmd"
     assert view_body =~ "direct_item_i_"
     refute view_body =~ "elmc_fn_Main_row_commands_append_native"
   end
@@ -3637,7 +3917,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     assert view_body =~ "direct_index_"
     assert view_body =~ "direct_item_i_"
-    assert view_body =~ "elmc_generated_draw_init"
+    assert view_body =~ "elmc_scene_writer_push_cmd"
     refute view_body =~ "elmc_fn_Main_row_commands_append_native"
     refute view_body =~ "elmc_new_int(direct_index_"
   end
@@ -3699,7 +3979,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       |> hd()
 
     assert view_body =~ "ELMC_RENDER_OP_TEXT"
-    assert view_body =~ "snprintf(out_cmds[*count].text"
+    assert view_body =~ "snprintf(scene_cmd.text"
     refute view_body =~ "elmc_fn_Main_drawCell_commands_append_native"
   end
 
@@ -3773,19 +4053,19 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute view_body =~ "ELMC_RECORD_GET_INDEX_INT(,"
     assert view_body =~ "direct_native_record_layout_cell_"
     assert view_body =~ "ELMC_RENDER_OP_TEXT"
-    assert view_body =~ "out_cmds[*count].p1 = (direct_native_record_layout_x_"
-    assert view_body =~ "out_cmds[*count].p2 = ((direct_native_record_layout_y_"
-    refute view_body =~ "out_cmds[*count].p1 = (ELMC_TEXT_ALIGN_CENTER"
+    assert view_body =~ "scene_cmd.p1 = (direct_native_record_layout_x_"
+    assert view_body =~ "scene_cmd.p2 = ((direct_native_record_layout_y_"
+    refute view_body =~ "scene_cmd.p1 = (ELMC_TEXT_ALIGN_CENTER"
 
     cell_loop =
       view_body
-      |> String.split("while (!direct_stop && direct_cursor_", parts: 2)
+      |> String.split("while (direct_cursor_", parts: 2)
       |> Enum.at(1, "")
       |> String.split("elmc_release", parts: 2)
       |> hd()
 
-    assert length(String.split(cell_loop, "*emitted += 1")) >= 3,
-           "expected per-command emitted increments in affine indexedMap loop"
+    assert length(String.split(cell_loop, "elmc_scene_writer_push_cmd")) >= 3,
+           "expected per-command scene writer pushes in affine indexedMap loop"
   end
 
   test "direct view reuses hoisted displayShapeIsRound across layout and chrome lets" do
@@ -3946,7 +4226,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     assert view_body =~ "direct_index_"
     assert view_body =~ "(10 + direct_index_"
-    assert view_body =~ "elmc_generated_draw_init"
+    assert view_body =~ "elmc_scene_writer_push_cmd"
     refute view_body =~ "elmc_fn_Main_cell_commands_append_native"
   end
 
@@ -4110,6 +4390,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     runtime_h = File.read!(Path.join(out_dir, "runtime/elmc_runtime.h"))
 
+    assert runtime_h =~ "#define ELMC_RECORD_GET_INDEX("
     assert runtime_h =~ "#define ELMC_RECORD_GET_INDEX_FLOAT"
     assert runtime_h =~ "#define ELMC_RECORD_GET_INDEX_BOOL"
   end

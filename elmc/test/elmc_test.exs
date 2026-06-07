@@ -54,6 +54,82 @@ defmodule ElmcTest do
     refute generated =~ "generated_trig_cos_double"
   end
 
+  test "runtime pruning keeps macro-derived accessors referenced by generated code" do
+    out_dir = Path.expand("tmp/runtime_pruned_record_macros", __DIR__)
+    refs_dir = Path.join(out_dir, "refs")
+    runtime_dir = Path.join(out_dir, "runtime")
+
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(refs_dir)
+
+    File.write!(Path.join(refs_dir, "elmc_generated.c"), """
+    #include "elmc_runtime.h"
+
+    static void uses_record_macros(ElmcValue *model) {
+      (void)ELMC_RECORD_GET_INDEX_BOOL(model, 2);
+      (void)ELMC_RECORD_GET_INDEX_FLOAT(model, 1);
+      (void)ELMC_RECORD_GET_INDEX_INT(model, 0);
+    }
+    """)
+
+    assert :ok = Elmc.Runtime.Generator.write_runtime(runtime_dir, prune_from_dir: refs_dir)
+
+    runtime = File.read!(Path.join(runtime_dir, "elmc_runtime.c"))
+
+    assert runtime =~ "elmc_int_t elmc_as_bool"
+    assert runtime =~ "double elmc_as_float"
+    assert runtime =~ "elmc_int_t elmc_as_int"
+  end
+
+  test "runtime pruning keeps elmc_sub_alloc when generated code uses elmc_sub1" do
+    out_dir = Path.expand("tmp/runtime_pruned_sub", __DIR__)
+    refs_dir = Path.join(out_dir, "refs")
+    runtime_dir = Path.join(out_dir, "runtime")
+
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(refs_dir)
+
+    File.write!(Path.join(refs_dir, "elmc_generated.c"), """
+    #include "elmc_runtime.h"
+
+    ElmcValue *uses_sub(void) {
+      return elmc_sub1(ELMC_SUBSCRIPTION_MINUTE_CHANGE, ELMC_PEBBLE_MSG_MINUTECHANGED);
+    }
+    """)
+
+    assert :ok = Elmc.Runtime.Generator.write_runtime(runtime_dir, prune_from_dir: refs_dir)
+
+    runtime = File.read!(Path.join(runtime_dir, "elmc_runtime.c"))
+
+    assert runtime =~ "ElmcValue *elmc_sub1"
+    assert runtime =~ "elmc_sub_alloc"
+  end
+
+  test "runtime pruning keeps elmc_cmd_alloc when generated code uses elmc_cmd1" do
+    out_dir = Path.expand("tmp/runtime_pruned_cmd", __DIR__)
+    refs_dir = Path.join(out_dir, "refs")
+    runtime_dir = Path.join(out_dir, "runtime")
+
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(refs_dir)
+
+    File.write!(Path.join(refs_dir, "elmc_generated.c"), """
+    #include "elmc_runtime.h"
+
+    ElmcValue *uses_cmd(void) {
+      return elmc_cmd1(1, 2);
+    }
+    """)
+
+    assert :ok = Elmc.Runtime.Generator.write_runtime(runtime_dir, prune_from_dir: refs_dir)
+
+    runtime = File.read!(Path.join(runtime_dir, "elmc_runtime.c"))
+
+    assert runtime =~ "ElmcValue *elmc_cmd1"
+    assert runtime =~ "elmc_cmd_alloc"
+    refute runtime =~ "implicit declaration"
+  end
+
   test "runtime pruning keeps closure constructor referenced by generated code" do
     out_dir = Path.expand("tmp/runtime_pruned_closure", __DIR__)
     refs_dir = Path.join(out_dir, "refs")

@@ -2,38 +2,13 @@ defmodule Elmc.Backend.CCodegen.Emit do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.Constants
+  alias Elmc.Backend.Pebble.Kinds
+  alias Elmc.Backend.Pebble.Util
 
   @spec generated_magic_number_defines() :: String.t()
   def generated_magic_number_defines do
     """
-    #define ELMC_RENDER_OP_NONE 0
-    #define ELMC_RENDER_OP_CLEAR 2
-    #define ELMC_RENDER_OP_PIXEL 3
-    #define ELMC_RENDER_OP_LINE 4
-    #define ELMC_RENDER_OP_RECT 5
-    #define ELMC_RENDER_OP_FILL_RECT 6
-    #define ELMC_RENDER_OP_CIRCLE 7
-    #define ELMC_RENDER_OP_FILL_CIRCLE 8
-    #define ELMC_RENDER_OP_PUSH_CONTEXT 10
-    #define ELMC_RENDER_OP_POP_CONTEXT 11
-    #define ELMC_RENDER_OP_STROKE_WIDTH 12
-    #define ELMC_RENDER_OP_ANTIALIASED 13
-    #define ELMC_RENDER_OP_STROKE_COLOR 14
-    #define ELMC_RENDER_OP_FILL_COLOR 15
-    #define ELMC_RENDER_OP_TEXT_COLOR 16
-    #define ELMC_RENDER_OP_ROUND_RECT 17
-    #define ELMC_RENDER_OP_ARC 18
-    #define ELMC_RENDER_OP_CONTEXT_GROUP 19
-    #define ELMC_RENDER_OP_PATH_FILLED 20
-    #define ELMC_RENDER_OP_PATH_OUTLINE 21
-    #define ELMC_RENDER_OP_PATH_OUTLINE_OPEN 22
-    #define ELMC_RENDER_OP_FILL_RADIAL 23
-    #define ELMC_RENDER_OP_COMPOSITING_MODE 24
-    #define ELMC_RENDER_OP_BITMAP_IN_RECT 25
-    #define ELMC_RENDER_OP_ROTATED_BITMAP 26
-    #define ELMC_RENDER_OP_TEXT_INT_WITH_FONT 27
-    #define ELMC_RENDER_OP_TEXT_LABEL_WITH_FONT 28
-    #define ELMC_RENDER_OP_TEXT 29
+    #{generated_render_op_defines()}
     #define ELMC_CONTEXT_STROKE_WIDTH 1
     #define ELMC_CONTEXT_ANTIALIASED 2
     #define ELMC_CONTEXT_STROKE_COLOR 3
@@ -55,6 +30,9 @@ defmodule Elmc.Backend.CCodegen.Emit do
     #define ELMC_SUBSCRIPTION_BUTTON_SELECT 4
     #define ELMC_SUBSCRIPTION_BUTTON_DOWN 8
     #define ELMC_SUBSCRIPTION_ACCEL_TAP 16
+    #define ELMC_SUBSCRIPTION_BATTERY 32
+    #define ELMC_SUBSCRIPTION_CONNECTION 64
+    #define ELMC_SUBSCRIPTION_APPMESSAGE 4096
     #define ELMC_SUBSCRIPTION_HOUR_CHANGE 1024
     #define ELMC_SUBSCRIPTION_MINUTE_CHANGE 2048
     #define ELMC_SUBSCRIPTION_FRAME_BASE 8192
@@ -65,6 +43,12 @@ defmodule Elmc.Backend.CCodegen.Emit do
     #define ELMC_SUBSCRIPTION_BUTTON_LONG_UP 128
     #define ELMC_SUBSCRIPTION_BUTTON_LONG_SELECT 256
     #define ELMC_SUBSCRIPTION_BUTTON_LONG_DOWN 512
+    #define ELMC_SUBSCRIPTION_ACCEL_DATA 32768
+    #define ELMC_SUBSCRIPTION_APP_FOCUS 524288
+    #define ELMC_SUBSCRIPTION_COMPASS 1048576
+    #define ELMC_SUBSCRIPTION_DICTATION 2097152
+    #define ELMC_SUBSCRIPTION_UNOBSTRUCTED_AREA 4194304
+    #define ELMC_SUBSCRIPTION_HEALTH 2147483648LL
     #define ELMC_TEXT_ALIGN_LEFT 0
     #define ELMC_TEXT_ALIGN_CENTER 1
     #define ELMC_TEXT_ALIGN_RIGHT 2
@@ -166,6 +150,15 @@ defmodule Elmc.Backend.CCodegen.Emit do
     |> Enum.sort_by(fn {name, _value} -> name end)
     |> Enum.map_join("\n", fn {name, value} ->
       "#define #{generated_color_macro(name)} #{value}"
+    end)
+  end
+
+  defp generated_render_op_defines do
+    Kinds.draw_kinds()
+    |> Enum.sort_by(fn {_kind, id} -> id end)
+    |> Enum.map_join("\n", fn {kind, id} ->
+      macro = kind |> Atom.to_string() |> Util.macro_name()
+      "#define ELMC_RENDER_OP_#{macro} #{id}"
     end)
   end
 end

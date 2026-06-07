@@ -10,7 +10,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.TypeParsing
-  alias Elmc.Backend.CCodegen.CanPlaceLoop
+  alias Elmc.Backend.CCodegen.Fusion
   alias Elmc.Backend.CCodegen.Tuple2CaseTable
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
@@ -51,12 +51,12 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       Process.delete(:elmc_generic_helper_counter)
 
       """
-      #{helper_defs}
-      ElmcValue *#{c_name}(ElmcValue ** const args, const int argc) {
+      #{helper_defs}ElmcValue *#{c_name}(ElmcValue ** const args, const int argc) {
         /* Ownership policy: #{Enum.join(decl.ownership, ", ")} */
-        #{body}
+      #{body}
       }
       """
+      |> String.trim_trailing()
     end
   end
 
@@ -93,12 +93,12 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       |> Enum.map(fn {_arg, c_arg, index} ->
         "ElmcValue *#{c_arg} = (argc > #{index}) ? args[#{index}] : NULL;"
       end)
-      |> Enum.join("\n  ")
+      |> Enum.join("\n")
 
     unused_casts =
       arg_bindings
       |> Enum.map(fn {_arg, c_arg, _index} -> c_arg end)
-      |> Enum.map_join("\n  ", fn name -> "(void)#{name};" end)
+      |> Enum.map_join("\n", fn name -> "(void)#{name};" end)
 
     env =
       arg_bindings
@@ -138,18 +138,26 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
         result_probe = DebugProbes.result_probe(module_name, decl.name, result_var)
 
-        """
-        (void)args;
-          (void)argc;
-        #{arg_binding_code}
-          #{unused_casts}
-          #{entry_probe}
-          #{code}
-          #{exit_probe}
-          #{result_probe}
-          return #{result_var};
-        """
+        format_function_body([
+          "(void)args;",
+          "(void)argc;",
+          arg_binding_code,
+          unused_casts,
+          entry_probe,
+          code,
+          exit_probe,
+          result_probe,
+          "return #{result_var};"
+        ])
     end
+  end
+
+  defp format_function_body(parts) do
+    parts
+    |> List.flatten()
+    |> Enum.reject(&(String.trim(&1) == ""))
+    |> Enum.join("\n")
+    |> Util.format_c_block(2)
   end
 
   defp boxed_special_body_emit(
@@ -162,8 +170,10 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
          arg_binding_code,
          unused_casts
        ) do
-    case Tuple2CaseTable.try_emit(module_name, decl.name, decl.expr) do
-      {:ok, helper_c} ->
+    tuple2_table? = match?({:ok, _, _}, Tuple2CaseTable.try_emit(module_name, decl.name, decl.expr))
+
+    case Fusion.try_emit(module_name, decl.name, decl.expr, decl_map) do
+      {:ok, helper_c, _} when tuple2_table? ->
         {:ok,
          emit_tuple2_table_function(
            decl,
@@ -176,25 +186,22 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
            unused_casts
          )}
 
-      :error ->
-        case CanPlaceLoop.try_emit(module_name, decl.name, decl.expr, decl_map) do
-          {:ok, helper_c} ->
-            {:ok,
-             emit_fused_native_wrapper_function(
-               decl,
-               module_name,
-               decl_map,
-               arg_bindings,
-               helper_c,
-               entry_probe,
-               exit_probe,
-               arg_binding_code,
-               unused_casts
-             )}
+      {:ok, helper_c, _} ->
+        {:ok,
+         emit_fused_native_wrapper_function(
+           decl,
+           module_name,
+           decl_map,
+           arg_bindings,
+           helper_c,
+           entry_probe,
+           exit_probe,
+           arg_binding_code,
+           unused_casts
+         )}
 
-          :error ->
-            :error
-        end
+      :error ->
+        :error
     end
   end
 
@@ -218,16 +225,16 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
     native_args = fused_native_call_args(decl, arg_bindings)
 
-    """
-    (void)args;
-      (void)argc;
-    #{arg_binding_code}
-      #{unused_casts}
-      #{entry_probe}
-      ElmcValue *tmp_result = #{native}(#{native_args});
-      #{exit_probe}
-      return tmp_result;
-    """
+    format_function_body([
+      "(void)args;",
+      "(void)argc;",
+      arg_binding_code,
+      unused_casts,
+      entry_probe,
+      "ElmcValue *tmp_result = #{native}(#{native_args});",
+      exit_probe,
+      "return tmp_result;"
+    ])
   end
 
   defp fused_native_call_args(%{type: type}, arg_bindings) when is_binary(type) do
@@ -273,16 +280,16 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       |> Enum.map(fn {_arg, c_arg, _index} -> "elmc_as_int(#{c_arg})" end)
       |> Enum.join(", ")
 
-  """
-  (void)args;
-    (void)argc;
-  #{arg_binding_code}
-    #{unused_casts}
-    #{entry_probe}
-    ElmcValue *tmp_result = #{native}(#{native_args});
-    #{exit_probe}
-    return tmp_result;
-  """
+    format_function_body([
+      "(void)args;",
+      "(void)argc;",
+      arg_binding_code,
+      unused_casts,
+      entry_probe,
+      "ElmcValue *tmp_result = #{native}(#{native_args});",
+      exit_probe,
+      "return tmp_result;"
+    ])
   end
 
   @spec generic_native_function_prototypes(
@@ -447,7 +454,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       case return_kind do
         :boxed ->
           case native_boxed_special_emit(module_name, decl, decl_map) do
-            {:ok, helper_c} ->
+            {:ok, helper_c, _callees} ->
               {helper_c <> "\n", ""}
 
             :error ->
@@ -504,13 +511,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   end
 
   defp native_boxed_special_emit(module_name, decl, decl_map) do
-    cond do
-      match?({:ok, _}, Tuple2CaseTable.try_emit(module_name, decl.name, decl.expr)) ->
-        Tuple2CaseTable.try_emit(module_name, decl.name, decl.expr)
-
-      true ->
-        CanPlaceLoop.try_emit(module_name, decl.name, decl.expr, decl_map)
-    end
+    Fusion.try_emit(module_name, decl.name, decl.expr, decl_map)
   end
 
   defp compile_native_function_body(
@@ -531,10 +532,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
     case_helpers =
       if collect_generic_helpers? do
-        defs = generic_helper_defs()
-        Process.delete(:elmc_generic_helper_defs)
-        Process.delete(:elmc_generic_helper_counter)
-        defs
+        generic_helper_defs_and_clear()
       else
         ""
       end
@@ -550,6 +548,13 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     """
 
     {case_helpers, native_def}
+  end
+
+  defp generic_helper_defs_and_clear do
+    defs = generic_helper_defs()
+    Process.delete(:elmc_generic_helper_defs)
+    Process.delete(:elmc_generic_helper_counter)
+    defs
   end
 
   @spec native_env(

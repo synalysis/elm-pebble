@@ -140,6 +140,38 @@ defmodule Elmc.Backend.CCodegen.EnvBindings do
 
   def native_int_binding(_env, _name), do: nil
 
+  @spec put_hybrid_loop_native_ref(Types.compile_env(), Types.binding_name(), String.t()) ::
+          Types.compile_env()
+  def put_hybrid_loop_native_ref(env, name, ref)
+      when (is_binary(name) or is_atom(name)) and is_binary(ref) do
+    hybrid_refs = Map.get(env, :__hybrid_loop_native_refs__, %{})
+    Map.put(env, :__hybrid_loop_native_refs__, Map.put(hybrid_refs, binding_key(name), ref))
+  end
+
+  def put_hybrid_loop_native_ref(env, _name, _ref), do: env
+
+  @spec remove_hybrid_loop_native_ref(Types.compile_env(), Types.binding_name()) ::
+          Types.compile_env()
+  def remove_hybrid_loop_native_ref(env, name) when is_binary(name) or is_atom(name) do
+    hybrid_refs =
+      env
+      |> Map.get(:__hybrid_loop_native_refs__, %{})
+      |> Map.delete(binding_key(name))
+
+    Map.put(env, :__hybrid_loop_native_refs__, hybrid_refs)
+  end
+
+  def remove_hybrid_loop_native_ref(env, _name), do: env
+
+  @spec hybrid_loop_native_ref(Types.compile_env(), Types.binding_name()) :: String.t() | nil
+  def hybrid_loop_native_ref(env, name) when is_binary(name) or is_atom(name) do
+    env
+    |> Map.get(:__hybrid_loop_native_refs__, %{})
+    |> Map.get(binding_key(name))
+  end
+
+  def hybrid_loop_native_ref(_env, _name), do: nil
+
   @spec env_resolvable_binding_keys(Types.compile_env()) :: MapSet.t(String.t())
   def env_resolvable_binding_keys(env) do
     map_keys =

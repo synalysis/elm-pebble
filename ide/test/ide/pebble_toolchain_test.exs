@@ -112,9 +112,10 @@ defmodule Ide.PebbleToolchainTest do
     assert source =~ "write_emulator_build_flags"
     assert source =~ "elmc_emulator_build_flags.h"
     assert source =~ "ELMC_PEBBLE_EMULATOR_STORAGE_LOGS 1"
-    assert source =~ "ELMC_PEBBLE_RUNTIME_LOGS 1"
+    refute source =~ "#define ELMC_PEBBLE_RUNTIME_LOGS 1"
     assert source =~ "emulator_agent_probes"
-    refute source =~ "emulator_storage_logs, \"ELMC_AGENT_PROBES\""
+    assert source =~ "#define ELMC_AGENT_PROBES 0"
+    assert source =~ "maybe_build_env_agent_probes"
     assert template =~ ~s(#include "elmc_emulator_build_flags.h")
     assert template =~ "emulator_storage_snapshot_callback"
     assert template =~ "companion_inbox_log"
@@ -175,8 +176,14 @@ defmodule Ide.PebbleToolchainTest do
     assert template =~ "resource_id == ELM_PEBBLE_RESOURCE_ID_MISSING"
     assert template =~ "font_from_id_for_height"
     refute template =~ "resource_height > requested_height"
-    assert template =~ "DRAW_HEAP_CHUNK_CAPACITY"
-    assert template =~ "elmc_pebble_scene_commands_from"
+    assert template =~ "s_draw_cmd"
+    assert template =~ "s_draw_update_active"
+    assert template =~ "elmc-draw text pre seq=%d #%d font=%p"
+    assert template =~ "elmc-draw text post seq=%d #%d ok"
+    assert template =~ "elmc_pebble_scene_commands_next(&s_elm_app, &s_draw_cmd, 1)"
+    refute template =~ "malloc(sizeof(ElmcPebbleDrawCmd)"
+    assert template =~ "elmc_pebble_scene_reset_draw_cursor"
+    assert template =~ "elmc_pebble_scene_commands_next"
     refute template =~ "realloc(s_draw_cmds"
     refute template =~ "resource_id == 0"
   end
@@ -351,12 +358,16 @@ defmodule Ide.PebbleToolchainTest do
   test "pebble app template initializes Elm after pushing the window once" do
     template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
 
-    push_idx = :binary.match(template, "window_stack_push(s_main_window, true);") |> elem(0)
-    launch_idx = :binary.match(template, "build_launch_context(launch)") |> elem(0)
-    init_idx = :binary.match(template, "elmc_pebble_init_with_mode") |> elem(0)
+    init_body =
+      case Regex.run(~r/static void init\(void\) \{(.*?)^\}/ms, template) do
+        [_, body] -> body
+        _ -> flunk("init() body not found in pebble app template")
+      end
 
-    assert push_idx < launch_idx
-    assert launch_idx < init_idx
+    push_idx = :binary.match(init_body, "window_stack_push(s_main_window, true);") |> elem(0)
+    init_call_idx = :binary.match(init_body, "complete_elm_init();") |> elem(0)
+
+    assert push_idx < init_call_idx
 
     refute template =~
              ~s/} else {\n    APP_LOG(APP_LOG_LEVEL_ERROR, "elmc_pebble_init failed: %d", rc);\n  }\n\n  window_stack_push(s_main_window, true);/

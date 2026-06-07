@@ -38,11 +38,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.If do
       end
 
     """
-    if (!direct_stop) {
     #{cond_code}
     #{body}
     #{cond_release}
-    }
     """
   end
 

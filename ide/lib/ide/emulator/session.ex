@@ -58,11 +58,21 @@ defmodule Ide.Emulator.Session do
         Install.do_install(pid, config(:native_install_retries, 4))
       end
     after
-      _ = GenServer.call(pid, :install_finished, 5_000)
+      safe_install_finished(pid)
     catch
       :exit, {:timeout, _} -> {:error, :emulator_session_unresponsive}
       :exit, _ -> {:error, :emulator_session_unavailable}
     end
+  end
+
+  defp safe_install_finished(pid) when is_pid(pid) do
+    if Process.alive?(pid) do
+      _ = GenServer.call(pid, :install_finished, 5_000)
+    end
+
+    :ok
+  catch
+    :exit, _ -> :ok
   end
 
   @doc false
@@ -364,6 +374,10 @@ defmodule Ide.Emulator.Session do
 
   def handle_info({:tcp, tcp, data}, state) when is_binary(data),
     do: VncHandlers.append_tcp_data(state, tcp, data)
+
+  def handle_info(:restart_pypkjs_after_install, state) do
+    {:noreply, InstallCalls.restart_pypkjs_after_install(state)}
+  end
 
   def handle_info(_message, state), do: {:noreply, state}
   @impl true

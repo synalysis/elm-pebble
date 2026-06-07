@@ -17,8 +17,8 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
 
       code = """
       #{left_code}
-        #{right_code}
-        ElmcValue *#{out} = elmc_tuple2_ints(#{left_ref}, #{right_ref});
+      #{right_code}
+      ElmcValue *#{out} = elmc_tuple2_ints(#{left_ref}, #{right_ref});
       """
 
       {code, out, next}
@@ -30,8 +30,8 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
 
       code = """
       #{left_code}
-        #{right_code}
-          ElmcValue *#{out} = elmc_tuple2_take(#{left_var}, #{right_var});
+      #{right_code}
+      ElmcValue *#{out} = elmc_tuple2_take(#{left_var}, #{right_var});
       """
 
       {code, out, next}

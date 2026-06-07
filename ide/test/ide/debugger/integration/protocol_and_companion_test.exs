@@ -89,13 +89,43 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
     source = """
     module TriggerSnap exposing (..)
 
-    type Msg
-      = Inc
-      | Dec
-      | ButtonUp
-      | ButtonDown
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
 
-    subscriptions model = Sub.none
+    type alias Model =
+        { n : Int }
+
+    type Msg
+        = Inc
+        | Dec
+        | ButtonUp
+        | ButtonDown
+
+    init _ =
+        ( { n = 0 }, Cmd.none )
+
+    update msg model =
+        case msg of
+            ButtonUp ->
+                ( { n = model.n + 1 }, Cmd.none )
+
+            _ ->
+                ( model, Cmd.none )
+
+    subscriptions _ =
+        Sub.none
+
+    view _ =
+        []
+
+    main : Program Decode.Value Model Msg
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , view = view
+            , subscriptions = subscriptions
+            }
     """
 
     {:ok, _} = Debugger.start_session(slug)

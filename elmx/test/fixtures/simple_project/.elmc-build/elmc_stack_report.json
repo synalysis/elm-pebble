@@ -621,8 +621,8 @@
     "boxed_tmp_declarations": 351,
     "closure_allocations": 2,
     "direct_command_defs": 2,
-    "generated_c_bytes": 57947,
-    "generated_c_lines": 2183,
+    "generated_c_bytes": 57948,
+    "generated_c_lines": 2184,
     "generic_function_defs": 2,
     "linked_binary": {
       "reason": "binary size is available after platform or host linking, not during C source generation",

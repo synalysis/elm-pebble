@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.DirectRender.Emit.Catch
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Types
@@ -130,29 +131,17 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
   @spec boxed_body(String.t(), String.t(), String.t(), String.t()) :: String.t()
   defp boxed_body(c_name, arg_bindings, unused_casts, body_code) do
     """
-    static int #{c_name}_commands_append(ElmcValue ** const args, const int argc, ElmcGeneratedPebbleDrawCmd * const out_cmds, const int max_cmds, const int skip, int * const count, int * const emitted) {
+    static int #{c_name}_commands_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {
       (void)args;
       (void)argc;
       #{arg_bindings}
       #{unused_casts}
-      if (!out_cmds || !count || !emitted || max_cmds <= 0) return -1;
-      int direct_stop = 0;
-      #{body_code}
-      return 0;
+      if (!writer) return -1;
+      #{Catch.function_body_prefix()}#{body_code}#{Catch.function_body_suffix()}
     }
 
-    int #{c_name}_commands(ElmcValue ** const args, const int argc, void * const out_cmds, const int max_cmds) {
-      return #{c_name}_commands_from(args, argc, out_cmds, max_cmds, 0, NULL);
-    }
-
-    int #{c_name}_commands_from(ElmcValue ** const args, const int argc, void * const out_cmds, const int max_cmds, const int skip, int *out_emitted) {
-      int count = 0;
-      int emitted = 0;
-      if (!out_cmds || max_cmds <= 0) return -1;
-      if (skip < 0) return -1;
-      int rc = #{c_name}_commands_append(args, argc, (ElmcGeneratedPebbleDrawCmd *)out_cmds, max_cmds, skip, &count, &emitted);
-      if (out_emitted) *out_emitted = emitted;
-      return rc < 0 ? rc : count;
+    int #{c_name}_scene_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {
+      return #{c_name}_commands_append(args, argc, writer);
     }
     """
   end
@@ -264,33 +253,21 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
         ) :: String.t()
   defp native_body(c_name, wrapper_bindings, native_args, decl, unused_casts, body_code) do
     """
-    static int #{c_name}_commands_append(ElmcValue ** const args, const int argc, ElmcGeneratedPebbleDrawCmd * const out_cmds, const int max_cmds, const int skip, int * const count, int * const emitted) {
+    static int #{c_name}_commands_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {
       (void)args;
       (void)argc;
       #{wrapper_bindings}
-      return #{c_name}_commands_append_native(#{native_args}, out_cmds, max_cmds, skip, count, emitted);
+      return #{c_name}_commands_append_native(#{native_args}, writer);
     }
 
-    static int #{c_name}_commands_append_native(#{native_params(decl)}, ElmcGeneratedPebbleDrawCmd * const out_cmds, const int max_cmds, const int skip, int * const count, int * const emitted) {
+    static int #{c_name}_commands_append_native(#{native_params(decl)}, ElmcSceneWriter * const writer) {
       #{unused_casts}
-      if (!out_cmds || !count || !emitted || max_cmds <= 0) return -1;
-      int direct_stop = 0;
-      #{body_code}
-      return 0;
+      if (!writer) return -1;
+      #{Catch.function_body_prefix()}#{body_code}#{Catch.function_body_suffix()}
     }
 
-    int #{c_name}_commands(ElmcValue ** const args, const int argc, void * const out_cmds, const int max_cmds) {
-      return #{c_name}_commands_from(args, argc, out_cmds, max_cmds, 0, NULL);
-    }
-
-    int #{c_name}_commands_from(ElmcValue ** const args, const int argc, void * const out_cmds, const int max_cmds, const int skip, int *out_emitted) {
-      int count = 0;
-      int emitted = 0;
-      if (!out_cmds || max_cmds <= 0) return -1;
-      if (skip < 0) return -1;
-      int rc = #{c_name}_commands_append(args, argc, (ElmcGeneratedPebbleDrawCmd *)out_cmds, max_cmds, skip, &count, &emitted);
-      if (out_emitted) *out_emitted = emitted;
-      return rc < 0 ? rc : count;
+    int #{c_name}_scene_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {
+      return #{c_name}_commands_append(args, argc, writer);
     }
     """
   end

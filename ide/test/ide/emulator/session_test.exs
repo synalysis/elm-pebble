@@ -362,11 +362,15 @@ defmodule Ide.Emulator.SessionTest do
     refute ProcessHost.tcp_port_open?(nil)
   end
 
-  test "companion installs keep pypkjs alive for phone bridge" do
+  test "native install keeps pypkjs alive; router acquire isolates PutBytes" do
     install_calls = File.read!("lib/ide/emulator/session/install_calls.ex")
 
-    assert install_calls =~ ~S/if Map.get(state, :has_phone_companion, false) do/
+    refute install_calls =~ ~S/has_phone_companion, false) do
+        state
+      else
+        ProcessHost.cleanup_process(state.pypkjs_pid)/
     assert install_calls =~ "def install_context("
+    assert install_calls =~ ":restart_pypkjs_after_install"
   end
 
   test "runtime status reports disabled embedded emulator before launch" do

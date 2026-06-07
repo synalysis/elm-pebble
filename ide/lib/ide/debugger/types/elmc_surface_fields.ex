@@ -41,7 +41,6 @@ defmodule Ide.Debugger.Types.ElmcSurfaceFields do
         "elmc_compile_revision" => field(attrs, :revision),
         "elmc_compile_cached" => bool_wire(cached)
       }
-      |> Map.merge(optional_runtime_artifacts(attrs))
 
     if is_binary(detail) and detail != "" do
       Map.put(base, "elmc_compile_detail", detail)

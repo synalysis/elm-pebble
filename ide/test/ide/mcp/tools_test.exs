@@ -3279,7 +3279,7 @@ defmodule Ide.Mcp.ToolsTest do
                [:edit]
              )
 
-    assert imported["entry"]["ctor"] == "Square"
+    assert imported["entry"]["ctor"] == "VectorStaticSquare"
     assert is_binary(imported["preview_svg"])
 
     assert {:ok, imported_sequence} =
@@ -3299,11 +3299,11 @@ defmodule Ide.Mcp.ToolsTest do
 
     assert {:ok, listed} = Tools.call("resources.vectors.list", %{"slug" => slug}, [:read])
     ctors = Enum.map(listed["entries"], & &1["ctor"])
-    assert "Square" in ctors
-    assert "Anim" in ctors
+    assert "VectorStaticSquare" in ctors
+    assert "VectorAnimatedAnim" in ctors
 
     assert {:ok, preview} =
-             Tools.call("resources.vectors.preview", %{"slug" => slug, "ctor" => "Square"}, [
+             Tools.call("resources.vectors.preview", %{"slug" => slug, "ctor" => "VectorStaticSquare"}, [
                :read
              ])
 
@@ -3311,9 +3311,9 @@ defmodule Ide.Mcp.ToolsTest do
     assert String.contains?(preview["svg"], "<svg")
 
     assert {:ok, deleted} =
-             Tools.call("resources.vectors.delete", %{"slug" => slug, "ctor" => "Square"}, [:edit])
+             Tools.call("resources.vectors.delete", %{"slug" => slug, "ctor" => "VectorStaticSquare"}, [:edit])
 
-    assert deleted["deleted"] == "Square"
-    refute Enum.any?(deleted["entries"], &(&1["ctor"] == "Square"))
+    assert deleted["deleted"] == "VectorStaticSquare"
+    refute Enum.any?(deleted["entries"], &(&1["ctor"] == "VectorStaticSquare"))
   end
 end

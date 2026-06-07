@@ -1003,7 +1003,7 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
        #{range_code}
        #{context_prelude}
         elmc_int_t direct_step_#{next} = (#{first_ref} <= #{last_ref}) ? 1 : -1;
-        for (elmc_int_t direct_item_i_#{next} = #{first_ref}; !direct_stop; direct_item_i_#{next} += direct_step_#{next}) {
+        for (elmc_int_t direct_item_i_#{next} = #{first_ref}; direct_rc == 0; direct_item_i_#{next} += direct_step_#{next}) {
           #{command_emits}
           if (direct_item_i_#{next} == #{last_ref}) break;
         }
@@ -1066,7 +1066,7 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
        #{context_prelude}
         elmc_int_t direct_index_#{next} = 0;
         elmc_int_t direct_step_#{next} = (#{first_ref} <= #{last_ref}) ? 1 : -1;
-        for (elmc_int_t direct_item_i_#{next} = #{first_ref}; !direct_stop; direct_item_i_#{next} += direct_step_#{next}) {
+        for (elmc_int_t direct_item_i_#{next} = #{first_ref}; direct_rc == 0; direct_item_i_#{next} += direct_step_#{next}) {
           #{command_emits}
           if (direct_item_i_#{next} == #{last_ref}) break;
           direct_index_#{next} += 1;
@@ -1127,7 +1127,7 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
        #{context_prelude}
        ElmcValue *direct_cursor_#{next} = #{list_var};
        elmc_int_t direct_index_#{next} = 0;
-       while (!direct_stop && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
+       while (direct_rc == 0 && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
          ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
          #{command_emits}
          direct_index_#{next} += 1;
@@ -1190,10 +1190,8 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
           emits = affine_draw_range_command_emits(spec, next, mode)
 
           snippet = """
-          if (!direct_stop) {
-          #{Util.indent(item_code, 2)}
-            #{Util.indent(emits, 2)}
-          }
+          #{item_code}
+            #{emits}
           """
 
           {acc <> snippet, c2}
@@ -1235,7 +1233,7 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
        #{prefix_code}
        #{context_prelude}
        ElmcValue *direct_cursor_#{next} = #{list_var};
-       while (!direct_stop && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
+       while (direct_rc == 0 && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
          ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
          #{command_emits}
          direct_cursor_#{next} = direct_node_#{next}->tail;
@@ -1273,16 +1271,12 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
       text_copy = affine_draw_text_copy(command, next, mode)
 
       """
-      if (!direct_stop && *emitted >= skip && *count < max_cmds) {
-            elmc_generated_draw_init(&out_cmds[*count], #{command.kind_macro});
+      #{Elmc.Backend.CCodegen.DirectRender.Emit.Commands.scene_emit_guard_open()}
+            elmc_draw_cmd_init(&scene_cmd, #{command.kind_macro});
             #{param_assignments}
             #{text_copy}
-            *count += 1;
-          }
-          if (!direct_stop) {
-            *emitted += 1;
-            if (*count >= max_cmds) direct_stop = 1;
-          }
+            #{Elmc.Backend.CCodegen.DirectRender.Emit.Catch.push_cmd_check()}
+          #{Elmc.Backend.CCodegen.DirectRender.Emit.Commands.scene_emit_guard_close()}
       """
       |> String.trim_trailing()
     end)
@@ -1296,8 +1290,8 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
     if (#{item_ref} == 0) {
       #{Util.indent(direct_text_copy_body_for_literal(escaped), 6)}
     } else {
-      snprintf(out_cmds[*count].text, sizeof(out_cmds[*count].text), "%lld", (long long)#{item_ref});
-      out_cmds[*count].text[sizeof(out_cmds[*count].text) - 1] = '\\0';
+      snprintf(scene_cmd.text, sizeof(scene_cmd.text), "%lld", (long long)#{item_ref});
+      scene_cmd.text[sizeof(scene_cmd.text) - 1] = '\\0';
     }
     """
   end
@@ -1328,7 +1322,7 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
     |> Enum.with_index()
     |> Enum.map_join("\n        ", fn {param, index} ->
       value = affine_draw_param_value(param, next, mode)
-      "out_cmds[*count].p#{index} = #{value};"
+      "scene_cmd.p#{index} = #{value};"
     end)
   end
 

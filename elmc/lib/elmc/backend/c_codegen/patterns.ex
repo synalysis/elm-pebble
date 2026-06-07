@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.CCodegen.Patterns do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.PebbleMsgTag
   alias Elmc.Backend.CCodegen.Types
 
   @spec pattern_condition(String.t(), Types.pattern()) :: String.t()
@@ -93,21 +94,25 @@ defmodule Elmc.Backend.CCodegen.Patterns do
     "1"
   end
 
-  def pattern_condition(subject_ref, %{kind: :constructor, tag: tag, arg_pattern: arg_pattern})
+  def pattern_condition(subject_ref, %{kind: :constructor, tag: tag, arg_pattern: arg_pattern} = pattern)
        when is_integer(tag) and is_map(arg_pattern) do
+    tag_ref = PebbleMsgTag.tag_expr(pattern)
     value_ref = "((ElmcTuple2 *)#{subject_ref}->payload)->second"
+    arg_cond = constructor_arg_condition(value_ref, arg_pattern)
 
     tagged_match =
-      "((#{subject_ref})->tag == ELMC_TAG_TUPLE2 && (#{subject_ref})->payload != NULL && elmc_as_int(((ElmcTuple2 *)(#{subject_ref})->payload)->first) == #{tag} && (#{pattern_condition(value_ref, arg_pattern)}))"
+      "((#{subject_ref})->tag == ELMC_TAG_TUPLE2 && (#{subject_ref})->payload != NULL && elmc_as_int(((ElmcTuple2 *)(#{subject_ref})->payload)->first) == #{tag_ref}#{arg_cond})"
 
     "(#{subject_ref}) && #{tagged_match}"
   end
 
-  def pattern_condition(subject_ref, %{kind: :constructor, tag: tag}) when is_integer(tag) do
-    int_match = "((#{subject_ref})->tag == ELMC_TAG_INT && elmc_as_int(#{subject_ref}) == #{tag})"
+  def pattern_condition(subject_ref, %{kind: :constructor, tag: tag} = pattern)
+       when is_integer(tag) do
+    tag_ref = PebbleMsgTag.tag_expr(pattern)
+    int_match = "((#{subject_ref})->tag == ELMC_TAG_INT && elmc_as_int(#{subject_ref}) == #{tag_ref})"
 
     tuple_match =
-      "((#{subject_ref})->tag == ELMC_TAG_TUPLE2 && (#{subject_ref})->payload != NULL && elmc_as_int(((ElmcTuple2 *)(#{subject_ref})->payload)->first) == #{tag})"
+      "((#{subject_ref})->tag == ELMC_TAG_TUPLE2 && (#{subject_ref})->payload != NULL && elmc_as_int(((ElmcTuple2 *)(#{subject_ref})->payload)->first) == #{tag_ref})"
 
     "(#{subject_ref}) && (#{int_match} || #{tuple_match})"
   end
@@ -295,4 +300,14 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   defp pattern_subject_ref(%{name: name}) when is_binary(name), do: name
   defp pattern_subject_ref(%{"name" => name}) when is_binary(name), do: name
   defp pattern_subject_ref(subject_ref), do: inspect(subject_ref)
+
+  @spec constructor_arg_condition(String.t(), Types.pattern()) :: String.t()
+  defp constructor_arg_condition(_value_ref, %{kind: :wildcard}), do: ""
+  defp constructor_arg_condition(_value_ref, %{kind: :var}), do: ""
+
+  defp constructor_arg_condition(value_ref, arg_pattern) when is_map(arg_pattern) do
+    " && (#{pattern_condition(value_ref, arg_pattern)})"
+  end
+
+  defp constructor_arg_condition(_value_ref, _arg_pattern), do: ""
 end

@@ -5,6 +5,7 @@ defmodule Elmc.Backend.CCodegen.LiteralCompile do
   alias Elmc.Backend.CCodegen.ResourceUnion
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
+  alias Elmc.Backend.Pebble.Util, as: PebbleUtil
 
   @spec compile(Types.ir_literal_expr(), Types.compile_env(), Types.compile_counter()) ::
           Types.compile_result()
@@ -27,6 +28,13 @@ defmodule Elmc.Backend.CCodegen.LiteralCompile do
     next = counter + 1
     var = "tmp_#{next}"
     {"ElmcValue *#{var} = elmc_new_int(#{value});", var, next}
+  end
+
+  def compile(%{op: :msg_tag_expr, name: name}, _env, counter) when is_binary(name) do
+    next = counter + 1
+    var = "tmp_#{next}"
+    macro = "ELMC_PEBBLE_MSG_#{PebbleUtil.macro_name(name)}"
+    {"ElmcValue *#{var} = elmc_new_int(#{macro});", var, next}
   end
 
   def compile(%{op: :string_literal, value: value}, _env, counter) do

@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.Expr do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.Native.RecordFields
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
 
@@ -116,7 +117,19 @@ defmodule Elmc.Backend.CCodegen.Expr do
 
   def substitute_expr(%{op: :field_access, arg: arg, field: field} = expr, substitutions)
        when is_binary(arg) do
-    %{expr | arg: Map.get(substitutions, arg, arg), field: field}
+  case Map.fetch(substitutions, arg) do
+    {:ok, bound} -> %{op: :field_access, arg: bound, field: field}
+    :error -> expr
+  end
+  end
+
+  def substitute_expr(%{op: :field_access, arg: %{op: :var, name: name}, field: field}, substitutions) do
+    key = Host.binding_key(name)
+
+    case Map.fetch(substitutions, key) do
+      {:ok, bound} -> %{op: :field_access, arg: bound, field: field}
+      :error -> %{op: :field_access, arg: %{op: :var, name: name}, field: field}
+    end
   end
 
   def substitute_expr(%{op: :field_call, arg: arg, args: args} = expr, substitutions)
@@ -194,6 +207,23 @@ defmodule Elmc.Backend.CCodegen.Expr do
     end
   end
 
+  defp resolve_branch_let_bindings(%{op: :field_access, arg: arg, field: field}, let_bindings)
+       when is_binary(arg) do
+    case Map.fetch(let_bindings, arg) do
+      {:ok, bound} -> %{op: :field_access, arg: bound, field: field}
+      :error -> %{op: :field_access, arg: arg, field: field}
+    end
+  end
+
+  defp resolve_branch_let_bindings(%{op: :field_access, arg: %{op: :var, name: name}, field: field}, let_bindings) do
+    key = Host.binding_key(name)
+
+    case Map.fetch(let_bindings, key) do
+      {:ok, bound} -> %{op: :field_access, arg: bound, field: field}
+      :error -> %{op: :field_access, arg: %{op: :var, name: name}, field: field}
+    end
+  end
+
   defp resolve_branch_let_bindings(%{op: :call, name: name, args: args}, let_bindings)
        when is_binary(name) and args in [[], nil] do
     case Map.fetch(let_bindings, name) do
@@ -228,12 +258,36 @@ defmodule Elmc.Backend.CCodegen.Expr do
          args <- Map.get(arg_expr, :args, []),
          true <- length(arg_names) == length(args),
          substituted <- substitute_expr(expr, Map.new(Enum.zip(arg_names, args))),
-         field_expr when not is_nil(field_expr) <- inline_record_field_expr(substituted, field, env) do
+         {_inner, let_bindings} <- unwrap_let_chain(substituted, %{}),
+         field_expr when not is_nil(field_expr) <- inline_record_field_expr(substituted, field, env),
+         false <- unresolved_let_ref?(field_expr, MapSet.new(Map.keys(let_bindings))) do
       field_expr
     else
       _ -> nil
     end
   end
+
+  defp unresolved_let_ref?(%{op: :var, name: name}, let_names) when is_binary(name) or is_atom(name),
+    do: MapSet.member?(let_names, Host.binding_key(name))
+
+  defp unresolved_let_ref?(%{op: :field_access, arg: arg}, let_names) when is_binary(arg),
+    do: MapSet.member?(let_names, arg)
+
+  defp unresolved_let_ref?(%{op: :field_access, arg: %{op: :var, name: name}}, let_names)
+       when is_binary(name) or is_atom(name),
+       do: MapSet.member?(let_names, Host.binding_key(name))
+
+  defp unresolved_let_ref?(expr, let_names) when is_map(expr) do
+    Enum.any?(expr, fn
+      {_key, value} when is_map(value) or is_list(value) -> unresolved_let_ref?(value, let_names)
+      _ -> false
+    end)
+  end
+
+  defp unresolved_let_ref?(values, let_names) when is_list(values),
+    do: Enum.any?(values, &unresolved_let_ref?(&1, let_names))
+
+  defp unresolved_let_ref?(_expr, _let_names), do: false
 
   @spec record_helper_target(Types.ir_expr(), Types.compile_env()) :: Types.function_decl_key() | nil
   def record_helper_target(%{op: :call, name: name}, env) when is_binary(name) do
@@ -258,7 +312,10 @@ defmodule Elmc.Backend.CCodegen.Expr do
 
   def record_shape(%{op: :var, name: name}, env) do
     record_shape_for_var(env, name) ||
-      record_shape_for_function_return({Map.get(env, :__module__, "Main"), name}, env, 0)
+      case Map.get(env, :__var_types__, %{}) |> Map.get(name) do
+        type when is_binary(type) -> record_shape_for_type(type, env)
+        _ -> record_shape_for_function_return({Map.get(env, :__module__, "Main"), name}, env, 0)
+      end
   end
 
   def record_shape(%{op: :call, name: name, args: args}, env) when is_binary(name) do
@@ -291,7 +348,96 @@ defmodule Elmc.Backend.CCodegen.Expr do
     record_shape(default, env)
   end
 
+  def record_shape(%{op: :field_access, arg: arg, field: field}, env) do
+    case RecordFields.field_type(env, arg, field) do
+      type when is_binary(type) -> record_shape_for_type(type, env)
+      _ -> nil
+    end
+  end
+
   def record_shape(_expr, _env), do: nil
+
+  @spec nested_record_get_int_expr(Types.ir_expr(), Types.compile_env()) :: String.t() | nil
+  def nested_record_get_int_expr(%{op: :field_access, arg: arg, field: field}, env) do
+    with {source, path} <- nested_field_access_path(arg, field),
+         true <- nested_field_access_path_int?(env, source, path),
+         getter when is_binary(getter) <- nested_field_int_get_expr(source, path, env) do
+      getter
+    else
+      _ -> nil
+    end
+  end
+
+  def nested_record_get_int_expr(_expr, _env), do: nil
+
+  defp nested_field_access_path(%{op: :var, name: name}, field) when is_binary(name),
+    do: {name, [field]}
+
+  defp nested_field_access_path(%{op: :field_access, arg: arg, field: parent_field}, field) do
+    case nested_field_access_path(arg, parent_field) do
+      {source, path} -> {source, path ++ [field]}
+      nil -> nil
+    end
+  end
+
+  defp nested_field_access_path(_, _), do: nil
+
+  defp nested_field_access_path_int?(env, source, path) do
+    {final_field, intermediate_fields} = List.pop_at(path, -1)
+
+    source
+    |> build_nested_field_access(intermediate_fields)
+    |> then(&RecordFields.int_field?(env, &1, final_field))
+  end
+
+  defp build_nested_field_access(source, fields) when is_binary(source) do
+    Enum.reduce(fields, %{op: :var, name: source}, fn field, acc ->
+      %{op: :field_access, arg: acc, field: field}
+    end)
+  end
+
+  defp nested_field_int_get_expr(source, path, env) do
+    {final_field, intermediate_fields} = List.pop_at(path, -1)
+
+    getter =
+      Enum.reduce(Enum.with_index(intermediate_fields), source, fn {field, idx}, cur ->
+        prior = Enum.take(intermediate_fields, idx)
+
+        case record_shape_for_path(env, source, prior) do
+          fields when is_list(fields) ->
+            case Enum.find_index(fields, &(&1 == field)) do
+              nil -> throw(:unsupported)
+              index ->
+                "ELMC_RECORD_GET_INDEX(#{cur}, #{index} /* #{Util.escape_c_comment(field)} */)"
+            end
+
+          _ ->
+            throw(:unsupported)
+        end
+      end)
+
+    case record_shape_for_path(env, source, intermediate_fields) do
+      fields when is_list(fields) ->
+        case Enum.find_index(fields, &(&1 == final_field)) do
+          nil ->
+            nil
+
+          index ->
+            "ELMC_RECORD_GET_INDEX_INT(#{getter}, #{index} /* #{Util.escape_c_comment(final_field)} */)"
+        end
+
+      _ ->
+        nil
+    end
+  catch
+    :unsupported -> nil
+  end
+
+  defp record_shape_for_path(env, source, prior_fields) do
+    source
+    |> build_nested_field_access(prior_fields)
+    |> then(&record_shape(&1, env))
+  end
 
   @spec record_get_expr(String.t(), String.t(), Types.record_shape()) :: String.t()
   def record_get_expr(source, field, fields) when is_list(fields) do
@@ -306,6 +452,21 @@ defmodule Elmc.Backend.CCodegen.Expr do
 
   def record_get_expr(source, field, _fields) do
     "elmc_record_get(#{source}, \"#{Util.escape_c_string(field)}\")"
+  end
+
+  @spec record_update_expr(String.t(), String.t(), String.t(), Types.record_shape()) :: String.t()
+  def record_update_expr(record_var, field, value_var, fields) when is_list(fields) do
+    case Enum.find_index(fields, &(&1 == field)) do
+      nil ->
+        "elmc_record_update(#{record_var}, \"#{Util.escape_c_string(field)}\", #{value_var})"
+
+      index ->
+        "elmc_record_update_index(#{record_var}, #{index} /* #{Util.escape_c_comment(field)} */, #{value_var})"
+    end
+  end
+
+  def record_update_expr(record_var, field, value_var, _fields) do
+    "elmc_record_update(#{record_var}, \"#{Util.escape_c_string(field)}\", #{value_var})"
   end
 
   @spec record_get_int_expr(String.t(), String.t(), Types.record_shape()) :: String.t()
@@ -349,6 +510,16 @@ defmodule Elmc.Backend.CCodegen.Expr do
     end
   end
 
+  defp record_shape_by_type_suffix(alias_shapes, type_name) do
+    suffix = type_name |> String.split(".") |> List.last()
+
+    alias_shapes
+    |> Enum.find_value(fn
+      {{_mod, ^suffix}, shape} -> shape
+      _ -> nil
+    end)
+  end
+
   @spec record_shape_for_type(String.t(), Types.compile_env()) :: Types.record_shape()
   def record_shape_for_type(type, env) when is_binary(type) do
     type_name = Host.normalize_type_name(type)
@@ -363,12 +534,15 @@ defmodule Elmc.Backend.CCodegen.Expr do
 
       String.contains?(type_name, ".") ->
         case split_qualified_type_name(type_name) do
-          nil -> nil
-          target_key -> Map.get(alias_shapes, target_key)
+          nil ->
+            nil
+
+          target_key ->
+            Map.get(alias_shapes, target_key) || record_shape_by_type_suffix(alias_shapes, type_name)
         end
 
       true ->
-        nil
+        record_shape_by_type_suffix(alias_shapes, type_name)
     end
   end
 

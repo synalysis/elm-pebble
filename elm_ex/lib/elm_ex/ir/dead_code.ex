@@ -100,6 +100,14 @@ defmodule ElmEx.IR.DeadCode do
     [local_call_target(name, mod)]
   end
 
+  defp call_reference_targets(%{op: :sub_const, var: name}, mod) when is_binary(name) do
+    [local_call_target(name, mod)]
+  end
+
+  defp call_reference_targets(%{op: :add_const, var: name}, mod) when is_binary(name) do
+    [local_call_target(name, mod)]
+  end
+
   defp call_reference_targets(_expr, _mod), do: []
 
   @spec local_call_target(String.t(), String.t()) :: String.t()

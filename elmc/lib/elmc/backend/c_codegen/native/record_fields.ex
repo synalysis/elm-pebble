@@ -19,13 +19,27 @@ defmodule Elmc.Backend.CCodegen.Native.RecordFields do
 
       String.contains?(normalized, ".") ->
         case Expr.split_qualified_type_name(normalized) do
-          {mod, name} -> Map.get(types_map[{mod, name}] || %{}, field)
-          _ -> nil
+          {mod, name} ->
+            Map.get(types_map[{mod, name}] || %{}, field) ||
+              lookup_field_type_by_suffix(types_map, normalized, field)
+
+          _ ->
+            nil
         end
 
       true ->
-        nil
+        lookup_field_type_by_suffix(types_map, normalized, field)
     end
+  end
+
+  defp lookup_field_type_by_suffix(types_map, type_name, field) do
+    suffix = type_name |> String.split(".") |> List.last()
+
+    types_map
+    |> Enum.find_value(fn
+      {{_mod, ^suffix}, field_types} -> Map.get(field_types, field)
+      _ -> nil
+    end)
   end
 
   @spec record_type_name(Types.compile_env(), String.t()) :: String.t() | nil
@@ -70,6 +84,17 @@ defmodule Elmc.Backend.CCodegen.Native.RecordFields do
 
   def field_type(env, %{op: :var, name: name}, field) when is_binary(field),
     do: field_type(env, name, field)
+
+  def field_type(env, %{op: :field_access, arg: arg, field: parent_field}, field)
+      when is_binary(field) do
+    case field_type(env, arg, parent_field) do
+      parent_type when is_binary(parent_type) ->
+        lookup_field_type(parent_type, field, env)
+
+      _ ->
+        nil
+    end
+  end
 
   def field_type(_env, _arg, _field), do: nil
 

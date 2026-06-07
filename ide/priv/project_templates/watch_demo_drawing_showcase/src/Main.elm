@@ -13,6 +13,7 @@ import Pebble.Ui.Resources as Resources
 type alias Model =
     { screenW : Int
     , screenH : Int
+    , displayShape : Platform.DisplayShape
     , pageIndex : Int
     , rotationAngle : Int
     }
@@ -52,6 +53,7 @@ init : Platform.LaunchContext -> ( Model, Cmd Msg )
 init context =
     ( { screenW = context.screen.width
       , screenH = context.screen.height
+      , displayShape = context.screen.shape
       , pageIndex = 0
       , rotationAngle = 0
       }
@@ -119,15 +121,49 @@ view model =
 
 headerOps : Model -> Page -> List Ui.RenderOp
 headerOps model page =
-    [ Ui.clear Color.white
-    , Ui.text Resources.DefaultFont Ui.defaultTextOptions
-        { x = 0, y = 2, w = model.screenW, h = 18 }
-        (pageTitle page ++ " " ++ String.fromInt (model.pageIndex + 1) ++ "/" ++ String.fromInt (List.length pages))
+    let
+        title =
+            pageTitle page
+                ++ " "
+                ++ String.fromInt (model.pageIndex + 1)
+                ++ "/"
+                ++ String.fromInt (List.length pages)
+
+        textOptions =
+            if Platform.displayShapeIsRound model.displayShape then
+                Ui.alignCenter Ui.defaultTextOptions
+
+            else
+                Ui.defaultTextOptions
+    in
+    if Platform.displayShapeIsRound model.displayShape then
+        let
+            textW =
+                (min model.screenW model.screenH * 4) // 9
+
+            textX =
+                (model.screenW - textW) // 2
+        in
+        [ Ui.clear Color.white
+        , Ui.text Resources.DefaultFont textOptions
+            { x = textX, y = 10, w = textW, h = 14 }
+            title
         , Ui.text Resources.DefaultFont
-        (Ui.alignLeft Ui.defaultTextOptions |> Ui.trailingEllipsis)
-        { x = 4, y = model.screenH - 16, w = model.screenW - 8, h = 14 }
-        "Up/Down: page"
-    ]
+            (Ui.alignLeft textOptions |> Ui.trailingEllipsis)
+            { x = textX, y = model.screenH - 24, w = textW, h = 14 }
+            "Up/Down: page"
+        ]
+
+    else
+        [ Ui.clear Color.white
+        , Ui.text Resources.DefaultFont textOptions
+            { x = 4, y = 4, w = model.screenW - 8, h = 16 }
+            title
+        , Ui.text Resources.DefaultFont
+            (Ui.alignLeft Ui.defaultTextOptions |> Ui.trailingEllipsis)
+            { x = 4, y = model.screenH - 18, w = model.screenW - 8, h = 14 }
+            "Up/Down: page"
+        ]
 
 
 pageTitle : Page -> String
@@ -165,7 +201,7 @@ pageOps model page =
             primitivesOps model
 
         Paths ->
-            pathsOps
+            pathsOps model
 
         TextPage ->
             textOps model
@@ -186,9 +222,22 @@ pageOps model page =
             combinedOps model
 
 
-contentTop : Int
-contentTop =
-    22
+contentTop : Model -> Int
+contentTop model =
+    if Platform.displayShapeIsRound model.displayShape then
+        26
+
+    else
+        22
+
+
+chromeBottom : Model -> Int
+chromeBottom model =
+    if Platform.displayShapeIsRound model.displayShape then
+        24
+
+    else
+        18
 
 
 primitivesOps : Model -> List Ui.RenderOp
@@ -197,27 +246,30 @@ primitivesOps model =
         w =
             model.screenW
 
+        top =
+            contentTop model
+
         h =
-            model.screenH - contentTop - 18
+            model.screenH - top - chromeBottom model
     in
-    [ Ui.fillRect { x = 0, y = contentTop, w = w, h = h } Color.lightGray
-    , Ui.rect { x = 4, y = contentTop + 4, w = 40, h = 24 } Color.black
-    , Ui.fillRect { x = 50, y = contentTop + 4, w = 36, h = 24 } Color.cobaltBlue
-    , Ui.line { x = 92, y = contentTop + 4 } { x = 132, y = contentTop + 28 } Color.red
-    , Ui.circle { x = 24, y = contentTop + 52 } 10 Color.black
-    , Ui.fillCircle { x = 72, y = contentTop + 52 } 12 Color.green
-    , Ui.pixel { x = 120, y = contentTop + 52 } Color.red
-    , Ui.roundRect { x = 4, y = contentTop + 72, w = 56, h = 28 } 6 Color.black
-    , Ui.arc { x = 68, y = contentTop + 72, w = 36, h = 28 } 0 32768
-    , Ui.fillRadial { x = 108, y = contentTop + 72, w = 32, h = 28 } 0 49152
+    [ Ui.fillRect { x = 0, y = top, w = w, h = h } Color.lightGray
+    , Ui.rect { x = 4, y = top + 4, w = 40, h = 24 } Color.black
+    , Ui.fillRect { x = 50, y = top + 4, w = 36, h = 24 } Color.cobaltBlue
+    , Ui.line { x = 92, y = top + 4 } { x = 132, y = top + 28 } Color.red
+    , Ui.circle { x = 24, y = top + 52 } 10 Color.black
+    , Ui.fillCircle { x = 72, y = top + 52 } 12 Color.green
+    , Ui.pixel { x = 120, y = top + 52 } Color.red
+    , Ui.roundRect { x = 4, y = top + 72, w = 56, h = 28 } 6 Color.black
+    , Ui.arc { x = 68, y = top + 72, w = 36, h = 28 } 0 32768
+    , Ui.fillRadial { x = 108, y = top + 72, w = 32, h = 28 } 0 49152
     ]
 
 
-pathsOps : List Ui.RenderOp
-pathsOps =
+pathsOps : Model -> List Ui.RenderOp
+pathsOps model =
     let
         y0 =
-            contentTop + 8
+            contentTop model + 8
 
         triangle =
             Ui.path
@@ -254,9 +306,9 @@ pathsOps =
 textOps : Model -> List Ui.RenderOp
 textOps model =
     let
-    y0 =
-        contentTop + 4
-  in
+        y0 =
+            contentTop model + 4
+    in
   [ Ui.text Resources.DefaultFont Ui.defaultTextOptions
       { x = 0, y = y0, w = model.screenW, h = 20 }
       "Centered text"
@@ -280,10 +332,10 @@ staticBitmapOps model =
             model.screenW // 2
 
         cy =
-            (model.screenH + contentTop) // 2
+            (model.screenH + contentTop model) // 2
     in
     [ Ui.drawBitmapInRect Resources.BitmapStaticBtIcon
-        { x = 8, y = contentTop + 8, w = 30, h = 30 }
+        { x = 8, y = contentTop model + 8, w = 30, h = 30 }
     , Ui.drawRotatedBitmap Resources.BitmapStaticBtIcon
         { x = 0, y = 0, w = 30, h = 30 }
         (Ui.rotationFromPebbleAngle model.rotationAngle)
@@ -298,7 +350,7 @@ animatedBitmapOps model =
             model.screenW // 2 - 8
 
         cy =
-            (model.screenH + contentTop) // 2 - 8
+            (model.screenH + contentTop model) // 2 - 8
     in
     [ Ui.drawBitmapSequenceAt Resources.BitmapAnimatedSparkle { x = cx, y = cy } ]
 
@@ -325,7 +377,7 @@ combinedOps : Model -> List Ui.RenderOp
 combinedOps model =
     let
         y0 =
-            contentTop + 4
+            contentTop model + 4
     in
     [ Ui.fillRect { x = 4, y = y0, w = 40, h = 20 } Color.cobaltBlue
     , Ui.text Resources.DefaultFont
@@ -344,7 +396,7 @@ combinedOps model =
 iconOrigin : Model -> Int -> Ui.Point
 iconOrigin model size =
     { x = model.screenW // 2 - size // 2
-    , y = (model.screenH + contentTop) // 2 - size // 2
+    , y = (model.screenH + contentTop model) // 2 - size // 2
     }
 
 

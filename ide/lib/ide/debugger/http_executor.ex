@@ -201,7 +201,13 @@ defmodule Ide.Debugger.HttpExecutor do
         body = map_value(response, "body") || ""
 
         if is_integer(status) and status >= 200 and status < 300 do
-          %{"ctor" => "Ok", "args" => [http_success_body(kind, body, decoder)]}
+          case decode_success_body(kind, body, decoder) do
+            {:ok, decoded} ->
+              %{"ctor" => "Ok", "args" => [decoded]}
+
+            {:error, {:bad_body, bad_body}} ->
+              %{"ctor" => "Err", "args" => [%{"ctor" => "BadBody", "args" => [bad_body]}]}
+          end
         else
           %{
             "ctor" => "Err",
@@ -221,24 +227,27 @@ defmodule Ide.Debugger.HttpExecutor do
   defp http_result(_kind, _response, _decoder),
     do: %{"ctor" => "Err", "args" => [%{"ctor" => "NetworkError", "args" => []}]}
 
-  @spec http_success_body(String.t(), String.t(), term()) :: Types.wire_value()
-  defp http_success_body(kind, body, decoder) when kind in ["json", :json] do
+  @spec decode_success_body(String.t(), String.t(), term()) ::
+          {:ok, Types.wire_value()} | {:error, {:bad_body, String.t()}}
+  defp decode_success_body(kind, body, decoder) when kind in ["json", :json] do
+    body_text = to_string(body || "")
+
     cond do
       match?({:json_decoder, _}, decoder) ->
-        case JsonDecode.decode_value(decoder, to_string(body || "")) do
-          {:Ok, decoded} -> Values.wire_value(decoded)
-          {:Err, _} -> to_string(body || "")
+        case JsonDecode.decode_value(decoder, body_text) do
+          {:Ok, decoded} -> {:ok, Values.wire_value(decoded)}
+          {:Err, _} -> {:error, {:bad_body, body_text}}
         end
 
       true ->
-        case Jason.decode(to_string(body || "")) do
-          {:ok, decoded} -> decoded
-          _ -> to_string(body || "")
+        case Jason.decode(body_text) do
+          {:ok, decoded} -> {:ok, decoded}
+          _ -> {:error, {:bad_body, body_text}}
         end
     end
   end
 
-  defp http_success_body(_kind, body, _decoder), do: to_string(body || "")
+  defp decode_success_body(_kind, body, _decoder), do: {:ok, to_string(body || "")}
 
   @spec http_error(map()) :: map()
   defp http_error(%{"ctor" => ctor, "args" => args}) when is_binary(ctor) and is_list(args),

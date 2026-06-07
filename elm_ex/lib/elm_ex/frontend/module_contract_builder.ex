@@ -97,6 +97,12 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
     line_info.indented? or line_info.trimmed == "" or String.starts_with?(line_info.trimmed, "--")
   end
 
+  @spec function_body_continuation_line?(map()) :: boolean()
+  defp function_body_continuation_line?(line_info) do
+    line_info.indented? or line_info.trimmed == "" or
+      String.starts_with?(line_info.trimmed, "--")
+  end
+
   @spec hydrate_multiline_signature_decl(map(), [map()]) :: map()
   defp hydrate_multiline_signature_decl(line_info, continuation) do
     name = line_info.trimmed |> String.trim_trailing(":") |> String.trim()
@@ -333,7 +339,8 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
       is_signature = match?({:ok, {:function_signature, _, _}}, line_info.decl)
 
       cond do
-        current != nil and (line_info.indented? or current.in_multiline_string?) ->
+        current != nil and
+            (function_body_continuation_line?(line_info) or current.in_multiline_string?) ->
           next_in_multiline_string =
             update_multiline_string_state(current.in_multiline_string?, line_info.raw_line)
 

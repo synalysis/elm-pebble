@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.DirectRender.Emit.Catch
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.SpecialValues
@@ -84,20 +85,14 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
     assignments =
       values
       |> Enum.with_index()
-      |> Enum.map_join("\n  ", fn {value, index} -> "out_cmds[*count].p#{index} = #{value};" end)
+      |> Enum.map_join("\n  ", fn {value, index} -> "scene_cmd.p#{index} = #{value};" end)
 
     {:ok,
      """
-      if (!direct_stop && *emitted >= skip && *count < max_cmds) {
      #{Util.indent(code, 4)}
-       elmc_generated_draw_init(&out_cmds[*count], #{Host.generated_draw_kind_macro(kind)});
+       elmc_draw_cmd_init(&scene_cmd, #{Host.generated_draw_kind_macro(kind)});
          #{assignments}
-         *count += 1;
-       }
-      if (!direct_stop) {
-        *emitted += 1;
-        if (*count >= max_cmds) direct_stop = 1;
-      }
+         #{Catch.push_cmd_check()}
      """, next}
   end
 
@@ -222,23 +217,17 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
     assignments =
       values
       |> Enum.with_index()
-      |> Enum.map_join("\n  ", fn {value, index} -> "out_cmds[*count].p#{index} = #{value};" end)
+      |> Enum.map_join("\n  ", fn {value, index} -> "scene_cmd.p#{index} = #{value};" end)
 
     {:ok,
      """
-       if (!direct_stop && *emitted >= skip && *count < max_cmds) {
      #{Util.indent(code, 2)}
      #{Util.indent(text_code, 2)}
-       elmc_generated_draw_init(&out_cmds[*count], #{Host.generated_draw_kind_macro(kind)});
+       elmc_draw_cmd_init(&scene_cmd, #{Host.generated_draw_kind_macro(kind)});
          #{assignments}
      #{Util.indent(text_copy_code, 4)}
-         *count += 1;
+         #{Catch.push_cmd_check()}
      #{Util.indent(text_release_code, 4)}
-       }
-       if (!direct_stop) {
-         *emitted += 1;
-         if (*count >= max_cmds) direct_stop = 1;
-       }
      """, counter}
   end
 
@@ -247,10 +236,10 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
     """
     int direct_text_i = 0;
     while (direct_text[direct_text_i] && direct_text_i < 63) {
-      out_cmds[*count].text[direct_text_i] = direct_text[direct_text_i];
+      scene_cmd.text[direct_text_i] = direct_text[direct_text_i];
       direct_text_i++;
     }
-    out_cmds[*count].text[direct_text_i] = '\\0';
+    scene_cmd.text[direct_text_i] = '\\0';
     """
   end
 
@@ -316,17 +305,17 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
       int direct_text_i = 0;
       const char *direct_text = #{left_ref};
       while (direct_text && direct_text[direct_text_i] && direct_text_i < 63) {
-        out_cmds[*count].text[direct_text_i] = direct_text[direct_text_i];
+        scene_cmd.text[direct_text_i] = direct_text[direct_text_i];
         direct_text_i++;
       }
       const char *direct_text_right = #{right_ref};
       int direct_text_right_i = 0;
       while (direct_text_right && direct_text_right[direct_text_right_i] && direct_text_i < 63) {
-        out_cmds[*count].text[direct_text_i] = direct_text_right[direct_text_right_i];
+        scene_cmd.text[direct_text_i] = direct_text_right[direct_text_right_i];
         direct_text_i++;
         direct_text_right_i++;
       }
-      out_cmds[*count].text[direct_text_i] = '\\0';
+      scene_cmd.text[direct_text_i] = '\\0';
     }
     """
 
@@ -397,8 +386,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
             Host.direct_int_value(Host.record_field_expr(point, "y"), env, c)
 
           assignment = """
-              out_cmds[*count].path_x[#{index}] = #{x_ref};
-              out_cmds[*count].path_y[#{index}] = #{y_ref};
+              scene_cmd.path_x[#{index}] = #{x_ref};
+              scene_cmd.path_y[#{index}] = #{y_ref};
           """
 
           {acc <> x_code <> y_code, assignments ++ [assignment], c}
@@ -414,29 +403,28 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
 
       {:ok,
        """
-         if (!direct_stop && *emitted >= skip && *count < max_cmds) {
        #{Util.indent(code, 4)}
        #{Util.indent(offset_x_code, 4)}
        #{Util.indent(offset_y_code, 4)}
        #{Util.indent(rotation_code, 4)}
-         elmc_generated_draw_init(&out_cmds[*count], #{Host.generated_draw_kind_macro(kind)});
-           out_cmds[*count].path_point_count = #{length(points)};
-           out_cmds[*count].path_offset_x = #{offset_x};
-           out_cmds[*count].path_offset_y = #{offset_y};
-           out_cmds[*count].path_rotation = #{rotation_ref};
+         elmc_draw_cmd_init(&scene_cmd, #{Host.generated_draw_kind_macro(kind)});
+           scene_cmd.path_point_count = #{length(points)};
+           scene_cmd.path_offset_x = #{offset_x};
+           scene_cmd.path_offset_y = #{offset_y};
+           scene_cmd.path_rotation = #{rotation_ref};
        #{Enum.join(point_assignments, "\n")}
-           *count += 1;
-         }
-         if (!direct_stop) {
-           *emitted += 1;
-           if (*count >= max_cmds) direct_stop = 1;
-         }
+           #{Catch.push_cmd_check()}
        """, counter}
     else
       _ -> :error
     end
   end
 
+  @spec scene_emit_guard_open() :: String.t()
+  def scene_emit_guard_open, do: ""
+
+  @spec scene_emit_guard_close() :: String.t()
+  def scene_emit_guard_close, do: ""
+
   defp draw_kind(kind), do: Elmc.Backend.Pebble.draw_kind_id!(kind)
 end
-

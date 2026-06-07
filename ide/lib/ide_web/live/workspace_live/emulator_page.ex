@@ -95,6 +95,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
         data-emulator-target={@selected_emulator_target}
         data-emulator-screen-width={elem(emulator_screen_size(@selected_emulator_target), 0)}
         data-emulator-screen-height={elem(emulator_screen_size(@selected_emulator_target), 1)}
+        data-emulator-display-shape={emulator_display_shape(@selected_emulator_target)}
         data-emulator-has-phone-companion={Projects.companion_app_present?(@project) |> to_string()}
         data-emulator-simulator-capabilities={
           emulator_simulator_capabilities_json(@project, @debugger_state)
@@ -818,6 +819,13 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
   defp emulator_canvas_style(target) do
     {width, height} = emulator_screen_size(target)
     "width: #{width}px; height: #{height}px;"
+  end
+
+  @spec emulator_display_shape(String.t()) :: String.t()
+  defp emulator_display_shape(target) do
+    target
+    |> WatchModels.profile_for()
+    |> Map.get("shape", "rect")
   end
 
   @spec emulator_settings_path(Project.t() | map() | nil) :: String.t()

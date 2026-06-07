@@ -1756,9 +1756,21 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
 
   @spec preview_runtime_model(map()) :: map()
   defp preview_runtime_model(runtime) when is_map(runtime) do
-    model = Map.get(runtime, :model) || Map.get(runtime, "model") || %{}
-    runtime_model = Map.get(model, "runtime_model") || Map.get(model, :runtime_model)
-    if is_map(runtime_model), do: runtime_model, else: model
+    nested = Map.get(runtime, :model) || Map.get(runtime, "model")
+
+    cond do
+      is_map(nested) ->
+        Map.get(nested, "runtime_model") || Map.get(nested, :runtime_model) || nested
+
+      is_map(Map.get(runtime, "runtime_model")) ->
+        Map.get(runtime, "runtime_model")
+
+      is_map(Map.get(runtime, :runtime_model)) ->
+        Map.get(runtime, :runtime_model)
+
+      true ->
+        runtime
+    end
   end
 
   @spec rendered_value_hint(Types.runtime_value(), map()) :: String.t() | nil
@@ -1766,13 +1778,21 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
     type = to_string(Map.get(node, "type") || Map.get(node, :type) || "")
     label = to_string(Map.get(node, "label") || Map.get(node, :label) || "")
     op = to_string(Map.get(node, "op") || Map.get(node, :op) || "")
+    preview_model = preview_runtime_model(model)
 
     cond do
       type == "field" ->
         node
         |> rendered_node_children()
         |> List.first()
-        |> evaluated_rendered_scalar_hint(model)
+        |> rendered_value_hint(preview_model) ||
+          (node
+           |> rendered_node_children()
+           |> List.first()
+           |> evaluated_rendered_scalar_hint(preview_model))
+
+      type == "call" and label == "__idiv__" ->
+        evaluate_rendered_binop_hint(node, preview_model, div: 2)
 
       type == "call" ->
         evaluated_rendered_scalar_hint(node, model)
@@ -1784,7 +1804,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
         evaluated_rendered_scalar_hint(node, model) ||
           label
           |> String.replace_prefix("model.", "")
-          |> then(&Map.get(model, &1))
+          |> then(&Map.get(preview_model, &1))
           |> rendered_int_hint()
 
       type == "var" ->
@@ -1796,6 +1816,58 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
   end
 
   defp rendered_value_hint(_node, _model), do: nil
+
+  @spec evaluate_rendered_binop_hint(map(), map(), keyword()) :: String.t() | nil
+  defp evaluate_rendered_binop_hint(node, model, div: _divisor) when is_map(node) and is_map(model) do
+    case rendered_node_children(node) do
+      [left, right | _] ->
+        with left_int when is_integer(left_int) <- rendered_expr_int(left, model),
+             right_int when is_integer(right_int) <- rendered_expr_int(right, model),
+             true <- right_int != 0 do
+          Integer.to_string(div(left_int, right_int))
+        else
+          _ -> nil
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp evaluate_rendered_binop_hint(_node, _model, _op), do: nil
+
+  @spec rendered_expr_int(map(), map()) :: integer() | nil
+  defp rendered_expr_int(node, model) when is_map(node) and is_map(model) do
+    op = to_string(Map.get(node, "op") || Map.get(node, :op) || "")
+    label = to_string(Map.get(node, "label") || Map.get(node, :label) || "")
+
+    cond do
+      is_integer(Map.get(node, "value")) ->
+        Map.get(node, "value")
+
+      is_float(Map.get(node, "value")) ->
+        trunc(Map.get(node, "value"))
+
+      op == "field_access" and String.starts_with?(label, "model.") ->
+        label
+        |> String.replace_prefix("model.", "")
+        |> then(&Map.get(model, &1))
+        |> case do
+          n when is_integer(n) -> n
+          n when is_float(n) -> trunc(n)
+          _ -> nil
+        end
+
+      true ->
+        case rendered_expr_scalar(node) do
+          n when is_integer(n) -> n
+          n when is_float(n) -> trunc(n)
+          _ -> nil
+        end
+    end
+  end
+
+  defp rendered_expr_int(_node, _model), do: nil
 
   @spec rendered_node_children(map()) :: [map()]
   defp rendered_node_children(node) when is_map(node) do

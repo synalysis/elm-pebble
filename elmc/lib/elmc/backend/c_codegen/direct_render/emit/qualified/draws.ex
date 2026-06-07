@@ -219,5 +219,53 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Qualified.Draws do
 
   def emit(_target, _args, _env, _counter), do: :no_match
 
+  @doc false
+  @spec usage_arg_kinds(String.t(), [Types.ir_expr()]) ::
+          {:ok, [Elmc.Backend.CCodegen.DirectRender.CommandDef.arg_kind()]} | :error
+  def usage_arg_kinds("Pebble.Ui.clear", [_color]), do: {:ok, [:native_int]}
+  def usage_arg_kinds("Pebble.Ui.pixel", [_pos, _color]), do: {:ok, [:boxed, :native_int]}
+  def usage_arg_kinds("Pebble.Ui.line", [_start, _end, _color]), do: {:ok, [:boxed, :boxed, :native_int]}
+  def usage_arg_kinds("Pebble.Ui.rect", [_bounds, _color]), do: {:ok, [:boxed, :native_int]}
+  def usage_arg_kinds("Pebble.Ui.fillRect", [_bounds, _color]), do: {:ok, [:boxed, :native_int]}
+
+  def usage_arg_kinds("Pebble.Ui.circle", [_center, _radius, _color]),
+    do: {:ok, [:boxed, :native_int, :native_int]}
+
+  def usage_arg_kinds("Pebble.Ui.fillCircle", [_center, _radius, _color]),
+    do: {:ok, [:boxed, :native_int, :native_int]}
+
+  def usage_arg_kinds("Pebble.Ui.textInt", [_font, _pos, _value]),
+    do: {:ok, [:boxed, :boxed, :native_int]}
+
+  def usage_arg_kinds("Pebble.Ui.textLabel", [_font, _pos, _label]),
+    do: {:ok, [:boxed, :boxed, :native_string]}
+
+  def usage_arg_kinds("Pebble.Ui.text", [_font, _options, _bounds, _value]),
+    do: {:ok, [:boxed, :boxed, :boxed, :native_string]}
+
+  def usage_arg_kinds("Pebble.Ui.roundRect", [_bounds, _radius, _color]),
+    do: {:ok, [:boxed, :native_int, :native_int]}
+
+  def usage_arg_kinds("Pebble.Ui.arc", [_bounds, _start, _end]),
+    do: {:ok, [:boxed, :native_int, :native_int]}
+
+  def usage_arg_kinds("Pebble.Ui.fillRadial", [_bounds, _start, _end]),
+    do: {:ok, [:boxed, :native_int, :native_int]}
+
+  def usage_arg_kinds("Pebble.Ui.drawBitmapInRect", [_bitmap, _bounds]),
+    do: {:ok, [:boxed, :boxed]}
+
+  def usage_arg_kinds("Pebble.Ui.drawVectorAt", [_vector, _origin]), do: {:ok, [:boxed, :boxed]}
+  def usage_arg_kinds("Pebble.Ui.drawVectorSequenceAt", [_vector, _origin]), do: {:ok, [:boxed, :boxed]}
+  def usage_arg_kinds("Pebble.Ui.drawBitmapSequenceAt", [_animation, _origin]), do: {:ok, [:boxed, :boxed]}
+
+  def usage_arg_kinds("Pebble.Ui.drawRotatedBitmap", [_bitmap, _bounds, _rotation, _center]),
+    do: {:ok, [:boxed, :boxed, :native_int, :boxed]}
+
+  def usage_arg_kinds("Pebble.Ui.pathFilled", [_path]), do: {:ok, [:boxed]}
+  def usage_arg_kinds("Pebble.Ui.pathOutline", [_path]), do: {:ok, [:boxed]}
+  def usage_arg_kinds("Pebble.Ui.pathOutlineOpen", [_path]), do: {:ok, [:boxed]}
+  def usage_arg_kinds(_target, _args), do: :error
+
   defp draw_kind(kind), do: Elmc.Backend.Pebble.draw_kind_id!(kind)
 end

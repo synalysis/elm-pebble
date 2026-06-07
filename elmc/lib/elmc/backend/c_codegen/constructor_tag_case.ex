@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.PebbleMsgTag
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.Native.IntCase, as: NativeIntCase
   alias Elmc.Backend.CCodegen.Patterns
@@ -212,8 +213,8 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
   @spec case_label(Types.pattern()) :: String.t()
   defp case_label(%{kind: :wildcard}), do: "default"
 
-  defp case_label(%{kind: :constructor, tag: tag}) when is_integer(tag),
-    do: "case #{tag}"
+  defp case_label(%{kind: :constructor, tag: tag} = pattern) when is_integer(tag),
+    do: "case #{PebbleMsgTag.tag_expr(pattern)}"
 
   @spec message_tag_expr(Types.subject_ref()) :: String.t()
   defp message_tag_expr(subject_ref) do

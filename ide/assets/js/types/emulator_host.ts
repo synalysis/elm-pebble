@@ -70,6 +70,7 @@ export type EmbeddedEmulatorHostSurface = {
   logEmulatorPlatform: () => void
   applyCanvasSize: () => void
   expectedScreenSize: () => EmulatorScreen
+  displayShape: () => "round" | "rect"
   connectPhone: () => void
   updateControlButtons: () => void
   startPing: () => void

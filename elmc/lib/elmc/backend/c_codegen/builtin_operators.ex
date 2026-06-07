@@ -1,9 +1,12 @@
 defmodule Elmc.Backend.CCodegen.BuiltinOperators do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.ConstantInt
+  alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.Float, as: NativeFloat
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
+  alias Elmc.Backend.CCodegen.RuntimeCall
   alias Elmc.Backend.CCodegen.SpecialValues
   alias Elmc.Backend.CCodegen.Types
 
@@ -99,12 +102,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
     do: curried_binary("__idiv__", args, env, counter)
 
   def call("__append__", [left, right], env, counter),
-    do:
-      Host.compile_expr(
-        %{op: :runtime_call, function: "elmc_append", args: [left, right]},
-        env,
-        counter
-      )
+    do: Host.compile_expr(Elmc.Backend.CCodegen.RuntimeCall.flatten_append_ir(left, right), env, counter)
 
   def call("__append__", args, env, counter)
        when length(args) in [0, 1],
@@ -350,11 +348,39 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
     Host.compile_expr(%{op: :int_literal, value: value}, %{}, counter)
   end
 
-  def int_binop(left, right, operator, env, counter) do
+  def int_binop(left, right, "-", env, counter) do
+    case RuntimeCall.compile_int_sub_list_length(left, right, env, counter) do
+      {:ok, code, out, c} ->
+        {code, out, c}
+
+      :error ->
+        int_binop_dispatch(left, right, "-", env, counter)
+    end
+  end
+
+  def int_binop(left, right, operator, env, counter) when operator in ["+", "*"] do
+    int_binop_dispatch(left, right, operator, env, counter)
+  end
+
+  defp int_binop_dispatch(left, right, operator, env, counter) when operator in ["+", "-", "*"] do
+    case ConstantInt.literal_binop(operator, left, right, env) do
+      {:ok, value} ->
+        Host.compile_expr(%{op: :int_literal, value: value}, env, counter)
+
+      :error ->
+        int_binop_dispatch_values(left, right, operator, env, counter)
+    end
+  end
+
+  defp int_binop_dispatch(left, right, operator, env, counter) do
+    int_binop_dispatch_values(left, right, operator, env, counter)
+  end
+
+  defp int_binop_dispatch_values(left, right, operator, env, counter) do
     cond do
-      Host.native_int_expr?(left, env) and Host.native_int_expr?(right, env) ->
-        {left_code, left_var, counter} = Host.compile_native_int_expr(left, env, counter)
-        {right_code, right_var, counter} = Host.compile_native_int_expr(right, env, counter)
+      both_native_int_operands?(left, right, env) ->
+        {left_code, left_var, counter} = compile_native_int_operand(left, env, counter)
+        {right_code, right_var, counter} = compile_native_int_operand(right, env, counter)
         next = counter + 1
         out = "tmp_#{next}"
 
@@ -394,6 +420,51 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
     end
   end
 
+  @spec both_native_int_operands?(Types.ir_expr(), Types.ir_expr(), Types.compile_env()) ::
+          boolean()
+  defp both_native_int_operands?(left, right, env) do
+    native_int_operand_available?(left, env) and native_int_operand_available?(right, env)
+  end
+
+  @spec native_int_operand_available?(Types.ir_expr(), Types.compile_env()) :: boolean()
+  defp native_int_operand_available?(%{op: :var, name: name}, env)
+       when is_binary(name) or is_atom(name) do
+    Host.native_int_expr?(%{op: :var, name: name}, env) or
+      is_binary(EnvBindings.native_int_binding(env, name))
+  end
+
+  defp native_int_operand_available?(expr, env),
+    do: Host.native_int_expr?(expr, env) or ConstantInt.native_let_value?(expr, env)
+
+  @spec compile_native_int_operand(
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: {String.t(), String.t(), Types.compile_counter()}
+  defp compile_native_int_operand(expr, env, counter) do
+    case ConstantInt.compile_native_operand(expr, env, counter) do
+      {:ok, code, ref, c} ->
+        {code, ref, c}
+
+      :error ->
+        case expr do
+          %{op: :var, name: name} ->
+            case EnvBindings.native_int_binding(env, name) do
+              ref when is_binary(ref) ->
+                {"", ref, counter}
+
+              nil ->
+                {code, ref, c} = Host.compile_native_int_expr(expr, env, counter)
+                {code, ref, c}
+            end
+
+          _ ->
+            {code, ref, c} = Host.compile_native_int_expr(expr, env, counter)
+            {code, ref, c}
+        end
+    end
+  end
+
   @spec int_idiv(
           Types.ir_expr(),
           Types.ir_expr(),
@@ -405,7 +476,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
     {left_code, left_var, counter} = Host.compile_native_int_expr(left, env, counter)
 
     {code, out, counter} =
-      case NativeInt.static_nonzero_int_value(right) do
+      case NativeInt.static_nonzero_int_value(right, env) do
         value when is_integer(value) ->
           next = counter + 1
           out = "tmp_#{next}"

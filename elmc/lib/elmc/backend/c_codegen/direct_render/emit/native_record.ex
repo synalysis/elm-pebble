@@ -475,22 +475,26 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
     if extractable_int_record_helper?(field_entries, record_type, env, field_code) do
       case helper_params(value_expr, env) do
         {:ok, params} ->
-          case per_field_int_record_helpers(
-                 name,
-                 field_entries,
-                 record_type,
-                 env,
-                 field_map,
-                 params,
-                 counter
-               ) do
-            nil ->
-              drop_hoists_declared_in_code(field_code)
-              combined_int_record_helper(name, env, field_code, field_map, params, counter)
+          drop_hoists_declared_in_code(field_code)
 
-            code ->
-              drop_hoists_declared_in_code(field_code)
-              code
+          if length(field_entries) >= 2 do
+            combined_int_record_helper(name, env, field_code, field_map, params, counter)
+          else
+            case per_field_int_record_helpers(
+                   name,
+                   field_entries,
+                   record_type,
+                   env,
+                   field_map,
+                   params,
+                   counter
+                 ) do
+              nil ->
+                combined_int_record_helper(name, env, field_code, field_map, params, counter)
+
+              code ->
+                code
+            end
           end
 
         :error ->

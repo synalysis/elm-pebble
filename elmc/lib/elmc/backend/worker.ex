@@ -26,10 +26,21 @@ defmodule Elmc.Backend.Worker do
 
     #include "elmc_generated.h"
 
+    #define ELMC_WORKER_MAX_BUTTON_RAW_SUBS 16
+
+    typedef struct {
+      elmc_int_t button_id;
+      elmc_int_t event;
+      elmc_int_t msg_tag;
+    } ElmcButtonRawSub;
+
     typedef struct {
       ElmcValue *model;
       ElmcValue *pending_cmd;
       int64_t subscriptions;
+      elmc_int_t sub_msg_tags[32];
+      ElmcButtonRawSub button_raw_subs[ELMC_WORKER_MAX_BUTTON_RAW_SUBS];
+      int button_raw_sub_count;
     } ElmcWorkerState;
 
     int elmc_worker_init(ElmcWorkerState *state, ElmcValue *flags);
@@ -37,6 +48,8 @@ defmodule Elmc.Backend.Worker do
     ElmcValue *elmc_worker_model(ElmcWorkerState *state);
     ElmcValue *elmc_worker_take_cmd(ElmcWorkerState *state);
     int64_t elmc_worker_subscriptions(ElmcWorkerState *state);
+    elmc_int_t elmc_worker_sub_msg_tag(ElmcWorkerState *state, int64_t flag);
+    elmc_int_t elmc_worker_button_raw_msg_tag(ElmcWorkerState *state, elmc_int_t button_id, elmc_int_t event);
     void elmc_worker_deinit(ElmcWorkerState *state);
 
     #endif
@@ -162,17 +175,87 @@ defmodule Elmc.Backend.Worker do
       return merged;
     }
 
+    static int elmc_sub_tag_slot(int64_t mask) {
+      if (mask == 0) return -1;
+      if ((mask & (1LL << 13)) != 0) return 13;
+      if ((mask & (mask - 1)) != 0) return -1;
+      int bit = 0;
+      while (bit < 32 && (mask & (1LL << bit)) == 0) bit++;
+      return bit < 32 ? bit : -1;
+    }
+
+    static void elmc_worker_clear_sub_tags(ElmcWorkerState *state) {
+      if (!state) return;
+      for (int i = 0; i < 32; i++) state->sub_msg_tags[i] = 0;
+      state->button_raw_sub_count = 0;
+    }
+
+    static int elmc_worker_mask_is_button_raw(int64_t mask) {
+      return (mask & (1LL << 14)) != 0;
+    }
+
+    static void elmc_worker_apply_sub(ElmcWorkerState *state, ElmcValue *sub) {
+      if (!state || !sub) return;
+
+      if (sub->tag == ELMC_TAG_SUB && sub->payload != NULL) {
+        ElmcSubPayload *payload = (ElmcSubPayload *)sub->payload;
+        state->subscriptions |= payload->mask;
+        if (elmc_worker_mask_is_button_raw(payload->mask) && payload->arity >= 3) {
+          if (state->button_raw_sub_count < ELMC_WORKER_MAX_BUTTON_RAW_SUBS) {
+            ElmcButtonRawSub *entry = &state->button_raw_subs[state->button_raw_sub_count++];
+            entry->button_id = payload->p0;
+            entry->event = payload->p1;
+            entry->msg_tag = payload->p2;
+          }
+          return;
+        }
+        if (payload->arity > 0) {
+          int slot = elmc_sub_tag_slot(payload->mask);
+          if (slot >= 0 && slot < 32) state->sub_msg_tags[slot] = payload->p0;
+        }
+        return;
+      }
+
+      if (sub->tag == ELMC_TAG_LIST && sub->payload != NULL) {
+        ElmcValue *cursor = sub;
+        while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
+          ElmcCons *cons = (ElmcCons *)cursor->payload;
+          if (cons->head) elmc_worker_apply_sub(state, cons->head);
+          cursor = cons->tail;
+        }
+      }
+    }
+
     static int64_t compute_subscriptions(ElmcWorkerState *state) {
       if (!state || !state->model) return 0;
     #{subscriptions_call}
-      int64_t value = result ? elmc_as_int(result) : 0;
+      elmc_worker_clear_sub_tags(state);
+      state->subscriptions = 0;
+      if (result) elmc_worker_apply_sub(state, result);
       elmc_release(result);
-      return value;
+      return state->subscriptions;
+    }
+
+    elmc_int_t elmc_worker_sub_msg_tag(ElmcWorkerState *state, int64_t flag) {
+      if (!state || flag == 0) return 0;
+      int slot = elmc_sub_tag_slot(flag);
+      if (slot < 0 || slot >= 32) return 0;
+      return state->sub_msg_tags[slot];
+    }
+
+    elmc_int_t elmc_worker_button_raw_msg_tag(ElmcWorkerState *state, elmc_int_t button_id, elmc_int_t event) {
+      if (!state) return 0;
+      for (int i = 0; i < state->button_raw_sub_count; i++) {
+        ElmcButtonRawSub *entry = &state->button_raw_subs[i];
+        if (entry->button_id == button_id && entry->event == event) return entry->msg_tag;
+      }
+      return 0;
     }
 
     int elmc_worker_init(ElmcWorkerState *state, ElmcValue *flags) {
       if (!state) return -1;
       state->subscriptions = 0;
+      elmc_worker_clear_sub_tags(state);
     #{init_missing_guard}#{init_call}
       ElmcValue *next_model = extract_model(result);
       if (!next_model) {

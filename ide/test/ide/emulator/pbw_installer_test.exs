@@ -9,6 +9,13 @@ defmodule Ide.Emulator.PBWInstallerTest do
   @uuid "3278ae24-9885-427f-90e7-791ac2450e78"
   @uuid_bytes Base.decode16!("3278AE249885427F90E7791AC2450E78")
 
+  test "rejects PBW variant that does not match emulator platform" do
+    path = tmp_pbw("diorite")
+
+    assert {:error, {:pbw_platform_mismatch, %{expected: "flint", got: "diorite"}}} =
+             PBWInstaller.install(self(), path, "flint")
+  end
+
   test "runs AppFetch and PutBytes sequence for binary and resources" do
     path = tmp_pbw()
     {:ok, server, qemu_port} = listen()
@@ -449,14 +456,14 @@ defmodule Ide.Emulator.PBWInstallerTest do
     [chunk | chunks(rest, size)]
   end
 
-  defp tmp_pbw do
+  defp tmp_pbw(platform \\ "emery") do
     path =
       Path.join(System.tmp_dir!(), "installer-pbw-test-#{System.unique_integer([:positive])}.pbw")
 
     appinfo =
       Jason.encode!(%{
         "uuid" => @uuid,
-        "targetPlatforms" => ["emery"],
+        "targetPlatforms" => [platform],
         "watchapp" => %{"watchface" => true}
       })
 
@@ -472,9 +479,9 @@ defmodule Ide.Emulator.PBWInstallerTest do
         String.to_charlist(path),
         [
           {~c"appinfo.json", appinfo},
-          {~c"emery/manifest.json", manifest},
-          {~c"emery/pebble-app.bin", <<1, 2, 3>>},
-          {~c"emery/app_resources.pbpack", <<4, 5>>}
+          {String.to_charlist("#{platform}/manifest.json"), manifest},
+          {String.to_charlist("#{platform}/pebble-app.bin"), <<1, 2, 3>>},
+          {String.to_charlist("#{platform}/app_resources.pbpack"), <<4, 5>>}
         ]
       )
 

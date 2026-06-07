@@ -98,6 +98,9 @@ defmodule Elmc.Backend.CCodegen.Host do
   @spec record_get_int_expr(String.t(), String.t(), Types.record_shape()) :: String.t()
   defdelegate record_get_int_expr(source, field, fields), to: Expr
 
+  @spec nested_record_get_int_expr(Types.ir_expr(), Types.compile_env()) :: String.t() | nil
+  defdelegate nested_record_get_int_expr(expr, env), to: Expr
+
   @spec normalize_special_target(String.t()) :: String.t()
   defdelegate normalize_special_target(target), to: SpecialValues
 

@@ -1,16 +1,32 @@
 defmodule Elmc.Backend.CCodegen.Tuple2CaseTable do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.FusionSupport
   alias Elmc.Backend.CCodegen.Util
 
-  @spec try_emit(String.t(), String.t(), map() | nil) :: {:ok, String.t()} | :error
+  @spec try_emit(String.t(), String.t(), map() | nil) ::
+          {:ok, String.t(), [FusionSupport.callee_key()]} | :error
   def try_emit(_module_name, _name, nil), do: :error
 
   def try_emit(module_name, name, expr) do
     with {:ok, outer_mod, outer_branches} <- parse_outer_case(expr),
          {:ok, rows} <- parse_rows(outer_branches),
          true <- length(rows) > 0 do
-      {:ok, emit(module_name, name, outer_mod, rows)}
+      FusionSupport.ok(emit(module_name, name, outer_mod, rows))
+    else
+      _ -> :error
+    end
+  end
+
+  @spec table_shape(map() | nil) :: {:ok, integer(), integer()} | :error
+  def table_shape(nil), do: :error
+
+  def table_shape(expr) do
+    with {:ok, outer_mod, outer_branches} <- parse_outer_case(expr),
+         {:ok, rows} <- parse_rows(outer_branches),
+         [{_k, inner} | _] <- rows,
+         true <- length(inner) > 0 do
+      {:ok, outer_mod, length(inner)}
     else
       _ -> :error
     end

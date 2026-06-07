@@ -4,6 +4,7 @@ defmodule Ide.Emulator.Workflow do
   """
 
   alias Ide.Emulator
+  alias Ide.Emulator.Session.Startup
   alias Ide.Projects
   alias Ide.WatchModels
   alias IdeWeb.WorkspaceLive.BuildFlow
@@ -39,6 +40,35 @@ defmodule Ide.Emulator.Workflow do
        }}
     end
   end
+
+  @doc """
+  Rebuilds the session PBW from the current workspace so Install uses fresh toolchain output.
+
+  Launch already packages once; this avoids stale artifacts when the IDE server or build
+  flags change between launch and install.
+  """
+  @spec refresh_session_artifact(map()) :: {:ok, map()} | {:error, term()}
+  def refresh_session_artifact(%{project_slug: slug, platform: platform} = state)
+      when is_binary(slug) and slug != "" and is_binary(platform) and platform != "" do
+    with %Projects.Project{} = project <- Projects.get_project_by_scope_key(slug),
+         workspace_root = Projects.project_workspace_path(project),
+         {:ok, packaged} <-
+           BuildFlow.package_for_emulator_session(project, workspace_root, platform) do
+      {:ok,
+       %{
+         state
+         | artifact_path: packaged.artifact_path,
+           app_uuid: Startup.app_uuid(packaged.artifact_path, platform),
+           has_phone_companion: Map.get(packaged, :has_phone_companion, false),
+           has_companion_preferences: Map.get(packaged, :has_companion_preferences, false)
+       }}
+    else
+      nil -> {:ok, state}
+      {:error, _} = error -> error
+    end
+  end
+
+  def refresh_session_artifact(state) when is_map(state), do: {:ok, state}
 
   @spec wait_display_ready(String.t(), keyword()) :: :ok | {:error, term()}
   def wait_display_ready(session_id, opts \\ []) when is_binary(session_id) do
@@ -88,6 +118,11 @@ defmodule Ide.Emulator.Workflow do
   @spec install_error_message(term()) :: String.t()
   def install_error_message(:artifact_not_found),
     do: "PBW artifact not found for this emulator session."
+
+  def install_error_message({:pbw_platform_mismatch, %{expected: expected, got: got}}) do
+    "PBW binary is built for #{got}, but this emulator session is #{expected}. " <>
+      "Stop and launch the emulator again so the app rebuilds for #{expected}, then install."
+  end
 
   def install_error_message(:embedded_protocol_router_not_started),
     do: "Embedded emulator protocol router is not running."

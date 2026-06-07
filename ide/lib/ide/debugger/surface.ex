@@ -118,9 +118,13 @@ defmodule Ide.Debugger.Surface do
     %{surface | model: Map.merge(surface.model, patch)}
   end
 
-  @spec put_shell(t(), Types.shell()) :: t()
+  @spec put_shell(t() | surface_map(), Types.shell()) :: t() | surface_map()
   def put_shell(%__MODULE__{} = surface, shell) when is_map(shell) do
     %{surface | shell: shell}
+  end
+
+  def put_shell(surface, shell) when is_map(surface) and is_map(shell) do
+    surface |> from_map() |> put_shell(shell) |> to_map()
   end
 
   @spec put_view_tree(t(), Types.view_output_tree() | nil) :: t()

@@ -14,6 +14,7 @@ Fix at the root in: parser, tokenizer, IR/lowering, **elmc**, **elmx**, **elm_ex
 - Rewrite app/template Elm to dodge codegen, runtime, or IDE bugs (for example replacing `case activePiece model of … piece ->` with manual field reads from `model`).
 - Add “works around elmc” patterns in `Main.elm`, templates, or samples when the Elm you wrote is what a normal Elm compiler would accept.
 - Ship one-app shims in the compiler to make a single template pass (see also **Generic Code Rules**).
+- Ask apps to rename `Msg` constructors so platform shims recognize them (`CurrentDateTime`, `HourChanged`, etc.) — tags must come from the call site in the cmd/sub, not name-guess lists (see **Msg and Cmd wiring** in Generic Code Rules).
 
 ## Do
 
@@ -33,6 +34,9 @@ On-device/watch behavior should not fault on well-typed, memory-safe Elm logic �
 
 - **Bad:** special-case `game-elmtris` in `elmc` or the IDE.
 - **Good:** a codegen test for `case maybe of Nothing -> …; x -> …` and a generic `bind_pattern` fix.
+
+- **Bad:** `getCurrentDateTime` emits only command kind; runtime uses `pick_tag(..., ["CurrentDateTime", "GotCurrentDateTime"])`.
+- **Good:** encode `constructor_tag_expr(to_msg)` in the cmd tuple (like `storageReadInt`); runtime dispatches the tag from the queued cmd.
 
 ## When Changing the Toolchain
 
