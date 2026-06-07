@@ -89,7 +89,7 @@ defmodule Ide.WatchModels do
     "gabbro" => %{
       "name" => "Gabbro",
       "shape" => "round",
-      "screen" => %{"width" => 180, "height" => 180},
+      "screen" => %{"width" => 260, "height" => 260},
       "color_mode" => "Color",
       "has_microphone" => false,
       "has_compass" => false,
