@@ -7,7 +7,14 @@ defmodule Ide.Debugger.Protocol.Schema do
   """
 
   @type wire_type ::
-          :int | :bool | :string | {:enum, String.t()} | {:union, String.t()} | {:list, :int}
+          :int
+          | :bool
+          | :string
+          | {:enum, String.t()}
+          | {:union, String.t()}
+          | {:list, wire_type()}
+          | {:record, String.t(), [map()]}
+          | {:dict, wire_type()}
 
   @type constructor :: %{
           required(:name) => String.t(),
@@ -30,8 +37,10 @@ defmodule Ide.Debugger.Protocol.Schema do
   @type t :: %{
           required(:enums) => %{optional(String.t()) => [String.t()]},
           required(:payload_unions) => %{optional(String.t()) => [constructor()]},
+          required(:type_aliases) => %{optional(String.t()) => [map()]},
           required(:watch_to_phone) => [message()],
           required(:phone_to_watch) => [message()],
+          required(:wire_slots) => [map()],
           required(:key_ids) => %{optional(String.t()) => pos_integer()}
         }
 

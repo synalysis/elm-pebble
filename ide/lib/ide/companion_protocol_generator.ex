@@ -2,13 +2,16 @@ defmodule Ide.CompanionProtocolGenerator do
   @moduledoc false
 
   alias Ide.Debugger.Protocol.Schema
+  alias Ide.CompanionProtocol.TypeParse
+  alias Ide.CompanionProtocol.WireFlatten
 
   @type schema :: Schema.t()
   @type constructor :: Schema.constructor()
   @type message :: Schema.message()
   @type field :: Schema.field()
 
-  @type generator_error :: {:missing_union, String.t()} | File.posix()
+  @type generator_error ::
+          {:missing_union, String.t()} | {:wire_schema_too_large, map()} | File.posix()
 
   # Pebble AppMessage commonly drops dictionary entries whose value is zero.
   # Enum and union-tag wire codes therefore start at 1; bool uses 1=true, 2=false.
@@ -16,6 +19,7 @@ defmodule Ide.CompanionProtocolGenerator do
   @wire_true_code 1
   @wire_false_code 2
   @list_max_elements 16
+  @dict_max_entries 16
 
   @spec wire_code_base() :: pos_integer()
   def wire_code_base, do: @wire_code_base
@@ -57,54 +61,60 @@ defmodule Ide.CompanionProtocolGenerator do
 
   @spec schema_from_source(String.t()) :: {:ok, schema()} | {:error, generator_error()}
   def schema_from_source(source) when is_binary(source) do
-    unions = parse_unions(source)
+    unions = TypeParse.parse_unions(source)
+    type_aliases = TypeParse.parse_type_aliases(source)
     enums = enum_unions(unions, ["WatchToPhone", "PhoneToWatch"])
     payload_unions = payload_unions(unions, enums, ["WatchToPhone", "PhoneToWatch"])
 
-    with {:ok, watch_to_phone} <- message_union(unions, enums, payload_unions, "WatchToPhone", 2),
+    base_schema = %{enums: enums, payload_unions: payload_unions, type_aliases: type_aliases}
+
+    with {:ok, watch_to_phone} <-
+           message_union(unions, base_schema, "WatchToPhone", 2),
          {:ok, phone_to_watch} <-
-           message_union(unions, enums, payload_unions, "PhoneToWatch", 201) do
+           message_union(unions, base_schema, "PhoneToWatch", 201) do
       messages = watch_to_phone ++ phone_to_watch
 
-      key_names =
-        ["message_tag"] ++
-          (messages
-           |> Enum.flat_map(& &1.fields)
-           |> Enum.flat_map(&field_keys/1)
-           |> Enum.uniq())
+      schema_without_keys = %{
+        enums: enums,
+        payload_unions: payload_unions,
+        type_aliases: type_aliases,
+        watch_to_phone: watch_to_phone,
+        phone_to_watch: phone_to_watch,
+        wire_slots: []
+      }
 
-      key_ids =
-        key_names
-        |> Enum.with_index(10)
-        |> Map.new(fn {name, id} -> {name, id} end)
+      with :ok <- WireFlatten.validate_message_key_count(messages, schema_without_keys) do
+        wire_slots =
+          messages
+          |> Enum.flat_map(fn message ->
+            message.fields
+            |> Enum.flat_map(&WireFlatten.slots_for_field(&1, schema_without_keys))
+            |> Enum.map(&Map.put(&1, :message, message.name))
+          end)
 
-      {:ok,
-       %{
-         enums: enums,
-         payload_unions: payload_unions,
-         watch_to_phone: watch_to_phone,
-         phone_to_watch: phone_to_watch,
-         key_ids: key_ids
-       }}
+        key_names =
+          ["message_tag"] ++
+            (messages
+             |> Enum.flat_map(&WireFlatten.message_keys(&1, schema_without_keys))
+             |> Enum.uniq())
+
+        key_ids =
+          key_names
+          |> Enum.with_index(10)
+          |> Map.new(fn {name, id} -> {name, id} end)
+
+        {:ok,
+         %{
+           enums: enums,
+           payload_unions: payload_unions,
+           type_aliases: type_aliases,
+           watch_to_phone: watch_to_phone,
+           phone_to_watch: phone_to_watch,
+           wire_slots: wire_slots,
+           key_ids: key_ids
+         }}
+      end
     end
-  end
-
-  defp parse_unions(source) do
-    ~r/(?:^|\n)type\s+([A-Z][A-Za-z0-9_]*)\s*\n((?:\s{4}=\s+[A-Z][^\n]*(?:\n\s{4}\|\s+[A-Z][^\n]*)*|\s+=\s+[A-Z][^\n]*(?:\n\s+\|\s+[A-Z][^\n]*)*))/m
-    |> Regex.scan(source)
-    |> Map.new(fn [_all, name, body] ->
-      constructors =
-        body
-        |> String.split("\n")
-        |> Enum.map(&String.trim/1)
-        |> Enum.map(&String.trim_leading(&1, "="))
-        |> Enum.map(&String.trim_leading(&1, "|"))
-        |> Enum.map(&String.trim/1)
-        |> Enum.reject(&(&1 == ""))
-        |> Enum.map(&parse_constructor_line/1)
-
-      {name, constructors}
-    end)
   end
 
   defp enum_unions(unions, excluded) do
@@ -120,7 +130,7 @@ defmodule Ide.CompanionProtocolGenerator do
     |> Map.new()
   end
 
-  defp message_union(unions, enums, payload_unions, name, first_tag) do
+  defp message_union(unions, schema, name, first_tag) do
     case Map.fetch(unions, name) do
       {:ok, constructors} ->
         messages =
@@ -135,7 +145,13 @@ defmodule Ide.CompanionProtocolGenerator do
                   name: "field#{index}",
                   key: "#{camel_to_snake(ctor.name)}_field#{index}",
                   type: type,
-                  wire_type: wire_type(type, enums, payload_unions)
+                  wire_type:
+                    WireFlatten.resolve_type(
+                      type,
+                      schema.enums,
+                      schema.payload_unions,
+                      schema.type_aliases
+                    )
                 }
               end)
 
@@ -148,48 +164,6 @@ defmodule Ide.CompanionProtocolGenerator do
         {:error, {:missing_union, name}}
     end
   end
-
-  defp parse_constructor_line(line) do
-    [ctor | raw_args] = String.split(line, ~r/\s+/, trim: true)
-    %{name: ctor, args: normalize_constructor_args(raw_args)}
-  end
-
-  defp normalize_constructor_args(raw_args) do
-    raw_args
-    |> Enum.join(" ")
-    |> String.replace(~r/[()]/, "")
-    |> String.split(~r/\s+/, trim: true)
-    |> collapse_list_type_tokens([])
-  end
-
-  defp collapse_list_type_tokens([], acc), do: Enum.reverse(acc)
-
-  defp collapse_list_type_tokens(["List", type | rest], acc),
-    do: collapse_list_type_tokens(rest, ["List #{type}" | acc])
-
-  defp collapse_list_type_tokens([head | rest], acc),
-    do: collapse_list_type_tokens(rest, [head | acc])
-
-  defp wire_type("Int", _enums, _payload_unions), do: :int
-  defp wire_type("Bool", _enums, _payload_unions), do: :bool
-  defp wire_type("String", _enums, _payload_unions), do: :string
-  defp wire_type("List Int", _enums, _payload_unions), do: {:list, :int}
-
-  defp wire_type(type, enums, payload_unions) do
-    cond do
-      Map.has_key?(enums, type) -> {:enum, type}
-      Map.has_key?(payload_unions, type) -> {:union, type}
-      true -> :int
-    end
-  end
-
-  defp field_keys(%{wire_type: {:union, _type}, key: key}), do: [key <> "_tag", key <> "_value"]
-
-  defp field_keys(%{wire_type: {:list, :int}, key: key}) do
-    [key <> "_count" | Enum.map(0..(@list_max_elements - 1), &"#{key}_#{&1}")]
-  end
-
-  defp field_keys(%{key: key}), do: [key]
 
   defp header(schema) do
     key_lines =
@@ -232,11 +206,14 @@ defmodule Ide.CompanionProtocolGenerator do
     uses_bool_payloads? = companion_protocol_uses_payload_type?(schema, :bool)
     uses_string_payloads? = companion_protocol_uses_payload_type?(schema, :string)
     uses_list_payloads? = companion_protocol_uses_list_payloads?(schema)
+    wire_struct_fields = c_wire_struct_fields(schema)
+    wire_seen_fields = c_wire_seen_fields(schema)
 
     message_fields =
       [
         "  CompanionProtocolPhoneToWatchKind kind;",
-        "  int32_t int_fields[COMPANION_PROTOCOL_MAX_FIELDS];"
+        "  int32_t int_fields[COMPANION_PROTOCOL_MAX_FIELDS];",
+        "  CompanionProtocolPhoneToWatchWire wire;"
       ] ++
         optional_c_struct_field(
           uses_list_payloads?,
@@ -277,7 +254,8 @@ defmodule Ide.CompanionProtocolGenerator do
         optional_c_struct_field(
           uses_list_payloads?,
           "  bool saw_list_elements[COMPANION_PROTOCOL_MAX_FIELDS][COMPANION_PROTOCOL_LIST_MAX_ELEMENTS];"
-        )
+        ) ++
+        wire_seen_fields
 
     list_macros =
       if uses_list_payloads? do
@@ -309,6 +287,10 @@ defmodule Ide.CompanionProtocolGenerator do
       COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_UNKNOWN = 0,
     #{kind_lines}
     } CompanionProtocolPhoneToWatchKind;
+
+    typedef struct {
+    #{Enum.join(wire_struct_fields, "\n")}
+    } CompanionProtocolPhoneToWatchWire;
 
     typedef struct {
     #{Enum.join(message_fields, "\n")}
@@ -357,6 +339,8 @@ defmodule Ide.CompanionProtocolGenerator do
       end)
       |> Enum.join("\n")
 
+    wire_push_cases = c_decode_wire_slot_cases(schema)
+
     finish_cases =
       schema.phone_to_watch
       |> Enum.map_join("\n", fn msg ->
@@ -384,6 +368,8 @@ defmodule Ide.CompanionProtocolGenerator do
       |> Enum.map_join("\n", fn {msg, phone_to_watch_tag} ->
         c_dispatch_case(msg, phone_to_watch_tag)
       end)
+
+    composite_build_helpers = c_composite_build_helpers(schema)
 
     union_value_helper =
       if companion_protocol_uses_union_payloads?(schema) do
@@ -436,6 +422,8 @@ defmodule Ide.CompanionProtocolGenerator do
 
     #{c_list_wire_helpers(schema)}
 
+    #{composite_build_helpers}
+
     bool companion_protocol_encode_watch_to_phone(DictionaryIterator *iter, int32_t tag, int32_t value) {
       if (!iter) return false;
       switch (tag) {
@@ -447,6 +435,7 @@ defmodule Ide.CompanionProtocolGenerator do
 
     void companion_protocol_phone_to_watch_decoder_init(CompanionProtocolPhoneToWatchDecoder *decoder) {
       if (!decoder) return;
+      memset(decoder, 0, sizeof(*decoder));
       decoder->saw_tag = false;
       decoder->tag = 0;
       memset(&decoder->message, 0, sizeof(decoder->message));
@@ -467,6 +456,7 @@ defmodule Ide.CompanionProtocolGenerator do
       }
 
     #{push_cases}
+    #{wire_push_cases}
     }
 
     bool companion_protocol_phone_to_watch_decoder_finish(
@@ -522,6 +512,25 @@ defmodule Ide.CompanionProtocolGenerator do
 
   defp optional_c_struct_field(true, field), do: [field]
   defp optional_c_struct_field(false, _field), do: []
+
+  defp c_wire_struct_fields(schema) do
+    fields =
+      schema.wire_slots
+      |> Enum.uniq_by(& &1.c_name)
+      |> Enum.map(fn
+        %{storage_type: :string, c_name: c_name} -> "  char #{c_name}[64];"
+        %{storage_type: :bool, c_name: c_name} -> "  bool #{c_name};"
+        %{c_name: c_name} -> "  int32_t #{c_name};"
+      end)
+
+    if fields == [], do: ["  int unused;"], else: fields
+  end
+
+  defp c_wire_seen_fields(schema) do
+    schema.wire_slots
+    |> Enum.uniq_by(& &1.c_name)
+    |> Enum.map(fn %{c_name: c_name} -> "  bool saw_#{c_name};" end)
+  end
 
   defp companion_simulator_weather_macros(schema, uses_union_payloads?) do
     names = schema.phone_to_watch |> Enum.map(& &1.name) |> MapSet.new()
@@ -731,7 +740,7 @@ defmodule Ide.CompanionProtocolGenerator do
 
     #{enum_lookup}
 
-    function encodeListIntField(prefix, list) {
+    function encodeListIntField(payload, prefix, list) {
       var items = Array.isArray(list) ? list : [];
       if (items.length > #{@list_max_elements}) {
         items = items.slice(0, #{@list_max_elements});
@@ -793,11 +802,16 @@ defmodule Ide.CompanionProtocolGenerator do
     -}
 
     import Companion.Types exposing (..)
+    import Dict exposing (Dict)
     import Json.Decode as Decode
     import Json.Encode as Encode
 
 
     #{elm_list_helpers()}
+
+    #{elm_dict_helpers()}
+
+    #{elm_record_helpers(schema)}
 
     #{elm_enum_helpers(schema)}
 
@@ -878,7 +892,7 @@ defmodule Ide.CompanionProtocolGenerator do
     Enum.map_join(messages, "\n", fn msg ->
       args = elm_pattern_args(msg.fields)
       scalar_fields = elm_encode_scalar_fields(schema, msg.fields)
-      list_fields = elm_encode_list_field_appends(msg.fields)
+      list_fields = elm_encode_field_appends(schema, msg.fields)
       closing = if list_fields == "", do: " ])", else: " ]#{list_fields})"
 
       """
@@ -892,20 +906,26 @@ defmodule Ide.CompanionProtocolGenerator do
   defp elm_encode_scalar_fields(schema, fields) do
     fields
     |> Enum.with_index(1)
-    |> Enum.reject(fn {field, _} -> match?(%{wire_type: {:list, :int}}, field) end)
+    |> Enum.reject(fn {field, _} -> elm_append_encoded_field?(field.wire_type) end)
     |> Enum.map_join("", fn {field, index} ->
       elm_encode_object_field(schema, field, "field#{index}")
     end)
   end
 
-  defp elm_encode_list_field_appends(fields) do
+  defp elm_encode_field_appends(schema, fields) do
     fields
     |> Enum.with_index(1)
-    |> Enum.filter(fn {field, _} -> match?(%{wire_type: {:list, :int}}, field) end)
+    |> Enum.filter(fn {field, _} -> elm_append_encoded_field?(field.wire_type) end)
     |> Enum.map_join("", fn {field, index} ->
-      "\n                        ++ encodeListInt \"#{field.key}\" field#{index}"
+      "\n                        ++ #{elm_encode_pairs_expr(schema, field.wire_type, "\"#{field.key}\"", "field#{index}", :raw)}"
     end)
   end
+
+  defp elm_append_encoded_field?({:list, _elem}), do: true
+  defp elm_append_encoded_field?({:record, _type, _fields}), do: true
+  defp elm_append_encoded_field?({:dict, _elem}), do: true
+  defp elm_append_encoded_field?({:union, _type, _ctors}), do: true
+  defp elm_append_encoded_field?(_wire_type), do: false
 
   defp elm_tag_cases(messages) do
     Enum.map_join(messages, "\n", fn msg ->
@@ -991,6 +1011,11 @@ defmodule Ide.CompanionProtocolGenerator do
 
   defp elm_decoder(%{wire_type: :string}), do: "Decode.string"
   defp elm_decoder(%{wire_type: {:list, :int}, key: key}), do: "decodeListInt \"#{key}\""
+  defp elm_decoder(%{wire_type: {:union, _type}}), do: "Decode.int"
+
+  defp elm_decoder(%{wire_type: wire_type, key: key}),
+    do: elm_decode_expr(wire_type, "\"#{key}\"", :raw)
+
   defp elm_decoder(_field), do: "Decode.int"
 
   defp elm_encoder(_schema, %{wire_type: :bool}, value),
@@ -1069,6 +1094,256 @@ defmodule Ide.CompanionProtocolGenerator do
     """
   end
 
+  defp elm_dict_helpers do
+    """
+    decodeListBy : String -> (String -> Decode.Decoder a) -> Decode.Decoder (List a)
+    decodeListBy prefix decodeItem =
+        Decode.field (prefix ++ "_count") Decode.int
+            |> Decode.andThen
+                (\\wireCount ->
+                    let
+                        count =
+                            wireCount - #{@wire_code_base}
+                    in
+                    if count < 0 then
+                        Decode.fail "Invalid list count"
+                    else
+                        decodeListByElements prefix decodeItem count 0 []
+                )
+
+
+    decodeListByElements : String -> (String -> Decode.Decoder a) -> Int -> Int -> List a -> Decode.Decoder (List a)
+    decodeListByElements prefix decodeItem remaining index acc =
+        if remaining <= 0 then
+            Decode.succeed (List.reverse acc)
+        else
+            decodeItem (prefix ++ "_" ++ String.fromInt index)
+                |> Decode.andThen
+                    (\\value ->
+                        decodeListByElements prefix decodeItem (remaining - 1) (index + 1) (value :: acc)
+                    )
+
+
+    encodeListBy : String -> (String -> a -> List ( String, Encode.Value )) -> List a -> List ( String, Encode.Value )
+    encodeListBy prefix encodeItem list =
+        let
+            items =
+                if List.length list > #{@list_max_elements} then
+                    List.take #{@list_max_elements} list
+                else
+                    list
+        in
+        ( prefix ++ "_count", Encode.int (List.length items + #{@wire_code_base}) )
+            :: (items
+                    |> List.indexedMap
+                        (\\index value ->
+                            encodeItem (prefix ++ "_" ++ String.fromInt index) value
+                        )
+                    |> List.concat
+               )
+
+
+    decodeDictStringBy : String -> (String -> Decode.Decoder a) -> Decode.Decoder (Dict String a)
+    decodeDictStringBy prefix decodeValue =
+        Decode.field (prefix ++ "_count") Decode.int
+            |> Decode.andThen
+                (\\wireCount ->
+                    let
+                        count =
+                            wireCount - #{@wire_code_base}
+                    in
+                    if count < 0 then
+                        Decode.fail "Invalid dict count"
+                    else
+                        decodeDictStringByElements prefix decodeValue count 0 []
+                )
+
+
+    decodeDictStringByElements : String -> (String -> Decode.Decoder a) -> Int -> Int -> List ( String, a ) -> Decode.Decoder (Dict String a)
+    decodeDictStringByElements prefix decodeValue remaining index acc =
+        if remaining <= 0 then
+            Decode.succeed (Dict.fromList (List.reverse acc))
+        else
+            Decode.map2 Tuple.pair
+                (Decode.field (prefix ++ "_key_" ++ String.fromInt index) Decode.string)
+                (decodeValue (prefix ++ "_val_" ++ String.fromInt index))
+                |> Decode.andThen
+                    (\\entry ->
+                        decodeDictStringByElements prefix decodeValue (remaining - 1) (index + 1) (entry :: acc)
+                    )
+
+
+    encodeDictStringBy : String -> (String -> a -> List ( String, Encode.Value )) -> Dict String a -> List ( String, Encode.Value )
+    encodeDictStringBy prefix encodeValue dict =
+        let
+            entries =
+                Dict.toList dict |> List.take #{@dict_max_entries}
+        in
+        ( prefix ++ "_count", Encode.int (List.length entries + #{@wire_code_base}) )
+            :: (entries
+                    |> List.indexedMap
+                        (\\index ( key, value ) ->
+                            ( prefix ++ "_key_" ++ String.fromInt index, Encode.string key )
+                                :: encodeValue (prefix ++ "_val_" ++ String.fromInt index) value
+                        )
+                    |> List.concat
+               )
+    """
+  end
+
+  defp elm_record_helpers(%{type_aliases: aliases} = schema) do
+    aliases
+    |> Enum.map_join("\n\n", fn {type, fields} ->
+      wire_fields =
+        fields
+        |> Enum.map(fn field ->
+          Map.put(
+            field,
+            :wire_type,
+            WireFlatten.resolve_type(
+              field.type,
+              schema.enums,
+              schema.payload_unions,
+              schema.type_aliases
+            )
+          )
+        end)
+
+      """
+      decode#{type} : String -> Decode.Decoder #{type}
+      decode#{type} prefix =
+      #{elm_record_decoder_body(wire_fields, :raw)}
+
+
+      decode#{type}Offset : String -> Decode.Decoder #{type}
+      decode#{type}Offset prefix =
+      #{elm_record_decoder_body(wire_fields, :offset)}
+
+
+      encode#{type} : String -> #{type} -> List ( String, Encode.Value )
+      encode#{type} prefix value =
+      #{elm_record_encoder_body(schema, wire_fields, :raw)}
+
+
+      encode#{type}Offset : String -> #{type} -> List ( String, Encode.Value )
+      encode#{type}Offset prefix value =
+      #{elm_record_encoder_body(schema, wire_fields, :offset)}
+      """
+    end)
+  end
+
+  defp elm_record_decoder_body(fields, offset_mode) do
+    names = Enum.map(fields, & &1.name)
+    ctor = "{ " <> Enum.map_join(names, ", ", &"#{&1} = #{&1}") <> " }"
+
+    case fields do
+      [] ->
+        "    Decode.succeed {}"
+
+      [field] ->
+        """
+          #{elm_decode_expr(field.wire_type, ~s<(prefix ++ "_#{field.name}")>, offset_mode)}
+              |> Decode.map (\\#{field.name} -> #{ctor})
+        """
+
+      fields ->
+        args = Enum.map_join(names, " ", &"(\\#{&1} ->")
+        closers = String.duplicate(")", length(names))
+
+        decoders =
+          fields
+          |> Enum.map_join("\n", fn field ->
+            "        (#{elm_decode_expr(field.wire_type, ~s<(prefix ++ "_#{field.name}")>, offset_mode)})"
+          end)
+
+        """
+          Decode.map#{length(fields)} #{args} #{ctor}#{closers}
+        #{decoders}
+        """
+    end
+  end
+
+  defp elm_record_encoder_body(schema, fields, offset_mode) do
+    fields
+    |> Enum.map_join("\n        ++ ", fn field ->
+      elm_encode_pairs_expr(
+        schema,
+        field.wire_type,
+        ~s<(prefix ++ "_#{field.name}")>,
+        "value.#{field.name}",
+        offset_mode
+      )
+    end)
+    |> case do
+      "" -> "    []"
+      body -> "    " <> body
+    end
+  end
+
+  defp elm_decode_expr(:int, prefix, :offset),
+    do: "Decode.field #{prefix} Decode.int |> Decode.map (\\wire -> wire - #{@wire_code_base})"
+
+  defp elm_decode_expr(:int, prefix, _mode), do: "Decode.field #{prefix} Decode.int"
+
+  defp elm_decode_expr(:bool, prefix, _mode),
+    do:
+      "Decode.field #{prefix} (Decode.andThen (\\value -> if value == #{@wire_true_code} then Decode.succeed True else if value == #{@wire_false_code} then Decode.succeed False else Decode.fail \"Invalid bool wire code\") Decode.int)"
+
+  defp elm_decode_expr(:string, prefix, _mode), do: "Decode.field #{prefix} Decode.string"
+  defp elm_decode_expr({:enum, _type}, prefix, _mode), do: "Decode.field #{prefix} Decode.int"
+
+  defp elm_decode_expr({:record, type, _fields}, prefix, :offset),
+    do: "decode#{type}Offset #{prefix}"
+
+  defp elm_decode_expr({:record, type, _fields}, prefix, _mode), do: "decode#{type} #{prefix}"
+  defp elm_decode_expr({:list, :int}, prefix, _mode), do: "decodeListInt #{prefix}"
+
+  defp elm_decode_expr({:list, elem}, prefix, _mode),
+    do: "decodeListBy #{prefix} (\\itemPrefix -> #{elm_decode_expr(elem, "itemPrefix", :offset)})"
+
+  defp elm_decode_expr({:dict, elem}, prefix, _mode),
+    do:
+      "decodeDictStringBy #{prefix} (\\valuePrefix -> #{elm_decode_expr(elem, "valuePrefix", :offset)})"
+
+  defp elm_decode_expr({:union, type, _ctors}, prefix, _mode), do: "decode#{type}Wire #{prefix}"
+
+  defp elm_encode_pairs_expr(_schema, :int, prefix, value, :offset),
+    do: "[ ( #{prefix}, Encode.int (#{value} + #{@wire_code_base}) ) ]"
+
+  defp elm_encode_pairs_expr(_schema, :int, prefix, value, _mode),
+    do: "[ ( #{prefix}, Encode.int #{value} ) ]"
+
+  defp elm_encode_pairs_expr(_schema, :bool, prefix, value, _mode),
+    do:
+      "[ ( #{prefix}, Encode.int (if #{value} then #{@wire_true_code} else #{@wire_false_code}) ) ]"
+
+  defp elm_encode_pairs_expr(_schema, :string, prefix, value, _mode),
+    do: "[ ( #{prefix}, Encode.string #{value} ) ]"
+
+  defp elm_encode_pairs_expr(schema, {:enum, _type} = wire_type, prefix, value, _mode),
+    do:
+      "[ ( #{prefix}, Encode.int (#{elm_encode_value(schema, %{wire_type: wire_type}, value)}) ) ]"
+
+  defp elm_encode_pairs_expr(_schema, {:record, type, _fields}, prefix, value, :offset),
+    do: "encode#{type}Offset #{prefix} #{value}"
+
+  defp elm_encode_pairs_expr(_schema, {:record, type, _fields}, prefix, value, _mode),
+    do: "encode#{type} #{prefix} #{value}"
+
+  defp elm_encode_pairs_expr(_schema, {:list, :int}, prefix, value, _mode),
+    do: "encodeListInt #{prefix} #{value}"
+
+  defp elm_encode_pairs_expr(schema, {:list, elem}, prefix, value, _mode),
+    do:
+      "encodeListBy #{prefix} (\\itemPrefix itemValue -> #{elm_encode_pairs_expr(schema, elem, "itemPrefix", "itemValue", :offset)}) #{value}"
+
+  defp elm_encode_pairs_expr(schema, {:dict, elem}, prefix, value, _mode),
+    do:
+      "encodeDictStringBy #{prefix} (\\valuePrefix dictValue -> #{elm_encode_pairs_expr(schema, elem, "valuePrefix", "dictValue", :offset)}) #{value}"
+
+  defp elm_encode_pairs_expr(_schema, {:union, type, _ctors}, prefix, value, _mode),
+    do: "encode#{type}Wire #{prefix} #{value}"
+
   defp elm_enum_helpers(%{enums: enums}) do
     enums
     |> Enum.map_join("\n\n", fn {type, _ctors} ->
@@ -1087,28 +1362,140 @@ defmodule Ide.CompanionProtocolGenerator do
     end)
   end
 
-  defp elm_payload_union_helpers(%{payload_unions: payload_unions}) do
+  defp elm_payload_union_helpers(%{payload_unions: payload_unions} = schema) do
     payload_unions
     |> Enum.map_join("\n\n", fn {type, ctors} ->
+      legacy = WireFlatten.legacy_union?(schema, type)
+
+      legacy_helpers =
+        """
+        #{elm_union_tag_encode_name(type)} : #{type} -> Int
+        #{elm_union_tag_encode_name(type)} value =
+            case value of
+        #{elm_union_tag_branches(ctors)}
+
+
+        #{elm_union_value_encode_name(type)} : #{type} -> Int
+        #{elm_union_value_encode_name(type)} value =
+            case value of
+        #{elm_union_value_branches(ctors)}
+
+
+        #{elm_union_decode_name(type)} : Int -> Int -> Maybe #{type}
+        #{elm_union_decode_name(type)} tag value =
+            case tag of
+        #{elm_union_decode_branches(ctors)}
+        """
+
+      if legacy do
+        legacy_helpers
+      else
+        legacy_helpers <> "\n\n" <> elm_generic_union_helpers(schema, type, ctors)
+      end
+    end)
+  end
+
+  defp elm_generic_union_helpers(schema, type, ctors) do
+    """
+    decode#{type}Wire : String -> Decode.Decoder #{type}
+    decode#{type}Wire prefix =
+        Decode.field (prefix ++ "_tag") Decode.int
+            |> Decode.andThen
+                (\\tag ->
+                    case tag of
+    #{elm_generic_union_decode_branches(schema, type, ctors)}
+                        _ ->
+                            Decode.fail ("Unknown #{type} tag: " ++ String.fromInt tag)
+                )
+
+
+    encode#{type}Wire : String -> #{type} -> List ( String, Encode.Value )
+    encode#{type}Wire prefix value =
+        case value of
+    #{elm_generic_union_encode_branches(schema, ctors)}
+    """
+  end
+
+  defp elm_generic_union_decode_branches(schema, _type, ctors) do
+    ctors
+    |> Enum.with_index(1)
+    |> Enum.map_join("\n\n", fn {ctor, tag} ->
+      case ctor.args do
+        [] ->
+          "                    #{tag} ->\n                        Decode.succeed #{ctor.name}"
+
+        args ->
+          decoders =
+            args
+            |> Enum.with_index(1)
+            |> Enum.map(fn {arg_type, index} ->
+              wire_type =
+                WireFlatten.resolve_type(
+                  arg_type,
+                  schema.enums,
+                  schema.payload_unions,
+                  schema.type_aliases
+                )
+
+              prefix = ~s<(prefix ++ "_#{Macro.underscore(ctor.name)}_arg#{index}")>
+              elm_decode_expr(wire_type, prefix, :raw)
+            end)
+
+          constructor = "#{ctor.name}#{Enum.map_join(1..length(args), "", &" arg#{&1}")}"
+          mapper = "\\#{Enum.map_join(1..length(args), " ", &"arg#{&1}")} -> #{constructor}"
+
+          """
+                              #{tag} ->
+                                  #{elm_map_decoder(decoders, mapper)}
+          """
+      end
+    end)
+  end
+
+  defp elm_generic_union_encode_branches(schema, ctors) do
+    ctors
+    |> Enum.with_index(1)
+    |> Enum.map_join("\n\n", fn {ctor, tag} ->
+      args =
+        if ctor.args == [] do
+          ""
+        else
+          Enum.map_join(1..length(ctor.args), "", &" arg#{&1}")
+        end
+
+      pairs =
+        ctor.args
+        |> Enum.with_index(1)
+        |> Enum.map_join("\n                ++ ", fn {arg_type, index} ->
+          wire_type =
+            WireFlatten.resolve_type(
+              arg_type,
+              schema.enums,
+              schema.payload_unions,
+              schema.type_aliases
+            )
+
+          prefix = ~s<(prefix ++ "_#{Macro.underscore(ctor.name)}_arg#{index}")>
+          elm_encode_pairs_expr(schema, wire_type, prefix, "arg#{index}", :raw)
+        end)
+
+      pairs = if pairs == "", do: "[]", else: pairs
+
       """
-      #{elm_union_tag_encode_name(type)} : #{type} -> Int
-      #{elm_union_tag_encode_name(type)} value =
-          case value of
-      #{elm_union_tag_branches(ctors)}
-
-
-      #{elm_union_value_encode_name(type)} : #{type} -> Int
-      #{elm_union_value_encode_name(type)} value =
-          case value of
-      #{elm_union_value_branches(ctors)}
-
-
-      #{elm_union_decode_name(type)} : Int -> Int -> Maybe #{type}
-      #{elm_union_decode_name(type)} tag value =
-          case tag of
-      #{elm_union_decode_branches(ctors)}
+              #{ctor.name}#{args} ->
+                  ( prefix ++ "_tag", Encode.int #{tag} )
+                      :: (#{pairs})
       """
     end)
+  end
+
+  defp elm_map_decoder([single], mapper), do: "Decode.map (#{mapper}) (#{single})"
+
+  defp elm_map_decoder(decoders, mapper) do
+    """
+    Decode.map#{length(decoders)} (#{mapper})
+    #{Enum.map_join(decoders, "\n", &"                            (#{&1})")}
+    """
   end
 
   defp elm_enum_encode_name(type), do: "encode#{type}Code"
@@ -1193,6 +1580,10 @@ defmodule Ide.CompanionProtocolGenerator do
   defp c_required_field_expr(%{wire_type: {:list, :int}}, index),
     do: "decoder->saw_list_counts[#{index}]"
 
+  defp c_required_field_expr(%{wire_type: wire_type}, index) do
+    if c_composite_wire_type?(wire_type), do: "true", else: "decoder->saw_fields[#{index}]"
+  end
+
   defp c_required_field_expr(_field, index), do: "decoder->saw_fields[#{index}]"
 
   # Treat missing enum/union tag fields as the first 1-based wire code when AppMessage omits keys.
@@ -1255,7 +1646,47 @@ defmodule Ide.CompanionProtocolGenerator do
     """
   end
 
+  defp c_missing_field_default(%{wire_type: wire_type, key: key}, _index)
+       when tuple_size(wire_type) in [2, 3] do
+    if c_composite_wire_type?(wire_type) do
+      WireFlatten.slots_for_field(%{key: key, name: key, wire_type: wire_type}, %{
+        enums: %{},
+        payload_unions: %{},
+        type_aliases: %{},
+        watch_to_phone: [],
+        phone_to_watch: []
+      })
+      |> Enum.map_join("\n", &c_missing_wire_slot_default/1)
+    else
+      ""
+    end
+  end
+
   defp c_missing_field_default(_field, _index), do: ""
+
+  defp c_missing_wire_slot_default(%{storage_type: :string, c_name: c_name}) do
+    """
+          if (!decoder->saw_#{c_name}) {
+            decoder->message.wire.#{c_name}[0] = '\\0';
+          }
+    """
+  end
+
+  defp c_missing_wire_slot_default(%{storage_type: :bool, c_name: c_name}) do
+    """
+          if (!decoder->saw_#{c_name}) {
+            decoder->message.wire.#{c_name} = false;
+          }
+    """
+  end
+
+  defp c_missing_wire_slot_default(%{c_name: c_name}) do
+    """
+          if (!decoder->saw_#{c_name}) {
+            decoder->message.wire.#{c_name} = 0;
+          }
+    """
+  end
 
   defp c_missing_tag_field_default(index) do
     """
@@ -1369,6 +1800,56 @@ defmodule Ide.CompanionProtocolGenerator do
     """
   end
 
+  defp c_decode_wire_slot_cases(schema) do
+    schema.wire_slots
+    |> Enum.uniq_by(& &1.key)
+    |> Enum.map_join("\n", fn slot ->
+      key_macro = "COMPANION_PROTOCOL_KEY_#{macro_name(slot.key)}"
+
+      """
+        if (tuple->key == #{key_macro}) {
+          decoder->saw_#{slot.c_name} = true;
+      #{c_decode_wire_slot_value(slot)}
+          return;
+        }
+      """
+    end)
+  end
+
+  defp c_decode_wire_slot_value(%{storage_type: :string, c_name: c_name}) do
+    """
+      if (tuple->type == TUPLE_CSTRING) {
+        strncpy(decoder->message.wire.#{c_name}, tuple->value->cstring, 63);
+        decoder->message.wire.#{c_name}[63] = '\\0';
+      }
+    """
+  end
+
+  defp c_decode_wire_slot_value(%{storage_type: :bool, c_name: c_name}) do
+    """
+      if (tuple->type == TUPLE_INT || tuple->type == TUPLE_UINT) {
+        decoder->message.wire.#{c_name} = tuple->value->int32 == #{@wire_true_code};
+      }
+    """
+  end
+
+  defp c_decode_wire_slot_value(%{wire_offset: :offset, c_name: c_name}) do
+    """
+      if (tuple->type == TUPLE_INT || tuple->type == TUPLE_UINT) {
+        decoder->message.wire.#{c_name} = tuple->value->int32 - #{@wire_code_base};
+        if (decoder->message.wire.#{c_name} < 0) decoder->message.wire.#{c_name} = 0;
+      }
+    """
+  end
+
+  defp c_decode_wire_slot_value(%{c_name: c_name}) do
+    """
+      if (tuple->type == TUPLE_INT || tuple->type == TUPLE_UINT) {
+        decoder->message.wire.#{c_name} = tuple->value->int32;
+      }
+    """
+  end
+
   defp c_payload_expr(%{fields: []}), do: "      ElmcValue *payload = elmc_new_int(0);"
 
   defp c_payload_expr(%{fields: [field]}) do
@@ -1412,11 +1893,314 @@ defmodule Ide.CompanionProtocolGenerator do
     do:
       "companion_protocol_new_union_value(#{c_runtime_tag_function(type)}(message->int_fields[#{index}]), message->union_value_fields[#{index}])"
 
+  defp c_value_expr(%{wire_type: {:union, _type, _ctors}, key: key}, _index),
+    do: "#{c_build_function_name(key)}(message)"
+
   defp c_value_expr(%{wire_type: {:list, :int}}, index),
-    do:
-      "elmc_list_from_int_array(message->list_values[#{index}], message->list_counts[#{index}])"
+    do: "elmc_list_from_int_array(message->list_values[#{index}], message->list_counts[#{index}])"
+
+  defp c_value_expr(%{wire_type: {:record, _type, _fields}, key: key}, _index),
+    do: "#{c_build_function_name(key)}(message)"
+
+  defp c_value_expr(%{wire_type: {:list, _elem}, key: key}, _index),
+    do: "#{c_build_function_name(key)}(message)"
+
+  defp c_value_expr(%{wire_type: {:dict, _elem}, key: key}, _index),
+    do: "#{c_build_function_name(key)}(message)"
 
   defp c_value_expr(_field, index), do: "elmc_new_int(message->int_fields[#{index}])"
+
+  defp c_composite_build_helpers(schema) do
+    schema.phone_to_watch
+    |> Enum.flat_map(& &1.fields)
+    |> Enum.filter(&c_composite_wire_type?(&1.wire_type))
+    |> Enum.uniq_by(& &1.key)
+    |> Enum.map_join("\n\n", fn field ->
+      {body, result} = c_build_value_from_wire(field.wire_type, field.key, schema, "v")
+
+      """
+      static ElmcValue *#{c_build_function_name(field.key)}(const CompanionProtocolPhoneToWatchMessage *message) {
+      #{body}
+        return #{result};
+      }
+      """
+    end)
+  end
+
+  defp c_composite_wire_type?({:record, _type, _fields}), do: true
+  defp c_composite_wire_type?({:list, elem}), do: elem != :int
+  defp c_composite_wire_type?({:dict, _elem}), do: true
+  defp c_composite_wire_type?({:union, _type, _ctors}), do: true
+  defp c_composite_wire_type?(_wire_type), do: false
+
+  defp c_build_function_name(key),
+    do: "companion_protocol_build_#{macro_name(key) |> String.downcase()}"
+
+  defp c_build_value_from_wire(:int, key, _schema, _var_prefix) do
+    slot =
+      WireFlatten.slots_for_field(%{key: key, name: key, wire_type: :int}, empty_wire_schema())
+      |> hd()
+
+    {"", "elmc_new_int(message->wire.#{slot.c_name})"}
+  end
+
+  defp c_build_value_from_wire(:bool, key, _schema, _var_prefix) do
+    slot =
+      WireFlatten.slots_for_field(%{key: key, name: key, wire_type: :bool}, empty_wire_schema())
+      |> hd()
+
+    {"", "elmc_new_bool(message->wire.#{slot.c_name} ? 1 : 0)"}
+  end
+
+  defp c_build_value_from_wire(:string, key, _schema, _var_prefix) do
+    slot =
+      WireFlatten.slots_for_field(%{key: key, name: key, wire_type: :string}, empty_wire_schema())
+      |> hd()
+
+    {"", "elmc_new_string(message->wire.#{slot.c_name})"}
+  end
+
+  defp c_build_value_from_wire({:enum, type}, key, _schema, _var_prefix) do
+    slot =
+      WireFlatten.slots_for_field(
+        %{key: key, name: key, wire_type: {:enum, type}},
+        empty_wire_schema()
+      )
+      |> hd()
+
+    {"", "elmc_new_int(#{c_runtime_tag_function(type)}(message->wire.#{slot.c_name}))"}
+  end
+
+  defp c_build_value_from_wire({:record, _type, fields}, key, schema, var_prefix) do
+    built =
+      fields
+      |> Enum.with_index()
+      |> Enum.map(fn {field, index} ->
+        child_key = "#{key}_#{field.name}"
+        child_var = "#{var_prefix}_field_#{index}"
+
+        {child_body, child_expr} =
+          c_build_value_from_wire(field.wire_type, child_key, schema, child_var)
+
+        {field, index, child_var, child_body, child_expr}
+      end)
+
+    names =
+      fields
+      |> Enum.map_join(", ", &~s("#{&1.name}"))
+
+    body =
+      built
+      |> Enum.map_join("\n", fn {_field, _index, child_var, child_body, child_expr} ->
+        """
+        #{child_body}
+        ElmcValue *#{child_var} = #{child_expr};
+        if (!#{child_var}) return NULL;
+        """
+      end)
+
+    values =
+      built |> Enum.map_join(", ", fn {_field, _index, child_var, _body, _expr} -> child_var end)
+
+    body =
+      body <>
+        """
+        const char *#{var_prefix}_names[] = { #{names} };
+        ElmcValue *#{var_prefix}_values[] = { #{values} };
+        """
+
+    {body, "elmc_record_new_take(#{length(fields)}, #{var_prefix}_names, #{var_prefix}_values)"}
+  end
+
+  defp c_build_value_from_wire({:list, elem_type}, key, schema, var_prefix) do
+    count_slot =
+      WireFlatten.slots_for_field(%{key: key, name: key, wire_type: {:list, elem_type}}, schema)
+      |> Enum.find(&String.ends_with?(&1.key, "_count"))
+
+    element_builds =
+      0..(@list_max_elements - 1)
+      |> Enum.map(fn index ->
+        child_key = "#{key}_#{index}"
+        child_var = "#{var_prefix}_item_#{index}"
+
+        {child_body, child_expr} =
+          c_build_value_from_wire(elem_type, child_key, schema, child_var)
+
+        """
+        if (#{var_prefix}_count > #{index}) {
+        #{child_body}
+          #{var_prefix}_items[#{index}] = #{child_expr};
+          if (!#{var_prefix}_items[#{index}]) return NULL;
+        }
+        """
+      end)
+      |> Enum.join("\n")
+
+    body = """
+        int32_t #{var_prefix}_count = message->wire.#{count_slot.c_name};
+        if (#{var_prefix}_count < 0) #{var_prefix}_count = 0;
+        if (#{var_prefix}_count > #{@list_max_elements}) #{var_prefix}_count = #{@list_max_elements};
+        ElmcValue *#{var_prefix}_items[#{@list_max_elements}];
+      #{element_builds}
+    """
+
+    {body, "elmc_list_from_values_take(#{var_prefix}_items, #{var_prefix}_count)"}
+  end
+
+  defp c_build_value_from_wire({:dict, value_type}, key, schema, var_prefix) do
+    count_slot =
+      WireFlatten.slots_for_field(%{key: key, name: key, wire_type: {:dict, value_type}}, schema)
+      |> Enum.find(&String.ends_with?(&1.key, "_count"))
+
+    entry_builds =
+      0..(@dict_max_entries - 1)
+      |> Enum.map(fn index ->
+        key_slot =
+          WireFlatten.slots_for_field(
+            %{key: "#{key}_key_#{index}", name: key, wire_type: :string},
+            schema
+          )
+          |> hd()
+
+        value_key = "#{key}_val_#{index}"
+        value_var = "#{var_prefix}_value_#{index}"
+
+        {value_body, value_expr} =
+          c_build_value_from_wire(value_type, value_key, schema, value_var)
+
+        """
+        if (#{var_prefix}_count > #{index}) {
+          ElmcValue *#{var_prefix}_key_#{index} = elmc_new_string(message->wire.#{key_slot.c_name});
+        #{value_body}
+          ElmcValue *#{value_var} = #{value_expr};
+          if (!#{var_prefix}_key_#{index} || !#{value_var}) return NULL;
+          #{var_prefix}_pairs[#{index}] = elmc_tuple2(#{var_prefix}_key_#{index}, #{value_var});
+          elmc_release(#{var_prefix}_key_#{index});
+          elmc_release(#{value_var});
+          if (!#{var_prefix}_pairs[#{index}]) return NULL;
+        }
+        """
+      end)
+      |> Enum.join("\n")
+
+    body = """
+        int32_t #{var_prefix}_count = message->wire.#{count_slot.c_name};
+        if (#{var_prefix}_count < 0) #{var_prefix}_count = 0;
+        if (#{var_prefix}_count > #{@dict_max_entries}) #{var_prefix}_count = #{@dict_max_entries};
+        ElmcValue *#{var_prefix}_pairs[#{@dict_max_entries}];
+      #{entry_builds}
+        ElmcValue *#{var_prefix}_pair_list = elmc_list_from_values_take(#{var_prefix}_pairs, #{var_prefix}_count);
+        if (!#{var_prefix}_pair_list) return NULL;
+        ElmcValue *#{var_prefix}_dict = elmc_dict_from_list(#{var_prefix}_pair_list);
+        elmc_release(#{var_prefix}_pair_list);
+    """
+
+    {body, "#{var_prefix}_dict"}
+  end
+
+  defp c_build_value_from_wire({:union, type, ctors}, key, schema, var_prefix) do
+    tag_slot =
+      WireFlatten.slots_for_field(
+        %{key: key, name: key, wire_type: {:union, type, ctors}},
+        schema
+      )
+      |> Enum.find(&String.ends_with?(&1.key, "_tag"))
+
+    cases =
+      ctors
+      |> Enum.with_index(1)
+      |> Enum.map_join("\n", fn {ctor, tag_code} ->
+        {payload_body, payload_expr} =
+          c_union_payload_build(ctor, key, schema, "#{var_prefix}_#{Macro.underscore(ctor.name)}")
+
+        """
+          case #{tag_code}: {
+        #{payload_body}
+            ElmcValue *#{var_prefix}_tag = elmc_new_int(#{c_runtime_tag_function(type)}(#{tag_code}));
+            ElmcValue *#{var_prefix}_payload = #{payload_expr};
+            if (!#{var_prefix}_tag || !#{var_prefix}_payload) return NULL;
+            ElmcValue *#{var_prefix}_out = elmc_tuple2(#{var_prefix}_tag, #{var_prefix}_payload);
+            elmc_release(#{var_prefix}_tag);
+            elmc_release(#{var_prefix}_payload);
+            return #{var_prefix}_out;
+          }
+        """
+      end)
+
+    body = """
+        switch (message->wire.#{tag_slot.c_name} + #{@wire_code_base}) {
+      #{cases}
+          default:
+            return NULL;
+        }
+    """
+
+    {body, "NULL"}
+  end
+
+  defp c_union_payload_build(%{args: []}, _key, _schema, _var_prefix), do: {"", "elmc_new_int(0)"}
+
+  defp c_union_payload_build(%{name: ctor_name, args: [arg_type]}, key, schema, var_prefix) do
+    wire_type =
+      WireFlatten.resolve_type(arg_type, schema.enums, schema.payload_unions, schema.type_aliases)
+
+    child_key = "#{key}_#{Macro.underscore(ctor_name)}_arg1"
+    c_build_value_from_wire(wire_type, child_key, schema, var_prefix <> "_arg1")
+  end
+
+  defp c_union_payload_build(%{name: ctor_name, args: args}, key, schema, var_prefix) do
+    built =
+      args
+      |> Enum.with_index(1)
+      |> Enum.map(fn {arg_type, arg_index} ->
+        wire_type =
+          WireFlatten.resolve_type(
+            arg_type,
+            schema.enums,
+            schema.payload_unions,
+            schema.type_aliases
+          )
+
+        child_key = "#{key}_#{Macro.underscore(ctor_name)}_arg#{arg_index}"
+        child_var = "#{var_prefix}_arg#{arg_index}"
+        {body, expr} = c_build_value_from_wire(wire_type, child_key, schema, child_var)
+        {child_var, body, expr}
+      end)
+
+    body =
+      built
+      |> Enum.map_join("\n", fn {child_var, child_body, child_expr} ->
+        """
+        #{child_body}
+            ElmcValue *#{child_var} = #{child_expr};
+            if (!#{child_var}) return NULL;
+        """
+      end)
+
+    tuple =
+      built
+      |> Enum.map(fn {child_var, _body, _expr} -> child_var end)
+      |> c_tuple_chain()
+
+    releases =
+      built
+      |> Enum.map_join("\n", fn {child_var, _body, _expr} ->
+        "          elmc_release(#{child_var});"
+      end)
+
+    body =
+      body <>
+        """
+            ElmcValue *#{var_prefix}_payload = #{tuple};
+        #{releases}
+        """
+
+    {body, "#{var_prefix}_payload"}
+  end
+
+  defp empty_wire_schema do
+    %{enums: %{}, payload_unions: %{}, type_aliases: %{}, watch_to_phone: [], phone_to_watch: []}
+  end
 
   defp c_runtime_tag_helpers(schema, runtime_tags) do
     schema
@@ -1449,11 +2233,7 @@ defmodule Ide.CompanionProtocolGenerator do
     used_types =
       schema.phone_to_watch
       |> Enum.flat_map(& &1.fields)
-      |> Enum.flat_map(fn
-        %{wire_type: {:enum, type}} -> [{:enum, type}]
-        %{wire_type: {:union, type}} -> [{:union, type}]
-        _ -> []
-      end)
+      |> Enum.flat_map(&c_runtime_tag_wire_types(&1.wire_type))
       |> Enum.uniq()
 
     enum_type_names = for {:enum, type} <- used_types, do: type
@@ -1469,6 +2249,27 @@ defmodule Ide.CompanionProtocolGenerator do
 
     Map.merge(enum_types, payload_union_types)
   end
+
+  defp c_runtime_tag_wire_types({:enum, type}), do: [{:enum, type}]
+  defp c_runtime_tag_wire_types({:union, type}), do: [{:union, type}]
+
+  defp c_runtime_tag_wire_types({:union, type, ctors}) do
+    nested =
+      ctors
+      |> Enum.flat_map(& &1.args)
+      |> Enum.flat_map(&c_runtime_tag_wire_types(WireFlatten.resolve_type(&1, %{}, %{}, %{})))
+
+    [{:union, type} | nested]
+  end
+
+  defp c_runtime_tag_wire_types({:list, elem}), do: c_runtime_tag_wire_types(elem)
+  defp c_runtime_tag_wire_types({:dict, elem}), do: c_runtime_tag_wire_types(elem)
+
+  defp c_runtime_tag_wire_types({:record, _type, fields}) do
+    Enum.flat_map(fields, &c_runtime_tag_wire_types(&1.wire_type))
+  end
+
+  defp c_runtime_tag_wire_types(_wire_type), do: []
 
   defp c_runtime_tag_function(type),
     do: "companion_protocol_runtime_tag_#{macro_name(type)}"
@@ -1514,6 +2315,15 @@ defmodule Ide.CompanionProtocolGenerator do
       "    })()"
   end
 
+  defp js_field_prop(%{wire_type: wire_type, key: key, name: name}, _index)
+       when tuple_size(wire_type) in [2, 3] do
+    if c_composite_wire_type?(wire_type) do
+      "    #{name}: #{js_decode_expr(wire_type, key)}"
+    else
+      "    #{name}: payload[#{js_payload_key(key)}]"
+    end
+  end
+
   defp js_field_prop(%{key: key, name: name}, _index) do
     "    #{name}: payload[#{js_payload_key(key)}]"
   end
@@ -1529,7 +2339,16 @@ defmodule Ide.CompanionProtocolGenerator do
   end
 
   defp js_encode_field_writes(%{wire_type: {:list, :int}, key: key}, source) do
-    "      encodeListIntField(#{js_string_key_macro(key)}, #{source});"
+    "      encodeListIntField(payload, #{js_string_key_macro(key)}, #{source});"
+  end
+
+  defp js_encode_field_writes(%{wire_type: wire_type, key: key}, source)
+       when tuple_size(wire_type) in [2, 3] do
+    if c_composite_wire_type?(wire_type) do
+      js_encode_writes(wire_type, key, source, "      ")
+    else
+      "      payload[#{js_payload_key(key)}] = #{js_encode_field_value(%{wire_type: wire_type}, source)};"
+    end
   end
 
   defp js_encode_field_writes(field, source) do
@@ -1542,6 +2361,202 @@ defmodule Ide.CompanionProtocolGenerator do
     do: "(#{source} ? #{@wire_true_code} : #{@wire_false_code})"
 
   defp js_encode_field_value(_field, source), do: source
+
+  defp js_decode_expr(:int, key), do: "(payload[#{js_payload_key(key)}] || 0)"
+  defp js_decode_expr(:bool, key), do: "(payload[#{js_payload_key(key)}] === #{@wire_true_code})"
+  defp js_decode_expr(:string, key), do: "(payload[#{js_payload_key(key)}] || \"\")"
+
+  defp js_decode_expr({:enum, _type}, key),
+    do: "(payload[#{js_payload_key(key)}] || #{@wire_code_base})"
+
+  defp js_decode_expr({:record, _type, fields}, key) do
+    props =
+      fields
+      |> Enum.map_join(", ", fn field ->
+        "#{field.name}: #{js_decode_expr(field.wire_type, "#{key}_#{field.name}")}"
+      end)
+
+    "({ #{props} })"
+  end
+
+  defp js_decode_expr({:list, elem_type}, key) do
+    elem_reads =
+      0..(@list_max_elements - 1)
+      |> Enum.map_join("\n", fn index ->
+        "        if (i === #{index}) return #{js_decode_expr(elem_type, "#{key}_#{index}")};"
+      end)
+
+    """
+    (function () {
+          var countWire = payload[#{js_payload_key(key <> "_count")}];
+          var count = typeof countWire === "number" ? Math.max(0, countWire - #{@wire_code_base}) : 0;
+          if (count > #{@list_max_elements}) count = #{@list_max_elements};
+          var out = [];
+          for (var i = 0; i < count; i++) {
+    #{elem_reads}
+          }
+          return out;
+        })()
+    """
+    |> String.trim()
+  end
+
+  defp js_decode_expr({:dict, value_type}, key) do
+    entry_reads =
+      0..(@dict_max_entries - 1)
+      |> Enum.map_join("\n", fn index ->
+        """
+            if (i === #{index}) {
+              var dictKey = payload[#{js_payload_key("#{key}_key_#{index}")}] || "";
+              out[dictKey] = #{js_decode_expr(value_type, "#{key}_val_#{index}")};
+            }
+        """
+      end)
+
+    """
+    (function () {
+          var countWire = payload[#{js_payload_key(key <> "_count")}];
+          var count = typeof countWire === "number" ? Math.max(0, countWire - #{@wire_code_base}) : 0;
+          if (count > #{@dict_max_entries}) count = #{@dict_max_entries};
+          var out = {};
+          for (var i = 0; i < count; i++) {
+    #{entry_reads}
+          }
+          return out;
+        })()
+    """
+    |> String.trim()
+  end
+
+  defp js_encode_writes(:int, key, source, indent),
+    do: "#{indent}payload[#{js_payload_key(key)}] = #{source};"
+
+  defp js_encode_writes(:bool, key, source, indent),
+    do:
+      "#{indent}payload[#{js_payload_key(key)}] = (#{source} ? #{@wire_true_code} : #{@wire_false_code});"
+
+  defp js_encode_writes(:string, key, source, indent),
+    do: "#{indent}payload[#{js_payload_key(key)}] = #{source} || \"\";"
+
+  defp js_encode_writes({:enum, _type}, key, source, indent),
+    do: "#{indent}payload[#{js_payload_key(key)}] = #{source};"
+
+  defp js_encode_writes({:record, _type, fields}, key, source, indent) do
+    fields
+    |> Enum.map_join("\n", fn field ->
+      js_encode_writes(
+        field.wire_type,
+        "#{key}_#{field.name}",
+        "#{source} && #{source}.#{field.name}",
+        indent
+      )
+    end)
+  end
+
+  defp js_encode_writes({:list, elem_type}, key, source, indent) do
+    items_var = js_temp_name(key, "items")
+
+    element_blocks =
+      0..(@list_max_elements - 1)
+      |> Enum.map_join("\n", fn index ->
+        """
+        #{indent}  if (#{items_var}.length > #{index}) {
+        #{js_encode_writes_offset(elem_type, "#{key}_#{index}", "#{items_var}[#{index}]", indent <> "    ")}
+        #{indent}  }
+        """
+      end)
+
+    """
+    #{indent}(function () {
+    #{indent}  var #{items_var} = Array.isArray(#{source}) ? #{source}.slice(0, #{@list_max_elements}) : [];
+    #{indent}  payload[#{js_payload_key(key <> "_count")}] = #{items_var}.length + #{@wire_code_base};
+    #{element_blocks}
+    #{indent}})();
+    """
+  end
+
+  defp js_encode_writes({:dict, value_type}, key, source, indent) do
+    entries_var = js_temp_name(key, "entries")
+
+    entry_blocks =
+      0..(@dict_max_entries - 1)
+      |> Enum.map_join("\n", fn index ->
+        """
+        #{indent}  if (#{entries_var}.length > #{index}) {
+        #{indent}    payload[#{js_payload_key("#{key}_key_#{index}")}] = #{entries_var}[#{index}][0];
+        #{js_encode_writes_offset(value_type, "#{key}_val_#{index}", "#{entries_var}[#{index}][1]", indent <> "    ")}
+        #{indent}  }
+        """
+      end)
+
+    """
+    #{indent}(function () {
+    #{indent}  var #{entries_var} = Object.entries(#{source} || {}).slice(0, #{@dict_max_entries});
+    #{indent}  payload[#{js_payload_key(key <> "_count")}] = #{entries_var}.length + #{@wire_code_base};
+    #{entry_blocks}
+    #{indent}})();
+    """
+  end
+
+  defp js_encode_writes({:union, _type, ctors}, key, source, indent) do
+    tag_writes =
+      ctors
+      |> Enum.with_index(1)
+      |> Enum.map_join("\n", fn {ctor, tag} ->
+        args =
+          ctor.args
+          |> Enum.with_index(1)
+          |> Enum.map_join("\n", fn {arg_type, index} ->
+            wire_type = WireFlatten.resolve_type(arg_type, %{}, %{}, %{})
+
+            js_encode_writes(
+              wire_type,
+              "#{key}_#{Macro.underscore(ctor.name)}_arg#{index}",
+              "#{source}.args && #{source}.args[#{index - 1}]",
+              indent <> "    "
+            )
+          end)
+
+        """
+        #{indent}  if (#{source} && #{source}.tag === #{tag}) {
+        #{indent}    payload[#{js_payload_key(key <> "_tag")}] = #{tag};
+        #{args}
+        #{indent}    return;
+        #{indent}  }
+        """
+      end)
+
+    """
+    #{indent}(function () {
+    #{tag_writes}
+    #{indent}})();
+    """
+  end
+
+  defp js_temp_name(key, suffix) do
+    key
+    |> macro_name()
+    |> String.downcase()
+    |> then(&"#{&1}_#{suffix}")
+  end
+
+  defp js_encode_writes_offset(:int, key, source, indent),
+    do: "#{indent}payload[#{js_payload_key(key)}] = (#{source} || 0) + #{@wire_code_base};"
+
+  defp js_encode_writes_offset({:record, _type, fields}, key, source, indent) do
+    fields
+    |> Enum.map_join("\n", fn field ->
+      js_encode_writes_offset(
+        field.wire_type,
+        "#{key}_#{field.name}",
+        "#{source} && #{source}.#{field.name}",
+        indent
+      )
+    end)
+  end
+
+  defp js_encode_writes_offset(wire_type, key, source, indent),
+    do: js_encode_writes(wire_type, key, source, indent)
 
   defp macro_name(value) do
     value
