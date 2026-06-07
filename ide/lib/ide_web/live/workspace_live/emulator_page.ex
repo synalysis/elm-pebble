@@ -105,6 +105,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
           emulator_feedback_installation_json(@emulator_installation_status)
         }
         data-emulator-ui-build="delegate-v4"
+        data-emulator-storage-snapshot={to_string(@debug_mode)}
         class="mt-6 rounded-lg border border-zinc-200 bg-zinc-50 p-4"
       >
         <div class="flex flex-wrap items-center justify-between gap-3">
@@ -163,16 +164,16 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
         </div>
         <div class="mt-4 grid gap-4 lg:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)] lg:items-start">
           <div class="w-fit max-w-full rounded border border-zinc-300 bg-black p-1">
-            <div class="flex items-start gap-1.5">
-              <button
-                type="button"
-                data-emulator-button="back"
-                class="rounded bg-zinc-100 px-2 py-1.5 text-xs font-semibold text-zinc-900 shadow-sm ring-1 ring-zinc-300 hover:bg-white"
-              >
-                Back
-              </button>
-              <div class="flex min-w-0 shrink-0 flex-col items-stretch gap-2">
-                <div class="relative">
+            <div class="flex min-w-0 flex-col gap-2">
+              <div class="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  data-emulator-button="back"
+                  class="rounded bg-zinc-100 px-2 py-1.5 text-xs font-semibold text-zinc-900 shadow-sm ring-1 ring-zinc-300 hover:bg-white"
+                >
+                  Back
+                </button>
+                <div class="relative min-w-0 shrink-0">
                   <div
                     id="embedded-emulator-display"
                     data-emulator-canvas
@@ -183,36 +184,45 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
                   </div>
                   <.emulator_display_tap_button show?={@show_accel_tap?} data_tap="emulator-tap" />
                 </div>
-                <p
-                  data-emulator-status
-                  class="min-w-0 rounded bg-white px-2 py-1.5 text-center text-[11px] leading-snug break-words text-zinc-700"
-                >
-                  Embedded emulator is idle.
-                </p>
+                <div class="flex flex-col gap-1.5">
+                  <button
+                    type="button"
+                    data-emulator-button="up"
+                    class="rounded bg-zinc-100 px-2 py-1.5 text-xs font-semibold text-zinc-900 shadow-sm ring-1 ring-zinc-300 hover:bg-white"
+                  >
+                    Up
+                  </button>
+                  <button
+                    type="button"
+                    data-emulator-button="select"
+                    class="rounded bg-zinc-100 px-2 py-1.5 text-xs font-semibold text-zinc-900 shadow-sm ring-1 ring-zinc-300 hover:bg-white"
+                  >
+                    Select
+                  </button>
+                  <button
+                    type="button"
+                    data-emulator-button="down"
+                    class="rounded bg-zinc-100 px-2 py-1.5 text-xs font-semibold text-zinc-900 shadow-sm ring-1 ring-zinc-300 hover:bg-white"
+                  >
+                    Down
+                  </button>
+                </div>
               </div>
-              <div class="flex flex-col gap-1.5">
-                <button
-                  type="button"
-                  data-emulator-button="up"
-                  class="rounded bg-zinc-100 px-2 py-1.5 text-xs font-semibold text-zinc-900 shadow-sm ring-1 ring-zinc-300 hover:bg-white"
-                >
-                  Up
-                </button>
-                <button
-                  type="button"
-                  data-emulator-button="select"
-                  class="rounded bg-zinc-100 px-2 py-1.5 text-xs font-semibold text-zinc-900 shadow-sm ring-1 ring-zinc-300 hover:bg-white"
-                >
-                  Select
-                </button>
-                <button
-                  type="button"
-                  data-emulator-button="down"
-                  class="rounded bg-zinc-100 px-2 py-1.5 text-xs font-semibold text-zinc-900 shadow-sm ring-1 ring-zinc-300 hover:bg-white"
-                >
-                  Down
-                </button>
+              <div
+                data-emulator-fault-banner
+                hidden
+                class="rounded border border-rose-500 bg-rose-50 px-2 py-2 text-[11px] leading-snug text-rose-950"
+                role="alert"
+              >
+                <p data-emulator-fault-headline class="font-semibold"></p>
+                <p data-emulator-fault-detail class="mt-1 break-words font-mono text-[10px] text-rose-900"></p>
               </div>
+              <p
+                data-emulator-status
+                class="min-w-0 rounded bg-white px-2 py-1.5 text-center text-[11px] leading-snug break-words text-zinc-700"
+              >
+                Embedded emulator is idle.
+              </p>
             </div>
           </div>
           <div class="space-y-3">

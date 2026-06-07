@@ -818,19 +818,21 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     end
   end
 
-  @spec package_for_emulator_session(Project.t(), String.t(), String.t()) ::
+  @spec package_for_emulator_session(Project.t(), String.t(), String.t(), keyword()) ::
           {:ok, PebbleToolchain.package_result()} | {:error, PebbleToolchain.toolchain_error()}
-  def package_for_emulator_session(project, workspace_root, emulator_target) do
+  def package_for_emulator_session(project, workspace_root, emulator_target, opts \\ []) do
+    package_opts =
+      [
+        workspace_root: workspace_root,
+        target_type: project.target_type,
+        project_name: project.name,
+        target_platforms: [emulator_target],
+        source_roots: project.source_roots,
+        emulator_storage_logs: Keyword.get(opts, :emulator_storage_logs, false)
+      ]
+
     with :ok <- Projects.ensure_packagable_workspace(project),
-         {:ok, packaged} <-
-           PebbleToolchain.package(project.slug,
-             workspace_root: workspace_root,
-             target_type: project.target_type,
-             project_name: project.name,
-             target_platforms: [emulator_target],
-             source_roots: project.source_roots,
-             emulator_storage_logs: true
-           ) do
+         {:ok, packaged} <- PebbleToolchain.package(project.slug, package_opts) do
       {:ok, packaged}
     end
   end

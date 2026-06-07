@@ -14,5 +14,5 @@ type WatchToPhone
 type PhoneToWatch
     = ProvideFigure Int
     | BeginFigure Int
-    | ProvidePiece Int Int Int Int Int Int Int Int Int Int Int
+    | ProvidePiece Int (List Int)
     | EndFigure Int

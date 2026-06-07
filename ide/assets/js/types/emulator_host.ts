@@ -61,6 +61,7 @@ export type EmbeddedEmulatorHostSurface = {
   simulatorSettings: SimulatorSettings | null
   lastSentWeatherJson: string | null
   appendLog: (message: string, options?: AppendLogOptions) => void
+  emulatorDebugEnabled: () => boolean
   setStatus: (message: string) => void
   endSession: (message: string) => void
   clearLog: () => void

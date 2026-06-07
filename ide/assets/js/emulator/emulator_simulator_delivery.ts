@@ -425,6 +425,7 @@ export class EmulatorSimulatorDelivery {
   }
 
   logWeatherTrace(bytes: ArrayBuffer): void {
+    if (!this.host.emulatorDebugEnabled()) return
     try {
       const trace = JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>
       const temp = trace.temperatureC ?? (trace.weather as WeatherSimulatorSettings)?.temperatureC ?? "?"

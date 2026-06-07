@@ -3025,6 +3025,17 @@ static Tuple *inbox_tuple_at(int index) {
 }
 #endif
 
+#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
+static int32_t companion_inbox_message_tag(void) {
+  for (int i = 0; i < s_inbox_snapshot_count; i++) {
+    if (s_inbox_snapshots[i].key == COMPANION_PROTOCOL_KEY_MESSAGE_TAG) {
+      return s_inbox_snapshots[i].int_value;
+    }
+  }
+  return 0;
+}
+#endif
+
 static bool handle_debug_storage(void) {
   ELMC_PEBBLE_TRACE_ENTER("handle_debug_storage");
   // #region agent log
@@ -3229,6 +3240,21 @@ static bool companion_simulator_weather_tuple(const Tuple *tuple) {
 #endif
 
 #if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
+static bool companion_dispatch_needs_render(const CompanionProtocolPhoneToWatchMessage *message) {
+  if (!message) return true;
+#if defined(COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_BEGIN_FIGURE)
+  if (message->kind == COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_BEGIN_FIGURE) {
+    return false;
+  }
+#endif
+#if defined(COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_PROVIDE_PIECE)
+  if (message->kind == COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_PROVIDE_PIECE) {
+    return false;
+  }
+#endif
+  return true;
+}
+
 static bool companion_decode_and_dispatch_snapshots(const ElmcInboxTupleSnapshot *snapshots, uint8_t wire[][ELMC_INBOX_TUPLE_WIRE_BYTES], int tuple_count) {
   CompanionProtocolPhoneToWatchDecoder decoder;
   companion_protocol_phone_to_watch_decoder_init(&decoder);
@@ -3245,22 +3271,21 @@ static bool companion_decode_and_dispatch_snapshots(const ElmcInboxTupleSnapshot
   if (companion_protocol_phone_to_watch_decoder_finish(&decoder, &message) &&
       message.kind != COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_UNKNOWN) {
     int rc = companion_protocol_dispatch_phone_to_watch(&s_elm_app, &message);
-    APP_LOG(APP_LOG_LEVEL_INFO, "companion response kind=%d rc=%d", (int)message.kind, rc);
 #if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
     companion_inbox_log("companion dispatch kind=%d rc=%d", (int)message.kind, rc);
 #endif
     if (rc == 0) {
       s_agent_after_companion_dispatch = true;
       apply_pending_cmd();
-      schedule_render_model();
+      if (companion_dispatch_needs_render(&message)) {
+        schedule_render_model();
+      }
       return true;
     }
     layer_mark_dirty(s_draw_layer);
     return false;
   }
 
-  APP_LOG(APP_LOG_LEVEL_WARNING, "companion decode failed saw_tag=%d tag=%ld tuples=%d",
-          decoder.saw_tag ? 1 : 0, (long)decoder.tag, tuple_count);
 #if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
   companion_inbox_log("companion decode failed saw_tag=%d tag=%ld tuples=%d",
                       decoder.saw_tag ? 1 : 0, (long)decoder.tag, tuple_count);
@@ -3276,8 +3301,10 @@ static bool companion_decode_and_dispatch_snapshots(const ElmcInboxTupleSnapshot
       continue;
     }
     int rc = elmc_pebble_dispatch_appmessage(&s_elm_app, tuple->key, wire_value);
-    APP_LOG(APP_LOG_LEVEL_INFO, "appmessage key=%lu value=%ld rc=%d",
-            (unsigned long)tuple->key, (long)wire_value, rc);
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+    companion_inbox_log("appmessage key=%lu value=%ld rc=%d",
+                        (unsigned long)tuple->key, (long)wire_value, rc);
+#endif
     if (rc == 0) {
       apply_pending_cmd();
       schedule_render_model();
@@ -3344,7 +3371,9 @@ static bool companion_try_decode_pending(void) {
 
   s_agent_after_companion_dispatch = true;
   apply_pending_cmd();
-  schedule_render_model();
+  if (companion_dispatch_needs_render(&message)) {
+    schedule_render_model();
+  }
   return true;
 }
 
@@ -3495,13 +3524,9 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   }
 
 #if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
-  companion_inbox_log("inbox tuples=%d", s_inbox_snapshot_count);
-  for (int i = 0; i < s_inbox_snapshot_count; i++) {
-    companion_inbox_log("  key=%lu type=%d value=%ld",
-                        (unsigned long)s_inbox_snapshots[i].key,
-                        (int)s_inbox_snapshots[i].type,
-                        (long)s_inbox_snapshots[i].int_value);
-  }
+  companion_inbox_log("inbox tuples=%d tag=%ld",
+                      s_inbox_snapshot_count,
+                      (long)companion_inbox_message_tag());
 #endif
 
 #if ELMC_PEBBLE_FEATURE_INBOX_EVENTS

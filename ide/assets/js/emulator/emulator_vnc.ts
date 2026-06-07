@@ -953,6 +953,7 @@ export class EmulatorVnc {
   }
 
   scheduleVncCanvasSample(label: string, delayMs = 0): void {
+    if (!this.host.emulatorDebugEnabled()) return
     const sample = () => {
       window.requestAnimationFrame(() => {
         window.requestAnimationFrame(() => {

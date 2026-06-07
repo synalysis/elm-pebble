@@ -941,10 +941,7 @@ defmodule Ide.ProjectsTest do
 
     assert String.contains?(protocol_types, "ProvideFigure Int")
 
-    assert String.contains?(
-             protocol_types,
-             "ProvidePiece Int Int Int Int Int Int Int Int Int Int Int"
-           )
+    assert String.contains?(protocol_types, "ProvidePiece Int (List Int)")
 
     assert String.contains?(protocol_types, "EndFigure Int")
 

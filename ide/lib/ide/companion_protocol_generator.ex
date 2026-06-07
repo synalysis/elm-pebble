@@ -15,6 +15,7 @@ defmodule Ide.CompanionProtocolGenerator do
   @wire_code_base 1
   @wire_true_code 1
   @wire_false_code 2
+  @list_max_elements 16
 
   @spec wire_code_base() :: pos_integer()
   def wire_code_base, do: @wire_code_base
@@ -100,10 +101,7 @@ defmodule Ide.CompanionProtocolGenerator do
         |> Enum.map(&String.trim_leading(&1, "|"))
         |> Enum.map(&String.trim/1)
         |> Enum.reject(&(&1 == ""))
-        |> Enum.map(fn line ->
-          [ctor | args] = String.split(line, ~r/\s+/, trim: true)
-          %{name: ctor, args: args}
-        end)
+        |> Enum.map(&parse_constructor_line/1)
 
       {name, constructors}
     end)
@@ -151,9 +149,31 @@ defmodule Ide.CompanionProtocolGenerator do
     end
   end
 
+  defp parse_constructor_line(line) do
+    [ctor | raw_args] = String.split(line, ~r/\s+/, trim: true)
+    %{name: ctor, args: normalize_constructor_args(raw_args)}
+  end
+
+  defp normalize_constructor_args(raw_args) do
+    raw_args
+    |> Enum.join(" ")
+    |> String.replace(~r/[()]/, "")
+    |> String.split(~r/\s+/, trim: true)
+    |> collapse_list_type_tokens([])
+  end
+
+  defp collapse_list_type_tokens([], acc), do: Enum.reverse(acc)
+
+  defp collapse_list_type_tokens(["List", type | rest], acc),
+    do: collapse_list_type_tokens(rest, ["List #{type}" | acc])
+
+  defp collapse_list_type_tokens([head | rest], acc),
+    do: collapse_list_type_tokens(rest, [head | acc])
+
   defp wire_type("Int", _enums, _payload_unions), do: :int
   defp wire_type("Bool", _enums, _payload_unions), do: :bool
   defp wire_type("String", _enums, _payload_unions), do: :string
+  defp wire_type("List Int", _enums, _payload_unions), do: {:list, :int}
 
   defp wire_type(type, enums, payload_unions) do
     cond do
@@ -164,6 +184,11 @@ defmodule Ide.CompanionProtocolGenerator do
   end
 
   defp field_keys(%{wire_type: {:union, _type}, key: key}), do: [key <> "_tag", key <> "_value"]
+
+  defp field_keys(%{wire_type: {:list, :int}, key: key}) do
+    [key <> "_count" | Enum.map(0..(@list_max_elements - 1), &"#{key}_#{&1}")]
+  end
+
   defp field_keys(%{key: key}), do: [key]
 
   defp header(schema) do
@@ -206,12 +231,21 @@ defmodule Ide.CompanionProtocolGenerator do
     uses_union_payloads? = companion_protocol_uses_union_payloads?(schema)
     uses_bool_payloads? = companion_protocol_uses_payload_type?(schema, :bool)
     uses_string_payloads? = companion_protocol_uses_payload_type?(schema, :string)
+    uses_list_payloads? = companion_protocol_uses_list_payloads?(schema)
 
     message_fields =
       [
         "  CompanionProtocolPhoneToWatchKind kind;",
         "  int32_t int_fields[COMPANION_PROTOCOL_MAX_FIELDS];"
       ] ++
+        optional_c_struct_field(
+          uses_list_payloads?,
+          "  int32_t list_counts[COMPANION_PROTOCOL_MAX_FIELDS];"
+        ) ++
+        optional_c_struct_field(
+          uses_list_payloads?,
+          "  int32_t list_values[COMPANION_PROTOCOL_MAX_FIELDS][COMPANION_PROTOCOL_LIST_MAX_ELEMENTS];"
+        ) ++
         optional_c_struct_field(
           uses_union_payloads?,
           "  int32_t union_value_fields[COMPANION_PROTOCOL_MAX_FIELDS];"
@@ -235,7 +269,25 @@ defmodule Ide.CompanionProtocolGenerator do
         optional_c_struct_field(
           uses_union_payloads?,
           "  bool saw_union_value_fields[COMPANION_PROTOCOL_MAX_FIELDS];"
+        ) ++
+        optional_c_struct_field(
+          uses_list_payloads?,
+          "  bool saw_list_counts[COMPANION_PROTOCOL_MAX_FIELDS];"
+        ) ++
+        optional_c_struct_field(
+          uses_list_payloads?,
+          "  bool saw_list_elements[COMPANION_PROTOCOL_MAX_FIELDS][COMPANION_PROTOCOL_LIST_MAX_ELEMENTS];"
         )
+
+    list_macros =
+      if uses_list_payloads? do
+        """
+        #define COMPANION_PROTOCOL_LIST_MAX_ELEMENTS #{@list_max_elements}
+        #define COMPANION_PROTOCOL_LIST_WIRE_OFFSET #{@wire_code_base}
+        """
+      else
+        ""
+      end
 
     """
     #ifndef COMPANION_PROTOCOL_H
@@ -251,7 +303,7 @@ defmodule Ide.CompanionProtocolGenerator do
     #{tag_lines}
 
     #define COMPANION_PROTOCOL_MAX_FIELDS #{max_fields}
-    #{companion_simulator_weather_macros(schema, uses_union_payloads?)}
+    #{list_macros}#{companion_simulator_weather_macros(schema, uses_union_payloads?)}
 
     typedef enum {
       COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_UNKNOWN = 0,
@@ -382,6 +434,8 @@ defmodule Ide.CompanionProtocolGenerator do
 
     #{phone_to_watch_helper}
 
+    #{c_list_wire_helpers(schema)}
+
     bool companion_protocol_encode_watch_to_phone(DictionaryIterator *iter, int32_t tag, int32_t value) {
       if (!iter) return false;
       switch (tag) {
@@ -398,6 +452,7 @@ defmodule Ide.CompanionProtocolGenerator do
       memset(&decoder->message, 0, sizeof(decoder->message));
       memset(decoder->saw_fields, 0, sizeof(decoder->saw_fields));
     #{c_init_union_seen_fields(schema)}
+    #{c_init_list_seen_fields(schema)}
     }
 
     void companion_protocol_phone_to_watch_decoder_push_tuple(
@@ -440,18 +495,29 @@ defmodule Ide.CompanionProtocolGenerator do
   end
 
   defp companion_protocol_uses_union_payloads?(schema) do
-    schema.phone_to_watch
-    |> Enum.flat_map(& &1.fields)
+    schema_fields(schema)
     |> Enum.any?(fn
       %{wire_type: {:union, _type}} -> true
       _field -> false
     end)
   end
 
+  defp companion_protocol_uses_list_payloads?(schema) do
+    schema_fields(schema)
+    |> Enum.any?(fn
+      %{wire_type: {:list, _elem}} -> true
+      _field -> false
+    end)
+  end
+
   defp companion_protocol_uses_payload_type?(schema, wire_type) do
-    schema.phone_to_watch
-    |> Enum.flat_map(& &1.fields)
+    schema_fields(schema)
     |> Enum.any?(&(&1.wire_type == wire_type))
+  end
+
+  defp schema_fields(schema) do
+    (schema.watch_to_phone ++ schema.phone_to_watch)
+    |> Enum.flat_map(& &1.fields)
   end
 
   defp optional_c_struct_field(true, field), do: [field]
@@ -491,6 +557,34 @@ defmodule Ide.CompanionProtocolGenerator do
   defp c_init_union_seen_fields(schema) do
     if companion_protocol_uses_union_payloads?(schema) do
       "  memset(decoder->saw_union_value_fields, 0, sizeof(decoder->saw_union_value_fields));"
+    else
+      ""
+    end
+  end
+
+  defp c_init_list_seen_fields(schema) do
+    if companion_protocol_uses_list_payloads?(schema) do
+      """
+        memset(decoder->saw_list_counts, 0, sizeof(decoder->saw_list_counts));
+        memset(decoder->saw_list_elements, 0, sizeof(decoder->saw_list_elements));
+      """
+    else
+      ""
+    end
+  end
+
+  defp c_list_wire_helpers(schema) do
+    if companion_protocol_uses_list_payloads?(schema) do
+      """
+      static int32_t companion_protocol_decode_list_wire_int(int32_t wire) {
+        return wire - COMPANION_PROTOCOL_LIST_WIRE_OFFSET;
+      }
+
+      static int32_t companion_protocol_decode_list_wire_count(int32_t wire) {
+        int32_t count = wire - COMPANION_PROTOCOL_LIST_WIRE_OFFSET;
+        return count < 0 ? 0 : count;
+      }
+      """
     else
       ""
     end
@@ -637,6 +731,17 @@ defmodule Ide.CompanionProtocolGenerator do
 
     #{enum_lookup}
 
+    function encodeListIntField(prefix, list) {
+      var items = Array.isArray(list) ? list : [];
+      if (items.length > #{@list_max_elements}) {
+        items = items.slice(0, #{@list_max_elements});
+      }
+      payload[constants["KEY_" + prefix.toUpperCase() + "_COUNT"]] = items.length + #{@wire_code_base};
+      for (var i = 0; i < items.length; i++) {
+        payload[constants["KEY_" + prefix.toUpperCase() + "_" + i]] = items[i] + #{@wire_code_base};
+      }
+    }
+
     function decodeWatchToPhonePayload(payload) {
       if (!payload) {
         return null;
@@ -691,6 +796,8 @@ defmodule Ide.CompanionProtocolGenerator do
     import Json.Decode as Decode
     import Json.Encode as Encode
 
+
+    #{elm_list_helpers()}
 
     #{elm_enum_helpers(schema)}
 
@@ -770,14 +877,33 @@ defmodule Ide.CompanionProtocolGenerator do
   defp elm_encode_cases(schema, messages) do
     Enum.map_join(messages, "\n", fn msg ->
       args = elm_pattern_args(msg.fields)
-      fields = elm_encode_object_fields(schema, msg)
+      scalar_fields = elm_encode_scalar_fields(schema, msg.fields)
+      list_fields = elm_encode_list_field_appends(msg.fields)
+      closing = if list_fields == "", do: " ])", else: " ]#{list_fields})"
 
       """
               #{msg.name}#{args} ->
                   Encode.object
-                      [ ( "message_tag", Encode.int #{msg.tag} )#{fields}
-                      ]
+                      ([ ( "message_tag", Encode.int #{msg.tag} )#{scalar_fields}#{closing}
       """
+    end)
+  end
+
+  defp elm_encode_scalar_fields(schema, fields) do
+    fields
+    |> Enum.with_index(1)
+    |> Enum.reject(fn {field, _} -> match?(%{wire_type: {:list, :int}}, field) end)
+    |> Enum.map_join("", fn {field, index} ->
+      elm_encode_object_field(schema, field, "field#{index}")
+    end)
+  end
+
+  defp elm_encode_list_field_appends(fields) do
+    fields
+    |> Enum.with_index(1)
+    |> Enum.filter(fn {field, _} -> match?(%{wire_type: {:list, :int}}, field) end)
+    |> Enum.map_join("", fn {field, index} ->
+      "\n                        ++ encodeListInt \"#{field.key}\" field#{index}"
     end)
   end
 
@@ -850,14 +976,6 @@ defmodule Ide.CompanionProtocolGenerator do
     end
   end
 
-  defp elm_encode_object_fields(schema, %{fields: fields}) do
-    fields
-    |> Enum.with_index(1)
-    |> Enum.map_join("", fn {field, index} ->
-      elm_encode_object_field(schema, field, "field#{index}")
-    end)
-  end
-
   defp elm_encode_object_field(_schema, %{wire_type: {:union, type}, key: key}, value) do
     "\n                , ( \"#{key}_tag\", Encode.int (#{elm_union_tag_encode_name(type)} #{value}) )" <>
       "\n                , ( \"#{key}_value\", Encode.int (#{elm_union_value_encode_name(type)} #{value}) )"
@@ -872,6 +990,7 @@ defmodule Ide.CompanionProtocolGenerator do
       "(Decode.andThen (\\value -> if value == #{@wire_true_code} then Decode.succeed True else if value == #{@wire_false_code} then Decode.succeed False else Decode.fail \"Invalid bool wire code\") Decode.int)"
 
   defp elm_decoder(%{wire_type: :string}), do: "Decode.string"
+  defp elm_decoder(%{wire_type: {:list, :int}, key: key}), do: "decodeListInt \"#{key}\""
   defp elm_decoder(_field), do: "Decode.int"
 
   defp elm_encoder(_schema, %{wire_type: :bool}, value),
@@ -897,6 +1016,58 @@ defmodule Ide.CompanionProtocolGenerator do
     do: "#{elm_union_tag_encode_name(type)} #{value}"
 
   defp elm_encode_value(_schema, _field, value), do: value
+
+  defp elm_list_helpers do
+    """
+    decodeListInt : String -> Decode.Decoder (List Int)
+    decodeListInt prefix =
+        Decode.field (prefix ++ "_count") Decode.int
+            |> Decode.andThen
+                (\\wireCount ->
+                    let
+                        count =
+                            wireCount - #{@wire_code_base}
+                    in
+                    if count < 0 then
+                        Decode.fail "Invalid list count"
+                    else
+                        decodeListIntElements prefix count 0 []
+                )
+
+
+    decodeListIntElements : String -> Int -> Int -> List Int -> Decode.Decoder (List Int)
+    decodeListIntElements prefix remaining index acc =
+        if remaining <= 0 then
+            Decode.succeed (List.reverse acc)
+        else
+            Decode.oneOf
+                [ Decode.field (prefix ++ "_" ++ String.fromInt index) Decode.int
+                    |> Decode.map (\\wire -> wire - #{@wire_code_base})
+                , Decode.succeed 0
+                ]
+                |> Decode.andThen
+                    (\\value ->
+                        decodeListIntElements prefix (remaining - 1) (index + 1) (value :: acc)
+                    )
+
+
+    encodeListInt : String -> List Int -> List ( String, Encode.Value )
+    encodeListInt prefix list =
+        let
+            items =
+                if List.length list > #{@list_max_elements} then
+                    List.take #{@list_max_elements} list
+                else
+                    list
+        in
+        ( prefix ++ "_count", Encode.int (List.length items + #{@wire_code_base}) )
+            :: List.indexedMap
+                (\\index value ->
+                    ( prefix ++ "_" ++ String.fromInt index, Encode.int (value + #{@wire_code_base}) )
+                )
+                items
+    """
+  end
 
   defp elm_enum_helpers(%{enums: enums}) do
     enums
@@ -1019,6 +1190,9 @@ defmodule Ide.CompanionProtocolGenerator do
   defp c_required_field_expr(%{wire_type: {:union, _type}}, index),
     do: "decoder->saw_fields[#{index}] && decoder->saw_union_value_fields[#{index}]"
 
+  defp c_required_field_expr(%{wire_type: {:list, :int}}, index),
+    do: "decoder->saw_list_counts[#{index}]"
+
   defp c_required_field_expr(_field, index), do: "decoder->saw_fields[#{index}]"
 
   # Treat missing enum/union tag fields as the first 1-based wire code when AppMessage omits keys.
@@ -1060,6 +1234,27 @@ defmodule Ide.CompanionProtocolGenerator do
     c_missing_tag_field_default(index)
   end
 
+  defp c_missing_field_default(%{wire_type: {:list, :int}}, index) do
+    missing_elements =
+      0..(@list_max_elements - 1)
+      |> Enum.map_join("\n", fn elem_index ->
+        """
+              if (!decoder->saw_list_elements[#{index}][#{elem_index}]) {
+                decoder->saw_list_elements[#{index}][#{elem_index}] = true;
+                decoder->message.list_values[#{index}][#{elem_index}] = 0;
+              }
+        """
+      end)
+
+    """
+          if (!decoder->saw_list_counts[#{index}]) {
+            decoder->saw_list_counts[#{index}] = true;
+            decoder->message.list_counts[#{index}] = 0;
+          }
+    #{missing_elements}
+    """
+  end
+
   defp c_missing_field_default(_field, _index), do: ""
 
   defp c_missing_tag_field_default(index) do
@@ -1078,6 +1273,40 @@ defmodule Ide.CompanionProtocolGenerator do
             decoder->message.int_fields[#{index}] = 0;
           }
     """
+  end
+
+  defp c_decode_tuple_cases(%{wire_type: {:list, :int}, key: key}, index) do
+    count_macro = "COMPANION_PROTOCOL_KEY_#{macro_name(key <> "_count")}"
+
+    count_case = """
+      if (tuple->key == #{count_macro}) {
+        decoder->saw_list_counts[#{index}] = true;
+        if (tuple->type == TUPLE_INT || tuple->type == TUPLE_UINT) {
+          decoder->message.list_counts[#{index}] =
+              companion_protocol_decode_list_wire_count(tuple->value->int32);
+        }
+        return;
+      }
+    """
+
+    element_cases =
+      0..(@list_max_elements - 1)
+      |> Enum.map_join("\n", fn elem_index ->
+        elem_macro = "COMPANION_PROTOCOL_KEY_#{macro_name("#{key}_#{elem_index}")}"
+
+        """
+          if (tuple->key == #{elem_macro}) {
+            decoder->saw_list_elements[#{index}][#{elem_index}] = true;
+            if (tuple->type == TUPLE_INT || tuple->type == TUPLE_UINT) {
+              decoder->message.list_values[#{index}][#{elem_index}] =
+                  companion_protocol_decode_list_wire_int(tuple->value->int32);
+            }
+            return;
+          }
+        """
+      end)
+
+    count_case <> element_cases
   end
 
   defp c_decode_tuple_cases(%{wire_type: {:union, _type}} = field, index) do
@@ -1183,6 +1412,10 @@ defmodule Ide.CompanionProtocolGenerator do
     do:
       "companion_protocol_new_union_value(#{c_runtime_tag_function(type)}(message->int_fields[#{index}]), message->union_value_fields[#{index}])"
 
+  defp c_value_expr(%{wire_type: {:list, :int}}, index),
+    do:
+      "elmc_list_from_int_array(message->list_values[#{index}], message->list_counts[#{index}])"
+
   defp c_value_expr(_field, index), do: "elmc_new_int(message->int_fields[#{index}])"
 
   defp c_runtime_tag_helpers(schema, runtime_tags) do
@@ -1256,6 +1489,31 @@ defmodule Ide.CompanionProtocolGenerator do
     "    #{name}: { tag: #{tag}, value: #{value} }"
   end
 
+  defp js_field_prop(%{wire_type: {:list, :int}, key: key, name: name}, _index) do
+    element_reads =
+      0..(@list_max_elements - 1)
+      |> Enum.map_join("\n", fn i ->
+        "      var wire#{i} = payload[#{js_payload_key("#{key}_#{i}")}];"
+      end)
+
+    wire_refs =
+      0..(@list_max_elements - 1)
+      |> Enum.map_join(", ", &"wire#{&1}")
+
+    "    #{name}: (function () {\n" <>
+      "      var countWire = payload[#{js_payload_key(key <> "_count")}];\n" <>
+      "      var count = typeof countWire === \"number\" ? Math.max(0, countWire - #{@wire_code_base}) : 0;\n" <>
+      "      if (count > #{@list_max_elements}) count = #{@list_max_elements};\n" <>
+      element_reads <>
+      "\n      var out = [];\n" <>
+      "      for (var i = 0; i < count; i++) {\n" <>
+      "        var wire = [#{wire_refs}][i];\n" <>
+      "        out.push(typeof wire === \"number\" ? wire - #{@wire_code_base} : 0);\n" <>
+      "      }\n" <>
+      "      return out;\n" <>
+      "    })()"
+  end
+
   defp js_field_prop(%{key: key, name: name}, _index) do
     "    #{name}: payload[#{js_payload_key(key)}]"
   end
@@ -1270,9 +1528,15 @@ defmodule Ide.CompanionProtocolGenerator do
     """
   end
 
+  defp js_encode_field_writes(%{wire_type: {:list, :int}, key: key}, source) do
+    "      encodeListIntField(#{js_string_key_macro(key)}, #{source});"
+  end
+
   defp js_encode_field_writes(field, source) do
     "      payload[#{js_payload_key(field.key)}] = #{js_encode_field_value(field, source)};"
   end
+
+  defp js_string_key_macro(key), do: "\"#{key}\""
 
   defp js_encode_field_value(%{wire_type: :bool}, source),
     do: "(#{source} ? #{@wire_true_code} : #{@wire_false_code})"

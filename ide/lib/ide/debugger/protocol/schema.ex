@@ -6,7 +6,8 @@ defmodule Ide.Debugger.Protocol.Schema do
   use `wire_schema/0` where extra keys are allowed.
   """
 
-  @type wire_type :: :int | :bool | :string | {:enum, String.t()} | {:union, String.t()}
+  @type wire_type ::
+          :int | :bool | :string | {:enum, String.t()} | {:union, String.t()} | {:list, :int}
 
   @type constructor :: %{
           required(:name) => String.t(),

@@ -25,6 +25,7 @@ import type {AppendLogOptions, EmulatorVncHost} from "../types/emulator_host"
 import type {QuietOptions, SimulatorSettingsOptions, WeatherSimulatorSettings} from "../types/emulator_options"
 import type {SimulatorDeliveryHost} from "../types/simulator_host"
 import {errMessage} from "../types/errors"
+import {classifyWatchFault, type WatchFault} from "./watch_fault"
 import type RFB from "@novnc/novnc"
 const CONFIG_RETURN_PATH = "/api/emulator/config-return"
 const MAX_LOG_LINES = 300
@@ -267,6 +268,11 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
   storageNewType: HTMLSelectElement | null = null
   storageNewValue: HTMLInputElement | null = null
   dataLogRows: HTMLElement | null = null
+  faultBanner: HTMLElement | null = null
+  faultHeadline: HTMLElement | null = null
+  faultDetail: HTMLElement | null = null
+  watchFault: WatchFault | null = null
+  watchAppLogShippingEnabled = false
 
   constructor(hook: HookContext) {
     this.hook = hook
@@ -381,6 +387,9 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
   mount(): void {
     this.canvas = this.el.querySelector("[data-emulator-canvas]")
     this.status = this.el.querySelector("[data-emulator-status]")
+    this.faultBanner = this.el.querySelector("[data-emulator-fault-banner]")
+    this.faultHeadline = this.el.querySelector("[data-emulator-fault-headline]")
+    this.faultDetail = this.el.querySelector("[data-emulator-fault-detail]")
     this.log = this.el.querySelector("[data-emulator-log]")
     this.configPanel = this.el.querySelector("[data-emulator-config-panel]")
     this.configDialog = this.el.querySelector("[data-emulator-config-dialog]")
@@ -423,6 +432,9 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
     this.refreshSimulatorCapabilities()
     this.canvas = this.el.querySelector("[data-emulator-canvas]")
     this.status = this.el.querySelector("[data-emulator-status]")
+    this.faultBanner = this.el.querySelector("[data-emulator-fault-banner]")
+    this.faultHeadline = this.el.querySelector("[data-emulator-fault-headline]")
+    this.faultDetail = this.el.querySelector("[data-emulator-fault-detail]")
     this.log = this.el.querySelector("[data-emulator-log]")
     this.launchButton = this.el.querySelector<HTMLButtonElement>("[data-emulator-launch]")
     this.installButton = this.el.querySelector<HTMLButtonElement>("[data-emulator-install]")
@@ -686,7 +698,7 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
       this.phoneOpenedAt = Date.now()
       this.phoneBridgeReady = true
       this.appendLog("phone websocket open")
-      if (this.appInstalled) void this.requestWatchAppLogs()
+      if (this.appInstalled) void this.ensureWatchAppLogShipping({quiet: true})
       if (this.buttonState !== 0) this.sendQemu(QEMU.button, [this.buttonState])
     })
     socket.addEventListener("error", () => {
@@ -734,7 +746,8 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
           }
         }
         if (this.session?.id !== installSessionId) return
-        await this.requestWatchAppLogs()
+        await this.ensureWatchAppLogShipping({quiet: true})
+        if (this.emulatorDebugEnabled()) this.scheduleDeferredStorageSnapshot()
       }
       if (this.session?.has_phone_companion && this.session?.backend_enabled && this.session?.artifact_path) {
         try {
@@ -821,7 +834,7 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
       if (this.destroyed || !this.session) return
       this.phoneBridgeLastReconnectedAt = Date.now()
       this.appendLog("phone bridge reconnected")
-      if (this.appInstalled) await this.requestWatchAppLogs()
+      if (this.appInstalled) await this.ensureWatchAppLogShipping({quiet: true})
       if (this.phoneCompanionCacheInstalled) {
         this.sendSimulatorSettingsToPhoneBridge({quiet: true})
       } else if (this.session.has_phone_companion && this.session.artifact_path) {
@@ -938,9 +951,17 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
       case 0x01:
         this.appendPebbleFrameLog("phone -> watch", data.slice(1))
         break
-      case 0x02:
-        this.appendLog(this.compactPhoneLog(new TextDecoder().decode(data.slice(1))))
+      case 0x02: {
+        const text = new TextDecoder().decode(data.slice(1))
+        if (
+          !this.emulatorDebugEnabled() &&
+          /Elm companion sendAppMessage payload|platform bridge -> Elm companion/i.test(text)
+        ) {
+          break
+        }
+        this.appendLog(this.compactPhoneLog(text))
         break
+      }
       case 0x05:
         if (this.pendingPypkjsInstall) {
           this.finishPypkjsInstall(data[data.length - 1] === 0)
@@ -949,11 +970,11 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
         break
       case 0x08:
         this.appendLog(data[1] === 0xff ? "phone bridge connected to watch" : "phone bridge disconnected")
-        if (data[1] === 0xff && this.appInstalled) void this.requestWatchAppLogs()
+        if (data[1] === 0xff && this.appInstalled) void this.ensureWatchAppLogShipping({quiet: true})
         break
       case 0x09:
         this.appendLog(data[1] === 0 ? "phone bridge authenticated" : "phone bridge authentication failed")
-        if (data[1] === 0 && this.appInstalled) void this.requestWatchAppLogs()
+        if (data[1] === 0 && this.appInstalled) void this.ensureWatchAppLogShipping({quiet: true})
         if (data[1] === 0) this.sendSimulatorSettingsToPhoneBridge()
         break
       case 0x0a:
@@ -1040,11 +1061,13 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
         const payload = frame.slice(4)
         if (endpoint === 0x0034 && opcode === 0x00 && payload[0] === 0x01) {
           if (this.rfb) this.scheduleVncViewportConfig(this.rfb, "app_start", 500)
-          this.scheduleVncCanvasSample("after_app_start_250ms", 250)
-          this.scheduleVncCanvasSample("after_app_start_1500ms", 1500)
+          if (this.emulatorDebugEnabled()) {
+            this.scheduleVncCanvasSample("after_app_start_250ms", 250)
+            this.scheduleVncCanvasSample("after_app_start_1500ms", 1500)
+          }
           this.scheduleWeatherSimulatorInject("after_app_start")
         }
-        if (endpoint === 0x0030 && opcode === 0x01) {
+        if (this.emulatorDebugEnabled() && endpoint === 0x0030 && opcode === 0x01) {
           this.scheduleVncCanvasSample("after_phone_appmessage_250ms", 250)
           this.scheduleVncCanvasSample("after_phone_appmessage_1500ms", 1500)
         }
@@ -1273,24 +1296,29 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
     return true
   }
 
-  async requestWatchAppLogs(): Promise<void> {
+  async ensureWatchAppLogShipping(options: {quiet?: boolean} = {}): Promise<void> {
+    if (this.watchAppLogShippingEnabled) return
+
     if (this.session?.request_app_logs_path) {
       try {
         await postJSON(this.session.request_app_logs_path)
-        this.appendLog("requested watch AppLog shipping via emulator session")
+        if (!options.quiet) {
+          this.appendLog("requested watch AppLog shipping via emulator session")
+        }
       } catch (error) {
-        this.appendLog(`watch AppLog enable via session failed: ${errMessage(error)}`)
+        if (!options.quiet) {
+          this.appendLog(`watch AppLog enable via session failed: ${errMessage(error)}`)
+        }
       }
     }
-    this.enableAppLogs()
-  }
 
-  enableAppLogs(): void {
     const sent = this.sendPebbleFrame(ENDPOINT_APP_LOG, new Uint8Array([1]))
     if (sent) {
-      this.appendLog("requested watch AppLog shipping via phone bridge")
-      this.scheduleDeferredStorageSnapshot()
-    } else if (!this.session?.request_app_logs_path) {
+      this.watchAppLogShippingEnabled = true
+      if (!options.quiet) {
+        this.appendLog("requested watch AppLog shipping via phone bridge")
+      }
+    } else if (!options.quiet && !this.session?.request_app_logs_path) {
       this.appendLog("skipped watch AppLog shipping: phone bridge is not connected")
     }
   }
@@ -1377,21 +1405,34 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
   }
 
   appendPebbleFrameLog(direction: string, frame: Uint8Array): void {
-    if (this.pebbleFrameEndpoint(frame) === 0xbeef) {
+    const endpoint = this.pebbleFrameEndpoint(frame)
+
+    if (endpoint === 0xbeef) {
       this.compactPutBytesFrame()
       return
     }
 
-    if (this.pebbleFrameEndpoint(frame) === ENDPOINT_SYSTEM_LOG) {
+    if (endpoint === ENDPOINT_SYSTEM_LOG) {
       this.compactSystemLogFrame()
       return
+    }
+
+    if (endpoint != null) {
+      if (endpoint === 0x0030 || endpoint === 0x0034 || endpoint === ENDPOINT_DATA_LOGGING) {
+        return
+      }
+      if (!this.emulatorDebugEnabled() && endpoint === ENDPOINT_APP_LOG) {
+        const payload = frame.slice(4)
+        const level = payload[20] ?? 0
+        if (level !== 1 && level !== 2 && level !== 50) return
+      }
     }
 
     this.flushPutBytesSummary()
     this.flushSystemLogSummary()
     const message = this.describePebbleFrame(direction, frame)
     if (message) {
-      this.appendLog(message)
+      this.appendLog(this.formatWatchFaultLogLine(message))
       if (message.includes("draw rendered") && this.rfb) {
         this.scheduleVncViewportConfig(this.rfb, "draw_rendered", 50)
       }
@@ -1596,6 +1637,10 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
     } catch (_error) {
       return "Companion configuration page"
     }
+  }
+
+  emulatorDebugEnabled(): boolean {
+    return this.el?.dataset.emulatorStorageSnapshot === "true"
   }
 
   compactPhoneLog(message: string): string {
@@ -1918,6 +1963,14 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
       ""
     ]
 
+    if (this.watchFault) {
+      lines.push("## Watch fault")
+      lines.push(`Headline: ${this.watchFault.headline}`)
+      lines.push(`Detail: ${this.watchFault.detail}`)
+      lines.push(`Kind: ${this.watchFault.kind}`)
+      lines.push("")
+    }
+
     if (this.session?.ping_path) {
       lines.push("## Session (live ping)")
       try {
@@ -2030,7 +2083,12 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
         ? "none"
         : ["connecting", "open", "closing", "closed"][this.phoneSocket.readyState] || String(this.phoneSocket.readyState)
 
+    const faultLines = this.watchFault
+      ? [`Watch fault: ${this.watchFault.headline}`, `Watch fault detail: ${this.watchFault.detail}`]
+      : ["Watch fault: (none)"]
+
     return [
+      ...faultLines,
       `Status line: ${this.currentStatus || "(none)"}`,
       `Launching: ${this.launching}`,
       `Stopping: ${this.stopping}`,
@@ -2191,8 +2249,9 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
   appendLog(message: string, options: AppendLogOptions = {}): void {
     if (options.flushTransfers !== false) this.flushPutBytesSummary()
     if (options.flushSystemLogs !== false) this.flushSystemLogSummary()
+    this.observeWatchFault(message)
     this.observeStorageLog(message)
-    const stamp = `${new Date().toLocaleTimeString()} ${message}`
+    const stamp = `${new Date().toLocaleTimeString()} ${this.formatWatchFaultLogLine(message)}`
     const line =
       this.logLines.length === 0 && message.includes("Launching embedded emulator")
         ? `${stamp} [ui ${EMBEDDED_EMULATOR_UI_BUILD}]`
@@ -2221,7 +2280,49 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
     this.suppressedPutBytesFrames = 0
     this.logFlushScheduled = false
     if (this.log) this.log.textContent = ""
+    this.clearWatchFault()
+    this.watchAppLogShippingEnabled = false
     this.notifyStateChanged()
+  }
+
+  formatWatchFaultLogLine(message: string): string {
+    const fault = classifyWatchFault(message)
+    if (!fault) return message
+    return `⚠ ${fault.headline}: ${fault.detail}`
+  }
+
+  observeWatchFault(message: string): void {
+    const fault = classifyWatchFault(message)
+    if (!fault) return
+    if (this.watchFault?.detail === fault.detail && this.watchFault?.headline === fault.headline) return
+    this.reportWatchFault(fault)
+  }
+
+  reportWatchFault(fault: WatchFault): void {
+    this.watchFault = fault
+    this.currentStatus = fault.headline
+    if (this.status) {
+      this.status.textContent = fault.headline
+      this.status.classList.remove("bg-white", "text-zinc-700")
+      this.status.classList.add("bg-rose-100", "text-rose-900", "ring-1", "ring-rose-400", "font-semibold")
+    }
+    if (this.faultBanner) {
+      this.faultBanner.hidden = false
+      if (this.faultHeadline) this.faultHeadline.textContent = fault.headline
+      if (this.faultDetail) this.faultDetail.textContent = fault.detail
+    }
+    this.notifyStateChanged()
+  }
+
+  clearWatchFault(): void {
+    this.watchFault = null
+    if (this.status) {
+      this.status.classList.add("bg-white", "text-zinc-700")
+      this.status.classList.remove("bg-rose-100", "text-rose-900", "ring-1", "ring-rose-400", "font-semibold")
+    }
+    if (this.faultBanner) this.faultBanner.hidden = true
+    if (this.faultHeadline) this.faultHeadline.textContent = ""
+    if (this.faultDetail) this.faultDetail.textContent = ""
   }
 
   endSession(message: string): void {

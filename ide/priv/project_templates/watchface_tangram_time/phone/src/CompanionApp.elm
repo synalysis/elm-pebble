@@ -250,7 +250,20 @@ sendPiece figureId piece =
             pointAt 3 piece.points
     in
     CompanionPhone.sendPhoneToWatch
-        (ProvidePiece figureId piece.index piece.vertexCount p1.x p1.y p2.x p2.y p3.x p3.y p4.x p4.y)
+        (ProvidePiece figureId
+            (piece.index
+                :: piece.vertexCount
+                :: p1.x
+                :: p1.y
+                :: p2.x
+                :: p2.y
+                :: p3.x
+                :: p3.y
+                :: p4.x
+                :: p4.y
+                :: []
+            )
+        )
 
 
 pointAt : Int -> List Point -> Point

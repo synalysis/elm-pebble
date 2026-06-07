@@ -156,6 +156,80 @@ defmodule Ide.CompanionProtocolGeneratorTest do
     end
   end
 
+  test "extracts List Int fields with indexed AppMessage keys" do
+    types = """
+    module Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))
+
+    type WatchToPhone
+        = RequestFigure
+
+    type PhoneToWatch
+        = ProvidePiece Int (List Int)
+    """
+
+    assert {:ok, schema} = CompanionProtocolGenerator.schema_from_source(types)
+
+    assert [%{name: "ProvidePiece", fields: fields}] = schema.phone_to_watch
+    assert [%{wire_type: {:list, :int}, key: "provide_piece_field2"}] = Enum.drop(fields, 1)
+
+    assert schema.key_ids["provide_piece_field2_count"]
+    assert schema.key_ids["provide_piece_field2_0"]
+    assert schema.key_ids["provide_piece_field2_15"]
+    refute Map.has_key?(schema.key_ids, "provide_piece_field2_16")
+  end
+
+  test "generates list int wire helpers in C, JS, and Elm" do
+    tmp =
+      Path.join(
+        System.tmp_dir!(),
+        "elm-pebble-protocol-list-#{System.unique_integer([:positive])}"
+      )
+
+    types = Path.join(tmp, "Types.elm")
+    header = Path.join(tmp, "generated/companion_protocol.h")
+    source = Path.join(tmp, "generated/companion_protocol.c")
+    js = Path.join(tmp, "pkjs/companion-protocol.js")
+    internal = Path.join(tmp, "Companion/Internal.elm")
+
+    try do
+      File.mkdir_p!(Path.dirname(types))
+
+      File.write!(types, """
+      module Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))
+
+      type WatchToPhone
+          = RequestFigure
+
+      type PhoneToWatch
+          = ProvidePiece Int (List Int)
+      """)
+
+      assert :ok = CompanionProtocolGenerator.generate(types, header, source, js)
+      assert :ok = CompanionProtocolGenerator.generate_elm_internal(types, internal)
+
+      generated_header = File.read!(header)
+      generated_source = File.read!(source)
+      generated_js = File.read!(js)
+      generated_internal = File.read!(internal)
+
+      assert generated_header =~ "COMPANION_PROTOCOL_LIST_MAX_ELEMENTS 16"
+      assert generated_header =~ "list_counts[COMPANION_PROTOCOL_MAX_FIELDS]"
+      assert generated_header =~ "COMPANION_PROTOCOL_KEY_PROVIDE_PIECE_FIELD2_COUNT"
+      assert generated_header =~ "COMPANION_PROTOCOL_KEY_PROVIDE_PIECE_FIELD2_0"
+
+      assert generated_source =~ "companion_protocol_decode_list_wire_int"
+      assert generated_source =~ "elmc_list_from_int_array(message->list_values[1]"
+      refute generated_source =~ "elmc_pebble_dispatch_tag_int_values(app"
+
+      assert generated_js =~ "encodeListIntField"
+      assert generated_internal =~ "decodeListInt"
+      assert generated_internal =~ "encodeListInt"
+      assert generated_internal =~ "++ encodeListInt \"provide_piece_field2\" field2"
+    after
+      File.rm_rf(tmp)
+    end
+  end
+
   test "generates Elm internal helpers from the extracted schema" do
     tmp =
       Path.join(

@@ -13,6 +13,7 @@ defmodule Ide.PebbleToolchain do
   alias Ide.WatchModels
   alias ElmEx.Frontend.Bridge
   alias ElmEx.IR.Lowerer
+  alias Elmc.Runtime.Generator, as: RuntimeGenerator
 
   @forbidden_build_warning_snippets [
     "warning: 'ELMC_PROCESS_SLOTS' defined but not used",
@@ -872,6 +873,7 @@ defmodule Ide.PebbleToolchain do
          :ok <- generate_companion_protocol_elm_internal(protocol_elm),
          :ok <- generate_elmc_sources(compile_project_root, app_root, workspace_root),
          :ok <- generate_companion_protocol(protocol_elm, app_root, compile_project_root),
+         :ok <- reprune_staged_elmc_runtime(app_root),
          :ok <- write_generated_preferences_bridge(workspace_root, preferences_schema),
          :ok <- write_preferences_config(app_root, preferences_schema),
          :ok <- compile_phone_companion(workspace_root, app_root),
@@ -1725,6 +1727,23 @@ defmodule Ide.PebbleToolchain do
          ) do
       :ok -> :ok
       {:error, reason} -> {:error, {:companion_protocol_generation_failed, reason}}
+    end
+  end
+
+  # Companion protocol C is generated after elmc runtime pruning, so symbols such as
+  # elmc_list_from_int_array are not seen on the first pass. Re-prune staged runtime
+  # against all watch-side C sources (generated Elm + companion protocol).
+  @spec reprune_staged_elmc_runtime(String.t()) :: :ok | {:error, toolchain_error()}
+  defp reprune_staged_elmc_runtime(app_root) when is_binary(app_root) do
+    runtime_dir = Path.join(app_root, "src/c/elmc/runtime")
+    prune_from_dir = Path.join(app_root, "src/c")
+
+    case RuntimeGenerator.write_runtime(runtime_dir,
+           prune_from_dir: prune_from_dir,
+           pebble_int32: true
+         ) do
+      :ok -> :ok
+      {:error, reason} -> {:error, {:runtime_reprune_failed, reason}}
     end
   end
 
