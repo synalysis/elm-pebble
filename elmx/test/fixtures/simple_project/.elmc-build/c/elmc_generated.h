@@ -27,9 +27,14 @@ ElmcValue *elmc_fn_Companion_Internal_encodeLocationCode(ElmcValue ** const args
 ElmcValue *elmc_fn_Companion_Internal_watchToPhoneTag(ElmcValue ** const args, const int argc);
 ElmcValue *elmc_fn_Companion_Internal_watchToPhoneValue(ElmcValue ** const args, const int argc);
 ElmcValue *elmc_fn_Companion_Watch_sendWatchToPhone(ElmcValue ** const args, const int argc);
+#ifndef ELMC_CATCH_MACROS
+#define ELMC_CATCH_MACROS
+#define CATCH_BEGIN     do {
+#define CATCH_END       } while (1!=1);
+#define CATCH_BREAK     { direct_rc = -2; break; }
+#endif
+
 #define ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW 1
-int elmc_fn_Main_view_commands(ElmcValue ** const args, const int argc, void * const out_cmds, const int max_cmds);
-int elmc_fn_Main_view_commands_from(ElmcValue ** const args, const int argc, void * const out_cmds, const int max_cmds, const int skip, int *out_emitted);
 
 
 #endif

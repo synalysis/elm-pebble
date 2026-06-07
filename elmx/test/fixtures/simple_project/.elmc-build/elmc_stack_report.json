@@ -136,13 +136,13 @@
       "function": "Main.handleAppMsg",
       "level": "ok",
       "reasons": [],
-      "score": 2
+      "score": 0
     },
     {
       "function": "Main.handlePlatformMsg",
       "level": "ok",
       "reasons": [],
-      "score": 4
+      "score": 0
     },
     {
       "function": "Main.helper",
@@ -208,7 +208,7 @@
       "function": "Main.view",
       "level": "risk",
       "reasons": [],
-      "score": 30
+      "score": 24
     },
     {
       "function": "Pebble.Accel.onTap",
@@ -492,12 +492,9 @@
     },
     {
       "function": "Pebble.Ui.path",
-      "level": "warn",
-      "reasons": [
-        "lambda",
-        "list_hof"
-      ],
-      "score": 7
+      "level": "ok",
+      "reasons": [],
+      "score": 1
     },
     {
       "function": "Pebble.Ui.pathFilled",
@@ -532,10 +529,8 @@
     {
       "function": "Pebble.Ui.rotationToPebbleAngle",
       "level": "ok",
-      "reasons": [
-        "lambda"
-      ],
-      "score": 3
+      "reasons": [],
+      "score": 0
     },
     {
       "function": "Pebble.Ui.roundRect",
@@ -613,16 +608,16 @@
     }
   ],
   "summary": {
-    "ok": 94,
-    "warn": 2,
+    "ok": 95,
+    "warn": 1,
     "risk": 3
   },
   "code_size_indicators": {
-    "boxed_tmp_declarations": 351,
-    "closure_allocations": 2,
     "direct_command_defs": 2,
-    "generated_c_bytes": 57948,
-    "generated_c_lines": 2184,
+    "boxed_tmp_declarations": 315,
+    "closure_allocations": 1,
+    "generated_c_bytes": 55294,
+    "generated_c_lines": 1672,
     "generic_function_defs": 2,
     "linked_binary": {
       "reason": "binary size is available after platform or host linking, not during C source generation",
@@ -632,7 +627,9 @@
       "elmc_list_all": 0,
       "elmc_list_any": 0,
       "elmc_list_drop": 0,
-      "elmc_list_map": 1
+      "elmc_list_filter": 0,
+      "elmc_list_filter_map": 0,
+      "elmc_list_map": 0
     }
   }
 }

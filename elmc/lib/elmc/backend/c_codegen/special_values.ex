@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.Constants
+  alias Elmc.Backend.CCodegen.PebbleMsgTag
   alias Elmc.Backend.CCodegen.Subscriptions
   alias Elmc.Backend.CCodegen.Emit
   alias Elmc.Backend.CCodegen.IRQueries
@@ -2684,28 +2685,33 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
   end
 
   defp constructor_tag_expr(%{op: :var, name: name}) when is_binary(name) do
-    msg_tag_expr(name)
+    if msg_constructor_name?(name), do: msg_tag_expr(name), else: %{op: :int_literal, value: 0}
   end
 
   defp constructor_tag_expr(%{op: :qualified_ref, target: target}) when is_binary(target) do
-    msg_tag_expr(target)
+    if msg_constructor_name?(target), do: msg_tag_expr(target), else: %{op: :int_literal, value: 0}
   end
 
   defp constructor_tag_expr(%{op: :qualified_var, target: target}) when is_binary(target) do
-    msg_tag_expr(target)
+    if msg_constructor_name?(target), do: msg_tag_expr(target), else: %{op: :int_literal, value: 0}
   end
 
   defp constructor_tag_expr(%{op: :constructor_call, target: target, args: []})
        when is_binary(target) do
-    msg_tag_expr(target)
+    if msg_constructor_name?(target), do: msg_tag_expr(target), else: %{op: :int_literal, value: 0}
   end
 
   defp constructor_tag_expr(%{op: :qualified_call, target: target, args: []})
        when is_binary(target) do
-    msg_tag_expr(target)
+    if msg_constructor_name?(target), do: msg_tag_expr(target), else: %{op: :int_literal, value: 0}
   end
 
   defp constructor_tag_expr(_), do: %{op: :int_literal, value: 0}
+
+  defp msg_constructor_name?(name) when is_binary(name) do
+    short = constructor_short_name(name)
+    PebbleMsgTag.msg_constructor?(short) or PebbleMsgTag.msg_constructor?(name)
+  end
 
   defp msg_tag_expr(name) when is_binary(name) do
     %{op: :msg_tag_expr, name: constructor_short_name(name)}

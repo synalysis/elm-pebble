@@ -107,6 +107,8 @@ defmodule Elmc.RuntimeRCTest do
         Path.join(out_dir, "runtime/elmc_runtime.c"),
         Path.join(out_dir, "ports/elmc_ports.c"),
         Path.join(out_dir, "c/elmc_generated.c"),
+        Path.join(out_dir, "c/elmc_pebble.c"),
+        Path.join(out_dir, "c/elmc_worker.c"),
         harness_path,
         "-o",
         binary_path

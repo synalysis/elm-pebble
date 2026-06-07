@@ -1,6 +1,32 @@
 #ifndef ELMC_PEBBLE_H
 #define ELMC_PEBBLE_H
 
+typedef struct ElmcPebbleApp ElmcPebbleApp;
+
+enum {
+  ELMC_SCENE_PL_EMPTY = 0,
+  ELMC_SCENE_PL_U8 = 1,
+  ELMC_SCENE_PL_I32 = 4,
+  ELMC_SCENE_PL_PIXEL = 5,
+  ELMC_SCENE_PL_CIRCLE_U8 = 7,
+  ELMC_SCENE_PL_TEXT_LABEL_BASE = 8,
+  ELMC_SCENE_PL_COORDS_COLOR_U8 = 9,
+  ELMC_SCENE_PL_CIRCLE_I32 = 10,
+  ELMC_SCENE_PL_ROUND_U8 = 11,
+  ELMC_SCENE_PL_COORDS_COLOR_I32 = 12,
+  ELMC_SCENE_PL_ROUND_I32 = 14,
+  ELMC_SCENE_PL_TEXT_BASE = 16,
+  ELMC_SCENE_PL_FULL = 24
+};
+
+typedef struct {
+  ElmcPebbleApp *app;
+  int command_count;
+} ElmcSceneWriter;
+
+void elmc_scene_writer_init_app(ElmcSceneWriter *writer, ElmcPebbleApp *app);
+
+
 #include "elmc_worker.h"
 
 #define ELMC_PEBBLE_FEATURE_TICK_EVENTS 0
@@ -22,7 +48,6 @@
 #define ELMC_PEBBLE_FEATURE_DICTATION_EVENTS 0
 #define ELMC_PEBBLE_FEATURE_UNOBSTRUCTED_AREA_EVENTS 0
 #define ELMC_PEBBLE_FEATURE_INBOX_EVENTS 0
-#define ELMC_PEBBLE_FEATURE_MSG_CURRENT_TIME 0
 #define ELMC_PEBBLE_FEATURE_CMD_TIMER_AFTER_MS 0
 #define ELMC_PEBBLE_FEATURE_CMD_STORAGE_WRITE_INT 0
 #define ELMC_PEBBLE_FEATURE_CMD_STORAGE_READ_INT 0
@@ -99,9 +124,43 @@
 #endif
 
 #ifndef ELMC_PEBBLE_SCENE_CACHE_ENABLED
-/* Scene byte cache is disabled until incremental dirty regions are reliable on all
-   targets; direct view command emission is used instead (lower RAM, simpler draw). */
-#define ELMC_PEBBLE_SCENE_CACHE_ENABLED 0
+/* Encode the view once into a compact byte stream; draw decodes with a cursor.
+   Incremental dirty regions (prev_scene diff) stay off on Pebble targets until reliable. */
+#define ELMC_PEBBLE_SCENE_CACHE_ENABLED 1
+#endif
+
+#ifndef ELMC_PEBBLE_DRAW_PATH_PROBES
+#define ELMC_PEBBLE_DRAW_PATH_PROBES 0
+#endif
+
+#define ELMC_DRAW_PATH_RENDER_MODEL_ENTER 0xED9A0101U
+#define ELMC_DRAW_PATH_RENDER_MODEL_EXIT 0xED9A8101U
+#define ELMC_DRAW_PATH_DRAW_UPDATE_ENTER 0xED9A0102U
+#define ELMC_DRAW_PATH_DRAW_UPDATE_EXIT 0xED9A8102U
+#define ELMC_DRAW_PATH_ENSURE_SCENE_ENTER 0xED9A0103U
+#define ELMC_DRAW_PATH_ENSURE_SCENE_EXIT 0xED9A8103U
+#define ELMC_DRAW_PATH_SCENE_NEXT_ENTER 0xED9A0104U
+#define ELMC_DRAW_PATH_SCENE_NEXT_EXIT 0xED9A8104U
+#define ELMC_DRAW_PATH_VIEW_APPEND_ENTER 0xED9A0105U
+#define ELMC_DRAW_PATH_VIEW_APPEND_EXIT 0xED9A8105U
+#define ELMC_DRAW_PATH_ELM_INIT_ENTER 0xED9A0106U
+#define ELMC_DRAW_PATH_ELM_INIT_EXIT 0xED9A8106U
+#define ELMC_DRAW_PATH_FONT_FOR_TEXT_ENTER 0xED9A0107U
+#define ELMC_DRAW_PATH_FONT_FOR_TEXT_EXIT 0xED9A8107U
+#define ELMC_DRAW_PATH_GRAPHICS_TEXT_ENTER 0xED9A0108U
+#define ELMC_DRAW_PATH_GRAPHICS_TEXT_EXIT 0xED9A8108U
+
+#if ELMC_PEBBLE_DRAW_PATH_PROBES && defined(ELMC_PEBBLE_PLATFORM)
+#include <data_logging.h>
+static inline void elmc_draw_path_probe(uint32_t tag) {
+  DataLoggingSessionRef session = data_logging_create(tag, DATA_LOGGING_BYTE_ARRAY, 1, false);
+  if (session) {
+    data_logging_finish(session);
+  }
+}
+#define ELMC_DRAW_PATH_PROBE(tag) elmc_draw_path_probe((uint32_t)(tag))
+#else
+#define ELMC_DRAW_PATH_PROBE(tag) do { (void)(tag); } while (0)
 #endif
 
 typedef struct {
@@ -120,7 +179,7 @@ typedef struct {
   int h;
 } ElmcPebbleRect;
 
-typedef struct {
+typedef struct ElmcPebbleApp {
   ElmcWorkerState worker;
   int initialized;
   int run_mode;
@@ -130,6 +189,9 @@ typedef struct {
   uint64_t prev_ops_hash;
   ElmcValue *stream_view_result;
   ElmcPebbleSceneBuffer scene;
+#if ELMC_PEBBLE_SCENE_CACHE_ENABLED
+  int scene_draw_byte_offset;
+#endif
 #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
   ElmcPebbleSceneBuffer prev_scene;
   ElmcPebbleRect dirty_rect;
@@ -157,6 +219,10 @@ typedef enum {
   ELMC_PEBBLE_BUTTON_SELECT = 2,
   ELMC_PEBBLE_BUTTON_DOWN = 3
 } ElmcPebbleButtonId;
+
+#define ELMC_BUTTON_EVENT_PRESSED 1
+#define ELMC_BUTTON_EVENT_RELEASED 2
+#define ELMC_BUTTON_EVENT_LONG_PRESSED 3
 
 
 typedef enum {
@@ -188,6 +254,20 @@ typedef struct {
 #endif
   };
 } ElmcPebbleDrawCmd;
+
+int elmc_scene_writer_push_cmd(ElmcSceneWriter *writer, const ElmcPebbleDrawCmd *cmd);
+void elmc_draw_cmd_init(ElmcPebbleDrawCmd *cmd, int32_t kind);
+int elmc_pebble_scene_decode_record(
+    const unsigned char *bytes,
+    int byte_count,
+    int *offset,
+    ElmcPebbleDrawCmd *out_cmd);
+
+
+int elmc_fn_Main_view_scene_append(
+    ElmcValue ** const args,
+    const int argc,
+    ElmcSceneWriter * const writer);
 
 typedef struct {
   int64_t kind;
@@ -287,10 +367,6 @@ typedef enum {
 } ElmcPebbleUiNodeKind;
 
 
-#define ELMC_PEBBLE_MSG_CURRENT_TIME_TARGET -1
-#define ELMC_PEBBLE_MSG_CURRENT_DATE_TIME_TARGET -1
-#define ELMC_PEBBLE_MSG_BATTERY_LEVEL_TARGET -1
-#define ELMC_PEBBLE_MSG_CONNECTION_STATUS_TARGET -1
 #define ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET -1
 
 
@@ -344,7 +420,6 @@ int elmc_pebble_dispatch_tag_record_int_fields(
     const int64_t *field_values);
 int elmc_pebble_msg_from_appmessage(int32_t key, int32_t value, int64_t *out_tag);
 int elmc_pebble_dispatch_appmessage(ElmcPebbleApp *app, int32_t key, int32_t value);
-int elmc_pebble_button_to_tag(int32_t button_id, int64_t *out_tag);
 int elmc_pebble_dispatch_button(ElmcPebbleApp *app, int32_t button_id);
 int elmc_pebble_dispatch_button_raw(ElmcPebbleApp *app, int32_t button_id, int32_t pressed);
 int elmc_pebble_dispatch_accel_tap(ElmcPebbleApp *app, int32_t axis, int32_t direction);
@@ -372,6 +447,8 @@ int elmc_pebble_view_command(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmd);
 int elmc_pebble_view_commands(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds);
 int elmc_pebble_view_commands_from(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip);
 int elmc_pebble_scene_commands_from(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip);
+void elmc_pebble_scene_reset_draw_cursor(ElmcPebbleApp *app);
+int elmc_pebble_scene_commands_next(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds);
 int elmc_pebble_ensure_scene(ElmcPebbleApp *app);
 int elmc_pebble_scene_command_count(ElmcPebbleApp *app);
 int elmc_pebble_scene_dirty_rect(ElmcPebbleApp *app, ElmcPebbleRect *out_rect, int *out_full);

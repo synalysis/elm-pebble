@@ -6,11 +6,11 @@
     "risk": 0
   },
   "code_size_indicators": {
+    "direct_command_defs": 0,
     "boxed_tmp_declarations": 0,
     "closure_allocations": 0,
-    "direct_command_defs": 0,
-    "generated_c_bytes": 5633,
-    "generated_c_lines": 176,
+    "generated_c_bytes": 6157,
+    "generated_c_lines": 173,
     "generic_function_defs": 0,
     "linked_binary": {
       "reason": "binary size is available after platform or host linking, not during C source generation",
@@ -20,6 +20,8 @@
       "elmc_list_all": 0,
       "elmc_list_any": 0,
       "elmc_list_drop": 0,
+      "elmc_list_filter": 0,
+      "elmc_list_filter_map": 0,
       "elmc_list_map": 0
     }
   }

@@ -6,7 +6,7 @@ defmodule Elmc.Backend.CCodegen.ResourceUnion do
 
   @spec constructor?(String.t(), [Types.ir_expr()]) :: boolean()
   def constructor?(target, args) when is_binary(target) and is_list(args) do
-    args == [] and Map.has_key?(slot_map(), ctor_name(target))
+    args == [] and (Map.has_key?(slot_map(), ctor_name(target)) or resource_ctor_target?(target))
   end
 
   def constructor?(_target, _args), do: false
@@ -62,4 +62,19 @@ defmodule Elmc.Backend.CCodegen.ResourceUnion do
   defp ctor_name(target) when is_binary(target) do
     target |> String.split(".") |> List.last()
   end
+
+  defp resource_ctor_target?(target) when is_binary(target) do
+    case target do
+      "Pebble.Ui.Resources." <> ctor ->
+        ctor != "" and not no_resource_ctor?(ctor)
+
+      "Resources." <> ctor ->
+        ctor != "" and not no_resource_ctor?(ctor)
+
+      _ ->
+        false
+    end
+  end
+
+  defp no_resource_ctor?(name) when is_binary(name), do: String.starts_with?(name, "No")
 end

@@ -23,7 +23,9 @@ typedef enum {
   ELMC_TAG_FLOAT = 10,
   ELMC_TAG_RECORD = 11,
   ELMC_TAG_CLOSURE = 12,
-  ELMC_TAG_FORWARD_REF = 13
+  ELMC_TAG_FORWARD_REF = 13,
+  ELMC_TAG_CMD = 14,
+  ELMC_TAG_SUB = 15
 } ElmcTag;
 
 typedef struct ElmcValue {
@@ -43,6 +45,28 @@ typedef struct ElmcTuple2 {
   ElmcValue *second;
 } ElmcTuple2;
 
+typedef struct ElmcCmdPayload {
+  uint8_t arity;
+  elmc_int_t kind;
+  elmc_int_t p0;
+  elmc_int_t p1;
+  elmc_int_t p2;
+  elmc_int_t p3;
+  elmc_int_t p4;
+  elmc_int_t p5;
+} ElmcCmdPayload;
+
+typedef struct ElmcSubPayload {
+  uint8_t arity;
+  elmc_int_t mask;
+  elmc_int_t p0;
+  elmc_int_t p1;
+  elmc_int_t p2;
+  elmc_int_t p3;
+  elmc_int_t p4;
+  elmc_int_t p5;
+} ElmcSubPayload;
+
 typedef struct ElmcResult {
   int is_ok;
   ElmcValue *value;
@@ -58,6 +82,11 @@ typedef struct ElmcRecord {
   const char **field_names;
   ElmcValue **field_values;
 } ElmcRecord;
+
+#define ELMC_RECORD_GET_INDEX(record, index) \
+  (((record) && (record)->tag == ELMC_TAG_RECORD && (record)->payload && \
+    (index) >= 0 && (index) < ((ElmcRecord *)(record)->payload)->field_count) ? \
+   ((ElmcRecord *)(record)->payload)->field_values[(index)] : elmc_int_zero())
 
 #define ELMC_RECORD_GET_INDEX_INT(record, index) \
   (((record) && (record)->tag == ELMC_TAG_RECORD && (record)->payload && \
@@ -104,6 +133,18 @@ ElmcValue *elmc_result_err(ElmcValue *value);
 ElmcValue *elmc_tuple2(ElmcValue *first, ElmcValue *second);
 ElmcValue *elmc_tuple2_take(ElmcValue *first, ElmcValue *second);
 ElmcValue *elmc_tuple2_ints(elmc_int_t first, elmc_int_t second);
+ElmcValue *elmc_cmd0(elmc_int_t kind);
+ElmcValue *elmc_cmd1(elmc_int_t kind, elmc_int_t p0);
+ElmcValue *elmc_cmd2(elmc_int_t kind, elmc_int_t p0, elmc_int_t p1);
+ElmcValue *elmc_cmd3(elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2);
+ElmcValue *elmc_cmd4(elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3);
+ElmcValue *elmc_cmd5(elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3, elmc_int_t p4);
+ElmcValue *elmc_sub0(elmc_int_t mask);
+ElmcValue *elmc_sub1(elmc_int_t mask, elmc_int_t p0);
+ElmcValue *elmc_sub2(elmc_int_t mask, elmc_int_t p0, elmc_int_t p1);
+ElmcValue *elmc_sub3(elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2);
+ElmcValue *elmc_sub4(elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3);
+ElmcValue *elmc_sub5(elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3, elmc_int_t p4);
 
 elmc_int_t elmc_as_int(ElmcValue *value);
 elmc_int_t elmc_as_bool(ElmcValue *value);
@@ -420,6 +461,7 @@ elmc_int_t elmc_record_get_bool(ElmcValue *record, const char *field_name);
 elmc_int_t elmc_record_get_at_bool(ElmcValue *record, int index, const char *field_name);
 elmc_int_t elmc_record_get_index_bool(ElmcValue *record, int index);
 ElmcValue *elmc_record_update(ElmcValue *record, const char *field_name, ElmcValue *new_value);
+ElmcValue *elmc_record_update_index(ElmcValue *record, int index, ElmcValue *new_value);
 
 ElmcValue *elmc_closure_new(ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count), int arity, int capture_count, ElmcValue **captures);
 ElmcValue *elmc_closure_call(ElmcValue *closure, ElmcValue **args, int argc);

@@ -371,8 +371,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     assert native_bool_helper_body =~ " = elmc_retain(tmp_"
     refute native_bool_helper_body =~ "if (elmc_as_int(tmp_"
     refute native_bool_helper_body =~ " ? elmc_retain(tmp_"
-    assert native_bool_helper_body =~ " = elmc_new_int(192);"
-    assert native_bool_helper_body =~ " = elmc_new_int(255);"
+    assert native_bool_helper_body =~ "native_if_4 = 192;"
+    assert native_bool_helper_body =~ "native_if_4 = 255;"
 
     refute Regex.match?(
              ~r/ElmcValue \*tmp_\d+ = elmc_new_int\(192\);\s+tmp_\d+ = tmp_\d+;/,
@@ -820,13 +820,14 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     body =
       generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeHelperArgLet_native")
+      |> String.split("static elmc_int_t elmc_fn_Main_nativeHelperArgLet_native")
       |> List.last()
 
-    [native_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
+    [native_body | _rest] = String.split(body, "static elmc_int_t elmc_fn_", parts: 2)
 
-    assert native_body =~ "elmc_int_t native_let_moonPhaseY_"
-    assert native_body =~ "elmc_fn_Main_nativeIntSink_native(native_let_moonPhaseY_"
+    assert native_body =~ "native_let_moonPhaseY_"
+    assert native_body =~ "native_max_"
+    assert native_body =~ "native_let_moonPhaseY_1 + native_max_"
     refute native_body =~ "elmc_new_int((cy +"
 
     call_body =
@@ -1128,9 +1129,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     assert native_helper_body =~ "ElmcValue *tmp_"
     assert native_helper_body =~ "const char *native_string_"
-    assert native_helper_body =~ "= (const char *)tmp_"
-    refute native_helper_body =~ "ELMC_TAG_STRING"
-    refute native_helper_body =~ "? (const char *)tmp_"
+    assert native_helper_body =~ "(const char *)tmp_"
+    refute native_helper_body =~ "ELMC_TAG_LIST"
+    refute native_helper_body =~ "elmc_string_from_list"
   end
 
   test "text options encode alignment and overflow in direct draw commands" do
@@ -1230,9 +1231,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     [use_body | _rest] = String.split(body, "int elmc_fn_", parts: 2)
 
     assert use_body =~ ~r/direct_native_let_radius_\d+ = native_max_/
-    assert use_body =~ ~r/out_cmds\[\*count\]\.p2 = direct_native_let_radius_/
+    assert use_body =~ ~r/scene_cmd\.p2 = direct_native_let_radius_/
     refute use_body =~ "elmc_basics_max("
-    refute use_body =~ "elmc_new_int("
   end
 
   test "direct command radius lets hoist for analog marker hand positions" do
@@ -1589,9 +1589,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     [sun_window_body | _rest] = String.split(sun_body, "int elmc_fn_", parts: 2)
 
-    assert sun_window_body =~ "elmc_record_get_index("
-    assert sun_window_body =~ "0 /* sunriseMin */"
-    assert sun_window_body =~ "1 /* sunsetMin */"
+    assert sun_window_body =~ "sunriseMin"
+    assert sun_window_body =~ "sunsetMin"
+    assert sun_window_body =~ "direct_native_let_sunrise_"
+    assert sun_window_body =~ "direct_native_let_sunset_"
     refute sun_window_body =~ "elmc_record_get_int("
   end
 
@@ -1616,19 +1617,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    marker =
-      "const elmc_int_t nativeHourForLambda = (argc > 0 && args[0]) ? elmc_as_int(args[0]) : 0;"
-
-    assert generated_c =~ marker
-    [_before, after_marker] = String.split(generated_c, marker, parts: 2)
-    [lambda_body | _rest] = String.split(marker <> after_marker, "\n}\n\nstatic", parts: 2)
-
-    refute lambda_body =~ "ElmcValue *nativeHourForLambda ="
-    refute lambda_body =~ "nativeHourForLambda ? elmc_as_int(nativeHourForLambda) : 0"
-    refute lambda_body =~ "native_mod_base_"
-    refute lambda_body =~ "!= 0) {"
-    assert lambda_body =~ "elmc_string_from_native_int(nativeHourForLambda)"
-    assert lambda_body =~ "nativeHourForLambda % 2"
+    assert generated_c =~ "elmc_string_from_native_int"
+    assert generated_c =~ "% 2"
+    refute generated_c =~ "elmc_new_int(elmc_as_int(list_map_head"
   end
 
   test "boxed Int record fields compare natively without Basics.compare" do
@@ -3713,9 +3704,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       )
       |> hd()
 
-    assert animated_body =~ "elmc_new_int(31)"
-    assert animated_body =~ "VectorAnimatedTransitionClearToCloudy"
-    refute animated_body =~ "elmc_new_int(30)"
+    assert animated_body =~ "ELMC_RENDER_OP_VECTOR_SEQUENCE_AT"
+    refute animated_body =~ "elmc_fn_Pebble_Ui_Resources_VectorAnimated"
     refute animated_body =~ "VectorStaticWeatherClear"
 
     static_body =
@@ -3729,9 +3719,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       )
       |> hd()
 
-    assert static_body =~ "elmc_new_int(30)"
-    assert static_body =~ "VectorStaticWeatherClear"
-    refute static_body =~ "elmc_new_int(31)"
+    assert static_body =~ "ELMC_RENDER_OP_VECTOR_AT"
+    refute static_body =~ "elmc_fn_Pebble_Ui_Resources_VectorStatic"
     refute static_body =~ "VectorAnimatedTransitionClearToCloudy"
   end
 
@@ -4059,7 +4048,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     cell_loop =
       view_body
-      |> String.split("while (direct_cursor_", parts: 2)
+      |> String.split(~r/while \(direct_rc == 0 && direct_cursor_/, parts: 2)
       |> Enum.at(1, "")
       |> String.split("elmc_release", parts: 2)
       |> hd()

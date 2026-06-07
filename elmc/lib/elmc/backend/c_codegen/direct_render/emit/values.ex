@@ -122,6 +122,14 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
     end
   end
 
+  def int_value(%{op: :qualified_ref, target: target}, env, counter) when is_binary(target) do
+    resource_slot_int_value(target, env, counter)
+  end
+
+  def int_value(%{op: :qualified_var, target: target}, env, counter) when is_binary(target) do
+    resource_slot_int_value(target, env, counter)
+  end
+
   def int_value(%{op: :field_access, arg: %{op: :var, name: name}, field: field}, env, counter) do
     case Map.get(env, name) do
       {:native_record, fields} ->
@@ -155,6 +163,14 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
   end
 
   def int_value(expr, env, counter), do: runtime_int_value(expr, env, counter)
+
+  defp resource_slot_int_value(target, env, counter) when is_binary(target) do
+    if Host.resource_union_constructor?(target, []) do
+      {"", "#{Host.pebble_resource_slot_index(target)}", counter}
+    else
+      runtime_int_value(%{op: :qualified_ref, target: target}, env, counter)
+    end
+  end
 
   defp int_hoistable_zero_arg_call?(%{op: :call, args: []}, env),
     do: Host.hoisted_native_ints_enabled?(env)

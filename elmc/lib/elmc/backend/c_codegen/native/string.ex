@@ -257,32 +257,53 @@ defmodule Elmc.Backend.CCodegen.Native.String do
   @spec value_code(Types.ir_expr(), Types.compile_env(), String.t(), String.t()) ::
           {String.t(), [String.t()]}
   defp value_code(expr, env, var, out) do
-    if TypedReturn.string_expr?(expr, env) do
-      boxed = "#{out}_boxed"
+    cond do
+      native_string_call_expr?(expr, env) ->
+        {
+          """
+            const char *#{out} =
+              (#{var} && #{var}->tag == ELMC_TAG_STRING && #{var}->payload)
+                ? (const char *)#{var}->payload
+                : "";
+          """,
+          []
+        }
 
-      {
-        """
-          ElmcValue *#{boxed} = NULL;
-          const char *#{out} = "";
-          if (#{var} && #{var}->tag == ELMC_TAG_STRING && #{var}->payload) {
-            #{out} = (const char *)#{var}->payload;
-          } else if (#{var} && #{var}->tag == ELMC_TAG_LIST) {
-            #{boxed} = elmc_string_from_list(#{var});
-            #{out} = (#{boxed} && #{boxed}->payload) ? (const char *)#{boxed}->payload : "";
-          }
-        """,
-        [boxed]
-      }
-    else
-      {
-        """
-          const char *#{out} =
-            (#{var} && #{var}->tag == ELMC_TAG_STRING && #{var}->payload)
-              ? (const char *)#{var}->payload
-              : "";
-        """,
-        []
-      }
+      TypedReturn.string_expr?(expr, env) ->
+        boxed = "#{out}_boxed"
+
+        {
+          """
+            ElmcValue *#{boxed} = NULL;
+            const char *#{out} = "";
+            if (#{var} && #{var}->tag == ELMC_TAG_STRING && #{var}->payload) {
+              #{out} = (const char *)#{var}->payload;
+            } else if (#{var} && #{var}->tag == ELMC_TAG_LIST) {
+              #{boxed} = elmc_string_from_list(#{var});
+              #{out} = (#{boxed} && #{boxed}->payload) ? (const char *)#{boxed}->payload : "";
+            }
+          """,
+          [boxed]
+        }
+
+      true ->
+        {
+          """
+            const char *#{out} =
+              (#{var} && #{var}->tag == ELMC_TAG_STRING && #{var}->payload)
+                ? (const char *)#{var}->payload
+                : "";
+          """,
+          []
+        }
+    end
+  end
+
+  defp native_string_call_expr?(expr, env) do
+    case expr do
+      %{op: :call} -> TypedReturn.string_expr?(expr, env)
+      %{op: :qualified_call} -> TypedReturn.string_expr?(expr, env)
+      _ -> false
     end
   end
 end

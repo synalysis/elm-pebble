@@ -107,6 +107,6 @@ defmodule Elmc.BundledPebbleSurfaceCodegenTest do
     refute init_fn =~ "elmc_fn_Pebble_Health_StepCount("
 
     assert init_fn =~ "elmc_new_int(4)"
-    assert init_fn =~ "elmc_list_from_values_take(list_items_28, 2)"
+    assert init_fn =~ ~r/elmc_list_from_values_take\(list_items_\d+, 2\)/
   end
 end

@@ -124,6 +124,16 @@ typedef struct {
 
 typedef struct {
   ElmcValue value;
+  ElmcCmdPayload cmd;
+} ElmcCmdCell;
+
+typedef struct {
+  ElmcValue value;
+  ElmcSubPayload sub;
+} ElmcSubCell;
+
+typedef struct {
+  ElmcValue value;
   ElmcRecord record;
 } ElmcRecordCell;
 
@@ -135,6 +145,8 @@ typedef struct {
 #define ELMC_MAYBE_CELL_SCALAR ((elmc_int_t)0x1EC012)
 #define ELMC_RESULT_CELL_SCALAR ((elmc_int_t)0x1EC013)
 #define ELMC_TUPLE2_CELL_SCALAR ((elmc_int_t)0x1EC014)
+#define ELMC_CMD_CELL_SCALAR ((elmc_int_t)0x1EC017)
+#define ELMC_SUB_CELL_SCALAR ((elmc_int_t)0x1EC018)
 #define ELMC_RECORD_CELL_SCALAR ((elmc_int_t)0x1EC015)
 #define ELMC_CLOSURE_CELL_SCALAR ((elmc_int_t)0x1EC016)
 
@@ -330,6 +342,22 @@ static int elmc_tuple2_cell_release(ElmcValue *value) {
   if (!value || value->tag != ELMC_TAG_TUPLE2 || value->scalar != ELMC_TUPLE2_CELL_SCALAR) return 0;
   ElmcTuple2Cell *cell = (ElmcTuple2Cell *)value;
   if (value->payload != &cell->tuple) return 0;
+  free(cell);
+  return 1;
+}
+
+static int elmc_cmd_cell_release(ElmcValue *value) {
+  if (!value || value->tag != ELMC_TAG_CMD || value->scalar != ELMC_CMD_CELL_SCALAR) return 0;
+  ElmcCmdCell *cell = (ElmcCmdCell *)value;
+  if (value->payload != &cell->cmd) return 0;
+  free(cell);
+  return 1;
+}
+
+static int elmc_sub_cell_release(ElmcValue *value) {
+  if (!value || value->tag != ELMC_TAG_SUB || value->scalar != ELMC_SUB_CELL_SCALAR) return 0;
+  ElmcSubCell *cell = (ElmcSubCell *)value;
+  if (value->payload != &cell->sub) return 0;
   free(cell);
   return 1;
 }
@@ -603,6 +631,92 @@ ElmcValue *elmc_tuple2_ints(elmc_int_t first, elmc_int_t second) {
   return elmc_tuple2_take(elmc_new_int(first), elmc_new_int(second));
 }
 
+static ElmcValue *elmc_cmd_alloc(uint8_t arity, elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3, elmc_int_t p4, elmc_int_t p5) {
+  ElmcCmdCell *cell = (ElmcCmdCell *)elmc_malloc(sizeof(ElmcCmdCell), __func__);
+  if (!cell) return NULL;
+  cell->cmd.arity = arity;
+  cell->cmd.kind = kind;
+  cell->cmd.p0 = p0;
+  cell->cmd.p1 = p1;
+  cell->cmd.p2 = p2;
+  cell->cmd.p3 = p3;
+  cell->cmd.p4 = p4;
+  cell->cmd.p5 = p5;
+  cell->value.rc = 1;
+  cell->value.tag = ELMC_TAG_CMD;
+  cell->value.payload = &cell->cmd;
+  cell->value.scalar = ELMC_CMD_CELL_SCALAR;
+  ELMC_ALLOCATED += 1;
+  return &cell->value;
+}
+
+ElmcValue *elmc_cmd0(elmc_int_t kind) {
+  return elmc_cmd_alloc(0, kind, 0, 0, 0, 0, 0, 0);
+}
+
+ElmcValue *elmc_cmd1(elmc_int_t kind, elmc_int_t p0) {
+  return elmc_cmd_alloc(1, kind, p0, 0, 0, 0, 0, 0);
+}
+
+ElmcValue *elmc_cmd2(elmc_int_t kind, elmc_int_t p0, elmc_int_t p1) {
+  return elmc_cmd_alloc(2, kind, p0, p1, 0, 0, 0, 0);
+}
+
+ElmcValue *elmc_cmd3(elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2) {
+  return elmc_cmd_alloc(3, kind, p0, p1, p2, 0, 0, 0);
+}
+
+ElmcValue *elmc_cmd4(elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3) {
+  return elmc_cmd_alloc(4, kind, p0, p1, p2, p3, 0, 0);
+}
+
+ElmcValue *elmc_cmd5(elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3, elmc_int_t p4) {
+  return elmc_cmd_alloc(5, kind, p0, p1, p2, p3, p4, 0);
+}
+
+static ElmcValue *elmc_sub_alloc(uint8_t arity, elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3, elmc_int_t p4, elmc_int_t p5) {
+  ElmcSubCell *cell = (ElmcSubCell *)elmc_malloc(sizeof(ElmcSubCell), __func__);
+  if (!cell) return NULL;
+  cell->sub.arity = arity;
+  cell->sub.mask = mask;
+  cell->sub.p0 = p0;
+  cell->sub.p1 = p1;
+  cell->sub.p2 = p2;
+  cell->sub.p3 = p3;
+  cell->sub.p4 = p4;
+  cell->sub.p5 = p5;
+  cell->value.rc = 1;
+  cell->value.tag = ELMC_TAG_SUB;
+  cell->value.payload = &cell->sub;
+  cell->value.scalar = ELMC_SUB_CELL_SCALAR;
+  ELMC_ALLOCATED += 1;
+  return &cell->value;
+}
+
+ElmcValue *elmc_sub0(elmc_int_t mask) {
+  return elmc_sub_alloc(0, mask, 0, 0, 0, 0, 0, 0);
+}
+
+ElmcValue *elmc_sub1(elmc_int_t mask, elmc_int_t p0) {
+  return elmc_sub_alloc(1, mask, p0, 0, 0, 0, 0, 0);
+}
+
+ElmcValue *elmc_sub2(elmc_int_t mask, elmc_int_t p0, elmc_int_t p1) {
+  return elmc_sub_alloc(2, mask, p0, p1, 0, 0, 0, 0);
+}
+
+ElmcValue *elmc_sub3(elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2) {
+  return elmc_sub_alloc(3, mask, p0, p1, p2, 0, 0, 0);
+}
+
+ElmcValue *elmc_sub4(elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3) {
+  return elmc_sub_alloc(4, mask, p0, p1, p2, p3, 0, 0);
+}
+
+ElmcValue *elmc_sub5(elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3, elmc_int_t p4) {
+  return elmc_sub_alloc(5, mask, p0, p1, p2, p3, p4, 0);
+}
+
 elmc_int_t elmc_as_int(ElmcValue *value) {
   if (!value || (value->tag != ELMC_TAG_INT && value->tag != ELMC_TAG_BOOL)) return 0;
   return value->scalar;
@@ -671,6 +785,34 @@ int elmc_value_equal(ElmcValue *left, ElmcValue *right) {
       ElmcTuple2 *a = (ElmcTuple2 *)left->payload;
       ElmcTuple2 *b = (ElmcTuple2 *)right->payload;
       return elmc_value_equal(a->first, b->first) && elmc_value_equal(a->second, b->second);
+    }
+
+    case ELMC_TAG_CMD: {
+      if (!left->payload || !right->payload) return left->payload == right->payload;
+      ElmcCmdPayload *a = (ElmcCmdPayload *)left->payload;
+      ElmcCmdPayload *b = (ElmcCmdPayload *)right->payload;
+      if (a->arity != b->arity || a->kind != b->kind) return 0;
+      if (a->arity > 0 && a->p0 != b->p0) return 0;
+      if (a->arity > 1 && a->p1 != b->p1) return 0;
+      if (a->arity > 2 && a->p2 != b->p2) return 0;
+      if (a->arity > 3 && a->p3 != b->p3) return 0;
+      if (a->arity > 4 && a->p4 != b->p4) return 0;
+      if (a->arity > 5 && a->p5 != b->p5) return 0;
+      return 1;
+    }
+
+    case ELMC_TAG_SUB: {
+      if (!left->payload || !right->payload) return left->payload == right->payload;
+      ElmcSubPayload *a = (ElmcSubPayload *)left->payload;
+      ElmcSubPayload *b = (ElmcSubPayload *)right->payload;
+      if (a->arity != b->arity || a->mask != b->mask) return 0;
+      if (a->arity > 0 && a->p0 != b->p0) return 0;
+      if (a->arity > 1 && a->p1 != b->p1) return 0;
+      if (a->arity > 2 && a->p2 != b->p2) return 0;
+      if (a->arity > 3 && a->p3 != b->p3) return 0;
+      if (a->arity > 4 && a->p4 != b->p4) return 0;
+      if (a->arity > 5 && a->p5 != b->p5) return 0;
+      return 1;
     }
 
     case ELMC_TAG_MAYBE: {
@@ -1484,16 +1626,24 @@ elmc_int_t elmc_record_get_index_bool(ElmcValue *record, int index) {
 ElmcValue *elmc_record_update(ElmcValue *record, const char *field_name, ElmcValue *new_value) {
   if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return elmc_retain(record);
   ElmcRecord *old = (ElmcRecord *)record->payload;
+  for (int i = 0; i < old->field_count; i++) {
+    if (old->field_names[i] && strcmp(old->field_names[i], field_name) == 0) {
+      return elmc_record_update_index(record, i, new_value);
+    }
+  }
+  return elmc_retain(record);
+}
+
+ElmcValue *elmc_record_update_index(ElmcValue *record, int index, ElmcValue *new_value) {
+  if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return elmc_retain(record);
+  ElmcRecord *old = (ElmcRecord *)record->payload;
+  if (index < 0 || index >= old->field_count) return elmc_retain(record);
   const char **names = (const char **)elmc_malloc(sizeof(const char *) * old->field_count, __func__);
   ElmcValue **values = (ElmcValue **)elmc_malloc(sizeof(ElmcValue *) * old->field_count, __func__);
   if (!names || !values) { free(names); free(values); return elmc_retain(record); }
   for (int i = 0; i < old->field_count; i++) {
     names[i] = old->field_names[i];
-    if (old->field_names[i] && strcmp(old->field_names[i], field_name) == 0) {
-      values[i] = new_value;
-    } else {
-      values[i] = old->field_values[i];
-    }
+    values[i] = i == index ? new_value : old->field_values[i];
   }
   ElmcValue *result = elmc_record_new(old->field_count, names, values);
   free(names);
@@ -1758,13 +1908,18 @@ ElmcValue *elmc_list_filter_map(ElmcValue *f, ElmcValue *list) {
     ElmcCons *node = (ElmcCons *)cursor->payload;
     ElmcValue *args[1] = { node->head };
     ElmcValue *maybe_val = elmc_closure_call(f, args, 1);
+    ElmcValue *payload = NULL;
     if (maybe_val && maybe_val->tag == ELMC_TAG_MAYBE && maybe_val->payload != NULL) {
       ElmcMaybe *m = (ElmcMaybe *)maybe_val->payload;
-      if (m->is_just && m->value) {
-        ElmcValue *next = elmc_list_cons(m->value, rev);
-        elmc_release(rev);
-        rev = next;
-      }
+      if (m->is_just && m->value) payload = m->value;
+    } else if (maybe_val && maybe_val->tag == ELMC_TAG_TUPLE2 && maybe_val->payload != NULL) {
+      ElmcTuple2 *pair = (ElmcTuple2 *)maybe_val->payload;
+      if (pair->first && elmc_as_int(pair->first) == 1 && pair->second) payload = pair->second;
+    }
+    if (payload) {
+      ElmcValue *next = elmc_list_cons(payload, rev);
+      elmc_release(rev);
+      rev = next;
     }
     elmc_release(maybe_val);
     cursor = node->tail;
@@ -2015,15 +2170,22 @@ ElmcValue *elmc_list_range(ElmcValue *lo, ElmcValue *hi) {
   return out;
 }
 
+static ElmcValue *elmc_list_repeat_count(elmc_int_t count, ElmcValue *value);
+
 ElmcValue *elmc_list_repeat(ElmcValue *n, ElmcValue *value) {
-  int64_t count = elmc_as_int(n);
-  ElmcValue *out = elmc_list_nil();
-  for (int64_t i = 0; i < count; i++) {
-    ElmcValue *next = elmc_list_cons(value, out);
-    elmc_release(out);
-    out = next;
+  return elmc_list_repeat_count((elmc_int_t)elmc_as_int(n), value);
+}
+
+static ElmcValue *elmc_list_repeat_count(elmc_int_t count, ElmcValue *value) {
+  ElmcValue *acc = elmc_list_nil();
+  ElmcValue *item = value ? elmc_retain(value) : elmc_int_zero();
+  for (elmc_int_t i = 0; i < count; i++) {
+    ElmcValue *cons = elmc_list_cons(item, acc);
+    elmc_release(acc);
+    acc = cons;
   }
-  return out;
+  elmc_release(item);
+  return acc;
 }
 
 ElmcValue *elmc_list_take(ElmcValue *n, ElmcValue *list) {
@@ -5529,6 +5691,14 @@ void elmc_release(ElmcValue *value) {
     return;
   }
   if (value->tag == ELMC_TAG_TUPLE2 && elmc_tuple2_cell_release(value)) {
+    ELMC_RELEASED += 1;
+    return;
+  }
+  if (value->tag == ELMC_TAG_CMD && elmc_cmd_cell_release(value)) {
+    ELMC_RELEASED += 1;
+    return;
+  }
+  if (value->tag == ELMC_TAG_SUB && elmc_sub_cell_release(value)) {
     ELMC_RELEASED += 1;
     return;
   }

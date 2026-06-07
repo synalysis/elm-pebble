@@ -105,6 +105,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
         |> MapSet.new()
         |> MapSet.union(direct_targets)
         |> MapSet.union(pruned)
+        |> MapSet.union(inlined_record_helpers(direct_targets, decl_map))
 
       opts[:prune_direct_generic] == true and MapSet.size(direct_targets) > 0 ->
         {def_targets, _emit_targets, pruned} = Host.direct_command_target_sets(decl_map, opts)
@@ -156,12 +157,26 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
   end
 
   defp inlined_record_helpers(direct_targets, decl_map) do
-    Enum.reduce(direct_targets, MapSet.new(), fn {module_name, _decl_name} = target, acc ->
-      case Map.fetch(decl_map, target) do
-        {:ok, decl} -> walk_inlined_record_helpers(decl.expr, module_name, decl_map, acc)
-        :error -> acc
-      end
-    end)
+    direct_helpers =
+      Enum.reduce(direct_targets, MapSet.new(), fn {module_name, _decl_name} = target, acc ->
+        case Map.fetch(decl_map, target) do
+          {:ok, decl} -> walk_inlined_record_helpers(decl.expr, module_name, decl_map, acc)
+          :error -> acc
+        end
+      end)
+
+    view_helpers =
+      decl_map
+      |> Map.keys()
+      |> Enum.filter(fn {_module_name, decl_name} -> decl_name == "view" end)
+      |> Enum.reduce(MapSet.new(), fn {module_name, _decl_name} = target, acc ->
+        case Map.fetch(decl_map, target) do
+          {:ok, decl} -> walk_inlined_record_helpers(decl.expr, module_name, decl_map, acc)
+          :error -> acc
+        end
+      end)
+
+    MapSet.union(direct_helpers, view_helpers)
   end
 
   defp walk_inlined_record_helpers(expr, module_name, decl_map, acc) when is_map(expr) do
@@ -176,7 +191,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
                 acc
 
               target_key ->
-                if NativeRecord.helper_let?("_", value_expr, env) do
+                if NativeRecord.helper_let?("_", value_expr, env) or
+                     NativeRecord.field_entries(value_expr, env) != :error do
                   MapSet.put(acc, target_key)
                 else
                   acc
