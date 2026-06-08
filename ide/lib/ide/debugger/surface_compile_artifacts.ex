@@ -39,12 +39,12 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
     source_root = ctx.source_root_for_target.(target)
 
     cond do
+      surface_has_versioned_runtime_artifacts?(state, target) ->
+        attach_missing_debugger_contract(state, target, ctx)
+
       inline_source_present?(state, source_root) ->
         artifacts = artifacts_for_source_root(state, source_root, ctx)
         ctx.merge_runtime_artifacts.(state, target, artifacts)
-
-      surface_has_versioned_runtime_artifacts?(state, target) ->
-        attach_missing_debugger_contract(state, target, ctx)
 
       true ->
         artifacts = artifacts_for_source_root(state, source_root, ctx)
@@ -84,31 +84,35 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
           Types.runtime_artifacts()
   def artifacts_for_source_root(state, source_root, ctx)
       when is_map(state) and is_binary(source_root) and is_map(ctx) do
-    project_artifacts = safe_project_entrypoint_artifacts(state, source_root, ctx)
+    inline_present? = inline_source_present?(state, source_root)
 
     inline_artifacts =
-      if inline_source_present?(state, source_root) do
+      if inline_present? do
         artifacts_from_inline_source(state, source_root, ctx)
       else
         %{}
       end
 
     cond do
-      inline_source_present?(state, source_root) and
-          versioned_runtime_artifacts?(inline_artifacts) ->
+      inline_present? and versioned_runtime_artifacts?(inline_artifacts) ->
         inline_artifacts
-
-      versioned_runtime_artifacts?(project_artifacts) ->
-        project_artifacts
 
       versioned_runtime_artifacts?(inline_artifacts) ->
         inline_artifacts
 
-      map_size(project_artifacts) > 0 ->
-        project_artifacts
-
       true ->
-        inline_artifacts
+        project_artifacts = safe_project_entrypoint_artifacts(state, source_root, ctx)
+
+        cond do
+          versioned_runtime_artifacts?(project_artifacts) ->
+            project_artifacts
+
+          map_size(project_artifacts) > 0 ->
+            project_artifacts
+
+          true ->
+            inline_artifacts
+        end
     end
   end
 
