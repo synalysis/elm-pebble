@@ -221,11 +221,19 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
     init _ =
         ( { n = 1 }, Cmd.none )
 
+    update msg model =
+        case msg of
+            Tick ->
+                ( model, Cmd.none )
+
+            Inc ->
+                ( model, Cmd.none )
+
     subscriptions model =
         Time.every 1000 Tick
 
     view m =
-        []
+        Ui.root []
     """
 
     {:ok, _} = Debugger.start_session(slug)
@@ -1011,6 +1019,9 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
 
     subscriptions _ =
       Evts.batch [ Evts.onSecondChange Tick, Evts.onMinuteChange MinuteChanged ]
+
+    view _ =
+        []
     """
 
     {:ok, _} = Debugger.start_session(slug)

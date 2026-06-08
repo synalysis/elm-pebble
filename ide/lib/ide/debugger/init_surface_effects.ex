@@ -5,6 +5,7 @@ defmodule Ide.Debugger.InitSurfaceEffects do
   alias Ide.Debugger.CompanionBridge.Runtime, as: CompanionBridgeRuntime
   alias Ide.Debugger.DeviceData
   alias Ide.Debugger.DeviceDataHints
+  alias Ide.Debugger.DeviceDataResponses
   alias Ide.Debugger.DeviceRequest
   alias Ide.Debugger.Geolocation
   alias Ide.Debugger.IntrospectAccess
@@ -84,10 +85,31 @@ defmodule Ide.Debugger.InitSurfaceEffects do
         )
         |> DeviceDataHints.apply_to_state(target, req)
       end)
+      |> apply_supported_health_metrics(target, ctx)
     else
       state
     end
   end
+
+  @spec apply_supported_health_metrics(Types.runtime_state(), Types.surface_target(), ctx()) ::
+          Types.runtime_state()
+  defp apply_supported_health_metrics(state, target, ctx)
+       when is_map(state) and target in [:watch, :companion, :phone] and is_map(ctx) do
+    DeviceDataResponses.apply_after_step(
+      state,
+      target,
+      "GotSupported True",
+      %{},
+      "init_device_data",
+      %{
+        append_event: ctx.append_event,
+        apply_step_once: ctx.apply_step_once,
+        source_root_for_target: ctx.source_root_for_target
+      }
+    )
+  end
+
+  defp apply_supported_health_metrics(state, _target, _ctx), do: state
 
   def apply_device_data_responses(state, _target, _ctx), do: state
 

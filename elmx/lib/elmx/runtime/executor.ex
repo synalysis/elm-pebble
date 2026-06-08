@@ -67,7 +67,8 @@ defmodule Elmx.Runtime.Executor do
            "compiler" => "elmx",
            "contract" => @contract,
            "execution_backend" => "compiled_elixir",
-           "runtime_model_source" => runtime_model_source
+           "runtime_model_source" => runtime_model_source,
+           "operation_source" => runtime_model_source
          },
          followup_messages:
            commands_to_followups(commands, Map.get(request, :source_root) || Map.get(request, "source_root")),

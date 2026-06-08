@@ -118,15 +118,28 @@ defmodule Ide.Debugger.DeviceDataResponses do
       DeviceData.response_wire_value(req) ||
         DeviceData.response_wire_for_callback(introspect, model, ctor, nil)
 
-    cond do
-      is_binary(ctor) and ctor != "" and is_map(wire_value) ->
-        ctx.apply_step_once.(state, target, ctor, wire_value, "device_data", "device_data")
+    step_message =
+      case DeviceData.response_message(req) do
+        message when is_binary(message) and message != "" -> message
+        _ -> ctor
+      end
 
-      is_binary(response_message = DeviceData.response_message(req)) and response_message != "" ->
+    cond do
+      is_binary(step_message) and step_message != "" and is_map(wire_value) ->
         ctx.apply_step_once.(
           state,
           target,
-          response_message,
+          step_message,
+          wire_value,
+          "device_data",
+          "device_data"
+        )
+
+      is_binary(step_message) and step_message != "" ->
+        ctx.apply_step_once.(
+          state,
+          target,
+          step_message,
           wire_value,
           "device_data",
           "device_data"

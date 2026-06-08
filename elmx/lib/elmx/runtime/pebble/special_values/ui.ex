@@ -55,6 +55,8 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Ui do
       "Pebble.Ui.pathFilled" -> ui_call("elmx_ui_path_filled", args)
       "Pebble.Ui.pathOutlineOpen" -> ui_call("elmx_ui_path_outline_open", args)
       "Pebble.Ui.rotationFromPebbleAngle" -> ui_call("elmx_ui_rotation_from_pebble_angle", args)
+      "Pebble.Ui.root" -> ui_call("elmx_ui_to_ui_node", args)
+      "Pebble.Ui.toUiNode" -> ui_call("elmx_ui_to_ui_node", args)
       "Pebble.Ui.windowStack" -> ui_call("elmx_ui_window_stack", args)
       "Pebble.Ui.window" -> ui_call("elmx_ui_window", args)
       "Pebble.Ui.canvasLayer" -> ui_call("elmx_ui_canvas_layer", args)

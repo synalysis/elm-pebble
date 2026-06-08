@@ -140,15 +140,16 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
       |> Projects.project_workspace_path()
       |> Path.join(source_root)
 
-    {:ok, result} =
-      Compiler.compile(Projects.compiler_cache_key(session_key, source_root),
-        workspace_root: workspace_root
-      )
+    case safe_compiler_compile(
+           Projects.compiler_cache_key(session_key, source_root),
+           workspace_root: workspace_root
+         ) do
+      {:ok, result} when is_map(result) ->
+        ElmcSurfaceFields.optional_runtime_artifacts(result)
 
-    result
-    |> ElmcSurfaceFields.optional_runtime_artifacts()
-  rescue
-    _ -> %{}
+      _ ->
+        %{}
+    end
   end
 
   @spec project_entrypoint_artifacts(Types.runtime_state(), String.t(), attach_ctx()) ::
@@ -232,22 +233,43 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
     is_binary(Map.get(model, "last_source")) and String.trim(Map.get(model, "last_source")) != ""
   end
 
+  @doc false
+  @spec precompile_inline_artifacts(String.t(), String.t(), String.t(), String.t()) ::
+          Types.runtime_artifacts()
+  def precompile_inline_artifacts(session_key, source, rel_path, source_root)
+      when is_binary(session_key) and is_binary(source) and is_binary(rel_path) and
+             is_binary(source_root) do
+    if String.trim(source) != "" do
+      ephemeral_entrypoint_artifacts(session_key, source, rel_path, source_root)
+    else
+      %{}
+    end
+  end
+
+  def precompile_inline_artifacts(_session_key, _source, _rel_path, _source_root), do: %{}
+
   @spec artifacts_from_inline_source(Types.runtime_state(), String.t(), attach_ctx()) ::
           Types.runtime_artifacts()
   defp artifacts_from_inline_source(state, source_root, ctx)
        when is_map(state) and is_binary(source_root) and is_map(ctx) do
-    target = surface_target_for_source_root(source_root)
-    model = get_in(state, [target, :model]) || %{}
+    case Map.get(state, :__reload_precompiled_artifacts__) do
+      precompiled when is_map(precompiled) and map_size(precompiled) > 0 ->
+        precompiled
 
-    source = Map.get(model, "last_source")
-    rel_path = Map.get(model, "last_path")
+      _ ->
+        target = surface_target_for_source_root(source_root)
+        model = get_in(state, [target, :model]) || %{}
 
-    with true <- is_binary(source) and String.trim(source) != "",
-         true <- is_binary(rel_path) and String.trim(rel_path) != "",
-         session_key when is_binary(session_key) <- ctx.session_key_from_state.(state) do
-      ephemeral_entrypoint_artifacts(session_key, source, rel_path, source_root)
-    else
-      _ -> %{}
+        source = Map.get(model, "last_source")
+        rel_path = Map.get(model, "last_path")
+
+        with true <- is_binary(source) and String.trim(source) != "",
+             true <- is_binary(rel_path) and String.trim(rel_path) != "",
+             session_key when is_binary(session_key) <- ctx.session_key_from_state.(state) do
+          ephemeral_entrypoint_artifacts(session_key, source, rel_path, source_root)
+        else
+          _ -> %{}
+        end
     end
   end
 
@@ -308,22 +330,18 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
     end
 
     compile_artifacts =
-      case Compiler.compile(
+      case safe_compiler_compile(
              "debugger-inline-phone-#{session_key}-#{:erlang.phash2({rel_path, source})}",
              workspace_root: phone_root
            ) do
         {:ok, result} when is_map(result) ->
-          result
-          |> ElmcSurfaceFields.optional_runtime_artifacts()
+          ElmcSurfaceFields.optional_runtime_artifacts(result)
 
         _ ->
           %{}
       end
 
     compile_artifacts
-  rescue
-    _error ->
-      %{}
   end
 
   defp ephemeral_entrypoint_artifacts(session_key, source, rel_path, "watch")
@@ -358,22 +376,18 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
     end
 
     compile_artifacts =
-      case Compiler.compile(
+      case safe_compiler_compile(
              "debugger-inline-#{session_key}-#{:erlang.phash2({rel_path, source})}",
              workspace_root: watch_dir
            ) do
         {:ok, result} when is_map(result) ->
-          result
-          |> ElmcSurfaceFields.optional_runtime_artifacts()
+          ElmcSurfaceFields.optional_runtime_artifacts(result)
 
         _ ->
           %{}
       end
 
     compile_artifacts
-  rescue
-    _error ->
-      %{}
   end
 
   @spec entry_module_from_path(String.t()) :: String.t()
@@ -436,5 +450,15 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
       true ->
         "src/Main.elm"
     end
+  end
+
+  @spec safe_compiler_compile(String.t(), keyword()) ::
+          {:ok, Ide.Compiler.compile_result()} | {:error, term()}
+  defp safe_compiler_compile(cache_key, opts) when is_binary(cache_key) and is_list(opts) do
+    Compiler.compile(cache_key, opts)
+  rescue
+    error -> {:error, error}
+  catch
+    :exit, reason -> {:error, {:compile_exit, reason}}
   end
 end

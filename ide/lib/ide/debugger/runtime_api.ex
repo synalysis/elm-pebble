@@ -2,12 +2,15 @@ defmodule Ide.Debugger.RuntimeApi do
   @moduledoc false
 
   alias Ide.Debugger.AgentSession
+  alias Ide.Debugger.DebuggerContractSnapshot
   alias Ide.Debugger.DebuggerStep
   alias Ide.Debugger.HotReloadSession
   alias Ide.Debugger.RuntimeBackgroundDrains
   alias Ide.Debugger.RuntimeExecutorConfig
   alias Ide.Debugger.RuntimePreview
   alias Ide.Debugger.Surface
+  alias Ide.Debugger.SurfaceCompileArtifacts
+  alias Ide.Debugger.SurfaceTargets
   alias Ide.Debugger.Types
 
   @type runtime_state :: Types.RuntimeState.t() | Types.RuntimeState.wire_map()
@@ -29,11 +32,35 @@ defmodule Ide.Debugger.RuntimeApi do
   @spec reload(String.t(), Types.reload_attrs()) :: {:ok, runtime_state()}
   def reload(project_slug, attrs \\ %{}) when is_binary(project_slug) and is_map(attrs) do
     AgentSession.with_hosts(fn hosts ->
+      rel_path = Map.get(attrs, :rel_path) || Map.get(attrs, "rel_path")
+      source = Map.get(attrs, :source) || Map.get(attrs, "source") || ""
+      source_root = SurfaceTargets.normalize_source_root(attrs)
+
+      precompiled =
+        if DebuggerContractSnapshot.elm_introspect?(rel_path, source, source_root) do
+          SurfaceCompileArtifacts.precompile_inline_artifacts(
+            project_slug,
+            source,
+            rel_path,
+            source_root
+          )
+        else
+          %{}
+        end
+
       with {:ok, state} <-
-             AgentSession.mutate(
-               project_slug,
-               &HotReloadSession.apply(&1, project_slug, attrs, hosts.hot_reload)
-             ) do
+             AgentSession.mutate(project_slug, fn state ->
+               state =
+                 if is_map(precompiled) and map_size(precompiled) > 0 do
+                   Map.put(state, :__reload_precompiled_artifacts__, precompiled)
+                 else
+                   state
+                 end
+
+               state
+               |> HotReloadSession.apply(project_slug, attrs, hosts.hot_reload)
+               |> Map.delete(:__reload_precompiled_artifacts__)
+             end) do
         RuntimeBackgroundDrains.schedule_all(project_slug, state)
         {:ok, state}
       end

@@ -119,10 +119,12 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
 
       case resolve_contract(state, target, rel_path, source, source_root, ctx) do
         {:ok, ei} when is_map(ei) ->
+          prepared = ctx.apply_simulator_settings.(state)
+
           st =
-            state
+            prepared
             |> apply(ei, target, source, rel_path, ctx.apply_snapshot)
-            |> maybe_after_apply(state, target, source_root, ctx)
+            |> maybe_after_apply(prepared, target, source_root, ctx)
 
           payload =
             if event_worth_logging?(ei) do
@@ -131,7 +133,7 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
               nil
             end
 
-          {ctx.apply_simulator_settings.(st), payload}
+          {st, payload}
 
         _ ->
           {state, nil}
@@ -216,19 +218,21 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
       |> Map.get(:model_patch, %{})
       |> then(fn patch -> if is_map(patch), do: patch, else: %{} end)
 
+    vt = Map.get(ei, "view_tree")
+    runtime_vt = Map.get(execution, :view_tree)
+
     model =
       model
       |> Map.put("runtime_execution_mode", "runtime_executed")
       |> Map.merge(model_patch)
       |> StepExecution.put_runtime_view_output(Map.get(execution, :view_output))
+      |> refresh_init_runtime_fingerprints(runtime_vt, ei)
 
     next_shell =
       shell
       |> Map.put("debugger_contract", ei)
       |> Map.put("debugger_contract_version", Map.get(ei, "contract_version"))
 
-    vt = Map.get(ei, "view_tree")
-    runtime_vt = Map.get(execution, :view_tree)
     output_vt = RuntimeViewOutput.tree(model, target)
 
     state =
@@ -240,13 +244,27 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
 
     state =
       cond do
-        StepExecution.introspect_view_usable?(output_vt, ei) ->
+        StepExecution.introspect_view_usable?(output_vt, ei) and
+            (RuntimePreview.has_drawable_output?(model) or
+               StepExecution.view_tree_has_draw_ops?(output_vt)) ->
           put_in(state, [target, :view_tree], output_vt)
 
         StepExecution.introspect_view_usable?(runtime_vt, ei) and
             (RuntimePreview.has_drawable_output?(model) or
                StepExecution.view_tree_has_draw_ops?(runtime_vt)) ->
           put_in(state, [target, :view_tree], runtime_vt)
+
+        parser_view? and StepExecution.introspect_view_usable?(runtime_vt, ei) and
+            not RuntimePreview.has_drawable_output?(model) and
+            not StepExecution.view_tree_has_draw_ops?(runtime_vt) ->
+          put_in(
+            state,
+            [target, :view_tree],
+            RuntimePreview.preview_unavailable_view_tree(
+              target,
+              "runtime view did not produce drawable output"
+            )
+          )
 
         parser_view? and not StepExecution.introspect_view_usable?(output_vt, ei) and
             not StepExecution.introspect_view_usable?(runtime_vt, ei) ->
@@ -302,14 +320,43 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
     |> refresh_view_preview_if_unavailable(target)
   end
 
+  @spec refresh_init_runtime_fingerprints(
+          Types.app_model(),
+          Types.view_output_tree() | nil,
+          Types.elm_introspect()
+        ) :: Types.app_model()
+  defp refresh_init_runtime_fingerprints(model, runtime_vt, ei)
+       when is_map(model) and is_map(ei) do
+    runtime_model =
+      case Map.get(model, "runtime_model") do
+        %{} = inner -> inner
+        _ -> %{}
+      end
+
+    view_tree = if is_map(runtime_vt), do: runtime_vt, else: %{}
+
+    model
+    |> Map.put_new("runtime_model_source", "init_model")
+    |> then(fn next ->
+      if is_map(Map.get(ei, "view_tree")) do
+        Map.put(next, "runtime_view_tree_source", "parser_view_tree")
+      else
+        next
+      end
+    end)
+    |> StepExecution.refresh_runtime_fingerprints(runtime_model, view_tree)
+  end
+
   @spec refresh_view_preview_if_unavailable(Types.runtime_state(), Types.surface_target()) ::
           Types.runtime_state()
   defp refresh_view_preview_if_unavailable(state, target) when is_map(state) do
     surface = Map.get(state, target) || %{}
     view_tree = Map.get(surface, :view_tree) || %{}
     type = Map.get(view_tree, :type) || Map.get(view_tree, "type")
+    ei = get_in(surface, [:shell, "debugger_contract"]) || %{}
 
-    if type == "previewUnavailable" do
+    if type == "previewUnavailable" and
+         not DebuggerContract.parser_expression_view?(%{"debugger_contract" => ei}) do
       RuntimePreview.refresh_for_target(state, target, RuntimeExecutor)
     else
       state

@@ -148,6 +148,12 @@ defmodule Elmx.Backend.QualifiedRewrite do
       {"Platform.Sub.none", []} ->
         {:ok, %{op: :int_literal, value: 0}}
 
+      {"Time.every", [_interval, _msg]} ->
+        {:ok, %{op: :int_literal, value: 1}}
+
+      {"Elm.Kernel.Time.every", [_interval, _msg]} ->
+        {:ok, %{op: :int_literal, value: 1}}
+
       {"Time.now", []} ->
         {:ok, %{op: :runtime_call, function: "elmx_time_now", args: []}}
 

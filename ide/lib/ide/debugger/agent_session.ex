@@ -12,8 +12,9 @@ defmodule Ide.Debugger.AgentSession do
 
   @history_limit 500
   @default_auto_fire_interval_ms 1_000
-  # Hot reload + init effects (executor, protocol follow-ups) can exceed 30s on larger templates.
-  @agent_call_timeout_ms 120_000
+  # Hot reload init effects (executor, protocol follow-ups) can exceed 30s on larger templates.
+  # Inline elmx compiles run outside the agent before mutate; this covers init/effects only.
+  @agent_call_timeout_ms 180_000
 
   @type runtime_state :: Types.RuntimeState.t() | Types.RuntimeState.wire_map()
 

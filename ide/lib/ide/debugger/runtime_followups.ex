@@ -695,19 +695,64 @@ defmodule Ide.Debugger.RuntimeFollowups do
 
     %{
       "name" => device_command_name(kind, command),
-      "target" =>
-        Map.get(command, "target") || Map.get(command, :target) || "PebbleCmd.getCurrentDateTime",
+      "target" => device_command_target(kind, command),
       "callback_constructor" => followup_message,
       "branch_constructor" => Map.get(row, "branch_constructor"),
       "task_sources" => Map.get(row, "task_sources", [])
     }
   end
 
-  defp device_command_name("cmd.device.current_date_time", _command), do: "getCurrentDateTime"
-  defp device_command_name("cmd.device.current_time_string", _command), do: "getCurrentTimeString"
+  defp device_command_name("cmd.device." <> kind, _command), do: device_command_name_for_kind(kind)
 
-  defp device_command_name(_kind, command) do
-    Map.get(command, "name") || Map.get(command, :name) || ""
+  defp device_command_name(kind, command) do
+    Map.get(command, "name") || Map.get(command, :name) ||
+      device_command_name_for_kind(kind)
+  end
+
+  defp device_command_name_for_kind("current_date_time"), do: "getCurrentDateTime"
+  defp device_command_name_for_kind("current_time_string"), do: "getCurrentTimeString"
+  defp device_command_name_for_kind("battery_level"), do: "getBatteryLevel"
+  defp device_command_name_for_kind("connection_status"), do: "getConnectionStatus"
+  defp device_command_name_for_kind("clock_style_24h"), do: "getClockStyle24h"
+  defp device_command_name_for_kind("timezone_is_set"), do: "getTimezoneIsSet"
+  defp device_command_name_for_kind("timezone"), do: "getTimezone"
+  defp device_command_name_for_kind("watch_model"), do: "getModel"
+  defp device_command_name_for_kind("watch_color"), do: "getColor"
+  defp device_command_name_for_kind("firmware_version"), do: "getFirmwareVersion"
+  defp device_command_name_for_kind("health_value"), do: "value"
+  defp device_command_name_for_kind("health_supported"), do: "supported"
+  defp device_command_name_for_kind("health_sum_today"), do: "sumToday"
+  defp device_command_name_for_kind("health_sum"), do: "sum"
+  defp device_command_name_for_kind("health_accessible"), do: "accessible"
+  defp device_command_name_for_kind(_), do: ""
+
+  defp device_command_target("cmd.device." <> kind, command),
+    do: device_command_target_for_kind(kind, command)
+
+  defp device_command_target(kind, command) do
+    device_command_target_for_kind(kind, command)
+  end
+
+  defp device_command_target_for_kind(kind, command) when is_binary(kind) do
+    cond do
+      kind in health_device_kinds() ->
+        "Pebble.Health"
+
+      kind in pebble_cmd_device_kinds() ->
+        "Pebble.Cmd"
+
+      true ->
+        Map.get(command, "target") || Map.get(command, :target) || "Pebble.Cmd"
+    end
+  end
+
+  defp health_device_kinds do
+    ~w(health_value health_supported health_sum_today health_sum health_accessible)
+  end
+
+  defp pebble_cmd_device_kinds do
+    ~w(current_date_time current_time_string battery_level connection_status clock_style_24h
+       timezone_is_set timezone watch_model watch_color firmware_version)
   end
 
   @spec synthesized_device_wire_value(

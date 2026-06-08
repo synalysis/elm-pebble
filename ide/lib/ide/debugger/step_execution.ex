@@ -74,6 +74,78 @@ defmodule Ide.Debugger.StepExecution do
     end
   end
 
+  @spec message_constructor_known?(String.t(), [String.t()]) :: boolean()
+  def message_constructor_known?(_message, []), do: true
+
+  def message_constructor_known?(message, known_messages)
+      when is_binary(message) and is_list(known_messages) do
+    ctor =
+      message
+      |> String.trim()
+      |> String.split(~r/\s+/, parts: 2)
+      |> List.first()
+
+    ctor_down = String.downcase(ctor)
+
+    Enum.any?(known_messages, fn known ->
+      if is_binary(known) do
+        known
+        |> String.trim()
+        |> String.split(~r/\s+/, parts: 2)
+        |> List.first()
+        |> case do
+          known_ctor when is_binary(known_ctor) ->
+            String.downcase(known_ctor) == ctor_down
+
+          _ ->
+            false
+        end
+      else
+        false
+      end
+    end)
+  end
+
+  def message_constructor_known?(_message, _known_messages), do: true
+
+  @spec unmapped_runtime_result(StepInput.t(), String.t(), [String.t()]) ::
+          {:ok, Types.runtime_step_result()} | :execute
+  def unmapped_runtime_result(%StepInput{} = step, "provided", known_messages)
+      when is_list(known_messages) and known_messages != [] do
+    if message_constructor_known?(step.message, known_messages) do
+      :execute
+    else
+      runtime_model =
+        step.app_model
+        |> Map.get("runtime_model")
+        |> case do
+          %{} = inner -> inner
+          _ -> %{}
+        end
+
+      runtime = %{
+        "engine" => "elmx_runtime_v1",
+        "compiler" => "elmx",
+        "execution_backend" => "compiled_elixir",
+        "operation_source" => "unmapped_message",
+        "runtime_model_source" => "unmapped_message"
+      }
+
+      {:ok,
+       StepExecutionContract.step_result_from_local_fallback(
+         %{
+           "runtime_model" => runtime_model,
+           "runtime_execution_mode" => "runtime_executed",
+           "runtime_model_source" => "unmapped_message",
+           "runtime_execution" => runtime
+         },
+         step.view_tree
+       )}
+    end
+  end
+
+  def unmapped_runtime_result(_step, _msg_source, _known_messages), do: :execute
+
   @spec canonicalize_message_constructor(String.t(), [String.t()]) :: String.t()
   def canonicalize_message_constructor(constructor, known_messages) when is_binary(constructor) do
     ctor_down = String.downcase(constructor)

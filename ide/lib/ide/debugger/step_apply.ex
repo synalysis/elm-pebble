@@ -123,7 +123,16 @@ defmodule Ide.Debugger.StepApply do
         message_source: source_override
       )
 
-    case StepExecution.runtime_result(step, update_branches) do
+    runtime_result =
+      case StepExecution.unmapped_runtime_result(step, msg_source, known_messages) do
+        {:ok, result} ->
+          {:ok, result}
+
+        :execute ->
+          StepExecution.runtime_result(step, update_branches)
+      end
+
+    case runtime_result do
       {:error, reason} ->
         record_step_execution_error(state, target, message, reason, ctx)
 
@@ -251,6 +260,17 @@ defmodule Ide.Debugger.StepApply do
         default_view_tree: ctx.default_view_tree.(target),
         execution_model: step.execution_model
       )
+
+    runtime_model =
+      case Map.get(updated_model, "runtime_model") do
+        %{} = inner -> inner
+        _ -> %{}
+      end
+
+    updated_model =
+      updated_model
+      |> Map.put("runtime_view_tree_source", "step_derived_view_tree")
+      |> StepExecution.refresh_runtime_fingerprints(runtime_model, rendered_view_tree)
 
     updated_state =
       state
