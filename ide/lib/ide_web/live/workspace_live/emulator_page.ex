@@ -123,7 +123,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
             <button
               type="button"
               data-emulator-launch
-              class="rounded bg-zinc-900 px-3 py-2 text-xs font-semibold text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
+              class="rounded bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Launch
             </button>
@@ -304,7 +304,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
                 type="button"
                 data-emulator-storage-add
                 disabled
-                class="w-full rounded bg-zinc-900 px-3 py-2 text-xs font-semibold text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
+                class="w-full rounded bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Save key
               </button>
@@ -498,7 +498,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
             <button
               type="button"
               data-wasm-launch
-              class="rounded bg-zinc-900 px-3 py-2 text-xs font-semibold text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
+              class="rounded bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Launch
             </button>

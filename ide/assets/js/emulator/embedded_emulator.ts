@@ -1922,7 +1922,7 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
 
     const save = document.createElement("button")
     save.type = "button"
-    save.className = "rounded bg-zinc-900 px-2 py-1 text-[11px] font-semibold text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
+    save.className = "rounded bg-blue-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
     save.textContent = "Save"
     save.addEventListener("click", () => this.saveStorageEntry(entry.key, type.value as "string" | "int", value.value))
 
