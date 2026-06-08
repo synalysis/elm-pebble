@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.CCodegen.PerModuleArtifacts do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.Emit
   alias Elmc.Backend.CCodegen.FunctionEmit
   alias Elmc.Backend.CCodegen.Types
@@ -116,5 +117,6 @@ defmodule Elmc.Backend.CCodegen.PerModuleArtifacts do
 
     #{function_defs}
     """
+    |> CSource.format()
   end
 end

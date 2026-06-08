@@ -2,14 +2,13 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.EnvBindings
+  alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.Hoist
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Native.RecordFields
   alias Elmc.Backend.CCodegen.Native.TypedReturn
   alias Elmc.Backend.CCodegen.Types
-  alias Elmc.Backend.CCodegen.Util
-
   @type compile_result :: Types.native_scalar_compile_result()
 
   @spec compile_expr(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
@@ -133,10 +132,10 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
       #{cond_code}
         elmc_int_t #{out} = 0;
         if (#{cond_ref}) {
-      #{Util.indent(then_code, 4)}
+      #{CSource.indent(then_code, 4)}
           #{out} = #{then_ref};
         } else {
-      #{Util.indent(else_code, 4)}
+      #{CSource.indent(else_code, 4)}
           #{out} = #{else_ref};
         }
       """

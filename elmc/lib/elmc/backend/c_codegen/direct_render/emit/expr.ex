@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.DirectRender.CommandDef
+  alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.DirectRender.Emit.If
   alias Elmc.Backend.CCodegen.DirectRender.Emit.Qualified.Draws, as: QualifiedDraws
   alias Elmc.Backend.CCodegen.EnvBindings
@@ -262,9 +263,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
 
             branch_body =
               """
-              #{Util.indent(unwrap_setup, 4)}
-              #{Util.indent(expr_code, 4)}
-              #{Util.indent(unwrap_release, 4)}
+              #{CSource.indent(unwrap_setup, 4)}
+              #{CSource.indent(expr_code, 4)}
+              #{CSource.indent(unwrap_release, 4)}
               """
 
             cond do

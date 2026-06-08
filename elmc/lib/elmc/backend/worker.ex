@@ -4,7 +4,7 @@ defmodule Elmc.Backend.Worker do
   """
 
   alias ElmEx.IR
-
+  alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Types
 
   @spec write_worker_adapter(IR.t(), String.t(), String.t()) :: :ok | {:error, Types.file_error()}
@@ -13,7 +13,11 @@ defmodule Elmc.Backend.Worker do
 
     with :ok <- File.mkdir_p(c_dir),
          :ok <- File.write(Path.join(c_dir, "elmc_worker.h"), worker_header()),
-         :ok <- File.write(Path.join(c_dir, "elmc_worker.c"), worker_source(ir, entry_module)) do
+         :ok <-
+           File.write(
+             Path.join(c_dir, "elmc_worker.c"),
+             ir |> worker_source(entry_module) |> CSource.format()
+           ) do
       :ok
     end
   end

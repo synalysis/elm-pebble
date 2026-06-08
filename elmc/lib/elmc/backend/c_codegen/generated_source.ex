@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.CCodegen.GeneratedSource do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.DirectRender.Analysis, as: DirectRenderAnalysis
   alias Elmc.Backend.CCodegen.DirectRender.GenericTargets
   alias Elmc.Backend.CCodegen.DirectRender.Registry, as: DirectRenderRegistry
@@ -13,9 +14,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
   alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.Pebble.IRAnalysis
 
-  defp finalize_source(source) do
-    source |> Util.collapse_extra_newlines() |> String.trim_trailing() |> Kernel.<>("\n")
-  end
+  defp finalize_source(source), do: CSource.format(source)
 
   @spec header(ElmEx.IR.t(), Types.codegen_opts()) :: String.t()
   def header(ir, opts) do

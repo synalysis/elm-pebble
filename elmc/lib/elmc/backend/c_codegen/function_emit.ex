@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.DebugProbes
+  alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Expr
   alias Elmc.Backend.CCodegen.Host
@@ -157,7 +158,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     |> List.flatten()
     |> Enum.reject(&(String.trim(&1) == ""))
     |> Enum.join("\n")
-    |> Util.format_c_block(2)
+    |> CSource.format_block(2)
   end
 
   defp boxed_special_body_emit(
@@ -678,11 +679,11 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       #{loop_bindings}
         elmc_int_t #{result_var} = 0;
         while (1) {
-      #{Util.indent(cond_code, 4)}
+      #{CSource.indent(cond_code, 4)}
           if (#{cond_ref}) {
-      #{Util.indent(then_branch, 6)}
+      #{CSource.indent(then_branch, 6)}
           } else {
-      #{Util.indent(else_branch, 6)}
+      #{CSource.indent(else_branch, 6)}
           }
         }
       """

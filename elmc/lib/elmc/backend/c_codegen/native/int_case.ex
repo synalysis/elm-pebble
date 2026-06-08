@@ -2,12 +2,11 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.ConstantInt
+  alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.Types
-  alias Elmc.Backend.CCodegen.Util
-
   @spec branches?(Types.int_case_branches()) :: boolean()
   def branches?(branches) when is_list(branches) do
     {int_values, wildcard_indexes} =
@@ -82,9 +81,9 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
 
         snippet = """
         #{label}:
-        #{Util.indent(expr_code, 4)}
-        #{Util.indent(release_previous, 4)}
-        #{Util.indent(assignment_code, 4)}
+        #{CSource.indent(expr_code, 4)}
+        #{CSource.indent(release_previous, 4)}
+        #{CSource.indent(assignment_code, 4)}
             break;
         """
 
@@ -130,8 +129,8 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
 
         snippet = """
         #{case_label(branch.pattern)}:
-        #{Util.indent(expr_code, 4)}
-        #{Util.indent(assignment_code, 4)}
+        #{CSource.indent(expr_code, 4)}
+        #{CSource.indent(assignment_code, 4)}
             break;
         """
 

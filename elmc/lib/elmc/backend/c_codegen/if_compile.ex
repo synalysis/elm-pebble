@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.CaseCompile
+  alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.HelperParams
   alias Elmc.Backend.CCodegen.Host
@@ -139,7 +140,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
   end
 
   defp format_if_branch_body(body) do
-    Util.format_c_block(body, 4)
+    CSource.format_block(body, 4)
   end
 
   defp maybe_extract_if_branch_helper(expr, env, out, branch_code, assignment_code) do
@@ -162,7 +163,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
           helper_def = """
           static ElmcValue *#{helper_name}(#{helper_param_decls}) {
             ElmcValue *#{helper_out} = NULL;
-          #{Util.indent(branch_code, 2)}
+          #{CSource.indent(branch_code, 2)}
             #{helper_assignment}
             return #{helper_out};
           }

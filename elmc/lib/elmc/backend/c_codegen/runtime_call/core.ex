@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.CodegenListHelpers
+  alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.ConstantInt
   alias Elmc.Backend.CCodegen.DebugProbes
   alias Elmc.Backend.CCodegen.ListLoopCodegen
@@ -1074,8 +1075,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
   defp list_loop_polarity("elmc_list_all", body_ref), do: {"1", "!(#{body_ref})", "0"}
   defp list_loop_polarity("elmc_list_any", body_ref), do: {"0", body_ref, "1"}
 
-  defp indent_loop_body(code),
-    do: code |> String.trim_trailing() |> String.replace("\n", "\n    ")
+  defp indent_loop_body(code), do: CSource.indent(code, 4)
 
   defp two_arg_lambda(%{args: [left, right], body: body})
        when is_binary(left) and is_binary(right),

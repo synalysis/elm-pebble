@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.DirectRender.CommandDef
+  alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.DirectRender.Emit.Catch
   alias Elmc.Backend.CCodegen.DirectRender.Emit.Release
   alias Elmc.Backend.CCodegen.EnvBindings
@@ -203,7 +204,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
          #{range_code}
            elmc_int_t direct_step_#{next} = (#{first_ref} <= #{last_ref}) ? 1 : -1;
            for (elmc_int_t #{item_var} = #{first_ref}; direct_rc == 0; #{item_var} += direct_step_#{next}) {
-         #{Util.indent(body_code, 2)}
+         #{CSource.indent(body_code, 2)}
              if (#{item_var} == #{last_ref}) break;
            }
          """, counter}
@@ -244,7 +245,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
          #{range_code}
            elmc_int_t direct_step_#{next} = (#{first_ref} <= #{last_ref}) ? 1 : -1;
            for (elmc_int_t #{item_var} = #{first_ref}, #{index_var} = 0; direct_rc == 0; #{item_var} += direct_step_#{next}, #{index_var} += 1) {
-         #{Util.indent(body_code, 2)}
+         #{CSource.indent(body_code, 2)}
              if (#{item_var} == #{last_ref}) break;
            }
          """, counter}
@@ -1068,7 +1069,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
            #{range_code}
             elmc_int_t direct_step_#{next} = (#{first_ref} <= #{last_ref}) ? 1 : -1;
             for (elmc_int_t direct_item_i_#{next} = #{first_ref}; direct_rc == 0; direct_item_i_#{next} += direct_step_#{next}) {
-           #{Util.indent(body_code, 4)}
+           #{CSource.indent(body_code, 4)}
                if (direct_item_i_#{next} == #{last_ref}) break;
              }
            """, counter}
@@ -1088,7 +1089,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
              ElmcValue *direct_cursor_#{next} = #{list_var};
              while (direct_rc == 0 && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
                ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
-           #{Util.indent(body_code, 4)}
+           #{CSource.indent(body_code, 4)}
                direct_cursor_#{next} = direct_node_#{next}->tail;
              }
              elmc_release(#{list_var});

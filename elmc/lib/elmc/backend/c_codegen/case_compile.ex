@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.ConstructorTagCase
+  alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.HelperParams
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
@@ -182,7 +183,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
   end
 
   defp format_branch_body(body) do
-    Util.format_c_block(body, 4)
+    CSource.format_block(body, 4)
   end
 
   defp maybe_extract_branch_helper(
@@ -222,12 +223,12 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
           helper_def = """
           static ElmcValue *#{helper_name}(#{helper_param_decls}) {
             ElmcValue *#{helper_out} = NULL;
-          #{Util.indent(enter_probe, 2)}
-          #{Util.indent(unwrap_setup, 2)}
-          #{Util.indent(expr_code, 2)}
-          #{Util.indent(after_expr_probe, 2)}
+          #{CSource.indent(enter_probe, 2)}
+          #{CSource.indent(unwrap_setup, 2)}
+          #{CSource.indent(expr_code, 2)}
+          #{CSource.indent(after_expr_probe, 2)}
             #{helper_assignment}
-          #{Util.indent(unwrap_release, 2)}
+          #{CSource.indent(unwrap_release, 2)}
             return #{helper_out};
           }
           """

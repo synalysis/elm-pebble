@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions
+  alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.DirectRender.UseSites
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Expr
@@ -544,7 +545,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
           {:ok, code, ref, _counter} ->
             helper_def = """
             static elmc_int_t #{helper_name}(#{helper_params}) {
-            #{Util.indent(code, 2)}
+            #{CSource.indent(code, 2)}
               return #{ref};
             }
             """
@@ -600,7 +601,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
 
     helper_def = """
     static void #{helper_name}(#{helper_params}) {
-    #{Util.indent(field_code, 2)}
+    #{CSource.indent(field_code, 2)}
       #{assignments}
     }
     """
@@ -855,7 +856,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
     """
       #{c_type} #{var} = #{default};
       {
-    #{Util.indent(code, 4)}
+    #{CSource.indent(code, 4)}
         #{var} = #{ref};
       }
     """

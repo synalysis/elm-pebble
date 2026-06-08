@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.DirectRender.Emit.Catch
+  alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.SpecialValues
@@ -89,7 +90,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
 
     {:ok,
      """
-     #{Util.indent(code, 4)}
+     #{CSource.indent(code, 4)}
        elmc_draw_cmd_init(&scene_cmd, #{Host.generated_draw_kind_macro(kind)});
          #{assignments}
          #{Catch.push_cmd_check()}
@@ -221,13 +222,13 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
 
     {:ok,
      """
-     #{Util.indent(code, 2)}
-     #{Util.indent(text_code, 2)}
+     #{CSource.indent(code, 2)}
+     #{CSource.indent(text_code, 2)}
        elmc_draw_cmd_init(&scene_cmd, #{Host.generated_draw_kind_macro(kind)});
          #{assignments}
-     #{Util.indent(text_copy_code, 4)}
+     #{CSource.indent(text_copy_code, 4)}
          #{Catch.push_cmd_check()}
-     #{Util.indent(text_release_code, 4)}
+     #{CSource.indent(text_release_code, 4)}
      """, counter}
   end
 
@@ -330,7 +331,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
     copy_code = """
     if (#{text_var} && #{text_var}->tag == ELMC_TAG_STRING && #{text_var}->payload) {
       const char *direct_text = (const char *)#{text_var}->payload;
-    #{Util.indent(text_copy_body(), 2)}
+    #{CSource.indent(text_copy_body(), 2)}
     }
     """
 
@@ -342,7 +343,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
     """
     {
       const char *direct_text = #{source};
-    #{Util.indent(text_copy_body(), 2)}
+    #{CSource.indent(text_copy_body(), 2)}
     }
     """
   end
@@ -403,10 +404,10 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
 
       {:ok,
        """
-       #{Util.indent(code, 4)}
-       #{Util.indent(offset_x_code, 4)}
-       #{Util.indent(offset_y_code, 4)}
-       #{Util.indent(rotation_code, 4)}
+       #{CSource.indent(code, 4)}
+       #{CSource.indent(offset_x_code, 4)}
+       #{CSource.indent(offset_y_code, 4)}
+       #{CSource.indent(rotation_code, 4)}
          elmc_draw_cmd_init(&scene_cmd, #{Host.generated_draw_kind_macro(kind)});
            scene_cmd.path_point_count = #{length(points)};
            scene_cmd.path_offset_x = #{offset_x};

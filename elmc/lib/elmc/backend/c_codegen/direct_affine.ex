@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
 
@@ -1288,7 +1289,7 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
 
     """
     if (#{item_ref} == 0) {
-      #{Util.indent(direct_text_copy_body_for_literal(escaped), 6)}
+      #{CSource.indent(direct_text_copy_body_for_literal(escaped), 6)}
     } else {
       snprintf(scene_cmd.text, sizeof(scene_cmd.text), "%lld", (long long)#{item_ref});
       scene_cmd.text[sizeof(scene_cmd.text) - 1] = '\\0';
@@ -1297,7 +1298,7 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
   end
 
   defp affine_draw_text_copy(%{label: {:literal, literal}}, _next, _mode) do
-    Util.indent(direct_text_copy_body_for_literal(Util.escape_c_string(literal)), 4)
+    CSource.indent(direct_text_copy_body_for_literal(Util.escape_c_string(literal)), 4)
   end
 
   defp affine_draw_text_copy(_command, _next, _mode), do: ""
@@ -1306,7 +1307,7 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
     """
     {
       const char *direct_text = "#{escaped}";
-    #{Util.indent(Host.direct_text_copy_body(), 2)}
+    #{CSource.indent(Host.direct_text_copy_body(), 2)}
     }
     """
   end

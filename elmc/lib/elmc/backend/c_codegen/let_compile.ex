@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.DebugProbes
+  alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Expr
   alias Elmc.Backend.CCodegen.HelperParams
@@ -311,7 +312,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
 
           helper_def = """
           static ElmcValue *#{helper_name}(#{helper_param_decls}) {
-          #{Util.indent(body_code, 2)}
+          #{CSource.indent(body_code, 2)}
             return #{body_var};
           }
           """

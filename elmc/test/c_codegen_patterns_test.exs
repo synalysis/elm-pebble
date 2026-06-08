@@ -1169,14 +1169,15 @@ defmodule Elmc.CCodegenPatternsTest do
 
     assert init_body =~ "elmc_record_new_ints"
     refute init_body =~ "elmc_record_new_take"
-    assert init_body =~ "ELMC_RECORD_GET_INDEX_INT(ELMC_RECORD_GET_INDEX(context, 3 /* screen */)"
-    refute Regex.match?(~r/elmc_record_get_index\(context, 3 \/\* screen \*\/\).*\n.*elmc_record_get_index\(context, 3 \/\* screen \*\)/s, init_body)
+    assert length(Regex.scan(~r/elmc_record_get_index\(context, 3 \/\* screen \*\/\)/, init_body)) == 1
+    assert init_body =~ "ELMC_RECORD_GET_INDEX_INT(tmp_1_screen, 1 /* height */)"
+    assert init_body =~ "ELMC_RECORD_GET_INDEX_INT(tmp_1_screen, 3 /* width */)"
     assert init_body =~
              "elmc_cmd1(ELMC_PEBBLE_CMD_GET_CURRENT_DATE_TIME, ELMC_PEBBLE_MSG_CURRENTDATETIME)"
     refute init_body =~ "elmc_new_int(ELMC_PEBBLE_CMD_GET_CURRENT_DATE_TIME)"
     refute init_body =~ "elmc_new_int(23)"
     refute init_body =~ "ELMC_PEBBLE_MSG_CURRENT_DATE_TIME_TARGET"
-    assert length(Regex.scan(~r/ElmcValue \*tmp_1 =/, init_body)) == 1
+    assert init_body =~ "ElmcValue *tmp_1_screen = elmc_record_get_index(context, 3 /* screen */)"
   end
 
   test "record literal reuses shared zero subexpression without duplicate tmp vars" do
@@ -1230,6 +1231,74 @@ defmodule Elmc.CCodegenPatternsTest do
 
     assert length(Regex.scan(~r/ElmcValue \*tmp_1 = elmc_int_zero\(\);/, init_body)) == 1
     refute length(Regex.scan(~r/ElmcValue \*tmp_2 = elmc_int_zero\(\);/, init_body)) > 0
+  end
+
+  test "boxed record literal reuses nested field-access prefixes like context.screen" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+
+    type alias Model =
+        { displayShape : Int
+        , screenH : Int
+        , screenW : Int
+        }
+
+    type Msg
+        = Noop
+
+    init context =
+        ( { displayShape = context.screen.shape
+          , screenH = context.screen.height
+          , screenW = context.screen.width
+          }
+        , Cmd.none
+        )
+
+    update _ model =
+        ( model, Cmd.none )
+
+    subscriptions _ =
+        Sub.none
+
+    view _ =
+        Ui.windowStack []
+
+    main =
+        Platform.application
+            { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/record_screen_cse_codegen", __DIR__)
+    out_dir = Path.expand("tmp/record_screen_cse_codegen_out", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    init_body =
+      generated_c
+      |> String.split("ElmcValue *elmc_fn_Main_init(ElmcValue ** const args, const int argc) {", parts: 2)
+      |> Enum.at(1, "")
+      |> String.split("}\n", parts: 2)
+      |> hd()
+
+    assert length(Regex.scan(~r/elmc_record_get\(context, "screen"\)/, init_body)) == 1
+
+    assert init_body =~ "ElmcValue *tmp_1_screen = elmc_record_get(context, \"screen\")"
+    assert init_body =~ ~s/elmc_record_get(tmp_1_screen, "shape")/
+    assert init_body =~ ~s/elmc_record_get(tmp_1_screen, "height")/
+    assert init_body =~ ~s/elmc_record_get(tmp_1_screen, "width")/
+    assert init_body =~ "ElmcValue *tmp_2_shape = elmc_record_get(tmp_1_screen, \"shape\")"
+    assert init_body =~ "ElmcValue *tmp_3_height = elmc_record_get(tmp_1_screen, \"height\")"
+    assert init_body =~ "ElmcValue *tmp_4_width = elmc_record_get(tmp_1_screen, \"width\")"
   end
 
   test "toMsg platform cmd encodes constructor tag from call site, not convention names" do

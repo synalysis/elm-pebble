@@ -2,13 +2,12 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.PebbleMsgTag
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.Native.IntCase, as: NativeIntCase
   alias Elmc.Backend.CCodegen.Patterns
   alias Elmc.Backend.CCodegen.Types
-  alias Elmc.Backend.CCodegen.Util
-
   @constructor_tag_switch_min_branches 4
 
   @constructor_tag_switch_excluded_names MapSet.new([
@@ -81,7 +80,7 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
 
         snippet = """
         #{case_label(branch.pattern)}:
-        #{Util.indent(expr_code, 4)}
+        #{CSource.indent(expr_code, 4)}
             #{assignment_code}
             break;
         """
@@ -140,7 +139,7 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
 
         snippet = """
         #{case_label(branch.pattern)}:
-        #{Util.indent(expr_code, 4)}
+        #{CSource.indent(expr_code, 4)}
             #{assignment_code}
             break;
         """

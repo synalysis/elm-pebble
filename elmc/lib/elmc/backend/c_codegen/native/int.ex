@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.ConstantInt
+  alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.ListLoopCodegen
@@ -320,10 +321,10 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
       #{cond_code}
         elmc_int_t #{out};
         if (#{cond_ref}) {
-      #{Util.indent(then_code, 4)}
+      #{CSource.indent(then_code, 4)}
           #{out} = #{then_ref};
         } else {
-      #{Util.indent(else_code, 4)}
+      #{CSource.indent(else_code, 4)}
           #{out} = #{else_ref};
         }
       """
