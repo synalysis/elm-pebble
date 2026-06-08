@@ -10,6 +10,8 @@ defmodule Ide.Emulator.WatchfaceSmokeScreenLiveTest do
   """
   use Ide.DataCase, async: false
 
+  @moduletag :live_emulator
+
   alias Ide.Emulator
   alias Ide.Emulator.LogCapture
   alias Ide.Emulator.Workflow

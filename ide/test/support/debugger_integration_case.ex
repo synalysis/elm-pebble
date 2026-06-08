@@ -15,6 +15,7 @@ defmodule Ide.DebuggerIntegrationCase do
       import Ide.DebuggerIntegrationHelpers
 
       @moduletag :integration
+      @moduletag :slow
     end
   end
 end
