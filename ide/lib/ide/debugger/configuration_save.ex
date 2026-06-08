@@ -69,12 +69,16 @@ defmodule Ide.Debugger.ConfigurationSave do
   @spec subscription_callback(Types.runtime_state(), bridge_ctx()) :: String.t() | nil
   def subscription_callback(state, %{introspect: introspect} = bridge_ctx)
       when is_map(state) and is_function(introspect) and is_map(bridge_ctx) do
-    CompanionBridgeRuntime.subscription_callback_from_state(
-      state,
-      :companion,
-      CompanionBridge.configuration_contract(),
-      bridge_ctx
-    )
+    contract = CompanionBridge.configuration_contract()
+
+    Enum.find_value([:companion, :phone], fn target ->
+      CompanionBridgeRuntime.subscription_callback_from_state(
+        state,
+        target,
+        contract,
+        bridge_ctx
+      )
+    end)
   end
 
   def subscription_callback(_state, _bridge_ctx), do: nil

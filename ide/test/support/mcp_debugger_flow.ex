@@ -22,7 +22,7 @@ defmodule Ide.TestSupport.McpDebuggerFlow do
               ( { model | n = model.n + 1 }, Cmd.none )
 
           Tick ->
-              model
+              ( model, Cmd.none )
 
   subscriptions _ =
       Time.every 1000 Tick

@@ -111,8 +111,6 @@ defmodule Ide.Debugger.InitSurfaceEffects do
 
   defp apply_supported_health_metrics(state, _target, _ctx), do: state
 
-  def apply_device_data_responses(state, _target, _ctx), do: state
-
   @spec apply_protocol_events(Types.runtime_state(), Types.surface_target(), ctx()) ::
           Types.runtime_state()
   def apply_protocol_events(state, target, ctx)
@@ -195,4 +193,6 @@ defmodule Ide.Debugger.InitSurfaceEffects do
   end
 
   def apply_companion_bridge_commands(state, _target, _ctx), do: state
+
+  def apply_device_data_responses(state, _target, _ctx), do: state
 end

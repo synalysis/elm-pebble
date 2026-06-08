@@ -248,11 +248,27 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
 
   def precompile_inline_artifacts(_session_key, _source, _rel_path, _source_root), do: %{}
 
+  @spec reload_precompiled_artifacts(Types.runtime_state(), String.t()) ::
+          Types.runtime_artifacts()
+  defp reload_precompiled_artifacts(state, source_root)
+       when is_map(state) and is_binary(source_root) do
+    case Map.get(state, :__reload_precompiled_artifacts__) do
+      %{source_root: ^source_root, artifacts: artifacts} when is_map(artifacts) ->
+        artifacts
+
+      %{"source_root" => ^source_root, "artifacts" => artifacts} when is_map(artifacts) ->
+        artifacts
+
+      _ ->
+        %{}
+    end
+  end
+
   @spec artifacts_from_inline_source(Types.runtime_state(), String.t(), attach_ctx()) ::
           Types.runtime_artifacts()
   defp artifacts_from_inline_source(state, source_root, ctx)
        when is_map(state) and is_binary(source_root) and is_map(ctx) do
-    case Map.get(state, :__reload_precompiled_artifacts__) do
+    case reload_precompiled_artifacts(state, source_root) do
       precompiled when is_map(precompiled) and map_size(precompiled) > 0 ->
         precompiled
 

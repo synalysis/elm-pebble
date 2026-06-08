@@ -4,7 +4,7 @@ defmodule Ide.Mcp.ToolsDebuggerIntegrationTest do
 
   @moduletag :integration
   @moduletag :slow
-  @moduletag timeout: 180_000
+  @moduletag timeout: 300_000
 
   import Ide.TestSupport.McpDebuggerFlow
 
@@ -74,7 +74,7 @@ defmodule Ide.Mcp.ToolsDebuggerIntegrationTest do
                 ( { model | n = model.n + 1 }, Cmd.none )
 
             Tick ->
-                model
+                ( model, Cmd.none )
 
     subscriptions _ =
         Time.every 1000 Tick

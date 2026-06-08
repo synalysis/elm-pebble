@@ -52,7 +52,10 @@ defmodule Ide.Debugger.RuntimeApi do
              AgentSession.mutate(project_slug, fn state ->
                state =
                  if is_map(precompiled) and map_size(precompiled) > 0 do
-                   Map.put(state, :__reload_precompiled_artifacts__, precompiled)
+                   Map.put(state, :__reload_precompiled_artifacts__, %{
+                     source_root: source_root,
+                     artifacts: precompiled
+                   })
                  else
                    state
                  end
