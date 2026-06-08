@@ -45,17 +45,13 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall do
         compile_native_append(left, right, env, counter)
 
       true ->
-        case collect_append_segments(append_expr) do
-          {:ok, segments} ->
-            if length(segments) >= @min_list_append_concat_segments and
-                 list_append_concat_segments?(segments, env) do
-              compile_list_concat(segments, env, counter)
-            else
-              compile_generic(append_expr, env, counter)
-            end
+        {:ok, segments} = collect_append_segments(append_expr)
 
-          :error ->
-            compile_generic(append_expr, env, counter)
+        if length(segments) >= @min_list_append_concat_segments and
+             list_append_concat_segments?(segments, env) do
+          compile_list_concat(segments, env, counter)
+        else
+          compile_generic(append_expr, env, counter)
         end
     end
   end
@@ -227,10 +223,8 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall do
         env,
         counter
       ) do
-    case compile_list_repeat_int(n, value, env, counter) do
-      {:ok, code, out, counter} -> {code, out, counter}
-      :error -> compile_generic(expr, env, counter)
-    end
+    {:ok, code, out, counter} = compile_list_repeat_int(n, value, env, counter)
+    {code, out, counter}
   end
 
   def compile(
@@ -2107,10 +2101,8 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall do
   defp compile_concat_item(item, env, counter) do
     case unwrap_list_repeat_expr(item) do
       {:ok, n, inner} ->
-        case compile_list_repeat_int(n, inner, env, counter) do
-          {:ok, code, var, c} -> {:ok, code, var, c}
-          :error -> :error
-        end
+        {:ok, code, var, c} = compile_list_repeat_int(n, inner, env, counter)
+        {:ok, code, var, c}
 
       :error ->
         {code, var, c} = Host.compile_expr(item, env, counter)

@@ -29,5 +29,5 @@ defmodule Ide.Debugger.Types.CompanionConfiguration do
           optional(String.t()) => Types.wire_input()
         }
 
-  @type wire_map :: t() | map()
+  @type wire_map :: t() | Types.wire_map()
 end

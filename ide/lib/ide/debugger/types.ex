@@ -4,6 +4,7 @@ defmodule Ide.Debugger.Types do
   """
 
   alias ElmEx.DebuggerContract.Payload
+  alias Ide.CompanionProtocol.WireSchema
   alias Ide.Debugger.Protocol.{ConstructorValue, Event, Schema}
   alias Ide.Debugger.RuntimeArtifacts.Types, as: RuntimeArtifactsTypes
 
@@ -211,16 +212,21 @@ defmodule Ide.Debugger.Types do
 
   @type protocol_wire_type :: Schema.wire_type()
 
+  @type protocol_wire_slot :: Schema.wire_slot()
+
+  @type protocol_key_ids :: WireSchema.key_ids()
+
   @type protocol_ctor_value :: ConstructorValue.t() | ConstructorValue.wire_value()
 
-  @type protocol_schema_message :: Schema.message() | map()
+  @type protocol_schema_message :: Schema.message() | Schema.runtime_message()
 
-  @type protocol_message_wire_value :: protocol_ctor_value() | map() | String.t() | nil
+  @type protocol_message_wire_value ::
+          protocol_ctor_value() | wire_map() | String.t() | nil
 
   @type protocol_wire_scalar :: String.t() | integer() | float() | boolean()
 
   @type protocol_wire_arg ::
-          protocol_ctor_value() | protocol_wire_scalar() | tuple() | map() | nil
+          protocol_ctor_value() | protocol_wire_scalar() | tuple() | wire_map() | nil
 
   @type protocol_wire_normalize_input :: protocol_wire_arg()
 
@@ -229,6 +235,8 @@ defmodule Ide.Debugger.Types do
   @type debugger_contract :: Payload.wire_payload()
 
   @type elm_introspect :: debugger_contract()
+
+  @type elmx_manifest :: wire_map()
 
   @type inner_runtime_model :: InnerRuntimeModel.t() | InnerRuntimeModel.wire_map()
 
@@ -254,8 +262,8 @@ defmodule Ide.Debugger.Types do
 
   @type companion_bridge_payload ::
           boolean()
-          | map()
-          | [map()]
+          | wire_map()
+          | [wire_map()]
           | String.t()
           | integer()
           | nil
@@ -301,20 +309,20 @@ defmodule Ide.Debugger.Types do
           optional(:ok_result_variant) => String.t()
         }
 
-  @type protocol_metadata_value :: wire_scalar() | map() | nil
+  @type protocol_metadata_value :: wire_scalar() | wire_map() | nil
 
-  @type phone_to_watch_message_value :: protocol_ctor_value() | map()
+  @type phone_to_watch_message_value :: protocol_ctor_value() | wire_map()
 
   @type phone_to_watch_payload :: subscription_payload() | boolean() | String.t()
 
-  @type elmc_wire_ctor_call :: map()
+  @type elmc_wire_ctor_call :: wire_ctor()
 
-  @type elmc_wire_ctor_value :: map()
+  @type elmc_wire_ctor_value :: wire_ctor()
 
   @type simulator_command_input ::
-          elmc_wire_ctor_value() | elmc_wire_ctor_call() | wire_scalar() | map()
+          elmc_wire_ctor_value() | elmc_wire_ctor_call() | wire_scalar() | wire_map()
 
-  @type subscription_row_input :: DisabledSubscription.wire_map() | map()
+  @type subscription_row_input :: DisabledSubscription.wire_map() | wire_map()
 
   @type runtime_model_patch :: %{optional(String.t()) => wire_input()}
 
@@ -362,14 +370,14 @@ defmodule Ide.Debugger.Types do
 
   @type device_preview :: nil | boolean() | String.t() | device_preview_map()
 
-  @type elm_maybe :: protocol_ctor_value() | map() | nil
+  @type elm_maybe :: protocol_ctor_value() | wire_map() | nil
 
   @type protocol_inbound_row :: %{
-          optional(String.t()) => String.t() | map() | list() | nil,
-          optional(atom()) => String.t() | map() | list() | nil
+          optional(String.t()) => String.t() | wire_map() | list() | nil,
+          optional(atom()) => String.t() | wire_map() | list() | nil
         }
 
-  @type subscription_payload :: map() | protocol_ctor_value() | wire_scalar()
+  @type subscription_payload :: wire_map() | protocol_ctor_value() | wire_scalar()
 
   @type view_output_row :: Elmx.Types.view_output_row()
 
@@ -455,6 +463,8 @@ defmodule Ide.Debugger.Types do
 
   @type compile_failure_detail :: Elmx.Types.compile_failure_detail()
 
+  @type parse_error :: :parse_error | :entry_not_found | atom() | String.t()
+
   @type elm_tuple_like :: Elmx.Types.elm_tuple_like()
 
   @type dict_entry_input :: Elmx.Types.dict_entry_input()
@@ -477,9 +487,10 @@ defmodule Ide.Debugger.Types do
 
   @type fingerprint_compare_surface_row :: wire_map()
 
-  @type normalized_export_term :: map() | list() | wire_scalar()
+  @type normalized_export_term :: wire_scalar() | wire_map() | [normalized_export_term()]
 
-  @type static_task_result :: map() | integer() | {map(), map()}
+  @type static_task_result ::
+          protocol_ctor_value() | {protocol_ctor_value(), protocol_ctor_value()}
 
   @type runtime_view_nodes :: [view_output_row()]
 

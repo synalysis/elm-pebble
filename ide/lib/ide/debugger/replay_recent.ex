@@ -19,7 +19,9 @@ defmodule Ide.Debugger.ReplayRecent do
            String.t() ->
              Types.runtime_state())
 
-  @type append_event_fn :: (Types.runtime_state(), String.t(), map() -> Types.runtime_state())
+  @type append_event_fn ::
+          (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() ->
+             Types.runtime_state())
 
   @type host :: %{
           required(:apply_step_once) => apply_step_fn(),

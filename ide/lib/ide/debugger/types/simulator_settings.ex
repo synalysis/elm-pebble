@@ -18,10 +18,28 @@ defmodule Ide.Debugger.Types.SimulatorSettings do
           optional(String.t()) => Types.wire_input()
         }
 
+  @type sun :: %{
+          optional(:sunriseMin) => integer(),
+          optional(:sunsetMin) => integer(),
+          optional(:polarDay) => boolean(),
+          optional(String.t()) => Types.wire_input()
+        }
+
+  @type moon :: %{
+          optional(:moonriseMin) => integer(),
+          optional(:moonsetMin) => integer(),
+          optional(:phaseE6) => integer(),
+          optional(String.t()) => Types.wire_input()
+        }
+
+  @type tide :: Types.wire_map()
+
+  @type calendar_event :: Types.wire_map()
+
   @type environment :: %{
-          optional(:sun) => map(),
-          optional(:moon) => map(),
-          optional(:tide) => map() | nil,
+          optional(:sun) => sun(),
+          optional(:moon) => moon(),
+          optional(:tide) => tide() | nil,
           optional(String.t()) => Types.wire_input()
         }
 
@@ -42,9 +60,9 @@ defmodule Ide.Debugger.Types.SimulatorSettings do
           optional(:notifications_enabled) => boolean(),
           optional(:quiet_hours) => boolean(),
           optional(:weather) => weather(),
-          optional(:calendar_events) => [map()],
+          optional(:calendar_events) => [calendar_event()],
           optional(:storage_values) => StorageValue.values_map(),
-          optional(:preferences) => map(),
+          optional(:preferences) => Types.wire_map(),
           optional(:environment) => environment(),
           optional(:latitude) => float(),
           optional(:longitude) => float(),
@@ -62,5 +80,5 @@ defmodule Ide.Debugger.Types.SimulatorSettings do
           optional(atom()) => Types.wire_input()
         }
 
-  @type wire_map :: t() | map()
+  @type wire_map :: t() | Types.wire_map()
 end

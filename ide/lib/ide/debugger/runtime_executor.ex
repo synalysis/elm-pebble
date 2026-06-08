@@ -36,7 +36,7 @@ defmodule Ide.Debugger.RuntimeExecutor do
   @doc """
   Re-evaluates Elm `view/1` for the current model without stepping `init/1` or `update/2`.
   """
-  @spec view(execution_input()) ::
+  @spec view(execution_input() | Types.wire_map()) ::
           {:ok, Types.elmx_view_preview_payload()} | {:error, Types.execution_error()}
   def view(input) when is_map(input) do
     with :ok <- require_elmx_manifest(input),
@@ -50,7 +50,6 @@ defmodule Ide.Debugger.RuntimeExecutor do
     else
       {:error, {:core_ir_execution_failed, _} = err} -> {:error, err}
       {:error, {:elmx_execution_failed, _} = err} -> {:error, {:core_ir_execution_failed, err}}
-      {:error, reason} -> {:error, {:core_ir_execution_failed, reason}}
     end
   end
 
@@ -92,27 +91,16 @@ defmodule Ide.Debugger.RuntimeExecutor do
 
           {:error, {:core_ir_execution_failed, _} = reason} ->
             {:error, reason}
-
-          {:error, reason} ->
-            {:error, {:core_ir_execution_failed, reason}}
-
-          other ->
-            {:error, {:core_ir_execution_failed, {:invalid_external_runtime_result, other}}}
         end
     end
   end
 
-  @spec validate_execution_payload(map()) :: :ok | {:error, atom()}
-  defp validate_execution_payload(%{model_patch: patch}) when is_map(patch) do
-    if is_map(Map.get(patch, "runtime_model")) or is_map(Map.get(patch, :runtime_model)) do
-      :ok
-    else
-      {:error, :missing_runtime_model}
-    end
-  end
+  @spec validate_execution_payload(ExecutorTypes.executor_wire_result()) :: :ok | {:error, atom()}
+  defp validate_execution_payload(payload) when is_map(payload) do
+    patch = Map.get(payload, :model_patch) || Map.get(payload, "model_patch")
 
-  defp validate_execution_payload(%{"model_patch" => patch}) when is_map(patch) do
-    if is_map(Map.get(patch, "runtime_model")) do
+    if is_map(patch) and
+         (is_map(Map.get(patch, "runtime_model")) or is_map(Map.get(patch, :runtime_model))) do
       :ok
     else
       {:error, :missing_runtime_model}
@@ -166,7 +154,8 @@ defmodule Ide.Debugger.RuntimeExecutor do
     end
   end
 
-  @spec resolve_view_module(execution_input()) :: {:ok, module()} | {:error, Types.execution_error()}
+  @spec resolve_view_module(execution_input()) ::
+          {:ok, module()} | {:error, Types.execution_error()}
   defp resolve_view_module(input) do
     revision = Map.get(input, :elmx_revision) || Map.get(input, "elmx_revision")
 

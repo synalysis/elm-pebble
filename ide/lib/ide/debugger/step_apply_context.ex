@@ -6,6 +6,7 @@ defmodule Ide.Debugger.StepApplyContext do
   alias Ide.Debugger.ProtocolEvents
   alias Ide.Debugger.ProtocolRx
   alias Ide.Debugger.RuntimeFollowups
+  alias Ide.Debugger.StepApply
   alias Ide.Debugger.StepApplyCallbacks
   alias Ide.Debugger.SurfaceCompileArtifacts
   alias Ide.Debugger.CompanionBridge.Runtime, as: CompanionBridgeRuntime
@@ -23,6 +24,6 @@ defmodule Ide.Debugger.StepApplyContext do
           required(:runtime_followups) => RuntimeFollowups.apply_ctx()
         }
 
-  @spec build(deps()) :: map()
+  @spec build(deps()) :: StepApply.ctx()
   def build(%{} = deps), do: StepApplyCallbacks.build(deps)
 end

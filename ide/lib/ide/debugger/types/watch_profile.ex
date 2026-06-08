@@ -3,6 +3,7 @@ defmodule Ide.Debugger.Types.WatchProfile do
   Watch hardware profile from `Ide.WatchModels` / `Debugger.watch_profiles/0`.
   """
 
+  alias Ide.Debugger.Types
   alias Ide.WatchModels.Profile, as: CatalogProfile
 
   @type screen :: CatalogProfile.screen()
@@ -14,7 +15,7 @@ defmodule Ide.Debugger.Types.WatchProfile do
           optional(:label) => String.t(),
           optional(:name) => String.t(),
           optional(:shape) => CatalogProfile.shape(),
-          optional(:screen) => screen() | map(),
+          optional(:screen) => screen() | Types.wire_map(),
           optional(:color_mode) => CatalogProfile.color_mode(),
           optional(:has_microphone) => boolean(),
           optional(:has_compass) => boolean(),
@@ -22,5 +23,5 @@ defmodule Ide.Debugger.Types.WatchProfile do
           optional(String.t()) => term()
         }
 
-  @type wire_list_item :: list_item() | map()
+  @type wire_list_item :: list_item() | Types.wire_map()
 end

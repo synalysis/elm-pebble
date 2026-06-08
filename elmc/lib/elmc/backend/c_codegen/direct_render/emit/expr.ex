@@ -429,8 +429,6 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
     ref != "" and not String.starts_with?(ref, "tmp_")
   end
 
-  defp direct_command_native_int_ref?(_ref), do: false
-
   @spec native_int_let?(Types.binding_name(), Types.ir_expr(), Types.ir_expr(), Types.compile_env()) ::
           boolean()
   defp native_int_let?(name, value_expr, in_expr, env)

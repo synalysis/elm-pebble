@@ -28,7 +28,7 @@ defmodule Ide.Debugger.Types.StepExecutionContract do
     RuntimeStepResult.from_executor_result(result)
   end
 
-  @spec step_result_from_wire(map()) :: step_result()
+  @spec step_result_from_wire(ExecutorTypes.executor_wire_result()) :: step_result()
   def step_result_from_wire(wire) when is_map(wire) do
     RuntimeStepResult.from_executor_wire(wire)
   end

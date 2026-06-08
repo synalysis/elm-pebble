@@ -15,11 +15,11 @@ defmodule Ide.Debugger.Types.ExecutionModel do
 
   @type wire_map :: %{
           optional(:runtime_model) => InnerRuntimeModel.t() | InnerRuntimeModel.wire_map(),
-          optional(:elm_introspect) => map(),
-          optional(:elmx_manifest) => map(),
+          optional(:elm_introspect) => Types.elm_introspect(),
+          optional(:elmx_manifest) => Types.elmx_manifest(),
           optional(:elmx_revision) => String.t(),
-          optional(:vector_resource_indices) => map(),
-          optional(:bitmap_resource_indices) => map(),
+          optional(:vector_resource_indices) => RuntimeArtifacts.Types.resource_indices(),
+          optional(:bitmap_resource_indices) => RuntimeArtifacts.Types.resource_indices(),
           optional(String.t()) => Types.wire_input(),
           optional(atom()) => Types.wire_input()
         }

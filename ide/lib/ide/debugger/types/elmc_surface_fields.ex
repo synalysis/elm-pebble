@@ -168,7 +168,7 @@ defmodule Ide.Debugger.Types.ElmcSurfaceFields do
   defp bool_wire(true), do: "true"
   defp bool_wire(false), do: "false"
 
-  @spec maybe_put_artifact(artifact_fields(), String.t(), map() | String.t() | nil) ::
+  @spec maybe_put_artifact(artifact_fields(), String.t(), Types.wire_map() | String.t() | nil) ::
           artifact_fields()
   defp maybe_put_artifact(map, key, value) when is_map(map) and is_binary(key) do
     case value do

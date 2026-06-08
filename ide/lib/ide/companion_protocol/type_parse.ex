@@ -1,10 +1,12 @@
 defmodule Ide.CompanionProtocol.TypeParse do
   @moduledoc false
 
-  @type constructor :: %{name: String.t(), args: [String.t()]}
-  @type alias_field :: %{name: String.t(), type: String.t()}
+  alias Ide.CompanionProtocol.WireSchema
 
-  @spec parse_unions(String.t()) :: %{optional(String.t()) => [constructor()]}
+  @type constructor :: WireSchema.constructor()
+  @type alias_field :: WireSchema.alias_field()
+
+  @spec parse_unions(String.t()) :: WireSchema.payload_unions()
   def parse_unions(source) when is_binary(source) do
     ~r/(?:^|\n)type\s+([A-Z][A-Za-z0-9_]*)\s*\n((?:\s{4}=\s+[A-Z][^\n]*(?:\n\s{4}\|\s+[A-Z][^\n]*)*|\s+=\s+[A-Z][^\n]*(?:\n\s+\|\s+[A-Z][^\n]*)*))/m
     |> Regex.scan(source)
@@ -23,7 +25,7 @@ defmodule Ide.CompanionProtocol.TypeParse do
     end)
   end
 
-  @spec parse_type_aliases(String.t()) :: %{optional(String.t()) => [alias_field()]}
+  @spec parse_type_aliases(String.t()) :: WireSchema.type_aliases()
   def parse_type_aliases(source) when is_binary(source) do
     ~r/(?:^|\n)type\s+alias\s+([A-Z][A-Za-z0-9_]*)\s*=\s*\{([^}]*)\}/m
     |> Regex.scan(source)

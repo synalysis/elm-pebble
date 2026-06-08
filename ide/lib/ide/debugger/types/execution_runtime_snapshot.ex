@@ -24,5 +24,5 @@ defmodule Ide.Debugger.Types.ExecutionRuntimeSnapshot do
           optional(atom()) => Types.wire_input()
         }
 
-  @type wire_map :: t() | map()
+  @type wire_map :: t() | Types.wire_map()
 end

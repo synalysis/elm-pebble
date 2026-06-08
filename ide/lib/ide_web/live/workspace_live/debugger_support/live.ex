@@ -3,6 +3,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Live do
   @dialyzer :no_match
 
   alias Ide.Debugger.CursorSeq
+  alias Ide.Debugger.Types, as: DebuggerTypes
   alias Phoenix.Component
   alias Ide.Debugger
   alias Ide.Projects
@@ -160,7 +161,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Live do
   end
 
   defp parse_since_seq(_value), do: nil
-  @spec assign_timeline(Types.socket(), map()) :: Types.socket()
+  @spec assign_timeline(Types.socket(), Types.debugger_state_map()) :: Types.socket()
   defp assign_timeline(socket, debugger_state) do
     events = Map.get(debugger_state, :events, [])
 
@@ -338,7 +339,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Live do
     end
   end
 
-  @spec latest_debugger_seq(map(), boolean()) :: Types.maybe_non_neg_integer()
+  @spec latest_debugger_seq(Types.debugger_state_map(), boolean()) :: Types.maybe_non_neg_integer()
   defp latest_debugger_seq(debugger_state, debug_mode) when is_map(debugger_state) do
     debugger_state
     |> Timeline.debugger_rows()
@@ -353,14 +354,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Live do
 
   @spec debugger_assigns(
           Types.maybe_non_neg_integer(),
-          %{
-            watch: map() | nil,
-            companion: map() | nil,
-            phone: map() | nil
-          },
-          map() | nil,
+          Types.cursor_snapshot_runtime(),
+          Types.debugger_state_map() | nil,
           boolean()
-        ) :: map()
+        ) :: Types.debugger_assigns_result()
   defp debugger_assigns(cursor_seq, snapshot_runtime, debugger_state, debug_mode) do
     rows =
       debugger_state
@@ -421,11 +418,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Live do
     end
   end
 
-  @spec snapshot_runtime_at_cursor([map()], Types.maybe_non_neg_integer()) :: %{
-          watch: map() | nil,
-          companion: map() | nil,
-          phone: map() | nil
-        }
+  @spec snapshot_runtime_at_cursor(Types.events(), Types.maybe_non_neg_integer()) ::
+          Types.cursor_snapshot_runtime()
   def snapshot_runtime_at_cursor(events, cursor_seq) when is_list(events) do
     normalized = Timeline.normalize_cursor_seq(events, cursor_seq)
     upper = Util.timeline_upper_seq(events, normalized)
@@ -440,11 +434,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Live do
   def snapshot_runtime_at_cursor(_events, _cursor_seq),
     do: %{watch: nil, companion: nil, phone: nil}
 
-  @spec with_live_runtime_fallback(map(), map() | nil) :: %{
-          watch: map() | nil,
-          companion: map() | nil,
-          phone: map() | nil
-        }
+  @spec with_live_runtime_fallback(Types.cursor_snapshot_runtime(), Types.debugger_state_map() | nil) ::
+          Types.cursor_snapshot_runtime()
   defp with_live_runtime_fallback(snapshot_runtime, debugger_state)
        when is_map(snapshot_runtime) and is_map(debugger_state) do
     %{
@@ -456,7 +447,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Live do
 
   defp with_live_runtime_fallback(snapshot_runtime, _debugger_state), do: snapshot_runtime
 
-  @spec trigger_button_row(map(), map()) :: map()
+  @spec trigger_button_row(DebuggerTypes.trigger_candidate(), Types.debugger_state_map()) ::
+          Types.trigger_button_row()
   defp trigger_button_row(row, debugger_state) when is_map(row) and is_map(debugger_state) do
     %{
       id: Map.get(row, :id) || Map.get(row, "id"),
@@ -477,7 +469,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Live do
     }
   end
 
-  @spec trigger_buttons(map()) :: [map()]
+  @spec trigger_buttons(Types.debugger_state_map()) :: [Types.trigger_button_row()]
   def trigger_buttons(debugger_state) when is_map(debugger_state) do
     [:watch, :companion]
     |> Enum.flat_map(&Debugger.trigger_candidates(debugger_state, &1))
@@ -489,7 +481,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Live do
 
   def trigger_buttons(_), do: []
 
-  @spec subscription_trigger_buttons(map(), :watch | :companion) :: [map()]
+  @spec subscription_trigger_buttons(Types.debugger_state_map(), :watch | :companion) ::
+          [Types.trigger_button_row()]
   defp subscription_trigger_buttons(debugger_state, target)
        when is_map(debugger_state) and target in [:watch, :companion] do
     debugger_state
@@ -503,7 +496,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Live do
 
   defp subscription_trigger_buttons(_debugger_state, _target), do: []
 
-  @spec auto_fire_enabled?(map(), :watch | :companion) :: boolean()
+  @spec auto_fire_enabled?(Types.debugger_state_map(), :watch | :companion) :: boolean()
   defp auto_fire_enabled?(debugger_state, target)
        when is_map(debugger_state) and target in [:watch, :companion] do
     auto_tick = Map.get(debugger_state, :auto_tick, %{})
@@ -532,7 +525,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Live do
     end
   end
 
-  @spec cursor_runtime(map() | nil, :watch | :companion | :phone) :: map() | nil
+  @spec cursor_runtime(Types.timeline_event() | nil, :watch | :companion | :phone) ::
+          Types.execution_model()
   defp cursor_runtime(nil, _kind), do: nil
 
   defp cursor_runtime(event, :watch) when is_map(event), do: Map.get(event, :watch)
@@ -540,11 +534,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Live do
   defp cursor_runtime(event, :phone) when is_map(event), do: Map.get(event, :phone)
 
   @spec nearest_surface_runtime_at_or_before(
-          [map()],
+          Types.events(),
           non_neg_integer(),
           :watch | :companion | :phone
         ) ::
-          map() | nil
+          Types.execution_model()
   def nearest_surface_runtime_at_or_before(events, upper_seq, surface)
       when is_list(events) and is_integer(upper_seq) and upper_seq >= 0 and
              surface in [:watch, :companion, :phone] do

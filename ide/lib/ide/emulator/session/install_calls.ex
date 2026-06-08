@@ -48,6 +48,14 @@ defmodule Ide.Emulator.Session.InstallCalls do
   @spec prepare_for_install(Types.session_state()) ::
           {:reply, :ok | {:error, term()}, Types.session_state()}
   def prepare_for_install(state) do
+    if not Config.start_processes?() do
+      {:reply, {:error, :embedded_protocol_router_not_started}, %{state | installing?: false}}
+    else
+      do_prepare_for_install(state)
+    end
+  end
+
+  defp do_prepare_for_install(state) do
     reuse? = not InstallPrep.reset_needed?(state)
 
     Logger.debug(

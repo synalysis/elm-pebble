@@ -37,12 +37,31 @@ defmodule Ide.Compiler do
           required(:compiled_path) => String.t(),
           required(:revision) => String.t(),
           required(:cached?) => boolean(),
-          optional(:elmx_manifest) => map(),
+          optional(:elmx_manifest) => Ide.Debugger.Types.elmx_manifest(),
           optional(:elmx_revision) => String.t()
         }
-  @type manifest_data :: %{
+  @type elm_json :: %{
           optional(String.t()) => String.t() | integer() | boolean() | list() | map() | nil
         }
+
+  @type elm_report :: %{optional(String.t()) => term()}
+
+  @type dependency_compatibility_row :: %{
+          required(:package) => String.t(),
+          required(:status) => String.t(),
+          optional(:reason_code) => String.t() | nil,
+          optional(:message) => String.t() | nil
+        }
+
+  @type normalized_manifest :: %{
+          required(:schema_version) => pos_integer(),
+          required(:supported_packages) => [String.t()],
+          required(:excluded_packages) => [String.t()],
+          required(:modules_detected) => [String.t()],
+          required(:dependency_compatibility) => [dependency_compatibility_row()]
+        }
+
+  @type manifest_data :: normalized_manifest()
 
   @type compiler_error :: atom() | String.t() | tuple()
 
@@ -549,18 +568,14 @@ defmodule Ide.Compiler do
   @spec maybe_attach_elmx_artifacts(compile_result(), String.t(), String.t()) :: compile_result()
   defp maybe_attach_elmx_artifacts(result, project_dir, revision)
        when is_map(result) and is_binary(project_dir) do
-    if attach_elmx_artifacts?() do
-      case build_elmx_artifacts_in_memory(project_dir, revision: revision) do
-        {:ok, fields} ->
-          Map.merge(result, fields)
+    case build_elmx_artifacts_in_memory(project_dir, revision: revision) do
+      {:ok, fields} ->
+        Map.merge(result, fields)
 
-        {:error, reason} ->
-          result
-          |> Map.merge(elmx_compile_failure_fields(reason))
-          |> record_elmx_compile_gap()
-      end
-    else
-      result
+      {:error, reason} ->
+        result
+        |> Map.merge(elmx_compile_failure_fields(reason))
+        |> record_elmx_compile_gap()
     end
   end
 
@@ -593,7 +608,7 @@ defmodule Ide.Compiler do
   defp elmx_compile_error_message(reason), do: "elmx compile failed: #{inspect(reason)}"
 
   # elmx is debugger-only; keep elmc compile status so PBW packaging is not blocked.
-  @spec record_elmx_compile_gap(compile_result()) :: compile_result()
+  @spec record_elmx_compile_gap(map()) :: map()
   defp record_elmx_compile_gap(result) when is_map(result) do
     Map.update(result, :output, nil, fn existing ->
       message = Map.get(result, :elmx_compile_error_message)
@@ -611,8 +626,6 @@ defmodule Ide.Compiler do
       end
     end)
   end
-
-  defp attach_elmx_artifacts?, do: true
 
   @doc """
   Resolves the Elm entry module for in-memory `elmx` compiles from `src/*.elm` layout.
@@ -654,9 +667,10 @@ defmodule Ide.Compiler do
   Compiles Elm → Elixir → BEAM in memory for debugger hot-reload (`:compiled_elixir` backend).
   """
   @spec build_elmx_artifacts_in_memory(String.t(), keyword()) ::
-          {:ok, %{elmx_manifest: map(), elmx_revision: String.t()}} | {:error, term()}
+          {:ok, %{elmx_manifest: Ide.Debugger.Types.elmx_manifest(), elmx_revision: String.t()}}
+          | {:error, term()}
   def build_elmx_artifacts_in_memory(project_dir, opts \\ []) when is_binary(project_dir) do
-    revision = Keyword.get(opts, :revision) || Keyword.get(opts, "revision")
+    revision = Keyword.get(opts, :revision)
     entry_module = Keyword.get(opts, :entry_module) || default_elmx_entry_module(project_dir)
 
     with {:ok, %Elmx.CompileResult{} = compile_result} <-
@@ -720,7 +734,7 @@ defmodule Ide.Compiler do
     }
   end
 
-  @spec read_elm_json(String.t()) :: {:ok, map()} | {:error, compiler_error()}
+  @spec read_elm_json(String.t()) :: {:ok, elm_json()} | {:error, compiler_error()}
   defp read_elm_json(project_dir) do
     project_dir
     |> Path.join("elm.json")
@@ -731,7 +745,8 @@ defmodule Ide.Compiler do
     end
   end
 
-  @spec elm_make_entries(String.t(), map()) :: {:ok, [String.t()]} | {:error, compiler_error()}
+  @spec elm_make_entries(String.t(), elm_json()) ::
+          {:ok, [String.t()]} | {:error, compiler_error()}
   defp elm_make_entries(project_dir, _elm_json) when is_binary(project_dir) do
     preferred_entries =
       [
@@ -789,7 +804,7 @@ defmodule Ide.Compiler do
     end
   end
 
-  @spec decode_elm_report(String.t()) :: {:ok, map()} | :error
+  @spec decode_elm_report(String.t()) :: {:ok, elm_report()} | :error
   defp decode_elm_report(output) do
     trimmed = String.trim(output || "")
 
@@ -807,7 +822,7 @@ defmodule Ide.Compiler do
     end
   end
 
-  @spec elm_compile_error_diagnostics(map(), String.t()) :: [diagnostic()]
+  @spec elm_compile_error_diagnostics(elm_report(), String.t()) :: [diagnostic()]
   defp elm_compile_error_diagnostics(%{"path" => path, "problems" => problems}, project_dir)
        when is_list(problems) do
     Enum.map(problems, &elm_problem_to_diagnostic(&1, path, project_dir))
@@ -815,7 +830,7 @@ defmodule Ide.Compiler do
 
   defp elm_compile_error_diagnostics(_, _project_dir), do: []
 
-  @spec elm_problem_to_diagnostic(map(), String.t() | nil, String.t()) :: diagnostic()
+  @spec elm_problem_to_diagnostic(elm_report(), String.t() | nil, String.t()) :: diagnostic()
   defp elm_problem_to_diagnostic(problem, path, project_dir) when is_map(problem) do
     region = Map.get(problem, "region", %{})
     start = Map.get(region, "start", %{})
@@ -947,7 +962,8 @@ defmodule Ide.Compiler do
   @doc """
   Normalizes manifest payloads into a stable schema and emits validation diagnostics.
   """
-  @spec normalize_manifest_payload(map() | nil) :: {map() | nil, [diagnostic()]}
+  @spec normalize_manifest_payload(manifest_data() | map() | nil) ::
+          {normalized_manifest() | nil, [diagnostic()]}
   def normalize_manifest_payload(nil) do
     {nil,
      [
@@ -1018,7 +1034,8 @@ defmodule Ide.Compiler do
     {[], ["Manifest field had unexpected type; using empty list."]}
   end
 
-  @spec normalize_dependency_compatibility(list() | map() | nil) :: {[map()], [String.t()]}
+  @spec normalize_dependency_compatibility(list() | map() | nil) ::
+          {[dependency_compatibility_row()], [String.t()]}
   defp normalize_dependency_compatibility(value) when is_list(value) do
     rows =
       value

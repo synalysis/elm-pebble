@@ -1,21 +1,19 @@
 defmodule Ide.CompanionProtocol.WireFlatten do
   @moduledoc false
 
+  alias Ide.CompanionProtocol.WireSchema
+
   @max_list_elements 16
   @max_dict_entries 16
   @max_nested_depth 4
   @max_keys_per_message 64
 
-  @type wire_type ::
-          :int
-          | :bool
-          | :string
-          | {:enum, String.t()}
-          | {:union, String.t()}
-          | {:union, String.t(), [map()]}
-          | {:list, wire_type()}
-          | {:record, String.t(), [map()]}
-          | {:dict, wire_type()}
+  @type wire_type :: WireSchema.wire_type()
+  @type wire_slot :: WireSchema.wire_slot()
+  @type field :: WireSchema.field()
+  @type message :: WireSchema.message()
+  @type flatten_context :: WireSchema.flatten_context()
+  @type message_build_context :: WireSchema.message_build_context()
 
   @spec max_list_elements() :: pos_integer()
   def max_list_elements, do: @max_list_elements
@@ -23,7 +21,18 @@ defmodule Ide.CompanionProtocol.WireFlatten do
   @spec max_dict_entries() :: pos_integer()
   def max_dict_entries, do: @max_dict_entries
 
-  @spec resolve_type(String.t(), map(), map(), map()) :: wire_type()
+  @spec max_nested_depth() :: pos_integer()
+  def max_nested_depth, do: @max_nested_depth
+
+  @spec max_keys_per_message() :: pos_integer()
+  def max_keys_per_message, do: @max_keys_per_message
+
+  @spec resolve_type(
+          String.t(),
+          WireSchema.enums(),
+          WireSchema.payload_unions(),
+          WireSchema.type_aliases()
+        ) :: wire_type()
   def resolve_type("Int", _enums, _payload_unions, _aliases), do: :int
   def resolve_type("Bool", _enums, _payload_unions, _aliases), do: :bool
   def resolve_type("String", _enums, _payload_unions, _aliases), do: :string
@@ -58,7 +67,7 @@ defmodule Ide.CompanionProtocol.WireFlatten do
     end
   end
 
-  @spec field_keys(map(), map()) :: [String.t()]
+  @spec field_keys(field(), flatten_context()) :: [String.t()]
   def field_keys(%{wire_type: {:union, type}, key: key}, schema) do
     if legacy_union?(schema, type) do
       [key <> "_tag", key <> "_value"]
@@ -76,13 +85,13 @@ defmodule Ide.CompanionProtocol.WireFlatten do
   def field_keys(%{wire_type: wire_type, key: key}, schema),
     do: flatten_keys(key, wire_type, schema)
 
-  @spec slots_for_field(map(), map()) :: [map()]
+  @spec slots_for_field(field(), flatten_context()) :: [wire_slot()]
   def slots_for_field(%{wire_type: wire_type, key: key} = field, schema) do
     flatten_slots(key, wire_type, schema, [%{kind: :field, name: field.name}], 0)
   end
 
-  @spec validate_message_key_count([map()], map()) ::
-          :ok | {:error, {:wire_schema_too_large, map()}}
+  @spec validate_message_key_count([message()], message_build_context()) ::
+          :ok | {:error, {:wire_schema_too_large, WireSchema.wire_schema_too_large_detail()}}
   def validate_message_key_count(messages, schema) do
     case Enum.find(messages, &(length(message_keys(&1, schema)) > @max_keys_per_message)) do
       nil ->
@@ -99,14 +108,14 @@ defmodule Ide.CompanionProtocol.WireFlatten do
     end
   end
 
-  @spec message_keys(map(), map()) :: [String.t()]
+  @spec message_keys(message(), message_build_context()) :: [String.t()]
   def message_keys(message, schema) do
     message.fields
     |> Enum.flat_map(&field_keys(&1, schema))
     |> Enum.uniq()
   end
 
-  @spec legacy_union?(map(), String.t()) :: boolean()
+  @spec legacy_union?(flatten_context(), String.t()) :: boolean()
   def legacy_union?(schema, type) do
     schema.payload_unions
     |> Map.get(type, [])
@@ -117,9 +126,17 @@ defmodule Ide.CompanionProtocol.WireFlatten do
     end)
   end
 
+  @spec flatten_keys(String.t(), wire_type(), flatten_context()) :: [String.t()]
   defp flatten_keys(prefix, wire_type, schema),
     do: Enum.map(flatten_slots(prefix, wire_type, schema, [], 0), & &1.key)
 
+  @spec flatten_slots(
+          String.t(),
+          wire_type(),
+          flatten_context(),
+          [WireSchema.path_segment()],
+          non_neg_integer()
+        ) :: [wire_slot()]
   defp flatten_slots(_prefix, _wire_type, _schema, _path, depth) when depth > @max_nested_depth,
     do: []
 
@@ -211,6 +228,14 @@ defmodule Ide.CompanionProtocol.WireFlatten do
     flatten_union_slots(prefix, type, ctors, schema, path, depth)
   end
 
+  @spec flatten_union_slots(
+          String.t(),
+          String.t(),
+          [WireSchema.constructor()],
+          flatten_context(),
+          [WireSchema.path_segment()],
+          non_neg_integer()
+        ) :: [wire_slot()]
   defp flatten_union_slots(prefix, type, ctors, schema, path, depth) do
     tag =
       slot(
@@ -255,6 +280,13 @@ defmodule Ide.CompanionProtocol.WireFlatten do
     [tag | variants]
   end
 
+  @spec slot(
+          String.t(),
+          wire_type(),
+          WireSchema.storage_type(),
+          [WireSchema.path_segment()],
+          WireSchema.wire_offset()
+        ) :: wire_slot()
   defp slot(key, wire_type, storage_type, path, wire_offset \\ :raw) do
     %{
       key: key,

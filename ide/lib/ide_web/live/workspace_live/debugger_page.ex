@@ -792,8 +792,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     end
   end
 
-  defp elmx_compile_warning(_), do: nil
-
   @spec runtime_execution_warning(map()) :: String.t() | nil
   defp runtime_execution_warning(model) when is_map(model) do
     case Map.get(model, "runtime_execution_error") || Map.get(model, :runtime_execution_error) do
@@ -822,8 +820,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
         |> String.trim()
     end
   end
-
-  defp unresolved_runtime_model_warning(_), do: nil
 
   @spec debugger_debugger_model(map() | nil) :: map()
   defp debugger_debugger_model(runtime) do
@@ -1001,26 +997,16 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
       end
 
     row_runtime ||
-      case DebuggerSupport.snapshot_runtime_at_cursor(Map.get(state, :events, []), seq) do
-        %{watch: rt} when surface == :watch ->
-          rt
-
-        %{phone: rt} when surface == :phone ->
-          rt
-
-        %{companion: companion, phone: phone} when surface == :companion ->
+      case {surface, DebuggerSupport.snapshot_runtime_at_cursor(Map.get(state, :events, []), seq)} do
+        {:watch, %{watch: rt}} -> rt
+        {:phone, %{phone: rt}} -> rt
+        {:companion, %{companion: companion, phone: phone}} ->
           DebuggerUtil.companion_or_phone_runtime(companion, phone)
 
-        _ ->
-          fallback_surface_runtime(state, surface)
+        {_, _} ->
+          nil
       end
   end
-
-  defp fallback_surface_runtime(state, :companion) when is_map(state) do
-    DebuggerUtil.companion_or_phone_runtime(Map.get(state, :companion), Map.get(state, :phone))
-  end
-
-  defp fallback_surface_runtime(state, surface) when is_map(state), do: Map.get(state, surface)
 
   @spec debugger_export_snapshot(map(), Project.t() | nil) ::
           {String.t(), map() | nil, non_neg_integer() | nil}

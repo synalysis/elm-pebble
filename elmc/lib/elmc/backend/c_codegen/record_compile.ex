@@ -637,6 +637,4 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
   defp boxed_release_var?(var) when is_binary(var),
     do: Regex.match?(~r/^tmp_\d+$/, var)
-
-  defp boxed_release_var?(_), do: false
 end

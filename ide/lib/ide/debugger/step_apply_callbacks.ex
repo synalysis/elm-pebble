@@ -2,6 +2,7 @@ defmodule Ide.Debugger.StepApplyCallbacks do
   @moduledoc false
 
   alias Ide.Debugger.CompanionBridge.Runtime, as: CompanionBridgeRuntime
+  alias Ide.Debugger.StepApply
   alias Ide.Debugger.DeviceDataResponses
   alias Ide.Debugger.GeolocationResponses
   alias Ide.Debugger.ProtocolEvents
@@ -15,21 +16,29 @@ defmodule Ide.Debugger.StepApplyCallbacks do
   alias Ide.Debugger.Types
 
   @type host :: %{
-          required(:introspect_for) => (map(), Types.surface_target() -> map()),
+          required(:introspect_for) => (Types.runtime_state(), Types.surface_target() ->
+                                          Types.elm_introspect()),
           required(:protocol_events_ctx) => (-> ProtocolEvents.ctx()),
           required(:protocol_rx_ctx) => (-> ProtocolRx.ctx()),
           required(:source_root_for_target) => (Types.surface_target() -> String.t()),
-          required(:append_runtime_exec) => (map(), Types.surface_target(), map() -> map()),
-          required(:append_event) => (map(), String.t(), map() -> map()),
-          required(:append_debugger_event) => (map(),
+          required(:append_runtime_exec) => (Types.runtime_state(),
+                                             Types.surface_target(),
+                                             Types.RuntimeExecEventPayload.extra() ->
+                                               Types.runtime_state()),
+          required(:append_event) => (Types.runtime_state(),
+                                      String.t(),
+                                      Types.debugger_timeline_payload() ->
+                                        Types.runtime_state()),
+          required(:append_debugger_event) => (Types.runtime_state(),
                                                String.t(),
                                                Types.surface_target(),
                                                String.t(),
                                                String.t(),
-                                               map()
-                                               | nil ->
-                                                 map()),
-          required(:maybe_append_runtime_status) => (map(), Types.surface_target() -> map())
+                                               Types.timeline_step_message_value() ->
+                                                 Types.runtime_state()),
+          required(:maybe_append_runtime_status) => (Types.runtime_state(),
+                                                     Types.surface_target() ->
+                                                       Types.runtime_state())
         }
 
   @type deps :: %{
@@ -43,8 +52,7 @@ defmodule Ide.Debugger.StepApplyCallbacks do
           required(:runtime_followups) => RuntimeFollowups.apply_ctx()
         }
 
-  # Return type stays map() — same keys as StepApply.ctx() but Dialyzer widens callback fields.
-  @spec build(deps()) :: map()
+  @spec build(deps()) :: StepApply.ctx()
   def build(%{} = deps) do
     host = Map.fetch!(deps, :host)
     surface_compile = Map.fetch!(deps, :surface_compile)

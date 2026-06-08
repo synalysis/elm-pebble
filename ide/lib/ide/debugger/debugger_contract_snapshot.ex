@@ -36,7 +36,7 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
           required(:runtime_status_after_init) => (Types.runtime_state(),
                                                    Types.surface_target(),
                                                    Types.step_executor_result()
-                                                   | map(),
+                                                   | Types.wire_map(),
                                                    Types.elm_introspect() ->
                                                      Types.runtime_state()),
           required(:apply_runtime_followups) => (Types.runtime_state(),
@@ -324,8 +324,8 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
     end
   end
 
-  @spec resolve_init_execution(Types.runtime_state(), map(), apply_ctx()) ::
-          Types.step_executor_result() | map()
+  @spec resolve_init_execution(Types.runtime_state(), Types.wire_map(), apply_ctx()) ::
+          Types.step_executor_result() | Types.wire_map()
   defp resolve_init_execution(_state, request, ctx) do
     case ctx.executor.execute(request) do
       {:ok, payload} when is_map(payload) ->

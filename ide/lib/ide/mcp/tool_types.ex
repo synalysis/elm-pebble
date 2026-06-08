@@ -7,6 +7,7 @@ defmodule Ide.Mcp.ToolTypes do
   alias Ide.Debugger.Types, as: DebuggerTypes
   alias Ide.Mcp.WireTypes
   alias Ide.Projects.Types, as: ProjectsTypes
+  alias Ide.WatchModels
 
   @type json_value :: WireTypes.json_value()
   @type file_mtime :: :calendar.datetime()
@@ -20,11 +21,13 @@ defmodule Ide.Mcp.ToolTypes do
   @type github_config :: ProjectsTypes.github_config()
   @type compile_ingest_attrs :: DebuggerTypes.compile_ingest_attrs()
   @type publish_opts :: AppStoreTypes.publish_opts()
+  @type debugger_runtime_state :: DebuggerTypes.runtime_state()
+  @type debugger_screen :: WatchModels.wire_screen()
 
   @type render_tree_result :: %{
           required(:slug) => String.t(),
           required(:target) => String.t(),
-          required(:screen) => map(),
+          required(:screen) => debugger_screen(),
           required(:root_type) => String.t(),
           required(:node_count) => non_neg_integer(),
           required(:nodes) => [map()],
@@ -111,18 +114,18 @@ defmodule Ide.Mcp.ToolTypes do
   @type debugger_state_replay_result :: %{
           required(:slug) => String.t(),
           required(:event_window) => non_neg_integer(),
-          required(:runtime_fingerprint_digest) => map(),
-          required(:snapshot_refs) => [map()],
+          required(:runtime_fingerprint_digest) => DebuggerTypes.wire_map(),
+          required(:snapshot_refs) => [DebuggerTypes.trace_snapshot_reference_row()],
           optional(atom()) => json_value(),
           optional(String.t()) => json_value()
         }
 
   @type debugger_state_full_result :: %{
           required(:slug) => String.t(),
-          required(:state) => map(),
-          required(:runtime_fingerprints) => map(),
-          required(:runtime_fingerprint_digest) => map(),
-          required(:snapshot_refs) => [map()],
+          required(:state) => debugger_runtime_state(),
+          required(:runtime_fingerprints) => DebuggerTypes.wire_map(),
+          required(:runtime_fingerprint_digest) => DebuggerTypes.wire_map(),
+          required(:snapshot_refs) => [DebuggerTypes.trace_snapshot_reference_row()],
           optional(atom()) => json_value(),
           optional(String.t()) => json_value()
         }
@@ -196,11 +199,11 @@ defmodule Ide.Mcp.ToolTypes do
           required(:slug) => String.t(),
           required(:seq) => non_neg_integer(),
           required(:target) => String.t(),
-          required(:screen) => map(),
+          required(:screen) => debugger_screen(),
           required(:model) => debugger_surface_model_entry(),
           optional(:last_message) => String.t() | nil,
           optional(:protocol_messages) => list(),
-          optional(:runtime_fingerprint) => map() | nil,
+          optional(:runtime_fingerprint) => DebuggerTypes.wire_map() | nil,
           optional(:render_tree) => debugger_render_tree_summary() | nil,
           optional(atom()) => json_value()
         }
@@ -214,8 +217,8 @@ defmodule Ide.Mcp.ToolTypes do
 
   @type debugger_surface_model_entry :: %{
           required(:target) => String.t(),
-          required(:model) => map(),
-          required(:runtime_model) => map(),
+          required(:model) => DebuggerTypes.wire_map(),
+          required(:runtime_model) => DebuggerTypes.wire_map(),
           required(:model_keys) => [String.t()],
           required(:runtime_model_keys) => [String.t()],
           optional(atom()) => json_value(),
@@ -362,8 +365,8 @@ defmodule Ide.Mcp.ToolTypes do
 
   @type debugger_configuration_result :: %{
           required(:slug) => String.t(),
-          required(:values) => map(),
-          required(:configuration) => map()
+          required(:values) => DebuggerTypes.companion_configuration_values(),
+          required(:configuration) => DebuggerTypes.companion_configuration()
         }
 
   @type trace_export_file_entry :: %{
@@ -437,9 +440,9 @@ defmodule Ide.Mcp.ToolTypes do
 
   @type debugger_auto_fire_result :: %{
           required(:slug) => String.t(),
-          required(:auto_fire) => map(),
-          required(:auto_fire_subscriptions) => list(),
-          required(:runtime_auto_tick) => map()
+          required(:auto_fire) => DebuggerTypes.wire_map(),
+          required(:auto_fire_subscriptions) => [DebuggerTypes.wire_map()],
+          required(:runtime_auto_tick) => DebuggerTypes.auto_tick()
         }
 
   @type debugger_disabled_subscriptions_result :: %{
@@ -450,7 +453,7 @@ defmodule Ide.Mcp.ToolTypes do
 
   @type debugger_slug_state_result :: %{
           required(:slug) => String.t(),
-          required(:state) => map()
+          required(:state) => debugger_runtime_state()
         }
 
   @type traces_policy_configured_settings :: %{
@@ -489,27 +492,27 @@ defmodule Ide.Mcp.ToolTypes do
 
   @type debugger_simulator_settings_state_result :: %{
           required(:slug) => String.t(),
-          required(:settings) => map(),
-          required(:state) => map()
+          required(:settings) => DebuggerTypes.simulator_settings(),
+          required(:state) => debugger_runtime_state()
         }
 
   @type debugger_configuration_values_state_result :: %{
           required(:slug) => String.t(),
-          required(:values) => map(),
-          required(:state) => map()
+          required(:values) => DebuggerTypes.companion_configuration_values(),
+          required(:state) => debugger_runtime_state()
         }
 
   @type debugger_auto_fire_settings_state_result :: %{
           required(:slug) => String.t(),
-          required(:auto_fire) => map(),
-          required(:auto_fire_subscriptions) => list(),
-          required(:state) => map()
+          required(:auto_fire) => DebuggerTypes.wire_map(),
+          required(:auto_fire_subscriptions) => [DebuggerTypes.wire_map()],
+          required(:state) => debugger_runtime_state()
         }
 
   @type debugger_disabled_subscriptions_state_result :: %{
           required(:slug) => String.t(),
-          required(:disabled_subscriptions) => list(),
-          required(:state) => map()
+          required(:disabled_subscriptions) => [DebuggerTypes.disabled_subscription()],
+          required(:state) => debugger_runtime_state()
         }
 
   @type debugger_export_trace_result :: %{

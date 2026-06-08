@@ -40,7 +40,8 @@ defmodule Ide.Debugger.TraceApi do
   end
 
   @spec import_trace(String.t(), Types.import_trace_input(), keyword()) ::
-          {:ok, runtime_state()} | {:error, Types.protocol_error() | atom() | String.t() | map()}
+          {:ok, runtime_state()}
+          | {:error, Types.protocol_error() | atom() | String.t() | Types.wire_map()}
   def import_trace(session_key, input, opts \\ []) when is_binary(session_key) do
     AgentSession.with_hosts(fn hosts ->
       TraceExchangeSession.import(session_key, input, opts, hosts.trace_import)

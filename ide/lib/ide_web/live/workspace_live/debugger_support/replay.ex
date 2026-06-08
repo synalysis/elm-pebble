@@ -4,7 +4,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Replay do
 
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Types
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Util
-  @spec replay_preview_rows([map()], map()) :: [Types.replay_preview_row()]
+  @spec replay_preview_rows(Types.events(), Types.wire_map()) :: [Types.replay_preview_row()]
   def replay_preview_rows(events, opts) when is_list(events) and is_map(opts) do
     count = parse_replay_count(Map.get(opts, :count) || Map.get(opts, "count"))
     target = parse_replay_target(Map.get(opts, :target) || Map.get(opts, "target"))
@@ -42,7 +42,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Replay do
     end)
   end
 
-  @spec replay_metadata_at_cursor([map()], Types.maybe_non_neg_integer()) :: map() | nil
+  @spec replay_metadata_at_cursor(Types.events(), Types.maybe_non_neg_integer()) ::
+          Types.replay_metadata() | nil
   def replay_metadata_at_cursor(events, cursor_seq) when is_list(events) do
     upper = Util.timeline_upper_seq(events, cursor_seq)
 
@@ -72,7 +73,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Replay do
     end
   end
 
-  @spec replay_compare([Types.replay_preview_row()], map() | nil) :: Types.replay_compare()
+  @spec replay_compare([Types.replay_preview_row()], Types.replay_metadata() | nil) ::
+          Types.replay_compare()
   def replay_compare(preview_rows, nil) when is_list(preview_rows) do
     %{
       status: :none,
@@ -125,7 +127,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Replay do
     end
   end
 
-  @spec replay_live_warning?(String.t(), Types.maybe_non_neg_integer(), [map()]) :: boolean()
+  @spec replay_live_warning?(String.t(), Types.maybe_non_neg_integer(), Types.events()) ::
+          boolean()
   def replay_live_warning?(mode, preview_seq, events) when is_binary(mode) and is_list(events) do
     latest_seq =
       case events do
@@ -142,7 +145,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Replay do
       latest_seq > preview_seq
   end
 
-  @spec replay_live_drift(String.t(), Types.maybe_non_neg_integer(), [map()]) ::
+  @spec replay_live_drift(String.t(), Types.maybe_non_neg_integer(), Types.events()) ::
           non_neg_integer() | nil
   def replay_live_drift(mode, preview_seq, events) when is_binary(mode) and is_list(events) do
     latest_seq =
@@ -197,7 +200,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Replay do
     end)
   end
 
-  @spec normalize_replay_row(map()) :: Types.replay_preview_row()
+  @spec normalize_replay_row(Types.wire_map()) :: Types.replay_preview_row()
   defp normalize_replay_row(row) when is_map(row) do
     %{
       seq: row[:seq] || row["seq"] || 0,

@@ -281,7 +281,7 @@ defmodule Ide.Debugger.RuntimeArtifacts do
 
   def execution_artifacts(_model), do: %{}
 
-  @spec eval_context(execution_model(), keyword()) :: map()
+  @spec eval_context(execution_model(), keyword()) :: Types.eval_context()
   def eval_context(model, extras \\ [])
 
   def eval_context(model, extras) when is_map(model) and is_list(extras) do
@@ -433,7 +433,7 @@ defmodule Ide.Debugger.RuntimeArtifacts do
     _ -> %{}
   end
 
-  @spec wire_field(map(), String.t()) :: term()
+  @spec wire_field(Types.wire_map(), String.t()) :: Types.wire_input() | nil
   defp wire_field(map, key) when is_map(map) and is_binary(key) do
     Map.get(map, key) || Map.get(map, String.to_atom(key))
   end

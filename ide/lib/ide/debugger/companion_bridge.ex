@@ -88,7 +88,7 @@ defmodule Ide.Debugger.CompanionBridge do
     Enum.find(subscription_contracts(), &(Map.fetch!(&1, :source) == source))
   end
 
-  @spec payload(Types.simulator_settings(), atom(), Types.wire_map()) ::
+  @spec payload(Types.simulator_settings(), atom(), Types.companion_bridge_request()) ::
           Types.companion_bridge_payload()
   def payload(settings, :calendar, request) when is_map(settings) and is_map(request) do
     events = settings["calendar_events"]
@@ -162,7 +162,7 @@ defmodule Ide.Debugger.CompanionBridge do
           String.t(),
           Types.companion_bridge_payload()
         ) ::
-          map()
+          Types.protocol_ctor_value()
   def subscription_message_value("weather", callback, result_ctor, payload) do
     wrapped_payload = wrap_weather_ok_payload(result_ctor, payload, "Current")
     subscription_result_message_value(callback, result_ctor, wrapped_payload)
@@ -186,7 +186,7 @@ defmodule Ide.Debugger.CompanionBridge do
   def wrap_weather_ok_payload(_result_ctor, payload, _default_variant), do: payload
 
   @spec plain_connectivity_parts(String.t(), Types.companion_connectivity_callback_result()) ::
-          {String.t(), Types.companion_bridge_payload(), map()}
+          {String.t(), Types.companion_bridge_payload(), Types.protocol_ctor_value()}
   def plain_connectivity_parts(callback, result) when is_binary(callback) do
     connectivity =
       case result do

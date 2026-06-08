@@ -31,13 +31,12 @@ defmodule Ide.Debugger.RuntimeExecutor.CompiledElixirAdapter do
     else
       {:error, {:core_ir_execution_failed, _} = err} -> {:error, err}
       {:error, {:elmx_execution_failed, _} = err} -> {:error, {:core_ir_execution_failed, err}}
-      {:error, reason} -> {:error, {:core_ir_execution_failed, reason}}
     end
   end
 
   def execute(_), do: {:error, {:core_ir_execution_failed, :invalid_execution_input}}
 
-  @spec require_elmx_manifest(map()) :: :ok | {:error, Types.execution_error()}
+  @spec require_elmx_manifest(execution_input()) :: :ok | {:error, Types.execution_error()}
   defp require_elmx_manifest(input) do
     manifest = Map.get(input, :elmx_manifest) || Map.get(input, "elmx_manifest")
 
@@ -48,7 +47,7 @@ defmodule Ide.Debugger.RuntimeExecutor.CompiledElixirAdapter do
     end
   end
 
-  @spec missing_elmx_manifest_error(map()) :: Types.execution_error()
+  @spec missing_elmx_manifest_error(execution_input()) :: Types.execution_error()
   defp missing_elmx_manifest_error(input) do
     detail =
       Map.get(input, :elmx_compile_error_message) ||
@@ -61,7 +60,8 @@ defmodule Ide.Debugger.RuntimeExecutor.CompiledElixirAdapter do
     end
   end
 
-  @spec resolve_compiled_module(map()) :: {:ok, module()} | {:error, Types.execution_error()}
+  @spec resolve_compiled_module(execution_input()) ::
+          {:ok, module()} | {:error, Types.execution_error()}
   defp resolve_compiled_module(input) do
     revision = Map.get(input, :elmx_revision) || Map.get(input, "elmx_revision")
 
@@ -77,7 +77,8 @@ defmodule Ide.Debugger.RuntimeExecutor.CompiledElixirAdapter do
     end
   end
 
-  @spec validate_runtime_model(map()) :: :ok | {:error, Types.execution_error()}
+  @spec validate_runtime_model(Types.elmx_execution_payload()) ::
+          :ok | {:error, Types.execution_error()}
   defp validate_runtime_model(payload) when is_map(payload) do
     patch = Map.get(payload, :model_patch) || Map.get(payload, "model_patch") || %{}
 

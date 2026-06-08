@@ -38,8 +38,6 @@ defmodule Ide.Debugger.RuntimeModelWire do
     |> Map.new()
   end
 
-  defp hydrate_static_runtime_model_values(runtime_model), do: runtime_model
-
   @spec hydrate_static_runtime_value(Types.wire_input()) :: Types.wire_input()
   defp hydrate_static_runtime_value(%{} = value) do
     cond do

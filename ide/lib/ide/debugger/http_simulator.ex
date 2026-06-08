@@ -6,9 +6,9 @@ defmodule Ide.Debugger.HttpSimulator do
 
   @type json_decoder :: tuple() | atom() | list()
 
-  @type json_leaf :: String.t() | number() | boolean() | map() | list()
+  @type json_leaf :: Types.wire_scalar() | Types.wire_map() | [json_leaf()]
 
-  @type weather_map :: SimulatorSettings.weather() | map()
+  @type weather_map :: SimulatorSettings.weather() | Types.wire_map()
 
   @spec simulated_response(Types.TrackedHttpCommand.wire_map(), Types.simulator_settings() | nil) ::
           {:ok, Types.http_simulated_response()} | :skip

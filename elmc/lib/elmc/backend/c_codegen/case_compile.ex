@@ -293,8 +293,6 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     end
   end
 
-  defp maybe_add_subject_param(params, _subject_ref), do: params
-
   defp external_vars(expr), do: external_vars(expr, MapSet.new())
 
   defp external_vars(%{op: :var, name: name}, bound) when is_binary(name) do

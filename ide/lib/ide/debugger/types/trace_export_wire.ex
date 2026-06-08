@@ -19,7 +19,7 @@ defmodule Ide.Debugger.Types.TraceExportWire do
             | nil
         }
 
-  @type wire_row :: export_event_row() | map()
+  @type wire_row :: export_event_row() | Types.wire_map()
 
   @type snapshot_reference_row :: %{
           optional(String.t()) => snapshot_refs() | [String.t()] | integer() | nil

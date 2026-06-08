@@ -26,7 +26,7 @@ defmodule Ide.Debugger.ProtocolResolutionCtx do
           arg_index: non_neg_integer() | nil,
           runtime_model: Types.inner_runtime_model(),
           simulator_settings: Types.simulator_settings(),
-          message_value: Types.protocol_message() | map() | nil,
+          message_value: Types.protocol_message_wire_value() | nil,
           schema: Schema.t() | Schema.wire_schema() | nil,
           message_fields: [Schema.field()] | nil
         }

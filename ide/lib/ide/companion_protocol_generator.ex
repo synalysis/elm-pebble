@@ -4,6 +4,7 @@ defmodule Ide.CompanionProtocolGenerator do
   alias Ide.Debugger.Protocol.Schema
   alias Ide.CompanionProtocol.TypeParse
   alias Ide.CompanionProtocol.WireFlatten
+  alias Ide.CompanionProtocol.WireSchema
 
   @type schema :: Schema.t()
   @type constructor :: Schema.constructor()
@@ -11,7 +12,9 @@ defmodule Ide.CompanionProtocolGenerator do
   @type field :: Schema.field()
 
   @type generator_error ::
-          {:missing_union, String.t()} | {:wire_schema_too_large, map()} | File.posix()
+          {:missing_union, String.t()}
+          | {:wire_schema_too_large, WireSchema.wire_schema_too_large_detail()}
+          | File.posix()
 
   # Pebble AppMessage commonly drops dictionary entries whose value is zero.
   # Enum and union-tag wire codes therefore start at 1; bool uses 1=true, 2=false.
@@ -24,9 +27,10 @@ defmodule Ide.CompanionProtocolGenerator do
   @spec wire_code_base() :: pos_integer()
   def wire_code_base, do: @wire_code_base
 
+  @spec wire_code(non_neg_integer()) :: pos_integer()
   defp wire_code(index) when is_integer(index), do: index + @wire_code_base
 
-  @spec generate(String.t(), String.t(), String.t(), String.t(), keyword()) ::
+  @spec generate(String.t(), String.t(), String.t(), String.t(), generate_opts()) ::
           :ok | {:error, generator_error()}
   def generate(types_elm, out_h, out_c, out_js, opts \\ []) do
     with {:ok, source} <- File.read(types_elm),
@@ -51,7 +55,7 @@ defmodule Ide.CompanionProtocolGenerator do
   end
 
   @spec message_keys(String.t()) ::
-          {:ok, %{optional(String.t()) => pos_integer()}} | {:error, generator_error()}
+          {:ok, WireSchema.key_ids()} | {:error, generator_error()}
   def message_keys(types_elm) do
     with {:ok, source} <- File.read(types_elm),
          {:ok, schema} <- schema_from_source(source) do
@@ -117,6 +121,10 @@ defmodule Ide.CompanionProtocolGenerator do
     end
   end
 
+  @spec enum_unions(
+          %{optional(String.t()) => [constructor()]},
+          [String.t()]
+        ) :: WireSchema.enums()
   defp enum_unions(unions, excluded) do
     unions
     |> Enum.reject(fn {name, _} -> name in excluded end)
@@ -124,12 +132,23 @@ defmodule Ide.CompanionProtocolGenerator do
     |> Map.new(fn {name, ctors} -> {name, Enum.map(ctors, & &1.name)} end)
   end
 
+  @spec payload_unions(
+          %{optional(String.t()) => [constructor()]},
+          WireSchema.enums(),
+          [String.t()]
+        ) :: WireSchema.payload_unions()
   defp payload_unions(unions, enums, excluded) do
     unions
     |> Enum.reject(fn {name, _} -> name in excluded or Map.has_key?(enums, name) end)
     |> Map.new()
   end
 
+  @spec message_union(
+          %{optional(String.t()) => [constructor()]},
+          WireSchema.type_resolution_context(),
+          String.t(),
+          pos_integer()
+        ) :: {:ok, [message()]} | {:error, {:missing_union, String.t()}}
   defp message_union(unions, schema, name, first_tag) do
     case Map.fetch(unions, name) do
       {:ok, constructors} ->
@@ -165,6 +184,7 @@ defmodule Ide.CompanionProtocolGenerator do
     end
   end
 
+  @spec header(schema()) :: String.t()
   defp header(schema) do
     key_lines =
       schema.key_ids
@@ -313,6 +333,9 @@ defmodule Ide.CompanionProtocolGenerator do
     """
   end
 
+  @type generate_opts :: [runtime_tags: WireSchema.runtime_tags()]
+
+  @spec source(schema(), generate_opts()) :: String.t()
   defp source(schema, opts) do
     runtime_tags = Keyword.get(opts, :runtime_tags, %{})
 
@@ -484,6 +507,7 @@ defmodule Ide.CompanionProtocolGenerator do
     """
   end
 
+  @spec companion_protocol_uses_union_payloads?(schema()) :: boolean()
   defp companion_protocol_uses_union_payloads?(schema) do
     schema_fields(schema)
     |> Enum.any?(fn
@@ -492,6 +516,7 @@ defmodule Ide.CompanionProtocolGenerator do
     end)
   end
 
+  @spec companion_protocol_uses_list_payloads?(schema()) :: boolean()
   defp companion_protocol_uses_list_payloads?(schema) do
     schema_fields(schema)
     |> Enum.any?(fn
@@ -500,11 +525,13 @@ defmodule Ide.CompanionProtocolGenerator do
     end)
   end
 
+  @spec companion_protocol_uses_payload_type?(schema(), WireSchema.wire_type()) :: boolean()
   defp companion_protocol_uses_payload_type?(schema, wire_type) do
     schema_fields(schema)
     |> Enum.any?(&(&1.wire_type == wire_type))
   end
 
+  @spec schema_fields(schema()) :: [field()]
   defp schema_fields(schema) do
     (schema.watch_to_phone ++ schema.phone_to_watch)
     |> Enum.flat_map(& &1.fields)
@@ -513,6 +540,7 @@ defmodule Ide.CompanionProtocolGenerator do
   defp optional_c_struct_field(true, field), do: [field]
   defp optional_c_struct_field(false, _field), do: []
 
+  @spec c_wire_struct_fields(schema()) :: [String.t()]
   defp c_wire_struct_fields(schema) do
     fields =
       schema.wire_slots
@@ -658,6 +686,7 @@ defmodule Ide.CompanionProtocolGenerator do
 
   defp js_payload_key(name), do: "String(constants.KEY_#{macro_name(name)})"
 
+  @spec js(schema()) :: String.t()
   defp js(schema) do
     constants =
       schema.key_ids
@@ -786,6 +815,7 @@ defmodule Ide.CompanionProtocolGenerator do
     """
   end
 
+  @spec elm_internal(schema()) :: String.t()
   defp elm_internal(schema) do
     """
     module Companion.Internal exposing
@@ -1649,7 +1679,9 @@ defmodule Ide.CompanionProtocolGenerator do
   defp c_missing_field_default(%{wire_type: wire_type, key: key}, _index)
        when tuple_size(wire_type) in [2, 3] do
     if c_composite_wire_type?(wire_type) do
-      WireFlatten.slots_for_field(%{key: key, name: key, wire_type: wire_type}, %{
+      WireFlatten.slots_for_field(
+        %{key: key, name: key, type: key, wire_type: wire_type},
+        %{
         enums: %{},
         payload_unions: %{},
         type_aliases: %{},
@@ -1927,6 +1959,7 @@ defmodule Ide.CompanionProtocolGenerator do
     end)
   end
 
+  @spec c_composite_wire_type?(WireSchema.wire_type()) :: boolean()
   defp c_composite_wire_type?({:record, _type, _fields}), do: true
   defp c_composite_wire_type?({:list, elem}), do: elem != :int
   defp c_composite_wire_type?({:dict, _elem}), do: true
@@ -1938,7 +1971,7 @@ defmodule Ide.CompanionProtocolGenerator do
 
   defp c_build_value_from_wire(:int, key, _schema, _var_prefix) do
     slot =
-      WireFlatten.slots_for_field(%{key: key, name: key, wire_type: :int}, empty_wire_schema())
+      WireFlatten.slots_for_field(%{key: key, name: key, type: key, wire_type: :int}, empty_wire_schema())
       |> hd()
 
     {"", "elmc_new_int(message->wire.#{slot.c_name})"}
@@ -1946,7 +1979,7 @@ defmodule Ide.CompanionProtocolGenerator do
 
   defp c_build_value_from_wire(:bool, key, _schema, _var_prefix) do
     slot =
-      WireFlatten.slots_for_field(%{key: key, name: key, wire_type: :bool}, empty_wire_schema())
+      WireFlatten.slots_for_field(%{key: key, name: key, type: key, wire_type: :bool}, empty_wire_schema())
       |> hd()
 
     {"", "elmc_new_bool(message->wire.#{slot.c_name} ? 1 : 0)"}
@@ -1954,7 +1987,7 @@ defmodule Ide.CompanionProtocolGenerator do
 
   defp c_build_value_from_wire(:string, key, _schema, _var_prefix) do
     slot =
-      WireFlatten.slots_for_field(%{key: key, name: key, wire_type: :string}, empty_wire_schema())
+      WireFlatten.slots_for_field(%{key: key, name: key, type: key, wire_type: :string}, empty_wire_schema())
       |> hd()
 
     {"", "elmc_new_string(message->wire.#{slot.c_name})"}
@@ -1963,7 +1996,7 @@ defmodule Ide.CompanionProtocolGenerator do
   defp c_build_value_from_wire({:enum, type}, key, _schema, _var_prefix) do
     slot =
       WireFlatten.slots_for_field(
-        %{key: key, name: key, wire_type: {:enum, type}},
+        %{key: key, name: key, type: type, wire_type: {:enum, type}},
         empty_wire_schema()
       )
       |> hd()
@@ -2014,7 +2047,7 @@ defmodule Ide.CompanionProtocolGenerator do
 
   defp c_build_value_from_wire({:list, elem_type}, key, schema, var_prefix) do
     count_slot =
-      WireFlatten.slots_for_field(%{key: key, name: key, wire_type: {:list, elem_type}}, schema)
+      WireFlatten.slots_for_field(%{key: key, name: key, type: key, wire_type: {:list, elem_type}}, schema)
       |> Enum.find(&String.ends_with?(&1.key, "_count"))
 
     element_builds =
@@ -2049,7 +2082,7 @@ defmodule Ide.CompanionProtocolGenerator do
 
   defp c_build_value_from_wire({:dict, value_type}, key, schema, var_prefix) do
     count_slot =
-      WireFlatten.slots_for_field(%{key: key, name: key, wire_type: {:dict, value_type}}, schema)
+      WireFlatten.slots_for_field(%{key: key, name: key, type: key, wire_type: {:dict, value_type}}, schema)
       |> Enum.find(&String.ends_with?(&1.key, "_count"))
 
     entry_builds =
@@ -2057,7 +2090,7 @@ defmodule Ide.CompanionProtocolGenerator do
       |> Enum.map(fn index ->
         key_slot =
           WireFlatten.slots_for_field(
-            %{key: "#{key}_key_#{index}", name: key, wire_type: :string},
+            %{key: "#{key}_key_#{index}", name: key, type: key, wire_type: :string},
             schema
           )
           |> hd()
@@ -2101,7 +2134,7 @@ defmodule Ide.CompanionProtocolGenerator do
   defp c_build_value_from_wire({:union, type, ctors}, key, schema, var_prefix) do
     tag_slot =
       WireFlatten.slots_for_field(
-        %{key: key, name: key, wire_type: {:union, type, ctors}},
+        %{key: key, name: key, type: type, wire_type: {:union, type, ctors}},
         schema
       )
       |> Enum.find(&String.ends_with?(&1.key, "_tag"))

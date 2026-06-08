@@ -13,78 +13,93 @@ defmodule Ide.Debugger.StepApply do
 
   @phone_to_watch_triggers ~w(phone_to_watch on_phone_to_watch)
 
-  # Callback fields use map() so Dialyzer accepts ctx maps built via partial application
-  # in StepApplyCallbacks; named implementations there keep precise @specs.
   @type ctx :: %{
-          required(:ensure_compile_artifacts) => (map(), Types.surface_target() -> map()),
-          required(:normalize_message_value) => (map(),
+          required(:ensure_compile_artifacts) => (Types.runtime_state(), Types.surface_target() ->
+                                                    Types.runtime_state()),
+          required(:normalize_message_value) => (Types.runtime_state(),
                                                  Types.surface_target(),
                                                  Types.subscription_payload()
                                                  | nil,
-                                                 map() ->
+                                                 Types.app_model() ->
                                                    Types.subscription_payload() | nil),
-          required(:normalize_runtime_patch) => (map(), map() -> map()),
-          required(:preserve_protocol_metadata) => (map(), map() -> map()),
-          required(:default_view_tree) => (Types.surface_target() -> map()),
-          required(:introspect_for) => (map(), Types.surface_target() -> map()),
+          required(:normalize_runtime_patch) => (Types.runtime_model_patch(),
+                                                 Types.runtime_model_patch() ->
+                                                   Types.runtime_model_patch()),
+          required(:preserve_protocol_metadata) => (Types.app_model(), Types.app_model() ->
+                                                      Types.app_model()),
+          required(:default_view_tree) => (Types.surface_target() -> Types.view_output_tree()),
+          required(:introspect_for) => (Types.runtime_state(), Types.surface_target() ->
+                                          Types.elm_introspect()),
           required(:protocol_events_ctx) => (-> ProtocolEvents.ctx()),
           required(:protocol_rx_ctx) => (-> ProtocolRx.ctx()),
           required(:source_root_for_target) => (Types.surface_target() -> String.t()),
-          required(:append_runtime_exec) => (map(), Types.surface_target(), map() -> map()),
-          required(:append_event) => (map(), String.t(), map() -> map()),
-          required(:append_debugger_event) => (map(),
+          required(:append_runtime_exec) => (Types.runtime_state(),
+                                             Types.surface_target(),
+                                             Types.RuntimeExecEventPayload.extra() ->
+                                               Types.runtime_state()),
+          required(:append_event) => (Types.runtime_state(),
+                                      String.t(),
+                                      Types.debugger_timeline_payload() ->
+                                        Types.runtime_state()),
+          required(:append_debugger_event) => (Types.runtime_state(),
                                                String.t(),
                                                Types.surface_target(),
                                                String.t(),
                                                String.t(),
-                                               map()
-                                               | nil ->
-                                                 map()),
-          required(:maybe_append_runtime_status) => (map(), Types.surface_target() -> map()),
-          required(:device_data_responses) => (map(),
+                                               Types.timeline_step_message_value() ->
+                                                 Types.runtime_state()),
+          required(:maybe_append_runtime_status) => (Types.runtime_state(),
+                                                     Types.surface_target() ->
+                                                       Types.runtime_state()),
+          required(:device_data_responses) => (Types.runtime_state(),
                                                Types.surface_target(),
                                                String.t(),
-                                               map(),
+                                               Types.app_model(),
                                                String.t() ->
-                                                 map()),
-          required(:geolocation_response) => (map(),
+                                                 Types.runtime_state()),
+          required(:geolocation_response) => (Types.runtime_state(),
                                               Types.surface_target(),
                                               String.t(),
-                                              map(),
+                                              Types.app_model(),
                                               String.t() ->
-                                                map()),
-          required(:companion_bridge_command_responses) => (map(),
+                                                Types.runtime_state()),
+          required(:companion_bridge_command_responses) => (Types.runtime_state(),
                                                             Types.surface_target(),
                                                             String.t(),
-                                                            map(),
+                                                            Types.app_model(),
                                                             String.t() ->
-                                                              map()),
-          required(:companion_bridge_responses) => (map(), Types.surface_target() -> map()),
-          required(:static_task_followups) => (map(),
+                                                              Types.runtime_state()),
+          required(:companion_bridge_responses) => (Types.runtime_state(),
+                                                    Types.surface_target(),
+                                                    String.t() ->
+                                                      Types.runtime_state()),
+          required(:static_task_followups) => (Types.runtime_state(),
                                                Types.surface_target(),
                                                String.t(),
                                                Types.subscription_payload()
                                                | nil,
                                                String.t() ->
-                                                 map()),
-          required(:runtime_followups) => (map(),
+                                                 Types.runtime_state()),
+          required(:runtime_followups) => (Types.runtime_state(),
                                            Types.surface_target(),
                                            String.t(),
                                            String.t(),
-                                           list() ->
-                                             map())
+                                           [Types.runtime_followup_row()] ->
+                                             Types.runtime_state())
         }
 
+  @type apply_opts :: [suppress_protocol_events: boolean()]
+
   @spec apply(
-          map(),
+          Types.runtime_state(),
           Types.surface_target(),
           String.t() | nil,
-          term(),
+          Types.subscription_payload() | nil,
           String.t() | nil,
           String.t(),
-          keyword(),
-          map()
-        ) :: any()
+          apply_opts(),
+          ctx()
+        ) :: Types.runtime_state()
   def apply(state, target, requested_message, message_value, source_override, trigger, opts, ctx)
       when target in [:watch, :companion, :phone] and is_list(opts) and is_map(ctx) do
     suppress_protocol_events? = Keyword.get(opts, :suppress_protocol_events, false)
@@ -344,12 +359,12 @@ defmodule Ide.Debugger.StepApply do
   end
 
   @spec record_step_execution_error(
-          map(),
+          Types.runtime_state(),
           Types.surface_target(),
           String.t(),
           Types.execution_error(),
           ctx()
-        ) :: map()
+        ) :: Types.runtime_state()
   defp record_step_execution_error(state, target, message, reason, ctx) do
     detail = inspect(reason, limit: 12, printable_limit: 256)
 

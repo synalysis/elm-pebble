@@ -15,7 +15,14 @@ defmodule Ide.Debugger.Types.CompanionBridgeRequest do
           optional(atom()) => Types.wire_input()
         }
 
-  @type wire_map :: t() | map()
+  @type envelope_fields :: %{
+          required(:api) => String.t(),
+          required(:op) => String.t(),
+          optional(:id) => term(),
+          optional(:payload) => Types.companion_bridge_payload()
+        }
+
+  @type wire_map :: t() | Types.wire_map()
 
   @type from_cmd_result :: [t()]
 end

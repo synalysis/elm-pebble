@@ -25,6 +25,14 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
           manifest: Compiler.manifest_result()
         }
 
+  @type package_validation_result :: %{
+          required(:status) => :ok | :error,
+          required(:artifact_path) => String.t() | nil,
+          required(:output) => String.t(),
+          required(:raw) => PebbleToolchain.package_result() | PebbleToolchain.toolchain_error() | nil,
+          required(:workspace_root) => String.t()
+        }
+
   @type build_pipeline_result :: %{
           status: :ok | :error,
           output: String.t(),
@@ -645,7 +653,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     end
   end
 
-  @spec run_package_validation(Project.t(), String.t(), boolean()) :: map()
+  @spec run_package_validation(Project.t(), String.t(), boolean()) :: package_validation_result()
   def run_package_validation(_project, workspace_root, false) do
     %{
       status: :error,
@@ -694,7 +702,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     end
   end
 
-  @spec render_package_validation_output(map()) :: String.t()
+  @spec render_package_validation_output(package_validation_result()) :: String.t()
   def render_package_validation_output(package_result) do
     """
     === [pbw package] ===
@@ -860,7 +868,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     |> String.trim()
   end
 
-  @spec skipped_compile_result(String.t(), String.t()) :: map()
+  @spec skipped_compile_result(String.t(), String.t()) :: Compiler.compile_result()
   def skipped_compile_result(workspace_root, message) do
     %{
       status: :error,
@@ -868,11 +876,13 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
       revision: "—",
       cached?: false,
       output: message,
-      diagnostics: []
+      diagnostics: [],
+      error_count: 0,
+      warning_count: 0
     }
   end
 
-  @spec skipped_manifest_result(String.t(), boolean(), String.t()) :: map()
+  @spec skipped_manifest_result(String.t(), boolean(), String.t()) :: Compiler.manifest_result()
   def skipped_manifest_result(workspace_root, strict?, message) do
     %{
       status: :error,
@@ -882,7 +892,9 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
       strict?: strict?,
       manifest: nil,
       output: message,
-      diagnostics: []
+      diagnostics: [],
+      error_count: 0,
+      warning_count: 0
     }
   end
 end

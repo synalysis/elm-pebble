@@ -14,7 +14,7 @@ defmodule Ide.Debugger.Types.HotReloadEventPayload do
           optional(String.t()) => Types.wire_input()
         }
 
-  @type wire_map :: t() | map()
+  @type wire_map :: t() | Types.wire_map()
 
   @spec from_reload(String.t(), String.t() | nil, String.t(), String.t()) :: t()
   def from_reload(reason, rel_path, revision, source_root)

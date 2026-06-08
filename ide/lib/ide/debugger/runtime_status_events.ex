@@ -13,15 +13,21 @@ defmodule Ide.Debugger.RuntimeStatusEvents do
              Types.runtime_state())
 
   @type append_debugger_event_fn ::
-          (map(), String.t(), Types.surface_target(), String.t(), String.t() -> map())
+          (Types.runtime_state(),
+           String.t(),
+           Types.surface_target(),
+           String.t(),
+           String.t(),
+           Types.timeline_step_message_value() ->
+             Types.runtime_state())
 
   @spec append_runtime_exec(
-          map(),
+          Types.runtime_state(),
           Types.surface_target(),
-          map(),
+          Types.RuntimeExecEventPayload.extra(),
           append_event_fn(),
           (Types.surface_target() -> String.t())
-        ) :: map()
+        ) :: Types.runtime_state()
   def append_runtime_exec(state, target, extra, append_event, source_root_for_target)
       when target in [:watch, :companion, :phone] and is_map(extra) and
              is_function(append_event, 3) and
@@ -46,12 +52,12 @@ defmodule Ide.Debugger.RuntimeStatusEvents do
     do: state
 
   @spec append_runtime_exec_for_source_root(
-          map(),
+          Types.runtime_state(),
           String.t(),
           append_event_fn(),
           (Types.surface_target() -> String.t()),
           (String.t() -> Types.surface_target())
-        ) :: map()
+        ) :: Types.runtime_state()
   def append_runtime_exec_for_source_root(
         state,
         source_root,
@@ -70,10 +76,10 @@ defmodule Ide.Debugger.RuntimeStatusEvents do
   end
 
   @spec maybe_append_simple_status(
-          map(),
+          Types.runtime_state(),
           Types.surface_target(),
           append_debugger_event_fn()
-        ) :: map()
+        ) :: Types.runtime_state()
   def maybe_append_simple_status(state, target, append_debugger_event)
       when target in [:watch, :companion, :phone] and
              (is_function(append_debugger_event, 5) or is_function(append_debugger_event, 6)) do
@@ -88,14 +94,14 @@ defmodule Ide.Debugger.RuntimeStatusEvents do
   def maybe_append_simple_status(state, _target, _append_debugger_event), do: state
 
   @spec maybe_append_after_execution(
-          map(),
+          Types.runtime_state(),
           Types.surface_target(),
-          map(),
-          map(),
+          Types.runtime_step_result(),
+          Types.elm_introspect(),
           append_event_fn(),
           append_debugger_event_fn(),
           (Types.surface_target() -> String.t())
-        ) :: map()
+        ) :: Types.runtime_state()
   def maybe_append_after_execution(
         state,
         target,

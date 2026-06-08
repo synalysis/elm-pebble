@@ -11,19 +11,22 @@ defmodule Ide.Debugger.CompanionBridgeContext do
 
   @type host :: %{
           required(:introspect_for) => (Types.runtime_state(), Types.surface_target() ->
-                                          Types.elm_introspect() | map()),
-          required(:append_event) => (map(), String.t(), map() -> map()),
-          required(:apply_step_once) => (map(),
+                                          Types.elm_introspect()),
+          required(:append_event) => (Types.runtime_state(),
+                                      String.t(),
+                                      Types.debugger_timeline_payload() ->
+                                        Types.runtime_state()),
+          required(:apply_step_once) => (Types.runtime_state(),
                                          Types.surface_target(),
                                          String.t(),
                                          Types.subscription_payload()
-                                         | map()
                                          | nil,
                                          String.t(),
                                          String.t() ->
-                                           map()),
-          required(:deliver_weather_to_watch) => (map() -> map()),
-          required(:settings) => (map() -> map())
+                                           Types.runtime_state()),
+          required(:deliver_weather_to_watch) => (Types.runtime_state() ->
+                                                    Types.runtime_state()),
+          required(:settings) => (Types.runtime_state() -> Types.runtime_state())
         }
 
   @spec build(host()) :: CompanionBridgeRuntime.ctx()

@@ -3,6 +3,16 @@ defmodule Ide.Debugger.Types.ReplayEventPayload do
 
   alias Ide.Debugger.Types
 
+  @type count_map :: %{optional(String.t()) => non_neg_integer()}
+
+  @type replay_preview_row :: %{
+          optional(:seq) => non_neg_integer() | nil,
+          optional(:target) => String.t(),
+          optional(:message) => String.t(),
+          optional(atom()) => Types.wire_input(),
+          optional(String.t()) => Types.wire_input()
+        }
+
   @type replay_telemetry :: %{
           optional(:mode) => String.t(),
           optional(:source) => String.t(),
@@ -24,9 +34,9 @@ defmodule Ide.Debugger.Types.ReplayEventPayload do
           optional(:replay_source) => String.t(),
           optional(:cursor_seq) => non_neg_integer() | nil,
           optional(:replay_telemetry) => replay_telemetry(),
-          optional(:replay_target_counts) => map(),
-          optional(:replay_message_counts) => map(),
-          optional(:replay_preview) => [map()],
+          optional(:replay_target_counts) => count_map(),
+          optional(:replay_message_counts) => count_map(),
+          optional(:replay_preview) => [replay_preview_row()],
           optional(atom()) => Types.wire_input(),
           optional(String.t()) => Types.wire_input()
         }
@@ -56,9 +66,9 @@ defmodule Ide.Debugger.Types.ReplayEventPayload do
   end
 
   @spec summary([Types.replay_row()]) :: %{
-          replay_target_counts: map(),
-          replay_message_counts: map(),
-          replay_preview: [map()]
+          replay_target_counts: count_map(),
+          replay_message_counts: count_map(),
+          replay_preview: [replay_preview_row()]
         }
   def summary(messages) when is_list(messages) do
     target_counts =

@@ -22,7 +22,7 @@ defmodule Ide.Debugger.Types.ElmcDiagnosticPreview do
           optional(atom()) => Types.wire_input()
         }
 
-  @type wire_row :: row() | map()
+  @type wire_row :: row() | Types.wire_map()
 
   @type preview :: [row()] | [wire_row()]
 

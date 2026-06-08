@@ -7,7 +7,7 @@ defmodule Ide.Debugger.TraceExchange.Export do
   alias Ide.Debugger.TraceExchange.Wire
   alias Ide.Debugger.Types
 
-  @type runtime_state :: Types.RuntimeState.t() | map()
+  @type runtime_state :: Types.runtime_state()
 
   @type export_opts :: [
           disabled_subscriptions: [Types.disabled_subscription()],

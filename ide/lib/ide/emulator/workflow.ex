@@ -15,7 +15,7 @@ defmodule Ide.Emulator.Workflow do
           required(:platform) => String.t()
         }
 
-  @spec launch_project(map(), String.t() | nil) ::
+  @spec launch_project(Projects.Project.t() | map(), String.t() | nil) ::
           {:ok, launch_result()} | {:error, term()}
   def launch_project(project, platform) do
     platform = normalize_platform(platform)
@@ -146,6 +146,9 @@ defmodule Ide.Emulator.Workflow do
   def install_error_message(:emulator_session_unresponsive),
     do:
       "Embedded emulator session did not respond during install (it may still be uploading). Try again or relaunch the emulator."
+
+  def install_error_message(:emulator_session_unavailable),
+    do: "Embedded emulator protocol router is not running."
 
   def install_error_message(reason), do: inspect(reason)
 

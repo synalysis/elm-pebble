@@ -17,7 +17,7 @@ defmodule Ide.Debugger.HttpExecutor do
         }
   @type result :: {:ok, execute_result()} | {:error, Types.http_executor_error()}
 
-  @spec execute(command(), map()) :: result()
+  @spec execute(command(), Types.eval_context()) :: result()
   def execute(command, eval_context \\ %{})
 
   def execute(command, eval_context) when is_map(command) and is_map(eval_context) do
@@ -34,7 +34,7 @@ defmodule Ide.Debugger.HttpExecutor do
 
   def execute(_command, _eval_context), do: {:error, :invalid_http_command}
 
-  @spec request(command(), map()) ::
+  @spec request(command(), Types.eval_context()) ::
           {:ok, http_response()} | {:error, Types.http_executor_error()}
   defp request(command, eval_context) when is_map(eval_context) do
     weather =
@@ -147,7 +147,7 @@ defmodule Ide.Debugger.HttpExecutor do
     end
   end
 
-  @type wire_value :: String.t() | integer() | float() | boolean() | map() | list() | nil
+  @type wire_value :: Types.wire_input()
 
   @spec request_body(Types.wire_map() | nil) :: String.t() | nil
   defp request_body(%{} = body) do
@@ -190,7 +190,7 @@ defmodule Ide.Debugger.HttpExecutor do
 
   defp decode_http_response(_command, _response), do: {:error, :invalid_http_command}
 
-  @spec http_result(String.t(), http_response(), term()) :: map()
+  @spec http_result(String.t(), http_response(), term()) :: Types.protocol_ctor_value()
   defp http_result(kind, response, decoder) when is_map(response) do
     case map_value(response, "error") do
       %{} = error ->
@@ -224,9 +224,6 @@ defmodule Ide.Debugger.HttpExecutor do
     end
   end
 
-  defp http_result(_kind, _response, _decoder),
-    do: %{"ctor" => "Err", "args" => [%{"ctor" => "NetworkError", "args" => []}]}
-
   @spec decode_success_body(String.t(), String.t(), term()) ::
           {:ok, Types.wire_value()} | {:error, {:bad_body, String.t()}}
   defp decode_success_body(kind, body, decoder) when kind in ["json", :json] do
@@ -249,7 +246,7 @@ defmodule Ide.Debugger.HttpExecutor do
 
   defp decode_success_body(_kind, body, _decoder), do: {:ok, to_string(body || "")}
 
-  @spec http_error(map()) :: map()
+  @spec http_error(Types.wire_map()) :: Types.protocol_ctor_value()
   defp http_error(%{"ctor" => ctor, "args" => args}) when is_binary(ctor) and is_list(args),
     do: %{"ctor" => ctor, "args" => args}
 

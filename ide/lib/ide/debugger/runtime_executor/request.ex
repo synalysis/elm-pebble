@@ -8,6 +8,7 @@ defmodule Ide.Debugger.RuntimeExecutor.Request do
 
   alias ElmEx.DebuggerContract.Payload
   alias Ide.Debugger.RuntimeArtifacts
+  alias Ide.Debugger.RuntimeArtifacts.Types, as: ArtifactTypes
   alias Ide.Debugger.RuntimeExecutor.Types, as: ExecutorTypes
   alias Ide.Debugger.Surface
   alias Ide.Debugger.Types
@@ -47,15 +48,15 @@ defmodule Ide.Debugger.RuntimeExecutor.Request do
           current_model: Types.app_model(),
           current_view_tree: Types.view_output_tree(),
           message: String.t() | nil,
-          message_value: Types.protocol_message() | map() | nil,
+          message_value: Types.protocol_message_wire_value() | nil,
           update_branches: [String.t()] | nil,
-          elmx_manifest: map() | nil,
+          elmx_manifest: Types.elmx_manifest() | nil,
           elmx_revision: String.t() | nil,
           elmx_compile_error: term() | nil,
           elmx_compile_error_message: String.t() | nil,
-          vector_resource_indices: map() | nil,
-          bitmap_resource_indices: map() | nil,
-          animation_resource_indices: map() | nil
+          vector_resource_indices: ArtifactTypes.resource_indices() | nil,
+          bitmap_resource_indices: ArtifactTypes.resource_indices() | nil,
+          animation_resource_indices: ArtifactTypes.resource_indices() | nil
         }
 
   @type wire_map :: ExecutorTypes.execution_input_map()

@@ -4,7 +4,7 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
   alias Ide.Debugger.Types
 
   @type field_value :: boolean() | integer() | String.t()
-  @type raw_value :: Types.wire_scalar() | map() | list() | nil
+  @type raw_value :: Types.wire_scalar() | Types.wire_map() | list() | nil
 
   defmodule ApiSuffixes do
     @moduledoc false

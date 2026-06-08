@@ -10,7 +10,7 @@ defmodule Ide.Resources.Types do
   @type font_source :: ResourceStore.font_source()
   @type vector_entry :: ResourceStore.vector_entry()
 
-  @type manifest_entry :: map()
+  @type manifest_entry :: bitmap_entry() | font_entry() | vector_entry()
   @type manifest :: %{
           optional(String.t()) => wire_input(),
           optional(:schema_version) => integer(),

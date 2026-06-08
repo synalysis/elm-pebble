@@ -228,8 +228,10 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.Support do
     body
     |> peel_lets()
     |> peel_update_result_model()
-    |> record_update_fields_from_model()
-    |> param_to_model_field_map(bindings)
+    |> then(fn
+      fields when is_list(fields) -> param_to_model_field_map(fields, bindings)
+      _ -> %{}
+    end)
   end
 
   def record_update_param_field_map(_body, _bindings), do: %{}
@@ -249,10 +251,6 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.Support do
        do: fields
 
   defp peel_update_result_model(_), do: nil
-
-  @spec record_update_fields_from_model(list() | nil) :: list()
-  defp record_update_fields_from_model(fields) when is_list(fields), do: fields
-  defp record_update_fields_from_model(_), do: []
 
   @spec param_to_model_field_map(list(), Types.binding_map()) :: %{String.t() => String.t()}
   defp param_to_model_field_map(fields, bindings) when is_list(fields) and is_map(bindings) do

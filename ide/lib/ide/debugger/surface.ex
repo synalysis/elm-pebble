@@ -27,8 +27,8 @@ defmodule Ide.Debugger.Surface do
         }
 
   @type surface_map :: %{
-          optional(:model) => map(),
-          optional(:shell) => map(),
+          optional(:model) => Types.app_model(),
+          optional(:shell) => Types.shell(),
           optional(:view_tree) => Types.view_output_tree(),
           optional(:last_message) => String.t() | nil,
           optional(:protocol_messages) => list(),
@@ -51,18 +51,20 @@ defmodule Ide.Debugger.Surface do
 
   def from_map(_surface), do: %__MODULE__{model: %{}, shell: %{}}
 
-  @spec from_state(map(), Types.surface_target()) :: t()
+  @spec from_state(Types.runtime_state(), Types.surface_target()) :: t()
   def from_state(state, target) when is_map(state) and target in [:watch, :companion, :phone] do
     state |> Map.get(target, %{}) |> from_map()
   end
 
-  @spec put_in_state(map(), Types.surface_target(), t() | surface_map()) :: map()
+  @spec put_in_state(Types.runtime_state(), Types.surface_target(), t() | surface_map()) ::
+          Types.runtime_state()
   def put_in_state(state, target, surface)
       when is_map(state) and target in [:watch, :companion, :phone] do
     Map.put(state, target, to_map(from_map(surface)))
   end
 
-  @spec update_in_state(map(), Types.surface_target(), (t() -> t())) :: map()
+  @spec update_in_state(Types.runtime_state(), Types.surface_target(), (t() -> t())) ::
+          Types.runtime_state()
   def update_in_state(state, target, fun)
       when is_map(state) and target in [:watch, :companion, :phone] and is_function(fun, 1) do
     state |> from_state(target) |> fun.() |> then(&put_in_state(state, target, &1))
@@ -100,7 +102,7 @@ defmodule Ide.Debugger.Surface do
   @spec introspect(t() | surface_map()) :: Types.elm_introspect() | nil
   def introspect(surface), do: RuntimeArtifacts.introspect(surface)
 
-  @spec introspect!(t() | surface_map()) :: map()
+  @spec introspect!(t() | surface_map()) :: Types.elm_introspect()
   def introspect!(surface) do
     case introspect(surface) do
       ei when is_map(ei) -> ei

@@ -129,7 +129,6 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.StaticDrawTable do
   end
 
   defp static_int_ref?(ref) when is_binary(ref), do: Regex.match?(~r/^-?\d+$/, ref)
-  defp static_int_ref?(_), do: false
 
   @spec static_record_int_fields(
           Types.ir_expr(),

@@ -4,6 +4,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Diagnostics do
 
   alias Ide.Debugger.RuntimeFingerprintDrift
   alias Ide.Debugger.RuntimeArtifacts
+  alias Ide.Debugger.Types, as: DebuggerTypes
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Timeline
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Types
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Util
@@ -19,7 +20,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Diagnostics do
   end
 
   def view_tree_outline(_), do: "(no snapshot)"
-  @spec model_diagnostic_preview(map() | nil) :: [map()]
+  @spec model_diagnostic_preview(Types.execution_model()) :: [
+          Ide.Debugger.Types.elmc_diagnostic_row()
+        ]
   def model_diagnostic_preview(nil), do: []
 
   def model_diagnostic_preview(%{} = runtime) do
@@ -35,7 +38,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Diagnostics do
 
   def model_diagnostic_preview(_), do: []
 
-  @spec event_diagnostic_preview(map() | nil) :: [map()]
+  @spec event_diagnostic_preview(Types.timeline_event() | nil) :: [
+          Ide.Debugger.Types.elmc_diagnostic_row()
+        ]
   def event_diagnostic_preview(nil), do: []
 
   def event_diagnostic_preview(%{} = event) do
@@ -57,10 +62,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Diagnostics do
   (watch, then companion, then phone).
   Returns `%{source: \"event_payload\" | \"cursor_model\" | \"cursor_model_companion\" | \"cursor_model_phone\" | \"none\", rows: [map()]}`.
   """
-  @spec diagnostics_preview_at_cursor([map()], Types.maybe_non_neg_integer()) :: %{
-          source: String.t(),
-          rows: [map()]
-        }
+  @spec diagnostics_preview_at_cursor(Types.events(), Types.maybe_non_neg_integer()) ::
+          Types.diagnostics_preview_result()
   def diagnostics_preview_at_cursor(events, cursor_seq) when is_list(events) do
     normalized = Timeline.normalize_cursor_seq(events, cursor_seq)
 
@@ -112,11 +115,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Diagnostics do
   Returns debugger contract maps for each surface at the timeline cursor
   (from the selected event's `watch` / `companion` / `phone` snapshots). Values are `nil` when absent.
   """
-  @spec debugger_contract_at_cursor([map()], Types.maybe_non_neg_integer()) :: %{
-          watch: map() | nil,
-          companion: map() | nil,
-          phone: map() | nil
-        }
+  @spec debugger_contract_at_cursor(Types.events(), Types.maybe_non_neg_integer()) ::
+          Types.surface_contracts_at_cursor()
   def debugger_contract_at_cursor(events, cursor_seq) when is_list(events) do
     normalized = Timeline.normalize_cursor_seq(events, cursor_seq)
 
@@ -144,11 +144,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Diagnostics do
   @doc """
   Returns runtime fingerprint summaries for watch/companion/phone at the timeline cursor.
   """
-  @spec runtime_fingerprints_at_cursor([map()], Types.maybe_non_neg_integer()) :: %{
-          watch: map() | nil,
-          companion: map() | nil,
-          phone: map() | nil
-        }
+  @spec runtime_fingerprints_at_cursor(Types.events(), Types.maybe_non_neg_integer()) ::
+          Types.surface_fingerprints_at_cursor()
   def runtime_fingerprints_at_cursor(events, cursor_seq) when is_list(events) do
     normalized = Timeline.normalize_cursor_seq(events, cursor_seq)
 
@@ -174,10 +171,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Diagnostics do
   Compares runtime fingerprint hashes at `cursor_seq` vs `compare_cursor_seq`.
   """
   @spec runtime_fingerprint_compare_at_cursor(
-          [map()],
+          Types.events(),
           Types.maybe_non_neg_integer(),
           Types.maybe_non_neg_integer()
-        ) :: map() | nil
+        ) :: DebuggerTypes.fingerprint_compare_result() | nil
   def runtime_fingerprint_compare_at_cursor(_events, _cursor_seq, nil), do: nil
 
   def runtime_fingerprint_compare_at_cursor(events, cursor_seq, compare_cursor_seq)
@@ -304,7 +301,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Diagnostics do
     }
   end
 
-  @spec backend_drift_detail(map() | nil, pos_integer()) :: String.t() | nil
+  @spec backend_drift_detail(DebuggerTypes.fingerprint_compare_result() | nil, pos_integer()) ::
+          String.t() | nil
   def backend_drift_detail(compare, max_reason_len \\ 72)
 
   def backend_drift_detail(compare, max_reason_len)
@@ -314,7 +312,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Diagnostics do
 
   def backend_drift_detail(_compare, _max_reason_len), do: nil
 
-  @spec key_target_drift_detail(map() | nil, pos_integer()) :: String.t() | nil
+  @spec key_target_drift_detail(DebuggerTypes.fingerprint_compare_result() | nil, pos_integer()) ::
+          String.t() | nil
   def key_target_drift_detail(compare, max_len \\ 72)
 
   def key_target_drift_detail(compare, max_len)
@@ -328,14 +327,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Diagnostics do
   def merge_drift_detail(backend_detail, key_target_detail),
     do: RuntimeFingerprintDrift.merge_drift_detail(backend_detail, key_target_detail)
 
-  @spec runtime_debugger_contract(map()) :: map()
+  @spec runtime_debugger_contract(Types.execution_model()) :: DebuggerTypes.elm_introspect() | nil
   defp runtime_debugger_contract(nil), do: nil
 
   defp runtime_debugger_contract(%{} = rt), do: RuntimeArtifacts.introspect(rt)
 
   defp runtime_debugger_contract(_), do: nil
 
-  @spec runtime_fingerprint(map()) :: map()
+  @spec runtime_fingerprint(Types.execution_model()) :: DebuggerTypes.runtime_fingerprint() | nil
   defp runtime_fingerprint(nil), do: nil
 
   defp runtime_fingerprint(%{} = rt) do

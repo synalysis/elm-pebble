@@ -262,8 +262,6 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
     end
   end
 
-  defp subscription_item_c_expr(_), do: nil
-
   defp frame_subscription_c_expr([%{op: :int_literal, value: ms}, _to_msg]) when is_integer(ms) do
     "(ELMC_SUBSCRIPTION_FRAME_BASE + (#{clamp_frame_interval_ms(ms)} << 16))"
   end

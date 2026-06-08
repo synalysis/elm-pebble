@@ -7,21 +7,28 @@ defmodule Ide.Debugger.SubscriptionWireContexts do
   alias Ide.Debugger.Types
 
   @type trigger_wire_host :: %{
-          required(:introspect_for) => (map(), Types.surface_target() -> map()),
+          required(:introspect_for) => (Types.runtime_state(), Types.surface_target() ->
+                                          Types.elm_introspect()),
           required(:normalize_target) => (Types.wire_input() -> Types.surface_target())
         }
 
   @type tick_resolution_host :: %{
-          required(:introspect_for) => (map(), Types.surface_target() -> map()),
-          required(:attach_payload) => (map(), Types.surface_target(), String.t(), String.t() ->
+          required(:introspect_for) => (Types.runtime_state(), Types.surface_target() ->
+                                          Types.elm_introspect()),
+          required(:attach_payload) => (Types.runtime_state(),
+                                        Types.surface_target(),
+                                        String.t(),
+                                        String.t() ->
                                           String.t())
         }
 
   @type payload_host :: %{
-          optional(:introspect) => (map(), Types.surface_target() -> map()),
-          optional(:settings) => (map() -> map()),
-          optional(:introspect_for) => (map(), Types.surface_target() -> map()),
-          optional(:simulator_settings) => (map() -> map())
+          optional(:introspect) => (Types.runtime_state(), Types.surface_target() ->
+                                      Types.elm_introspect()),
+          optional(:settings) => (Types.runtime_state() -> Types.simulator_settings()),
+          optional(:introspect_for) => (Types.runtime_state(), Types.surface_target() ->
+                                          Types.elm_introspect()),
+          optional(:simulator_settings) => (Types.runtime_state() -> Types.simulator_settings())
         }
 
   @type auto_fire_host :: %{
@@ -36,18 +43,18 @@ defmodule Ide.Debugger.SubscriptionWireContexts do
           required(:apply_step) => (Types.runtime_state(),
                                     Types.surface_target(),
                                     String.t(),
-                                    map()
+                                    Types.subscription_payload()
                                     | nil,
                                     String.t(),
                                     String.t() ->
                                       Types.runtime_state()),
           required(:subscription_row_enabled?) => (Types.runtime_state(),
                                                    Types.surface_target(),
-                                                   map() ->
+                                                   Types.trigger_candidate() ->
                                                      boolean()),
           required(:auto_fire_row_enabled?) => (Types.runtime_state(),
                                                 Types.surface_target(),
-                                                map() ->
+                                                Types.trigger_candidate() ->
                                                   boolean()),
           required(:simulator_now) => (Types.runtime_state(), Types.surface_target() ->
                                          NaiveDateTime.t()),

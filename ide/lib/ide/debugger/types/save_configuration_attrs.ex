@@ -10,5 +10,5 @@ defmodule Ide.Debugger.Types.SaveConfigurationAttrs do
 
   @type t :: values_map()
 
-  @type wire_map :: t() | map()
+  @type wire_map :: t() | Types.wire_map()
 end

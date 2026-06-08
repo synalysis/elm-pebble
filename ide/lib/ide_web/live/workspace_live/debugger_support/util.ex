@@ -3,8 +3,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Util do
   @dialyzer :no_match
 
   alias Ide.Debugger.RuntimeArtifacts
+  alias Ide.Debugger.Types, as: DebuggerTypes
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Types
-  @spec timeline_upper_seq([map()], Types.maybe_non_neg_integer()) :: non_neg_integer()
+
+  @spec timeline_upper_seq(Types.events(), Types.maybe_non_neg_integer()) :: non_neg_integer()
   def timeline_upper_seq(events, cursor_seq) do
     cond do
       is_integer(cursor_seq) ->
@@ -18,7 +20,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Util do
     end
   end
 
-  @spec protocol_payload_field(map(), atom()) :: String.t() | nil
+  @spec protocol_payload_field(Types.wire_payload(), atom()) :: String.t() | nil
   def protocol_payload_field(payload, key) when is_map(payload) do
     str = Atom.to_string(key)
     v = Map.get(payload, key) || Map.get(payload, str)
@@ -63,7 +65,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Util do
   def elm_value(nil), do: "null"
   def elm_value(value), do: to_string(value)
 
-  @spec elm_field_name(map()) :: String.t()
+  @spec elm_field_name(atom() | String.t() | integer()) :: String.t()
   def elm_field_name(key) when is_binary(key), do: key
   def elm_field_name(key), do: to_string(key)
 
@@ -82,17 +84,20 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Util do
   def debugger_target(:phone), do: "companion"
   def debugger_target(_), do: "watch"
 
-  @spec debugger_target_runtime(String.t(), map() | nil, map() | nil) :: map() | nil
+  @spec debugger_target_runtime(String.t(), Types.execution_model(), Types.execution_model()) ::
+          Types.execution_model()
   def debugger_target_runtime("companion", _watch_runtime, companion_runtime),
     do: companion_runtime
 
   def debugger_target_runtime(_target, watch_runtime, _companion_runtime), do: watch_runtime
 
-  @spec debugger_other_runtime(String.t(), map() | nil, map() | nil) :: map() | nil
+  @spec debugger_other_runtime(String.t(), Types.execution_model(), Types.execution_model()) ::
+          Types.execution_model()
   def debugger_other_runtime("companion", watch_runtime, _companion_runtime), do: watch_runtime
   def debugger_other_runtime(_target, _watch_runtime, companion_runtime), do: companion_runtime
 
-  @spec companion_or_phone_runtime(map() | nil, map() | nil) :: map() | nil
+  @spec companion_or_phone_runtime(Types.execution_model(), Types.execution_model()) ::
+          Types.execution_model()
   def companion_or_phone_runtime(companion_runtime, phone_runtime) do
     cond do
       app_runtime?(companion_runtime) -> companion_runtime
@@ -102,7 +107,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Util do
     end
   end
 
-  @spec app_runtime?(map() | nil) :: boolean()
+  @spec app_runtime?(Types.execution_model()) :: boolean()
   def app_runtime?(%{} = runtime) do
     model = Map.get(runtime, :model) || Map.get(runtime, "model") || %{}
     runtime_model = Map.get(model, "runtime_model") || Map.get(model, :runtime_model) || %{}
@@ -120,7 +125,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Util do
   end
 
   def app_runtime?(_runtime), do: false
-  @spec payload_target(map()) :: String.t() | nil
+  @spec payload_target(Types.wire_payload()) :: String.t() | nil
   def payload_target(payload) when is_map(payload) do
     cond do
       is_binary(Map.get(payload, :target)) -> Map.get(payload, :target)
@@ -140,7 +145,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Util do
     "#{runtime_text}\n#{tree_text}"
   end
 
-  @spec map_string(map(), atom()) :: String.t() | nil
+  @spec map_string(Types.wire_map(), atom()) :: String.t() | nil
   def map_string(map, key) when is_map(map) and is_atom(key) do
     case map_lookup(map, key) do
       {:ok, value} when is_binary(value) -> value
@@ -148,7 +153,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Util do
     end
   end
 
-  @spec map_scalar_string(map(), atom()) :: String.t() | nil
+  @spec map_scalar_string(Types.wire_map(), atom()) :: String.t() | nil
   def map_scalar_string(map, key) when is_map(map) and is_atom(key) do
     case map_lookup(map, key) do
       {:ok, nil} -> nil
@@ -161,7 +166,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Util do
     end
   end
 
-  @spec map_integer(map(), atom()) :: integer() | nil
+  @spec map_integer(Types.wire_map(), atom()) :: integer() | nil
   def map_integer(map, key) when is_map(map) and is_atom(key) do
     case map_lookup(map, key) do
       {:ok, value} when is_integer(value) -> value
@@ -171,7 +176,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Util do
 
   def map_integer(_map, _key), do: nil
 
-  @spec map_lookup(map(), atom()) :: {:ok, Types.runtime_value()} | :error
+  @spec map_lookup(Types.wire_map(), atom()) :: {:ok, Types.runtime_value()} | :error
   def map_lookup(map, key) when is_map(map) and is_atom(key) do
     string_key = Atom.to_string(key)
 
@@ -189,7 +194,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Util do
 
   def map_lookup(_map, _key), do: :error
 
-  @spec map_map(map(), atom()) :: map()
+  @spec map_map(Types.wire_map(), atom()) :: Types.wire_map()
   def map_map(map, key) when is_map(map) and is_atom(key) do
     case map_lookup(map, key) do
       {:ok, value} when is_map(value) -> value
@@ -197,7 +202,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Util do
     end
   end
 
-  @spec map_list(map(), atom()) :: list()
+  @spec map_list(Types.wire_map(), atom()) :: list()
   def map_list(map, key) when is_map(map) and is_atom(key) do
     case map_lookup(map, key) do
       {:ok, value} when is_list(value) -> value
@@ -205,7 +210,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Util do
     end
   end
 
-  @spec payload_message(map()) :: String.t() | nil
+  @spec payload_message(DebuggerTypes.elm_introspect() | Types.wire_map()) :: String.t() | nil
   def payload_message(payload) when is_map(payload) do
     mod = Map.get(payload, :module) || Map.get(payload, "module")
     tgt = Map.get(payload, :target) || Map.get(payload, "target")

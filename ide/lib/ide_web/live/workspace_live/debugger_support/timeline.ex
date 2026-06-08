@@ -6,6 +6,22 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Timeline do
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Types
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Live
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Util
+
+  @debugger_row_keys [
+    :seq,
+    :debugger_seq,
+    :raw_seq,
+    :type,
+    :target,
+    :message,
+    :message_source,
+    :selected_runtime,
+    :other_runtime,
+    :watch_runtime,
+    :companion_runtime,
+    :phone_runtime
+  ]
+
   @spec event_json(Types.events()) :: String.t()
   def event_json(events) when is_list(events) do
     events
@@ -16,7 +32,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Timeline do
   def event_json(event) when is_map(event), do: Jason.encode!(event, pretty: true)
   def event_json(_events), do: "[]"
 
-  @spec payload_diff_json(map() | nil, map() | nil) :: String.t()
+  @spec payload_diff_json(Types.timeline_event() | nil, Types.timeline_event() | nil) :: String.t()
   def payload_diff_json(base_event, compare_event)
       when is_map(base_event) and is_map(compare_event) do
     base_payload = Map.get(base_event, :payload, %{})
@@ -152,6 +168,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Timeline do
         |> Enum.sort_by(&debugger_row_seq/1, :desc)
         |> Enum.take(limit)
         |> Enum.map(&normalize_debugger_row/1)
+        |> Enum.map(&ensure_debugger_row/1)
 
       _ ->
         debugger_state
@@ -193,16 +210,21 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Timeline do
         companion_runtime: companion_app_runtime,
         phone_runtime: phone_runtime
       }
+      |> ensure_debugger_row()
     end)
   end
 
   def debugger_rows(_source, _limit), do: []
+
+  @spec ensure_debugger_row(Types.debugger_row()) :: Types.debugger_row()
+  defp ensure_debugger_row(%{} = row), do: Map.take(row, @debugger_row_keys)
 
   @spec debugger_rows_for_target([Types.debugger_row()], String.t()) :: [Types.debugger_row()]
   def debugger_rows_for_target(rows, target)
       when is_list(rows) and target in ["watch", "companion"] do
     rows
     |> Enum.filter(fn row -> Map.get(row, :target) == target end)
+    |> Enum.map(&ensure_debugger_row/1)
     |> newest_first()
   end
 
@@ -213,10 +235,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Timeline do
   def debugger_rows_for_mode(rows, "companion"), do: debugger_rows_for_target(rows, "companion")
 
   def debugger_rows_for_mode(rows, "mixed") when is_list(rows),
-    do: newest_first(rows)
+    do: rows |> Enum.map(&ensure_debugger_row/1) |> newest_first()
 
   def debugger_rows_for_mode(rows, "separate") when is_list(rows),
-    do: newest_first(rows)
+    do: rows |> Enum.map(&ensure_debugger_row/1) |> newest_first()
 
   def debugger_rows_for_mode(_rows, _mode), do: []
 
@@ -266,11 +288,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Timeline do
 
   def debugger_timeline_text(_rows), do: ""
 
-  @spec newest_first([map()]) :: [map()]
+  @spec newest_first(Types.events()) :: Types.events()
   defp newest_first(rows) when is_list(rows),
     do: Enum.sort_by(rows, &Map.get(&1, :seq, 0), :desc)
 
-  @spec debugger_timeline_line(map()) :: String.t()
+  @spec debugger_timeline_line(Types.timeline_event()) :: String.t()
   defp debugger_timeline_line(row) when is_map(row) do
     seq = Map.get(row, :seq) || Map.get(row, "seq") || "?"
     target = Map.get(row, :target) || Map.get(row, "target") || "-"
@@ -290,7 +312,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Timeline do
     |> String.trim()
   end
 
-  @spec normalize_debugger_row(map()) :: Types.debugger_row()
+  @spec normalize_debugger_row(Types.timeline_event()) :: Types.debugger_row()
   defp normalize_debugger_row(row) when is_map(row) do
     seq = debugger_row_seq(row)
     raw_seq = Map.get(row, :raw_seq) || Map.get(row, "raw_seq") || seq
@@ -703,7 +725,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Timeline do
     end
   end
 
-  @spec normalize_cursor_seq([map()], Types.maybe_non_neg_integer()) ::
+  @spec normalize_cursor_seq(Types.events(), Types.maybe_non_neg_integer()) ::
           Types.maybe_non_neg_integer()
   def normalize_cursor_seq(events, cursor_seq) do
     CursorSeq.resolve_at_or_before(events, cursor_seq)

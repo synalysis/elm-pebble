@@ -97,9 +97,9 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall do
     do: []
 
   @spec protocol_message_payload_for_cmd_call(
-          map(),
-          map(),
-          Types.app_model() | map(),
+          Types.runtime_state(),
+          Types.cmd_call(),
+          Types.app_model(),
           :watch_to_phone | :phone_to_watch,
           Types.subscription_payload(),
           ctx()
@@ -156,7 +156,7 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall do
           Types.cmd_call(),
           Types.protocol_schema(),
           :watch_to_phone | :phone_to_watch,
-          map()
+          ProtocolResolutionCtx.t()
         ) :: {String.t() | nil, Types.protocol_message_wire_value()}
   defp protocol_message_payload_from_cmd_call(cmd_call, schema, direction, ctx)
        when is_map(cmd_call) and is_map(schema) and
@@ -242,7 +242,7 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall do
           Types.protocol_schema(),
           :watch_to_phone | :phone_to_watch,
           ProtocolResolutionCtx.t()
-        ) :: {String.t(), Types.protocol_ctor_value() | map()} | :error
+        ) :: {String.t(), Types.protocol_ctor_value()} | :error
   defp resolve_protocol_message_from_cmd_call(
          cmd_call,
          schema,
@@ -893,7 +893,7 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall do
           :watch_to_phone | :phone_to_watch,
           String.t()
         ) ::
-          map() | nil
+          Types.protocol_ctor_value() | nil
   defp protocol_message_value_from_schema(schema, direction, callback)
        when is_map(schema) and is_binary(callback) and callback != "" do
     messages =
@@ -1082,7 +1082,7 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall do
           :watch_to_phone | :phone_to_watch | nil,
           Types.protocol_wire_arg(),
           Types.protocol_wire_arg()
-        ) :: {String.t(), Types.protocol_ctor_value() | map()} | :error
+        ) :: {String.t(), Types.protocol_ctor_value()} | :error
   def normalize_protocol_message_value_from_schema(schema, direction, message_value, message)
       when direction in [:watch_to_phone, :phone_to_watch] and is_map(schema) do
     ctor = protocol_message_ctor(message_value) || message_constructor(message)

@@ -9,13 +9,14 @@ defmodule Ide.Debugger.DeviceDataResponses do
   alias Ide.Debugger.Types
 
   @type apply_ctx :: %{
-          required(:append_event) => (Types.runtime_state(), String.t(), map() ->
+          required(:append_event) => (Types.runtime_state(),
+                                      String.t(),
+                                      Types.debugger_timeline_payload() ->
                                         Types.runtime_state()),
           required(:apply_step_once) => (Types.runtime_state(),
                                          Types.surface_target(),
                                          String.t(),
                                          Types.subscription_payload()
-                                         | map()
                                          | nil,
                                          String.t(),
                                          String.t() ->

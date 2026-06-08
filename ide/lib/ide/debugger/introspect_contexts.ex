@@ -28,7 +28,7 @@ defmodule Ide.Debugger.IntrospectContexts do
           required(:runtime_status_after_init) => (Types.runtime_state(),
                                                    Types.surface_target(),
                                                    Types.step_executor_result()
-                                                   | map(),
+                                                   | Types.wire_map(),
                                                    Types.elm_introspect() ->
                                                      Types.runtime_state()),
           required(:apply_runtime_followups) => (Types.runtime_state(),

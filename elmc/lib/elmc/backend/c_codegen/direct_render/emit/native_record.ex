@@ -830,10 +830,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
         end
 
       _ ->
-        case Host.direct_int_value(field_expr, env, counter) do
-          {code, ref, c2} -> {:ok, scoped_field_value(code, "elmc_int_t", var, ref, "0"), var, c2}
-          :error -> :error
-        end
+        {code, ref, c2} = Host.direct_int_value(field_expr, env, counter)
+        {:ok, scoped_field_value(code, "elmc_int_t", var, ref, "0"), var, c2}
     end
   end
 

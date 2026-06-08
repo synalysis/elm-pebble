@@ -308,6 +308,4 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   defp constructor_arg_condition(value_ref, arg_pattern) when is_map(arg_pattern) do
     " && (#{pattern_condition(value_ref, arg_pattern)})"
   end
-
-  defp constructor_arg_condition(_value_ref, _arg_pattern), do: ""
 end

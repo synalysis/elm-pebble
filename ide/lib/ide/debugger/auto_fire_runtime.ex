@@ -20,18 +20,18 @@ defmodule Ide.Debugger.AutoFireRuntime do
           required(:apply_step) => (Types.runtime_state(),
                                     Types.surface_target(),
                                     String.t(),
-                                    map()
+                                    Types.subscription_payload()
                                     | nil,
                                     String.t(),
                                     String.t() ->
                                       Types.runtime_state()),
           required(:subscription_row_enabled?) => (Types.runtime_state(),
                                                    Types.surface_target(),
-                                                   map() ->
+                                                   Types.trigger_candidate() ->
                                                      boolean()),
           required(:auto_fire_row_enabled?) => (Types.runtime_state(),
                                                 Types.surface_target(),
-                                                map() ->
+                                                Types.trigger_candidate() ->
                                                   boolean()),
           required(:simulator_now) => (Types.runtime_state(), Types.surface_target() ->
                                          NaiveDateTime.t()),
@@ -303,7 +303,7 @@ defmodule Ide.Debugger.AutoFireRuntime do
   @spec subscription_row_enabled?(
           Types.runtime_state(),
           Types.surface_target(),
-          map(),
+          Types.trigger_candidate(),
           (Types.surface_target() -> String.t())
         ) :: boolean()
   def subscription_row_enabled?(state, target, row, source_root_for_target)

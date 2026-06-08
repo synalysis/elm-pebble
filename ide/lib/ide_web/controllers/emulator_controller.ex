@@ -272,7 +272,6 @@ defmodule IdeWeb.EmulatorController do
   defp session_local_port(pid, kind) when is_pid(pid) do
     case Session.local_port(pid, kind) do
       port when is_integer(port) and port > 0 -> {:ok, port}
-      {:error, _} = error -> error
       other -> {:error, other}
     end
   catch

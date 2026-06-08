@@ -62,5 +62,14 @@
   {"lib/ide/mcp/debugger_template_corpus.ex", :pattern_match},
   {"lib/ide/mcp/debugger_template_corpus.ex", :unused_fun},
   {"lib/ide/debugger/surface_compile_artifacts.ex", :pattern_match},
-  {"lib/ide/debugger/surface_compile_artifacts.ex", :pattern_match_cov}
+  {"lib/ide/debugger/surface_compile_artifacts.ex", :pattern_match_cov},
+  {"lib/ide/debugger/runtime_contexts.ex", :call},
+  {"lib/ide/debugger/runtime_executor.ex", :pattern_match_cov},
+  {"lib/ide/debugger/step_execution.ex", :call},
+  {"lib/ide/emulator/pbw_installer/post_install.ex", :call},
+  {"lib/ide/mcp/debugger_template_corpus.ex", :no_return},
+  {"lib/ide_web/live/workspace_live/debugger_page.ex", :pattern_match},
+  {"lib/ide_web/live/workspace_live/debugger_page.ex", :pattern_match_cov},
+  {"lib/ide_web/live/workspace_live/debugger_support/timeline.ex", :invalid_contract},
+  {"lib/ide_web/live/workspace_live/debugger_page.ex", :guard_fail_pat}
 ]

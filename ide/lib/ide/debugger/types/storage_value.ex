@@ -9,7 +9,7 @@ defmodule Ide.Debugger.Types.StorageValue do
 
   @type scalar_value :: String.t() | integer() | boolean()
 
-  @type value :: scalar_value() | map()
+  @type value :: scalar_value() | Types.wire_map()
 
   @type t :: %{
           optional(:kind) => kind(),
@@ -20,5 +20,5 @@ defmodule Ide.Debugger.Types.StorageValue do
 
   @type values_map :: %{optional(String.t()) => t() | wire_map()}
 
-  @type wire_map :: t() | map()
+  @type wire_map :: t() | Types.wire_map()
 end

@@ -5,7 +5,9 @@ defmodule Ide.Debugger.WatchProfileApply do
   alias Ide.Debugger.SimulatorSurfaceSettings
   alias Ide.Debugger.Types
 
-  @type append_event_fn :: (Types.runtime_state(), String.t(), map() -> Types.runtime_state())
+  @type append_event_fn ::
+          (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() ->
+             Types.runtime_state())
 
   @type ensure_phone_fn :: (Types.runtime_state() -> Types.runtime_state())
 

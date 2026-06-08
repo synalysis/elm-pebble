@@ -8,10 +8,11 @@ defmodule Ide.Debugger.AppMessageQueue do
   """
 
   alias Ide.Debugger.Types
+  alias Ide.Debugger.Types.ProtocolTxRxPayload
 
   @queue_targets [:watch, :companion, :phone]
 
-  @type queue_entry :: Types.protocol_tx_rx_payload() | map()
+  @type queue_entry :: Types.protocol_tx_rx_payload() | ProtocolTxRxPayload.wire_map()
   @type queues :: %{
           optional(:watch) => [queue_entry()],
           optional(:companion) => [queue_entry()],

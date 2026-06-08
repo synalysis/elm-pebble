@@ -99,7 +99,7 @@ defmodule Ide.Debugger.CompanionBridge.SimulatorStore do
   def command_value_to_storage_value(value), do: %{"kind" => "json", "value" => value}
 
   @spec command_json_value(Types.simulator_command_input()) ::
-          Types.wire_scalar() | Types.elmc_wire_ctor_call() | map()
+          Types.wire_scalar() | Types.elmc_wire_ctor_call() | Types.wire_map()
   def command_json_value(%{"$call" => target, "$args" => [value | _]}) when is_binary(target) do
     cond do
       String.ends_with?(target, ".string") and is_binary(value) -> value

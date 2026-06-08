@@ -30,7 +30,9 @@ defmodule Ide.Debugger.HotReloadSurface do
 
   def put_view_trees(state, _path, _revision, _source_root), do: state
 
-  @type append_event_fn :: (Types.runtime_state(), String.t(), map() -> Types.runtime_state())
+  @type append_event_fn ::
+          (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() ->
+             Types.runtime_state())
 
   @spec maybe_append_phone_view_render(Types.runtime_state(), String.t(), append_event_fn()) ::
           Types.runtime_state()

@@ -1,5 +1,6 @@
 defmodule Ide.Debugger.RuntimePreview do
   @moduledoc false
+  @dialyzer :no_match
 
   alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Debugger.RuntimeViewOutput
@@ -200,7 +201,11 @@ defmodule Ide.Debugger.RuntimePreview do
   @doc """
   View-output rows for SVG preview: same executor refresh and resolution as rendered tree.
   """
-  @spec effective_runtime_view_output_rows(map(), map(), Types.surface_target()) :: [map()]
+  @spec effective_runtime_view_output_rows(
+          Types.RuntimeStepResult.wire_result(),
+          Types.app_model(),
+          Types.surface_target()
+        ) :: Types.runtime_view_nodes()
   def effective_runtime_view_output_rows(runtime, model, target)
       when is_map(runtime) and is_map(model) and target in [:watch, :companion, :phone] do
     stored_rows =

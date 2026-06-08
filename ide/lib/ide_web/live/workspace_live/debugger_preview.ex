@@ -8,20 +8,21 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   alias Ide.Resources.ApngStaticPreview
   alias Ide.Resources.PdcDecoder
   alias Ide.Resources.ResourceStore
+  alias IdeWeb.WorkspaceLive.DebuggerSupport.Types, as: PreviewTypes
 
   @default_screen_w 144
   @default_screen_h 168
 
-  @type runtime_input :: map() | nil
-  @type view_tree :: map() | nil
-  @type wire_value :: String.t() | integer() | float() | boolean() | map() | list() | nil
-  @type model_map :: map()
-  @type view_node :: map()
-  @type svg_op :: map()
-  @type compact_scene :: map()
-  @type bounds_map :: map()
-  @type unresolved_row :: map()
-  @type hash_input :: map() | [String.t()]
+  @type runtime_input :: PreviewTypes.runtime_input()
+  @type view_tree :: PreviewTypes.view_tree() | nil
+  @type wire_value :: PreviewTypes.wire_value()
+  @type model_map :: PreviewTypes.model_map()
+  @type view_node :: PreviewTypes.view_node()
+  @type svg_op :: PreviewTypes.svg_op()
+  @type compact_scene :: PreviewTypes.compact_scene()
+  @type bounds_map :: PreviewTypes.bounds_map()
+  @type unresolved_row :: PreviewTypes.unresolved_row()
+  @type hash_input :: PreviewTypes.hash_input()
 
   @spec screen_dimensions(runtime_input(), view_tree()) :: {pos_integer(), pos_integer()}
   def screen_dimensions(runtime, tree \\ nil) do
@@ -252,13 +253,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   def resolve_bitmap_svg_op_id(op, _bitmap_indices, _animation_indices), do: op
 
-  @spec bitmap_resource_index(term(), map()) :: non_neg_integer()
+  @spec bitmap_resource_index(term(), PreviewTypes.resource_index_map()) :: non_neg_integer()
   defp bitmap_resource_index(resource, indices), do: named_resource_index(resource, indices)
 
-  @spec animation_resource_index(term(), map()) :: non_neg_integer()
+  @spec animation_resource_index(term(), PreviewTypes.resource_index_map()) :: non_neg_integer()
   defp animation_resource_index(resource, indices), do: named_resource_index(resource, indices)
 
-  @spec named_resource_index(term(), map()) :: non_neg_integer()
+  @spec named_resource_index(term(), PreviewTypes.resource_index_map()) :: non_neg_integer()
   defp named_resource_index(resource, indices) when is_map(indices) do
     name = vector_resource_name(resource)
 
@@ -270,7 +271,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   defp named_resource_index(_resource, _indices), do: 0
 
-  @spec vector_resource_index(term(), map()) :: non_neg_integer()
+  @spec vector_resource_index(term(), PreviewTypes.resource_index_map()) :: non_neg_integer()
   defp vector_resource_index(resource, indices) when is_map(indices) do
     name = vector_resource_name(resource)
 
@@ -279,8 +280,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
       _ -> 0
     end
   end
-
-  defp vector_resource_index(_resource, _indices), do: 0
 
   @spec vector_resource_name(term()) :: String.t()
   defp vector_resource_name(resource) when is_binary(resource), do: resource
@@ -461,11 +460,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   @path_drawable_kinds ~w(path_filled path_outline path_outline_open)
 
-  @spec compact_scene(runtime_input()) :: map()
+  @spec compact_scene(runtime_input()) :: compact_scene()
   def compact_scene(runtime) when is_map(runtime), do: compact_scene(runtime, :watch)
   def compact_scene(_runtime), do: build_compact_scene([])
 
-  @spec compact_scene(runtime_input(), :watch | :companion | :phone) :: map()
+  @spec compact_scene(runtime_input(), :watch | :companion | :phone) :: compact_scene()
   def compact_scene(runtime, target)
       when is_map(runtime) and target in [:watch, :companion, :phone] do
     model = Map.get(runtime, :model) || Map.get(runtime, "model") || %{}
@@ -491,7 +490,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   def compact_scene(_runtime, _target), do: build_compact_scene([])
 
   @spec compact_scene_diff(compact_scene() | runtime_input(), compact_scene() | runtime_input()) ::
-          map()
+          PreviewTypes.compact_scene_diff()
   def compact_scene_diff(previous, current) do
     previous_scene = normalize_compact_scene_map(previous)
     current_scene = normalize_compact_scene_map(current)
@@ -883,7 +882,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   defp pebble_angle_to_rad(_), do: -:math.pi() / 2.0
 
-  @spec runtime_compact_scene_output(runtime_input()) :: [map()]
+  @spec runtime_compact_scene_output(runtime_input()) :: [PreviewTypes.view_output_row()]
   defp runtime_compact_scene_output(runtime) do
     runtime
     |> compact_scene()
@@ -893,7 +892,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     |> apply_svg_style_state()
   end
 
-  @spec build_compact_scene_from_view_output_rows(runtime_input(), map(), [map()]) :: map()
+  @spec build_compact_scene_from_view_output_rows(
+          runtime_input(),
+          PreviewTypes.wire_map(),
+          [PreviewTypes.view_output_row()]
+        ) :: compact_scene()
   defp build_compact_scene_from_view_output_rows(runtime, model, rows)
        when is_map(runtime) and is_map(model) and is_list(rows) do
     indices = RuntimeArtifacts.vector_resource_indices(runtime_model(runtime))
@@ -914,7 +917,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     build_compact_scene(ops)
   end
 
-  @spec compact_scene_missing_path_drawables?(map(), [map()]) :: boolean()
+  @spec compact_scene_missing_path_drawables?(compact_scene(), [PreviewTypes.view_output_row()]) ::
+          boolean()
   defp compact_scene_missing_path_drawables?(scene, rows) when is_map(scene) and is_list(rows) do
     rows_need_paths? =
       Enum.any?(rows, fn row ->
@@ -927,7 +931,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   defp compact_scene_missing_path_drawables?(_scene, _rows), do: false
 
-  @spec compact_scene_missing_bitmap_drawables?(map(), [map()]) :: boolean()
+  @spec compact_scene_missing_bitmap_drawables?(compact_scene(), [PreviewTypes.view_output_row()]) ::
+          boolean()
   defp compact_scene_missing_bitmap_drawables?(scene, rows) when is_map(scene) and is_list(rows) do
     rows_need_bitmaps? =
       Enum.any?(rows, fn row ->
@@ -961,7 +966,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     end
   end
 
-  @spec compact_scene_has_bitmap_drawables?(map()) :: boolean()
+  @spec compact_scene_has_bitmap_drawables?(compact_scene()) :: boolean()
   defp compact_scene_has_bitmap_drawables?(scene) when is_map(scene) do
     scene
     |> Map.get(:ops, Map.get(scene, "ops", []))
@@ -1016,7 +1021,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     end
   end
 
-  @spec compact_scene_has_path_drawables?(map()) :: boolean()
+  @spec compact_scene_has_path_drawables?(compact_scene()) :: boolean()
   defp compact_scene_has_path_drawables?(scene) when is_map(scene) do
     scene
     |> Map.get(:ops, Map.get(scene, "ops", []))
@@ -1028,12 +1033,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     end)
   end
 
-  @spec view_output_row_kind(map()) :: String.t()
+  @spec view_output_row_kind(PreviewTypes.view_output_row()) :: String.t()
   defp view_output_row_kind(row) when is_map(row) do
     to_string(Map.get(row, "kind") || Map.get(row, :kind) || "")
   end
 
-  @spec normalize_compact_scene(map()) :: map()
+  @spec normalize_compact_scene(PreviewTypes.compact_scene() | PreviewTypes.wire_map()) ::
+          compact_scene()
   defp normalize_compact_scene(scene) when is_map(scene) do
     ops =
       scene
@@ -1063,7 +1069,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     }
   end
 
-  @spec normalize_compact_scene_map(compact_scene() | runtime_input()) :: map()
+  @spec normalize_compact_scene_map(compact_scene() | runtime_input()) :: compact_scene()
   defp normalize_compact_scene_map(%{version: _, ops: _} = scene),
     do: normalize_compact_scene(scene)
 
@@ -1075,7 +1081,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   defp normalize_compact_scene_map(runtime) when is_map(runtime), do: compact_scene(runtime)
   defp normalize_compact_scene_map(_), do: build_compact_scene([])
 
-  @spec build_compact_scene([map()]) :: map()
+  @spec build_compact_scene([svg_op()]) :: compact_scene()
   defp build_compact_scene(ops) when is_list(ops) do
     rows =
       Enum.map(ops, fn op ->
@@ -1185,7 +1191,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     end
   end
 
-  @spec compact_op_bounds(map()) :: map() | nil
+  @spec compact_op_bounds(svg_op()) :: bounds_map() | nil
   defp compact_op_bounds(%{kind: kind})
        when kind in [
               :push_context,
@@ -1270,7 +1276,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   defp op_bounds(%{"bounds" => bounds}), do: bounds
   defp op_bounds(_), do: nil
 
-  @spec merge_dirty_bounds([map()]) :: [map()]
+  @spec merge_dirty_bounds([bounds_map()]) :: [bounds_map()]
   defp merge_dirty_bounds([]), do: []
 
   defp merge_dirty_bounds(bounds) when is_list(bounds) do
@@ -1284,7 +1290,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     end)
   end
 
-  @spec bounds_map(wire_value(), wire_value(), wire_value(), wire_value()) :: map()
+  @spec bounds_map(wire_value(), wire_value(), wire_value(), wire_value()) :: bounds_map()
   defp bounds_map(x, y, w, h), do: %{x: x || 0, y: y || 0, w: max(w || 0, 0), h: max(h || 0, 0)}
 
   @spec stable_hash(hash_input()) :: String.t()
@@ -1713,7 +1719,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     Enum.reverse(rows)
   end
 
-  @spec default_svg_style() :: map()
+  @spec default_svg_style() :: PreviewTypes.svg_style()
   defp default_svg_style do
     %{
       stroke_color: nil,
@@ -1733,7 +1739,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   defp update_svg_style([style | rest], key, value), do: [Map.put(style, key, value) | rest]
   defp update_svg_style([], key, value), do: [Map.put(default_svg_style(), key, value)]
 
-  @spec apply_svg_style(map(), map()) :: map()
+  @spec apply_svg_style(PreviewTypes.svg_style(), PreviewTypes.svg_style()) ::
+          PreviewTypes.svg_style()
   defp apply_svg_style(%{kind: :unresolved} = op, _style), do: op
 
   defp apply_svg_style(%{kind: :clear} = op, _style), do: op
@@ -3043,8 +3050,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
       Map.get(node, "evaluated_value") ||
       Map.get(node, :evaluated_value)
   end
-
-  defp evaluated_node_value(_node, _model), do: nil
 
   @spec node_color_value(map(), model_map()) :: integer() | nil
   defp node_color_value(node, model) when is_map(node) do

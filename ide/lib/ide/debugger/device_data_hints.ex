@@ -274,7 +274,8 @@ defmodule Ide.Debugger.DeviceDataHints do
 
   defp boolean_fields_for_update_ctor(_model, _ctor), do: []
 
-  @spec declared_model_fields(map(), Types.init_model_values()) :: [String.t()]
+  @spec declared_model_fields(Types.protocol_var_bindings(), Types.init_model_values()) ::
+          [String.t()]
   defp declared_model_fields(bindings, init) when is_map(bindings) and is_map(init) do
     bindings
     |> Map.values()

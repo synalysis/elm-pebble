@@ -29,14 +29,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
         model
         |> parser_view_tree()
         |> discard_parser_expression_view_tree(ei)
-        |> reject_placeholder_rendered_tree()
         |> normalize_rendered_tree_or_nil()
     end
   end
 
   def rendered_tree(_runtime), do: nil
 
-  @spec runtime_rendered_tree(map(), map()) :: map() | nil
+  @spec runtime_rendered_tree(Ide.Debugger.Types.execution_model(), Ide.Debugger.Types.wire_map()) ::
+          Types.view_tree() | nil
   defp runtime_rendered_tree(runtime, model) when is_map(runtime) and is_map(model) do
     view_tree = Map.get(runtime, :view_tree) || Map.get(runtime, "view_tree")
 
@@ -47,6 +47,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
 
     stored_rows =
       Map.get(model, "runtime_view_output") || Map.get(model, :runtime_view_output) || []
+
+    had_stored_rows? = stored_rows != []
 
     preview_model =
       case Map.get(model, "runtime_model") || Map.get(model, :runtime_model) do
@@ -81,6 +83,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
     output_tree = runtime_view_output_tree(Map.put(model, "runtime_view_output", refreshed_rows))
 
     cond do
+      not had_stored_rows? and concrete_rendered_view_tree?(view_tree, ei) ->
+        view_tree
+
       output_tree != nil and
           not Ide.Debugger.StepExecution.stale_runtime_view_output?(preview_model, refreshed_rows) ->
         output_tree
@@ -106,7 +111,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
 
   defp concrete_rendered_view_tree?(_tree, _ei), do: false
 
-  @spec discard_parser_expression_view_tree(Types.view_tree(), map()) :: map() | nil
+  @spec discard_parser_expression_view_tree(Types.view_tree(), Ide.Debugger.Types.elm_introspect()) ::
+          Types.view_tree() | nil
   defp discard_parser_expression_view_tree(tree, ei) when is_map(tree) do
     if parser_expression_view_tree?(tree, ei), do: nil, else: tree
   end
@@ -122,7 +128,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
 
   defp parser_expression_view_tree?(_tree, _ei), do: false
 
-  @spec runtime_view_output_tree(map()) :: map() | nil
+  @spec runtime_view_output_tree(Ide.Debugger.Types.wire_map()) :: Types.view_tree() | nil
   defp runtime_view_output_tree(model) when is_map(model) do
     case Map.get(model, "runtime_view_output") || Map.get(model, :runtime_view_output) || [] do
       [_ | _] = ops ->
@@ -189,7 +195,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
 
   defp positive_integer_value(_value, fallback), do: fallback
 
-  @spec runtime_view_output_nodes([map()]) :: [map()]
+  @spec runtime_view_output_nodes([Ide.Debugger.Types.view_output_row()]) ::
+          [Ide.Debugger.Types.view_output_row()]
   defp runtime_view_output_nodes(ops) when is_list(ops) do
     {nodes, _rest} = runtime_view_output_nodes_until(ops, false)
     nodes
@@ -539,7 +546,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
 
   def rendered_node_bounds(_tree, _path, _screen_w, _screen_h, _project), do: nil
 
-  @spec rendered_node_at_path(map(), String.t()) :: map() | nil
+  @spec rendered_node_at_path(Types.view_tree(), String.t()) :: Types.rendered_node() | nil
   defp rendered_node_at_path(tree, path) when is_map(tree) and is_binary(path) do
     indexes =
       path
@@ -553,7 +560,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
     end
   end
 
-  @spec rendered_node_at_indexes(Types.rendered_node(), [{integer(), String.t()}]) :: map() | nil
+  @spec rendered_node_at_indexes(Types.rendered_node(), [{integer(), String.t()}]) ::
+          Types.rendered_node() | nil
   defp rendered_node_at_indexes(node, []) when is_map(node), do: node
 
   defp rendered_node_at_indexes(node, [{index, ""} | rest]) when is_map(node) and index >= 0 do
@@ -693,7 +701,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
 
   defp vector_canvas_size(_node, _project, _kind), do: :error
 
-  @spec rect_bounds(map()) :: map() | nil
+  @spec rect_bounds(Types.rendered_node()) :: Types.bounds_map() | nil
   defp rect_bounds(node) when is_map(node) do
     with x when is_integer(x) <- Util.map_integer(node, :x),
          y when is_integer(y) <- Util.map_integer(node, :y),
@@ -705,7 +713,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
     end
   end
 
-  @spec line_bounds(map()) :: map() | nil
+  @spec line_bounds(Types.rendered_node()) :: Types.bounds_map() | nil
   defp line_bounds(node) when is_map(node) do
     with x1 when is_integer(x1) <- Util.map_integer(node, :x1),
          y1 when is_integer(y1) <- Util.map_integer(node, :y1),
@@ -719,7 +727,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
     end
   end
 
-  @spec circle_bounds(map()) :: map() | nil
+  @spec circle_bounds(Types.rendered_node()) :: Types.bounds_map() | nil
   defp circle_bounds(node) when is_map(node) do
     with cx when is_integer(cx) <- Util.map_integer(node, :cx),
          cy when is_integer(cy) <- Util.map_integer(node, :cy),
@@ -731,7 +739,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
     end
   end
 
-  @spec text_point_bounds(map(), integer(), integer()) :: map() | nil
+  @spec text_point_bounds(Types.rendered_node(), integer(), integer()) ::
+          Types.bounds_map() | nil
   defp text_point_bounds(node, default_w, default_h) when is_map(node) do
     with x when is_integer(x) <- Util.map_integer(node, :x),
          y when is_integer(y) <- Util.map_integer(node, :y) do
@@ -741,7 +750,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
     end
   end
 
-  @spec rotated_bitmap_bounds(map()) :: map() | nil
+  @spec rotated_bitmap_bounds(Types.rendered_node()) :: Types.bounds_map() | nil
   defp rotated_bitmap_bounds(node) when is_map(node) do
     with center_x when is_integer(center_x) <- Util.map_integer(node, :center_x),
          center_y when is_integer(center_y) <- Util.map_integer(node, :center_y),
@@ -765,7 +774,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
     end
   end
 
-  @spec path_bounds(map()) :: map() | nil
+  @spec path_bounds(Types.rendered_node()) :: Types.bounds_map() | nil
   defp path_bounds(node) when is_map(node) do
     payload = path_payload_from_children(node)
     points = Map.get(node, "points") || Map.get(node, :points) || Map.get(payload, :points, [])
@@ -921,7 +930,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
     |> union_bounds()
   end
 
-  @spec union_bounds([map()]) :: map() | nil
+  @spec union_bounds([Types.bounds_map()]) :: Types.bounds_map() | nil
   defp union_bounds([]), do: nil
 
   defp union_bounds([first | rest]) do
@@ -934,12 +943,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
     end)
   end
 
-  @spec reject_placeholder_rendered_tree(map() | nil) :: map() | nil
+  @spec reject_placeholder_rendered_tree(Types.view_tree() | nil) :: Types.view_tree() | nil
   defp reject_placeholder_rendered_tree(tree) do
     if Ide.Debugger.StepExecution.placeholder_view_tree?(tree), do: nil, else: tree
   end
 
-  @spec normalize_rendered_tree_or_nil(map() | nil) :: map() | nil
+  @spec normalize_rendered_tree_or_nil(Types.view_tree() | nil) :: Types.view_tree() | nil
   defp normalize_rendered_tree_or_nil(nil), do: nil
 
   defp normalize_rendered_tree_or_nil(%{} = tree) do
@@ -949,7 +958,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
     end
   end
 
-  @spec normalize_rendered_tree(map()) :: map()
+  @spec normalize_rendered_tree(Types.view_tree()) :: Types.view_tree()
   defp normalize_rendered_tree(tree) when is_map(tree) do
     case normalize_rendered_tree_or_nil(tree) do
       %{} = node -> node

@@ -62,7 +62,7 @@ defmodule Ide.Resources.ResourceStore do
         }
 
   @type font_lookup_error :: Types.font_lookup_error()
-  @type form_params :: map()
+  @type form_params :: %{optional(String.t()) => Types.wire_input(), optional(atom()) => Types.wire_input()}
   @type font_source :: %{
           id: String.t(),
           filename: String.t(),
@@ -812,7 +812,7 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec add_font_variant(Project.t(), map()) :: {:ok, map()} | {:error, Types.resource_error()}
+  @spec add_font_variant(Project.t(), form_params()) :: {:ok, map()} | {:error, Types.resource_error()}
   def add_font_variant(%Project{} = project, params) when is_map(params) do
     workspace = Projects.project_workspace_path(project)
     manifest_path = Path.join(workspace, @font_manifest_rel_path)
@@ -2211,8 +2211,8 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec font_variant_from_params(map(), map(), [map()], String.t() | nil) ::
-          {:ok, map()} | {:error, Types.asset_type_error()}
+  @spec font_variant_from_params(font_source(), form_params(), [map()], String.t() | nil) ::
+          {:ok, map()}
   defp font_variant_from_params(source, params, entries, existing_ctor \\ nil) do
     raw_ctor =
       params
@@ -2249,11 +2249,9 @@ defmodule Ide.Resources.ResourceStore do
       params
       |> Map.get("height", Map.get(params, :height, nil))
       |> positive_integer_or_default(next_font_height_for_source(source, used_entries))
+      |> max(1)
 
-    if height <= 0 do
-      {:error, :invalid_font_height}
-    else
-      variant = %{
+    variant = %{
         "id" => "font_" <> String.downcase(ctor),
         "source_id" => Map.fetch!(source, "id"),
         "ctor" => ctor,
@@ -2278,8 +2276,7 @@ defmodule Ide.Resources.ResourceStore do
           |> string_list()
       }
 
-      {:ok, normalize_font_variant_row(variant)}
-    end
+    {:ok, normalize_font_variant_row(variant)}
   end
 
   @spec next_font_height_for_source(map(), [map()]) :: pos_integer()

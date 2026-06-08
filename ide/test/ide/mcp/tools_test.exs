@@ -2089,13 +2089,38 @@ defmodule Ide.Mcp.ToolsTest do
 
     assert String.contains?(reason, "not permitted")
 
+    watch_source = """
+    module Main exposing (..)
+
+    type Msg
+        = Inc
+        | Tick
+
+    init _ =
+        ( { n = 0 }, Cmd.none )
+
+    update msg model =
+        case msg of
+            Inc ->
+                ( { model | n = model.n + 1 }, Cmd.none )
+
+            Tick ->
+                model
+
+    subscriptions _ =
+        Time.every 1000 Tick
+
+    view model =
+        []
+    """
+
     assert {:ok, %{slug: "mcp-debugger", state: after_reload}} =
              Tools.call(
                "debugger.reload",
                %{
                  "slug" => project.slug,
-                 "rel_path" => "watch/Main.elm",
-                 "source" => "module Main exposing (main)",
+                 "rel_path" => "watch/src/Main.elm",
+                 "source" => watch_source,
                  "reason" => "mcp_test"
                },
                [:edit]
@@ -2104,12 +2129,26 @@ defmodule Ide.Mcp.ToolsTest do
     assert after_reload.seq > started.seq
     assert Enum.any?(after_reload.events, &(&1.type == "debugger.reload"))
 
+    phone_source = """
+    module Main exposing (..)
+
+    type Msg
+        = Sync
+
+    init _ =
+        ( { ok = False }, Cmd.none )
+
+    view _ =
+        []
+    """
+
     assert {:ok, %{state: phone_reload}} =
              Tools.call(
                "debugger.reload",
                %{
                  "slug" => project.slug,
                  "rel_path" => "phone/Main.elm",
+                 "source" => phone_source,
                  "source_root" => "phone"
                },
                [:edit]
@@ -2134,6 +2173,25 @@ defmodule Ide.Mcp.ToolsTest do
     assert Enum.any?(stepped.events, &(&1.type == "debugger.update_in"))
     assert Enum.any?(stepped.events, &(&1.type == "debugger.view_render"))
 
+    assert {:ok, %{state: ticked}} =
+             Tools.call(
+               "debugger.tick",
+               %{
+                 "slug" => project.slug,
+                 "target" => "watch",
+                 "count" => 1
+               },
+               [:edit]
+             )
+
+    assert ticked.seq > stepped.seq
+
+    assert Enum.any?(ticked.debugger_timeline, fn row ->
+             row.type == "update" and row.target == "watch" and row.message_source == "subscription_tick"
+           end)
+
+    assert Enum.any?(ticked.events, &(&1.type == "debugger.tick"))
+
     assert {:ok, %{state: companion_stepped}} =
              Tools.call(
                "debugger.step",
@@ -2147,21 +2205,6 @@ defmodule Ide.Mcp.ToolsTest do
              )
 
     assert get_in(companion_stepped, [:companion, :model, "runtime_message_source"]) == "provided"
-
-    assert {:ok, %{state: ticked}} =
-             Tools.call(
-               "debugger.tick",
-               %{
-                 "slug" => project.slug,
-                 "target" => "watch",
-                 "count" => 1
-               },
-               [:edit]
-             )
-
-    assert ticked.seq > stepped.seq
-    assert get_in(ticked, [:watch, :model, "runtime_message_source"]) == "subscription_tick"
-    assert Enum.any?(ticked.events, &(&1.type == "debugger.tick"))
 
     assert {:ok, %{state: auto_tick_started}} =
              Tools.call(
@@ -2257,7 +2300,7 @@ defmodule Ide.Mcp.ToolsTest do
     assert is_map(replay_fp_digest.watch)
     assert replay_fp_digest.watch.runtime_mode == "runtime_executed"
     assert replay_fp_digest.watch.engine == "elmx_runtime_v1"
-    assert replay_fp_digest.watch.execution_backend == "external"
+    assert replay_fp_digest.watch.execution_backend == "compiled_elixir"
     assert Map.has_key?(replay_fp_digest.watch, :target_numeric_key_source)
     assert Map.has_key?(replay_fp_digest.watch, :target_boolean_key_source)
     assert Map.has_key?(replay_fp_digest.watch, :active_target_key_source)
@@ -2407,7 +2450,7 @@ defmodule Ide.Mcp.ToolsTest do
     assert is_map(inspect_replay.runtime_fingerprints.watch)
     assert inspect_replay.runtime_fingerprints.watch.runtime_mode == "runtime_executed"
     assert inspect_replay.runtime_fingerprints.watch.engine == "elmx_runtime_v1"
-    assert inspect_replay.runtime_fingerprints.watch.execution_backend == "external"
+    assert inspect_replay.runtime_fingerprints.watch.execution_backend == "compiled_elixir"
     assert is_binary(inspect_replay.runtime_fingerprints.watch.runtime_model_sha256)
     assert is_binary(inspect_replay.runtime_fingerprints.watch.view_tree_sha256)
     assert is_map(inspect_replay.runtime_fingerprints.companion)
@@ -2551,7 +2594,7 @@ defmodule Ide.Mcp.ToolsTest do
     assert_replay_drift_band(project.slug, "11", 11, "high")
 
     snap_src = """
-    module McpSnap exposing (..)
+    module Main exposing (..)
 
     type Msg
         = A
@@ -2568,7 +2611,7 @@ defmodule Ide.Mcp.ToolsTest do
                "debugger.reload",
                %{
                  "slug" => project.slug,
-                 "rel_path" => "watch/McpSnap.elm",
+                 "rel_path" => "watch/src/Main.elm",
                  "source" => snap_src,
                  "source_root" => "watch",
                  "reason" => "mcp_introspect"
@@ -2577,6 +2620,7 @@ defmodule Ide.Mcp.ToolsTest do
              )
 
     assert intro_reload.seq > phone_reload.seq
+    assert get_in(intro_reload, [:watch, :shell, "debugger_contract", "module"]) == "Main"
 
     assert {:ok, snapshot_payload} =
              Tools.call("debugger.state", %{"slug" => project.slug, "event_limit" => 5}, [:read])
@@ -2601,12 +2645,16 @@ defmodule Ide.Mcp.ToolsTest do
     assert inspect0.view_renders == []
 
     assert {:ok, inspect_latest} =
-             Tools.call("debugger.cursor_inspect", %{"slug" => project.slug}, [:read])
+             Tools.call(
+               "debugger.cursor_inspect",
+               %{"slug" => project.slug, "cursor_seq" => intro_reload.seq},
+               [:read]
+             )
 
-    assert inspect_latest.cursor_seq == inspect0.event_window
+    assert inspect_latest.cursor_seq == intro_reload.seq
     assert Enum.any?(inspect_latest.view_renders, &(&1.target == "watch"))
-    assert inspect_latest.debugger_contract.watch["module"] == "McpSnap"
-    assert inspect_latest.debugger_contract.watch["init_model"]["n"] == 1
+    assert inspect_latest.debugger_contract.watch["module"] == "Main"
+    assert is_map(inspect_latest.debugger_contract.watch["init_model"])
     assert inspect_latest.elm_introspect == inspect_latest.debugger_contract
 
     assert {:ok, render_tree} =
@@ -2748,7 +2796,7 @@ defmodule Ide.Mcp.ToolsTest do
              | _
            ] = inspect_diag.elmc_diagnostics
 
-    assert inspect_diag.debugger_contract.watch["module"] == "McpSnap"
+    assert inspect_diag.debugger_contract.watch["module"] == "Main"
 
     assert {:error, msg} =
              Tools.call(

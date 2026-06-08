@@ -170,7 +170,11 @@ defmodule Ide.Debugger.StepExecution do
     |> then(fn tagged ->
       case Map.get(tagged, "runtime_model") || Map.get(tagged, :runtime_model) do
         %{} = runtime_model ->
-          Map.put(tagged, "runtime_model", Map.put(runtime_model, "runtime_view_output_model_sha256", sha))
+          Map.put(
+            tagged,
+            "runtime_model",
+            Map.put(runtime_model, "runtime_view_output_model_sha256", sha)
+          )
 
         _ ->
           tagged
@@ -193,7 +197,8 @@ defmodule Ide.Debugger.StepExecution do
   end
 
   @doc false
-  @spec view_output_captured_for_model?(Types.app_model() | Types.inner_runtime_model()) :: boolean()
+  @spec view_output_captured_for_model?(Types.app_model() | Types.inner_runtime_model()) ::
+          boolean()
   def view_output_captured_for_model?(model) when is_map(model) do
     stored_sha =
       Map.get(model, "runtime_view_output_model_sha256") ||
@@ -285,7 +290,7 @@ defmodule Ide.Debugger.StepExecution do
 
   defp missing_supplemental_drawables?(primary, supplemental) do
     Enum.any?(@supplemental_drawable_kinds, fn kind ->
-      Enum.any?(supplemental, &view_output_row_kind(&1) == kind) and
+      Enum.any?(supplemental, &(view_output_row_kind(&1) == kind)) and
         not primary_has_drawable_kind?(primary, kind)
     end)
   end
@@ -325,13 +330,21 @@ defmodule Ide.Debugger.StepExecution do
   end
 
   @doc false
+  @incomplete_view_output_companions ~w(
+    fill_circle circle line path arc fill_radial bitmap_in_rect rotated_bitmap
+    bitmap_sequence_at vector_at vector_sequence_at
+  )
+
   @spec incomplete_stored_view_output?(Types.runtime_view_nodes()) :: boolean()
   def incomplete_stored_view_output?(rows) when is_list(rows) do
     has_text = Enum.any?(rows, &(view_output_row_kind(&1) in ["text", "text_label", "text_int"]))
     has_fill = Enum.any?(rows, &(view_output_row_kind(&1) == "fill_rect"))
     has_bitmap = primary_has_drawable_kind?(rows, "bitmap_in_rect")
 
-    has_text and has_fill and not has_bitmap
+    has_other_drawables =
+      Enum.any?(rows, &(view_output_row_kind(&1) in @incomplete_view_output_companions))
+
+    has_text and has_fill and not has_bitmap and not has_other_drawables
   end
 
   def incomplete_stored_view_output?(_rows), do: false
@@ -351,7 +364,8 @@ defmodule Ide.Debugger.StepExecution do
     end)
   end
 
-  defp merge_vector_view_output_rows(rows, fresh_rows) when is_list(rows) and is_list(fresh_rows) do
+  defp merge_vector_view_output_rows(rows, fresh_rows)
+       when is_list(rows) and is_list(fresh_rows) do
     keep = Enum.reject(rows, &vector_view_output_row?/1)
     vectors = Enum.filter(fresh_rows, &vector_view_output_row?/1)
     keep ++ vectors
@@ -377,7 +391,8 @@ defmodule Ide.Debugger.StepExecution do
     end)
   end
 
-  defp merge_bitmap_view_output_rows(rows, fresh_rows) when is_list(rows) and is_list(fresh_rows) do
+  defp merge_bitmap_view_output_rows(rows, fresh_rows)
+       when is_list(rows) and is_list(fresh_rows) do
     keep = Enum.reject(rows, &bitmap_view_output_row?/1)
     bitmaps = Enum.filter(fresh_rows, &bitmap_view_output_row?/1)
     keep ++ bitmaps
@@ -397,7 +412,9 @@ defmodule Ide.Debugger.StepExecution do
        when kind in ["vector_at", "vector_sequence_at"],
        do: true
 
-  defp vector_view_output_row?(%{kind: kind}) when kind in [:vector_at, :vector_sequence_at], do: true
+  defp vector_view_output_row?(%{kind: kind}) when kind in [:vector_at, :vector_sequence_at],
+    do: true
+
   defp vector_view_output_row?(_), do: false
 
   @doc false
@@ -451,20 +468,27 @@ defmodule Ide.Debugger.StepExecution do
       |> Map.merge(screen_dimensions_for_view_preview(execution_model))
 
     stored_rows =
-      Map.get(preview_model, "runtime_view_output") || Map.get(preview_model, :runtime_view_output) ||
+      Map.get(preview_model, "runtime_view_output") ||
+        Map.get(preview_model, :runtime_view_output) ||
         []
 
     cond do
       stale_runtime_view_output?(preview_model, stored_rows) ->
         case executor_view_preview(execution_model, %{"runtime_model" => preview_model}, :watch) do
-          {:ok, preview} -> preview
-          :error -> derive_preview_view_output_from_trees(execution_model, view_tree, preview_model)
+          {:ok, preview} ->
+            preview
+
+          :error ->
+            derive_preview_view_output_from_trees(execution_model, view_tree, preview_model)
         end
 
       stored_rows == [] and RuntimeArtifacts.versioned_elmx_artifacts?(execution_model) ->
         case executor_view_preview(execution_model, %{"runtime_model" => preview_model}, :watch) do
-          {:ok, preview} -> preview
-          :error -> derive_preview_view_output_from_trees(execution_model, view_tree, preview_model)
+          {:ok, preview} ->
+            preview
+
+          :error ->
+            derive_preview_view_output_from_trees(execution_model, view_tree, preview_model)
         end
 
       true ->
@@ -491,7 +515,8 @@ defmodule Ide.Debugger.StepExecution do
       end
 
     stored_rows =
-      Map.get(preview_model, "runtime_view_output") || Map.get(preview_model, :runtime_view_output) ||
+      Map.get(preview_model, "runtime_view_output") ||
+        Map.get(preview_model, :runtime_view_output) ||
         []
 
     view_output =
@@ -560,7 +585,8 @@ defmodule Ide.Debugger.StepExecution do
           Types.surface_target()
         ) :: {:ok, Types.preview_view_derivation()} | :error
   def executor_view_preview(execution_model, app_model, target)
-      when is_map(execution_model) and is_map(app_model) and target in [:watch, :companion, :phone] do
+      when is_map(execution_model) and is_map(app_model) and
+             target in [:watch, :companion, :phone] do
     if RuntimeArtifacts.versioned_elmx_artifacts?(execution_model) do
       runtime_model = RuntimeArtifacts.preview_runtime_model(app_model)
 
@@ -574,7 +600,7 @@ defmodule Ide.Debugger.StepExecution do
                 Map.get(execution_model, "launch_context") || %{},
             "runtime_model" => runtime_model
           },
-          introspect: RuntimeArtifacts.introspect(execution_model) || %{}
+          introspect: RuntimeArtifacts.require_introspect(execution_model)
         }
         |> Map.merge(RuntimeArtifacts.execution_artifacts(execution_model))
 
@@ -613,8 +639,13 @@ defmodule Ide.Debugger.StepExecution do
     end
   end
 
-  def stored_view_output_missing_executor_drawables?(_execution_model, _app_model, _target, _rows),
-    do: false
+  def stored_view_output_missing_executor_drawables?(
+        _execution_model,
+        _app_model,
+        _target,
+        _rows
+      ),
+      do: false
 
   @doc false
   @spec maybe_executor_view_preview(
@@ -654,7 +685,7 @@ defmodule Ide.Debugger.StepExecution do
           Types.runtime_view_nodes()
         ) :: boolean()
   def should_refresh_executor_view_preview?(app_model, stored, fresh)
-       when is_map(app_model) and is_list(stored) and is_list(fresh) do
+      when is_map(app_model) and is_list(stored) and is_list(fresh) do
     not view_output_captured_for_model?(app_model) or
       missing_supplemental_drawables?(stored, fresh) or
       view_output_scene_signature(stored) != view_output_scene_signature(fresh)
@@ -672,7 +703,7 @@ defmodule Ide.Debugger.StepExecution do
     |> Enum.sort()
   end
 
-  @spec view_output_scene_tokens(map()) :: [term()]
+  @spec view_output_scene_tokens(Types.view_output_row()) :: [term()]
   defp view_output_scene_tokens(row) when is_map(row) do
     kind = to_string(Map.get(row, "kind") || Map.get(row, :kind) || "")
 
@@ -685,21 +716,27 @@ defmodule Ide.Debugger.StepExecution do
 
   defp view_output_scene_tokens(_), do: []
 
-  @spec view_output_scene_token(String.t(), map()) :: term()
+  @spec view_output_scene_token(String.t(), Types.view_output_row()) :: term()
   defp view_output_scene_token("text", row),
-    do: {:text, Map.get(row, "text"), view_output_row_int(row, "x", 0), view_output_row_int(row, "y", 0)}
+    do:
+      {:text, Map.get(row, "text"), view_output_row_int(row, "x", 0),
+       view_output_row_int(row, "y", 0)}
 
   defp view_output_scene_token("text_label", row),
-    do: {:text_label, Map.get(row, "text"), view_output_row_int(row, "x", 0), view_output_row_int(row, "y", 0)}
+    do:
+      {:text_label, Map.get(row, "text"), view_output_row_int(row, "x", 0),
+       view_output_row_int(row, "y", 0)}
 
   defp view_output_scene_token("text_int", row),
-    do: {:text_int, Map.get(row, "text"), view_output_row_int(row, "x", 0), view_output_row_int(row, "y", 0)}
+    do:
+      {:text_int, Map.get(row, "text"), view_output_row_int(row, "x", 0),
+       view_output_row_int(row, "y", 0)}
 
   defp view_output_scene_token("bitmap_in_rect", row),
     do:
-      {:bitmap_in_rect, view_output_row_int(row, "bitmap_id", 0), view_output_row_int(row, "x", 0),
-       view_output_row_int(row, "y", 0), view_output_row_int(row, "w", 0),
-       view_output_row_int(row, "h", 0)}
+      {:bitmap_in_rect, view_output_row_int(row, "bitmap_id", 0),
+       view_output_row_int(row, "x", 0), view_output_row_int(row, "y", 0),
+       view_output_row_int(row, "w", 0), view_output_row_int(row, "h", 0)}
 
   defp view_output_scene_token("rotated_bitmap", row),
     do:
@@ -750,7 +787,7 @@ defmodule Ide.Debugger.StepExecution do
 
   defp zero_geometry_positioned_rows?(_), do: false
 
-  @spec zero_geometry_positioned_row?(Types.runtime_view_nodes()) :: boolean()
+  @spec zero_geometry_positioned_row?(Types.view_output_row()) :: boolean()
   defp zero_geometry_positioned_row?(%{"kind" => "circle"} = row),
     do: zero_coords?(row, ["cx", "cy"]) and zero_coords?(row, ["r"])
 
@@ -767,7 +804,7 @@ defmodule Ide.Debugger.StepExecution do
 
   defp zero_geometry_positioned_row?(_), do: false
 
-  @spec zero_coords?(map(), [String.t()]) :: boolean()
+  @spec zero_coords?(Types.view_output_row(), [String.t()]) :: boolean()
   defp zero_coords?(row, keys) when is_map(row) and is_list(keys) do
     Enum.all?(keys, fn key ->
       case Map.get(row, key) do
@@ -1018,11 +1055,13 @@ defmodule Ide.Debugger.StepExecution do
       |> to_string()
 
     type in @draw_op_types or
-      (tree |> Map.get("children", Map.get(tree, :children, [])) |> List.wrap()
-       |> Enum.any?(fn
-         child when is_map(child) -> view_tree_has_draw_ops?(child)
-         _ -> false
-       end))
+      tree
+      |> Map.get("children", Map.get(tree, :children, []))
+      |> List.wrap()
+      |> Enum.any?(fn
+        child when is_map(child) -> view_tree_has_draw_ops?(child)
+        _ -> false
+      end)
   end
 
   def view_tree_has_draw_ops?(_), do: false

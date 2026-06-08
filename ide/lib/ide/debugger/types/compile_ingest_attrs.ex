@@ -23,11 +23,11 @@ defmodule Ide.Debugger.Types.CompileIngestAttrs do
           optional(:source_root) => String.t(),
           optional(:schema_version) => String.t() | integer() | map() | nil,
           optional(:diagnostics) => list(),
-          optional(:elmx_manifest) => map(),
+          optional(:elmx_manifest) => Types.elmx_manifest(),
           optional(:elmx_revision) => String.t(),
           optional(String.t()) => Types.wire_input(),
           optional(atom()) => Types.wire_input()
         }
 
-  @type wire_map :: t() | map()
+  @type wire_map :: t() | Types.wire_map()
 end

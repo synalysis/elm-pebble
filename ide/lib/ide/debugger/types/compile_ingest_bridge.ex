@@ -29,7 +29,7 @@ defmodule Ide.Debugger.Types.CompileIngestBridge do
           optional(:warning_count) => non_neg_integer(),
           optional(:detail) => String.t(),
           optional(:source_root) => String.t(),
-          optional(:elmx_manifest) => map(),
+          optional(:elmx_manifest) => Types.elmx_manifest(),
           optional(:elmx_revision) => String.t(),
           optional(atom()) => Types.wire_input(),
           optional(String.t()) => Types.wire_input()

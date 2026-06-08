@@ -7,8 +7,8 @@ defmodule Ide.Debugger.ProtocolRuntimePatch do
   @spec patch_watch_runtime_from_protocol_message(
           Types.runtime_state(),
           Types.surface_target(),
-          Types.protocol_ctor_value() | map(),
-          Types.elm_introspect() | map() | nil
+          Types.protocol_message_wire_value(),
+          Types.elm_introspect() | nil
         ) ::
           Types.runtime_state()
   defp patch_watch_runtime_from_protocol_message(state, :watch, message_value, ei) do
@@ -187,9 +187,9 @@ defmodule Ide.Debugger.ProtocolRuntimePatch do
   defp model_field_for_patch_field(_patch_key, _init_keys), do: nil
 
   @spec protocol_runtime_model_patch_from_message_value(
-          map() | nil,
-          Types.protocol_ctor_value() | map()
-        ) :: map()
+          Types.elm_introspect() | nil,
+          Types.protocol_message_wire_value()
+        ) :: Types.runtime_model_patch()
   defp protocol_runtime_model_patch_from_message_value(introspect, %{
          "ctor" => "FromPhone",
          "args" => [inner | _]

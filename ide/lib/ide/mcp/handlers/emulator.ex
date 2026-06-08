@@ -119,7 +119,6 @@ defmodule Ide.Mcp.Handlers.Emulator do
       case result do
         {:ok, payload} -> {:ok, payload}
         {:error, reason} -> {:error, "embedded emulator run failed: #{format_run_error(reason)}"}
-        other -> other
       end
     after
       if kill_after? do
@@ -270,7 +269,7 @@ defmodule Ide.Mcp.Handlers.Emulator do
   defp capture_logs_snapshot(session_id, args) when is_binary(session_id) do
     case Emulator.log_capture_context(session_id) do
       {:ok, context} -> capture_logs_snapshot(context, args)
-      _ -> LogCapture.snapshot(%{}, args)
+      _ -> LogCapture.snapshot(%{}, [])
     end
   end
 

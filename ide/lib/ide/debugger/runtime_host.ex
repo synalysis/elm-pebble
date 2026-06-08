@@ -1,10 +1,11 @@
 defmodule Ide.Debugger.RuntimeHost do
   @moduledoc false
 
-  alias Ide.Debugger.RuntimeContexts
   alias Ide.Debugger.Types
 
-  @type append_event_fn :: (Types.runtime_state(), String.t(), map() -> Types.runtime_state())
+  @type append_event_fn ::
+          (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() ->
+             Types.runtime_state())
 
   @type append_debugger_event_fn ::
           (Types.runtime_state(), String.t(), Types.surface_target(), String.t(), String.t() ->
@@ -15,7 +16,6 @@ defmodule Ide.Debugger.RuntimeHost do
            Types.surface_target(),
            String.t(),
            Types.subscription_payload()
-           | map()
            | nil,
            String.t(),
            String.t() ->
@@ -35,7 +35,7 @@ defmodule Ide.Debugger.RuntimeHost do
           required(:simulator_settings_from_state) => (Types.runtime_state() ->
                                                          Types.simulator_settings()),
           required(:introspect_for) => (Types.runtime_state(), Types.surface_target() ->
-                                          Types.elm_introspect() | map()),
+                                          Types.elm_introspect()),
           required(:surface_app_model) => (Types.runtime_state(), Types.surface_target() ->
                                              Types.app_model()),
           required(:normalize_step_target) => (Types.wire_input() -> Types.surface_target()),
@@ -52,29 +52,31 @@ defmodule Ide.Debugger.RuntimeHost do
                                                        String.t()),
           required(:merge_runtime_artifacts) => (Types.runtime_state(),
                                                  Types.surface_target(),
-                                                 map() ->
+                                                 Types.elm_introspect() ->
                                                    Types.runtime_state()),
           required(:apply_subscription_ok_response) => (Types.runtime_state(),
                                                         Types.surface_target(),
                                                         String.t(),
-                                                        map(),
+                                                        Types.subscription_payload(),
                                                         String.t(),
                                                         String.t() ->
                                                           Types.runtime_state()),
           required(:maybe_attach_compile_artifacts) => (Types.runtime_state(),
                                                         Types.surface_target(),
-                                                        map() ->
+                                                        Types.elm_introspect() ->
                                                           Types.runtime_state()),
           required(:maybe_append_runtime_status) => (Types.runtime_state(),
                                                      Types.surface_target() ->
                                                        Types.runtime_state()),
           required(:maybe_append_runtime_status_after_init) => (Types.runtime_state(),
                                                                 Types.surface_target(),
-                                                                map(),
-                                                                Types.elm_introspect()
-                                                                | map() ->
+                                                                Types.step_executor_result()
+                                                                | Types.wire_map(),
+                                                                Types.elm_introspect() ->
                                                                   Types.runtime_state()),
-          required(:maybe_append_contract) => (Types.runtime_state(), map() | nil ->
+          required(:maybe_append_contract) => (Types.runtime_state(),
+                                               Types.debugger_contract()
+                                               | nil ->
                                                  Types.runtime_state()),
           required(:maybe_append_runtime_exec) => (Types.runtime_state(), String.t() ->
                                                      Types.runtime_state()),
@@ -82,23 +84,25 @@ defmodule Ide.Debugger.RuntimeHost do
                                                           Types.runtime_state()),
           required(:append_runtime_exec) => (Types.runtime_state(),
                                              Types.surface_target(),
-                                             map() ->
+                                             Types.RuntimeExecEventPayload.extra() ->
                                                Types.runtime_state()),
-          required(:model_active?) => (Types.runtime_state(), Types.surface_target(), map() ->
+          required(:model_active?) => (Types.runtime_state(),
+                                       Types.surface_target(),
+                                       Types.trigger_candidate() ->
                                          boolean()),
           required(:subscription_row_enabled?) => (Types.runtime_state(),
                                                    Types.surface_target(),
-                                                   map() ->
+                                                   Types.trigger_candidate() ->
                                                      boolean()),
           required(:auto_fire_row_enabled?) => (Types.runtime_state(),
                                                 Types.surface_target(),
-                                                map() ->
+                                                Types.trigger_candidate() ->
                                                   boolean()),
           required(:simulator_now) => (Types.runtime_state(), Types.surface_target() ->
                                          NaiveDateTime.t()),
           optional(:default_auto_fire_interval_ms) => pos_integer()
         }
 
-  @spec build(callbacks()) :: RuntimeContexts.host()
+  @spec build(callbacks()) :: callbacks()
   def build(callbacks) when is_map(callbacks), do: callbacks
 end

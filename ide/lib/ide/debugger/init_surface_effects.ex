@@ -14,13 +14,14 @@ defmodule Ide.Debugger.InitSurfaceEffects do
   alias Ide.Debugger.Types
 
   @type ctx :: %{
-          required(:append_event) => (Types.runtime_state(), String.t(), map() ->
+          required(:append_event) => (Types.runtime_state(),
+                                      String.t(),
+                                      Types.debugger_timeline_payload() ->
                                         Types.runtime_state()),
           required(:apply_step_once) => (Types.runtime_state(),
                                          Types.surface_target(),
                                          String.t(),
                                          Types.subscription_payload()
-                                         | map()
                                          | nil,
                                          String.t(),
                                          String.t() ->
@@ -28,7 +29,7 @@ defmodule Ide.Debugger.InitSurfaceEffects do
           required(:apply_subscription_ok_response) => (Types.runtime_state(),
                                                         Types.surface_target(),
                                                         String.t(),
-                                                        map(),
+                                                        Types.subscription_payload(),
                                                         String.t(),
                                                         String.t() ->
                                                           Types.runtime_state()),

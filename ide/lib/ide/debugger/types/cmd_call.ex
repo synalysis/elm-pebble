@@ -6,6 +6,7 @@ defmodule Ide.Debugger.Types.CmdCall do
   """
 
   alias ElmEx.DebuggerContract.Payload
+  alias Ide.Debugger.Types
 
   @type json_value :: Payload.json_value()
 
@@ -35,5 +36,5 @@ defmodule Ide.Debugger.Types.CmdCall do
           optional(atom()) => json_value()
         }
 
-  @type wire_map :: t() | map()
+  @type wire_map :: t() | Types.wire_map()
 end

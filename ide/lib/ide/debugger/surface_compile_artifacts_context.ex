@@ -9,7 +9,7 @@ defmodule Ide.Debugger.SurfaceCompileArtifactsContext do
           required(:source_root_for_target) => (Types.surface_target() -> String.t()),
           required(:merge_runtime_artifacts) => (Types.runtime_state(),
                                                  Types.surface_target(),
-                                                 map() ->
+                                                 Types.elm_introspect() ->
                                                    Types.runtime_state())
         }
 

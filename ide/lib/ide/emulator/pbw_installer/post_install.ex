@@ -4,6 +4,14 @@ defmodule Ide.Emulator.PBWInstaller.PostInstall do
   alias Ide.Emulator.PebbleProtocol.Packets
   alias Ide.Emulator.PebbleProtocol.Router
 
+  @type observed_frame :: %{
+          required(:endpoint) => String.t(),
+          required(:payload_bytes) => non_neg_integer(),
+          required(:payload_prefix) => String.t(),
+          optional(:data_logging_tag_hex) => String.t(),
+          optional(:error) => String.t()
+        }
+
   @spec probe_post_install_state(pid(), timeout()) :: :ok
   def probe_post_install_state(_router, timeout) when timeout <= 0, do: :ok
 
@@ -60,7 +68,7 @@ defmodule Ide.Emulator.PBWInstaller.PostInstall do
   end
 
   @doc false
-  @spec enrich_observed_frame(map(), binary()) :: map()
+  @spec enrich_observed_frame(observed_frame(), binary()) :: observed_frame()
   def enrich_observed_frame(
         observed,
         <<1, _session, _uuid::binary-size(16), _timestamp::little-32, tag::little-32,

@@ -36,7 +36,7 @@ defmodule Ide.Debugger.Types.RuntimeExecEventPayload do
           optional(String.t()) => Types.wire_input()
         }
 
-  @type wire_map :: t() | map()
+  @type wire_map :: t() | Types.wire_map()
 
   @spec from_runtime(ExecutionRuntimeSnapshot.wire_map(), String.t(), extra()) :: t()
   def from_runtime(runtime, target_label, extra \\ %{})

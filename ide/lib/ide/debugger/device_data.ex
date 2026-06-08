@@ -267,9 +267,6 @@ defmodule Ide.Debugger.DeviceData do
             end)
 
           if is_binary(kind), do: {:halt, kind}, else: :cont
-
-        _ ->
-          :cont
       end
     end)
   end
