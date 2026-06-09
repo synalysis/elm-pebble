@@ -4,6 +4,7 @@ defmodule Elmc.CCodegenPatternsTest do
   alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.FunctionCallCompile
   alias Elmc.Backend.CCodegen.Patterns
+  alias Elmc.Backend.CCodegen.RecordCompile
 
   @just_payload_borrow "elmc_maybe_or_tuple_just_payload_borrow"
 
@@ -207,6 +208,27 @@ defmodule Elmc.CCodegenPatternsTest do
     refute generated_c =~ "elmc_closure_new(elmc_lambda_"
   end
 
+  test "record literal reads score from bound merge var instead of constant zero" do
+    fields = [
+      %{name: "cells", expr: %{op: :field_access, arg: "merged", field: "cells"}},
+      %{name: "score", expr: %{op: :field_access, arg: "merged", field: "score"}}
+    ]
+
+    env = %{
+      "merged" => "tmp_4",
+      :__module__ => "Main",
+      :__record_shapes__ => %{"merged" => ["cells", "score"]},
+      :__program_decls__ => %{}
+    }
+
+    {code, _out, _counter} =
+      RecordCompile.compile(%{op: :record_literal, fields: fields}, env, 0)
+
+    assert code =~ ~r/elmc_record_get(?:_index)?\(tmp_4, (?:1 \/\* score \*\/|"score")\)/
+    refute code =~ "elmc_record_get(tmp_8, \"score\")"
+    refute code =~ "elmc_int_zero();  ElmcValue *tmp_"
+  end
+
   test "List.filter with (/=) 0 uses cursor loop instead of elmc_list_filter closure" do
     source = """
     module Main exposing (main)
@@ -240,6 +262,8 @@ defmodule Elmc.CCodegenPatternsTest do
 
     assert generated_c =~ "list_filter_cursor_"
     assert generated_c =~ "elmc_fn_Main_nonzero"
+    assert generated_c =~ "elmc_as_int(list_filter_head_"
+    refute generated_c =~ "elmc_value_equal(tmp_"
     refute generated_c =~ "elmc_list_filter("
     refute generated_c =~ "elmc_closure_new(elmc_lambda_"
   end
@@ -320,8 +344,10 @@ defmodule Elmc.CCodegenPatternsTest do
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
+    assert generated_c =~ "/* List.repeat */"
     assert generated_c =~ "list_repeat_i_"
     assert generated_c =~ "elmc_fn_Main_blankRow"
+    refute generated_c =~ "list_repeat_out_"
     refute generated_c =~ "elmc_list_repeat_count("
     refute generated_c =~ "elmc_list_repeat("
   end
@@ -357,6 +383,7 @@ defmodule Elmc.CCodegenPatternsTest do
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
+    assert generated_c =~ "/* List.length */"
     assert generated_c =~ "list_length_cursor_"
     assert generated_c =~ "elmc_fn_Main_countItems"
     refute generated_c =~ "elmc_list_length("
@@ -646,12 +673,23 @@ defmodule Elmc.CCodegenPatternsTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
     File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
 
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               prune_native_wrappers: true
+             })
+
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "elmc_fn_Main_collapseRows"
     assert generated_c =~ "elmc_list_concat("
-    assert generated_c =~ "elmc_fn_Main_collapseRow"
+    assert generated_c =~ "ElmcValue *elmc_fn_Main_collapseRow(ElmcValue *row)"
+    assert generated_c =~ ~r/elmc_fn_Main_collapseRow[\s\S]*?elmc_record_get(?:_index)?\(tmp_\d+, (?:1 \/\* score \*\/|"score")\)/
+    refute generated_c =~ "elmc_record_get(tmp_8, \"score\")"
+    refute generated_c =~ "elmc_int_zero();  ElmcValue *tmp_9_score"
+    assert generated_c =~ "elmc_retain(row)"
+    refute generated_c =~ "row ? elmc_retain(row)"
   end
 
   test "List.concat of literal segments flattens without elmc_list_concat" do
@@ -1301,6 +1339,219 @@ defmodule Elmc.CCodegenPatternsTest do
     assert init_body =~ "ElmcValue *tmp_4_width = elmc_record_get(tmp_1_screen, \"width\")"
   end
 
+  test "direct-only boxed helpers bind args without argc checks when wrappers are pruned" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Resources as UiResources
+
+    type alias Model =
+        { items : List Int }
+
+    type Msg
+        = Noop
+
+    directHelper items =
+        List.append items items
+
+    closureHelper items =
+        List.append items items
+
+    apply f x =
+        f x
+
+    init _ =
+        ( { items = [] }, Cmd.none )
+
+    update _ model =
+        ( { model | items = directHelper model.items }, Cmd.none )
+
+    subscriptions _ =
+        Sub.none
+
+    view model =
+        Ui.windowStack
+            [ Ui.text
+                UiResources.DefaultFont
+                Ui.defaultTextOptions
+                { x = 0, y = 0, w = 1, h = 1 }
+                (String.fromInt (List.length (apply closureHelper model.items)))
+            ]
+
+    main =
+        Platform.application
+            { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/direct_boxed_helper_codegen", __DIR__)
+    out_dir = Path.expand("tmp/direct_boxed_helper_codegen_out", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               prune_native_wrappers: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    direct_body =
+      generated_c
+      |> String.split("ElmcValue *elmc_fn_Main_directHelper(ElmcValue *items) {", parts: 2)
+      |> Enum.at(1, "")
+      |> String.split("ElmcValue *elmc_fn_Main_closureHelper", parts: 2)
+      |> hd()
+
+    closure_body =
+      generated_c
+      |> String.split("ElmcValue *elmc_fn_Main_closureHelper(ElmcValue ** const args, const int argc) {",
+        parts: 2
+      )
+      |> Enum.at(1, "")
+      |> String.split("ElmcValue *elmc_fn_Main_apply", parts: 2)
+      |> hd()
+
+    update_body =
+      generated_c
+      |> String.split("ElmcValue *elmc_fn_Main_update(ElmcValue ** const args, const int argc) {", parts: 2)
+      |> Enum.at(1, "")
+      |> String.split("ElmcValue *elmc_fn_Main_subscriptions", parts: 2)
+      |> hd()
+
+    assert direct_body =~ "direct_call_abi"
+    assert generated_c =~ "ElmcValue *elmc_fn_Main_directHelper(ElmcValue *items)"
+    refute direct_body =~ "argc > 0"
+    refute direct_body =~ "args[0]"
+
+    assert closure_body =~ "ElmcValue *items = (argc > 0) ? args[0] : NULL;"
+    refute closure_body =~ "direct_call_abi"
+
+    assert update_body =~ "ElmcValue *model = (argc > 1) ? args[1] : NULL;"
+  end
+
+  test "borrowed call operands pass function params directly without retain temps" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+
+    type alias Model =
+        { seed : Int }
+
+    type Msg
+        = Noop
+
+    callee seed board =
+        ( seed, board )
+
+    forward seed =
+        callee seed seed
+
+    init _ =
+        ( { seed = 0 }, Cmd.none )
+
+    update _ model =
+        ( Tuple.first (forward model.seed), Cmd.none )
+
+    subscriptions _ =
+        Sub.none
+
+    view _ =
+        Ui.windowStack []
+
+    main =
+        Platform.application
+            { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/borrowed_call_operand_codegen", __DIR__)
+    out_dir = Path.expand("tmp/borrowed_call_operand_codegen_out", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               prune_native_wrappers: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    forward_body =
+      generated_c
+      |> String.split("ElmcValue *elmc_fn_Main_forward(ElmcValue *seed) {", parts: 2)
+      |> Enum.at(1, "")
+      |> String.split("ElmcValue *elmc_fn_Main_init", parts: 2)
+      |> hd()
+
+    assert generated_c =~ "ElmcValue *elmc_fn_Main_forward(ElmcValue *seed)"
+    assert forward_body =~ "elmc_fn_Main_callee(seed, seed)"
+    refute forward_body =~ "call_args_"
+    refute forward_body =~ "elmc_retain(seed)"
+    refute Regex.match?(~r/ElmcValue \*tmp_\d+ = elmc_retain\(seed\);/, forward_body)
+  end
+
+  test "retaining runtime calls borrow env-bound vars without retain temps" do
+    alias Elmc.Backend.CCodegen.Host
+
+    env =
+      %{"head" => "tmp_head"}
+      |> Map.put(:__module__, "Main")
+
+    expr = %{
+      op: :runtime_call,
+      function: "elmc_list_cons",
+      args: [%{op: :var, name: "head"}, %{op: :int_literal, value: 0}]
+    }
+
+    {code, _out, _counter} = Host.compile_expr(expr, env, 2)
+    source = IO.iodata_to_binary(code)
+
+    assert source =~ "elmc_list_cons(tmp_head, tmp_"
+    refute source =~ "elmc_retain(tmp_head)"
+    refute source =~ "elmc_release(tmp_head)"
+    assert source =~ "elmc_release(tmp_"
+  end
+
+  test "zero-arity direct helpers called with an arg use closure apply" do
+    env =
+      %{"seed" => "tmp_seed"}
+      |> Map.put(:__module__, "Random")
+      |> Map.put(:__function_arities__, %{{"Random", "next"} => 0})
+      |> Map.put(:__direct_call_targets__, MapSet.new([{"Random", "next"}]))
+      |> Map.put(:__program_decls__, %{})
+
+    {code, _out, _counter} =
+      FunctionCallCompile.compile(
+        "Random",
+        "next",
+        [%{op: :var, name: "seed"}],
+        env,
+        1
+      )
+
+    source = IO.iodata_to_binary(code)
+
+    assert source =~ "elmc_fn_Random_next()"
+    assert source =~ "elmc_closure_call("
+    refute source =~ "elmc_fn_Random_next(call_args_"
+    refute source =~ "elmc_fn_Random_next(tmp_seed"
+  end
+
   test "toMsg platform cmd encodes constructor tag from call site, not convention names" do
     source = """
     module Main exposing (main)
@@ -1595,5 +1846,331 @@ defmodule Elmc.CCodegenPatternsTest do
 
     assert subscriptions_body =~
              "elmc_sub3(ELMC_SUBSCRIPTION_BUTTON_RAW, ELMC_BUTTON_UP, ELMC_BUTTON_EVENT_PRESSED, ELMC_PEBBLE_MSG_UPPRESSED)"
+  end
+
+  test "zero-arity direct helpers stay direct when only closure-applied from lambdas" do
+    alias Elmc.Backend.CCodegen.DirectRender.GenericTargets
+    alias Elmc.Backend.CCodegen.Host
+    alias Elmc.Backend.CCodegen.IRQueries
+    alias ElmEx.Frontend.Bridge
+    alias ElmEx.IR.Lowerer
+
+    random_source = """
+    module Random exposing (int)
+
+    type Generator a
+        = Generator (Int -> ( a, Int ))
+
+    int low high =
+        Generator
+            (\\seed ->
+                let
+                    ( raw, _ ) =
+                        next seed
+                in
+                ( low + raw, seed )
+            )
+
+    next =
+        \\seed -> ( seed, seed )
+    """
+
+    main_source = """
+    module Main exposing (main)
+
+    import Random
+
+    main =
+        Random.int 0 1
+    """
+
+    project_dir = Path.expand("tmp/random_zero_arity_wrapper_targets", __DIR__)
+    File.rm_rf!(project_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Random.elm"), random_source)
+    File.write!(Path.join(project_dir, "src/Main.elm"), main_source)
+    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    {:ok, project_data} = Bridge.load_project(project_dir)
+    {:ok, ir0} = Lowerer.lower_project(project_data)
+    ir = ElmEx.IR.DeadCode.strip(ir0, "Main")
+
+    opts = %{entry_module: "Main", prune_native_wrappers: true}
+    decl_map = IRQueries.function_decl_map(ir)
+    direct = Host.direct_command_targets(ir, opts, decl_map)
+    wrapper = GenericTargets.wrapper_targets(ir, opts, decl_map, direct)
+
+    refute MapSet.member?(wrapper, {"Random", "next"})
+  end
+
+  test "list int add-fold helpers emit native cursor loops and native call sites" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/list_int_reduce_project", __DIR__)
+    out_dir = Path.expand("tmp/list_int_reduce_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(source_fixture, project_dir)
+
+    File.write!(
+      Path.join(project_dir, "src/Main.elm"),
+      """
+      module Main exposing (main)
+
+      countEmpty : List Int -> Int
+      countEmpty cells =
+          case cells of
+              [] ->
+                  0
+
+              value :: rest ->
+                  (if value == 0 then
+                      1
+
+                   else
+                      0
+                  )
+                      + countEmpty rest
+
+      countZeros : List Int -> Int
+      countZeros xs =
+          case xs of
+              [] ->
+                  0
+
+              n :: tail ->
+                  (if n == 0 then 1 else 0) + countZeros tail
+
+      useCounts : List Int -> Int
+      useCounts cells =
+          let
+              emptyCount =
+                  countEmpty cells
+
+              zeroCount =
+                  countZeros cells
+          in
+          emptyCount + zeroCount
+
+      main =
+          useCounts []
+      """
+    )
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert generated_c =~
+             "static elmc_int_t elmc_fn_Main_countEmpty_native(ElmcValue * const cells)"
+
+    assert generated_c =~
+             "static elmc_int_t elmc_fn_Main_countZeros_native(ElmcValue * const xs)"
+
+    assert generated_c =~ "list_reduce_cursor_"
+    assert generated_c =~ ~r/elmc_as_int\(list_reduce_node_\d+->head\)/
+    refute generated_c =~ "elmc_fn_Main_countEmpty(cells)"
+    refute generated_c =~ "elmc_fn_Main_countZeros(xs)"
+
+    [use_counts_body | _] =
+      String.split(generated_c, "elmc_fn_Main_useCounts", parts: 2)
+
+    refute use_counts_body =~ "elmc_new_int(elmc_fn_Main_countEmpty_native"
+    assert generated_c =~ "elmc_fn_Main_countEmpty_native(cells)"
+    assert generated_c =~ "elmc_fn_Main_countZeros_native(xs)"
+  end
+
+  test "list int search helpers emit native cursor loops and native call sites" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/list_int_search_project", __DIR__)
+    out_dir = Path.expand("tmp/list_int_search_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(source_fixture, project_dir)
+
+    File.write!(
+      Path.join(project_dir, "src/Main.elm"),
+      """
+      module Main exposing (main)
+
+      nthEmptyIndex : Int -> List Int -> Int
+      nthEmptyIndex target cells =
+          nthEmptyIndexHelp target 0 cells
+
+      nthEmptyIndexHelp : Int -> Int -> List Int -> Int
+      nthEmptyIndexHelp target index cells =
+          case cells of
+              [] ->
+                  -1
+
+              value :: rest ->
+                  if value == 0 then
+                      if target == 0 then
+                          index
+                      else
+                          nthEmptyIndexHelp (target - 1) (index + 1) rest
+                  else
+                      nthEmptyIndexHelp target (index + 1) rest
+
+      useIndex : Int -> List Int -> Int
+      useIndex seed cells =
+          nthEmptyIndex (seed + 1) cells
+
+      main =
+          useIndex 0 []
+      """
+    )
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert generated_c =~
+             "static elmc_int_t elmc_fn_Main_nthEmptyIndexHelp_native(const elmc_int_t target, const elmc_int_t index, ElmcValue * const cells)"
+
+    assert generated_c =~
+             "static elmc_int_t elmc_fn_Main_nthEmptyIndex_native(const elmc_int_t target, ElmcValue * const cells)"
+
+    assert generated_c =~ "list_search_cursor_"
+    assert generated_c =~ ~r/elmc_as_int\(list_search_node_\d+->head\)/
+    refute generated_c =~ "elmc_fn_Main_nthEmptyIndexHelp(target"
+    assert generated_c =~ "elmc_fn_Main_nthEmptyIndexHelp_native("
+    assert generated_c =~ "elmc_fn_Main_nthEmptyIndex_native("
+  end
+
+  test "game-2048 direct view scene paints 16 board rects after init and random seed" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    elm_2048 = Path.expand("../../ide/priv/project_templates/game_2048/src/Main.elm", __DIR__)
+
+    project_dir = Path.expand("tmp/game_2048_scene_host", __DIR__)
+    out_dir = Path.expand("tmp/game_2048_scene_host_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(elm_2048))
+
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               strip_dead_code: true
+             })
+
+    generated_h = File.read!(Path.join(out_dir, "c/elmc_generated.h"))
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert generated_h =~ "elmc_fn_Main_init("
+    assert generated_h =~ "elmc_fn_Main_update("
+    refute generated_h =~ "elmc_fn_Main_spawnTileWithSeed("
+    assert generated_c =~ "static ElmcValue *elmc_fn_Main_spawnTileWithSeed("
+    assert generated_c =~ "while (direct_rc == 0 && direct_cursor_"
+    assert generated_c =~ "ELMC_RENDER_OP_RECT"
+
+    harness_path = Path.join(out_dir, "c/game_2048_scene_harness.c")
+
+    File.write!(
+      harness_path,
+      """
+      #include "elmc_pebble.h"
+      #include <stdio.h>
+
+      static ElmcValue *aplite_launch_context(void) {
+        ElmcValue *reason = elmc_new_int(2);
+        ElmcValue *watch_model = elmc_new_string("");
+        ElmcValue *watch_profile_id = elmc_new_string("aplite");
+        ElmcValue *width = elmc_new_int(144);
+        ElmcValue *height = elmc_new_int(168);
+        ElmcValue *shape = elmc_new_int(1);
+        ElmcValue *color_mode = elmc_new_string("BlackWhite");
+        const char *screen_names[] = {"color_mode", "height", "shape", "width"};
+        ElmcValue *screen_values[] = {color_mode, height, shape, width};
+        ElmcValue *screen = elmc_record_new_take(4, screen_names, screen_values);
+        ElmcValue *has_microphone = elmc_new_int(0);
+        ElmcValue *has_compass = elmc_new_int(0);
+        ElmcValue *supports_health = elmc_new_int(0);
+        const char *names[] = {
+          "has_compass", "has_microphone", "reason", "screen",
+          "supports_health", "watchModel", "watchProfileId"
+        };
+        ElmcValue *values[] = {
+          has_compass, has_microphone, reason, screen,
+          supports_health, watch_model, watch_profile_id
+        };
+        return elmc_record_new_take(7, names, values);
+      }
+
+      static int count_kind(ElmcPebbleApp *app, int kind) {
+        int count = 0;
+        ElmcPebbleDrawCmd cmd;
+        elmc_pebble_scene_reset_draw_cursor(app);
+        for (int i = 0; i < 256; i++) {
+          if (elmc_pebble_scene_commands_next(app, &cmd, 1) <= 0) break;
+          if (cmd.kind == kind) count++;
+        }
+        return count;
+      }
+
+      int main(void) {
+        ElmcPebbleApp app = {0};
+        ElmcValue *flags = aplite_launch_context();
+        if (elmc_pebble_init(&app, flags) != 0) return 2;
+        elmc_release(flags);
+
+        if (elmc_pebble_dispatch_tag_value(&app, ELMC_PEBBLE_MSG_RANDOMGENERATED, 12345) != 0) return 3;
+        app.scene.dirty = 1;
+        if (elmc_pebble_ensure_scene(&app) != 0) return 4;
+
+        int rects = count_kind(&app, ELMC_PEBBLE_DRAW_RECT);
+        int texts = count_kind(&app, ELMC_PEBBLE_DRAW_TEXT);
+        if (rects < 16) {
+          fprintf(stderr, "expected >=16 rects, got %d (texts=%d)\\n", rects, texts);
+          elmc_pebble_deinit(&app);
+          return 5;
+        }
+
+        elmc_pebble_deinit(&app);
+        printf("ok rects=%d texts=%d\\n", rects, texts);
+        return 0;
+      }
+      """
+    )
+
+    cc = System.get_env("CC") || "cc"
+    binary_path = Path.join(out_dir, "game_2048_scene_harness")
+
+    {compile_out, compile_code} =
+      System.cmd(cc, [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-I#{Path.join(out_dir, "runtime")}",
+        "-I#{Path.join(out_dir, "ports")}",
+        "-I#{Path.join(out_dir, "c")}",
+        Path.join(out_dir, "runtime/elmc_runtime.c"),
+        Path.join(out_dir, "ports/elmc_ports.c"),
+        Path.join(out_dir, "c/elmc_generated.c"),
+        Path.join(out_dir, "c/elmc_worker.c"),
+        Path.join(out_dir, "c/elmc_pebble.c"),
+        harness_path,
+        "-o",
+        binary_path
+      ])
+
+    assert compile_code == 0, compile_out
+
+    {run_out, run_code} = System.cmd(binary_path, [])
+    assert run_code == 0, run_out
+    assert String.contains?(run_out, "ok rects=")
   end
 end

@@ -14,6 +14,13 @@ defmodule Elmc.Backend.CCodegen.EnvBindings do
   def binding_key(%{"op" => "var", "name" => name}), do: binding_key(name)
   def binding_key(value), do: value
 
+  @spec lookup_binding(Types.compile_env(), Types.binding_name()) :: term() | nil
+  def lookup_binding(env, name) do
+    Enum.find_value(env, fn {key, value} ->
+      if same_binding?(key, name), do: value
+    end)
+  end
+
   @spec put_var_type(Types.compile_env(), Types.binding_name(), String.t()) :: Types.compile_env()
   def put_var_type(env, name, type) when is_binary(name) and is_binary(type) do
     types = Map.get(env, :__var_types__, %{})
@@ -224,6 +231,106 @@ defmodule Elmc.Backend.CCodegen.EnvBindings do
         var_name
     end
   end
+
+  @spec direct_args?(Types.compile_env()) :: boolean()
+  def direct_args?(env), do: Map.get(env, :__direct_args__, false)
+
+  @spec function_arity(Types.compile_env(), String.t(), String.t(), [Types.ir_expr()]) ::
+          non_neg_integer()
+  def function_arity(env, module_name, name, call_args \\ []) do
+    case Map.get(effective_function_arities(env), {module_name, name}) do
+      arity when is_integer(arity) -> arity
+      nil -> decl_arity(env, module_name, name, call_args)
+    end
+  end
+
+  @spec effective_function_arities(Types.compile_env()) :: %{
+          optional({String.t(), String.t()}) => non_neg_integer()
+        }
+  def effective_function_arities(env) do
+    case Map.get(env, :__function_arities__, %{}) do
+      map when map_size(map) > 0 -> map
+      _ -> Process.get(:elmc_function_arities, %{})
+    end
+  end
+
+  @spec effective_program_decls(Types.compile_env()) :: Types.function_decl_map()
+  def effective_program_decls(env) do
+    case Map.get(env, :__program_decls__, %{}) do
+      map when map_size(map) > 0 -> map
+      _ -> Process.get(:elmc_program_decls, %{})
+    end
+  end
+
+  @spec effective_direct_call_targets(Types.compile_env()) :: MapSet.t(Types.function_decl_key())
+  def effective_direct_call_targets(env) do
+    case Map.get(env, :__direct_call_targets__) do
+      %MapSet{} = targets -> targets
+      _ -> Process.get(:elmc_direct_call_targets, MapSet.new())
+    end
+  end
+
+  @spec direct_call_target?(Types.compile_env(), String.t(), String.t()) :: boolean()
+  def direct_call_target?(env, module_name, name)
+      when is_binary(module_name) and is_binary(name) do
+    effective_direct_call_targets(env)
+    |> MapSet.member?({module_name, name})
+  end
+
+  def direct_call_target?(_env, _module_name, _name), do: false
+
+  defp decl_arity(env, module_name, name, call_args) do
+    case Map.get(effective_program_decls(env), {module_name, name}) do
+      %{args: args} when is_list(args) -> length(args)
+      _ -> length(call_args || [])
+    end
+  end
+
+  @spec borrowed_arg_ref?(Types.compile_env(), String.t()) :: boolean()
+  def borrowed_arg_ref?(env, c_ref) when is_binary(c_ref) do
+    env
+    |> Map.get(:__borrowed_arg_refs__, MapSet.new())
+    |> MapSet.member?(c_ref)
+  end
+
+  def borrowed_arg_ref?(_env, _c_ref), do: false
+
+  @spec put_borrowed_arg_refs(
+          Types.compile_env(),
+          Types.function_declaration(),
+          [Types.c_arg_binding()]
+        ) :: Types.compile_env()
+  def put_borrowed_arg_refs(env, decl, arg_bindings) do
+    if :borrow_arg in List.wrap(decl.ownership) do
+      refs =
+        arg_bindings
+        |> Enum.map(fn {_arg, c_arg, _index} -> c_arg end)
+        |> MapSet.new()
+
+      Map.put(env, :__borrowed_arg_refs__, refs)
+    else
+      env
+    end
+  end
+
+  @spec put_direct_param_refs(Types.compile_env(), [Types.c_arg_binding()]) :: Types.compile_env()
+  def put_direct_param_refs(env, arg_bindings) do
+    refs =
+      arg_bindings
+      |> Enum.map(fn {_arg, c_arg, _index} -> c_arg end)
+      |> MapSet.new()
+
+    Map.put(env, :__direct_param_refs__, refs)
+  end
+
+  @spec direct_param_ref?(Types.compile_env(), String.t()) :: boolean()
+  def direct_param_ref?(env, c_ref) when is_binary(c_ref) do
+    env
+    |> Map.get(:__direct_param_refs__, MapSet.new())
+    |> MapSet.member?(c_ref)
+  end
+
+  def direct_param_ref?(_env, _c_ref), do: false
 
   @spec native_int_binding?(Types.compile_env(), Types.binding_name()) :: boolean()
   def native_int_binding?(env, name) when is_binary(name) or is_atom(name),

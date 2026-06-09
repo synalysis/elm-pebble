@@ -6,6 +6,34 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Analysis do
 
   @type target_sets_result :: Types.direct_target_sets()
 
+  @worker_export_names ~w(init update subscriptions)
+
+  @spec exported_function_targets(
+          Types.function_decl_map(),
+          Types.codegen_opts(),
+          MapSet.t(Types.function_decl_key())
+        ) :: MapSet.t(Types.function_decl_key())
+  def exported_function_targets(decl_map, opts, direct_command_targets \\ MapSet.new()) do
+    entry_module = opts[:entry_module] || "Main"
+    view_target = {entry_module, "view"}
+
+    worker_exports =
+      @worker_export_names
+      |> Enum.map(&{entry_module, &1})
+      |> Enum.filter(&Map.has_key?(decl_map, &1))
+      |> MapSet.new()
+
+    view_exports =
+      if Map.has_key?(decl_map, view_target) and
+           not MapSet.member?(direct_command_targets, view_target) do
+        MapSet.new([view_target])
+      else
+        MapSet.new()
+      end
+
+    MapSet.union(worker_exports, view_exports)
+  end
+
   @spec entry_roots(Types.function_decl_map(), Types.codegen_opts()) :: [
           Types.function_decl_key()
         ]

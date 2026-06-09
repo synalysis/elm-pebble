@@ -2,7 +2,10 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.EnvBindings
+  alias Elmc.Backend.CCodegen.FunctionCallCompile
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.Native.ListIntReduce
+  alias Elmc.Backend.CCodegen.Native.ListIntSearch
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
 
@@ -15,7 +18,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
     |> Map.get({module_name, name})
     |> case do
       nil -> false
-      decl -> native_args?(decl, module_name, Map.get(env, :__program_decls__, %{}))
+      decl -> native_scalar_fn?(decl, module_name, Map.get(env, :__program_decls__, %{}))
     end
   end
 
@@ -109,8 +112,14 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
             {code_acc <> "\n  " <> code, refs_acc ++ [ref], releases_acc, c2}
 
           :boxed ->
-            {code, ref, c2} = Host.compile_expr(arg_expr, env, c)
-            {code_acc <> "\n  " <> code, refs_acc ++ [ref], releases_acc ++ [ref], c2}
+            {code, ref, c2} = FunctionCallCompile.compile_call_operand(arg_expr, env, c)
+
+            releases_acc =
+              if EnvBindings.borrowed_arg_ref?(env, ref),
+                do: releases_acc,
+                else: releases_acc ++ [ref]
+
+            {code_acc <> "\n  " <> code, refs_acc ++ [ref], releases_acc, c2}
         end
       end)
 
@@ -140,6 +149,14 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
     |> Enum.any?(&(&1 in [:native_int, :native_bool]))
   end
 
+  @spec native_scalar_fn?(Types.function_declaration(), String.t(), Types.function_decl_map()) ::
+          boolean()
+  def native_scalar_fn?(decl, module_name, decl_map) do
+    native_args?(decl, module_name, decl_map) or
+      ListIntSearch.recognized?(decl, module_name, decl_map) or
+      match?({:ok, _}, ListIntReduce.recognize(decl, module_name, decl_map))
+  end
+
   @spec return_kind(Types.function_declaration(), String.t(), Types.function_decl_map()) ::
           native_return_kind()
   def return_kind(%{type: type, expr: expr} = decl, module_name, decl_map) when is_binary(type) do
@@ -147,9 +164,19 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
 
     case Host.function_return_type(type) do
       "Int" ->
-        if Host.native_int_expr?(expr || %{op: :int_literal, value: 0}, env),
-          do: :native_int,
-          else: :boxed
+        cond do
+          Host.native_int_expr?(expr || %{op: :int_literal, value: 0}, env) ->
+            :native_int
+
+          ListIntSearch.recognized?(decl, module_name, decl_map) ->
+            :native_int
+
+          match?({:ok, _}, ListIntReduce.recognize(decl, module_name, decl_map)) ->
+            :native_int
+
+          true ->
+            :boxed
+        end
 
       "Bool" ->
         if Host.native_bool_expr?(expr || %{op: :int_literal, value: 0}, env),
@@ -184,8 +211,15 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
 
   @spec arg_kinds(Types.function_declaration(), String.t(), Types.function_decl_map()) ::
           [Types.native_function_arg_kind()]
-  def arg_kinds(%{args: args, type: type, expr: expr}, module_name, decl_map)
-      when is_list(args) and is_binary(type) do
+  def arg_kinds(decl, module_name, decl_map) do
+    case ListIntSearch.arg_kinds(decl, module_name, decl_map) do
+      {:ok, kinds} -> kinds
+      :error -> default_arg_kinds(decl, module_name, decl_map)
+    end
+  end
+
+  defp default_arg_kinds(%{args: args, type: type, expr: expr}, module_name, decl_map)
+       when is_list(args) and is_binary(type) do
     arg_types = Host.function_arg_types(type)
 
     args
@@ -212,8 +246,8 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
     end)
   end
 
-  def arg_kinds(%{args: args, type: type}, _module_name, _decl_map)
-      when is_list(args) and is_binary(type) do
+  defp default_arg_kinds(%{args: args, type: type}, _module_name, _decl_map)
+       when is_list(args) and is_binary(type) do
     arg_types = Host.function_arg_types(type)
 
     args
@@ -227,10 +261,10 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
     end)
   end
 
-  def arg_kinds(%{args: args}, _module_name, _decl_map) when is_list(args),
+  defp default_arg_kinds(%{args: args}, _module_name, _decl_map) when is_list(args),
     do: Enum.map(args, fn _ -> :boxed end)
 
-  def arg_kinds(_decl, _module_name, _decl_map), do: []
+  defp default_arg_kinds(_decl, _module_name, _decl_map), do: []
 
   @spec int_arg_safe?(Types.binding_name(), Types.ir_expr() | nil) :: boolean()
   defp int_arg_safe?(arg, expr) do

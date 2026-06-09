@@ -10,6 +10,7 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     count = "list_length_count_#{loop_id}"
 
     code = """
+      /* List.length */
       elmc_int_t #{count} = 0;
       ElmcValue *#{cursor} = #{list_var};
       while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
@@ -28,19 +29,18 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     index_var = "list_repeat_i_#{loop_id}"
     acc = "list_repeat_acc_#{loop_id}"
     cons = "list_repeat_cons_#{loop_id}"
-    out = "list_repeat_out_#{loop_id}"
 
     code = """
+      /* List.repeat */
       ElmcValue *#{acc} = elmc_list_nil();
       for (elmc_int_t #{index_var} = 0; #{index_var} < #{count_ref}; #{index_var}++) {
         ElmcValue *#{cons} = elmc_list_cons(#{value_ref}, #{acc});
         elmc_release(#{acc});
         #{acc} = #{cons};
       }
-      ElmcValue *#{out} = #{acc};
     """
 
-    {code, out}
+    {code, acc}
   end
 
   @spec unwrap_list_length_expr(Types.ir_expr()) :: {:ok, Types.ir_expr()} | :error

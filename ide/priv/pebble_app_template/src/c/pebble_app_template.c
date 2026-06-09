@@ -442,7 +442,9 @@ static void apply_pending_cmd(void);
 static void startup_cmd_callback(void *data);
 static ElmcValue *build_launch_context(AppLaunchReason launch);
 static GRect compile_display_bounds(void);
+#if ELMC_PEBBLE_FEATURE_CMD_UNOBSTRUCTED_BOUNDS_PEEK || ELMC_PEBBLE_FEATURE_UNOBSTRUCTED_AREA_EVENTS
 static GRect current_unobstructed_bounds(void);
+#endif
 static void complete_elm_init(void);
 #ifdef ELMC_WATCHFACE_MODE
 static bool display_bounds_ready(void);
@@ -2759,6 +2761,11 @@ static void render_model(void) {
     return;
   }
   s_render_pending = false;
+#if ELMC_PEBBLE_SCENE_CACHE_ENABLED
+  if (s_elm_app.scene.dirty) {
+    schedule_scene_prep();
+  }
+#endif
   layer_mark_dirty(s_draw_layer);
   ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "elmc render seq=%d model=%lld", s_render_sequence, (long long)value);
   (void)value;
@@ -3785,6 +3792,19 @@ static void app_focus_handler(bool in_focus) {
 }
 #endif
 
+#if ELMC_PEBBLE_FEATURE_CMD_UNOBSTRUCTED_BOUNDS_PEEK || ELMC_PEBBLE_FEATURE_UNOBSTRUCTED_AREA_EVENTS
+static GRect current_unobstructed_bounds(void) {
+  GRect bounds = GRect(0, 0, PBL_IF_ROUND_ELSE(180, 144), PBL_IF_ROUND_ELSE(180, 168));
+  if (s_main_window) {
+    bounds = layer_get_unobstructed_bounds(window_get_root_layer(s_main_window));
+    if (bounds.size.w <= 0 || bounds.size.h <= 0) {
+      bounds = layer_get_bounds(window_get_root_layer(s_main_window));
+    }
+  }
+  return bounds;
+}
+#endif
+
 #if ELMC_PEBBLE_FEATURE_UNOBSTRUCTED_AREA_EVENTS
 static int dispatch_unobstructed_bounds_result(int64_t target, GRect bounds) {
   if (target <= 0) {
@@ -3977,17 +3997,6 @@ static bool display_bounds_ready(void) {
   return s_main_window != NULL;
 }
 #endif
-
-static GRect current_unobstructed_bounds(void) {
-  GRect bounds = GRect(0, 0, PBL_IF_ROUND_ELSE(180, 144), PBL_IF_ROUND_ELSE(180, 168));
-  if (s_main_window) {
-    bounds = layer_get_unobstructed_bounds(window_get_root_layer(s_main_window));
-    if (bounds.size.w <= 0 || bounds.size.h <= 0) {
-      bounds = layer_get_bounds(window_get_root_layer(s_main_window));
-    }
-  }
-  return bounds;
-}
 
 static GRect cap_display_bounds(GRect bounds, GRect compile) {
   if (bounds.size.w <= 0 || bounds.size.h <= 0) {

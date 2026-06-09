@@ -33,8 +33,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Catch do
   @spec push_cmd_check() :: String.t()
   def push_cmd_check do
     """
-    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0)
+    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0) {
       CATCH_BREAK;
+    }
     """
     |> String.trim()
   end
@@ -42,8 +43,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Catch do
   @spec soft_stop_if(String.t()) :: String.t()
   def soft_stop_if(rc_var) do
     """
-    if (#{rc_var} == -2)
+    if (#{rc_var} == -2) {
       CATCH_BREAK;
+    }
     """
     |> String.trim()
   end
@@ -52,8 +54,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Catch do
   def handle_child_rc(rc_var) do
     """
     if (#{rc_var} < 0) return #{rc_var};
-    if (#{rc_var} == -2)
+    if (#{rc_var} == -2) {
       CATCH_BREAK;
+    }
     """
     |> String.trim()
   end

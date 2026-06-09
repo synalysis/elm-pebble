@@ -128,8 +128,10 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
       end)
       |> Map.put(:__module__, Map.get(env, :__module__, "Main"))
       |> Map.put(:__function_name__, Map.get(env, :__function_name__))
-      |> Map.put(:__function_arities__, Map.get(env, :__function_arities__, %{}))
-      |> Map.put(:__program_decls__, Map.get(env, :__program_decls__, %{}))
+      |> Map.put(:__function_arities__, EnvBindings.effective_function_arities(env))
+      |> Map.put(:__program_decls__, EnvBindings.effective_program_decls(env))
+      |> Map.put(:__direct_call_targets__, EnvBindings.effective_direct_call_targets(env))
+      |> Map.put(:__borrowed_arg_refs__, Map.get(env, :__borrowed_arg_refs__, MapSet.new()))
       |> Map.put(:__inside_lambda__, true)
 
     {body_code, body_var, _body_counter} = Host.compile_expr(body, body_env, 0)

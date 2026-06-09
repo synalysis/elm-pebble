@@ -3,10 +3,12 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
   alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.DirectRender.Analysis, as: DirectRenderAnalysis
+  alias Elmc.Backend.CCodegen.DirectRender.Analysis
   alias Elmc.Backend.CCodegen.DirectRender.GenericTargets
   alias Elmc.Backend.CCodegen.DirectRender.Registry, as: DirectRenderRegistry
   alias Elmc.Backend.CCodegen.Emit
   alias Elmc.Backend.CCodegen.FunctionEmit
+  alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.IRQueries
   alias Elmc.Backend.CCodegen.Tuple2CaseTable
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
@@ -20,8 +22,9 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
   def header(ir, opts) do
     direct_cmd_decls = DirectRenderRegistry.decls(ir, opts)
     decl_map = IRQueries.function_decl_map(ir)
-    generic_targets = GenericTargets.function_targets(ir, opts)
     wrapper_targets = GenericTargets.wrapper_targets(ir, opts)
+    direct_command_targets = Host.direct_command_targets(ir, opts, decl_map)
+    exported_targets = Analysis.exported_function_targets(decl_map, opts, direct_command_targets)
 
     function_decls =
       ir.modules
@@ -31,13 +34,21 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
           target = {mod.name, decl.name}
 
           decl.kind == :function &&
-            MapSet.member?(generic_targets, target) &&
+            MapSet.member?(exported_targets, target) &&
             (MapSet.member?(wrapper_targets, target) ||
-               not NativeFunctionCall.native_args?(decl, mod.name, decl_map))
+               not NativeFunctionCall.native_scalar_fn?(decl, mod.name, decl_map))
         end)
         |> Enum.map(fn decl ->
           c_name = Util.module_fn_name(mod.name, decl.name)
-          "ElmcValue *#{c_name}(ElmcValue ** const args, const int argc);"
+          emit_wrapper? = MapSet.member?(wrapper_targets, {mod.name, decl.name})
+
+          FunctionEmit.boxed_function_prototype(
+            decl,
+            mod.name,
+            c_name,
+            emit_wrapper?,
+            decl_map
+          )
         end)
       end)
       |> Enum.join("\n")
@@ -102,11 +113,39 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
         DirectRenderAnalysis.targets(ir, opts, decl_map)
       )
 
+    direct_call_targets =
+      generic_targets
+      |> Enum.filter(fn target ->
+        case Map.fetch(decl_map, target) do
+          {:ok, decl} ->
+            not MapSet.member?(wrapper_targets, target) and
+              not NativeFunctionCall.native_scalar_fn?(decl, elem(target, 0), decl_map)
+
+          :error ->
+            false
+        end
+      end)
+      |> MapSet.new()
+
+    direct_command_targets = Host.direct_command_targets(ir, opts, decl_map)
+    exported_targets = Analysis.exported_function_targets(decl_map, opts, direct_command_targets)
+
+    Process.put(:elmc_direct_call_targets, direct_call_targets)
+    Process.put(:elmc_exported_targets, exported_targets)
+    Process.put(:elmc_function_arities, function_arities)
+    Process.put(:elmc_program_decls, decl_map)
+
     generic_native_prototypes =
       FunctionEmit.generic_native_function_prototypes(ir, generic_targets, decl_map)
 
     generic_function_prototypes =
-      FunctionEmit.generic_function_prototypes(ir, generic_targets, wrapper_targets, decl_map)
+      FunctionEmit.generic_function_prototypes(
+        ir,
+        generic_targets,
+        wrapper_targets,
+        decl_map,
+        exported_targets
+      )
 
     function_defs =
       ir.modules
@@ -146,6 +185,10 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
       |> Enum.join("\n")
 
     Process.delete(:elmc_lambdas)
+    Process.delete(:elmc_direct_call_targets)
+    Process.delete(:elmc_exported_targets)
+    Process.delete(:elmc_function_arities)
+    Process.delete(:elmc_program_decls)
     Process.delete(:elmc_lambda_counter)
     Process.delete(:elmc_lambda_defs)
     Process.delete(:elmc_constructor_tags)

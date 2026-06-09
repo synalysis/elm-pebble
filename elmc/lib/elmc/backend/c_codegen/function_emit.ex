@@ -10,6 +10,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   alias Elmc.Backend.CCodegen.Native.Bool, as: NativeBool
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
+  alias Elmc.Backend.CCodegen.Native.ListIntReduce
+  alias Elmc.Backend.CCodegen.Native.ListIntSearch
   alias Elmc.Backend.CCodegen.TypeParsing
   alias Elmc.Backend.CCodegen.Fusion
   alias Elmc.Backend.CCodegen.Tuple2CaseTable
@@ -34,7 +36,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         decl_map,
         emit_wrapper?
       ) do
-    if NativeFunctionCall.native_args?(decl, module_name, decl_map) do
+    if NativeFunctionCall.native_scalar_fn?(decl, module_name, decl_map) do
       emit_native_function_def(
         decl,
         module_name,
@@ -46,18 +48,77 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     else
       Process.put(:elmc_generic_helper_defs, [])
       Process.put(:elmc_generic_helper_counter, 0)
-      body = emit_body(decl, module_name, function_arities, decl_map)
+      direct_args? = not emit_wrapper?
+      body = emit_body(decl, module_name, function_arities, decl_map, direct_args?)
       helper_defs = generic_helper_defs()
       Process.delete(:elmc_generic_helper_defs)
       Process.delete(:elmc_generic_helper_counter)
 
+      policy =
+        if direct_args? do
+          "#{Enum.join(decl.ownership, ", ")}, direct_call_abi"
+        else
+          Enum.join(decl.ownership, ", ")
+        end
+
+      signature =
+        if direct_args? do
+          boxed_direct_params(decl)
+        else
+          "ElmcValue ** const args, const int argc"
+        end
+
+      linkage = function_linkage_prefix(module_name, decl.name)
+
       """
-      #{helper_defs}ElmcValue *#{c_name}(ElmcValue ** const args, const int argc) {
-        /* Ownership policy: #{Enum.join(decl.ownership, ", ")} */
+      #{helper_defs}#{linkage}ElmcValue *#{c_name}(#{signature}) {
+        /* Ownership policy: #{policy} */
       #{body}
       }
       """
       |> String.trim_trailing()
+    end
+  end
+
+  @spec function_linkage_prefix(String.t(), String.t()) :: String.t()
+  defp function_linkage_prefix(module_name, decl_name) do
+    exported? =
+      Process.get(:elmc_exported_targets, MapSet.new())
+      |> MapSet.member?({module_name, decl_name})
+
+    if exported?, do: "", else: "static "
+  end
+
+  @spec boxed_direct_params(Types.function_declaration()) :: String.t()
+  def boxed_direct_params(decl) do
+    case c_arg_bindings(decl.args || []) do
+      [] ->
+        "void"
+
+      bindings ->
+        bindings
+        |> Enum.map(fn {_arg, c_arg, _index} -> "ElmcValue *#{c_arg}" end)
+        |> Enum.join(", ")
+    end
+  end
+
+  @spec boxed_direct_prototype(Types.function_declaration(), String.t()) :: String.t()
+  def boxed_direct_prototype(decl, c_name) do
+    "ElmcValue *#{c_name}(#{boxed_direct_params(decl)});"
+  end
+
+  @spec boxed_function_prototype(
+          Types.function_declaration(),
+          String.t(),
+          String.t(),
+          boolean(),
+          Types.function_decl_map()
+        ) :: String.t()
+  def boxed_function_prototype(decl, module_name, c_name, emit_wrapper?, decl_map) do
+    if emit_wrapper? or NativeFunctionCall.native_scalar_fn?(decl, module_name, decl_map) do
+      "ElmcValue *#{c_name}(ElmcValue ** const args, const int argc);"
+    else
+      boxed_direct_prototype(decl, c_name)
     end
   end
 
@@ -76,25 +137,20 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           Types.function_declaration(),
           String.t(),
           %{optional({String.t(), String.t()}) => non_neg_integer()},
-          Types.function_decl_map()
+          Types.function_decl_map(),
+          boolean()
         ) :: String.t()
-  def emit_body(decl, module_name, function_arities \\ %{}, decl_map \\ %{})
+  def emit_body(decl, module_name, function_arities \\ %{}, decl_map \\ %{}, direct_args? \\ false)
 
-  def emit_body(%{expr: nil}, _module_name, _function_arities, _decl_map) do
+  def emit_body(%{expr: nil}, _module_name, _function_arities, _decl_map, _direct_args?) do
     "(void)args; (void)argc; return elmc_int_zero();"
   end
 
-  def emit_body(decl, module_name, function_arities, decl_map) do
+  def emit_body(decl, module_name, function_arities, decl_map, direct_args?) do
     arg_names = decl.args || []
     arg_bindings = c_arg_bindings(arg_names)
     {entry_probe, exit_probe} = DebugProbes.entry_exit_probes(module_name, decl.name)
-
-    arg_binding_code =
-      arg_bindings
-      |> Enum.map(fn {_arg, c_arg, index} ->
-        "ElmcValue *#{c_arg} = (argc > #{index}) ? args[#{index}] : NULL;"
-      end)
-      |> Enum.join("\n")
+    arg_binding_code = arg_binding_code(arg_bindings, direct_args?)
 
     unused_casts =
       arg_bindings
@@ -111,6 +167,10 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       |> put_typed_arg_bindings(arg_bindings, decl.type)
       |> Map.put(:__function_arities__, function_arities)
       |> Map.put(:__program_decls__, decl_map)
+      |> maybe_put_direct_args(direct_args?)
+      |> maybe_put_direct_param_refs(direct_args?, arg_bindings)
+      |> EnvBindings.put_borrowed_arg_refs(decl, arg_bindings)
+      |> Map.put(:__direct_call_targets__, Process.get(:elmc_direct_call_targets, MapSet.new()))
       |> Map.put(
         :__function_analysis__,
         LetAnalysis.analyze_function_expr(
@@ -125,6 +185,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
            decl,
            decl_map,
            arg_bindings,
+           direct_args?,
            entry_probe,
            exit_probe,
            arg_binding_code,
@@ -139,18 +200,43 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
         result_probe = DebugProbes.result_probe(module_name, decl.name, result_var)
 
-        format_function_body([
-          "(void)args;",
-          "(void)argc;",
-          arg_binding_code,
-          unused_casts,
-          entry_probe,
-          code,
-          exit_probe,
-          result_probe,
-          "return #{result_var};"
-        ])
+        format_function_body(
+          function_prologue(direct_args?, arg_bindings) ++
+            [
+              arg_binding_code,
+              unused_casts,
+              entry_probe,
+              code,
+              exit_probe,
+              result_probe,
+              "return #{result_var};"
+            ]
+        )
     end
+  end
+
+  defp maybe_put_direct_args(env, true), do: Map.put(env, :__direct_args__, true)
+  defp maybe_put_direct_args(env, _), do: env
+
+  defp maybe_put_direct_param_refs(env, true, arg_bindings),
+    do: EnvBindings.put_direct_param_refs(env, arg_bindings)
+
+  defp maybe_put_direct_param_refs(env, _, _arg_bindings), do: env
+
+  defp arg_binding_code(arg_bindings, direct_args?) do
+    if direct_args? do
+      ""
+    else
+      arg_bindings
+      |> Enum.map(fn {_arg, c_arg, index} ->
+        "ElmcValue *#{c_arg} = (argc > #{index}) ? args[#{index}] : NULL;"
+      end)
+      |> Enum.join("\n")
+    end
+  end
+
+  defp function_prologue(direct_args?, _arg_bindings) do
+    if direct_args?, do: [], else: ["(void)args;", "(void)argc;"]
   end
 
   defp format_function_body(parts) do
@@ -166,6 +252,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
          decl,
          decl_map,
          arg_bindings,
+         direct_args?,
          entry_probe,
          exit_probe,
          arg_binding_code,
@@ -180,6 +267,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
            decl,
            module_name,
            arg_bindings,
+           direct_args?,
            helper_c,
            entry_probe,
            exit_probe,
@@ -194,6 +282,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
            module_name,
            decl_map,
            arg_bindings,
+           direct_args?,
            helper_c,
            entry_probe,
            exit_probe,
@@ -211,6 +300,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
          module_name,
          _decl_map,
          arg_bindings,
+         direct_args?,
          helper_c,
          entry_probe,
          exit_probe,
@@ -226,16 +316,17 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
     native_args = fused_native_call_args(decl, arg_bindings)
 
-    format_function_body([
-      "(void)args;",
-      "(void)argc;",
-      arg_binding_code,
-      unused_casts,
-      entry_probe,
-      "ElmcValue *tmp_result = #{native}(#{native_args});",
-      exit_probe,
-      "return tmp_result;"
-    ])
+    format_function_body(
+      function_prologue(direct_args?, arg_bindings) ++
+        [
+          arg_binding_code,
+          unused_casts,
+          entry_probe,
+          "ElmcValue *tmp_result = #{native}(#{native_args});",
+          exit_probe,
+          "return tmp_result;"
+        ]
+    )
   end
 
   defp fused_native_call_args(%{type: type}, arg_bindings) when is_binary(type) do
@@ -262,6 +353,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
          decl,
          module_name,
          arg_bindings,
+         direct_args?,
          helper_c,
          entry_probe,
          exit_probe,
@@ -281,16 +373,17 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       |> Enum.map(fn {_arg, c_arg, _index} -> "elmc_as_int(#{c_arg})" end)
       |> Enum.join(", ")
 
-    format_function_body([
-      "(void)args;",
-      "(void)argc;",
-      arg_binding_code,
-      unused_casts,
-      entry_probe,
-      "ElmcValue *tmp_result = #{native}(#{native_args});",
-      exit_probe,
-      "return tmp_result;"
-    ])
+    format_function_body(
+      function_prologue(direct_args?, arg_bindings) ++
+        [
+          arg_binding_code,
+          unused_casts,
+          entry_probe,
+          "ElmcValue *tmp_result = #{native}(#{native_args});",
+          exit_probe,
+          "return tmp_result;"
+        ]
+    )
   end
 
   @spec generic_native_function_prototypes(
@@ -304,7 +397,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       mod.declarations
       |> Enum.filter(
         &(&1.kind == :function and MapSet.member?(generic_targets, {mod.name, &1.name}) and
-            NativeFunctionCall.native_args?(&1, mod.name, decl_map))
+            NativeFunctionCall.native_scalar_fn?(&1, mod.name, decl_map))
       )
       |> Enum.map(fn decl ->
         c_name = Util.module_fn_name(mod.name, decl.name)
@@ -320,9 +413,16 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           ElmEx.IR.t(),
           MapSet.t(Types.function_decl_key()),
           MapSet.t(Types.function_decl_key()),
-          Types.function_decl_map()
+          Types.function_decl_map(),
+          MapSet.t(Types.function_decl_key())
         ) :: String.t()
-  def generic_function_prototypes(ir, generic_targets, wrapper_targets, decl_map) do
+  def generic_function_prototypes(
+        ir,
+        generic_targets,
+        wrapper_targets,
+        decl_map,
+        exported_targets
+      ) do
     ir.modules
     |> Enum.flat_map(fn mod ->
       mod.declarations
@@ -331,11 +431,16 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
         decl.kind == :function and MapSet.member?(generic_targets, target) and
           (MapSet.member?(wrapper_targets, target) or
-             not NativeFunctionCall.native_args?(decl, mod.name, decl_map))
+             not NativeFunctionCall.native_scalar_fn?(decl, mod.name, decl_map))
       end)
       |> Enum.map(fn decl ->
         c_name = Util.module_fn_name(mod.name, decl.name)
-        "ElmcValue *#{c_name}(ElmcValue ** const args, const int argc);"
+        emit_wrapper? = MapSet.member?(wrapper_targets, {mod.name, decl.name})
+
+        prefix =
+          if MapSet.member?(exported_targets, {mod.name, decl.name}), do: "", else: "static "
+
+        prefix <> boxed_function_prototype(decl, mod.name, c_name, emit_wrapper?, decl_map)
       end)
     end)
     |> Enum.join("\n")
@@ -492,8 +597,10 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
     wrapper_def =
       if emit_wrapper? do
+        linkage = function_linkage_prefix(module_name, decl.name)
+
         """
-        ElmcValue *#{c_name}(ElmcValue ** const args, const int argc) {
+        #{linkage}ElmcValue *#{c_name}(ElmcValue ** const args, const int argc) {
           /* Ownership policy: #{Enum.join(decl.ownership, ", ")} */
           (void)args;
           (void)argc;
@@ -529,7 +636,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
          collect_generic_helpers?
        ) do
     {body_code, body_var, _counter} =
-      compile_native_body(decl, module_name, native_env, return_kind, arg_kinds)
+      compile_native_body(decl, module_name, decl_map, native_env, return_kind, arg_kinds)
 
     case_helpers =
       if collect_generic_helpers? do
@@ -581,6 +688,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     |> Map.put(:__function_name__, decl.name)
     |> Map.put(:__function_arities__, function_arities)
     |> Map.put(:__program_decls__, decl_map)
+    |> EnvBindings.put_borrowed_arg_refs(decl, c_arg_bindings)
+    |> Map.put(:__direct_call_targets__, Process.get(:elmc_direct_call_targets, MapSet.new()))
     |> Map.put(
       :__function_analysis__,
       LetAnalysis.analyze_function_expr(
@@ -591,21 +700,59 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     )
   end
 
-  defp compile_native_body(decl, module_name, env, return_kind, arg_kinds)
+  defp compile_native_body(decl, module_name, decl_map, env, return_kind, arg_kinds)
        when return_kind in [:native_int, :native_bool] do
     expr = decl.expr || %{op: :int_literal, value: 0}
 
-    case compile_tail_recursive_native(decl, module_name, env, return_kind, arg_kinds) do
+    case compile_list_int_search_native(decl, module_name, decl_map, env, return_kind) do
       {:ok, code, result_var} ->
         {code, result_var, 0}
 
       :error ->
-        compile_scalar_native_expr(expr, env, return_kind, 0)
+        case compile_list_int_reduce_native(decl, module_name, decl_map, env, return_kind) do
+          {:ok, code, result_var} ->
+            {code, result_var, 0}
+
+          :error ->
+            case compile_tail_recursive_native(decl, module_name, env, return_kind, arg_kinds) do
+              {:ok, code, result_var} ->
+                {code, result_var, 0}
+
+              :error ->
+                compile_scalar_native_expr(expr, env, return_kind, 0)
+            end
+        end
     end
   end
 
-  defp compile_native_body(decl, _module_name, env, :boxed, _arg_kinds),
+  defp compile_list_int_search_native(decl, module_name, decl_map, env, return_kind) do
+    with {:ok, spec} <- ListIntSearch.recognize(decl, module_name, decl_map),
+         {:ok, code, result_var} <-
+           ListIntSearch.compile(spec, env, return_kind, &compile_scalar_native_expr/4) do
+      {:ok, code, result_var}
+    else
+      :error ->
+        with {:ok, spec} <- ListIntSearch.recognize_delegate(decl, module_name, decl_map),
+             {:ok, code, result_var} <- ListIntSearch.compile_delegate(spec, env) do
+          {:ok, code, result_var}
+        else
+          _ -> :error
+        end
+    end
+  end
+
+  defp compile_native_body(decl, _module_name, _decl_map, env, :boxed, _arg_kinds),
     do: Host.compile_expr(decl.expr || %{op: :int_literal, value: 0}, env, 0)
+
+  defp compile_list_int_reduce_native(decl, module_name, decl_map, env, return_kind) do
+    with {:ok, spec} <- ListIntReduce.recognize(decl, module_name, decl_map),
+         {:ok, code, result_var} <-
+           ListIntReduce.compile(spec, env, return_kind, &compile_scalar_native_expr/4) do
+      {:ok, code, result_var}
+    else
+      _ -> :error
+    end
+  end
 
   defp compile_scalar_native_expr(expr, env, :native_int, counter),
     do: NativeInt.compile_expr(expr, env, counter)

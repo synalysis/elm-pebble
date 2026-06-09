@@ -61,6 +61,17 @@ defmodule Elmc.Backend.CCodegen.CSource do
           preprocessor_line?(content) ->
             {[content | acc], depth, switch_depth}
 
+          catch_end?(content) ->
+            depth_before = max(depth - 1, 0)
+            indent_cols = depth_before * @indent_unit
+            formatted = String.duplicate(" ", indent_cols) <> content
+            {[formatted | acc], depth_before, switch_depth}
+
+          catch_begin?(content) ->
+            indent_cols = depth * @indent_unit
+            formatted = String.duplicate(" ", indent_cols) <> content
+            {[formatted | acc], depth + 1, switch_depth}
+
           true ->
             depth_before = max(depth - leading_close_braces(content), 0)
             indent_level = effective_indent(depth_before, switch_depth, content)
@@ -80,6 +91,9 @@ defmodule Elmc.Backend.CCodegen.CSource do
   defp preprocessor_line?(line) do
     String.starts_with?(line, "#")
   end
+
+  defp catch_begin?(line), do: line == "CATCH_BEGIN"
+  defp catch_end?(line), do: line == "CATCH_END"
 
   defp case_label?(line) do
     Regex.match?(~r/^case\s+.+:$/, line) or Regex.match?(~r/^default:\s*$/, line)

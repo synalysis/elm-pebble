@@ -5,6 +5,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
   alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.ConstantInt
   alias Elmc.Backend.CCodegen.DebugProbes
+  alias Elmc.Backend.CCodegen.FunctionCallCompile
   alias Elmc.Backend.CCodegen.ListLoopCodegen
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
@@ -22,6 +23,8 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
 
   @min_list_append_concat_segments 3
   @compare_ops ~w(__eq__ __neq__ __lt__ __lte__ __gt__ __gte__)
+
+  @retaining_runtime_functions MapSet.new(~w(elmc_list_cons))
 
   @spec flatten_append_ir(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
   def flatten_append_ir(left, right) do
@@ -2120,10 +2123,21 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
           Types.compile_counter()
         ) :: Types.compile_result()
   defp compile_generic(%{op: :runtime_call, function: function, args: args}, env, counter) do
-    {arg_code, arg_vars, counter} =
-      Enum.reduce(args, {"", [], counter}, fn arg_expr, {code_acc, vars_acc, c} ->
-        {code, var, c2} = Host.compile_expr(arg_expr, env, c)
-        {code_acc <> "\n  " <> code, vars_acc ++ [var], c2}
+    compile_operand =
+      if MapSet.member?(@retaining_runtime_functions, function) do
+        &FunctionCallCompile.compile_retaining_call_operand/3
+      else
+        fn expr, operand_env, c ->
+          {code, var, c2} = Host.compile_expr(expr, operand_env, c)
+          {code, var, c2, false}
+        end
+      end
+
+    {arg_code, arg_vars, arg_borrowed?, counter} =
+      Enum.reduce(args, {"", [], [], counter}, fn arg_expr,
+                                                 {code_acc, vars_acc, borrowed_acc, c} ->
+        {code, var, c2, borrowed?} = compile_operand.(arg_expr, env, c)
+        {code_acc <> "\n  " <> code, vars_acc ++ [var], borrowed_acc ++ [borrowed?], c2}
       end)
 
     next = counter + 1
@@ -2132,7 +2146,9 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
 
     releases =
       arg_vars
-      |> Enum.map_join("\n  ", fn var -> "elmc_release(#{var});" end)
+      |> Enum.zip(arg_borrowed?)
+      |> Enum.reject(fn {_var, borrowed?} -> borrowed? end)
+      |> Enum.map_join("\n  ", fn {var, _borrowed?} -> "elmc_release(#{var});" end)
 
     code = """
     #{arg_code}

@@ -401,20 +401,20 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
           Types.compile_counter()
         ) :: Types.compile_result()
   defp compile_field_access_var(arg, field, env, counter) do
-    case Map.fetch(env, arg) do
-      {:ok, {:native_record, fields}} ->
+    case EnvBindings.lookup_binding(env, arg) do
+      {:native_record, fields} ->
         case Map.fetch(fields, field) do
           {:ok, native_ref} ->
             {"", native_ref, counter}
 
           :error ->
-            Host.compile_expr(%{op: :int_literal, value: 0}, env, counter)
+            compile_field_access_bound_var(arg, field, env, counter)
         end
 
-      {:ok, source} when is_binary(source) ->
+      source when is_binary(source) ->
         compile_bound_field_get(arg, source, field, env, counter)
 
-      :error ->
+      _ ->
         {arg_code, arg_var, counter} = Host.compile_expr(%{op: :var, name: arg}, env, counter)
         next = counter + 1
         var = "tmp_#{next}"
@@ -449,20 +449,32 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
           Types.compile_counter()
         ) :: Types.compile_result()
   defp compile_field_access_bound_var(name, field, env, counter) do
-    case Map.fetch(env, name) do
-      {:ok, {:native_record, fields}} ->
+    case EnvBindings.lookup_binding(env, name) do
+      {:native_record, fields} ->
         case Map.fetch(fields, field) do
           {:ok, native_ref} ->
             {"", native_ref, counter}
 
           :error ->
-            Host.compile_expr(%{op: :int_literal, value: 0}, env, counter)
+            {code, ref, counter} = Host.compile_expr(%{op: :var, name: name}, env, counter)
+            next = counter + 1
+            var = "tmp_#{next}"
+            getter = Expr.record_get_expr(ref, field, Expr.record_shape_for_var(env, name))
+
+            code =
+              code <>
+                """
+                  ElmcValue *#{var} = #{getter};
+                  elmc_release(#{ref});
+                """
+
+            {code, var, next}
         end
 
-      {:ok, source} ->
+      source when is_binary(source) ->
         compile_bound_field_get(name, source, field, env, counter)
 
-      :error ->
+      _ ->
         compile(%{op: :field_access, arg: name, field: field}, env, counter)
     end
   end
@@ -625,10 +637,14 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
                   compile_cached_field_access(expr, arg, field, env, counter, compile_fn)
 
                 field_expr ->
-                  {compiled_code, compiled_ref, compiled_counter} =
-                    compile_fn.(field_expr, env, counter)
+                  if runtime_record_field_access?(field_expr, arg, field) do
+                    compile_cached_field_access(expr, arg, field, env, counter, compile_fn)
+                  else
+                    {compiled_code, compiled_ref, compiled_counter} =
+                      compile_fn.(field_expr, env, counter)
 
-                  {compiled_code, compiled_ref, compiled_counter, env}
+                    {compiled_code, compiled_ref, compiled_counter, env}
+                  end
               end
 
             _ ->
@@ -676,14 +692,43 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   defp native_int_compile_fn?(compile_fn),
     do: compile_fn == &Host.compile_native_int_expr/3
 
+  defp runtime_record_field_access?(field_expr, arg, field)
+       when is_binary(field) or is_atom(field) do
+    match?(%{op: :int_literal}, field_expr) and record_field_arg?(arg)
+  end
+
+  defp runtime_record_field_access?(_field_expr, _arg, _field), do: false
+
+  defp record_field_arg?(%{op: :var, name: name}) when is_binary(name) or is_atom(name), do: true
+  defp record_field_arg?(name) when is_binary(name) or is_atom(name), do: true
+  defp record_field_arg?(%{op: :call}), do: true
+  defp record_field_arg?(%{op: :qualified_call}), do: true
+  defp record_field_arg?(_arg), do: false
+
+  defp compile_cached_field_access_bound_name(name, env, counter) do
+    case EnvBindings.lookup_binding(env, name) do
+      source when is_binary(source) ->
+        {"", source, counter, env, false}
+
+      {:native_record, _fields} ->
+        {code, ref, counter} = Host.compile_expr(%{op: :var, name: name}, env, counter)
+        {code, ref, counter, env, true}
+
+      _ ->
+        {"", to_string(name), counter, env, false}
+    end
+  end
+
   defp compile_cached_field_access_arg(%{op: :field_access} = arg_expr, env, counter) do
     {code, ref, counter, env} = compile_cached_expr(arg_expr, env, counter, &Host.compile_expr/3)
     {code, ref, counter, env, false}
   end
 
-  defp compile_cached_field_access_arg(%{op: :var, name: name}, env, counter) do
-    {"", name, counter, env, false}
-  end
+  defp compile_cached_field_access_arg(%{op: :var, name: name}, env, counter),
+    do: compile_cached_field_access_bound_name(name, env, counter)
+
+  defp compile_cached_field_access_arg(name, env, counter) when is_binary(name) or is_atom(name),
+    do: compile_cached_field_access_bound_name(name, env, counter)
 
   defp compile_cached_field_access_arg(arg_expr, env, counter) do
     {code, ref, counter} = Host.compile_expr(arg_expr, env, counter)

@@ -134,13 +134,7 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
     own =
       case expr do
         %{op: :call, name: name, args: args} ->
-          target = {module_name, name}
-
-          cond do
-            not Map.has_key?(decl_map, target) -> []
-            native_function_call_target?(target, args || [], decl_map) -> []
-            true -> [target]
-          end
+          wrapper_callee_target({module_name, name}, args || [], decl_map)
 
         %{op: :qualified_call, target: target, args: args} ->
           case Host.special_value_from_target(target, args || []) do
@@ -150,11 +144,7 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
                   []
 
                 target_key ->
-                  cond do
-                    not Map.has_key?(decl_map, target_key) -> []
-                    native_function_call_target?(target_key, args || [], decl_map) -> []
-                    true -> [target_key]
-                  end
+                  wrapper_callee_target(target_key, args || [], decl_map)
               end
 
             rewritten ->
@@ -230,6 +220,31 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
        do: args
 
   defp wrapper_callee_child_values(expr), do: Map.values(expr)
+
+  defp wrapper_callee_target(target, args, decl_map) do
+    cond do
+      not Map.has_key?(decl_map, target) -> []
+      native_function_call_target?(target, args, decl_map) -> []
+      direct_boxed_call_target?(target, args, decl_map) -> []
+      true -> [target]
+    end
+  end
+
+  @spec direct_boxed_call_target?(
+          Types.function_decl_key(),
+          [Types.ir_expr()],
+          Types.function_decl_map()
+        ) :: boolean()
+  defp direct_boxed_call_target?(target, args, decl_map) do
+    case Map.fetch(decl_map, target) do
+      {:ok, decl} ->
+        length(args) == length(decl.args || []) and
+          not native_function_call_target?(target, args, decl_map)
+
+      :error ->
+        false
+    end
+  end
 
   @spec native_function_call_target?(
           Types.function_decl_key(),

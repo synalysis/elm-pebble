@@ -44,8 +44,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
 
           :error ->
             module_name = Map.get(env, :__module__, "Main")
-            function_arities = Map.get(env, :__function_arities__, %{})
-            arity = Map.get(function_arities, {module_name, name}, 0)
+            arity = EnvBindings.function_arity(env, module_name, name, [])
 
             if arity > 0 do
               next = counter + 1
@@ -57,8 +56,13 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
               tmp = "tmp_#{next}"
               c_name = Util.module_fn_name(module_name, name)
 
+              zero_arg_call =
+                if EnvBindings.direct_call_target?(env, module_name, name),
+                  do: "#{c_name}()",
+                  else: "#{c_name}(NULL, 0)"
+
               {
-                "ElmcValue *#{tmp} = #{c_name}(NULL, 0);\n",
+                "ElmcValue *#{tmp} = #{zero_arg_call};\n",
                 tmp,
                 next
               }
@@ -67,11 +71,48 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     end
   end
 
+  @spec compile_call_operand(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
+          Types.compile_result()
+  def compile_call_operand(%{op: :var, name: name}, env, counter) do
+    case Map.get(env, name) do
+      source when is_binary(source) ->
+        if EnvBindings.borrowed_arg_ref?(env, source) do
+          {"", source, counter}
+        else
+          Host.compile_expr(%{op: :var, name: name}, env, counter)
+        end
+
+      _ ->
+        Host.compile_expr(%{op: :var, name: name}, env, counter)
+    end
+  end
+
+  def compile_call_operand(expr, env, counter) do
+    Host.compile_expr(expr, env, counter)
+  end
+
+  @spec compile_retaining_call_operand(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
+          {String.t(), String.t(), Types.compile_counter(), boolean()}
+  def compile_retaining_call_operand(%{op: :var, name: name}, env, counter) do
+    case Map.get(env, name) do
+      source when is_binary(source) ->
+        {"", source, counter, true}
+
+      _ ->
+        {code, var, c} = Host.compile_expr(%{op: :var, name: name}, env, counter)
+        {code, var, c, false}
+    end
+  end
+
+  def compile_retaining_call_operand(expr, env, counter) do
+    {code, var, c} = Host.compile_expr(expr, env, counter)
+    {code, var, c, false}
+  end
+
   @spec compile(String.t(), String.t(), [Types.ir_expr()], Types.compile_env(), Types.compile_counter()) ::
           Types.compile_result()
   def compile(module_name, name, args, env, counter) do
-    function_arities = Map.get(env, :__function_arities__, %{})
-    arity = Map.get(function_arities, {module_name, name}, length(args))
+    arity = EnvBindings.function_arity(env, module_name, name, args)
     c_name = Util.module_fn_name(module_name, name)
 
     case ConstantInt.compile_boxed_call(module_name, name, args, env, counter) do
@@ -96,7 +137,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
   def compile_closure(closure_var, args, env, counter) do
     {arg_code, arg_vars, counter} =
       Enum.reduce(args, {"", [], counter}, fn arg_expr, {code_acc, vars_acc, c} ->
-        {code, var, c2} = Host.compile_expr(arg_expr, env, c)
+        {code, var, c2} = compile_call_operand(arg_expr, env, c)
         {code_acc <> "\n  " <> code, vars_acc ++ [var], c2}
       end)
 
@@ -106,9 +147,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     args_array = "call_args_#{next}"
     arg_list = Enum.join(arg_vars, ", ")
 
-    releases =
-      arg_vars
-      |> Enum.map_join("\n  ", fn var -> "elmc_release(#{var});" end)
+    releases = release_call_operands(env, arg_vars)
 
     code = """
     #{arg_code}
@@ -156,20 +195,22 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
              retain_var, retain_next}
 
           {:ok, source} when is_binary(source) ->
-            if EnvBindings.boxed_int_binding?(env, name) or
-                 EnvBindings.boxed_string_binding?(env, name) do
-              {"ElmcValue *#{var} = elmc_retain(#{source});", var, next}
-            else
-              {"ElmcValue *#{var} = #{source} ? elmc_retain(#{source}) : elmc_int_zero();", var,
-               next}
-            end
+            retain_expr =
+              if EnvBindings.boxed_int_binding?(env, name) or
+                   EnvBindings.boxed_string_binding?(env, name) or
+                   EnvBindings.direct_param_ref?(env, source) do
+                "elmc_retain(#{source})"
+              else
+                "#{source} ? elmc_retain(#{source}) : elmc_int_zero()"
+              end
+
+            {"ElmcValue *#{var} = #{retain_expr};", var, next}
 
           :error ->
             case BuiltinOperators.call(name, [], env, counter) do
               nil ->
                 module_name = Map.get(env, :__module__, "Main")
-                function_arities = Map.get(env, :__function_arities__, %{})
-                arity = Map.get(function_arities, {module_name, name}, 0)
+                arity = EnvBindings.function_arity(env, module_name, name, [])
 
                 if arity > 0 do
                   top_level_closure(module_name, name, arity, var, next)
@@ -195,7 +236,15 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
   defp compile_zero_arg_constant(module_name, name, env, counter, var, next) do
     case ConstantInt.compile_boxed_call(module_name, name, [], env, counter) do
       {:ok, code, out, c} -> {code, out, c}
-      :error -> {"ElmcValue *#{var} = #{Util.module_fn_name(module_name, name)}(NULL, 0);", var, next}
+      :error ->
+        c_name = Util.module_fn_name(module_name, name)
+
+        call_expr =
+          if EnvBindings.direct_call_target?(env, module_name, name),
+            do: "#{c_name}()",
+            else: "#{c_name}(NULL, 0)"
+
+        {"ElmcValue *#{var} = #{call_expr};", var, next}
     end
   end
 
@@ -460,7 +509,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
 
     {arg_code, arg_vars, counter} =
       Enum.reduce(args, {"", [], counter}, fn arg_expr, {code_acc, vars_acc, c} ->
-        {code, var, c2} = Host.compile_expr(arg_expr, env, c)
+        {code, var, c2} = compile_call_operand(arg_expr, env, c)
         {code_acc <> "\n  " <> code, vars_acc ++ [var], c2}
       end)
 
@@ -474,9 +523,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     after_call_probe =
       DebugProbes.call_probe(env, module_name, name, :after_call) |> DebugProbes.region()
 
-    releases =
-      arg_vars
-      |> Enum.map_join("\n  ", fn var -> "elmc_release(#{var});" end)
+    releases = release_call_operands(env, arg_vars)
 
     code =
       cond do
@@ -514,22 +561,72 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
             #{releases}
           """
 
-        true ->
+        arity == 0 and argc > 0 ->
+          head_var = "head_#{next}"
           args_var = "call_args_#{next}"
           arg_list = Enum.join(arg_vars, ", ")
+          zero_call = zero_arg_call_expr(env, module_name, name, c_name)
 
           """
           #{before_args_probe}
           #{arg_code}
             #{after_args_probe}
+            ElmcValue *#{head_var} = #{zero_call};
             ElmcValue *#{args_var}[#{max(argc, 1)}] = { #{arg_list} };
-            ElmcValue *#{out} = #{c_name}(#{args_var}, #{argc});
+            ElmcValue *#{out} = elmc_closure_call(#{head_var}, #{args_var}, #{argc});
             #{after_call_probe}
+            elmc_release(#{head_var});
             #{releases}
           """
+
+        true ->
+          if EnvBindings.direct_call_target?(env, module_name, name) do
+            direct_call = direct_boxed_call_expr(c_name, arg_vars)
+
+            """
+            #{before_args_probe}
+            #{arg_code}
+              #{after_args_probe}
+              ElmcValue *#{out} = #{direct_call};
+              #{after_call_probe}
+              #{releases}
+            """
+          else
+            args_var = "call_args_#{next}"
+            arg_list = Enum.join(arg_vars, ", ")
+
+            """
+            #{before_args_probe}
+            #{arg_code}
+              #{after_args_probe}
+              ElmcValue *#{args_var}[#{max(argc, 1)}] = { #{arg_list} };
+              ElmcValue *#{out} = #{c_name}(#{args_var}, #{argc});
+              #{after_call_probe}
+              #{releases}
+            """
+          end
       end
 
     {code, out, next}
+  end
+
+  defp direct_boxed_call_expr(c_name, arg_vars) do
+    case arg_vars do
+      [] -> "#{c_name}()"
+      _ -> "#{c_name}(#{Enum.join(arg_vars, ", ")})"
+    end
+  end
+
+  defp zero_arg_call_expr(env, module_name, name, c_name) do
+    if EnvBindings.direct_call_target?(env, module_name, name),
+      do: "#{c_name}()",
+      else: "#{c_name}(NULL, 0)"
+  end
+
+  defp release_call_operands(env, arg_vars) do
+    arg_vars
+    |> Enum.reject(&EnvBindings.borrowed_arg_ref?(env, &1))
+    |> Enum.map_join("\n  ", &"elmc_release(#{&1});")
   end
 
   @spec compile_cross_module(String.t(), [Types.ir_expr()], Types.compile_env(), Types.compile_counter()) ::

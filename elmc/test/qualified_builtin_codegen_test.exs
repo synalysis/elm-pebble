@@ -156,7 +156,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       |> String.split("static ElmcValue *elmc_fn_Main_typedBounds_native")
       |> List.last()
 
-    [typed_bounds_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
+    [typed_bounds_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert typed_bounds_body =~ "elmc_record_new_ints"
     refute typed_bounds_body =~ "elmc_retain(x)"
@@ -164,10 +164,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     access_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_typedBoundsAccess")
+      |> String.split("static ElmcValue *elmc_fn_Main_typedBoundsAccess")
       |> List.last()
 
-    [typed_access_body | _rest] = String.split(access_body, "ElmcValue *elmc_fn_", parts: 2)
+    [typed_access_body | _rest] = String.split(access_body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert typed_access_body =~ "elmc_record_get_index("
     assert typed_access_body =~ "2 /* x */"
@@ -200,7 +200,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       |> String.split("static elmc_int_t elmc_fn_Main_nativeIntCase_native")
       |> List.last()
 
-    [native_case_body | _rest] = String.split(body, "\n\nElmcValue *elmc_fn_", parts: 2)
+    [native_case_body | _rest] = String.split(body, "\n\nstatic ElmcValue *elmc_fn_", parts: 2)
 
     assert native_case_body =~ "const elmc_int_t native_let_caseSubject_"
     assert native_case_body =~ ~r/const elmc_int_t native_lut_\d+\[4\] = \{ 1, 2, 3, 4 \};/
@@ -237,10 +237,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_nativeIntCaseString")
+      |> String.split("static ElmcValue *elmc_fn_Main_nativeIntCaseString")
       |> List.last()
 
-    [case_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
+    [case_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert case_body =~ "switch (month)"
     assert case_body =~ "case 1:"
@@ -277,10 +277,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_boxedDirectionString")
+      |> String.split("static ElmcValue *elmc_fn_Main_boxedDirectionString")
       |> List.last()
 
-    [case_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
+    [case_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert case_body =~ "switch (case_msg_tag_"
     assert case_body =~ "case "
@@ -321,7 +321,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       |> String.split("static elmc_int_t elmc_fn_Main_trigRoundScore_native")
       |> List.last()
 
-    [fn_body | _] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
+    [fn_body | _] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert fn_body =~ "elmc_basics_sin_double((double)degrees)"
     refute fn_body =~ "elmc_new_int(elmc_basics_round("
@@ -350,10 +350,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_nativeBoolField")
+      |> String.split("static ElmcValue *elmc_fn_Main_nativeBoolField")
       |> List.last()
 
-    [native_bool_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
+    [native_bool_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert native_bool_body =~ "if (ELMC_RECORD_GET_INDEX_BOOL(model, 0 /* isRound */))"
     refute native_bool_body =~ "elmc_record_get(model, \"isRound\")"
@@ -361,18 +361,18 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     helper_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_nativeBoolHelperColor")
+      |> String.split("static ElmcValue *elmc_fn_Main_nativeBoolHelperColor")
       |> List.last()
 
-    [native_bool_helper_body | _rest] = String.split(helper_body, "ElmcValue *elmc_fn_", parts: 2)
+    [native_bool_helper_body | _rest] = String.split(helper_body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert native_bool_helper_body =~ "elmc_as_bool(tmp_"
     assert native_bool_helper_body =~ "ElmcValue *tmp_"
     assert native_bool_helper_body =~ " = elmc_retain(tmp_"
     refute native_bool_helper_body =~ "if (elmc_as_int(tmp_"
     refute native_bool_helper_body =~ " ? elmc_retain(tmp_"
-    assert native_bool_helper_body =~ "native_if_4 = 192;"
-    assert native_bool_helper_body =~ "native_if_4 = 255;"
+    assert native_bool_helper_body =~ "native_if_3 = 192;"
+    assert native_bool_helper_body =~ "native_if_3 = 255;"
 
     refute Regex.match?(
              ~r/ElmcValue \*tmp_\d+ = elmc_new_int\(192\);\s+tmp_\d+ = tmp_\d+;/,
@@ -386,10 +386,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     mixed_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_nativeBoolMixedBranches")
+      |> String.split("static ElmcValue *elmc_fn_Main_nativeBoolMixedBranches")
       |> List.last()
 
-    [native_bool_mixed_body | _rest] = String.split(mixed_body, "ElmcValue *elmc_fn_", parts: 2)
+    [native_bool_mixed_body | _rest] = String.split(mixed_body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert native_bool_mixed_body =~ "ElmcValue *tmp_"
     assert native_bool_mixed_body =~ "if ((value < 0))"
@@ -408,10 +408,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     maybe_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_nativeBoolMaybeBranchReuse")
+      |> String.split("static ElmcValue *elmc_fn_Main_nativeBoolMaybeBranchReuse")
       |> List.last()
 
-    [native_bool_maybe_body | _rest] = String.split(maybe_body, "ElmcValue *elmc_fn_", parts: 2)
+    [native_bool_maybe_body | _rest] = String.split(maybe_body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert native_bool_maybe_body =~ "if (flag)"
 
@@ -473,10 +473,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_integerLetArithmetic")
+      |> String.split("static ElmcValue *elmc_fn_Main_integerLetArithmetic")
       |> List.last()
 
-    [integer_let_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
+    [integer_let_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
 
     refute integer_let_body =~ "native_float_headerBottom"
     refute integer_let_body =~ "elmc_new_float"
@@ -507,10 +507,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_nativeMinRecordFields")
+      |> String.split("static ElmcValue *elmc_fn_Main_nativeMinRecordFields")
       |> List.last()
 
-    [native_min_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
+    [native_min_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert native_min_body =~ "ELMC_RECORD_GET_INDEX_INT(model, 1 /* screenW */)"
     assert native_min_body =~ "ELMC_RECORD_GET_INDEX_INT(model, 0 /* screenH */)"
@@ -543,9 +543,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_view")
+      |> String.split(~r/(?:static )?ElmcValue \*elmc_fn_Main_view\(/)
       |> List.last()
-      |> String.split("ElmcValue *elmc_fn_", parts: 2)
+      |> String.split(~r/(?:static )?ElmcValue \*elmc_fn_/, parts: 2)
       |> hd()
 
     assert body =~ "ELMC_RECORD_GET_INDEX_INT(model, 6 /* screenW */)"
@@ -578,7 +578,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       |> String.split("static ElmcValue *elmc_fn_Main_nativeStringFromInt_native")
       |> List.last()
 
-    [native_string_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
+    [native_string_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert native_string_body =~ "elmc_string_from_native_int((value + 1))"
     refute native_string_body =~ "elmc_new_int((value + 1))"
@@ -586,10 +586,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     append_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_nativeStringAppend")
+      |> String.split("static ElmcValue *elmc_fn_Main_nativeStringAppend")
       |> List.last()
 
-    [native_append_body | _rest] = String.split(append_body, "ElmcValue *elmc_fn_", parts: 2)
+    [native_append_body | _rest] = String.split(append_body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert native_append_body =~ "elmc_string_append_native(\"0\", native_string_"
     assert native_append_body =~ "snprintf(native_string_buf_"
@@ -621,10 +621,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_boxedStringIf")
+      |> String.split("static ElmcValue *elmc_fn_Main_boxedStringIf")
       |> List.last()
 
-    [boxed_string_if_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
+    [boxed_string_if_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
 
     refute Regex.match?(
              ~r/ElmcValue \*tmp_\d+ = elmc_int_zero\(\);\s+if \(\(value < 0\)\)/,
@@ -676,10 +676,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_nativeMaybeDefaultString")
+      |> String.split("static ElmcValue *elmc_fn_Main_nativeMaybeDefaultString")
       |> List.last()
 
-    [maybe_string_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
+    [maybe_string_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert maybe_string_body =~ "native_maybe_default_"
     assert maybe_string_body =~ "elmc_record_get_index_maybe_int(model, 0 /* batteryLevel */, 0)"
@@ -691,10 +691,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     arg_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_nativeMaybeDefaultStringArg")
+      |> String.split("static ElmcValue *elmc_fn_Main_nativeMaybeDefaultStringArg")
       |> List.last()
 
-    [maybe_arg_body | _rest] = String.split(arg_body, "ElmcValue *elmc_fn_", parts: 2)
+    [maybe_arg_body | _rest] = String.split(arg_body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert maybe_arg_body =~ "native_maybe_default_"
     assert maybe_arg_body =~ "elmc_record_get_index_maybe_int(model, 0 /* batteryLevel */, 0)"
@@ -706,10 +706,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     head_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_nativeMaybeDefaultHeadString")
+      |> String.split("static ElmcValue *elmc_fn_Main_nativeMaybeDefaultHeadString")
       |> List.last()
 
-    [maybe_head_body | _rest] = String.split(head_body, "ElmcValue *elmc_fn_", parts: 2)
+    [maybe_head_body | _rest] = String.split(head_body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert maybe_head_body =~ "elmc_list_head_with_default_int(0,"
     assert maybe_head_body =~ "elmc_string_from_native_int(native_maybe_default_"
@@ -718,10 +718,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     dict_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_nativeMaybeDefaultDictString")
+      |> String.split("static ElmcValue *elmc_fn_Main_nativeMaybeDefaultDictString")
       |> List.last()
 
-    [maybe_dict_body | _rest] = String.split(dict_body, "ElmcValue *elmc_fn_", parts: 2)
+    [maybe_dict_body | _rest] = String.split(dict_body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert maybe_dict_body =~ "elmc_dict_get_with_default_int(0, key,"
     assert maybe_dict_body =~ "elmc_string_from_native_int(native_maybe_default_"
@@ -760,7 +760,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       |> String.split("static ElmcValue *elmc_fn_Main_nativeBoolCall_native")
       |> List.last()
 
-    [native_call_body | _rest] = String.split(call_body, "ElmcValue *elmc_fn_", parts: 2)
+    [native_call_body | _rest] = String.split(call_body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert native_call_body =~ "elmc_fn_Main_nativeBoolBranch_native(enabled, 7)"
     refute native_call_body =~ "elmc_new_bool(enabled)"
@@ -776,7 +776,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       |> List.last()
 
     [native_compare_branch_body | _rest] =
-      String.split(compare_branch_body, "ElmcValue *elmc_fn_", parts: 2)
+      String.split(compare_branch_body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert native_compare_branch_body =~ "if ((left == right))"
     refute native_compare_branch_body =~ "elmc_new_bool(left == right)"
@@ -784,11 +784,11 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     compare_call_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_nativeBoolCompareCall")
+      |> String.split("static ElmcValue *elmc_fn_Main_nativeBoolCompareCall")
       |> List.last()
 
     [native_compare_call_body | _rest] =
-      String.split(compare_call_body, "ElmcValue *elmc_fn_", parts: 2)
+      String.split(compare_call_body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert native_compare_call_body =~
              "elmc_fn_Main_nativeBoolBranch_native(!((elmc_as_bool(left) == elmc_as_bool(right))), 3)"
@@ -832,10 +832,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     call_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_typedIntReturnReuse")
+      |> String.split("static ElmcValue *elmc_fn_Main_typedIntReturnReuse")
       |> List.last()
 
-    [typed_call_body | _rest] = String.split(call_body, "ElmcValue *elmc_fn_", parts: 2)
+    [typed_call_body | _rest] = String.split(call_body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert typed_call_body =~ "ElmcValue *tmp_"
     assert typed_call_body =~ "elmc_fn_Main_opaqueStringLength"
@@ -868,10 +868,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_enumUnitString")
+      |> String.split("static ElmcValue *elmc_fn_Main_enumUnitString")
       |> List.last()
 
-    [enum_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
+    [enum_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert enum_body =~ "elmc_as_int(unit) == 2"
     refute enum_body =~ "elmc_retain(unit)"
@@ -905,7 +905,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       |> String.split("static elmc_int_t elmc_fn_Main_nativeAbsNegate_native")
       |> List.last()
 
-    [native_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
+    [native_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert native_body =~ "native_abs_arg_"
     assert native_body =~ "native_negate_arg_"
@@ -941,7 +941,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       |> String.split("static ElmcValue *elmc_fn_Main_nativeLiteralDivision_native")
       |> List.last()
 
-    [native_div_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
+    [native_div_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert native_div_body =~ "elmc_string_from_native_int(((value * 328) / 100))"
     refute native_div_body =~ "native_den_"
@@ -1298,7 +1298,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       |> String.split("static elmc_int_t elmc_fn_Main_unit12X_native")
       |> List.last()
 
-    [unit12_body | _rest] = String.split(body, "ElmcValue *elmc_fn_Main_unit12Y", parts: 2)
+    [unit12_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_Main_unit12Y", parts: 2)
 
     assert unit12_body =~ ~r/const elmc_int_t native_lut_\d+\[\d+\] = \{/
     assert unit12_body =~ "500"
@@ -1525,10 +1525,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_wildcardCaseCondition")
+      |> String.split("static ElmcValue *elmc_fn_Main_wildcardCaseCondition")
       |> List.last()
 
-    [case_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
+    [case_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
 
     refute case_body =~ "if (1)"
     refute case_body =~ "else if (1)"
@@ -1645,10 +1645,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_nativeBoxedRecordCompare")
+      |> String.split("static ElmcValue *elmc_fn_Main_nativeBoxedRecordCompare")
       |> List.last()
 
-    [compare_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
+    [compare_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
 
     refute compare_body =~ "elmc_basics_compare"
     refute compare_body =~ "elmc_new_int(720)"
@@ -1708,12 +1708,12 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     generated_h = File.read!(Path.join(out_dir, "c/elmc_generated.h"))
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert generated_h =~ "elmc_fn_Main_figureOriginOffsetX("
-    assert generated_h =~ "elmc_fn_Main_figureOriginOffsetY("
+    refute generated_h =~ "elmc_fn_Main_figureOriginOffsetX("
+    refute generated_h =~ "elmc_fn_Main_figureOriginOffsetY("
     refute generated_h =~ "elmc_fn_Main_vectorDrawOrigin("
 
     native_pos = :binary.match(generated_c, "elmc_fn_Main_vectorDrawOrigin_native")
-    offset_x_pos = :binary.match(generated_c, "ElmcValue *elmc_fn_Main_figureOriginOffsetX(")
+    offset_x_pos = :binary.match(generated_c, "static ElmcValue *elmc_fn_Main_figureOriginOffsetX(")
 
     assert native_pos != :nomatch
     assert offset_x_pos != :nomatch
@@ -1766,9 +1766,15 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     assert generated_h =~ "#define ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW 1"
     assert generated_c =~ "elmc_fn_Main_view_commands_append"
+    assert generated_h =~ "elmc_fn_Main_init("
+    assert generated_h =~ "elmc_fn_Main_update("
+    assert generated_h =~ "elmc_fn_Main_subscriptions("
+    refute generated_h =~ "elmc_fn_Main_statusDraw("
+
     assert generated_c =~ "ElmcValue *elmc_fn_Main_init("
     assert generated_c =~ "ElmcValue *elmc_fn_Main_update("
     assert generated_c =~ "ElmcValue *elmc_fn_Main_subscriptions("
+    assert generated_c =~ "static int elmc_fn_Main_view_commands_append("
 
     refute generated_c =~ "ElmcValue *elmc_fn_Main_view(ElmcValue"
     refute generated_c =~ "ElmcValue *elmc_fn_Main_statusDraw(ElmcValue"
@@ -3579,9 +3585,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     weather_string_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_weatherString")
+      |> String.split("static ElmcValue *elmc_fn_Main_weatherString")
       |> List.last()
-      |> String.split("ElmcValue *elmc_fn_", parts: 2)
+      |> String.split("static ElmcValue *elmc_fn_", parts: 2)
       |> hd()
 
     refute weather_string_body =~ "elmc_tuple2_ints(ELMC_RECORD_GET_INDEX_INT"
@@ -4317,16 +4323,16 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     small_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_smallTagCase")
+      |> String.split("static ElmcValue *elmc_fn_Main_smallTagCase")
       |> List.last()
-      |> String.split("ElmcValue *elmc_fn_", parts: 2)
+      |> String.split("static ElmcValue *elmc_fn_", parts: 2)
       |> hd()
 
     large_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_largeTagCase")
+      |> String.split("static ElmcValue *elmc_fn_Main_largeTagCase")
       |> List.last()
-      |> String.split("ElmcValue *elmc_fn_", parts: 2)
+      |> String.split("static ElmcValue *elmc_fn_", parts: 2)
       |> hd()
 
     refute small_body =~ "switch (case_msg_tag_"
@@ -4358,9 +4364,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_CoreCompliance_resultInc")
+      |> String.split("static ElmcValue *elmc_fn_CoreCompliance_resultInc")
       |> List.last()
-      |> String.split("ElmcValue *elmc_fn_", parts: 2)
+      |> String.split("static ElmcValue *elmc_fn_", parts: 2)
       |> hd()
 
     refute body =~ "switch (case_msg_tag_"

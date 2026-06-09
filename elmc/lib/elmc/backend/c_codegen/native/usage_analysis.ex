@@ -577,7 +577,20 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
   end
 
   defp collect_var_contexts(name, %{op: :call, name: call_name, args: args}, _context)
-       when call_name in ["__add__", "__sub__", "__mul__", "__idiv__", "modBy", "remainderBy"] do
+       when call_name in [
+              "__eq__",
+              "__neq__",
+              "__lt__",
+              "__lte__",
+              "__gt__",
+              "__gte__",
+              "__add__",
+              "__sub__",
+              "__mul__",
+              "__idiv__",
+              "modBy",
+              "remainderBy"
+            ] do
     Enum.flat_map(args, &collect_var_contexts(name, &1, :native))
   end
 

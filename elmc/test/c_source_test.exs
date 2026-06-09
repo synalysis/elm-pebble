@@ -74,4 +74,32 @@ defmodule Elmc.Backend.CCodegen.CSourceTest do
   test "collapse_extra_newlines limits blank runs" do
     assert CSource.collapse_extra_newlines("a\n\n\n\nb") == "a\n\nb"
   end
+
+  test "format indents CATCH_BEGIN body and brace-wrapped CATCH_BREAK" do
+    input = """
+    static int foo(void) {
+    int direct_rc = 0;
+    CATCH_BEGIN
+    x = 1;
+    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0) {
+    CATCH_BREAK;
+    }
+    CATCH_END
+    return direct_rc;
+    }
+    """
+
+    assert CSource.format(input) == """
+    static int foo(void) {
+      int direct_rc = 0;
+      CATCH_BEGIN
+        x = 1;
+        if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0) {
+          CATCH_BREAK;
+        }
+      CATCH_END
+      return direct_rc;
+    }
+    """
+  end
 end

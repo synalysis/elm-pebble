@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.CCodegen.Expr do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.RecordFields
   alias Elmc.Backend.CCodegen.Types
@@ -154,6 +155,32 @@ defmodule Elmc.Backend.CCodegen.Expr do
   def inline_record_field_expr(arg_expr, field, env) do
     arg_expr = Host.unwrap_affine_bindings(arg_expr)
 
+    if bound_record_var?(arg_expr, env) do
+      nil
+    else
+      inline_record_field_expr_uncached(arg_expr, field, env)
+    end
+  end
+
+  defp bound_record_var?(%{op: :var, name: name}, env) when is_binary(name) or is_atom(name) do
+    bound_record_name?(env, name)
+  end
+
+  defp bound_record_var?(name, env) when is_binary(name) or is_atom(name) do
+    bound_record_name?(env, name)
+  end
+
+  defp bound_record_var?(_arg_expr, _env), do: false
+
+  defp bound_record_name?(env, name) do
+    case EnvBindings.lookup_binding(env, name) do
+      source when is_binary(source) -> true
+      {:native_record, _} -> true
+      _ -> false
+    end
+  end
+
+  defp inline_record_field_expr_uncached(arg_expr, field, env) do
     case arg_expr do
       %{op: :if, cond: cond, then_expr: then_expr, else_expr: else_expr} ->
         case {branch_field_expr(then_expr, field, env), branch_field_expr(else_expr, field, env)} do
@@ -256,6 +283,7 @@ defmodule Elmc.Backend.CCodegen.Expr do
          decl_map <- Map.get(env, :__program_decls__, %{}),
          %{args: arg_names, expr: expr} when is_list(arg_names) <- Map.get(decl_map, target_key),
          args <- Map.get(arg_expr, :args, []),
+         true <- field_inline_args_static?(args),
          true <- length(arg_names) == length(args),
          substituted <- substitute_expr(expr, Map.new(Enum.zip(arg_names, args))),
          {_inner, let_bindings} <- unwrap_let_chain(substituted, %{}),
@@ -288,6 +316,17 @@ defmodule Elmc.Backend.CCodegen.Expr do
     do: Enum.any?(values, &unresolved_let_ref?(&1, let_names))
 
   defp unresolved_let_ref?(_expr, _let_names), do: false
+
+  defp field_inline_args_static?(args) when is_list(args),
+    do: Enum.all?(args, &field_inline_arg_static?/1)
+
+  defp field_inline_arg_static?(%{op: :int_literal}), do: true
+  defp field_inline_arg_static?(%{op: :char_literal}), do: true
+  defp field_inline_arg_static?(%{op: :float_literal}), do: true
+  defp field_inline_arg_static?(%{op: :string_literal}), do: true
+  defp field_inline_arg_static?(%{op: :bool_literal}), do: true
+  defp field_inline_arg_static?(%{op: :record_literal}), do: true
+  defp field_inline_arg_static?(_arg), do: false
 
   @spec record_helper_target(Types.ir_expr(), Types.compile_env()) :: Types.function_decl_key() | nil
   def record_helper_target(%{op: :call, name: name}, env) when is_binary(name) do
