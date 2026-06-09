@@ -741,6 +741,11 @@ defmodule Elmc.CCodegenPatternsTest do
     refute generated_c =~ "elmc_int_zero();  ElmcValue *tmp_9_score"
     assert generated_c =~ "elmc_retain(row)"
     refute generated_c =~ "row ? elmc_retain(row)"
+
+    refute generated_c =~
+             ~r/list_concat_node_\d+ = elmc_list_cons\(tmp_\d+ \? elmc_retain\(tmp_\d+\)/
+
+    assert generated_c =~ ~r/elmc_release\(list_concat_node_\d+\);/
   end
 
   test "List.concat of literal segments flattens without elmc_list_concat" do

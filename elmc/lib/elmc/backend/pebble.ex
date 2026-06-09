@@ -355,6 +355,19 @@ defmodule Elmc.Backend.Pebble do
     int elmc_pebble_run_mode(ElmcPebbleApp *app);
     void elmc_pebble_deinit(ElmcPebbleApp *app);
 
+    #if defined(ELMC_PEBBLE_PLATFORM) && ELMC_PEBBLE_HEAP_LOG
+    void elmc_pebble_heap_log(const char *label);
+    void elmc_pebble_render_diag_log(const char *phase, int render_seq, const ElmcPebbleApp *app);
+    #else
+    #define elmc_pebble_heap_log(label) do { (void)(label); } while (0)
+    #define elmc_pebble_render_diag_log(phase, render_seq, app) \\
+      do { \\
+        (void)(phase); \\
+        (void)(render_seq); \\
+        (void)(app); \\
+      } while (0)
+    #endif
+
     #endif
     """
   end
@@ -468,16 +481,35 @@ defmodule Elmc.Backend.Pebble do
     #endif
 
     #if defined(ELMC_PEBBLE_PLATFORM) && ELMC_PEBBLE_HEAP_LOG
-    static void elmc_pebble_heap_log(const char *label) {
+    void elmc_pebble_heap_log(const char *label) {
       APP_LOG(
         APP_LOG_LEVEL_INFO,
-        "ELMC heap %s used=%lu free=%lu",
+        "ELMC heap %s used=%lu free=%lu rc_alloc=%llu rc_rel=%llu",
         label ? label : "?",
         (unsigned long)heap_bytes_used(),
-        (unsigned long)heap_bytes_free());
+        (unsigned long)heap_bytes_free(),
+        (unsigned long long)elmc_rc_allocated_count(),
+        (unsigned long long)elmc_rc_released_count());
     }
-    #else
-    #define elmc_pebble_heap_log(label) do { (void)(label); } while (0)
+
+    void elmc_pebble_render_diag_log(const char *phase, int render_seq, const ElmcPebbleApp *app) {
+      if (app) {
+        APP_LOG(
+          APP_LOG_LEVEL_INFO,
+          "ELMC render %s seq=%d heap_used=%lu heap_free=%lu scene_dirty=%d scene_bytes=%d scene_cmds=%d rc_alloc=%llu rc_rel=%llu",
+          phase ? phase : "?",
+          render_seq,
+          (unsigned long)heap_bytes_used(),
+          (unsigned long)heap_bytes_free(),
+          app->scene.dirty,
+          app->scene.byte_count,
+          app->scene.command_count,
+          (unsigned long long)elmc_rc_allocated_count(),
+          (unsigned long long)elmc_rc_released_count());
+      } else {
+        elmc_pebble_heap_log(phase);
+      }
+    }
     #endif
 
     #ifndef ELMC_AGENT_PROBES
@@ -2544,6 +2576,7 @@ defmodule Elmc.Backend.Pebble do
     #endif
       ELMC_PEBBLE_SCENE_LOG("elmc-scene ensure ok cmds=%d bytes=%d",
               app->scene.command_count, app->scene.byte_count);
+      elmc_pebble_heap_log("view:scene-ready");
       ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", 0);
     }
 

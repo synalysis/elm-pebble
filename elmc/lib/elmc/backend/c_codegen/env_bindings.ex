@@ -221,11 +221,7 @@ defmodule Elmc.Backend.CCodegen.EnvBindings do
       Map.has_key?(env, var_name) ->
         source = Map.get(env, var_name)
 
-        if is_binary(source) do
-          "elmc_retain(#{source})"
-        else
-          var_name
-        end
+        if is_binary(source), do: source, else: var_name
 
       true ->
         var_name

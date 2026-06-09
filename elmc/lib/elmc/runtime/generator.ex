@@ -5,6 +5,7 @@ defmodule Elmc.Runtime.Generator do
 
   alias Elmc.Runtime.JsonSections
   alias Elmc.Runtime.Generator.Types
+  alias Elmc.Runtime.RcTrack
 
   @type write_opts :: [prune_from_dir: String.t() | nil, pebble_int32: boolean()]
 
@@ -781,9 +782,7 @@ defmodule Elmc.Runtime.Generator do
     uint64_t elmc_rc_allocated_count(void);
     uint64_t elmc_rc_released_count(void);
 
-    ElmcValue *elmc_retain(ElmcValue *value);
-    void elmc_release(ElmcValue *value);
-    void elmc_release_deep(ElmcValue *value);
+    #{RcTrack.header_declarations()}
 
     #endif
     """
@@ -925,6 +924,8 @@ defmodule Elmc.Runtime.Generator do
     #define elmc_alloc(tag, payload) elmc_alloc_impl((tag), (payload), NULL, 0)
     #endif
 
+    #{RcTrack.register_macro()}
+
     static ElmcProcessSlot *elmc_process_alloc_slot(void) {
       for (int i = 0; i < ELMC_PROCESS_MAX_SLOTS; i++) {
         if (!ELMC_PROCESS_SLOTS[i].active) {
@@ -1015,6 +1016,7 @@ defmodule Elmc.Runtime.Generator do
       value->payload = payload;
       value->scalar = 0;
       ELMC_ALLOCATED += 1;
+      ELMC_RC_TRACK_REGISTER(value, __func__);
       return value;
     }
 
@@ -1049,6 +1051,7 @@ defmodule Elmc.Runtime.Generator do
       cell->value.payload = &cell->cons;
       cell->value.scalar = ELMC_LIST_CELL_SCALAR;
       ELMC_ALLOCATED += 1;
+      ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
       return &cell->value;
     }
 
@@ -1146,6 +1149,7 @@ defmodule Elmc.Runtime.Generator do
       cell->value.payload = &cell->record;
       cell->value.scalar = ELMC_RECORD_CELL_SCALAR;
       ELMC_ALLOCATED += 1;
+      ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
       return &cell->value;
     }
 
@@ -1286,6 +1290,7 @@ defmodule Elmc.Runtime.Generator do
       cell->value.payload = &cell->maybe;
       cell->value.scalar = ELMC_MAYBE_CELL_SCALAR;
       ELMC_ALLOCATED += 1;
+      ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
       return &cell->value;
     }
 
@@ -1319,6 +1324,7 @@ defmodule Elmc.Runtime.Generator do
       cell->value.payload = &cell->result;
       cell->value.scalar = ELMC_RESULT_CELL_SCALAR;
       ELMC_ALLOCATED += 1;
+      ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
       return &cell->value;
     }
 
@@ -1332,6 +1338,7 @@ defmodule Elmc.Runtime.Generator do
       cell->value.payload = &cell->result;
       cell->value.scalar = ELMC_RESULT_CELL_SCALAR;
       ELMC_ALLOCATED += 1;
+      ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
       return &cell->value;
     }
 
@@ -1345,6 +1352,7 @@ defmodule Elmc.Runtime.Generator do
       cell->value.payload = &cell->tuple;
       cell->value.scalar = ELMC_TUPLE2_CELL_SCALAR;
       ELMC_ALLOCATED += 1;
+      ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
       return &cell->value;
     }
 
@@ -1362,6 +1370,7 @@ defmodule Elmc.Runtime.Generator do
       cell->value.payload = &cell->tuple;
       cell->value.scalar = ELMC_TUPLE2_CELL_SCALAR;
       ELMC_ALLOCATED += 1;
+      ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
       return &cell->value;
     }
 
@@ -1385,6 +1394,7 @@ defmodule Elmc.Runtime.Generator do
       cell->value.payload = &cell->cmd;
       cell->value.scalar = ELMC_CMD_CELL_SCALAR;
       ELMC_ALLOCATED += 1;
+      ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
       return &cell->value;
     }
 
@@ -1428,6 +1438,7 @@ defmodule Elmc.Runtime.Generator do
       cell->value.payload = &cell->sub;
       cell->value.scalar = ELMC_SUB_CELL_SCALAR;
       ELMC_ALLOCATED += 1;
+      ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
       return &cell->value;
     }
 
@@ -2402,6 +2413,7 @@ defmodule Elmc.Runtime.Generator do
       cell->value.payload = clo;
       cell->value.scalar = ELMC_CLOSURE_CELL_SCALAR;
       ELMC_ALLOCATED += 1;
+      ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
       return &cell->value;
     }
 
@@ -3711,7 +3723,9 @@ defmodule Elmc.Runtime.Generator do
       ElmcValue *pair = elmc_tuple2(ch, rest);
       elmc_release(ch);
       elmc_release(rest);
-      return elmc_maybe_just(pair);
+      ElmcValue *out = elmc_maybe_just(pair);
+      elmc_release(pair);
+      return out;
     }
 
     ElmcValue *elmc_string_to_list(ElmcValue *s) {
@@ -5071,89 +5085,9 @@ defmodule Elmc.Runtime.Generator do
       return ELMC_RELEASED;
     }
 
-    ElmcValue *elmc_retain(ElmcValue *value) {
-      if (!value) return NULL;
-      if (value->rc == ELMC_RC_IMMORTAL) return value;
-      if (value->rc < ELMC_RC_IMMORTAL - 1) value->rc += 1;
-      return value;
-    }
+    #{RcTrack.source_impl()}
 
-    void elmc_release(ElmcValue *value) {
-      if (!value) return;
-      if (value->rc == ELMC_RC_IMMORTAL) return;
-      if (value->rc == 0) return;
-      value->rc -= 1;
-      if (value->rc > 0) return;
-      if (value->tag == ELMC_TAG_INT || value->tag == ELMC_TAG_BOOL) {
-        /* Scalar values live inline in ElmcValue, not in heap payloads. */
-      } else if (value->tag == ELMC_TAG_LIST && value->payload != NULL) {
-        ElmcCons *node = (ElmcCons *)value->payload;
-        elmc_release(node->head);
-        elmc_release(node->tail);
-      } else if (value->tag == ELMC_TAG_MAYBE && value->payload != NULL) {
-        ElmcMaybe *maybe = (ElmcMaybe *)value->payload;
-        if (maybe->value) elmc_release(maybe->value);
-      } else if (value->tag == ELMC_TAG_RESULT && value->payload != NULL) {
-        ElmcResult *result = (ElmcResult *)value->payload;
-        if (result->value) elmc_release(result->value);
-      } else if (value->tag == ELMC_TAG_TUPLE2 && value->payload != NULL) {
-        ElmcTuple2 *tuple = (ElmcTuple2 *)value->payload;
-        if (tuple->first) elmc_release(tuple->first);
-        if (tuple->second) elmc_release(tuple->second);
-      } else if (value->tag == ELMC_TAG_RECORD && value->payload != NULL) {
-        ElmcRecord *rec = (ElmcRecord *)value->payload;
-        for (int i = 0; i < rec->field_count; i++) {
-          if (rec->field_values[i]) elmc_release(rec->field_values[i]);
-        }
-        if (elmc_record_cell_release(value)) {
-          ELMC_RELEASED += 1;
-          return;
-        }
-        free(rec->field_names);
-        free(rec->field_values);
-      } else if (value->tag == ELMC_TAG_CLOSURE && value->payload != NULL) {
-        ElmcClosure *clo = (ElmcClosure *)value->payload;
-        for (int i = 0; i < clo->capture_count; i++) {
-          if (clo->captures[i]) elmc_release(clo->captures[i]);
-        }
-        if (elmc_closure_cell_release(value)) {
-          ELMC_RELEASED += 1;
-          return;
-        }
-        free(clo->captures);
-      } else if (value->tag == ELMC_TAG_FORWARD_REF && value->payload != NULL) {
-        free(value->payload);
-      }
-      if (value->tag == ELMC_TAG_LIST && elmc_list_cell_release(value)) {
-        ELMC_RELEASED += 1;
-        return;
-      }
-      if (value->tag == ELMC_TAG_MAYBE && elmc_maybe_cell_release(value)) {
-        ELMC_RELEASED += 1;
-        return;
-      }
-      if (value->tag == ELMC_TAG_RESULT && elmc_result_cell_release(value)) {
-        ELMC_RELEASED += 1;
-        return;
-      }
-      if (value->tag == ELMC_TAG_TUPLE2 && elmc_tuple2_cell_release(value)) {
-        ELMC_RELEASED += 1;
-        return;
-      }
-      if (value->tag == ELMC_TAG_CMD && elmc_cmd_cell_release(value)) {
-        ELMC_RELEASED += 1;
-        return;
-      }
-      if (value->tag == ELMC_TAG_SUB && elmc_sub_cell_release(value)) {
-        ELMC_RELEASED += 1;
-        return;
-      }
-      if (value->tag != ELMC_TAG_INT && value->tag != ELMC_TAG_BOOL) {
-        free(value->payload);
-      }
-      free(value);
-      ELMC_RELEASED += 1;
-    }
+    #{RcTrack.retain_release_impl()}
 
     void elmc_release_deep(ElmcValue *value) {
       /* Current runtime representation has no nested ownership for supported subset. */

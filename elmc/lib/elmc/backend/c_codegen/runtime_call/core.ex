@@ -437,8 +437,9 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
           node = "list_concat_node_#{node_counter}"
 
           line = """
-          ElmcValue *#{node} = elmc_list_cons(#{seg_var} ? elmc_retain(#{seg_var}) : elmc_list_nil(), #{rev});
+          ElmcValue *#{node} = elmc_list_cons(#{seg_var} ? #{seg_var} : elmc_list_nil(), #{rev});
           elmc_release(#{seg_var});
+          elmc_release(#{rev});
           """
 
           {acc <> line, node, node_counter + 1}
@@ -656,7 +657,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
           ElmcValue *#{head} = #{node}->head;
       #{indent_loop_body(body_code)}
           if (#{body_ref}) {
-      #{ListLoopCodegen.emit_forward_list_append(loop_id, "#{head} ? elmc_retain(#{head}) : elmc_int_zero()")}
+      #{ListLoopCodegen.emit_forward_list_append(loop_id, head)}
           }
           #{cursor} = #{node}->tail;
         }
@@ -711,7 +712,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
           elmc_release(#{right}_tuple);
       #{indent_loop_body(body_code)}
           if (#{body_ref}) {
-      #{ListLoopCodegen.emit_forward_list_append(loop_id, "#{head} ? elmc_retain(#{head}) : elmc_int_zero()")}
+      #{ListLoopCodegen.emit_forward_list_append(loop_id, head)}
           }
           #{cursor} = #{node}->tail;
         }
@@ -815,7 +816,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
       #{indent_loop_body(cond_code)}
             if (#{keep_cond}) {
       #{indent_loop_body(just_code)}
-              ElmcValue *#{cons} = elmc_list_cons(#{just_var} ? elmc_retain(#{just_var}) : elmc_int_zero(), #{rev});
+              ElmcValue *#{cons} = elmc_list_cons(#{just_var} ? #{just_var} : elmc_int_zero(), #{rev});
               elmc_release(#{just_var});
               elmc_release(#{rev});
               #{rev} = #{cons};
@@ -871,7 +872,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     #{indent_loop_body(cond_code)}
         if (#{keep_cond}) {
     #{indent_loop_body(just_code)}
-    #{ListLoopCodegen.emit_forward_list_append(loop_id, "#{just_var} ? elmc_retain(#{just_var}) : elmc_int_zero()")}
+    #{ListLoopCodegen.emit_forward_list_append(loop_id, "#{just_var} ? #{just_var} : elmc_int_zero()")}
           elmc_release(#{just_var});
         }
         #{cursor} = #{node}->tail;
@@ -937,7 +938,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
           }
         }
         if (#{keep_flag}) {
-    #{ListLoopCodegen.emit_forward_list_append(loop_id, "#{payload} ? elmc_retain(#{payload}) : elmc_int_zero()")}
+    #{ListLoopCodegen.emit_forward_list_append(loop_id, payload)}
         }
         elmc_release(#{body_var});
         #{cursor} = #{node}->tail;
@@ -2074,6 +2075,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
          {:ok, item_code, item_var, counter} <- compile_concat_item(item, env, counter) do
       {rest_code, rest_var, counter} = Host.compile_expr(rest, env, counter)
       loop_id = counter + 1
+      inner = "list_concat_repeat_inner_#{loop_id}"
       lists = "list_concat_repeat_lists_#{loop_id}"
       counter = counter + 1
       out = "tmp_#{counter}"
@@ -2088,7 +2090,9 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
       #{count_code}#{item_code}#{rest_code}
       #{repeat_code}
         elmc_release(#{item_var});
-        ElmcValue *#{lists} = elmc_list_cons(#{rest_var}, elmc_list_cons(#{repeat_out}, elmc_list_nil()));
+        ElmcValue *#{inner} = elmc_list_cons(#{repeat_out}, elmc_list_nil());
+        ElmcValue *#{lists} = elmc_list_cons(#{rest_var}, #{inner});
+        elmc_release(#{inner});
         elmc_release(#{rest_var});
         ElmcValue *#{out} = elmc_list_concat(#{lists});
         elmc_release(#{lists});

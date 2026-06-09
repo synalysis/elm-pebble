@@ -2020,6 +2020,7 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
     return;
   }
   s_draw_update_active = true;
+  elmc_pebble_render_diag_log("draw:before", s_render_sequence, &s_elm_app);
   // #region agent log
   ELMC_AGENT_INIT_PROBE(0xED993001);
   // #endregion
@@ -2689,8 +2690,16 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
     (void)latency_ms;
   }
 
+#if ELMC_PEBBLE_HEAP_LOG
+  APP_LOG(APP_LOG_LEVEL_INFO,
+          "ELMC draw end seq=%d cmds=%d drew_text=%d",
+          s_render_sequence,
+          commands_drawn,
+          drew_text ? 1 : 0);
+#endif
+  elmc_pebble_render_diag_log("draw:after", s_render_sequence, &s_elm_app);
+
   (void)drew_text;
-  (void)commands_drawn;
 
 #if ELMC_PEBBLE_FEATURE_FRAME_EVENTS
   schedule_frame_timer_if_needed();
@@ -2739,6 +2748,7 @@ static void schedule_scene_prep(void) {
 static void render_model(void) {
   ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_RENDER_MODEL_ENTER);
   ELMC_PEBBLE_TRACE_ENTER("render_model");
+  elmc_pebble_render_diag_log("render:before", s_render_sequence + 1, &s_elm_app);
 #ifdef ELMC_WATCHFACE_MODE
   ensure_draw_layer_size();
 #endif
@@ -2769,6 +2779,7 @@ static void render_model(void) {
   layer_mark_dirty(s_draw_layer);
   ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "elmc render seq=%d model=%lld", s_render_sequence, (long long)value);
   (void)value;
+  elmc_pebble_render_diag_log("render:after", s_render_sequence, &s_elm_app);
   ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_RENDER_MODEL_EXIT);
   ELMC_PEBBLE_TRACE_EXIT("render_model");
 }

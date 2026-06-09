@@ -35,6 +35,7 @@ defmodule Elmc.Backend.CCodegen.BuildArtifacts do
     """
     CC ?= cc
     CFLAGS ?= -std=c11 -Wall -Wextra -ffunction-sections -fdata-sections -Iruntime -Iports -Ic
+    # Optional: CFLAGS += -DELMC_RC_TRACK=1 for host harness leak diagnostics
     LDFLAGS ?= -Wl,--gc-sections
     SOURCES := runtime/elmc_runtime.c ports/elmc_ports.c c/elmc_generated.c c/elmc_worker.c c/elmc_pebble.c c/host_harness.c
 

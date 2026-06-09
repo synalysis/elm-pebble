@@ -112,6 +112,8 @@ defmodule Ide.PebbleToolchainTest do
     assert source =~ "write_emulator_build_flags"
     assert source =~ "elmc_emulator_build_flags.h"
     assert source =~ "ELMC_PEBBLE_EMULATOR_STORAGE_LOGS 1"
+    assert source =~ "emulator_heap_log"
+    assert source =~ "ELMC_PEBBLE_HEAP_LOG 1"
     refute source =~ "#define ELMC_PEBBLE_RUNTIME_LOGS 1"
     assert source =~ "emulator_agent_probes"
     assert source =~ "#define ELMC_AGENT_PROBES 0"
@@ -120,6 +122,7 @@ defmodule Ide.PebbleToolchainTest do
     assert template =~ "emulator_storage_snapshot_callback"
     assert template =~ "companion_inbox_log"
     assert template =~ "ELMC_DEBUG_STORAGE_OP_SNAPSHOT"
+    assert template =~ "elmc_pebble_render_diag_log"
   end
 
   test "infer_package_target_type follows Pebble.Platform watchface entrypoint" do

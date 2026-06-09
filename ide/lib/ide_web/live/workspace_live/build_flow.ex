@@ -836,7 +836,8 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
         project_name: project.name,
         target_platforms: [emulator_target],
         source_roots: project.source_roots,
-        emulator_storage_logs: Keyword.get(opts, :emulator_storage_logs, false)
+        emulator_storage_logs: Keyword.get(opts, :emulator_storage_logs, false),
+        emulator_heap_log: Keyword.get(opts, :emulator_heap_log, true)
       ]
 
     with :ok <- Projects.ensure_packagable_workspace(project),

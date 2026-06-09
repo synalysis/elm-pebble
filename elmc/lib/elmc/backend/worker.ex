@@ -120,6 +120,23 @@ defmodule Elmc.Backend.Worker do
 
     """
     #include "elmc_worker.h"
+    #if defined(__has_include) && __has_include("elmc_emulator_build_flags.h")
+    #include "elmc_emulator_build_flags.h"
+    #endif
+
+    #if defined(ELMC_PEBBLE_PLATFORM) && ELMC_PEBBLE_HEAP_LOG
+    #include <pebble.h>
+    static void elmc_worker_heap_log(const char *label) {
+      APP_LOG(
+        APP_LOG_LEVEL_INFO,
+        "ELMC heap %s used=%lu free=%lu",
+        label ? label : "?",
+        (unsigned long)heap_bytes_used(),
+        (unsigned long)heap_bytes_free());
+    }
+    #else
+    #define elmc_worker_heap_log(label) do { (void)(label); } while (0)
+    #endif
 
     static ElmcValue *extract_model(ElmcValue *value) {
       if (!value) return elmc_new_int(0);
@@ -260,6 +277,7 @@ defmodule Elmc.Backend.Worker do
       if (!state) return -1;
       state->subscriptions = 0;
       elmc_worker_clear_sub_tags(state);
+      elmc_worker_heap_log("init:start");
     #{init_missing_guard}#{init_call}
       ElmcValue *next_model = extract_model(result);
       if (!next_model) {
@@ -270,11 +288,13 @@ defmodule Elmc.Backend.Worker do
       state->pending_cmd = extract_cmd(result);
       elmc_release(result);
       state->subscriptions = compute_subscriptions(state);
+      elmc_worker_heap_log("init:end");
       return 0;
     }
 
     int elmc_worker_dispatch(ElmcWorkerState *state, ElmcValue *msg) {
       if (!state || !state->model) return -1;
+      elmc_worker_heap_log("update:start");
     #{update_missing_guard}#{update_call}
       ElmcValue *next_model = extract_model(result);
       if (!next_model) {
@@ -292,6 +312,7 @@ defmodule Elmc.Backend.Worker do
       state->pending_cmd = merged_cmd;
       elmc_release(result);
       state->subscriptions = compute_subscriptions(state);
+      elmc_worker_heap_log("update:end");
       return 0;
     }
 
