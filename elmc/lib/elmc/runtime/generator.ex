@@ -2191,18 +2191,10 @@ defmodule Elmc.Runtime.Generator do
     ElmcValue *elmc_cmd_backlight_from_maybe(ElmcValue *maybe_mode) {
       int64_t mode = 0; /* 0 = interaction, 1 = disable, 2 = enable */
 
-      if (maybe_mode) {
-        if (maybe_mode->tag == ELMC_TAG_MAYBE && maybe_mode->payload != NULL) {
-          ElmcMaybe *maybe = (ElmcMaybe *)maybe_mode->payload;
-          if (maybe->is_just && maybe->value) {
-            mode = elmc_as_int(maybe->value) != 0 ? 2 : 1;
-          }
-        } else if (maybe_mode->tag == ELMC_TAG_TUPLE2 && maybe_mode->payload != NULL) {
-          ElmcTuple2 *tuple = (ElmcTuple2 *)maybe_mode->payload;
-          int64_t ctor_tag = tuple->first ? elmc_as_int(tuple->first) : 0;
-          if (ctor_tag == 1 && tuple->second) {
-            mode = elmc_as_int(tuple->second) != 0 ? 2 : 1;
-          }
+      if (maybe_mode && maybe_mode->tag == ELMC_TAG_MAYBE && maybe_mode->payload != NULL) {
+        ElmcMaybe *maybe = (ElmcMaybe *)maybe_mode->payload;
+        if (maybe->is_just && maybe->value) {
+          mode = elmc_as_int(maybe->value) != 0 ? 2 : 1;
         }
       }
 

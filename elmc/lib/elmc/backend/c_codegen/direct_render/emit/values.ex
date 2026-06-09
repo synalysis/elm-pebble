@@ -38,10 +38,10 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
     do: {"", value, counter}
 
   def int_value(
-         %{op: :direct_native_if, cond: cond, then_expr: then_expr, else_expr: else_expr},
-         env,
-         counter
-       ) do
+        %{op: :direct_native_if, cond: cond, then_expr: then_expr, else_expr: else_expr},
+        env,
+        counter
+      ) do
     {cond_code, cond_ref, cond_release, counter} =
       if Host.native_bool_expr?(cond, env) do
         {code, ref, c} = Host.compile_native_bool_expr(cond, env, counter)
@@ -300,30 +300,61 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
 
   defp int_builtin("__idiv__", [left, right], env, counter) do
     {left_code, left_value, counter} = int_value(left, env, counter)
-    {right_code, right_value, counter} = int_value(right, env, counter)
-    next = counter + 1
-    denom = "direct_den_#{next}"
 
-    code = """
-    #{left_code}#{right_code}
-      elmc_int_t #{denom} = #{right_value};
-    """
+    case static_nonzero_int_value(right, env) do
+      value when is_integer(value) ->
+        {:ok, left_code, "(#{left_value} / #{value})", counter}
 
-    {:ok, code, "(#{denom} == 0 ? 0 : (#{left_value} / #{denom}))", next}
+      nil ->
+        {right_code, right_value, counter} = int_value(right, env, counter)
+
+        case parse_compile_time_int_ref(right_value) do
+          value when is_integer(value) and value != 0 ->
+            {:ok, left_code <> right_code, "(#{left_value} / #{value})", counter}
+
+          _ ->
+            next = counter + 1
+            denom = "direct_den_#{next}"
+
+            code = """
+            #{left_code}#{right_code}
+              elmc_int_t #{denom} = #{right_value};
+            """
+
+            {:ok, code, "(#{denom} == 0 ? 0 : (#{left_value} / #{denom}))", next}
+        end
+    end
   end
 
   defp int_builtin("modBy", [base, value], env, counter) do
-    {base_code, base_value, counter} = int_value(base, env, counter)
-    {value_code, value_value, counter} = int_value(value, env, counter)
-    next = counter + 1
-    base_var = "direct_mod_base_#{next}"
+    case static_nonzero_int_value(base, env) do
+      base_value when is_integer(base_value) ->
+        {value_code, value_value, counter} = int_value(value, env, counter)
+        next = counter + 1
+        out = "direct_mod_#{next}"
+        correction = abs(base_value)
 
-    code = """
-    #{base_code}#{value_code}
-      elmc_int_t #{base_var} = #{base_value};
-    """
+        code = """
+        #{value_code}
+          elmc_int_t #{out} = #{value_value} % #{base_value};
+          if (#{out} < 0) #{out} += #{correction};
+        """
 
-    {:ok, code, "(#{base_var} == 0 ? 0 : (#{value_value} % #{base_var}))", next}
+        {:ok, code, out, next}
+
+      nil ->
+        {base_code, base_value, counter} = int_value(base, env, counter)
+        {value_code, value_value, counter} = int_value(value, env, counter)
+        next = counter + 1
+        base_var = "direct_mod_base_#{next}"
+
+        code = """
+        #{base_code}#{value_code}
+          elmc_int_t #{base_var} = #{base_value};
+        """
+
+        {:ok, code, "(#{base_var} == 0 ? 0 : (#{value_value} % #{base_var}))", next}
+    end
   end
 
   defp int_builtin("max", [left, right], env, counter) do
@@ -356,6 +387,22 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
   end
 
   defp int_builtin(_name, _args, _env, _counter), do: :error
+
+  defp static_nonzero_int_value(expr, env) do
+    case Elmc.Backend.CCodegen.ConstantInt.literal_value(expr, env) do
+      {:ok, value} when is_integer(value) and value != 0 -> value
+      _ -> nil
+    end
+  end
+
+  defp parse_compile_time_int_ref(ref) when is_binary(ref) do
+    case Integer.parse(ref) do
+      {value, ""} when value != 0 -> value
+      _ -> nil
+    end
+  end
+
+  defp parse_compile_time_int_ref(_ref), do: nil
 
   defp int_min_max_builtin(name, left, right, env, counter) do
     expr = %{op: :call, name: name, args: [left, right]}
@@ -430,8 +477,11 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
   defp zero_arg_native_int_call?(%{op: :qualified_call, target: target, args: []}, env)
        when is_binary(target) do
     case Util.split_qualified_function_target(Host.normalize_special_target(target)) do
-      target_key when not is_nil(target_key) -> Host.typed_function_return?(target_key, env, 0, "Int")
-      nil -> false
+      target_key when not is_nil(target_key) ->
+        Host.typed_function_return?(target_key, env, 0, "Int")
+
+      nil ->
+        false
     end
   end
 

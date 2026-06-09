@@ -23,7 +23,12 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
           String.t(),
           Types.compile_env()
         ) :: Types.affine_analysis_result()
-  def direct_draw_affine_template(decl_map, {target_module, target_name, _prefix_args}, loop_var, env) do
+  def direct_draw_affine_template(
+        decl_map,
+        {target_module, target_name, _prefix_args},
+        loop_var,
+        env
+      ) do
     case Map.get(decl_map, {target_module, target_name}) do
       %{expr: expr} when not is_nil(expr) ->
         analyze_affine_draw_body(expr, loop_var, env)
@@ -38,7 +43,11 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
           function_target(),
           Types.compile_env()
         ) :: Types.affine_indexed_template_result()
-  def direct_draw_affine_template_indexed(decl_map, {target_module, target_name, prefix_args}, env) do
+  def direct_draw_affine_template_indexed(
+        decl_map,
+        {target_module, target_name, prefix_args},
+        env
+      ) do
     case Map.get(decl_map, {target_module, target_name}) do
       %{args: args, expr: expr} when is_list(args) and not is_nil(expr) ->
         prefix_count = length(prefix_args)
@@ -52,16 +61,21 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
         affine_env =
           env
           |> Map.put(:__affine_prefix_params__, prefix_param_map)
-          |> Map.put(:__affine_prefix_shapes__, Enum.map(prefix_args, &Host.record_shape(&1, env)))
+          |> Map.put(
+            :__affine_prefix_shapes__,
+            Enum.map(prefix_args, &Host.record_shape(&1, env))
+          )
 
         case Enum.drop(args, prefix_count) do
           [index_param, item_param | _] ->
             case analyze_affine_draw_body_indexed(expr, index_param, item_param, affine_env) do
               {:ok, spec} ->
                 {:ok,
-                 Map.put(spec, :prefix_shapes, Map.get(affine_env, :__affine_prefix_shapes__, [])),
-                 index_param,
-                 item_param}
+                 Map.put(
+                   spec,
+                   :prefix_shapes,
+                   Map.get(affine_env, :__affine_prefix_shapes__, [])
+                 ), index_param, item_param}
 
               :error ->
                 :error
@@ -95,7 +109,10 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
   defp unwrap_direct_affine_bindings(expr, bindings \\ %{}) do
     case expr do
       %{op: :let_in, name: name, value_expr: value_expr, in_expr: in_expr} ->
-        unwrap_direct_affine_bindings(in_expr, Map.put(bindings, affine_binding_name(name), value_expr))
+        unwrap_direct_affine_bindings(
+          in_expr,
+          Map.put(bindings, affine_binding_name(name), value_expr)
+        )
 
       _ ->
         {expr, bindings}
@@ -128,7 +145,8 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
         case Host.normalize_special_target(target) do
           "Pebble.Ui.context" ->
             case {settings, commands} do
-              {%{op: :list_literal, items: settings_items}, %{op: :list_literal, items: command_items}} ->
+              {%{op: :list_literal, items: settings_items},
+               %{op: :list_literal, items: command_items}} ->
                 {:context, settings_items, command_items}
 
               _ ->
@@ -175,8 +193,14 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
           "Pebble.Ui.textInt" ->
             with {:ok, font_ref} <- direct_must_literal_int(font, env),
                  {:ok, x_param} <-
-                   affine_bounds_field_param(Host.record_field_expr(pos, "x"), loop_var, nil, bindings),
-                 {:ok, y_param} <- affine_record_field_int_param(pos, "y", loop_var, env, bindings),
+                   affine_bounds_field_param(
+                     Host.record_field_expr(pos, "x"),
+                     loop_var,
+                     nil,
+                     bindings
+                   ),
+                 {:ok, y_param} <-
+                   affine_record_field_int_param(pos, "y", loop_var, env, bindings),
                  {:ok, value_ref} <- affine_native_loop_ref(value, loop_var, env) do
               {:ok,
                %{
@@ -221,8 +245,14 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
           "Pebble.Ui.pixel" ->
             with [pos, color] <- args,
                  {:ok, x_param} <-
-                   affine_bounds_field_param(Host.record_field_expr(pos, "x"), loop_var, nil, bindings),
-                 {:ok, y_param} <- affine_record_field_int_param(pos, "y", loop_var, env, bindings),
+                   affine_bounds_field_param(
+                     Host.record_field_expr(pos, "x"),
+                     loop_var,
+                     nil,
+                     bindings
+                   ),
+                 {:ok, y_param} <-
+                   affine_record_field_int_param(pos, "y", loop_var, env, bindings),
                  {:ok, color_ref} <- direct_must_literal_int(color, env) do
               {:ok,
                %{
@@ -375,11 +405,29 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
              env
            ),
          {:ok, y_param} <-
-           affine_bound_dimension(Host.record_field_expr(bounds, "y"), index_param, item_param, bindings, env),
+           affine_bound_dimension(
+             Host.record_field_expr(bounds, "y"),
+             index_param,
+             item_param,
+             bindings,
+             env
+           ),
          {:ok, w_param} <-
-           affine_bound_dimension(Host.record_field_expr(bounds, "w"), index_param, item_param, bindings, env),
+           affine_bound_dimension(
+             Host.record_field_expr(bounds, "w"),
+             index_param,
+             item_param,
+             bindings,
+             env
+           ),
          {:ok, h_param} <-
-           affine_bound_dimension(Host.record_field_expr(bounds, "h"), index_param, item_param, bindings, env),
+           affine_bound_dimension(
+             Host.record_field_expr(bounds, "h"),
+             index_param,
+             item_param,
+             bindings,
+             env
+           ),
          {:ok, color_ref} <- direct_must_literal_int(color, env) do
       {:ok,
        %{
@@ -390,7 +438,16 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
     end
   end
 
-  defp analyze_affine_text_command(font, options, bounds, label, index_param, item_param, env, bindings) do
+  defp analyze_affine_text_command(
+         font,
+         options,
+         bounds,
+         label,
+         index_param,
+         item_param,
+         env,
+         bindings
+       ) do
     with {:ok, font_ref} <- direct_must_literal_int(font, env),
          {:ok, options_ref} <- affine_text_options_ref(options, env),
          {:ok, x_param} <-
@@ -402,11 +459,29 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
              env
            ),
          {:ok, y_param} <-
-           affine_bound_dimension(Host.record_field_expr(bounds, "y"), index_param, item_param, bindings, env),
+           affine_bound_dimension(
+             Host.record_field_expr(bounds, "y"),
+             index_param,
+             item_param,
+             bindings,
+             env
+           ),
          {:ok, w_param} <-
-           affine_bound_dimension(Host.record_field_expr(bounds, "w"), index_param, item_param, bindings, env),
+           affine_bound_dimension(
+             Host.record_field_expr(bounds, "w"),
+             index_param,
+             item_param,
+             bindings,
+             env
+           ),
          {:ok, h_param} <-
-           affine_bound_dimension(Host.record_field_expr(bounds, "h"), index_param, item_param, bindings, env),
+           affine_bound_dimension(
+             Host.record_field_expr(bounds, "h"),
+             index_param,
+             item_param,
+             bindings,
+             env
+           ),
          {:ok, label_spec} <- analyze_affine_text_label(label, item_param, bindings) do
       {:ok,
        %{
@@ -440,13 +515,21 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
   end
 
   defp affine_zero_test?(
-         %{op: :call, name: "__eq__", args: [%{op: :var, name: left}, %{op: :int_literal, value: 0}]},
+         %{
+           op: :call,
+           name: "__eq__",
+           args: [%{op: :var, name: left}, %{op: :int_literal, value: 0}]
+         },
          item_param
        ),
        do: affine_binding_name(left) == affine_binding_name(item_param)
 
   defp affine_zero_test?(
-         %{op: :call, name: "__eq__", args: [%{op: :int_literal, value: 0}, %{op: :var, name: right}]},
+         %{
+           op: :call,
+           name: "__eq__",
+           args: [%{op: :int_literal, value: 0}, %{op: :var, name: right}]
+         },
          item_param
        ),
        do: affine_binding_name(right) == affine_binding_name(item_param)
@@ -465,11 +548,17 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
 
   defp affine_zero_test?(_, _), do: false
 
-  defp affine_from_int_item?(%{op: :runtime_call, function: "elmc_string_from_int", args: [value]}, item_param),
-    do: affine_var_matches_loop_param?(value, item_param)
+  defp affine_from_int_item?(
+         %{op: :runtime_call, function: "elmc_string_from_int", args: [value]},
+         item_param
+       ),
+       do: affine_var_matches_loop_param?(value, item_param)
 
-  defp affine_from_int_item?(%{op: :qualified_call, target: "String.fromInt", args: [value]}, item_param),
-    do: affine_var_matches_loop_param?(value, item_param)
+  defp affine_from_int_item?(
+         %{op: :qualified_call, target: "String.fromInt", args: [value]},
+         item_param
+       ),
+       do: affine_var_matches_loop_param?(value, item_param)
 
   defp affine_from_int_item?(_, _), do: false
 
@@ -576,7 +665,10 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
       match?({:ok, _}, affine_add_idiv_mul_param(expr, index_param, item_param, bindings, env)) ->
         affine_add_idiv_mul_param(expr, index_param, item_param, bindings, env)
 
-      match?({:ok, _}, affine_add_prefix_idiv_offset_param(expr, index_param, item_param, bindings, env)) ->
+      match?(
+        {:ok, _},
+        affine_add_prefix_idiv_offset_param(expr, index_param, item_param, bindings, env)
+      ) ->
         affine_add_prefix_idiv_offset_param(expr, index_param, item_param, bindings, env)
 
       match?({:ok, _}, affine_mul_param(expr, loop_params)) ->
@@ -654,7 +746,11 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
   defp affine_var_name(%{op: :var, name: name}), do: affine_binding_name(name)
 
   defp affine_mul_param(
-         %{op: :call, name: "__mul__", args: [%{op: :var, name: param}, %{op: :int_literal, value: scale}]},
+         %{
+           op: :call,
+           name: "__mul__",
+           args: [%{op: :var, name: param}, %{op: :int_literal, value: scale}]
+         },
          loop_params
        ) do
     if affine_binding_name(param) in loop_params do
@@ -665,7 +761,11 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
   end
 
   defp affine_mul_param(
-         %{op: :call, name: "__mul__", args: [%{op: :int_literal, value: scale}, %{op: :var, name: param}]},
+         %{
+           op: :call,
+           name: "__mul__",
+           args: [%{op: :int_literal, value: scale}, %{op: :var, name: param}]
+         },
          loop_params
        ) do
     if affine_binding_name(param) in loop_params do
@@ -700,9 +800,14 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
 
   defp affine_coord_operand(expr, env) do
     cond do
-      match?({:ok, _}, affine_coord_literal(expr)) -> affine_coord_literal(expr)
-      match?({:ok, _}, affine_prefix_field_param(expr, env)) -> affine_prefix_field_param(expr, env)
-      true -> :error
+      match?({:ok, _}, affine_coord_literal(expr)) ->
+        affine_coord_literal(expr)
+
+      match?({:ok, _}, affine_prefix_field_param(expr, env)) ->
+        affine_prefix_field_param(expr, env)
+
+      true ->
+        :error
     end
   end
 
@@ -749,12 +854,23 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
 
   defp affine_stride_operand(expr, index_param, _item_param, _bindings, env) do
     cond do
-      match?({:ok, _}, affine_coord_literal(expr)) -> affine_coord_literal(expr)
-      match?({:ok, _}, affine_prefix_field_param(expr, env)) -> affine_prefix_field_param(expr, env)
-      match?({:ok, _}, affine_prefix_add_operand(expr, env)) -> affine_prefix_add_operand(expr, env)
-      match?({:ok, _}, affine_mod_mul_param(expr, index_param, env)) -> affine_mod_mul_param(expr, index_param, env)
-      match?({:ok, _}, affine_idiv_mul_param(expr, index_param, env)) -> affine_idiv_mul_param(expr, index_param, env)
-      true -> :error
+      match?({:ok, _}, affine_coord_literal(expr)) ->
+        affine_coord_literal(expr)
+
+      match?({:ok, _}, affine_prefix_field_param(expr, env)) ->
+        affine_prefix_field_param(expr, env)
+
+      match?({:ok, _}, affine_prefix_add_operand(expr, env)) ->
+        affine_prefix_add_operand(expr, env)
+
+      match?({:ok, _}, affine_mod_mul_param(expr, index_param, env)) ->
+        affine_mod_mul_param(expr, index_param, env)
+
+      match?({:ok, _}, affine_idiv_mul_param(expr, index_param, env)) ->
+        affine_idiv_mul_param(expr, index_param, env)
+
+      true ->
+        :error
     end
   end
 
@@ -965,8 +1081,13 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
     end
   end
 
-  defp affine_native_loop_ref_indexed(%{op: :int_literal} = expr, _index_param, _item_param, _env),
-    do: direct_must_literal_int(expr, %{})
+  defp affine_native_loop_ref_indexed(
+         %{op: :int_literal} = expr,
+         _index_param,
+         _item_param,
+         _env
+       ),
+       do: direct_must_literal_int(expr, %{})
 
   defp affine_native_loop_ref_indexed(_, _, _, _), do: :error
 
@@ -982,16 +1103,16 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
           Types.compile_counter()
         ) :: Types.affine_emit_result()
   def map_affine_draw_range_loop(
-         spec,
-         prefix_code,
-         prefix_release_code,
-         range_code,
-         first_ref,
-         last_ref,
-         next,
-         env,
-         counter
-       ) do
+        spec,
+        prefix_code,
+        prefix_release_code,
+        range_code,
+        first_ref,
+        last_ref,
+        next,
+        env,
+        counter
+      ) do
     with {:ok, context_prelude, counter} <-
            emit_affine_context_prelude(Map.get(spec, :context_settings, []), env, counter),
          {:ok, context_epilogue, counter} <-
@@ -1030,20 +1151,20 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
           Types.compile_counter()
         ) :: Types.affine_emit_result()
   def indexed_map_affine_draw_range_loop(
-         spec,
-         index_param,
-         item_param,
-         prefix_code,
-         prefix_refs,
-         native_prefix_fields,
-         prefix_release_code,
-         range_code,
-         first_ref,
-         last_ref,
-         next,
-         env,
-         counter
-       ) do
+        spec,
+        index_param,
+        item_param,
+        prefix_code,
+        prefix_refs,
+        native_prefix_fields,
+        prefix_release_code,
+        range_code,
+        first_ref,
+        last_ref,
+        next,
+        env,
+        counter
+      ) do
     mode =
       affine_indexed_mode(
         :indexed,
@@ -1056,7 +1177,7 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
 
     with {:ok, context_prelude, counter} <-
            emit_affine_context_prelude(Map.get(spec, :context_settings, []), env, counter),
-           {:ok, context_epilogue, counter} <-
+         {:ok, context_epilogue, counter} <-
            emit_affine_context_epilogue(Map.get(spec, :context_settings, []), env, counter) do
       command_emits = affine_draw_range_command_emits(spec, next, mode)
 
@@ -1091,17 +1212,17 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
           Types.compile_counter()
         ) :: Types.affine_emit_result()
   def indexed_map_affine_draw_list_loop(
-         spec,
-         index_param,
-         item_param,
-         prefix_code,
-         prefix_refs,
-         native_prefix_fields,
-         prefix_release_code,
-         list_expr,
-         env,
-         counter
-       ) do
+        spec,
+        index_param,
+        item_param,
+        prefix_code,
+        prefix_refs,
+        native_prefix_fields,
+        prefix_release_code,
+        list_expr,
+        env,
+        counter
+      ) do
     {list_code, list_var, counter} = Host.compile_expr(list_expr, env, counter)
     next = counter + 1
 
@@ -1117,7 +1238,7 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
 
     with {:ok, context_prelude, counter} <-
            emit_affine_context_prelude(Map.get(spec, :context_settings, []), env, counter),
-           {:ok, context_epilogue, counter} <-
+         {:ok, context_epilogue, counter} <-
            emit_affine_context_epilogue(Map.get(spec, :context_settings, []), env, counter) do
       command_emits = affine_draw_range_command_emits(spec, next, mode)
 
@@ -1155,21 +1276,21 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
           Types.compile_counter()
         ) :: Types.affine_emit_result()
   def indexed_map_affine_draw_static_list_loop(
-         spec,
-         index_param,
-         item_param,
-         prefix_code,
-         prefix_refs,
-         native_prefix_fields,
-         prefix_release_code,
-         static_items,
-         next,
-         env,
-         counter
-       ) do
+        spec,
+        index_param,
+        item_param,
+        prefix_code,
+        prefix_refs,
+        native_prefix_fields,
+        prefix_release_code,
+        static_items,
+        next,
+        env,
+        counter
+      ) do
     with {:ok, context_prelude, counter} <-
            emit_affine_context_prelude(Map.get(spec, :context_settings, []), env, counter),
-           {:ok, context_epilogue, counter} <-
+         {:ok, context_epilogue, counter} <-
            emit_affine_context_epilogue(Map.get(spec, :context_settings, []), env, counter) do
       {body, counter} =
         static_items
@@ -1348,13 +1469,21 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
     "(#{affine_operand_c_value(base, next, mode)} + (#{affine_positive_mod_expr(index_ref, mod)} * #{affine_stride_c_value(stride, next, mode)}))"
   end
 
-  defp affine_draw_param_value({:add_idiv_mul, base, {:idiv_mul, param, divisor, stride}}, next, mode) do
+  defp affine_draw_param_value(
+         {:add_idiv_mul, base, {:idiv_mul, param, divisor, stride}},
+         next,
+         mode
+       ) do
     index_ref = affine_loop_ref(param, next, mode)
 
     "(#{affine_operand_c_value(base, next, mode)} + ((#{index_ref} / #{divisor}) * #{affine_stride_c_value(stride, next, mode)}))"
   end
 
-  defp affine_draw_param_value({:add_prefix_idiv, base, {:prefix_idiv, idx, field, subtrahend, divisor}}, next, mode) do
+  defp affine_draw_param_value(
+         {:add_prefix_idiv, base, {:prefix_idiv, idx, field, subtrahend, divisor}},
+         next,
+         mode
+       ) do
     field_ref =
       case affine_native_prefix_fields(mode) do
         native_fields when is_map(native_fields) ->
@@ -1449,14 +1578,20 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
     do: "((#{index_ref} % #{mod} + #{mod}) % #{mod})"
 
   defp affine_mode_prefix({:indexed, _, _, prefix_refs, shapes, _}), do: {prefix_refs, shapes}
-  defp affine_mode_prefix({:indexed_list, _, _, prefix_refs, shapes, _}), do: {prefix_refs, shapes}
+
+  defp affine_mode_prefix({:indexed_list, _, _, prefix_refs, shapes, _}),
+    do: {prefix_refs, shapes}
 
   defp affine_mode_prefix({:indexed_static, _, _, prefix_refs, shapes, _, _, _}),
     do: {prefix_refs, shapes}
 
   defp affine_mode_prefix(_), do: {[], []}
 
-  defp affine_loop_ref(param_name, _next, {:indexed_static, index_param, item_param, _, _, _, index_value, item_value}) do
+  defp affine_loop_ref(
+         param_name,
+         _next,
+         {:indexed_static, index_param, item_param, _, _, _, index_value, item_value}
+       ) do
     cond do
       affine_param_names_match?(param_name, index_param) -> index_value
       affine_param_names_match?(param_name, item_param) -> item_value

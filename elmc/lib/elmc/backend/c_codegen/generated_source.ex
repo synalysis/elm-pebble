@@ -179,9 +179,13 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
     direct_command_defs = DirectRenderRegistry.defs(ir, opts)
 
-    lambda_defs =
+    lambda_def_items =
       Process.get(:elmc_lambdas, [])
       |> Enum.reverse()
+
+    lambda_defs =
+      lambda_def_items
+      |> prune_unreferenced_lambda_defs([function_defs, direct_command_defs])
       |> Enum.join("\n")
 
     Process.delete(:elmc_lambdas)
@@ -202,6 +206,12 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     trig_fallback_prelude =
       Emit.generated_trig_fallback_prelude([lambda_defs, function_defs, direct_command_defs])
 
+    magic_number_defines =
+      Emit.generated_magic_number_defines(
+        [lambda_defs, function_defs, direct_command_defs],
+        opts
+      )
+
     """
     #include "elmc_generated.h"
     #include "elmc_pebble.h"
@@ -211,7 +221,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     #pragma GCC diagnostic ignored "-Wunused-function"
     #endif
 
-    #{Emit.generated_magic_number_defines()}
+    #{magic_number_defines}
 
     #{Emit.pebble_debug_probe_prelude()}
 
@@ -229,4 +239,62 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     """
     |> finalize_source()
   end
+
+  defp prune_unreferenced_lambda_defs([], _root_chunks), do: []
+
+  defp prune_unreferenced_lambda_defs(lambda_defs, root_chunks) do
+    by_name =
+      lambda_defs
+      |> Enum.map(fn defn -> {lambda_definition_name(defn), defn} end)
+      |> Enum.reject(fn {name, _defn} -> is_nil(name) end)
+      |> Map.new()
+
+    roots =
+      root_chunks
+      |> referenced_lambda_names()
+      |> MapSet.intersection(MapSet.new(Map.keys(by_name)))
+
+    reachable_lambda_names(roots, by_name)
+    |> then(fn reachable ->
+      Enum.filter(lambda_defs, fn defn ->
+        name = lambda_definition_name(defn)
+        is_binary(name) and MapSet.member?(reachable, name)
+      end)
+    end)
+  end
+
+  defp reachable_lambda_names(roots, by_name) do
+    Stream.iterate(roots, fn seen ->
+      seen
+      |> Enum.flat_map(fn name -> by_name |> Map.fetch!(name) |> referenced_lambda_names() end)
+      |> MapSet.new()
+      |> MapSet.intersection(MapSet.new(Map.keys(by_name)))
+      |> MapSet.union(seen)
+    end)
+    |> Enum.reduce_while(MapSet.new(), fn seen, previous ->
+      if MapSet.equal?(seen, previous), do: {:halt, seen}, else: {:cont, seen}
+    end)
+  end
+
+  defp lambda_definition_name(defn) when is_binary(defn) do
+    case Regex.run(lambda_symbol_regex(), defn) do
+      [name] -> name
+      _ -> nil
+    end
+  end
+
+  defp referenced_lambda_names(chunks) when is_list(chunks) do
+    chunks
+    |> Enum.flat_map(&referenced_lambda_names/1)
+    |> MapSet.new()
+  end
+
+  defp referenced_lambda_names(chunk) when is_binary(chunk) do
+    lambda_symbol_regex()
+    |> Regex.scan(chunk)
+    |> Enum.map(fn [name] -> name end)
+  end
+
+  defp lambda_symbol_regex,
+    do: ~r/\belmc_(?:lambda|partial_ref|top_level_ref)_\d+\b/
 end

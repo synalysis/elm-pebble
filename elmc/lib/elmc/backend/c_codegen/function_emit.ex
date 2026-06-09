@@ -140,7 +140,13 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           Types.function_decl_map(),
           boolean()
         ) :: String.t()
-  def emit_body(decl, module_name, function_arities \\ %{}, decl_map \\ %{}, direct_args? \\ false)
+  def emit_body(
+        decl,
+        module_name,
+        function_arities \\ %{},
+        decl_map \\ %{},
+        direct_args? \\ false
+      )
 
   def emit_body(%{expr: nil}, _module_name, _function_arities, _decl_map, _direct_args?) do
     "(void)args; (void)argc; return elmc_int_zero();"
@@ -258,7 +264,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
          arg_binding_code,
          unused_casts
        ) do
-    tuple2_table? = match?({:ok, _, _}, Tuple2CaseTable.try_emit(module_name, decl.name, decl.expr))
+    tuple2_table? =
+      match?({:ok, _, _}, Tuple2CaseTable.try_emit(module_name, decl.name, decl.expr))
 
     case Fusion.try_emit(module_name, decl.name, decl.expr, decl_map) do
       {:ok, helper_c, _} when tuple2_table? ->
@@ -309,6 +316,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
        ) do
     c_name = Util.module_fn_name(module_name, decl.name)
     native = "#{c_name}_native"
+
     Process.put(
       :elmc_generic_helper_defs,
       [helper_c | Process.get(:elmc_generic_helper_defs, [])]
@@ -725,6 +733,9 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
+  defp compile_native_body(decl, _module_name, _decl_map, env, :boxed, _arg_kinds),
+    do: Host.compile_expr(decl.expr || %{op: :int_literal, value: 0}, env, 0)
+
   defp compile_list_int_search_native(decl, module_name, decl_map, env, return_kind) do
     with {:ok, spec} <- ListIntSearch.recognize(decl, module_name, decl_map),
          {:ok, code, result_var} <-
@@ -740,9 +751,6 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         end
     end
   end
-
-  defp compile_native_body(decl, _module_name, _decl_map, env, :boxed, _arg_kinds),
-    do: Host.compile_expr(decl.expr || %{op: :int_literal, value: 0}, env, 0)
 
   defp compile_list_int_reduce_native(decl, module_name, decl_map, env, return_kind) do
     with {:ok, spec} <- ListIntReduce.recognize(decl, module_name, decl_map),

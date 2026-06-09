@@ -163,67 +163,74 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
           </div>
         </div>
         <div class="mt-4 grid gap-4 lg:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)] lg:items-start">
-          <div class="w-fit max-w-full rounded border border-zinc-300 bg-black p-1">
-            <div class="flex min-w-0 flex-col gap-2">
-              <div class="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  data-emulator-button="back"
-                  class="rounded bg-zinc-100 px-2 py-1.5 text-xs font-semibold text-zinc-900 shadow-sm ring-1 ring-zinc-300 hover:bg-white"
-                >
-                  Back
-                </button>
-                <div class="relative min-w-0 shrink-0">
-                  <div
-                    id="embedded-emulator-display"
-                    data-emulator-canvas
-                    phx-update="ignore"
-                    class="overflow-hidden rounded bg-zinc-950"
-                    style={emulator_canvas_style(@selected_emulator_target)}
+          <div class="w-fit max-w-full">
+            <div class="rounded border border-zinc-300 bg-black p-1">
+              <div class="flex min-w-0 flex-col gap-2">
+                <div class="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    data-emulator-button="back"
+                    class="rounded bg-zinc-100 px-2 py-1.5 text-xs font-semibold text-zinc-900 shadow-sm ring-1 ring-zinc-300 hover:bg-white"
                   >
+                    Back
+                  </button>
+                  <div class="relative min-w-0 shrink-0">
+                    <div
+                      id="embedded-emulator-display"
+                      data-emulator-canvas
+                      phx-update="ignore"
+                      class="overflow-hidden rounded bg-zinc-950"
+                      style={emulator_canvas_style(@selected_emulator_target)}
+                    >
+                    </div>
+                    <.emulator_display_tap_button show?={@show_accel_tap?} data_tap="emulator-tap" />
                   </div>
-                  <.emulator_display_tap_button show?={@show_accel_tap?} data_tap="emulator-tap" />
+                  <div class="flex flex-col gap-1.5">
+                    <button
+                      type="button"
+                      data-emulator-button="up"
+                      class="rounded bg-zinc-100 px-2 py-1.5 text-xs font-semibold text-zinc-900 shadow-sm ring-1 ring-zinc-300 hover:bg-white"
+                    >
+                      Up
+                    </button>
+                    <button
+                      type="button"
+                      data-emulator-button="select"
+                      class="rounded bg-zinc-100 px-2 py-1.5 text-xs font-semibold text-zinc-900 shadow-sm ring-1 ring-zinc-300 hover:bg-white"
+                    >
+                      Select
+                    </button>
+                    <button
+                      type="button"
+                      data-emulator-button="down"
+                      class="rounded bg-zinc-100 px-2 py-1.5 text-xs font-semibold text-zinc-900 shadow-sm ring-1 ring-zinc-300 hover:bg-white"
+                    >
+                      Down
+                    </button>
+                  </div>
                 </div>
-                <div class="flex flex-col gap-1.5">
-                  <button
-                    type="button"
-                    data-emulator-button="up"
-                    class="rounded bg-zinc-100 px-2 py-1.5 text-xs font-semibold text-zinc-900 shadow-sm ring-1 ring-zinc-300 hover:bg-white"
+                <div
+                  data-emulator-fault-banner
+                  hidden
+                  class="rounded border border-rose-500 bg-rose-50 px-2 py-2 text-[11px] leading-snug text-rose-950"
+                  role="alert"
+                >
+                  <p data-emulator-fault-headline class="font-semibold"></p>
+                  <p
+                    data-emulator-fault-detail
+                    class="mt-1 break-words font-mono text-[10px] text-rose-900"
                   >
-                    Up
-                  </button>
-                  <button
-                    type="button"
-                    data-emulator-button="select"
-                    class="rounded bg-zinc-100 px-2 py-1.5 text-xs font-semibold text-zinc-900 shadow-sm ring-1 ring-zinc-300 hover:bg-white"
-                  >
-                    Select
-                  </button>
-                  <button
-                    type="button"
-                    data-emulator-button="down"
-                    class="rounded bg-zinc-100 px-2 py-1.5 text-xs font-semibold text-zinc-900 shadow-sm ring-1 ring-zinc-300 hover:bg-white"
-                  >
-                    Down
-                  </button>
+                  </p>
                 </div>
               </div>
-              <div
-                data-emulator-fault-banner
-                hidden
-                class="rounded border border-rose-500 bg-rose-50 px-2 py-2 text-[11px] leading-snug text-rose-950"
-                role="alert"
-              >
-                <p data-emulator-fault-headline class="font-semibold"></p>
-                <p data-emulator-fault-detail class="mt-1 break-words font-mono text-[10px] text-rose-900"></p>
-              </div>
-              <p
-                data-emulator-status
-                class="min-w-0 rounded bg-white px-2 py-1.5 text-center text-[11px] leading-snug break-words text-zinc-700"
-              >
-                Embedded emulator is idle.
-              </p>
             </div>
+            <p
+              data-emulator-status
+              class="mx-auto mt-2 min-w-0 rounded bg-white px-2 py-1.5 text-center text-[11px] leading-snug break-words text-zinc-700"
+              style={emulator_status_style(@selected_emulator_target)}
+            >
+              Embedded emulator is idle.
+            </p>
           </div>
           <div class="space-y-3">
             <.simulator_settings_form
@@ -831,6 +838,12 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
   defp emulator_canvas_style(target) do
     {width, height} = emulator_screen_size(target)
     "width: #{width}px; height: #{height}px;"
+  end
+
+  @spec emulator_status_style(String.t()) :: String.t()
+  defp emulator_status_style(target) do
+    {width, _height} = emulator_screen_size(target)
+    "width: #{width}px;"
   end
 
   @spec emulator_display_shape(String.t()) :: String.t()

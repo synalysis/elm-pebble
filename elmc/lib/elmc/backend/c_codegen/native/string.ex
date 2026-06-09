@@ -174,7 +174,9 @@ defmodule Elmc.Backend.CCodegen.Native.String do
     do: boxed_expr?(then_expr, env) and boxed_expr?(else_expr, env)
 
   def boxed_expr?(%{op: :var, name: name}, env) when is_binary(name) or is_atom(name),
-    do: EnvBindings.boxed_string_binding?(env, name) or TypedReturn.string_expr?(%{op: :var, name: name}, env)
+    do:
+      EnvBindings.boxed_string_binding?(env, name) or
+        TypedReturn.string_expr?(%{op: :var, name: name}, env)
 
   def boxed_expr?(%{op: :runtime_call, function: "elmc_string_from_int", args: [value]}, env),
     do: Host.native_int_expr?(value, env)
@@ -227,11 +229,17 @@ defmodule Elmc.Backend.CCodegen.Native.String do
   def boxed_non_null_expr?(%{op: :var, name: name}, env) when is_binary(name) or is_atom(name),
     do: EnvBindings.boxed_int_binding?(env, name) or EnvBindings.boxed_string_binding?(env, name)
 
-  def boxed_non_null_expr?(%{op: :runtime_call, function: "elmc_string_from_int", args: [value]}, env),
-    do: Host.native_int_expr?(value, env)
+  def boxed_non_null_expr?(
+        %{op: :runtime_call, function: "elmc_string_from_int", args: [value]},
+        env
+      ),
+      do: Host.native_int_expr?(value, env)
 
-  def boxed_non_null_expr?(%{op: :runtime_call, function: "elmc_append", args: [left, right]}, env),
-    do: expr?(left, env) and expr?(right, env)
+  def boxed_non_null_expr?(
+        %{op: :runtime_call, function: "elmc_append", args: [left, right]},
+        env
+      ),
+      do: expr?(left, env) and expr?(right, env)
 
   def boxed_non_null_expr?(_expr, _env), do: false
 

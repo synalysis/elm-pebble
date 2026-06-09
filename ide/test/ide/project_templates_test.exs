@@ -1,6 +1,7 @@
 defmodule Ide.ProjectTemplatesTest do
   use Ide.DataCase, async: false
 
+  alias Ide.Emulator.PBW
   alias Ide.ProjectTemplates
   alias Ide.Projects
 
@@ -105,6 +106,8 @@ defmodule Ide.ProjectTemplatesTest do
                project_name: "2048",
                target_platforms: ["aplite"]
              )
+
+    assert {:ok, %{uuid: _uuid}} = PBW.load(result.artifact_path, "aplite")
 
     elf_path = Path.join(result.app_root, "build/aplite/pebble-app.elf")
     assert File.regular?(elf_path)

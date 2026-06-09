@@ -121,7 +121,10 @@ defmodule Elmc.CCodegenPatternsTest do
     refute generated_c =~ "elmc_fn_Pebble_Ui_Resources_DefaultFont"
     assert generated_c =~ "elmc_scene_writer_push_cmd(writer, &scene_cmd)"
     assert generated_c =~ "elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_TEXT)"
-    assert generated_c =~ ~r/scene_cmd\.p0 = 1;\s*\n\s*scene_cmd\.p1 = direct_native_let_textX_\d+;/
+
+    assert generated_c =~
+             ~r/scene_cmd\.p0 = 1;\s*\n\s*scene_cmd\.p1 = direct_native_let_textX_\d+;/
+
     refute generated_c =~ ~r/scene_cmd\.p1 = elmc_as_int\(tmp_\d+\)/
   end
 
@@ -151,7 +154,11 @@ defmodule Elmc.CCodegenPatternsTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.join(project_dir, "src"))
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
-    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
 
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
@@ -197,7 +204,11 @@ defmodule Elmc.CCodegenPatternsTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.join(project_dir, "src"))
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
-    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
 
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
@@ -255,7 +266,11 @@ defmodule Elmc.CCodegenPatternsTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.join(project_dir, "src"))
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
-    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
 
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
@@ -302,7 +317,11 @@ defmodule Elmc.CCodegenPatternsTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.join(project_dir, "src"))
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
-    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
 
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
@@ -339,7 +358,11 @@ defmodule Elmc.CCodegenPatternsTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.join(project_dir, "src"))
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
-    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
 
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
@@ -378,7 +401,11 @@ defmodule Elmc.CCodegenPatternsTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.join(project_dir, "src"))
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
-    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
 
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
@@ -423,7 +450,11 @@ defmodule Elmc.CCodegenPatternsTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.join(project_dir, "src"))
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
-    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
 
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
@@ -470,7 +501,11 @@ defmodule Elmc.CCodegenPatternsTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.join(project_dir, "src"))
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
-    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
 
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
@@ -517,7 +552,11 @@ defmodule Elmc.CCodegenPatternsTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.join(project_dir, "src"))
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
-    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
 
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
@@ -559,13 +598,18 @@ defmodule Elmc.CCodegenPatternsTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.join(project_dir, "src"))
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
-    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
 
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "list_length_count_"
     assert generated_c =~ "elmc_fn_Main_remaining"
+
     assert Regex.match?(
              ~r/elmc_fn_Main_remaining\(ElmcValue \*\* const args, const int argc\) \{[\s\S]*?elmc_new_int\(10 - list_length_count_/,
              generated_c
@@ -671,7 +715,11 @@ defmodule Elmc.CCodegenPatternsTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.join(project_dir, "src"))
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
-    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
 
     assert {:ok, _} =
              Elmc.compile(project_dir, %{
@@ -685,7 +733,10 @@ defmodule Elmc.CCodegenPatternsTest do
     assert generated_c =~ "elmc_fn_Main_collapseRows"
     assert generated_c =~ "elmc_list_concat("
     assert generated_c =~ "ElmcValue *elmc_fn_Main_collapseRow(ElmcValue *row)"
-    assert generated_c =~ ~r/elmc_fn_Main_collapseRow[\s\S]*?elmc_record_get(?:_index)?\(tmp_\d+, (?:1 \/\* score \*\/|"score")\)/
+
+    assert generated_c =~
+             ~r/elmc_fn_Main_collapseRow[\s\S]*?elmc_record_get(?:_index)?\(tmp_\d+, (?:1 \/\* score \*\/|"score")\)/
+
     refute generated_c =~ "elmc_record_get(tmp_8, \"score\")"
     refute generated_c =~ "elmc_int_zero();  ElmcValue *tmp_9_score"
     assert generated_c =~ "elmc_retain(row)"
@@ -718,7 +769,11 @@ defmodule Elmc.CCodegenPatternsTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.join(project_dir, "src"))
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
-    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
 
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
@@ -753,7 +808,11 @@ defmodule Elmc.CCodegenPatternsTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.join(project_dir, "src"))
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
-    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
 
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
@@ -790,7 +849,11 @@ defmodule Elmc.CCodegenPatternsTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.join(project_dir, "src"))
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
-    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
 
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
@@ -837,7 +900,11 @@ defmodule Elmc.CCodegenPatternsTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.join(project_dir, "src"))
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
-    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
 
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
@@ -882,7 +949,11 @@ defmodule Elmc.CCodegenPatternsTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.join(project_dir, "src"))
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
-    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
 
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
@@ -934,17 +1005,23 @@ defmodule Elmc.CCodegenPatternsTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.join(project_dir, "src"))
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
-    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
 
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "for (elmc_int_t list_map_i_"
     assert generated_c =~ "list_map_i_1 = 13"
+
     refute Regex.match?(
              ~r/elmc_fn_Main_rows\(ElmcValue \*\* const args, const int argc\) \{[\s\S]*?elmc_new_int\(14\)/,
              generated_c
            )
+
     refute Regex.match?(
              ~r/elmc_fn_Main_rows\(ElmcValue \*\* const args, const int argc\) \{[\s\S]*?elmc_fn_Main_boardRows\(/,
              generated_c
@@ -977,7 +1054,11 @@ defmodule Elmc.CCodegenPatternsTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.join(project_dir, "src"))
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
-    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
 
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
@@ -1038,8 +1119,10 @@ defmodule Elmc.CCodegenPatternsTest do
     assert generated_c =~ "elmc_list_concat("
     assert generated_c =~ "record_update_helper_Main_withPiece"
     assert generated_c =~ "elmc_list_replace_nth_int"
+
     assert generated_c =~
              ~r/elmc_fn_Main_pieceOffsets_native\(const elmc_int_t kind, const elmc_int_t rot\) \{\s*elmc_int_t k = kind % 7;[\s\S]*?pieceOffsets_table\[k\]\[r\];\s*return elmc_list_from_tuple2_int_array/
+
     refute generated_c =~ "elmc_list_indexed_map("
     refute generated_c =~ "elmc_list_reverse("
     assert generated_c =~ "elmc_let_body_helper_Main_lockPiece"
@@ -1193,25 +1276,36 @@ defmodule Elmc.CCodegenPatternsTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.join(project_dir, "src"))
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
-    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
 
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     init_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_init(ElmcValue ** const args, const int argc) {", parts: 2)
+      |> String.split("ElmcValue *elmc_fn_Main_init(ElmcValue ** const args, const int argc) {",
+        parts: 2
+      )
       |> Enum.at(1, "")
       |> String.split("}\n", parts: 2)
       |> hd()
 
     assert init_body =~ "elmc_record_new_ints"
     refute init_body =~ "elmc_record_new_take"
-    assert length(Regex.scan(~r/elmc_record_get_index\(context, 3 \/\* screen \*\/\)/, init_body)) == 1
+
+    assert length(Regex.scan(~r/elmc_record_get_index\(context, 3 \/\* screen \*\/\)/, init_body)) ==
+             1
+
     assert init_body =~ "ELMC_RECORD_GET_INDEX_INT(tmp_1_screen, 1 /* height */)"
     assert init_body =~ "ELMC_RECORD_GET_INDEX_INT(tmp_1_screen, 3 /* width */)"
+
     assert init_body =~
              "elmc_cmd1(ELMC_PEBBLE_CMD_GET_CURRENT_DATE_TIME, ELMC_PEBBLE_MSG_CURRENTDATETIME)"
+
     refute init_body =~ "elmc_new_int(ELMC_PEBBLE_CMD_GET_CURRENT_DATE_TIME)"
     refute init_body =~ "elmc_new_int(23)"
     refute init_body =~ "ELMC_PEBBLE_MSG_CURRENT_DATE_TIME_TARGET"
@@ -1255,14 +1349,20 @@ defmodule Elmc.CCodegenPatternsTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.join(project_dir, "src"))
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
-    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
 
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     init_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_init(ElmcValue ** const args, const int argc) {", parts: 2)
+      |> String.split("ElmcValue *elmc_fn_Main_init(ElmcValue ** const args, const int argc) {",
+        parts: 2
+      )
       |> Enum.at(1, "")
       |> String.split("}\n", parts: 2)
       |> hd()
@@ -1316,14 +1416,20 @@ defmodule Elmc.CCodegenPatternsTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.join(project_dir, "src"))
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
-    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
 
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     init_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_init(ElmcValue ** const args, const int argc) {", parts: 2)
+      |> String.split("ElmcValue *elmc_fn_Main_init(ElmcValue ** const args, const int argc) {",
+        parts: 2
+      )
       |> Enum.at(1, "")
       |> String.split("}\n", parts: 2)
       |> hd()
@@ -1392,7 +1498,11 @@ defmodule Elmc.CCodegenPatternsTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.join(project_dir, "src"))
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
-    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
 
     assert {:ok, _} =
              Elmc.compile(project_dir, %{
@@ -1412,7 +1522,8 @@ defmodule Elmc.CCodegenPatternsTest do
 
     closure_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_closureHelper(ElmcValue ** const args, const int argc) {",
+      |> String.split(
+        "ElmcValue *elmc_fn_Main_closureHelper(ElmcValue ** const args, const int argc) {",
         parts: 2
       )
       |> Enum.at(1, "")
@@ -1421,7 +1532,9 @@ defmodule Elmc.CCodegenPatternsTest do
 
     update_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_update(ElmcValue ** const args, const int argc) {", parts: 2)
+      |> String.split("ElmcValue *elmc_fn_Main_update(ElmcValue ** const args, const int argc) {",
+        parts: 2
+      )
       |> Enum.at(1, "")
       |> String.split("ElmcValue *elmc_fn_Main_subscriptions", parts: 2)
       |> hd()
@@ -1480,7 +1593,11 @@ defmodule Elmc.CCodegenPatternsTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.join(project_dir, "src"))
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
-    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
 
     assert {:ok, _} =
              Elmc.compile(project_dir, %{
@@ -1595,7 +1712,11 @@ defmodule Elmc.CCodegenPatternsTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.join(project_dir, "src"))
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
-    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
 
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
@@ -1603,12 +1724,16 @@ defmodule Elmc.CCodegenPatternsTest do
 
     init_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_init(ElmcValue ** const args, const int argc) {", parts: 2)
+      |> String.split("ElmcValue *elmc_fn_Main_init(ElmcValue ** const args, const int argc) {",
+        parts: 2
+      )
       |> Enum.at(1, "")
       |> String.split("}\n", parts: 2)
       |> hd()
 
-    assert init_body =~ "elmc_cmd1(ELMC_PEBBLE_CMD_GET_CURRENT_DATE_TIME, ELMC_PEBBLE_MSG_TIMEUPDATE)"
+    assert init_body =~
+             "elmc_cmd1(ELMC_PEBBLE_CMD_GET_CURRENT_DATE_TIME, ELMC_PEBBLE_MSG_TIMEUPDATE)"
+
     refute init_body =~ "elmc_new_int(ELMC_PEBBLE_CMD_GET_CURRENT_DATE_TIME)"
     refute init_body =~ "ELMC_PEBBLE_MSG_CURRENT_DATE_TIME_TARGET"
     refute pebble_h =~ "ELMC_PEBBLE_MSG_CURRENT_DATE_TIME_TARGET"
@@ -1654,14 +1779,20 @@ defmodule Elmc.CCodegenPatternsTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.join(project_dir, "src"))
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
-    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
 
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     update_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_update(ElmcValue ** const args, const int argc) {", parts: 2)
+      |> String.split("ElmcValue *elmc_fn_Main_update(ElmcValue ** const args, const int argc) {",
+        parts: 2
+      )
       |> Enum.at(1, "")
       |> String.split("}\n", parts: 2)
       |> hd()
@@ -1715,14 +1846,20 @@ defmodule Elmc.CCodegenPatternsTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.join(project_dir, "src"))
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
-    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
 
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     update_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_update(ElmcValue ** const args, const int argc) {", parts: 2)
+      |> String.split("ElmcValue *elmc_fn_Main_update(ElmcValue ** const args, const int argc) {",
+        parts: 2
+      )
       |> Enum.at(1, "")
       |> String.split("}\n", parts: 2)
       |> hd()
@@ -1773,14 +1910,21 @@ defmodule Elmc.CCodegenPatternsTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.join(project_dir, "src"))
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
-    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
 
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     subscriptions_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_subscriptions(ElmcValue ** const args, const int argc) {", parts: 2)
+      |> String.split(
+        "ElmcValue *elmc_fn_Main_subscriptions(ElmcValue ** const args, const int argc) {",
+        parts: 2
+      )
       |> Enum.at(1, "")
       |> String.split("}\n", parts: 2)
       |> hd()
@@ -1832,14 +1976,21 @@ defmodule Elmc.CCodegenPatternsTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.join(project_dir, "src"))
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
-    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
 
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     subscriptions_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_subscriptions(ElmcValue ** const args, const int argc) {", parts: 2)
+      |> String.split(
+        "ElmcValue *elmc_fn_Main_subscriptions(ElmcValue ** const args, const int argc) {",
+        parts: 2
+      )
       |> Enum.at(1, "")
       |> String.split("}\n", parts: 2)
       |> hd()
@@ -1889,7 +2040,11 @@ defmodule Elmc.CCodegenPatternsTest do
     File.mkdir_p!(Path.join(project_dir, "src"))
     File.write!(Path.join(project_dir, "src/Random.elm"), random_source)
     File.write!(Path.join(project_dir, "src/Main.elm"), main_source)
-    File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
 
     {:ok, project_data} = Bridge.load_project(project_dir)
     {:ok, ir0} = Lowerer.lower_project(project_data)
@@ -2172,5 +2327,105 @@ defmodule Elmc.CCodegenPatternsTest do
     {run_out, run_code} = System.cmd(binary_path, [])
     assert run_code == 0, run_out
     assert String.contains?(run_out, "ok rects=")
+  end
+
+  test "special value commands do not keep discarded Random generator functions" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Random
+
+    type Msg
+        = RandomGenerated Int
+
+    init _ =
+        ( 0, Random.generate RandomGenerated (Random.int 1 16) )
+
+    update _ model =
+        ( model, Platform.Cmd.none )
+
+    subscriptions _ =
+        Platform.Sub.none
+
+    view model =
+        Ui.rect { x = 0, y = 0, w = 10, h = 10 } Color.black
+
+    main =
+        Platform.worker { init = init, update = update, subscriptions = subscriptions, view = view }
+    """
+
+    generated_c = compile_generated_c!("special_random_prune", source, direct_render_only: true)
+
+    assert generated_c =~ "ELMC_PEBBLE_CMD_RANDOM_GENERATE"
+    refute generated_c =~ "elmc_fn_Random_int"
+    refute generated_c =~ "elmc_fn_Random_next"
+    refute generated_c =~ "elmc_lambda_"
+    assert generated_c =~ "#define ELMC_COLOR_BLACK"
+    refute generated_c =~ "#define ELMC_COLOR_MELON"
+  end
+
+  test "direct render folds nonzero literal div and mod guards" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Resources as Resources
+
+    init _ =
+        ( { x = 17 }, Platform.Cmd.none )
+
+    update _ model =
+        ( model, Platform.Cmd.none )
+
+    subscriptions _ =
+        Platform.Sub.none
+
+    view model =
+        Ui.text Resources.DefaultFont
+            Ui.defaultTextOptions
+            { x = modBy 4 model.x, y = model.x // 4, w = 30, h = 20 }
+            (String.fromInt model.x)
+
+    main =
+        Platform.worker { init = init, update = update, subscriptions = subscriptions, view = view }
+    """
+
+    generated_c = compile_generated_c!("direct_literal_div_mod", source, direct_render_only: true)
+
+    refute generated_c =~ "direct_den_"
+    refute generated_c =~ "direct_mod_base_"
+    assert generated_c =~ " / 4"
+    assert generated_c =~ " % 4"
+  end
+
+  defp compile_generated_c!(name, source, opts) do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/#{name}_project", __DIR__)
+    out_dir = Path.expand("tmp/#{name}_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    assert {:ok, _result} =
+             Elmc.compile(
+               project_dir,
+               Map.merge(
+                 %{
+                   out_dir: out_dir,
+                   entry_module: "Main",
+                   strip_dead_code: true,
+                   prune_native_wrappers: true
+                 },
+                 Map.new(opts)
+               )
+             )
+
+    File.read!(Path.join(out_dir, "c/elmc_generated.c"))
   end
 end

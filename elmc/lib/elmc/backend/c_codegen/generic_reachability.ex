@@ -34,7 +34,12 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
         callees =
           case Map.fetch(decl_map, target) do
             {:ok, decl} ->
-              case FusedNativeReachability.callees(elem(target, 0), elem(target, 1), decl.expr, decl_map) do
+              case FusedNativeReachability.callees(
+                     elem(target, 0),
+                     elem(target, 1),
+                     decl.expr,
+                     decl_map
+                   ) do
                 keys when is_list(keys) -> keys
                 nil -> expr_callees(decl.expr, elem(target, 0), decl_map)
               end
@@ -55,7 +60,12 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
         decl = Map.fetch!(decl_map, target)
 
         callees =
-          case FusedNativeReachability.callees(elem(target, 0), elem(target, 1), decl.expr, decl_map) do
+          case FusedNativeReachability.callees(
+                 elem(target, 0),
+                 elem(target, 1),
+                 decl.expr,
+                 decl_map
+               ) do
             keys when is_list(keys) -> keys
             nil -> expr_callees(decl.expr, elem(target, 0), decl_map)
           end
@@ -77,7 +87,12 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
         callees =
           case Map.fetch(decl_map, target) do
             {:ok, decl} ->
-              case FusedNativeReachability.callees(elem(target, 0), elem(target, 1), decl.expr, decl_map) do
+              case FusedNativeReachability.callees(
+                     elem(target, 0),
+                     elem(target, 1),
+                     decl.expr,
+                     decl_map
+                   ) do
                 keys when is_list(keys) -> keys
                 nil -> expr_wrapper_callees(decl.expr, elem(target, 0), decl_map)
               end
@@ -98,7 +113,12 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
         decl = Map.fetch!(decl_map, target)
 
         callees =
-          case FusedNativeReachability.callees(elem(target, 0), elem(target, 1), decl.expr, decl_map) do
+          case FusedNativeReachability.callees(
+                 elem(target, 0),
+                 elem(target, 1),
+                 decl.expr,
+                 decl_map
+               ) do
             keys when is_list(keys) -> keys
             nil -> expr_wrapper_callees(decl.expr, elem(target, 0), decl_map)
           end
@@ -130,26 +150,25 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
     |> Enum.uniq()
   end
 
+  defp expr_wrapper_callees_list(
+         %{op: :qualified_call, target: target, args: args},
+         module_name,
+         decl_map
+       ) do
+    case Host.special_value_from_target(target, args || []) do
+      nil ->
+        qualified_wrapper_callees(target, args || [], module_name, decl_map)
+
+      rewritten ->
+        expr_wrapper_callees_list(rewritten, module_name, decl_map)
+    end
+  end
+
   defp expr_wrapper_callees_list(expr, module_name, decl_map) when is_map(expr) do
     own =
       case expr do
         %{op: :call, name: name, args: args} ->
           wrapper_callee_target({module_name, name}, args || [], decl_map)
-
-        %{op: :qualified_call, target: target, args: args} ->
-          case Host.special_value_from_target(target, args || []) do
-            nil ->
-              case Util.split_qualified_function_target(Host.normalize_special_target(target)) do
-                nil ->
-                  []
-
-                target_key ->
-                  wrapper_callee_target(target_key, args || [], decl_map)
-              end
-
-            rewritten ->
-              expr_wrapper_callees_list(rewritten, module_name, decl_map)
-          end
 
         %{op: :var, name: name} ->
           target = {module_name, name}
@@ -173,24 +192,32 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
 
   defp expr_wrapper_callees_list(_value, _module_name, _decl_map), do: []
 
+  defp expr_callees_list(
+         %{op: :qualified_call, target: target, args: args},
+         module_name,
+         decl_map
+       ) do
+    case Host.special_value_from_target(target, args || []) do
+      nil ->
+        own = qualified_callees(target, decl_map)
+
+        child_callees =
+          (args || [])
+          |> Enum.flat_map(&expr_callees_list(&1, module_name, decl_map))
+
+        own ++ child_callees
+
+      rewritten ->
+        expr_callees_list(rewritten, module_name, decl_map)
+    end
+  end
+
   defp expr_callees_list(expr, module_name, decl_map) when is_map(expr) do
     own =
       case expr do
         %{op: :call, name: name} ->
           target = {module_name, name}
           if Map.has_key?(decl_map, target), do: [target], else: []
-
-        %{op: :qualified_call, target: target, args: args} ->
-          case Host.special_value_from_target(target, args || []) do
-            nil ->
-              case Util.split_qualified_function_target(Host.normalize_special_target(target)) do
-                nil -> []
-                target_key -> if Map.has_key?(decl_map, target_key), do: [target_key], else: []
-              end
-
-            rewritten ->
-              expr_callees_list(rewritten, module_name, decl_map)
-          end
 
         %{op: :var, name: name} ->
           target = {module_name, name}
@@ -220,6 +247,27 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
        do: args
 
   defp wrapper_callee_child_values(expr), do: Map.values(expr)
+
+  defp qualified_wrapper_callees(target, args, module_name, decl_map) do
+    own =
+      case Util.split_qualified_function_target(Host.normalize_special_target(target)) do
+        nil -> []
+        target_key -> wrapper_callee_target(target_key, args, decl_map)
+      end
+
+    child_callees =
+      args
+      |> Enum.flat_map(&expr_wrapper_callees_list(&1, module_name, decl_map))
+
+    own ++ child_callees
+  end
+
+  defp qualified_callees(target, decl_map) do
+    case Util.split_qualified_function_target(Host.normalize_special_target(target)) do
+      nil -> []
+      target_key -> if Map.has_key?(decl_map, target_key), do: [target_key], else: []
+    end
+  end
 
   defp wrapper_callee_target(target, args, decl_map) do
     cond do

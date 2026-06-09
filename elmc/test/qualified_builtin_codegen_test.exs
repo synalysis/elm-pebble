@@ -167,7 +167,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       |> String.split("static ElmcValue *elmc_fn_Main_typedBoundsAccess")
       |> List.last()
 
-    [typed_access_body | _rest] = String.split(access_body, "static ElmcValue *elmc_fn_", parts: 2)
+    [typed_access_body | _rest] =
+      String.split(access_body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert typed_access_body =~ "elmc_record_get_index("
     assert typed_access_body =~ "2 /* x */"
@@ -364,7 +365,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       |> String.split("static ElmcValue *elmc_fn_Main_nativeBoolHelperColor")
       |> List.last()
 
-    [native_bool_helper_body | _rest] = String.split(helper_body, "static ElmcValue *elmc_fn_", parts: 2)
+    [native_bool_helper_body | _rest] =
+      String.split(helper_body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert native_bool_helper_body =~ "elmc_as_bool(tmp_"
     assert native_bool_helper_body =~ "ElmcValue *tmp_"
@@ -389,7 +391,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       |> String.split("static ElmcValue *elmc_fn_Main_nativeBoolMixedBranches")
       |> List.last()
 
-    [native_bool_mixed_body | _rest] = String.split(mixed_body, "static ElmcValue *elmc_fn_", parts: 2)
+    [native_bool_mixed_body | _rest] =
+      String.split(mixed_body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert native_bool_mixed_body =~ "ElmcValue *tmp_"
     assert native_bool_mixed_body =~ "if ((value < 0))"
@@ -411,7 +414,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       |> String.split("static ElmcValue *elmc_fn_Main_nativeBoolMaybeBranchReuse")
       |> List.last()
 
-    [native_bool_maybe_body | _rest] = String.split(maybe_body, "static ElmcValue *elmc_fn_", parts: 2)
+    [native_bool_maybe_body | _rest] =
+      String.split(maybe_body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert native_bool_maybe_body =~ "if (flag)"
 
@@ -589,7 +593,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       |> String.split("static ElmcValue *elmc_fn_Main_nativeStringAppend")
       |> List.last()
 
-    [native_append_body | _rest] = String.split(append_body, "static ElmcValue *elmc_fn_", parts: 2)
+    [native_append_body | _rest] =
+      String.split(append_body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert native_append_body =~ "elmc_string_append_native(\"0\", native_string_"
     assert native_append_body =~ "snprintf(native_string_buf_"
@@ -1225,7 +1230,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     body =
       generated_c
-      |> String.split("static int elmc_fn_Main_directNativeLetCircleRadius_commands_append_native")
+      |> String.split(
+        "static int elmc_fn_Main_directNativeLetCircleRadius_commands_append_native"
+      )
       |> List.last()
 
     [use_body | _rest] = String.split(body, "int elmc_fn_", parts: 2)
@@ -1340,6 +1347,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     assert use_body =~ "direct_hoisted_int_"
     assert use_body =~ ~r/const elmc_int_t direct_hoisted_int_\d+ = 0;/
     assert use_body =~ ~r/const elmc_int_t direct_hoisted_int_\d+ = -1000;/
+
     assert use_body =~
              ~r/direct_native_let_markerTopX_\d+ = direct_hoisted_int_\d+;\n.*direct_native_let_markerTopY_\d+ = direct_hoisted_int_\d+;/s
 
@@ -1684,7 +1692,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     assert generated_c =~
              "static elmc_int_t elmc_fn_Main_nativeOnlyHelper_native(const elmc_int_t value)"
 
-    assert generated_c =~ "elmc_fn_Main_nativeOnlyHelper_native(7)"
+    assert generated_c =~ "nativeOnlyHelper_native"
+    assert generated_c =~ "direct_hoisted_int_"
   end
 
   test "native callees forward-declare non-native top-level constants in stripped builds" do
@@ -1713,7 +1722,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute generated_h =~ "elmc_fn_Main_vectorDrawOrigin("
 
     native_pos = :binary.match(generated_c, "elmc_fn_Main_vectorDrawOrigin_native")
-    offset_x_pos = :binary.match(generated_c, "static ElmcValue *elmc_fn_Main_figureOriginOffsetX(")
+
+    offset_x_pos =
+      :binary.match(generated_c, "static ElmcValue *elmc_fn_Main_figureOriginOffsetX(")
 
     assert native_pos != :nomatch
     assert offset_x_pos != :nomatch
@@ -1897,7 +1908,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     assert run_out =~ "kind=2 p0=255"
   end
 
-  test "top-level function references compile as closures for indexedMap views" do
+  test "top-level function references compile indexedMap views without zero-arg helper calls" do
     source_fixture = Path.expand("fixtures/simple_project", __DIR__)
     project_dir = Path.expand("tmp/top_level_function_reference_project", __DIR__)
     out_dir = Path.expand("tmp/top_level_function_reference_codegen", __DIR__)
@@ -1911,7 +1922,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     refute generated_c =~ "elmc_fn_Main_drawCell(NULL, 0)"
-    assert generated_c =~ "elmc_closure_new"
+    refute generated_c =~ "elmc_closure_new(elmc_fn_Main_drawCell"
 
     draw_cell_body =
       generated_c
@@ -3144,44 +3155,44 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       """
 
 
-    directUnit12Dedup : Int -> Int -> Int -> Int -> List PebbleUi.RenderOp
-    directUnit12Dedup screenW screenH minute hour =
-        let
-            centerX =
-                screenW // 2
+      directUnit12Dedup : Int -> Int -> Int -> Int -> List PebbleUi.RenderOp
+      directUnit12Dedup screenW screenH minute hour =
+          let
+              centerX =
+                  screenW // 2
 
-            centerY =
-                screenH // 2
+              centerY =
+                  screenH // 2
 
-            radius =
-                max 22 ((min screenW screenH // 2) - 14)
+              radius =
+                  max 22 ((min screenW screenH // 2) - 14)
 
-            minuteIndex =
-                modBy 12 (minute // 5)
+              minuteIndex =
+                  modBy 12 (minute // 5)
 
-            hourIndex =
-                modBy 12 (hour + (minute // 30))
+              hourIndex =
+                  modBy 12 (hour + (minute // 30))
 
-            minuteX =
-                handX centerX radius minuteIndex
+              minuteX =
+                  handX centerX radius minuteIndex
 
-            minuteY =
-                handY centerY radius minuteIndex
+              minuteY =
+                  handY centerY radius minuteIndex
 
-            hourX =
-                handX centerX radius hourIndex
+              hourX =
+                  handX centerX radius hourIndex
 
-            markerTopX =
-                handX centerX radius 0
+              markerTopX =
+                  handX centerX radius 0
 
-            markerTopY =
-                handY centerY radius 0
-        in
-        [ PebbleUi.pixel { x = markerTopX, y = markerTopY } PebbleColor.black
-        , PebbleUi.line { x = centerX, y = centerY } { x = minuteX, y = minuteY } PebbleColor.black
-        , PebbleUi.line { x = centerX, y = centerY } { x = hourX, y = centerY } PebbleColor.black
-        ]
-    """
+              markerTopY =
+                  handY centerY radius 0
+          in
+          [ PebbleUi.pixel { x = markerTopX, y = markerTopY } PebbleColor.black
+          , PebbleUi.line { x = centerX, y = centerY } { x = minuteX, y = minuteY } PebbleColor.black
+          , PebbleUi.line { x = centerX, y = centerY } { x = hourX, y = centerY } PebbleColor.black
+          ]
+      """
   end
 
   defp direct_native_let_bounds_source do

@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.CCodegen.CollectionCompile do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.BuiltinUnion
   alias Elmc.Backend.CCodegen.DebugProbes
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
@@ -8,33 +9,13 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
 
   @spec compile(Types.ir_collection_expr(), Types.compile_env(), Types.compile_counter()) ::
           Types.compile_result()
-  def compile(%{op: :tuple2, left: left, right: right}, env, counter) do
-    if NativeInt.expr?(left, env) and NativeInt.expr?(right, env) do
-      {left_code, left_ref, counter} = Host.compile_native_int_expr(left, env, counter)
-      {right_code, right_ref, counter} = Host.compile_native_int_expr(right, env, counter)
-      next = counter + 1
-      out = "tmp_#{next}"
+  def compile(%{op: :tuple2, left: left, right: right} = expr, env, counter) do
+    case BuiltinUnion.try_compile_tuple2(expr, env, counter) do
+      {:ok, result} ->
+        result
 
-      code = """
-      #{left_code}
-      #{right_code}
-      ElmcValue *#{out} = elmc_tuple2_ints(#{left_ref}, #{right_ref});
-      """
-
-      {code, out, next}
-    else
-      {left_code, left_var, counter} = Host.compile_expr(left, env, counter)
-      {right_code, right_var, counter} = Host.compile_expr(right, env, counter)
-      next = counter + 1
-      out = "tmp_#{next}"
-
-      code = """
-      #{left_code}
-      #{right_code}
-      ElmcValue *#{out} = elmc_tuple2_take(#{left_var}, #{right_var});
-      """
-
-      {code, out, next}
+      :error ->
+        compile_generic_tuple2(left, right, env, counter)
     end
   end
 
@@ -91,6 +72,36 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
 
   def compile(%{op: :char_from_code_expr, arg: arg_expr}, env, counter) do
     compile_expr_unary(arg_expr, "elmc_new_char(elmc_as_int", env, counter)
+  end
+
+  defp compile_generic_tuple2(left, right, env, counter) do
+    if NativeInt.expr?(left, env) and NativeInt.expr?(right, env) do
+      {left_code, left_ref, counter} = Host.compile_native_int_expr(left, env, counter)
+      {right_code, right_ref, counter} = Host.compile_native_int_expr(right, env, counter)
+      next = counter + 1
+      out = "tmp_#{next}"
+
+      code = """
+      #{left_code}
+      #{right_code}
+      ElmcValue *#{out} = elmc_tuple2_ints(#{left_ref}, #{right_ref});
+      """
+
+      {code, out, next}
+    else
+      {left_code, left_var, counter} = Host.compile_expr(left, env, counter)
+      {right_code, right_var, counter} = Host.compile_expr(right, env, counter)
+      next = counter + 1
+      out = "tmp_#{next}"
+
+      code = """
+      #{left_code}
+      #{right_code}
+      ElmcValue *#{out} = elmc_tuple2_take(#{left_var}, #{right_var});
+      """
+
+      {code, out, next}
+    end
   end
 
   defp compile_dynamic_list_literal(items, env, counter) do
