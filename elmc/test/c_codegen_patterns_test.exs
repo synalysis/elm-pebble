@@ -986,6 +986,47 @@ defmodule Elmc.CCodegenPatternsTest do
     refute generated_c =~ "list_concat_node_"
   end
 
+  test "three-part string append lowers to elmc_string_append_native chain" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    timeLabel : Int -> Int -> String
+    timeLabel hour minute =
+        String.fromInt hour ++ ":" ++ String.fromInt minute
+
+    init _ = ( { label = timeLabel 9 5 }, Platform.Cmd.none )
+    update _ m = ( m, Platform.Cmd.none )
+    view m = Ui.toUiNode [ Ui.clear Color.white, Ui.textLabel Ui.defaultFont { x = 0, y = 0 } m.label ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    suffix = System.unique_integer([:positive])
+    project_dir = Path.expand("tmp/string_concat_segments_#{suffix}", __DIR__)
+    out_dir = Path.expand("tmp/string_concat_segments_codegen_#{suffix}", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert generated_c =~ "elmc_string_append("
+    refute generated_c =~ "elmc_list_concat_array("
+    refute generated_c =~ "elmc_list_concat("
+  end
+
   test "List.concat of List.repeat row append flattens without elmc_list_concat" do
     source = """
     module Main exposing (main)

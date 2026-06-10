@@ -467,34 +467,82 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
           Types.compile_counter()
         ) :: {:ok, String.t(), String.t(), Types.compile_counter()} | :error
   defp compile_list_concat_segments_flatten(segments, env, counter) do
-    if list_append_concat_segments?(segments, env) do
-      {segment_code, segment_vars, counter} =
-        Enum.reduce(segments, {"", [], counter}, fn segment, {code_acc, vars_acc, c} ->
-          {code, var, c2} = Host.compile_expr(segment, env, c)
-          {code_acc <> code, vars_acc ++ [var], c2}
-        end)
+    cond do
+      Enum.all?(segments, &NativeString.expr?(&1, env)) ->
+        compile_string_concat_segments(segments, env, counter)
 
-      next = counter + 1
-      out = "tmp_#{next}"
-      segments_array = "list_concat_segments_#{next}"
-      call_args = Enum.join(segment_vars, ", ")
+      list_append_concat_segments?(segments, env) ->
+        {segment_code, segment_vars, counter} =
+          Enum.reduce(segments, {"", [], counter}, fn segment, {code_acc, vars_acc, c} ->
+            {code, var, c2} = Host.compile_expr(segment, env, c)
+            {code_acc <> code, vars_acc ++ [var], c2}
+          end)
 
-      releases =
-        segment_vars
-        |> Enum.map_join("\n  ", fn var -> "elmc_release(#{var});" end)
+        next = counter + 1
+        out = "tmp_#{next}"
+        segments_array = "list_concat_segments_#{next}"
+        call_args = Enum.join(segment_vars, ", ")
 
-      code = """
-      #{segment_code}
-        ElmcValue *#{segments_array}[#{length(segment_vars)}] = { #{call_args} };
-        ElmcValue *#{out} = elmc_list_concat_array(#{segments_array}, #{length(segment_vars)});
-        #{releases}
-        #{DebugProbes.append_probe(env, "elmc_list_concat_array", out, next)}
-      """
+        releases =
+          segment_vars
+          |> Enum.map_join("\n  ", fn var -> "elmc_release(#{var});" end)
 
-      {:ok, code, out, next}
-    else
-      :error
+        code = """
+        #{segment_code}
+          ElmcValue *#{segments_array}[#{length(segment_vars)}] = { #{call_args} };
+          ElmcValue *#{out} = elmc_list_concat_array(#{segments_array}, #{length(segment_vars)});
+          #{releases}
+          #{DebugProbes.append_probe(env, "elmc_list_concat_array", out, next)}
+        """
+
+        {:ok, code, out, next}
+
+      true ->
+        :error
     end
+  end
+
+  defp compile_string_concat_segments(segments, env, counter) do
+    {segment_code, segment_boxes, segment_releases, counter} =
+      Enum.reduce(segments, {"", [], [], counter}, fn segment, {code_acc, boxes_acc, releases_acc, c} ->
+        {code, ref, releases, c2} = NativeString.compile_expr(segment, env, c)
+        next = c2 + 1
+        box = "string_segment_#{next}"
+
+        {code_acc <>
+           """
+           #{code}
+             ElmcValue *#{box} = elmc_new_string(#{ref});
+           """, boxes_acc ++ [box], releases_acc ++ releases ++ [box], next}
+      end)
+
+    [first_box | rest_boxes] = segment_boxes
+
+    {fold_code, out_ref, temp_refs} =
+      Enum.reduce(rest_boxes, {"", first_box, []}, fn box, {code_acc, acc_ref, temps} ->
+        acc_var = "string_concat_acc_#{counter + length(temps) + 1}"
+
+        {code_acc <>
+           """
+             ElmcValue *#{acc_var} = elmc_string_append(#{acc_ref}, #{box});
+           """, acc_var, temps ++ [acc_var]}
+      end)
+
+    next = counter + max(length(segments), 1)
+
+    releases =
+      (segment_boxes ++ temp_refs)
+      |> Enum.uniq()
+      |> Enum.reject(&(&1 == out_ref))
+      |> Enum.map_join("\n  ", fn var -> "elmc_release(#{var});" end)
+
+    code = """
+    #{segment_code}#{fold_code}
+      #{releases}
+      #{DebugProbes.append_probe(env, "elmc_string_concat", out_ref, next)}
+    """
+
+    {:ok, code, out_ref, next}
   end
 
   defp compile_native_append(left, right, env, counter) do

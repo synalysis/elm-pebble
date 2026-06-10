@@ -526,6 +526,10 @@ static GFont font_from_id_for_height(int64_t font_id, int64_t requested_height, 
 
   if (should_unload) *should_unload = true;
   GFont font = fonts_load_custom_font(resource_get_handle(resource_id));
+  if (!font) {
+    if (should_unload) *should_unload = false;
+    font = system_font_for_height(requested_height);
+  }
   ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_FONT_FOR_TEXT_EXIT);
   return font;
 }
@@ -3579,7 +3583,14 @@ static void outbox_failed_handler(DictionaryIterator *iter, AppMessageResult rea
   ELMC_PEBBLE_TRACE_ENTER("outbox_failed_handler");
   (void)iter;
   (void)context;
-  APP_LOG(APP_LOG_LEVEL_WARNING, "outbox failed: %d", reason);
+#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND
+  if (reason == APP_MSG_BUSY && (s_pending_companion_request || s_last_companion_request_valid)) {
+    ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "outbox busy; retry scheduled");
+  } else
+#endif
+  {
+    APP_LOG(APP_LOG_LEVEL_WARNING, "outbox failed: %d", reason);
+  }
 #if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND
   if (s_pending_companion_request || s_last_companion_request_valid) {
     AppTimer *retry_timer = app_timer_register(250, companion_resync_callback, NULL);

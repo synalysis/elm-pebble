@@ -637,6 +637,55 @@ defmodule Elmc.Backend.Pebble do
     static int elmc_decode_path_payload(ElmcValue *payload, ElmcPebbleDrawCmd *out_cmd);
     #endif
 
+    #if ELMC_PEBBLE_FEATURE_DRAW_TEXT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
+    static int elmc_copy_draw_text_value(ElmcValue *value, char *out_text, size_t out_size) {
+      if (!out_text || out_size == 0) return -1;
+      out_text[0] = '\\0';
+      if (!value) return -1;
+      if (value->tag == ELMC_TAG_STRING && value->payload != NULL) {
+        strncpy(out_text, (const char *)value->payload, out_size - 1);
+        out_text[out_size - 1] = '\\0';
+        return 0;
+      }
+      if (value->tag != ELMC_TAG_LIST) return -1;
+      size_t used = 0;
+      ElmcValue *cursor = value;
+      while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
+        ElmcCons *node = (ElmcCons *)cursor->payload;
+        const char *piece = NULL;
+        char char_buf[2] = {0, 0};
+        if (!node->head) {
+          cursor = node->tail;
+          continue;
+        }
+        if (node->head->tag == ELMC_TAG_STRING && node->head->payload != NULL) {
+          piece = (const char *)node->head->payload;
+        } else {
+          char_buf[0] = (char)elmc_as_int(node->head);
+          piece = char_buf;
+        }
+        size_t piece_len = strlen(piece);
+        if (piece_len == 0) {
+          cursor = node->tail;
+          continue;
+        }
+        if (used + piece_len >= out_size) {
+          size_t copy_len = out_size - used - 1;
+          if (copy_len > 0) {
+            memcpy(out_text + used, piece, copy_len);
+            used += copy_len;
+          }
+          break;
+        }
+        memcpy(out_text + used, piece, piece_len);
+        used += piece_len;
+        cursor = node->tail;
+      }
+      out_text[used] = '\\0';
+      return used > 0 ? 0 : -1;
+    }
+    #endif
+
     static int elmc_draw_cmd_from_value(ElmcValue *value, ElmcPebbleDrawCmd *out_cmd) {
       if (!out_cmd) return -1;
       out_cmd->kind = ELMC_PEBBLE_DRAW_NONE;
@@ -689,10 +738,7 @@ defmodule Elmc.Backend.Pebble do
           out_cmd->p3 = payload[3];
           out_cmd->p4 = payload[4];
           out_cmd->p5 = payload[5];
-          if (current && current->tag == ELMC_TAG_STRING && current->payload != NULL) {
-            strncpy(out_cmd->text, (const char *)current->payload, sizeof(out_cmd->text) - 1);
-            out_cmd->text[sizeof(out_cmd->text) - 1] = '\\0';
-          }
+          (void)elmc_copy_draw_text_value(current, out_cmd->text, sizeof(out_cmd->text));
           return 0;
         }
     #endif
