@@ -290,6 +290,7 @@ static uint32_t s_frame_interval_ms = 33;
 static bool s_frame_timer_started = false;
 #endif
 static bool s_logged_first_draw = false;
+static bool s_startup_cmds_ready = false;
 
 enum {
   ELMC_DEBUG_STORAGE_KEY_OP = 0x454c4d00,
@@ -816,8 +817,9 @@ static void deferred_datetime_callback(void *data) {
 
 static void apply_pending_cmd(void) {
   ELMC_PEBBLE_TRACE_ENTER("apply_pending_cmd");
+  static ElmcPebbleCmd cmd;
   for (int cmd_guard = 0; cmd_guard < 32; cmd_guard++) {
-    ElmcPebbleCmd cmd = {0};
+    memset(&cmd, 0, sizeof(cmd));
     if (elmc_pebble_take_cmd(&s_elm_app, &cmd) != 0 || cmd.kind == ELMC_PEBBLE_CMD_NONE) {
       ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "cmd drain complete count=%d", cmd_guard);
       ELMC_PEBBLE_TRACE_EXIT("apply_pending_cmd");
@@ -1370,6 +1372,7 @@ static void startup_cmd_callback(void *data) {
   // #region agent log
   ELMC_AGENT_INIT_PROBE(0xED991002);
   // #endregion
+  s_startup_cmds_ready = true;
 #if ELMC_PEBBLE_STARTUP_RENDER
   render_model();
   // #region agent log
@@ -1388,6 +1391,7 @@ static GColor color_from_code(int64_t value) {
 #ifdef PBL_COLOR
   return GColorFromRGB(red, green, blue);
 #else
+  /* ELMC color codes are not GColor8 ordinals (e.g. ELMC_COLOR_BLACK is 192). */
   int luminance = (red * 30 + green * 59 + blue * 11) / 100;
   return luminance >= 128 ? GColorWhite : GColorBlack;
 #endif
@@ -1445,7 +1449,11 @@ static DrawStyleState draw_style_default(void) {
       .text_color = GColorBlack,
       .compositing_mode = GCompOpAssign,
       .stroke_width = 1,
+#ifndef PBL_COLOR
+      .antialiased = false,
+#else
       .antialiased = true,
+#endif
   };
   return style;
 }
@@ -1459,6 +1467,7 @@ static void apply_draw_style(GContext *ctx, const DrawStyleState *style) {
   graphics_context_set_text_color(ctx, style->text_color);
   graphics_context_set_compositing_mode(ctx, style->compositing_mode);
   graphics_context_set_stroke_width(ctx, style->stroke_width > 0 ? style->stroke_width : 1);
+  graphics_context_set_antialiased(ctx, style->antialiased);
 }
 
 #if ELMC_PEBBLE_FEATURE_DRAW_FILL_RECT || ELMC_PEBBLE_FEATURE_DRAW_RECT || \
@@ -2019,6 +2028,11 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
     ELMC_PEBBLE_TRACE_EXIT("draw_update_proc");
     return;
   }
+  if (!s_startup_cmds_ready) {
+    s_draw_update_active = false;
+    ELMC_PEBBLE_TRACE_EXIT("draw_update_proc");
+    return;
+  }
   s_draw_update_active = true;
   elmc_pebble_render_diag_log("draw:before", s_render_sequence, &s_elm_app);
   // #region agent log
@@ -2043,14 +2057,12 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
     ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "draw begin seq=%d", s_render_sequence);
   }
   GRect bounds = layer_get_bounds(layer);
-#ifdef ELMC_WATCHFACE_MODE
   {
     GRect compile = compile_display_bounds();
-    if (compile.size.w > bounds.size.w || compile.size.h > bounds.size.h) {
+    if (bounds.size.w < compile.size.w || bounds.size.h < compile.size.h) {
       bounds = compile;
     }
   }
-#endif
   // #region agent log
   ELMC_AGENT_INIT_PROBE(0xED993011);
   // #endregion
@@ -2318,9 +2330,17 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         int16_t w = (int16_t)cmd->p2;
         int16_t h = (int16_t)cmd->p3;
         if (rect_params_are_valid(w, h)) {
+#ifndef PBL_COLOR
+          graphics_context_set_antialiased(ctx, false);
+          graphics_context_set_stroke_width(ctx, 2);
+#endif
           graphics_context_set_stroke_color(ctx, color_from_code(cmd->p4));
           graphics_draw_rect(ctx, GRect(x, y, w, h));
           graphics_context_set_stroke_color(ctx, s_draw_style_stack[s_draw_style_top].stroke_color);
+#ifndef PBL_COLOR
+          graphics_context_set_stroke_width(ctx, s_draw_style_stack[s_draw_style_top].stroke_width);
+          graphics_context_set_antialiased(ctx, s_draw_style_stack[s_draw_style_top].antialiased);
+#endif
         }
         break;
       }
@@ -2525,6 +2545,9 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
                 cmd->text[0] != '\0' ? cmd->text : "");
 #endif
         ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_GRAPHICS_TEXT_ENTER);
+#ifndef PBL_COLOR
+        graphics_context_set_antialiased(ctx, false);
+#endif
         graphics_draw_text(ctx, cmd->text, font, text_rect, overflow, align, NULL);
         ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_GRAPHICS_TEXT_EXIT);
 #if ELMC_PEBBLE_DEBUG_LOGS
@@ -2731,6 +2754,10 @@ static void scene_prep_timer_callback(void *data) {
   ELMC_PEBBLE_TRACE_ENTER("scene_prep_timer_callback");
   (void)data;
   s_scene_prep_timer = NULL;
+  if (!s_startup_cmds_ready) {
+    ELMC_PEBBLE_TRACE_EXIT("scene_prep_timer_callback");
+    return;
+  }
   if (elmc_pebble_ensure_scene(&s_elm_app) == 0 && s_draw_layer) {
     layer_mark_dirty(s_draw_layer);
   }
@@ -3947,7 +3974,7 @@ static void main_window_load(Window *window) {
     s_font = fonts_get_system_font(FONT_KEY_GOTHIC_24);
   }
   {
-    GRect bounds = display_bounds();
+    GRect bounds = compile_display_bounds();
     ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "draw layer bounds w=%d h=%d", (int)bounds.size.w,
                           (int)bounds.size.h);
     s_draw_layer = layer_create(bounds);
@@ -3959,6 +3986,13 @@ static void main_window_load(Window *window) {
   }
   layer_set_update_proc(s_draw_layer, draw_update_proc);
   layer_add_child(window_get_root_layer(window), s_draw_layer);
+  {
+    GRect compile = compile_display_bounds();
+    GRect layer_bounds = layer_get_bounds(s_draw_layer);
+    if (layer_bounds.size.w < compile.size.w || layer_bounds.size.h < compile.size.h) {
+      layer_set_bounds(s_draw_layer, compile);
+    }
+  }
   if (s_render_pending) {
     s_render_pending = false;
     layer_mark_dirty(s_draw_layer);
@@ -4078,6 +4112,17 @@ static GRect display_bounds(void) {
   }
 
   layer = cap_display_bounds(GRect(0, 0, layer.size.w, layer.size.h), compile);
+
+  /* Root layer can report a reduced height during early window load on some targets
+     (Aplite/QEMU) while the framebuffer is still compile-sized. Prefer compile bounds
+     so the draw layer matches launch-context screen dimensions used by Elm layout. */
+  if (layer.size.w < compile.size.w || layer.size.h < compile.size.h) {
+    ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO,
+                          "display bounds undersized layer w=%d h=%d; using compile w=%d h=%d",
+                          (int)layer.size.w, (int)layer.size.h, (int)compile.size.w,
+                          (int)compile.size.h);
+    return compile;
+  }
 
   ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO,
                         "display bounds layer w=%d h=%d (compile w=%d h=%d)",
@@ -4266,7 +4311,7 @@ static void display_bounds_diag_callback(void *data) {
 
 static ElmcValue *build_launch_context(AppLaunchReason launch) {
   ELMC_PEBBLE_TRACE_ENTER("build_launch_context");
-  GRect bounds = display_bounds();
+  GRect bounds = compile_display_bounds();
 
   ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "launch context screen w=%d h=%d",
                         (int)bounds.size.w, (int)bounds.size.h);

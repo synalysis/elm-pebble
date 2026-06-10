@@ -84,7 +84,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
     code = """
     #{before_probe}
       #{value_code}
-      const elmc_int_t #{native_var} = #{value_ref};
+      const bool #{native_var} = #{value_ref};
       #{after_probe}
       #{body_code}
     """
@@ -231,6 +231,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
 
     before_probe = DebugProbes.let_probe(env, name, :before)
     after_probe = DebugProbes.let_probe(env, name, :after)
+    record_shape = Expr.record_shape(value_expr, env)
 
     body_env =
       env
@@ -245,7 +246,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
           Host.native_int_expr?(value_expr, env)
       )
       |> EnvBindings.put_boxed_string_binding(name, NativeString.boxed_expr?(value_expr, env))
-      |> EnvBindings.put_record_shape(name, Expr.record_shape(value_expr, env))
+      |> put_boxed_record_shape(name, record_shape)
 
     {body_code, body_var, counter} = Host.compile_expr(in_expr, body_env, counter)
 
@@ -262,6 +263,13 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
 
     {code, body_var, counter}
   end
+
+  defp put_boxed_record_shape(env, name, fields) when is_list(fields) do
+    shapes = Map.get(env, :__record_shapes__, %{})
+    Map.put(env, :__record_shapes__, Map.put(shapes, EnvBindings.binding_key(name), fields))
+  end
+
+  defp put_boxed_record_shape(env, _name, _fields), do: env
 
   @spec compile_boxed_let_value(
           Types.ir_expr(),

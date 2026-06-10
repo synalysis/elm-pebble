@@ -5,16 +5,17 @@ defmodule Elmc.Backend.CCodegen.LiteralCompile do
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.ResourceUnion
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.CCodegen.UnionMacros
   alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.Pebble.Util, as: PebbleUtil
 
   @spec compile(Types.ir_literal_expr(), Types.compile_env(), Types.compile_counter()) ::
           Types.compile_result()
-  def compile(%{op: :int_literal} = expr, _env, counter) do
+  def compile(%{op: :int_literal} = expr, env, counter) do
     if BuiltinUnion.maybe_nothing_literal?(expr) do
       BuiltinUnion.compile_maybe_nothing(counter)
     else
-      compile_int_literal(expr, counter)
+      compile_int_literal(expr, env, counter)
     end
   end
 
@@ -54,16 +55,18 @@ defmodule Elmc.Backend.CCodegen.LiteralCompile do
     Host.compile_expr(%{op: :int_literal, value: 0}, env, counter)
   end
 
-  defp compile_int_literal(%{op: :int_literal} = expr, counter) do
+  defp compile_int_literal(%{op: :int_literal} = expr, env, counter) do
     value = ResourceUnion.int_literal_value(expr)
+    macro_ref = UnionMacros.literal_ref(expr, env)
+    ref = macro_ref || Integer.to_string(value)
     next = counter + 1
     var = "tmp_#{next}"
 
     code =
-      if value == 0 do
+      if value == 0 and is_nil(macro_ref) do
         "ElmcValue *#{var} = elmc_int_zero();"
       else
-        "ElmcValue *#{var} = elmc_new_int(#{value});"
+        "ElmcValue *#{var} = elmc_new_int(#{ref});"
       end
 
     {code, var, next}

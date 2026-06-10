@@ -136,6 +136,8 @@ defmodule Elmc.CCodegenPatternsTest do
     import Pebble.Platform as Platform
     import Pebble.Ui as Ui
     import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+    import Pebble.Ui.Color as Color
 
     rowHasValue : List Int -> Bool
     rowHasValue values =
@@ -167,6 +169,63 @@ defmodule Elmc.CCodegenPatternsTest do
     assert generated_c =~ "elmc_fn_Main_rowHasValue"
     refute generated_c =~ "elmc_list_all("
     refute generated_c =~ "elmc_closure_new(elmc_lambda_"
+  end
+
+  test "List.concat of compiled list segments omits redundant nil fallbacks" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+
+    rows : List Int -> List Int
+    rows cells =
+        [ List.reverse (List.take 2 cells)
+        , List.reverse (List.drop 2 cells)
+        , List.reverse cells
+        ]
+            |> List.concat
+
+    init _ = ( { cells = rows [ 1, 2, 3, 4 ] }, Platform.Cmd.none )
+    update _ m = ( m, Platform.Cmd.none )
+    view _ = Ui.windowStack []
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    suffix = System.unique_integer([:positive])
+    project_dir = Path.expand("tmp/list_concat_segments_no_nil_fallback_#{suffix}", __DIR__)
+    out_dir = Path.expand("tmp/list_concat_segments_no_nil_fallback_codegen_#{suffix}", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    body =
+      generated_c
+      |> String.split("static ElmcValue *elmc_fn_Main_rows")
+      |> List.last()
+      |> String.split("\n}\n\nElmcValue *elmc_fn_Main_init", parts: 2)
+      |> hd()
+
+    assert body =~ "elmc_list_reverse("
+    assert body =~ "elmc_list_take_int(2, cells)"
+    assert body =~ "elmc_list_drop_int(2, cells)"
+    refute body =~ "elmc_list_take("
+    refute body =~ "elmc_list_drop("
+    assert body =~ "list_concat_node_"
+    refute body =~ "? tmp_"
+    refute body =~ "? elmc_"
+    refute body =~ "elmc_release(elmc_list_nil())"
   end
 
   test "List.foldl over range with list acc uses cursor loop instead of elmc_list_foldl closure" do
@@ -332,7 +391,7 @@ defmodule Elmc.CCodegenPatternsTest do
     refute generated_c =~ "elmc_closure_new(elmc_lambda_"
   end
 
-  test "List.repeat with literal count inlines loop instead of elmc_list_repeat_count" do
+  test "List.repeat with literal zero count uses malloc-free zero list helper" do
     source = """
     module Main exposing (main)
 
@@ -367,11 +426,54 @@ defmodule Elmc.CCodegenPatternsTest do
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert generated_c =~ "/* List.repeat */"
-    assert generated_c =~ "list_repeat_i_"
     assert generated_c =~ "elmc_fn_Main_blankRow"
-    refute generated_c =~ "list_repeat_out_"
+    assert generated_c =~ "ELMC_ZERO_N = 4"
+    assert generated_c =~ "elmc_zero_list_tmp_"
+    refute generated_c =~ "list_repeat_i_"
     refute generated_c =~ "elmc_list_repeat_count("
+    refute generated_c =~ "elmc_list_repeat("
+  end
+
+  test "List.repeat with literal nonzero int uses static int array" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    row : List Int
+    row =
+        List.repeat 4 2
+
+    init _ = ( { row = row }, Platform.Cmd.none )
+    update _ m = ( m, Platform.Cmd.none )
+    view m = Ui.toUiNode [ Ui.clear Color.white, Ui.text (String.fromInt (List.length m.row)) ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/list_repeat_static_int", __DIR__)
+    out_dir = Path.expand("tmp/list_repeat_static_int_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert generated_c =~ "elmc_fn_Main_row"
+    assert generated_c =~ "static const elmc_int_t list_repeat_int_values_"
+    assert generated_c =~ "{ 2, 2, 2, 2 }"
+    assert generated_c =~ "elmc_list_from_int_array"
+    refute generated_c =~ "list_repeat_i_"
     refute generated_c =~ "elmc_list_repeat("
   end
 
@@ -736,6 +838,19 @@ defmodule Elmc.CCodegenPatternsTest do
 
     assert generated_c =~
              ~r/elmc_fn_Main_collapseRow[\s\S]*?elmc_record_get(?:_index)?\(tmp_\d+, (?:1 \/\* score \*\/|"score")\)/
+
+    collapse_row_body =
+      generated_c
+      |> String.split("static ElmcValue *elmc_fn_Main_collapseRow(ElmcValue *row) {", parts: 2)
+      |> Enum.at(1, "")
+      |> String.split("static ElmcValue *elmc_fn_Main_collapseRows", parts: 2)
+      |> hd()
+
+    assert Regex.scan(~r/elmc_record_get\((tmp_\d+), "cells"\)/, collapse_row_body)
+           |> Enum.frequencies()
+           |> Enum.all?(fn {_tmp, count} -> count == 1 end)
+
+    refute collapse_row_body =~ ~r/elmc_retain\(tmp_\d+_cells\)/
 
     refute generated_c =~ "elmc_record_get(tmp_8, \"score\")"
     refute generated_c =~ "elmc_int_zero();  ElmcValue *tmp_9_score"
@@ -1296,10 +1411,14 @@ defmodule Elmc.CCodegenPatternsTest do
         parts: 2
       )
       |> Enum.at(1, "")
-      |> String.split("}\n", parts: 2)
+      |> String.split("ElmcValue *elmc_fn_Main_update", parts: 2)
       |> hd()
 
-    assert init_body =~ "elmc_record_new_ints"
+    assert init_body =~ "elmc_record_new_values_ints"
+    refute init_body =~ "static const int rec_field_ids_"
+    refute init_body =~ "static const char * const rec_names_"
+    refute init_body =~ "elmc_record_new_static_ints"
+    refute init_body =~ "elmc_record_new_ints"
     refute init_body =~ "elmc_record_new_take"
 
     assert length(Regex.scan(~r/elmc_record_get_index\(context, 3 \/\* screen \*\/\)/, init_body)) ==
@@ -1369,11 +1488,16 @@ defmodule Elmc.CCodegenPatternsTest do
         parts: 2
       )
       |> Enum.at(1, "")
-      |> String.split("}\n", parts: 2)
+      |> String.split("ElmcValue *elmc_fn_Main_update", parts: 2)
       |> hd()
 
     assert length(Regex.scan(~r/ElmcValue \*tmp_1 = elmc_int_zero\(\);/, init_body)) == 1
     refute length(Regex.scan(~r/ElmcValue \*tmp_2 = elmc_int_zero\(\);/, init_body)) > 0
+    assert init_body =~ "elmc_record_new_values_take"
+    refute init_body =~ "static const int rec_field_ids_"
+    refute init_body =~ "static const char * const rec_names_"
+    refute init_body =~ "elmc_record_new_static_take"
+    refute init_body =~ "elmc_record_new_take"
   end
 
   test "boxed record literal reuses nested field-access prefixes like context.screen" do
@@ -1627,6 +1751,208 @@ defmodule Elmc.CCodegenPatternsTest do
     refute Regex.match?(~r/ElmcValue \*tmp_\d+ = elmc_retain\(seed\);/, forward_body)
   end
 
+  test "borrow_arg callees pass let-bound locals without retain temps" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+
+    type alias Model =
+        { seed : Int
+        , cells : List Int
+        }
+
+    type Msg
+        = Noop
+
+    setCell : Int -> Int -> List Int -> List Int
+    setCell index newValue cells =
+        List.indexedMap
+            (\\i value ->
+                if i == index then
+                    newValue
+                else
+                    value
+            )
+            cells
+
+    spawnTile seed cells =
+        let
+            tileIndex =
+                3
+
+            tileValue =
+                2
+        in
+        setCell tileIndex tileValue cells
+
+    init _ =
+        ( { seed = 0, cells = [] }, Cmd.none )
+
+    update _ model =
+        ( { model | cells = spawnTile model.seed model.cells }, Cmd.none )
+
+    subscriptions _ =
+        Sub.none
+
+    view _ =
+        Ui.windowStack []
+
+    main =
+        Platform.application
+            { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/borrow_local_call_operand_codegen", __DIR__)
+    out_dir = Path.expand("tmp/borrow_local_call_operand_codegen_out", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
+
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               prune_native_wrappers: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    spawn_body =
+      generated_c
+      |> String.split(
+        "static ElmcValue *elmc_fn_Main_spawnTile(ElmcValue *seed, ElmcValue *cells) {",
+        parts: 2
+      )
+      |> Enum.at(1, "")
+      |> String.split("static ElmcValue *elmc_fn_Main_setCell", parts: 2)
+      |> hd()
+
+    assert spawn_body =~ "elmc_fn_Main_setCell(tmp_"
+    refute Regex.match?(~r/elmc_retain\(tmp_\d+\)/, spawn_body)
+
+    refute Regex.match?(
+             ~r/ElmcValue \*tmp_\d+ = elmc_retain\(tmp_\d+\);/,
+             spawn_body
+           )
+
+    set_cell_body =
+      generated_c
+      |> String.split(
+        "static ElmcValue *elmc_fn_Main_setCell(ElmcValue *index, ElmcValue *newValue, ElmcValue *cells) {",
+        parts: 2
+      )
+      |> Enum.at(1, "")
+      |> String.split("static ElmcValue *elmc_fn_Main_spawnTile", parts: 2)
+      |> hd()
+
+    assert set_cell_body =~ "elmc_list_replace_nth_int(cells,"
+    refute set_cell_body =~ "elmc_retain(cells)"
+    refute set_cell_body =~ "elmc_release(cells)"
+  end
+
+  test "if branches assign tuple results directly without alias temps" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+
+    type alias Model =
+        { seed : Int
+        , cells : List Int
+        }
+
+    type Msg
+        = Noop
+
+    setCell index newValue cells =
+        List.indexedMap
+            (\\i value ->
+                if i == index then
+                    newValue
+                else
+                    value
+            )
+            cells
+
+    pickTile seed cells emptyCount =
+        if emptyCount == 0 then
+            ( cells, seed )
+        else
+            ( setCell 3 2 cells, seed )
+
+    init _ =
+        ( { seed = 0, cells = [] }, Cmd.none )
+
+    update _ model =
+        let
+            ( nextCells, _ ) =
+                pickTile model.seed model.cells 1
+        in
+        ( { model | cells = nextCells }, Cmd.none )
+
+    subscriptions _ =
+        Sub.none
+
+    view _ =
+        Ui.windowStack []
+
+    main =
+        Platform.application
+            { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/if_branch_direct_assign_codegen", __DIR__)
+    out_dir = Path.expand("tmp/if_branch_direct_assign_codegen_out", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
+
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               prune_native_wrappers: true,
+               strip_dead_code: false
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    pick_body =
+      generated_c
+      |> String.split(
+        "static ElmcValue *elmc_fn_Main_pickTile(ElmcValue ** const args, const int argc) {",
+        parts: 2
+      )
+      |> Enum.at(1, "")
+      |> String.split("ElmcValue *elmc_fn_Main_init", parts: 2)
+      |> hd()
+
+    assert pick_body =~ "= elmc_tuple2_take("
+    refute Regex.match?(~r/tmp_\d+ = tmp_\d+;/, pick_body)
+
+    refute Regex.match?(
+             ~r/ElmcValue \*tmp_\d+ = elmc_tuple2_take\([^;]+\);\s+tmp_\d+ = tmp_\d+;/,
+             pick_body
+           )
+  end
+
   test "retaining runtime calls borrow env-bound vars without retain temps" do
     alias Elmc.Backend.CCodegen.Host
 
@@ -1744,6 +2070,361 @@ defmodule Elmc.CCodegenPatternsTest do
     refute pebble_h =~ "ELMC_PEBBLE_MSG_CURRENT_DATE_TIME_TARGET"
   end
 
+  test "union constructor int literals use generated Elm-name macros" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+
+    type Direction
+        = Left
+        | Right
+        | Up
+        | Down
+
+    type Msg
+        = Noop
+
+    move : Direction -> Int -> Int
+    move direction value =
+        case direction of
+            Left ->
+                value + 1
+
+            Right ->
+                value - 1
+
+            Up ->
+                value + 2
+
+            Down ->
+                value - 2
+
+    init _ =
+        ( 0, Cmd.none )
+
+    update _ model =
+        ( move Left model + move Up model, Cmd.none )
+
+    subscriptions _ =
+        Sub.none
+
+    view _ =
+        Ui.windowStack []
+
+    main =
+        Platform.application
+            { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/union_constructor_macro_codegen", __DIR__)
+    out_dir = Path.expand("tmp/union_constructor_macro_codegen_out", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert generated_c =~ "#define ELMC_UNION_LEFT 1"
+    assert generated_c =~ "#define ELMC_UNION_MAIN_LEFT 1"
+    assert generated_c =~ "#define ELMC_UNION_MAIN_UP 3"
+    assert generated_c =~ "elmc_new_int(ELMC_UNION_LEFT)"
+    assert generated_c =~ "elmc_new_int(ELMC_UNION_MAIN_UP)"
+    assert generated_c =~ "case ELMC_UNION_LEFT:"
+    assert generated_c =~ "case ELMC_UNION_RIGHT:"
+    assert generated_c =~ "case ELMC_UNION_MAIN_UP:"
+    assert generated_c =~ "case ELMC_UNION_MAIN_DOWN:"
+    refute generated_c =~ "elmc_new_int(1);\n\n  ElmcValue *tmp_"
+    refute generated_c =~ "elmc_new_int(3);\n\n  ElmcValue *tmp_"
+  end
+
+  test "storage write string uses compact string command instead of padded tuple chain" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Storage as Storage
+    import Pebble.Ui as Ui
+
+    type Msg
+        = Noop
+
+    init _ =
+        ( 0, Storage.writeString 2048 (String.fromInt 42) )
+
+    update _ model =
+        ( model, Cmd.none )
+
+    subscriptions _ =
+        Sub.none
+
+    view _ =
+        Ui.windowStack []
+
+    main =
+        Platform.application
+            { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/storage_write_string_cmd_codegen", __DIR__)
+    out_dir = Path.expand("tmp/storage_write_string_cmd_codegen_out", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    init_body =
+      generated_c
+      |> String.split("ElmcValue *elmc_fn_Main_init(ElmcValue ** const args, const int argc) {",
+        parts: 2
+      )
+      |> Enum.at(1, "")
+      |> String.split("ElmcValue *elmc_fn_Main_update", parts: 2)
+      |> hd()
+
+    assert init_body =~
+             "elmc_cmd1_string(ELMC_PEBBLE_CMD_STORAGE_WRITE_STRING, 2048, native_string_"
+
+    refute init_body =~ "elmc_new_int(ELMC_PEBBLE_CMD_STORAGE_WRITE_STRING)"
+    refute init_body =~ "elmc_tuple2_ints(0, 0)"
+  end
+
+  test "direct render text append unrolls literal prefix before dynamic suffix" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+
+    type alias Model =
+        { best : Int }
+
+    type Msg
+        = Noop
+
+    init _ =
+        ( { best = 42 }, Cmd.none )
+
+    update _ model =
+        ( model, Cmd.none )
+
+    subscriptions _ =
+        Sub.none
+
+    view model =
+        Ui.toUiNode
+            [ Ui.clear Color.white
+            , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 0, y = 0, w = 100, h = 20 } ("Best " ++ String.fromInt model.best)
+            ]
+
+    main =
+        Platform.application
+            { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/direct_text_literal_prefix_append", __DIR__)
+    out_dir = Path.expand("tmp/direct_text_literal_prefix_append_out", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
+
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert generated_c =~ "scene_cmd.text[0] = 'B';"
+    assert generated_c =~ "scene_cmd.text[4] = ' ';"
+    assert generated_c =~ "int direct_text_i = 5;"
+    assert generated_c =~ "const char *direct_text_right = native_string_"
+    refute generated_c =~ "const char *direct_text = \"Best \";"
+  end
+
+  test "direct render eliminates inverse condition inside known branch" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+    type alias Model =
+        { value : Int }
+
+    type Msg
+        = Noop
+
+    init _ =
+        ( { value = 2 }, Cmd.none )
+
+    update _ model =
+        ( model, Cmd.none )
+
+    subscriptions _ =
+        Sub.none
+
+    view model =
+        Ui.toUiNode
+            [ if model.value /= 0 then
+                Ui.text Resources.DefaultFont
+                    Ui.defaultTextOptions
+                    { x = 0, y = 0, w = 100, h = 20 }
+                    (if model.value == 0 then
+                        "."
+
+                     else
+                        String.fromInt model.value
+                    )
+
+              else
+                Ui.clear Color.white
+            ]
+
+    main =
+        Platform.application
+            { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/direct_render_known_inverse_cond", __DIR__)
+    out_dir = Path.expand("tmp/direct_render_known_inverse_cond_out", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
+
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert generated_c =~ ~r/if \(elmc_as_int\(tmp_\d+\) != 0\)/
+    assert generated_c =~ "elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_TEXT)"
+    assert generated_c =~ "elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_CLEAR)"
+    refute generated_c =~ "if (ELMC_RECORD_GET_INDEX_INT(model, 0 /* value */) == 0)"
+    refute generated_c =~ "if (0)"
+    refute generated_c =~ "elmc_new_string(\".\")"
+    refute generated_c =~ "scene_cmd.text[0] = '.';"
+  end
+
+  test "affine direct render skips unreachable zero label inside nonzero text guard" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+    type alias Model =
+        { cells : List Int }
+
+    type Msg
+        = Noop
+
+    init _ =
+        ( { cells = [ 0, 2, 4 ] }, Cmd.none )
+
+    update _ model =
+        ( model, Cmd.none )
+
+    subscriptions _ =
+        Sub.none
+
+    drawCell : Int -> Int -> Ui.RenderOp
+    drawCell index value =
+        let
+            x =
+                index * 10
+
+            label =
+                if value == 0 then
+                    "."
+
+                else
+                    String.fromInt value
+        in
+        Ui.text Resources.DefaultFont
+            Ui.defaultTextOptions
+            { x = x, y = 0, w = 10, h = 10 }
+            label
+
+    view model =
+        model.cells
+            |> List.indexedMap drawCell
+            |> Ui.toUiNode
+
+    main =
+        Platform.application
+            { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/direct_affine_text_nonzero_guard", __DIR__)
+    out_dir = Path.expand("tmp/direct_affine_text_nonzero_guard_out", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
+
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert generated_c =~ ~r/if \(elmc_as_int\(direct_node_\d+->head\) != 0\)/
+    refute generated_c =~ ~r/if \(elmc_as_int\(direct_node_\d+->head\) == 0\)/
+    refute generated_c =~ "scene_cmd.text[0] = '.';"
+  end
+
   test "record update uses field index with comment when shape is known" do
     source = """
     module Main exposing (main)
@@ -1802,7 +2483,8 @@ defmodule Elmc.CCodegenPatternsTest do
       |> String.split("}\n", parts: 2)
       |> hd()
 
-    assert update_body =~ "elmc_record_update_index(tmp_2, 1 /* timeString */,"
+    assert update_body =~ "elmc_record_update_index(model, 1 /* timeString */, tmp_2)"
+    refute update_body =~ "elmc_retain(model)"
     refute update_body =~ ~s/elmc_record_update(tmp_2, "timeString"/
   end
 

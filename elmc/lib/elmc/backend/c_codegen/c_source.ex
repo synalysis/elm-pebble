@@ -10,8 +10,14 @@ defmodule Elmc.Backend.CCodegen.CSource do
 
   @spec format(String.t()) :: String.t()
   def format(source) when is_binary(source) do
+    borrow_arg_callees = borrow_arg_callees(source)
+
     source
+    |> compact_borrowed_record_field_call_temps(borrow_arg_callees)
     |> String.split("\n", trim: false)
+    |> Enum.flat_map(&expand_compact_if_assignment_line/1)
+    |> remove_adjacent_retain_release()
+    |> Enum.map(&compact_unit_increment/1)
     |> format_lines()
     |> collapse_blank_run(1)
     |> Enum.join("\n")
@@ -48,44 +54,186 @@ defmodule Elmc.Backend.CCodegen.CSource do
     Regex.replace(~r/\n{3,}/, text, "\n\n")
   end
 
+  defp expand_compact_if_assignment_line(line) do
+    case Regex.run(~r/^(\s*)if \((.+)\) (.+);$/, line) do
+      [_, indent, cond, body] ->
+        if compact_if_assignment_body?(body) do
+          ["#{indent}if (#{cond})", String.trim(body) <> ";"]
+        else
+          [line]
+        end
+
+      _ ->
+        [line]
+    end
+  end
+
+  defp remove_adjacent_retain_release(lines) do
+    lines
+    |> Enum.reduce([], fn line, acc ->
+      case acc do
+        [prev | rest] ->
+          case adjacent_retain_release?(prev, line) do
+            true -> rest
+            false -> [line | acc]
+          end
+
+        [] ->
+          [line]
+      end
+    end)
+    |> Enum.reverse()
+  end
+
+  defp adjacent_retain_release?(retain_line, release_line) do
+    with [_, tmp] <-
+           Regex.run(
+             ~r/^\s*ElmcValue \*(tmp_\d+) = elmc_retain\([A-Za-z_][A-Za-z0-9_]*\);\s*$/,
+             retain_line
+           ),
+         true <- Regex.match?(~r/^\s*elmc_release\(#{Regex.escape(tmp)}\);\s*$/, release_line) do
+      true
+    else
+      _ -> false
+    end
+  end
+
+  defp borrow_arg_callees(source) do
+    ~r/(?:static\s+)?ElmcValue \*(elmc_fn_[A-Za-z0-9_]+)\([^)]*\)\s*\{\s*\n\s*\/\* Ownership policy: [^*]*\bborrow_arg\b[^*]*\*\//
+    |> Regex.scan(source)
+    |> Enum.map(fn [_, callee] -> callee end)
+    |> MapSet.new()
+  end
+
+  defp compact_borrowed_record_field_call_temps(source, callees) do
+    Enum.reduce(callees, source, fn callee, acc ->
+      acc
+      |> compact_wrapper_borrowed_record_field_temp(callee)
+      |> compact_direct_borrowed_record_field_temp(callee)
+    end)
+  end
+
+  defp compact_wrapper_borrowed_record_field_temp(source, callee) do
+    pattern =
+      ~r/^(\s*)ElmcValue \*(tmp_\d+) = elmc_record_get_index\(([^;\n]+)\);\n\s*\n\s*ElmcValue \*(call_args_\d+)\[(\d+)\] = \{ ([^;\n{}]*?)\b\2\b([^;\n{}]*?) \};\n\s*ElmcValue \*(tmp_\d+) = #{Regex.escape(callee)}\(\4, \5\);\n\s*\n\s*elmc_release\(\2\);/m
+
+    Regex.replace(pattern, source, fn _match,
+                                      indent,
+                                      _tmp,
+                                      getter_args,
+                                      call_args,
+                                      arity,
+                                      before,
+                                      after_args,
+                                      out ->
+      borrowed = "ELMC_RECORD_GET_INDEX(#{getter_args})"
+
+      """
+      #{indent}ElmcValue *#{call_args}[#{arity}] = { #{before}#{borrowed}#{after_args} };
+      #{indent}ElmcValue *#{out} = #{callee}(#{call_args}, #{arity});
+      """
+      |> String.trim_trailing()
+    end)
+  end
+
+  defp compact_direct_borrowed_record_field_temp(source, callee) do
+    pattern =
+      ~r/^(\s*)ElmcValue \*(tmp_\d+) = elmc_record_get_index\(([^;\n]+)\);\n\s*\n\s*ElmcValue \*(tmp_\d+) = #{Regex.escape(callee)}\(([^;\n()]*?)\b\2\b([^;\n()]*?)\);\n\s*\n\s*elmc_release\(\2\);/m
+
+    Regex.replace(pattern, source, fn _match,
+                                      indent,
+                                      _tmp,
+                                      getter_args,
+                                      out,
+                                      before,
+                                      after_args ->
+      borrowed = "ELMC_RECORD_GET_INDEX(#{getter_args})"
+
+      """
+      #{indent}ElmcValue *#{out} = #{callee}(#{before}#{borrowed}#{after_args});
+      """
+      |> String.trim_trailing()
+    end)
+  end
+
+  defp compact_unit_increment(line) do
+    cond do
+      match = Regex.run(~r/^(\s*)([A-Za-z_][A-Za-z0-9_]*(?:\[[^\]]+\])?)\s*\+=\s*1;\s*$/, line) ->
+        [_, indent, target] = match
+        "#{indent}#{target}++;"
+
+      match = Regex.run(~r/^(\s*)([A-Za-z_][A-Za-z0-9_]*(?:\[[^\]]+\])?)\s*-=\s*1;\s*$/, line) ->
+        [_, indent, target] = match
+        "#{indent}#{target}--;"
+
+      true ->
+        line
+    end
+  end
+
+  defp compact_if_assignment_body?(body) do
+    Regex.match?(
+      ~r/^[A-Za-z_][\w]*(\[[^\]]+\])?\s*(\+=|-=|\*=|\/=|%?=)/,
+      String.trim(body)
+    )
+  end
+
   defp format_lines(lines) do
-    {reversed, _depth, _switch_depth} =
-      Enum.reduce(lines, {[], 0, nil}, fn line, {acc, depth, switch_depth} ->
+    {reversed, _depth, _switch_depth, _pending_if_body} =
+      Enum.reduce(lines, {[], 0, nil, false}, fn line,
+                                                 {acc, depth, switch_depth, pending_if_body} ->
         trimmed = String.trim_trailing(line)
         content = String.trim(trimmed)
 
         cond do
           content == "" ->
-            {["" | acc], depth, switch_depth}
+            {["" | acc], depth, switch_depth, pending_if_body}
 
           preprocessor_line?(content) ->
-            {[content | acc], depth, switch_depth}
+            {[content | acc], depth, switch_depth, false}
 
           catch_end?(content) ->
             depth_before = max(depth - 1, 0)
             indent_cols = depth_before * @indent_unit
             formatted = String.duplicate(" ", indent_cols) <> content
-            {[formatted | acc], depth_before, switch_depth}
+            {[formatted | acc], depth_before, switch_depth, false}
 
           catch_begin?(content) ->
             indent_cols = depth * @indent_unit
             formatted = String.duplicate(" ", indent_cols) <> content
-            {[formatted | acc], depth + 1, switch_depth}
+            {[formatted | acc], depth + 1, switch_depth, false}
 
           true ->
             depth_before = max(depth - leading_close_braces(content), 0)
-            indent_level = effective_indent(depth_before, switch_depth, content)
+
+            {indent_level, next_pending_if_body} =
+              cond do
+                pending_if_body ->
+                  {depth_before + 1, false}
+
+                braceless_if_opener?(content) ->
+                  {depth_before, true}
+
+                true ->
+                  {depth_before, false}
+              end
+
+            indent_level = effective_indent(indent_level, switch_depth, content)
             indent_cols = indent_level * @indent_unit
             formatted = String.duplicate(" ", indent_cols) <> content
 
             depth_after = depth_before + net_brace_delta(content)
             switch_after = update_switch_depth(content, depth_after, switch_depth)
 
-            {[formatted | acc], max(depth_after, 0), switch_after}
+            {[formatted | acc], max(depth_after, 0), switch_after, next_pending_if_body}
         end
       end)
 
     Enum.reverse(reversed)
+  end
+
+  defp braceless_if_opener?(content) do
+    Regex.match?(~r/^if\s*\(.+\)$/, content) and not String.contains?(content, "{")
   end
 
   defp preprocessor_line?(line) do

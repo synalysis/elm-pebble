@@ -7,6 +7,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
   alias Elmc.Backend.CCodegen.DirectRender.Emit.Qualified.Draws, as: QualifiedDraws
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.Hoist
   alias Elmc.Backend.CCodegen.Patterns
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
@@ -36,10 +37,10 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
   end
 
   def emit_expr(
-         %{op: :let_in, name: name, value_expr: value_expr, in_expr: in_expr},
-         env,
-         counter
-       ) do
+        %{op: :let_in, name: name, value_expr: value_expr, in_expr: in_expr},
+        env,
+        counter
+      ) do
     cond do
       native_int_let?(name, value_expr, in_expr, env) ->
         hoisted_before = Process.get(:elmc_hoisted_native_ints, %{})
@@ -102,7 +103,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
         end
 
       native_float_let?(name, value_expr, in_expr, env) ->
-        {value_code, value_ref, counter} = Host.compile_native_float_expr(value_expr, env, counter)
+        {value_code, value_ref, counter} =
+          Host.compile_native_float_expr(value_expr, env, counter)
+
         next = counter + 1
         native_var = "direct_native_float_let_#{Util.safe_c_suffix(name)}_#{next}"
 
@@ -220,10 +223,10 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
   end
 
   def emit_expr(
-         %{op: :if, cond: cond_expr, then_expr: then_expr, else_expr: else_expr},
-         env,
-         counter
-       ) do
+        %{op: :if, cond: cond_expr, then_expr: then_expr, else_expr: else_expr},
+        env,
+        counter
+      ) do
     {cond_code, cond_ref, cond_release, counter} =
       if Host.native_bool_expr?(cond_expr, env) do
         {code, ref, counter} = Host.compile_native_bool_expr(cond_expr, env, counter)
@@ -233,8 +236,11 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
         {code, "elmc_as_int(#{var}) != 0", "  elmc_release(#{var});", counter}
       end
 
-    with {:ok, then_code, counter} <- emit_expr(then_expr, env, counter),
-         {:ok, else_code, counter} <- emit_expr(else_expr, env, counter) do
+    then_env = Hoist.put_hoisted_native_bool(env, cond_expr, "1")
+    else_env = Hoist.put_hoisted_native_bool(env, cond_expr, "0")
+
+    with {:ok, then_code, counter} <- emit_expr(then_expr, then_env, counter),
+         {:ok, else_code, counter} <- emit_expr(else_expr, else_env, counter) do
       {:ok, If.if_code(cond_code, cond_ref, then_code, else_code, cond_release), counter}
     else
       _ -> :error
@@ -255,7 +261,11 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
           Patterns.maybe_unwrap_var_branch(case_env, branch, subject_ref, c)
 
         branch_env =
-          Map.put(branch_env, :__direct_targets__, Map.get(env, :__direct_targets__, MapSet.new()))
+          Map.put(
+            branch_env,
+            :__direct_targets__,
+            Map.get(env, :__direct_targets__, MapSet.new())
+          )
 
         case emit_expr(branch.expr, branch_env, c) do
           {:ok, expr_code, c2} ->
@@ -355,7 +365,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
     closure_var = Map.fetch!(env, Host.binding_key(name))
 
     {arg_code, arg_refs, release_refs, counter} =
-      Enum.reduce(args, {"", [], [], counter}, fn arg_expr, {code_acc, refs_acc, releases_acc, c} ->
+      Enum.reduce(args, {"", [], [], counter}, fn arg_expr,
+                                                  {code_acc, refs_acc, releases_acc, c} ->
         {code, ref, c2} = Host.compile_expr(arg_expr, env, c)
         {code_acc <> "\n  " <> code, refs_acc ++ [ref], releases_acc ++ [ref], c2}
       end)
@@ -424,13 +435,19 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
     end
   end
 
-  defp emit_direct_command_native_int_let(_name, _value_expr, _in_expr, _env, _counter), do: :error
+  defp emit_direct_command_native_int_let(_name, _value_expr, _in_expr, _env, _counter),
+    do: :error
 
   defp direct_command_native_int_ref?(ref) when is_binary(ref) do
     ref != "" and not String.starts_with?(ref, "tmp_")
   end
 
-  @spec native_int_let?(Types.binding_name(), Types.ir_expr(), Types.ir_expr(), Types.compile_env()) ::
+  @spec native_int_let?(
+          Types.binding_name(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env()
+        ) ::
           boolean()
   defp native_int_let?(name, value_expr, in_expr, env)
        when is_binary(name) or is_atom(name) do
@@ -640,8 +657,11 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
   end
 
   defp collect_direct_var_contexts(name, %{op: :tuple2, left: left, right: right}, _context, env) do
-    left_context = if Host.native_int_candidate_for_analysis?(name, left), do: :native, else: :boxed
-    right_context = if Host.native_int_candidate_for_analysis?(name, right), do: :native, else: :boxed
+    left_context =
+      if Host.native_int_candidate_for_analysis?(name, left), do: :native, else: :boxed
+
+    right_context =
+      if Host.native_int_candidate_for_analysis?(name, right), do: :native, else: :boxed
 
     collect_direct_var_contexts(name, left, left_context, env) ++
       collect_direct_var_contexts(name, right, right_context, env)
@@ -650,7 +670,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
   defp collect_direct_var_contexts(name, %{op: :record_literal, fields: fields}, _context, env)
        when is_list(fields) do
     Enum.flat_map(fields, fn field ->
-      context = if Host.native_int_candidate_for_analysis?(name, field.expr), do: :native, else: :boxed
+      context =
+        if Host.native_int_candidate_for_analysis?(name, field.expr), do: :native, else: :boxed
+
       collect_direct_var_contexts(name, field.expr, context, env)
     end)
   end
@@ -823,7 +845,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
         fragment_expr?(head, env) and fragment_expr?(tail, env)
 
       _ ->
-        fragment_expr_target?(normalized_target) or qualified_direct_fragment?(normalized_target, env)
+        fragment_expr_target?(normalized_target) or
+          qualified_direct_fragment?(normalized_target, env)
     end
   end
 

@@ -10,6 +10,12 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.If do
 
     body =
       cond do
+        cond_ref == "1" ->
+          then_code
+
+        cond_ref == "0" ->
+          else_code
+
         then_empty? and else_empty? ->
           ""
 

@@ -67,6 +67,75 @@ defmodule Elmc.GeneratedRcTrackGame2048TemplateTest do
         }
       }
 
+      static int drain_init_cmds(ElmcPebbleApp *app) {
+        ElmcPebbleCmd cmds[8];
+        int count = 0;
+        int random_rc = -99;
+        for (int j = 0; j < 8; j++) {
+          ElmcPebbleCmd cmd = {0};
+          if (elmc_pebble_take_cmd(app, &cmd) != 0) break;
+          if (cmd.kind == ELMC_PEBBLE_CMD_NONE) break;
+          cmds[count++] = cmd;
+        }
+        for (int j = 0; j < count; j++) {
+          if (cmds[j].kind == ELMC_PEBBLE_CMD_RANDOM_GENERATE) {
+            random_rc = elmc_pebble_dispatch_tag_value(app, cmds[j].p0, 12345);
+          }
+        }
+        for (int j = 0; j < count; j++) {
+          if (cmds[j].kind == ELMC_PEBBLE_CMD_STORAGE_READ_STRING) {
+            elmc_pebble_dispatch_tag_string(app, cmds[j].p1, "");
+          }
+        }
+        return random_rc;
+      }
+
+      static int scene_rect_cmds(ElmcPebbleApp *app) {
+        if (elmc_pebble_ensure_scene(app) != 0) return -1;
+        int rects = 0;
+        int offset = 0;
+        while (offset < app->scene.byte_count) {
+          ElmcPebbleDrawCmd cmd = {0};
+          if (elmc_pebble_scene_decode_record(app->scene.bytes, app->scene.byte_count, &offset, &cmd) != 0) {
+            break;
+          }
+          if (cmd.kind == ELMC_PEBBLE_DRAW_RECT) rects += 1;
+        }
+        elmc_pebble_scene_reset_draw_cursor(app);
+        return rects;
+      }
+
+      static int scene_text_cmds(ElmcPebbleApp *app) {
+        if (elmc_pebble_ensure_scene(app) != 0) return -1;
+        int texts = 0;
+        int offset = 0;
+        while (offset < app->scene.byte_count) {
+          ElmcPebbleDrawCmd cmd = {0};
+          if (elmc_pebble_scene_decode_record(app->scene.bytes, app->scene.byte_count, &offset, &cmd) != 0) {
+            break;
+          }
+          if (cmd.kind == ELMC_PEBBLE_DRAW_TEXT) texts += 1;
+        }
+        elmc_pebble_scene_reset_draw_cursor(app);
+        return texts;
+      }
+
+      static int model_nonzero_cells(ElmcPebbleApp *app) {
+        ElmcValue *model = elmc_worker_model(&app->worker);
+        if (!model) return -1;
+        ElmcValue *cells = elmc_record_get(model, "cells");
+        int count = 0;
+        ElmcValue *cursor = cells;
+        while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
+          ElmcCons *node = (ElmcCons *)cursor->payload;
+          if (node->head && elmc_as_int(node->head) != 0) count += 1;
+          cursor = node->tail;
+        }
+        if (cells) elmc_release(cells);
+        elmc_release(model);
+        return count;
+      }
+
       static int drain_view(ElmcPebbleApp *app) {
         app->scene.dirty = 1;
         if (elmc_pebble_ensure_scene(app) != 0) return -1;
@@ -80,6 +149,21 @@ defmodule Elmc.GeneratedRcTrackGame2048TemplateTest do
           skip += n;
         }
         return total;
+      }
+
+      static int model_cells_len(ElmcPebbleApp *app) {
+        ElmcValue *model = elmc_worker_model(&app->worker);
+        if (!model) return -1;
+        ElmcValue *cells = elmc_record_get(model, "cells");
+        int len = 0;
+        ElmcValue *cursor = cells;
+        while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
+          len += 1;
+          cursor = ((ElmcCons *)cursor->payload)->tail;
+        }
+        if (cells) elmc_release(cells);
+        elmc_release(model);
+        return len;
       }
 
       static int model_turn(ElmcPebbleApp *app) {
@@ -106,9 +190,26 @@ defmodule Elmc.GeneratedRcTrackGame2048TemplateTest do
         if (elmc_pebble_init(&app, context) != 0) return 2;
         elmc_release(context);
 
+        if (model_cells_len(&app) != 16) return 8;
+        if (drain_init_cmds(&app) != 0) return 16;
+        if (model_nonzero_cells(&app) != 2) return 17;
+        app.scene.dirty = 1;
+        if (elmc_pebble_ensure_scene(&app) != 0) return 13;
+        if (scene_rect_cmds(&app) != 16) return 19;
+        if (scene_text_cmds(&app) < 2) return 21;
+        void *scene_bytes = app.scene.bytes;
+        int scene_capacity = app.scene.byte_capacity;
+        if (!scene_bytes || scene_capacity <= 0) return 14;
+
         if (elmc_pebble_dispatch_tag_value(&app, ELMC_PEBBLE_MSG_RANDOMGENERATED, 12345) != 0) return 3;
+        if (app.scene.bytes != scene_bytes || app.scene.byte_capacity < scene_capacity) return 15;
         drain_cmds(&app);
+        if (model_cells_len(&app) != 16) return 9;
         if (drain_view(&app) < 17) return 4;
+        app.scene.dirty = 1;
+        if (elmc_pebble_ensure_scene(&app) != 0) return 10;
+        if (app.scene.command_count < 20) return 11;
+        if (app.scene.byte_count <= 0 || app.scene.byte_count > 512) return 12;
 
         for (int i = 0; i < 100; i++) {
           if (elmc_pebble_dispatch_int(&app, dir_msgs[i % 4]) != 0) return 5;

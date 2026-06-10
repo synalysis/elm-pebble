@@ -13,7 +13,9 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   alias Elmc.Backend.CCodegen.Native.TypedReturn
   alias Elmc.Backend.CCodegen.Native.RecordFields, as: RecordFields
   alias Elmc.Backend.CCodegen.Native.UsageAnalysis, as: NativeUsageAnalysis
+  alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.CCodegen.UnionMacros
   alias Elmc.Backend.CCodegen.Util
 
   @spec expr?(Types.ir_expr(), Types.compile_env()) :: boolean()
@@ -303,6 +305,16 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
         {"", ref, counter}
 
       :error ->
+        compile_literal_or_dispatch(expr, env, counter)
+    end
+  end
+
+  defp compile_literal_or_dispatch(expr, env, counter) do
+    case UnionMacros.literal_ref(expr, env) do
+      ref when is_binary(ref) ->
+        {"", ref, counter}
+
+      nil ->
         case ConstantInt.literal_value(expr, env) do
           {:ok, value} ->
             {"", Integer.to_string(value), counter}
@@ -1123,7 +1135,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
       code = """
       #{left_code}#{list_code}
       #{length_code}
-        elmc_release(#{list_var});
+        #{RecordCompile.release_list_operand_code(env, list_var)}
       """
 
       {:ok, code, "(#{left_ref} - #{count})", counter}

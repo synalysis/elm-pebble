@@ -101,6 +101,9 @@ defmodule Elmc.Backend.CCodegen.Host do
   @spec nested_record_get_int_expr(Types.ir_expr(), Types.compile_env()) :: String.t() | nil
   defdelegate nested_record_get_int_expr(expr, env), to: Expr
 
+  @spec record_get_borrow_expr(Types.ir_expr(), Types.compile_env()) :: String.t() | nil
+  defdelegate record_get_borrow_expr(expr, env), to: Expr
+
   @spec normalize_special_target(String.t()) :: String.t()
   defdelegate normalize_special_target(target), to: SpecialValues
 

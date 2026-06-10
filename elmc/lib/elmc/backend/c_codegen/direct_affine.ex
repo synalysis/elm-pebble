@@ -6,6 +6,8 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
 
+  @literal_text_unroll_max 16
+
   @type function_target :: Types.function_target()
 
   defp draw_kind(kind), do: Elmc.Backend.Pebble.draw_kind_id!(kind)
@@ -428,15 +430,50 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
              bindings,
              env
            ),
-         {:ok, color_ref} <- direct_must_literal_int(color, env) do
+         {:ok, color_spec} <- analyze_affine_bounds_color(color, item_param, bindings, env) do
       {:ok,
        %{
          kind: kind,
          kind_macro: Host.generated_draw_kind_macro(kind),
-         params: [x_param, y_param, w_param, h_param, color_ref]
+         params: [x_param, y_param, w_param, h_param, affine_bounds_color_param(color_spec)],
+         fill_emit_guard: affine_fill_emit_guard(color_spec, kind)
        }}
     end
   end
+
+  defp analyze_affine_bounds_color(expr, item_param, bindings, env) do
+    expr = resolve_affine_expr(expr, bindings)
+
+    case expr do
+      %{op: :if, cond: cond, then_expr: then_expr, else_expr: else_expr} ->
+        with true <- affine_zero_test?(cond, item_param),
+             {:ok, _} <- direct_must_literal_int(then_expr, env),
+             {:ok, nonzero} <- direct_must_literal_int(else_expr, env) do
+          {:ok, {:skip_when_zero, affine_binding_name(item_param), nonzero}}
+        else
+          _ -> analyze_affine_bounds_color_literal(expr, env)
+        end
+
+      _ ->
+        analyze_affine_bounds_color_literal(expr, env)
+    end
+  end
+
+  defp analyze_affine_bounds_color_literal(expr, env) do
+    case direct_must_literal_int(expr, env) do
+      {:ok, color} -> {:ok, {:literal, color}}
+      :error -> :error
+    end
+  end
+
+  defp affine_bounds_color_param({:literal, color}), do: color
+  defp affine_bounds_color_param({:skip_when_zero, _item, nonzero}), do: nonzero
+
+  defp affine_fill_emit_guard({:skip_when_zero, item, _}, kind) do
+    if kind == draw_kind(:fill_rect), do: {:nonzero, item}, else: nil
+  end
+
+  defp affine_fill_emit_guard(_, _), do: nil
 
   defp analyze_affine_text_command(
          font,
@@ -1391,44 +1428,135 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
     |> Enum.map_join("\n          ", fn command ->
       param_assignments = affine_draw_param_assignments(command.params, next, mode)
       text_copy = affine_draw_text_copy(command, next, mode)
+      fill_skip_open = affine_draw_skip_nonempty_fill_open(command, next, mode)
+      fill_skip_close = affine_draw_skip_nonempty_fill_close(fill_skip_open)
+      text_skip_open = affine_draw_skip_empty_text_open(command, next, mode)
+      text_skip_close = affine_draw_skip_empty_text_close(text_skip_open)
 
       """
-      #{Elmc.Backend.CCodegen.DirectRender.Emit.Commands.scene_emit_guard_open()}
+      #{fill_skip_open}#{text_skip_open}#{Elmc.Backend.CCodegen.DirectRender.Emit.Commands.scene_emit_guard_open()}
             elmc_draw_cmd_init(&scene_cmd, #{command.kind_macro});
             #{param_assignments}
             #{text_copy}
             #{Elmc.Backend.CCodegen.DirectRender.Emit.Catch.push_cmd_check()}
-          #{Elmc.Backend.CCodegen.DirectRender.Emit.Commands.scene_emit_guard_close()}
+          #{Elmc.Backend.CCodegen.DirectRender.Emit.Commands.scene_emit_guard_close()}#{text_skip_close}#{fill_skip_close}
       """
       |> String.trim_trailing()
     end)
   end
 
-  defp affine_draw_text_copy(%{label: {:from_int, item_param, zero_label}}, next, mode) do
+  defp affine_draw_skip_nonempty_fill_open(%{fill_emit_guard: {:nonzero, item_param}}, next, mode) do
     item_ref = affine_loop_item_ref(item_param, next, mode)
-    escaped = Util.escape_c_string(zero_label)
+    "if (#{item_ref} != 0) {\n          "
+  end
 
-    """
-    if (#{item_ref} == 0) {
-      #{CSource.indent(direct_text_copy_body_for_literal(escaped), 6)}
-    } else {
-      snprintf(scene_cmd.text, sizeof(scene_cmd.text), "%lld", (long long)#{item_ref});
-      scene_cmd.text[sizeof(scene_cmd.text) - 1] = '\\0';
-    }
-    """
+  defp affine_draw_skip_nonempty_fill_open(_command, _next, _mode), do: ""
+
+  defp affine_draw_skip_nonempty_fill_close(""), do: ""
+
+  defp affine_draw_skip_nonempty_fill_close(_skip_open),
+    do: "\n          }"
+
+  defp affine_draw_skip_empty_text_open(
+         %{label: {:from_int, item_param, _zero_label}},
+         next,
+         mode
+       ) do
+    item_ref = affine_loop_item_ref(item_param, next, mode)
+    "if (#{item_ref} != 0) {\n          "
+  end
+
+  defp affine_draw_skip_empty_text_open(_command, _next, _mode), do: ""
+
+  defp affine_draw_skip_empty_text_close(""), do: ""
+
+  defp affine_draw_skip_empty_text_close(_skip_open),
+    do: "\n          }"
+
+  defp affine_draw_text_copy(%{label: {:from_int, item_param, _zero_label}}, next, mode) do
+    item_ref = affine_loop_item_ref(item_param, next, mode)
+    CSource.indent(direct_int_text_copy_body(item_ref), 4)
   end
 
   defp affine_draw_text_copy(%{label: {:literal, literal}}, _next, _mode) do
-    CSource.indent(direct_text_copy_body_for_literal(Util.escape_c_string(literal)), 4)
+    CSource.indent(direct_text_copy_body_for_literal(literal), 4)
   end
 
   defp affine_draw_text_copy(_command, _next, _mode), do: ""
 
-  defp direct_text_copy_body_for_literal(escaped) do
+  defp direct_text_copy_body_for_literal(literal) do
+    bytes = :binary.bin_to_list(literal)
+
+    if length(bytes) <= @literal_text_unroll_max do
+      literal_text_assignments(bytes)
+    else
+      escaped = Util.escape_c_string(literal)
+
+      """
+      {
+        const char *direct_text = "#{escaped}";
+      #{CSource.indent(Host.direct_text_copy_body(), 2)}
+      }
+      """
+    end
+  end
+
+  defp literal_text_assignments(bytes) do
+    bytes = Enum.take(bytes, 63)
+
+    assignments =
+      bytes
+      |> Enum.with_index()
+      |> Enum.map_join("\n", fn {byte, index} ->
+        "scene_cmd.text[#{index}] = #{c_char_literal(byte)};"
+      end)
+
+    null_index = length(bytes)
+
     """
     {
-      const char *direct_text = "#{escaped}";
-    #{CSource.indent(Host.direct_text_copy_body(), 2)}
+      #{assignments}
+      scene_cmd.text[#{null_index}] = '\\0';
+    }
+    """
+  end
+
+  defp c_char_literal(?\\), do: "'\\\\'"
+  defp c_char_literal(?'), do: "'\\''"
+  defp c_char_literal(?\n), do: "'\\n'"
+  defp c_char_literal(?\r), do: "'\\r'"
+  defp c_char_literal(?\t), do: "'\\t'"
+
+  defp c_char_literal(byte) when byte >= 32 and byte <= 126 do
+    "'#{<<byte>>}'"
+  end
+
+  defp c_char_literal(byte) do
+    hex = byte |> Integer.to_string(16) |> String.pad_leading(2, "0")
+    "'\\x#{hex}'"
+  end
+
+  defp direct_int_text_copy_body(item_ref) do
+    """
+    {
+      elmc_int_t direct_value = #{item_ref};
+      char direct_digits[32];
+      int direct_digit_count = 0;
+      int direct_text_i = 0;
+      int direct_negative = direct_value < 0;
+      if (direct_negative) {
+        scene_cmd.text[direct_text_i++] = '-';
+      }
+      do {
+        elmc_int_t direct_digit = direct_value % 10;
+        if (direct_digit < 0) direct_digit = -direct_digit;
+        direct_digits[direct_digit_count++] = (char)('0' + direct_digit);
+        direct_value /= 10;
+      } while (direct_value != 0 && direct_digit_count < (int)sizeof(direct_digits));
+      while (direct_digit_count > 0 && direct_text_i < (int)sizeof(scene_cmd.text) - 1) {
+        scene_cmd.text[direct_text_i++] = direct_digits[--direct_digit_count];
+      }
+      scene_cmd.text[direct_text_i] = '\\0';
     }
     """
   end

@@ -6,6 +6,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.Float, as: NativeFloat
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
+  alias Elmc.Backend.CCodegen.OwnershipCompile
   alias Elmc.Backend.CCodegen.RuntimeCall
   alias Elmc.Backend.CCodegen.SpecialValues
   alias Elmc.Backend.CCodegen.Types
@@ -31,7 +32,8 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
   end
 
   @spec qualified_operator_member?(String.t(), [String.t()]) :: boolean()
-  def qualified_operator_member?(target, operators) when is_binary(target) and is_list(operators) do
+  def qualified_operator_member?(target, operators)
+      when is_binary(target) and is_list(operators) do
     case qualified_operator_name(target) do
       nil -> false
       name -> Enum.member?(operators, name)
@@ -102,20 +104,25 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
     do: curried_binary("__idiv__", args, env, counter)
 
   def call("__append__", [left, right], env, counter),
-    do: Host.compile_expr(Elmc.Backend.CCodegen.RuntimeCall.flatten_append_ir(left, right), env, counter)
+    do:
+      Host.compile_expr(
+        Elmc.Backend.CCodegen.RuntimeCall.flatten_append_ir(left, right),
+        env,
+        counter
+      )
 
   def call("__append__", args, env, counter)
-       when length(args) in [0, 1],
-       do: curried_binary("__append__", args, env, counter)
+      when length(args) in [0, 1],
+      do: curried_binary("__append__", args, env, counter)
 
   def call(name, [left, right], env, counter)
-       when name in ["__eq__", "__neq__", "__lt__", "__lte__", "__gt__", "__gte__"],
-       do: compare_operator(left, right, name, env, counter)
+      when name in ["__eq__", "__neq__", "__lt__", "__lte__", "__gt__", "__gte__"],
+      do: compare_operator(left, right, name, env, counter)
 
   def call(name, args, env, counter)
-       when name in ["__eq__", "__neq__", "__lt__", "__lte__", "__gt__", "__gte__"] and
-              length(args) in [0, 1],
-       do: curried_binary(name, args, env, counter)
+      when name in ["__eq__", "__neq__", "__lt__", "__lte__", "__gt__", "__gte__"] and
+             length(args) in [0, 1],
+      do: curried_binary(name, args, env, counter)
 
   def call("modBy", [base, value], env, counter),
     do:
@@ -134,14 +141,28 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
       )
 
   def call("round", [x], env, counter),
-    do: Host.compile_expr(%{op: :runtime_call, function: "elmc_basics_round", args: [x]}, env, counter)
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_round", args: [x]},
+        env,
+        counter
+      )
 
   def call("floor", [x], env, counter),
-    do: Host.compile_expr(%{op: :runtime_call, function: "elmc_basics_floor", args: [x]}, env, counter)
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_floor", args: [x]},
+        env,
+        counter
+      )
 
   def call("ceiling", [x], env, counter),
     do:
-      Host.compile_expr(%{op: :runtime_call, function: "elmc_basics_ceiling", args: [x]}, env, counter)
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_ceiling", args: [x]},
+        env,
+        counter
+      )
 
   def call("truncate", [x], env, counter),
     do:
@@ -160,7 +181,12 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
       )
 
   def call("sqrt", [x], env, counter),
-    do: Host.compile_expr(%{op: :runtime_call, function: "elmc_basics_sqrt", args: [x]}, env, counter)
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_sqrt", args: [x]},
+        env,
+        counter
+      )
 
   def call("logBase", [base, x], env, counter),
     do:
@@ -171,22 +197,52 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
       )
 
   def call("sin", [x], env, counter),
-    do: Host.compile_expr(%{op: :runtime_call, function: "elmc_basics_sin", args: [x]}, env, counter)
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_sin", args: [x]},
+        env,
+        counter
+      )
 
   def call("cos", [x], env, counter),
-    do: Host.compile_expr(%{op: :runtime_call, function: "elmc_basics_cos", args: [x]}, env, counter)
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_cos", args: [x]},
+        env,
+        counter
+      )
 
   def call("tan", [x], env, counter),
-    do: Host.compile_expr(%{op: :runtime_call, function: "elmc_basics_tan", args: [x]}, env, counter)
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_tan", args: [x]},
+        env,
+        counter
+      )
 
   def call("acos", [x], env, counter),
-    do: Host.compile_expr(%{op: :runtime_call, function: "elmc_basics_acos", args: [x]}, env, counter)
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_acos", args: [x]},
+        env,
+        counter
+      )
 
   def call("asin", [x], env, counter),
-    do: Host.compile_expr(%{op: :runtime_call, function: "elmc_basics_asin", args: [x]}, env, counter)
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_asin", args: [x]},
+        env,
+        counter
+      )
 
   def call("atan", [x], env, counter),
-    do: Host.compile_expr(%{op: :runtime_call, function: "elmc_basics_atan", args: [x]}, env, counter)
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_atan", args: [x]},
+        env,
+        counter
+      )
 
   def call("atan2", [y, x], env, counter),
     do:
@@ -198,14 +254,27 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
 
   def call("degrees", [x], env, counter),
     do:
-      Host.compile_expr(%{op: :runtime_call, function: "elmc_basics_degrees", args: [x]}, env, counter)
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_degrees", args: [x]},
+        env,
+        counter
+      )
 
   def call("radians", [x], env, counter),
     do:
-      Host.compile_expr(%{op: :runtime_call, function: "elmc_basics_radians", args: [x]}, env, counter)
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_radians", args: [x]},
+        env,
+        counter
+      )
 
   def call("turns", [x], env, counter),
-    do: Host.compile_expr(%{op: :runtime_call, function: "elmc_basics_turns", args: [x]}, env, counter)
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_turns", args: [x]},
+        env,
+        counter
+      )
 
   def call("fromPolar", [polar], env, counter),
     do:
@@ -225,7 +294,11 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
 
   def call("isNaN", [x], env, counter),
     do:
-      Host.compile_expr(%{op: :runtime_call, function: "elmc_basics_is_nan", args: [x]}, env, counter)
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_is_nan", args: [x]},
+        env,
+        counter
+      )
 
   def call("isInfinite", [x], env, counter),
     do:
@@ -236,18 +309,36 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
       )
 
   def call("abs", [x], env, counter),
-    do: Host.compile_expr(%{op: :runtime_call, function: "elmc_basics_abs", args: [x]}, env, counter)
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_abs", args: [x]},
+        env,
+        counter
+      )
 
   def call("negate", [x], env, counter),
     do:
-      Host.compile_expr(%{op: :runtime_call, function: "elmc_basics_negate", args: [x]}, env, counter)
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_negate", args: [x]},
+        env,
+        counter
+      )
 
   def call("not", [x], env, counter),
-    do: Host.compile_expr(%{op: :runtime_call, function: "elmc_basics_not", args: [x]}, env, counter)
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_not", args: [x]},
+        env,
+        counter
+      )
 
   def call("xor", [a, b], env, counter),
     do:
-      Host.compile_expr(%{op: :runtime_call, function: "elmc_basics_xor", args: [a, b]}, env, counter)
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_xor", args: [a, b]},
+        env,
+        counter
+      )
 
   def call("compare", [a, b], env, counter),
     do:
@@ -331,13 +422,13 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
         ) ::
           Types.compile_result()
   def int_binop(
-         %{op: :int_literal, value: left},
-         %{op: :int_literal, value: right},
-         operator,
-         _env,
-         counter
-       )
-       when operator in ["+", "-", "*"] do
+        %{op: :int_literal, value: left},
+        %{op: :int_literal, value: right},
+        operator,
+        _env,
+        counter
+      )
+      when operator in ["+", "-", "*"] do
     value =
       case operator do
         "+" -> left + right
@@ -549,10 +640,15 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
     if Host.native_int_compare_safe?(operator, left, right, env) do
       int_compare_operator(left, right, operator, env, counter)
     else
-      {left_code, left_var, counter} = Host.compile_expr(left, env, counter)
-      {right_code, right_var, counter} = Host.compile_expr(right, env, counter)
+      {left_code, left_var, counter, left_borrowed?} = compile_compare_operand(left, env, counter)
+
+      {right_code, right_var, counter, right_borrowed?} =
+        compile_compare_operand(right, env, counter)
+
       next = counter + 1
       out = "tmp_#{next}"
+      left_release = compare_operand_release(env, left_var, left_borrowed?)
+      right_release = compare_operand_release(env, right_var, right_borrowed?)
 
       code =
         case operator do
@@ -561,8 +657,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
             #{left_code}
               #{right_code}
               ElmcValue *#{out} = elmc_new_bool(elmc_value_equal(#{left_var}, #{right_var}));
-              elmc_release(#{left_var});
-              elmc_release(#{right_var});
+              #{left_release}#{right_release}\
             """
 
           "__neq__" ->
@@ -570,8 +665,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
             #{left_code}
               #{right_code}
               ElmcValue *#{out} = elmc_new_bool(!elmc_value_equal(#{left_var}, #{right_var}));
-              elmc_release(#{left_var});
-              elmc_release(#{right_var});
+              #{left_release}#{right_release}\
             """
 
           _ ->
@@ -589,14 +683,43 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
               ElmcValue *__cmp_#{next} = elmc_basics_compare(#{left_var}, #{right_var});
               ElmcValue *#{out} = elmc_new_bool(elmc_as_int(__cmp_#{next}) #{comparison} 0);
               elmc_release(__cmp_#{next});
-              elmc_release(#{left_var});
-              elmc_release(#{right_var});
+              #{left_release}#{right_release}\
             """
         end
 
       {code, out, next}
     end
   end
+
+  defp compile_compare_operand(%{op: :var, name: name}, env, counter) do
+    case EnvBindings.lookup_binding(env, name) do
+      source when is_binary(source) ->
+        if c_identifier?(source) do
+          {"", source, counter, true}
+        else
+          {code, var, counter} = Host.compile_expr(%{op: :var, name: name}, env, counter)
+          {code, var, counter, false}
+        end
+
+      _ ->
+        {code, var, counter} = Host.compile_expr(%{op: :var, name: name}, env, counter)
+        {code, var, counter, false}
+    end
+  end
+
+  defp compile_compare_operand(expr, env, counter) do
+    {code, var, counter} = Host.compile_expr(expr, env, counter)
+    {code, var, counter, false}
+  end
+
+  defp compare_operand_release(_env, _var, true), do: ""
+
+  defp compare_operand_release(env, var, false) do
+    OwnershipCompile.release_if_owned(env, var, :compare)
+  end
+
+  defp c_identifier?(value) when is_binary(value),
+    do: Regex.match?(~r/^[A-Za-z_][A-Za-z0-9_]*$/, value)
 
   @spec int_compare_operator(
           Types.ir_expr(),
@@ -651,5 +774,4 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
 
     {code, out, next}
   end
-
 end

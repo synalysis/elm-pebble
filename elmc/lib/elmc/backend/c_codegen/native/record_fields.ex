@@ -8,7 +8,7 @@ defmodule Elmc.Backend.CCodegen.Native.RecordFields do
 
   @spec lookup_field_type(String.t(), String.t(), Types.compile_env()) :: String.t() | nil
   def lookup_field_type(type_name, field, env)
-       when is_binary(type_name) and is_binary(field) do
+      when is_binary(type_name) and is_binary(field) do
     types_map = Process.get(:elmc_record_field_types, %{})
     current_module = Map.get(env, :__module__, "Main")
     normalized = Host.normalize_type_name(type_name)
@@ -258,7 +258,8 @@ defmodule Elmc.Backend.CCodegen.Native.RecordFields do
     end
   end
 
-  defp float_only_field?(env, %{op: :var, name: name}, field), do: float_only_field?(env, name, field)
+  defp float_only_field?(env, %{op: :var, name: name}, field),
+    do: float_only_field?(env, name, field)
 
   defp float_only_field?(env, arg_expr, field) when is_map(arg_expr) do
     case Host.record_shape(arg_expr, env) do

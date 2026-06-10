@@ -275,6 +275,20 @@ defmodule Elmc.Backend.CCodegen.EnvBindings do
 
   def direct_call_target?(_env, _module_name, _name), do: false
 
+  @spec callee_borrow_args?(Types.compile_env(), String.t(), String.t()) :: boolean()
+  def callee_borrow_args?(env, module_name, name)
+      when is_binary(module_name) and is_binary(name) do
+    case Map.get(effective_program_decls(env), {module_name, name}) do
+      %{ownership: ownership} when is_list(ownership) ->
+        :borrow_arg in ownership
+
+      _ ->
+        false
+    end
+  end
+
+  def callee_borrow_args?(_env, _module_name, _name), do: false
+
   defp decl_arity(env, module_name, name, call_args) do
     case Map.get(effective_program_decls(env), {module_name, name}) do
       %{args: args} when is_list(args) -> length(args)

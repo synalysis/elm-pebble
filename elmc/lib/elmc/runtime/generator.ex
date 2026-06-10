@@ -281,10 +281,13 @@ defmodule Elmc.Runtime.Generator do
   defp called_functions(_, _), do: []
 
   defp runtime_call_dependencies("elmc_alloc"),
-    do: ["elmc_alloc", "elmc_alloc_impl", "elmc_malloc_impl"]
+    do: ["elmc_alloc", "elmc_alloc_impl", "elmc_malloc_impl", "elmc_log_alloc_failed"]
 
   defp runtime_call_dependencies("elmc_malloc"),
-    do: ["elmc_malloc", "elmc_malloc_impl"]
+    do: ["elmc_malloc", "elmc_malloc_impl", "elmc_log_alloc_failed"]
+
+  defp runtime_call_dependencies("elmc_realloc"),
+    do: ["elmc_realloc", "elmc_realloc_impl", "elmc_log_alloc_failed"]
 
   defp runtime_call_dependencies(name), do: [name]
 
@@ -349,6 +352,7 @@ defmodule Elmc.Runtime.Generator do
 
     #include <stdint.h>
     #include <stddef.h>
+    #include <stdbool.h>
     #{int32_define}
 
     #if defined(ELMC_PEBBLE_INT32) || defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_CHALK) || defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_FLINT) || defined(PBL_PLATFORM_GABBRO)
@@ -386,6 +390,13 @@ defmodule Elmc.Runtime.Generator do
       ElmcValue *tail;
     } ElmcCons;
 
+    #ifndef ELMC_RC_IMMORTAL
+    #define ELMC_RC_IMMORTAL UINT16_MAX
+    #endif
+    #ifndef ELMC_LIST_CELL_SCALAR
+    #define ELMC_LIST_CELL_SCALAR ((elmc_int_t)0x1EC011)
+    #endif
+
     typedef struct ElmcTuple2 {
       ElmcValue *first;
       ElmcValue *second;
@@ -400,6 +411,7 @@ defmodule Elmc.Runtime.Generator do
       elmc_int_t p3;
       elmc_int_t p4;
       elmc_int_t p5;
+      ElmcValue *text;
     } ElmcCmdPayload;
 
     typedef struct ElmcSubPayload {
@@ -425,7 +437,6 @@ defmodule Elmc.Runtime.Generator do
 
     typedef struct ElmcRecord {
       int field_count;
-      const char **field_names;
       ElmcValue **field_values;
     } ElmcRecord;
 
@@ -481,6 +492,7 @@ defmodule Elmc.Runtime.Generator do
     ElmcValue *elmc_tuple2_ints(elmc_int_t first, elmc_int_t second);
     ElmcValue *elmc_cmd0(elmc_int_t kind);
     ElmcValue *elmc_cmd1(elmc_int_t kind, elmc_int_t p0);
+    ElmcValue *elmc_cmd1_string(elmc_int_t kind, elmc_int_t p0, const char *text);
     ElmcValue *elmc_cmd2(elmc_int_t kind, elmc_int_t p0, elmc_int_t p1);
     ElmcValue *elmc_cmd3(elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2);
     ElmcValue *elmc_cmd4(elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3);
@@ -581,7 +593,9 @@ defmodule Elmc.Runtime.Generator do
     ElmcValue *elmc_list_range(ElmcValue *lo, ElmcValue *hi);
     ElmcValue *elmc_list_repeat(ElmcValue *n, ElmcValue *value);
     ElmcValue *elmc_list_take(ElmcValue *n, ElmcValue *list);
+    ElmcValue *elmc_list_take_int(elmc_int_t count, ElmcValue *list);
     ElmcValue *elmc_list_drop(ElmcValue *n, ElmcValue *list);
+    ElmcValue *elmc_list_drop_int(elmc_int_t count, ElmcValue *list);
     ElmcValue *elmc_list_partition(ElmcValue *f, ElmcValue *list);
     ElmcValue *elmc_list_unzip(ElmcValue *list);
     ElmcValue *elmc_list_intersperse(ElmcValue *sep, ElmcValue *list);
@@ -750,6 +764,12 @@ defmodule Elmc.Runtime.Generator do
     ElmcValue *elmc_record_new(int field_count, const char **field_names, ElmcValue **field_values);
     ElmcValue *elmc_record_new_take(int field_count, const char **field_names, ElmcValue **field_values);
     ElmcValue *elmc_record_new_ints(int field_count, const char **field_names, const elmc_int_t *field_values);
+    ElmcValue *elmc_record_new_static(int field_count, const char * const *field_names, ElmcValue **field_values);
+    ElmcValue *elmc_record_new_static_take(int field_count, const char * const *field_names, ElmcValue **field_values);
+    ElmcValue *elmc_record_new_static_ints(int field_count, const char * const *field_names, const elmc_int_t *field_values);
+    ElmcValue *elmc_record_new_values(int field_count, ElmcValue **field_values);
+    ElmcValue *elmc_record_new_values_take(int field_count, ElmcValue **field_values);
+    ElmcValue *elmc_record_new_values_ints(int field_count, const elmc_int_t *field_values);
     ElmcValue *elmc_record_get(ElmcValue *record, const char *field_name);
     ElmcValue *elmc_record_get_at(ElmcValue *record, int index, const char *field_name);
     ElmcValue *elmc_record_get_index(ElmcValue *record, int index);
@@ -764,6 +784,7 @@ defmodule Elmc.Runtime.Generator do
     elmc_int_t elmc_record_get_index_bool(ElmcValue *record, int index);
     ElmcValue *elmc_record_update(ElmcValue *record, const char *field_name, ElmcValue *new_value);
     ElmcValue *elmc_record_update_index(ElmcValue *record, int index, ElmcValue *new_value);
+    ElmcValue *elmc_record_update_index_cow(ElmcValue *record, int index, ElmcValue *new_value);
 
     ElmcValue *elmc_closure_new(ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count), int arity, int capture_count, ElmcValue **captures);
     ElmcValue *elmc_closure_call(ElmcValue *closure, ElmcValue **args, int argc);
@@ -835,7 +856,6 @@ defmodule Elmc.Runtime.Generator do
     static char ELMC_EMPTY_STRING_PAYLOAD[] = "";
     static ElmcValue ELMC_EMPTY_STRING = { ELMC_RC_IMMORTAL, ELMC_TAG_STRING, ELMC_EMPTY_STRING_PAYLOAD, 0 };
     static ElmcValue ELMC_LIST_NIL = { ELMC_RC_IMMORTAL, ELMC_TAG_LIST, NULL, 0 };
-    static int ELMC_ALLOC_FAILURE_LOGGED = 0;
 
     typedef struct {
       ElmcValue value;
@@ -876,6 +896,12 @@ defmodule Elmc.Runtime.Generator do
 
     typedef struct {
       ElmcValue value;
+      ElmcRecord record;
+      const char **field_names;
+    } ElmcNamedRecordCell;
+
+    typedef struct {
+      ElmcValue value;
       ElmcClosure closure;
     } ElmcClosureCell;
 
@@ -885,6 +911,7 @@ defmodule Elmc.Runtime.Generator do
     #define ELMC_CMD_CELL_SCALAR ((elmc_int_t)0x1EC017)
     #define ELMC_SUB_CELL_SCALAR ((elmc_int_t)0x1EC018)
     #define ELMC_RECORD_CELL_SCALAR ((elmc_int_t)0x1EC015)
+    #define ELMC_NAMED_RECORD_CELL_SCALAR ((elmc_int_t)0x1EC019)
     #define ELMC_CLOSURE_CELL_SCALAR ((elmc_int_t)0x1EC016)
 
     typedef struct {
@@ -915,6 +942,9 @@ defmodule Elmc.Runtime.Generator do
     static int elmc_record_cell_release(ElmcValue *value);
     static int elmc_closure_cell_release(ElmcValue *value);
     static ElmcValue *elmc_record_cell_alloc(int field_count, const char **field_names, ElmcValue **field_values, int take);
+    static ElmcValue *elmc_record_cell_alloc_static(int field_count, const char * const *field_names, ElmcValue **field_values, int take);
+    static ElmcValue *elmc_record_cell_alloc_values(int field_count, ElmcValue **field_values, int take);
+    static const char **elmc_record_field_names(ElmcValue *record);
 
     #if ELMC_ALLOC_TRACE
     #define elmc_malloc(size, context) elmc_malloc_impl((size), (context), __FILE__, __LINE__)
@@ -923,6 +953,7 @@ defmodule Elmc.Runtime.Generator do
     #define elmc_malloc(size, context) elmc_malloc_impl((size), (context), NULL, 0)
     #define elmc_alloc(tag, payload) elmc_alloc_impl((tag), (payload), NULL, 0)
     #endif
+    #define elmc_realloc(ptr, size, context) elmc_realloc_impl((ptr), (size), (context))
 
     #{RcTrack.register_macro()}
 
@@ -980,32 +1011,36 @@ defmodule Elmc.Runtime.Generator do
     }
     #endif
 
-    static void elmc_log_alloc_failed_once(const char *context, size_t size, const char *file, int line) {
-      if (ELMC_ALLOC_FAILURE_LOGGED) return;
-      ELMC_ALLOC_FAILURE_LOGGED = 1;
+    static void elmc_log_alloc_failed(const char *context, size_t size, const char *file, int line) {
     #ifdef ELMC_PEBBLE_PLATFORM
       if (file && line > 0) {
-        APP_LOG(APP_LOG_LEVEL_ERROR, "ELMC allocation failed in %s at %s:%d (%lu bytes)",
-                context ? context : "unknown", file, line, (unsigned long)size);
+        APP_LOG(APP_LOG_LEVEL_ERROR, "ELMC malloc failed %s %s:%d %lu",
+                context ? context : "?", file, line, (unsigned long)size);
       } else {
-        APP_LOG(APP_LOG_LEVEL_ERROR, "ELMC allocation failed in %s (%lu bytes)",
-                context ? context : "unknown", (unsigned long)size);
+        APP_LOG(APP_LOG_LEVEL_ERROR, "ELMC malloc failed %s %lu",
+                context ? context : "?", (unsigned long)size);
       }
     #else
       if (file && line > 0) {
-        fprintf(stderr, "ELMC allocation failed in %s at %s:%d (%lu bytes)\\n",
-                context ? context : "unknown", file, line, (unsigned long)size);
+        fprintf(stderr, "ELMC malloc failed %s %s:%d %lu\\n",
+                context ? context : "?", file, line, (unsigned long)size);
       } else {
-        fprintf(stderr, "ELMC allocation failed in %s (%lu bytes)\\n",
-                context ? context : "unknown", (unsigned long)size);
+        fprintf(stderr, "ELMC malloc failed %s %lu\\n",
+                context ? context : "?", (unsigned long)size);
       }
     #endif
     }
 
     static void *elmc_malloc_impl(size_t size, const char *context, const char *file, int line) {
       void *ptr = malloc(size);
-      if (!ptr) elmc_log_alloc_failed_once(context, size, file, line);
+      if (!ptr) elmc_log_alloc_failed(context, size, file, line);
       return ptr;
+    }
+
+    static void *elmc_realloc_impl(void *ptr, size_t size, const char *context) {
+      void *next = realloc(ptr, size);
+      if (!next && size > 0) elmc_log_alloc_failed(context, size, NULL, 0);
+      return next;
     }
 
     static ElmcValue *elmc_alloc_impl(ElmcTag tag, void *payload, const char *file, int line) {
@@ -1091,6 +1126,7 @@ defmodule Elmc.Runtime.Generator do
       if (!value || value->tag != ELMC_TAG_CMD || value->scalar != ELMC_CMD_CELL_SCALAR) return 0;
       ElmcCmdCell *cell = (ElmcCmdCell *)value;
       if (value->payload != &cell->cmd) return 0;
+      elmc_release(cell->cmd.text);
       free(cell);
       return 1;
     }
@@ -1104,11 +1140,20 @@ defmodule Elmc.Runtime.Generator do
     }
 
     static int elmc_record_cell_release(ElmcValue *value) {
-      if (!value || value->tag != ELMC_TAG_RECORD || value->scalar != ELMC_RECORD_CELL_SCALAR) return 0;
-      ElmcRecordCell *cell = (ElmcRecordCell *)value;
-      if (value->payload != &cell->record) return 0;
-      free(cell);
-      return 1;
+      if (!value || value->tag != ELMC_TAG_RECORD) return 0;
+      if (value->scalar == ELMC_RECORD_CELL_SCALAR) {
+        ElmcRecordCell *cell = (ElmcRecordCell *)value;
+        if (value->payload != &cell->record) return 0;
+        free(cell);
+        return 1;
+      }
+      if (value->scalar == ELMC_NAMED_RECORD_CELL_SCALAR) {
+        ElmcNamedRecordCell *cell = (ElmcNamedRecordCell *)value;
+        if (value->payload != &cell->record) return 0;
+        free(cell);
+        return 1;
+      }
+      return 0;
     }
 
     static int elmc_closure_cell_release(ElmcValue *value) {
@@ -1123,7 +1168,7 @@ defmodule Elmc.Runtime.Generator do
       if (field_count < 0) return NULL;
       size_t names_size = sizeof(const char *) * (size_t)field_count;
       size_t values_size = sizeof(ElmcValue *) * (size_t)field_count;
-      ElmcRecordCell *cell = (ElmcRecordCell *)elmc_malloc(sizeof(ElmcRecordCell) + names_size + values_size, __func__);
+      ElmcNamedRecordCell *cell = (ElmcNamedRecordCell *)elmc_malloc(sizeof(ElmcNamedRecordCell) + names_size + values_size, __func__);
       if (!cell) {
         if (take) {
           for (int i = 0; i < field_count; i++) {
@@ -1135,12 +1180,45 @@ defmodule Elmc.Runtime.Generator do
 
       char *cursor = (char *)(cell + 1);
       cell->record.field_count = field_count;
-      cell->record.field_names = (const char **)cursor;
+      cell->field_names = (const char **)cursor;
       cursor += names_size;
       cell->record.field_values = (ElmcValue **)cursor;
 
       for (int i = 0; i < field_count; i++) {
-        cell->record.field_names[i] = field_names[i];
+        cell->field_names[i] = field_names[i];
+        cell->record.field_values[i] = take ? field_values[i] : elmc_retain(field_values[i]);
+      }
+
+      cell->value.rc = 1;
+      cell->value.tag = ELMC_TAG_RECORD;
+      cell->value.payload = &cell->record;
+      cell->value.scalar = ELMC_NAMED_RECORD_CELL_SCALAR;
+      ELMC_ALLOCATED += 1;
+      ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
+      return &cell->value;
+    }
+
+    static ElmcValue *elmc_record_cell_alloc_static(int field_count, const char * const *field_names, ElmcValue **field_values, int take) {
+      return elmc_record_cell_alloc(field_count, (const char **)field_names, field_values, take);
+    }
+
+    static ElmcValue *elmc_record_cell_alloc_values(int field_count, ElmcValue **field_values, int take) {
+      if (field_count < 0) return NULL;
+      size_t values_size = sizeof(ElmcValue *) * (size_t)field_count;
+      ElmcRecordCell *cell = (ElmcRecordCell *)elmc_malloc(sizeof(ElmcRecordCell) + values_size, __func__);
+      if (!cell) {
+        if (take) {
+          for (int i = 0; i < field_count; i++) {
+            elmc_release(field_values[i]);
+          }
+        }
+        return NULL;
+      }
+
+      cell->record.field_count = field_count;
+      cell->record.field_values = (ElmcValue **)(cell + 1);
+
+      for (int i = 0; i < field_count; i++) {
         cell->record.field_values[i] = take ? field_values[i] : elmc_retain(field_values[i]);
       }
 
@@ -1151,6 +1229,13 @@ defmodule Elmc.Runtime.Generator do
       ELMC_ALLOCATED += 1;
       ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
       return &cell->value;
+    }
+
+    static const char **elmc_record_field_names(ElmcValue *record) {
+      if (!record || record->tag != ELMC_TAG_RECORD || record->scalar != ELMC_NAMED_RECORD_CELL_SCALAR) return NULL;
+      ElmcNamedRecordCell *cell = (ElmcNamedRecordCell *)record;
+      if (record->payload != &cell->record) return NULL;
+      return cell->field_names;
     }
 
     static ElmcValue *elmc_list_reverse_copy(ElmcValue *list) {
@@ -1253,26 +1338,28 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_list_replace_nth_int(ElmcValue *list, elmc_int_t index, elmc_int_t value) {
-      ElmcValue *rev = elmc_list_nil();
       ElmcValue *cursor = list;
-      elmc_int_t i = 0;
+      int count = 0;
       while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
         ElmcCons *node = (ElmcCons *)cursor->payload;
-        ElmcValue *item = NULL;
-        if (i == index) {
-          item = elmc_new_int(value);
-        } else {
-          item = node->head ? elmc_retain(node->head) : elmc_int_zero();
-        }
-        ElmcValue *next = elmc_list_cons(item, rev);
-        elmc_release(item);
-        elmc_release(rev);
-        rev = next;
         cursor = node->tail;
-        i++;
+        count++;
       }
-      ElmcValue *out = elmc_list_reverse_copy(rev);
-      elmc_release(rev);
+      if (count <= 0) return elmc_list_nil();
+
+      elmc_int_t *items = (elmc_int_t *)elmc_malloc(sizeof(elmc_int_t) * (size_t)count, __func__);
+      if (!items) return elmc_retain(list);
+
+      cursor = list;
+      for (int i = 0; i < count; i++) {
+        ElmcCons *node = (ElmcCons *)cursor->payload;
+        items[i] = (i == index) ? value : elmc_as_int(node->head);
+        cursor = node->tail;
+      }
+
+      ElmcValue *out = elmc_list_from_int_array(items, count);
+      free(items);
+      if (!out) return elmc_retain(list);
       return out;
     }
 
@@ -1389,6 +1476,7 @@ defmodule Elmc.Runtime.Generator do
       cell->cmd.p3 = p3;
       cell->cmd.p4 = p4;
       cell->cmd.p5 = p5;
+      cell->cmd.text = NULL;
       cell->value.rc = 1;
       cell->value.tag = ELMC_TAG_CMD;
       cell->value.payload = &cell->cmd;
@@ -1404,6 +1492,18 @@ defmodule Elmc.Runtime.Generator do
 
     ElmcValue *elmc_cmd1(elmc_int_t kind, elmc_int_t p0) {
       return elmc_cmd_alloc(1, kind, p0, 0, 0, 0, 0, 0);
+    }
+
+    ElmcValue *elmc_cmd1_string(elmc_int_t kind, elmc_int_t p0, const char *text) {
+      ElmcValue *cmd_value = elmc_cmd_alloc(1, kind, p0, 0, 0, 0, 0, 0);
+      if (!cmd_value || cmd_value->tag != ELMC_TAG_CMD || !cmd_value->payload) return cmd_value;
+      ElmcCmdPayload *cmd = (ElmcCmdPayload *)cmd_value->payload;
+      cmd->text = elmc_new_string(text ? text : "");
+      if (!cmd->text) {
+        elmc_release(cmd_value);
+        return NULL;
+      }
+      return cmd_value;
     }
 
     ElmcValue *elmc_cmd2(elmc_int_t kind, elmc_int_t p0, elmc_int_t p1) {
@@ -1547,6 +1647,7 @@ defmodule Elmc.Runtime.Generator do
           if (a->arity > 3 && a->p3 != b->p3) return 0;
           if (a->arity > 4 && a->p4 != b->p4) return 0;
           if (a->arity > 5 && a->p5 != b->p5) return 0;
+          if (!elmc_value_equal(a->text, b->text)) return 0;
           return 1;
         }
 
@@ -1584,10 +1685,24 @@ defmodule Elmc.Runtime.Generator do
           ElmcRecord *a = (ElmcRecord *)left->payload;
           ElmcRecord *b = (ElmcRecord *)right->payload;
           if (a->field_count != b->field_count) return 0;
+          const char **a_names = elmc_record_field_names(left);
+          const char **b_names = elmc_record_field_names(right);
+          if ((a_names != NULL) != (b_names != NULL)) {
+            for (int i = 0; i < a->field_count; i++) {
+              if (!elmc_value_equal(a->field_values[i], b->field_values[i])) return 0;
+            }
+            return 1;
+          }
+          if (!a_names) {
+            for (int i = 0; i < a->field_count; i++) {
+              if (!elmc_value_equal(a->field_values[i], b->field_values[i])) return 0;
+            }
+            return 1;
+          }
           for (int i = 0; i < a->field_count; i++) {
             int found = 0;
             for (int j = 0; j < b->field_count; j++) {
-              if (strcmp(a->field_names[i], b->field_names[j]) == 0) {
+              if (strcmp(a_names[i], b_names[j]) == 0) {
                 if (!elmc_value_equal(a->field_values[i], b->field_values[j])) return 0;
                 found = 1;
                 break;
@@ -2268,11 +2383,45 @@ defmodule Elmc.Runtime.Generator do
       return elmc_record_new_take(field_count, field_names, values);
     }
 
+    ElmcValue *elmc_record_new_static(int field_count, const char * const *field_names, ElmcValue **field_values) {
+      return elmc_record_cell_alloc_static(field_count, field_names, field_values, 0);
+    }
+
+    ElmcValue *elmc_record_new_static_take(int field_count, const char * const *field_names, ElmcValue **field_values) {
+      return elmc_record_cell_alloc_static(field_count, field_names, field_values, 1);
+    }
+
+    ElmcValue *elmc_record_new_static_ints(int field_count, const char * const *field_names, const elmc_int_t *field_values) {
+      ElmcValue *values[field_count];
+      for (int i = 0; i < field_count; i++) {
+        values[i] = elmc_new_int(field_values[i]);
+      }
+      return elmc_record_new_static_take(field_count, field_names, values);
+    }
+
+    ElmcValue *elmc_record_new_values(int field_count, ElmcValue **field_values) {
+      return elmc_record_cell_alloc_values(field_count, field_values, 0);
+    }
+
+    ElmcValue *elmc_record_new_values_take(int field_count, ElmcValue **field_values) {
+      return elmc_record_cell_alloc_values(field_count, field_values, 1);
+    }
+
+    ElmcValue *elmc_record_new_values_ints(int field_count, const elmc_int_t *field_values) {
+      ElmcValue *values[field_count];
+      for (int i = 0; i < field_count; i++) {
+        values[i] = elmc_new_int(field_values[i]);
+      }
+      return elmc_record_new_values_take(field_count, values);
+    }
+
     ElmcValue *elmc_record_get(ElmcValue *record, const char *field_name) {
       if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return elmc_int_zero();
       ElmcRecord *rec = (ElmcRecord *)record->payload;
+      const char **field_names = elmc_record_field_names(record);
+      if (!field_names) return elmc_int_zero();
       for (int i = 0; i < rec->field_count; i++) {
-        if (rec->field_names[i] && strcmp(rec->field_names[i], field_name) == 0) {
+        if (field_names[i] && strcmp(field_names[i], field_name) == 0) {
           return elmc_retain(rec->field_values[i]);
         }
       }
@@ -2282,8 +2431,10 @@ defmodule Elmc.Runtime.Generator do
     ElmcValue *elmc_record_get_at(ElmcValue *record, int index, const char *field_name) {
       if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return elmc_int_zero();
       ElmcRecord *rec = (ElmcRecord *)record->payload;
-      if (index >= 0 && index < rec->field_count && rec->field_names[index] &&
-          strcmp(rec->field_names[index], field_name) == 0) {
+      const char **field_names = elmc_record_field_names(record);
+      if (!field_names) return elmc_int_zero();
+      if (index >= 0 && index < rec->field_count && field_names[index] &&
+          strcmp(field_names[index], field_name) == 0) {
         return elmc_retain(rec->field_values[index]);
       }
       return elmc_record_get(record, field_name);
@@ -2299,8 +2450,10 @@ defmodule Elmc.Runtime.Generator do
     elmc_int_t elmc_record_get_int(ElmcValue *record, const char *field_name) {
       if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return 0;
       ElmcRecord *rec = (ElmcRecord *)record->payload;
+      const char **field_names = elmc_record_field_names(record);
+      if (!field_names) return 0;
       for (int i = 0; i < rec->field_count; i++) {
-        if (rec->field_names[i] && strcmp(rec->field_names[i], field_name) == 0) {
+        if (field_names[i] && strcmp(field_names[i], field_name) == 0) {
           return elmc_as_int(rec->field_values[i]);
         }
       }
@@ -2310,8 +2463,10 @@ defmodule Elmc.Runtime.Generator do
     elmc_int_t elmc_record_get_at_int(ElmcValue *record, int index, const char *field_name) {
       if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return 0;
       ElmcRecord *rec = (ElmcRecord *)record->payload;
-      if (index >= 0 && index < rec->field_count && rec->field_names[index] &&
-          strcmp(rec->field_names[index], field_name) == 0) {
+      const char **field_names = elmc_record_field_names(record);
+      if (!field_names) return 0;
+      if (index >= 0 && index < rec->field_count && field_names[index] &&
+          strcmp(field_names[index], field_name) == 0) {
         return elmc_as_int(rec->field_values[index]);
       }
       return elmc_record_get_int(record, field_name);
@@ -2327,8 +2482,10 @@ defmodule Elmc.Runtime.Generator do
     elmc_int_t elmc_record_get_maybe_int(ElmcValue *record, const char *field_name, elmc_int_t default_val) {
       if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return default_val;
       ElmcRecord *rec = (ElmcRecord *)record->payload;
+      const char **field_names = elmc_record_field_names(record);
+      if (!field_names) return default_val;
       for (int i = 0; i < rec->field_count; i++) {
-        if (rec->field_names[i] && strcmp(rec->field_names[i], field_name) == 0) {
+        if (field_names[i] && strcmp(field_names[i], field_name) == 0) {
           return elmc_maybe_with_default_int(default_val, rec->field_values[i]);
         }
       }
@@ -2338,8 +2495,10 @@ defmodule Elmc.Runtime.Generator do
     elmc_int_t elmc_record_get_at_maybe_int(ElmcValue *record, int index, const char *field_name, elmc_int_t default_val) {
       if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return default_val;
       ElmcRecord *rec = (ElmcRecord *)record->payload;
-      if (index >= 0 && index < rec->field_count && rec->field_names[index] &&
-          strcmp(rec->field_names[index], field_name) == 0) {
+      const char **field_names = elmc_record_field_names(record);
+      if (!field_names) return default_val;
+      if (index >= 0 && index < rec->field_count && field_names[index] &&
+          strcmp(field_names[index], field_name) == 0) {
         return elmc_maybe_with_default_int(default_val, rec->field_values[index]);
       }
       return elmc_record_get_maybe_int(record, field_name, default_val);
@@ -2367,8 +2526,10 @@ defmodule Elmc.Runtime.Generator do
     ElmcValue *elmc_record_update(ElmcValue *record, const char *field_name, ElmcValue *new_value) {
       if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return elmc_retain(record);
       ElmcRecord *old = (ElmcRecord *)record->payload;
+      const char **field_names = elmc_record_field_names(record);
+      if (!field_names) return elmc_retain(record);
       for (int i = 0; i < old->field_count; i++) {
-        if (old->field_names[i] && strcmp(old->field_names[i], field_name) == 0) {
+        if (field_names[i] && strcmp(field_names[i], field_name) == 0) {
           return elmc_record_update_index(record, i, new_value);
         }
       }
@@ -2379,17 +2540,38 @@ defmodule Elmc.Runtime.Generator do
       if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return elmc_retain(record);
       ElmcRecord *old = (ElmcRecord *)record->payload;
       if (index < 0 || index >= old->field_count) return elmc_retain(record);
-      const char **names = (const char **)elmc_malloc(sizeof(const char *) * old->field_count, __func__);
+      const char **field_names = elmc_record_field_names(record);
+      if (field_names) {
+        ElmcValue **values = (ElmcValue **)elmc_malloc(sizeof(ElmcValue *) * old->field_count, __func__);
+        if (!values) return elmc_retain(record);
+        for (int i = 0; i < old->field_count; i++) {
+          values[i] = i == index ? new_value : old->field_values[i];
+        }
+        ElmcValue *result = elmc_record_new_static(old->field_count, (const char * const *)field_names, values);
+        free(values);
+        return result;
+      }
       ElmcValue **values = (ElmcValue **)elmc_malloc(sizeof(ElmcValue *) * old->field_count, __func__);
-      if (!names || !values) { free(names); free(values); return elmc_retain(record); }
+      if (!values) return elmc_retain(record);
       for (int i = 0; i < old->field_count; i++) {
-        names[i] = old->field_names[i];
         values[i] = i == index ? new_value : old->field_values[i];
       }
-      ElmcValue *result = elmc_record_new(old->field_count, names, values);
-      free(names);
+      ElmcValue *result = elmc_record_new_values(old->field_count, values);
       free(values);
       return result;
+    }
+
+    ElmcValue *elmc_record_update_index_cow(ElmcValue *record, int index, ElmcValue *new_value) {
+      if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return elmc_retain(record);
+      ElmcRecord *rec = (ElmcRecord *)record->payload;
+      if (index < 0 || index >= rec->field_count) return elmc_retain(record);
+      if (record->rc == 1) {
+        ElmcValue *old_value = rec->field_values[index];
+        rec->field_values[index] = elmc_retain(new_value);
+        elmc_release(old_value);
+        return record;
+      }
+      return elmc_record_update_index(record, index, new_value);
     }
 
     ElmcValue *elmc_closure_new(ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count), int arity, int capture_count, ElmcValue **captures) {
@@ -2931,10 +3113,13 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_list_take(ElmcValue *n, ElmcValue *list) {
-      int64_t count = elmc_as_int(n);
+      return elmc_list_take_int(elmc_as_int(n), list);
+    }
+
+    ElmcValue *elmc_list_take_int(elmc_int_t count, ElmcValue *list) {
       ElmcValue *rev = elmc_list_nil();
       ElmcValue *cursor = list;
-      int64_t i = 0;
+      elmc_int_t i = 0;
       while (i < count && cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
         ElmcCons *node = (ElmcCons *)cursor->payload;
         ElmcValue *next = elmc_list_cons(node->head, rev);
@@ -2949,9 +3134,12 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_list_drop(ElmcValue *n, ElmcValue *list) {
-      int64_t count = elmc_as_int(n);
+      return elmc_list_drop_int(elmc_as_int(n), list);
+    }
+
+    ElmcValue *elmc_list_drop_int(elmc_int_t count, ElmcValue *list) {
       ElmcValue *cursor = list;
-      int64_t i = 0;
+      elmc_int_t i = 0;
       while (i < count && cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
         cursor = ((ElmcCons *)cursor->payload)->tail;
         i++;

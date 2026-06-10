@@ -6,6 +6,7 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.CCodegen.UnionMacros
 
   @int_binops ~w(__add__ __sub__ __mul__ __idiv__)
 
@@ -69,7 +70,10 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
     end
   end
 
-  def literal_value(%{op: :runtime_call, function: "elmc_basics_mod_by", args: [base, value]}, env) do
+  def literal_value(
+        %{op: :runtime_call, function: "elmc_basics_mod_by", args: [base, value]},
+        env
+      ) do
     literal_value(%{op: :call, name: "modBy", args: [base, value]}, env)
   end
 
@@ -117,7 +121,8 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
 
   @spec literal_binop(String.t(), Types.ir_expr(), Types.ir_expr(), Types.compile_env()) ::
           {:ok, integer()} | :error
-  def literal_binop(operator, left, right, env) when operator in @int_binops or operator in ["+", "-", "*"] do
+  def literal_binop(operator, left, right, env)
+      when operator in @int_binops or operator in ["+", "-", "*"] do
     with {:ok, left_value} <- literal_value(left, env),
          {:ok, right_value} <- literal_value(right, env) do
       {:ok, apply_binop(normalize_binop(operator), left_value, right_value)}
@@ -189,7 +194,8 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
       {:ok, value} ->
         counter = counter + 1
         out = "tmp_#{counter}"
-        {:ok, "ElmcValue *#{out} = elmc_new_int(#{value});\n", out, counter}
+        ref = UnionMacros.literal_ref(expr, env) || Integer.to_string(value)
+        {:ok, "ElmcValue *#{out} = elmc_new_int(#{ref});\n", out, counter}
 
       :error ->
         :error

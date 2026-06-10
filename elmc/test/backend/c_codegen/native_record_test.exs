@@ -41,6 +41,23 @@ defmodule Elmc.Backend.CCodegen.NativeRecordTest do
     assert get_in(body_env, [:__record_field_kinds__, "cfg", "x"]) == "Int"
   end
 
+  test "emit_fields omits redundant zero init before immediate assignment" do
+    env = %{__module__: "Main"}
+
+    value_expr = %{
+      op: :record_literal,
+      fields: [
+        %{name: "x", expr: %{op: :int_literal, value: 4}},
+        %{name: "gap", expr: %{op: :int_literal, value: 2}}
+      ]
+    }
+
+    assert {:ok, code, _, _} = NativeRecord.emit_fields("layout", value_expr, env, 0)
+    refute code =~ ~r/elmc_int_t direct_native_record_layout_\w+_\d+ = 0;/
+    assert code =~ ~r/const elmc_int_t direct_native_record_layout_x_\d+ = 4;/
+    assert code =~ ~r/const elmc_int_t direct_native_record_layout_gap_\d+ = 2;/
+  end
+
   test "emit_hoisted_if_fields supports mixed int and string branch fields" do
     env = %{__module__: "Main"}
 
@@ -77,6 +94,10 @@ defmodule Elmc.Backend.CCodegen.NativeRecordTest do
     assert {:ok, code, body_env, _} =
              NativeRecord.emit_fields("layout", value_expr, env, 0)
 
+    refute code =~ ~r/elmc_int_t direct_native_record_branch__then_x_\d+ = 0;/
+    refute code =~ ~r/elmc_int_t direct_native_record_branch__else_x_\d+ = 0;/
+    assert code =~ ~r/const elmc_int_t direct_native_record_branch__then_x_\d+ = 1;/
+    assert code =~ ~r/const elmc_int_t direct_native_record_branch__else_x_\d+ = 2;/
     assert code =~ "direct_native_record_branch__then_label"
     assert code =~ "direct_native_record_branch__else_label"
     assert code =~ "const char *direct_native_record_layout_label"
@@ -95,8 +116,9 @@ defmodule Elmc.Backend.CCodegen.NativeRecordTest do
     {code, var, _} = FunctionCallCompile.compile_var("cfg", env, 0)
 
     assert var == "tmp_1"
-    assert code =~ "elmc_record_new_take(2"
+    assert code =~ "elmc_record_new_values_take(2"
     assert code =~ "elmc_new_string(direct_label)"
     assert code =~ "elmc_new_int(direct_x)"
+    refute code =~ "\"label\""
   end
 end

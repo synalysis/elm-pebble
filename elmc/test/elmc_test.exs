@@ -130,6 +130,67 @@ defmodule ElmcTest do
     refute runtime =~ "implicit declaration"
   end
 
+  test "runtime pruning keeps string command helper when generated code uses elmc_cmd1_string" do
+    out_dir = Path.expand("tmp/runtime_pruned_cmd_string", __DIR__)
+    refs_dir = Path.join(out_dir, "refs")
+    runtime_dir = Path.join(out_dir, "runtime")
+
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(refs_dir)
+
+    File.write!(Path.join(refs_dir, "elmc_generated.c"), """
+    #include "elmc_runtime.h"
+
+    ElmcValue *uses_cmd_string(void) {
+      return elmc_cmd1_string(1, 2, "saved");
+    }
+    """)
+
+    assert :ok = Elmc.Runtime.Generator.write_runtime(runtime_dir, prune_from_dir: refs_dir)
+
+    runtime = File.read!(Path.join(runtime_dir, "elmc_runtime.c"))
+
+    assert runtime =~ "ElmcValue *elmc_cmd1_string"
+    assert runtime =~ "elmc_cmd_alloc"
+    assert runtime =~ "elmc_new_string"
+    refute runtime =~ "implicit declaration"
+  end
+
+  test "runtime pruning keeps value-only record constructors" do
+    out_dir = Path.expand("tmp/runtime_pruned_value_record", __DIR__)
+    refs_dir = Path.join(out_dir, "refs")
+    runtime_dir = Path.join(out_dir, "runtime")
+
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(refs_dir)
+
+    File.write!(Path.join(refs_dir, "elmc_generated.c"), """
+    #include "elmc_runtime.h"
+
+    ElmcValue *uses_value_record(void) {
+      elmc_int_t values[2] = { 1, 2 };
+      return elmc_record_new_values_ints(2, values);
+    }
+
+    ElmcValue *uses_value_record_take(void) {
+      ElmcValue *values[1] = { elmc_new_int(3) };
+      return elmc_record_new_values_take(1, values);
+    }
+    """)
+
+    assert :ok = Elmc.Runtime.Generator.write_runtime(runtime_dir, prune_from_dir: refs_dir)
+
+    runtime = File.read!(Path.join(runtime_dir, "elmc_runtime.c"))
+    header = File.read!(Path.join(runtime_dir, "elmc_runtime.h"))
+
+    assert runtime =~ "ElmcValue *elmc_record_new_values_ints"
+    assert runtime =~ "ElmcValue *elmc_record_new_values_take"
+    assert runtime =~ "elmc_record_cell_alloc_values"
+    assert header =~ "ElmcValue *elmc_record_new_values_ints"
+    assert header =~ "ElmcValue *elmc_record_new_values_take"
+    refute runtime =~ "implicit declaration"
+  end
+
   test "runtime pruning keeps closure constructor referenced by generated code" do
     out_dir = Path.expand("tmp/runtime_pruned_closure", __DIR__)
     refs_dir = Path.join(out_dir, "refs")
@@ -179,7 +240,7 @@ defmodule ElmcTest do
     refute runtime =~ "malloc(sizeof(elmc_int_t))"
   end
 
-  test "runtime uses shared empty string and logs allocation failure once" do
+  test "runtime uses shared empty string and logs allocation failures" do
     runtime_dir = Path.expand("tmp/runtime_alloc_failure_logging", __DIR__)
 
     File.rm_rf!(runtime_dir)
@@ -190,8 +251,10 @@ defmodule ElmcTest do
 
     assert runtime =~ "static ElmcValue ELMC_EMPTY_STRING"
     assert runtime =~ "return &ELMC_EMPTY_STRING;"
-    assert runtime =~ "static void elmc_log_alloc_failed_once"
-    assert runtime =~ "ELMC allocation failed in %s"
+    assert runtime =~ "static void elmc_log_alloc_failed"
+    assert runtime =~ "static void *elmc_realloc_impl"
+    refute runtime =~ "ELMC_ALLOC_FAILURE_LOGGED"
+    assert runtime =~ "ELMC malloc failed %s"
     assert runtime =~ "static void *elmc_malloc_impl(size_t size, const char *context"
     assert runtime =~ "elmc_malloc_impl(sizeof(ElmcValue), __func__"
     refute runtime =~ "if (!out) return elmc_new_string(\"\");"

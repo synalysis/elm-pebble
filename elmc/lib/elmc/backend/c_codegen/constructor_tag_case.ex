@@ -8,16 +8,17 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
   alias Elmc.Backend.CCodegen.Native.IntCase, as: NativeIntCase
   alias Elmc.Backend.CCodegen.Patterns
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.CCodegen.UnionMacros
   @constructor_tag_switch_min_branches 4
 
   @constructor_tag_switch_excluded_names MapSet.new([
-    "Ok",
-    "Err",
-    "Just",
-    "Nothing",
-    "::",
-    "[]"
-  ])
+                                           "Ok",
+                                           "Err",
+                                           "Just",
+                                           "Nothing",
+                                           "::",
+                                           "[]"
+                                         ])
 
   @spec branches?(Types.case_branches()) :: boolean()
   def branches?(branches) when is_list(branches) do
@@ -71,7 +72,9 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     {subject_code, subject_ref, counter} = NativeInt.compile_expr(subject_expr, env, counter)
     next = counter + 1
     out = "tmp_#{next}"
-    has_default? = Enum.any?(branches, fn branch -> match?(%{kind: :wildcard}, branch.pattern) end)
+
+    has_default? =
+      Enum.any?(branches, fn branch -> match?(%{kind: :wildcard}, branch.pattern) end)
 
     {branch_code, final_counter} =
       Enum.reduce(branches, {"", next}, fn branch, {acc, c} ->
@@ -79,7 +82,7 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
           Host.compile_case_branch_assignment(branch.expr, out, env, c)
 
         snippet = """
-        #{case_label(branch.pattern)}:
+        #{case_label(branch.pattern, env)}:
         #{CSource.indent(expr_code, 4)}
             #{assignment_code}
             break;
@@ -110,7 +113,12 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     {code, out, final_counter}
   end
 
-  @spec compile(Types.case_subject(), Types.case_branches(), Types.compile_env(), Types.compile_counter()) ::
+  @spec compile(
+          Types.case_subject(),
+          Types.case_branches(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) ::
           Types.compile_result()
   def compile(subject, branches, env, counter) do
     compile_boxed_subject(subject, branches, env, counter)
@@ -128,7 +136,8 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     next = counter + 1
     out = "tmp_#{next}"
 
-    has_default? = Enum.any?(branches, fn branch -> match?(%{kind: :wildcard}, branch.pattern) end)
+    has_default? =
+      Enum.any?(branches, fn branch -> match?(%{kind: :wildcard}, branch.pattern) end)
 
     {branch_code, final_counter} =
       Enum.reduce(branches, {"", next}, fn branch, {acc, c} ->
@@ -138,7 +147,7 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
           Host.compile_case_branch_assignment(branch.expr, out, branch_env, c)
 
         snippet = """
-        #{case_label(branch.pattern)}:
+        #{case_label(branch.pattern, env)}:
         #{CSource.indent(expr_code, 4)}
             #{assignment_code}
             break;
@@ -179,15 +188,21 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
 
   @spec switchable_pattern?(Types.pattern()) :: boolean()
   defp switchable_pattern?(%{kind: :constructor, name: name, tag: _tag} = pattern) do
-    name_allowed? = is_nil(name) or not MapSet.member?(@constructor_tag_switch_excluded_names, name)
+    name_allowed? =
+      is_nil(name) or not MapSet.member?(@constructor_tag_switch_excluded_names, name)
+
     name_allowed? and simple_constructor_pattern?(pattern)
   end
 
   @spec simple_constructor_pattern?(Types.pattern()) :: boolean()
   defp simple_constructor_pattern?(%{kind: :constructor, tag: _tag, arg_pattern: nil}), do: true
 
-  defp simple_constructor_pattern?(%{kind: :constructor, tag: _tag, arg_pattern: %{kind: :wildcard}}),
-    do: true
+  defp simple_constructor_pattern?(%{
+         kind: :constructor,
+         tag: _tag,
+         arg_pattern: %{kind: :wildcard}
+       }),
+       do: true
 
   defp simple_constructor_pattern?(%{kind: :constructor, tag: _tag, arg_pattern: %{kind: :var}}),
     do: true
@@ -209,11 +224,29 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     Host.compile_expr(subject_expr, env, counter)
   end
 
-  @spec case_label(Types.pattern()) :: String.t()
-  defp case_label(%{kind: :wildcard}), do: "default"
+  @spec case_label(Types.pattern(), Types.compile_env()) :: String.t()
+  defp case_label(%{kind: :wildcard}, _env), do: "default"
 
-  defp case_label(%{kind: :constructor, tag: tag} = pattern) when is_integer(tag),
-    do: "case #{PebbleMsgTag.tag_expr(pattern)}"
+  defp case_label(%{kind: :constructor, tag: tag} = pattern, env) when is_integer(tag) do
+    pebble_tag = PebbleMsgTag.tag_expr(pattern)
+
+    ref =
+      if pebble_tag == Integer.to_string(tag) do
+        pattern
+        |> constructor_literal_expr()
+        |> UnionMacros.literal_ref(env)
+      end
+
+    "case #{ref || pebble_tag}"
+  end
+
+  defp constructor_literal_expr(%{tag: tag} = pattern) do
+    %{
+      op: :int_literal,
+      value: tag,
+      union_ctor: Map.get(pattern, :resolved_name) || Map.get(pattern, :name)
+    }
+  end
 
   @spec message_tag_expr(Types.subject_ref()) :: String.t()
   defp message_tag_expr(subject_ref) do

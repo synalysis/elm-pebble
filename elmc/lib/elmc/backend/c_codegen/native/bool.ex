@@ -8,7 +8,10 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Native.RecordFields
   alias Elmc.Backend.CCodegen.Native.TypedReturn
+  alias Elmc.Backend.CCodegen.Patterns
   alias Elmc.Backend.CCodegen.Types
+
+  @native_bool_c_type "bool"
   @type compile_result :: Types.native_scalar_compile_result()
 
   @spec compile_expr(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
@@ -31,7 +34,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
       nil ->
         case Map.fetch(env, name) do
           {:ok, source} when is_binary(source) ->
-            {"", "elmc_as_bool(#{source})", counter}
+            {"", "(bool)elmc_as_bool(#{source})", counter}
 
           _ ->
             compile_fallback(expr, env, counter)
@@ -66,7 +69,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
 
           code = """
           #{before_probe}
-            const elmc_int_t #{out} = #{getter};
+            const #{@native_bool_c_type} #{out} = #{getter};
           #{after_probe}
           """
 
@@ -104,7 +107,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
         code = """
         #{arg_code}
         #{before_probe}
-          const elmc_int_t #{out} = #{getter};
+          const #{@native_bool_c_type} #{out} = #{getter};
         #{after_probe}
           elmc_release(#{arg_var});
         """
@@ -121,16 +124,16 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
          env,
          counter
        ) do
-    if expr?(then_expr, env) and expr?(else_expr, env) do
+    if bool_coercible_branch?(then_expr, env) and bool_coercible_branch?(else_expr, env) do
       {cond_code, cond_ref, counter} = compile_expr(cond_expr, env, counter)
-      {then_code, then_ref, counter} = compile_expr(then_expr, env, counter)
-      {else_code, else_ref, counter} = compile_expr(else_expr, env, counter)
+      {then_code, then_ref, counter} = compile_bool_branch(then_expr, env, counter)
+      {else_code, else_ref, counter} = compile_bool_branch(else_expr, env, counter)
       next = counter + 1
       out = "native_bool_if_#{next}"
 
       code = """
       #{cond_code}
-        elmc_int_t #{out} = 0;
+        #{@native_bool_c_type} #{out} = false;
         if (#{cond_ref}) {
       #{CSource.indent(then_code, 4)}
           #{out} = #{then_ref};
@@ -222,6 +225,14 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
     {code, "!(#{ref})", counter}
   end
 
+  defp compile_expr_uncached(%{op: :case, subject: subject, branches: branches} = expr, env, counter) do
+    if union_constructor_case?(expr) do
+      compile_union_constructor_case(subject, branches, env, counter)
+    else
+      compile_fallback(expr, env, counter)
+    end
+  end
+
   defp compile_expr_uncached(expr, env, counter), do: compile_fallback(expr, env, counter)
 
   @spec compile_compare(
@@ -273,7 +284,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
               """
               #{left_code}
                 #{right_code}
-                const elmc_int_t #{out} = elmc_value_equal(#{left_var}, #{right_var});
+                const #{@native_bool_c_type} #{out} = elmc_value_equal(#{left_var}, #{right_var});
                 elmc_release(#{left_var});
                 elmc_release(#{right_var});
               """
@@ -282,7 +293,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
               """
               #{left_code}
                 #{right_code}
-                const elmc_int_t #{out} = !elmc_value_equal(#{left_var}, #{right_var});
+                const #{@native_bool_c_type} #{out} = !elmc_value_equal(#{left_var}, #{right_var});
                 elmc_release(#{left_var});
                 elmc_release(#{right_var});
               """
@@ -302,7 +313,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
               #{left_code}
                 #{right_code}
                 ElmcValue *#{cmp_var} = elmc_basics_compare(#{left_var}, #{right_var});
-                const elmc_int_t #{out} = elmc_as_int(#{cmp_var}) #{comparison} 0;
+                const #{@native_bool_c_type} #{out} = elmc_as_int(#{cmp_var}) #{comparison} 0;
                 elmc_release(#{cmp_var});
                 elmc_release(#{left_var});
                 elmc_release(#{right_var});
@@ -333,15 +344,19 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
     do: RecordFields.bool_field?(env, arg, field)
 
   def expr?(%{op: :if, then_expr: then_expr, else_expr: else_expr}, env),
-    do: expr?(then_expr, env) and expr?(else_expr, env)
+    do: bool_coercible_branch?(then_expr, env) and bool_coercible_branch?(else_expr, env)
 
   def expr?(%{op: :runtime_call, function: "elmc_basics_not", args: [value]}, env),
     do: expr?(value, env)
+
+  def expr?(%{op: :case} = expr, _env), do: union_constructor_case?(expr)
 
   def expr?(expr, env), do: structural_expr?(expr) or TypedReturn.bool_expr?(expr, env)
 
   @spec structural_expr?(Types.ir_expr()) :: boolean()
   def structural_expr?(%{op: :compare}), do: true
+
+  def structural_expr?(%{op: :case} = expr), do: union_constructor_case?(expr)
 
   def structural_expr?(%{op: :call, name: name, args: args})
       when name in ["__eq__", "__neq__", "__lt__", "__lte__", "__gt__", "__gte__"] and
@@ -367,6 +382,44 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
 
   def structural_expr?(_expr), do: false
 
+  @spec bool_coercible_branch?(Types.ir_expr(), Types.compile_env()) :: boolean()
+  defp bool_coercible_branch?(%{op: :int_literal, value: value}, _env) when value in [0, 1], do: true
+
+  defp bool_coercible_branch?(%{op: :constructor_call, target: target, args: []}, _env),
+    do: match?({:ok, _}, constructor_bool_literal(target))
+
+  defp bool_coercible_branch?(expr, env), do: expr?(expr, env)
+
+  @spec compile_bool_branch(
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: compile_result()
+  defp compile_bool_branch(%{op: :int_literal, value: 1}, _env, counter),
+    do: {"", "true", counter}
+
+  defp compile_bool_branch(%{op: :int_literal, value: 0}, _env, counter),
+    do: {"", "false", counter}
+
+  defp compile_bool_branch(%{op: :constructor_call, target: target, args: []}, env, counter) do
+    case constructor_bool_literal(target) do
+      {:ok, true} -> {"", "true", counter}
+      {:ok, false} -> {"", "false", counter}
+      :error -> compile_expr(%{op: :constructor_call, target: target, args: []}, env, counter)
+    end
+  end
+
+  defp compile_bool_branch(expr, env, counter), do: compile_expr(expr, env, counter)
+
+  @spec constructor_bool_literal(String.t()) :: {:ok, boolean()} | :error
+  defp constructor_bool_literal(target) when is_binary(target) do
+    case Host.special_value_from_target(target, []) do
+      %{op: :int_literal, value: 1} -> {:ok, true}
+      %{op: :int_literal, value: 0} -> {:ok, false}
+      _ -> :error
+    end
+  end
+
   @spec compile_fallback(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
           compile_result()
   defp compile_fallback(expr, env, counter) do
@@ -377,7 +430,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
     {
       """
       #{code}
-        const elmc_int_t #{out} = #{value_expr(expr, env, var)};
+        const #{@native_bool_c_type} #{out} = #{value_expr(expr, env, var)};
         elmc_release(#{var});
       """,
       out,
@@ -387,6 +440,53 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
 
   @spec value_expr(Types.ir_expr(), Types.compile_env(), String.t()) :: String.t()
   defp value_expr(expr, env, var) do
-    if TypedReturn.bool_expr?(expr, env), do: "elmc_as_bool(#{var})", else: "elmc_as_int(#{var}) != 0"
+    if TypedReturn.bool_expr?(expr, env),
+      do: "(bool)elmc_as_bool(#{var})",
+      else: "elmc_as_int(#{var}) != 0"
+  end
+
+  defp union_constructor_case?(%{op: :case, branches: branches}) do
+    case branches do
+      [
+        %{pattern: %{kind: :constructor, tag: tag}, expr: %{op: :int_literal, value: 1}},
+        %{pattern: %{kind: :wildcard}, expr: %{op: :int_literal, value: 0}}
+      ]
+      when is_integer(tag) ->
+        true
+
+      _ ->
+        false
+    end
+  end
+
+  defp union_constructor_case?(_expr), do: false
+
+  defp compile_union_constructor_case(subject, branches, env, counter) do
+    [%{pattern: pattern} | _] = branches
+    next = counter + 1
+    out = "native_b_#{next}"
+
+    case Host.record_get_borrow_expr(subject, env) do
+      borrow_ref when is_binary(borrow_ref) ->
+        condition = Patterns.pattern_condition(borrow_ref, pattern)
+
+        code = """
+          const #{@native_bool_c_type} #{out} = #{condition};
+        """
+
+        {code, out, next}
+
+      nil ->
+        {subject_code, subject_var, counter} = Host.compile_expr(subject, env, counter)
+        condition = Patterns.pattern_condition(subject_var, pattern)
+
+        code = """
+        #{subject_code}
+          const #{@native_bool_c_type} #{out} = #{condition};
+          elmc_release(#{subject_var});
+        """
+
+        {code, out, next}
+    end
   end
 end

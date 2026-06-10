@@ -9,7 +9,13 @@ defmodule Elmc.Backend.CCodegen.Hoist do
           Types.compile_env()
   def put_hoisted_native_bool(env, expr, ref) when is_binary(ref) do
     hoisted = Map.get(env, :__hoisted_native_bools__, %{})
-    Map.put(env, :__hoisted_native_bools__, Map.put(hoisted, hoisted_native_bool_key(expr), ref))
+
+    hoisted =
+      expr
+      |> hoisted_native_bool_key_aliases(ref)
+      |> Enum.reduce(hoisted, fn {key, value}, acc -> Map.put(acc, key, value) end)
+
+    Map.put(env, :__hoisted_native_bools__, hoisted)
   end
 
   def put_hoisted_native_bool(env, _expr, _ref), do: env
@@ -21,7 +27,8 @@ defmodule Elmc.Backend.CCodegen.Hoist do
     |> Map.get(hoisted_native_bool_key(expr))
   end
 
-  defp hoisted_native_bool_key(%{op: :qualified_call, target: target, args: args}) when is_binary(target) do
+  defp hoisted_native_bool_key(%{op: :qualified_call, target: target, args: args})
+       when is_binary(target) do
     {:qualified, Host.normalize_special_target(target),
      Enum.map(args || [], &hoisted_native_bool_key/1)}
   end
@@ -30,8 +37,13 @@ defmodule Elmc.Backend.CCodegen.Hoist do
     {:call, name, Enum.map(args || [], &hoisted_native_bool_key/1)}
   end
 
-  defp hoisted_native_bool_key(%{op: :field_access, arg: arg, field: field}) when is_binary(field) do
+  defp hoisted_native_bool_key(%{op: :field_access, arg: arg, field: field})
+       when is_binary(field) do
     {:field, hoisted_native_bool_arg_key(arg), field}
+  end
+
+  defp hoisted_native_bool_key(%{op: :compare, kind: kind, left: left, right: right}) do
+    {:compare, kind, hoisted_native_bool_key(left), hoisted_native_bool_key(right)}
   end
 
   defp hoisted_native_bool_key(%{op: :var, name: name}) when is_binary(name) or is_atom(name),
@@ -42,6 +54,47 @@ defmodule Elmc.Backend.CCodegen.Hoist do
   defp hoisted_native_bool_key(other) when is_map(other), do: {:other, Map.get(other, :op)}
 
   defp hoisted_native_bool_key(other), do: other
+
+  defp hoisted_native_bool_key_aliases(expr, ref) do
+    base = [{hoisted_native_bool_key(expr), ref}]
+
+    case inverse_native_bool_key(expr) do
+      nil -> base
+      inverse_key -> [{inverse_key, inverse_ref(ref)} | base]
+    end
+  end
+
+  defp inverse_native_bool_key(%{op: :compare, kind: kind, left: left, right: right})
+       when kind in [:eq, :neq, "eq", "neq"] do
+    inverse_kind =
+      case kind do
+        :eq -> :neq
+        "eq" -> "neq"
+        :neq -> :eq
+        "neq" -> "eq"
+      end
+
+    hoisted_native_bool_key(%{op: :compare, kind: inverse_kind, left: left, right: right})
+  end
+
+  defp inverse_native_bool_key(%{op: :runtime_call, function: "elmc_basics_not", args: [value]}),
+    do: hoisted_native_bool_key(value)
+
+  defp inverse_native_bool_key(%{op: :call, name: name, args: [value]})
+       when name in ["not", "Basics.not"],
+       do: hoisted_native_bool_key(value)
+
+  defp inverse_native_bool_key(%{op: :qualified_call, target: target, args: [value]}) do
+    if Host.normalize_special_target(target) == "Basics.not" do
+      hoisted_native_bool_key(value)
+    end
+  end
+
+  defp inverse_native_bool_key(_expr), do: nil
+
+  defp inverse_ref("1"), do: "0"
+  defp inverse_ref("0"), do: "1"
+  defp inverse_ref(ref), do: "!(" <> ref <> ")"
 
   defp hoisted_native_bool_arg_key(name) when is_binary(name) or is_atom(name),
     do: {:var, EnvBindings.binding_key(name)}
@@ -57,9 +110,11 @@ defmodule Elmc.Backend.CCodegen.Hoist do
       Process.get(:elmc_hoisted_native_ints_scope, false)
   end
 
-  defp hoisted_native_int_key(expr), do: expr |> hoisted_native_int_key_raw() |> normalize_hoist_key()
+  defp hoisted_native_int_key(expr),
+    do: expr |> hoisted_native_int_key_raw() |> normalize_hoist_key()
 
-  defp hoisted_native_int_key_raw(%{op: :call, name: name, args: args}) when name in ["min", "max"] do
+  defp hoisted_native_int_key_raw(%{op: :call, name: name, args: args})
+       when name in ["min", "max"] do
     {:minmax, name, minmax_arg_keys(args)}
   end
 
@@ -86,7 +141,8 @@ defmodule Elmc.Backend.CCodegen.Hoist do
   defp normalize_hoist_key({:minmax, name, keys}) when is_list(keys),
     do: {:minmax, name, Enum.sort(Enum.map(keys, &normalize_hoist_key/1))}
 
-  defp normalize_hoist_key({:field, arg, field}), do: {:field, normalize_hoist_arg_key(arg), field}
+  defp normalize_hoist_key({:field, arg, field}),
+    do: {:field, normalize_hoist_arg_key(arg), field}
 
   defp normalize_hoist_key({:var, name}), do: {:var, EnvBindings.binding_key(name)}
 
@@ -109,9 +165,13 @@ defmodule Elmc.Backend.CCodegen.Hoist do
   @spec register_hoisted_native_int(Types.ir_expr(), String.t()) :: :ok
   def register_hoisted_native_int(expr, ref) when is_binary(ref) do
     hoisted =
-      Enum.reduce(hoisted_native_int_key_aliases(expr), Process.get(:elmc_hoisted_native_ints, %{}), fn
-        key, acc -> Map.put(acc, key, ref)
-      end)
+      Enum.reduce(
+        hoisted_native_int_key_aliases(expr),
+        Process.get(:elmc_hoisted_native_ints, %{}),
+        fn
+          key, acc -> Map.put(acc, key, ref)
+        end
+      )
 
     Process.put(:elmc_hoisted_native_ints, hoisted)
   end
@@ -127,7 +187,13 @@ defmodule Elmc.Backend.CCodegen.Hoist do
       :call ->
         case expr do
           %{name: name, args: args} when name in ["min", "max"] ->
-            [hoisted_native_int_key(%{op: :runtime_call, function: "elmc_basics_#{name}", args: args})]
+            [
+              hoisted_native_int_key(%{
+                op: :runtime_call,
+                function: "elmc_basics_#{name}",
+                args: args
+              })
+            ]
 
           _ ->
             []
@@ -135,8 +201,15 @@ defmodule Elmc.Backend.CCodegen.Hoist do
 
       :runtime_call ->
         case expr do
-          %{function: function, args: args} when function in ["elmc_basics_min", "elmc_basics_max"] ->
-            [hoisted_native_int_key(%{op: :call, name: Host.native_min_max_name(function), args: args})]
+          %{function: function, args: args}
+          when function in ["elmc_basics_min", "elmc_basics_max"] ->
+            [
+              hoisted_native_int_key(%{
+                op: :call,
+                name: Host.native_min_max_name(function),
+                args: args
+              })
+            ]
 
           _ ->
             []
@@ -149,7 +222,11 @@ defmodule Elmc.Backend.CCodegen.Hoist do
 
             [
               hoisted_native_int_key(%{op: :call, name: name, args: args}),
-              hoisted_native_int_key(%{op: :runtime_call, function: "elmc_basics_#{name}", args: args})
+              hoisted_native_int_key(%{
+                op: :runtime_call,
+                function: "elmc_basics_#{name}",
+                args: args
+              })
             ]
 
           _ ->

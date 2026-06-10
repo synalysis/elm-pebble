@@ -71,27 +71,67 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     end
   end
 
-  @spec compile_call_operand(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
-          Types.compile_result()
-  def compile_call_operand(%{op: :var, name: name}, env, counter) do
+  @spec compile_call_operand(
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter(),
+          keyword()
+        ) :: Types.compile_result()
+  def compile_call_operand(expr, env, counter, opts \\ []) do
+    {code, var, next, _passthrough?} = compile_call_operand_inner(expr, env, counter, opts)
+    {code, var, next}
+  end
+
+  @spec compile_call_operand_inner(
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter(),
+          keyword()
+        ) :: {String.t(), String.t(), Types.compile_counter(), boolean()}
+  def compile_call_operand_inner(%{op: :var, name: name}, env, counter, opts) do
+    borrow_args? = Keyword.get(opts, :borrow_args?, false)
+
     case Map.get(env, name) do
       source when is_binary(source) ->
-        if EnvBindings.borrowed_arg_ref?(env, source) do
-          {"", source, counter}
+        if borrow_args? or EnvBindings.borrowed_arg_ref?(env, source) do
+          {"", source, counter, true}
         else
-          Host.compile_expr(%{op: :var, name: name}, env, counter)
+          {code, var, next} = Host.compile_expr(%{op: :var, name: name}, env, counter)
+          {code, var, next, false}
         end
 
       _ ->
-        Host.compile_expr(%{op: :var, name: name}, env, counter)
+        {code, var, next} = Host.compile_expr(%{op: :var, name: name}, env, counter)
+        {code, var, next, false}
     end
   end
 
-  def compile_call_operand(expr, env, counter) do
-    Host.compile_expr(expr, env, counter)
+  def compile_call_operand_inner(%{op: :field_access} = expr, env, counter, opts) do
+    if Keyword.get(opts, :borrow_args?, false) do
+      case Host.record_get_borrow_expr(expr, env) do
+        ref when is_binary(ref) ->
+          {"", ref, counter, true}
+
+        nil ->
+          {code, var, next} = Host.compile_expr(expr, env, counter)
+          {code, var, next, false}
+      end
+    else
+      {code, var, next} = Host.compile_expr(expr, env, counter)
+      {code, var, next, false}
+    end
   end
 
-  @spec compile_retaining_call_operand(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
+  def compile_call_operand_inner(expr, env, counter, _opts) do
+    {code, var, next} = Host.compile_expr(expr, env, counter)
+    {code, var, next, false}
+  end
+
+  @spec compile_retaining_call_operand(
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) ::
           {String.t(), String.t(), Types.compile_counter(), boolean()}
   def compile_retaining_call_operand(%{op: :var, name: name}, env, counter) do
     case Map.get(env, name) do
@@ -109,7 +149,13 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     {code, var, c, false}
   end
 
-  @spec compile(String.t(), String.t(), [Types.ir_expr()], Types.compile_env(), Types.compile_counter()) ::
+  @spec compile(
+          String.t(),
+          String.t(),
+          [Types.ir_expr()],
+          Types.compile_env(),
+          Types.compile_counter()
+        ) ::
           Types.compile_result()
   def compile(module_name, name, args, env, counter) do
     arity = EnvBindings.function_arity(env, module_name, name, args)
@@ -132,13 +178,21 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     end
   end
 
-  @spec compile_closure(String.t(), [Types.ir_expr()], Types.compile_env(), Types.compile_counter()) ::
+  @spec compile_closure(
+          String.t(),
+          [Types.ir_expr()],
+          Types.compile_env(),
+          Types.compile_counter()
+        ) ::
           Types.compile_result()
   def compile_closure(closure_var, args, env, counter) do
-    {arg_code, arg_vars, counter} =
-      Enum.reduce(args, {"", [], counter}, fn arg_expr, {code_acc, vars_acc, c} ->
-        {code, var, c2} = compile_call_operand(arg_expr, env, c)
-        {code_acc <> "\n  " <> code, vars_acc ++ [var], c2}
+    {arg_code, arg_vars, arg_passthrough, counter} =
+      Enum.reduce(args, {"", [], [], counter}, fn arg_expr,
+                                                  {code_acc, vars_acc, passthrough_acc, c} ->
+        {code, var, c2, passthrough?} =
+          compile_call_operand_inner(arg_expr, env, c, borrow_args?: true)
+
+        {code_acc <> "\n  " <> code, vars_acc ++ [var], passthrough_acc ++ [passthrough?], c2}
       end)
 
     next = counter + 1
@@ -147,7 +201,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     args_array = "call_args_#{next}"
     arg_list = Enum.join(arg_vars, ", ")
 
-    releases = release_call_operands(env, arg_vars)
+    releases = release_borrowed_call_operands(env, arg_vars, arg_passthrough)
 
     code = """
     #{arg_code}
@@ -159,7 +213,8 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     {code, out, next}
   end
 
-  @spec compile_var(String.t(), Types.compile_env(), Types.compile_counter()) :: Types.compile_result()
+  @spec compile_var(String.t(), Types.compile_env(), Types.compile_counter()) ::
+          Types.compile_result()
   def compile_var(name, env, counter) do
     next = counter + 1
     var = "tmp_#{next}"
@@ -235,7 +290,9 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
         ) :: Types.compile_result()
   defp compile_zero_arg_constant(module_name, name, env, counter, var, next) do
     case ConstantInt.compile_boxed_call(module_name, name, [], env, counter) do
-      {:ok, code, out, c} -> {code, out, c}
+      {:ok, code, out, c} ->
+        {code, out, c}
+
       :error ->
         c_name = Util.module_fn_name(module_name, name)
 
@@ -248,7 +305,13 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     end
   end
 
-  @spec top_level_closure(String.t(), String.t(), non_neg_integer(), String.t(), Types.compile_counter()) ::
+  @spec top_level_closure(
+          String.t(),
+          String.t(),
+          non_neg_integer(),
+          String.t(),
+          Types.compile_counter()
+        ) ::
           Types.compile_result()
   def top_level_closure(module_name, name, arity, out, next) do
     c_name = Util.module_fn_name(module_name, name)
@@ -343,15 +406,41 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     if native_record_all_int_fields?(env, name, field_names) do
       count = length(field_names)
 
-      names_array =
-        field_names
-        |> Enum.map_join(", ", fn field -> "\"#{Util.escape_c_string(field)}\"" end)
-
-      values_array =
+      call_args =
         field_names
         |> Enum.map_join(", ", fn field -> Map.fetch!(fields, field) end)
 
-      "elmc_record_new_ints(#{count}, (const char *[]){ #{names_array} }, (elmc_int_t[]){ #{values_array} })"
+      if Process.get(:elmc_generic_helper_defs) != nil do
+        helper_id = Process.get(:elmc_generic_helper_counter, 0) + 1
+        Process.put(:elmc_generic_helper_counter, helper_id)
+
+        helper_name =
+          "elmc_native_record_capture_#{Util.safe_c_suffix(Map.get(env, :__module__, "Main"))}_#{Util.safe_c_suffix(name)}_#{helper_id}"
+
+        params =
+          field_names
+          |> Enum.with_index()
+          |> Enum.map(fn {_field, index} -> "field_#{index}" end)
+
+        param_decls = Enum.map_join(params, ", ", &"elmc_int_t #{&1}")
+        values_array = Enum.join(params, ", ")
+
+        helper_def = """
+        static ElmcValue *#{helper_name}(#{param_decls}) {
+          elmc_int_t rec_values[#{count}] = { #{values_array} };
+          return elmc_record_new_values_ints(#{count}, rec_values);
+        }
+        """
+
+        Process.put(
+          :elmc_generic_helper_defs,
+          [helper_def | Process.get(:elmc_generic_helper_defs, [])]
+        )
+
+        "#{helper_name}(#{call_args})"
+      else
+        "elmc_record_new_values_ints(#{count}, (elmc_int_t[]){ #{call_args} })"
+      end
     else
       raise ArgumentError,
             "cannot capture native record #{inspect(name)} with non-Int fields in a closure; pass fields individually"
@@ -415,18 +504,13 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
   defp compile_native_record_box_ints(var, field_names, fields, next) do
     count = length(field_names)
 
-    names_array =
-      field_names
-      |> Enum.map_join(", ", fn field -> "\"#{Util.escape_c_string(field)}\"" end)
-
     values_array =
       field_names
       |> Enum.map_join(", ", fn field -> Map.fetch!(fields, field) end)
 
     code = """
-    const char *rec_names_#{next}[#{count}] = { #{names_array} };
-      elmc_int_t rec_values_#{next}[#{count}] = { #{values_array} };
-      ElmcValue *#{var} = elmc_record_new_ints(#{count}, rec_names_#{next}, rec_values_#{next});
+    elmc_int_t rec_values_#{next}[#{count}] = { #{values_array} };
+      ElmcValue *#{var} = elmc_record_new_values_ints(#{count}, rec_values_#{next});
     """
 
     {code, var, next}
@@ -434,10 +518,6 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
 
   defp compile_native_record_box_mixed(var, name, field_names, fields, env, next) do
     count = length(field_names)
-
-    names_array =
-      field_names
-      |> Enum.map_join(", ", fn field -> "\"#{Util.escape_c_string(field)}\"" end)
 
     {field_code, value_vars, next} =
       Enum.reduce(field_names, {"", [], next}, fn field, {code_acc, vars_acc, c} ->
@@ -452,9 +532,8 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
 
     code = """
     #{field_code}
-      const char *rec_names_#{next}[#{count}] = { #{names_array} };
       ElmcValue *rec_values_#{next}[#{count}] = { #{values_array} };
-      ElmcValue *#{var} = elmc_record_new_take(#{count}, rec_names_#{next}, rec_values_#{next});
+      ElmcValue *#{var} = elmc_record_new_values_take(#{count}, rec_values_#{next});
     """
 
     {code, var, next}
@@ -507,10 +586,16 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     before_args_probe =
       DebugProbes.call_probe(env, module_name, name, :before_args) |> DebugProbes.region()
 
-    {arg_code, arg_vars, counter} =
-      Enum.reduce(args, {"", [], counter}, fn arg_expr, {code_acc, vars_acc, c} ->
-        {code, var, c2} = compile_call_operand(arg_expr, env, c)
-        {code_acc <> "\n  " <> code, vars_acc ++ [var], c2}
+    borrow_args? = EnvBindings.callee_borrow_args?(env, module_name, name)
+    operand_opts = [borrow_args?: borrow_args?]
+
+    {arg_code, arg_vars, arg_passthrough, counter} =
+      Enum.reduce(args, {"", [], [], counter}, fn arg_expr,
+                                                  {code_acc, vars_acc, passthrough_acc, c} ->
+        {code, var, c2, passthrough?} =
+          compile_call_operand_inner(arg_expr, env, c, operand_opts)
+
+        {code_acc <> "\n  " <> code, vars_acc ++ [var], passthrough_acc ++ [passthrough?], c2}
       end)
 
     next = counter + 1
@@ -523,7 +608,12 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     after_call_probe =
       DebugProbes.call_probe(env, module_name, name, :after_call) |> DebugProbes.region()
 
-    releases = release_call_operands(env, arg_vars)
+    releases =
+      if borrow_args? do
+        release_borrowed_call_operands(env, arg_vars, arg_passthrough)
+      else
+        release_call_operands(env, arg_vars)
+      end
 
     code =
       cond do
@@ -629,7 +719,21 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     |> Enum.map_join("\n  ", &"elmc_release(#{&1});")
   end
 
-  @spec compile_cross_module(String.t(), [Types.ir_expr()], Types.compile_env(), Types.compile_counter()) ::
+  defp release_borrowed_call_operands(env, arg_vars, arg_passthrough) do
+    arg_vars
+    |> Enum.zip(arg_passthrough)
+    |> Enum.reject(fn {var, passthrough?} ->
+      passthrough? or EnvBindings.borrowed_arg_ref?(env, var)
+    end)
+    |> Enum.map_join("\n  ", fn {var, _} -> "elmc_release(#{var});" end)
+  end
+
+  @spec compile_cross_module(
+          String.t(),
+          [Types.ir_expr()],
+          Types.compile_env(),
+          Types.compile_counter()
+        ) ::
           Types.compile_result()
   def compile_cross_module(target, args, env, counter) do
     case Util.split_qualified_function_target(target) do

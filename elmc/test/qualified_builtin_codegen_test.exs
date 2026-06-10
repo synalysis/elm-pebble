@@ -158,7 +158,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     [typed_bounds_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
 
-    assert typed_bounds_body =~ "elmc_record_new_ints"
+    assert typed_bounds_body =~ "elmc_record_new_values_ints"
     refute typed_bounds_body =~ "elmc_retain(x)"
     refute typed_bounds_body =~ "elmc_retain(y)"
 
@@ -394,20 +394,14 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     [native_bool_mixed_body | _rest] =
       String.split(mixed_body, "static ElmcValue *elmc_fn_", parts: 2)
 
-    assert native_bool_mixed_body =~ "ElmcValue *tmp_"
+    assert native_bool_mixed_body =~ "bool native_bool_if_"
     assert native_bool_mixed_body =~ "if ((value < 0))"
-    assert native_bool_mixed_body =~ "elmc_new_int(1)"
-    assert native_bool_mixed_body =~ "elmc_new_bool(elmc_value_equal("
-
-    refute Regex.match?(
-             ~r/ElmcValue \*tmp_\d+ = elmc_int_zero\(\);\s+if \(\(value < 0\)\)/,
-             native_bool_mixed_body
-           )
-
-    [_, result_var] =
-      Regex.run(~r/ElmcValue \*(tmp_\d+);\s+if \(\(value < 0\)\)/, native_bool_mixed_body)
-
-    refute native_bool_mixed_body =~ "elmc_release(#{result_var});"
+    assert native_bool_mixed_body =~ "native_bool_if_"
+    assert native_bool_mixed_body =~ " = true;"
+    assert native_bool_mixed_body =~ "elmc_value_equal("
+    refute native_bool_mixed_body =~ "elmc_new_int(1)"
+    refute Regex.match?(~r/const bool native_bool_if_\d+ = false;\s+if/, native_bool_mixed_body)
+    refute Regex.match?(~r/elmc_as_int\(tmp_\d+\) != 0/, native_bool_mixed_body)
 
     maybe_body =
       generated_c
@@ -1169,6 +1163,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     assert generated_c =~
              "scene_cmd.p5 = (ELMC_TEXT_ALIGN_RIGHT + (ELMC_TEXT_OVERFLOW_FILL * (1 << ELMC_TEXT_OVERFLOW_SHIFT)));"
+
+    assert generated_c =~ "scene_cmd.text[0] = 'L';"
+    assert generated_c =~ "scene_cmd.text[4] = '\\0';"
+    refute generated_c =~ "const char *direct_text = \"Left\";"
   end
 
   test "direct command Int lets stay native inside bounds records" do
@@ -3985,7 +3983,44 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       |> hd()
 
     assert view_body =~ "ELMC_RENDER_OP_TEXT"
-    assert view_body =~ "snprintf(scene_cmd.text"
+    assert view_body =~ "direct_digits"
+    assert view_body =~ "scene_cmd.text[0] = '.';"
+    assert view_body =~ "scene_cmd.text[1] = '\\0';"
+    refute view_body =~ "snprintf(scene_cmd.text"
+    refute view_body =~ "const char *direct_text = \".\";"
+    refute view_body =~ "elmc_fn_Main_drawCell_commands_append_native"
+  end
+
+  test "direct indexedMap drawCell skips fillRect when cell value is zero" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_indexed_affine_cells_fill_skip_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_indexed_affine_cells_fill_skip_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+
+    File.write!(
+      Path.join(project_dir, "src/Main.elm"),
+      direct_indexed_map_affine_cells_fill_skip_source()
+    )
+
+    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body =
+      generated_c
+      |> String.split("static int elmc_fn_Main_view_commands_append")
+      |> List.last()
+      |> String.split("static int elmc_fn_", parts: 2)
+      |> hd()
+
+    assert view_body =~ "ELMC_RENDER_OP_RECT"
+    assert view_body =~ "ELMC_RENDER_OP_FILL_RECT"
+    assert view_body =~ "if (elmc_as_int(direct_node_"
+    assert view_body =~ "ELMC_RENDER_OP_FILL_RECT"
+    assert view_body =~ "!= 0)"
     refute view_body =~ "elmc_fn_Main_drawCell_commands_append_native"
   end
 
@@ -4103,7 +4138,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       |> hd()
 
     refute view_body =~ "elmc_fn_Pebble_Platform_displayShapeIsRound"
-    assert view_body =~ "if (native_b_"
+    assert view_body =~ "const bool native_b_"
+    refute view_body =~ "elmc_new_int(1)"
   end
 
   test "direct view reuses hoisted min screen dimensions across layout and chrome" do
@@ -4558,6 +4594,76 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
                 [ Ui.strokeColor Color.black ]
                 [ Ui.rect { x = x, y = 42, w = 28, h = 28 } Color.black ]
             )
+    """
+  end
+
+  defp direct_indexed_map_affine_cells_fill_skip_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        { cells : List Int }
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( { cells = [ 0, 2 ] }, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view model =
+        let
+            layout =
+                { x = 10, y = 26, cell = 28, gap = 3 }
+        in
+        Ui.toUiNode (List.indexedMap (drawCell layout) model.cells)
+
+
+    drawCell : { x : Int, y : Int, cell : Int, gap : Int } -> Int -> Int -> Ui.RenderOp
+    drawCell layout index value =
+        let
+            x =
+                layout.x + modBy 4 index * (layout.cell + layout.gap)
+
+            y =
+                layout.y + (index // 4) * (layout.cell + layout.gap)
+        in
+        Ui.context
+            [ Ui.textColor Color.white ]
+            [ Ui.rect { x = x, y = y, w = layout.cell, h = layout.cell } Color.black
+            , Ui.fillRect { x = x, y = y, w = layout.cell, h = layout.cell } <|
+                if value == 0 then
+                    Color.white
+
+                else
+                    Color.darkGray
+            ]
+            |> Ui.group
     """
   end
 

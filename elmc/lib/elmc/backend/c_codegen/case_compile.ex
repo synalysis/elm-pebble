@@ -66,8 +66,51 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
 
   def branch_assignment(expr, out, env, counter) do
     {expr_code, expr_var, counter} = Host.compile_expr(expr, env, counter)
-    {expr_code, "#{out} = #{expr_var};", counter}
+
+    case fold_result_binding(expr_code, expr_var, out) do
+      {:ok, folded_code} ->
+        {folded_code, "", counter}
+
+      :error ->
+        {expr_code, "#{out} = #{expr_var};", counter}
+    end
   end
+
+  @spec fold_result_binding(String.t(), String.t(), String.t()) ::
+          {:ok, String.t()} | :error
+  defp fold_result_binding(expr_code, expr_var, out)
+       when is_binary(expr_code) and expr_code != "" and is_binary(expr_var) and
+              is_binary(out) do
+    lines =
+      expr_code
+      |> String.split("\n")
+      |> Enum.map(&String.trim/1)
+      |> Enum.reject(&(&1 == ""))
+
+    case List.pop_at(lines, -1) do
+      {nil, _} ->
+        :error
+
+      {last, prefix_lines} ->
+        case Regex.run(~r/^ElmcValue \*#{Regex.escape(expr_var)} = (.+);$/, last) do
+          [_, rhs] ->
+            folded_last = "#{out} = #{rhs};"
+
+            folded_code =
+              case prefix_lines do
+                [] -> folded_last
+                _ -> Enum.join(prefix_lines, "\n") <> "\n" <> folded_last
+              end
+
+            {:ok, folded_code}
+
+          _ ->
+            :error
+        end
+    end
+  end
+
+  defp fold_result_binding(_expr_code, _expr_var, _out), do: :error
 
   @spec compile_boxed(
           Types.case_subject(),

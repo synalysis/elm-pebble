@@ -21,26 +21,39 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     compile_update(base, fields, env, counter)
   end
 
-  def compile(%{op: :field_access, arg: arg, field: field}, env, counter)
-      when is_binary(arg) do
+  def compile(%{op: :field_access} = expr, env, counter) do
+    if subexpr_cache_active?(env) do
+      {code, ref, counter, _env} = compile_cached_expr(expr, env, counter, &Host.compile_expr/3)
+      {code, ref, counter}
+    else
+      compile_field_access(expr, env, counter)
+    end
+  end
+
+  defp compile_field_access(%{op: :field_access, arg: arg, field: field}, env, counter)
+       when is_binary(arg) do
     compile_field_access_var(arg, field, env, counter)
   end
 
-  def compile(
-        %{op: :field_access, arg: %{op: :record_literal, fields: fields}, field: field},
-        env,
-        counter
-      )
-      when is_list(fields) do
+  defp compile_field_access(
+         %{op: :field_access, arg: %{op: :record_literal, fields: fields}, field: field},
+         env,
+         counter
+       )
+       when is_list(fields) do
     compile_field_access_literal(fields, field, env, counter)
   end
 
-  def compile(%{op: :field_access, arg: %{op: :var, name: name}, field: field}, env, counter) do
+  defp compile_field_access(
+         %{op: :field_access, arg: %{op: :var, name: name}, field: field},
+         env,
+         counter
+       ) do
     compile_field_access_bound_var(name, field, env, counter)
   end
 
-  def compile(%{op: :field_access, arg: arg_expr, field: field}, env, counter)
-      when is_map(arg_expr) do
+  defp compile_field_access(%{op: :field_access, arg: arg_expr, field: field}, env, counter)
+       when is_map(arg_expr) do
     compile_field_access_expr(arg_expr, field, env, counter)
   end
 
@@ -76,26 +89,20 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     ordered_fields = fields
     field_count = length(ordered_fields)
 
-    names_array =
-      ordered_fields
-      |> Enum.map(fn f -> "\"#{Util.escape_c_string(f.name)}\"" end)
-      |> Enum.join(", ")
-
     if field_count > 0 and Enum.all?(ordered_fields, &Host.native_int_expr?(&1.expr, env)) do
-      compile_native_int_literal(ordered_fields, names_array, field_count, env, counter)
+      compile_native_int_literal(ordered_fields, field_count, env, counter)
     else
-      compile_boxed_literal(ordered_fields, names_array, field_count, env, counter)
+      compile_boxed_literal(ordered_fields, field_count, env, counter)
     end
   end
 
   @spec compile_native_int_literal(
           Types.ir_record_fields(),
-          String.t(),
           non_neg_integer(),
           Types.compile_env(),
           Types.compile_counter()
         ) :: Types.compile_result()
-  defp compile_native_int_literal(ordered_fields, names_array, field_count, env, counter) do
+  defp compile_native_int_literal(ordered_fields, field_count, env, counter) do
     {field_code, field_refs, counter, post_release} =
       compile_field_exprs(ordered_fields, env, counter, &Host.compile_native_int_expr/3)
 
@@ -106,9 +113,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     code =
       """
       #{field_code}
-        const char *rec_names_#{next}[#{field_count}] = { #{names_array} };
         elmc_int_t rec_values_#{next}[#{field_count}] = { #{values_array} };
-        ElmcValue *#{out} = elmc_record_new_ints(#{field_count}, rec_names_#{next}, rec_values_#{next});
+        ElmcValue *#{out} = elmc_record_new_values_ints(#{field_count}, rec_values_#{next});
       """ <> post_release
 
     {code, out, next}
@@ -116,15 +122,13 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
   @spec compile_boxed_literal(
           Types.ir_record_fields(),
-          String.t(),
           non_neg_integer(),
           Types.compile_env(),
           Types.compile_counter()
         ) :: Types.compile_result()
-  defp compile_boxed_literal(ordered_fields, names_array, field_count, env, counter) do
+  defp compile_boxed_literal(ordered_fields, field_count, env, counter) do
     case maybe_extract_boxed_record_literal_helper(
            ordered_fields,
-           names_array,
            field_count,
            env,
            counter
@@ -133,11 +137,11 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
         {code, out, counter}
 
       :error ->
-        compile_inline_boxed_literal(ordered_fields, names_array, field_count, env, counter)
+        compile_inline_boxed_literal(ordered_fields, field_count, env, counter)
     end
   end
 
-  defp compile_inline_boxed_literal(ordered_fields, names_array, field_count, env, counter) do
+  defp compile_inline_boxed_literal(ordered_fields, field_count, env, counter) do
     {field_code, field_refs, counter, post_release} =
       compile_field_exprs(ordered_fields, env, counter, &Host.compile_expr/3)
 
@@ -148,9 +152,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     code =
       """
       #{field_code}
-        const char *rec_names_#{next}[#{max(field_count, 1)}] = { #{names_array} };
         ElmcValue *rec_values_#{next}[#{max(field_count, 1)}] = { #{values_array} };
-          ElmcValue *#{out} = elmc_record_new_take(#{field_count}, rec_names_#{next}, rec_values_#{next});
+          ElmcValue *#{out} = elmc_record_new_values_take(#{field_count}, rec_values_#{next});
       """ <> post_release
 
     {code, out, next}
@@ -158,7 +161,6 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
   defp maybe_extract_boxed_record_literal_helper(
          ordered_fields,
-         names_array,
          field_count,
          env,
          counter
@@ -191,9 +193,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
           helper_def = """
           static ElmcValue *#{helper_name}(#{helper_param_decls}) {
           #{CSource.indent(field_code, 2)}
-            const char *rec_names[#{field_count}] = { #{names_array} };
             ElmcValue *rec_values[#{field_count}] = { #{values_array} };
-            return elmc_record_new_take(#{field_count}, rec_names, rec_values);
+            return elmc_record_new_values_take(#{field_count}, rec_values);
           }
           """
 
@@ -235,8 +236,11 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
       end)
 
     case params do
-      :error -> :error
-      params -> {:ok, params |> Enum.reverse() |> Enum.uniq_by(fn {_key, c_ref, _kind} -> c_ref end)}
+      :error ->
+        :error
+
+      params ->
+        {:ok, params |> Enum.reverse() |> Enum.uniq_by(fn {_key, c_ref, _kind} -> c_ref end)}
     end
   end
 
@@ -266,27 +270,33 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
           Types.compile_counter()
         ) :: Types.compile_result()
   defp compile_update(base, fields, env, counter) do
-    {base_code, base_var, counter} = Host.compile_expr(base, env, counter)
+    {base_code, base_var, counter, base_passthrough?} =
+      compile_update_operand(base, env, counter)
+
     record_shape = Expr.record_shape(base, env)
 
     {update_code, current_var, counter} =
-      Enum.reduce(fields, {"", base_var, counter}, fn field, {code_acc, current, c} ->
-        {field_code, field_var, c2} = Host.compile_expr(field.expr, env, c)
+      Enum.reduce(fields, {base_code, base_var, counter, base_passthrough?, false}, fn field,
+                                                                                       {code_acc,
+                                                                                        current,
+                                                                                        c,
+                                                                                        current_passthrough?,
+                                                                                        current_unique?} ->
+        {field_code, field_var, c2, field_passthrough?} =
+          compile_update_operand(field.expr, env, c)
+
         next = c2 + 1
         out = "tmp_#{next}"
 
         update_call =
-          Expr.record_update_expr(current, field.name, field_var, record_shape)
+          Expr.record_update_expr(current, field.name, field_var, record_shape,
+            cow: current_unique?
+          )
 
-        field_release =
-          if boxed_release_var?(field_var),
-            do: "elmc_release(#{field_var});",
-            else: ""
+        field_release = update_operand_release(field_var, field_passthrough?)
 
         current_release =
-          if boxed_release_var?(current),
-            do: "elmc_release(#{current});",
-            else: ""
+          if current_unique?, do: "", else: update_operand_release(current, current_passthrough?)
 
         code = """
         #{field_code}
@@ -295,10 +305,11 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
         #{field_release}
         """
 
-        {code_acc <> "\n" <> code, out, next}
+        {code_acc <> "\n" <> code, out, next, false, true}
       end)
+      |> then(fn {code, var, c, _, _} -> {code, var, c} end)
 
-    full_code = base_code <> update_code
+    full_code = update_code
 
     case maybe_extract_chained_update_helper(base, fields, env, full_code, current_var, counter) do
       {:ok, code, out, counter} -> {code, out, counter}
@@ -371,13 +382,45 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
       end)
 
     case params do
-      :error -> :error
-      params -> {:ok, params |> Enum.reverse() |> Enum.uniq_by(fn {_key, c_ref, _kind} -> c_ref end)}
+      :error ->
+        :error
+
+      params ->
+        {:ok, params |> Enum.reverse() |> Enum.uniq_by(fn {_key, c_ref, _kind} -> c_ref end)}
     end
   end
 
   defp c_identifier?(value) when is_binary(value),
     do: Regex.match?(~r/^[A-Za-z_][A-Za-z0-9_]*$/, value)
+
+  defp compile_update_operand(%{op: :var, name: name}, env, counter) do
+    case EnvBindings.lookup_binding(env, name) do
+      source when is_binary(source) ->
+        if c_identifier?(source) do
+          {"", source, counter, true}
+        else
+          {code, ref, counter} = Host.compile_expr(%{op: :var, name: name}, env, counter)
+          {code, ref, counter, false}
+        end
+
+      _ ->
+        {code, ref, counter} = Host.compile_expr(%{op: :var, name: name}, env, counter)
+        {code, ref, counter, false}
+    end
+  end
+
+  defp compile_update_operand(expr, env, counter) do
+    {code, ref, counter} = Host.compile_expr(expr, env, counter)
+    {code, ref, counter, false}
+  end
+
+  defp update_operand_release(var, passthrough?) do
+    if passthrough? or not boxed_release_var?(var) do
+      ""
+    else
+      "elmc_release(#{var});\n"
+    end
+  end
 
   defp zero_arg_function_var?(env, var) do
     module_name = Map.get(env, :__module__, "Main")
@@ -418,10 +461,11 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
         {arg_code, arg_var, counter} = Host.compile_expr(%{op: :var, name: arg}, env, counter)
         next = counter + 1
         var = "tmp_#{next}"
+        getter = Expr.record_get_expr(arg_var, field, Expr.record_shape_for_var(env, arg))
 
         code = """
         #{arg_code}
-          ElmcValue *#{var} = elmc_record_get(#{arg_var}, "#{Util.escape_c_string(field)}");
+          ElmcValue *#{var} = #{getter};
           elmc_release(#{arg_var});
         """
 
@@ -605,30 +649,195 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   end
 
   defp compile_field_exprs(ordered_fields, env, counter, compile_fn) do
-    {env, field_code, field_refs, counter} =
-      Enum.reduce(ordered_fields, {subexpr_cache_env(env), "", [], counter}, fn field,
-                                                                                {env_acc, code_acc,
-                                                                                 refs_acc, c} ->
-        {code, ref, c2, env_acc} = compile_cached_expr(field.expr, env_acc, c, compile_fn)
-        {env_acc, code_acc <> "\n  " <> code, refs_acc ++ [ref], c2}
+    {record_env, field_code, field_refs, counter} =
+      Enum.reduce(ordered_fields, {record_subexpr_cache_env(env), "", [], counter}, fn field,
+                                                                                       {record_env_acc,
+                                                                                        code_acc,
+                                                                                        refs_acc,
+                                                                                        c} ->
+        field_env = field_subexpr_cache_env(record_env_acc)
+        {code, ref, c2, _} = compile_cached_expr(field.expr, field_env, c, compile_fn)
+        record_env_acc = sync_record_subexpr_cache(record_env_acc, field_env)
+        {record_env_acc, code_acc <> "\n  " <> code, refs_acc ++ [ref], c2}
       end)
 
-    release_code = deferred_cache_release_code(env, field_refs)
-    post_release = post_record_cache_release_code(env, field_refs)
+    cache = take_record_subexpr_cache(record_env)
+    release_env = Map.put(env, :__subexpr_cache__, cache)
+    release_code = deferred_cache_release_code(release_env, field_refs, field_code)
+    post_release = post_record_cache_release_code(release_env, field_refs, field_code)
     {field_code <> release_code, field_refs, counter, post_release}
   end
 
-  defp subexpr_cache_env(env), do: Map.put_new(env, :__subexpr_cache__, %{})
+  defp subexpr_cache_active?(env) do
+    Map.has_key?(env, :__subexpr_cache__) or
+      Map.has_key?(env, :__subexpr_cache_key__) or
+      Map.has_key?(env, :__record_subexpr_cache_key__)
+  end
+
+  defp record_subexpr_cache_env(env) do
+    cache_key = make_ref()
+    Process.put({:elmc_subexpr_cache, cache_key}, %{})
+
+    env
+    |> Map.drop([:__subexpr_cache__, :__subexpr_cache_key__, :__record_subexpr_cache_key__])
+    |> Map.put(:__record_subexpr_cache_key__, cache_key)
+  end
+
+  defp field_subexpr_cache_env(record_env) do
+    cache_key = make_ref()
+    Process.put({:elmc_subexpr_cache, cache_key}, %{})
+    Process.put({:elmc_subexpr_shared, cache_key}, MapSet.new())
+
+    record_env
+    |> Map.put(:__subexpr_cache_key__, cache_key)
+  end
+
+  @spec shared_subexpr_ref?(Types.compile_env(), String.t()) :: boolean()
+  def shared_subexpr_ref?(env, ref) when is_binary(ref) do
+    case Map.get(env, :__subexpr_cache_key__) do
+      nil -> false
+      key -> MapSet.member?(Process.get({:elmc_subexpr_shared, key}, MapSet.new()), ref)
+    end
+  end
+
+  @spec release_list_operand_code(Types.compile_env(), String.t()) :: String.t()
+  def release_list_operand_code(env, list_var) when is_binary(list_var) do
+    if shared_subexpr_ref?(env, list_var), do: "", else: "elmc_release(#{list_var});\n"
+  end
+
+  defp mark_shared_subexpr_ref(env, ref) when is_binary(ref) do
+    case Map.get(env, :__subexpr_cache_key__) do
+      nil ->
+        env
+
+      key ->
+        shared =
+          Process.get({:elmc_subexpr_shared, key}, MapSet.new())
+          |> MapSet.put(ref)
+
+        Process.put({:elmc_subexpr_shared, key}, shared)
+        env
+    end
+  end
+
+  defp sync_record_subexpr_cache(record_env, field_env) do
+    field_cache = take_field_subexpr_cache(field_env)
+
+    record_env
+    |> get_record_subexpr_cache()
+    |> Map.merge(field_cache)
+    |> then(&put_record_subexpr_cache(record_env, &1))
+  end
+
+  defp get_field_subexpr_cache(env) do
+    case Map.get(env, :__subexpr_cache_key__) do
+      nil -> %{}
+      key -> Process.get({:elmc_subexpr_cache, key}, %{})
+    end
+  end
+
+  defp put_field_subexpr_cache(env, cache) do
+    case Map.get(env, :__subexpr_cache_key__) do
+      nil ->
+        env
+
+      key ->
+        Process.put({:elmc_subexpr_cache, key}, cache)
+        env
+    end
+  end
+
+  defp take_field_subexpr_cache(env) do
+    case Map.get(env, :__subexpr_cache_key__) do
+      nil ->
+        %{}
+
+      key ->
+        cache = Process.get({:elmc_subexpr_cache, key}, %{})
+        Process.delete({:elmc_subexpr_cache, key})
+        Process.delete({:elmc_subexpr_shared, key})
+        cache
+    end
+  end
+
+  defp get_record_subexpr_cache(env) do
+    case Map.get(env, :__record_subexpr_cache_key__) do
+      nil -> %{}
+      key -> Process.get({:elmc_subexpr_cache, key}, %{})
+    end
+  end
+
+  defp put_record_subexpr_cache(env, cache) do
+    case Map.get(env, :__record_subexpr_cache_key__) do
+      nil ->
+        env
+
+      key ->
+        Process.put({:elmc_subexpr_cache, key}, cache)
+        env
+    end
+  end
+
+  defp take_record_subexpr_cache(env) do
+    case Map.get(env, :__record_subexpr_cache_key__) do
+      nil ->
+        %{}
+
+      key ->
+        cache = Process.get({:elmc_subexpr_cache, key}, %{})
+        Process.delete({:elmc_subexpr_cache, key})
+        cache
+    end
+  end
+
+  defp lookup_subexpr_cache(env, key) do
+    case Map.get(get_field_subexpr_cache(env), key) do
+      {cached_ref} ->
+        {:field_hit, cached_ref}
+
+      nil ->
+        case Map.get(get_record_subexpr_cache(env), key) do
+          {cached_ref} -> {:record_hit, cached_ref}
+          nil -> :miss
+        end
+    end
+  end
+
+  defp store_subexpr_cache(env, key, ref) do
+    entry = {ref}
+
+    env =
+      if Map.has_key?(env, :__subexpr_cache_key__) do
+        env
+        |> get_field_subexpr_cache()
+        |> Map.put(key, entry)
+        |> then(&put_field_subexpr_cache(env, &1))
+      else
+        env
+      end
+
+    if Map.has_key?(env, :__record_subexpr_cache_key__) do
+      env
+      |> get_record_subexpr_cache()
+      |> Map.put(key, entry)
+      |> then(&put_record_subexpr_cache(env, &1))
+    else
+      env
+    end
+  end
 
   defp compile_cached_expr(expr, env, counter, compile_fn) do
     key = subexpr_key(expr)
-    cache = Map.get(env, :__subexpr_cache__, %{})
 
-    case Map.get(cache, key) do
-      {cached_ref} ->
+    case lookup_subexpr_cache(env, key) do
+      {:field_hit, cached_ref} ->
+        env = mark_shared_subexpr_ref(env, cached_ref)
         {"", cached_ref, counter, env}
 
-      nil ->
+      {:record_hit, cached_ref} ->
+        {"", cached_ref, counter, env}
+
+      :miss ->
         {code, ref, c, env} =
           case expr do
             %{op: :field_access, arg: arg, field: field} ->
@@ -652,8 +861,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
               {compiled_code, compiled_ref, compiled_counter, env}
           end
 
-        cache = Map.get(env, :__subexpr_cache__, %{})
-        env = Map.put(env, :__subexpr_cache__, Map.put(cache, key, {ref}))
+        env = store_subexpr_cache(env, key, ref)
         {code, ref, c, env}
     end
   end
@@ -690,7 +898,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   end
 
   defp native_int_compile_fn?(compile_fn),
-    do: compile_fn == &Host.compile_native_int_expr/3
+    do: compile_fn == (&Host.compile_native_int_expr/3)
 
   defp runtime_record_field_access?(field_expr, arg, field)
        when is_binary(field) or is_atom(field) do
@@ -735,13 +943,14 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     {code, ref, counter, env, true}
   end
 
-  defp deferred_cache_release_code(env, field_refs) do
+  defp deferred_cache_release_code(env, field_refs, field_code) do
     env
     |> Map.get(:__subexpr_cache__, %{})
     |> Map.values()
     |> Enum.map(fn {ref} -> ref end)
     |> Enum.filter(&boxed_release_var?/1)
     |> Enum.reject(&field_ref_still_uses_cache_ref?(&1, field_refs))
+    |> Enum.reject(&released_in_field_code?(&1, field_code))
     |> Enum.uniq()
     |> Enum.map_join("\n  ", &"elmc_release(#{&1});")
     |> case do
@@ -751,15 +960,12 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   end
 
   defp field_ref_still_uses_cache_ref?(cached_ref, field_refs) when is_binary(cached_ref) do
-    cached_ref in field_refs or
-      Enum.any?(field_refs, fn field_ref ->
-        is_binary(field_ref) and String.contains?(field_ref, cached_ref)
-      end)
+    cached_ref in field_refs
   end
 
   defp field_ref_still_uses_cache_ref?(_cached_ref, _field_refs), do: false
 
-  defp post_record_cache_release_code(env, field_refs) do
+  defp post_record_cache_release_code(env, field_refs, field_code) do
     env
     |> Map.get(:__subexpr_cache__, %{})
     |> Map.values()
@@ -767,6 +973,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     |> Enum.filter(&boxed_release_var?/1)
     |> Enum.reject(&(&1 in field_refs))
     |> Enum.filter(&field_ref_still_uses_cache_ref?(&1, field_refs))
+    |> Enum.reject(&released_in_field_code?(&1, field_code))
     |> Enum.uniq()
     |> Enum.map_join("\n  ", &"elmc_release(#{&1});")
     |> case do
@@ -774,6 +981,12 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
       releases -> "\n  " <> releases
     end
   end
+
+  defp released_in_field_code?(ref, field_code) when is_binary(ref) and is_binary(field_code) do
+    String.contains?(field_code, "elmc_release(#{ref})")
+  end
+
+  defp released_in_field_code?(_ref, _field_code), do: false
 
   defp subexpr_key(%{op: :var, name: name}), do: {:var, name}
 

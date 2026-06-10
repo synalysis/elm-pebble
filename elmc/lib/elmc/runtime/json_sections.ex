@@ -177,7 +177,7 @@ defmodule Elmc.Runtime.JsonSections do
       if (needed <= buf->cap) return 1;
       size_t next = buf->cap ? buf->cap * 2 : 32;
       while (next < needed) next *= 2;
-      char *data = (char *)realloc(buf->data, next);
+      char *data = (char *)elmc_realloc(buf->data, next, "json_buf");
       if (!data) return 0;
       buf->data = data;
       buf->cap = next;
@@ -210,7 +210,7 @@ defmodule Elmc.Runtime.JsonSections do
     }
 
     static ElmcJsonValue *elmc_json_new_value(ElmcJsonKind kind) {
-      ElmcJsonValue *value = (ElmcJsonValue *)malloc(sizeof(ElmcJsonValue));
+      ElmcJsonValue *value = (ElmcJsonValue *)elmc_malloc(sizeof(ElmcJsonValue), "json_value");
       if (!value) return NULL;
       value->kind = kind;
       value->bool_value = 0;

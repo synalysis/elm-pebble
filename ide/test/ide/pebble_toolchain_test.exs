@@ -122,7 +122,6 @@ defmodule Ide.PebbleToolchainTest do
     assert template =~ "emulator_storage_snapshot_callback"
     assert template =~ "companion_inbox_log"
     assert template =~ "ELMC_DEBUG_STORAGE_OP_SNAPSHOT"
-    assert template =~ "elmc_pebble_render_diag_log"
   end
 
   test "infer_package_target_type follows Pebble.Platform watchface entrypoint" do
@@ -358,7 +357,7 @@ defmodule Ide.PebbleToolchainTest do
              "#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS"
   end
 
-  test "pebble app template initializes Elm after pushing the window once" do
+  test "pebble app template defers startup cmds to a timer after init returns" do
     template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
 
     init_body =
@@ -375,7 +374,88 @@ defmodule Ide.PebbleToolchainTest do
     refute template =~
              ~s/} else {\n    APP_LOG(APP_LOG_LEVEL_ERROR, "elmc_pebble_init failed: %d", rc);\n  }\n\n  window_stack_push(s_main_window, true);/
 
-    assert template =~ "display_bounds"
+    assert template =~ "s_startup_cmds_ready = true;"
+    assert template =~ "if (!s_startup_cmds_ready)"
+    refute template =~ "complete_elm_init();\n    apply_pending_cmd();"
+    refute template =~ "drain_startup_init_cmds"
+
+    startup_body =
+      case Regex.run(~r/static void startup_cmd_callback\(void \*data\) \{(.*?)^\}/ms, template) do
+        [_, body] -> body
+        _ -> flunk("startup_cmd_callback body not found")
+      end
+
+    assert startup_body =~ "apply_pending_cmd();"
+    refute startup_body =~ "elmc_pebble_ensure_scene(&s_elm_app);"
+    assert startup_body =~ "s_startup_cmds_ready = true;"
+    assert startup_body =~ "render_model();"
+    refute template =~ "startup_build_scene"
+    refute template =~ "elmc_pebble_reserve_startup_scene"
+    assert template =~ "static ElmcPebbleCmd cmd;"
+
+    draw_body =
+      case Regex.run(~r/static void draw_update_proc\(Layer \*layer, GContext \*ctx\) \{(.*?)^\}/ms, template) do
+        [_, body] -> body
+        _ -> flunk("draw_update_proc body not found")
+      end
+
+    refute draw_body =~ "#ifdef ELMC_WATCHFACE_MODE\n  {\n    GRect compile = compile_display_bounds();"
+    assert draw_body =~ "bounds.size.w < compile.size.w || bounds.size.h < compile.size.h"
+    assert template =~ "app_timer_register(1, startup_cmd_callback, NULL);"
+  end
+
+  test "pebble app template applies antialiased style and disables mono stroke dither" do
+    template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
+
+    assert template =~ "graphics_context_set_antialiased(ctx, style->antialiased);"
+
+    assert template =~
+             "#ifndef PBL_COLOR\n          graphics_context_set_antialiased(ctx, false);\n          graphics_context_set_stroke_width(ctx, 2);\n#endif\n          graphics_context_set_stroke_color(ctx, color_from_code(cmd->p4));\n          graphics_draw_rect(ctx, GRect(x, y, w, h));"
+
+    assert template =~
+             "#ifndef PBL_COLOR\n        graphics_context_set_antialiased(ctx, false);\n#endif\n        graphics_draw_text(ctx, cmd->text, font, text_rect, overflow, align, NULL);"
+  end
+
+  test "pebble app template mono color_from_code uses luminance not GColor8 ordinals" do
+    template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
+
+    assert template =~ "int luminance = (red * 30 + green * 59 + blue * 11) / 100;"
+    refute template =~ "GColor8DarkGray"
+    refute template =~ "code <= 0x55"
+  end
+
+  test "pebble app template launch context uses compile display bounds" do
+    template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
+
+    launch_body =
+      case Regex.run(~r/static ElmcValue \*build_launch_context\(AppLaunchReason launch\) \{(.*?)^\}/ms, template) do
+        [_, body] -> body
+        _ -> flunk("build_launch_context body not found")
+      end
+
+    assert launch_body =~ "GRect bounds = compile_display_bounds();"
+    refute launch_body =~ "GRect bounds = display_bounds();"
+  end
+
+  test "pebble app template draw layer and display_bounds prefer compile size when root layer is undersized" do
+    template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
+
+    window_load_body =
+      case Regex.run(~r/static void main_window_load\(Window \*window\) \{(.*?)^\}/ms, template) do
+        [_, body] -> body
+        _ -> flunk("main_window_load body not found")
+      end
+
+    assert window_load_body =~ "GRect bounds = compile_display_bounds();"
+
+    display_bounds_body =
+      case Regex.run(~r/static GRect display_bounds\(void\) \{(.*?)^\}/ms, template) do
+        [_, body] -> body
+        _ -> flunk("display_bounds body not found")
+      end
+
+    assert display_bounds_body =~ "display bounds undersized"
+    assert display_bounds_body =~ "layer.size.w < compile.size.w || layer.size.h < compile.size.h"
   end
 
   test "emulator install wipes before installing" do

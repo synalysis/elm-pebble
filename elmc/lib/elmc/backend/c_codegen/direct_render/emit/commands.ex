@@ -9,6 +9,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
 
+  @literal_text_unroll_max 16
+
   @spec emit_settings([Types.ir_expr()], Types.compile_env(), Types.compile_counter()) ::
           Types.direct_emit_result()
   def emit_settings(settings, env, counter) do
@@ -20,7 +22,11 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
     end)
   end
 
-  @spec setting_command(Types.ir_qualified_call_expr(), Types.compile_env(), Types.compile_counter()) ::
+  @spec setting_command(
+          Types.ir_qualified_call_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) ::
           Types.direct_emit_result()
   def setting_command(%{op: :qualified_call, target: target, args: [value]}, env, counter) do
     kind =
@@ -213,7 +219,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
         {acc <> arg_code, vars ++ [value_ref], c2}
       end)
 
-    {text_code, text_copy_code, text_release_code, counter} = text_copy_code(text_expr, env, counter)
+    {text_code, text_copy_code, text_release_code, counter} =
+      text_copy_code(text_expr, env, counter)
 
     assignments =
       values
@@ -249,12 +256,40 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
   @spec text_copy_code(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
           text_copy_result()
   defp text_copy_code(%{op: :string_literal, value: value}, _env, counter) do
-    escaped = Util.escape_c_string(value)
-    {"", text_copy_from("\"#{escaped}\""), "", counter}
+    {"", text_copy_literal(value), "", counter}
   end
 
   defp text_copy_code(%{op: :call, name: "__append__", args: [left, right]}, env, counter) do
     text_copy_append_code(left, right, env, counter)
+  end
+
+  defp text_copy_code(
+         %{op: :if, cond: cond_expr, then_expr: then_expr, else_expr: else_expr},
+         env,
+         counter
+       ) do
+    if Host.native_bool_expr?(cond_expr, env) do
+      {cond_code, cond_ref, counter} = Host.compile_native_bool_expr(cond_expr, env, counter)
+
+      case cond_ref do
+        "1" ->
+          {then_code, copy_code, cleanup_code, counter} = text_copy_code(then_expr, env, counter)
+          {cond_code <> then_code, copy_code, cleanup_code, counter}
+
+        "0" ->
+          {else_code, copy_code, cleanup_code, counter} = text_copy_code(else_expr, env, counter)
+          {cond_code <> else_code, copy_code, cleanup_code, counter}
+
+        _ ->
+          text_copy_dynamic_if_code(cond_code, cond_ref, then_expr, else_expr, env, counter)
+      end
+    else
+      text_copy_boxed_code(
+        %{op: :if, cond: cond_expr, then_expr: then_expr, else_expr: else_expr},
+        env,
+        counter
+      )
+    end
   end
 
   defp text_copy_code(%{op: :var, name: name}, env, counter) do
@@ -266,7 +301,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
 
       nil ->
         if Host.typed_string_expr?(expr, env) do
-          {text_code, text_ref, cleanup, counter} = Host.compile_native_string_expr(expr, env, counter)
+          {text_code, text_ref, cleanup, counter} =
+            Host.compile_native_string_expr(expr, env, counter)
+
           cleanup_code = Enum.map_join(cleanup, "\n", fn var -> "elmc_release(#{var});" end)
           {text_code, text_copy_from(text_ref), cleanup_code, counter}
         else
@@ -277,7 +314,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
 
   defp text_copy_code(text_expr, env, counter) do
     if Host.native_string_expr?(text_expr, env) do
-      {text_code, text_ref, cleanup, counter} = Host.compile_native_string_expr(text_expr, env, counter)
+      {text_code, text_ref, cleanup, counter} =
+        Host.compile_native_string_expr(text_expr, env, counter)
+
       cleanup_code = Enum.map_join(cleanup, "\n", fn var -> "elmc_release(#{var});" end)
       {text_code, text_copy_from(text_ref), cleanup_code, counter}
     else
@@ -291,8 +330,22 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
           Types.compile_env(),
           Types.compile_counter()
         ) :: text_copy_result()
+  defp text_copy_append_code(%{op: :string_literal, value: literal}, right, env, counter) do
+    {right_code, right_ref, right_cleanup, counter} =
+      Host.compile_native_string_expr(right, env, counter)
+
+    cleanup_code =
+      right_cleanup
+      |> Enum.map_join("\n", fn var -> "elmc_release(#{var});" end)
+
+    copy_code = text_copy_literal_prefix_append(literal, right_ref)
+
+    {right_code, copy_code, cleanup_code, counter}
+  end
+
   defp text_copy_append_code(left, right, env, counter) do
-    {left_code, left_ref, left_cleanup, counter} = Host.compile_native_string_expr(left, env, counter)
+    {left_code, left_ref, left_cleanup, counter} =
+      Host.compile_native_string_expr(left, env, counter)
 
     {right_code, right_ref, right_cleanup, counter} =
       Host.compile_native_string_expr(right, env, counter)
@@ -323,6 +376,26 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
     {left_code <> right_code, copy_code, cleanup_code, counter}
   end
 
+  defp text_copy_dynamic_if_code(cond_code, cond_ref, then_expr, else_expr, env, counter) do
+    {then_code, then_copy, then_cleanup, counter} = text_copy_code(then_expr, env, counter)
+    {else_code, else_copy, else_cleanup, counter} = text_copy_code(else_expr, env, counter)
+
+    copy_code = """
+    if (#{cond_ref}) {
+    #{CSource.indent(then_copy, 2)}
+    } else {
+    #{CSource.indent(else_copy, 2)}
+    }
+    """
+
+    cleanup_code = """
+    #{then_cleanup}
+    #{else_cleanup}
+    """
+
+    {cond_code <> then_code <> else_code, copy_code, cleanup_code, counter}
+  end
+
   @spec text_copy_boxed_code(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
           text_copy_result()
   defp text_copy_boxed_code(text_expr, env, counter) do
@@ -346,6 +419,80 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
     #{CSource.indent(text_copy_body(), 2)}
     }
     """
+  end
+
+  defp text_copy_literal(literal) do
+    bytes = :binary.bin_to_list(literal)
+
+    if length(bytes) <= @literal_text_unroll_max do
+      literal_text_assignments(bytes)
+    else
+      escaped = Util.escape_c_string(literal)
+      text_copy_from("\"#{escaped}\"")
+    end
+  end
+
+  defp literal_text_assignments(bytes) do
+    bytes = Enum.take(bytes, 63)
+
+    assignments =
+      bytes
+      |> Enum.with_index()
+      |> Enum.map_join("\n", fn {byte, index} ->
+        "scene_cmd.text[#{index}] = #{c_char_literal(byte)};"
+      end)
+
+    null_index = length(bytes)
+
+    """
+    {
+      #{assignments}
+      scene_cmd.text[#{null_index}] = '\\0';
+    }
+    """
+  end
+
+  defp text_copy_literal_prefix_append(literal, right_ref) do
+    bytes = literal |> :binary.bin_to_list() |> Enum.take(63)
+
+    prefix_assignments =
+      bytes
+      |> Enum.with_index()
+      |> Enum.map_join("\n", fn {byte, index} ->
+        "scene_cmd.text[#{index}] = #{c_char_literal(byte)};"
+      end)
+
+    start_index = length(bytes)
+
+    """
+    {
+      #{prefix_assignments}
+      int direct_text_i = #{start_index};
+      const char *direct_text_right = #{right_ref};
+      int direct_text_right_i = 0;
+      while (direct_text_right && direct_text_right[direct_text_right_i] && direct_text_i < 63) {
+        scene_cmd.text[direct_text_i] = direct_text_right[direct_text_right_i];
+        direct_text_i++;
+        direct_text_right_i++;
+      }
+      scene_cmd.text[direct_text_i] = '\\0';
+    }
+    """
+  end
+
+  defp c_char_literal(?\\), do: "'\\\\'"
+  defp c_char_literal(?'), do: "'\\''"
+  defp c_char_literal(?\n), do: "'\\n'"
+  defp c_char_literal(?\r), do: "'\\r'"
+  defp c_char_literal(?\t), do: "'\\t'"
+
+  defp c_char_literal(byte) when byte >= 32 and byte <= 126 do
+    "'#{<<byte>>}'"
+  end
+
+  defp c_char_literal(byte) do
+    hex = byte |> Integer.to_string(16) |> String.pad_leading(2, "0")
+    "'\\x#{hex}'"
   end
 
   @spec path_command(

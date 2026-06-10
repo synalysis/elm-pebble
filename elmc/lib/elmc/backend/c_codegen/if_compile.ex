@@ -71,33 +71,48 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
         ) :: Types.compile_result()
   defp compile_native_bool_branches(cond_expr, then_expr, else_expr, env, counter) do
     {cond_code, cond_ref, counter} = Host.compile_native_bool_expr(cond_expr, env, counter)
-    next = counter + 1
-    out = "tmp_#{next}"
 
-    {then_code, then_assignment, counter} =
-      CaseCompile.branch_assignment(then_expr, out, env, next)
+    case cond_ref do
+      "1" ->
+        {branch_code, branch_ref, counter} = Host.compile_expr(then_expr, env, counter)
+        {cond_code <> branch_code, branch_ref, counter}
 
-    {else_code, else_assignment, counter} =
-      CaseCompile.branch_assignment(else_expr, out, env, counter)
+      "0" ->
+        {branch_code, branch_ref, counter} = Host.compile_expr(else_expr, env, counter)
+        {cond_code <> branch_code, branch_ref, counter}
 
-    then_body = maybe_extract_if_branch_helper(then_expr, env, out, then_code, then_assignment)
-    else_body = maybe_extract_if_branch_helper(else_expr, env, out, else_code, else_assignment)
+      _ ->
+        next = counter + 1
+        out = "tmp_#{next}"
 
-    code =
-      Enum.join(
-        [
-          cond_code,
-          "ElmcValue *#{out};",
-          "if (#{cond_ref}) {",
-          format_if_branch_body(then_body),
-          "} else {",
-          format_if_branch_body(else_body),
-          "}"
-        ],
-        "\n"
-      )
+        {then_code, then_assignment, counter} =
+          CaseCompile.branch_assignment(then_expr, out, env, next)
 
-    {code, out, counter}
+        {else_code, else_assignment, counter} =
+          CaseCompile.branch_assignment(else_expr, out, env, counter)
+
+        then_body =
+          maybe_extract_if_branch_helper(then_expr, env, out, then_code, then_assignment)
+
+        else_body =
+          maybe_extract_if_branch_helper(else_expr, env, out, else_code, else_assignment)
+
+        code =
+          Enum.join(
+            [
+              cond_code,
+              "ElmcValue *#{out};",
+              "if (#{cond_ref}) {",
+              format_if_branch_body(then_body),
+              "} else {",
+              format_if_branch_body(else_body),
+              "}"
+            ],
+            "\n"
+          )
+
+        {code, out, counter}
+    end
   end
 
   @spec compile_boxed_cond(

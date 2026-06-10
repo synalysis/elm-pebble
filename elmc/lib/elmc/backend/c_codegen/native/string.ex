@@ -39,17 +39,29 @@ defmodule Elmc.Backend.CCodegen.Native.String do
       ) do
     if expr?(then_expr, env) and expr?(else_expr, env) do
       {cond_code, cond_ref, counter} = Host.compile_native_bool_expr(cond_expr, env, counter)
-      {then_code, then_ref, _then_cleanup, counter} = compile_expr(then_expr, env, counter)
-      {else_code, else_ref, _else_cleanup, counter} = compile_expr(else_expr, env, counter)
-      next = counter + 1
-      out = "native_string_if_#{next}"
 
-      code = """
-      #{cond_code}#{then_code}#{else_code}
-        const char *#{out} = #{cond_ref} ? #{then_ref} : #{else_ref};
-      """
+      case cond_ref do
+        "1" ->
+          {then_code, then_ref, then_cleanup, counter} = compile_expr(then_expr, env, counter)
+          {cond_code <> then_code, then_ref, then_cleanup, counter}
 
-      {code, out, [], next}
+        "0" ->
+          {else_code, else_ref, else_cleanup, counter} = compile_expr(else_expr, env, counter)
+          {cond_code <> else_code, else_ref, else_cleanup, counter}
+
+        _ ->
+          {then_code, then_ref, _then_cleanup, counter} = compile_expr(then_expr, env, counter)
+          {else_code, else_ref, _else_cleanup, counter} = compile_expr(else_expr, env, counter)
+          next = counter + 1
+          out = "native_string_if_#{next}"
+
+          code = """
+          #{cond_code}#{then_code}#{else_code}
+            const char *#{out} = #{cond_ref} ? #{then_ref} : #{else_ref};
+          """
+
+          {code, out, [], next}
+      end
     else
       compile_fallback(expr, env, counter)
     end

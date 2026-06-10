@@ -836,8 +836,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
     end
   end
 
-  defp scoped_field_value("", c_type, var, ref, default) do
-    "  #{c_type} #{var} = #{default};\n  #{var} = #{ref};\n"
+  defp scoped_field_value("", c_type, var, ref, _default) do
+    direct_field_assign_decl(c_type, var, ref)
   end
 
   defp scoped_field_value(code, c_type, var, ref, _default) when is_binary(code) do
@@ -846,20 +846,25 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
   end
 
   defp scoped_isolated_field_value(code, c_type, var, ref) do
-    default =
-      case c_type do
-        "const char *" -> "NULL"
-        "double" -> "0.0"
-        _ -> "0"
-      end
+    if String.trim(code) == "" do
+      direct_field_assign_decl(c_type, var, ref)
+    else
+      """
+        #{c_type} #{var};
+        {
+      #{CSource.indent(code, 4)}
+          #{var} = #{ref};
+        }
+      """
+    end
+  end
 
-    """
-      #{c_type} #{var} = #{default};
-      {
-    #{CSource.indent(code, 4)}
-        #{var} = #{ref};
-      }
-    """
+  defp direct_field_assign_decl("const char *", var, ref) do
+    "  const char *#{var} = #{ref};\n"
+  end
+
+  defp direct_field_assign_decl(c_type, var, ref) do
+    "  const #{c_type} #{var} = #{ref};\n"
   end
 
   defp split_reusable_native_hoists(code) do

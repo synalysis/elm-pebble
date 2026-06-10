@@ -1,5 +1,12 @@
 defmodule Elmc.Backend.CCodegen.Fusion do
-  @moduledoc false
+  @moduledoc """
+  Registry for generic whole-function C emitters.
+
+  Providers must match reusable IR shapes and emit C that preserves the Elm
+  semantics for every function with that shape. A provider implements
+  `try_emit/3` or `try_emit/4` and returns `{:ok, c_source}` or
+  `{:ok, c_source, runtime_callees}`; unmatched IR returns `:error`.
+  """
 
   alias Elmc.Backend.CCodegen.{FusionSupport, Tuple2CaseTable}
 

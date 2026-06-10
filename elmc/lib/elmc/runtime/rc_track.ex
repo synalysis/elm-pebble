@@ -277,7 +277,6 @@ defmodule Elmc.Runtime.RcTrack do
           ELMC_RELEASED += 1;
           return;
         }
-        free(rec->field_names);
         free(rec->field_values);
       } else if (value->tag == ELMC_TAG_CLOSURE && value->payload != NULL) {
         ElmcClosure *clo = (ElmcClosure *)value->payload;

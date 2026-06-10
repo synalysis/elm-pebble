@@ -112,10 +112,15 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
             {code_acc <> "\n  " <> code, refs_acc ++ [ref], releases_acc, c2}
 
           :boxed ->
-            {code, ref, c2} = FunctionCallCompile.compile_call_operand(arg_expr, env, c)
+            borrow_args? = :borrow_arg in List.wrap(decl.ownership)
+
+            {code, ref, c2, passthrough?} =
+              FunctionCallCompile.compile_call_operand_inner(arg_expr, env, c,
+                borrow_args?: borrow_args?
+              )
 
             releases_acc =
-              if EnvBindings.borrowed_arg_ref?(env, ref),
+              if passthrough? or EnvBindings.borrowed_arg_ref?(env, ref),
                 do: releases_acc,
                 else: releases_acc ++ [ref]
 
@@ -192,7 +197,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
 
   @spec c_return_type(native_return_kind()) :: String.t()
   def c_return_type(:native_int), do: "elmc_int_t"
-  def c_return_type(:native_bool), do: "elmc_int_t"
+  def c_return_type(:native_bool), do: "bool"
   def c_return_type(:boxed), do: "ElmcValue *"
 
   @spec params(Types.function_declaration(), String.t(), Types.function_decl_map()) ::
@@ -203,7 +208,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
     |> Enum.map_join(", ", fn {{_arg, c_arg, _index}, kind} ->
       case kind do
         :native_int -> "const elmc_int_t #{c_arg}"
-        :native_bool -> "const elmc_int_t #{c_arg}"
+        :native_bool -> "const bool #{c_arg}"
         :boxed -> "ElmcValue * const #{c_arg}"
       end
     end)
@@ -284,7 +289,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
   defp native_call_out(:boxed, next), do: "tmp_#{next}"
 
   defp native_call_decl(:native_int), do: "const elmc_int_t "
-  defp native_call_decl(:native_bool), do: "const elmc_int_t "
+  defp native_call_decl(:native_bool), do: "const bool "
   defp native_call_decl(:boxed), do: "ElmcValue *"
 
   defp callee_env(decl, module_name, decl_map) do

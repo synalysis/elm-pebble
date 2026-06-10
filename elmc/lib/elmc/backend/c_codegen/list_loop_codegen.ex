@@ -35,9 +35,11 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
       ElmcValue *#{acc} = elmc_list_nil();
       for (elmc_int_t #{index_var} = 0; #{index_var} < #{count_ref}; #{index_var}++) {
         ElmcValue *#{cons} = elmc_list_cons(#{value_ref}, #{acc});
+        if (!#{cons}) break;
         elmc_release(#{acc});
         #{acc} = #{cons};
       }
+      if (!#{acc}) #{acc} = elmc_list_nil();
     """
 
     {code, acc}
