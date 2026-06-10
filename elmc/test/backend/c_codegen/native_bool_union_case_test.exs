@@ -99,8 +99,10 @@ defmodule Elmc.Backend.CCodegen.NativeBoolUnionCaseTest do
       |> hd()
 
     assert view_body =~ "const bool native_b_"
+    assert view_body =~ ~r/ElmcValue \*native_union_subject_\d+ = ELMC_RECORD_GET_INDEX\(model,/
     assert view_body =~ "ELMC_RECORD_GET_INDEX(model,"
     assert view_body =~ "ELMC_TAG_INT && elmc_as_int"
+    assert Regex.scan(~r/ELMC_RECORD_GET_INDEX\(model,/, view_body) |> length() == 1
     refute view_body =~ "elmc_record_get_index(model"
     refute view_body =~ "tmp_2 = elmc_new_int(1)"
     refute view_body =~ "elmc_as_int(tmp_2)"
@@ -153,7 +155,8 @@ defmodule Elmc.Backend.CCodegen.NativeBoolUnionCaseTest do
 
     native_body =
       generated_c
-      |> String.split("static elmc_int_t elmc_fn_Main_randomIndex_native(const elmc_int_t maxExclusive, const elmc_int_t seed) {",
+      |> String.split(
+        "static elmc_int_t elmc_fn_Main_randomIndex_native(const elmc_int_t maxExclusive, const elmc_int_t seed) {",
         parts: 2
       )
       |> Enum.at(1, "")

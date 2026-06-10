@@ -183,7 +183,11 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
     end
   end
 
-  defp compile_expr_uncached(%{op: :qualified_call, target: target, args: args} = expr, env, counter) do
+  defp compile_expr_uncached(
+         %{op: :qualified_call, target: target, args: args} = expr,
+         env,
+         counter
+       ) do
     case Host.special_value_from_target(target, args) do
       nil ->
         case Host.qualified_builtin_operator_name(target) do
@@ -225,7 +229,11 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
     {code, "!(#{ref})", counter}
   end
 
-  defp compile_expr_uncached(%{op: :case, subject: subject, branches: branches} = expr, env, counter) do
+  defp compile_expr_uncached(
+         %{op: :case, subject: subject, branches: branches} = expr,
+         env,
+         counter
+       ) do
     if union_constructor_case?(expr) do
       compile_union_constructor_case(subject, branches, env, counter)
     else
@@ -271,6 +279,23 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
           end
 
         {left_code <> right_code, "(#{left_ref} #{comparison} #{right_ref})", counter}
+
+      list_int_compare_safe?(operator, left, right, env) ->
+        {left_code, left_var, counter} = Host.compile_expr(left, env, counter)
+        {right_code, right_var, counter} = Host.compile_expr(right, env, counter)
+        next = counter + 1
+        out = "native_cmp_#{next}"
+        negate = if operator == "__neq__", do: "!", else: ""
+
+        code = """
+        #{left_code}
+          #{right_code}
+          const #{@native_bool_c_type} #{out} = #{negate}elmc_list_equal_int(#{left_var}, #{right_var});
+          elmc_release(#{left_var});
+          elmc_release(#{right_var});
+        """
+
+        {code, out, next}
 
       true ->
         {left_code, left_var, counter} = Host.compile_expr(left, env, counter)
@@ -333,6 +358,13 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
 
   defp compare_safe?(_operator, _left, _right, _env), do: false
 
+  defp list_int_compare_safe?(operator, left, right, env)
+       when operator in ["__eq__", "__neq__"] do
+    TypedReturn.list_int_expr?(left, env) and TypedReturn.list_int_expr?(right, env)
+  end
+
+  defp list_int_compare_safe?(_operator, _left, _right, _env), do: false
+
   @spec expr?(Types.ir_expr(), Types.compile_env()) :: boolean()
   def expr?(%{op: :var, name: name}, env) when is_binary(name) or is_atom(name),
     do:
@@ -383,7 +415,8 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   def structural_expr?(_expr), do: false
 
   @spec bool_coercible_branch?(Types.ir_expr(), Types.compile_env()) :: boolean()
-  defp bool_coercible_branch?(%{op: :int_literal, value: value}, _env) when value in [0, 1], do: true
+  defp bool_coercible_branch?(%{op: :int_literal, value: value}, _env) when value in [0, 1],
+    do: true
 
   defp bool_coercible_branch?(%{op: :constructor_call, target: target, args: []}, _env),
     do: match?({:ok, _}, constructor_bool_literal(target))
@@ -463,14 +496,16 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
 
   defp compile_union_constructor_case(subject, branches, env, counter) do
     [%{pattern: pattern} | _] = branches
-    next = counter + 1
-    out = "native_b_#{next}"
 
     case Host.record_get_borrow_expr(subject, env) do
       borrow_ref when is_binary(borrow_ref) ->
-        condition = Patterns.pattern_condition(borrow_ref, pattern)
+        next = counter + 1
+        out = "native_b_#{next}"
+        {bind_code, subject_ref} = maybe_bind_borrowed_subject(borrow_ref, next)
+        condition = Patterns.pattern_condition(subject_ref, pattern)
 
         code = """
+        #{bind_code}
           const #{@native_bool_c_type} #{out} = #{condition};
         """
 
@@ -478,6 +513,8 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
 
       nil ->
         {subject_code, subject_var, counter} = Host.compile_expr(subject, env, counter)
+        next = counter + 1
+        out = "native_b_#{next}"
         condition = Patterns.pattern_condition(subject_var, pattern)
 
         code = """
@@ -488,5 +525,18 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
 
         {code, out, next}
     end
+  end
+
+  defp maybe_bind_borrowed_subject(ref, next) do
+    if complex_borrow_ref?(ref) do
+      subject_ref = "native_union_subject_#{next}"
+      {"  ElmcValue *#{subject_ref} = #{ref};", subject_ref}
+    else
+      {"", ref}
+    end
+  end
+
+  defp complex_borrow_ref?(ref) when is_binary(ref) do
+    String.contains?(ref, "(") or String.contains?(ref, "->")
   end
 end

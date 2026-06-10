@@ -52,7 +52,8 @@ defmodule Elmc.Backend.Pebble do
                msg_constructor_arities,
                has_view,
                entry_module,
-               random_generate_tag
+               random_generate_tag,
+               feature_flags
              )
            ) do
       :ok
@@ -346,7 +347,9 @@ defmodule Elmc.Backend.Pebble do
     int elmc_pebble_dispatch_connection(ElmcPebbleApp *app, int connected);
     int elmc_pebble_dispatch_health(ElmcPebbleApp *app, int event);
     int elmc_pebble_dispatch_app_focus(ElmcPebbleApp *app, int in_focus);
+    #if ELMC_PEBBLE_FEATURE_COMPASS_EVENTS
     int elmc_pebble_dispatch_compass_heading(ElmcPebbleApp *app, double degrees, int is_valid);
+    #endif
     int elmc_pebble_dispatch_dictation_status(ElmcPebbleApp *app, int status);
     int elmc_pebble_dispatch_dictation_result(ElmcPebbleApp *app, int is_ok, int error_code, const char *text);
     int elmc_pebble_dispatch_unobstructed_will_change(ElmcPebbleApp *app, int x, int y, int w, int h);
@@ -393,13 +396,14 @@ defmodule Elmc.Backend.Pebble do
     """
   end
 
-  @spec pebble_source([map()], map(), boolean(), String.t(), integer()) :: String.t()
+  @spec pebble_source([map()], map(), boolean(), String.t(), integer(), map()) :: String.t()
   defp pebble_source(
          msg_constructors,
          msg_constructor_arities,
          has_view,
          entry_module,
-         random_generate_tag
+         random_generate_tag,
+         feature_flags
        ) do
     value_decode_cases =
       msg_constructors
@@ -460,6 +464,7 @@ defmodule Elmc.Backend.Pebble do
       "elmc_fn_#{String.replace(entry_module, ".", "_")}_view_scene_append"
 
     scene_writer_source = SceneWriter.source_implementation()
+    compass_dispatch_source = compass_dispatch_source(feature_flags)
 
     """
     #include "elmc_pebble.h"
@@ -843,7 +848,8 @@ defmodule Elmc.Backend.Pebble do
       app->scene.dirty = 1;
     }
 
-    static void elmc_pebble_scene_buffer_free(ElmcPebbleSceneBuffer *scene) {
+    static void elmc_pebble_scene_buffer_free_for_app(ElmcPebbleApp *app, ElmcPebbleSceneBuffer *scene) {
+      (void)app;
       if (!scene) return;
       if (scene->bytes) {
         free(scene->bytes);
@@ -860,14 +866,14 @@ defmodule Elmc.Backend.Pebble do
       if (!app) return;
       elmc_pebble_clear_view_cache(app);
       elmc_pebble_scene_discard_build(app);
-      elmc_pebble_scene_buffer_free(&app->scene);
+      elmc_pebble_scene_buffer_free_for_app(app, &app->scene);
     }
 
     static void elmc_pebble_scene_free(ElmcPebbleApp *app) {
       if (!app) return;
-      elmc_pebble_scene_buffer_free(&app->scene);
+      elmc_pebble_scene_buffer_free_for_app(app, &app->scene);
     #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
-      elmc_pebble_scene_buffer_free(&app->prev_scene);
+      elmc_pebble_scene_buffer_free_for_app(app, &app->prev_scene);
       app->dirty_rect_valid = 0;
       app->dirty_rect_full = 1;
     #endif
@@ -881,7 +887,7 @@ defmodule Elmc.Backend.Pebble do
     static void elmc_pebble_prepare_scene_rebuild(ElmcPebbleApp *app) {
       if (!app) return;
     #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
-      elmc_pebble_scene_buffer_free(&app->prev_scene);
+      elmc_pebble_scene_buffer_free_for_app(app, &app->prev_scene);
       app->prev_scene = app->scene;
       app->scene.bytes = NULL;
       app->scene.byte_count = 0;
@@ -1076,18 +1082,39 @@ defmodule Elmc.Backend.Pebble do
     #endif
 
       switch (kind) {
+    #if ELMC_PEBBLE_FEATURE_DRAW_CONTEXT
       case ELMC_PEBBLE_DRAW_PUSH_CONTEXT:
       case ELMC_PEBBLE_DRAW_POP_CONTEXT:
         return ELMC_SCENE_PL_EMPTY;
+    #endif
+    #if ELMC_PEBBLE_FEATURE_DRAW_STROKE_WIDTH || ELMC_PEBBLE_FEATURE_DRAW_ANTIALIASED
+    #if ELMC_PEBBLE_FEATURE_DRAW_STROKE_WIDTH
       case ELMC_PEBBLE_DRAW_STROKE_WIDTH:
+    #endif
+    #if ELMC_PEBBLE_FEATURE_DRAW_ANTIALIASED
       case ELMC_PEBBLE_DRAW_ANTIALIASED:
+    #endif
         return elmc_scene_value_fits_u8(cmd->p0) ? ELMC_SCENE_PL_U8 : ELMC_SCENE_PL_I32;
+    #endif
+    #if ELMC_PEBBLE_FEATURE_DRAW_STROKE_COLOR || ELMC_PEBBLE_FEATURE_DRAW_FILL_COLOR || ELMC_PEBBLE_FEATURE_DRAW_TEXT_COLOR || ELMC_PEBBLE_FEATURE_DRAW_CLEAR || ELMC_PEBBLE_FEATURE_DRAW_COMPOSITING_MODE
+    #if ELMC_PEBBLE_FEATURE_DRAW_STROKE_COLOR
       case ELMC_PEBBLE_DRAW_STROKE_COLOR:
+    #endif
+    #if ELMC_PEBBLE_FEATURE_DRAW_FILL_COLOR
       case ELMC_PEBBLE_DRAW_FILL_COLOR:
+    #endif
+    #if ELMC_PEBBLE_FEATURE_DRAW_TEXT_COLOR
       case ELMC_PEBBLE_DRAW_TEXT_COLOR:
+    #endif
+    #if ELMC_PEBBLE_FEATURE_DRAW_CLEAR
       case ELMC_PEBBLE_DRAW_CLEAR:
+    #endif
+    #if ELMC_PEBBLE_FEATURE_DRAW_COMPOSITING_MODE
       case ELMC_PEBBLE_DRAW_COMPOSITING_MODE:
+    #endif
         return elmc_scene_value_fits_u8(cmd->p0) ? ELMC_SCENE_PL_U8 : ELMC_SCENE_PL_I32;
+    #endif
+    #if ELMC_PEBBLE_FEATURE_DRAW_PIXEL
       case ELMC_PEBBLE_DRAW_PIXEL:
         if (elmc_scene_value_fits_i16(cmd->p0) &&
             elmc_scene_value_fits_i16(cmd->p1) &&
@@ -1095,13 +1122,27 @@ defmodule Elmc.Backend.Pebble do
           return ELMC_SCENE_PL_PIXEL;
         }
         return ELMC_SCENE_PL_FULL;
+    #endif
+    #if ELMC_PEBBLE_FEATURE_DRAW_LINE || ELMC_PEBBLE_FEATURE_DRAW_RECT || ELMC_PEBBLE_FEATURE_DRAW_FILL_RECT
+    #if ELMC_PEBBLE_FEATURE_DRAW_LINE
       case ELMC_PEBBLE_DRAW_LINE:
+    #endif
+    #if ELMC_PEBBLE_FEATURE_DRAW_RECT
       case ELMC_PEBBLE_DRAW_RECT:
+    #endif
+    #if ELMC_PEBBLE_FEATURE_DRAW_FILL_RECT
       case ELMC_PEBBLE_DRAW_FILL_RECT:
+    #endif
         if (!elmc_scene_bounds_fit_i16(cmd) || cmd->p5 != 0) return ELMC_SCENE_PL_FULL;
         return elmc_scene_value_fits_u8(cmd->p4) ? ELMC_SCENE_PL_COORDS_COLOR_U8 : ELMC_SCENE_PL_COORDS_COLOR_I32;
+    #endif
+    #if ELMC_PEBBLE_FEATURE_DRAW_CIRCLE || ELMC_PEBBLE_FEATURE_DRAW_FILL_CIRCLE
+    #if ELMC_PEBBLE_FEATURE_DRAW_CIRCLE
       case ELMC_PEBBLE_DRAW_CIRCLE:
+    #endif
+    #if ELMC_PEBBLE_FEATURE_DRAW_FILL_CIRCLE
       case ELMC_PEBBLE_DRAW_FILL_CIRCLE:
+    #endif
         if (elmc_scene_value_fits_i16(cmd->p0) &&
             elmc_scene_value_fits_i16(cmd->p1) &&
             elmc_scene_value_fits_i16(cmd->p2) &&
@@ -1109,11 +1150,15 @@ defmodule Elmc.Backend.Pebble do
           return elmc_scene_value_fits_u8(cmd->p3) ? ELMC_SCENE_PL_CIRCLE_U8 : ELMC_SCENE_PL_CIRCLE_I32;
         }
         return ELMC_SCENE_PL_FULL;
+    #endif
+    #if ELMC_PEBBLE_FEATURE_DRAW_ROUND_RECT
       case ELMC_PEBBLE_DRAW_ROUND_RECT:
         if (elmc_scene_bounds_fit_i16(cmd) && elmc_scene_value_fits_i16(cmd->p4)) {
           return elmc_scene_value_fits_u8(cmd->p5) ? ELMC_SCENE_PL_ROUND_U8 : ELMC_SCENE_PL_ROUND_I32;
         }
         return ELMC_SCENE_PL_FULL;
+    #endif
+    #if ELMC_PEBBLE_FEATURE_DRAW_TEXT
       case ELMC_PEBBLE_DRAW_TEXT:
         if (elmc_scene_value_fits_i16(cmd->p1) &&
             elmc_scene_value_fits_i16(cmd->p2) &&
@@ -1122,16 +1167,21 @@ defmodule Elmc.Backend.Pebble do
           return ELMC_SCENE_PL_TEXT_BASE + 1 + text_len;
         }
         return ELMC_SCENE_PL_FULL + 1 + text_len;
+    #endif
+    #if ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
       case ELMC_PEBBLE_DRAW_TEXT_LABEL_WITH_FONT:
         if (elmc_scene_value_fits_i16(cmd->p1) && elmc_scene_value_fits_i16(cmd->p2)) {
           return ELMC_SCENE_PL_TEXT_LABEL_BASE + 1 + text_len;
         }
         return ELMC_SCENE_PL_FULL + 1 + text_len;
+    #endif
+    #if ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT
       case ELMC_PEBBLE_DRAW_TEXT_INT_WITH_FONT:
         if (elmc_scene_value_fits_i16(cmd->p1) && elmc_scene_value_fits_i16(cmd->p2)) {
           return ELMC_SCENE_PL_COORDS_COLOR_I32;
         }
         return ELMC_SCENE_PL_FULL;
+    #endif
       default:
         return ELMC_SCENE_PL_FULL;
       }
@@ -1241,6 +1291,7 @@ defmodule Elmc.Backend.Pebble do
       int rc = 0;
       /* Compact text-label payloads (8 + 1 + text_len) overlap fixed enum
          payload sizes such as ELMC_SCENE_PL_ROUND_U8 (11); decode by kind first. */
+    #if ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
       if (kind == ELMC_PEBBLE_DRAW_TEXT_LABEL_WITH_FONT &&
           payload_len >= ELMC_SCENE_PL_TEXT_LABEL_BASE + 1 &&
           payload_len < ELMC_SCENE_PL_TEXT_BASE) {
@@ -1249,6 +1300,7 @@ defmodule Elmc.Backend.Pebble do
         out_cmd->p2 = elmc_scene_read_i16(bytes, offset, payload_end);
         return elmc_scene_read_text_tail(bytes, offset, payload_end, out_cmd);
       }
+    #endif
       switch (payload_len) {
       case ELMC_SCENE_PL_EMPTY:
         return 0;
@@ -1260,6 +1312,7 @@ defmodule Elmc.Backend.Pebble do
       case ELMC_SCENE_PL_I32:
         out_cmd->p0 = elmc_pebble_scene_read_i32(bytes, offset, payload_end);
         return 0;
+    #if ELMC_PEBBLE_FEATURE_DRAW_PIXEL
       case ELMC_SCENE_PL_PIXEL:
         out_cmd->p0 = elmc_scene_read_i16(bytes, offset, payload_end);
         out_cmd->p1 = elmc_scene_read_i16(bytes, offset, payload_end);
@@ -1267,6 +1320,7 @@ defmodule Elmc.Backend.Pebble do
         out_cmd->p2 = bytes[*offset];
         *offset += 1;
         return 0;
+    #endif
       case ELMC_SCENE_PL_COORDS_COLOR_U8:
         rc = elmc_scene_read_coords_i16(bytes, offset, payload_end, out_cmd); if (rc != 0) return rc;
         if (*offset >= payload_end) return -3;
@@ -1274,6 +1328,7 @@ defmodule Elmc.Backend.Pebble do
         *offset += 1;
         return 0;
       case ELMC_SCENE_PL_COORDS_COLOR_I32:
+    #if ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT
         if (kind == ELMC_PEBBLE_DRAW_TEXT_INT_WITH_FONT) {
           out_cmd->p0 = elmc_pebble_scene_read_i32(bytes, offset, payload_end);
           out_cmd->p1 = elmc_scene_read_i16(bytes, offset, payload_end);
@@ -1281,9 +1336,11 @@ defmodule Elmc.Backend.Pebble do
           out_cmd->p3 = elmc_pebble_scene_read_i32(bytes, offset, payload_end);
           return 0;
         }
+    #endif
         rc = elmc_scene_read_coords_i16(bytes, offset, payload_end, out_cmd); if (rc != 0) return rc;
         out_cmd->p4 = elmc_pebble_scene_read_i32(bytes, offset, payload_end);
         return 0;
+    #if ELMC_PEBBLE_FEATURE_DRAW_CIRCLE || ELMC_PEBBLE_FEATURE_DRAW_FILL_CIRCLE
       case ELMC_SCENE_PL_CIRCLE_U8:
         out_cmd->p0 = elmc_scene_read_i16(bytes, offset, payload_end);
         out_cmd->p1 = elmc_scene_read_i16(bytes, offset, payload_end);
@@ -1298,6 +1355,8 @@ defmodule Elmc.Backend.Pebble do
         out_cmd->p2 = elmc_scene_read_i16(bytes, offset, payload_end);
         out_cmd->p3 = elmc_pebble_scene_read_i32(bytes, offset, payload_end);
         return 0;
+    #endif
+    #if ELMC_PEBBLE_FEATURE_DRAW_ROUND_RECT
       case ELMC_SCENE_PL_ROUND_U8:
         rc = elmc_scene_read_coords_i16(bytes, offset, payload_end, out_cmd); if (rc != 0) return rc;
         out_cmd->p4 = elmc_scene_read_i16(bytes, offset, payload_end);
@@ -1310,9 +1369,11 @@ defmodule Elmc.Backend.Pebble do
         out_cmd->p4 = elmc_scene_read_i16(bytes, offset, payload_end);
         out_cmd->p5 = elmc_pebble_scene_read_i32(bytes, offset, payload_end);
         return 0;
+    #endif
       default:
         break;
       }
+    #if ELMC_PEBBLE_FEATURE_DRAW_TEXT
       if (payload_len >= ELMC_SCENE_PL_TEXT_BASE &&
           kind == ELMC_PEBBLE_DRAW_TEXT &&
           payload_len >= ELMC_SCENE_PL_TEXT_BASE + 1) {
@@ -1321,6 +1382,8 @@ defmodule Elmc.Backend.Pebble do
         out_cmd->p5 = elmc_pebble_scene_read_i32(bytes, offset, payload_end);
         return elmc_scene_read_text_tail(bytes, offset, payload_end, out_cmd);
       }
+    #endif
+    #if ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
       if (payload_len >= ELMC_SCENE_PL_TEXT_LABEL_BASE &&
           kind == ELMC_PEBBLE_DRAW_TEXT_LABEL_WITH_FONT &&
           payload_len >= ELMC_SCENE_PL_TEXT_LABEL_BASE + 1) {
@@ -1329,6 +1392,7 @@ defmodule Elmc.Backend.Pebble do
         out_cmd->p2 = elmc_scene_read_i16(bytes, offset, payload_end);
         return elmc_scene_read_text_tail(bytes, offset, payload_end, out_cmd);
       }
+    #endif
       if ((payload_len == ELMC_SCENE_PL_FULL && !elmc_scene_is_path_kind(kind)) ||
           (payload_len > ELMC_SCENE_PL_FULL && elmc_scene_is_path_kind(kind))) {
         rc = elmc_scene_read_full_i32s(bytes, offset, payload_end, out_cmd); if (rc != 0) return rc;
@@ -1337,6 +1401,7 @@ defmodule Elmc.Backend.Pebble do
         }
         return 0;
       }
+    #if ELMC_PEBBLE_FEATURE_DRAW_TEXT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
       if (payload_len > ELMC_SCENE_PL_FULL &&
           (kind == ELMC_PEBBLE_DRAW_TEXT ||
            kind == ELMC_PEBBLE_DRAW_TEXT_LABEL_WITH_FONT)) {
@@ -1348,6 +1413,7 @@ defmodule Elmc.Backend.Pebble do
         out_cmd->p5 = elmc_pebble_scene_read_i32(bytes, offset, payload_end);
         return elmc_scene_read_text_tail(bytes, offset, payload_end, out_cmd);
       }
+    #endif
       return -4;
     }
 
@@ -2377,43 +2443,7 @@ defmodule Elmc.Backend.Pebble do
       return elmc_pebble_dispatch_tag_value(app, tag, in_focus ? 0 : 1);
     }
 
-    int elmc_pebble_dispatch_compass_heading(ElmcPebbleApp *app, double degrees, int is_valid) {
-      if (!app || !app->initialized) return -1;
-      if (!elmc_pebble_is_subscribed(app, ELMC_PEBBLE_SUB_COMPASS)) return -8;
-      elmc_int_t tag = elmc_pebble_sub_tag(app, ELMC_PEBBLE_SUB_COMPASS);
-      if (tag <= 0) return -6;
-
-      const char *names[] = {"degrees", "isValid"};
-      ElmcValue *values[2];
-      values[0] = elmc_new_float(degrees);
-      values[1] = elmc_new_bool(is_valid ? 1 : 0);
-      if (!values[0] || !values[1]) {
-        if (values[0]) elmc_release(values[0]);
-        if (values[1]) elmc_release(values[1]);
-        return -2;
-      }
-
-      ElmcValue *record = elmc_record_new(2, names, values);
-      elmc_release(values[0]);
-      elmc_release(values[1]);
-      if (!record) return -2;
-
-      ElmcValue *tag_value = elmc_new_int(tag);
-      if (!tag_value) {
-        elmc_release(record);
-        return -2;
-      }
-
-      ElmcValue *msg = elmc_tuple2(tag_value, record);
-      elmc_release(tag_value);
-      elmc_release(record);
-      if (!msg) return -2;
-
-      elmc_pebble_prepare_dispatch(app);
-      int rc = elmc_worker_dispatch(&app->worker, msg);
-      elmc_release(msg);
-      return elmc_pebble_finish_dispatch(app, rc);
-    }
+    #{compass_dispatch_source}
 
     int elmc_pebble_dispatch_dictation_status(ElmcPebbleApp *app, int status) {
       if (!app || !app->initialized) return -1;
@@ -2975,6 +3005,51 @@ defmodule Elmc.Backend.Pebble do
     }
     """
   end
+
+  @spec compass_dispatch_source(map()) :: String.t()
+  defp compass_dispatch_source(%{compass_events: true}) do
+    """
+    int elmc_pebble_dispatch_compass_heading(ElmcPebbleApp *app, double degrees, int is_valid) {
+      if (!app || !app->initialized) return -1;
+      if (!elmc_pebble_is_subscribed(app, ELMC_PEBBLE_SUB_COMPASS)) return -8;
+      elmc_int_t tag = elmc_pebble_sub_tag(app, ELMC_PEBBLE_SUB_COMPASS);
+      if (tag <= 0) return -6;
+
+      const char *names[] = {"degrees", "isValid"};
+      ElmcValue *values[2];
+      values[0] = elmc_new_float(degrees);
+      values[1] = elmc_new_bool(is_valid ? 1 : 0);
+      if (!values[0] || !values[1]) {
+        if (values[0]) elmc_release(values[0]);
+        if (values[1]) elmc_release(values[1]);
+        return -2;
+      }
+
+      ElmcValue *record = elmc_record_new(2, names, values);
+      elmc_release(values[0]);
+      elmc_release(values[1]);
+      if (!record) return -2;
+
+      ElmcValue *tag_value = elmc_new_int(tag);
+      if (!tag_value) {
+        elmc_release(record);
+        return -2;
+      }
+
+      ElmcValue *msg = elmc_tuple2(tag_value, record);
+      elmc_release(tag_value);
+      elmc_release(record);
+      if (!msg) return -2;
+
+      elmc_pebble_prepare_dispatch(app);
+      int rc = elmc_worker_dispatch(&app->worker, msg);
+      elmc_release(msg);
+      return elmc_pebble_finish_dispatch(app, rc);
+    }
+    """
+  end
+
+  defp compass_dispatch_source(_feature_flags), do: ""
 
   @spec constructor_tag_macros(String.t(), [{String.t(), non_neg_integer()}]) :: String.t()
   defp constructor_tag_macros(prefix, constructors) do

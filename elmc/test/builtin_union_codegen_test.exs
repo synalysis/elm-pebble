@@ -1,7 +1,7 @@
 defmodule Elmc.BuiltinUnionCodegenTest do
   use ExUnit.Case, async: true
 
-  test "Pebble.Light helpers emit typed Maybe constructors" do
+  test "Pebble.Light helpers emit compact backlight commands" do
     source_fixture = Path.expand("fixtures/simple_project", __DIR__)
     project_dir = Path.expand("tmp/builtin_union_light_project", __DIR__)
     out_dir = Path.expand("tmp/builtin_union_light_codegen", __DIR__)
@@ -32,16 +32,17 @@ defmodule Elmc.BuiltinUnionCodegenTest do
     assert {:ok, _} =
              Elmc.compile(project_dir, %{
                out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
+               entry_module: "Main"
              })
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert generated_c =~ "elmc_maybe_nothing()"
-    assert generated_c =~ "elmc_maybe_just("
-    assert generated_c =~ "elmc_cmd_backlight_from_maybe("
-    refute Regex.match?(~r/elmc_tuple2_take\([^\n]+\);\s+ElmcValue \*tmp_\d+ = elmc_cmd_backlight_from_maybe/, generated_c)
+    assert generated_c =~ "elmc_cmd1(ELMC_PEBBLE_CMD_BACKLIGHT, 0)"
+    assert generated_c =~ "elmc_cmd1(ELMC_PEBBLE_CMD_BACKLIGHT, 1)"
+    assert generated_c =~ "elmc_cmd1(ELMC_PEBBLE_CMD_BACKLIGHT, 2)"
+    refute generated_c =~ "elmc_cmd_backlight_from_maybe("
+    refute generated_c =~ "elmc_maybe_nothing()"
+    refute generated_c =~ "elmc_maybe_just("
   end
 
   test "Just and Ok payload constructors use typed runtime allocators" do

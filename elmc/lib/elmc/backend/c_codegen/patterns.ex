@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.CCodegen.Patterns do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.PebbleMsgTag
   alias Elmc.Backend.CCodegen.Types
 
@@ -9,7 +10,7 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   def pattern_condition(_subject_ref, %{kind: :var}), do: "1"
 
   def pattern_condition(subject_ref, pattern)
-       when is_map(pattern) and not is_binary(subject_ref) do
+      when is_map(pattern) and not is_binary(subject_ref) do
     pattern_condition(pattern_subject_ref(subject_ref), pattern)
   end
 
@@ -39,10 +40,10 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   end
 
   def pattern_condition(subject_ref, %{
-         kind: :constructor,
-         name: "Just",
-         arg_pattern: arg_pattern
-       }) do
+        kind: :constructor,
+        name: "Just",
+        arg_pattern: arg_pattern
+      }) do
     maybe_value_ref = "((ElmcMaybe *)#{subject_ref}->payload)->value"
     tuple_value_ref = "((ElmcTuple2 *)#{subject_ref}->payload)->second"
 
@@ -76,10 +77,10 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   end
 
   def pattern_condition(subject_ref, %{
-         kind: :constructor,
-         name: "::",
-         arg_pattern: %{kind: :tuple, elements: [head_pattern, tail_pattern]}
-       }) do
+        kind: :constructor,
+        name: "::",
+        arg_pattern: %{kind: :tuple, elements: [head_pattern, tail_pattern]}
+      }) do
     head_ref = "((ElmcCons *)#{subject_ref}->payload)->head"
     tail_ref = "((ElmcCons *)#{subject_ref}->payload)->tail"
 
@@ -94,8 +95,11 @@ defmodule Elmc.Backend.CCodegen.Patterns do
     "1"
   end
 
-  def pattern_condition(subject_ref, %{kind: :constructor, tag: tag, arg_pattern: arg_pattern} = pattern)
-       when is_integer(tag) and is_map(arg_pattern) do
+  def pattern_condition(
+        subject_ref,
+        %{kind: :constructor, tag: tag, arg_pattern: arg_pattern} = pattern
+      )
+      when is_integer(tag) and is_map(arg_pattern) do
     tag_ref = PebbleMsgTag.tag_expr(pattern)
     value_ref = "((ElmcTuple2 *)#{subject_ref}->payload)->second"
     arg_cond = constructor_arg_condition(value_ref, arg_pattern)
@@ -107,9 +111,11 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   end
 
   def pattern_condition(subject_ref, %{kind: :constructor, tag: tag} = pattern)
-       when is_integer(tag) do
+      when is_integer(tag) do
     tag_ref = PebbleMsgTag.tag_expr(pattern)
-    int_match = "((#{subject_ref})->tag == ELMC_TAG_INT && elmc_as_int(#{subject_ref}) == #{tag_ref})"
+
+    int_match =
+      "((#{subject_ref})->tag == ELMC_TAG_INT && elmc_as_int(#{subject_ref}) == #{tag_ref})"
 
     tuple_match =
       "((#{subject_ref})->tag == ELMC_TAG_TUPLE2 && (#{subject_ref})->payload != NULL && elmc_as_int(((ElmcTuple2 *)(#{subject_ref})->payload)->first) == #{tag_ref})"
@@ -148,10 +154,10 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   end
 
   def bind_pattern(
-         env,
-         %{kind: :constructor, name: "Ok", bind: bind, arg_pattern: arg},
-         subject_ref
-       ) do
+        env,
+        %{kind: :constructor, name: "Ok", bind: bind, arg_pattern: arg},
+        subject_ref
+      ) do
     subject_ref = pattern_subject_ref(subject_ref)
     value_ref = "((ElmcResult *)#{subject_ref}->payload)->value"
     env = if is_binary(bind), do: Map.put(env, bind, value_ref), else: env
@@ -159,10 +165,10 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   end
 
   def bind_pattern(
-         env,
-         %{kind: :constructor, name: "Err", bind: bind, arg_pattern: arg},
-         subject_ref
-       ) do
+        env,
+        %{kind: :constructor, name: "Err", bind: bind, arg_pattern: arg},
+        subject_ref
+      ) do
     subject_ref = pattern_subject_ref(subject_ref)
     value_ref = "((ElmcResult *)#{subject_ref}->payload)->value"
     env = if is_binary(bind), do: Map.put(env, bind, value_ref), else: env
@@ -170,10 +176,10 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   end
 
   def bind_pattern(
-         env,
-         %{kind: :constructor, name: "Just", bind: bind, arg_pattern: arg},
-         subject_ref
-       ) do
+        env,
+        %{kind: :constructor, name: "Just", bind: bind, arg_pattern: arg},
+        subject_ref
+      ) do
     subject_ref = pattern_subject_ref(subject_ref)
 
     value_ref = just_payload_ref(subject_ref)
@@ -183,25 +189,27 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   end
 
   def bind_pattern(
-         env,
-         %{
-           kind: :constructor,
-           name: "::",
-           bind: bind,
-           arg_pattern: %{kind: :tuple, elements: [head, tail]}
-         },
-         subject_ref
-       ) do
+        env,
+        %{
+          kind: :constructor,
+          name: "::",
+          bind: bind,
+          arg_pattern: %{kind: :tuple, elements: [head, tail]}
+        },
+        subject_ref
+      ) do
     subject_ref = pattern_subject_ref(subject_ref)
+    list_int? = list_int_subject?(env, subject_ref)
     env = if is_binary(bind), do: Map.put(env, bind, subject_ref), else: env
 
     env
     |> bind_pattern(head, "((ElmcCons *)#{subject_ref}->payload)->head")
     |> bind_pattern(tail, "((ElmcCons *)#{subject_ref}->payload)->tail")
+    |> maybe_mark_list_int_cons(head, tail, list_int?)
   end
 
   def bind_pattern(env, %{kind: :record, fields: fields, bind: bind}, subject_ref)
-       when is_list(fields) do
+      when is_list(fields) do
     subject_ref = pattern_subject_ref(subject_ref)
     env = if is_binary(bind), do: Map.put(env, bind, subject_ref), else: env
 
@@ -223,11 +231,11 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   end
 
   def bind_pattern(
-         env,
-         %{kind: :constructor, tag: tag, bind: bind, arg_pattern: arg},
-         subject_ref
-       )
-       when is_integer(tag) do
+        env,
+        %{kind: :constructor, tag: tag, bind: bind, arg_pattern: arg},
+        subject_ref
+      )
+      when is_integer(tag) do
     subject_ref = pattern_subject_ref(subject_ref)
     value_ref = "((ElmcTuple2 *)#{subject_ref}->payload)->second"
     env = if is_binary(bind), do: Map.put(env, bind, value_ref), else: env
@@ -300,6 +308,46 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   defp pattern_subject_ref(%{name: name}) when is_binary(name), do: name
   defp pattern_subject_ref(%{"name" => name}) when is_binary(name), do: name
   defp pattern_subject_ref(subject_ref), do: inspect(subject_ref)
+
+  defp list_int_subject?(env, subject_ref) when is_binary(subject_ref) do
+    env
+    |> Map.get(:__var_types__, %{})
+    |> Map.get(EnvBindings.binding_key(subject_ref))
+    |> Kernel.==("List Int")
+  end
+
+  defp list_int_subject?(_env, _subject_ref), do: false
+
+  defp maybe_mark_list_int_cons(env, head, tail, true) do
+    env
+    |> mark_list_int_head(head)
+    |> mark_list_int_tail(tail)
+  end
+
+  defp maybe_mark_list_int_cons(env, _head, _tail, _list_int?), do: env
+
+  defp mark_list_int_head(env, %{kind: :var, name: name}) when name not in ["_", ""] do
+    env
+    |> EnvBindings.put_boxed_int_binding(name, true)
+    |> EnvBindings.put_var_type(name, "Int")
+  end
+
+  defp mark_list_int_head(env, _pattern), do: env
+
+  defp mark_list_int_tail(env, %{kind: :var, name: name}) when name not in ["_", ""] do
+    EnvBindings.put_var_type(env, name, "List Int")
+  end
+
+  defp mark_list_int_tail(
+         env,
+         %{kind: :constructor, name: "::", arg_pattern: %{kind: :tuple, elements: [head, tail]}}
+       ) do
+    env
+    |> mark_list_int_head(head)
+    |> mark_list_int_tail(tail)
+  end
+
+  defp mark_list_int_tail(env, _pattern), do: env
 
   @spec constructor_arg_condition(String.t(), Types.pattern()) :: String.t()
   defp constructor_arg_condition(_value_ref, %{kind: :wildcard}), do: ""

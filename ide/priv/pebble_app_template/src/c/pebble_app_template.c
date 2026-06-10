@@ -106,13 +106,9 @@ static uint32_t agent_probe_count_byte(int value) {
 #endif
 // #endregion
 
-#if !ELMC_PEBBLE_RUNTIME_LOGS && !ELMC_PEBBLE_DEBUG_LOGS
-static inline void elmc_pebble_log_noop(int level, const char *format, ...) {
-  (void)level;
-  (void)format;
-}
+#if !ELMC_PEBBLE_RUNTIME_LOGS && !ELMC_PEBBLE_DEBUG_LOGS && !ELMC_PEBBLE_HEAP_LOG
 #undef APP_LOG
-#define APP_LOG(level, ...) elmc_pebble_log_noop(level, __VA_ARGS__)
+#define APP_LOG(level, ...) do { (void)(level); } while (0)
 #endif
 
 #ifndef ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
@@ -274,9 +270,6 @@ static bool s_draw_update_active = false;
 static int s_elm_init_attempts = 0;
 #endif
 static AppTimer *s_render_coalesce_timer = NULL;
-#if ELMC_PEBBLE_SCENE_CACHE_ENABLED
-static AppTimer *s_scene_prep_timer = NULL;
-#endif
 /* Stream one decoded draw command at a time from the scene byte cursor (static, not stack). */
 static ElmcPebbleDrawCmd s_draw_cmd;
 static GFont s_font;
@@ -431,10 +424,6 @@ static int64_t monotonic_ms(void) {
 }
 
 static void render_model(void);
-#if ELMC_PEBBLE_SCENE_CACHE_ENABLED
-static void scene_prep_timer_callback(void *data);
-static void schedule_scene_prep(void);
-#endif
 #if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
 static void schedule_render_model(void);
 static void render_coalesce_callback(void *data);
@@ -453,7 +442,9 @@ static void ensure_draw_layer_size(void);
 static void deferred_elm_init_callback(void *data);
 static void schedule_elm_init(void);
 #endif
+#if !defined(ELMC_WATCHFACE_MODE) || ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
 static GRect display_bounds(void);
+#endif
 #if ELMC_PEBBLE_FEATURE_CMD_GET_CURRENT_DATE_TIME
 static bool deliver_current_date_time(int msg_tag, const char *reason);
 static int s_last_current_date_time_msg_tag = 0;
@@ -2192,7 +2183,6 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
       }
       break;
     }
-
     const ElmcPebbleDrawCmd *cmd = &s_draw_cmd;
     if (cmd_index < 4) {
       // #region agent log
@@ -2749,29 +2739,6 @@ static void schedule_render_model(void) {
 }
 #endif
 
-#if ELMC_PEBBLE_SCENE_CACHE_ENABLED
-static void scene_prep_timer_callback(void *data) {
-  ELMC_PEBBLE_TRACE_ENTER("scene_prep_timer_callback");
-  (void)data;
-  s_scene_prep_timer = NULL;
-  if (!s_startup_cmds_ready) {
-    ELMC_PEBBLE_TRACE_EXIT("scene_prep_timer_callback");
-    return;
-  }
-  if (elmc_pebble_ensure_scene(&s_elm_app) == 0 && s_draw_layer) {
-    layer_mark_dirty(s_draw_layer);
-  }
-  ELMC_PEBBLE_TRACE_EXIT("scene_prep_timer_callback");
-}
-
-static void schedule_scene_prep(void) {
-  if (s_scene_prep_timer) {
-    return;
-  }
-  s_scene_prep_timer = app_timer_register(0, scene_prep_timer_callback, NULL);
-}
-#endif
-
 static void render_model(void) {
   ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_RENDER_MODEL_ENTER);
   ELMC_PEBBLE_TRACE_ENTER("render_model");
@@ -2782,7 +2749,6 @@ static void render_model(void) {
   // #region agent log
   ELMC_AGENT_INIT_PROBE(s_agent_after_companion_dispatch ? 0xED992101 : 0xED992001);
   // #endregion
-  int64_t value = elmc_pebble_model_as_int(&s_elm_app);
   // #region agent log
   ELMC_AGENT_INIT_PROBE(s_agent_after_companion_dispatch ? 0xED992102 : 0xED992002);
   // #endregion
@@ -2791,6 +2757,7 @@ static void render_model(void) {
   if (!s_draw_layer) {
     s_render_pending = true;
 #if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+    int64_t value = elmc_pebble_model_as_int(&s_elm_app);
     companion_inbox_log("render deferred seq=%d model=%lld", s_render_sequence, (long long)value);
 #endif
     ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_RENDER_MODEL_EXIT);
@@ -2800,12 +2767,14 @@ static void render_model(void) {
   s_render_pending = false;
 #if ELMC_PEBBLE_SCENE_CACHE_ENABLED
   if (s_elm_app.scene.dirty) {
-    schedule_scene_prep();
+    (void)elmc_pebble_ensure_scene(&s_elm_app);
   }
 #endif
   layer_mark_dirty(s_draw_layer);
+#if ELMC_PEBBLE_DEBUG_LOGS
+  int64_t value = elmc_pebble_model_as_int(&s_elm_app);
   ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "elmc render seq=%d model=%lld", s_render_sequence, (long long)value);
-  (void)value;
+#endif
   elmc_pebble_render_diag_log("render:after", s_render_sequence, &s_elm_app);
   ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_RENDER_MODEL_EXIT);
   ELMC_PEBBLE_TRACE_EXIT("render_model");
@@ -3070,7 +3039,7 @@ static Tuple *inbox_tuple_at(int index) {
 }
 #endif
 
-#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS && (ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS)
 static int32_t companion_inbox_message_tag(void) {
   for (int i = 0; i < s_inbox_snapshot_count; i++) {
     if (s_inbox_snapshots[i].key == COMPANION_PROTOCOL_KEY_MESSAGE_TAG) {
@@ -3193,11 +3162,6 @@ static void companion_pending_clear(void);
 #if ELMC_PEBBLE_FEATURE_INBOX_EVENTS
 static bool companion_simulator_weather_tuple(const Tuple *tuple) {
 #if ELMC_PEBBLE_FEATURE_INBOX_EVENTS && defined(ELMC_COMPANION_SIMULATOR_WEATHER) && ELMC_COMPANION_SIMULATOR_WEATHER
-  static int32_t s_pending_temp_c = 0;
-  static int32_t s_pending_condition_wire = 0;
-  static bool s_has_pending_temp = false;
-  static bool s_has_pending_condition = false;
-
   int32_t wire_value = 0;
   CompanionProtocolPhoneToWatchMessage message = {0};
   bool ready_to_dispatch = false;
@@ -3207,6 +3171,11 @@ static bool companion_simulator_weather_tuple(const Tuple *tuple) {
   }
 
 #if defined(ELMC_COMPANION_SIMULATOR_WEATHER_MODE_UNIFIED) && ELMC_COMPANION_SIMULATOR_WEATHER_MODE_UNIFIED
+  static int32_t s_pending_temp_c = 0;
+  static int32_t s_pending_condition_wire = 0;
+  static bool s_has_pending_temp = false;
+  static bool s_has_pending_condition = false;
+
   if (tuple->key == ELMC_DEBUG_SIMULATOR_KEY_WEATHER_TEMPERATURE_C) {
     s_pending_temp_c = wire_value;
     s_has_pending_temp = true;
@@ -4043,6 +4012,7 @@ static bool display_bounds_ready(void) {
 }
 #endif
 
+#ifndef ELMC_WATCHFACE_MODE
 static GRect cap_display_bounds(GRect bounds, GRect compile) {
   if (bounds.size.w <= 0 || bounds.size.h <= 0) {
     return compile;
@@ -4082,7 +4052,9 @@ static GRect cap_display_bounds(GRect bounds, GRect compile) {
 
   return GRect(x, y, w, h);
 }
+#endif
 
+#if !defined(ELMC_WATCHFACE_MODE) || ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
 static GRect display_bounds(void) {
   GRect compile = compile_display_bounds();
 #ifdef ELMC_WATCHFACE_MODE
@@ -4132,6 +4104,7 @@ static GRect display_bounds(void) {
   return layer;
 #endif
 }
+#endif
 
 #ifdef ELMC_WATCHFACE_MODE
 static void ensure_draw_layer_size(void) {
@@ -4178,8 +4151,7 @@ static void complete_elm_init(void) {
     (void)companion_resync_timer;
 #endif
 #endif
-    AppTimer *startup_timer = app_timer_register(1, startup_cmd_callback, NULL);
-    (void)startup_timer;
+    startup_cmd_callback(NULL);
 #if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
     AppTimer *storage_snapshot_timer = app_timer_register(1500, emulator_storage_snapshot_callback, NULL);
     (void)storage_snapshot_timer;

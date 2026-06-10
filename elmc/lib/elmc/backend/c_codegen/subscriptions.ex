@@ -274,5 +274,105 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
   end
 
   defp frame_fps_subscription_c_expr(_args), do: nil
+
+  @button_raw_mask "ELMC_SUBSCRIPTION_BUTTON_RAW"
+
+  @batch_targets ~w(
+    Pebble.Events.batch
+    Elm.Kernel.PebbleWatch.batch
+  )
+
+  @type subscription_analysis :: %{
+          tag_masks: [String.t()],
+          button_raw_count: non_neg_integer(),
+          compact: boolean(),
+          has_frame: boolean()
+        }
+
+  @spec analyze_subscription_masks(term()) :: subscription_analysis()
+  def analyze_subscription_masks(expr) do
+    acc = %{tag_masks: [], button_raw_count: 0, dynamic?: false}
+    acc = collect_subscription_specs(expr, acc)
+
+    {tag_masks, has_frame} =
+      acc.tag_masks
+      |> Enum.uniq()
+      |> Enum.reject(&(&1 == @button_raw_mask))
+      |> Enum.map_reduce(false, fn mask, frame? ->
+        if frame_mask?(mask) do
+          {nil, true}
+        else
+          {mask, frame?}
+        end
+      end)
+      |> then(fn {masks, frame?} -> {Enum.reject(masks, &is_nil/1), frame?} end)
+
+    compact = not acc.dynamic? and Enum.all?(tag_masks, &static_mask?/1)
+
+    %{
+      tag_masks: tag_masks,
+      button_raw_count: acc.button_raw_count,
+      compact: compact,
+      has_frame: has_frame
+    }
+  end
+
+  @spec frame_mask?(String.t()) :: boolean()
+  def frame_mask?(mask) when is_binary(mask) do
+    String.contains?(mask, "ELMC_SUBSCRIPTION_FRAME_BASE")
+  end
+
+  defp static_mask?(mask) when is_binary(mask) do
+    not frame_mask?(mask)
+  end
+
+  defp collect_subscription_specs(nil, acc), do: acc
+
+  defp collect_subscription_specs(list, acc) when is_list(list) do
+    Enum.reduce(list, acc, &collect_subscription_specs/2)
+  end
+
+  defp collect_subscription_specs(%{op: :qualified_call, target: target, args: args}, acc)
+       when is_binary(target) and is_list(args) do
+    normalized = SpecialValues.normalize_special_target(target)
+
+    cond do
+      normalized in @batch_targets ->
+        case args do
+          [%{op: :list_literal, items: items}] ->
+            Enum.reduce(items, acc, &collect_subscription_specs/2)
+
+          _ ->
+            %{acc | dynamic?: true}
+        end
+
+      true ->
+        case subscription_sub_expr(normalized, args) do
+          %{op: :pebble_sub, mask: %{op: :c_int_expr, value: @button_raw_mask}} ->
+            %{acc | button_raw_count: acc.button_raw_count + 1}
+
+          %{op: :pebble_sub, mask: %{op: :c_int_expr, value: mask}} ->
+            %{acc | tag_masks: [mask | acc.tag_masks]}
+
+          %{op: :pebble_sub} ->
+            %{acc | dynamic?: true}
+
+          nil ->
+            if subscription_mask_c_expr(normalized, args) != nil do
+              %{acc | dynamic?: true}
+            else
+              Enum.reduce(args, acc, &collect_subscription_specs/2)
+            end
+        end
+    end
+  end
+
+  defp collect_subscription_specs(%{} = expr, acc) do
+    expr
+    |> Map.values()
+    |> Enum.reduce(acc, &collect_subscription_specs/2)
+  end
+
+  defp collect_subscription_specs(_expr, acc), do: acc
 end
 

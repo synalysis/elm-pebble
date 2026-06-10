@@ -476,28 +476,19 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
 
       next = counter + 1
       out = "tmp_#{next}"
+      segments_array = "list_concat_segments_#{next}"
+      call_args = Enum.join(segment_vars, ", ")
 
-      {cons_code, lists_var, _counter} =
-        Enum.reduce(Enum.reverse(segment_vars), {"", "elmc_list_nil()", next}, fn seg_var,
-                                                                                  {acc, rev,
-                                                                                   node_counter} ->
-          node = "list_concat_node_#{node_counter}"
-          rev_release = if rev == "elmc_list_nil()", do: "", else: "elmc_release(#{rev});"
-
-          line = """
-          ElmcValue *#{node} = elmc_list_cons(#{seg_var}, #{rev});
-          elmc_release(#{seg_var});
-          #{rev_release}
-          """
-
-          {acc <> line, node, node_counter + 1}
-        end)
+      releases =
+        segment_vars
+        |> Enum.map_join("\n  ", fn var -> "elmc_release(#{var});" end)
 
       code = """
-      #{segment_code}#{cons_code}
-        ElmcValue *#{out} = elmc_list_concat(#{lists_var});
-        elmc_release(#{lists_var});
-        #{DebugProbes.append_probe(env, "elmc_list_concat", out, next)}
+      #{segment_code}
+        ElmcValue *#{segments_array}[#{length(segment_vars)}] = { #{call_args} };
+        ElmcValue *#{out} = elmc_list_concat_array(#{segments_array}, #{length(segment_vars)});
+        #{releases}
+        #{DebugProbes.append_probe(env, "elmc_list_concat_array", out, next)}
       """
 
       {:ok, code, out, next}

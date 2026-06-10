@@ -11,7 +11,6 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
   @spec draw_kind(Elmc.Backend.Pebble.Kinds.draw_kind()) :: non_neg_integer()
   defp draw_kind(kind), do: Elmc.Backend.Pebble.draw_kind_id!(kind)
 
-  
   defp command_kind(kind), do: Elmc.Backend.Pebble.command_kind_id!(kind)
 
   defp command_kind_expr(kind),
@@ -248,14 +247,14 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
   def special_value_from_target("Pebble.Ui.rotationFromPebbleAngle", [angle]), do: angle
 
   def special_value_from_target("Pebble.Ui.rotationFromDegrees", [
-         %{op: :int_literal, value: degrees}
-       ]),
-       do: %{op: :int_literal, value: round(degrees * 65_536 / 360)}
+        %{op: :int_literal, value: degrees}
+      ]),
+      do: %{op: :int_literal, value: round(degrees * 65_536 / 360)}
 
   def special_value_from_target("Pebble.Ui.rotationFromDegrees", [
-         %{op: :float_literal, value: degrees}
-       ]),
-       do: %{op: :int_literal, value: round(degrees * 65_536 / 360)}
+        %{op: :float_literal, value: degrees}
+      ]),
+      do: %{op: :int_literal, value: round(degrees * 65_536 / 360)}
 
   def special_value_from_target("Pebble.Ui.Color." <> name, []) do
     case Map.fetch(Constants.pebble_color_constants(), name) do
@@ -430,19 +429,19 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
     do: encoded_draw_cmd_expr(draw_kind(:bitmap_in_rect), args, 5)
 
   def special_value_from_target("Pebble.Ui.drawRotatedBitmap", [bitmap, bounds, rotation, center]),
-    do:
-      encoded_draw_field_cmd_expr(
-        draw_kind(:rotated_bitmap),
-        [
-          bitmap,
-          field_access_expr(bounds, "w"),
-          field_access_expr(bounds, "h"),
-          rotation,
-          field_access_expr(center, "x"),
-          field_access_expr(center, "y")
-        ],
-        6
-      )
+      do:
+        encoded_draw_field_cmd_expr(
+          draw_kind(:rotated_bitmap),
+          [
+            bitmap,
+            field_access_expr(bounds, "w"),
+            field_access_expr(bounds, "h"),
+            rotation,
+            field_access_expr(center, "x"),
+            field_access_expr(center, "y")
+          ],
+          6
+        )
 
   def special_value_from_target("Pebble.Ui.drawRotatedBitmap", args),
     do: encoded_draw_cmd_expr(draw_kind(:rotated_bitmap), args, 6)
@@ -544,6 +543,15 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
   def special_value_from_target("Elm.Kernel.PebbleWatch.companionSend", args),
     do: encoded_cmd_expr(command_kind(:companion_send), args, 2)
 
+  def special_value_from_target("Pebble.Light.interaction", []),
+    do: encoded_cmd_expr(command_kind(:backlight), [%{op: :int_literal, value: 0}], 1)
+
+  def special_value_from_target("Pebble.Light.disable", []),
+    do: encoded_cmd_expr(command_kind(:backlight), [%{op: :int_literal, value: 1}], 1)
+
+  def special_value_from_target("Pebble.Light.enable", []),
+    do: encoded_cmd_expr(command_kind(:backlight), [%{op: :int_literal, value: 2}], 1)
+
   def special_value_from_target("Pebble.Cmd.backlight", [mode]),
     do: %{op: :runtime_call, function: "elmc_cmd_backlight_from_maybe", args: [mode]}
 
@@ -605,30 +613,30 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
       )
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.healthSum", [
-         metric,
-         start_seconds,
-         end_seconds,
-         to_msg
-       ]),
-       do:
-         encoded_cmd_expr(
-           command_kind(:health_sum),
-           [metric, start_seconds, end_seconds, constructor_tag_expr(to_msg)],
-           4
-         )
+        metric,
+        start_seconds,
+        end_seconds,
+        to_msg
+      ]),
+      do:
+        encoded_cmd_expr(
+          command_kind(:health_sum),
+          [metric, start_seconds, end_seconds, constructor_tag_expr(to_msg)],
+          4
+        )
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.healthAccessible", [
-         metric,
-         start_seconds,
-         end_seconds,
-         to_msg
-       ]),
-       do:
-         encoded_cmd_expr(
-           command_kind(:health_accessible),
-           [metric, start_seconds, end_seconds, constructor_tag_expr(to_msg)],
-           4
-         )
+        metric,
+        start_seconds,
+        end_seconds,
+        to_msg
+      ]),
+      do:
+        encoded_cmd_expr(
+          command_kind(:health_accessible),
+          [metric, start_seconds, end_seconds, constructor_tag_expr(to_msg)],
+          4
+        )
 
   def special_value_from_target("Pebble.Cmd.getClockStyle24h", [to_msg]),
     do: encoded_to_msg_cmd(:get_clock_style_24h, to_msg)
@@ -894,27 +902,27 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
       ])
 
   def special_value_from_target("Pebble.Health.sum", [metric, start_seconds, end_seconds, to_msg]),
-       do:
-         special_value_from_target("Elm.Kernel.PebbleWatch.healthSum", [
-           health_metric_to_kernel_expr(metric),
-           start_seconds,
-           end_seconds,
-           to_msg
-         ])
+      do:
+        special_value_from_target("Elm.Kernel.PebbleWatch.healthSum", [
+          health_metric_to_kernel_expr(metric),
+          start_seconds,
+          end_seconds,
+          to_msg
+        ])
 
   def special_value_from_target("Pebble.Health.accessible", [
-         metric,
-         start_seconds,
-         end_seconds,
-         to_msg
-       ]),
-       do:
-         special_value_from_target("Elm.Kernel.PebbleWatch.healthAccessible", [
-           health_metric_to_kernel_expr(metric),
-           start_seconds,
-           end_seconds,
-           to_msg
-         ])
+        metric,
+        start_seconds,
+        end_seconds,
+        to_msg
+      ]),
+      do:
+        special_value_from_target("Elm.Kernel.PebbleWatch.healthAccessible", [
+          health_metric_to_kernel_expr(metric),
+          start_seconds,
+          end_seconds,
+          to_msg
+        ])
 
   def special_value_from_target("Pebble.AppFocus.onChange", args),
     do: subscription_special_value("Pebble.AppFocus.onChange", args)
@@ -1024,11 +1032,11 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
     do: %{op: :qualified_call, target: "Pebble.Storage.saveJsonImpl", args: [key, value, to_msg]}
 
   def special_value_from_target("Elm.Kernel.PebblePhone.storageLoadJson", [key, decoder, to_msg]),
-       do: %{
-         op: :qualified_call,
-         target: "Pebble.Storage.loadJsonImpl",
-         args: [key, decoder, to_msg]
-       }
+    do: %{
+      op: :qualified_call,
+      target: "Pebble.Storage.loadJsonImpl",
+      args: [key, decoder, to_msg]
+    }
 
   def special_value_from_target("Elm.Kernel.PebblePhone.storageSaveInt", [key, value, to_msg]),
     do: %{op: :qualified_call, target: "Pebble.Storage.saveIntImpl", args: [key, value, to_msg]}
@@ -1258,7 +1266,9 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
     do: special_value_from_target("Cmd.batch", args)
 
   def special_value_from_target("Sub.none", _args), do: %{op: :int_literal, value: 0}
-  def special_value_from_target("Sub.batch", args), do: Subscriptions.subscription_batch_expr(args)
+
+  def special_value_from_target("Sub.batch", args),
+    do: Subscriptions.subscription_batch_expr(args)
 
   def special_value_from_target("Pebble.Platform.application", _args),
     do: %{op: :int_literal, value: 0}
@@ -1895,9 +1905,14 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
           ]
         }
       ])
-      when default_op in [:int_literal, :c_int_expr, :char_literal] and head_target in ["List.head", "head"] and
+      when default_op in [:int_literal, :c_int_expr, :char_literal] and
+             head_target in ["List.head", "head"] and
              drop_target in ["List.drop", "drop"] do
-    %{op: :runtime_call, function: "elmc_list_nth_int_default_boxed", args: [list, index, default_val]}
+    %{
+      op: :runtime_call,
+      function: "elmc_list_nth_int_default_boxed",
+      args: [list, index, default_val]
+    }
   end
 
   def special_value_from_target("Maybe.withDefault", [
@@ -1905,7 +1920,11 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
         %{op: :runtime_call, function: "elmc_list_nth_maybe", args: [list, index]}
       ])
       when default_op in [:int_literal, :c_int_expr, :char_literal] do
-    %{op: :runtime_call, function: "elmc_list_nth_int_default_boxed", args: [list, index, default_val]}
+    %{
+      op: :runtime_call,
+      function: "elmc_list_nth_int_default_boxed",
+      args: [list, index, default_val]
+    }
   end
 
   def special_value_from_target("Maybe.withDefault", [default_val, maybe]),
@@ -2587,7 +2606,9 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
     length(args) <= 5 and Enum.all?(args, &pebble_cmd_param?/1)
   end
 
-  defp pebble_cmd_param?(%{op: op}) when op in [:int_literal, :c_int_expr, :msg_tag_expr], do: true
+  defp pebble_cmd_param?(%{op: op}) when op in [:int_literal, :c_int_expr, :msg_tag_expr],
+    do: true
+
   defp pebble_cmd_param?(%{op: :var}), do: true
   defp pebble_cmd_param?(%{op: :call}), do: true
   defp pebble_cmd_param?(%{op: :runtime_call}), do: true
@@ -2599,6 +2620,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
   defp pebble_cmd_param?(%{op: :add_const}), do: true
   defp pebble_cmd_param?(%{op: :add_vars}), do: true
   defp pebble_cmd_param?(%{op: :sub_const}), do: true
+
   defp pebble_cmd_param?(%{op: :constructor_call, args: args}) when is_list(args),
     do: Enum.all?(args, &pebble_cmd_param?/1)
 
@@ -2647,7 +2669,10 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
 
   defp health_metric_to_kernel_expr(%{op: :constructor_call, target: target, args: []})
        when is_binary(target) do
-    %{op: :int_literal, value: Map.get(IRQueries.bundled_health_metric_kernel_values(), target, 0)}
+    %{
+      op: :int_literal,
+      value: Map.get(IRQueries.bundled_health_metric_kernel_values(), target, 0)
+    }
   end
 
   defp health_metric_to_kernel_expr(%{op: :int_literal, value: value}) when is_integer(value),
@@ -2689,21 +2714,29 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
   end
 
   defp constructor_tag_expr(%{op: :qualified_ref, target: target}) when is_binary(target) do
-    if msg_constructor_name?(target), do: msg_tag_expr(target), else: %{op: :int_literal, value: 0}
+    if msg_constructor_name?(target),
+      do: msg_tag_expr(target),
+      else: %{op: :int_literal, value: 0}
   end
 
   defp constructor_tag_expr(%{op: :qualified_var, target: target}) when is_binary(target) do
-    if msg_constructor_name?(target), do: msg_tag_expr(target), else: %{op: :int_literal, value: 0}
+    if msg_constructor_name?(target),
+      do: msg_tag_expr(target),
+      else: %{op: :int_literal, value: 0}
   end
 
   defp constructor_tag_expr(%{op: :constructor_call, target: target, args: []})
        when is_binary(target) do
-    if msg_constructor_name?(target), do: msg_tag_expr(target), else: %{op: :int_literal, value: 0}
+    if msg_constructor_name?(target),
+      do: msg_tag_expr(target),
+      else: %{op: :int_literal, value: 0}
   end
 
   defp constructor_tag_expr(%{op: :qualified_call, target: target, args: []})
        when is_binary(target) do
-    if msg_constructor_name?(target), do: msg_tag_expr(target), else: %{op: :int_literal, value: 0}
+    if msg_constructor_name?(target),
+      do: msg_tag_expr(target),
+      else: %{op: :int_literal, value: 0}
   end
 
   defp constructor_tag_expr(_), do: %{op: :int_literal, value: 0}
@@ -2865,5 +2898,4 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
       }
     }
   end
-
 end

@@ -30,6 +30,34 @@ defmodule Ide.CompanionProtocolGeneratorTest do
       | SetLabel String
   """
 
+  test "generates single-field enum watch-to-phone decode without nested Decode.field" do
+    tmp =
+      Path.join(
+        System.tmp_dir!(),
+        "elm-pebble-protocol-enum-w2p-#{System.unique_integer([:positive])}"
+      )
+
+    types = Path.join(tmp, "Types.elm")
+    internal = Path.join(tmp, "Companion/Internal.elm")
+
+    try do
+      File.mkdir_p!(Path.dirname(types))
+      File.write!(types, @types)
+
+      assert :ok = CompanionProtocolGenerator.generate_elm_internal(types, internal)
+
+      generated_internal = File.read!(internal)
+
+      assert generated_internal =~
+               "Decode.decodeValue (Decode.field \"request_weather_field1\" Decode.int) value"
+
+      refute generated_internal =~
+               "Decode.field \"request_weather_field1\" Decode.field \"request_weather_field1\""
+    after
+      File.rm_rf(tmp)
+    end
+  end
+
   test "extracts generic ADT schema without app-specific query data" do
     assert {:ok, schema} = CompanionProtocolGenerator.schema_from_source(@types)
 

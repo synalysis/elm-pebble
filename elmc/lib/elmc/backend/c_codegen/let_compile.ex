@@ -10,6 +10,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
   alias Elmc.Backend.CCodegen.LetAnalysis
   alias Elmc.Backend.CCodegen.LetRecCompile
   alias Elmc.Backend.CCodegen.Native.String, as: NativeString
+  alias Elmc.Backend.CCodegen.Native.TypedReturn
   alias Elmc.Backend.CCodegen.Native.UsageAnalysis, as: NativeUsageAnalysis
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
@@ -247,6 +248,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
       )
       |> EnvBindings.put_boxed_string_binding(name, NativeString.boxed_expr?(value_expr, env))
       |> put_boxed_record_shape(name, record_shape)
+      |> put_boxed_var_type(name, value_expr, env)
 
     {body_code, body_var, counter} = Host.compile_expr(in_expr, body_env, counter)
 
@@ -270,6 +272,13 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
   end
 
   defp put_boxed_record_shape(env, _name, _fields), do: env
+
+  defp put_boxed_var_type(body_env, name, value_expr, env) do
+    case TypedReturn.expr_type(value_expr, env) do
+      type when is_binary(type) -> EnvBindings.put_var_type(body_env, name, type)
+      _ -> body_env
+    end
+  end
 
   @spec compile_boxed_let_value(
           Types.ir_expr(),

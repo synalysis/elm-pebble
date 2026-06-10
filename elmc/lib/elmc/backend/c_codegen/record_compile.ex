@@ -30,6 +30,32 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     end
   end
 
+  def compile(
+        %{op: :field_call, arg: %{op: :var, name: name}, field: field, args: args},
+        env,
+        counter
+      )
+      when is_binary(name) do
+    compile(%{op: :field_call, arg: name, field: field, args: args}, env, counter)
+  end
+
+  def compile(%{op: :field_call, arg: arg, field: field, args: args}, env, counter)
+      when is_binary(arg) do
+    compile_field_call_var(arg, field, args, env, counter)
+  end
+
+  def compile(%{op: :field_call, arg: arg_expr, field: field, args: args}, env, counter)
+      when is_map(arg_expr) and is_list(args) and args != [] do
+    {arg_code, record_var, counter} = Host.compile_expr(arg_expr, env, counter)
+    {call_code, out, counter} = compile_bound_field_call(record_var, field, args, env, counter)
+    {arg_code <> call_code, out, counter}
+  end
+
+  def compile(%{op: :field_call, arg: arg, field: field, args: args}, env, counter)
+      when args in [nil, []] do
+    compile(%{op: :field_access, arg: arg, field: field}, env, counter)
+  end
+
   defp compile_field_access(%{op: :field_access, arg: arg, field: field}, env, counter)
        when is_binary(arg) do
     compile_field_access_var(arg, field, env, counter)
@@ -55,32 +81,6 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   defp compile_field_access(%{op: :field_access, arg: arg_expr, field: field}, env, counter)
        when is_map(arg_expr) do
     compile_field_access_expr(arg_expr, field, env, counter)
-  end
-
-  def compile(
-        %{op: :field_call, arg: %{op: :var, name: name}, field: field, args: args},
-        env,
-        counter
-      )
-      when is_binary(name) do
-    compile(%{op: :field_call, arg: name, field: field, args: args}, env, counter)
-  end
-
-  def compile(%{op: :field_call, arg: arg, field: field, args: args}, env, counter)
-      when is_binary(arg) do
-    compile_field_call_var(arg, field, args, env, counter)
-  end
-
-  def compile(%{op: :field_call, arg: arg_expr, field: field, args: args}, env, counter)
-      when is_map(arg_expr) and is_list(args) and args != [] do
-    {arg_code, record_var, counter} = Host.compile_expr(arg_expr, env, counter)
-    {call_code, out, counter} = compile_bound_field_call(record_var, field, args, env, counter)
-    {arg_code <> call_code, out, counter}
-  end
-
-  def compile(%{op: :field_call, arg: arg, field: field, args: args}, env, counter)
-      when args in [nil, []] do
-    compile(%{op: :field_access, arg: arg, field: field}, env, counter)
   end
 
   @spec compile_literal(Types.ir_record_fields(), Types.compile_env(), Types.compile_counter()) ::

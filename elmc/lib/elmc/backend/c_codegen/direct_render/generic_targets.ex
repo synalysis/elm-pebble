@@ -182,32 +182,29 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
   defp walk_inlined_record_helpers(expr, module_name, decl_map, acc) when is_map(expr) do
     env = %{__module__: module_name, __program_decls__: decl_map}
 
-    acc =
-      case expr do
-        %{op: :let_in, value_expr: value_expr, in_expr: in_expr} ->
-          acc =
-            case Expr.record_helper_target(value_expr, env) do
-              nil ->
+    case expr do
+      %{op: :let_in, value_expr: value_expr, in_expr: in_expr} ->
+        acc =
+          case Expr.record_helper_target(value_expr, env) do
+            nil ->
+              acc
+
+            target_key ->
+              if NativeRecord.helper_let?("_", value_expr, env) or
+                   NativeRecord.field_entries(value_expr, env) != :error do
+                MapSet.put(acc, target_key)
+              else
                 acc
+              end
+          end
 
-              target_key ->
-                if NativeRecord.helper_let?("_", value_expr, env) or
-                     NativeRecord.field_entries(value_expr, env) != :error do
-                  MapSet.put(acc, target_key)
-                else
-                  acc
-                end
-            end
+        walk_inlined_record_helpers(in_expr, module_name, decl_map, acc)
 
-          walk_inlined_record_helpers(in_expr, module_name, decl_map, acc)
-
-        _ ->
-          acc
-      end
-
-    expr
-    |> Map.values()
-    |> Enum.reduce(acc, &walk_inlined_record_helpers(&1, module_name, decl_map, &2))
+      _ ->
+        expr
+        |> Map.values()
+        |> Enum.reduce(acc, &walk_inlined_record_helpers(&1, module_name, decl_map, &2))
+    end
   end
 
   defp walk_inlined_record_helpers(values, module_name, decl_map, acc) when is_list(values) do

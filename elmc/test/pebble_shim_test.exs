@@ -1808,6 +1808,37 @@ defmodule Elmc.PebbleShimTest do
     refute String.contains?(generated, "elmc_fn_Main_unusedArc")
   end
 
+  test "apps without compass features do not emit compass float dispatch" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/pebble_no_compass_float_project", __DIR__)
+    out_dir = Path.expand("tmp/pebble_no_compass_float_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(source_fixture, project_dir)
+    write_direct_helper_feature_app!(project_dir)
+
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               prune_runtime: true,
+               prune_native_wrappers: true,
+               pebble_int32: true
+             })
+
+    header = File.read!(Path.join(out_dir, "c/elmc_pebble.h"))
+    pebble_c = File.read!(Path.join(out_dir, "c/elmc_pebble.c"))
+    runtime_c = File.read!(Path.join(out_dir, "runtime/elmc_runtime.c"))
+
+    assert String.contains?(header, "#define ELMC_PEBBLE_FEATURE_COMPASS_EVENTS 0")
+    assert String.contains?(header, "#define ELMC_PEBBLE_FEATURE_CMD_COMPASS_PEEK 0")
+    refute String.contains?(pebble_c, "elmc_pebble_dispatch_compass_heading")
+    refute String.contains?(pebble_c, "elmc_new_float")
+    refute String.contains?(runtime_c, "elmc_new_float")
+    refute String.contains?(runtime_c, "elmc_as_float")
+  end
+
   test "direct view helper references enable draw runtime features" do
     source_fixture = Path.expand("fixtures/simple_project", __DIR__)
     project_dir = Path.expand("tmp/pebble_direct_helper_feature_project", __DIR__)

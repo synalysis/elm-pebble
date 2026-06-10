@@ -171,6 +171,60 @@ defmodule Elmc.CCodegenPatternsTest do
     refute generated_c =~ "elmc_closure_new(elmc_lambda_"
   end
 
+  test "typed List Int equality uses integer-list helper" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    same : List Int -> List Int -> Bool
+    same left right =
+        let
+            copied =
+                left
+        in
+        copied == right
+
+    adjacent : List Int -> Bool
+    adjacent values =
+        case values of
+            a :: b :: _ ->
+                a == b
+
+            _ ->
+                False
+
+    init _ = ( { ok = same [ 1, 2, 3 ] [ 1, 2, 3 ] && adjacent [ 4, 4 ] }, Platform.Cmd.none )
+    update _ m = ( m, Platform.Cmd.none )
+    view _ = Ui.toUiNode [ Ui.clear Color.white ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/list_int_eq", __DIR__)
+    out_dir = Path.expand("tmp/list_int_eq_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    runtime_c = File.read!(Path.join(out_dir, "runtime/elmc_runtime.c"))
+
+    assert generated_c =~ "elmc_list_equal_int("
+    refute generated_c =~ "elmc_value_equal("
+    assert runtime_c =~ "int elmc_list_equal_int(ElmcValue *left, ElmcValue *right)"
+  end
+
   test "List.concat of compiled list segments omits redundant nil fallbacks" do
     source = """
     module Main exposing (main)
@@ -209,6 +263,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    runtime_c = File.read!(Path.join(out_dir, "runtime/elmc_runtime.c"))
 
     body =
       generated_c
@@ -222,10 +277,38 @@ defmodule Elmc.CCodegenPatternsTest do
     assert body =~ "elmc_list_drop_int(2, cells)"
     refute body =~ "elmc_list_take("
     refute body =~ "elmc_list_drop("
-    assert body =~ "list_concat_node_"
+    assert body =~ "list_concat_segments_"
+    assert body =~ "elmc_list_concat_array("
+    refute body =~ "list_concat_node_"
+    refute body =~ "elmc_list_concat("
     refute body =~ "? tmp_"
     refute body =~ "? elmc_"
     refute body =~ "elmc_release(elmc_list_nil())"
+
+    take_body =
+      runtime_c
+      |> String.split("ElmcValue *elmc_list_take_int", parts: 2)
+      |> List.last()
+      |> String.split("\n}\n\nElmcValue *elmc_list_drop", parts: 2)
+      |> hd()
+
+    drop_body =
+      runtime_c
+      |> String.split("ElmcValue *elmc_list_drop_int", parts: 2)
+      |> List.last()
+      |> String.split("\n}\n\nElmcValue *elmc_list_partition", parts: 2)
+      |> hd()
+
+    concat_body =
+      runtime_c
+      |> String.split("ElmcValue *elmc_list_concat(ElmcValue *lists)", parts: 2)
+      |> List.last()
+      |> String.split("\n}\n\nElmcValue *elmc_list_concat_array", parts: 2)
+      |> hd()
+
+    refute take_body =~ "elmc_list_reverse_copy"
+    refute drop_body =~ "elmc_list_reverse_copy"
+    refute concat_body =~ "elmc_list_reverse_copy"
   end
 
   test "List.foldl over range with list acc uses cursor loop instead of elmc_list_foldl closure" do
@@ -833,7 +916,7 @@ defmodule Elmc.CCodegenPatternsTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "elmc_fn_Main_collapseRows"
-    assert generated_c =~ "elmc_list_concat("
+    assert generated_c =~ "elmc_list_concat_array("
     assert generated_c =~ "ElmcValue *elmc_fn_Main_collapseRow(ElmcValue *row)"
 
     assert generated_c =~
@@ -860,7 +943,7 @@ defmodule Elmc.CCodegenPatternsTest do
     refute generated_c =~
              ~r/list_concat_node_\d+ = elmc_list_cons\(tmp_\d+ \? elmc_retain\(tmp_\d+\)/
 
-    assert generated_c =~ ~r/elmc_release\(list_concat_node_\d+\);/
+    refute generated_c =~ ~r/elmc_release\(list_concat_node_\d+\);/
   end
 
   test "List.concat of literal segments flattens without elmc_list_concat" do
@@ -899,7 +982,8 @@ defmodule Elmc.CCodegenPatternsTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "elmc_fn_Main_mergeRows"
-    assert generated_c =~ "elmc_list_concat("
+    assert generated_c =~ "elmc_list_concat_array("
+    refute generated_c =~ "list_concat_node_"
   end
 
   test "List.concat of List.repeat row append flattens without elmc_list_concat" do

@@ -5,32 +5,165 @@ defmodule Elmc.Backend.Worker do
 
   alias ElmEx.IR
   alias Elmc.Backend.CCodegen.CSource
+  alias Elmc.Backend.CCodegen.Emit
+  alias Elmc.Backend.CCodegen.Subscriptions
   alias Elmc.Types
+
+  @fallback_sub_tag_slots 32
+  @fallback_button_raw_subs 16
 
   @spec write_worker_adapter(IR.t(), String.t(), String.t()) :: :ok | {:error, Types.file_error()}
   def write_worker_adapter(%IR{} = ir, out_dir, entry_module) do
     c_dir = Path.join(out_dir, "c")
+    analysis = subscription_analysis(ir, entry_module)
 
     with :ok <- File.mkdir_p(c_dir),
-         :ok <- File.write(Path.join(c_dir, "elmc_worker.h"), worker_header()),
+         :ok <- File.write(Path.join(c_dir, "elmc_worker.h"), worker_header(analysis)),
          :ok <-
            File.write(
              Path.join(c_dir, "elmc_worker.c"),
-             ir |> worker_source(entry_module) |> CSource.format()
+             ir |> worker_source(entry_module, analysis) |> CSource.format()
            ) do
       :ok
     end
   end
 
-  @spec worker_header() :: String.t()
-  defp worker_header do
+  @spec subscription_analysis(IR.t(), String.t()) :: map()
+  def subscription_analysis(%IR{} = ir, entry_module) do
+    case subscriptions_expr(ir, entry_module) do
+      nil ->
+        %{
+          tag_masks: [],
+          button_raw_count: 0,
+          compact: true,
+          has_frame: false,
+          slot_map: %{},
+          frame_slot: nil,
+          sub_tag_slots: 1,
+          button_raw_subs: 1
+        }
+
+      expr ->
+        analysis = Subscriptions.analyze_subscription_masks(expr)
+        build_slot_layout(analysis)
+    end
+  end
+
+  defp subscriptions_expr(%IR{} = ir, entry_module) do
+    ir.modules
+    |> Enum.find_value(fn mod ->
+      if mod.name == entry_module do
+        mod.declarations
+        |> Enum.find_value(fn
+          %{kind: :function, name: "subscriptions", expr: expr} when not is_nil(expr) -> expr
+          %{kind: :function, name: "subscriptions", body: body} when not is_nil(body) -> body
+          _ -> nil
+        end)
+      end
+    end)
+  end
+
+  defp build_slot_layout(%{compact: false} = analysis) do
+    Map.merge(analysis, %{
+      slot_map: %{},
+      frame_slot: nil,
+      sub_tag_slots: @fallback_sub_tag_slots,
+      button_raw_subs: max(analysis.button_raw_count, @fallback_button_raw_subs)
+    })
+  end
+
+  defp build_slot_layout(%{tag_masks: tag_masks, has_frame: has_frame} = analysis) do
+    {slot_map, next_index} =
+      Enum.map_reduce(tag_masks, 0, fn mask, index ->
+        name = slot_define_name(mask)
+        {{mask, {name, index}}, index + 1}
+      end)
+      |> then(fn {pairs, next_index} -> {Map.new(pairs), next_index} end)
+
+    frame_slot = if has_frame, do: next_index, else: nil
+    sub_tag_slots = next_index + if(has_frame, do: 1, else: 0) |> max(1)
+    button_raw_subs = max(analysis.button_raw_count, 1)
+
+    Map.merge(analysis, %{
+      slot_map: slot_map,
+      frame_slot: frame_slot,
+      sub_tag_slots: sub_tag_slots,
+      button_raw_subs: button_raw_subs
+    })
+  end
+
+  defp sub_tag_slot_fn(%{compact: false}) do
+    """
+    static int elmc_sub_tag_slot(int64_t mask) {
+      if (mask == 0) return -1;
+      if ((mask & (1LL << 13)) != 0) return 13;
+      if ((mask & (mask - 1)) != 0) return -1;
+      int bit = 0;
+      while (bit < 32 && (mask & (1LL << bit)) == 0) bit++;
+      return bit < 32 ? bit : -1;
+    }
+    """
+  end
+
+  defp sub_tag_slot_fn(%{compact: true} = analysis) do
+    frame_guard =
+      if is_integer(analysis.frame_slot) do
+        "  if ((mask & (1LL << 13)) != 0) return ELMC_WORKER_SLOT_FRAME;\n"
+      else
+        ""
+      end
+
+    switch_cases =
+      analysis.slot_map
+      |> Enum.map(fn {mask, {name, _index}} ->
+        "    case #{mask_case_label(mask)}: return #{name};"
+      end)
+      |> Enum.join("\n")
+
+    switch_body =
+      if switch_cases == "" do
+        "  (void)mask;\n  return -1;"
+      else
+        """
+        switch (mask) {
+        #{switch_cases}
+          default: return -1;
+        }
+        """
+      end
+
+    """
+    static int elmc_sub_tag_slot(int64_t mask) {
+      if (mask == 0) return -1;
+    #{frame_guard}#{switch_body}
+    }
+    """
+  end
+
+  defp mask_case_label(mask) when is_binary(mask) do
+    Map.get(Emit.subscription_mask_literals(), mask, mask)
+  end
+
+  defp slot_define_name(mask) when is_binary(mask) do
+    mask
+    |> String.replace_prefix("ELMC_SUBSCRIPTION_", "ELMC_WORKER_SLOT_")
+    |> String.replace(~r/[^A-Z0-9_]/, "_")
+    |> String.trim("_")
+  end
+
+  @spec worker_header(map()) :: String.t()
+  defp worker_header(analysis) do
+    slot_defines = worker_slot_defines(analysis)
+
     """
     #ifndef ELMC_WORKER_H
     #define ELMC_WORKER_H
 
     #include "elmc_generated.h"
 
-    #define ELMC_WORKER_MAX_BUTTON_RAW_SUBS 16
+    #define ELMC_WORKER_MAX_BUTTON_RAW_SUBS #{analysis.button_raw_subs}
+    #define ELMC_WORKER_SUB_TAG_SLOTS #{analysis.sub_tag_slots}
+    #{slot_defines}
 
     typedef struct {
       elmc_int_t button_id;
@@ -42,7 +175,7 @@ defmodule Elmc.Backend.Worker do
       ElmcValue *model;
       ElmcValue *pending_cmd;
       int64_t subscriptions;
-      elmc_int_t sub_msg_tags[32];
+      elmc_int_t sub_msg_tags[ELMC_WORKER_SUB_TAG_SLOTS];
       ElmcButtonRawSub button_raw_subs[ELMC_WORKER_MAX_BUTTON_RAW_SUBS];
       int button_raw_sub_count;
     } ElmcWorkerState;
@@ -60,8 +193,32 @@ defmodule Elmc.Backend.Worker do
     """
   end
 
-  @spec worker_source(ElmEx.IR.t(), String.t()) :: String.t()
-  defp worker_source(ir, entry_module) do
+  defp worker_slot_defines(%{compact: false}), do: ""
+
+  defp worker_slot_defines(%{slot_map: slot_map, frame_slot: frame_slot}) do
+    lines =
+      Enum.map(slot_map, fn {_mask, {name, index}} ->
+        "#define #{name} #{index}"
+      end)
+
+    frame_line =
+      if is_integer(frame_slot) do
+        ["#define ELMC_WORKER_SLOT_FRAME #{frame_slot}"]
+      else
+        []
+      end
+
+    (lines ++ frame_line)
+    |> Enum.sort()
+    |> Enum.join("\n")
+    |> case do
+      "" -> ""
+      defines -> defines <> "\n"
+    end
+  end
+
+  @spec worker_source(ElmEx.IR.t(), String.t(), map()) :: String.t()
+  defp worker_source(ir, entry_module, analysis) do
     module =
       Enum.find(ir.modules, fn mod ->
         mod.name == entry_module
@@ -196,18 +353,11 @@ defmodule Elmc.Backend.Worker do
       return merged;
     }
 
-    static int elmc_sub_tag_slot(int64_t mask) {
-      if (mask == 0) return -1;
-      if ((mask & (1LL << 13)) != 0) return 13;
-      if ((mask & (mask - 1)) != 0) return -1;
-      int bit = 0;
-      while (bit < 32 && (mask & (1LL << bit)) == 0) bit++;
-      return bit < 32 ? bit : -1;
-    }
+    #{sub_tag_slot_fn(analysis)}
 
     static void elmc_worker_clear_sub_tags(ElmcWorkerState *state) {
       if (!state) return;
-      for (int i = 0; i < 32; i++) state->sub_msg_tags[i] = 0;
+      for (int i = 0; i < ELMC_WORKER_SUB_TAG_SLOTS; i++) state->sub_msg_tags[i] = 0;
       state->button_raw_sub_count = 0;
     }
 
@@ -232,7 +382,7 @@ defmodule Elmc.Backend.Worker do
         }
         if (payload->arity > 0) {
           int slot = elmc_sub_tag_slot(payload->mask);
-          if (slot >= 0 && slot < 32) state->sub_msg_tags[slot] = payload->p0;
+          if (slot >= 0 && slot < ELMC_WORKER_SUB_TAG_SLOTS) state->sub_msg_tags[slot] = payload->p0;
         }
         return;
       }
@@ -260,7 +410,7 @@ defmodule Elmc.Backend.Worker do
     elmc_int_t elmc_worker_sub_msg_tag(ElmcWorkerState *state, int64_t flag) {
       if (!state || flag == 0) return 0;
       int slot = elmc_sub_tag_slot(flag);
-      if (slot < 0 || slot >= 32) return 0;
+      if (slot < 0 || slot >= ELMC_WORKER_SUB_TAG_SLOTS) return 0;
       return state->sub_msg_tags[slot];
     }
 

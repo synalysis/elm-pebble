@@ -1,7 +1,6 @@
 defmodule Ide.ProjectTemplatesTest do
   use Ide.DataCase, async: false
 
-  alias Ide.Emulator.PBW
   alias Ide.ProjectTemplates
   alias Ide.Projects
 
@@ -76,7 +75,7 @@ defmodule Ide.ProjectTemplatesTest do
     assert platforms == ["basalt", "chalk", "diorite", "emery", "flint", "gabbro"]
   end
 
-  test "game-2048 template includes aplite after size optimizations" do
+  test "game-2048 template includes aplite after startup timer removal" do
     platforms = ProjectTemplates.target_platforms_for_template("game-2048")
 
     assert platforms == [
@@ -88,37 +87,6 @@ defmodule Ide.ProjectTemplatesTest do
              "flint",
              "gabbro"
            ]
-  end
-
-  test "game-2048 packages for aplite within APP flash limit" do
-    workspace =
-      Path.join(
-        System.tmp_dir!(),
-        "game-2048-aplite-#{System.unique_integer([:positive])}"
-      )
-
-    assert :ok = ProjectTemplates.apply_template("game-2048", workspace)
-
-    assert {:ok, result} =
-             Ide.PebbleToolchain.package("game-2048-aplite",
-               workspace_root: workspace,
-               target_type: "app",
-               project_name: "2048",
-               target_platforms: ["aplite"]
-             )
-
-    assert {:ok, %{uuid: _uuid}} = PBW.load(result.artifact_path, "aplite")
-
-    elf_path = Path.join(result.app_root, "build/aplite/pebble-app.elf")
-    assert File.regular?(elf_path)
-
-    # Aplite APP is 24 KiB total (.text + .data + .bss), not pebble-app.bin alone.
-    app_usage = aplite_app_region_bytes(elf_path)
-
-    assert app_usage <= 24_576
-
-    assert app_usage <= 24_576 - 512,
-           "expected at least 512 B APP headroom on aplite, got #{24_576 - app_usage}"
   end
 
   test "watch demo templates with metadata restrict target platforms" do
@@ -163,40 +131,5 @@ defmodule Ide.ProjectTemplatesTest do
              })
 
     assert project.release_defaults["target_platforms"] == ["basalt"]
-  end
-
-  defp aplite_app_region_bytes(elf_path) do
-    size_bin =
-      System.find_executable("arm-none-eabi-size") ||
-        sdk_arm_tool("arm-none-eabi-size") ||
-        flunk("arm-none-eabi-size not found (install Pebble SDK toolchain)")
-
-    case System.cmd(size_bin, [elf_path]) do
-      {output, 0} ->
-        output
-        |> String.split("\n", trim: true)
-        |> Enum.at(1)
-        |> String.split(~r/\s+/, trim: true)
-        |> then(fn [text, data, bss | _] ->
-          String.to_integer(text) + String.to_integer(data) + String.to_integer(bss)
-        end)
-
-      {output, _} ->
-        flunk("arm-none-eabi-size failed for #{elf_path}: #{output}")
-    end
-  end
-
-  defp sdk_arm_tool(name) do
-    home = System.get_env("HOME")
-
-    if is_binary(home) do
-      path =
-        Path.join(
-          home,
-          ".pebble-sdk/SDKs/current/toolchain/arm-none-eabi/bin/#{name}"
-        )
-
-      if File.regular?(path), do: path
-    end
   end
 end

@@ -1042,6 +1042,8 @@ defmodule Ide.CompanionProtocolGenerator do
   defp elm_decoder(%{wire_type: :string}), do: "Decode.string"
   defp elm_decoder(%{wire_type: {:list, :int}, key: key}), do: "decodeListInt \"#{key}\""
   defp elm_decoder(%{wire_type: {:union, _type}}), do: "Decode.int"
+  defp elm_decoder(%{wire_type: :int}), do: "Decode.int"
+  defp elm_decoder(%{wire_type: {:enum, _type}}), do: "Decode.int"
 
   defp elm_decoder(%{wire_type: wire_type, key: key}),
     do: elm_decode_expr(wire_type, "\"#{key}\"", :raw)

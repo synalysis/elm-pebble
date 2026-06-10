@@ -166,6 +166,13 @@ defmodule Elmc.Backend.CCodegen.Emit do
     |> MapSet.new()
   end
 
+  @spec subscription_mask_literals() :: %{String.t() => String.t()}
+  def subscription_mask_literals do
+    fixed_magic_number_lines()
+    |> Enum.filter(fn {name, _} -> String.starts_with?(name, "ELMC_SUBSCRIPTION_") end)
+    |> Map.new()
+  end
+
   defp fixed_magic_number_lines do
     [
       {"ELMC_CONTEXT_STROKE_WIDTH", "1"},

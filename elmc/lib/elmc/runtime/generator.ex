@@ -114,17 +114,173 @@ defmodule Elmc.Runtime.Generator do
       Path.wildcard(Path.join(dir, "**/*.c"), match_dot: true)
       |> Enum.reject(&String.contains?(&1, "/runtime/elmc_runtime.c"))
 
-    Enum.reduce(files, %{}, fn path, acc ->
-      case File.read(path) do
-        {:ok, content} ->
-          content
-          |> runtime_reference_names()
-          |> Enum.reduce(acc, fn name, map -> Map.put(map, name, true) end)
+    contents =
+      files
+      |> Enum.flat_map(fn path ->
+        case File.read(path) do
+          {:ok, content} -> [content]
+          _ -> []
+        end
+      end)
 
-        _ ->
-          acc
+    macros =
+      contents
+      |> Enum.reduce(%{}, fn content, acc -> Map.merge(acc, preprocessor_bool_macros(content)) end)
+
+    Enum.reduce(contents, %{}, fn content, acc ->
+      content
+      |> runtime_reference_names(macros)
+      |> Enum.reduce(acc, fn name, map -> Map.put(map, name, true) end)
+    end)
+  end
+
+  @spec preprocessor_bool_macros(String.t()) :: %{String.t() => boolean()}
+  defp preprocessor_bool_macros(content) do
+    ~r/^\s*#define\s+(ELMC_[A-Z0-9_]+)\s+([01])\b/m
+    |> Regex.scan(content)
+    |> Map.new(fn [_match, name, value] -> {name, value == "1"} end)
+  end
+
+  @spec runtime_reference_names(String.t(), %{String.t() => boolean()}) :: [String.t()]
+  defp runtime_reference_names(content, macros) do
+    content
+    |> drop_inactive_preprocessor_blocks(macros)
+    |> runtime_reference_names()
+  end
+
+  @spec drop_inactive_preprocessor_blocks(String.t(), %{String.t() => boolean()}) :: String.t()
+  defp drop_inactive_preprocessor_blocks(content, macros) do
+    content
+    |> String.split("\n", trim: false)
+    |> Enum.reduce({[], [%{parent: true, active: true, matched: false}]}, fn line, {out, stack} ->
+      case preprocessor_directive(line) do
+        {:if, expr} ->
+          parent = List.first(stack).active
+          active = parent and preprocessor_expr_true?(expr, macros)
+          {out, [%{parent: parent, active: active, matched: active} | stack]}
+
+        {:ifdef, macro} ->
+          parent = List.first(stack).active
+          active = parent and Map.get(macros, macro, false)
+          {out, [%{parent: parent, active: active, matched: active} | stack]}
+
+        {:ifndef, macro} ->
+          parent = List.first(stack).active
+          active = parent and not Map.get(macros, macro, false)
+          {out, [%{parent: parent, active: active, matched: active} | stack]}
+
+        {:elif, expr} ->
+          case stack do
+            [current | rest] ->
+              active =
+                current.parent and not current.matched and preprocessor_expr_true?(expr, macros)
+
+              {out, [%{current | active: active, matched: current.matched or active} | rest]}
+
+            [] ->
+              {out, stack}
+          end
+
+        :else ->
+          case stack do
+            [current | rest] ->
+              active = current.parent and not current.matched
+              {out, [%{current | active: active, matched: true} | rest]}
+
+            [] ->
+              {out, stack}
+          end
+
+        :endif ->
+          case stack do
+            [_current | rest] when rest != [] -> {out, rest}
+            _ -> {out, stack}
+          end
+
+        nil ->
+          if List.first(stack).active do
+            {[line | out], stack}
+          else
+            {out, stack}
+          end
       end
     end)
+    |> elem(0)
+    |> Enum.reverse()
+    |> Enum.join("\n")
+  end
+
+  defp preprocessor_directive(line) do
+    cond do
+      match = Regex.run(~r/^\s*#if\s+(.+)$/, line) ->
+        {:if, Enum.at(match, 1)}
+
+      match = Regex.run(~r/^\s*#ifdef\s+([A-Za-z_][A-Za-z0-9_]*)/, line) ->
+        {:ifdef, Enum.at(match, 1)}
+
+      match = Regex.run(~r/^\s*#ifndef\s+([A-Za-z_][A-Za-z0-9_]*)/, line) ->
+        {:ifndef, Enum.at(match, 1)}
+
+      match = Regex.run(~r/^\s*#elif\s+(.+)$/, line) ->
+        {:elif, Enum.at(match, 1)}
+
+      Regex.match?(~r/^\s*#else\b/, line) ->
+        :else
+
+      Regex.match?(~r/^\s*#endif\b/, line) ->
+        :endif
+
+      true ->
+        nil
+    end
+  end
+
+  defp preprocessor_expr_true?(expr, macros) do
+    expr
+    |> then(fn expr ->
+      Regex.replace(~r/defined\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)/, expr, fn _, macro ->
+        if Map.get(macros, macro, false), do: "1", else: "0"
+      end)
+    end)
+    |> then(fn expr ->
+      Regex.replace(~r/\b[A-Za-z_][A-Za-z0-9_]*\b/, expr, fn macro ->
+        if Map.get(macros, macro, false), do: "1", else: "0"
+      end)
+    end)
+    |> eval_preprocessor_or()
+  end
+
+  defp eval_preprocessor_or(expr) do
+    expr
+    |> String.split("||")
+    |> Enum.any?(fn part ->
+      part
+      |> String.split("&&")
+      |> Enum.all?(fn term ->
+        term = String.trim(term)
+
+        cond do
+          String.starts_with?(term, "!") ->
+            not term_truthy?(String.trim_leading(term, "!"))
+
+          true ->
+            term_truthy?(term)
+        end
+      end)
+    end)
+  end
+
+  defp term_truthy?(term) do
+    term =
+      term
+      |> String.replace(~r/[()]/, "")
+      |> String.trim()
+
+    case Integer.parse(term) do
+      {0, _} -> false
+      {_value, _} -> true
+      :error -> false
+    end
   end
 
   @spec runtime_reference_names(String.t()) :: [String.t()]
@@ -507,6 +663,7 @@ defmodule Elmc.Runtime.Generator do
     elmc_int_t elmc_as_int(ElmcValue *value);
     elmc_int_t elmc_as_bool(ElmcValue *value);
     int elmc_value_equal(ElmcValue *left, ElmcValue *right);
+    int elmc_list_equal_int(ElmcValue *left, ElmcValue *right);
     int elmc_string_length(ElmcValue *value);
     ElmcValue *elmc_list_head(ElmcValue *list);
     ElmcValue *elmc_list_nth_maybe(ElmcValue *list, ElmcValue *index);
@@ -577,6 +734,7 @@ defmodule Elmc.Runtime.Generator do
     ElmcValue *elmc_list_foldr(ElmcValue *f, ElmcValue *acc, ElmcValue *list);
     ElmcValue *elmc_list_append(ElmcValue *a, ElmcValue *b);
     ElmcValue *elmc_list_concat(ElmcValue *lists);
+    ElmcValue *elmc_list_concat_array(ElmcValue * const *lists, int count);
     ElmcValue *elmc_list_concat_map(ElmcValue *f, ElmcValue *list);
     ElmcValue *elmc_list_indexed_map(ElmcValue *f, ElmcValue *list);
     ElmcValue *elmc_list_filter_map(ElmcValue *f, ElmcValue *list);
@@ -1339,28 +1497,42 @@ defmodule Elmc.Runtime.Generator do
 
     ElmcValue *elmc_list_replace_nth_int(ElmcValue *list, elmc_int_t index, elmc_int_t value) {
       ElmcValue *cursor = list;
-      int count = 0;
+      ElmcValue *out = NULL;
+      ElmcValue **tail_slot = NULL;
+      elmc_int_t i = 0;
       while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
         ElmcCons *node = (ElmcCons *)cursor->payload;
+        ElmcValue *head = NULL;
+        if (i == index) {
+          head = elmc_new_int(value);
+          if (!head) {
+            elmc_release(out);
+            return elmc_retain(list);
+          }
+        } else {
+          head = node->head;
+        }
+        ElmcValue *empty = elmc_list_nil();
+        ElmcValue *cell = elmc_list_cons(head, empty);
+        elmc_release(empty);
+        if (i == index) {
+          elmc_release(head);
+        }
+        if (!cell) {
+          elmc_release(out);
+          return elmc_retain(list);
+        }
+        if (tail_slot) {
+          elmc_release(*tail_slot);
+          *tail_slot = cell;
+        } else {
+          out = cell;
+        }
+        tail_slot = &((ElmcCons *)cell->payload)->tail;
         cursor = node->tail;
-        count++;
+        i++;
       }
-      if (count <= 0) return elmc_list_nil();
-
-      elmc_int_t *items = (elmc_int_t *)elmc_malloc(sizeof(elmc_int_t) * (size_t)count, __func__);
-      if (!items) return elmc_retain(list);
-
-      cursor = list;
-      for (int i = 0; i < count; i++) {
-        ElmcCons *node = (ElmcCons *)cursor->payload;
-        items[i] = (i == index) ? value : elmc_as_int(node->head);
-        cursor = node->tail;
-      }
-
-      ElmcValue *out = elmc_list_from_int_array(items, count);
-      free(items);
-      if (!out) return elmc_retain(list);
-      return out;
+      return out ? out : elmc_list_nil();
     }
 
     ElmcValue *elmc_maybe_nothing(void) {
@@ -1573,6 +1745,21 @@ defmodule Elmc.Runtime.Generator do
 
     elmc_int_t elmc_as_bool(ElmcValue *value) {
       return elmc_as_int(value) != 0;
+    }
+
+    int elmc_list_equal_int(ElmcValue *left, ElmcValue *right) {
+      if (left == right) return 1;
+      ElmcValue *a = left;
+      ElmcValue *b = right;
+      while (a && b && a->tag == ELMC_TAG_LIST && b->tag == ELMC_TAG_LIST) {
+        if (!a->payload || !b->payload) return a->payload == b->payload;
+        ElmcCons *ca = (ElmcCons *)a->payload;
+        ElmcCons *cb = (ElmcCons *)b->payload;
+        if (elmc_as_int(ca->head) != elmc_as_int(cb->head)) return 0;
+        a = ca->tail;
+        b = cb->tail;
+      }
+      return 0;
     }
 
     int elmc_value_equal(ElmcValue *left, ElmcValue *right) {
@@ -2767,32 +2954,67 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_list_append(ElmcValue *a, ElmcValue *b) {
-      ElmcValue *rev_a = elmc_list_reverse_copy(a);
-      ElmcValue *out = elmc_retain(b);
-      ElmcValue *cursor = rev_a;
+      ElmcValue *out = NULL;
+      ElmcValue **tail_slot = NULL;
+      ElmcValue *cursor = a;
       while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
         ElmcCons *node = (ElmcCons *)cursor->payload;
-        ElmcValue *next = elmc_list_cons(node->head, out);
-        elmc_release(out);
-        out = next;
+        ElmcValue *cell = elmc_list_cons(node->head, elmc_list_nil());
+        if (!cell) {
+          elmc_release(out);
+          return elmc_retain(b);
+        }
+        if (tail_slot) {
+          elmc_release(*tail_slot);
+          *tail_slot = cell;
+        } else {
+          out = cell;
+        }
+        tail_slot = &((ElmcCons *)cell->payload)->tail;
         cursor = node->tail;
       }
-      elmc_release(rev_a);
+      if (!out) return elmc_retain(b);
+      elmc_release(*tail_slot);
+      *tail_slot = elmc_retain(b);
       return out;
     }
 
     ElmcValue *elmc_list_concat(ElmcValue *lists) {
-      ElmcValue *rev_lists = elmc_list_reverse_copy(lists);
+      ElmcValue *out = NULL;
+      ElmcValue **tail_slot = NULL;
+      ElmcValue *outer = lists;
+      while (outer && outer->tag == ELMC_TAG_LIST && outer->payload != NULL) {
+        ElmcCons *outer_node = (ElmcCons *)outer->payload;
+        ElmcValue *inner = outer_node->head;
+        while (inner && inner->tag == ELMC_TAG_LIST && inner->payload != NULL) {
+          ElmcCons *inner_node = (ElmcCons *)inner->payload;
+          ElmcValue *cell = elmc_list_cons(inner_node->head, elmc_list_nil());
+          if (!cell) {
+            elmc_release(out);
+            return elmc_list_nil();
+          }
+          if (tail_slot) {
+            elmc_release(*tail_slot);
+            *tail_slot = cell;
+          } else {
+            out = cell;
+          }
+          tail_slot = &((ElmcCons *)cell->payload)->tail;
+          inner = inner_node->tail;
+        }
+        outer = outer_node->tail;
+      }
+      return out ? out : elmc_list_nil();
+    }
+
+    ElmcValue *elmc_list_concat_array(ElmcValue * const *lists, int count) {
       ElmcValue *out = elmc_list_nil();
-      ElmcValue *cursor = rev_lists;
-      while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
-        ElmcCons *node = (ElmcCons *)cursor->payload;
-        ElmcValue *merged = elmc_list_append(node->head, out);
+      if (!lists || count <= 0) return out;
+      for (int i = count - 1; i >= 0; i--) {
+        ElmcValue *merged = elmc_list_append(lists[i], out);
         elmc_release(out);
         out = merged;
-        cursor = node->tail;
       }
-      elmc_release(rev_lists);
       return out;
     }
 
@@ -3117,20 +3339,28 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_list_take_int(elmc_int_t count, ElmcValue *list) {
-      ElmcValue *rev = elmc_list_nil();
+      ElmcValue *out = NULL;
+      ElmcValue **tail_slot = NULL;
       ElmcValue *cursor = list;
       elmc_int_t i = 0;
       while (i < count && cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
         ElmcCons *node = (ElmcCons *)cursor->payload;
-        ElmcValue *next = elmc_list_cons(node->head, rev);
-        elmc_release(rev);
-        rev = next;
+        ElmcValue *cell = elmc_list_cons(node->head, elmc_list_nil());
+        if (!cell) {
+          elmc_release(out);
+          return elmc_list_nil();
+        }
+        if (tail_slot) {
+          elmc_release(*tail_slot);
+          *tail_slot = cell;
+        } else {
+          out = cell;
+        }
+        tail_slot = &((ElmcCons *)cell->payload)->tail;
         cursor = node->tail;
         i++;
       }
-      ElmcValue *out = elmc_list_reverse_copy(rev);
-      elmc_release(rev);
-      return out;
+      return out ? out : elmc_list_nil();
     }
 
     ElmcValue *elmc_list_drop(ElmcValue *n, ElmcValue *list) {
@@ -3144,18 +3374,25 @@ defmodule Elmc.Runtime.Generator do
         cursor = ((ElmcCons *)cursor->payload)->tail;
         i++;
       }
-      /* Copy the remainder */
-      ElmcValue *rev = elmc_list_nil();
+      ElmcValue *out = NULL;
+      ElmcValue **tail_slot = NULL;
       while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
         ElmcCons *node = (ElmcCons *)cursor->payload;
-        ElmcValue *next = elmc_list_cons(node->head, rev);
-        elmc_release(rev);
-        rev = next;
+        ElmcValue *cell = elmc_list_cons(node->head, elmc_list_nil());
+        if (!cell) {
+          elmc_release(out);
+          return elmc_list_nil();
+        }
+        if (tail_slot) {
+          elmc_release(*tail_slot);
+          *tail_slot = cell;
+        } else {
+          out = cell;
+        }
+        tail_slot = &((ElmcCons *)cell->payload)->tail;
         cursor = node->tail;
       }
-      ElmcValue *out = elmc_list_reverse_copy(rev);
-      elmc_release(rev);
-      return out;
+      return out ? out : elmc_list_nil();
     }
 
     ElmcValue *elmc_list_partition(ElmcValue *f, ElmcValue *list) {

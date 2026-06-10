@@ -6,6 +6,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.Float, as: NativeFloat
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
+  alias Elmc.Backend.CCodegen.Native.TypedReturn
   alias Elmc.Backend.CCodegen.OwnershipCompile
   alias Elmc.Backend.CCodegen.RuntimeCall
   alias Elmc.Backend.CCodegen.SpecialValues
@@ -637,58 +638,93 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
           Types.compile_counter()
         ) :: Types.compile_result()
   def compare_operator(left, right, operator, env, counter) do
-    if Host.native_int_compare_safe?(operator, left, right, env) do
-      int_compare_operator(left, right, operator, env, counter)
-    else
-      {left_code, left_var, counter, left_borrowed?} = compile_compare_operand(left, env, counter)
+    cond do
+      Host.native_int_compare_safe?(operator, left, right, env) ->
+        int_compare_operator(left, right, operator, env, counter)
 
-      {right_code, right_var, counter, right_borrowed?} =
-        compile_compare_operand(right, env, counter)
+      list_int_compare_safe?(operator, left, right, env) ->
+        list_int_compare_operator(left, right, operator, env, counter)
 
-      next = counter + 1
-      out = "tmp_#{next}"
-      left_release = compare_operand_release(env, left_var, left_borrowed?)
-      right_release = compare_operand_release(env, right_var, right_borrowed?)
+      true ->
+        {left_code, left_var, counter, left_borrowed?} =
+          compile_compare_operand(left, env, counter)
 
-      code =
-        case operator do
-          "__eq__" ->
-            """
-            #{left_code}
-              #{right_code}
-              ElmcValue *#{out} = elmc_new_bool(elmc_value_equal(#{left_var}, #{right_var}));
-              #{left_release}#{right_release}\
-            """
+        {right_code, right_var, counter, right_borrowed?} =
+          compile_compare_operand(right, env, counter)
 
-          "__neq__" ->
-            """
-            #{left_code}
-              #{right_code}
-              ElmcValue *#{out} = elmc_new_bool(!elmc_value_equal(#{left_var}, #{right_var}));
-              #{left_release}#{right_release}\
-            """
+        next = counter + 1
+        out = "tmp_#{next}"
+        left_release = compare_operand_release(env, left_var, left_borrowed?)
+        right_release = compare_operand_release(env, right_var, right_borrowed?)
 
-          _ ->
-            comparison =
-              case operator do
-                "__lt__" -> "<"
-                "__lte__" -> "<="
-                "__gt__" -> ">"
-                "__gte__" -> ">="
-              end
+        code =
+          case operator do
+            "__eq__" ->
+              """
+              #{left_code}
+                #{right_code}
+                ElmcValue *#{out} = elmc_new_bool(elmc_value_equal(#{left_var}, #{right_var}));
+                #{left_release}#{right_release}\
+              """
 
-            """
-            #{left_code}
-              #{right_code}
-              ElmcValue *__cmp_#{next} = elmc_basics_compare(#{left_var}, #{right_var});
-              ElmcValue *#{out} = elmc_new_bool(elmc_as_int(__cmp_#{next}) #{comparison} 0);
-              elmc_release(__cmp_#{next});
-              #{left_release}#{right_release}\
-            """
-        end
+            "__neq__" ->
+              """
+              #{left_code}
+                #{right_code}
+                ElmcValue *#{out} = elmc_new_bool(!elmc_value_equal(#{left_var}, #{right_var}));
+                #{left_release}#{right_release}\
+              """
 
-      {code, out, next}
+            _ ->
+              comparison =
+                case operator do
+                  "__lt__" -> "<"
+                  "__lte__" -> "<="
+                  "__gt__" -> ">"
+                  "__gte__" -> ">="
+                end
+
+              """
+              #{left_code}
+                #{right_code}
+                ElmcValue *__cmp_#{next} = elmc_basics_compare(#{left_var}, #{right_var});
+                ElmcValue *#{out} = elmc_new_bool(elmc_as_int(__cmp_#{next}) #{comparison} 0);
+                elmc_release(__cmp_#{next});
+                #{left_release}#{right_release}\
+              """
+          end
+
+        {code, out, next}
     end
+  end
+
+  defp list_int_compare_safe?(operator, left, right, env)
+       when operator in ["__eq__", "__neq__"] do
+    TypedReturn.list_int_expr?(left, env) and TypedReturn.list_int_expr?(right, env)
+  end
+
+  defp list_int_compare_safe?(_operator, _left, _right, _env), do: false
+
+  defp list_int_compare_operator(left, right, operator, env, counter) do
+    {left_code, left_var, counter, left_borrowed?} = compile_compare_operand(left, env, counter)
+
+    {right_code, right_var, counter, right_borrowed?} =
+      compile_compare_operand(right, env, counter)
+
+    next = counter + 1
+    out = "tmp_#{next}"
+    left_release = compare_operand_release(env, left_var, left_borrowed?)
+    right_release = compare_operand_release(env, right_var, right_borrowed?)
+    negate = if operator == "__neq__", do: "!", else: ""
+
+    code = """
+    #{left_code}
+      #{right_code}
+      ElmcValue *#{out} = elmc_new_bool(#{negate}elmc_list_equal_int(#{left_var}, #{right_var}));
+      #{left_release}#{right_release}\
+    """
+
+    {code, out, next}
   end
 
   defp compile_compare_operand(%{op: :var, name: name}, env, counter) do
