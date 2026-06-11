@@ -460,6 +460,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
     value_native? and usage.total > 0 and usage.boxed == 0 and not lambda?
   end
 
+  defp native_int_let?(_name, _value_expr, _in_expr, _env), do: false
+
   defp native_int_let_value?(value_expr, env) do
     case TypedReturn.expr_type(value_expr, env) do
       nil -> Host.native_int_expr?(value_expr, env)
@@ -467,8 +469,6 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
       _ -> false
     end
   end
-
-  defp native_int_let?(_name, _value_expr, _in_expr, _env), do: false
 
   defp native_string_let?(name, value_expr, in_expr, env)
        when is_binary(name) or is_atom(name) do
@@ -536,7 +536,12 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
     if EnvBindings.same_binding?(name, var_name), do: [context], else: []
   end
 
-  defp collect_direct_var_contexts(name, %{op: :field_access, arg: arg, field: field}, _context, env) do
+  defp collect_direct_var_contexts(
+         name,
+         %{op: :field_access, arg: arg, field: field},
+         _context,
+         env
+       ) do
     case record_literal_field_expr(arg, field) do
       {:ok, field_expr} ->
         field_context =
@@ -554,16 +559,6 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
     arg_contexts = collect_direct_var_contexts(name, arg, :boxed, env)
     if arg_contexts != [], do: [:boxed | arg_contexts], else: arg_contexts
   end
-
-  defp record_literal_field_expr(%{op: :record_literal, fields: fields}, field)
-       when is_list(fields) and is_binary(field) do
-    case Enum.find(fields, &(&1.name == field)) do
-      %{expr: expr} -> {:ok, expr}
-      nil -> :error
-    end
-  end
-
-  defp record_literal_field_expr(_arg, _field), do: :error
 
   defp collect_direct_var_contexts(name, %{op: :add_const, var: var_name}, _context, _env) do
     if EnvBindings.same_binding?(name, var_name), do: [:native], else: []
@@ -794,6 +789,16 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
     do: Enum.flat_map(exprs, &collect_direct_var_contexts(name, &1, context, env))
 
   defp collect_direct_var_contexts(_name, _expr, _context, _env), do: []
+
+  defp record_literal_field_expr(%{op: :record_literal, fields: fields}, field)
+       when is_list(fields) and is_binary(field) do
+    case Enum.find(fields, &(&1.name == field)) do
+      %{expr: expr} -> {:ok, expr}
+      nil -> :error
+    end
+  end
+
+  defp record_literal_field_expr(_arg, _field), do: :error
 
   defp collect_direct_var_contexts_from_map(name, expr, context, env) do
     expr

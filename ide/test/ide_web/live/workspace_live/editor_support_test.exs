@@ -64,5 +64,4 @@ defmodule IdeWeb.WorkspaceLive.EditorSupportTest do
                []
              )
   end
-
 end

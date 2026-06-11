@@ -22,7 +22,7 @@ import {
 } from "@codemirror/view"
 import {defaultKeymap, history, historyKeymap, indentLess, indentSelection} from "@codemirror/commands"
 import {searchKeymap} from "@codemirror/search"
-import {completionKeymap, startCompletion} from "@codemirror/autocomplete"
+import {acceptCompletion, completionKeymap, startCompletion} from "@codemirror/autocomplete"
 import {codeFolding, foldGutter, foldKeymap, foldService, indentService, indentUnit, IndentContext} from "@codemirror/language"
 import {lintGutter, setDiagnostics, type Diagnostic} from "@codemirror/lint"
 import {LSPClient, formatKeymap, hoverTooltips, serverCompletion, serverDiagnostics} from "@codemirror/lsp-client"
@@ -32,14 +32,6 @@ type EditorTheme = "dark" | "light" | "system"
 type EditorMode = "vim" | "regular"
 type FoldRange = {start_line: number; end_line: number}
 type TokenHighlight = {line: number; column: number; length: number; class?: string}
-type CompletionItem = {label?: string; insert_text?: string}
-type CompletionState = {
-  items: CompletionItem[]
-  selectedIndex: number
-  from: number
-  to: number
-  visible: boolean
-}
 type EditorRestoreState = {cursor_offset: number; scroll_top: number; scroll_left: number}
 type LintRow = {
   line?: number
@@ -335,7 +327,6 @@ export class CodeMirrorEditorHost {
   hiddenInput: HTMLInputElement | null
   form: HTMLFormElement | null
   modeBadge: HTMLElement | null
-  completionPanel: HTMLElement | null
   editorMode: EditorMode
   editorTheme: EditorTheme
   editorLineNumbers: boolean
@@ -365,7 +356,6 @@ export class CodeMirrorEditorHost {
   themeCompartment = new Compartment()
   lineNumbersCompartment = new Compartment()
   activeLineCompartment = new Compartment()
-  completionState: CompletionState = {items: [], selectedIndex: 0, from: 0, to: 0, visible: false}
   view?: EditorView
   onKeydown?: (event: KeyboardEvent) => void
   onContextMenu?: (event: MouseEvent) => void
@@ -382,7 +372,6 @@ export class CodeMirrorEditorHost {
     this.hiddenInput = this.el.querySelector<HTMLInputElement>("[data-role='input']")
     this.form = this.el.closest("form")
     this.modeBadge = this.el.querySelector("[data-role='mode-badge']")
-    this.completionPanel = this.el.querySelector("[data-role='completion-panel']")
     this.editorMode = safeLower(this.el.dataset.editorMode) === "vim" ? "vim" : "regular"
     this.editorTheme = parseEditorTheme(this.el.dataset.editorTheme)
     this.editorLineNumbers = parseBooleanDataset(this.el.dataset.editorLineNumbers, true)
@@ -426,13 +415,11 @@ export class CodeMirrorEditorHost {
     this.themeCompartment = new Compartment()
     this.lineNumbersCompartment = new Compartment()
     this.activeLineCompartment = new Compartment()
-    this.completionState = {items: [], selectedIndex: 0, from: 0, to: 0, visible: false}
   }
 
   mount() {
     if (!this.root || !this.hiddenInput) return
     this.ensureModeBadge()
-    this.ensureCompletionPanel()
 
     const initialContent = this.hiddenInput.value || ""
     const initialRestoreState = this.restoreStateFromDataset(initialContent.length)
@@ -769,15 +756,6 @@ export class CodeMirrorEditorHost {
     this.el.appendChild(this.modeBadge)
   }
 
-  ensureCompletionPanel() {
-    if (this.completionPanel) return
-    this.completionPanel = document.createElement("div")
-    this.completionPanel.dataset.role = "completion-panel"
-    this.completionPanel.className =
-      "absolute right-2 top-2 z-30 hidden max-h-56 w-72 overflow-auto rounded border border-zinc-700 bg-zinc-900 text-xs text-zinc-100 shadow-lg"
-    this.el.appendChild(this.completionPanel)
-  }
-
   updateModeBadge() {
     if (!this.modeBadge) return
     this.modeBadge.textContent = this.editorMode === "vim" ? "VIM" : "REGULAR"
@@ -1013,10 +991,7 @@ export class CodeMirrorEditorHost {
   runTabIndent(view: EditorView, outdent: boolean): boolean {
     if (this.readOnly) return false
 
-    if (this.completionState.visible) {
-      this.acceptCompletion()
-      return true
-    }
+    if (acceptCompletion(view)) return true
 
     if (outdent) return indentLess(view)
     if (!view.state.selection.ranges.every(range => range.empty)) return indentSelection(view)
@@ -1041,19 +1016,9 @@ export class CodeMirrorEditorHost {
     return true
   }
 
-  requestCompletions(manual = true) {
-    if (this.lspClient && this.lspClient.connected) {
-      if (this.view) startCompletion(this.view)
-      return
-    }
+  requestCompletions(): void {
     if (!this.view || this.readOnly) return
-    const {start, end} = this.getSelection()
-    this.hook.pushEvent("editor-request-completions", {
-      content: this.getValue(),
-      selection_start: start,
-      selection_end: end,
-      manual: !!manual
-    })
+    startCompletion(this.view)
   }
 
   scheduleAutoCompletions(): void {
@@ -1067,7 +1032,7 @@ export class CodeMirrorEditorHost {
     const prefix = this.currentCompletionPrefix()
     if (!prefix || prefix.length < 1) return
 
-    this.autoCompletionTimer = setTimeout(() => this.requestCompletions(false), 120)
+    this.autoCompletionTimer = setTimeout(() => this.requestCompletions(), 120)
   }
 
   currentCompletionPrefix() {
@@ -1075,86 +1040,9 @@ export class CodeMirrorEditorHost {
     const cursor = this.view.state.selection.main.head
     const content = this.getValue()
     const prefix = content.slice(0, cursor)
+    if (prefix.endsWith(".")) return "."
     const match = prefix.match(/([A-Za-z_][A-Za-z0-9_']*)$/)
     return match ? match[1] : ""
-  }
-
-  showCompletions({
-    items,
-    replace_from,
-    replace_to
-  }: {
-    items?: CompletionItem[]
-    replace_from?: number
-    replace_to?: number
-  }): void {
-    if (this.lspClient && this.lspClient.connected) return
-    if (!Array.isArray(items) || items.length === 0) {
-      this.dismissCompletions()
-      return
-    }
-    const value = this.getValue()
-    this.completionState = {
-      items,
-      selectedIndex: 0,
-      from: clamp(Number(replace_from || 0), 0, value.length),
-      to: clamp(Number(replace_to || 0), 0, value.length),
-      visible: true
-    }
-    this.renderCompletionPanel()
-  }
-
-  dismissCompletions() {
-    this.completionState.visible = false
-    this.completionState.items = []
-    if (!this.completionPanel) return
-    this.completionPanel.classList.add("hidden")
-    this.completionPanel.innerHTML = ""
-  }
-
-  renderCompletionPanel(): void {
-    const panel = this.completionPanel
-    if (!panel) return
-    if (!this.completionState.visible || this.completionState.items.length === 0) {
-      this.dismissCompletions()
-      return
-    }
-
-    panel.classList.remove("hidden")
-    panel.innerHTML = ""
-
-    this.completionState.items.forEach((item, index) => {
-      const row = document.createElement("button")
-      row.type = "button"
-      row.className =
-        "block w-full border-b border-zinc-800 px-3 py-2 text-left font-mono text-xs last:border-b-0 hover:bg-zinc-800"
-      if (index === this.completionState.selectedIndex) row.classList.add("bg-zinc-800")
-      row.textContent = item.label || item.insert_text || ""
-      row.addEventListener("mousedown", event => {
-        event.preventDefault()
-        this.acceptCompletion(index)
-      })
-      panel.appendChild(row)
-    })
-  }
-
-  moveCompletionSelection(delta: number): void {
-    if (!this.completionState.visible || this.completionState.items.length === 0) return
-    const len = this.completionState.items.length
-    this.completionState.selectedIndex = (this.completionState.selectedIndex + delta + len) % len
-    this.renderCompletionPanel()
-  }
-
-  acceptCompletion(index: number = this.completionState.selectedIndex): void {
-    if (!this.view || !this.completionState.visible) return
-    const item = this.completionState.items[index]
-    if (!item) return
-    const text = typeof item.insert_text === "string" ? item.insert_text : item.label || ""
-    this.view.dispatch({
-      changes: {from: this.completionState.from, to: this.completionState.to, insert: text},
-      selection: {anchor: this.completionState.from + text.length}
-    })
-    this.dismissCompletions()
   }
 
   cursorOffsetFromEvent(event: MouseEvent): number {
@@ -1193,32 +1081,9 @@ export class CodeMirrorEditorHost {
       this.pendingEnterIndent = true
     }
 
-    if (this.completionState.visible) {
-      if (event.key === "ArrowDown") {
-        event.preventDefault()
-        this.moveCompletionSelection(1)
-        return
-      }
-      if (event.key === "ArrowUp") {
-        event.preventDefault()
-        this.moveCompletionSelection(-1)
-        return
-      }
-      if (event.key === "Enter" || event.key === "Tab") {
-        event.preventDefault()
-        this.acceptCompletion()
-        return
-      }
-      if (event.key === "Escape") {
-        event.preventDefault()
-        this.dismissCompletions()
-        return
-      }
-    }
-
     if (isManualCompletionKey(event)) {
       event.preventDefault()
-      this.requestCompletions(true)
+      this.requestCompletions()
       return
     }
 
@@ -1381,7 +1246,6 @@ export class CodeMirrorEditorHost {
     clearAppTimeout(this.scrollStateTimer)
     this.reportEditorState()
     this.unbindDomEvents()
-    this.dismissCompletions()
     if (this.lspClient) this.lspClient.disconnect()
     if (this.lspTransport) this.lspTransport.destroy()
     if (this.view) this.view.destroy()

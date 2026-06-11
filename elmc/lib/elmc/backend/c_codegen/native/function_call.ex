@@ -22,7 +22,13 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
     end
   end
 
-  @spec compile(String.t(), String.t(), [Types.ir_expr()], Types.compile_env(), Types.compile_counter()) ::
+  @spec compile(
+          String.t(),
+          String.t(),
+          [Types.ir_expr()],
+          Types.compile_env(),
+          Types.compile_counter()
+        ) ::
           Types.compile_result()
   def compile(module_name, name, args, env, counter) do
     decl = env |> Map.get(:__program_decls__, %{}) |> Map.fetch!({module_name, name})
@@ -76,7 +82,16 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
 
     if decl && return_kind(decl, module_name, decl_map) == expected_kind do
       {code, ref, counter, ^expected_kind} =
-        compile_native_result(module_name, name, args, env, counter, decl, decl_map, expected_kind)
+        compile_native_result(
+          module_name,
+          name,
+          args,
+          env,
+          counter,
+          decl,
+          decl_map,
+          expected_kind
+        )
 
       {code, ref, counter}
     else
@@ -172,6 +187,8 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
     end
   end
 
+  def return_kind(_decl, _module_name, _decl_map), do: :boxed
+
   defp scalar_return_kind(decl, module_name, decl_map, type, expr) do
     env = callee_env(decl, module_name, decl_map)
 
@@ -200,8 +217,6 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
         :boxed
     end
   end
-
-  def return_kind(_decl, _module_name, _decl_map), do: :boxed
 
   @spec c_return_type(native_return_kind()) :: String.t()
   def c_return_type(:native_int), do: "elmc_int_t"
@@ -288,7 +303,9 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
   @spec bool_arg_safe?(String.t(), Types.ir_expr() | nil, String.t(), Types.function_decl_map()) ::
           boolean()
   defp bool_arg_safe?(arg, expr, module_name, decl_map) do
-    usage = Host.native_bool_usage(arg, expr || %{op: :int_literal, value: 0}, module_name, decl_map)
+    usage =
+      Host.native_bool_usage(arg, expr || %{op: :int_literal, value: 0}, module_name, decl_map)
+
     (usage.total == 0 or usage.boxed == 0) and not Host.binding_used_in_lambda?(arg, expr)
   end
 

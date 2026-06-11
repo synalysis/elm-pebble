@@ -2,10 +2,6 @@
 # Agent-backed debugger delegates, and third-party WebSockex option types.
 # Logic is covered by tests; suppressing analyzer false positives until upstream fixes land.
 [
-  {"lib/ide/pebble_toolchain.ex", :pattern_match},
-  {"lib/ide/pebble_toolchain.ex", :apply},
-  {"lib/ide/resources/resource_store.ex", :call},
-  {"lib/ide_web/live/workspace_live/debugger_preview.ex", :unused_fun},
   {"lib/ide_web/live/workspace_live/debugger_support/live.ex", :no_return},
   {"lib/ide_web/live/workspace_live/debugger_support/live.ex", :unused_fun},
   {"lib/ide_web/live/workspace_live/editor_flow.ex", :pattern_match},
@@ -30,6 +26,7 @@
   {"lib/ide/debugger/configuration_api.ex", :no_return},
   {"lib/ide/debugger/hot_reload_session.ex", :no_return},
   {"lib/ide/debugger/runtime_api.ex", :no_return},
+  {"lib/ide/debugger/runtime_api.ex", :pattern_match},
   {"lib/ide/debugger/runtime_contexts.ex", :no_return},
   {"lib/ide/debugger/runtime_hub.ex", :no_return},
   {"lib/ide/debugger/session_api.ex", :no_return},
@@ -42,9 +39,9 @@
   # Dialyzer reports `@moduledoc` / `@doc false` as line-1 pattern_match (false vs true).
   {"lib/ide/debugger/elm_introspect/view_tree.ex", :pattern_match},
   {"lib/ide/debugger/elm_introspect/view_tree/structure.ex", :pattern_match},
-  {"lib/ide_web/live/workspace_live/debugger_flow.ex", :unused_fun},
-  {"lib/ide_web/live/workspace_live/debugger_flow.ex", :no_return},
-  {"lib/ide_web/live/workspace_live/debugger_flow.ex", :pattern_match},
+  {"lib/ide_web/live/workspace_live/debugger_flow/core.ex", :unused_fun},
+  {"lib/ide_web/live/workspace_live/debugger_flow/core.ex", :no_return},
+  {"lib/ide_web/live/workspace_live/debugger_flow/core.ex", :pattern_match},
   {"lib/ide/debugger/runtime_model_normalize.ex", :pattern_match},
   {"lib/ide/debugger/runtime_model_wire.ex", :pattern_match},
   {"lib/ide/debugger/wire_values.ex", :pattern_match},
@@ -52,7 +49,6 @@
   {"lib/ide/mcp/handlers/debugger.ex", :pattern_match},
   {"lib/ide/debugger/runtime_hub.ex", :pattern_match},
   {"lib/ide/debugger/auto_fire_runtime.ex", :pattern_match},
-  {"lib/ide/debugger/step_execution.ex", :pattern_match},
   {"lib/ide/debugger/companion_phone_compile.ex", :no_return},
   {"lib/ide/debugger/companion_phone_compile.ex", :pattern_match},
   {"lib/ide/debugger/deferred_companion_init.ex", :no_return},
@@ -65,11 +61,10 @@
   {"lib/ide/debugger/surface_compile_artifacts.ex", :pattern_match_cov},
   {"lib/ide/debugger/runtime_contexts.ex", :call},
   {"lib/ide/debugger/runtime_executor.ex", :pattern_match_cov},
-  {"lib/ide/debugger/step_execution.ex", :call},
   {"lib/ide/emulator/pbw_installer/post_install.ex", :call},
   {"lib/ide/mcp/debugger_template_corpus.ex", :no_return},
-  {"lib/ide_web/live/workspace_live/debugger_page.ex", :pattern_match},
-  {"lib/ide_web/live/workspace_live/debugger_page.ex", :pattern_match_cov},
+  {"lib/ide_web/live/workspace_live/debugger_page/core.ex", :pattern_match},
+  {"lib/ide_web/live/workspace_live/debugger_page/core.ex", :pattern_match_cov},
   {"lib/ide_web/live/workspace_live/debugger_support/timeline.ex", :invalid_contract},
-  {"lib/ide_web/live/workspace_live/debugger_page.ex", :guard_fail_pat}
+  {"lib/ide_web/live/workspace_live/debugger_page/core.ex", :guard_fail_pat}
 ]

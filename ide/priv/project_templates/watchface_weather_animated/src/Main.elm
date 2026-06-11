@@ -89,8 +89,8 @@ update msg model =
                         if next == 0 then
                             update EnableWeatherTransitions { model | warmupTicksRemaining = 0 }
 
-                        else
-                            ( { model | warmupTicksRemaining = next }, Cmd.none )
+                    else
+                        ( { model | warmupTicksRemaining = next }, Cmd.none )
 
                     else
                         ( model, Cmd.none )

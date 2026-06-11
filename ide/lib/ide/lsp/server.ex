@@ -2,6 +2,7 @@ defmodule Ide.Lsp.Server do
   @moduledoc false
 
   alias Ide.EditorCompletion
+  alias Ide.EditorCompletionContext
   alias Ide.EditorDocLinks
   alias Ide.ElmFormat
   alias Ide.Formatter
@@ -95,14 +96,17 @@ defmodule Ide.Lsp.Server do
     text = document[:text] || ""
     position = params["position"] || %{}
     offset = offset_at_position(text, position)
-    prefix = completion_prefix(String.slice(text, 0, offset))
+    completion_context = EditorCompletionContext.analyze(%{source: text, offset: offset})
     {dependency_payload, state} = cached_dependency_payload(uri, state)
 
     items =
       dependency_payload
       |> Map.take([:package_doc_index, :editor_doc_packages, :direct, :indirect])
       |> Map.merge(%{
-        prefix: prefix,
+        prefix: completion_context.prefix,
+        context_kind: completion_context.kind,
+        qualifier: completion_context.qualifier,
+        declaration_index: completion_context.declaration_index,
         parser_payload: document[:parser_payload],
         token_tokens: document[:tokens] || [],
         limit: 50
@@ -160,7 +164,7 @@ defmodule Ide.Lsp.Server do
       "capabilities" => %{
         "textDocumentSync" => %{"openClose" => true, "change" => 1},
         "documentFormattingProvider" => true,
-        "completionProvider" => %{"triggerCharacters" => ["."]},
+        "completionProvider" => %{"triggerCharacters" => [".", ":"]},
         "foldingRangeProvider" => true,
         "hoverProvider" => true,
         "definitionProvider" => true,
@@ -349,13 +353,6 @@ defmodule Ide.Lsp.Server do
 
   defp offset_at_position(_text, _position), do: 0
 
-  defp completion_prefix(prefix_text) do
-    case Regex.run(~r/([A-Za-z_][A-Za-z0-9_']*)$/, prefix_text) do
-      [_, prefix] -> prefix
-      _ -> ""
-    end
-  end
-
   defp completion_item(item) do
     %{
       "label" => item.label,
@@ -368,7 +365,11 @@ defmodule Ide.Lsp.Server do
   defp completion_kind("keyword"), do: 14
   defp completion_kind("module"), do: 9
   defp completion_kind("package"), do: 9
+  defp completion_kind("function"), do: 3
   defp completion_kind("symbol"), do: 6
+  defp completion_kind("field"), do: 5
+  defp completion_kind("type"), do: 7
+  defp completion_kind("constructor"), do: 4
   defp completion_kind(_), do: 1
 
   defp folding_ranges(text) do

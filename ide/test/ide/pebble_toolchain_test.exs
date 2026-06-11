@@ -77,7 +77,7 @@ defmodule Ide.PebbleToolchainTest do
   end
 
   test "package metadata uses configured release version" do
-    source = File.read!("lib/ide/pebble_toolchain.ex")
+    source = File.read!("lib/ide/pebble_toolchain/core.ex")
 
     assert source =~ "version = package_version(Keyword.get(opts, :version))"
     assert source =~ ~s("version" => version)
@@ -85,7 +85,7 @@ defmodule Ide.PebbleToolchainTest do
   end
 
   test "toolchain stages animation raw resources and resource id header" do
-    source = File.read!("lib/ide/pebble_toolchain.ex")
+    source = File.read!("lib/ide/pebble_toolchain/core.ex")
     template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
 
     assert source =~ "stage_animation_resources"
@@ -106,7 +106,7 @@ defmodule Ide.PebbleToolchainTest do
   end
 
   test "emulator packaging writes storage log build flags header" do
-    source = File.read!("lib/ide/pebble_toolchain.ex")
+    source = File.read!("lib/ide/pebble_toolchain/core.ex")
     template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
 
     assert source =~ "write_emulator_build_flags"
@@ -161,7 +161,7 @@ defmodule Ide.PebbleToolchainTest do
   end
 
   test "generated resource bridge does not reserve Pebble resource id zero" do
-    source = File.read!("lib/ide/pebble_toolchain.ex")
+    source = File.read!("lib/ide/pebble_toolchain/core.ex")
     template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
 
     assert source =~ "elm_pebble_dev/node_modules/.bin/elm"
@@ -459,7 +459,7 @@ defmodule Ide.PebbleToolchainTest do
   end
 
   test "emulator install wipes before installing" do
-    source = File.read!("lib/ide/pebble_toolchain.ex")
+    source = File.read!("lib/ide/pebble_toolchain/core.ex")
 
     assert source =~ ~S|run_pebble_with_timeout(["wipe"], timeout_seconds, cwd: cwd)|
     assert source =~ "emulator_install_args(emulator_target, package_path)"
@@ -557,7 +557,7 @@ defmodule Ide.PebbleToolchainTest do
   end
 
   test "deterministic package UUIDs set RFC4122 version and variant bits" do
-    source = File.read!("lib/ide/pebble_toolchain.ex")
+    source = File.read!("lib/ide/pebble_toolchain/core.ex")
 
     assert source =~ "List.update_at(6, &((&1 &&& 0x0F) ||| 0x40))"
     assert source =~ "List.update_at(8, &((&1 &&& 0x3F) ||| 0x80))"
@@ -716,7 +716,7 @@ defmodule Ide.PebbleToolchainTest do
   end
 
   test "vector resource staging preserves manifest order for elm constructor tags" do
-    source = File.read!("lib/ide/pebble_toolchain.ex")
+    source = File.read!("lib/ide/pebble_toolchain/core.ex")
 
     vector_section =
       source

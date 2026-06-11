@@ -436,9 +436,6 @@ const TokenEditor: ViewHook = {
     this.handleEvent("token-editor-apply-edit", payload =>
       this.editorHost?.applyServerEdit(payload as Parameters<CodeMirrorEditorHost["applyServerEdit"]>[0])
     )
-    this.handleEvent("token-editor-show-completions", payload =>
-      this.editorHost?.showCompletions(payload as Parameters<CodeMirrorEditorHost["showCompletions"]>[0])
-    )
     this.handleEvent("token-editor-token-highlights", payload =>
       this.editorHost?.applyTokenHighlights(
         payload as Parameters<CodeMirrorEditorHost["applyTokenHighlights"]>[0]

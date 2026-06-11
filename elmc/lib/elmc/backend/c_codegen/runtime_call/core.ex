@@ -551,7 +551,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
   end
 
   defp compile_string_concat_segments(segments, env, counter) do
-    {segment_code, segment_boxes, _segment_releases, counter} =
+    {segment_code, segment_boxes, segment_releases, counter} =
       Enum.reduce(segments, {"", [], [], counter}, fn segment, {code_acc, boxes_acc, releases_acc, c} ->
         {code, ref, releases, c2} = NativeString.compile_expr(segment, env, c)
         next = c2 + 1
@@ -579,7 +579,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     next = counter + max(length(segments), 1)
 
     releases =
-      (segment_boxes ++ temp_refs)
+      (segment_releases ++ segment_boxes ++ temp_refs)
       |> Enum.uniq()
       |> Enum.reject(&(&1 == out_ref))
       |> Enum.map_join("\n  ", fn var -> "elmc_release(#{var});" end)

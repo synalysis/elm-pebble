@@ -852,10 +852,15 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
         {:ok, spec} ->
           index_code <>
             default_code <>
-            ImmortalStaticList.compile_static_int_list_nth_native(spec, index_ref, default_ref, out)
+            ImmortalStaticList.compile_static_int_list_nth_native(
+              spec,
+              index_ref,
+              default_ref,
+              out
+            )
 
         :error ->
-          {list_code, list_var, counter} = Host.compile_expr(list, env, counter)
+          {list_code, list_var, _counter} = Host.compile_expr(list, env, counter)
 
           """
           #{list_code}#{index_code}#{default_code}
@@ -1001,7 +1006,11 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     {code, out, next}
   end
 
-  defp dispatch(%{op: :runtime_call, function: "elmc_list_length", args: [list]} = expr, env, counter) do
+  defp dispatch(
+         %{op: :runtime_call, function: "elmc_list_length", args: [list]} = expr,
+         env,
+         counter
+       ) do
     case ImmortalStaticList.static_length(list, env) do
       {:ok, count} ->
         {"", ImmortalStaticList.format_static_length(count, expr, env), counter}
