@@ -1,19 +1,430 @@
 #include "elmc_generated.h"
 #include "elmc_pebble.h"
+#include <stdbool.h>
 #include <stdio.h>
 
 #if defined(__GNUC__)
 #pragma GCC diagnostic ignored "-Wunused-function"
 #endif
 
-#define ELMC_RENDER_OP_NONE 0
+#define ELMC_UNION_ACCELTAP 7
+#define ELMC_UNION_ACTIVEKCALORIES 7
+#define ELMC_UNION_ACTIVESECONDS 2
+#define ELMC_UNION_ALIGNCENTER 2
+#define ELMC_UNION_ALIGNLEFT 1
+#define ELMC_UNION_ALIGNRIGHT 3
+#define ELMC_UNION_ANTIALIASED 2
+#define ELMC_UNION_ARC 21
+#define ELMC_UNION_BACK 1
+#define ELMC_UNION_BERLIN 2
+#define ELMC_UNION_BITMAPINRECT 12
+#define ELMC_UNION_BITMAPSEQUENCEAT 16
+#define ELMC_UNION_BLACKWHITE 1
+#define ELMC_UNION_CANCELLED 3
+#define ELMC_UNION_CANVASLAYER 1
+#define ELMC_UNION_CELSIUS 1
+#define ELMC_UNION_CIRCLE 9
+#define ELMC_UNION_CLOCKSTYLE24H 10
+#define ELMC_UNION_CLOUDY 2
+#define ELMC_UNION_COLOR 2
+#define ELMC_UNION_COMPANION_TYPES_BERLIN 2
+#define ELMC_UNION_COMPANION_TYPES_BLACK 1
+#define ELMC_UNION_COMPANION_TYPES_BLUE 4
+#define ELMC_UNION_COMPANION_TYPES_CELSIUS 1
+#define ELMC_UNION_COMPANION_TYPES_CLEAR 1
+#define ELMC_UNION_COMPANION_TYPES_CLOUDY 2
+#define ELMC_UNION_COMPANION_TYPES_CURRENTLOCATION 1
+#define ELMC_UNION_COMPANION_TYPES_DRIZZLE 4
+#define ELMC_UNION_COMPANION_TYPES_FAHRENHEIT 2
+#define ELMC_UNION_COMPANION_TYPES_FOG 3
+#define ELMC_UNION_COMPANION_TYPES_GREEN 3
+#define ELMC_UNION_COMPANION_TYPES_NEWYORK 4
+#define ELMC_UNION_COMPANION_TYPES_PROVIDECONDITION 2
+#define ELMC_UNION_COMPANION_TYPES_PROVIDETEMPERATURE 1
+#define ELMC_UNION_COMPANION_TYPES_RAIN 5
+#define ELMC_UNION_COMPANION_TYPES_REQUESTWEATHER 1
+#define ELMC_UNION_COMPANION_TYPES_SETBACKGROUNDCOLOR 3
+#define ELMC_UNION_COMPANION_TYPES_SETSHOWDATE 5
+#define ELMC_UNION_COMPANION_TYPES_SETTEXTCOLOR 4
+#define ELMC_UNION_COMPANION_TYPES_SHOWERS 7
+#define ELMC_UNION_COMPANION_TYPES_SNOW 6
+#define ELMC_UNION_COMPANION_TYPES_STORM 8
+#define ELMC_UNION_COMPANION_TYPES_UNKNOWNWEATHER 9
+#define ELMC_UNION_COMPANION_TYPES_WHITE 2
+#define ELMC_UNION_COMPANION_TYPES_YELLOW 5
+#define ELMC_UNION_COMPANION_TYPES_ZURICH 3
+#define ELMC_UNION_COMPOSITINGMODE 6
+#define ELMC_UNION_CORECOMPLIANCE_TRIPLECHECK 1
+#define ELMC_UNION_COREDEVICESP2D 11
+#define ELMC_UNION_COREDEVICESP2DBLACK 33
+#define ELMC_UNION_COREDEVICESP2DWHITE 34
+#define ELMC_UNION_COREDEVICESPR2 13
+#define ELMC_UNION_COREDEVICESPR2BLACK20 39
+#define ELMC_UNION_COREDEVICESPR2GOLD14 41
+#define ELMC_UNION_COREDEVICESPR2SILVER14 42
+#define ELMC_UNION_COREDEVICESPR2SILVER20 40
+#define ELMC_UNION_COREDEVICESPT2 12
+#define ELMC_UNION_COREDEVICESPT2BLACKGREY 35
+#define ELMC_UNION_COREDEVICESPT2BLACKRED 36
+#define ELMC_UNION_COREDEVICESPT2SILVERBLUE 37
+#define ELMC_UNION_COREDEVICESPT2SILVERGREY 38
+#define ELMC_UNION_CURRENTLOCATION 1
+#define ELMC_UNION_CURRENTTIMESTRING 9
+#define ELMC_UNION_DECREMENT 2
+#define ELMC_UNION_DEFAULTFONT 1
+#define ELMC_UNION_DOUBLE 3
+#define ELMC_UNION_DOWN 4
+#define ELMC_UNION_DOWNPRESSED 6
+#define ELMC_UNION_DRIZZLE 4
+#define ELMC_UNION_FAHRENHEIT 2
+#define ELMC_UNION_FAILED 4
+#define ELMC_UNION_FILL 3
+#define ELMC_UNION_FILLCIRCLE 10
+#define ELMC_UNION_FILLCOLOR 4
+#define ELMC_UNION_FILLRADIAL 22
+#define ELMC_UNION_FILLRECT 8
+#define ELMC_UNION_FINISHED 3
+#define ELMC_UNION_FIRMWAREVERSIONSTRING 15
+#define ELMC_UNION_FOG 3
+#define ELMC_UNION_FRIDAY 5
+#define ELMC_UNION_GETBATTERYLEVEL 4
+#define ELMC_UNION_GETCONNECTIONSTATUS 5
+#define ELMC_UNION_GRAY 6
+#define ELMC_UNION_GROUP 11
+#define ELMC_UNION_HEARTRATEBPM 8
+#define ELMC_UNION_HIGH 4
+#define ELMC_UNION_HZ10 1
+#define ELMC_UNION_HZ100 4
+#define ELMC_UNION_HZ25 2
+#define ELMC_UNION_HZ50 3
+#define ELMC_UNION_INFOCUS 1
+#define ELMC_UNION_INCREMENT 1
+#define ELMC_UNION_INDEXED 1
+#define ELMC_UNION_INVALIDREADING 2
+#define ELMC_UNION_LAUNCHPHONE 3
+#define ELMC_UNION_LAUNCHQUICKLAUNCH 6
+#define ELMC_UNION_LAUNCHSMARTSTRAP 8
+#define ELMC_UNION_LAUNCHSYSTEM 1
+#define ELMC_UNION_LAUNCHTIMELINEACTION 7
+#define ELMC_UNION_LAUNCHUNKNOWN 9
+#define ELMC_UNION_LAUNCHUSER 2
+#define ELMC_UNION_LAUNCHWAKEUP 4
+#define ELMC_UNION_LAUNCHWORKER 5
+#define ELMC_UNION_LINE 6
+#define ELMC_UNION_LONG 2
+#define ELMC_UNION_LONGPRESSED 3
+#define ELMC_UNION_LOW 2
+#define ELMC_UNION_MAIN_ACCELTAP 7
+#define ELMC_UNION_MAIN_CLOCKSTYLE24H 10
+#define ELMC_UNION_MAIN_CURRENTTIMESTRING 9
+#define ELMC_UNION_MAIN_DECREMENT 2
+#define ELMC_UNION_MAIN_DOWNPRESSED 6
+#define ELMC_UNION_MAIN_FIRMWAREVERSIONSTRING 15
+#define ELMC_UNION_MAIN_INCREMENT 1
+#define ELMC_UNION_MAIN_PROVIDETEMPERATURE 8
+#define ELMC_UNION_MAIN_SELECTPRESSED 5
+#define ELMC_UNION_MAIN_TICK 3
+#define ELMC_UNION_MAIN_TIMEZONEISSET 11
+#define ELMC_UNION_MAIN_TIMEZONENAME 12
+#define ELMC_UNION_MAIN_UPPRESSED 4
+#define ELMC_UNION_MAIN_WATCHCOLORNAME 14
+#define ELMC_UNION_MAIN_WATCHMODELNAME 13
+#define ELMC_UNION_MATTEBLACK 8
+#define ELMC_UNION_MAX 5
+#define ELMC_UNION_MEDIUM 3
+#define ELMC_UNION_MONDAY 1
+#define ELMC_UNION_MOVEMENTUPDATE 2
+#define ELMC_UNION_NEWYORK 4
+#define ELMC_UNION_NOANIMATEDBITMAP 1
+#define ELMC_UNION_NOANIMATEDVECTOR 1
+#define ELMC_UNION_NOMICROPHONE 1
+#define ELMC_UNION_NOSTATICBITMAP 1
+#define ELMC_UNION_NOSTATICVECTOR 1
+#define ELMC_UNION_NUDGE 4
+#define ELMC_UNION_OFF 1
+#define ELMC_UNION_ORANGE 5
+#define ELMC_UNION_OUTOFFOCUS 2
+#define ELMC_UNION_PATHFILLED 17
+#define ELMC_UNION_PATHOUTLINE 18
+#define ELMC_UNION_PATHOUTLINEOPEN 19
+#define ELMC_UNION_PEBBLE_ACCEL_HZ10 1
+#define ELMC_UNION_PEBBLE_ACCEL_HZ100 4
+#define ELMC_UNION_PEBBLE_ACCEL_HZ25 2
+#define ELMC_UNION_PEBBLE_ACCEL_HZ50 3
+#define ELMC_UNION_PEBBLE_APPFOCUS_INFOCUS 1
+#define ELMC_UNION_PEBBLE_APPFOCUS_OUTOFFOCUS 2
+#define ELMC_UNION_PEBBLE_BUTTON_BACK 1
+#define ELMC_UNION_PEBBLE_BUTTON_DOWN 4
+#define ELMC_UNION_PEBBLE_BUTTON_LONGPRESSED 3
+#define ELMC_UNION_PEBBLE_BUTTON_PRESSED 1
+#define ELMC_UNION_PEBBLE_BUTTON_RELEASED 2
+#define ELMC_UNION_PEBBLE_BUTTON_SELECT 3
+#define ELMC_UNION_PEBBLE_BUTTON_UP 2
+#define ELMC_UNION_PEBBLE_COMPASS_INVALIDREADING 2
+#define ELMC_UNION_PEBBLE_COMPASS_UNAVAILABLE 1
+#define ELMC_UNION_PEBBLE_DATALOG_TAG 1
+#define ELMC_UNION_PEBBLE_DICTATION_CANCELLED 3
+#define ELMC_UNION_PEBBLE_DICTATION_FAILED 4
+#define ELMC_UNION_PEBBLE_DICTATION_FINISHED 3
+#define ELMC_UNION_PEBBLE_DICTATION_NOMICROPHONE 1
+#define ELMC_UNION_PEBBLE_DICTATION_PHONEDISCONNECTED 2
+#define ELMC_UNION_PEBBLE_DICTATION_RECOGNIZING 2
+#define ELMC_UNION_PEBBLE_DICTATION_STARTING 1
+#define ELMC_UNION_PEBBLE_HARDWARE_DOUBLE 3
+#define ELMC_UNION_PEBBLE_HARDWARE_GETBATTERYLEVEL 4
+#define ELMC_UNION_PEBBLE_HARDWARE_GETCONNECTIONSTATUS 5
+#define ELMC_UNION_PEBBLE_HARDWARE_HIGH 4
+#define ELMC_UNION_PEBBLE_HARDWARE_LONG 2
+#define ELMC_UNION_PEBBLE_HARDWARE_LOW 2
+#define ELMC_UNION_PEBBLE_HARDWARE_MAX 5
+#define ELMC_UNION_PEBBLE_HARDWARE_MEDIUM 3
+#define ELMC_UNION_PEBBLE_HARDWARE_NUDGE 4
+#define ELMC_UNION_PEBBLE_HARDWARE_OFF 1
+#define ELMC_UNION_PEBBLE_HARDWARE_PLAYTONE 6
+#define ELMC_UNION_PEBBLE_HARDWARE_SETBACKLIGHT 3
+#define ELMC_UNION_PEBBLE_HARDWARE_SHORT 1
+#define ELMC_UNION_PEBBLE_HARDWARE_STOPTONE 7
+#define ELMC_UNION_PEBBLE_HARDWARE_VIBRATE 1
+#define ELMC_UNION_PEBBLE_HARDWARE_VIBRATEPATTERN 2
+#define ELMC_UNION_PEBBLE_HEALTH_ACTIVEKCALORIES 7
+#define ELMC_UNION_PEBBLE_HEALTH_ACTIVESECONDS 2
+#define ELMC_UNION_PEBBLE_HEALTH_HEARTRATEBPM 8
+#define ELMC_UNION_PEBBLE_HEALTH_MOVEMENTUPDATE 2
+#define ELMC_UNION_PEBBLE_HEALTH_RESTFULSLEEPSECONDS 5
+#define ELMC_UNION_PEBBLE_HEALTH_RESTINGKCALORIES 6
+#define ELMC_UNION_PEBBLE_HEALTH_SIGNIFICANTUPDATE 1
+#define ELMC_UNION_PEBBLE_HEALTH_SLEEPSECONDS 4
+#define ELMC_UNION_PEBBLE_HEALTH_SLEEPUPDATE 3
+#define ELMC_UNION_PEBBLE_HEALTH_STEPCOUNT 1
+#define ELMC_UNION_PEBBLE_HEALTH_WALKEDDISTANCEMETERS 3
+#define ELMC_UNION_PEBBLE_PLATFORM_BLACKWHITE 1
+#define ELMC_UNION_PEBBLE_PLATFORM_COLOR 2
+#define ELMC_UNION_PEBBLE_PLATFORM_LAUNCHPHONE 3
+#define ELMC_UNION_PEBBLE_PLATFORM_LAUNCHQUICKLAUNCH 6
+#define ELMC_UNION_PEBBLE_PLATFORM_LAUNCHSMARTSTRAP 8
+#define ELMC_UNION_PEBBLE_PLATFORM_LAUNCHSYSTEM 1
+#define ELMC_UNION_PEBBLE_PLATFORM_LAUNCHTIMELINEACTION 7
+#define ELMC_UNION_PEBBLE_PLATFORM_LAUNCHUNKNOWN 9
+#define ELMC_UNION_PEBBLE_PLATFORM_LAUNCHUSER 2
+#define ELMC_UNION_PEBBLE_PLATFORM_LAUNCHWAKEUP 4
+#define ELMC_UNION_PEBBLE_PLATFORM_LAUNCHWORKER 5
+#define ELMC_UNION_PEBBLE_PLATFORM_RECTANGULAR 1
+#define ELMC_UNION_PEBBLE_PLATFORM_ROUND 2
+#define ELMC_UNION_PEBBLE_TIME_FRIDAY 5
+#define ELMC_UNION_PEBBLE_TIME_MONDAY 1
+#define ELMC_UNION_PEBBLE_TIME_SATURDAY 6
+#define ELMC_UNION_PEBBLE_TIME_SUNDAY 7
+#define ELMC_UNION_PEBBLE_TIME_THURSDAY 4
+#define ELMC_UNION_PEBBLE_TIME_TUESDAY 2
+#define ELMC_UNION_PEBBLE_TIME_WEDNESDAY 3
+#define ELMC_UNION_PEBBLE_UI_ALIGNCENTER 2
+#define ELMC_UNION_PEBBLE_UI_ALIGNLEFT 1
+#define ELMC_UNION_PEBBLE_UI_ALIGNRIGHT 3
+#define ELMC_UNION_PEBBLE_UI_ANTIALIASED 2
+#define ELMC_UNION_PEBBLE_UI_ARC 21
+#define ELMC_UNION_PEBBLE_UI_BITMAPINRECT 12
+#define ELMC_UNION_PEBBLE_UI_BITMAPSEQUENCEAT 16
+#define ELMC_UNION_PEBBLE_UI_CANVASLAYER 1
+#define ELMC_UNION_PEBBLE_UI_CIRCLE 9
+#define ELMC_UNION_PEBBLE_UI_CLEAR 4
+#define ELMC_UNION_PEBBLE_UI_COLOR_INDEXED 1
+#define ELMC_UNION_PEBBLE_UI_COLOR_RGBA 2
+#define ELMC_UNION_PEBBLE_UI_COMPOSITINGMODE 6
+#define ELMC_UNION_PEBBLE_UI_FILL 3
+#define ELMC_UNION_PEBBLE_UI_FILLCIRCLE 10
+#define ELMC_UNION_PEBBLE_UI_FILLCOLOR 4
+#define ELMC_UNION_PEBBLE_UI_FILLRADIAL 22
+#define ELMC_UNION_PEBBLE_UI_FILLRECT 8
+#define ELMC_UNION_PEBBLE_UI_GROUP 11
+#define ELMC_UNION_PEBBLE_UI_LINE 6
+#define ELMC_UNION_PEBBLE_UI_PATHFILLED 17
+#define ELMC_UNION_PEBBLE_UI_PATHOUTLINE 18
+#define ELMC_UNION_PEBBLE_UI_PATHOUTLINEOPEN 19
+#define ELMC_UNION_PEBBLE_UI_PIXEL 5
+#define ELMC_UNION_PEBBLE_UI_RECTOP 7
+#define ELMC_UNION_PEBBLE_UI_RESOURCES_DEFAULTFONT 1
+#define ELMC_UNION_PEBBLE_UI_RESOURCES_NOANIMATEDBITMAP 1
+#define ELMC_UNION_PEBBLE_UI_RESOURCES_NOANIMATEDVECTOR 1
+#define ELMC_UNION_PEBBLE_UI_RESOURCES_NOSTATICBITMAP 1
+#define ELMC_UNION_PEBBLE_UI_RESOURCES_NOSTATICVECTOR 1
+#define ELMC_UNION_PEBBLE_UI_ROTATEDBITMAP 13
+#define ELMC_UNION_PEBBLE_UI_ROTATION 1
+#define ELMC_UNION_PEBBLE_UI_ROUNDRECT 20
+#define ELMC_UNION_PEBBLE_UI_STROKECOLOR 3
+#define ELMC_UNION_PEBBLE_UI_STROKEWIDTH 1
+#define ELMC_UNION_PEBBLE_UI_TEXT 3
+#define ELMC_UNION_PEBBLE_UI_TEXTCOLOR 5
+#define ELMC_UNION_PEBBLE_UI_TEXTINT 1
+#define ELMC_UNION_PEBBLE_UI_TEXTLABEL 2
+#define ELMC_UNION_PEBBLE_UI_TRAILINGELLIPSIS 2
+#define ELMC_UNION_PEBBLE_UI_VECTORAT 14
+#define ELMC_UNION_PEBBLE_UI_VECTORSEQUENCEAT 15
+#define ELMC_UNION_PEBBLE_UI_WAITINGFORCOMPANION 1
+#define ELMC_UNION_PEBBLE_UI_WINDOWNODE 1
+#define ELMC_UNION_PEBBLE_UI_WINDOWSTACK 1
+#define ELMC_UNION_PEBBLE_UI_WORDWRAP 1
+#define ELMC_UNION_PEBBLE_WATCHINFO_BLACK 2
+#define ELMC_UNION_PEBBLE_WATCHINFO_BLUE 9
+#define ELMC_UNION_PEBBLE_WATCHINFO_COREDEVICESP2D 11
+#define ELMC_UNION_PEBBLE_WATCHINFO_COREDEVICESP2DBLACK 33
+#define ELMC_UNION_PEBBLE_WATCHINFO_COREDEVICESP2DWHITE 34
+#define ELMC_UNION_PEBBLE_WATCHINFO_COREDEVICESPR2 13
+#define ELMC_UNION_PEBBLE_WATCHINFO_COREDEVICESPR2BLACK20 39
+#define ELMC_UNION_PEBBLE_WATCHINFO_COREDEVICESPR2GOLD14 41
+#define ELMC_UNION_PEBBLE_WATCHINFO_COREDEVICESPR2SILVER14 42
+#define ELMC_UNION_PEBBLE_WATCHINFO_COREDEVICESPR2SILVER20 40
+#define ELMC_UNION_PEBBLE_WATCHINFO_COREDEVICESPT2 12
+#define ELMC_UNION_PEBBLE_WATCHINFO_COREDEVICESPT2BLACKGREY 35
+#define ELMC_UNION_PEBBLE_WATCHINFO_COREDEVICESPT2BLACKRED 36
+#define ELMC_UNION_PEBBLE_WATCHINFO_COREDEVICESPT2SILVERBLUE 37
+#define ELMC_UNION_PEBBLE_WATCHINFO_COREDEVICESPT2SILVERGREY 38
+#define ELMC_UNION_PEBBLE_WATCHINFO_GRAY 6
+#define ELMC_UNION_PEBBLE_WATCHINFO_GREEN 10
+#define ELMC_UNION_PEBBLE_WATCHINFO_MATTEBLACK 8
+#define ELMC_UNION_PEBBLE_WATCHINFO_ORANGE 5
+#define ELMC_UNION_PEBBLE_WATCHINFO_PEBBLE2HR 8
+#define ELMC_UNION_PEBBLE_WATCHINFO_PEBBLE2HRAQUA 27
+#define ELMC_UNION_PEBBLE_WATCHINFO_PEBBLE2HRBLACK 23
+#define ELMC_UNION_PEBBLE_WATCHINFO_PEBBLE2HRFLAME 25
+#define ELMC_UNION_PEBBLE_WATCHINFO_PEBBLE2HRLIME 24
+#define ELMC_UNION_PEBBLE_WATCHINFO_PEBBLE2HRWHITE 26
+#define ELMC_UNION_PEBBLE_WATCHINFO_PEBBLE2SE 9
+#define ELMC_UNION_PEBBLE_WATCHINFO_PEBBLE2SEBLACK 28
+#define ELMC_UNION_PEBBLE_WATCHINFO_PEBBLE2SEWHITE 29
+#define ELMC_UNION_PEBBLE_WATCHINFO_PEBBLEORIGINAL 2
+#define ELMC_UNION_PEBBLE_WATCHINFO_PEBBLESTEEL 3
+#define ELMC_UNION_PEBBLE_WATCHINFO_PEBBLETIME 4
+#define ELMC_UNION_PEBBLE_WATCHINFO_PEBBLETIME2 10
+#define ELMC_UNION_PEBBLE_WATCHINFO_PEBBLETIME2BLACK 30
+#define ELMC_UNION_PEBBLE_WATCHINFO_PEBBLETIME2GOLD 32
+#define ELMC_UNION_PEBBLE_WATCHINFO_PEBBLETIME2SILVER 31
+#define ELMC_UNION_PEBBLE_WATCHINFO_PEBBLETIMEROUND14 6
+#define ELMC_UNION_PEBBLE_WATCHINFO_PEBBLETIMEROUND20 7
+#define ELMC_UNION_PEBBLE_WATCHINFO_PEBBLETIMESTEEL 5
+#define ELMC_UNION_PEBBLE_WATCHINFO_PINK 11
+#define ELMC_UNION_PEBBLE_WATCHINFO_RED 4
+#define ELMC_UNION_PEBBLE_WATCHINFO_STAINLESSSTEEL 7
+#define ELMC_UNION_PEBBLE_WATCHINFO_TIMEBLACK 13
+#define ELMC_UNION_PEBBLE_WATCHINFO_TIMERED 14
+#define ELMC_UNION_PEBBLE_WATCHINFO_TIMEROUNDBLACK14 19
+#define ELMC_UNION_PEBBLE_WATCHINFO_TIMEROUNDBLACK20 21
+#define ELMC_UNION_PEBBLE_WATCHINFO_TIMEROUNDROSEGOLD14 22
+#define ELMC_UNION_PEBBLE_WATCHINFO_TIMEROUNDSILVER14 18
+#define ELMC_UNION_PEBBLE_WATCHINFO_TIMEROUNDSILVER20 20
+#define ELMC_UNION_PEBBLE_WATCHINFO_TIMESTEELBLACK 16
+#define ELMC_UNION_PEBBLE_WATCHINFO_TIMESTEELGOLD 17
+#define ELMC_UNION_PEBBLE_WATCHINFO_TIMESTEELSILVER 15
+#define ELMC_UNION_PEBBLE_WATCHINFO_TIMEWHITE 12
+#define ELMC_UNION_PEBBLE_WATCHINFO_UNKNOWNCOLOR 1
+#define ELMC_UNION_PEBBLE_WATCHINFO_UNKNOWNMODEL 1
+#define ELMC_UNION_PEBBLE_WATCHINFO_WHITE 3
+#define ELMC_UNION_PEBBLE2HR 8
+#define ELMC_UNION_PEBBLE2HRAQUA 27
+#define ELMC_UNION_PEBBLE2HRBLACK 23
+#define ELMC_UNION_PEBBLE2HRFLAME 25
+#define ELMC_UNION_PEBBLE2HRLIME 24
+#define ELMC_UNION_PEBBLE2HRWHITE 26
+#define ELMC_UNION_PEBBLE2SE 9
+#define ELMC_UNION_PEBBLE2SEBLACK 28
+#define ELMC_UNION_PEBBLE2SEWHITE 29
+#define ELMC_UNION_PEBBLEORIGINAL 2
+#define ELMC_UNION_PEBBLESTEEL 3
+#define ELMC_UNION_PEBBLETIME 4
+#define ELMC_UNION_PEBBLETIME2 10
+#define ELMC_UNION_PEBBLETIME2BLACK 30
+#define ELMC_UNION_PEBBLETIME2GOLD 32
+#define ELMC_UNION_PEBBLETIME2SILVER 31
+#define ELMC_UNION_PEBBLETIMEROUND14 6
+#define ELMC_UNION_PEBBLETIMEROUND20 7
+#define ELMC_UNION_PEBBLETIMESTEEL 5
+#define ELMC_UNION_PHONEDISCONNECTED 2
+#define ELMC_UNION_PINK 11
+#define ELMC_UNION_PIXEL 5
+#define ELMC_UNION_PLAYTONE 6
+#define ELMC_UNION_PRESSED 1
+#define ELMC_UNION_PROVIDECONDITION 2
+#define ELMC_UNION_RGBA 2
+#define ELMC_UNION_RAIN 5
+#define ELMC_UNION_RECOGNIZING 2
+#define ELMC_UNION_RECTOP 7
+#define ELMC_UNION_RECTANGULAR 1
+#define ELMC_UNION_RED 4
+#define ELMC_UNION_RELEASED 2
+#define ELMC_UNION_REQUESTWEATHER 1
+#define ELMC_UNION_RESTFULSLEEPSECONDS 5
+#define ELMC_UNION_RESTINGKCALORIES 6
+#define ELMC_UNION_ROTATEDBITMAP 13
+#define ELMC_UNION_ROTATION 1
+#define ELMC_UNION_ROUND 2
+#define ELMC_UNION_ROUNDRECT 20
+#define ELMC_UNION_SATURDAY 6
+#define ELMC_UNION_SELECT 3
+#define ELMC_UNION_SELECTPRESSED 5
+#define ELMC_UNION_SETBACKGROUNDCOLOR 3
+#define ELMC_UNION_SETBACKLIGHT 3
+#define ELMC_UNION_SETSHOWDATE 5
+#define ELMC_UNION_SETTEXTCOLOR 4
+#define ELMC_UNION_SHORT 1
+#define ELMC_UNION_SHOWERS 7
+#define ELMC_UNION_SIGNIFICANTUPDATE 1
+#define ELMC_UNION_SLEEPSECONDS 4
+#define ELMC_UNION_SLEEPUPDATE 3
+#define ELMC_UNION_SNOW 6
+#define ELMC_UNION_STAINLESSSTEEL 7
+#define ELMC_UNION_STARTING 1
+#define ELMC_UNION_STEPCOUNT 1
+#define ELMC_UNION_STOPTONE 7
+#define ELMC_UNION_STORM 8
+#define ELMC_UNION_STROKECOLOR 3
+#define ELMC_UNION_STROKEWIDTH 1
+#define ELMC_UNION_SUNDAY 7
+#define ELMC_UNION_TAG 1
+#define ELMC_UNION_TEXT 3
+#define ELMC_UNION_TEXTCOLOR 5
+#define ELMC_UNION_TEXTINT 1
+#define ELMC_UNION_TEXTLABEL 2
+#define ELMC_UNION_THURSDAY 4
+#define ELMC_UNION_TICK 3
+#define ELMC_UNION_TIMEBLACK 13
+#define ELMC_UNION_TIMERED 14
+#define ELMC_UNION_TIMEROUNDBLACK14 19
+#define ELMC_UNION_TIMEROUNDBLACK20 21
+#define ELMC_UNION_TIMEROUNDROSEGOLD14 22
+#define ELMC_UNION_TIMEROUNDSILVER14 18
+#define ELMC_UNION_TIMEROUNDSILVER20 20
+#define ELMC_UNION_TIMESTEELBLACK 16
+#define ELMC_UNION_TIMESTEELGOLD 17
+#define ELMC_UNION_TIMESTEELSILVER 15
+#define ELMC_UNION_TIMEWHITE 12
+#define ELMC_UNION_TIMEZONEISSET 11
+#define ELMC_UNION_TIMEZONENAME 12
+#define ELMC_UNION_TRAILINGELLIPSIS 2
+#define ELMC_UNION_TRIPLECHECK 1
+#define ELMC_UNION_TUESDAY 2
+#define ELMC_UNION_UNAVAILABLE 1
+#define ELMC_UNION_UNKNOWNCOLOR 1
+#define ELMC_UNION_UNKNOWNMODEL 1
+#define ELMC_UNION_UNKNOWNWEATHER 9
+#define ELMC_UNION_UP 2
+#define ELMC_UNION_UPPRESSED 4
+#define ELMC_UNION_VECTORAT 14
+#define ELMC_UNION_VECTORSEQUENCEAT 15
+#define ELMC_UNION_VIBRATE 1
+#define ELMC_UNION_VIBRATEPATTERN 2
+#define ELMC_UNION_WAITINGFORCOMPANION 1
+#define ELMC_UNION_WALKEDDISTANCEMETERS 3
+#define ELMC_UNION_WATCHCOLORNAME 14
+#define ELMC_UNION_WATCHMODELNAME 13
+#define ELMC_UNION_WEDNESDAY 3
+#define ELMC_UNION_WINDOWNODE 1
+#define ELMC_UNION_WINDOWSTACK 1
+#define ELMC_UNION_WORDWRAP 1
+#define ELMC_UNION_YELLOW 5
+#define ELMC_UNION_ZURICH 3
+
 #define ELMC_RENDER_OP_CLEAR 2
 #define ELMC_RENDER_OP_PIXEL 3
 #define ELMC_RENDER_OP_LINE 4
-#define ELMC_RENDER_OP_RECT 5
-#define ELMC_RENDER_OP_FILL_RECT 6
-#define ELMC_RENDER_OP_CIRCLE 7
-#define ELMC_RENDER_OP_FILL_CIRCLE 8
 #define ELMC_RENDER_OP_PUSH_CONTEXT 10
 #define ELMC_RENDER_OP_POP_CONTEXT 11
 #define ELMC_RENDER_OP_STROKE_WIDTH 12
@@ -23,132 +434,20 @@
 #define ELMC_RENDER_OP_TEXT_COLOR 16
 #define ELMC_RENDER_OP_ROUND_RECT 17
 #define ELMC_RENDER_OP_ARC 18
-#define ELMC_RENDER_OP_CONTEXT_GROUP 19
 #define ELMC_RENDER_OP_PATH_FILLED 20
 #define ELMC_RENDER_OP_PATH_OUTLINE 21
 #define ELMC_RENDER_OP_PATH_OUTLINE_OPEN 22
-#define ELMC_RENDER_OP_FILL_RADIAL 23
-#define ELMC_RENDER_OP_COMPOSITING_MODE 24
-#define ELMC_RENDER_OP_BITMAP_IN_RECT 25
-#define ELMC_RENDER_OP_ROTATED_BITMAP 26
 #define ELMC_RENDER_OP_TEXT_INT_WITH_FONT 27
 #define ELMC_RENDER_OP_TEXT_LABEL_WITH_FONT 28
-#define ELMC_RENDER_OP_TEXT 29
-#define ELMC_RENDER_OP_VECTOR_AT 30
-#define ELMC_RENDER_OP_VECTOR_SEQUENCE_AT 31
-#define ELMC_RENDER_OP_BITMAP_SEQUENCE_AT 32
-#define ELMC_CONTEXT_STROKE_WIDTH 1
-#define ELMC_CONTEXT_ANTIALIASED 2
-#define ELMC_CONTEXT_STROKE_COLOR 3
-#define ELMC_CONTEXT_FILL_COLOR 4
-#define ELMC_CONTEXT_TEXT_COLOR 5
-#define ELMC_CONTEXT_COMPOSITING_MODE 6
-#define ELMC_UI_NODE_WINDOW_STACK 1000
-#define ELMC_UI_NODE_WINDOW 1001
-#define ELMC_UI_NODE_CANVAS_LAYER 1002
-#define ELMC_BUTTON_BACK 0
 #define ELMC_BUTTON_UP 1
 #define ELMC_BUTTON_SELECT 2
 #define ELMC_BUTTON_DOWN 3
 #define ELMC_BUTTON_EVENT_PRESSED 1
-#define ELMC_BUTTON_EVENT_RELEASED 2
-#define ELMC_BUTTON_EVENT_LONG_PRESSED 3
 #define ELMC_SUBSCRIPTION_SECOND_CHANGE 1
-#define ELMC_SUBSCRIPTION_BUTTON_UP 2
-#define ELMC_SUBSCRIPTION_BUTTON_SELECT 4
-#define ELMC_SUBSCRIPTION_BUTTON_DOWN 8
 #define ELMC_SUBSCRIPTION_ACCEL_TAP 16
-#define ELMC_SUBSCRIPTION_BATTERY 32
-#define ELMC_SUBSCRIPTION_CONNECTION 64
-#define ELMC_SUBSCRIPTION_APPMESSAGE 4096
-#define ELMC_SUBSCRIPTION_HOUR_CHANGE 1024
-#define ELMC_SUBSCRIPTION_MINUTE_CHANGE 2048
-#define ELMC_SUBSCRIPTION_FRAME_BASE 8192
 #define ELMC_SUBSCRIPTION_BUTTON_RAW 16384
-#define ELMC_SUBSCRIPTION_DAY_CHANGE 65536
-#define ELMC_SUBSCRIPTION_MONTH_CHANGE 131072
-#define ELMC_SUBSCRIPTION_YEAR_CHANGE 262144
-#define ELMC_SUBSCRIPTION_BUTTON_LONG_UP 128
-#define ELMC_SUBSCRIPTION_BUTTON_LONG_SELECT 256
-#define ELMC_SUBSCRIPTION_BUTTON_LONG_DOWN 512
-#define ELMC_SUBSCRIPTION_ACCEL_DATA 32768
-#define ELMC_SUBSCRIPTION_APP_FOCUS 524288
-#define ELMC_SUBSCRIPTION_COMPASS 1048576
-#define ELMC_SUBSCRIPTION_DICTATION 2097152
-#define ELMC_SUBSCRIPTION_UNOBSTRUCTED_AREA 4194304
-#define ELMC_SUBSCRIPTION_HEALTH 2147483648LL
-#define ELMC_TEXT_ALIGN_LEFT 0
-#define ELMC_TEXT_ALIGN_CENTER 1
-#define ELMC_TEXT_ALIGN_RIGHT 2
-#define ELMC_TEXT_OVERFLOW_WORD_WRAP 0
-#define ELMC_TEXT_OVERFLOW_TRAILING_ELLIPSIS 1
-#define ELMC_TEXT_OVERFLOW_FILL 2
-#define ELMC_TEXT_OVERFLOW_SHIFT 2
-#define ELMC_COLOR_ARMY_GREEN 212
-#define ELMC_COLOR_BABY_BLUE_EYES 235
 #define ELMC_COLOR_BLACK 192
-#define ELMC_COLOR_BLUE 195
-#define ELMC_COLOR_BLUE_MOON 199
-#define ELMC_COLOR_BRASS 233
-#define ELMC_COLOR_BRIGHT_GREEN 220
-#define ELMC_COLOR_BRILLIANT_ROSE 246
-#define ELMC_COLOR_BULGARIAN_ROSE 208
-#define ELMC_COLOR_CADET_BLUE 218
-#define ELMC_COLOR_CELESTE 239
-#define ELMC_COLOR_CHROME_YELLOW 248
-#define ELMC_COLOR_CLEAR_COLOR 0
-#define ELMC_COLOR_COBALT_BLUE 198
-#define ELMC_COLOR_CYAN 207
-#define ELMC_COLOR_DARK_CANDY_APPLE_RED 224
-#define ELMC_COLOR_DARK_GRAY 213
-#define ELMC_COLOR_DARK_GREEN 196
-#define ELMC_COLOR_DUKE_BLUE 194
-#define ELMC_COLOR_ELECTRIC_BLUE 223
-#define ELMC_COLOR_ELECTRIC_ULTRAMARINE 211
-#define ELMC_COLOR_FASHION_MAGENTA 242
-#define ELMC_COLOR_FOLLY 241
-#define ELMC_COLOR_GREEN 204
-#define ELMC_COLOR_ICTERINE 253
-#define ELMC_COLOR_IMPERIAL_PURPLE 209
-#define ELMC_COLOR_INCHWORM 237
-#define ELMC_COLOR_INDIGO 210
-#define ELMC_COLOR_ISLAMIC_GREEN 200
-#define ELMC_COLOR_JAEGER_GREEN 201
-#define ELMC_COLOR_JAZZBERRY_JAM 225
-#define ELMC_COLOR_KELLY_GREEN 216
-#define ELMC_COLOR_LAVENDER_INDIGO 231
-#define ELMC_COLOR_LIBERTY 214
-#define ELMC_COLOR_LIGHT_GRAY 234
-#define ELMC_COLOR_LIMERICK 232
-#define ELMC_COLOR_MAGENTA 243
-#define ELMC_COLOR_MALACHITE 205
-#define ELMC_COLOR_MAY_GREEN 217
-#define ELMC_COLOR_MEDIUM_AQUAMARINE 222
-#define ELMC_COLOR_MEDIUM_SPRING_GREEN 206
-#define ELMC_COLOR_MELON 250
-#define ELMC_COLOR_MIDNIGHT_GREEN 197
-#define ELMC_COLOR_MINT_GREEN 238
-#define ELMC_COLOR_ORANGE 244
-#define ELMC_COLOR_OXFORD_BLUE 193
-#define ELMC_COLOR_PASTEL_YELLOW 254
-#define ELMC_COLOR_PICTON_BLUE 219
-#define ELMC_COLOR_PURPLE 226
-#define ELMC_COLOR_PURPUREUS 230
-#define ELMC_COLOR_RAJAH 249
-#define ELMC_COLOR_RED 240
-#define ELMC_COLOR_RICH_BRILLIANT_LAVENDER 251
-#define ELMC_COLOR_ROSE_VALE 229
-#define ELMC_COLOR_SCREAMIN_GREEN 221
-#define ELMC_COLOR_SHOCKING_PINK 247
-#define ELMC_COLOR_SPRING_BUD 236
-#define ELMC_COLOR_SUNSET_ORANGE 245
-#define ELMC_COLOR_TIFFANY_BLUE 202
-#define ELMC_COLOR_VERY_LIGHT_BLUE 215
-#define ELMC_COLOR_VIVID_CERULEAN 203
-#define ELMC_COLOR_VIVID_VIOLET 227
 #define ELMC_COLOR_WHITE 255
-#define ELMC_COLOR_WINDSOR_TAN 228
-#define ELMC_COLOR_YELLOW 252
 
 #if defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_CHALK) || defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_FLINT) || defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_GABBRO)
 #include <pebble.h>
@@ -173,48 +472,28 @@ static inline void elmc_agent_generated_probe(uint32_t tag) {
 
 static elmc_int_t elmc_fn_Main_helper_native(const elmc_int_t value);
 
-ElmcValue *elmc_fn_Main_helper(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Main_advanced(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Main_counterOf(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Main_temperatureOf(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Main_requestWeather(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Main_requestSystemInfo(ElmcValue ** const args, const int argc);
+static ElmcValue *elmc_fn_Main_helper(ElmcValue ** const args, const int argc);
+static ElmcValue *elmc_fn_Main_advanced(ElmcValue ** const args, const int argc);
+static ElmcValue *elmc_fn_Main_counterOf(ElmcValue ** const args, const int argc);
+static ElmcValue *elmc_fn_Main_temperatureOf(ElmcValue ** const args, const int argc);
+static ElmcValue *elmc_fn_Main_requestWeather(ElmcValue ** const args, const int argc);
+static ElmcValue *elmc_fn_Main_requestSystemInfo(ElmcValue ** const args, const int argc);
 ElmcValue *elmc_fn_Main_init(ElmcValue ** const args, const int argc);
 ElmcValue *elmc_fn_Main_update(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Main_handleAppMsg(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Main_handlePlatformMsg(ElmcValue ** const args, const int argc);
+static ElmcValue *elmc_fn_Main_handleAppMsg(ElmcValue ** const args, const int argc);
+static ElmcValue *elmc_fn_Main_handlePlatformMsg(ElmcValue ** const args, const int argc);
 ElmcValue *elmc_fn_Main_subscriptions(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Main_view(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Main_statusDraw(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Main_counterDraw(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Main_temperatureValue(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Main_main(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Pebble_Platform_launchReasonToInt(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Pebble_Ui_path(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Pebble_Ui_rotationToPebbleAngle(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Companion_Internal_encodeLocationCode(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Companion_Internal_watchToPhoneTag(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Companion_Internal_watchToPhoneValue(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Companion_Watch_sendWatchToPhone(ElmcValue ** const args, const int argc);
+static ElmcValue *elmc_fn_Main_statusDraw(ElmcValue ** const args, const int argc);
+static ElmcValue *elmc_fn_Main_counterDraw(ElmcValue ** const args, const int argc);
+static ElmcValue *elmc_fn_Main_temperatureValue(ElmcValue ** const args, const int argc);
+static ElmcValue *elmc_fn_Main_main(ElmcValue ** const args, const int argc);
+static ElmcValue *elmc_fn_Pebble_Platform_launchReasonToInt(ElmcValue ** const args, const int argc);
+static ElmcValue *elmc_fn_Companion_Internal_encodeLocationCode(ElmcValue ** const args, const int argc);
+static ElmcValue *elmc_fn_Companion_Internal_watchToPhoneTag(ElmcValue ** const args, const int argc);
+static ElmcValue *elmc_fn_Companion_Internal_watchToPhoneValue(ElmcValue ** const args, const int argc);
+static ElmcValue *elmc_fn_Companion_Watch_sendWatchToPhone(ElmcValue ** const args, const int argc);
 
-static ElmcValue *elmc_lambda_1(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
-  (void)args;
-  (void)argc;
-  (void)captures;
-  (void)capture_count;
-  ElmcValue *patternArg = (argc > 0) ? args[0] : NULL;
-  
-  
-ElmcValue *tmp_1;
-
-    ElmcValue *tmp_2 = ((ElmcTuple2 *)patternArg->payload)->second ? elmc_retain(((ElmcTuple2 *)patternArg->payload)->second) : elmc_int_zero();
-
-    tmp_1 = tmp_2;
-
-  return tmp_1;
-}
-
-ElmcValue *elmc_fn_Main_helper(ElmcValue ** const args, const int argc) {
+static ElmcValue *elmc_fn_Main_helper(ElmcValue ** const args, const int argc) {
   /* Ownership policy: borrow_arg, borrow_result */
   (void)args;
   (void)argc;
@@ -224,98 +503,93 @@ ElmcValue *elmc_fn_Main_helper(ElmcValue ** const args, const int argc) {
 
 static elmc_int_t elmc_fn_Main_helper_native(const elmc_int_t value) {
   (void)value;
-  
-  
-  
+
   return (value + 2);
 }
 
-ElmcValue *elmc_fn_Main_advanced(ElmcValue ** const args, const int argc) {
+static ElmcValue *elmc_fn_Main_advanced(ElmcValue ** const args, const int argc) {
   /* Ownership policy: borrow_arg, borrow_result */
   (void)args;
   (void)argc;
   ElmcValue *n = (argc > 0) ? args[0] : NULL;
   (void)n;
 
-      // inlined Main.helper
+  // inlined Main.helper
 
-    const elmc_int_t native_let_base_1 = (elmc_as_int(n) + 2);
+  const elmc_int_t native_let_base_1 = (elmc_as_int(n) + 2);
 
   ElmcValue *tmp_1;
   if ((native_let_base_1 > 10)) {
-      ElmcValue *tmp_2 = elmc_new_int(native_let_base_1);
-      tmp_1 = tmp_2;
+    tmp_1 = elmc_new_int(native_let_base_1);
   } else {
-        ElmcValue *tmp_3 = elmc_new_int((native_let_base_1 + 1));
-
-      tmp_1 = tmp_3;
+    tmp_1 = elmc_new_int((native_let_base_1 + 1));
   }
 
   return tmp_1;
 }
 
-ElmcValue *elmc_fn_Main_counterOf(ElmcValue ** const args, const int argc) {
+static ElmcValue *elmc_fn_Main_counterOf(ElmcValue ** const args, const int argc) {
   /* Ownership policy: borrow_arg, borrow_result */
   (void)args;
   (void)argc;
   ElmcValue *model = (argc > 0) ? args[0] : NULL;
   (void)model;
 
-    ElmcValue *tmp_1 = elmc_record_get_index(model, 1 /* value */);
+  ElmcValue *tmp_1 = elmc_record_get_index(model, 1 /* value */);
 
   return tmp_1;
 }
 
-ElmcValue *elmc_fn_Main_temperatureOf(ElmcValue ** const args, const int argc) {
+static ElmcValue *elmc_fn_Main_temperatureOf(ElmcValue ** const args, const int argc) {
   /* Ownership policy: borrow_arg, borrow_result */
   (void)args;
   (void)argc;
   ElmcValue *model = (argc > 0) ? args[0] : NULL;
   (void)model;
 
-    ElmcValue *tmp_1 = elmc_record_get_index(model, 0 /* temperature */);
+  ElmcValue *tmp_1 = elmc_record_get_index(model, 0 /* temperature */);
 
   return tmp_1;
 }
 
-ElmcValue *elmc_fn_Main_requestWeather(ElmcValue ** const args, const int argc) {
+static ElmcValue *elmc_fn_Main_requestWeather(ElmcValue ** const args, const int argc) {
   /* Ownership policy: borrow_arg, borrow_result */
   (void)args;
   (void)argc;
   ElmcValue *location = (argc > 0) ? args[0] : NULL;
   (void)location;
 
-  ElmcValue *tmp_1 = elmc_tuple2_ints(1, elmc_as_int(location));
+  ElmcValue *tmp_1 = elmc_tuple2_ints(ELMC_UNION_COMPANION_TYPES_REQUESTWEATHER, elmc_as_int(location));
 
-    ElmcValue *call_args_2[1] = { tmp_1 };
-    ElmcValue *tmp_2 = elmc_fn_Companion_Watch_sendWatchToPhone(call_args_2, 1);
+  ElmcValue *call_args_2[1] = { tmp_1 };
+  ElmcValue *tmp_2 = elmc_fn_Companion_Watch_sendWatchToPhone(call_args_2, 1);
 
-    elmc_release(tmp_1);
+  elmc_release(tmp_1);
 
   return tmp_2;
 }
 
-ElmcValue *elmc_fn_Main_requestSystemInfo(ElmcValue ** const args, const int argc) {
+static ElmcValue *elmc_fn_Main_requestSystemInfo(ElmcValue ** const args, const int argc) {
   /* Ownership policy: borrow_arg, borrow_result */
   (void)args;
   (void)argc;
 
-    ElmcValue *tmp_1 = elmc_cmd1(ELMC_PEBBLE_CMD_GET_CURRENT_TIME_STRING, ELMC_PEBBLE_MSG_CURRENTTIMESTRING);
+  ElmcValue *tmp_1 = elmc_cmd1(ELMC_PEBBLE_CMD_GET_CURRENT_TIME_STRING, ELMC_PEBBLE_MSG_CURRENTTIMESTRING);
 
-    ElmcValue *tmp_2 = elmc_cmd1(ELMC_PEBBLE_CMD_GET_CLOCK_STYLE_24H, ELMC_PEBBLE_MSG_CLOCKSTYLE24H);
+  ElmcValue *tmp_2 = elmc_cmd1(ELMC_PEBBLE_CMD_GET_CLOCK_STYLE_24H, ELMC_PEBBLE_MSG_CLOCKSTYLE24H);
 
-    ElmcValue *tmp_3 = elmc_cmd1(ELMC_PEBBLE_CMD_GET_TIMEZONE_IS_SET, ELMC_PEBBLE_MSG_TIMEZONEISSET);
+  ElmcValue *tmp_3 = elmc_cmd1(ELMC_PEBBLE_CMD_GET_TIMEZONE_IS_SET, ELMC_PEBBLE_MSG_TIMEZONEISSET);
 
-    ElmcValue *tmp_4 = elmc_cmd1(ELMC_PEBBLE_CMD_GET_TIMEZONE, ELMC_PEBBLE_MSG_TIMEZONENAME);
+  ElmcValue *tmp_4 = elmc_cmd1(ELMC_PEBBLE_CMD_GET_TIMEZONE, ELMC_PEBBLE_MSG_TIMEZONENAME);
 
-    ElmcValue *tmp_5 = elmc_cmd1(ELMC_PEBBLE_CMD_GET_WATCH_MODEL, ELMC_PEBBLE_MSG_WATCHMODELNAME);
+  ElmcValue *tmp_5 = elmc_cmd1(ELMC_PEBBLE_CMD_GET_WATCH_MODEL, ELMC_PEBBLE_MSG_WATCHMODELNAME);
 
-    ElmcValue *tmp_6 = elmc_cmd1(ELMC_PEBBLE_CMD_GET_WATCH_COLOR, ELMC_PEBBLE_MSG_WATCHCOLORNAME);
+  ElmcValue *tmp_6 = elmc_cmd1(ELMC_PEBBLE_CMD_GET_WATCH_COLOR, ELMC_PEBBLE_MSG_WATCHCOLORNAME);
 
-    ElmcValue *tmp_7 = elmc_cmd1(ELMC_PEBBLE_CMD_GET_FIRMWARE_VERSION, ELMC_PEBBLE_MSG_FIRMWAREVERSIONSTRING);
+  ElmcValue *tmp_7 = elmc_cmd1(ELMC_PEBBLE_CMD_GET_FIRMWARE_VERSION, ELMC_PEBBLE_MSG_FIRMWAREVERSIONSTRING);
 
-    ElmcValue *list_items_8[7] = { tmp_1, tmp_2, tmp_3, tmp_4, tmp_5, tmp_6, tmp_7 };
-    ElmcValue *tmp_8 = elmc_list_from_values_take(list_items_8, 7);
+  ElmcValue *list_items_8[7] = { tmp_1, tmp_2, tmp_3, tmp_4, tmp_5, tmp_6, tmp_7 };
+  ElmcValue *tmp_8 = elmc_list_from_values_take(list_items_8, 7);
 
   return tmp_8;
 }
@@ -327,36 +601,32 @@ ElmcValue *elmc_fn_Main_init(ElmcValue ** const args, const int argc) {
   ElmcValue *launchContext = (argc > 0) ? args[0] : NULL;
   (void)launchContext;
 
-    ElmcValue *tmp_1 = elmc_record_get_index(launchContext, 2 /* reason */);
+  ElmcValue *call_args_1[1] = { ELMC_RECORD_GET_INDEX(launchContext, 2 /* reason */) };
+  ElmcValue *tmp_1 = elmc_fn_Pebble_Platform_launchReasonToInt(call_args_1, 1);
 
-    ElmcValue *call_args_2[1] = { tmp_1 };
-    ElmcValue *tmp_2 = elmc_fn_Pebble_Platform_launchReasonToInt(call_args_2, 1);
+  const elmc_int_t native_i_2 = elmc_as_int(tmp_1);
+  elmc_release(tmp_1);
 
-    elmc_release(tmp_1);
+  const elmc_int_t native_let_initial_3 = native_i_2;
 
-    const elmc_int_t native_i_3 = elmc_as_int(tmp_2);
-    elmc_release(tmp_2);
+  const char *rec_field_names_3[2] = { "temperature", "value" };
+  elmc_int_t rec_values_3[2] = { 0, native_let_initial_3 };
+  ElmcValue *tmp_3 = elmc_record_new_static_ints(2, rec_field_names_3, rec_values_3);
 
-    const elmc_int_t native_let_initial_4 = native_i_3;
+  ElmcValue *tmp_4 = elmc_new_int(ELMC_UNION_COMPANION_TYPES_BERLIN);
 
-    const char *rec_names_4[2] = { "temperature", "value" };
-    elmc_int_t rec_values_4[2] = { 0, native_let_initial_4 };
-    ElmcValue *tmp_4 = elmc_record_new_ints(2, rec_names_4, rec_values_4);
+  ElmcValue *call_args_5[1] = { tmp_4 };
+  ElmcValue *tmp_5 = elmc_fn_Main_requestWeather(call_args_5, 1);
 
-    ElmcValue *tmp_5 = elmc_new_int(2);
+  elmc_release(tmp_4);
 
-    ElmcValue *call_args_6[1] = { tmp_5 };
-    ElmcValue *tmp_6 = elmc_fn_Main_requestWeather(call_args_6, 1);
+  ElmcValue *tmp_6 = elmc_fn_Main_requestSystemInfo(NULL, 0);
+  ElmcValue *list_items_7[2] = { tmp_5, tmp_6 };
+  ElmcValue *tmp_7 = elmc_list_from_values_take(list_items_7, 2);
 
-    elmc_release(tmp_5);
+  ElmcValue *tmp_8 = elmc_tuple2_take(tmp_3, tmp_7);
 
-    ElmcValue *tmp_7 = elmc_fn_Main_requestSystemInfo(NULL, 0);
-    ElmcValue *list_items_8[2] = { tmp_6, tmp_7 };
-    ElmcValue *tmp_8 = elmc_list_from_values_take(list_items_8, 2);
-
-  ElmcValue *tmp_9 = elmc_tuple2_take(tmp_4, tmp_8);
-
-  return tmp_9;
+  return tmp_8;
 }
 
 ElmcValue *elmc_fn_Main_update(ElmcValue ** const args, const int argc) {
@@ -368,94 +638,46 @@ ElmcValue *elmc_fn_Main_update(ElmcValue ** const args, const int argc) {
   (void)msg;
   (void)model;
 
-    const int case_msg_tag_1 = (msg && (msg)->tag == ELMC_TAG_INT ? elmc_as_int(msg) : (msg && (msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL ? elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) : -1));
-    ElmcValue *tmp_1 = elmc_int_zero();
-    switch (case_msg_tag_1) {
+  const int case_msg_tag_1 = (msg && (msg)->tag == ELMC_TAG_INT ? elmc_as_int(msg) : (msg && (msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL ? elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) : -1));
+  ElmcValue *tmp_1 = elmc_int_zero();
+  switch (case_msg_tag_1) {
     case ELMC_PEBBLE_MSG_TICK:
+      ElmcValue *call_args_2[2] = { msg, model };
+      tmp_1 = elmc_fn_Main_handlePlatformMsg(call_args_2, 2);
 
-        ElmcValue *tmp_2 = msg ? elmc_retain(msg) : elmc_int_zero();
-        ElmcValue *tmp_3 = model ? elmc_retain(model) : elmc_int_zero();
-
-        ElmcValue *call_args_4[2] = { tmp_2, tmp_3 };
-        ElmcValue *tmp_4 = elmc_fn_Main_handlePlatformMsg(call_args_4, 2);
-
-        elmc_release(tmp_2);
-        elmc_release(tmp_3);
-
-      tmp_1 = tmp_4;
       break;
-  case ELMC_PEBBLE_MSG_UPPRESSED:
+    case ELMC_PEBBLE_MSG_UPPRESSED:
+      ElmcValue *call_args_3[2] = { msg, model };
+      tmp_1 = elmc_fn_Main_handlePlatformMsg(call_args_3, 2);
 
-        ElmcValue *tmp_5 = msg ? elmc_retain(msg) : elmc_int_zero();
-        ElmcValue *tmp_6 = model ? elmc_retain(model) : elmc_int_zero();
-
-        ElmcValue *call_args_7[2] = { tmp_5, tmp_6 };
-        ElmcValue *tmp_7 = elmc_fn_Main_handlePlatformMsg(call_args_7, 2);
-
-        elmc_release(tmp_5);
-        elmc_release(tmp_6);
-
-      tmp_1 = tmp_7;
       break;
-  case ELMC_PEBBLE_MSG_SELECTPRESSED:
+    case ELMC_PEBBLE_MSG_SELECTPRESSED:
+      ElmcValue *call_args_4[2] = { msg, model };
+      tmp_1 = elmc_fn_Main_handlePlatformMsg(call_args_4, 2);
 
-        ElmcValue *tmp_8 = msg ? elmc_retain(msg) : elmc_int_zero();
-        ElmcValue *tmp_9 = model ? elmc_retain(model) : elmc_int_zero();
-
-        ElmcValue *call_args_10[2] = { tmp_8, tmp_9 };
-        ElmcValue *tmp_10 = elmc_fn_Main_handlePlatformMsg(call_args_10, 2);
-
-        elmc_release(tmp_8);
-        elmc_release(tmp_9);
-
-      tmp_1 = tmp_10;
       break;
-  case ELMC_PEBBLE_MSG_DOWNPRESSED:
+    case ELMC_PEBBLE_MSG_DOWNPRESSED:
+      ElmcValue *call_args_5[2] = { msg, model };
+      tmp_1 = elmc_fn_Main_handlePlatformMsg(call_args_5, 2);
 
-        ElmcValue *tmp_11 = msg ? elmc_retain(msg) : elmc_int_zero();
-        ElmcValue *tmp_12 = model ? elmc_retain(model) : elmc_int_zero();
-
-        ElmcValue *call_args_13[2] = { tmp_11, tmp_12 };
-        ElmcValue *tmp_13 = elmc_fn_Main_handlePlatformMsg(call_args_13, 2);
-
-        elmc_release(tmp_11);
-        elmc_release(tmp_12);
-
-      tmp_1 = tmp_13;
       break;
-  case ELMC_PEBBLE_MSG_ACCELTAP:
+    case ELMC_PEBBLE_MSG_ACCELTAP:
+      ElmcValue *call_args_6[2] = { msg, model };
+      tmp_1 = elmc_fn_Main_handlePlatformMsg(call_args_6, 2);
 
-        ElmcValue *tmp_14 = msg ? elmc_retain(msg) : elmc_int_zero();
-        ElmcValue *tmp_15 = model ? elmc_retain(model) : elmc_int_zero();
-
-        ElmcValue *call_args_16[2] = { tmp_14, tmp_15 };
-        ElmcValue *tmp_16 = elmc_fn_Main_handlePlatformMsg(call_args_16, 2);
-
-        elmc_release(tmp_14);
-        elmc_release(tmp_15);
-
-      tmp_1 = tmp_16;
       break;
-  default:
+    default:
+      ElmcValue *call_args_7[2] = { msg, model };
+      tmp_1 = elmc_fn_Main_handleAppMsg(call_args_7, 2);
 
-        ElmcValue *tmp_17 = msg ? elmc_retain(msg) : elmc_int_zero();
-        ElmcValue *tmp_18 = model ? elmc_retain(model) : elmc_int_zero();
-
-        ElmcValue *call_args_19[2] = { tmp_17, tmp_18 };
-        ElmcValue *tmp_19 = elmc_fn_Main_handleAppMsg(call_args_19, 2);
-
-        elmc_release(tmp_17);
-        elmc_release(tmp_18);
-
-      tmp_1 = tmp_19;
       break;
 
-    }
+  }
 
   return tmp_1;
 }
 
-ElmcValue *elmc_fn_Main_handleAppMsg(ElmcValue ** const args, const int argc) {
+static ElmcValue *elmc_fn_Main_handleAppMsg(ElmcValue ** const args, const int argc) {
   /* Ownership policy: borrow_arg, borrow_result */
   (void)args;
   (void)argc;
@@ -464,142 +686,103 @@ ElmcValue *elmc_fn_Main_handleAppMsg(ElmcValue ** const args, const int argc) {
   (void)msg;
   (void)model;
 
-    const int case_msg_tag_1 = (msg && (msg)->tag == ELMC_TAG_INT ? elmc_as_int(msg) : (msg && (msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL ? elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) : -1));
-    ElmcValue *tmp_1 = elmc_int_zero();
-    switch (case_msg_tag_1) {
+  const int case_msg_tag_1 = (msg && (msg)->tag == ELMC_TAG_INT ? elmc_as_int(msg) : (msg && (msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL ? elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) : -1));
+  ElmcValue *tmp_1 = elmc_int_zero();
+  switch (case_msg_tag_1) {
     case ELMC_PEBBLE_MSG_INCREMENT:
+      // inlined Main.counterOf
+      const elmc_int_t native_let_counter_2 = ELMC_RECORD_GET_INDEX_INT(model, 1 /* value */);
+      ElmcValue *call_args_2[1] = { model };
+      ElmcValue *tmp_2 = elmc_fn_Main_temperatureOf(call_args_2, 1);
+      ElmcValue *tmp_3 = elmc_new_int((native_let_counter_2 + 1));
+      const char *rec_field_names_4[2] = { "temperature", "value" };
+      ElmcValue *rec_values_4[2] = { tmp_2, tmp_3 };
+      ElmcValue *tmp_4 = elmc_record_new_static_take(2, rec_field_names_4, rec_values_4);
+      ElmcValue *tmp_5 = elmc_int_zero();
+      tmp_1 = elmc_tuple2_take(tmp_4, tmp_5);
 
-          // inlined Main.counterOf
-
-        const elmc_int_t native_let_counter_2 = ELMC_RECORD_GET_INDEX_INT(model, 1 /* value */);
-
-        ElmcValue *tmp_2 = model ? elmc_retain(model) : elmc_int_zero();
-
-        ElmcValue *call_args_3[1] = { tmp_2 };
-        ElmcValue *tmp_3 = elmc_fn_Main_temperatureOf(call_args_3, 1);
-
-        elmc_release(tmp_2);
-
-        ElmcValue *tmp_4 = elmc_new_int((native_let_counter_2 + 1));
-
-        const char *rec_names_5[2] = { "temperature", "value" };
-        ElmcValue *rec_values_5[2] = { tmp_3, tmp_4 };
-          ElmcValue *tmp_5 = elmc_record_new_take(2, rec_names_5, rec_values_5);
-
-      ElmcValue *tmp_6 = elmc_int_zero();
-      ElmcValue *tmp_7 = elmc_tuple2_take(tmp_5, tmp_6);
-
-      tmp_1 = tmp_7;
       break;
-  case ELMC_PEBBLE_MSG_DECREMENT:
+    case ELMC_PEBBLE_MSG_DECREMENT:
+      // inlined Main.counterOf
+      const elmc_int_t native_let_counter_7 = ELMC_RECORD_GET_INDEX_INT(model, 1 /* value */);
+      ElmcValue *call_args_7[1] = { model };
+      ElmcValue *tmp_7 = elmc_fn_Main_temperatureOf(call_args_7, 1);
+      ElmcValue *tmp_8 = elmc_new_int((native_let_counter_7 - 1));
+      const char *rec_field_names_9[2] = { "temperature", "value" };
+      ElmcValue *rec_values_9[2] = { tmp_7, tmp_8 };
+      ElmcValue *tmp_9 = elmc_record_new_static_take(2, rec_field_names_9, rec_values_9);
+      ElmcValue *tmp_10 = elmc_int_zero();
+      tmp_1 = elmc_tuple2_take(tmp_9, tmp_10);
 
-          // inlined Main.counterOf
-
-        const elmc_int_t native_let_counter_8 = ELMC_RECORD_GET_INDEX_INT(model, 1 /* value */);
-
-        ElmcValue *tmp_8 = model ? elmc_retain(model) : elmc_int_zero();
-
-        ElmcValue *call_args_9[1] = { tmp_8 };
-        ElmcValue *tmp_9 = elmc_fn_Main_temperatureOf(call_args_9, 1);
-
-        elmc_release(tmp_8);
-
-        ElmcValue *tmp_10 = elmc_new_int((native_let_counter_8 - 1));
-
-        const char *rec_names_11[2] = { "temperature", "value" };
-        ElmcValue *rec_values_11[2] = { tmp_9, tmp_10 };
-          ElmcValue *tmp_11 = elmc_record_new_take(2, rec_names_11, rec_values_11);
-
-      ElmcValue *tmp_12 = elmc_int_zero();
-      ElmcValue *tmp_13 = elmc_tuple2_take(tmp_11, tmp_12);
-
-      tmp_1 = tmp_13;
       break;
-  case ELMC_PEBBLE_MSG_PROVIDETEMPERATURE:
+    case ELMC_PEBBLE_MSG_PROVIDETEMPERATURE:
+      ElmcValue *tmp_12 = ((ElmcTuple2 *)msg->payload)->second ? elmc_retain(((ElmcTuple2 *)msg->payload)->second) : elmc_int_zero();
+      ElmcValue *tmp_13 = elmc_maybe_just(tmp_12);
+      elmc_release(tmp_12);
+      ElmcValue *call_args_14[1] = { model };
+      ElmcValue *tmp_14 = elmc_fn_Main_counterOf(call_args_14, 1);
+      const char *rec_field_names_15[2] = { "temperature", "value" };
+      ElmcValue *rec_values_15[2] = { tmp_13, tmp_14 };
+      ElmcValue *tmp_15 = elmc_record_new_static_take(2, rec_field_names_15, rec_values_15);
+      ElmcValue *tmp_16 = elmc_int_zero();
+      tmp_1 = elmc_tuple2_take(tmp_15, tmp_16);
 
-        ElmcValue *tmp_14 = elmc_new_int(1);
-      ElmcValue *tmp_15 = ((ElmcTuple2 *)msg->payload)->second ? elmc_retain(((ElmcTuple2 *)msg->payload)->second) : elmc_int_zero();
-      ElmcValue *tmp_16 = elmc_tuple2_take(tmp_14, tmp_15);
-
-        ElmcValue *tmp_17 = model ? elmc_retain(model) : elmc_int_zero();
-
-        ElmcValue *call_args_18[1] = { tmp_17 };
-        ElmcValue *tmp_18 = elmc_fn_Main_counterOf(call_args_18, 1);
-
-        elmc_release(tmp_17);
-
-        const char *rec_names_19[2] = { "temperature", "value" };
-        ElmcValue *rec_values_19[2] = { tmp_16, tmp_18 };
-          ElmcValue *tmp_19 = elmc_record_new_take(2, rec_names_19, rec_values_19);
-
-      ElmcValue *tmp_20 = elmc_int_zero();
-      ElmcValue *tmp_21 = elmc_tuple2_take(tmp_19, tmp_20);
-
-      tmp_1 = tmp_21;
       break;
-  case ELMC_PEBBLE_MSG_CURRENTTIMESTRING:
-      ElmcValue *tmp_22 = model ? elmc_retain(model) : elmc_int_zero();
-      ElmcValue *tmp_23 = elmc_int_zero();
-      ElmcValue *tmp_24 = elmc_tuple2_take(tmp_22, tmp_23);
+    case ELMC_PEBBLE_MSG_CURRENTTIMESTRING:
+      ElmcValue *tmp_18 = model ? elmc_retain(model) : elmc_int_zero();
+      ElmcValue *tmp_19 = elmc_int_zero();
+      tmp_1 = elmc_tuple2_take(tmp_18, tmp_19);
 
-      tmp_1 = tmp_24;
       break;
-  case ELMC_PEBBLE_MSG_CLOCKSTYLE24H:
-      ElmcValue *tmp_25 = model ? elmc_retain(model) : elmc_int_zero();
-      ElmcValue *tmp_26 = elmc_int_zero();
-      ElmcValue *tmp_27 = elmc_tuple2_take(tmp_25, tmp_26);
+    case ELMC_PEBBLE_MSG_CLOCKSTYLE24H:
+      ElmcValue *tmp_21 = model ? elmc_retain(model) : elmc_int_zero();
+      ElmcValue *tmp_22 = elmc_int_zero();
+      tmp_1 = elmc_tuple2_take(tmp_21, tmp_22);
 
-      tmp_1 = tmp_27;
       break;
-  case ELMC_PEBBLE_MSG_TIMEZONEISSET:
-      ElmcValue *tmp_28 = model ? elmc_retain(model) : elmc_int_zero();
-      ElmcValue *tmp_29 = elmc_int_zero();
-      ElmcValue *tmp_30 = elmc_tuple2_take(tmp_28, tmp_29);
+    case ELMC_PEBBLE_MSG_TIMEZONEISSET:
+      ElmcValue *tmp_24 = model ? elmc_retain(model) : elmc_int_zero();
+      ElmcValue *tmp_25 = elmc_int_zero();
+      tmp_1 = elmc_tuple2_take(tmp_24, tmp_25);
 
-      tmp_1 = tmp_30;
       break;
-  case ELMC_PEBBLE_MSG_TIMEZONENAME:
-      ElmcValue *tmp_31 = model ? elmc_retain(model) : elmc_int_zero();
-      ElmcValue *tmp_32 = elmc_int_zero();
-      ElmcValue *tmp_33 = elmc_tuple2_take(tmp_31, tmp_32);
+    case ELMC_PEBBLE_MSG_TIMEZONENAME:
+      ElmcValue *tmp_27 = model ? elmc_retain(model) : elmc_int_zero();
+      ElmcValue *tmp_28 = elmc_int_zero();
+      tmp_1 = elmc_tuple2_take(tmp_27, tmp_28);
 
-      tmp_1 = tmp_33;
       break;
-  case ELMC_PEBBLE_MSG_WATCHMODELNAME:
-      ElmcValue *tmp_34 = model ? elmc_retain(model) : elmc_int_zero();
-      ElmcValue *tmp_35 = elmc_int_zero();
-      ElmcValue *tmp_36 = elmc_tuple2_take(tmp_34, tmp_35);
+    case ELMC_PEBBLE_MSG_WATCHMODELNAME:
+      ElmcValue *tmp_30 = model ? elmc_retain(model) : elmc_int_zero();
+      ElmcValue *tmp_31 = elmc_int_zero();
+      tmp_1 = elmc_tuple2_take(tmp_30, tmp_31);
 
-      tmp_1 = tmp_36;
       break;
-  case ELMC_PEBBLE_MSG_WATCHCOLORNAME:
-      ElmcValue *tmp_37 = model ? elmc_retain(model) : elmc_int_zero();
-      ElmcValue *tmp_38 = elmc_int_zero();
-      ElmcValue *tmp_39 = elmc_tuple2_take(tmp_37, tmp_38);
+    case ELMC_PEBBLE_MSG_WATCHCOLORNAME:
+      ElmcValue *tmp_33 = model ? elmc_retain(model) : elmc_int_zero();
+      ElmcValue *tmp_34 = elmc_int_zero();
+      tmp_1 = elmc_tuple2_take(tmp_33, tmp_34);
 
-      tmp_1 = tmp_39;
       break;
-  case ELMC_PEBBLE_MSG_FIRMWAREVERSIONSTRING:
-      ElmcValue *tmp_40 = model ? elmc_retain(model) : elmc_int_zero();
-      ElmcValue *tmp_41 = elmc_int_zero();
-      ElmcValue *tmp_42 = elmc_tuple2_take(tmp_40, tmp_41);
+    case ELMC_PEBBLE_MSG_FIRMWAREVERSIONSTRING:
+      ElmcValue *tmp_36 = model ? elmc_retain(model) : elmc_int_zero();
+      ElmcValue *tmp_37 = elmc_int_zero();
+      tmp_1 = elmc_tuple2_take(tmp_36, tmp_37);
 
-      tmp_1 = tmp_42;
       break;
-  default:
-      ElmcValue *tmp_43 = model ? elmc_retain(model) : elmc_int_zero();
-      ElmcValue *tmp_44 = elmc_int_zero();
-      ElmcValue *tmp_45 = elmc_tuple2_take(tmp_43, tmp_44);
+    default:
+      ElmcValue *tmp_39 = model ? elmc_retain(model) : elmc_int_zero();
+      ElmcValue *tmp_40 = elmc_int_zero();
+      tmp_1 = elmc_tuple2_take(tmp_39, tmp_40);
 
-      tmp_1 = tmp_45;
       break;
 
-    }
+  }
 
   return tmp_1;
 }
 
-ElmcValue *elmc_fn_Main_handlePlatformMsg(ElmcValue ** const args, const int argc) {
+static ElmcValue *elmc_fn_Main_handlePlatformMsg(ElmcValue ** const args, const int argc) {
   /* Ownership policy: borrow_arg, borrow_result */
   (void)args;
   (void)argc;
@@ -608,155 +791,117 @@ ElmcValue *elmc_fn_Main_handlePlatformMsg(ElmcValue ** const args, const int arg
   (void)msg;
   (void)model;
 
-    const int case_msg_tag_1 = (msg && (msg)->tag == ELMC_TAG_INT ? elmc_as_int(msg) : (msg && (msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL ? elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) : -1));
-    ElmcValue *tmp_1 = elmc_int_zero();
-    switch (case_msg_tag_1) {
+  const int case_msg_tag_1 = (msg && (msg)->tag == ELMC_TAG_INT ? elmc_as_int(msg) : (msg && (msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL ? elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) : -1));
+  ElmcValue *tmp_1 = elmc_int_zero();
+  switch (case_msg_tag_1) {
     case ELMC_PEBBLE_MSG_TICK:
 
-        // inlined Main.counterOf
+      // inlined Main.counterOf
       ElmcValue *tmp_2 = elmc_new_int(ELMC_RECORD_GET_INDEX_INT(model, 1 /* value */));
 
-          // inlined Main.helper
+      // inlined Main.helper
 
-        const elmc_int_t native_let_base_3 = (elmc_as_int(tmp_2) + 2);
+      const elmc_int_t native_let_base_3 = (elmc_as_int(tmp_2) + 2);
 
-        elmc_int_t native_if_3;
-        if ((native_let_base_3 > 10)) {
+      elmc_int_t native_if_3;
+      if ((native_let_base_3 > 10)) {
 
-          native_if_3 = native_let_base_3;
-        } else {
+      native_if_3 = native_let_base_3;
+    } else {
 
-          native_if_3 = (native_let_base_3 + 1);
-        }
-
-        // inlined Main.advanced
-
-        const elmc_int_t native_let_next_4 = native_if_3;
-
-        ElmcValue *tmp_4 = model ? elmc_retain(model) : elmc_int_zero();
-
-        ElmcValue *call_args_5[1] = { tmp_4 };
-        ElmcValue *tmp_5 = elmc_fn_Main_temperatureOf(call_args_5, 1);
-
-        elmc_release(tmp_4);
-
-        ElmcValue *tmp_6 = elmc_new_int(native_let_next_4);
-        const char *rec_names_7[2] = { "temperature", "value" };
-        ElmcValue *rec_values_7[2] = { tmp_5, tmp_6 };
-          ElmcValue *tmp_7 = elmc_record_new_take(2, rec_names_7, rec_values_7);
-
-        ElmcValue *tmp_8 = elmc_cmd1(ELMC_PEBBLE_CMD_TIMER_AFTER_MS, 1000);
-
-      ElmcValue *tmp_9 = elmc_tuple2_take(tmp_7, tmp_8);
-
-        elmc_release(tmp_2);
-
-      tmp_1 = tmp_9;
-      break;
-  case ELMC_PEBBLE_MSG_UPPRESSED:
-
-          // inlined Main.counterOf
-
-        const elmc_int_t native_let_counter_10 = ELMC_RECORD_GET_INDEX_INT(model, 1 /* value */);
-
-      ElmcValue *tmp_10 = elmc_new_int((native_let_counter_10 + 1));
-
-        ElmcValue *tmp_11 = model ? elmc_retain(model) : elmc_int_zero();
-
-        ElmcValue *call_args_12[1] = { tmp_11 };
-        ElmcValue *tmp_12 = elmc_fn_Main_temperatureOf(call_args_12, 1);
-
-        elmc_release(tmp_11);
-
-        ElmcValue *tmp_13 = elmc_retain(tmp_10);
-        const char *rec_names_14[2] = { "temperature", "value" };
-        ElmcValue *rec_values_14[2] = { tmp_12, tmp_13 };
-          ElmcValue *tmp_14 = elmc_record_new_take(2, rec_names_14, rec_values_14);
-
-        ElmcValue *tmp_15 = elmc_cmd2(ELMC_PEBBLE_CMD_STORAGE_WRITE_INT, 1, elmc_as_int(tmp_10));
-
-      ElmcValue *tmp_16 = elmc_tuple2_take(tmp_14, tmp_15);
-
-        elmc_release(tmp_10);
-
-      tmp_1 = tmp_16;
-      break;
-  case ELMC_PEBBLE_MSG_SELECTPRESSED:
-      ElmcValue *tmp_17 = model ? elmc_retain(model) : elmc_int_zero();
-
-        ElmcValue *tmp_18 = elmc_new_int(2);
-
-        ElmcValue *call_args_19[1] = { tmp_18 };
-        ElmcValue *tmp_19 = elmc_fn_Main_requestWeather(call_args_19, 1);
-
-        elmc_release(tmp_18);
-
-        ElmcValue *tmp_20 = elmc_fn_Main_requestSystemInfo(NULL, 0);
-        ElmcValue *list_items_21[2] = { tmp_19, tmp_20 };
-        ElmcValue *tmp_21 = elmc_list_from_values_take(list_items_21, 2);
-
-      ElmcValue *tmp_22 = elmc_tuple2_take(tmp_17, tmp_21);
-
-      tmp_1 = tmp_22;
-      break;
-  case ELMC_PEBBLE_MSG_DOWNPRESSED:
-
-          // inlined Main.counterOf
-
-        const elmc_int_t native_let_counter_23 = ELMC_RECORD_GET_INDEX_INT(model, 1 /* value */);
-
-        ElmcValue *tmp_23 = model ? elmc_retain(model) : elmc_int_zero();
-
-        ElmcValue *call_args_24[1] = { tmp_23 };
-        ElmcValue *tmp_24 = elmc_fn_Main_temperatureOf(call_args_24, 1);
-
-        elmc_release(tmp_23);
-
-        ElmcValue *tmp_25 = elmc_new_int((native_let_counter_23 - 1));
-
-        const char *rec_names_26[2] = { "temperature", "value" };
-        ElmcValue *rec_values_26[2] = { tmp_24, tmp_25 };
-          ElmcValue *tmp_26 = elmc_record_new_take(2, rec_names_26, rec_values_26);
-
-        ElmcValue *tmp_27 = elmc_cmd1(ELMC_PEBBLE_CMD_STORAGE_DELETE, 1);
-
-      ElmcValue *tmp_28 = elmc_tuple2_take(tmp_26, tmp_27);
-
-      tmp_1 = tmp_28;
-      break;
-  case ELMC_PEBBLE_MSG_ACCELTAP:
-
-          // inlined Main.counterOf
-
-        const elmc_int_t native_let_counter_29 = ELMC_RECORD_GET_INDEX_INT(model, 1 /* value */);
-
-        ElmcValue *tmp_29 = model ? elmc_retain(model) : elmc_int_zero();
-
-        ElmcValue *call_args_30[1] = { tmp_29 };
-        ElmcValue *tmp_30 = elmc_fn_Main_temperatureOf(call_args_30, 1);
-
-        elmc_release(tmp_29);
-
-        ElmcValue *tmp_31 = elmc_new_int((native_let_counter_29 + 1));
-
-        const char *rec_names_32[2] = { "temperature", "value" };
-        ElmcValue *rec_values_32[2] = { tmp_30, tmp_31 };
-          ElmcValue *tmp_32 = elmc_record_new_take(2, rec_names_32, rec_values_32);
-
-      ElmcValue *tmp_33 = elmc_int_zero();
-      ElmcValue *tmp_34 = elmc_tuple2_take(tmp_32, tmp_33);
-
-      tmp_1 = tmp_34;
-      break;
-  default:
-      ElmcValue *tmp_35 = model ? elmc_retain(model) : elmc_int_zero();
-      ElmcValue *tmp_36 = elmc_int_zero();
-      ElmcValue *tmp_37 = elmc_tuple2_take(tmp_35, tmp_36);
-
-      tmp_1 = tmp_37;
-      break;
-
+      native_if_3 = (native_let_base_3 + 1);
     }
+
+      // inlined Main.advanced
+
+      const elmc_int_t native_let_next_4 = native_if_3;
+
+      ElmcValue *call_args_4[1] = { model };
+      ElmcValue *tmp_4 = elmc_fn_Main_temperatureOf(call_args_4, 1);
+
+      ElmcValue *tmp_5 = elmc_new_int(native_let_next_4);
+      const char *rec_field_names_6[2] = { "temperature", "value" };
+      ElmcValue *rec_values_6[2] = { tmp_4, tmp_5 };
+      ElmcValue *tmp_6 = elmc_record_new_static_take(2, rec_field_names_6, rec_values_6);
+
+      ElmcValue *tmp_7 = elmc_cmd1(ELMC_PEBBLE_CMD_TIMER_AFTER_MS, 1000);
+
+      ElmcValue *tmp_8 = elmc_tuple2_take(tmp_6, tmp_7);
+
+      elmc_release(tmp_2);
+
+      tmp_1 = tmp_8;
+      break;
+    case ELMC_PEBBLE_MSG_UPPRESSED:
+
+      // inlined Main.counterOf
+
+      const elmc_int_t native_let_counter_9 = ELMC_RECORD_GET_INDEX_INT(model, 1 /* value */);
+
+      ElmcValue *tmp_9 = elmc_new_int((native_let_counter_9 + 1));
+
+      ElmcValue *call_args_10[1] = { model };
+      ElmcValue *tmp_10 = elmc_fn_Main_temperatureOf(call_args_10, 1);
+
+      ElmcValue *tmp_11 = elmc_retain(tmp_9);
+      const char *rec_field_names_12[2] = { "temperature", "value" };
+      ElmcValue *rec_values_12[2] = { tmp_10, tmp_11 };
+      ElmcValue *tmp_12 = elmc_record_new_static_take(2, rec_field_names_12, rec_values_12);
+
+      ElmcValue *tmp_13 = elmc_cmd2(ELMC_PEBBLE_CMD_STORAGE_WRITE_INT, 1, elmc_as_int(tmp_9));
+
+      ElmcValue *tmp_14 = elmc_tuple2_take(tmp_12, tmp_13);
+
+      elmc_release(tmp_9);
+
+      tmp_1 = tmp_14;
+      break;
+    case ELMC_PEBBLE_MSG_SELECTPRESSED:
+      ElmcValue *tmp_15 = model ? elmc_retain(model) : elmc_int_zero();
+      ElmcValue *tmp_16 = elmc_new_int(ELMC_UNION_COMPANION_TYPES_BERLIN);
+      ElmcValue *call_args_17[1] = { tmp_16 };
+      ElmcValue *tmp_17 = elmc_fn_Main_requestWeather(call_args_17, 1);
+      elmc_release(tmp_16);
+      ElmcValue *tmp_18 = elmc_fn_Main_requestSystemInfo(NULL, 0);
+      ElmcValue *list_items_19[2] = { tmp_17, tmp_18 };
+      ElmcValue *tmp_19 = elmc_list_from_values_take(list_items_19, 2);
+      tmp_1 = elmc_tuple2_take(tmp_15, tmp_19);
+
+      break;
+    case ELMC_PEBBLE_MSG_DOWNPRESSED:
+      // inlined Main.counterOf
+      const elmc_int_t native_let_counter_21 = ELMC_RECORD_GET_INDEX_INT(model, 1 /* value */);
+      ElmcValue *call_args_21[1] = { model };
+      ElmcValue *tmp_21 = elmc_fn_Main_temperatureOf(call_args_21, 1);
+      ElmcValue *tmp_22 = elmc_new_int((native_let_counter_21 - 1));
+      const char *rec_field_names_23[2] = { "temperature", "value" };
+      ElmcValue *rec_values_23[2] = { tmp_21, tmp_22 };
+      ElmcValue *tmp_23 = elmc_record_new_static_take(2, rec_field_names_23, rec_values_23);
+      ElmcValue *tmp_24 = elmc_cmd1(ELMC_PEBBLE_CMD_STORAGE_DELETE, 1);
+      tmp_1 = elmc_tuple2_take(tmp_23, tmp_24);
+
+      break;
+    case ELMC_PEBBLE_MSG_ACCELTAP:
+      // inlined Main.counterOf
+      const elmc_int_t native_let_counter_26 = ELMC_RECORD_GET_INDEX_INT(model, 1 /* value */);
+      ElmcValue *call_args_26[1] = { model };
+      ElmcValue *tmp_26 = elmc_fn_Main_temperatureOf(call_args_26, 1);
+      ElmcValue *tmp_27 = elmc_new_int((native_let_counter_26 + 1));
+      const char *rec_field_names_28[2] = { "temperature", "value" };
+      ElmcValue *rec_values_28[2] = { tmp_26, tmp_27 };
+      ElmcValue *tmp_28 = elmc_record_new_static_take(2, rec_field_names_28, rec_values_28);
+      ElmcValue *tmp_29 = elmc_int_zero();
+      tmp_1 = elmc_tuple2_take(tmp_28, tmp_29);
+
+      break;
+    default:
+      ElmcValue *tmp_31 = model ? elmc_retain(model) : elmc_int_zero();
+      ElmcValue *tmp_32 = elmc_int_zero();
+      tmp_1 = elmc_tuple2_take(tmp_31, tmp_32);
+
+      break;
+
+  }
 
   return tmp_1;
 }
@@ -778,390 +923,70 @@ ElmcValue *elmc_fn_Main_subscriptions(ElmcValue ** const args, const int argc) {
 
   ElmcValue *tmp_5 = elmc_sub1(ELMC_SUBSCRIPTION_ACCEL_TAP, ELMC_PEBBLE_MSG_ACCELTAP);
 
-    ElmcValue *list_items_6[5] = { tmp_1, tmp_2, tmp_3, tmp_4, tmp_5 };
-    ElmcValue *tmp_6 = elmc_list_from_values_take(list_items_6, 5);
+  ElmcValue *list_items_6[5] = { tmp_1, tmp_2, tmp_3, tmp_4, tmp_5 };
+  ElmcValue *tmp_6 = elmc_list_from_values_take(list_items_6, 5);
 
   return tmp_6;
 }
 
-ElmcValue *elmc_fn_Main_view(ElmcValue ** const args, const int argc) {
-  /* Ownership policy: borrow_arg, borrow_result */
-  (void)args;
-  (void)argc;
-  ElmcValue *model = (argc > 0) ? args[0] : NULL;
-  (void)model;
-  // #region agent log
-  elmc_agent_generated_probe(0xED998100);
-  // #endregion
-
-  ElmcValue *tmp_1 = elmc_new_int(ELMC_UI_NODE_WINDOW_STACK);
-
-    ElmcValue *tmp_2 = elmc_new_int(ELMC_UI_NODE_WINDOW);
-  ElmcValue *tmp_3 = elmc_new_int(1);
-
-    ElmcValue *tmp_4 = elmc_new_int(ELMC_UI_NODE_CANVAS_LAYER);
-  ElmcValue *tmp_5 = elmc_new_int(1);
-
-    ElmcValue *tmp_6 = elmc_new_int(ELMC_RENDER_OP_CLEAR);
-  ElmcValue *tmp_7 = elmc_new_int(ELMC_COLOR_WHITE);
-  ElmcValue *tmp_8 = elmc_int_zero();
-  ElmcValue *tmp_9 = elmc_int_zero();
-  ElmcValue *tmp_10 = elmc_int_zero();
-
-  ElmcValue *tmp_11 = elmc_tuple2_ints(0, 0);
-
-  ElmcValue *tmp_12 = elmc_tuple2_take(tmp_10, tmp_11);
-
-  ElmcValue *tmp_13 = elmc_tuple2_take(tmp_9, tmp_12);
-
-  ElmcValue *tmp_14 = elmc_tuple2_take(tmp_8, tmp_13);
-
-  ElmcValue *tmp_15 = elmc_tuple2_take(tmp_7, tmp_14);
-
-  ElmcValue *tmp_16 = elmc_tuple2_take(tmp_6, tmp_15);
-
-    ElmcValue *tmp_17 = elmc_new_int(ELMC_RENDER_OP_CONTEXT_GROUP);
-
-  ElmcValue *tmp_18 = elmc_tuple2_ints(ELMC_CONTEXT_STROKE_WIDTH, 3);
-
-  ElmcValue *tmp_19 = elmc_tuple2_ints(ELMC_CONTEXT_ANTIALIASED, 1);
-
-  ElmcValue *tmp_20 = elmc_tuple2_ints(ELMC_CONTEXT_STROKE_COLOR, ELMC_COLOR_BLACK);
-
-  ElmcValue *tmp_21 = elmc_tuple2_ints(ELMC_CONTEXT_FILL_COLOR, ELMC_COLOR_BLACK);
-
-  ElmcValue *tmp_22 = elmc_tuple2_ints(ELMC_CONTEXT_TEXT_COLOR, ELMC_COLOR_BLACK);
-
-    ElmcValue *list_items_23[5] = { tmp_18, tmp_19, tmp_20, tmp_21, tmp_22 };
-    ElmcValue *tmp_23 = elmc_list_from_values_take(list_items_23, 5);
-
-    ElmcValue *tmp_24 = elmc_new_int(ELMC_RENDER_OP_ROUND_RECT);
-  ElmcValue *tmp_25 = elmc_new_int(6);
-  ElmcValue *tmp_26 = elmc_new_int(6);
-  ElmcValue *tmp_27 = elmc_new_int(132);
-  ElmcValue *tmp_28 = elmc_new_int(70);
-
-  ElmcValue *tmp_29 = elmc_tuple2_ints(6, ELMC_COLOR_BLACK);
-
-  ElmcValue *tmp_30 = elmc_tuple2_take(tmp_28, tmp_29);
-
-  ElmcValue *tmp_31 = elmc_tuple2_take(tmp_27, tmp_30);
-
-  ElmcValue *tmp_32 = elmc_tuple2_take(tmp_26, tmp_31);
-
-  ElmcValue *tmp_33 = elmc_tuple2_take(tmp_25, tmp_32);
-
-  ElmcValue *tmp_34 = elmc_tuple2_take(tmp_24, tmp_33);
-
-    ElmcValue *tmp_35 = elmc_new_int(ELMC_RENDER_OP_ARC);
-  ElmcValue *tmp_36 = elmc_new_int(20);
-  ElmcValue *tmp_37 = elmc_new_int(16);
-  ElmcValue *tmp_38 = elmc_new_int(36);
-  ElmcValue *tmp_39 = elmc_new_int(36);
-
-  ElmcValue *tmp_40 = elmc_tuple2_ints(0, 45000);
-
-  ElmcValue *tmp_41 = elmc_tuple2_take(tmp_39, tmp_40);
-
-  ElmcValue *tmp_42 = elmc_tuple2_take(tmp_38, tmp_41);
-
-  ElmcValue *tmp_43 = elmc_tuple2_take(tmp_37, tmp_42);
-
-  ElmcValue *tmp_44 = elmc_tuple2_take(tmp_36, tmp_43);
-
-  ElmcValue *tmp_45 = elmc_tuple2_take(tmp_35, tmp_44);
-
-    ElmcValue *tmp_46 = elmc_new_int(ELMC_RENDER_OP_PATH_OUTLINE);
-
-    const char *rec_names_47[2] = { "x", "y" };
-    elmc_int_t rec_values_47[2] = { 0, 0 };
-    ElmcValue *tmp_47 = elmc_record_new_ints(2, rec_names_47, rec_values_47);
-
-    const char *rec_names_48[2] = { "x", "y" };
-    elmc_int_t rec_values_48[2] = { 10, 4 };
-    ElmcValue *tmp_48 = elmc_record_new_ints(2, rec_names_48, rec_values_48);
-
-    const char *rec_names_49[2] = { "x", "y" };
-    elmc_int_t rec_values_49[2] = { 16, 14 };
-    ElmcValue *tmp_49 = elmc_record_new_ints(2, rec_names_49, rec_values_49);
-
-    const char *rec_names_50[2] = { "x", "y" };
-    elmc_int_t rec_values_50[2] = { 8, 24 };
-    ElmcValue *tmp_50 = elmc_record_new_ints(2, rec_names_50, rec_values_50);
-
-    const char *rec_names_51[2] = { "x", "y" };
-    elmc_int_t rec_values_51[2] = { 0, 18 };
-    ElmcValue *tmp_51 = elmc_record_new_ints(2, rec_names_51, rec_values_51);
-
-    ElmcValue *list_items_52[5] = { tmp_47, tmp_48, tmp_49, tmp_50, tmp_51 };
-    ElmcValue *tmp_52 = elmc_list_from_values_take(list_items_52, 5);
-
-    const char *rec_names_53[2] = { "x", "y" };
-    elmc_int_t rec_values_53[2] = { 86, 16 };
-    ElmcValue *tmp_53 = elmc_record_new_ints(2, rec_names_53, rec_values_53);
-
-    ElmcValue *tmp_54 = elmc_int_zero();
-
-    ElmcValue *call_args_55[3] = { tmp_52, tmp_53, tmp_54 };
-    ElmcValue *tmp_55 = elmc_fn_Pebble_Ui_path(call_args_55, 3);
-
-    elmc_release(tmp_52);
-    elmc_release(tmp_53);
-    elmc_release(tmp_54);
-
-  ElmcValue *tmp_56 = elmc_tuple2_take(tmp_46, tmp_55);
-
-    ElmcValue *tmp_57 = elmc_new_int(ELMC_RENDER_OP_PATH_FILLED);
-
-    const char *rec_names_58[2] = { "x", "y" };
-    elmc_int_t rec_values_58[2] = { 0, 0 };
-    ElmcValue *tmp_58 = elmc_record_new_ints(2, rec_names_58, rec_values_58);
-
-    const char *rec_names_59[2] = { "x", "y" };
-    elmc_int_t rec_values_59[2] = { 8, 6 };
-    ElmcValue *tmp_59 = elmc_record_new_ints(2, rec_names_59, rec_values_59);
-
-    const char *rec_names_60[2] = { "x", "y" };
-    elmc_int_t rec_values_60[2] = { 6, 14 };
-    ElmcValue *tmp_60 = elmc_record_new_ints(2, rec_names_60, rec_values_60);
-
-    const char *rec_names_61[2] = { "x", "y" };
-    elmc_int_t rec_values_61[2] = { 2, 20 };
-    ElmcValue *tmp_61 = elmc_record_new_ints(2, rec_names_61, rec_values_61);
-
-    const char *rec_names_62[2] = { "x", "y" };
-    elmc_int_t rec_values_62[2] = { 0, 14 };
-    ElmcValue *tmp_62 = elmc_record_new_ints(2, rec_names_62, rec_values_62);
-
-    ElmcValue *list_items_63[5] = { tmp_58, tmp_59, tmp_60, tmp_61, tmp_62 };
-    ElmcValue *tmp_63 = elmc_list_from_values_take(list_items_63, 5);
-
-    const char *rec_names_64[2] = { "x", "y" };
-    elmc_int_t rec_values_64[2] = { 108, 26 };
-    ElmcValue *tmp_64 = elmc_record_new_ints(2, rec_names_64, rec_values_64);
-
-    ElmcValue *tmp_65 = elmc_int_zero();
-
-    ElmcValue *call_args_66[3] = { tmp_63, tmp_64, tmp_65 };
-    ElmcValue *tmp_66 = elmc_fn_Pebble_Ui_path(call_args_66, 3);
-
-    elmc_release(tmp_63);
-    elmc_release(tmp_64);
-    elmc_release(tmp_65);
-
-  ElmcValue *tmp_67 = elmc_tuple2_take(tmp_57, tmp_66);
-
-    ElmcValue *tmp_68 = elmc_new_int(ELMC_RENDER_OP_PATH_OUTLINE_OPEN);
-
-    const char *rec_names_69[2] = { "x", "y" };
-    elmc_int_t rec_values_69[2] = { 0, 0 };
-    ElmcValue *tmp_69 = elmc_record_new_ints(2, rec_names_69, rec_values_69);
-
-    const char *rec_names_70[2] = { "x", "y" };
-    elmc_int_t rec_values_70[2] = { 8, 4 };
-    ElmcValue *tmp_70 = elmc_record_new_ints(2, rec_names_70, rec_values_70);
-
-    const char *rec_names_71[2] = { "x", "y" };
-    elmc_int_t rec_values_71[2] = { 16, 2 };
-    ElmcValue *tmp_71 = elmc_record_new_ints(2, rec_names_71, rec_values_71);
-
-    const char *rec_names_72[2] = { "x", "y" };
-    elmc_int_t rec_values_72[2] = { 24, 6 };
-    ElmcValue *tmp_72 = elmc_record_new_ints(2, rec_names_72, rec_values_72);
-
-    ElmcValue *list_items_73[4] = { tmp_69, tmp_70, tmp_71, tmp_72 };
-    ElmcValue *tmp_73 = elmc_list_from_values_take(list_items_73, 4);
-
-    const char *rec_names_74[2] = { "x", "y" };
-    elmc_int_t rec_values_74[2] = { 10, 78 };
-    ElmcValue *tmp_74 = elmc_record_new_ints(2, rec_names_74, rec_values_74);
-
-    ElmcValue *tmp_75 = elmc_int_zero();
-
-    ElmcValue *call_args_76[3] = { tmp_73, tmp_74, tmp_75 };
-    ElmcValue *tmp_76 = elmc_fn_Pebble_Ui_path(call_args_76, 3);
-
-    elmc_release(tmp_73);
-    elmc_release(tmp_74);
-    elmc_release(tmp_75);
-
-  ElmcValue *tmp_77 = elmc_tuple2_take(tmp_68, tmp_76);
-
-    ElmcValue *list_items_78[5] = { tmp_34, tmp_45, tmp_56, tmp_67, tmp_77 };
-    ElmcValue *tmp_78 = elmc_list_from_values_take(list_items_78, 5);
-
-  ElmcValue *tmp_79 = elmc_tuple2_take(tmp_23, tmp_78);
-
-  ElmcValue *tmp_80 = elmc_tuple2_take(tmp_17, tmp_79);
-
-    ElmcValue *tmp_81 = elmc_new_int(ELMC_RENDER_OP_LINE);
-  ElmcValue *tmp_82 = elmc_int_zero();
-  ElmcValue *tmp_83 = elmc_new_int(84);
-  ElmcValue *tmp_84 = elmc_new_int(143);
-  ElmcValue *tmp_85 = elmc_new_int(84);
-
-  ElmcValue *tmp_86 = elmc_tuple2_ints(ELMC_COLOR_BLACK, 0);
-
-  ElmcValue *tmp_87 = elmc_tuple2_take(tmp_85, tmp_86);
-
-  ElmcValue *tmp_88 = elmc_tuple2_take(tmp_84, tmp_87);
-
-  ElmcValue *tmp_89 = elmc_tuple2_take(tmp_83, tmp_88);
-
-  ElmcValue *tmp_90 = elmc_tuple2_take(tmp_82, tmp_89);
-
-  ElmcValue *tmp_91 = elmc_tuple2_take(tmp_81, tmp_90);
-
-    ElmcValue *tmp_92 = elmc_new_int(ELMC_RENDER_OP_PIXEL);
-  ElmcValue *tmp_93 = elmc_new_int(72);
-  ElmcValue *tmp_94 = elmc_new_int(84);
-  ElmcValue *tmp_95 = elmc_new_int(ELMC_COLOR_BLACK);
-  ElmcValue *tmp_96 = elmc_int_zero();
-
-  ElmcValue *tmp_97 = elmc_tuple2_ints(0, 0);
-
-  ElmcValue *tmp_98 = elmc_tuple2_take(tmp_96, tmp_97);
-
-  ElmcValue *tmp_99 = elmc_tuple2_take(tmp_95, tmp_98);
-
-  ElmcValue *tmp_100 = elmc_tuple2_take(tmp_94, tmp_99);
-
-  ElmcValue *tmp_101 = elmc_tuple2_take(tmp_93, tmp_100);
-
-  ElmcValue *tmp_102 = elmc_tuple2_take(tmp_92, tmp_101);
-
-    ElmcValue *tmp_103 = model ? elmc_retain(model) : elmc_int_zero();
-
-    ElmcValue *call_args_104[1] = { tmp_103 };
-    ElmcValue *tmp_104 = elmc_fn_Main_statusDraw(call_args_104, 1);
-
-    elmc_release(tmp_103);
-
-    ElmcValue *tmp_105 = model ? elmc_retain(model) : elmc_int_zero();
-
-    ElmcValue *call_args_106[1] = { tmp_105 };
-    ElmcValue *tmp_106 = elmc_fn_Main_counterDraw(call_args_106, 1);
-
-    elmc_release(tmp_105);
-
-    ElmcValue *list_items_107[6] = { tmp_16, tmp_80, tmp_91, tmp_102, tmp_104, tmp_106 };
-    ElmcValue *tmp_107 = elmc_list_from_values_take(list_items_107, 6);
-
-  ElmcValue *tmp_108 = elmc_tuple2_take(tmp_5, tmp_107);
-
-  ElmcValue *tmp_109 = elmc_tuple2_take(tmp_4, tmp_108);
-
-    ElmcValue *list_items_110[1] = { tmp_109 };
-    ElmcValue *tmp_110 = elmc_list_from_values_take(list_items_110, 1);
-
-  ElmcValue *tmp_111 = elmc_tuple2_take(tmp_3, tmp_110);
-
-  ElmcValue *tmp_112 = elmc_tuple2_take(tmp_2, tmp_111);
-
-    ElmcValue *list_items_113[1] = { tmp_112 };
-    ElmcValue *tmp_113 = elmc_list_from_values_take(list_items_113, 1);
-
-  ElmcValue *tmp_114 = elmc_tuple2_take(tmp_1, tmp_113);
-
-  // #region agent log
-  if (!tmp_114) {
-    elmc_agent_generated_probe(0xED998113);
-  } else if (tmp_114->tag == ELMC_TAG_TUPLE2) {
-    elmc_agent_generated_probe(0xED998111);
-  } else if (tmp_114->tag == ELMC_TAG_LIST) {
-    elmc_agent_generated_probe(0xED998112);
-  } else {
-    elmc_agent_generated_probe(0xED998110);
-  }
-
-  // #endregion
-
-  return tmp_114;
-}
-
-ElmcValue *elmc_fn_Main_statusDraw(ElmcValue ** const args, const int argc) {
+static ElmcValue *elmc_fn_Main_statusDraw(ElmcValue ** const args, const int argc) {
   /* Ownership policy: borrow_arg, borrow_result */
   (void)args;
   (void)argc;
   ElmcValue *model = (argc > 0) ? args[0] : NULL;
   (void)model;
 
-    ElmcValue *tmp_1 = model ? elmc_retain(model) : elmc_int_zero();
+  ElmcValue *call_args_1[1] = { model };
+  ElmcValue *tmp_1 = elmc_fn_Main_temperatureOf(call_args_1, 1);
 
-    ElmcValue *call_args_2[1] = { tmp_1 };
-    ElmcValue *tmp_2 = elmc_fn_Main_temperatureOf(call_args_2, 1);
+  ElmcValue *tmp_2;
 
-    elmc_release(tmp_1);
-
-  ElmcValue *tmp_3;
-
-  if (((tmp_2 && tmp_2->tag == ELMC_TAG_MAYBE && ((ElmcMaybe *)tmp_2->payload)->is_just == 1) || (tmp_2 && tmp_2->tag == ELMC_TAG_TUPLE2 && tmp_2->payload != NULL && elmc_as_int(((ElmcTuple2 *)tmp_2->payload)->first) == 1))) {
-      ElmcValue *tmp_4 = elmc_new_int(ELMC_RENDER_OP_TEXT_INT_WITH_FONT);
-      ElmcValue *tmp_5 = elmc_new_int(1);
-      ElmcValue *tmp_6 = elmc_int_zero();
-      ElmcValue *tmp_7 = elmc_new_int(28);
-
-        ElmcValue *tmp_8 = elmc_maybe_or_tuple_just_payload_borrow(tmp_2) ? elmc_retain(elmc_maybe_or_tuple_just_payload_borrow(tmp_2)) : elmc_int_zero();
-
-        ElmcValue *call_args_9[1] = { tmp_8 };
-        ElmcValue *tmp_9 = elmc_fn_Main_temperatureValue(call_args_9, 1);
-
-        elmc_release(tmp_8);
-
-      ElmcValue *tmp_10 = elmc_tuple2_ints(0, 0);
-
-      ElmcValue *tmp_11 = elmc_tuple2_take(tmp_9, tmp_10);
-
-      ElmcValue *tmp_12 = elmc_tuple2_take(tmp_7, tmp_11);
-
-      ElmcValue *tmp_13 = elmc_tuple2_take(tmp_6, tmp_12);
-
-      ElmcValue *tmp_14 = elmc_tuple2_take(tmp_5, tmp_13);
-
-      ElmcValue *tmp_15 = elmc_tuple2_take(tmp_4, tmp_14);
-
-      tmp_3 = tmp_15;
+  if (((tmp_1 && tmp_1->tag == ELMC_TAG_MAYBE && ((ElmcMaybe *)tmp_1->payload)->is_just == 1) || (tmp_1 && tmp_1->tag == ELMC_TAG_TUPLE2 && tmp_1->payload != NULL && elmc_as_int(((ElmcTuple2 *)tmp_1->payload)->first) == 1))) {
+    ElmcValue *tmp_3 = elmc_new_int(ELMC_RENDER_OP_TEXT_INT_WITH_FONT);
+    ElmcValue *tmp_4 = elmc_new_int(ELMC_UNION_PEBBLE_UI_RESOURCES_DEFAULTFONT);
+    ElmcValue *tmp_5 = elmc_int_zero();
+    ElmcValue *tmp_6 = elmc_new_int(28);
+    ElmcValue *call_args_7[1] = { elmc_maybe_or_tuple_just_payload_borrow(tmp_1) };
+    ElmcValue *tmp_7 = elmc_fn_Main_temperatureValue(call_args_7, 1);
+    ElmcValue *tmp_8 = elmc_tuple2_ints(0, 0);
+    ElmcValue *tmp_9 = elmc_tuple2_take(tmp_7, tmp_8);
+    ElmcValue *tmp_10 = elmc_tuple2_take(tmp_6, tmp_9);
+    ElmcValue *tmp_11 = elmc_tuple2_take(tmp_5, tmp_10);
+    ElmcValue *tmp_12 = elmc_tuple2_take(tmp_4, tmp_11);
+    tmp_2 = elmc_tuple2_take(tmp_3, tmp_12);
 
   } else {
-      ElmcValue *tmp_16 = elmc_new_int(ELMC_RENDER_OP_TEXT_LABEL_WITH_FONT);
-      ElmcValue *tmp_17 = elmc_new_int(1);
-      ElmcValue *tmp_18 = elmc_int_zero();
-      ElmcValue *tmp_19 = elmc_new_int(28);
-      ElmcValue *tmp_20 = elmc_int_zero();
-
-      ElmcValue *tmp_21 = elmc_tuple2_ints(0, 1);
-
-      ElmcValue *tmp_22 = elmc_tuple2_take(tmp_20, tmp_21);
-
-      ElmcValue *tmp_23 = elmc_tuple2_take(tmp_19, tmp_22);
-
-      ElmcValue *tmp_24 = elmc_tuple2_take(tmp_18, tmp_23);
-
-      ElmcValue *tmp_25 = elmc_tuple2_take(tmp_17, tmp_24);
-
-      ElmcValue *tmp_26 = elmc_tuple2_take(tmp_16, tmp_25);
-
-      tmp_3 = tmp_26;
+    ElmcValue *tmp_14 = elmc_new_int(ELMC_RENDER_OP_TEXT_LABEL_WITH_FONT);
+    ElmcValue *tmp_15 = elmc_new_int(ELMC_UNION_PEBBLE_UI_RESOURCES_DEFAULTFONT);
+    ElmcValue *tmp_16 = elmc_int_zero();
+    ElmcValue *tmp_17 = elmc_new_int(28);
+    ElmcValue *tmp_18 = elmc_int_zero();
+    ElmcValue *tmp_19 = elmc_tuple2_ints(0, ELMC_UNION_PEBBLE_UI_WAITINGFORCOMPANION);
+    ElmcValue *tmp_20 = elmc_tuple2_take(tmp_18, tmp_19);
+    ElmcValue *tmp_21 = elmc_tuple2_take(tmp_17, tmp_20);
+    ElmcValue *tmp_22 = elmc_tuple2_take(tmp_16, tmp_21);
+    ElmcValue *tmp_23 = elmc_tuple2_take(tmp_15, tmp_22);
+    tmp_2 = elmc_tuple2_take(tmp_14, tmp_23);
   }
 
-    elmc_release(tmp_2);
+  elmc_release(tmp_1);
 
-  return tmp_3;
+  return tmp_2;
 }
 
-ElmcValue *elmc_fn_Main_counterDraw(ElmcValue ** const args, const int argc) {
+static ElmcValue *elmc_fn_Main_counterDraw(ElmcValue ** const args, const int argc) {
   /* Ownership policy: borrow_arg, borrow_result */
   (void)args;
   (void)argc;
   ElmcValue *model = (argc > 0) ? args[0] : NULL;
   (void)model;
 
-      // inlined Main.counterOf
+  // inlined Main.counterOf
 
-    const elmc_int_t native_let_counter_1 = ELMC_RECORD_GET_INDEX_INT(model, 1 /* value */);
+  const elmc_int_t native_let_counter_1 = ELMC_RECORD_GET_INDEX_INT(model, 1 /* value */);
 
-    ElmcValue *tmp_1 = elmc_new_int(ELMC_RENDER_OP_TEXT_INT_WITH_FONT);
-  ElmcValue *tmp_2 = elmc_new_int(1);
+  ElmcValue *tmp_1 = elmc_new_int(ELMC_RENDER_OP_TEXT_INT_WITH_FONT);
+  ElmcValue *tmp_2 = elmc_new_int(ELMC_UNION_PEBBLE_UI_RESOURCES_DEFAULTFONT);
   ElmcValue *tmp_3 = elmc_int_zero();
   ElmcValue *tmp_4 = elmc_new_int(56);
   ElmcValue *tmp_5 = elmc_new_int(native_let_counter_1);
@@ -1181,7 +1006,7 @@ ElmcValue *elmc_fn_Main_counterDraw(ElmcValue ** const args, const int argc) {
   return tmp_11;
 }
 
-ElmcValue *elmc_fn_Main_temperatureValue(ElmcValue ** const args, const int argc) {
+static ElmcValue *elmc_fn_Main_temperatureValue(ElmcValue ** const args, const int argc) {
   /* Ownership policy: borrow_arg, borrow_result */
   (void)args;
   (void)argc;
@@ -1191,20 +1016,16 @@ ElmcValue *elmc_fn_Main_temperatureValue(ElmcValue ** const args, const int argc
   ElmcValue *tmp_1;
 
   if ((temperature) && (((temperature)->tag == ELMC_TAG_INT && elmc_as_int(temperature) == 1) || ((temperature)->tag == ELMC_TAG_TUPLE2 && (temperature)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(temperature)->payload)->first) == 1))) {
-      ElmcValue *tmp_2 = ((ElmcTuple2 *)temperature->payload)->second ? elmc_retain(((ElmcTuple2 *)temperature->payload)->second) : elmc_int_zero();
-
-      tmp_1 = tmp_2;
+    tmp_1 = ((ElmcTuple2 *)temperature->payload)->second ? elmc_retain(((ElmcTuple2 *)temperature->payload)->second) : elmc_int_zero();
 
   } else {
-      ElmcValue *tmp_3 = ((ElmcTuple2 *)temperature->payload)->second ? elmc_retain(((ElmcTuple2 *)temperature->payload)->second) : elmc_int_zero();
-
-      tmp_1 = tmp_3;
+    tmp_1 = ((ElmcTuple2 *)temperature->payload)->second ? elmc_retain(((ElmcTuple2 *)temperature->payload)->second) : elmc_int_zero();
   }
 
   return tmp_1;
 }
 
-ElmcValue *elmc_fn_Main_main(ElmcValue ** const args, const int argc) {
+static ElmcValue *elmc_fn_Main_main(ElmcValue ** const args, const int argc) {
   /* Ownership policy: borrow_arg, borrow_result */
   (void)args;
   (void)argc;
@@ -1212,160 +1033,97 @@ ElmcValue *elmc_fn_Main_main(ElmcValue ** const args, const int argc) {
   return tmp_1;
 }
 
-ElmcValue *elmc_fn_Pebble_Platform_launchReasonToInt(ElmcValue ** const args, const int argc) {
+static ElmcValue *elmc_fn_Pebble_Platform_launchReasonToInt(ElmcValue ** const args, const int argc) {
   /* Ownership policy: borrow_arg, borrow_result */
   (void)args;
   (void)argc;
   ElmcValue *launchReason = (argc > 0) ? args[0] : NULL;
   (void)launchReason;
 
-    const int case_msg_tag_1 = (launchReason && (launchReason)->tag == ELMC_TAG_INT ? elmc_as_int(launchReason) : (launchReason && (launchReason)->tag == ELMC_TAG_TUPLE2 && (launchReason)->payload != NULL ? elmc_as_int(((ElmcTuple2 *)(launchReason)->payload)->first) : -1));
-    ElmcValue *tmp_1 = elmc_int_zero();
-    switch (case_msg_tag_1) {
-    case 1:
+  const int case_msg_tag_1 = (launchReason && (launchReason)->tag == ELMC_TAG_INT ? elmc_as_int(launchReason) : (launchReason && (launchReason)->tag == ELMC_TAG_TUPLE2 && (launchReason)->payload != NULL ? elmc_as_int(((ElmcTuple2 *)(launchReason)->payload)->first) : -1));
+  ElmcValue *tmp_1 = elmc_int_zero();
+  switch (case_msg_tag_1) {
+    case ELMC_UNION_LAUNCHSYSTEM:
 
       tmp_1 = elmc_int_zero();
       break;
-  case 2:
+    case ELMC_UNION_LAUNCHUSER:
 
       tmp_1 = elmc_new_int(1);
       break;
-  case 3:
+    case ELMC_UNION_LAUNCHPHONE:
 
       tmp_1 = elmc_new_int(2);
       break;
-  case 4:
+    case ELMC_UNION_LAUNCHWAKEUP:
 
       tmp_1 = elmc_new_int(3);
       break;
-  case 5:
+    case ELMC_UNION_LAUNCHWORKER:
 
       tmp_1 = elmc_new_int(4);
       break;
-  case 6:
+    case ELMC_UNION_LAUNCHQUICKLAUNCH:
 
       tmp_1 = elmc_new_int(5);
       break;
-  case 7:
+    case ELMC_UNION_LAUNCHTIMELINEACTION:
 
       tmp_1 = elmc_new_int(6);
       break;
-  case 8:
+    case ELMC_UNION_LAUNCHSMARTSTRAP:
 
       tmp_1 = elmc_new_int(7);
       break;
-  case 9:
+    case ELMC_UNION_LAUNCHUNKNOWN:
 
       tmp_1 = elmc_new_int(-1);
       break;
-  default:
+    default:
       tmp_1 = elmc_int_zero();
       break;
 
-    }
+  }
 
   return tmp_1;
 }
 
-ElmcValue *elmc_fn_Pebble_Ui_path(ElmcValue ** const args, const int argc) {
-  /* Ownership policy: borrow_arg, retain_result */
-  (void)args;
-  (void)argc;
-  ElmcValue *points = (argc > 0) ? args[0] : NULL;
-  ElmcValue *offset = (argc > 1) ? args[1] : NULL;
-  ElmcValue *rotation = (argc > 2) ? args[2] : NULL;
-  (void)points;
-  (void)offset;
-  (void)rotation;
-  ElmcValue *tmp_1 = points ? elmc_retain(points) : elmc_int_zero();
-    ElmcValue *list_fwd_head_2 = elmc_list_nil();
-    ElmcValue **list_fwd_tail_2 = &list_fwd_head_2;
-
-    ElmcValue *list_map_cursor_2 = tmp_1;
-    while (list_map_cursor_2 && list_map_cursor_2->tag == ELMC_TAG_LIST && list_map_cursor_2->payload != NULL) {
-      ElmcCons *list_map_node_2 = (ElmcCons *)list_map_cursor_2->payload;
-      ElmcValue *list_map_head_2 = list_map_node_2->head;
-
-        ElmcValue *tmp_3 = elmc_record_get(list_map_head_2, "x");
-
-        ElmcValue *tmp_4 = elmc_record_get(list_map_head_2, "y");
-
-      ElmcValue *tmp_5 = elmc_tuple2_take(tmp_3, tmp_4);
-      ElmcValue *list_map_item_2 = tmp_5 ? elmc_retain(tmp_5) : elmc_int_zero();
-      elmc_release(tmp_5);
-      ElmcValue *list_fwd_cell_2 = elmc_list_cons(list_map_item_2, elmc_list_nil());
-      *list_fwd_tail_2 = list_fwd_cell_2;
-      list_fwd_tail_2 = &((ElmcCons *)list_fwd_cell_2->payload)->tail;
-
-      elmc_release(list_map_item_2);
-      list_map_cursor_2 = list_map_node_2->tail;
-    }
-  ElmcValue *tmp_6 = list_fwd_head_2;
-
-    elmc_release(tmp_1);
-
-  ElmcValue *tmp_7 = elmc_tuple2_ints(ELMC_RECORD_GET_INDEX_INT(offset, 0 /* x */), ELMC_RECORD_GET_INDEX_INT(offset, 1 /* y */));
-
-    ElmcValue *tmp_8 = rotation ? elmc_retain(rotation) : elmc_int_zero();
-
-    ElmcValue *call_args_9[1] = { tmp_8 };
-    ElmcValue *tmp_9 = elmc_fn_Pebble_Ui_rotationToPebbleAngle(call_args_9, 1);
-
-    elmc_release(tmp_8);
-
-  ElmcValue *tmp_10 = elmc_tuple2_take(tmp_7, tmp_9);
-
-  ElmcValue *tmp_11 = elmc_tuple2_take(tmp_6, tmp_10);
-
-  return tmp_11;
-}
-
-ElmcValue *elmc_fn_Pebble_Ui_rotationToPebbleAngle(ElmcValue ** const args, const int argc) {
-  /* Ownership policy: borrow_arg, borrow_result */
-  (void)args;
-  (void)argc;
-
-    ElmcValue *tmp_1 = elmc_closure_new(elmc_lambda_1, 1, 0, NULL);
-
-  return tmp_1;
-}
-
-ElmcValue *elmc_fn_Companion_Internal_encodeLocationCode(ElmcValue ** const args, const int argc) {
+static ElmcValue *elmc_fn_Companion_Internal_encodeLocationCode(ElmcValue ** const args, const int argc) {
   /* Ownership policy: borrow_arg, borrow_result */
   (void)args;
   (void)argc;
   ElmcValue *value = (argc > 0) ? args[0] : NULL;
   (void)value;
 
-    const int case_msg_tag_1 = (value && (value)->tag == ELMC_TAG_INT ? elmc_as_int(value) : (value && (value)->tag == ELMC_TAG_TUPLE2 && (value)->payload != NULL ? elmc_as_int(((ElmcTuple2 *)(value)->payload)->first) : -1));
-    ElmcValue *tmp_1 = elmc_int_zero();
-    switch (case_msg_tag_1) {
-    case 1:
+  const int case_msg_tag_1 = (value && (value)->tag == ELMC_TAG_INT ? elmc_as_int(value) : (value && (value)->tag == ELMC_TAG_TUPLE2 && (value)->payload != NULL ? elmc_as_int(((ElmcTuple2 *)(value)->payload)->first) : -1));
+  ElmcValue *tmp_1 = elmc_int_zero();
+  switch (case_msg_tag_1) {
+    case ELMC_UNION_COMPANION_TYPES_CURRENTLOCATION:
 
       tmp_1 = elmc_new_int(1);
       break;
-  case 2:
+    case ELMC_UNION_COMPANION_TYPES_BERLIN:
 
       tmp_1 = elmc_new_int(2);
       break;
-  case 3:
+    case ELMC_UNION_COMPANION_TYPES_ZURICH:
 
       tmp_1 = elmc_new_int(3);
       break;
-  case 4:
+    case ELMC_UNION_COMPANION_TYPES_NEWYORK:
 
       tmp_1 = elmc_new_int(4);
       break;
-  default:
+    default:
       tmp_1 = elmc_int_zero();
       break;
 
-    }
+  }
 
   return tmp_1;
 }
 
-ElmcValue *elmc_fn_Companion_Internal_watchToPhoneTag(ElmcValue ** const args, const int argc) {
+static ElmcValue *elmc_fn_Companion_Internal_watchToPhoneTag(ElmcValue ** const args, const int argc) {
   /* Ownership policy: borrow_arg, borrow_result */
   (void)args;
   (void)argc;
@@ -1374,12 +1132,12 @@ ElmcValue *elmc_fn_Companion_Internal_watchToPhoneTag(ElmcValue ** const args, c
 
   ElmcValue *tmp_1;
 
-      tmp_1 = elmc_new_int(2);
+  tmp_1 = elmc_new_int(2);
 
   return tmp_1;
 }
 
-ElmcValue *elmc_fn_Companion_Internal_watchToPhoneValue(ElmcValue ** const args, const int argc) {
+static ElmcValue *elmc_fn_Companion_Internal_watchToPhoneValue(ElmcValue ** const args, const int argc) {
   /* Ownership policy: borrow_arg, borrow_result */
   (void)args;
   (void)argc;
@@ -1388,48 +1146,34 @@ ElmcValue *elmc_fn_Companion_Internal_watchToPhoneValue(ElmcValue ** const args,
 
   ElmcValue *tmp_1;
 
-        ElmcValue *tmp_2 = ((ElmcTuple2 *)message->payload)->second ? elmc_retain(((ElmcTuple2 *)message->payload)->second) : elmc_int_zero();
-
-        ElmcValue *call_args_3[1] = { tmp_2 };
-        ElmcValue *tmp_3 = elmc_fn_Companion_Internal_encodeLocationCode(call_args_3, 1);
-
-        elmc_release(tmp_2);
-
-      tmp_1 = tmp_3;
+  ElmcValue *call_args_2[1] = { ((ElmcTuple2 *)message->payload)->second };
+  tmp_1 = elmc_fn_Companion_Internal_encodeLocationCode(call_args_2, 1);
 
   return tmp_1;
 }
 
-ElmcValue *elmc_fn_Companion_Watch_sendWatchToPhone(ElmcValue ** const args, const int argc) {
+static ElmcValue *elmc_fn_Companion_Watch_sendWatchToPhone(ElmcValue ** const args, const int argc) {
   /* Ownership policy: borrow_arg, borrow_result */
   (void)args;
   (void)argc;
   ElmcValue *message = (argc > 0) ? args[0] : NULL;
   (void)message;
 
-    ElmcValue *tmp_1 = message ? elmc_retain(message) : elmc_int_zero();
+  ElmcValue *call_args_1[1] = { message };
+  ElmcValue *tmp_1 = elmc_fn_Companion_Internal_watchToPhoneTag(call_args_1, 1);
 
-    ElmcValue *call_args_2[1] = { tmp_1 };
-    ElmcValue *tmp_2 = elmc_fn_Companion_Internal_watchToPhoneTag(call_args_2, 1);
+  const elmc_int_t native_i_2 = elmc_as_int(tmp_1);
+  elmc_release(tmp_1);
 
-    elmc_release(tmp_1);
+  ElmcValue *call_args_3[1] = { message };
+  ElmcValue *tmp_3 = elmc_fn_Companion_Internal_watchToPhoneValue(call_args_3, 1);
 
-    const elmc_int_t native_i_3 = elmc_as_int(tmp_2);
-    elmc_release(tmp_2);
+  const elmc_int_t native_i_4 = elmc_as_int(tmp_3);
+  elmc_release(tmp_3);
 
-    ElmcValue *tmp_4 = message ? elmc_retain(message) : elmc_int_zero();
+  ElmcValue *tmp_5 = elmc_cmd2(ELMC_PEBBLE_CMD_COMPANION_SEND, native_i_2, native_i_4);
 
-    ElmcValue *call_args_5[1] = { tmp_4 };
-    ElmcValue *tmp_5 = elmc_fn_Companion_Internal_watchToPhoneValue(call_args_5, 1);
-
-    elmc_release(tmp_4);
-
-    const elmc_int_t native_i_6 = elmc_as_int(tmp_5);
-    elmc_release(tmp_5);
-
-    ElmcValue *tmp_7 = elmc_cmd2(ELMC_PEBBLE_CMD_COMPANION_SEND, native_i_3, native_i_6);
-
-  return tmp_7;
+  return tmp_5;
 }
 
 static int elmc_fn_Main_view_commands_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer);
@@ -1441,65 +1185,74 @@ static int elmc_fn_Main_view_commands_append(ElmcValue ** const args, const int 
   (void)model;
   if (!writer) return -1;
   int direct_rc = 0;
-static ElmcPebbleDrawCmd scene_cmd;
-CATCH_BEGIN
+  static ElmcPebbleDrawCmd scene_cmd;
+  CATCH_BEGIN
 
-  elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_CLEAR);
+    elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_CLEAR);
     scene_cmd.p0 = ELMC_COLOR_WHITE;
-    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0)
-  CATCH_BREAK;
+    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0) {
+      CATCH_BREAK;
+    }
 
-  elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_PUSH_CONTEXT);
-    
-    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0)
-  CATCH_BREAK;
+    elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_PUSH_CONTEXT);
 
-  elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_STROKE_WIDTH);
+    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0) {
+      CATCH_BREAK;
+    }
+
+    elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_STROKE_WIDTH);
     scene_cmd.p0 = 3;
-    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0)
-  CATCH_BREAK;
+    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0) {
+      CATCH_BREAK;
+    }
 
-  elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_ANTIALIASED);
+    elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_ANTIALIASED);
     scene_cmd.p0 = 1;
-    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0)
-  CATCH_BREAK;
+    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0) {
+      CATCH_BREAK;
+    }
 
-  elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_STROKE_COLOR);
+    elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_STROKE_COLOR);
     scene_cmd.p0 = ELMC_COLOR_BLACK;
-    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0)
-  CATCH_BREAK;
+    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0) {
+      CATCH_BREAK;
+    }
 
-  elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_FILL_COLOR);
+    elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_FILL_COLOR);
     scene_cmd.p0 = ELMC_COLOR_BLACK;
-    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0)
-  CATCH_BREAK;
+    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0) {
+      CATCH_BREAK;
+    }
 
-  elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_TEXT_COLOR);
+    elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_TEXT_COLOR);
     scene_cmd.p0 = ELMC_COLOR_BLACK;
-    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0)
-  CATCH_BREAK;
+    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0) {
+      CATCH_BREAK;
+    }
 
-  elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_ROUND_RECT);
+    elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_ROUND_RECT);
     scene_cmd.p0 = 6;
-  scene_cmd.p1 = 6;
-  scene_cmd.p2 = 132;
-  scene_cmd.p3 = 70;
-  scene_cmd.p4 = 6;
-  scene_cmd.p5 = ELMC_COLOR_BLACK;
-    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0)
-  CATCH_BREAK;
+    scene_cmd.p1 = 6;
+    scene_cmd.p2 = 132;
+    scene_cmd.p3 = 70;
+    scene_cmd.p4 = 6;
+    scene_cmd.p5 = ELMC_COLOR_BLACK;
+    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0) {
+      CATCH_BREAK;
+    }
 
-  elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_ARC);
+    elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_ARC);
     scene_cmd.p0 = 20;
-  scene_cmd.p1 = 16;
-  scene_cmd.p2 = 36;
-  scene_cmd.p3 = 36;
-  scene_cmd.p4 = 0;
-  scene_cmd.p5 = 45000;
-    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0)
-  CATCH_BREAK;
+    scene_cmd.p1 = 16;
+    scene_cmd.p2 = 36;
+    scene_cmd.p3 = 36;
+    scene_cmd.p4 = 0;
+    scene_cmd.p5 = 45000;
+    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0) {
+      CATCH_BREAK;
+    }
 
-  elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_PATH_OUTLINE);
+    elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_PATH_OUTLINE);
     scene_cmd.path_point_count = 5;
     scene_cmd.path_offset_x = 86;
     scene_cmd.path_offset_y = 16;
@@ -1519,10 +1272,11 @@ CATCH_BEGIN
     scene_cmd.path_x[4] = 0;
     scene_cmd.path_y[4] = 18;
 
-    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0)
-  CATCH_BREAK;
+    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0) {
+      CATCH_BREAK;
+    }
 
-  elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_PATH_FILLED);
+    elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_PATH_FILLED);
     scene_cmd.path_point_count = 5;
     scene_cmd.path_offset_x = 108;
     scene_cmd.path_offset_y = 26;
@@ -1542,10 +1296,11 @@ CATCH_BEGIN
     scene_cmd.path_x[4] = 0;
     scene_cmd.path_y[4] = 14;
 
-    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0)
-  CATCH_BREAK;
+    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0) {
+      CATCH_BREAK;
+    }
 
-  elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_PATH_OUTLINE_OPEN);
+    elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_PATH_OUTLINE_OPEN);
     scene_cmd.path_point_count = 4;
     scene_cmd.path_offset_x = 10;
     scene_cmd.path_offset_y = 78;
@@ -1562,107 +1317,106 @@ CATCH_BEGIN
     scene_cmd.path_x[3] = 24;
     scene_cmd.path_y[3] = 6;
 
-    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0)
-  CATCH_BREAK;
+    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0) {
+      CATCH_BREAK;
+    }
 
-  elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_POP_CONTEXT);
-    
-    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0)
-  CATCH_BREAK;
+    elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_POP_CONTEXT);
 
-  elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_LINE);
+    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0) {
+      CATCH_BREAK;
+    }
+
+    elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_LINE);
     scene_cmd.p0 = 0;
-  scene_cmd.p1 = 84;
-  scene_cmd.p2 = 143;
-  scene_cmd.p3 = 84;
-  scene_cmd.p4 = ELMC_COLOR_BLACK;
-    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0)
-  CATCH_BREAK;
+    scene_cmd.p1 = 84;
+    scene_cmd.p2 = 143;
+    scene_cmd.p3 = 84;
+    scene_cmd.p4 = ELMC_COLOR_BLACK;
+    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0) {
+      CATCH_BREAK;
+    }
 
-  elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_PIXEL);
+    elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_PIXEL);
     scene_cmd.p0 = 72;
-  scene_cmd.p1 = 84;
-  scene_cmd.p2 = ELMC_COLOR_BLACK;
-    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0)
-  CATCH_BREAK;
+    scene_cmd.p1 = 84;
+    scene_cmd.p2 = ELMC_COLOR_BLACK;
+    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0) {
+      CATCH_BREAK;
+    }
 
-  ElmcValue *tmp_13 = model ? elmc_retain(model) : elmc_int_zero();
+    ElmcValue *tmp_13 = model ? elmc_retain(model) : elmc_int_zero();
 
-  ElmcValue *tmp_14 = tmp_13 ? elmc_retain(tmp_13) : elmc_int_zero();
-  
-  ElmcValue *call_args_15[1] = { tmp_14 };
-  ElmcValue *tmp_15 = elmc_fn_Main_temperatureOf(call_args_15, 1);
-  
-  elmc_release(tmp_14);
+    ElmcValue *call_args_14[1] = { tmp_13 };
+    ElmcValue *tmp_14 = elmc_fn_Main_temperatureOf(call_args_14, 1);
 
-  if (((tmp_15 && tmp_15->tag == ELMC_TAG_MAYBE && ((ElmcMaybe *)tmp_15->payload)->is_just == 1) || (tmp_15 && tmp_15->tag == ELMC_TAG_TUPLE2 && tmp_15->payload != NULL && elmc_as_int(((ElmcTuple2 *)tmp_15->payload)->first) == 1))) {
+    if (((tmp_14 && tmp_14->tag == ELMC_TAG_MAYBE && ((ElmcMaybe *)tmp_14->payload)->is_just == 1) || (tmp_14 && tmp_14->tag == ELMC_TAG_TUPLE2 && tmp_14->payload != NULL && elmc_as_int(((ElmcTuple2 *)tmp_14->payload)->first) == 1))) {
 
-          ElmcValue *tmp_16 = elmc_maybe_or_tuple_just_payload_borrow(tmp_15) ? elmc_retain(elmc_maybe_or_tuple_just_payload_borrow(tmp_15)) : elmc_int_zero();
-  
-          ElmcValue *call_args_17[1] = { tmp_16 };
-          ElmcValue *tmp_17 = elmc_fn_Main_temperatureValue(call_args_17, 1);
-  
-          elmc_release(tmp_16);
+      ElmcValue *call_args_15[1] = { elmc_maybe_or_tuple_just_payload_borrow(tmp_14) };
+      ElmcValue *tmp_15 = elmc_fn_Main_temperatureValue(call_args_15, 1);
 
-          const elmc_int_t native_i_18 = elmc_as_int(tmp_17);
-          elmc_release(tmp_17);
+      const elmc_int_t native_i_16 = elmc_as_int(tmp_15);
+      elmc_release(tmp_15);
 
       elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_TEXT_INT_WITH_FONT);
-        scene_cmd.p0 = 1;
+      scene_cmd.p0 = 1;
       scene_cmd.p1 = 0;
       scene_cmd.p2 = 28;
-      scene_cmd.p3 = native_i_18;
-        if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0)
-      CATCH_BREAK;
+      scene_cmd.p3 = native_i_16;
+      if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0) {
+        CATCH_BREAK;
+      }
 
-}
-else if (((tmp_15 && tmp_15->tag == ELMC_TAG_MAYBE && ((ElmcMaybe *)tmp_15->payload)->is_just == 0) || (tmp_15 && tmp_15->tag == ELMC_TAG_INT && elmc_as_int(tmp_15) == 0))) {
+    }
+    else if (((tmp_14 && tmp_14->tag == ELMC_TAG_MAYBE && ((ElmcMaybe *)tmp_14->payload)->is_just == 0) || (tmp_14 && tmp_14->tag == ELMC_TAG_INT && elmc_as_int(tmp_14) == 0))) {
 
-      ElmcValue *tmp_20 = elmc_new_int(1);
+      ElmcValue *tmp_18 = elmc_new_int(ELMC_UNION_PEBBLE_UI_WAITINGFORCOMPANION);
       elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_TEXT_LABEL_WITH_FONT);
-        scene_cmd.p0 = 1;
+      scene_cmd.p0 = 1;
       scene_cmd.p1 = 0;
       scene_cmd.p2 = 28;
       scene_cmd.p3 = 0;
       scene_cmd.p4 = 0;
-        if (tmp_20 && tmp_20->tag == ELMC_TAG_STRING && tmp_20->payload) {
-          const char *direct_text = (const char *)tmp_20->payload;
-          int direct_text_i = 0;
-          while (direct_text[direct_text_i] && direct_text_i < 63) {
-            scene_cmd.text[direct_text_i] = direct_text[direct_text_i];
-            direct_text_i++;
-          }
-          scene_cmd.text[direct_text_i] = '\0';
-
+      if (tmp_18 && tmp_18->tag == ELMC_TAG_STRING && tmp_18->payload) {
+        const char *direct_text = (const char *)tmp_18->payload;
+        int direct_text_i = 0;
+        while (direct_text[direct_text_i] && direct_text_i < 63) {
+          scene_cmd.text[direct_text_i] = direct_text[direct_text_i];
+          direct_text_i++;
         }
+        scene_cmd.text[direct_text_i] = '\0';
 
-        if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0)
-      CATCH_BREAK;
-        elmc_release(tmp_20);
+      }
 
-}
+      if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0) {
+        CATCH_BREAK;
+      }
+      elmc_release(tmp_18);
 
-  elmc_release(tmp_15);
+    }
 
-  elmc_release(tmp_13);
+    elmc_release(tmp_14);
 
-  ElmcValue *tmp_21 = model ? elmc_retain(model) : elmc_int_zero();
-  // inlined Main.counterOf
-  const elmc_int_t direct_hoisted_int_22 = ELMC_RECORD_GET_INDEX_INT(tmp_21, 1 /* value */);
+    elmc_release(tmp_13);
 
-  const elmc_int_t direct_native_let_counter_23 = direct_hoisted_int_22;
+    ElmcValue *tmp_19 = model ? elmc_retain(model) : elmc_int_zero();
+    // inlined Main.counterOf
+    const elmc_int_t direct_hoisted_int_20 = ELMC_RECORD_GET_INDEX_INT(tmp_19, 1 /* value */);
 
-  elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_TEXT_INT_WITH_FONT);
+    const elmc_int_t direct_native_let_counter_21 = direct_hoisted_int_20;
+
+    elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_TEXT_INT_WITH_FONT);
     scene_cmd.p0 = 1;
-  scene_cmd.p1 = 0;
-  scene_cmd.p2 = 56;
-  scene_cmd.p3 = direct_native_let_counter_23;
-    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0)
-  CATCH_BREAK;
+    scene_cmd.p1 = 0;
+    scene_cmd.p2 = 56;
+    scene_cmd.p3 = direct_native_let_counter_21;
+    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0) {
+      CATCH_BREAK;
+    }
 
-  elmc_release(tmp_21);
-CATCH_END
-return direct_rc;
+    elmc_release(tmp_19);
+  CATCH_END
+  return direct_rc;
 
 }
 

@@ -547,7 +547,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
       {offset_y_code, offset_y, counter} =
         Host.direct_int_value(Host.record_field_expr(offset, "y"), env, counter)
 
-      {rotation_code, rotation_ref, counter} = Host.direct_int_value(rotation, env, counter)
+      {rotation_code, rotation_ref, counter} =
+        Host.direct_int_value(SpecialValues.pebble_angle_expr(rotation), env, counter)
 
       {:ok,
        """

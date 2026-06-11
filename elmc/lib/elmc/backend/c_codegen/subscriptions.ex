@@ -37,22 +37,40 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
     end
   end
 
-  @spec subscription_batch_expr([Types.ir_expr()]) :: Types.ir_expr()
+  @spec subscription_batch_expr([Types.ir_expr()]) :: Types.ir_expr() | nil
   def subscription_batch_expr([%{op: :list_literal, items: items}]) do
-    sub_exprs = Enum.map(items, &subscription_item_sub_expr/1)
+    batch_items = Enum.flat_map(items, &batch_list_item_expr/1)
 
-    if sub_exprs != [] and Enum.all?(sub_exprs, & &1) do
-      %{op: :list_literal, items: sub_exprs}
+    if batch_items == [] do
+      nil
     else
-      %{op: :unsupported}
+      %{op: :list_literal, items: batch_items}
     end
   end
 
-  def subscription_batch_expr(_), do: %{op: :unsupported}
+  def subscription_batch_expr(_), do: nil
+
+  defp batch_list_item_expr(item) do
+    case subscription_item_sub_expr(item) do
+      :none -> []
+      sub when is_map(sub) -> [sub]
+      nil -> [item]
+    end
+  end
+
+  defp subscription_item_sub_expr(%{op: :if, then_expr: then_expr, else_expr: else_expr}) do
+    merge_optional_subscription_item(
+      subscription_item_sub_expr(then_expr),
+      subscription_item_sub_expr(else_expr)
+    )
+  end
 
   defp subscription_item_sub_expr(%{op: :qualified_call, target: target, args: args})
        when is_binary(target) and is_list(args) do
     case SpecialValues.normalize_special_target(target) do
+      t when t in ["Sub.none", "Platform.Sub.none"] ->
+        :none
+
       "Pebble.Frame.every" ->
         subscription_sub_expr("Pebble.Frame.every", args)
 
@@ -68,6 +86,11 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
   end
 
   defp subscription_item_sub_expr(_), do: nil
+
+  defp merge_optional_subscription_item(:none, sub) when is_map(sub), do: sub
+  defp merge_optional_subscription_item(sub, :none) when is_map(sub), do: sub
+  defp merge_optional_subscription_item(sub, sub) when is_map(sub), do: sub
+  defp merge_optional_subscription_item(_, _), do: nil
 
   @button_event_sub_targets ~w(
     Pebble.Button.onPress
@@ -286,12 +309,24 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
           tag_masks: [String.t()],
           button_raw_count: non_neg_integer(),
           compact: boolean(),
-          has_frame: boolean()
+          dynamic?: boolean(),
+          has_frame: boolean(),
+          model_dependent?: boolean()
         }
+
+  @spec model_dependent?(map() | nil) :: boolean()
+  def model_dependent?(nil), do: false
+
+  def model_dependent?(%{args: [param | _], expr: expr})
+      when is_binary(param) and not is_nil(expr) do
+    param != "_" and expr_uses_param?(expr, param, MapSet.new())
+  end
+
+  def model_dependent?(_), do: false
 
   @spec analyze_subscription_masks(term()) :: subscription_analysis()
   def analyze_subscription_masks(expr) do
-    acc = %{tag_masks: [], button_raw_count: 0, dynamic?: false}
+    acc = %{tag_masks: [], button_raw_count: 0, dynamic?: false, bindings: %{}}
     acc = collect_subscription_specs(expr, acc)
 
     {tag_masks, has_frame} =
@@ -313,6 +348,7 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
       tag_masks: tag_masks,
       button_raw_count: acc.button_raw_count,
       compact: compact,
+      dynamic?: acc.dynamic?,
       has_frame: has_frame
     }
   end
@@ -332,11 +368,46 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
     Enum.reduce(list, acc, &collect_subscription_specs/2)
   end
 
+  defp collect_subscription_specs(%{op: :let, bindings: bindings, body: body}, acc) do
+    bindings_map =
+      Enum.reduce(bindings, Map.get(acc, :bindings, %{}), fn %{name: name, expr: expr}, env ->
+        Map.put(env, name, expr)
+      end)
+
+    acc = %{acc | bindings: bindings_map}
+    collect_subscription_specs(body, acc)
+  end
+
+  defp collect_subscription_specs(
+         %{op: :let_in, name: name, value_expr: value_expr, in_expr: in_expr},
+         acc
+       )
+       when is_binary(name) do
+    bindings_map = Map.put(Map.get(acc, :bindings, %{}), name, value_expr)
+    collect_subscription_specs(in_expr, %{acc | bindings: bindings_map})
+  end
+
+  defp collect_subscription_specs(%{op: :if, then_expr: then_expr, else_expr: else_expr}, acc) do
+    acc
+    |> then(&collect_subscription_specs(then_expr, &1))
+    |> then(&collect_subscription_specs(else_expr, &1))
+  end
+
+  defp collect_subscription_specs(%{op: :var, name: name}, acc) when is_binary(name) do
+    case Map.get(acc, :bindings, %{}) do
+      %{^name => expr} -> collect_subscription_specs(expr, acc)
+      _ -> %{acc | dynamic?: true}
+    end
+  end
+
   defp collect_subscription_specs(%{op: :qualified_call, target: target, args: args}, acc)
        when is_binary(target) and is_list(args) do
     normalized = SpecialValues.normalize_special_target(target)
 
     cond do
+      normalized in ["Sub.none", "Platform.Sub.none"] ->
+        acc
+
       normalized in @batch_targets ->
         case args do
           [%{op: :list_literal, items: items}] ->
@@ -374,5 +445,60 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
   end
 
   defp collect_subscription_specs(_expr, acc), do: acc
+
+  defp expr_uses_param?(%{op: :var, name: name}, param, bound) when is_binary(name) do
+    name == param and not MapSet.member?(bound, name)
+  end
+
+  defp expr_uses_param?(%{op: :field_access, arg: arg, field: _field}, param, bound) do
+    expr_uses_param?(arg, param, bound)
+  end
+
+  defp expr_uses_param?(
+         %{op: :let_in, name: bind, value_expr: value_expr, in_expr: in_expr},
+         param,
+         bound
+       )
+       when is_binary(bind) do
+    expr_uses_param?(value_expr, param, bound) or
+      expr_uses_param?(in_expr, param, MapSet.put(bound, bind))
+  end
+
+  defp expr_uses_param?(%{op: :let, bindings: bindings, body: body}, param, bound)
+       when is_list(bindings) do
+    bound2 =
+      Enum.reduce(bindings, bound, fn %{name: name}, acc ->
+        if is_binary(name), do: MapSet.put(acc, name), else: acc
+      end)
+
+    Enum.any?(bindings, fn %{expr: expr} -> expr_uses_param?(expr, param, bound) end) or
+      expr_uses_param?(body, param, bound2)
+  end
+
+  defp expr_uses_param?(%{op: :lambda, params: params, body: body}, param, bound)
+       when is_list(params) do
+    bound2 =
+      Enum.reduce(params, bound, fn name, acc ->
+        if is_binary(name), do: MapSet.put(acc, name), else: acc
+      end)
+
+    expr_uses_param?(body, param, bound2)
+  end
+
+  defp expr_uses_param?(name, param, bound) when is_binary(name) do
+    name == param and not MapSet.member?(bound, name)
+  end
+
+  defp expr_uses_param?(expr, param, bound) when is_map(expr) do
+    expr
+    |> Map.values()
+    |> Enum.any?(fn
+      value when is_map(value) -> expr_uses_param?(value, param, bound)
+      values when is_list(values) -> Enum.any?(values, &expr_uses_param?(&1, param, bound))
+      _ -> false
+    end)
+  end
+
+  defp expr_uses_param?(_, _param, _bound), do: false
 end
 

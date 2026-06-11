@@ -4,6 +4,7 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
   alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.ImmortalStaticList
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.UnionMacros
@@ -115,6 +116,19 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
     with {:ok, subject_value} <- literal_value(subject_expr, env) do
       literal_case_select(branches, subject_value, env)
     end
+  end
+
+  def literal_value(%{op: :runtime_call, function: "elmc_list_length", args: [list]}, env) do
+    ImmortalStaticList.static_length(list, env)
+  end
+
+  def literal_value(%{op: :qualified_call, target: target, args: [list]}, env)
+      when target in ["List.length", "Elm.Kernel.List.length"] do
+    ImmortalStaticList.static_length(list, env)
+  end
+
+  def literal_value(%{op: :call, name: "length", args: [list]}, env) do
+    ImmortalStaticList.static_length(list, env)
   end
 
   def literal_value(_expr, _env), do: :error

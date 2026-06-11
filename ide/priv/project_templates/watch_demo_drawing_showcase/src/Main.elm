@@ -97,11 +97,19 @@ currentPage index =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions _ =
+subscriptions model =
+    let
+        frameSub =
+            if currentPage model.pageIndex == StaticBitmap then
+                Frame.every 33 FrameTick
+
+            else
+                Sub.none
+    in
     Events.batch
         [ Button.onPress Button.Up UpPressed
         , Button.onPress Button.Down DownPressed
-        , Frame.every 33 FrameTick
+        , frameSub
         ]
 
 

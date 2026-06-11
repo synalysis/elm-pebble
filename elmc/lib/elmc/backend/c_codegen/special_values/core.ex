@@ -244,17 +244,25 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
 
   def special_value_from_target("Pebble.Ui.Color.toInt", [value]), do: value
 
-  def special_value_from_target("Pebble.Ui.rotationFromPebbleAngle", [angle]), do: angle
+  def special_value_from_target("Pebble.Ui.rotationFromPebbleAngle", [angle]),
+    do: rotation_expr(angle)
+
+  def special_value_from_target("Pebble.Ui.rotationToPebbleAngle", [rotation]) do
+    case compile_time_pebble_angle_expr(rotation) do
+      {:ok, expr} -> expr
+      :error -> nil
+    end
+  end
 
   def special_value_from_target("Pebble.Ui.rotationFromDegrees", [
         %{op: :int_literal, value: degrees}
       ]),
-      do: %{op: :int_literal, value: round(degrees * 65_536 / 360)}
+      do: rotation_expr(%{op: :int_literal, value: pebble_angle_from_degrees(degrees)})
 
   def special_value_from_target("Pebble.Ui.rotationFromDegrees", [
         %{op: :float_literal, value: degrees}
       ]),
-      do: %{op: :int_literal, value: round(degrees * 65_536 / 360)}
+      do: rotation_expr(%{op: :int_literal, value: pebble_angle_from_degrees(degrees)})
 
   def special_value_from_target("Pebble.Ui.Color." <> name, []) do
     case Map.fetch(Constants.pebble_color_constants(), name) do
@@ -436,7 +444,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
             bitmap,
             field_access_expr(bounds, "w"),
             field_access_expr(bounds, "h"),
-            rotation,
+            pebble_angle_expr(rotation),
             field_access_expr(center, "x"),
             field_access_expr(center, "y")
           ],
@@ -2809,6 +2817,56 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
     %{op: :tuple2, left: tag, right: value_expr}
   end
 
+  @spec rotation_expr(Types.ir_expr()) :: Types.ir_expr()
+  defp rotation_expr(angle_expr) when is_map(angle_expr) do
+    tagged_value_expr(%{op: :c_int_expr, value: "ELMC_UNION_ROTATION"}, angle_expr)
+  end
+
+  @spec pebble_angle_expr(Types.ir_expr()) :: Types.ir_expr()
+  def pebble_angle_expr(rotation) when is_map(rotation) do
+    rotation =
+      case rotation do
+        %{op: :qualified_call, target: target, args: args} ->
+          case special_value_from_target(target, args) do
+            nil -> rotation
+            folded -> folded
+          end
+
+        _ ->
+          rotation
+      end
+
+    case compile_time_pebble_angle_expr(rotation) do
+      {:ok, expr} -> expr
+      :error -> rotation_to_pebble_angle_call(rotation)
+    end
+  end
+
+  @spec compile_time_pebble_angle_expr(Types.ir_expr()) :: {:ok, Types.ir_expr()} | :error
+  defp compile_time_pebble_angle_expr(%{op: :tuple2, left: left, right: right}) do
+    if rotation_union_payload?(left), do: {:ok, right}, else: :error
+  end
+
+  defp compile_time_pebble_angle_expr(_rotation), do: :error
+
+  @spec pebble_angle_from_degrees(number()) :: integer()
+  defp pebble_angle_from_degrees(degrees), do: round(degrees * 65_536 / 360)
+
+  defp rotation_to_pebble_angle_call(rotation) do
+    %{op: :qualified_call, target: "Pebble.Ui.rotationToPebbleAngle", args: [rotation]}
+  end
+
+  defp rotation_union_payload?(%{op: :c_int_expr, value: "ELMC_UNION_ROTATION"}), do: true
+
+  defp rotation_union_payload?(%{op: :int_literal, union_ctor: ctor}) when is_binary(ctor) do
+    ctor
+    |> String.split(".")
+    |> List.last()
+    |> Kernel.==("Rotation")
+  end
+
+  defp rotation_union_payload?(_left), do: false
+
   @spec path_expr(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) ::
           Types.ir_expr()
   defp path_expr(points, offset_x, offset_y, rotation) do
@@ -2821,7 +2879,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
         right: %{
           op: :tuple2,
           left: offset_y,
-          right: rotation
+          right: pebble_angle_expr(rotation)
         }
       }
     }

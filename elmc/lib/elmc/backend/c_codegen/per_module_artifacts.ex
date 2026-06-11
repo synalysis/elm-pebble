@@ -99,11 +99,13 @@ defmodule Elmc.Backend.CCodegen.PerModuleArtifacts do
       |> Enum.filter(&(&1.kind == :function))
       |> Enum.map(fn decl ->
         c_name = Util.module_fn_name(mod.name, decl.name)
+        {prelude, body} = FunctionEmit.emit_body(decl, mod.name)
 
         """
+        #{prelude}#{if prelude == "", do: "", else: "\n"}
         ElmcValue *#{c_name}(ElmcValue ** const args, const int argc) {
           /* Ownership policy: #{Enum.join(decl.ownership, ", ")} */
-          #{FunctionEmit.emit_body(decl, mod.name)}
+          #{body}
         }
         """
       end)

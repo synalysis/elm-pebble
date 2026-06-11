@@ -28,6 +28,9 @@ defmodule Elmc.Backend.CCodegen.SpecialValues do
   @spec field_access_expr(map(), String.t()) :: term()
   defdelegate field_access_expr(arg_expr, field), to: Core
 
+  @spec pebble_angle_expr(map()) :: map()
+  defdelegate pebble_angle_expr(rotation), to: Core
+
   @spec special_value_from_target(String.t(), [term()]) :: term()
   defdelegate special_value_from_target(target, args), to: Dispatcher
 end

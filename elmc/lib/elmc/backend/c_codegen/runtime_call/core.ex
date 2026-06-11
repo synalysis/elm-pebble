@@ -9,6 +9,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
   alias Elmc.Backend.CCodegen.ListLoopCodegen
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.ImmortalStaticList
   alias Elmc.Backend.CCodegen.Native.Bool, as: NativeBool
   alias Elmc.Backend.CCodegen.Native.Float, as: NativeFloat
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
@@ -406,6 +407,53 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     end
   end
 
+  def compile(
+        %{
+          op: :runtime_call,
+          function: "elmc_list_nth_int_default_boxed",
+          args: [list, index, default_val]
+        },
+        env,
+        counter
+      ) do
+    case ImmortalStaticList.static_immortal_int_list(list, env) do
+      {:ok, spec} ->
+        {index_code, index_ref, counter} =
+          if NativeInt.expr?(index, env) do
+            Host.compile_native_int_expr(index, env, counter)
+          else
+            Host.compile_expr(index, env, counter)
+          end
+
+        {default_code, default_ref, counter} = Host.compile_expr(default_val, env, counter)
+        next = counter + 1
+        out = "tmp_#{next}"
+
+        code =
+          ImmortalStaticList.compile_static_int_list_nth_boxed(
+            spec,
+            index_code,
+            index_ref,
+            default_code,
+            default_ref,
+            out
+          )
+
+        {code, out, next}
+
+      :error ->
+        compile_generic(
+          %{
+            op: :runtime_call,
+            function: "elmc_list_nth_int_default_boxed",
+            args: [list, index, default_val]
+          },
+          env,
+          counter
+        )
+    end
+  end
+
   def compile(%{op: :runtime_call, function: function, args: args}, env, counter) do
     compile_generic(%{op: :runtime_call, function: function, args: args}, env, counter)
   end
@@ -503,7 +551,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
   end
 
   defp compile_string_concat_segments(segments, env, counter) do
-    {segment_code, segment_boxes, segment_releases, counter} =
+    {segment_code, segment_boxes, _segment_releases, counter} =
       Enum.reduce(segments, {"", [], [], counter}, fn segment, {code_acc, boxes_acc, releases_acc, c} ->
         {code, ref, releases, c2} = NativeString.compile_expr(segment, env, c)
         next = c2 + 1
@@ -2187,40 +2235,63 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     with {:ok, list} <- ListLoopCodegen.unwrap_list_length_expr(right),
          {:ok, left_code, left_ref, counter} <-
            ConstantInt.compile_native_operand(left, env, counter) do
-      {list_code, list_var, counter} = Host.compile_expr(list, env, counter)
-      loop_id = counter + 1
-      {length_code, count} = ListLoopCodegen.emit_length_native_count(list_var, loop_id)
-      counter = counter + 1
-      out = "tmp_#{counter}"
+      case ImmortalStaticList.static_length(list, env) do
+        {:ok, count} ->
+          counter = counter + 1
+          out = "tmp_#{counter}"
 
-      code = """
-      #{left_code}#{list_code}
-      #{length_code}
-        #{RecordCompile.release_list_operand_code(env, list_var)}\
-        ElmcValue *#{out} = elmc_new_int(#{left_ref} - #{count});
-      """
+          code = """
+          #{left_code}\
+            ElmcValue *#{out} = elmc_new_int(#{left_ref} - #{count});
+          """
 
-      {:ok, code, out, counter}
+          {:ok, code, out, counter}
+
+        :error ->
+          {list_code, list_var, counter} = Host.compile_expr(list, env, counter)
+          loop_id = counter + 1
+          {length_code, count} = ListLoopCodegen.emit_length_native_count(list_var, loop_id)
+          counter = counter + 1
+          out = "tmp_#{counter}"
+
+          code = """
+          #{left_code}#{list_code}
+          #{length_code}
+            #{RecordCompile.release_list_operand_code(env, list_var)}\
+            ElmcValue *#{out} = elmc_new_int(#{left_ref} - #{count});
+          """
+
+          {:ok, code, out, counter}
+      end
     else
       _ -> :error
     end
   end
 
   defp compile_list_length_int(list, env, counter) do
-    {list_code, list_var, counter} = Host.compile_expr(list, env, counter)
-    loop_id = counter + 1
-    {length_code, count} = ListLoopCodegen.emit_length_native_count(list_var, loop_id)
-    counter = counter + 1
-    out = "tmp_#{counter}"
+    case ImmortalStaticList.static_length(list, env) do
+      {:ok, count} ->
+        counter = counter + 1
+        out = "tmp_#{counter}"
+        length_ref = ImmortalStaticList.format_static_length(count, list, env)
+        {:ok, "ElmcValue *#{out} = elmc_new_int(#{length_ref});\n", out, counter}
 
-    code = """
-    #{list_code}
-    #{length_code}
-      ElmcValue *#{out} = elmc_new_int(#{count});
-      #{RecordCompile.release_list_operand_code(env, list_var)}\
-    """
+      :error ->
+        {list_code, list_var, counter} = Host.compile_expr(list, env, counter)
+        loop_id = counter + 1
+        {length_code, count} = ListLoopCodegen.emit_length_native_count(list_var, loop_id)
+        counter = counter + 1
+        out = "tmp_#{counter}"
 
-    {:ok, code, out, counter}
+        code = """
+        #{list_code}
+        #{length_code}
+          ElmcValue *#{out} = elmc_new_int(#{count});
+          #{RecordCompile.release_list_operand_code(env, list_var)}\
+        """
+
+        {:ok, code, out, counter}
+    end
   end
 
   defp compile_list_slice_int(function, count, list, env, counter) do

@@ -129,6 +129,26 @@ void elmc_scene_writer_init_app(ElmcSceneWriter *writer, ElmcPebbleApp *app);
 #define ELMC_PEBBLE_SCENE_CACHE_ENABLED 1
 #endif
 
+#ifndef ELMC_PEBBLE_SCENE_INITIAL_CAPACITY
+#define ELMC_PEBBLE_SCENE_INITIAL_CAPACITY 512
+#endif
+
+#ifndef ELMC_PEBBLE_SCENE_GROW_CHUNK
+#if defined(PBL_PLATFORM_APLITE)
+#define ELMC_PEBBLE_SCENE_GROW_CHUNK 32
+#else
+#define ELMC_PEBBLE_SCENE_GROW_CHUNK 64
+#endif
+#endif
+
+#ifndef ELMC_PEBBLE_SCENE_TRIM_SLACK
+#if defined(PBL_PLATFORM_APLITE)
+#define ELMC_PEBBLE_SCENE_TRIM_SLACK 16
+#else
+#define ELMC_PEBBLE_SCENE_TRIM_SLACK 0
+#endif
+#endif
+
 #ifndef ELMC_PEBBLE_DRAW_PATH_PROBES
 #define ELMC_PEBBLE_DRAW_PATH_PROBES 0
 #endif
@@ -430,7 +450,9 @@ int elmc_pebble_dispatch_battery(ElmcPebbleApp *app, int level);
 int elmc_pebble_dispatch_connection(ElmcPebbleApp *app, int connected);
 int elmc_pebble_dispatch_health(ElmcPebbleApp *app, int event);
 int elmc_pebble_dispatch_app_focus(ElmcPebbleApp *app, int in_focus);
+#if ELMC_PEBBLE_FEATURE_COMPASS_EVENTS
 int elmc_pebble_dispatch_compass_heading(ElmcPebbleApp *app, double degrees, int is_valid);
+#endif
 int elmc_pebble_dispatch_dictation_status(ElmcPebbleApp *app, int status);
 int elmc_pebble_dispatch_dictation_result(ElmcPebbleApp *app, int is_ok, int error_code, const char *text);
 int elmc_pebble_dispatch_unobstructed_will_change(ElmcPebbleApp *app, int x, int y, int w, int h);
@@ -459,5 +481,18 @@ int64_t elmc_pebble_active_subscriptions(ElmcPebbleApp *app);
 int64_t elmc_pebble_model_as_int(ElmcPebbleApp *app);
 int elmc_pebble_run_mode(ElmcPebbleApp *app);
 void elmc_pebble_deinit(ElmcPebbleApp *app);
+
+#if defined(ELMC_PEBBLE_PLATFORM) && ELMC_PEBBLE_HEAP_LOG
+void elmc_pebble_heap_log(const char *label);
+void elmc_pebble_render_diag_log(const char *phase, int render_seq, const ElmcPebbleApp *app);
+#else
+#define elmc_pebble_heap_log(label) do { (void)(label); } while (0)
+#define elmc_pebble_render_diag_log(phase, render_seq, app) \
+  do { \
+    (void)(phase); \
+    (void)(render_seq); \
+    (void)(app); \
+  } while (0)
+#endif
 
 #endif

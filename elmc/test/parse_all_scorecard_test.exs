@@ -444,28 +444,33 @@ defmodule Elmc.ParseAllScorecardTest do
 
   defp load_fixture_config(fixture) when is_binary(fixture) do
     cfg_path = Path.expand("fixtures/#{fixture}/parse_all.json", __DIR__)
+    default_enabled = not String.starts_with?(fixture, "rc_track_")
 
     case File.read(cfg_path) do
       {:ok, json} ->
         case Jason.decode(json) do
           {:ok, %{} = decoded} ->
-            normalize_fixture_config(decoded)
+            normalize_fixture_config(decoded, default_enabled)
 
           _ ->
-            %{elm_make_enabled: true, elm_make_excluded_modules: []}
+            default_fixture_config(default_enabled)
         end
 
       _ ->
-        %{elm_make_enabled: true, elm_make_excluded_modules: []}
+        default_fixture_config(default_enabled)
     end
   end
 
-  defp normalize_fixture_config(%{} = cfg) do
+  defp default_fixture_config(enabled) do
+    %{elm_make_enabled: enabled, elm_make_excluded_modules: []}
+  end
+
+  defp normalize_fixture_config(%{} = cfg, default_enabled \\ true) do
     enabled =
-      case Map.get(cfg, "elm_make_enabled", true) do
+      case Map.get(cfg, "elm_make_enabled", default_enabled) do
         false -> false
         "false" -> false
-        _ -> true
+        _ -> default_enabled
       end
 
     raw = Map.get(cfg, "elm_make_excluded_modules", [])

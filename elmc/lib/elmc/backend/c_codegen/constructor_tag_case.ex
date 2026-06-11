@@ -4,6 +4,7 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.PebbleMsgTag
+  alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.Native.IntCase, as: NativeIntCase
   alias Elmc.Backend.CCodegen.Patterns
@@ -78,8 +79,10 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
 
     {branch_code, final_counter} =
       Enum.reduce(branches, {"", next}, fn branch, {acc, c} ->
+        branch_env = RecordCompile.fresh_subexpr_cache(env)
+
         {expr_code, assignment_code, c2} =
-          Host.compile_case_branch_assignment(branch.expr, out, env, c)
+          Host.compile_case_branch_assignment(branch.expr, out, branch_env, c)
 
         snippet = """
         #{case_label(branch.pattern, env)}:
@@ -141,7 +144,10 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
 
     {branch_code, final_counter} =
       Enum.reduce(branches, {"", next}, fn branch, {acc, c} ->
-        branch_env = Patterns.bind_pattern(env, branch.pattern, subject_ref)
+        branch_env =
+          env
+          |> Patterns.bind_pattern(branch.pattern, subject_ref)
+          |> RecordCompile.fresh_subexpr_cache()
 
         {expr_code, assignment_code, c2} =
           Host.compile_case_branch_assignment(branch.expr, out, branch_env, c)

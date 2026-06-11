@@ -165,6 +165,14 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
   @spec return_kind(Types.function_declaration(), String.t(), Types.function_decl_map()) ::
           native_return_kind()
   def return_kind(%{type: type, expr: expr} = decl, module_name, decl_map) when is_binary(type) do
+    if native_scalar_fn?(decl, module_name, decl_map) do
+      scalar_return_kind(decl, module_name, decl_map, type, expr)
+    else
+      :boxed
+    end
+  end
+
+  defp scalar_return_kind(decl, module_name, decl_map, type, expr) do
     env = callee_env(decl, module_name, decl_map)
 
     case Host.function_return_type(type) do

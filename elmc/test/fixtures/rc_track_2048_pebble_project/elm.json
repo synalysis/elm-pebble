@@ -2,8 +2,8 @@
   "type": "application",
   "source-directories": [
     "src",
-    "../../../../../packages/elm-pebble/elm-watch/src",
-    "../../../../../shared/elm"
+    "../../../../packages/elm-pebble/elm-watch/src",
+    "../../../../shared/elm"
   ],
   "elm-version": "0.19.1",
   "dependencies": {

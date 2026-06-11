@@ -5,7 +5,9 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Fusion
+  alias Elmc.Backend.CCodegen.Hoist
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.ImmortalStaticList
   alias Elmc.Backend.CCodegen.ListLoopCodegen
   alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
@@ -122,6 +124,10 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
         env
       ),
       do: expr?(index, env) and expr?(default_val, env)
+
+  def expr?(%{op: :runtime_call, function: "elmc_list_length", args: [list]}, env) do
+    match?({:ok, _}, ImmortalStaticList.static_length(list, env))
+  end
 
   def expr?(%{op: :runtime_call, function: function, args: [value]}, env)
       when function in ["elmc_basics_abs", "elmc_basics_negate"] do
@@ -582,25 +588,33 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
   defp dispatch(%{op: :call, name: name, args: [left, right]} = expr, env, counter)
        when name in ["min", "max"] do
-    {left_code, left_ref, counter} = compile_expr(left, env, counter)
-    {right_code, right_ref, counter} = compile_expr(right, env, counter)
-    next = counter + 1
-    left_var = "native_#{name}_left_#{next}"
-    right_var = "native_#{name}_right_#{next}"
-    out = "native_#{name}_#{next}"
-    cmp_op = if name == "min", do: "<=", else: ">="
+    case Host.hoisted_native_int_lookup(env, expr) do
+      {:ok, ref} ->
+        {"", ref, counter}
 
-    code = """
-    #{left_code}
-      #{right_code}
-      const elmc_int_t #{left_var} = #{left_ref};
-      const elmc_int_t #{right_var} = #{right_ref};
-      const elmc_int_t #{out} = (#{left_var} #{cmp_op} #{right_var}) ? #{left_var} : #{right_var};
-    """
+      :error ->
+        {left_code, left_ref, counter} = compile_expr(left, env, counter)
+        {right_code, right_ref, counter} = compile_expr(right, env, counter)
+        next = counter + 1
+        left_var = "native_#{name}_left_#{next}"
+        right_var = "native_#{name}_right_#{next}"
+        out = "native_#{name}_#{next}"
+        cmp_op = if name == "min", do: "<=", else: ">="
 
-    if Host.hoisted_native_ints_enabled?(env), do: Host.register_hoisted_native_int(expr, out)
+        code = """
+        #{left_code}
+          #{right_code}
+          const elmc_int_t #{left_var} = #{left_ref};
+          const elmc_int_t #{right_var} = #{right_ref};
+          const elmc_int_t #{out} = (#{left_var} #{cmp_op} #{right_var}) ? #{left_var} : #{right_var};
+        """
 
-    {code, out, next}
+        if Hoist.hoisted_native_ints_enabled?(env) do
+          Host.register_hoisted_native_int(expr, out)
+        end
+
+        {code, out, next}
+    end
   end
 
   defp dispatch(%{op: :call, name: name, args: [value]}, env, counter)
@@ -632,10 +646,11 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
         next = counter + 1
         out = "native_mod_#{next}"
         correction = abs(base_value)
+        divisor = ImmortalStaticList.format_static_length(base_value, base, env)
 
         code = """
         #{value_code}
-          elmc_int_t #{out} = #{value_ref} % #{base_value};
+          elmc_int_t #{out} = #{value_ref} % #{divisor};
           if (#{out} < 0) #{out} += #{correction};
         """
 
@@ -827,17 +842,27 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
          env,
          counter
        ) do
-    {list_code, list_var, counter} = Host.compile_expr(list, env, counter)
     {index_code, index_ref, counter} = compile_expr(index, env, counter)
     {default_code, default_ref, counter} = compile_expr(default_val, env, counter)
     next = counter + 1
     out = "native_list_nth_#{next}"
 
-    code = """
-    #{list_code}#{index_code}#{default_code}
-      const elmc_int_t #{out} = elmc_list_nth_int_default(#{list_var}, #{index_ref}, #{default_ref});
-      elmc_release(#{list_var});
-    """
+    code =
+      case ImmortalStaticList.static_immortal_int_list(list, env) do
+        {:ok, spec} ->
+          index_code <>
+            default_code <>
+            ImmortalStaticList.compile_static_int_list_nth_native(spec, index_ref, default_ref, out)
+
+        :error ->
+          {list_code, list_var, counter} = Host.compile_expr(list, env, counter)
+
+          """
+          #{list_code}#{index_code}#{default_code}
+            const elmc_int_t #{out} = elmc_list_nth_int_default(#{list_var}, #{index_ref}, #{default_ref});
+            elmc_release(#{list_var});
+          """
+      end
 
     {code, out, next}
   end
@@ -976,6 +1001,16 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     {code, out, next}
   end
 
+  defp dispatch(%{op: :runtime_call, function: "elmc_list_length", args: [list]} = expr, env, counter) do
+    case ImmortalStaticList.static_length(list, env) do
+      {:ok, count} ->
+        {"", ImmortalStaticList.format_static_length(count, expr, env), counter}
+
+      :error ->
+        compile_fallback(expr, env, counter)
+    end
+  end
+
   defp dispatch(%{op: :case, subject: subject, branches: branches} = expr, env, counter) do
     subject_expr = CaseCompile.subject_expr(subject)
 
@@ -1065,6 +1100,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
               name,
               value_code,
               value_ref,
+              value_expr,
               in_expr,
               env,
               counter
@@ -1072,13 +1108,30 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
         end
 
       :error ->
-        compile_native_int_let_bindings(name, value_code, value_ref, in_expr, env, counter)
+        compile_native_int_let_bindings(
+          name,
+          value_code,
+          value_ref,
+          value_expr,
+          in_expr,
+          env,
+          counter
+        )
     end
   end
 
-  defp compile_native_int_let_bindings(name, value_code, value_ref, in_expr, env, counter) do
+  defp compile_native_int_let_bindings(
+         name,
+         value_code,
+         value_ref,
+         value_expr,
+         in_expr,
+         env,
+         counter
+       ) do
     next = counter + 1
     native_var = "native_let_#{Util.safe_c_suffix(name)}_#{next}"
+    bound_ref = native_int_binding_ref(value_ref, value_expr, env)
 
     body_env =
       env
@@ -1092,11 +1145,18 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
     code = """
     #{value_code}
-      const elmc_int_t #{native_var} = #{value_ref};
+      const elmc_int_t #{native_var} = #{bound_ref};
     #{body_code}
     """
 
     {code, body_ref, counter}
+  end
+
+  defp native_int_binding_ref(value_ref, value_expr, env) do
+    case ImmortalStaticList.length_heritage_comment(value_expr, env) do
+      nil -> value_ref
+      comment -> "#{value_ref} #{comment}"
+    end
   end
 
   @spec compile_binary_int_op(
@@ -1128,17 +1188,23 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     with {:ok, list} <- ListLoopCodegen.unwrap_list_length_expr(right),
          {:ok, left_code, left_ref, counter} <-
            ConstantInt.compile_native_operand(left, env, counter) do
-      {list_code, list_var, counter} = Host.compile_expr(list, env, counter)
-      loop_id = counter + 1
-      {length_code, count} = ListLoopCodegen.emit_length_native_count(list_var, loop_id)
+      case ImmortalStaticList.static_length(list, env) do
+        {:ok, count} ->
+          {:ok, left_code, "(#{left_ref} - #{count})", counter}
 
-      code = """
-      #{left_code}#{list_code}
-      #{length_code}
-        #{RecordCompile.release_list_operand_code(env, list_var)}
-      """
+        :error ->
+          {list_code, list_var, counter} = Host.compile_expr(list, env, counter)
+          loop_id = counter + 1
+          {length_code, count} = ListLoopCodegen.emit_length_native_count(list_var, loop_id)
 
-      {:ok, code, "(#{left_ref} - #{count})", counter}
+          code = """
+          #{left_code}#{list_code}
+          #{length_code}
+            #{RecordCompile.release_list_operand_code(env, list_var)}
+          """
+
+          {:ok, code, "(#{left_ref} - #{count})", counter}
+      end
     else
       _ -> :error
     end

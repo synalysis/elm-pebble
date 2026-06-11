@@ -4,6 +4,7 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
   alias Elmc.Backend.CCodegen.BuiltinOperators
   alias Elmc.Backend.CCodegen.FunctionCallCompile
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.ResourceUnion
   alias Elmc.Backend.CCodegen.SpecialValues
   alias Elmc.Backend.CCodegen.Types
@@ -11,7 +12,21 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
 
   @spec compile(Types.ir_call_expr(), Types.compile_env(), Types.compile_counter()) ::
           Types.compile_result()
-  def compile(%{op: :qualified_call, target: target, args: args}, env, counter) do
+  def compile(%{op: :qualified_call, target: target, args: args} = expr, env, counter) do
+    if args == [] and RecordCompile.subexpr_cache_active?(env) do
+      {code, ref, counter, _env} =
+        RecordCompile.compile_expr_cached(expr, env, counter, fn expr, inner_env, inner_counter ->
+          %{op: :qualified_call, target: inner_target, args: inner_args} = expr
+          compile_qualified_call(inner_target, inner_args, inner_env, inner_counter)
+        end)
+
+      {code, ref, counter}
+    else
+      compile_qualified_call(target, args, env, counter)
+    end
+  end
+
+  defp compile_qualified_call(target, args, env, counter) do
     case SpecialValues.special_value_from_target(target, args) do
       nil ->
         cond do

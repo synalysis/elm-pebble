@@ -68,6 +68,7 @@ defmodule Elmc.Backend.Pebble.SceneWriter do
       return elmc_pebble_scene_put_i32(writer->app, value);
     }
 
+    #if ELMC_PEBBLE_FEATURE_DRAW_TEXT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
     static int elmc_scene_writer_write_text_tail(ElmcSceneWriter *writer, const ElmcPebbleDrawCmd *cmd) {
       if (!writer || !writer->app) return -1;
       int text_len = elmc_scene_text_len(cmd);
@@ -82,6 +83,7 @@ defmodule Elmc.Backend.Pebble.SceneWriter do
       }
       return 0;
     }
+    #endif
 
     static int elmc_scene_writer_write_coords_i16(ElmcSceneWriter *writer, const ElmcPebbleDrawCmd *cmd) {
       int rc = elmc_scene_writer_put_i16(writer, cmd->p0); if (rc != 0) return rc;
@@ -90,12 +92,14 @@ defmodule Elmc.Backend.Pebble.SceneWriter do
       return elmc_scene_writer_put_i16(writer, cmd->p3);
     }
 
+    #if ELMC_PEBBLE_FEATURE_DRAW_TEXT
     static int elmc_scene_writer_write_text_bounds_i16(ElmcSceneWriter *writer, const ElmcPebbleDrawCmd *cmd) {
       int rc = elmc_scene_writer_put_i16(writer, cmd->p1); if (rc != 0) return rc;
       rc = elmc_scene_writer_put_i16(writer, cmd->p2); if (rc != 0) return rc;
       rc = elmc_scene_writer_put_i16(writer, cmd->p3); if (rc != 0) return rc;
       return elmc_scene_writer_put_i16(writer, cmd->p4);
     }
+    #endif
 
     static int elmc_scene_writer_write_full_i32s(ElmcSceneWriter *writer, const ElmcPebbleDrawCmd *cmd) {
       int rc = elmc_scene_writer_put_i32(writer, cmd->p0); if (rc != 0) return rc;

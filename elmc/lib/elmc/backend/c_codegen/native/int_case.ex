@@ -6,6 +6,7 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
+  alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.Types
   @spec branches?(Types.int_case_branches()) :: boolean()
   def branches?(branches) when is_list(branches) do
@@ -73,8 +74,10 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
 
     {branch_code, final_counter} =
       Enum.reduce(branches, {"", next}, fn branch, {acc, c} ->
+        branch_env = RecordCompile.fresh_subexpr_cache(env)
+
         {expr_code, assignment_code, c2} =
-          Host.compile_case_branch_assignment(branch.expr, out, env, c)
+          Host.compile_case_branch_assignment(branch.expr, out, branch_env, c)
 
         label = case_label(branch.pattern)
         release_previous = if exhaustive?, do: "", else: "elmc_release(#{out});"
@@ -124,8 +127,10 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
 
     {branch_code, final_counter} =
       Enum.reduce(branches, {"", next}, fn branch, {acc, c} ->
+        branch_env = RecordCompile.fresh_subexpr_cache(env)
+
         {expr_code, assignment_code, c2} =
-          scalar_branch_assignment(branch.expr, out, env, c)
+          scalar_branch_assignment(branch.expr, out, branch_env, c)
 
         snippet = """
         #{case_label(branch.pattern)}:

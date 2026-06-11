@@ -12,6 +12,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
   alias Elmc.Backend.CCodegen.Native.String, as: NativeString
   alias Elmc.Backend.CCodegen.Native.TypedReturn
   alias Elmc.Backend.CCodegen.Native.UsageAnalysis, as: NativeUsageAnalysis
+  alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
 
@@ -249,6 +250,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
       |> EnvBindings.put_boxed_string_binding(name, NativeString.boxed_expr?(value_expr, env))
       |> put_boxed_record_shape(name, record_shape)
       |> put_boxed_var_type(name, value_expr, env)
+      |> RecordCompile.fresh_subexpr_cache()
 
     {body_code, body_var, counter} = Host.compile_expr(in_expr, body_env, counter)
 
@@ -317,7 +319,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
 
   defp maybe_extract_boxed_let_body(in_expr, body_env, body_code, body_var, counter) do
     if extract_boxed_let_body?(body_env, body_code) do
-      case boxed_let_body_helper_params(in_expr, body_env) do
+      case boxed_let_body_helper_params(in_expr, body_env, body_code) do
         {:ok, params} when params != [] ->
           helper_id = Process.get(:elmc_generic_helper_counter, 0) + 1
           Process.put(:elmc_generic_helper_counter, helper_id)
@@ -365,17 +367,36 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
 
   defp emitted_line_count(code), do: code |> String.split("\n") |> length()
 
-  defp boxed_let_body_helper_params(expr, env) do
+  defp boxed_let_body_helper_params(expr, env, body_code) do
     vars =
       expr
       |> external_vars()
       |> MapSet.union(case_subject_vars(expr))
+      |> MapSet.union(helper_vars_from_body_code(body_code, env))
       |> MapSet.to_list()
 
     case HelperParams.collect(vars, env) do
       :error -> :error
       {:ok, params} -> {:ok, params}
     end
+  end
+
+  defp helper_vars_from_body_code(body_code, env) when is_binary(body_code) do
+    env
+    |> EnvBindings.env_resolvable_binding_keys()
+    |> Enum.reduce(MapSet.new(), fn key, acc ->
+      case Map.get(env, key) do
+        c_ref when is_binary(c_ref) ->
+          if Regex.match?(~r/\b#{Regex.escape(c_ref)}\b/, body_code) do
+            MapSet.put(acc, key)
+          else
+            acc
+          end
+
+        _ ->
+          acc
+      end
+    end)
   end
 
   defp case_subject_vars(expr) when is_map(expr) do

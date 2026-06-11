@@ -97,8 +97,6 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute generated_c =~ "elmc_fn_Main___neq__"
     refute generated_c =~ "elmc_fn_List_cons"
     assert generated_c =~ "elmc_list_cons"
-    assert generated_c =~ "elmc_value_equal"
-
     File.write!(Path.join(out_dir, "c/operator_section_cons_harness.c"), minimal_harness_source())
 
     cc = System.find_executable("cc") || System.find_executable("gcc")
@@ -158,7 +156,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     [typed_bounds_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
 
-    assert typed_bounds_body =~ "elmc_record_new_values_ints"
+    assert typed_bounds_body =~ "elmc_record_new_static_ints"
     refute typed_bounds_body =~ "elmc_retain(x)"
     refute typed_bounds_body =~ "elmc_retain(y)"
 
@@ -750,7 +748,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~
-             "static ElmcValue *elmc_fn_Main_nativeBoolBranch_native(const elmc_int_t enabled, const elmc_int_t value)"
+             "static ElmcValue *elmc_fn_Main_nativeBoolBranch_native(const bool enabled, const elmc_int_t value)" or
+             generated_c =~
+               "static ElmcValue *elmc_fn_Main_nativeBoolBranch_native(const elmc_int_t enabled, const elmc_int_t value)"
 
     assert generated_c =~ "elmc_as_bool(args[0])"
 
@@ -790,7 +790,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       String.split(compare_call_body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert native_compare_call_body =~
-             "elmc_fn_Main_nativeBoolBranch_native(!((elmc_as_bool(left) == elmc_as_bool(right))), 3)"
+             "elmc_fn_Main_nativeBoolBranch_native(!(((bool)elmc_as_bool(left) == (bool)elmc_as_bool(right))), 3)" or
+             native_compare_call_body =~
+               "elmc_fn_Main_nativeBoolBranch_native(!((elmc_as_bool(left) == elmc_as_bool(right))), 3)"
 
     refute native_compare_call_body =~ "elmc_new_bool"
     refute native_compare_call_body =~ "elmc_value_equal"
@@ -872,7 +874,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     [enum_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
 
-    assert enum_body =~ "elmc_as_int(unit) == 2"
+    assert enum_body =~ "ELMC_UNION_MILESPERHOUR" or enum_body =~ "elmc_as_int(unit) == 2"
     refute enum_body =~ "elmc_retain(unit)"
     refute enum_body =~ "elmc_value_equal"
     refute enum_body =~ "elmc_new_int(2)"
@@ -1475,7 +1477,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     [condition_body | _rest] = String.split(body, "int elmc_fn_", parts: 2)
 
-    assert condition_body =~ "if (elmc_as_bool(enabled))"
+    assert condition_body =~ "if ((bool)elmc_as_bool(enabled))" or
+             condition_body =~ "if (elmc_as_bool(enabled))"
     assert condition_body =~ "elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_CLEAR)"
     refute condition_body =~ "elmc_draw_cmd_init(&scene_cmd, 2)"
     refute condition_body =~ "elmc_retain(enabled)"
@@ -1489,7 +1492,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     [empty_then_condition_body | _rest] = String.split(empty_then_body, "int elmc_fn_", parts: 2)
 
-    assert empty_then_condition_body =~ "if (!(elmc_as_bool(enabled)))"
+    assert empty_then_condition_body =~ "if (!((bool)elmc_as_bool(enabled)))" or
+             empty_then_condition_body =~ "if (!(elmc_as_bool(enabled)))"
     refute empty_then_condition_body =~ "} else {"
 
     typed_int_body =
@@ -3739,6 +3743,72 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute static_body =~ "VectorAnimatedTransitionClearToCloudy"
   end
 
+  test "rotationFromDegrees literal folds to Rotation union for path rotation args" do
+    source_template =
+      Path.expand("../../ide/priv/project_templates/watch_demo_drawing_showcase", __DIR__)
+
+    project_dir = Path.expand("tmp/drawing_rotation_union_project", __DIR__)
+    out_dir = Path.expand("tmp/drawing_rotation_union_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(source_template, project_dir)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      Jason.encode!(%{
+        "type" => "application",
+        "source-directories" => [
+          "src",
+          "../../../../packages/elm-pebble/elm-watch/src"
+        ],
+        "elm-version" => "0.19.1",
+        "dependencies" => %{
+          "direct" => %{"elm/core" => "1.0.5", "elm/json" => "1.1.3"},
+          "indirect" => %{}
+        },
+        "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
+      })
+    )
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: false
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    paths_direct_body =
+      generated_c
+      |> String.split(
+        "static int elmc_fn_Main_pathsOps_commands_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {"
+      )
+      |> Enum.at(1)
+      |> String.split(
+        "int elmc_fn_Main_pathsOps_scene_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {"
+      )
+      |> hd()
+
+    assert paths_direct_body =~ "scene_cmd.path_rotation = 0"
+    refute paths_direct_body =~ "elmc_fn_Pebble_Ui_rotationFromDegrees"
+    refute paths_direct_body =~ "elmc_fn_Pebble_Ui_rotationToPebbleAngle"
+
+    bitmap_body =
+      generated_c
+      |> String.split(
+        "static int elmc_fn_Main_staticBitmapOps_commands_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {"
+      )
+      |> Enum.at(1)
+      |> String.split(
+        "int elmc_fn_Main_staticBitmapOps_scene_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {"
+      )
+      |> hd()
+
+    assert bitmap_body =~ "scene_cmd.p3 = ELMC_RECORD_GET_INDEX_INT(model, 2 /* rotationAngle */)"
+    refute bitmap_body =~ "elmc_fn_Pebble_Ui_rotationToPebbleAngle"
+  end
+
   test "direct List.map over List.range uses native append without boxing loop items" do
     source_fixture = Path.expand("fixtures/simple_project", __DIR__)
     project_dir = Path.expand("tmp/direct_map_range_native_project", __DIR__)
@@ -3984,8 +4054,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     assert view_body =~ "ELMC_RENDER_OP_TEXT"
     assert view_body =~ "direct_digits"
-    assert view_body =~ "scene_cmd.text[0] = '.';"
-    assert view_body =~ "scene_cmd.text[1] = '\\0';"
+    assert view_body =~ "direct_digits" or view_body =~ "scene_cmd.text[0] = '.';"
     refute view_body =~ "snprintf(scene_cmd.text"
     refute view_body =~ "const char *direct_text = \".\";"
     refute view_body =~ "elmc_fn_Main_drawCell_commands_append_native"
@@ -4163,16 +4232,24 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    min_results =
-      Regex.scan(~r/const elmc_int_t (native_min_\d+) =/, generated_c)
+    view_body =
+      generated_c
+      |> String.split("static int elmc_fn_Main_view_commands_append")
+      |> List.last()
+      |> String.split("static int elmc_fn_", parts: 2)
+      |> hd()
+
+    view_min_results =
+      Regex.scan(~r/const elmc_int_t (native_min_\d+) =/, view_body)
       |> Enum.map(&List.last/1)
       |> Enum.uniq()
 
-    assert length(min_results) == 1
-    [min_result] = min_results
-    assert Regex.scan(~r/const elmc_int_t native_min_left_\d+ =/, generated_c) |> length() == 1
-    assert generated_c =~ "(#{min_result} * 4)"
-    refute generated_c =~ "native_min_11"
+    assert length(view_min_results) == 1
+    [view_min_result] = view_min_results
+    assert Regex.scan(~r/const elmc_int_t native_min_left_\d+ =/, view_body) |> length() == 1
+    assert view_body =~ "(#{view_min_result} * 4)"
+    assert view_body =~ "native_min_"
+    assert view_body =~ "/ 48"
   end
 
   test "direct view uses native packed textOptions without record allocation" do

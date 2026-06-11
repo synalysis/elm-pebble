@@ -3,7 +3,9 @@
 
 #include "elmc_generated.h"
 
-#define ELMC_WORKER_MAX_BUTTON_RAW_SUBS 16
+#define ELMC_WORKER_MAX_BUTTON_RAW_SUBS 1
+#define ELMC_WORKER_SUB_TAG_SLOTS 1
+
 
 typedef struct {
   elmc_int_t button_id;
@@ -15,7 +17,7 @@ typedef struct {
   ElmcValue *model;
   ElmcValue *pending_cmd;
   int64_t subscriptions;
-  elmc_int_t sub_msg_tags[32];
+  elmc_int_t sub_msg_tags[ELMC_WORKER_SUB_TAG_SLOTS];
   ElmcButtonRawSub button_raw_subs[ELMC_WORKER_MAX_BUTTON_RAW_SUBS];
   int button_raw_sub_count;
 } ElmcWorkerState;

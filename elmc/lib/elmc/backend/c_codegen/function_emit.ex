@@ -12,8 +12,10 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.Native.ListIntReduce
   alias Elmc.Backend.CCodegen.Native.ListIntSearch
+  alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.TypeParsing
   alias Elmc.Backend.CCodegen.Fusion
+  alias Elmc.Backend.CCodegen.ImmortalStaticList
   alias Elmc.Backend.CCodegen.Tuple2CaseTable
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
@@ -49,7 +51,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       Process.put(:elmc_generic_helper_defs, [])
       Process.put(:elmc_generic_helper_counter, 0)
       direct_args? = not emit_wrapper?
-      body = emit_body(decl, module_name, function_arities, decl_map, direct_args?)
+      {immortal_prelude, body} = emit_body(decl, module_name, function_arities, decl_map, direct_args?)
       helper_defs = generic_helper_defs()
       Process.delete(:elmc_generic_helper_defs)
       Process.delete(:elmc_generic_helper_counter)
@@ -71,6 +73,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       linkage = function_linkage_prefix(module_name, decl.name)
 
       """
+      #{immortal_prelude}#{if immortal_prelude == "", do: "", else: "\n"}
       #{helper_defs}#{linkage}ElmcValue *#{c_name}(#{signature}) {
         /* Ownership policy: #{policy} */
       #{body}
@@ -139,7 +142,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           %{optional({String.t(), String.t()}) => non_neg_integer()},
           Types.function_decl_map(),
           boolean()
-        ) :: String.t()
+        ) :: {String.t(), String.t()}
   def emit_body(
         decl,
         module_name,
@@ -149,10 +152,35 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       )
 
   def emit_body(%{expr: nil}, _module_name, _function_arities, _decl_map, _direct_args?) do
-    "(void)args; (void)argc; return elmc_int_zero();"
+    {"", "(void)args; (void)argc; return elmc_int_zero();"}
   end
 
   def emit_body(decl, module_name, function_arities, decl_map, direct_args?) do
+    with true <- ImmortalStaticList.zero_arg_function?(decl),
+         {:ok, prelude, body} <-
+           ImmortalStaticList.try_emit_function_prelude_and_body(
+             module_name,
+             decl.name,
+             decl.expr || %{op: :int_literal, value: 0},
+             direct_args?
+           ) do
+      {entry_probe, exit_probe} = DebugProbes.entry_exit_probes(module_name, decl.name)
+
+      body =
+        format_function_body([
+          entry_probe,
+          body,
+          exit_probe
+        ])
+
+      {prelude, body}
+    else
+      _ ->
+        {"", emit_boxed_body(decl, module_name, function_arities, decl_map, direct_args?)}
+    end
+  end
+
+  defp emit_boxed_body(decl, module_name, function_arities, decl_map, direct_args?) do
     arg_names = decl.args || []
     arg_bindings = c_arg_bindings(arg_names)
     {entry_probe, exit_probe} = DebugProbes.entry_exit_probes(module_name, decl.name)
@@ -733,8 +761,10 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
-  defp compile_native_body(decl, _module_name, _decl_map, env, :boxed, _arg_kinds),
-    do: Host.compile_expr(decl.expr || %{op: :int_literal, value: 0}, env, 0)
+  defp compile_native_body(decl, _module_name, _decl_map, env, :boxed, _arg_kinds) do
+    env = RecordCompile.with_subexpr_cache(env)
+    Host.compile_expr(decl.expr || %{op: :int_literal, value: 0}, env, 0)
+  end
 
   defp compile_list_int_search_native(decl, module_name, decl_map, env, return_kind) do
     with {:ok, spec} <- ListIntSearch.recognize(decl, module_name, decl_map),

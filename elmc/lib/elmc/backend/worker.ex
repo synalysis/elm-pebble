@@ -37,6 +37,7 @@ defmodule Elmc.Backend.Worker do
           button_raw_count: 0,
           compact: true,
           has_frame: false,
+          model_dependent?: false,
           slot_map: %{},
           frame_slot: nil,
           sub_tag_slots: 1,
@@ -44,23 +45,34 @@ defmodule Elmc.Backend.Worker do
         }
 
       expr ->
-        analysis = Subscriptions.analyze_subscription_masks(expr)
-        build_slot_layout(analysis)
+        decl = subscriptions_decl(ir, entry_module)
+
+        expr
+        |> Subscriptions.analyze_subscription_masks()
+        |> Map.put(:model_dependent?, Subscriptions.model_dependent?(decl))
+        |> build_slot_layout()
     end
   end
 
-  defp subscriptions_expr(%IR{} = ir, entry_module) do
+  defp subscriptions_decl(%IR{} = ir, entry_module) do
     ir.modules
     |> Enum.find_value(fn mod ->
       if mod.name == entry_module do
         mod.declarations
         |> Enum.find_value(fn
-          %{kind: :function, name: "subscriptions", expr: expr} when not is_nil(expr) -> expr
-          %{kind: :function, name: "subscriptions", body: body} when not is_nil(body) -> body
+          %{kind: :function, name: "subscriptions"} = decl -> decl
           _ -> nil
         end)
       end
     end)
+  end
+
+  defp subscriptions_expr(%IR{} = ir, entry_module) do
+    case subscriptions_decl(ir, entry_module) do
+      %{expr: expr} when not is_nil(expr) -> expr
+      %{body: body} when not is_nil(body) -> body
+      _ -> nil
+    end
   end
 
   defp build_slot_layout(%{compact: false} = analysis) do
@@ -275,6 +287,13 @@ defmodule Elmc.Backend.Worker do
         """
       end
 
+    dispatch_subscriptions_refresh =
+      if has_subscriptions and Map.get(analysis, :model_dependent?, true) do
+        "  state->subscriptions = compute_subscriptions(state);\n"
+      else
+        ""
+      end
+
     """
     #include "elmc_worker.h"
     #if defined(__has_include) && __has_include("elmc_emulator_build_flags.h")
@@ -461,8 +480,7 @@ defmodule Elmc.Backend.Worker do
       elmc_release(next_cmd);
       state->pending_cmd = merged_cmd;
       elmc_release(result);
-      state->subscriptions = compute_subscriptions(state);
-      elmc_worker_heap_log("update:end");
+    #{dispatch_subscriptions_refresh}  elmc_worker_heap_log("update:end");
       return 0;
     }
 

@@ -1075,14 +1075,17 @@ defmodule Elmc.Backend.Pebble do
       return (int32_t)raw;
     }
 
+    #if ELMC_PEBBLE_FEATURE_DRAW_PIXEL || ELMC_PEBBLE_FEATURE_DRAW_CIRCLE || ELMC_PEBBLE_FEATURE_DRAW_FILL_CIRCLE || ELMC_PEBBLE_FEATURE_DRAW_LINE || ELMC_PEBBLE_FEATURE_DRAW_RECT || ELMC_PEBBLE_FEATURE_DRAW_FILL_RECT || ELMC_PEBBLE_FEATURE_DRAW_ROUND_RECT || ELMC_PEBBLE_FEATURE_DRAW_TEXT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL || ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT
     static int elmc_scene_value_fits_i16(int32_t value) {
       return value >= -32768 && value <= 32767;
     }
+    #endif
 
     static int elmc_scene_value_fits_u8(int32_t value) {
       return value >= 0 && value <= 255;
     }
 
+    #if ELMC_PEBBLE_FEATURE_DRAW_LINE || ELMC_PEBBLE_FEATURE_DRAW_RECT || ELMC_PEBBLE_FEATURE_DRAW_FILL_RECT || ELMC_PEBBLE_FEATURE_DRAW_ROUND_RECT
     static int elmc_scene_bounds_fit_i16(const ElmcPebbleDrawCmd *cmd) {
       if (!cmd) return 0;
       return elmc_scene_value_fits_i16(cmd->p0) &&
@@ -1090,13 +1093,16 @@ defmodule Elmc.Backend.Pebble do
              elmc_scene_value_fits_i16(cmd->p2) &&
              elmc_scene_value_fits_i16(cmd->p3);
     }
+    #endif
 
+    #if ELMC_PEBBLE_FEATURE_DRAW_TEXT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
     static int elmc_scene_text_len(const ElmcPebbleDrawCmd *cmd) {
       int text_len = 0;
       if (!cmd) return 0;
       while (text_len < (int)sizeof(cmd->text) && cmd->text[text_len] != '\\0') text_len++;
       return text_len;
     }
+    #endif
 
     static int elmc_scene_path_extra_size(const ElmcPebbleDrawCmd *cmd) {
       (void)cmd;
@@ -1117,7 +1123,9 @@ defmodule Elmc.Backend.Pebble do
     static int elmc_pebble_scene_payload_len(const ElmcPebbleDrawCmd *cmd) {
       if (!cmd) return -1;
       int32_t kind = cmd->kind;
+    #if ELMC_PEBBLE_FEATURE_DRAW_TEXT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
       int text_len = elmc_scene_text_len(cmd);
+    #endif
 
     #if ELMC_PEBBLE_FEATURE_DRAW_PATH
       if (kind == ELMC_PEBBLE_DRAW_PATH_FILLED ||
@@ -1233,6 +1241,7 @@ defmodule Elmc.Backend.Pebble do
       }
     }
 
+    #if ELMC_PEBBLE_FEATURE_DRAW_TEXT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
     static int elmc_scene_read_text_tail(
         const unsigned char *bytes,
         int *offset,
@@ -1248,6 +1257,7 @@ defmodule Elmc.Backend.Pebble do
       *offset += text_len;
       return 0;
     }
+    #endif
 
     static int elmc_scene_read_coords_i16(
         const unsigned char *bytes,
@@ -1261,6 +1271,7 @@ defmodule Elmc.Backend.Pebble do
       return 0;
     }
 
+    #if ELMC_PEBBLE_FEATURE_DRAW_TEXT
     static int elmc_scene_read_text_bounds_i16(
         const unsigned char *bytes,
         int *offset,
@@ -1272,6 +1283,7 @@ defmodule Elmc.Backend.Pebble do
       out_cmd->p4 = elmc_scene_read_i16(bytes, offset, payload_end);
       return 0;
     }
+    #endif
 
     static int elmc_scene_is_path_kind(int32_t kind) {
     #if ELMC_PEBBLE_FEATURE_DRAW_PATH

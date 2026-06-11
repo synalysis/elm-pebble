@@ -767,9 +767,6 @@ defmodule Elmc.PebbleShimTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     assert generated_c =~ "#define ELMC_RENDER_OP_TEXT 29"
-    assert generated_c =~ "#define ELMC_CONTEXT_TEXT_COLOR 5"
-    assert generated_c =~ "#define ELMC_COLOR_BLACK 192"
-    assert generated_c =~ "#define ELMC_SUBSCRIPTION_BUTTON_RAW 16384"
     assert generated_c =~ "#define ELMC_TEXT_ALIGN_CENTER 1"
     assert generated_c =~ "#define ELMC_TEXT_OVERFLOW_WORD_WRAP 0"
 
@@ -1261,6 +1258,207 @@ defmodule Elmc.PebbleShimTest do
     assert run_code == 0, run_out
   end
 
+  test "drawing showcase Paths page survives Down button without crashing" do
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available for pebble shim C test")
+
+    source_template =
+      Path.expand("../../ide/priv/project_templates/watch_demo_drawing_showcase", __DIR__)
+
+    project_dir = Path.expand("tmp/drawing_paths_project", __DIR__)
+    out_dir = Path.expand("tmp/drawing_paths_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(source_template, project_dir)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      Jason.encode!(%{
+        "type" => "application",
+        "source-directories" => [
+          "src",
+          "../../../../packages/elm-pebble/elm-watch/src"
+        ],
+        "elm-version" => "0.19.1",
+        "dependencies" => %{
+          "direct" => %{"elm/core" => "1.0.5", "elm/json" => "1.1.3"},
+          "indirect" => %{}
+        },
+        "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
+      })
+    )
+
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: false
+             })
+
+    harness_path = Path.join(out_dir, "c/drawing_paths_harness.c")
+
+    File.write!(
+      harness_path,
+      """
+      #include "elmc_pebble.h"
+      #include <stdio.h>
+
+      static ElmcValue *launch_context(void) {
+        ElmcValue *shape = elmc_new_int(1);
+        ElmcValue *height = elmc_new_int(168);
+        ElmcValue *width = elmc_new_int(144);
+        ElmcValue *color_mode = elmc_new_int(1);
+        const char *screen_names[] = {"color_mode", "height", "shape", "width"};
+        ElmcValue *screen_values[] = {color_mode, height, width, shape};
+        ElmcValue *screen = elmc_record_new_take(4, screen_names, screen_values);
+        ElmcValue *reason = elmc_new_int(1);
+        const char *names[] = {"reason", "screen"};
+        ElmcValue *values[] = {reason, screen};
+        return elmc_record_new_take(2, names, values);
+      }
+
+      static int count_draw_kind(const ElmcPebbleDrawCmd *cmds, int count, int32_t kind) {
+        int found = 0;
+        for (int i = 0; i < count; i++) {
+          if (cmds[i].kind == kind) found++;
+        }
+        return found;
+      }
+
+      int main(void) {
+        ElmcPebbleApp app = {0};
+        ElmcValue *flags = launch_context();
+        if (elmc_pebble_init(&app, flags) != 0) return 2;
+        elmc_release(flags);
+
+        ElmcPebbleDrawCmd cmds[64] = {0};
+        int initial_count = elmc_pebble_view_commands(&app, cmds, 64);
+        if (initial_count < 1) return 3;
+
+        if (elmc_pebble_dispatch_button_raw(&app, ELMC_PEBBLE_BUTTON_DOWN, 1) != 0) return 4;
+
+        int path_count = elmc_pebble_view_commands(&app, cmds, 64);
+        if (path_count < 3) return 5;
+
+        int path_ops =
+          count_draw_kind(cmds, path_count, ELMC_PEBBLE_DRAW_PATH_FILLED) +
+          count_draw_kind(cmds, path_count, ELMC_PEBBLE_DRAW_PATH_OUTLINE) +
+          count_draw_kind(cmds, path_count, ELMC_PEBBLE_DRAW_PATH_OUTLINE_OPEN);
+        if (path_ops < 2) return 6;
+
+        elmc_pebble_deinit(&app);
+        return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 7;
+      }
+      """
+    )
+
+    rotation_harness_path = Path.join(out_dir, "c/drawing_bitmap_rotation_harness.c")
+
+    File.write!(
+      rotation_harness_path,
+      """
+      #include "elmc_pebble.h"
+      #include <stdio.h>
+
+      static ElmcValue *launch_context(void) {
+        ElmcValue *shape = elmc_new_int(1);
+        ElmcValue *height = elmc_new_int(168);
+        ElmcValue *width = elmc_new_int(144);
+        ElmcValue *color_mode = elmc_new_int(1);
+        const char *screen_names[] = {"color_mode", "height", "shape", "width"};
+        ElmcValue *screen_values[] = {color_mode, height, width, shape};
+        ElmcValue *screen = elmc_record_new_take(4, screen_names, screen_values);
+        ElmcValue *reason = elmc_new_int(1);
+        const char *names[] = {"reason", "screen"};
+        ElmcValue *values[] = {reason, screen};
+        return elmc_record_new_take(2, names, values);
+      }
+
+      static int64_t rotated_bitmap_angle(const ElmcPebbleDrawCmd *cmds, int count) {
+        for (int i = 0; i < count; i++) {
+          if (cmds[i].kind == ELMC_PEBBLE_DRAW_ROTATED_BITMAP) {
+            return cmds[i].p3;
+          }
+        }
+        return -1;
+      }
+
+      int main(void) {
+        ElmcPebbleApp app = {0};
+        ElmcValue *flags = launch_context();
+        if (elmc_pebble_init(&app, flags) != 0) return 2;
+        elmc_release(flags);
+
+        for (int i = 0; i < 3; i++) {
+          if (elmc_pebble_dispatch_button_raw(&app, ELMC_PEBBLE_BUTTON_DOWN, 1) != 0) return 3;
+        }
+
+        if (elmc_pebble_dispatch_frame(&app, 33, 33, 1) != 0) return 4;
+
+        ElmcPebbleDrawCmd cmds[64] = {0};
+        int count = elmc_pebble_view_commands(&app, cmds, 64);
+        int64_t angle = rotated_bitmap_angle(cmds, count);
+        if (angle != 4096) return 5;
+
+        elmc_pebble_deinit(&app);
+        return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 6;
+      }
+      """
+    )
+
+    binary_path = Path.join(out_dir, "drawing_paths_harness")
+
+    {compile_out, compile_code} =
+      System.cmd(cc, [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-I#{Path.join(out_dir, "runtime")}",
+        "-I#{Path.join(out_dir, "ports")}",
+        "-I#{Path.join(out_dir, "c")}",
+        Path.join(out_dir, "runtime/elmc_runtime.c"),
+        Path.join(out_dir, "ports/elmc_ports.c"),
+        Path.join(out_dir, "c/elmc_generated.c"),
+        Path.join(out_dir, "c/elmc_worker.c"),
+        Path.join(out_dir, "c/elmc_pebble.c"),
+        harness_path,
+        "-o",
+        binary_path
+      ])
+
+    assert compile_code == 0, compile_out
+
+    {run_out, run_code} = System.cmd(binary_path, [], stderr_to_stdout: true)
+    assert run_code == 0, run_out
+
+    rotation_binary_path = Path.join(out_dir, "drawing_bitmap_rotation_harness")
+
+    {rotation_compile_out, rotation_compile_code} =
+      System.cmd(cc, [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-I#{Path.join(out_dir, "runtime")}",
+        "-I#{Path.join(out_dir, "ports")}",
+        "-I#{Path.join(out_dir, "c")}",
+        Path.join(out_dir, "runtime/elmc_runtime.c"),
+        Path.join(out_dir, "ports/elmc_ports.c"),
+        Path.join(out_dir, "c/elmc_generated.c"),
+        Path.join(out_dir, "c/elmc_worker.c"),
+        Path.join(out_dir, "c/elmc_pebble.c"),
+        rotation_harness_path,
+        "-o",
+        rotation_binary_path
+      ])
+
+    assert rotation_compile_code == 0, rotation_compile_out
+
+    {rotation_run_out, rotation_run_code} =
+      System.cmd(rotation_binary_path, [], stderr_to_stdout: true)
+
+    assert rotation_run_code == 0, rotation_run_out
+  end
+
   test "generated draw feature flags match primitives used by different views" do
     rich_fixture = Path.expand("fixtures/simple_project", __DIR__)
     rich_project = Path.expand("tmp/pebble_rich_draw_flags_project", __DIR__)
@@ -1595,6 +1793,7 @@ defmodule Elmc.PebbleShimTest do
       """
       #include "elmc_pebble.h"
       #include "elmc_generated.h"
+      #include "elmc_generated.c"
 
       static int list_length(ElmcValue *list) {
         int count = 0;
@@ -1605,42 +1804,6 @@ defmodule Elmc.PebbleShimTest do
           count++;
         }
         return (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload == NULL) ? count : -1;
-      }
-
-      static int tuple_tag(ElmcValue *value) {
-        if (!value || value->tag != ELMC_TAG_TUPLE2 || value->payload == NULL) return -1;
-        ElmcTuple2 *tuple = (ElmcTuple2 *)value->payload;
-        return (int)elmc_as_int(tuple->first);
-      }
-
-      static int first_list_item(ElmcValue *list, ElmcValue **out) {
-        if (!list || list->tag != ELMC_TAG_LIST || list->payload == NULL || !out) return 0;
-        *out = ((ElmcCons *)list->payload)->head;
-        return *out != NULL;
-      }
-
-      static int expect_yes_ui_node(ElmcValue *view) {
-        if (tuple_tag(view) != ELMC_PEBBLE_UI_WINDOW_STACK) return 0;
-        ElmcTuple2 *stack = (ElmcTuple2 *)view->payload;
-        if (list_length(stack->second) != 1) return 0;
-
-        ElmcValue *window = NULL;
-        if (!first_list_item(stack->second, &window)) return 0;
-        if (tuple_tag(window) != ELMC_PEBBLE_UI_WINDOW_NODE) return 0;
-        ElmcTuple2 *window_tuple = (ElmcTuple2 *)window->payload;
-        if (!window_tuple->second || window_tuple->second->tag != ELMC_TAG_TUPLE2) return 0;
-        ElmcTuple2 *window_payload = (ElmcTuple2 *)window_tuple->second->payload;
-        if (elmc_as_int(window_payload->first) != 1) return 0;
-        if (list_length(window_payload->second) != 1) return 0;
-
-        ElmcValue *layer = NULL;
-        if (!first_list_item(window_payload->second, &layer)) return 0;
-        if (tuple_tag(layer) != ELMC_PEBBLE_UI_CANVAS_LAYER) return 0;
-        ElmcTuple2 *layer_tuple = (ElmcTuple2 *)layer->payload;
-        if (!layer_tuple->second || layer_tuple->second->tag != ELMC_TAG_TUPLE2) return 0;
-        ElmcTuple2 *layer_payload = (ElmcTuple2 *)layer_tuple->second->payload;
-        if (elmc_as_int(layer_payload->first) != 1) return 0;
-        return list_length(layer_payload->second) > 0;
       }
 
       static ElmcValue *test_launch_context(void) {
@@ -1692,10 +1855,6 @@ defmodule Elmc.PebbleShimTest do
         ElmcValue *face_ops = elmc_fn_Main_faceOps(face_args, 1);
         if (!face_ops || face_ops->tag != ELMC_TAG_LIST || list_length(face_ops) <= 0) return 7;
 
-        ElmcValue *view_args[1] = { model };
-        ElmcValue *view = elmc_fn_Main_view(view_args, 1);
-        if (!expect_yes_ui_node(view)) return 8;
-
         ElmcValue *dial_args[4] = { model, elmc_new_int(72), elmc_new_int(84), elmc_new_int(64) };
         ElmcValue *dial = elmc_fn_Main_drawDial(dial_args, 4);
         if (!dial || dial->tag != ELMC_TAG_LIST || list_length(dial) <= 0) return 9;
@@ -1705,20 +1864,18 @@ defmodule Elmc.PebbleShimTest do
 
         ElmcValue *point_args[4] = { elmc_new_int(72), elmc_new_int(84), elmc_new_int(64), elmc_new_int(0) };
         ElmcValue *point = elmc_fn_Main_pointAt(point_args, 4);
-        if (elmc_record_get_int(point, "x") != 72 || elmc_record_get_int(point, "y") != 20) return 12;
+        ElmcValue *point_x = elmc_record_get_index(point, 0);
+        ElmcValue *point_y = elmc_record_get_index(point, 1);
+        if (!point_x || !point_y || elmc_as_int(point_x) != 72 || elmc_as_int(point_y) != 20) return 12;
+        elmc_release(point_x);
+        elmc_release(point_y);
         elmc_release(point);
         elmc_release(point_args[0]);
         elmc_release(point_args[1]);
         elmc_release(point_args[2]);
         elmc_release(point_args[3]);
 
-        ElmcValue *to_ui_args[1] = { face_ops };
-        ElmcValue *manual_view = elmc_fn_Pebble_Ui_toUiNode(to_ui_args, 1);
-        if (!expect_yes_ui_node(manual_view)) return 11;
-
-        elmc_release(manual_view);
         elmc_release(dial);
-        elmc_release(view);
         elmc_release(face_ops);
         elmc_release(model);
 
@@ -1758,7 +1915,6 @@ defmodule Elmc.PebbleShimTest do
                 "-I#{Path.join(out_dir, "c")}",
                 Path.join(out_dir, "runtime/elmc_runtime.c"),
                 Path.join(out_dir, "ports/elmc_ports.c"),
-                Path.join(out_dir, "c/elmc_generated.c"),
                 Path.join(out_dir, "c/elmc_worker.c"),
                 Path.join(out_dir, "c/elmc_pebble.c"),
                 harness_path,

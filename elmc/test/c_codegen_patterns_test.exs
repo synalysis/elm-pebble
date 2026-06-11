@@ -1539,10 +1539,11 @@ defmodule Elmc.CCodegenPatternsTest do
       |> String.split("ElmcValue *elmc_fn_Main_update", parts: 2)
       |> hd()
 
-    assert init_body =~ "elmc_record_new_values_ints"
+    assert init_body =~ "elmc_record_new_static_ints"
+    assert init_body =~ "rec_field_names_"
     refute init_body =~ "static const int rec_field_ids_"
     refute init_body =~ "static const char * const rec_names_"
-    refute init_body =~ "elmc_record_new_static_ints"
+    refute init_body =~ "elmc_record_new_values_ints"
     refute init_body =~ "elmc_record_new_ints"
     refute init_body =~ "elmc_record_new_take"
 
@@ -1618,10 +1619,11 @@ defmodule Elmc.CCodegenPatternsTest do
 
     assert length(Regex.scan(~r/ElmcValue \*tmp_1 = elmc_int_zero\(\);/, init_body)) == 1
     refute length(Regex.scan(~r/ElmcValue \*tmp_2 = elmc_int_zero\(\);/, init_body)) > 0
-    assert init_body =~ "elmc_record_new_values_take"
+    assert init_body =~ "elmc_record_new_static_take"
+    assert init_body =~ "rec_field_names_"
     refute init_body =~ "static const int rec_field_ids_"
     refute init_body =~ "static const char * const rec_names_"
-    refute init_body =~ "elmc_record_new_static_take"
+    refute init_body =~ "elmc_record_new_values_take"
     refute init_body =~ "elmc_record_new_take"
   end
 

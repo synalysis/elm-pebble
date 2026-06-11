@@ -1,0 +1,38 @@
+---
+description: Surface unsupported or degraded behavior clearly — never hide toolchain limits
+alwaysApply: true
+---
+
+# Clear Feedback for Unsupported or Degraded Behavior
+
+When the toolchain cannot fully support an Elm construct, optimize a path, or preserve intended semantics, **tell the user explicitly**. Silent fallbacks make bugs hard to find and waste time in the emulator, on device, and in the IDE.
+
+## Do Not
+
+- Return `nil`, zero, `Sub.none`, empty values, or generic stubs to “make compile succeed” when semantics are wrong or degraded.
+- Swallow partial-analysis failures (for example static subscription batching) without a diagnostic.
+- Rely on kernel stubs (`Elm.Kernel.PebbleWatch.batch`, etc.) when codegen should lower the real contract.
+- Hide limitations behind comments only; users and IDE surfaces must see them.
+
+## Do
+
+- Emit a **structured diagnostic** (warning or error) with: **what** failed, **why**, and **what to change or expect**.
+- Use stable `source` / `code` fields (for example `elmc/subscriptions`, `dynamic_subscription_layout`) so IDE, CLI, and tests can surface them.
+- Prefer **compile-time** feedback when the issue is knowable from IR; use **runtime logs or explicit unsupported markers** only when behavior truly depends on dynamic values.
+- When degrading gracefully is intentional, say so in the diagnostic — including any performance or correctness trade-off (for example non-compact worker slot maps).
+- Add tests that assert the diagnostic is emitted, not only that codegen “does something”.
+
+## Litmus Test
+
+If a developer would ask “why doesn’t this work?” and the answer is “because we quietly fell back,” the implementation is wrong. Fix the lowering **or** report the limitation clearly.
+
+## Examples
+
+- **Bad:** `subscription_batch_expr` returns `nil` on a dynamic batch item → codegen calls kernel `batch` → all subs become `Sub.none`; buttons stop working with no message.
+- **Good:** lower mixed batches to a real subscription list; emit `dynamic_subscription_layout` when the worker cannot use a compact static slot map.
+
+- **Bad:** codegen emits `elmc_int_zero()` for an unsupported `Cmd` and the app silently does nothing.
+- **Good:** diagnostic `unsupported_cmd` naming the target and arity; or an explicit runtime “unmapped” path documented in the contract.
+
+- **Bad:** IDE build succeeds while emulator behavior is wrong because a shim returned a no-op.
+- **Good:** compile panel / manifest shows the warning; user knows to fix Elm or wait for toolchain support before debugging app logic.

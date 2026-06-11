@@ -1,4 +1,21 @@
 #include "elmc_worker.h"
+#if defined(__has_include) && __has_include("elmc_emulator_build_flags.h")
+#include "elmc_emulator_build_flags.h"
+#endif
+
+#if defined(ELMC_PEBBLE_PLATFORM) && ELMC_PEBBLE_HEAP_LOG
+#include <pebble.h>
+static void elmc_worker_heap_log(const char *label) {
+  APP_LOG(
+  APP_LOG_LEVEL_INFO,
+  "ELMC heap %s used=%lu free=%lu",
+  label ? label : "?",
+  (unsigned long)heap_bytes_used(),
+  (unsigned long)heap_bytes_free());
+}
+#else
+#define elmc_worker_heap_log(label) do { (void)(label); } while (0)
+#endif
 
 static ElmcValue *extract_model(ElmcValue *value) {
   if (!value) return elmc_new_int(0);
@@ -60,16 +77,13 @@ static ElmcValue *elmc_cmd_queue_append(ElmcValue *existing, ElmcValue *next) {
 
 static int elmc_sub_tag_slot(int64_t mask) {
   if (mask == 0) return -1;
-  if ((mask & (1LL << 13)) != 0) return 13;
-  if ((mask & (mask - 1)) != 0) return -1;
-  int bit = 0;
-  while (bit < 32 && (mask & (1LL << bit)) == 0) bit++;
-  return bit < 32 ? bit : -1;
+  (void)mask;
+  return -1;
 }
 
 static void elmc_worker_clear_sub_tags(ElmcWorkerState *state) {
   if (!state) return;
-  for (int i = 0; i < 32; i++) state->sub_msg_tags[i] = 0;
+  for (int i = 0; i < ELMC_WORKER_SUB_TAG_SLOTS; i++) state->sub_msg_tags[i] = 0;
   state->button_raw_sub_count = 0;
 }
 
@@ -94,7 +108,7 @@ static void elmc_worker_apply_sub(ElmcWorkerState *state, ElmcValue *sub) {
     }
     if (payload->arity > 0) {
       int slot = elmc_sub_tag_slot(payload->mask);
-      if (slot >= 0 && slot < 32) state->sub_msg_tags[slot] = payload->p0;
+      if (slot >= 0 && slot < ELMC_WORKER_SUB_TAG_SLOTS) state->sub_msg_tags[slot] = payload->p0;
     }
     return;
   }
@@ -111,7 +125,7 @@ static void elmc_worker_apply_sub(ElmcWorkerState *state, ElmcValue *sub) {
 
 static int64_t compute_subscriptions(ElmcWorkerState *state) {
   if (!state || !state->model) return 0;
-ElmcValue *result = elmc_new_int(0);
+  ElmcValue *result = elmc_new_int(0);
 
   elmc_worker_clear_sub_tags(state);
   state->subscriptions = 0;
@@ -123,7 +137,7 @@ ElmcValue *result = elmc_new_int(0);
 elmc_int_t elmc_worker_sub_msg_tag(ElmcWorkerState *state, int64_t flag) {
   if (!state || flag == 0) return 0;
   int slot = elmc_sub_tag_slot(flag);
-  if (slot < 0 || slot >= 32) return 0;
+  if (slot < 0 || slot >= ELMC_WORKER_SUB_TAG_SLOTS) return 0;
   return state->sub_msg_tags[slot];
 }
 
@@ -140,8 +154,9 @@ int elmc_worker_init(ElmcWorkerState *state, ElmcValue *flags) {
   if (!state) return -1;
   state->subscriptions = 0;
   elmc_worker_clear_sub_tags(state);
+  elmc_worker_heap_log("init:start");
   return -3;
-(void)flags;
+  (void)flags;
   ElmcValue *result = elmc_new_int(0);
 
   ElmcValue *next_model = extract_model(result);
@@ -153,13 +168,15 @@ int elmc_worker_init(ElmcWorkerState *state, ElmcValue *flags) {
   state->pending_cmd = extract_cmd(result);
   elmc_release(result);
   state->subscriptions = compute_subscriptions(state);
+  elmc_worker_heap_log("init:end");
   return 0;
 }
 
 int elmc_worker_dispatch(ElmcWorkerState *state, ElmcValue *msg) {
   if (!state || !state->model) return -1;
+  elmc_worker_heap_log("update:start");
   return -4;
-(void)msg;
+  (void)msg;
   ElmcValue *result = elmc_new_int(0);
 
   ElmcValue *next_model = extract_model(result);
@@ -178,6 +195,7 @@ int elmc_worker_dispatch(ElmcWorkerState *state, ElmcValue *msg) {
   state->pending_cmd = merged_cmd;
   elmc_release(result);
   state->subscriptions = compute_subscriptions(state);
+  elmc_worker_heap_log("update:end");
   return 0;
 }
 

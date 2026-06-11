@@ -98,7 +98,6 @@ static ElmcValue ELMC_MAYBE_NOTHING ELMC_UNUSED = { ELMC_RC_IMMORTAL, ELMC_TAG_M
 static char ELMC_EMPTY_STRING_PAYLOAD[] = "";
 static ElmcValue ELMC_EMPTY_STRING = { ELMC_RC_IMMORTAL, ELMC_TAG_STRING, ELMC_EMPTY_STRING_PAYLOAD, 0 };
 static ElmcValue ELMC_LIST_NIL = { ELMC_RC_IMMORTAL, ELMC_TAG_LIST, NULL, 0 };
-static int ELMC_ALLOC_FAILURE_LOGGED = 0;
 
 typedef struct {
   ElmcValue value;
@@ -139,6 +138,12 @@ typedef struct {
 
 typedef struct {
   ElmcValue value;
+  ElmcRecord record;
+  const char **field_names;
+} ElmcNamedRecordCell;
+
+typedef struct {
+  ElmcValue value;
   ElmcClosure closure;
 } ElmcClosureCell;
 
@@ -148,6 +153,7 @@ typedef struct {
 #define ELMC_CMD_CELL_SCALAR ((elmc_int_t)0x1EC017)
 #define ELMC_SUB_CELL_SCALAR ((elmc_int_t)0x1EC018)
 #define ELMC_RECORD_CELL_SCALAR ((elmc_int_t)0x1EC015)
+#define ELMC_NAMED_RECORD_CELL_SCALAR ((elmc_int_t)0x1EC019)
 #define ELMC_CLOSURE_CELL_SCALAR ((elmc_int_t)0x1EC016)
 
 typedef struct {
@@ -178,6 +184,9 @@ static int elmc_tuple2_cell_release(ElmcValue *value);
 static int elmc_record_cell_release(ElmcValue *value);
 static int elmc_closure_cell_release(ElmcValue *value);
 static ElmcValue *elmc_record_cell_alloc(int field_count, const char **field_names, ElmcValue **field_values, int take);
+static ElmcValue *elmc_record_cell_alloc_static(int field_count, const char * const *field_names, ElmcValue **field_values, int take);
+static ElmcValue *elmc_record_cell_alloc_values(int field_count, ElmcValue **field_values, int take);
+static const char **elmc_record_field_names(ElmcValue *record);
 
 #if ELMC_ALLOC_TRACE
 #define elmc_malloc(size, context) elmc_malloc_impl((size), (context), __FILE__, __LINE__)
@@ -186,6 +195,20 @@ static ElmcValue *elmc_record_cell_alloc(int field_count, const char **field_nam
 #define elmc_malloc(size, context) elmc_malloc_impl((size), (context), NULL, 0)
 #define elmc_alloc(tag, payload) elmc_alloc_impl((tag), (payload), NULL, 0)
 #endif
+#define elmc_realloc(ptr, size, context) elmc_realloc_impl((ptr), (size), (context))
+
+#if ELMC_RC_TRACK
+#define ELMC_RC_TRACK_REGISTER(value, context) \
+  elmc_rc_track_register((value), (context), __FILE__, __LINE__)
+static void elmc_rc_track_register(ElmcValue *value, const char *context, const char *file, int line);
+static ElmcValue *elmc_retain_impl(ElmcValue *value);
+static void elmc_release_impl(ElmcValue *value);
+static void elmc_rc_track_on_retain(ElmcValue *value, const char *file, int line);
+static void elmc_rc_track_on_release(ElmcValue *value, const char *file, int line);
+#else
+#define ELMC_RC_TRACK_REGISTER(value, context) ((void)0)
+#endif
+
 
 static ElmcProcessSlot *elmc_process_alloc_slot(void) {
   for (int i = 0; i < ELMC_PROCESS_MAX_SLOTS; i++) {
@@ -241,32 +264,36 @@ static void elmc_process_sleep_timer_cb(void *data) {
 }
 #endif
 
-static void elmc_log_alloc_failed_once(const char *context, size_t size, const char *file, int line) {
-  if (ELMC_ALLOC_FAILURE_LOGGED) return;
-  ELMC_ALLOC_FAILURE_LOGGED = 1;
+static void elmc_log_alloc_failed(const char *context, size_t size, const char *file, int line) {
 #ifdef ELMC_PEBBLE_PLATFORM
   if (file && line > 0) {
-    APP_LOG(APP_LOG_LEVEL_ERROR, "ELMC allocation failed in %s at %s:%d (%lu bytes)",
-            context ? context : "unknown", file, line, (unsigned long)size);
+    APP_LOG(APP_LOG_LEVEL_ERROR, "ELMC malloc failed %s %s:%d %lu",
+            context ? context : "?", file, line, (unsigned long)size);
   } else {
-    APP_LOG(APP_LOG_LEVEL_ERROR, "ELMC allocation failed in %s (%lu bytes)",
-            context ? context : "unknown", (unsigned long)size);
+    APP_LOG(APP_LOG_LEVEL_ERROR, "ELMC malloc failed %s %lu",
+            context ? context : "?", (unsigned long)size);
   }
 #else
   if (file && line > 0) {
-    fprintf(stderr, "ELMC allocation failed in %s at %s:%d (%lu bytes)\n",
-            context ? context : "unknown", file, line, (unsigned long)size);
+    fprintf(stderr, "ELMC malloc failed %s %s:%d %lu\n",
+            context ? context : "?", file, line, (unsigned long)size);
   } else {
-    fprintf(stderr, "ELMC allocation failed in %s (%lu bytes)\n",
-            context ? context : "unknown", (unsigned long)size);
+    fprintf(stderr, "ELMC malloc failed %s %lu\n",
+            context ? context : "?", (unsigned long)size);
   }
 #endif
 }
 
 static void *elmc_malloc_impl(size_t size, const char *context, const char *file, int line) {
   void *ptr = malloc(size);
-  if (!ptr) elmc_log_alloc_failed_once(context, size, file, line);
+  if (!ptr) elmc_log_alloc_failed(context, size, file, line);
   return ptr;
+}
+
+static void *elmc_realloc_impl(void *ptr, size_t size, const char *context) {
+  void *next = realloc(ptr, size);
+  if (!next && size > 0) elmc_log_alloc_failed(context, size, NULL, 0);
+  return next;
 }
 
 static ElmcValue *elmc_alloc_impl(ElmcTag tag, void *payload, const char *file, int line) {
@@ -277,6 +304,7 @@ static ElmcValue *elmc_alloc_impl(ElmcTag tag, void *payload, const char *file, 
   value->payload = payload;
   value->scalar = 0;
   ELMC_ALLOCATED += 1;
+  ELMC_RC_TRACK_REGISTER(value, __func__);
   return value;
 }
 
@@ -311,6 +339,7 @@ static ElmcValue *elmc_list_cell_alloc(ElmcValue *head, ElmcValue *tail, int tak
   cell->value.payload = &cell->cons;
   cell->value.scalar = ELMC_LIST_CELL_SCALAR;
   ELMC_ALLOCATED += 1;
+  ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
   return &cell->value;
 }
 
@@ -350,6 +379,7 @@ static int elmc_cmd_cell_release(ElmcValue *value) {
   if (!value || value->tag != ELMC_TAG_CMD || value->scalar != ELMC_CMD_CELL_SCALAR) return 0;
   ElmcCmdCell *cell = (ElmcCmdCell *)value;
   if (value->payload != &cell->cmd) return 0;
+  elmc_release(cell->cmd.text);
   free(cell);
   return 1;
 }
@@ -363,11 +393,20 @@ static int elmc_sub_cell_release(ElmcValue *value) {
 }
 
 static int elmc_record_cell_release(ElmcValue *value) {
-  if (!value || value->tag != ELMC_TAG_RECORD || value->scalar != ELMC_RECORD_CELL_SCALAR) return 0;
-  ElmcRecordCell *cell = (ElmcRecordCell *)value;
-  if (value->payload != &cell->record) return 0;
-  free(cell);
-  return 1;
+  if (!value || value->tag != ELMC_TAG_RECORD) return 0;
+  if (value->scalar == ELMC_RECORD_CELL_SCALAR) {
+    ElmcRecordCell *cell = (ElmcRecordCell *)value;
+    if (value->payload != &cell->record) return 0;
+    free(cell);
+    return 1;
+  }
+  if (value->scalar == ELMC_NAMED_RECORD_CELL_SCALAR) {
+    ElmcNamedRecordCell *cell = (ElmcNamedRecordCell *)value;
+    if (value->payload != &cell->record) return 0;
+    free(cell);
+    return 1;
+  }
+  return 0;
 }
 
 static int elmc_closure_cell_release(ElmcValue *value) {
@@ -382,7 +421,7 @@ static ElmcValue *elmc_record_cell_alloc(int field_count, const char **field_nam
   if (field_count < 0) return NULL;
   size_t names_size = sizeof(const char *) * (size_t)field_count;
   size_t values_size = sizeof(ElmcValue *) * (size_t)field_count;
-  ElmcRecordCell *cell = (ElmcRecordCell *)elmc_malloc(sizeof(ElmcRecordCell) + names_size + values_size, __func__);
+  ElmcNamedRecordCell *cell = (ElmcNamedRecordCell *)elmc_malloc(sizeof(ElmcNamedRecordCell) + names_size + values_size, __func__);
   if (!cell) {
     if (take) {
       for (int i = 0; i < field_count; i++) {
@@ -394,12 +433,45 @@ static ElmcValue *elmc_record_cell_alloc(int field_count, const char **field_nam
 
   char *cursor = (char *)(cell + 1);
   cell->record.field_count = field_count;
-  cell->record.field_names = (const char **)cursor;
+  cell->field_names = (const char **)cursor;
   cursor += names_size;
   cell->record.field_values = (ElmcValue **)cursor;
 
   for (int i = 0; i < field_count; i++) {
-    cell->record.field_names[i] = field_names[i];
+    cell->field_names[i] = field_names[i];
+    cell->record.field_values[i] = take ? field_values[i] : elmc_retain(field_values[i]);
+  }
+
+  cell->value.rc = 1;
+  cell->value.tag = ELMC_TAG_RECORD;
+  cell->value.payload = &cell->record;
+  cell->value.scalar = ELMC_NAMED_RECORD_CELL_SCALAR;
+  ELMC_ALLOCATED += 1;
+  ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
+  return &cell->value;
+}
+
+static ElmcValue *elmc_record_cell_alloc_static(int field_count, const char * const *field_names, ElmcValue **field_values, int take) {
+  return elmc_record_cell_alloc(field_count, (const char **)field_names, field_values, take);
+}
+
+static ElmcValue *elmc_record_cell_alloc_values(int field_count, ElmcValue **field_values, int take) {
+  if (field_count < 0) return NULL;
+  size_t values_size = sizeof(ElmcValue *) * (size_t)field_count;
+  ElmcRecordCell *cell = (ElmcRecordCell *)elmc_malloc(sizeof(ElmcRecordCell) + values_size, __func__);
+  if (!cell) {
+    if (take) {
+      for (int i = 0; i < field_count; i++) {
+        elmc_release(field_values[i]);
+      }
+    }
+    return NULL;
+  }
+
+  cell->record.field_count = field_count;
+  cell->record.field_values = (ElmcValue **)(cell + 1);
+
+  for (int i = 0; i < field_count; i++) {
     cell->record.field_values[i] = take ? field_values[i] : elmc_retain(field_values[i]);
   }
 
@@ -408,7 +480,15 @@ static ElmcValue *elmc_record_cell_alloc(int field_count, const char **field_nam
   cell->value.payload = &cell->record;
   cell->value.scalar = ELMC_RECORD_CELL_SCALAR;
   ELMC_ALLOCATED += 1;
+  ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
   return &cell->value;
+}
+
+static const char **elmc_record_field_names(ElmcValue *record) {
+  if (!record || record->tag != ELMC_TAG_RECORD || record->scalar != ELMC_NAMED_RECORD_CELL_SCALAR) return NULL;
+  ElmcNamedRecordCell *cell = (ElmcNamedRecordCell *)record;
+  if (record->payload != &cell->record) return NULL;
+  return cell->field_names;
 }
 
 static ElmcValue *elmc_list_reverse_copy(ElmcValue *list) {
@@ -511,27 +591,43 @@ ElmcValue *elmc_list_from_tuple2_int_array(const elmc_int_t items[][2], int coun
 }
 
 ElmcValue *elmc_list_replace_nth_int(ElmcValue *list, elmc_int_t index, elmc_int_t value) {
-  ElmcValue *rev = elmc_list_nil();
   ElmcValue *cursor = list;
+  ElmcValue *out = NULL;
+  ElmcValue **tail_slot = NULL;
   elmc_int_t i = 0;
   while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
     ElmcCons *node = (ElmcCons *)cursor->payload;
-    ElmcValue *item = NULL;
+    ElmcValue *head = NULL;
     if (i == index) {
-      item = elmc_new_int(value);
+      head = elmc_new_int(value);
+      if (!head) {
+        elmc_release(out);
+        return elmc_retain(list);
+      }
     } else {
-      item = node->head ? elmc_retain(node->head) : elmc_int_zero();
+      head = node->head;
     }
-    ElmcValue *next = elmc_list_cons(item, rev);
-    elmc_release(item);
-    elmc_release(rev);
-    rev = next;
+    ElmcValue *empty = elmc_list_nil();
+    ElmcValue *cell = elmc_list_cons(head, empty);
+    elmc_release(empty);
+    if (i == index) {
+      elmc_release(head);
+    }
+    if (!cell) {
+      elmc_release(out);
+      return elmc_retain(list);
+    }
+    if (tail_slot) {
+      elmc_release(*tail_slot);
+      *tail_slot = cell;
+    } else {
+      out = cell;
+    }
+    tail_slot = &((ElmcCons *)cell->payload)->tail;
     cursor = node->tail;
     i++;
   }
-  ElmcValue *out = elmc_list_reverse_copy(rev);
-  elmc_release(rev);
-  return out;
+  return out ? out : elmc_list_nil();
 }
 
 ElmcValue *elmc_maybe_nothing(void) {
@@ -548,6 +644,7 @@ ElmcValue *elmc_maybe_just(ElmcValue *value) {
   cell->value.payload = &cell->maybe;
   cell->value.scalar = ELMC_MAYBE_CELL_SCALAR;
   ELMC_ALLOCATED += 1;
+  ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
   return &cell->value;
 }
 
@@ -581,6 +678,7 @@ ElmcValue *elmc_result_ok(ElmcValue *value) {
   cell->value.payload = &cell->result;
   cell->value.scalar = ELMC_RESULT_CELL_SCALAR;
   ELMC_ALLOCATED += 1;
+  ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
   return &cell->value;
 }
 
@@ -594,6 +692,7 @@ ElmcValue *elmc_result_err(ElmcValue *value) {
   cell->value.payload = &cell->result;
   cell->value.scalar = ELMC_RESULT_CELL_SCALAR;
   ELMC_ALLOCATED += 1;
+  ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
   return &cell->value;
 }
 
@@ -607,6 +706,7 @@ ElmcValue *elmc_tuple2(ElmcValue *first, ElmcValue *second) {
   cell->value.payload = &cell->tuple;
   cell->value.scalar = ELMC_TUPLE2_CELL_SCALAR;
   ELMC_ALLOCATED += 1;
+  ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
   return &cell->value;
 }
 
@@ -624,6 +724,7 @@ ElmcValue *elmc_tuple2_take(ElmcValue *first, ElmcValue *second) {
   cell->value.payload = &cell->tuple;
   cell->value.scalar = ELMC_TUPLE2_CELL_SCALAR;
   ELMC_ALLOCATED += 1;
+  ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
   return &cell->value;
 }
 
@@ -642,11 +743,13 @@ static ElmcValue *elmc_cmd_alloc(uint8_t arity, elmc_int_t kind, elmc_int_t p0, 
   cell->cmd.p3 = p3;
   cell->cmd.p4 = p4;
   cell->cmd.p5 = p5;
+  cell->cmd.text = NULL;
   cell->value.rc = 1;
   cell->value.tag = ELMC_TAG_CMD;
   cell->value.payload = &cell->cmd;
   cell->value.scalar = ELMC_CMD_CELL_SCALAR;
   ELMC_ALLOCATED += 1;
+  ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
   return &cell->value;
 }
 
@@ -656,6 +759,18 @@ ElmcValue *elmc_cmd0(elmc_int_t kind) {
 
 ElmcValue *elmc_cmd1(elmc_int_t kind, elmc_int_t p0) {
   return elmc_cmd_alloc(1, kind, p0, 0, 0, 0, 0, 0);
+}
+
+ElmcValue *elmc_cmd1_string(elmc_int_t kind, elmc_int_t p0, const char *text) {
+  ElmcValue *cmd_value = elmc_cmd_alloc(1, kind, p0, 0, 0, 0, 0, 0);
+  if (!cmd_value || cmd_value->tag != ELMC_TAG_CMD || !cmd_value->payload) return cmd_value;
+  ElmcCmdPayload *cmd = (ElmcCmdPayload *)cmd_value->payload;
+  cmd->text = elmc_new_string(text ? text : "");
+  if (!cmd->text) {
+    elmc_release(cmd_value);
+    return NULL;
+  }
+  return cmd_value;
 }
 
 ElmcValue *elmc_cmd2(elmc_int_t kind, elmc_int_t p0, elmc_int_t p1) {
@@ -690,6 +805,7 @@ static ElmcValue *elmc_sub_alloc(uint8_t arity, elmc_int_t mask, elmc_int_t p0, 
   cell->value.payload = &cell->sub;
   cell->value.scalar = ELMC_SUB_CELL_SCALAR;
   ELMC_ALLOCATED += 1;
+  ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
   return &cell->value;
 }
 
@@ -724,6 +840,21 @@ elmc_int_t elmc_as_int(ElmcValue *value) {
 
 elmc_int_t elmc_as_bool(ElmcValue *value) {
   return elmc_as_int(value) != 0;
+}
+
+int elmc_list_equal_int(ElmcValue *left, ElmcValue *right) {
+  if (left == right) return 1;
+  ElmcValue *a = left;
+  ElmcValue *b = right;
+  while (a && b && a->tag == ELMC_TAG_LIST && b->tag == ELMC_TAG_LIST) {
+    if (!a->payload || !b->payload) return a->payload == b->payload;
+    ElmcCons *ca = (ElmcCons *)a->payload;
+    ElmcCons *cb = (ElmcCons *)b->payload;
+    if (elmc_as_int(ca->head) != elmc_as_int(cb->head)) return 0;
+    a = ca->tail;
+    b = cb->tail;
+  }
+  return 0;
 }
 
 int elmc_value_equal(ElmcValue *left, ElmcValue *right) {
@@ -798,6 +929,7 @@ int elmc_value_equal(ElmcValue *left, ElmcValue *right) {
       if (a->arity > 3 && a->p3 != b->p3) return 0;
       if (a->arity > 4 && a->p4 != b->p4) return 0;
       if (a->arity > 5 && a->p5 != b->p5) return 0;
+      if (!elmc_value_equal(a->text, b->text)) return 0;
       return 1;
     }
 
@@ -835,10 +967,24 @@ int elmc_value_equal(ElmcValue *left, ElmcValue *right) {
       ElmcRecord *a = (ElmcRecord *)left->payload;
       ElmcRecord *b = (ElmcRecord *)right->payload;
       if (a->field_count != b->field_count) return 0;
+      const char **a_names = elmc_record_field_names(left);
+      const char **b_names = elmc_record_field_names(right);
+      if ((a_names != NULL) != (b_names != NULL)) {
+        for (int i = 0; i < a->field_count; i++) {
+          if (!elmc_value_equal(a->field_values[i], b->field_values[i])) return 0;
+        }
+        return 1;
+      }
+      if (!a_names) {
+        for (int i = 0; i < a->field_count; i++) {
+          if (!elmc_value_equal(a->field_values[i], b->field_values[i])) return 0;
+        }
+        return 1;
+      }
       for (int i = 0; i < a->field_count; i++) {
         int found = 0;
         for (int j = 0; j < b->field_count; j++) {
-          if (strcmp(a->field_names[i], b->field_names[j]) == 0) {
+          if (strcmp(a_names[i], b_names[j]) == 0) {
             if (!elmc_value_equal(a->field_values[i], b->field_values[j])) return 0;
             found = 1;
             break;
@@ -1453,18 +1599,10 @@ ElmcValue *elmc_time_zone_offset_minutes(void) {
 ElmcValue *elmc_cmd_backlight_from_maybe(ElmcValue *maybe_mode) {
   int64_t mode = 0; /* 0 = interaction, 1 = disable, 2 = enable */
 
-  if (maybe_mode) {
-    if (maybe_mode->tag == ELMC_TAG_MAYBE && maybe_mode->payload != NULL) {
-      ElmcMaybe *maybe = (ElmcMaybe *)maybe_mode->payload;
-      if (maybe->is_just && maybe->value) {
-        mode = elmc_as_int(maybe->value) != 0 ? 2 : 1;
-      }
-    } else if (maybe_mode->tag == ELMC_TAG_TUPLE2 && maybe_mode->payload != NULL) {
-      ElmcTuple2 *tuple = (ElmcTuple2 *)maybe_mode->payload;
-      int64_t ctor_tag = tuple->first ? elmc_as_int(tuple->first) : 0;
-      if (ctor_tag == 1 && tuple->second) {
-        mode = elmc_as_int(tuple->second) != 0 ? 2 : 1;
-      }
+  if (maybe_mode && maybe_mode->tag == ELMC_TAG_MAYBE && maybe_mode->payload != NULL) {
+    ElmcMaybe *maybe = (ElmcMaybe *)maybe_mode->payload;
+    if (maybe->is_just && maybe->value) {
+      mode = elmc_as_int(maybe->value) != 0 ? 2 : 1;
     }
   }
 
@@ -1527,11 +1665,45 @@ ElmcValue *elmc_record_new_ints(int field_count, const char **field_names, const
   return elmc_record_new_take(field_count, field_names, values);
 }
 
+ElmcValue *elmc_record_new_static(int field_count, const char * const *field_names, ElmcValue **field_values) {
+  return elmc_record_cell_alloc_static(field_count, field_names, field_values, 0);
+}
+
+ElmcValue *elmc_record_new_static_take(int field_count, const char * const *field_names, ElmcValue **field_values) {
+  return elmc_record_cell_alloc_static(field_count, field_names, field_values, 1);
+}
+
+ElmcValue *elmc_record_new_static_ints(int field_count, const char * const *field_names, const elmc_int_t *field_values) {
+  ElmcValue *values[field_count];
+  for (int i = 0; i < field_count; i++) {
+    values[i] = elmc_new_int(field_values[i]);
+  }
+  return elmc_record_new_static_take(field_count, field_names, values);
+}
+
+ElmcValue *elmc_record_new_values(int field_count, ElmcValue **field_values) {
+  return elmc_record_cell_alloc_values(field_count, field_values, 0);
+}
+
+ElmcValue *elmc_record_new_values_take(int field_count, ElmcValue **field_values) {
+  return elmc_record_cell_alloc_values(field_count, field_values, 1);
+}
+
+ElmcValue *elmc_record_new_values_ints(int field_count, const elmc_int_t *field_values) {
+  ElmcValue *values[field_count];
+  for (int i = 0; i < field_count; i++) {
+    values[i] = elmc_new_int(field_values[i]);
+  }
+  return elmc_record_new_values_take(field_count, values);
+}
+
 ElmcValue *elmc_record_get(ElmcValue *record, const char *field_name) {
   if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return elmc_int_zero();
   ElmcRecord *rec = (ElmcRecord *)record->payload;
+  const char **field_names = elmc_record_field_names(record);
+  if (!field_names) return elmc_int_zero();
   for (int i = 0; i < rec->field_count; i++) {
-    if (rec->field_names[i] && strcmp(rec->field_names[i], field_name) == 0) {
+    if (field_names[i] && strcmp(field_names[i], field_name) == 0) {
       return elmc_retain(rec->field_values[i]);
     }
   }
@@ -1541,8 +1713,10 @@ ElmcValue *elmc_record_get(ElmcValue *record, const char *field_name) {
 ElmcValue *elmc_record_get_at(ElmcValue *record, int index, const char *field_name) {
   if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return elmc_int_zero();
   ElmcRecord *rec = (ElmcRecord *)record->payload;
-  if (index >= 0 && index < rec->field_count && rec->field_names[index] &&
-      strcmp(rec->field_names[index], field_name) == 0) {
+  const char **field_names = elmc_record_field_names(record);
+  if (!field_names) return elmc_int_zero();
+  if (index >= 0 && index < rec->field_count && field_names[index] &&
+      strcmp(field_names[index], field_name) == 0) {
     return elmc_retain(rec->field_values[index]);
   }
   return elmc_record_get(record, field_name);
@@ -1558,8 +1732,10 @@ ElmcValue *elmc_record_get_index(ElmcValue *record, int index) {
 elmc_int_t elmc_record_get_int(ElmcValue *record, const char *field_name) {
   if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return 0;
   ElmcRecord *rec = (ElmcRecord *)record->payload;
+  const char **field_names = elmc_record_field_names(record);
+  if (!field_names) return 0;
   for (int i = 0; i < rec->field_count; i++) {
-    if (rec->field_names[i] && strcmp(rec->field_names[i], field_name) == 0) {
+    if (field_names[i] && strcmp(field_names[i], field_name) == 0) {
       return elmc_as_int(rec->field_values[i]);
     }
   }
@@ -1569,8 +1745,10 @@ elmc_int_t elmc_record_get_int(ElmcValue *record, const char *field_name) {
 elmc_int_t elmc_record_get_at_int(ElmcValue *record, int index, const char *field_name) {
   if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return 0;
   ElmcRecord *rec = (ElmcRecord *)record->payload;
-  if (index >= 0 && index < rec->field_count && rec->field_names[index] &&
-      strcmp(rec->field_names[index], field_name) == 0) {
+  const char **field_names = elmc_record_field_names(record);
+  if (!field_names) return 0;
+  if (index >= 0 && index < rec->field_count && field_names[index] &&
+      strcmp(field_names[index], field_name) == 0) {
     return elmc_as_int(rec->field_values[index]);
   }
   return elmc_record_get_int(record, field_name);
@@ -1586,8 +1764,10 @@ elmc_int_t elmc_record_get_index_int(ElmcValue *record, int index) {
 elmc_int_t elmc_record_get_maybe_int(ElmcValue *record, const char *field_name, elmc_int_t default_val) {
   if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return default_val;
   ElmcRecord *rec = (ElmcRecord *)record->payload;
+  const char **field_names = elmc_record_field_names(record);
+  if (!field_names) return default_val;
   for (int i = 0; i < rec->field_count; i++) {
-    if (rec->field_names[i] && strcmp(rec->field_names[i], field_name) == 0) {
+    if (field_names[i] && strcmp(field_names[i], field_name) == 0) {
       return elmc_maybe_with_default_int(default_val, rec->field_values[i]);
     }
   }
@@ -1597,8 +1777,10 @@ elmc_int_t elmc_record_get_maybe_int(ElmcValue *record, const char *field_name, 
 elmc_int_t elmc_record_get_at_maybe_int(ElmcValue *record, int index, const char *field_name, elmc_int_t default_val) {
   if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return default_val;
   ElmcRecord *rec = (ElmcRecord *)record->payload;
-  if (index >= 0 && index < rec->field_count && rec->field_names[index] &&
-      strcmp(rec->field_names[index], field_name) == 0) {
+  const char **field_names = elmc_record_field_names(record);
+  if (!field_names) return default_val;
+  if (index >= 0 && index < rec->field_count && field_names[index] &&
+      strcmp(field_names[index], field_name) == 0) {
     return elmc_maybe_with_default_int(default_val, rec->field_values[index]);
   }
   return elmc_record_get_maybe_int(record, field_name, default_val);
@@ -1626,8 +1808,10 @@ elmc_int_t elmc_record_get_index_bool(ElmcValue *record, int index) {
 ElmcValue *elmc_record_update(ElmcValue *record, const char *field_name, ElmcValue *new_value) {
   if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return elmc_retain(record);
   ElmcRecord *old = (ElmcRecord *)record->payload;
+  const char **field_names = elmc_record_field_names(record);
+  if (!field_names) return elmc_retain(record);
   for (int i = 0; i < old->field_count; i++) {
-    if (old->field_names[i] && strcmp(old->field_names[i], field_name) == 0) {
+    if (field_names[i] && strcmp(field_names[i], field_name) == 0) {
       return elmc_record_update_index(record, i, new_value);
     }
   }
@@ -1638,17 +1822,38 @@ ElmcValue *elmc_record_update_index(ElmcValue *record, int index, ElmcValue *new
   if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return elmc_retain(record);
   ElmcRecord *old = (ElmcRecord *)record->payload;
   if (index < 0 || index >= old->field_count) return elmc_retain(record);
-  const char **names = (const char **)elmc_malloc(sizeof(const char *) * old->field_count, __func__);
+  const char **field_names = elmc_record_field_names(record);
+  if (field_names) {
+    ElmcValue **values = (ElmcValue **)elmc_malloc(sizeof(ElmcValue *) * old->field_count, __func__);
+    if (!values) return elmc_retain(record);
+    for (int i = 0; i < old->field_count; i++) {
+      values[i] = i == index ? new_value : old->field_values[i];
+    }
+    ElmcValue *result = elmc_record_new_static(old->field_count, (const char * const *)field_names, values);
+    free(values);
+    return result;
+  }
   ElmcValue **values = (ElmcValue **)elmc_malloc(sizeof(ElmcValue *) * old->field_count, __func__);
-  if (!names || !values) { free(names); free(values); return elmc_retain(record); }
+  if (!values) return elmc_retain(record);
   for (int i = 0; i < old->field_count; i++) {
-    names[i] = old->field_names[i];
     values[i] = i == index ? new_value : old->field_values[i];
   }
-  ElmcValue *result = elmc_record_new(old->field_count, names, values);
-  free(names);
+  ElmcValue *result = elmc_record_new_values(old->field_count, values);
   free(values);
   return result;
+}
+
+ElmcValue *elmc_record_update_index_cow(ElmcValue *record, int index, ElmcValue *new_value) {
+  if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return elmc_retain(record);
+  ElmcRecord *rec = (ElmcRecord *)record->payload;
+  if (index < 0 || index >= rec->field_count) return elmc_retain(record);
+  if (record->rc == 1) {
+    ElmcValue *old_value = rec->field_values[index];
+    rec->field_values[index] = elmc_retain(new_value);
+    elmc_release(old_value);
+    return record;
+  }
+  return elmc_record_update_index(record, index, new_value);
 }
 
 ElmcValue *elmc_closure_new(ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count), int arity, int capture_count, ElmcValue **captures) {
@@ -1672,6 +1877,7 @@ ElmcValue *elmc_closure_new(ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcVal
   cell->value.payload = clo;
   cell->value.scalar = ELMC_CLOSURE_CELL_SCALAR;
   ELMC_ALLOCATED += 1;
+  ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
   return &cell->value;
 }
 
@@ -1843,32 +2049,67 @@ ElmcValue *elmc_list_foldr(ElmcValue *f, ElmcValue *acc, ElmcValue *list) {
 }
 
 ElmcValue *elmc_list_append(ElmcValue *a, ElmcValue *b) {
-  ElmcValue *rev_a = elmc_list_reverse_copy(a);
-  ElmcValue *out = elmc_retain(b);
-  ElmcValue *cursor = rev_a;
+  ElmcValue *out = NULL;
+  ElmcValue **tail_slot = NULL;
+  ElmcValue *cursor = a;
   while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
     ElmcCons *node = (ElmcCons *)cursor->payload;
-    ElmcValue *next = elmc_list_cons(node->head, out);
-    elmc_release(out);
-    out = next;
+    ElmcValue *cell = elmc_list_cons(node->head, elmc_list_nil());
+    if (!cell) {
+      elmc_release(out);
+      return elmc_retain(b);
+    }
+    if (tail_slot) {
+      elmc_release(*tail_slot);
+      *tail_slot = cell;
+    } else {
+      out = cell;
+    }
+    tail_slot = &((ElmcCons *)cell->payload)->tail;
     cursor = node->tail;
   }
-  elmc_release(rev_a);
+  if (!out) return elmc_retain(b);
+  elmc_release(*tail_slot);
+  *tail_slot = elmc_retain(b);
   return out;
 }
 
 ElmcValue *elmc_list_concat(ElmcValue *lists) {
-  ElmcValue *rev_lists = elmc_list_reverse_copy(lists);
+  ElmcValue *out = NULL;
+  ElmcValue **tail_slot = NULL;
+  ElmcValue *outer = lists;
+  while (outer && outer->tag == ELMC_TAG_LIST && outer->payload != NULL) {
+    ElmcCons *outer_node = (ElmcCons *)outer->payload;
+    ElmcValue *inner = outer_node->head;
+    while (inner && inner->tag == ELMC_TAG_LIST && inner->payload != NULL) {
+      ElmcCons *inner_node = (ElmcCons *)inner->payload;
+      ElmcValue *cell = elmc_list_cons(inner_node->head, elmc_list_nil());
+      if (!cell) {
+        elmc_release(out);
+        return elmc_list_nil();
+      }
+      if (tail_slot) {
+        elmc_release(*tail_slot);
+        *tail_slot = cell;
+      } else {
+        out = cell;
+      }
+      tail_slot = &((ElmcCons *)cell->payload)->tail;
+      inner = inner_node->tail;
+    }
+    outer = outer_node->tail;
+  }
+  return out ? out : elmc_list_nil();
+}
+
+ElmcValue *elmc_list_concat_array(ElmcValue * const *lists, int count) {
   ElmcValue *out = elmc_list_nil();
-  ElmcValue *cursor = rev_lists;
-  while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
-    ElmcCons *node = (ElmcCons *)cursor->payload;
-    ElmcValue *merged = elmc_list_append(node->head, out);
+  if (!lists || count <= 0) return out;
+  for (int i = count - 1; i >= 0; i--) {
+    ElmcValue *merged = elmc_list_append(lists[i], out);
     elmc_release(out);
     out = merged;
-    cursor = node->tail;
   }
-  elmc_release(rev_lists);
   return out;
 }
 
@@ -2189,43 +2430,64 @@ static ElmcValue *elmc_list_repeat_count(elmc_int_t count, ElmcValue *value) {
 }
 
 ElmcValue *elmc_list_take(ElmcValue *n, ElmcValue *list) {
-  int64_t count = elmc_as_int(n);
-  ElmcValue *rev = elmc_list_nil();
+  return elmc_list_take_int(elmc_as_int(n), list);
+}
+
+ElmcValue *elmc_list_take_int(elmc_int_t count, ElmcValue *list) {
+  ElmcValue *out = NULL;
+  ElmcValue **tail_slot = NULL;
   ElmcValue *cursor = list;
-  int64_t i = 0;
+  elmc_int_t i = 0;
   while (i < count && cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
     ElmcCons *node = (ElmcCons *)cursor->payload;
-    ElmcValue *next = elmc_list_cons(node->head, rev);
-    elmc_release(rev);
-    rev = next;
+    ElmcValue *cell = elmc_list_cons(node->head, elmc_list_nil());
+    if (!cell) {
+      elmc_release(out);
+      return elmc_list_nil();
+    }
+    if (tail_slot) {
+      elmc_release(*tail_slot);
+      *tail_slot = cell;
+    } else {
+      out = cell;
+    }
+    tail_slot = &((ElmcCons *)cell->payload)->tail;
     cursor = node->tail;
     i++;
   }
-  ElmcValue *out = elmc_list_reverse_copy(rev);
-  elmc_release(rev);
-  return out;
+  return out ? out : elmc_list_nil();
 }
 
 ElmcValue *elmc_list_drop(ElmcValue *n, ElmcValue *list) {
-  int64_t count = elmc_as_int(n);
+  return elmc_list_drop_int(elmc_as_int(n), list);
+}
+
+ElmcValue *elmc_list_drop_int(elmc_int_t count, ElmcValue *list) {
   ElmcValue *cursor = list;
-  int64_t i = 0;
+  elmc_int_t i = 0;
   while (i < count && cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
     cursor = ((ElmcCons *)cursor->payload)->tail;
     i++;
   }
-  /* Copy the remainder */
-  ElmcValue *rev = elmc_list_nil();
+  ElmcValue *out = NULL;
+  ElmcValue **tail_slot = NULL;
   while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
     ElmcCons *node = (ElmcCons *)cursor->payload;
-    ElmcValue *next = elmc_list_cons(node->head, rev);
-    elmc_release(rev);
-    rev = next;
+    ElmcValue *cell = elmc_list_cons(node->head, elmc_list_nil());
+    if (!cell) {
+      elmc_release(out);
+      return elmc_list_nil();
+    }
+    if (tail_slot) {
+      elmc_release(*tail_slot);
+      *tail_slot = cell;
+    } else {
+      out = cell;
+    }
+    tail_slot = &((ElmcCons *)cell->payload)->tail;
     cursor = node->tail;
   }
-  ElmcValue *out = elmc_list_reverse_copy(rev);
-  elmc_release(rev);
-  return out;
+  return out ? out : elmc_list_nil();
 }
 
 ElmcValue *elmc_list_partition(ElmcValue *f, ElmcValue *list) {
@@ -2981,7 +3243,9 @@ ElmcValue *elmc_string_uncons(ElmcValue *s) {
   ElmcValue *pair = elmc_tuple2(ch, rest);
   elmc_release(ch);
   elmc_release(rest);
-  return elmc_maybe_just(pair);
+  ElmcValue *out = elmc_maybe_just(pair);
+  elmc_release(pair);
+  return out;
 }
 
 ElmcValue *elmc_string_to_list(ElmcValue *s) {
@@ -4449,7 +4713,7 @@ static int elmc_json_buf_reserve(ElmcJsonBuffer *buf, size_t needed) {
   if (needed <= buf->cap) return 1;
   size_t next = buf->cap ? buf->cap * 2 : 32;
   while (next < needed) next *= 2;
-  char *data = (char *)realloc(buf->data, next);
+  char *data = (char *)elmc_realloc(buf->data, next, "json_buf");
   if (!data) return 0;
   buf->data = data;
   buf->cap = next;
@@ -4482,7 +4746,7 @@ static ElmcValue *elmc_json_buf_to_string(ElmcJsonBuffer *buf) {
 }
 
 static ElmcJsonValue *elmc_json_new_value(ElmcJsonKind kind) {
-  ElmcJsonValue *value = (ElmcJsonValue *)malloc(sizeof(ElmcJsonValue));
+  ElmcJsonValue *value = (ElmcJsonValue *)elmc_malloc(sizeof(ElmcJsonValue), "json_value");
   if (!value) return NULL;
   value->kind = kind;
   value->bool_value = 0;
@@ -5625,14 +5889,203 @@ uint64_t elmc_rc_released_count(void) {
   return ELMC_RELEASED;
 }
 
-ElmcValue *elmc_retain(ElmcValue *value) {
+#if ELMC_RC_TRACK
+
+#ifndef ELMC_RC_TRACK_MAX
+#define ELMC_RC_TRACK_MAX 16384
+#endif
+
+typedef struct ElmcRcTrackEntry {
+  ElmcValue *value;
+  uint32_t id;
+  uint8_t tag;
+  uint16_t rc;
+  uint32_t retains;
+  uint32_t releases;
+  const char *alloc_context;
+  const char *alloc_file;
+  int alloc_line;
+  const char *last_retain_file;
+  int last_retain_line;
+  const char *last_release_file;
+  int last_release_line;
+} ElmcRcTrackEntry;
+
+static ElmcRcTrackEntry ELMC_RC_TRACK_ENTRIES[ELMC_RC_TRACK_MAX];
+static uint32_t ELMC_RC_TRACK_COUNT = 0;
+static uint32_t ELMC_RC_TRACK_NEXT_ID = 1;
+
+static const char *elmc_rc_track_tag_name(ElmcTag tag) {
+  switch (tag) {
+    case ELMC_TAG_INT: return "Int";
+    case ELMC_TAG_BOOL: return "Bool";
+    case ELMC_TAG_STRING: return "String";
+    case ELMC_TAG_LIST: return "List";
+    case ELMC_TAG_RESULT: return "Result";
+    case ELMC_TAG_MAYBE: return "Maybe";
+    case ELMC_TAG_TUPLE2: return "Tuple2";
+    case ELMC_TAG_RECORD: return "Record";
+    case ELMC_TAG_CLOSURE: return "Closure";
+    case ELMC_TAG_CMD: return "Cmd";
+    case ELMC_TAG_SUB: return "Sub";
+    default: return "Value";
+  }
+}
+
+static ElmcRcTrackEntry *elmc_rc_track_find(ElmcValue *value) {
+  if (!value) return NULL;
+  for (uint32_t i = 0; i < ELMC_RC_TRACK_COUNT; i++) {
+    if (ELMC_RC_TRACK_ENTRIES[i].value == value) return &ELMC_RC_TRACK_ENTRIES[i];
+  }
+  return NULL;
+}
+
+void elmc_rc_track_register(ElmcValue *value, const char *context, const char *file, int line) {
+  if (!value || value->rc == ELMC_RC_IMMORTAL) return;
+  if (ELMC_RC_TRACK_COUNT >= ELMC_RC_TRACK_MAX) return;
+  ElmcRcTrackEntry *entry = &ELMC_RC_TRACK_ENTRIES[ELMC_RC_TRACK_COUNT++];
+  entry->value = value;
+  entry->id = ELMC_RC_TRACK_NEXT_ID++;
+  entry->tag = value->tag;
+  entry->rc = value->rc;
+  entry->retains = 0;
+  entry->releases = 0;
+  entry->alloc_context = context ? context : "alloc";
+  entry->alloc_file = file;
+  entry->alloc_line = line;
+  entry->last_retain_file = file;
+  entry->last_retain_line = line;
+  entry->last_release_file = NULL;
+  entry->last_release_line = 0;
+}
+
+static void elmc_rc_track_unregister(ElmcValue *value) {
+  if (!value) return;
+  for (uint32_t i = 0; i < ELMC_RC_TRACK_COUNT; i++) {
+    if (ELMC_RC_TRACK_ENTRIES[i].value != value) continue;
+    ELMC_RC_TRACK_COUNT -= 1;
+    if (i < ELMC_RC_TRACK_COUNT) {
+      ELMC_RC_TRACK_ENTRIES[i] = ELMC_RC_TRACK_ENTRIES[ELMC_RC_TRACK_COUNT];
+    }
+    return;
+  }
+}
+
+static void elmc_rc_track_sync(ElmcRcTrackEntry *entry) {
+  if (!entry || !entry->value) return;
+  entry->rc = entry->value->rc;
+  entry->tag = entry->value->tag;
+}
+
+void elmc_rc_track_reset(void) {
+  ELMC_RC_TRACK_COUNT = 0;
+  ELMC_RC_TRACK_NEXT_ID = 1;
+}
+
+uint32_t elmc_rc_track_live_count(void) {
+  return ELMC_RC_TRACK_COUNT;
+}
+
+void elmc_rc_track_dump_live(FILE *out) {
+  if (!out) out = stderr;
+  fprintf(out, "elmc rc track: %u live object(s)\n", ELMC_RC_TRACK_COUNT);
+  for (uint32_t i = 0; i < ELMC_RC_TRACK_COUNT; i++) {
+    ElmcRcTrackEntry *entry = &ELMC_RC_TRACK_ENTRIES[i];
+    const char *alloc_file = entry->alloc_file ? entry->alloc_file : "?";
+    const char *retain_file = entry->last_retain_file ? entry->last_retain_file : "?";
+    const char *release_file = entry->last_release_file ? entry->last_release_file : "?";
+    fprintf(out,
+            "  #%u %s rc=%u retains=%u releases=%u alloc=%s:%d (%s) last_retain=%s:%d last_release=%s:%d\n",
+            entry->id,
+            elmc_rc_track_tag_name((ElmcTag)entry->tag),
+            entry->rc,
+            entry->retains,
+            entry->releases,
+            alloc_file,
+            entry->alloc_line,
+            entry->alloc_context ? entry->alloc_context : "alloc",
+            retain_file,
+            entry->last_retain_line,
+            release_file,
+            entry->last_release_line);
+  }
+}
+
+int elmc_rc_track_check_balanced(void) {
+  int ok = 1;
+  if (elmc_rc_allocated_count() != elmc_rc_released_count()) {
+    fprintf(stderr,
+            "elmc rc counters unbalanced: allocated=%llu released=%llu\n",
+            (unsigned long long)elmc_rc_allocated_count(),
+            (unsigned long long)elmc_rc_released_count());
+    ok = 0;
+  }
+  if (ELMC_RC_TRACK_COUNT > 0) {
+    elmc_rc_track_dump_live(stderr);
+    ok = 0;
+  }
+  return ok;
+}
+
+static void elmc_rc_track_on_retain(ElmcValue *value, const char *file, int line) {
+  if (!value || value->rc == ELMC_RC_IMMORTAL) return;
+  ElmcRcTrackEntry *entry = elmc_rc_track_find(value);
+  if (!entry) return;
+  entry->retains += 1;
+  entry->last_retain_file = file;
+  entry->last_retain_line = line;
+}
+
+static void elmc_rc_track_on_release(ElmcValue *value, const char *file, int line) {
+  if (!value || value->rc == ELMC_RC_IMMORTAL) return;
+  ElmcRcTrackEntry *entry = elmc_rc_track_find(value);
+  if (!entry) return;
+  entry->releases += 1;
+  entry->last_release_file = file;
+  entry->last_release_line = line;
+}
+
+#endif
+
+
+#if ELMC_RC_TRACK
+ElmcValue *elmc_rc_track_retain(ElmcValue *value, const char *file, int line) {
+  elmc_rc_track_on_retain(value, file, line);
+  ElmcValue *out = elmc_retain_impl(value);
+  ElmcRcTrackEntry *entry = elmc_rc_track_find(value);
+  if (entry) elmc_rc_track_sync(entry);
+  return out;
+}
+
+void elmc_rc_track_release(ElmcValue *value, const char *file, int line) {
+  if (!value) return;
+  elmc_rc_track_on_release(value, file, line);
+  ElmcRcTrackEntry *entry = elmc_rc_track_find(value);
+  uint16_t rc_before = value->rc;
+  if (entry && rc_before == 1) {
+    elmc_rc_track_unregister(value);
+  }
+  elmc_release_impl(value);
+  if (entry && rc_before > 1) {
+    elmc_rc_track_sync(entry);
+  }
+}
+#endif
+
+static ElmcValue *elmc_retain_impl(ElmcValue *value) {
   if (!value) return NULL;
   if (value->rc == ELMC_RC_IMMORTAL) return value;
   if (value->rc < ELMC_RC_IMMORTAL - 1) value->rc += 1;
   return value;
 }
 
-void elmc_release(ElmcValue *value) {
+#if !ELMC_RC_TRACK
+ElmcValue *elmc_retain(ElmcValue *value) {
+  return elmc_retain_impl(value);
+}
+#endif
+
+static void elmc_release_impl(ElmcValue *value) {
   if (!value) return;
   if (value->rc == ELMC_RC_IMMORTAL) return;
   if (value->rc == 0) return;
@@ -5663,7 +6116,6 @@ void elmc_release(ElmcValue *value) {
       ELMC_RELEASED += 1;
       return;
     }
-    free(rec->field_names);
     free(rec->field_values);
   } else if (value->tag == ELMC_TAG_CLOSURE && value->payload != NULL) {
     ElmcClosure *clo = (ElmcClosure *)value->payload;
@@ -5708,6 +6160,13 @@ void elmc_release(ElmcValue *value) {
   free(value);
   ELMC_RELEASED += 1;
 }
+
+#if !ELMC_RC_TRACK
+void elmc_release(ElmcValue *value) {
+  elmc_release_impl(value);
+}
+#endif
+
 
 void elmc_release_deep(ElmcValue *value) {
   /* Current runtime representation has no nested ownership for supported subset. */

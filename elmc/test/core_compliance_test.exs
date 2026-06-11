@@ -109,6 +109,7 @@ defmodule Elmc.CoreComplianceTest do
       harness_path,
       """
       #include "elmc_generated.h"
+      #include "elmc_generated.c"
       #include <stdio.h>
 
       static void print_i(const char *label, ElmcValue *value) {
@@ -553,7 +554,6 @@ defmodule Elmc.CoreComplianceTest do
         "-I#{Path.join(out_dir, "c")}",
         Path.join(out_dir, "runtime/elmc_runtime.c"),
         Path.join(out_dir, "ports/elmc_ports.c"),
-        Path.join(out_dir, "c/elmc_generated.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         Path.join(out_dir, "c/elmc_worker.c"),
         harness_path,

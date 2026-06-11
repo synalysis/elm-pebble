@@ -11,6 +11,45 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.CCodegen.VarAnalysis
 
+  @uncached_compile &Host.compile_expr/3
+
+  @spec with_subexpr_cache(Types.compile_env()) :: Types.compile_env()
+  def with_subexpr_cache(env), do: field_subexpr_cache_env(env)
+
+  @spec fresh_subexpr_cache(Types.compile_env()) :: Types.compile_env()
+  def fresh_subexpr_cache(env) do
+    if subexpr_cache_active?(env) do
+      env
+      |> Map.delete(:__subexpr_cache_key__)
+      |> field_subexpr_cache_env()
+    else
+      env
+    end
+  end
+
+  @spec subexpr_cache_active?(Types.compile_env()) :: boolean()
+  def subexpr_cache_active?(env) when is_map(env) do
+    Map.has_key?(env, :__subexpr_cache__) or
+      Map.has_key?(env, :__subexpr_cache_key__) or
+      Map.has_key?(env, :__record_subexpr_cache_key__)
+  end
+
+  @spec cacheable_subexpr?(Types.ir_expr()) :: boolean()
+  def cacheable_subexpr?(%{op: :qualified_call, args: []}), do: true
+  def cacheable_subexpr?(%{op: :call, args: []}), do: true
+  def cacheable_subexpr?(%{op: :constructor_call, args: []}), do: true
+  def cacheable_subexpr?(_), do: false
+
+  @spec compile_expr_cached(
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter(),
+          (Types.ir_expr(), Types.compile_env(), Types.compile_counter() -> Types.compile_result())
+        ) :: {String.t(), String.t(), Types.compile_counter(), Types.compile_env()}
+  def compile_expr_cached(expr, env, counter, compile_fn \\ @uncached_compile) do
+    compile_cached_expr(expr, env, counter, compile_fn)
+  end
+
   @spec compile(Types.ir_record_expr(), Types.compile_env(), Types.compile_counter()) ::
           Types.compile_result()
   def compile(%{op: :record_literal, fields: fields}, env, counter) do
@@ -23,7 +62,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
   def compile(%{op: :field_access} = expr, env, counter) do
     if subexpr_cache_active?(env) do
-      {code, ref, counter, _env} = compile_cached_expr(expr, env, counter, &Host.compile_expr/3)
+      {code, ref, counter, _env} = compile_cached_expr(expr, env, counter, @uncached_compile)
       {code, ref, counter}
     else
       compile_field_access(expr, env, counter)
@@ -109,12 +148,14 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     next = counter + 1
     out = "tmp_#{next}"
     values_array = Enum.join(field_refs, ", ")
+    field_names_decl = static_record_field_names_decl(ordered_fields, next)
 
     code =
       """
       #{field_code}
+        #{field_names_decl}
         elmc_int_t rec_values_#{next}[#{field_count}] = { #{values_array} };
-        ElmcValue *#{out} = elmc_record_new_values_ints(#{field_count}, rec_values_#{next});
+        ElmcValue *#{out} = elmc_record_new_static_ints(#{field_count}, rec_field_names_#{next}, rec_values_#{next});
       """ <> post_release
 
     {code, out, next}
@@ -149,14 +190,28 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     out = "tmp_#{next}"
     values_array = Enum.join(field_refs, ", ")
 
+    field_names_decl = static_record_field_names_decl(ordered_fields, next)
+
     code =
       """
       #{field_code}
+        #{field_names_decl}
         ElmcValue *rec_values_#{next}[#{max(field_count, 1)}] = { #{values_array} };
-          ElmcValue *#{out} = elmc_record_new_values_take(#{field_count}, rec_values_#{next});
+          ElmcValue *#{out} = elmc_record_new_static_take(#{field_count}, rec_field_names_#{next}, rec_values_#{next});
       """ <> post_release
 
     {code, out, next}
+  end
+
+  defp static_record_field_names_decl(ordered_fields, suffix) when is_list(ordered_fields) do
+    names = Enum.map(ordered_fields, & &1.name)
+    count = length(names)
+
+    literals =
+      names
+      |> Enum.map_join(", ", fn name -> "\"#{Util.escape_c_string(name)}\"" end)
+
+    "const char *rec_field_names_#{suffix}[#{count}] = { #{literals} };"
   end
 
   defp maybe_extract_boxed_record_literal_helper(
@@ -190,11 +245,14 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
           values_array = field_vars |> Enum.map(fn {_name, var} -> var end) |> Enum.join(", ")
 
+          field_names_decl = static_record_field_names_decl(ordered_fields, helper_id)
+
           helper_def = """
           static ElmcValue *#{helper_name}(#{helper_param_decls}) {
           #{CSource.indent(field_code, 2)}
+            #{field_names_decl}
             ElmcValue *rec_values[#{field_count}] = { #{values_array} };
-            return elmc_record_new_values_take(#{field_count}, rec_values);
+            return elmc_record_new_static_take(#{field_count}, rec_field_names_#{helper_id}, rec_values);
           }
           """
 
@@ -668,12 +726,6 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     {field_code <> release_code, field_refs, counter, post_release}
   end
 
-  defp subexpr_cache_active?(env) do
-    Map.has_key?(env, :__subexpr_cache__) or
-      Map.has_key?(env, :__subexpr_cache_key__) or
-      Map.has_key?(env, :__record_subexpr_cache_key__)
-  end
-
   defp record_subexpr_cache_env(env) do
     cache_key = make_ref()
     Process.put({:elmc_subexpr_cache, cache_key}, %{})
@@ -928,7 +980,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   end
 
   defp compile_cached_field_access_arg(%{op: :field_access} = arg_expr, env, counter) do
-    {code, ref, counter, env} = compile_cached_expr(arg_expr, env, counter, &Host.compile_expr/3)
+    {code, ref, counter, env} = compile_cached_expr(arg_expr, env, counter, @uncached_compile)
     {code, ref, counter, env, false}
   end
 

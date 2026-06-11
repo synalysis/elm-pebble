@@ -7,6 +7,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
   alias Elmc.Backend.CCodegen.HelperParams
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.String, as: NativeString
+  alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
 
@@ -74,28 +75,35 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
 
     case cond_ref do
       "1" ->
-        {branch_code, branch_ref, counter} = Host.compile_expr(then_expr, env, counter)
+        {branch_code, branch_ref, counter} =
+          Host.compile_expr(then_expr, RecordCompile.fresh_subexpr_cache(env), counter)
+
         {cond_code <> branch_code, branch_ref, counter}
 
       "0" ->
-        {branch_code, branch_ref, counter} = Host.compile_expr(else_expr, env, counter)
+        {branch_code, branch_ref, counter} =
+          Host.compile_expr(else_expr, RecordCompile.fresh_subexpr_cache(env), counter)
+
         {cond_code <> branch_code, branch_ref, counter}
 
       _ ->
         next = counter + 1
         out = "tmp_#{next}"
 
+        then_env = RecordCompile.fresh_subexpr_cache(env)
+        else_env = RecordCompile.fresh_subexpr_cache(env)
+
         {then_code, then_assignment, counter} =
-          CaseCompile.branch_assignment(then_expr, out, env, next)
+          CaseCompile.branch_assignment(then_expr, out, then_env, next)
 
         {else_code, else_assignment, counter} =
-          CaseCompile.branch_assignment(else_expr, out, env, counter)
+          CaseCompile.branch_assignment(else_expr, out, else_env, counter)
 
         then_body =
-          maybe_extract_if_branch_helper(then_expr, env, out, then_code, then_assignment)
+          maybe_extract_if_branch_helper(then_expr, then_env, out, then_code, then_assignment)
 
         else_body =
-          maybe_extract_if_branch_helper(else_expr, env, out, else_code, else_assignment)
+          maybe_extract_if_branch_helper(else_expr, else_env, out, else_code, else_assignment)
 
         code =
           Enum.join(
@@ -127,14 +135,17 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
     next = counter + 1
     out = "tmp_#{next}"
 
+    then_env = RecordCompile.fresh_subexpr_cache(env)
+    else_env = RecordCompile.fresh_subexpr_cache(env)
+
     {then_code, then_assignment, counter} =
-      CaseCompile.branch_assignment(then_expr, out, env, next)
+      CaseCompile.branch_assignment(then_expr, out, then_env, next)
 
     {else_code, else_assignment, counter} =
-      CaseCompile.branch_assignment(else_expr, out, env, counter)
+      CaseCompile.branch_assignment(else_expr, out, else_env, counter)
 
-    then_body = maybe_extract_if_branch_helper(then_expr, env, out, then_code, then_assignment)
-    else_body = maybe_extract_if_branch_helper(else_expr, env, out, else_code, else_assignment)
+    then_body = maybe_extract_if_branch_helper(then_expr, then_env, out, then_code, then_assignment)
+    else_body = maybe_extract_if_branch_helper(else_expr, else_env, out, else_code, else_assignment)
 
     code =
       Enum.join(

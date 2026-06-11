@@ -200,7 +200,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Qualified.Draws do
           bitmap,
           SpecialValues.field_access_expr(bounds, "w"),
           SpecialValues.field_access_expr(bounds, "h"),
-          rotation,
+          SpecialValues.pebble_angle_expr(rotation),
           SpecialValues.field_access_expr(center, "x"),
           SpecialValues.field_access_expr(center, "y")
         ],

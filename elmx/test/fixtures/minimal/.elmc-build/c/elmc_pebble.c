@@ -42,7 +42,7 @@
 #endif
 
 #if defined(ELMC_PEBBLE_PLATFORM) && ELMC_PEBBLE_HEAP_LOG
-static void elmc_pebble_heap_log(const char *label) {
+void elmc_pebble_heap_log(const char *label) {
   APP_LOG(
     APP_LOG_LEVEL_INFO,
     "ELMC heap %s used=%lu free=%lu",
@@ -50,8 +50,23 @@ static void elmc_pebble_heap_log(const char *label) {
     (unsigned long)heap_bytes_used(),
     (unsigned long)heap_bytes_free());
 }
-#else
-#define elmc_pebble_heap_log(label) do { (void)(label); } while (0)
+
+void elmc_pebble_render_diag_log(const char *phase, int render_seq, const ElmcPebbleApp *app) {
+  if (app) {
+    APP_LOG(
+      APP_LOG_LEVEL_INFO,
+      "ELMC render %s seq=%d heap_used=%lu heap_free=%lu scene_dirty=%d scene_bytes=%d scene_cmds=%d",
+      phase ? phase : "?",
+      render_seq,
+      (unsigned long)heap_bytes_used(),
+      (unsigned long)heap_bytes_free(),
+      app->scene.dirty,
+      app->scene.byte_count,
+      app->scene.command_count);
+  } else {
+    elmc_pebble_heap_log(phase);
+  }
+}
 #endif
 
 #ifndef ELMC_AGENT_PROBES
@@ -153,6 +168,55 @@ static int elmc_unpack_draw_payload(ElmcValue *payload, int64_t out[6]) {
 static int elmc_decode_path_payload(ElmcValue *payload, ElmcPebbleDrawCmd *out_cmd);
 #endif
 
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
+static int elmc_copy_draw_text_value(ElmcValue *value, char *out_text, size_t out_size) {
+  if (!out_text || out_size == 0) return -1;
+  out_text[0] = '\0';
+  if (!value) return -1;
+  if (value->tag == ELMC_TAG_STRING && value->payload != NULL) {
+    strncpy(out_text, (const char *)value->payload, out_size - 1);
+    out_text[out_size - 1] = '\0';
+    return 0;
+  }
+  if (value->tag != ELMC_TAG_LIST) return -1;
+  size_t used = 0;
+  ElmcValue *cursor = value;
+  while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
+    ElmcCons *node = (ElmcCons *)cursor->payload;
+    const char *piece = NULL;
+    char char_buf[2] = {0, 0};
+    if (!node->head) {
+      cursor = node->tail;
+      continue;
+    }
+    if (node->head->tag == ELMC_TAG_STRING && node->head->payload != NULL) {
+      piece = (const char *)node->head->payload;
+    } else {
+      char_buf[0] = (char)elmc_as_int(node->head);
+      piece = char_buf;
+    }
+    size_t piece_len = strlen(piece);
+    if (piece_len == 0) {
+      cursor = node->tail;
+      continue;
+    }
+    if (used + piece_len >= out_size) {
+      size_t copy_len = out_size - used - 1;
+      if (copy_len > 0) {
+        memcpy(out_text + used, piece, copy_len);
+        used += copy_len;
+      }
+      break;
+    }
+    memcpy(out_text + used, piece, piece_len);
+    used += piece_len;
+    cursor = node->tail;
+  }
+  out_text[used] = '\0';
+  return used > 0 ? 0 : -1;
+}
+#endif
+
 static int elmc_draw_cmd_from_value(ElmcValue *value, ElmcPebbleDrawCmd *out_cmd) {
   if (!out_cmd) return -1;
   out_cmd->kind = ELMC_PEBBLE_DRAW_NONE;
@@ -205,10 +269,7 @@ static int elmc_draw_cmd_from_value(ElmcValue *value, ElmcPebbleDrawCmd *out_cmd
       out_cmd->p3 = payload[3];
       out_cmd->p4 = payload[4];
       out_cmd->p5 = payload[5];
-      if (current && current->tag == ELMC_TAG_STRING && current->payload != NULL) {
-        strncpy(out_cmd->text, (const char *)current->payload, sizeof(out_cmd->text) - 1);
-        out_cmd->text[sizeof(out_cmd->text) - 1] = '\0';
-      }
+      (void)elmc_copy_draw_text_value(current, out_cmd->text, sizeof(out_cmd->text));
       return 0;
     }
 #endif
@@ -357,7 +418,15 @@ static void elmc_pebble_scene_reset(ElmcPebbleApp *app) {
   app->scene.hash = 1469598103934665603ULL;
 }
 
-static void elmc_pebble_scene_buffer_free(ElmcPebbleSceneBuffer *scene) {
+static void elmc_pebble_scene_discard_build(ElmcPebbleApp *app) {
+  if (!app) return;
+  app->scene.byte_count = 0;
+  app->scene.command_count = 0;
+  app->scene.dirty = 1;
+}
+
+static void elmc_pebble_scene_buffer_free_for_app(ElmcPebbleApp *app, ElmcPebbleSceneBuffer *scene) {
+  (void)app;
   if (!scene) return;
   if (scene->bytes) {
     free(scene->bytes);
@@ -370,11 +439,18 @@ static void elmc_pebble_scene_buffer_free(ElmcPebbleSceneBuffer *scene) {
   scene->dirty = 1;
 }
 
+static void elmc_pebble_scene_abort_build(ElmcPebbleApp *app) {
+  if (!app) return;
+  elmc_pebble_clear_view_cache(app);
+  elmc_pebble_scene_discard_build(app);
+  elmc_pebble_scene_buffer_free_for_app(app, &app->scene);
+}
+
 static void elmc_pebble_scene_free(ElmcPebbleApp *app) {
   if (!app) return;
-  elmc_pebble_scene_buffer_free(&app->scene);
+  elmc_pebble_scene_buffer_free_for_app(app, &app->scene);
 #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
-  elmc_pebble_scene_buffer_free(&app->prev_scene);
+  elmc_pebble_scene_buffer_free_for_app(app, &app->prev_scene);
   app->dirty_rect_valid = 0;
   app->dirty_rect_full = 1;
 #endif
@@ -388,7 +464,7 @@ static void elmc_pebble_mark_scene_dirty(ElmcPebbleApp *app) {
 static void elmc_pebble_prepare_scene_rebuild(ElmcPebbleApp *app) {
   if (!app) return;
 #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
-  elmc_pebble_scene_buffer_free(&app->prev_scene);
+  elmc_pebble_scene_buffer_free_for_app(app, &app->prev_scene);
   app->prev_scene = app->scene;
   app->scene.bytes = NULL;
   app->scene.byte_count = 0;
@@ -428,19 +504,49 @@ void elmc_pebble_invalidate_scene(ElmcPebbleApp *app) {
 #endif
 }
 
-static int elmc_pebble_scene_reserve(ElmcPebbleApp *app, int extra) {
-  if (!app || extra < 0) return -1;
-  int needed = app->scene.byte_count + extra;
-  if (needed <= app->scene.byte_capacity) return 0;
-  int next_capacity = app->scene.byte_capacity > 0 ? app->scene.byte_capacity : 512;
-  while (next_capacity < needed) {
-    next_capacity *= 2;
+static int elmc_pebble_scene_reserve_capacity(ElmcPebbleApp *app, int min_capacity) {
+  if (!app || min_capacity < 0) return -1;
+  if (app->scene.byte_capacity >= min_capacity) return 0;
+  int next_capacity = app->scene.byte_capacity > 0 ? app->scene.byte_capacity : 0;
+  while (next_capacity < min_capacity) {
+    if (next_capacity == 0) {
+#if defined(PBL_PLATFORM_APLITE)
+      next_capacity = ELMC_PEBBLE_SCENE_GROW_CHUNK;
+#else
+      next_capacity = ELMC_PEBBLE_SCENE_INITIAL_CAPACITY;
+#endif
+    } else if (next_capacity < ELMC_PEBBLE_SCENE_INITIAL_CAPACITY) {
+      next_capacity += ELMC_PEBBLE_SCENE_GROW_CHUNK;
+    } else {
+      next_capacity *= 2;
+    }
   }
   unsigned char *next = (unsigned char *)realloc(app->scene.bytes, (size_t)next_capacity);
   if (!next) return -2;
   app->scene.bytes = next;
   app->scene.byte_capacity = next_capacity;
   return 0;
+}
+
+static void elmc_pebble_scene_trim_capacity(ElmcPebbleApp *app) {
+#if ELMC_PEBBLE_SCENE_TRIM_SLACK > 0
+  if (!app || !app->scene.bytes || app->scene.byte_count <= 0) return;
+  int target = app->scene.byte_count + ELMC_PEBBLE_SCENE_TRIM_SLACK;
+  if (app->scene.byte_capacity <= target) return;
+  unsigned char *next = (unsigned char *)realloc(app->scene.bytes, (size_t)target);
+  if (!next) return;
+  app->scene.bytes = next;
+  app->scene.byte_capacity = target;
+#else
+  (void)app;
+#endif
+}
+
+static int elmc_pebble_scene_reserve(ElmcPebbleApp *app, int extra) {
+  if (!app || extra < 0) return -1;
+  int needed = app->scene.byte_count + extra;
+  if (needed <= app->scene.byte_capacity) return 0;
+  return elmc_pebble_scene_reserve_capacity(app, needed);
 }
 
 static void elmc_pebble_scene_hash_byte(ElmcPebbleApp *app, unsigned char byte) {
@@ -500,14 +606,17 @@ static int32_t elmc_pebble_scene_read_i32(const unsigned char *bytes, int *offse
   return (int32_t)raw;
 }
 
+#if ELMC_PEBBLE_FEATURE_DRAW_PIXEL || ELMC_PEBBLE_FEATURE_DRAW_CIRCLE || ELMC_PEBBLE_FEATURE_DRAW_FILL_CIRCLE || ELMC_PEBBLE_FEATURE_DRAW_LINE || ELMC_PEBBLE_FEATURE_DRAW_RECT || ELMC_PEBBLE_FEATURE_DRAW_FILL_RECT || ELMC_PEBBLE_FEATURE_DRAW_ROUND_RECT || ELMC_PEBBLE_FEATURE_DRAW_TEXT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL || ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT
 static int elmc_scene_value_fits_i16(int32_t value) {
   return value >= -32768 && value <= 32767;
 }
+#endif
 
 static int elmc_scene_value_fits_u8(int32_t value) {
   return value >= 0 && value <= 255;
 }
 
+#if ELMC_PEBBLE_FEATURE_DRAW_LINE || ELMC_PEBBLE_FEATURE_DRAW_RECT || ELMC_PEBBLE_FEATURE_DRAW_FILL_RECT || ELMC_PEBBLE_FEATURE_DRAW_ROUND_RECT
 static int elmc_scene_bounds_fit_i16(const ElmcPebbleDrawCmd *cmd) {
   if (!cmd) return 0;
   return elmc_scene_value_fits_i16(cmd->p0) &&
@@ -515,13 +624,16 @@ static int elmc_scene_bounds_fit_i16(const ElmcPebbleDrawCmd *cmd) {
          elmc_scene_value_fits_i16(cmd->p2) &&
          elmc_scene_value_fits_i16(cmd->p3);
 }
+#endif
 
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
 static int elmc_scene_text_len(const ElmcPebbleDrawCmd *cmd) {
   int text_len = 0;
   if (!cmd) return 0;
   while (text_len < (int)sizeof(cmd->text) && cmd->text[text_len] != '\0') text_len++;
   return text_len;
 }
+#endif
 
 static int elmc_scene_path_extra_size(const ElmcPebbleDrawCmd *cmd) {
   (void)cmd;
@@ -542,7 +654,9 @@ static int elmc_scene_path_extra_size(const ElmcPebbleDrawCmd *cmd) {
 static int elmc_pebble_scene_payload_len(const ElmcPebbleDrawCmd *cmd) {
   if (!cmd) return -1;
   int32_t kind = cmd->kind;
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
   int text_len = elmc_scene_text_len(cmd);
+#endif
 
 #if ELMC_PEBBLE_FEATURE_DRAW_PATH
   if (kind == ELMC_PEBBLE_DRAW_PATH_FILLED ||
@@ -553,18 +667,39 @@ static int elmc_pebble_scene_payload_len(const ElmcPebbleDrawCmd *cmd) {
 #endif
 
   switch (kind) {
+#if ELMC_PEBBLE_FEATURE_DRAW_CONTEXT
   case ELMC_PEBBLE_DRAW_PUSH_CONTEXT:
   case ELMC_PEBBLE_DRAW_POP_CONTEXT:
     return ELMC_SCENE_PL_EMPTY;
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_STROKE_WIDTH || ELMC_PEBBLE_FEATURE_DRAW_ANTIALIASED
+#if ELMC_PEBBLE_FEATURE_DRAW_STROKE_WIDTH
   case ELMC_PEBBLE_DRAW_STROKE_WIDTH:
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_ANTIALIASED
   case ELMC_PEBBLE_DRAW_ANTIALIASED:
+#endif
     return elmc_scene_value_fits_u8(cmd->p0) ? ELMC_SCENE_PL_U8 : ELMC_SCENE_PL_I32;
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_STROKE_COLOR || ELMC_PEBBLE_FEATURE_DRAW_FILL_COLOR || ELMC_PEBBLE_FEATURE_DRAW_TEXT_COLOR || ELMC_PEBBLE_FEATURE_DRAW_CLEAR || ELMC_PEBBLE_FEATURE_DRAW_COMPOSITING_MODE
+#if ELMC_PEBBLE_FEATURE_DRAW_STROKE_COLOR
   case ELMC_PEBBLE_DRAW_STROKE_COLOR:
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_FILL_COLOR
   case ELMC_PEBBLE_DRAW_FILL_COLOR:
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT_COLOR
   case ELMC_PEBBLE_DRAW_TEXT_COLOR:
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_CLEAR
   case ELMC_PEBBLE_DRAW_CLEAR:
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_COMPOSITING_MODE
   case ELMC_PEBBLE_DRAW_COMPOSITING_MODE:
+#endif
     return elmc_scene_value_fits_u8(cmd->p0) ? ELMC_SCENE_PL_U8 : ELMC_SCENE_PL_I32;
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_PIXEL
   case ELMC_PEBBLE_DRAW_PIXEL:
     if (elmc_scene_value_fits_i16(cmd->p0) &&
         elmc_scene_value_fits_i16(cmd->p1) &&
@@ -572,13 +707,27 @@ static int elmc_pebble_scene_payload_len(const ElmcPebbleDrawCmd *cmd) {
       return ELMC_SCENE_PL_PIXEL;
     }
     return ELMC_SCENE_PL_FULL;
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_LINE || ELMC_PEBBLE_FEATURE_DRAW_RECT || ELMC_PEBBLE_FEATURE_DRAW_FILL_RECT
+#if ELMC_PEBBLE_FEATURE_DRAW_LINE
   case ELMC_PEBBLE_DRAW_LINE:
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_RECT
   case ELMC_PEBBLE_DRAW_RECT:
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_FILL_RECT
   case ELMC_PEBBLE_DRAW_FILL_RECT:
+#endif
     if (!elmc_scene_bounds_fit_i16(cmd) || cmd->p5 != 0) return ELMC_SCENE_PL_FULL;
     return elmc_scene_value_fits_u8(cmd->p4) ? ELMC_SCENE_PL_COORDS_COLOR_U8 : ELMC_SCENE_PL_COORDS_COLOR_I32;
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_CIRCLE || ELMC_PEBBLE_FEATURE_DRAW_FILL_CIRCLE
+#if ELMC_PEBBLE_FEATURE_DRAW_CIRCLE
   case ELMC_PEBBLE_DRAW_CIRCLE:
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_FILL_CIRCLE
   case ELMC_PEBBLE_DRAW_FILL_CIRCLE:
+#endif
     if (elmc_scene_value_fits_i16(cmd->p0) &&
         elmc_scene_value_fits_i16(cmd->p1) &&
         elmc_scene_value_fits_i16(cmd->p2) &&
@@ -586,11 +735,15 @@ static int elmc_pebble_scene_payload_len(const ElmcPebbleDrawCmd *cmd) {
       return elmc_scene_value_fits_u8(cmd->p3) ? ELMC_SCENE_PL_CIRCLE_U8 : ELMC_SCENE_PL_CIRCLE_I32;
     }
     return ELMC_SCENE_PL_FULL;
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_ROUND_RECT
   case ELMC_PEBBLE_DRAW_ROUND_RECT:
     if (elmc_scene_bounds_fit_i16(cmd) && elmc_scene_value_fits_i16(cmd->p4)) {
       return elmc_scene_value_fits_u8(cmd->p5) ? ELMC_SCENE_PL_ROUND_U8 : ELMC_SCENE_PL_ROUND_I32;
     }
     return ELMC_SCENE_PL_FULL;
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT
   case ELMC_PEBBLE_DRAW_TEXT:
     if (elmc_scene_value_fits_i16(cmd->p1) &&
         elmc_scene_value_fits_i16(cmd->p2) &&
@@ -599,21 +752,27 @@ static int elmc_pebble_scene_payload_len(const ElmcPebbleDrawCmd *cmd) {
       return ELMC_SCENE_PL_TEXT_BASE + 1 + text_len;
     }
     return ELMC_SCENE_PL_FULL + 1 + text_len;
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
   case ELMC_PEBBLE_DRAW_TEXT_LABEL_WITH_FONT:
     if (elmc_scene_value_fits_i16(cmd->p1) && elmc_scene_value_fits_i16(cmd->p2)) {
       return ELMC_SCENE_PL_TEXT_LABEL_BASE + 1 + text_len;
     }
     return ELMC_SCENE_PL_FULL + 1 + text_len;
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT
   case ELMC_PEBBLE_DRAW_TEXT_INT_WITH_FONT:
     if (elmc_scene_value_fits_i16(cmd->p1) && elmc_scene_value_fits_i16(cmd->p2)) {
       return ELMC_SCENE_PL_COORDS_COLOR_I32;
     }
     return ELMC_SCENE_PL_FULL;
+#endif
   default:
     return ELMC_SCENE_PL_FULL;
   }
 }
 
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
 static int elmc_scene_read_text_tail(
     const unsigned char *bytes,
     int *offset,
@@ -629,6 +788,7 @@ static int elmc_scene_read_text_tail(
   *offset += text_len;
   return 0;
 }
+#endif
 
 static int elmc_scene_read_coords_i16(
     const unsigned char *bytes,
@@ -642,6 +802,7 @@ static int elmc_scene_read_coords_i16(
   return 0;
 }
 
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT
 static int elmc_scene_read_text_bounds_i16(
     const unsigned char *bytes,
     int *offset,
@@ -653,6 +814,7 @@ static int elmc_scene_read_text_bounds_i16(
   out_cmd->p4 = elmc_scene_read_i16(bytes, offset, payload_end);
   return 0;
 }
+#endif
 
 static int elmc_scene_is_path_kind(int32_t kind) {
 #if ELMC_PEBBLE_FEATURE_DRAW_PATH
@@ -718,6 +880,7 @@ static int elmc_pebble_scene_decode_payload(
   int rc = 0;
   /* Compact text-label payloads (8 + 1 + text_len) overlap fixed enum
      payload sizes such as ELMC_SCENE_PL_ROUND_U8 (11); decode by kind first. */
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
   if (kind == ELMC_PEBBLE_DRAW_TEXT_LABEL_WITH_FONT &&
       payload_len >= ELMC_SCENE_PL_TEXT_LABEL_BASE + 1 &&
       payload_len < ELMC_SCENE_PL_TEXT_BASE) {
@@ -726,6 +889,7 @@ static int elmc_pebble_scene_decode_payload(
     out_cmd->p2 = elmc_scene_read_i16(bytes, offset, payload_end);
     return elmc_scene_read_text_tail(bytes, offset, payload_end, out_cmd);
   }
+#endif
   switch (payload_len) {
   case ELMC_SCENE_PL_EMPTY:
     return 0;
@@ -737,6 +901,7 @@ static int elmc_pebble_scene_decode_payload(
   case ELMC_SCENE_PL_I32:
     out_cmd->p0 = elmc_pebble_scene_read_i32(bytes, offset, payload_end);
     return 0;
+#if ELMC_PEBBLE_FEATURE_DRAW_PIXEL
   case ELMC_SCENE_PL_PIXEL:
     out_cmd->p0 = elmc_scene_read_i16(bytes, offset, payload_end);
     out_cmd->p1 = elmc_scene_read_i16(bytes, offset, payload_end);
@@ -744,6 +909,7 @@ static int elmc_pebble_scene_decode_payload(
     out_cmd->p2 = bytes[*offset];
     *offset += 1;
     return 0;
+#endif
   case ELMC_SCENE_PL_COORDS_COLOR_U8:
     rc = elmc_scene_read_coords_i16(bytes, offset, payload_end, out_cmd); if (rc != 0) return rc;
     if (*offset >= payload_end) return -3;
@@ -751,6 +917,7 @@ static int elmc_pebble_scene_decode_payload(
     *offset += 1;
     return 0;
   case ELMC_SCENE_PL_COORDS_COLOR_I32:
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT
     if (kind == ELMC_PEBBLE_DRAW_TEXT_INT_WITH_FONT) {
       out_cmd->p0 = elmc_pebble_scene_read_i32(bytes, offset, payload_end);
       out_cmd->p1 = elmc_scene_read_i16(bytes, offset, payload_end);
@@ -758,9 +925,11 @@ static int elmc_pebble_scene_decode_payload(
       out_cmd->p3 = elmc_pebble_scene_read_i32(bytes, offset, payload_end);
       return 0;
     }
+#endif
     rc = elmc_scene_read_coords_i16(bytes, offset, payload_end, out_cmd); if (rc != 0) return rc;
     out_cmd->p4 = elmc_pebble_scene_read_i32(bytes, offset, payload_end);
     return 0;
+#if ELMC_PEBBLE_FEATURE_DRAW_CIRCLE || ELMC_PEBBLE_FEATURE_DRAW_FILL_CIRCLE
   case ELMC_SCENE_PL_CIRCLE_U8:
     out_cmd->p0 = elmc_scene_read_i16(bytes, offset, payload_end);
     out_cmd->p1 = elmc_scene_read_i16(bytes, offset, payload_end);
@@ -775,6 +944,8 @@ static int elmc_pebble_scene_decode_payload(
     out_cmd->p2 = elmc_scene_read_i16(bytes, offset, payload_end);
     out_cmd->p3 = elmc_pebble_scene_read_i32(bytes, offset, payload_end);
     return 0;
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_ROUND_RECT
   case ELMC_SCENE_PL_ROUND_U8:
     rc = elmc_scene_read_coords_i16(bytes, offset, payload_end, out_cmd); if (rc != 0) return rc;
     out_cmd->p4 = elmc_scene_read_i16(bytes, offset, payload_end);
@@ -787,9 +958,11 @@ static int elmc_pebble_scene_decode_payload(
     out_cmd->p4 = elmc_scene_read_i16(bytes, offset, payload_end);
     out_cmd->p5 = elmc_pebble_scene_read_i32(bytes, offset, payload_end);
     return 0;
+#endif
   default:
     break;
   }
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT
   if (payload_len >= ELMC_SCENE_PL_TEXT_BASE &&
       kind == ELMC_PEBBLE_DRAW_TEXT &&
       payload_len >= ELMC_SCENE_PL_TEXT_BASE + 1) {
@@ -798,6 +971,8 @@ static int elmc_pebble_scene_decode_payload(
     out_cmd->p5 = elmc_pebble_scene_read_i32(bytes, offset, payload_end);
     return elmc_scene_read_text_tail(bytes, offset, payload_end, out_cmd);
   }
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
   if (payload_len >= ELMC_SCENE_PL_TEXT_LABEL_BASE &&
       kind == ELMC_PEBBLE_DRAW_TEXT_LABEL_WITH_FONT &&
       payload_len >= ELMC_SCENE_PL_TEXT_LABEL_BASE + 1) {
@@ -806,6 +981,7 @@ static int elmc_pebble_scene_decode_payload(
     out_cmd->p2 = elmc_scene_read_i16(bytes, offset, payload_end);
     return elmc_scene_read_text_tail(bytes, offset, payload_end, out_cmd);
   }
+#endif
   if ((payload_len == ELMC_SCENE_PL_FULL && !elmc_scene_is_path_kind(kind)) ||
       (payload_len > ELMC_SCENE_PL_FULL && elmc_scene_is_path_kind(kind))) {
     rc = elmc_scene_read_full_i32s(bytes, offset, payload_end, out_cmd); if (rc != 0) return rc;
@@ -814,6 +990,7 @@ static int elmc_pebble_scene_decode_payload(
     }
     return 0;
   }
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
   if (payload_len > ELMC_SCENE_PL_FULL &&
       (kind == ELMC_PEBBLE_DRAW_TEXT ||
        kind == ELMC_PEBBLE_DRAW_TEXT_LABEL_WITH_FONT)) {
@@ -825,6 +1002,7 @@ static int elmc_pebble_scene_decode_payload(
     out_cmd->p5 = elmc_pebble_scene_read_i32(bytes, offset, payload_end);
     return elmc_scene_read_text_tail(bytes, offset, payload_end, out_cmd);
   }
+#endif
   return -4;
 }
 
@@ -849,6 +1027,7 @@ static int elmc_scene_writer_put_i32(ElmcSceneWriter *writer, int32_t value) {
   return elmc_pebble_scene_put_i32(writer->app, value);
 }
 
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
 static int elmc_scene_writer_write_text_tail(ElmcSceneWriter *writer, const ElmcPebbleDrawCmd *cmd) {
   if (!writer || !writer->app) return -1;
   int text_len = elmc_scene_text_len(cmd);
@@ -863,6 +1042,7 @@ static int elmc_scene_writer_write_text_tail(ElmcSceneWriter *writer, const Elmc
   }
   return 0;
 }
+#endif
 
 static int elmc_scene_writer_write_coords_i16(ElmcSceneWriter *writer, const ElmcPebbleDrawCmd *cmd) {
   int rc = elmc_scene_writer_put_i16(writer, cmd->p0); if (rc != 0) return rc;
@@ -871,12 +1051,14 @@ static int elmc_scene_writer_write_coords_i16(ElmcSceneWriter *writer, const Elm
   return elmc_scene_writer_put_i16(writer, cmd->p3);
 }
 
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT
 static int elmc_scene_writer_write_text_bounds_i16(ElmcSceneWriter *writer, const ElmcPebbleDrawCmd *cmd) {
   int rc = elmc_scene_writer_put_i16(writer, cmd->p1); if (rc != 0) return rc;
   rc = elmc_scene_writer_put_i16(writer, cmd->p2); if (rc != 0) return rc;
   rc = elmc_scene_writer_put_i16(writer, cmd->p3); if (rc != 0) return rc;
   return elmc_scene_writer_put_i16(writer, cmd->p4);
 }
+#endif
 
 static int elmc_scene_writer_write_full_i32s(ElmcSceneWriter *writer, const ElmcPebbleDrawCmd *cmd) {
   int rc = elmc_scene_writer_put_i32(writer, cmd->p0); if (rc != 0) return rc;
@@ -913,6 +1095,7 @@ static int elmc_scene_writer_encode_payload(
     const ElmcPebbleDrawCmd *cmd,
     int payload_len) {
   int rc = 0;
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
   if (payload_len >= ELMC_SCENE_PL_TEXT_LABEL_BASE &&
       cmd->kind == ELMC_PEBBLE_DRAW_TEXT_LABEL_WITH_FONT &&
       payload_len == ELMC_SCENE_PL_TEXT_LABEL_BASE + 1 + elmc_scene_text_len(cmd)) {
@@ -921,6 +1104,7 @@ static int elmc_scene_writer_encode_payload(
     rc2 = elmc_scene_writer_put_i16(writer, cmd->p2); if (rc2 != 0) return rc2;
     return elmc_scene_writer_write_text_tail(writer, cmd);
   }
+#endif
   switch (payload_len) {
   case ELMC_SCENE_PL_EMPTY:
     return 0;
@@ -928,22 +1112,27 @@ static int elmc_scene_writer_encode_payload(
     return elmc_scene_writer_put_u8(writer, (unsigned char)cmd->p0);
   case ELMC_SCENE_PL_I32:
     return elmc_scene_writer_put_i32(writer, cmd->p0);
+#if ELMC_PEBBLE_FEATURE_DRAW_PIXEL
   case ELMC_SCENE_PL_PIXEL:
     rc = elmc_scene_writer_put_i16(writer, cmd->p0); if (rc != 0) return rc;
     rc = elmc_scene_writer_put_i16(writer, cmd->p1); if (rc != 0) return rc;
     return elmc_scene_writer_put_u8(writer, (unsigned char)cmd->p2);
+#endif
   case ELMC_SCENE_PL_COORDS_COLOR_U8:
     rc = elmc_scene_writer_write_coords_i16(writer, cmd); if (rc != 0) return rc;
     return elmc_scene_writer_put_u8(writer, (unsigned char)cmd->p4);
   case ELMC_SCENE_PL_COORDS_COLOR_I32:
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT
     if (cmd->kind == ELMC_PEBBLE_DRAW_TEXT_INT_WITH_FONT) {
       rc = elmc_scene_writer_put_i32(writer, cmd->p0); if (rc != 0) return rc;
       rc = elmc_scene_writer_put_i16(writer, cmd->p1); if (rc != 0) return rc;
       rc = elmc_scene_writer_put_i16(writer, cmd->p2); if (rc != 0) return rc;
       return elmc_scene_writer_put_i32(writer, cmd->p3);
     }
+#endif
     rc = elmc_scene_writer_write_coords_i16(writer, cmd); if (rc != 0) return rc;
     return elmc_scene_writer_put_i32(writer, cmd->p4);
+#if ELMC_PEBBLE_FEATURE_DRAW_CIRCLE || ELMC_PEBBLE_FEATURE_DRAW_FILL_CIRCLE
   case ELMC_SCENE_PL_CIRCLE_U8:
     rc = elmc_scene_writer_put_i16(writer, cmd->p0); if (rc != 0) return rc;
     rc = elmc_scene_writer_put_i16(writer, cmd->p1); if (rc != 0) return rc;
@@ -954,6 +1143,8 @@ static int elmc_scene_writer_encode_payload(
     rc = elmc_scene_writer_put_i16(writer, cmd->p1); if (rc != 0) return rc;
     rc = elmc_scene_writer_put_i16(writer, cmd->p2); if (rc != 0) return rc;
     return elmc_scene_writer_put_i32(writer, cmd->p3);
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_ROUND_RECT
   case ELMC_SCENE_PL_ROUND_U8:
     rc = elmc_scene_writer_write_coords_i16(writer, cmd); if (rc != 0) return rc;
     rc = elmc_scene_writer_put_i16(writer, cmd->p4); if (rc != 0) return rc;
@@ -962,9 +1153,11 @@ static int elmc_scene_writer_encode_payload(
     rc = elmc_scene_writer_write_coords_i16(writer, cmd); if (rc != 0) return rc;
     rc = elmc_scene_writer_put_i16(writer, cmd->p4); if (rc != 0) return rc;
     return elmc_scene_writer_put_i32(writer, cmd->p5);
+#endif
   default:
     break;
   }
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT
   if (payload_len >= ELMC_SCENE_PL_TEXT_BASE &&
       cmd->kind == ELMC_PEBBLE_DRAW_TEXT &&
       payload_len == ELMC_SCENE_PL_TEXT_BASE + 1 + elmc_scene_text_len(cmd)) {
@@ -973,6 +1166,8 @@ static int elmc_scene_writer_encode_payload(
     rc2 = elmc_scene_writer_put_i32(writer, cmd->p5); if (rc2 != 0) return rc2;
     return elmc_scene_writer_write_text_tail(writer, cmd);
   }
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
   if (payload_len >= ELMC_SCENE_PL_TEXT_LABEL_BASE &&
       cmd->kind == ELMC_PEBBLE_DRAW_TEXT_LABEL_WITH_FONT &&
       payload_len == ELMC_SCENE_PL_TEXT_LABEL_BASE + 1 + elmc_scene_text_len(cmd)) {
@@ -981,6 +1176,7 @@ static int elmc_scene_writer_encode_payload(
     rc2 = elmc_scene_writer_put_i16(writer, cmd->p2); if (rc2 != 0) return rc2;
     return elmc_scene_writer_write_text_tail(writer, cmd);
   }
+#endif
   if (payload_len >= ELMC_SCENE_PL_FULL &&
       (!elmc_scene_is_path_kind(cmd->kind) ||
        payload_len == ELMC_SCENE_PL_FULL + elmc_scene_path_extra_size(cmd))) {
@@ -990,6 +1186,7 @@ static int elmc_scene_writer_encode_payload(
     }
     return 0;
   }
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
   if (payload_len > ELMC_SCENE_PL_FULL &&
       (cmd->kind == ELMC_PEBBLE_DRAW_TEXT ||
        cmd->kind == ELMC_PEBBLE_DRAW_TEXT_LABEL_WITH_FONT)) {
@@ -1001,6 +1198,7 @@ static int elmc_scene_writer_encode_payload(
     rc = elmc_scene_writer_put_i32(writer, cmd->p5); if (rc != 0) return rc;
     return elmc_scene_writer_write_text_tail(writer, cmd);
   }
+#endif
   return -4;
 }
 
@@ -1384,6 +1582,10 @@ static int elmc_cmd_from_value(ElmcValue *value, ElmcPebbleCmd *out_cmd) {
     if (cmd->arity > 3) out_cmd->p3 = cmd->p3;
     if (cmd->arity > 4) out_cmd->p4 = cmd->p4;
     if (cmd->arity > 5) out_cmd->p5 = cmd->p5;
+    if (cmd->text && cmd->text->tag == ELMC_TAG_STRING && cmd->text->payload) {
+      strncpy(out_cmd->text, (const char *)cmd->text->payload, sizeof(out_cmd->text) - 1);
+      out_cmd->text[sizeof(out_cmd->text) - 1] = '\0';
+    }
     return 0;
   }
 
@@ -1621,7 +1823,9 @@ static void elmc_pebble_prepare_dispatch(ElmcPebbleApp *app) {
   elmc_pebble_heap_log("dispatch:prepare:before");
   elmc_pebble_clear_view_cache(app);
 #if !ELMC_PEBBLE_DIRTY_REGION_ENABLED
-  elmc_pebble_scene_buffer_free(&app->scene);
+  /* Retain scene heap capacity across dispatches; freeing here forces realloc on
+     a fragmented heap after update and can fail on tight Aplite targets. */
+  app->scene.byte_count = 0;
   app->scene.command_count = 0;
   app->scene.hash = 0;
 #endif
@@ -2027,43 +2231,7 @@ int elmc_pebble_dispatch_app_focus(ElmcPebbleApp *app, int in_focus) {
   return elmc_pebble_dispatch_tag_value(app, tag, in_focus ? 0 : 1);
 }
 
-int elmc_pebble_dispatch_compass_heading(ElmcPebbleApp *app, double degrees, int is_valid) {
-  if (!app || !app->initialized) return -1;
-  if (!elmc_pebble_is_subscribed(app, ELMC_PEBBLE_SUB_COMPASS)) return -8;
-  elmc_int_t tag = elmc_pebble_sub_tag(app, ELMC_PEBBLE_SUB_COMPASS);
-  if (tag <= 0) return -6;
 
-  const char *names[] = {"degrees", "isValid"};
-  ElmcValue *values[2];
-  values[0] = elmc_new_float(degrees);
-  values[1] = elmc_new_bool(is_valid ? 1 : 0);
-  if (!values[0] || !values[1]) {
-    if (values[0]) elmc_release(values[0]);
-    if (values[1]) elmc_release(values[1]);
-    return -2;
-  }
-
-  ElmcValue *record = elmc_record_new(2, names, values);
-  elmc_release(values[0]);
-  elmc_release(values[1]);
-  if (!record) return -2;
-
-  ElmcValue *tag_value = elmc_new_int(tag);
-  if (!tag_value) {
-    elmc_release(record);
-    return -2;
-  }
-
-  ElmcValue *msg = elmc_tuple2(tag_value, record);
-  elmc_release(tag_value);
-  elmc_release(record);
-  if (!msg) return -2;
-
-  elmc_pebble_prepare_dispatch(app);
-  int rc = elmc_worker_dispatch(&app->worker, msg);
-  elmc_release(msg);
-  return elmc_pebble_finish_dispatch(app, rc);
-}
 
 int elmc_pebble_dispatch_dictation_status(ElmcPebbleApp *app, int status) {
   if (!app || !app->initialized) return -1;
@@ -2240,8 +2408,7 @@ int elmc_pebble_ensure_scene(ElmcPebbleApp *app) {
     elmc_scene_writer_init_app(&writer, app);
     ElmcValue *direct_model = elmc_worker_model(&app->worker);
     if (!direct_model) {
-      elmc_pebble_clear_view_cache(app);
-      elmc_pebble_scene_buffer_free(&app->scene);
+      elmc_pebble_scene_abort_build(app);
       ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_ENSURE_SCENE_EXIT);
       ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", -2);
     }
@@ -2253,8 +2420,7 @@ int elmc_pebble_ensure_scene(ElmcPebbleApp *app) {
     ELMC_PEBBLE_SCENE_LOG("elmc-scene view append rc=%d writer_cmds=%d",
             rc, writer.command_count);
     if (rc != 0) {
-      elmc_pebble_clear_view_cache(app);
-      elmc_pebble_scene_buffer_free(&app->scene);
+      elmc_pebble_scene_abort_build(app);
       ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_ENSURE_SCENE_EXIT);
       ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", rc);
     }
@@ -2269,15 +2435,13 @@ int elmc_pebble_ensure_scene(ElmcPebbleApp *app) {
     int emitted_end = 0;
     int count = elmc_pebble_view_commands_raw_impl(app, &cmd, 1, skip, 0, &emitted_end);
     if (count < 0) {
-      elmc_pebble_clear_view_cache(app);
-      elmc_pebble_scene_buffer_free(&app->scene);
+      elmc_pebble_scene_abort_build(app);
       ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", count);
     }
     if (count == 0) break;
     int rc = elmc_scene_writer_push_cmd(&writer, &cmd);
     if (rc != 0) {
-      elmc_pebble_clear_view_cache(app);
-      elmc_pebble_scene_buffer_free(&app->scene);
+      elmc_pebble_scene_abort_build(app);
       ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", rc);
     }
     skip = emitted_end;
@@ -2295,8 +2459,9 @@ int elmc_pebble_ensure_scene(ElmcPebbleApp *app) {
     elmc_pebble_scene_compute_dirty_rect(app);
   }
 #endif
-  ELMC_PEBBLE_SCENE_LOG("elmc-scene ensure ok cmds=%d bytes=%d",
-          app->scene.command_count, app->scene.byte_count);
+  elmc_pebble_scene_trim_capacity(app);
+  ELMC_PEBBLE_SCENE_LOG("elmc-scene ensure ok cmds=%d bytes=%d cap=%d",
+          app->scene.command_count, app->scene.byte_count, app->scene.byte_capacity);
   ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", 0);
 }
 
