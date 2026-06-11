@@ -197,7 +197,6 @@ int elmc_worker_dispatch(ElmcWorkerState *state, ElmcValue *msg) {
   elmc_release(next_cmd);
   state->pending_cmd = merged_cmd;
   elmc_release(result);
-  state->subscriptions = compute_subscriptions(state);
   elmc_worker_heap_log("update:end");
   return 0;
 }

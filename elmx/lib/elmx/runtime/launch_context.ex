@@ -57,6 +57,7 @@ defmodule Elmx.Runtime.LaunchContext do
       "supportsHealth",
       map_value(context, :supports_health) || map_value(context, :supportsHealth) || false
     )
+    |> Map.put_new("configurationResponse", nil)
   end
 
   def normalize(_), do: normalize(%{})

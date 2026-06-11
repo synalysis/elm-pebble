@@ -618,9 +618,9 @@
     "risk": 3
   },
   "code_size_indicators": {
-    "direct_command_defs": 2,
     "boxed_tmp_declarations": 132,
     "closure_allocations": 0,
+    "direct_command_defs": 2,
     "generated_c_bytes": 51617,
     "generated_c_lines": 1426,
     "generic_function_defs": 2,

@@ -266,10 +266,10 @@ defmodule Ide.Compiler do
           {:ok, entry} ->
             cached_result = Map.merge(entry.result, %{cached?: true, revision: revision})
 
-            {:ok, maybe_attach_runtime_artifacts(cached_result, project_dir, revision)}
+            {:ok, maybe_attach_runtime_artifacts(cached_result, project_dir, revision, opts)}
 
           {:error, :not_found} ->
-            {:ok, result} = run_elmc_compile(project_dir, revision)
+            {:ok, result} = run_elmc_compile(project_dir, revision, opts)
             :ok = Cache.put(project_slug, revision, result)
             {:ok, result}
         end
@@ -497,8 +497,8 @@ defmodule Ide.Compiler do
     |> Enum.join("\n\n")
   end
 
-  @spec run_elmc_compile(String.t(), String.t()) :: {:ok, compile_result()}
-  defp run_elmc_compile(project_dir, revision) do
+  @spec run_elmc_compile(String.t(), String.t(), opts()) :: {:ok, compile_result()}
+  defp run_elmc_compile(project_dir, revision, opts) do
     out_dir = Path.join(project_dir, ".elmc-build")
 
     result =
@@ -510,7 +510,7 @@ defmodule Ide.Compiler do
         error -> compile_result_from_exception(error, out_dir, revision)
       end
 
-    {:ok, maybe_attach_runtime_artifacts(result, project_dir, revision)}
+    {:ok, maybe_attach_runtime_artifacts(result, project_dir, revision, opts)}
   end
 
   @spec compile_result_from_exception(term(), String.t(), String.t()) :: compile_result()
@@ -543,16 +543,16 @@ defmodule Ide.Compiler do
     }
   end
 
-  @spec maybe_attach_runtime_artifacts(compile_result(), String.t(), String.t()) ::
+  @spec maybe_attach_runtime_artifacts(compile_result(), String.t(), String.t(), opts()) ::
           compile_result()
-  defp maybe_attach_runtime_artifacts(result, project_dir, revision)
+  defp maybe_attach_runtime_artifacts(result, project_dir, revision, opts)
        when is_map(result) and is_binary(project_dir) do
     result
     |> maybe_attach_debugger_contract(project_dir)
-    |> maybe_attach_elmx_artifacts(project_dir, revision)
+    |> maybe_attach_elmx_artifacts(project_dir, revision, opts)
   end
 
-  defp maybe_attach_runtime_artifacts(result, _project_dir, _revision), do: result
+  defp maybe_attach_runtime_artifacts(result, _project_dir, _revision, _opts), do: result
 
   @spec maybe_attach_debugger_contract(compile_result(), String.t()) :: compile_result()
   defp maybe_attach_debugger_contract(result, project_dir)
@@ -565,10 +565,15 @@ defmodule Ide.Compiler do
     end
   end
 
-  @spec maybe_attach_elmx_artifacts(compile_result(), String.t(), String.t()) :: compile_result()
-  defp maybe_attach_elmx_artifacts(result, project_dir, revision)
+  @spec maybe_attach_elmx_artifacts(compile_result(), String.t(), String.t(), opts()) ::
+          compile_result()
+  defp maybe_attach_elmx_artifacts(result, project_dir, revision, opts)
        when is_map(result) and is_binary(project_dir) do
-    case build_elmx_artifacts_in_memory(project_dir, revision: revision) do
+    elmx_opts =
+      [revision: revision]
+      |> maybe_put_elmx_entry_module(Keyword.get(opts, :entry_module))
+
+    case build_elmx_artifacts_in_memory(project_dir, elmx_opts) do
       {:ok, fields} ->
         Map.merge(result, fields)
 
@@ -662,6 +667,14 @@ defmodule Ide.Compiler do
       []
     end
   end
+
+  @spec maybe_put_elmx_entry_module(keyword(), String.t() | nil) :: keyword()
+  defp maybe_put_elmx_entry_module(opts, entry_module)
+       when is_list(opts) and is_binary(entry_module) and entry_module != "" do
+    Keyword.put(opts, :entry_module, entry_module)
+  end
+
+  defp maybe_put_elmx_entry_module(opts, _entry_module) when is_list(opts), do: opts
 
   @doc """
   Compiles Elm → Elixir → BEAM in memory for debugger hot-reload (`:compiled_elixir` backend).

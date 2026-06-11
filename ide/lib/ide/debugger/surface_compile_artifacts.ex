@@ -349,10 +349,13 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
       File.rm!(default_main)
     end
 
+    entry_module = entry_module_from_path(dest)
+
     compile_artifacts =
       case safe_compiler_compile(
              "debugger-inline-phone-#{session_key}-#{:erlang.phash2({rel_path, source})}",
-             workspace_root: phone_root
+             workspace_root: phone_root,
+             entry_module: entry_module
            ) do
         {:ok, result} when is_map(result) ->
           ElmcSurfaceFields.optional_runtime_artifacts(result)
@@ -395,10 +398,13 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
       File.rm!(default_main)
     end
 
+    entry_module = entry_module_from_path(dest)
+
     compile_artifacts =
       case safe_compiler_compile(
              "debugger-inline-#{session_key}-#{:erlang.phash2({rel_path, source})}",
-             workspace_root: watch_dir
+             workspace_root: watch_dir,
+             entry_module: entry_module
            ) do
         {:ok, result} when is_map(result) ->
           ElmcSurfaceFields.optional_runtime_artifacts(result)

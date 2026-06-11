@@ -11,10 +11,44 @@ defmodule Ide.Debugger.ConfigurationSaveTest do
   end
 
   test "message_payload falls back to FromBridge without subscription callback" do
-    {message, value} =
-      ConfigurationSave.message_payload(%{}, %{}, %{"event" => "configuration.closed"}, %{})
+    bridge_event = %{
+      "event" => "configuration.closed",
+      "payload" => %{"response" => ~s({"theme":"dark"})}
+    }
+
+    {message, value} = ConfigurationSave.message_payload(%{}, %{}, bridge_event, %{})
 
     assert message == "FromBridge"
-    assert value == %{"ctor" => "FromBridge", "args" => [%{"event" => "configuration.closed"}]}
+    assert value == %{"ctor" => "FromBridge", "args" => [bridge_event]}
+  end
+
+  test "message_payload uses configuration.closed bridge event when subscription callback is present" do
+    bridge_event = %{
+      "event" => "configuration.closed",
+      "payload" => %{"response" => ~s({"backgroundColor":"blue"})}
+    }
+
+    introspect = %{
+      "subscription_calls" => [
+        %{
+          "callback_constructor" => "FromBridge",
+          "target" => "GeneratedPreferences.onConfiguration"
+        }
+      ]
+    }
+
+    bridge_ctx = %{
+      introspect: fn
+        _state, :companion -> introspect
+        _state, :phone -> %{}
+      end,
+      cmd_calls: &Ide.Debugger.IntrospectAccess.cmd_calls/2
+    }
+
+    {message, value} =
+      ConfigurationSave.message_payload(%{companion: %{model: %{}}}, %{}, bridge_event, bridge_ctx)
+
+    assert message == "FromBridge"
+    assert value == %{"ctor" => "FromBridge", "args" => [bridge_event]}
   end
 end

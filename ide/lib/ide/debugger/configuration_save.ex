@@ -5,7 +5,6 @@ defmodule Ide.Debugger.ConfigurationSave do
   alias Ide.Debugger.CompanionBridge.Runtime, as: CompanionBridgeRuntime
   alias Ide.Debugger.ConfigurationProtocol
   alias Ide.Debugger.ProtocolRx
-  alias Ide.Debugger.SubscriptionResponses
   alias Ide.Debugger.Types
 
   @type bridge_ctx :: %{
@@ -31,16 +30,15 @@ defmodule Ide.Debugger.ConfigurationSave do
           Types.wire_map(),
           bridge_ctx()
         ) :: {String.t(), Types.subscription_payload()}
-  def message_payload(state, encoded_values, bridge_event, bridge_ctx)
-      when is_map(state) and is_map(encoded_values) and is_map(bridge_event) and
-             is_map(bridge_ctx) do
-    case subscription_callback(state, bridge_ctx) do
-      callback when is_binary(callback) and callback != "" ->
-        {callback, SubscriptionResponses.ok_wire_value(callback, encoded_values)}
+  def message_payload(state, _encoded_values, bridge_event, bridge_ctx)
+      when is_map(state) and is_map(bridge_event) and is_map(bridge_ctx) do
+    callback =
+      case subscription_callback(state, bridge_ctx) do
+        callback when is_binary(callback) and callback != "" -> callback
+        _ -> "FromBridge"
+      end
 
-      _ ->
-        {"FromBridge", %{"ctor" => "FromBridge", "args" => [bridge_event]}}
-    end
+    {callback, %{"ctor" => callback, "args" => [bridge_event]}}
   end
 
   def message_payload(_state, _encoded_values, bridge_event, _bridge_ctx),

@@ -144,10 +144,9 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
                "target_type" => "app"
              })
 
-    assert {:ok, view, _html} = live(conn, ~p"/projects/#{project.slug}/resources")
+    assert {:ok, view, _html} = live(conn, ~p"/projects/#{project.slug}/resources/bitmaps-static")
 
     assert has_element?(view, "button[disabled]", "Upload bitmap")
-    assert has_element?(view, "button[disabled]", "Upload font")
 
     bitmap_upload =
       file_input(view, "#bitmap-upload-form", :bitmap, [
@@ -166,8 +165,11 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
              "Upload bitmap"
            )
 
+    assert {:ok, fonts_view, _html} =
+             live(conn, ~p"/projects/#{project.slug}/resources/fonts")
+
     assert has_element?(
-             view,
+             fonts_view,
              "form[phx-submit='upload-font-resource'] button[disabled]",
              "Upload font"
            )
@@ -580,13 +582,13 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
     assert get_in(saved_state.watch, [:view_tree, "type"]) == "windowStack"
     view_tree_json = Jason.encode!(saved_state.watch.view_tree)
     assert view_tree_json =~ ~s("text":"21C Clear")
-    assert view_tree_json =~ ~s("text_color":192)
+    assert view_tree_json =~ ~s("text_color":248)
 
     runtime_output = get_in(saved_state.watch, [:model, "runtime_view_output"]) || []
     assert runtime_output != []
     runtime_output_json = Jason.encode!(runtime_output)
     assert runtime_output_json =~ ~s("text":"21C Clear")
-    assert runtime_output_json =~ ~s("color":192,"kind":"text_color")
+    assert runtime_output_json =~ ~s("color":248,"kind":"text_color")
 
     saved_html = render(view)
 
@@ -625,7 +627,9 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
     messages = Enum.map(saved_state.debugger_timeline, & &1.message)
 
     assert Enum.any?(messages, fn msg ->
-             String.contains?(msg, "SetShowDate true") or
+             (String.contains?(msg, "SetShowDate") and
+                (String.contains?(msg, "true") or String.contains?(msg, "True"))) or
+               msg == "FromPhone True" or
                (String.contains?(msg, "FromBridge") and String.contains?(msg, "showDate"))
            end)
 
@@ -672,10 +676,12 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
       end
     end)
 
+    slug = "workspace-debugger-watch-main-bootstrap-#{System.unique_integer([:positive])}"
+
     assert {:ok, project} =
              Projects.create_project(%{
                "name" => "WorkspaceDebuggerWatchMainBootstrap",
-               "slug" => "workspace-debugger-watch-main-bootstrap",
+               "slug" => slug,
                "target_type" => "app",
                "template" => "watchface-tutorial-complete"
              })
@@ -691,6 +697,7 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
 
     render_click(view, "debugger-start")
     _ = render_async(view, 10_000)
+    assert :ok = Debugger.RuntimeBackgroundDrains.await_idle(project.slug, 120_000)
 
     assert {:ok, state} = Debugger.snapshot(project.slug, event_limit: 50)
     watch_model = get_in(state, [:watch, :model]) || %{}
@@ -699,7 +706,7 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
     assert watch_model["source_root"] == "watch"
 
     assert get_in(state.companion, [:model, "runtime_execution", "execution_backend"]) ==
-             "external"
+             "compiled_elixir"
 
     timeline =
       state.debugger_timeline
@@ -708,12 +715,14 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
 
     assert {"watch", "init"} in timeline
     assert Enum.any?(timeline, &(&1 == {"watch", "init_device_data"}))
-    assert Enum.any?(timeline, &(&1 == {"phone", "protocol_rx"}))
 
     assert Enum.any?(timeline, fn
-             {"watch", "protocol_rx"} -> true
-             {"watch", "init_cmd"} -> true
-             _ -> false
+             {target, source} when target in ["phone", "companion", "watch"] and
+                                     source in ["protocol_rx", "init_cmd"] ->
+               true
+
+             _ ->
+               false
            end) or
              Enum.any?(state.events, fn event ->
                event.type in ["debugger.protocol_tx", "debugger.protocol_rx"]

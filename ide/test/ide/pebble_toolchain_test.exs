@@ -357,7 +357,7 @@ defmodule Ide.PebbleToolchainTest do
              "#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS"
   end
 
-  test "pebble app template defers startup cmds to a timer after init returns" do
+  test "pebble app template runs startup cmds after init completes" do
     template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
 
     init_body =
@@ -401,7 +401,16 @@ defmodule Ide.PebbleToolchainTest do
 
     refute draw_body =~ "#ifdef ELMC_WATCHFACE_MODE\n  {\n    GRect compile = compile_display_bounds();"
     assert draw_body =~ "bounds.size.w < compile.size.w || bounds.size.h < compile.size.h"
-    assert template =~ "app_timer_register(1, startup_cmd_callback, NULL);"
+    assert template =~ "startup_cmd_callback(NULL);"
+
+    complete_elm_init_body =
+      case Regex.run(~r/static void complete_elm_init\(void\) \{(.*?)^\}/ms, template) do
+        [_, body] -> body
+        _ -> flunk("complete_elm_init() body not found in pebble app template")
+      end
+
+    assert complete_elm_init_body =~ "startup_cmd_callback(NULL);"
+    refute complete_elm_init_body =~ "app_timer_register(1, startup_cmd_callback, NULL);"
   end
 
   test "pebble app template applies antialiased style and disables mono stroke dither" do
