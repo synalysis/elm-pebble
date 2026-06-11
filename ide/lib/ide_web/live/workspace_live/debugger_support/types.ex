@@ -5,6 +5,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Types do
   alias Ide.Debugger.RuntimeArtifacts.Types, as: ArtifactTypes
   alias Ide.Debugger.Types, as: DebuggerTypes
 
+  @type debugger_timeline_mode :: String.t()
+  @type debugger_surface_target :: String.t()
+  @type debugger_event :: DebuggerTypes.debugger_event()
+  @type debugger_row_source :: debugger_state_map() | events() | nil
+  @type debugger_row_wire :: debugger_event() | wire_map()
+  @type elmc_lifecycle_payload :: wire_map()
+
   @type socket :: Phoenix.LiveView.Socket.t()
   @type maybe_non_neg_integer :: non_neg_integer() | nil
   @type timeline_kind :: :all | :protocol | :update | :render | :lifecycle | :other
@@ -60,9 +67,15 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Types do
         }
   @type replay_preview_row :: DebuggerTypes.ReplayEventPayload.replay_preview_row()
 
+  @type replay_compare_status :: :none | :match | :mismatch
+  @type replay_compare_reason :: String.t() | nil
+  @type replay_drift_severity :: :none | :mild | :medium | :high
+  @type replay_surface_target :: String.t()
+  @type replay_preview_target :: String.t()
+
   @type replay_compare :: %{
-          status: :none | :match | :mismatch,
-          reason: String.t() | nil,
+          status: replay_compare_status(),
+          reason: replay_compare_reason(),
           preview_count: non_neg_integer(),
           applied_count: non_neg_integer(),
           mismatch_preview: replay_preview_row() | nil,
@@ -96,7 +109,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Types do
   @type compact_scene_op :: %{
           optional(:op) => svg_op(),
           optional(:bounds) => bounds_map() | nil,
-          optional(:hash) => String.t()
+          optional(:hash) => String.t(),
+          optional(String.t()) => wire_value(),
+          optional(atom()) => wire_value()
         }
 
   @type compact_scene :: %{
@@ -120,6 +135,33 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Types do
           optional(String.t()) => wire_value()
         }
 
+  @type animation_hydration_fields :: %{
+          required(:href) => String.t(),
+          required(:width) => non_neg_integer(),
+          required(:height) => non_neg_integer(),
+          required(:play_count) => non_neg_integer(),
+          required(:anim_id) => String.t()
+        }
+
+  @type resource_ctor_ref :: String.t() | atom() | wire_map()
+
+  @type svg_path :: %{
+          required(:points) => [[integer()]],
+          required(:offset_x) => integer(),
+          required(:offset_y) => integer(),
+          required(:rotation) => integer()
+        }
+
+  @type path_payload :: %{
+          optional(:points) => [{integer(), integer()}] | list(),
+          optional(:offset_x) => integer(),
+          optional(:offset_y) => integer(),
+          optional(:rotation) => integer()
+        }
+
+  @type group_style_map :: wire_map()
+  @type elm_introspect :: Ide.Debugger.Types.elm_introspect()
+
   @type flattened_rendered_node :: %{
           required(:path) => String.t(),
           required(:type) => String.t(),
@@ -133,6 +175,18 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Types do
   @type timeline_event :: DebuggerTypes.runtime_event() | DebuggerTypes.debugger_event()
   @type events :: [timeline_event()]
 
+  @type replay_count_map :: DebuggerTypes.ReplayEventPayload.count_map()
+  @type replay_telemetry :: DebuggerTypes.ReplayEventPayload.replay_telemetry()
+  @type replay_preview_row_wire :: replay_preview_row() | wire_map()
+  @type replay_preview_opts :: %{
+          optional(:count) => wire_input(),
+          optional(:target) => wire_input(),
+          optional(:cursor_seq) => maybe_non_neg_integer(),
+          optional(atom()) => wire_input(),
+          optional(String.t()) => wire_input()
+        }
+  @type replay_target_filter :: replay_surface_target() | nil
+
   @type replay_metadata :: %{
           optional(:seq) => non_neg_integer(),
           optional(:target) => String.t() | nil,
@@ -140,14 +194,17 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Types do
           optional(:requested_count) => non_neg_integer() | nil,
           optional(:replayed_count) => non_neg_integer() | nil,
           optional(:cursor_seq) => non_neg_integer() | nil,
-          optional(:replay_telemetry) => DebuggerTypes.wire_map(),
-          optional(:replay_target_counts) => DebuggerTypes.ReplayEventPayload.count_map(),
-          optional(:replay_message_counts) => DebuggerTypes.ReplayEventPayload.count_map(),
+          optional(:replay_telemetry) => replay_telemetry(),
+          optional(:replay_target_counts) => replay_count_map(),
+          optional(:replay_message_counts) => replay_count_map(),
           optional(:replay_preview) => [replay_preview_row()]
         }
 
+  @type diagnostics_preview_source ::
+          String.t()
+
   @type diagnostics_preview_result :: %{
-          required(:source) => String.t(),
+          required(:source) => diagnostics_preview_source(),
           required(:rows) => [DebuggerTypes.elmc_diagnostic_row()]
         }
 
@@ -197,6 +254,26 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Types do
         }
 
   @type runtime_value :: DebuggerTypes.wire_value()
+  @type json_export_input :: wire_map() | view_tree() | [wire_value()] | wire_value()
+  @type module_exposing :: String.t() | [String.t()]
+
+  @type debugger_state_export_ctx :: %{
+          optional(:format_version) => String.t(),
+          required(:project_name) => String.t(),
+          required(:project_slug) => String.t(),
+          required(:timeline_mode) => String.t(),
+          required(:timeline_text) => String.t(),
+          required(:watch_model_json) => String.t(),
+          required(:companion_model_json) => String.t(),
+          required(:rendered_view_json) => String.t(),
+          optional(:session_running) => boolean() | nil,
+          optional(:session_event_count) => non_neg_integer() | nil,
+          optional(:debugger_cursor_seq) => non_neg_integer() | String.t() | nil,
+          optional(:selected_timeline_seq) => non_neg_integer() | String.t() | nil,
+          optional(:watch_profile_id) => String.t() | nil,
+          optional(:runtime_model_warnings) => String.t() | nil
+        }
+
   @type debugger_state_map :: DebuggerTypes.runtime_state()
   @type wire_payload :: DebuggerTypes.debugger_timeline_payload()
 end

@@ -14,6 +14,18 @@ defmodule Ide.Resources.ResourceStore do
   @type font_source :: Types.font_source()
   @type vector_entry :: Types.vector_entry()
   @type animation_entry :: Types.animation_entry()
+  @type animation_resource_entry :: Types.animation_resource_entry()
+  @type manifest_wire_row :: Types.manifest_wire_row()
+  @type resource_error :: Types.resource_error()
+  @type bitmap_import_result :: Types.bitmap_import_result()
+  @type font_import_result :: Types.font_import_result()
+  @type font_variant_result :: Types.font_variant_result()
+  @type vector_import_result :: Types.vector_import_result()
+  @type animation_import_result :: Types.animation_import_result()
+  @type delete_entries_result :: Types.delete_entries_result()
+  @type rename_result :: Types.rename_result()
+  @type font_form_params :: Types.font_form_params()
+  @type font_delete_source_result :: Types.font_delete_source_result()
 
   defdelegate manifest_rel_path(), to: Manifest
   defdelegate generated_module_rel_path(), to: Manifest
@@ -51,5 +63,10 @@ defmodule Ide.Resources.ResourceStore do
   defdelegate delete_font_source(project, source_id), to: Fonts
   defdelegate font_file_path(project, ctor), to: Fonts
 
+  defdelegate list_animations(project), to: Animations, as: :list
+  defdelegate import_animation(project, upload_path, original_name), to: Animations
+  defdelegate delete_animation(project, ctor), to: Animations
+  defdelegate update_animation_base_name(project, old_ctor, new_base), to: Animations, as: :update_base_name
+  defdelegate animation_file_path(project, ctor), to: Animations
   defdelegate animation_file_path_by_id(project, id), to: Animations
 end

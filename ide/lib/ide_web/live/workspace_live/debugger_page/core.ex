@@ -4,15 +4,26 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
 
   import IdeWeb.WatchInteractives
 
-  alias Ide.Debugger
-  alias Ide.Debugger.RuntimeArtifacts
-  alias Ide.Projects
-  alias Ide.Projects.Project
-  alias Ide.Resources.ResourceStore
   alias IdeWeb.WorkspaceLive.DebuggerPreview
-  alias IdeWeb.WorkspaceLive.DebuggerPage.Assigns
+
+  alias IdeWeb.WorkspaceLive.DebuggerPage.{
+    Assigns,
+    BitmapHydration,
+    CompanionConfiguration,
+    Export,
+    ModelMetadata,
+    ModelTree,
+    Preview,
+    RenderedTree,
+    SessionState,
+    SubscriptionControls,
+    SvgRender,
+    Timeline,
+    WatchButtons,
+    WatchProfiles
+  }
+
   alias IdeWeb.WorkspaceLive.DebuggerSupport
-  alias IdeWeb.WorkspaceLive.DebuggerSupport.Util, as: DebuggerUtil
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Types, as: SupportTypes
   alias Phoenix.LiveView.Rendered
 
@@ -24,28 +35,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
   @type svg_op :: SupportTypes.svg_op()
   @type wire_input :: String.t() | integer() | float() | boolean() | list() | nil
   @type model_value :: map() | list() | String.t() | number() | boolean() | nil
-
-  @debugger_model_metadata_keys ~w(
-    last_message
-    last_operation
-    step_counter
-    last_runtime_step_message
-    last_runtime_step_op
-    runtime_last_message
-    runtime_message_source
-    runtime_model_source
-    runtime_view_output
-    runtime_view_output_model_sha256
-    runtime_view_tree
-    runtime_view_tree_source
-    runtime_view_tree_sha256
-    runtime_model_sha256
-    protocol_last_inbound_message
-    protocol_last_inbound_from
-    protocol_inbound_count
-    protocol_last_trigger
-    configuration
-  )
 
   @spec render(assigns()) :: rendered()
   def render(assigns) do
@@ -65,7 +54,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
           <.debugger_copy_button
             :if={@debug_mode}
             id="debugger-copy-agent-state"
-            text={debugger_agent_state_clipboard_text(assigns)}
+            text={Export.agent_state_clipboard_text(assigns, @project)}
             label="Copy for agent"
             title="Copy timeline, watch model, companion model, and rendered view as one markdown document"
           />
@@ -79,24 +68,24 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
         <button
           type="button"
           phx-click="debugger-start"
-          disabled={debugger_bootstrap_busy?(@debugger_bootstrap_status)}
+          disabled={SessionState.bootstrap_busy?(@debugger_bootstrap_status)}
           class={[
             "rounded px-2 py-1 text-xs font-medium text-white",
-            (debugger_bootstrap_busy?(@debugger_bootstrap_status) &&
+            (SessionState.bootstrap_busy?(@debugger_bootstrap_status) &&
                "cursor-not-allowed bg-zinc-400") || "bg-zinc-800 hover:bg-zinc-700"
           ]}
         >
-          {debugger_start_button_label(@debugger_state, @debugger_bootstrap_status)}
+          {SessionState.start_button_label(@debugger_state, @debugger_bootstrap_status)}
         </button>
         <form class="flex items-center gap-2" phx-change="debugger-set-watch-profile">
           <label class="flex items-center gap-2 text-xs text-zinc-600">
             <span class="shrink-0">Watch model</span>
             <select
               name="watch_profile_id"
-              disabled={debugger_bootstrap_busy?(@debugger_bootstrap_status)}
+              disabled={SessionState.bootstrap_busy?(@debugger_bootstrap_status)}
               class={[
                 "min-w-[12rem] max-w-full rounded border border-zinc-300 bg-white py-1 pl-2 pr-8 text-xs",
-                debugger_bootstrap_busy?(@debugger_bootstrap_status) &&
+                SessionState.bootstrap_busy?(@debugger_bootstrap_status) &&
                   "cursor-not-allowed opacity-60"
               ]}
             >
@@ -105,7 +94,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
                 value={profile["id"]}
                 selected={
                   profile["id"] ==
-                    selected_debugger_watch_profile_id(@debugger_state, @project)
+                    WatchProfiles.selected_id(@debugger_state, @project)
                 }
               >
                 {profile["label"]}
@@ -115,7 +104,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
         </form>
       </div>
       <div
-        :if={debugger_bootstrap_busy?(@debugger_bootstrap_status)}
+        :if={SessionState.bootstrap_busy?(@debugger_bootstrap_status)}
         class="mt-2 w-full max-w-xl"
         data-testid="debugger-bootstrap-progress"
       >
@@ -131,7 +120,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
         </div>
       </div>
       <div
-        :if={debugger_companion_bootstrap_busy?(@debugger_companion_bootstrap_status)}
+        :if={SessionState.companion_bootstrap_busy?(@debugger_companion_bootstrap_status)}
         class="mt-2 w-full max-w-xl"
         data-testid="debugger-companion-bootstrap-progress"
       >
@@ -159,7 +148,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
                 text={
                   @debugger_rows
                   |> DebuggerSupport.debugger_rows_for_mode(
-                    debugger_visible_timeline_mode(@debugger_timeline_mode, @companion_app_present)
+                    SessionState.visible_timeline_mode(@debugger_timeline_mode, @companion_app_present)
                   )
                   |> DebuggerSupport.debugger_timeline_text()
                 }
@@ -184,7 +173,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
           </div>
           <div
             :if={
-              debugger_visible_timeline_mode(@debugger_timeline_mode, @companion_app_present) !=
+              SessionState.visible_timeline_mode(@debugger_timeline_mode, @companion_app_present) !=
                 "separate"
             }
             class="mt-2 min-h-0 flex-1 overflow-auto rounded border border-zinc-200 bg-white"
@@ -193,7 +182,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
               rows={
                 DebuggerSupport.debugger_rows_for_mode(
                   @debugger_rows,
-                  debugger_visible_timeline_mode(@debugger_timeline_mode, @companion_app_present)
+                  SessionState.visible_timeline_mode(@debugger_timeline_mode, @companion_app_present)
                 )
               }
               selected_row={@debugger_selected_row}
@@ -202,7 +191,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
           </div>
           <div
             :if={
-              debugger_visible_timeline_mode(@debugger_timeline_mode, @companion_app_present) ==
+              SessionState.visible_timeline_mode(@debugger_timeline_mode, @companion_app_present) ==
                 "separate"
             }
             class="mt-2 grid min-h-0 flex-1 grid-rows-2 gap-2"
@@ -241,7 +230,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
               </h3>
               <.debugger_copy_button
                 id="debugger-watch-model-copy"
-                text={DebuggerSupport.copy_json(debugger_debugger_model(@debugger_watch_runtime))}
+                text={DebuggerSupport.copy_json(ModelMetadata.public_model(@debugger_watch_runtime))}
                 title="Copy watch model as JSON"
               />
             </div>
@@ -264,7 +253,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
               </h3>
               <.debugger_copy_button
                 id="debugger-companion-model-copy"
-                text={DebuggerSupport.copy_json(debugger_debugger_model(@debugger_companion_runtime))}
+                text={
+                  DebuggerSupport.copy_json(ModelMetadata.public_model(@debugger_companion_runtime))
+                }
                 title="Copy companion model as JSON"
               />
             </div>
@@ -331,7 +322,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
               mode={:debugger}
               watch_trigger_buttons={@debugger_watch_trigger_buttons}
               disabled_subscriptions={@debugger_disabled_subscriptions}
-              running={debugger_state_running?(@debugger_state)}
+              running={SessionState.running?(@debugger_state)}
             />
           </div>
         </div>
@@ -376,7 +367,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
       type="button"
       phx-click="debugger-select-debugger-event"
       phx-value-seq={row.seq}
-      class={debugger_debugger_timeline_row_class(row, @selected_row)}
+      class={Timeline.row_class(row, @selected_row)}
     >
       <span class="font-mono text-zinc-500">#{row.seq}</span>
       <span class="ml-1 rounded bg-zinc-100 px-1 font-medium text-zinc-700">
@@ -392,33 +383,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
     """
   end
 
-  @spec debugger_debugger_timeline_row_class(map(), map()) :: [String.t() | boolean()]
-  defp debugger_debugger_timeline_row_class(row, selected_row) do
-    selected? =
-      is_map(row) and is_map(selected_row) and
-        Map.get(row, :seq) == Map.get(selected_row, :seq)
-
-    target = if is_map(row), do: Map.get(row, :target), else: nil
-
-    target_class =
-      case target do
-        "watch" -> "bg-sky-50 hover:bg-sky-100"
-        "companion" -> "bg-emerald-50 hover:bg-emerald-100"
-        _ -> "bg-white hover:bg-blue-50"
-      end
-
-    [
-      "block w-full border-b border-zinc-100 px-2 py-1.5 text-left text-[11px]",
-      target_class,
-      selected? && "bg-blue-100 text-blue-950 ring-1 ring-inset ring-blue-300"
-    ]
-  end
-
   attr(:runtime, :any, required: true)
 
   @spec debugger_model_tree(assigns()) :: rendered()
   defp debugger_model_tree(assigns) do
-    model = debugger_debugger_model(assigns.runtime)
+    model = ModelMetadata.public_model(assigns.runtime)
     assigns = assign(assigns, :model, model)
 
     ~H"""
@@ -441,15 +410,15 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
   @spec debugger_companion_configuration(assigns()) :: rendered()
   defp debugger_companion_configuration(assigns) do
     configuration =
-      debugger_companion_configuration_model(
+      CompanionConfiguration.model(
         Map.get(assigns.debugger_state || %{}, :companion) ||
           Map.get(assigns.debugger_state || %{}, "companion")
       ) ||
-        debugger_companion_configuration_model(assigns.runtime)
+        CompanionConfiguration.model(assigns.runtime)
 
     configuration =
       if is_map(configuration) and map_size(assigns.draft_values) > 0 do
-        debugger_put_configuration_values(configuration, assigns.draft_values)
+        CompanionConfiguration.put_values(configuration, assigns.draft_values)
       else
         configuration
       end
@@ -540,7 +509,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
         name={"configuration[#{@field_id}]"}
         type="checkbox"
         value="true"
-        checked={debugger_configuration_truthy?(@control_value)}
+        checked={CompanionConfiguration.truthy?(@control_value)}
         class="mt-1 rounded border-zinc-300"
       />
       <select
@@ -559,11 +528,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
       <input
         :if={@control_type in ["text", "number", "color", "slider"]}
         name={"configuration[#{@field_id}]"}
-        type={debugger_configuration_input_type(@control_type)}
-        value={debugger_configuration_input_value(@control_value)}
+        type={CompanionConfiguration.input_type(@control_type)}
+        value={CompanionConfiguration.input_value(@control_value)}
         min={@control["min"]}
         max={@control["max"]}
-        step={debugger_configuration_input_step(@control_type, @control)}
+        step={CompanionConfiguration.input_step(@control_type, @control)}
         class="mt-1 w-full rounded border border-zinc-200 bg-white px-2 py-1 text-[11px]"
       />
       <p
@@ -618,536 +587,17 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
   end
 
   @spec debugger_model_children(model_node()) :: [%{label: String.t(), value: model_value()}]
-  defp debugger_model_children(value) when is_map(value) do
-    if debugger_model_elm_constructor?(value) do
-      []
-    else
-      value
-      |> Enum.map(fn {key, child_value} -> %{label: to_string(key), value: child_value} end)
-      |> Enum.sort_by(& &1.label)
-    end
-  end
-
-  defp debugger_model_children(value) when is_list(value) do
-    value
-    |> Enum.with_index()
-    |> Enum.map(fn {child_value, index} -> %{label: "[#{index}]", value: child_value} end)
-  end
-
-  defp debugger_model_children(_value), do: []
+  defp debugger_model_children(value), do: ModelTree.debugger_model_children(value)
 
   @spec debugger_model_tooltip(String.t(), model_node(), [map()], String.t()) :: String.t()
-  defp debugger_model_tooltip(label, _value, [], scalar)
-       when is_binary(label) and is_binary(scalar),
-       do: "#{label} = #{scalar}"
-
-  defp debugger_model_tooltip(label, value, _children, _scalar) when is_binary(label) do
-    "#{label} #{debugger_model_container_label(value)}"
-  end
+  defp debugger_model_tooltip(label, value, children, scalar),
+    do: ModelTree.debugger_model_tooltip(label, value, children, scalar)
 
   @spec debugger_model_scalar(model_node()) :: String.t()
-  defp debugger_model_scalar(value) when is_map(value) do
-    if debugger_model_elm_constructor?(value),
-      do: debugger_model_elm_value(value),
-      else: inspect(value)
-  end
-
-  defp debugger_model_scalar(nil), do: "null"
-  defp debugger_model_scalar(value) when is_binary(value), do: inspect(value)
-
-  defp debugger_model_scalar(value) when is_boolean(value),
-    do: if(value, do: "True", else: "False")
-
-  defp debugger_model_scalar(value) when is_number(value), do: to_string(value)
-  defp debugger_model_scalar(value) when is_atom(value), do: Atom.to_string(value)
-  defp debugger_model_scalar(value), do: inspect(value)
+  defp debugger_model_scalar(value), do: ModelTree.debugger_model_scalar(value)
 
   @spec debugger_model_container_label(map() | list()) :: String.t()
-  defp debugger_model_container_label(value) when is_map(value) do
-    if debugger_model_elm_constructor?(value),
-      do: debugger_model_elm_value(value),
-      else: "{#{map_size(value)}}"
-  end
-
-  defp debugger_model_container_label(value) when is_list(value), do: "[#{length(value)}]"
-
-  @spec debugger_model_elm_constructor?(map()) :: boolean()
-  defp debugger_model_elm_constructor?(value) when is_map(value) do
-    ctor = Map.get(value, "ctor") || Map.get(value, "$ctor") || Map.get(value, :ctor)
-    args = Map.get(value, "args") || Map.get(value, "$args") || Map.get(value, :args) || []
-
-    is_binary(ctor) and is_list(args) and
-      value
-      |> Map.keys()
-      |> Enum.all?(&(to_string(&1) in ["ctor", "args", "$ctor", "$args"]))
-  end
-
-  @spec debugger_model_elm_value(map()) :: String.t()
-  defp debugger_model_elm_value(%{} = value) do
-    ctor = Map.get(value, "ctor") || Map.get(value, "$ctor") || Map.get(value, :ctor)
-    args = Map.get(value, "args") || Map.get(value, "$args") || Map.get(value, :args) || []
-
-    case {ctor, args} do
-      {ctor, []} when is_binary(ctor) ->
-        ctor
-
-      {ctor, args} when is_binary(ctor) and is_list(args) ->
-        rendered_args =
-          args
-          |> Enum.map(&debugger_model_elm_arg_value/1)
-          |> Enum.join(" ")
-
-        String.trim("#{ctor} #{rendered_args}")
-
-      _ ->
-        inspect(value)
-    end
-  end
-
-  @spec debugger_model_elm_arg_value(map()) :: String.t()
-  defp debugger_model_elm_arg_value(%{} = value) do
-    if debugger_model_elm_constructor?(value) do
-      rendered = debugger_model_elm_value(value)
-
-      if constructor_arg_count(value) > 0 do
-        "(" <> rendered <> ")"
-      else
-        rendered
-      end
-    else
-      debugger_model_elm_record_value(value)
-    end
-  end
-
-  defp debugger_model_elm_arg_value(value) when is_list(value) do
-    inner =
-      value
-      |> Enum.map(&debugger_model_elm_arg_value/1)
-      |> Enum.join(", ")
-
-    "[" <> inner <> "]"
-  end
-
-  defp debugger_model_elm_arg_value(value) when is_boolean(value),
-    do: if(value, do: "True", else: "False")
-
-  defp debugger_model_elm_arg_value(value), do: debugger_model_scalar(value)
-
-  @spec debugger_model_elm_record_value(map()) :: String.t()
-  defp debugger_model_elm_record_value(value) when is_map(value) do
-    inner =
-      value
-      |> Enum.map(fn {key, child_value} ->
-        "#{key} = #{debugger_model_elm_arg_value(child_value)}"
-      end)
-      |> Enum.sort()
-      |> Enum.join(", ")
-
-    "{ " <> inner <> " }"
-  end
-
-  @spec constructor_arg_count(map()) :: non_neg_integer()
-  defp constructor_arg_count(%{} = value) do
-    args = Map.get(value, "args") || Map.get(value, "$args") || Map.get(value, :args) || []
-    if is_list(args), do: length(args), else: 0
-  end
-
-  @companion_protocol_runtime_keys ~w(
-    status
-    protocol_message_count
-    protocol_inbound_count
-    protocol_outbound_count
-    protocol_last_inbound_message
-    protocol_last_inbound_from
-    screenW
-    screenH
-    displayShape
-    colorMode
-  )
-
-  @spec runtime_model_warnings_text(map() | nil) :: String.t() | nil
-  defp runtime_model_warnings_text(runtime) do
-    model = debugger_raw_runtime_model(runtime)
-
-    warnings =
-      [
-        elmx_compile_warning(model),
-        runtime_execution_warning(model),
-        unresolved_runtime_model_warning(model)
-      ]
-      |> Enum.reject(&is_nil/1)
-
-    case warnings do
-      [] -> nil
-      parts -> Enum.join(parts, "\n\n")
-    end
-  end
-
-  @spec elmx_compile_warning(map()) :: String.t() | nil
-  defp elmx_compile_warning(model) when is_map(model) do
-    case Map.get(model, "elmx_compile_error_message") || Map.get(model, :elmx_compile_error_message) do
-      message when is_binary(message) and message != "" ->
-        "elmx compile failed: #{message}\n\nRecompile the watch (and phone, if used) from the Build tab, then reload the debugger."
-
-      _ ->
-        nil
-    end
-  end
-
-  @spec runtime_execution_warning(map()) :: String.t() | nil
-  defp runtime_execution_warning(model) when is_map(model) do
-    case Map.get(model, "runtime_execution_error") || Map.get(model, :runtime_execution_error) do
-      message when is_binary(message) and message != "" ->
-        "Runtime execution error: #{message}"
-
-      _ ->
-        nil
-    end
-  end
-
-  defp runtime_execution_warning(_), do: nil
-
-  @spec unresolved_runtime_model_warning(map()) :: String.t() | nil
-  defp unresolved_runtime_model_warning(model) when is_map(model) do
-    case Ide.Debugger.RuntimeModelQuality.unresolved_field_names(model) do
-      [] ->
-        nil
-
-      fields ->
-        """
-        Some watch `runtime_model` fields still contain parser/introspect artifacts (`$var`, `call`, `$opaque`) instead of evaluated Elm values: #{Enum.join(fields, ", ")}.
-
-        Typical causes: elmx artifacts were missing on reload, or `Main.init` did not evaluate via the executor. Recompile, reload the debugger, and check `runtime_execution_error` / `operation_source` on the watch model. Preview needs a fully evaluated model (see `previewUnavailable` when view eval fails).
-        """
-        |> String.trim()
-    end
-  end
-
-  @spec debugger_debugger_model(map() | nil) :: map()
-  defp debugger_debugger_model(runtime) do
-    runtime
-    |> debugger_raw_runtime_model()
-    |> Ide.Debugger.RuntimeModelQuality.public_runtime_model()
-    |> hide_debugger_model_metadata()
-    |> hide_companion_protocol_runtime_metadata(runtime)
-  end
-
-  @spec hide_companion_protocol_runtime_metadata(map(), map() | nil) :: map()
-  defp hide_companion_protocol_runtime_metadata(model, runtime) when is_map(model) do
-    if companion_protocol_placeholder_model?(model, runtime) do
-      %{}
-    else
-      Map.drop(model, @companion_protocol_runtime_keys)
-    end
-  end
-
-  @spec companion_protocol_placeholder_model?(map(), map() | nil) :: boolean()
-  defp companion_protocol_placeholder_model?(runtime_model, %{} = runtime)
-       when is_map(runtime_model) do
-    app_bootstrapped? =
-      case RuntimeArtifacts.introspect(runtime) do
-        ei when is_map(ei) and map_size(ei) > 0 ->
-          true
-
-        _ ->
-          runtime
-          |> RuntimeArtifacts.execution_model()
-          |> RuntimeArtifacts.versioned_elmx_artifacts?()
-      end
-
-    not app_bootstrapped? and
-      Map.keys(runtime_model)
-      |> Enum.map(&to_string/1)
-      |> Enum.all?(&(&1 in @companion_protocol_runtime_keys))
-  end
-
-  @spec debugger_raw_runtime_model(map() | nil) :: map()
-  defp debugger_raw_runtime_model(%{} = runtime) do
-    Map.get(runtime, :model) || Map.get(runtime, "model") || %{}
-  end
-
-  @spec debugger_agent_state_clipboard_text(map()) :: String.t()
-  defp debugger_agent_state_clipboard_text(%{} = assigns) do
-    project = Map.get(assigns, :project)
-
-    {timeline_text, state, selected_seq} =
-      debugger_export_snapshot(assigns, project)
-
-    state = state || Map.get(assigns, :debugger_state)
-
-    watch_runtime =
-      debugger_export_watch_runtime(state, selected_seq, Map.get(assigns, :debugger_cursor_seq)) ||
-        Map.get(assigns, :debugger_watch_runtime)
-
-    DebuggerSupport.debugger_agent_state_markdown(%{
-      format_version: "elm-pebble.debugger_state.v1",
-      project_name: project_name_for_clipboard(project),
-      project_slug: project_slug_for_clipboard(project),
-      timeline_mode: Map.get(assigns, :debugger_timeline_mode, "mixed"),
-      timeline_text: timeline_text,
-      runtime_model_warnings: runtime_model_warnings_text(watch_runtime),
-      watch_model_json: DebuggerSupport.copy_json(debugger_debugger_model(watch_runtime)),
-      companion_model_json:
-        DebuggerSupport.copy_json(
-          debugger_debugger_model(
-            debugger_export_companion_runtime(
-              state,
-              selected_seq,
-              Map.get(assigns, :debugger_cursor_seq)
-            ) ||
-              Map.get(assigns, :debugger_companion_runtime)
-          )
-        ),
-      rendered_view_json:
-        DebuggerSupport.copy_json(
-          debugger_rendered_tree(
-            debugger_export_watch_view_runtime(
-              state,
-              selected_seq,
-              Map.get(assigns, :debugger_cursor_seq)
-            ) ||
-              Map.get(assigns, :debugger_watch_view_runtime)
-          )
-        ),
-      session_running: state && debugger_state_running?(state),
-      session_event_count: if(state, do: length(state.events), else: nil),
-      debugger_cursor_seq: Map.get(assigns, :debugger_cursor_seq),
-      selected_timeline_seq: selected_seq,
-      watch_profile_id: state && debugger_state_watch_profile_id(state, project)
-    })
-  end
-
-  defp project_name_for_clipboard(%Project{name: name}) when is_binary(name), do: name
-  defp project_name_for_clipboard(_), do: ""
-
-  defp project_slug_for_clipboard(%Project{slug: slug}) when is_binary(slug), do: slug
-  defp project_slug_for_clipboard(_), do: ""
-
-  defp debugger_state_watch_profile_id(state, project) do
-    case Map.get(state, :watch_profile_id) do
-      nil -> selected_debugger_watch_profile_id(state, project)
-      id -> id
-    end
-  end
-
-  @spec debugger_export_watch_runtime(
-          map() | nil,
-          non_neg_integer() | nil,
-          non_neg_integer() | nil
-        ) ::
-          map() | nil
-  defp debugger_export_watch_runtime(%{} = state, selected_seq, cursor_seq) do
-    debugger_export_surface_runtime(state, selected_seq, cursor_seq, :watch)
-  end
-
-  defp debugger_export_watch_runtime(_state, _selected_seq, _cursor_seq), do: nil
-
-  @spec debugger_export_companion_runtime(
-          map() | nil,
-          non_neg_integer() | nil,
-          non_neg_integer() | nil
-        ) ::
-          map() | nil
-  defp debugger_export_companion_runtime(%{} = state, selected_seq, cursor_seq) do
-    debugger_export_surface_runtime(state, selected_seq, cursor_seq, :companion)
-  end
-
-  defp debugger_export_companion_runtime(_state, _selected_seq, _cursor_seq), do: nil
-
-  @spec debugger_export_watch_view_runtime(
-          map() | nil,
-          non_neg_integer() | nil,
-          non_neg_integer() | nil
-        ) ::
-          map() | nil
-  defp debugger_export_watch_view_runtime(%{} = state, selected_seq, cursor_seq) do
-    case debugger_export_surface_runtime(state, selected_seq, cursor_seq, :watch) do
-      %{} = watch_runtime ->
-        Debugger.render_runtime_preview_for_debugger(
-          watch_runtime,
-          Map.get(state, :watch),
-          :watch
-        )
-
-      _ ->
-        nil
-    end
-  end
-
-  defp debugger_export_watch_view_runtime(_state, _selected_seq, _cursor_seq), do: nil
-
-  @spec debugger_export_surface_runtime(
-          map(),
-          non_neg_integer() | nil,
-          non_neg_integer() | nil,
-          atom()
-        ) ::
-          map() | nil
-  defp debugger_export_surface_runtime(state, selected_seq, cursor_seq, surface)
-       when surface in [:watch, :companion, :phone] do
-    seq = selected_seq || cursor_seq
-
-    row_runtime =
-      state
-      |> DebuggerSupport.debugger_rows(500)
-      |> Enum.find(fn row -> row.seq == seq end)
-      |> case do
-        %{watch_runtime: rt} when surface == :watch and is_map(rt) -> rt
-        %{companion_runtime: rt} when surface == :companion and is_map(rt) -> rt
-        %{phone_runtime: rt} when surface == :phone and is_map(rt) -> rt
-        _ -> nil
-      end
-
-    row_runtime ||
-      case {surface, DebuggerSupport.snapshot_runtime_at_cursor(Map.get(state, :events, []), seq)} do
-        {:watch, %{watch: rt}} -> rt
-        {:phone, %{phone: rt}} -> rt
-        {:companion, %{companion: companion, phone: phone}} ->
-          DebuggerUtil.companion_or_phone_runtime(companion, phone)
-
-        {_, _} ->
-          nil
-      end
-  end
-
-  @spec debugger_export_snapshot(map(), Project.t() | nil) ::
-          {String.t(), map() | nil, non_neg_integer() | nil}
-  defp debugger_export_snapshot(assigns, %Project{} = project) do
-    selected_seq =
-      case Map.get(assigns, :debugger_selected_row) do
-        %{seq: s} -> s
-        %{"seq" => s} -> s
-        _ -> nil
-      end
-
-    timeline_mode = Map.get(assigns, :debugger_timeline_mode, "mixed")
-    event_limit = Map.get(assigns, :debugger_event_limit, 500)
-
-    {:ok, state} =
-      project |> Projects.scope_key() |> Ide.Debugger.snapshot(event_limit: event_limit)
-
-    timeline_text =
-      state
-      |> DebuggerSupport.debugger_rows(event_limit)
-      |> DebuggerSupport.debugger_rows_for_mode(timeline_mode)
-      |> DebuggerSupport.filter_debugger_rows_for_display(Map.get(assigns, :debug_mode, false))
-      |> DebuggerSupport.debugger_timeline_text()
-
-    {timeline_text, state, selected_seq}
-  end
-
-  defp debugger_export_snapshot(assigns, _project) do
-    selected_seq =
-      case Map.get(assigns, :debugger_selected_row) do
-        %{seq: s} -> s
-        %{"seq" => s} -> s
-        _ -> nil
-      end
-
-    timeline_text =
-      assigns
-      |> Map.get(:debugger_rows, [])
-      |> DebuggerSupport.debugger_rows_for_mode(
-        Map.get(assigns, :debugger_timeline_mode, "mixed")
-      )
-      |> DebuggerSupport.filter_debugger_rows_for_display(Map.get(assigns, :debug_mode, false))
-      |> DebuggerSupport.debugger_timeline_text()
-
-    {timeline_text, Map.get(assigns, :debugger_state), selected_seq}
-  end
-
-  @spec debugger_companion_configuration_model(assigns()) :: map() | nil
-  defp debugger_companion_configuration_model(runtime) do
-    model = debugger_runtime_model(runtime)
-
-    case Map.get(model, "configuration") || Map.get(model, :configuration) do
-      %{} = configuration -> configuration
-      _ -> nil
-    end
-  end
-
-  @spec debugger_put_configuration_values(map(), map()) :: map()
-  defp debugger_put_configuration_values(configuration, values)
-       when is_map(configuration) and is_map(values) do
-    values = Map.new(values, fn {key, value} -> {to_string(key), value} end)
-
-    configuration
-    |> Map.put("values", values)
-    |> Map.update("sections", [], fn
-      sections when is_list(sections) ->
-        Enum.map(sections, &debugger_put_configuration_section_values(&1, values))
-
-      other ->
-        other
-    end)
-  end
-
-  defp debugger_put_configuration_section_values(%{"fields" => fields} = section, values)
-       when is_list(fields) do
-    Map.put(
-      section,
-      "fields",
-      Enum.map(fields, &debugger_put_configuration_field_value(&1, values))
-    )
-  end
-
-  defp debugger_put_configuration_section_values(section, _values), do: section
-
-  defp debugger_put_configuration_field_value(
-         %{"id" => id, "control" => %{}} = field,
-         values
-       )
-       when is_binary(id) do
-    if Map.has_key?(values, id) do
-      put_in(field, ["control", "value"], Map.get(values, id))
-    else
-      field
-    end
-  end
-
-  defp debugger_put_configuration_field_value(field, _values), do: field
-
-  @spec debugger_configuration_input_type(config_field()) :: String.t()
-  defp debugger_configuration_input_type("number"), do: "number"
-  defp debugger_configuration_input_type("color"), do: "color"
-  defp debugger_configuration_input_type("slider"), do: "range"
-  defp debugger_configuration_input_type(_), do: "text"
-
-  @spec debugger_configuration_input_value(config_field()) :: String.t()
-  defp debugger_configuration_input_value(nil), do: ""
-  defp debugger_configuration_input_value(value) when is_binary(value), do: value
-  defp debugger_configuration_input_value(value) when is_boolean(value), do: to_string(value)
-  defp debugger_configuration_input_value(value) when is_number(value), do: to_string(value)
-  defp debugger_configuration_input_value(value), do: inspect(value)
-
-  @spec debugger_configuration_truthy?(config_field()) :: boolean()
-  defp debugger_configuration_truthy?(values) when is_list(values),
-    do: Enum.any?(values, &debugger_configuration_truthy?/1)
-
-  defp debugger_configuration_truthy?(value) when value in [true, "true", "True", "on", "1", 1],
-    do: true
-
-  defp debugger_configuration_truthy?(_value), do: false
-
-  @spec debugger_configuration_input_step(String.t(), map()) :: String.t() | number() | nil
-  defp debugger_configuration_input_step("number", control) when is_map(control) do
-    Map.get(control, "step") || "any"
-  end
-
-  defp debugger_configuration_input_step(_control_type, control) when is_map(control) do
-    Map.get(control, "step")
-  end
-
-  defp debugger_configuration_input_step(_control_type, _control), do: nil
-
-  @spec hide_debugger_model_metadata(map()) :: map()
-  defp hide_debugger_model_metadata(model) when is_map(model) do
-    atom_keys = Enum.map(@debugger_model_metadata_keys, &String.to_atom/1)
-
-    model
-    |> Map.drop(@debugger_model_metadata_keys ++ atom_keys)
-    |> RuntimeArtifacts.strip_shell_artifacts()
-  end
+  defp debugger_model_container_label(value), do: ModelTree.debugger_model_container_label(value)
 
   attr(:open, :boolean, required: true)
   attr(:form, :any, required: true)
@@ -1403,78 +853,24 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
     """
   end
 
-  defp subscription_trigger_enabled?(disabled_subscriptions, target, trigger)
-       when is_list(disabled_subscriptions) and is_binary(target) and is_binary(trigger) do
-    not Enum.any?(disabled_subscriptions, fn row ->
-      row_target = Map.get(row, "target") || Map.get(row, :target)
-      row_trigger = Map.get(row, "trigger") || Map.get(row, :trigger)
-      row_target == debugger_auto_fire_target(target) and row_trigger == trigger
-    end)
-  end
+  @spec subscription_trigger_enabled?([map()], String.t(), String.t()) :: boolean()
+  defp subscription_trigger_enabled?(disabled_subscriptions, target, trigger),
+    do: SubscriptionControls.enabled?(disabled_subscriptions, target, trigger)
 
-  defp subscription_trigger_enabled?(_disabled_subscriptions, _target, _trigger), do: true
+  @spec subscription_trigger_injection_supported?(trigger_row()) :: boolean()
+  defp subscription_trigger_injection_supported?(row),
+    do: SubscriptionControls.injection_supported?(row)
 
-  @spec subscription_trigger_injection_supported?(map()) :: boolean()
-  defp subscription_trigger_injection_supported?(%{injection_supported?: true}), do: true
-  defp subscription_trigger_injection_supported?(%{"injection_supported?" => true}), do: true
-  defp subscription_trigger_injection_supported?(_row), do: false
+  @spec subscription_trigger_button_title(trigger_row()) :: String.t()
+  defp subscription_trigger_button_title(row), do: SubscriptionControls.button_title(row)
 
-  @spec subscription_trigger_button_title(map()) :: String.t()
-  defp subscription_trigger_button_title(row) when is_map(row) do
-    model_active? = Map.get(row, :model_active?, Map.get(row, "model_active?", true)) == true
+  @spec subscription_auto_fire_enabled?([map()], String.t(), String.t()) :: boolean()
+  defp subscription_auto_fire_enabled?(auto_fire_subscriptions, target, trigger),
+    do: SubscriptionControls.auto_fire_enabled?(auto_fire_subscriptions, target, trigger)
 
-    cond do
-      not model_active? ->
-        "Inactive for the current model state"
-
-      subscription_trigger_injection_supported?(row) ->
-        "Fire this subscribed event"
-
-      true ->
-        "This subscribed event needs a payload shape the debugger form cannot represent."
-    end
-  end
-
-  defp subscription_auto_fire_enabled?(auto_fire_subscriptions, target, trigger)
-       when is_list(auto_fire_subscriptions) and is_binary(target) and is_binary(trigger) do
-    Enum.any?(auto_fire_subscriptions, fn row ->
-      row_target = Map.get(row, "target") || Map.get(row, :target)
-      row_trigger = Map.get(row, "trigger") || Map.get(row, :trigger)
-
-      row_target == debugger_auto_fire_target(target) and
-        (row_trigger == "*" or row_trigger == trigger)
-    end)
-  end
-
-  defp subscription_auto_fire_enabled?(_auto_fire_subscriptions, _target, _trigger), do: false
-
-  @spec subscription_auto_fire_toggle_visible?([map()], String.t(), map()) :: boolean()
-  defp subscription_auto_fire_toggle_visible?(auto_fire_subscriptions, target, row)
-       when is_list(auto_fire_subscriptions) and is_binary(target) and is_map(row) do
-    trigger = to_string(Map.get(row, :trigger) || Map.get(row, "trigger") || "")
-    interval_ms = Map.get(row, :interval_ms) || Map.get(row, "interval_ms")
-
-    interval_auto? = is_integer(interval_ms) and interval_ms > 0
-    recurring_event? = recurring_auto_fire_trigger?(trigger)
-
-    interval_auto? or recurring_event? or
-      subscription_auto_fire_enabled?(auto_fire_subscriptions, target, trigger)
-  end
-
-  defp subscription_auto_fire_toggle_visible?(_auto_fire_subscriptions, _target, _row), do: false
-
-  @spec recurring_auto_fire_trigger?(String.t()) :: boolean()
-  defp recurring_auto_fire_trigger?(trigger) when is_binary(trigger) do
-    trigger =
-      trigger
-      |> String.downcase()
-      |> String.replace(~r/[^a-z0-9]/, "")
-
-    String.contains?(trigger, "ontick") or
-      String.contains?(trigger, "onsecondchange") or
-      String.contains?(trigger, "onminutechange") or
-      String.contains?(trigger, "onhourchange")
-  end
+  @spec subscription_auto_fire_toggle_visible?([map()], String.t(), trigger_row()) :: boolean()
+  defp subscription_auto_fire_toggle_visible?(auto_fire_subscriptions, target, row),
+    do: SubscriptionControls.auto_fire_toggle_visible?(auto_fire_subscriptions, target, row)
 
   attr(:runtime, :any, required: true)
   attr(:project, :any, default: nil)
@@ -1489,16 +885,16 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
 
   @spec debugger_view_preview(assigns()) :: rendered()
   defp debugger_view_preview(assigns) do
-    tree = debugger_preview_tree(assigns.runtime)
+    tree = Preview.preview_tree(assigns.runtime)
     rendered_tree = debugger_rendered_tree(assigns.runtime)
-    preview_tree = debugger_svg_preview_tree(rendered_tree, tree)
-    {screen_w, screen_h} = debugger_preview_dimensions(assigns.runtime, preview_tree)
+    preview_tree = Preview.svg_preview_tree(rendered_tree, tree)
+    {screen_w, screen_h} = Preview.dimensions(assigns.runtime, preview_tree)
     screen_round? = DebuggerPreview.screen_round?(assigns.runtime, tree)
     clip_radius = min(screen_w, screen_h) / 2
-    clip_id = debugger_preview_clip_id(assigns, screen_w, screen_h, screen_round?)
-    svg_id = debugger_preview_svg_id(assigns)
+    clip_id = Preview.clip_id(assigns, screen_w, screen_h, screen_round?)
+    svg_id = Preview.svg_id(assigns)
 
-    color_mode = debugger_watch_color_mode(assigns.runtime)
+    color_mode = Preview.watch_color_mode(assigns.runtime)
 
     svg_ops =
       preview_tree
@@ -1540,14 +936,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
       |> assign(:svg_id, svg_id)
       |> assign(
         :preview_svg_class,
-        debugger_preview_svg_class(screen_round?, assigns.show_watch_buttons)
+        Preview.svg_class(screen_round?, assigns.show_watch_buttons)
       )
       |> assign(:svg_ops, svg_ops)
       |> assign(:unresolved_ops, unresolved_ops)
       |> assign(:hover_box, hover_box)
       |> assign(
         :watch_button_controls,
-        debugger_watch_button_controls(
+        WatchButtons.controls(
           assigns.watch_trigger_buttons,
           assigns.disabled_subscriptions
         )
@@ -1605,8 +1001,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
                   preserveAspectRatio="none"
                 />
                 <g :if={op.kind not in [:vector_sequence_anim, :bitmap_sequence_at]}>
-                  <title :if={debugger_svg_op_tooltip(op) != nil}>
-                    {debugger_svg_op_tooltip(op)}
+                  <title :if={Preview.svg_op_tooltip(op) != nil}>
+                    {Preview.svg_op_tooltip(op)}
                   </title>
                   <rect
                     :if={op.kind == :clear}
@@ -1614,7 +1010,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
                     y="0"
                     width={@screen_w}
                     height={@screen_h}
-                    fill={debugger_svg_color(op.color, "white")}
+                    fill={SvgRender.color(op.color, "white")}
                   />
                   <image
                     :if={op.kind == :bitmap_in_rect and is_binary(op[:href])}
@@ -1632,7 +1028,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
                     width={op.src_w}
                     height={op.src_h}
                     href={op.href}
-                    transform={"rotate(#{debugger_pebble_angle_deg(op.angle)} #{op.center_x} #{op.center_y})"}
+                    transform={"rotate(#{Preview.pebble_angle_deg(op.angle)} #{op.center_x} #{op.center_y})"}
                     preserveAspectRatio="none"
                   />
                   <rect
@@ -1644,7 +1040,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
                     rx={op.radius}
                     ry={op.radius}
                     fill="none"
-                    stroke={debugger_svg_color(op.stroke_color, "#111111")}
+                    stroke={SvgRender.color(op.stroke_color, "#111111")}
                     stroke-width={op.stroke_width || 1}
                   />
                   <rect
@@ -1654,7 +1050,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
                     width={op.w}
                     height={op.h}
                     fill="none"
-                    stroke={debugger_svg_color(op.stroke_color, "#111111")}
+                    stroke={SvgRender.color(op.stroke_color, "#111111")}
                     stroke-width={op.stroke_width || 1}
                   />
                   <rect
@@ -1663,11 +1059,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
                     y={op.y}
                     width={op.w}
                     height={op.h}
-                    fill={debugger_svg_color(op.fill_color, "#111111")}
+                    fill={SvgRender.color(op.fill_color, "#111111")}
                     stroke={
-                      debugger_svg_color(
+                      SvgRender.color(
                         op.stroke_color,
-                        debugger_svg_color(op.fill_color, "#111111")
+                        SvgRender.color(op.fill_color, "#111111")
                       )
                     }
                     stroke-width={op.stroke_width || 1}
@@ -1678,52 +1074,52 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
                     y1={op.y1}
                     x2={op.x2}
                     y2={op.y2}
-                    stroke={debugger_svg_color(op.stroke_color, "#111111")}
+                    stroke={SvgRender.color(op.stroke_color, "#111111")}
                     stroke-width={op.stroke_width || 1}
                   />
                   <path
                     :if={op.kind == :arc}
-                    d={debugger_arc_path(op)}
+                    d={SvgRender.arc_path(op)}
                     fill="none"
-                    stroke={debugger_svg_color(op.stroke_color, "#111111")}
+                    stroke={SvgRender.color(op.stroke_color, "#111111")}
                     stroke-width={op.stroke_width || 1}
                   />
                   <path
                     :if={op.kind == :fill_radial}
-                    d={debugger_arc_sector_path(op)}
-                    fill={debugger_svg_color(op.fill_color, "#111111")}
+                    d={SvgRender.arc_sector_path(op)}
+                    fill={SvgRender.color(op.fill_color, "#111111")}
                     stroke={
-                      debugger_svg_color(
+                      SvgRender.color(
                         op.stroke_color,
-                        debugger_svg_color(op.fill_color, "#111111")
+                        SvgRender.color(op.fill_color, "#111111")
                       )
                     }
                     stroke-width={op.stroke_width || 1}
                   />
                   <path
                     :if={op.kind == :path_filled}
-                    d={debugger_path_d(op, true)}
-                    fill={debugger_svg_color(op.fill_color, "#111111")}
+                    d={SvgRender.path_d(op, true)}
+                    fill={SvgRender.color(op.fill_color, "#111111")}
                     stroke={
-                      debugger_svg_color(
+                      SvgRender.color(
                         op.stroke_color,
-                        debugger_svg_color(op.fill_color, "#111111")
+                        SvgRender.color(op.fill_color, "#111111")
                       )
                     }
                     stroke-width={op.stroke_width || 1}
                   />
                   <path
                     :if={op.kind == :path_outline}
-                    d={debugger_path_d(op, true)}
+                    d={SvgRender.path_d(op, true)}
                     fill="none"
-                    stroke={debugger_svg_color(op.stroke_color, "#111111")}
+                    stroke={SvgRender.color(op.stroke_color, "#111111")}
                     stroke-width={op.stroke_width || 1}
                   />
                   <path
                     :if={op.kind == :path_outline_open}
-                    d={debugger_path_d(op, false)}
+                    d={SvgRender.path_d(op, false)}
                     fill="none"
-                    stroke={debugger_svg_color(op.stroke_color, "#111111")}
+                    stroke={SvgRender.color(op.stroke_color, "#111111")}
                     stroke-width={op.stroke_width || 1}
                   />
                   <circle
@@ -1732,7 +1128,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
                     cy={op.cy}
                     r={op.r}
                     fill="none"
-                    stroke={debugger_svg_color(op.stroke_color, "#111111")}
+                    stroke={SvgRender.color(op.stroke_color, "#111111")}
                     stroke-width={op.stroke_width || 1}
                   />
                   <circle
@@ -1740,11 +1136,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
                     cx={op.cx}
                     cy={op.cy}
                     r={op.r}
-                    fill={debugger_svg_color(op.fill_color, "#111111")}
+                    fill={SvgRender.color(op.fill_color, "#111111")}
                     stroke={
-                      debugger_svg_color(
+                      SvgRender.color(
                         op.stroke_color,
-                        debugger_svg_color(op.fill_color, "#111111")
+                        SvgRender.color(op.fill_color, "#111111")
                       )
                     }
                     stroke-width={op.stroke_width || 1}
@@ -1755,7 +1151,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
                     y={op.y}
                     width="1"
                     height="1"
-                    fill={debugger_svg_color(op.stroke_color, "#111111")}
+                    fill={SvgRender.color(op.stroke_color, "#111111")}
                   />
                   <text
                     :if={op.kind == :text_int}
@@ -1763,19 +1159,19 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
                     y={op.y}
                     font-size="14"
                     font-family="monospace"
-                    fill={debugger_svg_color(op.text_color, "#111111")}
+                    fill={SvgRender.color(op.text_color, "#111111")}
                   >
                     {op.text}
                   </text>
                   <text
                     :if={op.kind == :text_label}
-                    x={debugger_text_svg_x(op)}
-                    y={debugger_text_svg_y(op)}
-                    font-size={debugger_text_svg_font_size(op)}
+                    x={SvgRender.text_x(op)}
+                    y={SvgRender.text_y(op)}
+                    font-size={SvgRender.text_font_size(op)}
                     font-family="sans-serif"
-                    text-anchor={debugger_text_svg_anchor(op)}
-                    dominant-baseline={debugger_text_svg_baseline(op)}
-                    fill={debugger_svg_color(op.text_color, "#111111")}
+                    text-anchor={SvgRender.text_anchor(op)}
+                    dominant-baseline={SvgRender.text_baseline(op)}
+                    fill={SvgRender.color(op.text_color, "#111111")}
                   >
                     {op.text}
                   </text>
@@ -1805,7 +1201,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
           No drawable primitives found in this snapshot.
         </p>
         <p :if={@unresolved_ops != []} class="mt-1 text-center text-[10px] text-amber-700">
-          {debugger_unresolved_svg_summary(@unresolved_ops)}
+          {Preview.unresolved_svg_summary(@unresolved_ops)}
         </p>
       </div>
     </div>
@@ -1838,92 +1234,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
     </button>
     """
   end
-
-  @spec debugger_watch_button_controls([trigger_row()], list()) :: map()
-  defp debugger_watch_button_controls(rows, disabled_subscriptions) when is_list(rows) do
-    [:back, :up, :select, :down]
-    |> Map.new(fn button ->
-      row = debugger_watch_button_row(rows, button)
-      {button, debugger_watch_button_control(button, row, disabled_subscriptions)}
-    end)
-  end
-
-  defp debugger_watch_button_controls(_rows, disabled_subscriptions),
-    do: debugger_watch_button_controls([], disabled_subscriptions)
-
-  @spec debugger_watch_button_control(atom(), assigns(), trigger_row()) :: map()
-  defp debugger_watch_button_control(button, row, disabled_subscriptions) when is_map(row) do
-    enabled? =
-      subscription_trigger_enabled?(
-        disabled_subscriptions,
-        Map.get(row, :target) || Map.get(row, "target") || "watch",
-        Map.get(row, :trigger) || Map.get(row, "trigger") || ""
-      )
-
-    %{
-      id: Atom.to_string(button),
-      label: debugger_watch_button_label(button),
-      trigger: Map.get(row, :trigger) || Map.get(row, "trigger"),
-      target: Map.get(row, :target) || Map.get(row, "target") || "watch",
-      message: Map.get(row, :message) || Map.get(row, "message"),
-      enabled: enabled?,
-      title: "Trigger #{debugger_watch_button_label(button)} button event"
-    }
-  end
-
-  defp debugger_watch_button_control(button, _row, _disabled_subscriptions) do
-    label = debugger_watch_button_label(button)
-
-    %{
-      id: Atom.to_string(button),
-      label: label,
-      trigger: "",
-      target: "watch",
-      message: "",
-      enabled: false,
-      title: "#{label} button is not subscribed in this snapshot"
-    }
-  end
-
-  @spec debugger_watch_button_row([map()], atom()) :: map() | nil
-  defp debugger_watch_button_row(rows, button) when is_list(rows) do
-    button_name = Atom.to_string(button)
-
-    Enum.find(rows, &watch_button_metadata_match?(&1, button_name, "pressed")) ||
-      Enum.find(rows, &watch_button_metadata_match?(&1, button_name, nil)) ||
-      Enum.find(rows, &watch_button_trigger_match?(&1, button_name))
-  end
-
-  @spec watch_button_metadata_match?(trigger_row(), String.t(), String.t() | nil) :: boolean()
-  defp watch_button_metadata_match?(row, button_name, event_name) when is_map(row) do
-    row_button = Map.get(row, :button) || Map.get(row, "button")
-    row_event = Map.get(row, :button_event) || Map.get(row, "button_event")
-
-    row_button == button_name and (is_nil(event_name) or row_event == event_name)
-  end
-
-  defp watch_button_metadata_match?(_row, _button_name, _event_name), do: false
-
-  @spec watch_button_trigger_match?(trigger_row(), String.t()) :: boolean()
-  defp watch_button_trigger_match?(row, button_name) when is_map(row) do
-    trigger = Map.get(row, :trigger) || Map.get(row, "trigger")
-    trigger in watch_button_trigger_names(button_name)
-  end
-
-  defp watch_button_trigger_match?(_row, _button_name), do: false
-
-  @spec watch_button_trigger_names(String.t()) :: [String.t()]
-  defp watch_button_trigger_names("back"), do: ["button_back", "on_button_back"]
-  defp watch_button_trigger_names("up"), do: ["button_up", "on_button_up"]
-  defp watch_button_trigger_names("select"), do: ["button_select", "on_button_select"]
-  defp watch_button_trigger_names("down"), do: ["button_down", "on_button_down"]
-  defp watch_button_trigger_names(_button), do: []
-
-  @spec debugger_watch_button_label(atom()) :: String.t()
-  defp debugger_watch_button_label(:back), do: "Back"
-  defp debugger_watch_button_label(:up), do: "Up"
-  defp debugger_watch_button_label(:select), do: "Select"
-  defp debugger_watch_button_label(:down), do: "Down"
 
   attr(:id, :string, required: true)
   attr(:scope, :string, required: true)
@@ -1970,10 +1280,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
     children =
       (Map.get(node, "children") || Map.get(node, :children) || [])
       |> Enum.filter(&is_map/1)
-      |> debugger_rendered_child_rows(node, assigns.path)
+      |> RenderedTree.child_rows(node, assigns.path)
       |> Enum.reject(fn %{node: child} ->
         child_type = to_string(Map.get(child, "type") || Map.get(child, :type) || "")
-        debugger_hidden_rendered_node_type?(child_type)
+        RenderedTree.hidden_node_type?(child_type)
       end)
 
     assigns =
@@ -1983,11 +1293,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
         :summary,
         DebuggerSupport.rendered_node_summary(node, assigns.model, assigns.arg_name)
       )
-      |> assign(:source_tooltip, debugger_rendered_node_source_tooltip(node))
+      |> assign(:source_tooltip, RenderedTree.source_tooltip(node))
       |> assign(:children, children)
 
     ~H"""
-    <div :if={!debugger_hidden_rendered_node_type?(@type)} class="pl-1">
+    <div :if={!RenderedTree.hidden_node_type?(@type)} class="pl-1">
       <div :if={@children != [] && @depth < 2} class="mt-0.5">
         <div
           class="rounded px-0.5 text-zinc-800 hover:bg-blue-50 hover:text-blue-950"
@@ -2043,80 +1353,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
     """
   end
 
-  @spec debugger_hidden_rendered_node_type?(String.t()) :: boolean()
-  defp debugger_hidden_rendered_node_type?(type) when is_binary(type) do
-    type in ["debuggerRenderStep", "elmcRuntimeStep"]
-  end
-
-  defp debugger_hidden_rendered_node_type?(_), do: false
-
-  @spec debugger_rendered_node_source_tooltip(map()) :: String.t() | nil
-  defp debugger_rendered_node_source_tooltip(node) when is_map(node) do
-    source = Map.get(node, "source") || Map.get(node, :source)
-
-    with %{} <- source,
-         call when is_binary(call) and call != "" <-
-           Map.get(source, "call") || Map.get(source, :call) ||
-             Map.get(node, "qualified_target") || Map.get(node, :qualified_target) ||
-             rendered_node_tooltip_call(node),
-         path when is_binary(path) and path != "" <-
-           Map.get(source, "path") || Map.get(source, :path),
-         line when is_integer(line) <- Map.get(source, "line") || Map.get(source, :line) do
-      "#{call} at #{path}:#{line}"
-    else
-      _ -> nil
-    end
-  end
-
-  defp rendered_node_tooltip_call(node) when is_map(node) do
-    type = Map.get(node, "type") || Map.get(node, :type)
-    if is_binary(type) and type != "", do: "Ui.#{type}", else: nil
-  end
-
-  @spec debugger_rendered_child_rows([map()], map(), String.t()) :: [
-          %{node: map(), arg_name: String.t() | nil, path: String.t()}
-        ]
-  defp debugger_rendered_child_rows(children, parent, parent_path)
-       when is_list(children) and is_map(parent) and is_binary(parent_path) do
-    arg_names = debugger_rendered_node_arg_names(parent, length(children))
-
-    children
-    |> Enum.with_index()
-    |> Enum.map(fn {child, index} ->
-      %{node: child, arg_name: Enum.at(arg_names, index), path: "#{parent_path}.#{index}"}
-    end)
-  end
-
-  @spec debugger_rendered_node_arg_names(map(), non_neg_integer()) :: [String.t()]
-  defp debugger_rendered_node_arg_names(parent, child_count)
-       when is_map(parent) and is_integer(child_count) do
-    explicit = Map.get(parent, "arg_names") || Map.get(parent, :arg_names) || []
-
-    if explicit != [] do
-      explicit
-    else
-      []
-    end
-  end
-
   @spec debugger_watch_svg_ops(map() | nil, map() | nil) :: [svg_op()]
   defp debugger_watch_svg_ops(tree, runtime), do: DebuggerPreview.svg_ops(tree, runtime)
 
   @spec hydrate_bitmap_svg_ops([svg_op()], map(), String.t() | nil) :: [svg_op()]
-  defp hydrate_bitmap_svg_ops(rows, %Project{} = project, color_mode) when is_list(rows) do
-    Enum.map(rows, fn
-      %{kind: :bitmap_in_rect, bitmap_id: bitmap_id} = row when bitmap_id > 0 ->
-        Map.put(row, :href, bitmap_href_for(project, bitmap_id, color_mode))
-
-      %{kind: :rotated_bitmap, bitmap_id: bitmap_id} = row when bitmap_id > 0 ->
-        Map.put(row, :href, bitmap_href_for(project, bitmap_id, color_mode))
-
-      other ->
-        other
-    end)
-  end
-
-  defp hydrate_bitmap_svg_ops(rows, _project, _color_mode), do: rows
+  defp hydrate_bitmap_svg_ops(rows, project, color_mode),
+    do: BitmapHydration.hydrate_svg_ops(rows, project, color_mode)
 
   attr(:op, :map, required: true)
 
@@ -2160,292 +1402,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
     """
   end
 
-  @spec bitmap_href_for(Project.t(), pos_integer(), String.t() | nil) :: String.t() | nil
-  defp bitmap_href_for(%Project{} = project, bitmap_id, color_mode)
-       when is_integer(bitmap_id) and bitmap_id > 0 do
-    with {:ok, entries} <- ResourceStore.list(project),
-         %{} = row <- Enum.at(entries, bitmap_id - 1),
-         {:ok, path} <- ResourceStore.bitmap_file_path(project, row.ctor, color_mode),
-         {:ok, bytes} <- File.read(path) do
-      "data:#{bitmap_mime_for_path(path)};base64," <> Base.encode64(bytes)
-    else
-      _ -> nil
-    end
-  end
-
-  defp bitmap_href_for(_project, _bitmap_id, _color_mode), do: nil
-
-  @spec bitmap_mime_for_path(String.t()) :: String.t()
-  defp bitmap_mime_for_path(path) when is_binary(path) do
-    case path |> Path.extname() |> String.downcase() do
-      ".png" -> "image/png"
-      ".bmp" -> "image/bmp"
-      ".jpg" -> "image/jpeg"
-      ".jpeg" -> "image/jpeg"
-      ".gif" -> "image/gif"
-      ".webp" -> "image/webp"
-      _ -> "application/octet-stream"
-    end
-  end
-
-  @spec debugger_pebble_angle_deg(map()) :: float()
-  defp debugger_pebble_angle_deg(angle) when is_integer(angle) do
-    angle * 360.0 / 65_536.0
-  end
-
-  defp debugger_pebble_angle_deg(_), do: 0.0
-
-  @spec debugger_unresolved_svg_summary([map()]) :: String.t()
-  defp debugger_unresolved_svg_summary(rows), do: DebuggerPreview.unresolved_summary(rows)
-
-  @spec debugger_svg_op_tooltip(svg_op()) :: String.t() | nil
-  defp debugger_svg_op_tooltip(op) when is_map(op) do
-    source = Map.get(op, :source) || Map.get(op, "source")
-
-    with %{} <- source,
-         call when is_binary(call) and call != "" <-
-           Map.get(source, "call") || Map.get(source, :call),
-         path when is_binary(path) and path != "" <-
-           Map.get(source, "path") || Map.get(source, :path),
-         line when is_integer(line) <- Map.get(source, "line") || Map.get(source, :line) do
-      "#{call} at #{path}:#{line}"
-    else
-      _ -> nil
-    end
-  end
-
-  defp debugger_svg_op_tooltip(_op), do: nil
-
-  @spec debugger_rendered_tree(map() | nil) :: map() | nil
-  defp debugger_rendered_tree(runtime), do: DebuggerSupport.rendered_tree(runtime)
-
-  @spec debugger_preview_tree(map() | nil) :: map() | nil
-  defp debugger_preview_tree(%{} = runtime) do
-    view_tree = Map.get(runtime, :view_tree) || Map.get(runtime, "view_tree")
-
-    if is_map(view_tree) and map_size(view_tree) > 0 do
-      view_tree
-    else
-      case RuntimeArtifacts.introspect(runtime) do
-        ei when is_map(ei) ->
-          parser_tree = Map.get(ei, "view_tree") || Map.get(ei, :view_tree)
-          if is_map(parser_tree), do: parser_tree, else: nil
-
-        _ ->
-          nil
-      end
-    end
-  end
-
-  defp debugger_preview_tree(_runtime), do: nil
-
-  @spec debugger_svg_preview_tree(map() | nil, map() | nil) :: map() | nil
-  defp debugger_svg_preview_tree(%{} = rendered_tree, _fallback) when map_size(rendered_tree) > 0,
-    do: rendered_tree
-
-  defp debugger_svg_preview_tree(_rendered_tree, fallback), do: fallback
-
-  @spec debugger_watch_color_mode(map()) :: String.t() | nil
-  defp debugger_watch_color_mode(%{} = runtime) do
-    model = Map.get(runtime, :model) || Map.get(runtime, "model") || %{}
-
-    launch_context =
-      Map.get(model, "launch_context") || Map.get(model, :launch_context) ||
-        get_in(model, ["runtime_model", "launch_context"]) ||
-        get_in(model, [:runtime_model, :launch_context])
-
-    case launch_context do
-      %{} = ctx -> Ide.Debugger.RuntimeSurfaces.launch_context_color_mode(ctx)
-      _ -> nil
-    end
-  end
-
-  defp debugger_watch_color_mode(_runtime), do: nil
-
-  @spec debugger_preview_dimensions(map() | nil, map() | nil) :: {integer(), integer()}
-  defp debugger_preview_dimensions(runtime, tree),
-    do: DebuggerPreview.screen_dimensions(runtime, tree)
-
-  @spec debugger_preview_clip_id(assigns(), pos_integer(), pos_integer(), boolean()) :: String.t()
-  defp debugger_preview_clip_id(assigns, screen_w, screen_h, screen_round?) do
-    key = {
-      Map.get(assigns, :title),
-      Map.get(assigns, :hover_scope),
-      screen_w,
-      screen_h,
-      screen_round?
-    }
-
-    "debugger-preview-clip-#{:erlang.phash2(key)}"
-  end
-
-  @spec debugger_preview_svg_class(boolean(), boolean()) :: [String.t()]
-  defp debugger_preview_svg_class(true, true) do
-    [
-      "mx-auto min-w-0 flex-1 aspect-square max-w-52 rounded-full border border-zinc-700 bg-white shadow-inner object-contain"
-    ]
-  end
-
-  defp debugger_preview_svg_class(true, false) do
-    [
-      "mx-auto h-52 w-52 rounded-full border border-zinc-700 bg-white shadow-inner object-contain"
-    ]
-  end
-
-  defp debugger_preview_svg_class(false, true) do
-    [
-      "mx-auto min-w-0 flex-1 max-w-[11.25rem] rounded border border-zinc-700 bg-white shadow-inner object-contain"
-    ]
-  end
-
-  defp debugger_preview_svg_class(false, false) do
-    [
-      "mx-auto h-52 w-[11.25rem] rounded border border-zinc-700 bg-white shadow-inner object-contain"
-    ]
-  end
-
-  @spec debugger_preview_svg_id(assigns()) :: String.t()
-  defp debugger_preview_svg_id(assigns) do
-    key = {Map.get(assigns, :title), Map.get(assigns, :hover_scope)}
-    "debugger-preview-svg-#{:erlang.phash2(key)}"
-  end
-
-  @spec debugger_arc_path(svg_op()) :: String.t()
-  defp debugger_arc_path(op), do: DebuggerPreview.arc_path(op)
-
-  @spec debugger_arc_sector_path(svg_op()) :: String.t()
-  defp debugger_arc_sector_path(op) when is_map(op) do
-    arc = DebuggerPreview.arc_path(op)
-
-    if arc == "" do
-      ""
-    else
-      cx = (op.x || 0) + max(op.w || 1, 1) / 2.0
-      cy = (op.y || 0) + max(op.h || 1, 1) / 2.0
-      arc <> " L #{Float.round(cx, 2)} #{Float.round(cy, 2)} Z"
-    end
-  end
-
-  @spec debugger_path_d(svg_op(), boolean()) :: String.t()
-  defp debugger_path_d(op, close_shape?) when is_map(op) and is_boolean(close_shape?) do
-    DebuggerPreview.svg_path_d(op, close_shape?)
-  end
-
-  defp debugger_path_d(_op, _close_shape?), do: ""
-
-  @spec debugger_text_svg_x(svg_op()) :: number()
-  defp debugger_text_svg_x(%{text_align: "left", x: x}) when is_number(x), do: x
-
-  defp debugger_text_svg_x(%{text_align: "right", x: x, w: w}) when is_number(x) and is_number(w),
-    do: x + w
-
-  defp debugger_text_svg_x(%{x: x, w: w}) when is_number(x) and is_number(w), do: x + w / 2
-  defp debugger_text_svg_x(%{x: x}) when is_number(x), do: x
-  defp debugger_text_svg_x(_op), do: 0
-
-  @spec debugger_text_svg_y(svg_op()) :: number()
-  defp debugger_text_svg_y(%{y: y, w: w, h: h})
-       when is_number(y) and is_number(w) and is_number(h) and h > 0,
-       do: y + 1
-
-  defp debugger_text_svg_y(%{y: y, h: h}) when is_number(y) and is_number(h), do: y + h / 2
-  defp debugger_text_svg_y(%{y: y}) when is_number(y), do: y
-  defp debugger_text_svg_y(_op), do: 0
-
-  @spec debugger_text_svg_font_size(svg_op()) :: pos_integer()
-  defp debugger_text_svg_font_size(%{font_size: size}) when is_integer(size) and size > 0, do: size
-
-  defp debugger_text_svg_font_size(%{h: height}) when is_integer(height) and height > 0, do: height
-
-  defp debugger_text_svg_font_size(_op), do: 11
-
-  @spec debugger_text_svg_anchor(svg_op()) :: String.t() | nil
-  defp debugger_text_svg_anchor(%{text_align: "left", w: w}) when is_number(w), do: "start"
-  defp debugger_text_svg_anchor(%{text_align: "center", w: w}) when is_number(w), do: "middle"
-  defp debugger_text_svg_anchor(%{text_align: "right", w: w}) when is_number(w), do: "end"
-  defp debugger_text_svg_anchor(_op), do: nil
-
-  @spec debugger_text_svg_baseline(svg_op()) :: String.t() | nil
-  defp debugger_text_svg_baseline(%{w: w, h: h}) when is_number(w) and is_number(h) and h > 0,
-    do: "hanging"
-
-  defp debugger_text_svg_baseline(%{h: h}) when is_number(h), do: "middle"
-  defp debugger_text_svg_baseline(_op), do: nil
-
-  @spec debugger_svg_color(integer() | nil, String.t()) :: String.t()
-  defp debugger_svg_color(value, fallback),
-    do: DebuggerPreview.pebble_color_to_svg(value, fallback)
-
   @spec debugger_runtime_model(assigns()) :: map()
   defp debugger_runtime_model(runtime), do: DebuggerPreview.runtime_model(runtime)
 
-  @spec debugger_state_running?(map() | nil) :: boolean()
-  defp debugger_state_running?(%{running: true}), do: true
-  defp debugger_state_running?(_), do: false
-
-  defp debugger_bootstrap_busy?(:running), do: true
-  defp debugger_bootstrap_busy?(_), do: false
-
-  defp debugger_companion_bootstrap_busy?(:running), do: true
-  defp debugger_companion_bootstrap_busy?(_), do: false
-
-  defp debugger_start_button_label(_debugger_state, :running), do: "Starting…"
-
-  defp debugger_start_button_label(debugger_state, _status) do
-    if debugger_state_running?(debugger_state), do: "Restart", else: "Start"
-  end
-
-  @spec debugger_visible_timeline_mode(String.t(), boolean()) :: String.t()
-  def debugger_visible_timeline_mode(_mode, false), do: "watch"
-  def debugger_visible_timeline_mode(mode, true), do: mode
-
-  @spec selected_debugger_watch_profile_id(assigns(), map() | nil) :: String.t()
-  defp selected_debugger_watch_profile_id(%{watch_profile_id: watch_profile_id}, _project)
-       when is_binary(watch_profile_id) do
-    normalize_debugger_watch_profile_id(watch_profile_id)
-  end
-
-  defp selected_debugger_watch_profile_id(_debugger_state, project),
-    do: project_debugger_watch_profile_id(project)
-
-  @spec project_debugger_watch_profile_id(Project.t() | nil) :: String.t()
-  defp project_debugger_watch_profile_id(%Project{} = project) do
-    settings = project.debugger_settings || %{}
-    normalize_debugger_watch_profile_id(Map.get(settings, "watch_profile_id"))
-  end
-
-  defp project_debugger_watch_profile_id(_), do: default_debugger_watch_profile_id()
-
-  @spec normalize_debugger_watch_profile_id(wire_input()) :: String.t()
-  defp normalize_debugger_watch_profile_id(value) when is_binary(value) do
-    normalized = value |> String.trim() |> String.downcase()
-
-    if normalized in debugger_watch_profile_ids(),
-      do: normalized,
-      else: default_debugger_watch_profile_id()
-  end
-
-  defp normalize_debugger_watch_profile_id(_), do: default_debugger_watch_profile_id()
-
-  @spec debugger_watch_profile_ids() :: [String.t()]
-  defp debugger_watch_profile_ids do
-    Debugger.watch_profiles()
-    |> Enum.map(&Map.get(&1, "id"))
-    |> Enum.filter(&is_binary/1)
-  end
-
-  @spec default_debugger_watch_profile_id() :: String.t()
-  defp default_debugger_watch_profile_id do
-    debugger_watch_profile_ids()
-    |> List.first()
-    |> case do
-      id when is_binary(id) -> id
-      _ -> "basalt"
-    end
-  end
-
-  @spec debugger_auto_fire_target(wire_input()) :: String.t()
-  defp debugger_auto_fire_target("protocol"), do: "protocol"
-  defp debugger_auto_fire_target("companion"), do: "phone"
-  defp debugger_auto_fire_target(_target), do: "watch"
+  @spec debugger_rendered_tree(map() | nil) :: map() | nil
+  defp debugger_rendered_tree(runtime), do: DebuggerSupport.rendered_tree(runtime)
 end

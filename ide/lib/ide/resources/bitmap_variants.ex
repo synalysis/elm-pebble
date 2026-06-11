@@ -7,7 +7,10 @@ defmodule Ide.Resources.BitmapVariants do
   selects the matching tagged file per platform at build time.
   """
 
+  alias Ide.Resources.Types
   alias Ide.WatchModels
+
+  @type wire_row :: Types.manifest_wire_row()
 
   @color_modes ~w(BlackWhite Color)
 
@@ -61,7 +64,7 @@ defmodule Ide.Resources.BitmapVariants do
   @doc """
   All asset filenames referenced by a manifest row (variants + legacy).
   """
-  @spec filenames_for_row(map()) :: [String.t()]
+  @spec filenames_for_row(wire_row()) :: [String.t()]
   def filenames_for_row(row) when is_map(row) do
     legacy =
       case Map.get(row, "filename") do
@@ -80,7 +83,7 @@ defmodule Ide.Resources.BitmapVariants do
   @doc """
   Normalizes a manifest row to schema version 2 shape with a `variants` map.
   """
-  @spec normalize_row(map()) :: map()
+  @spec normalize_row(wire_row()) :: wire_row()
   def normalize_row(row) when is_map(row) do
     ctor = to_string(Map.get(row, "ctor", ""))
 
@@ -116,7 +119,7 @@ defmodule Ide.Resources.BitmapVariants do
   @doc """
   Picks preview dimensions: color variant, then monochrome, then legacy fields.
   """
-  @spec primary_dimensions(map()) :: {non_neg_integer(), non_neg_integer()}
+  @spec primary_dimensions(wire_row()) :: {non_neg_integer(), non_neg_integer()}
   def primary_dimensions(row) when is_map(row) do
     row = normalize_row(row)
 
@@ -133,11 +136,13 @@ defmodule Ide.Resources.BitmapVariants do
   end
 
   @doc false
+  @spec has_variants?(wire_row()) :: boolean()
   def has_variants?(row) when is_map(row) do
     row |> normalize_row() |> Map.get("variants", %{}) |> map_size() > 0
   end
 
   @doc false
+  @spec variant_row(wire_row(), String.t()) :: wire_row() | nil
   def variant_row(row, color_mode) when is_map(row) do
     row
     |> normalize_row()

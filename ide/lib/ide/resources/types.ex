@@ -67,7 +67,28 @@ defmodule Ide.Resources.Types do
           frame_duration_ms: non_neg_integer() | nil
         }
 
-  @type manifest_entry :: bitmap_entry() | font_entry() | font_source() | vector_entry() | animation_entry()
+  @type animation_resource_entry :: %{
+          id: String.t(),
+          ctor: String.t(),
+          base_name: String.t(),
+          filename: String.t(),
+          mime: String.t(),
+          bytes: non_neg_integer(),
+          width: non_neg_integer(),
+          height: non_neg_integer(),
+          frame_count: non_neg_integer(),
+          duration_ms: non_neg_integer(),
+          play_count: non_neg_integer() | :infinite
+        }
+
+  @type manifest_entry ::
+          bitmap_entry() | font_entry() | font_source() | vector_entry() | animation_entry()
+
+  @type manifest_wire_row :: %{
+          optional(String.t()) => wire_input(),
+          optional(atom()) => wire_input()
+        }
+
   @type manifest :: %{
           optional(String.t()) => wire_input(),
           optional(:schema_version) => integer(),
@@ -99,4 +120,70 @@ defmodule Ide.Resources.Types do
 
   @type resource_error ::
           manifest_io_error() | asset_lookup_error() | asset_type_error()
+
+  @type import_duplicate :: %{duplicate: true, entry: manifest_wire_row()}
+  @type import_source_duplicate :: %{duplicate: true, source: manifest_wire_row()}
+
+  @type manifest_entries_update :: %{
+          entry: manifest_wire_row(),
+          entries: [manifest_wire_row()]
+        }
+
+  @type bitmap_import_result ::
+          {:ok, manifest_entries_update() | import_duplicate()} | {:error, resource_error()}
+
+  @type bitmap_directory_import_stats :: %{
+          imported: non_neg_integer(),
+          skipped: non_neg_integer(),
+          duplicates: non_neg_integer()
+        }
+
+  @type font_import_ok :: %{source: manifest_wire_row(), entries: [manifest_wire_row()]}
+  @type font_import_result ::
+          {:ok, font_import_ok() | import_source_duplicate()} | {:error, resource_error()}
+
+  @type font_variant_result ::
+          {:ok, manifest_entries_update()} | {:error, resource_error()}
+
+  @type font_manifest_payload :: %{
+          optional(String.t()) => wire_input(),
+          optional(atom()) => wire_input()
+        }
+
+  @type font_delete_source_ok :: %{
+          sources: [manifest_wire_row()],
+          entries: [manifest_wire_row()]
+        }
+
+  @type font_delete_source_result ::
+          {:ok, font_delete_source_ok()} | {:error, resource_error()}
+
+  @type font_form_params :: %{
+          optional(String.t()) => wire_input(),
+          optional(atom()) => wire_input()
+        }
+
+  @type vector_import_wire_ok :: %{
+          required(:entry) => manifest_wire_row(),
+          required(:entries) => [manifest_wire_row()],
+          optional(:preview_svg) => String.t() | nil,
+          optional(:report) => map() | nil
+        }
+
+  @type vector_import_result ::
+          {:ok, vector_import_wire_ok() | import_duplicate()} | {:error, resource_error()}
+
+  @type vector_import_extras :: %{
+          optional(:kind) => String.t(),
+          optional(:preview_svg) => String.t() | nil,
+          optional(:report) => map() | nil,
+          optional(:frames) => non_neg_integer(),
+          optional(:frame_duration_ms) => non_neg_integer()
+        }
+
+  @type delete_entries_result :: {:ok, [manifest_wire_row()]} | {:error, resource_error()}
+  @type rename_result :: {:ok, manifest_entries_update()} | {:error, resource_error()}
+
+  @type animation_import_result ::
+          {:ok, manifest_entries_update() | import_duplicate()} | {:error, resource_error()}
 end

@@ -5,6 +5,8 @@ defmodule Ide.Resources.CtorNaming do
   Examples: `BitmapStaticHourHand`, `BitmapAnimatedSparkle`, `VectorStaticBird`.
   """
 
+  alias Ide.Resources.Types
+
   @prefixes %{
     bitmap_static: "BitmapStatic",
     bitmap_animated: "BitmapAnimated",
@@ -63,7 +65,7 @@ defmodule Ide.Resources.CtorNaming do
     |> normalize_base_name()
   end
 
-  @spec resolve_base_name(map(), kind()) :: String.t()
+  @spec resolve_base_name(Types.manifest_wire_row(), kind()) :: String.t()
   def resolve_base_name(row, kind) when is_map(row) and is_map_key(@prefixes, kind) do
     case Map.get(row, "base_name") || Map.get(row, :base_name) do
       base when is_binary(base) and base != "" ->
@@ -74,7 +76,7 @@ defmodule Ide.Resources.CtorNaming do
     end
   end
 
-  @spec ensure_row!(map(), kind()) :: map()
+  @spec ensure_row!(Types.manifest_wire_row(), kind()) :: Types.manifest_wire_row()
   def ensure_row!(row, kind) when is_map(row) and is_map_key(@prefixes, kind) do
     base = resolve_base_name(row, kind)
     ctor = ctor(kind, base)
@@ -84,7 +86,8 @@ defmodule Ide.Resources.CtorNaming do
     |> Map.put("ctor", ctor)
   end
 
-  @spec row_with_ctor(map(), kind(), String.t(), String.t() | nil) :: map()
+  @spec row_with_ctor(Types.manifest_wire_row(), kind(), String.t(), String.t() | nil) ::
+          Types.manifest_wire_row()
   def row_with_ctor(row, kind, new_ctor, new_base \\ nil)
       when is_map(row) and is_binary(new_ctor) and is_map_key(@prefixes, kind) do
     base_name =
@@ -98,7 +101,7 @@ defmodule Ide.Resources.CtorNaming do
     |> Map.put("base_name", base_name)
   end
 
-  @spec unique_ctor(kind(), String.t(), [map()], keyword()) :: String.t()
+  @spec unique_ctor(kind(), String.t(), [Types.manifest_wire_row()], keyword()) :: String.t()
   def unique_ctor(kind, base_name, entries, opts \\ []) when is_list(entries) do
     exclude = Keyword.get(opts, :exclude_ctor)
 
@@ -137,7 +140,7 @@ defmodule Ide.Resources.CtorNaming do
     |> normalize_base_name()
   end
 
-  @spec vector_kind_from_row(map()) :: kind()
+  @spec vector_kind_from_row(Types.manifest_wire_row()) :: kind()
   def vector_kind_from_row(row) when is_map(row) do
     case Map.get(row, "kind") || Map.get(row, :kind) do
       "sequence" -> :vector_animated

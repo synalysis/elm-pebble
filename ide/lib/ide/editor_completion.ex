@@ -243,8 +243,6 @@ defmodule Ide.EditorCompletion do
     doc_members ++ core_module_member_candidates(qualifier)
   end
 
-  defp module_member_candidates(_), do: []
-
   defp module_members_from_package(package_row, qualifier) when is_map(package_row) do
     package = package_row[:package] || package_row["package"] || "package"
 

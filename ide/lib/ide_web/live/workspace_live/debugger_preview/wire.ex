@@ -4,8 +4,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.Wire do
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Types, as: PreviewTypes
 
   @type wire_value :: PreviewTypes.wire_value()
+  @type wire_map :: PreviewTypes.wire_map()
 
-  @spec first_map([wire_value()]) :: map()
+  @spec first_map([wire_value()]) :: wire_map()
   def first_map(values) when is_list(values) do
     Enum.find(values, %{}, &is_map/1)
   end
@@ -15,7 +16,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.Wire do
     Enum.find(values, fn value -> not is_nil(value) end)
   end
 
-  @spec map_get_any(map() | nil, String.t()) :: wire_value()
+  @spec map_get_any(wire_map() | nil, String.t()) :: wire_value()
   def map_get_any(map, key) when is_map(map) and is_binary(key) do
     case Map.fetch(map, key) do
       {:ok, value} -> value
@@ -44,7 +45,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.Wire do
   def boolean_value?(value) when value in [true, 1, "true", "True", "TRUE"], do: true
   def boolean_value?(_value), do: false
 
-  @spec map_value_by_atom_name(map(), String.t()) :: wire_value()
+  @spec map_value_by_atom_name(wire_map(), String.t()) :: wire_value()
   defp map_value_by_atom_name(map, key) when is_map(map) and is_binary(key) do
     Enum.find_value(map, fn
       {atom_key, value} when is_atom(atom_key) ->

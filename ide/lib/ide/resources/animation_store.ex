@@ -4,6 +4,7 @@ defmodule Ide.Resources.AnimationStore do
   alias Ide.Projects
   alias Ide.Projects.Project
   alias Ide.Resources.{ApngProbe, CtorNaming, GifToApng, ResourceStore}
+  alias Ide.Resources.ResourceStore.Manifest
   alias Ide.Resources.Types
 
   @manifest_rel_path "watch/resources/animations.json"
@@ -13,24 +14,13 @@ defmodule Ide.Resources.AnimationStore do
   @max_frames 64
   @max_dimension 200
 
-  @type animation_entry :: %{
-          id: String.t(),
-          ctor: String.t(),
-          base_name: String.t(),
-          filename: String.t(),
-          mime: String.t(),
-          bytes: non_neg_integer(),
-          width: non_neg_integer(),
-          height: non_neg_integer(),
-          frame_count: non_neg_integer(),
-          duration_ms: non_neg_integer(),
-          play_count: non_neg_integer() | :infinite
-        }
+  @type animation_resource_entry :: Types.animation_resource_entry()
 
   @spec manifest_rel_path() :: String.t()
   def manifest_rel_path, do: @manifest_rel_path
 
-  @spec list(Project.t()) :: {:ok, [animation_entry()]} | {:error, Types.resource_error()}
+  @spec list(Project.t()) ::
+          {:ok, [animation_resource_entry()]} | {:error, Types.resource_error()}
   def list(%Project{} = project) do
     workspace = Projects.project_workspace_path(project)
 
@@ -44,8 +34,7 @@ defmodule Ide.Resources.AnimationStore do
     end
   end
 
-  @spec import_animation(Project.t(), String.t(), String.t()) ::
-          {:ok, map()} | {:error, Types.resource_error()}
+  @spec import_animation(Project.t(), String.t(), String.t()) :: Types.animation_import_result()
   def import_animation(%Project{} = project, upload_path, original_name)
       when is_binary(upload_path) and is_binary(original_name) do
     workspace = Projects.project_workspace_path(project)
@@ -68,8 +57,7 @@ defmodule Ide.Resources.AnimationStore do
     end
   end
 
-  @spec delete_animation(Project.t(), String.t()) ::
-          {:ok, [map()]} | {:error, Types.resource_error()}
+  @spec delete_animation(Project.t(), String.t()) :: Types.delete_entries_result()
   def delete_animation(%Project{} = project, ctor) when is_binary(ctor) do
     workspace = Projects.project_workspace_path(project)
     manifest_path = Path.join(workspace, @manifest_rel_path)
@@ -228,7 +216,7 @@ defmodule Ide.Resources.AnimationStore do
     filename != "" and File.exists?(Path.join([workspace, @assets_rel_dir, filename]))
   end
 
-  @spec migrate_manifest(String.t()) :: :ok | {:error, term()}
+  @spec migrate_manifest(String.t()) :: :ok | {:error, Types.resource_error()}
   def migrate_manifest(workspace) when is_binary(workspace) do
     manifest_path = Path.join(workspace, @manifest_rel_path)
     assets_dir = Path.join(workspace, @assets_rel_dir)
@@ -248,8 +236,7 @@ defmodule Ide.Resources.AnimationStore do
     end
   end
 
-  @spec update_base_name(Project.t(), String.t(), String.t()) ::
-          {:ok, map()} | {:error, Types.resource_error()}
+  @spec update_base_name(Project.t(), String.t(), String.t()) :: Types.rename_result()
   def update_base_name(%Project{} = project, old_ctor, new_base)
       when is_binary(old_ctor) and is_binary(new_base) do
     workspace = Projects.project_workspace_path(project)
@@ -284,6 +271,13 @@ defmodule Ide.Resources.AnimationStore do
     end
   end
 
+  @spec migrate_animation_row(
+          String.t(),
+          Types.manifest_wire_row(),
+          String.t() | nil,
+          String.t() | nil,
+          String.t() | nil
+        ) :: Types.manifest_wire_row()
   defp migrate_animation_row(assets_dir, row, old_ctor \\ nil, new_ctor \\ nil, new_base \\ nil) do
     old_ctor = old_ctor || Map.get(row, "ctor", "")
     ensured = CtorNaming.ensure_row!(row, :bitmap_animated)
@@ -306,6 +300,7 @@ defmodule Ide.Resources.AnimationStore do
     end
   end
 
+  @spec animation_entry_from_row(Types.manifest_wire_row()) :: animation_resource_entry()
   defp animation_entry_from_row(row) when is_map(row) do
     row = CtorNaming.ensure_row!(row, :bitmap_animated)
 
@@ -331,29 +326,15 @@ defmodule Ide.Resources.AnimationStore do
     }
   end
 
+  @spec read_manifest(Types.workspace_path()) ::
+          {:ok, Types.manifest()} | {:error, Types.resource_error() | :invalid_manifest}
   defp read_manifest(workspace) do
-    path = Path.join(workspace, @manifest_rel_path)
-
-    case File.read(path) do
-      {:ok, json} ->
-        case Jason.decode(json) do
-          {:ok, manifest} when is_map(manifest) -> {:ok, manifest}
-          _ -> {:error, :invalid_manifest}
-        end
-
-      {:error, :enoent} ->
-        {:ok, %{"schema_version" => 1, "entries" => []}}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
+    Manifest.read_animation_manifest(workspace, strict: true)
   end
 
+  @spec write_manifest(Path.t(), Types.manifest()) ::
+          :ok | {:error, Types.manifest_io_error()}
   defp write_manifest(path, payload) do
-    with :ok <- File.mkdir_p(Path.dirname(path)),
-         {:ok, json} <- Jason.encode(payload, pretty: true),
-         :ok <- File.write(path, json <> "\n") do
-      :ok
-    end
+    Manifest.write_manifest(path, payload)
   end
 end

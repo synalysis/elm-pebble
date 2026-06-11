@@ -9,7 +9,6 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
 
   alias Ide.Projects
   alias Ide.Projects.Project
-  alias Ide.Resources.AnimationStore
   alias Ide.Resources.BitmapVariants
   alias Ide.Resources.CtorNaming
   alias Ide.Resources.PdcDecoder
@@ -20,12 +19,22 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
 
   @type socket :: Phoenix.LiveView.Socket.t()
   @type lv_noreply :: {:noreply, socket()}
-  @type upload_result_row :: map()
+  @type upload_config :: Phoenix.LiveView.UploadConfig.t()
+  @type upload_entry :: Phoenix.LiveView.UploadEntry.t()
+  @type upload_entry_meta :: %{required(:path) => String.t(), optional(atom()) => term()}
+  @type upload_import_fn :: (upload_entry_meta(), upload_entry() -> {:ok, upload_result_row()})
+  @type upload_result_row ::
+          ResourceTypes.manifest_entries_update()
+          | ResourceTypes.vector_import_wire_ok()
+          | ResourceTypes.font_import_ok()
+          | ResourceTypes.import_duplicate()
+          | ResourceTypes.import_source_duplicate()
+          | %{required(:error) => String.t()}
   @type bitmap_resource_row :: ResourceTypes.bitmap_entry() | map()
   @type font_resource_row :: ResourceTypes.font_entry() | map()
   @type font_source_row :: ResourceTypes.font_source() | map()
   @type vector_resource_row :: ResourceTypes.vector_entry() | map()
-  @type animation_resource_row :: map()
+  @type animation_resource_row :: ResourceTypes.animation_resource_entry() | map()
 
   @spec bitmap_upload_output([upload_result_row()]) :: String.t()
   def bitmap_upload_output([]), do: "No file uploaded."
@@ -172,7 +181,7 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
     end
   end
 
-  @spec upload_ready?(map()) :: boolean()
+  @spec upload_ready?(upload_config()) :: boolean()
   def upload_ready?(upload) when is_map(upload) do
     upload.entries != [] and Enum.all?(upload.entries, &upload_entry_ready?(&1, upload))
   end
@@ -189,7 +198,7 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
     Map.get(upload, :auto_upload?) == true
   end
 
-  @spec consume_resource_upload(socket(), atom(), (map(), map() -> {:ok, map()})) ::
+  @spec consume_resource_upload(socket(), atom(), upload_import_fn()) ::
           {socket(), [upload_result_row()], String.t()}
   defp consume_resource_upload(socket, upload_name, import_fn) do
     upload = Map.fetch!(socket.assigns.uploads, upload_name)
@@ -412,7 +421,7 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
         Enum.with_index(entries, 1)
         |> Enum.map(fn {entry, idx} ->
           preview =
-            case AnimationStore.animation_file_path(project, entry.ctor) do
+            case ResourceStore.animation_file_path(project, entry.ctor) do
               {:ok, path} -> animation_preview_data_url(path)
               _ -> nil
             end
@@ -809,7 +818,9 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
     end
   end
 
-  @spec bitmap_import_opts(map()) :: keyword()
+  @type import_form_params :: ResourceTypes.font_form_params()
+
+  @spec bitmap_import_opts(import_form_params()) :: keyword()
   defp bitmap_import_opts(params) when is_map(params) do
     []
     |> maybe_put_import_opt(:color_mode, blank_to_nil(Map.get(params, "color_mode")))

@@ -422,7 +422,7 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   @spec animation_resource_indices_for_project(String.t()) :: ArtifactTypes.resource_indices()
   def animation_resource_indices_for_project(project_slug) when is_binary(project_slug) do
     with %Projects.Project{} = project <- Projects.get_project_by_scope_key(project_slug),
-         {:ok, entries} <- Ide.Resources.AnimationStore.list(project) do
+         {:ok, entries} <- Ide.Resources.ResourceStore.list_animations(project) do
       entries
       |> Enum.with_index(1)
       |> Map.new(fn {row, index} -> {row.ctor, index} end)

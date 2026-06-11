@@ -66,5 +66,8 @@
   {"lib/ide_web/live/workspace_live/debugger_page/core.ex", :pattern_match},
   {"lib/ide_web/live/workspace_live/debugger_page/core.ex", :pattern_match_cov},
   {"lib/ide_web/live/workspace_live/debugger_support/timeline.ex", :invalid_contract},
-  {"lib/ide_web/live/workspace_live/debugger_page/core.ex", :guard_fail_pat}
+  {"lib/ide_web/live/workspace_live/debugger_support/timeline/debugger_rows.ex", :invalid_contract},
+  {"lib/ide_web/live/workspace_live/debugger_support/live/triggers.ex", :no_return},
+  {"lib/ide_web/live/workspace_live/debugger_page/core.ex", :guard_fail_pat},
+  {"lib/ide_web/live/workspace_live/debugger_page/export.ex", :pattern_match}
 ]

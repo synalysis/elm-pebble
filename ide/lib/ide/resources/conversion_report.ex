@@ -1,6 +1,8 @@
 defmodule Ide.Resources.ConversionReport do
   @moduledoc false
 
+  alias Ide.Resources.Types
+
   @type warning :: %{code: atom(), element: String.t(), detail: String.t()}
   @type unsupported :: %{tag: String.t(), reason: atom()}
   @type stats :: %{
@@ -37,7 +39,9 @@ defmodule Ide.Resources.ConversionReport do
     %{report | stats: stats}
   end
 
-  @spec to_map(t()) :: map()
+  @type wire :: Types.manifest_wire_row()
+
+  @spec to_map(t()) :: wire()
   def to_map(%__MODULE__{} = report) do
     %{
       "warnings" =>

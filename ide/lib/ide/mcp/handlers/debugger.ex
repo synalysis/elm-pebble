@@ -14,6 +14,22 @@ defmodule Ide.Mcp.Handlers.Debugger do
   alias IdeWeb.WorkspaceLive.DebuggerSupport
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Types, as: SupportTypes
 
+  @type debugger_generic_result :: %{
+          optional(atom()) => term(),
+          optional(String.t()) => term()
+        }
+
+  @type debugger_export_payload :: %{
+          required(:json) => String.t(),
+          required(:sha256) => String.t(),
+          required(:byte_size) => non_neg_integer()
+        }
+
+  @type debugger_snapshot_ref :: DebuggerTypes.wire_map()
+  @type runtime_fingerprint_payload :: DebuggerTypes.wire_map()
+  @type runtime_fingerprint_digest :: DebuggerTypes.wire_map()
+  @type compact_event_payload :: DebuggerTypes.wire_map()
+
   @type debugger_result ::
           ToolTypes.debugger_state_result()
           | ToolTypes.debugger_cursor_inspect_result()
@@ -34,7 +50,7 @@ defmodule Ide.Mcp.Handlers.Debugger do
           | ToolTypes.debugger_disabled_subscriptions_state_result()
           | ToolTypes.debugger_export_trace_result()
           | ToolTypes.traces_export_result()
-          | map()
+          | debugger_generic_result()
 
   @spec call(String.t(), ToolTypes.tool_args()) :: {:ok, debugger_result()} | {:error, String.t()}
   def call("debugger.state", %{"slug" => slug} = args) do
@@ -640,7 +656,11 @@ defmodule Ide.Mcp.Handlers.Debugger do
     end
   end
 
-  @spec debugger_auto_fire_payload(String.t(), ProjectsTypes.debugger_settings(), DebuggerTypes.runtime_state()) ::
+  @spec debugger_auto_fire_payload(
+          String.t(),
+          ProjectsTypes.debugger_settings(),
+          DebuggerTypes.runtime_state()
+        ) ::
           ToolTypes.debugger_auto_fire_result()
   defp debugger_auto_fire_payload(slug, settings, state)
        when is_binary(slug) and is_map(settings) and is_map(state) do
@@ -693,12 +713,12 @@ defmodule Ide.Mcp.Handlers.Debugger do
           String.t(),
           non_neg_integer() | nil,
           non_neg_integer(),
-          [map()],
-          map(),
-          map(),
-          map(),
-          map(),
-          [map()],
+          [debugger_snapshot_ref()],
+          SupportTypes.diagnostics_preview_result(),
+          SupportTypes.surface_contracts_at_cursor(),
+          SupportTypes.surface_fingerprints_at_cursor(),
+          runtime_fingerprint_digest(),
+          SupportTypes.events(),
           pos_integer(),
           pos_integer(),
           pos_integer(),
@@ -744,7 +764,7 @@ defmodule Ide.Mcp.Handlers.Debugger do
           String.t(),
           non_neg_integer(),
           non_neg_integer(),
-          [map()]
+          [debugger_snapshot_ref()]
         ) :: ToolTypes.debugger_cursor_inspect_replay_result()
   defp debugger_cursor_inspect_replay_payload(slug, cursor_seq, event_window, snapshot_refs) do
     %{
@@ -779,7 +799,7 @@ defmodule Ide.Mcp.Handlers.Debugger do
     %{slug: slug, disabled_subscriptions: disabled_subscriptions, state: state}
   end
 
-  @spec debugger_export_trace_payload(String.t(), map()) ::
+  @spec debugger_export_trace_payload(String.t(), debugger_export_payload()) ::
           ToolTypes.debugger_export_trace_result()
   defp debugger_export_trace_payload(slug, export) when is_binary(slug) and is_map(export) do
     %{
@@ -790,7 +810,11 @@ defmodule Ide.Mcp.Handlers.Debugger do
     }
   end
 
-  @spec debugger_models_payload(String.t(), DebuggerTypes.runtime_state(), DebuggerTypes.wire_map()) ::
+  @spec debugger_models_payload(
+          String.t(),
+          DebuggerTypes.runtime_state(),
+          DebuggerTypes.wire_map()
+        ) ::
           ToolTypes.debugger_models_result()
   defp debugger_models_payload(slug, state, models) when is_map(state) and is_map(models) do
     %{
@@ -852,10 +876,10 @@ defmodule Ide.Mcp.Handlers.Debugger do
 
   @spec debugger_state_full_payload(
           String.t(),
-          map(),
-          map(),
-          map(),
-          [map()]
+          DebuggerTypes.runtime_state(),
+          SupportTypes.surface_fingerprints_at_cursor(),
+          runtime_fingerprint_digest(),
+          [debugger_snapshot_ref()]
         ) :: ToolTypes.debugger_state_full_result()
   defp debugger_state_full_payload(slug, state, fingerprints, digest, snapshot_refs) do
     %{
@@ -870,8 +894,8 @@ defmodule Ide.Mcp.Handlers.Debugger do
   @spec debugger_state_replay_payload(
           String.t(),
           non_neg_integer(),
-          map(),
-          [map()]
+          runtime_fingerprint_digest(),
+          [debugger_snapshot_ref()]
         ) :: ToolTypes.debugger_state_replay_result()
   defp debugger_state_replay_payload(slug, event_window, digest, snapshot_refs) do
     %{
@@ -972,7 +996,11 @@ defmodule Ide.Mcp.Handlers.Debugger do
     end)
   end
 
-  @spec persist_project_debugger_setting(Project.t(), String.t(), WireTypes.debugger_setting_value()) ::
+  @spec persist_project_debugger_setting(
+          Project.t(),
+          String.t(),
+          WireTypes.debugger_setting_value()
+        ) ::
           {:ok, Project.t()} | {:error, ToolTypes.tool_persist_error()}
   defp persist_project_debugger_setting(project, key, value)
        when is_map(project) and is_binary(key) do
@@ -1847,7 +1875,10 @@ defmodule Ide.Mcp.Handlers.Debugger do
 
   defp runtime_fingerprint_compare(_events, _current, _current_seq, _compare_cursor_seq), do: nil
 
-  @spec maybe_put_runtime_fingerprint_compare(map(), DebuggerTypes.fingerprint_compare_result() | nil) ::
+  @spec maybe_put_runtime_fingerprint_compare(
+          map(),
+          DebuggerTypes.fingerprint_compare_result() | nil
+        ) ::
           map()
   defp maybe_put_runtime_fingerprint_compare(payload, nil), do: payload
 

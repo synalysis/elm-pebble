@@ -17,10 +17,21 @@ defmodule Ide.PebbleToolchainTest do
   end
 
   defp toolchain_impl_source do
-    Ide.PebbleToolchain.Package.module_info(:compile)
-    |> Keyword.fetch!(:source)
-    |> to_string()
-    |> File.read!()
+    [
+      Ide.PebbleToolchain.Package,
+      Ide.PebbleToolchain.Build,
+      Ide.PebbleToolchain.Command,
+      Ide.PebbleToolchain.Companion,
+      Ide.PebbleToolchain.Elmc,
+      Ide.PebbleToolchain.Emulator,
+      Ide.PebbleToolchain.Prepare
+    ]
+    |> Enum.map_join("\n", fn module ->
+      module.module_info(:compile)
+      |> Keyword.fetch!(:source)
+      |> to_string()
+      |> File.read!()
+    end)
   end
 
   test "template_app_root_path resolves bundled priv template when config path is stale" do
@@ -401,12 +412,17 @@ defmodule Ide.PebbleToolchainTest do
     assert template =~ "static ElmcPebbleCmd cmd;"
 
     draw_body =
-      case Regex.run(~r/static void draw_update_proc\(Layer \*layer, GContext \*ctx\) \{(.*?)^\}/ms, template) do
+      case Regex.run(
+             ~r/static void draw_update_proc\(Layer \*layer, GContext \*ctx\) \{(.*?)^\}/ms,
+             template
+           ) do
         [_, body] -> body
         _ -> flunk("draw_update_proc body not found")
       end
 
-    refute draw_body =~ "#ifdef ELMC_WATCHFACE_MODE\n  {\n    GRect compile = compile_display_bounds();"
+    refute draw_body =~
+             "#ifdef ELMC_WATCHFACE_MODE\n  {\n    GRect compile = compile_display_bounds();"
+
     assert draw_body =~ "bounds.size.w < compile.size.w || bounds.size.h < compile.size.h"
     assert template =~ "startup_cmd_callback(NULL);"
 
@@ -444,7 +460,10 @@ defmodule Ide.PebbleToolchainTest do
     template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
 
     launch_body =
-      case Regex.run(~r/static ElmcValue \*build_launch_context\(AppLaunchReason launch\) \{(.*?)^\}/ms, template) do
+      case Regex.run(
+             ~r/static ElmcValue \*build_launch_context\(AppLaunchReason launch\) \{(.*?)^\}/ms,
+             template
+           ) do
         [_, body] -> body
         _ -> flunk("build_launch_context body not found")
       end
@@ -477,7 +496,7 @@ defmodule Ide.PebbleToolchainTest do
   test "emulator install wipes before installing" do
     source = toolchain_impl_source()
 
-    assert source =~ ~S|run_pebble_with_timeout(["wipe"], timeout_seconds, cwd: cwd)|
+    assert source =~ ~S|Command.run_pebble_with_timeout(["wipe"], timeout_seconds, cwd: cwd)|
     assert source =~ "emulator_install_args(emulator_target, package_path)"
     assert source =~ ~S|["install", "--emulator", emulator_target]|
     assert source =~ ~S|--throttle=#{throttle}|
