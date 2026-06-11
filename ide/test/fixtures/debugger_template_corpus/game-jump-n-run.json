@@ -370,10 +370,6 @@
   "runtime_model": {
     "alive": true,
     "best": 0,
-    "colorMode": {
-      "args": [],
-      "ctor": "BlackWhite"
-    },
     "displayShape": {
       "args": [],
       "ctor": "Rectangular"
@@ -402,10 +398,6 @@
     "runtime_model": {
       "alive": true,
       "best": 0,
-      "colorMode": {
-        "args": [],
-        "ctor": "BlackWhite"
-      },
       "displayShape": {
         "args": [],
         "ctor": "Rectangular"
@@ -423,6 +415,6 @@
     },
     "runtime_view_output": [],
     "timeString": null,
-    "watch_profile_id": "aplite"
+    "watch_profile_id": "basalt"
   }
 }

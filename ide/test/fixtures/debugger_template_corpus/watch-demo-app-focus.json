@@ -100,99 +100,75 @@
                 {
                   "children": [],
                   "color": 255,
-                  "kind": "clear",
-                  "label": "clear",
+                  "label": "",
                   "text": null,
                   "type": "clear"
                 },
                 {
-                  "bounds": {
-                    "h": 20,
-                    "text": null,
-                    "w": 136,
-                    "x": 4,
-                    "y": 8
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "App focus",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 20,
+                  "label": "",
                   "text": "App focus",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 8
                 },
                 {
-                  "bounds": {
-                    "h": 20,
-                    "text": null,
-                    "w": 136,
-                    "x": 4,
-                    "y": 40
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Starting",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 20,
+                  "label": "",
                   "text": "Starting",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 40
                 },
                 {
-                  "bounds": {
-                    "h": 20,
-                    "text": null,
-                    "w": 136,
-                    "x": 4,
-                    "y": 72
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "0",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 20,
+                  "label": "",
                   "text": "0",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 72
                 },
                 {
-                  "bounds": {
-                    "h": 40,
-                    "text": null,
-                    "w": 136,
-                    "x": 4,
-                    "y": 100
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Toggle focus in simulator",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 40,
+                  "label": "",
                   "text": "Toggle focus in simulator",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 100
                 }
               ],
-              "id": "1",
-              "kind": "canvasLayer",
+              "id": 1,
               "label": "",
               "text": null,
               "type": "canvasLayer"
             }
           ],
-          "id": "1",
-          "kind": "window",
+          "id": 1,
           "label": "",
           "text": null,
           "type": "window"
         }
       ],
-      "kind": "windowStack",
       "label": "",
       "text": null,
       "type": "windowStack"
@@ -200,21 +176,11 @@
   },
   "runtime_model": {
     "changes": 0,
-    "colorMode": {
-      "args": [],
-      "ctor": "BlackWhite"
-    },
-    "displayShape": {
-      "args": [],
-      "ctor": "Rectangular"
-    },
     "focus": {
       "args": [],
       "ctor": "Nothing"
     },
     "runtime_view_output": [],
-    "screenH": 168,
-    "screenW": 144,
     "timeString": null
   },
   "template": "watch-demo-app-focus",
@@ -226,20 +192,10 @@
     "debugger_init_complete": true,
     "runtime_model": {
       "changes": 0,
-      "colorMode": {
-        "args": [],
-        "ctor": "BlackWhite"
-      },
-      "displayShape": {
-        "args": [],
-        "ctor": "Rectangular"
-      },
       "focus": {
         "args": [],
         "ctor": "Nothing"
-      },
-      "screenH": 168,
-      "screenW": 144
+      }
     },
     "runtime_view_output": [],
     "timeString": null,

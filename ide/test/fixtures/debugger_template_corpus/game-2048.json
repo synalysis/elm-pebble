@@ -1546,10 +1546,6 @@
       0,
       0
     ],
-    "colorMode": {
-      "args": [],
-      "ctor": "Color"
-    },
     "displayShape": {
       "args": [],
       "ctor": "Rectangular"
@@ -1591,10 +1587,6 @@
         0,
         0
       ],
-      "colorMode": {
-        "args": [],
-        "ctor": "Color"
-      },
       "displayShape": {
         "args": [],
         "ctor": "Rectangular"
@@ -1607,6 +1599,6 @@
     },
     "runtime_view_output": [],
     "timeString": null,
-    "watch_profile_id": "basalt"
+    "watch_profile_id": "aplite"
   }
 }

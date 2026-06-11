@@ -1094,14 +1094,14 @@ defmodule Ide.Mcp.ToolsDebuggerIntegrationTest do
       |> Enum.map(&{&1.target, &1.message, &1.message_source})
 
     assert Enum.any?(timeline, fn
-             {"phone", msg, "configuration"} when is_binary(msg) ->
+             {"phone", msg, "core_ir"} when is_binary(msg) ->
                String.starts_with?(msg, "FromConfiguration")
 
              _ ->
                false
            end)
 
-    refute {"phone", "FromBridge", "configuration"} in timeline
+    refute {"phone", "FromBridge", "core_ir"} in timeline
   end
 
   test "debugger geolocation task followup passes Yes location to watch" do
@@ -1136,7 +1136,7 @@ defmodule Ide.Mcp.ToolsDebuggerIntegrationTest do
                reason: "yes_location_watch"
              })
 
-    assert {:ok, state} =
+    assert {:ok, _} =
              Debugger.reload(slug, %{
                rel_path: "phone/src/CompanionApp.elm",
                source_root: "phone",
@@ -1144,37 +1144,29 @@ defmodule Ide.Mcp.ToolsDebuggerIntegrationTest do
                reason: "yes_location_phone"
              })
 
+    assert :ok = Ide.Debugger.RuntimeBackgroundDrains.await_idle(slug, 30_000)
+    assert {:ok, state} = Debugger.snapshot(slug, event_limit: 200)
+
     timeline =
       state.debugger_timeline
       |> Enum.map(&{&1.target, &1.message, &1.message_source})
 
     assert Enum.any?(timeline, fn
-             {"phone", msg, source}
-             when is_binary(msg) and source in ["init_geolocation", "geolocation"] ->
+             {"phone", msg, _source} when is_binary(msg) ->
                String.starts_with?(msg, "CurrentPosition")
 
              _ ->
                false
-           end) or
-             Enum.any?(state.events, fn event -> event.type == "debugger.geolocation" end)
+           end)
 
     assert Enum.any?(timeline, fn
-             {"phone", msg, source}
-             when is_binary(msg) and
-                    source in ["init_geolocation", "geolocation", "runtime_followup"] ->
+             {"phone", msg, _source} when is_binary(msg) ->
                String.starts_with?(msg, "CurrentPosition") or
                  String.starts_with?(msg, "SendLocationSnapshot")
 
              _ ->
                false
-           end) or
-             Enum.any?(state.events, fn event ->
-               event.type in [
-                 "debugger.geolocation",
-                 "debugger.protocol_rx",
-                 "debugger.protocol_tx"
-               ]
-             end)
+           end)
 
     watch_model = get_in(state, [:watch, :model, "runtime_model"]) || %{}
 

@@ -13,7 +13,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusTest do
   @update_snapshots? System.get_env("UPDATE_DEBUGGER_TEMPLATE_SNAPSHOTS") in ["1", "true", "TRUE"]
 
   @tag :template_corpus
-  @tag timeout: 180_000
+  @tag timeout: 120_000
   test "templates.list matches ProjectTemplates.template_keys" do
     alias Ide.Mcp.Tools
 
@@ -25,7 +25,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusTest do
 
   for template <- DebuggerTemplateCorpus.template_keys() do
     @tag :template_corpus
-    @tag timeout: 180_000
+    @tag timeout: 120_000
     test "MCP debugger bootstrap snapshot for #{template}" do
       template = unquote(template)
 
@@ -54,7 +54,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusTest do
 
   for template <- DebuggerTemplateCorpus.subscription_step_template_keys() do
     @tag :template_corpus_step
-    @tag timeout: 180_000
+    @tag timeout: 120_000
     test "subscription step uses runtime execution for #{template}" do
       template = unquote(template)
 

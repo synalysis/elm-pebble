@@ -229,10 +229,6 @@
       "args": [],
       "ctor": "Nothing"
     },
-    "colorMode": {
-      "args": [],
-      "ctor": "Color"
-    },
     "condition": {
       "args": [
         {
@@ -241,10 +237,6 @@
         }
       ],
       "ctor": "Just"
-    },
-    "displayShape": {
-      "args": [],
-      "ctor": "Rectangular"
     },
     "displayedCondition": {
       "args": [
@@ -288,7 +280,12 @@
       ],
       "ctor": "Just"
     },
-    "timeString": null
+    "timeString": null,
+    "transitionTicksRemaining": {
+      "args": [],
+      "ctor": "Nothing"
+    },
+    "warmupTicksRemaining": 3
   },
   "template": "watchface-weather-animated",
   "timeline_init_messages": [
@@ -296,7 +293,6 @@
     "update:FromPhone {\"args\":[],\"ctor\":\"Fog\"}",
     "update:FromPhone 18",
     "update:CurrentDateTime {\"day\":27,\"dayOfWeek\":{\"args\":[],\"ctor\":\"Wednesday\"},\"hour\":8,\"minute\":53,\"month\":5,\"second\":0,\"utcOffsetMinutes\":0,\"year\":2026}",
-    "update:EnableWeatherTransitions {\"args\":[],\"ctor\":\"EnableWeatherTransitions\"}",
     "init:init"
   ],
   "view_tree_type": "windowStack",
@@ -307,10 +303,6 @@
         "args": [],
         "ctor": "Nothing"
       },
-      "colorMode": {
-        "args": [],
-        "ctor": "Color"
-      },
       "condition": {
         "args": [
           {
@@ -319,10 +311,6 @@
           }
         ],
         "ctor": "Just"
-      },
-      "displayShape": {
-        "args": [],
-        "ctor": "Rectangular"
       },
       "displayedCondition": {
         "args": [
@@ -364,7 +352,12 @@
           }
         ],
         "ctor": "Just"
-      }
+      },
+      "transitionTicksRemaining": {
+        "args": [],
+        "ctor": "Nothing"
+      },
+      "warmupTicksRemaining": 3
     },
     "runtime_view_output": [],
     "timeString": null,

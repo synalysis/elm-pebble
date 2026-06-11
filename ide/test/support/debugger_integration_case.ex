@@ -20,8 +20,9 @@ defmodule Ide.DebuggerIntegrationCase do
       @moduletag :slow
       @moduletag timeout: 300_000
 
-      setup _tags do
+      setup tags do
         :ok = AgentStore.ensure_started(Ide.Debugger)
+        Ide.TestSupport.DebuggerSessionLock.setup(timeout: tags[:timeout] || 300_000)
         :ok
       end
     end

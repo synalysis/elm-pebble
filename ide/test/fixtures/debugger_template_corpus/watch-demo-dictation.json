@@ -89,113 +89,81 @@
                 {
                   "children": [],
                   "color": 255,
-                  "kind": "clear",
-                  "label": "clear",
+                  "label": "",
                   "text": null,
                   "type": "clear"
                 },
                 {
-                  "bounds": {
-                    "h": 20,
-                    "text": null,
-                    "w": 136,
-                    "x": 4,
-                    "y": 8
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Dictation demo",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 20,
+                  "label": "",
                   "text": "Dictation demo",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 8
                 },
                 {
-                  "bounds": {
-                    "h": 20,
-                    "text": null,
-                    "w": 136,
-                    "x": 4,
-                    "y": 32
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Ready",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 20,
+                  "label": "",
                   "text": "Ready",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 32
                 },
                 {
-                  "bounds": {
-                    "h": 40,
-                    "text": null,
-                    "w": 136,
-                    "x": 4,
-                    "y": 56
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
+                  "font_id": 0,
+                  "h": 40,
                   "label": "",
-                  "options": [],
                   "text": "",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 56
                 },
                 {
-                  "bounds": {
-                    "h": 40,
-                    "text": null,
-                    "w": 136,
-                    "x": 4,
-                    "y": 100
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Select: start Down: stop",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 40,
+                  "label": "",
                   "text": "Select: start Down: stop",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 100
                 }
               ],
-              "id": "1",
-              "kind": "canvasLayer",
+              "id": 1,
               "label": "",
               "text": null,
               "type": "canvasLayer"
             }
           ],
-          "id": "1",
-          "kind": "window",
+          "id": 1,
           "label": "",
           "text": null,
           "type": "window"
         }
       ],
-      "kind": "windowStack",
       "label": "",
       "text": null,
       "type": "windowStack"
     }
   },
   "runtime_model": {
-    "colorMode": {
-      "args": [],
-      "ctor": "BlackWhite"
-    },
-    "displayShape": {
-      "args": [],
-      "ctor": "Rectangular"
-    },
     "hasMicrophone": true,
     "result": {
       "args": [
@@ -204,8 +172,6 @@
       "ctor": "Ok"
     },
     "runtime_view_output": [],
-    "screenH": 168,
-    "screenW": 144,
     "timeString": null
   },
   "template": "watch-demo-dictation",
@@ -216,14 +182,6 @@
   "watch_model": {
     "debugger_init_complete": true,
     "runtime_model": {
-      "colorMode": {
-        "args": [],
-        "ctor": "BlackWhite"
-      },
-      "displayShape": {
-        "args": [],
-        "ctor": "Rectangular"
-      },
       "hasMicrophone": true,
       "result": {
         "args": [
@@ -231,8 +189,6 @@
         ],
         "ctor": "Ok"
       },
-      "screenH": 168,
-      "screenW": 144,
       "status": {
         "args": [],
         "ctor": "Nothing"

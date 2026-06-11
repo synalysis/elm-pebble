@@ -199,14 +199,6 @@
     }
   },
   "runtime_model": {
-    "colorMode": {
-      "args": [],
-      "ctor": "BlackWhite"
-    },
-    "displayShape": {
-      "args": [],
-      "ctor": "Rectangular"
-    },
     "pinStatus": {
       "args": [],
       "ctor": "Nothing"
@@ -225,14 +217,6 @@
   "watch_model": {
     "debugger_init_complete": true,
     "runtime_model": {
-      "colorMode": {
-        "args": [],
-        "ctor": "BlackWhite"
-      },
-      "displayShape": {
-        "args": [],
-        "ctor": "Rectangular"
-      },
       "pinStatus": {
         "args": [],
         "ctor": "Nothing"

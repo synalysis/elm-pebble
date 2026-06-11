@@ -1,6 +1,8 @@
 defmodule Ide.Debugger.CompiledElixirDeviceFollowupsTest do
   use Ide.DataCase, async: false
 
+  @moduletag :debugger_session
+
   alias Ide.Debugger.CompiledElixirCorpusHelpers, as: Corpus
   alias Ide.Mcp.DebuggerTemplateCorpus
   alias IdeWeb.WorkspaceLive.DebuggerSupport

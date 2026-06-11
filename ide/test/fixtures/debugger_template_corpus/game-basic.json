@@ -65,15 +65,26 @@
       "w": 1,
       "x": 0,
       "y": 0
+    },
+    {
+      "antialiased": true,
+      "bitmap_id": 0,
+      "compositing_mode": 0,
+      "h": 1,
+      "kind": "bitmap_in_rect",
+      "resource": "NoStaticBitmap",
+      "w": 1,
+      "x": 0,
+      "y": 0
     }
   ],
-  "preview_ops_sha256": "e7ec8a0a8f8e1b1373eaf3e7caaf0d9c0898243a165d1ed4b837ce962b07104d",
+  "preview_ops_sha256": "e128c9c7c6fb12af2dfaa5659301e96bf309c7d8a943104f61b4692b17670d52",
   "render_tree": {
     "node_count": 8,
     "node_types": [
+      "bitmapInRect",
       "canvasLayer",
       "clear",
-      "drawBitmapInRect",
       "fillRect",
       "rect",
       "text",
@@ -82,6 +93,13 @@
     ],
     "root_type": "windowStack",
     "tree": {
+      "box": {
+        "h": 168,
+        "text": null,
+        "w": 144,
+        "x": 0,
+        "y": 0
+      },
       "children": [
         {
           "children": [
@@ -90,90 +108,69 @@
                 {
                   "children": [],
                   "color": 255,
-                  "kind": "clear",
-                  "label": "clear",
+                  "label": "",
                   "text": null,
                   "type": "clear"
                 },
                 {
-                  "bounds": {
-                    "h": 1,
-                    "text": null,
-                    "w": 1,
-                    "x": 0,
-                    "y": 0
-                  },
                   "children": [],
-                  "kind": "drawBitmapInRect",
-                  "label": "drawBitmapInRect",
-                  "resource": "NoStaticBitmap",
+                  "fill": 192,
+                  "h": 14,
+                  "label": "",
                   "text": null,
-                  "type": "drawBitmapInRect"
+                  "type": "fillRect",
+                  "w": 14,
+                  "x": 18,
+                  "y": 60
                 },
                 {
-                  "bounds": {
-                    "h": 14,
-                    "text": null,
-                    "w": 14,
-                    "x": 18,
-                    "y": 60
-                  },
                   "children": [],
-                  "color": 192,
-                  "kind": "fillRect",
-                  "label": "fillRect",
+                  "fill": 192,
+                  "h": 36,
+                  "label": "",
                   "text": null,
-                  "type": "fillRect"
+                  "type": "rect",
+                  "w": 18,
+                  "x": 104,
+                  "y": 112
                 },
                 {
-                  "bounds": {
-                    "h": 36,
-                    "text": null,
-                    "w": 18,
-                    "x": 104,
-                    "y": 112
-                  },
                   "children": [],
-                  "color": 192,
-                  "kind": "rect",
-                  "label": "rect",
-                  "text": null,
-                  "type": "rect"
-                },
-                {
-                  "bounds": {
-                    "h": 24,
-                    "text": null,
-                    "w": 120,
-                    "x": 4,
-                    "y": 4
-                  },
-                  "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Best 0",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 24,
+                  "label": "",
                   "text": "Best 0",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 120,
+                  "x": 4,
+                  "y": 4
+                },
+                {
+                  "bitmap_id": 0,
+                  "children": [],
+                  "h": 1,
+                  "label": "",
+                  "text": null,
+                  "type": "bitmapInRect",
+                  "w": 1,
+                  "x": 0,
+                  "y": 0
                 }
               ],
-              "id": "1",
-              "kind": "canvasLayer",
+              "id": 1,
               "label": "",
               "text": null,
               "type": "canvasLayer"
             }
           ],
-          "id": "1",
-          "kind": "window",
+          "id": 1,
           "label": "",
           "text": null,
           "type": "window"
         }
       ],
-      "kind": "windowStack",
       "label": "",
       "text": null,
       "type": "windowStack"
@@ -181,17 +178,7 @@
   },
   "runtime_model": {
     "best": 0,
-    "colorMode": {
-      "args": [],
-      "ctor": "BlackWhite"
-    },
-    "displayShape": {
-      "args": [],
-      "ctor": "Rectangular"
-    },
     "runtime_view_output": [],
-    "screenH": 168,
-    "screenW": 144,
     "timeString": null,
     "vy": 0,
     "x": 18,
@@ -207,16 +194,6 @@
     "debugger_init_complete": true,
     "runtime_model": {
       "best": 0,
-      "colorMode": {
-        "args": [],
-        "ctor": "BlackWhite"
-      },
-      "displayShape": {
-        "args": [],
-        "ctor": "Rectangular"
-      },
-      "screenH": 168,
-      "screenW": 144,
       "vy": 0,
       "x": 18,
       "y": 60

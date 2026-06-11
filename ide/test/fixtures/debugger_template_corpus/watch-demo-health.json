@@ -33,7 +33,7 @@
       "font_size": 20,
       "h": 20,
       "kind": "text_label",
-      "text": "Now: --",
+      "text": "Now: 4200",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -47,7 +47,7 @@
       "font_size": 20,
       "h": 20,
       "kind": "text_label",
-      "text": "Today: --",
+      "text": "Today: 9100",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -98,7 +98,7 @@
       "y": 120
     }
   ],
-  "preview_ops_sha256": "4b0716f9f60b0ecdb5743c352ebc10e292fa03240274878600a407797d4b5cc3",
+  "preview_ops_sha256": "3a2481b6c1ff2d4d0dae858a112afaef4c0d1e40b02f95d3f260c4c1d2b476e6",
   "render_tree": {
     "node_count": 10,
     "node_types": [
@@ -152,7 +152,7 @@
                   "font_id": 0,
                   "h": 20,
                   "label": "",
-                  "text": "Now: --",
+                  "text": "Now: 4200",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
                   "type": "text",
@@ -165,7 +165,7 @@
                   "font_id": 0,
                   "h": 20,
                   "label": "",
-                  "text": "Today: --",
+                  "text": "Today: 9100",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
                   "type": "text",
@@ -236,22 +236,30 @@
     "refreshes": 0,
     "runtime_view_output": [],
     "stepsNow": {
-      "args": [],
-      "ctor": "Nothing"
+      "args": [
+        4200
+      ],
+      "ctor": "Just"
     },
     "stepsToday": {
-      "args": [],
-      "ctor": "Nothing"
+      "args": [
+        9100
+      ],
+      "ctor": "Just"
     },
     "supported": {
-      "args": [],
-      "ctor": "Nothing"
+      "args": [
+        true
+      ],
+      "ctor": "Just"
     },
     "timeString": null
   },
   "template": "watch-demo-health",
   "timeline_init_messages": [
-    "runtime_exec_error:GotSupported True",
+    "update:GotStepsToday 9100",
+    "update:GotStepsNow 4200",
+    "update:GotSupported True",
     "init:init"
   ],
   "view_tree_type": "windowStack",
@@ -262,16 +270,22 @@
       "lastEvent": "Waiting",
       "refreshes": 0,
       "stepsNow": {
-        "args": [],
-        "ctor": "Nothing"
+        "args": [
+          4200
+        ],
+        "ctor": "Just"
       },
       "stepsToday": {
-        "args": [],
-        "ctor": "Nothing"
+        "args": [
+          9100
+        ],
+        "ctor": "Just"
       },
       "supported": {
-        "args": [],
-        "ctor": "Nothing"
+        "args": [
+          true
+        ],
+        "ctor": "Just"
       }
     },
     "runtime_view_output": [],

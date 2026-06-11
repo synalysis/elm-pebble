@@ -24,7 +24,9 @@ defmodule Ide.MixProject do
         "test.unit": :test,
         "test.integration": :test,
         "test.slow": :test,
-        "test.mcp": :test
+        "test.mcp": :test,
+        "test.corpus": :test,
+        "test.corpus_step": :test
       ]
     ]
   end
@@ -124,6 +126,18 @@ defmodule Ide.MixProject do
         "ecto.migrate --quiet",
         "ide.boundary_check",
         "test test/ide/mcp --include integration --include slow --max-cases 1"
+      ],
+      "test.corpus": [
+        "ecto.create --quiet",
+        "ecto.migrate --quiet",
+        "ide.boundary_check",
+        "test --only template_corpus --include template_corpus --max-cases 1"
+      ],
+      "test.corpus_step": [
+        "ecto.create --quiet",
+        "ecto.migrate --quiet",
+        "ide.boundary_check",
+        "test --only template_corpus_step --include template_corpus_step --max-cases 1"
       ],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
       "assets.build": ["tailwind ide", "esbuild ide"],

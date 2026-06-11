@@ -25,16 +25,16 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 18,
-      "h": 18,
+      "font_size": 16,
+      "h": 16,
       "kind": "text_label",
       "text": "Primitives 1/8",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
-      "w": 144,
-      "x": 0,
-      "y": 2
+      "w": 136,
+      "x": 4,
+      "y": 4
     },
     {
       "antialiased": true,
@@ -48,7 +48,7 @@
       "text_overflow": "trailing_ellipsis",
       "w": 136,
       "x": 4,
-      "y": 152
+      "y": 150
     },
     {
       "antialiased": true,
@@ -174,7 +174,7 @@
       "y": 94
     }
   ],
-  "preview_ops_sha256": "03119cdf5ddfbb07c5841a90c131700289cb61c3c70e97fd177930d09cff0a19",
+  "preview_ops_sha256": "f1e2f1b852b0e4c9e37914278acd65ac68a15a866a32e3fcc8c95d281b0216de",
   "render_tree": {
     "node_count": 16,
     "node_types": [
@@ -219,11 +219,11 @@
                 },
                 {
                   "bounds": {
-                    "h": 18,
+                    "h": 16,
                     "text": null,
-                    "w": 144,
-                    "x": 0,
-                    "y": 2
+                    "w": 136,
+                    "x": 4,
+                    "y": 4
                   },
                   "children": [],
                   "font": "DefaultFont",
@@ -241,7 +241,7 @@
                     "text": null,
                     "w": 136,
                     "x": 4,
-                    "y": 152
+                    "y": 150
                   },
                   "children": [],
                   "font": "DefaultFont",
@@ -417,10 +417,6 @@
     }
   },
   "runtime_model": {
-    "colorMode": {
-      "args": [],
-      "ctor": "Color"
-    },
     "displayShape": {
       "args": [],
       "ctor": "Rectangular"
@@ -440,10 +436,6 @@
   "watch_model": {
     "debugger_init_complete": true,
     "runtime_model": {
-      "colorMode": {
-        "args": [],
-        "ctor": "Color"
-      },
       "displayShape": {
         "args": [],
         "ctor": "Rectangular"

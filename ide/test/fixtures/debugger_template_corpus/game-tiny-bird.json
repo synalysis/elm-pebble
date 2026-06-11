@@ -118,9 +118,20 @@
       "w": 1,
       "x": 0,
       "y": 0
+    },
+    {
+      "antialiased": true,
+      "bitmap_id": 0,
+      "compositing_mode": 0,
+      "h": 1,
+      "kind": "bitmap_in_rect",
+      "resource": "NoStaticBitmap",
+      "w": 1,
+      "x": 0,
+      "y": 0
     }
   ],
-  "preview_ops_sha256": "c8ebf8bcdc03c3612b9c05ff04e27d40f08dc4f8d511b3ce8c8a5d9dbd0016c8",
+  "preview_ops_sha256": "9c9747add13a5e8b05d94cb840fc46411e6b808ea0d99f4906a817ed7e741bd4",
   "render_tree": {
     "node_count": 12,
     "node_types": [
@@ -303,10 +314,6 @@
     "alive": true,
     "best": 0,
     "birdY": 60,
-    "colorMode": {
-      "args": [],
-      "ctor": "BlackWhite"
-    },
     "displayShape": {
       "args": [],
       "ctor": "Rectangular"
@@ -340,10 +347,6 @@
       "alive": true,
       "best": 0,
       "birdY": 60,
-      "colorMode": {
-        "args": [],
-        "ctor": "BlackWhite"
-      },
       "displayShape": {
         "args": [],
         "ctor": "Rectangular"

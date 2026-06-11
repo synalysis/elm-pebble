@@ -1,5 +1,7 @@
 ExUnit.start()
 
+{:ok, _} = Ide.TestSupport.DebuggerSessionLock.start_link()
+
 ExUnit.configure(
   exclude: [
     :integration,
