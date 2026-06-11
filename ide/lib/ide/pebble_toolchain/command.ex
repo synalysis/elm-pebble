@@ -1,7 +1,7 @@
 defmodule Ide.PebbleToolchain.Command do
   @moduledoc false
 
-  alias Ide.PebbleToolchain.Core
+  alias Ide.PebbleToolchain.Package
 
-  defdelegate elm_bin(), to: Core
+  defdelegate elm_bin(), to: Package
 end

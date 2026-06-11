@@ -10,16 +10,18 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
   alias Ide.Projects.Project
   alias Ide.Resources.ResourceStore
   alias IdeWeb.WorkspaceLive.DebuggerPreview
+  alias IdeWeb.WorkspaceLive.DebuggerPage.Assigns
   alias IdeWeb.WorkspaceLive.DebuggerSupport
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Util, as: DebuggerUtil
+  alias IdeWeb.WorkspaceLive.DebuggerSupport.Types, as: SupportTypes
   alias Phoenix.LiveView.Rendered
 
-  @type assigns :: map()
+  @type assigns :: Assigns.t()
   @type rendered :: Rendered.t()
-  @type model_node :: map()
-  @type config_field :: map()
+  @type model_node :: SupportTypes.wire_map()
+  @type config_field :: SupportTypes.wire_map()
   @type trigger_row :: map()
-  @type svg_op :: map()
+  @type svg_op :: SupportTypes.svg_op()
   @type wire_input :: String.t() | integer() | float() | boolean() | list() | nil
   @type model_value :: map() | list() | String.t() | number() | boolean() | nil
 

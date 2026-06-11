@@ -1,7 +1,7 @@
 defmodule Ide.PebbleToolchain.Companion do
   @moduledoc false
 
-  alias Ide.PebbleToolchain.Core
+  alias Ide.PebbleToolchain.Package
 
-  defdelegate companion_index_js_for_preferences(preferences_schema), to: Core
+  defdelegate companion_index_js_for_preferences(preferences_schema), to: Package
 end

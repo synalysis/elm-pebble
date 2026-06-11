@@ -14,6 +14,29 @@ defmodule Ide.Mcp.Handlers.Debugger do
   alias IdeWeb.WorkspaceLive.DebuggerSupport
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Types, as: SupportTypes
 
+  @type debugger_result ::
+          ToolTypes.debugger_state_result()
+          | ToolTypes.debugger_cursor_inspect_result()
+          | ToolTypes.render_tree_result()
+          | ToolTypes.debugger_preview_diagnostics_result()
+          | ToolTypes.debugger_models_result()
+          | ToolTypes.debugger_timeline_result()
+          | ToolTypes.debugger_surface_state_result()
+          | ToolTypes.debugger_watch_profiles_result()
+          | ToolTypes.debugger_simulator_settings_result()
+          | ToolTypes.debugger_configuration_result()
+          | ToolTypes.debugger_auto_fire_result()
+          | ToolTypes.debugger_disabled_subscriptions_result()
+          | ToolTypes.debugger_slug_state_result()
+          | ToolTypes.debugger_simulator_settings_state_result()
+          | ToolTypes.debugger_configuration_values_state_result()
+          | ToolTypes.debugger_auto_fire_settings_state_result()
+          | ToolTypes.debugger_disabled_subscriptions_state_result()
+          | ToolTypes.debugger_export_trace_result()
+          | ToolTypes.traces_export_result()
+          | map()
+
+  @spec call(String.t(), ToolTypes.tool_args()) :: {:ok, debugger_result()} | {:error, String.t()}
   def call("debugger.state", %{"slug" => slug} = args) do
     replay_metadata_only? = ToolSupport.truthy?(Map.get(args, "replay_metadata_only"))
     include_replay_metadata? = include_replay_metadata?(Map.get(args, "include_replay_metadata"))

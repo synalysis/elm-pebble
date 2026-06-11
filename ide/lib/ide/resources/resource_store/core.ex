@@ -27,61 +27,14 @@ defmodule Ide.Resources.ResourceStore.Core do
   @generated_module_rel_path "watch/src/Pebble/Ui/Resources.elm"
   @legacy_generated_module_rel_path "watch/src/Pebble/Ui/Bitmap.elm"
 
-  @type bitmap_variant_entry :: %{
-          filename: String.t(),
-          mime: String.t(),
-          bytes: non_neg_integer(),
-          width: non_neg_integer(),
-          height: non_neg_integer()
-        }
-
-  @type bitmap_entry :: %{
-          id: String.t(),
-          ctor: String.t(),
-          base_name: String.t(),
-          filename: String.t() | nil,
-          mime: String.t() | nil,
-          bytes: non_neg_integer(),
-          width: non_neg_integer(),
-          height: non_neg_integer(),
-          variants: %{optional(String.t()) => bitmap_variant_entry()}
-        }
-
-  @type font_entry :: %{
-          id: String.t(),
-          ctor: String.t(),
-          source_id: String.t(),
-          filename: String.t(),
-          mime: String.t(),
-          bytes: non_neg_integer(),
-          height: non_neg_integer(),
-          characters: String.t(),
-          tracking_adjust: integer(),
-          compatibility: String.t(),
-          target_platforms: [String.t()]
-        }
+  @type bitmap_variant_entry :: Types.bitmap_variant_entry()
+  @type bitmap_entry :: Types.bitmap_entry()
+  @type font_entry :: Types.font_entry()
 
   @type font_lookup_error :: Types.font_lookup_error()
   @type form_params :: %{optional(String.t()) => Types.wire_input(), optional(atom()) => Types.wire_input()}
-  @type font_source :: %{
-          id: String.t(),
-          filename: String.t(),
-          mime: String.t(),
-          bytes: non_neg_integer()
-        }
-
-  @type vector_entry :: %{
-          id: String.t(),
-          ctor: String.t(),
-          base_name: String.t(),
-          filename: String.t(),
-          mime: String.t(),
-          bytes: non_neg_integer(),
-          source: String.t(),
-          kind: String.t(),
-          frames: non_neg_integer() | nil,
-          frame_duration_ms: non_neg_integer() | nil
-        }
+  @type font_source :: Types.font_source()
+  @type vector_entry :: Types.vector_entry()
 
   @spec manifest_rel_path() :: String.t()
   def manifest_rel_path, do: @manifest_rel_path

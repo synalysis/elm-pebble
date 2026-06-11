@@ -8,6 +8,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.Core do
   alias Ide.Resources.ApngStaticPreview
   alias Ide.Resources.PdcDecoder
   alias Ide.Resources.ResourceStore
+  alias IdeWeb.WorkspaceLive.DebuggerPreview.Wire
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Types, as: PreviewTypes
 
   @default_screen_w 144
@@ -606,57 +607,19 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.Core do
   defp raw_runtime_model(_runtime), do: %{}
 
   @spec first_map([wire_value()]) :: map()
-  defp first_map(values) when is_list(values) do
-    Enum.find(values, %{}, &is_map/1)
-  end
+  defp first_map(values), do: Wire.first_map(values)
 
   @spec first_present([wire_value()]) :: wire_value()
-  defp first_present(values) when is_list(values) do
-    Enum.find(values, fn value -> not is_nil(value) end)
-  end
+  defp first_present(values), do: Wire.first_present(values)
 
   @spec map_get_any(map() | nil, String.t()) :: wire_value()
-  defp map_get_any(map, key) when is_map(map) and is_binary(key) do
-    case Map.fetch(map, key) do
-      {:ok, value} ->
-        value
-
-      :error ->
-        map_value_by_atom_name(map, key)
-    end
-  end
-
-  defp map_get_any(_map, _key), do: nil
-
-  @spec map_value_by_atom_name(map(), String.t()) :: wire_value()
-  defp map_value_by_atom_name(map, key) when is_map(map) and is_binary(key) do
-    Enum.find_value(map, fn
-      {atom_key, value} when is_atom(atom_key) ->
-        if Atom.to_string(atom_key) == key, do: value, else: nil
-
-      _ ->
-        nil
-    end)
-  end
+  defp map_get_any(map, key), do: Wire.map_get_any(map, key)
 
   @spec dimension_int(wire_value(), pos_integer()) :: pos_integer()
-  defp dimension_int(value, _fallback) when is_integer(value) and value > 0, do: value
-
-  defp dimension_int(value, _fallback) when is_float(value) and value > 0,
-    do: max(1, trunc(value))
-
-  defp dimension_int(value, fallback) when is_binary(value) do
-    case Integer.parse(value) do
-      {parsed, ""} when parsed > 0 -> parsed
-      _ -> fallback
-    end
-  end
-
-  defp dimension_int(_value, fallback), do: fallback
+  defp dimension_int(value, fallback), do: Wire.dimension_int(value, fallback)
 
   @spec boolean_value?(wire_value()) :: boolean()
-  defp boolean_value?(value) when value in [true, 1, "true", "True", "TRUE"], do: true
-  defp boolean_value?(_value), do: false
+  defp boolean_value?(value), do: Wire.boolean_value?(value)
 
   @spec primary_int_model_value(model_map()) :: integer() | nil
   def primary_int_model_value(model) when is_map(model) do

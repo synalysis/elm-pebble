@@ -7,11 +7,13 @@ defmodule Ide.Resources.ResourceStore do
   alias Ide.Resources.ResourceStore.GeneratedModule
   alias Ide.Resources.ResourceStore.Manifest
   alias Ide.Resources.ResourceStore.Vectors
+  alias Ide.Resources.Types
 
-  @type bitmap_entry :: Ide.Resources.ResourceStore.Core.bitmap_entry()
-  @type font_entry :: Ide.Resources.ResourceStore.Core.font_entry()
-  @type font_source :: Ide.Resources.ResourceStore.Core.font_source()
-  @type vector_entry :: Ide.Resources.ResourceStore.Core.vector_entry()
+  @type bitmap_entry :: Types.bitmap_entry()
+  @type font_entry :: Types.font_entry()
+  @type font_source :: Types.font_source()
+  @type vector_entry :: Types.vector_entry()
+  @type animation_entry :: Types.animation_entry()
 
   defdelegate manifest_rel_path(), to: Manifest
   defdelegate generated_module_rel_path(), to: Manifest

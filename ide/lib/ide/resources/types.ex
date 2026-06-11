@@ -3,14 +3,71 @@ defmodule Ide.Resources.Types do
   Shared types for project resource manifests and generated Elm modules.
   """
 
-  alias Ide.Resources.ResourceStore
+  @type bitmap_variant_entry :: %{
+          filename: String.t(),
+          mime: String.t(),
+          bytes: non_neg_integer(),
+          width: non_neg_integer(),
+          height: non_neg_integer()
+        }
 
-  @type bitmap_entry :: ResourceStore.bitmap_entry()
-  @type font_entry :: ResourceStore.font_entry()
-  @type font_source :: ResourceStore.font_source()
-  @type vector_entry :: ResourceStore.vector_entry()
+  @type bitmap_entry :: %{
+          id: String.t(),
+          ctor: String.t(),
+          base_name: String.t(),
+          filename: String.t() | nil,
+          mime: String.t() | nil,
+          bytes: non_neg_integer(),
+          width: non_neg_integer(),
+          height: non_neg_integer(),
+          variants: %{optional(String.t()) => bitmap_variant_entry()}
+        }
 
-  @type manifest_entry :: bitmap_entry() | font_entry() | vector_entry()
+  @type font_entry :: %{
+          id: String.t(),
+          ctor: String.t(),
+          source_id: String.t(),
+          filename: String.t(),
+          mime: String.t(),
+          bytes: non_neg_integer(),
+          height: non_neg_integer(),
+          characters: String.t(),
+          tracking_adjust: integer(),
+          compatibility: String.t(),
+          target_platforms: [String.t()]
+        }
+
+  @type font_source :: %{
+          id: String.t(),
+          filename: String.t(),
+          mime: String.t(),
+          bytes: non_neg_integer()
+        }
+
+  @type vector_entry :: %{
+          id: String.t(),
+          ctor: String.t(),
+          base_name: String.t(),
+          filename: String.t(),
+          mime: String.t(),
+          bytes: non_neg_integer(),
+          source: String.t(),
+          kind: String.t(),
+          frames: non_neg_integer() | nil,
+          frame_duration_ms: non_neg_integer() | nil
+        }
+
+  @type animation_entry :: %{
+          id: String.t(),
+          ctor: String.t(),
+          filename: String.t(),
+          mime: String.t(),
+          bytes: non_neg_integer(),
+          frames: non_neg_integer() | nil,
+          frame_duration_ms: non_neg_integer() | nil
+        }
+
+  @type manifest_entry :: bitmap_entry() | font_entry() | font_source() | vector_entry() | animation_entry()
   @type manifest :: %{
           optional(String.t()) => wire_input(),
           optional(:schema_version) => integer(),

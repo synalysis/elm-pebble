@@ -295,16 +295,14 @@ defmodule Elmx.Types do
   @typedoc "IEEE float markers surfaced by Elm `Basics.isInfinite`."
   @type float_marker :: :infinity | :negative_infinity
 
-  @typedoc "Normalized launch metadata for `Platform` init."
-  @type launch_context :: wire_map()
-
   @typedoc "Screen fields on a normalized launch context."
   @type launch_screen :: %{
-          optional(String.t()) =>
-            integer()
-            | boolean()
-            | String.t()
-            | wire_ctor()
+          optional(String.t()) => integer() | boolean() | String.t() | wire_ctor()
+        }
+
+  @typedoc "Normalized launch metadata for `Platform` init."
+  @type launch_context :: %{
+          optional(String.t()) => wire_value()
         }
 
   @typedoc "HTTP response expectation attached to an `elm/http` command."
