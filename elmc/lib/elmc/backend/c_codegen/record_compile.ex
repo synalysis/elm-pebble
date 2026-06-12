@@ -7,6 +7,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   alias Elmc.Backend.CCodegen.Expr
   alias Elmc.Backend.CCodegen.FunctionCallCompile
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.Native.RecordFields
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.CCodegen.VarAnalysis
@@ -125,7 +126,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   @spec compile_literal(Types.ir_record_fields(), Types.compile_env(), Types.compile_counter()) ::
           Types.compile_result()
   defp compile_literal(fields, env, counter) do
-    ordered_fields = fields
+    ordered_fields = canonicalize_literal_fields(fields, env)
     field_count = length(ordered_fields)
 
     if field_count > 0 and Enum.all?(ordered_fields, &Host.native_int_expr?(&1.expr, env)) do
@@ -148,15 +149,15 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     next = counter + 1
     out = "tmp_#{next}"
     values_array = Enum.join(field_refs, ", ")
-    field_names_decl = static_record_field_names_decl(ordered_fields, next)
 
     code =
       """
       #{field_code}
-        #{field_names_decl}
         elmc_int_t rec_values_#{next}[#{field_count}] = { #{values_array} };
-        ElmcValue *#{out} = elmc_record_new_static_ints(#{field_count}, rec_field_names_#{next}, rec_values_#{next});
+        ElmcValue *#{out} = elmc_record_new_values_ints(#{field_count}, rec_values_#{next});
       """ <> post_release
+
+    :ok = put_literal_record_meta(out, ordered_fields, env)
 
     {code, out, next}
   end
@@ -190,28 +191,50 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     out = "tmp_#{next}"
     values_array = Enum.join(field_refs, ", ")
 
-    field_names_decl = static_record_field_names_decl(ordered_fields, next)
-
     code =
       """
       #{field_code}
-        #{field_names_decl}
         ElmcValue *rec_values_#{next}[#{max(field_count, 1)}] = { #{values_array} };
-          ElmcValue *#{out} = elmc_record_new_static_take(#{field_count}, rec_field_names_#{next}, rec_values_#{next});
+          ElmcValue *#{out} = elmc_record_new_values_take(#{field_count}, rec_values_#{next});
       """ <> post_release
+
+    :ok = put_literal_record_meta(out, ordered_fields, env)
 
     {code, out, next}
   end
 
-  defp static_record_field_names_decl(ordered_fields, suffix) when is_list(ordered_fields) do
+  defp put_literal_record_meta(var, ordered_fields, env) do
     names = Enum.map(ordered_fields, & &1.name)
-    count = length(names)
+    type = Expr.record_type_for_field_names(names, env)
+    shape = if is_binary(type), do: Expr.record_shape_for_type(type, env), else: names
+    Expr.put_subexpr_record_meta(var, %{type: type, shape: shape})
+  end
 
-    literals =
-      names
-      |> Enum.map_join(", ", fn name -> "\"#{Util.escape_c_string(name)}\"" end)
+  defp remap_literal_fields(ordered_fields, canonical_names) do
+    fields = Enum.map(canonical_names, fn name -> Enum.find(ordered_fields, &(&1.name == name)) end)
 
-    "const char *rec_field_names_#{suffix}[#{count}] = { #{literals} };"
+    if Enum.all?(fields, &is_map/1), do: {:ok, fields}, else: :error
+  end
+
+  defp canonicalize_literal_fields(ordered_fields, env) when is_list(ordered_fields) do
+    names = Enum.map(ordered_fields, & &1.name)
+
+    case Expr.record_type_for_field_names(names, env) do
+      nil ->
+        ordered_fields
+
+      type ->
+        case Expr.record_shape_for_type(type, env) do
+          nil ->
+            ordered_fields
+
+          canonical_names ->
+            case remap_literal_fields(ordered_fields, canonical_names) do
+              {:ok, fields} -> fields
+              :error -> ordered_fields
+            end
+        end
+    end
   end
 
   defp maybe_extract_boxed_record_literal_helper(
@@ -245,14 +268,11 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
           values_array = field_vars |> Enum.map(fn {_name, var} -> var end) |> Enum.join(", ")
 
-          field_names_decl = static_record_field_names_decl(ordered_fields, helper_id)
-
           helper_def = """
           static ElmcValue *#{helper_name}(#{helper_param_decls}) {
           #{CSource.indent(field_code, 2)}
-            #{field_names_decl}
             ElmcValue *rec_values[#{field_count}] = { #{values_array} };
-            return elmc_record_new_static_take(#{field_count}, rec_field_names_#{helper_id}, rec_values);
+            return elmc_record_new_values_take(#{field_count}, rec_values);
           }
           """
 
@@ -332,6 +352,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
       compile_update_operand(base, env, counter)
 
     record_shape = Expr.record_shape(base, env)
+    record_type = Expr.record_container_type_for_expr(base, env)
 
     {update_code, current_var, counter} =
       Enum.reduce(fields, {base_code, base_var, counter, base_passthrough?, false}, fn field,
@@ -348,6 +369,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
         update_call =
           Expr.record_update_expr(current, field.name, field_var, record_shape,
+            env: env,
+            type: record_type,
             cow: current_unique?
           )
 
@@ -519,7 +542,13 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
         {arg_code, arg_var, counter} = Host.compile_expr(%{op: :var, name: arg}, env, counter)
         next = counter + 1
         var = "tmp_#{next}"
-        getter = Expr.record_get_expr(arg_var, field, Expr.record_shape_for_var(env, arg))
+        getter =
+          record_field_get_expr(
+            arg_var,
+            field,
+            %{op: :var, name: arg},
+            env
+          )
 
         code = """
         #{arg_code}
@@ -561,7 +590,13 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
             {code, ref, counter} = Host.compile_expr(%{op: :var, name: name}, env, counter)
             next = counter + 1
             var = "tmp_#{next}"
-            getter = Expr.record_get_expr(ref, field, Expr.record_shape_for_var(env, name))
+            getter =
+              record_field_get_expr(
+                ref,
+                field,
+                %{op: :var, name: name},
+                env
+              )
 
             code =
               code <>
@@ -593,7 +628,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
         {arg_code, arg_var, counter} = Host.compile_expr(arg_expr, env, counter)
         next = counter + 1
         var = "tmp_#{next}"
-        getter = Expr.record_get_expr(arg_var, field, Expr.record_shape(arg_expr, env))
+        getter = record_field_get_expr(arg_var, field, arg_expr, env)
+        :ok = Expr.put_subexpr_record_meta(var, subexpr_record_meta_for_field_access(env, arg_expr, field))
 
         code = """
         #{arg_code}
@@ -619,7 +655,13 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
        when is_binary(source) do
     next = counter + 1
     var = "tmp_#{next}"
-    getter = Expr.record_get_expr(source, field, Expr.record_shape_for_var(env, record_name))
+    getter =
+      record_field_get_expr(
+        source,
+        field,
+        %{op: :var, name: record_name},
+        env
+      )
 
     before_probe =
       env |> DebugProbes.field_probe(record_name, field, :before) |> DebugProbes.region()
@@ -927,8 +969,10 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     release_line =
       if release_arg?, do: "  elmc_release(#{arg_var});\n", else: ""
 
+    record_type = Expr.record_container_type_for_expr(arg_expr, env)
+
     if native_int_compile_fn?(compile_fn) do
-      getter = Host.record_get_int_expr(arg_var, field, shape)
+      getter = Host.record_get_int_expr(arg_var, field, shape, env, record_type)
 
       code =
         arg_code <>
@@ -938,7 +982,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     else
       next = counter + 1
       var = Util.temp_var(next, field)
-      getter = Expr.record_get_expr(arg_var, field, shape)
+      getter = record_field_get_expr(arg_var, field, arg_expr, env)
+      :ok = Expr.put_subexpr_record_meta(var, subexpr_record_meta_for_field_access(env, arg_expr, field))
 
       code = """
       #{arg_code}  ElmcValue *#{var} = #{getter};
@@ -947,6 +992,25 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
       {code, var, next, env}
     end
+  end
+
+  defp record_field_get_expr(source, field, arg_expr, env) do
+    shape = Expr.record_shape(arg_expr, env)
+    type = Expr.record_container_type_for_expr(arg_expr, env)
+    Expr.record_get_expr(source, field, shape, env, type)
+  end
+
+  defp subexpr_record_meta_for_field_access(env, arg_expr, field) do
+    record_type = RecordFields.field_type(env, arg_expr, field)
+
+    shape =
+      if is_binary(record_type) do
+        Expr.record_shape_for_type(record_type, env)
+      else
+        Expr.record_shape(arg_expr, env)
+      end
+
+    %{type: record_type, shape: shape}
   end
 
   defp native_int_compile_fn?(compile_fn),

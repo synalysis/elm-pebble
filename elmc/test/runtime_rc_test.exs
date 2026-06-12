@@ -1,6 +1,99 @@
 defmodule Elmc.RuntimeRCTest do
   use ExUnit.Case
 
+  @deep_list_cells 200
+  @deep_list_stack_kb 32
+
+  test "list release uses iterative spine teardown in generated runtime" do
+    source = Elmc.Runtime.RcTrack.retain_release_impl()
+
+    assert source =~ "elmc_release_list_spine"
+    assert source =~ "elmc_release_list_cell_payload"
+    assert source =~ "elmc_release_list_spine(value);"
+    refute source =~ "elmc_release(node->tail);"
+  end
+
+  test "list release is emitted in compiled elmc_runtime.c" do
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available for runtime C test")
+
+    project_dir = Path.expand("fixtures/simple_project", __DIR__)
+    out_dir = Path.expand("tmp/runtime_rc_list_spine_source", __DIR__)
+    File.rm_rf!(out_dir)
+    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
+
+    runtime_c = File.read!(Path.join(out_dir, "runtime/elmc_runtime.c"))
+
+    assert runtime_c =~ "elmc_release_list_spine"
+    refute runtime_c =~ "elmc_release(node->tail);"
+  end
+
+  test "deep flat list release survives a small C stack (pebble stack safety)" do
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available for runtime C test")
+
+    project_dir = Path.expand("fixtures/simple_project", __DIR__)
+    out_dir = Path.expand("tmp/runtime_rc_deep_list_release", __DIR__)
+    File.rm_rf!(out_dir)
+    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
+
+    harness_path = Path.join(out_dir, "c/deep_list_release_harness.c")
+
+    File.write!(
+      harness_path,
+      """
+      #include "../runtime/elmc_runtime.h"
+      #include <stdio.h>
+
+      static ElmcValue *list_of_n_ints(int count) {
+        ElmcValue *out = elmc_list_nil();
+        ElmcValue **tail_slot = &out;
+        for (int i = 0; i < count; i++) {
+          ElmcValue *head = elmc_new_int(i);
+          ElmcValue *cell = elmc_list_cons(head, elmc_list_nil());
+          elmc_release(head);
+          *tail_slot = cell;
+          tail_slot = &((ElmcCons *)cell->payload)->tail;
+        }
+        return out;
+      }
+
+      int main(void) {
+        ElmcValue *list = list_of_n_ints(#{@deep_list_cells});
+        elmc_release(list);
+        printf("deep_list_release_ok cells=%d\\n", #{@deep_list_cells});
+        return 0;
+      }
+      """
+    )
+
+    binary_path = Path.join(out_dir, "deep_list_release_harness")
+
+    {compile_out, compile_code} =
+      System.cmd(cc, [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-I#{Path.join(out_dir, "runtime")}",
+        Path.join(out_dir, "runtime/elmc_runtime.c"),
+        harness_path,
+        "-o",
+        binary_path
+      ])
+
+    assert compile_code == 0, compile_out
+
+    {run_out, run_code} =
+      System.cmd(
+        "bash",
+        ["-c", "ulimit -s #{@deep_list_stack_kb}; exec #{binary_path}"],
+        stderr_to_stdout: true
+      )
+
+    assert run_code == 0, "deep list release failed under #{@deep_list_stack_kb}KB stack:\n#{run_out}"
+    assert run_out =~ "deep_list_release_ok cells=#{@deep_list_cells}"
+  end
+
   test "runtime retain/release counters work in c harness" do
     cc = System.find_executable("cc")
     if is_nil(cc), do: flunk("cc not available for runtime C test")

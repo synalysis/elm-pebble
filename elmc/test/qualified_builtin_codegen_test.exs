@@ -156,20 +156,22 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     [typed_bounds_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
 
-    assert typed_bounds_body =~ "elmc_record_new_static_ints"
+    assert typed_bounds_body =~ "elmc_record_new_values_ints"
     refute typed_bounds_body =~ "elmc_retain(x)"
     refute typed_bounds_body =~ "elmc_retain(y)"
 
     access_body =
       generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_typedBoundsAccess")
+      |> String.split("static ElmcValue *elmc_fn_Main_typedBoundsAccess_native")
       |> List.last()
 
     [typed_access_body | _rest] =
       String.split(access_body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert typed_access_body =~ "elmc_record_get_index("
-    assert typed_access_body =~ "2 /* x */"
+
+    assert typed_access_body =~
+             ~r/elmc_record_get_index\(tmp_\d+, (?:ELMC_FIELD_MAIN_TYPEDBOUNDS_X|2 \/\* x \*\/)\)/
     refute typed_access_body =~ "elmc_record_get(tmp_"
   end
 
@@ -508,8 +510,11 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     [native_min_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
 
-    assert native_min_body =~ "ELMC_RECORD_GET_INDEX_INT(model, 1 /* screenW */)"
-    assert native_min_body =~ "ELMC_RECORD_GET_INDEX_INT(model, 0 /* screenH */)"
+    assert native_min_body =~
+             "ELMC_RECORD_GET_INDEX_INT(model, ELMC_FIELD_MAIN_NATIVEMINRECORDMODEL_SCREENW)"
+
+    assert native_min_body =~
+             "ELMC_RECORD_GET_INDEX_INT(model, ELMC_FIELD_MAIN_NATIVEMINRECORDMODEL_SCREENH)"
     assert native_min_body =~ "native_min_"
     refute native_min_body =~ "elmc_basics_min"
     refute native_min_body =~ "elmc_record_get(model, \"screenW\")"
@@ -544,8 +549,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       |> String.split(~r/(?:static )?ElmcValue \*elmc_fn_/, parts: 2)
       |> hd()
 
-    assert body =~ "ELMC_RECORD_GET_INDEX_INT(model, 6 /* screenW */)"
-    assert body =~ "ELMC_RECORD_GET_INDEX_INT(model, 5 /* screenH */)"
+    assert body =~ "ELMC_RECORD_GET_INDEX_INT(model, ELMC_FIELD_MAIN_WATCHMODEL_SCREENW)"
+    assert body =~ "ELMC_RECORD_GET_INDEX_INT(model, ELMC_FIELD_MAIN_WATCHMODEL_SCREENH)"
   end
 
   test "String.fromInt over native Int avoids temporary boxed integer" do
@@ -1107,16 +1112,16 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     [native_bounds_body | _rest] = String.split(bounds_body, "int elmc_fn_", parts: 2)
 
     assert native_bounds_body =~
-             "scene_cmd.p1 = ELMC_RECORD_GET_INDEX_INT(bounds, 2 /* x */)"
+             "scene_cmd.p1 = ELMC_RECORD_GET_INDEX_INT(bounds, ELMC_FIELD_PEBBLE_UI_RECT_X)"
 
     assert native_bounds_body =~
-             "scene_cmd.p2 = ELMC_RECORD_GET_INDEX_INT(bounds, 3 /* y */)"
+             "scene_cmd.p2 = ELMC_RECORD_GET_INDEX_INT(bounds, ELMC_FIELD_PEBBLE_UI_RECT_Y)"
 
     assert native_bounds_body =~
-             "scene_cmd.p3 = ELMC_RECORD_GET_INDEX_INT(bounds, 1 /* w */)"
+             "scene_cmd.p3 = ELMC_RECORD_GET_INDEX_INT(bounds, ELMC_FIELD_PEBBLE_UI_RECT_W)"
 
     assert native_bounds_body =~
-             "scene_cmd.p4 = ELMC_RECORD_GET_INDEX_INT(bounds, 0 /* h */)"
+             "scene_cmd.p4 = ELMC_RECORD_GET_INDEX_INT(bounds, ELMC_FIELD_PEBBLE_UI_RECT_H)"
 
     refute native_bounds_body =~ "scene_cmd.p1 = 0;"
     refute native_bounds_body =~ "scene_cmd.p3 = 0;"
@@ -1599,8 +1604,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     [sun_window_body | _rest] = String.split(sun_body, "int elmc_fn_", parts: 2)
 
-    assert sun_window_body =~ "sunriseMin"
-    assert sun_window_body =~ "sunsetMin"
+    assert sun_window_body =~ "ELMC_FIELD_MAIN_DIRECTSUNWINDOW_SUNRISEMIN"
+    assert sun_window_body =~ "ELMC_FIELD_MAIN_DIRECTSUNWINDOW_SUNSETMIN"
     assert sun_window_body =~ "direct_native_let_sunrise_"
     assert sun_window_body =~ "direct_native_let_sunset_"
     refute sun_window_body =~ "elmc_record_get_int("
@@ -3805,7 +3810,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       )
       |> hd()
 
-    assert bitmap_body =~ "scene_cmd.p3 = ELMC_RECORD_GET_INDEX_INT(model, 2 /* rotationAngle */)"
+    assert bitmap_body =~
+             "scene_cmd.p3 = ELMC_RECORD_GET_INDEX_INT(model, ELMC_FIELD_MAIN_MODEL_ROTATIONANGLE)"
     refute bitmap_body =~ "elmc_fn_Pebble_Ui_rotationToPebbleAngle"
   end
 

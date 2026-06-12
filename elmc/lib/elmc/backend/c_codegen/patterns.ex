@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.EnvBindings
+  alias Elmc.Backend.CCodegen.Expr
   alias Elmc.Backend.CCodegen.PebbleMsgTag
   alias Elmc.Backend.CCodegen.Types
 
@@ -184,7 +185,13 @@ defmodule Elmc.Backend.CCodegen.Patterns do
 
     value_ref = just_payload_ref(subject_ref)
 
-    env = if is_binary(bind), do: Map.put(env, bind, value_ref), else: env
+    env =
+      env
+      |> then(fn branch_env ->
+        if is_binary(bind), do: Map.put(branch_env, bind, value_ref), else: branch_env
+      end)
+      |> put_just_bind_var_type(subject_ref, bind)
+
     if arg, do: bind_pattern(env, arg, value_ref), else: env
   end
 
@@ -259,9 +266,15 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   per branch so field reads do not leak one payload per `elmc_record_get` call.
   The borrow is valid while the case subject remains alive.
   """
-  @spec maybe_unwrap_var_branch(Types.compile_env(), map(), Types.subject_ref(), integer()) ::
+  @spec maybe_unwrap_var_branch(
+          Types.compile_env(),
+          map(),
+          Types.subject_ref(),
+          integer(),
+          Types.case_subject() | nil
+        ) ::
           {Types.compile_env(), String.t(), String.t(), integer()}
-  def maybe_unwrap_var_branch(env, branch, subject_ref, counter) do
+  def maybe_unwrap_var_branch(env, branch, subject_ref, counter, case_subject \\ nil) do
     if Map.get(env, :maybe_unwrap_just, false) and var_branch?(branch) do
       %{pattern: %{kind: :var, name: bind}} = branch
       next = counter + 1
@@ -275,12 +288,48 @@ defmodule Elmc.Backend.CCodegen.Patterns do
         env
         |> Map.put(bind, temp)
         |> Map.delete(:maybe_unwrap_just)
+        |> put_maybe_unwrapped_var_type(case_subject, bind)
 
       {branch_env, setup, release, next}
     else
       {bind_pattern(env, branch.pattern, subject_ref), "", "", counter}
     end
   end
+
+  defp put_maybe_unwrapped_var_type(env, case_subject, bind) when not is_nil(case_subject) do
+    subject_expr =
+      case case_subject do
+        name when is_binary(name) -> %{op: :var, name: name}
+        expr -> expr
+      end
+
+    case Expr.maybe_unwrapped_record_type(subject_expr, env) do
+      type when is_binary(type) -> EnvBindings.put_var_type(env, bind, type)
+      _ -> env
+    end
+  end
+
+  defp put_maybe_unwrapped_var_type(env, _case_subject, _bind), do: env
+
+  defp put_just_bind_var_type(env, _subject_ref, bind) when bind in [nil, "", "_"], do: env
+
+  defp put_just_bind_var_type(env, subject_ref, bind) when is_binary(bind) and is_binary(subject_ref) do
+    payload_type =
+      Expr.record_payload_type_for_var(env, subject_ref) ||
+        Map.get(env, :__case_subject_payload_type__)
+
+    case payload_type do
+      type when is_binary(type) ->
+        env
+        |> EnvBindings.put_var_type(bind, type)
+        |> EnvBindings.put_record_shape(bind, Expr.record_shape_from_type(type, env))
+
+      _ ->
+        env
+    end
+  end
+
+  defp put_just_bind_var_type(env, _subject_ref, _bind), do: env
 
   @spec nothing_branch?(map()) :: boolean()
   defp nothing_branch?(%{pattern: %{kind: :constructor, name: name}})

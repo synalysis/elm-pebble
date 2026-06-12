@@ -95,11 +95,21 @@ defmodule Elmc.Backend.CCodegen.Host do
     to: NativeInt,
     as: :pebble_bound_trig_round_expr?
 
-  @spec record_get_int_expr(String.t(), String.t(), Types.record_shape()) :: String.t()
-  defdelegate record_get_int_expr(source, field, fields), to: Expr
+  @spec record_get_int_expr(String.t(), String.t(), Types.record_shape(), Types.compile_env(), String.t() | nil) ::
+          String.t()
+  defdelegate record_get_int_expr(source, field, fields, env \\ %{}, type \\ nil), to: Expr
 
   @spec nested_record_get_int_expr(Types.ir_expr(), Types.compile_env()) :: String.t() | nil
   defdelegate nested_record_get_int_expr(expr, env), to: Expr
+
+  @spec record_type_for_expr(Types.ir_expr(), Types.compile_env()) :: String.t() | nil
+  defdelegate record_type_for_expr(expr, env), to: Expr
+
+  @spec record_container_type_for_expr(Types.ir_expr(), Types.compile_env()) :: String.t() | nil
+  defdelegate record_container_type_for_expr(expr, env), to: Expr
+
+  @spec record_type_for_var(Types.compile_env(), String.t()) :: String.t() | nil
+  defdelegate record_type_for_var(env, name), to: Expr
 
   @spec record_get_borrow_expr(Types.ir_expr(), Types.compile_env()) :: String.t() | nil
   defdelegate record_get_borrow_expr(expr, env), to: Expr

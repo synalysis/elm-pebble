@@ -3,6 +3,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
 
   alias Elmc.Backend.CCodegen.ConstructorTagCase
   alias Elmc.Backend.CCodegen.CSource
+  alias Elmc.Backend.CCodegen.Expr
   alias Elmc.Backend.CCodegen.HelperParams
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
@@ -55,13 +56,22 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     {"", "#{out} = elmc_new_string(\"#{Util.escape_c_string(value)}\");", counter}
   end
 
-  def branch_assignment(%{op: :int_literal, value: 0}, out, _env, counter) do
-    {"", "#{out} = elmc_int_zero();", counter}
+  def branch_assignment(%{op: :bool_literal, value: value}, out, _env, counter) do
+    {"", "#{out} = elmc_new_bool(#{if value, do: "true", else: "false"});", counter}
+  end
+
+  def branch_assignment(%{op: :int_literal, value: value}, out, env, counter)
+      when value in [0, 1] do
+    if function_returns_bool?(env) do
+      {"", "#{out} = elmc_new_bool(#{if value == 1, do: "true", else: "false"});", counter}
+    else
+      branch_assignment_int_literal(value, out, counter)
+    end
   end
 
   def branch_assignment(%{op: :int_literal, value: value}, out, _env, counter)
       when is_integer(value) do
-    {"", "#{out} = elmc_new_int(#{value});", counter}
+    branch_assignment_int_literal(value, out, counter)
   end
 
   def branch_assignment(expr, out, env, counter) do
@@ -123,9 +133,13 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
       ConstructorTagCase.compile_subject_ref(subject, env, counter)
 
     case_env =
-      if Patterns.maybe_unwrap_just_case?(branches),
-        do: Map.put(env, :maybe_unwrap_just, true),
-        else: env
+      env
+      |> then(fn case_env ->
+        if Patterns.maybe_unwrap_just_case?(branches),
+          do: Map.put(case_env, :maybe_unwrap_just, true),
+          else: case_env
+      end)
+      |> put_case_subject_payload_type(subject)
 
     next = counter + 1
     out = "tmp_#{next}"
@@ -137,7 +151,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
         last_branch? = branch_index == length(branches) - 1
 
         {branch_env, unwrap_setup, unwrap_release, c} =
-          Patterns.maybe_unwrap_var_branch(case_env, branch, subject_ref, c)
+          Patterns.maybe_unwrap_var_branch(case_env, branch, subject_ref, c, subject)
 
         {expr_code, assignment_code, c2} =
           branch_assignment(branch.expr, out, branch_env, c)
@@ -378,4 +392,30 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
 
   @spec battery_alert_case_probe(Types.compile_env(), term(), atom()) :: String.t()
   defp battery_alert_case_probe(_env, _branch_index, _position), do: ""
+
+  defp branch_assignment_int_literal(0, out, counter),
+    do: {"", "#{out} = elmc_int_zero();", counter}
+
+  defp branch_assignment_int_literal(value, out, counter) when is_integer(value),
+    do: {"", "#{out} = elmc_new_int(#{value});", counter}
+
+  defp function_returns_bool?(env) when is_map(env) do
+    case {Map.get(env, :__module__), Map.get(env, :__function_name__)} do
+      {mod, name} when is_binary(mod) and is_binary(name) ->
+        case Map.get(Map.get(env, :__program_decls__, %{}), {mod, name}) do
+          %{type: type} -> Host.function_return_type(type) == "Bool"
+          _ -> false
+        end
+
+      _ ->
+        false
+    end
+  end
+
+  defp put_case_subject_payload_type(env, subject) do
+    case Expr.maybe_unwrapped_record_type(subject_expr(subject), env) do
+      type when is_binary(type) -> Map.put(env, :__case_subject_payload_type__, type)
+      _ -> env
+    end
+  end
 end

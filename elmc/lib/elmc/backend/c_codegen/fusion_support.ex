@@ -39,10 +39,71 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
     end
   end
 
+  @spec resolve_cell_count(map(), String.t(), String.t()) :: {:ok, integer()} | :error
+  def resolve_cell_count(decl_map, module_name, size_var) when is_binary(size_var) do
+    case Map.get(decl_map, {module_name, size_var}) do
+      %{expr: %{op: :int_literal, value: value}} when is_integer(value) ->
+        {:ok, value}
+
+      %{expr: %{op: :call, name: mul, args: [%{op: :var, name: a}, %{op: :var, name: b}]}}
+      when mul in ["*", "__mul__"] ->
+        resolve_product(decl_map, module_name, a, b)
+
+      %{
+        expr: %{
+          op: :qualified_call,
+          target: "Basics.mul",
+          args: [%{op: :var, name: a}, %{op: :var, name: b}]
+        }
+      } ->
+        resolve_product(decl_map, module_name, a, b)
+
+      _ ->
+        :error
+    end
+  end
+
+  defp resolve_product(decl_map, module_name, a, b) do
+    with {:ok, ac} <- resolve_int_constant(decl_map, module_name, a),
+         {:ok, bc} <- resolve_int_constant(decl_map, module_name, b) do
+      {:ok, ac * bc}
+    else
+      _ -> :error
+    end
+  end
+
+  @spec flat_list_cell_reader?(map(), String.t(), String.t(), String.t()) :: boolean()
+  def flat_list_cell_reader?(decl_map, module_name, cell_reader, cols_var) do
+    case Map.get(decl_map, callee_key(module_name, cell_reader)) do
+      %{expr: %{op: :if, else_expr: else_expr}} ->
+        flat_list_index_uses_cols?(else_expr, cols_var)
+
+      _ ->
+        false
+    end
+  end
+
+  defp flat_list_index_uses_cols?(expr, cols_var) do
+    case expr do
+      %{op: :qualified_call, target: "Maybe.withDefault", args: [_default, index_expr]} ->
+        flat_list_index_uses_cols?(index_expr, cols_var)
+
+      %{op: :qualified_call, target: list_at, args: [index_expr, _board]}
+      when is_binary(list_at) and list_at != "Maybe.withDefault" ->
+        flat_list_index_uses_cols?(index_expr, cols_var)
+
+      other ->
+        case cols_from_y_mul_plus_x(other) do
+          {:ok, resolved} -> resolved == cols_var
+          _ -> false
+        end
+    end
+  end
+
   @spec int_constant_c(map(), String.t(), String.t()) :: String.t()
   def int_constant_c(decl_map, module_name, var_name) do
     case resolve_int_constant(decl_map, module_name, var_name) do
-      {:ok, value} -> Integer.to_string(value)
+      {:ok, value} -> "#{value} /* #{Util.escape_c_comment(var_name)} */"
       :error -> "elmc_as_int(#{Util.module_fn_name(module_name, var_name)}(NULL, 0))"
     end
   end
@@ -143,9 +204,9 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
   def cols_from_sub_one(%{op: :add_const, var: var, value: -1}) when is_binary(var), do: :error
   def cols_from_sub_one(_), do: :error
 
-  @spec board_size_expr(map(), String.t(), String.t(), String.t()) :: String.t()
-  def board_size_expr(decl_map, module_name, cols_var, rows_var) do
-    case Map.get(decl_map, {module_name, "boardSize"}) do
+  @spec board_size_expr(map(), String.t(), String.t(), String.t(), String.t()) :: String.t()
+  def board_size_expr(decl_map, module_name, size_var, cols_var, rows_var) do
+    case Map.get(decl_map, {module_name, size_var}) do
       %{expr: %{op: :int_literal, value: value}} when is_integer(value) ->
         Integer.to_string(value)
 

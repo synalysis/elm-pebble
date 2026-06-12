@@ -46,6 +46,26 @@ defmodule Elmc.Backend.CCodegen.Util do
     |> String.replace("\n", "\\n")
   end
 
+  @spec parse_compile_time_int_ref(String.t()) :: integer() | nil
+  def parse_compile_time_int_ref(ref) when is_binary(ref) do
+    ref
+    |> String.split("/*", parts: 2)
+    |> List.first()
+    |> String.trim()
+    |> case do
+      "" ->
+        nil
+
+      digits ->
+        case Integer.parse(digits) do
+          {value, ""} -> value
+          _ -> nil
+        end
+    end
+  end
+
+  def parse_compile_time_int_ref(_ref), do: nil
+
   @spec escape_c_comment(String.t()) :: String.t()
   def escape_c_comment(value) do
     value

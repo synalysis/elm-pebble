@@ -678,13 +678,14 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
   end
 
   defp collect_var_contexts(name, %{op: :compare, left: left, right: right}, _context) do
-    context =
-      if int_candidate_for_analysis?(name, left) and
-           int_candidate_for_analysis?(name, right),
-         do: :native,
-         else: :boxed
+    left_context =
+      if int_candidate_for_analysis?(name, left), do: :native, else: :boxed
 
-    collect_var_contexts(name, left, context) ++ collect_var_contexts(name, right, context)
+    right_context =
+      if int_candidate_for_analysis?(name, right), do: :native, else: :boxed
+
+    collect_var_contexts(name, left, left_context) ++
+      collect_var_contexts(name, right, right_context)
   end
 
   defp collect_var_contexts(

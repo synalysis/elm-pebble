@@ -13,6 +13,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
   alias Elmc.Backend.CCodegen.Tuple2CaseTable
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.CCodegen.RecordFieldMacros
   alias Elmc.Backend.CCodegen.UnionMacros
   alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.Pebble.IRAnalysis
@@ -85,8 +86,10 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
     constructor_tags = IRQueries.constructor_tag_map(ir)
     {union_constructor_defines, union_constructor_macros} = UnionMacros.definitions(ir)
+    {record_field_defines, record_field_macros} = RecordFieldMacros.definitions(ir)
     Process.put(:elmc_constructor_tags, constructor_tags)
     Process.put(:elmc_union_constructor_macros, union_constructor_macros)
+    Process.put(:elmc_record_field_macros, record_field_macros)
     Process.put(:elmc_vector_resource_slots, IRQueries.pebble_vector_resource_slot_map(ir))
     Process.put(:elmc_bitmap_resource_slots, IRQueries.pebble_bitmap_resource_slot_map(ir))
     Process.put(:elmc_animation_resource_slots, IRQueries.pebble_animation_resource_slot_map(ir))
@@ -200,6 +203,8 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     Process.delete(:elmc_lambda_defs)
     Process.delete(:elmc_constructor_tags)
     Process.delete(:elmc_union_constructor_macros)
+    Process.delete(:elmc_record_field_macros)
+    Process.delete(:elmc_subexpr_record_meta)
     Process.delete(:elmc_pebble_msg_names)
     Process.delete(:elmc_vector_resource_slots)
     Process.delete(:elmc_bitmap_resource_slots)
@@ -227,6 +232,8 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     #endif
 
     #{union_constructor_defines}
+
+    #{record_field_defines}
 
     #{magic_number_defines}
 

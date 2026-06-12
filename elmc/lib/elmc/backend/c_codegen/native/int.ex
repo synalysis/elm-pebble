@@ -321,9 +321,9 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
         {"", ref, counter}
 
       nil ->
-        case ConstantInt.literal_value(expr, env) do
-          {:ok, value} ->
-            {"", Integer.to_string(value), counter}
+        case ConstantInt.native_ref(expr, env) do
+          {:ok, ref} ->
+            {"", ref, counter}
 
           :error ->
             dispatch(expr, env, counter)
@@ -389,7 +389,14 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
         end
 
       {:ok, source} when is_binary(source) ->
-        getter = Host.record_get_int_expr(source, field, Host.record_shape_for_var(env, arg))
+        getter =
+          Host.record_get_int_expr(
+            source,
+            field,
+            Host.record_shape_for_var(env, arg),
+            env,
+            Host.record_type_for_var(env, arg)
+          )
 
         before_probe =
           env |> Host.battery_alert_field_probe(arg, field, :before) |> Host.agent_probe_region()
@@ -446,7 +453,14 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
             {arg_code, arg_var, counter} = Host.compile_expr(arg_expr, env, counter)
             next = counter + 1
             out = "native_field_#{next}"
-            getter = Host.record_get_int_expr(arg_var, field, Host.record_shape(arg_expr, env))
+            getter =
+              Host.record_get_int_expr(
+                arg_var,
+                field,
+                Host.record_shape(arg_expr, env),
+                env,
+                Host.record_container_type_for_expr(arg_expr, env)
+              )
 
             before_probe =
               env
@@ -1460,8 +1474,8 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
   @spec parse_compile_time_int_ref(String.t()) :: integer() | nil
   defp parse_compile_time_int_ref(ref) when is_binary(ref) do
-    case Integer.parse(ref) do
-      {value, ""} when value != 0 -> value
+    case Util.parse_compile_time_int_ref(ref) do
+      value when is_integer(value) and value != 0 -> value
       _ -> nil
     end
   end

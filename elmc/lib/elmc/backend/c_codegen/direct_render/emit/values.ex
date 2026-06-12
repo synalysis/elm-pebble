@@ -396,8 +396,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
   end
 
   defp parse_compile_time_int_ref(ref) when is_binary(ref) do
-    case Integer.parse(ref) do
-      {value, ""} when value != 0 -> value
+    case Util.parse_compile_time_int_ref(ref) do
+      value when is_integer(value) and value != 0 -> value
       _ -> nil
     end
   end

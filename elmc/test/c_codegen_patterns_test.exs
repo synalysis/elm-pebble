@@ -63,7 +63,7 @@ defmodule Elmc.CCodegenPatternsTest do
     assert Regex.scan(~r/elmc_maybe_or_tuple_just_payload_borrow\(tmp_subject\)/, source)
            |> length() == 1
 
-    assert source =~ "elmc_record_get(tmp_"
+    assert source =~ "elmc_record_get_index(tmp_"
     refute source =~ ~r/elmc_release\(tmp_\d+\);\s*\n\s*\}\s*\n\s*elmc_release\(tmp_2\)/
   end
 
@@ -106,6 +106,28 @@ defmodule Elmc.CCodegenPatternsTest do
 
     assert generated_c =~ "elmc_fn_Main_dropStep"
     assert generated_c =~ @just_payload_borrow
+
+    assert generated_c =~
+             "ELMC_RECORD_GET_INDEX(tmp_6, ELMC_FIELD_MAIN_ACTIVEPIECE_KIND)"
+
+    assert generated_c =~ "ELMC_RECORD_GET_INDEX(tmp_6, ELMC_FIELD_MAIN_ACTIVEPIECE_ROT)"
+    assert generated_c =~ "ELMC_RECORD_GET_INDEX(tmp_6, ELMC_FIELD_MAIN_ACTIVEPIECE_X)"
+
+    assert generated_c =~
+             "elmc_record_update_index(tmp_6, ELMC_FIELD_MAIN_ACTIVEPIECE_Y, tmp_"
+
+    refute generated_c =~ ~r/elmc_record_get_index\(tmp_\d+, 0 \/\* rot \*\)/
+    refute generated_c =~ ~r/elmc_record_update_index\(tmp_\d+, 0 \/\* y \*\)/
+
+    assert generated_c =~
+             "elmc_record_get_index(elmc_maybe_or_tuple_just_payload_borrow(piece), ELMC_FIELD_MAIN_ACTIVEPIECE_KIND)"
+
+    assert generated_c =~
+             "elmc_record_get_index(elmc_maybe_or_tuple_just_payload_borrow(piece), ELMC_FIELD_MAIN_ACTIVEPIECE_Y)"
+
+    refute generated_c =~
+             ~r/elmc_record_get_index\(elmc_maybe_or_tuple_just_payload_borrow\(piece\), 0 \/\* rot \*\)/
+
     refute generated_c =~ "elmc_fn_Main_canPlace_offset_fits"
     refute generated_c =~ "elmc_list_drop("
     refute generated_c =~ ~r/elmc_record_get\(tmp_2, "y"\)/
@@ -166,6 +188,10 @@ defmodule Elmc.CCodegenPatternsTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "list_hof_cursor_"
+    assert generated_c =~ "// List.all"
+    assert generated_c =~ "bool list_hof_result_"
+    assert generated_c =~ "list_hof_result_"
+    assert generated_c =~ "= false;"
     assert generated_c =~ "elmc_fn_Main_rowHasValue"
     refute generated_c =~ "elmc_list_all("
     refute generated_c =~ "elmc_closure_new(elmc_lambda_"
@@ -355,6 +381,7 @@ defmodule Elmc.CCodegenPatternsTest do
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
+    assert generated_c =~ "// List.foldl"
     assert generated_c =~ "list_foldl_i_"
     assert generated_c =~ "elmc_fn_Main_collect"
     refute generated_c =~ "elmc_list_foldl("
@@ -595,7 +622,7 @@ defmodule Elmc.CCodegenPatternsTest do
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert generated_c =~ "/* List.length */"
+    assert generated_c =~ "// List.length"
     assert generated_c =~ "list_length_cursor_"
     assert generated_c =~ "elmc_fn_Main_countItems"
     refute generated_c =~ "elmc_list_length("
@@ -746,6 +773,7 @@ defmodule Elmc.CCodegenPatternsTest do
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
+    assert generated_c =~ "// List.foldl"
     assert generated_c =~ "list_foldl_i_"
     assert generated_c =~ "elmc_fn_Main_collect"
     refute generated_c =~ "elmc_list_reverse("
@@ -796,7 +824,7 @@ defmodule Elmc.CCodegenPatternsTest do
     assert generated_c =~ "elmc_fn_Main_remaining"
 
     assert Regex.match?(
-             ~r/elmc_fn_Main_remaining\(ElmcValue \*\* const args, const int argc\) \{[\s\S]*?elmc_new_int\(10 - list_length_count_/,
+             ~r/elmc_fn_Main_remaining\(ElmcValue \*\* const args, const int argc\) \{[\s\S]*?elmc_new_int\(10 \/\* height \*\/ - list_length_count_/,
              generated_c
            )
 
@@ -1065,7 +1093,11 @@ defmodule Elmc.CCodegenPatternsTest do
     assert generated_c =~ "list_repeat_i_"
     assert generated_c =~ "elmc_fn_Main_padRows"
     refute generated_c =~ "elmc_list_repeat_count("
-    assert generated_c =~ "elmc_list_concat("
+    assert generated_c =~ "list_flatten_outer_"
+    assert generated_c =~ "list_flatten_inner_"
+    refute generated_c =~ "list_concat_repeat_appended_"
+    refute generated_c =~ "elmc_list_concat("
+    refute generated_c =~ "list_concat_repeat_lists_"
   end
 
   test "List.map with captured env uses cursor loop instead of elmc_list_map closure" do
@@ -1273,6 +1305,111 @@ defmodule Elmc.CCodegenPatternsTest do
            )
   end
 
+  test "zero-arg int constants annotate folded comparisons with decl names" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    boardCols : Int
+    boardCols =
+        10
+
+    boardRows : Int
+    boardRows =
+        14
+
+    fits : Int -> Int -> Bool
+    fits x y =
+        x >= 0
+            && x < boardCols
+            && y < boardRows
+
+    init _ = ( { ok = fits 3 5 }, Platform.Cmd.none )
+    update _ m = ( m, Platform.Cmd.none )
+    view m = Ui.toUiNode [ Ui.clear Color.white, Ui.text (if m.ok then "yes" else "no") ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/annotated_int_constants", __DIR__)
+    out_dir = Path.expand("tmp/annotated_int_constants_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert generated_c =~ "< 10 /* boardCols */"
+    assert generated_c =~ "< 14 /* boardRows */"
+  end
+
+  test "offsetFits native helper keeps cellX and cellY as native lets without boxing" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+
+    elmtris_main =
+      Path.expand("../../ide/priv/project_templates/game_elmtris/src/Main.elm", __DIR__)
+
+    project_dir = Path.expand("tmp/offset_fits_native_let", __DIR__)
+    out_dir = Path.expand("tmp/offset_fits_native_let_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(elmtris_main))
+
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert generated_c =~ "elmc_fn_Main_offsetFits_native"
+
+    assert Regex.match?(
+             ~r/elmc_fn_Main_offsetFits_native\([\s\S]*?const elmc_int_t native_let_cellX_\d+ = \(x \+ dx\);/,
+             generated_c
+           )
+
+    assert Regex.match?(
+             ~r/elmc_fn_Main_offsetFits_native\([\s\S]*?const elmc_int_t native_let_cellY_\d+ = \(y \+ dy\);/,
+             generated_c
+           )
+
+    refute Regex.match?(
+             ~r/elmc_fn_Main_offsetFits_native\([\s\S]*?elmc_new_int\(\(x \+ dx\)\)/,
+             generated_c
+           )
+
+    refute Regex.match?(
+             ~r/elmc_fn_Main_offsetFits_native\([\s\S]*?elmc_as_int\(tmp_\d+\) < 10 \/\* boardCols \*\//,
+             generated_c
+           )
+
+    assert Regex.match?(
+             ~r/elmc_fn_Main_canPlace\([\s\S]*?\/\/ List\.all[\s\S]*?bool list_hof_result_/,
+             generated_c
+           )
+
+    refute Regex.match?(
+             ~r/elmc_fn_Main_stampPiece\([\s\S]*?\/\/ List\.foldl[\s\S]*?list_foldl_cursor_/,
+             generated_c
+           )
+  end
+
   test "List.map cursor loop builds list in forward order without elmc_list_reverse" do
     source = """
     module Main exposing (main)
@@ -1308,6 +1445,7 @@ defmodule Elmc.CCodegenPatternsTest do
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
+    assert generated_c =~ "// List.map"
     assert generated_c =~ "list_map_cursor_"
     assert generated_c =~ "list_fwd_head_"
     assert generated_c =~ "list_fwd_tail_"
@@ -1315,6 +1453,203 @@ defmodule Elmc.CCodegenPatternsTest do
     refute generated_c =~ "list_rev_cursor_"
     refute generated_c =~ "elmc_list_reverse("
     refute generated_c =~ "elmc_list_map("
+  end
+
+  test "filterMap row drop fusion matches renamed row helpers, not elmtris names" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    boardRows : Int
+    boardRows =
+        4
+
+    boardCols : Int
+    boardCols =
+        3
+
+    readCell : Int -> Int -> List Int -> Int
+    readCell x y board =
+        if y < 0 then
+            0
+
+        else
+            Maybe.withDefault 0 (listAt (y * boardCols + x) board)
+
+    listAt : Int -> List Int -> Maybe Int
+    listAt index list =
+        if index < 0 then
+            Nothing
+
+        else if index == 0 then
+            case list of
+                x :: _ ->
+                    Just x
+
+                [] ->
+                    Nothing
+
+        else
+            case list of
+                _ :: xs ->
+                    listAt (index - 1) xs
+
+                [] ->
+                    Nothing
+
+    isCompleteRow : Int -> List Int -> Bool
+    isCompleteRow row board =
+        List.all ((/=) 0) (sliceRow row board)
+
+    sliceRow : Int -> List Int -> List Int
+    sliceRow row board =
+        List.range 0 (boardCols - 1)
+            |> List.map (\\col -> readCell col row board)
+
+    dropFullRows : List Int -> ( List Int, Int )
+    dropFullRows board =
+        let
+            kept =
+                List.range 0 (boardRows - 1)
+                    |> List.filterMap
+                        (\\row ->
+                            if isCompleteRow row board then
+                                Nothing
+
+                            else
+                                Just (sliceRow row board)
+                        )
+
+            cleared =
+                boardRows - List.length kept
+        in
+        ( List.concat (List.repeat cleared (List.repeat boardCols 0) ++ kept)
+        , cleared
+        )
+
+    init _ = ( { board = dropFullRows (List.repeat (boardRows * boardCols) 0) }, Platform.Cmd.none )
+    update _ m = ( m, Platform.Cmd.none )
+    view m = Ui.toUiNode [ Ui.clear Color.white, Ui.text (String.fromInt (Tuple.second m.board)) ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/filter_map_row_drop_renamed", __DIR__)
+    out_dir = Path.expand("tmp/filter_map_row_drop_renamed_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert generated_c =~ "elmc_fn_Main_dropFullRows_native"
+    assert generated_c =~ "if (cleared == 0)"
+    refute generated_c =~ "elmc_let_body_helper_Main_dropFullRows"
+    refute generated_c =~ "elmc_fn_Main_rowFull"
+    refute generated_c =~ "elmc_fn_Main_rowCells"
+  end
+
+  test "reverse foldl occupied fusion matches renamed cell reader and size vars" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    gridCols : Int
+    gridCols =
+        4
+
+    gridRows : Int
+    gridRows =
+        3
+
+    cellTotal : Int
+    cellTotal =
+        gridCols * gridRows
+
+    readCell : Int -> Int -> List Int -> Int
+    readCell x y board =
+        if y < 0 then
+            0
+
+        else
+            Maybe.withDefault 0 (listAt (y * gridCols + x) board)
+
+    listAt : Int -> List Int -> Maybe Int
+    listAt index list =
+        if index < 0 then
+            Nothing
+
+        else if index == 0 then
+            case list of
+                x :: _ ->
+                    Just x
+
+                [] ->
+                    Nothing
+
+        else
+            case list of
+                _ :: xs ->
+                    listAt (index - 1) xs
+
+                [] ->
+                    Nothing
+
+    occupiedIndices : List Int -> List Int
+    occupiedIndices board =
+        List.foldl
+            (\\index slots ->
+                if readCell (modBy gridCols index) (index // gridCols) board == 0 then
+                    slots
+
+                else
+                    index :: slots
+            )
+            []
+            (List.range 0 (cellTotal - 1))
+            |> List.reverse
+
+    init _ = ( { slots = occupiedIndices (List.repeat cellTotal 0) }, Platform.Cmd.none )
+    update _ m = ( m, Platform.Cmd.none )
+    view m = Ui.toUiNode [ Ui.clear Color.white, Ui.text (String.fromInt (List.length m.slots)) ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/reverse_foldl_occupied_renamed", __DIR__)
+    out_dir = Path.expand("tmp/reverse_foldl_occupied_renamed_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert generated_c =~ "elmc_fn_Main_occupiedIndices_native"
+    refute generated_c =~ "elmc_let_body_helper_Main_occupiedIndices"
+    refute generated_c =~ "elmc_fn_Main_cellAt"
+    refute generated_c =~ "elmc_fn_Main_lockedSlotsFromBoard"
   end
 
   test "game elmtris init and view run on host pebble shim with basalt launch context" do
@@ -1350,10 +1685,10 @@ defmodule Elmc.CCodegenPatternsTest do
     assert generated_c =~ "pieceOffsets_table[k][r]"
     refute generated_c =~ "elmc_fn_Main_pieceSlots_native"
     refute generated_c =~ "elmc_fn_Main_canPlace_native"
-    refute generated_c =~ "elmc_fn_Main_lockedSlotsFromBoard_native"
-    refute generated_c =~ "elmc_fn_Main_clearLines_native"
+    assert generated_c =~ "elmc_fn_Main_lockedSlotsFromBoard_native"
     refute generated_c =~ "elmc_fn_Main_canPlace_offset_fits"
-    refute generated_c =~ "elmc_fn_Main_stampPiece_native"
+    assert generated_c =~ "elmc_fn_Main_stampPiece_native"
+    assert generated_c =~ "patches[patch_count++]"
     refute generated_c =~ "elmc_fn_Main_boardLayout_native"
     refute generated_c =~ "elmc_fn_Main_lockedSlotOps_native"
     refute generated_c =~ "elmc_fn_Main_pieceSlotOps_native"
@@ -1361,7 +1696,7 @@ defmodule Elmc.CCodegenPatternsTest do
     refute generated_c =~ "elmc_fn_Main_dropStep_native"
     refute generated_c =~ "elmc_fn_Main_softDrop_native"
     refute generated_c =~ "elmc_fn_Main_spawnPiece_native"
-    assert generated_c =~ "elmc_list_concat("
+    refute generated_c =~ "elmc_list_concat("
     assert generated_c =~ "record_update_helper_Main_withPiece"
     assert generated_c =~ "elmc_list_replace_nth_int"
 
@@ -1373,6 +1708,10 @@ defmodule Elmc.CCodegenPatternsTest do
     assert generated_c =~ "elmc_let_body_helper_Main_lockPiece"
     assert generated_c =~ "elmc_fn_Main_freshModel("
     assert generated_c =~ "elmc_record_update_helper_Main_lockPiece"
+    refute generated_c =~ "list_concat_repeat_lists_"
+    assert generated_c =~ "elmc_fn_Main_clearLines_native"
+    assert generated_c =~ "if (cleared == 0)"
+    refute generated_c =~ "elmc_let_body_helper_Main_clearLines"
 
     harness_path = Path.join(out_dir, "c/elmtris_host_harness.c")
 
@@ -1407,6 +1746,24 @@ defmodule Elmc.CCodegenPatternsTest do
         return elmc_record_new_take(7, names, values);
       }
 
+      static elmc_int_t list_length(ElmcValue *list) {
+        elmc_int_t len = 0;
+        while (list && list->tag == ELMC_TAG_LIST && list->payload != NULL) {
+          len++;
+          list = ((ElmcCons *)list->payload)->tail;
+        }
+        return len;
+      }
+
+      static int list_has_nested_rows(ElmcValue *list) {
+        while (list && list->tag == ELMC_TAG_LIST && list->payload != NULL) {
+          ElmcCons *node = (ElmcCons *)list->payload;
+          if (node->head && node->head->tag == ELMC_TAG_LIST) return 1;
+          list = node->tail;
+        }
+        return 0;
+      }
+
       int main(void) {
         ElmcPebbleApp app = {0};
         ElmcValue *flags = basalt_launch_context();
@@ -1429,6 +1786,37 @@ defmodule Elmc.CCodegenPatternsTest do
           return 4;
         }
         elmc_release(model);
+
+        int piece_kind_before = -1;
+        for (int frame = 0; frame < 400; frame++) {
+          if (elmc_pebble_dispatch_frame(&app, 33, 33 * (frame + 1), frame + 1) != 0) {
+            fprintf(stderr, "frame %d dispatch failed\\n", frame);
+            return 5;
+          }
+
+          model = elmc_worker_model(&app.worker);
+          if (!model) {
+            fprintf(stderr, "missing model at frame %d\\n", frame);
+            return 6;
+          }
+
+          int piece_kind = ELMC_RECORD_GET_INDEX_INT(model, 7);
+          ElmcValue *board = ELMC_RECORD_GET_INDEX(model, 1);
+          elmc_int_t board_len = list_length(board);
+
+          if (piece_kind_before >= 0 && piece_kind != piece_kind_before) {
+            if (board_len != 140 || list_has_nested_rows(board)) {
+              fprintf(stderr, "board corrupted after lock at frame %d len=%lld nested=%d\\n",
+                      frame, (long long)board_len, list_has_nested_rows(board));
+              elmc_release(model);
+              return 7;
+            }
+          }
+
+          piece_kind_before = piece_kind;
+          elmc_release(model);
+        }
+
         elmc_pebble_deinit(&app);
         printf("ok view_commands=%d\\n", n);
         return 0;
@@ -1539,19 +1927,30 @@ defmodule Elmc.CCodegenPatternsTest do
       |> String.split("ElmcValue *elmc_fn_Main_update", parts: 2)
       |> hd()
 
-    assert init_body =~ "elmc_record_new_static_ints"
-    assert init_body =~ "rec_field_names_"
+    assert init_body =~ "elmc_record_new_values_ints"
+    refute init_body =~ "rec_field_names_"
+    refute init_body =~ "elmc_record_new_static_ints"
     refute init_body =~ "static const int rec_field_ids_"
     refute init_body =~ "static const char * const rec_names_"
-    refute init_body =~ "elmc_record_new_values_ints"
     refute init_body =~ "elmc_record_new_ints"
     refute init_body =~ "elmc_record_new_take"
 
-    assert length(Regex.scan(~r/elmc_record_get_index\(context, 3 \/\* screen \*\/\)/, init_body)) ==
-             1
+    assert generated_c =~ "#define ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHCONTEXT_SCREEN"
+    assert generated_c =~ "#define ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_HEIGHT"
+    assert generated_c =~ "#define ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_WIDTH"
 
-    assert init_body =~ "ELMC_RECORD_GET_INDEX_INT(tmp_1_screen, 1 /* height */)"
-    assert init_body =~ "ELMC_RECORD_GET_INDEX_INT(tmp_1_screen, 3 /* width */)"
+    assert length(
+             Regex.scan(
+               ~r/elmc_record_get_index\(context, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHCONTEXT_SCREEN\)/,
+               init_body
+             )
+           ) == 1
+
+    assert init_body =~
+             "ELMC_RECORD_GET_INDEX_INT(tmp_1_screen, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_HEIGHT)"
+
+    assert init_body =~
+             "ELMC_RECORD_GET_INDEX_INT(tmp_1_screen, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_WIDTH)"
 
     assert init_body =~
              "elmc_cmd1(ELMC_PEBBLE_CMD_GET_CURRENT_DATE_TIME, ELMC_PEBBLE_MSG_CURRENTDATETIME)"
@@ -1559,7 +1958,8 @@ defmodule Elmc.CCodegenPatternsTest do
     refute init_body =~ "elmc_new_int(ELMC_PEBBLE_CMD_GET_CURRENT_DATE_TIME)"
     refute init_body =~ "elmc_new_int(23)"
     refute init_body =~ "ELMC_PEBBLE_MSG_CURRENT_DATE_TIME_TARGET"
-    assert init_body =~ "ElmcValue *tmp_1_screen = elmc_record_get_index(context, 3 /* screen */)"
+    assert init_body =~
+             "ElmcValue *tmp_1_screen = elmc_record_get_index(context, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHCONTEXT_SCREEN)"
   end
 
   test "record literal reuses shared zero subexpression without duplicate tmp vars" do
@@ -1619,11 +2019,11 @@ defmodule Elmc.CCodegenPatternsTest do
 
     assert length(Regex.scan(~r/ElmcValue \*tmp_1 = elmc_int_zero\(\);/, init_body)) == 1
     refute length(Regex.scan(~r/ElmcValue \*tmp_2 = elmc_int_zero\(\);/, init_body)) > 0
-    assert init_body =~ "elmc_record_new_static_take"
-    assert init_body =~ "rec_field_names_"
+    assert init_body =~ "elmc_record_new_values_take"
+    refute init_body =~ "rec_field_names_"
+    refute init_body =~ "elmc_record_new_static_take"
     refute init_body =~ "static const int rec_field_ids_"
     refute init_body =~ "static const char * const rec_names_"
-    refute init_body =~ "elmc_record_new_values_take"
     refute init_body =~ "elmc_record_new_take"
   end
 
@@ -1644,6 +2044,7 @@ defmodule Elmc.CCodegenPatternsTest do
     type Msg
         = Noop
 
+    init : Platform.LaunchContext -> ( Model, Cmd Msg )
     init context =
         ( { displayShape = context.screen.shape
           , screenH = context.screen.height
@@ -1690,15 +2091,36 @@ defmodule Elmc.CCodegenPatternsTest do
       |> String.split("}\n", parts: 2)
       |> hd()
 
-    assert length(Regex.scan(~r/elmc_record_get\(context, "screen"\)/, init_body)) == 1
+    assert length(
+             Regex.scan(
+               ~r/elmc_record_get_index\(context, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHCONTEXT_SCREEN\)/,
+               init_body
+             )
+           ) == 1
 
-    assert init_body =~ "ElmcValue *tmp_1_screen = elmc_record_get(context, \"screen\")"
-    assert init_body =~ ~s/elmc_record_get(tmp_1_screen, "shape")/
-    assert init_body =~ ~s/elmc_record_get(tmp_1_screen, "height")/
-    assert init_body =~ ~s/elmc_record_get(tmp_1_screen, "width")/
-    assert init_body =~ "ElmcValue *tmp_2_shape = elmc_record_get(tmp_1_screen, \"shape\")"
-    assert init_body =~ "ElmcValue *tmp_3_height = elmc_record_get(tmp_1_screen, \"height\")"
-    assert init_body =~ "ElmcValue *tmp_4_width = elmc_record_get(tmp_1_screen, \"width\")"
+    refute init_body =~ ~s/elmc_record_get(context, "screen")/
+    refute init_body =~ ~s/elmc_record_get(tmp_1_screen, "shape")/
+
+    assert init_body =~
+             "ElmcValue *tmp_1_screen = elmc_record_get_index(context, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHCONTEXT_SCREEN)"
+
+    assert init_body =~
+             ~s/elmc_record_get_index(tmp_1_screen, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_SHAPE)/
+
+    assert init_body =~
+             ~s/elmc_record_get_index(tmp_1_screen, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_HEIGHT)/
+
+    assert init_body =~
+             ~s/elmc_record_get_index(tmp_1_screen, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_WIDTH)/
+
+    assert init_body =~
+             "ElmcValue *tmp_2_shape = elmc_record_get_index(tmp_1_screen, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_SHAPE)"
+
+    assert init_body =~
+             "ElmcValue *tmp_3_height = elmc_record_get_index(tmp_1_screen, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_HEIGHT)"
+
+    assert init_body =~
+             "ElmcValue *tmp_4_width = elmc_record_get_index(tmp_1_screen, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_WIDTH)"
   end
 
   test "direct-only boxed helpers bind args without argc checks when wrappers are pruned" do
@@ -2552,6 +2974,69 @@ defmodule Elmc.CCodegenPatternsTest do
     refute generated_c =~ "scene_cmd.text[0] = '.';"
   end
 
+  test "Maybe bare-var case binds payload type for distinct record field indices" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as PebblePlatform
+    import Pebble.Ui as PebbleUi
+
+    type alias Piece =
+        { kind : Int, rot : Int, x : Int, y : Int }
+
+    type alias Model =
+        { active : Maybe Piece, board : List Int }
+
+    type Msg
+        = Tick
+
+    init _ =
+        ( { active = Just { kind = 0, rot = 0, x = 3, y = 0 }, board = [] }, Cmd.none )
+
+    update : Msg -> Model -> ( Model, Cmd Msg )
+    update _ model =
+        case model.active of
+            Nothing ->
+                ( model, Cmd.none )
+
+            piece ->
+                ( { model | active = Just { piece | y = piece.y + 1 } }, Cmd.none )
+
+    subscriptions _ =
+        Sub.none
+
+    view model =
+        PebbleUi.windowStack []
+
+    main =
+        PebblePlatform.watchApp
+            { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/maybe_case_record_field_indices", __DIR__)
+    out_dir = Path.expand("tmp/maybe_case_record_field_indices_out", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert generated_c =~ "ELMC_FIELD_MAIN_PIECE_KIND"
+    assert generated_c =~ "ELMC_FIELD_MAIN_PIECE_ROT"
+    assert generated_c =~ "ELMC_FIELD_MAIN_PIECE_X"
+    assert generated_c =~ "ELMC_FIELD_MAIN_PIECE_Y"
+    refute generated_c =~ ~r/elmc_record_get_index\(tmp_\d+, 0 \/\* rot \*\)/
+    refute generated_c =~ ~r/elmc_record_update_index\(tmp_\d+, 0 \/\* y \*\)/
+  end
+
   test "record update uses field index with comment when shape is known" do
     source = """
     module Main exposing (main)
@@ -2610,7 +3095,8 @@ defmodule Elmc.CCodegenPatternsTest do
       |> String.split("}\n", parts: 2)
       |> hd()
 
-    assert update_body =~ "elmc_record_update_index(model, 1 /* timeString */, tmp_2)"
+    assert update_body =~
+             "elmc_record_update_index(model, ELMC_FIELD_MAIN_MODEL_TIMESTRING, tmp_2)"
     refute update_body =~ "elmc_retain(model)"
     refute update_body =~ ~s/elmc_record_update(tmp_2, "timeString"/
   end

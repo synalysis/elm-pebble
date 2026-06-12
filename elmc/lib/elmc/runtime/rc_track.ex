@@ -246,6 +246,41 @@ defmodule Elmc.Runtime.RcTrack do
     }
     #endif
 
+    /* Iterative list teardown: recursive tail release overflows Pebble's ~4-6 KB
+       app stack when dropping flat boards (for example elmtris lockPiece board). */
+    static void elmc_release_list_cell_payload(ElmcValue *cell) {
+      if (!cell || cell->tag != ELMC_TAG_LIST || !cell->payload) return;
+      if (elmc_list_cell_release(cell)) {
+        ELMC_RELEASED += 1;
+        return;
+      }
+      free(cell->payload);
+      free(cell);
+      ELMC_RELEASED += 1;
+    }
+
+    static void elmc_release_list_spine(ElmcValue *list) {
+      ElmcValue *cursor = list;
+      while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
+        ElmcCons *node = (ElmcCons *)cursor->payload;
+        ElmcValue *head = node->head;
+        ElmcValue *next = node->tail;
+        node->head = NULL;
+        node->tail = NULL;
+        elmc_release(head);
+        ElmcValue *cell = cursor;
+        cursor = next;
+        if (cell == list) {
+          elmc_release_list_cell_payload(cell);
+        } else {
+          elmc_release(cell);
+        }
+      }
+      if (cursor && cursor->rc != ELMC_RC_IMMORTAL) {
+        elmc_release(cursor);
+      }
+    }
+
     static void elmc_release_impl(ElmcValue *value) {
       if (!value) return;
       if (value->rc == ELMC_RC_IMMORTAL) return;
@@ -255,9 +290,8 @@ defmodule Elmc.Runtime.RcTrack do
       if (value->tag == ELMC_TAG_INT || value->tag == ELMC_TAG_BOOL) {
         /* Scalar values live inline in ElmcValue, not in heap payloads. */
       } else if (value->tag == ELMC_TAG_LIST && value->payload != NULL) {
-        ElmcCons *node = (ElmcCons *)value->payload;
-        elmc_release(node->head);
-        elmc_release(node->tail);
+        elmc_release_list_spine(value);
+        return;
       } else if (value->tag == ELMC_TAG_MAYBE && value->payload != NULL) {
         ElmcMaybe *maybe = (ElmcMaybe *)value->payload;
         if (maybe->value) elmc_release(maybe->value);

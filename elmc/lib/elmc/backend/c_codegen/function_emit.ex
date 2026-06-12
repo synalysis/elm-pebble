@@ -523,7 +523,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         end
 
       acc
-      |> EnvBindings.put_record_shape(arg, Expr.record_shape_for_type(arg_type, acc))
+      |> EnvBindings.put_record_shape(arg, Expr.record_shape_from_type(normalized_type, acc))
       |> put_var_type(arg, normalized_type)
     end)
   end

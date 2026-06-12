@@ -3,6 +3,33 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
 
   alias Elmc.Backend.CCodegen.Types
 
+  @runtime_source_comments %{
+    "elmc_list_all" => "List.all",
+    "elmc_list_any" => "List.any",
+    "elmc_list_foldl" => "List.foldl",
+    "elmc_list_map" => "List.map",
+    "elmc_list_filter" => "List.filter",
+    "elmc_list_filter_map" => "List.filterMap",
+    "elmc_list_indexed_map" => "List.indexedMap",
+    "elmc_list_length" => "List.length",
+    "elmc_list_repeat" => "List.repeat",
+    "elmc_list_range" => "List.range"
+  }
+
+  @spec runtime_source_comment(String.t()) :: String.t() | nil
+  def runtime_source_comment(runtime_function) when is_binary(runtime_function) do
+    Map.get(@runtime_source_comments, runtime_function)
+  end
+
+  @spec runtime_source_comment_line(String.t(), non_neg_integer()) :: String.t()
+  def runtime_source_comment_line(runtime_function, indent \\ 8)
+      when is_binary(runtime_function) and is_integer(indent) do
+    case runtime_source_comment(runtime_function) do
+      nil -> ""
+      label -> String.duplicate(" ", indent) <> "// #{label}\n"
+    end
+  end
+
   @spec emit_length_native_count(String.t(), pos_integer()) :: {String.t(), String.t()}
   def emit_length_native_count(list_var, loop_id) do
     cursor = "list_length_cursor_#{loop_id}"
@@ -10,8 +37,7 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     count = "list_length_count_#{loop_id}"
 
     code = """
-      /* List.length */
-      elmc_int_t #{count} = 0;
+      #{runtime_source_comment_line("elmc_list_length", 6)}elmc_int_t #{count} = 0;
       ElmcValue *#{cursor} = #{list_var};
       while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
         ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
@@ -31,8 +57,7 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     cons = "list_repeat_cons_#{loop_id}"
 
     code = """
-      /* List.repeat */
-      ElmcValue *#{acc} = elmc_list_nil();
+      #{runtime_source_comment_line("elmc_list_repeat", 6)}ElmcValue *#{acc} = elmc_list_nil();
       for (elmc_int_t #{index_var} = 0; #{index_var} < #{count_ref}; #{index_var}++) {
         ElmcValue *#{cons} = elmc_list_cons(#{value_ref}, #{acc});
         if (!#{cons}) break;

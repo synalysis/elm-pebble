@@ -8,6 +8,7 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.UnionMacros
+  alias Elmc.Backend.CCodegen.Util
 
   @int_binops ~w(__add__ __sub__ __mul__ __idiv__)
 
@@ -196,8 +197,43 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
   @spec native_ref(Types.ir_expr(), Types.compile_env()) :: {:ok, String.t()} | :error
   def native_ref(expr, env) do
     case literal_value(expr, env) do
-      {:ok, value} -> {:ok, Integer.to_string(value)}
+      {:ok, value} -> {:ok, format_annotated_int(value, literal_decl_name(expr, env))}
       :error -> :error
+    end
+  end
+
+  @spec format_annotated_int(integer(), String.t() | nil) :: String.t()
+  def format_annotated_int(value, name) when is_binary(name) do
+    "#{value} /* #{Util.escape_c_comment(name)} */"
+  end
+
+  def format_annotated_int(value, _), do: Integer.to_string(value)
+
+  @spec literal_decl_name(Types.ir_expr(), Types.compile_env()) :: String.t() | nil
+  def literal_decl_name(%{op: :var, name: name}, env) when is_binary(name) do
+    if zero_arg_int_decl?(Map.get(env, :__module__, "Main"), name, env), do: name
+  end
+
+  def literal_decl_name(%{op: :call, name: name, args: []}, env) when is_binary(name) do
+    if zero_arg_int_decl?(Map.get(env, :__module__, "Main"), name, env), do: name
+  end
+
+  def literal_decl_name(%{op: :qualified_call, target: target, args: []}, env) do
+    case Host.split_qualified_function_target(Host.normalize_special_target(target)) do
+      {module, name} ->
+        if zero_arg_int_decl?(module, name, env), do: name
+
+      _ ->
+        nil
+    end
+  end
+
+  def literal_decl_name(_expr, _env), do: nil
+
+  defp zero_arg_int_decl?(module, name, env) do
+    case Map.get(Map.get(env, :__program_decls__, %{}), {module, name}) do
+      %{args: [], expr: %{op: :int_literal, value: _}} -> true
+      _ -> false
     end
   end
 
@@ -208,7 +244,7 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
       {:ok, value} ->
         counter = counter + 1
         out = "tmp_#{counter}"
-        ref = UnionMacros.literal_ref(expr, env) || Integer.to_string(value)
+        ref = UnionMacros.literal_ref(expr, env) || format_annotated_int(value, literal_decl_name(expr, env))
         {:ok, "ElmcValue *#{out} = elmc_new_int(#{ref});\n", out, counter}
 
       :error ->

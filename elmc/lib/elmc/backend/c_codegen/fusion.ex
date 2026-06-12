@@ -8,9 +8,12 @@ defmodule Elmc.Backend.CCodegen.Fusion do
   `{:ok, c_source, runtime_callees}`; unmatched IR returns `:error`.
   """
 
-  alias Elmc.Backend.CCodegen.{FusionSupport, Tuple2CaseTable}
+  alias Elmc.Backend.CCodegen.{FilterMapRowDrop, FoldlOffsetPatch, FusionSupport, ReverseFoldlOccupied, Tuple2CaseTable}
 
   @providers [
+    {FilterMapRowDrop, 4},
+    {FoldlOffsetPatch, 4},
+    {ReverseFoldlOccupied, 4},
     {Tuple2CaseTable, 3}
   ]
 

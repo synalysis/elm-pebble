@@ -691,7 +691,8 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
 
       code = """
       #{list_code}
-        elmc_int_t #{result} = #{initial};
+        #{ListLoopCodegen.runtime_source_comment_line(function)}
+        bool #{result} = #{initial};
         ElmcValue *#{cursor} = #{list_var};
         while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
           ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
@@ -784,6 +785,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
       code = """
       #{list_code}
       #{forward_init}
+        #{ListLoopCodegen.runtime_source_comment_line("elmc_list_filter")}
         ElmcValue *#{cursor} = #{list_var};
         while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
           ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
@@ -835,6 +837,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
       code = """
       #{list_code}
       #{forward_init}
+        #{ListLoopCodegen.runtime_source_comment_line("elmc_list_filter")}
         ElmcValue *#{cursor} = #{list_var};
         while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
           ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
@@ -960,6 +963,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
 
       code = """
       #{range_code}
+        #{ListLoopCodegen.runtime_source_comment_line("elmc_list_filter_map")}
         ElmcValue *#{rev} = elmc_list_nil();
       #{ListLoopCodegen.emit_descending_int_range_loop(first_ref, last_ref, item_var, step_var, loop_body)}
         ElmcValue *#{out} = #{rev};
@@ -1000,6 +1004,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     code = """
     #{list_code}
     #{forward_init}
+      #{ListLoopCodegen.runtime_source_comment_line("elmc_list_filter_map", 6)}
       ElmcValue *#{cursor} = #{list_var};
       while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
         ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
@@ -1051,6 +1056,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     code = """
     #{list_code}
     #{forward_init}
+      #{ListLoopCodegen.runtime_source_comment_line("elmc_list_filter_map", 6)}
       ElmcValue *#{cursor} = #{list_var};
       while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
         ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
@@ -1126,6 +1132,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     code = """
     #{list_code}
     #{forward_init}
+      #{ListLoopCodegen.runtime_source_comment_line("elmc_list_indexed_map", 6)}
       ElmcValue *#{cursor} = #{list_var};
       elmc_int_t #{index_var} = 0;
       while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
@@ -1175,7 +1182,8 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
 
       code = """
       #{list_code}
-        elmc_int_t #{result} = #{initial};
+        #{ListLoopCodegen.runtime_source_comment_line(function)}
+        bool #{result} = #{initial};
         ElmcValue *#{cursor} = #{list_var};
         while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
           ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
@@ -1211,8 +1219,8 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     end
   end
 
-  defp list_loop_polarity("elmc_list_all", body_ref), do: {"1", "!(#{body_ref})", "0"}
-  defp list_loop_polarity("elmc_list_any", body_ref), do: {"0", body_ref, "1"}
+  defp list_loop_polarity("elmc_list_all", body_ref), do: {"true", "!(#{body_ref})", "false"}
+  defp list_loop_polarity("elmc_list_any", body_ref), do: {"false", body_ref, "true"}
 
   defp indent_loop_body(code), do: CSource.indent(code, 4)
 
@@ -1257,6 +1265,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
       code = """
       #{list_code}
       #{forward_init}
+        #{ListLoopCodegen.runtime_source_comment_line("elmc_list_map")}
         ElmcValue *#{cursor} = #{list_var};
         while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
           ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
@@ -1379,6 +1388,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
       code = """
       #{list_code}
       #{forward_init}
+        #{ListLoopCodegen.runtime_source_comment_line("elmc_list_map")}
         ElmcValue *#{cursor} = #{list_var};
         while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
           ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
@@ -1429,6 +1439,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     code = """
     #{list_code}
     #{forward_init}
+      #{ListLoopCodegen.runtime_source_comment_line("elmc_list_map", 6)}
       ElmcValue *#{cursor} = #{list_var};
       while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
         ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
@@ -1455,7 +1466,11 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     |> Enum.reduce(env, fn name, acc ->
       case Map.get(decl_map, {module_name, name}) do
         %{args: [], expr: %{op: :int_literal, value: value}} ->
-          EnvBindings.put_native_int_binding(acc, name, Integer.to_string(value))
+          EnvBindings.put_native_int_binding(
+            acc,
+            name,
+            ConstantInt.format_annotated_int(value, name)
+          )
 
         _ ->
           acc
@@ -1493,6 +1508,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
 
         code = """
         #{range_code}
+          #{ListLoopCodegen.runtime_source_comment_line("elmc_list_map")}
           ElmcValue *#{rev} = elmc_list_nil();
         #{ListLoopCodegen.emit_descending_int_range_loop(first_ref, last_ref, item_var, step_var, loop_body)}
           ElmcValue *#{out} = #{rev};
@@ -1597,6 +1613,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
       code = """
       #{list_code}
       #{forward_init}
+        #{ListLoopCodegen.runtime_source_comment_line("elmc_list_indexed_map")}
         ElmcValue *#{cursor} = #{list_var};
         elmc_int_t #{index_var} = 0;
         while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
@@ -1717,6 +1734,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
 
     code = """
     #{acc_code}#{list_code}
+      #{ListLoopCodegen.runtime_source_comment_line("elmc_list_foldl", 2)}
       ElmcValue *#{acc_ref} = #{acc_var} ? elmc_retain(#{acc_var}) : elmc_list_nil();
       ElmcValue *#{cursor} = #{list_var};
       while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
@@ -1780,6 +1798,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
 
     code = """
     #{acc_code}#{list_code}
+      #{ListLoopCodegen.runtime_source_comment_line("elmc_list_foldl", 2)}
       ElmcValue *#{acc_ref} = #{acc_var} ? elmc_retain(#{acc_var}) : elmc_list_nil();
       ElmcValue *#{cursor} = #{list_var};
       while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
@@ -1879,6 +1898,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
 
           code = """
           #{range_code}#{acc_code}
+            #{ListLoopCodegen.runtime_source_comment_line("elmc_list_foldl", 4)}
             elmc_int_t #{acc_var} = #{acc_ref};
             if (#{first_ref} <= #{last_ref}) {
               elmc_int_t #{step_var} = 1;
@@ -1943,6 +1963,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
 
           code = """
           #{range_code}#{acc_code}
+            #{ListLoopCodegen.runtime_source_comment_line("elmc_list_foldl", 4)}
             ElmcValue *#{acc_var} = #{acc_init_var} ? elmc_retain(#{acc_init_var}) : elmc_list_nil();
           #{range_loop}
             ElmcValue *#{out} = #{acc_var};
@@ -2405,10 +2426,10 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
          {:ok, item_code, item_var, counter} <- compile_concat_item(item, env, counter) do
       {rest_code, rest_var, counter} = Host.compile_expr(rest, env, counter)
       loop_id = counter + 1
-      inner = "list_concat_repeat_inner_#{loop_id}"
-      lists = "list_concat_repeat_lists_#{loop_id}"
+      flatten_id = loop_id + 1
       counter = counter + 1
       out = "tmp_#{counter}"
+      tail_slot = "list_flatten_tail_#{flatten_id}"
 
       count_release =
         if is_binary(count_var), do: "  elmc_release(#{count_var});\n", else: ""
@@ -2416,16 +2437,27 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
       {:inline, repeat_code, repeat_out} =
         CodegenListHelpers.repeat_codegen(count_ref, item_var, loop_id)
 
+      failed = "list_flatten_failed_#{flatten_id}"
+
+      flatten_repeat =
+        emit_flatten_row_lists(repeat_out, out, tail_slot, failed, "#{flatten_id}_repeat", 4)
+
+      flatten_rest =
+        emit_flatten_row_lists(rest_var, out, tail_slot, failed, "#{flatten_id}_rest", 4)
+
       code = """
       #{count_code}#{item_code}#{rest_code}
       #{repeat_code}
         elmc_release(#{item_var});
-        ElmcValue *#{inner} = elmc_list_cons(#{repeat_out}, elmc_list_nil());
-        ElmcValue *#{lists} = elmc_list_cons(#{rest_var}, #{inner});
-        elmc_release(#{inner});
+        ElmcValue *#{out} = NULL;
+        ElmcValue **#{tail_slot} = NULL;
+        bool #{failed} = false;
+        // List.concat
+      #{flatten_repeat}
+      #{flatten_rest}
+        if (!#{out}) #{out} = elmc_list_nil();
+        elmc_release(#{repeat_out});
         elmc_release(#{rest_var});
-        ElmcValue *#{out} = elmc_list_concat(#{lists});
-        elmc_release(#{lists});
       #{count_release}
       """
 
@@ -2433,6 +2465,38 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     else
       _ -> :error
     end
+  end
+
+  defp emit_flatten_row_lists(rows_var, out_var, tail_slot_var, failed_var, loop_suffix, indent) do
+    outer = "list_flatten_outer_#{loop_suffix}"
+    inner = "list_flatten_inner_#{loop_suffix}"
+    row = "list_flatten_row_#{loop_suffix}"
+    cell = "list_flatten_cell_#{loop_suffix}"
+    pad = String.duplicate(" ", indent)
+    pad_inner = String.duplicate(" ", indent + 2)
+
+    """
+    #{pad}for (ElmcValue *#{outer} = #{rows_var}; !#{failed_var} && #{outer} && #{outer}->tag == ELMC_TAG_LIST && #{outer}->payload != NULL; #{outer} = ((ElmcCons *)#{outer}->payload)->tail) {
+    #{pad}  ElmcValue *#{row} = ((ElmcCons *)#{outer}->payload)->head;
+    #{pad}  for (ElmcValue *#{inner} = #{row}; !#{failed_var} && #{inner} && #{inner}->tag == ELMC_TAG_LIST && #{inner}->payload != NULL; #{inner} = ((ElmcCons *)#{inner}->payload)->tail) {
+    #{pad_inner}ElmcValue *#{cell} = elmc_list_cons(((ElmcCons *)#{inner}->payload)->head, elmc_list_nil());
+    #{pad_inner}if (!#{cell}) {
+    #{pad_inner}  elmc_release(#{out_var});
+    #{pad_inner}  #{out_var} = elmc_list_nil();
+    #{pad_inner}  #{tail_slot_var} = NULL;
+    #{pad_inner}  #{failed_var} = true;
+    #{pad_inner}  break;
+    #{pad_inner}}
+    #{pad_inner}if (#{tail_slot_var}) {
+    #{pad_inner}  elmc_release(*#{tail_slot_var});
+    #{pad_inner}  *#{tail_slot_var} = #{cell};
+    #{pad_inner}} else {
+    #{pad_inner}  #{out_var} = #{cell};
+    #{pad_inner}}
+    #{pad_inner}#{tail_slot_var} = &((ElmcCons *)#{cell}->payload)->tail;
+    #{pad}  }
+    #{pad}}
+    """
   end
 
   defp compile_concat_item(item, env, counter) do

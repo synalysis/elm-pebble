@@ -259,7 +259,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
     result =
       Enum.reduce_while(branches, {:ok, "", counter}, fn branch, {:ok, acc, c} ->
         {branch_env, unwrap_setup, unwrap_release, c} =
-          Patterns.maybe_unwrap_var_branch(case_env, branch, subject_ref, c)
+          Patterns.maybe_unwrap_var_branch(case_env, branch, subject_ref, c, subject)
 
         branch_env =
           Map.put(
