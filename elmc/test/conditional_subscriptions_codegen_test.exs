@@ -1,6 +1,8 @@
 defmodule Elmc.ConditionalSubscriptionsCodegenTest do
   use ExUnit.Case, async: true
 
+  alias Elmc.Test.CCodegenExtract
+
   @drawing_template Path.expand(
                       "../../ide/priv/project_templates/watch_demo_drawing_showcase",
                       __DIR__
@@ -52,12 +54,7 @@ defmodule Elmc.ConditionalSubscriptionsCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    subs_body =
-      generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_subscriptions(ElmcValue ** const args, const int argc) {")
-      |> Enum.at(1)
-      |> String.split("ElmcValue *elmc_fn_Main_view(ElmcValue ** const args, const int argc) {")
-      |> hd()
+    subs_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_subscriptions")
 
     refute subs_body =~ "elmc_fn_Pebble_Events_batch"
     assert subs_body =~ "ELMC_SUBSCRIPTION_BUTTON_RAW"
@@ -68,15 +65,7 @@ defmodule Elmc.ConditionalSubscriptionsCodegenTest do
     assert subs_body =~ "elmc_list_from_values_take"
 
     current_page_native =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_currentPage_native(const elmc_int_t index) {",
-        parts: 2
-      )
-      |> Enum.at(1)
-      |> String.split("ElmcValue *elmc_fn_Main_subscriptions(ElmcValue ** const args, const int argc) {",
-        parts: 2
-      )
-      |> hd()
+      CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_currentPage_native")
 
     refute current_page_native =~ "elmc_fn_Main_pages"
     refute current_page_native =~ "list_length_cursor"
@@ -98,16 +87,7 @@ defmodule Elmc.ConditionalSubscriptionsCodegenTest do
     assert pages_fn =~ "ELMC_RC_IMMORTAL"
     refute pages_fn =~ "elmc_list_from_int_array"
 
-    pages_body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_pages(ElmcValue ** const args, const int argc) {",
-        parts: 2
-      )
-      |> Enum.at(1)
-      |> String.split("ElmcValue *elmc_fn_Main_init(ElmcValue ** const args, const int argc) {",
-        parts: 2
-      )
-      |> hd()
+    pages_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_pages")
 
     assert pages_body =~ "elmc_immortal_list_Main_pages_get()"
     refute pages_body =~ "elmc_list_from_int_array"
@@ -137,17 +117,6 @@ defmodule Elmc.ConditionalSubscriptionsCodegenTest do
     refute next_index_native =~ "elmc_fn_Main_pages"
     refute next_index_native =~ "list_length_cursor"
     assert next_index_native =~ "% 8 /* List.length Main.pages */"
-
-    subs_body =
-      generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_subscriptions(ElmcValue ** const args, const int argc) {",
-        parts: 2
-      )
-      |> Enum.at(1)
-      |> String.split("ElmcValue *elmc_fn_Main_view(ElmcValue ** const args, const int argc) {",
-        parts: 2
-      )
-      |> hd()
 
     refute subs_body =~ "elmc_fn_Main_pages"
     assert subs_body =~ "% 8 /* List.length Main.pages */"

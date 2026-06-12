@@ -669,19 +669,19 @@ static int dispatch_compass_current_result(int64_t target, double degrees, bool 
     const char *names[] = {"degrees", "isValid"};
     ElmcValue *values[2];
     values[0] = elmc_new_float(degrees);
-    values[1] = elmc_new_bool(1);
+    values[1] = elmc_new_bool_take(1);
     if (!values[0] || !values[1]) {
       if (values[0]) elmc_release(values[0]);
       if (values[1]) elmc_release(values[1]);
       return -2;
     }
-    ElmcValue *heading = elmc_record_new(2, names, values);
+    ElmcValue *heading = elmc_record_new_static_take_value(2, names, values);
     elmc_release(values[0]);
     elmc_release(values[1]);
     if (!heading) {
       return -2;
     }
-    ElmcValue *result = elmc_result_ok(heading);
+    ElmcValue *result = elmc_result_ok_take(heading);
     elmc_release(heading);
     if (!result) {
       return -2;
@@ -691,11 +691,11 @@ static int dispatch_compass_current_result(int64_t target, double degrees, bool 
     return rc;
   }
 
-  ElmcValue *error_value = elmc_new_int(error_code);
+  ElmcValue *error_value = elmc_new_int_take(error_code);
   if (!error_value) {
     return -2;
   }
-  ElmcValue *result = elmc_result_err(error_value);
+  ElmcValue *result = elmc_result_err_take(error_value);
   elmc_release(error_value);
   if (!result) {
     return -2;
@@ -3831,10 +3831,10 @@ static int dispatch_unobstructed_bounds_result(int64_t target, GRect bounds) {
 
   const char *names[] = {"x", "y", "w", "h"};
   ElmcValue *values[4];
-  values[0] = elmc_new_int(bounds.origin.x);
-  values[1] = elmc_new_int(bounds.origin.y);
-  values[2] = elmc_new_int(bounds.size.w);
-  values[3] = elmc_new_int(bounds.size.h);
+  values[0] = elmc_new_int_take(bounds.origin.x);
+  values[1] = elmc_new_int_take(bounds.origin.y);
+  values[2] = elmc_new_int_take(bounds.size.w);
+  values[3] = elmc_new_int_take(bounds.size.h);
   if (!values[0] || !values[1] || !values[2] || !values[3]) {
     for (int i = 0; i < 4; i++) {
       if (values[i]) {
@@ -3844,7 +3844,7 @@ static int dispatch_unobstructed_bounds_result(int64_t target, GRect bounds) {
     return -2;
   }
 
-  ElmcValue *record = elmc_record_new(4, names, values);
+  ElmcValue *record = elmc_record_new_static_take_value(4, names, values);
   for (int i = 0; i < 4; i++) {
     elmc_release(values[i]);
   }
@@ -4299,37 +4299,37 @@ static ElmcValue *build_launch_context(AppLaunchReason launch) {
   ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "launch context screen w=%d h=%d",
                         (int)bounds.size.w, (int)bounds.size.h);
 
-  ElmcValue *screen_width = elmc_new_int(bounds.size.w);
-  ElmcValue *screen_height = elmc_new_int(bounds.size.h);
+  ElmcValue *screen_width = elmc_new_int_take(bounds.size.w);
+  ElmcValue *screen_height = elmc_new_int_take(bounds.size.h);
   /* DisplayShape constructor tags (Round=2, Rectangular=1) match elmc codegen. */
-  ElmcValue *screen_shape = elmc_new_int(PBL_IF_ROUND_ELSE(2, 1));
-  ElmcValue *screen_color_mode = elmc_new_string(PBL_IF_COLOR_ELSE("Color", "BlackWhite"));
+  ElmcValue *screen_shape = elmc_new_int_take(PBL_IF_ROUND_ELSE(2, 1));
+  ElmcValue *screen_color_mode = elmc_new_string_take(PBL_IF_COLOR_ELSE("Color", "BlackWhite"));
   const char *screen_names[] = {"color_mode", "height", "shape", "width"};
   ElmcValue *screen_values[] = {screen_color_mode, screen_height, screen_shape, screen_width};
-  ElmcValue *screen = elmc_record_new(4, screen_names, screen_values);
+  ElmcValue *screen = elmc_record_new_static_take_value(4, screen_names, screen_values);
   elmc_release(screen_width);
   elmc_release(screen_height);
   elmc_release(screen_shape);
   elmc_release(screen_color_mode);
 
-  ElmcValue *reason = elmc_new_int(launch_reason_to_elm_tag(launch));
-  ElmcValue *watch_model = elmc_new_string("");
-  ElmcValue *watch_profile_id = elmc_new_string("");
-  ElmcValue *has_microphone = elmc_new_bool(
+  ElmcValue *reason = elmc_new_int_take(launch_reason_to_elm_tag(launch));
+  ElmcValue *watch_model = elmc_new_string_take("");
+  ElmcValue *watch_profile_id = elmc_new_string_take("");
+  ElmcValue *has_microphone = elmc_new_bool_take(
 #ifdef PBL_MICROPHONE
       1
 #else
       0
 #endif
   );
-  ElmcValue *has_compass = elmc_new_bool(
+  ElmcValue *has_compass = elmc_new_bool_take(
 #ifdef PBL_COMPASS
       1
 #else
       0
 #endif
   );
-  ElmcValue *supports_health = elmc_new_bool(
+  ElmcValue *supports_health = elmc_new_bool_take(
 #ifdef PBL_HEALTH
       1
 #else
@@ -4341,7 +4341,7 @@ static ElmcValue *build_launch_context(AppLaunchReason launch) {
       "watchProfileId"};
   ElmcValue *context_values[] = {has_compass, has_microphone, reason, screen, supports_health,
                                  watch_model, watch_profile_id};
-  ElmcValue *context = elmc_record_new(7, context_names, context_values);
+  ElmcValue *context = elmc_record_new_static_take_value(7, context_names, context_values);
   elmc_release(reason);
   elmc_release(screen);
   elmc_release(watch_model);

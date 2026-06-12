@@ -19,13 +19,13 @@ defmodule Elmc.WorkerAdapterTest do
       #include <stdio.h>
 
       static ElmcValue *launch_context(void) {
-        ElmcValue *reason = elmc_new_int(1); /* Pebble.Platform.LaunchSystem constructor tag */
-        ElmcValue *watch_model = elmc_new_string("");
-        ElmcValue *watch_profile_id = elmc_new_string("");
+        ElmcValue *reason = elmc_new_int_take(1); /* Pebble.Platform.LaunchSystem constructor tag */
+        ElmcValue *watch_model = elmc_new_string_take("");
+        ElmcValue *watch_profile_id = elmc_new_string_take("");
         ElmcValue *screen = elmc_int_zero();
-        ElmcValue *has_microphone = elmc_new_int(0);
-        ElmcValue *has_compass = elmc_new_int(0);
-        ElmcValue *supports_health = elmc_new_int(0);
+        ElmcValue *has_microphone = elmc_new_int_take(0);
+        ElmcValue *has_compass = elmc_new_int_take(0);
+        ElmcValue *supports_health = elmc_new_int_take(0);
         const char *names[] = {
           "hasCompass", "hasMicrophone", "reason", "screen",
           "supportsHealth", "watchModel", "watchProfileId"
@@ -34,7 +34,7 @@ defmodule Elmc.WorkerAdapterTest do
           has_compass, has_microphone, reason, screen,
           supports_health, watch_model, watch_profile_id
         };
-        return elmc_record_new_take(7, names, values);
+        return elmc_record_new_take_value(7, names, values);
       }
 
       int main(void) {
@@ -52,7 +52,7 @@ defmodule Elmc.WorkerAdapterTest do
           if (i == 15) return 22;
         }
 
-        ElmcValue *increment = elmc_new_int(1);
+        ElmcValue *increment = elmc_new_int_take(1);
         if (elmc_worker_dispatch(&state, increment) != 0) return 3;
         elmc_release(increment);
 

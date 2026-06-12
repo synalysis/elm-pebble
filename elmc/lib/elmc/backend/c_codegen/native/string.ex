@@ -299,7 +299,7 @@ defmodule Elmc.Backend.CCodegen.Native.String do
             if (#{var} && #{var}->tag == ELMC_TAG_STRING && #{var}->payload) {
               #{out} = (const char *)#{var}->payload;
             } else if (#{var} && #{var}->tag == ELMC_TAG_LIST) {
-              #{boxed} = elmc_string_from_list(#{var});
+              #{boxed} = elmc_string_from_list_take(#{var});
               #{out} = (#{boxed} && #{boxed}->payload) ? (const char *)#{boxed}->payload : "";
             }
           """,

@@ -79,19 +79,19 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
 
     {branch_code, final_counter} =
       Enum.reduce(branches, {"", next}, fn branch, {acc, c} ->
-        branch_env = RecordCompile.fresh_subexpr_cache(env)
+        branch_env =
+          env
+          |> RecordCompile.fresh_subexpr_cache()
+          |> Map.put(:__into_out__, out)
+          |> Map.put(:__rc_catch__, false)
 
         {expr_code, assignment_code, c2} =
           Host.compile_case_branch_assignment(branch.expr, out, branch_env, c)
 
-        snippet = """
-        #{case_label(branch.pattern, env)}:
-        #{CSource.indent(expr_code, 4)}
-            #{assignment_code}
-            break;
-        """
+        snippet =
+          switch_branch_snippet(case_label(branch.pattern, env), expr_code, assignment_code)
 
-        {acc <> snippet, c2}
+        {acc <> snippet <> "\n", c2}
       end)
 
     default_case =
@@ -100,16 +100,19 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
       else
         """
         default:
-            #{out} = elmc_int_zero();
-            break;
+          #{out} = elmc_int_zero();
+          break;
         """
+        |> CSource.indent(2)
       end
+
+    switch_body = CSource.indent(branch_code <> default_case, 2)
 
     code = """
     #{subject_code}
-      ElmcValue *#{out} = elmc_int_zero();
+      ElmcValue *#{out};
       switch (#{subject_ref}) {
-      #{branch_code}#{default_case}
+    #{switch_body}
       }
     """
 
@@ -148,18 +151,16 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
           env
           |> Patterns.bind_pattern(branch.pattern, subject_ref)
           |> RecordCompile.fresh_subexpr_cache()
+          |> Map.put(:__into_out__, out)
+          |> Map.put(:__rc_catch__, false)
 
         {expr_code, assignment_code, c2} =
           Host.compile_case_branch_assignment(branch.expr, out, branch_env, c)
 
-        snippet = """
-        #{case_label(branch.pattern, env)}:
-        #{CSource.indent(expr_code, 4)}
-            #{assignment_code}
-            break;
-        """
+        snippet =
+          switch_branch_snippet(case_label(branch.pattern, env), expr_code, assignment_code)
 
-        {acc <> snippet, c2}
+        {acc <> snippet <> "\n", c2}
       end)
 
     default_case =
@@ -168,17 +169,20 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
       else
         """
         default:
-            #{out} = elmc_int_zero();
-            break;
+          #{out} = elmc_int_zero();
+          break;
         """
+        |> CSource.indent(2)
       end
+
+    switch_body = CSource.indent(branch_code <> default_case, 2)
 
     code = """
     #{subject_setup}
       const int #{tag_ref} = #{message_tag_expr(subject_ref)};
-      ElmcValue *#{out} = elmc_int_zero();
+      ElmcValue *#{out};
       switch (#{tag_ref}) {
-      #{branch_code}#{default_case}
+    #{switch_body}
       }
     """
 
@@ -228,6 +232,21 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
 
   def compile_subject_ref(subject_expr, env, counter) do
     Host.compile_expr(subject_expr, env, counter)
+  end
+
+  defp switch_branch_snippet(label, expr_code, assignment_code) do
+    body =
+      [expr_code, assignment_code, "break;"]
+      |> Enum.reject(&(String.trim(&1) == ""))
+      |> Enum.join("\n")
+
+    """
+    #{label}: {
+    #{CSource.indent(body, 2)}
+    }
+    """
+    |> String.trim_trailing()
+    |> CSource.indent(2)
   end
 
   @spec case_label(Types.pattern(), Types.compile_env()) :: String.t()

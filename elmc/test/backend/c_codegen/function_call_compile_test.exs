@@ -22,7 +22,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompileTest do
 
     assert var == "tmp_11"
     assert next == 11
-    assert code =~ "elmc_record_new_values_ints(4"
+    assert code =~ "elmc_record_new_values_ints_take(4"
     refute code =~ "rec_field_ids_"
     assert code =~ "direct_native_record_layout_x_1"
     refute code =~ "\"x\""
@@ -46,7 +46,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompileTest do
 
       assert var == "tmp_1"
       assert code =~ "elmc_record_new_values_take(2"
-      assert code =~ "elmc_new_string(direct_label)"
+      assert code =~ "elmc_new_string_take(direct_label)"
       refute code =~ "\"label\""
     after
       Process.delete(:elmc_record_alias_shapes)
@@ -75,8 +75,8 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompileTest do
 
       assert var == "tmp_1"
       assert code =~ "elmc_record_new_values_take(2"
-      assert code =~ "elmc_new_int(direct_x)"
-      assert code =~ "elmc_new_string(direct_label)"
+      assert code =~ "elmc_new_int_take(direct_x)"
+      assert code =~ "elmc_new_string_take(direct_label)"
       refute code =~ "\"label\""
     after
       Process.delete(:elmc_record_field_types)

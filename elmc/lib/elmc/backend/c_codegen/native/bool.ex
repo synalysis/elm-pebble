@@ -133,7 +133,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
 
       code = """
       #{cond_code}
-        #{@native_bool_c_type} #{out} = false;
+        #{@native_bool_c_type} #{out};
         if (#{cond_ref}) {
       #{CSource.indent(then_code, 4)}
           #{out} = #{then_ref};

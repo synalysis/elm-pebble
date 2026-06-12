@@ -4,6 +4,7 @@ defmodule Elmc.Backend.CCodegen.VarArithCompile do
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.FunctionCallCompile
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Types
 
   @spec compile(Types.ir_var_arith_expr(), Types.compile_env(), Types.compile_counter()) ::
@@ -24,7 +25,8 @@ defmodule Elmc.Backend.CCodegen.VarArithCompile do
       next = counter + 1
       var = "tmp_#{next}"
 
-      {prefix <> "ElmcValue *#{var} = elmc_new_int(elmc_as_int(#{source}) + #{value});", var, next}
+      code = prefix <> RcRuntimeEmit.assign_call(env, var, "elmc_new_int", "elmc_as_int(#{source}) + #{value}")
+      {code, var, next}
     end
   end
 
@@ -48,7 +50,9 @@ defmodule Elmc.Backend.CCodegen.VarArithCompile do
       code =
         left_prefix <>
           right_prefix <>
-          "ElmcValue *#{var} = elmc_new_int(elmc_as_int(#{left_ref}) + elmc_as_int(#{right_ref}));"
+          RcRuntimeEmit.assign_call(env, var, "elmc_new_int",
+            "elmc_as_int(#{left_ref}) + elmc_as_int(#{right_ref})"
+          )
 
       {code, var, next}
     end
@@ -70,7 +74,8 @@ defmodule Elmc.Backend.CCodegen.VarArithCompile do
       next = counter + 1
       var = "tmp_#{next}"
 
-      {prefix <> "ElmcValue *#{var} = elmc_new_int(elmc_as_int(#{source}) - #{value});", var, next}
+      code = prefix <> RcRuntimeEmit.assign_call(env, var, "elmc_new_int", "elmc_as_int(#{source}) - #{value}")
+      {code, var, next}
     end
   end
 end

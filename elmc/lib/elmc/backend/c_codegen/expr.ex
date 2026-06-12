@@ -6,6 +6,7 @@ defmodule Elmc.Backend.CCodegen.Expr do
   alias Elmc.Backend.CCodegen.Native.RecordFields
   alias Elmc.Backend.CCodegen.RecordFieldMacros
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.CCodegen.Util
 
   @spec record_field_expr(Types.ir_expr(), String.t()) :: Types.ir_expr() | nil
   @spec record_field_expr(nil, String.t()) :: nil
@@ -634,8 +635,35 @@ defmodule Elmc.Backend.CCodegen.Expr do
   @spec record_get_expr(String.t(), String.t(), Types.record_shape(), Types.compile_env(), String.t() | nil) ::
           String.t()
   def record_get_expr(source, field, shape, env \\ %{}, type \\ nil) do
-    index_ref = record_field_index_ref(field, shape, type, env)
-    "elmc_record_get_index(#{source}, #{index_ref})"
+    cond do
+      runtime_record_get_by_name?(shape, type, env) ->
+        runtime_record_get_expr(source, field)
+
+      field_index_ambiguous?(field, shape, type, env) and field in ["x", "y"] ->
+        index_ref = if(field == "x", do: "0", else: "1")
+        "elmc_record_get_index(#{source}, #{index_ref} /* #{Util.escape_c_comment(field)} */)"
+
+      field_index_ambiguous?(field, shape, type, env) ->
+        runtime_record_get_expr(source, field)
+
+      true ->
+        index_ref = record_field_index_ref(field, shape, type, env)
+        "elmc_record_get_index(#{source}, #{index_ref})"
+    end
+  end
+
+  defp field_index_ambiguous?(field, shape, type, env) do
+    resolved_shape = shape || record_shape_from_type(type, env)
+
+    resolved_shape == nil and infer_record_shape_from_field(field, env) == nil
+  end
+
+  defp runtime_record_get_expr(source, field) do
+    "elmc_record_get(#{source}, \"#{Util.escape_c_string(field)}\")"
+  end
+
+  defp runtime_record_get_by_name?(shape, type, env) do
+    Map.get(env, :__inside_lambda__, false) and shape == nil and type == nil
   end
 
   @spec record_update_expr(String.t(), String.t(), String.t(), Types.record_shape(), keyword()) ::
@@ -663,13 +691,13 @@ defmodule Elmc.Backend.CCodegen.Expr do
   @spec record_field_index_ref(String.t(), Types.record_shape(), String.t() | nil, Types.compile_env()) ::
           String.t()
   def record_field_index_ref(field, shape, type, env) do
-    RecordFieldMacros.index_ref(field, shape: shape, type: type, env: env) ||
-      RecordFieldMacros.index_ref(field,
-        shape: shape || record_shape_for_type(type, env),
-        type: type || record_type_for_shape(shape, env),
-        env: env
-      ) ||
-      fallback_record_field_index(field, shape, type, env)
+    resolved_shape =
+      shape || record_shape_from_type(type, env) || infer_record_shape_from_field(field, env)
+
+    resolved_type = type || record_type_for_shape(resolved_shape, env)
+
+    RecordFieldMacros.index_ref(field, shape: resolved_shape, type: resolved_type, env: env) ||
+      fallback_record_field_index(field, resolved_shape, resolved_type, env)
   end
 
   @spec record_shape_from_type(String.t(), Types.compile_env()) :: Types.record_shape()
@@ -684,7 +712,10 @@ defmodule Elmc.Backend.CCodegen.Expr do
   def record_shape_from_type(_type, _env), do: nil
 
   defp fallback_record_field_index(field, shape, type, env) do
-    fields = shape || if(is_binary(type), do: record_shape_from_type(type, env), else: nil)
+    fields =
+      shape ||
+        if(is_binary(type), do: record_shape_from_type(type, env), else: nil) ||
+        infer_record_shape_from_field(field, env)
 
     with fields when is_list(fields) <- fields,
          index when is_integer(index) <- Enum.find_index(fields, &(&1 == field)) do
@@ -692,6 +723,34 @@ defmodule Elmc.Backend.CCodegen.Expr do
       RecordFieldMacros.format_index(index, field, type_key)
     else
       _ -> RecordFieldMacros.format_index(0, field, nil)
+    end
+  end
+
+  defp infer_record_shape_from_field(field, env) when is_binary(field) do
+    module = Map.get(env, :__module__, "Main")
+
+    alias_shapes =
+      Map.get(env, :__record_alias_shapes__) || Process.get(:elmc_record_alias_shapes, %{})
+
+    module_shapes =
+      alias_shapes
+      |> Enum.filter(fn {{mod, _name}, fields} -> mod == module and field in fields end)
+      |> Enum.map(fn {_key, fields} -> fields end)
+      |> Enum.uniq()
+
+    case module_shapes do
+      [shape] ->
+        shape
+
+      _ ->
+        alias_shapes
+        |> Enum.filter(fn {_key, fields} -> field in fields end)
+        |> Enum.map(fn {_key, fields} -> fields end)
+        |> Enum.uniq()
+        |> case do
+          [shape] -> shape
+          _ -> nil
+        end
     end
   end
 
@@ -788,9 +847,19 @@ defmodule Elmc.Backend.CCodegen.Expr do
 
   @spec record_shape_for_var(Types.compile_env(), String.t()) :: Types.record_shape()
   def record_shape_for_var(env, name) when is_binary(name) do
-    env
-    |> Map.get(:__record_shapes__, %{})
-    |> Map.get(name)
+    key = EnvBindings.binding_key(name)
+
+    case Map.get(env, :__record_shapes__, %{}) |> Map.get(key) do
+      fields when is_list(fields) ->
+        fields
+
+      _ ->
+        subexpr_record_shape(name, env) ||
+          case Map.get(Map.get(env, :__var_types__, %{}), key) do
+            type when is_binary(type) -> record_shape_from_type(type, env)
+            _ -> nil
+          end
+    end
   end
 
   @spec record_type_for_var(Types.compile_env(), String.t()) :: String.t() | nil

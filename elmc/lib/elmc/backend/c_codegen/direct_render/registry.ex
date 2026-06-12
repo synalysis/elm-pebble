@@ -55,12 +55,12 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Registry do
 
           native_proto =
             if Host.native_direct_command_args?(decl) do
-              "\nstatic int #{c_name}_commands_append_native(#{Host.native_direct_command_params(decl)}, ElmcSceneWriter * const writer);"
+              "\nstatic RC #{c_name}_commands_append_native(#{Host.native_direct_command_params(decl)}, ElmcSceneWriter * const writer);"
             else
               ""
             end
 
-          "static int #{c_name}_commands_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer);#{native_proto}"
+          "static RC #{c_name}_commands_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer);#{native_proto}"
         end)
 
       defs =

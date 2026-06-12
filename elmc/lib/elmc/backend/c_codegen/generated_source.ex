@@ -13,6 +13,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
   alias Elmc.Backend.CCodegen.Tuple2CaseTable
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.CCodegen.RcRequired
   alias Elmc.Backend.CCodegen.RecordFieldMacros
   alias Elmc.Backend.CCodegen.UnionMacros
   alias Elmc.Backend.CCodegen.Util
@@ -24,6 +25,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
   def header(ir, opts) do
     direct_cmd_decls = DirectRenderRegistry.decls(ir, opts)
     decl_map = IRQueries.function_decl_map(ir)
+    RcRequired.run!(decl_map, opts)
     wrapper_targets = GenericTargets.wrapper_targets(ir, opts)
     direct_command_targets = Host.direct_command_targets(ir, opts, decl_map)
     exported_targets = Analysis.exported_function_targets(decl_map, opts, direct_command_targets)
@@ -67,6 +69,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
     #endif
     """
+    |> tap(fn _ -> Process.delete(:elmc_rc_required) end)
   end
 
   @spec source(ElmEx.IR.t(), Types.codegen_opts()) :: String.t()
@@ -140,6 +143,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     Process.put(:elmc_exported_targets, exported_targets)
     Process.put(:elmc_function_arities, function_arities)
     Process.put(:elmc_program_decls, decl_map)
+    RcRequired.run!(decl_map, opts)
 
     generic_native_prototypes =
       FunctionEmit.generic_native_function_prototypes(ir, generic_targets, decl_map)
@@ -199,6 +203,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     Process.delete(:elmc_exported_targets)
     Process.delete(:elmc_function_arities)
     Process.delete(:elmc_program_decls)
+    Process.delete(:elmc_rc_required)
     Process.delete(:elmc_lambda_counter)
     Process.delete(:elmc_lambda_defs)
     Process.delete(:elmc_constructor_tags)

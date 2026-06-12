@@ -1,6 +1,8 @@
 defmodule Elmc.BundledPebbleSurfaceCodegenTest do
   use ExUnit.Case
 
+  alias Elmc.Test.CCodegenExtract
+
   @source """
   module Main exposing (main)
 
@@ -94,12 +96,7 @@ defmodule Elmc.BundledPebbleSurfaceCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    init_fn =
-      generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_init(ElmcValue ** const args, const int argc) {", parts: 2)
-      |> Enum.at(1, "")
-      |> String.split("ElmcValue *elmc_fn_Main_update(ElmcValue ** const args, const int argc) {", parts: 2)
-      |> hd()
+    init_fn = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_init")
 
     refute init_fn =~ "elmc_fn_Pebble_Platform_LaunchWakeup("
     refute init_fn =~ "elmc_fn_Pebble_Health_supported("
@@ -109,6 +106,6 @@ defmodule Elmc.BundledPebbleSurfaceCodegenTest do
     assert init_fn =~ "ELMC_UNION_PEBBLE_PLATFORM_LAUNCHWAKEUP" or
              init_fn =~ "ELMC_UNION_LAUNCHWAKEUP" or
              init_fn =~ "elmc_new_int(4)"
-    assert init_fn =~ ~r/elmc_list_from_values_take\(list_items_\d+, 2\)/
+    assert init_fn =~ ~r/elmc_list_from_values_take\(&tmp_\d+, list_items_\d+, 2\)/
   end
 end

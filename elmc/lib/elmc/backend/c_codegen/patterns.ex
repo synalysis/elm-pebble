@@ -209,9 +209,12 @@ defmodule Elmc.Backend.CCodegen.Patterns do
     list_int? = list_int_subject?(env, subject_ref)
     env = if is_binary(bind), do: Map.put(env, bind, subject_ref), else: env
 
+    tail_ref = "((ElmcCons *)#{subject_ref}->payload)->tail"
+
     env
     |> bind_pattern(head, "((ElmcCons *)#{subject_ref}->payload)->head")
-    |> bind_pattern(tail, "((ElmcCons *)#{subject_ref}->payload)->tail")
+    |> bind_pattern(tail, tail_ref)
+    |> EnvBindings.put_list_suffix_ref(tail_ref)
     |> maybe_mark_list_int_cons(head, tail, list_int?)
   end
 

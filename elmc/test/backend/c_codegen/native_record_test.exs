@@ -117,8 +117,8 @@ defmodule Elmc.Backend.CCodegen.NativeRecordTest do
 
     assert var == "tmp_1"
     assert code =~ "elmc_record_new_values_take(2"
-    assert code =~ "elmc_new_string(direct_label)"
-    assert code =~ "elmc_new_int(direct_x)"
+    assert code =~ "elmc_new_string_take(direct_label)"
+    assert code =~ "elmc_new_int_take(direct_x)"
     refute code =~ "\"label\""
   end
 end

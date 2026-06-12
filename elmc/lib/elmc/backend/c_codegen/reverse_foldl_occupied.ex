@@ -128,12 +128,14 @@ defmodule Elmc.Backend.CCodegen.ReverseFoldlOccupied do
       for (elmc_int_t index = 0; index < #{size}; index++) {
         const elmc_int_t cell = elmc_list_nth_int_default(board, index, 0);
         if (cell != 0) {
-          ElmcValue *head = elmc_new_int(index);
+          ElmcValue *head = NULL;
+          if (elmc_new_int(&head, index) != RC_SUCCESS) head = elmc_int_zero();
           if (!head) {
             elmc_release(out);
             return elmc_list_nil();
           }
-          ElmcValue *cell_node = elmc_list_cons(head, elmc_list_nil());
+          ElmcValue *cell_node = NULL;
+          if (elmc_list_cons(&cell_node, head, elmc_list_nil()) != RC_SUCCESS) cell_node = elmc_list_nil();
           elmc_release(head);
           if (!cell_node) {
             elmc_release(out);

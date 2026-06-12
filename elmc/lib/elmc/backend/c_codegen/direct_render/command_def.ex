@@ -3,6 +3,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
 
   alias Elmc.Backend.CCodegen.DirectRender.Emit.Catch
   alias Elmc.Backend.CCodegen.EnvBindings
+  alias Elmc.Backend.CCodegen.FunctionEmit
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
@@ -85,11 +86,6 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
         "ElmcValue *#{c_arg} = (argc > #{index}) ? args[#{index}] : NULL;"
       end)
 
-    unused_casts =
-      c_arg_bindings
-      |> Enum.map(fn {_arg, c_arg, _index} -> c_arg end)
-      |> Enum.map_join("\n  ", fn name -> "(void)#{name};" end)
-
     env =
       c_arg_bindings
       |> Enum.reduce(
@@ -114,6 +110,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
     try do
       case Host.direct_emit_expr(decl.expr, env, 0) do
         {:ok, body_code, _counter} ->
+          unused_casts =
+            FunctionEmit.unused_arg_casts(c_arg_bindings, [body_code])
+
           helper_defs = direct_helper_defs()
           helper_defs <> boxed_body(c_name, arg_bindings, unused_casts, body_code)
 
@@ -131,16 +130,15 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
   @spec boxed_body(String.t(), String.t(), String.t(), String.t()) :: String.t()
   defp boxed_body(c_name, arg_bindings, unused_casts, body_code) do
     """
-    static int #{c_name}_commands_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {
-      (void)args;
-      (void)argc;
+    static RC #{c_name}_commands_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {
       #{arg_bindings}
       #{unused_casts}
-      if (!writer) return -1;
+      if (!writer)
+        return RC_ERR_INVALID_ARG;
       #{Catch.function_body_prefix()}#{body_code}#{Catch.function_body_suffix()}
     }
 
-    int #{c_name}_scene_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {
+    RC #{c_name}_scene_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {
       return #{c_name}_commands_append(args, argc, writer);
     }
     """
@@ -204,11 +202,6 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
       )
       |> Host.put_typed_arg_bindings(c_arg_bindings, decl.type)
 
-    unused_casts =
-      c_arg_bindings
-      |> Enum.map(fn {_arg, c_arg, _index} -> c_arg end)
-      |> Enum.map_join("\n  ", fn name -> "(void)#{name};" end)
-
     Process.delete(:elmc_hoisted_native_ints)
     Process.put(:elmc_hoisted_native_ints_scope, true)
     Process.put(:elmc_direct_helper_defs, [])
@@ -216,10 +209,24 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
     try do
       case Host.direct_emit_expr(decl.expr, native_env, 0) do
         {:ok, body_code, _counter} ->
+          wrapper_unused_casts =
+            FunctionEmit.unused_arg_casts(c_arg_bindings, [wrapper_bindings, native_args])
+
+          native_unused_casts =
+            FunctionEmit.unused_arg_casts(c_arg_bindings, [body_code])
+
           helper_defs = direct_helper_defs()
 
           helper_defs <>
-            native_body(c_name, wrapper_bindings, native_args, decl, unused_casts, body_code)
+            native_body(
+              c_name,
+              wrapper_bindings,
+              native_args,
+              decl,
+              wrapper_unused_casts,
+              native_unused_casts,
+              body_code
+            )
 
         :error ->
           raise ArgumentError,
@@ -249,24 +256,33 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
           String.t(),
           map(),
           String.t(),
+          String.t(),
           String.t()
         ) :: String.t()
-  defp native_body(c_name, wrapper_bindings, native_args, decl, unused_casts, body_code) do
+  defp native_body(
+         c_name,
+         wrapper_bindings,
+         native_args,
+         decl,
+         wrapper_unused_casts,
+         native_unused_casts,
+         body_code
+       ) do
     """
-    static int #{c_name}_commands_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {
-      (void)args;
-      (void)argc;
+    static RC #{c_name}_commands_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {
       #{wrapper_bindings}
+      #{wrapper_unused_casts}
       return #{c_name}_commands_append_native(#{native_args}, writer);
     }
 
-    static int #{c_name}_commands_append_native(#{native_params(decl)}, ElmcSceneWriter * const writer) {
-      #{unused_casts}
-      if (!writer) return -1;
+    static RC #{c_name}_commands_append_native(#{native_params(decl)}, ElmcSceneWriter * const writer) {
+      #{native_unused_casts}
+      if (!writer)
+        return RC_ERR_INVALID_ARG;
       #{Catch.function_body_prefix()}#{body_code}#{Catch.function_body_suffix()}
     }
 
-    int #{c_name}_scene_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {
+    RC #{c_name}_scene_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {
       return #{c_name}_commands_append(args, argc, writer);
     }
     """

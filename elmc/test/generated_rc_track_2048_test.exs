@@ -1,5 +1,5 @@
 defmodule Elmc.GeneratedRcTrack2048Test do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Elmc.Test.RcTrackHarness
 
@@ -22,25 +22,27 @@ defmodule Elmc.GeneratedRcTrack2048Test do
       #include "elmc_generated.c"
       #include <stdio.h>
 
+      #{RcTrackHarness.harness_prelude()}
+
       static ElmcValue *probe_initial_model(elmc_int_t seed) {
-        ElmcValue *seed_val = elmc_new_int(seed);
+        ElmcValue *seed_val = elmc_new_int_take(seed);
         ElmcValue *args[] = { seed_val };
-        ElmcValue *model = elmc_fn_RcTrack2048Probe_initialModel(args, 1);
+        ElmcValue *model = #{RcTrackHarness.generated_fn_call(@out_dir, "RcTrack2048Probe", "initialModel", "args", 1)};
         elmc_release(seed_val);
         return model;
       }
 
       static ElmcValue *probe_step(elmc_int_t dir, ElmcValue *model) {
-        ElmcValue *dir_val = elmc_new_int(dir);
+        ElmcValue *dir_val = elmc_new_int_take(dir);
         ElmcValue *args[] = { dir_val, model };
-        ElmcValue *next = elmc_fn_RcTrack2048Probe_step(args, 2);
+        ElmcValue *next = #{RcTrackHarness.generated_fn_call(@out_dir, "RcTrack2048Probe", "step", "args", 2)};
         elmc_release(dir_val);
         return next;
       }
 
       static int probe_model_turn(ElmcValue *model) {
         ElmcValue *args[] = { model };
-        ElmcValue *turn = elmc_fn_RcTrack2048Probe_modelTurn(args, 1);
+        ElmcValue *turn = #{RcTrackHarness.generated_fn_call(@out_dir, "RcTrack2048Probe", "modelTurn", "args", 1)};
         int n = (int)elmc_as_int(turn);
         elmc_release(turn);
         return n;
@@ -66,7 +68,7 @@ defmodule Elmc.GeneratedRcTrack2048Test do
             9, 10, 11, 12,
             13, 14, 15, 16
           };
-          ElmcValue *cells = elmc_list_from_int_array(board, 16);
+          ElmcValue *cells = elmc_list_from_int_array_take(board, 16);
           elmc_rc_track_reset();
           ElmcValue *out = fn(cells);
           elmc_release(cells);
@@ -80,12 +82,12 @@ defmodule Elmc.GeneratedRcTrack2048Test do
 
         static ElmcValue *call_reverse(ElmcValue *cells) {
           ElmcValue *args[] = { cells };
-          return elmc_fn_RcTrack2048Probe_reverseRows(args, 1);
+          return #{RcTrackHarness.generated_fn_call(@out_dir, "RcTrack2048Probe", "reverseRows", "args", 1)};
         }
 
         static ElmcValue *call_transpose(ElmcValue *cells) {
           ElmcValue *args[] = { cells };
-          return elmc_fn_RcTrack2048Probe_transpose(args, 1);
+          return #{RcTrackHarness.generated_fn_call(@out_dir, "RcTrack2048Probe", "transpose", "args", 1)};
         }
 
         int main(void) {
@@ -114,11 +116,11 @@ defmodule Elmc.GeneratedRcTrack2048Test do
             2, 2, 0, 0,
             0, 0, 2, 2
           };
-          ElmcValue *cells = elmc_list_from_int_array(board, 16);
+          ElmcValue *cells = elmc_list_from_int_array_take(board, 16);
 
           elmc_rc_track_reset();
           ElmcValue *args[] = { cells };
-          ElmcValue *out = elmc_fn_RcTrack2048Probe_collapseRows(args, 1);
+          ElmcValue *out = #{RcTrackHarness.generated_fn_call(@out_dir, "RcTrack2048Probe", "collapseRows", "args", 1)};
           elmc_release(cells);
           elmc_release(out);
 
@@ -243,7 +245,7 @@ defmodule Elmc.GeneratedRcTrack2048Test do
 end
 
 defmodule Elmc.GeneratedRcTrack2048WorkerTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Elmc.Test.RcTrackHarness
 
@@ -274,17 +276,17 @@ defmodule Elmc.GeneratedRcTrack2048WorkerTest do
       #include <stdio.h>
 
       static ElmcValue *launch_context(void) {
-        ElmcValue *shape = elmc_new_int(1);
-        ElmcValue *height = elmc_new_int(168);
-        ElmcValue *width = elmc_new_int(144);
-        ElmcValue *color_mode = elmc_new_int(1);
+        ElmcValue *shape = elmc_new_int_take(1);
+        ElmcValue *height = elmc_new_int_take(168);
+        ElmcValue *width = elmc_new_int_take(144);
+        ElmcValue *color_mode = elmc_new_int_take(1);
         const char *screen_names[] = {"color_mode", "height", "shape", "width"};
         ElmcValue *screen_values[] = {color_mode, height, width, shape};
-        ElmcValue *screen = elmc_record_new_take(4, screen_names, screen_values);
-        ElmcValue *reason = elmc_new_int(1);
+        ElmcValue *screen = elmc_record_new_take_value(4, screen_names, screen_values);
+        ElmcValue *reason = elmc_new_int_take(1);
         const char *names[] = {"reason", "screen"};
         ElmcValue *values[] = {reason, screen};
-        return elmc_record_new_take(2, names, values);
+        return elmc_record_new_take_value(2, names, values);
       }
 
       static void drain_cmds(ElmcWorkerState *state) {
@@ -312,7 +314,7 @@ defmodule Elmc.GeneratedRcTrack2048WorkerTest do
         elmc_release(context);
 
         for (int i = 0; i < 100; i++) {
-          ElmcValue *msg = elmc_new_int(dir_msgs[i % 4]);
+          ElmcValue *msg = elmc_new_int_take(dir_msgs[i % 4]);
           if (elmc_worker_dispatch(&state, msg) != 0) {
             elmc_release(msg);
             return 3;
@@ -370,17 +372,17 @@ defmodule Elmc.GeneratedRcTrack2048WorkerTest do
       #include <stdio.h>
 
       static ElmcValue *launch_context(void) {
-        ElmcValue *shape = elmc_new_int(1);
-        ElmcValue *height = elmc_new_int(168);
-        ElmcValue *width = elmc_new_int(144);
-        ElmcValue *color_mode = elmc_new_int(1);
+        ElmcValue *shape = elmc_new_int_take(1);
+        ElmcValue *height = elmc_new_int_take(168);
+        ElmcValue *width = elmc_new_int_take(144);
+        ElmcValue *color_mode = elmc_new_int_take(1);
         const char *screen_names[] = {"color_mode", "height", "shape", "width"};
         ElmcValue *screen_values[] = {color_mode, height, width, shape};
-        ElmcValue *screen = elmc_record_new_take(4, screen_names, screen_values);
-        ElmcValue *reason = elmc_new_int(1);
+        ElmcValue *screen = elmc_record_new_take_value(4, screen_names, screen_values);
+        ElmcValue *reason = elmc_new_int_take(1);
         const char *names[] = {"reason", "screen"};
         ElmcValue *values[] = {reason, screen};
-        return elmc_record_new_take(2, names, values);
+        return elmc_record_new_take_value(2, names, values);
       }
 
       static void drain_cmds(ElmcPebbleApp *app) {

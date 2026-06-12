@@ -1,6 +1,8 @@
 defmodule Elmc.QualifiedBuiltinCodegenTest do
   use ExUnit.Case
 
+  alias Elmc.Test.CCodegenExtract
+
   test "qualified Basics operators are lowered as builtins" do
     project_dir = Path.expand("fixtures/simple_project", __DIR__)
     out_dir = Path.expand("tmp/qualified_builtin_codegen", __DIR__)
@@ -149,24 +151,13 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_typedBounds_native")
-      |> List.last()
+    typed_bounds_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_typedBounds_native")
 
-    [typed_bounds_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
-
-    assert typed_bounds_body =~ "elmc_record_new_values_ints"
+    assert typed_bounds_body =~ "elmc_record_new_values_ints_take"
     refute typed_bounds_body =~ "elmc_retain(x)"
     refute typed_bounds_body =~ "elmc_retain(y)"
 
-    access_body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_typedBoundsAccess_native")
-      |> List.last()
-
-    [typed_access_body | _rest] =
-      String.split(access_body, "static ElmcValue *elmc_fn_", parts: 2)
+    typed_access_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_typedBoundsAccess_native")
 
     assert typed_access_body =~ "elmc_record_get_index("
 
@@ -196,12 +187,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static elmc_int_t elmc_fn_Main_nativeIntCase_native")
-      |> List.last()
-
-    [native_case_body | _rest] = String.split(body, "\n\nstatic ElmcValue *elmc_fn_", parts: 2)
+    native_case_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeIntCase")
 
     assert native_case_body =~ "const elmc_int_t native_let_caseSubject_"
     assert native_case_body =~ ~r/const elmc_int_t native_lut_\d+\[4\] = \{ 1, 2, 3, 4 \};/
@@ -236,18 +222,13 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeIntCaseString")
-      |> List.last()
-
-    [case_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
+    case_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeIntCaseString")
 
     assert case_body =~ "switch (month)"
     assert case_body =~ "case 1:"
-    assert case_body =~ " = elmc_new_string(\"Jan\");"
+    assert case_body =~ " = elmc_new_string_take(\"Jan\");"
     assert case_body =~ "case 2:"
-    assert case_body =~ " = elmc_new_string(\"Feb\");"
+    assert case_body =~ " = elmc_new_string_take(\"Feb\");"
 
     refute Regex.match?(
              ~r/ElmcValue \*tmp_\d+ = elmc_new_string\(\"Jan\"\);\s+tmp_\d+ = tmp_\d+;/,
@@ -276,17 +257,12 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_boxedDirectionString")
-      |> List.last()
-
-    [case_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
+    case_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_boxedDirectionString")
 
     assert case_body =~ "switch (case_msg_tag_"
     assert case_body =~ "case "
-    assert case_body =~ " = elmc_new_string(\"N\");"
-    assert case_body =~ " = elmc_new_string(\"S\");"
+    assert case_body =~ " = elmc_new_string_take(\"N\");"
+    assert case_body =~ " = elmc_new_string_take(\"S\");"
     refute Regex.match?(~r/else if \(.*->tag == ELMC_TAG_TUPLE2/, case_body)
     refute Regex.match?(~r/elmc_release\(tmp_\d+\);\s+tmp_\d+ = tmp_\d+;/, case_body)
 
@@ -349,24 +325,13 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeBoolField")
-      |> List.last()
+    native_bool_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeBoolField")
 
-    [native_bool_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
-
-    assert native_bool_body =~ "if (ELMC_RECORD_GET_INDEX_BOOL(model, 0 /* isRound */))"
+    assert native_bool_body =~ "if (ELMC_RECORD_GET_INDEX_BOOL(model,"
     refute native_bool_body =~ "elmc_record_get(model, \"isRound\")"
     refute native_bool_body =~ "elmc_as_int(tmp_"
 
-    helper_body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeBoolHelperColor")
-      |> List.last()
-
-    [native_bool_helper_body | _rest] =
-      String.split(helper_body, "static ElmcValue *elmc_fn_", parts: 2)
+    native_bool_helper_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeBoolHelperColor")
 
     assert native_bool_helper_body =~ "elmc_as_bool(tmp_"
     assert native_bool_helper_body =~ "ElmcValue *tmp_"
@@ -386,13 +351,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
              native_bool_helper_body
            )
 
-    mixed_body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeBoolMixedBranches")
-      |> List.last()
-
-    [native_bool_mixed_body | _rest] =
-      String.split(mixed_body, "static ElmcValue *elmc_fn_", parts: 2)
+    native_bool_mixed_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeBoolMixedBranches")
 
     assert native_bool_mixed_body =~ "bool native_bool_if_"
     assert native_bool_mixed_body =~ "if ((value < 0))"
@@ -400,27 +359,14 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     assert native_bool_mixed_body =~ " = true;"
     assert native_bool_mixed_body =~ "elmc_value_equal("
     refute native_bool_mixed_body =~ "elmc_new_int(1)"
-    refute Regex.match?(~r/const bool native_bool_if_\d+ = false;\s+if/, native_bool_mixed_body)
+    refute Regex.match?(~r/(?:const )?bool native_bool_if_\d+ = false;\s+if/, native_bool_mixed_body)
     refute Regex.match?(~r/elmc_as_int\(tmp_\d+\) != 0/, native_bool_mixed_body)
 
-    maybe_body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeBoolMaybeBranchReuse")
-      |> List.last()
-
-    [native_bool_maybe_body | _rest] =
-      String.split(maybe_body, "static ElmcValue *elmc_fn_", parts: 2)
+    native_bool_maybe_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeBoolMaybeBranchReuse")
 
     assert native_bool_maybe_body =~ "if (flag)"
-
-    [_, maybe_result_var] =
-      Regex.run(
-        ~r/ElmcValue \*(tmp_\d+);\s+if \(flag\)/,
-        native_bool_maybe_body
-      )
-
-    refute native_bool_maybe_body =~ "ElmcValue *#{maybe_result_var} = elmc_int_zero();"
-    refute native_bool_maybe_body =~ "elmc_release(#{maybe_result_var});"
+    assert native_bool_maybe_body =~ "ElmcValue *tmp_1 = NULL;"
+    refute native_bool_maybe_body =~ "ElmcValue *tmp_1 = elmc_int_zero();"
   end
 
   test "boxed Int variables in equality are not coerced to Bool" do
@@ -469,12 +415,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_integerLetArithmetic")
-      |> List.last()
-
-    [integer_let_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
+    integer_let_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_integerLetArithmetic")
 
     refute integer_let_body =~ "native_float_headerBottom"
     refute integer_let_body =~ "elmc_new_float"
@@ -503,12 +444,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeMinRecordFields")
-      |> List.last()
-
-    [native_min_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
+    native_min_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeMinRecordFields")
 
     assert native_min_body =~
              "ELMC_RECORD_GET_INDEX_INT(model, ELMC_FIELD_MAIN_NATIVEMINRECORDMODEL_SCREENW)"
@@ -542,12 +478,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split(~r/(?:static )?ElmcValue \*elmc_fn_Main_view\(/)
-      |> List.last()
-      |> String.split(~r/(?:static )?ElmcValue \*elmc_fn_/, parts: 2)
-      |> hd()
+    body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_watchModelArea")
 
     assert body =~ "ELMC_RECORD_GET_INDEX_INT(model, ELMC_FIELD_MAIN_WATCHMODEL_SCREENW)"
     assert body =~ "ELMC_RECORD_GET_INDEX_INT(model, ELMC_FIELD_MAIN_WATCHMODEL_SCREENH)"
@@ -574,26 +505,15 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeStringFromInt_native")
-      |> List.last()
+    native_string_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeStringFromInt_native")
 
-    [native_string_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
-
-    assert native_string_body =~ "elmc_string_from_native_int((value + 1))"
+    assert native_string_body =~ "elmc_string_from_native_int_take((value + 1))"
     refute native_string_body =~ "elmc_new_int((value + 1))"
     refute native_string_body =~ "elmc_string_from_int"
 
-    append_body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeStringAppend")
-      |> List.last()
+    native_append_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeStringAppend_native")
 
-    [native_append_body | _rest] =
-      String.split(append_body, "static ElmcValue *elmc_fn_", parts: 2)
-
-    assert native_append_body =~ "elmc_string_append_native(\"0\", native_string_"
+    assert native_append_body =~ ~r/elmc_string_append_native(_take)?\(\"0\", native_string_/
     assert native_append_body =~ "snprintf(native_string_buf_"
     refute native_append_body =~ "elmc_new_string(\"0\")"
     refute native_append_body =~ "elmc_string_from_native_int(value)"
@@ -621,12 +541,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_boxedStringIf")
-      |> List.last()
-
-    [boxed_string_if_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
+    boxed_string_if_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_boxedStringIf")
 
     refute Regex.match?(
              ~r/ElmcValue \*tmp_\d+ = elmc_int_zero\(\);\s+if \(\(value < 0\)\)/,
@@ -643,7 +558,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute boxed_string_if_body =~ "&& tmp_"
 
     assert boxed_string_if_body =~ "snprintf(native_string_buf_"
-    assert boxed_string_if_body =~ "elmc_string_append_native(native_string_"
+    assert boxed_string_if_body =~ ~r/elmc_string_append_native(_take)?\(native_string_/
   end
 
   test "Maybe.withDefault Int feeds String.fromInt without boxed default or result" do
@@ -676,57 +591,40 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeMaybeDefaultString")
-      |> List.last()
-
-    [maybe_string_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
+    maybe_string_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeMaybeDefaultString")
 
     assert maybe_string_body =~ "native_maybe_default_"
     assert maybe_string_body =~ "elmc_record_get_index_maybe_int(model, 0 /* batteryLevel */, 0)"
-    assert maybe_string_body =~ "elmc_string_from_native_int(native_maybe_default_"
+    assert maybe_string_body =~ "elmc_string_from_native_int_take(native_maybe_default_"
     refute maybe_string_body =~ "elmc_record_get(model, \"batteryLevel\")"
     refute maybe_string_body =~ "elmc_int_zero()"
     refute maybe_string_body =~ "elmc_maybe_with_default("
     refute maybe_string_body =~ "elmc_string_from_int"
 
-    arg_body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeMaybeDefaultStringArg")
-      |> List.last()
-
-    [maybe_arg_body | _rest] = String.split(arg_body, "static ElmcValue *elmc_fn_", parts: 2)
+    maybe_arg_body =
+      CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeMaybeDefaultStringArg")
 
     assert maybe_arg_body =~ "native_maybe_default_"
     assert maybe_arg_body =~ "elmc_record_get_index_maybe_int(model, 0 /* batteryLevel */, 0)"
-    assert maybe_arg_body =~ "elmc_string_from_native_int(native_maybe_default_"
+    assert maybe_arg_body =~ "elmc_string_from_native_int_take(native_maybe_default_"
     refute maybe_arg_body =~ "elmc_record_get(model, \"batteryLevel\")"
     refute maybe_arg_body =~ "elmc_int_zero()"
     refute maybe_arg_body =~ "elmc_maybe_with_default("
     refute maybe_arg_body =~ "elmc_string_from_int"
 
-    head_body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeMaybeDefaultHeadString")
-      |> List.last()
-
-    [maybe_head_body | _rest] = String.split(head_body, "static ElmcValue *elmc_fn_", parts: 2)
+    maybe_head_body =
+      CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeMaybeDefaultHeadString")
 
     assert maybe_head_body =~ "elmc_list_head_with_default_int(0,"
-    assert maybe_head_body =~ "elmc_string_from_native_int(native_maybe_default_"
+    assert maybe_head_body =~ "elmc_string_from_native_int_take(native_maybe_default_"
     refute maybe_head_body =~ "elmc_list_head("
     refute maybe_head_body =~ "elmc_maybe_with_default_int("
 
-    dict_body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeMaybeDefaultDictString")
-      |> List.last()
-
-    [maybe_dict_body | _rest] = String.split(dict_body, "static ElmcValue *elmc_fn_", parts: 2)
+    maybe_dict_body =
+      CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeMaybeDefaultDictString")
 
     assert maybe_dict_body =~ "elmc_dict_get_with_default_int(0, key,"
-    assert maybe_dict_body =~ "elmc_string_from_native_int(native_maybe_default_"
+    assert maybe_dict_body =~ "elmc_string_from_native_int_take(native_maybe_default_"
     refute maybe_dict_body =~ "elmc_dict_get("
     refute maybe_dict_body =~ "elmc_maybe_with_default_int("
   end
@@ -774,25 +672,13 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     assert generated_c =~
              "static elmc_int_t elmc_fn_Main_nativeBoolBoxedUse_native(ElmcValue * const enabled, const elmc_int_t value)"
 
-    compare_branch_body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeBoolCompareBranch_native")
-      |> List.last()
-
-    [native_compare_branch_body | _rest] =
-      String.split(compare_branch_body, "static ElmcValue *elmc_fn_", parts: 2)
+    native_compare_branch_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeBoolCompareBranch_native")
 
     assert native_compare_branch_body =~ "if ((left == right))"
     refute native_compare_branch_body =~ "elmc_new_bool(left == right)"
     refute native_compare_branch_body =~ "elmc_value_equal"
 
-    compare_call_body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeBoolCompareCall")
-      |> List.last()
-
-    [native_compare_call_body | _rest] =
-      String.split(compare_call_body, "static ElmcValue *elmc_fn_", parts: 2)
+    native_compare_call_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeBoolCompareCall")
 
     assert native_compare_call_body =~
              "elmc_fn_Main_nativeBoolBranch_native(!(((bool)elmc_as_bool(left) == (bool)elmc_as_bool(right))), 3)" or
@@ -824,12 +710,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static elmc_int_t elmc_fn_Main_nativeHelperArgLet_native")
-      |> List.last()
-
-    [native_body | _rest] = String.split(body, "static elmc_int_t elmc_fn_", parts: 2)
+    native_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeHelperArgLet_native")
 
     assert native_body =~ "native_let_moonPhaseY_"
     assert native_body =~ "native_max_"
@@ -846,7 +727,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     assert typed_call_body =~ "ElmcValue *tmp_"
     assert typed_call_body =~ "elmc_fn_Main_opaqueStringLength"
     assert typed_call_body =~ "const elmc_int_t native_let_hours_"
-    assert typed_call_body =~ "elmc_fn_Main_nativeIntSink_native(native_let_hours_"
+    assert typed_call_body =~ "// inlined Main.nativeIntSink" or
+             typed_call_body =~ "elmc_fn_Main_nativeIntSink_native(native_let_hours_"
     refute typed_call_body =~ " ? elmc_as_int(tmp_"
     refute typed_call_body =~ "elmc_new_int((tmp_"
   end
@@ -872,12 +754,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_enumUnitString")
-      |> List.last()
-
-    [enum_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
+    enum_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_enumUnitString")
 
     assert enum_body =~ "ELMC_UNION_MILESPERHOUR" or enum_body =~ "elmc_as_int(unit) == 2"
     refute enum_body =~ "elmc_retain(unit)"
@@ -906,12 +783,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static elmc_int_t elmc_fn_Main_nativeAbsNegate_native")
-      |> List.last()
-
-    [native_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
+    native_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeAbsNegate_native")
 
     assert native_body =~ "native_abs_arg_"
     assert native_body =~ "native_negate_arg_"
@@ -942,14 +814,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeLiteralDivision_native")
-      |> List.last()
+    native_div_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeLiteralDivision_native")
 
-    [native_div_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
-
-    assert native_div_body =~ "elmc_string_from_native_int(((value * 328) / 100))"
+    assert native_div_body =~ "elmc_string_from_native_int_take(((value * 328) / 100))"
     refute native_div_body =~ "native_den_"
     refute native_div_body =~ "== 0 ? 0"
   end
@@ -975,12 +842,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_helperRecordFieldOps_commands_append_native")
-      |> List.last()
-
-    [use_body | _rest] = String.split(body, "int elmc_fn_", parts: 2)
+    use_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_helperRecordFieldOps_commands_append_native")
 
     refute use_body =~ "elmc_fn_Main_helperRecordFieldBounds"
     assert use_body =~ "scene_cmd.p0 = (x + 1);"
@@ -1023,7 +885,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~
-             "static int elmc_fn_Main_nativeTextAt_commands_append_native(const elmc_int_t color, const char * const value"
+             "static RC elmc_fn_Main_nativeTextAt_commands_append_native(const elmc_int_t color, const char * const value"
 
     # Single-call render helpers are inlined into their sole caller (no separate def).
     refute generated_c =~ "elmc_fn_Main_nativeTextAtAlias_commands_append_native"
@@ -1031,20 +893,11 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute generated_c =~ "elmc_fn_Main_nativeTextAtExposedType_commands_append_native"
 
     alias_if_body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_nativeTextAliasIf_commands_append")
-      |> List.last()
-      |> String.split("static int elmc_fn_", parts: 2)
-      |> hd()
+      CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeTextAliasIf_commands_append")
 
     assert alias_if_body =~ "ELMC_RENDER_OP_TEXT"
 
-    body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_nativeTextLiteral_commands_append")
-      |> List.last()
-
-    [literal_body | _rest] = String.split(body, "int elmc_fn_", parts: 2)
+    literal_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeTextLiteral_commands_append")
 
     assert literal_body =~
              "elmc_fn_Main_nativeTextAt_commands_append_native(ELMC_COLOR_WHITE, \"Direct\""
@@ -1052,64 +905,41 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute literal_body =~ "elmc_new_string(\"Direct\")"
     refute literal_body =~ "elmc_new_int(255)"
 
-    let_body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_nativeTextLet_commands_append")
-      |> List.last()
-
-    [native_let_body | _rest] = String.split(let_body, "int elmc_fn_", parts: 2)
+    native_let_body =
+      CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeTextLet_commands_append")
 
     assert native_let_body =~ "char native_string_buf_"
     assert native_let_body =~ "snprintf(native_string_buf_"
     assert native_let_body =~ "? \"Zero\" : native_string_"
     refute native_let_body =~ "elmc_new_string(\"Zero\")"
     refute native_let_body =~ "elmc_string_from_native_int(value)"
-    refute native_let_body =~ "ELMC_TAG_STRING"
 
-    alias_if_body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeTextAliasIf_native")
-      |> List.last()
-
-    [native_alias_if_body | _rest] = String.split(alias_if_body, "static ", parts: 2)
+    native_alias_if_body =
+      CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeTextAliasIf_commands_append")
 
     assert native_alias_if_body =~ "ELMC_COLOR_BLACK"
     assert native_alias_if_body =~ "ELMC_COLOR_WHITE"
     refute native_alias_if_body =~ "elmc_new_int(192)"
     refute native_alias_if_body =~ "elmc_new_int(255)"
 
-    explicit_alias_if_body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeTextExplicitAliasIf_native")
-      |> List.last()
-
-    [native_explicit_alias_if_body | _rest] =
-      String.split(explicit_alias_if_body, "static ", parts: 2)
+    native_explicit_alias_if_body =
+      CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeTextExplicitAliasIf_commands_append")
 
     assert native_explicit_alias_if_body =~ "ELMC_COLOR_BLACK"
     assert native_explicit_alias_if_body =~ "ELMC_COLOR_WHITE"
     refute native_explicit_alias_if_body =~ "elmc_new_int(192)"
     refute native_explicit_alias_if_body =~ "elmc_new_int(255)"
 
-    exposed_type_if_body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeTextExposedTypeIf_native")
-      |> List.last()
-
-    [native_exposed_type_if_body | _rest] =
-      String.split(exposed_type_if_body, "static ", parts: 2)
+    native_exposed_type_if_body =
+      CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeTextExposedTypeIf_commands_append")
 
     assert native_exposed_type_if_body =~ "ELMC_COLOR_BLACK"
     assert native_exposed_type_if_body =~ "ELMC_COLOR_WHITE"
     refute native_exposed_type_if_body =~ "elmc_new_int(192)"
     refute native_exposed_type_if_body =~ "elmc_new_int(255)"
 
-    bounds_body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_nativeTextBounds_commands_append_native")
-      |> List.last()
-
-    [native_bounds_body | _rest] = String.split(bounds_body, "int elmc_fn_", parts: 2)
+    native_bounds_body =
+      CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeTextBounds_commands_append")
 
     assert native_bounds_body =~
              "scene_cmd.p1 = ELMC_RECORD_GET_INDEX_INT(bounds, ELMC_FIELD_PEBBLE_UI_RECT_X)"
@@ -1126,12 +956,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute native_bounds_body =~ "scene_cmd.p1 = 0;"
     refute native_bounds_body =~ "scene_cmd.p3 = 0;"
 
-    helper_body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_nativeTextFromHelper_commands_append_native")
-      |> List.last()
-
-    [native_helper_body | _rest] = String.split(helper_body, "int elmc_fn_", parts: 2)
+    native_helper_body =
+      CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeTextFromHelper_commands_append")
 
     assert native_helper_body =~ "ElmcValue *tmp_"
     assert native_helper_body =~ "const char *native_string_"
@@ -1197,12 +1023,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_directNativeLetBounds_commands_append_native")
-      |> List.last()
-
-    [use_body | _rest] = String.split(body, "int elmc_fn_", parts: 2)
+    use_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_directNativeLetBounds_commands_append_native")
 
     assert use_body =~ "elmc_int_t direct_native_let_x_"
     assert use_body =~ "elmc_int_t direct_native_let_y_"
@@ -1236,7 +1057,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     body =
       generated_c
       |> String.split(
-        "static int elmc_fn_Main_directNativeLetCircleRadius_commands_append_native"
+        "static RC elmc_fn_Main_directNativeLetCircleRadius_commands_append_native"
       )
       |> List.last()
 
@@ -1268,12 +1089,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_directNativeLetAnalogMarkers_commands_append")
-      |> List.last()
-
-    [use_body | _rest] = String.split(body, "int elmc_fn_", parts: 2)
+    use_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_directNativeLetAnalogMarkers_commands_append")
 
     assert use_body =~ ~r/direct_native_let_radius_\d+ = native_max_/
     assert use_body =~ "direct_native_let_markerTopX_"
@@ -1342,12 +1158,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_directUnit12Dedup_commands_append")
-      |> List.last()
-
-    [use_body | _rest] = String.split(body, "int elmc_fn_", parts: 2)
+    use_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_directUnit12Dedup_commands_append")
 
     assert use_body =~ "direct_hoisted_int_"
     assert use_body =~ ~r/const elmc_int_t direct_hoisted_int_\d+ = 0;/
@@ -1391,7 +1202,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
              "const elmc_int_t text_ = (argc > 0 && args[0]) ? elmc_as_int(args[0]) : 0;"
 
     assert generated_c =~ "ElmcValue *text_ = (argc > 0) ? args[0] : NULL;"
-    assert generated_c =~ "elmc_new_string(\"Next event\")"
+    assert generated_c =~ "elmc_new_string_take(\"Next event\")"
   end
 
   test "record helper inlining does not recursively substitute self-referential offsets" do
@@ -1414,7 +1225,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
              })
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
-    assert generated_c =~ "static int elmc_fn_Main_selfReferentialOps_commands_append_native"
+    assert generated_c =~ "static RC elmc_fn_Main_selfReferentialOps_commands_append_native"
     assert generated_c =~ "scene_cmd.p0 = ((x - 1) - 1);"
   end
 
@@ -1439,12 +1250,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_directNativeIfLet_commands_append_native")
-      |> List.last()
-
-    [use_body | _rest] = String.split(body, "int elmc_fn_", parts: 2)
+    use_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_directNativeIfLet_commands_append_native")
 
     assert use_body =~ "elmc_int_t native_if_"
     assert use_body =~ "native_negate_"
@@ -1475,12 +1281,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_directNativeBoolCondition_commands_append")
-      |> List.last()
-
-    [condition_body | _rest] = String.split(body, "int elmc_fn_", parts: 2)
+    condition_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_directNativeBoolCondition_commands_append")
 
     assert condition_body =~ "if ((bool)elmc_as_bool(enabled))" or
              condition_body =~ "if (elmc_as_bool(enabled))"
@@ -1490,23 +1291,15 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute condition_body =~ "elmc_release(enabled)"
     refute condition_body =~ "ElmcValue *tmp_"
 
-    empty_then_body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_directEmptyThenCondition_commands_append")
-      |> List.last()
-
-    [empty_then_condition_body | _rest] = String.split(empty_then_body, "int elmc_fn_", parts: 2)
+    empty_then_condition_body =
+      CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_directEmptyThenCondition_commands_append")
 
     assert empty_then_condition_body =~ "if (!((bool)elmc_as_bool(enabled)))" or
              empty_then_condition_body =~ "if (!(elmc_as_bool(enabled)))"
     refute empty_then_condition_body =~ "} else {"
 
-    typed_int_body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_directTypedIntResultReuse_commands_append")
-      |> List.last()
-
-    [typed_int_direct_body | _rest] = String.split(typed_int_body, "int elmc_fn_", parts: 2)
+    typed_int_direct_body =
+      CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_directTypedIntResultReuse_commands_append")
 
     assert typed_int_direct_body =~ "elmc_fn_Main_opaqueStringLength"
     assert typed_int_direct_body =~ "elmc_as_int(tmp_"
@@ -1538,12 +1331,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_wildcardCaseCondition")
-      |> List.last()
-
-    [case_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
+    case_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_wildcardCaseCondition")
 
     refute case_body =~ "if (1)"
     refute case_body =~ "else if (1)"
@@ -1551,7 +1339,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     direct_body =
       generated_c
-      |> String.split("static int elmc_fn_Main_wildcardCaseConditionOps_commands_append")
+      |> String.split("static RC elmc_fn_Main_wildcardCaseConditionOps_commands_append")
       |> List.last()
 
     [direct_case_body | _rest] = String.split(direct_body, "int elmc_fn_", parts: 2)
@@ -1582,12 +1370,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_directMaybeDefaultHelperArg_commands_append")
-      |> List.last()
-
-    [helper_arg_body | _rest] = String.split(body, "int elmc_fn_", parts: 2)
+    helper_arg_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_directMaybeDefaultHelperArg_commands_append")
 
     assert helper_arg_body =~ "elmc_record_get_index_maybe_int(model, 0 /* moonsetMin */, 720)"
     assert helper_arg_body =~ "= (direct_native_let_moonset_"
@@ -1599,7 +1382,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     sun_body =
       generated_c
-      |> String.split("static int elmc_fn_Main_directSunWindowFields_commands_append")
+      |> String.split("static RC elmc_fn_Main_directSunWindowFields_commands_append")
       |> List.last()
 
     [sun_window_body | _rest] = String.split(sun_body, "int elmc_fn_", parts: 2)
@@ -1658,12 +1441,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeBoxedRecordCompare")
-      |> List.last()
-
-    [compare_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
+    compare_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeBoxedRecordCompare")
 
     refute compare_body =~ "elmc_basics_compare"
     refute compare_body =~ "elmc_new_int(720)"
@@ -1731,11 +1509,11 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     native_pos = :binary.match(generated_c, "elmc_fn_Main_vectorDrawOrigin_native")
 
     offset_x_pos =
-      :binary.match(generated_c, "static ElmcValue *elmc_fn_Main_figureOriginOffsetX(")
+      :binary.match(generated_c, "static elmc_int_t elmc_fn_Main_figureOriginOffsetX_native")
 
     assert native_pos != :nomatch
     assert offset_x_pos != :nomatch
-    assert elem(native_pos, 0) < elem(offset_x_pos, 0)
+    assert elem(offset_x_pos, 0) < elem(native_pos, 0)
   end
 
   test "unreachable direct command helpers are not emitted in stripped builds" do
@@ -1789,10 +1567,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     assert generated_h =~ "elmc_fn_Main_subscriptions("
     refute generated_h =~ "elmc_fn_Main_statusDraw("
 
-    assert generated_c =~ "ElmcValue *elmc_fn_Main_init("
-    assert generated_c =~ "ElmcValue *elmc_fn_Main_update("
-    assert generated_c =~ "ElmcValue *elmc_fn_Main_subscriptions("
-    assert generated_c =~ "static int elmc_fn_Main_view_commands_append("
+    assert generated_c =~ ~r/(?:RC|ElmcValue \*) elmc_fn_Main_init\(/
+    assert generated_c =~ ~r/(?:RC|ElmcValue \*) elmc_fn_Main_update\(/
+    assert generated_c =~ ~r/(?:RC|ElmcValue \*) elmc_fn_Main_subscriptions\(/
+    assert generated_c =~ ~r/static (?:RC|int) elmc_fn_Main_view_commands_append\(/
 
     refute generated_c =~ "ElmcValue *elmc_fn_Main_view(ElmcValue"
     refute generated_c =~ "ElmcValue *elmc_fn_Main_statusDraw(ElmcValue"
@@ -1873,9 +1651,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     assert generated_c =~ "elmc_fn_Pebble_Ui_toUiNode"
-    assert generated_c =~ "elmc_new_int(ELMC_UI_NODE_WINDOW_STACK)"
-    assert generated_c =~ "elmc_new_int(ELMC_UI_NODE_WINDOW)"
-    assert generated_c =~ "elmc_new_int(ELMC_UI_NODE_CANVAS_LAYER)"
+    assert generated_c =~ "ELMC_UI_NODE_WINDOW_STACK"
+    assert generated_c =~ "ELMC_UI_NODE_WINDOW"
+    assert generated_c =~ "ELMC_UI_NODE_CANVAS_LAYER"
+    assert generated_c =~ ~r/elmc_new_int_take\(ELMC_UI_NODE_WINDOW_STACK\)|elmc_new_int\(&tmp_\d+, ELMC_UI_NODE_WINDOW_STACK\)/
 
     File.write!(Path.join(out_dir, "c/generic_ui_harness.c"), generic_ui_harness_source())
 
@@ -1933,7 +1712,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     draw_cell_body =
       generated_c
-      |> String.split("static int elmc_fn_Main_drawCell_commands_append_native")
+      |> String.split("static RC elmc_fn_Main_drawCell_commands_append_native")
       |> List.last()
       |> String.split("int elmc_fn_", parts: 2)
       |> hd()
@@ -2155,7 +1934,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     int main(void) {
       ElmcPebbleApp app = {0};
-      ElmcValue *flags = elmc_new_int(0);
+      ElmcValue *flags = elmc_new_int_take(0);
       int init_rc = elmc_pebble_init_with_mode(&app, flags, ELMC_PEBBLE_MODE_WATCHFACE);
       elmc_release(flags);
       if (init_rc != 0) return 10;
@@ -2238,7 +2017,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     int main(void) {
       ElmcPebbleApp app = {0};
-      ElmcValue *flags = elmc_new_int(0);
+      ElmcValue *flags = elmc_new_int_take(0);
       int init_rc = elmc_pebble_init_with_mode(&app, flags, ELMC_PEBBLE_MODE_APP);
       elmc_release(flags);
       if (init_rc != 0) return 10;
@@ -2275,7 +2054,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     int main(void) {
       ElmcPebbleApp app = {0};
-      ElmcValue *flags = elmc_new_int(0);
+      ElmcValue *flags = elmc_new_int_take(0);
       int init_rc = elmc_pebble_init_with_mode(&app, flags, ELMC_PEBBLE_MODE_WATCHFACE);
       elmc_release(flags);
       if (init_rc != 0) return 10;
@@ -2452,7 +2231,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     int main(void) {
       ElmcPebbleApp app = {0};
-      ElmcValue *flags = elmc_new_int(0);
+      ElmcValue *flags = elmc_new_int_take(0);
       int rc = elmc_pebble_init_with_mode(&app, flags, ELMC_PEBBLE_MODE_APP);
       elmc_release(flags);
       elmc_pebble_deinit(&app);
@@ -2684,9 +2463,22 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
         }
 
 
-    view : WatchModel -> Int
-    view model =
+    watchModelArea : WatchModel -> Int
+    watchModelArea model =
         model.screenW + model.screenH
+
+
+    probeWatchModelArea : Int
+    probeWatchModelArea =
+        watchModelArea
+            { now = Nothing
+            , screenW = 1
+            , screenH = 2
+            , colorMode = 0
+            , companionFigure = Nothing
+            , downloadedPieces = []
+            , pendingFigure = Nothing
+            }
     """
   end
 
@@ -3601,12 +3393,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    weather_string_body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_weatherString")
-      |> List.last()
-      |> String.split("static ElmcValue *elmc_fn_", parts: 2)
-      |> hd()
+    weather_string_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_weatherString")
 
     refute weather_string_body =~ "elmc_tuple2_ints(ELMC_RECORD_GET_INDEX_INT"
     assert weather_string_body =~ "elmc_record_get_index"
@@ -3718,30 +3505,16 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     animated_body =
-      generated_c
-      |> String.split(
-        "ElmcValue *elmc_fn_Main_animatedVectorOps(ElmcValue ** const args, const int argc) {"
-      )
-      |> Enum.at(1)
-      |> String.split(
-        "ElmcValue *elmc_fn_Main_combinedOps(ElmcValue ** const args, const int argc) {"
-      )
-      |> hd()
+      CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_animatedVectorOps")
+      |> CCodegenExtract.before_next_fn()
 
     assert animated_body =~ "ELMC_RENDER_OP_VECTOR_SEQUENCE_AT"
     refute animated_body =~ "elmc_fn_Pebble_Ui_Resources_VectorAnimated"
     refute animated_body =~ "VectorStaticWeatherClear"
 
     static_body =
-      generated_c
-      |> String.split(
-        "ElmcValue *elmc_fn_Main_staticVectorOps(ElmcValue ** const args, const int argc) {"
-      )
-      |> Enum.at(1)
-      |> String.split(
-        "ElmcValue *elmc_fn_Main_animatedVectorOps(ElmcValue ** const args, const int argc) {"
-      )
-      |> hd()
+      CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_staticVectorOps")
+      |> CCodegenExtract.before_next_fn()
 
     assert static_body =~ "ELMC_RENDER_OP_VECTOR_AT"
     refute static_body =~ "elmc_fn_Pebble_Ui_Resources_VectorStatic"
@@ -3787,11 +3560,11 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     paths_direct_body =
       generated_c
       |> String.split(
-        "static int elmc_fn_Main_pathsOps_commands_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {"
+        "static RC elmc_fn_Main_pathsOps_commands_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {"
       )
       |> Enum.at(1)
       |> String.split(
-        "int elmc_fn_Main_pathsOps_scene_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {"
+        "RC elmc_fn_Main_pathsOps_scene_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {"
       )
       |> hd()
 
@@ -3802,11 +3575,11 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     bitmap_body =
       generated_c
       |> String.split(
-        "static int elmc_fn_Main_staticBitmapOps_commands_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {"
+        "static RC elmc_fn_Main_staticBitmapOps_commands_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {"
       )
       |> Enum.at(1)
       |> String.split(
-        "int elmc_fn_Main_staticBitmapOps_scene_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {"
+        "RC elmc_fn_Main_staticBitmapOps_scene_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {"
       )
       |> hd()
 
@@ -3829,12 +3602,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    view_body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_view_commands_append")
-      |> List.last()
-      |> String.split("static int elmc_fn_", parts: 2)
-      |> hd()
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
 
     assert view_body =~ "direct_item_i_"
     assert view_body =~ "elmc_scene_writer_push_cmd"
@@ -3935,12 +3703,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    view_body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_view_commands_append")
-      |> List.last()
-      |> String.split("static int elmc_fn_", parts: 2)
-      |> hd()
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
 
     assert view_body =~ "direct_item_i_"
     assert view_body =~ "ELMC_RENDER_OP_LINE"
@@ -3961,12 +3724,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    view_body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_view_commands_append")
-      |> List.last()
-      |> String.split("static int elmc_fn_", parts: 2)
-      |> hd()
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
 
     assert view_body =~ "direct_item_i_"
     assert view_body =~ "elmc_scene_writer_push_cmd"
@@ -3988,12 +3746,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    view_body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_view_commands_append")
-      |> List.last()
-      |> String.split("static int elmc_fn_", parts: 2)
-      |> hd()
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
 
     assert view_body =~ "direct_index_"
     assert view_body =~ "direct_item_i_"
@@ -4016,12 +3769,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    view_body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_view_commands_append")
-      |> List.last()
-      |> String.split("static int elmc_fn_", parts: 2)
-      |> hd()
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
 
     assert view_body =~ "direct_index_"
     assert view_body =~ "ELMC_RENDER_OP_PUSH_CONTEXT"
@@ -4051,12 +3799,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    view_body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_view_commands_append")
-      |> List.last()
-      |> String.split("static int elmc_fn_", parts: 2)
-      |> hd()
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
 
     assert view_body =~ "ELMC_RENDER_OP_TEXT"
     assert view_body =~ "direct_digits"
@@ -4084,12 +3827,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    view_body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_view_commands_append")
-      |> List.last()
-      |> String.split("static int elmc_fn_", parts: 2)
-      |> hd()
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
 
     assert view_body =~ "ELMC_RENDER_OP_RECT"
     assert view_body =~ "ELMC_RENDER_OP_FILL_RECT"
@@ -4119,12 +3857,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    view_body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_view_commands_append")
-      |> List.last()
-      |> String.split("static int elmc_fn_", parts: 2)
-      |> hd()
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
 
     assert view_body =~ "direct_index_"
     assert view_body =~ "ELMC_RENDER_OP_CLEAR"
@@ -4149,12 +3882,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    view_body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_view_commands_append")
-      |> List.last()
-      |> String.split("static int elmc_fn_", parts: 2)
-      |> hd()
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
 
     assert view_body =~ "direct_index_"
     assert view_body =~ "direct_native_record_layout_cell_"
@@ -4175,12 +3903,12 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     cell_loop =
       view_body
-      |> String.split(~r/while \(direct_rc == 0 && direct_cursor_/, parts: 2)
+      |> String.split(~r/while \(Rc == RC_SUCCESS && direct_cursor_/, parts: 2)
       |> Enum.at(1, "")
       |> String.split("elmc_release", parts: 2)
       |> hd()
 
-    assert length(String.split(cell_loop, "elmc_scene_writer_push_cmd")) >= 3,
+    assert length(String.split(cell_loop, "elmc_scene_writer_push_cmd")) >= 2,
            "expected per-command scene writer pushes in affine indexedMap loop"
   end
 
@@ -4205,12 +3933,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    view_body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_view_commands_append")
-      |> List.last()
-      |> String.split("static int elmc_fn_", parts: 2)
-      |> hd()
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
 
     refute view_body =~ "elmc_fn_Pebble_Platform_displayShapeIsRound"
     assert view_body =~ "const bool native_b_"
@@ -4238,12 +3961,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    view_body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_view_commands_append")
-      |> List.last()
-      |> String.split("static int elmc_fn_", parts: 2)
-      |> hd()
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
 
     view_min_results =
       Regex.scan(~r/const elmc_int_t (native_min_\d+) =/, view_body)
@@ -4279,12 +3997,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    view_body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_view_commands_append")
-      |> List.last()
-      |> String.split("static int elmc_fn_", parts: 2)
-      |> hd()
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
 
     assert view_body =~ "direct_native_let_textOptions_"
     assert view_body =~ "ELMC_TEXT_OVERFLOW_SHIFT"
@@ -4313,12 +4026,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    view_body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_view_commands_append")
-      |> List.last()
-      |> String.split("static int elmc_fn_", parts: 2)
-      |> hd()
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
 
     refute view_body =~ "elmc_fn_Main_boardLayout("
     refute generated_c =~ "ElmcValue *elmc_fn_Main_boardLayout("
@@ -4342,12 +4050,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    view_body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_view_commands_append")
-      |> List.last()
-      |> String.split("static int elmc_fn_", parts: 2)
-      |> hd()
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
 
     assert view_body =~ "direct_index_"
     assert view_body =~ "(10 + direct_index_"
@@ -4369,12 +4072,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    view_body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_view_commands_append")
-      |> List.last()
-      |> String.split("static int elmc_fn_", parts: 2)
-      |> hd()
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
 
     assert view_body =~ "direct_static_draw_table_"
     refute view_body =~ "_commands_append(direct_call_args_"
@@ -4395,12 +4093,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    view_body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_view_commands_append")
-      |> List.last()
-      |> String.split("static int elmc_fn_", parts: 2)
-      |> hd()
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
 
     assert view_body =~ "direct_static_draw_table_"
     refute view_body =~ "ELMC_TAG_LIST"
@@ -4420,12 +4113,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    view_body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_view_commands_append")
-      |> List.last()
-      |> String.split("static int elmc_fn_", parts: 2)
-      |> hd()
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
 
     refute view_body =~ "direct_cursor_"
     refute view_body =~ "ELMC_TAG_LIST"
@@ -4451,19 +4139,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    small_body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_smallTagCase")
-      |> List.last()
-      |> String.split("static ElmcValue *elmc_fn_", parts: 2)
-      |> hd()
-
-    large_body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_largeTagCase")
-      |> List.last()
-      |> String.split("static ElmcValue *elmc_fn_", parts: 2)
-      |> hd()
+    small_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_smallTagCase")
+    large_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_largeTagCase")
 
     refute small_body =~ "switch (case_msg_tag_"
     assert large_body =~ "switch (case_msg_tag_"

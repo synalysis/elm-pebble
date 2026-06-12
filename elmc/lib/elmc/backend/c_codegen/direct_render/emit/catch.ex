@@ -3,30 +3,28 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Catch do
 
   @spec header_macros() :: String.t()
   def header_macros do
-    """
-    #ifndef ELMC_CATCH_MACROS
-    #define ELMC_CATCH_MACROS
-    #define CATCH_BEGIN     do {
-    #define CATCH_END       } while (1!=1);
-    #define CATCH_BREAK     { direct_rc = -2; break; }
-    #endif
-    """
+    ""
   end
 
   @spec function_body_prefix() :: String.t()
   def function_body_prefix do
     """
-    int direct_rc = 0;
+    RC Rc = RC_SUCCESS;
     static ElmcPebbleDrawCmd scene_cmd;
+
     CATCH_BEGIN
     """
+    |> String.trim_trailing()
+    |> Kernel.<>("\n\n")
   end
 
   @spec function_body_suffix() :: String.t()
   def function_body_suffix do
     """
-    CATCH_END
-    return direct_rc;
+
+    CATCH_END;
+
+    return Rc;
     """
   end
 
@@ -34,7 +32,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Catch do
   def push_cmd_check do
     """
     if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0) {
-      CATCH_BREAK;
+      Rc = RC_ERR_SCENE_BUFFER_OVERFLOW;
+      ELMC_RC_LOG_FAIL(Rc, "elmc_scene_writer_push_cmd", "overflow");
+      break;
     }
     """
     |> String.trim()
@@ -43,8 +43,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Catch do
   @spec soft_stop_if(String.t()) :: String.t()
   def soft_stop_if(rc_var) do
     """
-    if (#{rc_var} == -2) {
-      CATCH_BREAK;
+    if (#{rc_var} != RC_SUCCESS) {
+      Rc = RC_ERR_RENDER_ABORT;
+      break;
     }
     """
     |> String.trim()
@@ -53,10 +54,21 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Catch do
   @spec handle_child_rc(String.t()) :: String.t()
   def handle_child_rc(rc_var) do
     """
-    if (#{rc_var} < 0) return #{rc_var};
-    if (#{rc_var} == -2) {
-      CATCH_BREAK;
+    if (#{rc_var} != RC_SUCCESS) {
+      Rc = #{rc_var};
+      if (Rc == RC_ERR_RENDER_ABORT)
+        break;
+      break;
     }
+    """
+    |> String.trim()
+  end
+
+  @spec catch_break() :: String.t()
+  def catch_break do
+    """
+    Rc = RC_ERR_RENDER_ABORT;
+    break;
     """
     |> String.trim()
   end

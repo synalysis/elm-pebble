@@ -115,7 +115,7 @@ defmodule Elmc.Backend.CCodegen.ImmortalStaticList do
       /* #{spec.module}.#{spec.name}[n] static table */
       ElmcValue *#{out} =
         (#{index_use} >= 0 && #{index_use} < #{count})
-          ? elmc_new_int(#{spec.sym}_values[#{index_use}])
+          ? elmc_new_int_take(#{spec.sym}_values[#{index_use}])
           : elmc_retain(#{default_ref});
     """
   end

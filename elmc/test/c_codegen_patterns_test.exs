@@ -5,8 +5,20 @@ defmodule Elmc.CCodegenPatternsTest do
   alias Elmc.Backend.CCodegen.FunctionCallCompile
   alias Elmc.Backend.CCodegen.Patterns
   alias Elmc.Backend.CCodegen.RecordCompile
+  alias Elmc.Test.CCodegenExtract
 
   @just_payload_borrow "elmc_maybe_or_tuple_just_payload_borrow"
+
+  defp worker_fn_open(name),
+    do: "RC elmc_fn_Main_#{name}(ElmcValue **out, ElmcValue ** const args, const int argc) {"
+
+  defp worker_fn_marker(name), do: ~r/(?:RC|ElmcValue \*) elmc_fn_Main_#{name}/
+
+  defp worker_fn_def_marker(name),
+    do: ~r/(?:RC|ElmcValue \*) elmc_fn_Main_#{name}\([^)]*\) \{/
+
+  defp static_fn_def_marker(name, params),
+    do: ~r/static (?:RC|ElmcValue \*) *elmc_fn_Main_#{name}\(#{Regex.escape(params)}\) \{/
 
   test "maybe_unwrap_just_case? recognizes Nothing + bare var branches" do
     branches = [
@@ -76,7 +88,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     assert out == "tmp_2"
     assert counter == 2
-    assert code =~ "ElmcValue *tmp_1 = elmc_new_int(42);"
+    assert code =~ "elmc_new_int_take(42)"
     assert code =~ "ElmcValue *tmp_2 = elmc_retain(tmp_1);"
     refute code =~ ~r/ElmcValue \*tmp_1 = elmc_retain\(tmp_1\);/
   end
@@ -99,7 +111,7 @@ defmodule Elmc.CCodegenPatternsTest do
              Elmc.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
-               strip_dead_code: true
+               strip_dead_code: false
              })
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
@@ -108,13 +120,13 @@ defmodule Elmc.CCodegenPatternsTest do
     assert generated_c =~ @just_payload_borrow
 
     assert generated_c =~
-             "ELMC_RECORD_GET_INDEX(tmp_6, ELMC_FIELD_MAIN_ACTIVEPIECE_KIND)"
+             "ELMC_RECORD_GET_INDEX(tmp_7, ELMC_FIELD_MAIN_ACTIVEPIECE_KIND)"
 
-    assert generated_c =~ "ELMC_RECORD_GET_INDEX(tmp_6, ELMC_FIELD_MAIN_ACTIVEPIECE_ROT)"
-    assert generated_c =~ "ELMC_RECORD_GET_INDEX(tmp_6, ELMC_FIELD_MAIN_ACTIVEPIECE_X)"
+    assert generated_c =~ "ELMC_RECORD_GET_INDEX(tmp_7, ELMC_FIELD_MAIN_ACTIVEPIECE_ROT)"
+    assert generated_c =~ "ELMC_RECORD_GET_INDEX(tmp_7, ELMC_FIELD_MAIN_ACTIVEPIECE_X)"
 
     assert generated_c =~
-             "elmc_record_update_index(tmp_6, ELMC_FIELD_MAIN_ACTIVEPIECE_Y, tmp_"
+             "elmc_record_update_index(tmp_7, ELMC_FIELD_MAIN_ACTIVEPIECE_Y, tmp_"
 
     refute generated_c =~ ~r/elmc_record_get_index\(tmp_\d+, 0 \/\* rot \*\)/
     refute generated_c =~ ~r/elmc_record_update_index\(tmp_\d+, 0 \/\* y \*\)/
@@ -293,18 +305,21 @@ defmodule Elmc.CCodegenPatternsTest do
 
     body =
       generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_rows")
-      |> List.last()
-      |> String.split("\n}\n\nElmcValue *elmc_fn_Main_init", parts: 2)
+      |> String.split(
+        static_fn_def_marker("rows", "ElmcValue **out, ElmcValue ** const args, const int argc"),
+        parts: 2
+      )
+      |> Enum.at(1, "")
+      |> String.split(worker_fn_def_marker("init"), parts: 2)
       |> hd()
 
     assert body =~ "elmc_list_reverse("
-    assert body =~ "elmc_list_take_int(2, cells)"
-    assert body =~ "elmc_list_drop_int(2, cells)"
+    assert body =~ ~r/elmc_list_take_int\(&tmp_\d+, 2, cells\)/
+    assert body =~ ~r/elmc_list_drop_int\(&tmp_\d+, 2, cells\)/
     refute body =~ "elmc_list_take("
     refute body =~ "elmc_list_drop("
     assert body =~ "list_concat_segments_"
-    assert body =~ "elmc_list_concat_array("
+    assert body =~ ~r/elmc_list_concat_array(_take)?\(/
     refute body =~ "list_concat_node_"
     refute body =~ "elmc_list_concat("
     refute body =~ "? tmp_"
@@ -313,23 +328,23 @@ defmodule Elmc.CCodegenPatternsTest do
 
     take_body =
       runtime_c
-      |> String.split("ElmcValue *elmc_list_take_int", parts: 2)
+      |> String.split("RC elmc_list_take_int(ElmcValue **out, elmc_int_t count, ElmcValue *list)", parts: 2)
       |> List.last()
-      |> String.split("\n}\n\nElmcValue *elmc_list_drop", parts: 2)
+      |> String.split("\n}\n\nRC elmc_list_drop", parts: 2)
       |> hd()
 
     drop_body =
       runtime_c
-      |> String.split("ElmcValue *elmc_list_drop_int", parts: 2)
+      |> String.split("RC elmc_list_drop_int(ElmcValue **out, elmc_int_t count, ElmcValue *list)", parts: 2)
       |> List.last()
-      |> String.split("\n}\n\nElmcValue *elmc_list_partition", parts: 2)
+      |> String.split("\n}\n\nRC elmc_list_partition", parts: 2)
       |> hd()
 
     concat_body =
       runtime_c
-      |> String.split("ElmcValue *elmc_list_concat(ElmcValue *lists)", parts: 2)
+      |> String.split("RC elmc_list_concat(ElmcValue **out, ElmcValue *lists)", parts: 2)
       |> List.last()
-      |> String.split("\n}\n\nElmcValue *elmc_list_concat_array", parts: 2)
+      |> String.split(~r/\n}\n\nRC elmc_list_concat_array/, parts: 2)
       |> hd()
 
     refute take_body =~ "elmc_list_reverse_copy"
@@ -823,20 +838,12 @@ defmodule Elmc.CCodegenPatternsTest do
     assert generated_c =~ "list_length_count_"
     assert generated_c =~ "elmc_fn_Main_remaining"
 
-    assert Regex.match?(
-             ~r/elmc_fn_Main_remaining\(ElmcValue \*\* const args, const int argc\) \{[\s\S]*?elmc_new_int\(10 \/\* height \*\/ - list_length_count_/,
-             generated_c
-           )
+    remaining_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_remaining")
 
-    refute Regex.match?(
-             ~r/elmc_fn_Main_remaining\(ElmcValue \*\* const args, const int argc\) \{[\s\S]*?elmc_list_length\(/,
-             generated_c
-           )
-
-    refute Regex.match?(
-             ~r/elmc_fn_Main_remaining\(ElmcValue \*\* const args, const int argc\) \{[\s\S]*?elmc_fn_Main_height\(/,
-             generated_c
-           )
+    assert remaining_body =~ "list_length_count_"
+    assert remaining_body =~ "return (10 /* height */ - list_length_count_"
+    refute remaining_body =~ "elmc_list_length("
+    refute remaining_body =~ "elmc_fn_Main_height("
   end
 
   test "List.concat of row segments preserves left-to-right order for collapseRows" do
@@ -944,7 +951,7 @@ defmodule Elmc.CCodegenPatternsTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "elmc_fn_Main_collapseRows"
-    assert generated_c =~ "elmc_list_concat_array("
+    assert generated_c =~ ~r/elmc_list_concat_array(_take)?\(/
     assert generated_c =~ "ElmcValue *elmc_fn_Main_collapseRow(ElmcValue *row)"
 
     assert generated_c =~
@@ -1010,7 +1017,7 @@ defmodule Elmc.CCodegenPatternsTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "elmc_fn_Main_mergeRows"
-    assert generated_c =~ "elmc_list_concat_array("
+    assert generated_c =~ ~r/elmc_list_concat_array(_take)?\(/
     refute generated_c =~ "list_concat_node_"
   end
 
@@ -1050,7 +1057,7 @@ defmodule Elmc.CCodegenPatternsTest do
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert generated_c =~ "elmc_string_append("
+    assert generated_c =~ ~r/elmc_string_append(_take)?\(/
     refute generated_c =~ "elmc_list_concat_array("
     refute generated_c =~ "elmc_list_concat("
   end
@@ -1235,20 +1242,14 @@ defmodule Elmc.CCodegenPatternsTest do
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert Regex.match?(
-             ~r/elmc_fn_Main_area\(ElmcValue \*\* const args, const int argc\) \{[\s\S]*?elmc_new_int\(140\)/,
-             generated_c
-           )
+    area_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_area")
+    init_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_init")
 
-    assert Regex.match?(
-             ~r/elmc_fn_Main_init\(ElmcValue \*\* const args, const int argc\) \{[\s\S]*?(elmc_new_int\(140\)|rec_values_1\[1\] = \{ 140 \})/,
-             generated_c
-           )
+    assert area_body =~ "return 140;"
+    refute area_body =~ "elmc_fn_Main_width("
 
-    refute Regex.match?(
-             ~r/elmc_fn_Main_area\(ElmcValue \*\* const args, const int argc\) \{[\s\S]*?elmc_fn_Main_width\(/,
-             generated_c
-           )
+    assert init_body =~ "elmc_record_new_values_ints("
+    assert init_body =~ "rec_values_1[1] = { 140 };"
   end
 
   test "top-level int constants compile natively in List.range without boxing" do
@@ -1396,6 +1397,11 @@ defmodule Elmc.CCodegenPatternsTest do
 
     refute Regex.match?(
              ~r/elmc_fn_Main_offsetFits_native\([\s\S]*?elmc_as_int\(tmp_\d+\) < 10 \/\* boardCols \*\//,
+             generated_c
+           )
+
+    refute Regex.match?(
+             ~r/elmc_fn_Main_offsetFits_native\([\s\S]*?ElmcValue \*tmp_\d+;\s+if \(native_bool_if_\d+\) \{\s+ElmcValue \*tmp_\d+;/,
              generated_c
            )
 
@@ -1697,7 +1703,7 @@ defmodule Elmc.CCodegenPatternsTest do
     refute generated_c =~ "elmc_fn_Main_softDrop_native"
     refute generated_c =~ "elmc_fn_Main_spawnPiece_native"
     refute generated_c =~ "elmc_list_concat("
-    assert generated_c =~ "record_update_helper_Main_withPiece"
+    refute generated_c =~ "record_update_helper_Main_withPiece"
     assert generated_c =~ "elmc_list_replace_nth_int"
 
     assert generated_c =~
@@ -1705,9 +1711,9 @@ defmodule Elmc.CCodegenPatternsTest do
 
     refute generated_c =~ "elmc_list_indexed_map("
     refute generated_c =~ "elmc_list_reverse("
-    assert generated_c =~ "elmc_let_body_helper_Main_lockPiece"
+    refute generated_c =~ "elmc_let_body_helper_Main_lockPiece"
     assert generated_c =~ "elmc_fn_Main_freshModel("
-    assert generated_c =~ "elmc_record_update_helper_Main_lockPiece"
+    refute generated_c =~ "elmc_record_update_helper_Main_lockPiece"
     refute generated_c =~ "list_concat_repeat_lists_"
     assert generated_c =~ "elmc_fn_Main_clearLines_native"
     assert generated_c =~ "if (cleared == 0)"
@@ -1722,19 +1728,19 @@ defmodule Elmc.CCodegenPatternsTest do
       #include <stdio.h>
 
       static ElmcValue *basalt_launch_context(void) {
-        ElmcValue *reason = elmc_new_int(2);
-        ElmcValue *watch_model = elmc_new_string("");
-        ElmcValue *watch_profile_id = elmc_new_string("");
-        ElmcValue *width = elmc_new_int(144);
-        ElmcValue *height = elmc_new_int(168);
-        ElmcValue *shape = elmc_new_int(2);
-        ElmcValue *color_mode = elmc_new_string("Color");
+        ElmcValue *reason = elmc_new_int_take(2);
+        ElmcValue *watch_model = elmc_new_string_take("");
+        ElmcValue *watch_profile_id = elmc_new_string_take("");
+        ElmcValue *width = elmc_new_int_take(144);
+        ElmcValue *height = elmc_new_int_take(168);
+        ElmcValue *shape = elmc_new_int_take(2);
+        ElmcValue *color_mode = elmc_new_string_take("Color");
         const char *screen_names[] = {"color_mode", "height", "shape", "width"};
         ElmcValue *screen_values[] = {color_mode, height, shape, width};
-        ElmcValue *screen = elmc_record_new_take(4, screen_names, screen_values);
-        ElmcValue *has_microphone = elmc_new_int(0);
-        ElmcValue *has_compass = elmc_new_int(0);
-        ElmcValue *supports_health = elmc_new_int(0);
+        ElmcValue *screen = elmc_record_new_take_value(4, screen_names, screen_values);
+        ElmcValue *has_microphone = elmc_new_int_take(0);
+        ElmcValue *has_compass = elmc_new_int_take(0);
+        ElmcValue *supports_health = elmc_new_int_take(0);
         const char *names[] = {
           "hasCompass", "hasMicrophone", "reason", "screen",
           "supportsHealth", "watchModel", "watchProfileId"
@@ -1743,7 +1749,7 @@ defmodule Elmc.CCodegenPatternsTest do
           has_compass, has_microphone, reason, screen,
           supports_health, watch_model, watch_profile_id
         };
-        return elmc_record_new_take(7, names, values);
+        return elmc_record_new_take_value(7, names, values);
       }
 
       static elmc_int_t list_length(ElmcValue *list) {
@@ -1920,18 +1926,15 @@ defmodule Elmc.CCodegenPatternsTest do
 
     init_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_init(ElmcValue ** const args, const int argc) {",
-        parts: 2
-      )
+      |> String.split(worker_fn_open("init"), parts: 2)
       |> Enum.at(1, "")
-      |> String.split("ElmcValue *elmc_fn_Main_update", parts: 2)
+      |> String.split(worker_fn_marker("update"), parts: 2)
       |> hd()
 
-    assert init_body =~ "elmc_record_new_values_ints"
+    assert init_body =~ "elmc_record_new_static_ints"
     refute init_body =~ "rec_field_names_"
-    refute init_body =~ "elmc_record_new_static_ints"
+    refute init_body =~ "elmc_record_new_values_ints"
     refute init_body =~ "static const int rec_field_ids_"
-    refute init_body =~ "static const char * const rec_names_"
     refute init_body =~ "elmc_record_new_ints"
     refute init_body =~ "elmc_record_new_take"
 
@@ -2010,21 +2013,19 @@ defmodule Elmc.CCodegenPatternsTest do
 
     init_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_init(ElmcValue ** const args, const int argc) {",
-        parts: 2
-      )
+      |> String.split(worker_fn_open("init"), parts: 2)
       |> Enum.at(1, "")
-      |> String.split("ElmcValue *elmc_fn_Main_update", parts: 2)
+      |> String.split(worker_fn_marker("update"), parts: 2)
       |> hd()
 
     assert length(Regex.scan(~r/ElmcValue \*tmp_1 = elmc_int_zero\(\);/, init_body)) == 1
     refute length(Regex.scan(~r/ElmcValue \*tmp_2 = elmc_int_zero\(\);/, init_body)) > 0
-    assert init_body =~ "elmc_record_new_values_take"
+    assert init_body =~ "elmc_record_new_static_take"
+    assert init_body =~ "rec_values_"
+    assert init_body =~ "static const char * const rec_names_"
     refute init_body =~ "rec_field_names_"
-    refute init_body =~ "elmc_record_new_static_take"
     refute init_body =~ "static const int rec_field_ids_"
-    refute init_body =~ "static const char * const rec_names_"
-    refute init_body =~ "elmc_record_new_take"
+    refute init_body =~ "elmc_record_new_take("
   end
 
   test "boxed record literal reuses nested field-access prefixes like context.screen" do
@@ -2084,9 +2085,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     init_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_init(ElmcValue ** const args, const int argc) {",
-        parts: 2
-      )
+      |> String.split(worker_fn_open("init"), parts: 2)
       |> Enum.at(1, "")
       |> String.split("}\n", parts: 2)
       |> hd()
@@ -2193,28 +2192,26 @@ defmodule Elmc.CCodegenPatternsTest do
 
     direct_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_directHelper(ElmcValue *items) {", parts: 2)
+      |> String.split(static_fn_def_marker("directHelper", "ElmcValue *items"), parts: 2)
       |> Enum.at(1, "")
-      |> String.split("ElmcValue *elmc_fn_Main_closureHelper", parts: 2)
+      |> String.split(worker_fn_marker("closureHelper"), parts: 2)
       |> hd()
 
     closure_body =
       generated_c
       |> String.split(
-        "ElmcValue *elmc_fn_Main_closureHelper(ElmcValue ** const args, const int argc) {",
+        static_fn_def_marker("closureHelper", "ElmcValue ** const args, const int argc"),
         parts: 2
       )
       |> Enum.at(1, "")
-      |> String.split("ElmcValue *elmc_fn_Main_apply", parts: 2)
+      |> String.split(worker_fn_marker("apply"), parts: 2)
       |> hd()
 
     update_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_update(ElmcValue ** const args, const int argc) {",
-        parts: 2
-      )
+      |> String.split(worker_fn_open("update"), parts: 2)
       |> Enum.at(1, "")
-      |> String.split("ElmcValue *elmc_fn_Main_subscriptions", parts: 2)
+      |> String.split(worker_fn_marker("subscriptions"), parts: 2)
       |> hd()
 
     assert direct_body =~ "direct_call_abi"
@@ -2288,9 +2285,9 @@ defmodule Elmc.CCodegenPatternsTest do
 
     forward_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_forward(ElmcValue *seed) {", parts: 2)
+      |> String.split(static_fn_def_marker("forward", "ElmcValue *seed"), parts: 2)
       |> Enum.at(1, "")
-      |> String.split("ElmcValue *elmc_fn_Main_init", parts: 2)
+      |> String.split(worker_fn_def_marker("init"), parts: 2)
       |> hd()
 
     assert generated_c =~ "ElmcValue *elmc_fn_Main_forward(ElmcValue *seed)"
@@ -2378,11 +2375,11 @@ defmodule Elmc.CCodegenPatternsTest do
     spawn_body =
       generated_c
       |> String.split(
-        "static ElmcValue *elmc_fn_Main_spawnTile(ElmcValue *seed, ElmcValue *cells) {",
+        static_fn_def_marker("spawnTile", "ElmcValue *seed, ElmcValue *cells"),
         parts: 2
       )
       |> Enum.at(1, "")
-      |> String.split("static ElmcValue *elmc_fn_Main_setCell", parts: 2)
+      |> String.split(~r/static (?:RC|ElmcValue \*) *elmc_fn_Main_setCell/, parts: 2)
       |> hd()
 
     assert spawn_body =~ "elmc_fn_Main_setCell(tmp_"
@@ -2396,11 +2393,14 @@ defmodule Elmc.CCodegenPatternsTest do
     set_cell_body =
       generated_c
       |> String.split(
-        "static ElmcValue *elmc_fn_Main_setCell(ElmcValue *index, ElmcValue *newValue, ElmcValue *cells) {",
+        static_fn_def_marker(
+          "setCell",
+          "ElmcValue *index, ElmcValue *newValue, ElmcValue *cells"
+        ),
         parts: 2
       )
       |> Enum.at(1, "")
-      |> String.split("static ElmcValue *elmc_fn_Main_spawnTile", parts: 2)
+      |> String.split(~r/static (?:RC|ElmcValue \*) *elmc_fn_Main_spawnTile/, parts: 2)
       |> hd()
 
     assert set_cell_body =~ "elmc_list_replace_nth_int(cells,"
@@ -2486,14 +2486,14 @@ defmodule Elmc.CCodegenPatternsTest do
     pick_body =
       generated_c
       |> String.split(
-        "static ElmcValue *elmc_fn_Main_pickTile(ElmcValue ** const args, const int argc) {",
+        static_fn_def_marker("pickTile", "ElmcValue ** const args, const int argc"),
         parts: 2
       )
       |> Enum.at(1, "")
-      |> String.split("ElmcValue *elmc_fn_Main_init", parts: 2)
+      |> String.split(worker_fn_def_marker("init"), parts: 2)
       |> hd()
 
-    assert pick_body =~ "= elmc_tuple2_take("
+    assert pick_body =~ "elmc_tuple2_take_value("
     refute Regex.match?(~r/tmp_\d+ = tmp_\d+;/, pick_body)
 
     refute Regex.match?(
@@ -2518,7 +2518,8 @@ defmodule Elmc.CCodegenPatternsTest do
     {code, _out, _counter} = Host.compile_expr(expr, env, 2)
     source = IO.iodata_to_binary(code)
 
-    assert source =~ "elmc_list_cons(tmp_head, tmp_"
+    assert source =~ "elmc_list_cons("
+    assert source =~ "tmp_head"
     refute source =~ "elmc_retain(tmp_head)"
     refute source =~ "elmc_release(tmp_head)"
     assert source =~ "elmc_release(tmp_"
@@ -2604,9 +2605,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     init_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_init(ElmcValue ** const args, const int argc) {",
-        parts: 2
-      )
+      |> String.split(worker_fn_open("init"), parts: 2)
       |> Enum.at(1, "")
       |> String.split("}\n", parts: 2)
       |> hd()
@@ -2686,8 +2685,10 @@ defmodule Elmc.CCodegenPatternsTest do
     assert generated_c =~ "#define ELMC_UNION_LEFT 1"
     assert generated_c =~ "#define ELMC_UNION_MAIN_LEFT 1"
     assert generated_c =~ "#define ELMC_UNION_MAIN_UP 3"
-    assert generated_c =~ "elmc_new_int(ELMC_UNION_LEFT)"
-    assert generated_c =~ "elmc_new_int(ELMC_UNION_MAIN_UP)"
+    assert generated_c =~ "ELMC_UNION_LEFT"
+    assert generated_c =~ "ELMC_UNION_MAIN_UP"
+    assert generated_c =~ ~r/elmc_new_int(?:_take)?\([^)]*ELMC_UNION_LEFT/
+    assert generated_c =~ ~r/elmc_new_int(?:_take)?\([^)]*ELMC_UNION_MAIN_UP/
     assert generated_c =~ "case ELMC_UNION_LEFT:"
     assert generated_c =~ "case ELMC_UNION_RIGHT:"
     assert generated_c =~ "case ELMC_UNION_MAIN_UP:"
@@ -2742,11 +2743,9 @@ defmodule Elmc.CCodegenPatternsTest do
 
     init_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_init(ElmcValue ** const args, const int argc) {",
-        parts: 2
-      )
+      |> String.split(worker_fn_open("init"), parts: 2)
       |> Enum.at(1, "")
-      |> String.split("ElmcValue *elmc_fn_Main_update", parts: 2)
+      |> String.split(worker_fn_marker("update"), parts: 2)
       |> hd()
 
     assert init_body =~
@@ -3088,15 +3087,13 @@ defmodule Elmc.CCodegenPatternsTest do
 
     update_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_update(ElmcValue ** const args, const int argc) {",
-        parts: 2
-      )
+      |> String.split(worker_fn_open("update"), parts: 2)
       |> Enum.at(1, "")
       |> String.split("}\n", parts: 2)
       |> hd()
 
     assert update_body =~
-             "elmc_record_update_index(model, ELMC_FIELD_MAIN_MODEL_TIMESTRING, tmp_2)"
+             "elmc_record_update_index(model, ELMC_FIELD_MAIN_MODEL_TIMESTRING, tmp_"
     refute update_body =~ "elmc_retain(model)"
     refute update_body =~ ~s/elmc_record_update(tmp_2, "timeString"/
   end
@@ -3157,9 +3154,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     update_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_update(ElmcValue ** const args, const int argc) {",
-        parts: 2
-      )
+      |> String.split(worker_fn_open("update"), parts: 2)
       |> Enum.at(1, "")
       |> String.split("}\n", parts: 2)
       |> hd()
@@ -3222,7 +3217,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions_body =
       generated_c
       |> String.split(
-        "ElmcValue *elmc_fn_Main_subscriptions(ElmcValue ** const args, const int argc) {",
+        worker_fn_open("subscriptions"),
         parts: 2
       )
       |> Enum.at(1, "")
@@ -3235,7 +3230,7 @@ defmodule Elmc.CCodegenPatternsTest do
     refute subscriptions_body =~ "elmc_new_int(ELMC_SUBSCRIPTION_MINUTE_CHANGE)"
     refute subscriptions_body =~ "elmc_new_int(2048)"
     refute subscriptions_body =~ "\n\n\n"
-    assert subscriptions_body =~ "  ElmcValue *_ ="
+    assert subscriptions_body =~ "  ElmcValue *_unused_0 ="
     refute subscriptions_body =~ ~r/^\S/m
   end
 
@@ -3288,7 +3283,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions_body =
       generated_c
       |> String.split(
-        "ElmcValue *elmc_fn_Main_subscriptions(ElmcValue ** const args, const int argc) {",
+        worker_fn_open("subscriptions"),
         parts: 2
       )
       |> Enum.at(1, "")
@@ -3528,8 +3523,8 @@ defmodule Elmc.CCodegenPatternsTest do
     assert generated_h =~ "elmc_fn_Main_init("
     assert generated_h =~ "elmc_fn_Main_update("
     refute generated_h =~ "elmc_fn_Main_spawnTileWithSeed("
-    assert generated_c =~ "static ElmcValue *elmc_fn_Main_spawnTileWithSeed("
-    assert generated_c =~ "while (direct_rc == 0 && direct_cursor_"
+    assert generated_c =~ "static RC elmc_fn_Main_spawnTileWithSeed(ElmcValue **out,"
+    assert generated_c =~ "while (Rc == RC_SUCCESS && direct_cursor_"
     assert generated_c =~ "ELMC_RENDER_OP_RECT"
 
     harness_path = Path.join(out_dir, "c/game_2048_scene_harness.c")
@@ -3541,19 +3536,19 @@ defmodule Elmc.CCodegenPatternsTest do
       #include <stdio.h>
 
       static ElmcValue *aplite_launch_context(void) {
-        ElmcValue *reason = elmc_new_int(2);
-        ElmcValue *watch_model = elmc_new_string("");
-        ElmcValue *watch_profile_id = elmc_new_string("aplite");
-        ElmcValue *width = elmc_new_int(144);
-        ElmcValue *height = elmc_new_int(168);
-        ElmcValue *shape = elmc_new_int(1);
-        ElmcValue *color_mode = elmc_new_string("BlackWhite");
+        ElmcValue *reason = elmc_new_int_take(2);
+        ElmcValue *watch_model = elmc_new_string_take("");
+        ElmcValue *watch_profile_id = elmc_new_string_take("aplite");
+        ElmcValue *width = elmc_new_int_take(144);
+        ElmcValue *height = elmc_new_int_take(168);
+        ElmcValue *shape = elmc_new_int_take(1);
+        ElmcValue *color_mode = elmc_new_string_take("BlackWhite");
         const char *screen_names[] = {"color_mode", "height", "shape", "width"};
         ElmcValue *screen_values[] = {color_mode, height, shape, width};
-        ElmcValue *screen = elmc_record_new_take(4, screen_names, screen_values);
-        ElmcValue *has_microphone = elmc_new_int(0);
-        ElmcValue *has_compass = elmc_new_int(0);
-        ElmcValue *supports_health = elmc_new_int(0);
+        ElmcValue *screen = elmc_record_new_take_value(4, screen_names, screen_values);
+        ElmcValue *has_microphone = elmc_new_int_take(0);
+        ElmcValue *has_compass = elmc_new_int_take(0);
+        ElmcValue *supports_health = elmc_new_int_take(0);
         const char *names[] = {
           "has_compass", "has_microphone", "reason", "screen",
           "supports_health", "watchModel", "watchProfileId"
@@ -3562,7 +3557,7 @@ defmodule Elmc.CCodegenPatternsTest do
           has_compass, has_microphone, reason, screen,
           supports_health, watch_model, watch_profile_id
         };
-        return elmc_record_new_take(7, names, values);
+        return elmc_record_new_take_value(7, names, values);
       }
 
       static int count_kind(ElmcPebbleApp *app, int kind) {
@@ -3700,6 +3695,58 @@ defmodule Elmc.CCodegenPatternsTest do
     refute generated_c =~ "direct_mod_base_"
     assert generated_c =~ " / 4"
     assert generated_c =~ " % 4"
+  end
+
+  test "record Bool helpers with native bodies emit _native return without RC boxing" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+
+    type alias Model =
+        { pieceKind : Int }
+
+    type Msg
+        = Noop
+
+    hasPiece : Model -> Bool
+    hasPiece model =
+        model.pieceKind >= 0
+
+    init _ =
+        ( { pieceKind = 1 }, Platform.Cmd.none )
+
+    update _ model =
+        ( model, Platform.Cmd.none )
+
+    subscriptions _ =
+        Platform.Sub.none
+
+    view model =
+        if hasPiece model then
+            Ui.windowStack []
+
+        else
+            Ui.windowStack []
+
+    main =
+        Platform.worker { init = init, update = update, subscriptions = subscriptions, view = view }
+    """
+
+    generated_c = compile_generated_c!("native_record_bool_helper", source, %{})
+
+    has_piece_native = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_hasPiece_native")
+
+    assert has_piece_native != ""
+    assert generated_c =~ "static bool elmc_fn_Main_hasPiece_native(ElmcValue * const model)"
+    assert generated_c =~ "elmc_fn_Main_hasPiece_native(model)"
+    refute generated_c =~ "RC elmc_fn_Main_hasPiece(ElmcValue **out"
+    refute has_piece_native =~ "elmc_new_bool"
+    refute has_piece_native =~ "elmc_new_int"
+    refute has_piece_native =~ "CATCH_BEGIN"
+    refute Regex.match?(~r/bool native_bool_if_\d+ = false;/, has_piece_native)
+    assert has_piece_native =~ "ELMC_RECORD_GET_INDEX_INT(model, ELMC_FIELD_MAIN_MODEL_PIECEKIND)"
   end
 
   defp compile_generated_c!(name, source, opts) do

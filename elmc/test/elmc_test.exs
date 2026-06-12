@@ -169,12 +169,17 @@ defmodule ElmcTest do
 
     ElmcValue *uses_value_record(void) {
       elmc_int_t values[2] = { 1, 2 };
-      return elmc_record_new_values_ints(2, values);
+      ElmcValue *out = NULL;
+      if (elmc_record_new_values_ints(&out, 2, values) != RC_SUCCESS) return NULL;
+      return out;
     }
 
     ElmcValue *uses_value_record_take(void) {
-      ElmcValue *values[1] = { elmc_new_int(3) };
-      return elmc_record_new_values_take(1, values);
+      ElmcValue *values[1] = { NULL };
+      if (elmc_new_int(&values[0], 3) != RC_SUCCESS) return NULL;
+      ElmcValue *out = NULL;
+      if (elmc_record_new_values_take(&out, 1, values) != RC_SUCCESS) return NULL;
+      return out;
     }
     """)
 
@@ -183,11 +188,11 @@ defmodule ElmcTest do
     runtime = File.read!(Path.join(runtime_dir, "elmc_runtime.c"))
     header = File.read!(Path.join(runtime_dir, "elmc_runtime.h"))
 
-    assert runtime =~ "ElmcValue *elmc_record_new_values_ints"
-    assert runtime =~ "ElmcValue *elmc_record_new_values_take"
+    assert runtime =~ "RC elmc_record_new_values_ints"
+    assert runtime =~ "RC elmc_record_new_values_take"
     assert runtime =~ "elmc_record_cell_alloc_values"
-    assert header =~ "ElmcValue *elmc_record_new_values_ints"
-    assert header =~ "ElmcValue *elmc_record_new_values_take"
+    assert header =~ "RC elmc_record_new_values_ints"
+    assert header =~ "RC elmc_record_new_values_take"
     refute runtime =~ "implicit declaration"
   end
 
@@ -203,7 +208,9 @@ defmodule ElmcTest do
     #include "elmc_runtime.h"
 
     ElmcValue *uses_closure(void) {
-      return elmc_closure_new(0, 0, 0);
+      ElmcValue *out = NULL;
+      if (elmc_closure_new(&out, 0, 0, 0, NULL) != RC_SUCCESS) return NULL;
+      return out;
     }
     """)
 
@@ -211,7 +218,7 @@ defmodule ElmcTest do
 
     runtime = File.read!(Path.join(runtime_dir, "elmc_runtime.c"))
 
-    assert runtime =~ "ElmcValue *elmc_closure_new"
+    assert runtime =~ "RC elmc_closure_new"
     assert runtime =~ "ElmcValue *elmc_alloc"
     assert runtime =~ "elmc_closure_cell_release"
   end
@@ -234,8 +241,8 @@ defmodule ElmcTest do
     assert runtime =~ "static const ElmcValue ELMC_SMALL_INTS"
     assert runtime =~ "static ElmcValue ELMC_MAYBE_NOTHING"
     assert runtime =~ "return &ELMC_MAYBE_NOTHING;"
-    assert runtime =~ "return elmc_alloc_scalar(ELMC_TAG_INT, value);"
-    assert runtime =~ "return value ? &ELMC_BOOL_TRUE : &ELMC_BOOL_FALSE;"
+    assert runtime =~ "elmc_rc_assign_value(out, elmc_alloc_scalar(ELMC_TAG_INT, value))"
+    assert runtime =~ "elmc_rc_assign_value(out, value ? &ELMC_BOOL_TRUE : &ELMC_BOOL_FALSE)"
     assert runtime =~ "return value->scalar;"
     refute runtime =~ "malloc(sizeof(elmc_int_t))"
   end
@@ -250,7 +257,7 @@ defmodule ElmcTest do
     runtime = File.read!(Path.join(runtime_dir, "elmc_runtime.c"))
 
     assert runtime =~ "static ElmcValue ELMC_EMPTY_STRING"
-    assert runtime =~ "return &ELMC_EMPTY_STRING;"
+    assert runtime =~ "elmc_rc_assign_value(out, &ELMC_EMPTY_STRING)"
     assert runtime =~ "static void elmc_log_alloc_failed"
     assert runtime =~ "static void *elmc_realloc_impl"
     refute runtime =~ "ELMC_ALLOC_FAILURE_LOGGED"
@@ -275,10 +282,10 @@ defmodule ElmcTest do
     assert runtime =~ "ElmcTuple2Cell"
     assert runtime =~ "ElmcRecordCell"
     assert runtime =~ "ElmcClosureCell"
-    assert runtime =~ "return elmc_list_cell_alloc(head, tail, 0);"
-    assert runtime =~ "return elmc_list_cell_alloc(head, tail, 1);"
-    assert runtime =~ "return elmc_record_cell_alloc(field_count, field_names, field_values, 0);"
-    assert runtime =~ "return elmc_record_cell_alloc(field_count, field_names, field_values, 1);"
+    assert runtime =~ "elmc_rc_assign_value(out, elmc_list_cell_alloc(head, tail, 0))"
+    assert runtime =~ "elmc_list_cell_alloc(head, tail, 0)"
+    assert runtime =~ "elmc_rc_assign_value(out, elmc_record_cell_alloc(field_count, field_names, field_values, 0))"
+    assert runtime =~ "elmc_rc_assign_value(out, elmc_record_cell_alloc(field_count, field_names, field_values, 1))"
     assert runtime =~ "if (value->tag == ELMC_TAG_LIST && elmc_list_cell_release(value))"
     assert runtime =~ "if (value->tag == ELMC_TAG_TUPLE2 && elmc_tuple2_cell_release(value))"
     assert runtime =~ "if (elmc_record_cell_release(value))"
@@ -302,32 +309,49 @@ defmodule ElmcTest do
     #include <stdint.h>
 
     static ElmcValue *add_capture(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
+      ElmcValue *out = NULL;
       (void)argc;
-      if (capture_count != 1) return elmc_new_int(-1);
-      return elmc_new_int(elmc_as_int(captures[0]) + elmc_as_int(args[0]));
+      if (capture_count != 1) {
+        if (elmc_new_int(&out, -1) != RC_SUCCESS) return NULL;
+        return out;
+      }
+      if (elmc_new_int(&out, elmc_as_int(captures[0]) + elmc_as_int(args[0])) != RC_SUCCESS) return NULL;
+      return out;
     }
 
     int main(void) {
-      ElmcValue *one = elmc_new_int(1);
+      ElmcValue *one = NULL;
+      ElmcValue *a = NULL;
+      ElmcValue *b = NULL;
+      ElmcValue *c = NULL;
+      ElmcValue *tuple = NULL;
+      ElmcValue *maybe = NULL;
+      ElmcValue *ok = NULL;
+      ElmcValue *record = NULL;
+      ElmcValue *captured = NULL;
+      ElmcValue *closure = NULL;
+      ElmcValue *arg = NULL;
+      ElmcValue *sum = NULL;
+      if (elmc_new_int(&one, 1) != RC_SUCCESS) return 1;
       ElmcValue *nil = elmc_list_nil();
-      ElmcValue *a = elmc_list_cons(one, nil);
-      ElmcValue *b = elmc_list_cons(one, a);
+      if (elmc_list_cons(&a, one, nil) != RC_SUCCESS) return 1;
+      if (elmc_list_cons(&b, one, a) != RC_SUCCESS) return 1;
       elmc_release(a);
-      ElmcValue *c = elmc_list_cons(one, b);
+      if (elmc_list_cons(&c, one, b) != RC_SUCCESS) return 1;
       elmc_release(b);
-      ElmcValue *tuple = elmc_tuple2(one, c);
-      ElmcValue *maybe = elmc_maybe_just(one);
-      ElmcValue *ok = elmc_result_ok(tuple);
+      if (elmc_tuple2(&tuple, one, c) != RC_SUCCESS) return 1;
+      if (elmc_maybe_just(&maybe, one) != RC_SUCCESS) return 1;
+      if (elmc_result_ok(&ok, tuple) != RC_SUCCESS) return 1;
       const char *field_names[] = {"value"};
       ElmcValue *field_values[] = {one};
-      ElmcValue *record = elmc_record_new(1, field_names, field_values);
-      ElmcValue *captured = elmc_new_int(100);
+      if (elmc_record_new(&record, 1, field_names, field_values) != RC_SUCCESS) return 1;
+      if (elmc_new_int(&captured, 100) != RC_SUCCESS) return 1;
       ElmcValue *closure_captures[] = {captured};
-      ElmcValue *closure = elmc_closure_new(add_capture, 1, 1, closure_captures);
+      if (elmc_closure_new(&closure, add_capture, 1, 1, closure_captures) != RC_SUCCESS) return 1;
       elmc_release(captured);
-      ElmcValue *arg = elmc_new_int(23);
+      if (elmc_new_int(&arg, 23) != RC_SUCCESS) return 1;
       ElmcValue *closure_args[] = {arg};
-      ElmcValue *sum = elmc_closure_call(closure, closure_args, 1);
+      sum = elmc_closure_call(closure, closure_args, 1);
       int sum_ok = elmc_as_int(sum) == 123;
       elmc_release(c);
       elmc_release(record);

@@ -241,10 +241,13 @@ defmodule Elmc.Backend.CCodegen.CSource do
   end
 
   defp catch_begin?(line), do: line == "CATCH_BEGIN"
-  defp catch_end?(line), do: line == "CATCH_END"
+
+  defp catch_end?(line) do
+    line == "CATCH_END" or line == "CATCH_END;"
+  end
 
   defp case_label?(line) do
-    Regex.match?(~r/^case\s+.+:$/, line) or Regex.match?(~r/^default:\s*$/, line)
+    Regex.match?(~r/^case\s+.+:/, line) or Regex.match?(~r/^default:/, line)
   end
 
   defp switch_opener?(line) do
@@ -256,7 +259,7 @@ defmodule Elmc.Backend.CCodegen.CSource do
       is_integer(switch_depth) and case_label?(content) ->
         switch_depth
 
-      is_integer(switch_depth) and not String.starts_with?(content, "}") ->
+      is_integer(switch_depth) and not String.starts_with?(content, "}") and not case_label?(content) ->
         switch_depth + 1
 
       true ->

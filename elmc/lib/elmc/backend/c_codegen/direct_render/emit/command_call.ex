@@ -142,7 +142,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.CommandCall do
       {:ok,
        """
        #{arg_code}
-         int direct_rc_#{next} = #{c_name}_commands_append_native(#{arg_list}, writer);
+         RC direct_rc_#{next} = #{c_name}_commands_append_native(#{arg_list}, writer);
        #{releases}
          #{Catch.handle_child_rc("direct_rc_#{next}")}
        """, next}
@@ -151,7 +151,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.CommandCall do
        """
        #{arg_code}
          ElmcValue *direct_call_args_#{next}[#{max(argc, 1)}] = { #{arg_list} };
-         int direct_rc_#{next} = #{c_name}_commands_append(direct_call_args_#{next}, #{argc}, writer);
+         RC direct_rc_#{next} = #{c_name}_commands_append(direct_call_args_#{next}, #{argc}, writer);
        #{releases}
          #{Catch.handle_child_rc("direct_rc_#{next}")}
        """, next}

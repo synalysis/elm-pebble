@@ -112,6 +112,12 @@ defmodule Elmc.CoreComplianceTest do
       #include "elmc_generated.c"
       #include <stdio.h>
 
+      static ElmcValue *elmc_harness_call_zero_rc(
+          RC (*fn)(ElmcValue **out, ElmcValue ** const args, const int argc)) {
+        ElmcValue *out = NULL;
+        return fn(&out, NULL, 0) == RC_SUCCESS ? out : elmc_int_zero();
+      }
+
       static void print_i(const char *label, ElmcValue *value) {
         printf("%s=%lld\\n", label, (long long)elmc_as_int(value));
       }
@@ -173,8 +179,8 @@ defmodule Elmc.CoreComplianceTest do
       }
 
       int main(void) {
-        ElmcValue *a = elmc_new_int(20);
-        ElmcValue *b = elmc_new_int(1);
+        ElmcValue *a = elmc_new_int_take(20);
+        ElmcValue *b = elmc_new_int_take(1);
         ElmcValue *f_args[] = { a, b };
         ElmcValue *fund = elmc_fn_CoreCompliance_fundamentalsMix(f_args, 2);
         print_i("fundamentalsMix", fund);
@@ -182,36 +188,36 @@ defmodule Elmc.CoreComplianceTest do
         elmc_release(a);
         elmc_release(b);
 
-        ElmcValue *bit_in = elmc_new_int(5);
+        ElmcValue *bit_in = elmc_new_int_take(5);
         ElmcValue *bit_args[] = { bit_in };
         ElmcValue *bit = elmc_fn_CoreCompliance_bitwiseMix(bit_args, 1);
         print_i("bitwiseMix", bit);
         elmc_release(bit);
         elmc_release(bit_in);
 
-        ElmcValue *bit_ex_in = elmc_new_int(0);
+        ElmcValue *bit_ex_in = elmc_new_int_take(0);
         ElmcValue *bit_ex_args[] = { bit_ex_in };
         ElmcValue *bit_ex = elmc_fn_CoreCompliance_bitwiseExtras(bit_ex_args, 1);
         print_i("bitwiseExtras", bit_ex);
         elmc_release(bit_ex);
         elmc_release(bit_ex_in);
 
-        ElmcValue *mod_in = elmc_new_int(-1);
+        ElmcValue *mod_in = elmc_new_int_take(-1);
         ElmcValue *mod_args[] = { mod_in };
         ElmcValue *mod_out = elmc_fn_CoreCompliance_modByNeg(mod_args, 1);
         print_i("modByNeg", mod_out);
         elmc_release(mod_out);
         elmc_release(mod_in);
 
-        ElmcValue *char_in = elmc_new_int(65);
+        ElmcValue *char_in = elmc_new_int_take(65);
         ElmcValue *char_args[] = { char_in };
         ElmcValue *char_rt = elmc_fn_CoreCompliance_charCodeRoundtrip(char_args, 1);
         print_i("charCodeRoundtrip", char_rt);
         elmc_release(char_rt);
         elmc_release(char_in);
 
-        ElmcValue *left = elmc_new_string("ab");
-        ElmcValue *right = elmc_new_string("c");
+        ElmcValue *left = elmc_new_string_take("ab");
+        ElmcValue *right = elmc_new_string_take("c");
         ElmcValue *append_args[] = { left, right };
         ElmcValue *append_len = elmc_fn_CoreCompliance_stringAppendLength(append_args, 2);
         print_i("stringAppendLength", append_len);
@@ -219,8 +225,8 @@ defmodule Elmc.CoreComplianceTest do
         elmc_release(left);
         elmc_release(right);
 
-        ElmcValue *empty = elmc_new_string("");
-        ElmcValue *non_empty = elmc_new_string("x");
+        ElmcValue *empty = elmc_new_string_take("");
+        ElmcValue *non_empty = elmc_new_string_take("x");
         ElmcValue *empty_args[] = { empty };
         ElmcValue *non_empty_args[] = { non_empty };
         ElmcValue *is_empty = elmc_fn_CoreCompliance_stringEmptyCheck(empty_args, 1);
@@ -232,8 +238,8 @@ defmodule Elmc.CoreComplianceTest do
         elmc_release(empty);
         elmc_release(non_empty);
 
-        ElmcValue *pair_l = elmc_new_int(7);
-        ElmcValue *pair_r = elmc_new_int(9);
+        ElmcValue *pair_l = elmc_new_int_take(7);
+        ElmcValue *pair_r = elmc_new_int_take(9);
         ElmcValue *pair_first_args[] = { pair_l, pair_r };
         ElmcValue *pair_first = elmc_fn_CoreCompliance_tuplePairFirst(pair_first_args, 2);
         print_i("tuplePairFirst", pair_first);
@@ -241,31 +247,28 @@ defmodule Elmc.CoreComplianceTest do
         elmc_release(pair_l);
         elmc_release(pair_r);
 
-        ElmcValue *ok_v = elmc_new_int(4);
-        ElmcValue *ok = elmc_result_ok(ok_v);
+        ElmcValue *ok_v = elmc_new_int_take(4);
+        ElmcValue *ok = elmc_result_ok_take(ok_v);
         ElmcValue *ok_args[] = { ok };
         ElmcValue *ok_out = elmc_fn_CoreCompliance_resultInc(ok_args, 1);
         print_i("resultInc_ok", ok_out);
         elmc_release(ok_out);
-        elmc_release(ok_v);
         elmc_release(ok);
 
-        ElmcValue *err_msg = elmc_new_string("boom");
-        ElmcValue *err = elmc_result_err(err_msg);
+        ElmcValue *err_msg = elmc_new_string_take("boom");
+        ElmcValue *err = elmc_result_err_take(err_msg);
         ElmcValue *err_args[] = { err };
         ElmcValue *err_out = elmc_fn_CoreCompliance_resultInc(err_args, 1);
         print_i("resultInc_err", err_out);
         elmc_release(err_out);
-        elmc_release(err_msg);
         elmc_release(err);
 
-        ElmcValue *n4 = elmc_new_int(4);
-        ElmcValue *just4 = elmc_maybe_just(n4);
+        ElmcValue *n4 = elmc_new_int_take(4);
+        ElmcValue *just4 = elmc_maybe_just_take(n4);
         ElmcValue *just_args[] = { just4 };
         ElmcValue *just_out = elmc_fn_CoreCompliance_maybeInc(just_args, 1);
         print_i("maybeInc_just", just_out);
         elmc_release(just_out);
-        elmc_release(n4);
         elmc_release(just4);
 
         ElmcValue *nothing = elmc_maybe_nothing();
@@ -275,128 +278,96 @@ defmodule Elmc.CoreComplianceTest do
         elmc_release(nothing_out);
         elmc_release(nothing);
 
-        ElmcValue *l3 = elmc_new_int(3);
-        ElmcValue *l2 = elmc_new_int(2);
-        ElmcValue *l1 = elmc_new_int(1);
-        ElmcValue *list = elmc_list_nil();
-        ElmcValue *list3 = elmc_list_cons(l3, list);
-        elmc_release(list);
-        ElmcValue *list2 = elmc_list_cons(l2, list3);
-        elmc_release(list3);
-        ElmcValue *list1 = elmc_list_cons(l1, list2);
-        elmc_release(list2);
+        static const elmc_int_t fold_items[3] = { 1, 2, 3 };
+        ElmcValue *list1 = elmc_list_from_int_array_take(fold_items, 3);
         ElmcValue *fold_args[] = { list1 };
         ElmcValue *fold_out = elmc_fn_CoreCompliance_foldSum(fold_args, 1);
         print_i("foldSum", fold_out);
         elmc_release(fold_out);
-        elmc_release(l1);
-        elmc_release(l2);
-        elmc_release(l3);
         elmc_release(list1);
 
-        ElmcValue *debug_in = elmc_new_int(7);
+        ElmcValue *debug_in = elmc_new_int_take(7);
         ElmcValue *debug_args[] = { debug_in };
         ElmcValue *debug_out = elmc_fn_CoreCompliance_debugEcho(debug_args, 1);
         print_i("debugEcho", debug_out);
         elmc_release(debug_out);
         elmc_release(debug_in);
 
-        ElmcValue *nr_n = elmc_new_int(10);
-        ElmcValue *nr_just = elmc_maybe_just(nr_n);
-        ElmcValue *nr_ok = elmc_result_ok(nr_just);
+        ElmcValue *nr_n = elmc_new_int_take(10);
+        ElmcValue *nr_just = elmc_maybe_just_take(nr_n);
+        ElmcValue *nr_ok = elmc_result_ok_take(nr_just);
         ElmcValue *nr_ok_args[] = { nr_ok };
         ElmcValue *nr_ok_out = elmc_fn_CoreCompliance_nestedResult(nr_ok_args, 1);
         print_i("nestedResult_ok_just", nr_ok_out);
         elmc_release(nr_ok_out);
-        elmc_release(nr_n);
-        elmc_release(nr_just);
         elmc_release(nr_ok);
 
         ElmcValue *nr_nothing = elmc_maybe_nothing();
-        ElmcValue *nr_ok_nothing = elmc_result_ok(nr_nothing);
+        ElmcValue *nr_ok_nothing = elmc_result_ok_take(nr_nothing);
         ElmcValue *nr_ok_nothing_args[] = { nr_ok_nothing };
         ElmcValue *nr_ok_nothing_out = elmc_fn_CoreCompliance_nestedResult(nr_ok_nothing_args, 1);
         print_i("nestedResult_ok_nothing", nr_ok_nothing_out);
         elmc_release(nr_ok_nothing_out);
-        elmc_release(nr_nothing);
         elmc_release(nr_ok_nothing);
 
-        ElmcValue *nr_err_msg = elmc_new_string("e");
-        ElmcValue *nr_err = elmc_result_err(nr_err_msg);
+        ElmcValue *nr_err_msg = elmc_new_string_take("e");
+        ElmcValue *nr_err = elmc_result_err_take(nr_err_msg);
         ElmcValue *nr_err_args[] = { nr_err };
         ElmcValue *nr_err_out = elmc_fn_CoreCompliance_nestedResult(nr_err_args, 1);
         print_i("nestedResult_err", nr_err_out);
         elmc_release(nr_err_out);
-        elmc_release(nr_err_msg);
         elmc_release(nr_err);
 
-        ElmcValue *tc_ok_n = elmc_new_int(3);
-        ElmcValue *tc_ok = elmc_result_ok(tc_ok_n);
-        ElmcValue *tc_just_m = elmc_new_int(4);
-        ElmcValue *tc_just = elmc_maybe_just(tc_just_m);
-        ElmcValue *tc_pair = elmc_tuple2(tc_ok, tc_just);
+        ElmcValue *tc_ok_n = elmc_new_int_take(3);
+        ElmcValue *tc_ok = elmc_result_ok_take(tc_ok_n);
+        ElmcValue *tc_just_m = elmc_new_int_take(4);
+        ElmcValue *tc_just = elmc_maybe_just_take(tc_just_m);
+        ElmcValue *tc_pair = elmc_tuple2_take_value(tc_ok, tc_just);
         ElmcValue *tc_args[] = { tc_pair };
         ElmcValue *tc_out = elmc_fn_CoreCompliance_tupleCase(tc_args, 1);
         print_i("tupleCase_ok_just", tc_out);
         elmc_release(tc_out);
-        elmc_release(tc_ok_n);
-        elmc_release(tc_ok);
-        elmc_release(tc_just_m);
-        elmc_release(tc_just);
         elmc_release(tc_pair);
 
-        ElmcValue *tc2_ok_n = elmc_new_int(9);
-        ElmcValue *tc2_ok = elmc_result_ok(tc2_ok_n);
+        ElmcValue *tc2_ok_n = elmc_new_int_take(9);
+        ElmcValue *tc2_ok = elmc_result_ok_take(tc2_ok_n);
         ElmcValue *tc2_nothing = elmc_maybe_nothing();
-        ElmcValue *tc2_pair = elmc_tuple2(tc2_ok, tc2_nothing);
+        ElmcValue *tc2_pair = elmc_tuple2_take_value(tc2_ok, tc2_nothing);
         ElmcValue *tc2_args[] = { tc2_pair };
         ElmcValue *tc2_out = elmc_fn_CoreCompliance_tupleCase(tc2_args, 1);
         print_i("tupleCase_ok_nothing", tc2_out);
         elmc_release(tc2_out);
-        elmc_release(tc2_ok_n);
-        elmc_release(tc2_ok);
-        elmc_release(tc2_nothing);
         elmc_release(tc2_pair);
 
-        ElmcValue *nts_l = elmc_new_int(2);
-        ElmcValue *nts_r = elmc_new_int(3);
-        ElmcValue *nts_inner = elmc_tuple2(nts_l, nts_r);
+        ElmcValue *nts_l = elmc_new_int_take(2);
+        ElmcValue *nts_r = elmc_new_int_take(3);
+        ElmcValue *nts_inner = elmc_tuple2_take_value(nts_l, nts_r);
         ElmcValue *nts_nothing = elmc_maybe_nothing();
-        ElmcValue *nts_outer = elmc_tuple2(nts_inner, nts_nothing);
+        ElmcValue *nts_outer = elmc_tuple2_take_value(nts_inner, nts_nothing);
         ElmcValue *nts_args[] = { nts_outer };
         ElmcValue *nts_out = elmc_fn_CoreCompliance_nestedTupleSum(nts_args, 1);
         print_i("nestedTupleSum", nts_out);
         elmc_release(nts_out);
-        elmc_release(nts_l);
-        elmc_release(nts_r);
-        elmc_release(nts_inner);
-        elmc_release(nts_nothing);
         elmc_release(nts_outer);
 
-        ElmcValue *bto_ok_n = elmc_new_int(2);
-        ElmcValue *bto_ok = elmc_result_ok(bto_ok_n);
-        ElmcValue *bto_just_m = elmc_new_int(5);
-        ElmcValue *bto_just = elmc_maybe_just(bto_just_m);
-        ElmcValue *bto_pair = elmc_tuple2(bto_ok, bto_just);
+        ElmcValue *bto_ok_n = elmc_new_int_take(2);
+        ElmcValue *bto_ok = elmc_result_ok_take(bto_ok_n);
+        ElmcValue *bto_just_m = elmc_new_int_take(5);
+        ElmcValue *bto_just = elmc_maybe_just_take(bto_just_m);
+        ElmcValue *bto_pair = elmc_tuple2_take_value(bto_ok, bto_just);
         ElmcValue *bto_args[] = { bto_pair };
         ElmcValue *bto_out = elmc_fn_CoreCompliance_branchTupleOut(bto_args, 1);
         print_pair("branchTupleOut_ok_just", bto_out);
         elmc_release(bto_out);
-        elmc_release(bto_ok_n);
-        elmc_release(bto_ok);
-        elmc_release(bto_just_m);
-        elmc_release(bto_just);
         elmc_release(bto_pair);
 
-        ElmcValue *bton_n = elmc_new_int(7);
-        ElmcValue *bton_just = elmc_maybe_just(bton_n);
-        ElmcValue *bton_ok = elmc_result_ok(bton_just);
+        ElmcValue *bton_n = elmc_new_int_take(7);
+        ElmcValue *bton_just = elmc_maybe_just_take(bton_n);
+        ElmcValue *bton_ok = elmc_result_ok_take(bton_just);
         ElmcValue *bton_args[] = { bton_ok };
         ElmcValue *bton_out = elmc_fn_CoreCompliance_branchTupleOutNested(bton_args, 1);
         print_pair("branchTupleOutNested_ok_just", bton_out);
         elmc_release(bton_out);
-        elmc_release(bton_n);
-        elmc_release(bton_just);
         elmc_release(bton_ok);
 
         ElmcValue *constructor_literal_case = elmc_fn_CoreCompliance_constructorLiteralCase(NULL, 0);
@@ -407,37 +378,37 @@ defmodule Elmc.CoreComplianceTest do
         print_i("constructorTripleCase", constructor_triple_case);
         elmc_release(constructor_triple_case);
 
-        ElmcValue *dict_lookup = elmc_fn_CoreCompliance_dictLookupOne(NULL, 0);
-        ElmcValue *dict_from_list_then_overwrite_size = elmc_fn_CoreCompliance_dictFromListThenOverwriteSize(NULL, 0);
-        ElmcValue *dict_from_list_then_overwrite_get = elmc_fn_CoreCompliance_dictFromListThenOverwriteGet(NULL, 0);
-        ElmcValue *dict_from_list_dup_size = elmc_fn_CoreCompliance_dictFromListDuplicateSize(NULL, 0);
-        ElmcValue *dict_from_list_dup_get = elmc_fn_CoreCompliance_dictFromListDuplicateGet(NULL, 0);
-        ElmcValue *dict_has = elmc_fn_CoreCompliance_dictHasOne(NULL, 0);
-        ElmcValue *dict_size = elmc_fn_CoreCompliance_dictSizeTwo(NULL, 0);
-        ElmcValue *dict_overwrite_size = elmc_fn_CoreCompliance_dictOverwriteSize(NULL, 0);
-        ElmcValue *dict_overwrite_get = elmc_fn_CoreCompliance_dictOverwriteGet(NULL, 0);
-        ElmcValue *set_has = elmc_fn_CoreCompliance_setHasThree(NULL, 0);
-        ElmcValue *set_from_list_dup_size = elmc_fn_CoreCompliance_setFromListDuplicateSize(NULL, 0);
-        ElmcValue *set_from_list_dup_has_two = elmc_fn_CoreCompliance_setFromListDuplicateHasTwo(NULL, 0);
-        ElmcValue *set_size = elmc_fn_CoreCompliance_setSizeAfterInsert(NULL, 0);
-        ElmcValue *set_dup_size = elmc_fn_CoreCompliance_setInsertDuplicateSize(NULL, 0);
-        ElmcValue *array_len = elmc_fn_CoreCompliance_arrayLengthFromList(NULL, 0);
-        ElmcValue *array_get_hit = elmc_fn_CoreCompliance_arrayGetHit(NULL, 0);
-        ElmcValue *array_get_miss = elmc_fn_CoreCompliance_arrayGetMiss(NULL, 0);
-        ElmcValue *array_get_negative = elmc_fn_CoreCompliance_arrayGetNegative(NULL, 0);
-        ElmcValue *array_set_hit = elmc_fn_CoreCompliance_arraySetInRangeGet(NULL, 0);
-        ElmcValue *array_set_last = elmc_fn_CoreCompliance_arraySetLastGet(NULL, 0);
-        ElmcValue *array_set_neg_len = elmc_fn_CoreCompliance_arraySetNegativeLength(NULL, 0);
-        ElmcValue *array_set_oob_len = elmc_fn_CoreCompliance_arraySetOutOfRangeLength(NULL, 0);
-        ElmcValue *array_push_len = elmc_fn_CoreCompliance_arrayPushLength(NULL, 0);
-        ElmcValue *array_push_twice_len = elmc_fn_CoreCompliance_arrayPushTwiceLength(NULL, 0);
-        ElmcValue *array_push_twice_last = elmc_fn_CoreCompliance_arrayPushTwiceLastGet(NULL, 0);
-        ElmcValue *array_set_then_push_last = elmc_fn_CoreCompliance_arraySetThenPushLastGet(NULL, 0);
-        ElmcValue *array_set_then_set = elmc_fn_CoreCompliance_arraySetThenSetGet(NULL, 0);
-        ElmcValue *array_push_then_set_first = elmc_fn_CoreCompliance_arrayPushThenSetFirstGet(NULL, 0);
+        ElmcValue *dict_lookup = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_dictLookupOne);
+        ElmcValue *dict_from_list_then_overwrite_size = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_dictFromListThenOverwriteSize);
+        ElmcValue *dict_from_list_then_overwrite_get = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_dictFromListThenOverwriteGet);
+        ElmcValue *dict_from_list_dup_size = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_dictFromListDuplicateSize);
+        ElmcValue *dict_from_list_dup_get = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_dictFromListDuplicateGet);
+        ElmcValue *dict_has = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_dictHasOne);
+        ElmcValue *dict_size = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_dictSizeTwo);
+        ElmcValue *dict_overwrite_size = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_dictOverwriteSize);
+        ElmcValue *dict_overwrite_get = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_dictOverwriteGet);
+        ElmcValue *set_has = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_setHasThree);
+        ElmcValue *set_from_list_dup_size = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_setFromListDuplicateSize);
+        ElmcValue *set_from_list_dup_has_two = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_setFromListDuplicateHasTwo);
+        ElmcValue *set_size = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_setSizeAfterInsert);
+        ElmcValue *set_dup_size = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_setInsertDuplicateSize);
+        ElmcValue *array_len = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_arrayLengthFromList);
+        ElmcValue *array_get_hit = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_arrayGetHit);
+        ElmcValue *array_get_miss = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_arrayGetMiss);
+        ElmcValue *array_get_negative = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_arrayGetNegative);
+        ElmcValue *array_set_hit = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_arraySetInRangeGet);
+        ElmcValue *array_set_last = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_arraySetLastGet);
+        ElmcValue *array_set_neg_len = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_arraySetNegativeLength);
+        ElmcValue *array_set_oob_len = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_arraySetOutOfRangeLength);
+        ElmcValue *array_push_len = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_arrayPushLength);
+        ElmcValue *array_push_twice_len = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_arrayPushTwiceLength);
+        ElmcValue *array_push_twice_last = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_arrayPushTwiceLastGet);
+        ElmcValue *array_set_then_push_last = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_arraySetThenPushLastGet);
+        ElmcValue *array_set_then_set = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_arraySetThenSetGet);
+        ElmcValue *array_push_then_set_first = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_arrayPushThenSetFirstGet);
         ElmcValue *task_succeed_int = elmc_fn_CoreCompliance_taskSucceedInt(NULL, 0);
         ElmcValue *task_fail_int = elmc_fn_CoreCompliance_taskFailInt(NULL, 0);
-        ElmcValue *task_arg_value = elmc_new_int(42);
+        ElmcValue *task_arg_value = elmc_new_int_take(42);
         ElmcValue *task_succeed_arg_args[] = { task_arg_value };
         ElmcValue *task_fail_arg_args[] = { task_arg_value };
         ElmcValue *task_succeed_arg = elmc_fn_CoreCompliance_taskSucceedArg(task_succeed_arg_args, 1);

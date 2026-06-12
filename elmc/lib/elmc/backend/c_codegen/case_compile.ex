@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.ConstructorTagCase
+  alias Elmc.Backend.CCodegen.BuiltinUnion
   alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.Expr
   alias Elmc.Backend.CCodegen.HelperParams
@@ -9,6 +10,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.Native.IntCase, as: NativeIntCase
   alias Elmc.Backend.CCodegen.Patterns
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
 
@@ -52,39 +54,64 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
           Types.compile_env(),
           Types.compile_counter()
         ) :: {String.t(), String.t(), Types.compile_counter()}
-  def branch_assignment(%{op: :string_literal, value: value}, out, _env, counter) do
-    {"", "#{out} = elmc_new_string(\"#{Util.escape_c_string(value)}\");", counter}
+  def branch_assignment(%{op: :string_literal, value: value}, out, env, counter) do
+    {"", RcRuntimeEmit.assign_into(env, out, "elmc_new_string", "\"#{Util.escape_c_string(value)}\""),
+     counter}
   end
 
-  def branch_assignment(%{op: :bool_literal, value: value}, out, _env, counter) do
-    {"", "#{out} = elmc_new_bool(#{if value, do: "true", else: "false"});", counter}
+  def branch_assignment(%{op: :bool_literal, value: value}, out, env, counter) do
+    branch_assignment_rc(env, out, "elmc_new_bool", if(value, do: "1", else: "0"), counter)
   end
 
-  def branch_assignment(%{op: :int_literal, value: value}, out, env, counter)
-      when value in [0, 1] do
-    if function_returns_bool?(env) do
-      {"", "#{out} = elmc_new_bool(#{if value == 1, do: "true", else: "false"});", counter}
-    else
-      branch_assignment_int_literal(value, out, counter)
+  def branch_assignment(%{op: :int_literal, value: value} = expr, out, env, counter)
+      when is_integer(value) do
+    cond do
+      BuiltinUnion.maybe_nothing_literal?(expr) ->
+        {"", "#{out} = elmc_maybe_nothing();", counter}
+
+      value in [0, 1] and function_returns_bool?(env) ->
+        branch_assignment_rc(env, out, "elmc_new_bool", Integer.to_string(value), counter)
+
+      true ->
+        branch_assignment_int_literal(value, out, env, counter)
     end
   end
 
-  def branch_assignment(%{op: :int_literal, value: value}, out, _env, counter)
-      when is_integer(value) do
-    branch_assignment_int_literal(value, out, counter)
+  def branch_assignment(%{op: op} = expr, out, env, counter)
+      when op in [:call, :qualified_call] do
+    {expr_code, expr_var, counter} =
+      Host.compile_expr(expr, Map.put(env, :__into_out__, out), counter)
+
+    branch_assignment_finish(expr_code, expr_var, out, env, counter)
   end
 
   def branch_assignment(expr, out, env, counter) do
     {expr_code, expr_var, counter} = Host.compile_expr(expr, env, counter)
 
+    branch_assignment_finish(expr_code, expr_var, out, env, counter)
+  end
+
+  defp branch_assignment_finish(expr_code, expr_var, out, env, counter) do
     case fold_result_binding(expr_code, expr_var, out) do
       {:ok, folded_code} ->
         {folded_code, "", counter}
 
       :error ->
-        {expr_code, "#{out} = #{expr_var};", counter}
+        case fold_rc_allocator_binding(expr_code, expr_var, out, env) do
+          {:ok, folded_code} ->
+            {folded_code, "", counter}
+
+          :error ->
+            case rename_result_var(expr_code, expr_var, out) do
+              {:ok, renamed} -> {renamed, "", counter}
+              :error when expr_var == out -> {expr_code, "", counter}
+              :error -> {expr_code, "#{out} = #{expr_var};", counter}
+            end
+        end
     end
   end
+
+  defp rename_result_var(expr_code, from, to), do: fold_result_binding(expr_code, from, to)
 
   @spec fold_result_binding(String.t(), String.t(), String.t()) ::
           {:ok, String.t()} | :error
@@ -122,6 +149,52 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
 
   defp fold_result_binding(_expr_code, _expr_var, _out), do: :error
 
+  @spec fold_rc_allocator_binding(String.t(), String.t(), String.t(), map()) ::
+          {:ok, String.t()} | :error
+  defp fold_rc_allocator_binding(expr_code, expr_var, out, env) do
+    trimmed = String.trim(expr_code)
+    var = Regex.escape(expr_var)
+
+    fallback =
+      ~r/^(?:([\s\S]*?)\n)?ElmcValue \*#{var} = NULL;\nif \((\w+)\(&#{var}, ([^)]+)\) != RC_SUCCESS\)\s*#{var} = elmc_int_zero\(\);$/
+
+  catch_pat =
+      ~r/^(?:([\s\S]*?)\n)?(?:ElmcValue \*#{var} = NULL;\n|ElmcValue \*#{var};\n)?Rc = (\w+)\(&#{var}, ([^)]+)\);\n(?:CHECK_RC\(Rc\);|if \(Rc != RC_SUCCESS\) break;)$/
+
+    cond do
+      Regex.match?(fallback, trimmed) ->
+        [_, prefix, function, call_args] = Regex.run(fallback, trimmed)
+
+        if RcRuntimeEmit.rc_allocator?(function) do
+          folded =
+            [prefix, RcRuntimeEmit.assign_into(env, out, function, call_args)]
+            |> Enum.reject(&(&1 == ""))
+            |> Enum.join("\n")
+
+          {:ok, folded}
+        else
+          :error
+        end
+
+      Regex.match?(catch_pat, trimmed) and RcRuntimeEmit.rc_mode?(env) ->
+        [_, prefix, function, call_args] = Regex.run(catch_pat, trimmed)
+
+        if RcRuntimeEmit.rc_allocator?(function) do
+          folded =
+            [prefix, RcRuntimeEmit.assign_into(env, out, function, call_args)]
+            |> Enum.reject(&(&1 == ""))
+            |> Enum.join("\n")
+
+          {:ok, folded}
+        else
+          :error
+        end
+
+      true ->
+        :error
+    end
+  end
+
   @spec compile_boxed(
           Types.case_subject(),
           Types.case_branches(),
@@ -132,6 +205,8 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     {subject_setup, subject_ref, counter} =
       ConstructorTagCase.compile_subject_ref(subject, env, counter)
 
+    {out, branch_counter, declare_out?} = result_out_binding(env, counter)
+
     case_env =
       env
       |> then(fn case_env ->
@@ -140,18 +215,19 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
           else: case_env
       end)
       |> put_case_subject_payload_type(subject)
-
-    next = counter + 1
-    out = "tmp_#{next}"
+      |> put_declared_out(out)
+    branch_counter = advance_counter_past_out(branch_counter, out, declare_out?)
 
     {branch_code, final_counter} =
       branches
       |> Enum.with_index()
-      |> Enum.reduce_while({"", next}, fn {branch, branch_index}, {acc, c} ->
+      |> Enum.reduce_while({"", branch_counter}, fn {branch, branch_index}, {acc, c} ->
         last_branch? = branch_index == length(branches) - 1
 
         {branch_env, unwrap_setup, unwrap_release, c} =
           Patterns.maybe_unwrap_var_branch(case_env, branch, subject_ref, c, subject)
+
+        branch_env = Map.put(branch_env, :__rc_catch__, false)
 
         {expr_code, assignment_code, c2} =
           branch_assignment(branch.expr, out, branch_env, c)
@@ -209,7 +285,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
       Enum.join(
         [
           subject_setup,
-          "ElmcValue *#{out};",
+          result_out_decl(out, declare_out?),
           after_setup_probe,
           branch_code,
           after_branches_probe
@@ -218,6 +294,47 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
       )
 
     {code, out, final_counter}
+  end
+
+  @spec result_out_binding(Types.compile_env(), Types.compile_counter()) ::
+          {String.t(), Types.compile_counter(), boolean()}
+  def result_out_binding(env, counter) do
+    case Map.get(env, :__into_out__) do
+      nil ->
+        next = counter + 1
+        {"tmp_#{next}", next, true}
+
+      out ->
+        {out, counter, false}
+    end
+  end
+
+  @spec result_out_decl(String.t(), boolean()) :: String.t()
+  def result_out_decl(_out, false), do: ""
+  def result_out_decl(out, true), do: "ElmcValue *#{out} = NULL;"
+
+  @spec advance_counter_past_out(Types.compile_counter(), String.t(), boolean()) ::
+          Types.compile_counter()
+  def advance_counter_past_out(counter, _out, false), do: counter
+
+  def advance_counter_past_out(counter, out, true) do
+    case Regex.run(~r/^tmp_(\d+)$/, out) do
+      [_, digits] -> max(counter, String.to_integer(digits) + 1)
+      _ -> counter
+    end
+  end
+
+  @spec fresh_var(Types.compile_counter(), Types.compile_env()) ::
+          {String.t(), Types.compile_counter()}
+  def fresh_var(counter, env) do
+    next = counter + 1
+    var = "tmp_#{next}"
+
+    if MapSet.member?(Map.get(env, :__declared_outs__, MapSet.new()), var) do
+      fresh_var(next, env)
+    else
+      {var, next}
+    end
   end
 
   defp if_branch_snippet(cond_code, branch_body, first_branch?) do
@@ -263,7 +380,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
         )
       )
 
-    if extract_branch_helper?(inline_body) do
+    if extract_branch_helper?(branch_env, inline_body) do
       case branch_helper_params(branch, branch_env, subject_ref) do
         {:ok, params} when params != [] ->
           helper_id = Process.get(:elmc_generic_helper_counter, 0) + 1
@@ -272,21 +389,18 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
           helper_name =
             "elmc_case_branch_helper_#{Util.safe_c_suffix(Map.get(branch_env, :__module__, "Main"))}_#{Util.safe_c_suffix(Map.get(branch_env, :__function_name__, "fn"))}_#{helper_id}"
 
-          helper_out = "branch_out"
-          helper_assignment = String.replace(assignment_code, "#{out} =", "#{helper_out} =")
-
           helper_param_decls = HelperParams.param_decls(params)
 
           helper_def = """
           static ElmcValue *#{helper_name}(#{helper_param_decls}) {
-            ElmcValue *#{helper_out} = NULL;
+            ElmcValue *#{out} = NULL;
           #{CSource.indent(enter_probe, 2)}
           #{CSource.indent(unwrap_setup, 2)}
           #{CSource.indent(expr_code, 2)}
           #{CSource.indent(after_expr_probe, 2)}
-            #{helper_assignment}
+            #{assignment_code}
           #{CSource.indent(unwrap_release, 2)}
-            return #{helper_out};
+            return #{out};
           }
           """
 
@@ -309,8 +423,10 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     end
   end
 
-  defp extract_branch_helper?(body) do
-    Process.get(:elmc_generic_helper_defs) != nil and emitted_line_count(body) >= 60
+  defp extract_branch_helper?(branch_env, body) do
+    not Map.get(branch_env, :__rc_catch__, false) and
+      not Map.get(branch_env, :__rc_required__, false) and
+      Process.get(:elmc_generic_helper_defs) != nil and emitted_line_count(body) >= 60
   end
 
   defp emitted_line_count(code), do: code |> String.split("\n") |> length()
@@ -393,11 +509,16 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
   @spec battery_alert_case_probe(Types.compile_env(), term(), atom()) :: String.t()
   defp battery_alert_case_probe(_env, _branch_index, _position), do: ""
 
-  defp branch_assignment_int_literal(0, out, counter),
+  defp branch_assignment_rc(env, out, function, call_args, counter) do
+    {"", RcRuntimeEmit.assign_into(env, out, function, call_args), counter}
+  end
+
+  defp branch_assignment_int_literal(0, out, _env, counter),
     do: {"", "#{out} = elmc_int_zero();", counter}
 
-  defp branch_assignment_int_literal(value, out, counter) when is_integer(value),
-    do: {"", "#{out} = elmc_new_int(#{value});", counter}
+  defp branch_assignment_int_literal(value, out, env, counter) when is_integer(value) do
+    branch_assignment_rc(env, out, "elmc_new_int", Integer.to_string(value), counter)
+  end
 
   defp function_returns_bool?(env) when is_map(env) do
     case {Map.get(env, :__module__), Map.get(env, :__function_name__)} do
@@ -410,6 +531,10 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
       _ ->
         false
     end
+  end
+
+  defp put_declared_out(env, out) do
+    Map.update(env, :__declared_outs__, MapSet.new([out]), &MapSet.put(&1, out))
   end
 
   defp put_case_subject_payload_type(env, subject) do

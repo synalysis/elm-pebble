@@ -32,9 +32,10 @@ defmodule Elmc.Backend.CCodegen.EnvBindings do
   @spec put_record_shape(Types.compile_env(), Types.binding_name(), Types.record_shape()) :: Types.compile_env()
   def put_record_shape(env, _name, nil), do: env
 
-  def put_record_shape(env, name, fields) when is_binary(name) and is_list(fields) do
+  def put_record_shape(env, name, fields) when is_list(fields) do
+    key = binding_key(name)
     shapes = Map.get(env, :__record_shapes__, %{})
-    Map.put(env, :__record_shapes__, Map.put(shapes, name, fields))
+    Map.put(env, :__record_shapes__, Map.put(shapes, key, fields))
   end
 
   def put_record_shape(env, _name, _fields), do: env
@@ -202,13 +203,13 @@ defmodule Elmc.Backend.CCodegen.EnvBindings do
   def capture_ref(env, var_name) do
     cond do
       is_binary(ref = native_int_binding(env, var_name)) ->
-        "elmc_new_int(#{ref})"
+        "elmc_new_int_take(#{ref})"
 
       is_binary(ref = native_bool_binding(env, var_name)) ->
-        "elmc_new_bool(#{ref})"
+        "elmc_new_bool_take(#{ref})"
 
       is_binary(ref = native_float_binding(env, var_name)) ->
-        "elmc_new_float(#{ref})"
+        "elmc_new_float_take(#{ref})"
 
       match?({:forward_ref, _}, Map.get(env, var_name)) ->
         {:forward_ref, ref} = Map.get(env, var_name)
@@ -341,6 +342,19 @@ defmodule Elmc.Backend.CCodegen.EnvBindings do
   end
 
   def direct_param_ref?(_env, _c_ref), do: false
+
+  @spec put_list_suffix_ref(Types.compile_env(), String.t()) :: Types.compile_env()
+  def put_list_suffix_ref(env, c_ref) when is_binary(c_ref) do
+    suffixes = Map.get(env, :__list_suffix_refs__, MapSet.new())
+    Map.put(env, :__list_suffix_refs__, MapSet.put(suffixes, c_ref))
+  end
+
+  @spec list_suffix_ref?(Types.compile_env(), String.t()) :: boolean()
+  def list_suffix_ref?(env, c_ref) when is_binary(c_ref) do
+    env
+    |> Map.get(:__list_suffix_refs__, MapSet.new())
+    |> MapSet.member?(c_ref)
+  end
 
   @spec native_int_binding?(Types.compile_env(), Types.binding_name()) :: boolean()
   def native_int_binding?(env, name) when is_binary(name) or is_atom(name),

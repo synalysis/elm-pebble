@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinUnion do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Types
 
   @maybe_nothing "Nothing"
@@ -46,9 +47,11 @@ defmodule Elmc.Backend.CCodegen.BuiltinUnion do
       next = counter + 1
       out = "tmp_#{next}"
 
+      assign = RcRuntimeEmit.assign_call(env, out, c_name, payload_var)
+
       code = """
       #{payload_code}
-        ElmcValue *#{out} = #{c_name}(#{payload_var});
+        #{assign}
         elmc_release(#{payload_var});
       """
 

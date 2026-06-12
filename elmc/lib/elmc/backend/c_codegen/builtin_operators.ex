@@ -3,7 +3,9 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
 
   alias Elmc.Backend.CCodegen.ConstantInt
   alias Elmc.Backend.CCodegen.EnvBindings
+  alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Native.Float, as: NativeFloat
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.Native.TypedReturn
@@ -473,13 +475,12 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
       both_native_int_operands?(left, right, env) ->
         {left_code, left_var, counter} = compile_native_int_operand(left, env, counter)
         {right_code, right_var, counter} = compile_native_int_operand(right, env, counter)
-        next = counter + 1
-        out = "tmp_#{next}"
+        {out, next} = CaseCompile.fresh_var(counter, env)
 
         code = """
         #{left_code}
           #{right_code}
-          ElmcValue *#{out} = elmc_new_int(#{left_var} #{operator} #{right_var});
+          #{RcRuntimeEmit.assign_call(env, out, "elmc_new_int", "#{left_var} #{operator} #{right_var}")}
         """
 
         {code, out, next}
@@ -494,18 +495,19 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
       true ->
         {left_code, left_var, counter} = Host.compile_expr(left, env, counter)
         {right_code, right_var, counter} = Host.compile_expr(right, env, counter)
-        next = counter + 1
-        out = "tmp_#{next}"
+        {left_code, left_var, counter} = retain_declared_out_operand(left_code, left_var, env, counter)
+        {right_code, right_var, counter} = retain_declared_out_operand(right_code, right_var, env, counter)
+        {out, next} = CaseCompile.fresh_var(counter, env)
 
         code = """
         #{left_code}
           #{right_code}
               ElmcValue *#{out} =
                   ((#{left_var} && #{left_var}->tag == ELMC_TAG_FLOAT) || (#{right_var} && #{right_var}->tag == ELMC_TAG_FLOAT))
-                      ? elmc_new_float(elmc_as_float(#{left_var}) #{operator} elmc_as_float(#{right_var}))
-                      : elmc_new_int(elmc_as_int(#{left_var}) #{operator} elmc_as_int(#{right_var}));
-          elmc_release(#{left_var});
-          elmc_release(#{right_var});
+                      ? elmc_new_float_take(elmc_as_float(#{left_var}) #{operator} elmc_as_float(#{right_var}))
+                      : elmc_new_int_take(elmc_as_int(#{left_var}) #{operator} elmc_as_int(#{right_var}));
+          #{binop_operand_release(left_var, out)}
+          #{binop_operand_release(right_var, out)}
         """
 
         {code, out, next}
@@ -573,24 +575,28 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
           next = counter + 1
           out = "tmp_#{next}"
 
-          """
-          #{left_code}
-            ElmcValue *#{out} = elmc_new_int(#{left_var} / #{value});
-          """
-          |> then(&{&1, out, next})
+          code =
+            """
+            #{left_code}
+              #{RcRuntimeEmit.assign_call(env, out, "elmc_new_int", "#{left_var} / #{value}")}
+            """
+
+          {code, out, next}
 
         nil ->
           {right_code, right_var, counter} = Host.compile_native_int_expr(right, env, counter)
           next = counter + 1
           out = "tmp_#{next}"
 
-          """
-          #{left_code}
-            #{right_code}
-            const elmc_int_t __den_#{next} = #{right_var};
-            ElmcValue *#{out} = elmc_new_int(__den_#{next} == 0 ? 0 : (#{left_var} / __den_#{next}));
-          """
-          |> then(&{&1, out, next})
+          code =
+            """
+            #{left_code}
+              #{right_code}
+              const elmc_int_t __den_#{next} = #{right_var};
+              #{RcRuntimeEmit.assign_call(env, out, "elmc_new_int", "__den_#{next} == 0 ? 0 : (#{left_var} / __den_#{next})")}
+            """
+
+          {code, out, next}
       end
 
     {code, out, counter}
@@ -621,7 +627,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
         #{right_code}
           const double __denf_#{next} = elmc_as_float(#{right_var});
           const double __numf_#{next} = elmc_as_float(#{left_var});
-        ElmcValue *#{out} = elmc_new_float(__numf_#{next} / __denf_#{next});
+        ElmcValue *#{out} = elmc_new_float_take(__numf_#{next} / __denf_#{next});
         elmc_release(#{left_var});
         elmc_release(#{right_var});
       """
@@ -663,7 +669,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
               """
               #{left_code}
                 #{right_code}
-                ElmcValue *#{out} = elmc_new_bool(elmc_value_equal(#{left_var}, #{right_var}));
+                #{RcRuntimeEmit.assign_call(env, out, "elmc_new_bool", "elmc_value_equal(#{left_var}, #{right_var})")}
                 #{left_release}#{right_release}\
               """
 
@@ -671,7 +677,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
               """
               #{left_code}
                 #{right_code}
-                ElmcValue *#{out} = elmc_new_bool(!elmc_value_equal(#{left_var}, #{right_var}));
+                #{RcRuntimeEmit.assign_call(env, out, "elmc_new_bool", "!elmc_value_equal(#{left_var}, #{right_var})")}
                 #{left_release}#{right_release}\
               """
 
@@ -688,7 +694,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
               #{left_code}
                 #{right_code}
                 ElmcValue *__cmp_#{next} = elmc_basics_compare(#{left_var}, #{right_var});
-                ElmcValue *#{out} = elmc_new_bool(elmc_as_int(__cmp_#{next}) #{comparison} 0);
+                #{RcRuntimeEmit.assign_call(env, out, "elmc_new_bool", "elmc_as_int(__cmp_#{next}) #{comparison} 0")}
                 elmc_release(__cmp_#{next});
                 #{left_release}#{right_release}\
               """
@@ -720,7 +726,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
     code = """
     #{left_code}
       #{right_code}
-      ElmcValue *#{out} = elmc_new_bool(#{negate}elmc_list_equal_int(#{left_var}, #{right_var}));
+      #{RcRuntimeEmit.assign_call(env, out, "elmc_new_bool", "#{negate}elmc_list_equal_int(#{left_var}, #{right_var})")}
       #{left_release}#{right_release}\
     """
 
@@ -768,7 +774,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
          %{op: :int_literal, value: left},
          %{op: :int_literal, value: right},
          operator,
-         _env,
+         env,
          counter
        ) do
     result =
@@ -783,7 +789,9 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
 
     next = counter + 1
     out = "tmp_#{next}"
-    {"ElmcValue *#{out} = elmc_new_bool(#{if(result, do: 1, else: 0)});", out, next}
+
+    {RcRuntimeEmit.assign_call(env, out, "elmc_new_bool", if(result, do: "1", else: "0")), out,
+     next}
   end
 
   defp int_compare_operator(left, right, operator, env, counter) do
@@ -805,9 +813,26 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
     code = """
     #{left_code}
       #{right_code}
-      ElmcValue *#{out} = elmc_new_bool(#{left_var} #{comparison} #{right_var});
+      #{RcRuntimeEmit.assign_call(env, out, "elmc_new_bool", "#{left_var} #{comparison} #{right_var}")}
     """
 
     {code, out, next}
+  end
+
+  defp binop_operand_release(var, out) when var == out, do: ""
+  defp binop_operand_release(var, _out), do: "elmc_release(#{var});"
+
+  defp retain_declared_out_operand(code, var, env, counter) do
+    if MapSet.member?(Map.get(env, :__declared_outs__, MapSet.new()), var) do
+      {retain_var, next} = CaseCompile.fresh_var(counter, env)
+
+      retain_code =
+        code <>
+          "\n  ElmcValue *#{retain_var} = elmc_retain(#{var});\n"
+
+      {retain_code, retain_var, next}
+    else
+      {code, var, counter}
+    end
   end
 end

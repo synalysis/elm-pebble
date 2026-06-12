@@ -49,8 +49,8 @@ defmodule Elmc.RuntimeRCTest do
         ElmcValue *out = elmc_list_nil();
         ElmcValue **tail_slot = &out;
         for (int i = 0; i < count; i++) {
-          ElmcValue *head = elmc_new_int(i);
-          ElmcValue *cell = elmc_list_cons(head, elmc_list_nil());
+          ElmcValue *head = elmc_new_int_take(i);
+          ElmcValue *cell = elmc_list_cons_take(head, elmc_list_nil());
           elmc_release(head);
           *tail_slot = cell;
           tail_slot = &((ElmcCons *)cell->payload)->tail;
@@ -112,7 +112,7 @@ defmodule Elmc.RuntimeRCTest do
       #include <stdio.h>
 
       int main(void) {
-        ElmcValue *v = elmc_new_int(420);
+        ElmcValue *v = elmc_new_int_take(420);
         elmc_retain(v);
         elmc_release(v);
         elmc_release(v);
@@ -164,11 +164,11 @@ defmodule Elmc.RuntimeRCTest do
       #include <stdio.h>
 
       int main(void) {
-        ElmcValue *n = elmc_new_int(4);
-        ElmcValue *m = elmc_new_int(5);
-        ElmcValue *ok = elmc_result_ok(n);
-        ElmcValue *just = elmc_maybe_just(m);
-        ElmcValue *pair = elmc_tuple2(ok, just);
+        ElmcValue *n = elmc_new_int_take(4);
+        ElmcValue *m = elmc_new_int_take(5);
+        ElmcValue *ok = elmc_result_ok_take(n);
+        ElmcValue *just = elmc_maybe_just_take(m);
+        ElmcValue *pair = elmc_tuple2_take_value(ok, just);
 
         elmc_release(n);
         elmc_release(m);
@@ -216,6 +216,73 @@ defmodule Elmc.RuntimeRCTest do
     assert String.to_integer(alloc) == String.to_integer(rel)
   end
 
+  test "maybe_map propagates RC closure allocation failures" do
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available for runtime C test")
+
+    out_dir = Path.expand("tmp/runtime_rc_maybe_map_fail", __DIR__)
+    File.rm_rf!(out_dir)
+    assert :ok = Elmc.Runtime.Generator.write_runtime(Path.join(out_dir, "runtime"))
+
+    harness_path = Path.join(out_dir, "harness.c")
+
+    File.write!(
+      harness_path,
+      """
+      #include "runtime/elmc_runtime.h"
+      #include <stdio.h>
+
+      static RC fail_alloc_lambda(
+          ElmcValue **out,
+          ElmcValue **args,
+          int argc,
+          ElmcValue **captures,
+          int capture_count) {
+        (void)out;
+        (void)args;
+        (void)argc;
+        (void)captures;
+        (void)capture_count;
+        return RC_ERR_OUT_OF_MEMORY;
+      }
+
+      int main(void) {
+        ElmcValue *cap[1] = { NULL };
+        ElmcValue *f = elmc_closure_new_rc_take(fail_alloc_lambda, 1, 0, cap);
+        ElmcValue *just = elmc_maybe_just_take(elmc_new_int_take(7));
+        ElmcValue *mapped = NULL;
+        RC rc = elmc_maybe_map(&mapped, f, just);
+        int ok = rc == RC_ERR_OUT_OF_MEMORY && mapped == NULL;
+        elmc_release(mapped);
+        elmc_release(just);
+        elmc_release(f);
+        printf("%d\\n", ok);
+        return ok ? 0 : 1;
+      }
+      """
+    )
+
+    binary_path = Path.join(out_dir, "harness")
+
+    {compile_out, compile_code} =
+      System.cmd(cc, [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-I#{out_dir}",
+        Path.join(out_dir, "runtime/elmc_runtime.c"),
+        harness_path,
+        "-o",
+        binary_path
+      ])
+
+    assert compile_code == 0, compile_out
+
+    {run_out, run_code} = System.cmd(binary_path, [], stderr_to_stdout: true)
+    assert run_code == 0, run_out
+    assert String.trim(run_out) == "1"
+  end
+
   test "elmc_list_concat does not leak nested row lists" do
     cc = System.find_executable("cc")
     if is_nil(cc), do: flunk("cc not available for runtime C test")
@@ -238,11 +305,8 @@ defmodule Elmc.RuntimeRCTest do
       static ElmcValue *row_of_four(void) {
         ElmcValue *out = elmc_list_nil();
         for (int i = 3; i >= 0; i--) {
-          ElmcValue *n = elmc_new_int(i + 1);
-          ElmcValue *next = elmc_list_cons(n, out);
-          elmc_release(n);
-          elmc_release(out);
-          out = next;
+          ElmcValue *n = elmc_new_int_take(i + 1);
+          out = elmc_list_cons_take(n, out);
         }
         return out;
       }
@@ -254,12 +318,9 @@ defmodule Elmc.RuntimeRCTest do
           for (int i = 0; i < 4; i++) rows[i] = row_of_four();
           ElmcValue *lists = elmc_list_nil();
           for (int i = 3; i >= 0; i--) {
-            ElmcValue *node = elmc_list_cons(rows[i], lists);
-            elmc_release(rows[i]);
-            elmc_release(lists);
-            lists = node;
+            lists = elmc_list_cons_take(rows[i], lists);
           }
-          ElmcValue *flat = elmc_list_concat(lists);
+          ElmcValue *flat = elmc_list_concat_take(lists);
           elmc_release(flat);
           elmc_release(lists);
         }

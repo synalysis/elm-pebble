@@ -33,6 +33,7 @@ defmodule Elmc.Runtime.RcTrack do
     #define ELMC_RC_TRACK_REGISTER(value, context) \\
       elmc_rc_track_register((value), (context), __FILE__, __LINE__)
     static void elmc_rc_track_register(ElmcValue *value, const char *context, const char *file, int line);
+    static void elmc_rc_track_unregister(ElmcValue *value);
     static ElmcValue *elmc_retain_impl(ElmcValue *value);
     static void elmc_release_impl(ElmcValue *value);
     static void elmc_rc_track_on_retain(ElmcValue *value, const char *file, int line);
@@ -248,8 +249,18 @@ defmodule Elmc.Runtime.RcTrack do
 
     /* Iterative list teardown: recursive tail release overflows Pebble's ~4-6 KB
        app stack when dropping flat boards (for example elmtris lockPiece board). */
+    #if ELMC_RC_TRACK
+    static void elmc_rc_track_drop_owned(ElmcValue *value) {
+      if (!value || value->rc == ELMC_RC_IMMORTAL) return;
+      elmc_rc_track_unregister(value);
+    }
+    #endif
+
     static void elmc_release_list_cell_payload(ElmcValue *cell) {
       if (!cell || cell->tag != ELMC_TAG_LIST || !cell->payload) return;
+    #if ELMC_RC_TRACK
+      elmc_rc_track_drop_owned(cell);
+    #endif
       if (elmc_list_cell_release(cell)) {
         ELMC_RELEASED += 1;
         return;
@@ -262,6 +273,7 @@ defmodule Elmc.Runtime.RcTrack do
     static void elmc_release_list_spine(ElmcValue *list) {
       ElmcValue *cursor = list;
       while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
+        if (cursor->rc == ELMC_RC_IMMORTAL) break;
         ElmcCons *node = (ElmcCons *)cursor->payload;
         ElmcValue *head = node->head;
         ElmcValue *next = node->tail;
@@ -270,14 +282,7 @@ defmodule Elmc.Runtime.RcTrack do
         elmc_release(head);
         ElmcValue *cell = cursor;
         cursor = next;
-        if (cell == list) {
-          elmc_release_list_cell_payload(cell);
-        } else {
-          elmc_release(cell);
-        }
-      }
-      if (cursor && cursor->rc != ELMC_RC_IMMORTAL) {
-        elmc_release(cursor);
+        elmc_release_list_cell_payload(cell);
       }
     }
 
@@ -308,6 +313,9 @@ defmodule Elmc.Runtime.RcTrack do
           if (rec->field_values[i]) elmc_release(rec->field_values[i]);
         }
         if (elmc_record_cell_release(value)) {
+        #if ELMC_RC_TRACK
+          elmc_rc_track_drop_owned(value);
+        #endif
           ELMC_RELEASED += 1;
           return;
         }
@@ -318,6 +326,9 @@ defmodule Elmc.Runtime.RcTrack do
           if (clo->captures[i]) elmc_release(clo->captures[i]);
         }
         if (elmc_closure_cell_release(value)) {
+        #if ELMC_RC_TRACK
+          elmc_rc_track_drop_owned(value);
+        #endif
           ELMC_RELEASED += 1;
           return;
         }
@@ -326,26 +337,44 @@ defmodule Elmc.Runtime.RcTrack do
         free(value->payload);
       }
       if (value->tag == ELMC_TAG_LIST && elmc_list_cell_release(value)) {
+      #if ELMC_RC_TRACK
+        elmc_rc_track_drop_owned(value);
+      #endif
         ELMC_RELEASED += 1;
         return;
       }
       if (value->tag == ELMC_TAG_MAYBE && elmc_maybe_cell_release(value)) {
+      #if ELMC_RC_TRACK
+        elmc_rc_track_drop_owned(value);
+      #endif
         ELMC_RELEASED += 1;
         return;
       }
       if (value->tag == ELMC_TAG_RESULT && elmc_result_cell_release(value)) {
+      #if ELMC_RC_TRACK
+        elmc_rc_track_drop_owned(value);
+      #endif
         ELMC_RELEASED += 1;
         return;
       }
       if (value->tag == ELMC_TAG_TUPLE2 && elmc_tuple2_cell_release(value)) {
+      #if ELMC_RC_TRACK
+        elmc_rc_track_drop_owned(value);
+      #endif
         ELMC_RELEASED += 1;
         return;
       }
       if (value->tag == ELMC_TAG_CMD && elmc_cmd_cell_release(value)) {
+      #if ELMC_RC_TRACK
+        elmc_rc_track_drop_owned(value);
+      #endif
         ELMC_RELEASED += 1;
         return;
       }
       if (value->tag == ELMC_TAG_SUB && elmc_sub_cell_release(value)) {
+      #if ELMC_RC_TRACK
+        elmc_rc_track_drop_owned(value);
+      #endif
         ELMC_RELEASED += 1;
         return;
       }

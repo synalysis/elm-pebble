@@ -217,7 +217,7 @@ defmodule Elmc.Backend.CCodegen.Tuple2CaseTable do
       elmc_int_t r = rot % 4;
       if (r < 0) r += 4;
       const #{table_type} *entry = &#{safe}_table[k][r];
-      return elmc_list_from_tuple2_int_array(entry->cells, entry->count);
+      return elmc_list_from_tuple2_int_array_take(entry->cells, entry->count);
     }
     """
   end

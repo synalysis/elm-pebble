@@ -6,6 +6,7 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
   """
 
   alias Elmc.Backend.CCodegen.FusionSupport
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Util
 
   @spec try_emit(String.t(), String.t(), map() | nil, map()) ::
@@ -251,15 +252,16 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
         if (row_full) cleared++;
       }
       if (cleared == 0) {
-        return elmc_tuple2_take(elmc_retain(board), elmc_new_int(0));
+        #{RcRuntimeEmit.fusion_tuple2_take_int_return("tmp_ret", "elmc_retain(board)", "0")}
       }
       ElmcValue *out = NULL;
       ElmcValue **tail_slot = NULL;
       for (elmc_int_t z = 0; z < (cleared * cols); z++) {
-        ElmcValue *cell = elmc_list_cons(elmc_int_zero(), elmc_list_nil());
+        ElmcValue *cell = NULL;
+        if (elmc_list_cons(&cell, elmc_int_zero(), elmc_list_nil()) != RC_SUCCESS) cell = elmc_list_nil();
         if (!cell) {
           elmc_release(out);
-          return elmc_tuple2_take(elmc_list_nil(), elmc_new_int(cleared));
+          #{RcRuntimeEmit.fusion_tuple2_take_int_return("tmp_ret", "elmc_list_nil()", "cleared")}
         }
         if (tail_slot) {
           elmc_release(*tail_slot);
@@ -280,16 +282,18 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
         if (!row_full) {
           for (elmc_int_t col = 0; col < cols; col++) {
             const elmc_int_t cell_value = elmc_list_nth_int_default(board, (row * cols) + col, 0);
-            ElmcValue *head = elmc_new_int(cell_value);
+            ElmcValue *head = NULL;
+            if (elmc_new_int(&head, cell_value) != RC_SUCCESS) head = elmc_int_zero();
             if (!head) {
               elmc_release(out);
-              return elmc_tuple2_take(elmc_list_nil(), elmc_new_int(cleared));
+              #{RcRuntimeEmit.fusion_tuple2_take_int_return("tmp_ret", "elmc_list_nil()", "cleared")}
             }
-            ElmcValue *cell = elmc_list_cons(head, elmc_list_nil());
+            ElmcValue *cell = NULL;
+            if (elmc_list_cons(&cell, head, elmc_list_nil()) != RC_SUCCESS) cell = elmc_list_nil();
             elmc_release(head);
             if (!cell) {
               elmc_release(out);
-              return elmc_tuple2_take(elmc_list_nil(), elmc_new_int(cleared));
+              #{RcRuntimeEmit.fusion_tuple2_take_int_return("tmp_ret", "elmc_list_nil()", "cleared")}
             }
             if (tail_slot) {
               elmc_release(*tail_slot);
@@ -302,7 +306,7 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
         }
       }
       if (!out) out = elmc_list_nil();
-      return elmc_tuple2_take(out, elmc_new_int(cleared));
+      #{RcRuntimeEmit.fusion_tuple2_take_int_return("tmp_ret", "out", "cleared")}
     }
     """
   end

@@ -103,6 +103,56 @@ defmodule Elmc.Test.RcTrackHarness do
   `module` is the Elm entry module (for example `"RcTrackListProbe"`).
   Each probe is a nullary generated function `elmc_fn_<Module>_<probe>`.
   """
+  @spec harness_prelude() :: String.t()
+  def harness_prelude do
+    """
+    static ElmcValue *elmc_harness_call_value(
+        ElmcValue *(*fn)(ElmcValue ** const args, const int argc),
+        ElmcValue **args,
+        int argc) {
+      return fn(args, argc);
+    }
+
+    static ElmcValue *elmc_harness_call_rc(
+        RC (*fn)(ElmcValue **out, ElmcValue ** const args, const int argc),
+        ElmcValue **args,
+        int argc) {
+      ElmcValue *out = NULL;
+      return fn(&out, args, argc) == RC_SUCCESS ? out : elmc_int_zero();
+    }
+    """
+  end
+
+  @spec generated_fn_call(String.t(), String.t(), String.t(), String.t(), integer()) :: String.t()
+  def generated_fn_call(out_dir, module_name, fn_name, args_expr, argc) do
+    c_name = "elmc_fn_#{module_name}_#{fn_name}"
+
+    if generated_fn_rc?(out_dir, c_name) do
+      "elmc_harness_call_rc(#{c_name}, #{args_expr}, #{argc})"
+    else
+      "elmc_harness_call_value(#{c_name}, #{args_expr}, #{argc})"
+    end
+  end
+
+  @spec generated_fn_rc?(String.t(), String.t()) :: boolean()
+  def generated_fn_rc?(out_dir, c_name) do
+    generated_c_path = Path.join(out_dir, "c/elmc_generated.c")
+
+    case File.read(generated_c_path) do
+      {:ok, source} ->
+        Enum.any?(
+          [
+            "RC #{c_name}(ElmcValue **out",
+            "static RC #{c_name}(ElmcValue **out"
+          ],
+          &String.contains?(source, &1)
+        )
+
+      _ ->
+        false
+    end
+  end
+
   @spec run_probe_suite!(String.t(), String.t(), String.t(), [probe_spec()]) :: String.t()
   def run_probe_suite!(out_dir, module_name, binary_name, probes) do
     harness_path = Path.join(out_dir, "c/#{binary_name}_harness.c")
@@ -115,6 +165,8 @@ defmodule Elmc.Test.RcTrackHarness do
       #include "elmc_generated.c"
       #include <stdio.h>
 
+      #{harness_prelude()}
+
       static int run_probe(const char *name, ElmcValue *(*fn)(void), int release_result) {
         elmc_rc_track_reset();
         ElmcValue *out = fn();
@@ -126,7 +178,7 @@ defmodule Elmc.Test.RcTrackHarness do
         return 0;
       }
 
-      #{probe_thunks(module_name, probes)}
+      #{probe_thunks(out_dir, module_name, probes)}
 
       int main(void) {
       #{probe_cases}
@@ -153,13 +205,23 @@ defmodule Elmc.Test.RcTrackHarness do
     end)
   end
 
-  defp probe_thunks(module_name, probes) do
+  defp probe_thunks(out_dir, module_name, probes) do
     Enum.map_join(probes, "\n", fn %{c_symbol: symbol} ->
-      """
-      static ElmcValue *#{symbol}_probe(void) {
-        return elmc_fn_#{module_name}_#{symbol}(NULL, 0);
-      }
-      """
+      c_name = "elmc_fn_#{module_name}_#{symbol}"
+
+      if generated_fn_rc?(out_dir, c_name) do
+        """
+        static ElmcValue *#{symbol}_probe(void) {
+          return elmc_harness_call_rc(#{c_name}, NULL, 0);
+        }
+        """
+      else
+        """
+        static ElmcValue *#{symbol}_probe(void) {
+          return elmc_harness_call_value(#{c_name}, NULL, 0);
+        }
+        """
+      end
     end)
   end
 

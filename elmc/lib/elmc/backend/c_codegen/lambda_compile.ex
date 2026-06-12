@@ -3,7 +3,9 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
 
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.RcRequired
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.CCodegen.ValueSlots
   alias Elmc.Backend.CCodegen.VarAnalysis
 
   @spec compile([String.t()] | nil, Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
@@ -134,22 +136,86 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
       |> Map.put(:__borrowed_arg_refs__, Map.get(env, :__borrowed_arg_refs__, MapSet.new()))
       |> Map.put(:__inside_lambda__, true)
 
+    rc_lambda? =
+      Map.get(env, :__rc_catch__, false) and
+        RcRequired.lambda_body_rc_required?(body, module_name, decl_map)
+
+    body_env =
+      if rc_lambda? do
+        body_env
+        |> Map.put(:__rc_required__, true)
+        |> Map.put(:__rc_catch__, true)
+      else
+        body_env
+      end
+
+    parent_slots = Process.get(:elmc_value_slots, MapSet.new())
+
+    if rc_lambda? do
+      Process.put(:elmc_value_slots, MapSet.new())
+    end
+
     {body_code, body_var, _body_counter} = Host.compile_expr(body, body_env, 0)
+
+    {owned_decls, failure_cleanup} =
+      if rc_lambda? do
+        if Regex.match?(~r/^tmp_\d+$/, body_var) do
+          ValueSlots.track(body_var)
+        end
+
+        decls = ValueSlots.owned_declarations_for_body(body_code)
+        cleanup = ValueSlots.failure_cleanup_for_body(body_code)
+        Process.put(:elmc_value_slots, parent_slots)
+        {decls, cleanup}
+      else
+        {"", ""}
+      end
 
     unless lambda_signature && Map.has_key?(Process.get(:elmc_lambda_defs, %{}), lambda_signature) do
       # Hoist the closure function to file scope via process dictionary.
-      closure_fn = """
-      static ElmcValue *#{closure_fn_name}(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
-        (void)args;
-        (void)argc;
-        (void)captures;
-        (void)capture_count;
-        #{arg_bindings}
-        #{capture_bindings}
-        #{body_code}
-        return #{body_var};
-      }
-      """
+      closure_fn =
+        if rc_lambda? do
+          failure_block =
+            if failure_cleanup == "" do
+              ""
+            else
+              """
+
+              if (Rc != RC_SUCCESS) {
+              #{failure_cleanup}
+              }
+              """
+            end
+
+          """
+          static RC #{closure_fn_name}(ElmcValue **out, ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
+            RC Rc = RC_SUCCESS;
+            #{owned_decls}
+            #{arg_bindings}
+            #{capture_bindings}
+
+            CATCH_BEGIN
+              #{body_code}
+              *out = #{body_var};
+            CATCH_END;
+            #{failure_block}
+            return Rc;
+          }
+          """
+        else
+          """
+          static ElmcValue *#{closure_fn_name}(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
+            (void)args;
+            (void)argc;
+            (void)captures;
+            (void)capture_count;
+            #{arg_bindings}
+            #{capture_bindings}
+            #{body_code}
+            return #{body_var};
+          }
+          """
+        end
 
       existing_lambdas = Process.get(:elmc_lambdas, [])
       Process.put(:elmc_lambdas, [closure_fn | existing_lambdas])
@@ -177,9 +243,16 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
         {"", "NULL"}
       end
 
+    closure_new =
+      if rc_lambda? do
+        "elmc_closure_new_rc_take(#{closure_fn_name}, #{length(lambda_arg_names)}, #{capture_count}, #{capture_arg})"
+      else
+        "elmc_closure_new_take(#{closure_fn_name}, #{length(lambda_arg_names)}, #{capture_count}, #{capture_arg})"
+      end
+
     code = """
       #{capture_array_code}
-      ElmcValue *#{out} = elmc_closure_new(#{closure_fn_name}, #{length(lambda_arg_names)}, #{capture_count}, #{capture_arg});
+      ElmcValue *#{out} = #{closure_new};
     """
 
     {code, out, next}

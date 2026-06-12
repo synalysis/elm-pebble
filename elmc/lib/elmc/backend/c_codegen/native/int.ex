@@ -15,6 +15,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   alias Elmc.Backend.CCodegen.Native.TypedReturn
   alias Elmc.Backend.CCodegen.Native.RecordFields, as: RecordFields
   alias Elmc.Backend.CCodegen.Native.UsageAnalysis, as: NativeUsageAnalysis
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.UnionMacros
@@ -296,7 +297,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     {
       """
       #{code}
-        ElmcValue *#{out} = elmc_new_int(#{value_ref});
+        #{RcRuntimeEmit.assign_call(env, out, "elmc_new_int", value_ref)}
       """,
       out,
       next
@@ -1008,8 +1009,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     next = counter + 1
     out = "native_maybe_default_#{next}"
 
-    release_code =
-      if is_binary(release_maybe), do: "\n  elmc_release(#{release_maybe});", else: ""
+    release_code = release_maybe_code(release_maybe)
 
     code = """
     #{default_code}
@@ -1551,9 +1551,18 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
       {
         key_code <> dict_code,
         "elmc_dict_get_with_default_int_value(#{default_ref}, #{key_var}, #{dict_var})",
-        key_var,
+        [key_var, dict_var],
         counter
       }
     end
   end
+
+  defp release_maybe_code(vars) when is_list(vars) do
+    vars
+    |> Enum.uniq()
+    |> Enum.map_join("", fn var -> "\n  elmc_release(#{var});" end)
+  end
+
+  defp release_maybe_code(var) when is_binary(var), do: "\n  elmc_release(#{var});"
+  defp release_maybe_code(_), do: ""
 end

@@ -262,7 +262,7 @@ defmodule Elmc.Backend.Pebble do
 
     #{scene_writer_late}
 
-    int #{entry_view_scene_append}(
+    RC #{entry_view_scene_append}(
         ElmcValue ** const args,
         const int argc,
         ElmcSceneWriter * const writer);
@@ -467,23 +467,30 @@ defmodule Elmc.Backend.Pebble do
     compass_dispatch_source = compass_dispatch_source(feature_flags)
 
     """
-    #include "elmc_pebble.h"
     #include <time.h>
+    #include <stdlib.h>
+    #include <stdio.h>
+    #include <string.h>
     #if defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_CHALK) || defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_FLINT) || defined(PBL_PLATFORM_GABBRO)
     #define ELMC_PEBBLE_PLATFORM 1
     #endif
     #ifdef ELMC_PEBBLE_PLATFORM
     #include <pebble.h>
-    #if defined(__has_include) && __has_include("elmc_emulator_build_flags.h")
+    #if defined(__has_include)
+    #if __has_include("../../elmc_emulator_build_flags.h")
+    #include "../../elmc_emulator_build_flags.h"
+    #elif __has_include("elmc_emulator_build_flags.h")
     #include "elmc_emulator_build_flags.h"
+    #endif
     #endif
     #ifndef ELMC_PEBBLE_DEBUG_LOGS
     #define ELMC_PEBBLE_DEBUG_LOGS 0
     #endif
     #endif
-    #include <stdlib.h>
-    #include <stdio.h>
-    #include <string.h>
+    #ifndef ELMC_PEBBLE_HEAP_LOG
+    #define ELMC_PEBBLE_HEAP_LOG 0
+    #endif
+    #include "elmc_pebble.h"
 
     #if defined(ELMC_PEBBLE_PLATFORM) && ELMC_PEBBLE_DEBUG_LOGS
     #define ELMC_PEBBLE_SCENE_LOG(...) APP_LOG(APP_LOG_LEVEL_INFO, __VA_ARGS__)
@@ -504,10 +511,6 @@ defmodule Elmc.Backend.Pebble do
     #define ELMC_PEBBLE_GENERATED_TRACE_ENTER(name) do { } while (0)
     #define ELMC_PEBBLE_GENERATED_TRACE_EXIT(name) do { } while (0)
     #define ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT(name, value) return (value)
-    #endif
-
-    #ifndef ELMC_PEBBLE_HEAP_LOG
-    #define ELMC_PEBBLE_HEAP_LOG 0
     #endif
 
     #if defined(ELMC_PEBBLE_PLATFORM) && ELMC_PEBBLE_HEAP_LOG
@@ -2165,7 +2168,7 @@ defmodule Elmc.Backend.Pebble do
     int elmc_pebble_dispatch_int(ElmcPebbleApp *app, int64_t tag) {
       ELMC_PEBBLE_GENERATED_TRACE_ENTER("elmc_pebble_dispatch_int");
       if (!app || !app->initialized) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_int", -1);
-      ElmcValue *msg = elmc_new_int(tag);
+      ElmcValue *msg = elmc_new_int_take(tag);
       if (!msg) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_int", -2);
       elmc_pebble_prepare_dispatch(app);
       int rc = elmc_worker_dispatch(&app->worker, msg);
@@ -2176,17 +2179,15 @@ defmodule Elmc.Backend.Pebble do
     int elmc_pebble_dispatch_tag_value(ElmcPebbleApp *app, int64_t tag, int64_t value) {
       ELMC_PEBBLE_GENERATED_TRACE_ENTER("elmc_pebble_dispatch_tag_value");
       if (!app || !app->initialized) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_value", -1);
-      ElmcValue *tag_value = elmc_new_int(tag);
-      ElmcValue *payload_value = elmc_new_int(value);
+      ElmcValue *tag_value = elmc_new_int_take(tag);
+      ElmcValue *payload_value = elmc_new_int_take(value);
       if (!tag_value || !payload_value) {
         if (tag_value) elmc_release(tag_value);
         if (payload_value) elmc_release(payload_value);
         ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_value", -2);
       }
 
-      ElmcValue *msg = elmc_tuple2(tag_value, payload_value);
-      elmc_release(tag_value);
-      elmc_release(payload_value);
+      ElmcValue *msg = elmc_tuple2_take_value(tag_value, payload_value);
       if (!msg) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_value", -2);
 
       elmc_pebble_prepare_dispatch(app);
@@ -2198,17 +2199,15 @@ defmodule Elmc.Backend.Pebble do
     int elmc_pebble_dispatch_tag_bool(ElmcPebbleApp *app, int64_t tag, int value) {
       ELMC_PEBBLE_GENERATED_TRACE_ENTER("elmc_pebble_dispatch_tag_bool");
       if (!app || !app->initialized) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_bool", -1);
-      ElmcValue *tag_value = elmc_new_int(tag);
-      ElmcValue *payload_value = elmc_new_bool(value ? 1 : 0);
+      ElmcValue *tag_value = elmc_new_int_take(tag);
+      ElmcValue *payload_value = elmc_new_bool_take(value ? 1 : 0);
       if (!tag_value || !payload_value) {
         if (tag_value) elmc_release(tag_value);
         if (payload_value) elmc_release(payload_value);
         ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_bool", -2);
       }
 
-      ElmcValue *msg = elmc_tuple2(tag_value, payload_value);
-      elmc_release(tag_value);
-      elmc_release(payload_value);
+      ElmcValue *msg = elmc_tuple2_take_value(tag_value, payload_value);
       if (!msg) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_bool", -2);
 
       elmc_pebble_prepare_dispatch(app);
@@ -2220,17 +2219,15 @@ defmodule Elmc.Backend.Pebble do
     int elmc_pebble_dispatch_tag_string(ElmcPebbleApp *app, int64_t tag, const char *value) {
       ELMC_PEBBLE_GENERATED_TRACE_ENTER("elmc_pebble_dispatch_tag_string");
       if (!app || !app->initialized) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_string", -1);
-      ElmcValue *tag_value = elmc_new_int(tag);
-      ElmcValue *payload_value = elmc_new_string(value ? value : "");
+      ElmcValue *tag_value = elmc_new_int_take(tag);
+      ElmcValue *payload_value = elmc_new_string_take(value ? value : "");
       if (!tag_value || !payload_value) {
         if (tag_value) elmc_release(tag_value);
         if (payload_value) elmc_release(payload_value);
         ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_string", -2);
       }
 
-      ElmcValue *msg = elmc_tuple2(tag_value, payload_value);
-      elmc_release(tag_value);
-      elmc_release(payload_value);
+      ElmcValue *msg = elmc_tuple2_take_value(tag_value, payload_value);
       if (!msg) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_string", -2);
 
       elmc_pebble_prepare_dispatch(app);
@@ -2243,11 +2240,10 @@ defmodule Elmc.Backend.Pebble do
       ELMC_PEBBLE_GENERATED_TRACE_ENTER("elmc_pebble_dispatch_tag_payload");
       if (!app || !app->initialized) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_payload", -1);
       if (!payload) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_payload", -3);
-      ElmcValue *tag_value = elmc_new_int(tag);
+      ElmcValue *tag_value = elmc_new_int_take(tag);
       if (!tag_value) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_payload", -2);
 
-      ElmcValue *msg = elmc_tuple2(tag_value, payload);
-      elmc_release(tag_value);
+      ElmcValue *msg = elmc_tuple2_take_value(tag_value, payload);
       if (!msg) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_payload", -2);
 
       elmc_pebble_prepare_dispatch(app);
@@ -2257,10 +2253,10 @@ defmodule Elmc.Backend.Pebble do
     }
 
     static ElmcValue *elmc_pebble_int_tuple_from_values(const int64_t *field_values, int index, int field_count) {
-      if (field_count <= 0) return elmc_new_int(0);
+      if (field_count <= 0) return elmc_new_int_take(0);
       if (!field_values || index < 0 || index >= field_count) return NULL;
 
-      ElmcValue *head = elmc_new_int(field_values[index]);
+      ElmcValue *head = elmc_new_int_take(field_values[index]);
       if (!head) return NULL;
       if (index == field_count - 1) return head;
 
@@ -2270,10 +2266,7 @@ defmodule Elmc.Backend.Pebble do
         return NULL;
       }
 
-      ElmcValue *tuple = elmc_tuple2(head, tail);
-      elmc_release(head);
-      elmc_release(tail);
-      return tuple;
+      return elmc_tuple2_take_value(head, tail);
     }
 
     int elmc_pebble_dispatch_tag_int_values(
@@ -2286,7 +2279,7 @@ defmodule Elmc.Backend.Pebble do
       if (!app || !app->initialized) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_int_values", -1);
       if (field_count < 0 || (field_count > 0 && !field_values)) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_int_values", -3);
 
-      ElmcValue *inner_tag_value = elmc_new_int(inner_tag);
+      ElmcValue *inner_tag_value = elmc_new_int_take(inner_tag);
       ElmcValue *inner_payload = elmc_pebble_int_tuple_from_values(field_values, 0, field_count);
       if (!inner_tag_value || !inner_payload) {
         if (inner_tag_value) elmc_release(inner_tag_value);
@@ -2294,13 +2287,10 @@ defmodule Elmc.Backend.Pebble do
         ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_int_values", -2);
       }
 
-      ElmcValue *inner_msg = elmc_tuple2(inner_tag_value, inner_payload);
-      elmc_release(inner_tag_value);
-      elmc_release(inner_payload);
+      ElmcValue *inner_msg = elmc_tuple2_take_value(inner_tag_value, inner_payload);
       if (!inner_msg) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_int_values", -2);
 
       int rc = elmc_pebble_dispatch_tag_payload(app, outer_tag, inner_msg);
-      elmc_release(inner_msg);
       ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_int_values", rc);
     }
 
@@ -2314,7 +2304,7 @@ defmodule Elmc.Backend.Pebble do
       if (!app || !app->initialized) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_record_int_fields", -1);
       if (field_count <= 0 || !field_names || !field_values) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_record_int_fields", -3);
 
-      ElmcValue *tag_value = elmc_new_int(tag);
+      ElmcValue *tag_value = elmc_new_int_take(tag);
       if (!tag_value) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_record_int_fields", -2);
 
       ElmcValue **record_values = (ElmcValue **)malloc(sizeof(ElmcValue *) * field_count);
@@ -2325,7 +2315,7 @@ defmodule Elmc.Backend.Pebble do
 
       int built = 0;
       for (int i = 0; i < field_count; i++) {
-        record_values[i] = elmc_new_int(field_values[i]);
+        record_values[i] = elmc_new_int_take(field_values[i]);
         if (!record_values[i]) {
           built = i;
           goto cleanup_values;
@@ -2333,10 +2323,7 @@ defmodule Elmc.Backend.Pebble do
       }
       built = field_count;
 
-      ElmcValue *payload_value = elmc_record_new(field_count, field_names, record_values);
-      for (int i = 0; i < built; i++) {
-        if (record_values[i]) elmc_release(record_values[i]);
-      }
+      ElmcValue *payload_value = elmc_record_new_take_value(field_count, field_names, record_values);
       free(record_values);
 
       if (!payload_value) {
@@ -2344,9 +2331,7 @@ defmodule Elmc.Backend.Pebble do
         ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_record_int_fields", -2);
       }
 
-      ElmcValue *msg = elmc_tuple2(tag_value, payload_value);
-      elmc_release(tag_value);
-      elmc_release(payload_value);
+      ElmcValue *msg = elmc_tuple2_take_value(tag_value, payload_value);
       if (!msg) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_record_int_fields", -2);
 
       elmc_pebble_prepare_dispatch(app);
@@ -2521,16 +2506,19 @@ defmodule Elmc.Backend.Pebble do
 
       ElmcValue *result_payload = NULL;
       if (is_ok) {
-        result_payload = elmc_result_ok(elmc_new_string(text ? text : ""));
+        ElmcValue *ok_value = elmc_new_string_take(text ? text : "");
+        if (elmc_result_ok(&result_payload, ok_value) != RC_SUCCESS) return -2;
+        elmc_release(ok_value);
       } else {
         ElmcValue *error_value = NULL;
         if (error_code == 3) {
-          error_value = elmc_tuple2(elmc_new_int(3), elmc_new_string(text ? text : ""));
+          error_value =
+              elmc_tuple2_take_value(elmc_new_int_take(3), elmc_new_string_take(text ? text : ""));
         } else {
-          error_value = elmc_new_int(error_code);
+          error_value = elmc_new_int_take(error_code);
         }
         if (!error_value) return -2;
-        result_payload = elmc_result_err(error_value);
+        if (elmc_result_err(&result_payload, error_value) != RC_SUCCESS) return -2;
         elmc_release(error_value);
       }
       if (!result_payload) return -2;
@@ -2684,15 +2672,16 @@ defmodule Elmc.Backend.Pebble do
         }
         ElmcValue *direct_args[] = { direct_model };
         ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_VIEW_APPEND_ENTER);
-        int rc = #{entry_view_scene_append}(direct_args, 1, &writer);
+        RC rc = #{entry_view_scene_append}(direct_args, 1, &writer);
         ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_VIEW_APPEND_EXIT);
         elmc_release(direct_model);
-        ELMC_PEBBLE_SCENE_LOG("elmc-scene view append rc=%d writer_cmds=%d",
-                rc, writer.command_count);
-        if (rc != 0) {
+        ELMC_PEBBLE_SCENE_LOG("elmc-scene view append rc=%s writer_cmds=%d",
+                elmc_rc_name(rc), writer.command_count);
+        if (rc != RC_SUCCESS) {
+          ELMC_RC_LOG_FAIL(rc, "elmc_pebble_ensure_scene", "view_scene_append");
           elmc_pebble_scene_abort_build(app);
           ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_ENSURE_SCENE_EXIT);
-          ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", rc);
+          ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", -1);
         }
       }
     #else
@@ -2909,8 +2898,17 @@ defmodule Elmc.Backend.Pebble do
               elmc_agent_scene_probe(0xED996190);
               // #endregion
               elmc_pebble_heap_log("view:start");
-              result = elmc_fn_#{String.replace(entry_module, ".", "_")}_view(args, 1);
-              elmc_pebble_heap_log("view:end");
+              {
+                RC view_rc = elmc_fn_#{String.replace(entry_module, ".", "_")}_view(&result, args, 1);
+                elmc_pebble_heap_log("view:end");
+                if (view_rc != RC_SUCCESS) {
+                  ELMC_RC_LOG_FAIL(view_rc, "elmc_pebble_view_commands_raw_impl", "view");
+                  elmc_release(result);
+                  result = NULL;
+                  elmc_release(model);
+                  return -2;
+                }
+              }
               // #region agent log
               elmc_agent_scene_probe(0xED996191);
               // #endregion
@@ -3076,27 +3074,23 @@ defmodule Elmc.Backend.Pebble do
       const char *names[] = {"degrees", "isValid"};
       ElmcValue *values[2];
       values[0] = elmc_new_float(degrees);
-      values[1] = elmc_new_bool(is_valid ? 1 : 0);
+      values[1] = elmc_new_bool_take(is_valid ? 1 : 0);
       if (!values[0] || !values[1]) {
         if (values[0]) elmc_release(values[0]);
         if (values[1]) elmc_release(values[1]);
         return -2;
       }
 
-      ElmcValue *record = elmc_record_new(2, names, values);
-      elmc_release(values[0]);
-      elmc_release(values[1]);
+      ElmcValue *record = elmc_record_new_take_value(2, names, values);
       if (!record) return -2;
 
-      ElmcValue *tag_value = elmc_new_int(tag);
+      ElmcValue *tag_value = elmc_new_int_take(tag);
       if (!tag_value) {
         elmc_release(record);
         return -2;
       }
 
-      ElmcValue *msg = elmc_tuple2(tag_value, record);
-      elmc_release(tag_value);
-      elmc_release(record);
+      ElmcValue *msg = elmc_tuple2_take_value(tag_value, record);
       if (!msg) return -2;
 
       elmc_pebble_prepare_dispatch(app);

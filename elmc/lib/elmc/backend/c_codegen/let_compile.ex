@@ -12,6 +12,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
   alias Elmc.Backend.CCodegen.Native.String, as: NativeString
   alias Elmc.Backend.CCodegen.Native.TypedReturn
   alias Elmc.Backend.CCodegen.Native.UsageAnalysis, as: NativeUsageAnalysis
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
@@ -251,6 +252,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
       |> put_boxed_record_shape(name, record_shape)
       |> put_boxed_var_type(name, value_expr, env)
       |> RecordCompile.fresh_subexpr_cache()
+      |> Map.put(:__rc_catch__, false)
 
     {body_code, body_var, counter} = Host.compile_expr(in_expr, body_env, counter)
 
@@ -294,7 +296,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
       value_var = "tmp_#{counter}"
 
       value_code = """
-      #{native_code}ElmcValue *#{value_var} = elmc_new_int(#{native_ref});
+      #{native_code}#{RcRuntimeEmit.assign_call(env, value_var, "elmc_new_int", native_ref)}
       """
 
       {value_code, value_var, counter, native_ref}
@@ -360,7 +362,9 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
   end
 
   defp extract_boxed_let_body?(env, body_code) do
-    not Map.get(env, :__inside_lambda__, false) and
+    not Map.get(env, :__rc_catch__, false) and
+      not Map.get(env, :__rc_required__, false) and
+      not Map.get(env, :__inside_lambda__, false) and
       not Map.get(env, :__skip_let_body_helper__, false) and
       Process.get(:elmc_generic_helper_defs) != nil and emitted_line_count(body_code) >= 100
   end
@@ -385,16 +389,19 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
     env
     |> EnvBindings.env_resolvable_binding_keys()
     |> Enum.reduce(MapSet.new(), fn key, acc ->
-      case Map.get(env, key) do
-        c_ref when is_binary(c_ref) ->
-          if Regex.match?(~r/\b#{Regex.escape(c_ref)}\b/, body_code) do
-            MapSet.put(acc, key)
-          else
-            acc
-          end
+      c_ref =
+        cond do
+          is_binary(ref = EnvBindings.native_int_binding(env, key)) -> ref
+          is_binary(ref = EnvBindings.native_bool_binding(env, key)) -> ref
+          is_binary(ref = EnvBindings.native_float_binding(env, key)) -> ref
+          is_binary(ref = Map.get(env, key)) -> ref
+          true -> nil
+        end
 
-        _ ->
-          acc
+      if is_binary(c_ref) and Regex.match?(~r/\b#{Regex.escape(c_ref)}\b/, body_code) do
+        MapSet.put(acc, key)
+      else
+        acc
       end
     end)
   end

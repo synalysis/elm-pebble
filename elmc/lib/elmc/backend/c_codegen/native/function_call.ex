@@ -6,6 +6,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.ListIntReduce
   alias Elmc.Backend.CCodegen.Native.ListIntSearch
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
 
@@ -46,7 +47,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
         {
           """
           #{code}
-            ElmcValue *#{out} = elmc_new_int(#{ref});
+            #{RcRuntimeEmit.assign_call(env, out, "elmc_new_int", ref)}
           """,
           out,
           next
@@ -59,7 +60,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
         {
           """
           #{code}
-            ElmcValue *#{out} = elmc_new_bool(#{ref});
+            #{RcRuntimeEmit.assign_call(env, out, "elmc_new_bool", ref)}
           """,
           out,
           next
@@ -174,8 +175,26 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
   def native_scalar_fn?(decl, module_name, decl_map) do
     native_args?(decl, module_name, decl_map) or
       ListIntSearch.recognized?(decl, module_name, decl_map) or
-      match?({:ok, _}, ListIntReduce.recognize(decl, module_name, decl_map))
+      match?({:ok, _}, ListIntReduce.recognize(decl, module_name, decl_map)) or
+      native_scalar_return?(decl, module_name, decl_map)
   end
+
+  # Bool/Int helpers over boxed records (for example Model -> Bool field checks) that
+  # only need a native return when the body already lowers to native scalar code.
+  @spec native_scalar_return?(Types.function_declaration(), String.t(), Types.function_decl_map()) ::
+          boolean()
+  def native_scalar_return?(%{type: type, expr: expr} = decl, module_name, decl_map)
+      when is_binary(type) do
+    env = callee_env(decl, module_name, decl_map)
+
+    case Host.function_return_type(type) do
+      "Bool" -> Host.native_bool_expr?(expr || %{op: :int_literal, value: 0}, env)
+      "Int" -> Host.native_int_expr?(expr || %{op: :int_literal, value: 0}, env)
+      _ -> false
+    end
+  end
+
+  def native_scalar_return?(_decl, _module_name, _decl_map), do: false
 
   @spec return_kind(Types.function_declaration(), String.t(), Types.function_decl_map()) ::
           native_return_kind()

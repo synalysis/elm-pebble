@@ -107,9 +107,8 @@ defmodule Elmc.CoreDifferentialConformanceTest do
       "elmc_string_is_empty(",
       "elmc_tuple_first(",
       "elmc_tuple_second(",
-      "elmc_list_foldl(",
-      "elmc_maybe_map(",
-      "elmc_maybe_with_default(",
+      "elmc_list_foldl",
+      "elmc_maybe_with_default_int(",
       "elmc_process_spawn(",
       "elmc_process_sleep(",
       "elmc_process_kill("

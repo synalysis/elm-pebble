@@ -49,6 +49,30 @@ defmodule Elmc.Backend.CCodegen.CSourceTest do
            """
   end
 
+  test "format indents switch cases when label and opening brace share a line" do
+    input = """
+    static ElmcValue *restore(ElmcValue *direction) {
+      switch (direction) {
+          case ELMC_UNION_LEFT: {
+          tmp = cells;
+          break;
+        }
+      }
+    }
+    """
+
+    assert CSource.format(input) == """
+           static ElmcValue *restore(ElmcValue *direction) {
+             switch (direction) {
+               case ELMC_UNION_LEFT: {
+                 tmp = cells;
+                 break;
+               }
+             }
+           }
+           """
+  end
+
   test "format leaves preprocessor directives at column zero" do
     input = """
     #if defined(__GNUC__)
@@ -197,12 +221,14 @@ defmodule Elmc.Backend.CCodegen.CSourceTest do
     input = """
     static int foo(void) {
     int direct_rc = 0;
+
     CATCH_BEGIN
     x = 1;
     if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0) {
     CATCH_BREAK;
     }
-    CATCH_END
+    CATCH_END;
+
     return direct_rc;
     }
     """
@@ -210,12 +236,14 @@ defmodule Elmc.Backend.CCodegen.CSourceTest do
     assert CSource.format(input) == """
            static int foo(void) {
              int direct_rc = 0;
+
              CATCH_BEGIN
                x = 1;
                if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0) {
                  CATCH_BREAK;
                }
-             CATCH_END
+             CATCH_END;
+
              return direct_rc;
            }
            """

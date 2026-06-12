@@ -249,12 +249,18 @@ defmodule Elmc.Backend.Worker do
       if has_init do
         """
         ElmcValue *args[] = { flags };
-          ElmcValue *result = elmc_fn_#{safe_module}_init(args, 1);
+          ElmcValue *result = NULL;
+          RC init_rc = elmc_fn_#{safe_module}_init(&result, args, 1);
+          if (init_rc != RC_SUCCESS) {
+            ELMC_RC_LOG_FAIL(init_rc, "elmc_worker_init", "init");
+            elmc_release(result);
+            return -2;
+          }
         """
       else
         """
         (void)flags;
-          ElmcValue *result = elmc_new_int(0);
+          ElmcValue *result = elmc_new_int_take(0);
         """
       end
 
@@ -264,12 +270,18 @@ defmodule Elmc.Backend.Worker do
       if has_update do
         """
         ElmcValue *args[] = { msg, state->model };
-          ElmcValue *result = elmc_fn_#{safe_module}_update(args, 2);
+          ElmcValue *result = NULL;
+          RC update_rc = elmc_fn_#{safe_module}_update(&result, args, 2);
+          if (update_rc != RC_SUCCESS) {
+            ELMC_RC_LOG_FAIL(update_rc, "elmc_worker_dispatch", "update");
+            elmc_release(result);
+            return -2;
+          }
         """
       else
         """
         (void)msg;
-          ElmcValue *result = elmc_new_int(0);
+          ElmcValue *result = elmc_new_int_take(0);
         """
       end
 
@@ -279,11 +291,17 @@ defmodule Elmc.Backend.Worker do
       if has_subscriptions do
         """
         ElmcValue *args[] = { state->model };
-          ElmcValue *result = elmc_fn_#{safe_module}_subscriptions(args, 1);
+          ElmcValue *result = NULL;
+          RC sub_rc = elmc_fn_#{safe_module}_subscriptions(&result, args, 1);
+          if (sub_rc != RC_SUCCESS) {
+            ELMC_RC_LOG_FAIL(sub_rc, "elmc_worker_subscriptions", "subscriptions");
+            elmc_release(result);
+            return 0;
+          }
         """
       else
         """
-        ElmcValue *result = elmc_new_int(0);
+        ElmcValue *result = elmc_new_int_take(0);
         """
       end
 
@@ -296,8 +314,12 @@ defmodule Elmc.Backend.Worker do
 
     """
     #include "elmc_worker.h"
-    #if defined(__has_include) && __has_include("elmc_emulator_build_flags.h")
+    #if defined(__has_include)
+    #if __has_include("../../elmc_emulator_build_flags.h")
+    #include "../../elmc_emulator_build_flags.h"
+    #elif __has_include("elmc_emulator_build_flags.h")
     #include "elmc_emulator_build_flags.h"
+    #endif
     #endif
 
     #if defined(ELMC_PEBBLE_PLATFORM) && ELMC_PEBBLE_HEAP_LOG
@@ -315,18 +337,18 @@ defmodule Elmc.Backend.Worker do
     #endif
 
     static ElmcValue *extract_model(ElmcValue *value) {
-      if (!value) return elmc_new_int(0);
+      if (!value) return elmc_new_int_take(0);
       if (value->tag != ELMC_TAG_TUPLE2 || value->payload == NULL) return elmc_retain(value);
       ElmcTuple2 *pair = (ElmcTuple2 *)value->payload;
-      if (!pair->first) return elmc_new_int(0);
+      if (!pair->first) return elmc_new_int_take(0);
       return elmc_retain(pair->first);
     }
 
     static ElmcValue *extract_cmd(ElmcValue *value) {
-      if (!value) return elmc_new_int(0);
-      if (value->tag != ELMC_TAG_TUPLE2 || value->payload == NULL) return elmc_new_int(0);
+      if (!value) return elmc_new_int_take(0);
+      if (value->tag != ELMC_TAG_TUPLE2 || value->payload == NULL) return elmc_new_int_take(0);
       ElmcTuple2 *pair = (ElmcTuple2 *)value->payload;
-      if (!pair->second) return elmc_new_int(0);
+      if (!pair->second) return elmc_new_int_take(0);
       return elmc_retain(pair->second);
     }
 
@@ -334,42 +356,103 @@ defmodule Elmc.Backend.Worker do
       return !value || ((value->tag == ELMC_TAG_INT || value->tag == ELMC_TAG_BOOL) && elmc_as_int(value) == 0);
     }
 
+    static ElmcValue *elmc_cmd_none(void) {
+      return elmc_int_zero();
+    }
+
     static ElmcValue *elmc_cmd_singleton(ElmcValue *cmd) {
       ElmcValue *empty = elmc_list_nil();
-      ElmcValue *list = elmc_list_cons(cmd, empty);
+      ElmcValue *list = elmc_list_cons_take(cmd, empty);
       elmc_release(empty);
-      return list;
+      return list ? list : elmc_cmd_none();
     }
 
     static ElmcValue *elmc_cmd_queue_append(ElmcValue *existing, ElmcValue *next) {
-      if (elmc_cmd_is_none(existing) && elmc_cmd_is_none(next)) return elmc_new_int(0);
-      if (elmc_cmd_is_none(existing)) return elmc_retain(next);
-      if (elmc_cmd_is_none(next)) return elmc_retain(existing);
+      if (elmc_cmd_is_none(existing) && elmc_cmd_is_none(next)) {
+        elmc_release(existing);
+        elmc_release(next);
+        return elmc_cmd_none();
+      }
+      if (elmc_cmd_is_none(existing)) {
+        elmc_release(existing);
+        return next;
+      }
+      if (elmc_cmd_is_none(next)) {
+        elmc_release(next);
+        return existing;
+      }
 
       if (existing->tag == ELMC_TAG_LIST && next->tag == ELMC_TAG_LIST) {
-        return elmc_list_append(existing, next);
+        ElmcValue *merged = elmc_list_append_take(existing, next);
+        elmc_release(existing);
+        elmc_release(next);
+        return merged;
       }
 
       if (existing->tag == ELMC_TAG_LIST) {
         ElmcValue *next_list = elmc_cmd_singleton(next);
-        ElmcValue *merged = elmc_list_append(existing, next_list);
+        ElmcValue *merged = elmc_list_append_take(existing, next_list);
         elmc_release(next_list);
+        elmc_release(existing);
+        elmc_release(next);
         return merged;
       }
 
       ElmcValue *existing_list = elmc_cmd_singleton(existing);
 
       if (next->tag == ELMC_TAG_LIST) {
-        ElmcValue *merged = elmc_list_append(existing_list, next);
+        ElmcValue *merged = elmc_list_append_take(existing_list, next);
         elmc_release(existing_list);
+        elmc_release(existing);
+        elmc_release(next);
         return merged;
       }
 
       ElmcValue *next_list = elmc_cmd_singleton(next);
-      ElmcValue *merged = elmc_list_append(existing_list, next_list);
+      ElmcValue *merged = elmc_list_append_take(existing_list, next_list);
       elmc_release(existing_list);
       elmc_release(next_list);
+      elmc_release(existing);
+      elmc_release(next);
       return merged;
+    }
+
+    static ElmcValue *elmc_cmd_queue_push_entry(ElmcValue *flat, ElmcValue *entry) {
+      if (!entry) return flat ? flat : elmc_new_int_take(0);
+      if (elmc_cmd_is_none(entry)) {
+        elmc_release(entry);
+        return flat ? flat : elmc_new_int_take(0);
+      }
+
+      if (entry->tag == ELMC_TAG_LIST) {
+        ElmcValue *cursor = entry;
+        while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
+          ElmcCons *node = (ElmcCons *)cursor->payload;
+          ElmcValue *head = node->head;
+          node->head = NULL;
+          flat = elmc_cmd_queue_push_entry(flat, head);
+          ElmcValue *next = node->tail;
+          node->tail = NULL;
+          elmc_release(cursor);
+          cursor = next;
+        }
+        return flat;
+      }
+
+      ElmcValue *single = elmc_cmd_singleton(entry);
+      return elmc_cmd_queue_append(flat, single);
+    }
+
+    static ElmcValue *elmc_cmd_queue_normalize(ElmcValue *cmd) {
+      if (!cmd || elmc_cmd_is_none(cmd)) {
+        if (cmd) elmc_release(cmd);
+        return elmc_cmd_none();
+      }
+      if (cmd->tag != ELMC_TAG_LIST) return cmd;
+
+      ElmcValue *flat = elmc_cmd_none();
+      flat = elmc_cmd_queue_push_entry(flat, cmd);
+      return flat;
     }
 
     #{sub_tag_slot_fn(analysis)}
@@ -454,7 +537,7 @@ defmodule Elmc.Backend.Worker do
         return -2;
       }
       state->model = next_model;
-      state->pending_cmd = extract_cmd(result);
+      state->pending_cmd = elmc_cmd_queue_normalize(extract_cmd(result));
       elmc_release(result);
       state->subscriptions = compute_subscriptions(state);
       elmc_worker_heap_log("init:end");
@@ -472,13 +555,8 @@ defmodule Elmc.Backend.Worker do
       }
       elmc_release(state->model);
       state->model = next_model;
-      ElmcValue *next_cmd = extract_cmd(result);
-      ElmcValue *merged_cmd = elmc_cmd_queue_append(state->pending_cmd, next_cmd);
-      if (state->pending_cmd) {
-        elmc_release(state->pending_cmd);
-      }
-      elmc_release(next_cmd);
-      state->pending_cmd = merged_cmd;
+      ElmcValue *next_cmd = elmc_cmd_queue_normalize(extract_cmd(result));
+      state->pending_cmd = elmc_cmd_queue_append(state->pending_cmd, next_cmd);
       elmc_release(result);
     #{dispatch_subscriptions_refresh}  elmc_worker_heap_log("update:end");
       return 0;
@@ -492,29 +570,24 @@ defmodule Elmc.Backend.Worker do
     ElmcValue *elmc_worker_take_cmd(ElmcWorkerState *state) {
       if (!state) return NULL;
       if (!state->pending_cmd) {
-        return elmc_new_int(0);
+        return elmc_cmd_none();
       }
 
       while (state->pending_cmd && state->pending_cmd->tag == ELMC_TAG_LIST) {
         if (state->pending_cmd->payload == NULL) {
           elmc_release(state->pending_cmd);
-          state->pending_cmd = elmc_new_int(0);
-          return elmc_new_int(0);
+          state->pending_cmd = elmc_cmd_none();
+          return elmc_cmd_none();
         }
 
         ElmcCons *node = (ElmcCons *)state->pending_cmd->payload;
-        ElmcValue *head = node->head ? elmc_retain(node->head) : elmc_new_int(0);
-        ElmcValue *next_pending = node->tail ? elmc_retain(node->tail) : elmc_new_int(0);
+        ElmcValue *head = node->head;
+        ElmcValue *rest = node->tail;
+        /* Transfer ownership: detach before release (list release walks the spine). */
+        node->head = NULL;
+        node->tail = NULL;
         elmc_release(state->pending_cmd);
-        state->pending_cmd = next_pending;
-
-        if (head->tag == ELMC_TAG_LIST) {
-          ElmcValue *merged_pending = elmc_cmd_queue_append(head, state->pending_cmd);
-          elmc_release(state->pending_cmd);
-          state->pending_cmd = merged_pending;
-          elmc_release(head);
-          continue;
-        }
+        state->pending_cmd = rest ? rest : elmc_cmd_none();
 
         if (elmc_cmd_is_none(head)) {
           elmc_release(head);
@@ -525,13 +598,14 @@ defmodule Elmc.Backend.Worker do
       }
 
       if (elmc_cmd_is_none(state->pending_cmd)) {
+        ElmcValue *none = elmc_cmd_none();
         elmc_release(state->pending_cmd);
-        state->pending_cmd = elmc_new_int(0);
-        return elmc_new_int(0);
+        state->pending_cmd = none;
+        return none;
       }
 
       ElmcValue *cmd = state->pending_cmd;
-      state->pending_cmd = elmc_new_int(0);
+      state->pending_cmd = elmc_cmd_none();
       return cmd;
     }
 

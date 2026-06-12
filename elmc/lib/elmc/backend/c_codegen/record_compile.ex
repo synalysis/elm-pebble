@@ -7,6 +7,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   alias Elmc.Backend.CCodegen.Expr
   alias Elmc.Backend.CCodegen.FunctionCallCompile
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Native.RecordFields
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
@@ -149,12 +150,33 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     next = counter + 1
     out = "tmp_#{next}"
     values_array = Enum.join(field_refs, ", ")
+    values_decl = "elmc_int_t rec_values_#{next}[#{field_count}] = { #{values_array} };"
+
+    {names_decl, alloc_fn} =
+      case record_literal_type(ordered_fields, env) do
+        nil ->
+          {"", "elmc_record_new_values_ints"}
+
+        _type ->
+          {static_field_names_c(ordered_fields, next) <> "\n", "elmc_record_new_static_ints"}
+      end
+
+    alloc_args =
+      case alloc_fn do
+        "elmc_record_new_static_ints" ->
+          "#{field_count}, rec_names_#{next}, rec_values_#{next}"
+
+        _ ->
+          "#{field_count}, rec_values_#{next}"
+      end
+
+    alloc = RcRuntimeEmit.assign_call(env, out, alloc_fn, alloc_args)
 
     code =
       """
       #{field_code}
-        elmc_int_t rec_values_#{next}[#{field_count}] = { #{values_array} };
-        ElmcValue *#{out} = elmc_record_new_values_ints(#{field_count}, rec_values_#{next});
+      #{names_decl}  #{values_decl}
+        #{alloc}
       """ <> post_release
 
     :ok = put_literal_record_meta(out, ordered_fields, env)
@@ -169,6 +191,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
           Types.compile_counter()
         ) :: Types.compile_result()
   defp compile_boxed_literal(ordered_fields, field_count, env, counter) do
+    env = Map.put(env, :__owned_list_result__, true)
+
     case maybe_extract_boxed_record_literal_helper(
            ordered_fields,
            field_count,
@@ -189,18 +213,54 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
     next = counter + 1
     out = "tmp_#{next}"
-    values_array = Enum.join(field_refs, ", ")
+    values_array = record_values_array(field_refs)
+
+    names_decl = static_field_names_c(ordered_fields, next) <> "\n"
+
+    allocator =
+      RcRuntimeEmit.assign_call(env, out, "elmc_record_new_static_take",
+        "#{field_count}, rec_names_#{next}, rec_values_#{next}"
+      )
 
     code =
       """
       #{field_code}
-        ElmcValue *rec_values_#{next}[#{max(field_count, 1)}] = { #{values_array} };
-          ElmcValue *#{out} = elmc_record_new_values_take(#{field_count}, rec_values_#{next});
+      #{names_decl}  ElmcValue *rec_values_#{next}[#{max(field_count, 1)}] = { #{values_array} };
+        #{allocator}
       """ <> post_release
 
     :ok = put_literal_record_meta(out, ordered_fields, env)
 
     {code, out, next}
+  end
+
+  defp record_literal_type(ordered_fields, env) do
+    ordered_fields
+    |> Enum.map(& &1.name)
+    |> then(&Expr.record_type_for_field_names(&1, env))
+  end
+
+  defp record_values_array(field_refs) do
+    field_refs
+    |> Enum.with_index()
+    |> Enum.map_join(", ", fn {ref, idx} ->
+      prior = Enum.take(field_refs, idx)
+
+      if ref in prior do
+        "elmc_retain(#{ref})"
+      else
+        ref
+      end
+    end)
+  end
+
+  defp static_field_names_c(ordered_fields, suffix) do
+    names =
+      ordered_fields
+      |> Enum.map_join(", ", fn %{name: name} -> "\"#{Util.escape_c_string(name)}\"" end)
+
+    field_count = length(ordered_fields)
+    "  static const char * const rec_names_#{suffix}[#{field_count}] = { #{names} };"
   end
 
   defp put_literal_record_meta(var, ordered_fields, env) do
@@ -260,9 +320,11 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
               {_key, c_ref, :native_bool} -> "bool #{c_ref}"
             end)
 
+          helper_env = Map.put(env, :__rc_catch__, false)
+
           {field_code, field_vars, _counter} =
             Enum.reduce(ordered_fields, {"", [], counter}, fn field, {code_acc, vars_acc, c} ->
-              {code, var, c2} = Host.compile_expr(field.expr, env, c)
+              {code, var, c2} = Host.compile_expr(field.expr, helper_env, c)
               {code_acc <> "\n  " <> code, vars_acc ++ [{field.name, var}], c2}
             end)
 
@@ -272,7 +334,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
           static ElmcValue *#{helper_name}(#{helper_param_decls}) {
           #{CSource.indent(field_code, 2)}
             ElmcValue *rec_values[#{field_count}] = { #{values_array} };
-            return elmc_record_new_values_take(#{field_count}, rec_values);
+            return elmc_record_new_values_take_value(#{field_count}, rec_values);
           }
           """
 
@@ -399,46 +461,51 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   end
 
   defp maybe_extract_chained_update_helper(base, fields, env, update_code, result_var, counter) do
-    if extract_chained_update_helper?(length(fields), update_code) do
-      case chained_update_helper_params(base, fields, env) do
-        {:ok, params} ->
-          helper_id = Process.get(:elmc_generic_helper_counter, 0) + 1
-          Process.put(:elmc_generic_helper_counter, helper_id)
+    cond do
+      Map.get(env, :__rc_catch__, false) or Map.get(env, :__rc_required__, false) ->
+        :error
 
-          helper_name =
-            "elmc_record_update_helper_#{Util.safe_c_suffix(Map.get(env, :__module__, "Main"))}_#{Util.safe_c_suffix(Map.get(env, :__function_name__, "fn"))}_#{helper_id}"
+      not extract_chained_update_helper?(length(fields), update_code) ->
+        :error
 
-          helper_param_decls =
-            params
-            |> Enum.map_join(", ", fn
-              {_key, c_ref, :boxed} -> "ElmcValue *#{c_ref}"
-              {_key, c_ref, :native_int} -> "elmc_int_t #{c_ref}"
-              {_key, c_ref, :native_bool} -> "bool #{c_ref}"
-            end)
+      true ->
+        case chained_update_helper_params(base, fields, env) do
+          {:ok, params} ->
+            helper_id = Process.get(:elmc_generic_helper_counter, 0) + 1
+            Process.put(:elmc_generic_helper_counter, helper_id)
 
-          helper_def = """
-          static ElmcValue *#{helper_name}(#{helper_param_decls}) {
-          #{CSource.indent(update_code, 2)}
-            return #{result_var};
-          }
-          """
+            helper_name =
+              "elmc_record_update_helper_#{Util.safe_c_suffix(Map.get(env, :__module__, "Main"))}_#{Util.safe_c_suffix(Map.get(env, :__function_name__, "fn"))}_#{helper_id}"
 
-          Process.put(
-            :elmc_generic_helper_defs,
-            [helper_def | Process.get(:elmc_generic_helper_defs, [])]
-          )
+            helper_param_decls =
+              params
+              |> Enum.map_join(", ", fn
+                {_key, c_ref, :boxed} -> "ElmcValue *#{c_ref}"
+                {_key, c_ref, :native_int} -> "elmc_int_t #{c_ref}"
+                {_key, c_ref, :native_bool} -> "bool #{c_ref}"
+              end)
 
-          next = counter + 1
-          out = "tmp_#{next}"
-          call_args = Enum.map_join(params, ", ", fn {_key, c_ref, _kind} -> c_ref end)
+            helper_def = """
+            static ElmcValue *#{helper_name}(#{helper_param_decls}) {
+            #{CSource.indent(update_code, 2)}
+              return #{result_var};
+            }
+            """
 
-          {:ok, "  ElmcValue *#{out} = #{helper_name}(#{call_args});\n", out, next}
+            Process.put(
+              :elmc_generic_helper_defs,
+              [helper_def | Process.get(:elmc_generic_helper_defs, [])]
+            )
 
-        :error ->
-          :error
-      end
-    else
-      :error
+            next = counter + 1
+            out = "tmp_#{next}"
+            call_args = Enum.map_join(params, ", ", fn {_key, c_ref, _kind} -> c_ref end)
+
+            {:ok, "  ElmcValue *#{out} = #{helper_name}(#{call_args});\n", out, next}
+
+          :error ->
+            :error
+        end
     end
   end
 

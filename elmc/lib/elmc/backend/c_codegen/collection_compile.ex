@@ -4,6 +4,7 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
   alias Elmc.Backend.CCodegen.BuiltinUnion
   alias Elmc.Backend.CCodegen.DebugProbes
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.Types
 
@@ -63,7 +64,7 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
   end
 
   def compile(%{op: :string_length_expr, arg: arg_expr}, env, counter) do
-    compile_expr_unary(arg_expr, "elmc_new_int(elmc_string_length", env, counter)
+    compile_expr_unary(arg_expr, "elmc_new_int_take(elmc_string_length", env, counter)
   end
 
   def compile(%{op: :char_from_code, arg: arg}, env, counter) when is_binary(arg) do
@@ -84,7 +85,7 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
       code = """
       #{left_code}
       #{right_code}
-      ElmcValue *#{out} = elmc_tuple2_ints(#{left_ref}, #{right_ref});
+      #{RcRuntimeEmit.assign_call(env, out, "elmc_tuple2_ints", "#{left_ref}, #{right_ref}")}
       """
 
       {code, out, next}
@@ -97,7 +98,7 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
       code = """
       #{left_code}
       #{right_code}
-      ElmcValue *#{out} = elmc_tuple2_take(#{left_var}, #{right_var});
+      #{RcRuntimeEmit.assign_call(env, out, "elmc_tuple2_take", "#{left_var}, #{right_var}")}
       """
 
       {code, out, next}
@@ -128,7 +129,7 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
         """
         #{item_code}
           ElmcValue *#{array_name}[#{count}] = { #{item_list} };
-          ElmcValue *#{out} = elmc_list_from_values_take(#{array_name}, #{count});
+          #{RcRuntimeEmit.assign_call(env, out, "elmc_list_from_values_take", "#{array_name}, #{count}")}
           #{list_probe}
         """
       end
@@ -165,7 +166,7 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
 
     code = """
       static const elmc_int_t #{values_name}[#{count}] = { #{values} };
-      ElmcValue *#{out} = elmc_list_from_int_array(#{values_name}, #{count});
+      #{RcRuntimeEmit.assign_call(env, out, "elmc_list_from_int_array", "#{values_name}, #{count}")}
       #{list_probe}
     """
 
@@ -186,7 +187,7 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
 
     code = """
       static const elmc_int_t #{values_name}[#{count}][2] = { #{values} };
-      ElmcValue *#{out} = elmc_list_from_tuple2_int_array(#{values_name}, #{count});
+      #{RcRuntimeEmit.assign_call(env, out, "elmc_list_from_tuple2_int_array", "#{values_name}, #{count}")}
       #{list_probe}
     """
 
@@ -233,7 +234,7 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
     source = env_source_ref(env, name)
     next = counter + 1
     var = "tmp_#{next}"
-    {"ElmcValue *#{var} = elmc_new_int(elmc_string_length(#{source}));", var, next}
+    {RcRuntimeEmit.assign_call(env, var, "elmc_new_int", "elmc_string_length(#{source})"), var, next}
   end
 
   @spec compile_bound_char_from_code(Types.compile_env(), String.t(), Types.compile_counter()) ::

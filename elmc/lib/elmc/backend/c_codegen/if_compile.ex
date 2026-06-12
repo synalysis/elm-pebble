@@ -87,14 +87,14 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
         {cond_code <> branch_code, branch_ref, counter}
 
       _ ->
-        next = counter + 1
-        out = "tmp_#{next}"
+        {out, branch_counter, declare_out?} = CaseCompile.result_out_binding(env, counter)
+        branch_counter = CaseCompile.advance_counter_past_out(branch_counter, out, declare_out?)
 
-        then_env = RecordCompile.fresh_subexpr_cache(env)
-        else_env = RecordCompile.fresh_subexpr_cache(env)
+        then_env = branch_env(env, out)
+        else_env = branch_env(env, out)
 
         {then_code, then_assignment, counter} =
-          CaseCompile.branch_assignment(then_expr, out, then_env, next)
+          CaseCompile.branch_assignment(then_expr, out, then_env, branch_counter)
 
         {else_code, else_assignment, counter} =
           CaseCompile.branch_assignment(else_expr, out, else_env, counter)
@@ -109,7 +109,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
           Enum.join(
             [
               cond_code,
-              "ElmcValue *#{out};",
+              CaseCompile.result_out_decl(out, declare_out?),
               "if (#{cond_ref}) {",
               format_if_branch_body(then_body),
               "} else {",
@@ -132,17 +132,17 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
         ) :: Types.compile_result()
   defp compile_boxed_cond(cond_expr, then_expr, else_expr, env, counter) do
     {cond_code, cond_var, counter} = Host.compile_expr(cond_expr, env, counter)
-    next = counter + 1
-    out = "tmp_#{next}"
+    {out, branch_counter, declare_out?} = CaseCompile.result_out_binding(env, counter)
+    branch_counter = CaseCompile.advance_counter_past_out(branch_counter, out, declare_out?)
 
-    then_env = RecordCompile.fresh_subexpr_cache(env)
-    else_env = RecordCompile.fresh_subexpr_cache(env)
+    then_env = branch_env(env, out)
+    else_env = branch_env(env, out)
 
-    {then_code, then_assignment, counter} =
-      CaseCompile.branch_assignment(then_expr, out, then_env, next)
+    {then_code, then_assignment, _counter} =
+      CaseCompile.branch_assignment(then_expr, out, then_env, branch_counter)
 
     {else_code, else_assignment, counter} =
-      CaseCompile.branch_assignment(else_expr, out, else_env, counter)
+      CaseCompile.branch_assignment(else_expr, out, else_env, branch_counter)
 
     then_body = maybe_extract_if_branch_helper(then_expr, then_env, out, then_code, then_assignment)
     else_body = maybe_extract_if_branch_helper(else_expr, else_env, out, else_code, else_assignment)
@@ -151,7 +151,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
       Enum.join(
         [
           cond_code,
-          "ElmcValue *#{out};",
+          CaseCompile.result_out_decl(out, declare_out?),
           "if (elmc_as_int(#{cond_var}) != 0) {",
           format_if_branch_body(then_body),
           "} else {",
@@ -163,6 +163,12 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
       )
 
     {code, out, counter}
+  end
+
+  defp branch_env(env, out) do
+    env
+    |> RecordCompile.fresh_subexpr_cache()
+    |> Map.update(:__declared_outs__, MapSet.new([out]), &MapSet.put(&1, out))
   end
 
   defp format_if_branch_body(body) do
@@ -181,17 +187,14 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
           helper_name =
             "elmc_if_branch_helper_#{Util.safe_c_suffix(Map.get(env, :__module__, "Main"))}_#{Util.safe_c_suffix(Map.get(env, :__function_name__, "fn"))}_#{helper_id}"
 
-          helper_out = "branch_out"
-          helper_assignment = String.replace(assignment_code, "#{out} =", "#{helper_out} =")
-
           helper_param_decls = HelperParams.param_decls(params)
 
           helper_def = """
           static ElmcValue *#{helper_name}(#{helper_param_decls}) {
-            ElmcValue *#{helper_out} = NULL;
+            ElmcValue *#{out} = NULL;
           #{CSource.indent(branch_code, 2)}
-            #{helper_assignment}
-            return #{helper_out};
+            #{assignment_code}
+            return #{out};
           }
           """
 
@@ -215,7 +218,9 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
   end
 
   defp extract_if_branch_helper?(env, body) do
-    not Map.get(env, :__inside_lambda__, false) and
+    not Map.get(env, :__rc_catch__, false) and
+      not Map.get(env, :__rc_required__, false) and
+      not Map.get(env, :__inside_lambda__, false) and
       Process.get(:elmc_generic_helper_defs) != nil and emitted_line_count(body) >= 70
   end
 

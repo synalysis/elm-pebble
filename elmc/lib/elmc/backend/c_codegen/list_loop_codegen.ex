@@ -1,6 +1,8 @@
 defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
+
   alias Elmc.Backend.CCodegen.Types
 
   @runtime_source_comments %{
@@ -59,7 +61,7 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     code = """
       #{runtime_source_comment_line("elmc_list_repeat", 6)}ElmcValue *#{acc} = elmc_list_nil();
       for (elmc_int_t #{index_var} = 0; #{index_var} < #{count_ref}; #{index_var}++) {
-        ElmcValue *#{cons} = elmc_list_cons(#{value_ref}, #{acc});
+        #{RcRuntimeEmit.list_cons_retain_assign(cons, "#{value_ref}, #{acc}")}
         if (!#{cons}) break;
         elmc_release(#{acc});
         #{acc} = #{cons};
@@ -95,13 +97,36 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     {code, head}
   end
 
-  @spec emit_forward_list_append(pos_integer(), String.t()) :: String.t()
-  def emit_forward_list_append(loop_id, item_expr) do
+  @spec emit_forward_list_append(pos_integer(), String.t(), keyword()) :: String.t()
+  def emit_forward_list_append(loop_id, item_expr, opts \\ []) do
     cell = forward_cell(loop_id)
     tail = forward_tail(loop_id)
+    owned? = Keyword.get(opts, :owned, false)
+    rc_mode? = Keyword.get(opts, :rc_mode, false)
+
+    cons =
+      cond do
+        owned? and rc_mode? ->
+          """
+          ElmcValue *#{cell} = NULL;
+          Rc = elmc_list_cons(&#{cell}, #{item_expr}, elmc_list_nil());
+          CHECK_RC(Rc);
+          """
+          |> String.trim()
+
+        owned? ->
+          RcRuntimeEmit.fusion_assign(cell, "elmc_list_cons", "#{item_expr}, elmc_list_nil()")
+
+        true ->
+          """
+          ElmcValue *#{cell} = NULL;
+          if (elmc_list_cons(&#{cell}, #{item_expr}, elmc_list_nil()) != RC_SUCCESS) #{cell} = elmc_int_zero();
+          """
+          |> String.trim()
+      end
 
     """
-        ElmcValue *#{cell} = elmc_list_cons(#{item_expr}, elmc_list_nil());
+        #{cons}
         *#{tail} = #{cell};
         #{tail} = &((ElmcCons *)#{cell}->payload)->tail;
     """

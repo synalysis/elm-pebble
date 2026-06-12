@@ -1162,7 +1162,7 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
        #{range_code}
        #{context_prelude}
         elmc_int_t direct_step_#{next} = (#{first_ref} <= #{last_ref}) ? 1 : -1;
-        for (elmc_int_t direct_item_i_#{next} = #{first_ref}; direct_rc == 0; direct_item_i_#{next} += direct_step_#{next}) {
+        for (elmc_int_t direct_item_i_#{next} = #{first_ref}; Rc == RC_SUCCESS; direct_item_i_#{next} += direct_step_#{next}) {
           #{command_emits}
           if (direct_item_i_#{next} == #{last_ref}) break;
         }
@@ -1225,7 +1225,7 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
        #{context_prelude}
         elmc_int_t direct_index_#{next} = 0;
         elmc_int_t direct_step_#{next} = (#{first_ref} <= #{last_ref}) ? 1 : -1;
-        for (elmc_int_t direct_item_i_#{next} = #{first_ref}; direct_rc == 0; direct_item_i_#{next} += direct_step_#{next}) {
+        for (elmc_int_t direct_item_i_#{next} = #{first_ref}; Rc == RC_SUCCESS; direct_item_i_#{next} += direct_step_#{next}) {
           #{command_emits}
           if (direct_item_i_#{next} == #{last_ref}) break;
           direct_index_#{next} += 1;
@@ -1286,7 +1286,7 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
        #{context_prelude}
        ElmcValue *direct_cursor_#{next} = #{list_var};
        elmc_int_t direct_index_#{next} = 0;
-       while (direct_rc == 0 && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
+       while (Rc == RC_SUCCESS && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
          ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
          #{command_emits}
          direct_index_#{next} += 1;
@@ -1392,7 +1392,7 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
        #{prefix_code}
        #{context_prelude}
        ElmcValue *direct_cursor_#{next} = #{list_var};
-       while (direct_rc == 0 && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
+       while (Rc == RC_SUCCESS && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
          ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
          #{command_emits}
          direct_cursor_#{next} = direct_node_#{next}->tail;

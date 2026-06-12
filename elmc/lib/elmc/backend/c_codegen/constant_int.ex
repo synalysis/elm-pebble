@@ -7,6 +7,7 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
   alias Elmc.Backend.CCodegen.ImmortalStaticList
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.UnionMacros
   alias Elmc.Backend.CCodegen.Util
 
@@ -245,7 +246,7 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
         counter = counter + 1
         out = "tmp_#{counter}"
         ref = UnionMacros.literal_ref(expr, env) || format_annotated_int(value, literal_decl_name(expr, env))
-        {:ok, "ElmcValue *#{out} = elmc_new_int(#{ref});\n", out, counter}
+        {:ok, RcRuntimeEmit.assign_call(env, out, "elmc_new_int", ref) <> "\n", out, counter}
 
       :error ->
         :error

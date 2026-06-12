@@ -272,12 +272,14 @@ defmodule Elmc.Backend.CCodegen.FoldlOffsetPatch do
             break;
           }
         }
-        ElmcValue *head = elmc_new_int(cell_value);
+        ElmcValue *head = NULL;
+        if (elmc_new_int(&head, cell_value) != RC_SUCCESS) head = elmc_int_zero();
         if (!head) {
           elmc_release(out);
           return elmc_retain(board);
         }
-        ElmcValue *cell = elmc_list_cons(head, elmc_list_nil());
+        ElmcValue *cell = NULL;
+        if (elmc_list_cons(&cell, head, elmc_list_nil()) != RC_SUCCESS) cell = elmc_list_nil();
         elmc_release(head);
         if (!cell) {
           elmc_release(out);

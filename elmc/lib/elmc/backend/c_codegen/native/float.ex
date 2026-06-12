@@ -124,7 +124,7 @@ defmodule Elmc.Backend.CCodegen.Native.Float do
     {
       """
       #{code}
-        ElmcValue *#{out} = elmc_new_float(#{value_ref});
+        ElmcValue *#{out} = elmc_new_float_take(#{value_ref});
       """,
       out,
       next
