@@ -602,7 +602,25 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
   defp direct_string_literal_value(%{op: :string_literal, value: value}), do: {:ok, value}
   defp direct_string_literal_value(_), do: :error
 
-  defp affine_text_options_ref(%{op: :qualified_call, target: target, args: []}, _env) do
+  defp affine_text_options_ref(options, env) do
+    normalized = Host.text_options_expr(options)
+
+    case Host.hoisted_native_int_lookup(env, normalized) do
+      {:ok, ref} ->
+        {:ok, ref}
+
+      :error ->
+        case Host.hoisted_native_int_lookup(env, options) do
+          {:ok, ref} ->
+            {:ok, ref}
+
+          :error ->
+            affine_text_options_ref_literal(options, env)
+        end
+    end
+  end
+
+  defp affine_text_options_ref_literal(%{op: :qualified_call, target: target, args: []}, _env) do
     case Host.normalize_special_target(target) do
       "Pebble.Ui.defaultTextOptions" ->
         {:ok,
@@ -613,14 +631,14 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
     end
   end
 
-  defp affine_text_options_ref(%{op: :qualified_call, target: target, args: [inner]}, env) do
+  defp affine_text_options_ref_literal(%{op: :qualified_call, target: target, args: [inner]}, env) do
     case Host.normalize_special_target(target) do
       "Pebble.Ui.alignCenter" -> affine_text_options_ref(inner, env)
       _ -> :error
     end
   end
 
-  defp affine_text_options_ref(options, env),
+  defp affine_text_options_ref_literal(options, env),
     do: direct_must_literal_int(Host.text_options_expr(options), env)
 
   defp affine_bound_dimension(field_expr, index_param, item_param, bindings, env) do
@@ -1216,16 +1234,21 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
            emit_affine_context_prelude(Map.get(spec, :context_settings, []), env, counter),
          {:ok, context_epilogue, counter} <-
            emit_affine_context_epilogue(Map.get(spec, :context_settings, []), env, counter) do
-      command_emits = affine_draw_range_command_emits(spec, next, mode)
+      {hoisted_spec, hoist_before_loop, hoist_loop_head} =
+        affine_prepare_grid_coord_hoist(spec, next, mode)
+
+      command_emits = affine_draw_range_command_emits(hoisted_spec, next, mode)
 
       {:ok,
        """
        #{prefix_code}
        #{range_code}
        #{context_prelude}
+       #{hoist_before_loop}
         elmc_int_t direct_index_#{next} = 0;
         elmc_int_t direct_step_#{next} = (#{first_ref} <= #{last_ref}) ? 1 : -1;
         for (elmc_int_t direct_item_i_#{next} = #{first_ref}; Rc == RC_SUCCESS; direct_item_i_#{next} += direct_step_#{next}) {
+          #{hoist_loop_head}
           #{command_emits}
           if (direct_item_i_#{next} == #{last_ref}) break;
           direct_index_#{next} += 1;
@@ -1277,17 +1300,22 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
            emit_affine_context_prelude(Map.get(spec, :context_settings, []), env, counter),
          {:ok, context_epilogue, counter} <-
            emit_affine_context_epilogue(Map.get(spec, :context_settings, []), env, counter) do
-      command_emits = affine_draw_range_command_emits(spec, next, mode)
+      {hoisted_spec, hoist_before_loop, hoist_loop_head} =
+        affine_prepare_grid_coord_hoist(spec, next, mode)
+
+      command_emits = affine_draw_range_command_emits(hoisted_spec, next, mode)
 
       {:ok,
        """
        #{list_code}
        #{prefix_code}
        #{context_prelude}
+       #{hoist_before_loop}
        ElmcValue *direct_cursor_#{next} = #{list_var};
        elmc_int_t direct_index_#{next} = 0;
        while (Rc == RC_SUCCESS && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
          ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
+         #{hoist_loop_head}
          #{command_emits}
          direct_index_#{next} += 1;
          direct_cursor_#{next} = direct_node_#{next}->tail;
@@ -1329,6 +1357,22 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
            emit_affine_context_prelude(Map.get(spec, :context_settings, []), env, counter),
          {:ok, context_epilogue, counter} <-
            emit_affine_context_epilogue(Map.get(spec, :context_settings, []), env, counter) do
+      static_mode =
+        affine_indexed_static_mode(
+          index_param,
+          item_param,
+          prefix_refs,
+          Map.get(spec, :prefix_shapes, []),
+          native_prefix_fields,
+          "0",
+          "0"
+        )
+
+      {hoisted_spec, hoist_before_loop, _} =
+        affine_prepare_grid_coord_hoist(spec, next, static_mode)
+
+      hoist_plan = affine_grid_coord_hoist_plan_from_spec(spec)
+
       {body, counter} =
         static_items
         |> Enum.with_index()
@@ -1346,10 +1390,17 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
               item_ref
             )
 
-          emits = affine_draw_range_command_emits(spec, next, mode)
+          hoist_loop_head =
+            case hoist_plan do
+              nil -> ""
+              plan -> emit_affine_grid_hoist_loop_head(plan, next, mode)
+            end
+
+          emits = affine_draw_range_command_emits(hoisted_spec, next, mode)
 
           snippet = """
           #{item_code}
+            #{hoist_loop_head}
             #{emits}
           """
 
@@ -1360,6 +1411,7 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
        """
        #{prefix_code}
        #{context_prelude}
+       #{hoist_before_loop}
        #{body}
        #{context_epilogue}
        #{prefix_release_code}
@@ -1457,25 +1509,24 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
   defp affine_draw_skip_nonempty_fill_close(_skip_open),
     do: "\n          }"
 
-  defp affine_draw_skip_empty_text_open(
-         %{label: {:from_int, item_param, _zero_label}},
-         next,
-         mode
-       ) do
-    item_ref = affine_loop_item_ref(item_param, next, mode)
-    "if (#{item_ref} != 0) {\n          "
-  end
-
   defp affine_draw_skip_empty_text_open(_command, _next, _mode), do: ""
 
-  defp affine_draw_skip_empty_text_close(""), do: ""
+  defp affine_draw_skip_empty_text_close(_skip_open), do: ""
 
-  defp affine_draw_skip_empty_text_close(_skip_open),
-    do: "\n          }"
-
-  defp affine_draw_text_copy(%{label: {:from_int, item_param, _zero_label}}, next, mode) do
+  defp affine_draw_text_copy(%{label: {:from_int, item_param, zero_label}}, next, mode) do
     item_ref = affine_loop_item_ref(item_param, next, mode)
-    CSource.indent(direct_int_text_copy_body(item_ref), 4)
+    zero_copy = direct_text_copy_body_for_literal(zero_label)
+
+    CSource.indent(
+      """
+      if (#{item_ref} == 0) {
+      #{CSource.indent(zero_copy, 2)}
+      } else {
+      #{CSource.indent(direct_int_text_copy_body(item_ref), 2)}
+      }
+      """,
+      4
+    )
   end
 
   defp affine_draw_text_copy(%{label: {:literal, literal}}, _next, _mode) do
@@ -1538,26 +1589,7 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
 
   defp direct_int_text_copy_body(item_ref) do
     """
-    {
-      elmc_int_t direct_value = #{item_ref};
-      char direct_digits[32];
-      int direct_digit_count = 0;
-      int direct_text_i = 0;
-      int direct_negative = direct_value < 0;
-      if (direct_negative) {
-        scene_cmd.text[direct_text_i++] = '-';
-      }
-      do {
-        elmc_int_t direct_digit = direct_value % 10;
-        if (direct_digit < 0) direct_digit = -direct_digit;
-        direct_digits[direct_digit_count++] = (char)('0' + direct_digit);
-        direct_value /= 10;
-      } while (direct_value != 0 && direct_digit_count < (int)sizeof(direct_digits));
-      while (direct_digit_count > 0 && direct_text_i < (int)sizeof(scene_cmd.text) - 1) {
-        scene_cmd.text[direct_text_i++] = direct_digits[--direct_digit_count];
-      }
-      scene_cmd.text[direct_text_i] = '\\0';
-    }
+    elmc_scene_text_from_nonzero_int(scene_cmd.text, #{item_ref});
     """
   end
 
@@ -1575,6 +1607,12 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
       "scene_cmd.p#{index} = #{value};"
     end)
   end
+
+  defp affine_draw_param_value({:hoist, :cell_x}, next, _mode), do: "direct_cell_x_#{next}"
+
+  defp affine_draw_param_value({:hoist, :cell_y}, next, _mode), do: "direct_cell_y_#{next}"
+
+  defp affine_draw_param_value({:hoist, :text_y}, next, _mode), do: "direct_text_y_#{next}"
 
   defp affine_draw_param_value({:mul, _param_name, scale}, next, :map),
     do: "(direct_item_i_#{next} * #{scale})"
@@ -1760,4 +1798,150 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
 
   defp affine_param_names_match?(left, right),
     do: affine_binding_name(left) == affine_binding_name(right)
+
+  defp affine_prepare_grid_coord_hoist(spec, next, mode) do
+    case affine_grid_coord_hoist_plan(affine_draw_commands(spec)) do
+      nil ->
+        {spec, "", ""}
+
+      plan ->
+        hoisted_commands = affine_hoist_grid_coord_commands(affine_draw_commands(spec), plan)
+
+        hoisted_spec =
+          case spec do
+            %{commands: _} = s -> Map.put(s, :commands, hoisted_commands)
+            _ -> %{commands: hoisted_commands, context_settings: Map.get(spec, :context_settings, [])}
+          end
+
+        {hoisted_spec, emit_affine_grid_hoist_before_loop(plan, next, mode),
+         emit_affine_grid_hoist_loop_head(plan, next, mode)}
+    end
+  end
+
+  defp affine_grid_coord_hoist_plan_from_spec(spec),
+    do: affine_grid_coord_hoist_plan(affine_draw_commands(spec))
+
+  defp affine_grid_coord_hoist_plan(commands) when is_list(commands) do
+    rect = Enum.find(commands, &affine_rect_draw_command?/1)
+    text = Enum.find(commands, &match?(%{kind: :text}, &1))
+
+    with %{params: [x_param, y_param | _]} <- rect,
+         %{params: [_font, text_x, text_y | _]} <- text,
+         true <- affine_grid_coord_param_equal?(x_param, text_x),
+         {:ok, stride, mod, divisor, index_param} <- affine_grid_row_stride(x_param, y_param),
+         {:ok, text_y_offset} <- affine_grid_text_y_offset(text_y, y_param) do
+      %{
+        base_x: elem(x_param, 1),
+        base_y: elem(y_param, 1),
+        stride: stride,
+        mod: mod,
+        divisor: divisor,
+        index_param: index_param,
+        text_y_offset: text_y_offset
+      }
+    else
+      _ -> nil
+    end
+  end
+
+  defp affine_rect_draw_command?(command) do
+    command.kind == draw_kind(:rect) or command.kind == draw_kind(:fill_rect)
+  end
+
+  defp affine_grid_coord_param_equal?(left, right), do: left == right
+
+  defp affine_grid_row_stride(
+         {:add_mod_mul, _base_x, {:mod_mul, index_param, mod, stride}},
+         {:add_idiv_mul, _base_y, {:idiv_mul, index_param2, divisor, stride2}}
+       )
+       when index_param == index_param2 and stride == stride2 do
+    {:ok, stride, mod, divisor, index_param}
+  end
+
+  defp affine_grid_row_stride(_, _), do: :error
+
+  defp affine_grid_text_y_offset(
+         {:add_prefix_idiv, {:add_idiv_mul, base_y, idiv_mul}, offset},
+         {:add_idiv_mul, base_y, idiv_mul}
+       ),
+       do: {:ok, offset}
+
+  defp affine_grid_text_y_offset({:add_idiv_mul, base_y, idiv_mul}, {:add_idiv_mul, base_y, idiv_mul}),
+    do: {:ok, nil}
+
+  defp affine_grid_text_y_offset(_, _), do: :error
+
+  defp affine_hoist_grid_coord_commands(commands, plan) do
+    Enum.map(commands, fn command ->
+      cond do
+        affine_rect_draw_command?(command) ->
+          [x, y | rest] = command.params
+
+          if affine_grid_coord_param_equal?(x, {:add_mod_mul, plan.base_x, affine_grid_mod_mul(plan)}) and
+               affine_grid_coord_param_equal?(y, {:add_idiv_mul, plan.base_y, affine_grid_idiv_mul(plan)}) do
+            %{command | params: [{:hoist, :cell_x}, {:hoist, :cell_y} | rest]}
+          else
+            command
+          end
+
+        match?(%{kind: :text}, command) ->
+          [font, x, _y | rest] = command.params
+          hoisted_y = if plan.text_y_offset, do: {:hoist, :text_y}, else: {:hoist, :cell_y}
+
+          if affine_grid_coord_param_equal?(x, {:add_mod_mul, plan.base_x, affine_grid_mod_mul(plan)}) do
+            %{command | params: [font, {:hoist, :cell_x}, hoisted_y | rest]}
+          else
+            command
+          end
+
+        true ->
+          command
+      end
+    end)
+  end
+
+  defp affine_grid_mod_mul(%{mod: mod, index_param: index_param, stride: stride}) do
+    {:mod_mul, index_param, mod, stride}
+  end
+
+  defp affine_grid_idiv_mul(%{divisor: divisor, index_param: index_param, stride: stride}) do
+    {:idiv_mul, index_param, divisor, stride}
+  end
+
+  defp emit_affine_grid_hoist_before_loop(plan, next, mode) do
+    stride = affine_stride_c_value(plan.stride, next, mode)
+
+    """
+    const elmc_int_t direct_stride_#{next} = #{stride};
+    """
+  end
+
+  defp emit_affine_grid_hoist_loop_head(plan, next, mode) do
+    index_ref = affine_loop_ref(plan.index_param, next, mode)
+    base_x = affine_operand_c_value(plan.base_x, next, mode)
+    base_y = affine_operand_c_value(plan.base_y, next, mode)
+
+    lines = [
+      "const elmc_int_t direct_col_#{next} = #{index_ref} % #{plan.mod};",
+      "const elmc_int_t direct_cell_x_#{next} = #{base_x} + (direct_col_#{next} * direct_stride_#{next});",
+      "const elmc_int_t direct_cell_y_#{next} = #{base_y} + ((#{index_ref} / #{plan.divisor}) * direct_stride_#{next});"
+    ]
+
+    lines =
+      if plan.text_y_offset do
+        lines ++
+          [
+            "const elmc_int_t direct_text_y_#{next} = direct_cell_y_#{next} + #{affine_grid_text_y_offset_c(plan.text_y_offset, next, mode)};"
+          ]
+      else
+        lines
+      end
+
+    Enum.map_join(lines, "\n        ", & &1)
+  end
+
+  defp affine_grid_text_y_offset_c({:prefix_idiv, idx, field, subtrahend, divisor}, _next, mode) do
+    field_ref = affine_prefix_field_ref(mode, idx, field)
+    "((#{field_ref} - #{subtrahend}) / #{divisor})"
+  end
 end

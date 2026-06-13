@@ -550,6 +550,29 @@ defmodule Ide.Compiler do
     result
     |> maybe_attach_debugger_contract(project_dir)
     |> maybe_attach_elmx_artifacts(project_dir, revision, opts)
+    |> maybe_attach_stack_report(project_dir)
+  end
+
+  @spec maybe_attach_stack_report(compile_result(), String.t()) :: compile_result()
+  defp maybe_attach_stack_report(result, project_dir) when is_map(result) do
+    stack_report_path = Path.join(project_dir, ".elmc-build/elmc_stack_report.json")
+
+    case Elmc.Backend.CCodegen.StackReport.read_linked_binary(stack_report_path) do
+      %{"available" => true} = linked ->
+        result
+        |> Map.put(:elmc_linked_binary, linked)
+        |> maybe_put_stack_report_detail(linked)
+
+      _ ->
+        result
+    end
+  end
+
+  defp maybe_put_stack_report_detail(result, linked) do
+    case Elmc.Backend.CCodegen.StackReport.flash_detail(linked) do
+      detail when is_binary(detail) -> Map.put(result, :detail, detail)
+      _ -> result
+    end
   end
 
   defp maybe_attach_runtime_artifacts(result, _project_dir, _revision, _opts), do: result

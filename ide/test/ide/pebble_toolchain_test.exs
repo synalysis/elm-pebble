@@ -442,7 +442,7 @@ defmodule Ide.PebbleToolchainTest do
     assert template =~ "graphics_context_set_antialiased(ctx, style->antialiased);"
 
     assert template =~
-             "#ifndef PBL_COLOR\n          graphics_context_set_antialiased(ctx, false);\n          graphics_context_set_stroke_width(ctx, 2);\n#endif\n          graphics_context_set_stroke_color(ctx, color_from_code(cmd->p4));\n          graphics_draw_rect(ctx, GRect(x, y, w, h));"
+             "#ifndef PBL_COLOR\n          graphics_context_set_antialiased(ctx, false);\n          rect_sw = 2;\n          graphics_context_set_stroke_width(ctx, rect_sw);\n#endif\n          graphics_context_set_stroke_color(ctx, color_from_code(cmd->p4));\n          graphics_draw_rect(ctx, stroke_outline_rect_bounds(x, y, w, h, rect_sw));"
 
     assert template =~
              "#ifndef PBL_COLOR\n        graphics_context_set_antialiased(ctx, false);\n#endif\n        graphics_draw_text(ctx, cmd->text, font, text_rect, overflow, align, NULL);"

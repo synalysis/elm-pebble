@@ -164,7 +164,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     socket =
       socket
       |> assign(:build_status, result.status)
-      |> assign(:build_output, result.output)
+      |> assign(:build_output, flash_enriched_output(result.output, result.package))
       |> assign(:build_issues, result.issues)
       |> assign(:publish_artifact_path, result.package.artifact_path)
       |> assign(:publish_app_root, package_app_root(result.package))
@@ -365,6 +365,27 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
 
   defp package_app_root(%{raw: %{app_root: app_root}}) when is_binary(app_root), do: app_root
   defp package_app_root(_package), do: nil
+
+  defp flash_enriched_output(output, package) when is_binary(output) do
+    case flash_summary_for_app(package_app_root(package)) do
+      nil -> output
+      line -> String.trim_trailing(output) <> "\n\n" <> line
+    end
+  end
+
+  defp flash_enriched_output(output, _package), do: output
+
+  defp flash_summary_for_app(app_root) when is_binary(app_root) do
+    app_root
+    |> Path.join("src/c/elmc/elmc_stack_report.json")
+    |> Elmc.Backend.CCodegen.StackReport.read_linked_binary()
+    |> case do
+      %{"available" => true} = linked -> Elmc.Backend.CCodegen.StackReport.flash_detail(linked)
+      _ -> nil
+    end
+  end
+
+  defp flash_summary_for_app(_), do: nil
 
   @spec schedule_compiler_check(socket()) :: socket()
   def schedule_compiler_check(socket) do
@@ -837,7 +858,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
         target_platforms: [emulator_target],
         source_roots: project.source_roots,
         emulator_storage_logs: Keyword.get(opts, :emulator_storage_logs, false),
-        emulator_heap_log: Keyword.get(opts, :emulator_heap_log, true)
+        emulator_heap_log: Keyword.get(opts, :emulator_heap_log, false)
       ]
 
     with :ok <- Projects.ensure_packagable_workspace(project),

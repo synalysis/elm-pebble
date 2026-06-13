@@ -4,6 +4,7 @@ defmodule Ide.Debugger.RuntimeApi do
   alias Ide.Debugger.AgentSession
   alias Ide.Debugger.DebuggerContractSnapshot
   alias Ide.Debugger.DebuggerStep
+  alias Ide.Debugger.EmulatorRcFailApply
   alias Ide.Debugger.HotReloadSession
   alias Ide.Debugger.RuntimeBackgroundDrains
   alias Ide.Debugger.RuntimeExecutorConfig
@@ -79,5 +80,11 @@ defmodule Ide.Debugger.RuntimeApi do
         {:ok, state}
       end
     end)
+  end
+
+  @spec ingest_emulator_rc_fail(String.t(), map()) :: {:ok, runtime_state()}
+  def ingest_emulator_rc_fail(project_slug, attrs)
+      when is_binary(project_slug) and is_map(attrs) do
+    EmulatorRcFailApply.apply(project_slug, attrs)
   end
 end

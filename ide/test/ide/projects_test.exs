@@ -41,6 +41,26 @@ defmodule Ide.ProjectsTest do
     assert Projects.active_project().slug == "beta"
   end
 
+  test "create_project returns changeset error when slug already exists" do
+    assert {:ok, _project} =
+             Projects.create_project(%{
+               "name" => "Digital",
+               "slug" => "digital",
+               "target_type" => "watchface",
+               "template" => "watchface-digital"
+             })
+
+    assert {:error, changeset} =
+             Projects.create_project(%{
+               "name" => "Digital Again",
+               "slug" => "digital",
+               "target_type" => "watchface",
+               "template" => "watchface-digital"
+             })
+
+    assert %{slug: ["is already in use. Choose a different slug."]} = errors_on(changeset)
+  end
+
   test "failed create removes workspace directories" do
     alias Ide.Paths
 

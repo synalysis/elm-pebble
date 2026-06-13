@@ -41,6 +41,7 @@ defmodule Ide.Debugger.Types.ElmcSurfaceFields do
         "elmc_compile_revision" => field(attrs, :revision),
         "elmc_compile_cached" => bool_wire(cached)
       }
+      |> Map.merge(linked_binary_fields(attrs))
 
     if is_binary(detail) and detail != "" do
       Map.put(base, "elmc_compile_detail", detail)
@@ -167,6 +168,26 @@ defmodule Ide.Debugger.Types.ElmcSurfaceFields do
   @spec bool_wire(boolean()) :: String.t()
   defp bool_wire(true), do: "true"
   defp bool_wire(false), do: "false"
+
+  @spec linked_binary_fields(CompileIngestAttrs.t() | CompileIngestAttrs.wire_map()) ::
+          wire_map()
+  defp linked_binary_fields(attrs) when is_map(attrs) do
+    linked = field(attrs, :elmc_linked_binary)
+
+    case linked do
+      %{"available" => true} = map ->
+        %{
+          "elmc_linked_binary" => map,
+          "elmc_last_fail_code" => field(attrs, :elmc_last_fail_code),
+          "elmc_last_fail_line" => field(attrs, :elmc_last_fail_line)
+        }
+        |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+        |> Map.new()
+
+      _ ->
+        %{}
+    end
+  end
 
   @spec maybe_put_artifact(artifact_fields(), String.t(), Types.wire_map() | String.t() | nil) ::
           artifact_fields()

@@ -1,7 +1,7 @@
 defmodule Elmc.Backend.CCodegen.ValueSlots do
   @moduledoc false
 
-  @owned_tmp ~r/^(tmp_\d+|head_\d+|call_args_\d+|list_items_\d+|rec_values_\d+)$/
+  @owned_tmp ~r/^(tmp_\d+|head_\d+|call_args_\d+|list_items_\d+|rec_values_\d+|list_map_item_\d+|list_map_cons_\d+|list_map_rev_\d+|list_fwd_cell_\d+|list_repeat_cons_\d+)$/
 
   @spec reset() :: :ok
   def reset do

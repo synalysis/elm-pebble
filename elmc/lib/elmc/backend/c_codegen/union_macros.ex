@@ -8,8 +8,10 @@ defmodule Elmc.Backend.CCodegen.UnionMacros do
 
   @type macro_map :: %{optional(String.t()) => String.t()}
 
-  @spec definitions(IR.t()) :: {String.t(), macro_map()}
-  def definitions(%IR{} = ir) do
+  @spec definitions(IR.t(), keyword()) :: {String.t(), macro_map()}
+  def definitions(%IR{} = ir, opts \\ []) do
+    used = Keyword.get(opts, :used_union_ctors)
+
     qualified_entries =
       Enum.flat_map(ir.modules, fn mod ->
         mod.unions
@@ -34,7 +36,9 @@ defmodule Elmc.Backend.CCodegen.UnionMacros do
       end)
 
     entries =
-      Enum.sort_by(qualified_entries ++ unqualified_entries, fn {name, _macro, _tag} -> name end)
+      (qualified_entries ++ unqualified_entries)
+      |> Enum.sort_by(fn {name, _macro, _tag} -> name end)
+      |> maybe_filter_used_ctors(used)
 
     defines =
       entries
@@ -45,6 +49,20 @@ defmodule Elmc.Backend.CCodegen.UnionMacros do
       |> Map.new(fn {name, macro, _tag} -> {name, macro} end)
 
     {defines, macro_map}
+  end
+
+  defp maybe_filter_used_ctors(entries, %MapSet{} = used) do
+    Enum.filter(entries, fn {name, _macro, _tag} -> union_ctor_used?(name, used) end)
+  end
+
+  defp maybe_filter_used_ctors(entries, _), do: entries
+
+  defp union_ctor_used?(name, used) do
+    MapSet.member?(used, name) or
+      (not String.contains?(name, ".") and
+         Enum.any?(used, fn qualified ->
+           String.ends_with?(qualified, "." <> name)
+         end))
   end
 
   @spec literal_ref(Types.ir_expr(), Types.compile_env() | nil) :: String.t() | nil

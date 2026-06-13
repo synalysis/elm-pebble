@@ -368,8 +368,6 @@ defmodule Elmc.Backend.CCodegen.Patterns do
     |> Kernel.==("List Int")
   end
 
-  defp list_int_subject?(_env, _subject_ref), do: false
-
   defp maybe_mark_list_int_cons(env, head, tail, true) do
     env
     |> mark_list_int_head(head)

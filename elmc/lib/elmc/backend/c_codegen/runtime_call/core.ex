@@ -802,7 +802,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
           ElmcValue *#{head} = #{node}->head;
       #{indent_loop_body(body_code)}
           if (#{body_ref}) {
-      #{ListLoopCodegen.emit_forward_list_append(loop_id, head)}
+      #{ListLoopCodegen.emit_forward_list_append(loop_id, head, env: env)}
           }
           #{cursor} = #{node}->tail;
         }
@@ -860,7 +860,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
           elmc_release(#{right}_tuple);
       #{indent_loop_body(body_code)}
           if (#{body_ref}) {
-      #{ListLoopCodegen.emit_forward_list_append(loop_id, head)}
+      #{ListLoopCodegen.emit_forward_list_append(loop_id, head, env: env)}
           }
           #{cursor} = #{node}->tail;
         }
@@ -964,7 +964,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
       #{indent_loop_body(cond_code)}
             if (#{keep_cond}) {
       #{indent_loop_body(just_code)}
-              #{RcRuntimeEmit.fusion_assign(cons, "elmc_list_cons", "#{just_var} ? #{just_var} : elmc_int_zero(), #{rev}")}
+              #{RcRuntimeEmit.fusion_assign(cons, "elmc_list_cons", "#{just_var} ? #{just_var} : elmc_int_zero(), #{rev}", env)}
               elmc_release(#{just_var});
               elmc_release(#{rev});
               #{rev} = #{cons};
@@ -1022,7 +1022,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     #{indent_loop_body(cond_code)}
         if (#{keep_cond}) {
     #{indent_loop_body(just_code)}
-    #{ListLoopCodegen.emit_forward_list_append(loop_id, "#{just_var} ? #{just_var} : elmc_int_zero()", owned: true, rc_mode: RcRuntimeEmit.rc_mode?(env))}
+    #{ListLoopCodegen.emit_forward_list_append(loop_id, "#{just_var} ? #{just_var} : elmc_int_zero()", owned: true, env: env)}
           elmc_release(#{just_var});
         }
         #{cursor} = #{node}->tail;
@@ -1089,7 +1089,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
           }
         }
         if (#{keep_flag}) {
-    #{ListLoopCodegen.emit_forward_list_append(loop_id, payload)}
+    #{ListLoopCodegen.emit_forward_list_append(loop_id, payload, env: env)}
         }
         elmc_release(#{body_var});
         #{cursor} = #{node}->tail;
@@ -1151,7 +1151,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     #{indent_loop_body(body_code)}
         ElmcValue *#{item_value} = #{body_var} ? elmc_retain(#{body_var}) : elmc_int_zero();
         elmc_release(#{body_var});
-    #{ListLoopCodegen.emit_forward_list_append(loop_id, item_value, owned: true, rc_mode: RcRuntimeEmit.rc_mode?(env))}
+    #{ListLoopCodegen.emit_forward_list_append(loop_id, item_value, owned: true, env: env)}
         #{index_var} += 1;
         #{cursor} = #{node}->tail;
       }
@@ -1287,7 +1287,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
           elmc_release(#{right}_tuple);
       #{indent_loop_body(body_code)}
           #{RcRuntimeEmit.assign_or_fusion(env, item_value, "elmc_new_int", body_ref)}
-      #{ListLoopCodegen.emit_forward_list_append(next, item_value, owned: true, rc_mode: RcRuntimeEmit.rc_mode?(env))}
+      #{ListLoopCodegen.emit_forward_list_append(next, item_value, owned: true, env: env)}
           #{cursor} = #{node}->tail;
         }
       #{ListLoopCodegen.finalize_forward_cursor_list(next, out)}
@@ -1403,7 +1403,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
           ElmcValue *#{head} = #{node}->head;
       #{indent_loop_body(body_code)}
           #{RcRuntimeEmit.assign_or_fusion(env, item_value, "elmc_new_int", body_ref)}
-      #{ListLoopCodegen.emit_forward_list_append(next, item_value, owned: true, rc_mode: RcRuntimeEmit.rc_mode?(env))}
+      #{ListLoopCodegen.emit_forward_list_append(next, item_value, owned: true, env: env)}
           #{cursor} = #{node}->tail;
         }
       #{ListLoopCodegen.finalize_forward_cursor_list(next, out)}
@@ -1454,7 +1454,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     #{indent_loop_body(body_code)}
         ElmcValue *#{item_value} = #{body_var} ? elmc_retain(#{body_var}) : elmc_int_zero();
         elmc_release(#{body_var});
-    #{ListLoopCodegen.emit_forward_list_append(loop_id, item_value, owned: true, rc_mode: RcRuntimeEmit.rc_mode?(env))}
+    #{ListLoopCodegen.emit_forward_list_append(loop_id, item_value, owned: true, env: env)}
         #{cursor} = #{node}->tail;
       }
     #{ListLoopCodegen.finalize_forward_cursor_list(loop_id, out)}
@@ -1499,7 +1499,10 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
         |> EnvBindings.put_boxed_int_binding(arg, false)
         |> Map.put(:__rc_catch__, false)
 
-      loop_env = Map.put(env, :__rc_catch__, false)
+      loop_env =
+        if Map.get(env, :__rc_required__, false),
+          do: env,
+          else: Map.put(env, :__rc_catch__, false)
 
       if NativeInt.expr?(body, body_env) do
         {body_code, body_ref, counter} = NativeInt.compile_expr(body, body_env, loop_id)
@@ -1509,7 +1512,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
         loop_body = """
         #{indent_loop_body(body_code)}
               #{RcRuntimeEmit.assign_call(loop_env, item_value, "elmc_new_int", body_ref)}
-              #{RcRuntimeEmit.fusion_assign(cons, "elmc_list_cons", "#{item_value}, #{rev}")}
+              #{RcRuntimeEmit.fusion_assign(cons, "elmc_list_cons", "#{item_value}, #{rev}", loop_env)}
               elmc_release(#{item_value});
               elmc_release(#{rev});
               #{rev} = #{cons};
@@ -1630,7 +1633,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
           ElmcValue *#{item_head} = #{node}->head;
       #{indent_loop_body(body_code)}
           #{RcRuntimeEmit.assign_or_fusion(env, item_value, "elmc_new_int", body_ref)}
-      #{ListLoopCodegen.emit_forward_list_append(next, item_value, owned: true, rc_mode: RcRuntimeEmit.rc_mode?(env))}
+      #{ListLoopCodegen.emit_forward_list_append(next, item_value, owned: true, env: env)}
           #{index_var} += 1;
           #{cursor} = #{node}->tail;
         }
@@ -2135,7 +2138,8 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
         count_var,
         value_code,
         value_ref,
-        counter
+        counter,
+        env
       )
     end
   end
@@ -2146,7 +2150,8 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
           String.t() | nil,
           String.t(),
           String.t(),
-          Types.compile_counter()
+          Types.compile_counter(),
+          Types.compile_env()
         ) :: {:ok, String.t(), String.t(), Types.compile_counter()}
   defp compile_list_repeat_from_count(
          count_code,
@@ -2154,7 +2159,8 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
          count_var,
          value_code,
          value_ref,
-         counter
+         counter,
+         env
        ) do
     with {:ok, _n} <- immortal_zero_repeat_count(count_ref, count_var),
          true <- value_ref == "elmc_int_zero()" do
@@ -2167,7 +2173,8 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
           count_var,
           value_code,
           value_ref,
-          counter
+          counter,
+          env
         )
     end
   end
@@ -2228,7 +2235,8 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
          count_var,
          value_code,
          value_ref,
-         counter
+         counter,
+         env
        ) do
     value_release =
       if value_ref =~ ~r/^tmp_\d+$/ do
@@ -2247,7 +2255,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     loop_id = counter + 1
 
     {:inline, inline_code, inline_out} =
-      CodegenListHelpers.repeat_codegen(count_ref, value_ref, loop_id)
+      CodegenListHelpers.repeat_codegen(count_ref, value_ref, loop_id, env)
 
     code = """
     #{count_code}#{value_code}
@@ -2449,15 +2457,15 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
         if is_binary(count_var), do: "  elmc_release(#{count_var});\n", else: ""
 
       {:inline, repeat_code, repeat_out} =
-        CodegenListHelpers.repeat_codegen(count_ref, item_var, loop_id)
+        CodegenListHelpers.repeat_codegen(count_ref, item_var, loop_id, env)
 
       failed = "list_flatten_failed_#{flatten_id}"
 
       flatten_repeat =
-        emit_flatten_row_lists(repeat_out, out, tail_slot, failed, "#{flatten_id}_repeat", 4)
+        emit_flatten_row_lists(repeat_out, out, tail_slot, failed, "#{flatten_id}_repeat", 4, env)
 
       flatten_rest =
-        emit_flatten_row_lists(rest_var, out, tail_slot, failed, "#{flatten_id}_rest", 4)
+        emit_flatten_row_lists(rest_var, out, tail_slot, failed, "#{flatten_id}_rest", 4, env)
 
       code = """
       #{count_code}#{item_code}#{rest_code}
@@ -2481,7 +2489,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     end
   end
 
-  defp emit_flatten_row_lists(rows_var, out_var, tail_slot_var, failed_var, loop_suffix, indent) do
+  defp emit_flatten_row_lists(rows_var, out_var, tail_slot_var, failed_var, loop_suffix, indent, env) do
     outer = "list_flatten_outer_#{loop_suffix}"
     inner = "list_flatten_inner_#{loop_suffix}"
     row = "list_flatten_row_#{loop_suffix}"
@@ -2493,7 +2501,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     #{pad}for (ElmcValue *#{outer} = #{rows_var}; !#{failed_var} && #{outer} && #{outer}->tag == ELMC_TAG_LIST && #{outer}->payload != NULL; #{outer} = ((ElmcCons *)#{outer}->payload)->tail) {
     #{pad}  ElmcValue *#{row} = ((ElmcCons *)#{outer}->payload)->head;
     #{pad}  for (ElmcValue *#{inner} = #{row}; !#{failed_var} && #{inner} && #{inner}->tag == ELMC_TAG_LIST && #{inner}->payload != NULL; #{inner} = ((ElmcCons *)#{inner}->payload)->tail) {
-    #{pad_inner}#{RcRuntimeEmit.list_cons_retain_assign(cell, "((ElmcCons *)#{inner}->payload)->head, elmc_list_nil()")}
+    #{pad_inner}#{RcRuntimeEmit.list_cons_retain_assign(cell, "((ElmcCons *)#{inner}->payload)->head, elmc_list_nil()", env, return_on_fail?: false)}
     #{pad_inner}if (!#{cell}) {
     #{pad_inner}  elmc_release(#{out_var});
     #{pad_inner}  #{out_var} = elmc_list_nil();
@@ -2577,7 +2585,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
           "ElmcValue *#{out} = elmc_list_cons_take(#{call_args});"
 
         function == "elmc_list_cons" and Enum.any?(arg_borrowed?) ->
-          RcRuntimeEmit.list_cons_retain_assign(out, call_args)
+          RcRuntimeEmit.list_cons_retain_assign(out, call_args, env)
 
         true ->
           RcRuntimeEmit.assign_call(env, out, function, call_args)

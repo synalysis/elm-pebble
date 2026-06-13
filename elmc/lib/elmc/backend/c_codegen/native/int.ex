@@ -237,7 +237,8 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   end
 
   defp fused_native_helper?({module_name, name}, body, decl_map) do
-    match?({:ok, _, _}, Fusion.try_emit(module_name, name, body, decl_map))
+    match?({:ok, _, _}, Fusion.try_emit(module_name, name, body, decl_map)) or
+      match?({:ok, _, _, :rc_native}, Fusion.try_emit(module_name, name, body, decl_map))
   end
 
   @spec structural_expr?(Types.ir_expr()) :: boolean()
@@ -331,6 +332,14 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
         end
     end
   end
+
+  defp register_minmax_operand_hoists(left, left_var, right, right_var) do
+    if record_field_access?(left), do: Host.register_hoisted_native_int(left, left_var)
+    if record_field_access?(right), do: Host.register_hoisted_native_int(right, right_var)
+  end
+
+  defp record_field_access?(%{op: :field_access}), do: true
+  defp record_field_access?(_), do: false
 
   defp dispatch(%{op: :int_literal, value: value}, _env, counter),
     do: {"", "#{value}", counter}
@@ -626,6 +635,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
         if Hoist.hoisted_native_ints_enabled?(env) do
           Host.register_hoisted_native_int(expr, out)
+          register_minmax_operand_hoists(left, left_var, right, right_var)
         end
 
         {code, out, next}

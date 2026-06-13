@@ -71,6 +71,16 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
     }
   end
 
+  @spec put_linked_binary(map(), map()) :: map()
+  def put_linked_binary(report, linked) when is_map(report) and is_map(linked) do
+    indicators =
+      report
+      |> Map.get("code_size_indicators", report[:code_size_indicators] || %{})
+      |> Map.put("linked_binary", linked)
+
+    Map.put(report, "code_size_indicators", indicators)
+  end
+
   defp runtime_call_counts(source) do
     @risk_runtime_calls
     |> Map.keys()

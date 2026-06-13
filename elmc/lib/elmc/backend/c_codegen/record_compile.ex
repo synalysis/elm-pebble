@@ -152,30 +152,15 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     values_array = Enum.join(field_refs, ", ")
     values_decl = "elmc_int_t rec_values_#{next}[#{field_count}] = { #{values_array} };"
 
-    {names_decl, alloc_fn} =
-      case record_literal_type(ordered_fields, env) do
-        nil ->
-          {"", "elmc_record_new_values_ints"}
-
-        _type ->
-          {static_field_names_c(ordered_fields, next) <> "\n", "elmc_record_new_static_ints"}
-      end
-
-    alloc_args =
-      case alloc_fn do
-        "elmc_record_new_static_ints" ->
-          "#{field_count}, rec_names_#{next}, rec_values_#{next}"
-
-        _ ->
-          "#{field_count}, rec_values_#{next}"
-      end
-
-    alloc = RcRuntimeEmit.assign_call(env, out, alloc_fn, alloc_args)
+    alloc =
+      RcRuntimeEmit.assign_call(env, out, "elmc_record_new_values_ints",
+        "#{field_count}, rec_values_#{next}"
+      )
 
     code =
       """
       #{field_code}
-      #{names_decl}  #{values_decl}
+        #{values_decl}
         #{alloc}
       """ <> post_release
 
@@ -209,35 +194,27 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
   defp compile_inline_boxed_literal(ordered_fields, field_count, env, counter) do
     {field_code, field_refs, counter, post_release} =
-      compile_field_exprs(ordered_fields, env, counter, &Host.compile_expr/3)
+      compile_field_exprs(ordered_fields, env, counter, &compile_boxed_field_value_expr/3)
 
     next = counter + 1
     out = "tmp_#{next}"
     values_array = record_values_array(field_refs)
 
-    names_decl = static_field_names_c(ordered_fields, next) <> "\n"
-
     allocator =
-      RcRuntimeEmit.assign_call(env, out, "elmc_record_new_static_take",
-        "#{field_count}, rec_names_#{next}, rec_values_#{next}"
+      RcRuntimeEmit.assign_call(env, out, "elmc_record_new_values_take",
+        "#{field_count}, rec_values_#{next}"
       )
 
     code =
       """
       #{field_code}
-      #{names_decl}  ElmcValue *rec_values_#{next}[#{max(field_count, 1)}] = { #{values_array} };
+        ElmcValue *rec_values_#{next}[#{max(field_count, 1)}] = { #{values_array} };
         #{allocator}
       """ <> post_release
 
     :ok = put_literal_record_meta(out, ordered_fields, env)
 
     {code, out, next}
-  end
-
-  defp record_literal_type(ordered_fields, env) do
-    ordered_fields
-    |> Enum.map(& &1.name)
-    |> then(&Expr.record_type_for_field_names(&1, env))
   end
 
   defp record_values_array(field_refs) do
@@ -252,15 +229,6 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
         ref
       end
     end)
-  end
-
-  defp static_field_names_c(ordered_fields, suffix) do
-    names =
-      ordered_fields
-      |> Enum.map_join(", ", fn %{name: name} -> "\"#{Util.escape_c_string(name)}\"" end)
-
-    field_count = length(ordered_fields)
-    "  static const char * const rec_names_#{suffix}[#{field_count}] = { #{names} };"
   end
 
   defp put_literal_record_meta(var, ordered_fields, env) do
@@ -430,11 +398,18 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
         out = "tmp_#{next}"
 
         update_call =
-          Expr.record_update_expr(current, field.name, field_var, record_shape,
-            env: env,
-            type: record_type,
-            cow: current_unique?
-          )
+          if current_unique? do
+            index_ref =
+              Expr.record_field_index_ref(field.name, record_shape, record_type, env)
+
+            "elmc_record_update_index_cow_drop(#{current}, #{index_ref}, #{field_var})"
+          else
+            Expr.record_update_expr(current, field.name, field_var, record_shape,
+              env: env,
+              type: record_type,
+              cow: false
+            )
+          end
 
         field_release = update_operand_release(field_var, field_passthrough?)
 
@@ -815,6 +790,18 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     {code, out, next2}
   end
 
+  defp compile_boxed_field_value_expr(expr, env, counter) do
+    if Host.native_int_expr?(expr, env) do
+      {code, native_ref, c2} = Host.compile_native_int_expr(expr, env, counter)
+      next = c2 + 1
+      var = Util.temp_var(next, "boxed_int")
+
+      {code <> "  ElmcValue *#{var} = elmc_new_int_take(#{native_ref});\n", var, next}
+    else
+      Host.compile_expr(expr, env, counter)
+    end
+  end
+
   defp compile_field_exprs(ordered_fields, env, counter, compile_fn) do
     {record_env, field_code, field_refs, counter} =
       Enum.reduce(ordered_fields, {record_subexpr_cache_env(env), "", [], counter}, fn field,
@@ -1027,7 +1014,47 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     end
   end
 
-  defp compile_cached_field_access(_full_expr, arg_expr, field, env, counter, compile_fn) do
+  defp compile_cached_field_access(full_expr, arg_expr, field, env, counter, compile_fn) do
+    cond do
+      boxed_field_compile_fn?(compile_fn) and Host.native_int_expr?(full_expr, env) and
+          shareable_field_access_arg?(arg_expr) ->
+        compile_cached_boxed_native_int_field(arg_expr, field, env, counter)
+
+      boxed_field_compile_fn?(compile_fn) and Host.native_int_expr?(full_expr, env) ->
+        {code, ref, c} = compile_boxed_field_value_expr(full_expr, env, counter)
+        {code, ref, c, env}
+
+      true ->
+        compile_cached_field_access_impl(full_expr, arg_expr, field, env, counter, compile_fn)
+    end
+  end
+
+  defp shareable_field_access_arg?(%{op: :field_access}), do: true
+  defp shareable_field_access_arg?(_), do: false
+
+  defp compile_cached_boxed_native_int_field(arg_expr, field, env, counter) do
+    {arg_code, arg_var, counter, env, release_arg?} =
+      compile_cached_field_access_arg(arg_expr, env, counter)
+
+    shape = Expr.record_shape(arg_expr, env)
+    record_type = Expr.record_container_type_for_expr(arg_expr, env)
+    getter = Host.record_get_int_expr(arg_var, field, shape, env, record_type)
+
+    next = counter + 1
+    var = Util.temp_var(next, "boxed_int")
+
+    release_line =
+      if release_arg?, do: "  elmc_release(#{arg_var});\n", else: ""
+
+    code = """
+    #{arg_code}  ElmcValue *#{var} = elmc_new_int_take(#{getter});
+    #{release_line}
+    """
+
+    {code, var, next, env}
+  end
+
+  defp compile_cached_field_access_impl(_full_expr, arg_expr, field, env, counter, compile_fn) do
     {arg_code, arg_var, counter, env, release_arg?} =
       compile_cached_field_access_arg(arg_expr, env, counter)
 
@@ -1083,6 +1110,9 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   defp native_int_compile_fn?(compile_fn),
     do: compile_fn == (&Host.compile_native_int_expr/3)
 
+  defp boxed_field_compile_fn?(compile_fn),
+    do: compile_fn == (&compile_boxed_field_value_expr/3)
+
   defp runtime_record_field_access?(field_expr, arg, field)
        when is_binary(field) or is_atom(field) do
     match?(%{op: :int_literal}, field_expr) and record_field_arg?(arg)
@@ -1091,7 +1121,6 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   defp runtime_record_field_access?(_field_expr, _arg, _field), do: false
 
   defp record_field_arg?(%{op: :var, name: name}) when is_binary(name) or is_atom(name), do: true
-  defp record_field_arg?(name) when is_binary(name) or is_atom(name), do: true
   defp record_field_arg?(%{op: :call}), do: true
   defp record_field_arg?(%{op: :qualified_call}), do: true
   defp record_field_arg?(_arg), do: false
@@ -1118,7 +1147,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   defp compile_cached_field_access_arg(%{op: :var, name: name}, env, counter),
     do: compile_cached_field_access_bound_name(name, env, counter)
 
-  defp compile_cached_field_access_arg(name, env, counter) when is_binary(name) or is_atom(name),
+  defp compile_cached_field_access_arg(name, env, counter) when is_binary(name),
     do: compile_cached_field_access_bound_name(name, env, counter)
 
   defp compile_cached_field_access_arg(arg_expr, env, counter) do

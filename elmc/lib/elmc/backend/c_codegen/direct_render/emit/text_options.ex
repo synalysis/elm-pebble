@@ -139,6 +139,47 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions do
 
   defp value_shape?(_), do: false
 
+  @spec register_hoisted_aliases(Types.ir_expr(), String.t()) :: :ok
+  def register_hoisted_aliases(expr, ref) when is_binary(ref) do
+    expr
+    |> hoisted_alias_exprs()
+    |> Enum.each(&Host.register_hoisted_native_int(&1, ref))
+
+    register_packed_value_aliases(expr, ref)
+    :ok
+  end
+
+  defp register_packed_value_aliases(expr, ref) do
+    case packed_expr(expr) do
+      {:ok, %{op: :c_int_expr, value: value}} ->
+        Host.register_hoisted_native_int(%{op: :c_int_expr, value: value}, ref)
+
+      {:ok, %{op: :direct_native_if, then_expr: then_expr, else_expr: else_expr}} ->
+        case {packed_c_value(then_expr), packed_c_value(else_expr)} do
+          {{:ok, then_value}, {:ok, else_value}} when then_value == else_value ->
+            Host.register_hoisted_native_int(%{op: :c_int_expr, value: then_value}, ref)
+
+          _ ->
+            :ok
+        end
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp hoisted_alias_exprs(%{op: :if, then_expr: then_expr, else_expr: else_expr}) do
+    case {packed_c_value(then_expr), packed_c_value(else_expr)} do
+      {{:ok, then_value}, {:ok, else_value}} when then_value == else_value ->
+        hoisted_alias_exprs(then_expr)
+
+      _ ->
+        []
+    end
+  end
+
+  defp hoisted_alias_exprs(expr), do: [expr]
+
   defp record_fields?(fields) do
     fields
     |> Enum.map(& &1.name)

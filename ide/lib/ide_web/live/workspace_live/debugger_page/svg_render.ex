@@ -42,18 +42,36 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.SvgRender do
   def text_x(_op), do: 0
 
   @spec text_y(svg_op()) :: number()
-  def text_y(%{y: y, w: w, h: h})
-      when is_number(y) and is_number(w) and is_number(h) and h > 0,
-      do: y + 1
-
-  def text_y(%{y: y, h: h}) when is_number(y) and is_number(h), do: y + h / 2
+  def text_y(%{y: y, h: h}) when is_number(y) and is_number(h) and h > 0, do: y + h / 2
   def text_y(%{y: y}) when is_number(y), do: y
   def text_y(_op), do: 0
 
   @spec text_font_size(svg_op()) :: pos_integer()
-  def text_font_size(%{font_size: size}) when is_integer(size) and size > 0, do: size
-  def text_font_size(%{h: height}) when is_integer(height) and height > 0, do: height
-  def text_font_size(_op), do: 11
+  def text_font_size(op) do
+    op
+    |> box_text_height()
+    |> pebble_system_font_cap_height()
+  end
+
+  @spec box_text_height(svg_op()) :: pos_integer() | nil
+  defp box_text_height(%{h: height}) when is_integer(height) and height > 0, do: height
+
+  defp box_text_height(%{font_size: size}) when is_integer(size) and size > 0, do: size
+  defp box_text_height(_op), do: nil
+
+  # Mirrors Pebble `system_font_for_height` in pebble_app_template.c: box height selects
+  # a system font cap size, not the SVG em size of the full bounding box.
+  @spec pebble_system_font_cap_height(pos_integer() | nil) :: pos_integer()
+  defp pebble_system_font_cap_height(height) when is_integer(height) and height > 0 do
+    cond do
+      height <= 18 -> 18
+      height <= 28 -> 24
+      height <= 36 -> 28
+      true -> 42
+    end
+  end
+
+  defp pebble_system_font_cap_height(_height), do: 11
 
   @spec text_anchor(svg_op()) :: String.t() | nil
   def text_anchor(%{text_align: "left", w: w}) when is_number(w), do: "start"
@@ -62,10 +80,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.SvgRender do
   def text_anchor(_op), do: nil
 
   @spec text_baseline(svg_op()) :: String.t() | nil
-  def text_baseline(%{w: w, h: h}) when is_number(w) and is_number(h) and h > 0,
-    do: "hanging"
-
-  def text_baseline(%{h: h}) when is_number(h), do: "middle"
+  def text_baseline(%{h: h}) when is_number(h) and h > 0, do: "middle"
   def text_baseline(_op), do: nil
 
   @spec color(integer() | nil, String.t()) :: String.t()

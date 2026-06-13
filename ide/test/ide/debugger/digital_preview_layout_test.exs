@@ -69,6 +69,16 @@ defmodule Ide.Debugger.DigitalPreviewLayoutTest do
     rect_op = Enum.find(svg_ops, &(&1.kind == :round_rect))
 
     assert rect_op.y == card_y
+
+    text_op = Enum.find(svg_ops, &(&1.kind == :text_label))
+    assert text_op
+
+    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_font_size(text_op) <
+             text_op.h,
+           "debugger SVG text should use Pebble cap height, not full box height"
+
+    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_y(text_op) ==
+             text_op.y + text_op.h / 2
   end
 
   test "semantic view preview evaluates centered cardY for digital template" do

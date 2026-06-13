@@ -16,6 +16,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
   alias Ide.Projects.Project
   alias Ide.Screenshots
   alias IdeWeb.WorkspaceLive.BuildFlow
+  alias IdeWeb.WorkspaceLive.DebuggerBridge
   alias IdeWeb.WorkspaceLive.DebuggerFlow
   alias IdeWeb.WorkspaceLive.PublishFlow
   alias IdeWeb.WorkspaceLive.ResourcesFlow
@@ -38,6 +39,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
     delete-screenshot
     delete-screenshot-target
     set-emulator-target
+    emulator-elmc-rc-fail
   )
 
   @emulator_asyncs [
@@ -200,6 +202,13 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
        :publish_type_guidance,
        PublishFlow.publish_type_guidance(socket.assigns.project, readiness)
      )}
+  end
+
+  def handle_event("emulator-elmc-rc-fail", params, socket) do
+    code = Map.get(params, "code")
+    line = Map.get(params, "line")
+
+    {:noreply, DebuggerBridge.sync_emulator_rc_fail(socket, code, line)}
   end
 
   def handle_event("capture-all-screenshots", _params, socket) do

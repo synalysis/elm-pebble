@@ -100,6 +100,20 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
     |> Map.new()
   end
 
+  @spec union_type_name_set(IR.t()) :: MapSet.t(String.t())
+  def union_type_name_set(%IR{} = ir) do
+    ir.modules
+    |> Enum.flat_map(fn mod ->
+      mod.unions
+      |> Map.keys()
+      |> Enum.flat_map(fn union_name ->
+        qualified = "#{mod.name}.#{union_name}"
+        [qualified, union_name]
+      end)
+    end)
+    |> MapSet.new()
+  end
+
   @spec constructor_tag_map(IR.t()) :: %{String.t() => non_neg_integer()}
   def constructor_tag_map(%IR{} = ir) do
     qualified =

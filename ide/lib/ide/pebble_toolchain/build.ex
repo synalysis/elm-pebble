@@ -16,10 +16,18 @@ defmodule Ide.PebbleToolchain.Build do
   def build(_project_slug, opts) do
     case Keyword.get(opts, :app_root) do
       app_root when is_binary(app_root) and app_root != "" ->
-        Command.run_pebble(["build"], cwd: app_root, env: Command.build_env(opts))
+        with {:ok, result} <-
+               Command.run_pebble(["build"], cwd: app_root, env: Command.build_env(opts)) do
+          _ = enrich_stack_report(app_root)
+          {:ok, result}
+        end
 
       _ ->
         Command.run_pebble(["build"], env: Command.build_env(opts))
     end
+  end
+
+  defp enrich_stack_report(app_root) do
+    Elmc.Backend.CCodegen.StackReport.enrich_from_pebble_build(app_root)
   end
 end

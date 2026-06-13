@@ -308,7 +308,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
           String.t(),
           String.t(),
           non_neg_integer(),
-          String.t(),
+          Types.compile_env(),
           Types.compile_counter()
         ) ::
           Types.compile_result()
@@ -587,7 +587,8 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
 
   defp compile_boxed(module_name, name, args, env, counter, arity, c_name) do
     rc_callee? = RcRequired.rc_required?(module_name, name)
-    caller_rc? = Map.get(env, :__rc_required__, false)
+    caller_rc? =
+      Map.get(env, :__rc_required__, false) or Map.get(env, :__rc_catch__, false)
 
     before_args_probe =
       DebugProbes.call_probe(env, module_name, name, :before_args) |> DebugProbes.region()
@@ -655,10 +656,27 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
 
           head_call =
             if rc_callee? do
-              """
-              ElmcValue *#{head_var} = NULL;
-              if (#{c_name}(&#{head_var}, #{first_args_var}, #{length(first_vars)}) != RC_SUCCESS) #{head_var} = elmc_int_zero();
-              """
+              if caller_rc? do
+                """
+                ElmcValue *#{head_var} = NULL;
+                Rc = #{c_name}(&#{head_var}, #{first_args_var}, #{length(first_vars)});
+                CHECK_RC(Rc);
+                """
+              else
+                failure_return = RcRuntimeEmit.failure_return(env)
+
+                """
+                ElmcValue *#{head_var} = NULL;
+                {
+                  RC __call_rc = #{c_name}(&#{head_var}, #{first_args_var}, #{length(first_vars)});
+                  if (__call_rc != RC_SUCCESS) {
+                  elmc_release(#{head_var});
+                  #{head_var} = NULL;
+                  #{failure_return};
+                }
+                }
+                """
+              end
               |> String.trim()
             else
               "ElmcValue *#{head_var} = #{c_name}(#{first_args_var}, #{length(first_vars)});"
@@ -751,23 +769,31 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
   end
 
   defp rc_call_assignment(env, out, call_expr, true, false) do
+    failure_return = RcRuntimeEmit.failure_return(env)
+
     if predeclared_out?(env, out) do
       """
       #{out} = NULL;
-      if (#{call_expr} != RC_SUCCESS) {
-        elmc_release(#{out});
-        #{out} = NULL;
-        return NULL;
+      {
+        RC __call_rc = #{call_expr};
+        if (__call_rc != RC_SUCCESS) {
+          elmc_release(#{out});
+          #{out} = NULL;
+          #{failure_return};
+        }
       }
       """
       |> String.trim()
     else
       """
       ElmcValue *#{out} = NULL;
-      if (#{call_expr} != RC_SUCCESS) {
-        elmc_release(#{out});
-        #{out} = NULL;
-        return NULL;
+      {
+        RC __call_rc = #{call_expr};
+        if (__call_rc != RC_SUCCESS) {
+          elmc_release(#{out});
+          #{out} = NULL;
+          #{failure_return};
+        }
       }
       """
       |> String.trim()
@@ -814,11 +840,16 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
 
   defp zero_arg_call_expr(env, module_name, name, c_name) do
     if RcRequired.rc_required?(module_name, name) do
-      if EnvBindings.direct_call_target?(env, module_name, name) do
-        "({ ElmcValue *__z = NULL; #{c_name}(&__z) != RC_SUCCESS ? elmc_int_zero() : __z; })"
-      else
-        "({ ElmcValue *__z = NULL; #{c_name}(&__z, NULL, 0) != RC_SUCCESS ? elmc_int_zero() : __z; })"
-      end
+      call =
+        if EnvBindings.direct_call_target?(env, module_name, name) do
+          "#{c_name}(&__z)"
+        else
+          "#{c_name}(&__z, NULL, 0)"
+        end
+
+      """
+      ({ ElmcValue *__z = NULL; RC __call_rc = #{call}; if (__call_rc != RC_SUCCESS) __z = NULL; __z; })
+      """
     else
       if EnvBindings.direct_call_target?(env, module_name, name),
         do: "#{c_name}()",
@@ -830,7 +861,13 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     if RcRequired.rc_required?(module_name, name) do
       """
       ElmcValue *out = NULL;
-      if (#{c_name}(&out, #{call_args}) != RC_SUCCESS) return elmc_int_zero();
+      {
+        RC __call_rc = #{c_name}(&out, #{call_args});
+        if (__call_rc != RC_SUCCESS) {
+          ELMC_RC_LOG_FAIL(__call_rc, "#{c_name}", "closure call failed");
+          return NULL;
+        }
+      }
       return out;
       """
       |> String.trim()

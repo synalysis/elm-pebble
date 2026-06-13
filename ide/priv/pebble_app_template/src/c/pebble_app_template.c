@@ -442,7 +442,7 @@ static void ensure_draw_layer_size(void);
 static void deferred_elm_init_callback(void *data);
 static void schedule_elm_init(void);
 #endif
-#if !defined(ELMC_WATCHFACE_MODE) || ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
 static GRect display_bounds(void);
 #endif
 #if ELMC_PEBBLE_FEATURE_CMD_GET_CURRENT_DATE_TIME
@@ -676,8 +676,6 @@ static int dispatch_compass_current_result(int64_t target, double degrees, bool 
       return -2;
     }
     ElmcValue *heading = elmc_record_new_static_take_value(2, names, values);
-    elmc_release(values[0]);
-    elmc_release(values[1]);
     if (!heading) {
       return -2;
     }
@@ -1357,6 +1355,13 @@ static void apply_pending_cmd(void) {
   ELMC_PEBBLE_TRACE_EXIT("apply_pending_cmd");
 }
 
+#if defined(PBL_PLATFORM_APLITE)
+static void startup_render_callback(void *data) {
+  (void)data;
+  render_model();
+}
+#endif
+
 static void startup_cmd_callback(void *data) {
   ELMC_PEBBLE_TRACE_ENTER("startup_cmd_callback");
   // #region agent log
@@ -1369,7 +1374,14 @@ static void startup_cmd_callback(void *data) {
   // #endregion
   s_startup_cmds_ready = true;
 #if ELMC_PEBBLE_STARTUP_RENDER
+#if defined(PBL_PLATFORM_APLITE)
+  /* Defer the first draw until after init returns. Synchronous render during
+     startup_cmd_callback nests init, cmd dispatch, scene encode, and Pebble
+     graphics on Aplite's tiny stack+heap and faults at the heap boundary. */
+  app_timer_register(1, startup_render_callback, NULL);
+#else
   render_model();
+#endif
   // #region agent log
   ELMC_AGENT_INIT_PROBE(0xED991003);
   // #endregion
@@ -1475,6 +1487,19 @@ static bool rect_params_are_valid(int64_t w, int64_t h) {
 
 static GRect rect_from_params(int64_t x, int64_t y, int64_t w, int64_t h) {
   return GRect((int16_t)x, (int16_t)y, (int16_t)w, (int16_t)h);
+}
+#endif
+
+#if ELMC_PEBBLE_FEATURE_DRAW_RECT
+/* Ui.rect (x,y,w,h) is the outer inked bounds; Pebble strokes are centered on edges. */
+static GRect stroke_outline_rect_bounds(int16_t x, int16_t y, int16_t w, int16_t h,
+                                        uint8_t stroke_width) {
+  uint8_t sw = stroke_width > 0 ? stroke_width : 1;
+  int16_t inset = (int16_t)(sw / 2);
+  if (w <= (int16_t)sw || h <= (int16_t)sw) {
+    return GRect(x, y, w, h);
+  }
+  return GRect((int16_t)(x + inset), (int16_t)(y + inset), (int16_t)(w - sw), (int16_t)(h - sw));
 }
 #endif
 
@@ -2324,12 +2349,17 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         int16_t w = (int16_t)cmd->p2;
         int16_t h = (int16_t)cmd->p3;
         if (rect_params_are_valid(w, h)) {
+          uint8_t rect_sw = s_draw_style_stack[s_draw_style_top].stroke_width;
+          if (rect_sw < 1) {
+            rect_sw = 1;
+          }
 #ifndef PBL_COLOR
           graphics_context_set_antialiased(ctx, false);
-          graphics_context_set_stroke_width(ctx, 2);
+          rect_sw = 2;
+          graphics_context_set_stroke_width(ctx, rect_sw);
 #endif
           graphics_context_set_stroke_color(ctx, color_from_code(cmd->p4));
-          graphics_draw_rect(ctx, GRect(x, y, w, h));
+          graphics_draw_rect(ctx, stroke_outline_rect_bounds(x, y, w, h, rect_sw));
           graphics_context_set_stroke_color(ctx, s_draw_style_stack[s_draw_style_top].stroke_color);
 #ifndef PBL_COLOR
           graphics_context_set_stroke_width(ctx, s_draw_style_stack[s_draw_style_top].stroke_width);
@@ -3845,9 +3875,6 @@ static int dispatch_unobstructed_bounds_result(int64_t target, GRect bounds) {
   }
 
   ElmcValue *record = elmc_record_new_static_take_value(4, names, values);
-  for (int i = 0; i < 4; i++) {
-    elmc_release(values[i]);
-  }
   if (!record) {
     return -2;
   }
@@ -4023,7 +4050,7 @@ static bool display_bounds_ready(void) {
 }
 #endif
 
-#ifndef ELMC_WATCHFACE_MODE
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS && !defined(ELMC_WATCHFACE_MODE)
 static GRect cap_display_bounds(GRect bounds, GRect compile) {
   if (bounds.size.w <= 0 || bounds.size.h <= 0) {
     return compile;
@@ -4065,7 +4092,7 @@ static GRect cap_display_bounds(GRect bounds, GRect compile) {
 }
 #endif
 
-#if !defined(ELMC_WATCHFACE_MODE) || ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
 static GRect display_bounds(void) {
   GRect compile = compile_display_bounds();
 #ifdef ELMC_WATCHFACE_MODE
@@ -4307,10 +4334,6 @@ static ElmcValue *build_launch_context(AppLaunchReason launch) {
   const char *screen_names[] = {"color_mode", "height", "shape", "width"};
   ElmcValue *screen_values[] = {screen_color_mode, screen_height, screen_shape, screen_width};
   ElmcValue *screen = elmc_record_new_static_take_value(4, screen_names, screen_values);
-  elmc_release(screen_width);
-  elmc_release(screen_height);
-  elmc_release(screen_shape);
-  elmc_release(screen_color_mode);
 
   ElmcValue *reason = elmc_new_int_take(launch_reason_to_elm_tag(launch));
   ElmcValue *watch_model = elmc_new_string_take("");
@@ -4342,13 +4365,6 @@ static ElmcValue *build_launch_context(AppLaunchReason launch) {
   ElmcValue *context_values[] = {has_compass, has_microphone, reason, screen, supports_health,
                                  watch_model, watch_profile_id};
   ElmcValue *context = elmc_record_new_static_take_value(7, context_names, context_values);
-  elmc_release(reason);
-  elmc_release(screen);
-  elmc_release(watch_model);
-  elmc_release(watch_profile_id);
-  elmc_release(has_microphone);
-  elmc_release(has_compass);
-  elmc_release(supports_health);
   ELMC_PEBBLE_TRACE_EXIT("build_launch_context");
   return context;
 }

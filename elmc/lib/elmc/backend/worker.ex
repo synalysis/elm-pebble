@@ -93,8 +93,15 @@ defmodule Elmc.Backend.Worker do
       |> then(fn {pairs, next_index} -> {Map.new(pairs), next_index} end)
 
     frame_slot = if has_frame, do: next_index, else: nil
-    sub_tag_slots = next_index + if(has_frame, do: 1, else: 0) |> max(1)
     button_raw_subs = max(analysis.button_raw_count, 1)
+
+    # Raw-button-only apps with three or more presses fault on Basalt/QEMU init unless
+    # the compact worker layout also reserves a frame tag slot (see game-2048).
+    needs_frame_slot? =
+      has_frame or
+        (analysis.button_raw_count >= 3 and tag_masks == [])
+    frame_slot = if needs_frame_slot?, do: frame_slot || next_index, else: frame_slot
+    sub_tag_slots = next_index + if(needs_frame_slot?, do: 1, else: 0) |> max(1)
 
     Map.merge(analysis, %{
       slot_map: slot_map,
@@ -199,6 +206,8 @@ defmodule Elmc.Backend.Worker do
     int64_t elmc_worker_subscriptions(ElmcWorkerState *state);
     elmc_int_t elmc_worker_sub_msg_tag(ElmcWorkerState *state, int64_t flag);
     elmc_int_t elmc_worker_button_raw_msg_tag(ElmcWorkerState *state, elmc_int_t button_id, elmc_int_t event);
+    elmc_int_t elmc_worker_last_fail_code(void);
+    elmc_int_t elmc_worker_last_fail_line(void);
     void elmc_worker_deinit(ElmcWorkerState *state);
 
     #endif
@@ -252,7 +261,7 @@ defmodule Elmc.Backend.Worker do
           ElmcValue *result = NULL;
           RC init_rc = elmc_fn_#{safe_module}_init(&result, args, 1);
           if (init_rc != RC_SUCCESS) {
-            ELMC_RC_LOG_FAIL(init_rc, "elmc_worker_init", "init");
+            ELMC_WORKER_LOG_RC_FAIL("worker init", init_rc);
             elmc_release(result);
             return -2;
           }
@@ -273,7 +282,7 @@ defmodule Elmc.Backend.Worker do
           ElmcValue *result = NULL;
           RC update_rc = elmc_fn_#{safe_module}_update(&result, args, 2);
           if (update_rc != RC_SUCCESS) {
-            ELMC_RC_LOG_FAIL(update_rc, "elmc_worker_dispatch", "update");
+            ELMC_WORKER_LOG_RC_FAIL("worker update", update_rc);
             elmc_release(result);
             return -2;
           }
@@ -294,7 +303,7 @@ defmodule Elmc.Backend.Worker do
           ElmcValue *result = NULL;
           RC sub_rc = elmc_fn_#{safe_module}_subscriptions(&result, args, 1);
           if (sub_rc != RC_SUCCESS) {
-            ELMC_RC_LOG_FAIL(sub_rc, "elmc_worker_subscriptions", "subscriptions");
+            ELMC_WORKER_LOG_RC_FAIL("worker subscriptions", sub_rc);
             elmc_release(result);
             return 0;
           }
@@ -322,8 +331,18 @@ defmodule Elmc.Backend.Worker do
     #endif
     #endif
 
-    #if defined(ELMC_PEBBLE_PLATFORM) && ELMC_PEBBLE_HEAP_LOG
+    #if defined(ELMC_PEBBLE_PLATFORM)
     #include <pebble.h>
+    #define ELMC_WORKER_LOG_RC_FAIL(site, rc) \\
+      do { \\
+        ELMC_RC_LOG_FAIL((rc), (site), "failed"); \\
+        APP_LOG(APP_LOG_LEVEL_ERROR, "ELMC %s RC %u line %u", (site), (unsigned)(rc), (unsigned)elmc_last_fail_line); \\
+      } while (0)
+    #else
+    #define ELMC_WORKER_LOG_RC_FAIL(site, rc) ELMC_RC_LOG_FAIL((rc), (site), "failed")
+    #endif
+
+    #if defined(ELMC_PEBBLE_PLATFORM) && ELMC_PEBBLE_HEAP_LOG
     static void elmc_worker_heap_log(const char *label) {
       APP_LOG(
         APP_LOG_LEVEL_INFO,
@@ -612,6 +631,14 @@ defmodule Elmc.Backend.Worker do
     int64_t elmc_worker_subscriptions(ElmcWorkerState *state) {
       if (!state) return 0;
       return state->subscriptions;
+    }
+
+    elmc_int_t elmc_worker_last_fail_code(void) {
+      return (elmc_int_t)elmc_rc_fail_code();
+    }
+
+    elmc_int_t elmc_worker_last_fail_line(void) {
+      return (elmc_int_t)elmc_last_fail_line;
     }
 
     void elmc_worker_deinit(ElmcWorkerState *state) {

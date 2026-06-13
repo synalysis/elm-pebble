@@ -113,6 +113,9 @@ defmodule Elmc.Backend.CCodegen.Hoist do
   defp hoisted_native_int_key(expr),
     do: expr |> hoisted_native_int_key_raw() |> normalize_hoist_key()
 
+  defp hoisted_native_int_key_raw(%{op: :c_int_expr, value: value}) when is_binary(value),
+    do: {:c_int, value}
+
   defp hoisted_native_int_key_raw(%{op: :call, name: name, args: args})
        when name in ["min", "max"] do
     {:minmax, name, minmax_arg_keys(args)}
@@ -151,6 +154,8 @@ defmodule Elmc.Backend.CCodegen.Hoist do
 
   defp normalize_hoist_key({:qualified, target, args}),
     do: {:qualified, target, Enum.map(args || [], &normalize_hoist_key/1)}
+
+  defp normalize_hoist_key({:c_int, value}), do: {:c_int, value}
 
   defp normalize_hoist_key({:int, value}), do: {:int, value}
   defp normalize_hoist_key({:char, value}), do: {:char, value}
@@ -237,6 +242,9 @@ defmodule Elmc.Backend.CCodegen.Hoist do
         []
     end
   end
+
+  @spec lookup_key(Types.ir_expr()) :: term()
+  def lookup_key(expr), do: hoisted_native_int_key(expr)
 
   @spec hoisted_native_int_lookup(Types.compile_env(), Types.ir_expr()) ::
           {:ok, String.t()} | :error

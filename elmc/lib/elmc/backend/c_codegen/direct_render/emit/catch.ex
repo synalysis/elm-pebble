@@ -33,7 +33,6 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Catch do
     """
     if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0) {
       Rc = RC_ERR_SCENE_BUFFER_OVERFLOW;
-      ELMC_RC_LOG_FAIL(Rc, "elmc_scene_writer_push_cmd", "overflow");
       break;
     }
     """
@@ -56,8 +55,6 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Catch do
     """
     if (#{rc_var} != RC_SUCCESS) {
       Rc = #{rc_var};
-      if (Rc == RC_ERR_RENDER_ABORT)
-        break;
       break;
     }
     """

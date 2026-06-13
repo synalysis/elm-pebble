@@ -57,7 +57,7 @@ defmodule Elmc.WorkerSubscriptionSlotsTest do
 
     assert sub_tag_slots(header) == 1
     assert header =~ "#define ELMC_WORKER_MAX_BUTTON_RAW_SUBS 4"
-    refute header =~ "#define ELMC_WORKER_SLOT_"
+    assert header =~ "#define ELMC_WORKER_SLOT_FRAME 0"
   end
 
   test "pebble surface project compacts many subscriptions into dense slots" do

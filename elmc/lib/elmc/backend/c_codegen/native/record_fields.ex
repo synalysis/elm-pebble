@@ -114,6 +114,7 @@ defmodule Elmc.Backend.CCodegen.Native.RecordFields do
       _ ->
         case field_type(env, arg, field) do
           "Int" -> true
+          type when is_binary(type) -> union_tag_field_type?(type)
           _ -> int_only_field?(env, arg, field)
         end
     end
@@ -122,8 +123,24 @@ defmodule Elmc.Backend.CCodegen.Native.RecordFields do
   def int_field?(env, arg, field) do
     case field_type(env, arg, field) do
       "Int" -> true
+      type when is_binary(type) -> union_tag_field_type?(type)
       _ -> int_only_field?(env, arg, field)
     end
+  end
+
+  @spec union_tag_field?(Types.compile_env(), term(), String.t()) :: boolean()
+  def union_tag_field?(env, arg, field) do
+    case field_type(env, arg, field) do
+      type when is_binary(type) -> union_tag_field_type?(type)
+      _ -> false
+    end
+  end
+
+  defp union_tag_field_type?(type) do
+    normalized = Host.normalize_type_name(type)
+    types = Process.get(:elmc_union_type_names, MapSet.new())
+
+    MapSet.member?(types, normalized) or MapSet.member?(types, type)
   end
 
   @spec float_field?(Types.compile_env(), term(), String.t()) :: boolean()

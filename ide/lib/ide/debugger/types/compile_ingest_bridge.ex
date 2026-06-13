@@ -93,7 +93,9 @@ defmodule Ide.Debugger.Types.CompileIngestBridge do
       elmx_compile_error:
         Map.get(result, :elmx_compile_error) || Map.get(result, "elmx_compile_error"),
       elmx_compile_error_message:
-        Map.get(result, :elmx_compile_error_message) || Map.get(result, "elmx_compile_error_message")
+        Map.get(result, :elmx_compile_error_message) || Map.get(result, "elmx_compile_error_message"),
+      elmc_linked_binary:
+        Map.get(result, :elmc_linked_binary) || Map.get(result, "elmc_linked_binary")
     }
     |> drop_nil_fields()
   end

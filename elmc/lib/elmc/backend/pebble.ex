@@ -152,6 +152,19 @@ defmodule Elmc.Backend.Pebble do
     #endif
     #endif
 
+    /* Optional fixed scene arena (BSS). Prefer chained heap chunks on Aplite instead. */
+    #ifndef ELMC_PEBBLE_SCENE_STATIC_CAPACITY
+    #define ELMC_PEBBLE_SCENE_STATIC_CAPACITY 0
+    #endif
+
+    #ifndef ELMC_PEBBLE_SCENE_CHUNK_SIZE
+    #if defined(PBL_PLATFORM_APLITE)
+    #define ELMC_PEBBLE_SCENE_CHUNK_SIZE 256
+    #else
+    #define ELMC_PEBBLE_SCENE_CHUNK_SIZE 0
+    #endif
+    #endif
+
     #ifndef ELMC_PEBBLE_DRAW_PATH_PROBES
     #define ELMC_PEBBLE_DRAW_PATH_PROBES 0
     #endif
@@ -193,7 +206,18 @@ defmodule Elmc.Backend.Pebble do
       int command_count;
       uint64_t hash;
       int dirty;
+    #if ELMC_PEBBLE_SCENE_CHUNK_SIZE > 0
+      struct ElmcPebbleSceneChunk *chunks;
+    #endif
     } ElmcPebbleSceneBuffer;
+
+    #if ELMC_PEBBLE_SCENE_CHUNK_SIZE > 0
+    typedef struct ElmcPebbleSceneChunk {
+      struct ElmcPebbleSceneChunk *next;
+      int used;
+      unsigned char bytes[ELMC_PEBBLE_SCENE_CHUNK_SIZE];
+    } ElmcPebbleSceneChunk;
+    #endif
 
     typedef struct {
       int x;
@@ -492,6 +516,10 @@ defmodule Elmc.Backend.Pebble do
     #endif
     #include "elmc_pebble.h"
 
+    #if defined(#{direct_view_macro}) && !defined(PBL_PLATFORM_APLITE)
+    #define ELMC_PEBBLE_DIRECT_VIEW_SCENE 1
+    #endif
+
     #if defined(ELMC_PEBBLE_PLATFORM) && ELMC_PEBBLE_DEBUG_LOGS
     #define ELMC_PEBBLE_SCENE_LOG(...) APP_LOG(APP_LOG_LEVEL_INFO, __VA_ARGS__)
     #else
@@ -556,7 +584,7 @@ defmodule Elmc.Backend.Pebble do
     #{current_second_helper}
 
     // #region agent log
-    #if defined(ELMC_PEBBLE_PLATFORM) && ELMC_AGENT_PROBES && !defined(#{direct_view_macro})
+    #if defined(ELMC_PEBBLE_PLATFORM) && ELMC_AGENT_PROBES && !defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)
     static bool elmc_agent_scene_probe_enabled(uint32_t tag) {
       return tag == 0xED997A00 ||
              tag == 0xED997C02 ||
@@ -600,7 +628,7 @@ defmodule Elmc.Backend.Pebble do
     #define elmc_agent_scene_probe(tag) do { (void)(tag); } while (0)
     #endif
 
-    #if !defined(#{direct_view_macro})
+    #if !defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)
     static uint32_t elmc_agent_value_shape(ElmcValue *value) {
       if (!value) return 0x0;
       switch (value->tag) {
@@ -635,7 +663,7 @@ defmodule Elmc.Backend.Pebble do
       return 0;
     }
 
-    #if !defined(#{direct_view_macro})
+    #if !defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)
     #if ELMC_PEBBLE_FEATURE_DRAW_PATH
     static int elmc_decode_path_payload(ElmcValue *payload, ElmcPebbleDrawCmd *out_cmd);
     #endif
@@ -883,6 +911,79 @@ defmodule Elmc.Backend.Pebble do
       cmd->text[0] = '\\0';
     }
 
+    #if ELMC_PEBBLE_SCENE_STATIC_CAPACITY > 0
+    static unsigned char elmc_pebble_scene_static_bytes[ELMC_PEBBLE_SCENE_STATIC_CAPACITY];
+
+    static int elmc_pebble_scene_using_static(const ElmcPebbleSceneBuffer *scene) {
+      return scene && scene->bytes == elmc_pebble_scene_static_bytes;
+    }
+
+    static void elmc_pebble_scene_bind_static(ElmcPebbleSceneBuffer *scene) {
+      if (!scene) return;
+      scene->bytes = elmc_pebble_scene_static_bytes;
+      scene->byte_capacity = ELMC_PEBBLE_SCENE_STATIC_CAPACITY;
+    }
+    #else
+    static int elmc_pebble_scene_using_static(const ElmcPebbleSceneBuffer *scene) {
+      (void)scene;
+      return 0;
+    }
+    #endif
+
+    #if ELMC_PEBBLE_SCENE_CHUNK_SIZE > 0
+    static void elmc_pebble_scene_chunks_free(ElmcPebbleSceneBuffer *scene) {
+      if (!scene) return;
+      while (scene->chunks) {
+        ElmcPebbleSceneChunk *next = scene->chunks->next;
+        free(scene->chunks);
+        scene->chunks = next;
+      }
+    }
+
+    static ElmcPebbleSceneChunk *elmc_pebble_scene_chunk_tail(ElmcPebbleSceneChunk *head) {
+      ElmcPebbleSceneChunk *tail = head;
+      while (tail && tail->next) tail = tail->next;
+      return tail;
+    }
+
+    static int elmc_pebble_scene_chunk_append(ElmcPebbleSceneBuffer *scene) {
+      ElmcPebbleSceneChunk *chunk = (ElmcPebbleSceneChunk *)malloc(sizeof(ElmcPebbleSceneChunk));
+      if (!chunk) return -2;
+      chunk->next = NULL;
+      chunk->used = 0;
+      if (!scene->chunks) {
+        scene->chunks = chunk;
+      } else {
+        ElmcPebbleSceneChunk *tail = elmc_pebble_scene_chunk_tail(scene->chunks);
+        if (!tail) {
+          free(chunk);
+          return -2;
+        }
+        tail->next = chunk;
+      }
+      scene->byte_capacity += ELMC_PEBBLE_SCENE_CHUNK_SIZE;
+      return 0;
+    }
+
+    static int elmc_pebble_scene_materialize_chunks(ElmcPebbleSceneBuffer *scene) {
+      if (!scene || !scene->chunks || scene->byte_count <= 0) return 0;
+      unsigned char *dest = scene->bytes;
+      if (!dest || scene->byte_capacity < scene->byte_count) {
+        dest = (unsigned char *)realloc(scene->bytes, (size_t)scene->byte_count);
+        if (!dest) return -2;
+        scene->bytes = dest;
+        scene->byte_capacity = scene->byte_count;
+      }
+      int pos = 0;
+      for (ElmcPebbleSceneChunk *chunk = scene->chunks; chunk; chunk = chunk->next) {
+        memcpy(dest + pos, chunk->bytes, (size_t)chunk->used);
+        pos += chunk->used;
+      }
+      elmc_pebble_scene_chunks_free(scene);
+      return 0;
+    }
+    #endif
+
     static void elmc_pebble_scene_reset(ElmcPebbleApp *app) {
       if (!app) return;
       app->scene.byte_count = 0;
@@ -900,7 +1001,10 @@ defmodule Elmc.Backend.Pebble do
     static void elmc_pebble_scene_buffer_free_for_app(ElmcPebbleApp *app, ElmcPebbleSceneBuffer *scene) {
       (void)app;
       if (!scene) return;
-      if (scene->bytes) {
+    #if ELMC_PEBBLE_SCENE_CHUNK_SIZE > 0
+      elmc_pebble_scene_chunks_free(scene);
+    #endif
+      if (scene->bytes && !elmc_pebble_scene_using_static(scene)) {
         free(scene->bytes);
       }
       scene->bytes = NULL;
@@ -943,6 +1047,9 @@ defmodule Elmc.Backend.Pebble do
       app->scene.byte_capacity = 0;
     #else
       app->scene.byte_count = 0;
+    #if ELMC_PEBBLE_SCENE_CHUNK_SIZE > 0
+      elmc_pebble_scene_chunks_free(&app->scene);
+    #endif
     #endif
       app->scene.command_count = 0;
       app->scene.hash = 0;
@@ -978,6 +1085,21 @@ defmodule Elmc.Backend.Pebble do
 
     static int elmc_pebble_scene_reserve_capacity(ElmcPebbleApp *app, int min_capacity) {
       if (!app || min_capacity < 0) return -1;
+    #if ELMC_PEBBLE_SCENE_CHUNK_SIZE > 0
+      while (app->scene.byte_capacity < min_capacity) {
+        if (elmc_pebble_scene_chunk_append(&app->scene) != 0) return -2;
+      }
+      return 0;
+    #else
+    #if ELMC_PEBBLE_SCENE_STATIC_CAPACITY > 0
+      if (!app->scene.bytes) {
+        elmc_pebble_scene_bind_static(&app->scene);
+      }
+      if (elmc_pebble_scene_using_static(&app->scene)) {
+        if (min_capacity > ELMC_PEBBLE_SCENE_STATIC_CAPACITY) return -2;
+        return 0;
+      }
+    #endif
       if (app->scene.byte_capacity >= min_capacity) return 0;
       int next_capacity = app->scene.byte_capacity > 0 ? app->scene.byte_capacity : 0;
       while (next_capacity < min_capacity) {
@@ -998,11 +1120,15 @@ defmodule Elmc.Backend.Pebble do
       app->scene.bytes = next;
       app->scene.byte_capacity = next_capacity;
       return 0;
+    #endif
     }
 
     static void elmc_pebble_scene_trim_capacity(ElmcPebbleApp *app) {
-    #if ELMC_PEBBLE_SCENE_TRIM_SLACK > 0
+    #if ELMC_PEBBLE_SCENE_CHUNK_SIZE > 0
+      (void)app;
+    #elif ELMC_PEBBLE_SCENE_TRIM_SLACK > 0
       if (!app || !app->scene.bytes || app->scene.byte_count <= 0) return;
+      if (elmc_pebble_scene_using_static(&app->scene)) return;
       int target = app->scene.byte_count + ELMC_PEBBLE_SCENE_TRIM_SLACK;
       if (app->scene.byte_capacity <= target) return;
       unsigned char *next = (unsigned char *)realloc(app->scene.bytes, (size_t)target);
@@ -1029,7 +1155,18 @@ defmodule Elmc.Backend.Pebble do
     static int elmc_pebble_scene_put_u8(ElmcPebbleApp *app, unsigned char value) {
       int rc = elmc_pebble_scene_reserve(app, 1);
       if (rc != 0) return rc;
+    #if ELMC_PEBBLE_SCENE_CHUNK_SIZE > 0
+      ElmcPebbleSceneChunk *tail = elmc_pebble_scene_chunk_tail(app->scene.chunks);
+      if (!tail || tail->used >= ELMC_PEBBLE_SCENE_CHUNK_SIZE) {
+        if (elmc_pebble_scene_chunk_append(&app->scene) != 0) return -2;
+        tail = elmc_pebble_scene_chunk_tail(app->scene.chunks);
+        if (!tail) return -2;
+      }
+      tail->bytes[tail->used++] = value;
+      app->scene.byte_count++;
+    #else
       app->scene.bytes[app->scene.byte_count++] = value;
+    #endif
       elmc_pebble_scene_hash_byte(app, value);
       return 0;
     }
@@ -1042,23 +1179,38 @@ defmodule Elmc.Backend.Pebble do
       if (rc != 0) return rc;
       unsigned char b0 = (unsigned char)(raw & 0xff);
       unsigned char b1 = (unsigned char)((raw >> 8) & 0xff);
+    #if ELMC_PEBBLE_SCENE_CHUNK_SIZE > 0
+      rc = elmc_pebble_scene_put_u8(app, b0);
+      if (rc != 0) return rc;
+      return elmc_pebble_scene_put_u8(app, b1);
+    #else
       app->scene.bytes[app->scene.byte_count++] = b0;
       app->scene.bytes[app->scene.byte_count++] = b1;
       elmc_pebble_scene_hash_byte(app, b0);
       elmc_pebble_scene_hash_byte(app, b1);
       return 0;
+    #endif
     }
 
     static int elmc_pebble_scene_put_i32(ElmcPebbleApp *app, int32_t value) {
       uint32_t raw = (uint32_t)value;
       int rc = elmc_pebble_scene_reserve(app, 4);
       if (rc != 0) return rc;
+    #if ELMC_PEBBLE_SCENE_CHUNK_SIZE > 0
+      for (int i = 0; i < 4; i++) {
+        unsigned char byte = (unsigned char)((raw >> (i * 8)) & 0xff);
+        rc = elmc_pebble_scene_put_u8(app, byte);
+        if (rc != 0) return rc;
+      }
+      return 0;
+    #else
       for (int i = 0; i < 4; i++) {
         unsigned char byte = (unsigned char)((raw >> (i * 8)) & 0xff);
         app->scene.bytes[app->scene.byte_count++] = byte;
         elmc_pebble_scene_hash_byte(app, byte);
       }
       return 0;
+    #endif
     }
 
     static int32_t elmc_scene_read_i16(const unsigned char *bytes, int *offset, int limit) {
@@ -1712,7 +1864,7 @@ defmodule Elmc.Backend.Pebble do
     #else
     #endif
 
-    #if !defined(#{direct_view_macro})
+    #if !defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)
     static void elmc_emit_draw_cmd(
         const ElmcPebbleDrawCmd *cmd,
         ElmcPebbleDrawCmd *out_cmds,
@@ -1910,7 +2062,7 @@ defmodule Elmc.Backend.Pebble do
       return -4;
     }
 
-    #if !defined(#{direct_view_macro})
+    #if !defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)
     static uint64_t elmc_hash_value(ElmcValue *value, int depth) {
       if (!value || depth > 64) return 1469598103934665603ULL;
       uint64_t h = 1469598103934665603ULL;
@@ -2132,12 +2284,19 @@ defmodule Elmc.Backend.Pebble do
       app->prev_window_id = 0;
       app->prev_layer_id = 0;
       app->prev_ops_hash = 0;
-    #if !defined(#{direct_view_macro})
+    #if !defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)
       app->stream_view_result = NULL;
     #endif
-      app->scene.bytes = NULL;
+    #if ELMC_PEBBLE_SCENE_STATIC_CAPACITY > 0
+      elmc_pebble_scene_bind_static(&app->scene);
       app->scene.byte_count = 0;
+    #else
+      app->scene.bytes = NULL;
       app->scene.byte_capacity = 0;
+    #if ELMC_PEBBLE_SCENE_CHUNK_SIZE > 0
+      app->scene.chunks = NULL;
+    #endif
+    #endif
       app->scene.command_count = 0;
       app->scene.hash = 0;
       app->scene.dirty = 1;
@@ -2630,7 +2789,7 @@ defmodule Elmc.Backend.Pebble do
 
     void elmc_pebble_clear_view_cache(ElmcPebbleApp *app) {
       if (!app) return;
-    #if defined(#{direct_view_macro})
+    #if defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)
       (void)app;
     #else
       if (app->stream_view_result) {
@@ -2660,7 +2819,7 @@ defmodule Elmc.Backend.Pebble do
       ELMC_PEBBLE_SCENE_LOG("elmc-scene ensure rebuild begin");
       elmc_pebble_prepare_scene_rebuild(app);
       elmc_pebble_scene_reset(app);
-    #if defined(#{direct_view_macro})
+    #if defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)
       {
         ElmcSceneWriter writer;
         elmc_scene_writer_init_app(&writer, app);
@@ -2704,6 +2863,16 @@ defmodule Elmc.Backend.Pebble do
           ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", rc);
         }
         skip = emitted_end;
+      }
+    #endif
+    #if ELMC_PEBBLE_SCENE_CHUNK_SIZE > 0
+      {
+        int mat_rc = elmc_pebble_scene_materialize_chunks(&app->scene);
+        if (mat_rc != 0) {
+          elmc_pebble_scene_abort_build(app);
+          ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_ENSURE_SCENE_EXIT);
+          ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", mat_rc);
+        }
       }
     #endif
       elmc_pebble_clear_view_cache(app);
@@ -2855,7 +3024,7 @@ defmodule Elmc.Backend.Pebble do
       if (!app || !app->initialized || !out_cmds || max_cmds <= 0) return -1;
       if (skip < 0) return -1;
       if (out_emitted_end) *out_emitted_end = skip;
-    #if !defined(#{direct_view_macro})
+    #if !defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)
       int count = 0;
       ElmcValue *result = NULL;
       int result_is_cached = dedupe ? 0 : 1;
@@ -2865,7 +3034,7 @@ defmodule Elmc.Backend.Pebble do
     #endif
     #{if has_view do
       """
-      #if defined(#{direct_view_macro})
+      #if defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)
             int direct_rc = elmc_pebble_ensure_scene(app);
             if (direct_rc != 0) return direct_rc;
             if (skip == 0 && dedupe && app->scene.command_count < max_cmds) {
@@ -2898,16 +3067,12 @@ defmodule Elmc.Backend.Pebble do
               elmc_agent_scene_probe(0xED996190);
               // #endregion
               elmc_pebble_heap_log("view:start");
-              {
-                RC view_rc = elmc_fn_#{String.replace(entry_module, ".", "_")}_view(&result, args, 1);
-                elmc_pebble_heap_log("view:end");
-                if (view_rc != RC_SUCCESS) {
-                  ELMC_RC_LOG_FAIL(view_rc, "elmc_pebble_view_commands_raw_impl", "view");
-                  elmc_release(result);
-                  result = NULL;
-                  elmc_release(model);
-                  return -2;
-                }
+              result = elmc_fn_#{String.replace(entry_module, ".", "_")}_view(args, 1);
+              elmc_pebble_heap_log("view:end");
+              if (!result) {
+                ELMC_RC_LOG_FAIL(RC_ERR_OUT_OF_MEMORY, "elmc_pebble_view_commands_raw_impl", "view");
+                elmc_release(model);
+                return -2;
               }
               // #region agent log
               elmc_agent_scene_probe(0xED996191);
@@ -2945,7 +3110,7 @@ defmodule Elmc.Backend.Pebble do
       """
     end}
 
-      #if !defined(#{direct_view_macro})
+      #if !defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)
         ElmcValue *ops = result;
         int64_t window_id = 0;
         int64_t layer_id = 0;

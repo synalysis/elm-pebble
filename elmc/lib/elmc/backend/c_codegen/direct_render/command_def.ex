@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.DirectRender.Emit.Catch
+  alias Elmc.Backend.CCodegen.DirectRender.Emit.DuplicateFieldHoists
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.FunctionEmit
   alias Elmc.Backend.CCodegen.Host
@@ -102,19 +103,22 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
         end
       )
       |> Host.put_typed_arg_bindings(c_arg_bindings, decl.type)
+      |> Map.put(:__rc_catch__, true)
 
     Process.delete(:elmc_hoisted_native_ints)
     Process.put(:elmc_hoisted_native_ints_scope, true)
     Process.put(:elmc_direct_helper_defs, [])
 
     try do
-      case Host.direct_emit_expr(decl.expr, env, 0) do
+      {hoist_preamble, start_counter} = DuplicateFieldHoists.preamble(decl.expr, env, 0)
+
+      case Host.direct_emit_expr(decl.expr, env, start_counter) do
         {:ok, body_code, _counter} ->
           unused_casts =
             FunctionEmit.unused_arg_casts(c_arg_bindings, [body_code])
 
           helper_defs = direct_helper_defs()
-          helper_defs <> boxed_body(c_name, arg_bindings, unused_casts, body_code)
+          helper_defs <> boxed_body(c_name, arg_bindings, unused_casts, hoist_preamble <> body_code)
 
         :error ->
           raise ArgumentError,
@@ -201,13 +205,16 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
         end
       )
       |> Host.put_typed_arg_bindings(c_arg_bindings, decl.type)
+      |> Map.put(:__rc_catch__, true)
 
     Process.delete(:elmc_hoisted_native_ints)
     Process.put(:elmc_hoisted_native_ints_scope, true)
     Process.put(:elmc_direct_helper_defs, [])
 
     try do
-      case Host.direct_emit_expr(decl.expr, native_env, 0) do
+      {hoist_preamble, start_counter} = DuplicateFieldHoists.preamble(decl.expr, native_env, 0)
+
+      case Host.direct_emit_expr(decl.expr, native_env, start_counter) do
         {:ok, body_code, _counter} ->
           wrapper_unused_casts =
             FunctionEmit.unused_arg_casts(c_arg_bindings, [wrapper_bindings, native_args])
@@ -225,7 +232,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
               decl,
               wrapper_unused_casts,
               native_unused_casts,
-              body_code
+              hoist_preamble <> body_code
             )
 
         :error ->

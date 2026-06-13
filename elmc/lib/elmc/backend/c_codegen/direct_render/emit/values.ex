@@ -34,8 +34,24 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
   def int_value(%{op: :int_literal} = expr, _env, counter),
     do: {"", "#{Host.int_literal_compile_value(expr)}", counter}
 
-  def int_value(%{op: :c_int_expr, value: value}, _env, counter) when is_binary(value),
-    do: {"", value, counter}
+  def int_value(%{op: :c_int_expr, value: value}, env, counter) when is_binary(value) do
+    expr = %{op: :c_int_expr, value: value}
+
+    if Host.hoisted_native_ints_enabled?(env) and hoisted_c_int_literal?(value) do
+      case Host.hoisted_native_int_lookup(env, expr) do
+        {:ok, ref} ->
+          {"", ref, counter}
+
+        :error ->
+          Host.maybe_promote_hoisted_native_int(expr, env, "", value, counter)
+      end
+    else
+      {"", value, counter}
+    end
+  end
+
+  defp hoisted_c_int_literal?(value),
+    do: String.contains?(value, ["ELMC_TEXT", "<<", "+"])
 
   def int_value(
         %{op: :direct_native_if, cond: cond, then_expr: then_expr, else_expr: else_expr},
@@ -401,8 +417,6 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
       _ -> nil
     end
   end
-
-  defp parse_compile_time_int_ref(_ref), do: nil
 
   defp int_min_max_builtin(name, left, right, env, counter) do
     expr = %{op: :call, name: name, args: [left, right]}

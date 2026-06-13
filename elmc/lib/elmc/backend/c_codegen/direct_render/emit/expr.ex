@@ -5,6 +5,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
   alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.DirectRender.Emit.If
   alias Elmc.Backend.CCodegen.DirectRender.Emit.Qualified.Draws, as: QualifiedDraws
+  alias Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Hoist
@@ -56,6 +57,10 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
 
         next = counter + 1
         native_var = "direct_native_let_#{Util.safe_c_suffix(name)}_#{next}"
+
+        if TextOptions.packable_value?(value_expr) do
+          TextOptions.register_hoisted_aliases(value_expr, native_var)
+        end
 
         body_env =
           env

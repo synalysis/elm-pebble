@@ -1262,6 +1262,9 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
 
   def special_value_from_target("Cmd.none", _args), do: %{op: :int_literal, value: 0}
 
+  def special_value_from_target("Platform.Cmd.none", _args),
+    do: command_kind_expr(:none)
+
   def special_value_from_target("Cmd.batch", [%{op: :list_literal, items: []}]),
     do: %{op: :int_literal, value: 0}
 
@@ -1274,6 +1277,9 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
     do: special_value_from_target("Cmd.batch", args)
 
   def special_value_from_target("Sub.none", _args), do: %{op: :int_literal, value: 0}
+
+  def special_value_from_target("Platform.Sub.none", _args),
+    do: %{op: :int_literal, value: 0}
 
   def special_value_from_target("Sub.batch", args),
     do: Subscriptions.subscription_batch_expr(args)

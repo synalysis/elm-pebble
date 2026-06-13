@@ -10,6 +10,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
   alias Elmc.Backend.CCodegen.FunctionEmit
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.IRQueries
+  alias Elmc.Backend.CCodegen.MacroReachability
   alias Elmc.Backend.CCodegen.Tuple2CaseTable
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Types
@@ -25,7 +26,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
   def header(ir, opts) do
     direct_cmd_decls = DirectRenderRegistry.decls(ir, opts)
     decl_map = IRQueries.function_decl_map(ir)
-    RcRequired.run!(decl_map, opts)
+    _ = RcRequired.run!(decl_map, opts)
     wrapper_targets = GenericTargets.wrapper_targets(ir, opts)
     direct_command_targets = Host.direct_command_targets(ir, opts, decl_map)
     exported_targets = Analysis.exported_function_targets(decl_map, opts, direct_command_targets)
@@ -88,10 +89,8 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
       |> Map.new()
 
     constructor_tags = IRQueries.constructor_tag_map(ir)
-    {union_constructor_defines, union_constructor_macros} = UnionMacros.definitions(ir)
     {record_field_defines, record_field_macros} = RecordFieldMacros.definitions(ir)
     Process.put(:elmc_constructor_tags, constructor_tags)
-    Process.put(:elmc_union_constructor_macros, union_constructor_macros)
     Process.put(:elmc_record_field_macros, record_field_macros)
     Process.put(:elmc_vector_resource_slots, IRQueries.pebble_vector_resource_slot_map(ir))
     Process.put(:elmc_bitmap_resource_slots, IRQueries.pebble_bitmap_resource_slot_map(ir))
@@ -100,6 +99,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     Process.put(:elmc_enum_types, IRQueries.enum_type_set(ir))
     Process.put(:elmc_record_alias_shapes, IRQueries.record_alias_shape_map(ir))
     Process.put(:elmc_record_field_types, IRQueries.record_alias_field_types_map(ir))
+    Process.put(:elmc_union_type_names, IRQueries.union_type_name_set(ir))
 
     entry_module = opts[:entry_module] || "Main"
 
@@ -137,13 +137,29 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
       |> MapSet.new()
 
     direct_command_targets = Host.direct_command_targets(ir, opts, decl_map)
+
+    used_union_ctors =
+      if opts[:strip_dead_code] == false do
+        nil
+      else
+        MacroReachability.used_union_ctors(
+          decl_map,
+          MapSet.union(generic_targets, direct_command_targets)
+        )
+      end
+
+    {union_constructor_defines, union_constructor_macros} =
+      UnionMacros.definitions(ir, used_union_ctors: used_union_ctors)
+
+    Process.put(:elmc_union_constructor_macros, union_constructor_macros)
+
     exported_targets = Analysis.exported_function_targets(decl_map, opts, direct_command_targets)
 
     Process.put(:elmc_direct_call_targets, direct_call_targets)
     Process.put(:elmc_exported_targets, exported_targets)
     Process.put(:elmc_function_arities, function_arities)
     Process.put(:elmc_program_decls, decl_map)
-    RcRequired.run!(decl_map, opts)
+    _ = RcRequired.run!(decl_map, opts)
 
     generic_native_prototypes =
       FunctionEmit.generic_native_function_prototypes(ir, generic_targets, decl_map)

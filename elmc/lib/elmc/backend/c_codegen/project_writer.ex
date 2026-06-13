@@ -10,6 +10,7 @@ defmodule Elmc.Backend.CCodegen.ProjectWriter do
 
   @spec write(IR.t(), String.t(), Types.codegen_opts()) :: :ok | {:error, Types.file_error()}
   def write(%IR{} = ir, out_dir, opts \\ %{}) do
+    opts = normalize_codegen_opts(opts)
     c_dir = Path.join(out_dir, "c")
 
     with :ok <- File.mkdir_p(c_dir),
@@ -26,6 +27,7 @@ defmodule Elmc.Backend.CCodegen.ProjectWriter do
 
   @spec write_multi(IR.t(), String.t(), Types.codegen_opts()) :: :ok | {:error, Types.file_error()}
   def write_multi(%IR{} = ir, out_dir, opts \\ %{}) do
+    opts = normalize_codegen_opts(opts)
     c_dir = Path.join(out_dir, "c")
 
     with :ok <- File.mkdir_p(c_dir),
@@ -50,5 +52,17 @@ defmodule Elmc.Backend.CCodegen.ProjectWriter do
       |> Jason.encode!(pretty: true)
 
     File.write(Path.join(out_dir, "elmc_stack_report.json"), report)
+  end
+
+  defp normalize_codegen_opts(opts) when is_map(opts) do
+    cond do
+      Map.has_key?(opts, :prune_native_wrappers) -> opts
+      pebble_production_build?(opts) -> Map.put(opts, :prune_native_wrappers, true)
+      true -> opts
+    end
+  end
+
+  defp pebble_production_build?(opts) do
+    opts[:pebble_int32] == true or opts[:prune_runtime] == true
   end
 end

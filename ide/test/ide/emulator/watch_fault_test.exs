@@ -10,6 +10,8 @@ defmodule Ide.Emulator.WatchFaultTest do
     assert source =~ "App fault!"
     assert source =~ "Watch app ran out of memory"
     assert source =~ "Watch app crashed"
+    assert source =~ "RC_ERR_OUT_OF_MEMORY"
+    assert source =~ ~r/ELMC\\s\+worker\\s\+\\w\+\\s\+RC\\s\+\(\\d\+\)/
   end
 
   test "embedded emulator page includes watch fault banner" do

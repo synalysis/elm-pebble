@@ -121,4 +121,267 @@ defmodule Elmc.Backend.CCodegen.NativeRecordTest do
     assert code =~ "elmc_new_int_take(direct_x)"
     refute code =~ "\"label\""
   end
+
+  test "debug branch_span_key matches board size add after cell substitution" do
+    cell_ref = %{op: :c_int_expr, value: "direct_native_record_branch__then_cell_2"}
+
+    board_size = %{
+      op: :call,
+      name: "__add__",
+      args: [
+        %{op: :call, name: "__mul__", args: [cell_ref, %{op: :int_literal, value: 4}]},
+        %{op: :call, name: "__mul__", args: [%{op: :int_literal, value: 2}, %{op: :int_literal, value: 3}]}
+      ]
+    }
+
+    refs = %{"cell" => "direct_native_record_branch__then_cell_2", "gap" => "direct_native_record_branch__then_gap_2"}
+
+    sources = %{
+      "gap" => %{op: :int_literal, value: 2},
+      "cell" => %{op: :int_literal, value: 10}
+    }
+
+    assert {:ok, {"cell", 4, "gap", 3}, "cell", 4, "gap", 3} =
+             NativeRecord.debug_branch_span_key(board_size, refs, sources)
+  end
+
+  test "branch span hoists cell*4 + gap*3 shared across x and y siblings" do
+    env = %{
+      __module__: "Main",
+      __hoisted_native_ints_enabled__: true,
+      __program_decls__: %{}
+    }
+
+    Process.put(:elmc_hoisted_native_ints_scope, true)
+    Process.delete(:elmc_hoisted_native_ints)
+
+    cond = %{op: :bool_literal, value: true}
+
+    cell_formula = %{
+      op: :call,
+      name: "__idiv__",
+      args: [
+        %{
+          op: :call,
+          name: "__sub__",
+          args: [
+            %{op: :int_literal, value: 90},
+            %{op: :call, name: "__mul__", args: [%{op: :int_literal, value: 2}, %{op: :int_literal, value: 3}]}
+          ]
+        },
+        %{op: :int_literal, value: 4}
+      ]
+    }
+
+    board_size = %{
+      op: :call,
+      name: "__add__",
+      args: [
+        %{
+          op: :call,
+          name: "__mul__",
+          args: [cell_formula, %{op: :int_literal, value: 4}]
+        },
+        %{
+          op: :call,
+          name: "__mul__",
+          args: [%{op: :int_literal, value: 2}, %{op: :int_literal, value: 3}]
+        }
+      ]
+    }
+
+    center = fn screen ->
+      %{
+        op: :call,
+        name: "__idiv__",
+        args: [
+          %{
+            op: :call,
+            name: "__sub__",
+            args: [%{op: :int_literal, value: screen}, board_size]
+          },
+          %{op: :int_literal, value: 2}
+        ]
+      }
+    end
+
+    value_expr = %{
+      op: :record_literal,
+      fields: [
+        %{
+          name: "gap",
+          expr: %{
+            op: :direct_native_if,
+            cond: cond,
+            then_expr: %{op: :int_literal, value: 2},
+            else_expr: %{op: :int_literal, value: 3}
+          }
+        },
+        %{
+          name: "cell",
+          expr: %{
+            op: :direct_native_if,
+            cond: cond,
+            then_expr: cell_formula,
+            else_expr: %{op: :int_literal, value: 20}
+          }
+        },
+        %{
+          name: "x",
+          expr: %{
+            op: :direct_native_if,
+            cond: cond,
+            then_expr: center.(144),
+            else_expr: %{op: :int_literal, value: 0}
+          }
+        },
+        %{
+          name: "y",
+          expr: %{
+            op: :direct_native_if,
+            cond: cond,
+            then_expr: center.(168),
+            else_expr: %{op: :int_literal, value: 0}
+          }
+        }
+      ]
+    }
+
+    assert {:ok, code, _, _} = NativeRecord.emit_fields("layout", value_expr, env, 0)
+
+    assert code =~ "direct_native_record_branch_span_"
+    assert code =~ "direct_native_record_branch__then_cell_"
+
+    then_x =
+      code
+      |> String.split("direct_native_record_branch__then_x_")
+      |> Enum.at(1, "")
+      |> String.split(";")
+      |> hd()
+
+    refute then_x =~ "direct_native_record_branch__then_cell_"
+  after
+    Process.delete(:elmc_hoisted_native_ints_scope)
+    Process.delete(:elmc_hoisted_native_ints)
+  end
+
+  test "branch span hoists cell*4 + literal gap*3 after cell subexpr substitution" do
+    env = %{
+      __module__: "Main",
+      __hoisted_native_ints_enabled__: true,
+      __program_decls__: %{}
+    }
+
+    Process.put(:elmc_hoisted_native_ints_scope, true)
+    Process.delete(:elmc_hoisted_native_ints)
+
+    cond = %{op: :bool_literal, value: true}
+
+    cell_formula = %{
+      op: :call,
+      name: "__idiv__",
+      args: [
+        %{
+          op: :call,
+          name: "__sub__",
+          args: [
+            %{
+              op: :call,
+              name: "__idiv__",
+              args: [
+                %{
+                  op: :call,
+                  name: "__mul__",
+                  args: [%{op: :int_literal, value: 100}, %{op: :int_literal, value: 2}]
+                },
+                %{op: :int_literal, value: 3}
+              ]
+            },
+            %{op: :call, name: "__mul__", args: [%{op: :int_literal, value: 2}, %{op: :int_literal, value: 3}]}
+          ]
+        },
+        %{op: :int_literal, value: 4}
+      ]
+    }
+
+    board_size = %{
+      op: :call,
+      name: "__add__",
+      args: [
+        %{
+          op: :call,
+          name: "__mul__",
+          args: [cell_formula, %{op: :int_literal, value: 4}]
+        },
+        %{
+          op: :call,
+          name: "__mul__",
+          args: [%{op: :int_literal, value: 2}, %{op: :int_literal, value: 3}]
+        }
+      ]
+    }
+
+    center = fn screen ->
+      %{
+        op: :call,
+        name: "__idiv__",
+        args: [
+          %{
+            op: :call,
+            name: "__sub__",
+            args: [%{op: :int_literal, value: screen}, board_size]
+          },
+          %{op: :int_literal, value: 2}
+        ]
+      }
+    end
+
+    value_expr = %{
+      op: :record_literal,
+      fields: [
+        %{
+          name: "gap",
+          expr: %{
+            op: :direct_native_if,
+            cond: cond,
+            then_expr: %{op: :int_literal, value: 2},
+            else_expr: %{op: :int_literal, value: 3}
+          }
+        },
+        %{
+          name: "cell",
+          expr: %{
+            op: :direct_native_if,
+            cond: cond,
+            then_expr: cell_formula,
+            else_expr: %{op: :int_literal, value: 20}
+          }
+        },
+        %{
+          name: "x",
+          expr: %{
+            op: :direct_native_if,
+            cond: cond,
+            then_expr: center.(144),
+            else_expr: %{op: :int_literal, value: 0}
+          }
+        },
+        %{
+          name: "y",
+          expr: %{
+            op: :direct_native_if,
+            cond: cond,
+            then_expr: center.(168),
+            else_expr: %{op: :int_literal, value: 0}
+          }
+        }
+      ]
+    }
+
+    assert {:ok, code, _, _} = NativeRecord.emit_fields("layout", value_expr, env, 0)
+    assert code =~ "direct_native_record_branch_span_"
+  after
+    Process.delete(:elmc_hoisted_native_ints_scope)
+    Process.delete(:elmc_hoisted_native_ints)
+  end
 end

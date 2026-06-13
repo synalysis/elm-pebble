@@ -16,7 +16,7 @@ defmodule Elmc.Runtime.Generator do
     source = runtime_source()
 
     {header, source} =
-      maybe_prune_runtime(header, source, Keyword.get(opts, :prune_from_dir))
+      maybe_prune_runtime(header, source, Keyword.get(opts, :prune_from_dir), opts)
 
     with :ok <- File.mkdir_p(runtime_dir),
          :ok <- File.write(Path.join(runtime_dir, "elmc_runtime.h"), header),
@@ -25,17 +25,27 @@ defmodule Elmc.Runtime.Generator do
     end
   end
 
-  @spec maybe_prune_runtime(Types.runtime_header(), Types.runtime_source(), String.t() | nil) ::
+  @spec maybe_prune_runtime(Types.runtime_header(), Types.runtime_source(), String.t() | nil, write_opts()) ::
           Types.prune_pair()
-  defp maybe_prune_runtime(header, source, prune_from_dir) when is_binary(prune_from_dir) do
+  defp maybe_prune_runtime(header, source, prune_from_dir, opts) when is_binary(prune_from_dir) do
     with refs when map_size(refs) > 0 <- collect_runtime_references(prune_from_dir),
          source <- maybe_drop_float_runtime(source, refs),
          {:ok, defs} <- parse_function_defs(source),
          true <- defs != [] do
-      kept_names = transitive_keep_set(defs, refs)
+      kept_names =
+        defs
+        |> transitive_keep_set(refs)
+        |> drop_pebble_inline_runtime_symbols(opts)
 
       if MapSet.size(kept_names) > 0 do
-        {header, prune_source(source, defs, kept_names)}
+        pruned = prune_source(source, defs, kept_names)
+
+        {header,
+         pruned
+         |> String.trim_trailing()
+         |> Kernel.<>("\n\n")
+         |> Kernel.<>(RcMacros.fail_stash_source_impl())
+         |> Kernel.<>("\n")}
       else
         {header, source}
       end
@@ -46,7 +56,17 @@ defmodule Elmc.Runtime.Generator do
     _error -> {header, source}
   end
 
-  defp maybe_prune_runtime(header, source, _), do: {header, source}
+  defp maybe_prune_runtime(header, source, _, _), do: {header, source}
+
+  @pebble_inline_runtime_symbols MapSet.new(["elmc_rc_name"])
+
+  defp drop_pebble_inline_runtime_symbols(kept_names, opts) do
+    if Keyword.get(opts, :pebble_int32, false) do
+      MapSet.difference(kept_names, @pebble_inline_runtime_symbols)
+    else
+      kept_names
+    end
+  end
 
   defp maybe_drop_float_runtime(source, refs) when is_map(refs) do
     float_refs =
@@ -157,19 +177,24 @@ defmodule Elmc.Runtime.Generator do
       |> Enum.flat_map(&expand_runtime_prune_ref/1)
       |> Enum.uniq()
 
-    rc_support =
-      Enum.any?(contents, fn content ->
-        String.contains?(content, "ELMC_RC_LOG_FAIL") or
-          String.contains?(content, "CHECK_RC(") or
-          String.contains?(content, "RC Rc = RC_SUCCESS")
-      end)
+    maybe_seed_rc_prune_refs(expanded, contents)
+  end
 
-    if rc_support do
-      expanded ++ ["elmc_rc_name", "elmc_rc_allocated_count", "elmc_rc_released_count"]
-    else
-      expanded
-    end
-    |> Enum.uniq()
+  defp maybe_seed_rc_prune_refs(expanded, contents) do
+    joined = Enum.join(contents, "\n")
+
+    extras =
+      []
+      |> maybe_seed_rc_ref(joined, "elmc_rc_name(", "elmc_rc_name")
+      |> maybe_seed_rc_ref(joined, "elmc_rc_allocated_count(", "elmc_rc_allocated_count")
+      |> maybe_seed_rc_ref(joined, "elmc_rc_released_count(", "elmc_rc_released_count")
+      |> maybe_seed_rc_ref(joined, "ELMC_WORKER_LOG_RC_FAIL", "elmc_rc_name")
+
+    (expanded ++ extras) |> Enum.uniq()
+  end
+
+  defp maybe_seed_rc_ref(extras, joined, needle, name) do
+    if String.contains?(joined, needle), do: extras ++ [name], else: extras
   end
 
   @spec expand_runtime_prune_ref(String.t()) :: [String.t()]
@@ -347,8 +372,7 @@ defmodule Elmc.Runtime.Generator do
       [
         {"ELMC_RECORD_GET_INDEX_BOOL", "elmc_as_bool"},
         {"ELMC_RECORD_GET_INDEX_FLOAT", "elmc_as_float"},
-        {"ELMC_RECORD_GET_INDEX_INT", "elmc_as_int"},
-        {"ELMC_RC_LOG_FAIL", "elmc_rc_name"}
+        {"ELMC_RECORD_GET_INDEX_INT", "elmc_as_int"}
       ]
       |> Enum.flat_map(fn {macro, fn_name} ->
         if String.contains?(content, macro), do: [fn_name], else: []
@@ -367,23 +391,27 @@ defmodule Elmc.Runtime.Generator do
       |> Enum.with_index()
       |> Enum.reduce([], fn {line, idx}, acc ->
         case Regex.run(
-               ~r/^\s*(?:static\s+)?[A-Za-z_][A-Za-z0-9_\s\*]*\**\s*(elmc_[A-Za-z0-9_]+)\s*\([^;]*\)\s*\{/,
+               ~r/^\s*(?:static\s+)?[A-Za-z_][A-Za-z0-9_\s\*]*\**\s*(elmc_[A-Za-z0-9_]+)\s*\(/,
                line
              ) do
           [_, name] ->
-            start_idx = Enum.at(line_starts, idx)
+            case Enum.at(line_starts, idx) do
+              line_start when is_integer(line_start) ->
+                case find_function_body_start(source, line_start, name) do
+                  {:ok, brace_idx} ->
+                    case find_matching_brace(source, brace_idx) do
+                      {:ok, end_idx} ->
+                        body = binary_part(source, line_start, end_idx - line_start + 1)
 
-            brace_idx =
-              start_idx +
-                case :binary.match(line, "{") do
-                  {pos, _len} -> pos
-                  :nomatch -> 0
+                        [%{name: name, start_idx: line_start, end_idx: end_idx, body: body} | acc]
+
+                      _ ->
+                        acc
+                    end
+
+                  _ ->
+                    acc
                 end
-
-            case find_matching_brace(source, brace_idx) do
-              {:ok, end_idx} ->
-                body = binary_part(source, start_idx, end_idx - start_idx + 1)
-                [%{name: name, start_idx: start_idx, end_idx: end_idx, body: body} | acc]
 
               _ ->
                 acc
@@ -409,6 +437,70 @@ defmodule Elmc.Runtime.Generator do
       end)
 
     Enum.reverse(starts)
+  end
+
+  @spec find_function_body_start(Types.runtime_source(), non_neg_integer(), String.t()) ::
+          {:ok, non_neg_integer()} | :error
+  defp find_function_body_start(source, line_start, name) when is_integer(line_start) do
+    marker = name <> "("
+    suffix = binary_part(source, line_start, byte_size(source) - line_start)
+
+    case :binary.match(suffix, marker) do
+      {rel_idx, _} ->
+        paren_open_idx = line_start + rel_idx
+        param_start = paren_open_idx + byte_size(marker)
+
+        with {:ok, close_idx} <- find_closing_paren(source, param_start, byte_size(source), 1),
+             {:ok, brace_idx} <- skip_to_open_brace(source, close_idx + 1, byte_size(source)) do
+          {:ok, brace_idx}
+        else
+          _ -> :error
+        end
+
+      :nomatch ->
+        :error
+    end
+  end
+
+  @spec find_closing_paren(Types.runtime_source(), non_neg_integer(), non_neg_integer(), pos_integer()) ::
+          {:ok, non_neg_integer()} | :error
+  defp find_closing_paren(_source, idx, limit, _depth) when idx >= limit, do: :error
+
+  defp find_closing_paren(source, idx, limit, depth) do
+    ch = :binary.at(source, idx)
+
+    cond do
+      ch == ?( ->
+        find_closing_paren(source, idx + 1, limit, depth + 1)
+
+      ch == ?) and depth == 1 ->
+        {:ok, idx}
+
+      ch == ?) ->
+        find_closing_paren(source, idx + 1, limit, depth - 1)
+
+      true ->
+        find_closing_paren(source, idx + 1, limit, depth)
+    end
+  end
+
+  @spec skip_to_open_brace(Types.runtime_source(), non_neg_integer(), non_neg_integer()) ::
+          {:ok, non_neg_integer()} | :error
+  defp skip_to_open_brace(_source, idx, limit) when idx >= limit, do: :error
+
+  defp skip_to_open_brace(source, idx, limit) do
+    ch = :binary.at(source, idx)
+
+    cond do
+      ch in [?\s, ?\t, ?\n, ?\r] ->
+        skip_to_open_brace(source, idx + 1, limit)
+
+      ch == ?{ ->
+        {:ok, idx}
+
+      true ->
+        :error
+    end
   end
 
   @spec find_matching_brace(Types.runtime_source(), non_neg_integer()) :: Types.brace_result()
@@ -499,6 +591,12 @@ defmodule Elmc.Runtime.Generator do
 
   defp runtime_call_dependencies("elmc_realloc"),
     do: ["elmc_realloc", "elmc_realloc_impl", "elmc_log_alloc_failed"]
+
+  defp runtime_call_dependencies("elmc_closure_new"),
+    do: ["elmc_closure_new", "elmc_closure_cell_init", "elmc_malloc", "elmc_retain"]
+
+  defp runtime_call_dependencies("elmc_closure_new_rc"),
+    do: ["elmc_closure_new_rc", "elmc_closure_cell_init", "elmc_malloc", "elmc_retain"]
 
   defp runtime_call_dependencies(name) do
     [name | runtime_take_dependency(name)]
@@ -1045,6 +1143,7 @@ defmodule Elmc.Runtime.Generator do
     ElmcValue *elmc_record_update(ElmcValue *record, const char *field_name, ElmcValue *new_value);
     ElmcValue *elmc_record_update_index(ElmcValue *record, int index, ElmcValue *new_value);
     ElmcValue *elmc_record_update_index_cow(ElmcValue *record, int index, ElmcValue *new_value);
+    ElmcValue *elmc_record_update_index_cow_drop(ElmcValue *record, int index, ElmcValue *new_value);
 
     RC elmc_closure_new(ElmcValue **out, ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count), int arity, int capture_count, ElmcValue **captures);
     RC elmc_closure_new_rc(ElmcValue **out, RC (*rc_fn)(ElmcValue **out, ElmcValue **args, int argc, ElmcValue **captures, int capture_count), int arity, int capture_count, ElmcValue **captures);
@@ -3347,18 +3446,6 @@ defmodule Elmc.Runtime.Generator do
       if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return elmc_retain(record);
       ElmcRecord *old = (ElmcRecord *)record->payload;
       if (index < 0 || index >= old->field_count) return elmc_retain(record);
-      const char **field_names = elmc_record_field_names(record);
-      if (field_names) {
-        ElmcValue **values = (ElmcValue **)elmc_malloc(sizeof(ElmcValue *) * old->field_count, __func__);
-        if (!values) return elmc_retain(record);
-        for (int i = 0; i < old->field_count; i++) {
-          values[i] = i == index ? new_value : old->field_values[i];
-        }
-        ElmcValue *result = NULL;
-        if (elmc_record_new_static(&result, old->field_count, (const char * const *)field_names, values) != RC_SUCCESS) result = NULL;
-        free(values);
-        return result;
-      }
       ElmcValue **values = (ElmcValue **)elmc_malloc(sizeof(ElmcValue *) * old->field_count, __func__);
       if (!values) return elmc_retain(record);
       for (int i = 0; i < old->field_count; i++) {
@@ -3381,6 +3468,12 @@ defmodule Elmc.Runtime.Generator do
         return record;
       }
       return elmc_record_update_index(record, index, new_value);
+    }
+
+    ElmcValue *elmc_record_update_index_cow_drop(ElmcValue *record, int index, ElmcValue *new_value) {
+      ElmcValue *next = elmc_record_update_index_cow(record, index, new_value);
+      if (next != record) elmc_release(record);
+      return next;
     }
 
     static RC elmc_closure_cell_init(

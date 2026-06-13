@@ -51,9 +51,9 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     {code, count}
   end
 
-  @spec emit_repeat_inline_loop(String.t(), String.t(), pos_integer()) ::
+  @spec emit_repeat_inline_loop(String.t(), String.t(), pos_integer(), map()) ::
           {String.t(), String.t()}
-  def emit_repeat_inline_loop(count_ref, value_ref, loop_id) do
+  def emit_repeat_inline_loop(count_ref, value_ref, loop_id, env \\ %{}) do
     index_var = "list_repeat_i_#{loop_id}"
     acc = "list_repeat_acc_#{loop_id}"
     cons = "list_repeat_cons_#{loop_id}"
@@ -61,8 +61,7 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     code = """
       #{runtime_source_comment_line("elmc_list_repeat", 6)}ElmcValue *#{acc} = elmc_list_nil();
       for (elmc_int_t #{index_var} = 0; #{index_var} < #{count_ref}; #{index_var}++) {
-        #{RcRuntimeEmit.list_cons_retain_assign(cons, "#{value_ref}, #{acc}")}
-        if (!#{cons}) break;
+        #{RcRuntimeEmit.list_cons_retain_assign(cons, "#{value_ref}, #{acc}", env)}
         elmc_release(#{acc});
         #{acc} = #{cons};
       }
@@ -102,27 +101,18 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     cell = forward_cell(loop_id)
     tail = forward_tail(loop_id)
     owned? = Keyword.get(opts, :owned, false)
-    rc_mode? = Keyword.get(opts, :rc_mode, false)
+    env = Keyword.get(opts, :env, %{})
 
     cons =
-      cond do
-        owned? and rc_mode? ->
-          """
-          ElmcValue *#{cell} = NULL;
-          Rc = elmc_list_cons(&#{cell}, #{item_expr}, elmc_list_nil());
-          CHECK_RC(Rc);
-          """
-          |> String.trim()
-
-        owned? ->
-          RcRuntimeEmit.fusion_assign(cell, "elmc_list_cons", "#{item_expr}, elmc_list_nil()")
-
-        true ->
-          """
-          ElmcValue *#{cell} = NULL;
-          if (elmc_list_cons(&#{cell}, #{item_expr}, elmc_list_nil()) != RC_SUCCESS) #{cell} = elmc_int_zero();
-          """
-          |> String.trim()
+      if owned? do
+        RcRuntimeEmit.fusion_assign(cell, "elmc_list_cons", "#{item_expr}, elmc_list_nil()", env)
+      else
+        RcRuntimeEmit.list_cons_retain_assign(
+          cell,
+          "#{item_expr}, elmc_list_nil()",
+          env,
+          return_on_fail?: false
+        )
       end
 
     """

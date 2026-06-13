@@ -1561,6 +1561,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert text.h == 56
     assert text.font_size == 56
     assert text.text_align == "center"
+    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_font_size(text) == 42
+    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_y(text) == 80
   end
 
   test "debugger preview preserves explicit text alignment and overflow" do

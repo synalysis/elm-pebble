@@ -126,6 +126,8 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     "elmc_closure_new"
   ])
 
+  @fresh_owned_slot ~r/^(tmp_\d+|head_\d+|call_args_\d+|list_items_\d+|rec_values_\d+|list_map_item_\d+|list_map_cons_\d+|list_map_rev_\d+|list_fwd_cell_\d+|list_repeat_cons_\d+)$/
+
   @take_wrappers %{
     "elmc_new_int" => "elmc_new_int_take",
     "elmc_new_bool" => "elmc_new_bool_take",
@@ -249,23 +251,28 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   def rc_mode?(env),
     do: Map.get(env, :__rc_required__, false) and Map.get(env, :__rc_catch__, false)
 
+  @spec rc_allocator_emit_mode?(map()) :: boolean()
+  def rc_allocator_emit_mode?(env),
+    do: Map.get(env, :__rc_required__, false) or Map.get(env, :__rc_catch__, false)
+
   @spec assign_call(map(), String.t(), String.t(), String.t()) :: String.t()
   def assign_call(env, out, function, call_args) do
     cond do
       not rc_allocator?(function) ->
         "ElmcValue *#{out} = #{function}(#{call_args});"
 
-      rc_mode?(env) ->
+      rc_allocator_emit_mode?(env) ->
         ValueSlots.track(out)
 
         """
+        ElmcValue *#{out} = NULL;
         Rc = #{function}(&#{out}, #{call_args});
         CHECK_RC(Rc);
         """
         |> String.trim()
 
       true ->
-        fusion_assign(out, function, call_args)
+        fusion_assign(out, function, call_args, env)
     end
   end
 
@@ -278,7 +285,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
       not rc_allocator?(function) ->
         "#{out} = #{function}(#{call_args});"
 
-      rc_mode?(env) ->
+      rc_allocator_emit_mode?(env) ->
         ValueSlots.track(out)
 
         """
@@ -292,28 +299,36 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
         "#{out} = #{take_fn}(#{call_args});"
 
       true ->
-        """
-        #{out} = NULL;
-        if (#{function}(&#{out}, #{call_args}) != RC_SUCCESS) #{out} = elmc_int_zero();
-        """
-        |> String.trim()
+        legacy_rc_allocator_stmt(out, function, call_args, declare_out?: false, env: env)
     end
   end
 
   @doc "List.cons with retain semantics for borrowed head/tail operands."
-  @spec list_cons_retain_assign(String.t(), String.t()) :: String.t()
-  def list_cons_retain_assign(out, call_args) do
-    """
-    ElmcValue *#{out} = NULL;
-    if (elmc_list_cons(&#{out}, #{call_args}) != RC_SUCCESS) #{out} = elmc_int_zero();
-    """
-    |> String.trim()
+  @spec list_cons_retain_assign(String.t(), String.t(), map(), keyword()) :: String.t()
+  def list_cons_retain_assign(out, call_args, env \\ %{}, opts \\ []) do
+    if rc_allocator_emit_mode?(env) do
+      ValueSlots.track(out)
+
+      """
+      ElmcValue *#{out} = NULL;
+      Rc = elmc_list_cons(&#{out}, #{call_args});
+      CHECK_RC(Rc);
+      """
+      |> String.trim()
+    else
+      legacy_rc_allocator_stmt(
+        out,
+        "elmc_list_cons",
+        call_args,
+        opts |> Keyword.put(:declare_out?, true) |> Keyword.put(:env, env)
+      )
+    end
   end
 
   @doc "RC assign in catch blocks; take wrapper otherwise."
   @spec assign_or_fusion(map(), String.t(), String.t(), String.t()) :: String.t()
   def assign_or_fusion(env, out, function, call_args) do
-    if rc_mode?(env) do
+    if rc_allocator_emit_mode?(env) do
       ValueSlots.track(out)
 
       """
@@ -323,41 +338,121 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
       """
       |> String.trim()
     else
-      fusion_assign(out, function, call_args)
+      fusion_assign(out, function, call_args, env)
     end
   end
 
   @doc "RC allocator assign for fused/native C snippets (never uses break)."
-  @spec fusion_assign(String.t(), String.t(), String.t()) :: String.t()
-  def fusion_assign(out, function, call_args) do
-    case Map.get(@take_wrappers, function) do
-      nil ->
+  @spec fusion_assign(String.t(), String.t(), String.t(), map(), keyword()) :: String.t()
+  def fusion_assign(out, function, call_args, env \\ %{}, opts \\ []) do
+    cond do
+      rc_allocator_emit_mode?(env) ->
+        ValueSlots.track(out)
+
         """
         ElmcValue *#{out} = NULL;
-        if (#{function}(&#{out}, #{call_args}) != RC_SUCCESS) #{out} = elmc_int_zero();
+        Rc = #{function}(&#{out}, #{call_args});
+        CHECK_RC(Rc);
         """
         |> String.trim()
 
-      take_fn ->
+      Map.has_key?(@take_wrappers, function) ->
+        take_fn = Map.fetch!(@take_wrappers, function)
         "ElmcValue *#{out} = #{take_fn}(#{call_args});"
+
+      true ->
+        legacy_rc_allocator_stmt(out, function, call_args, Keyword.merge(opts, env: env))
     end
   end
 
   @doc "RC allocator return for fused C snippets."
-  @spec fusion_return(String.t(), String.t(), String.t()) :: String.t()
-  def fusion_return(_out, function, call_args) do
-    case Map.get(@take_wrappers, function) do
-      nil ->
+  @spec fusion_return(String.t(), String.t(), String.t(), map()) :: String.t()
+  def fusion_return(_out, function, call_args, env \\ %{}) do
+    cond do
+      rc_allocator_emit_mode?(env) ->
         """
         {
           ElmcValue *__rc_ret = NULL;
-          if (#{function}(&__rc_ret, #{call_args}) != RC_SUCCESS) return elmc_int_zero();
+          Rc = #{function}(&__rc_ret, #{call_args});
+          CHECK_RC(Rc);
           return __rc_ret;
         }
         """
 
-      take_fn ->
+      Map.has_key?(@take_wrappers, function) ->
+        take_fn = Map.fetch!(@take_wrappers, function)
         "return #{take_fn}(#{call_args});"
+
+      true ->
+        """
+        {
+          ElmcValue *__rc_ret = NULL;
+          RC __alloc_rc = #{function}(&__rc_ret, #{call_args});
+          if (__alloc_rc != RC_SUCCESS) {
+            ELMC_RC_LOG_FAIL(__alloc_rc, "#{function}", "allocation failed");
+            return NULL;
+          }
+          return __rc_ret;
+        }
+        """
+    end
+  end
+
+  @spec legacy_rc_allocator_stmt(String.t(), String.t(), String.t(), keyword()) :: String.t()
+  defp legacy_rc_allocator_stmt(out, function, call_args, opts \\ []) do
+    return_on_fail? = Keyword.get(opts, :return_on_fail?, true)
+    declare_out? = legacy_declare_out?(out, opts)
+
+    init =
+      if declare_out? do
+        "ElmcValue *#{out} = NULL"
+      else
+        "#{out} = NULL"
+      end
+
+    failure =
+      if return_on_fail? do
+        """
+        ELMC_RC_LOG_FAIL(__alloc_rc, "#{function}", "allocation failed");
+        #{rc_failure_return(opts)};
+        """
+      else
+        """
+        ELMC_RC_LOG_FAIL(__alloc_rc, "#{function}", "allocation failed");
+        #{out} = NULL;
+        """
+      end
+
+    """
+    #{init};
+    {
+      RC __alloc_rc = #{function}(&#{out}, #{call_args});
+      if (__alloc_rc != RC_SUCCESS) {
+        #{failure}
+      }
+    }
+    """
+    |> String.trim()
+  end
+
+  defp legacy_declare_out?(out, opts) do
+    case Keyword.get(opts, :declare_out?) do
+      true -> true
+      false -> false
+      nil -> Regex.match?(@fresh_owned_slot, out)
+    end
+  end
+
+  defp rc_failure_return(opts) do
+    failure_return(Keyword.get(opts, :env, %{}))
+  end
+
+  @spec failure_return(map()) :: String.t()
+  def failure_return(env) do
+    case Map.get(env, :__native_return_kind__) do
+      :native_int -> "return 0"
+      :native_bool -> "return 0"
+      _ -> "return NULL"
     end
   end
 

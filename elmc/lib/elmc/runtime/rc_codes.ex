@@ -62,6 +62,14 @@ defmodule Elmc.Runtime.RcCodes do
     """
   end
 
+  @spec name_for_index(non_neg_integer()) :: String.t()
+  def name_for_index(index) when is_integer(index) and index >= 0 do
+    case Enum.at(@entries, index) do
+      %{c_name: name} -> name
+      nil -> "RC_#{index}"
+    end
+  end
+
   @spec name_table_source() :: String.t()
   def name_table_source do
     rows =

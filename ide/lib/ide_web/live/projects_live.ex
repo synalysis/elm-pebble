@@ -54,7 +54,10 @@ defmodule IdeWeb.ProjectsLive do
          |> push_navigate(to: ~p"/projects/#{project.slug}/editor")}
 
       {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply, assign(socket, :form, to_form(Map.put(changeset, :action, :validate)))}
+        {:noreply,
+         socket
+         |> put_flash(:error, "Could not create project. Fix the errors below.")
+         |> assign(:form, to_form(Map.put(changeset, :action, :insert)))}
 
       {:error, reason} ->
         {:noreply,

@@ -1539,7 +1539,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute generated_c =~ "elmc_fn_Main_unreachableDirectOps_commands"
   end
 
-  test "direct render only builds omit generic render helpers" do
+  test "direct render only keeps streaming view fallback for small-stack platforms" do
     source_fixture = Path.expand("fixtures/simple_project", __DIR__)
     project_dir = Path.expand("tmp/direct_render_only_project", __DIR__)
     out_dir = Path.expand("tmp/direct_render_only_codegen", __DIR__)
@@ -1572,14 +1572,13 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     assert generated_c =~ ~r/(?:RC|ElmcValue \*) elmc_fn_Main_subscriptions\(/
     assert generated_c =~ ~r/static (?:RC|int) elmc_fn_Main_view_commands_append\(/
 
-    refute generated_c =~ "ElmcValue *elmc_fn_Main_view(ElmcValue"
-    refute generated_c =~ "ElmcValue *elmc_fn_Main_statusDraw(ElmcValue"
-    refute generated_c =~ "ElmcValue *elmc_fn_Main_counterDraw(ElmcValue"
-    refute generated_c =~ "elmc_fn_Pebble_Ui_windowStack"
-    refute generated_c =~ "elmc_fn_Pebble_Ui_path"
+    assert generated_c =~ "ElmcValue *elmc_fn_Main_view(ElmcValue"
+    assert generated_c =~ "elmc_fn_Main_statusDraw"
+    assert generated_c =~ "elmc_fn_Main_counterDraw"
+    assert generated_c =~ "elmc_fn_Pebble_Ui_path"
 
-    assert pebble_c =~ "#if !defined(ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW)\n  int count = 0;"
-    assert pebble_c =~ "#if defined(ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW)\n  (void)app;"
+    assert pebble_c =~ "#if !defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)\n  int count = 0;"
+    assert pebble_c =~ "#if defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)\n  (void)app;"
   end
 
   test "worker drains nested Cmd.batch commands in order" do
@@ -3802,8 +3801,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
 
     assert view_body =~ "ELMC_RENDER_OP_TEXT"
-    assert view_body =~ "direct_digits"
-    assert view_body =~ "direct_digits" or view_body =~ "scene_cmd.text[0] = '.';"
+    assert view_body =~ "elmc_scene_text_from_nonzero_int"
+    assert view_body =~ "scene_cmd.text[0] = '.';"
     refute view_body =~ "snprintf(scene_cmd.text"
     refute view_body =~ "const char *direct_text = \".\";"
     refute view_body =~ "elmc_fn_Main_drawCell_commands_append_native"
@@ -3897,8 +3896,13 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute view_body =~ "ELMC_RECORD_GET_INDEX_INT(,"
     assert view_body =~ "direct_native_record_layout_cell_"
     assert view_body =~ "ELMC_RENDER_OP_TEXT"
-    assert view_body =~ "scene_cmd.p1 = (direct_native_record_layout_x_"
-    assert view_body =~ "scene_cmd.p2 = ((direct_native_record_layout_y_"
+    assert view_body =~ "direct_stride_"
+    assert view_body =~ "direct_cell_x_"
+    assert view_body =~ "direct_cell_y_"
+    assert view_body =~ "direct_text_y_"
+    assert view_body =~ "scene_cmd.p0 = direct_cell_x_"
+    assert view_body =~ "scene_cmd.p1 = direct_cell_y_"
+    assert view_body =~ "scene_cmd.p2 = direct_text_y_"
     refute view_body =~ "scene_cmd.p1 = (ELMC_TEXT_ALIGN_CENTER"
 
     cell_loop =

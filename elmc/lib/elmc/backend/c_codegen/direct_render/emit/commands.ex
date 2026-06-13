@@ -331,16 +331,27 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
           Types.compile_counter()
         ) :: text_copy_result()
   defp text_copy_append_code(%{op: :string_literal, value: literal}, right, env, counter) do
-    {right_code, right_ref, right_cleanup, counter} =
-      Host.compile_native_string_expr(right, env, counter)
+    case native_int_append_operand(right, env) do
+      {:ok, int_expr} ->
+        {int_code, int_ref, counter} = Host.compile_native_int_expr(int_expr, env, counter)
 
-    cleanup_code =
-      right_cleanup
-      |> Enum.map_join("\n", fn var -> "elmc_release(#{var});" end)
+        copy_code =
+          "elmc_scene_text_prefix_and_nonzero_int(scene_cmd.text, \"#{Util.escape_c_string(literal)}\", #{int_ref});"
 
-    copy_code = text_copy_literal_prefix_append(literal, right_ref)
+        {int_code, copy_code, "", counter}
 
-    {right_code, copy_code, cleanup_code, counter}
+      :error ->
+        {right_code, right_ref, right_cleanup, counter} =
+          Host.compile_native_string_expr(right, env, counter)
+
+        cleanup_code =
+          right_cleanup
+          |> Enum.map_join("\n", fn var -> "elmc_release(#{var});" end)
+
+        copy_code = text_copy_literal_prefix_append(literal, right_ref)
+
+        {right_code, copy_code, cleanup_code, counter}
+    end
   end
 
   defp text_copy_append_code(left, right, env, counter) do
@@ -576,4 +587,26 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
   def scene_emit_guard_close, do: ""
 
   defp draw_kind(kind), do: Elmc.Backend.Pebble.draw_kind_id!(kind)
+
+  defp native_int_append_operand(
+         %{op: :runtime_call, function: "elmc_string_from_int", args: [value]},
+         env
+       ) do
+    if Host.native_int_expr?(value, env), do: {:ok, value}, else: :error
+  end
+
+  defp native_int_append_operand(
+         %{op: :qualified_call, target: target, args: [value]},
+         env
+       ) do
+    case Host.normalize_special_target(target) do
+      "String.fromInt" ->
+        if Host.native_int_expr?(value, env), do: {:ok, value}, else: :error
+
+      _ ->
+        :error
+    end
+  end
+
+  defp native_int_append_operand(_, _), do: :error
 end

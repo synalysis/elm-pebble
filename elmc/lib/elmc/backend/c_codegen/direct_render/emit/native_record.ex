@@ -236,6 +236,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
           {field, else_expr}
         end)
 
+      {minmax_preamble, counter} =
+        precompile_branch_minmax_hoists(then_entries ++ else_entries, env, counter)
+
       with {:ok, then_code, then_refs, then_kinds, counter} <-
              emit_branch_fields("_then", then_entries, record_type, env, counter),
            {:ok, else_code, else_refs, _else_kinds, counter} <-
@@ -257,8 +260,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
           env
           |> put_native_record_binding(name, field_map, value_expr, then_entries ++ else_entries)
           |> Hoist.put_hoisted_native_bool(cond, cond_ref)
+          |> Hoist.merge_process_hoisted_native_ints()
 
-        {:ok, cond_code <> cond_cleanup <> then_code <> else_code <> field_code, body_env, counter}
+        {:ok, minmax_preamble <> cond_code <> cond_cleanup <> then_code <> else_code <> field_code, body_env, counter}
       else
         :error -> :error
       end
@@ -267,25 +271,107 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
     end
   end
 
-  defp emit_branch_fields(_branch, [], _record_type, _env, counter),
-    do: {:ok, "", %{}, %{}, counter}
-
   defp emit_branch_fields(branch, field_entries, record_type, env, counter) do
+    if field_entries == [] do
+      {:ok, "", %{}, %{}, counter}
+    else
+      emit_branch_fields_impl(branch, field_entries, record_type, env, counter)
+    end
+  end
+
+  defp precompile_branch_minmax_hoists(field_entries, env, counter) do
     env = Hoist.merge_process_hoisted_native_ints(env)
+
+    field_entries
+    |> Enum.map(&elem(&1, 1))
+    |> Enum.flat_map(&branch_minmax_exprs(&1, []))
+    |> Enum.uniq()
+    |> Enum.reduce({"", counter}, fn expr, {code_acc, c} ->
+      case Host.hoisted_native_int_lookup(env, expr) do
+        {:ok, _ref} ->
+          {code_acc, c}
+
+        :error ->
+          {expr_code, _ref, c2} = Host.compile_native_int_expr(expr, env, c)
+          {code_acc <> expr_code, c2}
+      end
+    end)
+  end
+
+  defp branch_minmax_exprs(expr, acc) when is_map(expr) do
+    acc =
+      case expr do
+        %{op: :call, name: name, args: [_, _]} when name in ["min", "max"] ->
+          [expr | acc]
+
+        %{op: :qualified_call, target: target, args: [_, _]}
+        when target in ["Basics.min", "Basics.max"] ->
+          [expr | acc]
+
+        %{op: :runtime_call, function: function, args: [_, _]}
+        when function in ["elmc_basics_min", "elmc_basics_max"] ->
+          [expr | acc]
+
+        _ ->
+          acc
+      end
+
+    Enum.reduce(expr, acc, fn
+      {_key, value}, acc when is_map(value) or is_list(value) ->
+        branch_minmax_exprs(value, acc)
+
+      _, acc ->
+        acc
+    end)
+  end
+
+  defp branch_minmax_exprs(expr, acc) when is_list(expr) do
+    Enum.reduce(expr, acc, &branch_minmax_exprs(&1, &2))
+  end
+
+  defp branch_minmax_exprs(_expr, acc), do: acc
+
+  defp emit_branch_fields_impl(branch, field_entries, record_type, env, counter) do
+    env = Hoist.merge_process_hoisted_native_ints(env)
+
+    Process.put(
+      :elmc_hoisted_native_ints,
+      Map.merge(
+        Process.get(:elmc_hoisted_native_ints, %{}),
+        Map.get(env, :__hoisted_native_ints__, %{})
+      )
+    )
+
     field_entries = sort_branch_field_entries(field_entries)
+    field_sources = Map.new(field_entries)
 
     result =
-      Enum.reduce_while(field_entries, {:ok, "", %{}, %{}, counter}, fn
-        {field, field_expr}, {:ok, code_acc, refs_acc, kinds_acc, c} ->
+      Enum.reduce_while(field_entries, {:ok, "", %{}, %{}, %{}, counter}, fn
+        {field, field_expr}, {:ok, code_acc, refs_acc, kinds_acc, span_hoists, c} ->
+          compile_env = Hoist.merge_process_hoisted_native_ints(env)
           field_expr = substitute_emitted_branch_field_calls(field_expr, refs_acc)
+
+          field_expr =
+            substitute_emitted_branch_field_subexprs(field_expr, refs_acc, field_sources)
+
+          field_expr = rewrite_branch_value_hoists(field_expr, compile_env)
+
+          {span_code, field_expr, span_hoists, c} =
+            ensure_branch_span_hoists(field_expr, refs_acc, span_hoists, field_sources, c)
+
           kind = field_kind(record_type, field, field_expr, env)
           var = "direct_native_record_branch_#{branch}_#{field}_#{c}"
 
           case emit_native_field_value(field_expr, kind, var, env, c) do
             {:ok, code, ref, c2} ->
+              if register_branch_field_hoist?(field_expr) and
+                   Hoist.hoisted_native_ints_enabled?(env) do
+                Host.register_hoisted_native_int(field_expr, ref)
+              end
+
               {:cont,
-               {:ok, code_acc <> code, Map.put(refs_acc, field, ref),
-                Map.put(kinds_acc, field, kind), c2}}
+               {:ok, code_acc <> span_code <> code, Map.put(refs_acc, field, ref),
+                Map.put(kinds_acc, field, kind), span_hoists, c2}}
 
             :error ->
               {:halt, :error}
@@ -293,7 +379,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
       end)
 
     case result do
-      {:ok, code, refs, kinds, counter} -> {:ok, code, refs, kinds, counter}
+      {:ok, code, refs, kinds, _span_hoists, counter} -> {:ok, code, refs, kinds, counter}
       :error -> :error
     end
   end
@@ -312,29 +398,97 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
 
   defp sort_branch_field_entries(field_entries) do
     names = MapSet.new(Enum.map(field_entries, &elem(&1, 0)))
+    sources = Map.new(field_entries)
 
-    deps =
+    zero_arg_deps =
       Map.new(field_entries, fn {field, expr} ->
         {field,
          branch_field_zero_arg_call_deps(expr, names, []) |> Enum.uniq() |> List.delete(field)}
       end)
 
+    subexpr_deps = branch_field_subexpr_deps(field_entries, sources)
+
+    deps =
+      Map.merge(zero_arg_deps, subexpr_deps, fn _field, zero, sub ->
+        Enum.uniq(zero ++ sub)
+      end)
+
     sort_branch_field_entries_by_deps(field_entries, deps, [])
   end
+
+  defp branch_field_subexpr_deps(field_entries, sources) do
+    Enum.reduce(field_entries, %{}, fn {field_b, expr_b}, acc ->
+      deps =
+        for {field_a, expr_a} <- sources,
+            field_a != field_b,
+            not trivial_branch_field_literal?(expr_a),
+            expr_contains?(expr_b, expr_a),
+            do: field_a
+
+      if deps == [], do: acc, else: Map.put(acc, field_b, Enum.uniq(deps))
+    end)
+  end
+
+  defp trivial_branch_field_literal?(%{op: :int_literal}), do: true
+  defp trivial_branch_field_literal?(%{op: :char_literal}), do: true
+  defp trivial_branch_field_literal?(_), do: false
+
+  defp expr_contains?(haystack, needle) do
+    case ir_expr_equal?(haystack, needle) do
+      true ->
+        true
+
+      false ->
+        cond do
+          is_map(haystack) ->
+            Enum.any?(haystack, fn
+              {_key, value} when is_map(value) or is_list(value) ->
+                expr_contains?(value, needle)
+
+              _ ->
+                false
+            end)
+
+          is_list(haystack) ->
+            Enum.any?(haystack, &expr_contains?(&1, needle))
+
+          true ->
+            false
+        end
+    end
+  end
+
+  defp ir_expr_equal?(left, right), do: normalize_ir_expr(left) == normalize_ir_expr(right)
+
+  defp normalize_ir_expr(expr) when is_map(expr) do
+    expr
+    |> Map.drop([:loc, :meta, :range])
+    |> Enum.sort()
+    |> Enum.map(fn {key, value} -> {key, normalize_ir_expr(value)} end)
+    |> Map.new()
+  end
+
+  defp normalize_ir_expr(expr) when is_list(expr), do: Enum.map(expr, &normalize_ir_expr/1)
+  defp normalize_ir_expr(expr), do: expr
 
   defp sort_branch_field_entries_by_deps([], _deps, acc), do: Enum.reverse(acc)
 
   defp sort_branch_field_entries_by_deps(remaining, deps, acc) do
     ready =
-      Enum.filter(remaining, fn {field, _} ->
+      remaining
+      |> Enum.filter(fn {field, _} ->
         Enum.all?(Map.get(deps, field, []), &(&1 in acc))
       end)
+      |> Enum.sort_by(&branch_field_emit_priority/1)
 
     case ready do
       [] -> Enum.reverse(acc) ++ remaining
       _ -> sort_branch_field_entries_by_deps(remaining -- ready, deps, acc ++ ready)
     end
   end
+
+  defp branch_field_emit_priority({_field, expr}),
+    do: if(trivial_branch_field_literal?(expr), do: 0, else: 1)
 
   defp branch_field_zero_arg_call_deps(expr, names, acc)
 
@@ -410,6 +564,342 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
     do: Enum.map(expr, &substitute_emitted_branch_field_calls(&1, field_map))
 
   defp substitute_emitted_branch_field_calls(expr, _field_map), do: expr
+
+  defp substitute_emitted_branch_field_subexprs(expr, refs_acc, field_sources) do
+    replacements =
+      refs_acc
+      |> Enum.flat_map(fn {field, ref} ->
+        case Map.fetch(field_sources, field) do
+          {:ok, source} ->
+            if trivial_branch_field_literal?(source) do
+              []
+            else
+              [{source, %{op: :c_int_expr, value: ref}}]
+            end
+
+          :error ->
+            []
+        end
+      end)
+      |> Enum.sort_by(fn {source, _} -> ir_expr_size(source) end, :desc)
+
+    Enum.reduce(replacements, expr, &substitute_subexpr(&2, &1))
+  end
+
+  defp ir_expr_size(expr) when is_map(expr),
+    do: 1 + Enum.sum(Enum.map(expr, fn {_k, v} -> ir_expr_size(v) end))
+
+  defp ir_expr_size(expr) when is_list(expr), do: Enum.sum(Enum.map(expr, &ir_expr_size/1))
+  defp ir_expr_size(_), do: 1
+
+  defp substitute_subexpr(expr, {source, replacement}) do
+    if ir_expr_equal?(expr, source) do
+      replacement
+    else
+      substitute_subexpr_children(expr, source, replacement)
+    end
+  end
+
+  defp substitute_subexpr_children(expr, source, replacement) when is_map(expr) do
+    expr
+    |> Map.new(fn
+      {key, value} when is_map(value) or is_list(value) ->
+        {key, substitute_subexpr(value, {source, replacement})}
+
+      {key, value} ->
+        {key, value}
+    end)
+  end
+
+  defp substitute_subexpr_children(expr, source, replacement) when is_list(expr),
+    do: Enum.map(expr, &substitute_subexpr(&1, {source, replacement}))
+
+  defp substitute_subexpr_children(expr, _source, _replacement), do: expr
+
+  defp ensure_branch_span_hoists(expr, refs_acc, span_hoists, field_sources, counter) do
+    ensure_branch_span_hoists(expr, refs_acc, span_hoists, field_sources, counter, "")
+  end
+
+  defp ensure_branch_span_hoists(expr, refs_acc, span_hoists, field_sources, counter, code_acc)
+       when is_map(expr) do
+    case branch_span_key(expr, refs_acc, field_sources) do
+      {:ok, key, left_field, width, right_field, gap} ->
+        case Map.fetch(span_hoists, key) do
+          {:ok, ref} ->
+            {code_acc, %{op: :c_int_expr, value: ref}, span_hoists, counter}
+
+          :error ->
+            next = counter + 1
+            ref = "direct_native_record_branch_span_#{next}"
+            left_ref = branch_span_ref(refs_acc, field_sources, left_field)
+            right_ref = branch_span_ref(refs_acc, field_sources, right_field)
+
+            decl =
+              "  const elmc_int_t #{ref} = ((#{left_ref} * #{width}) + (#{right_ref} * #{gap}));\n"
+
+            {code_acc <> decl, %{op: :c_int_expr, value: ref}, Map.put(span_hoists, key, ref),
+             next}
+        end
+
+      :error ->
+        expr
+        |> Enum.reduce({code_acc, expr, span_hoists, counter}, fn
+          {key, value}, {acc_code, acc_expr, acc_hoists, acc_counter} ->
+            {child_code, child_value, child_hoists, child_counter} =
+              ensure_branch_span_hoists(value, refs_acc, acc_hoists, field_sources, acc_counter)
+
+            {acc_code <> child_code, Map.put(acc_expr, key, child_value), child_hoists,
+             child_counter}
+        end)
+        |> then(fn {c, e, h, ct} -> {c, e, h, ct} end)
+    end
+  end
+
+  defp ensure_branch_span_hoists(expr, refs_acc, span_hoists, field_sources, counter, code_acc)
+       when is_list(expr) do
+    Enum.reduce(Enum.with_index(expr), {code_acc, [], span_hoists, counter}, fn
+      {value, index}, {acc_code, acc_items, acc_hoists, acc_counter} ->
+        {child_code, child_value, child_hoists, child_counter} =
+          ensure_branch_span_hoists(value, refs_acc, acc_hoists, field_sources, acc_counter)
+
+        {acc_code <> child_code, acc_items ++ [{index, child_value}], child_hoists, child_counter}
+    end)
+    |> then(fn {c, indexed, h, ct} ->
+      {c, Enum.map(indexed, fn {_i, v} -> v end), h, ct}
+    end)
+  end
+
+  defp ensure_branch_span_hoists(expr, _refs_acc, span_hoists, _field_sources, counter, code_acc),
+    do: {code_acc, expr, span_hoists, counter}
+
+  @doc false
+  @spec debug_branch_span_mul_field(Types.ir_expr(), map(), map()) :: term()
+  def debug_branch_span_mul_field(expr, refs_acc, field_sources),
+    do: branch_span_mul_field(expr, refs_acc, field_sources)
+
+  @doc false
+  @spec debug_branch_span_key(Types.ir_expr(), map(), map()) :: term()
+  def debug_branch_span_key(expr, refs_acc, field_sources),
+    do: branch_span_key(expr, refs_acc, field_sources)
+
+  defp branch_span_key(expr, refs_acc, field_sources) do
+    case add_of_two_muls(expr) do
+      {:ok, left_mul, right_mul} ->
+        left = branch_span_mul_field(left_mul, refs_acc, field_sources)
+        right = branch_span_mul_field(right_mul, refs_acc, field_sources)
+
+        with {:ok, left_field, width} <- left,
+             {:ok, right_field, gap} <- right,
+             true <- left_field != right_field do
+          {:ok, {left_field, width, right_field, gap}, left_field, width, right_field, gap}
+        else
+          _ -> :error
+        end
+
+      :error ->
+        :error
+    end
+  end
+
+  defp add_of_two_muls(%{op: :call, name: op, args: [left, right]})
+       when op in ["__add__", "+"],
+       do: {:ok, left, right}
+
+  defp add_of_two_muls(%{op: :qualified_call, target: "Basics.add", args: [left, right]}),
+    do: {:ok, left, right}
+
+  defp add_of_two_muls(_), do: :error
+
+  defp branch_span_mul_field(mul_expr, refs_acc, field_sources)
+
+  defp branch_span_mul_field(
+         %{op: :call, name: op, args: [%{op: :c_int_expr, value: ref}, %{op: :int_literal, value: width}]},
+         refs_acc,
+         _field_sources
+       )
+       when op in ["__mul__", "*"] and is_integer(width) do
+    case field_for_ref(refs_acc, ref) do
+      field when is_binary(field) -> {:ok, field, width}
+      _ -> :error
+    end
+  end
+
+  defp branch_span_mul_field(
+         %{
+           op: :qualified_call,
+           target: op,
+           args: [%{op: :c_int_expr, value: ref}, %{op: :int_literal, value: width}]
+         },
+         refs_acc,
+         _field_sources
+       )
+       when op in ["Basics.mul", "*"] and is_integer(width) do
+    case field_for_ref(refs_acc, ref) do
+      field when is_binary(field) -> {:ok, field, width}
+      _ -> :error
+    end
+  end
+
+  defp branch_span_mul_field(
+         %{
+           op: :call,
+           name: op,
+           args: [%{op: :int_literal, value: gap_val}, %{op: :int_literal, value: scale}]
+         },
+         refs_acc,
+         field_sources
+       )
+       when op in ["__mul__", "*"] and is_integer(scale) and is_integer(gap_val) do
+    case field_for_literal_value(field_sources, refs_acc, gap_val) do
+      field when is_binary(field) -> {:ok, field, scale}
+      _ -> :error
+    end
+  end
+
+  defp branch_span_mul_field(
+         %{
+           op: :qualified_call,
+           target: op,
+           args: [%{op: :int_literal, value: gap_val}, %{op: :int_literal, value: scale}]
+         },
+         refs_acc,
+         field_sources
+       )
+       when op in ["Basics.mul", "*"] and is_integer(scale) and is_integer(gap_val) do
+    case field_for_literal_value(field_sources, refs_acc, gap_val) do
+      field when is_binary(field) -> {:ok, field, scale}
+      _ -> :error
+    end
+  end
+
+  defp branch_span_mul_field(
+         %{op: :call, name: op, args: [left, %{op: :int_literal, value: scale}]},
+         refs_acc,
+         field_sources
+       )
+       when op in ["__mul__", "*"] and is_integer(scale) do
+    branch_span_mul_field_named(left, refs_acc, field_sources, scale)
+  end
+
+  defp branch_span_mul_field(
+         %{op: :qualified_call, target: op, args: [left, %{op: :int_literal, value: scale}]},
+         refs_acc,
+         field_sources
+       )
+       when op in ["Basics.mul", "*"] and is_integer(scale) do
+    branch_span_mul_field_named(left, refs_acc, field_sources, scale)
+  end
+
+  defp branch_span_mul_field(
+         %{op: :call, name: op, args: [%{op: :int_literal, value: width}, left]},
+         refs_acc,
+         field_sources
+       )
+       when op in ["__mul__", "*"] and is_integer(width) do
+    branch_span_mul_field_named(left, refs_acc, field_sources, width)
+  end
+
+  defp branch_span_mul_field(
+         %{
+           op: :qualified_call,
+           target: op,
+           args: [%{op: :int_literal, value: width}, left]
+         },
+         refs_acc,
+         field_sources
+       )
+       when op in ["Basics.mul", "*"] and is_integer(width) do
+    branch_span_mul_field_named(left, refs_acc, field_sources, width)
+  end
+
+  defp branch_span_mul_field(_mul_expr, _refs_acc, _field_sources), do: :error
+
+  defp branch_span_mul_field_named(left, refs_acc, _field_sources, scale) do
+    case branch_span_field_name(left) do
+      name when is_binary(name) ->
+        if Map.has_key?(refs_acc, name), do: {:ok, name, scale}, else: :error
+
+      _ ->
+        case left do
+          %{op: :c_int_expr, value: ref} ->
+            case field_for_ref(refs_acc, ref) do
+              field when is_binary(field) -> {:ok, field, scale}
+              _ -> :error
+            end
+
+          _ ->
+            :error
+        end
+    end
+  end
+
+  defp field_for_ref(refs_acc, ref) do
+    Enum.find_value(refs_acc, fn {field, field_ref} ->
+      if field_ref == ref, do: field
+    end)
+  end
+
+  defp field_for_literal_value(field_sources, _refs_acc, value) do
+    Enum.find_value(field_sources, fn {field, expr} ->
+      if expr == %{op: :int_literal, value: value}, do: field
+    end)
+  end
+
+  defp branch_span_ref(refs_acc, field_sources, field) do
+    case Map.fetch(refs_acc, field) do
+      {:ok, ref} ->
+        ref
+
+      :error ->
+        case Map.fetch(field_sources, field) do
+          {:ok, %{op: :int_literal, value: value}} -> Integer.to_string(value)
+          _ -> Map.fetch!(refs_acc, field)
+        end
+    end
+  end
+
+  defp branch_span_field_name(%{op: :var, name: name}) when is_binary(name) or is_atom(name),
+    do: EnvBindings.binding_key(name)
+
+  defp branch_span_field_name(%{op: :call, name: name, args: []}) when is_binary(name), do: name
+
+  defp branch_span_field_name(%{op: :qualified_call, target: target, args: []})
+       when is_binary(target) do
+    case Util.split_qualified_function_target(Host.normalize_special_target(target)) do
+      {_mod, name} -> name
+      _ -> nil
+    end
+  end
+
+  defp branch_span_field_name(_), do: nil
+
+  defp rewrite_branch_value_hoists(expr, env) when is_map(expr) do
+    case Host.hoisted_native_int_lookup(env, expr) do
+      {:ok, ref} ->
+        %{op: :c_int_expr, value: ref}
+
+      :error ->
+        expr
+        |> Enum.map(fn
+          {key, value} when is_map(value) or is_list(value) ->
+            {key, rewrite_branch_value_hoists(value, env)}
+
+          other ->
+            other
+        end)
+        |> Map.new()
+    end
+  end
+
+  defp rewrite_branch_value_hoists(expr, env) when is_list(expr),
+    do: Enum.map(expr, &rewrite_branch_value_hoists(&1, env))
+
+  defp rewrite_branch_value_hoists(expr, _env), do: expr
+
+  defp register_branch_field_hoist?(%{op: :int_literal}), do: false
+  defp register_branch_field_hoist?(%{op: :char_literal}), do: false
+  defp register_branch_field_hoist?(%{op: :c_int_expr}), do: false
+  defp register_branch_field_hoist?(_), do: true
 
   defp substitute_emitted_branch_field_calls_map(expr, field_map) do
     expr

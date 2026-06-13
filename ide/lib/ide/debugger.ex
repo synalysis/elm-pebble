@@ -92,6 +92,9 @@ defmodule Ide.Debugger do
   @spec step(String.t(), Types.step_attrs()) :: {:ok, runtime_state()}
   defdelegate step(project_slug, attrs \\ %{}), to: RuntimeApi
 
+  @spec ingest_emulator_rc_fail(String.t(), map()) :: {:ok, runtime_state()}
+  defdelegate ingest_emulator_rc_fail(project_slug, attrs), to: RuntimeApi
+
   # Companion configuration
   @spec save_configuration(String.t(), Types.save_configuration_attrs()) :: {:ok, runtime_state()}
   defdelegate save_configuration(project_slug, values), to: ConfigurationApi

@@ -50,6 +50,28 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.RuntimeWarnings do
         "Runtime execution error: #{message}"
 
       _ ->
+        elmc_runtime_fail_warning(model)
+    end
+  end
+
+  @spec elmc_runtime_fail_warning(map()) :: String.t() | nil
+  defp elmc_runtime_fail_warning(model) when is_map(model) do
+    code = Map.get(model, "elmc_last_fail_code") || Map.get(model, :elmc_last_fail_code)
+    line = Map.get(model, "elmc_last_fail_line") || Map.get(model, :elmc_last_fail_line)
+
+    case Integer.parse(to_string(code || "")) do
+      {rc, _} when rc > 0 ->
+        name = Elmc.Runtime.RcCodes.name_for_index(rc)
+
+        line_text =
+          case Integer.parse(to_string(line || "")) do
+            {ln, _} when ln > 0 -> " at line #{ln}"
+            _ -> ""
+          end
+
+        "Elm runtime error: #{name} (code #{rc})#{line_text}"
+
+      _ ->
         nil
     end
   end

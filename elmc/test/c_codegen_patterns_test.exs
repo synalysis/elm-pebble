@@ -419,7 +419,10 @@ defmodule Elmc.CCodegenPatternsTest do
     {code, _out, _counter} =
       RecordCompile.compile(%{op: :record_literal, fields: fields}, env, 0)
 
-    assert code =~ ~r/elmc_record_get(?:_index)?\(tmp_4, (?:1 \/\* score \*\/|"score")\)/
+    assert code =~ "elmc_record_new_values_take"
+    refute code =~ "rec_names_"
+    refute code =~ "elmc_record_new_static_take"
+    assert code =~ ~r/elmc_record_get(?:_index)?\(tmp_4, (?:1 \/\* score \*\/|ELMC_FIELD_.*_SCORE)\)/
     refute code =~ "elmc_record_get(tmp_8, \"score\")"
     refute code =~ "elmc_int_zero();  ElmcValue *tmp_"
   end
@@ -1658,6 +1661,519 @@ defmodule Elmc.CCodegenPatternsTest do
     refute generated_c =~ "elmc_fn_Main_lockedSlotsFromBoard"
   end
 
+  test "list map static index at fusion matches renamed gather helpers, not 2048 names" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    fetchSlot : Int -> List Int -> Maybe Int
+    fetchSlot index slots =
+        if index < 0 then
+            Nothing
+
+        else
+            List.head (List.drop index slots)
+
+    gatherAt : List Int -> List Int
+    gatherAt slots =
+        List.map
+            (\\i -> Maybe.withDefault 0 (fetchSlot i slots))
+            [ 0, 2, 4, 1, 3, 5 ]
+
+    init _ = ( { picked = gatherAt (List.range 0 5) }, Platform.Cmd.none )
+    update _ m = ( m, Platform.Cmd.none )
+    view m = Ui.toUiNode [ Ui.clear Color.white, Ui.text (String.fromInt (List.length m.picked)) ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/list_map_static_index_at_renamed", __DIR__)
+    out_dir = Path.expand("tmp/list_map_static_index_at_renamed_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert generated_c =~ "elmc_fn_Main_gatherAt_native"
+    assert generated_c =~ "gatherAt_indices[6] = { 0, 2, 4, 1, 3, 5 }"
+    assert generated_c =~ "elmc_list_nth_int_default(slots, gatherAt_indices[k], 0)"
+    refute generated_c =~ "elmc_list_from_int_array"
+    refute generated_c =~ "elmc_fn_Main_fetchSlot"
+  end
+
+  test "row slice adjacent merge fusion matches renamed line helpers, not 2048 names" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    type alias LineResult =
+        { cells : List Int
+        , score : Int
+        }
+
+    sliceRow : Int -> List Int -> List Int
+    sliceRow row board =
+        List.take 3 (List.drop (row * 3) board)
+
+    slideMerge : List Int -> LineResult
+    slideMerge values =
+        case values of
+            a :: b :: rest ->
+                if a == b then
+                    let
+                        tail =
+                            slideMerge rest
+
+                        value =
+                            a + b
+                    in
+                    { cells = value :: tail.cells
+                    , score = value + tail.score
+                    }
+
+                else
+                    let
+                        tail =
+                            slideMerge (b :: rest)
+                    in
+                    { cells = a :: tail.cells
+                    , score = tail.score
+                    }
+
+            _ ->
+                { cells = values, score = 0 }
+
+    slideLine : List Int -> LineResult
+    slideLine row =
+        let
+            merged =
+                slideMerge (List.filter ((/=) 0) row)
+        in
+        { cells = merged.cells ++ List.repeat (3 - List.length merged.cells) 0
+        , score = merged.score
+        }
+
+    collapseGrid : List Int -> LineResult
+    collapseGrid cells =
+        let
+            row0 =
+                slideLine (sliceRow 0 cells)
+
+            row1 =
+                slideLine (sliceRow 1 cells)
+
+            row2 =
+                slideLine (sliceRow 2 cells)
+        in
+        { cells = row0.cells ++ row1.cells ++ row2.cells
+        , score = row0.score + row1.score + row2.score
+        }
+
+    init _ = ( { size = List.length (collapseGrid (List.range 0 8)) }, Platform.Cmd.none )
+    update _ m = ( m, Platform.Cmd.none )
+    view m = Ui.toUiNode [ Ui.clear Color.white, Ui.text (String.fromInt m.size) ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/row_slice_adjacent_merge_renamed", __DIR__)
+    out_dir = Path.expand("tmp/row_slice_adjacent_merge_renamed_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert generated_c =~ "elmc_fn_Main_collapseGrid_native"
+    assert generated_c =~ "elmc_list_from_int_array(&cells_out, flat, 9)"
+    refute generated_c =~ "elmc_fn_Main_slideLine"
+    refute generated_c =~ "elmc_fn_Main_slideMerge"
+    refute generated_c =~ "elmc_fn_Main_sliceRow"
+  end
+
+  test "list concat reversed row slices fusion matches renamed row helpers, not 2048 names" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    sliceRow : Int -> List Int -> List Int
+    sliceRow row board =
+        List.take 3 (List.drop (row * 3) board)
+
+    flipRows : List Int -> List Int
+    flipRows cells =
+        List.concat
+            [ List.reverse (sliceRow 0 cells)
+            , List.reverse (sliceRow 1 cells)
+            , List.reverse (sliceRow 2 cells)
+            ]
+
+    init _ = ( { flat = flipRows (List.range 0 8) }, Platform.Cmd.none )
+    update _ m = ( m, Platform.Cmd.none )
+    view m = Ui.toUiNode [ Ui.clear Color.white, Ui.text (String.fromInt (List.length m.flat)) ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/list_concat_reversed_row_slices_renamed", __DIR__)
+    out_dir = Path.expand("tmp/list_concat_reversed_row_slices_renamed_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert generated_c =~ "elmc_fn_Main_flipRows_native"
+    assert generated_c =~ "elmc_list_nth_int_default(cells, (row * 3) + (3 - 1 - col), 0)"
+    refute generated_c =~ "elmc_fn_Main_sliceRow"
+    refute generated_c =~ "elmc_list_concat"
+  end
+
+  test "union case four perm fusion matches renamed permute helper, not 2048 names" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    type Dir
+        = Left
+        | Right
+        | Up
+        | Down
+
+    sliceRow : Int -> List Int -> List Int
+    sliceRow row board =
+        List.take 3 (List.drop (row * 3) board)
+
+    flipRows : List Int -> List Int
+    flipRows cells =
+        List.concat
+            [ List.reverse (sliceRow 0 cells)
+            , List.reverse (sliceRow 1 cells)
+            , List.reverse (sliceRow 2 cells)
+            ]
+
+    fetchAt : Int -> List Int -> Maybe Int
+    fetchAt index values =
+        if index < 0 then
+            Nothing
+        else
+            List.head (List.drop index values)
+
+    swapAxes : List Int -> List Int
+    swapAxes cells =
+        List.map
+            (\\i -> Maybe.withDefault 0 (fetchAt i cells))
+            [ 0, 3, 6, 1, 4, 7, 2, 5, 8 ]
+
+    remapPack : Dir -> List Int -> List Int
+    remapPack direction cells =
+        case direction of
+            Left ->
+                cells
+
+            Right ->
+                flipRows cells
+
+            Up ->
+                swapAxes cells
+
+            Down ->
+                flipRows (swapAxes cells)
+
+    init _ = ( { packed = remapPack Up (List.range 0 8) }, Platform.Cmd.none )
+    update _ m = ( m, Platform.Cmd.none )
+    view m = Ui.toUiNode [ Ui.clear Color.white, Ui.text (String.fromInt (List.head m.packed |> Maybe.withDefault 0)) ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/union_case_four_perm_renamed", __DIR__)
+    out_dir = Path.expand("tmp/union_case_four_perm_renamed_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert generated_c =~ "elmc_fn_Main_remapPack_native"
+    assert generated_c =~ "switch (perm_case)"
+    refute generated_c =~ "remapPack_perms"
+    refute generated_c =~ "elmc_fn_Main_flipRows"
+    refute generated_c =~ "elmc_fn_Main_swapAxes"
+  end
+
+  test "permute merge inverse pipeline fusion matches renamed helpers, not 2048 names" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Storage as Storage
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    type alias GridModel =
+        { cells : List Int
+        , seed : Int
+        , score : Int
+        , best : Int
+        , turn : Int
+        }
+
+    type Dir
+        = Left
+        | Right
+        | Up
+        | Down
+
+    type alias LineResult =
+        { cells : List Int
+        , score : Int
+        }
+
+    sliceRow : Int -> List Int -> List Int
+    sliceRow row board =
+        List.take 3 (List.drop (row * 3) board)
+
+    slideMerge : List Int -> LineResult
+    slideMerge values =
+        case values of
+            a :: b :: rest ->
+                if a == b then
+                    let
+                        tail =
+                            slideMerge rest
+
+                        value =
+                            a + b
+                    in
+                    { cells = value :: tail.cells, score = value + tail.score }
+
+                else
+                    let
+                        tail =
+                            slideMerge (b :: rest)
+                    in
+                    { cells = a :: tail.cells, score = tail.score }
+
+            _ ->
+                { cells = values, score = 0 }
+
+    slideLine : List Int -> LineResult
+    slideLine row =
+        let
+            merged =
+                slideMerge (List.filter ((/=) 0) row)
+        in
+        { cells = merged.cells ++ List.repeat (3 - List.length merged.cells) 0
+        , score = merged.score
+        }
+
+    collapseGrid : List Int -> LineResult
+    collapseGrid cells =
+        let
+            row0 =
+                slideLine (sliceRow 0 cells)
+
+            row1 =
+                slideLine (sliceRow 1 cells)
+
+            row2 =
+                slideLine (sliceRow 2 cells)
+        in
+        { cells = row0.cells ++ row1.cells ++ row2.cells
+        , score = row0.score + row1.score + row2.score
+        }
+
+    flipRows : List Int -> List Int
+    flipRows cells =
+        List.concat
+            [ List.reverse (sliceRow 0 cells)
+            , List.reverse (sliceRow 1 cells)
+            , List.reverse (sliceRow 2 cells)
+            ]
+
+    fetchAt : Int -> List Int -> Maybe Int
+    fetchAt index values =
+        if index < 0 then
+            Nothing
+        else
+            List.head (List.drop index values)
+
+    swapAxes : List Int -> List Int
+    swapAxes cells =
+        List.map
+            (\\i -> Maybe.withDefault 0 (fetchAt i cells))
+            [ 0, 3, 6, 1, 4, 7, 2, 5, 8 ]
+
+    faceGrid : Dir -> List Int -> List Int
+    faceGrid direction cells =
+        case direction of
+            Left ->
+                cells
+
+            Right ->
+                flipRows cells
+
+            Up ->
+                swapAxes cells
+
+            Down ->
+                flipRows (swapAxes cells)
+
+    unfaceGrid : Dir -> List Int -> List Int
+    unfaceGrid direction cells =
+        case direction of
+            Left ->
+                cells
+
+            Right ->
+                flipRows cells
+
+            Up ->
+                swapAxes cells
+
+            Down ->
+                swapAxes (flipRows cells)
+
+    addTile : Int -> List Int -> ( List Int, Int )
+    addTile seed cells =
+        ( cells, seed + 1 )
+
+    slideGrid : Dir -> GridModel -> ( GridModel, Platform.Cmd msg )
+    slideGrid direction model =
+        let
+            faced =
+                faceGrid direction model.cells
+
+            squashed =
+                collapseGrid faced
+
+            restored =
+                unfaceGrid direction squashed.cells
+        in
+        if restored == model.cells then
+            ( model, Platform.Cmd.none )
+
+        else
+            let
+                ( nextCells, nextSeed ) =
+                    addTile model.seed restored
+
+                nextScore =
+                    model.score + squashed.score
+
+                nextBest =
+                    max model.best nextScore
+
+                saveCmd =
+                    if nextBest > model.best then
+                        Storage.writeString 99 (String.fromInt nextBest)
+
+                    else
+                        Platform.Cmd.none
+            in
+            ( { model
+                | cells = nextCells
+                , seed = nextSeed
+                , score = nextScore
+                , best = nextBest
+                , turn = model.turn + 1
+              }
+            , saveCmd
+            )
+
+    init _ =
+        let
+            ( model, _ ) =
+                slideGrid Left
+                    { cells = List.repeat 9 0
+                    , seed = 1
+                    , score = 0
+                    , best = 0
+                    , turn = 0
+                    }
+        in
+        ( model, Platform.Cmd.none )
+
+    update _ m = ( m, Platform.Cmd.none )
+
+    view m = Ui.toUiNode [ Ui.clear Color.white, Ui.text (String.fromInt m.turn) ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/permute_merge_inverse_pipeline_renamed", __DIR__)
+    out_dir = Path.expand("tmp/permute_merge_inverse_pipeline_renamed_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
+
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: false
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert generated_c =~ "elmc_fn_Main_slideGrid_native"
+    assert generated_c =~ "elmc_row_major_perm_src_i"
+    refute generated_c =~ "slideGrid_orient_perms"
+  end
+
   test "game elmtris init and view run on host pebble shim with basalt launch context" do
     cc = System.find_executable("cc")
     if is_nil(cc), do: flunk("cc not available for elmtris host harness")
@@ -1931,10 +2447,11 @@ defmodule Elmc.CCodegenPatternsTest do
       |> String.split(worker_fn_marker("update"), parts: 2)
       |> hd()
 
-    assert init_body =~ "elmc_record_new_static_ints"
+    assert init_body =~ "elmc_record_new_values_ints"
     refute init_body =~ "rec_field_names_"
-    refute init_body =~ "elmc_record_new_values_ints"
+    refute init_body =~ "rec_names_"
     refute init_body =~ "static const int rec_field_ids_"
+    refute init_body =~ "elmc_record_new_static_ints"
     refute init_body =~ "elmc_record_new_ints"
     refute init_body =~ "elmc_record_new_take"
 
@@ -2020,11 +2537,12 @@ defmodule Elmc.CCodegenPatternsTest do
 
     assert length(Regex.scan(~r/ElmcValue \*tmp_1 = elmc_int_zero\(\);/, init_body)) == 1
     refute length(Regex.scan(~r/ElmcValue \*tmp_2 = elmc_int_zero\(\);/, init_body)) > 0
-    assert init_body =~ "elmc_record_new_static_take"
+    assert init_body =~ "elmc_record_new_values_take"
     assert init_body =~ "rec_values_"
-    assert init_body =~ "static const char * const rec_names_"
+    refute init_body =~ "rec_names_"
     refute init_body =~ "rec_field_names_"
     refute init_body =~ "static const int rec_field_ids_"
+    refute init_body =~ "elmc_record_new_static_take"
     refute init_body =~ "elmc_record_new_take("
   end
 
@@ -2104,22 +2622,15 @@ defmodule Elmc.CCodegenPatternsTest do
              "ElmcValue *tmp_1_screen = elmc_record_get_index(context, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHCONTEXT_SCREEN)"
 
     assert init_body =~
-             ~s/elmc_record_get_index(tmp_1_screen, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_SHAPE)/
+             "ELMC_RECORD_GET_INDEX_INT(tmp_1_screen, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_SHAPE)"
 
     assert init_body =~
-             ~s/elmc_record_get_index(tmp_1_screen, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_HEIGHT)/
+             "ELMC_RECORD_GET_INDEX_INT(tmp_1_screen, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_HEIGHT)"
 
     assert init_body =~
-             ~s/elmc_record_get_index(tmp_1_screen, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_WIDTH)/
+             "ELMC_RECORD_GET_INDEX_INT(tmp_1_screen, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_WIDTH)"
 
-    assert init_body =~
-             "ElmcValue *tmp_2_shape = elmc_record_get_index(tmp_1_screen, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_SHAPE)"
-
-    assert init_body =~
-             "ElmcValue *tmp_3_height = elmc_record_get_index(tmp_1_screen, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_HEIGHT)"
-
-    assert init_body =~
-             "ElmcValue *tmp_4_width = elmc_record_get_index(tmp_1_screen, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_WIDTH)"
+    assert init_body =~ "elmc_record_new_values_ints"
   end
 
   test "direct-only boxed helpers bind args without argc checks when wrappers are pruned" do
@@ -2894,7 +3405,7 @@ defmodule Elmc.CCodegenPatternsTest do
     refute generated_c =~ "scene_cmd.text[0] = '.';"
   end
 
-  test "affine direct render skips unreachable zero label inside nonzero text guard" do
+  test "affine direct render emits zero placeholder label for empty indexedMap cells" do
     source = """
     module Main exposing (main)
 
@@ -2968,9 +3479,10 @@ defmodule Elmc.CCodegenPatternsTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert generated_c =~ ~r/if \(elmc_as_int\(direct_node_\d+->head\) != 0\)/
-    refute generated_c =~ ~r/if \(elmc_as_int\(direct_node_\d+->head\) == 0\)/
-    refute generated_c =~ "scene_cmd.text[0] = '.';"
+    assert generated_c =~ ~r/if \(elmc_as_int\(direct_node_\d+->head\) == 0\)/
+    assert generated_c =~ "scene_cmd.text[0] = '.';"
+    assert generated_c =~ "elmc_scene_text_from_nonzero_int"
+    refute generated_c =~ ~r/if \(elmc_as_int\(direct_node_\d+->head\) != 0\) \{\s*elmc_draw_cmd_init\(&scene_cmd, ELMC_RENDER_OP_TEXT\)/
   end
 
   test "Maybe bare-var case binds payload type for distinct record field indices" do
@@ -3526,6 +4038,11 @@ defmodule Elmc.CCodegenPatternsTest do
     assert generated_c =~ "static RC elmc_fn_Main_spawnTileWithSeed(ElmcValue **out,"
     assert generated_c =~ "while (Rc == RC_SUCCESS && direct_cursor_"
     assert generated_c =~ "ELMC_RENDER_OP_RECT"
+    assert generated_c =~ "scene_cmd.text[0] = '.';"
+    refute generated_c =~ "10 + 2"
+    refute generated_c =~ "rec_names_"
+    refute generated_c =~ "elmc_record_new_static_take"
+    refute generated_c =~ ~r/static const char \* const rec_names/
 
     harness_path = Path.join(out_dir, "c/game_2048_scene_harness.c")
 
@@ -3571,6 +4088,20 @@ defmodule Elmc.CCodegenPatternsTest do
         return count;
       }
 
+      static int max_rect_right(ElmcPebbleApp *app) {
+        int max_right = 0;
+        ElmcPebbleDrawCmd cmd;
+        elmc_pebble_scene_reset_draw_cursor(app);
+        for (int i = 0; i < 256; i++) {
+          if (elmc_pebble_scene_commands_next(app, &cmd, 1) <= 0) break;
+          if (cmd.kind == ELMC_PEBBLE_DRAW_RECT) {
+            int right = (int)cmd.p0 + (int)cmd.p2;
+            if (right > max_right) max_right = right;
+          }
+        }
+        return max_right;
+      }
+
       int main(void) {
         ElmcPebbleApp app = {0};
         ElmcValue *flags = aplite_launch_context();
@@ -3583,14 +4114,20 @@ defmodule Elmc.CCodegenPatternsTest do
 
         int rects = count_kind(&app, ELMC_PEBBLE_DRAW_RECT);
         int texts = count_kind(&app, ELMC_PEBBLE_DRAW_TEXT);
+        int max_right = max_rect_right(&app);
         if (rects < 16) {
           fprintf(stderr, "expected >=16 rects, got %d (texts=%d)\\n", rects, texts);
           elmc_pebble_deinit(&app);
           return 5;
         }
+        if (max_right > 128) {
+          fprintf(stderr, "expected max rect right <= 128 on 144px screen, got %d\\n", max_right);
+          elmc_pebble_deinit(&app);
+          return 6;
+        }
 
         elmc_pebble_deinit(&app);
-        printf("ok rects=%d texts=%d\\n", rects, texts);
+        printf("ok rects=%d texts=%d max_right=%d\\n", rects, texts, max_right);
         return 0;
       }
       """

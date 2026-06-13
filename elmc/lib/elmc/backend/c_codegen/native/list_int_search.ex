@@ -11,6 +11,7 @@ defmodule Elmc.Backend.CCodegen.Native.ListIntSearch do
           index: String.t(),
           list_arg: String.t(),
           head: String.t(),
+          tail: String.t(),
           not_found: Types.ir_expr()
         }
 
@@ -24,8 +25,16 @@ defmodule Elmc.Backend.CCodegen.Native.ListIntSearch do
   @spec recognized?(Types.function_declaration(), String.t(), Types.function_decl_map()) ::
           boolean()
   def recognized?(decl, module_name, decl_map) do
-    match?({:ok, _}, recognize(decl, module_name, decl_map)) or
-      match?({:ok, _}, recognize_delegate(decl, module_name, decl_map))
+    case recognize(decl, module_name, decl_map) do
+      {:ok, _} ->
+        true
+
+      :error ->
+        case recognize_delegate(decl, module_name, decl_map) do
+          {:ok, _} -> true
+          :error -> false
+        end
+    end
   end
 
   @spec recognize(Types.function_declaration(), String.t(), Types.function_decl_map()) ::
@@ -89,17 +98,18 @@ defmodule Elmc.Backend.CCodegen.Native.ListIntSearch do
 
   def recognize_delegate(_decl, _module_name, _decl_map), do: :error
 
-  @spec arg_kinds(Types.function_declaration(), String.t(), Types.function_decl_map()) :: :error | {:ok, [atom()]}
+  @spec arg_kinds(Types.function_declaration(), String.t(), Types.function_decl_map()) ::
+          :error | {:ok, [atom()]}
   def arg_kinds(decl, module_name, decl_map) do
-    cond do
-      match?({:ok, _}, recognize(decl, module_name, decl_map)) ->
+    case recognize(decl, module_name, decl_map) do
+      {:ok, _} ->
         {:ok, [:native_int, :native_int, :boxed]}
 
-      match?({:ok, _}, recognize_delegate(decl, module_name, decl_map)) ->
-        {:ok, [:native_int, :boxed]}
-
-      true ->
-        :error
+      :error ->
+        case recognize_delegate(decl, module_name, decl_map) do
+          {:ok, _} -> {:ok, [:native_int, :boxed]}
+          :error -> :error
+        end
     end
   end
 
@@ -448,10 +458,7 @@ defmodule Elmc.Backend.CCodegen.Native.ListIntSearch do
   defp tail_var?(name, tail) when is_binary(name) and is_binary(tail), do: name == tail
   defp tail_var?(_expr, _tail), do: false
 
-  @spec var_name?(Types.ir_expr() | String.t(), String.t()) :: boolean()
-  defp var_name?(%{op: :var, name: name}, expected) when is_binary(name) and is_binary(expected),
-    do: name == expected
-
+  @spec var_name?(String.t(), String.t()) :: boolean()
   defp var_name?(name, expected) when is_binary(name) and is_binary(expected), do: name == expected
-  defp var_name?(_expr, _expected), do: false
+  defp var_name?(_name, _expected), do: false
 end

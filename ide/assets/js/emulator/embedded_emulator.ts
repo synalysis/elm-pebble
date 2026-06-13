@@ -2301,6 +2301,12 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
   reportWatchFault(fault: WatchFault): void {
     this.watchFault = fault
     this.currentStatus = fault.headline
+    if (fault.elmcRcCode != null && Number.isFinite(fault.elmcRcCode) && fault.elmcRcCode > 0) {
+      this.hook.pushEvent("emulator-elmc-rc-fail", {
+        code: fault.elmcRcCode,
+        line: fault.elmcRcLine ?? 0
+      })
+    }
     if (this.status) {
       this.status.textContent = fault.headline
       this.status.classList.remove("bg-white", "text-zinc-700")

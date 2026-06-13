@@ -9,6 +9,14 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
   @spec ok(String.t(), [callee_key()]) :: {:ok, String.t(), [callee_key()]}
   def ok(code, runtime_callees \\ []), do: {:ok, code, runtime_callees}
 
+  @spec ok_rc(String.t(), [callee_key()]) :: {:ok, String.t(), [callee_key()], :rc_native}
+  def ok_rc(code, runtime_callees \\ []), do: {:ok, code, runtime_callees, :rc_native}
+
+  @spec field_macro(String.t(), String.t(), String.t()) :: String.t() | nil
+  def field_macro(module_name, type_name, field) do
+    Map.get(Process.get(:elmc_record_field_macros, %{}), {module_name, type_name, field})
+  end
+
   @spec local_name(String.t()) :: String.t()
   def local_name(target) when is_binary(target) do
     case String.split(target, ".") do
@@ -99,6 +107,72 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
         end
     end
   end
+
+  @spec indexed_list_at_reader?(map(), String.t(), String.t()) :: boolean()
+  def indexed_list_at_reader?(decl_map, module_name, list_at_target) do
+    case Map.get(decl_map, callee_key(module_name, list_at_target)) do
+      %{expr: %{op: :if, cond: cond, then_expr: then_expr, else_expr: else_expr}} ->
+        index_lt_zero?(cond) and maybe_nothing?(then_expr) and nth_maybe_body?(else_expr)
+
+      _ ->
+        false
+    end
+  end
+
+  defp index_lt_zero?(%{
+         op: :compare,
+         left: %{op: :var, name: "index"},
+         right: %{op: :int_literal, value: 0},
+         kind: :lt
+       }),
+       do: true
+
+  defp index_lt_zero?(%{op: :call, name: op, args: [%{op: :var, name: "index"}, %{op: :int_literal, value: 0}]})
+       when op in ["__lt__", "<"],
+       do: true
+
+  defp index_lt_zero?(%{
+         op: :qualified_call,
+         target: op,
+         args: [%{op: :var, name: "index"}, %{op: :int_literal, value: 0}]
+       })
+       when op in ["Basics.lt", "<"],
+       do: true
+
+  defp index_lt_zero?(_), do: false
+
+  defp maybe_nothing?(%{union_ctor: "Maybe.Nothing"}), do: true
+  defp maybe_nothing?(%{op: :int_literal, union_ctor: "Maybe.Nothing"}), do: true
+  defp maybe_nothing?(_), do: false
+
+  defp nth_maybe_body?(%{
+         op: :runtime_call,
+         function: "elmc_list_nth_maybe",
+         args: [%{op: :var, name: _list}, %{op: :var, name: _index}]
+       }),
+       do: true
+
+  defp nth_maybe_body?(%{op: :qualified_call, target: "List.head", args: [drop_expr]}),
+    do: list_drop_index_values?(drop_expr)
+
+  defp nth_maybe_body?(_), do: false
+
+  defp list_drop_index_values?(%{
+         op: :qualified_call,
+         target: target,
+         args: [%{op: :var, name: _index}, %{op: :var, name: _list}]
+       })
+       when target in ["List.drop", "drop"],
+       do: true
+
+  defp list_drop_index_values?(%{
+         op: :call,
+         target: {_, "drop"},
+         args: [%{op: :var, name: _index}, %{op: :var, name: _list}]
+       }),
+       do: true
+
+  defp list_drop_index_values?(_), do: false
 
   @spec int_constant_c(map(), String.t(), String.t()) :: String.t()
   def int_constant_c(decl_map, module_name, var_name) do

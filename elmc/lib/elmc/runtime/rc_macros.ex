@@ -32,6 +32,7 @@ defmodule Elmc.Runtime.RcMacros do
 
     #define CHECK_RC(rc_var) \\
       if ((rc_var) != RC_SUCCESS) { \\
+        elmc_rc_record_fail((rc_var), __LINE__); \\
         ELMC_CHECK_RC_BREAK((rc_var), __FILE__, __LINE__); \\
       }
 
@@ -39,20 +40,56 @@ defmodule Elmc.Runtime.RcMacros do
       do { \\
         (rc_var) = (expr); \\
         if ((rc_var) != RC_SUCCESS) { \\
+          elmc_rc_record_fail((rc_var), __LINE__); \\
           ELMC_CHECK_RC_BREAK((rc_var), __FILE__, __LINE__); \\
         } \\
       } while (0)
     #endif
 
+    extern volatile RC elmc_last_fail_rc;
+    extern volatile uint16_t elmc_last_fail_line;
+
+    static inline void elmc_rc_record_fail(RC rc, int line) {
+      if (rc != RC_SUCCESS) {
+        elmc_last_fail_rc = rc;
+        elmc_last_fail_line = (uint16_t)line;
+      }
+    }
+
+    static inline RC elmc_rc_fail_code(void) {
+      return elmc_last_fail_rc;
+    }
+
     #ifdef ELMC_PEBBLE_PLATFORM
+    #if defined(ELMC_DEBUG_RC)
     #define ELMC_RC_LOG_FAIL(rc, site, ...) \\
-      APP_LOG(APP_LOG_LEVEL_ERROR, "ELMC RC %s at %s: " __VA_ARGS__, elmc_rc_name(rc), site)
+      do { \\
+        elmc_rc_record_fail((rc), __LINE__); \\
+        APP_LOG(APP_LOG_LEVEL_ERROR, "ELMC RC %u at %s", (unsigned)(rc), site); \\
+      } while (0)
     #else
     #define ELMC_RC_LOG_FAIL(rc, site, ...) \\
-      fprintf(stderr, "ELMC RC %s at %s: " __VA_ARGS__ "\\n", elmc_rc_name(rc), site)
+      do { \\
+        elmc_rc_record_fail((rc), __LINE__); \\
+        (void)(site); \\
+      } while (0)
+    #endif
+    #else
+    #define ELMC_RC_LOG_FAIL(rc, site, ...) \\
+      do { \\
+        elmc_rc_record_fail((rc), __LINE__); \\
+        fprintf(stderr, "ELMC RC %s at %s: " __VA_ARGS__ "\\n", elmc_rc_name(rc), site); \\
+      } while (0)
     #endif
 
+    #ifdef ELMC_PEBBLE_PLATFORM
+    static inline const char *elmc_rc_name(RC rc) {
+      (void)rc;
+      return "RC";
+    }
+    #else
     const char *elmc_rc_name(RC rc);
+    #endif
 
     static inline RC elmc_rc_assign_value(ElmcValue **out, ElmcValue *value) {
       if (!value) return RC_ERR_OUT_OF_MEMORY;
@@ -662,8 +699,24 @@ defmodule Elmc.Runtime.RcMacros do
     """
   end
 
+  @spec fail_stash_source_impl() :: String.t()
+  def fail_stash_source_impl do
+    """
+    volatile RC elmc_last_fail_rc = RC_SUCCESS;
+    volatile uint16_t elmc_last_fail_line = 0;
+    """
+    |> String.trim()
+  end
+
   @spec source_impl() :: String.t()
   def source_impl do
-    RcCodes.name_table_source()
+    """
+    #{fail_stash_source_impl()}
+
+    #ifndef ELMC_PEBBLE_PLATFORM
+    #{RcCodes.name_table_source()}
+    #endif
+    """
+    |> String.trim()
   end
 end
