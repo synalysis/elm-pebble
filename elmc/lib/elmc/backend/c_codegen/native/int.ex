@@ -333,9 +333,25 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     end
   end
 
-  defp register_minmax_operand_hoists(left, left_var, right, right_var) do
-    if record_field_access?(left), do: Host.register_hoisted_native_int(left, left_var)
-    if record_field_access?(right), do: Host.register_hoisted_native_int(right, right_var)
+  defp register_minmax_operand_hoists(left, left_ref, left_var, right, right_ref, right_var) do
+    if record_field_access?(left) do
+      Host.register_hoisted_native_int(left, left_var)
+      maybe_register_operand_hoist_init(left_var, left_ref)
+    end
+
+    if record_field_access?(right) do
+      Host.register_hoisted_native_int(right, right_var)
+      maybe_register_operand_hoist_init(right_var, right_ref)
+    end
+  end
+
+  defp maybe_register_operand_hoist_init(ref, init)
+       when is_binary(ref) and is_binary(init) do
+    if String.starts_with?(init, "ELMC_RECORD_GET_INDEX") or Hoist.stable_hoist_init?(init) do
+      Hoist.register_hoisted_native_int_init(ref, init)
+    end
+
+    :ok
   end
 
   defp record_field_access?(%{op: :field_access}), do: true
@@ -361,14 +377,16 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
          counter
        ) do
     if expr?(then_expr, env) and expr?(else_expr, env) do
+      hoisted_before = Process.get(:elmc_hoisted_native_int_inits, %{})
       {cond_code, cond_ref, counter} = Host.compile_native_bool_expr(cond_expr, env, counter)
       {then_code, then_ref, counter} = compile_expr(then_expr, env, counter)
       {else_code, else_ref, counter} = compile_expr(else_expr, env, counter)
+      branch_hoists = Hoist.hoisted_native_int_branch_preamble(hoisted_before, allow_record_getters: true)
       next = counter + 1
       out = "native_if_#{next}"
 
       code = """
-      #{cond_code}
+      #{branch_hoists}#{cond_code}
         elmc_int_t #{out};
         if (#{cond_ref}) {
       #{CSource.indent(then_code, 4)}
@@ -635,7 +653,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
         if Hoist.hoisted_native_ints_enabled?(env) do
           Host.register_hoisted_native_int(expr, out)
-          register_minmax_operand_hoists(left, left_var, right, right_var)
+          register_minmax_operand_hoists(left, left_ref, left_var, right, right_ref, right_var)
         end
 
         {code, out, next}

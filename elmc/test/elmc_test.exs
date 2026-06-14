@@ -219,7 +219,7 @@ defmodule ElmcTest do
     runtime = File.read!(Path.join(runtime_dir, "elmc_runtime.c"))
 
     assert runtime =~ "RC elmc_closure_new"
-    assert runtime =~ "ElmcValue *elmc_alloc"
+    assert runtime =~ "elmc_malloc_impl"
     assert runtime =~ "elmc_closure_cell_release"
   end
 

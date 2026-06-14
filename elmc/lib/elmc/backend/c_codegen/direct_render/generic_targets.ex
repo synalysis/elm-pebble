@@ -40,14 +40,33 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
         MapSet.member?(direct_targets, target) and not MapSet.member?(view_fallback, target)
       end)
 
-    GenericReachability.reachable_targets(
-      roots,
-      decl_map,
-      direct_render_excluded_targets(opts, direct_targets, decl_map, view_fallback),
-      MapSet.new()
+    reachable_core =
+      GenericReachability.reachable_targets(
+        roots,
+        decl_map,
+        direct_render_excluded_targets(opts, direct_targets, decl_map, view_fallback),
+        MapSet.new()
+      )
+      |> MapSet.difference(direct_targets)
+      |> MapSet.union(view_fallback)
+
+    MapSet.union(
+      reachable_core,
+      helper_native_targets_from_generic(reachable_core, decl_map, view_fallback)
     )
-    |> MapSet.difference(direct_targets)
-    |> MapSet.union(view_fallback)
+  end
+
+  # Only pull missing `_native`/boxed helpers for the streaming view subgraph — not
+  # update/init/companion closures that aplite never executes at runtime.
+  defp helper_native_targets_from_generic(generic_targets, decl_map, view_fallback) do
+    if MapSet.size(view_fallback) == 0 do
+      MapSet.new()
+    else
+      view_fallback
+      |> MapSet.to_list()
+      |> GenericReachability.reachable_targets(decl_map, MapSet.new(), MapSet.new())
+      |> MapSet.difference(generic_targets)
+    end
   end
 
   @spec wrapper_targets(ElmEx.IR.t(), Types.codegen_opts()) :: target_set()

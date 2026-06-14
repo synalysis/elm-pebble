@@ -191,14 +191,19 @@ defmodule Elmc.Backend.CCodegen.Hoist do
 
   @spec stable_hoist_init?(String.t()) :: boolean()
   def stable_hoist_init?(init) when is_binary(init) do
-    not Regex.match?(~r/\b(?:native_if_|native_let_|tmp_)\d+\b/, init)
+    not Regex.match?(~r/\b(?:native_if_|native_let_|tmp_|native_case_)\d+\b/, init)
   end
 
-  @spec hoisted_native_int_branch_preamble(map()) :: String.t()
-  def hoisted_native_int_branch_preamble(before_inits) when is_map(before_inits) do
+  @spec hoisted_native_int_branch_preamble(map(), keyword()) :: String.t()
+  def hoisted_native_int_branch_preamble(before_inits, opts \\ []) do
+    allow_record_getters? = Keyword.get(opts, :allow_record_getters, false)
+
     Process.get(:elmc_hoisted_native_int_inits, %{})
     |> Map.drop(Map.keys(before_inits))
-    |> Enum.filter(fn {_ref, init} -> stable_hoist_init?(init) end)
+    |> Enum.filter(fn {_ref, init} ->
+      stable_hoist_init?(init) or
+        (allow_record_getters? and String.starts_with?(init, "ELMC_RECORD_GET_INDEX"))
+    end)
     |> Enum.sort_by(fn {ref, _init} -> ref end)
     |> Enum.map_join("\n", fn {ref, init} -> "  const elmc_int_t #{ref} = #{init};" end)
     |> case do

@@ -19,6 +19,7 @@ defmodule Ide.PebbleToolchain.Elmc do
       out_dir: compile_out_dir,
       entry_module: "Main",
       direct_render_only: direct_render_only?(target_platforms),
+      prune_direct_generic: prune_direct_generic?(target_platforms),
       prune_runtime: true,
       prune_native_wrappers: true,
       pebble_int32: true
@@ -115,6 +116,12 @@ defmodule Ide.PebbleToolchain.Elmc do
 
   defp direct_render_only?(target_platforms) when is_list(target_platforms) do
     target_platforms == [] or not Enum.member?(target_platforms, "aplite")
+  end
+
+  # Multi-platform PBWs include aplite (streaming view) and newer watches (direct scene).
+  # Prune direct-scene generic bodies from the shared compile so aplite stays within flash.
+  defp prune_direct_generic?(target_platforms) when is_list(target_platforms) do
+    Enum.member?(target_platforms, "aplite") and length(target_platforms) > 1
   end
 
   defp reset_generated_dir(path) do

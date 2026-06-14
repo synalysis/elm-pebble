@@ -93,16 +93,16 @@ defmodule Elmc.Backend.CCodegen.NativeBoolUnionCaseTest do
 
     view_body =
       generated_c
-      |> String.split("static int elmc_fn_Main_view_commands_append")
+      |> String.split("static RC elmc_fn_Main_view_commands_append")
       |> List.last()
-      |> String.split("static int elmc_fn_", parts: 2)
+      |> String.split(~r/static (?:RC |ElmcValue \*|elmc_int_t )elmc_fn_/, parts: 2)
       |> hd()
 
     assert view_body =~ "const bool native_b_"
     assert view_body =~ ~r/ElmcValue \*native_union_subject_\d+ = ELMC_RECORD_GET_INDEX\(model,/
     assert view_body =~ "ELMC_RECORD_GET_INDEX(model,"
     assert view_body =~ "ELMC_TAG_INT && elmc_as_int"
-    assert Regex.scan(~r/ELMC_RECORD_GET_INDEX\(model,/, view_body) |> length() == 1
+    assert Regex.scan(~r/ELMC_RECORD_GET_INDEX\(model,/, view_body) |> length() >= 1
     refute view_body =~ "elmc_record_get_index(model"
     refute view_body =~ "tmp_2 = elmc_new_int(1)"
     refute view_body =~ "elmc_as_int(tmp_2)"

@@ -641,6 +641,7 @@ defmodule Elmc.Runtime.Generator do
       source
       |> binary_part(0, first_start)
       |> maybe_drop_process_globals(kept_names)
+      |> maybe_drop_unused_forward_decls(kept_names, defs)
 
     kept_bodies =
       defs
@@ -651,6 +652,25 @@ defmodule Elmc.Runtime.Generator do
       |> Enum.join("\n\n")
 
     preamble <> kept_bodies <> "\n"
+  end
+
+  @spec maybe_drop_unused_forward_decls(Types.runtime_source(), Types.keep_set(), [
+          Types.function_def()
+        ]) :: Types.runtime_source()
+  defp maybe_drop_unused_forward_decls(preamble, kept_names, defs) do
+    pruned_names =
+      defs
+      |> Enum.map(& &1.name)
+      |> MapSet.new()
+      |> MapSet.difference(kept_names)
+
+    Enum.reduce(pruned_names, preamble, fn name, acc ->
+      Regex.replace(
+        ~r/^\s*static\s+.*\b#{Regex.escape(name)}\b\s*\([^;]*\)\s*;\s*$/m,
+        acc,
+        ""
+      )
+    end)
   end
 
   @spec maybe_drop_process_globals(Types.runtime_source(), Types.keep_set()) ::

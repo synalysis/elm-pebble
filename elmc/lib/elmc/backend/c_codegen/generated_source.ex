@@ -23,6 +23,21 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
   defp finalize_source(source), do: CSource.format(source)
 
+  # Direct-scene command append bodies are unused on aplite (streaming view only).
+  # Use the platform macro: ELMC_PEBBLE_DIRECT_VIEW_SCENE is defined in elmc_pebble.c,
+  # too late for this translation unit.
+  defp direct_scene_guard(content) when is_binary(content) do
+    if String.trim(content) == "" do
+      ""
+    else
+      """
+      #if !defined(PBL_PLATFORM_APLITE)
+      #{String.trim_trailing(content)}
+      #endif
+      """
+    end
+  end
+
   @spec header(ElmEx.IR.t(), Types.codegen_opts()) :: String.t()
   def header(ir, opts) do
     direct_cmd_decls = DirectRenderRegistry.decls(ir, opts)
@@ -274,7 +289,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
     #{function_defs}
 
-    #{direct_command_defs}
+    #{direct_scene_guard(direct_command_defs)}
     """
     |> finalize_source()
   end

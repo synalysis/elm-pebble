@@ -15,7 +15,6 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.DuplicateFieldHoists do
     |> Enum.group_by(&Hoist.lookup_key/1)
       |> Enum.filter(fn {_key, exprs} -> length(exprs) > 1 end)
       |> Enum.map(fn {_key, [expr | _]} -> expr end)
-      |> Enum.reject(&expr_contains_if?/1)
       |> Enum.reduce({"", counter}, fn field_expr, {code_acc, c} ->
         case Host.hoisted_native_int_lookup(env, field_expr) do
           {:ok, _ref} ->
@@ -65,17 +64,4 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.DuplicateFieldHoists do
   end
 
   defp native_field_int_access?(_expr, _env), do: false
-
-  defp expr_contains_if?(%{op: :if}), do: true
-
-  defp expr_contains_if?(expr) when is_map(expr) do
-    expr
-    |> Map.values()
-    |> Enum.any?(&expr_contains_if?/1)
-  end
-
-  defp expr_contains_if?(expr) when is_list(expr),
-    do: Enum.any?(expr, &expr_contains_if?/1)
-
-  defp expr_contains_if?(_), do: false
 end

@@ -900,8 +900,20 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
   end
 
   defp rc_closure_return_body(module_name, name, c_name, call_args_spec, env) do
-    direct? = EnvBindings.direct_call_target?(env, module_name, name)
     rc_callee? = rc_closure_callee?(module_name, name, env)
+
+    with false <- rc_callee?,
+         decl_map when is_map(decl_map) <- Map.get(env, :__program_decls__),
+         {:ok, decl} <- Map.fetch(decl_map, {module_name, name}),
+         true <- NativeFunctionCall.native_scalar_fn?(decl, module_name, decl_map) do
+      native_scalar_closure_return_body(c_name, call_args_spec, module_name, name, decl, env)
+    else
+      _ -> boxed_closure_return_body(module_name, name, c_name, call_args_spec, env, rc_callee?)
+    end
+  end
+
+  defp boxed_closure_return_body(module_name, name, c_name, call_args_spec, env, rc_callee?) do
+    direct? = EnvBindings.direct_call_target?(env, module_name, name)
 
     call_expr =
       cond do
@@ -938,6 +950,50 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     else
       "return #{call_expr};"
     end
+  end
+
+  defp native_scalar_closure_return_body(c_name, call_args_spec, module_name, name, decl, env) do
+    decl_map = Map.fetch!(env, :__program_decls__)
+    {args_var, arity} = closure_call_args(call_args_spec, module_name, name, env)
+    arg_kinds = NativeFunctionCall.arg_kinds(decl, module_name, decl_map)
+    return_kind = NativeFunctionCall.return_kind(decl, module_name, decl_map)
+
+    {bindings, native_arg_names} =
+      0..(arity - 1)
+      |> Enum.map(fn index ->
+        kind = Enum.at(arg_kinds, index, :boxed)
+        c_arg = "closure_native_arg_#{index}"
+        {closure_native_arg_binding(args_var, index, c_arg, kind), c_arg}
+      end)
+      |> Enum.unzip()
+
+    native_args = Enum.join(native_arg_names, ", ")
+    bindings = Enum.join(bindings, "\n  ")
+
+    return_stmt =
+      case return_kind do
+        :native_int -> "return elmc_new_int_take(#{c_name}_native(#{native_args}));"
+        :native_bool -> "return elmc_new_bool_take(#{c_name}_native(#{native_args}));"
+        :boxed -> "return #{c_name}_native(#{native_args});"
+      end
+
+    """
+    #{bindings}
+    #{return_stmt}
+    """
+    |> String.trim()
+  end
+
+  defp closure_native_arg_binding(args_var, index, c_arg, :native_int) do
+    "elmc_int_t #{c_arg} = (#{args_var}[#{index}]) ? elmc_as_int(#{args_var}[#{index}]) : 0;"
+  end
+
+  defp closure_native_arg_binding(args_var, index, c_arg, :native_bool) do
+    "bool #{c_arg} = (#{args_var}[#{index}]) ? elmc_as_bool(#{args_var}[#{index}]) : false;"
+  end
+
+  defp closure_native_arg_binding(args_var, index, c_arg, :boxed) do
+    "ElmcValue *#{c_arg} = #{args_var}[#{index}];"
   end
 
   defp closure_call_args("args, argc", module_name, name, env) do

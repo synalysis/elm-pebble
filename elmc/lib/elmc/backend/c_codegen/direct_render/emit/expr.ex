@@ -259,6 +259,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
 
   def emit_expr(%{op: :case, subject: subject, branches: branches}, env, counter) do
     subject_ref = Map.get(env, subject, subject)
+    hoisted_before = Process.get(:elmc_hoisted_native_int_inits, %{})
 
     case_env =
       if Patterns.maybe_unwrap_just_case?(branches),
@@ -320,8 +321,12 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
       end)
 
     case result do
-      {:ok, branch_code, counter} -> {:ok, branch_code, counter}
-      :error -> :error
+      {:ok, branch_code, counter} ->
+        branch_hoists = Hoist.hoisted_native_int_branch_preamble(hoisted_before)
+        {:ok, branch_hoists <> branch_code, counter}
+
+      :error ->
+        :error
     end
   end
 

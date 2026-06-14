@@ -293,6 +293,15 @@ enum {
   ELMC_DEBUG_STORAGE_KEY_STRING_VALUE = 0x454c4d04,
 };
 
+#if defined(PBL_PLATFORM_APLITE)
+enum {
+  ELMC_INBOX_MAX_TUPLES = 3,
+  ELMC_INBOX_STRING_MAX = 32,
+  ELMC_INBOX_TUPLE_WIRE_BYTES = 12,
+  ELMC_INBOX_CSTRING_NONE = 0,
+  ELMC_INBOX_CSTRING_INBOX = 1,
+};
+#else
 enum {
   ELMC_INBOX_MAX_TUPLES = 16,
   ELMC_INBOX_STRING_MAX = 128,
@@ -300,6 +309,7 @@ enum {
   ELMC_INBOX_CSTRING_NONE = 0,
   ELMC_INBOX_CSTRING_INBOX = 1,
 };
+#endif
 
 typedef struct {
   uint32_t key;
@@ -668,7 +678,7 @@ static int dispatch_compass_current_result(int64_t target, double degrees, bool 
   if (is_valid) {
     const char *names[] = {"degrees", "isValid"};
     ElmcValue *values[2];
-    values[0] = elmc_new_float(degrees);
+    values[0] = elmc_new_float_take(degrees);
     values[1] = elmc_new_bool_take(1);
     if (!values[0] || !values[1]) {
       if (values[0]) elmc_release(values[0]);
