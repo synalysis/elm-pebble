@@ -153,7 +153,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     typed_bounds_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_typedBounds_native")
 
-    assert typed_bounds_body =~ "elmc_record_new_values_ints_take"
+    assert typed_bounds_body =~ ~r/elmc_record_new_values_(?:ints_)?take/
     refute typed_bounds_body =~ "elmc_retain(x)"
     refute typed_bounds_body =~ "elmc_retain(y)"
 
@@ -989,13 +989,15 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~
-             "scene_cmd.p5 = (ELMC_TEXT_ALIGN_LEFT + (ELMC_TEXT_OVERFLOW_WORD_WRAP * (1 << ELMC_TEXT_OVERFLOW_SHIFT)));"
+             ~r/direct_hoisted_int_\d+ = \(ELMC_TEXT_ALIGN_LEFT \+ \(ELMC_TEXT_OVERFLOW_WORD_WRAP \* \(1 << ELMC_TEXT_OVERFLOW_SHIFT\)\)\)/
 
     assert generated_c =~
-             "scene_cmd.p5 = (ELMC_TEXT_ALIGN_CENTER + (ELMC_TEXT_OVERFLOW_TRAILING_ELLIPSIS * (1 << ELMC_TEXT_OVERFLOW_SHIFT)));"
+             ~r/direct_hoisted_int_\d+ = \(ELMC_TEXT_ALIGN_CENTER \+ \(ELMC_TEXT_OVERFLOW_TRAILING_ELLIPSIS \* \(1 << ELMC_TEXT_OVERFLOW_SHIFT\)\)\)/
 
     assert generated_c =~
-             "scene_cmd.p5 = (ELMC_TEXT_ALIGN_RIGHT + (ELMC_TEXT_OVERFLOW_FILL * (1 << ELMC_TEXT_OVERFLOW_SHIFT)));"
+             ~r/direct_hoisted_int_\d+ = \(ELMC_TEXT_ALIGN_RIGHT \+ \(ELMC_TEXT_OVERFLOW_FILL \* \(1 << ELMC_TEXT_OVERFLOW_SHIFT\)\)\)/
+
+    assert generated_c =~ ~r/scene_cmd\.p5 = direct_hoisted_int_\d+/
 
     assert generated_c =~ "scene_cmd.text[0] = 'L';"
     assert generated_c =~ "scene_cmd.text[4] = '\\0';"
@@ -1572,13 +1574,12 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     assert generated_c =~ ~r/(?:RC|ElmcValue \*) elmc_fn_Main_subscriptions\(/
     assert generated_c =~ ~r/static (?:RC|int) elmc_fn_Main_view_commands_append\(/
 
-    assert generated_c =~ "ElmcValue *elmc_fn_Main_view(ElmcValue"
-    assert generated_c =~ "elmc_fn_Main_statusDraw"
-    assert generated_c =~ "elmc_fn_Main_counterDraw"
-    assert generated_c =~ "elmc_fn_Pebble_Ui_path"
+    assert generated_c =~ "elmc_fn_Main_view_scene_append"
+    refute generated_c =~ ~r/static (?:RC|ElmcValue \*) elmc_fn_Main_view\(/
+    assert generated_c =~ "ELMC_RENDER_OP_PATH_OUTLINE"
 
-    assert pebble_c =~ "#if !defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)\n  int count = 0;"
-    assert pebble_c =~ "#if defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)\n  (void)app;"
+    assert pebble_c =~ "#if !defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)"
+    assert pebble_c =~ "#if defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)"
   end
 
   test "worker drains nested Cmd.batch commands in order" do

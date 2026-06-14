@@ -25,7 +25,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.CmdValue.Init do
             cmd->path_y[i] = 0;
           }
         #endif
-          cmd->text[0] = '\0';
+          cmd->text[0] = '\\0';
         }
 
 """

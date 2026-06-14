@@ -275,6 +275,8 @@ defmodule Elmc.GeneratedRcTrack2048WorkerTest do
       #include "elmc_pebble.h"
       #include <stdio.h>
 
+      enum { MODEL_FIELD_TURN = 4 };
+
       static ElmcValue *launch_context(void) {
         ElmcValue *shape = elmc_new_int_take(1);
         ElmcValue *height = elmc_new_int_take(168);
@@ -326,7 +328,7 @@ defmodule Elmc.GeneratedRcTrack2048WorkerTest do
         ElmcValue *model = elmc_worker_model(&state);
         int turns = 0;
         if (model) {
-          ElmcValue *turn_val = elmc_record_get(model, "turn");
+          ElmcValue *turn_val = elmc_record_get_index(model, MODEL_FIELD_TURN);
           if (turn_val) {
             turns = (int)elmc_as_int(turn_val);
             elmc_release(turn_val);
@@ -369,6 +371,7 @@ defmodule Elmc.GeneratedRcTrack2048WorkerTest do
       harness_path,
       """
       #include "elmc_pebble.h"
+      #include "elmc_generated.h"
       #include <stdio.h>
 
       static ElmcValue *launch_context(void) {

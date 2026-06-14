@@ -8,7 +8,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.CmdValue.Decode.Helpers.T
     """
           if (value->tag == ELMC_TAG_STRING && value->payload != NULL) {
             strncpy(out_text, (const char *)value->payload, out_size - 1);
-            out_text[out_size - 1] = '\0';
+            out_text[out_size - 1] = '\\0';
             return 0;
           }
           if (value->tag != ELMC_TAG_LIST) return -1;

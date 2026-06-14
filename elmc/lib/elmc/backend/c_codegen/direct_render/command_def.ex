@@ -106,11 +106,12 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
       |> Map.put(:__rc_catch__, true)
 
     Process.delete(:elmc_hoisted_native_ints)
+    Process.delete(:elmc_hoisted_native_int_inits)
     Process.put(:elmc_hoisted_native_ints_scope, true)
     Process.put(:elmc_direct_helper_defs, [])
 
     try do
-      {hoist_preamble, start_counter} = DuplicateFieldHoists.preamble(decl.expr, env, 0)
+      {field_hoist_preamble, start_counter} = DuplicateFieldHoists.preamble(decl.expr, env, 0)
 
       case Host.direct_emit_expr(decl.expr, env, start_counter) do
         {:ok, body_code, _counter} ->
@@ -118,7 +119,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
             FunctionEmit.unused_arg_casts(c_arg_bindings, [body_code])
 
           helper_defs = direct_helper_defs()
-          helper_defs <> boxed_body(c_name, arg_bindings, unused_casts, hoist_preamble <> body_code)
+          helper_defs <> boxed_body(c_name, arg_bindings, unused_casts, field_hoist_preamble <> body_code)
 
         :error ->
           raise ArgumentError,
@@ -127,6 +128,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
     after
       Process.delete(:elmc_hoisted_native_ints_scope)
       Process.delete(:elmc_hoisted_native_ints)
+      Process.delete(:elmc_hoisted_native_int_inits)
       Process.delete(:elmc_direct_helper_defs)
     end
   end
@@ -208,11 +210,12 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
       |> Map.put(:__rc_catch__, true)
 
     Process.delete(:elmc_hoisted_native_ints)
+    Process.delete(:elmc_hoisted_native_int_inits)
     Process.put(:elmc_hoisted_native_ints_scope, true)
     Process.put(:elmc_direct_helper_defs, [])
 
     try do
-      {hoist_preamble, start_counter} = DuplicateFieldHoists.preamble(decl.expr, native_env, 0)
+      {field_hoist_preamble, start_counter} = DuplicateFieldHoists.preamble(decl.expr, native_env, 0)
 
       case Host.direct_emit_expr(decl.expr, native_env, start_counter) do
         {:ok, body_code, _counter} ->
@@ -232,7 +235,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
               decl,
               wrapper_unused_casts,
               native_unused_casts,
-              hoist_preamble <> body_code
+              field_hoist_preamble <> body_code
             )
 
         :error ->
@@ -242,6 +245,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
     after
       Process.delete(:elmc_hoisted_native_ints_scope)
       Process.delete(:elmc_hoisted_native_ints)
+      Process.delete(:elmc_hoisted_native_int_inits)
       Process.delete(:elmc_direct_helper_defs)
     end
   end

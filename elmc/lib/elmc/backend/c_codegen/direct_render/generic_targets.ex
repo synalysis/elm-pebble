@@ -46,6 +46,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
       direct_render_excluded_targets(opts, direct_targets, decl_map, view_fallback),
       MapSet.new()
     )
+    |> MapSet.difference(direct_targets)
+    |> MapSet.union(view_fallback)
   end
 
   @spec wrapper_targets(ElmEx.IR.t(), Types.codegen_opts()) :: target_set()
@@ -128,19 +130,23 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
     entry_module = opts[:entry_module] || "Main"
     view_target = {entry_module, "view"}
 
-    if MapSet.member?(direct_targets, view_target) do
-      GenericReachability.reachable_targets(
-        [view_target],
-        decl_map,
-        MapSet.new(),
+    case Map.fetch(decl_map, view_target) do
+      {:ok, _} ->
+        GenericReachability.reachable_targets(
+          [view_target],
+          decl_map,
+          MapSet.new(),
+          MapSet.new()
+        )
+        |> MapSet.delete(view_target)
+        |> MapSet.intersection(direct_targets)
+
+      :error ->
         MapSet.new()
-      )
-    else
-      MapSet.new()
     end
   end
 
-  defp direct_render_excluded_targets(opts, direct_targets, decl_map, view_fallback \\ MapSet.new()) do
+  defp direct_render_excluded_targets(opts, direct_targets, decl_map, view_fallback) do
     excluded =
       cond do
         direct_render_only?(opts) ->

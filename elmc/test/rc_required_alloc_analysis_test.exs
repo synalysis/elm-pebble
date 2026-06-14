@@ -7,7 +7,15 @@ defmodule Elmc.RcRequiredAllocAnalysisTest do
   @fixture_elm_json Path.expand("fixtures/simple_project/elm.json", __DIR__)
   @game_2048_main Path.expand("../../ide/priv/project_templates/game_2048/src/Main.elm", __DIR__)
 
-  defp compile_2048_generated! do
+  defp compile_2048_generated!(opts \\ []) do
+    defaults = [
+      direct_render_only: true,
+      strip_dead_code: true,
+      prune_native_wrappers: true,
+      pebble_int32: true,
+      prune_runtime: true
+    ]
+
     project_dir = Path.expand("tmp/rc_required_2048_project", __DIR__)
     out_dir = Path.expand("tmp/rc_required_2048_codegen", __DIR__)
     File.rm_rf!(project_dir)
@@ -16,16 +24,14 @@ defmodule Elmc.RcRequiredAllocAnalysisTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(@game_2048_main))
     File.write!(Path.join(project_dir, "elm.json"), File.read!(@fixture_elm_json))
 
-    assert {:ok, _} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               direct_render_only: true,
-               strip_dead_code: true,
-               prune_native_wrappers: true,
-               pebble_int32: true,
-               prune_runtime: true
-             })
+    compile_opts =
+      %{
+        out_dir: out_dir,
+        entry_module: "Main"
+      }
+      |> Map.merge(Map.new(Keyword.merge(defaults, opts)))
+
+    assert {:ok, _} = Elmc.compile(project_dir, compile_opts)
 
     File.read!(Path.join(out_dir, "c/elmc_generated.c"))
   end
@@ -65,7 +71,7 @@ defmodule Elmc.RcRequiredAllocAnalysisTest do
   end
 
   test "game-2048 merge uses CHECK_RC for borrowed list.cons instead of elmc_int_zero fallback" do
-    generated_c = compile_2048_generated!()
+    generated_c = compile_2048_generated!(strip_dead_code: false, direct_render_only: false)
 
     assert generated_c =~ "RC elmc_fn_Main_merge("
     refute generated_c =~ ~r/elmc_list_cons\(&[^;]+;\s*if \(elmc_list_cons\(&[^)]+\) != RC_SUCCESS\)\s*tmp_\d+ = elmc_int_zero\(\);/s

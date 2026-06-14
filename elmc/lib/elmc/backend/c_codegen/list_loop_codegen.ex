@@ -115,9 +115,16 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
         )
       end
 
+    release_owned =
+      if owned? and owned_forward_item_expr?(item_expr) do
+        "elmc_release(#{item_expr});\n        "
+      else
+        ""
+      end
+
     """
         #{cons}
-        *#{tail} = #{cell};
+        #{release_owned}*#{tail} = #{cell};
         #{tail} = &((ElmcCons *)#{cell}->payload)->tail;
     """
   end
@@ -135,6 +142,11 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
 
   @spec forward_cell(pos_integer()) :: String.t()
   defp forward_cell(loop_id), do: "list_fwd_cell_#{loop_id}"
+
+  # `elmc_list_cons` retains its head; owned forward-build loops already hold one ref.
+  defp owned_forward_item_expr?(item_expr) when is_binary(item_expr) do
+    Regex.match?(~r/^[A-Za-z_][A-Za-z0-9_]*$/, item_expr)
+  end
 
   @spec emit_ascending_int_range_loop(
           String.t(),

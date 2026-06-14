@@ -352,7 +352,7 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
           in_expr: %{op: :record_literal, fields: fields}
         }
       } ->
-        with {:ok, cells_field, cells_expr} <- find_padded_cells_field(fields, width),
+        with {:ok, cells_field, _cells_expr} <- find_padded_cells_field(fields, width),
              {:ok, score_field, score_expr} <- find_score_field(fields),
              true <- field_access_field(score_expr) == score_field do
           {:ok, merge_target, cells_field, score_field}
@@ -362,30 +362,6 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
 
       _ ->
         :error
-    end
-  end
-
-  defp pad_append_pattern?(
-         %{op: :call, name: op, args: [left, right]},
-         cells_field,
-         score_field,
-         width
-       )
-       when op in ["__append__", "++"] do
-    field_access_field(left) == cells_field and repeat_pad?(right, cells_field, width)
-  end
-
-  defp pad_append_pattern?(expr, cells_field, score_field, width) do
-    case expr do
-      %{
-        op: :qualified_call,
-        target: "Basics.append",
-        args: [left, right]
-      } ->
-        pad_append_pattern?(%{op: :call, name: "__append__", args: [left, right]}, cells_field, score_field, width)
-
-      _ ->
-        false
     end
   end
 

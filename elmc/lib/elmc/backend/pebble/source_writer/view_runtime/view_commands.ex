@@ -8,16 +8,11 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime.ViewCommands do
     VirtualEmit
   }
 
-  @spec body(Types.source_bindings()) :: Types.c_source()
+  @spec body(Types.view_command_bindings()) :: Types.c_source()
   def body(%{} = bindings) do
-    view_bindings = %{
-      entry_view_fn: bindings.entry_view_fn,
-      has_view: bindings.has_view
-    }
-
     [
       Preamble.body(),
-      ResultFetch.body(view_bindings),
+      ResultFetch.body(bindings),
       VirtualEmit.body()
     ]
     |> IO.iodata_to_binary()

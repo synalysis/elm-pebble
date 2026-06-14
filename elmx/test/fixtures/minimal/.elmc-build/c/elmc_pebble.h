@@ -76,12 +76,12 @@ void elmc_scene_writer_init_app(ElmcSceneWriter *writer, ElmcPebbleApp *app);
 #define ELMC_PEBBLE_FEATURE_CMD_VIBES_SHORT_PULSE 0
 #define ELMC_PEBBLE_FEATURE_CMD_VIBES_LONG_PULSE 0
 #define ELMC_PEBBLE_FEATURE_CMD_VIBES_DOUBLE_PULSE 0
+#define ELMC_PEBBLE_FEATURE_CMD_VIBES_CUSTOM_PATTERN 0
 #define ELMC_PEBBLE_FEATURE_CMD_HEALTH_VALUE 0
 #define ELMC_PEBBLE_FEATURE_CMD_HEALTH_SUM_TODAY 0
 #define ELMC_PEBBLE_FEATURE_CMD_HEALTH_SUM 0
 #define ELMC_PEBBLE_FEATURE_CMD_HEALTH_ACCESSIBLE 0
 #define ELMC_PEBBLE_FEATURE_CMD_HEALTH_SUPPORTED 0
-#define ELMC_PEBBLE_FEATURE_CMD_VIBES_CUSTOM_PATTERN 0
 #define ELMC_PEBBLE_FEATURE_CMD_DATA_LOG_BYTES 0
 #define ELMC_PEBBLE_FEATURE_CMD_DATA_LOG_INT32 0
 #define ELMC_PEBBLE_FEATURE_CMD_COMPASS_PEEK 0
@@ -114,7 +114,6 @@ void elmc_scene_writer_init_app(ElmcSceneWriter *writer, ElmcPebbleApp *app);
 #define ELMC_PEBBLE_FEATURE_DRAW_BITMAP_SEQUENCE_AT 0
 #define ELMC_PEBBLE_FEATURE_DRAW_ROTATED_BITMAP 0
 #define ELMC_PEBBLE_FEATURE_DRAW_TEXT 0
-
 #ifndef ELMC_PEBBLE_DIRTY_REGION_ENABLED
 #if defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_CHALK) || defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_FLINT) || defined(PBL_PLATFORM_GABBRO)
 #define ELMC_PEBBLE_DIRTY_REGION_ENABLED 0
@@ -149,39 +148,52 @@ void elmc_scene_writer_init_app(ElmcSceneWriter *writer, ElmcPebbleApp *app);
 #endif
 #endif
 
-#ifndef ELMC_PEBBLE_DRAW_PATH_PROBES
-#define ELMC_PEBBLE_DRAW_PATH_PROBES 0
+/* Optional fixed scene arena (BSS). Prefer chained heap chunks on Aplite instead. */
+#ifndef ELMC_PEBBLE_SCENE_STATIC_CAPACITY
+#define ELMC_PEBBLE_SCENE_STATIC_CAPACITY 0
 #endif
 
-#define ELMC_DRAW_PATH_RENDER_MODEL_ENTER 0xED9A0101U
-#define ELMC_DRAW_PATH_RENDER_MODEL_EXIT 0xED9A8101U
-#define ELMC_DRAW_PATH_DRAW_UPDATE_ENTER 0xED9A0102U
-#define ELMC_DRAW_PATH_DRAW_UPDATE_EXIT 0xED9A8102U
-#define ELMC_DRAW_PATH_ENSURE_SCENE_ENTER 0xED9A0103U
-#define ELMC_DRAW_PATH_ENSURE_SCENE_EXIT 0xED9A8103U
-#define ELMC_DRAW_PATH_SCENE_NEXT_ENTER 0xED9A0104U
-#define ELMC_DRAW_PATH_SCENE_NEXT_EXIT 0xED9A8104U
-#define ELMC_DRAW_PATH_VIEW_APPEND_ENTER 0xED9A0105U
-#define ELMC_DRAW_PATH_VIEW_APPEND_EXIT 0xED9A8105U
-#define ELMC_DRAW_PATH_ELM_INIT_ENTER 0xED9A0106U
-#define ELMC_DRAW_PATH_ELM_INIT_EXIT 0xED9A8106U
-#define ELMC_DRAW_PATH_FONT_FOR_TEXT_ENTER 0xED9A0107U
-#define ELMC_DRAW_PATH_FONT_FOR_TEXT_EXIT 0xED9A8107U
-#define ELMC_DRAW_PATH_GRAPHICS_TEXT_ENTER 0xED9A0108U
-#define ELMC_DRAW_PATH_GRAPHICS_TEXT_EXIT 0xED9A8108U
-
-#if ELMC_PEBBLE_DRAW_PATH_PROBES && defined(ELMC_PEBBLE_PLATFORM)
-#include <data_logging.h>
-static inline void elmc_draw_path_probe(uint32_t tag) {
-  DataLoggingSessionRef session = data_logging_create(tag, DATA_LOGGING_BYTE_ARRAY, 1, false);
-  if (session) {
-    data_logging_finish(session);
-  }
-}
-#define ELMC_DRAW_PATH_PROBE(tag) elmc_draw_path_probe((uint32_t)(tag))
+#ifndef ELMC_PEBBLE_SCENE_CHUNK_SIZE
+#if defined(PBL_PLATFORM_APLITE)
+#define ELMC_PEBBLE_SCENE_CHUNK_SIZE 256
 #else
-#define ELMC_DRAW_PATH_PROBE(tag) do { (void)(tag); } while (0)
+#define ELMC_PEBBLE_SCENE_CHUNK_SIZE 0
 #endif
+#endif
+
+    #ifndef ELMC_PEBBLE_DRAW_PATH_PROBES
+    #define ELMC_PEBBLE_DRAW_PATH_PROBES 0
+    #endif
+
+    #define ELMC_DRAW_PATH_RENDER_MODEL_ENTER 0xED9A0101U
+    #define ELMC_DRAW_PATH_RENDER_MODEL_EXIT 0xED9A8101U
+    #define ELMC_DRAW_PATH_DRAW_UPDATE_ENTER 0xED9A0102U
+    #define ELMC_DRAW_PATH_DRAW_UPDATE_EXIT 0xED9A8102U
+    #define ELMC_DRAW_PATH_ENSURE_SCENE_ENTER 0xED9A0103U
+    #define ELMC_DRAW_PATH_ENSURE_SCENE_EXIT 0xED9A8103U
+    #define ELMC_DRAW_PATH_SCENE_NEXT_ENTER 0xED9A0104U
+    #define ELMC_DRAW_PATH_SCENE_NEXT_EXIT 0xED9A8104U
+    #define ELMC_DRAW_PATH_VIEW_APPEND_ENTER 0xED9A0105U
+    #define ELMC_DRAW_PATH_VIEW_APPEND_EXIT 0xED9A8105U
+    #define ELMC_DRAW_PATH_ELM_INIT_ENTER 0xED9A0106U
+    #define ELMC_DRAW_PATH_ELM_INIT_EXIT 0xED9A8106U
+    #define ELMC_DRAW_PATH_FONT_FOR_TEXT_ENTER 0xED9A0107U
+    #define ELMC_DRAW_PATH_FONT_FOR_TEXT_EXIT 0xED9A8107U
+    #define ELMC_DRAW_PATH_GRAPHICS_TEXT_ENTER 0xED9A0108U
+    #define ELMC_DRAW_PATH_GRAPHICS_TEXT_EXIT 0xED9A8108U
+
+    #if ELMC_PEBBLE_DRAW_PATH_PROBES && defined(ELMC_PEBBLE_PLATFORM)
+    #include <data_logging.h>
+    static inline void elmc_draw_path_probe(uint32_t tag) {
+      DataLoggingSessionRef session = data_logging_create(tag, DATA_LOGGING_BYTE_ARRAY, 1, false);
+      if (session) {
+        data_logging_finish(session);
+      }
+    }
+    #define ELMC_DRAW_PATH_PROBE(tag) elmc_draw_path_probe((uint32_t)(tag))
+    #else
+    #define ELMC_DRAW_PATH_PROBE(tag) do { (void)(tag); } while (0)
+    #endif
 
 typedef struct {
   unsigned char *bytes;
@@ -190,7 +202,18 @@ typedef struct {
   int command_count;
   uint64_t hash;
   int dirty;
+#if ELMC_PEBBLE_SCENE_CHUNK_SIZE > 0
+  struct ElmcPebbleSceneChunk *chunks;
+#endif
 } ElmcPebbleSceneBuffer;
+
+#if ELMC_PEBBLE_SCENE_CHUNK_SIZE > 0
+typedef struct ElmcPebbleSceneChunk {
+  struct ElmcPebbleSceneChunk *next;
+  int used;
+  unsigned char bytes[ELMC_PEBBLE_SCENE_CHUNK_SIZE];
+} ElmcPebbleSceneChunk;
+#endif
 
 typedef struct {
   int x;
@@ -277,6 +300,44 @@ typedef struct {
 
 int elmc_scene_writer_push_cmd(ElmcSceneWriter *writer, const ElmcPebbleDrawCmd *cmd);
 void elmc_draw_cmd_init(ElmcPebbleDrawCmd *cmd, int32_t kind);
+
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
+static inline int elmc_scene_format_nonzero_int_at(char *text, int start, elmc_int_t value) {
+  elmc_int_t direct_value = value;
+  char direct_digits[12];
+  int direct_digit_count = 0;
+  int direct_text_i = start;
+  int direct_negative = direct_value < 0;
+  if (direct_negative && direct_text_i < 63) {
+    text[direct_text_i++] = '-';
+  }
+  do {
+    elmc_int_t direct_digit = direct_value % 10;
+    if (direct_digit < 0) direct_digit = -direct_digit;
+    direct_digits[direct_digit_count++] = (char)('0' + direct_digit);
+    direct_value /= 10;
+  } while (direct_value != 0 && direct_digit_count < (int)sizeof(direct_digits));
+  while (direct_digit_count > 0 && direct_text_i < 63) {
+    text[direct_text_i++] = direct_digits[--direct_digit_count];
+  }
+  text[direct_text_i] = '\0';
+  return direct_text_i;
+}
+
+static inline void elmc_scene_text_from_nonzero_int(char *text, elmc_int_t value) {
+  (void)elmc_scene_format_nonzero_int_at(text, 0, value);
+}
+
+static inline void elmc_scene_text_prefix_and_nonzero_int(char *text, const char *prefix, elmc_int_t value) {
+  int direct_text_i = 0;
+  while (prefix && prefix[direct_text_i] && direct_text_i < 63) {
+    text[direct_text_i] = prefix[direct_text_i];
+    direct_text_i++;
+  }
+  (void)elmc_scene_format_nonzero_int_at(text, direct_text_i, value);
+}
+#endif
+
 int elmc_pebble_scene_decode_record(
     const unsigned char *bytes,
     int byte_count,
@@ -284,7 +345,7 @@ int elmc_pebble_scene_decode_record(
     ElmcPebbleDrawCmd *out_cmd);
 
 
-int elmc_fn_Main_view_scene_append(
+RC elmc_fn_Main_view_scene_append(
     ElmcValue ** const args,
     const int argc,
     ElmcSceneWriter * const writer);
@@ -390,109 +451,106 @@ typedef enum {
 #define ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET -1
 
 
-#define ELMC_PEBBLE_SUB_TICK (1 << 0)
-#define ELMC_PEBBLE_SUB_BUTTON_UP (1 << 1)
-#define ELMC_PEBBLE_SUB_BUTTON_SELECT (1 << 2)
-#define ELMC_PEBBLE_SUB_BUTTON_DOWN (1 << 3)
-#define ELMC_PEBBLE_SUB_ACCEL_TAP (1 << 4)
-#define ELMC_PEBBLE_SUB_BATTERY (1 << 5)
-#define ELMC_PEBBLE_SUB_CONNECTION (1 << 6)
-#define ELMC_PEBBLE_SUB_HOUR (1 << 10)
-#define ELMC_PEBBLE_SUB_MINUTE (1 << 11)
-#define ELMC_PEBBLE_SUB_APPMESSAGE (1 << 12)
-#define ELMC_PEBBLE_SUB_FRAME (1 << 13)
-#define ELMC_PEBBLE_SUB_BUTTON_RAW (1 << 14)
-#define ELMC_PEBBLE_SUB_ACCEL_DATA (1 << 15)
-#define ELMC_PEBBLE_SUB_DAY (1 << 16)
-#define ELMC_PEBBLE_SUB_MONTH (1 << 17)
-#define ELMC_PEBBLE_SUB_YEAR (1 << 18)
-#define ELMC_PEBBLE_SUB_APP_FOCUS (1 << 19)
-#define ELMC_PEBBLE_SUB_COMPASS (1 << 20)
-#define ELMC_PEBBLE_SUB_DICTATION (1 << 21)
-#define ELMC_PEBBLE_SUB_UNOBSTRUCTED_AREA (1 << 22)
-#define ELMC_PEBBLE_SUB_HEALTH (1LL << 31)
-
+    #define ELMC_PEBBLE_SUB_TICK (1 << 0)
+    #define ELMC_PEBBLE_SUB_BUTTON_UP (1 << 1)
+    #define ELMC_PEBBLE_SUB_BUTTON_SELECT (1 << 2)
+    #define ELMC_PEBBLE_SUB_BUTTON_DOWN (1 << 3)
+    #define ELMC_PEBBLE_SUB_ACCEL_TAP (1 << 4)
+    #define ELMC_PEBBLE_SUB_BATTERY (1 << 5)
+    #define ELMC_PEBBLE_SUB_CONNECTION (1 << 6)
+    #define ELMC_PEBBLE_SUB_HOUR (1 << 10)
+    #define ELMC_PEBBLE_SUB_MINUTE (1 << 11)
+    #define ELMC_PEBBLE_SUB_APPMESSAGE (1 << 12)
+    #define ELMC_PEBBLE_SUB_FRAME (1 << 13)
+    #define ELMC_PEBBLE_SUB_BUTTON_RAW (1 << 14)
+    #define ELMC_PEBBLE_SUB_ACCEL_DATA (1 << 15)
+    #define ELMC_PEBBLE_SUB_DAY (1 << 16)
+    #define ELMC_PEBBLE_SUB_MONTH (1 << 17)
+    #define ELMC_PEBBLE_SUB_YEAR (1 << 18)
+    #define ELMC_PEBBLE_SUB_APP_FOCUS (1 << 19)
+    #define ELMC_PEBBLE_SUB_COMPASS (1 << 20)
+    #define ELMC_PEBBLE_SUB_DICTATION (1 << 21)
+    #define ELMC_PEBBLE_SUB_UNOBSTRUCTED_AREA (1 << 22)
+    #define ELMC_PEBBLE_SUB_HEALTH (1LL << 31)
 #ifndef ELMC_PEBBLE_ACCEL_SAMPLES_PER_UPDATE
 #define ELMC_PEBBLE_ACCEL_SAMPLES_PER_UPDATE 1
 #endif
 #ifndef ELMC_PEBBLE_ACCEL_SAMPLING_HZ
 #define ELMC_PEBBLE_ACCEL_SAMPLING_HZ 25
 #endif
+    int elmc_pebble_init(ElmcPebbleApp *app, ElmcValue *flags);
+    int elmc_pebble_init_with_mode(ElmcPebbleApp *app, ElmcValue *flags, int run_mode);
+    int elmc_pebble_dispatch_int(ElmcPebbleApp *app, int64_t tag);
+    int elmc_pebble_dispatch_tag_value(ElmcPebbleApp *app, int64_t tag, int64_t value);
+    int elmc_pebble_dispatch_tag_bool(ElmcPebbleApp *app, int64_t tag, int value);
+    int elmc_pebble_dispatch_tag_string(ElmcPebbleApp *app, int64_t tag, const char *value);
+    int elmc_pebble_dispatch_tag_payload(ElmcPebbleApp *app, int64_t tag, ElmcValue *payload);
+    int elmc_pebble_dispatch_tag_int_values(
+        ElmcPebbleApp *app,
+        int64_t outer_tag,
+        int64_t inner_tag,
+        int field_count,
+        const int64_t *field_values);
+    int elmc_pebble_dispatch_tag_record_int_fields(
+        ElmcPebbleApp *app,
+        int64_t tag,
+        int field_count,
+        const char **field_names,
+        const int64_t *field_values);
+    int elmc_pebble_msg_from_appmessage(int32_t key, int32_t value, int64_t *out_tag);
+    int elmc_pebble_dispatch_appmessage(ElmcPebbleApp *app, int32_t key, int32_t value);
+    int elmc_pebble_dispatch_button(ElmcPebbleApp *app, int32_t button_id);
+    int elmc_pebble_dispatch_button_raw(ElmcPebbleApp *app, int32_t button_id, int32_t pressed);
+    int elmc_pebble_dispatch_accel_tap(ElmcPebbleApp *app, int32_t axis, int32_t direction);
+    int elmc_pebble_dispatch_accel_data(ElmcPebbleApp *app, int32_t x, int32_t y, int32_t z);
+    int elmc_pebble_dispatch_storage_string(ElmcPebbleApp *app, const char *value);
+    int elmc_pebble_dispatch_random_int(ElmcPebbleApp *app, int32_t value);
+    int elmc_pebble_dispatch_battery(ElmcPebbleApp *app, int level);
+    int elmc_pebble_dispatch_connection(ElmcPebbleApp *app, int connected);
+    int elmc_pebble_dispatch_health(ElmcPebbleApp *app, int event);
+    int elmc_pebble_dispatch_app_focus(ElmcPebbleApp *app, int in_focus);
+    #if ELMC_PEBBLE_FEATURE_COMPASS_EVENTS
+    int elmc_pebble_dispatch_compass_heading(ElmcPebbleApp *app, double degrees, int is_valid);
+    #endif
+    int elmc_pebble_dispatch_dictation_status(ElmcPebbleApp *app, int status);
+    int elmc_pebble_dispatch_dictation_result(ElmcPebbleApp *app, int is_ok, int error_code, const char *text);
+    int elmc_pebble_dispatch_unobstructed_will_change(ElmcPebbleApp *app, int x, int y, int w, int h);
+    int elmc_pebble_dispatch_unobstructed_changing(ElmcPebbleApp *app, int progress);
+    int elmc_pebble_dispatch_unobstructed_did_change(ElmcPebbleApp *app);
+    int elmc_pebble_dispatch_frame(ElmcPebbleApp *app, int64_t dt_ms, int64_t elapsed_ms, int64_t frame);
+    int elmc_pebble_dispatch_hour(ElmcPebbleApp *app, int hour);
+    int elmc_pebble_dispatch_minute(ElmcPebbleApp *app, int minute);
+    int elmc_pebble_dispatch_day(ElmcPebbleApp *app, int day);
+    int elmc_pebble_dispatch_month(ElmcPebbleApp *app, int month);
+    int elmc_pebble_dispatch_year(ElmcPebbleApp *app, int year);
+    int elmc_pebble_take_cmd(ElmcPebbleApp *app, ElmcPebbleCmd *out_cmd);
+    int elmc_pebble_view_command(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmd);
+    int elmc_pebble_view_commands(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds);
+    int elmc_pebble_view_commands_from(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip);
+    int elmc_pebble_scene_commands_from(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip);
+    void elmc_pebble_scene_reset_draw_cursor(ElmcPebbleApp *app);
+    int elmc_pebble_scene_commands_next(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds);
+    int elmc_pebble_ensure_scene(ElmcPebbleApp *app);
+    int elmc_pebble_scene_command_count(ElmcPebbleApp *app);
+    int elmc_pebble_scene_dirty_rect(ElmcPebbleApp *app, ElmcPebbleRect *out_rect, int *out_full);
+    void elmc_pebble_invalidate_scene(ElmcPebbleApp *app);
+    void elmc_pebble_clear_view_cache(ElmcPebbleApp *app);
+    int elmc_pebble_tick(ElmcPebbleApp *app);
+    int64_t elmc_pebble_active_subscriptions(ElmcPebbleApp *app);
+    int64_t elmc_pebble_model_as_int(ElmcPebbleApp *app);
+    int elmc_pebble_run_mode(ElmcPebbleApp *app);
+    void elmc_pebble_deinit(ElmcPebbleApp *app);
 
-int elmc_pebble_init(ElmcPebbleApp *app, ElmcValue *flags);
-int elmc_pebble_init_with_mode(ElmcPebbleApp *app, ElmcValue *flags, int run_mode);
-int elmc_pebble_dispatch_int(ElmcPebbleApp *app, int64_t tag);
-int elmc_pebble_dispatch_tag_value(ElmcPebbleApp *app, int64_t tag, int64_t value);
-int elmc_pebble_dispatch_tag_bool(ElmcPebbleApp *app, int64_t tag, int value);
-int elmc_pebble_dispatch_tag_string(ElmcPebbleApp *app, int64_t tag, const char *value);
-int elmc_pebble_dispatch_tag_payload(ElmcPebbleApp *app, int64_t tag, ElmcValue *payload);
-int elmc_pebble_dispatch_tag_int_values(
-    ElmcPebbleApp *app,
-    int64_t outer_tag,
-    int64_t inner_tag,
-    int field_count,
-    const int64_t *field_values);
-int elmc_pebble_dispatch_tag_record_int_fields(
-    ElmcPebbleApp *app,
-    int64_t tag,
-    int field_count,
-    const char **field_names,
-    const int64_t *field_values);
-int elmc_pebble_msg_from_appmessage(int32_t key, int32_t value, int64_t *out_tag);
-int elmc_pebble_dispatch_appmessage(ElmcPebbleApp *app, int32_t key, int32_t value);
-int elmc_pebble_dispatch_button(ElmcPebbleApp *app, int32_t button_id);
-int elmc_pebble_dispatch_button_raw(ElmcPebbleApp *app, int32_t button_id, int32_t pressed);
-int elmc_pebble_dispatch_accel_tap(ElmcPebbleApp *app, int32_t axis, int32_t direction);
-int elmc_pebble_dispatch_accel_data(ElmcPebbleApp *app, int32_t x, int32_t y, int32_t z);
-int elmc_pebble_dispatch_storage_string(ElmcPebbleApp *app, const char *value);
-int elmc_pebble_dispatch_random_int(ElmcPebbleApp *app, int32_t value);
-int elmc_pebble_dispatch_battery(ElmcPebbleApp *app, int level);
-int elmc_pebble_dispatch_connection(ElmcPebbleApp *app, int connected);
-int elmc_pebble_dispatch_health(ElmcPebbleApp *app, int event);
-int elmc_pebble_dispatch_app_focus(ElmcPebbleApp *app, int in_focus);
-#if ELMC_PEBBLE_FEATURE_COMPASS_EVENTS
-int elmc_pebble_dispatch_compass_heading(ElmcPebbleApp *app, double degrees, int is_valid);
-#endif
-int elmc_pebble_dispatch_dictation_status(ElmcPebbleApp *app, int status);
-int elmc_pebble_dispatch_dictation_result(ElmcPebbleApp *app, int is_ok, int error_code, const char *text);
-int elmc_pebble_dispatch_unobstructed_will_change(ElmcPebbleApp *app, int x, int y, int w, int h);
-int elmc_pebble_dispatch_unobstructed_changing(ElmcPebbleApp *app, int progress);
-int elmc_pebble_dispatch_unobstructed_did_change(ElmcPebbleApp *app);
-int elmc_pebble_dispatch_frame(ElmcPebbleApp *app, int64_t dt_ms, int64_t elapsed_ms, int64_t frame);
-int elmc_pebble_dispatch_hour(ElmcPebbleApp *app, int hour);
-int elmc_pebble_dispatch_minute(ElmcPebbleApp *app, int minute);
-int elmc_pebble_dispatch_day(ElmcPebbleApp *app, int day);
-int elmc_pebble_dispatch_month(ElmcPebbleApp *app, int month);
-int elmc_pebble_dispatch_year(ElmcPebbleApp *app, int year);
-int elmc_pebble_take_cmd(ElmcPebbleApp *app, ElmcPebbleCmd *out_cmd);
-int elmc_pebble_view_command(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmd);
-int elmc_pebble_view_commands(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds);
-int elmc_pebble_view_commands_from(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip);
-int elmc_pebble_scene_commands_from(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip);
-void elmc_pebble_scene_reset_draw_cursor(ElmcPebbleApp *app);
-int elmc_pebble_scene_commands_next(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds);
-int elmc_pebble_ensure_scene(ElmcPebbleApp *app);
-int elmc_pebble_scene_command_count(ElmcPebbleApp *app);
-int elmc_pebble_scene_dirty_rect(ElmcPebbleApp *app, ElmcPebbleRect *out_rect, int *out_full);
-void elmc_pebble_invalidate_scene(ElmcPebbleApp *app);
-void elmc_pebble_clear_view_cache(ElmcPebbleApp *app);
-int elmc_pebble_tick(ElmcPebbleApp *app);
-int64_t elmc_pebble_active_subscriptions(ElmcPebbleApp *app);
-int64_t elmc_pebble_model_as_int(ElmcPebbleApp *app);
-int elmc_pebble_run_mode(ElmcPebbleApp *app);
-void elmc_pebble_deinit(ElmcPebbleApp *app);
-
-#if defined(ELMC_PEBBLE_PLATFORM) && ELMC_PEBBLE_HEAP_LOG
-void elmc_pebble_heap_log(const char *label);
-void elmc_pebble_render_diag_log(const char *phase, int render_seq, const ElmcPebbleApp *app);
-#else
-#define elmc_pebble_heap_log(label) do { (void)(label); } while (0)
-#define elmc_pebble_render_diag_log(phase, render_seq, app) \
-  do { \
-    (void)(phase); \
-    (void)(render_seq); \
-    (void)(app); \
-  } while (0)
-#endif
-
+    #if defined(ELMC_PEBBLE_PLATFORM) && ELMC_PEBBLE_HEAP_LOG
+    void elmc_pebble_heap_log(const char *label);
+    void elmc_pebble_render_diag_log(const char *phase, int render_seq, const ElmcPebbleApp *app);
+    #else
+    #define elmc_pebble_heap_log(label) do { (void)(label); } while (0)
+    #define elmc_pebble_render_diag_log(phase, render_seq, app) \
+      do { \
+        (void)(phase); \
+        (void)(render_seq); \
+        (void)(app); \
+      } while (0)
+    #endif
 #endif

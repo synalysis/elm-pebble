@@ -648,11 +648,35 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
 
         arity > 0 and argc > arity ->
           {first_vars, rest_vars} = Enum.split(arg_vars, arity)
+          rest_exprs = Enum.drop(args, arity)
           first_args = Enum.join(first_vars, ", ")
           rest_args = Enum.join(rest_vars, ", ")
           head_var = "head_#{next}"
           first_args_var = "call_args_#{next}"
           rest_args_var = "extra_args_#{next}"
+
+          head_shape =
+            Expr.record_shape_for_function_return({module_name, name}, env, arity) ||
+              Expr.function_decl_return_shape(env, module_name, name)
+
+          field_accessor_field =
+            case rest_exprs do
+              [%{op: :lambda, body: body} | _] ->
+                field_accessor_field(body)
+
+              _ ->
+                nil
+            end
+
+          apply_expr =
+            if is_binary(field_accessor_field) and is_list(head_shape) do
+              index_ref =
+                Expr.record_field_index_ref(field_accessor_field, head_shape, nil, env)
+
+              "elmc_record_get_index(#{head_var}, #{index_ref})"
+            else
+              "elmc_apply_extra(#{head_var}, #{rest_args_var}, #{length(rest_vars)})"
+            end
 
           head_call =
             if rc_callee? do
@@ -682,14 +706,32 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
               "ElmcValue *#{head_var} = #{c_name}(#{first_args_var}, #{length(first_vars)});"
             end
 
+          field_accessor_inline? =
+            is_binary(field_accessor_field) and is_list(head_shape)
+
+          apply_block =
+            if field_accessor_inline? do
+              rest_releases = Enum.map_join(rest_vars, "\n  ", &"elmc_release(#{&1});")
+
+              """
+              #{head_call}
+              #{boxed_out_decl(env, out, apply_expr)}
+              #{rest_releases}
+              """
+            else
+              """
+              #{head_call}
+              ElmcValue *#{rest_args_var}[#{max(length(rest_vars), 1)}] = { #{rest_args} };
+              #{boxed_out_decl(env, out, apply_expr)}
+              """
+            end
+
           """
           #{before_args_probe}
           #{arg_code}
             #{after_args_probe}
             ElmcValue *#{first_args_var}[#{max(length(first_vars), 1)}] = { #{first_args} };
-            #{head_call}
-            ElmcValue *#{rest_args_var}[#{max(length(rest_vars), 1)}] = { #{rest_args} };
-            #{boxed_out_decl(env, out, "elmc_apply_extra(#{head_var}, #{rest_args_var}, #{length(rest_vars)})")}
+            #{apply_block}
             #{after_call_probe}
             elmc_release(#{head_var});
             #{releases}
@@ -890,6 +932,14 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     end)
     |> Enum.map_join("\n  ", fn {var, _} -> "elmc_release(#{var});" end)
   end
+
+  defp field_accessor_field(%{op: :field_access, field: field}) when is_binary(field),
+    do: field
+
+  defp field_accessor_field(%{op: :field_access, arg: _arg, field: field}) when is_binary(field),
+    do: field
+
+  defp field_accessor_field(_body), do: nil
 
   @spec compile_cross_module(
           String.t(),

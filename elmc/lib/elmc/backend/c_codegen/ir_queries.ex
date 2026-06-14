@@ -68,7 +68,7 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
       |> Enum.flat_map(fn decl ->
         case Map.get(decl, :expr) do
           %{op: :record_alias, fields: fields} when is_list(fields) ->
-            shape = fields |> Enum.map(&to_string/1) |> Enum.sort()
+            shape = fields |> Enum.map(&to_string/1)
             [{{mod.name, decl.name}, shape}]
 
           _ ->

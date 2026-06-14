@@ -21,16 +21,12 @@ defmodule Elmc.Backend.Pebble.Types.FeatureFlags.MapType do
 
     case apply(module, fun, []) do
       list when is_list(list) -> list
-      other -> raise_keys_error!(other)
+      other -> raise ArgumentError, "def_flags_type expected a key list, got: #{inspect(other)}"
     end
   end
 
   defp keys_list!(keys_ast, _caller) do
     raise ArgumentError,
           "def_flags_type expects Keys.subset_keys/0, got: #{Macro.to_string(keys_ast)}"
-  end
-
-  defp raise_keys_error!(other) do
-    raise ArgumentError, "def_flags_type expected a key list, got: #{inspect(other)}"
   end
 end

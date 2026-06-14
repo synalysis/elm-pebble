@@ -41,4 +41,30 @@ defmodule Elmc.RcFailRecordTest do
     assert header =~ "elmc_last_fail_rc"
     assert source =~ "volatile RC elmc_last_fail_rc"
   end
+
+  test "pruned pebble runtime keeps elmc_rc_name behind ELMC_PEBBLE_PLATFORM guard" do
+    tmp = Path.expand("tmp/rc_fail_record_pruned", __DIR__)
+    refs_dir = Path.expand("tmp/rc_fail_record_pruned_refs", __DIR__)
+    File.rm_rf!(tmp)
+    File.rm_rf!(refs_dir)
+    File.mkdir_p!(Path.join(refs_dir, "c"))
+
+    File.write!(
+      Path.join(refs_dir, "c/elmc_pebble.c"),
+      """
+      void elmc_rc_name_probe(void) {
+        (void)elmc_rc_name(RC_SUCCESS);
+      }
+      """
+    )
+
+    assert :ok = Generator.write_runtime(tmp, prune_from_dir: refs_dir, pebble_int32: true)
+
+    source = File.read!(Path.join(tmp, "elmc_runtime.c"))
+
+    assert {guard_idx, _} = :binary.match(source, "#ifndef ELMC_PEBBLE_PLATFORM")
+    assert {name_idx, _} = :binary.match(source, "const char *elmc_rc_name(RC rc)")
+    assert guard_idx < name_idx
+    assert Regex.scan(~r/const char \*elmc_rc_name\(RC rc\) \{/, source) |> length() == 1
+  end
 end

@@ -5,12 +5,13 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.CmdValue.Decode.PathSetti
 
   alias Elmc.Backend.Pebble.SourceWriter.DrawRuntime.CmdValue.Decode.PathSettings.{
     DrawSettings,
+    MainViewClose,
     PathPayload
   }
 
   @spec body() :: Types.c_source()
   def body do
-    [PathPayload.body(), DrawSettings.body()]
+    [PathPayload.body(), DrawSettings.body(), MainViewClose.body()]
     |> IO.iodata_to_binary()
   end
 end

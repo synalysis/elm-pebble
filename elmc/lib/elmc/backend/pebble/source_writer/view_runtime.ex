@@ -11,11 +11,20 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime do
 
   @spec body(Types.source_bindings()) :: Types.c_source()
   def body(%{} = bindings) do
+    scene_build_bindings = %{
+      entry_view_scene_append: bindings.entry_view_scene_append
+    }
+
+    view_command_bindings = %{
+      entry_view_fn: bindings.entry_view_fn,
+      has_view: bindings.has_view
+    }
+
     [
-      SceneBuild.body(bindings),
+      SceneBuild.body(scene_build_bindings),
       SceneQuery.body(),
       SceneStream.body(),
-      ViewCommands.body(bindings)
+      ViewCommands.body(view_command_bindings)
     ]
     |> IO.iodata_to_binary()
   end

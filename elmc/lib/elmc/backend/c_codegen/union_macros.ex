@@ -58,11 +58,17 @@ defmodule Elmc.Backend.CCodegen.UnionMacros do
   defp maybe_filter_used_ctors(entries, _), do: entries
 
   defp union_ctor_used?(name, used) do
+    short = short_union_ctor_name(name)
+
     MapSet.member?(used, name) or
-      (not String.contains?(name, ".") and
-         Enum.any?(used, fn qualified ->
-           String.ends_with?(qualified, "." <> name)
-         end))
+      MapSet.member?(used, short) or
+      Enum.any?(used, fn entry ->
+        entry == short or String.ends_with?(entry, "." <> short)
+      end)
+  end
+
+  defp short_union_ctor_name(name) when is_binary(name) do
+    name |> String.split(".") |> List.last()
   end
 
   @spec literal_ref(Types.ir_expr(), Types.compile_env() | nil) :: String.t() | nil

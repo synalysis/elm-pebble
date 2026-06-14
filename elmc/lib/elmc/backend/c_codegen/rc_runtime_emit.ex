@@ -399,7 +399,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   end
 
   @spec legacy_rc_allocator_stmt(String.t(), String.t(), String.t(), keyword()) :: String.t()
-  defp legacy_rc_allocator_stmt(out, function, call_args, opts \\ []) do
+  defp legacy_rc_allocator_stmt(out, function, call_args, opts) do
     return_on_fail? = Keyword.get(opts, :return_on_fail?, true)
     declare_out? = legacy_declare_out?(out, opts)
 

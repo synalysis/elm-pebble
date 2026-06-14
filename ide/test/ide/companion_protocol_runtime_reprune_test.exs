@@ -4,9 +4,9 @@ defmodule Ide.CompanionProtocolRuntimeRepruneTest do
   alias Elmc.Runtime.Generator, as: RuntimeGenerator
   alias Ide.CompanionProtocolGenerator
 
-  @list_helper_def ~r/ElmcValue \*elmc_list_from_int_array\(const elmc_int_t \*items, int count\) \{/
-  @record_helper_def ~r/ElmcValue \*elmc_record_new_take\(int field_count, const char \*\*field_names, ElmcValue \*\*field_values\) \{/
-  @dict_helper_def ~r/ElmcValue \*elmc_dict_from_list\(ElmcValue \*items\) \{/
+  @list_helper_def ~r/RC elmc_list_from_int_array\(ElmcValue \*\*out, const elmc_int_t \*items, int count\) \{/
+  @record_helper_def ~r/RC elmc_record_new_take\(ElmcValue \*\*out, int field_count, const char \*\*field_names, ElmcValue \*\*field_values\) \{/
+  @dict_helper_def ~r/RC elmc_dict_from_list\(ElmcValue \*\*out, ElmcValue \*items\) \{/
 
   test "repruned runtime includes list helper referenced by companion protocol C" do
     tmp =

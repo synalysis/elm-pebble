@@ -54,6 +54,10 @@ defmodule Elmc.Backend.CCodegen.ProjectWriter do
     File.write(Path.join(out_dir, "elmc_stack_report.json"), report)
   end
 
+  defp normalize_codegen_opts(opts) when is_list(opts) do
+    opts |> Map.new() |> normalize_codegen_opts()
+  end
+
   defp normalize_codegen_opts(opts) when is_map(opts) do
     cond do
       Map.has_key?(opts, :prune_native_wrappers) -> opts

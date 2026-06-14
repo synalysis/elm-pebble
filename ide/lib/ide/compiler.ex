@@ -553,6 +553,8 @@ defmodule Ide.Compiler do
     |> maybe_attach_stack_report(project_dir)
   end
 
+  defp maybe_attach_runtime_artifacts(result, _project_dir, _revision, _opts), do: result
+
   @spec maybe_attach_stack_report(compile_result(), String.t()) :: compile_result()
   defp maybe_attach_stack_report(result, project_dir) when is_map(result) do
     stack_report_path = Path.join(project_dir, ".elmc-build/elmc_stack_report.json")
@@ -574,8 +576,6 @@ defmodule Ide.Compiler do
       _ -> result
     end
   end
-
-  defp maybe_attach_runtime_artifacts(result, _project_dir, _revision, _opts), do: result
 
   @spec maybe_attach_debugger_contract(compile_result(), String.t()) :: compile_result()
   defp maybe_attach_debugger_contract(result, project_dir)

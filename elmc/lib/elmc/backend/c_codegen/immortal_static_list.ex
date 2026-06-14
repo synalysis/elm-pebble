@@ -196,13 +196,14 @@ defmodule Elmc.Backend.CCodegen.ImmortalStaticList do
           String.t(),
           String.t(),
           Types.ir_expr(),
+          boolean(),
           boolean()
         ) :: {:ok, String.t(), String.t()} | :error
-  def try_emit_function_prelude_and_body(module_name, fun_name, expr, direct_args?) do
+  def try_emit_function_prelude_and_body(module_name, fun_name, expr, direct_args?, rc_required?) do
     with true <- match?(%{op: :list_literal, items: _}, expr),
          {:ok, prelude, return_expr} <- emit_list(module_name, fun_name, expr) do
       body =
-        emit_function_body(direct_args?, return_expr)
+        emit_function_body(direct_args?, return_expr, rc_required?)
 
       {:ok, prelude, body}
     else
@@ -282,11 +283,18 @@ defmodule Elmc.Backend.CCodegen.ImmortalStaticList do
     |> String.trim_trailing()
   end
 
-  defp emit_function_body(direct_args?, return_expr) do
+  defp emit_function_body(direct_args?, return_expr, rc_required?) do
     prologue = if direct_args?, do: [], else: ["(void)args;", "(void)argc;"]
 
+    return_lines =
+      if rc_required? do
+        ["*out = elmc_retain(#{return_expr});", "return RC_SUCCESS;"]
+      else
+        ["return elmc_retain(#{return_expr});"]
+      end
+
     prologue
-    |> Kernel.++(["return elmc_retain(#{return_expr});"])
+    |> Kernel.++(return_lines)
     |> Enum.join("\n")
     |> CSource.format_block(2)
   end

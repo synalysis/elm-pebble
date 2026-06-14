@@ -3,7 +3,7 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.AppTypes.MsgEnums do
 
   alias Elmc.Backend.Pebble.Types
 
-  @spec body(Types.header_app_types_bindings()) :: Types.c_source()
+  @spec body(Types.header_bindings()) :: Types.c_source()
   def body(%{
         run_mode_enum: run_mode_enum,
         msg_enum_members: msg_enum_members,

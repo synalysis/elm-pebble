@@ -4,15 +4,10 @@
 #include "../runtime/elmc_runtime.h"
 #include "../ports/elmc_ports.h"
 
-ElmcValue *elmc_fn_Main_init(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Main_update(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Main_subscriptions(ElmcValue ** const args, const int argc);
-#ifndef ELMC_CATCH_MACROS
-#define ELMC_CATCH_MACROS
-#define CATCH_BEGIN     do {
-#define CATCH_END       } while (1!=1);
-#define CATCH_BREAK     { direct_rc = -2; break; }
-#endif
+RC elmc_fn_Main_init(ElmcValue **out, ElmcValue ** const args, const int argc);
+RC elmc_fn_Main_update(ElmcValue **out, ElmcValue ** const args, const int argc);
+RC elmc_fn_Main_subscriptions(ElmcValue **out, ElmcValue ** const args, const int argc);
+RC elmc_fn_Main_view(ElmcValue **out, ElmcValue *model);
 
 #define ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW 1
 

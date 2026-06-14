@@ -1184,7 +1184,7 @@ defmodule Elmc.PebbleShimTest do
 
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     assert String.contains?(generated, "elmc_partial_ref_")
-    assert String.contains?(generated, "elmc_apply_extra")
+    assert String.contains?(generated, "elmc_record_get_index(head_")
 
     harness_path = Path.join(out_dir, "c/partial_collision_harness.c")
 
@@ -1192,12 +1192,15 @@ defmodule Elmc.PebbleShimTest do
       harness_path,
       """
       #include "elmc_pebble.h"
+      #include "elmc_generated.h"
 
-      static long field_int(ElmcValue *record, const char *field) {
-        ElmcValue *value = elmc_record_get(record, field);
-        long out = (long)elmc_as_int(value);
-        elmc_release(value);
-        return out;
+      enum {
+        MODEL_FIELD_PLAYERY = 0,
+        MODEL_FIELD_VELOCITYY = 1
+      };
+
+      static long field_int(ElmcValue *record, int index) {
+        return (long)ELMC_RECORD_GET_INDEX_INT(record, index);
       }
 
       int main(void) {
@@ -1213,15 +1216,15 @@ defmodule Elmc.PebbleShimTest do
         if (cmds[2].p0 != 30 || cmds[2].p1 != 10 || cmds[2].p2 != 20 || cmds[2].p3 != 4) return 5;
 
         if (elmc_pebble_dispatch_button_raw(&app, ELMC_PEBBLE_BUTTON_UP, 1) != 0) return 6;
-        if (field_int(app.worker.model, "playerY") != 6) return 7;
-        if (field_int(app.worker.model, "velocityY") != -2) return 8;
+        if (field_int(app.worker.model, MODEL_FIELD_PLAYERY) != 6) return 7;
+        if (field_int(app.worker.model, MODEL_FIELD_VELOCITYY) != -2) return 8;
 
         for (int i = 0; i < 8; i++) {
           if (elmc_pebble_dispatch_frame(&app, 33, 33 * (i + 1), i + 1) != 0) return 20 + i;
         }
 
-        long y = field_int(app.worker.model, "playerY");
-        long vy = field_int(app.worker.model, "velocityY");
+        long y = field_int(app.worker.model, MODEL_FIELD_PLAYERY);
+        long vy = field_int(app.worker.model, MODEL_FIELD_VELOCITYY);
         if (y != 6) return 40;
         if (vy != 0) return 41;
 
@@ -1811,8 +1814,8 @@ defmodule Elmc.PebbleShimTest do
         ElmcValue *screen_height = elmc_new_int_take(168);
         ElmcValue *screen_shape = elmc_new_string_take("Rectangular");
         ElmcValue *screen_color_mode = elmc_new_string_take("Color");
-        const char *screen_names[] = {"color_mode", "height", "shape", "width"};
-        ElmcValue *screen_values[] = {screen_color_mode, screen_height, screen_shape, screen_width};
+        const char *screen_names[] = {"width", "height", "shape", "color_mode"};
+        ElmcValue *screen_values[] = {screen_width, screen_height, screen_shape, screen_color_mode};
         ElmcValue *screen = NULL;
         if (elmc_record_new(&screen, 4, screen_names, screen_values) != RC_SUCCESS) return NULL;
         elmc_release(screen_width);

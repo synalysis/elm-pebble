@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.CCodegen.RecordCompile do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.BuiltinUnion
   alias Elmc.Backend.CCodegen.DebugProbes
   alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.EnvBindings
@@ -130,7 +131,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     ordered_fields = canonicalize_literal_fields(fields, env)
     field_count = length(ordered_fields)
 
-    if field_count > 0 and Enum.all?(ordered_fields, &Host.native_int_expr?(&1.expr, env)) do
+    if field_count > 0 and native_int_record_literal?(ordered_fields, env) do
       compile_native_int_literal(ordered_fields, field_count, env, counter)
     else
       compile_boxed_literal(ordered_fields, field_count, env, counter)
@@ -244,6 +245,41 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     if Enum.all?(fields, &is_map/1), do: {:ok, fields}, else: :error
   end
 
+  defp native_int_record_literal?(ordered_fields, env) when is_list(ordered_fields) do
+    Enum.all?(ordered_fields, &Host.native_int_expr?(&1.expr, env)) and
+      native_int_record_field_types?(ordered_fields, env)
+  end
+
+  defp native_int_record_field_types?(ordered_fields, env) when is_list(ordered_fields) do
+    names = Enum.map(ordered_fields, & &1.name)
+
+    case Expr.record_type_for_field_names(names, env) do
+      type when is_binary(type) ->
+        field_types = record_field_types_for_type(type, env)
+
+        is_map(field_types) and
+          Enum.all?(ordered_fields, fn %{name: name} ->
+            field_type = Map.get(field_types, name) || Map.get(field_types, to_string(name))
+            field_type == "Int"
+          end)
+
+      _ ->
+        false
+    end
+  end
+
+  defp record_field_types_for_type(type, env) when is_binary(type) do
+    module = Map.get(env, :__module__, "Main")
+    type_name = Host.normalize_type_name(type)
+
+    types_map =
+      Map.get(env, :__record_field_types__) ||
+        Process.get(:elmc_record_field_types, %{})
+
+    Map.get(types_map, {module, type_name}) ||
+      Map.get(types_map, {module, type})
+  end
+
   defp canonicalize_literal_fields(ordered_fields, env) when is_list(ordered_fields) do
     names = Enum.map(ordered_fields, & &1.name)
 
@@ -288,7 +324,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
               {_key, c_ref, :native_bool} -> "bool #{c_ref}"
             end)
 
-          helper_env = Map.put(env, :__rc_catch__, false)
+          helper_env = env |> Map.put(:__rc_catch__, false) |> Map.put(:__rc_required__, false)
 
           {field_code, field_vars, _counter} =
             Enum.reduce(ordered_fields, {"", [], counter}, fn field, {code_acc, vars_acc, c} ->
@@ -791,7 +827,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   end
 
   defp compile_boxed_field_value_expr(expr, env, counter) do
-    if Host.native_int_expr?(expr, env) do
+    if Host.native_int_expr?(expr, env) and not BuiltinUnion.maybe_nothing_literal?(expr) do
       {code, native_ref, c2} = Host.compile_native_int_expr(expr, env, counter)
       next = c2 + 1
       var = Util.temp_var(next, "boxed_int")
@@ -1147,8 +1183,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   defp compile_cached_field_access_arg(%{op: :var, name: name}, env, counter),
     do: compile_cached_field_access_bound_name(name, env, counter)
 
-  defp compile_cached_field_access_arg(name, env, counter) when is_binary(name),
-    do: compile_cached_field_access_bound_name(name, env, counter)
+  defp compile_cached_field_access_arg(arg, env, counter) when is_binary(arg),
+    do: compile_cached_field_access_bound_name(arg, env, counter)
 
   defp compile_cached_field_access_arg(arg_expr, env, counter) do
     {code, ref, counter} = Host.compile_expr(arg_expr, env, counter)

@@ -3,7 +3,7 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.AppTypes.DrawCmdDecl do
 
   alias Elmc.Backend.Pebble.Types
 
-  @spec body(Types.header_app_types_bindings()) :: Types.c_source()
+  @spec body(Types.header_bindings()) :: Types.c_source()
   def body(%{scene_writer_late: scene_writer_late, entry_view_scene_append: entry_view_scene_append}) do
     """
     typedef struct {

@@ -181,6 +181,32 @@ defmodule Elmc.Backend.CCodegen.Hoist do
     Process.put(:elmc_hoisted_native_ints, hoisted)
   end
 
+  @spec register_hoisted_native_int_init(String.t(), String.t()) :: :ok
+  def register_hoisted_native_int_init(ref, init_expr)
+      when is_binary(ref) and is_binary(init_expr) do
+    inits = Process.get(:elmc_hoisted_native_int_inits, %{})
+    Process.put(:elmc_hoisted_native_int_inits, Map.put(inits, ref, init_expr))
+    :ok
+  end
+
+  @spec stable_hoist_init?(String.t()) :: boolean()
+  def stable_hoist_init?(init) when is_binary(init) do
+    not Regex.match?(~r/\b(?:native_if_|native_let_|tmp_)\d+\b/, init)
+  end
+
+  @spec hoisted_native_int_branch_preamble(map()) :: String.t()
+  def hoisted_native_int_branch_preamble(before_inits) when is_map(before_inits) do
+    Process.get(:elmc_hoisted_native_int_inits, %{})
+    |> Map.drop(Map.keys(before_inits))
+    |> Enum.filter(fn {_ref, init} -> stable_hoist_init?(init) end)
+    |> Enum.sort_by(fn {ref, _init} -> ref end)
+    |> Enum.map_join("\n", fn {ref, init} -> "  const elmc_int_t #{ref} = #{init};" end)
+    |> case do
+      "" -> ""
+      preamble -> preamble <> "\n"
+    end
+  end
+
   defp hoisted_native_int_key_aliases(expr) do
     [hoisted_native_int_key(expr) | minmax_cross_form_keys(expr)]
     |> Enum.uniq()
@@ -339,6 +365,11 @@ defmodule Elmc.Backend.CCodegen.Hoist do
           next = counter + 1
           hoisted = "direct_hoisted_int_#{next}"
           register_hoisted_native_int(expr, hoisted)
+
+          if stable_hoist_init?(ref) do
+            register_hoisted_native_int_init(hoisted, ref)
+          end
+
           {code <> "  const elmc_int_t #{hoisted} = #{ref};\n", hoisted, next}
       end
     else

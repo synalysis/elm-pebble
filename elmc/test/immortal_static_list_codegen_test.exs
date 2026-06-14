@@ -10,7 +10,7 @@ defmodule Elmc.ImmortalStaticListCodegenTest do
     }
 
     assert {:ok, prelude, body} =
-             ImmortalStaticList.try_emit_function_prelude_and_body("Main", "pages", expr, true)
+             ImmortalStaticList.try_emit_function_prelude_and_body("Main", "pages", expr, true, false)
 
     assert prelude =~ "elmc_immortal_list_Main_pages_storage"
     assert prelude =~ "ELMC_RC_IMMORTAL"
@@ -25,7 +25,7 @@ defmodule Elmc.ImmortalStaticListCodegenTest do
     expr = %{op: :list_literal, items: []}
 
     assert {:ok, "", body} =
-             ImmortalStaticList.try_emit_function_prelude_and_body("Main", "empty", expr, false)
+             ImmortalStaticList.try_emit_function_prelude_and_body("Main", "empty", expr, false, false)
 
     assert body =~ "return elmc_retain(elmc_list_nil());"
     refute body =~ "elmc_immortal_list"
@@ -71,6 +71,6 @@ defmodule Elmc.ImmortalStaticListCodegenTest do
     }
 
     assert :error =
-             ImmortalStaticList.try_emit_function_prelude_and_body("Main", "mixed", expr, true)
+             ImmortalStaticList.try_emit_function_prelude_and_body("Main", "mixed", expr, true, false)
   end
 end

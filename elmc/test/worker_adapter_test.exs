@@ -63,10 +63,7 @@ defmodule Elmc.WorkerAdapterTest do
         ElmcValue *model = elmc_worker_model(&state);
         if (!model) return 4;
         if (model->tag != ELMC_TAG_RECORD || model->payload == NULL) return 24;
-        ElmcValue *model_value = elmc_record_get(model, "value");
-        if (!model_value) return 25;
-        printf("model=%lld\\n", (long long)elmc_as_int(model_value));
-        elmc_release(model_value);
+        printf("model=%lld\\n", (long long)elmc_record_get_index_int(model, 0));
         elmc_release(model);
         printf("subs=%lld\\n", (long long)elmc_worker_subscriptions(&state));
 

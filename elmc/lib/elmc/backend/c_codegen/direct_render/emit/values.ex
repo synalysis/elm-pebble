@@ -50,9 +50,6 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
     end
   end
 
-  defp hoisted_c_int_literal?(value),
-    do: String.contains?(value, ["ELMC_TEXT", "<<", "+"])
-
   def int_value(
         %{op: :direct_native_if, cond: cond, then_expr: then_expr, else_expr: else_expr},
         env,
@@ -179,6 +176,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
   end
 
   def int_value(expr, env, counter), do: runtime_int_value(expr, env, counter)
+
+  defp hoisted_c_int_literal?(value),
+    do: String.contains?(value, ["ELMC_TEXT", "<<", "+"])
 
   defp resource_slot_int_value(target, env, counter) when is_binary(target) do
     if Host.resource_union_constructor?(target, []) do

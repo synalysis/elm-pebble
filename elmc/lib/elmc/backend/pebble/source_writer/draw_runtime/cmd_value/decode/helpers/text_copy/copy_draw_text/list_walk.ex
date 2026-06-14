@@ -39,7 +39,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.CmdValue.Decode.Helpers.T
             used += piece_len;
             cursor = node->tail;
           }
-          out_text[used] = '\0';
+          out_text[used] = '\\0';
           return used > 0 ? 0 : -1;
         }
         #endif

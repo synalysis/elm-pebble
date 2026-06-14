@@ -9,6 +9,12 @@ defmodule Elmc.CCodegenPatternsTest do
 
   @just_payload_borrow "elmc_maybe_or_tuple_just_payload_borrow"
 
+  defp rc_direct_fn_def_marker(name),
+    do: ~r/static RC elmc_fn_Main_#{name}\(ElmcValue \*\*out,[^)]*\) \{/
+
+  defp rc_worker_fn_def_marker(name),
+    do: ~r/static RC elmc_fn_Main_#{name}\(ElmcValue \*\*out, ElmcValue \*\* const args, const int argc\) \{/
+
   defp worker_fn_open(name),
     do: "RC elmc_fn_Main_#{name}(ElmcValue **out, ElmcValue ** const args, const int argc) {"
 
@@ -955,19 +961,19 @@ defmodule Elmc.CCodegenPatternsTest do
 
     assert generated_c =~ "elmc_fn_Main_collapseRows"
     assert generated_c =~ ~r/elmc_list_concat_array(_take)?\(/
-    assert generated_c =~ "ElmcValue *elmc_fn_Main_collapseRow(ElmcValue *row)"
+    assert generated_c =~ "static RC elmc_fn_Main_collapseRow(ElmcValue **out, ElmcValue *row)"
 
     assert generated_c =~
-             ~r/elmc_fn_Main_collapseRow[\s\S]*?elmc_record_get(?:_index)?\(tmp_\d+, (?:1 \/\* score \*\/|"score")\)/
+             ~r/elmc_fn_Main_collapseRow[\s\S]*?elmc_record_get(?:_index)?\(tmp_\d+, (?:0 \/\* cells \*\/|ELMC_FIELD_.*_CELLS)\)/
 
     collapse_row_body =
       generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_collapseRow(ElmcValue *row) {", parts: 2)
+      |> String.split(rc_direct_fn_def_marker("collapseRow"), parts: 2)
       |> Enum.at(1, "")
-      |> String.split("static ElmcValue *elmc_fn_Main_collapseRows", parts: 2)
+      |> String.split(~r/static RC elmc_fn_Main_collapseRows/, parts: 2)
       |> hd()
 
-    assert Regex.scan(~r/elmc_record_get\((tmp_\d+), "cells"\)/, collapse_row_body)
+    assert Regex.scan(~r/elmc_record_get_index\(tmp_\d+, 0 \/\* cells \*\)/, collapse_row_body)
            |> Enum.frequencies()
            |> Enum.all?(fn {_tmp, count} -> count == 1 end)
 
@@ -1251,8 +1257,8 @@ defmodule Elmc.CCodegenPatternsTest do
     assert area_body =~ "return 140;"
     refute area_body =~ "elmc_fn_Main_width("
 
-    assert init_body =~ "elmc_record_new_values_ints("
-    assert init_body =~ "rec_values_1[1] = { 140 };"
+    assert init_body =~ "elmc_record_new_values_take"
+    assert init_body =~ "elmc_new_int_take(140)"
   end
 
   test "top-level int constants compile natively in List.range without boxing" do
@@ -2243,6 +2249,11 @@ defmodule Elmc.CCodegenPatternsTest do
       #include "elmc_pebble.h"
       #include <stdio.h>
 
+      enum {
+        MODEL_FIELD_BOARD = 0,
+        MODEL_FIELD_PIECEKIND = 1
+      };
+
       static ElmcValue *basalt_launch_context(void) {
         ElmcValue *reason = elmc_new_int_take(2);
         ElmcValue *watch_model = elmc_new_string_take("");
@@ -2302,7 +2313,7 @@ defmodule Elmc.CCodegenPatternsTest do
           return 3;
         }
         ElmcValue *model = elmc_worker_model(&app.worker);
-        if (!model || ELMC_RECORD_GET_INDEX_INT(model, 7) < 0) {
+        if (!model || ELMC_RECORD_GET_INDEX_INT(model, MODEL_FIELD_PIECEKIND) <= 0) {
           fprintf(stderr, "expected active piece\\n");
           elmc_release(model);
           return 4;
@@ -2322,8 +2333,8 @@ defmodule Elmc.CCodegenPatternsTest do
             return 6;
           }
 
-          int piece_kind = ELMC_RECORD_GET_INDEX_INT(model, 7);
-          ElmcValue *board = ELMC_RECORD_GET_INDEX(model, 1);
+          int piece_kind = ELMC_RECORD_GET_INDEX_INT(model, MODEL_FIELD_PIECEKIND);
+          ElmcValue *board = ELMC_RECORD_GET_INDEX(model, MODEL_FIELD_BOARD);
           elmc_int_t board_len = list_length(board);
 
           if (piece_kind_before >= 0 && piece_kind != piece_kind_before) {
@@ -2535,8 +2546,8 @@ defmodule Elmc.CCodegenPatternsTest do
       |> String.split(worker_fn_marker("update"), parts: 2)
       |> hd()
 
-    assert length(Regex.scan(~r/ElmcValue \*tmp_1 = elmc_int_zero\(\);/, init_body)) == 1
-    refute length(Regex.scan(~r/ElmcValue \*tmp_2 = elmc_int_zero\(\);/, init_body)) > 0
+    assert length(Regex.scan(~r/elmc_new_int_take\(0\)/, init_body)) >= 1
+    refute length(Regex.scan(~r/ElmcValue \*tmp_\d+ = elmc_int_zero\(\);\s*ElmcValue \*tmp_\d+ = elmc_new_int_take\(0\)/, init_body)) > 1
     assert init_body =~ "elmc_record_new_values_take"
     assert init_body =~ "rec_values_"
     refute init_body =~ "rec_names_"
@@ -2703,19 +2714,16 @@ defmodule Elmc.CCodegenPatternsTest do
 
     direct_body =
       generated_c
-      |> String.split(static_fn_def_marker("directHelper", "ElmcValue *items"), parts: 2)
+      |> String.split(rc_direct_fn_def_marker("directHelper"), parts: 2)
       |> Enum.at(1, "")
       |> String.split(worker_fn_marker("closureHelper"), parts: 2)
       |> hd()
 
     closure_body =
       generated_c
-      |> String.split(
-        static_fn_def_marker("closureHelper", "ElmcValue ** const args, const int argc"),
-        parts: 2
-      )
+      |> String.split(rc_worker_fn_def_marker("closureHelper"), parts: 2)
       |> Enum.at(1, "")
-      |> String.split(worker_fn_marker("apply"), parts: 2)
+      |> String.split(rc_direct_fn_def_marker("apply"), parts: 2)
       |> hd()
 
     update_body =
@@ -2726,7 +2734,7 @@ defmodule Elmc.CCodegenPatternsTest do
       |> hd()
 
     assert direct_body =~ "direct_call_abi"
-    assert generated_c =~ "ElmcValue *elmc_fn_Main_directHelper(ElmcValue *items)"
+    assert generated_c =~ "static RC elmc_fn_Main_directHelper(ElmcValue **out, ElmcValue *items)"
     refute direct_body =~ "argc > 0"
     refute direct_body =~ "args[0]"
 
@@ -2796,13 +2804,14 @@ defmodule Elmc.CCodegenPatternsTest do
 
     forward_body =
       generated_c
-      |> String.split(static_fn_def_marker("forward", "ElmcValue *seed"), parts: 2)
+      |> String.split(rc_direct_fn_def_marker("forward"), parts: 2)
       |> Enum.at(1, "")
       |> String.split(worker_fn_def_marker("init"), parts: 2)
       |> hd()
 
-    assert generated_c =~ "ElmcValue *elmc_fn_Main_forward(ElmcValue *seed)"
-    assert forward_body =~ "elmc_fn_Main_callee(seed, seed)"
+    assert generated_c =~ "static RC elmc_fn_Main_forward(ElmcValue **out, ElmcValue *seed)"
+    assert forward_body =~ "elmc_fn_Main_callee(&"
+    assert forward_body =~ "seed, seed"
     refute forward_body =~ "call_args_"
     refute forward_body =~ "elmc_retain(seed)"
     refute Regex.match?(~r/ElmcValue \*tmp_\d+ = elmc_retain\(seed\);/, forward_body)
@@ -2885,15 +2894,12 @@ defmodule Elmc.CCodegenPatternsTest do
 
     spawn_body =
       generated_c
-      |> String.split(
-        static_fn_def_marker("spawnTile", "ElmcValue *seed, ElmcValue *cells"),
-        parts: 2
-      )
+      |> String.split(rc_direct_fn_def_marker("spawnTile"), parts: 2)
       |> Enum.at(1, "")
       |> String.split(~r/static (?:RC|ElmcValue \*) *elmc_fn_Main_setCell/, parts: 2)
       |> hd()
 
-    assert spawn_body =~ "elmc_fn_Main_setCell(tmp_"
+    assert spawn_body =~ "elmc_fn_Main_setCell(&"
     refute Regex.match?(~r/elmc_retain\(tmp_\d+\)/, spawn_body)
 
     refute Regex.match?(
@@ -2903,15 +2909,9 @@ defmodule Elmc.CCodegenPatternsTest do
 
     set_cell_body =
       generated_c
-      |> String.split(
-        static_fn_def_marker(
-          "setCell",
-          "ElmcValue *index, ElmcValue *newValue, ElmcValue *cells"
-        ),
-        parts: 2
-      )
+      |> String.split(rc_direct_fn_def_marker("setCell"), parts: 2)
       |> Enum.at(1, "")
-      |> String.split(~r/static (?:RC|ElmcValue \*) *elmc_fn_Main_spawnTile/, parts: 2)
+      |> String.split(rc_direct_fn_def_marker("spawnTile"), parts: 2)
       |> hd()
 
     assert set_cell_body =~ "elmc_list_replace_nth_int(cells,"
@@ -4000,7 +4000,7 @@ defmodule Elmc.CCodegenPatternsTest do
              "static elmc_int_t elmc_fn_Main_nthEmptyIndexHelp_native(const elmc_int_t target, const elmc_int_t index, ElmcValue * const cells)"
 
     assert generated_c =~
-             "static elmc_int_t elmc_fn_Main_nthEmptyIndex_native(const elmc_int_t target, ElmcValue * const cells)"
+             "static elmc_int_t elmc_fn_Main_nthEmptyIndex_native(ElmcValue * const target, ElmcValue * const cells)"
 
     assert generated_c =~ "list_search_cursor_"
     assert generated_c =~ ~r/elmc_as_int\(list_search_node_\d+->head\)/

@@ -27,7 +27,6 @@ defmodule Elmc.Backend.Pebble.SceneWriter.Encode.Helpers.WriterPut do
           return elmc_pebble_scene_put_i32(writer->app, value);
         }
 
-        #if ELMC_PEBBLE_FEATURE_DRAW_TEXT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
 """
   end
 end

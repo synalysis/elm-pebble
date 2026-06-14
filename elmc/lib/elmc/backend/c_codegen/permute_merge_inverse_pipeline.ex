@@ -30,9 +30,6 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
            emit(module_name, name, pipeline, else_info, width, rows, model_type, decl_map) do
       FusionSupport.ok_rc(code, [{module_name, else_info.spawn}])
     else
-      false -> :error
-      "" -> :error
-      :error -> :error
       _ -> :error
     end
   end
@@ -215,19 +212,21 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
   defp row_mul_width?(_, _), do: false
 
   defp permute_inverse_shape?(decl_map, module_name, permute_fn, inverse_fn) do
-    permute_ok? =
-      case Map.get(decl_map, {module_name, permute_fn}) do
-        %{expr: expr} -> match?({:ok, _, _}, UnionCaseFourPerm.try_emit(module_name, permute_fn, expr, decl_map))
-        _ -> false
-      end
+    permute_ok?(decl_map, module_name, permute_fn) and
+      permute_ok?(decl_map, module_name, inverse_fn)
+  end
 
-    inverse_ok? =
-      case Map.get(decl_map, {module_name, inverse_fn}) do
-        %{expr: expr} -> match?({:ok, _, _}, UnionCaseFourPerm.try_emit(module_name, inverse_fn, expr, decl_map))
-        _ -> false
-      end
+  defp permute_ok?(decl_map, module_name, fn_name) do
+    case Map.get(decl_map, {module_name, fn_name}) do
+      %{expr: expr} ->
+        case UnionCaseFourPerm.try_emit(module_name, fn_name, expr, decl_map) do
+          {:ok, _, _} -> true
+          _ -> false
+        end
 
-    permute_ok? and inverse_ok?
+      _ ->
+        false
+    end
   end
 
   defp permute_case_tags(decl_map, module_name, permute_fn) do
@@ -556,7 +555,8 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
         *out = same_out;
       } else {
         ElmcValue *spawn_out = NULL;
-        Rc = #{spawn_fn}(&spawn_out, ELMC_RECORD_GET_INDEX(model, #{seed_macro}), out_list);
+        ElmcValue *spawn_args[] = { ELMC_RECORD_GET_INDEX(model, #{seed_macro}), out_list };
+        Rc = #{spawn_fn}(&spawn_out, spawn_args, 2);
         CHECK_RC(Rc);
         ElmcValue *next_cells = elmc_tuple_first(spawn_out);
         ElmcValue *next_seed = elmc_tuple_second(spawn_out);

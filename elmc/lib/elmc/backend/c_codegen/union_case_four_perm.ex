@@ -10,7 +10,9 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
   alias Elmc.Backend.CCodegen.{FusionSupport, ListMapStaticIndexAt, RowMajorLayout, Util}
 
   @spec try_emit(String.t(), String.t(), map() | nil, map()) ::
-          {:ok, String.t(), [FusionSupport.callee_key()]} | :error
+          {:ok, String.t(), [FusionSupport.callee_key()]}
+          | {:ok, String.t(), [FusionSupport.callee_key()], :rc_native}
+          | :error
   def try_emit(_module_name, _name, nil, _decl_map), do: :error
 
   def try_emit(module_name, name, expr, decl_map) do

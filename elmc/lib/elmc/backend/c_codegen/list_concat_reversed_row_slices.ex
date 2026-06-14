@@ -28,7 +28,7 @@ defmodule Elmc.Backend.CCodegen.ListConcatReversedRowSlices do
     parse_list_literal(list_expr)
   end
 
-  defp parse(%{op: :call, name: op, args: [list_expr]}) when op in ["++", "__append__"] do
+  defp parse(%{op: :call, name: op, args: [_list_expr]}) when op in ["++", "__append__"] do
     :error
   end
 

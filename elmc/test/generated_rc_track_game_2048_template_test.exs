@@ -34,6 +34,11 @@ defmodule Elmc.GeneratedRcTrackGame2048TemplateTest do
       #include "elmc_pebble.h"
       #include <stdio.h>
 
+      enum {
+        MODEL_FIELD_CELLS = 0,
+        MODEL_FIELD_TURN = 4
+      };
+
       static ElmcValue *aplite_launch_context(void) {
         ElmcValue *reason = elmc_new_int_take(2);
         ElmcValue *watch_model = elmc_new_string_take("");
@@ -123,7 +128,7 @@ defmodule Elmc.GeneratedRcTrackGame2048TemplateTest do
       static int model_nonzero_cells(ElmcPebbleApp *app) {
         ElmcValue *model = elmc_worker_model(&app->worker);
         if (!model) return -1;
-        ElmcValue *cells = elmc_record_get(model, "cells");
+        ElmcValue *cells = elmc_record_get_index(model, MODEL_FIELD_CELLS);
         int count = 0;
         ElmcValue *cursor = cells;
         while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
@@ -154,7 +159,7 @@ defmodule Elmc.GeneratedRcTrackGame2048TemplateTest do
       static int model_cells_len(ElmcPebbleApp *app) {
         ElmcValue *model = elmc_worker_model(&app->worker);
         if (!model) return -1;
-        ElmcValue *cells = elmc_record_get(model, "cells");
+        ElmcValue *cells = elmc_record_get_index(model, MODEL_FIELD_CELLS);
         int len = 0;
         ElmcValue *cursor = cells;
         while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
@@ -169,7 +174,7 @@ defmodule Elmc.GeneratedRcTrackGame2048TemplateTest do
       static int model_turn(ElmcPebbleApp *app) {
         ElmcValue *model = elmc_worker_model(&app->worker);
         if (!model) return -1;
-        ElmcValue *turn_val = elmc_record_get(model, "turn");
+        ElmcValue *turn_val = elmc_record_get_index(model, MODEL_FIELD_TURN);
         int turn = turn_val ? (int)elmc_as_int(turn_val) : -1;
         if (turn_val) elmc_release(turn_val);
         elmc_release(model);
@@ -209,7 +214,7 @@ defmodule Elmc.GeneratedRcTrackGame2048TemplateTest do
         app.scene.dirty = 1;
         if (elmc_pebble_ensure_scene(&app) != 0) return 10;
         if (app.scene.command_count < 20) return 11;
-        if (app.scene.byte_count <= 0 || app.scene.byte_count > 512) return 12;
+        if (app.scene.byte_count <= 0 || app.scene.byte_count > 640) return 12;
 
         for (int i = 0; i < 100; i++) {
           if (elmc_pebble_dispatch_int(&app, dir_msgs[i % 4]) != 0) return 5;

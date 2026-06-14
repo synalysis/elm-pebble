@@ -3,7 +3,7 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.AppTypes.KindEnums do
 
   alias Elmc.Backend.Pebble.Types
 
-  @spec body(Types.header_app_types_bindings()) :: Types.c_source()
+  @spec body(Types.header_bindings()) :: Types.c_source()
   def body(%{
         draw_kind_enum: draw_kind_enum,
         command_kind_enum: command_kind_enum,

@@ -5,6 +5,7 @@ defmodule Elmc.Runtime.Generator do
 
   alias Elmc.Runtime.JsonSections
   alias Elmc.Runtime.Generator.Types
+  alias Elmc.Runtime.RcCodes
   alias Elmc.Runtime.RcMacros
   alias Elmc.Runtime.RcTrack
 
@@ -45,7 +46,9 @@ defmodule Elmc.Runtime.Generator do
          |> String.trim_trailing()
          |> Kernel.<>("\n\n")
          |> Kernel.<>(RcMacros.fail_stash_source_impl())
-         |> Kernel.<>("\n")}
+         |> Kernel.<>("\n\n#ifndef ELMC_PEBBLE_PLATFORM\n")
+         |> Kernel.<>(RcCodes.name_table_source())
+         |> Kernel.<>("\n#endif\n")}
       else
         {header, source}
       end
@@ -58,14 +61,8 @@ defmodule Elmc.Runtime.Generator do
 
   defp maybe_prune_runtime(header, source, _, _), do: {header, source}
 
-  @pebble_inline_runtime_symbols MapSet.new(["elmc_rc_name"])
-
-  defp drop_pebble_inline_runtime_symbols(kept_names, opts) do
-    if Keyword.get(opts, :pebble_int32, false) do
-      MapSet.difference(kept_names, @pebble_inline_runtime_symbols)
-    else
-      kept_names
-    end
+  defp drop_pebble_inline_runtime_symbols(kept_names, _opts) do
+    MapSet.delete(kept_names, "elmc_rc_name")
   end
 
   defp maybe_drop_float_runtime(source, refs) when is_map(refs) do

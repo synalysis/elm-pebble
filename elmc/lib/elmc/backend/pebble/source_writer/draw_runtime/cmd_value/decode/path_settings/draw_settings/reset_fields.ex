@@ -31,7 +31,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.CmdValue.Decode.PathSetti
             out_cmd->path_y[i] = 0;
           }
         #endif
-          out_cmd->text[0] = '\0';
+          out_cmd->text[0] = '\\0';
 
     """
   end

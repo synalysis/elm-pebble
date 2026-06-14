@@ -632,8 +632,9 @@ defmodule Elmc.Backend.CCodegen.Expr do
           String.t()
   def record_get_expr(source, field, shape, env \\ %{}, type \\ nil) do
     cond do
-      runtime_record_get_by_name?(shape, type, env) ->
-        runtime_record_get_expr(source, field)
+      is_list(shape) ->
+        index_ref = record_field_index_ref(field, shape, type, env)
+        "elmc_record_get_index(#{source}, #{index_ref})"
 
       field_index_ambiguous?(field, shape, type, env) and field in ["x", "y"] ->
         index_ref = if(field == "x", do: "0", else: "1")
@@ -658,8 +659,23 @@ defmodule Elmc.Backend.CCodegen.Expr do
     "elmc_record_get(#{source}, \"#{Util.escape_c_string(field)}\")"
   end
 
-  defp runtime_record_get_by_name?(shape, type, env) do
-    Map.get(env, :__inside_lambda__, false) and shape == nil and type == nil
+  @spec function_decl_return_shape(Types.compile_env(), String.t(), String.t()) ::
+          Types.record_shape()
+  def function_decl_return_shape(env, module, name) do
+    decls = Elmc.Backend.CCodegen.EnvBindings.effective_program_decls(env)
+
+    case Map.get(decls, {module, name}) do
+      %{expr: expr} -> unwrap_decl_return_record_shape(expr, env)
+      _ -> nil
+    end
+  end
+
+  defp unwrap_decl_return_record_shape(expr, env) do
+    record_shape(expr, env) ||
+      case expr do
+        %{op: :let_in, in_expr: in_expr} -> unwrap_decl_return_record_shape(in_expr, env)
+        _ -> nil
+      end
   end
 
   @spec record_update_expr(String.t(), String.t(), String.t(), Types.record_shape(), keyword()) ::
@@ -894,7 +910,8 @@ defmodule Elmc.Backend.CCodegen.Expr do
   end
 
   defp record_shape_for_function_return_uncached(target_key, env, arg_count, stack) do
-    decl = Map.get(Map.get(env, :__program_decls__, %{}), target_key)
+    decls = Elmc.Backend.CCodegen.EnvBindings.effective_program_decls(env)
+    decl = Map.get(decls, target_key)
     nested_env = Map.put(env, :__record_shape_stack__, MapSet.put(stack, {target_key, arg_count}))
 
     cond do

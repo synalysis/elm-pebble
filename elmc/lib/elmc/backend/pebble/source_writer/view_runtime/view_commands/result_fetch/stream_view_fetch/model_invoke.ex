@@ -19,8 +19,13 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime.ViewCommands.ResultFetch.
               elmc_agent_scene_probe(0xED996190);
               // #endregion
               elmc_pebble_heap_log("view:start");
-              result = #{entry_view_fn}(args, 1);
+              RC view_rc = #{entry_view_fn}(&result, args, 1);
               elmc_pebble_heap_log("view:end");
+              if (view_rc != RC_SUCCESS) {
+                ELMC_RC_LOG_FAIL(view_rc, "elmc_pebble_view_commands_raw_impl", "view");
+                elmc_release(model);
+                return -2;
+              }
               if (!result) {
                 ELMC_RC_LOG_FAIL(RC_ERR_OUT_OF_MEMORY, "elmc_pebble_view_commands_raw_impl", "view");
                 elmc_release(model);

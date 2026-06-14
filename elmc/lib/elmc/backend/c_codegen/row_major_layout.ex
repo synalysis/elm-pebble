@@ -73,7 +73,7 @@ defmodule Elmc.Backend.CCodegen.RowMajorLayout do
           String.t(),
           String.t(),
           String.t(),
-          String.t()
+          pos_integer() | nil
         ) :: String.t()
   def emit_apply_row_major_perm(mode, width, rows, src_buf, dst_buf, perm_case_var, count \\ nil) do
     total = count || rows * width

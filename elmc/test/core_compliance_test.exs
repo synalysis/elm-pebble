@@ -112,10 +112,9 @@ defmodule Elmc.CoreComplianceTest do
       #include "elmc_generated.c"
       #include <stdio.h>
 
-      static ElmcValue *elmc_harness_call_zero_rc(
-          RC (*fn)(ElmcValue **out, ElmcValue ** const args, const int argc)) {
-        ElmcValue *out = NULL;
-        return fn(&out, NULL, 0) == RC_SUCCESS ? out : elmc_int_zero();
+      static ElmcValue *elmc_harness_call_zero(
+          ElmcValue *(*fn)(ElmcValue ** const args, const int argc)) {
+        return fn(NULL, 0);
       }
 
       static void print_i(const char *label, ElmcValue *value) {
@@ -378,34 +377,34 @@ defmodule Elmc.CoreComplianceTest do
         print_i("constructorTripleCase", constructor_triple_case);
         elmc_release(constructor_triple_case);
 
-        ElmcValue *dict_lookup = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_dictLookupOne);
-        ElmcValue *dict_from_list_then_overwrite_size = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_dictFromListThenOverwriteSize);
-        ElmcValue *dict_from_list_then_overwrite_get = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_dictFromListThenOverwriteGet);
-        ElmcValue *dict_from_list_dup_size = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_dictFromListDuplicateSize);
-        ElmcValue *dict_from_list_dup_get = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_dictFromListDuplicateGet);
-        ElmcValue *dict_has = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_dictHasOne);
-        ElmcValue *dict_size = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_dictSizeTwo);
-        ElmcValue *dict_overwrite_size = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_dictOverwriteSize);
-        ElmcValue *dict_overwrite_get = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_dictOverwriteGet);
-        ElmcValue *set_has = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_setHasThree);
-        ElmcValue *set_from_list_dup_size = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_setFromListDuplicateSize);
-        ElmcValue *set_from_list_dup_has_two = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_setFromListDuplicateHasTwo);
-        ElmcValue *set_size = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_setSizeAfterInsert);
-        ElmcValue *set_dup_size = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_setInsertDuplicateSize);
-        ElmcValue *array_len = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_arrayLengthFromList);
-        ElmcValue *array_get_hit = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_arrayGetHit);
-        ElmcValue *array_get_miss = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_arrayGetMiss);
-        ElmcValue *array_get_negative = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_arrayGetNegative);
-        ElmcValue *array_set_hit = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_arraySetInRangeGet);
-        ElmcValue *array_set_last = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_arraySetLastGet);
-        ElmcValue *array_set_neg_len = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_arraySetNegativeLength);
-        ElmcValue *array_set_oob_len = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_arraySetOutOfRangeLength);
-        ElmcValue *array_push_len = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_arrayPushLength);
-        ElmcValue *array_push_twice_len = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_arrayPushTwiceLength);
-        ElmcValue *array_push_twice_last = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_arrayPushTwiceLastGet);
-        ElmcValue *array_set_then_push_last = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_arraySetThenPushLastGet);
-        ElmcValue *array_set_then_set = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_arraySetThenSetGet);
-        ElmcValue *array_push_then_set_first = elmc_harness_call_zero_rc(elmc_fn_CoreCompliance_arrayPushThenSetFirstGet);
+        ElmcValue *dict_lookup = elmc_harness_call_zero(elmc_fn_CoreCompliance_dictLookupOne);
+        ElmcValue *dict_from_list_then_overwrite_size = elmc_harness_call_zero(elmc_fn_CoreCompliance_dictFromListThenOverwriteSize);
+        ElmcValue *dict_from_list_then_overwrite_get = elmc_harness_call_zero(elmc_fn_CoreCompliance_dictFromListThenOverwriteGet);
+        ElmcValue *dict_from_list_dup_size = elmc_harness_call_zero(elmc_fn_CoreCompliance_dictFromListDuplicateSize);
+        ElmcValue *dict_from_list_dup_get = elmc_harness_call_zero(elmc_fn_CoreCompliance_dictFromListDuplicateGet);
+        ElmcValue *dict_has = elmc_harness_call_zero(elmc_fn_CoreCompliance_dictHasOne);
+        ElmcValue *dict_size = elmc_harness_call_zero(elmc_fn_CoreCompliance_dictSizeTwo);
+        ElmcValue *dict_overwrite_size = elmc_harness_call_zero(elmc_fn_CoreCompliance_dictOverwriteSize);
+        ElmcValue *dict_overwrite_get = elmc_harness_call_zero(elmc_fn_CoreCompliance_dictOverwriteGet);
+        ElmcValue *set_has = elmc_harness_call_zero(elmc_fn_CoreCompliance_setHasThree);
+        ElmcValue *set_from_list_dup_size = elmc_harness_call_zero(elmc_fn_CoreCompliance_setFromListDuplicateSize);
+        ElmcValue *set_from_list_dup_has_two = elmc_harness_call_zero(elmc_fn_CoreCompliance_setFromListDuplicateHasTwo);
+        ElmcValue *set_size = elmc_harness_call_zero(elmc_fn_CoreCompliance_setSizeAfterInsert);
+        ElmcValue *set_dup_size = elmc_harness_call_zero(elmc_fn_CoreCompliance_setInsertDuplicateSize);
+        ElmcValue *array_len = elmc_harness_call_zero(elmc_fn_CoreCompliance_arrayLengthFromList);
+        ElmcValue *array_get_hit = elmc_harness_call_zero(elmc_fn_CoreCompliance_arrayGetHit);
+        ElmcValue *array_get_miss = elmc_harness_call_zero(elmc_fn_CoreCompliance_arrayGetMiss);
+        ElmcValue *array_get_negative = elmc_harness_call_zero(elmc_fn_CoreCompliance_arrayGetNegative);
+        ElmcValue *array_set_hit = elmc_harness_call_zero(elmc_fn_CoreCompliance_arraySetInRangeGet);
+        ElmcValue *array_set_last = elmc_harness_call_zero(elmc_fn_CoreCompliance_arraySetLastGet);
+        ElmcValue *array_set_neg_len = elmc_harness_call_zero(elmc_fn_CoreCompliance_arraySetNegativeLength);
+        ElmcValue *array_set_oob_len = elmc_harness_call_zero(elmc_fn_CoreCompliance_arraySetOutOfRangeLength);
+        ElmcValue *array_push_len = elmc_harness_call_zero(elmc_fn_CoreCompliance_arrayPushLength);
+        ElmcValue *array_push_twice_len = elmc_harness_call_zero(elmc_fn_CoreCompliance_arrayPushTwiceLength);
+        ElmcValue *array_push_twice_last = elmc_harness_call_zero(elmc_fn_CoreCompliance_arrayPushTwiceLastGet);
+        ElmcValue *array_set_then_push_last = elmc_harness_call_zero(elmc_fn_CoreCompliance_arraySetThenPushLastGet);
+        ElmcValue *array_set_then_set = elmc_harness_call_zero(elmc_fn_CoreCompliance_arraySetThenSetGet);
+        ElmcValue *array_push_then_set_first = elmc_harness_call_zero(elmc_fn_CoreCompliance_arrayPushThenSetFirstGet);
         ElmcValue *task_succeed_int = elmc_fn_CoreCompliance_taskSucceedInt(NULL, 0);
         ElmcValue *task_fail_int = elmc_fn_CoreCompliance_taskFailInt(NULL, 0);
         ElmcValue *task_arg_value = elmc_new_int_take(42);

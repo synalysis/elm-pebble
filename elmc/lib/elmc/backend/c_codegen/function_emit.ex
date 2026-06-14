@@ -199,13 +199,16 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   end
 
   def emit_body(decl, module_name, function_arities, decl_map, direct_args?) do
+    rc_required? = RcRequired.rc_required?(module_name, decl.name)
+
     with true <- ImmortalStaticList.zero_arg_function?(decl),
          {:ok, prelude, body} <-
            ImmortalStaticList.try_emit_function_prelude_and_body(
              module_name,
              decl.name,
              decl.expr || %{op: :int_literal, value: 0},
-             direct_args?
+             direct_args?,
+             rc_required?
            ) do
       {entry_probe, exit_probe} = DebugProbes.entry_exit_probes(module_name, decl.name)
 
@@ -407,7 +410,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       match?({:ok, _, _}, Tuple2CaseTable.try_emit(module_name, decl.name, decl.expr))
 
     case Fusion.try_emit(module_name, decl.name, decl.expr, decl_map) do
-      {:ok, helper_c, _, :rc_native} when tuple2_table? ->
+      {:ok, _helper_c, _, :rc_native} when tuple2_table? ->
         {:error}
 
       {:ok, helper_c, _, :rc_native} ->

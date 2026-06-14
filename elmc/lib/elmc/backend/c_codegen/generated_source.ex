@@ -16,6 +16,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.RcRequired
   alias Elmc.Backend.CCodegen.RecordFieldMacros
+  alias Elmc.Backend.CCodegen.SpecialValues
   alias Elmc.Backend.CCodegen.UnionMacros
   alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.Pebble.IRAnalysis
@@ -146,6 +147,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
           decl_map,
           MapSet.union(generic_targets, direct_command_targets)
         )
+        |> MapSet.union(SpecialValues.compiler_folded_union_constructors())
       end
 
     {union_constructor_defines, union_constructor_macros} =

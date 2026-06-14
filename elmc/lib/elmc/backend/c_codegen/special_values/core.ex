@@ -2825,7 +2825,15 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
 
   @spec rotation_expr(Types.ir_expr()) :: Types.ir_expr()
   defp rotation_expr(angle_expr) when is_map(angle_expr) do
-    tagged_value_expr(%{op: :c_int_expr, value: "ELMC_UNION_ROTATION"}, angle_expr)
+    tagged_value_expr(
+      %{op: :int_literal, value: 1, union_ctor: "Pebble.Ui.Rotation"},
+      angle_expr
+    )
+  end
+
+  @spec compiler_folded_union_constructors() :: MapSet.t(String.t())
+  def compiler_folded_union_constructors do
+    MapSet.new(["Pebble.Ui.Rotation"])
   end
 
   @spec pebble_angle_expr(Types.ir_expr()) :: Types.ir_expr()
