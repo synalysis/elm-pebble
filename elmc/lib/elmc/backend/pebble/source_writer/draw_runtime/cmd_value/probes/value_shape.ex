@@ -6,7 +6,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.CmdValue.Probes.ValueShap
   @spec body() :: Types.c_source()
   def body do
     """
-        #if !defined(ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW)
+    #if !defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)
         static uint32_t elmc_agent_value_shape(ElmcValue *value) {
           if (!value) return 0x0;
           switch (value->tag) {
@@ -22,7 +22,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.CmdValue.Probes.ValueShap
             default: return 0xF;
           }
         }
-        #endif
+    #endif
 
         // #endregion
 

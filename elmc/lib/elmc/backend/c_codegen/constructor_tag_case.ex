@@ -110,7 +110,7 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
 
     code = """
     #{subject_code}
-      ElmcValue *#{out};
+      ElmcValue *#{out} = NULL;
       switch (#{subject_ref}) {
     #{switch_body}
       }
@@ -180,7 +180,7 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     code = """
     #{subject_setup}
       const int #{tag_ref} = #{message_tag_expr(subject_ref)};
-      ElmcValue *#{out};
+      ElmcValue *#{out} = NULL;
       switch (#{tag_ref}) {
     #{switch_body}
       }

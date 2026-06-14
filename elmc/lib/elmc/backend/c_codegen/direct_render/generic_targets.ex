@@ -132,14 +132,21 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
 
     case Map.fetch(decl_map, view_target) do
       {:ok, _} ->
-        GenericReachability.reachable_targets(
-          [view_target],
-          decl_map,
-          MapSet.new(),
-          MapSet.new()
-        )
-        |> MapSet.delete(view_target)
-        |> MapSet.intersection(direct_targets)
+        intersection =
+          GenericReachability.reachable_targets(
+            [view_target],
+            decl_map,
+            MapSet.new(),
+            MapSet.new()
+          )
+          |> MapSet.delete(view_target)
+          |> MapSet.intersection(direct_targets)
+
+        if opts[:direct_render_only] == false and MapSet.member?(direct_targets, view_target) do
+          MapSet.put(intersection, view_target)
+        else
+          intersection
+        end
 
       :error ->
         MapSet.new()

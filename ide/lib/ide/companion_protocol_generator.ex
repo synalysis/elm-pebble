@@ -398,18 +398,15 @@ defmodule Ide.CompanionProtocolGenerator do
       if companion_protocol_uses_union_payloads?(schema) do
         """
         static ElmcValue *companion_protocol_new_union_value(int32_t runtime_tag, int32_t value) {
-          ElmcValue *tag_value = elmc_new_int(runtime_tag);
-          ElmcValue *payload_value = elmc_new_int(value);
+          ElmcValue *tag_value = elmc_new_int_take(runtime_tag);
+          ElmcValue *payload_value = elmc_new_int_take(value);
           if (!tag_value || !payload_value) {
             if (tag_value) elmc_release(tag_value);
             if (payload_value) elmc_release(payload_value);
             return NULL;
           }
 
-          ElmcValue *out = elmc_tuple2(tag_value, payload_value);
-          elmc_release(tag_value);
-          elmc_release(payload_value);
-          return out;
+          return elmc_tuple2_take_value(tag_value, payload_value);
         }
         """
       else
@@ -421,12 +418,10 @@ defmodule Ide.CompanionProtocolGenerator do
         """
         static ElmcValue *companion_protocol_new_phone_to_watch_message(int32_t tag, ElmcValue *payload) {
           if (!payload) return NULL;
-          ElmcValue *tag_value = elmc_new_int(tag);
+          ElmcValue *tag_value = elmc_new_int_take(tag);
           if (!tag_value) return NULL;
 
-          ElmcValue *out = elmc_tuple2(tag_value, payload);
-          elmc_release(tag_value);
-          return out;
+          return elmc_tuple2_take_value(tag_value, payload);
         }
         """
       else
@@ -1884,7 +1879,7 @@ defmodule Ide.CompanionProtocolGenerator do
     """
   end
 
-  defp c_payload_expr(%{fields: []}), do: "      ElmcValue *payload = elmc_new_int(0);"
+  defp c_payload_expr(%{fields: []}), do: "      ElmcValue *payload = elmc_new_int_take(0);"
 
   defp c_payload_expr(%{fields: [field]}) do
     "      ElmcValue *payload = #{c_value_expr(field, 0)};"
@@ -1903,25 +1898,20 @@ defmodule Ide.CompanionProtocolGenerator do
       |> Enum.map(&"field_#{&1}")
       |> c_tuple_chain()
 
-    releases =
-      0..(length(fields) - 1)
-      |> Enum.map_join("\n", &"      elmc_release(field_#{&1});")
-
     """
     #{vars}
           ElmcValue *payload = #{tuple};
-    #{releases}
     """
   end
 
   defp c_value_expr(%{wire_type: :string}, index),
-    do: "elmc_new_string(message->string_fields[#{index}])"
+    do: "elmc_new_string_take(message->string_fields[#{index}])"
 
   defp c_value_expr(%{wire_type: :bool}, index),
-    do: "elmc_new_bool(message->bool_fields[#{index}] ? 1 : 0)"
+    do: "elmc_new_bool_take(message->bool_fields[#{index}] ? 1 : 0)"
 
   defp c_value_expr(%{wire_type: {:enum, type}}, index),
-    do: "elmc_new_int(#{c_runtime_tag_function(type)}(message->int_fields[#{index}]))"
+    do: "elmc_new_int_take(#{c_runtime_tag_function(type)}(message->int_fields[#{index}]))"
 
   defp c_value_expr(%{wire_type: {:union, type}}, index),
     do:
@@ -1931,7 +1921,7 @@ defmodule Ide.CompanionProtocolGenerator do
     do: "#{c_build_function_name(key)}(message)"
 
   defp c_value_expr(%{wire_type: {:list, :int}}, index),
-    do: "elmc_list_from_int_array(message->list_values[#{index}], message->list_counts[#{index}])"
+    do: "elmc_list_from_int_array_take(message->list_values[#{index}], message->list_counts[#{index}])"
 
   defp c_value_expr(%{wire_type: {:record, _type, _fields}, key: key}, _index),
     do: "#{c_build_function_name(key)}(message)"
@@ -1942,7 +1932,7 @@ defmodule Ide.CompanionProtocolGenerator do
   defp c_value_expr(%{wire_type: {:dict, _elem}, key: key}, _index),
     do: "#{c_build_function_name(key)}(message)"
 
-  defp c_value_expr(_field, index), do: "elmc_new_int(message->int_fields[#{index}])"
+  defp c_value_expr(_field, index), do: "elmc_new_int_take(message->int_fields[#{index}])"
 
   defp c_composite_build_helpers(schema) do
     schema.phone_to_watch
@@ -1976,7 +1966,7 @@ defmodule Ide.CompanionProtocolGenerator do
       WireFlatten.slots_for_field(%{key: key, name: key, type: key, wire_type: :int}, empty_wire_schema())
       |> hd()
 
-    {"", "elmc_new_int(message->wire.#{slot.c_name})"}
+    {"", "elmc_new_int_take(message->wire.#{slot.c_name})"}
   end
 
   defp c_build_value_from_wire(:bool, key, _schema, _var_prefix) do
@@ -1984,7 +1974,7 @@ defmodule Ide.CompanionProtocolGenerator do
       WireFlatten.slots_for_field(%{key: key, name: key, type: key, wire_type: :bool}, empty_wire_schema())
       |> hd()
 
-    {"", "elmc_new_bool(message->wire.#{slot.c_name} ? 1 : 0)"}
+    {"", "elmc_new_bool_take(message->wire.#{slot.c_name} ? 1 : 0)"}
   end
 
   defp c_build_value_from_wire(:string, key, _schema, _var_prefix) do
@@ -1992,7 +1982,7 @@ defmodule Ide.CompanionProtocolGenerator do
       WireFlatten.slots_for_field(%{key: key, name: key, type: key, wire_type: :string}, empty_wire_schema())
       |> hd()
 
-    {"", "elmc_new_string(message->wire.#{slot.c_name})"}
+    {"", "elmc_new_string_take(message->wire.#{slot.c_name})"}
   end
 
   defp c_build_value_from_wire({:enum, type}, key, _schema, _var_prefix) do
@@ -2003,7 +1993,7 @@ defmodule Ide.CompanionProtocolGenerator do
       )
       |> hd()
 
-    {"", "elmc_new_int(#{c_runtime_tag_function(type)}(message->wire.#{slot.c_name}))"}
+    {"", "elmc_new_int_take(#{c_runtime_tag_function(type)}(message->wire.#{slot.c_name}))"}
   end
 
   defp c_build_value_from_wire({:record, _type, fields}, key, schema, var_prefix) do
@@ -2105,13 +2095,11 @@ defmodule Ide.CompanionProtocolGenerator do
 
         """
         if (#{var_prefix}_count > #{index}) {
-          ElmcValue *#{var_prefix}_key_#{index} = elmc_new_string(message->wire.#{key_slot.c_name});
+          ElmcValue *#{var_prefix}_key_#{index} = elmc_new_string_take(message->wire.#{key_slot.c_name});
         #{value_body}
           ElmcValue *#{value_var} = #{value_expr};
           if (!#{var_prefix}_key_#{index} || !#{value_var}) return NULL;
-          #{var_prefix}_pairs[#{index}] = elmc_tuple2(#{var_prefix}_key_#{index}, #{value_var});
-          elmc_release(#{var_prefix}_key_#{index});
-          elmc_release(#{value_var});
+          #{var_prefix}_pairs[#{index}] = elmc_tuple2_take_value(#{var_prefix}_key_#{index}, #{value_var});
           if (!#{var_prefix}_pairs[#{index}]) return NULL;
         }
         """
@@ -2126,7 +2114,7 @@ defmodule Ide.CompanionProtocolGenerator do
       #{entry_builds}
         ElmcValue *#{var_prefix}_pair_list = elmc_list_from_values_take(#{var_prefix}_pairs, #{var_prefix}_count);
         if (!#{var_prefix}_pair_list) return NULL;
-        ElmcValue *#{var_prefix}_dict = elmc_dict_from_list(#{var_prefix}_pair_list);
+        ElmcValue *#{var_prefix}_dict = elmc_dict_from_list_take(#{var_prefix}_pair_list);
         elmc_release(#{var_prefix}_pair_list);
     """
 
@@ -2151,13 +2139,10 @@ defmodule Ide.CompanionProtocolGenerator do
         """
           case #{tag_code}: {
         #{payload_body}
-            ElmcValue *#{var_prefix}_tag = elmc_new_int(#{c_runtime_tag_function(type)}(#{tag_code}));
+            ElmcValue *#{var_prefix}_tag = elmc_new_int_take(#{c_runtime_tag_function(type)}(#{tag_code}));
             ElmcValue *#{var_prefix}_payload = #{payload_expr};
             if (!#{var_prefix}_tag || !#{var_prefix}_payload) return NULL;
-            ElmcValue *#{var_prefix}_out = elmc_tuple2(#{var_prefix}_tag, #{var_prefix}_payload);
-            elmc_release(#{var_prefix}_tag);
-            elmc_release(#{var_prefix}_payload);
-            return #{var_prefix}_out;
+            return elmc_tuple2_take_value(#{var_prefix}_tag, #{var_prefix}_payload);
           }
         """
       end)
@@ -2173,7 +2158,7 @@ defmodule Ide.CompanionProtocolGenerator do
     {body, "NULL"}
   end
 
-  defp c_union_payload_build(%{args: []}, _key, _schema, _var_prefix), do: {"", "elmc_new_int(0)"}
+  defp c_union_payload_build(%{args: []}, _key, _schema, _var_prefix), do: {"", "elmc_new_int_take(0)"}
 
   defp c_union_payload_build(%{name: ctor_name, args: [arg_type]}, key, schema, var_prefix) do
     wire_type =
@@ -2310,7 +2295,7 @@ defmodule Ide.CompanionProtocolGenerator do
     do: "companion_protocol_runtime_tag_#{macro_name(type)}"
 
   defp c_tuple_chain([single]), do: single
-  defp c_tuple_chain([head | rest]), do: "elmc_tuple2(#{head}, #{c_tuple_chain(rest)})"
+  defp c_tuple_chain([head | rest]), do: "elmc_tuple2_take_value(#{head}, #{c_tuple_chain(rest)})"
 
   defp js_field_prop(%{wire_type: {:enum, type}, key: key, name: name}, _index) do
     code = "payload[#{js_payload_key(key)}]"

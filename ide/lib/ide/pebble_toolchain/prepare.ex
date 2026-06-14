@@ -55,7 +55,10 @@ defmodule Ide.PebbleToolchain.Prepare do
              has_phone_companion
            ),
          :ok <- Companion.generate_protocol_elm_internal(protocol_elm),
-         :ok <- ToolchainElmc.generate_sources(compile_project_root, app_root, workspace_root),
+         :ok <-
+           ToolchainElmc.generate_sources(compile_project_root, app_root, workspace_root,
+             target_platforms: target_platforms_for_target_type(resolved_target_type, opts)
+           ),
          :ok <- Companion.generate_protocol(protocol_elm, app_root, compile_project_root),
          :ok <- ToolchainElmc.reprune_staged_runtime(app_root),
          :ok <- Companion.write_generated_preferences_bridge(workspace_root, preferences_schema),

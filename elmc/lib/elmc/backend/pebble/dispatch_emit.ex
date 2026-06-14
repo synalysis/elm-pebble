@@ -14,7 +14,7 @@ defmodule Elmc.Backend.Pebble.DispatchEmit do
 
       const char *names[] = {"degrees", "isValid"};
       ElmcValue *values[2];
-      values[0] = elmc_new_float(degrees);
+      values[0] = elmc_new_float_take(degrees);
       values[1] = elmc_new_bool_take(is_valid ? 1 : 0);
       if (!values[0] || !values[1]) {
         if (values[0]) elmc_release(values[0]);

@@ -493,7 +493,8 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
           width,
           rows,
           tag_expr,
-          perm_case_index
+          perm_case_index,
+          module_name
         )
       end
     else
@@ -514,7 +515,8 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
          width,
          rows,
          tag_expr,
-         perm_case_index
+         perm_case_index,
+         module_name
        ) do
     """
     #{RowMajorLayout.emit_perm_src_index_fn(width)}
@@ -555,8 +557,7 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
         *out = same_out;
       } else {
         ElmcValue *spawn_out = NULL;
-        ElmcValue *spawn_args[] = { ELMC_RECORD_GET_INDEX(model, #{seed_macro}), out_list };
-        Rc = #{spawn_fn}(&spawn_out, spawn_args, 2);
+        #{spawn_tile_call(spawn_fn, seed_macro, module_name, else_info.spawn)}
         CHECK_RC(Rc);
         ElmcValue *next_cells = elmc_tuple_first(spawn_out);
         ElmcValue *next_seed = elmc_tuple_second(spawn_out);
@@ -599,5 +600,21 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
       return Rc;
     }
     """
+  end
+
+  defp spawn_tile_call(spawn_fn, seed_macro, module_name, spawn_name) do
+    direct? =
+      Process.get(:elmc_direct_call_targets, MapSet.new())
+      |> MapSet.member?({module_name, spawn_name})
+
+    if direct? do
+      "Rc = #{spawn_fn}(&spawn_out, ELMC_RECORD_GET_INDEX(model, #{seed_macro}), out_list);"
+    else
+      """
+      ElmcValue *spawn_args[] = { ELMC_RECORD_GET_INDEX(model, #{seed_macro}), out_list };
+      Rc = #{spawn_fn}(&spawn_out, spawn_args, 2);
+      """
+      |> String.trim()
+    end
   end
 end

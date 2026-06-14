@@ -26,7 +26,8 @@ defmodule Ide.MixProject do
         "test.slow": :test,
         "test.mcp": :test,
         "test.corpus": :test,
-        "test.corpus_step": :test
+        "test.corpus_step": :test,
+        "test.pbw_gate": :test
       ]
     ]
   end
@@ -107,7 +108,7 @@ defmodule Ide.MixProject do
         "ecto.create --quiet",
         "ecto.migrate --quiet",
         "ide.boundary_check",
-        "test --exclude integration --exclude slow --exclude live_emulator --exclude template_corpus --exclude template_corpus_step --exclude compiled_elixir_corpus --exclude template_compile_gate --max-cases 4"
+        "test --exclude integration --exclude slow --exclude live_emulator --exclude template_corpus --exclude template_corpus_step --exclude compiled_elixir_corpus --exclude template_compile_gate --exclude template_pbw_gate --max-cases 4"
       ],
       "test.integration": [
         "ecto.create --quiet",
@@ -138,6 +139,12 @@ defmodule Ide.MixProject do
         "ecto.migrate --quiet",
         "ide.boundary_check",
         "test --only template_corpus_step --include template_corpus_step --max-cases 1"
+      ],
+      "test.pbw_gate": [
+        "ecto.create --quiet",
+        "ecto.migrate --quiet",
+        "ide.boundary_check",
+        "test test/ide/template_pbw_gate_test.exs --only template_pbw_gate --include template_pbw_gate --max-cases 1"
       ],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
       "assets.build": ["tailwind ide", "esbuild ide"],

@@ -8,16 +8,17 @@ defmodule Ide.PebbleToolchain.Elmc do
   @type elmc_compile_result :: Types.elmc_compile_result()
   @type toolchain_error :: Types.toolchain_error()
 
-  @spec generate_sources(String.t(), String.t(), String.t()) ::
+  @spec generate_sources(String.t(), String.t(), String.t(), keyword()) ::
           :ok | {:error, toolchain_error()}
-  def generate_sources(project_root, app_root, _workspace_root) do
+  def generate_sources(project_root, app_root, _workspace_root, opts \\ []) do
     compile_out_dir = Path.join(project_root, ".elmc-build")
     stage_out_dir = Path.join(app_root, "src/c/elmc")
+    target_platforms = Keyword.get(opts, :target_platforms, [])
 
-    opts = %{
+    compile_opts = %{
       out_dir: compile_out_dir,
       entry_module: "Main",
-      direct_render_only: true,
+      direct_render_only: direct_render_only?(target_platforms),
       prune_runtime: true,
       prune_native_wrappers: true,
       pebble_int32: true
@@ -25,7 +26,7 @@ defmodule Ide.PebbleToolchain.Elmc do
 
     with :ok <- reset_generated_dir(compile_out_dir),
          :ok <- reset_generated_dir(stage_out_dir),
-         {:ok, _} <- compile_project(project_root, opts),
+         {:ok, _} <- compile_project(project_root, compile_opts),
          :ok <- File.mkdir_p(Path.dirname(stage_out_dir)),
          {:ok, _copied} <- File.cp_r(compile_out_dir, stage_out_dir) do
       :ok
@@ -110,6 +111,10 @@ defmodule Ide.PebbleToolchain.Elmc do
         Exception.message(exception),
         "direct_render_only requires"
       )
+  end
+
+  defp direct_render_only?(target_platforms) when is_list(target_platforms) do
+    target_platforms == [] or not Enum.member?(target_platforms, "aplite")
   end
 
   defp reset_generated_dir(path) do

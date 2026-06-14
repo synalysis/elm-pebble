@@ -161,6 +161,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     Process.put(:elmc_exported_targets, exported_targets)
     Process.put(:elmc_function_arities, function_arities)
     Process.put(:elmc_program_decls, decl_map)
+    Process.put(:elmc_codegen_opts, opts)
     _ = RcRequired.run!(decl_map, opts)
 
     generic_native_prototypes =
@@ -221,6 +222,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     Process.delete(:elmc_exported_targets)
     Process.delete(:elmc_function_arities)
     Process.delete(:elmc_program_decls)
+    Process.delete(:elmc_codegen_opts)
     Process.delete(:elmc_rc_required)
     Process.delete(:elmc_lambda_counter)
     Process.delete(:elmc_lambda_defs)

@@ -324,7 +324,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
       static ElmcValue *#{closure_fn_name}(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
         (void)captures;
         (void)capture_count;
-        #{rc_closure_return_body(module_name, name, c_name, "args, argc")}
+        #{rc_closure_return_body(module_name, name, c_name, "args, argc", env)}
       }
       """
 
@@ -371,7 +371,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
         (void)capture_count;
         ElmcValue *call_args[#{max(arity, 1)}] = {0};
         #{call_bindings}
-        #{rc_closure_return_body(module_name, name, c_name, "call_args, #{arity}")}
+        #{rc_closure_return_body(module_name, name, c_name, "call_args, #{arity}", env)}
       }
       """
 
@@ -899,12 +899,34 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     end
   end
 
-  defp rc_closure_return_body(module_name, name, c_name, call_args) do
-    if RcRequired.rc_required?(module_name, name) do
+  defp rc_closure_return_body(module_name, name, c_name, call_args_spec, env) do
+    direct? = EnvBindings.direct_call_target?(env, module_name, name)
+    rc_callee? = rc_closure_callee?(module_name, name, env)
+
+    call_expr =
+      cond do
+        direct? ->
+          {args_var, arity} = closure_call_args(call_args_spec, module_name, name, env)
+          arg_list = direct_call_arg_list(args_var, arity)
+
+          if rc_callee? do
+            "#{c_name}(&out, #{arg_list})"
+          else
+            "#{c_name}(#{arg_list})"
+          end
+
+        rc_callee? ->
+          "#{c_name}(&out, #{call_args_spec})"
+
+        true ->
+          "#{c_name}(#{call_args_spec})"
+      end
+
+    if rc_callee? do
       """
       ElmcValue *out = NULL;
       {
-        RC __call_rc = #{c_name}(&out, #{call_args});
+        RC __call_rc = #{call_expr};
         if (__call_rc != RC_SUCCESS) {
           ELMC_RC_LOG_FAIL(__call_rc, "#{c_name}", "closure call failed");
           return NULL;
@@ -914,7 +936,39 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
       """
       |> String.trim()
     else
-      "return #{c_name}(#{call_args});"
+      "return #{call_expr};"
+    end
+  end
+
+  defp closure_call_args("args, argc", module_name, name, env) do
+    {"args", EnvBindings.function_arity(env, module_name, name, [])}
+  end
+
+  defp closure_call_args("call_args, " <> arity_str, _module_name, _name, _env) do
+    {"call_args", String.to_integer(String.trim(arity_str))}
+  end
+
+  defp direct_call_arg_list(args_var, arity) when arity > 0 do
+    Enum.map_join(0..(arity - 1), ", ", &"#{args_var}[#{&1}]")
+  end
+
+  defp direct_call_arg_list(_args_var, _arity), do: ""
+
+  defp rc_closure_callee?(module_name, name, env) do
+    if RcRequired.rc_required?(module_name, name) do
+      true
+    else
+      case Map.get(env, :__program_decls__) do
+        decl_map when is_map(decl_map) ->
+          opts = Process.get(:elmc_codegen_opts, %{})
+
+          decl_map
+          |> RcRequired.analyze(opts)
+          |> MapSet.member?({module_name, name})
+
+        _ ->
+          false
+      end
     end
   end
 

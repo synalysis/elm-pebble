@@ -6,7 +6,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.CmdValue.Decode.Helpers.T
   @spec body() :: Types.c_source()
   def body do
     """
-        #if !defined(ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW)
+        #if !defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)
         #if ELMC_PEBBLE_FEATURE_DRAW_PATH
         static int elmc_decode_path_payload(ElmcValue *payload, ElmcPebbleDrawCmd *out_cmd);
         #endif

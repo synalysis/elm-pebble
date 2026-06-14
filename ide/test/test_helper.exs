@@ -10,7 +10,8 @@ ExUnit.configure(
     :template_corpus,
     :template_corpus_step,
     :compiled_elixir_corpus,
-    :template_compile_gate
+    :template_compile_gate,
+    :template_pbw_gate
   ]
 )
 
