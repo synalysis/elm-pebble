@@ -2,9 +2,7 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.Prologue do
   @moduledoc false
 
   alias Elmc.Backend.Pebble.HeaderWriter.Bindings
-
   alias Elmc.Backend.Pebble.Types
-  alias Elmc.Backend.Pebble.HeaderWriter.Bindings
 
   @spec body(Bindings.t()) :: Types.c_source()
   def body(%{} = bindings) do

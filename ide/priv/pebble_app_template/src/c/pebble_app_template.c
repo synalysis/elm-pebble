@@ -676,7 +676,6 @@ static int dispatch_compass_current_result(int64_t target, double degrees, bool 
   }
 
   if (is_valid) {
-    const char *names[] = {"degrees", "isValid"};
     ElmcValue *values[2];
     values[0] = elmc_new_float_take(degrees);
     values[1] = elmc_new_bool_take(1);
@@ -685,7 +684,7 @@ static int dispatch_compass_current_result(int64_t target, double degrees, bool 
       if (values[1]) elmc_release(values[1]);
       return -2;
     }
-    ElmcValue *heading = elmc_record_new_static_take_value(2, names, values);
+    ElmcValue *heading = elmc_record_new_values_take_value(2, values);
     if (!heading) {
       return -2;
     }
@@ -3871,7 +3870,6 @@ static int dispatch_unobstructed_bounds_result(int64_t target, GRect bounds) {
     return -6;
   }
 
-  const char *names[] = {"x", "y", "w", "h"};
   ElmcValue *values[4];
   values[0] = elmc_new_int_take(bounds.origin.x);
   values[1] = elmc_new_int_take(bounds.origin.y);
@@ -3886,7 +3884,7 @@ static int dispatch_unobstructed_bounds_result(int64_t target, GRect bounds) {
     return -2;
   }
 
-  ElmcValue *record = elmc_record_new_static_take_value(4, names, values);
+  ElmcValue *record = elmc_record_new_values_take_value(4, values);
   if (!record) {
     return -2;
   }

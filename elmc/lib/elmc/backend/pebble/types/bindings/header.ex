@@ -26,7 +26,8 @@ defmodule Elmc.Backend.Pebble.Types.Bindings.Header do
           required(:watch_model_macros) => Core.c_source(),
           required(:watch_color_macros) => Core.c_source(),
           required(:accel_samples_per_update) => pos_integer(),
-          required(:accel_sampling_hz) => pos_integer()
+          required(:accel_sampling_hz) => pos_integer(),
+          optional(:aplite_direct_view_scene?) => boolean()
         }
 
   @type header_app_types_bindings :: %{

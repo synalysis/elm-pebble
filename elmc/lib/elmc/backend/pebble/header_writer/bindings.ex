@@ -12,7 +12,8 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.Bindings do
   #define ELMC_BUTTON_EVENT_LONG_PRESSED 3
   """
 
-  @spec from_analysis(Types.shim_analysis(), Types.entry_module()) :: Types.header_bindings()
+  @spec from_analysis(Types.shim_analysis(), Types.entry_module(), keyword()) ::
+          Types.header_bindings()
   def from_analysis(
         %{
           msg_constructors: msg_constructors,
@@ -22,7 +23,8 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.Bindings do
           feature_flags: feature_flags,
           accel_config: accel_config
         },
-        entry_module
+        entry_module,
+        opts \\ []
       ) do
     %{enum_members: msg_enum_members, presence_macros: msg_presence_macros} =
       MsgCodegen.header_macros(msg_constructors)
@@ -49,7 +51,8 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.Bindings do
       watch_model_macros: CEmit.constructor_tag_macros("ELMC_PEBBLE_WATCH_MODEL", watch_model_tags),
       watch_color_macros: CEmit.constructor_tag_macros("ELMC_PEBBLE_WATCH_COLOR", watch_color_tags),
       accel_samples_per_update: Map.fetch!(accel_config, :samples_per_update),
-      accel_sampling_hz: Map.fetch!(accel_config, :sampling_hz)
+      accel_sampling_hz: Map.fetch!(accel_config, :sampling_hz),
+      aplite_direct_view_scene?: Keyword.get(opts, :aplite_direct_view_scene, false)
     }
   end
 end

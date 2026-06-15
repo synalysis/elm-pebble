@@ -16,10 +16,8 @@ defmodule Elmc.Backend.Pebble.HeaderWriter do
   @spec generate(Types.shim_analysis(), Types.entry_module(), keyword()) :: Types.c_source()
   def generate(analysis, entry_module, opts \\ []) do
     bindings =
-      Bindings.from_analysis(analysis, entry_module)
-      |> Map.put(
-        :aplite_direct_view_scene?,
-        Keyword.get(opts, :aplite_direct_view_scene, false)
+      Bindings.from_analysis(analysis, entry_module,
+        aplite_direct_view_scene: Keyword.get(opts, :aplite_direct_view_scene, false)
       )
 
     [
