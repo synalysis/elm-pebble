@@ -11,6 +11,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
   alias Elmc.Backend.CCodegen.Native.IntCase, as: NativeIntCase
   alias Elmc.Backend.CCodegen.Patterns
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
+  alias Elmc.Backend.CCodegen.ValueSlots
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
 
@@ -131,6 +132,8 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
       {last, prefix_lines} ->
         case Regex.run(~r/^ElmcValue \*#{Regex.escape(expr_var)} = (.+);$/, last) do
           [_, rhs] ->
+            if expr_var != out, do: ValueSlots.untrack(expr_var)
+
             folded_last = "#{out} = #{rhs};"
 
             folded_code =
@@ -166,6 +169,8 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
         [_, prefix, function, call_args] = Regex.run(fallback, trimmed)
 
         if RcRuntimeEmit.rc_allocator?(function) do
+          if expr_var != out, do: ValueSlots.untrack(expr_var)
+
           folded =
             [prefix, RcRuntimeEmit.assign_into(env, out, function, call_args)]
             |> Enum.reject(&(&1 == ""))
@@ -180,6 +185,8 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
         [_, prefix, function, call_args] = Regex.run(catch_pat, trimmed)
 
         if RcRuntimeEmit.rc_allocator?(function) do
+          if expr_var != out, do: ValueSlots.untrack(expr_var)
+
           folded =
             [prefix, RcRuntimeEmit.assign_into(env, out, function, call_args)]
             |> Enum.reject(&(&1 == ""))

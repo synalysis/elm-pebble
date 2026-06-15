@@ -10,14 +10,22 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.Prologue do
   def body(%{} = bindings) do
     %{
       scene_writer_early: scene_writer_early,
-      feature_macros: feature_macros
+      feature_macros: feature_macros,
+      aplite_direct_view_scene?: aplite_direct_view_scene?
     } = bindings
+
+    aplite_direct_view =
+      if aplite_direct_view_scene? do
+        "#define ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE 1\n"
+      else
+        ""
+      end
 
     """
     #ifndef ELMC_PEBBLE_H
     #define ELMC_PEBBLE_H
 
-    #{scene_writer_early}
+    #{aplite_direct_view}#{scene_writer_early}
 
     #include "elmc_worker.h"
 

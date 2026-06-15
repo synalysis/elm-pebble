@@ -75,10 +75,17 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
     arg_bindings =
       lambda_arg_bindings
       |> Enum.map(fn {arg, c_arg, index} ->
-        if MapSet.member?(native_arg_names, arg) do
-          "const elmc_int_t #{c_arg} = (argc > #{index} && args[#{index}]) ? elmc_as_int(args[#{index}]) : 0;"
+        binding =
+          if MapSet.member?(native_arg_names, arg) do
+            "const elmc_int_t #{c_arg} = (argc > #{index} && args[#{index}]) ? elmc_as_int(args[#{index}]) : 0;"
+          else
+            "ElmcValue *#{c_arg} = (argc > #{index}) ? args[#{index}] : NULL;"
+          end
+
+        if MapSet.member?(body_vars, arg) do
+          binding
         else
-          "ElmcValue *#{c_arg} = (argc > #{index}) ? args[#{index}] : NULL;"
+          binding <> "\n  (void)#{c_arg};"
         end
       end)
       |> Enum.join("\n  ")
@@ -88,15 +95,27 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
       free_vars
       |> Enum.with_index()
       |> Enum.map(fn {var_name, index} ->
-        cond do
-          MapSet.member?(native_free_vars, var_name) ->
-            "const elmc_int_t #{var_name} = (capture_count > #{index} && captures[#{index}]) ? elmc_as_int(captures[#{index}]) : 0;"
+        binding =
+          cond do
+            MapSet.member?(native_free_vars, var_name) ->
+              "const elmc_int_t #{var_name} = (capture_count > #{index} && captures[#{index}]) ? elmc_as_int(captures[#{index}]) : 0;"
 
-          match?({:forward_ref, _}, Map.get(env, var_name)) ->
-            "ElmcForwardRef *#{var_name}_letrec = (capture_count > #{index} && captures[#{index}] && captures[#{index}]->tag == ELMC_TAG_FORWARD_REF && captures[#{index}]->payload) ? *((ElmcForwardRef **)captures[#{index}]->payload) : NULL;"
+            match?({:forward_ref, _}, Map.get(env, var_name)) ->
+              "ElmcForwardRef *#{var_name}_letrec = (capture_count > #{index} && captures[#{index}] && captures[#{index}]->tag == ELMC_TAG_FORWARD_REF && captures[#{index}]->payload) ? *((ElmcForwardRef **)captures[#{index}]->payload) : NULL;"
 
-          true ->
-            "ElmcValue *#{var_name} = (capture_count > #{index}) ? captures[#{index}] : NULL;"
+            true ->
+              "ElmcValue *#{var_name} = (capture_count > #{index}) ? captures[#{index}] : NULL;"
+          end
+
+        if MapSet.member?(body_vars, var_name) do
+          binding
+        else
+          void_name =
+            if match?({:forward_ref, _}, Map.get(env, var_name)),
+              do: "#{var_name}_letrec",
+              else: var_name
+
+          binding <> "\n  (void)#{void_name};"
         end
       end)
       |> Enum.join("\n  ")
@@ -172,6 +191,13 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
       end
 
     unless lambda_signature && Map.has_key?(Process.get(:elmc_lambda_defs, %{}), lambda_signature) do
+      closure_body = Enum.join([arg_bindings, capture_bindings, body_code], "\n  ")
+
+      closure_void_casts =
+        ["args", "argc", "captures", "capture_count"]
+        |> Enum.reject(&closure_param_used?(&1, closure_body))
+        |> Enum.map_join("\n  ", &"(void)#{&1};")
+
       # Hoist the closure function to file scope via process dictionary.
       closure_fn =
         if rc_lambda? do
@@ -205,10 +231,7 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
         else
           """
           static ElmcValue *#{closure_fn_name}(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
-            (void)args;
-            (void)argc;
-            (void)captures;
-            (void)capture_count;
+            #{closure_void_casts}
             #{arg_bindings}
             #{capture_bindings}
             #{body_code}
@@ -256,5 +279,9 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
     """
 
     {code, out, next}
+  end
+
+  defp closure_param_used?(param, body) when is_binary(param) and is_binary(body) do
+    Regex.match?(~r/(?:\W|^)#{Regex.escape(param)}(?:\W|$)/, body)
   end
 end

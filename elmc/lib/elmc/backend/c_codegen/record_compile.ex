@@ -149,7 +149,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
       compile_field_exprs(ordered_fields, env, counter, &Host.compile_native_int_expr/3)
 
     next = counter + 1
-    out = "tmp_#{next}"
+    out = literal_result_out(env, next)
     values_array = Enum.join(field_refs, ", ")
     values_decl = "elmc_int_t rec_values_#{next}[#{field_count}] = { #{values_array} };"
 
@@ -198,7 +198,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
       compile_field_exprs(ordered_fields, env, counter, &compile_boxed_field_value_expr/3)
 
     next = counter + 1
-    out = "tmp_#{next}"
+    out = literal_result_out(env, next)
     values_array = record_values_array(field_refs)
 
     allocator =
@@ -237,6 +237,13 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     type = Expr.record_type_for_field_names(names, env)
     shape = if is_binary(type), do: Expr.record_shape_for_type(type, env), else: names
     Expr.put_subexpr_record_meta(var, %{type: type, shape: shape})
+  end
+
+  defp literal_result_out(env, next) do
+    case Map.get(env, :__declared_outs__, MapSet.new()) |> MapSet.to_list() do
+      [single] -> single
+      _ -> "tmp_#{next}"
+    end
   end
 
   defp remap_literal_fields(ordered_fields, canonical_names) do

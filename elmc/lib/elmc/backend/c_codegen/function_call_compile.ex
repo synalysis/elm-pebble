@@ -977,7 +977,20 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
         :boxed -> "return #{c_name}_native(#{native_args});"
       end
 
+    argc_void =
+      cond do
+        arity == 0 and call_args_spec == "args, argc" ->
+          "(void)args;\n(void)argc;"
+
+        call_args_spec == "args, argc" ->
+          "(void)argc;"
+
+        true ->
+          ""
+      end
+
     """
+    #{argc_void}
     #{bindings}
     #{return_stmt}
     """

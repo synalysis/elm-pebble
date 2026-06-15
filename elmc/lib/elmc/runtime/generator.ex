@@ -14,7 +14,7 @@ defmodule Elmc.Runtime.Generator do
   @spec write_runtime(String.t(), write_opts()) :: :ok | {:error, Types.file_error()}
   def write_runtime(runtime_dir, opts \\ []) do
     header = runtime_header(opts)
-    source = runtime_source()
+    source = runtime_source(opts)
 
     {header, source} =
       maybe_prune_runtime(header, source, Keyword.get(opts, :prune_from_dir), opts)
@@ -1189,16 +1189,37 @@ defmodule Elmc.Runtime.Generator do
   end
 
   @small_int_min -1
-  @small_int_max 64
+  @default_small_int_max 64
+  # Pebble watch RAM: cache only common UI/game scalars (-1..3).
+  @pebble_small_int_max 3
+  @default_process_max_slots 16
+  @pebble_process_max_slots 2
 
-  defp small_int_table_entries do
-    Enum.map_join(@small_int_min..@small_int_max, ",\n", fn value ->
+  defp small_int_bounds(opts) do
+    max =
+      if Keyword.get(opts, :pebble_int32, false),
+        do: @pebble_small_int_max,
+        else: @default_small_int_max
+
+    {@small_int_min, max}
+  end
+
+  defp process_max_slots(opts) do
+    if Keyword.get(opts, :pebble_int32, false),
+      do: @pebble_process_max_slots,
+      else: @default_process_max_slots
+  end
+
+  defp small_int_table_entries(min, max) do
+    Enum.map_join(min..max, ",\n", fn value ->
       "      { ELMC_RC_IMMORTAL, ELMC_TAG_INT, NULL, #{value} }"
     end)
   end
 
-  @spec runtime_source() :: String.t()
-  defp runtime_source do
+  @spec runtime_source(write_opts()) :: String.t()
+  defp runtime_source(opts) do
+    {small_min, small_max} = small_int_bounds(opts)
+    process_max_slots = process_max_slots(opts)
     """
     #include "elmc_runtime.h"
     #include <stdlib.h>
@@ -1218,17 +1239,22 @@ defmodule Elmc.Runtime.Generator do
     #define ELMC_UNUSED
     #endif
 
+    #ifdef ELMC_PEBBLE_PLATFORM
+    static uint32_t ELMC_ALLOCATED = 0;
+    static uint32_t ELMC_RELEASED = 0;
+    #else
     static uint64_t ELMC_ALLOCATED = 0;
     static uint64_t ELMC_RELEASED = 0;
+    #endif
     static int64_t ELMC_NEXT_PROCESS_ID = 1;
-    #define ELMC_PROCESS_MAX_SLOTS 16
+    #define ELMC_PROCESS_MAX_SLOTS #{process_max_slots}
     #define ELMC_RC_IMMORTAL UINT16_MAX
     static ElmcValue ELMC_BOOL_FALSE = { ELMC_RC_IMMORTAL, ELMC_TAG_BOOL, NULL, 0 };
     static ElmcValue ELMC_BOOL_TRUE = { ELMC_RC_IMMORTAL, ELMC_TAG_BOOL, NULL, 1 };
-    #define ELMC_SMALL_INT_MIN (#{@small_int_min})
-    #define ELMC_SMALL_INT_MAX #{@small_int_max}
+    #define ELMC_SMALL_INT_MIN (#{small_min})
+    #define ELMC_SMALL_INT_MAX #{small_max}
     static const ElmcValue ELMC_SMALL_INTS[ELMC_SMALL_INT_MAX - ELMC_SMALL_INT_MIN + 1] = {
-    #{small_int_table_entries()}
+    #{small_int_table_entries(small_min, small_max)}
     };
     static ElmcMaybe ELMC_MAYBE_NOTHING_PAYLOAD = { 0, NULL };
     static ElmcValue ELMC_MAYBE_NOTHING ELMC_UNUSED = { ELMC_RC_IMMORTAL, ELMC_TAG_MAYBE, &ELMC_MAYBE_NOTHING_PAYLOAD, 0 };

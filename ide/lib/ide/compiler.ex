@@ -2,6 +2,7 @@ defmodule Ide.Compiler do
   alias Ide.Compiler.Cache
   alias Ide.Compiler.Diagnostics
   alias Ide.Debugger.Types.ElmcCliIngestBridge
+  alias Ide.PebbleToolchain.Elmc, as: PebbleToolchainElmc
   alias Ide.Compiler.ManifestCache
   alias Ide.PebbleToolchain
   alias ElmEx.Frontend.Bridge
@@ -260,7 +261,7 @@ defmodule Ide.Compiler do
          }}
 
       project_dir ->
-        revision = workspace_revision(project_dir)
+        revision = workspace_revision(project_dir) <> pebble_compile_revision_suffix(project_dir)
 
         case Cache.get(project_slug, revision) do
           {:ok, entry} ->
@@ -504,7 +505,7 @@ defmodule Ide.Compiler do
     result =
       try do
         project_dir
-        |> Elmc.CLI.compile_project(out_dir)
+        |> PebbleToolchainElmc.compile_for_project_dir(out_dir)
         |> ElmcCliIngestBridge.to_compile_result(compiled_path: out_dir, revision: revision)
       rescue
         error -> compile_result_from_exception(error, out_dir, revision)
@@ -983,6 +984,14 @@ defmodule Ide.Compiler do
       :crypto.hash(:sha256, payload)
       |> Base.encode16(case: :lower)
     end)
+  end
+
+  @spec pebble_compile_revision_suffix(String.t()) :: String.t()
+  defp pebble_compile_revision_suffix(project_dir) do
+    case PebbleToolchainElmc.target_platforms_for_project_dir(project_dir) do
+      nil -> ""
+      platforms -> ":pebble=" <> Enum.join(platforms, ",")
+    end
   end
 
   @spec source_files_for_revision(String.t()) :: [String.t()]

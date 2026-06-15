@@ -261,6 +261,9 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
       not rc_allocator?(function) ->
         "ElmcValue *#{out} = #{function}(#{call_args});"
 
+      rc_allocator_emit_mode?(env) and declared_out_slot?(env, out) ->
+        assign_into(env, out, function, call_args)
+
       rc_allocator_emit_mode?(env) ->
         ValueSlots.track(out)
 
@@ -460,5 +463,9 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   @spec fusion_tuple2_take_int_return(String.t(), String.t(), String.t()) :: String.t()
   def fusion_tuple2_take_int_return(_out, left, int_expr) do
     "return elmc_tuple2_take_value(#{left}, elmc_new_int_take(#{int_expr}));"
+  end
+
+  defp declared_out_slot?(env, out) do
+    MapSet.member?(Map.get(env, :__declared_outs__, MapSet.new()), out)
   end
 end

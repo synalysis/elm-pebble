@@ -37,7 +37,8 @@ defmodule Elmc do
            Pebble.write_pebble_shim(
              ir,
              opts[:out_dir] || "build",
-             entry_module
+             entry_module,
+             opts
            ),
          :ok <-
            Worker.write_worker_adapter(

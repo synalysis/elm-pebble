@@ -16,8 +16,13 @@
 #define ELMC_UNUSED
 #endif
 
+#ifdef ELMC_PEBBLE_PLATFORM
+static uint32_t ELMC_ALLOCATED = 0;
+static uint32_t ELMC_RELEASED = 0;
+#else
 static uint64_t ELMC_ALLOCATED = 0;
 static uint64_t ELMC_RELEASED = 0;
+#endif
 static int64_t ELMC_NEXT_PROCESS_ID = 1;
 #define ELMC_PROCESS_MAX_SLOTS 16
 #define ELMC_RC_IMMORTAL UINT16_MAX

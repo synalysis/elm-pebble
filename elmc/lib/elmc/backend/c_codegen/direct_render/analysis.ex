@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.CCodegen.DirectRender.Analysis do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.DirectRender.GenericTargets
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Types
 
@@ -13,7 +14,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Analysis do
           Types.codegen_opts(),
           MapSet.t(Types.function_decl_key())
         ) :: MapSet.t(Types.function_decl_key())
-  def exported_function_targets(decl_map, opts, _direct_command_targets \\ MapSet.new()) do
+  def exported_function_targets(decl_map, opts, direct_command_targets \\ MapSet.new()) do
     entry_module = opts[:entry_module] || "Main"
     view_target = {entry_module, "view"}
 
@@ -24,7 +25,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Analysis do
       |> MapSet.new()
 
     view_exports =
-      if Map.has_key?(decl_map, view_target) do
+      if Map.has_key?(decl_map, view_target) and
+           not GenericTargets.prune_generic_view?(opts, decl_map, direct_command_targets) do
         MapSet.new([view_target])
       else
         MapSet.new()

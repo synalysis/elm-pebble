@@ -295,8 +295,8 @@ enum {
 
 #if defined(PBL_PLATFORM_APLITE)
 enum {
-  ELMC_INBOX_MAX_TUPLES = 3,
-  ELMC_INBOX_STRING_MAX = 32,
+  ELMC_INBOX_MAX_TUPLES = 2,
+  ELMC_INBOX_STRING_MAX = 16,
   ELMC_INBOX_TUPLE_WIRE_BYTES = 12,
   ELMC_INBOX_CSTRING_NONE = 0,
   ELMC_INBOX_CSTRING_INBOX = 1,
@@ -1494,7 +1494,9 @@ static void apply_draw_style(GContext *ctx, const DrawStyleState *style) {
 static bool rect_params_are_valid(int64_t w, int64_t h) {
   return w > 0 && h > 0;
 }
+#endif
 
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT || ELMC_PEBBLE_FEATURE_DRAW_BITMAP_IN_RECT
 static GRect rect_from_params(int64_t x, int64_t y, int64_t w, int64_t h) {
   return GRect((int16_t)x, (int16_t)y, (int16_t)w, (int16_t)h);
 }
@@ -3297,7 +3299,7 @@ static bool companion_simulator_weather_tuple(const Tuple *tuple) {
 }
 #endif
 
-#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
+#if ELMC_PEBBLE_FEATURE_INBOX_EVENTS
 static bool companion_dispatch_needs_render(const CompanionProtocolPhoneToWatchMessage *message) {
   if (!message) return true;
 #if defined(COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_BEGIN_FIGURE)

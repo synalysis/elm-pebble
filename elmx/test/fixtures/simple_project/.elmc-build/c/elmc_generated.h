@@ -3,7 +3,6 @@
 
 #include "../runtime/elmc_runtime.h"
 #include "../ports/elmc_ports.h"
-
 RC elmc_fn_Main_init(ElmcValue **out, ElmcValue ** const args, const int argc);
 RC elmc_fn_Main_update(ElmcValue **out, ElmcValue ** const args, const int argc);
 RC elmc_fn_Main_subscriptions(ElmcValue **out, ElmcValue ** const args, const int argc);

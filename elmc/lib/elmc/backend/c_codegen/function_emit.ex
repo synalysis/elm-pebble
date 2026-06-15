@@ -884,9 +884,13 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         wrapper_unused_casts =
           unused_arg_casts(c_arg_bindings, [wrapper_bindings, return_stmt])
 
+        wrapper_void_casts =
+          if arg_names == [], do: wrapper_abi_void_casts(false, []), else: ""
+
         """
         #{linkage}#{signature} {
           /* Ownership policy: #{Enum.join(decl.ownership, ", ")} */
+          #{wrapper_void_casts}
           #{wrapper_bindings}
           #{wrapper_unused_casts}
           #{return_stmt}

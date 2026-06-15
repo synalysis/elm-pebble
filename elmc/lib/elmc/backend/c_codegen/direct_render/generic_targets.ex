@@ -13,18 +13,42 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
 
   @platform_wrapper_entries ~w(init update subscriptions main view)
 
+  @spec prune_generic_view?(Types.codegen_opts(), Types.function_decl_map(), target_set()) ::
+          boolean()
+  def prune_generic_view?(opts, decl_map, direct_targets) do
+    entry_module = opts[:entry_module] || "Main"
+    view_target = {entry_module, "view"}
+
+    opts[:prune_direct_generic] == true and Map.has_key?(decl_map, view_target) and
+      MapSet.member?(direct_targets, view_target)
+  end
+
   @spec function_targets(ElmEx.IR.t(), Types.codegen_opts()) :: target_set()
   def function_targets(ir, opts) do
     decl_map = IRQueries.function_decl_map(ir)
     direct_targets = Host.direct_command_targets(ir, opts, decl_map)
-    view_fallback = view_streaming_fallback_targets(direct_targets, decl_map, opts)
+    pruned_view? = prune_generic_view?(opts, decl_map, direct_targets)
+    entry_module = opts[:entry_module] || "Main"
+    view_target = {entry_module, "view"}
+
+    view_fallback =
+      if pruned_view? do
+        MapSet.new()
+      else
+        view_streaming_fallback_targets(direct_targets, decl_map, opts)
+      end
 
     direct_runtime_roots =
-      if direct_render_only?(opts) do
-        generic_callees_from_direct_targets(direct_targets, decl_map)
-        |> Enum.reject(&MapSet.member?(direct_targets, &1))
-      else
-        generic_callees_from_direct_targets(direct_targets, decl_map)
+      cond do
+        direct_render_only?(opts) ->
+          generic_callees_from_direct_targets(direct_targets, decl_map)
+          |> Enum.reject(&MapSet.member?(direct_targets, &1))
+
+        opts[:prune_direct_generic] == true ->
+          []
+
+        true ->
+          generic_callees_from_direct_targets(direct_targets, decl_map)
       end
 
     roots =
@@ -36,6 +60,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
       |> Kernel.++(direct_runtime_roots)
       |> Kernel.++(MapSet.to_list(view_fallback))
       |> Enum.uniq()
+      |> Enum.reject(fn target -> pruned_view? and target == view_target end)
       |> Enum.reject(fn target ->
         MapSet.member?(direct_targets, target) and not MapSet.member?(view_fallback, target)
       end)
@@ -49,22 +74,51 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
       )
       |> MapSet.difference(direct_targets)
       |> MapSet.union(view_fallback)
+      |> then(fn targets -> if pruned_view?, do: MapSet.delete(targets, view_target), else: targets end)
 
     MapSet.union(
       reachable_core,
-      helper_native_targets_from_generic(reachable_core, decl_map, view_fallback)
+      helper_native_targets_from_generic(
+        reachable_core,
+        decl_map,
+        view_fallback,
+        opts,
+        direct_targets
+      )
     )
   end
 
-  # Only pull missing `_native`/boxed helpers for the streaming view subgraph — not
-  # update/init/companion closures that aplite never executes at runtime.
-  defp helper_native_targets_from_generic(generic_targets, decl_map, view_fallback) do
-    if MapSet.size(view_fallback) == 0 do
+  # Pull generic helpers for the view subgraph. When generic `view` is omitted for aplite
+  # dual-codegen, reach from `view` itself so direct `_commands_append` still links.
+  defp helper_native_targets_from_generic(
+         generic_targets,
+         decl_map,
+         view_fallback,
+         opts,
+         direct_targets
+       ) do
+    entry_module = opts[:entry_module] || "Main"
+    view_target = {entry_module, "view"}
+
+    view_roots =
+      cond do
+        prune_generic_view?(opts, decl_map, direct_targets) ->
+          [view_target]
+
+        MapSet.size(view_fallback) > 0 ->
+          MapSet.to_list(view_fallback)
+
+        true ->
+          []
+      end
+
+    if view_roots == [] do
       MapSet.new()
     else
-      view_fallback
-      |> MapSet.to_list()
+      view_roots
       |> GenericReachability.reachable_targets(decl_map, MapSet.new(), MapSet.new())
+      |> Enum.reject(&(&1 == view_target))
+      |> MapSet.new()
       |> MapSet.difference(generic_targets)
     end
   end
@@ -95,14 +149,28 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
   end
 
   defp do_wrapper_targets(opts, decl_map, direct_targets) do
-    view_fallback = view_streaming_fallback_targets(direct_targets, decl_map, opts)
+    pruned_view? = prune_generic_view?(opts, decl_map, direct_targets)
+    entry_module = opts[:entry_module] || "Main"
+    view_target = {entry_module, "view"}
+
+    view_fallback =
+      if pruned_view? do
+        MapSet.new()
+      else
+        view_streaming_fallback_targets(direct_targets, decl_map, opts)
+      end
 
     direct_runtime_roots =
-      if direct_render_only?(opts) do
-        generic_wrapper_callees_from_direct_targets(direct_targets, decl_map)
-        |> Enum.reject(&MapSet.member?(direct_targets, &1))
-      else
-        generic_wrapper_callees_from_direct_targets(direct_targets, decl_map)
+      cond do
+        direct_render_only?(opts) ->
+          generic_wrapper_callees_from_direct_targets(direct_targets, decl_map)
+          |> Enum.reject(&MapSet.member?(direct_targets, &1))
+
+        opts[:prune_direct_generic] == true ->
+          []
+
+        true ->
+          generic_wrapper_callees_from_direct_targets(direct_targets, decl_map)
       end
 
     roots =
@@ -114,17 +182,30 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
       |> Kernel.++(direct_runtime_roots)
       |> Kernel.++(MapSet.to_list(view_fallback))
       |> Enum.uniq()
+      |> Enum.reject(fn target -> pruned_view? and target == view_target end)
       |> Enum.reject(fn target ->
         MapSet.member?(direct_targets, target) and not MapSet.member?(view_fallback, target)
       end)
 
-    GenericReachability.wrapper_reachable_targets(
-      roots,
-      decl_map,
-      direct_render_excluded_targets(opts, direct_targets, decl_map, view_fallback),
-      MapSet.new()
+    reachable_core =
+      GenericReachability.wrapper_reachable_targets(
+        roots,
+        decl_map,
+        direct_render_excluded_targets(opts, direct_targets, decl_map, view_fallback),
+        MapSet.new()
+      )
+      |> prune_zero_arity_internal_wrappers(decl_map)
+
+    MapSet.union(
+      reachable_core,
+      helper_native_targets_from_generic(
+        reachable_core,
+        decl_map,
+        view_fallback,
+        opts,
+        direct_targets
+      )
     )
-    |> prune_zero_arity_internal_wrappers(decl_map)
   end
 
   defp prune_zero_arity_internal_wrappers(targets, decl_map) when is_map(decl_map) do
@@ -187,14 +268,15 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
           |> MapSet.union(inlined_record_helpers(direct_targets, decl_map))
 
         opts[:prune_direct_generic] == true and MapSet.size(direct_targets) > 0 ->
-          {def_targets, _emit_targets, pruned} = Host.direct_command_target_sets(decl_map, opts)
+          {_def_targets, _emit_targets, pruned} = Host.direct_command_target_sets(decl_map, opts)
 
           decl_map
           |> Map.keys()
           |> Enum.filter(&render_helper_target?/1)
           |> MapSet.new()
-          |> MapSet.union(def_targets)
+          |> MapSet.union(direct_targets)
           |> MapSet.union(pruned)
+          |> MapSet.union(inlined_record_helpers(direct_targets, decl_map))
 
         true ->
           MapSet.new()

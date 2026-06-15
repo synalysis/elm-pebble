@@ -28,7 +28,11 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
         {:ok, value}
 
       _ ->
-        literal_from_decl(Map.get(env, :__module__, "Main"), name, env)
+        if local_binding?(env, name) do
+          :error
+        else
+          literal_from_decl(Map.get(env, :__module__, "Main"), name, env)
+        end
     end
   end
 
@@ -212,7 +216,11 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
 
   @spec literal_decl_name(Types.ir_expr(), Types.compile_env()) :: String.t() | nil
   def literal_decl_name(%{op: :var, name: name}, env) when is_binary(name) do
-    if zero_arg_int_decl?(Map.get(env, :__module__, "Main"), name, env), do: name
+    if local_binding?(env, name) do
+      nil
+    else
+      if zero_arg_int_decl?(Map.get(env, :__module__, "Main"), name, env), do: name
+    end
   end
 
   def literal_decl_name(%{op: :call, name: name, args: []}, env) when is_binary(name) do
@@ -230,6 +238,13 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
   end
 
   def literal_decl_name(_expr, _env), do: nil
+
+  defp local_binding?(env, name) when is_map(env) and is_binary(name) do
+    key = EnvBindings.binding_key(name)
+
+    Map.has_key?(env, key) or Map.has_key?(env, name) or
+      EnvBindings.native_int_binding(env, name) != nil
+  end
 
   defp zero_arg_int_decl?(module, name, env) do
     case Map.get(Map.get(env, :__program_decls__, %{}), {module, name}) do

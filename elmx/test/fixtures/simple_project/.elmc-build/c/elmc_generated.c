@@ -238,6 +238,7 @@ static RC elmc_fn_Companion_Watch_sendWatchToPhone(ElmcValue **out, ElmcValue **
 
 static ElmcValue *elmc_fn_Main_helper(ElmcValue ** const args, const int argc) {
   /* Ownership policy: borrow_arg, borrow_result */
+
   elmc_int_t value = (argc > 0 && args[0]) ? elmc_as_int(args[0]) : 0;
 
   return elmc_new_int_take(elmc_fn_Main_helper_native(value));
@@ -250,6 +251,7 @@ static elmc_int_t elmc_fn_Main_helper_native(const elmc_int_t value) {
 
 static ElmcValue *elmc_fn_Main_advanced(ElmcValue ** const args, const int argc) {
   /* Ownership policy: borrow_arg, borrow_result */
+
   ElmcValue *n = (argc > 0) ? args[0] : NULL;
 
   return elmc_new_int_take(elmc_fn_Main_advanced_native(n));
@@ -422,7 +424,7 @@ RC elmc_fn_Main_update(ElmcValue **out, ElmcValue ** const args, const int argc)
   CATCH_BEGIN
 
     const int case_msg_tag_1 = (msg && (msg)->tag == ELMC_TAG_INT ? elmc_as_int(msg) : (msg && (msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL ? elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) : -1));
-    ElmcValue *tmp_1;
+    ElmcValue *tmp_1 = NULL;
     switch (case_msg_tag_1) {
       case ELMC_PEBBLE_MSG_TICK: {
 
@@ -491,7 +493,7 @@ static RC elmc_fn_Main_handleAppMsg(ElmcValue **out, ElmcValue ** const args, co
   CATCH_BEGIN
 
     const int case_msg_tag_1 = (msg && (msg)->tag == ELMC_TAG_INT ? elmc_as_int(msg) : (msg && (msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL ? elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) : -1));
-    ElmcValue *tmp_1;
+    ElmcValue *tmp_1 = NULL;
     switch (case_msg_tag_1) {
       case ELMC_PEBBLE_MSG_INCREMENT: {
 
@@ -666,7 +668,7 @@ static RC elmc_fn_Main_handlePlatformMsg(ElmcValue **out, ElmcValue ** const arg
   CATCH_BEGIN
 
     const int case_msg_tag_1 = (msg && (msg)->tag == ELMC_TAG_INT ? elmc_as_int(msg) : (msg && (msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL ? elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) : -1));
-    ElmcValue *tmp_1;
+    ElmcValue *tmp_1 = NULL;
     switch (case_msg_tag_1) {
       case ELMC_PEBBLE_MSG_TICK: {
 
@@ -1074,7 +1076,7 @@ static RC elmc_fn_Pebble_Platform_launchReasonToInt(ElmcValue **out, ElmcValue *
   CATCH_BEGIN
 
     const int case_msg_tag_1 = (launchReason && (launchReason)->tag == ELMC_TAG_INT ? elmc_as_int(launchReason) : (launchReason && (launchReason)->tag == ELMC_TAG_TUPLE2 && (launchReason)->payload != NULL ? elmc_as_int(((ElmcTuple2 *)(launchReason)->payload)->first) : -1));
-    ElmcValue *tmp_1;
+    ElmcValue *tmp_1 = NULL;
     switch (case_msg_tag_1) {
       case ELMC_UNION_LAUNCHSYSTEM: {
         tmp_1 = elmc_int_zero();
@@ -1141,7 +1143,7 @@ static RC elmc_fn_Companion_Internal_encodeLocationCode(ElmcValue **out, ElmcVal
   CATCH_BEGIN
 
     const int case_msg_tag_1 = (value && (value)->tag == ELMC_TAG_INT ? elmc_as_int(value) : (value && (value)->tag == ELMC_TAG_TUPLE2 && (value)->payload != NULL ? elmc_as_int(((ElmcTuple2 *)(value)->payload)->first) : -1));
-    ElmcValue *tmp_1;
+    ElmcValue *tmp_1 = NULL;
     switch (case_msg_tag_1) {
       case ELMC_UNION_COMPANION_TYPES_CURRENTLOCATION: {
         Rc = elmc_new_int(&tmp_1, 1);
@@ -1247,6 +1249,7 @@ static RC elmc_fn_Companion_Watch_sendWatchToPhone(ElmcValue **out, ElmcValue **
   return Rc;
 }
 
+#if !defined(PBL_PLATFORM_APLITE)
 static RC elmc_fn_Main_view_commands_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer);
 
 static RC elmc_fn_Main_view_commands_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {
@@ -1520,3 +1523,4 @@ static RC elmc_fn_Main_view_commands_append(ElmcValue ** const args, const int a
 RC elmc_fn_Main_view_scene_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {
   return elmc_fn_Main_view_commands_append(args, argc, writer);
 }
+#endif

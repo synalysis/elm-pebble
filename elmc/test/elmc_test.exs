@@ -247,6 +247,20 @@ defmodule ElmcTest do
     refute runtime =~ "malloc(sizeof(elmc_int_t))"
   end
 
+  test "pebble_int32 runtime uses a smaller small-int cache" do
+    runtime_dir = Path.expand("tmp/runtime_pebble_small_ints", __DIR__)
+
+    File.rm_rf!(runtime_dir)
+
+    assert :ok = Elmc.Runtime.Generator.write_runtime(runtime_dir, pebble_int32: true)
+
+    runtime = File.read!(Path.join(runtime_dir, "elmc_runtime.c"))
+
+    assert runtime =~ "#define ELMC_SMALL_INT_MAX 3"
+    assert runtime =~ "#define ELMC_PROCESS_MAX_SLOTS 2"
+    refute runtime =~ "#define ELMC_SMALL_INT_MAX 64"
+  end
+
   test "runtime uses shared empty string and logs allocation failures" do
     runtime_dir = Path.expand("tmp/runtime_alloc_failure_logging", __DIR__)
 

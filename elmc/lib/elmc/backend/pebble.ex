@@ -4,6 +4,8 @@ defmodule Elmc.Backend.Pebble do
   """
 
   alias ElmEx.IR
+  alias Elmc.Backend.CCodegen.{Host, IRQueries}
+  alias Elmc.Backend.CCodegen.DirectRender.GenericTargets
   alias Elmc.Backend.Pebble.{HeaderWriter, IRAnalysis, Kinds, SourceWriter}
   alias Elmc.Backend.Pebble.Types, as: PebbleTypes
   alias Elmc.Types
@@ -32,17 +34,24 @@ defmodule Elmc.Backend.Pebble do
   @spec ui_node_kind_id!(Kinds.ui_node_kind()) :: non_neg_integer()
   defdelegate ui_node_kind_id!(kind), to: Kinds
 
-  @spec write_pebble_shim(IR.t(), String.t(), PebbleTypes.entry_module()) ::
+  @spec write_pebble_shim(IR.t(), String.t(), PebbleTypes.entry_module(), map()) ::
           :ok | {:error, Types.file_error()}
-  def write_pebble_shim(%IR{} = ir, out_dir, entry_module) do
+  def write_pebble_shim(%IR{} = ir, out_dir, entry_module, opts \\ %{}) do
     c_dir = Path.join(out_dir, "c")
     analysis = IRAnalysis.analyze(ir, entry_module)
+    decl_map = IRQueries.function_decl_map(ir)
+    direct_targets = Host.direct_command_targets(ir, opts, decl_map)
+
+    aplite_direct_view_scene? =
+      GenericTargets.prune_generic_view?(opts, decl_map, direct_targets)
 
     with :ok <- File.mkdir_p(c_dir),
          :ok <-
            File.write(
              Path.join(c_dir, "elmc_pebble.h"),
-             HeaderWriter.generate(analysis, entry_module)
+             HeaderWriter.generate(analysis, entry_module,
+               aplite_direct_view_scene: aplite_direct_view_scene?
+             )
            ),
          :ok <-
            File.write(

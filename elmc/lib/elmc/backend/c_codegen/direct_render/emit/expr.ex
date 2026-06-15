@@ -248,7 +248,10 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
 
     with {:ok, then_code, counter} <- emit_expr(then_expr, then_env, counter),
          {:ok, else_code, counter} <- emit_expr(else_expr, else_env, counter) do
-      branch_hoists = Hoist.hoisted_native_int_branch_preamble(hoisted_before)
+      branch_hoists =
+        hoisted_before
+        |> Hoist.hoisted_native_int_branch_preamble()
+        |> Hoist.drop_branch_only_redeclared_hoists(then_code, else_code)
 
       {:ok, branch_hoists <> If.if_code(cond_code, cond_ref, then_code, else_code, cond_release),
        counter}

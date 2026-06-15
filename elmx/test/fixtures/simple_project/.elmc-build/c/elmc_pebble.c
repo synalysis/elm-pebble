@@ -23,7 +23,7 @@
 #endif
 #include "elmc_pebble.h"
 
-#if defined(ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW) && !defined(PBL_PLATFORM_APLITE)
+#if defined(ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW) && (!defined(PBL_PLATFORM_APLITE) || defined(ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE))
 #define ELMC_PEBBLE_DIRECT_VIEW_SCENE 1
 #endif
 
@@ -146,7 +146,7 @@ static int elmc_current_second(void) {
         #define elmc_agent_scene_probe(tag) do { (void)(tag); } while (0)
         #endif
 
-    #if !defined(ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW)
+#if !defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)
     static uint32_t elmc_agent_value_shape(ElmcValue *value) {
       if (!value) return 0x0;
       switch (value->tag) {
@@ -162,7 +162,7 @@ static int elmc_current_second(void) {
         default: return 0xF;
       }
     }
-    #endif
+#endif
 
     // #endregion
 
@@ -181,7 +181,7 @@ static int elmc_current_second(void) {
           return 0;
         }
 
-    #if !defined(ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW)
+    #if !defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)
     #if ELMC_PEBBLE_FEATURE_DRAW_PATH
     static int elmc_decode_path_payload(ElmcValue *payload, ElmcPebbleDrawCmd *out_cmd);
     #endif

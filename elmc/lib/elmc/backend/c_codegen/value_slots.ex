@@ -19,6 +19,13 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
     :ok
   end
 
+  @spec untrack(String.t()) :: :ok
+  def untrack(var) when is_binary(var) do
+    slots = Process.get(:elmc_value_slots, MapSet.new())
+    Process.put(:elmc_value_slots, MapSet.delete(slots, var))
+    :ok
+  end
+
   @spec owned_vars() :: [String.t()]
   def owned_vars do
     Process.get(:elmc_value_slots, MapSet.new())

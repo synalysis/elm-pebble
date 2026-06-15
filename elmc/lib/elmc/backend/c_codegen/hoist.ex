@@ -212,6 +212,37 @@ defmodule Elmc.Backend.CCodegen.Hoist do
     end
   end
 
+  @spec drop_branch_only_redeclared_hoists(String.t(), String.t(), String.t()) :: String.t()
+  def drop_branch_only_redeclared_hoists(preamble, then_code, else_code)
+      when is_binary(preamble) and is_binary(then_code) and is_binary(else_code) do
+    if preamble == "" do
+      ""
+    else
+      preamble
+      |> String.split("\n", trim: true)
+      |> Enum.reject(fn line ->
+        case Regex.run(~r/^const elmc_int_t (\w+) =/, String.trim(line)) do
+          [_, ref] ->
+            declared_in_then? = String.contains?(then_code, "const elmc_int_t #{ref} =")
+            used_in_else? = hoist_ref_used?(else_code, ref)
+
+            declared_in_then? and not used_in_else?
+
+          _ ->
+            false
+        end
+      end)
+      |> case do
+        [] -> ""
+        lines -> Enum.join(lines, "\n") <> "\n"
+      end
+    end
+  end
+
+  defp hoist_ref_used?(body, ref) do
+    String.contains?(body, ref) and not String.contains?(body, "const elmc_int_t #{ref} =")
+  end
+
   defp hoisted_native_int_key_aliases(expr) do
     [hoisted_native_int_key(expr) | minmax_cross_form_keys(expr)]
     |> Enum.uniq()
