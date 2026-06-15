@@ -82,40 +82,58 @@ defmodule Elmx.Runtime.LaunchContext do
   defp launch_reason_ctor_name(_), do: "LaunchUnknown"
 
   defp launch_screen(screen, context) when is_map(screen) and is_map(context) do
-    shape_name = launch_shape_name(screen, context)
-    color_name = launch_color_name(screen, context)
+    shape = launch_shape_value(screen, context)
+    color = launch_color_value(screen, context)
 
-    is_round = display_shape_is_round?(shape_name)
-    is_color = color_capability_is_color?(color_name)
+    is_round = display_shape_is_round?(shape)
+    is_color = color_capability_is_color?(color)
 
     %{
       "width" => map_value(screen, :width) || 144,
       "height" => map_value(screen, :height) || 168,
-      "shape" => display_shape_ctor(shape_name),
-      "color_mode" => color_name,
-      "colorMode" => color_mode_ctor(color_name),
+      "shape" => display_shape_ctor(shape),
+      "color_mode" => color_mode_name(color),
+      "colorMode" => color_mode_ctor(color),
       "is_color" => is_color,
       "is_round" => is_round
     }
   end
 
-  defp launch_shape_name(screen, context) when is_map(screen) and is_map(context) do
+  defp launch_shape_value(screen, context) when is_map(screen) and is_map(context) do
     case map_value(screen, :shape) || map_value(context, :shape) do
-      %{"ctor" => ctor, "args" => _} when is_binary(ctor) -> ctor
-      %{ctor: ctor, args: _} when is_binary(ctor) -> ctor
-      {ctor, _} when is_atom(ctor) -> Atom.to_string(ctor)
-      shape when is_binary(shape) -> shape
-      _ -> "Rectangular"
+      %{"ctor" => ctor, "args" => _} = value when is_binary(ctor) ->
+        value
+
+      %{ctor: ctor, args: args} when is_binary(ctor) ->
+        %{"ctor" => ctor, "args" => args || []}
+
+      {ctor, _} when is_atom(ctor) ->
+        %{"ctor" => Atom.to_string(ctor), "args" => []}
+
+      shape when is_binary(shape) ->
+        shape
+
+      _ ->
+        "Rectangular"
     end
   end
 
-  defp launch_color_name(screen, context) when is_map(screen) and is_map(context) do
+  defp launch_color_value(screen, context) when is_map(screen) and is_map(context) do
     case map_value(screen, :color_mode) || map_value(context, :color_mode) do
-      %{"ctor" => ctor, "args" => _} when is_binary(ctor) -> ctor
-      %{ctor: ctor, args: _} when is_binary(ctor) -> ctor
-      {ctor, _} when is_atom(ctor) -> Atom.to_string(ctor)
-      mode when is_binary(mode) -> mode
-      _ -> "Color"
+      %{"ctor" => ctor, "args" => _} = value when is_binary(ctor) ->
+        value
+
+      %{ctor: ctor, args: args} when is_binary(ctor) ->
+        %{"ctor" => ctor, "args" => args || []}
+
+      {ctor, _} when is_atom(ctor) ->
+        %{"ctor" => Atom.to_string(ctor), "args" => []}
+
+      mode when is_binary(mode) ->
+        mode
+
+      _ ->
+        "Color"
     end
   end
 
@@ -133,8 +151,13 @@ defmodule Elmx.Runtime.LaunchContext do
   defp color_capability_is_color?("BlackWhite"), do: false
   defp color_capability_is_color?(%{"ctor" => "BlackWhite"}), do: false
   defp color_capability_is_color?(%{ctor: "BlackWhite"}), do: false
-  defp color_capability_is_color?({:BlackWhite}), do: false
   defp color_capability_is_color?(_), do: true
+
+  defp color_mode_name("BlackWhite"), do: "BlackWhite"
+  defp color_mode_name(%{"ctor" => ctor, "args" => _}) when is_binary(ctor), do: ctor
+  defp color_mode_name(%{ctor: ctor, args: _}) when is_binary(ctor), do: ctor
+  defp color_mode_name(mode) when is_binary(mode), do: mode
+  defp color_mode_name(_), do: "Color"
 
   defp display_shape_ctor(%{"ctor" => ctor, "args" => args} = value) when is_binary(ctor) do
     Map.put(value, "args", args || [])
@@ -155,6 +178,8 @@ defmodule Elmx.Runtime.LaunchContext do
   defp display_shape_ctor(_), do: %{"ctor" => "Rectangular", "args" => []}
 
   defp color_mode_ctor("BlackWhite"), do: %{"ctor" => "BlackWhite", "args" => []}
+  defp color_mode_ctor(%{"ctor" => ctor, "args" => _} = value) when is_binary(ctor), do: value
+  defp color_mode_ctor(%{ctor: ctor, args: args}) when is_binary(ctor), do: %{"ctor" => ctor, "args" => args || []}
   defp color_mode_ctor(_), do: %{"ctor" => "Color", "args" => []}
 
   defp map_value(map, key) when is_map(map) and (is_atom(key) or is_binary(key)) do

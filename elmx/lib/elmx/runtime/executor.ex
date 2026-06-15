@@ -118,13 +118,25 @@ defmodule Elmx.Runtime.Executor do
 
   defp sync_launch_screen_fields(_runtime_model, _launch_context), do: %{}
 
-  defp maybe_put_screen_dimension(model, _key, value) when not is_integer(value) or value <= 0,
-    do: model
+  defp maybe_put_screen_dimension(model, key, value)
+       when is_map(model) and is_binary(key) and is_integer(value) and value > 0 do
+    if Map.has_key?(model, key) or Map.has_key?(model, String.to_atom(key)) do
+      Map.put(model, key, value)
+    else
+      model
+    end
+  end
 
-  defp maybe_put_screen_dimension(model, key, value), do: Map.put(model, key, value)
+  defp maybe_put_screen_dimension(model, _key, _value), do: model
 
-  defp maybe_put_display_shape(model, %{"ctor" => _, "args" => _} = shape) when is_map(shape),
-    do: Map.put(model, "displayShape", shape)
+  defp maybe_put_display_shape(model, %{"ctor" => _, "args" => _} = shape)
+       when is_map(model) and is_map(shape) do
+    if Map.has_key?(model, "displayShape") or Map.has_key?(model, :displayShape) do
+      Map.put(model, "displayShape", shape)
+    else
+      model
+    end
+  end
 
   defp maybe_put_display_shape(model, _), do: model
 

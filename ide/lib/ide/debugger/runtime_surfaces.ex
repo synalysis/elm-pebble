@@ -283,12 +283,25 @@ defmodule Ide.Debugger.RuntimeSurfaces do
        when is_map(model) and is_map(screen_fields) and map_size(screen_fields) > 0 do
     case Map.get(model, "runtime_model") do
       %{} = runtime_model ->
-        Map.put(model, "runtime_model", Map.merge(runtime_model, screen_fields))
+        fields = screen_fields_for_runtime_model(screen_fields, runtime_model)
+        Map.put(model, "runtime_model", Map.merge(runtime_model, fields))
 
       _ ->
         model
     end
   end
+
+  defp screen_fields_for_runtime_model(screen_fields, runtime_model) when is_map(runtime_model) do
+    Enum.reduce(["screenW", "screenH", "displayShape"], screen_fields, fn key, fields ->
+      if Map.has_key?(runtime_model, key) or Map.has_key?(runtime_model, String.to_atom(key)) do
+        fields
+      else
+        Map.delete(fields, key)
+      end
+    end)
+  end
+
+  defp screen_fields_for_runtime_model(screen_fields, _runtime_model), do: screen_fields
 
   defp patch_runtime_model_screen_fields(model, _screen_fields) when is_map(model), do: model
   defp patch_runtime_model_screen_fields(model, _screen_fields), do: model

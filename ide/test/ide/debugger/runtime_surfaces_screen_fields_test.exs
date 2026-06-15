@@ -50,6 +50,24 @@ defmodule Ide.Debugger.RuntimeSurfacesScreenFieldsTest do
              %{"ctor" => "Round", "args" => []}
   end
 
+  test "merge_launch_context_model does not inject displayShape when app model omits it" do
+    launch_context = RuntimeSurfaces.launch_context_for("basalt", "LaunchUser")
+
+    model = %{
+      "runtime_model" => %{
+        "screenW" => 144,
+        "screenH" => 168,
+        "condition" => %{"ctor" => "Just", "args" => [%{"ctor" => "Fog", "args" => []}]}
+      }
+    }
+
+    merged = RuntimeSurfaces.merge_launch_context_model(model, launch_context)
+
+    assert get_in(merged, ["runtime_model", "screenW"]) == 144
+    assert get_in(merged, ["runtime_model", "screenH"]) == 168
+    refute Map.has_key?(get_in(merged, ["runtime_model"]), "displayShape")
+  end
+
   defp launch_context_screen_fields(launch_context) do
     RuntimeSurfaces.launch_context_screen_fields(launch_context)
   end
