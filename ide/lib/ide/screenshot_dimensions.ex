@@ -3,8 +3,10 @@ defmodule Ide.ScreenshotDimensions do
   Canonical App Store screenshot dimensions per Pebble platform.
 
   These sizes match listing validation in `IdeWeb.WorkspaceLive.PublishFlow` and
-  the Rebble developer portal. Emulator framebuffer size may differ (for example
-  Gabbro runs at 180×180 in QEMU but store screenshots must be 260×260).
+  the Rebble developer portal. They align with `Ide.WatchModels` for every platform
+  except when a capture arrives smaller (for example legacy QEMU firmware paths);
+  `Ide.Emulator.ScreenshotCaptureRepair.normalize_dimensions/4` upscales those to
+  the store size before publish.
   """
 
   alias Ide.Png

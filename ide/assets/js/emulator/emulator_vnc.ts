@@ -886,8 +886,8 @@ export class EmulatorVnc {
     this.host.vncViewportConfigKey = configKey
 
     if (mode === "scale") {
-      // Gabbro exposes a 260×260 (or similar) VNC buffer around a 180×180 panel.
-      // Fit the whole buffer into the watch frame instead of 1:1 center-cropping,
+      // Some round QEMU builds expose a padded VNC buffer larger than the logical
+      // panel. Fit the whole buffer into the watch frame instead of center-cropping,
       // which clips origin-aligned watchfaces on the left and right.
       rfb.scaleViewport = true
       rfb.clipViewport = false

@@ -14,7 +14,7 @@ export type VncViewportMode = "clip" | "scale"
 
 const ROUND_SCALE_PADDING_THRESHOLD = 8
 
-/** Round QEMU surfaces (Gabbro) often expose a much larger VNC buffer than the logical screen. */
+/** Round QEMU surfaces may expose a larger VNC buffer than the catalog screen (e.g. Chalk). */
 export function shouldScaleRoundFramebuffer(framebuffer: ScreenSize, screen: ScreenSize): boolean {
   return (
     framebuffer.width - screen.width > ROUND_SCALE_PADDING_THRESHOLD ||

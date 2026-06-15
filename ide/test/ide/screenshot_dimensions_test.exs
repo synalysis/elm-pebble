@@ -2,6 +2,7 @@ defmodule Ide.ScreenshotDimensionsTest do
   use ExUnit.Case, async: true
 
   alias Ide.ScreenshotDimensions
+  alias Ide.WatchModels
 
   test "store dimensions include gabbro at 260x260" do
     assert ScreenshotDimensions.store_dimensions("gabbro") == {260, 260}
@@ -13,6 +14,13 @@ defmodule Ide.ScreenshotDimensionsTest do
 
     assert {:ok, normalized} = ScreenshotDimensions.normalize_for_store(png, "gabbro")
     assert ScreenshotDimensions.valid_store_file?("gabbro", normalized)
+  end
+
+  test "store dimensions match watch catalog screen sizes" do
+    for {platform, store_size} <- ScreenshotDimensions.all_store_dimensions() do
+      screen = platform |> WatchModels.profile_for() |> WatchModels.profile_screen()
+      assert {screen["width"], screen["height"]} == store_size
+    end
   end
 
   test "normalize_for_store is a no-op for unknown platforms" do

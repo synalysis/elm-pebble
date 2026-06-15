@@ -35,4 +35,11 @@ defmodule Ide.WatchModelsTest do
     assert chalk["shape"] == "round"
     assert WatchModels.profile_screen(chalk) == %{"width" => 180, "height" => 180}
   end
+
+  test "round gabbro profile matches Pebble Round 2 hardware resolution" do
+    gabbro = WatchModels.profile_for("gabbro")
+
+    assert gabbro["shape"] == "round"
+    assert WatchModels.profile_screen(gabbro) == %{"width" => 260, "height" => 260}
+  end
 end

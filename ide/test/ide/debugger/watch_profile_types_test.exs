@@ -37,4 +37,23 @@ defmodule Ide.Debugger.WatchProfileTypesTest do
     assert ctx["shape"] == "round"
     assert ctx["screen"]["shape"] == "Round"
   end
+
+  test "start_session with gabbro profile applies Round 2 screen launch context" do
+    slug = "watch_profile_gabbro_#{System.unique_integer([:positive])}"
+    on_exit(fn -> Debugger.forget_project(slug) end)
+
+    assert {:ok, state} =
+             Debugger.start_session(slug, %{
+               "watch_profile_id" => "gabbro",
+               "launch_reason" => "LaunchUser"
+             })
+
+    ctx = state.launch_context
+
+    assert ctx["watch_profile_id"] == "gabbro"
+    assert ctx["screen"]["width"] == 260
+    assert ctx["screen"]["height"] == 260
+    assert ctx["shape"] == "round"
+    assert ctx["screen"]["shape"] == "Round"
+  end
 end

@@ -3,11 +3,18 @@ defmodule Ide.Emulator.ScreenshotCaptureRepairTest do
 
   alias Ide.Emulator.ScreenshotCaptureRepair
 
-  test "normalize_dimensions upscales gabbro captures to store size" do
+  test "normalize_dimensions upscales legacy smaller gabbro captures to store size" do
     rgb = :binary.copy(<<255, 0, 0>>, 180 * 180 * 3)
     {out, w, h} = ScreenshotCaptureRepair.normalize_dimensions(rgb, 180, 180, "gabbro")
     assert {w, h} == {260, 260}
     assert byte_size(out) == 260 * 260 * 3
+  end
+
+  test "normalize_dimensions leaves full-size gabbro captures unchanged" do
+    rgb = :binary.copy(<<255, 0, 0>>, 260 * 260 * 3)
+    {out, w, h} = ScreenshotCaptureRepair.normalize_dimensions(rgb, 260, 260, "gabbro")
+    assert {w, h} == {260, 260}
+    assert out == rgb
   end
 
   test "shift_top_left_bezel removes asymmetric top and left black edges" do
