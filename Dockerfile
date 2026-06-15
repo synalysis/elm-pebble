@@ -11,7 +11,9 @@ COPY . .
 
 WORKDIR /app/ide
 
-RUN mix local.hex --force && mix local.rebar --force
+RUN mix local.hex --force && \
+    curl -fsSL https://github.com/erlang/rebar3/releases/download/3.24.0/rebar3 -o /usr/local/bin/rebar3 && \
+    chmod +x /usr/local/bin/rebar3
 RUN chmod +x scripts/sync_bundled_elm.sh && scripts/sync_bundled_elm.sh /app
 RUN mix deps.get --only prod
 RUN mix deps.compile
@@ -60,6 +62,7 @@ RUN apt-get update && \
       curl \
       patch \
       xz-utils \
+      build-essential \
       qemu-system-data \
       qemu-system-common \
       libsdl2-2.0-0 \
@@ -90,17 +93,12 @@ ENV SECRET_KEY_BASE=8eXjTGrTXoJHN8S-sqKoLrXp1xQ8vlqv2Ryr_5wPjMz5f4lAQ9S3v5dvU7uI
 
 WORKDIR /opt/ide
 
-RUN mkdir -p /var/lib/ide /opt/ide && \
-    HOME=/var/lib/ide pebble sdk install "${PEBBLE_SDK_VERSION}" && \
-    HOME=/var/lib/ide pebble sdk activate "${PEBBLE_SDK_VERSION}" && \
-    cp -a /var/lib/ide/.pebble-sdk /opt/pebble-sdk-seed && \
-    rm -rf /var/lib/ide/.pebble-sdk
-
 COPY --from=build /app/ide/_build/prod/rel/ide /opt/ide
 COPY docker/entrypoint.sh /entrypoint.sh
 COPY docker/pebble_sdk.sh /docker/pebble_sdk.sh
-RUN chmod +x /entrypoint.sh /docker/pebble_sdk.sh && \
-    chown -R nobody:nogroup /var/lib/ide /opt/ide /opt/pebble-sdk-seed /entrypoint.sh /docker
+RUN mkdir -p /var/lib/ide && \
+    chmod +x /entrypoint.sh /docker/pebble_sdk.sh && \
+    chown -R nobody:nogroup /var/lib/ide /opt/ide /entrypoint.sh /docker
 
 USER nobody
 

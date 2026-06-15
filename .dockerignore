@@ -8,3 +8,8 @@ elm-stuff
 **/*.beam
 **/*.ez
 **/.DS_Store
+ide/priv/wasm_emulator/vendor
+ide/priv/wasm_emulator/qemu-system-arm.js
+ide/priv/wasm_emulator/qemu-system-arm.wasm
+ide/priv/wasm_emulator/qemu-system-arm.worker.js
+ide/priv/wasm_emulator/firmware

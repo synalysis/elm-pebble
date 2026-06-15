@@ -32,26 +32,19 @@ Container image includes required toolchain binaries:
 - `elm` (installed globally via npm)
 - `pebble` CLI (`pebble-tool`)
 - `gif2apng` 1.9 (built from [SourceForge sources](https://sourceforge.net/projects/gif2apng/files/1.9/gif2apng-1.9-src.zip) for animated bitmap GIF upload)
-- a pinned Pebble SDK bundle baked into the image (`PEBBLE_SDK_VERSION`, default `4.9.169`)
+- Pebble SDK installed on first container start into the persistent volume (`PEBBLE_SDK_VERSION`, default `4.9.169`)
 - embedded emulator runtime support (`qemu-pebble` from the installed SDK,
   `pypkjs` from `pebble-tool`, QEMU keymap data, and bzip2 for flash images)
 
-On first startup, the container copies the bundled SDK into the persistent
-volume (fast). The Phoenix server starts immediately after database setup; SDK
-network installs only run in the background when the bundled SDK is missing or
-a different version is requested. To restore the old blocking install behavior:
+On first startup, the container installs the Pebble SDK into the persistent
+volume (if missing) and starts the Phoenix server immediately. SDK install runs
+in the background by default. To wait for the SDK before serving traffic:
 
 ```bash
 PEBBLE_SDK_BLOCKING_INSTALL=1 docker compose up -d
 ```
 
-To pin a different SDK version at image build time:
-
-```bash
-docker compose build --build-arg PEBBLE_SDK_VERSION=4.9.148
-```
-
-To request a runtime upgrade/download to another version (non-blocking):
+To pin a different SDK version at runtime:
 
 ```bash
 PEBBLE_SDK_VERSION=4.9.148 docker compose up -d

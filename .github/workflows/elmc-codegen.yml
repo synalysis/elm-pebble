@@ -18,8 +18,14 @@ jobs:
       - name: Set up Erlang/Elixir
         uses: erlef/setup-beam@v1
         with:
-          otp-version: "27.1"
+          otp-version: "27.3.3"
           elixir-version: "1.17.3"
+          version-type: strict
+          install-rebar: false
+          rebar3-version: "3.24.0"
+          hexpm-mirrors: |
+            https://builds.hex.pm
+            https://cdn.jsdelivr.net/hex
 
       - name: Install elm_ex dependencies
         working-directory: elm_ex
@@ -55,8 +61,14 @@ jobs:
       - name: Set up Erlang/Elixir
         uses: erlef/setup-beam@v1
         with:
-          otp-version: "27.1"
+          otp-version: "27.3.3"
           elixir-version: "1.17.3"
+          version-type: strict
+          install-rebar: false
+          rebar3-version: "3.24.0"
+          hexpm-mirrors: |
+            https://builds.hex.pm
+            https://cdn.jsdelivr.net/hex
 
       - name: Install elm_ex dependencies
         working-directory: elm_ex
@@ -97,12 +109,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v5
 
-      - name: Set up Erlang/Elixir
-        uses: erlef/setup-beam@v1
-        with:
-          otp-version: "27.1"
-          elixir-version: "1.17.3"
-
       - name: Install Pebble toolchain dependencies
         run: |
           sudo apt-get update
@@ -118,6 +124,18 @@ jobs:
             python3 \
             xz-utils \
             zlib1g
+
+      - name: Set up Erlang/Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27.3.3"
+          elixir-version: "1.17.3"
+          version-type: strict
+          install-rebar: false
+          rebar3-version: "3.24.0"
+          hexpm-mirrors: |
+            https://builds.hex.pm
+            https://cdn.jsdelivr.net/hex
 
       - name: Install pebble-tool and Pebble SDK
         run: |

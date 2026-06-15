@@ -18,8 +18,14 @@ jobs:
       - name: Set up Erlang/Elixir
         uses: erlef/setup-beam@v1
         with:
-          otp-version: "27.1"
+          otp-version: "27.3.3"
           elixir-version: "1.17.3"
+          version-type: strict
+          install-rebar: false
+          rebar3-version: "3.24.0"
+          hexpm-mirrors: |
+            https://builds.hex.pm
+            https://cdn.jsdelivr.net/hex
 
       - name: Install IDE dependencies
         working-directory: ide
@@ -52,8 +58,14 @@ jobs:
       - name: Set up Erlang/Elixir
         uses: erlef/setup-beam@v1
         with:
-          otp-version: "27.1"
+          otp-version: "27.3.3"
           elixir-version: "1.17.3"
+          version-type: strict
+          install-rebar: false
+          rebar3-version: "3.24.0"
+          hexpm-mirrors: |
+            https://builds.hex.pm
+            https://cdn.jsdelivr.net/hex
 
       - name: Install elmx dependencies
         working-directory: elmx
