@@ -294,8 +294,8 @@ defmodule Elmc.Backend.CCodegen.CSource do
     opens - (closes - leading)
   end
 
-  defp count_char(line, ?{), do: String.count(line, "{")
-  defp count_char(line, ?}), do: String.count(line, "}")
+  defp count_char(line, ?{), do: line |> String.codepoints() |> Enum.count(&(&1 == "{"))
+  defp count_char(line, ?}), do: line |> String.codepoints() |> Enum.count(&(&1 == "}"))
 
   defp trim_blank_edges(lines) do
     lines
