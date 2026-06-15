@@ -470,6 +470,8 @@ defmodule Ide.PebbleToolchainTest do
 
     assert launch_body =~ "GRect bounds = compile_display_bounds();"
     refute launch_body =~ "GRect bounds = display_bounds();"
+    assert launch_body =~ ~s|const char *screen_names[] = {"width", "height", "shape", "color_mode"};|
+    assert launch_body =~ "screen_values[] = {screen_width, screen_height, screen_shape, screen_color_mode};"
   end
 
   test "pebble app template draw layer and display_bounds prefer compile size when root layer is undersized" do

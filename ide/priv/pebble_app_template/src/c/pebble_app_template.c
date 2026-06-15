@@ -4343,8 +4343,9 @@ static ElmcValue *build_launch_context(AppLaunchReason launch) {
   /* DisplayShape constructor tags (Round=2, Rectangular=1) match elmc codegen. */
   ElmcValue *screen_shape = elmc_new_int_take(PBL_IF_ROUND_ELSE(2, 1));
   ElmcValue *screen_color_mode = elmc_new_string_take(PBL_IF_COLOR_ELSE("Color", "BlackWhite"));
-  const char *screen_names[] = {"color_mode", "height", "shape", "width"};
-  ElmcValue *screen_values[] = {screen_color_mode, screen_height, screen_shape, screen_width};
+  /* LaunchScreen field order matches Pebble.Platform (width, height, shape, colorMode). */
+  const char *screen_names[] = {"width", "height", "shape", "color_mode"};
+  ElmcValue *screen_values[] = {screen_width, screen_height, screen_shape, screen_color_mode};
   ElmcValue *screen = elmc_record_new_static_take_value(4, screen_names, screen_values);
 
   ElmcValue *reason = elmc_new_int_take(launch_reason_to_elm_tag(launch));

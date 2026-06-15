@@ -2262,8 +2262,8 @@ defmodule Elmc.CCodegenPatternsTest do
         ElmcValue *height = elmc_new_int_take(168);
         ElmcValue *shape = elmc_new_int_take(2);
         ElmcValue *color_mode = elmc_new_string_take("Color");
-        const char *screen_names[] = {"color_mode", "height", "shape", "width"};
-        ElmcValue *screen_values[] = {color_mode, height, shape, width};
+        const char *screen_names[] = {"width", "height", "shape", "color_mode"};
+        ElmcValue *screen_values[] = {width, height, shape, color_mode};
         ElmcValue *screen = elmc_record_new_take_value(4, screen_names, screen_values);
         ElmcValue *has_microphone = elmc_new_int_take(0);
         ElmcValue *has_compass = elmc_new_int_take(0);
@@ -4060,8 +4060,8 @@ defmodule Elmc.CCodegenPatternsTest do
         ElmcValue *height = elmc_new_int_take(168);
         ElmcValue *shape = elmc_new_int_take(1);
         ElmcValue *color_mode = elmc_new_string_take("BlackWhite");
-        const char *screen_names[] = {"color_mode", "height", "shape", "width"};
-        ElmcValue *screen_values[] = {color_mode, height, shape, width};
+        const char *screen_names[] = {"width", "height", "shape", "color_mode"};
+        ElmcValue *screen_values[] = {width, height, shape, color_mode};
         ElmcValue *screen = elmc_record_new_take_value(4, screen_names, screen_values);
         ElmcValue *has_microphone = elmc_new_int_take(0);
         ElmcValue *has_compass = elmc_new_int_take(0);
@@ -4095,6 +4095,7 @@ defmodule Elmc.CCodegenPatternsTest do
         for (int i = 0; i < 256; i++) {
           if (elmc_pebble_scene_commands_next(app, &cmd, 1) <= 0) break;
           if (cmd.kind == ELMC_PEBBLE_DRAW_RECT) {
+            if (cmd.p2 <= 0 || cmd.p3 <= 0) return -1;
             int right = (int)cmd.p0 + (int)cmd.p2;
             if (right > max_right) max_right = right;
           }
@@ -4119,6 +4120,11 @@ defmodule Elmc.CCodegenPatternsTest do
           fprintf(stderr, "expected >=16 rects, got %d (texts=%d)\\n", rects, texts);
           elmc_pebble_deinit(&app);
           return 5;
+        }
+        if (max_right <= 0) {
+          fprintf(stderr, "expected positive rect sizes on 144px screen\\n");
+          elmc_pebble_deinit(&app);
+          return 7;
         }
         if (max_right > 128) {
           fprintf(stderr, "expected max rect right <= 128 on 144px screen, got %d\\n", max_right);

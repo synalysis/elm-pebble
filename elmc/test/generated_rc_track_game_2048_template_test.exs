@@ -47,8 +47,8 @@ defmodule Elmc.GeneratedRcTrackGame2048TemplateTest do
         ElmcValue *height = elmc_new_int_take(168);
         ElmcValue *shape = elmc_new_int_take(1);
         ElmcValue *color_mode = elmc_new_string_take("BlackWhite");
-        const char *screen_names[] = {"color_mode", "height", "shape", "width"};
-        ElmcValue *screen_values[] = {color_mode, height, shape, width};
+        const char *screen_names[] = {"width", "height", "shape", "color_mode"};
+        ElmcValue *screen_values[] = {width, height, shape, color_mode};
         ElmcValue *screen = elmc_record_new_take_value(4, screen_names, screen_values);
         ElmcValue *has_microphone = elmc_new_int_take(0);
         ElmcValue *has_compass = elmc_new_int_take(0);
