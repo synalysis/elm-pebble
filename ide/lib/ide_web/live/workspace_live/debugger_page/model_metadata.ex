@@ -73,9 +73,28 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.ModelMetadata do
     if companion_protocol_placeholder?(model, runtime) do
       %{}
     else
-      Map.drop(model, @companion_protocol_runtime_keys)
+      Map.drop(model, companion_protocol_drop_keys(runtime))
     end
   end
+
+  @spec companion_protocol_drop_keys(runtime_input() | nil) :: [String.t()]
+  defp companion_protocol_drop_keys(%{} = runtime) do
+    declared_init_model_keys =
+      runtime
+      |> RuntimeArtifacts.introspect()
+      |> case do
+        %{"init_model" => init_model} when is_map(init_model) ->
+          init_model |> Map.keys() |> Enum.map(&to_string/1)
+
+        _ ->
+          []
+      end
+
+    @companion_protocol_runtime_keys
+    |> Enum.reject(&(&1 in declared_init_model_keys))
+  end
+
+  defp companion_protocol_drop_keys(_runtime), do: @companion_protocol_runtime_keys
 
   @spec companion_protocol_placeholder?(model_map(), runtime_input() | nil) :: boolean()
   defp companion_protocol_placeholder?(runtime_model, %{} = runtime) when is_map(runtime_model) do

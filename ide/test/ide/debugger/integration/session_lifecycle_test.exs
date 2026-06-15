@@ -129,6 +129,31 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     assert get_in(updated, [:watch, :model, "supports_color"]) == true
   end
 
+  test "set_watch_profile patches runtime_model display shape for round profiles" do
+    slug = "sim-watch-profile-runtime-shape-#{System.unique_integer([:positive])}"
+    alias Ide.Debugger.AgentSession
+
+    assert {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, _} =
+             AgentSession.mutate(slug, fn state ->
+               put_in(state, [:watch, Access.key!(:model), "runtime_model"], %{
+                 "score" => 0,
+                 "screenW" => 144,
+                 "screenH" => 168,
+                 "displayShape" => %{"ctor" => "Rectangular", "args" => []}
+               })
+             end)
+
+    assert {:ok, updated} = Debugger.set_watch_profile(slug, %{watch_profile_id: "gabbro"})
+
+    assert get_in(updated, [:watch, :model, "runtime_model", "screenW"]) == 260
+    assert get_in(updated, [:watch, :model, "runtime_model", "screenH"]) == 260
+
+    assert get_in(updated, [:watch, :model, "runtime_model", "displayShape"]) ==
+             %{"ctor" => "Round", "args" => []}
+  end
+
   test "set_watch_profile exposes Round display shape on launch screen contract" do
     slug = "sim-watch-profile-is-round-#{System.unique_integer([:positive])}"
 

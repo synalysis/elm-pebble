@@ -1,6 +1,7 @@
 defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered.ViewOutput do
   @moduledoc false
 
+  alias Ide.Debugger.RuntimeViewOutput
   alias IdeWeb.WorkspaceLive.DebuggerPreview.{SvgTextOptions, WireMap}
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Types
 
@@ -43,40 +44,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered.ViewOutput do
     end
   end
 
-  @spec positive_integer_value(Types.wire_input(), pos_integer()) :: pos_integer()
-  defp positive_integer_value(value, _fallback) when is_integer(value) and value > 0, do: value
-
-  defp positive_integer_value(value, _fallback) when is_float(value) and value > 0,
-    do: trunc(value)
-
-  defp positive_integer_value(value, fallback) when is_binary(value) do
-    case Integer.parse(value) do
-      {parsed, ""} when parsed > 0 -> parsed
-      _ -> fallback
-    end
-  end
-
-  defp positive_integer_value(_value, fallback), do: fallback
-
   @spec screen_size(model_map()) :: {pos_integer(), pos_integer()}
-  def screen_size(model) when is_map(model) do
-    runtime_model =
-      case Map.get(model, "runtime_model") || Map.get(model, :runtime_model) do
-        %{} = value -> value
-        _ -> model
-      end
-
-    {
-      positive_integer_value(
-        Map.get(runtime_model, "screenW") || Map.get(runtime_model, :screenW),
-        144
-      ),
-      positive_integer_value(
-        Map.get(runtime_model, "screenH") || Map.get(runtime_model, :screenH),
-        168
-      )
-    }
-  end
+  def screen_size(model) when is_map(model), do: RuntimeViewOutput.runtime_view_output_screen(model)
 
   @spec nodes([view_output_row()]) :: [rendered_node()]
   def nodes(ops) when is_list(ops) do

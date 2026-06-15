@@ -14,11 +14,19 @@ defmodule Elmx.Runtime.Pebble.Dispatch.Platform do
   def display_shape_is_round(_), do: false
 
   @spec display_shape_is_round_value(Types.display_shape_like()) :: boolean()
+  def display_shape_is_round_value(:Round), do: true
+  def display_shape_is_round_value(:ChinookRound), do: true
+  def display_shape_is_round_value(:EmeryRound), do: true
+  def display_shape_is_round_value(:Rectangular), do: false
+
   def display_shape_is_round_value(%{"ctor" => ctor}) when is_binary(ctor),
     do: String.contains?(ctor, "Round") or String.contains?(ctor, "round")
 
   def display_shape_is_round_value({ctor, _}) when is_atom(ctor),
     do: ctor in [:Round, :ChinookRound, :EmeryRound]
+
+  def display_shape_is_round_value(ctor) when is_binary(ctor),
+    do: String.contains?(String.downcase(ctor), "round")
 
   def display_shape_is_round_value(_), do: false
 

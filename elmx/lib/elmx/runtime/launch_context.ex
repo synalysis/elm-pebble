@@ -82,8 +82,8 @@ defmodule Elmx.Runtime.LaunchContext do
   defp launch_reason_ctor_name(_), do: "LaunchUnknown"
 
   defp launch_screen(screen, context) when is_map(screen) and is_map(context) do
-    shape_name = map_value(screen, :shape) || map_value(context, :shape) || "Rectangular"
-    color_name = map_value(screen, :color_mode) || map_value(context, :color_mode) || "Color"
+    shape_name = launch_shape_name(screen, context)
+    color_name = launch_color_name(screen, context)
 
     is_round = display_shape_is_round?(shape_name)
     is_color = color_capability_is_color?(color_name)
@@ -99,6 +99,32 @@ defmodule Elmx.Runtime.LaunchContext do
     }
   end
 
+  defp launch_shape_name(screen, context) when is_map(screen) and is_map(context) do
+    case map_value(screen, :shape) || map_value(context, :shape) do
+      %{"ctor" => ctor, "args" => _} when is_binary(ctor) -> ctor
+      %{ctor: ctor, args: _} when is_binary(ctor) -> ctor
+      {ctor, _} when is_atom(ctor) -> Atom.to_string(ctor)
+      shape when is_binary(shape) -> shape
+      _ -> "Rectangular"
+    end
+  end
+
+  defp launch_color_name(screen, context) when is_map(screen) and is_map(context) do
+    case map_value(screen, :color_mode) || map_value(context, :color_mode) do
+      %{"ctor" => ctor, "args" => _} when is_binary(ctor) -> ctor
+      %{ctor: ctor, args: _} when is_binary(ctor) -> ctor
+      {ctor, _} when is_atom(ctor) -> Atom.to_string(ctor)
+      mode when is_binary(mode) -> mode
+      _ -> "Color"
+    end
+  end
+
+  defp display_shape_is_round?(%{"ctor" => ctor}) when is_binary(ctor),
+    do: String.contains?(String.downcase(ctor), "round")
+
+  defp display_shape_is_round?(%{ctor: ctor}) when is_binary(ctor) or is_atom(ctor),
+    do: display_shape_is_round?(Atom.to_string(ctor))
+
   defp display_shape_is_round?(shape) when is_binary(shape),
     do: String.contains?(String.downcase(shape), "round")
 
@@ -106,8 +132,17 @@ defmodule Elmx.Runtime.LaunchContext do
 
   defp color_capability_is_color?("BlackWhite"), do: false
   defp color_capability_is_color?(%{"ctor" => "BlackWhite"}), do: false
+  defp color_capability_is_color?(%{ctor: "BlackWhite"}), do: false
   defp color_capability_is_color?({:BlackWhite}), do: false
   defp color_capability_is_color?(_), do: true
+
+  defp display_shape_ctor(%{"ctor" => ctor, "args" => args} = value) when is_binary(ctor) do
+    Map.put(value, "args", args || [])
+  end
+
+  defp display_shape_ctor(%{ctor: ctor, args: args}) when is_binary(ctor) do
+    %{"ctor" => ctor, "args" => args || []}
+  end
 
   defp display_shape_ctor(shape) when is_binary(shape) do
     if String.contains?(String.downcase(shape), "round") do

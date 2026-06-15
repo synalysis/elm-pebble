@@ -916,17 +916,34 @@ defmodule Ide.Debugger.StepExecution.Core do
   @spec screen_dimensions_for_view_preview(Types.execution_model()) ::
           Types.screen_dimension_patch()
   def screen_dimensions_for_view_preview(execution_model) when is_map(execution_model) do
+    launch_context = Map.get(execution_model, "launch_context") || %{}
+
+    runtime_model =
+      case Map.get(execution_model, "runtime_model") do
+        %{} = value -> value
+        _ -> %{}
+      end
+
     %{
       "screenW" =>
         Map.get(execution_model, "screen_width") ||
           Map.get(execution_model, "screenW") ||
-          get_in(execution_model, ["launch_context", "screen", "width"]),
+          Map.get(runtime_model, "screenW") ||
+          get_in(launch_context, ["screen", "width"]),
       "screenH" =>
         Map.get(execution_model, "screen_height") ||
           Map.get(execution_model, "screenH") ||
-          get_in(execution_model, ["launch_context", "screen", "height"])
+          Map.get(runtime_model, "screenH") ||
+          get_in(launch_context, ["screen", "height"]),
+      "displayShape" =>
+        Map.get(runtime_model, "displayShape") ||
+          Ide.Debugger.RuntimeSurfaces.launch_context_display_shape(launch_context)
     }
-    |> Enum.reject(fn {_key, value} -> not is_integer(value) end)
+    |> Enum.reject(fn
+      {_key, value} when is_integer(value) -> value <= 0
+      {"displayShape", %{"ctor" => ctor, "args" => _}} when is_binary(ctor) -> false
+      _ -> true
+    end)
     |> Map.new()
   end
 

@@ -96,9 +96,37 @@ defmodule Elmx.Runtime.Executor do
     runtime_model =
       current_model
       |> Map.get("runtime_model", Map.get(current_model, :runtime_model, %{}))
+      |> sync_launch_screen_fields(launch_context)
 
     {launch_context, runtime_model}
   end
+
+  @spec sync_launch_screen_fields(Types.runtime_model(), Types.launch_context()) ::
+          Types.runtime_model()
+  defp sync_launch_screen_fields(runtime_model, launch_context)
+       when is_map(runtime_model) and is_map(launch_context) do
+    screen = Map.get(launch_context, "screen") || %{}
+
+    runtime_model
+    |> maybe_put_screen_dimension("screenW", Map.get(screen, "width"))
+    |> maybe_put_screen_dimension("screenH", Map.get(screen, "height"))
+    |> maybe_put_display_shape(Map.get(screen, "shape"))
+  end
+
+  defp sync_launch_screen_fields(runtime_model, _launch_context) when is_map(runtime_model),
+    do: runtime_model
+
+  defp sync_launch_screen_fields(_runtime_model, _launch_context), do: %{}
+
+  defp maybe_put_screen_dimension(model, _key, value) when not is_integer(value) or value <= 0,
+    do: model
+
+  defp maybe_put_screen_dimension(model, key, value), do: Map.put(model, key, value)
+
+  defp maybe_put_display_shape(model, %{"ctor" => _, "args" => _} = shape) when is_map(shape),
+    do: Map.put(model, "displayShape", shape)
+
+  defp maybe_put_display_shape(model, _), do: model
 
   defp commands_to_followups(cmd, source_root) when is_map(cmd) do
     Followups.from_commands(cmd, source_root: source_root || "watch")

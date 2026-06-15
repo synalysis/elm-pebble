@@ -228,6 +228,62 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
 
   @tag :compiled_elixir_corpus
   @tag timeout: 180_000
+  test "game-2048 gabbro init keeps round screen fields" do
+    if @enabled? and "game-2048" in DebuggerTemplateCorpus.template_keys() do
+      Corpus.ensure_compiled_elixir_backend!()
+
+      assert {:ok, %{project: project}} =
+               DebuggerTemplateCorpus.bootstrap_template("game-2048", cleanup: false)
+
+      try do
+        workspace = project |> Ide.Projects.project_workspace_path() |> Path.join("watch")
+
+        revision = "corpus-2048-gabbro-" <> Integer.to_string(:erlang.unique_integer([:positive]))
+
+        assert {:ok, manifest, runtime_model} =
+                 Corpus.corpus_compile_and_execute_init!(workspace,
+                   revision: revision,
+                   watch_profile_id: "gabbro"
+                 )
+
+        assert runtime_model["screenW"] == 260
+        assert runtime_model["screenH"] == 260
+        assert runtime_model["displayShape"] == %{"ctor" => "Round", "args" => []}
+
+        {:ok, view_payload} =
+          Ide.Debugger.RuntimeExecutor.execute(%{
+            elmx_manifest: manifest,
+            elmx_revision: revision,
+            current_model: %{
+              "launch_context" => Corpus.corpus_launch_context_for("gabbro"),
+              "runtime_model" => runtime_model
+            },
+            message: nil,
+            introspect: %{},
+            source: "",
+            source_root: "watch",
+            rel_path: "src/Main.elm",
+            current_view_tree: %{}
+          })
+
+        rows = Map.get(view_payload, :view_output) || Map.get(view_payload, "view_output") || []
+        rect = Enum.find(rows, &(Map.get(&1, "kind") == "rect"))
+
+        assert rect,
+               "expected rect draw op in gabbro view_output, got #{inspect(Enum.map(rows, &Map.get(&1, "kind")))}"
+
+        refute rect["x"] == 15 and rect["y"] == 26 and rect["w"] == 55,
+               "expected round board layout, got rectangular basalt-style rect #{inspect(rect)}"
+      after
+        _ = Ide.Projects.delete_project(project)
+      end
+    else
+      assert true
+    end
+  end
+
+  @tag :compiled_elixir_corpus
+  @tag timeout: 180_000
   test "watchface-tangram-time compiles and executes init when enabled" do
     corpus_init_execute!("watchface-tangram-time", "corpus-tangram-init-", fn model ->
       assert model["screenW"] == 144

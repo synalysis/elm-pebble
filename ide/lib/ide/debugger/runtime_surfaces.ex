@@ -214,6 +214,7 @@ defmodule Ide.Debugger.RuntimeSurfaces do
     color_mode = launch_context_color_mode(launch_context)
     width = get_in(launch_context, ["screen", "width"])
     height = get_in(launch_context, ["screen", "height"])
+    screen_fields = launch_context_screen_fields(launch_context)
 
     model
     |> Map.put("launch_context", launch_context)
@@ -221,10 +222,79 @@ defmodule Ide.Debugger.RuntimeSurfaces do
     |> Map.put("screen_width", width)
     |> Map.put("screen_height", height)
     |> Map.put("supports_color", color_mode == "Color")
+    |> patch_runtime_model_screen_fields(screen_fields)
   end
 
   def merge_launch_context_model(model, _launch_context) when is_map(model), do: model
   def merge_launch_context_model(_model, _launch_context), do: %{}
+
+  @doc false
+  @spec launch_context_screen_fields(Types.launch_context()) :: Types.inner_runtime_model()
+  def launch_context_screen_fields(launch_context) when is_map(launch_context) do
+    width = get_in(launch_context, ["screen", "width"])
+    height = get_in(launch_context, ["screen", "height"])
+
+    %{}
+    |> maybe_put_screen_field("screenW", width)
+    |> maybe_put_screen_field("screenH", height)
+    |> Map.put("displayShape", launch_context_display_shape(launch_context))
+  end
+
+  def launch_context_screen_fields(_launch_context), do: %{}
+
+  @doc false
+  @spec launch_context_display_shape(Types.launch_context()) :: Types.protocol_ctor_value()
+  def launch_context_display_shape(launch_context) when is_map(launch_context) do
+    case get_in(launch_context, ["screen", "shape"]) do
+      %{"ctor" => ctor, "args" => _} = value when is_binary(ctor) ->
+        Map.put(value, "args", [])
+
+      %{ctor: ctor, args: _} when is_binary(ctor) ->
+        %{"ctor" => ctor, "args" => []}
+
+      "Round" ->
+        %{"ctor" => "Round", "args" => []}
+
+      "Rectangular" ->
+        %{"ctor" => "Rectangular", "args" => []}
+
+      shape when is_binary(shape) ->
+        if String.contains?(String.downcase(shape), "round") do
+          %{"ctor" => "Round", "args" => []}
+        else
+          %{"ctor" => "Rectangular", "args" => []}
+        end
+
+      _ ->
+        if get_in(launch_context, ["screen", "is_round"]) == true do
+          %{"ctor" => "Round", "args" => []}
+        else
+          %{"ctor" => "Rectangular", "args" => []}
+        end
+    end
+  end
+
+  def launch_context_display_shape(_launch_context),
+    do: %{"ctor" => "Rectangular", "args" => []}
+
+  @spec patch_runtime_model_screen_fields(Types.app_model(), Types.inner_runtime_model()) ::
+          Types.app_model()
+  defp patch_runtime_model_screen_fields(model, screen_fields)
+       when is_map(model) and is_map(screen_fields) and map_size(screen_fields) > 0 do
+    case Map.get(model, "runtime_model") do
+      %{} = runtime_model ->
+        Map.put(model, "runtime_model", Map.merge(runtime_model, screen_fields))
+
+      _ ->
+        model
+    end
+  end
+
+  defp patch_runtime_model_screen_fields(model, _screen_fields) when is_map(model), do: model
+  defp patch_runtime_model_screen_fields(model, _screen_fields), do: model
+
+  defp maybe_put_screen_field(map, _key, value) when not is_integer(value) or value <= 0, do: map
+  defp maybe_put_screen_field(map, key, value), do: Map.put(map, key, value)
 
   defp maybe_put_runtime_value(map, _key, value) when value in [nil, ""], do: map
   defp maybe_put_runtime_value(map, key, value), do: Map.put(map, key, value)

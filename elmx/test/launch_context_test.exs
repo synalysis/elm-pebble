@@ -22,4 +22,40 @@ defmodule Elmx.LaunchContextTest do
     assert normalized["watchProfileId"] == "basalt"
     assert Map.get(normalized, "configurationResponse") == nil
   end
+
+  test "normalize is idempotent for round screen shape ctors" do
+    once =
+      LaunchContext.normalize(%{
+        "launch_reason" => "LaunchUser",
+        "watch_profile_id" => "gabbro",
+        "screen" => %{
+          "width" => 260,
+          "height" => 260,
+          "shape" => "Round",
+          "color_mode" => "Color"
+        }
+      })
+
+    twice = LaunchContext.normalize(once)
+
+    assert once["screen"]["shape"] == %{"ctor" => "Round", "args" => []}
+    assert twice["screen"]["shape"] == %{"ctor" => "Round", "args" => []}
+    assert twice["screen"]["width"] == 260
+    assert twice["screen"]["is_round"] == true
+  end
+
+  test "normalize preserves round shape when screen shape is already a ctor map" do
+    normalized =
+      LaunchContext.normalize(%{
+        "launch_reason" => "LaunchUser",
+        "screen" => %{
+          "width" => 260,
+          "height" => 260,
+          "shape" => %{"ctor" => "Round", "args" => []}
+        }
+      })
+
+    assert normalized["screen"]["shape"] == %{"ctor" => "Round", "args" => []}
+    assert normalized["screen"]["is_round"] == true
+  end
 end

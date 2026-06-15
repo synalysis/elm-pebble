@@ -307,15 +307,31 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
 
     project = persist_project_emulator_selection(socket.assigns.project, target, mode)
 
-    {:noreply,
-     socket
-     |> assign(:project, project)
-     |> assign(:selected_emulator_target, target)
-     |> assign(:emulator_mode, mode)
-     |> assign(:external_emulator_running, false)
-     |> assign(:emulator_mode_options, ToolchainPresenter.emulator_mode_options(target))
-     |> assign(:emulator_form, to_form(%{"target" => target, "mode" => mode}, as: :emulator))
-     |> check_emulator_installation()}
+    socket =
+      socket
+      |> assign(:project, project)
+      |> assign(:selected_emulator_target, target)
+      |> assign(:emulator_mode, mode)
+      |> assign(:external_emulator_running, false)
+      |> assign(:emulator_mode_options, ToolchainPresenter.emulator_mode_options(target))
+      |> assign(:emulator_form, to_form(%{"target" => target, "mode" => mode}, as: :emulator))
+      |> check_emulator_installation()
+
+    socket =
+      case project do
+        %Project{} = project ->
+          case Ide.Debugger.set_watch_profile(Projects.scope_key(project), %{
+                 watch_profile_id: target
+               }) do
+            {:ok, _} -> socket
+            _ -> socket
+          end
+
+        _ ->
+          socket
+      end
+
+    {:noreply, socket}
   end
 
   defp do_handle_async(:check_emulator_installation, {:ok, status}, socket) do

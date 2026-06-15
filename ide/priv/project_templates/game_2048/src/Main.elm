@@ -388,6 +388,9 @@ view model =
         layout =
             boardLayout model
 
+        diameter =
+            min model.screenW model.screenH
+
         textOptions =
             if Platform.displayShapeIsRound model.displayShape then
                 Ui.alignCenter Ui.defaultTextOptions
@@ -398,14 +401,20 @@ view model =
         chromeOps =
             if Platform.displayShapeIsRound model.displayShape then
                 let
+                    topBand =
+                        diameter // 6
+
+                    bottomBand =
+                        diameter // 5
+
                     textW =
-                        (min model.screenW model.screenH * 4) // 9
+                        diameter * 4 // 9
 
                     textX =
                         (model.screenW - textW) // 2
                 in
-                [ Ui.text Resources.DefaultFont textOptions { x = textX, y = 10, w = textW, h = 14 } "2048"
-                , Ui.text Resources.DefaultFont textOptions { x = textX, y = model.screenH - 24, w = textW, h = 14 } ("Best " ++ String.fromInt model.best)
+                [ Ui.text Resources.DefaultFont textOptions { x = textX, y = max 4 (topBand - 16), w = textW, h = 14 } "2048"
+                , Ui.text Resources.DefaultFont textOptions { x = textX, y = model.screenH - bottomBand + 6, w = textW, h = 14 } ("Best " ++ String.fromInt model.best)
                 ]
 
             else
@@ -434,11 +443,20 @@ boardLayout model =
             diameter =
                 min model.screenW model.screenH
 
-            targetBoardSize =
-                (diameter * 2) // 3
+            -- Round watches clip to a circle. Reserve top/bottom bands for score
+            -- chrome and cap board size by the inscribed square (diameter × √2/2
+            -- ≈ diameter × 707/1000) and the vertical gap between the bands.
+            topBand =
+                diameter // 6
+
+            bottomBand =
+                diameter // 5
 
             gap =
-                2
+                max 1 (diameter // 90)
+
+            targetBoardSize =
+                min (diameter * 707 // 1000) (diameter - topBand - bottomBand)
 
             cell =
                 (targetBoardSize - gap * 3) // 4
@@ -447,7 +465,7 @@ boardLayout model =
                 cell * 4 + gap * 3
         in
         { x = (model.screenW - boardSize) // 2
-        , y = (model.screenH - boardSize) // 2
+        , y = topBand
         , cell = cell
         , gap = gap
         }

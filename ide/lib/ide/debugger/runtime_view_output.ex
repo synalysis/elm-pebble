@@ -1,6 +1,7 @@
 defmodule Ide.Debugger.RuntimeViewOutput do
   @moduledoc false
 
+  alias Ide.Debugger.RuntimeSurfaces
   alias Ide.Debugger.Types
   alias Ide.Debugger.WireValues
 
@@ -53,16 +54,49 @@ defmodule Ide.Debugger.RuntimeViewOutput do
         _ -> model
       end
 
+    launch_context =
+      Map.get(model, "launch_context") ||
+        Map.get(model, :launch_context) ||
+        Map.get(runtime_model, "launch_context") ||
+        %{}
+
+    screen = Map.get(launch_context, "screen") || %{}
+
     {
       positive_integer_value(
-        Map.get(runtime_model, "screenW") || Map.get(runtime_model, :screenW),
+        Map.get(runtime_model, "screenW") ||
+          Map.get(runtime_model, :screenW) ||
+          Map.get(model, "screen_width") ||
+          Map.get(screen, "width"),
         144
       ),
       positive_integer_value(
-        Map.get(runtime_model, "screenH") || Map.get(runtime_model, :screenH),
+        Map.get(runtime_model, "screenH") ||
+          Map.get(runtime_model, :screenH) ||
+          Map.get(model, "screen_height") ||
+          Map.get(screen, "height"),
         168
       )
     }
+  end
+
+  @doc false
+  @spec runtime_view_output_display_shape(Types.app_model()) :: Types.protocol_ctor_value()
+  def runtime_view_output_display_shape(model) when is_map(model) do
+    runtime_model =
+      case Map.get(model, "runtime_model") || Map.get(model, :runtime_model) do
+        %{} = value -> value
+        _ -> model
+      end
+
+    launch_context =
+      Map.get(model, "launch_context") ||
+        Map.get(model, :launch_context) ||
+        Map.get(runtime_model, "launch_context") ||
+        %{}
+
+    Map.get(runtime_model, "displayShape") ||
+      RuntimeSurfaces.launch_context_display_shape(launch_context)
   end
 
   @spec positive_integer_value(Types.wire_input(), pos_integer()) :: pos_integer()

@@ -1,6 +1,7 @@
 defmodule Ide.Debugger.WatchProfileApply do
   @moduledoc false
 
+  alias Ide.Debugger.RuntimeExecutorConfig
   alias Ide.Debugger.RuntimeSurfaces
   alias Ide.Debugger.SimulatorSurfaceSettings
   alias Ide.Debugger.Types
@@ -33,6 +34,7 @@ defmodule Ide.Debugger.WatchProfileApply do
     |> Map.put(:watch_profile_id, profile_id)
     |> RuntimeSurfaces.apply_launch_context(launch_reason)
     |> SimulatorSurfaceSettings.apply_to_state()
+    |> RuntimeExecutorConfig.refresh_for_target(:watch)
     |> host.append_event.(
       "debugger.watch_profile_set",
       Types.WatchProfileSetEventPayload.from_profile(profile_id, launch_reason)
