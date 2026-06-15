@@ -46,22 +46,15 @@ defmodule Elmc.GeneratedRcTrackGame2048TemplateTest do
         ElmcValue *width = elmc_new_int_take(144);
         ElmcValue *height = elmc_new_int_take(168);
         ElmcValue *shape = elmc_new_int_take(1);
-        ElmcValue *color_mode = elmc_new_string_take("BlackWhite");
-        const char *screen_names[] = {"width", "height", "shape", "color_mode"};
+        ElmcValue *color_mode = elmc_new_int_take(1);
         ElmcValue *screen_values[] = {width, height, shape, color_mode};
-        ElmcValue *screen = elmc_record_new_take_value(4, screen_names, screen_values);
+        ElmcValue *screen = elmc_record_new_values_take_value(4, screen_values);
         ElmcValue *has_microphone = elmc_new_int_take(0);
         ElmcValue *has_compass = elmc_new_int_take(0);
         ElmcValue *supports_health = elmc_new_int_take(0);
-        const char *names[] = {
-          "has_compass", "has_microphone", "reason", "screen",
-          "supports_health", "watchModel", "watchProfileId"
-        };
-        ElmcValue *values[] = {
-          has_compass, has_microphone, reason, screen,
-          supports_health, watch_model, watch_profile_id
-        };
-        return elmc_record_new_take_value(7, names, values);
+        ElmcValue *context_values[] = {reason, watch_model, watch_profile_id, screen, has_microphone,
+                                       has_compass, supports_health};
+        return elmc_record_new_values_take_value(7, context_values);
       }
 
       static void drain_cmds(ElmcPebbleApp *app) {

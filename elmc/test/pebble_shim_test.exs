@@ -1812,16 +1812,10 @@ defmodule Elmc.PebbleShimTest do
       static ElmcValue *test_launch_context(void) {
         ElmcValue *screen_width = elmc_new_int_take(144);
         ElmcValue *screen_height = elmc_new_int_take(168);
-        ElmcValue *screen_shape = elmc_new_string_take("Rectangular");
-        ElmcValue *screen_color_mode = elmc_new_string_take("Color");
-        const char *screen_names[] = {"width", "height", "shape", "color_mode"};
+        ElmcValue *screen_shape = elmc_new_int_take(1);
+        ElmcValue *screen_color_mode = elmc_new_int_take(2);
         ElmcValue *screen_values[] = {screen_width, screen_height, screen_shape, screen_color_mode};
-        ElmcValue *screen = NULL;
-        if (elmc_record_new(&screen, 4, screen_names, screen_values) != RC_SUCCESS) return NULL;
-        elmc_release(screen_width);
-        elmc_release(screen_height);
-        elmc_release(screen_shape);
-        elmc_release(screen_color_mode);
+        ElmcValue *screen = elmc_record_new_values_take_value(4, screen_values);
 
         ElmcValue *reason = elmc_new_int_take(2);
         ElmcValue *watch_model = elmc_new_string_take("");
@@ -1829,13 +1823,10 @@ defmodule Elmc.PebbleShimTest do
         ElmcValue *has_microphone = elmc_new_bool_take(1);
         ElmcValue *has_compass = elmc_new_bool_take(0);
         ElmcValue *supports_health = elmc_new_bool_take(1);
-        const char *context_names[] = {
-            "has_compass", "has_microphone", "reason", "screen", "supports_health", "watchModel",
-            "watchProfileId"};
-        ElmcValue *context_values[] = {has_compass, has_microphone, reason, screen, supports_health,
-                                       watch_model, watch_profile_id};
+        ElmcValue *context_values[] = {reason, watch_model, watch_profile_id, screen, has_microphone,
+                                       has_compass, supports_health};
         ElmcValue *context = NULL;
-        if (elmc_record_new(&context, 7, context_names, context_values) != RC_SUCCESS) return NULL;
+        if (elmc_record_new_values(&context, 7, context_values) != RC_SUCCESS) return NULL;
         elmc_release(reason);
         elmc_release(screen);
         elmc_release(watch_model);

@@ -4042,6 +4042,12 @@ static int launch_reason_to_elm_tag(AppLaunchReason launch) {
   return (int)launch;
 }
 
+/* Pebble.Platform union constructor tags (bundled elmc IR contract). */
+#define ELMC_PLATFORM_DISPLAY_SHAPE_RECTANGULAR 1
+#define ELMC_PLATFORM_DISPLAY_SHAPE_ROUND 2
+#define ELMC_PLATFORM_COLOR_CAPABILITY_BLACK_WHITE 1
+#define ELMC_PLATFORM_COLOR_CAPABILITY_COLOR 2
+
 static GRect compile_display_bounds(void) {
 #ifdef PBL_DISPLAY_WIDTH
   const int16_t compile_w = PBL_DISPLAY_WIDTH;
@@ -4340,13 +4346,13 @@ static ElmcValue *build_launch_context(AppLaunchReason launch) {
 
   ElmcValue *screen_width = elmc_new_int_take(bounds.size.w);
   ElmcValue *screen_height = elmc_new_int_take(bounds.size.h);
-  /* DisplayShape constructor tags (Round=2, Rectangular=1) match elmc codegen. */
-  ElmcValue *screen_shape = elmc_new_int_take(PBL_IF_ROUND_ELSE(2, 1));
-  ElmcValue *screen_color_mode = elmc_new_string_take(PBL_IF_COLOR_ELSE("Color", "BlackWhite"));
-  /* LaunchScreen field order matches Pebble.Platform (width, height, shape, colorMode). */
-  const char *screen_names[] = {"width", "height", "shape", "color_mode"};
+  ElmcValue *screen_shape = elmc_new_int_take(
+      PBL_IF_ROUND_ELSE(ELMC_PLATFORM_DISPLAY_SHAPE_ROUND, ELMC_PLATFORM_DISPLAY_SHAPE_RECTANGULAR));
+  ElmcValue *screen_color_mode = elmc_new_int_take(
+      PBL_IF_COLOR_ELSE(ELMC_PLATFORM_COLOR_CAPABILITY_COLOR, ELMC_PLATFORM_COLOR_CAPABILITY_BLACK_WHITE));
+  /* Pebble.Platform.LaunchScreen: width, height, shape, colorMode (indices 0..3). */
   ElmcValue *screen_values[] = {screen_width, screen_height, screen_shape, screen_color_mode};
-  ElmcValue *screen = elmc_record_new_static_take_value(4, screen_names, screen_values);
+  ElmcValue *screen = elmc_record_new_values_take_value(4, screen_values);
 
   ElmcValue *reason = elmc_new_int_take(launch_reason_to_elm_tag(launch));
   ElmcValue *watch_model = elmc_new_string_take("");
@@ -4372,12 +4378,11 @@ static ElmcValue *build_launch_context(AppLaunchReason launch) {
       0
 #endif
   );
-  const char *context_names[] = {
-      "has_compass", "has_microphone", "reason", "screen", "supports_health", "watchModel",
-      "watchProfileId"};
-  ElmcValue *context_values[] = {has_compass, has_microphone, reason, screen, supports_health,
-                                 watch_model, watch_profile_id};
-  ElmcValue *context = elmc_record_new_static_take_value(7, context_names, context_values);
+  /* Pebble.Platform.LaunchContext: reason, watchModel, watchProfileId, screen,
+     hasMicrophone, hasCompass, supportsHealth (indices 0..6). */
+  ElmcValue *context_values[] = {reason, watch_model, watch_profile_id, screen, has_microphone,
+                                 has_compass, supports_health};
+  ElmcValue *context = elmc_record_new_values_take_value(7, context_values);
   ELMC_PEBBLE_TRACE_EXIT("build_launch_context");
   return context;
 }
