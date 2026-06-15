@@ -9,6 +9,7 @@ These rules apply to all code changes in this repository.
 
 - No one-off hacks, compatibility shims, or "special case for this sample/template" logic.
 - No behavior based on specific project names, template names, file paths, or app-specific constructor names.
+- **No assumptions about user-chosen names in app Elm** — see [Msg and Cmd wiring](#msg-and-cmd-wiring-no-name-guessing) below.
 - No field-name guessing heuristics tied to domain words (for example: hour/minute/watchface/weather/logo).
 - No regex/string parsing of debug labels to recover semantic arguments (for example parsing coordinates/text out of a label string).
 - No operation inference from free-form message text fragments; operations must come from declared constructors/contracts.
@@ -17,6 +18,44 @@ These rules apply to all code changes in this repository.
 - Fallback logic must be generic and capability-based (shape/type/contract), never app-specific.
 - If data cannot be resolved from the contract, surface it as unmapped/unsupported instead of guessing.
 - Keep implementation names generic when logic is generic; use domain-specific names only for domain-specific behavior.
+
+## Msg and Cmd wiring (no name guessing)
+
+The toolchain must **never** infer runtime behavior from guessed `Msg` / `Sub` constructor names in app Elm.
+
+**Forbidden**
+
+- Hardcoded constructor-name lists (for example `pick_tag(msg_constructors, ["CurrentDateTime", "GotCurrentDateTime"])`).
+- Shim macros like `ELMC_PEBBLE_MSG_*_TARGET` derived from “convention” names instead of the call site.
+- Ignoring the `toMsg` / callback argument on `Pebble.Cmd.*`, kernel stubs, or subscriptions when lowering to C.
+- Scanning `Msg` union names to pick a “likely” target when the app passed a different constructor at the call site.
+- Requiring apps to rename constructors (`CurrentDateTime`, `GotBatteryLevel`, `HourChanged`, etc.) so platform glue recognizes them.
+
+**Required**
+
+- **Encode the `Msg` constructor tag in the `Cmd` (or `Sub`) value** at the call site — same pattern as `storageReadInt`, `Random.generate`, and `constructor_tag_expr(to_msg)` in encoded cmds.
+- If indirection is needed, use an **explicit mapping table** keyed by declared contract metadata (command kind + payload shape), never by free-form constructor-name heuristics.
+- Platform/runtime dispatch reads the tag (and payload layout) from the queued value; it does not consult parallel name-guess tables.
+- When codegen cannot resolve the callback from IR, emit **unsupported/unmapped** — do not fall back to a name list.
+
+**Examples**
+
+- Bad: `getCurrentDateTime` lowers to command kind only; `ELMC_PEBBLE_MSG_CURRENT_DATE_TIME_TARGET` baked from `["CurrentDateTime", "GotCurrentDateTime"]`.
+- Bad: hour/minute events wired only if the app named variants `HourChanged` / `MinuteChanged`.
+- Good: `PebbleCmd.getCurrentDateTime TimeUpdate` encodes `TimeUpdate`’s constructor tag in the cmd tuple; runtime dispatches that tag with the `CurrentDateTime` record payload.
+- Good: subscription batch entries carry the tag chosen in `PebbleEvents.onHourChange Tick` from IR, not from a template naming cheat sheet.
+
+Legacy name-list shims are **bugs to remove**, not patterns to extend. New Pebble/cmd/subscription paths must encode tags at the call site.
+
+## Import Aliases and Name Resolution
+
+Import aliases (`import Pebble.Platform as Platform`, `PebblePlatform`, etc.) are **app-specific**. Generic compiler, IR, dead-code, and codegen code must not encode them.
+
+- Resolve aliases and unqualified imports **once** during lowering (`ElmEx.IR.ImportResolution` / lowerer), not in dead-code, reachability, codegen, or runtime adapters.
+- After lowering, IR and all downstream passes must use **fully qualified** `Module.name` targets (for example `Pebble.Platform.displayShapeIsRound`, not `Platform.displayShapeIsRound`).
+- Do not add alias maps, alias candidate lists, or “try these module prefixes” logic in generic modules.
+- Do not branch on short module names (`Platform`, `Ui`, `Cmd`) unless they are the canonical module identity from the contract, not a user-chosen alias.
+- Kernel/platform modules keep their real names (for example `Platform.worker` from `import Platform` is not `Pebble.Platform.worker`).
 
 ## Required When Changing Runtime Paths
 
@@ -28,5 +67,10 @@ These rules apply to all code changes in this repository.
 
 - Bad: `if project_slug == "wf-analog" do ... end`
 - Bad: `if key contains "hour" then ...`
+- Bad: `@pebble_qualified_aliases %{"Platform" => "Pebble.Platform", ...}` in `DeadCode`, codegen `Util`, or reachability.
+- Bad: `special_value_from_target("Platform.displayShapeIsRound", ...)` delegating to a Pebble-qualified name.
+- Bad: `IRAnalysis.pick_tag(msg_constructors, ["CurrentDateTime", "GotCurrentDateTime"])` for `getCurrentDateTime` dispatch.
 - Good: add `CurrentDateTime` payload type and map by declared fields.
+- Good: `encoded_cmd_expr(..., [constructor_tag_expr(to_msg)], ...)` so any `Msg` name the app uses is preserved in the cmd.
 - Good: dispatch by constructor/contract metadata, not by template identity.
+- Good: normalize call targets in the lowerer; dead-code and codegen match `Pebble.Platform.*` as stored in IR.

@@ -4,6 +4,7 @@ defmodule Ide.Debugger.Types do
   """
 
   alias ElmEx.DebuggerContract.Payload
+  alias Ide.CompanionProtocol.WireSchema
   alias Ide.Debugger.Protocol.{ConstructorValue, Event, Schema}
   alias Ide.Debugger.RuntimeArtifacts.Types, as: RuntimeArtifactsTypes
 
@@ -211,16 +212,21 @@ defmodule Ide.Debugger.Types do
 
   @type protocol_wire_type :: Schema.wire_type()
 
+  @type protocol_wire_slot :: Schema.wire_slot()
+
+  @type protocol_key_ids :: WireSchema.key_ids()
+
   @type protocol_ctor_value :: ConstructorValue.t() | ConstructorValue.wire_value()
 
-  @type protocol_schema_message :: Schema.message() | map()
+  @type protocol_schema_message :: Schema.message() | Schema.runtime_message()
 
-  @type protocol_message_wire_value :: protocol_ctor_value() | map() | String.t() | nil
+  @type protocol_message_wire_value ::
+          protocol_ctor_value() | wire_map() | String.t() | nil
 
   @type protocol_wire_scalar :: String.t() | integer() | float() | boolean()
 
   @type protocol_wire_arg ::
-          protocol_ctor_value() | protocol_wire_scalar() | tuple() | map() | nil
+          protocol_ctor_value() | protocol_wire_scalar() | tuple() | wire_map() | nil
 
   @type protocol_wire_normalize_input :: protocol_wire_arg()
 
@@ -229,6 +235,8 @@ defmodule Ide.Debugger.Types do
   @type debugger_contract :: Payload.wire_payload()
 
   @type elm_introspect :: debugger_contract()
+
+  @type elmx_manifest :: wire_map()
 
   @type inner_runtime_model :: InnerRuntimeModel.t() | InnerRuntimeModel.wire_map()
 
@@ -248,14 +256,14 @@ defmodule Ide.Debugger.Types do
 
   @type wire_scalar :: String.t() | integer() | float() | boolean() | nil
 
-  @type wire_input :: wire_scalar() | list() | map()
+  @type wire_input :: Elmx.Types.wire_input()
 
   @type wire_map :: %{optional(String.t()) => wire_input(), optional(atom()) => wire_input()}
 
   @type companion_bridge_payload ::
           boolean()
-          | map()
-          | [map()]
+          | wire_map()
+          | [wire_map()]
           | String.t()
           | integer()
           | nil
@@ -301,20 +309,20 @@ defmodule Ide.Debugger.Types do
           optional(:ok_result_variant) => String.t()
         }
 
-  @type protocol_metadata_value :: wire_scalar() | map() | nil
+  @type protocol_metadata_value :: wire_scalar() | wire_map() | nil
 
-  @type phone_to_watch_message_value :: protocol_ctor_value() | map()
+  @type phone_to_watch_message_value :: protocol_ctor_value() | wire_map()
 
   @type phone_to_watch_payload :: subscription_payload() | boolean() | String.t()
 
-  @type elmc_wire_ctor_call :: map()
+  @type elmc_wire_ctor_call :: wire_ctor()
 
-  @type elmc_wire_ctor_value :: map()
+  @type elmc_wire_ctor_value :: wire_ctor()
 
   @type simulator_command_input ::
-          elmc_wire_ctor_value() | elmc_wire_ctor_call() | wire_scalar() | map()
+          elmc_wire_ctor_value() | elmc_wire_ctor_call() | wire_scalar() | wire_map()
 
-  @type subscription_row_input :: DisabledSubscription.wire_map() | map()
+  @type subscription_row_input :: DisabledSubscription.wire_map() | wire_map()
 
   @type runtime_model_patch :: %{optional(String.t()) => wire_input()}
 
@@ -362,18 +370,112 @@ defmodule Ide.Debugger.Types do
 
   @type device_preview :: nil | boolean() | String.t() | device_preview_map()
 
-  @type elm_maybe :: protocol_ctor_value() | map() | nil
+  @type elm_maybe :: protocol_ctor_value() | wire_map() | nil
 
   @type protocol_inbound_row :: %{
-          optional(String.t()) => String.t() | map() | list() | nil,
-          optional(atom()) => String.t() | map() | list() | nil
+          optional(String.t()) => String.t() | wire_map() | list() | nil,
+          optional(atom()) => String.t() | wire_map() | list() | nil
         }
 
-  @type subscription_payload :: map() | protocol_ctor_value() | wire_scalar()
+  @type subscription_payload :: wire_map() | protocol_ctor_value() | wire_scalar()
 
-  @type view_output_node :: wire_map()
+  @type view_output_row :: Elmx.Types.view_output_row()
 
-  @type view_output_tree :: wire_map()
+  @type view_output_node :: view_output_row() | Elmx.Types.view_output_tree()
+
+  @type view_output_tree :: Elmx.Types.view_output_tree()
+
+  @type elm_msg :: Elmx.Types.elm_msg()
+
+  @type json_value :: Elmx.Types.json_value()
+
+  @type runtime_protocol_event :: Elmx.Types.protocol_event()
+
+  @type comparable :: Elmx.Types.comparable()
+
+  @type wire_cmd :: Elmx.Types.wire_cmd()
+
+  @type wire_value :: Elmx.Types.wire_value()
+
+  @type elmx_executor_request :: Elmx.Types.executor_request()
+
+  @type elmx_execution_payload :: Elmx.Types.execution_payload()
+
+  @type elmx_view_preview_payload :: Elmx.Types.view_preview_payload()
+
+  @type elmx_execution_error :: Elmx.Types.execution_error()
+
+  @type elmx_runtime_model :: Elmx.Types.runtime_model()
+
+  @type elm_dict :: Elmx.Types.elm_dict()
+
+  @type elm_set :: Elmx.Types.elm_set()
+
+  @type elm_array :: Elmx.Types.elm_array()
+
+  @type elm_list :: Elmx.Types.elm_list()
+
+  @type elm_char_list :: Elmx.Types.elm_char_list()
+
+  @type ui_node :: Elmx.Types.ui_node()
+
+  @type ui_point :: Elmx.Types.ui_point()
+
+  @type ui_bounds :: Elmx.Types.ui_bounds()
+
+  @type ui_color :: Elmx.Types.ui_color()
+
+  @type ui_path :: Elmx.Types.ui_path()
+
+  @type string_like :: Elmx.Types.string_like()
+
+  @type launch_reason_like :: Elmx.Types.launch_reason_like()
+
+  @type view_shape_input :: Elmx.Types.view_shape_input()
+
+  @type render_op_input :: Elmx.Types.render_op_input()
+
+  @type numeric_input :: Elmx.Types.numeric_input()
+
+  @type maybe_like :: Elmx.Types.maybe_like()
+
+  @type result_like :: Elmx.Types.result_like()
+
+  @type json_object_pair :: Elmx.Types.json_object_pair()
+
+  @type storage_value_input :: Elmx.Types.storage_value_input()
+
+  @type elm_value :: Elmx.Types.elm_value()
+
+  @type wire_cmd_input :: Elmx.Types.wire_cmd_input()
+
+  @type data_log_tag :: Elmx.Types.data_log_tag()
+
+  @type subscription_mask_item :: Elmx.Types.subscription_mask_item()
+
+  @type display_shape_like :: Elmx.Types.display_shape_like()
+
+  @type elm_hof :: Elmx.Types.elm_hof()
+
+  @type color_mode_like :: Elmx.Types.color_mode_like()
+
+  @type json_decoder_spec :: Elmx.Types.json_decoder_spec()
+
+  @type compile_failure_detail :: Elmx.Types.compile_failure_detail()
+
+  @type parse_error :: :parse_error | :entry_not_found | atom() | String.t()
+
+  @type elm_tuple_like :: Elmx.Types.elm_tuple_like()
+
+  @type dict_entry_input :: Elmx.Types.dict_entry_input()
+
+  @type wire_ctor :: Elmx.Types.wire_ctor()
+
+  @type elmx_wire_map :: Elmx.Types.wire_map()
+
+  @type followup_row :: Elmx.Types.followup_row()
+
+  @type frame_tick_payload :: Elmx.Types.frame_tick_payload()
 
   @type runtime_step_result :: RuntimeStepResult.t() | RuntimeStepResult.wire_result()
 
@@ -385,11 +487,12 @@ defmodule Ide.Debugger.Types do
 
   @type fingerprint_compare_surface_row :: wire_map()
 
-  @type normalized_export_term :: map() | list() | wire_scalar()
+  @type normalized_export_term :: wire_scalar() | wire_map() | [normalized_export_term()]
 
-  @type static_task_result :: map() | integer() | {map(), map()}
+  @type static_task_result ::
+          protocol_ctor_value() | {protocol_ctor_value(), protocol_ctor_value()}
 
-  @type runtime_view_nodes :: [view_output_node()]
+  @type runtime_view_nodes :: [view_output_row()]
 
   @type auto_fire_candidate :: trigger_candidate()
 

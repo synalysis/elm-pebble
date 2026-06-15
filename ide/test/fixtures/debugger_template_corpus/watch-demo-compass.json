@@ -115,131 +115,94 @@
                 {
                   "children": [],
                   "color": 255,
-                  "kind": "clear",
-                  "label": "clear",
+                  "label": "",
                   "text": null,
                   "type": "clear"
                 },
                 {
-                  "bounds": {
-                    "h": 20,
-                    "text": null,
-                    "w": 136,
-                    "x": 4,
-                    "y": 8
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Compass demo",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 20,
+                  "label": "",
                   "text": "Compass demo",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 8
                 },
                 {
-                  "bounds": {
-                    "h": 20,
-                    "text": null,
-                    "w": 136,
-                    "x": 4,
-                    "y": 36
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "180 deg",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 20,
+                  "label": "",
                   "text": "180 deg",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 36
                 },
                 {
-                  "bounds": {
-                    "h": 20,
-                    "text": null,
-                    "w": 136,
-                    "x": 4,
-                    "y": 60
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Valid",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 20,
+                  "label": "",
                   "text": "Valid",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 60
                 },
                 {
-                  "bounds": {
-                    "h": 20,
-                    "text": null,
-                    "w": 136,
-                    "x": 4,
-                    "y": 84
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "0",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 20,
+                  "label": "",
                   "text": "0",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 84
                 },
                 {
-                  "bounds": {
-                    "h": 24,
-                    "text": null,
-                    "w": 136,
-                    "x": 4,
-                    "y": 108
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Select: peek heading",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 24,
+                  "label": "",
                   "text": "Select: peek heading",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 108
                 }
               ],
-              "id": "1",
-              "kind": "canvasLayer",
+              "id": 1,
               "label": "",
               "text": null,
               "type": "canvasLayer"
             }
           ],
-          "id": "1",
-          "kind": "window",
+          "id": 1,
           "label": "",
           "text": null,
           "type": "window"
         }
       ],
-      "kind": "windowStack",
       "label": "",
       "text": null,
       "type": "windowStack"
     }
   },
   "runtime_model": {
-    "colorMode": {
-      "args": [],
-      "ctor": "BlackWhite"
-    },
-    "displayShape": {
-      "args": [],
-      "ctor": "Rectangular"
-    },
     "hasCompass": true,
     "heading": {
       "args": [
@@ -252,8 +215,6 @@
     },
     "refreshes": 0,
     "runtime_view_output": [],
-    "screenH": 168,
-    "screenW": 144,
     "timeString": null
   },
   "template": "watch-demo-compass",
@@ -264,48 +225,7 @@
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
-    "last_source": "module Main exposing (main)\n\nimport Json.Decode as Decode\nimport Pebble.Button as Button\nimport Pebble.Compass as Compass\nimport Pebble.Events as Events\nimport Pebble.Platform as Platform\nimport Pebble.Ui as Ui\nimport Pebble.Ui.Color as Color\nimport Pebble.Ui.Resources as Resources\n\n\ntype alias Model =\n    { hasCompass : Bool\n    , heading : Maybe Compass.Heading\n    , refreshes : Int\n    }\n\n\ntype Msg\n    = SelectPressed\n    | GotHeading (Result Compass.Error Compass.Heading)\n    | HeadingChanged Compass.Heading\n\n\ninit : Platform.LaunchContext -> ( Model, Cmd Msg )\ninit context =\n    ( { hasCompass = context.hasCompass\n      , heading = Nothing\n      , refreshes = 0\n      }\n    , if context.hasCompass then\n          Compass.current GotHeading\n\n      else\n          Cmd.none\n    )\n\n\nupdate : Msg -> Model -> ( Model, Cmd Msg )\nupdate msg model =\n    case msg of\n        SelectPressed ->\n            if model.hasCompass then\n                ( { model | refreshes = model.refreshes + 1 }, Compass.current GotHeading )\n\n            else\n                ( model, Cmd.none )\n\n        GotHeading result ->\n            case result of\n                Ok heading ->\n                    ( { model | heading = Just heading }, Cmd.none )\n\n                Err Compass.Unavailable ->\n                    ( { model | heading = Nothing }, Cmd.none )\n\n                Err Compass.InvalidReading ->\n                    ( { model | heading = Nothing }, Cmd.none )\n\n        HeadingChanged heading ->\n            ( { model | heading = Just heading }, Cmd.none )\n\n\nsubscriptions : Model -> Sub Msg\nsubscriptions model =\n    if model.hasCompass then\n        Events.batch\n            [ Compass.onChange HeadingChanged\n            , Button.onPress Button.Select SelectPressed\n            ]\n\n    else\n        Events.batch []\n\n\nview : Model -> Ui.UiNode\nview model =\n    Ui.toUiNode\n        [ Ui.clear Color.white\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 8, w = 136, h = 20 } \"Compass demo\"\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 36, w = 136, h = 20 } (headingLabel model.heading model.hasCompass)\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 60, w = 136, h = 20 } (validLabel model.heading)\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 84, w = 136, h = 20 } (String.fromInt model.refreshes)\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 108, w = 136, h = 24 } \"Select: peek heading\"\n        ]\n\n\nheadingLabel : Maybe Compass.Heading -> Bool -> String\nheadingLabel maybeHeading hasCompass =\n    if not hasCompass then\n        \"No compass\"\n\n    else\n        case maybeHeading of\n            Nothing ->\n                \"--\"\n\n            Just heading ->\n                if heading.isValid then\n                    String.fromInt (round heading.degrees) ++ \" deg\"\n\n                else\n                    \"Invalid\"\n\n\nvalidLabel : Maybe Compass.Heading -> String\nvalidLabel maybeHeading =\n    case maybeHeading of\n        Nothing ->\n            \"Waiting\"\n\n        Just heading ->\n            if heading.isValid then\n                \"Valid\"\n\n            else\n                \"Invalid\"\n\n\nround : Float -> Int\nround value =\n    if value >= 0 then\n        floor (value + 0.5)\n\n    else\n        ceiling (value - 0.5)\n\n\nmain : Program Decode.Value Model Msg\nmain =\n    Platform.application\n        { init = init\n        , update = update\n        , view = view\n        , subscriptions = subscriptions\n        }\n",
-    "launch_context": {
-      "has_compass": true,
-      "has_microphone": false,
-      "launch_reason": "LaunchUser",
-      "screen": {
-        "color_mode": "BlackWhite",
-        "height": 168,
-        "shape": "Rectangular",
-        "width": 144
-      },
-      "shape": "rect",
-      "supports_health": false,
-      "watch_model": "Aplite",
-      "watch_profile_id": "aplite"
-    },
-    "revision": "97140f37858b",
-    "runtime_execution": {
-      "compiler": "elmx",
-      "contract": "elmx.runtime_executor.v1",
-      "engine": "elmx_runtime_v1",
-      "execution_backend": "compiled_elixir",
-      "runtime_mode": "runtime_first",
-      "runtime_model_source": "step_message"
-    },
-    "runtime_execution_mode": "runtime_executed",
-    "runtime_known_messages": [
-      "SelectPressed",
-      "GotHeading",
-      "HeadingChanged"
-    ],
-    "runtime_message_cursor": 1,
-    "runtime_message_source": "runtime_followup",
     "runtime_model": {
-      "colorMode": {
-        "args": [],
-        "ctor": "BlackWhite"
-      },
-      "displayShape": {
-        "args": [],
-        "ctor": "Rectangular"
-      },
       "hasCompass": true,
       "heading": {
         "args": [
@@ -316,137 +236,9 @@
         ],
         "ctor": "Just"
       },
-      "refreshes": 0,
-      "runtime_view_output_model_sha256": "c72e72fd4c3ae2b25448a438e6155120d8b300cd6d8db348b3aeda24dfac04c5",
-      "screenH": 168,
-      "screenW": 144
+      "refreshes": 0
     },
-    "runtime_model_source": "step_message",
-    "runtime_update_branches": [
-      "SelectPressed",
-      "GotHeading result",
-      "HeadingChanged heading"
-    ],
-    "runtime_view_output": [
-      {
-        "color": 255,
-        "kind": "clear",
-        "text": null
-      },
-      {
-        "font_id": 0,
-        "h": 20,
-        "kind": "text",
-        "text": "Compass demo",
-        "text_align": "center",
-        "text_overflow": "word_wrap",
-        "w": 136,
-        "x": 4,
-        "y": 8
-      },
-      {
-        "font_id": 0,
-        "h": 20,
-        "kind": "text",
-        "text": "180 deg",
-        "text_align": "center",
-        "text_overflow": "word_wrap",
-        "w": 136,
-        "x": 4,
-        "y": 36
-      },
-      {
-        "font_id": 0,
-        "h": 20,
-        "kind": "text",
-        "text": "Valid",
-        "text_align": "center",
-        "text_overflow": "word_wrap",
-        "w": 136,
-        "x": 4,
-        "y": 60
-      },
-      {
-        "font_id": 0,
-        "h": 20,
-        "kind": "text",
-        "text": "0",
-        "text_align": "center",
-        "text_overflow": "word_wrap",
-        "w": 136,
-        "x": 4,
-        "y": 84
-      },
-      {
-        "font_id": 0,
-        "h": 24,
-        "kind": "text",
-        "text": "Select: peek heading",
-        "text_align": "center",
-        "text_overflow": "word_wrap",
-        "w": 136,
-        "x": 4,
-        "y": 108
-      }
-    ],
-    "screen_height": 168,
-    "screen_width": 144,
-    "simulator_settings": {
-      "calendar_events": [],
-      "storage_values": {},
-      "charging": false,
-      "timezone_id": "Europe/Berlin",
-      "compass_valid": true,
-      "use_simulated_time": true,
-      "simulated_date": "2026-05-27",
-      "compass_heading_deg": 0,
-      "latitude": 48.14,
-      "companion_timeline_token": "demo-timeline-token",
-      "notifications_enabled": true,
-      "health_steps_today": 9100,
-      "language": "en",
-      "connected": true,
-      "preferences": {},
-      "battery_percent": 88,
-      "dictation_error": "",
-      "environment": {
-        "moon": {
-          "moonriseMin": 900,
-          "moonsetMin": 300,
-          "phaseE6": 500000
-        },
-        "sun": {
-          "polarDay": false,
-          "sunriseMin": 420,
-          "sunsetMin": 1200
-        },
-        "tide": null
-      },
-      "timezone_offset_min": 0,
-      "weather": {
-        "condition": "clear",
-        "humidityPercent": 50,
-        "pressureHpa": 1013,
-        "temperatureC": 21,
-        "windKph": 8
-      },
-      "region": "US",
-      "clock_24h": true,
-      "longitude": 11.58,
-      "vibe_pattern_ms": [],
-      "accuracy": 25.0,
-      "app_in_focus": true,
-      "locale": "en-US",
-      "network_online": true,
-      "timeline_peek": false,
-      "health_steps": 4200,
-      "dictation_transcript": "",
-      "simulated_time": "08:53:00",
-      "quiet_hours": false
-    },
-    "source_root": "watch",
-    "status": "idle",
-    "supports_color": false,
+    "runtime_view_output": [],
     "timeString": null,
     "watch_profile_id": "aplite"
   }

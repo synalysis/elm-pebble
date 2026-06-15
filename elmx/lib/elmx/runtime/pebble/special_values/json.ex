@@ -1,6 +1,8 @@
 defmodule Elmx.Runtime.Pebble.SpecialValues.Json do
   @moduledoc false
 
+  @behaviour Elmx.Runtime.Pebble.SpecialValues.Dispatcher
+
   alias Elmx.Types
 
   @spec rewrite(String.t(), Types.ir_arg_list()) :: Types.dispatch_result()

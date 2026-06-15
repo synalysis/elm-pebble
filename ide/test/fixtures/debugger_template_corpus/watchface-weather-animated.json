@@ -229,10 +229,6 @@
       "args": [],
       "ctor": "Nothing"
     },
-    "colorMode": {
-      "args": [],
-      "ctor": "Color"
-    },
     "condition": {
       "args": [
         {
@@ -241,10 +237,6 @@
         }
       ],
       "ctor": "Just"
-    },
-    "displayShape": {
-      "args": [],
-      "ctor": "Rectangular"
     },
     "displayedCondition": {
       "args": [
@@ -288,7 +280,12 @@
       ],
       "ctor": "Just"
     },
-    "timeString": null
+    "timeString": null,
+    "transitionTicksRemaining": {
+      "args": [],
+      "ctor": "Nothing"
+    },
+    "warmupTicksRemaining": 3
   },
   "template": "watchface-weather-animated",
   "timeline_init_messages": [
@@ -296,55 +293,15 @@
     "update:FromPhone {\"args\":[],\"ctor\":\"Fog\"}",
     "update:FromPhone 18",
     "update:CurrentDateTime {\"day\":27,\"dayOfWeek\":{\"args\":[],\"ctor\":\"Wednesday\"},\"hour\":8,\"minute\":53,\"month\":5,\"second\":0,\"utcOffsetMinutes\":0,\"year\":2026}",
-    "update:EnableWeatherTransitions {\"args\":[],\"ctor\":\"EnableWeatherTransitions\"}",
     "init:init"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
-    "last_source": "module Main exposing (main)\n\nimport Companion.Types exposing (Location(..), PhoneToWatch(..), Temperature(..), WatchToPhone(..), WeatherCondition(..))\nimport Companion.Watch as CompanionWatch\nimport Json.Decode as Decode\nimport Pebble.Cmd as Cmd\nimport Pebble.Events as Events\nimport Pebble.Platform as Platform\nimport Pebble.Time as Time\nimport Pebble.Ui as Ui\nimport Pebble.Ui.Color as Color\nimport Pebble.Ui.Resources as Resources\n\n\ntype alias Model =\n    { now : Maybe Time.CurrentDateTime\n    , temperature : Maybe Temperature\n    , condition : Maybe WeatherCondition\n    , displayedCondition : Maybe WeatherCondition\n    , activeTransition : Maybe Resources.AnimatedVector\n    , suppressWeatherTransitions : Bool\n    , screenW : Int\n    , screenH : Int\n    }\n\n\ntype Msg\n    = CurrentDateTime Time.CurrentDateTime\n    | FromPhone PhoneToWatch\n    | MinuteChanged Int\n    | TransitionFinished\n    | EnableWeatherTransitions\n\n\ninit : Platform.LaunchContext -> ( Model, Cmd Msg )\ninit context =\n    ( { now = Nothing\n      , temperature = Nothing\n      , condition = Nothing\n      , displayedCondition = Nothing\n      , activeTransition = Nothing\n      , suppressWeatherTransitions = True\n      , screenW = context.screen.width\n      , screenH = context.screen.height\n      }\n    , Cmd.batch\n        [ Time.currentDateTime CurrentDateTime\n        , CompanionWatch.sendWatchToPhone (RequestWeather CurrentLocation)\n        , Cmd.timerAfter weatherTransitionWarmupMs EnableWeatherTransitions\n        ]\n    )\n\n\nupdate : Msg -> Model -> ( Model, Cmd Msg )\nupdate msg model =\n    case msg of\n        CurrentDateTime value ->\n            ( { model | now = Just value }, Cmd.none )\n\n        FromPhone message ->\n            updateFromPhone message model\n\n        MinuteChanged _ ->\n            ( model\n            , Cmd.batch\n                [ Time.currentDateTime CurrentDateTime\n                , CompanionWatch.sendWatchToPhone (RequestWeather CurrentLocation)\n                ]\n            )\n\n        TransitionFinished ->\n            ( { model\n                | displayedCondition = model.condition\n                , activeTransition = Nothing\n              }\n            , Cmd.none\n            )\n\n        EnableWeatherTransitions ->\n            ( { model | suppressWeatherTransitions = False }, Cmd.none )\n\n\nupdateFromPhone : PhoneToWatch -> Model -> ( Model, Cmd Msg )\nupdateFromPhone message model =\n    case message of\n        ProvideTemperature temperature ->\n            ( { model | temperature = Just temperature }, Cmd.none )\n\n        ProvideCondition newCondition ->\n            let\n                nextModel =\n                    { model | condition = Just newCondition }\n            in\n            case model.displayedCondition of\n                Nothing ->\n                    ( { nextModel | displayedCondition = Just newCondition }, Cmd.none )\n\n                Just displayed ->\n                    if newCondition == displayed then\n                        ( nextModel, Cmd.none )\n\n                    else if model.suppressWeatherTransitions || model.activeTransition /= Nothing then\n                        ( { nextModel | displayedCondition = Just newCondition, activeTransition = Nothing }\n                        , Cmd.none\n                        )\n\n                    else\n                        case transitionVector displayed newCondition of\n                            Nothing ->\n                                ( { nextModel | displayedCondition = Just newCondition }, Cmd.none )\n\n                            Just vector ->\n                                ( { nextModel | activeTransition = Just vector }\n                                , Cmd.timerAfter transitionDurationMs TransitionFinished\n                                )\n\n\nsubscriptions : Model -> Sub Msg\nsubscriptions _ =\n    Events.batch\n        [ Events.onMinuteChange MinuteChanged\n        , CompanionWatch.onPhoneToWatch FromPhone\n        ]\n\n\nview : Model -> Ui.UiNode\nview model =\n    let\n        cx =\n            model.screenW // 2\n\n        timeY =\n            (model.screenH // 2) - 28\n\n        iconOrigin =\n            { x = cx - (iconSize // 2), y = (model.screenH * 3) // 4 - (iconSize // 2) }\n    in\n    [ Ui.clear Color.white\n    , drawCentered model Color.black timeY 40 (timeString model)\n    , drawCentered model Color.black (timeY + 36) 18 (weatherString model)\n    ]\n        ++ weatherIconOps model iconOrigin\n        |> Ui.toUiNode\n\n\nweatherIconOps : Model -> Ui.Point -> List Ui.RenderOp\nweatherIconOps model origin =\n    if model.suppressWeatherTransitions then\n        []\n\n    else\n        case ( model.temperature, model.condition ) of\n            ( Just _, Just _ ) ->\n                case model.activeTransition of\n                    Just vector ->\n                        [ Ui.drawVectorSequenceAt vector origin ]\n\n                    Nothing ->\n                        case model.displayedCondition of\n                            Nothing ->\n                                []\n\n                            Just condition ->\n                                [ Ui.drawVectorAt (conditionVector condition) origin ]\n\n            _ ->\n                []\n\n\ndrawCentered : Model -> Color.Color -> Int -> Int -> String -> Ui.RenderOp\ndrawCentered model textColor y height value =\n    Ui.group\n        (Ui.context\n            [ Ui.textColor textColor ]\n            [ Ui.text Resources.DefaultFont (Ui.alignCenter Ui.defaultTextOptions) { x = 0, y = y, w = model.screenW, h = height } value ]\n        )\n\n\ntimeString : Model -> String\ntimeString model =\n    case model.now of\n        Nothing ->\n            \"--:--\"\n\n        Just currentDateTime ->\n            pad2 currentDateTime.hour ++ \":\" ++ pad2 currentDateTime.minute\n\n\nweatherString : Model -> String\nweatherString model =\n    case ( model.temperature, model.condition ) of\n        ( Just temperature, Just condition ) ->\n            temperatureString temperature ++ \" \" ++ conditionString condition\n\n        _ ->\n            \"Loading...\"\n\n\ntemperatureString : Temperature -> String\ntemperatureString temperature =\n    case temperature of\n        Celsius value ->\n            String.fromInt value ++ \"C\"\n\n        Fahrenheit value ->\n            String.fromInt value ++ \"F\"\n\n\nconditionString : WeatherCondition -> String\nconditionString condition =\n    case condition of\n        Clear ->\n            \"Clear\"\n\n        Cloudy ->\n            \"Cloudy\"\n\n        Fog ->\n            \"Fog\"\n\n        Drizzle ->\n            \"Drizzle\"\n\n        Rain ->\n            \"Rain\"\n\n        Snow ->\n            \"Snow\"\n\n        Showers ->\n            \"Showers\"\n\n        Storm ->\n            \"Storm\"\n\n        UnknownWeather ->\n            \"Weather\"\n\n\nconditionVector : WeatherCondition -> Resources.StaticVector\nconditionVector condition =\n    case condition of\n        Clear ->\n            Resources.VectorStaticWeatherClear\n\n        Cloudy ->\n            Resources.VectorStaticWeatherCloudy\n\n        Fog ->\n            Resources.VectorStaticWeatherFog\n\n        Drizzle ->\n            Resources.VectorStaticWeatherDrizzle\n\n        Rain ->\n            Resources.VectorStaticWeatherRain\n\n        Snow ->\n            Resources.VectorStaticWeatherSnow\n\n        Showers ->\n            Resources.VectorStaticWeatherShowers\n\n        Storm ->\n            Resources.VectorStaticWeatherStorm\n\n        UnknownWeather ->\n            Resources.VectorStaticWeatherUnknown\n\n\ntransitionVector : WeatherCondition -> WeatherCondition -> Maybe Resources.AnimatedVector\ntransitionVector from to =\n    if from == to then\n        Nothing\n\n    else\n        case from of\n            Clear ->\n                case to of\n                    Cloudy ->\n                        Just Resources.VectorAnimatedTransitionClearToCloudy\n\n                    Fog ->\n                        Just Resources.VectorAnimatedTransitionClearToFog\n\n                    Drizzle ->\n                        Just Resources.VectorAnimatedTransitionClearToDrizzle\n\n                    Rain ->\n                        Just Resources.VectorAnimatedTransitionClearToRain\n\n                    Snow ->\n                        Just Resources.VectorAnimatedTransitionClearToSnow\n\n                    Showers ->\n                        Just Resources.VectorAnimatedTransitionClearToShowers\n\n                    Storm ->\n                        Just Resources.VectorAnimatedTransitionClearToStorm\n\n                    _ ->\n                        Nothing\n\n            Cloudy ->\n                case to of\n                    Clear ->\n                        Just Resources.VectorAnimatedTransitionCloudyToClear\n\n                    Fog ->\n                        Just Resources.VectorAnimatedTransitionCloudyToFog\n\n                    Drizzle ->\n                        Just Resources.VectorAnimatedTransitionCloudyToDrizzle\n\n                    Rain ->\n                        Just Resources.VectorAnimatedTransitionCloudyToRain\n\n                    Snow ->\n                        Just Resources.VectorAnimatedTransitionCloudyToSnow\n\n                    Showers ->\n                        Just Resources.VectorAnimatedTransitionCloudyToShowers\n\n                    Storm ->\n                        Just Resources.VectorAnimatedTransitionCloudyToStorm\n\n                    _ ->\n                        Nothing\n\n            Fog ->\n                case to of\n                    Clear ->\n                        Just Resources.VectorAnimatedTransitionFogToClear\n\n                    Cloudy ->\n                        Just Resources.VectorAnimatedTransitionFogToCloudy\n\n                    Drizzle ->\n                        Just Resources.VectorAnimatedTransitionFogToDrizzle\n\n                    Rain ->\n                        Just Resources.VectorAnimatedTransitionFogToRain\n\n                    Snow ->\n                        Just Resources.VectorAnimatedTransitionFogToSnow\n\n                    Showers ->\n                        Just Resources.VectorAnimatedTransitionFogToShowers\n\n                    Storm ->\n                        Just Resources.VectorAnimatedTransitionFogToStorm\n\n                    _ ->\n                        Nothing\n\n            Drizzle ->\n                case to of\n                    Clear ->\n                        Just Resources.VectorAnimatedTransitionDrizzleToClear\n\n                    Cloudy ->\n                        Just Resources.VectorAnimatedTransitionDrizzleToCloudy\n\n                    Fog ->\n                        Just Resources.VectorAnimatedTransitionDrizzleToFog\n\n                    Rain ->\n                        Just Resources.VectorAnimatedTransitionDrizzleToRain\n\n                    Snow ->\n                        Just Resources.VectorAnimatedTransitionDrizzleToSnow\n\n                    Showers ->\n                        Just Resources.VectorAnimatedTransitionDrizzleToShowers\n\n                    Storm ->\n                        Just Resources.VectorAnimatedTransitionDrizzleToStorm\n\n                    _ ->\n                        Nothing\n\n            Rain ->\n                case to of\n                    Clear ->\n                        Just Resources.VectorAnimatedTransitionRainToClear\n\n                    Cloudy ->\n                        Just Resources.VectorAnimatedTransitionRainToCloudy\n\n                    Fog ->\n                        Just Resources.VectorAnimatedTransitionRainToFog\n\n                    Drizzle ->\n                        Just Resources.VectorAnimatedTransitionRainToDrizzle\n\n                    Snow ->\n                        Just Resources.VectorAnimatedTransitionRainToSnow\n\n                    Showers ->\n                        Just Resources.VectorAnimatedTransitionRainToShowers\n\n                    Storm ->\n                        Just Resources.VectorAnimatedTransitionRainToStorm\n\n                    _ ->\n                        Nothing\n\n            Snow ->\n                case to of\n                    Clear ->\n                        Just Resources.VectorAnimatedTransitionSnowToClear\n\n                    Cloudy ->\n                        Just Resources.VectorAnimatedTransitionSnowToCloudy\n\n                    Fog ->\n                        Just Resources.VectorAnimatedTransitionSnowToFog\n\n                    Drizzle ->\n                        Just Resources.VectorAnimatedTransitionSnowToDrizzle\n\n                    Rain ->\n                        Just Resources.VectorAnimatedTransitionSnowToRain\n\n                    Showers ->\n                        Just Resources.VectorAnimatedTransitionSnowToShowers\n\n                    Storm ->\n                        Just Resources.VectorAnimatedTransitionSnowToStorm\n\n                    _ ->\n                        Nothing\n\n            Showers ->\n                case to of\n                    Clear ->\n                        Just Resources.VectorAnimatedTransitionShowersToClear\n\n                    Cloudy ->\n                        Just Resources.VectorAnimatedTransitionShowersToCloudy\n\n                    Fog ->\n                        Just Resources.VectorAnimatedTransitionShowersToFog\n\n                    Drizzle ->\n                        Just Resources.VectorAnimatedTransitionShowersToDrizzle\n\n                    Rain ->\n                        Just Resources.VectorAnimatedTransitionShowersToRain\n\n                    Snow ->\n                        Just Resources.VectorAnimatedTransitionShowersToSnow\n\n                    Storm ->\n                        Just Resources.VectorAnimatedTransitionShowersToStorm\n\n                    _ ->\n                        Nothing\n\n            Storm ->\n                case to of\n                    Clear ->\n                        Just Resources.VectorAnimatedTransitionStormToClear\n\n                    Cloudy ->\n                        Just Resources.VectorAnimatedTransitionStormToCloudy\n\n                    Fog ->\n                        Just Resources.VectorAnimatedTransitionStormToFog\n\n                    Drizzle ->\n                        Just Resources.VectorAnimatedTransitionStormToDrizzle\n\n                    Rain ->\n                        Just Resources.VectorAnimatedTransitionStormToRain\n\n                    Snow ->\n                        Just Resources.VectorAnimatedTransitionStormToSnow\n\n                    Showers ->\n                        Just Resources.VectorAnimatedTransitionStormToShowers\n\n                    _ ->\n                        Nothing\n\n            UnknownWeather ->\n                Nothing\n\n\niconSize : Int\niconSize =\n    48\n\n\ntransitionDurationMs : Int\ntransitionDurationMs =\n    900\n\n\nweatherTransitionWarmupMs : Int\nweatherTransitionWarmupMs =\n    2500\n\n\npad2 : Int -> String\npad2 value =\n    if value < 10 then\n        \"0\" ++ String.fromInt value\n\n    else\n        String.fromInt value\n\n\nmain : Program Decode.Value Model Msg\nmain =\n    Platform.watchface\n        { init = init\n        , update = update\n        , view = view\n        , subscriptions = subscriptions\n        }\n",
-    "launch_context": {
-      "has_compass": false,
-      "has_microphone": false,
-      "launch_reason": "LaunchUser",
-      "screen": {
-        "color_mode": "Color",
-        "height": 168,
-        "shape": "Rectangular",
-        "width": 144
-      },
-      "shape": "rect",
-      "supports_health": true,
-      "watch_model": "Basalt",
-      "watch_profile_id": "basalt"
-    },
-    "revision": "c82b6d8cefc4",
-    "runtime_execution": {
-      "compiler": "elmx",
-      "contract": "elmx.runtime_executor.v1",
-      "engine": "elmx_runtime_v1",
-      "execution_backend": "compiled_elixir",
-      "runtime_mode": "runtime_first",
-      "runtime_model_source": "step_message"
-    },
-    "runtime_execution_mode": "runtime_executed",
-    "runtime_known_messages": [
-      "CurrentDateTime",
-      "FromPhone",
-      "MinuteChanged",
-      "TransitionFinished",
-      "EnableWeatherTransitions"
-    ],
-    "runtime_message_cursor": 5,
-    "runtime_message_source": "subscription_trigger",
     "runtime_model": {
       "activeTransition": {
         "args": [],
         "ctor": "Nothing"
-      },
-      "colorMode": {
-        "args": [],
-        "ctor": "Color"
       },
       "condition": {
         "args": [
@@ -354,10 +311,6 @@
           }
         ],
         "ctor": "Just"
-      },
-      "displayShape": {
-        "args": [],
-        "ctor": "Rectangular"
       },
       "displayedCondition": {
         "args": [
@@ -386,7 +339,6 @@
         ],
         "ctor": "Just"
       },
-      "runtime_view_output_model_sha256": "950d41b56558efd6332f2282e58534717176df0cae3ca31b5c0a5a6077994e50",
       "screenH": 168,
       "screenW": 144,
       "suppressWeatherTransitions": false,
@@ -400,118 +352,14 @@
           }
         ],
         "ctor": "Just"
-      }
+      },
+      "transitionTicksRemaining": {
+        "args": [],
+        "ctor": "Nothing"
+      },
+      "warmupTicksRemaining": 3
     },
-    "runtime_model_source": "step_message",
-    "runtime_update_branches": [
-      "CurrentDateTime value",
-      "FromPhone message",
-      "MinuteChanged _",
-      "TransitionFinished",
-      "EnableWeatherTransitions"
-    ],
-    "runtime_view_output": [
-      {
-        "color": 255,
-        "kind": "clear",
-        "text": null
-      },
-      {
-        "color": 192,
-        "kind": "text_color",
-        "text": null
-      },
-      {
-        "font_id": 0,
-        "h": 40,
-        "kind": "text",
-        "text": "<TIME>",
-        "text_align": "center",
-        "text_overflow": "word_wrap",
-        "w": 144,
-        "x": 0,
-        "y": 56
-      },
-      {
-        "color": 192,
-        "kind": "text_color",
-        "text": null
-      },
-      {
-        "font_id": 0,
-        "h": 18,
-        "kind": "text",
-        "text": "18C Fog",
-        "text_align": "center",
-        "text_overflow": "word_wrap",
-        "w": 144,
-        "x": 0,
-        "y": 92
-      },
-      {
-        "kind": "vector_at",
-        "resource": "VectorStaticWeatherFog",
-        "text": null,
-        "vector_id": 3,
-        "x": 48,
-        "y": 102
-      }
-    ],
-    "screen_height": 168,
-    "screen_width": 144,
-    "simulator_settings": {
-      "calendar_events": [],
-      "storage_values": {},
-      "charging": false,
-      "timezone_id": "Europe/Berlin",
-      "compass_valid": true,
-      "use_simulated_time": true,
-      "simulated_date": "2026-05-27",
-      "compass_heading_deg": 0,
-      "latitude": 48.14,
-      "companion_timeline_token": "demo-timeline-token",
-      "notifications_enabled": true,
-      "health_steps_today": 9100,
-      "language": "en",
-      "connected": true,
-      "preferences": {},
-      "battery_percent": 88,
-      "dictation_error": "",
-      "environment": {
-        "moon": {
-          "moonriseMin": 900,
-          "moonsetMin": 300,
-          "phaseE6": 500000
-        },
-        "sun": {
-          "polarDay": false,
-          "sunriseMin": 420,
-          "sunsetMin": 1200
-        },
-        "tide": null
-      },
-      "timezone_offset_min": 0,
-      "weather": {
-        "condition": "fog",
-        "temperatureC": 18
-      },
-      "region": "US",
-      "clock_24h": true,
-      "longitude": 11.58,
-      "vibe_pattern_ms": [],
-      "accuracy": 25.0,
-      "app_in_focus": true,
-      "locale": "en-US",
-      "network_online": true,
-      "timeline_peek": false,
-      "health_steps": 4200,
-      "dictation_transcript": "",
-      "simulated_time": "08:53:00",
-      "quiet_hours": false
-    },
-    "source_root": "watch",
-    "status": "idle",
-    "supports_color": true,
+    "runtime_view_output": [],
     "timeString": null,
     "watch_profile_id": "basalt"
   }

@@ -13,7 +13,7 @@ defmodule Ide.Debugger.Types.Shell do
   @type t :: %{
           optional(:debugger_contract) => Payload.wire_payload(),
           optional(:elm_introspect) => Payload.wire_payload(),
-          optional(:elmx_manifest) => map(),
+          optional(:elmx_manifest) => Types.elmx_manifest(),
           optional(:elmx_revision) => String.t(),
           optional(:vector_resource_indices) => ArtifactTypes.resource_indices(),
           optional(:bitmap_resource_indices) => ArtifactTypes.resource_indices(),
@@ -21,5 +21,5 @@ defmodule Ide.Debugger.Types.Shell do
           optional(atom()) => Types.wire_input()
         }
 
-  @type wire_map :: t() | map()
+  @type wire_map :: t() | Types.wire_map()
 end

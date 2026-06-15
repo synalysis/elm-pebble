@@ -19,7 +19,7 @@ defmodule Ide.Debugger.Types.PackageCmdEventPayload do
           optional(String.t()) => Types.wire_input()
         }
 
-  @type wire_map :: t() | map()
+  @type wire_map :: t() | Types.wire_map()
 
   @spec from_static_task(String.t(), String.t(), String.t(), command_map()) :: t()
   def from_static_task(target, package, response_message, command)

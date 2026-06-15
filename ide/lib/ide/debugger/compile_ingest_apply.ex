@@ -4,10 +4,15 @@ defmodule Ide.Debugger.CompileIngestApply do
   alias Ide.Debugger.CompileIngest
   alias Ide.Debugger.Types
 
-  @type append_event_fn :: (Types.runtime_state(), String.t(), map() -> Types.runtime_state())
+  @type append_event_fn ::
+          (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() ->
+             Types.runtime_state())
 
   @type merge_artifacts_fn ::
-          (Types.runtime_state(), Types.surface_target() | nil, map() -> Types.runtime_state())
+          (Types.runtime_state(),
+           Types.surface_target() | nil,
+           Types.elm_introspect() ->
+             Types.runtime_state())
 
   @type host :: %{
           required(:append_event) => append_event_fn(),

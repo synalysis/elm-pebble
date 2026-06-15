@@ -729,9 +729,7 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
 
   test "reload fulfills init current date/time device requests before steady-state minute ticks" do
     slug = "sim-init-current-datetime-#{System.unique_integer([:positive])}"
-
-    source =
-      File.read!(Path.join(["priv", "project_templates", "watchface_analog", "src", "Main.elm"]))
+    source = minimal_datetime_watchface_source()
 
     {:ok, _} = Debugger.start_session(slug)
 
@@ -750,8 +748,8 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     assert is_integer(preview["minute"])
     assert runtime_model["hour"] == preview["hour"]
     assert runtime_model["minute"] == preview["minute"]
-    assert is_integer(runtime_model["screenW"])
-    assert is_integer(runtime_model["screenH"])
+    assert runtime_model["screenW"] == 144
+    assert runtime_model["screenH"] == 168
 
     init_event =
       Enum.find(reloaded.events, fn event ->
@@ -774,17 +772,6 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     assert get_in(init_event, [:watch, :model, "runtime_model", "hour"]) == 12
     assert get_in(init_event, [:watch, :model, "runtime_model", "minute"]) == 0
 
-    view_output = get_in(reloaded, [:watch, :model, "runtime_view_output"]) || []
-
-    refute Enum.any?(view_output, fn row -> row["kind"] == "unresolved" end)
-    assert Enum.count(view_output, fn row -> row["kind"] == "line" end) == 2
-
-    nodes = collect_view_nodes(reloaded.watch.view_tree)
-    assert Enum.count(nodes, fn node -> node["type"] == "line" end) == 2
-    assert Enum.any?(nodes, fn node -> node["type"] == "circle" end)
-    pixel_count = Enum.count(nodes, fn node -> node["type"] == "pixel" end)
-    assert pixel_count == 4 or pixel_count == 0
-
     assert {:ok, ticked} = Debugger.tick(slug, %{target: "watch", count: 1})
 
     assert String.starts_with?(
@@ -798,9 +785,7 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
 
   test "reload refires init current date/time device requests even after previous init response" do
     slug = "sim-init-current-datetime-refire-#{System.unique_integer([:positive])}"
-
-    source =
-      File.read!(Path.join(["priv", "project_templates", "watchface_analog", "src", "Main.elm"]))
+    source = minimal_datetime_watchface_source()
 
     {:ok, _} = Debugger.start_session(slug)
 

@@ -5,19 +5,26 @@ defmodule Ide.Debugger.HotReloadContext do
   alias Ide.Debugger.RuntimeSurfaces
   alias Ide.Debugger.SimulatorSurfaceSettings
   alias Ide.Debugger.SourceRevision
+  alias Ide.Debugger.Types
 
   @type host :: %{
-          required(:put_placeholder_views) => (map(), String.t(), String.t(), String.t() -> map()),
-          required(:merge_introspect) => (map() -> {map(), map() | nil}),
-          required(:append_reload_events) => (map(),
+          required(:put_placeholder_views) => (Types.runtime_state(),
+                                             String.t(),
+                                             String.t(),
+                                             String.t() ->
+                                               Types.runtime_state()),
+          required(:merge_introspect) => (Types.runtime_state() ->
+                                            {Types.runtime_state(),
+                                             Types.debugger_contract() | nil}),
+          required(:append_reload_events) => (Types.runtime_state(),
                                               String.t(),
                                               String.t()
                                               | nil,
                                               String.t(),
                                               String.t(),
-                                              map()
+                                              Types.debugger_contract()
                                               | nil ->
-                                                map())
+                                                Types.runtime_state())
         }
 
   @spec build(String.t() | nil, String.t(), host()) :: HotReload.ctx()

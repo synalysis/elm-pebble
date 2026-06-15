@@ -267,9 +267,6 @@ defmodule Ide.Debugger.DeviceData do
             end)
 
           if is_binary(kind), do: {:halt, kind}, else: :cont
-
-        _ ->
-          :cont
       end
     end)
   end
@@ -540,7 +537,7 @@ defmodule Ide.Debugger.DeviceData do
         []
       end
 
-    (update_requests ++ init_requests)
+    (update_requests ++ init_requests ++ got_supported_health_requests(model, current_ctor))
     |> Enum.reject(&health_metric_request_disabled?(model, &1))
     |> Enum.reject(fn req ->
       not is_binary(req.response_message) or req.response_message == "" or
@@ -561,6 +558,34 @@ defmodule Ide.Debugger.DeviceData do
   end
 
   defp cmd_calls_for(_, _), do: []
+
+  @spec got_supported_health_requests(Types.app_model(), String.t()) :: [Types.device_request()]
+  defp got_supported_health_requests(model, current_ctor)
+       when is_map(model) and is_binary(current_ctor) do
+    if got_supported_health_ctor?(current_ctor) and got_supported_health_active?(model) do
+      [
+        %{kind: "health_value", response_message: "GotStepsNow"},
+        %{kind: "health_sum_today", response_message: "GotStepsToday"}
+      ]
+    else
+      []
+    end
+  end
+
+  defp got_supported_health_requests(_model, _current_ctor), do: []
+
+  @spec got_supported_health_ctor?(String.t()) :: boolean()
+  defp got_supported_health_ctor?(ctor) when is_binary(ctor) do
+    String.starts_with?(ctor, "GotSupported")
+  end
+
+  @spec got_supported_health_active?(Types.app_model()) :: boolean()
+  defp got_supported_health_active?(model) when is_map(model) do
+    runtime = Map.get(model, "runtime_model") || %{}
+
+    get_in(runtime, ["supported", "ctor"]) == "Just" and
+      get_in(runtime, ["supported", "args", Access.at(0)]) == true
+  end
 
   defp filter_update_cmd_calls(calls, current_ctor, filter_fn) when is_list(calls) do
     if is_function(filter_fn, 2), do: filter_fn.(calls, current_ctor), else: calls

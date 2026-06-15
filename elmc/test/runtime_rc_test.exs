@@ -1,6 +1,99 @@
 defmodule Elmc.RuntimeRCTest do
   use ExUnit.Case
 
+  @deep_list_cells 200
+  @deep_list_stack_kb 32
+
+  test "list release uses iterative spine teardown in generated runtime" do
+    source = Elmc.Runtime.RcTrack.retain_release_impl()
+
+    assert source =~ "elmc_release_list_spine"
+    assert source =~ "elmc_release_list_cell_payload"
+    assert source =~ "elmc_release_list_spine(value);"
+    refute source =~ "elmc_release(node->tail);"
+  end
+
+  test "list release is emitted in compiled elmc_runtime.c" do
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available for runtime C test")
+
+    project_dir = Path.expand("fixtures/simple_project", __DIR__)
+    out_dir = Path.expand("tmp/runtime_rc_list_spine_source", __DIR__)
+    File.rm_rf!(out_dir)
+    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
+
+    runtime_c = File.read!(Path.join(out_dir, "runtime/elmc_runtime.c"))
+
+    assert runtime_c =~ "elmc_release_list_spine"
+    refute runtime_c =~ "elmc_release(node->tail);"
+  end
+
+  test "deep flat list release survives a small C stack (pebble stack safety)" do
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available for runtime C test")
+
+    project_dir = Path.expand("fixtures/simple_project", __DIR__)
+    out_dir = Path.expand("tmp/runtime_rc_deep_list_release", __DIR__)
+    File.rm_rf!(out_dir)
+    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
+
+    harness_path = Path.join(out_dir, "c/deep_list_release_harness.c")
+
+    File.write!(
+      harness_path,
+      """
+      #include "../runtime/elmc_runtime.h"
+      #include <stdio.h>
+
+      static ElmcValue *list_of_n_ints(int count) {
+        ElmcValue *out = elmc_list_nil();
+        ElmcValue **tail_slot = &out;
+        for (int i = 0; i < count; i++) {
+          ElmcValue *head = elmc_new_int_take(i);
+          ElmcValue *cell = elmc_list_cons_take(head, elmc_list_nil());
+          elmc_release(head);
+          *tail_slot = cell;
+          tail_slot = &((ElmcCons *)cell->payload)->tail;
+        }
+        return out;
+      }
+
+      int main(void) {
+        ElmcValue *list = list_of_n_ints(#{@deep_list_cells});
+        elmc_release(list);
+        printf("deep_list_release_ok cells=%d\\n", #{@deep_list_cells});
+        return 0;
+      }
+      """
+    )
+
+    binary_path = Path.join(out_dir, "deep_list_release_harness")
+
+    {compile_out, compile_code} =
+      System.cmd(cc, [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-I#{Path.join(out_dir, "runtime")}",
+        Path.join(out_dir, "runtime/elmc_runtime.c"),
+        harness_path,
+        "-o",
+        binary_path
+      ])
+
+    assert compile_code == 0, compile_out
+
+    {run_out, run_code} =
+      System.cmd(
+        "bash",
+        ["-c", "ulimit -s #{@deep_list_stack_kb}; exec #{binary_path}"],
+        stderr_to_stdout: true
+      )
+
+    assert run_code == 0, "deep list release failed under #{@deep_list_stack_kb}KB stack:\n#{run_out}"
+    assert run_out =~ "deep_list_release_ok cells=#{@deep_list_cells}"
+  end
+
   test "runtime retain/release counters work in c harness" do
     cc = System.find_executable("cc")
     if is_nil(cc), do: flunk("cc not available for runtime C test")
@@ -19,7 +112,7 @@ defmodule Elmc.RuntimeRCTest do
       #include <stdio.h>
 
       int main(void) {
-        ElmcValue *v = elmc_new_int(420);
+        ElmcValue *v = elmc_new_int_take(420);
         elmc_retain(v);
         elmc_release(v);
         elmc_release(v);
@@ -67,14 +160,15 @@ defmodule Elmc.RuntimeRCTest do
       harness_path,
       """
       #include "elmc_generated.h"
+      #include "elmc_generated.c"
       #include <stdio.h>
 
       int main(void) {
-        ElmcValue *n = elmc_new_int(4);
-        ElmcValue *m = elmc_new_int(5);
-        ElmcValue *ok = elmc_result_ok(n);
-        ElmcValue *just = elmc_maybe_just(m);
-        ElmcValue *pair = elmc_tuple2(ok, just);
+        ElmcValue *n = elmc_new_int_take(4);
+        ElmcValue *m = elmc_new_int_take(5);
+        ElmcValue *ok = elmc_result_ok_take(n);
+        ElmcValue *just = elmc_maybe_just_take(m);
+        ElmcValue *pair = elmc_tuple2_take_value(ok, just);
 
         elmc_release(n);
         elmc_release(m);
@@ -106,7 +200,8 @@ defmodule Elmc.RuntimeRCTest do
         "-I#{Path.join(out_dir, "c")}",
         Path.join(out_dir, "runtime/elmc_runtime.c"),
         Path.join(out_dir, "ports/elmc_ports.c"),
-        Path.join(out_dir, "c/elmc_generated.c"),
+        Path.join(out_dir, "c/elmc_pebble.c"),
+        Path.join(out_dir, "c/elmc_worker.c"),
         harness_path,
         "-o",
         binary_path
@@ -119,5 +214,145 @@ defmodule Elmc.RuntimeRCTest do
     [alloc, rel] = run_out |> String.trim() |> String.split(" ")
     assert String.to_integer(alloc) > 0
     assert String.to_integer(alloc) == String.to_integer(rel)
+  end
+
+  test "maybe_map propagates RC closure allocation failures" do
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available for runtime C test")
+
+    out_dir = Path.expand("tmp/runtime_rc_maybe_map_fail", __DIR__)
+    File.rm_rf!(out_dir)
+    assert :ok = Elmc.Runtime.Generator.write_runtime(Path.join(out_dir, "runtime"))
+
+    harness_path = Path.join(out_dir, "harness.c")
+
+    File.write!(
+      harness_path,
+      """
+      #include "runtime/elmc_runtime.h"
+      #include <stdio.h>
+
+      static RC fail_alloc_lambda(
+          ElmcValue **out,
+          ElmcValue **args,
+          int argc,
+          ElmcValue **captures,
+          int capture_count) {
+        (void)out;
+        (void)args;
+        (void)argc;
+        (void)captures;
+        (void)capture_count;
+        return RC_ERR_OUT_OF_MEMORY;
+      }
+
+      int main(void) {
+        ElmcValue *cap[1] = { NULL };
+        ElmcValue *f = elmc_closure_new_rc_take(fail_alloc_lambda, 1, 0, cap);
+        ElmcValue *just = elmc_maybe_just_take(elmc_new_int_take(7));
+        ElmcValue *mapped = NULL;
+        RC rc = elmc_maybe_map(&mapped, f, just);
+        int ok = rc == RC_ERR_OUT_OF_MEMORY && mapped == NULL;
+        elmc_release(mapped);
+        elmc_release(just);
+        elmc_release(f);
+        printf("%d\\n", ok);
+        return ok ? 0 : 1;
+      }
+      """
+    )
+
+    binary_path = Path.join(out_dir, "harness")
+
+    {compile_out, compile_code} =
+      System.cmd(cc, [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-I#{out_dir}",
+        Path.join(out_dir, "runtime/elmc_runtime.c"),
+        harness_path,
+        "-o",
+        binary_path
+      ])
+
+    assert compile_code == 0, compile_out
+
+    {run_out, run_code} = System.cmd(binary_path, [], stderr_to_stdout: true)
+    assert run_code == 0, run_out
+    assert String.trim(run_out) == "1"
+  end
+
+  test "elmc_list_concat does not leak nested row lists" do
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available for runtime C test")
+
+    out_dir = Path.expand("tmp/runtime_rc_list_concat", __DIR__)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(out_dir, "runtime"))
+
+    project_dir = Path.expand("fixtures/simple_project", __DIR__)
+    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
+
+    harness_path = Path.join(out_dir, "c/list_concat_rc_harness.c")
+
+    File.write!(
+      harness_path,
+      """
+      #include "../runtime/elmc_runtime.h"
+      #include <stdio.h>
+
+      static ElmcValue *row_of_four(void) {
+        ElmcValue *out = elmc_list_nil();
+        for (int i = 3; i >= 0; i--) {
+          ElmcValue *n = elmc_new_int_take(i + 1);
+          out = elmc_list_cons_take(n, out);
+        }
+        return out;
+      }
+
+      int main(void) {
+        uint64_t a0 = elmc_rc_allocated_count(), r0 = elmc_rc_released_count();
+        for (int iter = 0; iter < 100; iter++) {
+          ElmcValue *rows[4];
+          for (int i = 0; i < 4; i++) rows[i] = row_of_four();
+          ElmcValue *lists = elmc_list_nil();
+          for (int i = 3; i >= 0; i--) {
+            lists = elmc_list_cons_take(rows[i], lists);
+          }
+          ElmcValue *flat = elmc_list_concat_take(lists);
+          elmc_release(flat);
+          elmc_release(lists);
+        }
+        uint64_t a1 = elmc_rc_allocated_count(), r1 = elmc_rc_released_count();
+        printf("%llu %llu\\n",
+               (unsigned long long)(a1 - a0),
+               (unsigned long long)(r1 - r0));
+        return 0;
+      }
+      """
+    )
+
+    binary_path = Path.join(out_dir, "list_concat_rc_harness")
+
+    {compile_out, compile_code} =
+      System.cmd(cc, [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-I#{Path.join(out_dir, "runtime")}",
+        Path.join(out_dir, "runtime/elmc_runtime.c"),
+        harness_path,
+        "-o",
+        binary_path
+      ])
+
+    assert compile_code == 0, compile_out
+
+    {run_out, run_code} = System.cmd(binary_path, [])
+    assert run_code == 0
+    [alloc_delta, rel_delta] = run_out |> String.trim() |> String.split(" ")
+    assert String.to_integer(alloc_delta) > 0
+    assert String.to_integer(alloc_delta) == String.to_integer(rel_delta)
   end
 end

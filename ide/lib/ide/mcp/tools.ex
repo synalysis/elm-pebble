@@ -8,6 +8,7 @@ defmodule Ide.Mcp.Tools do
   alias Ide.Mcp.Handlers.Build, as: BuildHandler
   alias Ide.Mcp.Handlers.Compiler, as: CompilerHandler
   alias Ide.Mcp.Handlers.Debugger, as: DebuggerHandler
+  alias Ide.Mcp.Handlers.Emulator, as: EmulatorHandler
   alias Ide.Mcp.Handlers.Packages, as: PackagesHandler
   alias Ide.Mcp.Handlers.Projects, as: ProjectsHandler
   alias Ide.Mcp.Handlers.Traces, as: TracesHandler
@@ -113,6 +114,7 @@ defmodule Ide.Mcp.Tools do
   defp do_call("files." <> _rest = name, args), do: ProjectsHandler.call(name, args)
   defp do_call("packages." <> _rest = name, args), do: PackagesHandler.call(name, args)
   defp do_call("pebble." <> _rest = name, args), do: BuildHandler.call(name, args)
+  defp do_call("emulator." <> _rest = name, args), do: EmulatorHandler.call(name, args)
   defp do_call("screenshots." <> _rest = name, args), do: BuildHandler.call(name, args)
   defp do_call("audit.recent", args), do: CompilerHandler.call("audit.recent", args)
   defp do_call("compiler." <> _rest = name, args), do: CompilerHandler.call(name, args)

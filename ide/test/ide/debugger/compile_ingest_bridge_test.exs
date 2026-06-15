@@ -40,7 +40,8 @@ defmodule Ide.Debugger.CompileIngestBridgeTest do
 
     assert artifacts["elmx_manifest"]["contract"] == "elmx.runtime_executor.v1"
     assert artifacts["elmx_revision"] == "rev"
-    assert fields["elmx_manifest"]["contract"] == "elmx.runtime_executor.v1"
+    refute Map.has_key?(fields, "elmx_manifest")
+    refute Map.has_key?(fields, "elmx_revision")
   end
 
   test "from_manifest_result maps strict? and schema_version" do

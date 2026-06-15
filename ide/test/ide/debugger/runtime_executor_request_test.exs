@@ -26,6 +26,9 @@ defmodule Ide.Debugger.RuntimeExecutorRequestTest do
     assert wire.introspect["module"] == "Main"
     assert wire.elmx_manifest["contract"] == "elmx.runtime_executor.v1"
     assert wire.elmx_revision == "request-test"
+    assert is_map(wire.current_model)
+    assert is_map(wire.current_view_tree)
+    assert wire.message == "Tick"
   end
 
   test "validate! accepts wire maps with string keys" do

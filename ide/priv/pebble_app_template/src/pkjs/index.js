@@ -1593,12 +1593,10 @@ function handleOutgoing(payload) {
     }
 
     if (payload && payload.api === "appMessage" && payload.op === "send") {
-        console.log("Elm companion sendAppMessage payload", JSON.stringify(payload.payload || {}));
         sendQueuedAppMessage(payload.payload || {});
         return;
     }
 
-    console.log("Elm companion sendAppMessage payload", JSON.stringify(payload));
     sendQueuedAppMessage(payload);
 }
 

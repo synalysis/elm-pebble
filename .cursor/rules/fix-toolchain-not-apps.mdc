@@ -1,0 +1,44 @@
+---
+description: Fix compiler/toolchain when Elm is correct; no app workarounds
+alwaysApply: true
+---
+
+# Correct Elm → Fix the Toolchain
+
+When application Elm is **semantically correct** (valid Elm, matches intended behavior, uses declared APIs), failures belong in the **toolchain**, not in app code.
+
+Fix at the root in: parser, tokenizer, IR/lowering, **elmc**, **elmx**, **elm_ex**, runtime, debugger, IDE, emulator glue — wherever the bug actually lives.
+
+## Do Not
+
+- Rewrite app/template Elm to dodge codegen, runtime, or IDE bugs (for example replacing `case activePiece model of … piece ->` with manual field reads from `model`).
+- Add “works around elmc” patterns in `Main.elm`, templates, or samples when the Elm you wrote is what a normal Elm compiler would accept.
+- Ship one-app shims in the compiler to make a single template pass (see also **Generic Code Rules**).
+- Ask apps to rename `Msg` constructors so platform shims recognize them (`CurrentDateTime`, `HourChanged`, etc.) — tags must come from the call site in the cmd/sub, not name-guess lists (see **Msg and Cmd wiring** in Generic Code Rules).
+
+## Do
+
+- Treat correct Elm as the specification; make the toolchain match Elm semantics and project contracts.
+- Add or extend **toolchain tests** (elmc/elmx/elm_ex/ide) that reproduce the bug from minimal IR or Elm, then fix the implementation.
+- Prefer fixes that apply to **all** apps with the same language construct (patterns, types, subscriptions), not one project slug.
+- Change app Elm only when the Elm was wrong, incomplete, or intentionally adopting a new contract.
+
+## Safety Goal
+
+On-device/watch behavior should not fault on well-typed, memory-safe Elm logic — same spirit as Elm on the web. The only acceptable hard crash from normal app logic is **out-of-memory** (or equivalent platform resource exhaustion), not bad codegen or wrong runtime representation.
+
+## Examples
+
+- **Bad:** `dropStep` uses `if hasPiece model` and `model.pieceY` because `case activePiece` codegen passes the `Maybe` wrapper to `elmc_record_get`.
+- **Good:** fix `Elmc.Backend.CCodegen.Patterns` so `Nothing` + bare-var `case` binds the Just payload (like elmx already does).
+
+- **Bad:** special-case `game-elmtris` in `elmc` or the IDE.
+- **Good:** a codegen test for `case maybe of Nothing -> …; x -> …` and a generic `bind_pattern` fix.
+
+- **Bad:** `getCurrentDateTime` emits only command kind; runtime uses `pick_tag(..., ["CurrentDateTime", "GotCurrentDateTime"])`.
+- **Good:** encode `constructor_tag_expr(to_msg)` in the cmd tuple (like `storageReadInt`); runtime dispatches the tag from the queued cmd.
+
+## When Changing the Toolchain
+
+- Prove the fix with a focused test in the package you changed, plus a second fixture/template when the path is shared.
+- Do not “fix” the emulator or debugger by patching runtime model in ways that hide compiler bugs unless that layer is genuinely the owner of the contract.

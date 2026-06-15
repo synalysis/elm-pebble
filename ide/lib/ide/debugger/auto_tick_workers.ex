@@ -7,7 +7,12 @@ defmodule Ide.Debugger.AutoTickWorkers do
   alias Ide.Debugger.SurfaceTargets
   alias Ide.Debugger.Types
 
-  @type tick_fn :: (String.t(), map() -> {:ok, Types.runtime_state()} | any())
+  @type tick_payload :: %{
+          required(:target) => String.t(),
+          required(:count) => non_neg_integer()
+        }
+
+  @type tick_fn :: (String.t(), tick_payload() -> {:ok, Types.runtime_state()} | any())
   @type update_fn :: (String.t(), (Types.runtime_state() -> Types.runtime_state()) ->
                         {:ok, Types.runtime_state()})
 

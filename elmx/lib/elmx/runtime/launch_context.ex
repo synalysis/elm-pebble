@@ -17,7 +17,7 @@ defmodule Elmx.Runtime.LaunchContext do
     "LaunchUnknown" => -1
   }
 
-  @spec normalize(map()) :: Types.launch_context()
+  @spec normalize(Types.wire_map() | map()) :: Types.launch_context()
   def normalize(context) when is_map(context) do
     reason =
       case map_value(context, :reason) do
@@ -57,22 +57,24 @@ defmodule Elmx.Runtime.LaunchContext do
       "supportsHealth",
       map_value(context, :supports_health) || map_value(context, :supportsHealth) || false
     )
+    |> Map.put_new("configurationResponse", nil)
   end
 
   def normalize(_), do: normalize(%{})
 
-  @spec launch_reason_to_int(term()) :: integer()
+  @spec launch_reason_to_int(Types.launch_reason_like()) :: integer()
   def launch_reason_to_int(reason) do
     Map.get(@launch_reason_int, launch_reason_ctor_name(reason), -1)
   end
 
-  @spec launch_reason_ctor(term()) :: Types.wire_ctor()
-  defp launch_reason_ctor(name) when is_binary(name) and name != "",
-    do: %{"ctor" => name, "args" => []}
+  @spec launch_reason_ctor(Types.launch_reason_like()) :: Types.wire_ctor()
+  defp launch_reason_ctor(name) when is_binary(name) and name != "" do
+    %{"ctor" => name, "args" => []}
+  end
 
   defp launch_reason_ctor(_), do: %{"ctor" => "LaunchUser", "args" => []}
 
-  @spec launch_reason_ctor_name(term()) :: String.t()
+  @spec launch_reason_ctor_name(Types.launch_reason_like()) :: String.t()
   defp launch_reason_ctor_name(%{"ctor" => ctor, "args" => _}) when is_binary(ctor), do: ctor
   defp launch_reason_ctor_name(%{ctor: ctor, args: _}) when is_atom(ctor), do: Atom.to_string(ctor)
   defp launch_reason_ctor_name({ctor, _args}) when is_atom(ctor), do: Atom.to_string(ctor)

@@ -58,6 +58,20 @@ defmodule IdeWeb.EmulatorControllerTest do
     Process.exit(pid, :kill)
   end
 
+  test "GET ws/phone without upgrade headers returns 426", %{conn: conn} do
+    EmulatorSessionEnv.run(fn ->
+      assert {:ok, info} =
+               EmulatorLaunch.launch(project_slug: "wf", platform: "basalt", artifact_path: nil)
+
+      assert %{"error" => "WebSocket upgrade required"} =
+               conn
+               |> get(~p"/api/emulator/#{info.id}/ws/phone")
+               |> json_response(426)
+
+      assert :ok = Emulator.kill(info.id)
+    end)
+  end
+
   test "GET ws/vnc without upgrade headers returns 426", %{conn: conn} do
     EmulatorSessionEnv.run(fn ->
       assert {:ok, info} =
@@ -101,6 +115,20 @@ defmodule IdeWeb.EmulatorControllerTest do
       assert %{"error" => "Embedded emulator protocol router is not running."} =
                conn
                |> post(~p"/api/emulator/#{info.id}/install")
+               |> json_response(422)
+
+      assert :ok = Emulator.kill(info.id)
+    end)
+  end
+
+  test "request-app-logs reports missing protocol router in dry-run sessions", %{conn: conn} do
+    EmulatorSessionEnv.run(fn ->
+      assert {:ok, info} =
+               EmulatorLaunch.launch(project_slug: "wf", platform: "basalt", artifact_path: nil)
+
+      assert %{"error" => "Embedded emulator protocol router is not running."} =
+               conn
+               |> post(~p"/api/emulator/#{info.id}/request-app-logs")
                |> json_response(422)
 
       assert :ok = Emulator.kill(info.id)

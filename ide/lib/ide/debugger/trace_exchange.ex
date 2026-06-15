@@ -17,7 +17,7 @@ defmodule Ide.Debugger.TraceExchange do
 
   @type runtime_event :: Types.runtime_event()
   @type debugger_event :: Types.debugger_event()
-  @type runtime_state :: Types.RuntimeState.t() | map()
+  @type runtime_state :: Types.runtime_state()
 
   @spec export_payload(String.t(), runtime_state(), keyword()) :: Types.import_trace_body()
   def export_payload(project_slug, state, opts) when is_binary(project_slug) and is_map(state) do

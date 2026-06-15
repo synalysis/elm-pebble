@@ -3,6 +3,7 @@ defmodule ElmEx.IR.DeadCode do
   Dead-code elimination for function declarations in IR.
 
   Keeps only functions reachable from entry module roots plus qualified calls.
+  Call targets in IR must already be fully qualified (see `ElmEx.IR.ImportResolution`).
   """
 
   alias ElmEx.IR
@@ -96,6 +97,14 @@ defmodule ElmEx.IR.DeadCode do
   end
 
   defp call_reference_targets(%{op: :var, name: name}, mod) when is_binary(name) do
+    [local_call_target(name, mod)]
+  end
+
+  defp call_reference_targets(%{op: :sub_const, var: name}, mod) when is_binary(name) do
+    [local_call_target(name, mod)]
+  end
+
+  defp call_reference_targets(%{op: :add_const, var: name}, mod) when is_binary(name) do
     [local_call_target(name, mod)]
   end
 

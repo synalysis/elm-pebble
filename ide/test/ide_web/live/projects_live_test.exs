@@ -82,6 +82,32 @@ defmodule IdeWeb.ProjectsLiveTest do
     refute html_response(conn, 200) =~ "Delete my data"
   end
 
+  test "create project shows slug error when slug already exists", %{conn: conn} do
+    assert {:ok, _project} =
+             Projects.create_project(%{
+               "name" => "Digital",
+               "slug" => "digital",
+               "target_type" => "watchface",
+               "template" => "watchface-digital"
+             })
+
+    assert {:ok, view, _html} = live(conn, ~p"/projects")
+
+    html =
+      view
+      |> form("#project-form", %{
+        "project" => %{
+          "name" => "Digital",
+          "slug" => "digital",
+          "template" => "watchface-digital"
+        }
+      })
+      |> render_submit()
+
+    assert html =~ "Could not create project"
+    assert html =~ "is already in use"
+  end
+
   test "delete my data removes account and redirects to login", %{conn: conn} do
     Application.put_env(:ide, Ide.Auth, mode: :public_custom)
 

@@ -1,11 +1,13 @@
 defmodule Ide.Debugger.IntrospectContexts do
   @moduledoc false
 
+  alias ElmEx.DebuggerContract
   alias Ide.Debugger.DebuggerContractSnapshot
   alias Ide.Debugger.InitSurfaceEffects
   alias Ide.Debugger.ProtocolRx
-  alias Ide.Debugger.RuntimeModelHydrate
+  alias Ide.Debugger.RuntimePreview
   alias Ide.Debugger.StepExecution
+  alias Ide.Debugger.Surface
   alias Ide.Debugger.Types
   alias Ide.Debugger.Types.DebuggerContractEventPayload
 
@@ -29,7 +31,7 @@ defmodule Ide.Debugger.IntrospectContexts do
           required(:runtime_status_after_init) => (Types.runtime_state(),
                                                    Types.surface_target(),
                                                    Types.step_executor_result()
-                                                   | map(),
+                                                   | Types.wire_map(),
                                                    Types.elm_introspect() ->
                                                      Types.runtime_state()),
           required(:apply_runtime_followups) => (Types.runtime_state(),
@@ -56,7 +58,6 @@ defmodule Ide.Debugger.IntrospectContexts do
     %{
       executor: host.executor,
       attach_compile_artifacts: host.attach_compile_artifacts,
-      hydrate_runtime_model: &RuntimeModelHydrate.for_message/3,
       append_event: host.append_event,
       append_debugger_event: host.append_debugger_event,
       runtime_status_after_init: host.runtime_status_after_init,
@@ -76,7 +77,7 @@ defmodule Ide.Debugger.IntrospectContexts do
         state
         |> InitSurfaceEffects.apply_all(target, host.init_surface_effects_ctx.())
         |> then(fn reloaded ->
-          if target == :watch do
+          if target == :watch and refresh_watch_preview_after_apply?(reloaded) do
             host.refresh_runtime_preview_for_target.(reloaded, :watch)
           else
             reloaded
@@ -93,5 +94,27 @@ defmodule Ide.Debugger.IntrospectContexts do
         )
       end
     }
+  end
+
+  @spec refresh_watch_preview_after_apply?(Types.runtime_state()) :: boolean()
+  defp refresh_watch_preview_after_apply?(state) when is_map(state) do
+    watch = Surface.from_state(state, :watch)
+    ei = Surface.shell(watch)["debugger_contract"] || %{}
+    model = Surface.app_model(watch)
+    view_tree = watch.view_tree || %{}
+
+    cond do
+      not DebuggerContract.parser_expression_view?(%{"debugger_contract" => ei}) ->
+        true
+
+      RuntimePreview.has_drawable_output?(model) ->
+        true
+
+      StepExecution.view_tree_has_draw_ops?(view_tree) ->
+        true
+
+      true ->
+        false
+    end
   end
 end

@@ -1,5 +1,6 @@
 defmodule Ide.Debugger.RuntimePreview do
   @moduledoc false
+  @dialyzer :no_match
 
   alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Debugger.RuntimeViewOutput
@@ -88,12 +89,19 @@ defmodule Ide.Debugger.RuntimePreview do
       ei = RuntimeArtifacts.require_introspect(execution_model)
 
       executor_refresh =
-        StepExecution.maybe_executor_view_preview(
-          execution_model,
-          model,
-          target,
-          stored_rows
-        )
+        if force_executor_view_preview?(surface_view_tree, execution_model, target) do
+          case StepExecution.executor_view_preview(execution_model, model, target) do
+            {:ok, preview} -> {:ok, preview}
+            :error -> :skip
+          end
+        else
+          StepExecution.maybe_executor_view_preview(
+            execution_model,
+            model,
+            target,
+            stored_rows
+          )
+        end
 
       preview =
         case executor_refresh do
@@ -101,8 +109,13 @@ defmodule Ide.Debugger.RuntimePreview do
             fresh
 
           :skip ->
+            surface_tree_for_preview =
+              if StepExecution.placeholder_view_tree?(surface_view_tree),
+                do: %{},
+                else: surface_view_tree
+
             preview_from_surface_trees(
-              surface_view_tree,
+              surface_tree_for_preview,
               preview_model,
               stored_rows,
               ei,
@@ -110,6 +123,20 @@ defmodule Ide.Debugger.RuntimePreview do
               model,
               target
             )
+        end
+
+      derived_view_tree = Map.get(preview, :view_tree)
+
+      preview =
+        if StepExecution.placeholder_view_tree?(derived_view_tree) and
+             RuntimeArtifacts.versioned_elmx_artifacts?(execution_model) and
+             target == :watch do
+          case StepExecution.executor_view_preview(execution_model, model, target) do
+            {:ok, fresh} -> fresh
+            :error -> preview
+          end
+        else
+          preview
         end
 
       view_output = Map.get(preview, :view_output) || []
@@ -159,10 +186,26 @@ defmodule Ide.Debugger.RuntimePreview do
 
   def render_view_from_surface(_surface_runtime, _target), do: nil
 
+  @spec force_executor_view_preview?(
+          Types.view_output_tree(),
+          Types.execution_model(),
+          Types.surface_target()
+        ) :: boolean()
+  defp force_executor_view_preview?(surface_view_tree, execution_model, :watch) do
+    RuntimeArtifacts.versioned_elmx_artifacts?(execution_model) and
+      (StepExecution.placeholder_view_tree?(surface_view_tree) or surface_view_tree == %{})
+  end
+
+  defp force_executor_view_preview?(_surface_view_tree, _execution_model, _target), do: false
+
   @doc """
   View-output rows for SVG preview: same executor refresh and resolution as rendered tree.
   """
-  @spec effective_runtime_view_output_rows(map(), map(), Types.surface_target()) :: [map()]
+  @spec effective_runtime_view_output_rows(
+          Types.RuntimeStepResult.wire_result(),
+          Types.app_model(),
+          Types.surface_target()
+        ) :: Types.runtime_view_nodes()
   def effective_runtime_view_output_rows(runtime, model, target)
       when is_map(runtime) and is_map(model) and target in [:watch, :companion, :phone] do
     stored_rows =

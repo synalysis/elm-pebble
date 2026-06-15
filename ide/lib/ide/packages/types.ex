@@ -41,7 +41,7 @@ defmodule Ide.Packages.Types do
           optional(:latest_version) => String.t() | nil,
           optional(:versions) => [String.t()],
           optional(:exposed_modules) => [String.t()],
-          optional(:elm_json) => map(),
+          optional(:elm_json) => elm_json(),
           optional(:source) => String.t(),
           optional(:compatibility) => compatibility()
         }
@@ -100,6 +100,8 @@ defmodule Ide.Packages.Types do
 
   @type json_field :: String.t() | integer() | boolean() | list() | map() | nil
 
+  @type elm_json :: %{optional(String.t()) => json_field()}
+
   @type index_validators :: %{
           optional(:etag) => String.t(),
           optional(:last_modified) => String.t()
@@ -122,7 +124,10 @@ defmodule Ide.Packages.Types do
           }
         }
 
-  @type resolver_error :: map()
+  @type resolver_error :: %{
+          optional(atom()) => term(),
+          optional(String.t()) => term()
+        }
 
   @type http_status_error :: {:http_status, pos_integer(), String.t()}
   @type network_error :: {:network, String.t() | map() | Exception.t()}

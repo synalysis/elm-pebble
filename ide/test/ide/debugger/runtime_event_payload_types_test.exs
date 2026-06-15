@@ -21,18 +21,26 @@ defmodule Ide.Debugger.RuntimeEventPayloadTypesTest do
              })
 
     assert {:ok, _} =
-             Debugger.step(slug, %{"target" => "watch", "message" => "Tick", "count" => 1})
+             Debugger.step(slug, %{
+               "target" => "watch",
+               "message" => "SelectPressed",
+               "count" => 1
+             })
 
     assert {:ok, st} = Debugger.snapshot(slug, event_limit: 200)
 
     start_event = Enum.find(st.events, &(&1.type == "debugger.start"))
-    update_event = Enum.find(st.events, &(&1.type == "debugger.update_in"))
+    update_event =
+      Enum.find(st.events, fn event ->
+        event.type == "debugger.update_in" and event.payload.message == "SelectPressed"
+      end)
 
     assert start_event.payload.launch_reason == "LaunchUser"
     assert start_event.payload.watch_profile_id == "basalt"
 
+    assert update_event
     assert update_event.payload.target == "watch"
-    assert update_event.payload.message == "Tick"
+    assert update_event.payload.message == "SelectPressed"
   end
 
   test "reload and ingest_elmc_check produce expected event payload shapes" do

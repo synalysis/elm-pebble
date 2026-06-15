@@ -2884,8 +2884,11 @@ var $elm$core$Result$isOk = function (result) {
 };
 var $elm$json$Json$Decode$decodeValue = _Json_run;
 var $author$project$Pebble$Platform$LaunchUser = {$: 'LaunchUser'};
-var $author$project$Pebble$Platform$defaultScreen = {height: 168, isColor: true, isRound: false, width: 144};
-var $author$project$Pebble$Platform$defaultContext = {reason: $author$project$Pebble$Platform$LaunchUser, screen: $author$project$Pebble$Platform$defaultScreen, watchModel: 'Pebble Time Steel', watchProfileId: 'basalt'};
+var $author$project$Pebble$Platform$Color = {$: 'Color'};
+var $author$project$Pebble$Platform$Rectangular = {$: 'Rectangular'};
+var $author$project$Pebble$Platform$defaultScreen = {colorMode: $author$project$Pebble$Platform$Color, height: 168, shape: $author$project$Pebble$Platform$Rectangular, width: 144};
+var $author$project$Pebble$Platform$defaultContext = {hasCompass: false, hasMicrophone: false, reason: $author$project$Pebble$Platform$LaunchUser, screen: $author$project$Pebble$Platform$defaultScreen, supportsHealth: true, watchModel: 'Pebble Time Steel', watchProfileId: 'basalt'};
+var $elm$json$Json$Decode$bool = _Json_decodeBool;
 var $elm$json$Json$Decode$field = _Json_decodeField;
 var $elm$json$Json$Decode$oneOf = _Json_oneOf;
 var $elm$json$Json$Decode$succeed = _Json_succeed;
@@ -2912,34 +2915,124 @@ var $author$project$Pebble$Platform$launchReasonFromString = function (value) {
 var $elm$json$Json$Decode$map = _Json_map1;
 var $elm$json$Json$Decode$string = _Json_decodeString;
 var $author$project$Pebble$Platform$launchReasonDecoder = A2($elm$json$Json$Decode$map, $author$project$Pebble$Platform$launchReasonFromString, $elm$json$Json$Decode$string);
-var $elm$json$Json$Decode$map4 = _Json_map4;
-var $elm$json$Json$Decode$bool = _Json_decodeBool;
+var $elm$json$Json$Decode$map7 = _Json_map7;
+var $author$project$Pebble$Platform$BlackWhite = {$: 'BlackWhite'};
+var $author$project$Pebble$Platform$Round = {$: 'Round'};
+var $author$project$Pebble$Platform$colorCapabilityFromString = function (value) {
+	return ((value === 'Color') || (value === 'color')) ? $author$project$Pebble$Platform$Color : $author$project$Pebble$Platform$BlackWhite;
+};
+var $author$project$Pebble$Platform$colorCapabilityDecoder = $elm$json$Json$Decode$oneOf(
+	_List_fromArray(
+		[
+			A2($elm$json$Json$Decode$map, $author$project$Pebble$Platform$colorCapabilityFromString, $elm$json$Json$Decode$string),
+			A2(
+			$elm$json$Json$Decode$map,
+			function (isColor) {
+				return isColor ? $author$project$Pebble$Platform$Color : $author$project$Pebble$Platform$BlackWhite;
+			},
+			$elm$json$Json$Decode$bool)
+		]));
+var $author$project$Pebble$Platform$colorCapabilityIsColor = function (colorMode) {
+	if (colorMode.$ === 'Color') {
+		return true;
+	} else {
+		return false;
+	}
+};
+var $author$project$Pebble$Platform$displayShapeFromString = function (value) {
+	return ((value === 'Round') || (value === 'round')) ? $author$project$Pebble$Platform$Round : $author$project$Pebble$Platform$Rectangular;
+};
+var $author$project$Pebble$Platform$displayShapeDecoder = $elm$json$Json$Decode$oneOf(
+	_List_fromArray(
+		[
+			A2($elm$json$Json$Decode$map, $author$project$Pebble$Platform$displayShapeFromString, $elm$json$Json$Decode$string),
+			A2(
+			$elm$json$Json$Decode$map,
+			function (isRound) {
+				return isRound ? $author$project$Pebble$Platform$Round : $author$project$Pebble$Platform$Rectangular;
+			},
+			$elm$json$Json$Decode$bool)
+		]));
 var $elm$json$Json$Decode$int = _Json_decodeInt;
+var $elm$json$Json$Decode$map4 = _Json_map4;
 var $author$project$Pebble$Platform$screenDecoder = A5(
 	$elm$json$Json$Decode$map4,
 	F4(
-		function (width, height, isColor, isRound) {
-			return {height: height, isColor: isColor, isRound: isRound, width: width};
+		function (width, height, shape, colorMode) {
+			return {colorMode: colorMode, height: height, shape: shape, width: width};
 		}),
 	A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'width', $elm$json$Json$Decode$int, $author$project$Pebble$Platform$defaultScreen.width),
 	A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'height', $elm$json$Json$Decode$int, $author$project$Pebble$Platform$defaultScreen.height),
-	A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'is_color', $elm$json$Json$Decode$bool, $author$project$Pebble$Platform$defaultScreen.isColor),
-	A2(
-		$elm$json$Json$Decode$map,
-		function (shape) {
-			return shape === 'round';
-		},
-		A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'shape', $elm$json$Json$Decode$string, 'rect')));
-var $author$project$Pebble$Platform$contextObjectDecoder = A5(
-	$elm$json$Json$Decode$map4,
-	F4(
-		function (reason, watchModel, watchProfileId, screen) {
-			return {reason: reason, screen: screen, watchModel: watchModel, watchProfileId: watchProfileId};
+	$elm$json$Json$Decode$oneOf(
+		_List_fromArray(
+			[
+				A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'shape', $author$project$Pebble$Platform$displayShapeDecoder, $author$project$Pebble$Platform$defaultScreen.shape),
+				A2(
+				$elm$json$Json$Decode$map,
+				function (legacyShape) {
+					return (legacyShape === 'round') ? $author$project$Pebble$Platform$Round : $author$project$Pebble$Platform$Rectangular;
+				},
+				A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'shape', $elm$json$Json$Decode$string, 'rect'))
+			])),
+	$elm$json$Json$Decode$oneOf(
+		_List_fromArray(
+			[
+				A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'color_mode', $author$project$Pebble$Platform$colorCapabilityDecoder, $author$project$Pebble$Platform$defaultScreen.colorMode),
+				A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'colorMode', $author$project$Pebble$Platform$colorCapabilityDecoder, $author$project$Pebble$Platform$defaultScreen.colorMode),
+				A2(
+				$elm$json$Json$Decode$map,
+				function (isColor) {
+					return isColor ? $author$project$Pebble$Platform$Color : $author$project$Pebble$Platform$BlackWhite;
+				},
+				A3(
+					$author$project$Pebble$Platform$decodeFieldWithDefault,
+					'is_color',
+					$elm$json$Json$Decode$bool,
+					$author$project$Pebble$Platform$colorCapabilityIsColor($author$project$Pebble$Platform$defaultScreen.colorMode)))
+			])));
+var $author$project$Pebble$Platform$contextObjectDecoder = A8(
+	$elm$json$Json$Decode$map7,
+	F7(
+		function (reason, watchModel, watchProfileId, screen, hasMicrophone, hasCompass, supportsHealth) {
+			return {hasCompass: hasCompass, hasMicrophone: hasMicrophone, reason: reason, screen: screen, supportsHealth: supportsHealth, watchModel: watchModel, watchProfileId: watchProfileId};
 		}),
-	A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'launch_reason', $author$project$Pebble$Platform$launchReasonDecoder, $author$project$Pebble$Platform$defaultContext.reason),
-	A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'watch_model', $elm$json$Json$Decode$string, $author$project$Pebble$Platform$defaultContext.watchModel),
-	A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'watch_profile_id', $elm$json$Json$Decode$string, $author$project$Pebble$Platform$defaultContext.watchProfileId),
-	A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'screen', $author$project$Pebble$Platform$screenDecoder, $author$project$Pebble$Platform$defaultContext.screen));
+	$elm$json$Json$Decode$oneOf(
+		_List_fromArray(
+			[
+				A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'launch_reason', $author$project$Pebble$Platform$launchReasonDecoder, $author$project$Pebble$Platform$defaultContext.reason),
+				A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'reason', $author$project$Pebble$Platform$launchReasonDecoder, $author$project$Pebble$Platform$defaultContext.reason)
+			])),
+	$elm$json$Json$Decode$oneOf(
+		_List_fromArray(
+			[
+				A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'watch_model', $elm$json$Json$Decode$string, $author$project$Pebble$Platform$defaultContext.watchModel),
+				A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'watchModel', $elm$json$Json$Decode$string, $author$project$Pebble$Platform$defaultContext.watchModel)
+			])),
+	$elm$json$Json$Decode$oneOf(
+		_List_fromArray(
+			[
+				A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'watch_profile_id', $elm$json$Json$Decode$string, $author$project$Pebble$Platform$defaultContext.watchProfileId),
+				A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'watchProfileId', $elm$json$Json$Decode$string, $author$project$Pebble$Platform$defaultContext.watchProfileId)
+			])),
+	A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'screen', $author$project$Pebble$Platform$screenDecoder, $author$project$Pebble$Platform$defaultContext.screen),
+	$elm$json$Json$Decode$oneOf(
+		_List_fromArray(
+			[
+				A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'has_microphone', $elm$json$Json$Decode$bool, $author$project$Pebble$Platform$defaultContext.hasMicrophone),
+				A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'hasMicrophone', $elm$json$Json$Decode$bool, $author$project$Pebble$Platform$defaultContext.hasMicrophone)
+			])),
+	$elm$json$Json$Decode$oneOf(
+		_List_fromArray(
+			[
+				A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'has_compass', $elm$json$Json$Decode$bool, $author$project$Pebble$Platform$defaultContext.hasCompass),
+				A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'hasCompass', $elm$json$Json$Decode$bool, $author$project$Pebble$Platform$defaultContext.hasCompass)
+			])),
+	$elm$json$Json$Decode$oneOf(
+		_List_fromArray(
+			[
+				A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'supports_health', $elm$json$Json$Decode$bool, $author$project$Pebble$Platform$defaultContext.supportsHealth),
+				A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'supportsHealth', $elm$json$Json$Decode$bool, $author$project$Pebble$Platform$defaultContext.supportsHealth)
+			])));
 var $author$project$Pebble$Platform$launchContextDecoder = $author$project$Pebble$Platform$contextObjectDecoder;
 var $author$project$Pebble$Platform$decodeLaunchContext = function (flags) {
 	var _v0 = A2($elm$json$Json$Decode$decodeValue, $author$project$Pebble$Platform$launchContextDecoder, flags);
@@ -3068,21 +3161,20 @@ var $author$project$Elm$Kernel$PebbleWatch$companionSend = F2(
 		var keep = tag + value;
 		return $elm$core$Platform$Cmd$none;
 	});
-var $author$project$Pebble$Cmd$companionSend = $author$project$Elm$Kernel$PebbleWatch$companionSend;
-var $author$project$Pebble$Internal$Companion$companionSend = $author$project$Pebble$Cmd$companionSend;
+var $author$project$Pebble$Internal$Companion$companionSend = $author$project$Elm$Kernel$PebbleWatch$companionSend;
 var $author$project$Companion$Internal$watchToPhoneTag = function (message) {
 	return 2;
 };
 var $author$project$Companion$Internal$encodeLocationCode = function (value) {
 	switch (value.$) {
 		case 'CurrentLocation':
-			return 0;
-		case 'Berlin':
 			return 1;
-		case 'Zurich':
+		case 'Berlin':
 			return 2;
-		default:
+		case 'Zurich':
 			return 3;
+		default:
+			return 4;
 	}
 };
 var $author$project$Companion$Internal$watchToPhoneValue = function (message) {
@@ -3111,11 +3203,14 @@ var $author$project$Main$init = function (launchContext) {
 				])));
 };
 var $author$project$Main$AccelTap = {$: 'AccelTap'};
+var $author$project$Pebble$Button$Down = {$: 'Down'};
 var $author$project$Main$DownPressed = {$: 'DownPressed'};
+var $author$project$Pebble$Button$Select = {$: 'Select'};
 var $author$project$Main$SelectPressed = {$: 'SelectPressed'};
 var $author$project$Main$Tick = function (a) {
 	return {$: 'Tick', a: a};
 };
+var $author$project$Pebble$Button$Up = {$: 'Up'};
 var $author$project$Main$UpPressed = {$: 'UpPressed'};
 var $elm$core$Platform$Sub$batch = _Platform_batch;
 var $elm$core$Platform$Sub$none = $elm$core$Platform$Sub$batch(_List_Nil);
@@ -3123,35 +3218,62 @@ var $author$project$Elm$Kernel$PebbleWatch$batch = function (_v0) {
 	return $elm$core$Platform$Sub$none;
 };
 var $author$project$Pebble$Events$batch = $author$project$Elm$Kernel$PebbleWatch$batch;
+var $author$project$Pebble$Button$Pressed = {$: 'Pressed'};
+var $author$project$Pebble$Button$buttonToInt = function (button) {
+	switch (button.$) {
+		case 'Back':
+			return 0;
+		case 'Up':
+			return 1;
+		case 'Select':
+			return 2;
+		default:
+			return 3;
+	}
+};
+var $author$project$Pebble$Button$eventToInt = function (event) {
+	switch (event.$) {
+		case 'Pressed':
+			return 1;
+		case 'Released':
+			return 2;
+		default:
+			return 3;
+	}
+};
+var $author$project$Elm$Kernel$PebbleWatch$onButtonRaw = F3(
+	function (_v0, _v1, _v2) {
+		return $elm$core$Platform$Sub$none;
+	});
+var $author$project$Pebble$Button$on = F3(
+	function (button, event, msg) {
+		return A3(
+			$author$project$Elm$Kernel$PebbleWatch$onButtonRaw,
+			$author$project$Pebble$Button$buttonToInt(button),
+			$author$project$Pebble$Button$eventToInt(event),
+			msg);
+	});
+var $author$project$Pebble$Button$onPress = F2(
+	function (button, msg) {
+		return A3($author$project$Pebble$Button$on, button, $author$project$Pebble$Button$Pressed, msg);
+	});
+var $author$project$Elm$Kernel$PebbleWatch$onSecondChange = function (_v0) {
+	return $elm$core$Platform$Sub$none;
+};
+var $author$project$Pebble$Events$onSecondChange = $author$project$Elm$Kernel$PebbleWatch$onSecondChange;
 var $author$project$Elm$Kernel$PebbleWatch$onAccelTap = function (_v0) {
 	return $elm$core$Platform$Sub$none;
 };
-var $author$project$Pebble$Events$onAccelTap = $author$project$Elm$Kernel$PebbleWatch$onAccelTap;
-var $author$project$Elm$Kernel$PebbleWatch$onButtonDown = function (_v0) {
-	return $elm$core$Platform$Sub$none;
-};
-var $author$project$Pebble$Events$onButtonDown = $author$project$Elm$Kernel$PebbleWatch$onButtonDown;
-var $author$project$Elm$Kernel$PebbleWatch$onButtonSelect = function (_v0) {
-	return $elm$core$Platform$Sub$none;
-};
-var $author$project$Pebble$Events$onButtonSelect = $author$project$Elm$Kernel$PebbleWatch$onButtonSelect;
-var $author$project$Elm$Kernel$PebbleWatch$onButtonUp = function (_v0) {
-	return $elm$core$Platform$Sub$none;
-};
-var $author$project$Pebble$Events$onButtonUp = $author$project$Elm$Kernel$PebbleWatch$onButtonUp;
-var $author$project$Elm$Kernel$PebbleWatch$onTick = function (_v0) {
-	return $elm$core$Platform$Sub$none;
-};
-var $author$project$Pebble$Events$onTick = $author$project$Elm$Kernel$PebbleWatch$onTick;
+var $author$project$Pebble$Accel$onTap = $author$project$Elm$Kernel$PebbleWatch$onAccelTap;
 var $author$project$Main$subscriptions = function (_v0) {
 	return $author$project$Pebble$Events$batch(
 		_List_fromArray(
 			[
-				$author$project$Pebble$Events$onTick($author$project$Main$Tick),
-				$author$project$Pebble$Events$onButtonUp($author$project$Main$UpPressed),
-				$author$project$Pebble$Events$onButtonSelect($author$project$Main$SelectPressed),
-				$author$project$Pebble$Events$onButtonDown($author$project$Main$DownPressed),
-				$author$project$Pebble$Events$onAccelTap($author$project$Main$AccelTap)
+				$author$project$Pebble$Events$onSecondChange($author$project$Main$Tick),
+				A2($author$project$Pebble$Button$onPress, $author$project$Pebble$Button$Up, $author$project$Main$UpPressed),
+				A2($author$project$Pebble$Button$onPress, $author$project$Pebble$Button$Select, $author$project$Main$SelectPressed),
+				A2($author$project$Pebble$Button$onPress, $author$project$Pebble$Button$Down, $author$project$Main$DownPressed),
+				$author$project$Pebble$Accel$onTap($author$project$Main$AccelTap)
 			]));
 };
 var $author$project$Main$counterOf = function (model) {

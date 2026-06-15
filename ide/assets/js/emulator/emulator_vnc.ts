@@ -5,6 +5,11 @@ import {postJSON} from "./emulator_http"
 import type {EmulatorVncHost, VncSessionProbe} from "../types/emulator_host"
 import type {EmulatorSessionInfo, PingResponse} from "../types/emulator"
 import {errMessage} from "../types/errors"
+import {
+  computeVncViewportOffset,
+  vncViewportConfigKey,
+  vncViewportMode
+} from "./vnc_viewport_crop"
 
 export type {EmulatorVncHost}
 
@@ -858,34 +863,97 @@ export class EmulatorVnc {
     this.host.applyCanvasSize()
     rfb.resizeSession = false
 
-    const framebuffer = this.readVncFramebufferSize(rfb)
+    const framebufferSize = this.readVncFramebufferSize(rfb)
     const canvasBacking = this.readVncBackingSize()
-    const fbWidth = framebuffer?.width ?? 0
-    const fbHeight = framebuffer?.height ?? 0
-    const oversized =
-      fbWidth > screen.width + 1 ||
-      fbHeight > screen.height + 1
-    const configKey = `${fbWidth}x${fbHeight}:${screen.width}x${screen.height}`
-    if (this.host.vncViewportConfigKey === configKey) return
+    const fbWidth = framebufferSize?.width ?? 0
+    const fbHeight = framebufferSize?.height ?? 0
+    const shape = this.host.displayShape()
+    const framebuffer = {width: fbWidth, height: fbHeight}
+    const mode = vncViewportMode(framebuffer, screen, shape)
+    const offset = computeVncViewportOffset(framebuffer, screen, shape, mode)
+    const configKey = vncViewportConfigKey(framebuffer, screen, mode, offset)
+    const refreshFramebuffer = this.shouldRequestVncFramebufferRefresh(reason)
+    const forceReapply = /framebufferresize/i.test(reason)
+    const configUnchanged = this.host.vncViewportConfigKey === configKey
+
+    if (configUnchanged && !forceReapply) {
+      if (refreshFramebuffer) {
+        this.requestVncFramebufferRefresh(rfb, fbWidth, fbHeight, reason)
+      }
+      return
+    }
+
     this.host.vncViewportConfigKey = configKey
 
-    // Always clip at 1:1. scaleViewport scales the entire padded QEMU surface into
-    // the canvas, which shrinks a top-left draw layer into the upper-left quadrant.
-    rfb.scaleViewport = false
-    rfb.clipViewport = true
+    if (mode === "scale") {
+      // Gabbro exposes a 260×260 (or similar) VNC buffer around a 180×180 panel.
+      // Fit the whole buffer into the watch frame instead of 1:1 center-cropping,
+      // which clips origin-aligned watchfaces on the left and right.
+      rfb.scaleViewport = true
+      rfb.clipViewport = false
+    } else {
+      rfb.scaleViewport = false
+      rfb.clipViewport = true
+      this.applyVncViewportOffset(rfb, offset)
+    }
 
     const canvasNote =
       canvasBacking && (canvasBacking.width !== fbWidth || canvasBacking.height !== fbHeight)
         ? ` canvas ${canvasBacking.width}x${canvasBacking.height}`
         : ""
+    const offsetNote = mode === "clip" && (offset.x > 0 || offset.y > 0) ? ` offset ${offset.x},${offset.y}` : ""
+    const modeNote = mode === "scale" ? " scale (fit padded fb)" : oversizedModeNote(framebuffer, screen)
 
     this.host.appendLog(
-      `VNC viewport ${reason}: framebuffer ${fbWidth}x${fbHeight}, screen ${screen.width}x${screen.height}, clip${oversized ? " (padded fb)" : ""}${canvasNote}`,
+      `VNC viewport ${reason}: framebuffer ${fbWidth}x${fbHeight}, screen ${screen.width}x${screen.height}, ${modeNote}${offsetNote}${canvasNote}`,
       {flushTransfers: false, flushSystemLogs: false}
     )
+
+    if (refreshFramebuffer) {
+      this.requestVncFramebufferRefresh(rfb, fbWidth, fbHeight, reason)
+    }
+  }
+
+  shouldRequestVncFramebufferRefresh(reason: string): boolean {
+    return /install|app_start|framebufferresize|appmessage|draw_rendered|tick/i.test(reason)
+  }
+
+  applyVncViewportOffset(rfb: RFB, offset: {x: number; y: number}): void {
+    const display = (rfb as unknown as {
+      _display?: {viewportChangePos: (deltaX: number, deltaY: number) => void}
+    })._display
+
+    if (!display?.viewportChangePos) return
+
+    if (offset.x > 0 || offset.y > 0) {
+      display.viewportChangePos(offset.x, offset.y)
+    }
+  }
+
+  requestVncFramebufferRefresh(rfb: RFB, width: number, height: number, reason: string): void {
+    if (width <= 0 || height <= 0) return
+
+    const connection = (rfb as unknown as {_rfb_connection?: {sendFramebufferUpdateRequest?: Function}})
+      ._rfb_connection
+
+    if (typeof connection?.sendFramebufferUpdateRequest !== "function") return
+
+    try {
+      connection.sendFramebufferUpdateRequest(false, 0, 0, width, height)
+      this.host.appendLog(`VNC framebuffer refresh (${reason}) ${width}x${height}`, {
+        flushTransfers: false,
+        flushSystemLogs: false
+      })
+    } catch (error: unknown) {
+      this.host.appendLog(`VNC framebuffer refresh failed (${reason}): ${errMessage(error)}`, {
+        flushTransfers: false,
+        flushSystemLogs: false
+      })
+    }
   }
 
   scheduleVncCanvasSample(label: string, delayMs = 0): void {
+    if (!this.host.emulatorDebugEnabled()) return
     const sample = () => {
       window.requestAnimationFrame(() => {
         window.requestAnimationFrame(() => {
@@ -946,5 +1014,11 @@ export class EmulatorVnc {
 
     this.host.appendLog(`VNC canvas sample ${label}: ${JSON.stringify(sample)}`)
   }
+}
+
+function oversizedModeNote(framebuffer: ScreenSize, screen: ScreenSize): string {
+  const padded =
+    framebuffer.width > screen.width + 1 || framebuffer.height > screen.height + 1
+  return padded ? "clip (padded fb)" : "clip"
 }
 

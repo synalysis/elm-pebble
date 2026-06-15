@@ -8,7 +8,7 @@ defmodule Ide.Debugger.Protocol.Event do
 
   @type t :: %{
           optional(:type) => String.t(),
-          optional(:payload) => ProtocolTxRxPayload.t() | map(),
+          optional(:payload) => ProtocolTxRxPayload.t() | ProtocolTxRxPayload.wire_map(),
           optional(:from) => String.t(),
           optional(:to) => String.t(),
           optional(:message) => String.t(),
@@ -19,5 +19,5 @@ defmodule Ide.Debugger.Protocol.Event do
           optional(atom()) => Types.wire_input()
         }
 
-  @type wire_event :: t() | map()
+  @type wire_event :: t() | Types.wire_map()
 end

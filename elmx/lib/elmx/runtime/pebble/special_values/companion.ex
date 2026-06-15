@@ -1,6 +1,8 @@
 defmodule Elmx.Runtime.Pebble.SpecialValues.Companion do
   @moduledoc false
 
+  @behaviour Elmx.Runtime.Pebble.SpecialValues.Dispatcher
+
   import Elmx.Runtime.Pebble.SpecialValues.Helpers
 
   alias Elmx.Types
@@ -90,7 +92,7 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Companion do
     end
   end
 
-  @spec fallback_rewrite(String.t(), [term()]) :: Types.rewrite_result() | :unmatched
+  @spec fallback_rewrite(String.t(), Types.ir_arg_list()) :: Types.rewrite_result() | :unmatched
   def fallback_rewrite("Pebble.Companion." <> _rest = target, args) do
     cond do
       companion_json_encode?(target) -> :unmatched

@@ -5,9 +5,9 @@ defmodule Ide.Debugger.SubscriptionPayload do
   alias Ide.Debugger.Types
 
   @type attach_ctx :: %{
-          optional(:introspect) => (map(), Types.surface_target() ->
-                                      Types.elm_introspect() | map() | nil),
-          optional(:settings) => (map() -> map())
+          optional(:introspect) => (Types.runtime_state(), Types.surface_target() ->
+                                      Types.elm_introspect() | nil),
+          optional(:settings) => (Types.runtime_state() -> Types.simulator_settings())
         }
 
   defp resolve_introspect(state, target, ctx) do

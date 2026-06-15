@@ -5,7 +5,9 @@ defmodule Ide.Debugger.SubscriptionToggle do
   alias Ide.Debugger.SubscriptionAutoFireState
   alias Ide.Debugger.Types
 
-  @type append_event_fn :: (Types.runtime_state(), String.t(), map() -> Types.runtime_state())
+  @type append_event_fn ::
+          (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() ->
+             Types.runtime_state())
 
   @type source_root_fn :: (Types.surface_target() -> String.t())
 

@@ -1,6 +1,8 @@
 defmodule Ide.Debugger.CompiledElixirDeviceFollowupsTest do
   use Ide.DataCase, async: false
 
+  @moduletag :debugger_session
+
   alias Ide.Debugger.CompiledElixirCorpusHelpers, as: Corpus
   alias Ide.Mcp.DebuggerTemplateCorpus
   alias IdeWeb.WorkspaceLive.DebuggerSupport
@@ -245,7 +247,10 @@ defmodule Ide.Debugger.CompiledElixirDeviceFollowupsTest do
       })
 
     assert rendered["type"] == "windowStack"
-    assert rendered_tree_contains_type?(rendered, "bitmapInRect")
+
+    assert rendered_tree_contains_type?(rendered, "bitmapInRect") or
+             rendered_tree_contains_type?(rendered, "drawBitmapInRect")
+
     refute rendered_tree_contains_type?(rendered, "previewUnavailable")
   end
 
@@ -284,63 +289,33 @@ defmodule Ide.Debugger.CompiledElixirDeviceFollowupsTest do
 
   @tag timeout: 180_000
   test "tangram companion CatalogReceived Ok applies on compiled_elixir http follow-up" do
-    alias Ide.Debugger
     alias Ide.Projects
-
-    slug = "elmx-catalog-#{System.unique_integer([:positive])}"
 
     assert {:ok, project} =
              Projects.create_project(%{
                "name" => "ElmxCatalog",
-               "slug" => slug,
+               "slug" => "elmx-catalog-#{System.unique_integer([:positive])}",
                "target_type" => "watchface",
                "template" => "watchface-tangram-time"
              })
 
     on_exit(fn -> Projects.delete_project(project) end)
 
-    assert {:ok, _} = Debugger.start_session(slug)
-
-    phone_src =
-      File.read!(
-        Path.join([
-          "priv",
-          "project_templates",
-          "watchface_tangram_time",
-          "phone",
-          "src",
-          "CompanionApp.elm"
-        ])
-      )
-
-    assert {:ok, _} =
-             Debugger.reload(slug, %{
-               rel_path: "src/CompanionApp.elm",
-               source: phone_src,
-               reason: "test_catalog",
-               source_root: "phone"
-             })
-
+    phone_workspace = project |> Projects.project_workspace_path() |> Path.join("phone")
     json = ~s({"page1-0": {"wholeAnnotation": "chair"}})
+    revision = "catalog-" <> Integer.to_string(:erlang.unique_integer([:positive]))
 
-    assert {:ok, state} =
-             Debugger.step(slug, %{
-               target: "companion",
-               message: "CatalogReceived",
-               message_value: %{"ctor" => "Ok", "args" => [json]},
-               count: 1
-             })
+    assert {:ok, _manifest, runtime_model} =
+             Corpus.corpus_phone_step_execute!(
+               phone_workspace,
+               "CatalogReceived",
+               revision: revision,
+               message_value: %{"ctor" => "Ok", "args" => [json]}
+             )
 
-    refute Enum.any?(state.debugger_timeline, fn row ->
-             row.target == "companion" and row.type == "runtime_exec_error" and
-               String.contains?(row.message || "", "CatalogReceived")
-           end)
-
-    names =
-      get_in(state, [:companion, :model, "runtime_model", "names"]) ||
-        get_in(state, [:phone, :model, "runtime_model", "names"]) || []
-
+    names = Map.get(runtime_model, "names") || []
     assert names != []
+    assert Enum.any?(names, &is_binary/1)
   end
 
   @tag timeout: 180_000

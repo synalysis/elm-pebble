@@ -25,6 +25,14 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
           manifest: Compiler.manifest_result()
         }
 
+  @type package_validation_result :: %{
+          required(:status) => :ok | :error,
+          required(:artifact_path) => String.t() | nil,
+          required(:output) => String.t(),
+          required(:raw) => PebbleToolchain.package_result() | PebbleToolchain.toolchain_error() | nil,
+          required(:workspace_root) => String.t()
+        }
+
   @type build_pipeline_result :: %{
           status: :ok | :error,
           output: String.t(),
@@ -156,7 +164,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     socket =
       socket
       |> assign(:build_status, result.status)
-      |> assign(:build_output, result.output)
+      |> assign(:build_output, flash_enriched_output(result.output, result.package))
       |> assign(:build_issues, result.issues)
       |> assign(:publish_artifact_path, result.package.artifact_path)
       |> assign(:publish_app_root, package_app_root(result.package))
@@ -357,6 +365,27 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
 
   defp package_app_root(%{raw: %{app_root: app_root}}) when is_binary(app_root), do: app_root
   defp package_app_root(_package), do: nil
+
+  defp flash_enriched_output(output, package) when is_binary(output) do
+    case flash_summary_for_app(package_app_root(package)) do
+      nil -> output
+      line -> String.trim_trailing(output) <> "\n\n" <> line
+    end
+  end
+
+  defp flash_enriched_output(output, _package), do: output
+
+  defp flash_summary_for_app(app_root) when is_binary(app_root) do
+    app_root
+    |> Path.join("src/c/elmc/elmc_stack_report.json")
+    |> Elmc.Backend.CCodegen.StackReport.read_linked_binary()
+    |> case do
+      %{"available" => true} = linked -> Elmc.Backend.CCodegen.StackReport.flash_detail(linked)
+      _ -> nil
+    end
+  end
+
+  defp flash_summary_for_app(_), do: nil
 
   @spec schedule_compiler_check(socket()) :: socket()
   def schedule_compiler_check(socket) do
@@ -645,7 +674,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     end
   end
 
-  @spec run_package_validation(Project.t(), String.t(), boolean()) :: map()
+  @spec run_package_validation(Project.t(), String.t(), boolean()) :: package_validation_result()
   def run_package_validation(_project, workspace_root, false) do
     %{
       status: :error,
@@ -694,7 +723,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     end
   end
 
-  @spec render_package_validation_output(map()) :: String.t()
+  @spec render_package_validation_output(package_validation_result()) :: String.t()
   def render_package_validation_output(package_result) do
     """
     === [pbw package] ===
@@ -818,19 +847,22 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     end
   end
 
-  @spec package_for_emulator_session(Project.t(), String.t(), String.t()) ::
+  @spec package_for_emulator_session(Project.t(), String.t(), String.t(), keyword()) ::
           {:ok, PebbleToolchain.package_result()} | {:error, PebbleToolchain.toolchain_error()}
-  def package_for_emulator_session(project, workspace_root, emulator_target) do
+  def package_for_emulator_session(project, workspace_root, emulator_target, opts \\ []) do
+    package_opts =
+      [
+        workspace_root: workspace_root,
+        target_type: project.target_type,
+        project_name: project.name,
+        target_platforms: [emulator_target],
+        source_roots: project.source_roots,
+        emulator_storage_logs: Keyword.get(opts, :emulator_storage_logs, false),
+        emulator_heap_log: Keyword.get(opts, :emulator_heap_log, false)
+      ]
+
     with :ok <- Projects.ensure_packagable_workspace(project),
-         {:ok, packaged} <-
-           PebbleToolchain.package(project.slug,
-             workspace_root: workspace_root,
-             target_type: project.target_type,
-             project_name: project.name,
-             target_platforms: [emulator_target],
-             source_roots: project.source_roots,
-             emulator_storage_logs: true
-           ) do
+         {:ok, packaged} <- PebbleToolchain.package(project.slug, package_opts) do
       {:ok, packaged}
     end
   end
@@ -858,7 +890,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     |> String.trim()
   end
 
-  @spec skipped_compile_result(String.t(), String.t()) :: map()
+  @spec skipped_compile_result(String.t(), String.t()) :: Compiler.compile_result()
   def skipped_compile_result(workspace_root, message) do
     %{
       status: :error,
@@ -866,11 +898,13 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
       revision: "—",
       cached?: false,
       output: message,
-      diagnostics: []
+      diagnostics: [],
+      error_count: 0,
+      warning_count: 0
     }
   end
 
-  @spec skipped_manifest_result(String.t(), boolean(), String.t()) :: map()
+  @spec skipped_manifest_result(String.t(), boolean(), String.t()) :: Compiler.manifest_result()
   def skipped_manifest_result(workspace_root, strict?, message) do
     %{
       status: :error,
@@ -880,7 +914,9 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
       strict?: strict?,
       manifest: nil,
       output: message,
-      diagnostics: []
+      diagnostics: [],
+      error_count: 0,
+      warning_count: 0
     }
   end
 end

@@ -89,113 +89,81 @@
                 {
                   "children": [],
                   "color": 255,
-                  "kind": "clear",
-                  "label": "clear",
+                  "label": "",
                   "text": null,
                   "type": "clear"
                 },
                 {
-                  "bounds": {
-                    "h": 20,
-                    "text": null,
-                    "w": 136,
-                    "x": 4,
-                    "y": 8
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Dictation demo",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 20,
+                  "label": "",
                   "text": "Dictation demo",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 8
                 },
                 {
-                  "bounds": {
-                    "h": 20,
-                    "text": null,
-                    "w": 136,
-                    "x": 4,
-                    "y": 32
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Ready",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 20,
+                  "label": "",
                   "text": "Ready",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 32
                 },
                 {
-                  "bounds": {
-                    "h": 40,
-                    "text": null,
-                    "w": 136,
-                    "x": 4,
-                    "y": 56
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
+                  "font_id": 0,
+                  "h": 40,
                   "label": "",
-                  "options": [],
                   "text": "",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 56
                 },
                 {
-                  "bounds": {
-                    "h": 40,
-                    "text": null,
-                    "w": 136,
-                    "x": 4,
-                    "y": 100
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Select: start Down: stop",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 40,
+                  "label": "",
                   "text": "Select: start Down: stop",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 100
                 }
               ],
-              "id": "1",
-              "kind": "canvasLayer",
+              "id": 1,
               "label": "",
               "text": null,
               "type": "canvasLayer"
             }
           ],
-          "id": "1",
-          "kind": "window",
+          "id": 1,
           "label": "",
           "text": null,
           "type": "window"
         }
       ],
-      "kind": "windowStack",
       "label": "",
       "text": null,
       "type": "windowStack"
     }
   },
   "runtime_model": {
-    "colorMode": {
-      "args": [],
-      "ctor": "BlackWhite"
-    },
-    "displayShape": {
-      "args": [],
-      "ctor": "Rectangular"
-    },
     "hasMicrophone": true,
     "result": {
       "args": [
@@ -204,12 +172,6 @@
       "ctor": "Ok"
     },
     "runtime_view_output": [],
-    "screenH": 168,
-    "screenW": 144,
-    "status": {
-      "args": [],
-      "ctor": "Nothing"
-    },
     "timeString": null
   },
   "template": "watch-demo-dictation",
@@ -219,41 +181,7 @@
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
-    "last_source": "module Main exposing (main)\n\nimport Json.Decode as Decode\nimport Pebble.Button as Button\nimport Pebble.Dictation as Dictation\nimport Pebble.Events as Events\nimport Pebble.Platform as Platform\nimport Pebble.Ui as Ui\nimport Pebble.Ui.Color as Color\nimport Pebble.Ui.Resources as Resources\n\n\ntype alias Model =\n    { hasMicrophone : Bool\n    , status : Maybe Dictation.Status\n    , result : Result Dictation.Error String\n    }\n\n\ntype Msg\n    = SelectPressed\n    | DownPressed\n    | DictationStatusChanged Dictation.Status\n    | DictationFinished (Result Dictation.Error String)\n\n\ninit : Platform.LaunchContext -> ( Model, Cmd Msg )\ninit context =\n    ( { hasMicrophone = context.hasMicrophone\n      , status =\n            if context.hasMicrophone then\n                Nothing\n\n            else\n                Just Dictation.Finished\n      , result =\n            if context.hasMicrophone then\n                Ok \"\"\n\n            else\n                Err Dictation.NoMicrophone\n      }\n    , Cmd.none\n    )\n\n\nupdate : Msg -> Model -> ( Model, Cmd Msg )\nupdate msg model =\n    case msg of\n        SelectPressed ->\n            if model.hasMicrophone then\n                ( { model | status = Just Dictation.Starting, result = Ok \"\" }, Dictation.start )\n\n            else\n                ( model, Cmd.none )\n\n        DownPressed ->\n            if model.hasMicrophone then\n                ( model, Dictation.stop )\n\n            else\n                ( model, Cmd.none )\n\n        DictationStatusChanged status ->\n            ( { model | status = Just status }, Cmd.none )\n\n        DictationFinished result ->\n            ( { model | status = Just Dictation.Finished, result = result }, Cmd.none )\n\n\nsubscriptions : Model -> Sub Msg\nsubscriptions model =\n    if model.hasMicrophone then\n        Events.batch\n            [ Dictation.onStatus DictationStatusChanged\n            , Dictation.onResult DictationFinished\n            , Button.onPress Button.Select SelectPressed\n            , Button.onPress Button.Down DownPressed\n            ]\n\n    else\n        Events.batch []\n\n\nview : Model -> Ui.UiNode\nview model =\n    Ui.toUiNode\n        [ Ui.clear Color.white\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 8, w = 136, h = 20 } \"Dictation demo\"\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 32, w = 136, h = 20 } (statusLabel model.status model.hasMicrophone)\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 56, w = 136, h = 40 } (resultLabel model.result)\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 100, w = 136, h = 40 } \"Select: start Down: stop\"\n        ]\n\n\nstatusLabel : Maybe Dictation.Status -> Bool -> String\nstatusLabel maybeStatus hasMicrophone =\n    if not hasMicrophone then\n        \"No microphone\"\n\n    else\n        case maybeStatus of\n            Nothing ->\n                \"Ready\"\n\n            Just Dictation.Starting ->\n                \"Starting\"\n\n            Just Dictation.Recognizing ->\n                \"Recognizing\"\n\n            Just Dictation.Finished ->\n                \"Finished\"\n\n\nresultLabel : Result Dictation.Error String -> String\nresultLabel result =\n    case result of\n        Ok transcript ->\n            transcript\n\n        Err Dictation.NoMicrophone ->\n            \"No microphone\"\n\n        Err Dictation.PhoneDisconnected ->\n            \"Phone disconnected\"\n\n        Err Dictation.Cancelled ->\n            \"Cancelled\"\n\n        Err (Dictation.Failed detail) ->\n            detail\n\n\nmain : Program Decode.Value Model Msg\nmain =\n    Platform.application\n        { init = init\n        , update = update\n        , view = view\n        , subscriptions = subscriptions\n        }\n",
-    "launch_context": {
-      "has_compass": false,
-      "has_microphone": true,
-      "launch_reason": "LaunchUser",
-      "screen": {
-        "color_mode": "BlackWhite",
-        "height": 168,
-        "shape": "Rectangular",
-        "width": 144
-      },
-      "shape": "rect",
-      "supports_health": true,
-      "watch_model": "Diorite",
-      "watch_profile_id": "diorite"
-    },
-    "revision": "f709b27f1546",
-    "runtime_execution": {
-      "compiler": "elmx",
-      "contract": "elmx.runtime_executor.v1",
-      "engine": "elmx_runtime_v1",
-      "execution_backend": "compiled_elixir",
-      "runtime_mode": "runtime_first",
-      "runtime_model_source": "init_model"
-    },
-    "runtime_execution_mode": "runtime_executed",
     "runtime_model": {
-      "colorMode": {
-        "args": [],
-        "ctor": "BlackWhite"
-      },
-      "displayShape": {
-        "args": [],
-        "ctor": "Rectangular"
-      },
       "hasMicrophone": true,
       "result": {
         "args": [
@@ -261,124 +189,12 @@
         ],
         "ctor": "Ok"
       },
-      "runtime_view_output_model_sha256": "73f12807580c169139d92b8fcbf0475e2b83c0ee1760432458137b75d7738acf",
-      "screenH": 168,
-      "screenW": 144,
       "status": {
         "args": [],
         "ctor": "Nothing"
       }
     },
-    "runtime_model_source": "init_model",
-    "runtime_view_output": [
-      {
-        "color": 255,
-        "kind": "clear",
-        "text": null
-      },
-      {
-        "font_id": 0,
-        "h": 20,
-        "kind": "text",
-        "text": "Dictation demo",
-        "text_align": "center",
-        "text_overflow": "word_wrap",
-        "w": 136,
-        "x": 4,
-        "y": 8
-      },
-      {
-        "font_id": 0,
-        "h": 20,
-        "kind": "text",
-        "text": "Ready",
-        "text_align": "center",
-        "text_overflow": "word_wrap",
-        "w": 136,
-        "x": 4,
-        "y": 32
-      },
-      {
-        "font_id": 0,
-        "h": 40,
-        "kind": "text",
-        "text": "",
-        "text_align": "center",
-        "text_overflow": "word_wrap",
-        "w": 136,
-        "x": 4,
-        "y": 56
-      },
-      {
-        "font_id": 0,
-        "h": 40,
-        "kind": "text",
-        "text": "Select: start Down: stop",
-        "text_align": "center",
-        "text_overflow": "word_wrap",
-        "w": 136,
-        "x": 4,
-        "y": 100
-      }
-    ],
-    "screen_height": 168,
-    "screen_width": 144,
-    "simulator_settings": {
-      "calendar_events": [],
-      "storage_values": {},
-      "charging": false,
-      "timezone_id": "Europe/Berlin",
-      "compass_valid": true,
-      "use_simulated_time": true,
-      "simulated_date": "2026-05-27",
-      "compass_heading_deg": 0,
-      "latitude": 48.14,
-      "companion_timeline_token": "demo-timeline-token",
-      "notifications_enabled": true,
-      "health_steps_today": 9100,
-      "language": "en",
-      "connected": true,
-      "preferences": {},
-      "battery_percent": 88,
-      "dictation_error": "",
-      "environment": {
-        "moon": {
-          "moonriseMin": 900,
-          "moonsetMin": 300,
-          "phaseE6": 500000
-        },
-        "sun": {
-          "polarDay": false,
-          "sunriseMin": 420,
-          "sunsetMin": 1200
-        },
-        "tide": null
-      },
-      "timezone_offset_min": 0,
-      "weather": {
-        "condition": "clear",
-        "humidityPercent": 50,
-        "pressureHpa": 1013,
-        "temperatureC": 21,
-        "windKph": 8
-      },
-      "region": "US",
-      "clock_24h": true,
-      "longitude": 11.58,
-      "vibe_pattern_ms": [],
-      "accuracy": 25.0,
-      "app_in_focus": true,
-      "locale": "en-US",
-      "network_online": true,
-      "timeline_peek": false,
-      "health_steps": 4200,
-      "dictation_transcript": "",
-      "simulated_time": "08:53:00",
-      "quiet_hours": false
-    },
-    "source_root": "watch",
-    "status": "idle",
-    "supports_color": false,
+    "runtime_view_output": [],
     "timeString": null,
     "watch_profile_id": "diorite"
   }

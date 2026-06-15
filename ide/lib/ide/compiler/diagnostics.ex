@@ -3,7 +3,19 @@ defmodule Ide.Compiler.Diagnostics do
   Shared diagnostic normalization and count helpers.
   """
 
-  @type diagnostic_map :: map()
+  @type diagnostic_map :: %{
+          required(:severity) => String.t(),
+          required(:message) => String.t(),
+          required(:source) => String.t(),
+          required(:file) => String.t() | nil,
+          required(:line) => integer() | nil,
+          required(:column) => integer() | nil,
+          optional(:warning_type) => String.t() | atom() | nil,
+          optional(:warning_code) => String.t() | atom() | nil,
+          optional(:warning_constructor) => String.t() | nil,
+          optional(:warning_expected_kind) => String.t() | atom() | nil,
+          optional(:warning_has_arg_pattern) => boolean() | nil
+        }
   @type summary :: %{
           error_count: non_neg_integer(),
           warning_count: non_neg_integer(),

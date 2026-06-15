@@ -14,7 +14,17 @@ defmodule Ide.DebuggerIntegrationCase do
 
       import Ide.DebuggerIntegrationHelpers
 
+      alias Ide.Debugger.AgentStore
+
       @moduletag :integration
+      @moduletag :slow
+      @moduletag timeout: 300_000
+
+      setup tags do
+        :ok = AgentStore.ensure_started(Ide.Debugger)
+        Ide.TestSupport.DebuggerSessionLock.setup(timeout: tags[:timeout] || 300_000)
+        :ok
+      end
     end
   end
 end

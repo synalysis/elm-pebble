@@ -10,6 +10,8 @@ defmodule Ide.Debugger.Types.LaunchContext do
           optional(:height) => pos_integer(),
           optional(:shape) => String.t(),
           optional(:color_mode) => String.t(),
+          optional(:isRound) => boolean(),
+          optional(:is_round) => boolean(),
           optional(String.t()) => Types.wire_input()
         }
 
@@ -21,10 +23,10 @@ defmodule Ide.Debugger.Types.LaunchContext do
           optional(:has_microphone) => boolean(),
           optional(:has_compass) => boolean(),
           optional(:supports_health) => boolean(),
-          optional(:screen) => screen() | map(),
+          optional(:screen) => screen(),
           optional(String.t()) => Types.wire_input(),
           optional(atom()) => Types.wire_input()
         }
 
-  @type wire_map :: t() | map()
+  @type wire_map :: t() | Types.wire_map()
 end

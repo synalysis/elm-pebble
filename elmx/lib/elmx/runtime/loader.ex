@@ -4,9 +4,10 @@ defmodule Elmx.Runtime.Loader do
   """
 
   alias Elmx.CompileResult
+  alias Elmx.Types
 
   @type compile_error ::
-          {:compile_failed, String.t(), term()}
+          {:compile_failed, String.t(), Types.compile_failure_detail()}
           | {:missing_module_source, String.t()}
 
   @spec compile_modules([CompileResult.compiled_module()]) ::

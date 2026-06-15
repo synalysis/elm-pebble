@@ -26,7 +26,7 @@ defmodule Elmx.SimpleProjectCompileSourceTest do
 
     assert is_binary(main_source), "expected generated Main module in #{inspect(Enum.map(result.modules, & &1.name))}"
     assert main_source =~ "def elmx_fn_Main_view"
-    assert main_source =~ "elmx_ui_window_stack"
+    assert main_source =~ "Elmx.Runtime.Pebble.Ui.window_stack"
     refute main_source =~ "PebbleUi.windowStack"
   end
 end

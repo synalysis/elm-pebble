@@ -18,7 +18,9 @@ defmodule Ide.Debugger.TickIngress do
            String.t() ->
              Types.runtime_state())
 
-  @type append_event_fn :: (Types.runtime_state(), String.t(), map() -> Types.runtime_state())
+  @type append_event_fn ::
+          (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() ->
+             Types.runtime_state())
 
   @type tick_message_fn :: (Types.runtime_state(), Types.surface_target() -> String.t())
 

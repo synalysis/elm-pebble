@@ -100,118 +100,84 @@
                 {
                   "children": [],
                   "color": 255,
-                  "kind": "clear",
-                  "label": "clear",
+                  "label": "",
                   "text": null,
                   "type": "clear"
                 },
                 {
-                  "bounds": {
-                    "h": 20,
-                    "text": null,
-                    "w": 136,
-                    "x": 4,
-                    "y": 8
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Vibes pattern",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 20,
+                  "label": "",
                   "text": "Vibes pattern",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 8
                 },
                 {
-                  "bounds": {
-                    "h": 20,
-                    "text": null,
-                    "w": 136,
-                    "x": 4,
-                    "y": 36
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Short-long",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 20,
+                  "label": "",
                   "text": "Short-long",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 36
                 },
                 {
-                  "bounds": {
-                    "h": 20,
-                    "text": null,
-                    "w": 136,
-                    "x": 4,
-                    "y": 64
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "0",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 20,
+                  "label": "",
                   "text": "0",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 64
                 },
                 {
-                  "bounds": {
-                    "h": 40,
-                    "text": null,
-                    "w": 136,
-                    "x": 4,
-                    "y": 92
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Up/Down: pattern Select: play",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 40,
+                  "label": "",
                   "text": "Up/Down: pattern Select: play",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 92
                 }
               ],
-              "id": "1",
-              "kind": "canvasLayer",
+              "id": 1,
               "label": "",
               "text": null,
               "type": "canvasLayer"
             }
           ],
-          "id": "1",
-          "kind": "window",
+          "id": 1,
           "label": "",
           "text": null,
           "type": "window"
         }
       ],
-      "kind": "windowStack",
       "label": "",
       "text": null,
       "type": "windowStack"
     }
   },
   "runtime_model": {
-    "colorMode": {
-      "args": [],
-      "ctor": "BlackWhite"
-    },
-    "displayShape": {
-      "args": [],
-      "ctor": "Rectangular"
-    },
     "patternIndex": 0,
     "presses": 0,
     "runtime_view_output": [],
-    "screenH": 168,
-    "screenW": 144,
     "timeString": null
   },
   "template": "watch-demo-vibes",
@@ -221,157 +187,11 @@
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
-    "last_source": "module Main exposing (main)\n\nimport Json.Decode as Decode\nimport Pebble.Button as Button\nimport Pebble.Events as Events\nimport Pebble.Platform as Platform\nimport Pebble.Ui as Ui\nimport Pebble.Ui.Color as Color\nimport Pebble.Ui.Resources as Resources\nimport Pebble.Vibes as Vibes\n\n\ntype alias Model =\n    { patternIndex : Int\n    , presses : Int\n    }\n\n\ntype Msg\n    = UpPressed\n    | SelectPressed\n    | DownPressed\n\n\npatterns : List ( String, List Int )\npatterns =\n    [ ( \"Short-long\", [ 100, 50, 300 ] )\n    , ( \"SOS\", [ 100, 100, 100, 100, 100, 300, 300, 300, 100, 100, 100 ] )\n    , ( \"Heartbeat\", [ 80, 80, 80, 200, 80, 80, 80, 400 ] )\n    ]\n\n\ninit : Platform.LaunchContext -> ( Model, Cmd Msg )\ninit _ =\n    ( { patternIndex = 0, presses = 0 }, Cmd.none )\n\n\nupdate : Msg -> Model -> ( Model, Cmd Msg )\nupdate msg model =\n    case msg of\n        UpPressed ->\n            playPattern { model | patternIndex = prevIndex model.patternIndex }\n\n        SelectPressed ->\n            playPattern { model | presses = model.presses + 1 }\n\n        DownPressed ->\n            playPattern { model | patternIndex = nextIndex model.patternIndex }\n\n\nplayPattern : Model -> ( Model, Cmd Msg )\nplayPattern model =\n    case currentPattern model.patternIndex of\n        ( _, segments ) ->\n            ( model, Vibes.pattern segments )\n\n\ncurrentPattern : Int -> ( String, List Int )\ncurrentPattern index =\n    let\n        count =\n            List.length patterns\n\n        normalized =\n            modBy count (index + count)\n    in\n    patterns\n        |> List.drop normalized\n        |> List.head\n        |> Maybe.withDefault ( \"Pulse\", [ 200 ] )\n\n\nprevIndex : Int -> Int\nprevIndex index =\n    modBy (List.length patterns) (index - 1 + List.length patterns)\n\n\nnextIndex : Int -> Int\nnextIndex index =\n    modBy (List.length patterns) (index + 1)\n\n\npatternLabel : Model -> String\npatternLabel model =\n    Tuple.first (currentPattern model.patternIndex)\n\n\nsubscriptions : Model -> Sub Msg\nsubscriptions _ =\n    Events.batch\n        [ Button.onPress Button.Up UpPressed\n        , Button.onPress Button.Select SelectPressed\n        , Button.onPress Button.Down DownPressed\n        ]\n\n\nview : Model -> Ui.UiNode\nview model =\n    Ui.toUiNode\n        [ Ui.clear Color.white\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 8, w = 136, h = 20 } \"Vibes pattern\"\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 36, w = 136, h = 20 } (patternLabel model)\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 64, w = 136, h = 20 } (String.fromInt model.presses)\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 92, w = 136, h = 40 } \"Up/Down: pattern Select: play\"\n        ]\n\n\nmain : Program Decode.Value Model Msg\nmain =\n    Platform.application\n        { init = init\n        , update = update\n        , view = view\n        , subscriptions = subscriptions\n        }\n",
-    "launch_context": {
-      "has_compass": true,
-      "has_microphone": false,
-      "launch_reason": "LaunchUser",
-      "screen": {
-        "color_mode": "BlackWhite",
-        "height": 168,
-        "shape": "Rectangular",
-        "width": 144
-      },
-      "shape": "rect",
-      "supports_health": false,
-      "watch_model": "Aplite",
-      "watch_profile_id": "aplite"
-    },
-    "revision": "20266e728bdd",
-    "runtime_execution": {
-      "compiler": "elmx",
-      "contract": "elmx.runtime_executor.v1",
-      "engine": "elmx_runtime_v1",
-      "execution_backend": "compiled_elixir",
-      "runtime_mode": "runtime_first",
-      "runtime_model_source": "init_model"
-    },
-    "runtime_execution_mode": "runtime_executed",
     "runtime_model": {
-      "colorMode": {
-        "args": [],
-        "ctor": "BlackWhite"
-      },
-      "displayShape": {
-        "args": [],
-        "ctor": "Rectangular"
-      },
       "patternIndex": 0,
-      "presses": 0,
-      "runtime_view_output_model_sha256": "a5568ca83ef594c1b82ce0d93f222507b97150ecee7c125776c774e345ba6b77",
-      "screenH": 168,
-      "screenW": 144
+      "presses": 0
     },
-    "runtime_model_source": "init_model",
-    "runtime_view_output": [
-      {
-        "color": 255,
-        "kind": "clear",
-        "text": null
-      },
-      {
-        "font_id": 0,
-        "h": 20,
-        "kind": "text",
-        "text": "Vibes pattern",
-        "text_align": "center",
-        "text_overflow": "word_wrap",
-        "w": 136,
-        "x": 4,
-        "y": 8
-      },
-      {
-        "font_id": 0,
-        "h": 20,
-        "kind": "text",
-        "text": "Short-long",
-        "text_align": "center",
-        "text_overflow": "word_wrap",
-        "w": 136,
-        "x": 4,
-        "y": 36
-      },
-      {
-        "font_id": 0,
-        "h": 20,
-        "kind": "text",
-        "text": "0",
-        "text_align": "center",
-        "text_overflow": "word_wrap",
-        "w": 136,
-        "x": 4,
-        "y": 64
-      },
-      {
-        "font_id": 0,
-        "h": 40,
-        "kind": "text",
-        "text": "Up/Down: pattern Select: play",
-        "text_align": "center",
-        "text_overflow": "word_wrap",
-        "w": 136,
-        "x": 4,
-        "y": 92
-      }
-    ],
-    "screen_height": 168,
-    "screen_width": 144,
-    "simulator_settings": {
-      "calendar_events": [],
-      "storage_values": {},
-      "charging": false,
-      "timezone_id": "Europe/Berlin",
-      "compass_valid": true,
-      "use_simulated_time": true,
-      "simulated_date": "2026-05-27",
-      "compass_heading_deg": 0,
-      "latitude": 48.14,
-      "companion_timeline_token": "demo-timeline-token",
-      "notifications_enabled": true,
-      "health_steps_today": 9100,
-      "language": "en",
-      "connected": true,
-      "preferences": {},
-      "battery_percent": 88,
-      "dictation_error": "",
-      "environment": {
-        "moon": {
-          "moonriseMin": 900,
-          "moonsetMin": 300,
-          "phaseE6": 500000
-        },
-        "sun": {
-          "polarDay": false,
-          "sunriseMin": 420,
-          "sunsetMin": 1200
-        },
-        "tide": null
-      },
-      "timezone_offset_min": 0,
-      "weather": {
-        "condition": "clear",
-        "humidityPercent": 50,
-        "pressureHpa": 1013,
-        "temperatureC": 21,
-        "windKph": 8
-      },
-      "region": "US",
-      "clock_24h": true,
-      "longitude": 11.58,
-      "vibe_pattern_ms": [],
-      "accuracy": 25.0,
-      "app_in_focus": true,
-      "locale": "en-US",
-      "network_online": true,
-      "timeline_peek": false,
-      "health_steps": 4200,
-      "dictation_transcript": "",
-      "simulated_time": "08:53:00",
-      "quiet_hours": false
-    },
-    "source_root": "watch",
-    "status": "idle",
-    "supports_color": false,
+    "runtime_view_output": [],
     "timeString": null,
     "watch_profile_id": "aplite"
   }

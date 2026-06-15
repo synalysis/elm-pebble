@@ -48,4 +48,46 @@ defmodule ElmEx.IR.DeadCodeReachableTest do
     assert MapSet.member?(reachable, "Helper.greet")
     refute MapSet.member?(reachable, "Helper.unused")
   end
+
+  test "reachable_keys follows sub_const references to top-level constants" do
+    ir = %IR{
+      modules: [
+        %{
+          name: "Main",
+          declarations: [
+            %{
+              kind: :function,
+              name: "boardRows",
+              args: [],
+              expr: %{op: :int_literal, value: 14}
+            },
+            %{
+              kind: :function,
+              name: "rows",
+              args: [],
+              expr: %{
+                op: :qualified_call,
+                target: "List.range",
+                args: [
+                  %{op: :int_literal, value: 0},
+                  %{op: :sub_const, var: "boardRows", value: 1}
+                ]
+              }
+            },
+            %{
+              kind: :function,
+              name: "init",
+              args: [],
+              expr: %{op: :call, name: "rows", args: []}
+            }
+          ]
+        }
+      ]
+    }
+
+    reachable = DeadCode.reachable_keys(ir, "Main", roots: ["init"])
+
+    assert MapSet.member?(reachable, "Main.boardRows")
+    assert MapSet.member?(reachable, "Main.rows")
+  end
 end

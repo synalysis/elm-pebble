@@ -129,13 +129,7 @@ defmodule Mix.Tasks.Ide.SizeReport do
     compile_out = Path.join(workspace_root, ".size/elmc")
 
     with :ok <- reset_workspace(template, workspace_root),
-         :ok <-
-           Elmc.compile(Path.join(workspace_root, "watch"), %{
-             out_dir: compile_out,
-             entry_module: "Main",
-             prune_runtime: true
-           })
-           |> normalize_compile_result() do
+         :ok <- compile_template_elmc(Path.join(workspace_root, "watch"), compile_out) do
       package_report =
         if package? do
           package_template(template, workspace_root, targets)
@@ -159,6 +153,39 @@ defmodule Mix.Tasks.Ide.SizeReport do
     with :ok <- File.mkdir_p(workspace_root) do
       ProjectTemplates.apply_template(template, workspace_root)
     end
+  end
+
+  defp compile_template_elmc(watch_dir, compile_out) do
+    compile_template_elmc(watch_dir, compile_out, direct_render_only: true)
+  end
+
+  defp compile_template_elmc(watch_dir, compile_out, opts) do
+    elmc_opts = %{
+      out_dir: compile_out,
+      entry_module: "Main",
+      direct_render_only: Keyword.get(opts, :direct_render_only, false),
+      prune_runtime: true,
+      prune_native_wrappers: true
+    }
+
+    case Elmc.compile(watch_dir, elmc_opts) do
+      result -> normalize_compile_result(result)
+    end
+  rescue
+    exception in ArgumentError ->
+      if Keyword.get(opts, :direct_render_only, false) and
+           direct_render_only_view_error?(exception) do
+        compile_template_elmc(watch_dir, compile_out, direct_render_only: false)
+      else
+        reraise exception, __STACKTRACE__
+      end
+  end
+
+  defp direct_render_only_view_error?(%ArgumentError{} = exception) do
+    String.contains?(
+      Exception.message(exception),
+      "direct_render_only requires"
+    )
   end
 
   defp normalize_compile_result({:ok, _result}), do: :ok

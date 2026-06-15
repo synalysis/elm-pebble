@@ -3,6 +3,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Constructor do
 
   alias Elmx.Backend.ConstructorLookup
   alias Elmx.Backend.ElixirCodegen.Emit.Helpers
+  alias Elmx.Runtime.CodegenRefs
   alias Elmx.Types
 
   @type env :: Types.emit_env()
@@ -26,7 +27,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Constructor do
         _ ->
           case args do
             [] -> zero_arg_constructor_code(name, env)
-            _ -> "Elmx.Runtime.Values.ctor(#{inspect(ctor_name)}, [#{arg_str}])"
+            _ -> "#{CodegenRefs.values()}.ctor(#{inspect(ctor_name)}, [#{arg_str}])"
           end
       end
 
@@ -76,7 +77,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Constructor do
   end
 
   def ide_runtime_constructor_code(ctor, _args, arg_str, _name, _env) do
-    "Elmx.Runtime.Values.ctor(#{inspect(ctor)}, [#{arg_str}])"
+    "#{CodegenRefs.values()}.ctor(#{inspect(ctor)}, [#{arg_str}])"
   end
 
   def zero_arg_constructor_code_library(name, ctor, env) do
@@ -95,10 +96,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Constructor do
   def compile_var(name, env, counter) when is_binary(name) do
     case String.split(name, ".") do
       [^name] ->
-        case Helpers.compile_constructor_reference(name, env, counter) do
-          {:ok, code, env, c} -> {:ok, code, env, c}
-          :error -> :error
-        end
+        compile_var_simple(name, env, counter)
 
       [base | fields] ->
         with {:ok, base_code, env, c} <- compile_var_simple(base, env, counter) do

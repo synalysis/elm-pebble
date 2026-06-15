@@ -118,7 +118,7 @@ defmodule Ide.SizeReportMapPathTest do
     assert get_in(report, ["baseline", "generated_c", "current"]) ==
              get_in(report, ["compiler", "generated_c", "bytes"])
 
-    assert get_in(report, ["baseline", "generated_c", "baseline"]) == 78_758
+    assert get_in(report, ["baseline", "generated_c", "baseline"]) == 69_762
   end
 
   defp extract_json!(output) do

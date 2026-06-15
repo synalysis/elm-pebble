@@ -8,7 +8,7 @@ defmodule Ide.Debugger.RuntimeArtifacts.Types do
   @type resource_indices :: %{optional(String.t()) => pos_integer()}
 
   @type t :: %{
-          optional(:elmx_manifest) => map(),
+          optional(:elmx_manifest) => Types.elmx_manifest(),
           optional(:elmx_revision) => String.t(),
           optional(:vector_resource_indices) => resource_indices(),
           optional(:bitmap_resource_indices) => resource_indices(),

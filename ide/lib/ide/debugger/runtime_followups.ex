@@ -133,7 +133,11 @@ defmodule Ide.Debugger.RuntimeFollowups do
   defp apply_runtime(state, _target, _message, _message_source, _followups, _ctx),
     do: state
 
-  @spec init_device_followup_shadowed?(Surface.t() | Surface.surface_map(), String.t(), String.t()) ::
+  @spec init_device_followup_shadowed?(
+          Surface.t() | Surface.surface_map(),
+          String.t(),
+          String.t()
+        ) ::
           boolean()
   defp init_device_followup_shadowed?(surface, "init", followup_message)
        when is_binary(followup_message) and followup_message != "" do
@@ -181,7 +185,8 @@ defmodule Ide.Debugger.RuntimeFollowups do
 
   defp shadowed_by_device_data?(_state, _target, _message, _row), do: false
 
-  @spec cross_surface_protocol_followup?(map(), Types.surface_target()) :: boolean()
+  @spec cross_surface_protocol_followup?(Types.runtime_followup_row(), Types.surface_target()) ::
+          boolean()
   defp cross_surface_protocol_followup?(row, target) when is_map(row) and is_atom(target) do
     package = Map.get(row, "package") || Map.get(row, :package)
     command = Map.get(row, "command") || Map.get(row, :command)
@@ -196,7 +201,7 @@ defmodule Ide.Debugger.RuntimeFollowups do
 
   defp cross_surface_protocol_followup?(_row, _target), do: false
 
-  @spec protocol_command_direction(map()) :: :watch_to_phone | :phone_to_watch | nil
+  @spec protocol_command_direction(Types.wire_map()) :: :watch_to_phone | :phone_to_watch | nil
   defp protocol_command_direction(command) when is_map(command) do
     direction = Map.get(command, "direction") || Map.get(command, :direction)
 
@@ -651,8 +656,8 @@ defmodule Ide.Debugger.RuntimeFollowups do
           Types.surface_target(),
           String.t(),
           String.t(),
-          map()
-        ) :: map() | nil
+          Types.runtime_followup_row()
+        ) :: Types.protocol_ctor_value() | nil
   defp device_command_wire_value(state, target, parent_message, followup_message, row)
        when is_map(state) and is_binary(parent_message) and is_binary(followup_message) and
               is_map(row) do
@@ -683,26 +688,71 @@ defmodule Ide.Debugger.RuntimeFollowups do
   defp device_command_wire_value(_state, _target, _parent_message, _followup_message, _row),
     do: nil
 
-  @spec device_request_row(map(), String.t()) :: Types.cmd_call()
+  @spec device_request_row(Types.runtime_followup_row(), String.t()) :: Types.cmd_call()
   defp device_request_row(row, followup_message) when is_map(row) do
     command = Map.get(row, "command") || Map.get(row, :command) || %{}
     kind = Map.get(command, "kind") || Map.get(command, :kind) || ""
 
     %{
       "name" => device_command_name(kind, command),
-      "target" =>
-        Map.get(command, "target") || Map.get(command, :target) || "PebbleCmd.getCurrentDateTime",
+      "target" => device_command_target(kind, command),
       "callback_constructor" => followup_message,
       "branch_constructor" => Map.get(row, "branch_constructor"),
       "task_sources" => Map.get(row, "task_sources", [])
     }
   end
 
-  defp device_command_name("cmd.device.current_date_time", _command), do: "getCurrentDateTime"
-  defp device_command_name("cmd.device.current_time_string", _command), do: "getCurrentTimeString"
+  defp device_command_name("cmd.device." <> kind, _command), do: device_command_name_for_kind(kind)
 
-  defp device_command_name(_kind, command) do
-    Map.get(command, "name") || Map.get(command, :name) || ""
+  defp device_command_name(kind, command) do
+    Map.get(command, "name") || Map.get(command, :name) ||
+      device_command_name_for_kind(kind)
+  end
+
+  defp device_command_name_for_kind("current_date_time"), do: "getCurrentDateTime"
+  defp device_command_name_for_kind("current_time_string"), do: "getCurrentTimeString"
+  defp device_command_name_for_kind("battery_level"), do: "getBatteryLevel"
+  defp device_command_name_for_kind("connection_status"), do: "getConnectionStatus"
+  defp device_command_name_for_kind("clock_style_24h"), do: "getClockStyle24h"
+  defp device_command_name_for_kind("timezone_is_set"), do: "getTimezoneIsSet"
+  defp device_command_name_for_kind("timezone"), do: "getTimezone"
+  defp device_command_name_for_kind("watch_model"), do: "getModel"
+  defp device_command_name_for_kind("watch_color"), do: "getColor"
+  defp device_command_name_for_kind("firmware_version"), do: "getFirmwareVersion"
+  defp device_command_name_for_kind("health_value"), do: "value"
+  defp device_command_name_for_kind("health_supported"), do: "supported"
+  defp device_command_name_for_kind("health_sum_today"), do: "sumToday"
+  defp device_command_name_for_kind("health_sum"), do: "sum"
+  defp device_command_name_for_kind("health_accessible"), do: "accessible"
+  defp device_command_name_for_kind(_), do: ""
+
+  defp device_command_target("cmd.device." <> kind, command),
+    do: device_command_target_for_kind(kind, command)
+
+  defp device_command_target(kind, command) do
+    device_command_target_for_kind(kind, command)
+  end
+
+  defp device_command_target_for_kind(kind, command) when is_binary(kind) do
+    cond do
+      kind in health_device_kinds() ->
+        "Pebble.Health"
+
+      kind in pebble_cmd_device_kinds() ->
+        "Pebble.Cmd"
+
+      true ->
+        Map.get(command, "target") || Map.get(command, :target) || "Pebble.Cmd"
+    end
+  end
+
+  defp health_device_kinds do
+    ~w(health_value health_supported health_sum_today health_sum health_accessible)
+  end
+
+  defp pebble_cmd_device_kinds do
+    ~w(current_date_time current_time_string battery_level connection_status clock_style_24h
+       timezone_is_set timezone watch_model watch_color firmware_version)
   end
 
   @spec synthesized_device_wire_value(
@@ -710,7 +760,7 @@ defmodule Ide.Debugger.RuntimeFollowups do
           Types.surface_target(),
           String.t(),
           String.t()
-        ) :: map() | nil
+        ) :: Types.protocol_ctor_value() | nil
   defp synthesized_device_wire_value(state, target, parent_message, ctor)
        when is_map(state) and target in [:watch, :companion, :phone] and is_binary(parent_message) and
               is_binary(ctor) and ctor != "" do
@@ -731,7 +781,7 @@ defmodule Ide.Debugger.RuntimeFollowups do
           Types.surface_target(),
           String.t(),
           String.t()
-        ) :: map() | nil
+        ) :: Types.protocol_ctor_value() | nil
   defp callback_wire_from_surface(state, target, ctor, current_message)
        when is_map(state) and target in [:watch, :companion, :phone] and is_binary(ctor) and
               ctor != "" do
@@ -757,7 +807,8 @@ defmodule Ide.Debugger.RuntimeFollowups do
     div(local_seconds - utc_seconds, 60)
   end
 
-  @spec http_eval_context(Types.execution_model(), Types.simulator_settings()) :: map()
+  @spec http_eval_context(Types.execution_model(), Types.simulator_settings()) ::
+          Types.eval_context()
   defp http_eval_context(model, settings) when is_map(model) and is_map(settings) do
     weather = Map.get(settings, "weather")
 

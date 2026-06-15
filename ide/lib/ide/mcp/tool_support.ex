@@ -2,21 +2,29 @@ defmodule Ide.Mcp.ToolSupport do
   @moduledoc false
 
   alias Ide.Debugger
+  alias Ide.Debugger.Types
   alias Ide.Mcp.WireTypes
   alias Ide.PebbleToolchain
   alias Ide.Projects
+  alias Ide.Projects.Project
 
   @type maybe_since :: DateTime.t() | nil
   @type maybe_slug :: String.t() | nil
+  @type timestamped_entry :: %{
+          optional(:at) => String.t(),
+          optional(atom()) => WireTypes.json_value(),
+          optional(String.t()) => WireTypes.json_value()
+        }
 
-  @spec normalize_mcp_simulator_settings(map()) :: map()
+  @spec normalize_mcp_simulator_settings(Types.SimulatorSettings.wire_map()) ::
+          Types.simulator_settings()
   def normalize_mcp_simulator_settings(settings) when is_map(settings) do
     Debugger.normalize_simulator_settings(settings)
   end
 
   def normalize_mcp_simulator_settings(_settings), do: Debugger.default_simulator_settings()
 
-  @spec fetch_project(String.t()) :: {:ok, map()} | {:error, :project_not_found}
+  @spec fetch_project(String.t()) :: {:ok, Project.t()} | {:error, :project_not_found}
   def fetch_project(slug) do
     case Projects.get_project_by_scope_key(slug) do
       nil -> {:error, :project_not_found}
@@ -24,7 +32,7 @@ defmodule Ide.Mcp.ToolSupport do
     end
   end
 
-  @spec project_session_key(String.t() | map()) :: String.t()
+  @spec project_session_key(String.t() | Project.t()) :: String.t()
   def project_session_key(%{} = project), do: Projects.scope_key(project)
 
   def project_session_key(slug) when is_binary(slug) do
@@ -34,13 +42,13 @@ defmodule Ide.Mcp.ToolSupport do
     end
   end
 
-  @spec map_value(map(), String.t()) :: WireTypes.map_value_result()
+  @spec map_value(Types.wire_map(), String.t()) :: WireTypes.map_value_result()
   def map_value(map, key) when is_map(map) and is_binary(key),
     do: Map.get(map, key) || Map.get(map, String.to_atom(key))
 
   def map_value(_map, _key), do: nil
 
-  @spec map_get_any(map(), [atom() | String.t()], term()) :: term()
+  @spec map_get_any(Types.wire_map(), [atom() | String.t()], term()) :: term()
   def map_get_any(map, keys, default) when is_map(map) and is_list(keys) do
     Enum.find_value(keys, default, fn key ->
       case Map.fetch(map, key) do
@@ -57,7 +65,8 @@ defmodule Ide.Mcp.ToolSupport do
   def put_opt(opts, _key, ""), do: opts
   def put_opt(opts, key, value), do: Keyword.put(opts, key, value)
 
-  @spec put_opt_map(map(), String.t(), WireTypes.json_value()) :: map()
+  @spec put_opt_map(WireTypes.json_value(), String.t(), WireTypes.json_value()) ::
+          WireTypes.json_value()
   def put_opt_map(map, _key, nil), do: map
   def put_opt_map(map, _key, ""), do: map
   def put_opt_map(map, key, value), do: Map.put(map, key, value)
@@ -146,13 +155,13 @@ defmodule Ide.Mcp.ToolSupport do
   def format_since(nil), do: nil
   def format_since(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
 
-  @spec filter_since([map()], maybe_since()) :: [map()]
+  @spec filter_since([timestamped_entry()], maybe_since()) :: [timestamped_entry()]
   def filter_since(entries, nil), do: entries
 
   def filter_since(entries, %DateTime{} = since),
     do: Enum.filter(entries, &keep_since?(&1, since))
 
-  @spec keep_since?(map(), maybe_since()) :: boolean()
+  @spec keep_since?(timestamped_entry(), maybe_since()) :: boolean()
   def keep_since?(_entry, nil), do: true
 
   def keep_since?(entry, %DateTime{} = since) do
@@ -162,7 +171,7 @@ defmodule Ide.Mcp.ToolSupport do
     end
   end
 
-  @spec entry_datetime(map()) :: {:ok, DateTime.t()} | :error
+  @spec entry_datetime(timestamped_entry()) :: {:ok, DateTime.t()} | :error
   def entry_datetime(entry) when is_map(entry) do
     at = Map.get(entry, :at) || Map.get(entry, "at")
 
@@ -193,7 +202,7 @@ defmodule Ide.Mcp.ToolSupport do
     end
   end
 
-  @spec publish_target_platforms(map()) :: [String.t()]
+  @spec publish_target_platforms(Project.t()) :: [String.t()]
   def publish_target_platforms(project) do
     defaults = Map.get(project, :release_defaults) || %{}
     allowed = PebbleToolchain.supported_emulator_targets()

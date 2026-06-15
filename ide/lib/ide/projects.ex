@@ -761,7 +761,7 @@ defmodule Ide.Projects do
   Imports a bitmap resource and regenerates the generated resources Elm module.
   """
   @spec import_bitmap_resource(Project.t(), String.t(), String.t(), keyword()) ::
-          {:ok, map()} | {:error, Types.project_error()}
+          ResourceStore.bitmap_import_result() | {:error, Types.project_error()}
   def import_bitmap_resource(%Project{} = project, upload_path, original_name, opts \\ []) do
     ResourceStore.import_bitmap(project, upload_path, original_name, opts)
   end
@@ -802,7 +802,7 @@ defmodule Ide.Projects do
   Imports a vector graphic resource (PDC or SVG) and regenerates the resources module.
   """
   @spec import_vector_resource(Project.t(), String.t(), String.t()) ::
-          {:ok, map()} | {:error, Types.project_error()}
+          ResourceStore.vector_import_result() | {:error, Types.project_error()}
   def import_vector_resource(%Project{} = project, upload_path, original_name) do
     ResourceStore.import_vector(project, upload_path, original_name)
   end
@@ -811,46 +811,45 @@ defmodule Ide.Projects do
   Deletes one vector graphic resource and regenerates the generated resources Elm module.
   """
   @spec delete_vector_resource(Project.t(), String.t()) ::
-          {:ok, [map()]} | {:error, Types.project_error()}
+          ResourceStore.delete_entries_result() | {:error, Types.project_error()}
   def delete_vector_resource(%Project{} = project, ctor) do
     ResourceStore.delete_vector(project, ctor)
   end
 
   @spec list_animation_resources(Project.t()) ::
-          {:ok, [Ide.Resources.AnimationStore.animation_entry()]}
-          | {:error, Types.project_error()}
+          {:ok, [ResourceStore.animation_resource_entry()]} | {:error, Types.project_error()}
   def list_animation_resources(%Project{} = project) do
-    Ide.Resources.AnimationStore.list(project)
+    ResourceStore.list_animations(project)
   end
 
   @spec import_animation_resource(Project.t(), String.t(), String.t()) ::
-          {:ok, map()} | {:error, Types.project_error()}
+          ResourceStore.animation_import_result() | {:error, Types.project_error()}
   def import_animation_resource(%Project{} = project, upload_path, original_name) do
-    Ide.Resources.AnimationStore.import_animation(project, upload_path, original_name)
+    ResourceStore.import_animation(project, upload_path, original_name)
   end
 
   @spec delete_animation_resource(Project.t(), String.t()) ::
-          {:ok, [map()]} | {:error, Types.project_error()}
+          ResourceStore.delete_entries_result() | {:error, Types.project_error()}
   def delete_animation_resource(%Project{} = project, ctor) do
-    Ide.Resources.AnimationStore.delete_animation(project, ctor)
+    ResourceStore.delete_animation(project, ctor)
   end
 
   @spec update_bitmap_resource_base_name(Project.t(), String.t(), String.t()) ::
-          {:ok, map()} | {:error, Types.project_error()}
+          ResourceStore.rename_result() | {:error, Types.project_error()}
   def update_bitmap_resource_base_name(%Project{} = project, old_ctor, new_base) do
     ResourceStore.update_bitmap_base_name(project, old_ctor, new_base)
   end
 
   @spec update_vector_resource_base_name(Project.t(), String.t(), String.t()) ::
-          {:ok, map()} | {:error, Types.project_error()}
+          ResourceStore.rename_result() | {:error, Types.project_error()}
   def update_vector_resource_base_name(%Project{} = project, old_ctor, new_base) do
     ResourceStore.update_vector_base_name(project, old_ctor, new_base)
   end
 
   @spec update_animation_resource_base_name(Project.t(), String.t(), String.t()) ::
-          {:ok, map()} | {:error, Types.project_error()}
+          ResourceStore.rename_result() | {:error, Types.project_error()}
   def update_animation_resource_base_name(%Project{} = project, old_ctor, new_base) do
-    Ide.Resources.AnimationStore.update_base_name(project, old_ctor, new_base)
+    ResourceStore.update_animation_base_name(project, old_ctor, new_base)
   end
 
   @doc """
@@ -913,7 +912,7 @@ defmodule Ide.Projects do
   Imports a font resource and regenerates the generated resources Elm module.
   """
   @spec import_font_resource(Project.t(), String.t(), String.t()) ::
-          {:ok, map()} | {:error, Types.project_error()}
+          ResourceStore.font_import_result() | {:error, Types.project_error()}
   def import_font_resource(%Project{} = project, upload_path, original_name) do
     ResourceStore.import_font(project, upload_path, original_name)
   end
@@ -921,7 +920,8 @@ defmodule Ide.Projects do
   @doc """
   Adds a generated font variant for an uploaded source font.
   """
-  @spec add_font_variant(Project.t(), map()) :: {:ok, map()} | {:error, Types.project_error()}
+  @spec add_font_variant(Project.t(), ResourceStore.font_form_params()) ::
+          ResourceStore.font_variant_result() | {:error, Types.project_error()}
   def add_font_variant(%Project{} = project, params) when is_map(params) do
     ResourceStore.add_font_variant(project, params)
   end
@@ -929,8 +929,8 @@ defmodule Ide.Projects do
   @doc """
   Updates a generated font variant.
   """
-  @spec update_font_variant(Project.t(), String.t(), map()) ::
-          {:ok, map()} | {:error, Types.project_error()}
+  @spec update_font_variant(Project.t(), String.t(), ResourceStore.font_form_params()) ::
+          ResourceStore.font_variant_result() | {:error, Types.project_error()}
   def update_font_variant(%Project{} = project, ctor, params)
       when is_binary(ctor) and is_map(params) do
     ResourceStore.update_font_variant(project, ctor, params)
@@ -940,7 +940,7 @@ defmodule Ide.Projects do
   Deletes one font resource and regenerates the generated resources Elm module.
   """
   @spec delete_font_resource(Project.t(), String.t()) ::
-          {:ok, [map()]} | {:error, Types.project_error()}
+          ResourceStore.delete_entries_result() | {:error, Types.project_error()}
   def delete_font_resource(%Project{} = project, ctor) do
     ResourceStore.delete_font(project, ctor)
   end
@@ -949,7 +949,7 @@ defmodule Ide.Projects do
   Deletes an uploaded source font and its generated variants.
   """
   @spec delete_font_source(Project.t(), String.t()) ::
-          {:ok, map()} | {:error, Types.project_error()}
+          ResourceStore.font_delete_source_result() | {:error, Types.project_error()}
   def delete_font_source(%Project{} = project, source_id) when is_binary(source_id) do
     ResourceStore.delete_font_source(project, source_id)
   end

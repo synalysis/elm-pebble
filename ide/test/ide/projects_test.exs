@@ -41,6 +41,26 @@ defmodule Ide.ProjectsTest do
     assert Projects.active_project().slug == "beta"
   end
 
+  test "create_project returns changeset error when slug already exists" do
+    assert {:ok, _project} =
+             Projects.create_project(%{
+               "name" => "Digital",
+               "slug" => "digital",
+               "target_type" => "watchface",
+               "template" => "watchface-digital"
+             })
+
+    assert {:error, changeset} =
+             Projects.create_project(%{
+               "name" => "Digital Again",
+               "slug" => "digital",
+               "target_type" => "watchface",
+               "template" => "watchface-digital"
+             })
+
+    assert %{slug: ["is already in use. Choose a different slug."]} = errors_on(changeset)
+  end
+
   test "failed create removes workspace directories" do
     alias Ide.Paths
 
@@ -410,7 +430,7 @@ defmodule Ide.ProjectsTest do
   end
 
   test "game templates seed app projects with Elm game APIs" do
-    for template <- ["game-basic", "game-tiny-bird", "game-jump-n-run", "game-2048"] do
+    for template <- ["game-basic", "game-tiny-bird", "game-jump-n-run", "game-2048", "game-elmtris"] do
       slug = "#{template}-#{System.unique_integer([:positive])}"
 
       assert {:ok, project} =
@@ -941,10 +961,7 @@ defmodule Ide.ProjectsTest do
 
     assert String.contains?(protocol_types, "ProvideFigure Int")
 
-    assert String.contains?(
-             protocol_types,
-             "ProvidePiece Int Int Int Int Int Int Int Int Int Int Int"
-           )
+    assert String.contains?(protocol_types, "ProvidePiece Int (List Int)")
 
     assert String.contains?(protocol_types, "EndFigure Int")
 

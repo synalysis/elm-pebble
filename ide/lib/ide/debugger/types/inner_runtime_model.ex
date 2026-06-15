@@ -7,5 +7,5 @@ defmodule Ide.Debugger.Types.InnerRuntimeModel do
 
   @type t :: Types.wire_map()
 
-  @type wire_map :: t() | map()
+  @type wire_map :: t() | Types.wire_map()
 end

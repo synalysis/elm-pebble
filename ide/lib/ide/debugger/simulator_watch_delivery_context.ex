@@ -10,14 +10,15 @@ defmodule Ide.Debugger.SimulatorWatchDeliveryContext do
                                          Types.surface_target(),
                                          String.t(),
                                          Types.subscription_payload()
-                                         | map()
                                          | nil,
                                          String.t(),
                                          String.t() ->
                                            Types.runtime_state()),
           required(:trigger_candidates) => (Types.runtime_state(), Types.surface_target() ->
                                               [Types.trigger_candidate()]),
-          required(:model_active?) => (Types.runtime_state(), Types.surface_target(), map() ->
+          required(:model_active?) => (Types.runtime_state(),
+                                       Types.surface_target(),
+                                       Types.trigger_candidate() ->
                                          boolean()),
           required(:trigger_message_for_surface) => (Types.runtime_state(),
                                                      Types.surface_target(),
@@ -25,7 +26,8 @@ defmodule Ide.Debugger.SimulatorWatchDeliveryContext do
                                                      String.t()
                                                      | nil ->
                                                        String.t()),
-          required(:simulator_settings) => (Types.runtime_state() -> map()),
+          required(:simulator_settings) => (Types.runtime_state() ->
+                                              Types.simulator_settings()),
           required(:protocol_events_ctx) => (-> ProtocolEvents.ctx())
         }
 

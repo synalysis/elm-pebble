@@ -24,6 +24,8 @@ defmodule Elmx.Runtime.Pebble.SpecialValues do
   @spec canonical_target(String.t()) :: String.t()
   def canonical_target("Cmd." <> rest), do: "Platform.Cmd." <> rest
   def canonical_target("Sub." <> rest), do: "Platform.Sub." <> rest
+  def canonical_target("Evts." <> rest), do: "Pebble.Events." <> rest
+  def canonical_target("Ui." <> rest), do: "Pebble.Ui." <> rest
   def canonical_target("List." <> rest), do: "Elm.Kernel.List." <> rest
   def canonical_target(target) when is_binary(target), do: target
 

@@ -8,7 +8,7 @@ static void on_outgoing(ElmcValue *value, void *context) {
 
 int main(void) {
   register_incoming_port("demo", on_outgoing, NULL);
-  ElmcValue *payload = elmc_new_int(7);
+  ElmcValue *payload = elmc_new_int_take(7);
   send_outgoing_port("demo", payload);
   elmc_release(payload);
   return 0;

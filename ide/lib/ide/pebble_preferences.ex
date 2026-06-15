@@ -23,10 +23,28 @@ defmodule Ide.PebblePreferences do
           required(:fields) => [field()]
         }
 
+  @type choice_option :: %{
+          required(:value) => String.t(),
+          required(:label) => String.t(),
+          optional(:constructor) => String.t() | nil
+        }
+
+  @type field_control :: %{
+          required(:type) => String.t(),
+          optional(:default) => String.t() | integer() | float() | boolean() | nil,
+          optional(:min) => number(),
+          optional(:max) => number(),
+          optional(:step) => number(),
+          optional(:options) => [choice_option()],
+          optional(:send_to_watch) => String.t()
+        }
+
+  @type companion_field_mappings :: %{optional(String.t()) => String.t()}
+
   @type field :: %{
           required(:id) => String.t(),
           required(:label) => String.t(),
-          required(:control) => map()
+          required(:control) => field_control()
         }
 
   @type preferences_error ::
@@ -546,7 +564,7 @@ defmodule Ide.PebblePreferences do
     end
   end
 
-  @spec with_send_to_watch(map(), String.t() | nil) :: map()
+  @spec with_send_to_watch(field_control(), String.t() | nil) :: field_control()
   defp with_send_to_watch(control, constructor)
        when is_binary(constructor) and constructor != "" do
     Map.put(control, :send_to_watch, unescape_elm_string(constructor))
@@ -587,7 +605,7 @@ defmodule Ide.PebblePreferences do
     end)
   end
 
-  @spec enrich_section_fields(section(), map()) :: section()
+  @spec enrich_section_fields(section(), companion_field_mappings()) :: section()
   defp enrich_section_fields(section, mappings) when is_map(section) and is_map(mappings) do
     Map.update(section, :fields, [], fn fields ->
       Enum.map(fields, &enrich_field_control(&1, mappings))
@@ -596,7 +614,7 @@ defmodule Ide.PebblePreferences do
 
   defp enrich_section_fields(section, _mappings), do: section
 
-  @spec enrich_field_control(field(), map()) :: field()
+  @spec enrich_field_control(field(), companion_field_mappings()) :: field()
   defp enrich_field_control(field, mappings) when is_map(field) and is_map(mappings) do
     id = Map.get(field, :id)
     constructor = if is_binary(id), do: Map.get(mappings, id)
@@ -635,7 +653,7 @@ defmodule Ide.PebblePreferences do
     |> Enum.join("\n")
   end
 
-  @spec field(String.t(), String.t(), map()) :: field()
+  @spec field(String.t(), String.t(), field_control()) :: field()
   defp field(id, label, control) do
     %{id: unescape_elm_string(id), label: unescape_elm_string(label), control: control}
   end

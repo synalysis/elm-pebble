@@ -111,22 +111,64 @@ defmodule Elmc.CLI do
 
   @doc """
   Runs `elmc compile` in-process and returns CLI-compatible output for IDE integration.
+
+  Pass `elmc_opts:` to compile with Pebble production flags (runtime pruning, direct render).
   """
   @spec compile_project(String.t(), String.t(), keyword()) :: project_run()
   def compile_project(project_dir, out_dir, opts \\ []) do
-    strip_dead_code = Keyword.get(opts, :strip_dead_code, true)
+    elmc_opts = elmc_opts_from_cli(out_dir, opts)
 
-    case Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: strip_dead_code}) do
-      {:ok, result} ->
-        compile_project_result(result, out_dir)
+    project_dir
+    |> compile_with_opts(elmc_opts)
+    |> project_run_from_compile(out_dir)
+  end
 
-      {:error, error} ->
-        %{
-          status: :error,
-          output: "compile: failed\n" <> DiagnosticFormatter.format_error(error),
-          warnings: []
-        }
+  @doc false
+  @spec compile_with_opts(String.t(), map()) :: {:ok, map()} | {:error, term()}
+  def compile_with_opts(project_dir, opts) when is_binary(project_dir) and is_map(opts) do
+    with {:ok, result} <- Elmc.compile(project_dir, opts),
+         :ok <- validate_compile_result(result) do
+      {:ok, result}
+    else
+      {:error, warnings} when is_list(warnings) ->
+        {:error, {:compile_diagnostics, warnings}}
+
+      {:error, reason} ->
+        {:error, reason}
     end
+  rescue
+    exception in ArgumentError ->
+      if direct_render_only_view_error?(exception, opts) do
+        compile_with_opts(project_dir, Map.put(opts, :direct_render_only, false))
+      else
+        {:error, {:compiler_exception, exception.__struct__, Exception.message(exception)}}
+      end
+
+    exception ->
+      {:error, {:compiler_exception, exception.__struct__, Exception.message(exception)}}
+  catch
+    kind, reason ->
+      {:error, {:compiler_exception, kind, reason}}
+  end
+
+  defp elmc_opts_from_cli(out_dir, opts) do
+    case Keyword.get(opts, :elmc_opts) do
+      %{} = elmc_opts ->
+        elmc_opts
+        |> Map.put_new(:out_dir, out_dir)
+        |> Map.put_new(:strip_dead_code, Keyword.get(opts, :strip_dead_code, true))
+
+      _ ->
+        %{out_dir: out_dir, strip_dead_code: Keyword.get(opts, :strip_dead_code, true)}
+    end
+  end
+
+  defp direct_render_only_view_error?(%ArgumentError{} = exception, opts) do
+    Map.get(opts, :direct_render_only) == true and
+      String.contains?(
+        Exception.message(exception),
+        "direct_render_only requires"
+      )
   end
 
   @doc """
@@ -141,6 +183,26 @@ defmodule Elmc.CLI do
     else
       :ok
     end
+  end
+
+  @doc false
+  @spec project_run_from_compile({:ok, map()} | {:error, term()}, String.t()) :: project_run()
+  def project_run_from_compile({:ok, result}, out_dir), do: compile_project_result(result, out_dir)
+
+  def project_run_from_compile({:error, {:compile_diagnostics, warnings}}, out_dir) do
+    %{
+      status: :error,
+      output: compile_output(:error, out_dir, dedupe_warnings(warnings)),
+      warnings: dedupe_warnings(warnings)
+    }
+  end
+
+  def project_run_from_compile({:error, error}, _out_dir) do
+    %{
+      status: :error,
+      output: "compile: failed\n" <> DiagnosticFormatter.format_error(error),
+      warnings: []
+    }
   end
 
   @spec compile_project_result(%{project: map(), ir: map()}, String.t()) :: project_run()

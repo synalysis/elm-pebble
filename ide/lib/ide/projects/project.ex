@@ -4,10 +4,12 @@ defmodule Ide.Projects.Project do
   """
 
   use Ecto.Schema
+  import Ecto.Query, only: [from: 2, dynamic: 2]
   import Ecto.Changeset
 
   alias Ide.ProjectTemplates
   alias Ide.Projects.Types
+  alias Ide.Repo
 
   @target_types ~w(app watchface companion)
 
@@ -90,7 +92,49 @@ defmodule Ide.Projects.Project do
         do: [],
         else: [template: "is invalid"]
     end)
-    |> unique_constraint(:slug, name: :projects_owner_id_slug_index)
-    |> unique_constraint(:slug, name: :projects_local_slug_index)
+    |> validate_slug_available()
+    |> unique_constraint(:slug,
+      name: :projects_slug_index,
+      message: "is already in use by another project"
+    )
+    |> unique_constraint(:slug,
+      name: :projects_owner_id_slug_index,
+      message: "is already in use by another of your projects"
+    )
+    |> unique_constraint(:slug,
+      name: :projects_local_slug_index,
+      message: "is already in use by another project"
+    )
   end
+
+  defp validate_slug_available(changeset) do
+    slug = get_change(changeset, :slug) || get_field(changeset, :slug)
+    owner_id = get_change(changeset, :owner_id) || get_field(changeset, :owner_id)
+    project_id = get_field(changeset, :id)
+
+    if is_binary(slug) and slug != "" do
+      query =
+        from p in __MODULE__,
+          where: p.slug == ^slug,
+          where: ^owner_scope(owner_id)
+
+      query =
+        if project_id do
+          from p in query, where: p.id != ^project_id
+        else
+          query
+        end
+
+      if Repo.exists?(query) do
+        add_error(changeset, :slug, "is already in use. Choose a different slug.")
+      else
+        changeset
+      end
+    else
+      changeset
+    end
+  end
+
+  defp owner_scope(nil), do: dynamic([p], is_nil(p.owner_id))
+  defp owner_scope(owner_id), do: dynamic([p], p.owner_id == ^owner_id)
 end

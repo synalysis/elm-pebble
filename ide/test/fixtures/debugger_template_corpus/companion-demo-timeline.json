@@ -199,14 +199,6 @@
     }
   },
   "runtime_model": {
-    "colorMode": {
-      "args": [],
-      "ctor": "BlackWhite"
-    },
-    "displayShape": {
-      "args": [],
-      "ctor": "Rectangular"
-    },
     "pinStatus": {
       "args": [],
       "ctor": "Nothing"
@@ -224,160 +216,16 @@
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
-    "last_source": "module Main exposing (main)\n\nimport Companion.Types exposing (PhoneToWatch(..), TimelinePinStatus(..), WatchToPhone(..))\nimport Companion.Watch as CompanionWatch\nimport Json.Decode as Decode\nimport Pebble.Button as Button\nimport Pebble.Platform as Platform\nimport Pebble.Ui as Ui\nimport Pebble.Ui.Color as Color\nimport Pebble.Ui.Resources as Resources\n\n\ntype alias Model =\n    { tokenPreview : String\n    , pinStatus : Maybe TimelinePinStatus\n    , screenW : Int\n    , screenH : Int\n    }\n\n\ntype Msg\n    = FromPhone PhoneToWatch\n    | SelectPressed\n\n\ninit : Platform.LaunchContext -> ( Model, Cmd Msg )\ninit context =\n    ( { tokenPreview = \"loading\"\n      , pinStatus = Nothing\n      , screenW = context.screen.width\n      , screenH = context.screen.height\n      }\n    , CompanionWatch.sendWatchToPhone RequestTimelineToken\n    )\n\n\nupdate : Msg -> Model -> ( Model, Cmd Msg )\nupdate msg model =\n    case msg of\n        SelectPressed ->\n            ( model, CompanionWatch.sendWatchToPhone InsertDemoPin )\n\n        FromPhone (ProvideTimelineToken token) ->\n            ( { model | tokenPreview = truncate token 20, pinStatus = Nothing }, Cmd.none )\n\n        FromPhone (ProvideTimelineStatus status) ->\n            ( { model | pinStatus = Just status }, Cmd.none )\n\n\nsubscriptions : Model -> Sub Msg\nsubscriptions _ =\n    Sub.batch\n        [ CompanionWatch.onPhoneToWatch FromPhone\n        , Button.onPress Button.Select SelectPressed\n        ]\n\n\nview : Model -> Ui.UiNode\nview model =\n    let\n        lineH =\n            18\n\n        startY =\n            36\n\n        label x y text_ =\n            Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = x, y = y, w = model.screenW - 16, h = lineH } text_\n    in\n    Ui.windowStack\n        [ Ui.window 1\n            [ Ui.canvasLayer 1\n                [ Ui.clear Color.white\n                , label 8 startY \"Timeline demo\"\n                , label 8 (startY + lineH) (\"Token \" ++ model.tokenPreview)\n                , label 8 (startY + lineH * 2) (\"Pin \" ++ pinStatusLabel model.pinStatus)\n                , label 8 (startY + lineH * 3) \"Select = insert\"\n                ]\n            ]\n        ]\n\n\npinStatusLabel : Maybe TimelinePinStatus -> String\npinStatusLabel maybeStatus =\n    case maybeStatus of\n        Nothing ->\n            \"pending\"\n\n        Just PinOk ->\n            \"ok\"\n\n        Just PinFailed ->\n            \"error\"\n\n\ntruncate : String -> Int -> String\ntruncate text maxLen =\n    if String.length text <= maxLen then\n        text\n\n    else\n        String.left maxLen text ++ \"…\"\n\n\nmain : Program Decode.Value Model Msg\nmain =\n    Platform.application\n        { init = init\n        , update = update\n        , view = view\n        , subscriptions = subscriptions\n        }\n",
-    "launch_context": {
-      "has_compass": true,
-      "has_microphone": false,
-      "launch_reason": "LaunchUser",
-      "screen": {
-        "color_mode": "BlackWhite",
-        "height": 168,
-        "shape": "Rectangular",
-        "width": 144
-      },
-      "shape": "rect",
-      "supports_health": false,
-      "watch_model": "Aplite",
-      "watch_profile_id": "aplite"
-    },
-    "revision": "5cec0dcea457",
-    "runtime_execution": {
-      "compiler": "elmx",
-      "contract": "elmx.runtime_executor.v1",
-      "engine": "elmx_runtime_v1",
-      "execution_backend": "compiled_elixir",
-      "runtime_mode": "runtime_first",
-      "runtime_model_source": "init_model"
-    },
-    "runtime_execution_mode": "runtime_executed",
     "runtime_model": {
-      "colorMode": {
-        "args": [],
-        "ctor": "BlackWhite"
-      },
-      "displayShape": {
-        "args": [],
-        "ctor": "Rectangular"
-      },
       "pinStatus": {
         "args": [],
         "ctor": "Nothing"
       },
-      "runtime_view_output_model_sha256": "e31f8238b41e1f63209cc156524cee77fbec7c6321dcbc76d7ec2f2e8505f419",
       "screenH": 168,
       "screenW": 144,
       "tokenPreview": "loading"
     },
-    "runtime_model_source": "init_model",
-    "runtime_view_output": [
-      {
-        "color": 255,
-        "kind": "clear",
-        "text": null
-      },
-      {
-        "font_id": 0,
-        "h": 18,
-        "kind": "text",
-        "text": "Timeline demo",
-        "text_align": "center",
-        "text_overflow": "word_wrap",
-        "w": 128,
-        "x": 8,
-        "y": 36
-      },
-      {
-        "font_id": 0,
-        "h": 18,
-        "kind": "text",
-        "text": "Token loading",
-        "text_align": "center",
-        "text_overflow": "word_wrap",
-        "w": 128,
-        "x": 8,
-        "y": 54
-      },
-      {
-        "font_id": 0,
-        "h": 18,
-        "kind": "text",
-        "text": "Pin pending",
-        "text_align": "center",
-        "text_overflow": "word_wrap",
-        "w": 128,
-        "x": 8,
-        "y": 72
-      },
-      {
-        "font_id": 0,
-        "h": 18,
-        "kind": "text",
-        "text": "Select = insert",
-        "text_align": "center",
-        "text_overflow": "word_wrap",
-        "w": 128,
-        "x": 8,
-        "y": 90
-      }
-    ],
-    "screen_height": 168,
-    "screen_width": 144,
-    "simulator_settings": {
-      "calendar_events": [],
-      "storage_values": {},
-      "charging": false,
-      "timezone_id": "Europe/Berlin",
-      "compass_valid": true,
-      "use_simulated_time": true,
-      "simulated_date": "2026-05-27",
-      "compass_heading_deg": 0,
-      "latitude": 48.14,
-      "companion_timeline_token": "demo-timeline-token",
-      "notifications_enabled": true,
-      "health_steps_today": 9100,
-      "language": "en",
-      "connected": true,
-      "preferences": {},
-      "battery_percent": 88,
-      "dictation_error": "",
-      "environment": {
-        "moon": {
-          "moonriseMin": 900,
-          "moonsetMin": 300,
-          "phaseE6": 500000
-        },
-        "sun": {
-          "polarDay": false,
-          "sunriseMin": 420,
-          "sunsetMin": 1200
-        },
-        "tide": null
-      },
-      "timezone_offset_min": 0,
-      "weather": {
-        "condition": "clear",
-        "humidityPercent": 50,
-        "pressureHpa": 1013,
-        "temperatureC": 21,
-        "windKph": 8
-      },
-      "region": "US",
-      "clock_24h": true,
-      "longitude": 11.58,
-      "vibe_pattern_ms": [],
-      "accuracy": 25.0,
-      "app_in_focus": true,
-      "locale": "en-US",
-      "network_online": true,
-      "timeline_peek": false,
-      "health_steps": 4200,
-      "dictation_transcript": "",
-      "simulated_time": "08:53:00",
-      "quiet_hours": false
-    },
-    "source_root": "watch",
-    "status": "idle",
-    "supports_color": false,
+    "runtime_view_output": [],
     "timeString": null,
     "watch_profile_id": "aplite"
   }

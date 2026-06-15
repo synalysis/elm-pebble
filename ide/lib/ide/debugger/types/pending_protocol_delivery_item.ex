@@ -10,5 +10,5 @@ defmodule Ide.Debugger.Types.PendingProtocolDeliveryItem do
           required(:payload) => Types.protocol_tx_rx_payload()
         }
 
-  @type wire_item :: t() | map()
+  @type wire_item :: t() | Types.wire_map()
 end

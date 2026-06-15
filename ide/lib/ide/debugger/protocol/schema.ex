@@ -6,35 +6,30 @@ defmodule Ide.Debugger.Protocol.Schema do
   use `wire_schema/0` where extra keys are allowed.
   """
 
-  @type wire_type :: :int | :bool | :string | {:enum, String.t()} | {:union, String.t()}
+  alias Ide.CompanionProtocol.WireSchema
+  alias Ide.Debugger.Types
 
-  @type constructor :: %{
-          required(:name) => String.t(),
-          required(:args) => [String.t()]
-        }
+  @type wire_type :: WireSchema.wire_type()
+  @type constructor :: WireSchema.constructor()
+  @type alias_field :: WireSchema.alias_field()
+  @type record_field :: WireSchema.record_field()
+  @type wire_slot :: WireSchema.wire_slot()
+  @type field :: WireSchema.field()
+  @type message :: WireSchema.message()
 
-  @type field :: %{
-          required(:name) => String.t(),
-          required(:key) => String.t(),
-          required(:type) => String.t(),
-          required(:wire_type) => wire_type()
-        }
-
-  @type message :: %{
-          required(:name) => String.t(),
-          required(:tag) => pos_integer(),
-          required(:fields) => [field()]
-        }
+  @type runtime_message ::
+          message()
+          | %{optional(String.t() | atom()) => term()}
 
   @type t :: %{
-          required(:enums) => %{optional(String.t()) => [String.t()]},
-          required(:payload_unions) => %{optional(String.t()) => [constructor()]},
+          required(:enums) => WireSchema.enums(),
+          required(:payload_unions) => WireSchema.payload_unions(),
+          required(:type_aliases) => WireSchema.type_aliases(),
           required(:watch_to_phone) => [message()],
           required(:phone_to_watch) => [message()],
-          required(:key_ids) => %{optional(String.t()) => pos_integer()}
+          required(:wire_slots) => WireSchema.wire_slots(),
+          required(:key_ids) => WireSchema.key_ids()
         }
-
-  alias Ide.Debugger.Types
 
   @type wire_schema :: t() | Types.wire_map()
 end

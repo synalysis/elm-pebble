@@ -5,7 +5,7 @@ import type {EmbeddedEmulatorHostSurface} from "../types/emulator_host"
 import type {EmulatorSessionInfo, PingResponse} from "../types/emulator"
 
 type InstallResponse = {
-  result?: {parts?: Array<{kind: string}>}
+  result?: {parts?: Array<{kind: string}>; variant?: string}
 }
 
 /**
@@ -124,10 +124,26 @@ export class EmulatorSessionClient {
     const response = await postJSON<InstallResponse>(this.host.session.install_path, {}, {timeoutMs: 300_000})
     if (this.host.session?.id !== installSessionId) return
     const parts = response.result?.parts?.map(part => part.kind).join(", ")
+    const variant = response.result?.variant
+    const platform = this.host.session?.platform
     this.host.appInstalled = true
     this.host.lastSentWeatherJson = null
-    this.host.setStatus(parts ? `PBW installed on embedded emulator (${parts})` : "PBW installed on embedded emulator")
-    this.host.appendLog("native PBW install complete")
+    const variantNote = variant ? `, variant ${variant}` : ""
+    this.host.setStatus(
+      parts
+        ? `PBW installed on embedded emulator (${parts}${variantNote})`
+        : `PBW installed on embedded emulator`
+    )
+    this.host.appendLog(
+      variant
+        ? `native PBW install complete (variant ${variant}${platform ? `, emulator ${platform}` : ""})`
+        : "native PBW install complete"
+    )
+    if (variant && platform && variant !== platform) {
+      this.host.appendLog(
+        `warning: PBW variant ${variant} does not match emulator platform ${platform}; relaunch the emulator to rebuild`
+      )
+    }
     if (this.host.rfb) {
       this.host.scheduleVncViewportConfig(this.host.rfb, "after_install", 500)
       this.host.scheduleVncViewportConfig(this.host.rfb, "after_install_2s", 2000)

@@ -100,99 +100,75 @@
                 {
                   "children": [],
                   "color": 255,
-                  "kind": "clear",
-                  "label": "clear",
+                  "label": "",
                   "text": null,
                   "type": "clear"
                 },
                 {
-                  "bounds": {
-                    "h": 20,
-                    "text": null,
-                    "w": 136,
-                    "x": 4,
-                    "y": 8
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Light demo",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 20,
+                  "label": "",
                   "text": "Light demo",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 8
                 },
                 {
-                  "bounds": {
-                    "h": 20,
-                    "text": null,
-                    "w": 136,
-                    "x": 4,
-                    "y": 36
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Interaction",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 20,
+                  "label": "",
                   "text": "Interaction",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 36
                 },
                 {
-                  "bounds": {
-                    "h": 20,
-                    "text": null,
-                    "w": 136,
-                    "x": 4,
-                    "y": 64
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "0",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 20,
+                  "label": "",
                   "text": "0",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 64
                 },
                 {
-                  "bounds": {
-                    "h": 40,
-                    "text": null,
-                    "w": 136,
-                    "x": 4,
-                    "y": 92
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Up/Down: mode Select: apply",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 40,
+                  "label": "",
                   "text": "Up/Down: mode Select: apply",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 92
                 }
               ],
-              "id": "1",
-              "kind": "canvasLayer",
+              "id": 1,
               "label": "",
               "text": null,
               "type": "canvasLayer"
             }
           ],
-          "id": "1",
-          "kind": "window",
+          "id": 1,
           "label": "",
           "text": null,
           "type": "window"
         }
       ],
-      "kind": "windowStack",
       "label": "",
       "text": null,
       "type": "windowStack"
@@ -200,18 +176,8 @@
   },
   "runtime_model": {
     "applies": 0,
-    "colorMode": {
-      "args": [],
-      "ctor": "BlackWhite"
-    },
-    "displayShape": {
-      "args": [],
-      "ctor": "Rectangular"
-    },
     "modeIndex": 0,
     "runtime_view_output": [],
-    "screenH": 168,
-    "screenW": 144,
     "timeString": null
   },
   "template": "watch-demo-light",
@@ -221,157 +187,11 @@
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
-    "last_source": "module Main exposing (main)\n\nimport Json.Decode as Decode\nimport Pebble.Button as Button\nimport Pebble.Events as Events\nimport Pebble.Light as Light\nimport Pebble.Platform as Platform\nimport Pebble.Ui as Ui\nimport Pebble.Ui.Color as Color\nimport Pebble.Ui.Resources as Resources\n\n\ntype alias Model =\n    { modeIndex : Int\n    , applies : Int\n    }\n\n\ntype Msg\n    = UpPressed\n    | SelectPressed\n    | DownPressed\n\n\nmodes : List ( String, Cmd Msg )\nmodes =\n    [ ( \"Interaction\", Light.interaction )\n    , ( \"Enable\", Light.enable )\n    , ( \"Disable\", Light.disable )\n    ]\n\n\ninit : Platform.LaunchContext -> ( Model, Cmd Msg )\ninit _ =\n    ( { modeIndex = 0, applies = 0 }, Cmd.none )\n\n\nupdate : Msg -> Model -> ( Model, Cmd Msg )\nupdate msg model =\n    case msg of\n        UpPressed ->\n            ( { model | modeIndex = prevIndex model.modeIndex }, Cmd.none )\n\n        DownPressed ->\n            ( { model | modeIndex = nextIndex model.modeIndex }, Cmd.none )\n\n        SelectPressed ->\n            applyMode { model | applies = model.applies + 1 }\n\n\napplyMode : Model -> ( Model, Cmd Msg )\napplyMode model =\n    case currentMode model.modeIndex of\n        ( _, cmd ) ->\n            ( model, cmd )\n\n\ncurrentMode : Int -> ( String, Cmd Msg )\ncurrentMode index =\n    let\n        count =\n            List.length modes\n\n        normalized =\n            modBy count (index + count)\n    in\n    modes\n        |> List.drop normalized\n        |> List.head\n        |> Maybe.withDefault ( \"Interaction\", Light.interaction )\n\n\nprevIndex : Int -> Int\nprevIndex index =\n    modBy (List.length modes) (index - 1 + List.length modes)\n\n\nnextIndex : Int -> Int\nnextIndex index =\n    modBy (List.length modes) (index + 1)\n\n\nmodeLabel : Model -> String\nmodeLabel model =\n    Tuple.first (currentMode model.modeIndex)\n\n\nsubscriptions : Model -> Sub Msg\nsubscriptions _ =\n    Events.batch\n        [ Button.onPress Button.Up UpPressed\n        , Button.onPress Button.Select SelectPressed\n        , Button.onPress Button.Down DownPressed\n        ]\n\n\nview : Model -> Ui.UiNode\nview model =\n    Ui.toUiNode\n        [ Ui.clear Color.white\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 8, w = 136, h = 20 } \"Light demo\"\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 36, w = 136, h = 20 } (modeLabel model)\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 64, w = 136, h = 20 } (String.fromInt model.applies)\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 92, w = 136, h = 40 } \"Up/Down: mode Select: apply\"\n        ]\n\n\nmain : Program Decode.Value Model Msg\nmain =\n    Platform.application\n        { init = init\n        , update = update\n        , view = view\n        , subscriptions = subscriptions\n        }\n",
-    "launch_context": {
-      "has_compass": true,
-      "has_microphone": false,
-      "launch_reason": "LaunchUser",
-      "screen": {
-        "color_mode": "BlackWhite",
-        "height": 168,
-        "shape": "Rectangular",
-        "width": 144
-      },
-      "shape": "rect",
-      "supports_health": false,
-      "watch_model": "Aplite",
-      "watch_profile_id": "aplite"
-    },
-    "revision": "7aa7185bce76",
-    "runtime_execution": {
-      "compiler": "elmx",
-      "contract": "elmx.runtime_executor.v1",
-      "engine": "elmx_runtime_v1",
-      "execution_backend": "compiled_elixir",
-      "runtime_mode": "runtime_first",
-      "runtime_model_source": "init_model"
-    },
-    "runtime_execution_mode": "runtime_executed",
     "runtime_model": {
       "applies": 0,
-      "colorMode": {
-        "args": [],
-        "ctor": "BlackWhite"
-      },
-      "displayShape": {
-        "args": [],
-        "ctor": "Rectangular"
-      },
-      "modeIndex": 0,
-      "runtime_view_output_model_sha256": "e8c3f58b6bd3de8e7974cefddbad7bc06a16127ac988bb7a6c8b9376baf0ccbe",
-      "screenH": 168,
-      "screenW": 144
+      "modeIndex": 0
     },
-    "runtime_model_source": "init_model",
-    "runtime_view_output": [
-      {
-        "color": 255,
-        "kind": "clear",
-        "text": null
-      },
-      {
-        "font_id": 0,
-        "h": 20,
-        "kind": "text",
-        "text": "Light demo",
-        "text_align": "center",
-        "text_overflow": "word_wrap",
-        "w": 136,
-        "x": 4,
-        "y": 8
-      },
-      {
-        "font_id": 0,
-        "h": 20,
-        "kind": "text",
-        "text": "Interaction",
-        "text_align": "center",
-        "text_overflow": "word_wrap",
-        "w": 136,
-        "x": 4,
-        "y": 36
-      },
-      {
-        "font_id": 0,
-        "h": 20,
-        "kind": "text",
-        "text": "0",
-        "text_align": "center",
-        "text_overflow": "word_wrap",
-        "w": 136,
-        "x": 4,
-        "y": 64
-      },
-      {
-        "font_id": 0,
-        "h": 40,
-        "kind": "text",
-        "text": "Up/Down: mode Select: apply",
-        "text_align": "center",
-        "text_overflow": "word_wrap",
-        "w": 136,
-        "x": 4,
-        "y": 92
-      }
-    ],
-    "screen_height": 168,
-    "screen_width": 144,
-    "simulator_settings": {
-      "calendar_events": [],
-      "storage_values": {},
-      "charging": false,
-      "timezone_id": "Europe/Berlin",
-      "compass_valid": true,
-      "use_simulated_time": true,
-      "simulated_date": "2026-05-27",
-      "compass_heading_deg": 0,
-      "latitude": 48.14,
-      "companion_timeline_token": "demo-timeline-token",
-      "notifications_enabled": true,
-      "health_steps_today": 9100,
-      "language": "en",
-      "connected": true,
-      "preferences": {},
-      "battery_percent": 88,
-      "dictation_error": "",
-      "environment": {
-        "moon": {
-          "moonriseMin": 900,
-          "moonsetMin": 300,
-          "phaseE6": 500000
-        },
-        "sun": {
-          "polarDay": false,
-          "sunriseMin": 420,
-          "sunsetMin": 1200
-        },
-        "tide": null
-      },
-      "timezone_offset_min": 0,
-      "weather": {
-        "condition": "clear",
-        "humidityPercent": 50,
-        "pressureHpa": 1013,
-        "temperatureC": 21,
-        "windKph": 8
-      },
-      "region": "US",
-      "clock_24h": true,
-      "longitude": 11.58,
-      "vibe_pattern_ms": [],
-      "accuracy": 25.0,
-      "app_in_focus": true,
-      "locale": "en-US",
-      "network_online": true,
-      "timeline_peek": false,
-      "health_steps": 4200,
-      "dictation_transcript": "",
-      "simulated_time": "08:53:00",
-      "quiet_hours": false
-    },
-    "source_root": "watch",
-    "status": "idle",
-    "supports_color": false,
+    "runtime_view_output": [],
     "timeString": null,
     "watch_profile_id": "aplite"
   }

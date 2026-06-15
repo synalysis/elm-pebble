@@ -1020,17 +1020,6 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
 
   def parse_non_negative_number(_), do: nil
 
-  @spec completion_replace_range(String.t(), integer()) ::
-          {non_neg_integer(), non_neg_integer(), String.t()}
-  def completion_replace_range(content, cursor) when is_binary(content) and is_integer(cursor) do
-    safe_cursor = min(max(cursor, 0), String.length(content))
-    prefix = String.slice(content, 0, safe_cursor)
-    match = Regex.run(~r/([A-Za-z_][A-Za-z0-9_']*)$/, prefix)
-    token = if is_list(match), do: List.last(match), else: ""
-    from = safe_cursor - String.length(token)
-    {from, safe_cursor, token}
-  end
-
   @spec maybe_put_state(EditorTypes.editor_state(), atom(), EditorTypes.wire_input()) :: map()
   def maybe_put_state(state, _key, nil), do: state
   def maybe_put_state(state, key, value), do: Map.put(state, key, value)
@@ -1178,8 +1167,7 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
             {result.formatted_source, message, nil, %{status: status, rel_path: tab.rel_path}}
 
           {:error, _reason} ->
-            {tab.content, "Saved #{disp}", nil,
-             %{status: :skipped, rel_path: tab.rel_path}}
+            {tab.content, "Saved #{disp}", nil, %{status: :skipped, rel_path: tab.rel_path}}
         end
     end
   end

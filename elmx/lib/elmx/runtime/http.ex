@@ -6,7 +6,7 @@ defmodule Elmx.Runtime.Http do
   alias Elmx.Runtime.Values
   alias Elmx.Types
 
-  @spec get(list()) :: Types.wire_cmd()
+  @spec get(Types.registry_args()) :: Types.wire_cmd()
   def get([record]) when is_map(record) do
     url = field(record, "url")
     expect = field(record, "expect")
@@ -24,7 +24,7 @@ defmodule Elmx.Runtime.Http do
 
   def get(_), do: Values.cmd_none()
 
-  @spec post(list()) :: Types.wire_cmd()
+  @spec post(Types.registry_args()) :: Types.wire_cmd()
   def post([record]) when is_map(record) do
     url = field(record, "url")
     expect = field(record, "expect")
@@ -42,7 +42,7 @@ defmodule Elmx.Runtime.Http do
 
   def post(_), do: Values.cmd_none()
 
-  @spec request(list()) :: Types.wire_cmd()
+  @spec request(Types.registry_args()) :: Types.wire_cmd()
   def request([record]) when is_map(record) do
     request_descriptor(
       method_name(field(record, "method")),
@@ -57,7 +57,7 @@ defmodule Elmx.Runtime.Http do
 
   def request(_), do: Values.cmd_none()
 
-  @spec expect_string(list()) :: Types.http_expect() | Types.wire_cmd()
+  @spec expect_string(Types.registry_args()) :: Types.http_expect() | Types.wire_cmd()
   def expect_string([to_msg, req]) when is_map(req) do
     put_expect(req, expect_descriptor("string", to_msg, nil))
   end
@@ -68,7 +68,7 @@ defmodule Elmx.Runtime.Http do
 
   def expect_string(_), do: expect_descriptor("string", "HttpResponse", nil)
 
-  @spec expect_json(list()) :: Types.http_expect() | Types.wire_cmd()
+  @spec expect_json(Types.registry_args()) :: Types.http_expect() | Types.wire_cmd()
   def expect_json([decoder, to_msg, req]) when is_map(req) do
     put_expect(req, expect_descriptor("json", to_msg, decoder))
   end
@@ -79,14 +79,14 @@ defmodule Elmx.Runtime.Http do
 
   def expect_json(_), do: expect_descriptor("json", "HttpResponse", nil)
 
-  @spec header(list()) :: %{required(String.t()) => String.t()}
+  @spec header(Types.registry_args()) :: %{required(String.t()) => String.t()}
   def header([name, value]) when is_binary(name) do
     %{"name" => name, "value" => to_string(value || "")}
   end
 
   def header(_), do: %{"name" => "", "value" => ""}
 
-  @spec string_body(list()) :: Types.http_body()
+  @spec string_body(Types.registry_args()) :: Types.http_body()
   def string_body([content_type, body]) when is_binary(content_type) do
     %{
       "kind" => "string",
@@ -100,10 +100,10 @@ defmodule Elmx.Runtime.Http do
   @spec empty_body() :: Types.http_body()
   def empty_body(), do: %{"kind" => "empty"}
 
-  @spec empty_body(list()) :: Types.http_body()
+  @spec empty_body(Types.registry_args()) :: Types.http_body()
   def empty_body(_args), do: empty_body()
 
-  @spec json_body(list()) :: Types.http_body()
+  @spec json_body([Types.json_value()]) :: Types.http_body()
   def json_body([value]) do
     %{
       "kind" => "json",
@@ -116,12 +116,12 @@ defmodule Elmx.Runtime.Http do
 
   @spec request_descriptor(
           String.t(),
-          term(),
-          list(),
+          String.t() | Types.wire_value(),
+          [Types.wire_map()],
           Types.http_body(),
-          term(),
-          term() | nil,
-          term() | nil
+          Types.http_expect() | Types.wire_map() | function(),
+          Types.wire_value() | nil,
+          Types.wire_value() | nil
         ) :: Types.wire_cmd()
   defp request_descriptor(method, url, headers, request_body, expect, timeout, tracker) do
     %{
@@ -148,8 +148,6 @@ defmodule Elmx.Runtime.Http do
   defp put_expect(req, expect) when is_map(req) do
     Map.put(req, "expect", normalize_expect(expect))
   end
-
-  defp put_expect(_req, expect), do: normalize_expect(expect)
 
   defp normalize_expect(%{"kind" => _} = expect), do: expect
   defp normalize_expect(%{kind: kind} = expect) when is_binary(kind) or is_atom(kind) do

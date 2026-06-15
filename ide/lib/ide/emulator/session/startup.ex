@@ -150,7 +150,7 @@ defmodule Ide.Emulator.Session.Startup do
     state = %{state | installing?: true, last_ping_ms: Lifecycle.now_ms()}
 
     with {:ok, state} <- ensure_protocol_router(state),
-         {:ok, state} <- maybe_start_pypkjs(state) do
+         {:ok, state} <- maybe_start_pypkjs_if_needed(state) do
       :ok = InstallPrep.wait_before_reuse_install(state)
       {:ok, state}
     end

@@ -28,7 +28,7 @@ defmodule Ide.Debugger.Types.ElmcEventPayload do
           optional(String.t()) => Types.wire_input()
         }
 
-  @type wire_map :: t() | map()
+  @type wire_map :: t() | Types.wire_map()
 
   @spec from_check(CompileIngestAttrs.t() | CompileIngestAttrs.wire_map()) :: t()
   def from_check(attrs) when is_map(attrs) do

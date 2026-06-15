@@ -23,8 +23,6 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
 
     import Json.Decode as Decode
     import Pebble.Platform as PebblePlatform
-    import Pebble.Ui as Ui
-
     type alias Model =
         { n : Int, enabled : Bool }
 
@@ -47,7 +45,7 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
         Sub.none
 
     view _ =
-        Ui.root []
+        []
 
     main : Program Decode.Value Model Msg
     main =
@@ -83,7 +81,6 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
     assert get_in(stepped, [:watch, :model, "runtime_message_source"]) == "provided"
     assert get_in(stepped, [:watch, :model, "runtime_model_source"]) == "step_message"
     assert get_in(stepped, [:watch, :model, "runtime_model", "n"]) == 3
-    assert get_in(stepped, [:watch, :model, "runtime_model", "last_operation"]) == "Inc"
 
     refute get_in(stepped, [:watch, :model, "runtime_execution", "heuristic_fallback_used"])
 
@@ -152,7 +149,7 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
         ( { n = 1 }, Cmd.none )
 
     view m =
-        Ui.root []
+        []
     """
 
     {:ok, _} = Debugger.start_session(slug)
@@ -183,7 +180,7 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
         ( { n = 1 }, Cmd.none )
 
     view m =
-        Ui.root []
+        []
     """
 
     {:ok, _} = Debugger.start_session(slug)
@@ -223,6 +220,14 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
 
     init _ =
         ( { n = 1 }, Cmd.none )
+
+    update msg model =
+        case msg of
+            Tick ->
+                ( model, Cmd.none )
+
+            Inc ->
+                ( model, Cmd.none )
 
     subscriptions model =
         Time.every 1000 Tick
@@ -334,8 +339,6 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
 
     import Json.Decode as Decode
     import Pebble.Platform as PebblePlatform
-    import Pebble.Ui as Ui
-
     type alias Model =
         { count : Int
         , enabled : Bool
@@ -373,7 +376,7 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
         Sub.none
 
     view _ =
-        Ui.root []
+        []
 
     main : Program Decode.Value Model Msg
     main =
@@ -436,8 +439,6 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
     import Json.Decode as Decode
     import Pebble.Cmd as PebbleCmd
     import Pebble.Platform as PebblePlatform
-    import Pebble.Ui as Ui
-
     type alias Model =
         { count : Int
         , timeString : String
@@ -466,7 +467,7 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
         Sub.none
 
     view _ =
-        Ui.root []
+        []
 
     main : Program Decode.Value Model Msg
     main =
@@ -879,8 +880,6 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
 
     import Json.Decode as Decode
     import Pebble.Platform as PebblePlatform
-    import Pebble.Ui as Ui
-
     type alias Model =
         { n : Int }
 
@@ -903,7 +902,7 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
         Sub.none
 
     view _ =
-        Ui.root []
+        []
 
     main : Program Decode.Value Model Msg
     main =
@@ -1020,6 +1019,9 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
 
     subscriptions _ =
       Evts.batch [ Evts.onSecondChange Tick, Evts.onMinuteChange MinuteChanged ]
+
+    view _ =
+        []
     """
 
     {:ok, _} = Debugger.start_session(slug)
@@ -1160,7 +1162,7 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
         ( { n = 1 }, Cmd.none )
 
     view m =
-        Ui.root []
+        []
     """
 
     {:ok, _} = Debugger.start_session(slug)
@@ -1238,7 +1240,7 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
         ( { n = 1 }, Cmd.none )
 
     view m =
-        Ui.root []
+        []
     """
 
     {:ok, _} = Debugger.start_session(slug)

@@ -16,6 +16,24 @@ defmodule Ide.PebbleToolchainTest do
     :ok
   end
 
+  defp toolchain_impl_source do
+    [
+      Ide.PebbleToolchain.Package,
+      Ide.PebbleToolchain.Build,
+      Ide.PebbleToolchain.Command,
+      Ide.PebbleToolchain.Companion,
+      Ide.PebbleToolchain.Elmc,
+      Ide.PebbleToolchain.Emulator,
+      Ide.PebbleToolchain.Prepare
+    ]
+    |> Enum.map_join("\n", fn module ->
+      module.module_info(:compile)
+      |> Keyword.fetch!(:source)
+      |> to_string()
+      |> File.read!()
+    end)
+  end
+
   test "template_app_root_path resolves bundled priv template when config path is stale" do
     original = Application.get_env(:ide, Ide.PebbleToolchain, [])
 
@@ -77,7 +95,7 @@ defmodule Ide.PebbleToolchainTest do
   end
 
   test "package metadata uses configured release version" do
-    source = File.read!("lib/ide/pebble_toolchain.ex")
+    source = toolchain_impl_source()
 
     assert source =~ "version = package_version(Keyword.get(opts, :version))"
     assert source =~ ~s("version" => version)
@@ -85,7 +103,7 @@ defmodule Ide.PebbleToolchainTest do
   end
 
   test "toolchain stages animation raw resources and resource id header" do
-    source = File.read!("lib/ide/pebble_toolchain.ex")
+    source = toolchain_impl_source()
     template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
 
     assert source =~ "stage_animation_resources"
@@ -106,13 +124,18 @@ defmodule Ide.PebbleToolchainTest do
   end
 
   test "emulator packaging writes storage log build flags header" do
-    source = File.read!("lib/ide/pebble_toolchain.ex")
+    source = toolchain_impl_source()
     template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
 
     assert source =~ "write_emulator_build_flags"
     assert source =~ "elmc_emulator_build_flags.h"
     assert source =~ "ELMC_PEBBLE_EMULATOR_STORAGE_LOGS 1"
-    assert source =~ "ELMC_PEBBLE_RUNTIME_LOGS 1"
+    assert source =~ "emulator_heap_log"
+    assert source =~ "ELMC_PEBBLE_HEAP_LOG 1"
+    refute source =~ "#define ELMC_PEBBLE_RUNTIME_LOGS 1"
+    assert source =~ "emulator_agent_probes"
+    assert source =~ "#define ELMC_AGENT_PROBES 0"
+    assert source =~ "maybe_build_env_agent_probes"
     assert template =~ ~s(#include "elmc_emulator_build_flags.h")
     assert template =~ "emulator_storage_snapshot_callback"
     assert template =~ "companion_inbox_log"
@@ -156,7 +179,7 @@ defmodule Ide.PebbleToolchainTest do
   end
 
   test "generated resource bridge does not reserve Pebble resource id zero" do
-    source = File.read!("lib/ide/pebble_toolchain.ex")
+    source = toolchain_impl_source()
     template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
 
     assert source =~ "elm_pebble_dev/node_modules/.bin/elm"
@@ -173,8 +196,14 @@ defmodule Ide.PebbleToolchainTest do
     assert template =~ "resource_id == ELM_PEBBLE_RESOURCE_ID_MISSING"
     assert template =~ "font_from_id_for_height"
     refute template =~ "resource_height > requested_height"
-    assert template =~ "DRAW_HEAP_CHUNK_CAPACITY"
-    assert template =~ "elmc_pebble_scene_commands_from"
+    assert template =~ "s_draw_cmd"
+    assert template =~ "s_draw_update_active"
+    assert template =~ "elmc-draw text pre seq=%d #%d font=%p"
+    assert template =~ "elmc-draw text post seq=%d #%d ok"
+    assert template =~ "elmc_pebble_scene_commands_next(&s_elm_app, &s_draw_cmd, 1)"
+    refute template =~ "malloc(sizeof(ElmcPebbleDrawCmd)"
+    assert template =~ "elmc_pebble_scene_reset_draw_cursor"
+    assert template =~ "elmc_pebble_scene_commands_next"
     refute template =~ "realloc(s_draw_cmds"
     refute template =~ "resource_id == 0"
   end
@@ -346,26 +375,132 @@ defmodule Ide.PebbleToolchainTest do
              "#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS"
   end
 
-  test "pebble app template initializes Elm after pushing the window once" do
+  test "pebble app template runs startup cmds after init completes" do
     template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
 
-    push_idx = :binary.match(template, "window_stack_push(s_main_window, true);") |> elem(0)
-    launch_idx = :binary.match(template, "build_launch_context(launch)") |> elem(0)
-    init_idx = :binary.match(template, "elmc_pebble_init_with_mode") |> elem(0)
+    init_body =
+      case Regex.run(~r/static void init\(void\) \{(.*?)^\}/ms, template) do
+        [_, body] -> body
+        _ -> flunk("init() body not found in pebble app template")
+      end
 
-    assert push_idx < launch_idx
-    assert launch_idx < init_idx
+    push_idx = :binary.match(init_body, "window_stack_push(s_main_window, true);") |> elem(0)
+    init_call_idx = :binary.match(init_body, "complete_elm_init();") |> elem(0)
+
+    assert push_idx < init_call_idx
 
     refute template =~
              ~s/} else {\n    APP_LOG(APP_LOG_LEVEL_ERROR, "elmc_pebble_init failed: %d", rc);\n  }\n\n  window_stack_push(s_main_window, true);/
 
-    assert template =~ "display_bounds"
+    assert template =~ "s_startup_cmds_ready = true;"
+    assert template =~ "if (!s_startup_cmds_ready)"
+    refute template =~ "complete_elm_init();\n    apply_pending_cmd();"
+    refute template =~ "drain_startup_init_cmds"
+
+    startup_body =
+      case Regex.run(~r/static void startup_cmd_callback\(void \*data\) \{(.*?)^\}/ms, template) do
+        [_, body] -> body
+        _ -> flunk("startup_cmd_callback body not found")
+      end
+
+    assert startup_body =~ "apply_pending_cmd();"
+    refute startup_body =~ "elmc_pebble_ensure_scene(&s_elm_app);"
+    assert startup_body =~ "s_startup_cmds_ready = true;"
+    assert startup_body =~ "render_model();"
+    refute template =~ "startup_build_scene"
+    refute template =~ "elmc_pebble_reserve_startup_scene"
+    assert template =~ "static ElmcPebbleCmd cmd;"
+
+    draw_body =
+      case Regex.run(
+             ~r/static void draw_update_proc\(Layer \*layer, GContext \*ctx\) \{(.*?)^\}/ms,
+             template
+           ) do
+        [_, body] -> body
+        _ -> flunk("draw_update_proc body not found")
+      end
+
+    refute draw_body =~
+             "#ifdef ELMC_WATCHFACE_MODE\n  {\n    GRect compile = compile_display_bounds();"
+
+    assert draw_body =~ "bounds.size.w < compile.size.w || bounds.size.h < compile.size.h"
+    assert template =~ "startup_cmd_callback(NULL);"
+
+    complete_elm_init_body =
+      case Regex.run(~r/static void complete_elm_init\(void\) \{(.*?)^\}/ms, template) do
+        [_, body] -> body
+        _ -> flunk("complete_elm_init() body not found in pebble app template")
+      end
+
+    assert complete_elm_init_body =~ "startup_cmd_callback(NULL);"
+    refute complete_elm_init_body =~ "app_timer_register(1, startup_cmd_callback, NULL);"
+  end
+
+  test "pebble app template applies antialiased style and disables mono stroke dither" do
+    template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
+
+    assert template =~ "graphics_context_set_antialiased(ctx, style->antialiased);"
+
+    assert template =~
+             "#ifndef PBL_COLOR\n          graphics_context_set_antialiased(ctx, false);\n          rect_sw = 2;\n          graphics_context_set_stroke_width(ctx, rect_sw);\n#endif\n          graphics_context_set_stroke_color(ctx, color_from_code(cmd->p4));\n          graphics_draw_rect(ctx, stroke_outline_rect_bounds(x, y, w, h, rect_sw));"
+
+    assert template =~
+             "#ifndef PBL_COLOR\n        graphics_context_set_antialiased(ctx, false);\n#endif\n        graphics_draw_text(ctx, cmd->text, font, text_rect, overflow, align, NULL);"
+  end
+
+  test "pebble app template mono color_from_code uses luminance not GColor8 ordinals" do
+    template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
+
+    assert template =~ "int luminance = (red * 30 + green * 59 + blue * 11) / 100;"
+    refute template =~ "GColor8DarkGray"
+    refute template =~ "code <= 0x55"
+  end
+
+  test "pebble app template launch context uses compile display bounds" do
+    template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
+
+    launch_body =
+      case Regex.run(
+             ~r/static ElmcValue \*build_launch_context\(AppLaunchReason launch\) \{(.*?)^\}/ms,
+             template
+           ) do
+        [_, body] -> body
+        _ -> flunk("build_launch_context body not found")
+      end
+
+    assert launch_body =~ "GRect bounds = compile_display_bounds();"
+    refute launch_body =~ "GRect bounds = display_bounds();"
+    assert launch_body =~ "elmc_record_new_values_take_value(4, screen_values)"
+    assert launch_body =~ "screen_values[] = {screen_width, screen_height, screen_shape, screen_color_mode}"
+    assert launch_body =~ "ELMC_PLATFORM_COLOR_CAPABILITY_COLOR"
+    assert launch_body =~ "context_values[] = {reason, watch_model, watch_profile_id, screen, has_microphone,"
+  end
+
+  test "pebble app template draw layer and display_bounds prefer compile size when root layer is undersized" do
+    template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
+
+    window_load_body =
+      case Regex.run(~r/static void main_window_load\(Window \*window\) \{(.*?)^\}/ms, template) do
+        [_, body] -> body
+        _ -> flunk("main_window_load body not found")
+      end
+
+    assert window_load_body =~ "GRect bounds = compile_display_bounds();"
+
+    display_bounds_body =
+      case Regex.run(~r/static GRect display_bounds\(void\) \{(.*?)^\}/ms, template) do
+        [_, body] -> body
+        _ -> flunk("display_bounds body not found")
+      end
+
+    assert display_bounds_body =~ "display bounds undersized"
+    assert display_bounds_body =~ "layer.size.w < compile.size.w || layer.size.h < compile.size.h"
   end
 
   test "emulator install wipes before installing" do
-    source = File.read!("lib/ide/pebble_toolchain.ex")
+    source = toolchain_impl_source()
 
-    assert source =~ ~S|run_pebble_with_timeout(["wipe"], timeout_seconds, cwd: cwd)|
+    assert source =~ ~S|Command.run_pebble_with_timeout(["wipe"], timeout_seconds, cwd: cwd)|
     assert source =~ "emulator_install_args(emulator_target, package_path)"
     assert source =~ ~S|["install", "--emulator", emulator_target]|
     assert source =~ ~S|--throttle=#{throttle}|
@@ -461,7 +596,7 @@ defmodule Ide.PebbleToolchainTest do
   end
 
   test "deterministic package UUIDs set RFC4122 version and variant bits" do
-    source = File.read!("lib/ide/pebble_toolchain.ex")
+    source = toolchain_impl_source()
 
     assert source =~ "List.update_at(6, &((&1 &&& 0x0F) ||| 0x40))"
     assert source =~ "List.update_at(8, &((&1 &&& 0x3F) ||| 0x80))"
@@ -620,7 +755,7 @@ defmodule Ide.PebbleToolchainTest do
   end
 
   test "vector resource staging preserves manifest order for elm constructor tags" do
-    source = File.read!("lib/ide/pebble_toolchain.ex")
+    source = toolchain_impl_source()
 
     vector_section =
       source

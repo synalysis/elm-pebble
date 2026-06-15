@@ -1,0 +1,206 @@
+{
+  "preview_diagnostics": {
+    "render_source": "runtime_view_output",
+    "root_type": "windowStack",
+    "runtime_view_output_kinds": [
+      "clear",
+      "fill_rect"
+    ],
+    "status": "ok"
+  },
+  "preview_ops": [
+    {
+      "color": 255,
+      "kind": "clear"
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "fill": 192,
+      "fill_color": 192,
+      "h": 84,
+      "kind": "fill_rect",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "w": 72,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "fill": 255,
+      "fill_color": 255,
+      "h": 84,
+      "kind": "fill_rect",
+      "stroke_color": 255,
+      "stroke_width": 1,
+      "w": 72,
+      "x": 72,
+      "y": 0
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "fill": 255,
+      "fill_color": 255,
+      "h": 84,
+      "kind": "fill_rect",
+      "stroke_color": 255,
+      "stroke_width": 1,
+      "w": 72,
+      "x": 0,
+      "y": 84
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "fill": 192,
+      "fill_color": 192,
+      "h": 84,
+      "kind": "fill_rect",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "w": 72,
+      "x": 72,
+      "y": 84
+    }
+  ],
+  "preview_ops_sha256": "9d668de4d4f8a7e083026268480ad684ac4963c6019f3b53a8d67ea4e3f56242",
+  "render_tree": {
+    "node_count": 8,
+    "node_types": [
+      "canvasLayer",
+      "clear",
+      "fillRect",
+      "fillRect",
+      "fillRect",
+      "fillRect",
+      "window",
+      "windowStack"
+    ],
+    "root_type": "windowStack",
+    "tree": {
+      "box": {
+        "h": 168,
+        "text": null,
+        "w": 144,
+        "x": 0,
+        "y": 0
+      },
+      "children": [
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "children": [],
+                  "color": 255,
+                  "kind": "clear",
+                  "label": "clear",
+                  "text": null,
+                  "type": "clear"
+                },
+                {
+                  "bounds": {
+                    "h": 84,
+                    "text": null,
+                    "w": 72,
+                    "x": 0,
+                    "y": 0
+                  },
+                  "children": [],
+                  "color": 192,
+                  "kind": "fillRect",
+                  "label": "fillRect",
+                  "text": null,
+                  "type": "fillRect"
+                },
+                {
+                  "bounds": {
+                    "h": 84,
+                    "text": null,
+                    "w": 72,
+                    "x": 72,
+                    "y": 0
+                  },
+                  "children": [],
+                  "color": 255,
+                  "kind": "fillRect",
+                  "label": "fillRect",
+                  "text": null,
+                  "type": "fillRect"
+                },
+                {
+                  "bounds": {
+                    "h": 84,
+                    "text": null,
+                    "w": 72,
+                    "x": 0,
+                    "y": 84
+                  },
+                  "children": [],
+                  "color": 255,
+                  "kind": "fillRect",
+                  "label": "fillRect",
+                  "text": null,
+                  "type": "fillRect"
+                },
+                {
+                  "bounds": {
+                    "h": 84,
+                    "text": null,
+                    "w": 72,
+                    "x": 72,
+                    "y": 84
+                  },
+                  "children": [],
+                  "color": 192,
+                  "kind": "fillRect",
+                  "label": "fillRect",
+                  "text": null,
+                  "type": "fillRect"
+                }
+              ],
+              "id": "1",
+              "kind": "canvasLayer",
+              "label": "",
+              "text": null,
+              "type": "canvasLayer"
+            }
+          ],
+          "id": "1",
+          "kind": "window",
+          "label": "",
+          "text": null,
+          "type": "window"
+        }
+      ],
+      "kind": "windowStack",
+      "label": "",
+      "text": null,
+      "type": "windowStack"
+    }
+  },
+  "runtime_model": {
+    "runtime_view_output": [],
+    "screenH": 168,
+    "screenW": 144,
+    "timeString": null
+  },
+  "template": "watchface-smoke-screen",
+  "timeline_init_messages": [
+    "init:init"
+  ],
+  "view_tree_type": "windowStack",
+  "watch_model": {
+    "debugger_init_complete": true,
+    "runtime_model": {
+      "screenH": 168,
+      "screenW": 144
+    },
+    "runtime_view_output": [],
+    "timeString": null,
+    "watch_profile_id": "aplite"
+  }
+}

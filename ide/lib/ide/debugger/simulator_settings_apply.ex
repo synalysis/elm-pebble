@@ -10,7 +10,9 @@ defmodule Ide.Debugger.SimulatorSettingsApply do
   alias Ide.Debugger.SimulatorWatchDelivery
   alias Ide.Debugger.Types
 
-  @type append_event_fn :: (Types.runtime_state(), String.t(), map() -> Types.runtime_state())
+  @type append_event_fn ::
+          (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() ->
+             Types.runtime_state())
 
   @type host :: %{
           required(:append_event) => append_event_fn(),

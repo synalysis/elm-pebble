@@ -13,6 +13,9 @@ echo "== elmx coverage + audit gates =="
 echo "== IDE template compile gate =="
 (cd "$ROOT/ide" && ELMX_TEMPLATE_COMPILE_GATE=1 mix test test/ide/mcp/debugger_template_compile_gate_test.exs --only template_compile_gate)
 
+echo "== IDE template PBW gate =="
+(cd "$ROOT/ide" && ELMC_TEMPLATE_PBW_GATE=1 mix test test/ide/template_pbw_gate_test.exs --only template_pbw_gate --max-cases 1)
+
 echo "== IDE compiled_elixir corpus =="
 (cd "$ROOT/ide" && ELMX_TEMPLATE_CORPUS=1 mix test --only compiled_elixir_corpus)
 

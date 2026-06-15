@@ -8,7 +8,7 @@ defmodule Ide.Debugger.TriggerSurface do
   alias Ide.Debugger.Types
 
   @type introspect_fn :: (Types.runtime_state(), Types.surface_target() ->
-                            Types.elm_introspect() | map())
+                            Types.elm_introspect())
   @type normalize_target_fn :: (Types.wire_input() -> Types.surface_target())
 
   @type candidates_ctx :: %{

@@ -72,6 +72,14 @@ defmodule Ide.Debugger.DrawingPathsPreviewTest do
     assert Enum.any?(svg_ops, &(&1.kind == :path_filled))
     assert Enum.any?(svg_ops, &(&1.kind == :path_outline))
 
+    assert Enum.any?(svg_ops, fn op ->
+             op.kind in [:text, :text_label] and Map.get(op, :text) == "Paths 2/8"
+           end)
+
+    assert Enum.any?(svg_ops, fn op ->
+             op.kind in [:text, :text_label] and Map.get(op, :text) == "Up/Down: page"
+           end)
+
     path_filled = Enum.find(svg_ops, &(&1.kind == :path_filled))
     assert DebuggerPreview.svg_path_d(path_filled, true) =~ "M"
     assert path_filled.fill_color == 248

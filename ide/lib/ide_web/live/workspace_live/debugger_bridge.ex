@@ -98,6 +98,28 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridge do
     end
   end
 
+  @spec sync_emulator_rc_fail(Phoenix.LiveView.Socket.t(), term(), term()) ::
+          Phoenix.LiveView.Socket.t()
+  def sync_emulator_rc_fail(socket, code, line) do
+    case socket.assigns[:project] do
+      project when is_map(project) ->
+        if debugger_session_active?(socket) do
+          {:ok, _} =
+            Ide.Debugger.ingest_emulator_rc_fail(project_session_key(project), %{
+              code: code,
+              line: line
+            })
+
+          DebuggerSupport.refresh(socket)
+        else
+          socket
+        end
+
+      _ ->
+        socket
+    end
+  end
+
   @spec sync_compile_failed(Phoenix.LiveView.Socket.t(), String.t()) ::
           Phoenix.LiveView.Socket.t()
   def sync_compile_failed(socket, message) do

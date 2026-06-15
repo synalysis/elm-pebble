@@ -118,6 +118,70 @@ defmodule Ide.DebuggerIntegrationHelpers do
 
   def synthetic_step_protocol_event?(_), do: false
 
+  @doc """
+  Minimal watchface Elm used by integration tests that need init `CurrentDateTime`
+  and `onMinuteChange` without compiling the full `watchface_analog` template.
+  """
+  def minimal_datetime_watchface_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Cmd as PebbleCmd
+    import Pebble.Events as PebbleEvents
+    import Pebble.Platform as PebblePlatform
+    import Pebble.Ui as PebbleUi
+    import Json.Decode as Decode
+
+    type alias Model =
+        { hour : Int
+        , minute : Int
+        , screenW : Int
+        , screenH : Int
+        }
+
+    type Msg
+        = CurrentDateTime PebbleCmd.CurrentDateTime
+        | MinuteChanged Int
+
+    init context =
+        ( { hour = 12
+          , minute = 0
+          , screenW = context.screen.width
+          , screenH = context.screen.height
+          }
+        , PebbleCmd.getCurrentDateTime CurrentDateTime
+        )
+
+    update msg model =
+        case msg of
+            CurrentDateTime value ->
+                ( { model
+                    | hour = value.hour
+                    , minute = value.minute
+                  }
+                , Cmd.none
+                )
+
+            MinuteChanged minute ->
+                ( { model | minute = minute }, Cmd.none )
+
+    subscriptions _ =
+        PebbleEvents.onMinuteChange MinuteChanged
+
+    view _ =
+        PebbleUi.root []
+
+    main : Program Decode.Value Model Msg
+    main =
+        PebblePlatform.watchface
+            { init = init
+            , update = update
+            , view = view
+            , subscriptions = subscriptions
+            }
+    """
+  end
+
   def collect_view_nodes(node) when is_map(node) do
     children =
       case node["children"] || node[:children] do

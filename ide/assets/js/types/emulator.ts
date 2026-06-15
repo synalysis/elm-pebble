@@ -15,6 +15,7 @@ export type EmulatorSessionInfo = {
   has_phone_companion: boolean
   has_companion_preferences: boolean
   install_path: string
+  request_app_logs_path: string
   vnc_path: string
   phone_path: string
   ping_path: string

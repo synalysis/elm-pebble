@@ -2,14 +2,17 @@ defmodule Elmx.Runtime.Core.Task do
   @moduledoc false
 
   alias Elmx.Runtime.Cmd
+  alias Elmx.Types
 
-  @spec succeed(term()) :: {:Ok, term()}
+  @type t :: Types.result_native()
+
+  @spec succeed(Types.elm_value()) :: Types.result_native()
   def succeed(value), do: {:Ok, value}
 
-  @spec fail(term()) :: {:Err, term()}
+  @spec fail(Types.elm_value()) :: Types.result_native()
   def fail(error), do: {:Err, error}
 
-  @spec map(function(), term()) :: {:Ok, term()} | {:Err, term()}
+  @spec map(Types.elm_hof(), Types.result_like()) :: Types.result_native()
   def map(fun, task) when is_function(fun, 1) do
     case normalize(task) do
       {:ok, value} -> {:Ok, fun.(value)}
@@ -17,7 +20,7 @@ defmodule Elmx.Runtime.Core.Task do
     end
   end
 
-  @spec and_then(function(), term()) :: {:Ok, term()} | {:Err, term()}
+  @spec and_then(Types.elm_hof(), Types.result_like()) :: Types.result_native()
   def and_then(fun, task) when is_function(fun, 1) do
     case normalize(task) do
       {:ok, value} ->
@@ -31,7 +34,8 @@ defmodule Elmx.Runtime.Core.Task do
     end
   end
 
-  @spec map2(function(), term(), term()) :: {:Ok, term()} | {:Err, term()}
+  @spec map2(Types.elm_hof(), Types.result_like(), Types.result_like()) ::
+          Types.result_native()
   def map2(fun, task_a, task_b) when is_function(fun, 2) do
     case {normalize(task_a), normalize(task_b)} do
       {{:ok, a}, {:ok, b}} -> {:Ok, fun.(a, b)}
@@ -40,7 +44,7 @@ defmodule Elmx.Runtime.Core.Task do
     end
   end
 
-  @spec perform(function(), term()) :: map()
+  @spec perform(Types.elm_hof(), Types.result_like()) :: Types.wire_cmd()
   def perform(to_msg, task) when is_function(to_msg) do
     case normalize(task) do
       {:ok, value} -> Cmd.task_immediate(apply_to_msg(to_msg, value))
@@ -58,6 +62,4 @@ defmodule Elmx.Runtime.Core.Task do
   defp apply_to_msg(fun, [a, b]) when is_function(fun, 2), do: fun.(a, b)
   defp apply_to_msg(fun, value) when is_function(fun, 1), do: fun.(value)
   defp apply_to_msg(fun, value), do: fun.(value)
-
-  @type t :: {:Ok, term()} | {:Err, term()}
 end

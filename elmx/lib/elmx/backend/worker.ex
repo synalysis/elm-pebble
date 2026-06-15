@@ -2,6 +2,7 @@ defmodule Elmx.Backend.Worker do
   @moduledoc false
 
   alias Elmx.Backend.MainProgram
+  alias Elmx.Runtime.CodegenRefs
 
   @executor_callbacks ~w(init update view subscriptions)
 
@@ -51,7 +52,7 @@ defmodule Elmx.Backend.Worker do
       """
     else
       """
-      def init(_launch_context), do: {%{}, Elmx.Runtime.Values.cmd_none()}
+      def init(_launch_context), do: {%{}, #{CodegenRefs.values()}.cmd_none()}
       """
     end
   end
@@ -67,7 +68,7 @@ defmodule Elmx.Backend.Worker do
       """
     else
       """
-      def update(_msg, model), do: {model, Elmx.Runtime.Values.cmd_none()}
+      def update(_msg, model), do: {model, #{CodegenRefs.values()}.cmd_none()}
       """
     end
   end

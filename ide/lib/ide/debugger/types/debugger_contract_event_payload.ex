@@ -59,7 +59,7 @@ defmodule Ide.Debugger.Types.DebuggerContractEventPayload do
           optional(String.t()) => Types.wire_input()
         }
 
-  @type wire_map :: t() | map()
+  @type wire_map :: t() | Types.wire_map()
 
   @spec from_introspect(Types.elm_introspect(), String.t() | nil, String.t(), boolean()) :: t()
   def from_introspect(ei, rel_path, source_root, view_outline) when is_map(ei) do

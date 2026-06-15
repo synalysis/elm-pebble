@@ -3,7 +3,6 @@
 
 #include <stdint.h>
 #include <stddef.h>
-#define ELMC_PEBBLE_INT32 1
 
 
 #if defined(ELMC_PEBBLE_INT32) || defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_CHALK) || defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_FLINT) || defined(PBL_PLATFORM_GABBRO)
@@ -23,12 +22,13 @@ typedef enum {
   ELMC_TAG_PORT_PAYLOAD = 9,
   ELMC_TAG_FLOAT = 10,
   ELMC_TAG_RECORD = 11,
-  ELMC_TAG_CLOSURE = 12
+  ELMC_TAG_CLOSURE = 12,
+  ELMC_TAG_FORWARD_REF = 13
 } ElmcTag;
 
 typedef struct ElmcValue {
-  uint32_t rc;
-  ElmcTag tag;
+  uint16_t rc;
+  uint8_t tag;
   void *payload;
   elmc_int_t scalar;
 } ElmcValue;
@@ -59,8 +59,25 @@ typedef struct ElmcRecord {
   ElmcValue **field_values;
 } ElmcRecord;
 
+#define ELMC_RECORD_GET_INDEX(record, index) \
+  (((record) && (record)->tag == ELMC_TAG_RECORD && (record)->payload && \
+    (index) >= 0 && (index) < ((ElmcRecord *)(record)->payload)->field_count) ? \
+   ((ElmcRecord *)(record)->payload)->field_values[(index)] : elmc_int_zero())
+
 #define ELMC_RECORD_GET_INDEX_INT(record, index) \
-  elmc_as_int(((ElmcRecord *)((record)->payload))->field_values[(index)])
+  (((record) && (record)->tag == ELMC_TAG_RECORD && (record)->payload && \
+    (index) >= 0 && (index) < ((ElmcRecord *)(record)->payload)->field_count) ? \
+   elmc_as_int(((ElmcRecord *)(record)->payload)->field_values[(index)]) : 0)
+
+#define ELMC_RECORD_GET_INDEX_FLOAT(record, index) \
+  (((record) && (record)->tag == ELMC_TAG_RECORD && (record)->payload && \
+    (index) >= 0 && (index) < ((ElmcRecord *)(record)->payload)->field_count) ? \
+   elmc_as_float(((ElmcRecord *)(record)->payload)->field_values[(index)]) : 0.0)
+
+#define ELMC_RECORD_GET_INDEX_BOOL(record, index) \
+  (((record) && (record)->tag == ELMC_TAG_RECORD && (record)->payload && \
+    (index) >= 0 && (index) < ((ElmcRecord *)(record)->payload)->field_count) ? \
+   elmc_as_bool(((ElmcRecord *)(record)->payload)->field_values[(index)]) : 0)
 
 typedef struct ElmcClosure {
   ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count);
@@ -75,14 +92,18 @@ ElmcValue *elmc_new_int(elmc_int_t value);
 ElmcValue *elmc_new_bool(int value);
 ElmcValue *elmc_new_char(elmc_int_t value);
 ElmcValue *elmc_new_string(const char *value);
-extern ElmcValue ELMC_INT_ZERO;
-#define elmc_int_zero() (&ELMC_INT_ZERO)
+ElmcValue *elmc_int_zero(void);
 ElmcValue *elmc_list_nil(void);
 ElmcValue *elmc_list_cons(ElmcValue *head, ElmcValue *tail);
 ElmcValue *elmc_list_from_values(ElmcValue **items, int count);
 ElmcValue *elmc_list_from_values_take(ElmcValue **items, int count);
+ElmcValue *elmc_list_from_int_array(const elmc_int_t *items, int count);
+ElmcValue *elmc_list_from_tuple2_int_array(const elmc_int_t items[][2], int count);
+ElmcValue *elmc_list_replace_nth_int(ElmcValue *list, elmc_int_t index, elmc_int_t value);
 ElmcValue *elmc_maybe_nothing(void);
 ElmcValue *elmc_maybe_just(ElmcValue *value);
+ElmcValue *elmc_maybe_or_tuple_just_payload(ElmcValue *maybe);
+ElmcValue *elmc_maybe_or_tuple_just_payload_borrow(ElmcValue *maybe);
 ElmcValue *elmc_result_ok(ElmcValue *value);
 ElmcValue *elmc_result_err(ElmcValue *value);
 ElmcValue *elmc_tuple2(ElmcValue *first, ElmcValue *second);
@@ -94,6 +115,10 @@ elmc_int_t elmc_as_bool(ElmcValue *value);
 int elmc_value_equal(ElmcValue *left, ElmcValue *right);
 int elmc_string_length(ElmcValue *value);
 ElmcValue *elmc_list_head(ElmcValue *list);
+ElmcValue *elmc_list_nth_maybe(ElmcValue *list, ElmcValue *index);
+elmc_int_t elmc_list_nth_int_default(ElmcValue *list, elmc_int_t index, elmc_int_t default_value);
+ElmcValue *elmc_list_nth_int_default_boxed(ElmcValue *list, ElmcValue *index, ElmcValue *default_value);
+elmc_int_t elmc_list_head_with_default_int(elmc_int_t default_val, ElmcValue *list);
 ElmcValue *elmc_tuple_first(ElmcValue *tuple);
 ElmcValue *elmc_tuple_second(ElmcValue *tuple);
 ElmcValue *elmc_result_inc_or_zero(ElmcValue *result);
@@ -119,6 +144,8 @@ ElmcValue *elmc_string_is_empty(ElmcValue *value);
 ElmcValue *elmc_dict_from_list(ElmcValue *items);
 ElmcValue *elmc_dict_insert(ElmcValue *key, ElmcValue *value, ElmcValue *dict);
 ElmcValue *elmc_dict_get(ElmcValue *key, ElmcValue *dict);
+elmc_int_t elmc_dict_get_with_default_int(elmc_int_t default_val, elmc_int_t key, ElmcValue *dict);
+elmc_int_t elmc_dict_get_with_default_int_value(elmc_int_t default_val, ElmcValue *key, ElmcValue *dict);
 ElmcValue *elmc_dict_member(ElmcValue *key, ElmcValue *dict);
 ElmcValue *elmc_dict_size(ElmcValue *dict);
 ElmcValue *elmc_set_from_list(ElmcValue *items);
@@ -129,10 +156,14 @@ ElmcValue *elmc_array_empty(void);
 ElmcValue *elmc_array_from_list(ElmcValue *items);
 ElmcValue *elmc_array_length(ElmcValue *array);
 ElmcValue *elmc_array_get(ElmcValue *index, ElmcValue *array);
+elmc_int_t elmc_array_get_with_default_int(elmc_int_t default_val, elmc_int_t index, ElmcValue *array);
 ElmcValue *elmc_array_set(ElmcValue *index, ElmcValue *value, ElmcValue *array);
 ElmcValue *elmc_array_push(ElmcValue *value, ElmcValue *array);
 ElmcValue *elmc_task_succeed(ElmcValue *value);
 ElmcValue *elmc_task_fail(ElmcValue *value);
+ElmcValue *elmc_task_map(ElmcValue *f, ElmcValue *task);
+ElmcValue *elmc_task_map2(ElmcValue *f, ElmcValue *a, ElmcValue *b);
+ElmcValue *elmc_task_and_then(ElmcValue *f, ElmcValue *task);
 ElmcValue *elmc_process_spawn(ElmcValue *task);
 ElmcValue *elmc_process_sleep(ElmcValue *milliseconds);
 ElmcValue *elmc_process_kill(ElmcValue *pid);
@@ -293,7 +324,7 @@ ElmcValue *elmc_dict_partition(ElmcValue *f, ElmcValue *dict);
 ElmcValue *elmc_dict_union(ElmcValue *a, ElmcValue *b);
 ElmcValue *elmc_dict_intersect(ElmcValue *a, ElmcValue *b);
 ElmcValue *elmc_dict_diff(ElmcValue *a, ElmcValue *b);
-ElmcValue *elmc_dict_merge(ElmcValue *lf, ElmcValue *bf, ElmcValue *rf, ElmcValue *a, ElmcValue *b);
+ElmcValue *elmc_dict_merge(ElmcValue *lf, ElmcValue *bf, ElmcValue *rf, ElmcValue *a, ElmcValue *b, ElmcValue *result);
 ElmcValue *elmc_dict_update(ElmcValue *key, ElmcValue *f, ElmcValue *dict);
 ElmcValue *elmc_dict_singleton(ElmcValue *key, ElmcValue *value);
 
@@ -344,6 +375,8 @@ ElmcValue *elmc_json_decode_map2(ElmcValue *f, ElmcValue *d1, ElmcValue *d2);
 ElmcValue *elmc_json_decode_map3(ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3);
 ElmcValue *elmc_json_decode_map4(ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3, ElmcValue *d4);
 ElmcValue *elmc_json_decode_map5(ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3, ElmcValue *d4, ElmcValue *d5);
+ElmcValue *elmc_json_decode_map6(ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3, ElmcValue *d4, ElmcValue *d5, ElmcValue *d6);
+ElmcValue *elmc_json_decode_map7(ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3, ElmcValue *d4, ElmcValue *d5, ElmcValue *d6, ElmcValue *d7);
 ElmcValue *elmc_json_decode_succeed(ElmcValue *value);
 ElmcValue *elmc_json_decode_fail(ElmcValue *msg);
 ElmcValue *elmc_json_decode_and_then(ElmcValue *f, ElmcValue *decoder);
@@ -396,6 +429,16 @@ ElmcValue *elmc_record_update(ElmcValue *record, const char *field_name, ElmcVal
 ElmcValue *elmc_closure_new(ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count), int arity, int capture_count, ElmcValue **captures);
 ElmcValue *elmc_closure_call(ElmcValue *closure, ElmcValue **args, int argc);
 ElmcValue *elmc_apply_extra(ElmcValue *value, ElmcValue **args, int argc);
+
+typedef struct ElmcForwardRef {
+  ElmcValue *value;
+} ElmcForwardRef;
+
+ElmcForwardRef *elmc_forward_ref_new(void);
+void elmc_forward_ref_set(ElmcForwardRef *ref, ElmcValue *value);
+ElmcValue *elmc_forward_ref_get(ElmcForwardRef *ref);
+void elmc_forward_ref_free(ElmcForwardRef *ref);
+ElmcValue *elmc_forward_ref_capture(ElmcForwardRef *ref);
 
 uint64_t elmc_rc_allocated_count(void);
 uint64_t elmc_rc_released_count(void);

@@ -1142,6 +1142,45 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert op.y == 6
   end
 
+  test "debugger preview derives flat drawBitmapInRect and drawRotatedBitmap nodes" do
+    tree = %{
+      "type" => "root",
+      "children" => [
+        %{
+          "type" => "drawBitmapInRect",
+          "resource" => "BitmapStaticBtIcon",
+          "bounds" => %{"x" => 8, "y" => 30, "w" => 30, "h" => 30}
+        },
+        %{
+          "type" => "drawRotatedBitmap",
+          "resource" => "BitmapStaticBtIcon",
+          "bounds" => %{"x" => 0, "y" => 0, "w" => 30, "h" => 30},
+          "rotation" => 24_576,
+          "origin" => %{"x" => 72, "y" => 95}
+        }
+      ]
+    }
+
+    runtime = %{
+      model: %{
+        "bitmap_resource_indices" => %{"BitmapStaticBtIcon" => 1}
+      }
+    }
+
+    [in_rect, rotated] = DebuggerPreview.svg_ops(tree, runtime)
+
+    assert in_rect.kind == :bitmap_in_rect
+    assert in_rect.bitmap_id == 1
+    assert in_rect.x == 8
+    assert in_rect.y == 30
+
+    assert rotated.kind == :rotated_bitmap
+    assert rotated.bitmap_id == 1
+    assert rotated.center_x == 72
+    assert rotated.center_y == 95
+    assert rotated.angle == 24_576
+  end
+
   test "debugger preview supplements runtime output with tree drawVectorAt ops" do
     tree = %{
       "type" => "root",
@@ -1262,7 +1301,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert length(anim_op.frame_elements) >= 2
     assert length(anim_op.durations) == length(anim_op.frame_elements)
     # play_count 0 is IDE/PDC infinite; debugger JS treats 0 as loop forever.
-    assert anim_op.play_count == 0
+    assert anim_op.play_count == 1
   end
 
   test "hydrate_animation_svg_ops attaches APNG data URL for bitmap sequences" do
@@ -1522,6 +1561,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert text.h == 56
     assert text.font_size == 56
     assert text.text_align == "center"
+    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_font_size(text) == 42
+    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_y(text) == 80
   end
 
   test "debugger preview preserves explicit text alignment and overflow" do
@@ -3058,7 +3099,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
         width::32-big,
         height::32-big,
         8,
-        6,
+        3,
         0,
         0,
         0
@@ -3066,20 +3107,24 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
 
     actl = png_chunk("acTL", <<frames::32-big, 0::32-big>>)
 
-    fctl =
-      png_chunk("fcTL", <<
-        0::32-big,
-        width::32-big,
-        height::32-big,
-        0::32,
-        0::32,
-        delay_num::16-big,
-        delay_den::16-big,
-        0,
-        0
-      >>)
+    fctls =
+      for seq <- 0..(frames - 2) do
+        png_chunk("fcTL", <<
+          seq::32-big,
+          width::32-big,
+          height::32-big,
+          0::32,
+          0::32,
+          delay_num::16-big,
+          delay_den::16-big,
+          0,
+          0
+        >>)
+      end
 
-    <<137, 80, 78, 71, 13, 10, 26, 10, ihdr::binary, actl::binary, fctl::binary,
+    fctl_data = Enum.reduce(fctls, <<>>, fn chunk, acc -> acc <> chunk end)
+
+    <<137, 80, 78, 71, 13, 10, 26, 10, ihdr::binary, actl::binary, fctl_data::binary,
       png_chunk("IEND", "")::binary>>
   end
 

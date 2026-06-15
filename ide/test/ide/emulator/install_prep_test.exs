@@ -12,14 +12,34 @@ defmodule Ide.Emulator.InstallPrepTest do
            })
   end
 
-  test "reset_needed? when boot is stale" do
-    stale_boot = System.os_time(:millisecond) - 999_999_999
+  test "reset_needed? when boot is stale and session is idle" do
+    now = System.monotonic_time(:millisecond)
+    stale = now - 999_999_999
 
     assert InstallPrep.reset_needed?(%{
              qemu_pid: self(),
              protocol_router_pid: self(),
-             last_boot_ms: stale_boot,
+             last_boot_ms: stale,
+             last_ping_ms: stale,
              bt_port: 12_345
+           })
+  end
+
+  test "reset_needed? is false when boot is stale but session was pinged recently" do
+    {:ok, listen} =
+      :gen_tcp.listen(0, [:binary, active: false, reuseaddr: true, ip: {127, 0, 0, 1}])
+
+    {:ok, bt_port} = :inet.port(listen)
+    on_exit(fn -> :gen_tcp.close(listen) end)
+
+    now = System.monotonic_time(:millisecond)
+
+    refute InstallPrep.reset_needed?(%{
+             qemu_pid: self(),
+             protocol_router_pid: self(),
+             last_boot_ms: now - 400_000,
+             last_ping_ms: now - 5_000,
+             bt_port: bt_port
            })
   end
 

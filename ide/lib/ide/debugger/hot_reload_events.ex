@@ -4,21 +4,29 @@ defmodule Ide.Debugger.HotReloadEvents do
   alias Ide.Debugger.Types
 
   @type host :: %{
-          required(:append_event) => (map(), String.t(), map() -> map()),
-          required(:maybe_append_contract) => (map(), map() | nil -> map()),
-          required(:maybe_append_runtime_exec) => (map(), String.t() -> map()),
-          required(:maybe_append_phone_view_render) => (map(), String.t() -> map())
+          required(:append_event) => (Types.runtime_state(),
+                                      String.t(),
+                                      Types.debugger_timeline_payload() ->
+                                        Types.runtime_state()),
+          required(:maybe_append_contract) => (Types.runtime_state(),
+                                               Types.debugger_contract()
+                                               | nil ->
+                                                 Types.runtime_state()),
+          required(:maybe_append_runtime_exec) => (Types.runtime_state(), String.t() ->
+                                                     Types.runtime_state()),
+          required(:maybe_append_phone_view_render) => (Types.runtime_state(), String.t() ->
+                                                          Types.runtime_state())
         }
 
   @spec append(
-          map(),
+          Types.runtime_state(),
           String.t(),
           String.t() | nil,
           String.t(),
           String.t(),
-          map() | nil,
+          Types.debugger_contract() | nil,
           host()
-        ) :: map()
+        ) :: Types.runtime_state()
   def append(state, reason, rel_path, revision, source_root, intro_payload, host)
       when is_map(state) and is_binary(reason) and is_binary(revision) and is_binary(source_root) and
              is_map(host) do

@@ -13,7 +13,7 @@ defmodule Ide.Debugger.Types.MessageInEventPayload do
           optional(String.t()) => Types.wire_input()
         }
 
-  @type wire_map :: t() | map()
+  @type wire_map :: t() | Types.wire_map()
 
   @spec from_message(String.t(), String.t(), String.t() | nil) :: t()
   def from_message(target, message, message_source)

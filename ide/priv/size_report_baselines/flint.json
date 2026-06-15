@@ -1,18 +1,19 @@
 {
   "version": 1,
-  "description": "Reference sizes after C codegen improvements (flint). pebble-app.bin requires --package.",
+  "description": "Reference sizes after C codegen phase 2 improvements (flint). pebble-app.bin requires --package.",
   "templates": {
     "game-2048": {
-      "generated_c_bytes": 78758,
-      "pebble_app_bin_flint": 25912
+      "generated_c_bytes": 69762,
+      "pebble_app_bin_aplite": 21380,
+      "pebble_app_bin_flint": 21788
     },
     "watchface-tangram-time": {
-      "generated_c_bytes": 218184,
-      "pebble_app_bin_flint": 49460
+      "generated_c_bytes": 209258,
+      "pebble_app_bin_flint": 49324
     },
     "watchface-poke-battle": {
-      "generated_c_bytes": 189842,
-      "pebble_app_bin_flint": 43008
+      "generated_c_bytes": 189422,
+      "pebble_app_bin_flint": 42808
     }
   }
 }

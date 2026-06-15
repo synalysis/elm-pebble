@@ -2,7 +2,7 @@ defmodule Ide.Debugger.Types.ViewRenderEventPayload do
   @moduledoc "Payload for `debugger.view_render` events."
   alias Ide.Debugger.Types
 
-  @type root :: map() | String.t() | nil
+  @type root :: Types.view_output_tree() | String.t() | nil
 
   @type t :: %{
           optional(:target) => String.t(),

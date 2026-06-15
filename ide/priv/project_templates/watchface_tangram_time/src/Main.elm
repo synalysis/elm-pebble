@@ -32,9 +32,23 @@ type alias DownloadedPiece =
     }
 
 
+type alias PendingPiece =
+    { index : Int
+    , vertexCount : Int
+    , x1 : Int
+    , y1 : Int
+    , x2 : Int
+    , y2 : Int
+    , x3 : Int
+    , y3 : Int
+    , x4 : Int
+    , y4 : Int
+    }
+
+
 type alias PendingFigure =
     { figureId : Int
-    , pieces : List DownloadedPiece
+    , pieces : List PendingPiece
     }
 
 
@@ -86,16 +100,8 @@ update msg model =
         FromPhone (BeginFigure figureId) ->
             ( { model | companionFigure = Just figureId, pendingFigure = Just { figureId = figureId, pieces = [] } }, Cmd.none )
 
-        FromPhone (ProvidePiece figureId pieceIndex vertexCount x1 y1 x2 y2 x3 y3 x4 y4) ->
-            ( addDownloadedPiece figureId
-                { index = pieceIndex
-                , vertexCount = vertexCount
-                , p1 = o x1 y1
-                , p2 = o x2 y2
-                , p3 = o x3 y3
-                , p4 = o x4 y4
-                }
-                model
+        FromPhone (ProvidePiece figureId coords) ->
+            ( addPendingPieceFromCoords figureId coords model
             , Cmd.none
             )
 
@@ -440,12 +446,40 @@ currentMinute model =
             0
 
 
-addDownloadedPiece : Int -> DownloadedPiece -> Model -> Model
-addDownloadedPiece figureId piece model =
+addPendingPieceFromCoords : Int -> List Int -> Model -> Model
+addPendingPieceFromCoords figureId coords model =
+    case coords of
+        pieceIndex :: vertexCount :: x1 :: y1 :: x2 :: y2 :: x3 :: y3 :: x4 :: y4 :: _ ->
+            addPendingPiece figureId pieceIndex vertexCount x1 y1 x2 y2 x3 y3 x4 y4 model
+
+        _ ->
+            model
+
+
+addPendingPiece : Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Model -> Model
+addPendingPiece figureId pieceIndex vertexCount x1 y1 x2 y2 x3 y3 x4 y4 model =
     case model.pendingFigure of
         Just pending ->
             if pending.figureId == figureId then
-                { model | pendingFigure = Just { pending | pieces = piece :: pending.pieces } }
+                { model
+                    | pendingFigure =
+                        Just
+                            { pending
+                                | pieces =
+                                    { index = pieceIndex
+                                    , vertexCount = vertexCount
+                                    , x1 = x1
+                                    , y1 = y1
+                                    , x2 = x2
+                                    , y2 = y2
+                                    , x3 = x3
+                                    , y3 = y3
+                                    , x4 = x4
+                                    , y4 = y4
+                                    }
+                                        :: pending.pieces
+                            }
+                }
             else
                 model
 
@@ -453,12 +487,26 @@ addDownloadedPiece figureId piece model =
             model
 
 
+toDownloadedPiece : PendingPiece -> DownloadedPiece
+toDownloadedPiece piece =
+    { index = piece.index
+    , vertexCount = piece.vertexCount
+    , p1 = o piece.x1 piece.y1
+    , p2 = o piece.x2 piece.y2
+    , p3 = o piece.x3 piece.y3
+    , p4 = o piece.x4 piece.y4
+    }
+
+
 finishDownloadedFigure : Int -> Model -> Model
 finishDownloadedFigure figureId model =
     case model.pendingFigure of
         Just pending ->
             if pending.figureId == figureId && List.length pending.pieces >= 7 then
-                { model | downloadedPieces = pending.pieces, pendingFigure = Nothing }
+                { model
+                    | downloadedPieces = List.map toDownloadedPiece pending.pieces
+                    , pendingFigure = Nothing
+                }
             else
                 { model | pendingFigure = Nothing }
 

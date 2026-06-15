@@ -29,7 +29,7 @@ defmodule Ide.Debugger.Types.CompileIngestBridge do
           optional(:warning_count) => non_neg_integer(),
           optional(:detail) => String.t(),
           optional(:source_root) => String.t(),
-          optional(:elmx_manifest) => map(),
+          optional(:elmx_manifest) => Types.elmx_manifest(),
           optional(:elmx_revision) => String.t(),
           optional(atom()) => Types.wire_input(),
           optional(String.t()) => Types.wire_input()
@@ -93,7 +93,9 @@ defmodule Ide.Debugger.Types.CompileIngestBridge do
       elmx_compile_error:
         Map.get(result, :elmx_compile_error) || Map.get(result, "elmx_compile_error"),
       elmx_compile_error_message:
-        Map.get(result, :elmx_compile_error_message) || Map.get(result, "elmx_compile_error_message")
+        Map.get(result, :elmx_compile_error_message) || Map.get(result, "elmx_compile_error_message"),
+      elmc_linked_binary:
+        Map.get(result, :elmc_linked_binary) || Map.get(result, "elmc_linked_binary")
     }
     |> drop_nil_fields()
   end

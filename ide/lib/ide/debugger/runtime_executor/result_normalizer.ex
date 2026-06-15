@@ -6,13 +6,20 @@ defmodule Ide.Debugger.RuntimeExecutor.ResultNormalizer do
   alias Ide.Debugger.RuntimeExecutor.Types, as: ExecutorTypes
   alias Ide.Debugger.Types
 
-  @spec normalize(ExecutorTypes.executor_wire_result()) :: ExecutorTypes.execution_result()
+  @spec normalize(ExecutorTypes.elmx_execution_payload() | ExecutorTypes.executor_wire_result()) ::
+          ExecutorTypes.execution_result()
   def normalize(result) when is_map(result) do
+    runtime = map_field(result, :runtime)
+
+    model_patch =
+      map_field(result, :model_patch)
+      |> Map.put_new("runtime_execution", runtime)
+
     %{
-      model_patch: map_field(result, :model_patch),
+      model_patch: model_patch,
       view_tree: map_or_nil_field(result, :view_tree),
       view_output: list_field(result, :view_output),
-      runtime: map_field(result, :runtime),
+      runtime: runtime,
       protocol_events: list_field(result, :protocol_events),
       followup_messages: list_field(result, :followup_messages)
     }

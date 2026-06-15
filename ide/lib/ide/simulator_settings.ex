@@ -10,6 +10,9 @@ defmodule Ide.SimulatorSettings do
 
   @type t :: Types.simulator_settings()
 
+  @type form_params :: %{optional(String.t()) => Types.wire_input()}
+  @type display_values :: %{optional(String.t()) => Types.wire_input()}
+
   @type field_type :: :range | :checkbox | :text | :number | :date | :time | :select | :json
   @type field_spec :: %{
           key: String.t(),
@@ -585,7 +588,7 @@ defmodule Ide.SimulatorSettings do
   @doc """
   Loads normalized simulator settings for display, including derived flat weather/environment/json fields.
   """
-  @spec values_for(Project.t() | nil, map() | nil) :: map()
+  @spec values_for(Project.t() | nil, Types.runtime_state() | nil) :: display_values()
   def values_for(project, debugger_state \\ nil) do
     base =
       cond do
@@ -612,7 +615,7 @@ defmodule Ide.SimulatorSettings do
   @doc """
   Merges form params with existing project simulator settings and normalizes the result.
   """
-  @spec save_from_form(map(), map()) :: map()
+  @spec save_from_form(t() | map(), form_params()) :: t()
   def save_from_form(existing_settings, form_params) when is_map(form_params) do
     canonical = existing_settings |> Debugger.normalize_simulator_settings()
     display = expand_display_values(canonical)
@@ -628,7 +631,7 @@ defmodule Ide.SimulatorSettings do
     do: Debugger.normalize_simulator_settings(existing_settings)
 
   @doc false
-  @spec raw_settings_for(Project.t() | nil, map() | nil) :: map()
+  @spec raw_settings_for(Project.t() | nil, Types.runtime_state() | nil) :: t() | map()
   def raw_settings_for(project, debugger_state \\ nil) do
     cond do
       is_map(debugger_state) and is_map(Map.get(debugger_state, :simulator_settings)) ->
@@ -648,7 +651,7 @@ defmodule Ide.SimulatorSettings do
   @doc """
   Normalizes form params from the shared simulator settings component.
   """
-  @spec normalize_form(map()) :: map()
+  @spec normalize_form(form_params()) :: t()
   def normalize_form(params) when is_map(params) do
     params
     |> collapse_form_params()
@@ -687,7 +690,7 @@ defmodule Ide.SimulatorSettings do
   defp group_order(:emulator_extras), do: 13
   defp group_order(_), do: 99
 
-  @spec project_simulator_settings(Project.t()) :: map()
+  @spec project_simulator_settings(Project.t()) :: Ide.Projects.Types.debugger_settings()
   defp project_simulator_settings(%Project{} = project) do
     settings = project.debugger_settings || %{}
 
@@ -697,7 +700,7 @@ defmodule Ide.SimulatorSettings do
     end
   end
 
-  @spec expand_display_values(map()) :: map()
+  @spec expand_display_values(t()) :: display_values()
   defp expand_display_values(settings) do
     weather = Map.get(settings, "weather", %{})
     environment = Map.get(settings, "environment", %{})
@@ -723,7 +726,7 @@ defmodule Ide.SimulatorSettings do
     |> Map.put("timeline_peek", Map.get(settings, "timeline_peek", false))
   end
 
-  @spec expand_structured_fields(map()) :: map()
+  @spec expand_structured_fields(display_values() | form_params()) :: t()
   defp expand_structured_fields(params) do
     weather =
       %{
@@ -775,7 +778,7 @@ defmodule Ide.SimulatorSettings do
     |> maybe_put("preferences", decode_json_map(map_get(params, "preferences_json")))
   end
 
-  @spec collapse_form_params(map()) :: map()
+  @spec collapse_form_params(form_params()) :: form_params()
   defp collapse_form_params(params) do
     Enum.reduce(params, %{}, fn
       {key, value}, acc when is_atom(key) ->
@@ -786,7 +789,7 @@ defmodule Ide.SimulatorSettings do
     end)
   end
 
-  @spec maybe_put(map(), String.t(), Types.wire_input() | nil) :: map()
+  @spec maybe_put(form_params(), String.t(), Types.wire_input() | nil) :: form_params()
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
@@ -841,7 +844,7 @@ defmodule Ide.SimulatorSettings do
 
   defp decode_json_list(_value), do: nil
 
-  @spec decode_json_map(Types.wire_input()) :: map() | nil
+  @spec decode_json_map(Types.wire_input()) :: Types.wire_map() | nil
   defp decode_json_map(value) when is_map(value), do: value
 
   defp decode_json_map(value) when is_binary(value) do

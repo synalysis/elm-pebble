@@ -13,5 +13,5 @@ defmodule Ide.Debugger.Types.RuntimeFollowupRow do
           optional(atom()) => Types.wire_input()
         }
 
-  @type wire_row :: t() | map()
+  @type wire_row :: t() | Types.wire_map()
 end

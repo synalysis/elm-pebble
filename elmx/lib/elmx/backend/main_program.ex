@@ -4,6 +4,7 @@ defmodule Elmx.Backend.MainProgram do
   """
 
   alias ElmEx.DebuggerContract.EffectAnalysis
+  alias Elmx.Types
 
   @default_roots ~w(init update view subscriptions main)
 
@@ -30,14 +31,14 @@ defmodule Elmx.Backend.MainProgram do
   end
 
   @doc false
-  @spec outline(ElmEx.IR.t(), String.t()) :: map() | nil
+  @spec outline(ElmEx.IR.t(), String.t()) :: Types.wire_map() | nil
   def outline(%ElmEx.IR{} = ir, entry_module) when is_binary(entry_module) do
     ir
     |> main_expr(entry_module)
     |> EffectAnalysis.main_program_outline()
   end
 
-  @spec main_expr(ElmEx.IR.t(), String.t()) :: map() | nil
+  @spec main_expr(ElmEx.IR.t(), String.t()) :: Types.ir_expr() | nil
   defp main_expr(%ElmEx.IR{modules: modules}, entry_module) do
     modules
     |> Enum.find_value(fn mod ->

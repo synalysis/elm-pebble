@@ -16,7 +16,7 @@ defmodule Ide.Debugger.Types.PackageCmdErrorEventPayload do
           optional(String.t()) => Types.wire_input()
         }
 
-  @type wire_map :: t() | map()
+  @type wire_map :: t() | Types.wire_map()
 
   @spec from_error(String.t(), String.t(), command_map(), Types.execution_fallback_reason()) ::
           t()

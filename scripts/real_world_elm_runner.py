@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Resumable real-world Elm package runner for elmc + elm_executor.
+Resumable real-world Elm package runner for elmc + elmx.
 
 What it does:
 - fetches package catalog from package.elm-lang.org
 - filters out blocked/browser-heavy dependency families
 - caches downloaded package source under tmp/real_world_elm_runner/packages
-- runs elmc + elm_executor check for each package
+- runs elmc + elmx check for each package
 - extracts Elm code examples from docs comments (when available) and checks them
 - records all failures in tmp/real_world_elm_runner/todos.json
 - tracks progress in tmp/real_world_elm_runner/state.json so reruns continue
@@ -43,6 +43,8 @@ BLOCKED_PACKAGES = {
 }
 
 RUNNER_ELM_VERSION = "0.19.1"
+
+ENGINES = ("elmc", "elmx")
 
 INTERNAL_MANAGED_PACKAGES = {
     "elm/core",
@@ -238,7 +240,7 @@ class RunnerPaths:
     state_path: Path
     todos_path: Path
     elmc_bin: Path
-    elm_executor_bin: Path
+    elmx_bin: Path
     elm_bootstrap_dir: Path
 
 
@@ -955,12 +957,50 @@ def _parse_last_json_line(output: str) -> Dict[str, Any]:
     return {"status": "error", "error": summarize_output(output)}
 
 
+def engine_bin(paths: RunnerPaths, engine: str) -> Path:
+    if engine == "elmc":
+        return paths.elmc_bin
+    if engine == "elmx":
+        return paths.elmx_bin
+    raise ValueError(f"unknown engine: {engine}")
+
+
+def engine_repo_dir(engine: str) -> str:
+    if engine not in ENGINES:
+        raise ValueError(f"unknown engine: {engine}")
+    return engine
+
+
+def run_engine_check(paths: RunnerPaths, engine: str, project_dir: Path) -> Tuple[int, str]:
+    return run_cmd(
+        [str(engine_bin(paths, engine)), "check", str(project_dir)],
+        cwd=paths.repo_root / engine_repo_dir(engine),
+    )
+
+
+def ensure_compiler_binaries(paths: RunnerPaths) -> None:
+    for engine in ENGINES:
+        bin_path = engine_bin(paths, engine)
+        if bin_path.exists():
+            continue
+        pkg_dir = paths.repo_root / engine_repo_dir(engine)
+        print(f"building {engine} escript via mix escript.build...", file=sys.stderr)
+        exit_code, output = run_cmd(["mix", "escript.build"], cwd=pkg_dir, timeout_seconds=300)
+        if exit_code != 0 or not bin_path.exists():
+            raise RuntimeError(
+                f"failed to build {engine} escript at {bin_path}: {summarize_output(output)}"
+            )
+
+
 def run_doc_runtime_eval(paths: RunnerPaths, project_dir: Path, engine: str) -> Dict[str, Any]:
     script_path = paths.repo_root / "scripts" / "doc_snippet_runtime_eval.exs"
+    if not script_path.exists():
+        return {"status": "skipped", "reason": "doc_snippet_runtime_eval.exs not found"}
+
     out_dir = paths.scratch_dir / "runtime_eval" / engine / project_dir.name
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    cwd = paths.repo_root / ("elmc" if engine == "elmc" else "elm_executor")
+    cwd = paths.repo_root / engine_repo_dir(engine)
     cmd = [
         "mix",
         "run",
@@ -990,12 +1030,12 @@ def run_doc_runtime_eval(paths: RunnerPaths, project_dir: Path, engine: str) -> 
     return parsed
 
 
-def compare_runtime_results(elmc_eval: Dict[str, Any], elm_executor_eval: Dict[str, Any]) -> Dict[str, Any]:
-    if elmc_eval.get("status") != "ok" or elm_executor_eval.get("status") != "ok":
+def compare_runtime_results(elmc_eval: Dict[str, Any], elmx_eval: Dict[str, Any]) -> Dict[str, Any]:
+    if elmc_eval.get("status") != "ok" or elmx_eval.get("status") != "ok":
         return {
             "status": "runtime_eval_error",
             "elmc_status": elmc_eval.get("status"),
-            "elm_executor_status": elm_executor_eval.get("status"),
+            "elmx_status": elmx_eval.get("status"),
             "mismatches": [],
         }
 
@@ -1009,7 +1049,7 @@ def compare_runtime_results(elmc_eval: Dict[str, Any], elm_executor_eval: Dict[s
         return out
 
     left = to_map(elmc_eval.get("results"))
-    right = to_map(elm_executor_eval.get("results"))
+    right = to_map(elmx_eval.get("results"))
     names = sorted(set(left.keys()).intersection(right.keys()))
     mismatches: List[Dict[str, Any]] = []
     error_count = 0
@@ -1024,7 +1064,7 @@ def compare_runtime_results(elmc_eval: Dict[str, Any], elm_executor_eval: Dict[s
                     "name": name,
                     "kind": "ok_mismatch",
                     "elmc": l,
-                    "elm_executor": r,
+                    "elmx": r,
                 }
             )
             continue
@@ -1037,7 +1077,7 @@ def compare_runtime_results(elmc_eval: Dict[str, Any], elm_executor_eval: Dict[s
                         "name": name,
                         "kind": "error_mismatch",
                         "elmc": l,
-                        "elm_executor": r,
+                        "elmx": r,
                     }
                 )
             continue
@@ -1047,7 +1087,7 @@ def compare_runtime_results(elmc_eval: Dict[str, Any], elm_executor_eval: Dict[s
                     "name": name,
                     "kind": "value_mismatch",
                     "elmc_value": l.get("value"),
-                    "elm_executor_value": r.get("value"),
+                    "elmx_value": r.get("value"),
                 }
             )
 
@@ -1060,7 +1100,7 @@ def compare_runtime_results(elmc_eval: Dict[str, Any], elm_executor_eval: Dict[s
     }
 
 
-def run_elm_core_docs_suite(paths: RunnerPaths, version: str) -> Dict[str, Any]:
+def run_elm_core_docs_suite(paths: RunnerPaths, version: str, *, skip_runtime: bool = False) -> Dict[str, Any]:
     encoded = encode_package("elm/core")
     docs_json = http_json(f"/packages/{encoded}/{version}/docs.json")
     snippets = extract_doc_snippets(docs_json)
@@ -1106,27 +1146,28 @@ def run_elm_core_docs_suite(paths: RunnerPaths, version: str) -> Dict[str, Any]:
         report["doc_tests"]["status"] = "no_supported_snippets"
         return report
 
-    elmc_exit, elmc_output = run_cmd([str(paths.elmc_bin), "check", str(project_dir)], cwd=paths.repo_root / "elmc")
-    elm_executor_exit, elm_executor_output = run_cmd(
-        [str(paths.elm_executor_bin), "check", str(project_dir)],
-        cwd=paths.repo_root / "elm_executor",
-    )
-    report["checks"]["elmc"] = {"exit_code": elmc_exit, "output": summarize_output(elmc_output)}
-    report["checks"]["elm_executor"] = {"exit_code": elm_executor_exit, "output": summarize_output(elm_executor_output)}
+    for engine in ENGINES:
+        exit_code, output = run_engine_check(paths, engine, project_dir)
+        report["checks"][engine] = {"exit_code": exit_code, "output": summarize_output(output)}
+        report["doc_tests"][engine] = report["checks"][engine]
 
-    report["doc_tests"]["elmc"] = report["checks"]["elmc"]
-    report["doc_tests"]["elm_executor"] = report["checks"]["elm_executor"]
-
-    if elmc_exit == 0 and elm_executor_exit == 0:
+    checks_ok = all(report["checks"][engine]["exit_code"] == 0 for engine in ENGINES)
+    if checks_ok and not skip_runtime:
         elmc_runtime = run_doc_runtime_eval(paths, project_dir, "elmc")
-        elm_executor_runtime = run_doc_runtime_eval(paths, project_dir, "elm_executor")
-        runtime_compare = compare_runtime_results(elmc_runtime, elm_executor_runtime)
+        elmx_runtime = run_doc_runtime_eval(paths, project_dir, "elmx")
+        runtime_compare = compare_runtime_results(elmc_runtime, elmx_runtime)
         report["doc_tests"]["runtime"] = {
             "elmc": elmc_runtime,
-            "elm_executor": elm_executor_runtime,
+            "elmx": elmx_runtime,
             "compare": runtime_compare,
         }
-        report["doc_tests"]["status"] = "runtime_checked"
+        if elmc_runtime.get("status") == "skipped" or elmx_runtime.get("status") == "skipped":
+            report["doc_tests"]["status"] = "compile_checked"
+        else:
+            report["doc_tests"]["status"] = "runtime_checked"
+    elif checks_ok:
+        report["doc_tests"]["runtime"] = {"status": "skipped_by_flag"}
+        report["doc_tests"]["status"] = "compile_checked"
     else:
         report["doc_tests"]["runtime"] = {"status": "skipped_due_to_compile_failure"}
         report["doc_tests"]["status"] = "compile_checked"
@@ -1145,7 +1186,7 @@ def ensure_paths(repo_root: Path) -> RunnerPaths:
         state_path=base / "state.json",
         todos_path=base / "todos.json",
         elmc_bin=repo_root / "elmc" / "elmc",
-        elm_executor_bin=repo_root / "elm_executor" / "elm_executor",
+        elmx_bin=repo_root / "elmx" / "elmx",
         elm_bootstrap_dir=base / "elm_install_bootstrap",
     )
     for p in (paths.base_dir, paths.packages_dir, paths.scratch_dir, paths.reports_dir):
@@ -1314,6 +1355,8 @@ def run_package_checks(
     version: str,
     package_dir: Path,
     docs_json: Any,
+    *,
+    skip_runtime: bool = False,
 ) -> Dict[str, Any]:
     report: Dict[str, Any] = {
         "package": package,
@@ -1330,12 +1373,9 @@ def run_package_checks(
     }
 
     # Base package checks.
-    elmc_exit, elmc_output = run_cmd([str(paths.elmc_bin), "check", str(package_dir)], cwd=paths.repo_root / "elmc")
-    elm_executor_exit, elm_executor_output = run_cmd(
-        [str(paths.elm_executor_bin), "check", str(package_dir)], cwd=paths.repo_root / "elm_executor"
-    )
-    report["checks"]["elmc"] = {"exit_code": elmc_exit, "output": summarize_output(elmc_output)}
-    report["checks"]["elm_executor"] = {"exit_code": elm_executor_exit, "output": summarize_output(elm_executor_output)}
+    for engine in ENGINES:
+        exit_code, output = run_engine_check(paths, engine, package_dir)
+        report["checks"][engine] = {"exit_code": exit_code, "output": summarize_output(output)}
 
     auto_snippets = extract_doc_snippets(docs_json)
     derived_snippets = derived_snippets_for_package(package)
@@ -1363,32 +1403,31 @@ def run_package_checks(
         report["doc_tests"]["status"] = "no_supported_snippets"
         return report
 
-    d_elmc_exit, d_elmc_output = run_cmd([str(paths.elmc_bin), "check", str(scratch)], cwd=paths.repo_root / "elmc")
-    d_elm_executor_exit, d_elm_executor_output = run_cmd(
-        [str(paths.elm_executor_bin), "check", str(scratch)],
-        cwd=paths.repo_root / "elm_executor",
-    )
-
     report["doc_tests"]["status"] = "checked"
-    report["doc_tests"]["elmc"] = {
-        "exit_code": d_elmc_exit,
-        "output": summarize_output(d_elmc_output),
-    }
-    report["doc_tests"]["elm_executor"] = {
-        "exit_code": d_elm_executor_exit,
-        "output": summarize_output(d_elm_executor_output),
-    }
+    for engine in ENGINES:
+        exit_code, output = run_engine_check(paths, engine, scratch)
+        report["doc_tests"][engine] = {
+            "exit_code": exit_code,
+            "output": summarize_output(output),
+        }
 
-    if d_elmc_exit == 0 and d_elm_executor_exit == 0:
+    doc_checks_ok = all(report["doc_tests"][engine]["exit_code"] == 0 for engine in ENGINES)
+    if doc_checks_ok and not skip_runtime:
         elmc_runtime = run_doc_runtime_eval(paths, scratch, "elmc")
-        elm_executor_runtime = run_doc_runtime_eval(paths, scratch, "elm_executor")
-        runtime_compare = compare_runtime_results(elmc_runtime, elm_executor_runtime)
+        elmx_runtime = run_doc_runtime_eval(paths, scratch, "elmx")
+        runtime_compare = compare_runtime_results(elmc_runtime, elmx_runtime)
         report["doc_tests"]["runtime"] = {
             "elmc": elmc_runtime,
-            "elm_executor": elm_executor_runtime,
+            "elmx": elmx_runtime,
             "compare": runtime_compare,
         }
-        report["doc_tests"]["status"] = "runtime_checked"
+        if elmc_runtime.get("status") == "skipped" or elmx_runtime.get("status") == "skipped":
+            report["doc_tests"]["status"] = "compile_checked"
+        else:
+            report["doc_tests"]["status"] = "runtime_checked"
+    elif doc_checks_ok:
+        report["doc_tests"]["runtime"] = {"status": "skipped_by_flag"}
+        report["doc_tests"]["status"] = "compile_checked"
     else:
         report["doc_tests"]["runtime"] = {
             "status": "skipped_due_to_compile_failure",
@@ -1467,7 +1506,7 @@ def runner_summary(state: Dict[str, Any], todos: Dict[str, Any]) -> str:
 
 
 def main(argv: Sequence[str]) -> int:
-    parser = argparse.ArgumentParser(description="Resumable Elm package runner for elmc and elm_executor")
+    parser = argparse.ArgumentParser(description="Resumable Elm package runner for elmc and elmx")
     parser.add_argument("--repo-root", default=".", help="Repo root (default: current directory)")
     parser.add_argument("--limit", type=int, default=10, help="Max packages to process this run")
     parser.add_argument("--reset", action="store_true", help="Reset state cursor and package statuses")
@@ -1491,17 +1530,33 @@ def main(argv: Sequence[str]) -> int:
         action="store_true",
         help="Do not fetch from package.elm-lang.org; use local package cache only",
     )
+    parser.add_argument(
+        "--skip-runtime",
+        action="store_true",
+        help="Only run elmc/elmx check; skip doc-snippet runtime evaluation",
+    )
+    parser.add_argument(
+        "--no-build-escripts",
+        action="store_true",
+        help="Do not auto-run mix escript.build when compiler binaries are missing",
+    )
     args = parser.parse_args(argv)
 
     repo_root = Path(args.repo_root).resolve()
     paths = ensure_paths(repo_root)
 
-    if not paths.elmc_bin.exists():
-        print(f"missing elmc binary at {paths.elmc_bin}", file=sys.stderr)
-        return 2
-    if not paths.elm_executor_bin.exists():
-        print(f"missing elm_executor binary at {paths.elm_executor_bin}", file=sys.stderr)
-        return 2
+    if args.no_build_escripts:
+        for engine in ENGINES:
+            bin_path = engine_bin(paths, engine)
+            if not bin_path.exists():
+                print(f"missing {engine} binary at {bin_path}", file=sys.stderr)
+                return 2
+    else:
+        try:
+            ensure_compiler_binaries(paths)
+        except RuntimeError as e:
+            print(str(e), file=sys.stderr)
+            return 2
 
     local_packages_dir: Optional[Path] = None
     if args.local_packages_dir:
@@ -1598,7 +1653,7 @@ def main(argv: Sequence[str]) -> int:
             if package == "elm/core":
                 resolved_version = version
                 row["version"] = resolved_version
-                report = run_elm_core_docs_suite(paths, resolved_version)
+                report = run_elm_core_docs_suite(paths, resolved_version, skip_runtime=args.skip_runtime)
             else:
                 if local_packages_dir is not None:
                     owner, pkg = package.split("/", 1)
@@ -1638,7 +1693,14 @@ def main(argv: Sequence[str]) -> int:
                     local_cache_only=args.local_cache_only or local_packages_dir is not None,
                 )
                 row["version"] = resolved_version
-                report = run_package_checks(paths, package, resolved_version, package_dir, docs_json)
+                report = run_package_checks(
+                    paths,
+                    package,
+                    resolved_version,
+                    package_dir,
+                    docs_json,
+                    skip_runtime=args.skip_runtime,
+                )
 
             report_path = paths.reports_dir / f"{package.replace('/', '__')}__{resolved_version}.json"
             write_json(report_path, report)
@@ -1646,7 +1708,7 @@ def main(argv: Sequence[str]) -> int:
             row["status"] = "checked"
 
             # Collect todos from check failures.
-            for engine in ("elmc", "elm_executor"):
+            for engine in ENGINES:
                 engine_row = report.get("checks", {}).get(engine, {})
                 exit_code = engine_row.get("exit_code")
                 if isinstance(exit_code, int) and exit_code != 0:
@@ -1664,7 +1726,7 @@ def main(argv: Sequence[str]) -> int:
 
             doc_status = report.get("doc_tests", {})
             if doc_status.get("status") in ("compile_checked", "runtime_checked"):
-                for engine in ("elmc", "elm_executor"):
+                for engine in ENGINES:
                     engine_row = doc_status.get(engine, {})
                     exit_code = engine_row.get("exit_code")
                     if isinstance(exit_code, int) and exit_code != 0:
@@ -1712,16 +1774,21 @@ def main(argv: Sequence[str]) -> int:
                     )
 
                 if runtime_compare.get("status") == "runtime_eval_error":
-                    append_todo(
-                        todos,
-                        {
-                            "kind": "doc_test_runtime_eval_error",
-                            "package": package,
-                            "version": resolved_version,
-                            "message": json.dumps(runtime_compare, sort_keys=True),
-                            "created_at": now_iso(),
-                        },
+                    skipped_runtime = any(
+                        doc_status.get("runtime", {}).get(engine, {}).get("status") == "skipped"
+                        for engine in ENGINES
                     )
+                    if not skipped_runtime:
+                        append_todo(
+                            todos,
+                            {
+                                "kind": "doc_test_runtime_eval_error",
+                                "package": package,
+                                "version": resolved_version,
+                                "message": json.dumps(runtime_compare, sort_keys=True),
+                                "created_at": now_iso(),
+                            },
+                        )
 
                 runtime_block = doc_status.get("runtime", {})
                 if runtime_block.get("status") == "skipped_due_to_compile_failure":

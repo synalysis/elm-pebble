@@ -17,6 +17,33 @@ defmodule Ide.Debugger.StepExecutionViewOutputTest do
            )
   end
 
+  test "placeholder_view_tree? rejects executor empty stub and previewUnavailable" do
+    refute StepExecution.introspect_view_usable?(%{"type" => "empty", "children" => []}, %{})
+    refute StepExecution.introspect_view_usable?(%{"type" => "previewUnavailable", "children" => []}, %{})
+
+    assert StepExecution.introspect_view_usable?(
+             %{"type" => "windowStack", "children" => [%{"type" => "window", "children" => []}]},
+             %{}
+           )
+  end
+
+  test "introspect_parser_view_tree prefers contract view_tree over executor empty stub" do
+    execution_model = %{
+      "debugger_contract" => %{
+        "view_tree" => %{
+          "type" => "windowStack",
+          "children" => [%{"type" => "window", "children" => []}]
+        }
+      }
+    }
+
+    assert %{"type" => "windowStack"} =
+             StepExecution.introspect_parser_view_tree(
+               execution_model,
+               %{"type" => "empty", "children" => []}
+             )
+  end
+
   test "should_refresh_executor_view_preview? when scene signatures differ" do
     app_model = %{"runtime_model" => %{"pageIndex" => 3}}
 

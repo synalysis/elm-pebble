@@ -8,8 +8,7 @@ defmodule Ide.Debugger.SubscriptionResponses do
           required(:apply_step_once) => (Types.runtime_state(),
                                          Types.surface_target(),
                                          String.t(),
-                                         Types.subscription_payload()
-                                         | map(),
+                                         Types.subscription_payload(),
                                          String.t(),
                                          String.t() ->
                                            Types.runtime_state())

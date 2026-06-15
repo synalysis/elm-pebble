@@ -130,6 +130,7 @@ defmodule Ide.Emulator.Types do
           required(:has_phone_companion) => boolean(),
           required(:has_companion_preferences) => boolean(),
           required(:install_path) => String.t(),
+          required(:request_app_logs_path) => String.t(),
           required(:vnc_path) => String.t(),
           required(:phone_path) => String.t(),
           required(:ping_path) => String.t(),
@@ -281,6 +282,7 @@ defmodule Ide.Emulator.Types do
           | {:entry_not_found, String.t()}
           | {:json_decode_failed, String.t(), error_detail()}
           | {:pbw_uuid_mismatch, String.t(), String.t()}
+          | {:pbw_platform_mismatch, %{required(:expected) => String.t(), required(:got) => String.t()}}
 
   @type sdk_error ::
           :python_not_found

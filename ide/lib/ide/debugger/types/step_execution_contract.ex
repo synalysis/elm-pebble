@@ -13,6 +13,8 @@ defmodule Ide.Debugger.Types.StepExecutionContract do
 
   @type executor_request :: Request.t()
   @type executor_request_wire :: ExecutorTypes.execution_input_map()
+  @type elmx_executor_wire :: Types.elmx_executor_request()
+  @type elmx_execution_payload :: Types.elmx_execution_payload()
   @type executor_result :: ExecutorTypes.execution_result()
   @type step_result :: RuntimeStepResult.t()
 
@@ -26,7 +28,7 @@ defmodule Ide.Debugger.Types.StepExecutionContract do
     RuntimeStepResult.from_executor_result(result)
   end
 
-  @spec step_result_from_wire(map()) :: step_result()
+  @spec step_result_from_wire(ExecutorTypes.executor_wire_result()) :: step_result()
   def step_result_from_wire(wire) when is_map(wire) do
     RuntimeStepResult.from_executor_wire(wire)
   end

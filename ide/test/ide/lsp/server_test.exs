@@ -18,6 +18,8 @@ defmodule Ide.Lsp.ServerTest do
     assert [%{"id" => 1, "result" => %{"capabilities" => capabilities}}] = messages
     assert capabilities["documentFormattingProvider"]
     assert capabilities["completionProvider"]
+    assert "." in capabilities["completionProvider"]["triggerCharacters"]
+    assert ":" in capabilities["completionProvider"]["triggerCharacters"]
     assert capabilities["foldingRangeProvider"]
     assert capabilities["textDocumentSync"]["change"] == 1
   end
@@ -104,6 +106,226 @@ defmodule Ide.Lsp.ServerTest do
 
     assert [%{"id" => 6, "result" => %{"items" => repeat_items}}] = messages
     assert Enum.any?(repeat_items, &(&1["label"] == "alias"))
+  end
+
+  test "field accessor completion inserts field name after existing dot" do
+    state = Server.new("demo")
+    uri = "elm-pebble://demo/watch/src%2FMain.elm"
+
+    text =
+      [
+        "type alias Model =",
+        "    { pageIndex : Int }",
+        "",
+        "getter = .tokenOnly",
+        "main model = model."
+      ]
+      |> Enum.join("\n")
+
+    {:ok, state} = open_document(state, uri, text)
+
+    {messages, _state} =
+      Server.handle(
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => 7,
+          "method" => "textDocument/completion",
+          "params" => %{
+            "textDocument" => %{"uri" => uri},
+            "position" => %{"line" => 4, "character" => String.length("main model = model.")}
+          }
+        }),
+        state
+      )
+
+    assert [%{"id" => 7, "result" => %{"items" => items}}] = messages
+    labels = Enum.map(items, & &1["label"])
+    assert labels == ["pageIndex"]
+    refute ".tokenOnly" in labels
+  end
+
+  test "field access completion uses record alias fields instead of functions" do
+    state = Server.new("demo")
+    uri = "elm-pebble://demo/watch/src%2FMain.elm"
+
+    text =
+      [
+        "module Main exposing (main)",
+        "",
+        "type alias Model =",
+        "    { pageIndex : Int",
+        "    , count : Int",
+        "    }",
+        "",
+        "update model =",
+        "    model."
+      ]
+      |> Enum.join("\n")
+
+    {:ok, state} = open_document(state, uri, text)
+
+    {messages, _state} =
+      Server.handle(
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => 8,
+          "method" => "textDocument/completion",
+          "params" => %{
+            "textDocument" => %{"uri" => uri},
+            "position" => %{"line" => 8, "character" => String.length("    model.")}
+          }
+        }),
+        state
+      )
+
+    assert [%{"id" => 8, "result" => %{"items" => items}}] = messages
+    labels = Enum.map(items, & &1["label"])
+    assert labels == ["count", "pageIndex"]
+    refute "update" in labels
+    refute "module" in labels
+  end
+
+  test "qualified module completion does not suggest record fields" do
+    uri = "elm-pebble://demo/watch/src%2FMain.elm"
+
+    state = %{
+      Server.new("demo")
+      | dependency_payloads: %{
+          {"demo", "watch"} => %{
+            package_doc_index: %{},
+            editor_doc_packages: [
+              %{
+                package: "elm/core",
+                docs: [
+                  %{
+                    "name" => "List",
+                    "values" => [
+                      %{"name" => "map"},
+                      %{"name" => "filter"}
+                    ],
+                    "aliases" => [],
+                    "unions" => []
+                  }
+                ]
+              }
+            ],
+            direct: [],
+            indirect: []
+          }
+        }
+    }
+
+    text =
+      [
+        "module Main exposing (main)",
+        "",
+        "type alias Model =",
+        "    { pageIndex : Int }",
+        "",
+        "main =",
+        "    List."
+      ]
+      |> Enum.join("\n")
+
+    {:ok, state} = open_document(state, uri, text)
+
+    {messages, _state} =
+      Server.handle(
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => 11,
+          "method" => "textDocument/completion",
+          "params" => %{
+            "textDocument" => %{"uri" => uri},
+            "position" => %{"line" => 6, "character" => String.length("    List.")}
+          }
+        }),
+        state
+      )
+
+    assert [%{"id" => 11, "result" => %{"items" => items}}] = messages
+    labels = Enum.map(items, & &1["label"])
+    assert "filter" in labels
+    assert "map" in labels
+    refute "pageIndex" in labels
+  end
+
+  test "type annotation completion suggests only type names" do
+    state = Server.new("demo")
+    uri = "elm-pebble://demo/watch/src%2FMain.elm"
+
+    text =
+      [
+        "module Main exposing (main)",
+        "",
+        "type alias Model =",
+        "    { count : Int }",
+        "",
+        "update model =",
+        "    model",
+        "",
+        "newFunction : I"
+      ]
+      |> Enum.join("\n")
+
+    {:ok, state} = open_document(state, uri, text)
+
+    {messages, _state} =
+      Server.handle(
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => 9,
+          "method" => "textDocument/completion",
+          "params" => %{
+            "textDocument" => %{"uri" => uri},
+            "position" => %{"line" => 8, "character" => String.length("newFunction : I")}
+          }
+        }),
+        state
+      )
+
+    assert [%{"id" => 9, "result" => %{"items" => items}}] = messages
+    labels = Enum.map(items, & &1["label"])
+    assert "Int" in labels
+    refute "update" in labels
+    refute "module" in labels
+    refute "import" in labels
+  end
+
+  test "value expression completion still suggests values" do
+    state = Server.new("demo")
+    uri = "elm-pebble://demo/watch/src%2FMain.elm"
+
+    text =
+      [
+        "module Main exposing (main)",
+        "",
+        "mapValue model =",
+        "    model",
+        "",
+        "main =",
+        "    ma"
+      ]
+      |> Enum.join("\n")
+
+    {:ok, state} = open_document(state, uri, text)
+
+    {messages, _state} =
+      Server.handle(
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => 10,
+          "method" => "textDocument/completion",
+          "params" => %{
+            "textDocument" => %{"uri" => uri},
+            "position" => %{"line" => 6, "character" => String.length("    ma")}
+          }
+        }),
+        state
+      )
+
+    assert [%{"id" => 10, "result" => %{"items" => items}}] = messages
+    assert Enum.any?(items, &(&1["label"] == "mapValue"))
   end
 
   test "publishes unfinished record diagnostics" do

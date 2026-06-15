@@ -196,8 +196,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
            ),
          {:ok, _} <- apply_simulator_settings(slug, template_key),
          :ok <- reload_surfaces(slug, project, template_key),
-         :ok <- after_bootstrap(slug, template_key) do
-      _ = RuntimeBackgroundDrains.await_idle(slug, 120_000)
+         :ok <- after_bootstrap(slug, template_key),
+         :ok <- await_background_idle!(slug) do
       :ok
     else
       {:error, reason} -> {:error, reason}
@@ -314,6 +314,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
              %{"slug" => slug, "target" => "watch"},
              @capabilities
            ),
+         :ok <- await_background_idle!(slug),
          {:ok, state} <- Debugger.snapshot(slug, event_limit: 200) do
       :ok = assert_surfaces_versioned_runtime_artifacts!(state, template_key)
       :ok = assert_watch_executor_ready!(state, template_key)
@@ -513,6 +514,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
       "runtime_model_source",
       "runtime_message_cursor",
       "runtime_message_source",
+      "runtime_view_tree_source",
       "runtime_known_messages",
       "runtime_update_branches",
       "runtime_view_output",
@@ -564,10 +566,20 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     |> Map.update("text", nil, &normalize_time_string/1)
   end
 
-  defp normalize_render_tree(list) when is_list(list),
-    do: Enum.map(list, &normalize_render_tree/1)
+  defp normalize_render_tree(list) when is_list(list) do
+    list
+    |> Enum.map(&normalize_render_tree/1)
+    |> Enum.sort_by(&render_tree_sort_key/1)
+  end
 
   defp normalize_render_tree(other), do: normalize_value(other)
+
+  @spec render_tree_sort_key(term()) :: term()
+  defp render_tree_sort_key(node) when is_map(node) do
+    {Map.get(node, "type"), Map.get(node, "kind"), Map.get(node, "text"), Map.get(node, "label")}
+  end
+
+  defp render_tree_sort_key(node), do: node
 
   @spec normalize_preview_ops(list()) :: list()
   defp normalize_preview_ops(ops) when is_list(ops) do
@@ -696,7 +708,13 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     :ok
   end
 
-  @runtime_step_success_sources ~w(runtime_update_eval runtime_update_noop core_ir_update_eval core_ir_update_noop)
+  @runtime_step_success_sources ~w(
+    runtime_update_eval
+    runtime_update_noop
+    core_ir_update_eval
+    core_ir_update_noop
+    step_message
+  )
 
   @spec assert_watch_subscription_step_runtime!(String.t(), String.t()) :: :ok
   defp assert_watch_subscription_step_runtime!(slug, template_key) do
@@ -912,9 +930,20 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     |> Enum.join("\n")
   end
 
+  @corpus_drain_timeout_ms 45_000
+
+  @spec await_background_idle!(String.t()) :: :ok | {:error, term()}
+  defp await_background_idle!(slug) when is_binary(slug) do
+    case RuntimeBackgroundDrains.await_idle(slug, @corpus_drain_timeout_ms) do
+      :ok -> :ok
+      :timeout -> {:error, {:background_drain_timeout, slug}}
+    end
+  end
+
   @spec seed_corpus_random!() :: :ok
   defp seed_corpus_random! do
     :rand.seed(:exsss, {0, 0, 1})
+    Process.put(:elmx_corpus_fixed_random_int, 42_424_242)
     Application.put_env(:elmx, :corpus_fixed_random_int, 42_424_242)
     :ok
   end

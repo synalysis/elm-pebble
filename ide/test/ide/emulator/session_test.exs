@@ -3,7 +3,7 @@ defmodule Ide.Emulator.SessionTest do
 
   alias Ide.Emulator
   alias Ide.Emulator.Session
-  alias Ide.Emulator.Session.{Pypkjs, Qemu, RuntimeSetup}
+  alias Ide.Emulator.Session.{ProcessHost, Pypkjs, Qemu, RuntimeSetup}
   alias Ide.TestSupport.{EmulatorLaunch, EmulatorSessionEnv}
 
   test "launch creates an unguessable session with websocket paths and controls" do
@@ -352,13 +352,25 @@ defmodule Ide.Emulator.SessionTest do
     assert pypkjs =~ "pypkjs_ready_timeout_ms"
     assert startup =~ "maybe_start_pypkjs_if_needed"
     refute startup =~ "maybe_start_pypkjs_if_needed(%{has_phone_companion: true}"
+    assert startup =~ "prepare_running_session_for_install"
+    assert startup =~ "maybe_start_pypkjs_if_needed(state)"
   end
 
-  test "companion installs keep pypkjs alive for phone bridge" do
+  test "tcp_port_open? ignores non-port values" do
+    refute ProcessHost.tcp_port_open?({:error, {:daemon_exited_before_ready, 44_307}})
+    refute ProcessHost.tcp_port_open?(0)
+    refute ProcessHost.tcp_port_open?(nil)
+  end
+
+  test "native install keeps pypkjs alive; router acquire isolates PutBytes" do
     install_calls = File.read!("lib/ide/emulator/session/install_calls.ex")
 
-    assert install_calls =~ ~S/if Map.get(state, :has_phone_companion, false) do/
+    refute install_calls =~ ~S/has_phone_companion, false) do
+        state
+      else
+        ProcessHost.cleanup_process(state.pypkjs_pid)/
     assert install_calls =~ "def install_context("
+    assert install_calls =~ ":restart_pypkjs_after_install"
   end
 
   test "runtime status reports disabled embedded emulator before launch" do

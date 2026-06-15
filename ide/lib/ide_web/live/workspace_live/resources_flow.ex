@@ -9,7 +9,6 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
 
   alias Ide.Projects
   alias Ide.Projects.Project
-  alias Ide.Resources.AnimationStore
   alias Ide.Resources.BitmapVariants
   alias Ide.Resources.CtorNaming
   alias Ide.Resources.PdcDecoder
@@ -20,12 +19,22 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
 
   @type socket :: Phoenix.LiveView.Socket.t()
   @type lv_noreply :: {:noreply, socket()}
-  @type upload_result_row :: map()
+  @type upload_config :: Phoenix.LiveView.UploadConfig.t()
+  @type upload_entry :: Phoenix.LiveView.UploadEntry.t()
+  @type upload_entry_meta :: %{required(:path) => String.t(), optional(atom()) => term()}
+  @type upload_import_fn :: (upload_entry_meta(), upload_entry() -> {:ok, upload_result_row()})
+  @type upload_result_row ::
+          ResourceTypes.manifest_entries_update()
+          | ResourceTypes.vector_import_wire_ok()
+          | ResourceTypes.font_import_ok()
+          | ResourceTypes.import_duplicate()
+          | ResourceTypes.import_source_duplicate()
+          | %{required(:error) => String.t()}
   @type bitmap_resource_row :: ResourceTypes.bitmap_entry() | map()
   @type font_resource_row :: ResourceTypes.font_entry() | map()
   @type font_source_row :: ResourceTypes.font_source() | map()
   @type vector_resource_row :: ResourceTypes.vector_entry() | map()
-  @type animation_resource_row :: map()
+  @type animation_resource_row :: ResourceTypes.animation_resource_entry() | map()
 
   @spec bitmap_upload_output([upload_result_row()]) :: String.t()
   def bitmap_upload_output([]), do: "No file uploaded."
@@ -82,6 +91,9 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
     duplicates =
       Enum.count(ok_rows, &(is_map(&1) and Map.get(&1, :duplicate, false) == true))
 
+    auto_monochrome =
+      Enum.count(ok_rows, &(is_map(&1) and Map.get(&1, :auto_black_white) == true))
+
     failure_messages =
       failed_rows
       |> Enum.map(fn
@@ -94,6 +106,8 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
 
     [
       "Uploaded #{uploaded} #{if uploaded == 1, do: singular, else: plural}.",
+      auto_monochrome > 0 &&
+        "Generated monochrome (~bw) previews for #{auto_monochrome} color #{if auto_monochrome == 1, do: singular, else: plural}.",
       duplicates > 0 &&
         "Skipped #{duplicates} duplicate #{if duplicates == 1, do: singular, else: plural}.",
       failure_messages != [] && Enum.join(failure_messages, " ")
@@ -105,6 +119,12 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
   @spec resource_import_error_message(term()) :: String.t()
   def resource_import_error_message(reason) do
     case reason do
+      :monochrome_converter_missing ->
+        "Could not generate a monochrome (~bw) preview: ImageMagick (`magick` or `convert`) is not on PATH."
+
+      :monochrome_conversion_failed ->
+        "Could not generate a monochrome (~bw) preview from the color image."
+
       :gif_converter_missing ->
         "GIF import requires gif2apng (run `mix ide.install_gif2apng` in ide/, or install on PATH)."
 
@@ -161,7 +181,7 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
     end
   end
 
-  @spec upload_ready?(map()) :: boolean()
+  @spec upload_ready?(upload_config()) :: boolean()
   def upload_ready?(upload) when is_map(upload) do
     upload.entries != [] and Enum.all?(upload.entries, &upload_entry_ready?(&1, upload))
   end
@@ -178,7 +198,7 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
     Map.get(upload, :auto_upload?) == true
   end
 
-  @spec consume_resource_upload(socket(), atom(), (map(), map() -> {:ok, map()})) ::
+  @spec consume_resource_upload(socket(), atom(), upload_import_fn()) ::
           {socket(), [upload_result_row()], String.t()}
   defp consume_resource_upload(socket, upload_name, import_fn) do
     upload = Map.fetch!(socket.assigns.uploads, upload_name)
@@ -401,7 +421,7 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
         Enum.with_index(entries, 1)
         |> Enum.map(fn {entry, idx} ->
           preview =
-            case AnimationStore.animation_file_path(project, entry.ctor) do
+            case ResourceStore.animation_file_path(project, entry.ctor) do
               {:ok, path} -> animation_preview_data_url(path)
               _ -> nil
             end
@@ -430,7 +450,12 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
 
   @spec animation_preview_data_url(String.t()) :: String.t() | nil
   defp animation_preview_data_url(path) when is_binary(path) do
-    bitmap_preview_data_url(path, "image/png")
+    with {:ok, bytes} <- File.read(path),
+         {:ok, preview_bytes} <- Ide.Resources.ApngStaticPreview.static_png_bytes(bytes) do
+      bitmap_preview_data_url_bytes(preview_bytes, "image/png")
+    else
+      _ -> nil
+    end
   end
 
   @spec vector_preview_svg(String.t()) :: String.t() | nil
@@ -448,7 +473,7 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
     with {:ok, %File.Stat{size: size}} <- File.stat(path),
          true <- size <= @bitmap_preview_max_bytes,
          {:ok, bytes} <- File.read(path) do
-      "data:#{mime};base64," <> Base.encode64(bytes)
+      bitmap_preview_data_url_bytes(bytes, mime)
     else
       {:ok, %File.Stat{size: size}} when size > @bitmap_preview_max_bytes ->
         nil
@@ -456,6 +481,12 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
       _ ->
         nil
     end
+  end
+
+  @spec bitmap_preview_data_url_bytes(binary(), String.t()) :: String.t()
+  defp bitmap_preview_data_url_bytes(bytes, mime)
+       when is_binary(bytes) and is_binary(mime) do
+    "data:#{mime};base64," <> Base.encode64(bytes)
   end
 
   @spec load_screenshots(Screenshots.project_ref()) :: [Screenshots.screenshot()]
@@ -787,7 +818,9 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
     end
   end
 
-  @spec bitmap_import_opts(map()) :: keyword()
+  @type import_form_params :: ResourceTypes.font_form_params()
+
+  @spec bitmap_import_opts(import_form_params()) :: keyword()
   defp bitmap_import_opts(params) when is_map(params) do
     []
     |> maybe_put_import_opt(:color_mode, blank_to_nil(Map.get(params, "color_mode")))

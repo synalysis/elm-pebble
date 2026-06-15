@@ -9,7 +9,6 @@ defmodule IdeWeb.WorkspaceLive.EditorFlow do
   import Phoenix.Component, only: [assign: 2, assign: 3, to_form: 2]
   import Phoenix.LiveView, only: [put_flash: 3, push_event: 3, start_async: 3]
 
-  alias Ide.EditorCompletion
   alias Ide.EditorDocLinks
   alias Ide.Formatter
   alias Ide.Formatter.EditPatch
@@ -26,7 +25,6 @@ defmodule IdeWeb.WorkspaceLive.EditorFlow do
   @editor_events ~w(
     editor-change
     editor-key-edit
-    editor-request-completions
     editor-submit
     format-file
     save-file
@@ -386,47 +384,6 @@ defmodule IdeWeb.WorkspaceLive.EditorFlow do
        |> push_event("token-editor-apply-edit", edit_result)}
     else
       {:noreply, socket}
-    end
-  end
-
-  def handle_event(
-        "editor-request-completions",
-        %{
-          "content" => content,
-          "selection_start" => raw_start,
-          "selection_end" => raw_end
-        },
-        socket
-      ) do
-    if read_only_tab?(active_tab(socket)) do
-      {:noreply, socket}
-    else
-      start_offset = parse_non_negative_int(raw_start) || 0
-      end_offset = parse_non_negative_int(raw_end) || start_offset
-      cursor = max(start_offset, end_offset)
-      {replace_from, replace_to, prefix} = completion_replace_range(content, cursor)
-
-      items =
-        EditorCompletion.suggest(%{
-          prefix: prefix,
-          parser_payload: socket.assigns[:formatter_parser_payload],
-          token_tokens: socket.assigns[:token_tokens],
-          package_doc_index: socket.assigns[:package_doc_index],
-          editor_doc_packages: socket.assigns[:editor_doc_packages],
-          direct_dependencies: socket.assigns[:project_elm_direct],
-          indirect_dependencies: socket.assigns[:project_elm_indirect],
-          limit: 24
-        })
-
-      {:noreply,
-       push_event(socket, "token-editor-show-completions", %{
-         replace_from: replace_from,
-         replace_to: replace_to,
-         items:
-           Enum.map(items, fn item ->
-             %{label: item.label, insert_text: item.insert_text}
-           end)
-       })}
     end
   end
 
@@ -1115,7 +1072,6 @@ defmodule IdeWeb.WorkspaceLive.EditorFlow do
   defdelegate parse_positive_int(value), to: EditorSupport
   defdelegate parse_non_negative_int(value), to: EditorSupport
   defdelegate parse_non_negative_number(value), to: EditorSupport
-  defdelegate completion_replace_range(content, cursor), to: EditorSupport
   defdelegate maybe_put_state(state, key, value), to: EditorSupport
   defdelegate sync_active_diagnostic_index_to_tab(socket), to: EditorSupport
   defdelegate restore_editor_state(socket, state), to: EditorSupport
@@ -1132,7 +1088,8 @@ defmodule IdeWeb.WorkspaceLive.EditorFlow do
                 formatter_backend,
                 parser_payload,
                 tokens
-              ), to: EditorSupport
+              ),
+              to: EditorSupport
 
   defdelegate default_editor_state(), to: EditorSupport
   defdelegate update_editor_state_tab(socket, tab_id, updater), to: EditorSupport

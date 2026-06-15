@@ -207,7 +207,7 @@ defmodule Ide.Debugger.RuntimeSurfaces do
 
   def parse_launch_reason(_), do: "LaunchUser"
 
-  @spec merge_launch_context_model(map(), map()) :: map()
+  @spec merge_launch_context_model(Types.app_model(), Types.launch_context()) :: Types.app_model()
   def merge_launch_context_model(model, launch_context)
       when is_map(model) and is_map(launch_context) do
     profile_id = Map.get(launch_context, "watch_profile_id")

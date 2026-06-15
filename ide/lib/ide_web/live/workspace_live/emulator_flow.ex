@@ -16,6 +16,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
   alias Ide.Projects.Project
   alias Ide.Screenshots
   alias IdeWeb.WorkspaceLive.BuildFlow
+  alias IdeWeb.WorkspaceLive.DebuggerBridge
   alias IdeWeb.WorkspaceLive.DebuggerFlow
   alias IdeWeb.WorkspaceLive.PublishFlow
   alias IdeWeb.WorkspaceLive.ResourcesFlow
@@ -38,6 +39,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
     delete-screenshot
     delete-screenshot-target
     set-emulator-target
+    emulator-elmc-rc-fail
   )
 
   @emulator_asyncs [
@@ -200,6 +202,13 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
        :publish_type_guidance,
        PublishFlow.publish_type_guidance(socket.assigns.project, readiness)
      )}
+  end
+
+  def handle_event("emulator-elmc-rc-fail", params, socket) do
+    code = Map.get(params, "code")
+    line = Map.get(params, "line")
+
+    {:noreply, DebuggerBridge.sync_emulator_rc_fail(socket, code, line)}
   end
 
   def handle_event("capture-all-screenshots", _params, socket) do
@@ -407,7 +416,15 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
      |> assign(:emulator_stop_output, "Emulator stop task exited: #{inspect(reason)}")}
   end
 
-  defp do_handle_async(:external_emulator_control, {:ok, {:ok, result}}, socket) do
+  defp do_handle_async(:external_emulator_control, {:ok, {:ok, :synced}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:emulator_stop_status, :ok)
+     |> assign(:emulator_stop_output, "Simulator settings synced.")}
+  end
+
+  defp do_handle_async(:external_emulator_control, {:ok, {:ok, result}}, socket)
+       when is_map(result) do
     {:noreply,
      socket
      |> assign(:emulator_stop_status, result.status)

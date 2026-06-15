@@ -88,3 +88,59 @@ jobs:
           --max-bin-regression 512
           --max-generated-c-regression 8192
           > /tmp/size_report.json
+
+  ide-template-pbw-gate:
+    name: IDE template PBW package gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Erlang/Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27.1"
+          elixir-version: "1.17.3"
+
+      - name: Install Pebble toolchain dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bzip2 \
+            ca-certificates \
+            curl \
+            git \
+            libncurses6 \
+            libstdc++6 \
+            openssl \
+            pipx \
+            python3 \
+            xz-utils \
+            zlib1g
+
+      - name: Install pebble-tool and Pebble SDK
+        run: |
+          pipx install pebble-tool
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          pebble sdk install 4.9.169
+          pebble sdk activate 4.9.169
+          pebble sdk list
+
+      - name: Install elm_ex dependencies
+        working-directory: elm_ex
+        run: mix deps.get
+
+      - name: Install elmc dependencies
+        working-directory: elmc
+        run: mix deps.get
+
+      - name: Install IDE dependencies
+        working-directory: ide
+        run: mix deps.get
+
+      - name: Run template PBW package gate
+        working-directory: ide
+        env:
+          ELMC_TEMPLATE_PBW_GATE: "1"
+        run: mix test test/ide/template_pbw_gate_test.exs --only template_pbw_gate --max-cases 1

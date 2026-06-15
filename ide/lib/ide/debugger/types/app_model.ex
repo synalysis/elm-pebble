@@ -6,7 +6,7 @@ defmodule Ide.Debugger.Types.AppModel do
   """
 
   alias Ide.Debugger.Types
-  alias Ide.Debugger.Types.{InnerRuntimeModel, LaunchContext}
+  alias Ide.Debugger.Types.{ExecutionRuntimeSnapshot, InnerRuntimeModel, LaunchContext}
 
   @type t :: %{
           optional(:launch_context) => LaunchContext.t() | LaunchContext.wire_map(),
@@ -18,10 +18,11 @@ defmodule Ide.Debugger.Types.AppModel do
           optional(:last_message) => String.t() | nil,
           optional(:last_operation) => String.t(),
           optional(:step_counter) => integer(),
-          optional(:runtime_execution) => map(),
+          optional(:runtime_execution) => ExecutionRuntimeSnapshot.t()
+                                           | ExecutionRuntimeSnapshot.wire_map(),
           optional(String.t()) => Types.wire_input(),
           optional(atom()) => Types.wire_input()
         }
 
-  @type wire_map :: t() | map()
+  @type wire_map :: t() | Types.wire_map()
 end

@@ -4,7 +4,7 @@ defmodule Elmc.Backend.Ports do
   """
 
   alias ElmEx.IR
-
+  alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Types
 
   @spec write_port_headers(IR.t(), String.t()) :: :ok | {:error, Types.file_error()}
@@ -13,7 +13,7 @@ defmodule Elmc.Backend.Ports do
 
     with :ok <- File.mkdir_p(ports_dir),
          :ok <- File.write(Path.join(ports_dir, "elmc_ports.h"), ports_header()),
-         :ok <- File.write(Path.join(ports_dir, "elmc_ports.c"), ports_source()) do
+         :ok <- File.write(Path.join(ports_dir, "elmc_ports.c"), ports_source() |> CSource.format()) do
       :ok
     end
   end

@@ -5,7 +5,6 @@ defmodule Ide.Debugger.ConfigurationSave do
   alias Ide.Debugger.CompanionBridge.Runtime, as: CompanionBridgeRuntime
   alias Ide.Debugger.ConfigurationProtocol
   alias Ide.Debugger.ProtocolRx
-  alias Ide.Debugger.SubscriptionResponses
   alias Ide.Debugger.Types
 
   @type bridge_ctx :: %{
@@ -31,16 +30,15 @@ defmodule Ide.Debugger.ConfigurationSave do
           Types.wire_map(),
           bridge_ctx()
         ) :: {String.t(), Types.subscription_payload()}
-  def message_payload(state, encoded_values, bridge_event, bridge_ctx)
-      when is_map(state) and is_map(encoded_values) and is_map(bridge_event) and
-             is_map(bridge_ctx) do
-    case subscription_callback(state, bridge_ctx) do
-      callback when is_binary(callback) and callback != "" ->
-        {callback, SubscriptionResponses.ok_wire_value(callback, encoded_values)}
+  def message_payload(state, _encoded_values, bridge_event, bridge_ctx)
+      when is_map(state) and is_map(bridge_event) and is_map(bridge_ctx) do
+    callback =
+      case subscription_callback(state, bridge_ctx) do
+        callback when is_binary(callback) and callback != "" -> callback
+        _ -> "FromBridge"
+      end
 
-      _ ->
-        {"FromBridge", %{"ctor" => "FromBridge", "args" => [bridge_event]}}
-    end
+    {callback, %{"ctor" => callback, "args" => [bridge_event]}}
   end
 
   def message_payload(_state, _encoded_values, bridge_event, _bridge_ctx),
@@ -69,12 +67,16 @@ defmodule Ide.Debugger.ConfigurationSave do
   @spec subscription_callback(Types.runtime_state(), bridge_ctx()) :: String.t() | nil
   def subscription_callback(state, %{introspect: introspect} = bridge_ctx)
       when is_map(state) and is_function(introspect) and is_map(bridge_ctx) do
-    CompanionBridgeRuntime.subscription_callback_from_state(
-      state,
-      :companion,
-      CompanionBridge.configuration_contract(),
-      bridge_ctx
-    )
+    contract = CompanionBridge.configuration_contract()
+
+    Enum.find_value([:companion, :phone], fn target ->
+      CompanionBridgeRuntime.subscription_callback_from_state(
+        state,
+        target,
+        contract,
+        bridge_ctx
+      )
+    end)
   end
 
   def subscription_callback(_state, _bridge_ctx), do: nil

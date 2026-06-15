@@ -20,5 +20,6 @@ defmodule Elmx.LaunchContextTest do
 
     assert normalized["reason"] == %{"ctor" => "LaunchUser", "args" => []}
     assert normalized["watchProfileId"] == "basalt"
+    assert Map.get(normalized, "configurationResponse") == nil
   end
 end

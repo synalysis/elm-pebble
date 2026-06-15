@@ -16,7 +16,7 @@ defmodule Ide.Debugger.Types.ProtocolTxRxPayload do
           optional(String.t()) => Types.wire_input()
         }
 
-  @type wire_map :: t() | map()
+  @type wire_map :: t() | Types.wire_map()
 
   @spec from_reload(String.t(), String.t()) :: t()
   def from_reload(revision, source_root) when is_binary(revision) and is_binary(source_root) do

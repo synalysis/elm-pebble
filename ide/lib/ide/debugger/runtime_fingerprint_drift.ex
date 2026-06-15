@@ -146,7 +146,7 @@ defmodule Ide.Debugger.RuntimeFingerprintDrift do
     end
   end
 
-  @type row_value :: String.t() | integer() | float() | boolean() | nil | map()
+  @type row_value :: Types.wire_scalar() | Types.wire_map()
 
   @spec row_current_value(Types.fingerprint_compare_surface_row(), atom() | String.t()) ::
           row_value()

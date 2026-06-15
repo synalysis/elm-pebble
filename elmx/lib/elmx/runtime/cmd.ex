@@ -3,97 +3,45 @@ defmodule Elmx.Runtime.Cmd do
   Wire-format `Cmd` values for debugger runtime command maps.
   """
 
-  alias Elmx.Runtime.Values
+  alias Elmx.Runtime.Cmd.{Companion, Device, Effects, Storage, Wire}
   alias Elmx.Types
 
   @spec none() :: Types.wire_cmd()
   def none, do: %{"kind" => "none", "commands" => []}
 
-  @spec batch([Types.wire_cmd() | term()]) :: Types.wire_cmd()
+  @spec batch([Types.wire_cmd_input()]) :: Types.wire_cmd()
   def batch(commands) when is_list(commands) do
     %{
       "kind" => "batch",
       "commands" =>
         commands
         |> List.flatten()
-        |> Enum.map(&normalize/1)
+        |> Enum.map(&Wire.normalize/1)
         |> Enum.reject(&match?(%{"kind" => "none"}, &1))
     }
   end
 
-  @spec timer_after(non_neg_integer(), term()) :: Types.wire_cmd()
-  def timer_after(ms, message) when is_integer(ms) do
-    {name, message_value} = message_wire(message)
+  @spec timer_after(non_neg_integer(), Types.elm_msg()) :: Types.wire_cmd()
+  defdelegate timer_after(ms, message), to: Device
 
-    %{
-      "kind" => "cmd.timer.after",
-      "package" => "pebble/cmd",
-      "delay_ms" => ms,
-      "message" => name,
-      "message_value" => message_value
-    }
-  end
+  @spec storage_read_int(integer(), Types.elm_msg(), Types.wire_value()) :: Types.wire_cmd()
+  defdelegate storage_read_int(key, callback, default), to: Storage
 
-  @spec storage_read_int(integer(), term(), term()) :: Types.wire_cmd()
-  def storage_read_int(key, callback, default) when is_integer(key) do
-    {message, message_value} = callback_message_value(callback, default)
+  @spec storage_read_string(integer(), Types.elm_msg(), Types.wire_value()) :: Types.wire_cmd()
+  defdelegate storage_read_string(key, callback, default), to: Storage
 
-    %{
-      "kind" => "cmd.storage.read_int",
-      "package" => "elm-pebble/elm-watch",
-      "key" => key,
-      "message" => message,
-      "message_value" => message_value,
-      "value" => Values.wire_value(default)
-    }
-  end
+  @spec storage_write_int(integer(), Types.wire_value()) :: Types.wire_cmd()
+  defdelegate storage_write_int(key, value), to: Storage
 
-  @spec storage_read_string(integer(), term(), term()) :: Types.wire_cmd()
-  def storage_read_string(key, callback, default) when is_integer(key) do
-    {message, message_value} = callback_message_value(callback, default)
-
-    %{
-      "kind" => "cmd.storage.read_string",
-      "package" => "elm-pebble/elm-watch",
-      "key" => key,
-      "message" => message,
-      "message_value" => message_value,
-      "value" => Values.wire_value(default)
-    }
-  end
-
-  @spec storage_write_int(integer(), term()) :: Types.wire_cmd()
-  def storage_write_int(key, value) when is_integer(key) do
-    %{
-      "kind" => "cmd.storage.write_int",
-      "package" => "elm-pebble/elm-watch",
-      "key" => key,
-      "value" => Values.wire_value(value)
-    }
-  end
-
-  @spec storage_write_string(integer(), term()) :: Types.wire_cmd()
-  def storage_write_string(key, value) when is_integer(key) do
-    %{
-      "kind" => "cmd.storage.write_string",
-      "package" => "elm-pebble/elm-watch",
-      "key" => key,
-      "value" => Values.wire_value(value)
-    }
-  end
+  @spec storage_write_string(integer(), Types.wire_value()) :: Types.wire_cmd()
+  defdelegate storage_write_string(key, value), to: Storage
 
   @spec storage_delete(integer()) :: Types.wire_cmd()
-  def storage_delete(key) when is_integer(key) do
-    %{
-      "kind" => "cmd.storage.delete",
-      "package" => "elm-pebble/elm-watch",
-      "key" => key
-    }
-  end
+  defdelegate storage_delete(key), to: Storage
 
-  @spec data_log_int32(term(), integer()) :: Types.wire_cmd()
+  @spec data_log_int32(Types.data_log_tag(), integer()) :: Types.wire_cmd()
   def data_log_int32(tag, value) when is_integer(value) do
-    case data_log_tag_id(tag) do
+    case Wire.data_log_tag_id(tag) do
       {:ok, tag_id} ->
         %{
           "kind" => "cmd.data_log.int32",
@@ -107,9 +55,9 @@ defmodule Elmx.Runtime.Cmd do
     end
   end
 
-  @spec data_log_bytes(term(), list()) :: Types.wire_cmd()
+  @spec data_log_bytes(Types.wire_ctor() | integer(), [byte() | integer()]) :: Types.wire_cmd()
   def data_log_bytes(tag, bytes) when is_list(bytes) do
-    case data_log_tag_id(tag) do
+    case Wire.data_log_tag_id(tag) do
       {:ok, tag_id} ->
         %{
           "kind" => "cmd.data_log.bytes",
@@ -123,295 +71,52 @@ defmodule Elmx.Runtime.Cmd do
     end
   end
 
-  defp data_log_tag_id(%{"ctor" => "Tag", "args" => [tag]}) when is_integer(tag), do: {:ok, tag}
-  defp data_log_tag_id(%{ctor: :Tag, args: [tag]}) when is_integer(tag), do: {:ok, tag}
-  defp data_log_tag_id({:Tag, tag}) when is_integer(tag), do: {:ok, tag}
-  defp data_log_tag_id(tag) when is_integer(tag), do: {:ok, tag}
-  defp data_log_tag_id(_), do: :error
+  @spec protocol_watch_to_phone(Types.elm_msg()) :: Types.wire_cmd()
+  defdelegate protocol_watch_to_phone(message), to: Companion
 
-  @spec protocol_watch_to_phone(term()) :: Types.wire_cmd()
-  def protocol_watch_to_phone(message) do
-    {name, message_value} = message_wire(message)
+  @spec companion_bridge(String.t(), String.t(), Types.companion_bridge_opts()) :: Types.wire_cmd()
+  defdelegate companion_bridge(api, op, opts \\ []), to: Companion
 
-    %{
-      "kind" => "protocol",
-      "package" => "companion-protocol",
-      "direction" => "watch_to_phone",
-      "from" => "watch",
-      "to" => "companion",
-      "message" => name,
-      "message_value" => message_value
-    }
-  end
+  @spec protocol_phone_to_watch(Types.elm_msg()) :: Types.wire_cmd()
+  defdelegate protocol_phone_to_watch(message), to: Companion
 
-  @doc """
-  Companion platform bridge command (storage, preferences, weather, …).
+  @spec device(String.t(), Types.elm_msg(), Types.wire_value()) :: Types.wire_cmd()
+  defdelegate device(kind, callback, value), to: Device
 
-  `target` uses `Pebble.Companion.<Module>.<op>` so IDE bridge request extraction matches Core IR.
-  """
-  @spec companion_bridge(String.t(), String.t(), keyword()) :: Types.wire_cmd()
-  def companion_bridge(api, op, opts \\ []) when is_binary(api) and is_binary(op) do
-    module =
-      case api do
-        "storage" -> "Storage"
-        "preferences" -> "PreferenceStore"
-        other -> Macro.camelize(other)
-      end
+  @spec task_immediate(Types.elm_msg()) :: Types.wire_cmd()
+  defdelegate task_immediate(msg), to: Device
 
-    callback = Keyword.get(opts, :callback)
-    {callback_name, callback_value} = message_wire(callback || "Unknown")
-
-    base = %{
-      "kind" => "cmd.companion.bridge",
-      "package" => "pebble/companion",
-      "target" => "Pebble.Companion." <> module <> "." <> op,
-      "name" => op,
-      "api" => api,
-      "op" => op,
-      "callback_constructor" => callback_name
-    }
-
-    base
-    |> maybe_put_key(Keyword.get(opts, :key))
-    |> maybe_put_field("bridge_id", Keyword.get(opts, :bridge_id))
-    |> maybe_put_field("payload", Keyword.get(opts, :payload))
-    |> maybe_put_field("value", Keyword.get(opts, :value))
-    |> maybe_put_field("message", callback_name)
-    |> maybe_put_field("message_value", callback_value)
-  end
-
-  defp maybe_put_key(cmd, key) when is_binary(key), do: Map.put(cmd, "key", key)
-  defp maybe_put_key(cmd, _), do: cmd
-
-  defp maybe_put_field(cmd, _field, nil), do: cmd
-  defp maybe_put_field(cmd, field, value), do: Map.put(cmd, field, Values.wire_value(value))
-
-  @spec protocol_phone_to_watch(term()) :: Types.wire_cmd()
-  def protocol_phone_to_watch(message) do
-    {name, message_value} = message_wire(message)
-
-    %{
-      "kind" => "protocol",
-      "package" => "companion-protocol",
-      "direction" => "phone_to_watch",
-      "from" => "companion",
-      "to" => "watch",
-      "message" => name,
-      "message_value" => message_value
-    }
-  end
-
-  @spec device(String.t(), term(), term()) :: Types.wire_cmd()
-  def device(kind, callback, value) when is_binary(kind) do
-    {message, message_value} = callback_message_value(callback, value)
-
-    %{
-      "kind" => "cmd.device." <> kind,
-      "package" => "elm-pebble/elm-watch",
-      "message" => message,
-      "message_value" => message_value,
-      "value" => Values.wire_value(value)
-    }
-  end
-
-  @doc """
-  Delivers a message from a completed `Task.perform` on the next debugger step.
-  """
-  @spec task_immediate(term()) :: Types.wire_cmd()
-  def task_immediate(msg) do
-    {message, message_value} = message_wire(msg)
-
-    %{
-      "kind" => "cmd.task.immediate",
-      "package" => "elm/core",
-      "message" => message,
-      "message_value" => message_value
-    }
-  end
-
-  @doc """
-  Synthetic followup row for dictation status/result messages (debugger stepping).
-  """
-  @spec dictation_followup(String.t(), term()) :: Types.wire_cmd()
-  def dictation_followup(message, payload) when is_binary(message) do
-    payload_wire = Values.wire_value(payload)
-
-    %{
-      "kind" => "cmd.dictation.followup",
-      "package" => "pebble/dictation",
-      "message" => message,
-      "message_value" => %{"ctor" => message, "args" => [payload_wire]}
-    }
-  end
+  @spec dictation_followup(String.t(), Types.elm_msg()) :: Types.wire_cmd()
+  defdelegate dictation_followup(message, payload), to: Device
 
   @spec dictation_start() :: Types.wire_cmd()
-  def dictation_start do
-    batch([
-      dictation_followup("DictationStatusChanged", :Starting),
-      dictation_followup("DictationStatusChanged", :Recognizing),
-      dictation_followup("DictationStatusChanged", :Finished),
-      dictation_followup("DictationFinished", {:Ok, "Hello"})
-    ])
-  end
+  defdelegate dictation_start(), to: Device
 
   @spec dictation_stop() :: Types.wire_cmd()
-  def dictation_stop do
-    dictation_followup("DictationFinished", {:Err, :Cancelled})
-  end
+  defdelegate dictation_stop(), to: Device
 
-  @doc """
-  `Pebble.Compass.current` / `compass_peek` — delivers `GotHeading (Ok heading)` on the followup step.
-  """
-  @spec compass_peek(term()) :: Types.wire_cmd()
-  def compass_peek(callback) do
-    {message, _} = message_wire(callback)
-    heading = %{"degrees" => 180.0, "isValid" => true}
-    result_wire = Values.wire_value({:Ok, heading})
+  @spec compass_peek(Types.elm_msg()) :: Types.wire_cmd()
+  defdelegate compass_peek(callback), to: Device
 
-    %{
-      "kind" => "cmd.device.compass_peek",
-      "package" => "elm-pebble/elm-watch",
-      "message" => message,
-      "message_value" => %{"ctor" => message, "args" => [result_wire]},
-      "value" => result_wire
-    }
-  end
+  @spec unobstructed_bounds_peek(Types.elm_msg()) :: Types.wire_cmd()
+  defdelegate unobstructed_bounds_peek(callback), to: Device
 
-  @doc """
-  `Pebble.UnobstructedArea.currentBounds` — delivers unobstructed `Rect` on the followup step.
-  """
-  @spec unobstructed_bounds_peek(term()) :: Types.wire_cmd()
-  def unobstructed_bounds_peek(callback) do
-    {message, _} = message_wire(callback)
-    bounds = %{"x" => 0, "y" => 0, "w" => 144, "h" => 168}
-    bounds_wire = Values.wire_value(bounds)
+  @spec normalize(Types.wire_cmd() | map()) :: Types.wire_cmd()
+  defdelegate normalize(cmd), to: Wire
 
-    %{
-      "kind" => "cmd.device.unobstructed_bounds_peek",
-      "package" => "elm-pebble/elm-watch",
-      "message" => message,
-      "message_value" => %{"ctor" => message, "args" => [bounds_wire]},
-      "value" => bounds_wire
-    }
-  end
+  @spec message_wire(Types.elm_msg()) :: {String.t(), Types.wire_value() | Types.wire_map()}
+  defdelegate message_wire(message), to: Wire
 
-  @spec normalize(term()) :: Types.wire_cmd()
-  def normalize(%{"kind" => _} = cmd), do: cmd
-  def normalize(%{kind: kind} = cmd), do: Map.new(cmd, fn {k, v} -> {to_string(k), v} end) |> Map.put("kind", to_string(kind))
-  def normalize(cmd) when is_map(cmd), do: cmd
-  def normalize(_), do: none()
+  @spec callback_message_value(Types.elm_msg(), Types.wire_value()) ::
+          {String.t(), Types.wire_map()}
+  defdelegate callback_message_value(callback, payload), to: Wire
 
-  @spec message_wire(term()) :: {String.t(), Types.wire_ctor()}
-  def message_wire(%{"ctor" => ctor, "args" => args}) when is_binary(ctor),
-    do: {ctor, %{"ctor" => ctor, "args" => Values.wire_value(args || [])}}
+  @spec subscription_register(String.t(), Types.subscription_register_opts()) :: Types.wire_cmd()
+  defdelegate subscription_register(target, opts \\ []), to: Effects
 
-  def message_wire(tuple) when is_tuple(tuple) do
-    case Tuple.to_list(tuple) do
-      [ctor | args] when is_atom(ctor) ->
-        name = Atom.to_string(ctor)
-        {name, %{"ctor" => name, "args" => Enum.map(args, &Values.wire_value/1)}}
+  @spec effect(String.t(), Types.effect_cmd_opts()) :: Types.wire_cmd()
+  defdelegate effect(kind, opts \\ []), to: Effects
 
-      _ ->
-        {"Unknown", %{"ctor" => "Unknown", "args" => [Values.wire_value(tuple)]}}
-    end
-  end
-
-  def message_wire(ctor) when is_atom(ctor),
-    do: {Atom.to_string(ctor), %{"ctor" => Atom.to_string(ctor), "args" => []}}
-
-  def message_wire(ctor) when is_binary(ctor),
-    do: {ctor, %{"ctor" => ctor, "args" => []}}
-
-  def message_wire(tag) when is_integer(tag),
-    do: {"tag:#{tag}", %{"ctor" => "tag:#{tag}", "args" => []}}
-
-  def message_wire(other),
-    do: {"Unknown", %{"ctor" => "Unknown", "args" => [Values.wire_value(other)]}}
-
-  @doc """
-  Builds `message` + `message_value` for device/storage followups.
-
-  Nullary callback constructors (e.g. `ClockStyle24h`) get the command payload in `args`
-  so debugger steps decode to `{:ClockStyle24h, true}` instead of `:ClockStyle24h`.
-  """
-  @spec callback_message_value(term(), term()) :: {String.t(), Types.wire_ctor()}
-  def callback_message_value(callback, payload) do
-    {message, message_value} = message_wire(callback)
-
-    message_value =
-      case message_value do
-        %{"ctor" => ctor, "args" => []} when not is_nil(payload) ->
-          %{"ctor" => ctor, "args" => [Values.wire_value(payload)]}
-
-        %{ctor: ctor, args: []} when not is_nil(payload) ->
-          %{"ctor" => to_string(ctor), "args" => [Values.wire_value(payload)]}
-
-        other ->
-          other
-      end
-
-    {message, message_value}
-  end
-
-  @doc """
-  Registers a Pebble subscription for debugger stepping (contract-driven `target` string).
-  """
-  @spec subscription_register(String.t(), keyword()) :: Types.wire_cmd()
-  def subscription_register(target, opts \\ []) when is_binary(target) do
-    {message, message_value} =
-      case Keyword.get(opts, :callback) do
-        nil -> {"", nil}
-        callback -> message_wire(callback)
-      end
-
-    base = %{
-      "kind" => "cmd.subscription.register",
-      "package" => "elm-pebble/elm-watch",
-      "target" => target,
-      "message" => message
-    }
-
-    base
-    |> maybe_put_field("interval_ms", Keyword.get(opts, :interval_ms))
-    |> maybe_put_field("message_value", message_value)
-  end
-
-  @doc """
-  Side-effect command the IDE may simulate (vibes, light) without a followup message.
-  """
-  @spec effect(String.t(), keyword()) :: Types.wire_cmd()
-  def effect(kind, opts \\ []) when is_binary(kind) do
-    %{
-      "kind" => "cmd.effect." <> kind,
-      "package" => "elm-pebble/elm-watch"
-    }
-    |> maybe_put_field("variant", Keyword.get(opts, :variant))
-    |> maybe_put_field("pattern", Keyword.get(opts, :pattern))
-  end
-
-  @doc """
-  Pebble backlight cmd from `Maybe Bool` (Nothing → interaction, Just False → disable, Just True → enable).
-  """
-  @spec backlight_from_maybe(term()) :: Types.wire_cmd()
-  def backlight_from_maybe(maybe) do
-    mode =
-      case maybe do
-        :Nothing -> 0
-        %{"ctor" => "Nothing"} -> 0
-        %{ctor: :Nothing} -> 0
-        {:Just, false} -> 1
-        {:Just, true} -> 2
-        %{"ctor" => "Just", "args" => [false]} -> 1
-        %{"ctor" => "Just", "args" => [true]} -> 2
-        %{ctor: :Just, args: [false]} -> 1
-        %{ctor: :Just, args: [true]} -> 2
-        _ -> 0
-      end
-
-    %{
-      "kind" => "cmd.backlight",
-      "package" => "pebble/cmd",
-      "mode" => mode
-    }
-  end
+  @spec backlight_from_maybe(Types.maybe_like()) :: Types.wire_cmd()
+  defdelegate backlight_from_maybe(maybe), to: Effects
 end

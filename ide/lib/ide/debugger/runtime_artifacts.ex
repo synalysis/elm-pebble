@@ -113,6 +113,9 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   @runtime_preview_envelope_keys [
     "runtime_model",
     "runtime_view_output",
+    "runtime_view_output_model_sha256",
+    "runtime_view_tree",
+    "runtime_view_tree_source",
     "runtime_last_message",
     "runtime_message_source",
     "runtime_message_cursor",
@@ -278,7 +281,7 @@ defmodule Ide.Debugger.RuntimeArtifacts do
 
   def execution_artifacts(_model), do: %{}
 
-  @spec eval_context(execution_model(), keyword()) :: map()
+  @spec eval_context(execution_model(), keyword()) :: Types.eval_context()
   def eval_context(model, extras \\ [])
 
   def eval_context(model, extras) when is_map(model) and is_list(extras) do
@@ -419,7 +422,7 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   @spec animation_resource_indices_for_project(String.t()) :: ArtifactTypes.resource_indices()
   def animation_resource_indices_for_project(project_slug) when is_binary(project_slug) do
     with %Projects.Project{} = project <- Projects.get_project_by_scope_key(project_slug),
-         {:ok, entries} <- Ide.Resources.AnimationStore.list(project) do
+         {:ok, entries} <- Ide.Resources.ResourceStore.list_animations(project) do
       entries
       |> Enum.with_index(1)
       |> Map.new(fn {row, index} -> {row.ctor, index} end)
@@ -430,7 +433,7 @@ defmodule Ide.Debugger.RuntimeArtifacts do
     _ -> %{}
   end
 
-  @spec wire_field(map(), String.t()) :: term()
+  @spec wire_field(Types.wire_map(), String.t()) :: Types.wire_input() | nil
   defp wire_field(map, key) when is_map(map) and is_binary(key) do
     Map.get(map, key) || Map.get(map, String.to_atom(key))
   end

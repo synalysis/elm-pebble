@@ -12,13 +12,15 @@ defmodule Ide.Emulator.SessionInstallPrepareTest do
            })
   end
 
-  test "install_reset_needed? when boot is stale" do
-    stale_boot = System.os_time(:millisecond) - 999_999_999
+  test "install_reset_needed? when boot is stale and session is idle" do
+    now = System.monotonic_time(:millisecond)
+    stale = now - 999_999_999
 
     assert Session.install_reset_needed?(%{
              qemu_pid: self(),
              protocol_router_pid: self(),
-             last_boot_ms: stale_boot,
+             last_boot_ms: stale,
+             last_ping_ms: stale,
              bt_port: 12_345
            })
   end

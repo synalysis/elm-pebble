@@ -19,7 +19,7 @@ defmodule Ide.Debugger.ElmcSurfaceFieldsTest do
     assert length(fields["elmc_diagnostic_preview"]) == 1
   end
 
-  test "compile_fields includes elmx artifact keys from ingest_compile_fields" do
+  test "compile_fields keeps elmx artifacts out of compile status fields" do
     manifest = %{"contract" => "elmx.runtime_executor.v1"}
 
     fields =
@@ -32,8 +32,17 @@ defmodule Ide.Debugger.ElmcSurfaceFieldsTest do
       })
 
     assert fields["elmc_compile_status"] == "ok"
-    assert fields["elmx_manifest"] == manifest
-    assert fields["elmx_revision"] == "rev1"
+    refute Map.has_key?(fields, "elmx_manifest")
+    refute Map.has_key?(fields, "elmx_revision")
+
+    artifacts =
+      ElmcSurfaceFields.optional_runtime_artifacts(%{
+        elmx_manifest: manifest,
+        elmx_revision: "rev1"
+      })
+
+    assert artifacts["elmx_manifest"] == manifest
+    assert artifacts["elmx_revision"] == "rev1"
   end
 
   test "optional_runtime_artifacts and compile_artifact_target route by source_root" do

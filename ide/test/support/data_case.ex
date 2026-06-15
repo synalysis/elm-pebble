@@ -29,7 +29,22 @@ defmodule Ide.DataCase do
 
   setup tags do
     Ide.DataCase.setup_sandbox(tags)
+
+    if debugger_session_exclusive?(tags) do
+      timeout = tags[:ownership_timeout] || tags[:timeout] || 300_000
+      :ok = Ide.TestSupport.DebuggerSessionLock.acquire(timeout)
+      on_exit(fn -> Ide.TestSupport.DebuggerSessionLock.release() end)
+    end
+
     :ok
+  end
+
+  @doc false
+  def debugger_session_exclusive?(tags) do
+    tags[:async] == false and
+      (tags[:integration] == true or tags[:template_corpus] == true or
+         tags[:template_corpus_step] == true or tags[:compiled_elixir_corpus] == true or
+         tags[:debugger_session] == true)
   end
 
   @doc """

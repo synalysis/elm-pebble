@@ -358,6 +358,21 @@ Phoenix channel (browser):
 
 Shared socket: `/socket` with CSRF param `_csrf_token` on connect (see `user_socket.js`).
 
+### MCP (IDE agent tools, `:build` capability)
+
+These call the same `Ide.Emulator.Workflow` / `Ide.Emulator` stack as the HTTP routes above (not the external `pebble install --emulator` CLI path):
+
+| Tool | Purpose |
+|------|---------|
+| `emulator_launch` | Package + start embedded session; optional `wait_display_ready` |
+| `emulator_install` | Install session PBW (`session_id` from launch) |
+| `emulator_ping` | Session status |
+| `emulator_kill` | Stop session |
+| `emulator_run` | Launch → wait display → install → optional `logs_snapshot_seconds` → optional `kill_after` |
+| `emulator_logs` | Capture QEMU console + protocol AppLog/system lines from a running session |
+
+Typical agent workflow: `emulator_run` with `slug`, `platform` (e.g. `basalt`), and optional `open_from_launcher: true` for games. Log capture defaults to 20s on `emulator_run` (embedded console/protocol, not `pebble logs --emulator`). For manual steps, `emulator_launch` then `emulator_install` with the returned `session.id`.
+
 ## Programmatic examples
 
 ### curl (from a logged-in browser session)
@@ -419,6 +434,11 @@ Tests often set `start_processes: false` on `Ide.Emulator.Session` to avoid spaw
 | Display timeout, 12 bytes only | Event log: join `initial`, “pushing N bytes”, `framesReceived` on feedback report; UI build string; server restarted after channel changes |
 | `display_ready: false` | QEMU still booting; VNC banner not captured — wait and ping again |
 | Install fails | `POST /install` error body; console logs in session; try phone bridge if companion app |
+| Install OK but app list / launcher only | Install already sent `AppRunStateStart` once (AppFetch + PutBytes). Do **not** send a second start right after install. If you tapped Select and see `AppRunState stop` then `App fault! PC: 0 LR: 0`, the app crashed in init/first draw (toolchain), not a missing launch packet. |
+| Verify display with a trivial watchface | Create a project from template **Watchface: Smoke screen (checkerboard, emulator debug)** (`watchface-smoke-screen`). After install you should see four equal black/white quadrants in VNC; if not, the problem is install/launch, not watchface logic. |
+| Watchface shows launcher or blank white face | Rebuild/install after toolchain updates. Watchfaces must compile with `ELMC_WATCHFACE_MODE` (from `package.json` `"watchface": true` and/or IDE `target_type: watchface`). In AppLog look for `elmc init rc=0 launch_reason=… mode=1` (`mode=1` = watchface). `mode=0` means the PBW was built as an app. |
+| Install OK, logs show `AppRunState start`, VNC stays black | Often a stale noVNC buffer (app drew, client did not refresh). Hard-refresh the page or reinstall; recent builds request a full framebuffer update after install/app start. Checkerboard smoke on B&W VNC looks like black + light gray in canvas samples, not four colors. |
+| Flood of `Data logging` lines after install | Emulator storage logging (optional `ELMC_AGENT_PROBES` when enabled). Not necessarily a crash; check AppLog for `App fault!` or `elmc init rc=`. |
 | Install progress stuck ~5% on watch | Early PutBytes/binary phase — Bluetooth may not be ready yet; wait a few seconds after launch (emery/flint) then install, or stop and relaunch; check server logs for `putbytes_failed` / timeout |
 | Launch takes many seconds | Normal while QEMU boots to “Ready for communication” and VNC comes up (typically under ~10s); a duplicate console wait was removed in recent builds |
 | Phone bridge not ready | `phone_bridge_ready: false` — pypkjs missing or not started; non-fatal for display-only apps |

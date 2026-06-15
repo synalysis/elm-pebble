@@ -3,6 +3,8 @@ defmodule Ide.Debugger.Types.SourceLocation do
   Source span attached to parser-derived view tree nodes.
   """
 
+  alias Ide.Debugger.Types
+
   @type t :: %{
           optional(:path) => String.t() | nil,
           optional(:line) => non_neg_integer(),
@@ -10,5 +12,5 @@ defmodule Ide.Debugger.Types.SourceLocation do
           optional(String.t()) => String.t() | integer() | nil
         }
 
-  @type wire_map :: t() | map()
+  @type wire_map :: t() | Types.wire_map()
 end

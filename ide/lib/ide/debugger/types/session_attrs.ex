@@ -12,5 +12,5 @@ defmodule Ide.Debugger.Types.SessionAttrs do
           optional(atom()) => Types.wire_input()
         }
 
-  @type wire_map :: t() | map()
+  @type wire_map :: t() | Types.wire_map()
 end

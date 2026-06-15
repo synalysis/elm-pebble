@@ -4,6 +4,7 @@ defmodule Ide.SimulatorCapabilities do
   """
 
   alias Ide.Debugger.RuntimeArtifacts
+  alias Ide.Debugger.Types
   alias Ide.Projects
   alias Ide.Projects.Project
   alias Ide.SimulatorCapabilities.Detect
@@ -11,7 +12,7 @@ defmodule Ide.SimulatorCapabilities do
   @doc """
   Returns a set of capability keys used to filter simulator settings UI and persistence.
   """
-  @spec infer(Project.t() | nil, map() | nil) :: MapSet.t(String.t())
+  @spec infer(Project.t() | nil, Types.runtime_state() | nil) :: MapSet.t(String.t())
   def infer(project \\ nil, debugger_state \\ nil)
 
   def infer(%Project{} = project, debugger_state) do
@@ -31,7 +32,11 @@ defmodule Ide.SimulatorCapabilities do
 
   def infer(_project, _debugger_state), do: MapSet.new()
 
-  @spec caps_from_introspect(map() | nil, map() | nil, map() | nil) :: MapSet.t(String.t())
+  @spec caps_from_introspect(
+          Types.elm_introspect() | nil,
+          Types.elm_introspect() | nil,
+          Types.elm_introspect() | nil
+        ) :: MapSet.t(String.t())
   defp caps_from_introspect(watch, phone, companion) do
     MapSet.new()
     |> MapSet.union(Detect.watch_caps(watch))
@@ -45,8 +50,11 @@ defmodule Ide.SimulatorCapabilities do
   @spec emulator_only_caps() :: MapSet.t(String.t())
   def emulator_only_caps, do: MapSet.new(["emulator_timeline_peek"])
 
-  @spec introspect_for(Project.t(), map() | nil, :watch | :phone | :companion) ::
-          map() | nil
+  @spec introspect_for(
+          Project.t(),
+          Types.runtime_state() | nil,
+          :watch | :phone | :companion
+        ) :: Types.elm_introspect() | nil
   defp introspect_for(%Project{} = project, debugger_state, surface) do
     case runtime_introspect(debugger_state, surface) do
       %{} = introspect ->
@@ -57,7 +65,8 @@ defmodule Ide.SimulatorCapabilities do
     end
   end
 
-  @spec runtime_introspect(map(), :watch | :phone | :companion) :: map() | nil
+  @spec runtime_introspect(Types.runtime_state(), :watch | :phone | :companion) ::
+          Types.elm_introspect() | nil
   defp runtime_introspect(%{watch: watch} = _state, :watch) when is_map(watch),
     do: model_introspect(watch)
 
@@ -82,7 +91,7 @@ defmodule Ide.SimulatorCapabilities do
 
   defp runtime_introspect(_state, _surface), do: nil
 
-  @spec model_introspect(map()) :: map() | nil
+  @spec model_introspect(Types.wire_map()) :: Types.elm_introspect() | nil
   defp model_introspect(%{"model" => _} = surface) when is_map(surface),
     do: RuntimeArtifacts.introspect(surface)
 
@@ -103,7 +112,8 @@ defmodule Ide.SimulatorCapabilities do
     if File.dir?(root), do: root, else: nil
   end
 
-  @spec workspace_introspect(String.t() | nil, :watch | :phone | :companion) :: map() | nil
+  @spec workspace_introspect(String.t() | nil, :watch | :phone | :companion) ::
+          Types.elm_introspect() | nil
   defp workspace_introspect(nil, _surface), do: nil
 
   defp workspace_introspect(workspace_root, surface) do
@@ -129,7 +139,11 @@ defmodule Ide.SimulatorCapabilities do
     end)
   end
 
-  @spec merge_introspect(map() | nil, map(), :watch | :phone | :companion) :: map()
+  @spec merge_introspect(
+          Types.elm_introspect() | nil,
+          Types.elm_introspect(),
+          :watch | :phone | :companion
+        ) :: Types.elm_introspect()
   defp merge_introspect(nil, introspect, _surface), do: introspect
 
   defp merge_introspect(existing, introspect, surface) do

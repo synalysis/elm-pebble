@@ -22,7 +22,9 @@ defmodule Ide.Debugger.AgentHosts do
   alias Ide.Debugger.Types
   alias Ide.Debugger.WatchProfileApply
 
-  @type append_event_fn :: (Types.runtime_state(), String.t(), map() -> Types.runtime_state())
+  @type append_event_fn ::
+          (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() ->
+             Types.runtime_state())
 
   @type append_debugger_event_fn ::
           (Types.runtime_state(), String.t(), Types.surface_target(), String.t(), String.t() ->

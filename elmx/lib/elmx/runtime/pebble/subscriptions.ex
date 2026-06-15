@@ -3,6 +3,7 @@ defmodule Elmx.Runtime.Pebble.Subscriptions do
 
   alias Elmx.Runtime.Pebble.SubscriptionMasks
   alias Elmx.Runtime.Pebble.Subscriptions.Frame, as: FrameMask
+  alias Elmx.Types
 
   @frame_targets %{
     "Pebble.Frame.every" => :every,
@@ -13,12 +14,12 @@ defmodule Elmx.Runtime.Pebble.Subscriptions do
   @spec mask(String.t()) :: non_neg_integer() | nil
   def mask(target) when is_binary(target), do: SubscriptionMasks.mask(target)
 
-  @spec batch_mask(list()) :: non_neg_integer()
+  @spec batch_mask(Types.ir_arg_list()) :: non_neg_integer()
   def batch_mask(items) when is_list(items) do
     Enum.reduce(items, 0, fn item, acc -> Bitwise.bor(acc, item_mask(item)) end)
   end
 
-  @spec item_mask(term()) :: non_neg_integer()
+  @spec item_mask(Types.subscription_mask_item()) :: non_neg_integer()
   def item_mask(%{op: :int_literal, value: value}) when is_integer(value), do: value
 
   def item_mask(%{op: :qualified_call, target: target, args: args}) when is_binary(target) do

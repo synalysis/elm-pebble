@@ -85,7 +85,7 @@ Functions marked with (λ) also have zero-arg partial-application wrappers.
 | `Basics.truncate` (λ) | `elmc_basics_truncate` | Real |
 | `Basics.remainderBy` | `elmc_basics_remainder_by` | Real |
 | `Basics.xor` | `elmc_basics_xor` | Real |
-| `Basics.compare` | `elmc_basics_compare` | Stub |
+| `Basics.compare` | `elmc_basics_compare` | Real |
 
 ### elm/core: Bitwise
 
@@ -125,8 +125,8 @@ Functions marked with (λ) also have zero-arg partial-application wrappers.
 | `List.any` | `elmc_list_any` | Real |
 | `List.all` | `elmc_list_all` | Real |
 | `List.sort` (λ) | `elmc_list_sort` | Real |
-| `List.sortBy` | `elmc_list_sort_by` | Stub |
-| `List.sortWith` | `elmc_list_sort_with` | Stub |
+| `List.sortBy` | `elmc_list_sort_by` | Real |
+| `List.sortWith` | `elmc_list_sort_with` | Real |
 | `List.singleton` | `elmc_list_singleton` | Real |
 | `List.range` | `elmc_list_range` | Real |
 | `List.repeat` | `elmc_list_repeat` | Real |
@@ -167,7 +167,7 @@ Functions marked with (λ) also have zero-arg partial-application wrappers.
 | `String.length` (λ) | `elmc_string_length_val` | Real |
 | `String.reverse` (λ) | `elmc_string_reverse` | Real |
 | `String.repeat` | `elmc_string_repeat` | Real |
-| `String.replace` | `elmc_string_replace` | Stub |
+| `String.replace` | `elmc_string_replace` | Real |
 | `String.fromInt` (λ) | `elmc_string_from_int` | Real |
 | `String.toInt` (λ) | `elmc_string_to_int` | Real |
 | `String.fromFloat` (λ) | `elmc_string_from_float` | Real |
@@ -256,7 +256,7 @@ Functions marked with (λ) also have zero-arg partial-application wrappers.
 | `Dict.union` | `elmc_dict_union` | Real |
 | `Dict.intersect` | `elmc_dict_intersect` | Real |
 | `Dict.diff` | `elmc_dict_diff` | Real |
-| `Dict.merge` | `elmc_dict_merge` | Stub |
+| `Dict.merge` | `elmc_dict_merge` | Real |
 | `Dict.update` | `elmc_dict_update` | Real |
 
 ### elm/core: Set
@@ -326,50 +326,52 @@ Functions marked with (λ) also have zero-arg partial-application wrappers.
 
 | Function | Runtime intrinsic | Status |
 |---|---|---|
-| `Json.Decode.decodeValue` | `elmc_json_decode_value` | Stub |
-| `Json.Decode.decodeString` | `elmc_json_decode_string` | Stub |
-| `Json.Decode.string` | `elmc_json_decode_string_decoder` | Stub |
-| `Json.Decode.int` | `elmc_json_decode_int_decoder` | Stub |
-| `Json.Decode.float` | `elmc_json_decode_float_decoder` | Stub |
-| `Json.Decode.bool` | `elmc_json_decode_bool_decoder` | Stub |
-| `Json.Decode.null` | `elmc_json_decode_null` | Stub |
-| `Json.Decode.nullable` | `elmc_json_decode_nullable` | Stub |
-| `Json.Decode.list` | `elmc_json_decode_list` | Stub |
-| `Json.Decode.array` | `elmc_json_decode_array` | Stub |
-| `Json.Decode.field` | `elmc_json_decode_field` | Stub |
-| `Json.Decode.at` | `elmc_json_decode_at` | Stub |
-| `Json.Decode.index` | `elmc_json_decode_index` | Stub |
-| `Json.Decode.map` | `elmc_json_decode_map` | Stub |
-| `Json.Decode.map2` | `elmc_json_decode_map2` | Stub |
-| `Json.Decode.map3` | `elmc_json_decode_map3` | Stub |
-| `Json.Decode.map4` | `elmc_json_decode_map4` | Stub |
-| `Json.Decode.map5` | `elmc_json_decode_map5` | Stub |
-| `Json.Decode.succeed` | `elmc_json_decode_succeed` | Stub |
-| `Json.Decode.fail` | `elmc_json_decode_fail` | Stub |
-| `Json.Decode.andThen` | `elmc_json_decode_and_then` | Stub |
-| `Json.Decode.oneOf` | `elmc_json_decode_one_of` | Stub |
-| `Json.Decode.maybe` | `elmc_json_decode_maybe` | Stub |
-| `Json.Decode.lazy` | `elmc_json_decode_lazy` | Stub |
-| `Json.Decode.value` | `elmc_json_decode_value_decoder` | Stub |
-| `Json.Decode.errorToString` (λ) | `elmc_json_decode_error_to_string` | Stub |
-| `Json.Decode.keyValuePairs` | `elmc_json_decode_key_value_pairs` | Stub |
-| `Json.Decode.dict` | `elmc_json_decode_dict` | Stub |
+| `Json.Decode.decodeValue` | `elmc_json_decode_value` | Real |
+| `Json.Decode.decodeString` | `elmc_json_decode_string` | Real |
+| `Json.Decode.string` | `elmc_json_decode_string_decoder` | Real |
+| `Json.Decode.int` | `elmc_json_decode_int_decoder` | Real |
+| `Json.Decode.float` | `elmc_json_decode_float_decoder` | Real |
+| `Json.Decode.bool` | `elmc_json_decode_bool_decoder` | Real |
+| `Json.Decode.null` | `elmc_json_decode_null` | Real |
+| `Json.Decode.nullable` | `elmc_json_decode_nullable` | Real |
+| `Json.Decode.list` | `elmc_json_decode_list` | Real |
+| `Json.Decode.array` | `elmc_json_decode_array` | Real |
+| `Json.Decode.field` | `elmc_json_decode_field` | Real |
+| `Json.Decode.at` | `elmc_json_decode_at` | Real |
+| `Json.Decode.index` | `elmc_json_decode_index` | Real |
+| `Json.Decode.map` | `elmc_json_decode_map` | Real |
+| `Json.Decode.map2` | `elmc_json_decode_map2` | Real |
+| `Json.Decode.map3` | `elmc_json_decode_map3` | Real |
+| `Json.Decode.map4` | `elmc_json_decode_map4` | Real |
+| `Json.Decode.map5` | `elmc_json_decode_map5` | Real |
+| `Json.Decode.map6` | `elmc_json_decode_map6` | Real |
+| `Json.Decode.map7` | `elmc_json_decode_map7` | Real |
+| `Json.Decode.succeed` | `elmc_json_decode_succeed` | Real |
+| `Json.Decode.fail` | `elmc_json_decode_fail` | Real |
+| `Json.Decode.andThen` | `elmc_json_decode_and_then` | Real |
+| `Json.Decode.oneOf` | `elmc_json_decode_one_of` | Real |
+| `Json.Decode.maybe` | `elmc_json_decode_maybe` | Real |
+| `Json.Decode.lazy` | `elmc_json_decode_lazy` | Real |
+| `Json.Decode.value` | `elmc_json_decode_value_decoder` | Real |
+| `Json.Decode.errorToString` (λ) | `elmc_json_decode_error_to_string` | Real |
+| `Json.Decode.keyValuePairs` | `elmc_json_decode_key_value_pairs` | Real |
+| `Json.Decode.dict` | `elmc_json_decode_dict` | Real |
 
 ### elm/json: Json.Encode
 
 | Function | Runtime intrinsic | Status |
 |---|---|---|
-| `Json.Encode.string` | `elmc_json_encode_string` | Stub |
-| `Json.Encode.int` | `elmc_json_encode_int` | Stub |
-| `Json.Encode.float` | `elmc_json_encode_float` | Stub |
-| `Json.Encode.bool` | `elmc_json_encode_bool` | Stub |
-| `Json.Encode.null` | `elmc_json_encode_null` | Stub |
-| `Json.Encode.list` | `elmc_json_encode_list` | Stub |
-| `Json.Encode.array` | `elmc_json_encode_array` | Stub |
-| `Json.Encode.set` | `elmc_json_encode_set` | Stub |
-| `Json.Encode.object` | `elmc_json_encode_object` | Stub |
-| `Json.Encode.dict` | `elmc_json_encode_dict` | Stub |
-| `Json.Encode.encode` | `elmc_json_encode_encode` | Stub |
+| `Json.Encode.string` | `elmc_json_encode_string` | Real |
+| `Json.Encode.int` | `elmc_json_encode_int` | Real |
+| `Json.Encode.float` | `elmc_json_encode_float` | Real |
+| `Json.Encode.bool` | `elmc_json_encode_bool` | Real |
+| `Json.Encode.null` | `elmc_json_encode_null` | Real |
+| `Json.Encode.list` | `elmc_json_encode_list` | Real |
+| `Json.Encode.array` | `elmc_json_encode_array` | Real |
+| `Json.Encode.set` | `elmc_json_encode_set` | Real |
+| `Json.Encode.object` | `elmc_json_encode_object` | Real |
+| `Json.Encode.dict` | `elmc_json_encode_dict` | Real |
+| `Json.Encode.encode` | `elmc_json_encode_encode` | Real |
 
 ## Runtime Value Types
 
@@ -421,10 +423,4 @@ Functions marked with (λ) also have zero-arg partial-application wrappers.
 
 ## Remaining Gaps / Next Steps
 
-1. **Json.Decode / Json.Encode** — All 39 functions are link-safe stubs. Need real JSON parsing/encoding implementation for packages that use `elm/json` at runtime.
-2. **`List.sortBy` / `List.sortWith`** — Currently stubs (return unsorted). Need generic comparison + closure-based sorting.
-3. **`Dict.merge`** — Stub. Needs 3-closure merge logic.
-4. **`String.replace`** — Stub. Needs substring replacement implementation.
-5. **Record update syntax** (`{ model | field = value }`) — Parser doesn't emit this yet; `elmc_record_update` runtime function is ready.
-6. **Partial application** — Commonly-used stdlib functions have zero-arg lambda wrappers. Generic partial application for arbitrary functions is not yet supported.
-7. **Recursive let bindings** — Lambda lifting handles top-level recursion; mutual recursion within `let` blocks needs additional lowering.
+No known codegen/stdlib gaps remain for the current Pebble target. Desktop `elm/json` may still differ in exotic error-message wording for malformed input.

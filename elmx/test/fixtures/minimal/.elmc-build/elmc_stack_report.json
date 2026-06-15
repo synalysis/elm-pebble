@@ -1,0 +1,28 @@
+{
+  "functions": [],
+  "summary": {
+    "ok": 0,
+    "warn": 0,
+    "risk": 0
+  },
+  "code_size_indicators": {
+    "boxed_tmp_declarations": 0,
+    "closure_allocations": 0,
+    "direct_command_defs": 0,
+    "generated_c_bytes": 933,
+    "generated_c_lines": 30,
+    "generic_function_defs": 0,
+    "linked_binary": {
+      "reason": "binary size is available after platform or host linking, not during C source generation",
+      "available": false
+    },
+    "runtime_calls": {
+      "elmc_list_all": 0,
+      "elmc_list_any": 0,
+      "elmc_list_drop": 0,
+      "elmc_list_filter": 0,
+      "elmc_list_filter_map": 0,
+      "elmc_list_map": 0
+    }
+  }
+}

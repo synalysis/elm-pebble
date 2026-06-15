@@ -1,121 +1,65 @@
 defmodule Ide.Debugger.RuntimeContexts do
   @moduledoc false
 
+  alias Ide.Debugger.AutoFireRuntime
+  alias Ide.Debugger.CompanionBridge.Runtime, as: CompanionBridgeRuntime
   alias Ide.Debugger.CompanionBridgeContext
+  alias Ide.Debugger.DebuggerContractSnapshot
   alias Ide.Debugger.DeviceDataResponses
+  alias Ide.Debugger.GeolocationResponses
+  alias Ide.Debugger.HotReload
   alias Ide.Debugger.HotReloadContext
   alias Ide.Debugger.HotReloadEvents
   alias Ide.Debugger.HotReloadSurface
   alias Ide.Debugger.InitCmdFollowups
+  alias Ide.Debugger.InitSurfaceEffects
   alias Ide.Debugger.InitSurfaceEffectsContext
   alias Ide.Debugger.IntrospectContexts
   alias Ide.Debugger.ProtocolContexts
+  alias Ide.Debugger.ProtocolEvents
+  alias Ide.Debugger.ProtocolRx
   alias Ide.Debugger.RuntimeExecutorConfig
   alias Ide.Debugger.RuntimeFollowups
+  alias Ide.Debugger.RuntimeHost
+  alias Ide.Debugger.SimulatorWatchDelivery
   alias Ide.Debugger.SimulatorWatchDeliveryContext
+  alias Ide.Debugger.StepApply
   alias Ide.Debugger.StepApplyContext
   alias Ide.Debugger.StepFollowupContexts
+  alias Ide.Debugger.SubscriptionResponses
+  alias Ide.Debugger.SubscriptionTriggerWire
   alias Ide.Debugger.SubscriptionWireContexts
+  alias Ide.Debugger.SurfaceCompileArtifacts
   alias Ide.Debugger.SurfaceCompileArtifactsContext
-  alias Ide.Debugger.HotReload
+  alias Ide.Debugger.TriggerInjection
   alias Ide.Debugger.TriggerInjectionContext
+  alias Ide.Debugger.TriggerMessageSurface
   alias Ide.Debugger.TriggerSurface
-  alias Ide.Debugger.Types
 
-  @type step_followup_host :: StepFollowupContexts.host()
+  @type host :: RuntimeHost.callbacks()
 
-  # Host callbacks use map() for runtime state so Dialyzer accepts ctx maps from RuntimeHost.
-  @type host :: %{
-          required(:append_event) => (map(), String.t(), map() -> map()),
-          required(:append_debugger_event) => (map(),
-                                               String.t(),
-                                               Types.surface_target(),
-                                               String.t(),
-                                               String.t() ->
-                                                 map()),
-          required(:apply_step_once) => (map(),
-                                         Types.surface_target(),
-                                         String.t(),
-                                         Types.subscription_payload()
-                                         | nil,
-                                         String.t(),
-                                         String.t() ->
-                                           map()),
-          required(:apply_step_without_value) => (map(),
-                                                  Types.surface_target(),
-                                                  String.t(),
-                                                  String.t(),
-                                                  String.t() ->
-                                                    map()),
-          required(:source_root_for_target) => (Types.surface_target() -> String.t()),
-          required(:session_key_from_state) => (map() -> String.t() | nil),
-          required(:simulator_settings_from_state) => (map() -> Types.simulator_settings()),
-          required(:introspect_for) => (map(), Types.surface_target() -> map()),
-          required(:surface_app_model) => (map(), Types.surface_target() -> map()),
-          required(:normalize_step_target) => (Types.wire_input() -> Types.surface_target()),
-          required(:model_active?) => (map(), Types.surface_target(), map() -> boolean()),
-          required(:subscription_row_enabled?) => (map(), Types.surface_target(), map() ->
-                                                     boolean()),
-          required(:auto_fire_row_enabled?) => (map(), Types.surface_target(), map() -> boolean()),
-          required(:simulator_now) => (map(), Types.surface_target() -> map()),
-          required(:append_runtime_exec) => (map(), Types.surface_target(), map() -> map()),
-          required(:trigger_message_for_surface) => (map(),
-                                                     Types.surface_target(),
-                                                     String.t(),
-                                                     String.t()
-                                                     | nil ->
-                                                       String.t()),
-          required(:attach_subscription_payload) => (map(),
-                                                     Types.surface_target(),
-                                                     String.t(),
-                                                     String.t() ->
-                                                       String.t()),
-          required(:merge_runtime_artifacts) => (map(), Types.surface_target(), map() -> map()),
-          required(:apply_subscription_ok_response) => (map(),
-                                                        Types.surface_target(),
-                                                        String.t(),
-                                                        Types.subscription_payload(),
-                                                        String.t(),
-                                                        String.t() ->
-                                                          map()),
-          required(:maybe_attach_compile_artifacts) => (map(), Types.surface_target(), map() ->
-                                                          map()),
-          required(:maybe_append_runtime_status) => (map(), Types.surface_target() -> map()),
-          required(:maybe_append_runtime_status_after_init) => (map(),
-                                                                Types.surface_target(),
-                                                                map(),
-                                                                map() ->
-                                                                  map()),
-          required(:maybe_append_contract) => (map(), map() | nil -> map()),
-          required(:maybe_append_runtime_exec) => (map(), String.t() -> map()),
-          required(:maybe_append_phone_view_render) => (map(), String.t() -> map()),
-          optional(:default_auto_fire_interval_ms) => pos_integer()
-        }
-
-  # Nested context maps are typed as map() at this boundary so Dialyzer accepts
-  # RuntimeHost/StepApplyCallbacks wiring; leaf modules keep precise ctx() types.
   @type t :: %{
-          step_followup_host: map(),
-          device_data: map(),
-          runtime_followups: map(),
-          geolocation: map(),
-          subscription_responses: map(),
-          surface_compile: map(),
-          simulator_watch_delivery: map(),
-          companion_bridge: map(),
-          protocol_events: map(),
-          protocol_rx: map(),
-          step_apply: map(),
-          trigger_injection: map(),
-          subscription_payload: map(),
-          trigger_wire: map(),
-          tick_resolution: map(),
-          trigger_surface: map(),
-          auto_fire: map(),
-          init_surface_effects: map(),
-          introspect_snapshot_apply: map(),
-          introspect_merge: map(),
-          hot_reload_events: map()
+          step_followup_host: StepFollowupContexts.host(),
+          device_data: DeviceDataResponses.apply_ctx(),
+          runtime_followups: RuntimeFollowups.apply_ctx(),
+          geolocation: GeolocationResponses.apply_ctx(),
+          subscription_responses: SubscriptionResponses.apply_ctx(),
+          surface_compile: SurfaceCompileArtifacts.attach_ctx(),
+          simulator_watch_delivery: SimulatorWatchDelivery.apply_ctx(),
+          companion_bridge: CompanionBridgeRuntime.ctx(),
+          protocol_events: ProtocolEvents.ctx(),
+          protocol_rx: ProtocolRx.ctx(),
+          step_apply: StepApply.ctx(),
+          trigger_injection: TriggerInjection.host(),
+          subscription_payload: TriggerMessageSurface.payload_ctx(),
+          trigger_wire: SubscriptionTriggerWire.injection_modal_ctx(),
+          tick_resolution: TriggerMessageSurface.resolve_ctx(),
+          trigger_surface: TriggerSurface.candidates_ctx(),
+          auto_fire: AutoFireRuntime.apply_ctx(),
+          init_surface_effects: InitSurfaceEffects.ctx(),
+          introspect_snapshot_apply: DebuggerContractSnapshot.apply_ctx(),
+          introspect_merge: DebuggerContractSnapshot.merge_ctx(),
+          hot_reload_events: HotReloadEvents.host()
         }
 
   @spec build(host()) :: t()

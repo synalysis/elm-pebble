@@ -1,13 +1,15 @@
 defmodule Elmx.Runtime.Pebble.TextOptions do
   @moduledoc false
 
+  alias Elmx.Types
+
   @type alignment :: String.t()
   @type overflow :: String.t()
 
   @doc """
   Normalizes Elm `TextOptions` runtime values to debugger/emulator string fields.
   """
-  @spec fields(term()) :: {alignment(), overflow()}
+  @spec fields(Types.ui_text_options() | nil) :: {alignment(), overflow()}
   def fields(options) do
     settings = collect_settings(options)
 
@@ -17,7 +19,7 @@ defmodule Elmx.Runtime.Pebble.TextOptions do
     }
   end
 
-  @spec collect_settings(term()) :: [map()]
+  @spec collect_settings(Types.ui_text_options() | nil) :: [map()]
   defp collect_settings(nil), do: []
   defp collect_settings([]), do: []
 
@@ -39,7 +41,7 @@ defmodule Elmx.Runtime.Pebble.TextOptions do
     to_string(type || "") == "contextSetting"
   end
 
-  @spec alignment_from_settings([map()], term()) :: alignment()
+  @spec alignment_from_settings([map()], Types.ui_text_options() | nil) :: alignment()
   defp alignment_from_settings(settings, options) do
     keys = Enum.map(settings, &setting_key/1)
 
@@ -51,7 +53,7 @@ defmodule Elmx.Runtime.Pebble.TextOptions do
     end
   end
 
-  @spec overflow_from_settings([map()], term()) :: overflow()
+  @spec overflow_from_settings([map()], Types.ui_text_options() | nil) :: overflow()
   defp overflow_from_settings(settings, options) do
     keys = Enum.map(settings, &setting_key/1)
 
@@ -76,7 +78,7 @@ defmodule Elmx.Runtime.Pebble.TextOptions do
     to_string(Map.get(setting, "key") || Map.get(setting, :key) || "")
   end
 
-  @spec alignment_name(term()) :: alignment()
+  @spec alignment_name(String.t() | atom() | integer()) :: alignment()
   defp alignment_name("left"), do: "left"
   defp alignment_name("right"), do: "right"
   defp alignment_name("center"), do: "center"
@@ -87,7 +89,7 @@ defmodule Elmx.Runtime.Pebble.TextOptions do
   defp alignment_name(2), do: "right"
   defp alignment_name(_), do: "center"
 
-  @spec overflow_name(term()) :: overflow()
+  @spec overflow_name(String.t() | atom() | integer()) :: overflow()
   defp overflow_name("trailing_ellipsis"), do: "trailing_ellipsis"
   defp overflow_name("fill"), do: "fill"
   defp overflow_name("word_wrap"), do: "word_wrap"

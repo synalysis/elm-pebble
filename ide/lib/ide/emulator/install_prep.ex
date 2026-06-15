@@ -22,13 +22,16 @@ defmodule Ide.Emulator.InstallPrep do
   """
   @spec reset_needed?(Types.install_prep_session()) :: boolean()
   def reset_needed?(state) when is_map(state) do
-    reuse_window_ms = config(:install_reuse_boot_window_ms, 120_000)
+    reuse_window_ms = config(:install_reuse_boot_window_ms, 300_000)
+    now = now_ms()
+    last_boot_ms = Map.get(state, :last_boot_ms, 0)
+    last_ping_ms = Map.get(state, :last_ping_ms, last_boot_ms)
 
     cond do
       not qemu_and_router_healthy?(state) ->
         true
 
-      now_ms() - Map.get(state, :last_boot_ms, 0) > reuse_window_ms ->
+      now - last_boot_ms > reuse_window_ms and now - last_ping_ms > reuse_window_ms ->
         true
 
       true ->

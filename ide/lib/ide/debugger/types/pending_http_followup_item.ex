@@ -15,5 +15,5 @@ defmodule Ide.Debugger.Types.PendingHttpFollowupItem do
           optional(atom()) => Types.wire_input()
         }
 
-  @type wire_item :: t() | map()
+  @type wire_item :: t() | Types.wire_map()
 end

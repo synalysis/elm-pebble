@@ -322,15 +322,15 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
   defp apply_request(state, _target, _request, _source, _ctx), do: state
 
   @spec apply_subscription_response(
-          map(),
+          Types.runtime_state(),
           Types.surface_target(),
           String.t(),
           Types.companion_bridge_payload(),
           String.t(),
           String.t(),
-          map(),
+          Types.companion_subscription_contract() | Types.api_suffix_contract(),
           ctx()
-        ) :: map()
+        ) :: Types.runtime_state()
   def apply_subscription_response(
         state,
         :companion = _target,
@@ -657,7 +657,7 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
     |> Enum.any?(fn known -> known == callback or String.starts_with?(known, callback <> " ") end)
   end
 
-  @spec introspect_known_messages(Types.elm_introspect() | map() | nil) :: [String.t()]
+  @spec introspect_known_messages(Types.elm_introspect() | nil) :: [String.t()]
   defp introspect_known_messages(ei) when is_map(ei) do
     msg_constructors = IntrospectAccess.list(ei, "msg_constructors")
     update_branches = IntrospectAccess.list(ei, "update_case_branches")

@@ -7,10 +7,9 @@ defmodule IdeWeb.EmulatorController do
   alias Ide.Emulator
   alias Ide.Emulator.Session
   alias Ide.Emulator.Session.ProcessHost
+  alias Ide.Emulator.Workflow
   alias Ide.PebblePreferences
   alias Ide.Projects
-  alias Ide.WatchModels
-  alias IdeWeb.WorkspaceLive.BuildFlow
 
   @spec launch(Plug.Conn.t(), %{required(String.t()) => term()}) :: Plug.Conn.t()
   def launch(conn, %{"slug" => slug} = params) do
@@ -18,79 +17,22 @@ defmodule IdeWeb.EmulatorController do
 
     with project when not is_nil(project) <-
            Projects.get_project_by_slug(slug, conn.assigns[:current_user]),
-         workspace_root <- Projects.project_workspace_path(project),
-         :ok <- ensure_runtime_ready(platform),
-         {:ok, package_result, launch_platform} <-
-           package_for_launch(project, workspace_root, platform),
-         {:ok, info} <-
-           Emulator.launch(
-             project_slug: Projects.scope_key(project),
-             platform: launch_platform,
-             artifact_path: package_result.artifact_path,
-             has_phone_companion: package_result.has_phone_companion,
-             has_companion_preferences: package_result.has_companion_preferences
-           ) do
+         {:ok, %{session: info}} <- Workflow.launch_project(project, platform) do
       json(conn, info)
     else
       nil ->
         conn |> put_status(:not_found) |> json(%{error: "Project not found"})
 
       {:error, reason} ->
-        conn |> put_status(:unprocessable_entity) |> json(%{error: launch_error_message(reason)})
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: Workflow.launch_error_message(reason)})
     end
   end
 
   def launch(conn, _params) do
     conn |> put_status(:bad_request) |> json(%{error: "Expected slug and platform"})
   end
-
-  defp package_for_launch(project, workspace_root, platform) do
-    case BuildFlow.package_for_emulator_session(project, workspace_root, platform) do
-      {:ok, package_result} ->
-        {:ok, package_result, platform}
-
-      {:error, reason} ->
-        fallback_platform = WatchModels.default_id()
-
-        if aplite_app_overflow?(platform, reason) and platform != fallback_platform do
-          with {:ok, package_result} <-
-                 BuildFlow.package_for_emulator_session(
-                   project,
-                   workspace_root,
-                   fallback_platform
-                 ) do
-            {:ok, package_result, fallback_platform}
-          end
-        else
-          {:error, reason}
-        end
-    end
-  end
-
-  defp ensure_runtime_ready(platform) do
-    case Emulator.runtime_status(platform) do
-      %{missing: []} ->
-        :ok
-
-      %{missing: missing} when is_list(missing) ->
-        {:error, {:embedded_emulator_unavailable, Enum.map(missing, &component_missing_detail/1)}}
-    end
-  end
-
-  defp component_missing_detail(%{label: label, detail: detail})
-       when is_binary(label) and is_binary(detail) do
-    "#{label}: #{detail}"
-  end
-
-  defp component_missing_detail(%{label: label}) when is_binary(label), do: label
-  defp component_missing_detail(component), do: inspect(component)
-
-  defp aplite_app_overflow?("aplite", {:pebble_build_failed, %{output: output}})
-       when is_binary(output) do
-    String.contains?(output, "region `APP' overflowed")
-  end
-
-  defp aplite_app_overflow?(_platform, _reason), do: false
 
   defp qemu_protocol(protocol) when is_integer(protocol) and protocol >= 0 and protocol <= 255,
     do: {:ok, protocol}
@@ -132,13 +74,35 @@ defmodule IdeWeb.EmulatorController do
   def install(conn, %{"id" => id}) do
     case Emulator.install(id) do
       {:ok, result} ->
+        _ = Emulator.request_app_logs(id)
         json(conn, %{status: "ok", result: result})
 
       {:error, :not_found} ->
         conn |> put_status(:not_found) |> json(%{error: "Emulator not found"})
 
       {:error, reason} ->
-        conn |> put_status(:unprocessable_entity) |> json(%{error: install_error_message(reason)})
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: Workflow.install_error_message(reason)})
+    end
+  end
+
+  @spec request_app_logs(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  def request_app_logs(conn, %{"id" => id}) do
+    case Emulator.request_app_logs(id) do
+      :ok ->
+        json(conn, %{status: "ok"})
+
+      {:error, :not_found} ->
+        conn |> put_status(:not_found) |> json(%{error: "Emulator not found"})
+
+      {:error, :embedded_protocol_router_not_started} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "Embedded emulator protocol router is not running."})
+
+      {:error, reason} ->
+        conn |> put_status(:unprocessable_entity) |> json(%{error: inspect(reason)})
     end
   end
 
@@ -285,7 +249,7 @@ defmodule IdeWeb.EmulatorController do
 
   defp proxy_target(%{id: id}, :vnc) do
     with {:ok, pid} <- Emulator.lookup(id),
-         port when is_integer(port) <- Session.local_port(pid, :vnc),
+         {:ok, port} <- session_local_port(pid, :vnc),
          true <- ProcessHost.tcp_port_open?(port) do
       {:ok, {:tcp, "127.0.0.1", port}}
     else
@@ -296,7 +260,7 @@ defmodule IdeWeb.EmulatorController do
 
   defp proxy_target(%{id: id}, :phone) do
     with {:ok, pid} <- Emulator.lookup(id),
-         port when is_integer(port) <- Session.local_port(pid, :phone),
+         {:ok, port} <- session_local_port(pid, :phone),
          true <- ProcessHost.tcp_port_open?(port) do
       {:ok, "ws://127.0.0.1:#{port}/"}
     else
@@ -305,64 +269,16 @@ defmodule IdeWeb.EmulatorController do
     end
   end
 
-  defp launch_error_message({:daemon_exited_before_ready, _port}) do
-    "The phone bridge (pypkjs) exited before it could connect to the watch emulator. " <>
-      "Try launching again; if it keeps failing, restart the IDE server to clear stale emulator processes."
+  defp session_local_port(pid, kind) when is_pid(pid) do
+    case Session.local_port(pid, kind) do
+      port when is_integer(port) and port > 0 -> {:ok, port}
+      other -> {:error, other}
+    end
+  catch
+    :exit, {:noproc, _} -> {:error, :emulator_not_running}
+    :exit, {:timeout, _} -> {:error, :emulator_session_timeout}
+    :exit, :killed -> {:error, :emulator_not_running}
+    :exit, reason -> {:error, reason}
   end
 
-  defp launch_error_message({:qemu_boot_timeout, _tail}) do
-    "The watch emulator did not finish booting in time. Try launching again."
-  end
-
-  defp launch_error_message(:compile_project_root_not_found) do
-    "Could not find Elm project files (elm.json) in this workspace. Restore your project sources from backup or re-import the project, then try again."
-  end
-
-  defp launch_error_message({:embedded_emulator_unavailable, missing}) when is_list(missing) do
-    "Embedded emulator dependencies are missing: #{Enum.join(missing, ", ")}. " <>
-      "Install Pebble QEMU/pypkjs or set ELM_PEBBLE_QEMU_BIN, ELM_PEBBLE_PYPKJS_BIN, and ELM_PEBBLE_QEMU_IMAGE_ROOT."
-  end
-
-  defp launch_error_message(:embedded_emulator_disabled) do
-    "Embedded emulator is disabled by ELM_PEBBLE_EMBEDDED_EMULATOR."
-  end
-
-  defp launch_error_message({:embedded_emulator_image_download_failed, reason}) do
-    "Could not download Pebble QEMU flash images: #{inspect(reason)}. " <>
-      "Check network access or set ELM_PEBBLE_QEMU_IMAGE_ROOT to a directory that already contains <platform>/qemu images."
-  end
-
-  defp launch_error_message(:timeout) do
-    "All emulator slots are in use; timed out waiting for a free slot. Try again later."
-  end
-
-  defp launch_error_message(reason), do: inspect(reason)
-
-  defp install_error_message(:artifact_not_found),
-    do: "PBW artifact not found for this emulator session."
-
-  defp install_error_message(:embedded_protocol_router_not_started),
-    do: "Embedded emulator protocol router is not running."
-
-  defp install_error_message({:install_ready_timeout, marker, _tail}) do
-    "Emulator did not reach “#{marker}” before install. Stop and launch the emulator again, then wait a few seconds before installing."
-  end
-
-  defp install_error_message({:putbytes_failed, %{phase: phase, kind: kind}, :timeout}) do
-    "PutBytes timed out during #{phase} (#{kind}). Stop and launch the emulator again, or wait a few seconds after launch before installing."
-  end
-
-  defp install_error_message({:putbytes_failed, %{phase: phase, kind: kind}, {:timeout, _}}) do
-    "PutBytes timed out during #{phase} (#{kind}). Stop and launch the emulator again, or wait a few seconds after launch before installing."
-  end
-
-  defp install_error_message({:putbytes_failed, %{phase: phase, kind: kind}, {:nack, _cookie}}) do
-    "PutBytes was rejected during #{phase} (#{kind}). Stop and launch the emulator, then try installing again."
-  end
-
-  defp install_error_message(:emulator_session_unresponsive),
-    do:
-      "Embedded emulator session did not respond during install (it may still be uploading). Try again or relaunch the emulator."
-
-  defp install_error_message(reason), do: inspect(reason)
 end

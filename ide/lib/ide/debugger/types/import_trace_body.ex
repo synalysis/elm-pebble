@@ -25,7 +25,7 @@ defmodule Ide.Debugger.Types.ImportTraceBody do
           optional(String.t()) => Types.wire_input()
         }
 
-  @type wire_map :: t() | map()
+  @type wire_map :: t() | Types.wire_map()
 
   @type input :: String.t() | wire_map()
 end

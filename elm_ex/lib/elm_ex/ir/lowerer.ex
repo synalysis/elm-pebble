@@ -8,6 +8,7 @@ defmodule ElmEx.IR.Lowerer do
   alias ElmEx.IR
   alias ElmEx.IR.Declaration
   alias ElmEx.IR.FunctionCallCheck
+  alias ElmEx.IR.ImportResolution
   alias ElmEx.IR.Module
 
   @typep expr() :: map()
@@ -275,6 +276,12 @@ defmodule ElmEx.IR.Lowerer do
                Map.get(signature_by_name, name) || Map.get(definition_only_by_name, name)
              end)
              |> Enum.reject(&is_nil/1))
+          |> Enum.map(fn decl ->
+            case Map.get(decl, :expr) do
+              nil -> decl
+              expr -> %{decl | expr: ImportResolution.normalize_expr(expr, rewrite_lookup)}
+            end
+          end)
 
         %Module{
           name: frontend_module.name,
@@ -456,24 +463,13 @@ defmodule ElmEx.IR.Lowerer do
   end
 
   defp rewrite_expr(%{op: :let_in, value_expr: value_expr, in_expr: in_expr} = expr, lookup) do
-    local_name = Map.get(expr, :name) || Map.get(expr, "name")
-
-    scoped_lookup =
-      if is_binary(local_name) and local_name != "" do
-        Map.update(
-          lookup,
-          :local_call_names,
-          MapSet.new([local_name]),
-          &MapSet.put(&1, local_name)
-        )
-      else
-        lookup
-      end
-
+  # Let-bound names (including local functions) must stay as unqualified :call ops so
+  # codegen can resolve them from the compile env. Adding them to local_call_names would
+  # rewrite `label x y z` into `Main.label`, which is wrong for let-bound lambdas.
     %{
       expr
-      | value_expr: rewrite_expr(value_expr, scoped_lookup),
-        in_expr: rewrite_expr(in_expr, scoped_lookup)
+      | value_expr: rewrite_expr(value_expr, lookup),
+        in_expr: rewrite_expr(in_expr, lookup)
     }
   end
 
@@ -565,21 +561,7 @@ defmodule ElmEx.IR.Lowerer do
   end
 
   defp rewrite_expr(%{op: :lambda, body: body} = expr, lookup) do
-    lambda_args =
-      Map.get(expr, :args) || Map.get(expr, "args") || Map.get(expr, :params) ||
-        Map.get(expr, "params") ||
-        []
-
-    scoped_lookup =
-      Enum.reduce(lambda_args, lookup, fn arg_name, acc ->
-        if is_binary(arg_name) and arg_name != "" do
-          Map.update(acc, :local_call_names, MapSet.new([arg_name]), &MapSet.put(&1, arg_name))
-        else
-          acc
-        end
-      end)
-
-    %{expr | body: rewrite_expr(body, scoped_lookup)}
+    %{expr | body: rewrite_expr(body, lookup)}
   end
 
   defp rewrite_expr(%{op: :compose_left, f: f, g: g}, lookup) do
@@ -695,38 +677,8 @@ defmodule ElmEx.IR.Lowerer do
   defp builtin_type_name?(_name), do: false
 
   @spec resolve_alias(String.t(), map()) :: String.t()
-  defp resolve_alias(target, lookup) when is_binary(target) do
-    alias_map = Map.get(lookup, :alias_map, %{})
-    import_unqualified_map = Map.get(lookup, :import_unqualified_map, %{})
-    local_call_names = Map.get(lookup, :local_call_names, MapSet.new())
-
-    case String.split(target, ".", parts: 2) do
-      [prefix, rest] ->
-        case Map.get(alias_map, prefix) do
-          nil -> target
-          real_module -> "#{real_module}.#{rest}"
-        end
-
-      [single] ->
-        if MapSet.member?(local_call_names, single) do
-          target
-        else
-          case Map.get(import_unqualified_map, single) do
-            module when is_binary(module) and module != "" ->
-              "#{module}.#{single}"
-
-            :ambiguous ->
-              target
-
-            _ ->
-              target
-          end
-        end
-
-      _other ->
-        target
-    end
-  end
+  defp resolve_alias(target, lookup) when is_binary(target),
+    do: ImportResolution.resolve(target, lookup)
 
   defp resolve_alias(target, _lookup), do: target
 

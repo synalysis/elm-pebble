@@ -37,12 +37,14 @@ defmodule Ide.Projects.Types do
   @type debugger_settings :: %{
           optional(:platform_target) => String.t(),
           optional(:timeline_limit) => pos_integer() | integer(),
-          optional(:auto_fire) => boolean(),
+          optional(:auto_fire) => boolean() | DebuggerTypes.wire_map(),
           optional(:watch_profile_id) => String.t(),
-          optional(:geolocation) => map(),
-          optional(:companion_bridge) => map(),
-          optional(String.t()) => wire_input(),
-          optional(atom()) => wire_input()
+          optional(:geolocation) => DebuggerTypes.wire_map(),
+          optional(:companion_bridge) => DebuggerTypes.wire_map(),
+          optional(:auto_fire_subscriptions) => [subscription_row()],
+          optional(:disabled_subscriptions) => [subscription_row()],
+          optional(String.t()) => wire_input() | [subscription_row()] | DebuggerTypes.wire_map(),
+          optional(atom()) => wire_input() | [subscription_row()] | DebuggerTypes.wire_map()
         }
 
   @type source_tree :: FileTypes.source_tree()

@@ -32,7 +32,7 @@ defmodule Ide.PackageDocs.ExtractorTest do
 
     assert {:ok, ui_doc} = Extractor.build_module_doc(ui_path)
     assert ui_doc["comment"] =~ "mainWindow"
-    assert Enum.any?(ui_doc["aliases"], &(&1["name"] == "Bitmap"))
+    assert Enum.any?(ui_doc["aliases"], &(&1["name"] == "StaticBitmap"))
 
     unobstructed_path =
       Path.expand(

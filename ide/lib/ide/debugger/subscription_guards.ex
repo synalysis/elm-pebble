@@ -2,7 +2,7 @@ defmodule Ide.Debugger.SubscriptionGuards do
   @moduledoc false
 
   alias Ide.Debugger.IntrospectAccess
-  alias Ide.Debugger.RuntimeModelHydrate
+  alias Ide.Debugger.RuntimeModelWire
   alias Ide.Debugger.Surface
   alias Ide.Debugger.Types
   alias Ide.Debugger.Types.CmdCall
@@ -37,7 +37,7 @@ defmodule Ide.Debugger.SubscriptionGuards do
         value =
           case Map.fetch(runtime_model, field) do
             {:ok, found} ->
-              RuntimeModelHydrate.static_value(found)
+              RuntimeModelWire.static_value(found)
 
             :error ->
               init =
@@ -46,7 +46,7 @@ defmodule Ide.Debugger.SubscriptionGuards do
                   _ -> %{}
                 end
 
-              RuntimeModelHydrate.static_value(Map.get(init, field))
+              RuntimeModelWire.static_value(Map.get(init, field))
           end
 
         {:ok, value}
@@ -66,7 +66,7 @@ defmodule Ide.Debugger.SubscriptionGuards do
   def truthy?(%{"$ctor" => "Just", "$args" => [value]}), do: truthy?(value)
 
   def truthy?(value) when is_binary(value) do
-    case RuntimeModelHydrate.normalize_boolean_string(value) do
+    case RuntimeModelWire.normalize_boolean_string(value) do
       bool when is_boolean(bool) -> bool
       _ -> String.trim(value) != ""
     end

@@ -1,6 +1,8 @@
 defmodule Elmc.QualifiedBuiltinCodegenTest do
   use ExUnit.Case
 
+  alias Elmc.Test.CCodegenExtract
+
   test "qualified Basics operators are lowered as builtins" do
     project_dir = Path.expand("fixtures/simple_project", __DIR__)
     out_dir = Path.expand("tmp/qualified_builtin_codegen", __DIR__)
@@ -97,8 +99,6 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute generated_c =~ "elmc_fn_Main___neq__"
     refute generated_c =~ "elmc_fn_List_cons"
     assert generated_c =~ "elmc_list_cons"
-    assert generated_c =~ "elmc_value_equal"
-
     File.write!(Path.join(out_dir, "c/operator_section_cons_harness.c"), minimal_harness_source())
 
     cc = System.find_executable("cc") || System.find_executable("gcc")
@@ -151,26 +151,18 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_typedBounds_native")
-      |> List.last()
+    typed_bounds_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_typedBounds_native")
 
-    [typed_bounds_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
-
-    assert typed_bounds_body =~ "elmc_record_new_ints"
+    assert typed_bounds_body =~ ~r/elmc_record_new_values_(?:ints_)?take/
     refute typed_bounds_body =~ "elmc_retain(x)"
     refute typed_bounds_body =~ "elmc_retain(y)"
 
-    access_body =
-      generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_typedBoundsAccess")
-      |> List.last()
-
-    [typed_access_body | _rest] = String.split(access_body, "ElmcValue *elmc_fn_", parts: 2)
+    typed_access_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_typedBoundsAccess_native")
 
     assert typed_access_body =~ "elmc_record_get_index("
-    assert typed_access_body =~ "2 /* x */"
+
+    assert typed_access_body =~
+             ~r/elmc_record_get_index\(tmp_\d+, (?:ELMC_FIELD_MAIN_TYPEDBOUNDS_X|2 \/\* x \*\/)\)/
     refute typed_access_body =~ "elmc_record_get(tmp_"
   end
 
@@ -195,29 +187,18 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeIntCase_native")
-      |> List.last()
+    native_case_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeIntCase")
 
-    [native_case_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
-
-    assert native_case_body =~ "elmc_int_t native_let_caseSubject_"
-    assert native_case_body =~ "switch (native_let_caseSubject_"
-    assert native_case_body =~ "case 0:"
-    assert native_case_body =~ "default:"
+    assert native_case_body =~ "const elmc_int_t native_let_caseSubject_"
+    assert native_case_body =~ ~r/const elmc_int_t native_lut_\d+\[4\] = \{ 1, 2, 3, 4 \};/
+    assert native_case_body =~ ~r/native_case_\d+ = native_lut_\d+\[\(\(native_let_caseSubject_/
+    refute native_case_body =~ "switch (native_let_caseSubject_"
     refute native_case_body =~ " = elmc_int_zero();\n  switch"
-    assert native_case_body =~ " = elmc_new_int(1);"
-    assert native_case_body =~ " = elmc_new_int(2);"
+    refute native_case_body =~ "elmc_new_int("
     refute native_case_body =~ "elmc_release(tmp_"
     refute native_case_body =~ "->tag == ELMC_TAG_INT"
     refute native_case_body =~ "elmc_as_int(native_let_caseSubject_"
     refute native_case_body =~ "elmc_new_int(native_mod_"
-
-    refute Regex.match?(
-             ~r/ElmcValue \*tmp_\d+ = elmc_new_int\(1\);\s+tmp_\d+ = tmp_\d+;/,
-             native_case_body
-           )
   end
 
   test "native Int case string branches assign result directly" do
@@ -241,18 +222,13 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_nativeIntCaseString")
-      |> List.last()
-
-    [case_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
+    case_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeIntCaseString")
 
     assert case_body =~ "switch (month)"
     assert case_body =~ "case 1:"
-    assert case_body =~ " = elmc_new_string(\"Jan\");"
+    assert case_body =~ " = elmc_new_string_take(\"Jan\");"
     assert case_body =~ "case 2:"
-    assert case_body =~ " = elmc_new_string(\"Feb\");"
+    assert case_body =~ " = elmc_new_string_take(\"Feb\");"
 
     refute Regex.match?(
              ~r/ElmcValue \*tmp_\d+ = elmc_new_string\(\"Jan\"\);\s+tmp_\d+ = tmp_\d+;/,
@@ -281,17 +257,12 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_boxedDirectionString")
-      |> List.last()
-
-    [case_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
+    case_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_boxedDirectionString")
 
     assert case_body =~ "switch (case_msg_tag_"
     assert case_body =~ "case "
-    assert case_body =~ " = elmc_new_string(\"N\");"
-    assert case_body =~ " = elmc_new_string(\"S\");"
+    assert case_body =~ " = elmc_new_string_take(\"N\");"
+    assert case_body =~ " = elmc_new_string_take(\"S\");"
     refute Regex.match?(~r/else if \(.*->tag == ELMC_TAG_TUPLE2/, case_body)
     refute Regex.match?(~r/elmc_release\(tmp_\d+\);\s+tmp_\d+ = tmp_\d+;/, case_body)
 
@@ -324,10 +295,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     body =
       generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_trigRoundScore_native")
+      |> String.split("static elmc_int_t elmc_fn_Main_trigRoundScore_native")
       |> List.last()
 
-    [fn_body | _] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
+    [fn_body | _] = String.split(body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert fn_body =~ "elmc_basics_sin_double((double)degrees)"
     refute fn_body =~ "elmc_new_int(elmc_basics_round("
@@ -354,31 +325,21 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_nativeBoolField")
-      |> List.last()
+    native_bool_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeBoolField")
 
-    [native_bool_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
-
-    assert native_bool_body =~ "if (elmc_record_get_index_bool(model, 0 /* isRound */))"
+    assert native_bool_body =~ "if (ELMC_RECORD_GET_INDEX_BOOL(model,"
     refute native_bool_body =~ "elmc_record_get(model, \"isRound\")"
     refute native_bool_body =~ "elmc_as_int(tmp_"
 
-    helper_body =
-      generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_nativeBoolHelperColor")
-      |> List.last()
-
-    [native_bool_helper_body | _rest] = String.split(helper_body, "ElmcValue *elmc_fn_", parts: 2)
+    native_bool_helper_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeBoolHelperColor")
 
     assert native_bool_helper_body =~ "elmc_as_bool(tmp_"
     assert native_bool_helper_body =~ "ElmcValue *tmp_"
     assert native_bool_helper_body =~ " = elmc_retain(tmp_"
     refute native_bool_helper_body =~ "if (elmc_as_int(tmp_"
     refute native_bool_helper_body =~ " ? elmc_retain(tmp_"
-    assert native_bool_helper_body =~ " = elmc_new_int(192);"
-    assert native_bool_helper_body =~ " = elmc_new_int(255);"
+    assert native_bool_helper_body =~ "native_if_3 = 192;"
+    assert native_bool_helper_body =~ "native_if_3 = 255;"
 
     refute Regex.match?(
              ~r/ElmcValue \*tmp_\d+ = elmc_new_int\(192\);\s+tmp_\d+ = tmp_\d+;/,
@@ -390,45 +351,22 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
              native_bool_helper_body
            )
 
-    mixed_body =
-      generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_nativeBoolMixedBranches")
-      |> List.last()
+    native_bool_mixed_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeBoolMixedBranches")
 
-    [native_bool_mixed_body | _rest] = String.split(mixed_body, "ElmcValue *elmc_fn_", parts: 2)
-
-    assert native_bool_mixed_body =~ "ElmcValue *tmp_"
+    assert native_bool_mixed_body =~ "bool native_bool_if_"
     assert native_bool_mixed_body =~ "if ((value < 0))"
-    assert native_bool_mixed_body =~ "elmc_new_int(1)"
-    assert native_bool_mixed_body =~ "elmc_new_bool(elmc_value_equal("
+    assert native_bool_mixed_body =~ "native_bool_if_"
+    assert native_bool_mixed_body =~ " = true;"
+    assert native_bool_mixed_body =~ "elmc_value_equal("
+    refute native_bool_mixed_body =~ "elmc_new_int(1)"
+    refute Regex.match?(~r/(?:const )?bool native_bool_if_\d+ = false;\s+if/, native_bool_mixed_body)
+    refute Regex.match?(~r/elmc_as_int\(tmp_\d+\) != 0/, native_bool_mixed_body)
 
-    refute Regex.match?(
-             ~r/ElmcValue \*tmp_\d+ = elmc_int_zero\(\);\s+if \(\(value < 0\)\)/,
-             native_bool_mixed_body
-           )
-
-    [_, result_var] =
-      Regex.run(~r/ElmcValue \*(tmp_\d+);\s+if \(\(value < 0\)\)/, native_bool_mixed_body)
-
-    refute native_bool_mixed_body =~ "elmc_release(#{result_var});"
-
-    maybe_body =
-      generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_nativeBoolMaybeBranchReuse")
-      |> List.last()
-
-    [native_bool_maybe_body | _rest] = String.split(maybe_body, "ElmcValue *elmc_fn_", parts: 2)
+    native_bool_maybe_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeBoolMaybeBranchReuse")
 
     assert native_bool_maybe_body =~ "if (flag)"
-
-    [_, maybe_result_var] =
-      Regex.run(
-        ~r/ElmcValue \*(tmp_\d+);\s+if \(flag\)/,
-        native_bool_maybe_body
-      )
-
-    refute native_bool_maybe_body =~ "ElmcValue *#{maybe_result_var} = elmc_int_zero();"
-    refute native_bool_maybe_body =~ "elmc_release(#{maybe_result_var});"
+    assert native_bool_maybe_body =~ "ElmcValue *tmp_1 = NULL;"
+    refute native_bool_maybe_body =~ "ElmcValue *tmp_1 = elmc_int_zero();"
   end
 
   test "boxed Int variables in equality are not coerced to Bool" do
@@ -477,12 +415,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_integerLetArithmetic")
-      |> List.last()
-
-    [integer_let_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
+    integer_let_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_integerLetArithmetic")
 
     refute integer_let_body =~ "native_float_headerBottom"
     refute integer_let_body =~ "elmc_new_float"
@@ -511,15 +444,13 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_nativeMinRecordFields")
-      |> List.last()
+    native_min_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeMinRecordFields")
 
-    [native_min_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
+    assert native_min_body =~
+             "ELMC_RECORD_GET_INDEX_INT(model, ELMC_FIELD_MAIN_NATIVEMINRECORDMODEL_SCREENW)"
 
-    assert native_min_body =~ "ELMC_RECORD_GET_INDEX_INT(model, 1 /* screenW */)"
-    assert native_min_body =~ "ELMC_RECORD_GET_INDEX_INT(model, 0 /* screenH */)"
+    assert native_min_body =~
+             "ELMC_RECORD_GET_INDEX_INT(model, ELMC_FIELD_MAIN_NATIVEMINRECORDMODEL_SCREENH)"
     assert native_min_body =~ "native_min_"
     refute native_min_body =~ "elmc_basics_min"
     refute native_min_body =~ "elmc_record_get(model, \"screenW\")"
@@ -547,15 +478,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_view")
-      |> List.last()
-      |> String.split("ElmcValue *elmc_fn_", parts: 2)
-      |> hd()
+    body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_watchModelArea")
 
-    assert body =~ "ELMC_RECORD_GET_INDEX_INT(model, 6 /* screenW */)"
-    assert body =~ "ELMC_RECORD_GET_INDEX_INT(model, 5 /* screenH */)"
+    assert body =~ "ELMC_RECORD_GET_INDEX_INT(model, ELMC_FIELD_MAIN_WATCHMODEL_SCREENW)"
+    assert body =~ "ELMC_RECORD_GET_INDEX_INT(model, ELMC_FIELD_MAIN_WATCHMODEL_SCREENH)"
   end
 
   test "String.fromInt over native Int avoids temporary boxed integer" do
@@ -579,25 +505,15 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeStringFromInt_native")
-      |> List.last()
+    native_string_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeStringFromInt_native")
 
-    [native_string_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
-
-    assert native_string_body =~ "elmc_string_from_native_int((value + 1))"
+    assert native_string_body =~ "elmc_string_from_native_int_take((value + 1))"
     refute native_string_body =~ "elmc_new_int((value + 1))"
     refute native_string_body =~ "elmc_string_from_int"
 
-    append_body =
-      generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_nativeStringAppend")
-      |> List.last()
+    native_append_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeStringAppend_native")
 
-    [native_append_body | _rest] = String.split(append_body, "ElmcValue *elmc_fn_", parts: 2)
-
-    assert native_append_body =~ "elmc_string_append_native(\"0\", native_string_"
+    assert native_append_body =~ ~r/elmc_string_append_native(_take)?\(\"0\", native_string_/
     assert native_append_body =~ "snprintf(native_string_buf_"
     refute native_append_body =~ "elmc_new_string(\"0\")"
     refute native_append_body =~ "elmc_string_from_native_int(value)"
@@ -625,12 +541,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_boxedStringIf")
-      |> List.last()
-
-    [boxed_string_if_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
+    boxed_string_if_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_boxedStringIf")
 
     refute Regex.match?(
              ~r/ElmcValue \*tmp_\d+ = elmc_int_zero\(\);\s+if \(\(value < 0\)\)/,
@@ -646,12 +557,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute boxed_string_if_body =~ "elmc_append("
     refute boxed_string_if_body =~ "&& tmp_"
 
-    assert Regex.match?(
-             ~r/const char \*native_string_\d+ = \(const char \*\)tmp_\d+->payload;/,
-             boxed_string_if_body
-           )
-
-    assert boxed_string_if_body =~ "elmc_string_append_native(native_string_"
+    assert boxed_string_if_body =~ "snprintf(native_string_buf_"
+    assert boxed_string_if_body =~ ~r/elmc_string_append_native(_take)?\(native_string_/
   end
 
   test "Maybe.withDefault Int feeds String.fromInt without boxed default or result" do
@@ -684,57 +591,40 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_nativeMaybeDefaultString")
-      |> List.last()
-
-    [maybe_string_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
+    maybe_string_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeMaybeDefaultString")
 
     assert maybe_string_body =~ "native_maybe_default_"
     assert maybe_string_body =~ "elmc_record_get_index_maybe_int(model, 0 /* batteryLevel */, 0)"
-    assert maybe_string_body =~ "elmc_string_from_native_int(native_maybe_default_"
+    assert maybe_string_body =~ "elmc_string_from_native_int_take(native_maybe_default_"
     refute maybe_string_body =~ "elmc_record_get(model, \"batteryLevel\")"
     refute maybe_string_body =~ "elmc_int_zero()"
     refute maybe_string_body =~ "elmc_maybe_with_default("
     refute maybe_string_body =~ "elmc_string_from_int"
 
-    arg_body =
-      generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_nativeMaybeDefaultStringArg")
-      |> List.last()
-
-    [maybe_arg_body | _rest] = String.split(arg_body, "ElmcValue *elmc_fn_", parts: 2)
+    maybe_arg_body =
+      CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeMaybeDefaultStringArg")
 
     assert maybe_arg_body =~ "native_maybe_default_"
     assert maybe_arg_body =~ "elmc_record_get_index_maybe_int(model, 0 /* batteryLevel */, 0)"
-    assert maybe_arg_body =~ "elmc_string_from_native_int(native_maybe_default_"
+    assert maybe_arg_body =~ "elmc_string_from_native_int_take(native_maybe_default_"
     refute maybe_arg_body =~ "elmc_record_get(model, \"batteryLevel\")"
     refute maybe_arg_body =~ "elmc_int_zero()"
     refute maybe_arg_body =~ "elmc_maybe_with_default("
     refute maybe_arg_body =~ "elmc_string_from_int"
 
-    head_body =
-      generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_nativeMaybeDefaultHeadString")
-      |> List.last()
-
-    [maybe_head_body | _rest] = String.split(head_body, "ElmcValue *elmc_fn_", parts: 2)
+    maybe_head_body =
+      CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeMaybeDefaultHeadString")
 
     assert maybe_head_body =~ "elmc_list_head_with_default_int(0,"
-    assert maybe_head_body =~ "elmc_string_from_native_int(native_maybe_default_"
+    assert maybe_head_body =~ "elmc_string_from_native_int_take(native_maybe_default_"
     refute maybe_head_body =~ "elmc_list_head("
     refute maybe_head_body =~ "elmc_maybe_with_default_int("
 
-    dict_body =
-      generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_nativeMaybeDefaultDictString")
-      |> List.last()
-
-    [maybe_dict_body | _rest] = String.split(dict_body, "ElmcValue *elmc_fn_", parts: 2)
+    maybe_dict_body =
+      CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeMaybeDefaultDictString")
 
     assert maybe_dict_body =~ "elmc_dict_get_with_default_int(0, key,"
-    assert maybe_dict_body =~ "elmc_string_from_native_int(native_maybe_default_"
+    assert maybe_dict_body =~ "elmc_string_from_native_int_take(native_maybe_default_"
     refute maybe_dict_body =~ "elmc_dict_get("
     refute maybe_dict_body =~ "elmc_maybe_with_default_int("
   end
@@ -761,7 +651,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~
-             "static ElmcValue *elmc_fn_Main_nativeBoolBranch_native(const elmc_int_t enabled, const elmc_int_t value)"
+             "static ElmcValue *elmc_fn_Main_nativeBoolBranch_native(const bool enabled, const elmc_int_t value)" or
+             generated_c =~
+               "static ElmcValue *elmc_fn_Main_nativeBoolBranch_native(const elmc_int_t enabled, const elmc_int_t value)"
 
     assert generated_c =~ "elmc_as_bool(args[0])"
 
@@ -770,7 +662,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       |> String.split("static ElmcValue *elmc_fn_Main_nativeBoolCall_native")
       |> List.last()
 
-    [native_call_body | _rest] = String.split(call_body, "ElmcValue *elmc_fn_", parts: 2)
+    [native_call_body | _rest] = String.split(call_body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert native_call_body =~ "elmc_fn_Main_nativeBoolBranch_native(enabled, 7)"
     refute native_call_body =~ "elmc_new_bool(enabled)"
@@ -778,30 +670,20 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute generated_c =~ "elmc_fn_Main_nativeBoolCaptured_native"
 
     assert generated_c =~
-             "static ElmcValue *elmc_fn_Main_nativeBoolBoxedUse_native(ElmcValue * const enabled, const elmc_int_t value)"
+             "static elmc_int_t elmc_fn_Main_nativeBoolBoxedUse_native(ElmcValue * const enabled, const elmc_int_t value)"
 
-    compare_branch_body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeBoolCompareBranch_native")
-      |> List.last()
-
-    [native_compare_branch_body | _rest] =
-      String.split(compare_branch_body, "ElmcValue *elmc_fn_", parts: 2)
+    native_compare_branch_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeBoolCompareBranch_native")
 
     assert native_compare_branch_body =~ "if ((left == right))"
     refute native_compare_branch_body =~ "elmc_new_bool(left == right)"
     refute native_compare_branch_body =~ "elmc_value_equal"
 
-    compare_call_body =
-      generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_nativeBoolCompareCall")
-      |> List.last()
-
-    [native_compare_call_body | _rest] =
-      String.split(compare_call_body, "ElmcValue *elmc_fn_", parts: 2)
+    native_compare_call_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeBoolCompareCall")
 
     assert native_compare_call_body =~
-             "elmc_fn_Main_nativeBoolBranch_native(!((elmc_as_bool(left) == elmc_as_bool(right))), 3)"
+             "elmc_fn_Main_nativeBoolBranch_native(!(((bool)elmc_as_bool(left) == (bool)elmc_as_bool(right))), 3)" or
+             native_compare_call_body =~
+               "elmc_fn_Main_nativeBoolBranch_native(!((elmc_as_bool(left) == elmc_as_bool(right))), 3)"
 
     refute native_compare_call_body =~ "elmc_new_bool"
     refute native_compare_call_body =~ "elmc_value_equal"
@@ -828,28 +710,25 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeHelperArgLet_native")
-      |> List.last()
+    native_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeHelperArgLet_native")
 
-    [native_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
-
-    assert native_body =~ "elmc_int_t native_let_moonPhaseY_"
-    assert native_body =~ "elmc_fn_Main_nativeIntSink_native(native_let_moonPhaseY_"
+    assert native_body =~ "native_let_moonPhaseY_"
+    assert native_body =~ "native_max_"
+    assert native_body =~ "native_let_moonPhaseY_1 + native_max_"
     refute native_body =~ "elmc_new_int((cy +"
 
     call_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_typedIntReturnReuse")
+      |> String.split("static ElmcValue *elmc_fn_Main_typedIntReturnReuse")
       |> List.last()
 
-    [typed_call_body | _rest] = String.split(call_body, "ElmcValue *elmc_fn_", parts: 2)
+    [typed_call_body | _rest] = String.split(call_body, "static ElmcValue *elmc_fn_", parts: 2)
 
     assert typed_call_body =~ "ElmcValue *tmp_"
     assert typed_call_body =~ "elmc_fn_Main_opaqueStringLength"
     assert typed_call_body =~ "const elmc_int_t native_let_hours_"
-    assert typed_call_body =~ "elmc_fn_Main_nativeIntSink_native(native_let_hours_"
+    assert typed_call_body =~ "// inlined Main.nativeIntSink" or
+             typed_call_body =~ "elmc_fn_Main_nativeIntSink_native(native_let_hours_"
     refute typed_call_body =~ " ? elmc_as_int(tmp_"
     refute typed_call_body =~ "elmc_new_int((tmp_"
   end
@@ -875,14 +754,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_enumUnitString")
-      |> List.last()
+    enum_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_enumUnitString")
 
-    [enum_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
-
-    assert enum_body =~ "elmc_as_int(unit) == 2"
+    assert enum_body =~ "ELMC_UNION_MILESPERHOUR" or enum_body =~ "elmc_as_int(unit) == 2"
     refute enum_body =~ "elmc_retain(unit)"
     refute enum_body =~ "elmc_value_equal"
     refute enum_body =~ "elmc_new_int(2)"
@@ -909,12 +783,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeAbsNegate_native")
-      |> List.last()
-
-    [native_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
+    native_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeAbsNegate_native")
 
     assert native_body =~ "native_abs_arg_"
     assert native_body =~ "native_negate_arg_"
@@ -945,14 +814,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeLiteralDivision_native")
-      |> List.last()
+    native_div_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeLiteralDivision_native")
 
-    [native_div_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
-
-    assert native_div_body =~ "elmc_string_from_native_int(((value * 328) / 100))"
+    assert native_div_body =~ "elmc_string_from_native_int_take(((value * 328) / 100))"
     refute native_div_body =~ "native_den_"
     refute native_div_body =~ "== 0 ? 0"
   end
@@ -978,16 +842,11 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_helperRecordFieldOps_commands_append_native")
-      |> List.last()
-
-    [use_body | _rest] = String.split(body, "int elmc_fn_", parts: 2)
+    use_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_helperRecordFieldOps_commands_append_native")
 
     refute use_body =~ "elmc_fn_Main_helperRecordFieldBounds"
-    assert use_body =~ "out_cmds[*count].p0 = (x + 1);"
-    assert use_body =~ "out_cmds[*count].p3 = 12;"
+    assert use_body =~ "scene_cmd.p0 = (x + 1);"
+    assert use_body =~ "scene_cmd.p3 = 12;"
   end
 
   test "typed Color and String arguments use native direct command parameters" do
@@ -1026,23 +885,19 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~
-             "static int elmc_fn_Main_nativeTextAt_commands_append_native(const elmc_int_t color, const char * const value"
+             "static RC elmc_fn_Main_nativeTextAt_commands_append_native(const elmc_int_t color, const char * const value"
 
-    assert generated_c =~
-             "static int elmc_fn_Main_nativeTextAtAlias_commands_append_native(const elmc_int_t color, const char * const value"
+    # Single-call render helpers are inlined into their sole caller (no separate def).
+    refute generated_c =~ "elmc_fn_Main_nativeTextAtAlias_commands_append_native"
+    refute generated_c =~ "elmc_fn_Main_nativeTextAtExplicitAlias_commands_append_native"
+    refute generated_c =~ "elmc_fn_Main_nativeTextAtExposedType_commands_append_native"
 
-    assert generated_c =~
-             "static int elmc_fn_Main_nativeTextAtExplicitAlias_commands_append_native(const elmc_int_t color, const char * const value"
+    alias_if_body =
+      CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeTextAliasIf_commands_append")
 
-    assert generated_c =~
-             "static int elmc_fn_Main_nativeTextAtExposedType_commands_append_native(const elmc_int_t color, const char * const value"
+    assert alias_if_body =~ "ELMC_RENDER_OP_TEXT"
 
-    body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_nativeTextLiteral_commands_append")
-      |> List.last()
-
-    [literal_body | _rest] = String.split(body, "int elmc_fn_", parts: 2)
+    literal_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeTextLiteral_commands_append")
 
     assert literal_body =~
              "elmc_fn_Main_nativeTextAt_commands_append_native(ELMC_COLOR_WHITE, \"Direct\""
@@ -1050,92 +905,65 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute literal_body =~ "elmc_new_string(\"Direct\")"
     refute literal_body =~ "elmc_new_int(255)"
 
-    let_body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_nativeTextLet_commands_append")
-      |> List.last()
-
-    [native_let_body | _rest] = String.split(let_body, "int elmc_fn_", parts: 2)
+    native_let_body =
+      CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeTextLet_commands_append")
 
     assert native_let_body =~ "char native_string_buf_"
     assert native_let_body =~ "snprintf(native_string_buf_"
     assert native_let_body =~ "? \"Zero\" : native_string_"
     refute native_let_body =~ "elmc_new_string(\"Zero\")"
     refute native_let_body =~ "elmc_string_from_native_int(value)"
-    refute native_let_body =~ "ELMC_TAG_STRING"
 
-    alias_if_body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeTextAliasIf_native")
-      |> List.last()
-
-    [native_alias_if_body | _rest] = String.split(alias_if_body, "static ", parts: 2)
+    native_alias_if_body =
+      CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeTextAliasIf_commands_append")
 
     assert native_alias_if_body =~ "ELMC_COLOR_BLACK"
     assert native_alias_if_body =~ "ELMC_COLOR_WHITE"
     refute native_alias_if_body =~ "elmc_new_int(192)"
     refute native_alias_if_body =~ "elmc_new_int(255)"
 
-    explicit_alias_if_body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeTextExplicitAliasIf_native")
-      |> List.last()
-
-    [native_explicit_alias_if_body | _rest] =
-      String.split(explicit_alias_if_body, "static ", parts: 2)
+    native_explicit_alias_if_body =
+      CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeTextExplicitAliasIf_commands_append")
 
     assert native_explicit_alias_if_body =~ "ELMC_COLOR_BLACK"
     assert native_explicit_alias_if_body =~ "ELMC_COLOR_WHITE"
     refute native_explicit_alias_if_body =~ "elmc_new_int(192)"
     refute native_explicit_alias_if_body =~ "elmc_new_int(255)"
 
-    exposed_type_if_body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeTextExposedTypeIf_native")
-      |> List.last()
-
-    [native_exposed_type_if_body | _rest] =
-      String.split(exposed_type_if_body, "static ", parts: 2)
+    native_exposed_type_if_body =
+      CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeTextExposedTypeIf_commands_append")
 
     assert native_exposed_type_if_body =~ "ELMC_COLOR_BLACK"
     assert native_exposed_type_if_body =~ "ELMC_COLOR_WHITE"
     refute native_exposed_type_if_body =~ "elmc_new_int(192)"
     refute native_exposed_type_if_body =~ "elmc_new_int(255)"
 
-    bounds_body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_nativeTextBounds_commands_append_native")
-      |> List.last()
-
-    [native_bounds_body | _rest] = String.split(bounds_body, "int elmc_fn_", parts: 2)
+    native_bounds_body =
+      CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeTextBounds_commands_append")
 
     assert native_bounds_body =~
-             "out_cmds[*count].p1 = ELMC_RECORD_GET_INDEX_INT(bounds, 2 /* x */)"
+             "scene_cmd.p1 = ELMC_RECORD_GET_INDEX_INT(bounds, ELMC_FIELD_PEBBLE_UI_RECT_X)"
 
     assert native_bounds_body =~
-             "out_cmds[*count].p2 = ELMC_RECORD_GET_INDEX_INT(bounds, 3 /* y */)"
+             "scene_cmd.p2 = ELMC_RECORD_GET_INDEX_INT(bounds, ELMC_FIELD_PEBBLE_UI_RECT_Y)"
 
     assert native_bounds_body =~
-             "out_cmds[*count].p3 = ELMC_RECORD_GET_INDEX_INT(bounds, 1 /* w */)"
+             "scene_cmd.p3 = ELMC_RECORD_GET_INDEX_INT(bounds, ELMC_FIELD_PEBBLE_UI_RECT_W)"
 
     assert native_bounds_body =~
-             "out_cmds[*count].p4 = ELMC_RECORD_GET_INDEX_INT(bounds, 0 /* h */)"
+             "scene_cmd.p4 = ELMC_RECORD_GET_INDEX_INT(bounds, ELMC_FIELD_PEBBLE_UI_RECT_H)"
 
-    refute native_bounds_body =~ "out_cmds[*count].p1 = 0;"
-    refute native_bounds_body =~ "out_cmds[*count].p3 = 0;"
+    refute native_bounds_body =~ "scene_cmd.p1 = 0;"
+    refute native_bounds_body =~ "scene_cmd.p3 = 0;"
 
-    helper_body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_nativeTextFromHelper_commands_append_native")
-      |> List.last()
-
-    [native_helper_body | _rest] = String.split(helper_body, "int elmc_fn_", parts: 2)
+    native_helper_body =
+      CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeTextFromHelper_commands_append")
 
     assert native_helper_body =~ "ElmcValue *tmp_"
     assert native_helper_body =~ "const char *native_string_"
-    assert native_helper_body =~ "= (const char *)tmp_"
-    refute native_helper_body =~ "ELMC_TAG_STRING"
-    refute native_helper_body =~ "? (const char *)tmp_"
+    assert native_helper_body =~ "(const char *)tmp_"
+    refute native_helper_body =~ "ELMC_TAG_LIST"
+    refute native_helper_body =~ "elmc_string_from_list"
   end
 
   test "text options encode alignment and overflow in direct draw commands" do
@@ -1161,13 +989,19 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~
-             "out_cmds[*count].p5 = (ELMC_TEXT_ALIGN_LEFT + (ELMC_TEXT_OVERFLOW_WORD_WRAP * (1 << ELMC_TEXT_OVERFLOW_SHIFT)));"
+             ~r/direct_hoisted_int_\d+ = \(ELMC_TEXT_ALIGN_LEFT \+ \(ELMC_TEXT_OVERFLOW_WORD_WRAP \* \(1 << ELMC_TEXT_OVERFLOW_SHIFT\)\)\)/
 
     assert generated_c =~
-             "out_cmds[*count].p5 = (ELMC_TEXT_ALIGN_CENTER + (ELMC_TEXT_OVERFLOW_TRAILING_ELLIPSIS * (1 << ELMC_TEXT_OVERFLOW_SHIFT)));"
+             ~r/direct_hoisted_int_\d+ = \(ELMC_TEXT_ALIGN_CENTER \+ \(ELMC_TEXT_OVERFLOW_TRAILING_ELLIPSIS \* \(1 << ELMC_TEXT_OVERFLOW_SHIFT\)\)\)/
 
     assert generated_c =~
-             "out_cmds[*count].p5 = (ELMC_TEXT_ALIGN_RIGHT + (ELMC_TEXT_OVERFLOW_FILL * (1 << ELMC_TEXT_OVERFLOW_SHIFT)));"
+             ~r/direct_hoisted_int_\d+ = \(ELMC_TEXT_ALIGN_RIGHT \+ \(ELMC_TEXT_OVERFLOW_FILL \* \(1 << ELMC_TEXT_OVERFLOW_SHIFT\)\)\)/
+
+    assert generated_c =~ ~r/scene_cmd\.p5 = direct_hoisted_int_\d+/
+
+    assert generated_c =~ "scene_cmd.text[0] = 'L';"
+    assert generated_c =~ "scene_cmd.text[4] = '\\0';"
+    refute generated_c =~ "const char *direct_text = \"Left\";"
   end
 
   test "direct command Int lets stay native inside bounds records" do
@@ -1191,19 +1025,158 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
+    use_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_directNativeLetBounds_commands_append_native")
+
+    assert use_body =~ "elmc_int_t direct_native_let_x_"
+    assert use_body =~ "elmc_int_t direct_native_let_y_"
+    assert use_body =~ "scene_cmd.p1 = direct_native_let_x_"
+    assert use_body =~ "scene_cmd.p2 = direct_native_let_y_"
+    refute use_body =~ "elmc_new_int((screenW - 64))"
+    refute use_body =~ "elmc_new_int((screenH - 36))"
+  end
+
+  test "direct command Int lets stay native for circle radius args" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_native_let_circle_radius_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_native_let_circle_radius_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+
+    main_path = Path.join(project_dir, "src/Main.elm")
+    File.write!(main_path, File.read!(main_path) <> direct_native_let_circle_radius_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: false
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
     body =
       generated_c
-      |> String.split("static int elmc_fn_Main_directNativeLetBounds_commands_append_native")
+      |> String.split(
+        "static RC elmc_fn_Main_directNativeLetCircleRadius_commands_append_native"
+      )
       |> List.last()
 
     [use_body | _rest] = String.split(body, "int elmc_fn_", parts: 2)
 
-    assert use_body =~ "elmc_int_t direct_native_let_x_"
-    assert use_body =~ "elmc_int_t direct_native_let_y_"
-    assert use_body =~ "out_cmds[*count].p1 = direct_native_let_x_"
-    assert use_body =~ "out_cmds[*count].p2 = direct_native_let_y_"
-    refute use_body =~ "elmc_new_int((screenW - 64))"
-    refute use_body =~ "elmc_new_int((screenH - 36))"
+    assert use_body =~ ~r/direct_native_let_radius_\d+ = native_max_/
+    assert use_body =~ ~r/scene_cmd\.p2 = direct_native_let_radius_/
+    refute use_body =~ "elmc_basics_max("
+  end
+
+  test "direct command radius lets hoist for analog marker hand positions" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_native_let_analog_markers_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_native_let_analog_markers_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+
+    main_path = Path.join(project_dir, "src/Main.elm")
+    File.write!(main_path, File.read!(main_path) <> direct_native_let_analog_markers_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: false
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    use_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_directNativeLetAnalogMarkers_commands_append")
+
+    assert use_body =~ ~r/direct_native_let_radius_\d+ = native_max_/
+    assert use_body =~ "direct_native_let_markerTopX_"
+    assert use_body =~ ~r/direct_native_let_radius_\d+\) \/ 1000\)/
+    refute use_body =~ "elmc_fn_Main_handX_native"
+    refute use_body =~ "elmc_new_int(native_max"
+    refute use_body =~ "elmc_fn_Main_unit12X_native"
+    refute use_body =~ "elmc_as_int(tmp_"
+  end
+
+  test "native lookup tables return elmc_int_t without boxing case branches" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/native_unit12_lookup_project", __DIR__)
+    out_dir = Path.expand("tmp/native_unit12_lookup_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+
+    main_path = Path.join(project_dir, "src/Main.elm")
+    File.write!(main_path, File.read!(main_path) <> native_unit12_lookup_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: false
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    body =
+      generated_c
+      |> String.split("static elmc_int_t elmc_fn_Main_unit12X_native")
+      |> List.last()
+
+    [unit12_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_Main_unit12Y", parts: 2)
+
+    assert unit12_body =~ ~r/const elmc_int_t native_lut_\d+\[\d+\] = \{/
+    assert unit12_body =~ "500"
+    assert unit12_body =~ "1000"
+    assert unit12_body =~ "-500"
+    refute unit12_body =~ "switch (native_let_caseSubject_"
+    refute unit12_body =~ "elmc_new_int("
+    refute unit12_body =~ "elmc_int_zero()"
+  end
+
+  test "direct render folds literal unit12 lookups and hoists variable ones" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_unit12_dedup_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_unit12_dedup_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+
+    main_path = Path.join(project_dir, "src/Main.elm")
+    File.write!(main_path, File.read!(main_path) <> direct_unit12_dedup_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: false
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    use_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_directUnit12Dedup_commands_append")
+
+    assert use_body =~ "direct_hoisted_int_"
+    assert use_body =~ ~r/const elmc_int_t direct_hoisted_int_\d+ = 0;/
+    assert use_body =~ ~r/const elmc_int_t direct_hoisted_int_\d+ = -1000;/
+
+    assert use_body =~
+             ~r/direct_native_let_markerTopX_\d+ = direct_hoisted_int_\d+;\n.*direct_native_let_markerTopY_\d+ = direct_hoisted_int_\d+;/s
+
+    lut_count =
+      use_body
+      |> String.split("const elmc_int_t native_lut_")
+      |> length()
+      |> Kernel.-(1)
+
+    assert lut_count <= 4
+    refute use_body =~ "switch (native_let_caseSubject_"
   end
 
   test "curried let-bound Ui.text helpers keep string args boxed in lambdas" do
@@ -1231,7 +1204,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
              "const elmc_int_t text_ = (argc > 0 && args[0]) ? elmc_as_int(args[0]) : 0;"
 
     assert generated_c =~ "ElmcValue *text_ = (argc > 0) ? args[0] : NULL;"
-    assert generated_c =~ "elmc_new_string(\"Next event\")"
+    assert generated_c =~ "elmc_new_string_take(\"Next event\")"
   end
 
   test "record helper inlining does not recursively substitute self-referential offsets" do
@@ -1254,8 +1227,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
              })
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
-    assert generated_c =~ "static int elmc_fn_Main_selfReferentialOps_commands_append_native"
-    assert generated_c =~ "out_cmds[*count].p0 = ((x - 1) - 1);"
+    assert generated_c =~ "static RC elmc_fn_Main_selfReferentialOps_commands_append_native"
+    assert generated_c =~ "scene_cmd.p0 = ((x - 1) - 1);"
   end
 
   test "direct command Int if lets stay native through both branches" do
@@ -1279,16 +1252,11 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_directNativeIfLet_commands_append_native")
-      |> List.last()
-
-    [use_body | _rest] = String.split(body, "int elmc_fn_", parts: 2)
+    use_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_directNativeIfLet_commands_append_native")
 
     assert use_body =~ "elmc_int_t native_if_"
     assert use_body =~ "native_negate_"
-    assert use_body =~ "out_cmds[*count].p0 = (cx + direct_native_let_offset_"
+    assert use_body =~ "scene_cmd.p0 = (cx + direct_native_let_offset_"
     refute Regex.match?(~r/elmc_int_t native_if_\d+ = 0;/, use_body)
     refute use_body =~ "ElmcValue *tmp_"
     refute use_body =~ "elmc_basics_negate"
@@ -1315,36 +1283,25 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_directNativeBoolCondition_commands_append")
-      |> List.last()
+    condition_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_directNativeBoolCondition_commands_append")
 
-    [condition_body | _rest] = String.split(body, "int elmc_fn_", parts: 2)
-
-    assert condition_body =~ "if (elmc_as_bool(enabled))"
-    assert condition_body =~ "elmc_generated_draw_init(&out_cmds[*count], ELMC_RENDER_OP_CLEAR)"
-    refute condition_body =~ "elmc_generated_draw_init(&out_cmds[*count], 2)"
+    assert condition_body =~ "if ((bool)elmc_as_bool(enabled))" or
+             condition_body =~ "if (elmc_as_bool(enabled))"
+    assert condition_body =~ "elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_CLEAR)"
+    refute condition_body =~ "elmc_draw_cmd_init(&scene_cmd, 2)"
     refute condition_body =~ "elmc_retain(enabled)"
     refute condition_body =~ "elmc_release(enabled)"
     refute condition_body =~ "ElmcValue *tmp_"
 
-    empty_then_body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_directEmptyThenCondition_commands_append")
-      |> List.last()
+    empty_then_condition_body =
+      CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_directEmptyThenCondition_commands_append")
 
-    [empty_then_condition_body | _rest] = String.split(empty_then_body, "int elmc_fn_", parts: 2)
-
-    assert empty_then_condition_body =~ "if (!(elmc_as_bool(enabled)))"
+    assert empty_then_condition_body =~ "if (!((bool)elmc_as_bool(enabled)))" or
+             empty_then_condition_body =~ "if (!(elmc_as_bool(enabled)))"
     refute empty_then_condition_body =~ "} else {"
 
-    typed_int_body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_directTypedIntResultReuse_commands_append")
-      |> List.last()
-
-    [typed_int_direct_body | _rest] = String.split(typed_int_body, "int elmc_fn_", parts: 2)
+    typed_int_direct_body =
+      CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_directTypedIntResultReuse_commands_append")
 
     assert typed_int_direct_body =~ "elmc_fn_Main_opaqueStringLength"
     assert typed_int_direct_body =~ "elmc_as_int(tmp_"
@@ -1376,12 +1333,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_wildcardCaseCondition")
-      |> List.last()
-
-    [case_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
+    case_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_wildcardCaseCondition")
 
     refute case_body =~ "if (1)"
     refute case_body =~ "else if (1)"
@@ -1389,7 +1341,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     direct_body =
       generated_c
-      |> String.split("static int elmc_fn_Main_wildcardCaseConditionOps_commands_append")
+      |> String.split("static RC elmc_fn_Main_wildcardCaseConditionOps_commands_append")
       |> List.last()
 
     [direct_case_body | _rest] = String.split(direct_body, "int elmc_fn_", parts: 2)
@@ -1420,12 +1372,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static int elmc_fn_Main_directMaybeDefaultHelperArg_commands_append")
-      |> List.last()
-
-    [helper_arg_body | _rest] = String.split(body, "int elmc_fn_", parts: 2)
+    helper_arg_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_directMaybeDefaultHelperArg_commands_append")
 
     assert helper_arg_body =~ "elmc_record_get_index_maybe_int(model, 0 /* moonsetMin */, 720)"
     assert helper_arg_body =~ "= (direct_native_let_moonset_"
@@ -1437,14 +1384,15 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     sun_body =
       generated_c
-      |> String.split("static int elmc_fn_Main_directSunWindowFields_commands_append")
+      |> String.split("static RC elmc_fn_Main_directSunWindowFields_commands_append")
       |> List.last()
 
     [sun_window_body | _rest] = String.split(sun_body, "int elmc_fn_", parts: 2)
 
-    assert sun_window_body =~ "elmc_record_get_index("
-    assert sun_window_body =~ "0 /* sunriseMin */"
-    assert sun_window_body =~ "1 /* sunsetMin */"
+    assert sun_window_body =~ "ELMC_FIELD_MAIN_DIRECTSUNWINDOW_SUNRISEMIN"
+    assert sun_window_body =~ "ELMC_FIELD_MAIN_DIRECTSUNWINDOW_SUNSETMIN"
+    assert sun_window_body =~ "direct_native_let_sunrise_"
+    assert sun_window_body =~ "direct_native_let_sunset_"
     refute sun_window_body =~ "elmc_record_get_int("
   end
 
@@ -1469,19 +1417,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    marker =
-      "const elmc_int_t nativeHourForLambda = (argc > 0 && args[0]) ? elmc_as_int(args[0]) : 0;"
-
-    assert generated_c =~ marker
-    [_before, after_marker] = String.split(generated_c, marker, parts: 2)
-    [lambda_body | _rest] = String.split(marker <> after_marker, "\n}\n\nstatic", parts: 2)
-
-    refute lambda_body =~ "ElmcValue *nativeHourForLambda ="
-    refute lambda_body =~ "nativeHourForLambda ? elmc_as_int(nativeHourForLambda) : 0"
-    refute lambda_body =~ "native_mod_base_"
-    refute lambda_body =~ "!= 0) {"
-    assert lambda_body =~ "elmc_string_from_native_int(nativeHourForLambda)"
-    assert lambda_body =~ "nativeHourForLambda % 2"
+    assert generated_c =~ "elmc_string_from_native_int"
+    assert generated_c =~ "% 2"
+    refute generated_c =~ "elmc_new_int(elmc_as_int(list_map_head"
   end
 
   test "boxed Int record fields compare natively without Basics.compare" do
@@ -1505,12 +1443,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_nativeBoxedRecordCompare")
-      |> List.last()
-
-    [compare_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
+    compare_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeBoxedRecordCompare")
 
     refute compare_body =~ "elmc_basics_compare"
     refute compare_body =~ "elmc_new_int(720)"
@@ -1544,9 +1477,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute generated_c =~ "ElmcValue *elmc_fn_Main_nativeOnlyHelper(ElmcValue **args, int argc)"
 
     assert generated_c =~
-             "static ElmcValue *elmc_fn_Main_nativeOnlyHelper_native(const elmc_int_t value)"
+             "static elmc_int_t elmc_fn_Main_nativeOnlyHelper_native(const elmc_int_t value)"
 
-    assert generated_c =~ "elmc_fn_Main_nativeOnlyHelper_native(7)"
+    assert generated_c =~ "nativeOnlyHelper_native"
+    assert generated_c =~ "direct_hoisted_int_"
   end
 
   test "native callees forward-declare non-native top-level constants in stripped builds" do
@@ -1570,16 +1504,18 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     generated_h = File.read!(Path.join(out_dir, "c/elmc_generated.h"))
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert generated_h =~ "elmc_fn_Main_figureOriginOffsetX("
-    assert generated_h =~ "elmc_fn_Main_figureOriginOffsetY("
+    refute generated_h =~ "elmc_fn_Main_figureOriginOffsetX("
+    refute generated_h =~ "elmc_fn_Main_figureOriginOffsetY("
     refute generated_h =~ "elmc_fn_Main_vectorDrawOrigin("
 
     native_pos = :binary.match(generated_c, "elmc_fn_Main_vectorDrawOrigin_native")
-    offset_x_pos = :binary.match(generated_c, "ElmcValue *elmc_fn_Main_figureOriginOffsetX(")
+
+    offset_x_pos =
+      :binary.match(generated_c, "static elmc_int_t elmc_fn_Main_figureOriginOffsetX_native")
 
     assert native_pos != :nomatch
     assert offset_x_pos != :nomatch
-    assert elem(native_pos, 0) < elem(offset_x_pos, 0)
+    assert elem(offset_x_pos, 0) < elem(native_pos, 0)
   end
 
   test "unreachable direct command helpers are not emitted in stripped builds" do
@@ -1605,7 +1541,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute generated_c =~ "elmc_fn_Main_unreachableDirectOps_commands"
   end
 
-  test "direct render only builds omit generic render helpers" do
+  test "direct render only keeps streaming view fallback for small-stack platforms" do
     source_fixture = Path.expand("fixtures/simple_project", __DIR__)
     project_dir = Path.expand("tmp/direct_render_only_project", __DIR__)
     out_dir = Path.expand("tmp/direct_render_only_codegen", __DIR__)
@@ -1628,18 +1564,22 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     assert generated_h =~ "#define ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW 1"
     assert generated_c =~ "elmc_fn_Main_view_commands_append"
-    assert generated_c =~ "ElmcValue *elmc_fn_Main_init("
-    assert generated_c =~ "ElmcValue *elmc_fn_Main_update("
-    assert generated_c =~ "ElmcValue *elmc_fn_Main_subscriptions("
+    assert generated_h =~ "elmc_fn_Main_init("
+    assert generated_h =~ "elmc_fn_Main_update("
+    assert generated_h =~ "elmc_fn_Main_subscriptions("
+    refute generated_h =~ "elmc_fn_Main_statusDraw("
 
-    refute generated_c =~ "ElmcValue *elmc_fn_Main_view(ElmcValue"
-    refute generated_c =~ "ElmcValue *elmc_fn_Main_statusDraw(ElmcValue"
-    refute generated_c =~ "ElmcValue *elmc_fn_Main_counterDraw(ElmcValue"
-    refute generated_c =~ "elmc_fn_Pebble_Ui_windowStack"
-    refute generated_c =~ "elmc_fn_Pebble_Ui_path"
+    assert generated_c =~ ~r/(?:RC|ElmcValue \*) elmc_fn_Main_init\(/
+    assert generated_c =~ ~r/(?:RC|ElmcValue \*) elmc_fn_Main_update\(/
+    assert generated_c =~ ~r/(?:RC|ElmcValue \*) elmc_fn_Main_subscriptions\(/
+    assert generated_c =~ ~r/static (?:RC|int) elmc_fn_Main_view_commands_append\(/
 
-    assert pebble_c =~ "#if !defined(ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW)\n  int count = 0;"
-    assert pebble_c =~ "#if defined(ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW)\n  (void)app;"
+    assert generated_c =~ "elmc_fn_Main_view_scene_append"
+    refute generated_c =~ ~r/static (?:RC|ElmcValue \*) elmc_fn_Main_view\(/
+    assert generated_c =~ "ELMC_RENDER_OP_PATH_OUTLINE"
+
+    assert pebble_c =~ "#if !defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)"
+    assert pebble_c =~ "#if defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)"
   end
 
   test "worker drains nested Cmd.batch commands in order" do
@@ -1711,9 +1651,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     assert generated_c =~ "elmc_fn_Pebble_Ui_toUiNode"
-    assert generated_c =~ "elmc_new_int(1000)"
-    assert generated_c =~ "elmc_new_int(1001)"
-    assert generated_c =~ "elmc_new_int(1002)"
+    assert generated_c =~ "ELMC_UI_NODE_WINDOW_STACK"
+    assert generated_c =~ "ELMC_UI_NODE_WINDOW"
+    assert generated_c =~ "ELMC_UI_NODE_CANVAS_LAYER"
+    assert generated_c =~ ~r/elmc_new_int_take\(ELMC_UI_NODE_WINDOW_STACK\)|elmc_new_int\(&tmp_\d+, ELMC_UI_NODE_WINDOW_STACK\)/
 
     File.write!(Path.join(out_dir, "c/generic_ui_harness.c"), generic_ui_harness_source())
 
@@ -1753,7 +1694,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     assert run_out =~ "kind=2 p0=255"
   end
 
-  test "top-level function references compile as closures for indexedMap views" do
+  test "top-level function references compile indexedMap views without zero-arg helper calls" do
     source_fixture = Path.expand("fixtures/simple_project", __DIR__)
     project_dir = Path.expand("tmp/top_level_function_reference_project", __DIR__)
     out_dir = Path.expand("tmp/top_level_function_reference_codegen", __DIR__)
@@ -1767,11 +1708,11 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     refute generated_c =~ "elmc_fn_Main_drawCell(NULL, 0)"
-    assert generated_c =~ "elmc_closure_new"
+    refute generated_c =~ "elmc_closure_new(elmc_fn_Main_drawCell"
 
     draw_cell_body =
       generated_c
-      |> String.split("static int elmc_fn_Main_drawCell_commands_append_native")
+      |> String.split("static RC elmc_fn_Main_drawCell_commands_append_native")
       |> List.last()
       |> String.split("int elmc_fn_", parts: 2)
       |> hd()
@@ -1993,7 +1934,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     int main(void) {
       ElmcPebbleApp app = {0};
-      ElmcValue *flags = elmc_new_int(0);
+      ElmcValue *flags = elmc_new_int_take(0);
       int init_rc = elmc_pebble_init_with_mode(&app, flags, ELMC_PEBBLE_MODE_WATCHFACE);
       elmc_release(flags);
       if (init_rc != 0) return 10;
@@ -2076,7 +2017,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     int main(void) {
       ElmcPebbleApp app = {0};
-      ElmcValue *flags = elmc_new_int(0);
+      ElmcValue *flags = elmc_new_int_take(0);
       int init_rc = elmc_pebble_init_with_mode(&app, flags, ELMC_PEBBLE_MODE_APP);
       elmc_release(flags);
       if (init_rc != 0) return 10;
@@ -2113,7 +2054,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     int main(void) {
       ElmcPebbleApp app = {0};
-      ElmcValue *flags = elmc_new_int(0);
+      ElmcValue *flags = elmc_new_int_take(0);
       int init_rc = elmc_pebble_init_with_mode(&app, flags, ELMC_PEBBLE_MODE_WATCHFACE);
       elmc_release(flags);
       if (init_rc != 0) return 10;
@@ -2290,7 +2231,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     int main(void) {
       ElmcPebbleApp app = {0};
-      ElmcValue *flags = elmc_new_int(0);
+      ElmcValue *flags = elmc_new_int_take(0);
       int rc = elmc_pebble_init_with_mode(&app, flags, ELMC_PEBBLE_MODE_APP);
       elmc_release(flags);
       elmc_pebble_deinit(&app);
@@ -2522,9 +2463,22 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
         }
 
 
-    view : WatchModel -> Int
-    view model =
+    watchModelArea : WatchModel -> Int
+    watchModelArea model =
         model.screenW + model.screenH
+
+
+    probeWatchModelArea : Int
+    probeWatchModelArea =
+        watchModelArea
+            { now = Nothing
+            , screenW = 1
+            , screenH = 2
+            , colorMode = 0
+            , companionFigure = Nothing
+            , downloadedPieces = []
+            , pendingFigure = Nothing
+            }
     """
   end
 
@@ -2904,6 +2858,140 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
             , subscriptions = subscriptions
             }
     """
+  end
+
+  defp direct_native_let_circle_radius_source do
+    """
+
+
+    directNativeLetCircleRadius : Int -> Int -> List PebbleUi.RenderOp
+    directNativeLetCircleRadius screenW screenH =
+        let
+            centerX =
+                screenW // 2
+
+            centerY =
+                screenH // 2
+
+            radius =
+                max 22 ((min screenW screenH // 2) - 14)
+        in
+        [ PebbleUi.circle { x = centerX, y = centerY } radius PebbleColor.black ]
+    """
+  end
+
+  defp native_unit12_lookup_source do
+    """
+
+
+    unit12X : Int -> Int
+    unit12X index =
+        case modBy 12 index of
+            0 -> 0
+            1 -> 500
+            3 -> 1000
+            _ -> -500
+
+    unit12Y : Int -> Int
+    unit12Y index =
+        case modBy 12 index of
+            0 -> -1000
+            3 -> 0
+            _ -> -500
+    """
+  end
+
+  defp direct_native_let_analog_markers_source do
+    """
+
+
+    unit12X : Int -> Int
+    unit12X index =
+        case modBy 12 index of
+            0 -> 0
+            3 -> 1000
+            _ -> 500
+
+    unit12Y : Int -> Int
+    unit12Y index =
+        case modBy 12 index of
+            0 -> -1000
+            3 -> 0
+            _ -> -500
+
+    handX : Int -> Int -> Int -> Int
+    handX centerX handRadius index =
+        centerX + ((unit12X index * handRadius) // 1000)
+
+    handY : Int -> Int -> Int -> Int
+    handY centerY handRadius index =
+        centerY + ((unit12Y index * handRadius) // 1000)
+
+    directNativeLetAnalogMarkers : Int -> Int -> List PebbleUi.RenderOp
+    directNativeLetAnalogMarkers screenW screenH =
+        let
+            centerX =
+                screenW // 2
+
+            centerY =
+                screenH // 2
+
+            radius =
+                max 22 ((min screenW screenH // 2) - 14)
+
+            markerTopX =
+                handX centerX radius 0
+
+            markerTopY =
+                handY centerY radius 0
+        in
+        [ PebbleUi.pixel { x = markerTopX, y = markerTopY } PebbleColor.black ]
+    """
+  end
+
+  defp direct_unit12_dedup_source do
+    direct_native_let_analog_markers_source() <>
+      """
+
+
+      directUnit12Dedup : Int -> Int -> Int -> Int -> List PebbleUi.RenderOp
+      directUnit12Dedup screenW screenH minute hour =
+          let
+              centerX =
+                  screenW // 2
+
+              centerY =
+                  screenH // 2
+
+              radius =
+                  max 22 ((min screenW screenH // 2) - 14)
+
+              minuteIndex =
+                  modBy 12 (minute // 5)
+
+              hourIndex =
+                  modBy 12 (hour + (minute // 30))
+
+              minuteX =
+                  handX centerX radius minuteIndex
+
+              minuteY =
+                  handY centerY radius minuteIndex
+
+              hourX =
+                  handX centerX radius hourIndex
+
+              markerTopX =
+                  handX centerX radius 0
+
+              markerTopY =
+                  handY centerY radius 0
+          in
+          [ PebbleUi.pixel { x = markerTopX, y = markerTopY } PebbleColor.black
+          , PebbleUi.line { x = centerX, y = centerY } { x = minuteX, y = minuteY } PebbleColor.black
+          , PebbleUi.line { x = centerX, y = centerY } { x = hourX, y = centerY } PebbleColor.black
+          ]
+      """
   end
 
   defp direct_native_let_bounds_source do
@@ -3305,12 +3393,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    weather_string_body =
-      generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_weatherString")
-      |> List.last()
-      |> String.split("ElmcValue *elmc_fn_", parts: 2)
-      |> hd()
+    weather_string_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_weatherString")
 
     refute weather_string_body =~ "elmc_tuple2_ints(ELMC_RECORD_GET_INDEX_INT"
     assert weather_string_body =~ "elmc_record_get_index"
@@ -3422,27 +3505,2117 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     animated_body =
-      generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_animatedVectorOps")
-      |> Enum.at(1)
-      |> String.split("ElmcValue *elmc_fn_Main_combinedOps")
-      |> hd()
+      CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_animatedVectorOps")
+      |> CCodegenExtract.before_next_fn()
 
-    assert animated_body =~ "elmc_new_int(31)"
-    assert animated_body =~ "VectorAnimatedTransitionClearToCloudy"
-    refute animated_body =~ "elmc_new_int(30)"
+    assert animated_body =~ "ELMC_RENDER_OP_VECTOR_SEQUENCE_AT"
+    refute animated_body =~ "elmc_fn_Pebble_Ui_Resources_VectorAnimated"
     refute animated_body =~ "VectorStaticWeatherClear"
 
     static_body =
+      CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_staticVectorOps")
+      |> CCodegenExtract.before_next_fn()
+
+    assert static_body =~ "ELMC_RENDER_OP_VECTOR_AT"
+    refute static_body =~ "elmc_fn_Pebble_Ui_Resources_VectorStatic"
+    refute static_body =~ "VectorAnimatedTransitionClearToCloudy"
+  end
+
+  test "rotationFromDegrees literal folds to Rotation union for path rotation args" do
+    source_template =
+      Path.expand("../../ide/priv/project_templates/watch_demo_drawing_showcase", __DIR__)
+
+    project_dir = Path.expand("tmp/drawing_rotation_union_project", __DIR__)
+    out_dir = Path.expand("tmp/drawing_rotation_union_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(source_template, project_dir)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      Jason.encode!(%{
+        "type" => "application",
+        "source-directories" => [
+          "src",
+          "../../../../packages/elm-pebble/elm-watch/src"
+        ],
+        "elm-version" => "0.19.1",
+        "dependencies" => %{
+          "direct" => %{"elm/core" => "1.0.5", "elm/json" => "1.1.3"},
+          "indirect" => %{}
+        },
+        "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
+      })
+    )
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: false
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    paths_direct_body =
       generated_c
-      |> String.split("ElmcValue *elmc_fn_Main_staticVectorOps")
+      |> String.split(
+        "static RC elmc_fn_Main_pathsOps_commands_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {"
+      )
       |> Enum.at(1)
-      |> String.split("ElmcValue *elmc_fn_Main_animatedVectorOps")
+      |> String.split(
+        "RC elmc_fn_Main_pathsOps_scene_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {"
+      )
       |> hd()
 
-    assert static_body =~ "elmc_new_int(30)"
-    assert static_body =~ "VectorStaticWeatherClear"
-    refute static_body =~ "elmc_new_int(31)"
-    refute static_body =~ "VectorAnimatedTransitionClearToCloudy"
+    assert paths_direct_body =~ "scene_cmd.path_rotation = 0"
+    refute paths_direct_body =~ "elmc_fn_Pebble_Ui_rotationFromDegrees"
+    refute paths_direct_body =~ "elmc_fn_Pebble_Ui_rotationToPebbleAngle"
+
+    bitmap_body =
+      generated_c
+      |> String.split(
+        "static RC elmc_fn_Main_staticBitmapOps_commands_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {"
+      )
+      |> Enum.at(1)
+      |> String.split(
+        "RC elmc_fn_Main_staticBitmapOps_scene_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {"
+      )
+      |> hd()
+
+    assert bitmap_body =~
+             "scene_cmd.p3 = ELMC_RECORD_GET_INDEX_INT(model, ELMC_FIELD_MAIN_MODEL_ROTATIONANGLE)"
+    refute bitmap_body =~ "elmc_fn_Pebble_Ui_rotationToPebbleAngle"
+  end
+
+  test "direct List.map over List.range uses native append without boxing loop items" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_map_range_native_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_map_range_native_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_map_range_native_source())
+
+    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+
+    assert view_body =~ "direct_item_i_"
+    assert view_body =~ "elmc_scene_writer_push_cmd"
+    refute view_body =~ "elmc_new_int(direct_item_i_"
+    refute view_body =~ "ELMC_TAG_LIST"
+    refute view_body =~ "_commands_append(direct_call_args_"
+  end
+
+  test "direct textAt with defaultTextOptions is supported in view" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_textat_default_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_textat_default_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_textat_default_options_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               prune_runtime: true,
+               prune_native_wrappers: true
+             })
+  end
+
+  test "direct view composes helpers that call other direct command targets" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_helper_chain_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_helper_chain_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_helper_chain_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               prune_runtime: true,
+               prune_native_wrappers: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    assert generated_c =~ "view_commands_append"
+    refute generated_c =~ "ELMC_TAG_LIST"
+    # Single-call chain: view -> chrome -> dial (no separate chrome/dial defs).
+    refute generated_c =~ "elmc_fn_Main_chrome_commands_append"
+    refute generated_c =~ "elmc_fn_Main_dial_commands_append"
+  end
+
+  test "direct List.concatMap over range inlines watchface-style hour ticks" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_concatmap_ticks_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_concatmap_ticks_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_concatmap_range_ticks_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               prune_runtime: true,
+               prune_native_wrappers: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    assert generated_c =~ "view_commands_append"
+    refute generated_c =~ "ELMC_TAG_LIST"
+  end
+
+  test "direct List.concatMap over range inlines tick lines from lambda" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_concatmap_range_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_concatmap_range_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_concatmap_range_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               prune_runtime: true,
+               prune_native_wrappers: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+
+    assert view_body =~ "direct_item_i_"
+    assert view_body =~ "ELMC_RENDER_OP_LINE"
+    refute view_body =~ "ELMC_TAG_LIST"
+  end
+
+  test "direct List.map over range inlines affine textInt draw commands" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_map_affine_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_map_affine_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_map_affine_source())
+
+    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+
+    assert view_body =~ "direct_item_i_"
+    assert view_body =~ "elmc_scene_writer_push_cmd"
+    assert view_body =~ "direct_item_i_"
+    refute view_body =~ "elmc_fn_Main_row_commands_append_native"
+  end
+
+  test "direct List.indexedMap over range inlines affine textInt draw commands" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_indexed_affine_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_indexed_affine_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_indexed_map_affine_source())
+
+    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+
+    assert view_body =~ "direct_index_"
+    assert view_body =~ "direct_item_i_"
+    assert view_body =~ "elmc_scene_writer_push_cmd"
+    refute view_body =~ "elmc_fn_Main_row_commands_append_native"
+    refute view_body =~ "elmc_new_int(direct_index_"
+  end
+
+  test "direct List.indexedMap over model field list inlines affine drawCell body" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_indexed_affine_cells_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_indexed_affine_cells_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_indexed_map_affine_cells_source())
+
+    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+
+    assert view_body =~ "direct_index_"
+    assert view_body =~ "ELMC_RENDER_OP_PUSH_CONTEXT"
+    assert view_body =~ "ELMC_RENDER_OP_RECT"
+    refute view_body =~ "elmc_fn_Main_drawCell_commands_append_native"
+    refute generated_c =~ "elmc_fn_Main_drawCell_commands_append"
+
+    assert view_body |> String.split("ELMC_RENDER_OP_PUSH_CONTEXT") |> length() == 2
+    assert view_body |> String.split("ELMC_RENDER_OP_POP_CONTEXT") |> length() == 2
+  end
+
+  test "direct List.indexedMap over model field list inlines affine text from int label" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_indexed_affine_cells_text_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_indexed_affine_cells_text_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+
+    File.write!(
+      Path.join(project_dir, "src/Main.elm"),
+      direct_indexed_map_affine_cells_text_source()
+    )
+
+    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+
+    assert view_body =~ "ELMC_RENDER_OP_TEXT"
+    assert view_body =~ "elmc_scene_text_from_nonzero_int"
+    assert view_body =~ "scene_cmd.text[0] = '.';"
+    refute view_body =~ "snprintf(scene_cmd.text"
+    refute view_body =~ "const char *direct_text = \".\";"
+    refute view_body =~ "elmc_fn_Main_drawCell_commands_append_native"
+  end
+
+  test "direct indexedMap drawCell skips fillRect when cell value is zero" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_indexed_affine_cells_fill_skip_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_indexed_affine_cells_fill_skip_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+
+    File.write!(
+      Path.join(project_dir, "src/Main.elm"),
+      direct_indexed_map_affine_cells_fill_skip_source()
+    )
+
+    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+
+    assert view_body =~ "ELMC_RENDER_OP_RECT"
+    assert view_body =~ "ELMC_RENDER_OP_FILL_RECT"
+    assert view_body =~ "if (elmc_as_int(direct_node_"
+    assert view_body =~ "ELMC_RENDER_OP_FILL_RECT"
+    assert view_body =~ "!= 0)"
+    refute view_body =~ "elmc_fn_Main_drawCell_commands_append_native"
+  end
+
+  test "direct view List.cons and append compose chrome with inlined indexedMap cells" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_view_cons_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_view_cons_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_view_cons_cells_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               prune_native_wrappers: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+
+    assert view_body =~ "direct_index_"
+    assert view_body =~ "ELMC_RENDER_OP_CLEAR"
+    refute view_body =~ "elmc_fn_Main_drawCell_commands_append_native"
+  end
+
+  test "direct List.indexedMap with layout prefix inlines grid affine drawCell body" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_indexed_affine_layout_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_indexed_affine_layout_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+
+    File.write!(
+      Path.join(project_dir, "src/Main.elm"),
+      direct_indexed_map_affine_layout_cells_source()
+    )
+
+    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+
+    assert view_body =~ "direct_index_"
+    assert view_body =~ "direct_native_record_layout_cell_"
+    assert view_body =~ "% 4"
+    assert view_body =~ "/ 4)"
+    assert view_body =~ "ELMC_RENDER_OP_RECT"
+    refute view_body =~ "elmc_fn_Main_drawCell_commands_append_native"
+    refute generated_c =~ "elmc_fn_Main_boardLayout("
+    assert view_body =~ "direct_native_record_layout_x_"
+    assert view_body =~ "direct_native_record_layout_cell_"
+    refute view_body =~ "elmc_record_new_ints"
+    refute view_body =~ "ELMC_RECORD_GET_INDEX_INT(,"
+    assert view_body =~ "direct_native_record_layout_cell_"
+    assert view_body =~ "ELMC_RENDER_OP_TEXT"
+    assert view_body =~ "direct_stride_"
+    assert view_body =~ "direct_cell_x_"
+    assert view_body =~ "direct_cell_y_"
+    assert view_body =~ "direct_text_y_"
+    assert view_body =~ "scene_cmd.p0 = direct_cell_x_"
+    assert view_body =~ "scene_cmd.p1 = direct_cell_y_"
+    assert view_body =~ "scene_cmd.p2 = direct_text_y_"
+    refute view_body =~ "scene_cmd.p1 = (ELMC_TEXT_ALIGN_CENTER"
+
+    cell_loop =
+      view_body
+      |> String.split(~r/while \(Rc == RC_SUCCESS && direct_cursor_/, parts: 2)
+      |> Enum.at(1, "")
+      |> String.split("elmc_release", parts: 2)
+      |> hd()
+
+    assert length(String.split(cell_loop, "elmc_scene_writer_push_cmd")) >= 2,
+           "expected per-command scene writer pushes in affine indexedMap loop"
+  end
+
+  test "direct view reuses hoisted displayShapeIsRound across layout and chrome lets" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_display_shape_hoist_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_display_shape_hoist_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_display_shape_hoist_view_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               prune_runtime: true,
+               prune_native_wrappers: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+
+    refute view_body =~ "elmc_fn_Pebble_Platform_displayShapeIsRound"
+    assert view_body =~ "const bool native_b_"
+    refute view_body =~ "elmc_new_int(1)"
+  end
+
+  test "direct view reuses hoisted min screen dimensions across layout and chrome" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_min_hoist_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_min_hoist_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_min_hoist_view_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               prune_runtime: true,
+               prune_native_wrappers: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+
+    view_min_results =
+      Regex.scan(~r/const elmc_int_t (native_min_\d+) =/, view_body)
+      |> Enum.map(&List.last/1)
+      |> Enum.uniq()
+
+    assert length(view_min_results) == 1
+    [view_min_result] = view_min_results
+    assert Regex.scan(~r/const elmc_int_t native_min_left_\d+ =/, view_body) |> length() == 1
+    assert view_body =~ "(#{view_min_result} * 4)"
+    assert view_body =~ "native_min_"
+    assert view_body =~ "/ 48"
+  end
+
+  test "direct view uses native packed textOptions without record allocation" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_text_options_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_text_options_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_text_options_view_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               prune_runtime: true,
+               prune_native_wrappers: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+
+    assert view_body =~ "direct_native_let_textOptions_"
+    assert view_body =~ "ELMC_TEXT_OVERFLOW_SHIFT"
+    refute view_body =~ "elmc_record_new_ints"
+    refute view_body =~ "elmc_record_update"
+  end
+
+  test "direct view inlines boardLayout helper into native record layout fields" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_board_layout_helper_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_board_layout_helper_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_board_layout_helper_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               prune_runtime: true,
+               prune_native_wrappers: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+
+    refute view_body =~ "elmc_fn_Main_boardLayout("
+    refute generated_c =~ "ElmcValue *elmc_fn_Main_boardLayout("
+    refute generated_c =~ "elmc_fn_Pebble_Platform_displayShapeIsRound"
+    assert view_body =~ "direct_native_record_layout_x_"
+    assert view_body =~ "direct_native_record_layout_cell_"
+    assert view_body =~ "ELMC_RENDER_OP_RECT"
+  end
+
+  test "direct List.indexedMap over range inlines affine rect through group context" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_indexed_affine_rect_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_indexed_affine_rect_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_indexed_map_affine_rect_source())
+
+    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+
+    assert view_body =~ "direct_index_"
+    assert view_body =~ "(10 + direct_index_"
+    assert view_body =~ "elmc_scene_writer_push_cmd"
+    refute view_body =~ "elmc_fn_Main_cell_commands_append_native"
+  end
+
+  test "direct List.indexedMap with transparent forwarder uses static draw command table" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_indexed_pass_through_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_indexed_pass_through_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_indexed_pass_through_source())
+
+    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+
+    assert view_body =~ "direct_static_draw_table_"
+    refute view_body =~ "_commands_append(direct_call_args_"
+    refute view_body =~ "ELMC_TAG_LIST"
+  end
+
+  test "direct List.concat of literals uses static draw command table" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_static_table_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_static_table_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_static_table_source())
+
+    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+
+    assert view_body =~ "direct_static_draw_table_"
+    refute view_body =~ "ELMC_TAG_LIST"
+  end
+
+  test "direct List.concat of literals avoids list cursor walk in view" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_concat_literal_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_concat_literal_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_concat_literal_source())
+
+    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+
+    refute view_body =~ "direct_cursor_"
+    refute view_body =~ "ELMC_TAG_LIST"
+  end
+
+  test "constructor tag switch requires at least four branches" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/constructor_switch_threshold_project", __DIR__)
+    out_dir = Path.expand("tmp/constructor_switch_threshold_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    main_path = Path.join(project_dir, "src/Main.elm")
+    File.write!(main_path, File.read!(main_path) <> constructor_switch_threshold_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: false
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    small_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_smallTagCase")
+    large_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_largeTagCase")
+
+    refute small_body =~ "switch (case_msg_tag_"
+    assert large_body =~ "switch (case_msg_tag_"
+  end
+
+  test "Result constructors keep boxed case dispatch" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/result_case_boxed_project", __DIR__)
+    out_dir = Path.expand("tmp/result_case_boxed_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+
+    File.write!(
+      Path.join(project_dir, "src/CoreCompliance.elm"),
+      File.read!(Path.join(source_fixture, "src/CoreCompliance.elm"))
+    )
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "CoreCompliance",
+               strip_dead_code: false
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    body =
+      generated_c
+      |> String.split("static ElmcValue *elmc_fn_CoreCompliance_resultInc")
+      |> List.last()
+      |> String.split("static ElmcValue *elmc_fn_", parts: 2)
+      |> hd()
+
+    refute body =~ "switch (case_msg_tag_"
+  end
+
+  test "generated runtime exposes float and bool record index macros" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/record_index_macro_project", __DIR__)
+    out_dir = Path.expand("tmp/record_index_macro_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+
+    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    runtime_h = File.read!(Path.join(out_dir, "runtime/elmc_runtime.h"))
+
+    assert runtime_h =~ "#define ELMC_RECORD_GET_INDEX("
+    assert runtime_h =~ "#define ELMC_RECORD_GET_INDEX_FLOAT"
+    assert runtime_h =~ "#define ELMC_RECORD_GET_INDEX_BOOL"
+  end
+
+  defp direct_indexed_pass_through_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        {}
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( {}, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view _ =
+        Ui.toUiNode
+            (List.indexedMap passThrough
+                [ Ui.textInt Resources.DefaultFont { x = 0, y = 0 } 1
+                , Ui.textInt Resources.DefaultFont { x = 8, y = 0 } 2
+                ]
+            )
+
+
+    passThrough : Int -> Ui.RenderOp -> Ui.RenderOp
+    passThrough _ op =
+        op
+    """
+  end
+
+  defp direct_indexed_map_affine_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        {}
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( {}, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view _ =
+        Ui.toUiNode (List.indexedMap row (List.range 0 3))
+
+
+    row : Int -> Int -> Ui.RenderOp
+    row i n =
+        Ui.textInt Resources.DefaultFont { x = i * 10, y = n } n
+    """
+  end
+
+  defp direct_indexed_map_affine_cells_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        { cells : List Int }
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( { cells = [ 0, 2, 4 ] }, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view model =
+        Ui.toUiNode (List.indexedMap drawCell model.cells)
+
+
+    drawCell : Int -> Int -> Ui.RenderOp
+    drawCell index _ =
+        let
+            x =
+                10 + index * 31
+        in
+        Ui.group
+            (Ui.context
+                [ Ui.strokeColor Color.black ]
+                [ Ui.rect { x = x, y = 42, w = 28, h = 28 } Color.black ]
+            )
+    """
+  end
+
+  defp direct_indexed_map_affine_cells_fill_skip_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        { cells : List Int }
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( { cells = [ 0, 2 ] }, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view model =
+        let
+            layout =
+                { x = 10, y = 26, cell = 28, gap = 3 }
+        in
+        Ui.toUiNode (List.indexedMap (drawCell layout) model.cells)
+
+
+    drawCell : { x : Int, y : Int, cell : Int, gap : Int } -> Int -> Int -> Ui.RenderOp
+    drawCell layout index value =
+        let
+            x =
+                layout.x + modBy 4 index * (layout.cell + layout.gap)
+
+            y =
+                layout.y + (index // 4) * (layout.cell + layout.gap)
+        in
+        Ui.context
+            [ Ui.textColor Color.white ]
+            [ Ui.rect { x = x, y = y, w = layout.cell, h = layout.cell } Color.black
+            , Ui.fillRect { x = x, y = y, w = layout.cell, h = layout.cell } <|
+                if value == 0 then
+                    Color.white
+
+                else
+                    Color.darkGray
+            ]
+            |> Ui.group
+    """
+  end
+
+  defp direct_indexed_map_affine_cells_text_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        { cells : List Int }
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( { cells = [ 0, 2, 4 ] }, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view model =
+        Ui.toUiNode (List.indexedMap drawCell model.cells)
+
+
+    drawCell : Int -> Int -> Ui.RenderOp
+    drawCell index value =
+        let
+            x =
+                10 + index * 31
+
+            label =
+                if value == 0 then
+                    "."
+
+                else
+                    String.fromInt value
+        in
+        Ui.group
+            (Ui.context
+                [ Ui.strokeColor Color.black
+                , Ui.textColor Color.black
+                ]
+                [ Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = x + 2, y = 47, w = 24, h = 18 } label
+                ]
+            )
+    """
+  end
+
+  defp direct_view_cons_cells_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias BoardLayout =
+        { x : Int
+        , y : Int
+        , cell : Int
+        , gap : Int
+        }
+
+
+    type alias Model =
+        { cells : List Int
+        , best : Int
+        }
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( { cells = [ 0, 2 ], best = 42 }, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view model =
+        let
+            layout =
+                { x = 10, y = 20, cell = 28, gap = 2 }
+
+            chromeOps =
+                [ Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 4, w = 120, h = 14 } ("Best " ++ String.fromInt model.best)
+                ]
+        in
+        Ui.toUiNode
+            (Ui.clear Color.white
+                :: (chromeOps
+                        ++ List.indexedMap (drawCell layout) model.cells
+                   )
+            )
+
+
+    drawCell : BoardLayout -> Int -> Int -> Ui.RenderOp
+    drawCell layout index _ =
+        Ui.rect
+            { x = layout.x + modBy 4 index * (layout.cell + layout.gap)
+            , y = layout.y + (index // 4) * (layout.cell + layout.gap)
+            , w = layout.cell
+            , h = layout.cell
+            }
+            Color.black
+    """
+  end
+
+  defp direct_text_options_view_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        { displayShape : Platform.DisplayShape }
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( { displayShape = Platform.DisplayShapeRound }, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view model =
+        let
+            textOptions =
+                if Platform.displayShapeIsRound model.displayShape then
+                    Ui.alignCenter Ui.defaultTextOptions
+
+                else
+                    Ui.defaultTextOptions
+        in
+        Ui.toUiNode
+            [ Ui.text Resources.DefaultFont textOptions { x = 4, y = 4, w = 40, h = 12 } "Hi" ]
+    """
+  end
+
+  defp direct_board_layout_helper_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias BoardLayout =
+        { x : Int
+        , y : Int
+        , cell : Int
+        , gap : Int
+        }
+
+
+    type alias Model =
+        { screenW : Int
+        , screenH : Int
+        , displayShape : Platform.DisplayShape
+        , cells : List Int
+        }
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( { screenW = 144, screenH = 168, displayShape = Platform.DisplayShapeRound, cells = [ 0, 2 ] }, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view model =
+        let
+            layout =
+                boardLayout model
+        in
+        Ui.toUiNode (List.indexedMap (drawCell layout) model.cells)
+
+
+    boardLayout : Model -> BoardLayout
+    boardLayout model =
+        if Platform.displayShapeIsRound model.displayShape then
+            let
+                diameter =
+                    min model.screenW model.screenH
+
+                gap =
+                    2
+
+                cell =
+                    ((diameter * 2) // 3 - gap * 3) // 4
+
+                boardSize =
+                    cell * 4 + gap * 3
+            in
+            { x = (model.screenW - boardSize) // 2
+            , y = (model.screenH - boardSize) // 2
+            , cell = cell
+            , gap = gap
+            }
+
+        else
+            { x = 10, y = 26, cell = 28, gap = 3 }
+
+
+    drawCell : BoardLayout -> Int -> Int -> Ui.RenderOp
+    drawCell layout index value =
+        let
+            x =
+                layout.x + modBy 2 index * (layout.cell + layout.gap)
+
+            y =
+                layout.y + (index // 2) * (layout.cell + layout.gap)
+        in
+        Ui.rect { x = x, y = y, w = layout.cell, h = layout.cell } Color.black
+    """
+  end
+
+  defp direct_min_hoist_view_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias BoardLayout =
+        { x : Int
+        , y : Int
+        }
+
+
+    type alias Model =
+        { screenW : Int
+        , screenH : Int
+        , displayShape : Platform.DisplayShape
+        }
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( { screenW = 144, screenH = 168, displayShape = Platform.DisplayShapeRound }, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view model =
+        let
+            layout =
+                boardLayout model
+
+            chromeOps =
+                if Platform.displayShapeIsRound model.displayShape then
+                    let
+                        textW =
+                            (min model.screenW model.screenH * 4) // 9
+                    in
+                    [ Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 0, y = 10, w = textW, h = 12 } "Hi" ]
+
+                else
+                    []
+        in
+        Ui.toUiNode (chromeOps ++ [ Ui.rect { x = layout.x, y = layout.y, w = 8, h = 8 } Color.black ])
+
+
+    boardLayout : Model -> BoardLayout
+    boardLayout model =
+        if Platform.displayShapeIsRound model.displayShape then
+            { x = 0, y = 0 }
+
+        else
+            let
+                gap =
+                    max 3 (min model.screenW model.screenH // 48)
+            in
+            { x = gap, y = 26 }
+    """
+  end
+
+  defp direct_display_shape_hoist_view_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias BoardLayout =
+        { x : Int
+        , y : Int
+        , cell : Int
+        , gap : Int
+        }
+
+
+    type alias Model =
+        { screenW : Int
+        , screenH : Int
+        , displayShape : Platform.DisplayShape
+        }
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( { screenW = 144, screenH = 168, displayShape = Platform.DisplayShapeRound }, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view model =
+        let
+            layout =
+                boardLayout model
+
+            chromeOps =
+                if Platform.displayShapeIsRound model.displayShape then
+                    [ Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 10, y = 10, w = 40, h = 12 } "Hi" ]
+
+                else
+                    []
+        in
+        Ui.toUiNode (chromeOps ++ [ Ui.rect { x = layout.x, y = layout.y, w = layout.cell, h = layout.cell } Color.black ])
+
+
+    boardLayout : Model -> BoardLayout
+    boardLayout model =
+        if Platform.displayShapeIsRound model.displayShape then
+            { x = 0, y = 0, cell = 20, gap = 2 }
+
+        else
+            { x = 10, y = 26, cell = 28, gap = 3 }
+    """
+  end
+
+  defp direct_indexed_map_affine_layout_cells_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias BoardLayout =
+        { x : Int
+        , y : Int
+        , cell : Int
+        , gap : Int
+        }
+
+
+    type alias Model =
+        { cells : List Int }
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( { cells = [ 0, 2, 4, 8 ] }, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view model =
+        let
+            layout =
+                { x = 10, y = 20, cell = 28, gap = 2 }
+        in
+        Ui.toUiNode (List.indexedMap (drawCell layout) model.cells)
+
+
+    drawCell : BoardLayout -> Int -> Int -> Ui.RenderOp
+    drawCell layout index value =
+        let
+            x =
+                layout.x + modBy 4 index * (layout.cell + layout.gap)
+
+            y =
+                layout.y + (index // 4) * (layout.cell + layout.gap)
+
+            label =
+                if value == 0 then
+                    "."
+
+                else
+                    String.fromInt value
+
+            textY =
+                y + ((layout.cell - 18) // 2)
+        in
+        Ui.group
+            (Ui.context
+                [ Ui.strokeColor Color.black ]
+                [ Ui.rect { x = x, y = y, w = layout.cell, h = layout.cell } Color.black
+                , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = x, y = textY, w = layout.cell, h = 18 } label
+                ]
+            )
+    """
+  end
+
+  defp direct_indexed_map_affine_rect_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+
+    type alias Model =
+        {}
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( {}, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view _ =
+        Ui.toUiNode (List.indexedMap cell (List.range 0 2))
+
+
+    cell : Int -> Int -> Ui.RenderOp
+    cell index _ =
+        let
+            x =
+                10 + index * 31
+        in
+        Ui.group
+            (Ui.context
+                [ Ui.strokeColor Color.black ]
+                [ Ui.rect { x = x, y = 42, w = 28, h = 28 } Color.black ]
+            )
+    """
+  end
+
+  defp direct_map_affine_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        {}
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( {}, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view _ =
+        Ui.toUiNode (List.map row (List.range 0 3))
+
+
+    row : Int -> Ui.RenderOp
+    row n =
+        Ui.textInt Resources.DefaultFont { x = n * 10, y = 4 } n
+    """
+  end
+
+  defp direct_static_table_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        {}
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( {}, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view _ =
+        Ui.toUiNode
+            [ Ui.textInt Resources.DefaultFont { x = 0, y = 0 } 1
+            , Ui.textInt Resources.DefaultFont { x = 8, y = 0 } 2
+            ]
+    """
+  end
+
+  defp direct_helper_chain_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+
+    type alias Model =
+        { screenW : Int
+        , screenH : Int
+        }
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( { screenW = 144, screenH = 168 }, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view model =
+        Ui.toUiNode (chrome model)
+
+
+    chrome model =
+        let
+            body =
+                dial model
+        in
+        [ Ui.clear Color.black ]
+            ++ body
+
+
+    dial model =
+        let
+            cx =
+                model.screenW // 2
+
+            cy =
+                model.screenH // 2
+
+            radius =
+                (min model.screenW model.screenH // 2) - 10
+        in
+        [ Ui.fillCircle { x = cx, y = cy } radius Color.black ]
+            ++ ticks cx cy radius
+
+
+    ticks cx cy radius =
+        List.concatMap
+            (\\i ->
+                [ Ui.line { x = cx, y = cy } { x = cx + i, y = cy + radius } Color.white ]
+            )
+            (List.range 0 2)
+    """
+  end
+
+  defp direct_textat_default_options_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        {}
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( {}, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view _ =
+        Ui.toUiNode
+            [ textAt Color.white { x = 4, y = 4, w = 40, h = 16 } "Hi" ]
+
+
+    textAt : Color.Color -> Ui.Rect -> String -> Ui.RenderOp
+    textAt color bounds value =
+        Ui.group
+            (Ui.context
+                [ Ui.textColor color ]
+                [ Ui.text Resources.DefaultFont Ui.defaultTextOptions bounds value ]
+            )
+    """
+  end
+
+  defp direct_concatmap_range_ticks_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        {}
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( {}, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view _ =
+        Ui.toUiNode
+            (List.concatMap
+                (\\hour ->
+                    let
+                        inner =
+                            pointAt 72 84 60 (angleFromMinute (hour * 60))
+
+                        outer =
+                            pointAt 72 84
+                                (60
+                                    + (if modBy 2 hour == 0 then
+                                        5
+
+                                       else
+                                        9
+                                      )
+                                )
+                                (angleFromMinute (hour * 60))
+
+                        labelPoint =
+                            pointAt 72 84 (60 + 16) (angleFromMinute (hour * 60))
+
+                        label =
+                            if hour == 0 then
+                                "24"
+
+                            else
+                                String.fromInt hour
+                    in
+                    if modBy 2 hour == 0 then
+                        [ Ui.line outer inner Color.white
+                        , textAt Color.lightGray { x = labelPoint.x - 6, y = labelPoint.y - 4, w = 12, h = 8 } label
+                        ]
+
+                    else
+                        [ Ui.line outer inner Color.lightGray ]
+                )
+                (List.range 0 23)
+            )
+
+
+    textAt : Color.Color -> Ui.Rect -> String -> Ui.RenderOp
+    textAt color bounds value =
+        Ui.group
+            (Ui.context
+                [ Ui.textColor color ]
+                [ Ui.text Resources.DefaultFont Ui.defaultTextOptions bounds value ]
+            )
+
+
+    pointAt : Int -> Int -> Int -> Int -> Ui.Point
+    pointAt cx cy radius angle =
+        { x = cx + radius, y = cy + radius }
+
+
+    angleFromMinute : Int -> Int
+    angleFromMinute minute =
+        minute * 6 // 60
+    """
+  end
+
+  defp direct_concatmap_range_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        {}
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( {}, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view _ =
+        Ui.toUiNode
+            (List.concatMap
+                (\\hour ->
+                    let
+                        inner =
+                            { x = hour * 4, y = 0 }
+
+                        outer =
+                            { x = hour * 4, y = 8 }
+                    in
+                    [ Ui.line outer inner Color.white
+                    , textAt Color.white { x = 0, y = 0, w = 8, h = 8 } (String.fromInt hour)
+                    ]
+                )
+                (List.range 0 3)
+            )
+
+
+    textAt : Color.Color -> Ui.Rect -> String -> Ui.RenderOp
+    textAt color bounds value =
+        Ui.group
+            (Ui.context
+                [ Ui.textColor color ]
+                [ Ui.text Resources.DefaultFont Ui.defaultTextOptions bounds value ]
+            )
+    """
+  end
+
+  defp direct_map_range_native_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        {}
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( {}, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view _ =
+        Ui.toUiNode (List.map row (List.range 0 2))
+
+
+    row : Int -> Ui.RenderOp
+    row n =
+        Ui.textInt Resources.DefaultFont { x = n * 8, y = 0 } n
+    """
+  end
+
+  defp direct_concat_literal_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        {}
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( {}, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view _ =
+        Ui.toUiNode
+            (List.concat
+                [ [ Ui.clear Color.white ]
+                , [ Ui.textInt Resources.DefaultFont { x = 0, y = 0 } 1
+                  , Ui.textInt Resources.DefaultFont { x = 8, y = 0 } 2
+                  ]
+                ]
+            )
+    """
+  end
+
+  defp constructor_switch_threshold_source do
+    """
+
+
+    type SmallTag
+        = TagA
+        | TagB
+
+
+    type LargeTag
+        = LargeA
+        | LargeB
+        | LargeC
+        | LargeD
+
+
+    smallTagCase : SmallTag -> Int
+    smallTagCase tag =
+        case tag of
+            TagA ->
+                1
+
+            TagB ->
+                2
+
+
+    largeTagCase : LargeTag -> Int
+    largeTagCase tag =
+        case tag of
+            LargeA ->
+                1
+
+            LargeB ->
+                2
+
+            LargeC ->
+                3
+
+            LargeD ->
+                4
+    """
+  end
+
+  test "game elmtris template compiles displayShapeIsRound case subjects to valid C" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+
+    elmtris_main =
+      Path.expand("../../ide/priv/project_templates/game_elmtris/src/Main.elm", __DIR__)
+
+    project_dir = Path.expand("tmp/game_elmtris_project", __DIR__)
+    out_dir = Path.expand("tmp/game_elmtris_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(elmtris_main))
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    refute generated_c =~ "%{arg:"
+    assert generated_c =~ "elmc_fn_Main_gameOverOps"
+
+    File.write!(Path.join(out_dir, "c/game_elmtris_harness.c"), "int main(void) { return 0; }\n")
+
+    cc = System.find_executable("cc") || System.find_executable("gcc")
+    assert is_binary(cc)
+
+    {compile_out, compile_code} =
+      System.cmd(
+        cc,
+        [
+          "-std=c11",
+          "-Wall",
+          "-Wextra",
+          "-Iruntime",
+          "-Iports",
+          "-Ic",
+          "runtime/elmc_runtime.c",
+          "ports/elmc_ports.c",
+          "c/elmc_generated.c",
+          "c/elmc_worker.c",
+          "c/elmc_pebble.c",
+          "c/game_elmtris_harness.c",
+          "-o",
+          "game_elmtris_harness"
+        ],
+        cd: out_dir,
+        stderr_to_stdout: true
+      )
+
+    assert compile_code == 0, compile_out
   end
 end

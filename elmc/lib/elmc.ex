@@ -12,16 +12,7 @@ defmodule Elmc do
   alias ElmEx.IR.Lowerer
   alias Elmc.Runtime.Generator
 
-  @type compile_options :: %{
-          optional(:entry_module) => String.t(),
-          optional(:out_dir) => String.t() | nil,
-          optional(:runtime_dir) => String.t(),
-          optional(:strip_dead_code) => boolean(),
-          optional(:prune_runtime) => boolean(),
-          optional(:prune_native_wrappers) => boolean(),
-          optional(:direct_render_only) => boolean(),
-          optional(:pebble_int32) => boolean()
-        }
+  @type compile_options :: Elmc.Types.compile_options()
 
   @doc """
   Typechecks and extracts frontend metadata for an Elm project.
@@ -34,7 +25,7 @@ defmodule Elmc do
   @doc """
   Compiles a supported Elm subset into C artifacts.
   """
-  @spec compile(String.t(), compile_options()) :: {:ok, map()} | {:error, map()}
+  @spec compile(String.t(), compile_options()) :: {:ok, map()} | {:error, term()}
   def compile(project_dir, opts \\ %{}) do
     entry_module = opts[:entry_module] || "Main"
 
@@ -46,7 +37,8 @@ defmodule Elmc do
            Pebble.write_pebble_shim(
              ir,
              opts[:out_dir] || "build",
-             entry_module
+             entry_module,
+             opts
            ),
          :ok <-
            Worker.write_worker_adapter(

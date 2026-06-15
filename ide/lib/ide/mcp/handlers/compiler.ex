@@ -74,7 +74,10 @@ defmodule Ide.Mcp.Handlers.Compiler do
     with {:ok, project} <- ToolSupport.fetch_project(slug),
          session_key = Projects.scope_key(project),
          {:ok, result} <-
-           compiler.compile(session_key, workspace_root: Projects.project_workspace_path(project)),
+           compiler.compile(session_key,
+             workspace_root: Projects.project_workspace_path(project),
+             source_roots: project.source_roots
+           ),
          :ok <- ingest_compile_result(slug, project, result) do
       diagnostics = Diagnostics.normalize_list(result.diagnostics || [])
       counts = Diagnostics.summary(diagnostics)

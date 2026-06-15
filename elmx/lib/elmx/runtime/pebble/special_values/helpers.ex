@@ -10,7 +10,7 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Helpers do
     {:ok, %{op: :runtime_call, function: function, args: args}}
   end
 
-  @spec cmd_batch([term()]) :: Types.rewrite_result()
+  @spec cmd_batch(Types.ir_arg_list()) :: Types.rewrite_result()
   def cmd_batch([%{op: :list_literal} = list]),
     do: {:ok, %{op: :runtime_call, function: "elmx_cmd_batch", args: [list]}}
 
@@ -27,7 +27,7 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Helpers do
     end
   end
 
-  @spec subscription_batch([term()]) :: Types.rewrite_result()
+  @spec subscription_batch(Types.ir_arg_list()) :: Types.rewrite_result()
   def subscription_batch([%{op: :list_literal, items: items}]) when is_list(items) do
     {:ok, %{op: :int_literal, value: Subscriptions.batch_mask(items)}}
   end
@@ -39,38 +39,38 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Helpers do
 
   def subscription_batch(_), do: :error
 
-  @spec frame_subscription([term()]) :: Types.rewrite_result()
+  @spec frame_subscription(Types.ir_arg_list()) :: Types.rewrite_result()
   def frame_subscription(args),
     do: {:ok, %{op: :int_literal, value: Subscriptions.Frame.mask(args)}}
 
-  @spec frame_fps_subscription([term()]) :: Types.rewrite_result()
+  @spec frame_fps_subscription(Types.ir_arg_list()) :: Types.rewrite_result()
   def frame_fps_subscription(args),
     do: {:ok, %{op: :int_literal, value: Subscriptions.Frame.fps_mask(args)}}
 
-  @spec data_log_tag([term()]) :: Types.rewrite_result()
+  @spec data_log_tag(Types.ir_arg_list()) :: Types.rewrite_result()
   def data_log_tag([value]), do: {:ok, %{op: :runtime_call, function: "elmx_datalog_tag", args: [value]}}
   def data_log_tag(_), do: :error
 
-  @spec math_clamp([term()]) :: Types.rewrite_result()
+  @spec math_clamp(Types.ir_arg_list()) :: Types.rewrite_result()
   def math_clamp([lo, hi, value]) do
     {:ok, %{op: :runtime_call, function: "elmx_math_clamp", args: [lo, hi, value]}}
   end
 
   def math_clamp(_), do: :error
 
-  @spec kernel_watch(String.t(), [term()]) :: Types.rewrite_result()
+  @spec kernel_watch(String.t(), Types.ir_arg_list()) :: Types.rewrite_result()
   def kernel_watch(name, args) when is_binary(name) and is_list(args) do
     KernelTargets.rewrite("Elm.Kernel.PebbleWatch." <> name, args)
   end
 
-  @spec passthrough_arg([term()]) :: Types.rewrite_result()
+  @spec passthrough_arg(Types.ir_arg_list()) :: Types.rewrite_result()
   def passthrough_arg([value]), do: {:ok, value}
   def passthrough_arg(_), do: :error
 
   @spec companion_subscription_zero() :: Types.rewrite_result()
   def companion_subscription_zero, do: {:ok, %{op: :int_literal, value: 0}}
 
-  @spec companion_phone_send([term()]) :: Types.rewrite_result()
+  @spec companion_phone_send(Types.ir_arg_list()) :: Types.rewrite_result()
   def companion_phone_send([callback, inner | _] = args) when is_list(args) do
     case phone_request_envelope_ir(inner) do
       {:ok, envelope} -> ui_call("elmx_companion_phone_send", [callback, envelope])
@@ -80,7 +80,7 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Helpers do
 
   def companion_phone_send(args), do: ui_call("elmx_companion_phone_send", args)
 
-  @spec companion_bridge_call(String.t(), String.t(), [term()]) :: Types.rewrite_result()
+  @spec companion_bridge_call(String.t(), String.t(), Types.ir_arg_list()) :: Types.rewrite_result()
   def companion_bridge_call(api, op, args)
       when is_binary(api) and is_binary(op) and is_list(args) do
     callback = companion_bridge_callback(args)

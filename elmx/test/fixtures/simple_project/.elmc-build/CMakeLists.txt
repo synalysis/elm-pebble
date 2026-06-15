@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.20)
 project(elmc_generated C)
 
+add_compile_options(-ffunction-sections -fdata-sections)
+add_link_options(-Wl,--gc-sections)
+
 add_library(elmc_runtime runtime/elmc_runtime.c)
 add_library(elmc_ports ports/elmc_ports.c)
 add_library(elmc_generated c/elmc_generated.c)
