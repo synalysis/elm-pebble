@@ -154,10 +154,16 @@ defmodule Elmc.Backend.CCodegen.Expr do
 
   def substitute_expr(value, _substitutions), do: value
 
+  @spec normalize_field_access_arg(Types.ir_expr() | Types.binding_name()) :: Types.ir_expr()
+  def normalize_field_access_arg(name) when is_binary(name) or is_atom(name),
+    do: %{op: :var, name: name}
+
+  def normalize_field_access_arg(arg_expr), do: arg_expr
+
   @spec inline_record_field_expr(Types.ir_expr(), String.t(), Types.compile_env()) ::
           Types.ir_expr() | nil
   def inline_record_field_expr(arg_expr, field, env) do
-    arg_expr = Host.unwrap_affine_bindings(arg_expr)
+    arg_expr = arg_expr |> Host.unwrap_affine_bindings() |> normalize_field_access_arg()
 
     if bound_record_var?(arg_expr, env) do
       nil
@@ -167,10 +173,6 @@ defmodule Elmc.Backend.CCodegen.Expr do
   end
 
   defp bound_record_var?(%{op: :var, name: name}, env) when is_binary(name) or is_atom(name) do
-    bound_record_name?(env, name)
-  end
-
-  defp bound_record_var?(name, env) when is_binary(name) or is_atom(name) do
     bound_record_name?(env, name)
   end
 

@@ -1098,6 +1098,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   end
 
   defp compile_cached_field_access_impl(_full_expr, arg_expr, field, env, counter, compile_fn) do
+    arg_expr = Expr.normalize_field_access_arg(arg_expr)
+
     {arg_code, arg_var, counter, env, release_arg?} =
       compile_cached_field_access_arg(arg_expr, env, counter)
 
@@ -1188,9 +1190,6 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   end
 
   defp compile_cached_field_access_arg(%{op: :var, name: name}, env, counter),
-    do: compile_cached_field_access_bound_name(name, env, counter)
-
-  defp compile_cached_field_access_arg(name, env, counter) when is_binary(name),
     do: compile_cached_field_access_bound_name(name, env, counter)
 
   defp compile_cached_field_access_arg(arg_expr, env, counter) do
