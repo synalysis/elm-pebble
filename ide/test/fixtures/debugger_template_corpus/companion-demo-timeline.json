@@ -111,42 +111,6 @@
                     "text": null,
                     "w": 128,
                     "x": 8,
-                    "y": 36
-                  },
-                  "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Timeline demo",
-                  "options": [],
-                  "text": "Timeline demo",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text"
-                },
-                {
-                  "bounds": {
-                    "h": 18,
-                    "text": null,
-                    "w": 128,
-                    "x": 8,
-                    "y": 54
-                  },
-                  "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Token loading",
-                  "options": [],
-                  "text": "Token loading",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text"
-                },
-                {
-                  "bounds": {
-                    "h": 18,
-                    "text": null,
-                    "w": 128,
-                    "x": 8,
                     "y": 72
                   },
                   "children": [],
@@ -173,6 +137,42 @@
                   "label": "Select = insert",
                   "options": [],
                   "text": "Select = insert",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text"
+                },
+                {
+                  "bounds": {
+                    "h": 18,
+                    "text": null,
+                    "w": 128,
+                    "x": 8,
+                    "y": 36
+                  },
+                  "children": [],
+                  "font": "DefaultFont",
+                  "kind": "text",
+                  "label": "Timeline demo",
+                  "options": [],
+                  "text": "Timeline demo",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text"
+                },
+                {
+                  "bounds": {
+                    "h": 18,
+                    "text": null,
+                    "w": 128,
+                    "x": 8,
+                    "y": 54
+                  },
+                  "children": [],
+                  "font": "DefaultFont",
+                  "kind": "text",
+                  "label": "Token loading",
+                  "options": [],
+                  "text": "Token loading",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
                   "type": "text"

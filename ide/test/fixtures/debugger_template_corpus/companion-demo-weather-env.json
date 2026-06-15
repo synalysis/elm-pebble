@@ -111,24 +111,6 @@
                     "text": null,
                     "w": 128,
                     "x": 8,
-                    "y": 36
-                  },
-                  "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "08:53",
-                  "options": [],
-                  "text": "<TIME>",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text"
-                },
-                {
-                  "bounds": {
-                    "h": 18,
-                    "text": null,
-                    "w": 128,
-                    "x": 8,
                     "y": 54
                   },
                   "children": [],
@@ -147,14 +129,14 @@
                     "text": null,
                     "w": 128,
                     "x": 8,
-                    "y": 72
+                    "y": 36
                   },
                   "children": [],
                   "font": "DefaultFont",
                   "kind": "text",
-                  "label": "Sun 0:00-0:00",
+                  "label": "08:53",
                   "options": [],
-                  "text": "Sun 0:00-0:00",
+                  "text": "<TIME>",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
                   "type": "text"
@@ -173,6 +155,24 @@
                   "label": "Moon 0%",
                   "options": [],
                   "text": "Moon 0%",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text"
+                },
+                {
+                  "bounds": {
+                    "h": 18,
+                    "text": null,
+                    "w": 128,
+                    "x": 8,
+                    "y": 72
+                  },
+                  "children": [],
+                  "font": "DefaultFont",
+                  "kind": "text",
+                  "label": "Sun 0:00-0:00",
+                  "options": [],
+                  "text": "Sun 0:00-0:00",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
                   "type": "text"

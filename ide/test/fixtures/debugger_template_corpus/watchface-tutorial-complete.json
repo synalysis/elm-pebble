@@ -112,19 +112,6 @@
                     {
                       "children": [
                         {
-                          "children": [],
-                          "color": 255,
-                          "h": 8,
-                          "kind": "roundRect",
-                          "label": "roundRect",
-                          "radius": 2,
-                          "text": null,
-                          "type": "roundRect",
-                          "w": 72,
-                          "x": 36,
-                          "y": 6
-                        },
-                        {
                           "bounds": {
                             "h": 4,
                             "text": null,
@@ -138,6 +125,19 @@
                           "label": "fillRect",
                           "text": null,
                           "type": "fillRect"
+                        },
+                        {
+                          "children": [],
+                          "color": 255,
+                          "h": 8,
+                          "kind": "roundRect",
+                          "label": "roundRect",
+                          "radius": 2,
+                          "text": null,
+                          "type": "roundRect",
+                          "w": 72,
+                          "x": 36,
+                          "y": 6
                         }
                       ],
                       "kind": "group",

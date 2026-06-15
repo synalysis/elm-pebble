@@ -127,6 +127,74 @@ defmodule ElmEx.IR.FunctionCallCheckTest do
            )
   end
 
+  test "infers Point for int coordinate record literals when Vec2 also exists" do
+    project = %Project{
+      project_dir: "/tmp",
+      elm_json: %{"source-directories" => ["src"]},
+      modules: [
+        ui_module_with_point_and_vec2(),
+        main_module(%{
+          op: :qualified_call,
+          target: "Ui.line",
+          args: [
+            %{
+              op: :record_literal,
+              fields: [
+                %{name: "x", expr: %{op: :int_literal, value: 1}},
+                %{name: "y", expr: %{op: :int_literal, value: 2}}
+              ]
+            },
+            %{
+              op: :record_literal,
+              fields: [
+                %{name: "x", expr: %{op: :int_literal, value: 3}},
+                %{name: "y", expr: %{op: :int_literal, value: 4}}
+              ]
+            },
+            %{op: :int_literal, value: 0}
+          ]
+        })
+      ]
+    }
+
+    assert {:ok, ir} = Lowerer.lower_project(project)
+
+    refute Enum.any?(ir.diagnostics, &(&1.code == "function_call_type"))
+  end
+
+  test "infers anonymous record for int Rect literals when multiple Rect aliases exist" do
+    project = %Project{
+      project_dir: "/tmp",
+      elm_json: %{"source-directories" => ["src"]},
+      modules: [
+        ui_module_with_rect_and_collision_rect(),
+        collision_module(),
+        main_module(%{
+          op: :qualified_call,
+          target: "Ui.text",
+          args: [
+            %{op: :qualified_call1, target: "Resources.DefaultFont"},
+            %{op: :qualified_call1, target: "Ui.defaultTextOptions"},
+            %{
+              op: :record_literal,
+              fields: [
+                %{name: "x", expr: %{op: :int_literal, value: 0}},
+                %{name: "y", expr: %{op: :int_literal, value: 0}},
+                %{name: "w", expr: %{op: :int_literal, value: 80}},
+                %{name: "h", expr: %{op: :int_literal, value: 20}}
+              ]
+            },
+            %{op: :string_literal, value: "ok"}
+          ]
+        })
+      ]
+    }
+
+    assert {:ok, ir} = Lowerer.lower_project(project)
+
+    refute Enum.any?(ir.diagnostics, &(&1.code == "function_call_type"))
+  end
+
   test "collect_project_diagnostics resolves module aliases" do
     diagnostics =
       FunctionCallCheck.collect_project_diagnostics(
@@ -416,6 +484,61 @@ defmodule ElmEx.IR.FunctionCallCheckTest do
             name: "rotationFromDegrees",
             type: "Float -> Rotation",
             span: %{start_line: 5, end_line: 5}
+          }
+        ]
+    end)
+  end
+
+  defp ui_module_with_rect_and_collision_rect do
+    Map.update!(ui_module(), :declarations, fn decls ->
+      decls ++
+        [
+          %{
+            kind: :type_alias,
+            name: "Rect",
+            fields: ["x", "y", "w", "h"],
+            field_types: %{"x" => "Int", "y" => "Int", "w" => "Int", "h" => "Int"},
+            span: %{start_line: 6, end_line: 6}
+          },
+          %{
+            kind: :function_signature,
+            name: "text",
+            type: "Font -> TextOptions -> Rect -> String -> RenderOp",
+            span: %{start_line: 7, end_line: 7}
+          }
+        ]
+    end)
+  end
+
+  defp collision_module do
+    %FrontendModule{
+      name: "Pebble.Game.Collision",
+      path: "/tmp/Pebble/Game/Collision.elm",
+      imports: [],
+      module_exposing: "..",
+      declarations: [
+        %{
+          kind: :type_alias,
+          name: "Rect",
+          fields: ["x", "y", "w", "h"],
+          field_types: %{"x" => "Int", "y" => "Int", "w" => "Int", "h" => "Int"},
+          span: %{start_line: 1, end_line: 1}
+        }
+      ]
+    }
+  end
+
+  defp ui_module_with_point_and_vec2 do
+    ui_module_with_line()
+    |> Map.update!(:declarations, fn decls ->
+      decls ++
+        [
+          %{
+            kind: :type_alias,
+            name: "Vec2",
+            fields: ["x", "y"],
+            field_types: %{"x" => "Float", "y" => "Float"},
+            span: %{start_line: 6, end_line: 6}
           }
         ]
     end)

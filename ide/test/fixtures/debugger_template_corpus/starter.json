@@ -159,10 +159,143 @@
               "children": [
                 {
                   "children": [],
+                  "end_angle": 0,
+                  "h": 36,
+                  "label": "",
+                  "start_angle": 0,
+                  "text": null,
+                  "type": "arc",
+                  "w": 36,
+                  "x": 20,
+                  "y": 16
+                },
+                {
+                  "children": [],
                   "color": 255,
                   "label": "",
                   "text": null,
                   "type": "clear"
+                },
+                {
+                  "children": [],
+                  "color": 192,
+                  "label": "",
+                  "text": null,
+                  "type": "line",
+                  "x1": 0,
+                  "x2": 143,
+                  "y1": 84,
+                  "y2": 84
+                },
+                {
+                  "children": [],
+                  "label": "",
+                  "offset_x": 108,
+                  "offset_y": 26,
+                  "points": [
+                    [
+                      0,
+                      0
+                    ],
+                    [
+                      0,
+                      14
+                    ],
+                    [
+                      2,
+                      20
+                    ],
+                    [
+                      6,
+                      8
+                    ],
+                    [
+                      6,
+                      14
+                    ]
+                  ],
+                  "rotation": 0,
+                  "text": null,
+                  "type": "pathFilled"
+                },
+                {
+                  "children": [],
+                  "label": "",
+                  "offset_x": 86,
+                  "offset_y": 16,
+                  "points": [
+                    [
+                      0,
+                      0
+                    ],
+                    [
+                      0,
+                      18
+                    ],
+                    [
+                      4,
+                      10
+                    ],
+                    [
+                      8,
+                      24
+                    ],
+                    [
+                      14,
+                      16
+                    ]
+                  ],
+                  "rotation": 0,
+                  "text": null,
+                  "type": "pathOutline"
+                },
+                {
+                  "children": [],
+                  "label": "",
+                  "offset_x": 10,
+                  "offset_y": 78,
+                  "points": [
+                    [
+                      0,
+                      0
+                    ],
+                    [
+                      2,
+                      16
+                    ],
+                    [
+                      4,
+                      8
+                    ],
+                    [
+                      6,
+                      24
+                    ]
+                  ],
+                  "rotation": 0,
+                  "text": null,
+                  "type": "pathOutlineOpen"
+                },
+                {
+                  "children": [],
+                  "color": 192,
+                  "label": "",
+                  "text": null,
+                  "type": "pixel",
+                  "x": 72,
+                  "y": 84
+                },
+                {
+                  "children": [],
+                  "fill": 192,
+                  "h": 70,
+                  "label": "",
+                  "radius": 6,
+                  "text": null,
+                  "type": "roundRect",
+                  "w": 132,
+                  "x": 6,
+                  "y": 6
                 },
                 {
                   "key": "stroke_color",
@@ -184,136 +317,12 @@
                 },
                 {
                   "children": [],
-                  "fill": 192,
-                  "h": 70,
+                  "font_id": 0,
                   "label": "",
-                  "radius": 6,
-                  "text": null,
-                  "type": "roundRect",
-                  "w": 132,
-                  "x": 6,
-                  "y": 6
-                },
-                {
-                  "children": [],
-                  "end_angle": 0,
-                  "h": 36,
-                  "label": "",
-                  "start_angle": 0,
-                  "text": null,
-                  "type": "arc",
-                  "w": 36,
-                  "x": 20,
-                  "y": 16
-                },
-                {
-                  "children": [],
-                  "label": "",
-                  "offset_x": 86,
-                  "offset_y": 16,
-                  "points": [
-                    [
-                      0,
-                      0
-                    ],
-                    [
-                      10,
-                      4
-                    ],
-                    [
-                      16,
-                      14
-                    ],
-                    [
-                      8,
-                      24
-                    ],
-                    [
-                      0,
-                      18
-                    ]
-                  ],
-                  "rotation": 0,
-                  "text": null,
-                  "type": "pathOutline"
-                },
-                {
-                  "children": [],
-                  "label": "",
-                  "offset_x": 108,
-                  "offset_y": 26,
-                  "points": [
-                    [
-                      0,
-                      0
-                    ],
-                    [
-                      8,
-                      6
-                    ],
-                    [
-                      6,
-                      14
-                    ],
-                    [
-                      2,
-                      20
-                    ],
-                    [
-                      0,
-                      14
-                    ]
-                  ],
-                  "rotation": 0,
-                  "text": null,
-                  "type": "pathFilled"
-                },
-                {
-                  "children": [],
-                  "label": "",
-                  "offset_x": 10,
-                  "offset_y": 78,
-                  "points": [
-                    [
-                      0,
-                      0
-                    ],
-                    [
-                      8,
-                      4
-                    ],
-                    [
-                      16,
-                      2
-                    ],
-                    [
-                      24,
-                      6
-                    ]
-                  ],
-                  "rotation": 0,
-                  "text": null,
-                  "type": "pathOutlineOpen"
-                },
-                {
-                  "children": [],
-                  "color": 192,
-                  "label": "",
-                  "text": null,
-                  "type": "line",
-                  "x1": 0,
-                  "x2": 143,
-                  "y1": 84,
-                  "y2": 84
-                },
-                {
-                  "children": [],
-                  "color": 192,
-                  "label": "",
-                  "text": null,
-                  "type": "pixel",
-                  "x": 72,
-                  "y": 84
+                  "text": "1",
+                  "type": "textInt",
+                  "x": 0,
+                  "y": 56
                 },
                 {
                   "children": [],
@@ -323,15 +332,6 @@
                   "type": "textLabel",
                   "x": 0,
                   "y": 28
-                },
-                {
-                  "children": [],
-                  "font_id": 0,
-                  "label": "",
-                  "text": "1",
-                  "type": "textInt",
-                  "x": 0,
-                  "y": 56
                 }
               ],
               "id": 1,

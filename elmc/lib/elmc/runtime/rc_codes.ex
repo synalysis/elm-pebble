@@ -88,10 +88,6 @@ defmodule Elmc.Runtime.RcCodes do
         return "RC_UNKNOWN";
       return elmc_rc_names[(unsigned)rc];
     }
-
-    static inline int elmc_rc_is_success(RC rc) {
-      return rc == RC_SUCCESS;
-    }
     """
   end
 end

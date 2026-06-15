@@ -111,6 +111,24 @@
                     "text": null,
                     "w": 128,
                     "x": 8,
+                    "y": 90
+                  },
+                  "children": [],
+                  "font": "DefaultFont",
+                  "kind": "text",
+                  "label": "Select = cycle",
+                  "options": [],
+                  "text": "Select = cycle",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text"
+                },
+                {
+                  "bounds": {
+                    "h": 18,
+                    "text": null,
+                    "w": 128,
+                    "x": 8,
                     "y": 36
                   },
                   "children": [],
@@ -155,24 +173,6 @@
                   "label": "Units --",
                   "options": [],
                   "text": "Units --",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text"
-                },
-                {
-                  "bounds": {
-                    "h": 18,
-                    "text": null,
-                    "w": 128,
-                    "x": 8,
-                    "y": 90
-                  },
-                  "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Select = cycle",
-                  "options": [],
-                  "text": "Select = cycle",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
                   "type": "text"

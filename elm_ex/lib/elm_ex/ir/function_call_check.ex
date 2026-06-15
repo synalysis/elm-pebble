@@ -118,7 +118,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
     |> Map.new()
   end
 
-  @spec build_type_alias_lookup([map()]) :: %{String.t() => [String.t()]}
+  @spec build_type_alias_lookup([map()]) :: %{String.t() => map()}
   defp build_type_alias_lookup(frontend_modules) do
     frontend_modules
     |> Enum.flat_map(fn frontend_module ->
@@ -133,9 +133,14 @@ defmodule ElmEx.IR.FunctionCallCheck do
         if fields == [] do
           []
         else
+          spec = %{
+            fields: fields,
+            field_types: Map.get(alias_decl, :field_types, %{})
+          }
+
           [
-            {"#{module_name}.#{alias_decl.name}", fields},
-            {alias_decl.name, fields}
+            {"#{module_name}.#{alias_decl.name}", spec},
+            {alias_decl.name, spec}
           ]
         end
       end)
@@ -586,15 +591,19 @@ defmodule ElmEx.IR.FunctionCallCheck do
     Map.get(binding_types, name)
   end
 
-  defp infer_expr_type(%{op: :record_literal, fields: fields}, _, _, type_alias_lookup, _)
+  defp infer_expr_type(%{op: :record_literal, fields: fields}, import_lookup, signature_lookup, type_alias_lookup, binding_types)
        when is_list(fields) do
-    field_names =
+    inferred_field_types =
       fields
-      |> Enum.map(&Map.get(&1, :name))
-      |> Enum.filter(&is_binary/1)
-      |> Enum.sort()
+      |> Enum.filter(&(is_binary(Map.get(&1, :name))))
+      |> Map.new(fn %{name: name, expr: expr} ->
+        {name,
+         infer_expr_type(expr, import_lookup, signature_lookup, type_alias_lookup, binding_types)}
+      end)
 
-    case find_matching_alias(field_names, type_alias_lookup) do
+    field_names = inferred_field_types |> Map.keys() |> Enum.sort()
+
+    case find_matching_alias(field_names, type_alias_lookup, inferred_field_types) do
       nil -> record_type_label(field_names)
       alias_name -> alias_name
     end
@@ -672,11 +681,57 @@ defmodule ElmEx.IR.FunctionCallCheck do
 
   defp value_type(_), do: nil
 
-  @spec find_matching_alias([String.t()], map()) :: String.t() | nil
-  defp find_matching_alias(field_names, type_alias_lookup) when is_list(field_names) do
-    Enum.find_value(type_alias_lookup, fn {alias_name, alias_fields} ->
-      if alias_fields == field_names, do: alias_name
+  @spec find_matching_alias([String.t()], map(), map()) :: String.t() | nil
+  defp find_matching_alias(field_names, type_alias_lookup, inferred_field_types)
+       when is_list(field_names) and is_map(inferred_field_types) do
+    candidates =
+      type_alias_lookup
+      |> Enum.filter(fn {_alias_name, spec} ->
+        alias_field_names(spec) == field_names
+      end)
+
+    matches =
+      if inferred_field_types == %{} do
+        candidates
+      else
+        Enum.filter(candidates, fn {_alias_name, spec} ->
+          alias_field_types_compatible?(alias_field_types(spec), inferred_field_types)
+        end)
+      end
+
+    case matches do
+      [{alias_name, _}] -> alias_name
+      _ -> nil
+    end
+  end
+
+  @spec alias_field_names(map() | [String.t()]) :: [String.t()]
+  defp alias_field_names(%{fields: fields}) when is_list(fields), do: Enum.sort(fields)
+  defp alias_field_names(fields) when is_list(fields), do: Enum.sort(fields)
+  defp alias_field_names(_), do: []
+
+  @spec alias_field_types(map()) :: %{String.t() => String.t()}
+  defp alias_field_types(%{field_types: field_types}) when is_map(field_types), do: field_types
+  defp alias_field_types(_), do: %{}
+
+  @spec alias_field_types_compatible?(map(), map()) :: boolean()
+  defp alias_field_types_compatible?(_alias_types, inferred_types) when inferred_types == %{} do
+    true
+  end
+
+  defp alias_field_types_compatible?(alias_types, inferred_types)
+       when is_map(alias_types) and is_map(inferred_types) do
+    Enum.all?(alias_types, fn {field, expected} ->
+      case Map.get(inferred_types, field) do
+        nil -> true
+        inferred -> record_field_types_compatible?(expected, inferred)
+      end
     end)
+  end
+
+  @spec record_field_types_compatible?(String.t(), String.t()) :: boolean()
+  defp record_field_types_compatible?(expected, inferred) do
+    normalize_type(expected) == normalize_type(inferred)
   end
 
   @spec record_type_label([String.t()]) :: String.t()
@@ -925,12 +980,18 @@ defmodule ElmEx.IR.FunctionCallCheck do
 
   @spec alias_fields(String.t(), map()) :: [String.t()]
   defp alias_fields(alias_name, type_alias_lookup) do
+    alias_name
+    |> alias_spec(type_alias_lookup)
+    |> alias_field_names()
+  end
+
+  @spec alias_spec(String.t(), map()) :: map() | nil
+  defp alias_spec(alias_name, type_alias_lookup) do
     Map.get(type_alias_lookup, alias_name) ||
       case String.split(alias_name, ".", parts: 2) do
         [_module, name] -> Map.get(type_alias_lookup, name)
         _ -> nil
-      end ||
-      []
+      end
   end
 
   @spec record_field_names(String.t(), map()) :: [String.t()]

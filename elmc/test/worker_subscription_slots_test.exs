@@ -7,7 +7,7 @@ defmodule Elmc.WorkerSubscriptionSlotsTest do
   @pebble_surface Path.expand("fixtures/pebble_surface_project", __DIR__)
   @game_2048_main Path.expand("../../ide/priv/project_templates/game_2048/src/Main.elm", __DIR__)
 
-  defp compile_worker!(project_dir, opts \\ []) do
+  defp compile_worker!(project_dir, opts) do
     out_dir = Path.expand("tmp/worker_slots_#{:erlang.phash2({project_dir, opts})}", __DIR__)
     File.rm_rf!(out_dir)
 

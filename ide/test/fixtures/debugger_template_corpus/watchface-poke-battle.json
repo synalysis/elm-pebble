@@ -248,6 +248,81 @@
                   "type": "clear"
                 },
                 {
+                  "bounds": {
+                    "h": 8,
+                    "text": null,
+                    "w": 48,
+                    "x": 84,
+                    "y": 136
+                  },
+                  "children": [],
+                  "kind": "drawBitmapInRect",
+                  "label": "drawBitmapInRect",
+                  "resource": "BitmapStaticHealthEmpty",
+                  "text": null,
+                  "type": "drawBitmapInRect"
+                },
+                {
+                  "bounds": {
+                    "h": 48,
+                    "text": null,
+                    "w": 56,
+                    "x": 24,
+                    "y": 103
+                  },
+                  "children": [],
+                  "kind": "drawBitmapInRect",
+                  "label": "drawBitmapInRect",
+                  "resource": "BitmapStaticPikachuBack",
+                  "text": null,
+                  "type": "drawBitmapInRect"
+                },
+                {
+                  "bounds": {
+                    "h": 12,
+                    "text": null,
+                    "w": 12,
+                    "x": 18,
+                    "y": 133
+                  },
+                  "children": [],
+                  "kind": "drawBitmapInRect",
+                  "label": "drawBitmapInRect",
+                  "resource": "BitmapStaticBoxBall",
+                  "text": null,
+                  "type": "drawBitmapInRect"
+                },
+                {
+                  "bounds": {
+                    "h": 12,
+                    "text": null,
+                    "w": 12,
+                    "x": 114,
+                    "y": 133
+                  },
+                  "children": [],
+                  "kind": "drawBitmapInRect",
+                  "label": "drawBitmapInRect",
+                  "resource": "BitmapStaticBoxBall",
+                  "text": null,
+                  "type": "drawBitmapInRect"
+                },
+                {
+                  "bounds": {
+                    "h": 24,
+                    "text": null,
+                    "w": 24,
+                    "x": 108,
+                    "y": 87
+                  },
+                  "children": [],
+                  "kind": "drawBitmapInRect",
+                  "label": "drawBitmapInRect",
+                  "resource": "BitmapStaticPokeball",
+                  "text": null,
+                  "type": "drawBitmapInRect"
+                },
+                {
                   "children": [
                     {
                       "children": [
@@ -400,21 +475,6 @@
                   "type": "group"
                 },
                 {
-                  "bounds": {
-                    "h": 8,
-                    "text": null,
-                    "w": 48,
-                    "x": 84,
-                    "y": 136
-                  },
-                  "children": [],
-                  "kind": "drawBitmapInRect",
-                  "label": "drawBitmapInRect",
-                  "resource": "BitmapStaticHealthEmpty",
-                  "text": null,
-                  "type": "drawBitmapInRect"
-                },
-                {
                   "children": [
                     {
                       "children": [
@@ -448,21 +508,6 @@
                   "label": "",
                   "text": null,
                   "type": "group"
-                },
-                {
-                  "bounds": {
-                    "h": 48,
-                    "text": null,
-                    "w": 56,
-                    "x": 24,
-                    "y": 103
-                  },
-                  "children": [],
-                  "kind": "drawBitmapInRect",
-                  "label": "drawBitmapInRect",
-                  "resource": "BitmapStaticPikachuBack",
-                  "text": null,
-                  "type": "drawBitmapInRect"
                 },
                 {
                   "children": [
@@ -555,51 +600,6 @@
                   "label": "",
                   "text": null,
                   "type": "group"
-                },
-                {
-                  "bounds": {
-                    "h": 12,
-                    "text": null,
-                    "w": 12,
-                    "x": 18,
-                    "y": 133
-                  },
-                  "children": [],
-                  "kind": "drawBitmapInRect",
-                  "label": "drawBitmapInRect",
-                  "resource": "BitmapStaticBoxBall",
-                  "text": null,
-                  "type": "drawBitmapInRect"
-                },
-                {
-                  "bounds": {
-                    "h": 12,
-                    "text": null,
-                    "w": 12,
-                    "x": 114,
-                    "y": 133
-                  },
-                  "children": [],
-                  "kind": "drawBitmapInRect",
-                  "label": "drawBitmapInRect",
-                  "resource": "BitmapStaticBoxBall",
-                  "text": null,
-                  "type": "drawBitmapInRect"
-                },
-                {
-                  "bounds": {
-                    "h": 24,
-                    "text": null,
-                    "w": 24,
-                    "x": 108,
-                    "y": 87
-                  },
-                  "children": [],
-                  "kind": "drawBitmapInRect",
-                  "label": "drawBitmapInRect",
-                  "resource": "BitmapStaticPokeball",
-                  "text": null,
-                  "type": "drawBitmapInRect"
                 }
               ],
               "id": "1",

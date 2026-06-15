@@ -210,12 +210,144 @@
             {
               "children": [
                 {
+                  "bounds": {
+                    "h": 28,
+                    "text": null,
+                    "w": 36,
+                    "x": 68,
+                    "y": 94
+                  },
+                  "children": [],
+                  "kind": "arc",
+                  "label": "arc",
+                  "text": null,
+                  "type": "arc"
+                },
+                {
+                  "children": [],
+                  "color": 192,
+                  "cx": 24,
+                  "cy": 74,
+                  "kind": "circle",
+                  "label": "circle",
+                  "r": 10,
+                  "text": null,
+                  "type": "circle"
+                },
+                {
                   "children": [],
                   "color": 255,
                   "kind": "clear",
                   "label": "clear",
                   "text": null,
                   "type": "clear"
+                },
+                {
+                  "children": [],
+                  "color": 204,
+                  "cx": 72,
+                  "cy": 74,
+                  "kind": "fillCircle",
+                  "label": "fillCircle",
+                  "r": 12,
+                  "text": null,
+                  "type": "fillCircle"
+                },
+                {
+                  "bounds": {
+                    "h": 28,
+                    "text": null,
+                    "w": 32,
+                    "x": 108,
+                    "y": 94
+                  },
+                  "children": [],
+                  "end_angle": 49152,
+                  "kind": "fillRadial",
+                  "label": "fillRadial",
+                  "start_angle": 0,
+                  "text": null,
+                  "type": "fillRadial"
+                },
+                {
+                  "bounds": {
+                    "h": 128,
+                    "text": null,
+                    "w": 144,
+                    "x": 0,
+                    "y": 22
+                  },
+                  "children": [],
+                  "color": 234,
+                  "kind": "fillRect",
+                  "label": "fillRect",
+                  "text": null,
+                  "type": "fillRect"
+                },
+                {
+                  "bounds": {
+                    "h": 24,
+                    "text": null,
+                    "w": 36,
+                    "x": 50,
+                    "y": 26
+                  },
+                  "children": [],
+                  "color": 198,
+                  "kind": "fillRect",
+                  "label": "fillRect",
+                  "text": null,
+                  "type": "fillRect"
+                },
+                {
+                  "children": [],
+                  "color": 240,
+                  "kind": "line",
+                  "label": "line",
+                  "text": null,
+                  "type": "line",
+                  "x1": 92,
+                  "x2": 132,
+                  "y1": 26,
+                  "y2": 50
+                },
+                {
+                  "children": [],
+                  "color": 240,
+                  "kind": "pixel",
+                  "label": "pixel",
+                  "text": null,
+                  "type": "pixel",
+                  "x": 120,
+                  "y": 74
+                },
+                {
+                  "bounds": {
+                    "h": 24,
+                    "text": null,
+                    "w": 40,
+                    "x": 4,
+                    "y": 26
+                  },
+                  "children": [],
+                  "color": 192,
+                  "kind": "rect",
+                  "label": "rect",
+                  "text": null,
+                  "type": "rect"
+                },
+                {
+                  "children": [],
+                  "color": 192,
+                  "h": 28,
+                  "kind": "roundRect",
+                  "label": "roundRect",
+                  "radius": 6,
+                  "text": null,
+                  "type": "roundRect",
+                  "w": 56,
+                  "x": 4,
+                  "y": 94
                 },
                 {
                   "bounds": {
@@ -262,138 +394,6 @@
                   "text_align": "left",
                   "text_overflow": "trailing_ellipsis",
                   "type": "text"
-                },
-                {
-                  "bounds": {
-                    "h": 128,
-                    "text": null,
-                    "w": 144,
-                    "x": 0,
-                    "y": 22
-                  },
-                  "children": [],
-                  "color": 234,
-                  "kind": "fillRect",
-                  "label": "fillRect",
-                  "text": null,
-                  "type": "fillRect"
-                },
-                {
-                  "bounds": {
-                    "h": 24,
-                    "text": null,
-                    "w": 40,
-                    "x": 4,
-                    "y": 26
-                  },
-                  "children": [],
-                  "color": 192,
-                  "kind": "rect",
-                  "label": "rect",
-                  "text": null,
-                  "type": "rect"
-                },
-                {
-                  "bounds": {
-                    "h": 24,
-                    "text": null,
-                    "w": 36,
-                    "x": 50,
-                    "y": 26
-                  },
-                  "children": [],
-                  "color": 198,
-                  "kind": "fillRect",
-                  "label": "fillRect",
-                  "text": null,
-                  "type": "fillRect"
-                },
-                {
-                  "children": [],
-                  "color": 240,
-                  "kind": "line",
-                  "label": "line",
-                  "text": null,
-                  "type": "line",
-                  "x1": 92,
-                  "x2": 132,
-                  "y1": 26,
-                  "y2": 50
-                },
-                {
-                  "children": [],
-                  "color": 192,
-                  "cx": 24,
-                  "cy": 74,
-                  "kind": "circle",
-                  "label": "circle",
-                  "r": 10,
-                  "text": null,
-                  "type": "circle"
-                },
-                {
-                  "children": [],
-                  "color": 204,
-                  "cx": 72,
-                  "cy": 74,
-                  "kind": "fillCircle",
-                  "label": "fillCircle",
-                  "r": 12,
-                  "text": null,
-                  "type": "fillCircle"
-                },
-                {
-                  "children": [],
-                  "color": 240,
-                  "kind": "pixel",
-                  "label": "pixel",
-                  "text": null,
-                  "type": "pixel",
-                  "x": 120,
-                  "y": 74
-                },
-                {
-                  "children": [],
-                  "color": 192,
-                  "h": 28,
-                  "kind": "roundRect",
-                  "label": "roundRect",
-                  "radius": 6,
-                  "text": null,
-                  "type": "roundRect",
-                  "w": 56,
-                  "x": 4,
-                  "y": 94
-                },
-                {
-                  "bounds": {
-                    "h": 28,
-                    "text": null,
-                    "w": 36,
-                    "x": 68,
-                    "y": 94
-                  },
-                  "children": [],
-                  "kind": "arc",
-                  "label": "arc",
-                  "text": null,
-                  "type": "arc"
-                },
-                {
-                  "bounds": {
-                    "h": 28,
-                    "text": null,
-                    "w": 32,
-                    "x": 108,
-                    "y": 94
-                  },
-                  "children": [],
-                  "end_angle": 49152,
-                  "kind": "fillRadial",
-                  "label": "fillRadial",
-                  "start_angle": 0,
-                  "text": null,
-                  "type": "fillRadial"
                 }
               ],
               "id": "1",

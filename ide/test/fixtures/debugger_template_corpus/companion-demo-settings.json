@@ -111,14 +111,14 @@
                     "text": null,
                     "w": 128,
                     "x": 8,
-                    "y": 36
+                    "y": 72
                   },
                   "children": [],
                   "font": "DefaultFont",
                   "kind": "text",
-                  "label": "Settings demo",
+                  "label": "Config none",
                   "options": [],
-                  "text": "Settings demo",
+                  "text": "Config none",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
                   "type": "text"
@@ -147,14 +147,14 @@
                     "text": null,
                     "w": 128,
                     "x": 8,
-                    "y": 72
+                    "y": 90
                   },
                   "children": [],
                   "font": "DefaultFont",
                   "kind": "text",
-                  "label": "Config none",
+                  "label": "Select = open",
                   "options": [],
-                  "text": "Config none",
+                  "text": "Select = open",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
                   "type": "text"
@@ -165,14 +165,14 @@
                     "text": null,
                     "w": 128,
                     "x": 8,
-                    "y": 90
+                    "y": 36
                   },
                   "children": [],
                   "font": "DefaultFont",
                   "kind": "text",
-                  "label": "Select = open",
+                  "label": "Settings demo",
                   "options": [],
-                  "text": "Select = open",
+                  "text": "Settings demo",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
                   "type": "text"

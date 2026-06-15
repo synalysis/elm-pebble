@@ -137,6 +137,17 @@
               "children": [
                 {
                   "children": [],
+                  "color": 192,
+                  "cx": 72,
+                  "cy": 84,
+                  "kind": "circle",
+                  "label": "circle",
+                  "r": 58,
+                  "text": null,
+                  "type": "circle"
+                },
+                {
+                  "children": [],
                   "color": 255,
                   "kind": "clear",
                   "label": "clear",
@@ -148,11 +159,35 @@
                   "color": 192,
                   "cx": 72,
                   "cy": 84,
-                  "kind": "circle",
-                  "label": "circle",
-                  "r": 58,
+                  "kind": "fillCircle",
+                  "label": "fillCircle",
+                  "r": 4,
                   "text": null,
-                  "type": "circle"
+                  "type": "fillCircle"
+                },
+                {
+                  "children": [],
+                  "color": 192,
+                  "kind": "line",
+                  "label": "line",
+                  "text": null,
+                  "type": "line",
+                  "x1": 72,
+                  "x2": 37,
+                  "y1": 84,
+                  "y2": 84
+                },
+                {
+                  "children": [],
+                  "color": 192,
+                  "kind": "line",
+                  "label": "line",
+                  "text": null,
+                  "type": "line",
+                  "x1": 72,
+                  "x2": 30,
+                  "y1": 84,
+                  "y2": 60
                 },
                 {
                   "children": [],
@@ -193,41 +228,6 @@
                   "type": "pixel",
                   "x": 14,
                   "y": 84
-                },
-                {
-                  "children": [],
-                  "color": 192,
-                  "kind": "line",
-                  "label": "line",
-                  "text": null,
-                  "type": "line",
-                  "x1": 72,
-                  "x2": 37,
-                  "y1": 84,
-                  "y2": 84
-                },
-                {
-                  "children": [],
-                  "color": 192,
-                  "kind": "line",
-                  "label": "line",
-                  "text": null,
-                  "type": "line",
-                  "x1": 72,
-                  "x2": 30,
-                  "y1": 84,
-                  "y2": 60
-                },
-                {
-                  "children": [],
-                  "color": 192,
-                  "cx": 72,
-                  "cy": 84,
-                  "kind": "fillCircle",
-                  "label": "fillCircle",
-                  "r": 4,
-                  "text": null,
-                  "type": "fillCircle"
                 }
               ],
               "id": "1",

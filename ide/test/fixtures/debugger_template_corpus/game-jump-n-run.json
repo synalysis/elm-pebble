@@ -182,52 +182,6 @@
                 },
                 {
                   "bounds": {
-                    "h": 16,
-                    "text": null,
-                    "w": 136,
-                    "x": 4,
-                    "y": 10
-                  },
-                  "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Score 0",
-                  "options": {
-                    "key": "align_center",
-                    "text": null,
-                    "type": "contextSetting",
-                    "value": []
-                  },
-                  "text": "Score 0",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text"
-                },
-                {
-                  "bounds": {
-                    "h": 16,
-                    "text": null,
-                    "w": 136,
-                    "x": 4,
-                    "y": 26
-                  },
-                  "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Best 0",
-                  "options": {
-                    "key": "align_center",
-                    "text": null,
-                    "type": "contextSetting",
-                    "value": []
-                  },
-                  "text": "Best 0",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text"
-                },
-                {
-                  "bounds": {
                     "h": 14,
                     "text": null,
                     "w": 12,
@@ -345,6 +299,52 @@
                   "label": "fillRect",
                   "text": null,
                   "type": "fillRect"
+                },
+                {
+                  "bounds": {
+                    "h": 16,
+                    "text": null,
+                    "w": 136,
+                    "x": 4,
+                    "y": 26
+                  },
+                  "children": [],
+                  "font": "DefaultFont",
+                  "kind": "text",
+                  "label": "Best 0",
+                  "options": {
+                    "key": "align_center",
+                    "text": null,
+                    "type": "contextSetting",
+                    "value": []
+                  },
+                  "text": "Best 0",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text"
+                },
+                {
+                  "bounds": {
+                    "h": 16,
+                    "text": null,
+                    "w": 136,
+                    "x": 4,
+                    "y": 10
+                  },
+                  "children": [],
+                  "font": "DefaultFont",
+                  "kind": "text",
+                  "label": "Score 0",
+                  "options": {
+                    "key": "align_center",
+                    "text": null,
+                    "type": "contextSetting",
+                    "value": []
+                  },
+                  "text": "Score 0",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text"
                 }
               ],
               "id": "1",

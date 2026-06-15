@@ -109,19 +109,6 @@
                   "font_id": 0,
                   "h": 20,
                   "label": "",
-                  "text": "DataLog demo",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 136,
-                  "x": 4,
-                  "y": 8
-                },
-                {
-                  "children": [],
-                  "font_id": 0,
-                  "h": 20,
-                  "label": "",
                   "text": "0",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
@@ -142,6 +129,19 @@
                   "w": 136,
                   "x": 4,
                   "y": 56
+                },
+                {
+                  "children": [],
+                  "font_id": 0,
+                  "h": 20,
+                  "label": "",
+                  "text": "DataLog demo",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 8
                 },
                 {
                   "children": [],

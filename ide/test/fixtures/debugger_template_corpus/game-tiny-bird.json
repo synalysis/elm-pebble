@@ -195,42 +195,6 @@
                 },
                 {
                   "bounds": {
-                    "h": 20,
-                    "text": null,
-                    "w": 120,
-                    "x": 4,
-                    "y": 4
-                  },
-                  "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Score 0",
-                  "options": [],
-                  "text": "Score 0",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text"
-                },
-                {
-                  "bounds": {
-                    "h": 20,
-                    "text": null,
-                    "w": 120,
-                    "x": 4,
-                    "y": 24
-                  },
-                  "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Best 0",
-                  "options": [],
-                  "text": "Best 0",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text"
-                },
-                {
-                  "bounds": {
                     "h": 62,
                     "text": null,
                     "w": 22,
@@ -288,6 +252,42 @@
                   "label": "fillRect",
                   "text": null,
                   "type": "fillRect"
+                },
+                {
+                  "bounds": {
+                    "h": 20,
+                    "text": null,
+                    "w": 120,
+                    "x": 4,
+                    "y": 24
+                  },
+                  "children": [],
+                  "font": "DefaultFont",
+                  "kind": "text",
+                  "label": "Best 0",
+                  "options": [],
+                  "text": "Best 0",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text"
+                },
+                {
+                  "bounds": {
+                    "h": 20,
+                    "text": null,
+                    "w": 120,
+                    "x": 4,
+                    "y": 4
+                  },
+                  "children": [],
+                  "font": "DefaultFont",
+                  "kind": "text",
+                  "label": "Score 0",
+                  "options": [],
+                  "text": "Score 0",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text"
                 }
               ],
               "id": "1",

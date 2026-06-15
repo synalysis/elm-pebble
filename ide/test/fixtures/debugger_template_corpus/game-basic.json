@@ -106,6 +106,17 @@
             {
               "children": [
                 {
+                  "bitmap_id": 0,
+                  "children": [],
+                  "h": 1,
+                  "label": "",
+                  "text": null,
+                  "type": "bitmapInRect",
+                  "w": 1,
+                  "x": 0,
+                  "y": 0
+                },
+                {
                   "children": [],
                   "color": 255,
                   "label": "",
@@ -146,17 +157,6 @@
                   "w": 120,
                   "x": 4,
                   "y": 4
-                },
-                {
-                  "bitmap_id": 0,
-                  "children": [],
-                  "h": 1,
-                  "label": "",
-                  "text": null,
-                  "type": "bitmapInRect",
-                  "w": 1,
-                  "x": 0,
-                  "y": 0
                 }
               ],
               "id": 1,

@@ -119,6 +119,8 @@ jobs:
             git \
             libncurses6 \
             libstdc++6 \
+            nodejs \
+            npm \
             openssl \
             pipx \
             python3 \
@@ -144,6 +146,9 @@ jobs:
           pebble sdk install 4.9.169
           pebble sdk activate 4.9.169
           pebble sdk list
+
+      - name: Install Elm compiler
+        run: npm install -g elm@0.19.1-6
 
       - name: Install elm_ex dependencies
         working-directory: elm_ex

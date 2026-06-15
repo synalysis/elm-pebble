@@ -96,6 +96,19 @@
                 {
                   "children": [],
                   "font_id": 0,
+                  "h": 40,
+                  "label": "",
+                  "text": "",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 56
+                },
+                {
+                  "children": [],
+                  "font_id": 0,
                   "h": 20,
                   "label": "",
                   "text": "Dictation demo",
@@ -118,19 +131,6 @@
                   "w": 136,
                   "x": 4,
                   "y": 32
-                },
-                {
-                  "children": [],
-                  "font_id": 0,
-                  "h": 40,
-                  "label": "",
-                  "text": "",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 136,
-                  "x": 4,
-                  "y": 56
                 },
                 {
                   "children": [],

@@ -103,6 +103,21 @@
                   "type": "clear"
                 },
                 {
+                  "children": [],
+                  "frame": 0,
+                  "kind": "drawVectorAt",
+                  "label": "drawVectorAt",
+                  "origin": {
+                    "text": null,
+                    "x": 48,
+                    "y": 102
+                  },
+                  "resource": "VectorStaticWeatherFog",
+                  "rotation": 0,
+                  "text": null,
+                  "type": "drawVectorAt"
+                },
+                {
                   "children": [
                     {
                       "children": [
@@ -187,21 +202,6 @@
                   "label": "",
                   "text": null,
                   "type": "group"
-                },
-                {
-                  "children": [],
-                  "frame": 0,
-                  "kind": "drawVectorAt",
-                  "label": "drawVectorAt",
-                  "origin": {
-                    "text": null,
-                    "x": 48,
-                    "y": 102
-                  },
-                  "resource": "VectorStaticWeatherFog",
-                  "rotation": 0,
-                  "text": null,
-                  "type": "drawVectorAt"
                 }
               ],
               "id": "1",

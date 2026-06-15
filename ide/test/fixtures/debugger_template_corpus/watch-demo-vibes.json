@@ -109,13 +109,13 @@
                   "font_id": 0,
                   "h": 20,
                   "label": "",
-                  "text": "Vibes pattern",
+                  "text": "0",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
                   "type": "text",
                   "w": 136,
                   "x": 4,
-                  "y": 8
+                  "y": 64
                 },
                 {
                   "children": [],
@@ -133,19 +133,6 @@
                 {
                   "children": [],
                   "font_id": 0,
-                  "h": 20,
-                  "label": "",
-                  "text": "0",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 136,
-                  "x": 4,
-                  "y": 64
-                },
-                {
-                  "children": [],
-                  "font_id": 0,
                   "h": 40,
                   "label": "",
                   "text": "Up/Down: pattern Select: play",
@@ -155,6 +142,19 @@
                   "w": 136,
                   "x": 4,
                   "y": 92
+                },
+                {
+                  "children": [],
+                  "font_id": 0,
+                  "h": 20,
+                  "label": "",
+                  "text": "Vibes pattern",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 8
                 }
               ],
               "id": 1,

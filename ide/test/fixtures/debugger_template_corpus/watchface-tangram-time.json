@@ -214,14 +214,6 @@
               "children": [
                 {
                   "children": [],
-                  "color": 193,
-                  "kind": "clear",
-                  "label": "clear",
-                  "text": null,
-                  "type": "clear"
-                },
-                {
-                  "children": [],
                   "color": 215,
                   "cx": 72,
                   "cy": 84,
@@ -230,6 +222,29 @@
                   "r": 60,
                   "text": null,
                   "type": "circle"
+                },
+                {
+                  "children": [],
+                  "color": 193,
+                  "kind": "clear",
+                  "label": "clear",
+                  "text": null,
+                  "type": "clear"
+                },
+                {
+                  "children": [],
+                  "frame": 0,
+                  "kind": "drawVectorAt",
+                  "label": "drawVectorAt",
+                  "origin": {
+                    "text": null,
+                    "x": 14,
+                    "y": 8
+                  },
+                  "resource": "VectorStaticTangramKite",
+                  "rotation": 0,
+                  "text": null,
+                  "type": "drawVectorAt"
                 },
                 {
                   "children": [],
@@ -274,21 +289,6 @@
                   "r": 2,
                   "text": null,
                   "type": "fillCircle"
-                },
-                {
-                  "children": [],
-                  "frame": 0,
-                  "kind": "drawVectorAt",
-                  "label": "drawVectorAt",
-                  "origin": {
-                    "text": null,
-                    "x": 14,
-                    "y": 8
-                  },
-                  "resource": "VectorStaticTangramKite",
-                  "rotation": 0,
-                  "text": null,
-                  "type": "drawVectorAt"
                 },
                 {
                   "children": [],
