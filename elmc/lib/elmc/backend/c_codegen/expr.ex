@@ -170,6 +170,10 @@ defmodule Elmc.Backend.CCodegen.Expr do
     bound_record_name?(env, name)
   end
 
+  defp bound_record_var?(name, env) when is_binary(name) or is_atom(name) do
+    bound_record_name?(env, name)
+  end
+
   defp bound_record_var?(_arg_expr, _env), do: false
 
   defp bound_record_name?(env, name) do
