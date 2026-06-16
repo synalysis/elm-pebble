@@ -712,12 +712,20 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
     socket =
       if result.companion_async? do
         apply_project_auto_fire_settings(project)
-        schedule_companion_debugger_bootstrap(project, socket)
+
+        socket =
+          if Projects.companion_app_present?(project) do
+            :ok = schedule_companion_debugger_bootstrap(project, socket)
+
+            socket
+            |> assign(:debugger_companion_bootstrap_status, :running)
+            |> assign(:debugger_companion_bootstrap_progress, "Loading companion app...")
+          else
+            socket
+          end
 
         socket
         |> clear_debugger_bootstrap_busy()
-        |> assign(:debugger_companion_bootstrap_status, :running)
-        |> assign(:debugger_companion_bootstrap_progress, "Loading companion app...")
         |> put_flash(:info, result.message)
         |> DebuggerSupport.refresh()
         |> maybe_schedule_debugger_auto_fire_refresh()

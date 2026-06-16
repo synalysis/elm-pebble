@@ -78,6 +78,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
   @spec run_companion_bootstrap(Project.t(), keyword()) ::
           {:ok, companion_bootstrap_result()} | {:error, String.t()}
   def run_companion_bootstrap(%Project{} = project, opts \\ []) do
+    unless Projects.companion_app_present?(project) do
+      {:ok, %{phone_compile: :skipped, reload: :skipped}}
+    else
+      run_companion_bootstrap_when_present(project, opts)
+    end
+  end
+
+  defp run_companion_bootstrap_when_present(%Project{} = project, opts) do
     progress = Keyword.get(opts, :progress, fn _ -> :ok end)
     scope_key = Projects.scope_key(project)
     force_sync? = Keyword.get(opts, :force_sync, false)
@@ -445,7 +453,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
   end
 
   defp maybe_sync_companion(project, progress) do
-    if companion_bootstrap_async?() do
+    if companion_bootstrap_async?() or not Projects.companion_app_present?(project) do
       :ok
     else
       case run_companion_bootstrap(project, progress: progress) do

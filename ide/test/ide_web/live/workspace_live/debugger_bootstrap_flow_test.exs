@@ -113,6 +113,36 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlowTest do
   end
 
   @tag timeout: 120_000
+  test "watch-only analog project skips companion bootstrap without phone root error" do
+    slug = "debugger-bootstrap-analog-#{System.unique_integer([:positive])}"
+
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "Analog Bootstrap",
+               "slug" => slug,
+               "target_type" => "watchface",
+               "template" => "watchface-analog"
+             })
+
+    refute Projects.companion_app_present?(project)
+
+    assert {:ok, %{phone_compile: :skipped, reload: :skipped}} =
+             DebuggerBootstrapFlow.run_companion_bootstrap(project, force_sync: true)
+
+    scope_key = Projects.scope_key(project)
+
+    assert {:ok, _result} =
+             DebuggerBootstrapFlow.run(project,
+               watch_profile_id: "basalt",
+               progress: fn _ -> :ok end
+             )
+
+    state = AgentStore.fetch(scope_key)
+    refute DebuggerBootstrapFlow.companion_bootstrapped?(state)
+    assert DebuggerBootstrapFlow.watch_surface_bootstrapped?(state)
+  end
+
+  @tag timeout: 120_000
   test "ingesting warm compile before watch reload executes YES init with runtime model" do
     slug = "debugger-bootstrap-yes-#{System.unique_integer([:positive])}"
 
