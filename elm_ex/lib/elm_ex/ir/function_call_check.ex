@@ -49,14 +49,26 @@ defmodule ElmEx.IR.FunctionCallCheck do
             occurrence_counts: %{}
           }
 
-          expr_function_call_diagnostics(
-            decl.expr,
-            import_lookup,
-            signature_lookup,
-            type_alias_lookup,
-            call_context
-          )
-          |> elem(0)
+          call_diags =
+            expr_function_call_diagnostics(
+              decl.expr,
+              import_lookup,
+              signature_lookup,
+              type_alias_lookup,
+              call_context
+            )
+            |> elem(0)
+
+          return_diags =
+            function_return_diagnostics(
+              Map.put(decl, :type, decl_type),
+              import_lookup,
+              signature_lookup,
+              type_alias_lookup,
+              call_context
+            )
+
+          call_diags ++ return_diags
         end)
       else
         []
@@ -421,6 +433,293 @@ defmodule ElmEx.IR.FunctionCallCheck do
 
   defp call_site_diagnostics(_, _, _, _, _, _, call_context), do: {[], call_context}
 
+  @spec function_return_diagnostics(
+          map(),
+          map(),
+          map(),
+          map(),
+          map()
+        ) :: [diagnostic()]
+  defp function_return_diagnostics(
+         decl,
+         import_lookup,
+         signature_lookup,
+         type_alias_lookup,
+         call_context
+       ) do
+    with type when is_binary(type) <- Map.get(decl, :type),
+         expr when is_map(expr) <- Map.get(decl, :expr),
+         expected when is_binary(expected) <- TypeSignature.return_type(type) do
+      binding_types = Map.get(call_context, :binding_types, %{})
+      module_name = Map.get(call_context, :module_name)
+      function_name = Map.get(call_context, :function_name)
+      file = Map.get(call_context, :file)
+      line = get_in(decl, [:span, :start_line])
+      column = get_in(decl, [:span, :start_column])
+
+      {mismatch?, inferred, mismatch_expr, mismatch_expected} =
+        return_type_mismatch?(expected, expr, import_lookup, signature_lookup, type_alias_lookup, binding_types)
+
+      if mismatch? do
+        message =
+          function_return_message(
+            mismatch_expected || expected,
+            inferred,
+            mismatch_expr,
+            type_alias_lookup,
+            import_lookup,
+            signature_lookup,
+            binding_types
+          )
+
+        [
+          diagnostic(
+            "error",
+            "function_return_type",
+            module_name,
+            function_name,
+            file,
+            line,
+            column,
+            function_name,
+            message,
+            expected_type: expected,
+            inferred_type: inferred
+          )
+        ]
+      else
+        []
+      end
+    else
+      _ -> []
+    end
+  end
+
+  @spec return_type_mismatch?(
+          String.t(),
+          expr(),
+          map(),
+          map(),
+          map(),
+          map()
+        ) :: {boolean(), String.t() | nil, expr() | nil, String.t() | nil}
+  defp return_type_mismatch?(expected, expr, import_lookup, signature_lookup, type_alias_lookup, binding_types) do
+    expected_elems = TypeSignature.tuple_element_types(expected)
+
+    case {expected_elems, expr} do
+      {elems, %{op: :tuple2, left: left, right: right}} when elems != [] ->
+        inferred_elems =
+          Enum.map([left, right], fn part ->
+            infer_expr_type(part, import_lookup, signature_lookup, type_alias_lookup, binding_types)
+          end)
+
+        inferred = "( #{Enum.join(inferred_elems, ", ")} )"
+
+        mismatch? =
+          length(elems) != length(inferred_elems) or
+            Enum.zip([left, right], elems)
+            |> Enum.any?(fn {part, exp} ->
+              record_literal_validation_issues(exp, part, import_lookup, signature_lookup,
+                type_alias_lookup,
+                binding_types
+              ) != [] or
+                incompatible_types?(
+                  exp,
+                  infer_expr_type(part, import_lookup, signature_lookup, type_alias_lookup,
+                    binding_types
+                  ),
+                  import_lookup,
+                  type_alias_lookup,
+                  nil,
+                  part
+                )
+            end)
+
+        mismatch_part =
+          Enum.find(Enum.zip([left, right], elems), fn {part, exp} ->
+            record_literal_validation_issues(exp, part, import_lookup, signature_lookup,
+              type_alias_lookup,
+              binding_types
+            ) != [] or
+              incompatible_types?(
+                exp,
+                infer_expr_type(part, import_lookup, signature_lookup, type_alias_lookup,
+                  binding_types
+                ),
+                import_lookup,
+                type_alias_lookup,
+                nil,
+                part
+              )
+          end)
+
+        case mismatch_part do
+          {part, exp} -> {mismatch?, inferred, part, exp}
+          _ -> {mismatch?, inferred, expr, nil}
+        end
+
+      _ ->
+        inferred =
+          infer_expr_type(expr, import_lookup, signature_lookup, type_alias_lookup, binding_types)
+
+        mismatch? =
+          record_literal_validation_issues(expected, expr, import_lookup, signature_lookup,
+            type_alias_lookup,
+            binding_types
+          ) != [] or
+            incompatible_types?(expected, inferred, import_lookup, type_alias_lookup, nil, expr)
+
+        {mismatch?, inferred, expr, nil}
+    end
+  end
+
+  @type record_validation_issue ::
+          {:extra_field, String.t()}
+          | {:missing_field, String.t()}
+          | {:field_type, String.t(), String.t(), String.t()}
+
+  @spec record_literal_validation_issues(
+          String.t(),
+          expr(),
+          map(),
+          map(),
+          map(),
+          map()
+        ) :: [record_validation_issue()]
+  defp record_literal_validation_issues(
+         expected,
+         expr,
+         import_lookup,
+         signature_lookup,
+         type_alias_lookup,
+         binding_types
+       ) do
+    with %{op: :record_literal, fields: fields} when is_list(fields) <- expr,
+         resolved when is_binary(resolved) <- resolve_type_reference(expected, import_lookup),
+         spec when is_map(spec) <- alias_spec(resolved, type_alias_lookup),
+         expected_fields when expected_fields != [] <- alias_fields(resolved, type_alias_lookup) do
+      expected_set = MapSet.new(expected_fields)
+      literal_names = fields |> Enum.map(&Map.get(&1, :name)) |> Enum.filter(&is_binary/1)
+      literal_set = MapSet.new(literal_names)
+      expected_field_types = alias_field_types(spec)
+
+      extras =
+        literal_set
+        |> MapSet.difference(expected_set)
+        |> Enum.sort()
+        |> Enum.map(&{:extra_field, &1})
+
+      missing =
+        expected_set
+        |> MapSet.difference(literal_set)
+        |> Enum.sort()
+        |> Enum.map(&{:missing_field, &1})
+
+      field_types =
+        Enum.flat_map(fields, fn %{name: name, expr: field_expr} ->
+          with true <- MapSet.member?(expected_set, name),
+               expected_type when is_binary(expected_type) <- Map.get(expected_field_types, name),
+               inferred_type when is_binary(inferred_type) <-
+                 infer_expr_type(
+                   field_expr,
+                   import_lookup,
+                   signature_lookup,
+                   type_alias_lookup,
+                   binding_types
+                 ),
+               true <-
+                 incompatible_types?(
+                   expected_type,
+                   inferred_type,
+                   import_lookup,
+                   type_alias_lookup,
+                   nil,
+                   field_expr
+                 ) do
+            [{:field_type, name, expected_type, inferred_type}]
+          else
+            _ -> []
+          end
+        end)
+
+      if extras != [] or missing != [] do
+        extras ++ missing
+      else
+        extras ++ missing ++ field_types
+      end
+    else
+      _ -> []
+    end
+  end
+
+  @spec function_return_message(
+          String.t(),
+          String.t() | nil,
+          expr() | nil,
+          map(),
+          map(),
+          map(),
+          map()
+        ) :: String.t()
+  defp function_return_message(
+         expected,
+         inferred,
+         expr,
+         type_alias_lookup,
+         import_lookup,
+         signature_lookup,
+         binding_types
+       ) do
+    issues =
+      record_literal_validation_issues(
+        expected,
+        expr,
+        import_lookup,
+        signature_lookup,
+        type_alias_lookup,
+        binding_types
+      )
+
+    field_type_issues = Enum.filter(issues, &match?({:field_type, _, _, _}, &1))
+    extra_issues = Enum.filter(issues, &match?({:extra_field, _}, &1))
+    missing_issues = Enum.filter(issues, &match?({:missing_field, _}, &1))
+
+    cond do
+      length(field_type_issues) == 1 ->
+        {:field_type, name, expected_type, inferred_type} = hd(field_type_issues)
+        "The `#{name}` field expects #{expected_type}, but got #{inferred_type}."
+
+      field_type_issues != [] ->
+        names =
+          field_type_issues
+          |> Enum.map(fn {:field_type, name, expected_type, inferred_type} ->
+            "`#{name}` expects #{expected_type}, but got #{inferred_type}"
+          end)
+          |> Enum.join("; ")
+
+        "Record field type mismatches for #{expected}: #{names}."
+
+      length(extra_issues) == 1 ->
+        {:extra_field, name} = hd(extra_issues)
+        "The `#{name}` field does not belong to type #{expected}."
+
+      extra_issues != [] ->
+        names = extra_issues |> Enum.map(fn {:extra_field, name} -> "`#{name}`" end) |> Enum.join(", ")
+        "These fields do not belong to type #{expected}: #{names}."
+
+      length(missing_issues) == 1 ->
+        {:missing_field, name} = hd(missing_issues)
+        "The `#{name}` field is required for type #{expected}."
+
+      missing_issues != [] ->
+        names = missing_issues |> Enum.map(fn {:missing_field, name} -> "`#{name}`" end) |> Enum.join(", ")
+        "Missing fields for type #{expected}: #{names}."
+
+      true ->
+        "Expected return type #{expected}, but got #{inferred || "an incompatible value"}."
+    end
+  end
+
   @spec next_call_occurrence(map(), String.t()) :: {pos_integer(), map()}
   defp next_call_occurrence(call_context, pattern) when is_binary(pattern) do
     counts = Map.get(call_context, :occurrence_counts, %{})
@@ -591,6 +890,45 @@ defmodule ElmEx.IR.FunctionCallCheck do
     Map.get(binding_types, name)
   end
 
+  defp infer_expr_type(
+         %{op: :field_access, arg: arg, field: field},
+         import_lookup,
+         signature_lookup,
+         type_alias_lookup,
+         binding_types
+       )
+       when is_binary(field) do
+    case infer_expr_type(arg, import_lookup, signature_lookup, type_alias_lookup, binding_types) do
+      parent_type when is_binary(parent_type) ->
+        infer_record_field_type(parent_type, field, import_lookup, type_alias_lookup)
+
+      _ ->
+        nil
+    end
+  end
+
+  defp infer_expr_type(
+         %{op: :tuple2, left: left, right: right},
+         import_lookup,
+         signature_lookup,
+         type_alias_lookup,
+         binding_types
+       ) do
+    left_type =
+      infer_expr_type(left, import_lookup, signature_lookup, type_alias_lookup, binding_types)
+
+    right_type =
+      infer_expr_type(right, import_lookup, signature_lookup, type_alias_lookup, binding_types)
+
+    case {left_type, right_type} do
+      {left, right} when is_binary(left) and is_binary(right) ->
+        "( #{left}, #{right} )"
+
+      _ ->
+        nil
+    end
+  end
+
   defp infer_expr_type(%{op: :record_literal, fields: fields}, import_lookup, signature_lookup, type_alias_lookup, binding_types)
        when is_list(fields) do
     inferred_field_types =
@@ -714,6 +1052,23 @@ defmodule ElmEx.IR.FunctionCallCheck do
   defp alias_field_types(%{field_types: field_types}) when is_map(field_types), do: field_types
   defp alias_field_types(_), do: %{}
 
+  @spec infer_record_field_type(String.t(), String.t(), map(), map()) :: String.t() | nil
+  defp infer_record_field_type(parent_type, field, import_lookup, type_alias_lookup)
+       when is_binary(parent_type) and is_binary(field) do
+    resolved = resolve_type_reference(parent_type, import_lookup)
+
+    case alias_spec(resolved, type_alias_lookup) do
+      spec when is_map(spec) ->
+        case Map.get(alias_field_types(spec), field) do
+          type when is_binary(type) -> type
+          _ -> nil
+        end
+
+      _ ->
+        nil
+    end
+  end
+
   @spec alias_field_types_compatible?(map(), map()) :: boolean()
   defp alias_field_types_compatible?(_alias_types, inferred_types) when inferred_types == %{} do
     true
@@ -784,6 +1139,16 @@ defmodule ElmEx.IR.FunctionCallCheck do
 
       primitive_type?(expected) and primitive_type?(inferred) ->
         expected != inferred
+
+      TypeSignature.tuple_type?(expected) and TypeSignature.tuple_type?(inferred) ->
+        expected_elems = TypeSignature.tuple_element_types(expected)
+        inferred_elems = TypeSignature.tuple_element_types(inferred)
+
+        length(expected_elems) != length(inferred_elems) or
+          Enum.zip(expected_elems, inferred_elems)
+          |> Enum.any?(fn {exp, inf} ->
+            incompatible_types?(exp, inf, import_lookup, type_alias_lookup, target, arg)
+          end)
 
       record_type?(expected) and record_type?(inferred) ->
         not record_fields_compatible?(expected, inferred, type_alias_lookup)

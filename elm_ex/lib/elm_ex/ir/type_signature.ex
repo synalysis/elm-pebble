@@ -70,6 +70,27 @@ defmodule ElmEx.IR.TypeSignature do
     String.starts_with?(String.trim(type), "{") and String.ends_with?(String.trim(type), "}")
   end
 
+  @spec tuple_type?(String.t()) :: boolean()
+  def tuple_type?(type) when is_binary(type) do
+    trimmed = String.trim(type)
+    String.starts_with?(trimmed, "(") and String.ends_with?(trimmed, ")")
+  end
+
+  @spec tuple_element_types(String.t()) :: [String.t()]
+  def tuple_element_types(type) when is_binary(type) do
+    if tuple_type?(type) do
+      type
+      |> String.trim()
+      |> String.trim_leading("(")
+      |> String.trim_trailing(")")
+      |> split_top_level(",", [])
+      |> Enum.map(&String.trim/1)
+      |> Enum.reject(&(&1 == ""))
+    else
+      []
+    end
+  end
+
   @spec split_top_level(String.t(), String.t(), [String.t()]) :: [String.t()]
   defp split_top_level(source, separator, acc) when is_binary(source) and is_binary(separator) do
     do_split_top_level(source, separator, acc, "", 0, nil)

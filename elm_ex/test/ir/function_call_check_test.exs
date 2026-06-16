@@ -475,6 +475,303 @@ defmodule ElmEx.IR.FunctionCallCheckTest do
              Enum.filter(diagnostics, &(&1.code == "function_call_arity"))
   end
 
+  test "reports record field type mismatch in init return value" do
+    project = %Project{
+      project_dir: "/tmp",
+      elm_json: %{"source-directories" => ["src"]},
+      modules: [digital_init_module()]
+    }
+
+    assert {:ok, ir} = Lowerer.lower_project(project)
+
+    assert Enum.any?(
+             ir.diagnostics,
+             &(&1.code == "function_return_type" and
+                 &1.severity == "error" and
+                 &1.function == "init" and
+                 String.contains?(&1.message, "`screenH`") and
+                 String.contains?(&1.message, "Int"))
+           )
+  end
+
+  test "reports missing and extra fields in init return value" do
+    project = %Project{
+      project_dir: "/tmp",
+      elm_json: %{"source-directories" => ["src"]},
+      modules: [mismatched_init_fields_module()]
+    }
+
+    assert {:ok, ir} = Lowerer.lower_project(project)
+
+    assert Enum.any?(
+             ir.diagnostics,
+             &(&1.code == "function_return_type" and
+                 &1.severity == "error" and
+                 &1.function == "init" and
+                 (String.contains?(&1.message, "`hour`") or
+                    String.contains?(&1.message, "`timeString`")))
+           )
+  end
+
+  test "reports extra record fields in init return value" do
+    project = %Project{
+      project_dir: "/tmp",
+      elm_json: %{"source-directories" => ["src"]},
+      modules: [
+        %FrontendModule{
+          name: "Main",
+          path: "/tmp/src/Main.elm",
+          imports: [],
+          module_exposing: "main",
+          declarations: [
+            %{
+              kind: :type_alias,
+              name: "Model",
+              fields: ["hour", "minute", "screenW", "screenH"],
+              field_types: %{
+                "hour" => "Int",
+                "minute" => "Int",
+                "screenW" => "Int",
+                "screenH" => "Int"
+              },
+              span: %{start_line: 5, end_line: 8}
+            },
+            %{
+              kind: :function_definition,
+              name: "init",
+              args: ["context"],
+              type: "LaunchContext -> ( Model, Cmd Msg )",
+              expr: %{
+                op: :tuple2,
+                left: %{
+                  op: :record_literal,
+                  fields: [
+                    %{name: "hour", expr: %{op: :int_literal, value: 12}},
+                    %{name: "minute", expr: %{op: :int_literal, value: 0}},
+                    %{
+                      name: "screenW",
+                      expr: %{
+                        op: :field_access,
+                        arg: %{op: :field_access, arg: %{op: :var, name: "context"}, field: "screen"},
+                        field: "width"
+                      }
+                    },
+                    %{
+                      name: "screenH",
+                      expr: %{
+                        op: :field_access,
+                        arg: %{op: :field_access, arg: %{op: :var, name: "context"}, field: "screen"},
+                        field: "height"
+                      }
+                    },
+                    %{
+                      name: "abc",
+                      expr: %{
+                        op: :field_access,
+                        arg: %{op: :field_access, arg: %{op: :var, name: "context"}, field: "screen"},
+                        field: "colorMode"
+                      }
+                    }
+                  ]
+                },
+                right: %{op: :qualified_call1, target: "Cmd.none"}
+              },
+              span: %{start_line: 20, end_line: 28}
+            }
+          ]
+        }
+      ]
+    }
+
+    assert {:ok, ir} = Lowerer.lower_project(project)
+
+    assert Enum.any?(
+             ir.diagnostics,
+             &(&1.code == "function_return_type" and
+                 &1.severity == "error" and
+                 &1.function == "init" and
+                 String.contains?(&1.message, "`abc`"))
+           )
+  end
+
+  defp digital_init_module do
+    %FrontendModule{
+      name: "Main",
+      path: "/tmp/src/Main.elm",
+      imports: [],
+      module_exposing: "main",
+      declarations: [
+        %{
+          kind: :type_alias,
+          name: "DisplayShape",
+          fields: [],
+          field_types: %{},
+          span: %{start_line: 1, end_line: 1}
+        },
+        %{
+          kind: :type_alias,
+          name: "LaunchScreen",
+          fields: ["width", "height", "shape"],
+          field_types: %{
+            "width" => "Int",
+            "height" => "Int",
+            "shape" => "DisplayShape"
+          },
+          span: %{start_line: 2, end_line: 2}
+        },
+        %{
+          kind: :type_alias,
+          name: "LaunchContext",
+          fields: ["screen"],
+          field_types: %{"screen" => "LaunchScreen"},
+          span: %{start_line: 3, end_line: 3}
+        },
+        %{
+          kind: :type_alias,
+          name: "Model",
+          fields: ["timeString", "screenW", "screenH", "displayShape"],
+          field_types: %{
+            "timeString" => "String",
+            "screenW" => "Int",
+            "screenH" => "Int",
+            "displayShape" => "DisplayShape"
+          },
+          span: %{start_line: 5, end_line: 8}
+        },
+        %{
+          kind: :function_definition,
+          name: "init",
+          args: ["context"],
+          type: "LaunchContext -> ( Model, Cmd Msg )",
+          expr: %{
+            op: :tuple2,
+            left: %{
+              op: :record_literal,
+              fields: [
+                %{name: "timeString", expr: %{op: :string_literal, value: "--:--"}},
+                %{
+                  name: "screenW",
+                  expr: %{
+                    op: :field_access,
+                    arg: %{op: :field_access, arg: %{op: :var, name: "context"}, field: "screen"},
+                    field: "width"
+                  }
+                },
+                %{
+                  name: "screenH",
+                  expr: %{
+                    op: :field_access,
+                    arg: %{op: :field_access, arg: %{op: :var, name: "context"}, field: "screen"},
+                    field: "shape"
+                  }
+                },
+                %{
+                  name: "displayShape",
+                  expr: %{
+                    op: :field_access,
+                    arg: %{op: :field_access, arg: %{op: :var, name: "context"}, field: "screen"},
+                    field: "shape"
+                  }
+                }
+              ]
+            },
+            right: %{op: :qualified_call1, target: "Cmd.none"}
+          },
+          span: %{start_line: 20, end_line: 28}
+        }
+      ]
+    }
+  end
+
+  defp mismatched_init_fields_module do
+    %FrontendModule{
+      name: "Main",
+      path: "/tmp/src/Main.elm",
+      imports: [],
+      module_exposing: "main",
+      declarations: [
+        %{
+          kind: :type_alias,
+          name: "DisplayShape",
+          fields: [],
+          field_types: %{},
+          span: %{start_line: 1, end_line: 1}
+        },
+        %{
+          kind: :type_alias,
+          name: "LaunchScreen",
+          fields: ["width", "height", "shape"],
+          field_types: %{
+            "width" => "Int",
+            "height" => "Int",
+            "shape" => "DisplayShape"
+          },
+          span: %{start_line: 2, end_line: 2}
+        },
+        %{
+          kind: :type_alias,
+          name: "LaunchContext",
+          fields: ["screen"],
+          field_types: %{"screen" => "LaunchScreen"},
+          span: %{start_line: 3, end_line: 3}
+        },
+        %{
+          kind: :type_alias,
+          name: "Model",
+          fields: ["hour", "minute", "screenW", "screenH"],
+          field_types: %{
+            "hour" => "Int",
+            "minute" => "Int",
+            "screenW" => "Int",
+            "screenH" => "Int"
+          },
+          span: %{start_line: 5, end_line: 8}
+        },
+        %{
+          kind: :function_definition,
+          name: "init",
+          args: ["context"],
+          type: "LaunchContext -> ( Model, Cmd Msg )",
+          expr: %{
+            op: :tuple2,
+            left: %{
+              op: :record_literal,
+              fields: [
+                %{name: "timeString", expr: %{op: :string_literal, value: "--:--"}},
+                %{
+                  name: "screenW",
+                  expr: %{
+                    op: :field_access,
+                    arg: %{op: :field_access, arg: %{op: :var, name: "context"}, field: "screen"},
+                    field: "width"
+                  }
+                },
+                %{
+                  name: "screenH",
+                  expr: %{
+                    op: :field_access,
+                    arg: %{op: :field_access, arg: %{op: :var, name: "context"}, field: "screen"},
+                    field: "shape"
+                  }
+                },
+                %{
+                  name: "displayShape",
+                  expr: %{
+                    op: :field_access,
+                    arg: %{op: :field_access, arg: %{op: :var, name: "context"}, field: "screen"},
+                    field: "shape"
+                  }
+                }
+              ]
+            },
+            right: %{op: :qualified_call1, target: "Cmd.none"}
+          },
+          span: %{start_line: 20, end_line: 28}
+        }
+      ]
+    }
+  end
+
   defp ui_module_with_rotation_from_degrees do
     Map.update!(ui_module(), :declarations, fn decls ->
       decls ++
