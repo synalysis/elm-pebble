@@ -212,6 +212,62 @@ defmodule Elmc.Backend.CCodegen.Hoist do
     end
   end
 
+  @spec drop_unused_native_minmax_decls(String.t()) :: String.t()
+  def drop_unused_native_minmax_decls(code) when is_binary(code) do
+    code
+    |> String.split("\n")
+    |> drop_unused_native_minmax_decl_lines()
+    |> Enum.join("\n")
+  end
+
+  @spec unused_native_minmax_refs(String.t()) :: [String.t()]
+  def unused_native_minmax_refs(code) when is_binary(code) do
+    code
+    |> String.split("\n")
+    |> Enum.flat_map(fn line ->
+      case Regex.run(
+             ~r/^\s*const elmc_int_t (native_(?:min|max)(?:_left|_right)?_\d+) = /,
+             line
+           ) do
+        [_, ref] ->
+          if native_minmax_hoist_used?(code, ref), do: [], else: [ref]
+
+        _ ->
+          []
+      end
+    end)
+  end
+
+  defp drop_unused_native_minmax_decl_lines(lines) do
+    case find_removable_native_minmax_line(lines) do
+      nil ->
+        lines
+
+      index ->
+        lines
+        |> List.delete_at(index)
+        |> drop_unused_native_minmax_decl_lines()
+    end
+  end
+
+  defp find_removable_native_minmax_line(lines) do
+    body = Enum.join(lines, "\n")
+
+    Enum.find_index(lines, fn line ->
+      case Regex.run(
+             ~r/^\s*const elmc_int_t (native_(?:min|max)(?:_left|_right)?_\d+) = /,
+             line
+           ) do
+        [_, ref] -> not native_minmax_hoist_used?(body, ref)
+        _ -> false
+      end
+    end)
+  end
+
+  defp native_minmax_hoist_used?(body, ref) when is_binary(body) and is_binary(ref) do
+    Regex.scan(~r/\b#{Regex.escape(ref)}\b/, body) |> length() > 1
+  end
+
   @spec drop_branch_only_redeclared_hoists(String.t(), String.t(), String.t()) :: String.t()
   def drop_branch_only_redeclared_hoists(preamble, then_code, else_code)
       when is_binary(preamble) and is_binary(then_code) and is_binary(else_code) do

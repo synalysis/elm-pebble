@@ -5,6 +5,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
   alias Elmc.Backend.CCodegen.DirectRender.Emit.DuplicateFieldHoists
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.FunctionEmit
+  alias Elmc.Backend.CCodegen.Hoist
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
@@ -119,7 +120,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
             FunctionEmit.unused_arg_casts(c_arg_bindings, [body_code])
 
           helper_defs = direct_helper_defs()
-          helper_defs <> boxed_body(c_name, arg_bindings, unused_casts, field_hoist_preamble <> body_code)
+          helper_defs <> boxed_body(c_name, arg_bindings, unused_casts, Hoist.drop_unused_native_minmax_decls(field_hoist_preamble <> body_code))
 
         :error ->
           raise ArgumentError,
@@ -236,6 +237,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
               wrapper_unused_casts,
               native_unused_casts,
               field_hoist_preamble <> body_code
+              |> Hoist.drop_unused_native_minmax_decls()
             )
 
         :error ->

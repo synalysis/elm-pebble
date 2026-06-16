@@ -341,6 +341,9 @@ defmodule Elmc.Backend.CCodegen.Host do
   @spec register_hoisted_native_int(Types.ir_expr(), String.t()) :: :ok
   defdelegate register_hoisted_native_int(expr, ref), to: Hoist
 
+  @spec drop_unused_native_minmax_decls(String.t()) :: String.t()
+  defdelegate drop_unused_native_minmax_decls(code), to: Hoist
+
   @spec maybe_promote_hoisted_native_int(
           Types.ir_expr(),
           Types.compile_env(),

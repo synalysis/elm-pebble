@@ -1,6 +1,7 @@
 defmodule Elmc.QualifiedBuiltinCodegenTest do
   use ExUnit.Case
 
+  alias Elmc.Backend.CCodegen.Hoist
   alias Elmc.Test.CCodegenExtract
 
   test "qualified Basics operators are lowered as builtins" do
@@ -4039,6 +4040,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     assert view_body =~ "direct_native_record_layout_x_"
     assert view_body =~ "direct_native_record_layout_cell_"
     assert view_body =~ "ELMC_RENDER_OP_RECT"
+    assert Hoist.unused_native_minmax_refs(view_body) == []
   end
 
   test "direct List.indexedMap over range inlines affine rect through group context" do
