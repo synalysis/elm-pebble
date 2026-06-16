@@ -896,6 +896,70 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     if shared_subexpr_ref?(env, list_var), do: "", else: "elmc_release(#{list_var});\n"
   end
 
+  @spec reset_deferred_call_operand_releases() :: :ok
+  def reset_deferred_call_operand_releases do
+    Process.put(:elmc_deferred_call_operand_releases, MapSet.new())
+    :ok
+  end
+
+  @spec defer_call_operand_release(String.t()) :: :ok
+  def defer_call_operand_release(ref) when is_binary(ref) do
+    if Util.boxed_temp_var?(ref) do
+      set =
+        Process.get(:elmc_deferred_call_operand_releases, MapSet.new())
+        |> MapSet.put(ref)
+
+      Process.put(:elmc_deferred_call_operand_releases, set)
+    end
+
+    :ok
+  end
+
+  @spec deferred_call_operand_release_code() :: String.t()
+  def deferred_call_operand_release_code do
+    refs = Process.get(:elmc_deferred_call_operand_releases, MapSet.new())
+    Process.put(:elmc_deferred_call_operand_releases, MapSet.new())
+
+    refs
+    |> Enum.sort()
+    |> Enum.map_join("\n  ", &"elmc_release(#{&1});")
+    |> case do
+      "" -> ""
+      releases -> "\n  " <> releases <> "\n"
+    end
+  end
+
+  @spec flush_subexpr_cache_releases(Types.compile_env()) :: String.t()
+  def flush_subexpr_cache_releases(env) do
+    field_releases =
+      env
+      |> get_field_subexpr_cache()
+      |> Map.values()
+      |> Enum.map(fn {ref} -> ref end)
+      |> Enum.filter(&boxed_release_var?/1)
+      |> Enum.uniq()
+      |> Enum.map_join("\n  ", &"elmc_release(#{&1});")
+
+    record_releases =
+      env
+      |> get_record_subexpr_cache()
+      |> Map.values()
+      |> Enum.map(fn {ref} -> ref end)
+      |> Enum.filter(&boxed_release_var?/1)
+      |> Enum.uniq()
+      |> Enum.map_join("\n  ", &"elmc_release(#{&1});")
+
+    deferred = deferred_call_operand_release_code()
+
+    [field_releases, record_releases, String.trim(deferred)]
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.map_join("\n  ", & &1)
+    |> case do
+      "" -> ""
+      releases -> "\n  " <> releases <> "\n"
+    end
+  end
+
   defp mark_shared_subexpr_ref(env, ref) when is_binary(ref) do
     case Map.get(env, :__subexpr_cache_key__) do
       nil ->
@@ -1193,9 +1257,23 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     do: compile_cached_field_access_bound_name(name, env, counter)
 
   defp compile_cached_field_access_arg(arg_expr, env, counter) do
-    {code, ref, counter} = Host.compile_expr(arg_expr, env, counter)
-    {code, ref, counter, env, true}
+    key = subexpr_key(arg_expr)
+    cache_hit? = lookup_subexpr_cache(env, key) != :miss
+
+    {code, ref, counter, env} = compile_cached_expr(arg_expr, env, counter, @uncached_compile)
+
+    release? =
+      if cacheable_call_arg?(arg_expr) do
+        cache_hit?
+      else
+        true
+      end
+
+    {code, ref, counter, env, release?}
   end
+
+  defp cacheable_call_arg?(%{op: op}) when op in [:call, :qualified_call, :constructor_call], do: true
+  defp cacheable_call_arg?(_), do: false
 
   defp deferred_cache_release_code(env, field_refs, field_code) do
     env

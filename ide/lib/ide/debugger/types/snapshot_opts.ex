@@ -7,6 +7,7 @@ defmodule Ide.Debugger.Types.SnapshotOpts do
           {:event_limit, pos_integer()}
           | {:types, [String.t()]}
           | {:since_seq, non_neg_integer()}
+          | {:timeout, pos_integer()}
 
   @type opts :: [opt()]
 end

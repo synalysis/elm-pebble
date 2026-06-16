@@ -253,6 +253,8 @@ defmodule Ide.CompanionProtocolGeneratorTest do
       assert generated_internal =~ "decodeListInt"
       assert generated_internal =~ "encodeListInt"
       assert generated_internal =~ "++ encodeListInt \"provide_piece_field2\" field2"
+      assert generated_js =~ "wirePhoneToWatchFromElmPayload"
+      assert generated_js =~ "elmPayloadListInt"
     after
       File.rm_rf(tmp)
     end

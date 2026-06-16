@@ -105,11 +105,27 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
           :error ->
             case rename_result_var(expr_code, expr_var, out) do
               {:ok, renamed} -> {renamed, "", counter}
-              :error when expr_var == out -> {expr_code, "", counter}
-              :error -> {expr_code, "#{out} = #{expr_var};", counter}
+              :error when expr_var == out ->
+                if assigns_into_out?(expr_code, out) do
+                  {strip_orphan_tmp_decl(expr_code, expr_var), "", counter}
+                else
+                  {expr_code, "", counter}
+                end
+
+              :error ->
+                {expr_code, "#{out} = #{expr_var};", counter}
             end
         end
     end
+  end
+
+  defp assigns_into_out?(expr_code, out) when is_binary(expr_code) and is_binary(out) do
+    String.contains?(expr_code, "&#{out},") or String.contains?(expr_code, "&#{out})")
+  end
+
+  defp strip_orphan_tmp_decl(expr_code, expr_var)
+       when is_binary(expr_code) and is_binary(expr_var) do
+    Regex.replace(~r/^[ \t]*ElmcValue \*#{Regex.escape(expr_var)} = NULL;\n/m, expr_code, "")
   end
 
   defp rename_result_var(expr_code, from, to), do: fold_result_binding(expr_code, from, to)

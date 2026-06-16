@@ -272,6 +272,142 @@ defmodule Ide.Debugger.TemplateWatchfaceIntegrationTest do
            end)
   end
 
+  test "tangram companion http chain delivers svg pieces to watch" do
+    previous_async_http = Application.get_env(:ide, :debugger_async_http_followups)
+    previous_async_protocol = Application.get_env(:ide, :debugger_async_protocol_delivery)
+    previous_http_executor = Application.get_env(:ide, Ide.Debugger.HttpExecutor)
+
+    catalog_json = ~s({"page1-0": {"wholeAnnotation": "chair"}})
+
+    tangram_svg = ~s(
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 132 126">
+        <polygon points="58,52 16,22 6,62" fill="#0055FF"/>
+        <polygon points="74,52 108,22 118,62" fill="#00AAFF"/>
+        <polygon points="48,60 66,46 84,60 66,76" fill="#55FFFF"/>
+        <polygon points="84,54 102,46 98,66" fill="#00FFFF"/>
+        <polygon points="48,66 26,58 20,74 42,82" fill="#001133"/>
+        <polygon points="61,76 38,92 70,90" fill="#0055DD"/>
+        <polygon points="72,76 100,90 78,94" fill="#AADDFF"/>
+      </svg>
+    )
+
+    Application.put_env(:ide, :debugger_async_http_followups, true)
+    Application.put_env(:ide, :debugger_async_protocol_delivery, true)
+
+    Application.put_env(:ide, Ide.Debugger.HttpExecutor,
+      request_fun: fn command ->
+        url = Map.get(command, "url") || Map.get(command, :url) || ""
+
+        body =
+          cond do
+            String.contains?(url, "dense10.json") -> catalog_json
+            String.contains?(url, "tangrams-svg") -> tangram_svg
+            true -> ""
+          end
+
+        {:ok, %{"status" => 200, "body" => body, "headers" => []}}
+      end
+    )
+
+    on_exit(fn ->
+      if is_nil(previous_async_http) do
+        Application.delete_env(:ide, :debugger_async_http_followups)
+      else
+        Application.put_env(:ide, :debugger_async_http_followups, previous_async_http)
+      end
+
+      if is_nil(previous_async_protocol) do
+        Application.delete_env(:ide, :debugger_async_protocol_delivery)
+      else
+        Application.put_env(:ide, :debugger_async_protocol_delivery, previous_async_protocol)
+      end
+
+      if is_nil(previous_http_executor) do
+        Application.delete_env(:ide, Ide.Debugger.HttpExecutor)
+      else
+        Application.put_env(:ide, Ide.Debugger.HttpExecutor, previous_http_executor)
+      end
+    end)
+
+    slug = "sim-tangram-svg-pieces-#{System.unique_integer([:positive])}"
+
+    companion_source =
+      File.read!(
+        Path.join([
+          "priv",
+          "project_templates",
+          "watchface_tangram_time",
+          "phone",
+          "src",
+          "CompanionApp.elm"
+        ])
+      )
+
+    watch_source =
+      File.read!(
+        Path.join([
+          "priv",
+          "project_templates",
+          "watchface_tangram_time",
+          "src",
+          "Main.elm"
+        ])
+      )
+
+    {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               rel_path: "watch/src/Main.elm",
+               source: watch_source,
+               reason: "tangram_svg_pieces_watch",
+               source_root: "watch"
+             })
+
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               rel_path: "src/CompanionApp.elm",
+               source: companion_source,
+               reason: "tangram_svg_pieces_companion",
+               source_root: "phone"
+             })
+
+    assert :ok = Debugger.RuntimeBackgroundDrains.await_idle(slug, 180_000)
+
+    assert {:ok, state} = Debugger.snapshot(slug, event_limit: 500)
+
+    timeline = state.debugger_timeline || []
+
+    assert Enum.any?(timeline, fn row ->
+             row.target == "phone" and
+               row.type == "update" and
+               String.contains?(to_string(row.message || ""), "CatalogReceived")
+           end)
+
+    assert Enum.any?(timeline, fn row ->
+             row.target == "phone" and
+               row.type == "update" and
+               String.contains?(to_string(row.message || ""), "SvgReceived")
+           end)
+
+    watch_runtime =
+      get_in(state, [:watch, :model, "runtime_model"]) ||
+        get_in(state, [:watch, :model, :runtime_model]) || %{}
+
+    downloaded =
+      Map.get(watch_runtime, "downloadedPieces") || Map.get(watch_runtime, :downloadedPieces) ||
+        []
+
+    assert length(downloaded) == 7,
+           "expected exactly 7 tangram pieces on watch, got: #{inspect(downloaded)}"
+
+    pending_figure =
+      Map.get(watch_runtime, "pendingFigure") || Map.get(watch_runtime, :pendingFigure)
+
+    assert pending_figure == %{"ctor" => "Nothing", "args" => []},
+           "expected pendingFigure cleared after download, got: #{inspect(pending_figure)}"
+  end
+
   test "tutorial watchface init emits platform and companion command events" do
     slug = "sim-tutorial-init-events-#{System.unique_integer([:positive])}"
 

@@ -19,13 +19,27 @@ defmodule Ide.Debugger.SnapshotQuery do
     types = Keyword.get(opts, :types)
     since_seq = Keyword.get(opts, :since_seq)
 
-    host.fetch.(project_slug,
-      transform: fn prepared ->
-        prepared
-        |> EventLogFilters.by_types(types)
-        |> EventLogFilters.since_seq(since_seq)
-        |> EventLog.trim(limit)
-      end
-    )
+    fetch_opts =
+      [
+        transform: fn prepared ->
+          prepared
+          |> EventLogFilters.by_types(types)
+          |> EventLogFilters.since_seq(since_seq)
+          |> EventLog.trim(limit)
+        end
+      ]
+      |> maybe_put_timeout(opts)
+
+    host.fetch.(project_slug, fetch_opts)
+  end
+
+  defp maybe_put_timeout(fetch_opts, snapshot_opts) do
+    case Keyword.get(snapshot_opts, :timeout) do
+      timeout when is_integer(timeout) and timeout > 0 ->
+        Keyword.put(fetch_opts, :timeout, timeout)
+
+      _ ->
+        fetch_opts
+    end
   end
 end

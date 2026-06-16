@@ -1374,4 +1374,82 @@ defmodule Ide.Mcp.ToolsDebuggerIntegrationTest do
     refute Map.has_key?(inspect_md_only_no_md, :update_messages)
   end
 
+  test "debugger.start bootstraps tangram companion and delivers ProvideFigure to watch" do
+    slug = "mcp-tangram-companion-start-#{System.unique_integer([:positive])}"
+
+    wait_for_companion_figure = fn slug ->
+      Enum.reduce_while(1..120, false, fn _, _ ->
+        case Tools.call("debugger.models", %{"slug" => slug, "target" => "watch"}, [:read]) do
+          {:ok, models} ->
+            watch_runtime =
+              get_in(models, [:models, :watch, :runtime_model]) ||
+                get_in(models, ["models", "watch", "runtime_model"]) || %{}
+
+            companion_figure =
+              Map.get(watch_runtime, "companionFigure") || Map.get(watch_runtime, :companionFigure)
+
+            if match?(%{"ctor" => "Just", "args" => [_]}, companion_figure) do
+              {:halt, true}
+            else
+              Process.sleep(250)
+              {:cont, false}
+            end
+
+          _ ->
+            Process.sleep(250)
+            {:cont, false}
+        end
+      end)
+    end
+
+    assert {:ok, _project} =
+             Projects.create_project(%{
+               "name" => "Mcp Tangram Companion Start",
+               "slug" => slug,
+               "target_type" => "watchface",
+               "template" => "watchface-tangram-time"
+             })
+
+    assert {:ok, %{state: started}} = Tools.call("debugger.start", %{"slug" => slug}, [:edit])
+    assert started.running
+
+    assert wait_for_companion_figure.(slug)
+
+    assert {:ok, models} =
+             Tools.call("debugger.models", %{"slug" => slug, "target" => "companion"}, [:read])
+
+    companion_runtime =
+      get_in(models, [:models, :companion, :runtime_model]) ||
+        get_in(models, ["models", "companion", "runtime_model"]) || %{}
+
+    assert Map.has_key?(companion_runtime, "figure") or Map.has_key?(companion_runtime, :figure)
+
+    assert {:ok, models} =
+             Tools.call("debugger.models", %{"slug" => slug, "target" => "watch"}, [:read])
+
+    watch_runtime =
+      get_in(models, [:models, :watch, :runtime_model]) ||
+        get_in(models, ["models", "watch", "runtime_model"]) || %{}
+
+    companion_figure =
+      Map.get(watch_runtime, "companionFigure") || Map.get(watch_runtime, :companionFigure)
+
+    assert %{"ctor" => "Just", "args" => [0]} = companion_figure
+
+    assert {:ok, timeline} =
+             Tools.call("debugger.timeline", %{"slug" => slug, "event_limit" => 50}, [:read])
+
+    events = Map.get(timeline, :timeline) || Map.get(timeline, "timeline") || []
+
+    assert Enum.any?(events, fn row ->
+             type = Map.get(row, :type) || Map.get(row, "type")
+             target = Map.get(row, :target) || Map.get(row, "target")
+             type in ["init", "debugger.init_in"] and target in ["phone", "companion"]
+           end)
+
+    assert Enum.any?(events, fn row ->
+             summary = Map.get(row, :summary) || Map.get(row, "summary") || ""
+             String.contains?(summary, "FromPhone")
+           end)
+  end
 end

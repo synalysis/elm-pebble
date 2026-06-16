@@ -113,7 +113,7 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
       end)
 
     next = counter + 1
-    out = "tmp_#{next}"
+    out = Map.get(env, :__into_out__) || "tmp_#{next}"
     count = length(item_vars)
     array_name = "list_items_#{next}"
     item_list = Enum.join(item_vars, ", ")

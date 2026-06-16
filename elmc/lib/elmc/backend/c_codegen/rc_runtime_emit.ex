@@ -261,7 +261,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
       not rc_allocator?(function) ->
         "ElmcValue *#{out} = #{function}(#{call_args});"
 
-      rc_allocator_emit_mode?(env) and declared_out_slot?(env, out) ->
+      rc_allocator_emit_mode?(env) and predeclared_out_slot?(env, out) ->
         assign_into(env, out, function, call_args)
 
       rc_allocator_emit_mode?(env) ->
@@ -467,5 +467,9 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
 
   defp declared_out_slot?(env, out) do
     MapSet.member?(Map.get(env, :__declared_outs__, MapSet.new()), out)
+  end
+
+  defp predeclared_out_slot?(env, out) do
+    declared_out_slot?(env, out) or Map.get(env, :__into_out__) == out
   end
 end

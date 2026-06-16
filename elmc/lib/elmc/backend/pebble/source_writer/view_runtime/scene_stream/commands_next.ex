@@ -18,13 +18,11 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime.SceneStream.CommandsNext 
       ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_SCENE_NEXT_EXIT);
       ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_next", direct_count);
     #endif
-      if ((app->scene.dirty || app->scene.byte_count <= 0) &&
-          app->scene_draw_byte_offset == 0) {
-        int build_rc = elmc_pebble_ensure_scene(app);
-        if (build_rc != 0) {
-          ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_SCENE_NEXT_EXIT);
-          ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_next", build_rc);
-        }
+      /* Scene cache is built off the draw stack (deferred timer in the app template).
+         While dirty or empty, skip drawing rather than calling ensure_scene here. */
+      if (app->scene.dirty || app->scene.byte_count <= 0) {
+        ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_SCENE_NEXT_EXIT);
+        ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_next", 0);
       }
       int rc = 0;
       int byte_offset = app->scene_draw_byte_offset;

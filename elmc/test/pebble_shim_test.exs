@@ -1693,14 +1693,16 @@ defmodule Elmc.PebbleShimTest do
         elmc_pebble_invalidate_scene(&app);
         if (!app.scene.dirty) return 5;
 
+        if (elmc_pebble_ensure_scene(&app) != 0) return 6;
+
         ElmcPebbleDrawCmd cmds[64];
         elmc_pebble_scene_reset_draw_cursor(&app);
-        if (elmc_pebble_scene_commands_next(&app, cmds, 64) != 38) return 6;
-        if (app.scene.byte_count <= 0) return 7;
-        if (app.scene.dirty) return 8;
+        if (elmc_pebble_scene_commands_next(&app, cmds, 64) != 38) return 7;
+        if (app.scene.byte_count <= 0) return 8;
+        if (app.scene.dirty) return 9;
 
         elmc_pebble_deinit(&app);
-        return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 9;
+        return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 10;
       }
       """
     )

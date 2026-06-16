@@ -591,7 +591,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
          socket
          |> assign(:debugger_companion_bootstrap_status, :idle)
          |> assign(:debugger_companion_bootstrap_progress, nil)
-         |> DebuggerSupport.refresh()
+         |> schedule_debugger_runtime_refresh()
          |> maybe_schedule_debugger_auto_fire_refresh()}
     end
   end
@@ -618,7 +618,19 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
 
   def handle_info({:debugger_runtime_refresh, seq}, socket) when is_integer(seq) do
     if socket.assigns[:debugger_runtime_refresh_seq] == seq do
-      {:noreply, DebuggerSupport.refresh_following_debugger_latest(socket)}
+      socket = DebuggerSupport.refresh_following_debugger_latest(socket)
+
+      socket =
+        if socket.assigns[:debugger_companion_bootstrap_status] == :running and
+             DebuggerBootstrapFlow.companion_bootstrapped?(socket.assigns[:debugger_state]) do
+          socket
+          |> assign(:debugger_companion_bootstrap_status, :idle)
+          |> assign(:debugger_companion_bootstrap_progress, nil)
+        else
+          socket
+        end
+
+      {:noreply, socket}
     else
       {:noreply, socket}
     end
@@ -759,11 +771,16 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
 
       Task.start(fn ->
         result =
-          DebuggerBootstrapFlow.run_companion_bootstrap(project,
-            progress: fn msg ->
-              send(parent, {:debugger_companion_bootstrap_progress, msg})
-            end
-          )
+          try do
+            DebuggerBootstrapFlow.run_companion_bootstrap(project,
+              progress: fn msg ->
+                send(parent, {:debugger_companion_bootstrap_progress, msg})
+              end
+            )
+          rescue
+            exception ->
+              {:error, Exception.message(exception)}
+          end
 
         send(parent, :debugger_runtime_updated)
         send(parent, {:companion_debugger_bootstrapped, scope_key, result})
@@ -776,8 +793,51 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
     end
   end
 
+  @spec maybe_ensure_companion_bootstrapped(socket()) :: socket()
+  def maybe_ensure_companion_bootstrapped(socket) do
+    project = socket.assigns[:project]
+    state = socket.assigns[:debugger_state]
+
+    cond do
+      not Phoenix.LiveView.connected?(socket) ->
+        socket
+
+      socket.assigns[:pane] != :debugger ->
+        socket
+
+      not match?(%Project{}, project) ->
+        socket
+
+      not Projects.companion_app_present?(project) ->
+        socket
+
+      not debugger_session_active?(socket) ->
+        socket
+
+      socket.assigns[:debugger_companion_bootstrap_status] == :running ->
+        socket
+
+      DebuggerBootstrapFlow.companion_bootstrapped?(state) ->
+        socket
+
+      DebuggerBootstrapFlow.companion_bootstrap_incomplete?(state) ->
+        schedule_companion_debugger_bootstrap(project, socket)
+
+        socket
+        |> assign(:debugger_companion_bootstrap_status, :running)
+        |> assign(:debugger_companion_bootstrap_progress, "Loading companion app...")
+
+      true ->
+        schedule_companion_debugger_bootstrap(project, socket)
+
+        socket
+        |> assign(:debugger_companion_bootstrap_status, :running)
+        |> assign(:debugger_companion_bootstrap_progress, "Loading companion app...")
+    end
+  end
+
   @spec schedule_debugger_runtime_refresh(socket()) :: socket()
-  defp schedule_debugger_runtime_refresh(socket) do
+  def schedule_debugger_runtime_refresh(socket) do
     ms = Application.get_env(:ide, :debugger_runtime_refresh_debounce_ms, 100)
     seq = (socket.assigns[:debugger_runtime_refresh_seq] || 0) + 1
 

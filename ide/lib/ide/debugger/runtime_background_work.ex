@@ -38,10 +38,16 @@ defmodule Ide.Debugger.RuntimeBackgroundWork do
 
   @spec idle?(String.t()) :: boolean()
   def idle?(project_slug) when is_binary(project_slug) do
-    state = AgentStore.fetch(project_slug)
+    if inflight?(project_slug) do
+      false
+    else
+      state = AgentStore.fetch(project_slug, timeout: 5_000)
 
-    not inflight?(project_slug) and PendingHttpFollowups.pending(state) == [] and
-      PendingProtocolDelivery.pending(state) == []
+      PendingHttpFollowups.pending(state) == [] and
+        PendingProtocolDelivery.pending(state) == []
+    end
+  rescue
+    _ -> false
   end
 
   @spec inc(String.t()) :: non_neg_integer()

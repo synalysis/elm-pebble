@@ -270,6 +270,9 @@ static bool s_draw_update_active = false;
 static int s_elm_init_attempts = 0;
 #endif
 static AppTimer *s_render_coalesce_timer = NULL;
+#if ELMC_PEBBLE_SCENE_CACHE_ENABLED
+static AppTimer *s_scene_prep_timer = NULL;
+#endif
 /* Stream one decoded draw command at a time from the scene byte cursor (static, not stack). */
 static ElmcPebbleDrawCmd s_draw_cmd;
 static GFont s_font;
@@ -434,6 +437,10 @@ static int64_t monotonic_ms(void) {
 }
 
 static void render_model(void);
+#if ELMC_PEBBLE_SCENE_CACHE_ENABLED
+static void scene_prep_timer_callback(void *data);
+static void schedule_scene_prep(void);
+#endif
 #if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
 static void schedule_render_model(void);
 static void render_coalesce_callback(void *data);
@@ -1364,7 +1371,7 @@ static void apply_pending_cmd(void) {
   ELMC_PEBBLE_TRACE_EXIT("apply_pending_cmd");
 }
 
-#if defined(PBL_PLATFORM_APLITE)
+#if ELMC_PEBBLE_STARTUP_RENDER
 static void startup_render_callback(void *data) {
   (void)data;
   render_model();
@@ -1383,14 +1390,10 @@ static void startup_cmd_callback(void *data) {
   // #endregion
   s_startup_cmds_ready = true;
 #if ELMC_PEBBLE_STARTUP_RENDER
-#if defined(PBL_PLATFORM_APLITE)
   /* Defer the first draw until after init returns. Synchronous render during
      startup_cmd_callback nests init, cmd dispatch, scene encode, and Pebble
-     graphics on Aplite's tiny stack+heap and faults at the heap boundary. */
+     graphics on the app stack; heavy watchfaces fault before the event loop runs. */
   app_timer_register(1, startup_render_callback, NULL);
-#else
-  render_model();
-#endif
   // #region agent log
   ELMC_AGENT_INIT_PROBE(0xED991003);
   // #endregion
@@ -2155,21 +2158,6 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
           s_elm_app.scene.byte_count,
           s_elm_app.scene.command_count,
           s_elm_app.scene_draw_byte_offset);
-  if (s_elm_app.scene.dirty || s_elm_app.scene.byte_count <= 0) {
-    ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "elmc-draw ensure_scene begin seq=%d", s_render_sequence);
-    int scene_rc = elmc_pebble_ensure_scene(&s_elm_app);
-    if (scene_rc != 0) {
-      APP_LOG(APP_LOG_LEVEL_WARNING, "elmc-draw ensure_scene failed rc=%d", scene_rc);
-      s_draw_update_active = false;
-      ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_DRAW_UPDATE_EXIT);
-      ELMC_PEBBLE_TRACE_EXIT("draw_update_proc");
-      return;
-    }
-    ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO,
-            "elmc-draw ensure_scene ok bytes=%d cmds=%d",
-            s_elm_app.scene.byte_count,
-            s_elm_app.scene.command_count);
-  }
 #endif
 
   elmc_pebble_scene_reset_draw_cursor(&s_elm_app);
@@ -2784,6 +2772,36 @@ static void schedule_render_model(void) {
 }
 #endif
 
+#if ELMC_PEBBLE_SCENE_CACHE_ENABLED
+static void scene_prep_timer_callback(void *data) {
+  ELMC_PEBBLE_TRACE_ENTER("scene_prep_timer_callback");
+  (void)data;
+  s_scene_prep_timer = NULL;
+  int scene_rc = elmc_pebble_ensure_scene(&s_elm_app);
+  if (scene_rc == 0 && s_draw_layer) {
+    layer_mark_dirty(s_draw_layer);
+#if ELMC_PEBBLE_SCENE_CACHE_ENABLED
+    /* Model can change while a prep timer was already queued; rebuild once more. */
+    if (s_elm_app.scene.dirty) {
+      schedule_scene_prep();
+    }
+#endif
+  } else if (scene_rc != 0) {
+    APP_LOG(APP_LOG_LEVEL_WARNING, "elmc scene prep failed rc=%d", scene_rc);
+  }
+  ELMC_PEBBLE_TRACE_EXIT("scene_prep_timer_callback");
+}
+
+static void schedule_scene_prep(void) {
+  if (s_scene_prep_timer) {
+    return;
+  }
+  /* Defer past the current callback stack (init, inbox, tick). 0 ms still runs
+     on the same event-loop turn and can fault on stack-heavy watchfaces. */
+  s_scene_prep_timer = app_timer_register(100, scene_prep_timer_callback, NULL);
+}
+#endif
+
 static void render_model(void) {
   ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_RENDER_MODEL_ENTER);
   ELMC_PEBBLE_TRACE_ENTER("render_model");
@@ -2811,8 +2829,11 @@ static void render_model(void) {
   }
   s_render_pending = false;
 #if ELMC_PEBBLE_SCENE_CACHE_ENABLED
-  if (s_elm_app.scene.dirty) {
-    (void)elmc_pebble_ensure_scene(&s_elm_app);
+  if (s_elm_app.scene.dirty || s_elm_app.scene.byte_count <= 0) {
+    schedule_scene_prep();
+    ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_RENDER_MODEL_EXIT);
+    ELMC_PEBBLE_TRACE_EXIT("render_model");
+    return;
   }
 #endif
   layer_mark_dirty(s_draw_layer);
@@ -4468,6 +4489,12 @@ static void deinit(void) {
     app_timer_cancel(s_render_coalesce_timer);
     s_render_coalesce_timer = NULL;
   }
+#if ELMC_PEBBLE_SCENE_CACHE_ENABLED
+  if (s_scene_prep_timer) {
+    app_timer_cancel(s_scene_prep_timer);
+    s_scene_prep_timer = NULL;
+  }
+#endif
 #if ELMC_PEBBLE_FEATURE_FRAME_EVENTS
   if (s_frame_timer) {
     app_timer_cancel(s_frame_timer);

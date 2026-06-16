@@ -99,8 +99,45 @@ var companionSimulatorSettings = (function () {
 })();
 var appMessageOutbox = [];
 var appMessageSending = false;
+var appMessageHeadRetries = 0;
+var companionWatchAppReady = false;
+var companionWatchReadyBootTimer = null;
+var APP_MESSAGE_MAX_RETRIES = 24;
+var APP_MESSAGE_BASE_DELAY_MS = 200;
+var COMPANION_WATCH_READY_BOOT_TIMEOUT_MS = 12000;
 var lifecycleReadyDelivered = false;
 var companionSimulatorSettingsReady = false;
+
+function markCompanionWatchAppReady(source) {
+    if (companionWatchAppReady) {
+        return;
+    }
+
+    companionWatchAppReady = true;
+    appMessageHeadRetries = 0;
+
+    if (companionWatchReadyBootTimer != null) {
+        clearTimeout(companionWatchReadyBootTimer);
+        companionWatchReadyBootTimer = null;
+    }
+
+    console.log("Elm companion watch app ready", source || "");
+    drainAppMessageOutbox();
+}
+
+function scheduleCompanionWatchReadyBootTimeout() {
+    if (companionWatchReadyBootTimer != null) {
+        return;
+    }
+
+    companionWatchReadyBootTimer = setTimeout(function () {
+        companionWatchReadyBootTimer = null;
+
+        if (!companionWatchAppReady) {
+            markCompanionWatchAppReady("boot_timeout");
+        }
+    }, COMPANION_WATCH_READY_BOOT_TIMEOUT_MS);
+}
 
 function markCompanionSimulatorSettingsReady() {
     companionSimulatorSettingsReady = true;
@@ -167,11 +204,17 @@ function isCompanionWeatherAppMessage(payload) {
         return false;
     }
 
-    var tag = typeof payload.message_tag === "number"
-        ? payload.message_tag
-        : payload[String(protocol.KEY_MESSAGE_TAG)];
+    // Phone-to-watch wire tags start at 201 for every companion protocol; only
+    // weather payloads use the provide_temperature / provide_condition field keys.
+    var temperatureTag = appMessageValue(payload, "provide_temperature_field1_tag");
+    var temperatureValue = appMessageValue(payload, "provide_temperature_field1_value");
+    var conditionField = appMessageValue(payload, "provide_condition_field1");
 
-    return tag === 201 || tag === 202;
+    if (typeof temperatureTag === "number" && typeof temperatureValue === "number") {
+        return true;
+    }
+
+    return typeof conditionField === "number";
 }
 
 function readStoredConfigurationResponse() {
@@ -316,6 +359,13 @@ function companionPhoneToWatchWirePayload(payload) {
         ));
     }
 
+    if (typeof protocol.wirePhoneToWatchFromElmPayload === "function") {
+        var encoded = protocol.wirePhoneToWatchFromElmPayload(payload);
+        if (encoded) {
+            return wirePayloadFromObject(encoded);
+        }
+    }
+
     return normalizeOutgoingAppMessage(payload);
 }
 
@@ -326,6 +376,11 @@ function sendQueuedAppMessage(payload) {
     }
 
     appMessageOutbox.push(companionPhoneToWatchWirePayload(payload || {}));
+
+    if (!companionWatchAppReady) {
+        return;
+    }
+
     drainAppMessageOutbox();
 }
 
@@ -396,7 +451,7 @@ function sendPebbleWireAppMessage(wire, success, failure, fallback) {
 }
 
 function drainAppMessageOutbox() {
-    if (appMessageSending || appMessageOutbox.length === 0) {
+    if (!companionWatchAppReady || appMessageSending || appMessageOutbox.length === 0) {
         return;
     }
 
@@ -408,12 +463,32 @@ function drainAppMessageOutbox() {
         function () {
             appMessageOutbox.shift();
             appMessageSending = false;
+            appMessageHeadRetries = 0;
             setTimeout(drainAppMessageOutbox, 250);
         },
         function (error) {
-            console.log("Elm companion sendAppMessage failed", JSON.stringify(error || {}));
+            var errorText = error == null ? "null" : JSON.stringify(error);
+            console.log("Elm companion sendAppMessage failed", errorText);
             appMessageSending = false;
-            setTimeout(drainAppMessageOutbox, 150);
+            appMessageHeadRetries += 1;
+
+            if (appMessageHeadRetries >= APP_MESSAGE_MAX_RETRIES) {
+                console.log(
+                    "Elm companion sendAppMessage giving up after retries",
+                    String(appMessageHeadRetries),
+                    JSON.stringify(payload || {})
+                );
+                appMessageOutbox.shift();
+                appMessageHeadRetries = 0;
+                setTimeout(drainAppMessageOutbox, 250);
+                return;
+            }
+
+            var delay = Math.min(
+                APP_MESSAGE_BASE_DELAY_MS * appMessageHeadRetries,
+                4000
+            );
+            setTimeout(drainAppMessageOutbox, delay);
         }
     );
 }
@@ -644,6 +719,7 @@ function finishCompanionBoot() {
     flushUnhandledPlatformIncoming();
     applyPendingCompanionSimulatorSettings();
     deliverLifecycleReadyOnce();
+    scheduleCompanionWatchReadyBootTimeout();
 }
 
 function deliverIncoming(payload) {
@@ -652,6 +728,7 @@ function deliverIncoming(payload) {
         return;
     }
 
+    markCompanionWatchAppReady("watch_inbound");
     console.log("watch -> Elm companion", JSON.stringify(payload));
     if (incomingPort) {
         incomingPort.send(payload);
@@ -1431,6 +1508,17 @@ function companionApplySimulatorSettings(settings) {
         return;
     }
 
+    if (settings.watchAppRunning === true) {
+        markCompanionWatchAppReady("simulator_settings");
+
+        if (
+            Object.keys(settings).length === 1 &&
+            Object.prototype.hasOwnProperty.call(settings, "watchAppRunning")
+        ) {
+            return;
+        }
+    }
+
     companionSimulatorSettings = normalizeCompanionSimulatorSettings(settings);
     companionGlobalRoot().__elmPebbleCompanionSimulatorSettings = companionSimulatorSettings;
     markCompanionSimulatorSettingsReady();
@@ -1458,6 +1546,7 @@ function companionApplySimulatorSettings(settings) {
 }
 
 companionGlobalRoot().companionApplySimulatorSettings = companionApplySimulatorSettings;
+companionGlobalRoot().markCompanionWatchAppReady = markCompanionWatchAppReady;
 companionGlobalRoot().syncCompanionSimulatorSettingsFromGlobal = syncCompanionSimulatorSettingsFromGlobal;
 companionGlobalRoot().deliverWeatherToWatch = deliverWeatherToWatch;
 
@@ -1701,7 +1790,7 @@ Pebble.addEventListener("appmessage", function (event) {
         return;
     }
 
-    console.log("watch -> Elm companion", JSON.stringify(event.payload));
+    markCompanionWatchAppReady("watch_appmessage");
     deliverIncoming(normalizeIncomingAppMessage(event.payload));
 });
 

@@ -1,4 +1,5 @@
 import json
+import os
 import struct
 import sys
 import tempfile
@@ -85,7 +86,14 @@ patch_early_appmessage_replay()
 _pending_companion_js_prefix = None
 
 
+def weather_trace_enabled():
+    return os.environ.get("ELMC_EMULATOR_WEATHER_TRACE", "").lower() in ("1", "true", "yes")
+
+
 def weather_trace_log(runner, ws, stage, **data):
+    if not weather_trace_enabled():
+        return
+
     weather = data.get("weather") if isinstance(data.get("weather"), dict) else None
     temperature_c = None
     condition = None

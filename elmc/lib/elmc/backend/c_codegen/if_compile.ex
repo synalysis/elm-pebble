@@ -168,6 +168,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
   defp branch_env(env, out) do
     env
     |> RecordCompile.fresh_subexpr_cache()
+    |> Map.put(:__into_out__, out)
     |> Map.update(:__declared_outs__, MapSet.new([out]), &MapSet.put(&1, out))
   end
 

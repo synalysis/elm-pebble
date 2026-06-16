@@ -55,6 +55,7 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
     |> normalize_let_source()
     |> normalize_case_source()
     |> normalize_minus_numeric_source()
+    |> close_unbalanced_brackets_before_final_pipe()
     |> split_inline_let_in_lines()
   end
 
@@ -175,6 +176,45 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
   end
 
   @inline_let_in_line ~r/\blet\s+.+\s+in(\s+|$)/u
+
+  @spec close_unbalanced_brackets_before_final_pipe(source()) :: source()
+  defp close_unbalanced_brackets_before_final_pipe(source) when is_binary(source) do
+    if list_bracket_depth(source) > 0 do
+      lines =
+        source
+        |> String.split("\n")
+        |> Enum.reject(&(String.trim(&1) == ""))
+
+      case List.last(lines) do
+        line when is_binary(line) ->
+          trimmed = String.trim(line)
+
+          if String.starts_with?(trimmed, "|>") do
+            indent = String.duplicate(" ", leading_indent_count(line))
+            prefix = Enum.drop(lines, -1)
+            Enum.join(prefix ++ [indent <> "]", line], "\n")
+          else
+            source
+          end
+
+        _ ->
+          source
+      end
+    else
+      source
+    end
+  end
+
+  @spec list_bracket_depth(source()) :: integer()
+  defp list_bracket_depth(source) when is_binary(source) do
+    source
+    |> String.graphemes()
+    |> Enum.reduce(0, fn
+      "[", depth -> depth + 1
+      "]", depth -> depth - 1
+      _, depth -> depth
+    end)
+  end
 
   @spec split_inline_let_in_lines(source()) :: source()
   defp split_inline_let_in_lines(source) when is_binary(source) do
@@ -511,6 +551,10 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
       case_branch_start_line?(line) and (is_nil(branch_indent) or indent == branch_indent)
 
     cond do
+      is_binary(current) and is_integer(branch_indent) and indent < branch_indent and
+          String.starts_with?(String.trim(line), ",") ->
+        {acc, current, branch_indent, let_depth, [line | rest]}
+
       is_binary(current) and is_integer(branch_indent) and case_branch_start_line?(line) and
           indent < branch_indent ->
         {acc, current, branch_indent, let_depth, [line | rest]}

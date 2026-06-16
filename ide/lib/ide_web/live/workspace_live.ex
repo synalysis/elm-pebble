@@ -377,7 +377,15 @@ defmodule IdeWeb.WorkspaceLive do
   @spec maybe_refresh_debugger(socket()) :: socket()
   defp maybe_refresh_debugger(socket) do
     if socket.assigns[:pane] == :debugger do
-      DebuggerSupport.refresh(socket)
+      socket =
+        socket
+        |> DebuggerFlow.maybe_ensure_companion_bootstrapped()
+
+      if Phoenix.LiveView.connected?(socket) do
+        DebuggerFlow.schedule_debugger_runtime_refresh(socket)
+      else
+        DebuggerSupport.refresh(socket)
+      end
     else
       socket
     end

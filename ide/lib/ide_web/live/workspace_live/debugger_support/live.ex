@@ -13,6 +13,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Live do
   defdelegate snapshot_runtime_at_cursor(events, cursor_seq), to: RuntimeSnapshot
   defdelegate nearest_surface_runtime_at_or_before(events, upper_seq, surface), to: RuntimeSnapshot
   @default_event_limit 500
+  @default_ui_snapshot_timeout_ms 5_000
 
   @spec assign_defaults(Types.socket()) :: Types.socket()
   def assign_defaults(socket) do
@@ -60,14 +61,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Live do
         assign_defaults(socket)
 
       project ->
-        {:ok, debugger_state} =
-          Debugger.snapshot(Projects.scope_key(project),
-            event_limit: socket.assigns[:debugger_event_limit] || @default_event_limit,
-            since_seq: socket.assigns[:debugger_since_seq],
-            types: socket.assigns[:debugger_types]
-          )
+        case snapshot_project_state(project, socket) do
+          {:ok, debugger_state} ->
+            Cursor.assign_timeline(socket, debugger_state)
 
-        Cursor.assign_timeline(socket, debugger_state)
+          :agent_busy ->
+            socket
+        end
     end
   end
 
@@ -150,6 +150,30 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Live do
 
         refresh(socket)
     end
+  end
+
+  @spec snapshot_project_state(Projects.Project.t(), Types.socket()) ::
+          {:ok, map()} | :agent_busy
+  defp snapshot_project_state(project, socket) do
+    opts = [
+      event_limit: socket.assigns[:debugger_event_limit] || @default_event_limit,
+      since_seq: socket.assigns[:debugger_since_seq],
+      types: socket.assigns[:debugger_types],
+      timeout: ui_snapshot_timeout_ms()
+    ]
+
+    try do
+      {:ok, debugger_state} = Debugger.snapshot(Projects.scope_key(project), opts)
+      {:ok, debugger_state}
+    catch
+      :exit, {:timeout, _} -> :agent_busy
+      :exit, _ -> :agent_busy
+    end
+  end
+
+  @spec ui_snapshot_timeout_ms() :: pos_integer()
+  defp ui_snapshot_timeout_ms do
+    Application.get_env(:ide, :debugger_ui_snapshot_timeout_ms, @default_ui_snapshot_timeout_ms)
   end
 
   @spec parse_since_seq(Types.wire_input()) :: Types.maybe_non_neg_integer()

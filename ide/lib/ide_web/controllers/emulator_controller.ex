@@ -74,7 +74,6 @@ defmodule IdeWeb.EmulatorController do
   def install(conn, %{"id" => id}) do
     case Emulator.install(id) do
       {:ok, result} ->
-        _ = Emulator.request_app_logs(id)
         json(conn, %{status: "ok", result: result})
 
       {:error, :not_found} ->

@@ -13,6 +13,7 @@ defmodule Ide.Mcp.Handlers.Debugger do
   alias Ide.Projects.Types, as: ProjectsTypes
   alias IdeWeb.WorkspaceLive.DebuggerSupport
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Types, as: SupportTypes
+  alias IdeWeb.WorkspaceLive.DebuggerBootstrapFlow
 
   @type debugger_generic_result :: %{
           optional(atom()) => term(),
@@ -377,8 +378,10 @@ defmodule Ide.Mcp.Handlers.Debugger do
   end
 
   def call("debugger.start", %{"slug" => slug}) do
-    with {:ok, _project} <- ToolSupport.fetch_project(slug),
-         {:ok, state} <- Debugger.start_session(slug) do
+    with {:ok, project} <- ToolSupport.fetch_project(slug),
+         scope_key = ToolSupport.project_session_key(project),
+         {:ok, state} <- Debugger.start_session(scope_key) do
+      :ok = schedule_companion_bootstrap_if_present(project)
       {:ok, debugger_slug_state_payload(slug, state)}
     else
       {:error, reason} -> {:error, "debugger start failed: #{inspect(reason)}"}
@@ -386,8 +389,9 @@ defmodule Ide.Mcp.Handlers.Debugger do
   end
 
   def call("debugger.reset", %{"slug" => slug}) do
-    with {:ok, _project} <- ToolSupport.fetch_project(slug),
-         {:ok, state} <- Debugger.reset(slug) do
+    with {:ok, project} <- ToolSupport.fetch_project(slug),
+         scope_key = ToolSupport.project_session_key(project),
+         {:ok, state} <- Debugger.reset(scope_key) do
       {:ok, debugger_slug_state_payload(slug, state)}
     else
       {:error, reason} -> {:error, "debugger reset failed: #{inspect(reason)}"}
@@ -1997,6 +2001,35 @@ defmodule Ide.Mcp.Handlers.Debugger do
       :ok
     else
       {:error, {:sha256_mismatch, %{expected: expected_normalized, actual: actual}}}
+    end
+  end
+
+  @spec schedule_companion_bootstrap_if_present(Project.t()) :: :ok
+  defp schedule_companion_bootstrap_if_present(%Project{} = project) do
+    if Projects.companion_app_present?(project) and not companion_session_bootstrapped?(project) do
+      Task.start(fn -> run_companion_bootstrap_session(project) end)
+    end
+
+    :ok
+  end
+
+  @spec companion_session_bootstrapped?(Project.t()) :: boolean()
+  defp companion_session_bootstrapped?(project) do
+    scope_key = ToolSupport.project_session_key(project.slug)
+
+    case Debugger.snapshot(scope_key) do
+      {:ok, state} -> DebuggerBootstrapFlow.companion_bootstrapped?(state)
+      _ -> false
+    end
+  rescue
+    _ -> false
+  end
+
+  @spec run_companion_bootstrap_session(Project.t()) :: :ok
+  defp run_companion_bootstrap_session(%Project{} = project) do
+    case DebuggerBootstrapFlow.run_companion_bootstrap(project, force_sync: false) do
+      {:ok, _} -> :ok
+      {:error, _} -> :ok
     end
   end
 end

@@ -26,4 +26,61 @@ defmodule Ide.Debugger.TimelineMessageTest do
   test "format ignores constructor-only trailing whitespace" do
     assert TimelineMessage.format("MinuteChanged ", nil) == "MinuteChanged"
   end
+
+  test "format decodes tangram PhoneToWatch protocol payloads" do
+    provide_figure =
+      %{
+        "ctor" => "FromPhone",
+        "args" => [%{"ctor" => "ProvideFigure", "args" => [0]}]
+      }
+
+    assert TimelineMessage.format("FromPhone", provide_figure) ==
+             "FromPhone (ProvideFigure 0)"
+
+    provide_piece =
+      %{
+        "ctor" => "FromPhone",
+        "args" => [
+          %{
+            "ctor" => "ProvidePiece",
+            "args" => [0, [0, 4, -13, -13, 13, -13, 13, -38, -13, -38]]
+          }
+        ]
+      }
+
+    assert TimelineMessage.format("FromPhone", provide_piece) ==
+             "FromPhone (ProvidePiece 0 [0, 4, -13, -13, 13, -13, 13, -38, -13, -38])"
+
+    begin_figure =
+      %{
+        "ctor" => "FromPhone",
+        "args" => [%{"ctor" => "BeginFigure", "args" => [0]}]
+      }
+
+    assert TimelineMessage.format("FromPhone", begin_figure) ==
+             "FromPhone (BeginFigure 0)"
+
+    end_figure =
+      %{
+        "ctor" => "FromPhone",
+        "args" => [%{"ctor" => "EndFigure", "args" => [0]}]
+      }
+
+    assert TimelineMessage.format("FromPhone", end_figure) == "FromPhone (EndFigure 0)"
+  end
+
+  test "format parenthesizes nested protocol constructor arguments" do
+    value = %{
+      "ctor" => "FromPhone",
+      "args" => [
+        %{
+          "ctor" => "ProvideTemperature",
+          "args" => [%{"ctor" => "Celsius", "args" => [28]}]
+        }
+      ]
+    }
+
+    assert TimelineMessage.format("FromPhone", value) ==
+             "FromPhone (ProvideTemperature (Celsius 28))"
+  end
 end

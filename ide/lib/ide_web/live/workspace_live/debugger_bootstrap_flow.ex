@@ -4,9 +4,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
   alias Ide.Compiler
   alias Ide.Compiler.Diagnostics
   alias Ide.Debugger.AgentSession
+  alias Ide.Debugger.AgentStore
   alias Ide.Debugger.BootstrapInit
+  alias Ide.Debugger.CompanionBootstrapLock
   alias Ide.Debugger.CompanionPhoneCompile
-  alias Ide.Debugger.DeferredCompanionInit
+  alias Ide.Debugger.RuntimeBackgroundDrains
   alias Ide.Debugger.Types.CompileIngestBridge
   alias Ide.Projects
   alias Ide.Projects.Project
@@ -60,62 +62,119 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
     end
   end
 
+  @companion_protocol_runtime_keys ~w(
+    status
+    protocol_message_count
+    protocol_inbound_count
+    protocol_outbound_count
+    protocol_last_inbound_message
+    protocol_last_inbound_from
+    screenW
+    screenH
+    displayShape
+    colorMode
+  )
+
   @spec run_companion_bootstrap(Project.t(), keyword()) ::
           {:ok, companion_bootstrap_result()} | {:error, String.t()}
   def run_companion_bootstrap(%Project{} = project, opts \\ []) do
     progress = Keyword.get(opts, :progress, fn _ -> :ok end)
     scope_key = Projects.scope_key(project)
+    force_sync? = Keyword.get(opts, :force_sync, false)
 
-    if companion_bootstrap_async?() do
-      run_companion_bootstrap_async(project, scope_key, progress)
+    unless CompanionBootstrapLock.try_acquire(scope_key) do
+      {:ok, %{reload: :skipped}}
     else
-      run_companion_bootstrap_sync(project, scope_key, progress)
-    end
-  end
-
-  defp run_companion_bootstrap_sync(project, scope_key, progress) do
-    with :ok <- compile_and_ingest_phone(project, scope_key, progress),
-         reload <- companion_reload(project, progress) do
-      {:ok, %{reload: reload}}
-    end
-  end
-
-  defp run_companion_bootstrap_async(project, scope_key, progress) do
-    with :ok <- compile_and_ingest_phone(project, scope_key, progress) do
-      progress.("Loading companion model...")
-
-      reload =
-        with_companion_fast_bootstrap(scope_key, fn ->
-          companion_reload(project, progress)
-        end)
-
-      _ = CompanionPhoneCompile.schedule_if_needed(scope_key, project)
-
-      case reload do
-        {:ok, _} ->
-          progress.("Applying companion init follow-ups...")
-          :ok = DeferredCompanionInit.run(scope_key)
-          progress.("Fetching companion HTTP data...")
-          :ok = Ide.Debugger.RuntimeBackgroundDrains.await_idle(scope_key, 120_000)
-          {:ok, %{reload: reload}}
-
-        {:error, _} = err ->
-          err
-
-        :skipped ->
-          {:ok, %{reload: :skipped}}
+      try do
+        with :ok <- compile_and_ingest_phone(project, scope_key, progress),
+             :ok <- bootstrap_watch_for_companion(project, progress) do
+          run_companion_bootstrap_body(project, scope_key, progress, force_sync: force_sync?)
+        end
+      after
+        CompanionBootstrapLock.release(scope_key)
       end
     end
   end
 
-  defp with_companion_fast_bootstrap(scope_key, fun)
+  @spec bootstrap_watch_for_companion(Project.t(), progress()) :: :ok | {:error, String.t()}
+  def bootstrap_watch_for_companion(%Project{} = project, progress \\ fn _ -> :ok end) do
+    scope_key = Projects.scope_key(project)
+
+    state =
+      try do
+        AgentStore.fetch(scope_key, timeout: 5_000)
+      catch
+        :exit, _ -> %{}
+      end
+
+    if watch_surface_bootstrapped?(state) do
+      :ok
+    else
+      progress.("Loading watch for companion bootstrap...")
+      bootstrap_watch_reload(project, scope_key)
+    end
+  end
+
+  @spec bootstrap_watch_reload(Project.t(), String.t()) :: :ok | {:error, String.t()}
+  defp bootstrap_watch_reload(%Project{} = project, scope_key) when is_binary(scope_key) do
+    case try_read_watch_main_elm(project) do
+      {:ok, rel_path, content, source_root} ->
+        reload =
+          with_skip_blocking_compile(scope_key, fn ->
+            Ide.Debugger.reload(scope_key, %{
+              rel_path: rel_path,
+              source: content,
+              reason: "debugger_companion_bootstrap",
+              source_root: source_root,
+              skip_precompile: true
+            })
+          end)
+
+        case reload do
+          {:ok, _} -> :ok
+          {:error, reason} -> {:error, "Watch bootstrap failed: #{inspect(reason)}"}
+        end
+
+      :error ->
+        :ok
+    end
+  end
+
+  defp with_skip_blocking_compile(scope_key, fun)
        when is_binary(scope_key) and is_function(fun, 0) do
-    {:ok, _} = AgentSession.mutate(scope_key, &BootstrapInit.with_companion_bootstrap_flags/1)
+    {:ok, _} = AgentSession.mutate(scope_key, &BootstrapInit.with_skip_blocking_compile_flags/1)
 
     try do
       fun.()
     after
-      {:ok, _} = AgentSession.mutate(scope_key, &BootstrapInit.clear_companion_bootstrap_flags/1)
+      {:ok, _} = AgentSession.mutate(scope_key, &BootstrapInit.clear_skip_blocking_compile_flags/1)
+    end
+  end
+
+  defp run_companion_bootstrap_body(project, scope_key, progress, opts) do
+    force_sync? = Keyword.get(opts, :force_sync, false)
+
+    reload =
+      with_skip_blocking_compile(scope_key, fn ->
+        companion_reload(project, progress)
+      end)
+
+    _ = CompanionPhoneCompile.schedule_if_needed(scope_key, project)
+
+    case reload do
+      {:ok, _} ->
+        if force_sync? do
+          progress.("Waiting for companion follow-ups...")
+          _ = RuntimeBackgroundDrains.await_idle(scope_key, 120_000)
+        end
+
+        {:ok, %{reload: reload}}
+
+      {:error, _} = err ->
+        err
+
+      :skipped ->
+        {:ok, %{reload: :skipped}}
     end
   end
 
@@ -135,13 +194,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
             rel_path: "src/CompanionApp.elm",
             source: content,
             reason: "debugger_companion_bootstrap",
-            source_root: "phone"
+            source_root: "phone",
+            skip_precompile: true
           })
-
-        if match?({:ok, _}, result) and companion_reload_await_idle?() do
-          progress.("Applying companion init follow-ups...")
-          _ = Ide.Debugger.RuntimeBackgroundDrains.await_idle(scope_key)
-        end
 
         result
 
@@ -155,8 +210,94 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
     Application.get_env(:ide, :debugger_async_companion_bootstrap, true)
   end
 
-  # When companion bootstrap runs in a background Task, do not block on the full
-  # HTTP + protocol cascade; LiveView refreshes on debugger:runtime PubSub events.
+  @spec companion_bootstrapped?(map() | nil) :: boolean()
+  def companion_bootstrapped?(state) when is_map(state) do
+    companion_runtime_model_bootstrapped?(state)
+  end
+
+  def companion_bootstrapped?(_state), do: false
+
+  @spec companion_bootstrap_incomplete?(map() | nil) :: boolean()
+  def companion_bootstrap_incomplete?(state) when is_map(state) do
+    companion_surface_init_started?(state) and not companion_bootstrapped?(state)
+  end
+
+  def companion_bootstrap_incomplete?(_state), do: false
+
+  @spec companion_surface_init_started?(map() | nil) :: boolean()
+  def companion_surface_init_started?(state) when is_map(state) do
+    companion_init_on_timeline?(state)
+  end
+
+  def companion_surface_init_started?(_state), do: false
+
+  @spec watch_surface_bootstrapped?(map() | nil) :: boolean()
+  def watch_surface_bootstrapped?(state) when is_map(state) do
+    watch_init_on_timeline?(state) or watch_runtime_model_bootstrapped?(state)
+  end
+
+  def watch_surface_bootstrapped?(_state), do: false
+
+  @spec companion_init_on_timeline?(map()) :: boolean()
+  defp companion_init_on_timeline?(state) when is_map(state) do
+    state
+    |> Map.get(:debugger_timeline, [])
+    |> Enum.any?(fn row ->
+      target = Map.get(row, :target) || Map.get(row, "target")
+      type = Map.get(row, :type) || Map.get(row, "type")
+
+      target in ["phone", "companion"] and
+        type in ["init", "debugger.init_in", "debugger.runtime_exec"]
+    end)
+  end
+
+  @spec watch_init_on_timeline?(map()) :: boolean()
+  defp watch_init_on_timeline?(state) when is_map(state) do
+    state
+    |> Map.get(:debugger_timeline, [])
+    |> Enum.any?(fn row ->
+      target = Map.get(row, :target) || Map.get(row, "target")
+      type = Map.get(row, :type) || Map.get(row, "type")
+
+      target == "watch" and
+        type in ["init", "debugger.init_in", "debugger.runtime_exec"]
+    end)
+  end
+
+  @spec watch_runtime_model_bootstrapped?(map()) :: boolean()
+  defp watch_runtime_model_bootstrapped?(state) when is_map(state) do
+    runtime_model =
+      get_in(state, [:watch, :model, "runtime_model"]) ||
+        get_in(state, [:watch, :model, :runtime_model]) ||
+        %{}
+
+    is_map(runtime_model) and map_size(runtime_model) > 0 and
+      not Map.has_key?(runtime_model, "runtime_execution_error") and
+      not Map.has_key?(runtime_model, :runtime_execution_error)
+  end
+
+  @spec companion_runtime_model_bootstrapped?(map()) :: boolean()
+  defp companion_runtime_model_bootstrapped?(state) when is_map(state) do
+    runtime_model =
+      get_in(state, [:companion, :model, "runtime_model"]) ||
+        get_in(state, [:companion, :model, :runtime_model]) ||
+        %{}
+
+    is_map(runtime_model) and map_size(runtime_model) > 0 and
+      not companion_protocol_only_model?(runtime_model)
+  end
+
+  @spec companion_protocol_only_model?(map()) :: boolean()
+  defp companion_protocol_only_model?(model) when is_map(model) do
+    keys =
+      model
+      |> Map.keys()
+      |> Enum.map(&to_string/1)
+
+    keys != [] and Enum.all?(keys, &(&1 in @companion_protocol_runtime_keys))
+  end
+
+  # Background companion bootstrap refreshes via debugger:runtime PubSub when HTTP drains finish.
   @spec companion_reload_await_idle?() :: boolean()
   def companion_reload_await_idle? do
     not companion_bootstrap_async?() or
@@ -190,21 +331,33 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
   @spec compile_and_ingest_phone(Project.t(), String.t(), progress()) ::
           :ok | {:error, String.t()}
   defp compile_and_ingest_phone(project, scope_key, progress) do
-    progress.("Compiling companion app...")
+    state =
+      try do
+        AgentStore.fetch(scope_key, timeout: 5_000)
+      catch
+        :exit, _ -> %{}
+      end
 
-    case compile_phone_root(project) do
-      :skipped ->
-        :ok
+    if companion_bootstrapped?(state) do
+      progress.("Companion artifacts ready")
+      :ok
+    else
+      progress.("Compiling companion app...")
 
-      {:ok, result} ->
-        progress.("Ingesting companion compile artifacts...")
-        ingest_phone_compile(scope_key, result)
+      case compile_phone_root(project) do
+        :skipped ->
+          {:error, "Companion phone source root is missing"}
 
-        if Map.get(result, :status) == :error do
-          {:error, "Companion compile failed: #{Map.get(result, :output, "elmc error")}"}
-        else
-          :ok
-        end
+        {:ok, result} ->
+          progress.("Ingesting companion compile artifacts...")
+          ingest_phone_compile(scope_key, result)
+
+          if Map.get(result, :status) == :error do
+            {:error, "Companion compile failed: #{Map.get(result, :output, "elmc error")}"}
+          else
+            :ok
+          end
+      end
     end
   end
 

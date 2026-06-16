@@ -38,15 +38,19 @@ defmodule Ide.Debugger.RuntimeApi do
       source_root = SurfaceTargets.normalize_source_root(attrs)
 
       precompiled =
-        if DebuggerContractSnapshot.elm_introspect?(rel_path, source, source_root) do
-          SurfaceCompileArtifacts.precompile_inline_artifacts(
-            project_slug,
-            source,
-            rel_path,
-            source_root
-          )
-        else
+        if reload_skip_precompile?(project_slug, attrs) do
           %{}
+        else
+          if DebuggerContractSnapshot.elm_introspect?(rel_path, source, source_root) do
+            SurfaceCompileArtifacts.precompile_inline_artifacts(
+              project_slug,
+              source,
+              rel_path,
+              source_root
+            )
+          else
+            %{}
+          end
         end
 
       with {:ok, state} <-
@@ -86,5 +90,9 @@ defmodule Ide.Debugger.RuntimeApi do
   def ingest_emulator_rc_fail(project_slug, attrs)
       when is_binary(project_slug) and is_map(attrs) do
     EmulatorRcFailApply.apply(project_slug, attrs)
+  end
+
+  defp reload_skip_precompile?(project_slug, attrs) when is_binary(project_slug) and is_map(attrs) do
+    Map.get(attrs, :skip_precompile) == true or Map.get(attrs, "skip_precompile") == true
   end
 end

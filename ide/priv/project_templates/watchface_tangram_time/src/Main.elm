@@ -78,7 +78,6 @@ init context =
       }
     , Cmd.batch
         [ PebbleCmd.getCurrentDateTime CurrentDateTime
-        , CompanionWatch.sendWatchToPhone RequestFigure
         ]
     )
 
@@ -87,7 +86,14 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         CurrentDateTime value ->
-            ( { model | now = Just value }, Cmd.none )
+            ( { model | now = Just value }
+            , case model.now of
+                Nothing ->
+                    CompanionWatch.sendWatchToPhone RequestFigure
+
+                Just _ ->
+                    Cmd.none
+            )
 
         MinuteChanged _ ->
             ( model
@@ -119,6 +125,11 @@ subscriptions _ =
 
 view : Model -> Ui.UiNode
 view model =
+    Ui.toUiNode (tangramFaceOps model)
+
+
+tangramFaceOps : Model -> List Ui.RenderOp
+tangramFaceOps model =
     let
         cx =
             model.screenW // 2
@@ -169,9 +180,7 @@ view model =
         , [ Ui.fillCircle (clockPoint cx cy hour hourRadius) 4 (accentColor model)
           , Ui.fillCircle (minutePoint cx cy minute minuteRadius) 3 (accentColor model)
           ]
-        , timeText model scale cx cy hour minute figure
         ]
-        |> Ui.toUiNode
 
 
 figureVector : Int -> Resources.StaticVector
@@ -677,54 +686,34 @@ timeTextHeight =
 
 
 timeTextPosition : Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Point
-timeTextPosition screenW screenH scale cx cy hour minute figure =
-    let
-        hourRadius =
-            scaled scale 42
-
-        minuteRadius =
-            scaled scale 66
-
-        markerRadius =
-            scaled scale 68
-
-        candidates =
-            [ o 8 (cy + 24)
-            , o (screenW - timeTextWidth - 8) (cy + 24)
-            , o 16 (cy + 44)
-            , o (screenW - timeTextWidth - 16) (cy + 44)
-            , o (cx - 72) (cy - 58)
-            , o cx (cy - 58)
-            , o 8 (cy - 12)
-            , o (screenW - timeTextWidth - 8) (cy - 12)
-            ]
-
-        hourMarker =
-            clockPoint cx cy hour hourRadius
-
-        minuteMarker =
-            minutePoint cx cy minute minuteRadius
-
-        figureRect =
-            tangramBounds scale (formOrigin scale cx cy hour minute figure)
-    in
-    bestTextCandidate cy hourMarker minuteMarker (clockPoint cx cy 0 markerRadius) (clockPoint cx cy 3 markerRadius) (clockPoint cx cy 6 markerRadius) (clockPoint cx cy 9 markerRadius) figureRect candidates
-        |> clampTextPosition screenW screenH
+timeTextPosition screenW screenH _ cx cy _ _ _ =
+    clampTextPosition screenW screenH (o (cx - timeTextWidth // 2) (cy + 24))
 
 
 bestTextCandidate : Int -> Point -> Point -> Point -> Point -> Point -> Point -> Rect -> List Point -> Point
 bestTextCandidate cy hourMarker minuteMarker topMarker rightMarker bottomMarker leftMarker figureRect candidates =
     case candidates of
         first :: rest ->
-            List.foldl
-                (\candidate best ->
-                    if textCandidateScore cy hourMarker minuteMarker topMarker rightMarker bottomMarker leftMarker figureRect candidate < textCandidateScore cy hourMarker minuteMarker topMarker rightMarker bottomMarker leftMarker figureRect best then
-                        candidate
-                    else
-                        best
-                )
-                first
-                rest
+            let
+                score candidate =
+                    textCandidateScore cy hourMarker minuteMarker topMarker rightMarker bottomMarker leftMarker figureRect candidate
+
+                ( best, _ ) =
+                    List.foldl
+                        (\candidate ( bestPoint, bestScore ) ->
+                            let
+                                candidateScore =
+                                    score candidate
+                            in
+                            if candidateScore < bestScore then
+                                ( candidate, candidateScore )
+                            else
+                                ( bestPoint, bestScore )
+                        )
+                        ( first, score first )
+                        rest
+            in
+            best
 
         [] ->
             o 0 0

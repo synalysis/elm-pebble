@@ -36,6 +36,8 @@ const SYSTEM_LOG_SUMMARY_INTERVAL = 50
 const PHONE_BRIDGE_INSTALL_TIMEOUT_MS = 300_000
 /** Let native watch install and AppMessage traffic settle before reloading phone JS. */
 const PHONE_COMPANION_INSTALL_DELAY_MS = 2_000
+/** Let native watch install and first scene build settle before AppLog shipping. */
+const WATCH_APP_LOG_SHIPPING_DELAY_MS = 8_000
 /** Ignore phone-bridge close events briefly after a successful companion cache load. */
 const PHONE_BRIDGE_POST_INSTALL_QUIET_MS = 4_000
 const PHONE_BRIDGE_RECONNECT_MAX = 4
@@ -746,7 +748,10 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
           }
         }
         if (this.session?.id !== installSessionId) return
-        await this.ensureWatchAppLogShipping({quiet: true})
+        window.setTimeout(() => {
+          if (this.session?.id !== installSessionId) return
+          void this.ensureWatchAppLogShipping({quiet: true})
+        }, WATCH_APP_LOG_SHIPPING_DELAY_MS)
         if (this.emulatorDebugEnabled()) this.scheduleDeferredStorageSnapshot()
       }
       if (this.session?.has_phone_companion && this.session?.backend_enabled && this.session?.artifact_path) {
@@ -1066,6 +1071,7 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
             this.scheduleVncCanvasSample("after_app_start_1500ms", 1500)
           }
           this.scheduleWeatherSimulatorInject("after_app_start")
+          this.scheduleCompanionWatchReadySignal("after_app_start")
         }
         if (this.emulatorDebugEnabled() && endpoint === 0x0030 && opcode === 0x01) {
           this.scheduleVncCanvasSample("after_phone_appmessage_250ms", 250)
@@ -1258,6 +1264,10 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
   scheduleWeatherSimulatorInject(reason: string): void {
     return this.simulatorDelivery.scheduleWeatherSimulatorInject(reason)
   }
+
+  scheduleCompanionWatchReadySignal(reason: string): void {
+    return this.simulatorDelivery.scheduleCompanionWatchReadySignal(reason)
+  }
   injectWeatherSimulatorSettings(reason: string): void {
     return this.simulatorDelivery.injectWeatherSimulatorSettings(reason)
   }
@@ -1399,6 +1409,9 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
 
     if (success) {
       pending.resolve()
+      if (this.companionSimulatorEnabled() && this.appInstalled) {
+        this.scheduleCompanionWatchReadySignal("after_companion_install")
+      }
     } else {
       pending.reject(new Error("Phone bridge PBW install failed"))
     }

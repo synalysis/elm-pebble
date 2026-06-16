@@ -4,6 +4,8 @@ defmodule Ide.Debugger.TimelineMessage do
   alias Ide.Debugger.RuntimeModelMessages
   alias Ide.Debugger.Types
 
+  @subscription_wrapper_ctors ~w(FromPhone FromWatch)
+
   @spec format(String.t(), Types.timeline_step_message_value()) :: String.t()
   def format(message, message_value \\ nil)
 
@@ -120,18 +122,92 @@ defmodule Ide.Debugger.TimelineMessage do
   end
 
   @spec payload_text(Types.protocol_wire_arg()) :: String.t()
-  defp payload_text(%{"ctor" => _ctor, "args" => [single]}) do
-    payload_text(single)
+  defp payload_text(value) do
+    case wire_ctor_parts(value) do
+      {ctor, args} when ctor in @subscription_wrapper_ctors ->
+        case args do
+          [inner] -> "(#{wire_ctor_display(inner)})"
+          _ -> wire_ctor_display(value)
+        end
+
+      {ctor, args} when is_binary(ctor) ->
+        wire_ctor_display(%{"ctor" => ctor, "args" => args})
+
+      _ ->
+        primitive_payload_text(value)
+    end
   end
 
-  defp payload_text(%{"ctor" => _ctor, "args" => args}) when is_list(args) and args != [] do
-    Jason.encode!(args)
+  @spec wire_ctor_parts(Types.protocol_wire_arg()) :: {String.t() | nil, list()}
+  defp wire_ctor_parts(%{"ctor" => ctor, "args" => args}) when is_binary(ctor),
+    do: {ctor, List.wrap(args)}
+
+  defp wire_ctor_parts(%{ctor: ctor, args: args}) when is_binary(ctor),
+    do: {ctor, List.wrap(args)}
+
+  defp wire_ctor_parts(_value), do: {nil, []}
+
+  @spec wire_ctor_display(Types.protocol_wire_arg()) :: String.t()
+  defp wire_ctor_display(value) do
+    case wire_ctor_parts(value) do
+      {_ctor, [single]} ->
+        if is_map(single) and not protocol_constructor?(single) do
+          Jason.encode!(single)
+        else
+          wire_ctor_display_inner(value)
+        end
+
+      _ ->
+        wire_ctor_display_inner(value)
+    end
   end
 
-  defp payload_text(%{} = value), do: Jason.encode!(value)
+  defp wire_ctor_display_inner(value) do
+    case wire_ctor_parts(value) do
+      {ctor, args} when is_binary(ctor) ->
+        protocol_message_display(ctor, args)
 
-  defp payload_text(value) when is_integer(value), do: Integer.to_string(value)
-  defp payload_text(value) when is_boolean(value), do: if(value, do: "True", else: "False")
-  defp payload_text(value) when is_binary(value), do: inspect(value, charlists: :as_lists)
-  defp payload_text(value), do: inspect(value, charlists: :as_lists)
+      _ ->
+        primitive_payload_text(value)
+    end
+  end
+
+  @spec protocol_constructor?(term()) :: boolean()
+  defp protocol_constructor?(%{"ctor" => ctor}) when is_binary(ctor), do: true
+  defp protocol_constructor?(%{ctor: ctor}) when is_binary(ctor), do: true
+  defp protocol_constructor?(_), do: false
+
+  @spec protocol_message_display(String.t(), [Types.protocol_wire_arg()]) :: String.t()
+  defp protocol_message_display(ctor, args) when is_binary(ctor) and is_list(args) do
+    case args do
+      [] -> ctor
+      _ -> ctor <> " " <> Enum.map_join(args, " ", &protocol_arg_display/1)
+    end
+  end
+
+  @spec protocol_arg_display(Types.protocol_wire_arg()) :: String.t()
+  defp protocol_arg_display(%{"ctor" => ctor, "args" => []}) when is_binary(ctor), do: ctor
+  defp protocol_arg_display(%{ctor: ctor, args: []}) when is_binary(ctor), do: ctor
+
+  defp protocol_arg_display(%{"ctor" => ctor, "args" => args}) when is_binary(ctor) and is_list(args) do
+    inner = protocol_message_display(ctor, args)
+    if String.contains?(inner, " "), do: "(#{inner})", else: inner
+  end
+
+  defp protocol_arg_display(%{ctor: ctor, args: args}) when is_binary(ctor) and is_list(args) do
+    protocol_arg_display(%{"ctor" => ctor, "args" => args})
+  end
+
+  defp protocol_arg_display(value) when is_integer(value) or is_float(value) or is_boolean(value),
+    do: to_string(value)
+
+  defp protocol_arg_display(value) when is_binary(value), do: inspect(value, charlists: :as_lists)
+  defp protocol_arg_display(value), do: inspect(value, charlists: :as_lists)
+
+  @spec primitive_payload_text(Types.protocol_wire_arg()) :: String.t()
+  defp primitive_payload_text(value) when is_integer(value), do: Integer.to_string(value)
+  defp primitive_payload_text(value) when is_boolean(value), do: if(value, do: "True", else: "False")
+  defp primitive_payload_text(value) when is_binary(value), do: inspect(value, charlists: :as_lists)
+  defp primitive_payload_text(%{} = value), do: Jason.encode!(value)
+  defp primitive_payload_text(value), do: inspect(value, charlists: :as_lists)
 end

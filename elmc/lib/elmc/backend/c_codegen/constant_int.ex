@@ -258,8 +258,7 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
   def compile_boxed(expr, env, counter) do
     case literal_value(expr, env) do
       {:ok, value} ->
-        counter = counter + 1
-        out = "tmp_#{counter}"
+        {out, counter} = boxed_out_slot(env, counter)
         ref = UnionMacros.literal_ref(expr, env) || format_annotated_int(value, literal_decl_name(expr, env))
         {:ok, RcRuntimeEmit.assign_call(env, out, "elmc_new_int", ref) <> "\n", out, counter}
 
@@ -285,6 +284,17 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
   defp apply_binop("__mul__", left, right), do: left * right
   defp apply_binop("__idiv__", _left, 0), do: 0
   defp apply_binop("__idiv__", left, right), do: div(left, right)
+
+  defp boxed_out_slot(env, counter) do
+    case Map.get(env, :__into_out__) do
+      into_out when is_binary(into_out) ->
+        {into_out, counter}
+
+      _ ->
+        counter = counter + 1
+        {"tmp_#{counter}", counter}
+    end
+  end
 
   defp elmc_mod_by(value, base) do
     rem = rem(value, base)

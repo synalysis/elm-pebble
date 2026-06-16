@@ -453,7 +453,7 @@ defmodule Ide.Debugger.RuntimeFollowups do
           target,
           response_message,
           message_value,
-          "runtime_followup",
+          "http",
           "runtime_followup"
         )
 

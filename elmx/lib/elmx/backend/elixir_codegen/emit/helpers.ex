@@ -114,6 +114,16 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Helpers do
   end
 
   def compile_constructor_reference(name, env, counter) when is_binary(name) do
+    case compile_record_alias_constructor_reference(name, env, counter) do
+      {:ok, code, env, c} ->
+        {:ok, code, env, c}
+
+      :error ->
+        compile_union_constructor_reference(name, env, counter)
+    end
+  end
+
+  defp compile_union_constructor_reference(name, env, counter) when is_binary(name) do
     lookup = Map.get(env, :constructor_lookup)
     module = Map.get(env, :module)
 
@@ -124,6 +134,40 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Helpers do
       {:ok, code, env, c}
     else
       _ -> :error
+    end
+  end
+
+  @spec compile_record_alias_constructor_reference(String.t(), map(), non_neg_integer()) ::
+          {:ok, iodata(), map(), non_neg_integer()} | :error
+  def compile_record_alias_constructor_reference(name, env, counter) when is_binary(name) do
+    case record_alias_constructor_code(name, env) do
+      {:ok, code} -> {:ok, code, env, counter}
+      :error -> :error
+    end
+  end
+
+  @spec record_alias_constructor_code(String.t(), map()) :: {:ok, iodata()} | :error
+  def record_alias_constructor_code(name, env) when is_binary(name) do
+    case Map.get(env, :record_field_types, %{}) |> Map.get(name) do
+      fields when is_map(fields) and map_size(fields) > 0 ->
+        field_names = Enum.map(Map.to_list(fields), fn {field, _} -> to_string(field) end)
+        params = Enum.map(0..(length(field_names) - 1), &let_emit_name("__alias_#{&1}"))
+
+        body =
+          field_names
+          |> Enum.zip(params)
+          |> Enum.map(fn {field, param} -> [inspect(field), " => ", param] end)
+          |> then(fn parts -> ["%{", Enum.intersperse(parts, ", "), "}"] end)
+
+        code =
+          Enum.reduce(Enum.reverse(params), body, fn param, acc ->
+            ["fn ", param, " -> ", acc, " end"]
+          end)
+
+        {:ok, code}
+
+      _ ->
+        :error
     end
   end
 

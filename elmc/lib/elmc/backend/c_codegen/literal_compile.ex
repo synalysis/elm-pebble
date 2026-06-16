@@ -21,16 +21,14 @@ defmodule Elmc.Backend.CCodegen.LiteralCompile do
   end
 
   def compile(%{op: :c_int_expr, value: value}, env, counter) when is_binary(value) do
-    next = counter + 1
-    var = "tmp_#{next}"
-    {RcRuntimeEmit.assign_call(env, var, "elmc_new_int", value) <> "\n", var, next}
+    {var, counter} = literal_out_slot(env, counter)
+    {RcRuntimeEmit.assign_call(env, var, "elmc_new_int", value) <> "\n", var, counter}
   end
 
   def compile(%{op: :msg_tag_expr, name: name}, env, counter) when is_binary(name) do
-    next = counter + 1
-    var = "tmp_#{next}"
+    {var, counter} = literal_out_slot(env, counter)
     macro = "ELMC_PEBBLE_MSG_#{PebbleUtil.macro_name(name)}"
-    {RcRuntimeEmit.assign_call(env, var, "elmc_new_int", macro) <> "\n", var, next}
+    {RcRuntimeEmit.assign_call(env, var, "elmc_new_int", macro) <> "\n", var, counter}
   end
 
   def compile(%{op: :string_literal, value: value}, env, counter) do
@@ -60,16 +58,30 @@ defmodule Elmc.Backend.CCodegen.LiteralCompile do
     value = ResourceUnion.int_literal_value(expr)
     macro_ref = UnionMacros.literal_ref(expr, env)
     ref = macro_ref || Integer.to_string(value)
-    next = counter + 1
-    var = "tmp_#{next}"
+    {var, counter} = literal_out_slot(env, counter)
 
     code =
       if value == 0 and is_nil(macro_ref) do
-        "ElmcValue *#{var} = elmc_int_zero();"
+        if Map.get(env, :__into_out__) == var do
+          "#{var} = elmc_int_zero();"
+        else
+          "ElmcValue *#{var} = elmc_int_zero();"
+        end
       else
         RcRuntimeEmit.assign_call(env, var, "elmc_new_int", ref)
       end
 
-    {code, var, next}
+    {code, var, counter}
+  end
+
+  defp literal_out_slot(env, counter) do
+    case Map.get(env, :__into_out__) do
+      into_out when is_binary(into_out) ->
+        {into_out, counter}
+
+      _ ->
+        next = counter + 1
+        {"tmp_#{next}", next}
+    end
   end
 end

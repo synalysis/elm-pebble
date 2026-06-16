@@ -2,6 +2,7 @@ defmodule Ide.Debugger.RuntimeFollowupsTest do
   use ExUnit.Case, async: true
 
   alias Ide.Debugger.AgentSession
+  alias Ide.Debugger.PendingHttpFollowups
   alias Ide.Debugger.RuntimeFollowups
   alias Ide.Debugger.RuntimeSurfaces
 
@@ -63,6 +64,102 @@ defmodule Ide.Debugger.RuntimeFollowupsTest do
                  Map.get(updated, "pending_http_followups")
     end
   end
+
+  describe "apply_http_executor_result/8" do
+    test "CatalogReceived Ok chains SvgReceived into async http pending" do
+      previous_async_http = Application.get_env(:ide, :debugger_async_http_followups)
+      Application.put_env(:ide, :debugger_async_http_followups, true)
+
+      on_exit(fn ->
+        if is_nil(previous_async_http) do
+          Application.delete_env(:ide, :debugger_async_http_followups)
+        else
+          Application.put_env(:ide, :debugger_async_http_followups, previous_async_http)
+        end
+      end)
+
+      state = %{
+        phone: RuntimeSurfaces.default_phone(),
+        companion: RuntimeSurfaces.default_companion(),
+        watch: RuntimeSurfaces.default_watch()
+      }
+
+      inner_ctx = %{
+        append_event: fn s, _, _ -> s end,
+        append_debugger_event: &AgentSession.append_debugger_event/6,
+        apply_step_once: fn s, _, _, _, _, _ -> s end,
+        source_root_for_target: fn :phone -> "phone" end,
+        track_http_command: &RuntimeFollowups.track_http_command/2,
+        simulator_settings: fn _ -> %{} end
+      }
+
+      ctx = %{
+        append_event: fn st, _, _ -> st end,
+        append_debugger_event: &AgentSession.append_debugger_event/6,
+        apply_step_once: fn st, target, message, _message_value, source, _trigger ->
+          RuntimeFollowups.apply_after_step(
+            st,
+            target,
+            message,
+            source,
+            catalog_followups_for_message(message),
+            inner_ctx
+          )
+        end,
+        source_root_for_target: fn :phone -> "phone" end,
+        track_http_command: &RuntimeFollowups.track_http_command/2,
+        simulator_settings: fn _ -> %{} end
+      }
+
+      catalog_cmd = %{
+        "method" => "GET",
+        "url" => "https://raw.githubusercontent.com/lil-lab/kilogram/main/dataset/dense10.json"
+      }
+
+      result = {
+        :ok,
+        %{
+          "message_value" => %{"ctor" => "Ok", "args" => [~s({"page1-0": {}})]},
+          "response" => %{"status" => 200, "body" => ~s({"page1-0": {}})}
+        }
+      }
+
+      updated =
+        RuntimeFollowups.apply_http_executor_result(
+          state,
+          :phone,
+          "phone",
+          "elm/http",
+          catalog_cmd,
+          "CatalogReceived",
+          result,
+          ctx
+        )
+
+      assert Enum.any?(updated.debugger_timeline || [], fn row ->
+               row.type == "update" and
+                 String.contains?(to_string(row.message || ""), "CatalogReceived")
+             end)
+
+      assert [%{"followup_message" => "SvgReceived"}] = PendingHttpFollowups.pending(updated)
+    end
+  end
+
+  defp catalog_followups_for_message("CatalogReceived") do
+    [
+      %{
+        "package" => "elm/http",
+        "message" => "SvgReceived",
+        "command" => %{
+          "method" => "GET",
+          "url" =>
+            "https://raw.githubusercontent.com/lil-lab/kilogram/main/dataset/tangrams-svg/page1%2D0.svg"
+        }
+      }
+    ]
+  end
+
+  defp catalog_followups_for_message(_), do: []
 
   describe "track_http_command/2" do
     test "dedupes by method and url and caps list length" do

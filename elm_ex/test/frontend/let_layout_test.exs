@@ -75,6 +75,72 @@ defmodule ElmEx.Frontend.LetLayoutTest do
     assert {:ok, %{op: :let_in, name: "appended"}} = GeneratedExpressionParser.parse(source)
   end
 
+  test "parses tangram companion update with nested case in branch" do
+    source = """
+    case msg of
+        CatalogReceived (Ok json) ->
+            case catalogNames json of
+                [] ->
+                    ( model, Cmd.none )
+
+                names ->
+                    ( { model | names = names }, Cmd.none )
+
+        SvgReceived (Ok svg) ->
+            let
+                figureId =
+                    model.figure
+
+                pieces =
+                    parseSvgPieces svg
+            in
+            case pieces of
+                [] ->
+                    ( model, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        SvgReceived (Err _) ->
+            ( model, Cmd.none )
+    """
+
+    assert {:ok, %{op: :case}} = GeneratedExpressionParser.parse(source)
+  end
+
+  test "parses List.concat with embedded case and trailing pipe" do
+    source = """
+    let
+        cx =
+            model.screenW // 2
+
+        figure =
+            case model.companionFigure of
+                Just companionFigure ->
+                    companionFigure
+
+                Nothing ->
+                    minute
+    in
+    List.concat
+        [ [ Ui.clear Color.white
+          , Ui.circle { x = cx, y = cy } 60 Color.black
+          ]
+        , case model.downloadedPieces of
+            [] ->
+                [ Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 0, y = 0, w = 10, h = 10 } "x" ]
+
+            pieces ->
+                pieces
+        , [ Ui.fillCircle { x = 1, y = 2 } 4 Color.white
+          , Ui.fillCircle { x = 3, y = 4 } 3 Color.white
+          ]
+        |> Ui.toUiNode
+    """
+
+    assert {:ok, %{op: :let_in}} = GeneratedExpressionParser.parse(source)
+  end
+
   test "starter watch template Main.elm parses through generated frontend" do
     path =
       Path.expand(

@@ -14,7 +14,28 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Constructor do
     compile_constructor(%{name: target, args: args}, env, counter)
   end
 
-  def compile_constructor(%{name: name, args: args} = _expr, env, counter) when is_binary(name) do
+  def compile_constructor(%{name: name, args: args}, env, counter) when is_binary(name) do
+    case Helpers.record_alias_constructor_code(name, env) do
+      {:ok, ctor_code} ->
+        apply_record_alias_constructor(ctor_code, args, env, counter)
+
+      :error ->
+        compile_union_constructor(%{name: name, args: args}, env, counter)
+    end
+  end
+
+  defp apply_record_alias_constructor(ctor_code, args, env, counter) when is_list(args) do
+    {arg_code, env, c} = Helpers.compile_arg_list(args, env, counter)
+
+    code =
+      Enum.reduce(arg_code, ctor_code, fn arg, fun ->
+        [fun, "(", arg, ")"]
+      end)
+
+    {code, env, c}
+  end
+
+  defp compile_union_constructor(%{name: name, args: args}, env, counter) when is_binary(name) do
     ctor_name = constructor_emit_name(name, env)
     {arg_code, env, c1} = Elmx.Backend.ElixirCodegen.Emit.Helpers.compile_arg_list(args, env, counter)
     arg_str = IO.iodata_to_binary(arg_code)

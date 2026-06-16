@@ -6,6 +6,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.ListIntReduce
   alias Elmc.Backend.CCodegen.Native.ListIntSearch
+  alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
@@ -112,6 +113,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
         ) :: {String.t(), String.t(), Types.compile_counter(), native_return_kind()}
   defp compile_native_result(module_name, name, args, env, counter, decl, decl_map, return_kind) do
     arg_kinds = arg_kinds(decl, module_name, decl_map)
+    borrow_args? = :borrow_arg in List.wrap(decl.ownership)
 
     {arg_code, arg_refs, release_refs, counter} =
       args
@@ -128,17 +130,23 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
             {code_acc <> "\n  " <> code, refs_acc ++ [ref], releases_acc, c2}
 
           :boxed ->
-            borrow_args? = :borrow_arg in List.wrap(decl.ownership)
-
             {code, ref, c2, passthrough?} =
               FunctionCallCompile.compile_call_operand_inner(arg_expr, env, c,
                 borrow_args?: borrow_args?
               )
 
             releases_acc =
-              if passthrough? or EnvBindings.borrowed_arg_ref?(env, ref),
-                do: releases_acc,
-                else: releases_acc ++ [ref]
+              cond do
+                passthrough? or EnvBindings.borrowed_arg_ref?(env, ref) ->
+                  releases_acc
+
+                borrow_args? ->
+                  RecordCompile.defer_call_operand_release(ref)
+                  releases_acc
+
+                true ->
+                  releases_acc ++ [ref]
+              end
 
             {code_acc <> "\n  " <> code, refs_acc ++ [ref], releases_acc, c2}
         end

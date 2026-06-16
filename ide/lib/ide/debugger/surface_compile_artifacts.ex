@@ -3,6 +3,7 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
 
   alias Ide.Compiler
   alias Ide.Debugger.CompileContract
+  alias Ide.Debugger.CompanionPhoneCompile
   alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Debugger.Surface
   alias Ide.Debugger.SurfaceTargets
@@ -160,11 +161,15 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
           Types.runtime_artifacts()
   defp project_entrypoint_artifacts(state, source_root, ctx)
        when is_map(state) and is_binary(source_root) and is_map(ctx) do
-    with session_key when is_binary(session_key) <- ctx.session_key_from_state.(state),
-         %{} = project <- Projects.get_project_by_scope_key(session_key) do
-      entrypoint_artifacts(session_key, project, source_root)
+    if CompanionPhoneCompile.skip_blocking_compile?(state) do
+      %{}
     else
-      _ -> %{}
+      with session_key when is_binary(session_key) <- ctx.session_key_from_state.(state),
+           %{} = project <- Projects.get_project_by_scope_key(session_key) do
+        entrypoint_artifacts(session_key, project, source_root)
+      else
+        _ -> %{}
+      end
     end
   end
 

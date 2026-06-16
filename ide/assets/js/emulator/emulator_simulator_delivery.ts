@@ -264,6 +264,10 @@ export class EmulatorSimulatorDelivery {
       delete payload.weather_windKph
     }
 
+    if (this.host.appInstalled) {
+      payload.watchAppRunning = true
+    }
+
     return payload
   }
 
@@ -513,6 +517,17 @@ export class EmulatorSimulatorDelivery {
       this.injectWeatherSimulatorSettings(reason)
     }, 2000)
     this.host.weatherInjectTimers = [timerId]
+  }
+
+  scheduleCompanionWatchReadySignal(reason: string): void {
+    if (!this.companionSimulatorEnabled()) return
+
+    window.setTimeout(() => {
+      this.sendSimulatorSettingsToPhoneBridge({watchAppRunning: true})
+      if (this.host.emulatorDebugEnabled?.()) {
+        this.host.appendLog(`signaled companion watch app ready (${reason})`)
+      }
+    }, 500)
   }
 
   injectWeatherSimulatorSettings(reason: string): void {

@@ -301,7 +301,9 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
 
       {value_code, value_var, counter, native_ref}
     else
-      {value_code, value_var, counter} = Host.compile_expr(value_expr, env, counter)
+      value_env = Map.delete(env, :__into_out__)
+
+      {value_code, value_var, counter} = Host.compile_expr(value_expr, value_env, counter)
       {value_code, value_var, counter, nil}
     end
   end

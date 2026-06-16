@@ -14,9 +14,22 @@ defmodule Ide.Debugger.BootstrapInit do
 
   @spec clear_companion_bootstrap_flags(Types.runtime_state()) :: Types.runtime_state()
   def clear_companion_bootstrap_flags(state) when is_map(state) do
-    state
-    |> Map.delete(:debugger_skip_blocking_compile)
-    |> Map.delete(@defer_surface_effects_key)
+    Map.delete(state, :debugger_skip_blocking_compile)
+  end
+
+  @spec with_skip_blocking_compile_flags(Types.runtime_state()) :: Types.runtime_state()
+  def with_skip_blocking_compile_flags(state) when is_map(state) do
+    Map.put(state, :debugger_skip_blocking_compile, true)
+  end
+
+  @spec clear_skip_blocking_compile_flags(Types.runtime_state()) :: Types.runtime_state()
+  def clear_skip_blocking_compile_flags(state) when is_map(state) do
+    Map.delete(state, :debugger_skip_blocking_compile)
+  end
+
+  @spec discard_defer_surface_effects(Types.runtime_state()) :: Types.runtime_state()
+  def discard_defer_surface_effects(state) when is_map(state) do
+    Map.delete(state, @defer_surface_effects_key)
   end
 
   @spec clear_session_bootstrap_flags(Types.runtime_state()) :: Types.runtime_state()

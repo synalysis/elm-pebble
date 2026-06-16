@@ -681,6 +681,135 @@ defmodule Ide.CompanionProtocolGenerator do
 
   defp js_payload_key(name), do: "String(constants.KEY_#{macro_name(name)})"
 
+  defp js_wire_from_elm_helpers(schema) do
+    list_helpers =
+      if companion_protocol_uses_list_payloads?(schema) do
+        """
+        var LIST_WIRE_OFFSET = #{@wire_code_base};
+        var LIST_MAX_ELEMENTS = #{@list_max_elements};
+
+        function elmPayloadWireInt(payload, key) {
+          if (payload && typeof payload[key] === "number") {
+            return payload[key];
+          }
+
+          var constantName = "KEY_" + key.toUpperCase();
+          if (typeof constants[constantName] === "number") {
+            var wireKey = String(constants[constantName]);
+            if (payload && typeof payload[wireKey] === "number") {
+              return payload[wireKey];
+            }
+          }
+
+          return null;
+        }
+
+        function elmPayloadInt(payload, key) {
+          var wire = elmPayloadWireInt(payload, key);
+          return typeof wire === "number" ? wire - LIST_WIRE_OFFSET : null;
+        }
+
+        function elmPayloadListInt(payload, prefix) {
+          var countWire = elmPayloadWireInt(payload, prefix + "_count");
+          if (typeof countWire !== "number") {
+            return [];
+          }
+
+          var count = countWire - LIST_WIRE_OFFSET;
+          if (count < 0 || count > LIST_MAX_ELEMENTS) {
+            return [];
+          }
+
+          var items = [];
+          for (var i = 0; i < count; i++) {
+            var wire = elmPayloadWireInt(payload, prefix + "_" + i);
+            items.push(typeof wire === "number" ? wire - LIST_WIRE_OFFSET : 0);
+          }
+
+          return items;
+        }
+        """
+      else
+        """
+        var LIST_WIRE_OFFSET = #{@wire_code_base};
+
+        function elmPayloadWireInt(payload, key) {
+          if (payload && typeof payload[key] === "number") {
+            return payload[key];
+          }
+
+          var constantName = "KEY_" + key.toUpperCase();
+          if (typeof constants[constantName] === "number") {
+            var wireKey = String(constants[constantName]);
+            if (payload && typeof payload[wireKey] === "number") {
+              return payload[wireKey];
+            }
+          }
+
+          return null;
+        }
+
+        function elmPayloadInt(payload, key) {
+          var wire = elmPayloadWireInt(payload, key);
+          return typeof wire === "number" ? wire - LIST_WIRE_OFFSET : null;
+        }
+        """
+      end
+
+    list_helpers
+  end
+
+  defp js_wire_phone_to_watch_from_elm_cases(schema) do
+    schema.phone_to_watch
+    |> Enum.filter(&js_wire_phone_to_watch_from_elm_supported?/1)
+    |> Enum.map_join("\n", &js_wire_phone_to_watch_from_elm_case/1)
+  end
+
+  defp js_wire_phone_to_watch_from_elm_supported?(msg) do
+    Enum.all?(msg.fields, fn field ->
+      case field.wire_type do
+        :int -> true
+        {:list, :int} -> true
+        _ -> false
+      end
+    end)
+  end
+
+  defp js_wire_phone_to_watch_from_elm_case(msg) do
+    required =
+      msg.fields
+      |> Enum.reject(fn field -> match?({:list, _}, field.wire_type) end)
+      |> Enum.map_join("\n", fn field ->
+        "      if (elmPayloadWireInt(payload, \"#{field.key}\") === null) return null;"
+      end)
+
+    encode_call = js_wire_phone_to_watch_encode_call(msg)
+
+    """
+        case #{msg.tag}:
+    #{required}      return #{encode_call};
+    """
+  end
+
+  defp js_wire_phone_to_watch_encode_call(%{fields: []} = msg) do
+    "encodePhoneToWatchPayload(\"#{msg.name}\")"
+  end
+
+  defp js_wire_phone_to_watch_encode_call(%{fields: [field]} = msg) do
+    "encodePhoneToWatchPayload(\"#{msg.name}\", elmPayloadWireInt(payload, \"#{field.key}\"))"
+  end
+
+  defp js_wire_phone_to_watch_encode_call(%{fields: [field1, field2 | _]} = msg) do
+    case field2.wire_type do
+      {:list, _} ->
+        "encodePhoneToWatchPayload(\"#{msg.name}\", elmPayloadWireInt(payload, \"#{field1.key}\"), { #{field2.name}: elmPayloadListInt(payload, \"#{field2.key}\") })"
+
+      _ ->
+        raise ArgumentError,
+              "unsupported phone-to-watch wire helper for #{msg.name} field #{field2.key}"
+    end
+  end
+
   @spec js(schema()) :: String.t()
   defp js(schema) do
     constants =
@@ -748,6 +877,9 @@ defmodule Ide.CompanionProtocolGenerator do
         """
       end)
 
+    wire_from_elm_helpers = js_wire_from_elm_helpers(schema)
+    wire_from_elm_cases = js_wire_phone_to_watch_from_elm_cases(schema)
+
     exports =
       schema.enums
       |> Map.keys()
@@ -763,6 +895,8 @@ defmodule Ide.CompanionProtocolGenerator do
     #{enum_maps}
 
     #{enum_lookup}
+
+    #{wire_from_elm_helpers}
 
     function encodeListIntField(payload, prefix, list) {
       var items = Array.isArray(list) ? list : [];
@@ -802,10 +936,30 @@ defmodule Ide.CompanionProtocolGenerator do
       }
     }
 
+    function wirePhoneToWatchFromElmPayload(payload) {
+      if (!payload || typeof payload !== "object") {
+        return null;
+      }
+
+      var tag = typeof payload.message_tag === "number"
+        ? payload.message_tag
+        : payload[#{js_payload_key("message_tag")}];
+      if (typeof tag !== "number") {
+        return null;
+      }
+
+      switch (tag) {
+    #{wire_from_elm_cases}
+        default:
+          return null;
+      }
+    }
+
     var exported = constants;
     #{exports}
     exported.decodeWatchToPhonePayload = decodeWatchToPhonePayload;
     exported.encodePhoneToWatchPayload = encodePhoneToWatchPayload;
+    exported.wirePhoneToWatchFromElmPayload = wirePhoneToWatchFromElmPayload;
     module.exports = exported;
     """
   end

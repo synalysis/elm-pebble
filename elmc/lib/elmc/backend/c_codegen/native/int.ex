@@ -212,6 +212,8 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     expr?(left, env) and expr?(right, env)
   end
 
+  @max_native_int_inline_lines 32
+
   @spec inline_function_expr?(Types.function_decl_key(), [Types.ir_expr()], Types.compile_env()) ::
           boolean()
   def inline_function_expr?(target_key, args, env) do
@@ -1466,15 +1468,23 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
         )
 
       {code, value_ref, counter} = dispatch(substituted, env, counter)
-      code = code <> "  // inlined #{format_function_target(target_key)}\n"
-      call_expr = %{op: :call, name: elem(target_key, 1), args: args}
 
-      Host.maybe_promote_hoisted_native_int(call_expr, env, code, value_ref, counter)
-      |> then(fn {code, value_ref, counter} -> {:ok, code, value_ref, counter} end)
+      if emitted_line_count(code) > @max_native_int_inline_lines do
+        :error
+      else
+        code = code <> "  // inlined #{format_function_target(target_key)}\n"
+        call_expr = %{op: :call, name: elem(target_key, 1), args: args}
+
+        Host.maybe_promote_hoisted_native_int(call_expr, env, code, value_ref, counter)
+        |> then(fn {code, value_ref, counter} -> {:ok, code, value_ref, counter} end)
+      end
     else
       _ -> :error
     end
   end
+
+  defp emitted_line_count(code) when is_binary(code),
+    do: code |> String.split("\n", trim: true) |> length()
 
   defp format_function_target({module_name, function_name}), do: "#{module_name}.#{function_name}"
 

@@ -9,6 +9,7 @@ defmodule Ide.Debugger.PendingProtocolDelivery do
 
   alias Ide.Debugger.AgentHosts
   alias Ide.Debugger.AgentSession
+  alias Ide.Debugger.AgentStore
   alias Ide.Debugger.ProtocolRx
   alias Ide.Debugger.RuntimeBackgroundDrains
   alias Ide.Debugger.RuntimeBackgroundNotify
@@ -16,6 +17,7 @@ defmodule Ide.Debugger.PendingProtocolDelivery do
   alias Ide.Debugger.Types
 
   @pending_key :pending_protocol_deliveries
+  @drain_lock_table :debugger_protocol_drain_lock
 
   @spec async?() :: boolean()
   def async? do
@@ -25,25 +27,53 @@ defmodule Ide.Debugger.PendingProtocolDelivery do
   @spec maybe_schedule_drain(String.t(), Types.runtime_state()) :: :ok
   def maybe_schedule_drain(project_slug, state)
       when is_binary(project_slug) and is_map(state) do
-    if async?() do
-      items = pending(state)
+    if async?() and pending(state) != [] do
+      ensure_drain_lock_table()
 
-      if items != [] do
-        {:ok, _} =
-          AgentSession.mutate(project_slug, fn st ->
-            put_pending(st, [])
+      case :ets.lookup(@drain_lock_table, project_slug) do
+        [{^project_slug, true}] ->
+          :ok
+
+        _ ->
+          :ets.insert(@drain_lock_table, {project_slug, true})
+
+          hosts = AgentSession.hosts()
+          ctx = hosts |> AgentHosts.contexts() |> Map.fetch!(:protocol_rx)
+
+          RuntimeBackgroundWork.spawn(project_slug, fn ->
+            try do
+              drain_until_empty(project_slug, ctx)
+            after
+              :ets.delete(@drain_lock_table, project_slug)
+
+              st = AgentStore.fetch(project_slug)
+
+              if pending(st) != [] do
+                maybe_schedule_drain(project_slug, st)
+              end
+            end
           end)
-
-        hosts = AgentSession.hosts()
-        ctx = hosts |> AgentHosts.contexts() |> Map.fetch!(:protocol_rx)
-
-        RuntimeBackgroundWork.spawn(project_slug, fn ->
-          run_drain_batch(project_slug, items, ctx)
-        end)
       end
     end
 
     :ok
+  end
+
+  defp drain_until_empty(project_slug, ctx)
+       when is_binary(project_slug) and is_map(ctx) do
+    items = project_slug |> AgentStore.fetch() |> pending()
+
+    if items != [] do
+      {:ok, _} =
+        AgentSession.mutate(project_slug, fn st ->
+          put_pending(st, [])
+        end)
+
+      run_drain_batch(project_slug, items, ctx)
+      drain_until_empty(project_slug, ctx)
+    else
+      :ok
+    end
   end
 
   @spec pending(Types.runtime_state()) :: [Types.pending_protocol_delivery_item()]
@@ -130,5 +160,13 @@ defmodule Ide.Debugger.PendingProtocolDelivery do
       %{@pending_key => _} = companion -> Map.delete(companion, @pending_key)
       other -> other
     end)
+  end
+
+  defp ensure_drain_lock_table do
+    if :ets.whereis(@drain_lock_table) == :undefined do
+      :ets.new(@drain_lock_table, [:named_table, :public, :set, read_concurrency: true])
+    end
+
+    :ok
   end
 end

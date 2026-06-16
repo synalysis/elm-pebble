@@ -84,4 +84,52 @@ defmodule Ide.Debugger.InitCmdFollowupsTest do
 
     assert length(merged) == 1
   end
+
+  test "enqueue skips duplicate pending http flights for the same method and url" do
+    state = %{}
+    cmd = %{"kind" => "http", "method" => "GET", "url" => "https://example.test/figure.svg"}
+
+    state =
+      PendingHttpFollowups.enqueue(
+        state,
+        :companion,
+        "phone",
+        "elm/http",
+        cmd,
+        "SvgReceived"
+      )
+
+    state =
+      PendingHttpFollowups.enqueue(
+        state,
+        :companion,
+        "phone",
+        "elm/http",
+        cmd,
+        "SvgReceived"
+      )
+
+    assert length(PendingHttpFollowups.pending(state)) == 1
+  end
+
+  test "enqueue skips http flights already completed in the session" do
+    cmd = %{"kind" => "http", "method" => "GET", "url" => "https://example.test/figure.svg"}
+
+    state = %{
+      completed_http_flights:
+        MapSet.new([{"GET", "https://example.test/figure.svg"}])
+    }
+
+    state =
+      PendingHttpFollowups.enqueue(
+        state,
+        :companion,
+        "phone",
+        "elm/http",
+        cmd,
+        "SvgReceived"
+      )
+
+    assert PendingHttpFollowups.pending(state) == []
+  end
 end

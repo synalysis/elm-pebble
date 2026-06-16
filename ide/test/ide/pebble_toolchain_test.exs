@@ -258,11 +258,27 @@ defmodule Ide.PebbleToolchainTest do
 
     assert source =~ "appMessageOutbox"
     assert source =~ "appMessageSending"
+    assert source =~ "companionWatchAppReady"
+    assert source =~ "markCompanionWatchAppReady"
+    assert source =~ "APP_MESSAGE_MAX_RETRIES"
     assert source =~ "sendQueuedAppMessage"
     assert source =~ "drainAppMessageOutbox"
     assert source =~ "Pebble.sendAppMessage = function"
     assert source =~ "setTimeout(drainAppMessageOutbox, 250)"
+    assert source =~ "sendAppMessage giving up after retries"
+    refute source =~ "setTimeout(drainAppMessageOutbox, 150)"
     refute source =~ "Pebble.sendAppMessage(normalizeOutgoingAppMessage"
+  end
+
+  test "Elm companion index defers phone-to-watch AppMessages until watch app is ready" do
+    source = File.read!("priv/pebble_app_template/src/pkjs/index.js")
+
+    assert source =~ "settings.watchAppRunning === true"
+    assert source =~ ~S/markCompanionWatchAppReady("simulator_settings")/
+    assert source =~ ~S/markCompanionWatchAppReady("watch_appmessage")/
+    assert source =~ "scheduleCompanionWatchReadyBootTimeout"
+    assert source =~ "COMPANION_WATCH_READY_BOOT_TIMEOUT_MS"
+    assert source =~ "wirePhoneToWatchFromElmPayload"
   end
 
   test "Elm companion index serves calendar bridge data from simulator settings" do
@@ -309,6 +325,16 @@ defmodule Ide.PebbleToolchainTest do
     refute source =~ "deliverWeatherToWatch();\n        lastDeliveredCompanionWeatherSignature"
     refute source =~ "requestCompanionWeatherRefresh();"
     refute source =~ "Weather data unavailable from this Pebble companion runtime"
+  end
+
+  test "Elm companion index only defers weather AppMessages by payload shape, not wire tag" do
+    source = File.read!("priv/pebble_app_template/src/pkjs/index.js")
+
+    assert source =~ "function isCompanionWeatherAppMessage(payload)"
+    assert source =~ "provide_temperature_field1_tag"
+    assert source =~ "provide_temperature_field1_value"
+    assert source =~ "provide_condition_field1"
+    refute source =~ "return tag === 201 || tag === 202;"
   end
 
   test "companion build copies full pkjs template with calendar support" do
@@ -406,7 +432,8 @@ defmodule Ide.PebbleToolchainTest do
     assert startup_body =~ "apply_pending_cmd();"
     refute startup_body =~ "elmc_pebble_ensure_scene(&s_elm_app);"
     assert startup_body =~ "s_startup_cmds_ready = true;"
-    assert startup_body =~ "render_model();"
+    assert startup_body =~ "startup_render_callback"
+    refute startup_body =~ "render_model();"
     refute template =~ "startup_build_scene"
     refute template =~ "elmc_pebble_reserve_startup_scene"
     assert template =~ "static ElmcPebbleCmd cmd;"
@@ -420,8 +447,11 @@ defmodule Ide.PebbleToolchainTest do
         _ -> flunk("draw_update_proc body not found")
       end
 
-    refute draw_body =~
-             "#ifdef ELMC_WATCHFACE_MODE\n  {\n    GRect compile = compile_display_bounds();"
+    refute draw_body =~ "elmc_pebble_ensure_scene(&s_elm_app);"
+    assert template =~ "schedule_scene_prep"
+    assert template =~ "scene_prep_timer_callback"
+    assert template =~ "app_timer_register(100, scene_prep_timer_callback, NULL)"
+    assert template =~ "if (s_elm_app.scene.dirty)"
 
     assert draw_body =~ "bounds.size.w < compile.size.w || bounds.size.h < compile.size.h"
     assert template =~ "startup_cmd_callback(NULL);"

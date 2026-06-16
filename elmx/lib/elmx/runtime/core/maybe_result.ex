@@ -39,21 +39,28 @@ defmodule Elmx.Runtime.Core.MaybeResult do
   def maybe_and_then(f, %{ctor: :Just, args: [value]}) when is_function(f, 1), do: f.(value)
   def maybe_and_then(_f, other), do: other
 
-  @spec maybe_map2(Types.elm_hof(), Types.maybe_like(), Types.maybe_like()) ::
+  @spec maybe_map2(Types.maybe_like(), Types.maybe_like(), Types.elm_hof()) ::
           Types.maybe_like()
-  def maybe_map2(:Nothing, _, _), do: :Nothing
-  def maybe_map2(_, :Nothing, _), do: :Nothing
-  def maybe_map2(%{"ctor" => "Nothing"}, _, _), do: :Nothing
-  def maybe_map2(_, %{"ctor" => "Nothing"}, _), do: :Nothing
+  def maybe_map2(maybe_a, maybe_b, f) when is_function(f, 2) do
+    with {:Just, a} <- normalize_maybe_strict(maybe_a),
+         {:Just, b} <- normalize_maybe_strict(maybe_b) do
+      {:Just, f.(a, b)}
+    else
+      _ -> :Nothing
+    end
+  end
 
-  def maybe_map2({:Just, a}, {:Just, b}, f) when is_function(f, 2), do: {:Just, f.(a, b)}
+  def maybe_map2(maybe_a, maybe_b, f) when is_function(f, 1) do
+    with {:Just, a} <- normalize_maybe_strict(maybe_a),
+         {:Just, b} <- normalize_maybe_strict(maybe_b),
+         inner when is_function(inner, 1) <- f.(a) do
+      {:Just, inner.(b)}
+    else
+      _ -> :Nothing
+    end
+  end
 
-  def maybe_map2(%{"ctor" => "Just", "args" => [a]}, %{"ctor" => "Just", "args" => [b]}, f)
-      when is_function(f, 2),
-      do: {:Just, f.(a, b)}
-
-  def maybe_map2(other_a, other_b, f),
-    do: maybe_map2(normalize_maybe(other_a), normalize_maybe(other_b), f)
+  def maybe_map2(_maybe_a, _maybe_b, _f), do: :Nothing
 
   @spec result_map(Types.elm_hof(), Types.result_like()) :: Types.result_like()
   def result_map(_f, {:Err, _} = err), do: err
@@ -123,8 +130,11 @@ defmodule Elmx.Runtime.Core.MaybeResult do
     min(max(n, low), high)
   end
 
-  defp normalize_maybe(:Nothing), do: :Nothing
-  defp normalize_maybe({:Just, _} = value), do: value
-  defp normalize_maybe(%{"ctor" => _} = value), do: value
-  defp normalize_maybe(_), do: :Nothing
+  defp normalize_maybe_strict(:Nothing), do: :Nothing
+  defp normalize_maybe_strict({:Just, value}), do: {:Just, value}
+  defp normalize_maybe_strict(%{"ctor" => "Nothing"}), do: :Nothing
+  defp normalize_maybe_strict(%{"ctor" => "Just", "args" => [value]}), do: {:Just, value}
+  defp normalize_maybe_strict(%{ctor: :Nothing}), do: :Nothing
+  defp normalize_maybe_strict(%{ctor: :Just, args: [value]}), do: {:Just, value}
+  defp normalize_maybe_strict(_), do: :Nothing
 end

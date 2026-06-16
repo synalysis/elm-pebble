@@ -927,11 +927,15 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
          exit_probe,
          collect_generic_helpers?
        ) do
+    RecordCompile.reset_deferred_call_operand_releases()
+
     {body_code, body_var, _counter} =
       compile_native_body(decl, module_name, decl_map, native_env, return_kind, arg_kinds)
 
+    deferred_release_code = RecordCompile.deferred_call_operand_release_code()
+
     unused_casts =
-      unused_arg_casts(c_arg_bindings, [body_code, entry_probe, exit_probe, "return #{body_var};"])
+      unused_arg_casts(c_arg_bindings, [body_code, deferred_release_code, entry_probe, exit_probe, "return #{body_var};"])
 
     case_helpers =
       if collect_generic_helpers? do
@@ -944,7 +948,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     static #{native_return_prefix(return_kind)}#{c_name}_native(#{NativeFunctionCall.params(decl, module_name, decl_map)}) {
       #{unused_casts}
       #{entry_probe}
-      #{body_code}
+      #{body_code}#{deferred_release_code}
       #{exit_probe}
       return #{body_var};
     }
