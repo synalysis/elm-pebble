@@ -96,15 +96,19 @@ defmodule Ide.Debugger.RuntimeFollowupsTest do
       ctx = %{
         append_event: fn st, _, _ -> st end,
         append_debugger_event: &AgentSession.append_debugger_event/6,
-        apply_step_once: fn st, target, message, _message_value, source, _trigger ->
-          RuntimeFollowups.apply_after_step(
-            st,
-            target,
-            message,
-            source,
-            catalog_followups_for_message(message),
-            inner_ctx
-          )
+        apply_step_once: fn st, target, message, message_value, source, _trigger ->
+          st
+          |> AgentSession.append_debugger_event("update", target, message, source, message_value)
+          |> then(fn next ->
+            RuntimeFollowups.apply_after_step(
+              next,
+              target,
+              message,
+              source,
+              catalog_followups_for_message(message),
+              inner_ctx
+            )
+          end)
         end,
         source_root_for_target: fn :phone -> "phone" end,
         track_http_command: &RuntimeFollowups.track_http_command/2,

@@ -180,6 +180,7 @@ tangramFaceOps model =
         , [ Ui.fillCircle (clockPoint cx cy hour hourRadius) 4 (accentColor model)
           , Ui.fillCircle (minutePoint cx cy minute minuteRadius) 3 (accentColor model)
           ]
+        , timeText model scale cx cy hour minute figure
         ]
 
 

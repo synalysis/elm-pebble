@@ -738,9 +738,11 @@ static int elmc_scene_value_fits_i16(int32_t value) {
 }
 #endif
 
+#if ELMC_PEBBLE_FEATURE_DRAW_PIXEL || ELMC_PEBBLE_FEATURE_DRAW_CIRCLE || ELMC_PEBBLE_FEATURE_DRAW_FILL_CIRCLE || ELMC_PEBBLE_FEATURE_DRAW_LINE || ELMC_PEBBLE_FEATURE_DRAW_RECT || ELMC_PEBBLE_FEATURE_DRAW_FILL_RECT || ELMC_PEBBLE_FEATURE_DRAW_ROUND_RECT || ELMC_PEBBLE_FEATURE_DRAW_STROKE_COLOR || ELMC_PEBBLE_FEATURE_DRAW_FILL_COLOR || ELMC_PEBBLE_FEATURE_DRAW_TEXT_COLOR || ELMC_PEBBLE_FEATURE_DRAW_CLEAR || ELMC_PEBBLE_FEATURE_DRAW_COMPOSITING_MODE || ELMC_PEBBLE_FEATURE_DRAW_STROKE_WIDTH || ELMC_PEBBLE_FEATURE_DRAW_ANTIALIASED
 static int elmc_scene_value_fits_u8(int32_t value) {
   return value >= 0 && value <= 255;
 }
+#endif
 
 #if ELMC_PEBBLE_FEATURE_DRAW_LINE || ELMC_PEBBLE_FEATURE_DRAW_RECT || ELMC_PEBBLE_FEATURE_DRAW_FILL_RECT || ELMC_PEBBLE_FEATURE_DRAW_ROUND_RECT
 static int elmc_scene_bounds_fit_i16(const ElmcPebbleDrawCmd *cmd) {
@@ -2649,13 +2651,11 @@ static int elmc_pebble_scene_decode_from(
       ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_SCENE_NEXT_EXIT);
       ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_next", direct_count);
     #endif
-      if ((app->scene.dirty || app->scene.byte_count <= 0) &&
-          app->scene_draw_byte_offset == 0) {
-        int build_rc = elmc_pebble_ensure_scene(app);
-        if (build_rc != 0) {
-          ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_SCENE_NEXT_EXIT);
-          ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_next", build_rc);
-        }
+      /* Scene cache is built off the draw stack (deferred timer in the app template).
+         While dirty or empty, skip drawing rather than calling ensure_scene here. */
+      if (app->scene.dirty || app->scene.byte_count <= 0) {
+        ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_SCENE_NEXT_EXIT);
+        ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_next", 0);
       }
       int rc = 0;
       int byte_offset = app->scene_draw_byte_offset;

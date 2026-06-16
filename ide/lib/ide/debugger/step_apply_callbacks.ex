@@ -9,6 +9,7 @@ defmodule Ide.Debugger.StepApplyCallbacks do
   alias Ide.Debugger.ProtocolRx
   alias Ide.Debugger.ProtocolRuntimeMetadata
   alias Ide.Debugger.RuntimeFollowups
+  alias Ide.Debugger.RuntimeInitApply
   alias Ide.Debugger.RuntimeModelNormalize
   alias Ide.Debugger.SampleViewTrees
   alias Ide.Debugger.StepMessageValue
@@ -44,6 +45,7 @@ defmodule Ide.Debugger.StepApplyCallbacks do
   @type deps :: %{
           required(:host) => host(),
           required(:surface_compile) => SurfaceCompileArtifacts.attach_ctx(),
+          required(:runtime_init) => RuntimeInitApply.ctx(),
           required(:protocol_events) => ProtocolEvents.ctx(),
           required(:protocol_rx) => ProtocolRx.ctx(),
           required(:device_data) => DeviceDataResponses.apply_ctx(),
@@ -56,6 +58,7 @@ defmodule Ide.Debugger.StepApplyCallbacks do
   def build(%{} = deps) do
     host = Map.fetch!(deps, :host)
     surface_compile = Map.fetch!(deps, :surface_compile)
+    runtime_init = Map.fetch!(deps, :runtime_init)
     protocol_events = Map.fetch!(deps, :protocol_events)
     protocol_rx = Map.fetch!(deps, :protocol_rx)
     device_data = Map.fetch!(deps, :device_data)
@@ -64,7 +67,7 @@ defmodule Ide.Debugger.StepApplyCallbacks do
     runtime_followups = Map.fetch!(deps, :runtime_followups)
 
     %{
-      ensure_compile_artifacts: &ensure_compile_artifacts(&1, &2, surface_compile),
+      ensure_compile_artifacts: &ensure_compile_artifacts(&1, &2, surface_compile, runtime_init),
       normalize_message_value: &normalize_message_value(&1, &2, &3, &4, protocol_events),
       normalize_runtime_patch: &RuntimeModelNormalize.patch_values/2,
       preserve_protocol_metadata: &ProtocolRuntimeMetadata.preserve/2,
@@ -90,10 +93,13 @@ defmodule Ide.Debugger.StepApplyCallbacks do
   @spec ensure_compile_artifacts(
           Types.runtime_state(),
           Types.surface_target(),
-          SurfaceCompileArtifacts.attach_ctx()
+          SurfaceCompileArtifacts.attach_ctx(),
+          RuntimeInitApply.ctx()
         ) :: Types.runtime_state()
-  def ensure_compile_artifacts(state, target, surface_compile) do
-    SurfaceCompileArtifacts.ensure_attached(state, target, surface_compile)
+  def ensure_compile_artifacts(state, target, surface_compile, runtime_init) do
+    state
+    |> SurfaceCompileArtifacts.ensure_attached(target, surface_compile)
+    |> RuntimeInitApply.ensure_applied(target, runtime_init)
   end
 
   @spec normalize_message_value(

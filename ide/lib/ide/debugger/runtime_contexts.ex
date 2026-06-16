@@ -142,18 +142,6 @@ defmodule Ide.Debugger.RuntimeContexts do
       maybe_append_runtime_status: host.maybe_append_runtime_status
     }
 
-    step_apply =
-      StepApplyContext.build(%{
-        host: step_apply_host,
-        surface_compile: surface_compile,
-        protocol_events: protocol_events,
-        protocol_rx: protocol_rx,
-        device_data: device_data,
-        geolocation: geolocation,
-        companion_bridge: companion_bridge,
-        runtime_followups: runtime_followups
-      })
-
     init_surface_effects =
       InitSurfaceEffectsContext.build(%{
         append_event: host.append_event,
@@ -193,6 +181,24 @@ defmodule Ide.Debugger.RuntimeContexts do
           )
         end,
         protocol_rx_ctx: protocol_rx_fn
+      })
+
+    runtime_init = %{
+      snapshot_apply: introspect_snapshot_apply,
+      init_surface_effects: init_surface_effects
+    }
+
+    step_apply =
+      StepApplyContext.build(%{
+        host: step_apply_host,
+        surface_compile: surface_compile,
+        runtime_init: runtime_init,
+        protocol_events: protocol_events,
+        protocol_rx: protocol_rx,
+        device_data: device_data,
+        geolocation: geolocation,
+        companion_bridge: companion_bridge,
+        runtime_followups: runtime_followups
       })
 
     introspect_merge =

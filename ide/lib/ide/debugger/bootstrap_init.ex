@@ -14,7 +14,9 @@ defmodule Ide.Debugger.BootstrapInit do
 
   @spec clear_companion_bootstrap_flags(Types.runtime_state()) :: Types.runtime_state()
   def clear_companion_bootstrap_flags(state) when is_map(state) do
-    Map.delete(state, :debugger_skip_blocking_compile)
+    state
+    |> Map.delete(:debugger_skip_blocking_compile)
+    |> discard_defer_surface_effects()
   end
 
   @spec with_skip_blocking_compile_flags(Types.runtime_state()) :: Types.runtime_state()

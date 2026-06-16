@@ -504,20 +504,19 @@ static RC elmc_fn_Main_handleAppMsg(ElmcValue **out, ElmcValue ** const args, co
         ElmcValue *tmp_2_boxed_int = elmc_new_int_take((native_let_counter_2 + 1));
 
         ElmcValue *call_args_3[1] = { model };
-        Rc = elmc_fn_Main_temperatureOf(&tmp_1, call_args_3, 1);
+        ElmcValue *tmp_3;
+        Rc = elmc_fn_Main_temperatureOf(&tmp_3, call_args_3, 1);
         CHECK_RC(Rc);
 
-        ElmcValue *rec_values_4[2] = { tmp_2_boxed_int, tmp_1 };
+        ElmcValue *rec_values_4[2] = { tmp_2_boxed_int, tmp_3 };
         ElmcValue *tmp_4 = NULL;
         Rc = elmc_record_new_values_take(&tmp_4, 2, rec_values_4);
         CHECK_RC(Rc);
 
         ElmcValue *tmp_5 = elmc_int_zero();
-        ElmcValue *tmp_6 = NULL;
-        Rc = elmc_tuple2_take(&tmp_6, tmp_4, tmp_5);
+        Rc = elmc_tuple2_take(&tmp_1, tmp_4, tmp_5);
         CHECK_RC(Rc);
 
-        tmp_1 = tmp_6;
         break;
       }
       case ELMC_PEBBLE_MSG_DECREMENT: {
@@ -529,20 +528,19 @@ static RC elmc_fn_Main_handleAppMsg(ElmcValue **out, ElmcValue ** const args, co
         ElmcValue *tmp_7_boxed_int = elmc_new_int_take((native_let_counter_7 - 1));
 
         ElmcValue *call_args_8[1] = { model };
-        Rc = elmc_fn_Main_temperatureOf(&tmp_1, call_args_8, 1);
+        ElmcValue *tmp_8;
+        Rc = elmc_fn_Main_temperatureOf(&tmp_8, call_args_8, 1);
         CHECK_RC(Rc);
 
-        ElmcValue *rec_values_9[2] = { tmp_7_boxed_int, tmp_1 };
+        ElmcValue *rec_values_9[2] = { tmp_7_boxed_int, tmp_8 };
         ElmcValue *tmp_9 = NULL;
         Rc = elmc_record_new_values_take(&tmp_9, 2, rec_values_9);
         CHECK_RC(Rc);
 
         ElmcValue *tmp_10 = elmc_int_zero();
-        ElmcValue *tmp_11 = NULL;
-        Rc = elmc_tuple2_take(&tmp_11, tmp_9, tmp_10);
+        Rc = elmc_tuple2_take(&tmp_1, tmp_9, tmp_10);
         CHECK_RC(Rc);
 
-        tmp_1 = tmp_11;
         break;
       }
       case ELMC_PEBBLE_MSG_PROVIDETEMPERATURE: {
@@ -562,91 +560,73 @@ static RC elmc_fn_Main_handleAppMsg(ElmcValue **out, ElmcValue ** const args, co
         CHECK_RC(Rc);
 
         ElmcValue *tmp_16 = elmc_int_zero();
-        ElmcValue *tmp_17 = NULL;
-        Rc = elmc_tuple2_take(&tmp_17, tmp_15, tmp_16);
+        Rc = elmc_tuple2_take(&tmp_1, tmp_15, tmp_16);
         CHECK_RC(Rc);
 
-        tmp_1 = tmp_17;
         break;
       }
       case ELMC_PEBBLE_MSG_CURRENTTIMESTRING: {
         ElmcValue *tmp_18 = model ? elmc_retain(model) : elmc_int_zero();
         ElmcValue *tmp_19 = elmc_int_zero();
-        ElmcValue *tmp_20 = NULL;
-        Rc = elmc_tuple2_take(&tmp_20, tmp_18, tmp_19);
+        Rc = elmc_tuple2_take(&tmp_1, tmp_18, tmp_19);
         CHECK_RC(Rc);
 
-        tmp_1 = tmp_20;
         break;
       }
       case ELMC_PEBBLE_MSG_CLOCKSTYLE24H: {
         ElmcValue *tmp_21 = model ? elmc_retain(model) : elmc_int_zero();
         ElmcValue *tmp_22 = elmc_int_zero();
-        ElmcValue *tmp_23 = NULL;
-        Rc = elmc_tuple2_take(&tmp_23, tmp_21, tmp_22);
+        Rc = elmc_tuple2_take(&tmp_1, tmp_21, tmp_22);
         CHECK_RC(Rc);
 
-        tmp_1 = tmp_23;
         break;
       }
       case ELMC_PEBBLE_MSG_TIMEZONEISSET: {
         ElmcValue *tmp_24 = model ? elmc_retain(model) : elmc_int_zero();
         ElmcValue *tmp_25 = elmc_int_zero();
-        ElmcValue *tmp_26 = NULL;
-        Rc = elmc_tuple2_take(&tmp_26, tmp_24, tmp_25);
+        Rc = elmc_tuple2_take(&tmp_1, tmp_24, tmp_25);
         CHECK_RC(Rc);
 
-        tmp_1 = tmp_26;
         break;
       }
       case ELMC_PEBBLE_MSG_TIMEZONENAME: {
         ElmcValue *tmp_27 = model ? elmc_retain(model) : elmc_int_zero();
         ElmcValue *tmp_28 = elmc_int_zero();
-        ElmcValue *tmp_29 = NULL;
-        Rc = elmc_tuple2_take(&tmp_29, tmp_27, tmp_28);
+        Rc = elmc_tuple2_take(&tmp_1, tmp_27, tmp_28);
         CHECK_RC(Rc);
 
-        tmp_1 = tmp_29;
         break;
       }
       case ELMC_PEBBLE_MSG_WATCHMODELNAME: {
         ElmcValue *tmp_30 = model ? elmc_retain(model) : elmc_int_zero();
         ElmcValue *tmp_31 = elmc_int_zero();
-        ElmcValue *tmp_32 = NULL;
-        Rc = elmc_tuple2_take(&tmp_32, tmp_30, tmp_31);
+        Rc = elmc_tuple2_take(&tmp_1, tmp_30, tmp_31);
         CHECK_RC(Rc);
 
-        tmp_1 = tmp_32;
         break;
       }
       case ELMC_PEBBLE_MSG_WATCHCOLORNAME: {
         ElmcValue *tmp_33 = model ? elmc_retain(model) : elmc_int_zero();
         ElmcValue *tmp_34 = elmc_int_zero();
-        ElmcValue *tmp_35 = NULL;
-        Rc = elmc_tuple2_take(&tmp_35, tmp_33, tmp_34);
+        Rc = elmc_tuple2_take(&tmp_1, tmp_33, tmp_34);
         CHECK_RC(Rc);
 
-        tmp_1 = tmp_35;
         break;
       }
       case ELMC_PEBBLE_MSG_FIRMWAREVERSIONSTRING: {
         ElmcValue *tmp_36 = model ? elmc_retain(model) : elmc_int_zero();
         ElmcValue *tmp_37 = elmc_int_zero();
-        ElmcValue *tmp_38 = NULL;
-        Rc = elmc_tuple2_take(&tmp_38, tmp_36, tmp_37);
+        Rc = elmc_tuple2_take(&tmp_1, tmp_36, tmp_37);
         CHECK_RC(Rc);
 
-        tmp_1 = tmp_38;
         break;
       }
       default: {
         ElmcValue *tmp_39 = model ? elmc_retain(model) : elmc_int_zero();
         ElmcValue *tmp_40 = elmc_int_zero();
-        ElmcValue *tmp_41 = NULL;
-        Rc = elmc_tuple2_take(&tmp_41, tmp_39, tmp_40);
+        Rc = elmc_tuple2_take(&tmp_1, tmp_39, tmp_40);
         CHECK_RC(Rc);
 
-        tmp_1 = tmp_41;
         break;
       }
 
@@ -697,23 +677,22 @@ static RC elmc_fn_Main_handlePlatformMsg(ElmcValue **out, ElmcValue ** const arg
         ElmcValue *tmp_4_boxed_int = elmc_new_int_take(native_let_next_4);
 
         ElmcValue *call_args_5[1] = { model };
-        Rc = elmc_fn_Main_temperatureOf(&tmp_1, call_args_5, 1);
+        ElmcValue *tmp_5;
+        Rc = elmc_fn_Main_temperatureOf(&tmp_5, call_args_5, 1);
         CHECK_RC(Rc);
 
-        ElmcValue *rec_values_6[2] = { tmp_4_boxed_int, tmp_1 };
+        ElmcValue *rec_values_6[2] = { tmp_4_boxed_int, tmp_5 };
         ElmcValue *tmp_6 = NULL;
         Rc = elmc_record_new_values_take(&tmp_6, 2, rec_values_6);
         CHECK_RC(Rc);
 
         ElmcValue *tmp_7 = elmc_cmd1(ELMC_PEBBLE_CMD_TIMER_AFTER_MS, 1000);
 
-        ElmcValue *tmp_8 = NULL;
-        Rc = elmc_tuple2_take(&tmp_8, tmp_6, tmp_7);
+        Rc = elmc_tuple2_take(&tmp_1, tmp_6, tmp_7);
         CHECK_RC(Rc);
 
         elmc_release(tmp_2);
 
-        tmp_1 = tmp_8;
         break;
       }
       case ELMC_PEBBLE_MSG_UPPRESSED: {
@@ -729,23 +708,22 @@ static RC elmc_fn_Main_handlePlatformMsg(ElmcValue **out, ElmcValue ** const arg
         ElmcValue *tmp_10_boxed_int = elmc_new_int_take(elmc_as_int(tmp_9));
 
         ElmcValue *call_args_11[1] = { model };
-        Rc = elmc_fn_Main_temperatureOf(&tmp_1, call_args_11, 1);
+        ElmcValue *tmp_11;
+        Rc = elmc_fn_Main_temperatureOf(&tmp_11, call_args_11, 1);
         CHECK_RC(Rc);
 
-        ElmcValue *rec_values_12[2] = { tmp_10_boxed_int, tmp_1 };
+        ElmcValue *rec_values_12[2] = { tmp_10_boxed_int, tmp_11 };
         ElmcValue *tmp_12 = NULL;
         Rc = elmc_record_new_values_take(&tmp_12, 2, rec_values_12);
         CHECK_RC(Rc);
 
         ElmcValue *tmp_13 = elmc_cmd2(ELMC_PEBBLE_CMD_STORAGE_WRITE_INT, 1, elmc_as_int(tmp_9));
 
-        ElmcValue *tmp_14 = NULL;
-        Rc = elmc_tuple2_take(&tmp_14, tmp_12, tmp_13);
+        Rc = elmc_tuple2_take(&tmp_1, tmp_12, tmp_13);
         CHECK_RC(Rc);
 
         elmc_release(tmp_9);
 
-        tmp_1 = tmp_14;
         break;
       }
       case ELMC_PEBBLE_MSG_SELECTPRESSED: {
@@ -756,23 +734,22 @@ static RC elmc_fn_Main_handlePlatformMsg(ElmcValue **out, ElmcValue ** const arg
         CHECK_RC(Rc);
 
         ElmcValue *call_args_17[1] = { tmp_16 };
-        Rc = elmc_fn_Main_requestWeather(&tmp_1, call_args_17, 1);
+        ElmcValue *tmp_17;
+        Rc = elmc_fn_Main_requestWeather(&tmp_17, call_args_17, 1);
         CHECK_RC(Rc);
 
         elmc_release(tmp_16);
 
         ElmcValue *tmp_18 = ({ ElmcValue *__z = NULL; RC __call_rc = elmc_fn_Main_requestSystemInfo(&__z, NULL, 0); if (__call_rc != RC_SUCCESS) __z = NULL; __z; })
         ;
-        ElmcValue *list_items_19[2] = { tmp_1, tmp_18 };
+        ElmcValue *list_items_19[2] = { tmp_17, tmp_18 };
         ElmcValue *tmp_19 = NULL;
         Rc = elmc_list_from_values_take(&tmp_19, list_items_19, 2);
         CHECK_RC(Rc);
 
-        ElmcValue *tmp_20 = NULL;
-        Rc = elmc_tuple2_take(&tmp_20, tmp_15, tmp_19);
+        Rc = elmc_tuple2_take(&tmp_1, tmp_15, tmp_19);
         CHECK_RC(Rc);
 
-        tmp_1 = tmp_20;
         break;
       }
       case ELMC_PEBBLE_MSG_DOWNPRESSED: {
@@ -784,21 +761,20 @@ static RC elmc_fn_Main_handlePlatformMsg(ElmcValue **out, ElmcValue ** const arg
         ElmcValue *tmp_21_boxed_int = elmc_new_int_take((native_let_counter_21 - 1));
 
         ElmcValue *call_args_22[1] = { model };
-        Rc = elmc_fn_Main_temperatureOf(&tmp_1, call_args_22, 1);
+        ElmcValue *tmp_22;
+        Rc = elmc_fn_Main_temperatureOf(&tmp_22, call_args_22, 1);
         CHECK_RC(Rc);
 
-        ElmcValue *rec_values_23[2] = { tmp_21_boxed_int, tmp_1 };
+        ElmcValue *rec_values_23[2] = { tmp_21_boxed_int, tmp_22 };
         ElmcValue *tmp_23 = NULL;
         Rc = elmc_record_new_values_take(&tmp_23, 2, rec_values_23);
         CHECK_RC(Rc);
 
         ElmcValue *tmp_24 = elmc_cmd1(ELMC_PEBBLE_CMD_STORAGE_DELETE, 1);
 
-        ElmcValue *tmp_25 = NULL;
-        Rc = elmc_tuple2_take(&tmp_25, tmp_23, tmp_24);
+        Rc = elmc_tuple2_take(&tmp_1, tmp_23, tmp_24);
         CHECK_RC(Rc);
 
-        tmp_1 = tmp_25;
         break;
       }
       case ELMC_PEBBLE_MSG_ACCELTAP: {
@@ -810,30 +786,27 @@ static RC elmc_fn_Main_handlePlatformMsg(ElmcValue **out, ElmcValue ** const arg
         ElmcValue *tmp_26_boxed_int = elmc_new_int_take((native_let_counter_26 + 1));
 
         ElmcValue *call_args_27[1] = { model };
-        Rc = elmc_fn_Main_temperatureOf(&tmp_1, call_args_27, 1);
+        ElmcValue *tmp_27;
+        Rc = elmc_fn_Main_temperatureOf(&tmp_27, call_args_27, 1);
         CHECK_RC(Rc);
 
-        ElmcValue *rec_values_28[2] = { tmp_26_boxed_int, tmp_1 };
+        ElmcValue *rec_values_28[2] = { tmp_26_boxed_int, tmp_27 };
         ElmcValue *tmp_28 = NULL;
         Rc = elmc_record_new_values_take(&tmp_28, 2, rec_values_28);
         CHECK_RC(Rc);
 
         ElmcValue *tmp_29 = elmc_int_zero();
-        ElmcValue *tmp_30 = NULL;
-        Rc = elmc_tuple2_take(&tmp_30, tmp_28, tmp_29);
+        Rc = elmc_tuple2_take(&tmp_1, tmp_28, tmp_29);
         CHECK_RC(Rc);
 
-        tmp_1 = tmp_30;
         break;
       }
       default: {
         ElmcValue *tmp_31 = model ? elmc_retain(model) : elmc_int_zero();
         ElmcValue *tmp_32 = elmc_int_zero();
-        ElmcValue *tmp_33 = NULL;
-        Rc = elmc_tuple2_take(&tmp_33, tmp_31, tmp_32);
+        Rc = elmc_tuple2_take(&tmp_1, tmp_31, tmp_32);
         CHECK_RC(Rc);
 
-        tmp_1 = tmp_33;
         break;
       }
 
@@ -904,7 +877,8 @@ static RC elmc_fn_Main_statusDraw(ElmcValue **out, ElmcValue ** const args, cons
       CHECK_RC(Rc);
 
       ElmcValue *call_args_8[1] = { elmc_maybe_or_tuple_just_payload_borrow(tmp_1) };
-      Rc = elmc_fn_Main_temperatureValue(&tmp_2, call_args_8, 1);
+      ElmcValue *tmp_8;
+      Rc = elmc_fn_Main_temperatureValue(&tmp_8, call_args_8, 1);
       CHECK_RC(Rc);
 
       ElmcValue *tmp_9 = NULL;
@@ -912,7 +886,7 @@ static RC elmc_fn_Main_statusDraw(ElmcValue **out, ElmcValue ** const args, cons
       CHECK_RC(Rc);
 
       ElmcValue *tmp_10 = NULL;
-      Rc = elmc_tuple2_take(&tmp_10, tmp_2, tmp_9);
+      Rc = elmc_tuple2_take(&tmp_10, tmp_8, tmp_9);
       CHECK_RC(Rc);
 
       ElmcValue *tmp_11 = NULL;
@@ -927,11 +901,8 @@ static RC elmc_fn_Main_statusDraw(ElmcValue **out, ElmcValue ** const args, cons
       Rc = elmc_tuple2_take(&tmp_13, tmp_5, tmp_12);
       CHECK_RC(Rc);
 
-      ElmcValue *tmp_14 = NULL;
-      Rc = elmc_tuple2_take(&tmp_14, tmp_4, tmp_13);
+      Rc = elmc_tuple2_take(&tmp_2, tmp_4, tmp_13);
       CHECK_RC(Rc);
-
-      tmp_2 = tmp_14;
 
     } else {
       ElmcValue *tmp_15 = NULL;
@@ -967,11 +938,8 @@ static RC elmc_fn_Main_statusDraw(ElmcValue **out, ElmcValue ** const args, cons
       Rc = elmc_tuple2_take(&tmp_24, tmp_16, tmp_23);
       CHECK_RC(Rc);
 
-      ElmcValue *tmp_25 = NULL;
-      Rc = elmc_tuple2_take(&tmp_25, tmp_15, tmp_24);
+      Rc = elmc_tuple2_take(&tmp_2, tmp_15, tmp_24);
       CHECK_RC(Rc);
-
-      tmp_2 = tmp_25;
     }
 
     elmc_release(tmp_1);

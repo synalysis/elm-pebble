@@ -76,11 +76,18 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
   end
 
   defp compile_generic_tuple2(left, right, env, counter) do
+    child_env = Map.delete(env, :__into_out__)
+
     if NativeInt.expr?(left, env) and NativeInt.expr?(right, env) do
-      {left_code, left_ref, counter} = Host.compile_native_int_expr(left, env, counter)
-      {right_code, right_ref, counter} = Host.compile_native_int_expr(right, env, counter)
+      {left_code, left_ref, counter} = Host.compile_native_int_expr(left, child_env, counter)
+      {right_code, right_ref, counter} = Host.compile_native_int_expr(right, child_env, counter)
       next = counter + 1
-      out = "tmp_#{next}"
+
+      out =
+        case Map.get(env, :__into_out__) do
+          into_out when is_binary(into_out) -> into_out
+          _ -> "tmp_#{next}"
+        end
 
       code = """
       #{left_code}
@@ -90,10 +97,15 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
 
       {code, out, next}
     else
-      {left_code, left_var, counter} = Host.compile_expr(left, env, counter)
-      {right_code, right_var, counter} = Host.compile_expr(right, env, counter)
+      {left_code, left_var, counter} = Host.compile_expr(left, child_env, counter)
+      {right_code, right_var, counter} = Host.compile_expr(right, child_env, counter)
       next = counter + 1
-      out = "tmp_#{next}"
+
+      out =
+        case Map.get(env, :__into_out__) do
+          into_out when is_binary(into_out) -> into_out
+          _ -> "tmp_#{next}"
+        end
 
       code = """
       #{left_code}

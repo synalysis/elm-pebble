@@ -119,9 +119,15 @@ defmodule Ide.Debugger.DeviceDataResponses do
         DeviceData.response_wire_for_callback(introspect, model, ctor, nil)
 
     step_message =
-      case DeviceData.response_message(req) do
-        message when is_binary(message) and message != "" -> message
-        _ -> ctor
+      cond do
+        is_map(wire_value) and is_binary(ctor) and ctor != "" ->
+          ctor
+
+        true ->
+          case DeviceData.response_message(req) do
+            message when is_binary(message) and message != "" -> message
+            _ -> ctor
+          end
       end
 
     cond do

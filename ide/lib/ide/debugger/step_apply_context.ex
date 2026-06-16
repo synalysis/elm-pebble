@@ -16,6 +16,7 @@ defmodule Ide.Debugger.StepApplyContext do
   @type deps :: %{
           required(:host) => host(),
           required(:surface_compile) => SurfaceCompileArtifacts.attach_ctx(),
+          required(:runtime_init) => Ide.Debugger.RuntimeInitApply.ctx(),
           required(:protocol_events) => ProtocolEvents.ctx(),
           required(:protocol_rx) => ProtocolRx.ctx(),
           required(:device_data) => DeviceDataResponses.apply_ctx(),

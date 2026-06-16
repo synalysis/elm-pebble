@@ -258,6 +258,9 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   @spec assign_call(map(), String.t(), String.t(), String.t()) :: String.t()
   def assign_call(env, out, function, call_args) do
     cond do
+      not rc_allocator?(function) and predeclared_out_slot?(env, out) ->
+        "#{out} = #{function}(#{call_args});"
+
       not rc_allocator?(function) ->
         "ElmcValue *#{out} = #{function}(#{call_args});"
 
@@ -358,6 +361,10 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
         CHECK_RC(Rc);
         """
         |> String.trim()
+
+      Map.has_key?(@take_wrappers, function) and predeclared_out_slot?(env, out) ->
+        take_fn = Map.fetch!(@take_wrappers, function)
+        "#{out} = #{take_fn}(#{call_args});"
 
       Map.has_key?(@take_wrappers, function) ->
         take_fn = Map.fetch!(@take_wrappers, function)

@@ -8288,10 +8288,6 @@ const char *elmc_rc_name(RC rc) {
   return elmc_rc_names[(unsigned)rc];
 }
 
-static inline int elmc_rc_is_success(RC rc) {
-  return rc == RC_SUCCESS;
-}
-
 #endif
 
 #if ELMC_RC_TRACK

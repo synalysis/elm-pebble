@@ -954,7 +954,7 @@ defmodule Ide.ProjectsTest do
     assert String.contains?(watch_main, "CompanionWatch.sendWatchToPhone RequestFigure")
     assert String.contains?(watch_main, "BeginFigure figureId")
     assert String.contains?(watch_main, "downloadedTangram")
-    assert String.contains?(watch_main, "|> Ui.toUiNode")
+    assert String.contains?(watch_main, "Ui.toUiNode (tangramFaceOps model)")
 
     assert {:ok, protocol_types} =
              Projects.read_source_file(project, "protocol", "src/Companion/Types.elm")
