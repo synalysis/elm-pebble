@@ -3,6 +3,8 @@ defmodule Ide.EditorCompletionDeclarationIndex do
   Lightweight declaration index for syntax-aware editor completions.
   """
 
+  alias Ide.EditorCompletionTypeParse
+
   @builtin_types ~w(
     Bool Char Cmd Dict Float Int List Maybe Never Order Platform.Program Result String Sub
   )
@@ -11,12 +13,25 @@ defmodule Ide.EditorCompletionDeclarationIndex do
           types: [String.t()],
           values: [String.t()],
           constructors: [String.t()],
-          record_fields: [String.t()]
+          record_fields: [String.t()],
+          record_fields_by_type: %{String.t() => [String.t()]},
+          field_types_by_type: %{String.t() => %{String.t() => String.t()}},
+          function_scopes: [map()],
+          import_aliases: %{String.t() => String.t()}
         }
 
   @spec empty() :: t()
   def empty do
-    %{types: @builtin_types, values: [], constructors: [], record_fields: []}
+    %{
+      types: @builtin_types,
+      values: [],
+      constructors: [],
+      record_fields: [],
+      record_fields_by_type: %{},
+      field_types_by_type: %{},
+      function_scopes: [],
+      import_aliases: %{}
+    }
   end
 
   @spec build(String.t()) :: t()
@@ -25,48 +40,158 @@ defmodule Ide.EditorCompletionDeclarationIndex do
 
     with {:module, ElmEx.Frontend.GeneratedContractBuilder} <-
            Code.ensure_loaded(ElmEx.Frontend.GeneratedContractBuilder) do
-      "Main.elm"
-      |> ElmEx.Frontend.GeneratedContractBuilder.build(source, module_name, [])
-      |> Map.get(:declarations, [])
-      |> from_declarations()
+      declarations =
+        "Main.elm"
+        |> ElmEx.Frontend.GeneratedContractBuilder.build(source, module_name, [])
+        |> Map.get(:declarations, [])
+
+      source
+      |> from_declarations(declarations)
+      |> Map.put(:import_aliases, parse_import_aliases(source))
     else
-      _ -> empty()
+      _ ->
+        empty() |> Map.put(:import_aliases, parse_import_aliases(source))
     end
   rescue
-    _ -> empty()
+    _ ->
+      empty() |> Map.put(:import_aliases, parse_import_aliases(source))
   end
 
   @spec from_declarations([map()]) :: t()
   def from_declarations(declarations) when is_list(declarations) do
-    Enum.reduce(declarations, empty(), fn declaration, acc ->
-      case declaration_kind(declaration) do
-        :type_alias ->
-          name = declaration_value(declaration, :name)
-          fields = declaration_value(declaration, :fields) |> List.wrap()
+    from_declarations("", declarations)
+  end
 
-          acc
-          |> add_unique(:types, name)
-          |> add_many_unique(:record_fields, fields)
+  @spec from_declarations(String.t(), [map()]) :: t()
+  def from_declarations(source, declarations) when is_binary(source) and is_list(declarations) do
+    index =
+      Enum.reduce(declarations, empty(), fn declaration, acc ->
+        case declaration_kind(declaration) do
+          :type_alias ->
+            name = declaration_value(declaration, :name)
+            fields = declaration_value(declaration, :fields) |> List.wrap()
+            field_types = declaration_value(declaration, :field_types) |> normalize_field_types()
 
-        :union ->
-          name = declaration_value(declaration, :name)
-          constructors = declaration_value(declaration, :constructors) |> List.wrap()
+            acc
+            |> add_unique(:types, name)
+            |> add_many_unique(:record_fields, fields)
+            |> put_type_maps(name, fields, field_types)
 
-          acc
-          |> add_unique(:types, name)
-          |> add_many_unique(:constructors, Enum.map(constructors, &constructor_name/1))
+          :union ->
+            name = declaration_value(declaration, :name)
+            constructors = declaration_value(declaration, :constructors) |> List.wrap()
 
-        kind when kind in [:function_definition, :function_signature] ->
-          add_unique(acc, :values, declaration_value(declaration, :name))
+            acc
+            |> add_unique(:types, name)
+            |> add_many_unique(:constructors, Enum.map(constructors, &constructor_name/1))
 
-        _ ->
+          kind when kind in [:function_definition, :function_signature] ->
+            add_unique(acc, :values, declaration_value(declaration, :name))
+
+          _ ->
+            acc
+        end
+      end)
+
+  index
+  |> Map.put(:function_scopes, function_scopes_from_declarations(declarations))
+  |> sort_index()
+  end
+
+  def from_declarations(_source, _), do: empty()
+
+  @spec parse_import_aliases(String.t()) :: %{String.t() => String.t()}
+  def parse_import_aliases(source) when is_binary(source) do
+    source
+    |> String.split("\n", trim: false)
+    |> Enum.reduce(%{}, fn line, acc ->
+      trimmed = String.trim(line)
+
+      cond do
+        String.starts_with?(trimmed, "import ") ->
+          parse_import_line(trimmed, acc)
+
+        true ->
           acc
       end
     end)
-    |> sort_index()
   end
 
-  def from_declarations(_), do: empty()
+  def parse_import_aliases(_), do: %{}
+
+  defp parse_import_line(line, acc) do
+    with [_, module, rest] <-
+           Regex.run(~r/^import\s+([A-Z][A-Za-z0-9_.]*)(?:\s+as\s+([A-Za-z][A-Za-z0-9_]*))?/, line) do
+      alias_name =
+        case rest do
+          nil -> module |> String.split(".") |> List.last()
+          alias -> alias
+        end
+
+      Map.put(acc, alias_name, module)
+    else
+      _ -> acc
+    end
+  end
+
+  defp function_scopes_from_declarations(declarations) do
+    signatures =
+      declarations
+      |> Enum.filter(&(declaration_kind(&1) == :function_signature))
+      |> Map.new(fn decl ->
+        {declaration_value(decl, :name), declaration_value(decl, :type)}
+      end)
+
+    declarations
+    |> Enum.filter(&(declaration_kind(&1) == :function_definition))
+    |> Enum.map(fn decl ->
+      name = declaration_value(decl, :name)
+      args = declaration_value(decl, :args) |> List.wrap() |> Enum.map(&to_string/1)
+      span = declaration_value(decl, :span) || %{}
+      param_types = signatures |> Map.get(name, "") |> EditorCompletionTypeParse.function_param_types()
+      bindings = zip_param_bindings(args, param_types)
+
+      %{
+        name: name,
+        start_line: Map.get(span, :start_line) || Map.get(span, "start_line") || 0,
+        end_line: Map.get(span, :end_line) || Map.get(span, "end_line") || 0,
+        bindings: bindings
+      }
+    end)
+    |> Enum.sort_by(& &1.start_line)
+  end
+
+  defp zip_param_bindings(args, param_types) do
+    args
+    |> Enum.with_index()
+    |> Enum.reduce(%{}, fn {arg, index}, acc ->
+      type = Enum.at(param_types, index)
+
+      if is_binary(type) and type != "" do
+        Map.put(acc, arg, String.trim(type))
+      else
+        acc
+      end
+    end)
+  end
+
+  defp put_type_maps(acc, type_name, fields, field_types) when is_binary(type_name) do
+    acc
+    |> Map.update!(:record_fields_by_type, fn by_type ->
+      Map.put(by_type, type_name, Enum.map(fields, &to_string/1))
+    end)
+    |> Map.update!(:field_types_by_type, fn by_type ->
+      Map.put(by_type, type_name, field_types)
+    end)
+  end
+
+  defp put_type_maps(acc, _type_name, _fields, _field_types), do: acc
+
+  defp normalize_field_types(field_types) when is_map(field_types) do
+    Map.new(field_types, fn {name, type} -> {to_string(name), to_string(type || "")} end)
+  end
+
+  defp normalize_field_types(_), do: %{}
 
   defp module_name(source) do
     source
@@ -126,6 +251,10 @@ defmodule Ide.EditorCompletionDeclarationIndex do
   end
 
   defp sort_index(index) do
-    Map.new(index, fn {key, values} -> {key, Enum.sort(values)} end)
+    index
+    |> Map.new(fn
+      {key, values} when is_list(values) -> {key, Enum.sort(values)}
+      {key, values} -> {key, values}
+    end)
   end
 end

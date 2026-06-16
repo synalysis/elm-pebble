@@ -8,7 +8,16 @@ defmodule Ide.EditorCompletionContextTest do
     context = EditorCompletionContext.analyze(%{source: source, offset: String.length(source)})
 
     assert context.kind == :record_field_access
+    assert context.qualifier == "model"
     assert context.prefix == "pa"
+  end
+
+  test "classifies nested record field access" do
+    source = "init context = context.screen."
+    context = EditorCompletionContext.analyze(%{source: source, offset: String.length(source)})
+
+    assert context.kind == :record_field_access
+    assert context.qualifier == "context.screen"
   end
 
   test "classifies uppercase qualified access as module access" do

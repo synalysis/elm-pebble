@@ -59,7 +59,7 @@ defmodule IdeWeb.WorkspaceLive.EditorDependencies do
              source_root: doc_root,
              platform_target: platform_target
            ) do
-        {:ok, rows} -> rows
+        {:ok, rows} -> enrich_editor_doc_packages(rows)
       end
 
     %{
@@ -132,6 +132,18 @@ defmodule IdeWeb.WorkspaceLive.EditorDependencies do
         builtin?: Packages.pebble_builtin_package?(name, packages_root),
         used?: if(include_usage?, do: Map.get(usage, name, false), else: nil)
       }
+    end)
+  end
+
+  @spec enrich_editor_doc_packages([map()]) :: [map()]
+  defp enrich_editor_doc_packages(rows) when is_list(rows) do
+    Enum.map(rows, fn row ->
+      package = row[:package] || row["package"]
+
+      case Packages.builtin_package_docs(package) do
+        {:ok, docs} when docs != [] -> Map.put(row, :docs, docs)
+        _ -> row
+      end
     end)
   end
 end

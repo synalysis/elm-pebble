@@ -20,6 +20,8 @@ defmodule Ide.EditorCompletionContext do
           qualifier: String.t() | nil,
           replace_from: non_neg_integer(),
           replace_to: non_neg_integer(),
+          offset: non_neg_integer(),
+          source: String.t(),
           declaration_index: EditorCompletionDeclarationIndex.t()
         }
 
@@ -38,6 +40,8 @@ defmodule Ide.EditorCompletionContext do
       qualifier: qualifier,
       replace_from: replace_from,
       replace_to: safe_offset,
+      offset: safe_offset,
+      source: source,
       declaration_index: declaration_index
     }
   end
@@ -49,6 +53,8 @@ defmodule Ide.EditorCompletionContext do
       qualifier: nil,
       replace_from: 0,
       replace_to: 0,
+      offset: 0,
+      source: "",
       declaration_index: EditorCompletionDeclarationIndex.empty()
     }
   end
@@ -67,7 +73,7 @@ defmodule Ide.EditorCompletionContext do
         {:module_qualified_access, qualifier_before_dot(source, replace_from)}
 
       record_field_access_position?(source, replace_from) ->
-        {:record_field_access, nil}
+        {:record_field_access, qualifier_before_dot(source, replace_from)}
 
       type_annotation_position?(source, replace_from) ->
         {:type_annotation, nil}

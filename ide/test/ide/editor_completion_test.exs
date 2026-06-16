@@ -114,6 +114,186 @@ defmodule Ide.EditorCompletionTest do
     assert labels == ["count", "pageIndex"]
   end
 
+  test "init context completions use launch context fields" do
+    source = """
+    module Main exposing (..)
+
+    import Pebble.Platform as PebblePlatform
+
+    type alias Model =
+        { timeString : String
+        , screenW : Int
+        }
+
+    init : PebblePlatform.LaunchContext -> ( Model, Cmd Msg )
+    init context =
+        context.
+    """
+
+    index = Ide.EditorCompletionDeclarationIndex.build(source)
+    offset = String.length(source)
+
+    launch_context_doc = %{
+      "name" => "LaunchContext",
+      "type" =>
+        "{ reason : LaunchReason, watchModel : String, watchProfileId : String, screen : LaunchScreen, hasMicrophone : Bool, hasCompass : Bool, supportsHealth : Bool }"
+    }
+
+    launch_screen_doc = %{
+      "name" => "LaunchScreen",
+      "type" => "{ width : Int, height : Int, shape : DisplayShape, colorMode : ColorCapability }"
+    }
+
+    suggestions =
+      EditorCompletion.suggest(%{
+        prefix: "",
+        context_kind: :record_field_access,
+        qualifier: "context",
+        declaration_index: index,
+        source: source,
+        cursor_offset: offset,
+        editor_doc_packages: [
+          %{
+            package: "elm-pebble/elm-watch",
+            docs: [
+              %{
+                "name" => "Pebble.Platform",
+                "aliases" => [launch_context_doc, launch_screen_doc],
+                "values" => [],
+                "unions" => []
+              }
+            ]
+          }
+        ],
+        limit: 50
+      })
+
+    labels = Enum.map(suggestions, & &1.label)
+
+    assert "reason" in labels
+    assert "screen" in labels
+    assert "watchModel" in labels
+    refute "timeString" in labels
+    refute "screenW" in labels
+  end
+
+  test "contextual qualifier without package docs does not fall back to unrelated fields" do
+    source = """
+    module Main exposing (..)
+
+    import Pebble.Platform as PebblePlatform
+
+    type alias Model =
+        { timeString : String }
+
+    init : PebblePlatform.LaunchContext -> Model
+    init context =
+        context.
+    """
+
+    index = Ide.EditorCompletionDeclarationIndex.build(source)
+    offset = String.length(source)
+
+    suggestions =
+      EditorCompletion.suggest(%{
+        prefix: "",
+        context_kind: :record_field_access,
+        qualifier: "context",
+        declaration_index: index,
+        source: source,
+        cursor_offset: offset,
+        limit: 20
+      })
+
+    assert suggestions == []
+  end
+
+  test "update model completions use model fields" do
+    source = """
+    module Main exposing (..)
+
+    type alias Model =
+        { timeString : String
+        , screenW : Int
+        }
+
+    type Msg
+        = Tick
+
+    update : Msg -> Model -> Model
+    update msg model =
+        model.
+    """
+
+    index = Ide.EditorCompletionDeclarationIndex.build(source)
+    offset = String.length(source)
+
+    suggestions =
+      EditorCompletion.suggest(%{
+        prefix: "",
+        context_kind: :record_field_access,
+        qualifier: "model",
+        declaration_index: index,
+        source: source,
+        cursor_offset: offset,
+        limit: 20
+      })
+
+    labels = Enum.map(suggestions, & &1.label)
+    assert labels == ["screenW", "timeString"]
+  end
+
+  test "nested context screen completions use launch screen fields" do
+    source = """
+    module Main exposing (..)
+
+    import Pebble.Platform as PebblePlatform
+
+    init : PebblePlatform.LaunchContext -> Model
+    init context =
+        context.screen.
+    """
+
+    index = Ide.EditorCompletionDeclarationIndex.build(source)
+    offset = String.length(source)
+
+    suggestions =
+      EditorCompletion.suggest(%{
+        prefix: "",
+        context_kind: :record_field_access,
+        qualifier: "context.screen",
+        declaration_index: index,
+        source: source,
+        cursor_offset: offset,
+        editor_doc_packages: [
+          %{
+            package: "elm-pebble/elm-watch",
+            docs: [
+              %{
+                "name" => "Pebble.Platform",
+                "aliases" => [
+                  %{
+                    "name" => "LaunchContext",
+                    "type" => "{ screen : LaunchScreen }"
+                  },
+                  %{
+                    "name" => "LaunchScreen",
+                    "type" => "{ width : Int, height : Int, shape : DisplayShape, colorMode : ColorCapability }"
+                  }
+                ],
+                "values" => [],
+                "unions" => []
+              }
+            ]
+          }
+        ],
+        limit: 20
+      })
+
+    labels = Enum.map(suggestions, & &1.label)
+    assert labels == ["colorMode", "height", "shape", "width"]
+  end
+
   test "type annotation completions are limited to type names" do
     suggestions =
       EditorCompletion.suggest(%{
@@ -164,6 +344,34 @@ defmodule Ide.EditorCompletionTest do
     assert "filter" in labels
     assert "map" in labels
     refute "pageIndex" in labels
+  end
+
+  test "qualified module completions resolve import aliases" do
+    {:ok, docs} = Ide.Packages.builtin_package_docs("elm-pebble/elm-watch")
+
+    index =
+      Ide.EditorCompletionDeclarationIndex.build("""
+      module Main exposing (main)
+
+      import Pebble.Events as PebbleEvents
+      """)
+
+    suggestions =
+      EditorCompletion.suggest(%{
+        prefix: "on",
+        context_kind: :module_qualified_access,
+        qualifier: "PebbleEvents",
+        declaration_index: index,
+        editor_doc_packages: [%{package: "elm-pebble/elm-watch", docs: docs}],
+        limit: 50
+      })
+
+    labels = Enum.map(suggestions, & &1.label)
+    assert "onDayChange" in labels
+    assert "onHourChange" in labels
+    assert "onMinuteChange" in labels
+    refute "HourChanged" in labels
+    refute "MinuteChanged" in labels
   end
 
   test "value expression completions include values and constructors" do

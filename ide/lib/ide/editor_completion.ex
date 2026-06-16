@@ -3,6 +3,9 @@ defmodule Ide.EditorCompletion do
   Aggregates completion candidates from parser/token context and workspace package knowledge.
   """
 
+  alias Ide.EditorCompletionPackageTypes
+  alias Ide.EditorCompletionRecordResolver
+
   @default_limit 24
 
   @keywords ~w(
@@ -49,6 +52,8 @@ defmodule Ide.EditorCompletion do
           optional(:context_kind) => atom(),
           optional(:qualifier) => String.t() | nil,
           optional(:declaration_index) => map(),
+          optional(:source) => String.t(),
+          optional(:cursor_offset) => non_neg_integer(),
           optional(:limit) => pos_integer()
         }
 
@@ -59,6 +64,7 @@ defmodule Ide.EditorCompletion do
     context_kind = completion_context_kind(context)
     field_access? = context_kind == :record_field_access
     limit = context[:limit] || @default_limit
+    context = with_package_type_maps(context)
 
     candidates =
       context
@@ -146,12 +152,63 @@ defmodule Ide.EditorCompletion do
   @spec field_candidates(map()) :: candidate_list()
   defp field_candidates(context) when is_map(context) do
     fields =
-      case declaration_index_values(context, :record_fields) do
-        [] -> context[:record_fields]
-        values -> values
+      case contextual_record_fields(context) do
+        [_ | _] = fields ->
+          fields
+
+        _ ->
+          if contextual_qualifier?(context) do
+            []
+          else
+            flat_record_fields(context)
+          end
       end
 
     record_field_candidates(fields)
+  end
+
+  @spec contextual_qualifier?(map()) :: boolean()
+  defp contextual_qualifier?(context) do
+    case context[:qualifier] do
+      qualifier when is_binary(qualifier) -> String.trim(qualifier) != ""
+      _ -> false
+    end
+  end
+
+  @spec contextual_record_fields(map()) :: [String.t()]
+  defp contextual_record_fields(context) do
+    qualifier = context[:qualifier]
+    index = context[:declaration_index] || %{}
+    source = context[:source] || ""
+    offset = context[:cursor_offset] || context[:replace_to]
+
+    if is_binary(qualifier) and qualifier != "" and is_binary(source) and is_integer(offset) do
+      EditorCompletionRecordResolver.resolve_fields(index, qualifier, offset, source, context)
+    else
+      []
+    end
+  end
+
+  @spec flat_record_fields(map()) :: [String.t()]
+  defp flat_record_fields(context) do
+    case declaration_index_values(context, :record_fields) do
+      [] -> context[:record_fields] || []
+      values -> values
+    end
+    |> List.wrap()
+  end
+
+  @spec with_package_type_maps(map()) :: map()
+  defp with_package_type_maps(context) do
+    if is_map(context[:package_type_maps]) do
+      context
+    else
+      Map.put(
+        context,
+        :package_type_maps,
+        EditorCompletionPackageTypes.build(context[:editor_doc_packages])
+      )
+    end
   end
 
   @spec record_field_candidates([String.t()] | nil) :: candidate_list()
@@ -233,7 +290,7 @@ defmodule Ide.EditorCompletion do
 
   @spec module_member_candidates(map()) :: candidate_list()
   defp module_member_candidates(context) when is_map(context) do
-    qualifier = context[:qualifier]
+    qualifier = resolved_module_qualifier(context[:qualifier], context[:declaration_index])
 
     doc_members =
       context[:editor_doc_packages]
@@ -242,6 +299,14 @@ defmodule Ide.EditorCompletion do
 
     doc_members ++ core_module_member_candidates(qualifier)
   end
+
+  @spec resolved_module_qualifier(String.t() | nil, map() | nil) :: String.t() | nil
+  defp resolved_module_qualifier(qualifier, index) when is_binary(qualifier) do
+    aliases = Map.get(index || %{}, :import_aliases, %{})
+    Map.get(aliases, qualifier, qualifier)
+  end
+
+  defp resolved_module_qualifier(qualifier, _), do: qualifier
 
   defp module_members_from_package(package_row, qualifier) when is_map(package_row) do
     package = package_row[:package] || package_row["package"] || "package"

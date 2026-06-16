@@ -395,4 +395,12 @@ defmodule Ide.PackagesTest do
     assert companion_preferences
     assert "Pebble.Companion.Preferences" in companion_preferences.modules
   end
+
+  test "builtin_package_docs loads structured docs from bundled watch sources" do
+    assert {:ok, docs} = Packages.builtin_package_docs("elm-pebble/elm-watch")
+    assert Enum.any?(docs, &(&1["name"] == "Pebble.Platform"))
+
+    platform = Enum.find(docs, &(&1["name"] == "Pebble.Platform"))
+    assert Enum.any?(platform["aliases"], &(&1["name"] == "LaunchContext"))
+  end
 end

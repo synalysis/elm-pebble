@@ -139,6 +139,52 @@ defmodule Ide.Packages do
   end
 
   @doc """
+  Loads structured module documentation for a built-in source-backed package.
+  """
+  @spec builtin_package_docs(String.t()) :: {:ok, [map()]}
+  def builtin_package_docs(package) when is_binary(package) do
+    with {:ok, source_root} <- builtin_docs_source_root(package),
+         {:ok, docs} <- builtin_package_docs_from_source_root(source_root, package) do
+      {:ok, docs}
+    else
+      _ -> {:ok, []}
+    end
+  end
+
+  @spec builtin_package_docs_from_source_root(String.t(), String.t()) ::
+          {:ok, [map()]}
+  defp builtin_package_docs_from_source_root(source_root, package) do
+    case ElmSourceDocs.package_docs(source_root) do
+      {:ok, [_ | _] = docs} ->
+        {:ok, docs}
+
+      _ ->
+        package_root = builtin_package_root_for_extractor(package)
+
+        if is_binary(package_root) do
+          case Ide.PackageDocs.Extractor.build_package_docs(package_root) do
+            {:ok, docs} -> {:ok, docs}
+            _ -> {:ok, []}
+          end
+        else
+          {:ok, []}
+        end
+    end
+  end
+
+  @spec builtin_package_root_for_extractor(String.t()) :: String.t() | nil
+  defp builtin_package_root_for_extractor("elm-pebble/companion-core"),
+    do: Path.join(Ide.Paths.repo_root(), "packages/elm-pebble-companion-core")
+
+  defp builtin_package_root_for_extractor("elm-pebble/companion-preferences"),
+    do: Path.join(Ide.Paths.repo_root(), "packages/elm-pebble-companion-preferences")
+
+  defp builtin_package_root_for_extractor("elm-pebble/elm-watch"),
+    do: Path.join(Ide.Paths.repo_root(), "packages/elm-pebble/elm-watch")
+
+  defp builtin_package_root_for_extractor(_), do: nil
+
+  @doc """
   Loads API documentation for a single exposed module from the package registry (`docs.json`).
   """
   @spec module_doc_markdown(String.t(), String.t(), String.t(), keyword()) ::

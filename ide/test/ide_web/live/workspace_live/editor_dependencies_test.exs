@@ -53,4 +53,20 @@ defmodule IdeWeb.WorkspaceLive.EditorDependenciesTest do
     assert payload.direct == []
     assert payload.indirect == []
   end
+
+  test "build_payload enriches builtin package rows with structured docs" do
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "EditorDepsDocs",
+               "slug" => "editor-deps-docs",
+               "target_type" => "watchface"
+             })
+
+    payload = EditorDependencies.build_docs_payload(project, "watch")
+
+    row = Enum.find(payload.editor_doc_packages, &(&1.package == "elm-pebble/elm-watch"))
+    assert row
+    assert is_list(row.docs)
+    assert Enum.any?(row.docs, &(&1["name"] == "Pebble.Platform"))
+  end
 end

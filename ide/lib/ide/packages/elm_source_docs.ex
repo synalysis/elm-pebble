@@ -44,14 +44,39 @@ defmodule Ide.Packages.ElmSourceDocs do
     end
   end
 
+  @spec package_docs(String.t()) :: {:ok, [source_doc_entry()]} | {:error, source_error()}
+  def package_docs(source_root) when is_binary(source_root) do
+    with {:ok, modules} <- list_modules(source_root) do
+      docs =
+        modules
+        |> Enum.map(fn module_name ->
+          case module_doc(source_root, module_name) do
+            {:ok, doc} -> doc
+            _ -> nil
+          end
+        end)
+        |> Enum.reject(&is_nil/1)
+
+      {:ok, docs}
+    end
+  end
+
+  @spec module_doc(String.t(), String.t()) ::
+          {:ok, source_doc_entry()} | {:error, source_error()}
+  def module_doc(source_root, module_name)
+      when is_binary(source_root) and is_binary(module_name) do
+    with {:ok, path} <- source_module_path(source_root, module_name),
+         {:ok, source} <- File.read(path) do
+      {:ok, source_to_module_doc(source, module_name)}
+    end
+  end
+
   @spec module_doc_markdown(String.t(), String.t()) ::
           {:ok, String.t()} | {:error, source_error()}
   def module_doc_markdown(source_root, module_name)
       when is_binary(source_root) and is_binary(module_name) do
-    with {:ok, path} <- source_module_path(source_root, module_name),
-         {:ok, source} <- File.read(path) do
-      mod = source_to_module_doc(source, module_name)
-      {:ok, ModuleDoc.json_to_markdown(mod)}
+    with {:ok, doc} <- module_doc(source_root, module_name) do
+      {:ok, ModuleDoc.json_to_markdown(doc)}
     end
   end
 

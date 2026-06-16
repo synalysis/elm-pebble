@@ -107,6 +107,8 @@ defmodule Ide.Lsp.Server do
         context_kind: completion_context.kind,
         qualifier: completion_context.qualifier,
         declaration_index: completion_context.declaration_index,
+        source: text,
+        cursor_offset: completion_context.offset,
         parser_payload: document[:parser_payload],
         token_tokens: document[:tokens] || [],
         limit: 50

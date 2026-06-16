@@ -250,6 +250,118 @@ defmodule Ide.Lsp.ServerTest do
     refute "pageIndex" in labels
   end
 
+  test "import alias module completion suggests Pebble event subscriptions" do
+    uri = "elm-pebble://demo/watch/src%2FMain.elm"
+    {:ok, docs} = Ide.Packages.builtin_package_docs("elm-pebble/elm-watch")
+
+    state = %{
+      Server.new("demo")
+      | dependency_payloads: %{
+          {"demo", "watch"} => %{
+            package_doc_index: %{"Pebble.Events" => "elm-pebble/elm-watch"},
+            editor_doc_packages: [%{package: "elm-pebble/elm-watch", docs: docs}],
+            direct: [],
+            indirect: []
+          }
+        }
+    }
+
+    text =
+      [
+        "module Main exposing (main)",
+        "",
+        "import Pebble.Events as PebbleEvents",
+        "",
+        "type Msg",
+        "    = HourChanged Int",
+        "    | MinuteChanged Int",
+        "",
+        "subscriptions _ =",
+        "    PebbleEvents.batch",
+        "        [ PebbleEvents.onHourChange HourChanged",
+        "        , PebbleEvents.onMinuteChange MinuteChanged",
+        "        , PebbleEvents."
+      ]
+      |> Enum.join("\n")
+
+    {:ok, state} = open_document(state, uri, text)
+
+    {messages, _state} =
+      Server.handle(
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => 13,
+          "method" => "textDocument/completion",
+          "params" => %{
+            "textDocument" => %{"uri" => uri},
+            "position" => %{"line" => 11, "character" => String.length("        , PebbleEvents.")}
+          }
+        }),
+        state
+      )
+
+    assert [%{"id" => 13, "result" => %{"items" => items}}] = messages
+    labels = Enum.map(items, & &1["label"])
+    assert "onDayChange" in labels
+    assert "onSecondChange" in labels
+    refute "HourChanged" in labels
+    refute "MinuteChanged" in labels
+  end
+
+  test "init context completion uses builtin package docs from dependency payload" do
+    uri = "elm-pebble://demo/watch/src%2FMain.elm"
+    {:ok, docs} = Ide.Packages.builtin_package_docs("elm-pebble/elm-watch")
+
+    state = %{
+      Server.new("demo")
+      | dependency_payloads: %{
+          {"demo", "watch"} => %{
+            package_doc_index: %{"Pebble.Platform" => "elm-pebble/elm-watch"},
+            editor_doc_packages: [%{package: "elm-pebble/elm-watch", docs: docs}],
+            direct: [],
+            indirect: []
+          }
+        }
+    }
+
+    text =
+      [
+        "module Main exposing (main)",
+        "",
+        "import Pebble.Platform as PebblePlatform",
+        "",
+        "type alias Model =",
+        "    { timeString : String }",
+        "",
+        "init : PebblePlatform.LaunchContext -> ( Model, Cmd Msg )",
+        "init context =",
+        "    context."
+      ]
+      |> Enum.join("\n")
+
+    {:ok, state} = open_document(state, uri, text)
+
+    {messages, _state} =
+      Server.handle(
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => 12,
+          "method" => "textDocument/completion",
+          "params" => %{
+            "textDocument" => %{"uri" => uri},
+            "position" => %{"line" => 9, "character" => String.length("    context.")}
+          }
+        }),
+        state
+      )
+
+    assert [%{"id" => 12, "result" => %{"items" => items}}] = messages
+    labels = Enum.map(items, & &1["label"])
+    assert "screen" in labels
+    assert "reason" in labels
+    refute "timeString" in labels
+  end
+
   test "type annotation completion suggests only type names" do
     state = Server.new("demo")
     uri = "elm-pebble://demo/watch/src%2FMain.elm"
