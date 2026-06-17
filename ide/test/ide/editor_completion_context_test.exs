@@ -20,6 +20,32 @@ defmodule Ide.EditorCompletionContextTest do
     assert context.qualifier == "context.screen"
   end
 
+  test "classifies record field access after binary operator" do
+    source = """
+    hasPiece model =
+        model.pieceKind >= 0 && model.
+    """
+
+    context =
+      EditorCompletionContext.analyze(%{
+        source: source,
+        offset: String.length(source)
+      })
+
+    assert context.kind == :record_field_access
+    assert context.qualifier == "model"
+    assert context.prefix == ""
+  end
+
+  test "classifies partial record field access after binary operator" do
+    source = "hasPiece model = model.pieceKind >= 0 && model.pi"
+    context = EditorCompletionContext.analyze(%{source: source, offset: String.length(source)})
+
+    assert context.kind == :record_field_access
+    assert context.qualifier == "model"
+    assert context.prefix == "pi"
+  end
+
   test "classifies uppercase qualified access as module access" do
     source = "main = List."
     context = EditorCompletionContext.analyze(%{source: source, offset: String.length(source)})

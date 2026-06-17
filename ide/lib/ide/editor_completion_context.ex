@@ -32,7 +32,7 @@ defmodule Ide.EditorCompletionContext do
     prefix = completion_prefix(String.slice(source, 0, safe_offset))
     replace_from = safe_offset - String.length(prefix)
     declaration_index = opts[:declaration_index] || EditorCompletionDeclarationIndex.build(source)
-    {kind, qualifier} = classify(source, replace_from)
+    {kind, qualifier} = classify(source, safe_offset, prefix)
 
     %{
       kind: kind,
@@ -67,40 +67,58 @@ defmodule Ide.EditorCompletionContext do
     end
   end
 
-  defp classify(source, replace_from) do
-    cond do
-      module_qualified_access_position?(source, replace_from) ->
-        {:module_qualified_access, qualifier_before_dot(source, replace_from)}
+  defp classify(source, offset, prefix) do
+    case field_access_context(source, offset, prefix) do
+      {:ok, qualifier} ->
+        root = qualifier |> String.split(".") |> List.first() || ""
 
-      record_field_access_position?(source, replace_from) ->
-        {:record_field_access, qualifier_before_dot(source, replace_from)}
+        if String.match?(root, ~r/^[A-Z]/) do
+          {:module_qualified_access, qualifier}
+        else
+          {:record_field_access, qualifier}
+        end
 
-      type_annotation_position?(source, replace_from) ->
-        {:type_annotation, nil}
+      :error ->
+        cond do
+          type_annotation_position?(source, offset - String.length(prefix)) ->
+            {:type_annotation, nil}
 
-      true ->
-        {:value_expression, nil}
+          true ->
+            {:value_expression, nil}
+        end
     end
   end
 
-  defp module_qualified_access_position?(source, offset) do
-    case qualifier_before_dot(source, offset) do
-      <<first::utf8, _::binary>> -> first in ?A..?Z
-      _ -> false
+  defp field_access_context(source, offset, prefix) when is_binary(source) do
+    safe_offset = min(max(offset, 0), String.length(source))
+    replace_from = safe_offset - String.length(prefix)
+
+    dot_index =
+      if prefix != "" do
+        if replace_from > 0 and String.at(source, replace_from - 1) == ".", do: replace_from - 1
+      else
+        scan_back_for_dot_index(source, safe_offset - 1)
+      end
+
+    with dot when is_integer(dot) and dot >= 0 <- dot_index,
+         prefix_before_dot <- String.slice(source, 0, dot + 1),
+         [_, qualifier] <-
+           Regex.run(
+             ~r/([A-Za-z_][A-Za-z0-9_']*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\.$/,
+             prefix_before_dot
+           ) do
+      {:ok, qualifier}
+    else
+      _ -> :error
     end
   end
 
-  defp record_field_access_position?(source, offset) do
-    safe_offset = min(max(offset, 0), String.length(source))
-    safe_offset > 0 && String.at(source, safe_offset - 1) == "."
-  end
+  defp scan_back_for_dot_index(_source, pos) when pos < 0, do: nil
 
-  defp qualifier_before_dot(source, offset) do
-    safe_offset = min(max(offset, 0), String.length(source))
-    prefix = String.slice(source, 0, safe_offset)
-
-    case Regex.run(~r/([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)*)\.$/, prefix) do
-      [_, qualifier] -> qualifier
+  defp scan_back_for_dot_index(source, pos) when is_binary(source) do
+    case String.at(source, pos) do
+      "." -> pos
+      c when c in [" ", "\t", "\n", "\r"] -> scan_back_for_dot_index(source, pos - 1)
       _ -> nil
     end
   end

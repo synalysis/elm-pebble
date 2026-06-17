@@ -374,6 +374,40 @@ defmodule Ide.EditorCompletionTest do
     refute "MinuteChanged" in labels
   end
 
+  test "hasPiece model field access after binary operator suggests model fields" do
+    source = """
+    module Main exposing (..)
+
+    type alias Model =
+        { pieceKind : Int
+        , pieceRot : Int
+        , pieceX : Int
+        }
+
+    hasPiece : Model -> Bool
+    hasPiece model =
+        model.pieceKind >= 0 && model.
+    """
+
+    index = Ide.EditorCompletionDeclarationIndex.build(source)
+    offset = String.length(source)
+    context = Ide.EditorCompletionContext.analyze(%{source: source, offset: offset})
+
+    suggestions =
+      EditorCompletion.suggest(%{
+        prefix: context.prefix,
+        context_kind: context.kind,
+        qualifier: context.qualifier,
+        declaration_index: index,
+        source: source,
+        cursor_offset: offset,
+        limit: 20
+      })
+
+    labels = Enum.map(suggestions, & &1.label)
+    assert labels == ["pieceKind", "pieceRot", "pieceX"]
+  end
+
   test "value expression completions include values and constructors" do
     suggestions =
       EditorCompletion.suggest(%{
