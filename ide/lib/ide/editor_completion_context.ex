@@ -10,6 +10,7 @@ defmodule Ide.EditorCompletionContext do
   @type kind ::
           :record_field_access
           | :module_qualified_access
+          | :import_exposing
           | :type_annotation
           | :value_expression
           | :unknown
@@ -29,10 +30,18 @@ defmodule Ide.EditorCompletionContext do
   def analyze(%{source: source, offset: offset} = opts)
       when is_binary(source) and is_integer(offset) do
     safe_offset = min(max(offset, 0), String.length(source))
-    prefix = completion_prefix(String.slice(source, 0, safe_offset))
-    replace_from = safe_offset - String.length(prefix)
+    prefix_text = String.slice(source, 0, safe_offset)
     declaration_index = opts[:declaration_index] || EditorCompletionDeclarationIndex.build(source)
-    {kind, qualifier} = classify(source, safe_offset, prefix)
+    {kind, qualifier} = classify(source, safe_offset, completion_prefix(prefix_text))
+
+    prefix =
+      if kind == :import_exposing do
+        import_exposing_member_prefix(prefix_text)
+      else
+        completion_prefix(prefix_text)
+      end
+
+    replace_from = safe_offset - String.length(prefix)
 
     %{
       kind: kind,
@@ -68,24 +77,95 @@ defmodule Ide.EditorCompletionContext do
   end
 
   defp classify(source, offset, prefix) do
-    case field_access_context(source, offset, prefix) do
-      {:ok, qualifier} ->
-        root = qualifier |> String.split(".") |> List.first() || ""
+    cond do
+      match?({:ok, _}, import_exposing_context(source, offset)) ->
+        {:import_exposing, import_exposing_module(source, offset)}
 
-        if String.match?(root, ~r/^[A-Z]/) do
-          {:module_qualified_access, qualifier}
+      true ->
+        case field_access_context(source, offset, prefix) do
+          {:ok, qualifier} ->
+            root = qualifier |> String.split(".") |> List.first() || ""
+
+            if String.match?(root, ~r/^[A-Z]/) do
+              {:module_qualified_access, qualifier}
+            else
+              {:record_field_access, qualifier}
+            end
+
+          :error ->
+            cond do
+              type_annotation_position?(source, offset - String.length(prefix)) ->
+                {:type_annotation, nil}
+
+              true ->
+                {:value_expression, nil}
+            end
+        end
+    end
+  end
+
+  defp import_exposing_module(source, offset) when is_binary(source) do
+    case import_exposing_context(source, offset) do
+      {:ok, module} -> module
+      :error -> nil
+    end
+  end
+
+  defp import_exposing_context(source, offset) when is_binary(source) do
+    safe_offset = min(max(offset, 0), String.length(source))
+    prefix = String.slice(source, 0, safe_offset)
+
+    with :error <- import_exposing_after_paren(prefix, safe_offset),
+         :error <- import_exposing_after_keyword(prefix, safe_offset) do
+      :error
+    end
+  end
+
+  defp import_exposing_after_paren(prefix, safe_offset) do
+    pattern = ~r/import\s+[A-Z][A-Za-z0-9_.']*[^\n]*(?:exposing|eposing|xposing|posing)\s*\(/u
+    import_exposing_module_at_match(prefix, safe_offset, pattern, [])
+  end
+
+  defp import_exposing_after_keyword(prefix, _safe_offset) do
+    trimmed = String.trim_trailing(prefix)
+    keyword_pattern = ~r/import\s+[A-Z][A-Za-z0-9_.']*[^\n]*(?:exposing|eposing|xposing|posing)\s*$/u
+    import_exposing_module_at_match(trimmed, String.length(trimmed), keyword_pattern, [])
+  end
+
+  defp import_exposing_module_at_match(text, safe_offset, pattern, _opts) do
+    case Regex.scan(pattern, text, return: :index) do
+      [] ->
+        :error
+
+      matches ->
+        [{start, length} | _] = List.last(matches)
+
+        if safe_offset >= start + length do
+          case Regex.run(~r/^import\s+([A-Z][A-Za-z0-9_.']*)/, String.slice(text, start, length)) do
+            [_, module] -> {:ok, module}
+            _ -> :error
+          end
         else
-          {:record_field_access, qualifier}
+          :error
         end
+    end
+  end
 
-      :error ->
-        cond do
-          type_annotation_position?(source, offset - String.length(prefix)) ->
-            {:type_annotation, nil}
+  defp import_exposing_member_prefix(prefix_text) when is_binary(prefix_text) do
+    trimmed = String.trim_trailing(prefix_text)
 
-          true ->
-            {:value_expression, nil}
-        end
+    cond do
+      Regex.match?(~r/(?:exposing|eposing|xposing|posing)\s*\(\s*$/u, trimmed) ->
+        ""
+
+      Regex.match?(~r/(?:exposing|eposing|xposing|posing)\s*$/u, trimmed) ->
+        ""
+
+      match = Regex.run(~r/(?:exposing|eposing|xposing|posing)\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)$/u, trimmed) ->
+        Enum.at(match, 1, "")
+
+      true ->
+        completion_prefix(prefix_text)
     end
   end
 

@@ -300,6 +300,15 @@ defmodule Ide.EditorCompletion do
     doc_members ++ core_module_member_candidates(qualifier)
   end
 
+  @spec import_exposing_candidates(map()) :: candidate_list()
+  defp import_exposing_candidates(context) when is_map(context) do
+    expose_all = [
+      %{label: "..", insert_text: "..", kind: "keyword", source: "language/import-exposing"}
+    ]
+
+    expose_all ++ module_member_candidates(context)
+  end
+
   @spec resolved_module_qualifier(String.t() | nil, map() | nil) :: String.t() | nil
   defp resolved_module_qualifier(qualifier, index) when is_binary(qualifier) do
     aliases = Map.get(index || %{}, :import_aliases, %{})
@@ -398,6 +407,7 @@ defmodule Ide.EditorCompletion do
   @spec candidates(map(), atom()) :: candidate_list()
   defp candidates(context, :record_field_access), do: field_candidates(context)
   defp candidates(context, :module_qualified_access), do: module_member_candidates(context)
+  defp candidates(context, :import_exposing), do: import_exposing_candidates(context)
   defp candidates(context, :type_annotation), do: type_candidates(context)
 
   defp candidates(context, :value_expression) do

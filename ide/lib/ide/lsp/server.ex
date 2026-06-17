@@ -166,7 +166,7 @@ defmodule Ide.Lsp.Server do
       "capabilities" => %{
         "textDocumentSync" => %{"openClose" => true, "change" => 1},
         "documentFormattingProvider" => true,
-        "completionProvider" => %{"triggerCharacters" => [".", ":"]},
+        "completionProvider" => %{"triggerCharacters" => [".", ":", "("]},
         "foldingRangeProvider" => true,
         "hoverProvider" => true,
         "definitionProvider" => true,

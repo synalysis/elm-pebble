@@ -55,4 +55,12 @@ defmodule Ide.EditorCompletionDeclarationIndexTest do
     assert [%{name: "init", bindings: %{"context" => "PebblePlatform.LaunchContext"}}] =
              Enum.filter(index.function_scopes, &(&1.name == "init"))
   end
+
+  test "import alias parsing strips partial exposing suffix glued to alias" do
+    source = "import Pebble.Storage as Storageeposing (\n"
+    index = EditorCompletionDeclarationIndex.build(source)
+
+    assert %{"Storage" => "Pebble.Storage"} = index.import_aliases
+    refute Map.has_key?(index.import_aliases, "Storageeposing")
+  end
 end

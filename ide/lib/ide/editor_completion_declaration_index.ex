@@ -120,17 +120,25 @@ defmodule Ide.EditorCompletionDeclarationIndex do
   def parse_import_aliases(_), do: %{}
 
   defp parse_import_line(line, acc) do
-    with [_, module, rest] <-
-           Regex.run(~r/^import\s+([A-Z][A-Za-z0-9_.]*)(?:\s+as\s+([A-Za-z][A-Za-z0-9_]*))?/, line) do
+    trimmed = String.trim(line)
+
+    with [_, module] <- Regex.run(~r/^import\s+([A-Z][A-Za-z0-9_.']*)/, trimmed) do
       alias_name =
-        case rest do
-          nil -> module |> String.split(".") |> List.last()
-          alias -> alias
+        case Regex.run(~r/\s+as\s+([A-Za-z_][A-Za-z0-9_']*)/, trimmed) do
+          [_, alias] -> strip_exposing_suffix(alias)
+          _ -> module |> String.split(".") |> List.last()
         end
 
       Map.put(acc, alias_name, module)
     else
       _ -> acc
+    end
+  end
+
+  defp strip_exposing_suffix(name) when is_binary(name) do
+    case Regex.run(~r/^(.*?)(?:exposing|eposing|xposing|posing)$/u, name) do
+      [_, base] when byte_size(base) > 0 -> base
+      _ -> name
     end
   end
 

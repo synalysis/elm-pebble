@@ -346,6 +346,59 @@ defmodule Ide.EditorCompletionTest do
     refute "pageIndex" in labels
   end
 
+  test "import exposing suggests module members and expose-all" do
+    {:ok, docs} = Ide.Packages.builtin_package_docs("elm-pebble/elm-watch")
+
+    source = "import Pebble.Storage as Storage exposing (\n"
+    index = Ide.EditorCompletionDeclarationIndex.build(source)
+    offset = String.length(source)
+    context = Ide.EditorCompletionContext.analyze(%{source: source, offset: offset})
+
+    suggestions =
+      EditorCompletion.suggest(%{
+        prefix: context.prefix,
+        context_kind: context.kind,
+        qualifier: context.qualifier,
+        declaration_index: index,
+        source: source,
+        cursor_offset: offset,
+        editor_doc_packages: [%{package: "elm-pebble/elm-watch", docs: docs}],
+        limit: 30
+      })
+
+    labels = Enum.map(suggestions, & &1.label)
+
+    assert ".." in labels
+    assert "readInt" in labels
+    assert "writeString" in labels
+    refute "import" in labels
+  end
+
+  test "partial exposing keyword glued to alias still suggests import members" do
+    {:ok, docs} = Ide.Packages.builtin_package_docs("elm-pebble/elm-watch")
+
+    source = "import Pebble.Storage as Storageeposing (\n"
+    index = Ide.EditorCompletionDeclarationIndex.build(source)
+    offset = String.length(source)
+    context = Ide.EditorCompletionContext.analyze(%{source: source, offset: offset})
+
+    suggestions =
+      EditorCompletion.suggest(%{
+        prefix: context.prefix,
+        context_kind: context.kind,
+        qualifier: context.qualifier,
+        declaration_index: index,
+        source: source,
+        cursor_offset: offset,
+        editor_doc_packages: [%{package: "elm-pebble/elm-watch", docs: docs}],
+        limit: 30
+      })
+
+    labels = Enum.map(suggestions, & &1.label)
+    assert "readInt" in labels
+    assert "delete" in labels
+  end
+
   test "qualified module completions resolve import aliases" do
     {:ok, docs} = Ide.Packages.builtin_package_docs("elm-pebble/elm-watch")
 

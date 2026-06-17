@@ -308,6 +308,47 @@ defmodule Ide.Lsp.ServerTest do
     refute "MinuteChanged" in labels
   end
 
+  test "import exposing completion suggests module members after opening paren" do
+    uri = "elm-pebble://demo/watch/src%2FMain.elm"
+    {:ok, docs} = Ide.Packages.builtin_package_docs("elm-pebble/elm-watch")
+
+    state = %{
+      Server.new("demo")
+      | dependency_payloads: %{
+          {"demo", "watch"} => %{
+            package_doc_index: %{"Pebble.Storage" => "elm-pebble/elm-watch"},
+            editor_doc_packages: [%{package: "elm-pebble/elm-watch", docs: docs}],
+            direct: [],
+            indirect: []
+          }
+        }
+    }
+
+    text = "import Pebble.Storage as Storage exposing (\n"
+    {:ok, state} = open_document(state, uri, text)
+
+    {messages, _state} =
+      Server.handle(
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => 14,
+          "method" => "textDocument/completion",
+          "params" => %{
+            "textDocument" => %{"uri" => uri},
+            "position" => %{"line" => 1, "character" => 0}
+          }
+        }),
+        state
+      )
+
+    assert [%{"id" => 14, "result" => %{"items" => items}}] = messages
+    labels = Enum.map(items, & &1["label"])
+    assert ".." in labels
+    assert "readInt" in labels
+    assert "writeString" in labels
+    refute "import" in labels
+  end
+
   test "init context completion uses builtin package docs from dependency payload" do
     uri = "elm-pebble://demo/watch/src%2FMain.elm"
     {:ok, docs} = Ide.Packages.builtin_package_docs("elm-pebble/elm-watch")

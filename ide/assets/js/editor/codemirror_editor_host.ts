@@ -1029,10 +1029,22 @@ export class CodeMirrorEditorHost {
     const main = this.view.state.selection.main
     if (!main.empty) return
 
-    const prefix = this.currentCompletionPrefix()
-    if (!prefix || prefix.length < 1) return
+    if (!this.shouldAutoComplete()) return
 
     this.autoCompletionTimer = setTimeout(() => this.requestCompletions(), 120)
+  }
+
+  shouldAutoComplete(): boolean {
+    if (!this.view) return false
+
+    const cursor = this.view.state.selection.main.head
+    const beforeCursor = this.getValue().slice(0, cursor)
+    const trimmed = beforeCursor.replace(/\s+$/, "")
+
+    if (trimmed.endsWith(".") || trimmed.endsWith("(")) return true
+
+    const prefix = this.currentCompletionPrefix()
+    return prefix.length >= 1
   }
 
   currentCompletionPrefix() {
