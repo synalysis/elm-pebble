@@ -266,9 +266,6 @@ defmodule Ide.Formatter.Semantics.Parse do
 
       {:error, _reason} ->
         {:error, "ElmEx.Frontend.GeneratedParser is not loaded."}
-
-      false ->
-        {:error, "Loaded ElmEx.Frontend.GeneratedParser is missing metadata helpers."}
     end
   end
 

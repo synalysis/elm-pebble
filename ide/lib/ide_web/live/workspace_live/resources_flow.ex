@@ -487,9 +487,6 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
          {:ok, bytes} <- File.read(path) do
       bitmap_preview_data_url_bytes(bytes, mime)
     else
-      {:ok, %File.Stat{size: size}} when size > @bitmap_preview_max_bytes ->
-        nil
-
       _ ->
         nil
     end

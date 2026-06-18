@@ -145,7 +145,7 @@ defmodule Ide.Png do
         rgba =
           Enum.reduce(0..(height - 1), <<>>, fn y, acc ->
             row = :binary.part(data, y * (row_bytes + 1), row_bytes + 1)
-            <<filter, pixels::binary-size(row_bytes)>> = row
+            <<filter, pixels::binary-size(^row_bytes)>> = row
             unfiltered = unfilter_row(filter, pixels, acc, row_bytes, y)
             acc <> unfiltered
           end)
@@ -196,13 +196,13 @@ defmodule Ide.Png do
   defp unfilter_sub(<<>>, _prev, _row_bytes), do: <<>>
 
   defp unfilter_sub(pixels, <<>>, row_bytes) do
-    <<current::binary-size(row_bytes), rest::binary>> = pixels
+    <<current::binary-size(^row_bytes), rest::binary>> = pixels
     current <> unfilter_sub(rest, <<>>, row_bytes)
   end
 
   defp unfilter_sub(pixels, prev, row_bytes) do
-    <<current::binary-size(row_bytes), rest::binary>> = pixels
-    <<prev_row::binary-size(row_bytes), prev_rest::binary>> = prev
+    <<current::binary-size(^row_bytes), rest::binary>> = pixels
+    <<prev_row::binary-size(^row_bytes), prev_rest::binary>> = prev
     fixed = add_bytes(current, prev_row)
     fixed <> unfilter_sub(rest, prev_rest, row_bytes)
   end
@@ -210,8 +210,8 @@ defmodule Ide.Png do
   defp unfilter_up(<<>>, _prev, _row_bytes), do: <<>>
 
   defp unfilter_up(pixels, prev, row_bytes) do
-    <<current::binary-size(row_bytes), rest::binary>> = pixels
-    <<prev_row::binary-size(row_bytes), prev_rest::binary>> = prev
+    <<current::binary-size(^row_bytes), rest::binary>> = pixels
+    <<prev_row::binary-size(^row_bytes), prev_rest::binary>> = prev
     fixed = add_bytes(current, prev_row)
     fixed <> unfilter_up(rest, prev_rest, row_bytes)
   end

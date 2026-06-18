@@ -857,8 +857,6 @@ defmodule Ide.Debugger.StepExecution.Core do
     positioned != [] and Enum.all?(positioned, &zero_geometry_positioned_row?/1)
   end
 
-  defp zero_geometry_positioned_rows?(_), do: false
-
   @spec zero_geometry_positioned_row?(Types.view_output_row()) :: boolean()
   defp zero_geometry_positioned_row?(%{"kind" => "circle"} = row),
     do: zero_coords?(row, ["cx", "cy"]) and zero_coords?(row, ["r"])

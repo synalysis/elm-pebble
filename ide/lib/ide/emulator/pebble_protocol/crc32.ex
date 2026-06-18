@@ -17,7 +17,7 @@ defmodule Ide.Emulator.PebbleProtocol.CRC32 do
 
   defp words(data) do
     full_size = div(byte_size(data), 4) * 4
-    <<full::binary-size(full_size), rest::binary>> = data
+    <<full::binary-size(^full_size), rest::binary>> = data
 
     full_words =
       for <<word::little-32 <- full>> do

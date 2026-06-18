@@ -99,8 +99,6 @@ defmodule Ide.Debugger.DeviceDataResponses do
     end
   end
 
-  def filter_update_cmd_calls(calls, _current_ctor) when is_list(calls), do: calls
-
   @spec apply_device_response_step(
           Types.runtime_state(),
           Types.surface_target(),

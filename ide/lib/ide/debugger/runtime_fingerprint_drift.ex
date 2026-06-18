@@ -200,8 +200,6 @@ defmodule Ide.Debugger.RuntimeFingerprintDrift do
     end
   end
 
-  defp map_value(_map, _key), do: nil
-
   @spec fetch_value(Types.wire_map(), atom() | String.t()) :: {:ok, row_value()} | :error
   defp fetch_value(map, key) when is_map(map) do
     variants =

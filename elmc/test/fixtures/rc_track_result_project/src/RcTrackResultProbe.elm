@@ -1,10 +1,13 @@
 module RcTrackResultProbe exposing
     ( probeAndThen
+    , probeAndThenErr
     , probeFromMaybe
     , probeMap
+    , probeMapErr
     , probeMapError
     , probeToMaybe
     , probeWithDefault
+    , probeWithDefaultErr
     )
 
 import Maybe
@@ -44,3 +47,18 @@ probeToMaybe =
 probeFromMaybe : Int
 probeFromMaybe =
     Result.withDefault 0 (Result.fromMaybe "err" (Just 4))
+
+
+probeMapErr : Int
+probeMapErr =
+    Result.withDefault 0 (Result.map (\x -> x + 1) (Err "bad"))
+
+
+probeWithDefaultErr : Int
+probeWithDefaultErr =
+    Result.withDefault 7 (Err "bad")
+
+
+probeAndThenErr : Int
+probeAndThenErr =
+    Result.withDefault 0 (Result.andThen (\x -> Ok (x * 2)) (Err "bad"))

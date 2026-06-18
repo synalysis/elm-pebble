@@ -2652,8 +2652,13 @@ static int elmc_pebble_scene_decode_from(
       ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_next", direct_count);
     #endif
       /* Scene cache is built off the draw stack (deferred timer in the app template).
-         While dirty or empty, skip drawing rather than calling ensure_scene here. */
-      if (app->scene.dirty || app->scene.byte_count <= 0) {
+         While dirty or empty, skip drawing rather than calling ensure_scene here.
+         Mid-stream reads may finish draining a cached scene after dirty is set. */
+      if (app->scene.byte_count <= 0) {
+        ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_SCENE_NEXT_EXIT);
+        ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_next", 0);
+      }
+      if (app->scene.dirty && app->scene_draw_byte_offset <= 0) {
         ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_SCENE_NEXT_EXIT);
         ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_next", 0);
       }

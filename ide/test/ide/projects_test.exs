@@ -296,10 +296,7 @@ defmodule Ide.ProjectsTest do
                "release_defaults" => %{"target_platforms" => ["basalt", "chalk"]}
              })
 
-    tmp_png =
-      Path.join(System.tmp_dir!(), "bitmap_upload_#{System.unique_integer([:positive])}.png")
-
-    File.write!(tmp_png, <<137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0>>)
+    tmp_png = write_test_bitmap_png()
     on_exit(fn -> File.rm(tmp_png) end)
 
     tmp_ttf =
@@ -1529,5 +1526,37 @@ defmodule Ide.ProjectsTest do
     }
 
     assert Projects.pbw_download_filename(project) == "my-game-v-1.0-beta.pbw"
+  end
+
+  defp minimal_png_bytes do
+    <<137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 2, 0, 0, 0, 3,
+      8, 2, 0, 0, 0, 217, 74, 34, 230, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130>>
+  end
+
+  defp write_test_bitmap_png do
+    path = Path.join(System.tmp_dir!(), "bitmap_upload_#{System.unique_integer([:positive])}.png")
+    bin = System.find_executable("magick") || System.find_executable("convert")
+
+    if is_binary(bin) do
+      args =
+        if String.ends_with?(Path.basename(bin), "magick"),
+          do: [
+               "-size",
+               "32x32",
+               "xc:blue",
+               "-fill",
+               "yellow",
+               "-draw",
+               "circle 16,16 16,4",
+               "PNG:" <> path
+             ],
+          else: ["-size", "32x32", "xc:blue", "-fill", "yellow", "-draw", "circle 16,16 16,4", path]
+
+      {_, 0} = System.cmd(bin, args, stderr_to_stdout: true)
+      path
+    else
+      File.write!(path, minimal_png_bytes())
+      path
+    end
   end
 end

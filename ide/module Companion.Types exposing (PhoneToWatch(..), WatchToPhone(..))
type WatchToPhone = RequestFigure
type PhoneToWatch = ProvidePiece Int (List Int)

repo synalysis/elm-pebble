@@ -1,0 +1,3 @@
+module Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))
+type WatchToPhone = RequestFigure
+type PhoneToWatch = ProvidePiece Int (List Int)

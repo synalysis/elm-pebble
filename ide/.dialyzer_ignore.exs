@@ -16,6 +16,8 @@
   {"lib/ide/projects.ex", :pattern_match},
   {"lib/ide/debugger/http_simulator.ex", :exact_eq},
   {"lib/ide/debugger/http_simulator.ex", :pattern_match},
+  {"lib/ide/debugger/pending_http_followups.ex", :unused_fun},
+  {"lib/ide/debugger/pending_protocol_delivery.ex", :unused_fun},
   {"lib/ide_web/live/workspace_live.ex", :pattern_match},
   {"lib/ide_web/live/workspace_live.ex", :unused_fun},
   {"lib/ide_web/live/workspace_live.ex", :no_return},

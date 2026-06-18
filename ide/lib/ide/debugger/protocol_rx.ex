@@ -426,6 +426,16 @@ defmodule Ide.Debugger.ProtocolRx do
           boolean()
         ) ::
           {String.t(), Types.protocol_message_wire_value()} | String.t() | nil
+  defp protocol_callback_message(
+         callback,
+         message,
+         %{"ctor" => ctor, "args" => _} = message_value,
+         false
+       )
+       when is_binary(callback) and callback != "" and callback == ctor do
+    {ProtocolEvents.inbound_display_message(message, message_value), message_value}
+  end
+
   defp protocol_callback_message(callback, message, message_value, wrap_result?)
        when is_binary(callback) and callback != "" and is_binary(message) and message != "" do
     already_wrapped? = wrap_result? and String.starts_with?(message, "#{callback} (Ok ")
@@ -473,6 +483,16 @@ defmodule Ide.Debugger.ProtocolRx do
 
   @spec wrap_protocol_callback_value(String.t(), Types.subscription_payload()) ::
           Types.protocol_ctor_value() | nil
+  defp wrap_protocol_callback_value(callback, %{"ctor" => ctor, "args" => _} = value)
+       when is_binary(callback) and callback != "" and callback == ctor do
+    value
+  end
+
+  defp wrap_protocol_callback_value(callback, %{ctor: ctor, args: _} = value)
+       when is_binary(callback) and callback != "" and callback == ctor do
+    value
+  end
+
   defp wrap_protocol_callback_value(callback, value)
        when is_binary(callback) and callback != "" do
     %{"ctor" => callback, "args" => [protocol_callback_arg(value)]}
@@ -501,8 +521,6 @@ defmodule Ide.Debugger.ProtocolRx do
       _ -> [row]
     end)
   end
-
-  defp update_recipient_protocol_messages(state, _recipient, _row), do: state
 
   @spec update_recipient_runtime_model_from_protocol(
           Types.runtime_state(),

@@ -152,7 +152,7 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
       file_input(view, "#bitmap-upload-form", :bitmap, [
         %{
           name: "logo.png",
-          content: <<137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0>>,
+          content: minimal_png_bytes(),
           type: "image/png"
         }
       ])
@@ -987,5 +987,10 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
 
     assert {:error, _} =
              Projects.read_source_file(project, "phone", "src/Pebble/Companion/AppMessage.elm")
+  end
+
+  defp minimal_png_bytes do
+    <<137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 2, 0, 0, 0, 3,
+      8, 2, 0, 0, 0, 217, 74, 34, 230, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130>>
   end
 end

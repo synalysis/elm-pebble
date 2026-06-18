@@ -8,7 +8,7 @@ defmodule Ide.PebbleToolchain.Elmc do
   @type elmc_compile_result :: Types.elmc_compile_result()
   @type toolchain_error :: Types.toolchain_error()
 
-  @spec watch_compile_opts(String.t(), [String.t()]) :: elmc_compile_opts()
+  @spec watch_compile_opts(String.t(), [String.t()]) :: Types.watch_compile_opts()
   def watch_compile_opts(out_dir, target_platforms)
       when is_binary(out_dir) and is_list(target_platforms) do
     %{

@@ -11,6 +11,5 @@ defmodule Elmx.Runtime.Core.Collections.Pairs do
   def to_int(n, _default) when is_float(n), do: trunc(n)
   def to_int(%{"ctor" => "Ok", "args" => [inner]}, default), do: to_int(inner, default)
   def to_int({:Ok, inner}, default), do: to_int(inner, default)
-  def to_int(other, _default) when is_number(other), do: trunc(other)
   def to_int(_other, default), do: default
 end

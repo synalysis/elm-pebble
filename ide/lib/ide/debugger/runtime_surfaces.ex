@@ -291,9 +291,6 @@ defmodule Ide.Debugger.RuntimeSurfaces do
     end
   end
 
-  defp patch_runtime_model_screen_fields(model, _screen_fields) when is_map(model), do: model
-  defp patch_runtime_model_screen_fields(model, _screen_fields), do: model
-
   defp screen_fields_for_runtime_model(screen_fields, runtime_model) when is_map(runtime_model) do
     Enum.reduce(["screenW", "screenH", "displayShape"], screen_fields, fn key, fields ->
       if Map.has_key?(runtime_model, key) or Map.has_key?(runtime_model, String.to_atom(key)) do
@@ -303,8 +300,6 @@ defmodule Ide.Debugger.RuntimeSurfaces do
       end
     end)
   end
-
-  defp screen_fields_for_runtime_model(screen_fields, _runtime_model), do: screen_fields
 
   defp maybe_put_screen_field(map, _key, value) when not is_integer(value) or value <= 0, do: map
   defp maybe_put_screen_field(map, key, value), do: Map.put(map, key, value)
@@ -381,6 +376,4 @@ defmodule Ide.Debugger.RuntimeSurfaces do
 
     "#{name} (#{width}x#{height}, #{color})"
   end
-
-  defp watch_profile_label(_), do: "Watch"
 end

@@ -1,4 +1,4 @@
-FROM elixir:1.17.3-otp-27 AS build
+FROM elixir:1.20.1-otp-27 AS build
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends build-essential git ca-certificates nodejs npm && \

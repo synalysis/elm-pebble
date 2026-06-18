@@ -142,7 +142,6 @@ defmodule Ide.Projects do
             Repo.rollback(changeset)
         end
       else
-        {:error, %Ecto.Changeset{} = changeset} -> Repo.rollback(changeset)
         {:error, reason} -> Repo.rollback(reason)
       end
     end)

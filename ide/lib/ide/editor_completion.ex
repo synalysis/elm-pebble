@@ -211,7 +211,7 @@ defmodule Ide.EditorCompletion do
     end
   end
 
-  @spec record_field_candidates([String.t()] | nil) :: candidate_list()
+  @spec record_field_candidates([String.t()]) :: candidate_list()
   defp record_field_candidates(fields) when is_list(fields) do
     fields
     |> Enum.map(&to_string(&1 || ""))
@@ -219,8 +219,6 @@ defmodule Ide.EditorCompletion do
       %{label: field, insert_text: field, kind: "field", source: "record/type-alias"}
     end)
   end
-
-  defp record_field_candidates(_), do: []
 
   @spec type_candidates(map()) :: candidate_list()
   defp type_candidates(context) when is_map(context) do

@@ -400,9 +400,9 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     end
   end
 
-  def compile(%{op: :runtime_call, function: function, args: [_value]} = expr, env, counter)
+  def compile(%{op: :runtime_call, function: function, args: [value]} = expr, env, counter)
       when function in @float_unary_functions do
-    if NativeFloat.expr?(expr, env) do
+    if NativeFloat.expr?(value, env) do
       NativeFloat.compile_boxed(expr, env, counter)
     else
       compile_generic(expr, env, counter)
@@ -2443,50 +2443,47 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
           Types.compile_counter()
         ) :: {:ok, String.t(), String.t(), Types.compile_counter()} | :error
   defp compile_concat_repeat_append_flatten(n, item, rest, env, counter) do
-    with {:ok, count_code, count_ref, counter, count_var} <-
-           compile_int_loop_count(n, env, counter),
-         {:ok, item_code, item_var, counter} <- compile_concat_item(item, env, counter) do
-      {rest_code, rest_var, counter} = Host.compile_expr(rest, env, counter)
-      loop_id = counter + 1
-      flatten_id = loop_id + 1
-      counter = counter + 1
-      out = "tmp_#{counter}"
-      tail_slot = "list_flatten_tail_#{flatten_id}"
+    {:ok, count_code, count_ref, counter, count_var} = compile_int_loop_count(n, env, counter)
+    {:ok, item_code, item_var, counter} = compile_concat_item(item, env, counter)
 
-      count_release =
-        if is_binary(count_var), do: "  elmc_release(#{count_var});\n", else: ""
+    {rest_code, rest_var, counter} = Host.compile_expr(rest, env, counter)
+    loop_id = counter + 1
+    flatten_id = loop_id + 1
+    counter = counter + 1
+    out = "tmp_#{counter}"
+    tail_slot = "list_flatten_tail_#{flatten_id}"
 
-      {:inline, repeat_code, repeat_out} =
-        CodegenListHelpers.repeat_codegen(count_ref, item_var, loop_id, env)
+    count_release =
+      if is_binary(count_var), do: "  elmc_release(#{count_var});\n", else: ""
 
-      failed = "list_flatten_failed_#{flatten_id}"
+    {:inline, repeat_code, repeat_out} =
+      CodegenListHelpers.repeat_codegen(count_ref, item_var, loop_id, env)
 
-      flatten_repeat =
-        emit_flatten_row_lists(repeat_out, out, tail_slot, failed, "#{flatten_id}_repeat", 4, env)
+    failed = "list_flatten_failed_#{flatten_id}"
 
-      flatten_rest =
-        emit_flatten_row_lists(rest_var, out, tail_slot, failed, "#{flatten_id}_rest", 4, env)
+    flatten_repeat =
+      emit_flatten_row_lists(repeat_out, out, tail_slot, failed, "#{flatten_id}_repeat", 4, env)
 
-      code = """
-      #{count_code}#{item_code}#{rest_code}
-      #{repeat_code}
-        elmc_release(#{item_var});
-        ElmcValue *#{out} = NULL;
-        ElmcValue **#{tail_slot} = NULL;
-        bool #{failed} = false;
-        // List.concat
-      #{flatten_repeat}
-      #{flatten_rest}
-        if (!#{out}) #{out} = elmc_list_nil();
-        elmc_release(#{repeat_out});
-        elmc_release(#{rest_var});
-      #{count_release}
-      """
+    flatten_rest =
+      emit_flatten_row_lists(rest_var, out, tail_slot, failed, "#{flatten_id}_rest", 4, env)
 
-      {:ok, code, out, counter}
-    else
-      _ -> :error
-    end
+    code = """
+    #{count_code}#{item_code}#{rest_code}
+    #{repeat_code}
+      elmc_release(#{item_var});
+      ElmcValue *#{out} = NULL;
+      ElmcValue **#{tail_slot} = NULL;
+      bool #{failed} = false;
+      // List.concat
+    #{flatten_repeat}
+    #{flatten_rest}
+      if (!#{out}) #{out} = elmc_list_nil();
+      elmc_release(#{repeat_out});
+      elmc_release(#{rest_var});
+    #{count_release}
+    """
+
+    {:ok, code, out, counter}
   end
 
   defp emit_flatten_row_lists(rows_var, out_var, tail_slot_var, failed_var, loop_suffix, indent, env) do

@@ -97,7 +97,12 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlowTest do
 
   defp write_png do
     path = Path.join(System.tmp_dir!(), "flow_#{System.unique_integer([:positive])}.png")
-    File.write!(path, <<137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13>>)
+    File.write!(path, minimal_png_bytes())
     path
+  end
+
+  defp minimal_png_bytes do
+    <<137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 2, 0, 0, 0, 3,
+      8, 2, 0, 0, 0, 217, 74, 34, 230, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130>>
   end
 end

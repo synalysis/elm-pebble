@@ -19,8 +19,8 @@ defmodule Ide.Emulator.PebbleProtocol.Frame do
         :more
 
       true ->
-        <<raw::binary-size(total), remaining::binary>> = buffer
-        <<_length::16, _endpoint::16, payload::binary-size(length)>> = raw
+        <<raw::binary-size(^total), remaining::binary>> = buffer
+        <<_length::16, _endpoint::16, payload::binary-size(^length)>> = raw
         {:ok, %{endpoint: endpoint, payload: payload, raw: raw}, remaining}
     end
   end

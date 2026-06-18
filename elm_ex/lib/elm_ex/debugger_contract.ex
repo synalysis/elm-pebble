@@ -604,7 +604,6 @@ defmodule ElmEx.DebuggerContract do
   end
 
   defp resolve_case_subject(subj, _) when is_binary(subj), do: subj
-  defp resolve_case_subject(_, _), do: ""
 
   @spec case_subject_text(Types.case_subject(), Types.binding_map()) :: String.t()
   def case_subject_text(subj, bindings) when is_binary(subj),
@@ -701,8 +700,6 @@ defmodule ElmEx.DebuggerContract do
         %{}
     end
   end
-
-  defp msg_constructor_arg_types(_), do: %{}
 
   @spec msg_constructor_arities(%Module{} | nil) :: %{optional(String.t()) => non_neg_integer()}
   defp msg_constructor_arities(%Module{declarations: decls}) do

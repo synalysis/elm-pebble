@@ -1,4 +1,7 @@
-module RcTrackRecordUpdateProbe exposing (probeAliasedBase, probeChainedUpdate)
+module RcTrackRecordUpdateProbe exposing (probeAliasedBase, probeChainedUpdate, probeDictUpdateAlias)
+
+
+import Dict
 
 
 type alias Model =
@@ -46,6 +49,22 @@ probeAliasedBase =
     in
     if model.values == updated.values then
         updated.total
+
+    else
+        0
+
+
+probeDictUpdateAlias : Int
+probeDictUpdateAlias =
+    let
+        base =
+            Dict.fromList [ ( "a", 1 ), ( "b", 2 ) ]
+
+        updated =
+            Dict.update "a" (\maybe -> Just 9) base
+    in
+    if Dict.size base == 2 then
+        Maybe.withDefault 0 (Dict.get "a" updated)
 
     else
         0

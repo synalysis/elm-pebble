@@ -15,6 +15,7 @@ module RcTrackSetProbe exposing
     , probeSingleton
     , probeSize
     , probeToList
+    , probeToListResult
     , probeUnion
     )
 
@@ -122,3 +123,8 @@ probePartition =
             Set.partition (\x -> x > 1) sample
     in
     Set.size yes + Set.size no
+
+
+probeToListResult : List Int
+probeToListResult =
+    Set.toList sample

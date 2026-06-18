@@ -30,10 +30,12 @@ module RcTrackStringProbe exposing
     , probeRight
     , probeSlice
     , probeSplit
+    , probeSplitList
     , probeStartsWith
     , probeToFloat
     , probeToInt
     , probeToList
+    , probeToListResult
     , probeToLower
     , probeToUpper
     , probeTrim
@@ -295,3 +297,13 @@ probeAll =
 probeIndexes : Int
 probeIndexes =
     List.length (String.indexes "a" "a1B c2")
+
+
+probeSplitList : List String
+probeSplitList =
+    String.split " " "a1B c2"
+
+
+probeToListResult : List Char
+probeToListResult =
+    String.toList "a1B c2"

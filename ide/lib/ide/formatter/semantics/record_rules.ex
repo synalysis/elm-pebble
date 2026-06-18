@@ -160,7 +160,6 @@ defmodule Ide.Formatter.Semantics.RecordRules do
 
   @spec apply_stack_effect([record_entry()], stack_effect()) :: [record_entry()]
   defp apply_stack_effect(indent_stack, :keep), do: indent_stack
-  defp apply_stack_effect([], :pop), do: []
   defp apply_stack_effect([_ | rest], :pop), do: rest
 
   @spec starts_with_lower_identifier?(String.t()) :: boolean()
@@ -253,8 +252,6 @@ defmodule Ide.Formatter.Semantics.RecordRules do
   end
 
   @spec pop_stack(list(), non_neg_integer()) :: list()
-  defp pop_stack([], _closing), do: []
-
   defp pop_stack([open | rest], closing) do
     if delimiter_char_match?(open, closing), do: rest, else: [open | rest]
   end

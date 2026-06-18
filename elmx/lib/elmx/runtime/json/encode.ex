@@ -19,7 +19,6 @@ defmodule Elmx.Runtime.Json.Encode do
   @spec bool(boolean()) :: boolean()
   def bool(true), do: true
   def bool(false), do: false
-  def bool(value) when is_boolean(value), do: value
 
   @spec string(Types.string_like()) :: String.t()
   def string(value) when is_binary(value), do: value

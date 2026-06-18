@@ -78,6 +78,4 @@ defmodule Ide.Debugger.Types.StepExecutionContract do
   defp deep_merge_runtime_model(existing, patch) when is_map(existing) and is_map(patch) do
     Map.merge(existing, patch)
   end
-
-  defp deep_merge_runtime_model(_existing, patch) when is_map(patch), do: patch
 end

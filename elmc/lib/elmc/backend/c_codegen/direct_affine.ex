@@ -897,7 +897,6 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
     end
   end
 
-  defp affine_field_access_root_name(%{op: :var, name: name}) when is_binary(name), do: name
   defp affine_field_access_root_name(name) when is_binary(name), do: name
   defp affine_field_access_root_name(_), do: nil
 

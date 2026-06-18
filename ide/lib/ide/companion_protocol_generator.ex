@@ -796,19 +796,23 @@ defmodule Ide.CompanionProtocolGenerator do
   end
 
   defp js_wire_phone_to_watch_encode_call(%{fields: [field]} = msg) do
-    "encodePhoneToWatchPayload(\"#{msg.name}\", elmPayloadWireInt(payload, \"#{field.key}\"))"
+    "encodePhoneToWatchPayload(\"#{msg.name}\", #{js_elm_payload_field_arg(field)})"
   end
 
-  defp js_wire_phone_to_watch_encode_call(%{fields: [field1, field2 | _]} = msg) do
-    case field2.wire_type do
-      {:list, _} ->
-        "encodePhoneToWatchPayload(\"#{msg.name}\", elmPayloadWireInt(payload, \"#{field1.key}\"), { #{field2.name}: elmPayloadListInt(payload, \"#{field2.key}\") })"
+  defp js_wire_phone_to_watch_encode_call(%{fields: [first | rest]} = msg) do
+    rest_args =
+      rest
+      |> Enum.map(fn field -> "#{field.name}: #{js_elm_payload_field_arg(field)}" end)
+      |> Enum.join(", ")
 
-      _ ->
-        raise ArgumentError,
-              "unsupported phone-to-watch wire helper for #{msg.name} field #{field2.key}"
-    end
+    "encodePhoneToWatchPayload(\"#{msg.name}\", #{js_elm_payload_field_arg(first)}, { #{rest_args} })"
   end
+
+  defp js_elm_payload_field_arg(%{wire_type: {:list, :int}, key: key}),
+    do: "elmPayloadListInt(payload, \"#{key}\")"
+
+  defp js_elm_payload_field_arg(%{key: key}),
+    do: "elmPayloadWireInt(payload, \"#{key}\")"
 
   @spec js(schema()) :: String.t()
   defp js(schema) do
@@ -1206,9 +1210,6 @@ defmodule Ide.CompanionProtocolGenerator do
 
   defp elm_encoder(schema, %{wire_type: {:enum, _type}} = field, value),
     do: "Encode.int (#{elm_encode_value(schema, field, value)})"
-
-  defp elm_encoder(_schema, %{wire_type: {:union, type}}, value),
-    do: "Encode.int (#{elm_union_tag_encode_name(type)} #{value})"
 
   defp elm_encoder(_schema, _field, value), do: "Encode.int #{value}"
 

@@ -61,5 +61,5 @@ defmodule Elmx.Runtime.Core.Task do
   defp apply_to_msg(fun, {a, b}) when is_function(fun, 2), do: fun.(a, b)
   defp apply_to_msg(fun, [a, b]) when is_function(fun, 2), do: fun.(a, b)
   defp apply_to_msg(fun, value) when is_function(fun, 1), do: fun.(value)
-  defp apply_to_msg(fun, value), do: fun.(value)
+  defp apply_to_msg(_fun, _value), do: nil
 end

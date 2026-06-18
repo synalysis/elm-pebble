@@ -200,6 +200,11 @@ defmodule Ide.Debugger.RuntimeModelNormalize do
     end)
   end
 
+  defp normalize_runtime_value(_previous, %{"ctor" => "::", "args" => [head, tail]}),
+    do: RuntimeModelWire.wire_list_to_elixir(%{"ctor" => "::", "args" => [head, tail]})
+
+  defp normalize_runtime_value(_previous, %{"ctor" => "[]", "args" => []}), do: []
+
   defp normalize_runtime_value(_previous, value) when is_map(value) do
     Map.new(value, fn {key, nested} -> {key, normalize_runtime_value(nil, nested)} end)
   end
@@ -212,11 +217,6 @@ defmodule Ide.Debugger.RuntimeModelNormalize do
 
   defp normalize_runtime_value(_previous, values) when is_list(values),
     do: Enum.map(values, &normalize_runtime_value(nil, &1))
-
-  defp normalize_runtime_value(_previous, %{"ctor" => "::", "args" => [head, tail]}),
-    do: RuntimeModelWire.wire_list_to_elixir(%{"ctor" => "::", "args" => [head, tail]})
-
-  defp normalize_runtime_value(_previous, %{"ctor" => "[]", "args" => []}), do: []
 
   defp normalize_runtime_value(shape, value),
     do: coerce_runtime_scalar(value, shape)

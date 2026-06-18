@@ -122,7 +122,7 @@ defmodule Elmc.Runtime.Executor do
         do: operation_from_text(matched_branch),
         else: nil
 
-    if is_atom(branch_op) and not is_nil(branch_op),
+    if not is_nil(branch_op),
       do: branch_op,
       else: operation_from_text(message)
   end

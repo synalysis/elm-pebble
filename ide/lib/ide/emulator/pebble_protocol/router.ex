@@ -352,9 +352,9 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
         {Enum.reverse(packets), buffer}
 
       true ->
-        <<raw::binary-size(total), remaining::binary>> = buffer
+        <<raw::binary-size(^total), remaining::binary>> = buffer
 
-        <<@qemu_header::16, ^protocol::16, ^length::16, payload::binary-size(length),
+        <<@qemu_header::16, ^protocol::16, ^length::16, payload::binary-size(^length),
           @qemu_footer::16>> =
           raw
 

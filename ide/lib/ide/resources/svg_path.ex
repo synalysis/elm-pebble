@@ -83,7 +83,7 @@ defmodule Ide.Resources.SvgPath do
 
   defp flatten_segments([token | rest], state, tolerance) do
     if token in @command_letters do
-      flatten_command(token, rest, state, tolerance)
+      flatten_command(<<token::utf8>>, rest, state, tolerance)
     else
       :error
     end
@@ -287,7 +287,7 @@ defmodule Ide.Resources.SvgPath do
 
   defp parse_segments([token | rest], state) do
     if token in @command_letters do
-      parse_command(token, rest, state)
+      parse_command(<<token::utf8>>, rest, state)
     else
       :error
     end

@@ -50,7 +50,9 @@ defmodule Ide.Debugger.IntrospectContexts do
           required(:refresh_runtime_preview_for_target) => (Types.runtime_state(),
                                                             Types.surface_target() ->
                                                               Types.runtime_state()),
-          required(:apply_simulator_settings) => (Types.runtime_state() -> Types.runtime_state())
+          required(:apply_simulator_settings) => (Types.runtime_state() -> Types.runtime_state()),
+          required(:deliver_companion_status_after_watch_init) =>
+            (Types.runtime_state() -> Types.runtime_state())
         }
 
   @spec snapshot_apply(snapshot_host()) :: DebuggerContractSnapshot.apply_ctx()
@@ -77,6 +79,13 @@ defmodule Ide.Debugger.IntrospectContexts do
         state
         |> InitSurfaceEffects.apply_all(target, host.init_surface_effects_ctx.())
         |> then(fn reloaded ->
+          reloaded =
+            if target == :watch do
+              host.deliver_companion_status_after_watch_init.(reloaded)
+            else
+              reloaded
+            end
+
           if target == :watch and refresh_watch_preview_after_apply?(reloaded) do
             host.refresh_runtime_preview_for_target.(reloaded, :watch)
           else

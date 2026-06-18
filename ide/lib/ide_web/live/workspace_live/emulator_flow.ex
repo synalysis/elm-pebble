@@ -318,17 +318,11 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
       |> check_emulator_installation()
 
     socket =
-      case project do
-        %Project{} = project ->
-          case Ide.Debugger.set_watch_profile(Projects.scope_key(project), %{
-                 watch_profile_id: target
-               }) do
-            {:ok, _} -> socket
-            _ -> socket
-          end
-
-        _ ->
-          socket
+      case Ide.Debugger.set_watch_profile(Projects.scope_key(project), %{
+             watch_profile_id: target
+           }) do
+        {:ok, _} -> socket
+        _ -> socket
       end
 
     {:noreply, socket}

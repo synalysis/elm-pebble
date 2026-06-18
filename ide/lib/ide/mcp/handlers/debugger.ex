@@ -1178,8 +1178,6 @@ defmodule Ide.Mcp.Handlers.Debugger do
     {:ok, Map.get(state, target)}
   end
 
-  defp debugger_surface_runtime(_state, _target), do: {:error, :invalid_target}
-
   @spec debugger_render_tree(DebuggerTypes.execution_model()) ::
           {:ok, DebuggerTypes.rendered_tree()} | {:error, :no_rendered_tree}
   defp debugger_render_tree(runtime) when is_map(runtime) do

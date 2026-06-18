@@ -91,9 +91,6 @@ defmodule Ide.Debugger.CompileContract do
               end
 
             {:ok, normalize_contract(contract)}
-
-          _ ->
-            {:error, :parse_error}
         end
 
       {:error, :entry_not_found} ->
@@ -110,7 +107,6 @@ defmodule Ide.Debugger.CompileContract do
       {:ok, snapshot} ->
         case DebuggerContract.contract_payload(snapshot) do
           %{} = contract -> {:ok, normalize_contract(contract)}
-          _ -> {:error, :parse_error}
         end
 
       {:error, :entry_not_found} = err ->

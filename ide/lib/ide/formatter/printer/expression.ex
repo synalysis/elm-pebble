@@ -396,9 +396,6 @@ defmodule Ide.Formatter.Printer.Expression do
 
         list_lines =
           case list_items do
-            [] ->
-              []
-
             [first | rest] ->
               [list_base <> "[ " <> first] ++
                 Enum.map(rest, &(list_base <> ", " <> &1)) ++ [list_base <> "]"]

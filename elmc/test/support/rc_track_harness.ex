@@ -205,6 +205,85 @@ defmodule Elmc.Test.RcTrackHarness do
     end)
   end
 
+  @doc """
+  Run each probe `iterations` times with a fresh RC registry per iteration.
+  """
+  @spec run_stress_suite!(String.t(), String.t(), String.t(), [probe_spec()], pos_integer()) ::
+          String.t()
+  def run_stress_suite!(out_dir, module_name, binary_name, probes, iterations) do
+    harness_path = Path.join(out_dir, "c/#{binary_name}_harness.c")
+    probe_cases = Enum.map_join(probes, "\n", &stress_probe_case_c(&1, iterations))
+
+    File.write!(
+      harness_path,
+      """
+      #include "elmc_generated.h"
+      #include "elmc_generated.c"
+      #include <stdio.h>
+
+      #{harness_prelude()}
+
+      static int run_probe_iterations(
+          const char *name,
+          ElmcValue *(*fn)(void),
+          int release_result,
+          int iterations) {
+        for (int i = 0; i < iterations; i++) {
+          elmc_rc_track_reset();
+          ElmcValue *out = fn();
+          if (release_result && out) elmc_release(out);
+          if (!elmc_rc_track_check_balanced()) {
+            fprintf(stderr, "rc leak in %s at iteration %d\\n", name, i);
+            return 1;
+          }
+        }
+        return 0;
+      }
+
+      #{probe_thunks(out_dir, module_name, probes)}
+
+      int main(void) {
+      #{probe_cases}
+        printf("rc_ok #{module_name} stress probes=%d iterations=#{iterations}\\n", #{length(probes)});
+        return 0;
+      }
+      """
+    )
+
+    run_harness!(out_dir, harness_path, binary_name)
+  end
+
+  @spec run_stress_core_probe!(
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          pos_integer()
+        ) :: String.t()
+  def run_stress_core_probe!(test_dir, fixture_dir, module_name, probe_name, binary_name, iterations) do
+    project_dir = Path.expand(fixture_dir, test_dir)
+    out_dir = Path.expand("tmp/#{binary_name}", test_dir)
+    File.rm_rf!(out_dir)
+    compile!(project_dir, out_dir, entry_module: module_name)
+
+    run_stress_suite!(
+      out_dir,
+      module_name,
+      binary_name,
+      int_probes([probe_name]),
+      iterations
+    )
+  end
+
+  defp stress_probe_case_c(%{name: name, c_symbol: symbol, release_result: release_result}, iterations) do
+    release = if release_result, do: "1", else: "0"
+
+    """
+        if (run_probe_iterations("#{name}", #{symbol}_probe, #{release}, #{iterations}) != 0) return 1;
+    """
+  end
+
   defp probe_thunks(out_dir, module_name, probes) do
     Enum.map_join(probes, "\n", fn %{c_symbol: symbol} ->
       c_name = "elmc_fn_#{module_name}_#{symbol}"

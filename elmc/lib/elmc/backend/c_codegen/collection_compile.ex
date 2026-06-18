@@ -118,9 +118,11 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
   end
 
   defp compile_dynamic_list_literal(items, env, counter) do
+    item_env = Map.delete(env, :__into_out__)
+
     {item_code, item_vars, counter} =
       Enum.reduce(items, {"", [], counter}, fn item, {acc_code, vars, c} ->
-        {code, var, c1} = Host.compile_expr(item, env, c)
+        {code, var, c1} = Host.compile_expr(item, item_env, c)
         {acc_code <> "\n  " <> code, vars ++ [var], c1}
       end)
 

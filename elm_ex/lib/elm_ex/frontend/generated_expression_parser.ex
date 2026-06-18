@@ -641,15 +641,8 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
   @spec maybe_fallback_unsupported(source(), Types.parse_error_reason()) ::
           {:ok, expr()} | {:error, Types.parse_error_reason()}
   defp maybe_fallback_unsupported(source, reason) when is_binary(source) do
-    if fallback_unsupported_reason?(source, reason) do
-      {:ok, %{op: :unsupported, source: String.trim(source)}}
-    else
-      {:error, reason}
-    end
+    {:error, reason}
   end
-
-  @spec fallback_unsupported_reason?(source(), Types.parse_error_reason()) :: boolean()
-  defp fallback_unsupported_reason?(_source, _reason), do: false
 
   @spec parse_once(source()) :: {:ok, expr()} | {:error, Types.parse_error_reason()}
   defp parse_once(source) when is_binary(source) do

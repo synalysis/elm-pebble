@@ -152,8 +152,6 @@ defmodule Ide.Debugger.ProtocolEvents.Subscription do
     end
   end
 
-  def inbound_display_message(message, _message_value) when is_binary(message), do: message
-
   @spec protocol_wire_message_display(Types.subscription_payload() | nil) :: String.t() | nil
   defp protocol_wire_message_display(message_value) when is_map(message_value) do
     case protocol_wire_message_value(message_value) do

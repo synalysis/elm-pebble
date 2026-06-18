@@ -107,8 +107,6 @@ defmodule Ide.Debugger.RuntimeExecutor do
     end
   end
 
-  defp validate_execution_payload(_payload), do: {:error, :missing_model_patch}
-
   @spec module_supports_execute?(module()) :: boolean()
   defp module_supports_execute?(module) when is_atom(module) do
     case Code.ensure_loaded(module) do

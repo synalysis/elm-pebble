@@ -2,9 +2,11 @@ module RcTrackListProbe exposing
     ( probeAll
     , probeAny
     , probeAppend
+    , probeAppendChain
     , probeConcat
     , probeConcatMap
     , probeCons
+    , probeConsChain
     , probeDrop
     , probeFilter
     , probeFilterMap
@@ -262,3 +264,13 @@ probeMap3 =
 probeCons : Int
 probeCons =
     listChecksum (0 :: sample)
+
+
+probeConsChain : Int
+probeConsChain =
+    listChecksum (List.cons 0 (List.cons 9 (List.reverse sample)))
+
+
+probeAppendChain : Int
+probeAppendChain =
+    listChecksum (List.append sample (List.reverse (List.take 2 sample)))

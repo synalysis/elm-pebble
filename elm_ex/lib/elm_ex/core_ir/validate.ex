@@ -195,14 +195,14 @@ defmodule ElmEx.CoreIR.Validate do
             validate_case_branch(branch, path ++ ["branches", idx])
           end)
 
-        {_, nested} when is_map(nested) ->
-          validate_expr(nested, path ++ [key])
-
         {"fields", list} when op in ["record_literal", "record_update"] and is_list(list) ->
           validate_record_fields(list, path ++ ["fields"])
 
         {"fields", map} when op in ["record_literal", "record_update"] and is_map(map) ->
           validate_record_fields_map(map, path ++ ["fields"])
+
+        {_, nested} when is_map(nested) ->
+          validate_expr(nested, path ++ [key])
 
         {_, list} when is_list(list) ->
           walk_expr_list(list, path ++ [key])
@@ -356,9 +356,6 @@ defmodule ElmEx.CoreIR.Validate do
       deterministic_sha256: core_ir.deterministic_sha256
     }
   end
-
-  defp normalize_wire_map(%CoreIR{} = core_ir),
-    do: core_ir_to_map(core_ir) |> stringify_keys_deep()
 
   defp normalize_wire_map(map) when is_map(map), do: stringify_keys_deep(map)
 

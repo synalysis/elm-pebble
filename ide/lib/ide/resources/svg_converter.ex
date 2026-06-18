@@ -79,13 +79,8 @@ defmodule Ide.Resources.SvgConverter do
         true ->
           image = %{width: round(width), height: round(height), commands: commands}
 
-          case PdcEncoder.encode(image) do
-            {:ok, bytes} ->
-              {:ok, %ConversionResult{bytes: bytes, report: report}}
-
-            error ->
-              error
-          end
+          {:ok, bytes} = PdcEncoder.encode(image)
+          {:ok, %ConversionResult{bytes: bytes, report: report}}
       end
     else
       _ -> {:error, :svg_conversion_failed}

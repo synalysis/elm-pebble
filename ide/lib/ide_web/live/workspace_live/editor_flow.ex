@@ -945,15 +945,6 @@ defmodule IdeWeb.WorkspaceLive.EditorFlow do
      |> assign(:editor_check_output, inspect(reason))}
   end
 
-  defp do_handle_async(:run_build, result, socket),
-    do: BuildFlow.handle_async(:run_build, result, socket)
-
-  defp do_handle_async(:run_compile, result, socket),
-    do: BuildFlow.handle_async(:run_compile, result, socket)
-
-  defp do_handle_async(:run_manifest, result, socket),
-    do: BuildFlow.handle_async(:run_manifest, result, socket)
-
   defp do_handle_async(
          :format_file,
          {:ok, {:ok, %{tab: tab, result: result, write_result: :ok}}},

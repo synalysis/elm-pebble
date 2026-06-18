@@ -239,9 +239,6 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.Support do
   @spec peel_update_result_model(Types.ast_expr()) :: Types.ast_expr() | nil
   defp peel_update_result_model(%{op: :tuple2, left: left}), do: peel_update_result_model(left)
 
-  defp peel_update_result_model(%{op: :tuple2, left: left, right: _}),
-    do: peel_update_result_model(left)
-
   defp peel_update_result_model(%{
          op: :record_update,
          base: %{op: :var, name: base},

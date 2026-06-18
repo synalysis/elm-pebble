@@ -11,7 +11,7 @@ defmodule ElmEx.DebuggerContract.ViewTree do
   """
   @spec parser_expression_view?(Types.introspect_snapshot() | Types.elm_introspect()) :: boolean()
   def parser_expression_view?(introspect) when is_map(introspect) do
-    ei = ElmEx.DebuggerContract.unwrap_shell(introspect) || introspect
+    ei = ElmEx.DebuggerContract.unwrap_shell(introspect)
     root = Map.get(ei, "view_tree") || %{}
     parser_expression_view_tree_node?(root, ei)
   end
@@ -82,7 +82,7 @@ defmodule ElmEx.DebuggerContract.ViewTree do
 
   def parser_expression_combinator_type?(type, introspect)
       when is_binary(type) and is_map(introspect) and map_size(introspect) > 0 do
-    ei = ElmEx.DebuggerContract.unwrap_shell(introspect) || introspect
+    ei = ElmEx.DebuggerContract.unwrap_shell(introspect)
     parser_expression_view_tree_node?(%{"type" => type}, ei)
   end
 

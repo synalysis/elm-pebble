@@ -5,7 +5,7 @@ defmodule ElmEx.MixProject do
     [
       app: :elm_ex,
       version: "0.1.0",
-      elixir: "~> 1.17",
+      elixir: "~> 1.20",
       compilers: [:leex, :yecc] ++ Mix.compilers(),
       start_permanent: Mix.env() == :prod,
       dialyzer: [

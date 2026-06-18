@@ -78,9 +78,7 @@ defmodule Elmx do
          {:ok, modules} <- ElixirCodegen.emit_project(ir, emit_opts),
          {:ok, compiled_modules} <- Loader.compile_modules(modules),
          entry <- entry_compiled_module(compiled_modules, emit_opts) do
-      if revision do
-        ModuleRegistry.put(revision, entry.module)
-      end
+      ModuleRegistry.put(revision, entry.module)
 
       manifest = %{
         "compiler" => "elmx",

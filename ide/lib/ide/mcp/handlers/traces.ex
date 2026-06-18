@@ -592,13 +592,6 @@ defmodule Ide.Mcp.Handlers.Traces do
     end
   end
 
-  defp screenshot_count(project_slug) when is_binary(project_slug) do
-    case Screenshots.list(project_slug, []) do
-      {:ok, shots} -> length(shots)
-      {:error, _reason} -> 0
-    end
-  end
-
   defp parse_prune_keep_latest(value) when is_integer(value), do: max(value, 0)
 
   defp parse_prune_keep_latest(value) when is_binary(value) do

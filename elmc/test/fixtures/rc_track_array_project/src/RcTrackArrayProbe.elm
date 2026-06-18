@@ -14,9 +14,11 @@ module RcTrackArrayProbe exposing
     , probePush
     , probeRepeat
     , probeSet
+    , probeSetAlias
     , probeSlice
     , probeToIndexedList
     , probeToList
+    , probeToListResult
     )
 
 import Array
@@ -116,3 +118,23 @@ probeAppend =
 probeSlice : Int
 probeSlice =
     Array.length (Array.slice 1 3 (Array.fromList [ 1, 2, 3, 4, 5 ]))
+
+
+baseArray : Array.Array Int
+baseArray =
+    Array.fromList [ 10, 20, 30 ]
+
+
+probeSetAlias : Int
+probeSetAlias =
+    let
+        updated =
+            Array.set 1 99 baseArray
+    in
+    Maybe.withDefault -1 (Array.get 1 updated)
+        + Maybe.withDefault -1 (Array.get 1 baseArray)
+
+
+probeToListResult : List Int
+probeToListResult =
+    Array.toList baseArray

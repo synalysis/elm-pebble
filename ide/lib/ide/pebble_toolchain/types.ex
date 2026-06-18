@@ -84,6 +84,17 @@ defmodule Ide.PebbleToolchain.Types do
         }
 
   @type elmc_compile_opts :: Elmc.Types.compile_options()
+
+  @type watch_compile_opts :: %{
+          required(:out_dir) => String.t(),
+          required(:entry_module) => String.t(),
+          required(:direct_render_only) => boolean(),
+          required(:prune_direct_generic) => boolean(),
+          required(:prune_runtime) => true,
+          required(:prune_native_wrappers) => true,
+          required(:pebble_int32) => true,
+          required(:strip_dead_code) => true
+        }
   @type elmc_compile_result :: %{
           optional(atom()) => term(),
           optional(String.t()) => term()

@@ -213,6 +213,12 @@ defmodule Ide.Debugger.RuntimeContexts do
           |> Ide.Debugger.CompanionBridgeEffects.apply_simulator_settings_responses(
             companion_bridge
           )
+        end,
+        deliver_companion_status_after_watch_init: fn st ->
+          Ide.Debugger.CompanionBridgeEffects.apply_simulator_settings_responses(
+            st,
+            companion_bridge
+          )
         end
       })
 

@@ -483,8 +483,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
     String.ends_with?(path, ".elm")
   end
 
-  defp elm_bootstrap_tab?(_), do: false
-
   defp try_read_watch_main_elm(project) do
     candidates = [{"watch", "src/Main.elm"}, {"watch", "Main.elm"}]
 

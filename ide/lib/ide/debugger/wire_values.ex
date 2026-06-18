@@ -38,7 +38,7 @@ defmodule Ide.Debugger.WireValues do
           nil
         end
 
-      if is_atom(atom_key) and Map.has_key?(map, atom_key) do
+      if not is_nil(atom_key) and Map.has_key?(map, atom_key) do
         Map.get(map, atom_key)
       end
     end

@@ -139,6 +139,13 @@ defmodule Ide.Resources.ResourceStore.Bitmaps do
 
     with :ok <- File.mkdir_p(assets_dir),
          {:ok, manifest} <- read_manifest(workspace),
+         nil <-
+           Duplicates.duplicate_variant_color_mode_entry(
+             manifest["entries"] || [],
+             assets_dir,
+             bytes,
+             color_mode
+           ),
          ctor <- resolve_bitmap_ctor(manifest, safe_name, ctor_hint),
          unique_ctor <- CtorDedup.among_entries(ctor, manifest["entries"] || [], ctor_hint),
          basename <-
@@ -291,7 +298,6 @@ defmodule Ide.Resources.ResourceStore.Bitmaps do
         {:ok, %{entry: migrated_row, entries: entries}}
       end
     else
-      nil -> {:error, :bitmap_not_found}
       {:error, reason} -> {:error, reason}
     end
   end

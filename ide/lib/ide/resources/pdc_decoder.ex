@@ -274,7 +274,7 @@ defmodule Ide.Resources.PdcDecoder do
     bytes_needed = point_count * point_size
 
     if byte_size(rest) >= bytes_needed do
-      <<points_bin::binary-size(bytes_needed), rest::binary>> = rest
+      <<points_bin::binary-size(^bytes_needed), rest::binary>> = rest
 
       points =
         points_bin
@@ -304,7 +304,7 @@ defmodule Ide.Resources.PdcDecoder do
     bytes_needed = point_count * 4
 
     if byte_size(rest) >= bytes_needed do
-      <<points_bin::binary-size(bytes_needed), rest::binary>> = rest
+      <<points_bin::binary-size(^bytes_needed), rest::binary>> = rest
       [point | _] = decode_points(points_bin, point_count, false)
 
       {:ok,
@@ -474,8 +474,6 @@ defmodule Ide.Resources.PdcDecoder do
     close = if open?, do: "", else: " Z"
     move <> " " <> segments <> close
   end
-
-  defp path_d([], _scale, _open?), do: ""
 
   defp scale_coord(value, scale) when is_number(value) and is_number(scale),
     do: Float.round(value * scale, 2)

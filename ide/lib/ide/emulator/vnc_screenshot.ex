@@ -321,8 +321,8 @@ defmodule Ide.Emulator.VncScreenshot do
       dst_offset = y * dest_row_bytes
 
       <<
-        before::binary-size(dst_offset),
-        _old::binary-size(src_row_bytes),
+        before::binary-size(^dst_offset),
+        _old::binary-size(^src_row_bytes),
         after_rest::binary
       >> = acc
 
@@ -376,8 +376,8 @@ defmodule Ide.Emulator.VncScreenshot do
         chunk = :binary.part(pixels, src_offset, row_bytes)
 
         <<
-          before::binary-size(dst_offset),
-          _old::binary-size(row_bytes),
+          before::binary-size(^dst_offset),
+          _old::binary-size(^row_bytes),
           after_rest::binary
         >> = acc
 

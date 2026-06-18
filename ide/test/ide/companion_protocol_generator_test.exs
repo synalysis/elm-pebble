@@ -246,7 +246,7 @@ defmodule Ide.CompanionProtocolGeneratorTest do
       assert generated_header =~ "COMPANION_PROTOCOL_KEY_PROVIDE_PIECE_FIELD2_0"
 
       assert generated_source =~ "companion_protocol_decode_list_wire_int"
-      assert generated_source =~ "elmc_list_from_int_array(message->list_values[1]"
+      assert generated_source =~ "elmc_list_from_int_array_take(message->list_values[1]"
       refute generated_source =~ "elmc_pebble_dispatch_tag_int_values(app"
 
       assert generated_js =~ "encodeListIntField"

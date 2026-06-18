@@ -280,7 +280,7 @@ defmodule Ide.Emulator.ScreenshotCaptureRepair do
 
   defp put_rgba(rgba, width, x, y, pixel) do
     offset = (y * width + x) * 4
-    <<before::binary-size(offset), _::binary-size(4), after_rest::binary>> = rgba
+    <<before::binary-size(^offset), _::binary-size(4), after_rest::binary>> = rgba
     before <> pixel <> after_rest
   end
 end

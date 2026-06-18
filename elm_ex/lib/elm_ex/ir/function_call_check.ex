@@ -947,6 +947,31 @@ defmodule ElmEx.IR.FunctionCallCheck do
     end
   end
 
+  defp infer_expr_type(
+         %{op: :qualified_call, target: target, args: args},
+         import_lookup,
+         signature_lookup,
+         type_alias_lookup,
+         binding_types
+       )
+       when is_binary(target) and is_list(args) do
+    resolved = ImportResolution.resolve(target, import_lookup)
+
+    case Map.get(signature_lookup, resolved) do
+      type when is_binary(type) ->
+        TypeSignature.return_type(type)
+
+      _ ->
+        infer_expr_type(
+          %{op: :qualified_call, args: args},
+          import_lookup,
+          signature_lookup,
+          type_alias_lookup,
+          binding_types
+        )
+    end
+  end
+
   defp infer_expr_type(%{op: op, target: target}, import_lookup, signature_lookup, _, _)
        when op in [:qualified_call1, :qualified_call] and is_binary(target) do
     value_type(Map.get(signature_lookup, ImportResolution.resolve(target, import_lookup)))
@@ -974,31 +999,6 @@ defmodule ElmEx.IR.FunctionCallCheck do
       _ ->
         infer_expr_type(
           %{op: :call, args: args},
-          import_lookup,
-          signature_lookup,
-          type_alias_lookup,
-          binding_types
-        )
-    end
-  end
-
-  defp infer_expr_type(
-         %{op: :qualified_call, target: target, args: args},
-         import_lookup,
-         signature_lookup,
-         type_alias_lookup,
-         binding_types
-       )
-       when is_binary(target) and is_list(args) do
-    resolved = ImportResolution.resolve(target, import_lookup)
-
-    case Map.get(signature_lookup, resolved) do
-      type when is_binary(type) ->
-        TypeSignature.return_type(type)
-
-      _ ->
-        infer_expr_type(
-          %{op: :qualified_call, args: args},
           import_lookup,
           signature_lookup,
           type_alias_lookup,
@@ -1070,10 +1070,6 @@ defmodule ElmEx.IR.FunctionCallCheck do
   end
 
   @spec alias_field_types_compatible?(map(), map()) :: boolean()
-  defp alias_field_types_compatible?(_alias_types, inferred_types) when inferred_types == %{} do
-    true
-  end
-
   defp alias_field_types_compatible?(alias_types, inferred_types)
        when is_map(alias_types) and is_map(inferred_types) do
     Enum.all?(alias_types, fn {field, expected} ->

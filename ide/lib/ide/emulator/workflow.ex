@@ -154,7 +154,6 @@ defmodule Ide.Emulator.Workflow do
   defp bitmap_import_error_message(other),
     do: "Re-import or remove the bitmap on the Resources page (#{inspect(other)})."
 
-  defp protocol_router_detail(:eaddrinuse), do: "port already in use"
   defp protocol_router_detail(reason), do: inspect(reason)
 
   @spec install_error_message(term()) :: String.t()

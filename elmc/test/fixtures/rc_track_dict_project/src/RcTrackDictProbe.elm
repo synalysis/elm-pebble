@@ -7,6 +7,7 @@ module RcTrackDictProbe exposing
     , probeFromList
     , probeGet
     , probeInsert
+    , probeInsertAlias
     , probeIntersect
     , probeIsEmpty
     , probeKeys
@@ -18,6 +19,7 @@ module RcTrackDictProbe exposing
     , probeSingleton
     , probeSize
     , probeToList
+    , probeToListResult
     , probeUnion
     , probeUpdate
     , probeValues
@@ -160,3 +162,24 @@ probeMerge =
 probeUpdate : Int
 probeUpdate =
     Dict.size (Dict.update "a" (\maybe -> Just 9) sample)
+
+
+probeToListResult : List ( String, Int )
+probeToListResult =
+    Dict.toList sample
+
+
+probeInsertAlias : Int
+probeInsertAlias =
+    let
+        base =
+            sample
+
+        updated =
+            Dict.insert "c" 3 base
+    in
+    if Dict.size base == 2 && Dict.size updated == 3 then
+        Dict.size updated
+
+    else
+        0

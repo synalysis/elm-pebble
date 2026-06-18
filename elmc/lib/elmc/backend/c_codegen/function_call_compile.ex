@@ -1071,9 +1071,6 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
   defp field_accessor_field(%{op: :field_access, field: field}) when is_binary(field),
     do: field
 
-  defp field_accessor_field(%{op: :field_access, arg: _arg, field: field}) when is_binary(field),
-    do: field
-
   defp field_accessor_field(_body), do: nil
 
   @spec compile_cross_module(

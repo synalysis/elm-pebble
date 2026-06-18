@@ -3,8 +3,6 @@ defmodule Ide.Emulator.Session do
 
   use GenServer
 
-  require Logger
-
   alias Ide.Emulator.{InstallPrep, LogCapture, SlotLimiter, Types}
   alias Ide.Emulator.PebbleProtocol.{Packets, Router}
 

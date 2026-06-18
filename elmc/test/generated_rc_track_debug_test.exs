@@ -2,30 +2,25 @@ defmodule Elmc.GeneratedRcTrackDebugTest do
   use ExUnit.Case, async: true
 
   alias Elmc.Test.RcTrackCoreTest
+  alias Elmc.Test.RcTrackMatrix
 
-  @module "RcTrackDebugProbe"
-  @project_dir Path.expand("fixtures/rc_track_debug_project", __DIR__)
-  @out_dir Path.expand("tmp/rc_track_debug", __DIR__)
-
-  @probes ~w(probeLog probeTodo probeToString)
-
-  @matrix ~w(Debug.log Debug.todo Debug.toString)
+  @module_name "Debug"
 
   @tag :rc_track
   @tag :rc_track_core
   test "elm/core Debug probes balance rc registry" do
-    RcTrackCoreTest.run_int_suite!(
-      project_dir: @project_dir,
-      out_dir: @out_dir,
-      module: @module,
-      binary: "rc_track_debug",
-      probes: @probes
-    )
+    RcTrackCoreTest.run_core_module_suite!(@module_name, test_dir: __DIR__)
   end
 
   @tag :rc_track
   @tag :rc_track_core
   test "every codegen matrix Debug function has an rc probe" do
-    RcTrackCoreTest.assert_matrix_coverage!(@probes, @matrix, "Debug")
+    %{probes: probes} = RcTrackMatrix.registry_entry(@module_name)
+
+    RcTrackCoreTest.assert_matrix_coverage!(
+      probes,
+      RcTrackMatrix.functions_for(@module_name),
+      @module_name
+    )
   end
 end

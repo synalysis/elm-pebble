@@ -1,8 +1,11 @@
 module RcTrackMaybeProbe exposing
     ( probeAndThen
+    , probeAndThenNothing
     , probeMap
     , probeMap2
+    , probeMapNothing
     , probeWithDefault
+    , probeWithDefaultNothing
     )
 
 import Maybe
@@ -31,3 +34,18 @@ probeMap2 =
 probeAndThen : Int
 probeAndThen =
     Maybe.withDefault 0 (Maybe.andThen (\x -> Just (x * 2)) justThree)
+
+
+probeWithDefaultNothing : Int
+probeWithDefaultNothing =
+    Maybe.withDefault 7 Nothing
+
+
+probeMapNothing : Int
+probeMapNothing =
+    Maybe.withDefault 0 (Maybe.map (\x -> x + 1) Nothing)
+
+
+probeAndThenNothing : Int
+probeAndThenNothing =
+    Maybe.withDefault 0 (Maybe.andThen (\x -> Just (x * 2)) Nothing)

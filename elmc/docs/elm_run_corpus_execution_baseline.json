@@ -1,0 +1,16 @@
+{
+  "corpus_sha": "a1137d6d5de0d76ef28cefe37317c11339e6c831",
+  "elmc": {
+    "attempted": 395,
+    "run_ok_min": 72
+  },
+  "elmx": {
+    "attempted": 395,
+    "run_ok_min": 65
+  },
+  "elmc_smoke": {
+    "attempted": 7,
+    "run_ok_min": 1
+  },
+  "notes": "Strict gold programs exclude corpus metadata known_gold_diff entries. Many mismatches reflect Debug.toString / codegen gaps to fix over time."
+}

@@ -659,8 +659,6 @@ defmodule Ide.Formatter.Printer.ModuleHeader do
   end
 
   @spec pop_stack(list(), non_neg_integer()) :: list()
-  defp pop_stack([], _closing), do: []
-
   defp pop_stack([open | rest], closing) do
     if delimiter_char_match?(open, closing), do: rest, else: [open | rest]
   end

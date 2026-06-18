@@ -53,8 +53,6 @@ defmodule Ide.EditorCompletionRecordResolver do
     if Map.has_key?(types, candidate), do: candidate
   end
 
-  defp infer_param_type(_, _), do: nil
-
   defp fields_for_type(type_name, index, context) do
     by_type = merged_record_fields_by_type(index, context)
 

@@ -160,19 +160,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
   end
 
   def int_value(%{op: :field_access, arg: arg, field: field}, env, counter) do
-    source =
-      case arg do
-        %{op: :var, name: name} ->
-          case Map.get(env, name) do
-            {:direct_fragment, fragment} -> fragment
-            _ -> arg
-          end
-
-        _ ->
-          arg
-      end
-
-    int_value_field_access_fallback(source, field, env, counter)
+    int_value_field_access_fallback(arg, field, env, counter)
   end
 
   def int_value(expr, env, counter), do: runtime_int_value(expr, env, counter)

@@ -7,7 +7,7 @@ defmodule Elmc.GeneratedRcTrackCodegenOptimizationsTest do
     {"RcTrackCompareProbe", "fixtures/rc_track_compare_project",
      ~w(probeListEqual probeRecordEqual)},
     {"RcTrackRecordUpdateProbe", "fixtures/rc_track_record_update_project",
-     ~w(probeChainedUpdate probeAliasedBase)},
+     ~w(probeChainedUpdate probeAliasedBase probeDictUpdateAlias)},
     {"RcTrackGridIntProbe", "fixtures/rc_track_grid_int_project",
      ~w(probeGridAccess probeGridUpdate)}
   ]
