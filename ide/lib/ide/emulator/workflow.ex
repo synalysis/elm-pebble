@@ -128,6 +128,17 @@ defmodule Ide.Emulator.Workflow do
     "Bitmap `#{filename}` could not be prepared for packaging. #{bitmap_import_error_message(reason)}"
   end
 
+  def launch_error_message({:protocol_router_start_failed, :eaddrinuse}) do
+    "The emulator could not start its communication bridge because a required network port is already in use. " <>
+      "Stop any other emulator sessions for this project, wait a few seconds, then try again. " <>
+      "If the problem persists, restart the IDE server to clear stale emulator processes."
+  end
+
+  def launch_error_message({:protocol_router_start_failed, reason}) do
+    "The emulator could not start its communication bridge (#{protocol_router_detail(reason)}). " <>
+      "Try launching again; if it keeps failing, restart the IDE server."
+  end
+
   def launch_error_message(reason), do: inspect(reason)
 
   defp bitmap_import_error_message(:bitmap_converter_missing),
@@ -142,6 +153,9 @@ defmodule Ide.Emulator.Workflow do
 
   defp bitmap_import_error_message(other),
     do: "Re-import or remove the bitmap on the Resources page (#{inspect(other)})."
+
+  defp protocol_router_detail(:eaddrinuse), do: "port already in use"
+  defp protocol_router_detail(reason), do: inspect(reason)
 
   @spec install_error_message(term()) :: String.t()
   def install_error_message(:artifact_not_found),
