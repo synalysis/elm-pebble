@@ -5,10 +5,13 @@ defmodule Ide.Resources.ResourceStore.Bitmaps do
   alias Ide.Projects.Project
   alias Ide.Resources.{
     BitmapMonochrome,
+    BitmapRaster,
     BitmapVariants,
     CtorNaming,
     PngInfo
   }
+
+  @stored_bitmap_ext ".png"
 
   alias Ide.Resources.ResourceStore.{Coercion, CtorDedup, Duplicates, Manifest}
   alias Ide.Resources.Types
@@ -72,52 +75,46 @@ defmodule Ide.Resources.ResourceStore.Bitmaps do
     color_mode = Keyword.get(opts, :color_mode)
     ctor_hint = Keyword.get(opts, :ctor)
 
-    if is_binary(color_mode) and BitmapVariants.valid_color_mode?(color_mode) do
-      import_bitmap_variant(project, upload_path, original_name, color_mode, ctor_hint)
-    else
-      import_bitmap_legacy(project, upload_path, original_name)
-    end
-  end
-
-  @spec import_bitmap_legacy(Project.t(), String.t(), String.t()) ::
-          Types.bitmap_import_result()
-  defp import_bitmap_legacy(%Project{} = project, upload_path, original_name) do
     with {:ok, bytes} <- File.read(upload_path),
-         {:ok, _safe_name, mime} <- normalized_filename_and_mime(original_name),
-         true <- mime == "image/png" and PngInfo.color_palette_image?(bytes),
-         {:ok, result} <-
-           import_bitmap_variant(project, upload_path, original_name, "Color", nil) do
-      {:ok, result}
-    else
-      _ -> import_bitmap_legacy_universal(project, upload_path, original_name)
+         {:ok, prepared} <- BitmapRaster.normalize_for_import(bytes, original_name) do
+      if is_binary(color_mode) and BitmapVariants.valid_color_mode?(color_mode) do
+        import_bitmap_variant_prepared(project, prepared, color_mode, ctor_hint)
+      else
+        import_bitmap_legacy_prepared(project, prepared)
+      end
     end
   end
 
-  defp import_bitmap_legacy_universal(%Project{} = project, upload_path, original_name) do
+  defp import_bitmap_legacy_prepared(%Project{} = project, prepared) do
+    if PngInfo.color_palette_image?(prepared.bytes) do
+      import_bitmap_variant_prepared(project, prepared, "Color", nil)
+    else
+      import_bitmap_legacy_universal_prepared(project, prepared)
+    end
+  end
+
+  defp import_bitmap_legacy_universal_prepared(%Project{} = project, prepared) do
     workspace = Projects.project_workspace_path(project)
     assets_dir = Path.join(workspace, @assets_rel_dir)
     manifest_path = Path.join(workspace, @manifest_rel_path)
+    %{bytes: bytes, width: width, height: height, safe_name: safe_name} = prepared
 
     with :ok <- File.mkdir_p(assets_dir),
          {:ok, manifest} <- read_manifest(workspace),
-         {:ok, bytes} <- File.read(upload_path),
-         {:ok, safe_name, mime} <- normalized_filename_and_mime(original_name),
          nil <- Duplicates.duplicate_asset_entry(manifest["entries"] || [], assets_dir, bytes),
          base_name <- CtorNaming.base_name_from_filename(safe_name),
          unique_ctor <-
            CtorNaming.unique_ctor(:bitmap_static, base_name, manifest["entries"] || []),
-         basename <- BitmapVariants.legacy_filename(unique_ctor, Path.extname(safe_name)),
+         basename <- BitmapVariants.legacy_filename(unique_ctor, @stored_bitmap_ext),
          :ok <- remove_bitmap_row_files(assets_dir, existing_row(manifest, unique_ctor)),
          :ok <- File.write(Path.join(assets_dir, basename), bytes) do
-      {width, height} = bitmap_dimensions(bytes, mime)
-
       entry =
         BitmapVariants.normalize_row(%{
           "id" => "bitmap_" <> String.downcase(unique_ctor),
           "base_name" => CtorNaming.legacy_base_from_ctor(unique_ctor, :bitmap_static),
           "ctor" => unique_ctor,
           "filename" => basename,
-          "mime" => mime,
+          "mime" => "image/png",
           "bytes" => byte_size(bytes),
           "width" => width,
           "height" => height,
@@ -134,31 +131,20 @@ defmodule Ide.Resources.ResourceStore.Bitmaps do
     end
   end
 
-  @spec import_bitmap_variant(Project.t(), String.t(), String.t(), String.t(), String.t() | nil) ::
-          Types.bitmap_import_result()
-  defp import_bitmap_variant(
-         %Project{} = project,
-         upload_path,
-         original_name,
-         color_mode,
-         ctor_hint
-       ) do
+  defp import_bitmap_variant_prepared(%Project{} = project, prepared, color_mode, ctor_hint) do
     workspace = Projects.project_workspace_path(project)
     assets_dir = Path.join(workspace, @assets_rel_dir)
     manifest_path = Path.join(workspace, @manifest_rel_path)
+    %{bytes: bytes, width: width, height: height, safe_name: safe_name} = prepared
 
     with :ok <- File.mkdir_p(assets_dir),
          {:ok, manifest} <- read_manifest(workspace),
-         {:ok, bytes} <- File.read(upload_path),
-         {:ok, safe_name, mime} <- normalized_filename_and_mime(original_name),
          ctor <- resolve_bitmap_ctor(manifest, safe_name, ctor_hint),
          unique_ctor <- CtorDedup.among_entries(ctor, manifest["entries"] || [], ctor_hint),
          basename <-
-           BitmapVariants.variant_filename(unique_ctor, color_mode, Path.extname(safe_name)),
+           BitmapVariants.variant_filename(unique_ctor, color_mode, @stored_bitmap_ext),
          nil <- duplicate_variant_asset(manifest, assets_dir, bytes, unique_ctor, basename),
          :ok <- File.write(Path.join(assets_dir, basename), bytes) do
-      {width, height} = bitmap_dimensions(bytes, mime)
-
       prior = existing_row(manifest, unique_ctor) |> BitmapVariants.normalize_row()
 
       variants =
@@ -166,7 +152,7 @@ defmodule Ide.Resources.ResourceStore.Bitmaps do
         |> Map.get("variants", %{})
         |> Map.put(color_mode, %{
           "filename" => basename,
-          "mime" => mime,
+          "mime" => "image/png",
           "bytes" => byte_size(bytes),
           "width" => width,
           "height" => height
@@ -192,7 +178,7 @@ defmodule Ide.Resources.ResourceStore.Bitmaps do
           result,
           entry,
           bytes,
-          Path.extname(safe_name)
+          @stored_bitmap_ext
         )
       end
     else
@@ -557,44 +543,6 @@ defmodule Ide.Resources.ResourceStore.Bitmaps do
       height: height,
       variants: variants
     }
-  end
-
-
-  @spec normalized_filename_and_mime(String.t()) ::
-          {:ok, String.t(), String.t()} | {:error, Types.asset_type_error()}
-  defp normalized_filename_and_mime(original_name) do
-    ext =
-      original_name
-      |> Path.extname()
-      |> String.downcase()
-
-    mime =
-      case ext do
-        ".png" -> "image/png"
-        ".bmp" -> "image/bmp"
-        ".jpg" -> "image/jpeg"
-        ".jpeg" -> "image/jpeg"
-        ".gif" -> "image/gif"
-        ".webp" -> "image/webp"
-        _ -> nil
-      end
-
-    if is_binary(mime) do
-      base =
-        original_name
-        |> Path.basename()
-        |> Path.rootname()
-        |> String.replace(~r/[^A-Za-z0-9_-]+/, "_")
-        |> String.trim("_")
-        |> case do
-          "" -> "bitmap"
-          value -> value
-        end
-
-      {:ok, String.downcase(base) <> ext, mime}
-    else
-      {:error, :unsupported_bitmap_type}
-    end
   end
 
   @spec bitmap_dimensions(binary(), String.t()) :: {non_neg_integer(), non_neg_integer()}

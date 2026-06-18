@@ -551,128 +551,10 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
 
   @spec package_output_issues(String.t()) :: [map()]
   def package_output_issues(output) when is_binary(output) do
-    case memory_overflow_info(output) do
-      nil ->
-        [
-          %{
-            title: "PBW packaging failed",
-            message: "Pebble SDK packaging failed. See the package log below for details.",
-            detail: nil
-          }
-        ]
-
-      info ->
-        [
-          %{
-            title: "PBW too large for #{target_label(info.target)}",
-            message:
-              "The linker says the app does not fit in the Pebble APP memory region. " <>
-                overflow_action(info.target),
-            detail: overflow_detail(info)
-          }
-        ]
-    end
+    [Ide.PebbleToolchain.BuildDiagnostics.package_issue(output)]
   end
 
   def package_output_issues(_output), do: []
-
-  defp memory_overflow_info(output) do
-    normalized = String.downcase(output)
-
-    if String.contains?(normalized, "region `app' overflowed") or
-         String.contains?(normalized, "will not fit in region `app'") or
-         String.contains?(normalized, "overflowed by") do
-      %{
-        target: overflow_target(output),
-        bytes: overflow_bytes(output)
-      }
-    else
-      nil
-    end
-  end
-
-  defp overflow_target(output) do
-    lines = String.split(output, "\n")
-
-    with index when is_integer(index) <- overflow_line_index(lines) do
-      overflow_context_target(lines, index) || last_linking_target_before(lines, index)
-    else
-      _ -> first_pebble_app_target(output)
-    end
-  end
-
-  defp overflow_line_index(lines) do
-    Enum.find_index(lines, fn line ->
-      normalized = String.downcase(line)
-
-      String.contains?(normalized, "region `app' overflowed") or
-        String.contains?(normalized, "will not fit in region `app'") or
-        String.contains?(normalized, "overflowed by")
-    end)
-  end
-
-  defp overflow_context_target(lines, index) do
-    before_or_at =
-      lines
-      |> Enum.take(index + 1)
-      |> Enum.reverse()
-
-    after_overflow =
-      lines
-      |> Enum.drop(index + 1)
-
-    (before_or_at ++ after_overflow)
-    |> Enum.find_value(&pebble_app_target_from_line/1)
-  end
-
-  defp last_linking_target_before(lines, index) do
-    lines
-    |> Enum.take(index + 1)
-    |> Enum.reverse()
-    |> Enum.find_value(fn line ->
-      case Regex.run(~r/Linking\s+([a-z0-9_-]+)/i, line) do
-        [_, target] -> String.downcase(target)
-        _ -> nil
-      end
-    end)
-  end
-
-  defp first_pebble_app_target(output), do: pebble_app_target_from_line(output)
-
-  defp pebble_app_target_from_line(line) do
-    case Regex.run(~r/build\/([a-z0-9_-]+)\/pebble-app\.elf/i, line) do
-      [_, target] -> String.downcase(target)
-      _ -> nil
-    end
-  end
-
-  defp overflow_bytes(output) do
-    case Regex.run(~r/overflowed by\s+(\d+)\s+bytes/i, output) do
-      [_, bytes] -> bytes
-      _ -> nil
-    end
-  end
-
-  defp overflow_action("aplite") do
-    "Aplite is enabled; remove it from target platforms if this app should not support original black-and-white Pebble, or reduce code/resources."
-  end
-
-  defp overflow_action(_target) do
-    "Reduce generated code/resources or narrow target platforms to models that can fit the app."
-  end
-
-  defp target_label(nil), do: "target"
-  defp target_label(target) when is_binary(target), do: String.capitalize(target)
-
-  defp overflow_detail(%{target: target, bytes: bytes}) do
-    [target && "target=#{target}", bytes && "overflow=#{bytes} bytes"]
-    |> Enum.reject(&is_nil/1)
-    |> Enum.join(" ")
-    |> case do
-      "" -> nil
-      detail -> detail
-    end
-  end
 
   @spec run_package_validation(Project.t(), String.t(), boolean()) :: package_validation_result()
   def run_package_validation(_project, workspace_root, false) do
@@ -761,24 +643,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
   end
 
   defp package_failure_hint(output, targets) do
-    normalized = String.downcase(output)
-
-    cond do
-      String.contains?(normalized, "region `app' overflowed") or
-        String.contains?(normalized, "will not fit in region `app'") or
-          String.contains?(normalized, "overflowed by") ->
-        target_hint =
-          if "aplite" in targets do
-            " Aplite is enabled; consider removing it from target platforms if the app is not intended to support the original black-and-white Pebble, or reduce generated code/resources."
-          else
-            " Reduce generated code/resources or narrow target platforms to models that can fit the app."
-          end
-
-        "Diagnosis: Pebble SDK linker output indicates a memory-region overflow.#{target_hint}"
-
-      true ->
-        nil
-    end
+    Ide.PebbleToolchain.BuildDiagnostics.package_hint(output, targets)
   end
 
   @spec run_build_pipeline_for_root(String.t(), String.t(), String.t(), boolean()) ::

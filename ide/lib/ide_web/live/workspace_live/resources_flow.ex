@@ -155,6 +155,18 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
       :invalid_png ->
         "Could not read PNG/APNG metadata."
 
+      :unsupported_bitmap_type ->
+        "Unsupported bitmap file type. Use PNG, JPEG, BMP, GIF, or WebP."
+
+      :invalid_bitmap_image ->
+        "Could not read the image file. The file may be corrupted or empty."
+
+      :bitmap_converter_missing ->
+        "This image must be converted to PNG before import, but ImageMagick (`magick` or `convert`) is not on PATH."
+
+      :bitmap_conversion_failed ->
+        "Could not convert the image to PNG. Check that the file is a valid image."
+
       :invalid_animation ->
         "Invalid animation file."
 

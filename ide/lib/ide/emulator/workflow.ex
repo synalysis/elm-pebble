@@ -113,7 +113,35 @@ defmodule Ide.Emulator.Workflow do
   def launch_error_message(:display_ready_timeout),
     do: "Embedded emulator display was not ready before the timeout."
 
+  def launch_error_message({:pebble_build_failed, %{output: output}}) when is_binary(output) do
+    case Ide.PebbleToolchain.BuildDiagnostics.launch_message(output) do
+      message when is_binary(message) ->
+        message
+
+      _ ->
+        "Pebble app packaging failed while building the watch binary. Open the Build panel for the full package log."
+    end
+  end
+
+  def launch_error_message({:bitmap_resource_stage_failed, filename, reason})
+      when is_binary(filename) do
+    "Bitmap `#{filename}` could not be prepared for packaging. #{bitmap_import_error_message(reason)}"
+  end
+
   def launch_error_message(reason), do: inspect(reason)
+
+  defp bitmap_import_error_message(:bitmap_converter_missing),
+    do:
+      "Install ImageMagick (`magick` or `convert`) on the IDE host, or re-import the image as PNG from the Resources page."
+
+  defp bitmap_import_error_message(:bitmap_conversion_failed),
+    do: "The file could not be converted to PNG. Re-import it from the Resources page."
+
+  defp bitmap_import_error_message(:invalid_bitmap_image),
+    do: "The file is corrupted or not a supported image format."
+
+  defp bitmap_import_error_message(other),
+    do: "Re-import or remove the bitmap on the Resources page (#{inspect(other)})."
 
   @spec install_error_message(term()) :: String.t()
   def install_error_message(:artifact_not_found),

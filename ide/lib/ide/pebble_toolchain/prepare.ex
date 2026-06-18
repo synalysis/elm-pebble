@@ -473,26 +473,70 @@ defmodule Ide.PebbleToolchain.Prepare do
     package_file = Ide.Resources.BitmapVariants.package_media_file(ctor)
     filenames = Ide.Resources.BitmapVariants.filenames_for_row(normalized)
 
-    Enum.each(filenames, fn filename ->
+    Enum.reduce_while(filenames, :ok, fn filename, :ok ->
       source_path = Path.join(assets_root, filename)
       target_variant_path = Path.join([app_root, "resources", "bitmaps", filename])
 
       if filename != "" and File.exists?(source_path) do
-        :ok = File.mkdir_p(Path.dirname(target_variant_path))
-        :ok = File.cp(source_path, target_variant_path)
+        case stage_bitmap_file(source_path, target_variant_path) do
+          :ok -> {:cont, :ok}
+          {:error, reason} -> {:halt, {:error, reason}}
+        end
+      else
+        {:cont, :ok}
       end
     end)
+    |> case do
+      :ok ->
+        {:ok,
+         if filenames != [] do
+           [
+             %{
+               "type" => "bitmap",
+               "name" => "BITMAP_" <> macro_name(ctor),
+               "file" => package_file
+             }
+           ]
+         else
+           []
+         end}
 
-    if filenames != [] do
-      [
-        %{
-          "type" => "bitmap",
-          "name" => "BITMAP_" <> macro_name(ctor),
-          "file" => package_file
-        }
-      ]
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp stage_bitmap_file(source_path, target_path) do
+    with {:ok, bytes} <- File.read(source_path),
+         {:ok, prepared} <- Ide.Resources.BitmapRaster.normalize_bytes(bytes),
+         :ok <- File.mkdir_p(Path.dirname(target_path)),
+         :ok <- File.write(target_path, prepared.bytes) do
+      :ok
     else
-      []
+      {:error, reason} ->
+        {:error, {:bitmap_resource_stage_failed, Path.basename(source_path), reason}}
+    end
+  end
+
+  defp stage_manifest_bitmap_entries(entries, assets_root, app_root) do
+    entries
+    |> Enum.filter(&is_map/1)
+    |> Enum.sort_by(&to_string(Map.get(&1, "ctor", "")))
+    |> Enum.reduce_while({:ok, []}, fn row, {:ok, acc} ->
+      case stage_bitmap_entry_rows(row, assets_root, app_root) do
+        {:ok, rows} -> {:cont, {:ok, acc ++ rows}}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+    |> case do
+      {:ok, media_entries} ->
+        {:ok,
+         Enum.filter(media_entries, fn row ->
+           String.trim(to_string(Map.get(row, "file", ""))) != ""
+         end)}
+
+      other ->
+        other
     end
   end
 
@@ -506,14 +550,10 @@ defmodule Ide.PebbleToolchain.Prepare do
       {:ok, json} ->
         with {:ok, decoded} <- Jason.decode(json),
              entries when is_list(entries) <- Map.get(decoded, "entries", []) do
-          media_entries =
-            entries
-            |> Enum.filter(&is_map/1)
-            |> Enum.sort_by(&to_string(Map.get(&1, "ctor", "")))
-            |> Enum.flat_map(&stage_bitmap_entry_rows(&1, assets_root, app_root))
-            |> Enum.filter(fn row -> String.trim(to_string(Map.get(row, "file", ""))) != "" end)
-
-          {:ok, media_entries}
+          case stage_manifest_bitmap_entries(entries, assets_root, app_root) do
+            {:ok, media_entries} -> {:ok, media_entries}
+            {:error, reason} -> {:error, reason}
+          end
         else
           _ -> {:ok, []}
         end

@@ -103,6 +103,9 @@ defmodule Ide.Resources.Types do
 
   @type asset_type_error ::
           :unsupported_bitmap_type
+          | :invalid_bitmap_image
+          | :bitmap_converter_missing
+          | :bitmap_conversion_failed
           | :unsupported_font_type
           | :unsupported_vector_type
           | :invalid_font_height

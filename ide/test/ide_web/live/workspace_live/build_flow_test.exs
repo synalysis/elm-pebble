@@ -56,4 +56,45 @@ defmodule IdeWeb.WorkspaceLive.BuildFlowTest do
              }
            ] = BuildFlow.package_output_issues(output)
   end
+
+  test "package failure explains bitmap resource packaging failures" do
+    reason =
+      {:pebble_build_failed,
+       %{
+         cwd: "/tmp/app",
+         command: "pebble build",
+         exit_code: 1,
+         output: """
+         [ 9/29] Compiling basalt | reso: resources/bitmaps/BadLogo.png -> build/basalt/resources/bitmaps/BadLogo.png.BITMAP_BADLOGO.reso
+         File ".../png2pblpng.py", line 158, in get_palette_for_png
+           input_png.preamble()
+         Build failed
+         """
+       }}
+
+    output = BuildFlow.render_package_failure(reason, ["basalt"])
+
+    assert output =~ "PBW packaging failed"
+    assert output =~ "BadLogo.png"
+    assert output =~ "could not read bitmap"
+  end
+
+  test "package output issues explain bitmap resource packaging failures" do
+    output = """
+    [ 9/29] Compiling basalt | reso: resources/bitmaps/BadLogo.png -> build/basalt/resources/bitmaps/BadLogo.png.BITMAP_BADLOGO.reso
+    File ".../png2pblpng.py", line 158, in get_palette_for_png
+      input_png.preamble()
+    Build failed
+    """
+
+    assert [
+             %{
+               title: "Bitmap resource packaging failed",
+               message: message,
+               detail: "resource=BadLogo.png"
+             }
+           ] = BuildFlow.package_output_issues(output)
+
+    assert message =~ "BadLogo.png"
+  end
 end
