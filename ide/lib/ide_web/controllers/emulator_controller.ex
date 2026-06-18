@@ -10,6 +10,30 @@ defmodule IdeWeb.EmulatorController do
   alias Ide.Emulator.Workflow
   alias Ide.PebblePreferences
   alias Ide.Projects
+  alias Ide.Screenshots
+
+  @spec screenshot(Plug.Conn.t(), %{required(String.t()) => term()}) :: Plug.Conn.t()
+  def screenshot(conn, %{"slug" => slug, "image" => image} = params) do
+    emulator_target = Map.get(params, "platform", "basalt")
+
+    with project when not is_nil(project) <-
+           Projects.get_project_by_slug(slug, conn.assigns[:current_user]),
+         {:ok, shot} <- Screenshots.store_png_data_url(project, emulator_target, image) do
+      json(conn, %{status: "ok", screenshot: shot})
+    else
+      nil ->
+        conn |> put_status(:not_found) |> json(%{error: "Project not found"})
+
+      {:error, reason} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: screenshot_error_message(reason)})
+    end
+  end
+
+  def screenshot(conn, _params) do
+    conn |> put_status(:bad_request) |> json(%{error: "Expected image data URL"})
+  end
 
   @spec launch(Plug.Conn.t(), %{required(String.t()) => term()}) :: Plug.Conn.t()
   def launch(conn, %{"slug" => slug} = params) do
@@ -280,4 +304,11 @@ defmodule IdeWeb.EmulatorController do
     :exit, reason -> {:error, reason}
   end
 
+  defp screenshot_error_message(:invalid_data_url),
+    do: "Expected a PNG data URL from the emulator display."
+
+  defp screenshot_error_message(:invalid_png),
+    do: "Screenshot image is not a valid PNG."
+
+  defp screenshot_error_message(reason), do: inspect(reason)
 end

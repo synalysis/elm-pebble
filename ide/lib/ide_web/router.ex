@@ -95,6 +95,7 @@ defmodule IdeWeb.Router do
     post "/mcp", McpController, :create
     post "/tokenize", TokenizerController, :create
     post "/emulator/launch", EmulatorController, :launch
+    post "/emulator/projects/:slug/screenshot", EmulatorController, :screenshot
     post "/emulator/:id/ping", EmulatorController, :ping
     post "/emulator/:id/install", EmulatorController, :install
     post "/emulator/:id/request-app-logs", EmulatorController, :request_app_logs

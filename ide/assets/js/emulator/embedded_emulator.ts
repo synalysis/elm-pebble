@@ -2154,9 +2154,9 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
 
       const slug = this.el.dataset.projectSlug ?? "default"
       const result = await postJSON<{screenshot?: string}>(
-        `/api/wasm-emulator/projects/${encodeURIComponent(slug)}/screenshot`,
+        `/api/emulator/projects/${encodeURIComponent(slug)}/screenshot`,
         {
-        platform: this.el.dataset.emulatorTarget || "embedded",
+        platform: this.el.dataset.emulatorTarget || "basalt",
         image
       })
 

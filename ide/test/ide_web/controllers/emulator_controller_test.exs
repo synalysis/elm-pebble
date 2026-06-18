@@ -311,4 +311,55 @@ defmodule IdeWeb.EmulatorControllerTest do
     assert response =~ "showDate"
     assert response =~ "return_to"
   end
+
+  test "embedded screenshot endpoint stores browser capture in public_custom mode", %{conn: conn} do
+    previous_auth = Application.get_env(:ide, Ide.Auth, [])
+    Application.put_env(:ide, Ide.Auth, mode: :public_custom)
+
+    alias Ide.Auth.User
+    alias Ide.Png
+    alias Ide.Repo
+
+    {:ok, user} =
+      %User{}
+      |> User.changeset(%{firebase_uid: "embedded-shot-user", email: "shot@example.test"})
+      |> Repo.insert()
+
+    auth_conn = Plug.Test.init_test_session(conn, user_id: user.id)
+
+    assert {:ok, project} =
+             Projects.create_project(
+               %{
+                 "name" => "Embedded Shot",
+                 "slug" => "embedded-shot",
+                 "target_type" => "app"
+               },
+               user
+             )
+
+    {:ok, png} = Png.encode_rgba(<<255, 255, 255, 255>>, 1, 1)
+    image = "data:image/png;base64," <> Base.encode64(png)
+
+    response =
+      post(auth_conn, ~p"/api/emulator/projects/#{project.slug}/screenshot", %{
+        "platform" => "basalt",
+        "image" => image
+      })
+
+    body = json_response(response, 200)
+    assert body["status"] == "ok"
+    assert body["screenshot"]["emulator_target"] == "basalt"
+    assert body["screenshot"]["filename"] =~ ~r/^basalt_shot_\d/
+    assert File.regular?(body["screenshot"]["absolute_path"])
+
+    wasm_conn =
+      post(auth_conn, ~p"/api/wasm-emulator/projects/#{project.slug}/screenshot", %{
+        "platform" => "basalt",
+        "image" => image
+      })
+
+    assert json_response(wasm_conn, 404)["error"] =~ "not available"
+
+    Application.put_env(:ide, Ide.Auth, previous_auth)
+  end
 end

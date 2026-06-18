@@ -137,6 +137,33 @@ defmodule Ide.Screenshots do
   end
 
   @doc """
+  Stores a browser-captured PNG from a `data:image/png;base64,...` URL.
+  """
+  @spec store_png_data_url(project_ref(), String.t(), String.t(), opts()) ::
+          {:ok, screenshot()} | {:error, screenshot_error()}
+  def store_png_data_url(project_ref, emulator_target, data_url, opts \\ [])
+
+  def store_png_data_url(%Project{} = project, emulator_target, data_url, opts),
+    do:
+      store_png_data_url(project.slug, emulator_target, data_url,
+        Keyword.put(opts, :project, project)
+      )
+
+  def store_png_data_url(project_slug, emulator_target, data_url, opts)
+      when is_binary(data_url) do
+    with {:ok, png} <- decode_png_data_url(data_url),
+         {:ok, shot} <- store_png(project_slug, emulator_target, png, opts) do
+      {:ok, shot}
+    end
+  end
+
+  defp decode_png_data_url("data:image/png;base64," <> encoded) when is_binary(encoded) do
+    Base.decode64(encoded)
+  end
+
+  defp decode_png_data_url(_), do: {:error, :invalid_data_url}
+
+  @doc """
   Captures screenshots for all supported emulator targets.
   """
   @spec capture_all_targets(project_ref(), opts()) ::

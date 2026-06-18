@@ -97,8 +97,7 @@ defmodule IdeWeb.WasmEmulatorController do
 
     with project when not is_nil(project) <-
            Projects.get_project_by_slug(slug, conn.assigns[:current_user]),
-         {:ok, png} <- decode_png_data_url(image),
-         {:ok, shot} <- Screenshots.store_png(project, emulator_target, png) do
+         {:ok, shot} <- Screenshots.store_png_data_url(project, emulator_target, image) do
       json(conn, %{status: "ok", screenshot: shot})
     else
       nil ->
@@ -112,12 +111,6 @@ defmodule IdeWeb.WasmEmulatorController do
   def screenshot(conn, _params) do
     conn |> put_status(:bad_request) |> json(%{error: "Expected image data URL"})
   end
-
-  defp decode_png_data_url("data:image/png;base64," <> encoded) do
-    Base.decode64(encoded)
-  end
-
-  defp decode_png_data_url(_), do: {:error, :invalid_data_url}
 
   defp build_install_plan(pbw, firmware) do
     sdk_limit = firmware_sdk_limit(firmware)
