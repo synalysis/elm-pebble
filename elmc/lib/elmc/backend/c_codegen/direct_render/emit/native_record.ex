@@ -1198,7 +1198,11 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
 
   defp put_native_record_binding(env, name, field_map, value_expr, field_entries)
        when is_map(field_map) do
-    field_names = field_map |> Map.keys() |> Enum.sort()
+    type =
+      Expr.record_type_for_expr(value_expr, env) ||
+        Expr.record_type_for_field_names(Map.keys(field_map), env)
+
+    field_names = native_record_shape_field_names(type, field_map, env)
 
     field_kinds = infer_field_kinds(field_entries, value_expr, env)
 
@@ -1208,11 +1212,17 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
       |> EnvBindings.put_record_shape(name, field_names)
       |> put_record_field_kinds(name, field_kinds)
 
-    type =
-      Expr.record_type_for_expr(value_expr, env) ||
-        Expr.record_type_for_field_names(field_names, env)
-
     if is_binary(type), do: EnvBindings.put_var_type(env, name, type), else: env
+  end
+
+  defp native_record_shape_field_names(type, field_map, env) when is_map(field_map) do
+    case type && Expr.record_shape_for_type(type, env) do
+      names when is_list(names) ->
+        Enum.filter(names, &Map.has_key?(field_map, &1))
+
+      _ ->
+        field_map |> Map.keys() |> Enum.sort()
+    end
   end
 
   defp put_record_field_kinds(env, _name, kinds) when map_size(kinds) == 0, do: env

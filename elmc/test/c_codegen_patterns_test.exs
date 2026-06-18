@@ -2241,6 +2241,12 @@ defmodule Elmc.CCodegenPatternsTest do
     assert generated_c =~ "if (cleared == 0)"
     refute generated_c =~ "elmc_let_body_helper_Main_clearLines"
 
+    assert generated_c =~
+             ~r/elmc_int_t rec_values_\d+\[4\] = \{ direct_native_record_layout_x_\d+, direct_native_record_layout_y_\d+, direct_native_record_layout_cell_\d+, direct_native_record_layout_gap_\d+ \}/
+
+    refute generated_c =~
+             ~r/elmc_int_t rec_values_\d+\[4\] = \{ direct_native_record_layout_cell_\d+, direct_native_record_layout_gap_\d+, direct_native_record_layout_x_\d+, direct_native_record_layout_y_\d+ \}/
+
     harness_path = Path.join(out_dir, "c/elmtris_host_harness.c")
 
     File.write!(
@@ -2304,6 +2310,28 @@ defmodule Elmc.CCodegenPatternsTest do
         if (n < 4) {
           fprintf(stderr, "expected view commands, got %d\\n", n);
           return 3;
+        }
+
+        if (elmc_pebble_ensure_scene(&app) != 0) {
+          fprintf(stderr, "ensure_scene failed\\n");
+          return 8;
+        }
+
+        ElmcPebbleDrawCmd scene_cmds[256] = {0};
+        int scene_count = elmc_pebble_scene_commands_from(&app, scene_cmds, 256, 0);
+        int piece_rects = 0;
+        for (int i = 0; i < scene_count; i++) {
+          if (scene_cmds[i].kind != ELMC_PEBBLE_DRAW_FILL_RECT) continue;
+          if (scene_cmds[i].p2 <= 0 || scene_cmds[i].p3 <= 0) {
+            fprintf(stderr, "fillRect %d has non-positive size w=%lld h=%lld\\n",
+                    i, (long long)scene_cmds[i].p2, (long long)scene_cmds[i].p3);
+            return 9;
+          }
+          piece_rects++;
+        }
+        if (piece_rects < 4) {
+          fprintf(stderr, "expected active piece fill rects, got %d\\n", piece_rects);
+          return 10;
         }
         ElmcValue *model = elmc_worker_model(&app.worker);
         if (!model || ELMC_RECORD_GET_INDEX_INT(model, MODEL_FIELD_PIECEKIND) <= 0) {

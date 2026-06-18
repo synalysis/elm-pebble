@@ -557,7 +557,19 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
   defp native_record_field_names(env, name, fields) do
     shapes = Map.get(env, :__record_shapes__, %{})
 
-    case Map.get(shapes, name) do
+    field_order =
+      case Map.get(shapes, name) do
+        names when is_list(names) ->
+          names
+
+        _ ->
+          case Map.get(env, :__var_types__, %{}) |> Map.get(name) do
+            type when is_binary(type) -> Expr.record_shape_for_type(type, env)
+            _ -> nil
+          end
+      end
+
+    case field_order do
       names when is_list(names) ->
         Enum.filter(names, &Map.has_key?(fields, &1))
 
