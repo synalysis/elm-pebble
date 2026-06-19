@@ -24,6 +24,17 @@ defmodule ElmEx.Frontend.LetLayoutTest do
     assert expr.op == :let_in
   end
 
+  test "parses multiline let with first binding on let line and additional bindings" do
+    source = """
+    let a = 10 + 20
+        b = a + 30
+        c = b * 2
+    in c
+    """
+
+    assert {:ok, %{op: :let_in, name: "a"}} = GeneratedExpressionParser.parse(source)
+  end
+
   test "validate accepts first binding on let line when in is on its own line" do
     source = """
     let counter = n + 1
@@ -139,6 +150,52 @@ defmodule ElmEx.Frontend.LetLayoutTest do
     """
 
     assert {:ok, %{op: :let_in}} = GeneratedExpressionParser.parse(source)
+  end
+
+  test "parses postfix field access on parenthesized expression" do
+    assert {:ok, %{op: :qualified_call, target: "String.fromInt", args: [arg]}} =
+             GeneratedExpressionParser.parse("String.fromInt (compute 42).y")
+
+    assert %{op: :field_access, field: "y", arg: %{op: :call, name: "compute"}} = arg
+  end
+
+  test "parses parenthesized constructor pattern in cons case branch" do
+    source = """
+    case list of
+        (Wrapped InnerA) :: [] ->
+            "single-wrapped-A"
+        _ ->
+            "other"
+    """
+
+    assert {:ok, %{op: :case, branches: branches}} = GeneratedExpressionParser.parse(source)
+    [%{pattern: %{kind: :constructor, name: "::", arg_pattern: %{kind: :tuple, elements: [head, _tail]}}} | _] =
+      branches
+
+    assert %{kind: :constructor, name: "Wrapped", arg_pattern: %{kind: :constructor, name: "InnerA"}} = head
+  end
+
+  test "parses wildcard tuple destructuring in multiline let" do
+    source = """
+    let
+        msg = update model
+        ( _, paths ) = msg
+    in
+    paths
+    """
+
+    assert {:ok, %{op: :let_in}} = GeneratedExpressionParser.parse(source)
+  end
+
+  test "GeneratedExpressionParser preserves triple-quoted string contents" do
+    source = ~S|D.decodeString (D.field "name" D.string) """{"name": "Alice"}"""|
+
+    assert {:ok,
+            %{
+              op: :qualified_call,
+              target: "D.decodeString",
+              args: [_, %{op: :string_literal, value: ~s|{"name": "Alice"}|}]
+            }} = GeneratedExpressionParser.parse(source)
   end
 
   test "starter watch template Main.elm parses through generated frontend" do

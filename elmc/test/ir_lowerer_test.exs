@@ -1254,4 +1254,153 @@ defmodule Elmc.IRLowererTest do
       }
     end)
   end
+
+  test "let-bound e and pi shadow imported Basics constants" do
+    source = """
+    module ShadowMath exposing (main)
+
+    main : String
+    main =
+        let
+            e = 100
+            pi = 200
+        in
+        String.fromInt e ++ "," ++ String.fromInt pi
+    """
+
+    tmp = System.tmp_dir!() |> Path.join("shadow_math_#{System.unique_integer()}")
+    File.mkdir_p!(Path.join(tmp, "src"))
+    File.write!(Path.join(tmp, "src/ShadowMath.elm"), source)
+
+    File.write!(
+      Path.join(tmp, "elm.json"),
+      Jason.encode!(%{
+        "type" => "application",
+        "source-directories" => ["src"],
+        "elm-version" => "0.19.1",
+        "dependencies" => %{"direct" => %{"elm/core" => "1.0.5"}, "indirect" => %{}},
+        "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
+      })
+    )
+
+    {:ok, project} = Bridge.load_project(tmp)
+    {:ok, ir} = Lowerer.lower_project(project)
+
+    main_decl =
+      ir.modules
+      |> Enum.find(&(&1.name == "ShadowMath"))
+      |> Map.fetch!(:declarations)
+      |> Enum.find(&(&1.kind == :function and &1.name == "main"))
+
+    assert find_from_int_arg(main_decl.expr, "e") == %{op: :var, name: "e"}
+    assert find_from_int_arg(main_decl.expr, "pi") == %{op: :var, name: "pi"}
+
+    on_exit(fn -> File.rm_rf!(tmp) end)
+  end
+
+  test "function parameters shadow imported Basics constants" do
+    source = """
+    module ShadowParam exposing (add5, main)
+
+    add5 : Int -> Int -> Int -> Int -> Int -> Int
+    add5 a b c d e =
+        a + b + c + d + e
+
+    main : Int
+    main =
+        add5 1 2 3 4 5
+    """
+
+    tmp = System.tmp_dir!() |> Path.join("shadow_param_#{System.unique_integer()}")
+    File.mkdir_p!(Path.join(tmp, "src"))
+    File.write!(Path.join(tmp, "src/ShadowParam.elm"), source)
+
+    File.write!(
+      Path.join(tmp, "elm.json"),
+      Jason.encode!(%{
+        "type" => "application",
+        "source-directories" => ["src"],
+        "elm-version" => "0.19.1",
+        "dependencies" => %{"direct" => %{"elm/core" => "1.0.5"}, "indirect" => %{}},
+        "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
+      })
+    )
+
+    {:ok, project} = Bridge.load_project(tmp)
+    {:ok, ir} = Lowerer.lower_project(project)
+
+    add5_decl =
+      ir.modules
+      |> Enum.find(&(&1.name == "ShadowParam"))
+      |> Map.fetch!(:declarations)
+      |> Enum.find(&(&1.kind == :function and &1.name == "add5"))
+
+    refute find_qualified_target(add5_decl.expr, "Basics.e")
+    assert find_var_name(add5_decl.expr, "e") == %{op: :var, name: "e"}
+
+    on_exit(fn -> File.rm_rf!(tmp) end)
+  end
+
+  defp find_qualified_target(%{op: :qualified_call, target: target}, wanted),
+    do: if(target == wanted, do: true, else: nil)
+
+  defp find_qualified_target(%{op: :call, name: "__append__", args: [left, right]}, wanted),
+    do: find_qualified_target(left, wanted) || find_qualified_target(right, wanted)
+
+  defp find_qualified_target(%{op: :let_in, in_expr: in_expr}, wanted),
+    do: find_qualified_target(in_expr, wanted)
+
+  defp find_qualified_target(map, wanted) when is_map(map) do
+    map
+    |> Map.values()
+    |> Enum.find_value(&find_qualified_target(&1, wanted))
+  end
+
+  defp find_qualified_target(list, wanted) when is_list(list) do
+    Enum.find_value(list, &find_qualified_target(&1, wanted))
+  end
+
+  defp find_qualified_target(_expr, _wanted), do: nil
+
+  defp find_var_name(%{op: :qualified_call, target: "Basics.e"}, _name), do: nil
+
+  defp find_var_name(%{op: :var, name: name}, wanted),
+    do: if(name == wanted, do: %{op: :var, name: name}, else: nil)
+
+  defp find_var_name(%{op: :call, name: "__add__", args: args}, name) do
+    Enum.find_value(args, &find_var_name(&1, name))
+  end
+
+  defp find_var_name(%{op: :let_in, in_expr: in_expr}, name), do: find_var_name(in_expr, name)
+
+  defp find_var_name(map, name) when is_map(map) do
+    map |> Map.values() |> Enum.find_value(&find_var_name(&1, name))
+  end
+
+  defp find_var_name(list, name) when is_list(list) do
+    Enum.find_value(list, &find_var_name(&1, name))
+  end
+
+  defp find_var_name(_expr, _name), do: nil
+
+  defp find_from_int_arg(%{op: :qualified_call, target: "String.fromInt", args: [arg]}, name),
+    do: if(match?(%{op: :var, name: ^name}, arg), do: arg, else: nil)
+
+  defp find_from_int_arg(%{op: :call, name: "__append__", args: [left, right]}, name) do
+    find_from_int_arg(left, name) || find_from_int_arg(right, name)
+  end
+
+  defp find_from_int_arg(%{op: :let_in, in_expr: in_expr}, name), do: find_from_int_arg(in_expr, name)
+
+  defp find_from_int_arg(map, name) when is_map(map) do
+    map
+    |> Map.values()
+    |> Enum.find_value(&find_from_int_arg(&1, name))
+  end
+
+  defp find_from_int_arg(list, name) when is_list(list) do
+    Enum.find_value(list, &find_from_int_arg(&1, name))
+  end
+
+  defp find_from_int_arg(_expr, _name), do: nil
 end

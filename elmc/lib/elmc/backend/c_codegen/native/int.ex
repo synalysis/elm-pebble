@@ -29,7 +29,9 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   end
 
   def expr?(%{op: :field_access, arg: arg, field: field}, env),
-    do: RecordFields.int_field?(env, arg, field)
+    do:
+      RecordFields.int_field?(env, arg, field) and
+        not RecordFields.union_tag_field?(env, arg, field)
 
   # Tuple accessors yield boxed Elm values (lists, records, nested tuples). Treating them as
   # native ints would truncate pointers on 32-bit targets.
@@ -223,6 +225,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     with %{args: arg_names, expr: body} when is_list(arg_names) <- Map.get(decl_map, target_key),
          true <- length(arg_names) == length(args),
          false <- MapSet.member?(inline_stack, target_key),
+         false <- decl_self_recursive?(target_key, decl_map),
          false <- fused_native_helper?(target_key, body, decl_map),
          substituted <- Host.substitute_expr(body, Map.new(Enum.zip(arg_names, args))) do
       env =
@@ -243,7 +246,19 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
       match?({:ok, _, _, :rc_native}, Fusion.try_emit(module_name, name, body, decl_map))
   end
 
+  defp decl_self_recursive?({module_name, name}, decl_map) do
+    case Map.get(decl_map, {module_name, name}) do
+      %{expr: expr} when is_map(expr) ->
+        Util.self_recursive_call_in_expr?(expr, module_name, name)
+
+      _ ->
+        false
+    end
+  end
+
   @spec structural_expr?(Types.ir_expr()) :: boolean()
+  def structural_expr?(%{op: :int_literal, union_ctor: ctor}) when is_binary(ctor), do: false
+
   def structural_expr?(%{op: op})
       when op in [:int_literal, :char_literal, :add_const, :sub_const, :add_vars],
       do: true
@@ -607,14 +622,14 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
     case static_nonzero_int_value(right, env) do
       value when is_integer(value) ->
-        {left_code, "(#{left_ref} / #{value})", counter}
+        {left_code, "elmc_int_idiv(#{left_ref}, #{value})", counter}
 
       nil ->
         {right_code, right_ref, counter} = compile_expr(right, env, counter)
 
         case parse_compile_time_int_ref(right_ref) do
           value when is_integer(value) ->
-            {left_code <> right_code, "(#{left_ref} / #{value})", counter}
+            {left_code <> right_code, "elmc_int_idiv(#{left_ref}, #{value})", counter}
 
           nil ->
             next = counter + 1
@@ -625,7 +640,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
               const elmc_int_t #{denom} = #{right_ref};
             """
 
-            {code, "(#{denom} == 0 ? 0 : (#{left_ref} / #{denom}))", next}
+            {code, "elmc_int_idiv(#{left_ref}, #{denom})", next}
         end
     end
   end
@@ -1457,6 +1472,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     with %{args: arg_names, expr: body} when is_list(arg_names) <- Map.get(decl_map, target_key),
          true <- length(arg_names) == length(args),
          false <- MapSet.member?(inline_stack, target_key),
+         false <- decl_self_recursive?(target_key, decl_map),
          false <- fused_native_helper?(target_key, body, decl_map),
          substituted <- Host.substitute_expr(body, Map.new(Enum.zip(arg_names, args))),
          true <- expr?(substituted, env) do

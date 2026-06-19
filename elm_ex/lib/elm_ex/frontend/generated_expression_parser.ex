@@ -88,7 +88,20 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
 
   @spec normalize_multiline_strings(source()) :: source()
   defp normalize_multiline_strings(source) when is_binary(source) do
-    Regex.replace(~r/\"\"\"[\s\S]*?\"\"\"/u, source, "\"\"")
+    Regex.replace(~r/\"\"\"([\s\S]*?)\"\"\"/u, source, fn _full, inner ->
+      "\"#{escape_string_literal(inner)}\""
+    end)
+  end
+
+  @spec escape_string_literal(String.t()) :: String.t()
+  defp escape_string_literal(text) when is_binary(text) do
+    text
+    |> String.replace("\\", "\\\\")
+    |> String.replace("\"", "\\\"")
+    |> String.replace("\r\n", "\\n")
+    |> String.replace("\n", "\\n")
+    |> String.replace("\r", "\\r")
+    |> String.replace("\t", "\\t")
   end
 
   @spec strip_line_comments(source()) :: source()
@@ -160,9 +173,7 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
       nil ->
         source
 
-      %{index: index, binding_lines: binding_lines, in_lines: in_lines} ->
-        bindings = collect_let_bindings(binding_lines)
-
+      %{index: index, bindings: bindings, in_lines: in_lines} ->
         rewritten =
           Enum.take(lines, index) ++
             [
@@ -303,19 +314,52 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
     lines
     |> Enum.with_index()
     |> Enum.find_value(fn {line, index} ->
-      if String.trim(line) == "let" do
-        rest = Enum.drop(lines, index + 1)
-        {binding_lines, in_lines} = split_let_lines(rest, [], 1)
-        bindings = collect_let_bindings(binding_lines)
+      cond do
+        String.trim(line) == "let" ->
+          rest = Enum.drop(lines, index + 1)
+          {binding_lines, in_lines} = split_let_lines(rest, [], 1)
+          bindings = collect_let_bindings(binding_lines)
 
-        if in_lines != [] and length(bindings) > 1 do
-          %{index: index, binding_lines: binding_lines, in_lines: in_lines}
-        else
+          if in_lines != [] and length(bindings) > 1 do
+            %{index: index, bindings: bindings, in_lines: in_lines}
+          else
+            nil
+          end
+
+        Regex.match?(~r/^\s*let\s+[a-z][A-Za-z0-9_']*\s*=\s+.+/u, line) ->
+          rest = Enum.drop(lines, index + 1)
+          first_line_rest = line |> String.trim() |> String.replace_prefix("let ", "")
+          first_line = align_first_let_binding_indent(first_line_rest, rest)
+          {binding_lines, in_lines} = split_let_lines(rest, [first_line], 1)
+          bindings = collect_let_bindings(binding_lines)
+
+          if in_lines != [] and length(bindings) > 1 do
+            %{index: index, bindings: bindings, in_lines: in_lines}
+          else
+            nil
+          end
+
+        true ->
           nil
-        end
-      else
-        nil
       end
+    end)
+  end
+
+  @spec align_first_let_binding_indent(String.t(), lines()) :: String.t()
+  defp align_first_let_binding_indent(first_line_rest, binding_lines) do
+    case infer_let_binding_indent(binding_lines) do
+      indent when is_integer(indent) and indent > 0 ->
+        String.duplicate(" ", indent) <> first_line_rest
+
+      _ ->
+        first_line_rest
+    end
+  end
+
+  @spec infer_let_binding_indent(lines()) :: non_neg_integer() | nil
+  defp infer_let_binding_indent(lines) do
+    Enum.find_value(lines, fn line ->
+      if let_binding_start_line?(line), do: leading_indent_count(line)
     end)
   end
 
@@ -413,13 +457,14 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
   @spec let_binding_start_line?(line()) :: boolean()
   defp let_binding_start_line?(line) when is_binary(line) do
     trimmed = String.trim(line)
+    binding_name = "(?:_|[a-z][A-Za-z0-9_]*)"
 
     Regex.match?(
       ~r/^[a-z][A-Za-z0-9_']*(?:\s+[a-z][A-Za-z0-9_']*|\s+_|\s+\([^\)]*\))*\s*=(?!=)/u,
       trimmed
     ) or
       Regex.match?(
-        ~r/^\(\s*[a-z][A-Za-z0-9_']*(?:\s*,\s*[a-z][A-Za-z0-9_']*){1,2}\s*\)\s*=(?!=)/u,
+        ~r/^\(\s*#{binding_name}(?:\s*,\s*#{binding_name}){1,2}\s*\)\s*=(?!=)/u,
         trimmed
       )
   end
@@ -673,7 +718,7 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
           nil
         end
 
-      ~c"shl" ->
+      token when token in [~c"shl", ~c"shr"] ->
         recover_compose_chain_source(source)
 
       _ ->

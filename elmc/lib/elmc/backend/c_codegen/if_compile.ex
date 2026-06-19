@@ -131,7 +131,20 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
           Types.compile_counter()
         ) :: Types.compile_result()
   defp compile_boxed_cond(cond_expr, then_expr, else_expr, env, counter) do
-    {cond_code, cond_var, counter} = Host.compile_expr(cond_expr, env, counter)
+    cond_env =
+      env
+      |> Map.delete(:__into_out__)
+      |> Map.update(:__declared_outs__, MapSet.new(), fn declared ->
+        out = Map.get(env, :__into_out__)
+
+        if is_binary(out) do
+          MapSet.delete(declared, out)
+        else
+          declared
+        end
+      end)
+
+    {cond_code, cond_var, counter} = Host.compile_expr(cond_expr, cond_env, counter)
     {out, branch_counter, declare_out?} = CaseCompile.result_out_binding(env, counter)
     branch_counter = CaseCompile.advance_counter_past_out(branch_counter, out, declare_out?)
 
@@ -157,7 +170,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
           "} else {",
           format_if_branch_body(else_body),
           "}",
-          "elmc_release(#{cond_var});"
+          if(cond_var != out, do: "elmc_release(#{cond_var});", else: "")
         ],
         "\n"
       )

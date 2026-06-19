@@ -475,6 +475,28 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
       right: %{op: :tuple2, left: layer_id, right: ops}
     }
 
+  def special_value_from_target("List.cons", []),
+    do: %{
+      op: :lambda,
+      args: ["__head", "__tail"],
+      body: %{
+        op: :runtime_call,
+        function: "elmc_list_cons",
+        args: [%{op: :var, name: "__head"}, %{op: :var, name: "__tail"}]
+      }
+    }
+
+  def special_value_from_target("List.cons", [head]),
+    do: %{
+      op: :lambda,
+      args: ["__tail"],
+      body: %{
+        op: :runtime_call,
+        function: "elmc_list_cons",
+        args: [head, %{op: :var, name: "__tail"}]
+      }
+    }
+
   def special_value_from_target("List.cons", [head, tail]),
     do: %{op: :runtime_call, function: "elmc_list_cons", args: [head, tail]}
 
@@ -1172,6 +1194,9 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
   def special_value_from_target("Set.insert", [value, set]),
     do: %{op: :runtime_call, function: "elmc_set_insert", args: [value, set]}
 
+  def special_value_from_target("Set.insert", []),
+    do: runtime_fn_lambda("elmc_set_insert", ["__value", "__set"])
+
   def special_value_from_target("Set.member", [value, set]),
     do: %{op: :runtime_call, function: "elmc_set_member", args: [value, set]}
 
@@ -1271,7 +1296,11 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
   def special_value_from_target("Cmd.batch", [%{op: :list_literal, items: [command]}]),
     do: command
 
-  def special_value_from_target("Cmd.batch", [commands]), do: commands
+  def special_value_from_target("Cmd.batch", [commands]),
+    do: %{op: :runtime_call, function: "elmc_cmd_batch", args: [commands]}
+
+  def special_value_from_target("Cmd.map", [f, cmd]),
+    do: %{op: :runtime_call, function: "elmc_cmd_map", args: [f, cmd]}
 
   def special_value_from_target("Pebble.Cmd.batch", args),
     do: special_value_from_target("Cmd.batch", args)
@@ -1281,8 +1310,34 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
   def special_value_from_target("Platform.Sub.none", _args),
     do: %{op: :int_literal, value: 0}
 
-  def special_value_from_target("Sub.batch", args),
-    do: Subscriptions.subscription_batch_expr(args)
+  def special_value_from_target("Sub.batch", args) do
+    case Subscriptions.subscription_batch_expr(args) do
+      %{op: :list_literal, items: items} = list_expr ->
+        if Enum.any?(items, &match?(%{op: :pebble_sub}, &1)) do
+          list_expr
+        else
+          %{op: :runtime_call, function: "elmc_sub_batch", args: [list_expr]}
+        end
+
+      nil ->
+        case args do
+          [%{op: :list_literal, items: []}] ->
+            %{op: :int_literal, value: 0}
+
+          [%{op: :list_literal, items: [single]}] ->
+            single
+
+          [subs] ->
+            %{op: :runtime_call, function: "elmc_sub_batch", args: [subs]}
+
+          _ ->
+            nil
+        end
+    end
+  end
+
+  def special_value_from_target("Sub.map", [f, sub]),
+    do: %{op: :runtime_call, function: "elmc_sub_map", args: [f, sub]}
 
   def special_value_from_target("Pebble.Platform.application", _args),
     do: %{op: :int_literal, value: 0}
@@ -1820,8 +1875,30 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
   def special_value_from_target("List.member", [value, list]),
     do: %{op: :runtime_call, function: "elmc_list_member", args: [value, list]}
 
+  def special_value_from_target("List.map", [f]),
+    do: %{
+      op: :lambda,
+      args: ["__list"],
+      body: %{
+        op: :runtime_call,
+        function: "elmc_list_map",
+        args: [f, %{op: :var, name: "__list"}]
+      }
+    }
+
   def special_value_from_target("List.map", [f, list]),
     do: %{op: :runtime_call, function: "elmc_list_map", args: [f, list]}
+
+  def special_value_from_target("List.filter", [f]),
+    do: %{
+      op: :lambda,
+      args: ["__list"],
+      body: %{
+        op: :runtime_call,
+        function: "elmc_list_filter",
+        args: [f, %{op: :var, name: "__list"}]
+      }
+    }
 
   def special_value_from_target("List.filter", [f, list]),
     do: %{op: :runtime_call, function: "elmc_list_filter", args: [f, list]}
@@ -1829,8 +1906,61 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
   def special_value_from_target("List.foldl", [f, acc, list]),
     do: %{op: :runtime_call, function: "elmc_list_foldl", args: [f, acc, list]}
 
+  def special_value_from_target("List.foldl", []),
+    do: runtime_fn_lambda("elmc_list_foldl", ["__f", "__acc", "__list"])
+
+  def special_value_from_target("List.foldl", [f, acc]),
+    do: %{
+      op: :lambda,
+      args: ["__list"],
+      body: %{
+        op: :runtime_call,
+        function: "elmc_list_foldl",
+        args: [f, acc, %{op: :var, name: "__list"}]
+      }
+    }
+
+  def special_value_from_target("List.foldl", [f]),
+    do: %{
+      op: :lambda,
+      args: ["__acc", "__list"],
+      body: %{
+        op: :runtime_call,
+        function: "elmc_list_foldl",
+        args: [f, %{op: :var, name: "__acc"}, %{op: :var, name: "__list"}]
+      }
+    }
+
+  def special_value_from_target("Elm.Kernel.List.foldl", []),
+    do: runtime_fn_lambda("elmc_list_foldl", ["__f", "__acc", "__list"])
+
   def special_value_from_target("List.foldr", [f, acc, list]),
     do: %{op: :runtime_call, function: "elmc_list_foldr", args: [f, acc, list]}
+
+  def special_value_from_target("List.foldr", []),
+    do: runtime_fn_lambda("elmc_list_foldr", ["__f", "__acc", "__list"])
+
+  def special_value_from_target("List.foldr", [f, acc]),
+    do: %{
+      op: :lambda,
+      args: ["__list"],
+      body: %{
+        op: :runtime_call,
+        function: "elmc_list_foldr",
+        args: [f, acc, %{op: :var, name: "__list"}]
+      }
+    }
+
+  def special_value_from_target("List.foldr", [f]),
+    do: %{
+      op: :lambda,
+      args: ["__acc", "__list"],
+      body: %{
+        op: :runtime_call,
+        function: "elmc_list_foldr",
+        args: [f, %{op: :var, name: "__acc"}, %{op: :var, name: "__list"}]
+      }
+    }
 
   def special_value_from_target("List.append", [a, b]),
     do: %{op: :runtime_call, function: "elmc_list_append", args: [a, b]}
@@ -1903,6 +2033,12 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
 
   def special_value_from_target("List.map3", [f, a, b, c]),
     do: %{op: :runtime_call, function: "elmc_list_map3", args: [f, a, b, c]}
+
+  def special_value_from_target("List.map4", [f, a, b, c, d]),
+    do: %{op: :runtime_call, function: "elmc_list_map4", args: [f, a, b, c, d]}
+
+  def special_value_from_target("List.map5", [f, a, b, c, d, e]),
+    do: %{op: :runtime_call, function: "elmc_list_map5", args: [f, a, b, c, d, e]}
 
   # --- elm/core: Maybe ---
   def special_value_from_target("Maybe.withDefault", [
@@ -1980,6 +2116,9 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
 
   def special_value_from_target("Task.andThen", [f, task]),
     do: %{op: :runtime_call, function: "elmc_task_and_then", args: [f, task]}
+
+  def special_value_from_target("Task.perform", [to_msg, task]),
+    do: %{op: :runtime_call, function: "elmc_task_perform", args: [to_msg, task]}
 
   # --- elm/core: String (extended) ---
   def special_value_from_target("String.length", [s]),
@@ -2112,6 +2251,12 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
   def special_value_from_target("Tuple.second", [t]),
     do: %{op: :runtime_call, function: "elmc_tuple_second", args: [t]}
 
+  def special_value_from_target("Tuple.first", []),
+    do: runtime_fn_lambda("elmc_tuple_first", ["__t"])
+
+  def special_value_from_target("Tuple.second", []),
+    do: runtime_fn_lambda("elmc_tuple_second", ["__t"])
+
   def special_value_from_target("Tuple.mapFirst", [f, t]),
     do: %{op: :runtime_call, function: "elmc_tuple_map_first", args: [f, t]}
 
@@ -2212,7 +2357,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
 
   # --- elm/core: Char (extended) ---
   def special_value_from_target("Char.fromCode", [code]),
-    do: %{op: :runtime_call, function: "elmc_new_char", args: [code]}
+    do: %{op: :runtime_call, function: "elmc_char_from_code", args: [code]}
 
   def special_value_from_target("Char.isUpper", [ch]),
     do: %{op: :runtime_call, function: "elmc_char_is_upper", args: [ch]}
@@ -2313,6 +2458,9 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
 
   def special_value_from_target("Set.remove", [value, set]),
     do: %{op: :runtime_call, function: "elmc_set_remove", args: [value, set]}
+
+  def special_value_from_target("Set.remove", []),
+    do: runtime_fn_lambda("elmc_set_remove", ["__value", "__set"])
 
   def special_value_from_target("Set.isEmpty", [set]),
     do: %{op: :runtime_call, function: "elmc_set_is_empty", args: [set]}
@@ -2476,20 +2624,38 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
   def special_value_from_target("Json.Encode.string", [s]),
     do: %{op: :runtime_call, function: "elmc_json_encode_string", args: [s]}
 
+  def special_value_from_target("Json.Encode.string", []),
+    do: runtime_fn_lambda("elmc_json_encode_string", ["__s"])
+
   def special_value_from_target("Json.Encode.int", [n]),
     do: %{op: :runtime_call, function: "elmc_json_encode_int", args: [n]}
+
+  def special_value_from_target("Json.Encode.int", []),
+    do: runtime_fn_lambda("elmc_json_encode_int", ["__n"])
 
   def special_value_from_target("Json.Encode.float", [f]),
     do: %{op: :runtime_call, function: "elmc_json_encode_float", args: [f]}
 
+  def special_value_from_target("Json.Encode.float", []),
+    do: runtime_fn_lambda("elmc_json_encode_float", ["__f"])
+
   def special_value_from_target("Json.Encode.bool", [b]),
     do: %{op: :runtime_call, function: "elmc_json_encode_bool", args: [b]}
+
+  def special_value_from_target("Json.Encode.bool", []),
+    do: runtime_fn_lambda("elmc_json_encode_bool", ["__b"])
 
   def special_value_from_target("Json.Encode.list", [f, items]),
     do: %{op: :runtime_call, function: "elmc_json_encode_list", args: [f, items]}
 
+  def special_value_from_target("Json.Encode.list", [_f]),
+    do: runtime_fn_lambda("elmc_json_encode_list", ["__f", "__items"])
+
   def special_value_from_target("Json.Encode.array", [f, items]),
     do: %{op: :runtime_call, function: "elmc_json_encode_array", args: [f, items]}
+
+  def special_value_from_target("Json.Encode.array", [_f]),
+    do: runtime_fn_lambda("elmc_json_encode_array", ["__f", "__items"])
 
   def special_value_from_target("Json.Encode.set", [f, items]),
     do: %{op: :runtime_call, function: "elmc_json_encode_set", args: [f, items]}
@@ -2506,25 +2672,28 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
   def special_value_from_target(target, []) when is_binary(target) do
     cond do
       target in ["True", "Basics.True"] or String.ends_with?(target, ".True") ->
-        %{op: :int_literal, value: 1}
+        %{op: :bool_literal, value: true}
 
       target in ["False", "Basics.False"] or String.ends_with?(target, ".False") ->
-        %{op: :int_literal, value: 0}
+        %{op: :bool_literal, value: false}
 
       target in ["LT", "Basics.LT"] or String.ends_with?(target, ".LT") ->
-        %{op: :int_literal, value: -1}
+        %{op: :order_literal, value: -1}
 
       target in ["EQ", "Basics.EQ"] or String.ends_with?(target, ".EQ") ->
-        %{op: :int_literal, value: 0}
+        %{op: :order_literal, value: 0}
 
       target in ["GT", "Basics.GT"] or String.ends_with?(target, ".GT") ->
-        %{op: :int_literal, value: 1}
+        %{op: :order_literal, value: 1}
 
-      target in ["e", "Basics.e"] or String.ends_with?(target, ".e") ->
+      target in ["Basics.e"] ->
         %{op: :float_literal, value: 2.718281828459045}
 
-      target in ["pi", "Basics.pi"] or String.ends_with?(target, ".pi") ->
+      target in ["Basics.pi"] ->
         %{op: :float_literal, value: 3.141592653589793}
+
+      target == "()" ->
+        %{op: :runtime_call, function: "elmc_unit", args: []}
 
       Map.has_key?(IRQueries.bundled_union_constructor_tags(), target) ->
         %{op: :int_literal, value: Map.fetch!(IRQueries.bundled_union_constructor_tags(), target)}
@@ -2693,6 +2862,18 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
     do: %{op: :int_literal, value: value}
 
   defp health_metric_to_kernel_expr(metric) when is_map(metric), do: metric
+
+  defp runtime_fn_lambda(function, arg_names) when is_binary(function) and is_list(arg_names) do
+    %{
+      op: :lambda,
+      args: arg_names,
+      body: %{
+        op: :runtime_call,
+        function: function,
+        args: Enum.map(arg_names, &%{op: :var, name: &1})
+      }
+    }
+  end
 
   @spec http_request_constructor_expr(String.t(), Types.ir_expr(), Types.ir_expr()) ::
           Types.ir_expr()

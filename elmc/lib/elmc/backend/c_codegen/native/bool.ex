@@ -415,6 +415,8 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   def structural_expr?(_expr), do: false
 
   @spec bool_coercible_branch?(Types.ir_expr(), Types.compile_env()) :: boolean()
+  defp bool_coercible_branch?(%{op: :bool_literal}, _env), do: true
+
   defp bool_coercible_branch?(%{op: :int_literal, value: value}, _env) when value in [0, 1],
     do: true
 
@@ -428,6 +430,9 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
           Types.compile_env(),
           Types.compile_counter()
         ) :: compile_result()
+  defp compile_bool_branch(%{op: :bool_literal, value: value}, _env, counter),
+    do: {"", if(value, do: "true", else: "false"), counter}
+
   defp compile_bool_branch(%{op: :int_literal, value: 1}, _env, counter),
     do: {"", "true", counter}
 
@@ -447,6 +452,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   @spec constructor_bool_literal(String.t()) :: {:ok, boolean()} | :error
   defp constructor_bool_literal(target) when is_binary(target) do
     case Host.special_value_from_target(target, []) do
+      %{op: :bool_literal, value: value} -> {:ok, value}
       %{op: :int_literal, value: 1} -> {:ok, true}
       %{op: :int_literal, value: 0} -> {:ok, false}
       _ -> :error

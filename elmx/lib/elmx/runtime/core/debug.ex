@@ -22,7 +22,7 @@ defmodule Elmx.Runtime.Core.Debug do
     case wire_shape(value) do
       {:ctor, name, []} -> name
       {:ctor, name, args} -> name <> " " <> Enum.map_join(args, " ", &format_value/1)
-      {:list, items} -> "[" <> Enum.map_join(items, ", ", &format_value/1) <> "]"
+      {:list, items} -> "[" <> Enum.map_join(items, ",", &format_value/1) <> "]"
       {:record, fields} -> "{" <> record_fields_to_string(fields) <> "}"
       :plain -> plain_to_string(value)
     end
@@ -43,16 +43,38 @@ defmodule Elmx.Runtime.Core.Debug do
 
   defp record_fields_to_string(fields) do
     fields
+    |> Enum.sort_by(fn {key, _} -> record_field_sort_key(key) end)
     |> Enum.map_join(", ", fn
       {key, val} when is_atom(key) -> Atom.to_string(key) <> " = " <> format_value(val)
       {key, val} when is_binary(key) -> key <> " = " <> format_value(val)
     end)
   end
 
-  defp plain_to_string(value) when is_binary(value), do: value
+  defp record_field_sort_key(key) when is_atom(key), do: Atom.to_string(key)
+  defp record_field_sort_key(key) when is_binary(key), do: key
+
+  defp plain_to_string(value) when is_binary(value), do: "\"" <> escape_elm_string(value) <> "\""
+  defp plain_to_string(value) when is_integer(value) and value in [-1, 0, 1],
+    do: order_name(value)
+
   defp plain_to_string(value) when is_integer(value), do: Integer.to_string(value)
   defp plain_to_string(value) when is_float(value), do: :erlang.float_to_binary(value, [:compact, decimals: 6])
   defp plain_to_string(true), do: "True"
   defp plain_to_string(false), do: "False"
   defp plain_to_string(value), do: inspect(value, limit: :infinity, printable_limit: :infinity)
+
+  defp order_name(-1), do: "LT"
+  defp order_name(0), do: "EQ"
+  defp order_name(1), do: "GT"
+
+  defp escape_elm_string(value) do
+    value
+    |> String.replace("\\", "\\\\")
+    |> String.replace("\"", "\\\"")
+    |> String.replace("\n", "\\n")
+    |> String.replace("\t", "\\t")
+    |> String.replace("\r", "\\r")
+    |> String.replace("\v", "\\v")
+    |> String.replace("\0", "\\0")
+  end
 end

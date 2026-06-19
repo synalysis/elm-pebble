@@ -104,4 +104,60 @@ defmodule Elmc.Backend.CCodegen.UnionMacros do
 
     "ELMC_UNION_#{suffix}"
   end
+
+  @spec debug_ctor_name_fn(IR.t(), keyword()) :: String.t()
+  def debug_ctor_name_fn(%IR{} = ir, opts \\ []) do
+    used = Keyword.get(opts, :used_union_ctors)
+
+    entries =
+      ir.modules
+      |> Enum.flat_map(fn mod ->
+        mod.unions
+        |> Map.values()
+        |> Enum.flat_map(fn union ->
+          union.tags
+          |> Enum.map(fn {name, tag} ->
+            {short_union_ctor_name(name), tag}
+          end)
+        end)
+      end)
+      |> maybe_filter_debug_entries(used)
+
+    unique_by_tag =
+      entries
+      |> Enum.group_by(fn {_name, tag} -> tag end)
+      |> Enum.filter(fn {_tag, group} -> length(group) == 1 end)
+      |> Enum.map(fn {tag, [{name, tag}]} -> {tag, name} end)
+      |> Enum.sort_by(fn {tag, _name} -> tag end)
+
+    cases =
+      unique_by_tag
+      |> Enum.map_join("\n", fn {tag, name} ->
+        "    case #{tag}: return \"#{escape_c_string(name)}\";"
+      end)
+
+    """
+    const char *elmc_debug_union_ctor_name(elmc_int_t tag) {
+      switch (tag) {
+    #{cases}
+        default: return NULL;
+      }
+    }
+    """
+  end
+
+  defp maybe_filter_debug_entries(entries, %MapSet{} = used) do
+    Enum.filter(entries, fn {name, _tag} ->
+      MapSet.member?(used, name) or
+        Enum.any?(used, fn entry ->
+          entry == name or String.ends_with?(entry, "." <> name)
+        end)
+    end)
+  end
+
+  defp maybe_filter_debug_entries(entries, _), do: entries
+
+  defp escape_c_string(name) when is_binary(name) do
+    name |> String.replace("\\", "\\\\") |> String.replace("\"", "\\\"")
+  end
 end

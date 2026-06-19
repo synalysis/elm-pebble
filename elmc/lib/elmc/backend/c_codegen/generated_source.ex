@@ -123,6 +123,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     Process.put(:elmc_union_type_names, IRQueries.union_type_name_set(ir))
 
     entry_module = opts[:entry_module] || "Main"
+    Process.put(:elmc_named_record_literals, opts[:named_record_literals] == true)
 
     msg_names =
       ir
@@ -172,6 +173,8 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
     {union_constructor_defines, union_constructor_macros} =
       UnionMacros.definitions(ir, used_union_ctors: used_union_ctors)
+
+    union_debug_ctor_fn = UnionMacros.debug_ctor_name_fn(ir, used_union_ctors: used_union_ctors)
 
     Process.put(:elmc_union_constructor_macros, union_constructor_macros)
 
@@ -256,6 +259,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     Process.delete(:elmc_animation_resource_slots)
     Process.delete(:elmc_font_resource_slots)
     Process.delete(:elmc_enum_types)
+    Process.delete(:elmc_named_record_literals)
 
     trig_fallback_prelude =
       Emit.generated_trig_fallback_prelude([lambda_defs, function_defs, direct_command_defs])
@@ -277,6 +281,8 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     #endif
 
     #{union_constructor_defines}
+
+    #{union_debug_ctor_fn}
 
     #{record_field_defines}
 
@@ -355,5 +361,5 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
   end
 
   defp lambda_symbol_regex,
-    do: ~r/\belmc_(?:lambda|partial_ref|top_level_ref)_\d+\b/
+    do: ~r/\belmc_(?:lambda|partial_ref|top_level_ref|partial_union)_\d+\b/
 end

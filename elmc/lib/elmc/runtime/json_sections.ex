@@ -634,6 +634,65 @@ defmodule Elmc.Runtime.JsonSections do
       }
     }
 
+    static int elmc_json_buf_append_indent(ElmcJsonBuffer *buf, int indent, int depth) {
+      if (!elmc_json_buf_append_char(buf, '\n')) return 0;
+      for (int i = 0; i < indent * depth; i++) {
+        if (!elmc_json_buf_append_char(buf, ' ')) return 0;
+      }
+      return 1;
+    }
+
+    static int elmc_json_pretty_value_to_buffer(const ElmcJsonValue *value, ElmcJsonBuffer *buf, int indent, int depth) {
+      if (!value) return elmc_json_buf_append_cstr(buf, "null");
+      char number[48];
+      switch (value->kind) {
+        case ELMC_JSON_NULL:
+          return elmc_json_buf_append_cstr(buf, "null");
+        case ELMC_JSON_BOOL:
+          return elmc_json_buf_append_cstr(buf, value->bool_value ? "true" : "false");
+        case ELMC_JSON_INT:
+          snprintf(number, sizeof(number), "%lld", (long long)value->int_value);
+          return elmc_json_buf_append_cstr(buf, number);
+        case ELMC_JSON_FLOAT:
+          snprintf(number, sizeof(number), "%.17g", value->float_value);
+          return elmc_json_buf_append_cstr(buf, number);
+        case ELMC_JSON_STRING:
+          return elmc_json_encode_string_to_buffer(value->string_value, buf);
+        case ELMC_JSON_ARRAY: {
+          if (!elmc_json_buf_append_char(buf, '[')) return 0;
+          ElmcJsonValue *child = value->child;
+          int first = 1;
+          while (child) {
+            if (!first && !elmc_json_buf_append_char(buf, ',')) return 0;
+            if (!elmc_json_buf_append_indent(buf, indent, depth + 1)) return 0;
+            if (!elmc_json_pretty_value_to_buffer(child, buf, indent, depth + 1)) return 0;
+            first = 0;
+            child = child->next;
+          }
+          if (!first && !elmc_json_buf_append_indent(buf, indent, depth)) return 0;
+          return elmc_json_buf_append_char(buf, ']');
+        }
+        case ELMC_JSON_OBJECT: {
+          if (!elmc_json_buf_append_char(buf, '{')) return 0;
+          ElmcJsonValue *child = value->child;
+          int first = 1;
+          while (child) {
+            if (!first && !elmc_json_buf_append_char(buf, ',')) return 0;
+            if (!elmc_json_buf_append_indent(buf, indent, depth + 1)) return 0;
+            if (!elmc_json_encode_string_to_buffer(child->key, buf)) return 0;
+            if (!elmc_json_buf_append_char(buf, ':')) return 0;
+            if (!elmc_json_pretty_value_to_buffer(child, buf, indent, depth + 1)) return 0;
+            first = 0;
+            child = child->next;
+          }
+          if (!first && !elmc_json_buf_append_indent(buf, indent, depth)) return 0;
+          return elmc_json_buf_append_char(buf, '}');
+        }
+        default:
+          return elmc_json_buf_append_cstr(buf, "null");
+      }
+    }
+
     static ElmcValue *elmc_json_value_to_string(const ElmcJsonValue *value) {
       ElmcJsonBuffer buf;
       elmc_json_buf_init(&buf);
@@ -1454,7 +1513,34 @@ defmodule Elmc.Runtime.JsonSections do
     }
 
     ElmcValue *elmc_json_encode_encode(ElmcValue *indent, ElmcValue *value) {
-      (void)indent;
+      int spaces = (int)elmc_as_int(indent);
+      if (spaces <= 0) {
+        if (value && value->tag == ELMC_TAG_STRING && value->payload) {
+          return elmc_retain(value);
+        }
+      }
+      if (value && value->tag == ELMC_TAG_STRING && value->payload) {
+        const char *raw = (const char *)value->payload;
+        const char *parse_error = NULL;
+        ElmcJsonValue *parsed = elmc_json_parse_document(raw, &parse_error);
+        if (parsed) {
+          ElmcJsonBuffer buf;
+          elmc_json_buf_init(&buf);
+          int ok = spaces > 0
+            ? elmc_json_pretty_value_to_buffer(parsed, &buf, spaces, 0)
+            : elmc_json_encode_value_to_buffer(parsed, &buf);
+          elmc_json_free_value(parsed);
+          if (!ok) {
+            elmc_json_buf_free(&buf);
+            {
+              ElmcValue *_elmc_rc_out = NULL;
+              if (elmc_new_string(&_elmc_rc_out, "null") != RC_SUCCESS) return NULL;
+              return _elmc_rc_out;
+            }
+          }
+          return elmc_json_buf_to_string(&buf);
+        }
+      }
       ElmcJsonBuffer buf;
       elmc_json_buf_init(&buf);
       if (!elmc_json_encoded_to_buffer(value, &buf)) {

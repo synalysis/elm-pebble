@@ -10,6 +10,7 @@ defmodule Elmc.RuntimeRCTest do
     assert source =~ "elmc_release_list_spine"
     assert source =~ "elmc_release_list_cell_payload"
     assert source =~ "elmc_release_list_spine(value);"
+    assert source =~ "next->rc > 1"
     refute source =~ "elmc_release(node->tail);"
   end
 

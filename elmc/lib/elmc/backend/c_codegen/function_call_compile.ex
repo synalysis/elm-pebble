@@ -20,6 +20,86 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
   @type closure_signature ::
           {:top_level_ref, String.t(), String.t(), non_neg_integer()}
           | {:partial_ref, String.t(), String.t(), non_neg_integer(), non_neg_integer()}
+          | {:partial_union, String.t(), integer(), non_neg_integer(), non_neg_integer()}
+
+  @spec partial_union_constructor(
+          String.t(),
+          integer(),
+          [Types.ir_expr()],
+          non_neg_integer(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
+  def partial_union_constructor(target, tag, bound_args, full_arity, env, counter) do
+    env = Map.delete(env, :__into_out__)
+    bound_count = length(bound_args)
+    remaining = max(full_arity - bound_count, 0)
+
+    {tag_code, tag_var, counter} =
+      Host.compile_expr(%{op: :int_literal, value: tag}, env, counter)
+
+    {args_code, bound_vars, counter} =
+      Enum.reduce(bound_args, {tag_code, [tag_var], counter}, fn arg_expr,
+                                                                {code_acc, vars_acc, c} ->
+        {code, var, c2} = Host.compile_expr(arg_expr, env, c)
+        {code_acc <> "\n  " <> code, vars_acc ++ [var], c2}
+      end)
+
+    {out, next} = CaseCompile.fresh_var(counter, env)
+
+    signature = {:partial_union, target, tag, full_arity, bound_count}
+    {closure_fn_name, new?} = closure_function_name(signature, "elmc_partial_union")
+
+    if new? do
+      merge_lines =
+        if bound_count > 0 do
+          Enum.map_join(0..(bound_count - 1), "\n    ", fn index ->
+            "all_args[#{index}] = captures[#{index + 1}];"
+          end)
+        else
+          ""
+        end
+
+      arg_lines =
+        if remaining > 0 do
+          Enum.map_join(0..(remaining - 1), "\n    ", fn index ->
+            "all_args[#{bound_count + index}] = (argc > #{index}) ? args[#{index}] : NULL;"
+          end)
+        else
+          ""
+        end
+
+      closure_fn = """
+      static ElmcValue *#{closure_fn_name}(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
+        (void)capture_count;
+        ElmcValue *all_args[#{max(full_arity, 1)}] = {0};
+        #{merge_lines}
+        #{arg_lines}
+        ElmcValue *payload = elmc_build_constructor_payload(all_args, #{full_arity});
+        ElmcValue *tag = captures[0] ? elmc_retain(captures[0]) : elmc_int_zero();
+        ElmcValue *result = elmc_tuple2_take_value(tag, payload);
+        return result;
+      }
+      """
+
+      existing_lambdas = Process.get(:elmc_lambdas, [])
+      Process.put(:elmc_lambdas, [closure_fn | existing_lambdas])
+    end
+
+    capture_list =
+      case bound_vars do
+        [] -> "NULL"
+        vars -> Enum.join(vars, ", ")
+      end
+
+    code = """
+    #{args_code}
+    ElmcValue *cap_#{next}[#{max(bound_count + 1, 1)}] = { #{capture_list} };
+      #{boxed_out_decl(env, out, "elmc_closure_new_take(#{closure_fn_name}, #{remaining}, #{bound_count + 1}, cap_#{next})")}
+    """
+
+    {code, out, next}
+  end
 
   @spec value_source(Types.compile_env(), String.t(), Types.compile_counter()) ::
           Types.value_source_result()
@@ -156,17 +236,65 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
         ) ::
           Types.compile_result()
   def compile(module_name, name, args, env, counter) do
-    arity = EnvBindings.function_arity(env, module_name, name, args)
-    c_name = Util.module_fn_name(module_name, name)
-
-    case ConstantInt.compile_boxed_call(module_name, name, args, env, counter) do
-      {:ok, code, out, c} ->
-        {code, out, c}
+    case port_call_expr(module_name, name, args, env) do
+      {:ok, expr} ->
+        Host.compile_expr(expr, env, counter)
 
       :error ->
-        compile_function_call(module_name, name, args, env, counter, arity, c_name)
+        arity = EnvBindings.function_arity(env, module_name, name, args)
+        c_name = Util.module_fn_name(module_name, name)
+
+        case ConstantInt.compile_boxed_call(module_name, name, args, env, counter) do
+          {:ok, code, out, c} ->
+            {code, out, c}
+
+          :error ->
+            compile_function_call(module_name, name, args, env, counter, arity, c_name)
+        end
     end
   end
+
+  defp port_call_expr(module_name, name, args, env) do
+    with true <- port_signature?(env, module_name, name),
+         {:ok, expr} <- port_call_ir(module_name, name, args) do
+      {:ok, expr}
+    else
+      _ -> :error
+    end
+  end
+
+  defp port_signature?(env, module_name, name) do
+    case Map.get(Map.get(env, :__program_decls__, %{}), {module_name, name}) do
+      decl when is_map(decl) -> Map.get(decl, :expr) == nil
+      _ -> false
+    end
+  end
+
+  defp port_call_ir(module_name, "outgoing", [payload]) do
+    {:ok,
+     %{
+       op: :runtime_call,
+       function: "elmc_port_outgoing",
+       args: [
+         %{op: :string_literal, value: "#{module_name}.outgoing"},
+         payload
+       ]
+     }}
+  end
+
+  defp port_call_ir(module_name, "incoming", [callback]) do
+    {:ok,
+     %{
+       op: :runtime_call,
+       function: "elmc_port_incoming_sub",
+       args: [
+         %{op: :string_literal, value: "#{module_name}.incoming"},
+         callback
+       ]
+     }}
+  end
+
+  defp port_call_ir(_module_name, _name, _args), do: :error
 
   defp compile_function_call(module_name, name, args, env, counter, arity, c_name) do
     if length(args) == arity and NativeFunctionCall.call?({module_name, name}, env) do
@@ -217,6 +345,16 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     next = counter + 1
     var = "tmp_#{next}"
 
+    case EnvBindings.native_string_binding(env, name) do
+      native_ref when is_binary(native_ref) ->
+        {RcRuntimeEmit.assign_call(env, var, "elmc_new_string_take", native_ref) <> "\n", var, next}
+
+      nil ->
+        compile_var_native_or_boxed(name, env, counter, var, next)
+    end
+  end
+
+  defp compile_var_native_or_boxed(name, env, counter, var, next) do
     case {EnvBindings.native_int_binding(env, name), EnvBindings.native_bool_binding(env, name),
           EnvBindings.native_float_binding(env, name)} do
       {native_ref, _, _} when is_binary(native_ref) ->

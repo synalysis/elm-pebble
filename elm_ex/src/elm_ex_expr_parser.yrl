@@ -1,5 +1,5 @@
 Nonterminals let_expr let_bindings let_binding if_expr case_expr case_after_of case_branches case_branch pattern pattern_arg ctor_pattern_args
-             lambda_expr lambda_args lambda_arg pipe_right_expr plain_pipe_expr apply_left_expr bool_or_expr bool_and_expr compare_expr compare_op cons_expr append_expr add_expr mul_expr pow_expr app_expr atom compose_name list_expr
+             lambda_expr lambda_args lambda_arg pipe_right_expr plain_pipe_expr apply_left_expr bool_or_expr bool_and_expr compare_expr compare_op cons_expr append_expr add_expr mul_expr pow_expr app_expr atom list_expr
              list_items tuple_items record_expr record_fields record_field pattern_record_fields pattern_list_items.
 Terminals lparen rparen lbracket rbracket lbrace rbrace comma semicolon cons append plus minus shl shr pipe_right pipe apply_left eq eqeq gt lt gte lte neq bslash arrow
          times pow int_div divide pipe_dot pipe_eq
@@ -20,6 +20,8 @@ plain_pipe_expr -> plain_pipe_expr pipe_dot apply_left_expr : build_pipe_dot('$1
 plain_pipe_expr -> plain_pipe_expr pipe_eq apply_left_expr : build_pipe_eq('$1', '$3').
 plain_pipe_expr -> apply_left_expr : '$1'.
 
+apply_left_expr -> apply_left_expr shr apply_left_expr : build_compose_right('$1', '$3').
+apply_left_expr -> apply_left_expr shl apply_left_expr : build_compose_left('$1', '$3').
 apply_left_expr -> bool_or_expr apply_left pipe_right_expr : build_apply_left('$1', '$3').
 apply_left_expr -> bool_or_expr : '$1'.
 
@@ -40,6 +42,18 @@ let_bindings -> let_binding : ['$1'].
 
 let_binding -> lower_qid eq pipe_right_expr : {token_value('$1'), '$3'}.
 let_binding -> lower_qid lambda_args eq pipe_right_expr : {token_value('$1'), build_lambda_args('$2', '$4')}.
+let_binding -> lparen wildcard comma lower_qid rparen eq pipe_right_expr :
+  {pattern_bind, build_pattern_tuple(#{kind => wildcard}, build_pattern_var(token_value('$4'))), '$7'}.
+let_binding -> lparen lower_qid comma wildcard rparen eq pipe_right_expr :
+  {pattern_bind, build_pattern_tuple(build_pattern_var(token_value('$2')), #{kind => wildcard}), '$7'}.
+let_binding -> lparen wildcard comma wildcard rparen eq pipe_right_expr :
+  {pattern_bind, build_pattern_tuple(#{kind => wildcard}, #{kind => wildcard}), '$7'}.
+let_binding -> lparen lower_qid comma wildcard comma wildcard rparen eq pipe_right_expr :
+  {pattern_bind, build_pattern_tuple(build_pattern_var(token_value('$2')), build_pattern_tuple(#{kind => wildcard}, #{kind => wildcard})), '$9'}.
+let_binding -> lparen wildcard comma lower_qid comma wildcard rparen eq pipe_right_expr :
+  {pattern_bind, build_pattern_tuple(#{kind => wildcard}, build_pattern_tuple(build_pattern_var(token_value('$4')), #{kind => wildcard})), '$9'}.
+let_binding -> lparen wildcard comma wildcard comma lower_qid rparen eq pipe_right_expr :
+  {pattern_bind, build_pattern_tuple(#{kind => wildcard}, build_pattern_tuple(#{kind => wildcard}, build_pattern_var(token_value('$6')))), '$9'}.
 let_binding -> lparen pattern rparen eq pipe_right_expr : {pattern_bind, '$2', '$5'}.
 let_binding -> lparen lower_qid comma lower_qid rparen eq pipe_right_expr :
   {tuple2_bind, token_value('$2'), token_value('$4'), '$7'}.
@@ -83,11 +97,14 @@ pattern -> upper_qid cons pattern :
   build_pattern_cons(build_pattern_ctor(token_value('$1'), none), '$3').
 pattern -> string_lit cons pattern :
   build_pattern_cons(#{kind => string, value => parse_string(token_value('$1'))}, '$3').
+pattern -> char_lit cons pattern :
+  build_pattern_cons(#{kind => int, value => parse_char(token_value('$1'))}, '$3').
 pattern -> lparen pattern comma pattern rparen cons pattern :
   build_pattern_cons(build_pattern_tuple('$2', '$4'), '$7').
 pattern -> lower_qid cons pattern : build_pattern_cons(build_pattern_var(token_value('$1')), '$3').
 pattern -> wildcard cons pattern : build_pattern_cons(#{kind => wildcard}, '$3').
 pattern -> lparen pattern rparen as_kw lower_qid : build_pattern_alias('$2', token_value('$5')).
+pattern -> lparen pattern rparen cons pattern : build_pattern_cons('$2', '$5').
 pattern -> lparen pattern rparen : '$2'.
 pattern -> lparen pattern comma pattern comma pattern rparen :
   build_pattern_tuple('$2', build_pattern_tuple('$4', '$6')).
@@ -125,6 +142,12 @@ lambda_arg -> lparen wildcard comma lower_qid rparen : {tuple2_wild_left, token_
 lambda_arg -> lparen lower_qid comma lower_qid rparen : {tuple2, token_value('$2'), token_value('$4')}.
 lambda_arg -> lparen lower_qid comma lower_qid comma lower_qid rparen :
   {tuple3, token_value('$2'), token_value('$4'), token_value('$6')}.
+lambda_arg -> lparen wildcard comma lower_qid comma lower_qid rparen :
+  {tuple3_wild_left, token_value('$4'), token_value('$6')}.
+lambda_arg -> lparen lower_qid comma wildcard comma lower_qid rparen :
+  {tuple3_wild_middle, token_value('$2'), token_value('$6')}.
+lambda_arg -> lparen lower_qid comma lower_qid comma wildcard rparen :
+  {tuple3_wild_right, token_value('$2'), token_value('$4')}.
 lambda_arg -> lparen pattern rparen : {pattern, '$2'}.
 
 compare_expr -> cons_expr compare_op cons_expr : build_compare('$1', '$2', '$3').
@@ -158,6 +181,8 @@ pow_expr -> app_expr : '$1'.
 app_expr -> app_expr atom : build_app('$1', ['$2']).
 app_expr -> atom : '$1'.
 
+atom -> lparen pipe_right_expr rparen field_accessor :
+  build_postfix_field_access('$2', token_value('$4')).
 atom -> int_lit : #{op => int_literal, value => token_value('$1')}.
 atom -> float_lit : #{op => float_literal, value => token_value('$1')}.
 atom -> string_lit : #{op => string_literal, value => parse_string(token_value('$1'))}.
@@ -182,11 +207,9 @@ atom -> lparen apply_left rparen : build_operator_section(apply_left).
 atom -> lparen pipe_dot rparen : build_operator_section(pipe_dot).
 atom -> lparen pipe_eq rparen : build_operator_section(pipe_eq).
 atom -> lparen rparen : #{op => constructor_ref, target => <<"()">>}.
-atom -> lparen compose_name shl compose_name rparen : build_compose_left('$2', '$4').
-atom -> lparen compose_name shr compose_name rparen : build_compose_right('$2', '$4').
+atom -> lparen apply_left_expr shl apply_left_expr rparen : build_compose_left('$2', '$4').
+atom -> lparen apply_left_expr shr apply_left_expr rparen : build_compose_right('$2', '$4').
 atom -> lparen pipe_right_expr rparen : '$2'.
-compose_name -> lower_qid : token_value('$1').
-compose_name -> upper_qid : token_value('$1').
 
 atom -> lparen tuple_items rparen : build_tuple('$2').
 atom -> list_expr : '$1'.
@@ -280,14 +303,14 @@ build_app(Base, Args) ->
       #{op => field_call, arg => Arg, field => Field, args => ExistingArgs ++ Args};
     #{op := compose_left, f := F, g := G} ->
       [Arg | Rest] = Args,
-      First = build_named_call(F, [build_named_call(G, [Arg])]),
+      First = build_expr_apply(F, build_expr_apply(G, Arg)),
       case Rest of
         [] -> First;
         _ -> build_app(First, Rest)
       end;
     #{op := compose_right, f := F, g := G} ->
       [Arg | Rest] = Args,
-      First = build_named_call(G, [build_named_call(F, [Arg])]),
+      First = build_expr_apply(G, build_expr_apply(F, Arg)),
       case Rest of
         [] -> First;
         _ -> build_app(First, Rest)
@@ -539,6 +562,39 @@ normalize_lambda_args([{tuple3, Left, Middle, Right} | Rest], Counter, Acc) ->
     Counter + 1,
     [{tuple3, Placeholder, Left, Middle, Right} | Acc]
   );
+normalize_lambda_args([{tuple3_wild_left, Middle, Right} | Rest], Counter, Acc) ->
+  Placeholder =
+    case Counter of
+      1 -> <<"tupleArg">>;
+      _ -> list_to_binary("tupleArg" ++ integer_to_list(Counter))
+    end,
+  normalize_lambda_args(
+    Rest,
+    Counter + 1,
+    [{tuple3_wild_left, Placeholder, Middle, Right} | Acc]
+  );
+normalize_lambda_args([{tuple3_wild_middle, Left, Right} | Rest], Counter, Acc) ->
+  Placeholder =
+    case Counter of
+      1 -> <<"tupleArg">>;
+      _ -> list_to_binary("tupleArg" ++ integer_to_list(Counter))
+    end,
+  normalize_lambda_args(
+    Rest,
+    Counter + 1,
+    [{tuple3_wild_middle, Placeholder, Left, Right} | Acc]
+  );
+normalize_lambda_args([{tuple3_wild_right, Left, Middle} | Rest], Counter, Acc) ->
+  Placeholder =
+    case Counter of
+      1 -> <<"tupleArg">>;
+      _ -> list_to_binary("tupleArg" ++ integer_to_list(Counter))
+    end,
+  normalize_lambda_args(
+    Rest,
+    Counter + 1,
+    [{tuple3_wild_right, Placeholder, Left, Middle} | Acc]
+  );
 normalize_lambda_args([Arg | Rest], Counter, Acc) ->
   normalize_lambda_args(Rest, Counter + 1, [{simple, Arg} | Acc]).
 
@@ -583,6 +639,30 @@ build_lambda_spec({tuple3, Placeholder, Left, Middle, Right}, Body) ->
       FirstExpr,
       build_let(Middle, MiddleExpr, build_let(Right, RightExpr, Body))
     ),
+  build_lambda(Placeholder, ExpandedBody);
+build_lambda_spec({tuple3_wild_left, Placeholder, Middle, Right}, Body) ->
+  PlaceholderVar = #{op => var, name => Placeholder},
+  TailExpr = #{op => qualified_call, target => <<"Tuple.second">>, args => [PlaceholderVar]},
+  MiddleExpr = #{op => qualified_call, target => <<"Tuple.first">>, args => [TailExpr]},
+  RightExpr = #{op => qualified_call, target => <<"Tuple.second">>, args => [TailExpr]},
+  ExpandedBody =
+    build_let(Middle, MiddleExpr, build_let(Right, RightExpr, Body)),
+  build_lambda(Placeholder, ExpandedBody);
+build_lambda_spec({tuple3_wild_middle, Placeholder, Left, Right}, Body) ->
+  PlaceholderVar = #{op => var, name => Placeholder},
+  FirstExpr = #{op => qualified_call, target => <<"Tuple.first">>, args => [PlaceholderVar]},
+  TailExpr = #{op => qualified_call, target => <<"Tuple.second">>, args => [PlaceholderVar]},
+  RightExpr = #{op => qualified_call, target => <<"Tuple.second">>, args => [TailExpr]},
+  ExpandedBody =
+    build_let(Left, FirstExpr, build_let(Right, RightExpr, Body)),
+  build_lambda(Placeholder, ExpandedBody);
+build_lambda_spec({tuple3_wild_right, Placeholder, Left, Middle}, Body) ->
+  PlaceholderVar = #{op => var, name => Placeholder},
+  FirstExpr = #{op => qualified_call, target => <<"Tuple.first">>, args => [PlaceholderVar]},
+  TailExpr = #{op => qualified_call, target => <<"Tuple.second">>, args => [PlaceholderVar]},
+  MiddleExpr = #{op => qualified_call, target => <<"Tuple.first">>, args => [TailExpr]},
+  ExpandedBody =
+    build_let(Left, FirstExpr, build_let(Middle, MiddleExpr, Body)),
   build_lambda(Placeholder, ExpandedBody).
 
 build_record_pattern_lets([], _Placeholder, Body) ->
@@ -612,6 +692,11 @@ build_upper_qid(Text) ->
     true -> #{op => qualified_ref, target => Text};
     false -> #{op => constructor_ref, target => Text}
   end.
+
+build_postfix_field_access(Expr, <<$., Field/binary>>) ->
+  #{op => field_access, arg => Expr, field => Field};
+build_postfix_field_access(Expr, Text) ->
+  #{op => field_access, arg => Expr, field => Text}.
 
 build_field_accessor(<<$., Rest/binary>>) ->
   Arg = <<"fieldAccessorArg">>,
@@ -674,6 +759,26 @@ build_compose_left(F, G) ->
 build_compose_right(F, G) ->
   #{op => compose_right, f => F, g => G}.
 
+build_expr_apply(Expr, Arg) when is_map(Expr) ->
+  case Expr of
+    #{op := qualified_call, target := Target, args := ExistingArgs} ->
+      #{op => qualified_call, target => Target, args => ExistingArgs ++ [Arg]};
+    #{op := call, name := Name, args := ExistingArgs} ->
+      #{op => call, name => Name, args => ExistingArgs ++ [Arg]};
+    #{op := constructor_call, target := Target, args := ExistingArgs} ->
+      #{op => constructor_call, target => Target, args => ExistingArgs ++ [Arg]};
+    #{op := var, name := Name} ->
+      #{op => call, name => Name, args => [Arg]};
+    #{op := qualified_ref, target := Target} ->
+      #{op => qualified_call, target => Target, args => [Arg]};
+    #{op := constructor_ref, target := Target} ->
+      #{op => constructor_call, target => Target, args => [Arg]};
+    _ ->
+      #{op => call, name => <<"__apply__">>, args => [Expr, Arg]}
+  end;
+build_expr_apply(Name, Arg) when is_binary(Name) ->
+  build_named_call(Name, [Arg]).
+
 build_named_call(Name, Args) ->
   case binary:match(Name, <<".">>) of
     nomatch -> #{op => call, name => Name, args => Args};
@@ -686,8 +791,8 @@ parse_string(Text) ->
 
 parse_char(Text) ->
   Inner = binary:part(Text, 1, byte_size(Text) - 2),
-  case binary_to_list(unescape(Inner)) of
-    [Code] -> Code;
+  case unicode:characters_to_list(unescape(Inner)) of
+    [Code] when is_integer(Code) -> Code;
     _ -> 0
   end.
 

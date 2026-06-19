@@ -50,20 +50,26 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
           Types.compile_counter()
         ) ::
           Types.compile_result_or_nil()
-  def call("e", [], env, counter),
-    do: Host.compile_expr(%{op: :float_literal, value: 2.718281828459045}, env, counter)
+  def call("e", [], env, counter) do
+    if ambient_math_constant_resolvable?(env, "e") do
+      Host.compile_expr(%{op: :float_literal, value: 2.718281828459045}, env, counter)
+    end
+  end
 
-  def call("pi", [], env, counter),
-    do: Host.compile_expr(%{op: :float_literal, value: 3.141592653589793}, env, counter)
+  def call("pi", [], env, counter) do
+    if ambient_math_constant_resolvable?(env, "pi") do
+      Host.compile_expr(%{op: :float_literal, value: 3.141592653589793}, env, counter)
+    end
+  end
 
   def call("LT", [], env, counter),
-    do: Host.compile_expr(%{op: :int_literal, value: -1}, env, counter)
+    do: Host.compile_expr(%{op: :order_literal, value: -1}, env, counter)
 
   def call("EQ", [], env, counter),
-    do: Host.compile_expr(%{op: :int_literal, value: 0}, env, counter)
+    do: Host.compile_expr(%{op: :order_literal, value: 0}, env, counter)
 
   def call("GT", [], env, counter),
-    do: Host.compile_expr(%{op: :int_literal, value: 1}, env, counter)
+    do: Host.compile_expr(%{op: :order_literal, value: 1}, env, counter)
 
   def call("__add__", [left, right], env, counter),
     do: int_binop(left, right, "+", env, counter)
@@ -109,7 +115,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
   def call("__append__", [left, right], env, counter),
     do:
       Host.compile_expr(
-        Elmc.Backend.CCodegen.RuntimeCall.flatten_append_ir(left, right),
+        Elmc.Backend.CCodegen.RuntimeCall.flatten_append_ir(left, right, env),
         env,
         counter
       )
@@ -578,7 +584,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
           code =
             """
             #{left_code}
-              #{RcRuntimeEmit.assign_call(env, out, "elmc_new_int", "#{left_var} / #{value}")}
+              #{RcRuntimeEmit.assign_call(env, out, "elmc_new_int", "elmc_int_idiv(#{left_var}, #{value})")}
             """
 
           {code, out, next}
@@ -593,7 +599,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
             #{left_code}
               #{right_code}
               const elmc_int_t __den_#{next} = #{right_var};
-              #{RcRuntimeEmit.assign_call(env, out, "elmc_new_int", "__den_#{next} == 0 ? 0 : (#{left_var} / __den_#{next})")}
+              #{RcRuntimeEmit.assign_call(env, out, "elmc_new_int", "elmc_int_idiv(#{left_var}, __den_#{next})")}
             """
 
           {code, out, next}
@@ -834,5 +840,12 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
     else
       {code, var, counter}
     end
+  end
+
+  defp ambient_math_constant_resolvable?(env, name) when is_binary(name) do
+    not Map.has_key?(env, name) and
+      is_nil(EnvBindings.lookup_binding(env, name)) and
+      is_nil(EnvBindings.native_int_binding(env, name)) and
+      is_nil(EnvBindings.native_float_binding(env, name))
   end
 end

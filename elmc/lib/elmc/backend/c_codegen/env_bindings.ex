@@ -211,6 +211,10 @@ defmodule Elmc.Backend.CCodegen.EnvBindings do
       is_binary(ref = native_float_binding(env, var_name)) ->
         "elmc_new_float_take(#{ref})"
 
+      match?({:forward_ref_slot, _}, Map.get(env, var_name)) ->
+        {:forward_ref_slot, slot} = Map.get(env, var_name)
+        "elmc_forward_ref_get(#{slot})"
+
       match?({:forward_ref, _}, Map.get(env, var_name)) ->
         {:forward_ref, ref} = Map.get(env, var_name)
         "elmc_forward_ref_capture(#{ref})"

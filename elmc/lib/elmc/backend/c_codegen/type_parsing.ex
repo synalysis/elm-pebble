@@ -29,6 +29,17 @@ defmodule Elmc.Backend.CCodegen.TypeParsing do
 
   def normalize_type_name(_type), do: ""
 
+  @spec set_type?(String.t()) :: boolean()
+  def set_type?(type) when is_binary(type) do
+    type = normalize_type_name(type)
+
+    String.starts_with?(type, "Set ") or
+      String.starts_with?(type, "Set.") or
+      type == "Set"
+  end
+
+  def set_type?(_type), do: false
+
   @spec enum_type?(String.t()) :: boolean()
   def enum_type?(type) when is_binary(type) do
     Process.get(:elmc_enum_types, MapSet.new())

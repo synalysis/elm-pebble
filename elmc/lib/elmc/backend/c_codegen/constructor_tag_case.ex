@@ -223,7 +223,13 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
   @spec compile_subject_ref(Types.case_subject(), Types.compile_env(), Types.compile_counter()) ::
           {String.t(), Types.subject_ref(), Types.compile_counter()}
   def compile_subject_ref(subject, env, counter) when is_binary(subject) do
-    {"", Map.get(env, subject, subject), counter}
+    case Map.get(env, subject) do
+      ref when is_binary(ref) ->
+        {"", ref, counter}
+
+      _ ->
+        Host.compile_expr(%{op: :var, name: subject}, env, counter)
+    end
   end
 
   def compile_subject_ref(%{op: :var, name: name}, env, counter) when is_binary(name) do

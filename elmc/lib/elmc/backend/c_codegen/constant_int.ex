@@ -14,6 +14,8 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
   @int_binops ~w(__add__ __sub__ __mul__ __idiv__)
 
   @spec literal_value(Types.ir_expr(), Types.compile_env()) :: {:ok, integer()} | :error
+  def literal_value(%{op: :int_literal, union_ctor: ctor}, _env) when is_binary(ctor), do: :error
+
   def literal_value(%{op: :int_literal, value: value}, _env) when is_integer(value),
     do: {:ok, value}
 
@@ -283,7 +285,7 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
   defp apply_binop("__sub__", left, right), do: left - right
   defp apply_binop("__mul__", left, right), do: left * right
   defp apply_binop("__idiv__", _left, 0), do: 0
-  defp apply_binop("__idiv__", left, right), do: div(left, right)
+  defp apply_binop("__idiv__", left, right), do: Integer.floor_div(left, right)
 
   defp boxed_out_slot(env, counter) do
     case Map.get(env, :__into_out__) do

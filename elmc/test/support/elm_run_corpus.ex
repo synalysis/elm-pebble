@@ -265,7 +265,8 @@ defmodule Elmc.Test.ElmRunCorpus do
                Elmc.compile(project_dir, %{
                  out_dir: out_dir,
                  strip_dead_code: false,
-                 entry_module: entry_module
+                 entry_module: entry_module,
+                 named_record_literals: true
                }),
              {:ok, stdout} <- run_elmc_harness(out_dir, entry_module) do
           {:ok, normalize_output(stdout)}
@@ -404,12 +405,34 @@ defmodule Elmc.Test.ElmRunCorpus do
 
     json_path = Path.join(out_dir, "elm_run_corpus_execution_scorecard.json")
     md_path = Path.join(out_dir, "elm_run_corpus_execution_scorecard.md")
+    safe_scorecard = json_safe_execution_scorecard(scorecard)
 
-    File.write!(json_path, Jason.encode!(scorecard, pretty: true) <> "\n")
+    File.write!(json_path, Jason.encode!(safe_scorecard, pretty: true, escape: :unicode) <> "\n")
     File.write!(md_path, render_execution_scorecard_md(scorecard))
 
     json_path
   end
+
+  defp json_safe_execution_scorecard(%{"results" => results} = scorecard) do
+    Map.put(
+      scorecard,
+      "results",
+      Enum.map(results, fn row ->
+        row
+        |> Map.update("actual", nil, &json_safe_text_field/1)
+        |> Map.update("expected", nil, &json_safe_text_field/1)
+        |> Map.update("detail", nil, &json_safe_text_field/1)
+      end)
+    )
+  end
+
+  defp json_safe_execution_scorecard(scorecard), do: scorecard
+
+  defp json_safe_text_field(value) when is_binary(value) do
+    if String.valid?(value), do: value, else: "base64:" <> Base.encode64(value)
+  end
+
+  defp json_safe_text_field(value), do: value
 
   @spec render_execution_scorecard_md(map()) :: String.t()
   def render_execution_scorecard_md(scorecard) do
@@ -467,7 +490,7 @@ defmodule Elmc.Test.ElmRunCorpus do
       {:error, :cc_not_available}
     else
       harness_path = Path.join(out_dir, "c/corpus_execution_harness.c")
-      binary_path = Path.join(out_dir, "corpus_execution_harness")
+      binary_path = Path.join(out_dir, "corpus_execution_harness") |> Path.expand()
 
       File.write!(harness_path, elmc_execution_harness_source(entry_module))
 
@@ -484,6 +507,7 @@ defmodule Elmc.Test.ElmRunCorpus do
             Path.join(out_dir, "runtime/elmc_runtime.c"),
             Path.join(out_dir, "ports/elmc_ports.c"),
             harness_path,
+            "-lm",
             "-o",
             binary_path
           ],
@@ -493,14 +517,14 @@ defmodule Elmc.Test.ElmRunCorpus do
         if compile_code != 0 or not File.exists?(binary_path) do
           {:error, {:harness_compile, compile_out}}
         else
-        {run_out, run_code} = System.cmd(binary_path, [], stderr_to_stdout: true)
+          {run_out, run_code} = System.cmd(binary_path, [], stderr_to_stdout: true)
 
-        if run_code == 0 do
-          {:ok, run_out}
-        else
-          {:error, {:harness_run, run_code, run_out}}
+          if run_code == 0 do
+            {:ok, run_out}
+          else
+            {:error, {:harness_run, run_code, run_out}}
+          end
         end
-      end
     end
   end
 

@@ -22,7 +22,12 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
 
-  @c_reserved_binding_names ~w(args argc out_cmds max_cmds skip count emitted)
+  @c_reserved_binding_names ~w(
+    args argc out_cmds max_cmds skip count emitted
+    auto break case char const continue default do double else enum extern float for goto
+    if inline int long register restrict return short signed sizeof static struct switch
+    typedef union unsigned void volatile while _Bool _Complex _Imaginary
+  )
 
   @spec emit_function_def(
           Types.function_declaration(),
@@ -1065,31 +1070,49 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
   defp compile_tail_recursive_native(decl, module_name, env, return_kind, arg_kinds) do
     arg_names = decl.args || []
+    arg_types = if is_binary(decl.type), do: Host.function_arg_types(decl.type), else: []
 
     with true <- arg_names != [],
-         true <- Enum.all?(arg_kinds, &(&1 in [:native_int, :native_bool])),
+         true <- tail_recursive_arg_kinds?(arg_kinds, arg_types),
          {:if_tail, cond_expr, base_expr, recursive_args, recurse_on_truthy?} <-
-           tail_recursive_if(decl.expr, decl.name),
+           tail_recursive_if(decl.expr, module_name, decl.name),
          true <- length(recursive_args) == length(arg_names) do
       c_arg_bindings = c_arg_bindings(arg_names)
 
       loop_bindings =
         c_arg_bindings
+        |> Enum.with_index()
         |> Enum.zip(arg_kinds)
-        |> Enum.map_join("\n  ", fn {{_arg, c_arg, _index}, kind} ->
-          "elmc_int_t #{loop_arg_name(c_arg)} = #{c_arg}; /* #{kind} */"
+        |> Enum.map_join("\n  ", fn {{{_arg, c_arg, _index}, index}, kind} ->
+          loop = loop_arg_name(c_arg)
+
+          case {kind, Enum.at(arg_types, index) |> Host.normalize_type_name()} do
+            {:native_int, _} -> "elmc_int_t #{loop} = #{c_arg};"
+            {:boxed, "Int"} -> "elmc_int_t #{loop} = elmc_as_int(#{c_arg});"
+            {:native_bool, _} -> "bool #{loop} = #{c_arg};"
+            _ -> "elmc_int_t #{loop} = #{c_arg};"
+          end
         end)
 
       loop_env =
         c_arg_bindings
+        |> Enum.with_index()
         |> Enum.zip(arg_kinds)
-        |> Enum.reduce(env, fn {{source_arg, c_arg, _index}, kind}, acc ->
-          case kind do
-            :native_int ->
-              EnvBindings.put_native_int_binding(acc, source_arg, loop_arg_name(c_arg))
+        |> Enum.reduce(env, fn {{{source_arg, c_arg, _index}, index}, kind}, acc ->
+          loop = loop_arg_name(c_arg)
 
-            :native_bool ->
-              EnvBindings.put_native_bool_binding(acc, source_arg, loop_arg_name(c_arg))
+          case {kind, Enum.at(arg_types, index) |> Host.normalize_type_name()} do
+            {:native_int, _} ->
+              EnvBindings.put_native_int_binding(acc, source_arg, loop)
+
+            {:boxed, "Int"} ->
+              EnvBindings.put_native_int_binding(acc, source_arg, loop)
+
+            {:native_bool, _} ->
+              EnvBindings.put_native_bool_binding(acc, source_arg, loop)
+
+            _ ->
+              acc
           end
         end)
 
@@ -1102,8 +1125,10 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         |> Enum.zip(arg_kinds)
         |> Enum.reduce({"", []}, fn {{arg_expr, {_source_arg, c_arg, _index}}, kind},
                                     {code_acc, refs_acc} ->
+          compile_kind = if kind == :boxed, do: :native_int, else: kind
+
           {arg_code, arg_ref, _} =
-            compile_scalar_native_expr(arg_expr, loop_env, kind, length(refs_acc))
+            compile_scalar_native_expr(arg_expr, loop_env, compile_kind, length(refs_acc))
 
           next_ref = "#{loop_arg_name(c_arg)}_next"
           code = code_acc <> "\n" <> arg_code <> "\n      elmc_int_t #{next_ref} = #{arg_ref};"
@@ -1145,12 +1170,16 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
-  defp tail_recursive_if(%{op: :if, cond: cond, then_expr: then_expr, else_expr: else_expr}, name) do
+  defp tail_recursive_if(
+         %{op: :if, cond: cond, then_expr: then_expr, else_expr: else_expr},
+         module_name,
+         name
+       ) do
     cond do
-      self_call?(then_expr, name) ->
+      Util.local_function_call?(then_expr, module_name, name) ->
         {:if_tail, cond, else_expr, then_expr.args || [], true}
 
-      self_call?(else_expr, name) ->
+      Util.local_function_call?(else_expr, module_name, name) ->
         {:if_tail, cond, then_expr, else_expr.args || [], false}
 
       true ->
@@ -1158,10 +1187,20 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
-  defp tail_recursive_if(_expr, _name), do: :error
+  defp tail_recursive_if(_expr, _module_name, _name), do: :error
 
-  defp self_call?(%{op: :call, name: name}, name), do: true
-  defp self_call?(_expr, _name), do: false
+  defp tail_recursive_arg_kinds?(arg_kinds, arg_types) do
+    arg_kinds
+    |> Enum.with_index()
+    |> Enum.all?(fn {kind, index} ->
+      case {kind, Enum.at(arg_types, index) |> Host.normalize_type_name()} do
+        {:native_int, _} -> true
+        {:native_bool, _} -> true
+        {:boxed, "Int"} -> true
+        _ -> false
+      end
+    end)
+  end
 
   defp loop_arg_name(c_arg), do: "#{c_arg}_loop"
 

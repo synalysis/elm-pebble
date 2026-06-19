@@ -5,8 +5,9 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall do
   alias Elmc.Backend.CCodegen.RuntimeCall.Dispatcher
   alias Elmc.Backend.CCodegen.Types
 
-  @spec flatten_append_ir(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
-  defdelegate flatten_append_ir(left, right), to: Core
+  @spec flatten_append_ir(Types.ir_expr(), Types.ir_expr(), Types.compile_env()) ::
+          Types.ir_expr()
+  defdelegate flatten_append_ir(left, right, env \\ %{}), to: Core
 
   @spec compile(Types.ir_runtime_call_expr(), Types.compile_env(), Types.compile_counter()) ::
           Types.compile_result()

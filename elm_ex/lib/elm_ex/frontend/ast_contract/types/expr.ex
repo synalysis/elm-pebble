@@ -66,13 +66,13 @@ defmodule ElmEx.Frontend.AstContract.Types.Expr do
         }
   @type compose_left :: %{
           required(:op) => :compose_left,
-          required(:f) => String.t(),
-          required(:g) => String.t()
+          required(:f) => String.t() | t(),
+          required(:g) => String.t() | t()
         }
   @type compose_right :: %{
           required(:op) => :compose_right,
-          required(:f) => String.t(),
-          required(:g) => String.t()
+          required(:f) => String.t() | t(),
+          required(:g) => String.t() | t()
         }
   @type lambda :: %{
           required(:op) => :lambda,

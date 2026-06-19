@@ -11,6 +11,7 @@ defmodule Elmc.Backend.CCodegen.BuildArtifacts do
     add_link_options(-Wl,--gc-sections)
 
     add_library(elmc_runtime runtime/elmc_runtime.c)
+    target_link_libraries(elmc_runtime PRIVATE m)
     add_library(elmc_ports ports/elmc_ports.c)
     add_library(elmc_generated c/elmc_generated.c)
     add_library(elmc_worker c/elmc_worker.c)
@@ -36,7 +37,7 @@ defmodule Elmc.Backend.CCodegen.BuildArtifacts do
     CC ?= cc
     CFLAGS ?= -std=c11 -Wall -Wextra -ffunction-sections -fdata-sections -Iruntime -Iports -Ic
     # Optional: CFLAGS += -DELMC_RC_TRACK=1 for host harness leak diagnostics
-    LDFLAGS ?= -Wl,--gc-sections
+    LDFLAGS ?= -Wl,--gc-sections -lm
     SOURCES := runtime/elmc_runtime.c ports/elmc_ports.c c/elmc_generated.c c/elmc_worker.c c/elmc_pebble.c c/host_harness.c
 
     all: elmc_host

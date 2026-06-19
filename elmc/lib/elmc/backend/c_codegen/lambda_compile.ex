@@ -147,6 +147,7 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
           bind_lambda_value.(acc, name, name, native_free_vars)
         end)
       end)
+      |> propagate_lambda_metadata(env, lambda_arg_names ++ free_vars)
       |> Map.put(:__module__, Map.get(env, :__module__, "Main"))
       |> Map.put(:__function_name__, Map.get(env, :__function_name__))
       |> Map.put(:__function_arities__, EnvBindings.effective_function_arities(env))
@@ -284,4 +285,37 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
   defp closure_param_used?(param, body) when is_binary(param) and is_binary(body) do
     Regex.match?(~r/(?:\W|^)#{Regex.escape(param)}(?:\W|$)/, body)
   end
+
+  defp propagate_lambda_metadata(body_env, parent_env, names) when is_list(names) do
+    keys = Enum.map(names, &EnvBindings.binding_key/1)
+
+    var_types =
+      parent_env
+      |> Map.get(:__var_types__, %{})
+      |> Map.take(keys)
+
+    boxed_strings =
+      Enum.reduce(names, MapSet.new(), fn name, acc ->
+        key = EnvBindings.binding_key(name)
+
+        cond do
+          EnvBindings.boxed_string_binding?(parent_env, name) ->
+            MapSet.put(acc, key)
+
+          match?("String", normalize_lambda_type(Map.get(var_types, key))) ->
+            MapSet.put(acc, key)
+
+          true ->
+            acc
+        end
+      end)
+
+    body_env
+    |> Map.put(:__var_types__, var_types)
+    |> Map.put(:__boxed_string_bindings__, boxed_strings)
+  end
+
+  defp normalize_lambda_type(nil), do: nil
+
+  defp normalize_lambda_type(type) when is_binary(type), do: Host.normalize_type_name(type)
 end

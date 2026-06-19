@@ -10,8 +10,8 @@ defmodule Elmc.Backend.CCodegen.VarAnalysis do
   def used_vars(%{op: :float_literal}), do: MapSet.new()
   def used_vars(%{op: :field_access, arg: arg}) when is_binary(arg), do: MapSet.new([arg])
   def used_vars(%{op: :field_access, arg: arg}) when is_map(arg), do: used_vars(arg)
-  def used_vars(%{op: :compose_left, f: f, g: g}), do: MapSet.new([f, g])
-  def used_vars(%{op: :compose_right, f: f, g: g}), do: MapSet.new([f, g])
+  def used_vars(%{op: :compose_left, f: f, g: g}), do: compose_used_vars(f, g)
+  def used_vars(%{op: :compose_right, f: f, g: g}), do: compose_used_vars(f, g)
   def used_vars(%{op: :add_const, var: name}), do: MapSet.new([name])
   def used_vars(%{op: :sub_const, var: name}), do: MapSet.new([name])
   def used_vars(%{op: :add_vars, left: left, right: right}), do: MapSet.new([left, right])
@@ -38,6 +38,12 @@ defmodule Elmc.Backend.CCodegen.VarAnalysis do
 
   def used_vars(%{op: :list_literal, items: items}) do
     Enum.reduce(items, MapSet.new(), fn item, acc -> MapSet.union(acc, used_vars(item)) end)
+  end
+
+  def used_vars(%{op: :call, name: name, args: args}) when is_binary(name) do
+    Enum.reduce(args, MapSet.new([name]), fn arg, acc ->
+      MapSet.union(acc, used_vars(arg))
+    end)
   end
 
   def used_vars(%{op: :call, args: args}) do
@@ -98,4 +104,12 @@ defmodule Elmc.Backend.CCodegen.VarAnalysis do
   defp field_arg_vars(arg) when is_binary(arg), do: MapSet.new([arg])
   defp field_arg_vars(arg) when is_map(arg), do: used_vars(arg)
   defp field_arg_vars(_arg), do: MapSet.new()
+
+  defp compose_used_vars(f, g) do
+    MapSet.union(compose_side_vars(f), compose_side_vars(g))
+  end
+
+  defp compose_side_vars(name) when is_binary(name), do: MapSet.new([name])
+  defp compose_side_vars(expr) when is_map(expr), do: used_vars(expr)
+  defp compose_side_vars(_), do: MapSet.new()
 end

@@ -49,7 +49,21 @@ defmodule Elmc.Backend.CCodegen.Expr do
 
   @spec substitute_expr(term(), Types.let_substitutions()) :: term()
   def substitute_expr(%{op: :var, name: name}, substitutions) do
-    Map.get(substitutions, name, %{op: :var, name: name})
+    key = Host.binding_key(name)
+
+    case Map.fetch(substitutions, key) do
+      {:ok, bound} ->
+        substitute_expr(bound, Map.delete(substitutions, key))
+
+      :error ->
+        case Map.fetch(substitutions, name) do
+          {:ok, bound} ->
+            substitute_expr(bound, Map.delete(substitutions, name))
+
+          :error ->
+            %{op: :var, name: name}
+        end
+    end
   end
 
   def substitute_expr(%{op: :add_const, var: name, value: value}, substitutions) do
@@ -450,6 +464,7 @@ defmodule Elmc.Backend.CCodegen.Expr do
   @spec nested_record_get_int_expr(Types.ir_expr(), Types.compile_env()) :: String.t() | nil
   def nested_record_get_int_expr(%{op: :field_access, arg: arg, field: field}, env) do
     with {source, path} <- nested_field_access_path(arg, field),
+         false <- zero_arg_function_binding?(env, source),
          true <- nested_field_access_path_int?(env, source, path),
          getter when is_binary(getter) <- nested_field_int_get_expr(source, path, env) do
       getter
@@ -459,6 +474,21 @@ defmodule Elmc.Backend.CCodegen.Expr do
   end
 
   def nested_record_get_int_expr(_expr, _env), do: nil
+
+  defp zero_arg_function_binding?(env, name) when is_binary(name) do
+    case EnvBindings.lookup_binding(env, name) do
+      source when is_binary(source) ->
+        false
+
+      _ ->
+        module_name = Map.get(env, :__module__, "Main")
+
+        case Map.get(EnvBindings.effective_program_decls(env), {module_name, name}) do
+          %{args: args} when args in [[], nil] -> true
+          _ -> false
+        end
+    end
+  end
 
   defp nested_field_access_path(%{op: :var, name: name}, field) when is_binary(name),
     do: {name, [field]}
@@ -480,7 +510,10 @@ defmodule Elmc.Backend.CCodegen.Expr do
 
     source
     |> build_nested_field_access(intermediate_fields)
-    |> then(&RecordFields.int_field?(env, &1, final_field))
+    |> then(fn access_expr ->
+      RecordFields.int_field?(env, access_expr, final_field) and
+        not RecordFields.union_tag_field?(env, access_expr, final_field)
+    end)
   end
 
   defp build_nested_field_access(source, fields) when is_binary(source) do
@@ -566,10 +599,17 @@ defmodule Elmc.Backend.CCodegen.Expr do
 
   defp borrow_record_source_ref(name, env) do
     case Map.get(env, name) do
-      ref when is_binary(ref) -> ref
-      {:native_record, _} -> nil
-      {:forward_ref, _} -> nil
-      _ -> name
+      ref when is_binary(ref) ->
+        ref
+
+      {:native_record, _} ->
+        nil
+
+      {:forward_ref, _} ->
+        nil
+
+      _ ->
+        if zero_arg_function_binding?(env, name), do: nil, else: name
     end
   end
 

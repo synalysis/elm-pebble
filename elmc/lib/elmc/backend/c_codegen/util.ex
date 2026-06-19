@@ -112,4 +112,32 @@ defmodule Elmc.Backend.CCodegen.Util do
 
     "ELMC_HAVE_DIRECT_COMMANDS_#{safe}"
   end
+
+  @spec local_function_call?(Types.ir_expr(), String.t(), String.t()) :: boolean()
+  def local_function_call?(%{op: :call, name: call_name}, _module_name, function_name) do
+    call_name == function_name
+  end
+
+  def local_function_call?(%{op: :qualified_call, target: target}, module_name, function_name) do
+    case split_qualified_function_target(target) do
+      {^module_name, ^function_name} -> true
+      _ -> false
+    end
+  end
+
+  def local_function_call?(_, _, _), do: false
+
+  @spec self_recursive_call_in_expr?(Types.ir_expr(), String.t(), String.t()) :: boolean()
+  def self_recursive_call_in_expr?(expr, module_name, function_name) when is_map(expr) do
+    local_function_call?(expr, module_name, function_name) or
+      expr
+      |> Map.values()
+      |> Enum.any?(&self_recursive_call_in_expr?(&1, module_name, function_name))
+  end
+
+  def self_recursive_call_in_expr?(exprs, module_name, function_name) when is_list(exprs) do
+    Enum.any?(exprs, &self_recursive_call_in_expr?(&1, module_name, function_name))
+  end
+
+  def self_recursive_call_in_expr?(_, _, _), do: false
 end

@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.VarCompile do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.EnvBindings
+  alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.FunctionCallCompile
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.RecordCompile
@@ -33,7 +34,10 @@ defmodule Elmc.Backend.CCodegen.VarCompile do
   defp top_level_zero_arg_var?(name, env) when is_binary(name) do
     module_name = Map.get(env, :__module__, "Main")
 
-    not Map.has_key?(env, name) and
+    not ambient_math_constant_name?(name) and
+      not Map.has_key?(env, name) and
       EnvBindings.function_arity(env, module_name, name, []) == 0
   end
+
+  defp ambient_math_constant_name?(name), do: name in ["e", "pi"]
 end

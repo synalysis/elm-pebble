@@ -152,11 +152,26 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     out = literal_result_out(env, next)
     values_array = Enum.join(field_refs, ", ")
     values_decl = "elmc_int_t rec_values_#{next}[#{field_count}] = { #{values_array} };"
+    names = Enum.map(ordered_fields, & &1.name)
+    use_named? = Process.get(:elmc_named_record_literals, false) and field_count > 0
 
     alloc =
-      RcRuntimeEmit.assign_call(env, out, "elmc_record_new_values_ints",
-        "#{field_count}, rec_values_#{next}"
-      )
+      if use_named? do
+        names_array =
+          names
+          |> Enum.map_join(", ", fn name -> "\"#{Util.escape_c_string(name)}\"" end)
+
+        """
+        const char *rec_names_#{next}[#{max(field_count, 1)}] = { #{names_array} };
+        #{RcRuntimeEmit.assign_call(env, out, "elmc_record_new_static_ints",
+          "#{field_count}, rec_names_#{next}, rec_values_#{next}"
+        )}
+        """
+      else
+        RcRuntimeEmit.assign_call(env, out, "elmc_record_new_values_ints",
+          "#{field_count}, rec_values_#{next}"
+        )
+      end
 
     code =
       """
@@ -200,15 +215,38 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     next = counter + 1
     out = literal_result_out(env, next)
     values_array = record_values_array(field_refs)
+    names = Enum.map(ordered_fields, & &1.name)
+    _type_name = Expr.record_type_for_field_names(names, env)
+    use_named? = Process.get(:elmc_named_record_literals, false) and field_count > 0
 
-    allocator =
-      RcRuntimeEmit.assign_call(env, out, "elmc_record_new_values_take",
-        "#{field_count}, rec_values_#{next}"
-      )
+    {names_decl, allocator} =
+      if use_named? do
+        names_array =
+          names
+          |> Enum.map_join(", ", fn name -> "\"#{Util.escape_c_string(name)}\"" end)
+
+        alloc =
+          RcRuntimeEmit.assign_call(env, out, "elmc_record_new_static_take",
+            "#{field_count}, rec_names_#{next}, rec_values_#{next}"
+          )
+
+        {
+          "const char *rec_names_#{next}[#{max(field_count, 1)}] = { #{names_array} };",
+          alloc
+        }
+      else
+        alloc =
+          RcRuntimeEmit.assign_call(env, out, "elmc_record_new_values_take",
+            "#{field_count}, rec_values_#{next}"
+          )
+
+        {"", alloc}
+      end
 
     code =
       """
       #{field_code}
+        #{names_decl}
         ElmcValue *rec_values_#{next}[#{max(field_count, 1)}] = { #{values_array} };
         #{allocator}
       """ <> post_release
@@ -340,12 +378,27 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
             end)
 
           values_array = field_vars |> Enum.map(fn {_name, var} -> var end) |> Enum.join(", ")
+          use_named? = Process.get(:elmc_named_record_literals, false) and field_count > 0
+
+          record_return =
+            if use_named? do
+              names_array =
+                ordered_fields
+                |> Enum.map_join(", ", fn field -> "\"#{Util.escape_c_string(field.name)}\"" end)
+
+              """
+                const char *rec_names[#{field_count}] = { #{names_array} };
+                return elmc_record_new_static_take_value(#{field_count}, rec_names, rec_values);
+              """
+            else
+              "return elmc_record_new_values_take_value(#{field_count}, rec_values);"
+            end
 
           helper_def = """
           static ElmcValue *#{helper_name}(#{helper_param_decls}) {
           #{CSource.indent(field_code, 2)}
             ElmcValue *rec_values[#{field_count}] = { #{values_array} };
-            return elmc_record_new_values_take_value(#{field_count}, rec_values);
+          #{CSource.indent(record_return, 2)}
           }
           """
 
@@ -833,6 +886,12 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     {code, out, next2}
   end
 
+  defp compile_boxed_field_value_expr(%{op: :char_literal, value: value}, _env, counter) do
+    next = counter + 1
+    var = Util.temp_var(next, "boxed_char")
+    {"ElmcValue *#{var} = elmc_new_char(#{value});\n", var, next}
+  end
+
   defp compile_boxed_field_value_expr(expr, env, counter) do
     if Host.native_int_expr?(expr, env) and not BuiltinUnion.maybe_nothing_literal?(expr) do
       {code, native_ref, c2} = Host.compile_native_int_expr(expr, env, counter)
@@ -1244,7 +1303,12 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
         {code, ref, counter, env, true}
 
       _ ->
-        {"", to_string(name), counter, env, false}
+        if zero_arg_function_var?(env, name) do
+          {code, ref, counter} = Host.compile_expr(%{op: :var, name: name}, env, counter)
+          {code, ref, counter, env, false}
+        else
+          {"", to_string(name), counter, env, false}
+        end
     end
   end
 

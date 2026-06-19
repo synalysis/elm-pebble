@@ -23,6 +23,8 @@ defmodule Elmc.Backend.CCodegen.ExprCompile do
     :msg_tag_expr,
     :string_literal,
     :char_literal,
+    :bool_literal,
+    :order_literal,
     :float_literal,
     :cmd_none
   ]
@@ -42,7 +44,7 @@ defmodule Elmc.Backend.CCodegen.ExprCompile do
     :char_from_code,
     :char_from_code_expr
   ]
-  @call_ops [:qualified_call, :constructor_call, :call]
+  @call_ops [:qualified_call, :constructor_call, :partial_constructor, :call]
   @record_ops [:record_literal, :record_update, :field_access, :field_call]
 
   @spec compile(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::

@@ -43,6 +43,19 @@ defmodule Elmc.Backend.CCodegen.LiteralCompile do
     {"ElmcValue *#{var} = elmc_new_char(#{value});", var, next}
   end
 
+  def compile(%{op: :bool_literal, value: value}, env, counter) do
+    {var, counter} = literal_out_slot(env, counter)
+    flag = if value, do: "1", else: "0"
+
+    {RcRuntimeEmit.assign_call(env, var, "elmc_new_bool", flag) <> "\n", var, counter}
+  end
+
+  def compile(%{op: :order_literal, value: value}, _env, counter) when is_integer(value) do
+    next = counter + 1
+    var = "tmp_#{next}"
+    {"ElmcValue *#{var} = elmc_new_order(#{value});", var, next}
+  end
+
   def compile(%{op: :float_literal, value: value}, _env, counter) do
     next = counter + 1
     var = "tmp_#{next}"

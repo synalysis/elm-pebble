@@ -203,10 +203,23 @@ defmodule ElmEx.IR.Lowerer do
                 project_module_exports
               )
 
+            local_payload_arity_lookup =
+              unions
+              |> Map.values()
+              |> Enum.flat_map(fn union_info ->
+                union_info
+                |> Map.get(:payload_specs, %{})
+                |> Enum.map(fn {name, spec} -> {name, payload_arity_for_spec(spec)} end)
+              end)
+              |> Map.new()
+
             rewrite_lookup = %{
               local: local_constructor_lookup,
               unqualified: global_constructor_lookup,
               qualified: global_qualified_constructor_lookup,
+              payload_arity_local: local_payload_arity_lookup,
+              payload_arity_unqualified: global_payload_arity_lookup,
+              payload_arity_qualified: global_qualified_payload_arity_lookup,
               current_module: frontend_module.name,
               alias_map: alias_map,
               import_unqualified_map: import_unqualified_map,
@@ -221,7 +234,12 @@ defmodule ElmEx.IR.Lowerer do
             definitions =
               defs
               |> Map.new(fn defn ->
-                expr = rewrite_expr(defn.expr, rewrite_lookup)
+                fn_lookup =
+                  Enum.reduce(defn.args || [], rewrite_lookup, fn arg, acc ->
+                    put_let_bound_name(acc, arg)
+                  end)
+
+                expr = rewrite_expr(defn.expr, fn_lookup)
                 {defn.name, %{defn | expr: expr}}
               end)
 
@@ -462,10 +480,21 @@ defmodule ElmEx.IR.Lowerer do
     %{expr | args: Enum.map(args || [], &rewrite_expr(&1, lookup))}
   end
 
+  defp rewrite_expr(%{op: :let_in, name: name, value_expr: value_expr, in_expr: in_expr} = expr, lookup) do
+    # Let-bound names (including local functions) must stay as unqualified :call ops so
+    # codegen can resolve them from the compile env. Adding them to local_call_names would
+    # rewrite `label x y z` into `Main.label`, which is wrong for let-bound lambdas.
+    # Value expressions are compiled in the outer scope; only the body sees the binding.
+    inner_lookup = put_let_bound_name(lookup, name)
+
+    %{
+      expr
+      | value_expr: rewrite_expr(value_expr, lookup),
+        in_expr: rewrite_expr(in_expr, inner_lookup)
+    }
+  end
+
   defp rewrite_expr(%{op: :let_in, value_expr: value_expr, in_expr: in_expr} = expr, lookup) do
-  # Let-bound names (including local functions) must stay as unqualified :call ops so
-  # codegen can resolve them from the compile env. Adding them to local_call_names would
-  # rewrite `label x y z` into `Main.label`, which is wrong for let-bound lambdas.
     %{
       expr
       | value_expr: rewrite_expr(value_expr, lookup),
@@ -542,10 +571,12 @@ defmodule ElmEx.IR.Lowerer do
   defp rewrite_expr(%{op: :case, branches: branches} = expr, lookup) do
     rewritten =
       Enum.map(branches, fn branch ->
+        branch_lookup = extend_lookup_with_pattern(branch.pattern, lookup)
+
         %{
           branch
           | pattern: rewrite_pattern(branch.pattern, lookup),
-            expr: rewrite_expr(branch.expr, lookup)
+            expr: rewrite_expr(branch.expr, branch_lookup)
         }
       end)
 
@@ -560,11 +591,18 @@ defmodule ElmEx.IR.Lowerer do
     }
   end
 
+  defp rewrite_expr(%{op: :lambda, args: args, body: body} = expr, lookup) do
+    inner_lookup =
+      Enum.reduce(args || [], lookup, fn arg, acc -> put_let_bound_name(acc, arg) end)
+
+    %{expr | body: rewrite_expr(body, inner_lookup)}
+  end
+
   defp rewrite_expr(%{op: :lambda, body: body} = expr, lookup) do
     %{expr | body: rewrite_expr(body, lookup)}
   end
 
-  defp rewrite_expr(%{op: :compose_left, f: f, g: g}, lookup) do
+  defp rewrite_expr(%{op: :compose_left, f: f, g: g}, lookup) when is_binary(f) and is_binary(g) do
     # (f << g) = \x -> f(g(x))
     arg_name = "__compose_arg__"
     inner_call = %{op: :call, name: g, args: [%{op: :var, name: arg_name}]}
@@ -572,7 +610,14 @@ defmodule ElmEx.IR.Lowerer do
     rewrite_expr(%{op: :lambda, args: [arg_name], body: outer_call}, lookup)
   end
 
-  defp rewrite_expr(%{op: :compose_right, f: f, g: g}, lookup) do
+  defp rewrite_expr(%{op: :compose_left, f: f, g: g}, lookup) do
+    arg_name = "__compose_arg__"
+    inner = apply_expr_to_arg(rewrite_expr(g, lookup), arg_name)
+    body = apply_expr_to_operand(rewrite_expr(f, lookup), inner)
+    rewrite_expr(%{op: :lambda, args: [arg_name], body: body}, lookup)
+  end
+
+  defp rewrite_expr(%{op: :compose_right, f: f, g: g}, lookup) when is_binary(f) and is_binary(g) do
     # (f >> g) = \x -> g(f(x))
     arg_name = "__compose_arg__"
     inner_call = %{op: :call, name: f, args: [%{op: :var, name: arg_name}]}
@@ -580,7 +625,140 @@ defmodule ElmEx.IR.Lowerer do
     rewrite_expr(%{op: :lambda, args: [arg_name], body: outer_call}, lookup)
   end
 
+  defp rewrite_expr(%{op: :compose_right, f: f, g: g}, lookup) do
+    arg_name = "__compose_arg__"
+    inner = apply_expr_to_arg(rewrite_expr(f, lookup), arg_name)
+    body = apply_expr_to_operand(rewrite_expr(g, lookup), inner)
+    rewrite_expr(%{op: :lambda, args: [arg_name], body: body}, lookup)
+  end
+
+  defp rewrite_expr(%{op: :var, name: name} = expr, lookup) when is_binary(name) do
+    local_call_names = Map.get(lookup, :local_call_names, MapSet.new())
+
+    cond do
+      MapSet.member?(local_call_names, name) ->
+        expr
+
+      imported_value_reference?(name, lookup) ->
+        %{op: :qualified_call, target: resolve_alias(name, lookup), args: []}
+
+      true ->
+        expr
+    end
+  end
+
   defp rewrite_expr(expr, _lookup), do: expr
+
+  defp imported_value_reference?(name, lookup) when is_binary(name) do
+    let_bound = Map.get(lookup, :let_bound_names, MapSet.new())
+
+    not MapSet.member?(let_bound, name) and
+      not constructor_reference?(name, lookup) and
+      case resolve_alias(name, lookup) do
+        ^name -> false
+        resolved when is_binary(resolved) -> String.contains?(resolved, ".")
+      end
+  end
+
+  defp put_let_bound_name(lookup, name) when is_binary(name) do
+    bound = Map.get(lookup, :let_bound_names, MapSet.new())
+    Map.put(lookup, :let_bound_names, MapSet.put(bound, name))
+  end
+
+  defp put_let_bound_name(lookup, _name), do: lookup
+
+  defp extend_lookup_with_pattern(pattern, lookup) do
+    Enum.reduce(pattern_bound_names(pattern), lookup, fn name, acc ->
+      put_let_bound_name(acc, name)
+    end)
+  end
+
+  defp pattern_bound_names(%{kind: :var, name: name}) when name not in ["_", ""], do: [name]
+  defp pattern_bound_names(%{kind: :wildcard}), do: []
+
+  defp pattern_bound_names(%{kind: :tuple, elements: elements}) when is_list(elements),
+    do: Enum.flat_map(elements, &pattern_bound_names/1)
+
+  defp pattern_bound_names(%{kind: :list, elements: elements}) when is_list(elements),
+    do: Enum.flat_map(elements, &pattern_bound_names/1)
+
+  defp pattern_bound_names(%{kind: :cons, head: head, tail: tail}),
+    do: pattern_bound_names(head) ++ pattern_bound_names(tail)
+
+  defp pattern_bound_names(%{kind: :alias, bind: bind, pattern: inner}) when is_binary(bind),
+    do: [bind | pattern_bound_names(inner)]
+
+  defp pattern_bound_names(%{kind: :alias, pattern: inner}), do: pattern_bound_names(inner)
+
+  defp pattern_bound_names(%{kind: :constructor, bind: bind, arg_pattern: arg})
+       when is_binary(bind),
+       do: [bind | pattern_bound_names(arg)]
+
+  defp pattern_bound_names(%{kind: :constructor, arg_pattern: arg}),
+    do: pattern_bound_names(arg)
+
+  defp pattern_bound_names(_pattern), do: []
+
+  defp constructor_reference?(name, lookup) when is_binary(name) do
+    Map.has_key?(Map.get(lookup, :local, %{}), name) or
+      Map.has_key?(Map.get(lookup, :unqualified, %{}), name)
+  end
+
+  defp apply_expr_to_arg(%{op: :qualified_call, args: args} = expr, arg_name) do
+    %{expr | args: args ++ [%{op: :var, name: arg_name}]}
+  end
+
+  defp apply_expr_to_arg(%{op: :call, args: args} = expr, arg_name) do
+    %{expr | args: args ++ [%{op: :var, name: arg_name}]}
+  end
+
+  defp apply_expr_to_arg(%{op: :constructor_call, args: args} = expr, arg_name) do
+    %{expr | args: args ++ [%{op: :var, name: arg_name}]}
+  end
+
+  defp apply_expr_to_arg(%{op: :var, name: name}, arg_name) do
+    %{op: :call, name: name, args: [%{op: :var, name: arg_name}]}
+  end
+
+  defp apply_expr_to_arg(%{op: :qualified_ref, target: target}, arg_name) do
+    %{op: :qualified_call, target: target, args: [%{op: :var, name: arg_name}]}
+  end
+
+  defp apply_expr_to_arg(%{op: :constructor_ref, target: target}, arg_name) do
+    %{op: :constructor_call, target: target, args: [%{op: :var, name: arg_name}]}
+  end
+
+  defp apply_expr_to_arg(expr, arg_name) do
+    %{op: :call, name: "__apply__", args: [expr, %{op: :var, name: arg_name}]}
+  end
+
+  defp apply_expr_to_operand(%{op: :qualified_call, args: args} = expr, operand) do
+    %{expr | args: args ++ [operand]}
+  end
+
+  defp apply_expr_to_operand(%{op: :call, args: args} = expr, operand) do
+    %{expr | args: args ++ [operand]}
+  end
+
+  defp apply_expr_to_operand(%{op: :constructor_call, args: args} = expr, operand) do
+    %{expr | args: args ++ [operand]}
+  end
+
+  defp apply_expr_to_operand(%{op: :var, name: name}, operand) when is_binary(name) do
+    %{op: :call, name: name, args: [operand]}
+  end
+
+  defp apply_expr_to_operand(%{op: :qualified_ref, target: target}, operand) do
+    %{op: :qualified_call, target: target, args: [operand]}
+  end
+
+  defp apply_expr_to_operand(%{op: :constructor_ref, target: target}, operand) do
+    %{op: :constructor_call, target: target, args: [operand]}
+  end
+
+  defp apply_expr_to_operand(expr, operand) do
+    %{op: :call, name: "__apply__", args: [expr, operand]}
+  end
 
   @spec rewrite_case_subject(expr() | String.t(), lookup()) :: expr() | String.t()
   defp rewrite_case_subject(subject, lookup) when is_map(subject),
@@ -1097,7 +1275,20 @@ defmodule ElmEx.IR.Lowerer do
         tag = resolve_constructor_tag(resolved_target, lookup)
 
         if is_integer(tag) do
-          tagged_constructor_value(tag, rewritten_args, resolved_target)
+          expected_arity = resolve_payload_arity(resolved_target, lookup)
+          bound = length(rewritten_args)
+
+          if is_integer(expected_arity) and bound < expected_arity do
+            %{
+              op: :partial_constructor,
+              target: resolved_target,
+              tag: tag,
+              args: rewritten_args,
+              arity: expected_arity
+            }
+          else
+            tagged_constructor_value(tag, rewritten_args, resolved_target)
+          end
         end
 
       rewritten ->
@@ -1632,6 +1823,24 @@ defmodule ElmEx.IR.Lowerer do
          _line
        ),
        do: []
+
+  @spec resolve_payload_arity(String.t(), lookup()) :: non_neg_integer() | nil
+  defp resolve_payload_arity(target, lookup) when is_binary(target) do
+    segments = String.split(target, ".")
+    unqualified_name = List.last(segments)
+
+    case segments do
+      [_single] ->
+        Map.get(lookup, :payload_arity_local, %{})[unqualified_name] ||
+          Map.get(lookup, :payload_arity_unqualified, %{})[unqualified_name] ||
+          builtin_constructor_arity(unqualified_name)
+
+      _many ->
+        Map.get(lookup, :payload_arity_qualified, %{})[target] ||
+          Map.get(lookup, :payload_arity_unqualified, %{})[unqualified_name] ||
+          builtin_constructor_arity(unqualified_name)
+    end
+  end
 
   @spec resolve_constructor_arity(String.t(), constructor_lookup()) :: non_neg_integer() | nil
   defp resolve_constructor_arity(target, lookup) when is_binary(target) do

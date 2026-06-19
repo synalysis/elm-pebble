@@ -15,8 +15,10 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
   alias Elmc.Backend.CCodegen.Native.Float, as: NativeFloat
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.Native.String, as: NativeString
+  alias Elmc.Backend.CCodegen.Native.TypedReturn, as: NativeTypedReturn
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.RecordCompile
+  alias Elmc.Backend.CCodegen.TypeParsing
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.VarAnalysis
 
@@ -30,17 +32,22 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
 
   @retaining_runtime_functions MapSet.new(~w(elmc_list_cons))
 
-  @spec flatten_append_ir(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
-  def flatten_append_ir(left, right) do
+  @spec flatten_append_ir(Types.ir_expr(), Types.ir_expr(), Types.compile_env()) ::
+          Types.ir_expr()
+  def flatten_append_ir(left, right, env \\ %{}) do
     append_expr = %{op: :runtime_call, function: "elmc_append", args: [left, right]}
 
     case collect_append_segments(append_expr) do
       {:ok, segments} when length(segments) >= @min_list_append_concat_segments ->
-        %{
-          op: :runtime_call,
-          function: "elmc_list_concat",
-          args: [%{op: :list_literal, items: segments}]
-        }
+        if list_append_concat_segments?(segments, env) do
+          %{
+            op: :runtime_call,
+            function: "elmc_list_concat",
+            args: [%{op: :list_literal, items: segments}]
+          }
+        else
+          append_expr
+        end
 
       _ ->
         append_expr
@@ -456,6 +463,17 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     end
   end
 
+  def compile(%{op: :runtime_call, function: "elmc_debug_to_string", args: [value]}, env, counter) do
+    function =
+      if debug_set_value?(value, env) do
+        "elmc_debug_set_to_string"
+      else
+        "elmc_debug_to_string"
+      end
+
+    compile_generic(%{op: :runtime_call, function: function, args: [value]}, env, counter)
+  end
+
   def compile(%{op: :runtime_call, function: function, args: args}, env, counter) do
     compile_generic(%{op: :runtime_call, function: function, args: args}, env, counter)
   end
@@ -489,7 +507,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
 
   defp list_append_concat_segments?(segments, env) do
     Enum.all?(segments, fn segment ->
-      not NativeString.expr?(segment, env)
+      not NativeString.expr?(segment, env) and not NativeString.boxed_expr?(segment, env)
     end)
   end
 
@@ -520,6 +538,9 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     cond do
       Enum.all?(segments, &NativeString.expr?(&1, env)) ->
         compile_string_concat_segments(segments, env, counter)
+
+      Enum.all?(segments, &NativeString.boxed_expr?(&1, env)) ->
+        compile_boxed_string_append_chain(segments, env, counter)
 
       list_append_concat_segments?(segments, env) ->
         {segment_code, segment_vars, counter} =
@@ -598,6 +619,42 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     """
 
     {:ok, code, out_ref, next}
+  end
+
+  defp compile_boxed_string_append_chain(segments, env, counter) do
+    {segment_code, segment_vars, counter} =
+      Enum.reduce(segments, {"", [], counter}, fn segment, {code_acc, vars_acc, c} ->
+        {code, var, c2} = Host.compile_expr(segment, env, c)
+        {code_acc <> code, vars_acc ++ [var], c2}
+      end)
+
+    [first | rest] = segment_vars
+
+    {fold_code, out_ref, counter} =
+      Enum.reduce(rest, {"", first, counter}, fn var, {code_acc, acc_ref, c} ->
+        next = c + 1
+        out = "tmp_#{next}"
+
+        fold =
+          """
+            ElmcValue *#{out} = elmc_append(#{acc_ref}, #{var});
+          """
+
+        {code_acc <> fold, out, next}
+      end)
+
+    releases =
+      segment_vars
+      |> Enum.reject(&(&1 == out_ref))
+      |> Enum.map_join("\n  ", fn var -> "elmc_release(#{var});" end)
+
+    code = """
+    #{segment_code}#{fold_code}
+      #{releases}
+      #{DebugProbes.append_probe(env, "elmc_append", out_ref, counter)}
+    """
+
+    {:ok, code, out_ref, counter}
   end
 
   defp compile_native_append(left, right, env, counter) do
@@ -1219,10 +1276,13 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     decl_map = Map.get(env, :__program_decls__, %{})
     usage = Host.native_int_usage(arg, body, module_name, decl_map)
 
-    if usage.total > 0 and usage.boxed == 0 do
+    trial_env =
       env
       |> EnvBindings.put_native_int_binding(arg, "elmc_as_int(#{head})")
       |> EnvBindings.put_boxed_int_binding(arg, false)
+
+    if usage.total > 0 and usage.boxed == 0 and NativeInt.expr?(body, trial_env) do
+      trial_env
     else
       env
     end
@@ -2623,4 +2683,40 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
 
   defp maybe_copy_list_cons_suffix_tail(_env, _function, arg_vars, arg_code, counter),
     do: {arg_code, arg_vars, counter, false}
+
+  defp debug_set_value?(value, env) do
+    case NativeTypedReturn.expr_type(value, env) do
+      type when is_binary(type) ->
+        TypeParsing.set_type?(type) or debug_set_function_param?(value, env)
+
+      _ ->
+        debug_set_function_param?(value, env)
+    end
+  end
+
+  defp debug_set_function_param?(%{op: :var, name: name}, env) when is_binary(name) do
+    module = Map.get(env, :__module__, "Main")
+    fn_name = Map.get(env, :__function_name__)
+
+    case Map.get(Map.get(env, :__program_decls__, %{}), {module, fn_name}) do
+      %{type: type, args: args} when is_binary(type) and is_list(args) ->
+        with idx when is_integer(idx) <- Enum.find_index(args, &(&1 == name)),
+             param_type when is_binary(param_type) <- Enum.at(TypeParsing.function_arg_types(type), idx) do
+          TypeParsing.set_type?(param_type)
+        else
+          _ -> false
+        end
+
+      %{type: type} when is_binary(type) ->
+        case TypeParsing.function_arg_types(type) do
+          [param_type] -> TypeParsing.set_type?(param_type)
+          _ -> false
+        end
+
+      _ ->
+        false
+    end
+  end
+
+  defp debug_set_function_param?(_value, _env), do: false
 end

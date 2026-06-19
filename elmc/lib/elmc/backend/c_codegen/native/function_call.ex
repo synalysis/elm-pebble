@@ -6,7 +6,6 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.ListIntReduce
   alias Elmc.Backend.CCodegen.Native.ListIntSearch
-  alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
@@ -141,8 +140,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
                   releases_acc
 
                 borrow_args? ->
-                  RecordCompile.defer_call_operand_release(ref)
-                  releases_acc
+                  releases_acc ++ [ref]
 
                 true ->
                   releases_acc ++ [ref]

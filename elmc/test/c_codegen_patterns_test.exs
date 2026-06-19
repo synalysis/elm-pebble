@@ -1465,9 +1465,79 @@ defmodule Elmc.CCodegenPatternsTest do
     assert generated_c =~ "list_fwd_head_"
     assert generated_c =~ "list_fwd_tail_"
     assert generated_c =~ "elmc_fn_Main_double"
+    refute generated_c =~ "elmc_list_cons_take(list_map_item_"
     refute generated_c =~ "list_rev_cursor_"
     refute generated_c =~ "elmc_list_reverse("
     refute generated_c =~ "elmc_list_map("
+  end
+
+  test "json andThen lambda keeps string parameters boxed for literal equality" do
+    alias Elmc.Test.ElmRunCorpus
+
+    path = "Kernel/MainJsonDecodeAndThen.elm"
+    tmp = Path.expand("tmp/json_and_then_lambda", __DIR__)
+    gold = ElmRunCorpus.read_expected!(path)
+
+    assert {:ok, out} = ElmRunCorpus.run_elmc_execution!(path, tmp, timeout_ms: 60_000)
+    assert out == gold
+
+    generated_c =
+      Path.join(tmp, "Kernel__MainJsonDecodeAndThen__exec/out/c/elmc_generated.c")
+      |> File.read!()
+
+    refute generated_c =~ "const elmc_int_t t ="
+    assert generated_c =~ "ElmcValue *t ="
+  end
+
+  test "char case patterns match ELMC_TAG_CHAR subjects" do
+    alias Elmc.Test.ElmRunCorpus
+
+    for path <- ["Unicode/CharPattern.elm", "Unicode/CharPatternComplex.elm"] do
+      tmp = Path.expand("tmp/char_pattern_#{Path.basename(path, ".elm")}", __DIR__)
+      gold = ElmRunCorpus.read_expected!(path)
+
+      assert {:ok, out} = ElmRunCorpus.run_elmc_execution!(path, tmp, timeout_ms: 60_000)
+      assert out == gold
+    end
+  end
+
+  test "large named record literals keep field names in extracted helpers" do
+    alias Elmc.Test.ElmRunCorpus
+
+    path = "Kernel/MainJsonDecode.elm"
+    tmp = Path.expand("tmp/main_json_decode_record", __DIR__)
+    gold = ElmRunCorpus.read_expected!(path)
+
+    assert {:ok, out} = ElmRunCorpus.run_elmc_execution!(path, tmp, timeout_ms: 60_000)
+    assert out == gold
+
+    generated_c =
+      Path.join(tmp, "Kernel__MainJsonDecode__exec/out/c/elmc_generated.c")
+      |> File.read!()
+
+    assert generated_c =~ "elmc_record_new_static_take_value"
+    refute generated_c =~ "return elmc_record_new_values_take_value(23, rec_values);"
+  end
+
+  test "utf8 string runtime matches corpus reverse slice and filter programs" do
+    alias Elmc.Test.ElmRunCorpus
+
+    for path <- [
+          "Unicode/StringReverse.elm",
+          "Unicode/UnicodeEdgeCases.elm",
+          "KernelLowering/StringFilter.elm",
+          "KernelLowering/StringFoldr.elm",
+          "Basics/MainListPattern.elm",
+          "Basics/MainParseJson.elm",
+          "Compiler/NestedLoaderCaptureShape.elm",
+          "Iterative/ControlFlow.elm"
+        ] do
+      tmp = Path.expand("tmp/utf8_string_#{Path.basename(path, ".elm")}", __DIR__)
+      gold = ElmRunCorpus.read_expected!(path)
+
+      assert {:ok, out} = ElmRunCorpus.run_elmc_execution!(path, tmp, timeout_ms: 60_000)
+      assert out == gold
+    end
   end
 
   test "filterMap row drop fusion matches renamed row helpers, not elmtris names" do
@@ -4304,6 +4374,33 @@ defmodule Elmc.CCodegenPatternsTest do
     refute has_piece_native =~ "CATCH_BEGIN"
     refute Regex.match?(~r/bool native_bool_if_\d+ = false;/, has_piece_native)
     assert has_piece_native =~ "ELMC_RECORD_GET_INDEX_INT(model, ELMC_FIELD_MAIN_MODEL_PIECEKIND)"
+  end
+
+  test "tail-recursive qualified self calls emit loop instead of broken native inline" do
+    source = """
+    module Main exposing (main)
+
+    fibHelper : Int -> Int -> Int -> Int
+    fibHelper n a b =
+        if n <= 0 then
+            a
+        else
+            fibHelper (n - 1) b (a + b)
+
+    fib : Int -> Int
+    fib n =
+        fibHelper n 0 1
+
+    main : Int
+    main =
+        fib 40
+    """
+
+    generated_c = compile_generated_c!("tail_rec_qualified_call", source, %{})
+
+    assert generated_c =~ "while (1)"
+    refute generated_c =~ "// inlined Main.fibHelper"
+    assert generated_c =~ "elmc_fn_Main_fibHelper_native"
   end
 
   defp compile_generated_c!(name, source, opts) do

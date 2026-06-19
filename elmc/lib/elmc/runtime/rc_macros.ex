@@ -305,6 +305,16 @@ defmodule Elmc.Runtime.RcMacros do
       return elmc_list_map3(&out, f, a, b, c) == RC_SUCCESS ? out : elmc_int_zero();
     }
 
+    static inline ElmcValue *elmc_list_map4_take(ElmcValue *f, ElmcValue *a, ElmcValue *b, ElmcValue *c, ElmcValue *d) {
+      ElmcValue *out = NULL;
+      return elmc_list_map4(&out, f, a, b, c, d) == RC_SUCCESS ? out : elmc_int_zero();
+    }
+
+    static inline ElmcValue *elmc_list_map5_take(ElmcValue *f, ElmcValue *a, ElmcValue *b, ElmcValue *c, ElmcValue *d, ElmcValue *e) {
+      ElmcValue *out = NULL;
+      return elmc_list_map5(&out, f, a, b, c, d, e) == RC_SUCCESS ? out : elmc_int_zero();
+    }
+
     static inline ElmcValue *elmc_list_sum_take(ElmcValue *list) {
       ElmcValue *out = NULL;
       return elmc_list_sum(&out, list) == RC_SUCCESS ? out : elmc_int_zero();

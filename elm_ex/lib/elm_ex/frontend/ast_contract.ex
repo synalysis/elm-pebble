@@ -185,6 +185,12 @@ defmodule ElmEx.Frontend.AstContract do
       :call ->
         validate_call_like(expr[:name], expr[:args], :invalid_call_expr)
 
+      :qualified_ref ->
+        validate_non_empty_binary(expr[:target], :invalid_qualified_ref_expr)
+
+      :constructor_ref ->
+        validate_non_empty_binary(expr[:target], :invalid_constructor_ref_expr)
+
       :qualified_call ->
         validate_call_like(expr[:target], expr[:args], :invalid_qualified_call_expr)
 
@@ -333,7 +339,20 @@ defmodule ElmEx.Frontend.AstContract do
        when is_binary(f) and f != "" and is_binary(g) and g != "",
        do: :ok
 
+  defp validate_compose(%{f: f, g: g}, reason) when is_map(f) or is_map(g) do
+    with :ok <- validate_compose_side(f),
+         :ok <- validate_compose_side(g) do
+      :ok
+    else
+      {:error, _} -> {:error, reason}
+    end
+  end
+
   defp validate_compose(_, reason), do: {:error, reason}
+
+  defp validate_compose_side(f) when is_binary(f) and f != "", do: :ok
+  defp validate_compose_side(f) when is_map(f), do: validate_expr(f)
+  defp validate_compose_side(_), do: {:error, :invalid_compose_operand}
 
   @spec validate_lambda(Types.expr() | Types.invalid_input()) :: :ok | {:error, atom()}
   defp validate_lambda(%{args: args, body: body}) when is_list(args) do

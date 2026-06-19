@@ -29,7 +29,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
   def compile(%{op: :let_in} = expr, env, counter) do
     {bindings, body} = flatten_let_chain(expr)
 
-    if length(bindings) > 1 and LetRecCompile.cyclic_bindings?(bindings) do
+    if LetRecCompile.cyclic_bindings?(bindings) do
       LetRecCompile.compile(bindings, body, env, counter)
     else
       %{op: :let_in, name: name, value_expr: value_expr, in_expr: in_expr} = expr

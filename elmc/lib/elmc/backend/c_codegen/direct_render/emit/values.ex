@@ -307,14 +307,14 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
 
     case static_nonzero_int_value(right, env) do
       value when is_integer(value) ->
-        {:ok, left_code, "(#{left_value} / #{value})", counter}
+        {:ok, left_code, "elmc_int_idiv(#{left_value}, #{value})", counter}
 
       nil ->
         {right_code, right_value, counter} = int_value(right, env, counter)
 
         case parse_compile_time_int_ref(right_value) do
           value when is_integer(value) and value != 0 ->
-            {:ok, left_code <> right_code, "(#{left_value} / #{value})", counter}
+            {:ok, left_code <> right_code, "elmc_int_idiv(#{left_value}, #{value})", counter}
 
           _ ->
             next = counter + 1
@@ -325,7 +325,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
               elmc_int_t #{denom} = #{right_value};
             """
 
-            {:ok, code, "(#{denom} == 0 ? 0 : (#{left_value} / #{denom}))", next}
+            {:ok, code, "elmc_int_idiv(#{left_value}, #{denom})", next}
         end
     end
   end

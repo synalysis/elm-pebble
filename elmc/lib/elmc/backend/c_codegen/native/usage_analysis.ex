@@ -124,6 +124,13 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
   @spec int_let?(Types.binding_name(), Types.ir_expr(), Types.ir_expr(), Types.compile_env()) ::
           boolean()
   def int_let?(name, value_expr, in_expr, env) when is_binary(name) or is_atom(name) do
+    not union_ctor_literal?(value_expr) and
+      int_let_without_union_guard?(name, value_expr, in_expr, env)
+  end
+
+  def int_let?(_name, _value_expr, _in_expr, _env), do: false
+
+  defp int_let_without_union_guard?(name, value_expr, in_expr, env) do
     usage =
       int_usage(
         name,
@@ -140,7 +147,8 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
       (usage.native_container > 0 or usage.native > 0)
   end
 
-  def int_let?(_name, _value_expr, _in_expr, _env), do: false
+  defp union_ctor_literal?(%{op: :int_literal, union_ctor: ctor}) when is_binary(ctor), do: true
+  defp union_ctor_literal?(_expr), do: false
 
   @spec float_usage(
           Types.binding_name(),
@@ -576,10 +584,14 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
     |> Enum.map(fn _ -> :native end)
   end
 
+  defp collect_var_contexts(name, %{op: :call, name: call_name, args: [left, right]}, _context)
+       when call_name in ["__eq__", "__neq__"] do
+    collect_var_contexts(name, left, equality_operand_context(right)) ++
+      collect_var_contexts(name, right, equality_operand_context(left))
+  end
+
   defp collect_var_contexts(name, %{op: :call, name: call_name, args: args}, _context)
        when call_name in [
-              "__eq__",
-              "__neq__",
               "__lt__",
               "__lte__",
               "__gt__",
@@ -655,14 +667,7 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
   end
 
   defp collect_var_contexts(name, %{op: :tuple2, left: left, right: right}, _context) do
-    left_context =
-      if int_candidate_for_analysis?(name, left), do: :native_container, else: :boxed
-
-    right_context =
-      if int_candidate_for_analysis?(name, right), do: :native_container, else: :boxed
-
-    collect_var_contexts(name, left, left_context) ++
-      collect_var_contexts(name, right, right_context)
+    collect_var_contexts(name, left, :boxed) ++ collect_var_contexts(name, right, :boxed)
   end
 
   defp collect_var_contexts(name, %{op: :record_literal, fields: fields}, _context)
@@ -675,6 +680,12 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
 
       collect_var_contexts(name, field.expr, context)
     end)
+  end
+
+  defp collect_var_contexts(name, %{op: :compare, kind: kind, left: left, right: right}, _context)
+       when kind in [:eq, :neq] do
+    collect_var_contexts(name, left, equality_operand_context(right)) ++
+      collect_var_contexts(name, right, equality_operand_context(left))
   end
 
   defp collect_var_contexts(name, %{op: :compare, left: left, right: right}, _context) do
@@ -952,5 +963,13 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
   end
 
   def int_candidate_for_analysis?(_name, expr), do: NativeInt.structural_expr?(expr)
+
+  defp equality_operand_context(other) do
+    if non_int_equality_operand?(other), do: :boxed, else: :native
+  end
+
+  defp non_int_equality_operand?(%{op: :string_literal}), do: true
+  defp non_int_equality_operand?(%{op: :char_literal}), do: true
+  defp non_int_equality_operand?(_other), do: false
 
 end

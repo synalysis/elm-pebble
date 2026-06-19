@@ -4,9 +4,11 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
   alias Elmc.Backend.CCodegen.BuiltinOperators
   alias Elmc.Backend.CCodegen.FunctionCallCompile
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.Native.TypedReturn
   alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.ResourceUnion
   alias Elmc.Backend.CCodegen.SpecialValues
+  alias Elmc.Backend.CCodegen.TypeParsing
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
 
@@ -26,6 +28,10 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
     end
   end
 
+  def compile(%{op: :partial_constructor, target: target, tag: tag, args: args, arity: arity}, env, counter) do
+    FunctionCallCompile.partial_union_constructor(target, tag, args, arity, env, counter)
+  end
+
   def compile(%{op: :constructor_call, target: target, args: args}, env, counter) do
     case SpecialValues.special_value_from_target(target, args) do
       nil ->
@@ -40,6 +46,30 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
     end
   end
 
+  def compile(%{op: :call, name: "__apply__", args: args}, env, counter)
+      when is_list(args) and length(args) >= 2 do
+    [fun | operands] = args
+    {fun_code, fun_var, counter} = FunctionCallCompile.compile_call_operand(fun, env, counter)
+
+    {acc_code, acc_var, counter} =
+      Enum.reduce(operands, {fun_code, fun_var, counter}, fn operand, {code_acc, var_acc, c} ->
+        {op_code, op_var, c} = FunctionCallCompile.compile_call_operand(operand, env, c)
+        next = c + 1
+        out = "tmp_#{next}"
+        args_array = "apply_args_#{next}"
+
+        code =
+          code_acc <>
+            op_code <>
+            "  ElmcValue *#{args_array}[1] = { #{op_var} };\n" <>
+            "  ElmcValue *#{out} = elmc_closure_call(#{var_acc}, #{args_array}, 1);\n"
+
+        {code, out, next}
+      end)
+
+    {acc_code, acc_var, counter}
+  end
+
   def compile(%{op: :call, name: name, args: args}, env, counter) do
     case BuiltinOperators.call(name, args, env, counter) do
       nil ->
@@ -48,8 +78,17 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
             FunctionCallCompile.compile_closure(closure_var, args, env, counter)
 
           _ ->
-            module_name = Map.get(env, :__module__, "Main")
-            FunctionCallCompile.compile(module_name, name, args, env, counter)
+            case Map.get(env, name) do
+              {:forward_ref, _} ->
+                forward_ref_call(name, args, env, counter)
+
+              {:forward_ref_slot, _} ->
+                forward_ref_call(name, args, env, counter)
+
+              _ ->
+                module_name = Map.get(env, :__module__, "Main")
+                FunctionCallCompile.compile(module_name, name, args, env, counter)
+            end
         end
 
       result ->
@@ -84,9 +123,59 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
         end
 
       expr ->
+        expr = typed_debug_to_string_expr(target, args, expr, env)
         Host.compile_expr(expr, env, counter)
     end
   end
+
+  defp typed_debug_to_string_expr("Debug.toString", [value], _expr, env) do
+    function =
+      if set_debug_value?(value, env) do
+        "elmc_debug_set_to_string"
+      else
+        "elmc_debug_to_string"
+      end
+
+    %{op: :runtime_call, function: function, args: [value]}
+  end
+
+  defp typed_debug_to_string_expr(_target, _args, expr, _env), do: expr
+
+  defp set_debug_value?(value, env) do
+    case TypedReturn.expr_type(value, env) do
+      type when is_binary(type) ->
+        TypeParsing.set_type?(type) or function_param_set_type?(value, env)
+
+      _ ->
+        function_param_set_type?(value, env)
+    end
+  end
+
+  defp function_param_set_type?(%{op: :var, name: name}, env) when is_binary(name) do
+    module = Map.get(env, :__module__, "Main")
+    fn_name = Map.get(env, :__function_name__)
+
+    case Map.get(Map.get(env, :__program_decls__, %{}), {module, fn_name}) do
+      %{type: type, args: args} when is_binary(type) and is_list(args) ->
+        with idx when is_integer(idx) <- Enum.find_index(args, &(&1 == name)),
+             param_type when is_binary(param_type) <- Enum.at(TypeParsing.function_arg_types(type), idx) do
+          TypeParsing.set_type?(param_type)
+        else
+          _ -> false
+        end
+
+      %{type: type} when is_binary(type) ->
+        case TypeParsing.function_arg_types(type) do
+          [param_type] -> TypeParsing.set_type?(param_type)
+          _ -> false
+        end
+
+      _ ->
+        false
+    end
+  end
+
+  defp function_param_set_type?(_value, _env), do: false
 
   defp let_bound_closure_call(target, args, env, counter) do
     with {module_name, name} <- Host.split_qualified_function_target(target),
@@ -140,5 +229,42 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
     """
 
     {code, out, counter}
+  end
+
+  defp forward_ref_call(name, args, env, counter) do
+    ref_expr =
+      case Map.get(env, name) do
+        {:forward_ref, ref} -> "elmc_forward_ref_get(#{ref})"
+        {:forward_ref_slot, slot} -> "elmc_forward_ref_get(#{slot})"
+      end
+
+    {arg_code, arg_vars, counter} =
+      Enum.reduce(args, {"", [], counter}, fn arg_expr, {code_acc, vars_acc, c} ->
+        {code, var, c2} = Host.compile_expr(arg_expr, env, c)
+        {code_acc <> "\n  " <> code, vars_acc ++ [var], c2}
+      end)
+
+    callee_counter = counter + 1
+    callee = "tmp_#{callee_counter}"
+    out_counter = callee_counter + 1
+    out = "tmp_#{out_counter}"
+    args_var = "call_args_#{out_counter}"
+    argc = length(arg_vars)
+    arg_list = Enum.join(arg_vars, ", ")
+
+    releases =
+      arg_vars
+      |> Enum.map_join("\n  ", fn var -> "elmc_release(#{var});" end)
+
+    code = """
+    #{arg_code}
+      ElmcValue *#{callee} = #{ref_expr};
+      ElmcValue *#{args_var}[#{max(argc, 1)}] = { #{arg_list} };
+      ElmcValue *#{out} = elmc_closure_call(#{callee}, #{args_var}, #{argc});
+      elmc_release(#{callee});
+      #{releases}
+    """
+
+    {code, out, out_counter}
   end
 end

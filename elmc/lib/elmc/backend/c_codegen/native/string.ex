@@ -154,7 +154,10 @@ defmodule Elmc.Backend.CCodegen.Native.String do
       do:
         is_binary(EnvBindings.native_string_binding(env, name)) or
           EnvBindings.boxed_string_binding?(env, name) or
-          TypedReturn.string_expr?(expr, env)
+          TypedReturn.string_expr?(expr, env) or
+          TypedReturn.expr_type(expr, env) == "String"
+
+  def expr?(%{op: :runtime_call, function: "elmc_string_from_char", args: [_]}, _env), do: true
 
   def expr?(%{op: :if, then_expr: then_expr, else_expr: else_expr}, env),
     do: expr?(then_expr, env) and expr?(else_expr, env)
@@ -188,7 +191,11 @@ defmodule Elmc.Backend.CCodegen.Native.String do
   def boxed_expr?(%{op: :var, name: name}, env) when is_binary(name) or is_atom(name),
     do:
       EnvBindings.boxed_string_binding?(env, name) or
-        TypedReturn.string_expr?(%{op: :var, name: name}, env)
+        TypedReturn.string_expr?(%{op: :var, name: name}, env) or
+        TypedReturn.expr_type(%{op: :var, name: name}, env) == "String"
+
+  def boxed_expr?(%{op: :runtime_call, function: "elmc_string_from_char", args: [_]}, _env),
+    do: true
 
   def boxed_expr?(%{op: :runtime_call, function: "elmc_string_from_int", args: [value]}, env),
     do: Host.native_int_expr?(value, env)

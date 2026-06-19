@@ -217,6 +217,18 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
                | sigs_acc
              ], nil}
 
+          {:ok, {:port_signature, name, type}} ->
+            {aliases_acc, flush_union(unions_acc, union_current),
+             [
+               %{
+                 kind: :function_signature,
+                 name: name,
+                 type: String.trim(type),
+                 span: %{start_line: line_info.line_no, end_line: line_info.line_no}
+               }
+               | sigs_acc
+             ], nil}
+
           _ ->
             {next_unions, next_current} = parse_union_line(line_info, unions_acc, union_current)
             {aliases_acc, next_unions, sigs_acc, next_current}
@@ -427,6 +439,9 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
   end
 
   @spec maybe_generated_expr(String.t()) :: expr()
+  defp maybe_generated_expr("(&&)"), do: bool_intrinsic_lambda(:and)
+  defp maybe_generated_expr("(||)"), do: bool_intrinsic_lambda(:or)
+
   defp maybe_generated_expr(body) do
     if body == "" do
       nil
@@ -607,6 +622,9 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
   defp allow_generated_expr?(%{op: op})
        when op in [
               :int_literal,
+              :float_literal,
+              :bool_literal,
+              :order_literal,
               :string_literal,
               :char_literal,
               :var,
@@ -615,8 +633,8 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
               :sub_const,
               :cmd_none,
               :field_access,
-              :compose_left,
-              :compose_right,
+              :qualified_ref,
+              :constructor_ref,
               :tuple_second_expr,
               :tuple_first_expr,
               :string_length_expr,
@@ -692,7 +710,42 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
       end)
   end
 
+  defp allow_generated_expr?(%{op: :compose_left, f: f, g: g}),
+    do: allow_compose_side?(f) and allow_compose_side?(g)
+
+  defp allow_generated_expr?(%{op: :compose_right, f: f, g: g}),
+    do: allow_compose_side?(f) and allow_compose_side?(g)
+
+  defp allow_compose_side?(side) when is_binary(side), do: true
+  defp allow_compose_side?(side), do: allow_generated_expr?(side)
+
   defp allow_generated_expr?(_), do: false
+
+  defp bool_intrinsic_lambda(:and) do
+    %{
+      op: :lambda,
+      args: ["arg1", "arg2"],
+      body: %{
+        op: :if,
+        cond: %{op: :var, name: "arg1"},
+        then_expr: %{op: :var, name: "arg2"},
+        else_expr: %{op: :constructor_call, target: "False", args: []}
+      }
+    }
+  end
+
+  defp bool_intrinsic_lambda(:or) do
+    %{
+      op: :lambda,
+      args: ["arg1", "arg2"],
+      body: %{
+        op: :if,
+        cond: %{op: :var, name: "arg1"},
+        then_expr: %{op: :constructor_call, target: "True", args: []},
+        else_expr: %{op: :var, name: "arg2"}
+      }
+    }
+  end
 
   @spec parse_union_line(map(), [map()], map() | nil) :: {[map()], map() | nil}
   defp parse_union_line(line_info, acc, current) do

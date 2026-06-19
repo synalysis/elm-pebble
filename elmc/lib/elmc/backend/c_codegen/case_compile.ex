@@ -4,6 +4,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
   alias Elmc.Backend.CCodegen.ConstructorTagCase
   alias Elmc.Backend.CCodegen.BuiltinUnion
   alias Elmc.Backend.CCodegen.CSource
+  alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Expr
   alias Elmc.Backend.CCodegen.HelperParams
   alias Elmc.Backend.CCodegen.Host
@@ -255,7 +256,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
         {expr_code, assignment_code, c2} =
           branch_assignment(branch.expr, out, branch_env, c)
 
-        cond_code = Patterns.pattern_condition(subject_ref, branch.pattern)
+        cond_code = pattern_condition_code(subject, subject_ref, branch.pattern, branch_env)
 
         enter_probe =
           env |> battery_alert_case_probe(branch_index, :enter) |> Host.agent_probe_region()
@@ -489,6 +490,31 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
       params
     end
   end
+
+  defp pattern_condition_code(subject, subject_ref, pattern, env) do
+    case native_bool_pattern_condition(subject, pattern, env) do
+      nil -> Patterns.pattern_condition(subject_ref, pattern)
+      code -> code
+    end
+  end
+
+  defp native_bool_pattern_condition(subject, pattern, env) do
+    with name when is_binary(name) <- case_subject_name(subject),
+         ref when is_binary(ref) <- EnvBindings.native_bool_binding(env, name) do
+      case pattern do
+        %{kind: :wildcard} -> "1"
+        %{kind: :constructor, name: "True"} -> "(#{ref})"
+        %{kind: :constructor, name: "False"} -> "!(#{ref})"
+        _ -> nil
+      end
+    else
+      _ -> nil
+    end
+  end
+
+  defp case_subject_name(subject) when is_binary(subject), do: subject
+  defp case_subject_name(%{op: :var, name: name}) when is_binary(name), do: name
+  defp case_subject_name(_), do: nil
 
   defp external_vars(expr), do: external_vars(expr, MapSet.new())
 

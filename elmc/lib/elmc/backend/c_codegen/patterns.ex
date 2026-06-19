@@ -3,6 +3,7 @@ defmodule Elmc.Backend.CCodegen.Patterns do
 
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Expr
+  alias Elmc.Backend.CCodegen.Native.RecordFields
   alias Elmc.Backend.CCodegen.PebbleMsgTag
   alias Elmc.Backend.CCodegen.Types
 
@@ -16,7 +17,12 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   end
 
   def pattern_condition(subject_ref, %{kind: :int, value: value}) when is_integer(value) do
-    "#{subject_ref} && #{subject_ref}->tag == ELMC_TAG_INT && elmc_as_int(#{subject_ref}) == #{value}"
+    "#{subject_ref} && (#{subject_ref}->tag == ELMC_TAG_INT || #{subject_ref}->tag == ELMC_TAG_CHAR) && elmc_as_int(#{subject_ref}) == #{value}"
+  end
+
+  def pattern_condition(subject_ref, %{kind: :tuple, elements: elements})
+      when is_list(elements) and length(elements) > 2 do
+    pattern_condition(subject_ref, nest_tuple_pattern(elements))
   end
 
   def pattern_condition(subject_ref, %{kind: :tuple, elements: [left, right]}) do
@@ -124,6 +130,20 @@ defmodule Elmc.Backend.CCodegen.Patterns do
     "(#{subject_ref}) && (#{int_match} || #{tuple_match})"
   end
 
+  def pattern_condition(subject_ref, %{kind: :constructor} = pattern) do
+    case order_constructor_name(pattern) do
+      name when name in ["LT", "EQ", "GT"] ->
+        order_constructor_condition(subject_ref, order_scalar(name))
+
+      _ ->
+        case bool_constructor_name(pattern) do
+          "False" -> bool_constructor_condition(subject_ref, false)
+          "True" -> bool_constructor_condition(subject_ref, true)
+          _ -> "0"
+        end
+    end
+  end
+
   def pattern_condition(_subject_ref, _pattern), do: "0"
 
   @spec bind_pattern(Types.compile_env(), Types.pattern(), Types.subject_ref()) ::
@@ -144,6 +164,11 @@ defmodule Elmc.Backend.CCodegen.Patterns do
 
   def bind_pattern(env, %{kind: :var, name: bind}, subject_ref) do
     Map.put(env, bind, pattern_subject_ref(subject_ref))
+  end
+
+  def bind_pattern(env, %{kind: :tuple, elements: elements}, subject_ref)
+      when is_list(elements) and length(elements) > 2 do
+    bind_pattern(env, nest_tuple_pattern(elements), subject_ref)
   end
 
   def bind_pattern(env, %{kind: :tuple, elements: [left, right]}, subject_ref) do
@@ -223,6 +248,13 @@ defmodule Elmc.Backend.CCodegen.Patterns do
     subject_ref = pattern_subject_ref(subject_ref)
     env = if is_binary(bind), do: Map.put(env, bind, subject_ref), else: env
 
+    parent_expr =
+      cond do
+        is_binary(bind) -> %{op: :var, name: bind}
+        is_binary(subject_ref) -> %{op: :var, name: subject_ref}
+        true -> nil
+      end
+
     Enum.reduce(fields, env, fn field, acc ->
       case field do
         "value" ->
@@ -230,6 +262,18 @@ defmodule Elmc.Backend.CCodegen.Patterns do
 
         "temperature" ->
           Map.put(acc, field, "((ElmcTuple2 *)#{subject_ref}->payload)->second")
+
+        name when is_binary(name) and not is_nil(parent_expr) ->
+          shape = Expr.record_shape(parent_expr, acc)
+          type = Expr.record_container_type_for_expr(parent_expr, acc)
+          getter = Expr.record_get_expr(subject_ref, name, shape, acc, type)
+
+          field_type = RecordFields.field_type(acc, parent_expr, name)
+          field_shape = if is_binary(field_type), do: Expr.record_shape_for_type(field_type, acc), else: nil
+
+          acc
+          |> Map.put(name, getter)
+          |> put_pattern_field_record_shape(name, field_shape)
 
         name when is_binary(name) ->
           Map.put(acc, name, subject_ref)
@@ -405,5 +449,54 @@ defmodule Elmc.Backend.CCodegen.Patterns do
 
   defp constructor_arg_condition(value_ref, arg_pattern) when is_map(arg_pattern) do
     " && (#{pattern_condition(value_ref, arg_pattern)})"
+  end
+
+  defp put_pattern_field_record_shape(env, name, shape) when is_list(shape) do
+    shapes = Map.get(env, :__record_shapes__, %{})
+    Map.put(env, :__record_shapes__, Map.put(shapes, EnvBindings.binding_key(name), shape))
+  end
+
+  defp put_pattern_field_record_shape(env, _name, _shape), do: env
+
+  defp bool_constructor_name(%{resolved_name: name}) when name in ["True", "False"], do: name
+  defp bool_constructor_name(%{name: name}) when name in ["True", "False"], do: name
+  defp bool_constructor_name(_), do: nil
+
+  defp bool_constructor_condition(subject_ref, true_value?) do
+    bool_match =
+      if true_value? do
+        "((#{subject_ref})->tag == ELMC_TAG_BOOL && elmc_as_bool(#{subject_ref}))"
+      else
+        "((#{subject_ref})->tag == ELMC_TAG_BOOL && !elmc_as_bool(#{subject_ref}))"
+      end
+
+    int_match =
+      if true_value? do
+        "((#{subject_ref})->tag == ELMC_TAG_INT && elmc_as_int(#{subject_ref}) == 1)"
+      else
+        "((#{subject_ref})->tag == ELMC_TAG_INT && elmc_as_int(#{subject_ref}) == 0)"
+      end
+
+    "(#{subject_ref}) && (#{bool_match} || #{int_match})"
+  end
+
+  defp order_constructor_name(%{resolved_name: name}) when name in ["LT", "EQ", "GT"], do: name
+  defp order_constructor_name(%{name: name}) when name in ["LT", "EQ", "GT"], do: name
+  defp order_constructor_name(_), do: nil
+
+  defp order_scalar("LT"), do: -1
+  defp order_scalar("EQ"), do: 0
+  defp order_scalar("GT"), do: 1
+
+  defp order_constructor_condition(subject_ref, scalar) do
+    "(#{subject_ref}) && (#{subject_ref})->tag == ELMC_TAG_ORDER && elmc_as_int(#{subject_ref}) == #{scalar}"
+  end
+
+  defp nest_tuple_pattern([left, right]) do
+    %{kind: :tuple, elements: [left, right]}
+  end
+
+  defp nest_tuple_pattern([left | rest]) do
+    %{kind: :tuple, elements: [left, nest_tuple_pattern(rest)]}
   end
 end

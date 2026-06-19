@@ -104,16 +104,12 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     env = Keyword.get(opts, :env, %{})
 
     cons =
-      if owned? do
-        RcRuntimeEmit.fusion_assign(cell, "elmc_list_cons", "#{item_expr}, elmc_list_nil()", env)
-      else
-        RcRuntimeEmit.list_cons_retain_assign(
-          cell,
-          "#{item_expr}, elmc_list_nil()",
-          env,
-          return_on_fail?: false
-        )
-      end
+      RcRuntimeEmit.list_cons_retain_assign(
+        cell,
+        "#{item_expr}, elmc_list_nil()",
+        env,
+        return_on_fail?: false
+      )
 
     release_owned =
       if owned? and owned_forward_item_expr?(item_expr) do

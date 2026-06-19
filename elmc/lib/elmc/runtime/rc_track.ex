@@ -281,6 +281,13 @@ defmodule Elmc.Runtime.RcTrack do
         node->tail = NULL;
         elmc_release(head);
         ElmcValue *cell = cursor;
+        /* Stop when the tail spine is still borrowed elsewhere (for example
+           releasing a temporary `first :: rest` cons must not tear down `rest`). */
+        if (next && next->tag == ELMC_TAG_LIST && next->payload != NULL && next->rc > 1) {
+          elmc_release(next);
+          elmc_release_list_cell_payload(cell);
+          return;
+        }
         cursor = next;
         elmc_release_list_cell_payload(cell);
       }

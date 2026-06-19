@@ -2,7 +2,9 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.BuiltinUnion
+  alias Elmc.Backend.CCodegen.ConstantInt
   alias Elmc.Backend.CCodegen.DebugProbes
+  alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
@@ -72,13 +74,23 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
   end
 
   def compile(%{op: :char_from_code_expr, arg: arg_expr}, env, counter) do
-    compile_expr_unary(arg_expr, "elmc_new_char(elmc_as_int", env, counter)
+    {arg_code, arg_var, counter} = Host.compile_expr(arg_expr, env, counter)
+    next = counter + 1
+    var = "tmp_#{next}"
+
+    code = """
+    #{arg_code}
+      ElmcValue *#{var} = elmc_char_from_code(#{arg_var});
+      elmc_release(#{arg_var});
+    """
+
+    {code, var, next}
   end
 
   defp compile_generic_tuple2(left, right, env, counter) do
     child_env = Map.delete(env, :__into_out__)
 
-    if NativeInt.expr?(left, env) and NativeInt.expr?(right, env) do
+    if tuple2_native_int_operands?(left, right, env) do
       {left_code, left_ref, counter} = Host.compile_native_int_expr(left, child_env, counter)
       {right_code, right_ref, counter} = Host.compile_native_int_expr(right, child_env, counter)
       next = counter + 1
@@ -116,6 +128,17 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
       {code, out, next}
     end
   end
+
+  defp tuple2_native_int_operands?(left, right, env) do
+    NativeInt.expr?(left, env) and NativeInt.expr?(right, env) and
+      not tuple2_unspecialized_var?(left, env) and
+      not tuple2_unspecialized_var?(right, env)
+  end
+
+  defp tuple2_unspecialized_var?(%{op: :var, name: name}, env),
+    do: not ConstantInt.native_let_value?(%{op: :var, name: name}, env)
+
+  defp tuple2_unspecialized_var?(_expr, _env), do: false
 
   defp compile_dynamic_list_literal(items, env, counter) do
     item_env = Map.delete(env, :__into_out__)
@@ -221,43 +244,78 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
 
   defp static_tuple2_int_literal?(_), do: false
 
-  @spec env_source_ref(Types.compile_env(), String.t()) :: Types.env_source_ref()
-  defp env_source_ref(env, name), do: Map.get(env, name, name)
+  @spec resolve_env_source(Types.compile_env(), String.t(), Types.compile_counter()) ::
+          {String.t(), Types.env_source_ref(), Types.compile_counter()}
+  defp resolve_env_source(env, name, counter) do
+    case Map.get(env, name) do
+      ref when is_binary(ref) ->
+        {"", ref, counter}
+
+      _ ->
+        Host.compile_expr(%{op: :var, name: name}, env, counter)
+    end
+  end
 
   @spec compile_bound_tuple_second(Types.compile_env(), String.t(), Types.compile_counter()) ::
           Types.compile_result()
   defp compile_bound_tuple_second(env, name, counter) do
-    source = env_source_ref(env, name)
+    {source_code, source, counter} = resolve_env_source(env, name, counter)
     next = counter + 1
     var = "tmp_#{next}"
-    {"ElmcValue *#{var} = elmc_tuple_second(#{source});", var, next}
+
+    code = """
+    #{source_code}  ElmcValue *#{var} = elmc_tuple_second(#{source});
+    """
+
+    {code, var, next}
   end
 
   @spec compile_bound_tuple_first(Types.compile_env(), String.t(), Types.compile_counter()) ::
           Types.compile_result()
   defp compile_bound_tuple_first(env, name, counter) do
-    source = env_source_ref(env, name)
+    {source_code, source, counter} = resolve_env_source(env, name, counter)
     next = counter + 1
     var = "tmp_#{next}"
-    {"ElmcValue *#{var} = elmc_tuple_first(#{source});", var, next}
+
+    code = """
+    #{source_code}  ElmcValue *#{var} = elmc_tuple_first(#{source});
+    """
+
+    {code, var, next}
   end
 
   @spec compile_bound_string_length(Types.compile_env(), String.t(), Types.compile_counter()) ::
           Types.compile_result()
   defp compile_bound_string_length(env, name, counter) do
-    source = env_source_ref(env, name)
+    {source_code, source, counter} = resolve_env_source(env, name, counter)
     next = counter + 1
     var = "tmp_#{next}"
-    {RcRuntimeEmit.assign_call(env, var, "elmc_new_int", "elmc_string_length(#{source})"), var, next}
+
+    code =
+      source_code <>
+        RcRuntimeEmit.assign_call(env, var, "elmc_new_int", "elmc_string_length(#{source})")
+
+    {code, var, next}
   end
 
   @spec compile_bound_char_from_code(Types.compile_env(), String.t(), Types.compile_counter()) ::
           Types.compile_result()
   defp compile_bound_char_from_code(env, name, counter) do
-    source = env_source_ref(env, name)
+    {source_code, source, counter} = resolve_env_source(env, name, counter)
     next = counter + 1
     var = "tmp_#{next}"
-    {"ElmcValue *#{var} = elmc_new_char(elmc_as_int(#{source}));", var, next}
+
+    char_expr =
+      case EnvBindings.native_int_binding(env, name) do
+        ref when is_binary(ref) -> "elmc_char_from_code_int(#{ref})"
+        _ -> "elmc_char_from_code(#{source})"
+      end
+
+    code = """
+    #{source_code}  ElmcValue *#{var} = #{char_expr};
+    """
+
+    {code, var, next}
   end
 
   @spec compile_expr_tuple_access(
