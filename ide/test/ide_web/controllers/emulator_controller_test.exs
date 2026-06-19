@@ -322,7 +322,7 @@ defmodule IdeWeb.EmulatorControllerTest do
 
     {:ok, user} =
       %User{}
-      |> User.changeset(%{firebase_uid: "embedded-shot-user", email: "shot@example.test"})
+      |> User.changeset(%{firebase_uid: "embedded-shot-user"})
       |> Repo.insert()
 
     auth_conn = Plug.Test.init_test_session(conn, user_id: user.id)

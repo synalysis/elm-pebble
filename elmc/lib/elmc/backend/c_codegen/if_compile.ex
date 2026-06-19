@@ -43,6 +43,9 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
         ) :: Types.compile_result()
   defp compile_branches(cond_expr, then_expr, else_expr, env, counter) do
     cond do
+      identical_branch_exprs?(then_expr, else_expr) ->
+        Host.compile_expr(then_expr, env, counter)
+
       Host.native_bool_expr?(cond_expr, env) and Host.native_int_expr?(then_expr, env) and
           Host.native_int_expr?(else_expr, env) ->
         compile_native_bool_branches(cond_expr, then_expr, else_expr, env, counter)
@@ -177,6 +180,28 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
 
     {code, out, counter}
   end
+
+  defp identical_branch_exprs?(left, right) do
+    normalize_branch_expr(left) == normalize_branch_expr(right)
+  end
+
+  defp normalize_branch_expr(%{op: :var, name: name}), do: {:var, name}
+
+  defp normalize_branch_expr(%{op: op, value: value}) when op in [:int_literal, :float_literal, :bool_literal, :string_literal],
+    do: {op, value}
+
+  defp normalize_branch_expr(%{op: op} = expr) when is_atom(op) do
+    expr
+    |> Map.drop([:meta, :loc, :span, :range, :source])
+    |> Enum.sort()
+    |> Enum.map(fn
+      {key, value} when is_map(value) -> {key, normalize_branch_expr(value)}
+      {key, value} when is_list(value) -> {key, Enum.map(value, &normalize_branch_expr/1)}
+      pair -> pair
+    end)
+  end
+
+  defp normalize_branch_expr(other), do: other
 
   defp branch_env(env, out) do
     env

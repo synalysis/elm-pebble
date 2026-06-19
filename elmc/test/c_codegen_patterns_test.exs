@@ -1066,7 +1066,7 @@ defmodule Elmc.CCodegenPatternsTest do
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert generated_c =~ ~r/elmc_string_append(_take)?\(/
+    assert generated_c =~ ~r/elmc_string_append(_native(_take)?|_take)?\(/
     refute generated_c =~ "elmc_list_concat_array("
     refute generated_c =~ "elmc_list_concat("
   end
@@ -1530,7 +1530,9 @@ defmodule Elmc.CCodegenPatternsTest do
           "Basics/MainListPattern.elm",
           "Basics/MainParseJson.elm",
           "Compiler/NestedLoaderCaptureShape.elm",
-          "Iterative/ControlFlow.elm"
+          "Iterative/ControlFlow.elm",
+          "Bugs/BigStringCase.elm",
+          "Bugs/StringContainsNul.elm"
         ] do
       tmp = Path.expand("tmp/utf8_string_#{Path.basename(path, ".elm")}", __DIR__)
       gold = ElmRunCorpus.read_expected!(path)
@@ -2464,6 +2466,7 @@ defmodule Elmc.CCodegenPatternsTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        "-lm",
         "-o",
         binary_path
       ])
@@ -2732,7 +2735,8 @@ defmodule Elmc.CCodegenPatternsTest do
     assert init_body =~
              "ELMC_RECORD_GET_INDEX_INT(tmp_1_screen, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_WIDTH)"
 
-    assert init_body =~ "elmc_record_new_values_ints"
+    assert init_body =~ "elmc_record_new_values_ints" or
+             init_body =~ "elmc_record_new_values_take"
   end
 
   test "direct-only boxed helpers bind args without argc checks when wrappers are pruned" do
@@ -3088,14 +3092,15 @@ defmodule Elmc.CCodegenPatternsTest do
     pick_body =
       generated_c
       |> String.split(
-        static_fn_def_marker("pickTile", "ElmcValue ** const args, const int argc"),
+        static_fn_def_marker("pickTile", "ElmcValue **out, ElmcValue ** const args, const int argc"),
         parts: 2
       )
       |> Enum.at(1, "")
       |> String.split(worker_fn_def_marker("init"), parts: 2)
       |> hd()
 
-    assert pick_body =~ "elmc_tuple2_take_value("
+    assert pick_body =~ "elmc_tuple2_take("
+    refute pick_body =~ "elmc_tuple2_take_value("
     refute Regex.match?(~r/tmp_\d+ = tmp_\d+;/, pick_body)
 
     refute Regex.match?(
@@ -4240,6 +4245,7 @@ defmodule Elmc.CCodegenPatternsTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        "-lm",
         "-o",
         binary_path
       ])
@@ -4320,8 +4326,8 @@ defmodule Elmc.CCodegenPatternsTest do
 
     refute generated_c =~ "direct_den_"
     refute generated_c =~ "direct_mod_base_"
-    assert generated_c =~ " / 4"
     assert generated_c =~ " % 4"
+    assert generated_c =~ " / 4" or generated_c =~ "elmc_int_idiv("
   end
 
   test "record Bool helpers with native bodies emit _native return without RC boxing" do

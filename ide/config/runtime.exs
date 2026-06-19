@@ -48,7 +48,8 @@ config :ide, Ide.Auth,
     System.get_env("IDE_APPSTORE_API_BASE") || "https://appstore-api.repebble.com",
   login_link_ttl_days:
     (System.get_env("IDE_LOGIN_LINK_TTL_DAYS") || "30")
-    |> String.to_integer()
+    |> String.to_integer(),
+  email_hash_pepper: System.get_env("IDE_EMAIL_HASH_PEPPER")
 
 config :ide, Ide.Emulator.SlotLimiter,
   max_slots:
@@ -308,7 +309,8 @@ if config_env() == :prod do
     login_link_ttl_days:
       (System.get_env("IDE_LOGIN_LINK_TTL_DAYS") || "30")
       |> String.to_integer(),
-    mail_from: mail_from
+    mail_from: mail_from,
+    email_hash_pepper: System.get_env("IDE_EMAIL_HASH_PEPPER")
 
   if is_nil(System.get_env("SMTP_RELAY")) and auth_mode == "public_custom" do
     raise """

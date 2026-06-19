@@ -266,8 +266,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
     {:ok, user} =
       %Ide.Auth.User{}
       |> Ide.Auth.User.changeset(%{
-        firebase_uid: "store-listing-sync",
-        email: "store@example.test"
+        firebase_uid: "store-listing-sync"
       })
       |> Ide.Repo.insert()
 

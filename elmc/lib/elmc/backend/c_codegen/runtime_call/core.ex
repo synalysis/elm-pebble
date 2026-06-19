@@ -1281,7 +1281,8 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
       |> EnvBindings.put_native_int_binding(arg, "elmc_as_int(#{head})")
       |> EnvBindings.put_boxed_int_binding(arg, false)
 
-    if usage.total > 0 and usage.boxed == 0 and NativeInt.expr?(body, trial_env) do
+    if usage.total > 0 and usage.boxed == 0 and
+         (NativeInt.expr?(body, trial_env) or NativeBool.expr?(body, trial_env)) do
       trial_env
     else
       env

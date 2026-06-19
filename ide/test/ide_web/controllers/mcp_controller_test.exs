@@ -26,7 +26,7 @@ defmodule IdeWeb.McpControllerTest do
   defp insert_mcp_test_user! do
     {:ok, user} =
       %Ide.Auth.User{}
-      |> Ide.Auth.User.changeset(%{firebase_uid: "mcp-test-user", email: "mcp@example.test"})
+      |> Ide.Auth.User.changeset(%{firebase_uid: "mcp-test-user"})
       |> Ide.Repo.insert()
 
     user

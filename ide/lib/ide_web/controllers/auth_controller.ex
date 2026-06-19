@@ -34,7 +34,6 @@ defmodule IdeWeb.AuthController do
     json(conn, %{
       mode: Auth.mode(),
       logged_in: not is_nil(user),
-      email: user && user.email,
       display_name: user && user.display_name,
       firebase_token_exp: token_exp,
       firebase_token_expired: Auth.token_expired?(token_exp),
@@ -55,7 +54,7 @@ defmodule IdeWeb.AuthController do
       |> put_session(:firebase_id_token_exp, Auth.token_exp(id_token))
       |> json(%{
         logged_in: true,
-        email: user.email,
+        email: payload["email"],
         display_name: user.display_name,
         redirect_to: "/projects"
       })

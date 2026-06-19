@@ -20,7 +20,9 @@ config :ide, IdeWeb.Endpoint,
   secret_key_base: "b6ipsOJm6FpX685mhXpMwlEbam0P2ZpFfXx6N36lpKjaWuqefeD2xNfzsHxGhZ/8",
   server: false
 
-config :ide, Ide.Auth, login_link_ttl_days: 30
+config :ide, Ide.Auth,
+  login_link_ttl_days: 30,
+  email_hash_pepper: "test-email-hash-pepper"
 
 # In test we don't send emails
 config :ide, Ide.Mailer, adapter: Swoosh.Adapters.Test

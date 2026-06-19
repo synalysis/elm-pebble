@@ -2934,6 +2934,13 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
       else: %{op: :int_literal, value: 0}
   end
 
+  defp constructor_tag_expr(%{op: :partial_constructor, target: target, args: []})
+       when is_binary(target) do
+    if msg_constructor_name?(target),
+      do: msg_tag_expr(target),
+      else: %{op: :int_literal, value: 0}
+  end
+
   defp constructor_tag_expr(_), do: %{op: :int_literal, value: 0}
 
   defp msg_constructor_name?(name) when is_binary(name) do

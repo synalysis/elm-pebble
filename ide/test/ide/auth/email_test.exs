@@ -5,6 +5,7 @@ defmodule Ide.Auth.EmailTest do
 
   alias Ide.Auth
   alias Ide.Auth.Email
+  alias Ide.Auth.EmailHash
   alias Ide.Auth.LoginLink
   alias Ide.Auth.LoginToken
   alias Ide.Auth.User
@@ -20,7 +21,10 @@ defmodule Ide.Auth.EmailTest do
   test "send_login_link creates user, token, and email" do
     assert :ok = Email.send_login_link("dev@example.test")
 
-    assert %User{email: "dev@example.test"} = Repo.get_by(User, email: "dev@example.test")
+    assert %User{email_hash: hash} =
+             Repo.get_by(User, email_hash: EmailHash.hash("dev@example.test"))
+
+    assert hash == EmailHash.hash("dev@example.test")
     assert [%LoginToken{}] = Repo.all(LoginToken)
 
     assert_email_sent(fn email ->
@@ -31,7 +35,8 @@ defmodule Ide.Auth.EmailTest do
 
   test "send_login_link rejects invalid punycode domain" do
     assert {:error, :invalid_email} = Email.send_login_link("test@xn--y0.net")
-    refute Repo.get_by(User, email: "test@xn--y0.net")
+
+    refute Repo.get_by(User, email_hash: EmailHash.hash("test@xn--y0.net"))
   end
 
   test "verify_login_token logs in once" do
@@ -44,7 +49,7 @@ defmodule Ide.Auth.EmailTest do
       end)
 
     assert {:ok, user} = Email.verify_login_token(token)
-    assert user.email == "verify@example.test"
+    assert user.email_hash == EmailHash.hash("verify@example.test")
     assert {:error, :used_token} = Email.verify_login_token(token)
   end
 

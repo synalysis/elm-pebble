@@ -36,7 +36,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     companion-demo-settings
     companion-demo-websocket
     companion-demo-timeline
-  )a
+  )
 
   @aplite_profile_templates ~w(watch-demo-compass)
 

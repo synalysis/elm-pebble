@@ -58,7 +58,9 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
 
     native_lambda_arg? = fn name ->
       usage = Host.native_int_usage(name, body, module_name, decl_map)
-      usage.total > 0 and usage.boxed == 0 and not Host.binding_used_in_lambda?(name, body)
+
+      usage.total > 0 and usage.boxed == 0 and usage.native_container == 0 and
+        not Host.binding_used_in_lambda?(name, body)
     end
 
     native_arg_names =
@@ -68,7 +70,9 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
 
     native_free_vars =
       free_vars
-      |> Enum.filter(native_lambda_arg?)
+      |> Enum.filter(fn name ->
+        native_lambda_arg?.(name) and not boxed_capture_in_env?(name, env)
+      end)
       |> MapSet.new()
 
     # Build arg bindings for the closure function body
@@ -318,4 +322,16 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
   defp normalize_lambda_type(nil), do: nil
 
   defp normalize_lambda_type(type) when is_binary(type), do: Host.normalize_type_name(type)
+
+  defp boxed_capture_in_env?(name, env) do
+    case EnvBindings.lookup_binding(env, name) do
+      ref when is_binary(ref) ->
+        not EnvBindings.native_int_binding?(env, name) and
+          not is_binary(EnvBindings.native_bool_binding(env, name)) and
+          not is_binary(EnvBindings.native_float_binding(env, name))
+
+      _ ->
+        false
+    end
+  end
 end

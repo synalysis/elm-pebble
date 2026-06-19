@@ -16,6 +16,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.TypeParsing
   alias Elmc.Backend.CCodegen.Fusion
+  alias Elmc.Backend.CCodegen.FunctionCallCompile
   alias Elmc.Backend.CCodegen.ValueSlots
   alias Elmc.Backend.CCodegen.ImmortalStaticList
   alias Elmc.Backend.CCodegen.Tuple2CaseTable
@@ -283,8 +284,23 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         compile_env =
           if rc_required?, do: Map.put(env, :__rc_catch__, true), else: env
 
+        arg_kinds = List.duplicate(:boxed, length(arg_names))
+
         {code, result_var, _counter} =
-          Host.compile_expr(decl.expr || %{op: :int_literal, value: 0}, compile_env, 0)
+          case compile_tail_recursive(
+                 decl,
+                 module_name,
+                 compile_env,
+                 arg_bindings,
+                 arg_kinds,
+                 :boxed
+               ) do
+            {:ok, loop_code, tail_result} ->
+              {loop_code, tail_result, 0}
+
+            :error ->
+              Host.compile_expr(decl.expr || %{op: :int_literal, value: 0}, compile_env, 0)
+          end
 
         if rc_required?, do: ValueSlots.track(result_var)
 
@@ -1031,9 +1047,17 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
-  defp compile_native_body(decl, _module_name, _decl_map, env, :boxed, _arg_kinds) do
-    env = RecordCompile.with_subexpr_cache(env)
-    Host.compile_expr(decl.expr || %{op: :int_literal, value: 0}, env, 0)
+  defp compile_native_body(decl, module_name, _decl_map, env, :boxed, arg_kinds) do
+    c_arg_bindings = c_arg_bindings(decl.args || [])
+
+    case compile_tail_recursive(decl, module_name, env, c_arg_bindings, arg_kinds, :boxed) do
+      {:ok, code, result_var} ->
+        {code, result_var, 0}
+
+      :error ->
+        env = RecordCompile.with_subexpr_cache(env)
+        Host.compile_expr(decl.expr || %{op: :int_literal, value: 0}, env, 0)
+    end
   end
 
   defp compile_list_int_search_native(decl, module_name, decl_map, env, return_kind) do
@@ -1069,15 +1093,24 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     do: NativeBool.compile_expr(expr, env, counter)
 
   defp compile_tail_recursive_native(decl, module_name, env, return_kind, arg_kinds) do
+    c_arg_bindings = c_arg_bindings(decl.args || [])
+    compile_tail_recursive(decl, module_name, env, c_arg_bindings, arg_kinds, return_kind)
+  end
+
+  defp compile_tail_recursive(decl, module_name, env, arg_bindings, arg_kinds, return_kind) do
     arg_names = decl.args || []
     arg_types = if is_binary(decl.type), do: Host.function_arg_types(decl.type), else: []
 
     with true <- arg_names != [],
          true <- tail_recursive_arg_kinds?(arg_kinds, arg_types),
-         {:if_tail, cond_expr, base_expr, recursive_args, recurse_on_truthy?} <-
+         {:if_tail, cond_expr, base_expr, recursive_args, recurse_on_truthy?, let_prelude} <-
            tail_recursive_if(decl.expr, module_name, decl.name),
          true <- length(recursive_args) == length(arg_names) do
-      c_arg_bindings = c_arg_bindings(arg_names)
+      c_arg_bindings =
+        case arg_bindings do
+          bindings when bindings != [] -> bindings
+          _ -> c_arg_bindings(arg_names)
+        end
 
       loop_bindings =
         c_arg_bindings
@@ -1087,10 +1120,21 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           loop = loop_arg_name(c_arg)
 
           case {kind, Enum.at(arg_types, index) |> Host.normalize_type_name()} do
-            {:native_int, _} -> "elmc_int_t #{loop} = #{c_arg};"
-            {:boxed, "Int"} -> "elmc_int_t #{loop} = elmc_as_int(#{c_arg});"
-            {:native_bool, _} -> "bool #{loop} = #{c_arg};"
-            _ -> "elmc_int_t #{loop} = #{c_arg};"
+            {:native_int, _} ->
+              "elmc_int_t #{loop} = #{c_arg};"
+
+            {:boxed, "Int"} ->
+              box = boxed_int_loop_name(c_arg)
+              "elmc_int_t #{loop} = elmc_as_int(#{c_arg});\n  ElmcValue *#{box} = elmc_new_int_take(#{loop});"
+
+            {:native_bool, _} ->
+              "bool #{loop} = #{c_arg};"
+
+            {:boxed, _} ->
+              "ElmcValue *#{loop} = #{c_arg} ? elmc_retain(#{c_arg}) : elmc_int_zero();"
+
+            _ ->
+              "elmc_int_t #{loop} = #{c_arg};"
           end
         end)
 
@@ -1106,53 +1150,89 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
               EnvBindings.put_native_int_binding(acc, source_arg, loop)
 
             {:boxed, "Int"} ->
-              EnvBindings.put_native_int_binding(acc, source_arg, loop)
+              box = boxed_int_loop_name(c_arg)
+
+              acc
+              |> EnvBindings.put_native_int_binding(source_arg, loop)
+              |> Map.put(source_arg, box)
 
             {:native_bool, _} ->
               EnvBindings.put_native_bool_binding(acc, source_arg, loop)
+
+            {:boxed, _} ->
+              Map.put(acc, source_arg, loop)
 
             _ ->
               acc
           end
         end)
 
-      {cond_code, cond_ref, _} = NativeBool.compile_expr(cond_expr, loop_env, 0)
-      {base_code, base_ref, _} = compile_scalar_native_expr(base_expr, loop_env, return_kind, 0)
+      {hoist_code, loop_env, counter} =
+        hoist_tail_recursive_top_level_vars(
+          recursive_args,
+          let_prelude,
+          loop_env,
+          0,
+          module_name
+        )
 
-      updates =
-        recursive_args
-        |> Enum.zip(c_arg_bindings)
-        |> Enum.zip(arg_kinds)
-        |> Enum.reduce({"", []}, fn {{arg_expr, {_source_arg, c_arg, _index}}, kind},
-                                    {code_acc, refs_acc} ->
-          compile_kind = if kind == :boxed, do: :native_int, else: kind
+      {cond_code, cond_ref, counter} = NativeBool.compile_expr(cond_expr, loop_env, counter)
 
-          {arg_code, arg_ref, _} =
-            compile_scalar_native_expr(arg_expr, loop_env, compile_kind, length(refs_acc))
+      {base_code, base_ref, counter} =
+        if return_kind == :boxed do
+          Host.compile_expr(base_expr, loop_env, counter)
+        else
+          compile_scalar_native_expr(base_expr, loop_env, return_kind, counter)
+        end
 
-          next_ref = "#{loop_arg_name(c_arg)}_next"
-          code = code_acc <> "\n" <> arg_code <> "\n      elmc_int_t #{next_ref} = #{arg_ref};"
-          {code, refs_acc ++ [{loop_arg_name(c_arg), next_ref}]}
-        end)
-
-      {update_code, update_refs} = updates
-
-      assignments =
-        update_refs
-        |> Enum.map_join("\n      ", fn {target, next_ref} -> "#{target} = #{next_ref};" end)
+      {update_code, int_update_refs, boxed_update_refs, boxed_int_refresh_refs, _loop_env} =
+        compile_tail_recursive_continue_updates(
+          recursive_args,
+          c_arg_bindings,
+          arg_kinds,
+          arg_types,
+          loop_env,
+          counter,
+          let_prelude
+        )
 
       result_var = "tail_result"
-      continue_branch = tail_continue_branch(update_code, assignments)
-      base_branch = tail_base_branch(base_code, result_var, base_ref)
+      continue_branch =
+        tail_continue_branch(
+          update_code,
+          int_update_refs,
+          boxed_update_refs,
+          boxed_int_refresh_refs
+        )
+
+      base_branch =
+        if return_kind == :boxed do
+          tail_base_branch_boxed(
+            base_code,
+            result_var,
+            base_ref,
+            c_arg_bindings,
+            arg_kinds,
+            arg_types
+          )
+        else
+          tail_base_branch(base_code, result_var, base_ref)
+        end
 
       {then_branch, else_branch} =
         if recurse_on_truthy?,
           do: {continue_branch, base_branch},
           else: {base_branch, continue_branch}
 
+      result_decl =
+        if return_kind == :boxed,
+          do: "ElmcValue *#{result_var} = NULL;",
+          else: "elmc_int_t #{result_var} = 0;"
+
       code = """
       #{loop_bindings}
-        elmc_int_t #{result_var} = 0;
+      #{hoist_code}
+        #{result_decl}
         while (1) {
       #{CSource.indent(cond_code, 4)}
           if (#{cond_ref}) {
@@ -1170,24 +1250,142 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
+  defp compile_tail_recursive_continue_updates(
+         recursive_args,
+         c_arg_bindings,
+         arg_kinds,
+         arg_types,
+         loop_env,
+         counter,
+         let_prelude
+       ) do
+    {loop_env, counter, let_code} =
+      Enum.reduce(let_prelude, {loop_env, counter, ""}, fn {let_name, let_value},
+                                                            {env, ctr, code_acc} ->
+        {let_code, let_ref, ctr2} = Host.compile_expr(let_value, env, ctr)
+        {Map.put(env, let_name, let_ref), ctr2, code_acc <> "\n" <> let_code}
+      end)
+
+    {_counter, update_code, int_refs, boxed_refs, boxed_int_refs} =
+      recursive_args
+      |> Enum.zip(c_arg_bindings)
+      |> Enum.zip(arg_kinds)
+      |> Enum.with_index()
+      |> Enum.reduce({counter, let_code, [], [], []}, fn {{{arg_expr, {_source_arg, c_arg, _index}}, kind}, index},
+                                                    {ctr, code_acc, int_refs, boxed_refs, boxed_int_refs} ->
+        loop = loop_arg_name(c_arg)
+        type_name = Enum.at(arg_types, index) |> Host.normalize_type_name()
+        loop_kind = effective_tail_loop_kind(kind, type_name)
+
+        {arg_code, arg_ref, ctr2} =
+          compile_tail_recursive_step_arg(arg_expr, loop_env, loop_kind, ctr)
+
+        case loop_kind do
+          :boxed ->
+            {ctr2, code_acc <> "\n" <> arg_code, int_refs, boxed_refs ++ [{loop, arg_ref}],
+             boxed_int_refs}
+
+          _ ->
+            next_ref = "#{loop}_next"
+
+            {ctr2,
+             code_acc <> "\n" <> arg_code <> "\n      elmc_int_t #{next_ref} = #{arg_ref};",
+             int_refs ++ [{loop, next_ref}], boxed_refs,
+             if(kind == :boxed and type_name == "Int",
+               do: boxed_int_refs ++ [{boxed_int_loop_name(c_arg), loop}],
+               else: boxed_int_refs
+             )}
+        end
+      end)
+
+    {update_code, int_refs, boxed_refs, boxed_int_refs, loop_env}
+  end
+
+  defp effective_tail_loop_kind(:boxed, "Int"), do: :native_int
+  defp effective_tail_loop_kind(kind, _type_name), do: kind
+
+  defp compile_tail_recursive_step_arg(expr, loop_env, :boxed, counter),
+    do: Host.compile_expr(expr, loop_env, counter)
+
+  defp compile_tail_recursive_step_arg(expr, loop_env, :native_bool, counter),
+    do: NativeBool.compile_expr(expr, loop_env, counter)
+
+  defp compile_tail_recursive_step_arg(expr, loop_env, :native_int, counter),
+    do: NativeInt.compile_expr(expr, loop_env, counter)
+
+  defp hoist_tail_recursive_top_level_vars(recursive_args, let_prelude, env, counter, module_name) do
+    vars =
+      recursive_args
+      |> Enum.flat_map(&collect_ir_var_names/1)
+      |> Enum.concat(Enum.flat_map(let_prelude, fn {_name, value} -> collect_ir_var_names(value) end))
+      |> Enum.uniq()
+      |> Enum.filter(fn name ->
+        not Map.has_key?(env, name) and
+          match?(
+            %{args: args} when is_list(args),
+            Map.get(Map.get(env, :__program_decls__, %{}), {module_name, name})
+          ) and
+          EnvBindings.function_arity(env, module_name, name, []) == 0
+      end)
+
+    Enum.reduce(vars, {"", env, counter}, fn name, {code_acc, env_acc, ctr} ->
+      {var_code, ref, ctr2} = FunctionCallCompile.compile_var(name, env_acc, ctr)
+      {code_acc <> var_code <> "\n", Map.put(env_acc, name, ref), ctr2}
+    end)
+  end
+
+  defp collect_ir_var_names(%{op: :var, name: name}) when is_binary(name), do: [name]
+
+  defp collect_ir_var_names(map) when is_map(map) do
+    map |> Map.values() |> Enum.flat_map(&collect_ir_var_names/1)
+  end
+
+  defp collect_ir_var_names(list) when is_list(list) do
+    Enum.flat_map(list, &collect_ir_var_names/1)
+  end
+
+  defp collect_ir_var_names(_), do: []
+
   defp tail_recursive_if(
          %{op: :if, cond: cond, then_expr: then_expr, else_expr: else_expr},
          module_name,
          name
        ) do
-    cond do
-      Util.local_function_call?(then_expr, module_name, name) ->
-        {:if_tail, cond, else_expr, then_expr.args || [], true}
+    case tail_recursive_branch(then_expr, module_name, name) do
+      {:tail, args, let_prelude} ->
+        {:if_tail, cond, else_expr, args, true, let_prelude}
 
-      Util.local_function_call?(else_expr, module_name, name) ->
-        {:if_tail, cond, then_expr, else_expr.args || [], false}
+      :error ->
+        case tail_recursive_branch(else_expr, module_name, name) do
+          {:tail, args, let_prelude} ->
+            {:if_tail, cond, then_expr, args, false, let_prelude}
 
-      true ->
-        :error
+          :error ->
+            :error
+        end
     end
   end
 
   defp tail_recursive_if(_expr, _module_name, _name), do: :error
+
+  defp tail_recursive_branch(expr, module_name, name) do
+    {let_prelude, core} = peel_tail_recursive_lets(expr, [])
+
+    if Util.local_function_call?(core, module_name, name) do
+      {:tail, core.args || [], let_prelude}
+    else
+      :error
+    end
+  end
+
+  defp peel_tail_recursive_lets(
+         %{op: :let_in, name: let_name, value_expr: let_value, in_expr: in_expr},
+         acc
+       ) do
+    peel_tail_recursive_lets(in_expr, acc ++ [{let_name, let_value}])
+  end
+
+  defp peel_tail_recursive_lets(expr, acc), do: {acc, expr}
 
   defp tail_recursive_arg_kinds?(arg_kinds, arg_types) do
     arg_kinds
@@ -1196,7 +1394,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       case {kind, Enum.at(arg_types, index) |> Host.normalize_type_name()} do
         {:native_int, _} -> true
         {:native_bool, _} -> true
-        {:boxed, "Int"} -> true
+        {:boxed, _} -> true
         _ -> false
       end
     end)
@@ -1204,11 +1402,62 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
   defp loop_arg_name(c_arg), do: "#{c_arg}_loop"
 
-  defp tail_continue_branch(update_code, assignments) do
+  defp boxed_int_loop_name(c_arg), do: "#{c_arg}_box_loop"
+
+  defp tail_continue_branch(update_code, int_update_refs, boxed_update_refs, boxed_int_refresh_refs) do
+    int_assignments =
+      int_update_refs
+      |> Enum.map_join("\n      ", fn {target, next_ref} -> "#{target} = #{next_ref};" end)
+
+    boxed_int_refresh =
+      boxed_int_refresh_refs
+      |> Enum.map_join("\n      ", fn {box, loop} ->
+        "elmc_release(#{box});\n      #{box} = elmc_new_int_take(#{loop});"
+      end)
+
+    boxed_releases =
+      boxed_update_refs
+      |> Enum.map_join("\n      ", fn {loop, _ref} -> "elmc_release(#{loop});" end)
+
+    boxed_assignments =
+      boxed_update_refs
+      |> Enum.map_join("\n      ", fn {loop, ref} -> "#{loop} = #{ref};" end)
+
     """
     #{update_code}
-      #{assignments}
+      #{boxed_releases}
+      #{int_assignments}
+      #{boxed_int_refresh}
+      #{boxed_assignments}
       continue;
+    """
+  end
+
+  defp tail_base_branch_boxed(base_code, result_var, base_ref, arg_bindings, arg_kinds, arg_types) do
+    releases =
+      arg_bindings
+      |> Enum.zip(arg_kinds)
+      |> Enum.with_index()
+      |> Enum.flat_map(fn {{{_source, c_arg, _arg_index}, kind}, index} ->
+        type_name = Enum.at(arg_types, index) |> Host.normalize_type_name()
+
+        if effective_tail_loop_kind(kind, type_name) == :boxed do
+          ["elmc_release(#{loop_arg_name(c_arg)});"]
+        else
+          if kind == :boxed and type_name == "Int" do
+            ["elmc_release(#{boxed_int_loop_name(c_arg)});"]
+          else
+            []
+          end
+        end
+      end)
+      |> Enum.join("\n      ")
+
+    """
+    #{base_code}
+      #{result_var} = #{base_ref};
+      #{releases}
+      break;
     """
   end
 

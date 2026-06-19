@@ -260,10 +260,33 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
     Host.native_string_expr?(value_expr, env) and usage.total > 0 and
       (usage.native_string > 0 or usage.native_container > 0) and
       (usage.boxed == 0 or usage.native_container > 0) and
-      not Host.binding_used_in_lambda?(name, in_expr)
+      not Host.binding_used_in_lambda?(name, in_expr) and
+      not native_string_value_may_contain_nul?(value_expr)
   end
 
   def string_let?(_name, _value_expr, _in_expr, _env), do: false
+
+  defp native_string_value_may_contain_nul?(%{op: :runtime_call, function: "elmc_string_from_char", args: [_]}),
+    do: true
+
+  defp native_string_value_may_contain_nul?(%{op: :qualified_call, target: target, args: [_]})
+       when target in ["String.fromChar", "Basics.fromChar"],
+       do: true
+
+  defp native_string_value_may_contain_nul?(%{op: :call, name: name, args: [_]})
+       when name in ["fromChar", "__fromChar__"],
+       do: true
+
+  defp native_string_value_may_contain_nul?(%{op: :runtime_call, function: "elmc_append", args: [left, right]}),
+    do: native_string_value_may_contain_nul?(left) or native_string_value_may_contain_nul?(right)
+
+  defp native_string_value_may_contain_nul?(%{op: :call, name: "__append__", args: [left, right]}),
+    do: native_string_value_may_contain_nul?(left) or native_string_value_may_contain_nul?(right)
+
+  defp native_string_value_may_contain_nul?(%{op: :string_literal, value: value}) when is_binary(value),
+    do: String.contains?(value, <<0>>)
+
+  defp native_string_value_may_contain_nul?(_), do: false
 
   @spec string_usage(
           Types.binding_name(),
@@ -631,6 +654,29 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
          _context
        ) do
     collect_var_contexts(name, value, :native)
+  end
+
+  @list_unary_container_runtime_functions ~w(
+    elmc_list_length
+    elmc_list_is_empty
+    elmc_list_reverse
+    elmc_list_head
+    elmc_list_tail
+    elmc_list_sum
+    elmc_list_product
+    elmc_list_maximum
+    elmc_list_minimum
+    elmc_list_sort
+    elmc_list_concat
+  )
+
+  defp collect_var_contexts(
+         name,
+         %{op: :runtime_call, function: function, args: [arg]},
+         _context
+       )
+       when function in @list_unary_container_runtime_functions do
+    collect_var_contexts(name, arg, :native_container)
   end
 
   defp collect_var_contexts(

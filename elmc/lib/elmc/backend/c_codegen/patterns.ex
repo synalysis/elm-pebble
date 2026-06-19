@@ -6,6 +6,7 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   alias Elmc.Backend.CCodegen.Native.RecordFields
   alias Elmc.Backend.CCodegen.PebbleMsgTag
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.CCodegen.Util
 
   @spec pattern_condition(String.t(), Types.pattern()) :: String.t()
   def pattern_condition(_subject_ref, %{kind: :wildcard}), do: "1"
@@ -30,6 +31,15 @@ defmodule Elmc.Backend.CCodegen.Patterns do
     right_ref = "((ElmcTuple2 *)#{subject_ref}->payload)->second"
 
     "#{subject_ref} && #{subject_ref}->tag == ELMC_TAG_TUPLE2 && (#{pattern_condition(left_ref, left)}) && (#{pattern_condition(right_ref, right)})"
+  end
+
+  def pattern_condition(subject_ref, %{kind: :constructor, name: "()", arg_pattern: nil}) do
+    "#{subject_ref} && elmc_value_is_unit(#{subject_ref})"
+  end
+
+  def pattern_condition(subject_ref, %{kind: :constructor, name: "()", arg_pattern: pattern})
+      when not is_nil(pattern) do
+    pattern_condition(subject_ref, pattern)
   end
 
   def pattern_condition(subject_ref, %{kind: :constructor, name: "Ok", arg_pattern: arg_pattern}) do
@@ -100,6 +110,12 @@ defmodule Elmc.Backend.CCodegen.Patterns do
 
   def pattern_condition(_subject_ref, %{kind: :record}) do
     "1"
+  end
+
+  def pattern_condition(subject_ref, %{kind: :string, value: value}) when is_binary(value) do
+    escaped = Util.escape_c_string(value)
+
+    "#{subject_ref} && elmc_string_equals_cstr(#{subject_ref}, \"#{escaped}\")"
   end
 
   def pattern_condition(
@@ -251,8 +267,7 @@ defmodule Elmc.Backend.CCodegen.Patterns do
     parent_expr =
       cond do
         is_binary(bind) -> %{op: :var, name: bind}
-        is_binary(subject_ref) -> %{op: :var, name: subject_ref}
-        true -> nil
+        true -> %{op: :var, name: subject_ref}
       end
 
     Enum.reduce(fields, env, fn field, acc ->

@@ -44,6 +44,20 @@ defmodule Elmc.Backend.CCodegen.Util do
     |> String.replace("\\", "\\\\")
     |> String.replace("\"", "\\\"")
     |> String.replace("\n", "\\n")
+    |> String.replace("\r", "\\r")
+    |> String.replace("\t", "\\t")
+    |> String.replace("\0", "\\0")
+  end
+
+  @spec string_literal_c_expr(String.t()) :: String.t()
+  def string_literal_c_expr(value) when is_binary(value) do
+    escaped = escape_c_string(value)
+
+    if String.contains?(value, <<0>>) do
+      "elmc_new_string_len_take(\"#{escaped}\", #{byte_size(value)})"
+    else
+      "elmc_new_string_take(\"#{escaped}\")"
+    end
   end
 
   @spec parse_compile_time_int_ref(String.t()) :: integer() | nil

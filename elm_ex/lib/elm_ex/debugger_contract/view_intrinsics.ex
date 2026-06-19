@@ -6,11 +6,11 @@ defmodule ElmEx.DebuggerContract.ViewIntrinsics do
     modBy remainderBy max min abs negate round clamp clampInt
     Basics.modBy Basics.remainderBy Basics.abs Basics.negate Basics.round
     basics.modby basics.remainderby
-  )a
+  )
 
   @intrinsic_operator_names ~w(
     __add__ __sub__ __mul__ __fdiv__ __idiv__ __pow__
-  )a
+  )
 
   @spec int_call_name?(String.t()) :: boolean()
   def int_call_name?(name) when is_binary(name), do: name in @int_call_names

@@ -41,7 +41,7 @@ defmodule IdeWeb.WasmEmulatorControllerTest do
 
     {:ok, user} =
       %User{}
-      |> User.changeset(%{firebase_uid: "wasm-public-user", email: "wasm@example.test"})
+      |> User.changeset(%{firebase_uid: "wasm-public-user"})
       |> Repo.insert()
 
     auth_conn =

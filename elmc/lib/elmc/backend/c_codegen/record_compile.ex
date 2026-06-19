@@ -775,6 +775,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
           elmc_release(#{arg_var});
         """
 
+        mark_borrowed_record_field_ref(var, getter)
+
         {code, var, next}
 
       field_expr ->
@@ -813,7 +815,26 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
       #{after_probe}
     """
 
+    mark_borrowed_record_field_ref(var, getter)
+
     {code, var, next}
+  end
+
+  defp mark_borrowed_record_field_ref(var, getter)
+       when is_binary(var) and is_binary(getter) do
+    if borrowed_record_field_getter?(getter) do
+      Process.put(
+        :elmc_borrowed_field_refs,
+        MapSet.put(Process.get(:elmc_borrowed_field_refs, MapSet.new()), var)
+      )
+    end
+  end
+
+  defp mark_borrowed_record_field_ref(_var, _getter), do: :ok
+
+  defp borrowed_record_field_getter?(getter) do
+    String.starts_with?(getter, "elmc_record_get_index(") or
+      String.starts_with?(getter, "ELMC_RECORD_GET_INDEX(")
   end
 
   @spec compile_field_call_var(
@@ -1182,8 +1203,9 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
   defp compile_cached_field_access(full_expr, arg_expr, field, env, counter, compile_fn) do
     cond do
-      boxed_field_compile_fn?(compile_fn) and Host.native_int_expr?(full_expr, env) and
-          shareable_field_access_arg?(arg_expr) ->
+      boxed_field_compile_fn?(compile_fn) and shareable_field_access_arg?(arg_expr) and
+          (Host.native_int_expr?(full_expr, env) or
+             RecordFields.union_tag_field?(env, arg_expr, field)) ->
         compile_cached_boxed_native_int_field(arg_expr, field, env, counter)
 
       boxed_field_compile_fn?(compile_fn) and Host.native_int_expr?(full_expr, env) ->
@@ -1251,6 +1273,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
       #{arg_code}  ElmcValue *#{var} = #{getter};
       #{release_line}
       """
+
+      mark_borrowed_record_field_ref(var, getter)
 
       {code, var, next, env}
     end
@@ -1401,5 +1425,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
   defp subexpr_key(other), do: other
 
-  defp boxed_release_var?(var), do: Util.boxed_temp_var?(var)
+  defp boxed_release_var?(var) do
+    Util.boxed_temp_var?(var) and not EnvBindings.borrowed_arg_ref?(%{}, var)
+  end
 end

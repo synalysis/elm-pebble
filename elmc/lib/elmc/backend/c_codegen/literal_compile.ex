@@ -34,7 +34,16 @@ defmodule Elmc.Backend.CCodegen.LiteralCompile do
   def compile(%{op: :string_literal, value: value}, env, counter) do
     next = counter + 1
     var = "tmp_#{next}"
-    {RcRuntimeEmit.assign_call(env, var, "elmc_new_string", "\"#{Util.escape_c_string(value)}\"") <> "\n", var, next}
+
+    code =
+      if String.contains?(value, <<0>>) do
+        "ElmcValue *#{var} = #{Util.string_literal_c_expr(value)};\n"
+      else
+        RcRuntimeEmit.assign_call(env, var, "elmc_new_string", "\"#{Util.escape_c_string(value)}\"") <>
+          "\n"
+      end
+
+    {code, var, next}
   end
 
   def compile(%{op: :char_literal, value: value}, _env, counter) do

@@ -5,6 +5,7 @@ defmodule Ide.Auth.Email do
 
   import Ecto.Query
 
+  alias Ide.Auth.EmailHash
   alias Ide.Auth.LoginLink
   alias Ide.Auth.LoginLinkEmail
   alias Ide.Auth.EmailAddress
@@ -21,7 +22,7 @@ defmodule Ide.Auth.Email do
       with :ok <- ensure_mailer_ready(),
            {:ok, user} <- ensure_user(email),
            {:ok, raw_token} <- issue_token(user),
-           {:ok, _} <- LoginLinkEmail.deliver(user, raw_token) do
+           {:ok, _} <- LoginLinkEmail.deliver(email, raw_token) do
         :ok
       else
         {:error, %Ecto.Changeset{}} ->
@@ -37,7 +38,7 @@ defmodule Ide.Auth.Email do
           require Logger
 
           Logger.error(
-            "login email delivery failed email=#{email} reason=#{inspect(reason)} mailer=#{mailer_adapter_label()}"
+            "login email delivery failed email_hash=#{String.slice(EmailHash.hash(email), 0, 12)} reason=#{inspect(reason)} mailer=#{mailer_adapter_label()}"
           )
 
           {:error, :delivery_failed}
@@ -112,13 +113,15 @@ defmodule Ide.Auth.Email do
   @spec user_exists?(String.t()) :: boolean()
   def user_exists?(email) when is_binary(email) do
     email = User.normalize_email(email)
-    not is_nil(Repo.get_by(User, email: email))
+    not is_nil(Repo.get_by(User, email_hash: EmailHash.hash(email)))
   end
 
   def user_exists?(_), do: false
 
   defp ensure_user(email) do
-    case Repo.get_by(User, email: email) do
+    hash = EmailHash.hash(email)
+
+    case Repo.get_by(User, email_hash: hash) do
       %User{} = user ->
         {:ok, user}
 

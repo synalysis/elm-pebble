@@ -2,7 +2,7 @@
   "corpus_sha": "a1137d6d5de0d76ef28cefe37317c11339e6c831",
   "elmc": {
     "attempted": 395,
-    "run_ok_min": 377
+    "run_ok_min": 395
   },
   "elmx": {
     "attempted": 395,
@@ -12,5 +12,5 @@
     "attempted": 7,
     "run_ok_min": 7
   },
-  "notes": "Strict gold programs exclude corpus metadata known_gold_diff entries. Baselines raised after shared-tail list RC spine fix, empty record Debug.toString, and prior String.toList/lambda/nested-if fixes (elmc 377)."
+  "notes": "Strict gold programs exclude corpus metadata known_gold_diff entries. Baselines raised after identical-if folding, lambda boxed-capture fix, partial-closure into_out, and borrowed record-field release guards (elmc 395)."
 }

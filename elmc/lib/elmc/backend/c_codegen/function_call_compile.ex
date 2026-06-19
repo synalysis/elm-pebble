@@ -478,9 +478,9 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     {code, out, next}
   end
 
-  defp partial_closure(module_name, name, arity, arg_vars, env, counter) do
+  defp partial_closure(module_name, name, arity, arg_vars, env, counter, out) when is_binary(out) do
     env = Map.delete(env, :__into_out__)
-    {out, next} = CaseCompile.fresh_var(counter, env)
+    {cap_index, next} = CaseCompile.fresh_var(counter, env)
     c_name = Util.module_fn_name(module_name, name)
     bound_count = length(arg_vars)
     remaining = max(arity - bound_count, 0)
@@ -524,8 +524,8 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
       end
 
     code = """
-    ElmcValue *cap_#{next}[#{max(bound_count, 1)}] = { #{capture_list} };
-      #{boxed_out_decl(env, out, "elmc_closure_new_take(#{closure_fn_name}, #{remaining}, #{bound_count}, cap_#{next})")}
+    ElmcValue *cap_#{cap_index}[#{max(bound_count, 1)}] = { #{capture_list} };
+      #{boxed_out_decl(env, out, "elmc_closure_new_take(#{closure_fn_name}, #{remaining}, #{bound_count}, cap_#{cap_index})")}
     """
 
     {code, out, next}
@@ -784,8 +784,8 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     code =
       cond do
         arity > 0 and argc < arity ->
-          {closure_code, _partial_out, _counter} =
-            partial_closure(module_name, name, arity, arg_vars, env, counter)
+          {closure_code, _partial_out, _partial_next} =
+            partial_closure(module_name, name, arity, arg_vars, env, counter, out)
 
           """
           #{before_args_probe}

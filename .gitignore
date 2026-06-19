@@ -25,6 +25,7 @@
 # Logs and crash dumps
 *.log
 erl_crash.dump
+vgcore*
 
 # Generated Erlang parser/lexer outputs from elm_ex/src/*.xrl and *.yrl
 elm_ex/src/*.erl

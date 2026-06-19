@@ -797,9 +797,40 @@ parse_char(Text) ->
   end.
 
 unescape(Bin) ->
-  Bin1 = binary:replace(Bin, <<"\\n">>, <<"\n">>, [global]),
-  Bin2 = binary:replace(Bin1, <<"\\r">>, <<"\r">>, [global]),
-  Bin3 = binary:replace(Bin2, <<"\\t">>, <<"\t">>, [global]),
-  Bin4 = binary:replace(Bin3, <<"\\\"">>, <<"\"">>, [global]),
-  Bin5 = binary:replace(Bin4, <<"\\'">>, <<"'">>, [global]),
-  binary:replace(Bin5, <<"\\\\">>, <<"\\">>, [global]).
+  unescape_acc(Bin, <<>>).
+
+unescape_acc(<<>>, Acc) ->
+  Acc;
+unescape_acc(<<"\\n", Rest/binary>>, Acc) ->
+  unescape_acc(Rest, <<Acc/binary, $\n>>);
+unescape_acc(<<"\\r", Rest/binary>>, Acc) ->
+  unescape_acc(Rest, <<Acc/binary, $\r>>);
+unescape_acc(<<"\\t", Rest/binary>>, Acc) ->
+  unescape_acc(Rest, <<Acc/binary, $\t>>);
+unescape_acc(<<"\\\"", Rest/binary>>, Acc) ->
+  unescape_acc(Rest, <<Acc/binary, $">>);
+unescape_acc(<<"\\'", Rest/binary>>, Acc) ->
+  unescape_acc(Rest, <<Acc/binary, $'>>);
+unescape_acc(<<"\\\\", Rest/binary>>, Acc) ->
+  unescape_acc(Rest, <<Acc/binary, $\\>>);
+unescape_acc(<<"\\u{", Rest/binary>>, Acc) ->
+  case take_unicode_escape(Rest, <<>>) of
+    {ok, Code, Rest2} when Code >= 0, Code =< 16#10FFFF ->
+      Char = unicode:characters_to_binary([Code]),
+      unescape_acc(Rest2, <<Acc/binary, Char/binary>>);
+    _ ->
+      unescape_acc(Rest, <<Acc/binary, "\\u{">>)
+  end;
+unescape_acc(<<C, Rest/binary>>, Acc) ->
+  unescape_acc(Rest, <<Acc/binary, C>>).
+
+take_unicode_escape(<<"}", Rest/binary>>, Acc) when Acc =/= <<>> ->
+  try {ok, binary_to_integer(Acc, 16), Rest} catch _:_ -> error end;
+take_unicode_escape(<<C, Rest/binary>>, Acc) when C >= $0, C =< $9 ->
+  take_unicode_escape(Rest, <<Acc/binary, C>>);
+take_unicode_escape(<<C, Rest/binary>>, Acc) when C >= $a, C =< $f ->
+  take_unicode_escape(Rest, <<Acc/binary, C>>);
+take_unicode_escape(<<C, Rest/binary>>, Acc) when C >= $A, C =< $F ->
+  take_unicode_escape(Rest, <<Acc/binary, C>>);
+take_unicode_escape(_, _) ->
+  error.

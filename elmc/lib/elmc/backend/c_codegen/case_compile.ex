@@ -57,8 +57,14 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
           Types.compile_counter()
         ) :: {String.t(), String.t(), Types.compile_counter()}
   def branch_assignment(%{op: :string_literal, value: value}, out, env, counter) do
-    {"", RcRuntimeEmit.assign_into(env, out, "elmc_new_string", "\"#{Util.escape_c_string(value)}\""),
-     counter}
+    literal = Util.string_literal_c_expr(value)
+
+    if String.contains?(value, <<0>>) do
+      {"", "#{out} = #{literal};", counter}
+    else
+      {"", RcRuntimeEmit.assign_into(env, out, "elmc_new_string", "\"#{Util.escape_c_string(value)}\""),
+       counter}
+    end
   end
 
   def branch_assignment(%{op: :bool_literal, value: value}, out, env, counter) do

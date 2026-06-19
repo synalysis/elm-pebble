@@ -117,6 +117,11 @@ defmodule Elmc.Runtime.RcMacros do
       return elmc_new_string(&out, value) == RC_SUCCESS ? out : elmc_int_zero();
     }
 
+    static inline ElmcValue *elmc_new_string_len_take(const char *value, size_t len) {
+      ElmcValue *out = NULL;
+      return elmc_new_string_len(&out, value, len) == RC_SUCCESS ? out : elmc_int_zero();
+    }
+
     static inline ElmcValue *elmc_new_float_take(double value) {
       ElmcValue *out = NULL;
       return elmc_new_float(&out, value) == RC_SUCCESS ? out : elmc_int_zero();

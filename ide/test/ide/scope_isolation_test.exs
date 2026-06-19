@@ -18,12 +18,12 @@ defmodule Ide.ScopeIsolationTest do
   test "compiler cache and debugger state are isolated for same slug across owners" do
     {:ok, alice} =
       %User{}
-      |> User.changeset(%{firebase_uid: "scope-alice", email: "alice@scope.test"})
+      |> User.changeset(%{firebase_uid: "scope-alice"})
       |> Repo.insert()
 
     {:ok, bob} =
       %User{}
-      |> User.changeset(%{firebase_uid: "scope-bob", email: "bob@scope.test"})
+      |> User.changeset(%{firebase_uid: "scope-bob"})
       |> Repo.insert()
 
     {:ok, alice_project} =

@@ -99,6 +99,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     Process.put(:elmc_lambdas, [])
     Process.put(:elmc_lambda_counter, 0)
     Process.put(:elmc_lambda_defs, %{})
+    Process.put(:elmc_borrowed_field_refs, MapSet.new())
 
     function_arities =
       ir.modules
@@ -253,6 +254,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     Process.delete(:elmc_union_constructor_macros)
     Process.delete(:elmc_record_field_macros)
     Process.delete(:elmc_subexpr_record_meta)
+    Process.delete(:elmc_borrowed_field_refs)
     Process.delete(:elmc_pebble_msg_names)
     Process.delete(:elmc_vector_resource_slots)
     Process.delete(:elmc_bitmap_resource_slots)

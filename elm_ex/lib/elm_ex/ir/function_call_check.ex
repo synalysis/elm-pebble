@@ -1191,14 +1191,16 @@ defmodule ElmEx.IR.FunctionCallCheck do
   defp int_number_literal?(_), do: false
 
   @spec callee_module_from_target(String.t() | nil) :: String.t() | nil
-  defp callee_module_from_target(target) when is_binary(target) do
-    case String.split(target, ".") do
-      [_] -> nil
-      parts -> parts |> Enum.drop(-1) |> Enum.join(".")
+  defp callee_module_from_target(target) do
+    if is_binary(target) do
+      case String.split(target, ".") do
+        [_] -> nil
+        parts -> parts |> Enum.drop(-1) |> Enum.join(".")
+      end
+    else
+      nil
     end
   end
-
-  defp callee_module_from_target(_), do: nil
 
   @spec canonical_type_identity(String.t(), map(), map()) :: String.t()
   defp canonical_type_identity(type, context, type_alias_lookup) do

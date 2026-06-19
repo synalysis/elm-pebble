@@ -6,19 +6,18 @@ defmodule Ide.Auth.LoginLinkEmail do
   alias Ide.Auth
   alias Ide.Auth.Types, as: AuthTypes
   alias Ide.Auth.LoginLink
-  alias Ide.Auth.User
   alias Ide.Mailer
 
-  @spec deliver(User.t(), String.t()) ::
+  @spec deliver(String.t(), String.t()) ::
           {:ok, AuthTypes.mail_delivery_response()} | {:error, AuthTypes.mail_delivery_error()}
-  def deliver(%User{} = user, raw_token) when is_binary(raw_token) do
+  def deliver(email, raw_token) when is_binary(email) and is_binary(raw_token) do
     url = LoginLink.verify_url(raw_token)
     {from_name, from_address} = Auth.mail_from()
 
     email =
       new()
       |> from({from_name, from_address})
-      |> to(user.email)
+      |> to(email)
       |> subject("Log in to elm-pebble IDE")
       |> text_body("""
       Use this link to log in to the elm-pebble IDE:

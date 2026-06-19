@@ -305,7 +305,9 @@ defmodule Elmc.Backend.CCodegen.EnvBindings do
   def borrowed_arg_ref?(env, c_ref) when is_binary(c_ref) do
     env
     |> Map.get(:__borrowed_arg_refs__, MapSet.new())
-    |> MapSet.member?(c_ref)
+    |> MapSet.member?(c_ref) or
+      Process.get(:elmc_borrowed_field_refs, MapSet.new())
+      |> MapSet.member?(c_ref)
   end
 
   def borrowed_arg_ref?(_env, _c_ref), do: false

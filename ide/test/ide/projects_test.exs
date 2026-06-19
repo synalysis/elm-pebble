@@ -97,12 +97,12 @@ defmodule Ide.ProjectsTest do
   test "project ownership scopes slugs and workspaces" do
     {:ok, alice} =
       %User{}
-      |> User.changeset(%{firebase_uid: "alice", email: "alice@example.test"})
+      |> User.changeset(%{firebase_uid: "alice"})
       |> Repo.insert()
 
     {:ok, bob} =
       %User{}
-      |> User.changeset(%{firebase_uid: "bob", email: "bob@example.test"})
+      |> User.changeset(%{firebase_uid: "bob"})
       |> Repo.insert()
 
     assert {:ok, alice_project} =
@@ -142,7 +142,7 @@ defmodule Ide.ProjectsTest do
   test "owned project adopts legacy unscoped workspace files" do
     {:ok, user} =
       %User{}
-      |> User.changeset(%{firebase_uid: "legacy-owner", email: "legacy@example.test"})
+      |> User.changeset(%{firebase_uid: "legacy-owner"})
       |> Repo.insert()
 
     slug = "legacy-adopt-#{System.unique_integer([:positive])}"
@@ -1153,8 +1153,7 @@ defmodule Ide.ProjectsTest do
     assert {:ok, user} =
              %User{}
              |> User.changeset(%{
-               firebase_uid: "legacy-artifacts",
-               email: "legacy-artifacts@example.test"
+               firebase_uid: "legacy-artifacts"
              })
              |> Repo.insert()
 

@@ -716,10 +716,10 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
   defp allow_generated_expr?(%{op: :compose_right, f: f, g: g}),
     do: allow_compose_side?(f) and allow_compose_side?(g)
 
+  defp allow_generated_expr?(_), do: false
+
   defp allow_compose_side?(side) when is_binary(side), do: true
   defp allow_compose_side?(side), do: allow_generated_expr?(side)
-
-  defp allow_generated_expr?(_), do: false
 
   defp bool_intrinsic_lambda(:and) do
     %{

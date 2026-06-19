@@ -123,7 +123,6 @@ defmodule Ide.Auth do
   def upsert_firebase_user(%{"localId" => uid} = payload) when is_binary(uid) and uid != "" do
     attrs = %{
       firebase_uid: uid,
-      email: payload["email"],
       display_name: payload["displayName"]
     }
 

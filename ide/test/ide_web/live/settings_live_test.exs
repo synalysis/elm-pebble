@@ -124,8 +124,7 @@ defmodule IdeWeb.SettingsLiveTest do
     {:ok, user} =
       %Ide.Auth.User{}
       |> Ide.Auth.User.changeset(%{
-        firebase_uid: "settings-public-user",
-        email: "settings@example.test"
+        firebase_uid: "settings-public-user"
       })
       |> Ide.Repo.insert()
 

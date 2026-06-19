@@ -264,7 +264,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
     #{value_code}
           #{after_probe}
       #{body_code}
-      elmc_release(#{value_var});
+      #{let_value_release(env, value_var)}
     """
 
     {code, body_var, counter}
@@ -480,4 +480,10 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
   end
 
   defp flatten_let_chain(body), do: {[], body}
+
+  defp let_value_release(env, value_var) when is_binary(value_var) do
+    if EnvBindings.borrowed_arg_ref?(env, value_var),
+      do: "",
+      else: "elmc_release(#{value_var});"
+  end
 end

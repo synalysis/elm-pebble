@@ -33,8 +33,8 @@ probeFail =
 probeSpawn : Int
 probeSpawn =
     case Process.spawn (Task.succeed 1) of
-        Ok pid ->
-            pid
+        Ok _ ->
+            1
 
         Err _ ->
             -1

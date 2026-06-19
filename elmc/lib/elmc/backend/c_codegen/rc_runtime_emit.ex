@@ -134,6 +134,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     "elmc_new_int" => "elmc_new_int_take",
     "elmc_new_bool" => "elmc_new_bool_take",
     "elmc_new_string" => "elmc_new_string_take",
+    "elmc_new_string_len" => "elmc_new_string_len_take",
     "elmc_new_float" => "elmc_new_float_take",
     "elmc_list_cons" => "elmc_list_cons_take",
     "elmc_list_reverse" => "elmc_list_reverse_take",

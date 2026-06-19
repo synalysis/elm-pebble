@@ -80,7 +80,7 @@ defmodule IdeWeb.AuthModeTest do
 
     {:ok, user} =
       %User{}
-      |> User.changeset(%{firebase_uid: "auth-mode-user", email: "user@example.test"})
+      |> User.changeset(%{firebase_uid: "auth-mode-user"})
       |> Repo.insert()
 
     conn =
