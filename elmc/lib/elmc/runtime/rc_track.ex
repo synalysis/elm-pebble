@@ -14,6 +14,8 @@ defmodule Elmc.Runtime.RcTrack do
     uint32_t elmc_rc_track_live_count(void);
     int elmc_rc_track_check_balanced(void);
     void elmc_rc_track_dump_live(FILE *out);
+    void elmc_rc_track_dump_since(uint32_t min_id, FILE *out);
+    uint32_t elmc_rc_track_next_alloc_id(void);
     ElmcValue *elmc_rc_track_retain(ElmcValue *value, const char *file, int line);
     void elmc_rc_track_release(ElmcValue *value, const char *file, int line);
     #define elmc_retain(value) elmc_rc_track_retain((value), __FILE__, __LINE__)
@@ -144,6 +146,27 @@ defmodule Elmc.Runtime.RcTrack do
       return ELMC_RC_TRACK_COUNT;
     }
 
+    uint32_t elmc_rc_track_next_alloc_id(void) {
+      return ELMC_RC_TRACK_NEXT_ID;
+    }
+
+    void elmc_rc_track_dump_since(uint32_t min_id, FILE *out) {
+      if (!out) out = stderr;
+      for (uint32_t i = 0; i < ELMC_RC_TRACK_COUNT; i++) {
+        ElmcRcTrackEntry *entry = &ELMC_RC_TRACK_ENTRIES[i];
+        if (entry->id < min_id) continue;
+        const char *alloc_file = entry->alloc_file ? entry->alloc_file : "?";
+        fprintf(out,
+                "    +rc #%u %s rc=%u alloc=%s:%d (%s)\\n",
+                entry->id,
+                elmc_rc_track_tag_name((ElmcTag)entry->tag),
+                entry->rc,
+                alloc_file,
+                entry->alloc_line,
+                entry->alloc_context ? entry->alloc_context : "alloc");
+      }
+    }
+
     void elmc_rc_track_dump_live(FILE *out) {
       if (!out) out = stderr;
       fprintf(out, "elmc rc track: %u live object(s)\\n", ELMC_RC_TRACK_COUNT);
@@ -265,8 +288,8 @@ defmodule Elmc.Runtime.RcTrack do
         ELMC_RELEASED += 1;
         return;
       }
-      free(cell->payload);
-      free(cell);
+      elmc_free(cell->payload);
+      elmc_free(cell);
       ELMC_RELEASED += 1;
     }
 
@@ -326,7 +349,7 @@ defmodule Elmc.Runtime.RcTrack do
           ELMC_RELEASED += 1;
           return;
         }
-        free(rec->field_values);
+        elmc_free(rec->field_values);
       } else if (value->tag == ELMC_TAG_CLOSURE && value->payload != NULL) {
         ElmcClosure *clo = (ElmcClosure *)value->payload;
         for (int i = 0; i < clo->capture_count; i++) {
@@ -339,9 +362,9 @@ defmodule Elmc.Runtime.RcTrack do
           ELMC_RELEASED += 1;
           return;
         }
-        free(clo->captures);
+        elmc_free(clo->captures);
       } else if (value->tag == ELMC_TAG_FORWARD_REF && value->payload != NULL) {
-        free(value->payload);
+        elmc_free(value->payload);
       }
       if (value->tag == ELMC_TAG_LIST && elmc_list_cell_release(value)) {
       #if ELMC_RC_TRACK
@@ -386,9 +409,9 @@ defmodule Elmc.Runtime.RcTrack do
         return;
       }
       if (value->tag != ELMC_TAG_INT && value->tag != ELMC_TAG_BOOL) {
-        free(value->payload);
+        elmc_free(value->payload);
       }
-      free(value);
+      elmc_free(value);
       ELMC_RELEASED += 1;
     }
 

@@ -20,6 +20,8 @@ defmodule IdeWeb.ProjectsLive do
      socket
      |> assign(:page_title, "Projects")
      |> assign(:template_categories, ProjectTemplates.picker_categories())
+     |> assign(:template_target_filter, "all")
+     |> assign(:template_companion_filter, "all")
      |> assign(:show_create_modal, false)
      |> assign(:selected_template, "starter")
      |> assign(:create_name_user_edited, false)
@@ -145,6 +147,8 @@ defmodule IdeWeb.ProjectsLive do
      |> assign(:show_create_modal, true)
      |> assign(:selected_template, "starter")
      |> assign(:create_name_user_edited, false)
+     |> assign(:template_target_filter, "all")
+     |> assign(:template_companion_filter, "all")
      |> assign(:form, to_form(Project.changeset(%Project{}, default_attrs())))
      |> autofill_create_name_from_template("starter")}
   end
@@ -167,6 +171,22 @@ defmodule IdeWeb.ProjectsLive do
   def handle_event("set-import-mode", %{"mode" => mode}, socket)
       when mode in ["local", "github"] do
     {:noreply, assign(socket, :import_mode, String.to_existing_atom(mode))}
+  end
+
+  def handle_event("set-template-target-filter", %{"target" => target}, socket)
+      when target in ["all", "watchface", "app"] do
+    {:noreply,
+     socket
+     |> assign(:template_target_filter, target)
+     |> sync_template_selection_after_filter()}
+  end
+
+  def handle_event("set-template-companion-filter", %{"companion" => companion}, socket)
+      when companion in ["all", "with", "without"] do
+    {:noreply,
+     socket
+     |> assign(:template_companion_filter, companion)
+     |> sync_template_selection_after_filter()}
   end
 
   def handle_event("activate", %{"id" => id}, socket) do
@@ -338,6 +358,38 @@ defmodule IdeWeb.ProjectsLive do
       |> assign(:create_name_user_edited, false)
     else
       socket
+    end
+  end
+
+  @spec filtered_template_categories(map()) :: [map()]
+  defp filtered_template_categories(assigns) do
+    ProjectTemplates.filter_picker_categories(
+      assigns.template_categories,
+      assigns.template_target_filter,
+      assigns.template_companion_filter
+    )
+  end
+
+  @spec sync_template_selection_after_filter(socket()) :: socket()
+  defp sync_template_selection_after_filter(socket) do
+    visible_keys =
+      socket.assigns
+      |> filtered_template_categories()
+      |> Enum.flat_map(& &1.templates)
+      |> Enum.map(& &1.key)
+
+    if socket.assigns.selected_template in visible_keys do
+      socket
+    else
+      case List.first(visible_keys) do
+        nil ->
+          socket
+
+        template_key ->
+          socket
+          |> assign(:selected_template, template_key)
+          |> autofill_create_name_from_template(template_key)
+      end
     end
   end
 
@@ -605,11 +657,78 @@ defmodule IdeWeb.ProjectsLive do
             >
               <.input field={@form[:name]} type="text" label="Project name" required />
             </.form>
+            <div class="mt-4 flex flex-wrap gap-x-10 gap-y-4">
+              <div>
+                <p class="text-xs font-medium text-zinc-600">Project type</p>
+                <div class="mt-1 flex flex-wrap gap-1">
+                  <button
+                    type="button"
+                    phx-click="set-template-target-filter"
+                    phx-value-target="all"
+                    class={template_filter_class(@template_target_filter, "all")}
+                  >
+                    All
+                  </button>
+                  <button
+                    type="button"
+                    phx-click="set-template-target-filter"
+                    phx-value-target="watchface"
+                    class={template_filter_class(@template_target_filter, "watchface")}
+                  >
+                    Watchface
+                  </button>
+                  <button
+                    type="button"
+                    phx-click="set-template-target-filter"
+                    phx-value-target="app"
+                    class={template_filter_class(@template_target_filter, "app")}
+                  >
+                    App
+                  </button>
+                </div>
+              </div>
+              <div>
+                <p class="text-xs font-medium text-zinc-600">Companion app</p>
+                <div class="mt-1 flex flex-wrap gap-1">
+                  <button
+                    type="button"
+                    phx-click="set-template-companion-filter"
+                    phx-value-companion="all"
+                    class={template_filter_class(@template_companion_filter, "all")}
+                  >
+                    All
+                  </button>
+                  <button
+                    type="button"
+                    phx-click="set-template-companion-filter"
+                    phx-value-companion="with"
+                    class={template_filter_class(@template_companion_filter, "with")}
+                  >
+                    With companion
+                  </button>
+                  <button
+                    type="button"
+                    phx-click="set-template-companion-filter"
+                    phx-value-companion="without"
+                    class={template_filter_class(@template_companion_filter, "without")}
+                  >
+                    Watch only
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
           <div class="overflow-y-auto px-5 py-4">
-            <div :for={category <- @template_categories} class="space-y-3">
-              <h4 class="text-sm font-semibold text-zinc-800">{category.label}</h4>
-              <div class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <p
+              :if={filtered_template_categories(assigns) == []}
+              class="text-sm text-zinc-600"
+            >
+              No templates match the current filters.
+            </p>
+            <div class="space-y-10">
+              <div :for={category <- filtered_template_categories(assigns)} class="space-y-3">
+                <h4 class="text-sm font-semibold text-zinc-800">{category.label}</h4>
+                <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <button
                   :for={template <- category.templates}
                   type="button"
@@ -636,6 +755,7 @@ defmodule IdeWeb.ProjectsLive do
                     {template.description}
                   </p>
                 </button>
+                </div>
               </div>
             </div>
           </div>
@@ -684,4 +804,10 @@ defmodule IdeWeb.ProjectsLive do
 
   defp import_mode_class(_current, _mode),
     do: "rounded bg-white px-3 py-1.5 text-zinc-700 ring-1 ring-zinc-200"
+
+  defp template_filter_class(current, value) when current == value,
+    do: "rounded bg-blue-100 px-3 py-1.5 text-sm font-medium text-blue-800"
+
+  defp template_filter_class(_current, _value),
+    do: "rounded bg-white px-3 py-1.5 text-sm text-zinc-700 ring-1 ring-zinc-200"
 end

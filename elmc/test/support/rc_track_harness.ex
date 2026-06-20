@@ -19,21 +19,36 @@ defmodule Elmc.Test.RcTrackHarness do
     end
   end
 
-  @spec cc_flags(String.t()) :: [String.t()]
-  def cc_flags(out_dir) do
+  @spec cc_flags(String.t(), keyword()) :: [String.t()]
+  def cc_flags(out_dir, opts \\ []) do
+    rc_track_flag = if Keyword.get(opts, :rc_track, true), do: ["-DELMC_RC_TRACK=1"], else: []
+
+    alloc_track_flag =
+      if Keyword.get(opts, :alloc_track, true), do: ["-DELMC_ALLOC_TRACK=1"], else: []
+
+    alloc_probe_flag =
+      if Keyword.get(opts, :alloc_probe, false), do: ["-DELMC_ALLOC_PROBE=1"], else: []
+
     [
       "-std=c11",
       "-Wall",
-      "-Wextra",
-      "-DELMC_RC_TRACK=1",
+      "-Wextra"
+    ] ++ rc_track_flag ++ alloc_track_flag ++ alloc_probe_flag ++ [
       "-I#{Path.join(out_dir, "runtime")}",
       "-I#{Path.join(out_dir, "ports")}",
       "-I#{Path.join(out_dir, "c")}"
-    ]
+    ] ++ Keyword.get(opts, :extra_flags, []) ++ ["-lm"]
   end
 
   @spec run_harness!(String.t(), String.t(), String.t(), keyword()) :: String.t()
   def run_harness!(out_dir, harness_path, binary_name, opts \\ []) do
+    {out, code} = run_harness_capture(out_dir, harness_path, binary_name, opts)
+    if code != 0, do: flunk("rc track harness failed (exit #{code}):\n#{out}")
+    out
+  end
+
+  @spec run_harness_capture(String.t(), String.t(), String.t(), keyword()) :: {String.t(), non_neg_integer()}
+  def run_harness_capture(out_dir, harness_path, binary_name, opts \\ []) do
     cc = System.find_executable("cc") || flunk("cc not available for rc track harness")
 
     sources =
@@ -48,25 +63,24 @@ defmodule Elmc.Test.RcTrackHarness do
     binary_path = Path.join(out_dir, binary_name)
 
     {compile_out, compile_code} =
-      System.cmd(cc, cc_flags(out_dir) ++ sources ++ ["-o", binary_path])
+      System.cmd(cc, cc_flags(out_dir, opts) ++ sources ++ ["-o", binary_path])
 
     if compile_code != 0, do: flunk("harness compile failed:\n#{compile_out}")
 
     {run_out, run_code} = System.cmd(binary_path, [], stderr_to_stdout: true)
 
-    if run_code != 0 do
-      flunk("rc track harness failed (exit #{run_code}):\n#{run_out}")
-    end
-
-    run_out
+    {run_out, run_code}
   end
 
   @spec assert_balanced!(String.t()) :: :ok
   def assert_balanced!(run_out) do
-    if String.contains?(run_out, "rc_ok") do
-      :ok
-    else
-      flunk("expected balanced rc registry, got:\n#{run_out}")
+    cond do
+      String.contains?(run_out, "rc_ok") and not String.contains?(run_out, "rc leak") and
+          not String.contains?(run_out, "malloc leak") ->
+        :ok
+
+      true ->
+        flunk("expected balanced rc/alloc registry, got:\n#{run_out}")
     end
   end
 
@@ -169,12 +183,21 @@ defmodule Elmc.Test.RcTrackHarness do
 
       static int run_probe(const char *name, ElmcValue *(*fn)(void), int release_result) {
         elmc_rc_track_reset();
+    #if ELMC_ALLOC_TRACK
+        elmc_alloc_track_reset();
+    #endif
         ElmcValue *out = fn();
         if (release_result && out) elmc_release(out);
         if (!elmc_rc_track_check_balanced()) {
           fprintf(stderr, "rc leak in %s\\n", name);
           return 1;
         }
+    #if ELMC_ALLOC_TRACK
+        if (!elmc_alloc_track_check_balanced()) {
+          fprintf(stderr, "malloc leak in %s\\n", name);
+          return 1;
+        }
+    #endif
         return 0;
       }
 

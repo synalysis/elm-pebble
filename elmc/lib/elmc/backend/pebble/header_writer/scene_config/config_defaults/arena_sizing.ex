@@ -7,7 +7,7 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.SceneConfig.ConfigDefaults.ArenaSizin
   def body do
     """
     #ifndef ELMC_PEBBLE_SCENE_INITIAL_CAPACITY
-    #define ELMC_PEBBLE_SCENE_INITIAL_CAPACITY 512
+    #define ELMC_PEBBLE_SCENE_INITIAL_CAPACITY 1024
     #endif
 
     #ifndef ELMC_PEBBLE_SCENE_GROW_CHUNK
@@ -19,24 +19,20 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.SceneConfig.ConfigDefaults.ArenaSizin
     #endif
 
     #ifndef ELMC_PEBBLE_SCENE_TRIM_SLACK
-    #if defined(PBL_PLATFORM_APLITE)
-    #define ELMC_PEBBLE_SCENE_TRIM_SLACK 16
-    #else
     #define ELMC_PEBBLE_SCENE_TRIM_SLACK 0
     #endif
+
+    /* Retained scene-byte pools: grow once per slot, never shrink or realloc per frame. */
+    #ifndef ELMC_PEBBLE_SCENE_POOL_SLOTS
+    #define ELMC_PEBBLE_SCENE_POOL_SLOTS 10
     #endif
 
-    /* Optional fixed scene arena (BSS). Prefer chained heap chunks on Aplite instead. */
     #ifndef ELMC_PEBBLE_SCENE_STATIC_CAPACITY
     #define ELMC_PEBBLE_SCENE_STATIC_CAPACITY 0
     #endif
 
     #ifndef ELMC_PEBBLE_SCENE_CHUNK_SIZE
-    #if defined(PBL_PLATFORM_APLITE)
-    #define ELMC_PEBBLE_SCENE_CHUNK_SIZE 256
-    #else
     #define ELMC_PEBBLE_SCENE_CHUNK_SIZE 0
-    #endif
     #endif
 
     """

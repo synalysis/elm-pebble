@@ -106,6 +106,43 @@ defmodule Ide.ProjectTemplates do
 
   def target_type_for_template(_template), do: "app"
 
+  @companion_templates ~w(
+    starter
+    watchface-tutorial-complete
+    watchface-yes
+    watchface-tangram-time
+    watchface-weather-animated
+  )
+
+  @doc """
+  Whether a template seeds a phone companion app (protocol + phone roots).
+  """
+  @spec companion_for_template(String.t()) :: boolean()
+  def companion_for_template(template) when template in @companion_templates, do: true
+  def companion_for_template("companion-demo-" <> _), do: true
+  def companion_for_template(_template), do: false
+
+  @doc """
+  Returns picker categories with templates filtered by `target` and `companion`.
+
+  `target` is `"all"`, `"watchface"`, or `"app"`.
+  `companion` is `"all"`, `"with"`, or `"without"`.
+  """
+  @spec filter_picker_categories([map()], String.t(), String.t()) :: [map()]
+  def filter_picker_categories(categories, target \\ "all", companion \\ "all") do
+    categories
+    |> Enum.map(fn category ->
+      templates =
+        Enum.filter(category.templates, fn template ->
+          picker_target_matches?(template.target_type, target) and
+            picker_companion_matches?(template.has_companion, companion)
+        end)
+
+      Map.put(category, :templates, templates)
+    end)
+    |> Enum.reject(&(Enum.empty?(&1.templates)))
+  end
+
   @doc """
   Default Pebble target platforms to enable for new projects created from `template`.
 
@@ -142,7 +179,8 @@ defmodule Ide.ProjectTemplates do
       %{
         key: key,
         label: label,
-        target_type: target_type_for_template(key)
+        target_type: target_type_for_template(key),
+        has_companion: companion_for_template(key)
       }
     end)
   end
@@ -1154,6 +1192,7 @@ defmodule Ide.ProjectTemplates do
       title: parsed.title,
       description: parsed.description,
       target_type: target_type_for_template(key),
+      has_companion: companion_for_template(key),
       screenshot_url: preview_image_url(key)
     }
   end
@@ -1177,6 +1216,16 @@ defmodule Ide.ProjectTemplates do
         %{title: String.trim(rest), description: nil}
     end
   end
+
+  @spec picker_target_matches?(String.t(), String.t()) :: boolean()
+  defp picker_target_matches?(_target_type, "all"), do: true
+  defp picker_target_matches?(target_type, filter), do: target_type == filter
+
+  @spec picker_companion_matches?(boolean(), String.t()) :: boolean()
+  defp picker_companion_matches?(_has_companion, "all"), do: true
+  defp picker_companion_matches?(true, "with"), do: true
+  defp picker_companion_matches?(false, "without"), do: true
+  defp picker_companion_matches?(_, _), do: false
 
   @spec load_template_metadata(String.t()) :: map()
   defp load_template_metadata(template) do

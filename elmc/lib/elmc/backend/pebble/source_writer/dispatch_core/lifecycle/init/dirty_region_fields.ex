@@ -13,6 +13,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DispatchCore.Lifecycle.Init.DirtyRegi
       app->prev_scene.command_count = 0;
       app->prev_scene.hash = 0;
       app->prev_scene.dirty = 1;
+      app->prev_scene.pool_slot = 1;
       app->dirty_rect.x = 0;
       app->dirty_rect.y = 0;
       app->dirty_rect.w = 0;

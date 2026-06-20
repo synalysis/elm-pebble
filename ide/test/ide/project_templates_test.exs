@@ -54,6 +54,42 @@ defmodule Ide.ProjectTemplatesTest do
     assert ProjectTemplates.picker_title("game-2048") == "2048"
   end
 
+  test "companion_for_template reflects whether a template seeds phone companion" do
+    assert ProjectTemplates.companion_for_template("starter")
+    assert ProjectTemplates.companion_for_template("watchface-yes")
+    assert ProjectTemplates.companion_for_template("companion-demo-storage")
+    refute ProjectTemplates.companion_for_template("watchface-digital")
+    refute ProjectTemplates.companion_for_template("game-2048")
+    refute ProjectTemplates.companion_for_template("watch-demo-health")
+  end
+
+  test "filter_picker_categories filters by project type and companion app" do
+    categories = ProjectTemplates.picker_categories()
+
+    watch_only =
+      ProjectTemplates.filter_picker_categories(categories, "all", "without")
+
+    assert Enum.flat_map(watch_only, & &1.templates)
+           |> Enum.map(& &1.key)
+           |> Enum.member?("watchface-digital")
+
+    refute Enum.flat_map(watch_only, & &1.templates)
+           |> Enum.map(& &1.key)
+           |> Enum.member?("starter")
+
+    watchfaces =
+      ProjectTemplates.filter_picker_categories(categories, "watchface", "all")
+
+    assert Enum.all?(
+             Enum.flat_map(watchfaces, & &1.templates),
+             &(&1.target_type == "watchface")
+           )
+
+    refute Enum.flat_map(watchfaces, & &1.templates)
+           |> Enum.map(& &1.key)
+           |> Enum.member?("game-2048")
+  end
+
   test "minimal templates seed bare watch-only Elm apps" do
     for {template, platform_entry} <- [
           {"watchface-minimal", "Platform.watchface"},

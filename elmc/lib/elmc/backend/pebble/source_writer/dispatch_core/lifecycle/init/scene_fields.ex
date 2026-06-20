@@ -9,9 +9,11 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DispatchCore.Lifecycle.Init.SceneFiel
     #if ELMC_PEBBLE_SCENE_STATIC_CAPACITY > 0
       elmc_pebble_scene_bind_static(&app->scene);
       app->scene.byte_count = 0;
+      app->scene.pool_slot = -1;
     #else
       app->scene.bytes = NULL;
       app->scene.byte_capacity = 0;
+      app->scene.pool_slot = 0;
     #if ELMC_PEBBLE_SCENE_CHUNK_SIZE > 0
       app->scene.chunks = NULL;
     #endif

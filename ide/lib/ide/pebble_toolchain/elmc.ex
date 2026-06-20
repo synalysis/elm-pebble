@@ -93,9 +93,7 @@ defmodule Ide.PebbleToolchain.Elmc do
     end
   end
 
-  defp direct_render_only?(target_platforms) when is_list(target_platforms) do
-    target_platforms == [] or not Enum.member?(target_platforms, "aplite")
-  end
+  defp direct_render_only?(_target_platforms), do: true
 
   # Multi-platform PBWs include aplite (streaming view) and newer watches (direct scene).
   # Prune direct-scene generic bodies from the shared compile so aplite stays within flash.

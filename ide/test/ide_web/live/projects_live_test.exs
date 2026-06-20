@@ -163,6 +163,36 @@ defmodule IdeWeb.ProjectsLiveTest do
     refute has_element?(view, "button[form='project-form'][disabled]")
   end
 
+  test "create project modal filters templates by type and companion app", %{conn: conn} do
+    assert {:ok, view, _html} = live(conn, ~p"/projects")
+
+    view |> element("button", "Create project") |> render_click()
+
+    html =
+      view
+      |> element("button", "Watch only")
+      |> render_click()
+
+    assert html =~ "watchface-digital"
+    refute html =~ "phx-value-template=\"starter\""
+
+    html =
+      view
+      |> element("button", "Watchface")
+      |> render_click()
+
+    assert html =~ "watchface-digital"
+    refute html =~ "phx-value-template=\"game-2048\""
+
+    html =
+      view
+      |> element("button", "With companion")
+      |> render_click()
+
+    assert html =~ "phx-value-template=\"watchface-yes\""
+    refute html =~ "watchface-digital"
+  end
+
   test "delete my data removes account and redirects to login", %{conn: conn} do
     Application.put_env(:ide, Ide.Auth, mode: :public_custom)
 

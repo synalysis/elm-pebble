@@ -23,25 +23,9 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
   defp finalize_source(source), do: CSource.format(source)
 
-  # When prune_generic_view is active, direct `_commands_append` is linked on aplite too.
-  defp direct_scene_guard(content, opts, ir) when is_binary(content) do
-    decl_map = IRQueries.function_decl_map(ir)
-    direct_targets = Host.direct_command_targets(ir, opts, decl_map)
-
-    cond do
-      String.trim(content) == "" ->
-        ""
-
-      GenericTargets.prune_generic_view?(opts, decl_map, direct_targets) ->
-        String.trim_trailing(content)
-
-      true ->
-        """
-        #if !defined(PBL_PLATFORM_APLITE)
-        #{String.trim_trailing(content)}
-        #endif
-        """
-    end
+  # Direct scene helpers are linked for every Pebble platform, including aplite.
+  defp direct_scene_guard(content, _opts, _ir) when is_binary(content) do
+    String.trim_trailing(content)
   end
 
   @spec header(ElmEx.IR.t(), Types.codegen_opts()) :: String.t()
@@ -280,6 +264,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
     #if defined(__GNUC__)
     #pragma GCC diagnostic ignored "-Wunused-function"
+    #pragma GCC diagnostic ignored "-Wunused-variable"
     #endif
 
     #{union_constructor_defines}

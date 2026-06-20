@@ -465,7 +465,6 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
   defp emit(module_name, name, pipeline, else_info, width, rows, model_type, decl_map) do
     c_prefix = Util.module_fn_name(module_name, name)
     count = rows * width
-    spawn_fn = Util.module_fn_name(module_name, else_info.spawn)
 
     with {:ok, tags} <- permute_case_tags(decl_map, module_name, pipeline.permute_fn) do
       cells_macro = FusionSupport.field_macro(module_name, model_type, pipeline.cells_field)
@@ -483,7 +482,6 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
         emit_body(
           c_prefix,
           count,
-          spawn_fn,
           cells_macro,
           seed_macro,
           score_macro,
@@ -505,7 +503,6 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
   defp emit_body(
          c_prefix,
          count,
-         spawn_fn,
          cells_macro,
          seed_macro,
          score_macro,
@@ -537,9 +534,6 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
       elmc_int_t merge_score = 0;
       #{RowMajorLayout.emit_adjacent_pair_merge_rows(width, rows, "perm_buf", "merge_buf", "merge_score")}
       #{RowMajorLayout.emit_apply_row_major_perm_via_helper("merge_buf", "out_buf", "perm_case", true, count)}
-      ElmcValue *out_list = NULL;
-      if (elmc_list_from_int_array(&out_list, out_buf, #{count}) != RC_SUCCESS)
-        out_list = elmc_list_nil();
       bool unchanged = true;
       for (elmc_int_t cmp_i = 0; cmp_i < #{count}; cmp_i++) {
         if (out_buf[cmp_i] != elmc_list_nth_int_default(model_cells, cmp_i, 0)) {
@@ -548,19 +542,13 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
         }
       }
       if (unchanged) {
-        ElmcValue *same_model = elmc_retain(model);
         ElmcValue *no_cmd = elmc_int_zero();
         ElmcValue *same_out = NULL;
-        Rc = elmc_tuple2_take(&same_out, same_model, no_cmd);
+        Rc = elmc_tuple2_take(&same_out, model, no_cmd);
         CHECK_RC(Rc);
-        elmc_release(out_list);
         *out = same_out;
       } else {
-        ElmcValue *spawn_out = NULL;
-        #{spawn_tile_call(spawn_fn, seed_macro, module_name, else_info.spawn)}
-        CHECK_RC(Rc);
-        ElmcValue *next_cells = elmc_tuple_first(spawn_out);
-        ElmcValue *next_seed = elmc_tuple_second(spawn_out);
+        #{emit_inline_spawn_tile(module_name, seed_macro, count)}
         const elmc_int_t model_score = ELMC_RECORD_GET_INDEX_INT(model, #{score_macro});
         const elmc_int_t model_best = ELMC_RECORD_GET_INDEX_INT(model, #{best_macro});
         const elmc_int_t model_turn = ELMC_RECORD_GET_INDEX_INT(model, #{turn_macro});
@@ -580,18 +568,18 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
         ElmcValue *turn_val = NULL;
         Rc = elmc_new_int(&turn_val, model_turn + 1);
         CHECK_RC(Rc);
-        ElmcValue *m1 = elmc_record_update_index(model, #{best_macro}, next_best_val);
-        ElmcValue *m2 = elmc_record_update_index_cow_drop(m1, #{cells_macro}, next_cells);
-        ElmcValue *m3 = elmc_record_update_index_cow_drop(m2, #{score_macro}, elmc_new_int_take(next_score));
-        ElmcValue *m4 = elmc_record_update_index_cow_drop(m3, #{seed_macro}, next_seed);
-        ElmcValue *m5 = elmc_record_update_index_cow_drop(m4, #{turn_macro}, turn_val);
+        ElmcValue *next_model = elmc_record_update_index_cow_drop(model, #{best_macro}, next_best_val);
+        next_model = elmc_record_update_index_cow_drop(next_model, #{cells_macro}, next_cells);
+        next_model = elmc_record_update_index_cow_drop(next_model, #{score_macro}, elmc_new_int_take(next_score));
+        next_model = elmc_record_update_index_cow_drop(next_model, #{seed_macro}, next_seed);
+        next_model = elmc_record_update_index_cow_drop(next_model, #{turn_macro}, turn_val);
+        elmc_release(next_cells);
+        elmc_release(next_seed);
         elmc_release(turn_val);
         elmc_release(next_best_val);
-        elmc_release(spawn_out);
-        elmc_release(out_list);
         ElmcValue *cmd_copy = save_cmd ? elmc_retain(save_cmd) : elmc_int_zero();
         ElmcValue *result = NULL;
-        Rc = elmc_tuple2_take(&result, m5, cmd_copy);
+        Rc = elmc_tuple2_take(&result, next_model, cmd_copy);
         CHECK_RC(Rc);
         elmc_release(save_cmd);
         *out = result;
@@ -602,19 +590,41 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
     """
   end
 
-  defp spawn_tile_call(spawn_fn, seed_macro, module_name, spawn_name) do
-    direct? =
-      Process.get(:elmc_direct_call_targets, MapSet.new())
-      |> MapSet.member?({module_name, spawn_name})
-
-    if direct? do
-      "Rc = #{spawn_fn}(&spawn_out, ELMC_RECORD_GET_INDEX(model, #{seed_macro}), out_list);"
-    else
-      """
-      ElmcValue *spawn_args[] = { ELMC_RECORD_GET_INDEX(model, #{seed_macro}), out_list };
-      Rc = #{spawn_fn}(&spawn_out, spawn_args, 2);
-      """
-      |> String.trim()
-    end
+  defp emit_inline_spawn_tile(_module_name, seed_macro, count) do
+    """
+    elmc_int_t spawn_empty_count = 0;
+    for (elmc_int_t spawn_scan_i = 0; spawn_scan_i < #{count}; spawn_scan_i++) {
+      if (out_buf[spawn_scan_i] == 0) spawn_empty_count++;
+    }
+    const elmc_int_t spawn_model_seed = ELMC_RECORD_GET_INDEX_INT(model, #{seed_macro});
+    elmc_int_t spawn_seed_after_choice = ((spawn_model_seed * 16807) + 11) % 2147483647;
+    if (spawn_seed_after_choice < 0) spawn_seed_after_choice += 2147483647;
+    elmc_int_t spawn_seed_after_tile = ((spawn_seed_after_choice * 16807) + 11) % 2147483647;
+    if (spawn_seed_after_tile < 0) spawn_seed_after_tile += 2147483647;
+    ElmcValue *next_seed = NULL;
+    Rc = elmc_new_int(&next_seed, spawn_seed_after_tile);
+    CHECK_RC(Rc);
+    if (spawn_empty_count > 0) {
+      elmc_int_t spawn_pick = spawn_seed_after_choice % spawn_empty_count;
+      if (spawn_pick < 0) spawn_pick += spawn_empty_count;
+      elmc_int_t spawn_seen_empty = 0;
+      elmc_int_t spawn_tile_index = 0;
+      for (elmc_int_t spawn_scan_i = 0; spawn_scan_i < #{count}; spawn_scan_i++) {
+        if (out_buf[spawn_scan_i] != 0) continue;
+        if (spawn_seen_empty == spawn_pick) {
+          spawn_tile_index = spawn_scan_i;
+          break;
+        }
+        spawn_seen_empty++;
+      }
+      elmc_int_t spawn_tile_roll = spawn_seed_after_tile % 10;
+      if (spawn_tile_roll < 0) spawn_tile_roll += 10;
+      out_buf[spawn_tile_index] = spawn_tile_roll == 0 ? 4 : 2;
+    }
+    ElmcValue *next_cells = NULL;
+    if (elmc_list_from_int_array(&next_cells, out_buf, #{count}) != RC_SUCCESS)
+      next_cells = elmc_list_nil();
+    """
+    |> String.trim()
   end
 end

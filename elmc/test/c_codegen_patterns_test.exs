@@ -4127,6 +4127,11 @@ defmodule Elmc.CCodegenPatternsTest do
 
     generated_h = File.read!(Path.join(out_dir, "c/elmc_generated.h"))
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    pebble_h = File.read!(Path.join(out_dir, "c/elmc_pebble.h"))
+
+    assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_POOL_SLOTS 10"
+    assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_STATIC_CAPACITY 0"
+    assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_CHUNK_SIZE 0"
 
     assert generated_h =~ "elmc_fn_Main_init("
     assert generated_h =~ "elmc_fn_Main_update("

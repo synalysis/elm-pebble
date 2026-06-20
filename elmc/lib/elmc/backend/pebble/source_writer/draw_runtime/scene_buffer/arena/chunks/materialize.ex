@@ -7,14 +7,15 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.SceneBuffer.Arena.Chunks.
   def body do
     """
     static int elmc_pebble_scene_materialize_chunks(ElmcPebbleSceneBuffer *scene) {
-      if (!scene || !scene->chunks || scene->byte_count <= 0) return 0;
-      unsigned char *dest = scene->bytes;
-      if (!dest || scene->byte_capacity < scene->byte_count) {
-        dest = (unsigned char *)realloc(scene->bytes, (size_t)scene->byte_count);
-        if (!dest) return -2;
-        scene->bytes = dest;
-        scene->byte_capacity = scene->byte_count;
+      if (!scene || !scene->chunks) return 0;
+      if (scene->byte_count <= 0) {
+        elmc_pebble_scene_chunks_free(scene);
+        return 0;
       }
+      unsigned char *dest = (unsigned char *)realloc(scene->bytes, (size_t)scene->byte_count);
+      if (!dest) return -2;
+      scene->bytes = dest;
+      scene->byte_capacity = scene->byte_count;
       int pos = 0;
       for (ElmcPebbleSceneChunk *chunk = scene->chunks; chunk; chunk = chunk->next) {
         memcpy(dest + pos, chunk->bytes, (size_t)chunk->used);

@@ -6,15 +6,11 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.SceneBuffer.Arena.Lifecyc
   @spec body() :: Types.c_source()
   def body do
     """
-    static void elmc_pebble_scene_buffer_free_for_app(ElmcPebbleApp *app, ElmcPebbleSceneBuffer *scene) {
-      (void)app;
+    static void elmc_pebble_scene_buffer_detach(ElmcPebbleSceneBuffer *scene) {
       if (!scene) return;
     #if ELMC_PEBBLE_SCENE_CHUNK_SIZE > 0
       elmc_pebble_scene_chunks_free(scene);
     #endif
-      if (scene->bytes && !elmc_pebble_scene_using_static(scene)) {
-        free(scene->bytes);
-      }
       scene->bytes = NULL;
       scene->byte_count = 0;
       scene->byte_capacity = 0;
@@ -27,14 +23,17 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.SceneBuffer.Arena.Lifecyc
       if (!app) return;
       elmc_pebble_clear_view_cache(app);
       elmc_pebble_scene_discard_build(app);
-      elmc_pebble_scene_buffer_free_for_app(app, &app->scene);
+      elmc_pebble_scene_buffer_detach(&app->scene);
     }
 
     static void elmc_pebble_scene_free(ElmcPebbleApp *app) {
       if (!app) return;
-      elmc_pebble_scene_buffer_free_for_app(app, &app->scene);
+      elmc_pebble_scene_buffer_detach(&app->scene);
     #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
-      elmc_pebble_scene_buffer_free_for_app(app, &app->prev_scene);
+      elmc_pebble_scene_buffer_detach(&app->prev_scene);
+    #endif
+      elmc_pebble_scene_pool_free_all();
+    #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
       app->dirty_rect_valid = 0;
       app->dirty_rect_full = 1;
     #endif

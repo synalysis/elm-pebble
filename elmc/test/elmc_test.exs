@@ -105,6 +105,37 @@ defmodule ElmcTest do
     assert runtime =~ "elmc_sub_alloc"
   end
 
+  test "runtime includes malloc registry hooks for ELMC_ALLOC_TRACK" do
+    out_dir = Path.expand("tmp/runtime_alloc_track", __DIR__)
+    runtime_dir = Path.join(out_dir, "runtime")
+    File.rm_rf!(out_dir)
+
+    assert :ok = Elmc.Runtime.Generator.write_runtime(runtime_dir)
+
+    runtime_h = File.read!(Path.join(runtime_dir, "elmc_runtime.h"))
+    runtime_c = File.read!(Path.join(runtime_dir, "elmc_runtime.c"))
+
+    assert runtime_h =~ "ELMC_ALLOC_TRACK"
+    assert runtime_h =~ "elmc_alloc_track_dump_live"
+    assert runtime_c =~ "elmc_alloc_track_register"
+    assert runtime_c =~ "elmc_alloc_track_check_balanced"
+  end
+
+  test "runtime includes alloc probe snapshot API" do
+    out_dir = Path.expand("tmp/runtime_alloc_probe", __DIR__)
+    runtime_dir = Path.join(out_dir, "runtime")
+    File.rm_rf!(out_dir)
+
+    assert :ok = Elmc.Runtime.Generator.write_runtime(runtime_dir)
+
+    runtime_h = File.read!(Path.join(runtime_dir, "elmc_runtime.h"))
+    runtime_c = File.read!(Path.join(runtime_dir, "elmc_runtime.c"))
+
+    assert runtime_h =~ "ELMC_ALLOC_PROBE"
+    assert runtime_h =~ "elmc_alloc_probe_snap"
+    assert runtime_c =~ "elmc_alloc_probe_diff"
+  end
+
   test "runtime pruning keeps elmc_cmd_alloc when generated code uses elmc_cmd1" do
     out_dir = Path.expand("tmp/runtime_pruned_cmd", __DIR__)
     refs_dir = Path.join(out_dir, "refs")

@@ -14,6 +14,14 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.SceneBuffer.Arena.Reserve
       }
       return 0;
     #else
+    #if ELMC_PEBBLE_SCENE_POOL_SLOTS > 0
+      if (app->scene.pool_slot < 0) {
+        app->scene.pool_slot = 0;
+      }
+      if (elmc_pebble_scene_using_pool(&app->scene)) {
+        return elmc_pebble_scene_pool_grow_slot(&app->scene, min_capacity);
+      }
+    #endif
     #if ELMC_PEBBLE_SCENE_STATIC_CAPACITY > 0
       if (!app->scene.bytes) {
         elmc_pebble_scene_bind_static(&app->scene);
@@ -27,19 +35,19 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.SceneBuffer.Arena.Reserve
       int next_capacity = app->scene.byte_capacity > 0 ? app->scene.byte_capacity : 0;
       while (next_capacity < min_capacity) {
         if (next_capacity == 0) {
-    #if defined(PBL_PLATFORM_APLITE)
-          next_capacity = ELMC_PEBBLE_SCENE_GROW_CHUNK;
-    #else
           next_capacity = ELMC_PEBBLE_SCENE_INITIAL_CAPACITY;
-    #endif
         } else if (next_capacity < ELMC_PEBBLE_SCENE_INITIAL_CAPACITY) {
           next_capacity += ELMC_PEBBLE_SCENE_GROW_CHUNK;
         } else {
           next_capacity *= 2;
         }
       }
-      unsigned char *next = (unsigned char *)realloc(app->scene.bytes, (size_t)next_capacity);
+      unsigned char *next = (unsigned char *)malloc((size_t)next_capacity);
       if (!next) return -2;
+      if (app->scene.bytes && app->scene.byte_count > 0) {
+        memcpy(next, app->scene.bytes, (size_t)app->scene.byte_count);
+      }
+      free(app->scene.bytes);
       app->scene.bytes = next;
       app->scene.byte_capacity = next_capacity;
       return 0;

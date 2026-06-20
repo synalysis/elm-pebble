@@ -67,4 +67,31 @@ defmodule Elmc.RcFailRecordTest do
     assert guard_idx < name_idx
     assert Regex.scan(~r/const char \*elmc_rc_name\(RC rc\) \{/, source) |> length() == 1
   end
+
+  test "pruned pebble runtime drops host-only alloc track helpers" do
+    tmp = Path.expand("tmp/rc_fail_record_alloc_track_pruned", __DIR__)
+    refs_dir = Path.expand("tmp/rc_fail_record_alloc_track_pruned_refs", __DIR__)
+    File.rm_rf!(tmp)
+    File.rm_rf!(refs_dir)
+    File.mkdir_p!(Path.join(refs_dir, "c"))
+
+    File.write!(
+      Path.join(refs_dir, "c/elmc_generated.c"),
+      """
+      #include "elmc_runtime.h"
+      void elmc_alloc_probe(void) {
+        ElmcValue *v = elmc_new_int_take(1);
+        elmc_release(v);
+      }
+      """
+    )
+
+    assert :ok = Generator.write_runtime(tmp, prune_from_dir: refs_dir, pebble_int32: true)
+
+    source = File.read!(Path.join(tmp, "elmc_runtime.c"))
+
+    refute source =~ "static void elmc_alloc_track_register("
+    refute source =~ "ELMC_ALLOC_TRACK_ENTRIES"
+    refute source =~ "static ElmcValue ELMC_UNIT ="
+  end
 end

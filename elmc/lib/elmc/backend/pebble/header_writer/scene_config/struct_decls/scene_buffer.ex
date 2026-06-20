@@ -13,6 +13,7 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.SceneConfig.StructDecls.SceneBuffer d
       int command_count;
       uint64_t hash;
       int dirty;
+      int pool_slot;
     #if ELMC_PEBBLE_SCENE_CHUNK_SIZE > 0
       struct ElmcPebbleSceneChunk *chunks;
     #endif

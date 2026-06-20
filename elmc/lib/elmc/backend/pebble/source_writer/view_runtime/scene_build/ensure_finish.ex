@@ -28,7 +28,12 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime.SceneBuild.EnsureFinish d
         elmc_pebble_scene_compute_dirty_rect(app);
       }
     #endif
+    #if ELMC_PEBBLE_SCENE_POOL_SLOTS > 0
+      elmc_pebble_scene_pool_sync_from_slot(&app->scene);
+    #endif
+    #if ELMC_PEBBLE_SCENE_TRIM_SLACK > 0
       elmc_pebble_scene_trim_capacity(app);
+    #endif
       ELMC_PEBBLE_SCENE_LOG("elmc-scene ensure ok cmds=%d bytes=%d cap=%d",
               app->scene.command_count, app->scene.byte_count, app->scene.byte_capacity);
       ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", 0);

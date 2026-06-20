@@ -11,11 +11,18 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DispatchCore.Lifecycle.DispatchHooks 
       elmc_pebble_heap_log("dispatch:prepare:before");
       elmc_pebble_clear_view_cache(app);
     #if !ELMC_PEBBLE_DIRTY_REGION_ENABLED
-      /* Retain scene heap capacity across dispatches; freeing here forces realloc on
-         a fragmented heap after update and can fail on tight Aplite targets. */
+      /* Invalidate encoded scene; retain materialized bytes to avoid heap churn on Aplite.
+         Chunked rebuild uses scene.chunks; stale bytes are not read while dirty. */
       app->scene.byte_count = 0;
       app->scene.command_count = 0;
       app->scene.hash = 0;
+    #if ELMC_PEBBLE_SCENE_POOL_SLOTS > 0
+      elmc_pebble_scene_pool_sync_from_slot(&app->scene);
+    #endif
+    #if ELMC_PEBBLE_SCENE_CHUNK_SIZE > 0
+      elmc_pebble_scene_chunks_free(&app->scene);
+      app->scene.byte_capacity = 0;
+    #endif
     #endif
       elmc_pebble_mark_scene_dirty(app);
     #if ELMC_PEBBLE_SCENE_CACHE_ENABLED

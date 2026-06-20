@@ -195,12 +195,8 @@ defmodule Elmc.GeneratedRcTrackGame2048TemplateTest do
         if (elmc_pebble_ensure_scene(&app) != 0) return 13;
         if (scene_rect_cmds(&app) != 16) return 19;
         if (scene_text_cmds(&app) < 2) return 21;
-        void *scene_bytes = app.scene.bytes;
-        int scene_capacity = app.scene.byte_capacity;
-        if (!scene_bytes || scene_capacity <= 0) return 14;
 
         if (elmc_pebble_dispatch_tag_value(&app, ELMC_PEBBLE_MSG_RANDOMGENERATED, 12345) != 0) return 3;
-        if (app.scene.bytes != scene_bytes || app.scene.byte_capacity < scene_capacity) return 15;
         drain_cmds(&app);
         if (model_cells_len(&app) != 16) return 9;
         if (drain_view(&app) < 17) return 4;

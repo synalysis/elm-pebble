@@ -5,7 +5,6 @@ defmodule Elmc.Backend.Pebble do
 
   alias ElmEx.IR
   alias Elmc.Backend.CCodegen.{Host, IRQueries}
-  alias Elmc.Backend.CCodegen.DirectRender.GenericTargets
   alias Elmc.Backend.Pebble.{HeaderWriter, IRAnalysis, Kinds, SourceWriter}
   alias Elmc.Backend.Pebble.Types, as: PebbleTypes
   alias Elmc.Types
@@ -43,7 +42,7 @@ defmodule Elmc.Backend.Pebble do
     direct_targets = Host.direct_command_targets(ir, opts, decl_map)
 
     aplite_direct_view_scene? =
-      GenericTargets.prune_generic_view?(opts, decl_map, direct_targets)
+      MapSet.member?(direct_targets, {entry_module, "view"})
 
     with :ok <- File.mkdir_p(c_dir),
          :ok <-

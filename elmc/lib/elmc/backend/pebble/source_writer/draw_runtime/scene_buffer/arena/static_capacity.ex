@@ -18,11 +18,6 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.SceneBuffer.Arena.StaticC
       scene->bytes = elmc_pebble_scene_static_bytes;
       scene->byte_capacity = ELMC_PEBBLE_SCENE_STATIC_CAPACITY;
     }
-    #else
-    static int elmc_pebble_scene_using_static(const ElmcPebbleSceneBuffer *scene) {
-      (void)scene;
-      return 0;
-    }
     #endif
 
 """
