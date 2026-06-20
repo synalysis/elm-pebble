@@ -57,7 +57,17 @@ defmodule Elmx.Runtime.Cmd.Wire do
   @spec callback_message_value(Types.elm_msg(), Types.wire_value()) ::
           {String.t(), Types.wire_map()}
   def callback_message_value(callback, payload) do
-    {message, message_value} = message_wire(callback)
+    {message, message_value} =
+      case callback do
+        fun when is_function(fun, 1) and not is_nil(payload) ->
+          message_wire(fun.(payload))
+
+        fun when is_function(fun, 0) ->
+          message_wire(fun.())
+
+        other ->
+          message_wire(other)
+      end
 
     message_value =
       case message_value do

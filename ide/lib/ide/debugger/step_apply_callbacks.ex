@@ -80,7 +80,7 @@ defmodule Ide.Debugger.StepApplyCallbacks do
       append_event: host.append_event,
       append_debugger_event: host.append_debugger_event,
       maybe_append_runtime_status: host.maybe_append_runtime_status,
-      device_data_responses: &device_data_responses(&1, &2, &3, &4, &5, device_data),
+      device_data_responses: &device_data_responses(&1, &2, &3, &4, &5, &6, device_data),
       geolocation_response: &geolocation_response(&1, &2, &3, &4, &5, geolocation),
       companion_bridge_command_responses:
         &companion_bridge_command_responses(&1, &2, &3, &4, &5, companion_bridge),
@@ -119,10 +119,19 @@ defmodule Ide.Debugger.StepApplyCallbacks do
           String.t(),
           Types.app_model(),
           String.t(),
+          Types.subscription_payload() | nil,
           DeviceDataResponses.apply_ctx()
         ) :: Types.runtime_state()
-  def device_data_responses(state, target, message, model, source, device_data) do
-    DeviceDataResponses.apply_after_step(state, target, message, model, source, device_data)
+  def device_data_responses(state, target, message, model, source, message_value, device_data) do
+    DeviceDataResponses.apply_after_step(
+      state,
+      target,
+      message,
+      model,
+      source,
+      device_data,
+      message_value
+    )
   end
 
   @spec geolocation_response(

@@ -107,7 +107,8 @@ defmodule Ide.Debugger.InitSurfaceEffects do
         append_event: ctx.append_event,
         apply_step_once: ctx.apply_step_once,
         source_root_for_target: ctx.source_root_for_target
-      }
+      },
+      nil
     )
   end
 

@@ -147,7 +147,15 @@ defmodule Ide.Debugger.RuntimeContexts do
         append_event: host.append_event,
         apply_step_once: host.apply_step_once,
         apply_device_data_followups: fn st, target, message, model, source ->
-          DeviceDataResponses.apply_after_step(st, target, message, model, source, device_data)
+          DeviceDataResponses.apply_after_step(
+            st,
+            target,
+            message,
+            model,
+            source,
+            device_data,
+            nil
+          )
         end,
         apply_subscription_ok_response: host.apply_subscription_ok_response,
         protocol_events_ctx: protocol_events_fn,
@@ -250,20 +258,21 @@ defmodule Ide.Debugger.RuntimeContexts do
           attach_payload: host.attach_subscription_payload
         }),
       trigger_surface: trigger_surface,
-      trigger_injection: TriggerInjectionContext.build(host),
+      trigger_injection: TriggerInjectionContext.build(host, device_data),
       auto_fire:
         SubscriptionWireContexts.auto_fire(%{
           trigger_candidates: trigger_candidates,
           trigger_message: host.trigger_message_for_surface,
           apply_step: host.apply_step_once,
-          apply_device_data_responses: fn st, target, message ->
+          apply_device_data_responses: fn st, target, message, message_value ->
             DeviceDataResponses.apply_after_step(
               st,
               target,
               message,
               nil,
               "subscription_auto_fire",
-              device_data
+              device_data,
+              message_value
             )
           end,
           subscription_row_enabled?: host.subscription_row_enabled?,

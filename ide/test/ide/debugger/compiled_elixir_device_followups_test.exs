@@ -107,6 +107,88 @@ defmodule Ide.Debugger.CompiledElixirDeviceFollowupsTest do
   end
 
   @tag timeout: 180_000
+  test "tangram inject_trigger applies CurrentDateTime after each manual MinuteChanged" do
+    alias Ide.Debugger
+    alias Ide.Projects
+
+    slug = "elmx-inject-minute-followup-#{System.unique_integer([:positive])}"
+
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "ElmxInjectMinuteFollowup",
+               "slug" => slug,
+               "target_type" => "watchface",
+               "template" => "watchface-tangram-time"
+             })
+
+    on_exit(fn -> Projects.delete_project(project) end)
+
+    assert {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, _} =
+             Debugger.set_simulator_settings(slug, %{
+               "use_simulated_time" => true,
+               "simulated_date" => "2026-06-20",
+               "simulated_time" => "12:39:00",
+               "timezone_offset_min" => 120
+             })
+
+    assert {:ok, stepped} =
+             Debugger.step(slug, %{target: "watch", message: "MinuteChanged 40", count: 1})
+
+    step_rows =
+      stepped
+      |> DebuggerSupport.debugger_rows(500)
+      |> Enum.filter(fn row -> row.target == "watch" and row.type == "update" end)
+      |> Enum.map(fn row -> {row.message, row.message_source} end)
+
+    assert Enum.any?(step_rows, fn {msg, _} -> String.contains?(msg || "", "CurrentDateTime") end),
+           "step baseline missing CurrentDateTime: #{inspect(step_rows)}"
+
+    assert {:ok, state40} =
+             Debugger.inject_trigger(slug, %{
+               target: "watch",
+               trigger: "on_minute_change",
+               message: "MinuteChanged 41"
+             })
+
+    rows41 =
+      state40
+      |> DebuggerSupport.debugger_rows(500)
+      |> Enum.filter(fn row -> row.target == "watch" and row.type == "update" end)
+      |> Enum.map(fn row -> {row.message, row.message_source} end)
+
+    assert Enum.any?(rows41, fn {msg, _} -> String.contains?(msg || "", "MinuteChanged") end)
+
+    assert Enum.any?(rows41, fn {msg, _} ->
+             String.contains?(msg || "", "CurrentDateTime") and
+               String.contains?(msg || "", "\"minute\":41")
+           end),
+           "expected CurrentDateTime follow-up for minute 41, got: #{inspect(rows41)}"
+
+    assert {:ok, state41} =
+             Debugger.inject_trigger(slug, %{
+               target: "watch",
+               trigger: "on_minute_change",
+               message: "MinuteChanged",
+               message_value: 42
+             })
+
+    rows42 =
+      state41
+      |> DebuggerSupport.debugger_rows(500)
+      |> Enum.filter(fn row -> row.target == "watch" and row.type == "update" end)
+      |> Enum.take(4)
+      |> Enum.map(fn row -> {row.message, row.message_source} end)
+
+    assert Enum.any?(rows42, fn {msg, source} ->
+             source == "device_data" and String.contains?(msg || "", "CurrentDateTime") and
+               String.contains?(msg || "", "\"minute\":42")
+           end),
+           "expected CurrentDateTime follow-up for message_value minute 42, got: #{inspect(rows42)}"
+  end
+
+  @tag timeout: 180_000
   test "watchface-poke-battle init device followups execute without clause errors" do
     assert "watchface-poke-battle" in DebuggerTemplateCorpus.template_keys()
 

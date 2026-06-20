@@ -20,16 +20,36 @@ defmodule Ide.Debugger.DeviceData do
   defp settings_from_model(model) when is_map(model),
     do: DebuggerSimulatorSettings.from_model(model)
 
-  @spec now_from_model(Types.app_model(), String.t() | nil) :: NaiveDateTime.t()
-  defp now_from_model(model, current_message) when is_map(model) do
+  @spec now_from_model(Types.app_model(), String.t() | nil, Types.subscription_payload() | nil) ::
+          NaiveDateTime.t()
+  defp now_from_model(model, current_message, message_value) when is_map(model) do
     model
     |> settings_from_model()
     |> now_from_settings()
-    |> apply_subscription_clock_overrides(subscription_clock_overrides(current_message))
+    |> apply_subscription_clock_overrides(
+      subscription_clock_overrides(current_message, message_value)
+    )
   end
 
-  @spec subscription_clock_overrides(String.t() | nil) :: %{String.t() => integer()}
-  def subscription_clock_overrides(message) when is_binary(message) do
+  @spec subscription_clock_overrides(String.t() | nil, Types.subscription_payload() | nil) ::
+          %{String.t() => integer()}
+  def subscription_clock_overrides(message, message_value \\ nil)
+
+  def subscription_clock_overrides(message, message_value) when is_binary(message) do
+    case subscription_clock_overrides_from_message(message) do
+      %{} = overrides when map_size(overrides) > 0 ->
+        overrides
+
+      _ ->
+        subscription_clock_overrides_from_message_value(message, message_value)
+    end
+  end
+
+  def subscription_clock_overrides(_message, message_value),
+    do: subscription_clock_overrides_from_message_value(nil, message_value)
+
+  @spec subscription_clock_overrides_from_message(String.t()) :: %{String.t() => integer()}
+  defp subscription_clock_overrides_from_message(message) when is_binary(message) do
     case RuntimeModelMessages.wire_constructor(message) do
       ctor when is_binary(ctor) ->
         case Map.get(@subscription_clock_units, ctor) do
@@ -48,7 +68,44 @@ defmodule Ide.Debugger.DeviceData do
     end
   end
 
-  def subscription_clock_overrides(_message), do: %{}
+  @spec subscription_clock_overrides_from_message_value(
+          String.t() | nil,
+          Types.subscription_payload() | nil
+        ) :: %{String.t() => integer()}
+  defp subscription_clock_overrides_from_message_value(message, message_value) do
+    ctor =
+      case message do
+        msg when is_binary(msg) -> RuntimeModelMessages.wire_constructor(msg)
+        _ -> nil
+      end
+
+    ctor =
+      case {ctor, wire_constructor_from_value(message_value)} do
+        {ctor, _} when is_binary(ctor) and ctor != "" -> ctor
+        {_, ctor} when is_binary(ctor) and ctor != "" -> ctor
+        _ -> nil
+      end
+
+    with ctor when is_binary(ctor) <- ctor,
+         unit when not is_nil(unit) <- Map.get(@subscription_clock_units, ctor),
+         value when is_integer(value) <- integer_from_wire_value(message_value) do
+      %{Atom.to_string(unit) => value}
+    else
+      _ -> %{}
+    end
+  end
+
+  @spec wire_constructor_from_value(Types.subscription_payload() | nil) :: String.t() | nil
+  defp wire_constructor_from_value(%{"ctor" => ctor}) when is_binary(ctor), do: ctor
+  defp wire_constructor_from_value(%{ctor: ctor}) when is_binary(ctor), do: ctor
+  defp wire_constructor_from_value(_value), do: nil
+
+  @spec integer_from_wire_value(Types.subscription_payload() | nil) :: integer() | nil
+  defp integer_from_wire_value(value) when is_integer(value), do: value
+
+  defp integer_from_wire_value(%{"args" => [head | _]}) when is_integer(head), do: head
+  defp integer_from_wire_value(%{args: [head | _]}) when is_integer(head), do: head
+  defp integer_from_wire_value(_value), do: nil
 
   @spec apply_subscription_clock_overrides(NaiveDateTime.t(), %{String.t() => integer()}) ::
           NaiveDateTime.t()
@@ -389,10 +446,17 @@ defmodule Ide.Debugger.DeviceData do
 
   def init_request_already_satisfied?(_model, _req), do: false
 
-  @spec finalize_request(Types.device_request(), Types.app_model(), String.t() | nil) ::
+  @spec finalize_request(
+          Types.device_request(),
+          Types.app_model(),
+          String.t() | nil,
+          Types.subscription_payload() | nil
+        ) ::
           Types.device_request()
-  def finalize_request(%{kind: "current_time_string"} = req, model, current_message) do
-    now = now_from_model(model, current_message)
+  def finalize_request(req, model, current_message, message_value \\ nil)
+
+  def finalize_request(%{kind: "current_time_string"} = req, model, current_message, message_value) do
+    now = now_from_model(model, current_message, message_value)
     hhmm_text = Calendar.strftime(now, "%H:%M")
 
     hhmm =
@@ -410,8 +474,8 @@ defmodule Ide.Debugger.DeviceData do
     })
   end
 
-  def finalize_request(%{kind: "current_date_time"} = req, model, current_message) do
-    now = now_from_model(model, current_message)
+  def finalize_request(%{kind: "current_date_time"} = req, model, current_message, message_value) do
+    now = now_from_model(model, current_message, message_value)
     settings = settings_from_model(model)
 
     Map.put(req, :preview, %{
@@ -426,69 +490,70 @@ defmodule Ide.Debugger.DeviceData do
     })
   end
 
-  def finalize_request(%{kind: "battery_level"} = req, model, _current_message) do
+  def finalize_request(%{kind: "battery_level"} = req, model, _current_message, _message_value) do
     settings = settings_from_model(model)
     Map.put(req, :preview, %{"batteryLevel" => settings["battery_percent"]})
   end
 
-  def finalize_request(%{kind: "connection_status"} = req, model, _current_message) do
+  def finalize_request(%{kind: "connection_status"} = req, model, _current_message, _message_value) do
     settings = settings_from_model(model)
     Map.put(req, :preview, %{"connected" => settings["connected"]})
   end
 
-  def finalize_request(%{kind: "clock_style_24h"} = req, model, _current_message) do
+  def finalize_request(%{kind: "clock_style_24h"} = req, model, _current_message, _message_value) do
     settings = settings_from_model(model)
     Map.put(req, :preview, settings["clock_24h"])
   end
 
-  def finalize_request(%{kind: "timezone_is_set"} = req, _model, _current_message),
+  def finalize_request(%{kind: "timezone_is_set"} = req, _model, _current_message, _message_value),
     do: Map.put(req, :preview, true)
 
-  def finalize_request(%{kind: "timezone"} = req, _model, _current_message) do
+  def finalize_request(%{kind: "timezone"} = req, _model, _current_message, _message_value) do
     tz = System.get_env("TZ") || "UTC"
     Map.put(req, :preview, tz)
   end
 
-  def finalize_request(%{kind: "watch_model"} = req, model, _current_message)
+  def finalize_request(%{kind: "watch_model"} = req, model, _current_message, _message_value)
       when is_map(model) do
     launch_context = Map.get(model, "launch_context") || %{}
     Map.put(req, :preview, launch_context)
   end
 
-  def finalize_request(%{kind: "watch_color"} = req, model, _current_message)
+  def finalize_request(%{kind: "watch_color"} = req, model, _current_message, _message_value)
       when is_map(model) do
     launch_context = Map.get(model, "launch_context") || %{}
     Map.put(req, :preview, launch_context)
   end
 
-  def finalize_request(%{kind: "firmware_version"} = req, _model, _current_message),
+  def finalize_request(%{kind: "firmware_version"} = req, _model, _current_message, _message_value),
     do: Map.put(req, :preview, "v4.4.0-sim")
 
-  def finalize_request(%{kind: "health_value"} = req, model, _current_message) do
+  def finalize_request(%{kind: "health_value"} = req, model, _current_message, _message_value) do
     settings = settings_from_model(model)
     Map.put(req, :preview, %{"value" => settings["health_steps"]})
   end
 
-  def finalize_request(%{kind: "health_supported"} = req, model, _current_message) do
+  def finalize_request(%{kind: "health_supported"} = req, model, _current_message, _message_value) do
     launch_context = Map.get(model, "launch_context") || %{}
     supported = Map.get(launch_context, "supports_health") == true
     Map.put(req, :preview, supported)
   end
 
-  def finalize_request(%{kind: "health_sum_today"} = req, model, _current_message) do
+  def finalize_request(%{kind: "health_sum_today"} = req, model, _current_message, _message_value) do
     settings = settings_from_model(model)
     Map.put(req, :preview, %{"value" => settings["health_steps_today"]})
   end
 
-  def finalize_request(%{kind: "health_sum"} = req, model, _current_message) do
+  def finalize_request(%{kind: "health_sum"} = req, model, _current_message, _message_value) do
     settings = settings_from_model(model)
     Map.put(req, :preview, %{"value" => settings["health_steps_today"]})
   end
 
-  def finalize_request(%{kind: "health_accessible"} = req, _model, _current_message),
+  def finalize_request(%{kind: "health_accessible"} = req, _model, _current_message, _message_value),
     do: Map.put(req, :preview, true)
 
-  def finalize_request(req, _model, _current_message), do: Map.put(req, :preview, nil)
+  def finalize_request(req, _model, _current_message, _message_value),
+    do: Map.put(req, :preview, nil)
 
   @spec day_of_week_name(NaiveDateTime.t()) :: String.t()
   def day_of_week_name(%NaiveDateTime{} = now) do
@@ -544,7 +609,7 @@ defmodule Ide.Debugger.DeviceData do
         req.response_message == current_ctor
     end)
     |> Enum.uniq_by(fn req -> {req.kind, req.response_message} end)
-    |> Enum.map(&finalize_request(&1, model, current_message))
+    |> Enum.map(&finalize_request(&1, model, current_message, Keyword.get(opts, :message_value)))
   end
 
   def requests_for_message(_ei, _model, _current_message, _opts), do: []

@@ -1,6 +1,7 @@
 defmodule Ide.Debugger.AutoFireRuntime do
   @moduledoc false
 
+  alias Ide.Debugger.DeviceDataResponses
   alias Ide.Debugger.SubscriptionActivation
   alias Ide.Debugger.SubscriptionAutoFireState
   alias Ide.Debugger.SubscriptionPayload
@@ -38,7 +39,8 @@ defmodule Ide.Debugger.AutoFireRuntime do
           required(:source_root_for_target) => (Types.surface_target() -> String.t()),
           optional(:apply_device_data_responses) => (Types.runtime_state(),
                                                      Types.surface_target(),
-                                                     String.t() ->
+                                                     String.t(),
+                                                     Types.subscription_payload() | nil ->
                                                        Types.runtime_state()),
           optional(:default_interval_ms) => pos_integer()
         }
@@ -112,37 +114,21 @@ defmodule Ide.Debugger.AutoFireRuntime do
         trigger
       )
 
-    if device_data_response_appended?(stepped, before_seq, target, ctx) do
+    if DeviceDataResponses.device_data_response_appended?(
+         stepped,
+         before_seq,
+         target,
+         ctx.source_root_for_target
+       ) do
       stepped
     else
       case Map.get(ctx, :apply_device_data_responses) do
+        fun when is_function(fun, 4) -> fun.(stepped, target, message, message_value)
         fun when is_function(fun, 3) -> fun.(stepped, target, message)
         _ -> stepped
       end
     end
   end
-
-  defp device_data_response_appended?(state, before_seq, target, ctx)
-       when is_map(state) and is_integer(before_seq) and target in [:watch, :companion, :phone] and
-              is_map(ctx) do
-    source_root = ctx.source_root_for_target.(target)
-
-    state
-    |> Map.get(:debugger_timeline, [])
-    |> Enum.any?(fn
-      %{seq: seq, target: ^source_root, message_source: "device_data"} when is_integer(seq) ->
-        seq > before_seq
-
-      %{"seq" => seq, "target" => ^source_root, "message_source" => "device_data"}
-      when is_integer(seq) ->
-        seq > before_seq
-
-      _ ->
-        false
-    end)
-  end
-
-  defp device_data_response_appended?(_state, _before_seq, _target, _ctx), do: false
 
   @spec subscription_due?(
           Types.runtime_state(),

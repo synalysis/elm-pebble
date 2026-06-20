@@ -11,6 +11,13 @@ defmodule Ide.Debugger.DeviceDataClockOverrideTest do
            ) == %{"minute" => 54}
   end
 
+  test "subscription_clock_overrides reads integer payload from structured message_value" do
+    assert DeviceData.subscription_clock_overrides("MinuteChanged", %{
+             "ctor" => "MinuteChanged",
+             "args" => [41]
+           }) == %{"minute" => 41}
+  end
+
   test "apply_subscription_clock_overrides adjusts simulated device time not runtime model" do
     base = ~N[2026-05-27 08:53:00]
 

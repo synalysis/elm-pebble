@@ -55,7 +55,8 @@ defmodule Ide.Debugger.StepApply do
                                                Types.surface_target(),
                                                String.t(),
                                                Types.app_model(),
-                                               String.t() ->
+                                               String.t(),
+                                               Types.subscription_payload() | nil ->
                                                  Types.runtime_state()),
           required(:geolocation_response) => (Types.runtime_state(),
                                               Types.surface_target(),
@@ -331,7 +332,8 @@ defmodule Ide.Debugger.StepApply do
         target,
         message,
         updated_model,
-        message_source
+        message_source,
+        message_value
       )
       |> ctx.geolocation_response.(target, message, updated_model, message_source)
       |> ctx.companion_bridge_command_responses.(

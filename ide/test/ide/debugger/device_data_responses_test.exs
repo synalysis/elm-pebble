@@ -22,7 +22,7 @@ defmodule Ide.Debugger.DeviceDataResponsesTest do
     end
   end
 
-  describe "apply_after_step/6" do
+  describe "apply_after_step/7" do
     test "skips configuration message source" do
       state = RuntimeSurfaces.default_watch()
 
@@ -32,7 +32,8 @@ defmodule Ide.Debugger.DeviceDataResponsesTest do
                "Tick",
                %{},
                "configuration",
-               %{}
+               %{},
+               nil
              ) == state
     end
   end

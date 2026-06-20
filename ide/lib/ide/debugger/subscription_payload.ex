@@ -1,6 +1,7 @@
 defmodule Ide.Debugger.SubscriptionPayload do
   @moduledoc false
 
+  alias Ide.Debugger.RuntimeModelMessages
   alias Ide.Debugger.SimulatorSettings, as: DebuggerSimulatorSettings
   alias Ide.Debugger.Types
 
@@ -154,12 +155,97 @@ defmodule Ide.Debugger.SubscriptionPayload do
   def attach(_state, _target, message, _trigger, _ctx) when is_binary(message), do: message
 
   @spec message_has_payload?(String.t()) :: boolean()
-  defp message_has_payload?(message) when is_binary(message) do
+  def message_has_payload?(message) when is_binary(message) do
     case String.split(message, ~r/\s+/, parts: 2) do
       [_ctor, payload] -> String.trim(payload) != ""
       _ -> false
     end
   end
+
+  @spec ensure_message_payload(String.t() | nil, Types.subscription_payload() | nil) ::
+          String.t() | nil
+  def ensure_message_payload(message, message_value) do
+    cond do
+      is_binary(message) and message != "" and message_has_payload?(message) ->
+        message
+
+      true ->
+        case explicit_payload_text(message, message_value) do
+          payload when is_binary(payload) and payload != "" ->
+            ctor =
+              message
+              |> case do
+                msg when is_binary(msg) and msg != "" ->
+                  RuntimeModelMessages.wire_constructor(msg) || String.trim(msg)
+
+                _ ->
+                  wire_ctor_from_value(message_value)
+              end
+
+            if is_binary(ctor) and ctor != "" do
+              "#{ctor} #{payload}"
+            else
+              message
+            end
+
+          _ ->
+            message
+        end
+    end
+  end
+
+  @spec sync_simulator_clock_from_subscription(
+          Types.runtime_state(),
+          String.t(),
+          Types.subscription_payload() | nil
+        ) :: Types.runtime_state()
+  def sync_simulator_clock_from_subscription(state, message, message_value)
+      when is_map(state) and is_binary(message) do
+    overrides = Ide.Debugger.DeviceData.subscription_clock_overrides(message, message_value)
+
+    if map_size(overrides) > 0 do
+      settings = DebuggerSimulatorSettings.from_state(state)
+
+      if settings["use_simulated_time"] == true do
+        now = simulator_now_from_settings(settings)
+        next = Ide.Debugger.DeviceData.apply_subscription_clock_overrides(now, overrides)
+
+        next_settings = %{
+          settings
+          | "simulated_date" => next |> NaiveDateTime.to_date() |> Date.to_iso8601(),
+            "simulated_time" => next |> NaiveDateTime.to_time() |> format_simulated_time()
+        }
+
+        state
+        |> Map.put(:simulator_settings, next_settings)
+        |> Ide.Debugger.SimulatorSurfaceSettings.apply_to_state()
+      else
+        state
+      end
+    else
+      state
+    end
+  end
+
+  def sync_simulator_clock_from_subscription(state, _message, _message_value) when is_map(state),
+    do: state
+
+  @spec explicit_payload_text(String.t() | nil, Types.subscription_payload() | nil) ::
+          String.t() | nil
+  defp explicit_payload_text(_message, value) when is_integer(value), do: Integer.to_string(value)
+
+  defp explicit_payload_text(_message, %{"args" => [head | _]}) when is_integer(head),
+    do: Integer.to_string(head)
+
+  defp explicit_payload_text(_message, %{args: [head | _]}) when is_integer(head),
+    do: Integer.to_string(head)
+
+  defp explicit_payload_text(_message, _value), do: nil
+
+  @spec wire_ctor_from_value(Types.subscription_payload() | nil) :: String.t() | nil
+  defp wire_ctor_from_value(%{"ctor" => ctor}) when is_binary(ctor), do: ctor
+  defp wire_ctor_from_value(%{ctor: ctor}) when is_binary(ctor), do: ctor
+  defp wire_ctor_from_value(_value), do: nil
 
   @spec simulator_now_for_target(Types.runtime_state(), :watch | :companion | :phone) ::
           NaiveDateTime.t()

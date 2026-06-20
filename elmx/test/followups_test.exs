@@ -17,6 +17,27 @@ defmodule Elmx.FollowupsTest do
              Followups.from_commands(cmd, source_root: "phone")
   end
 
+  test "device current_date_time followup resolves toMsg closure to constructor name" do
+    payload = %{
+      "year" => 2026,
+      "month" => 6,
+      "day" => 20,
+      "dayOfWeek" => %{"ctor" => "Saturday", "args" => []},
+      "hour" => 12,
+      "minute" => 31,
+      "second" => 17,
+      "utcOffsetMinutes" => 120
+    }
+
+    callback = fn dt -> {:CurrentDateTime, dt} end
+
+    assert [%{"source" => "device_command", "message" => "CurrentDateTime"} = row] =
+             Followups.from_commands(Cmd.device("current_date_time", callback, payload))
+
+    assert get_in(row, ["message_value", "ctor"]) == "CurrentDateTime"
+    assert get_in(row, ["message_value", "args"]) == [payload]
+  end
+
   test "protocol_watch_to_phone produces protocol followup row" do
     cmd = Cmd.protocol_watch_to_phone(:RequestWeather)
 
