@@ -48,6 +48,12 @@ defmodule Ide.ProjectTemplatesTest do
     assert digital.screenshot_url == "/images/template-previews/watchface-digital.png"
   end
 
+  test "picker_title returns the short template title for a key" do
+    assert ProjectTemplates.picker_title("starter") == "Starter"
+    assert ProjectTemplates.picker_title("watchface-digital") == "Digital"
+    assert ProjectTemplates.picker_title("game-2048") == "2048"
+  end
+
   test "minimal templates seed bare watch-only Elm apps" do
     for {template, platform_entry} <- [
           {"watchface-minimal", "Platform.watchface"},

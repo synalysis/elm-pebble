@@ -22,6 +22,7 @@ defmodule IdeWeb.ProjectsLive do
      |> assign(:template_categories, ProjectTemplates.picker_categories())
      |> assign(:show_create_modal, false)
      |> assign(:selected_template, "starter")
+     |> assign(:create_name_user_edited, false)
      |> assign(:form, to_form(Project.changeset(%Project{}, default_attrs())))
      |> assign(:show_import_form, false)
      |> assign(:import_mode, :local)
@@ -45,7 +46,10 @@ defmodule IdeWeb.ProjectsLive do
       |> Map.put(:action, :validate)
       |> to_form()
 
-    {:noreply, assign(socket, :form, form)}
+    {:noreply,
+     socket
+     |> assign(:form, form)
+     |> assign(:create_name_user_edited, true)}
   end
 
   def handle_event("create", %{"project" => params}, socket) do
@@ -140,7 +144,9 @@ defmodule IdeWeb.ProjectsLive do
      socket
      |> assign(:show_create_modal, true)
      |> assign(:selected_template, "starter")
-     |> assign(:form, to_form(Project.changeset(%Project{}, default_attrs())))}
+     |> assign(:create_name_user_edited, false)
+     |> assign(:form, to_form(Project.changeset(%Project{}, default_attrs())))
+     |> autofill_create_name_from_template("starter")}
   end
 
   def handle_event("close-create-modal", _params, socket) do
@@ -149,7 +155,10 @@ defmodule IdeWeb.ProjectsLive do
 
   def handle_event("select-template", %{"template" => template}, socket) do
     if template in ProjectTemplates.template_keys() do
-      {:noreply, assign(socket, :selected_template, template)}
+      {:noreply,
+       socket
+       |> assign(:selected_template, template)
+       |> autofill_create_name_from_template(template)}
     else
       {:noreply, socket}
     end
@@ -199,6 +208,7 @@ defmodule IdeWeb.ProjectsLive do
          |> load_projects()
          |> assign(:show_create_modal, false)
          |> assign(:selected_template, "starter")
+         |> assign(:create_name_user_edited, false)
          |> assign(:form, to_form(Project.changeset(%Project{}, default_attrs())))
          |> push_navigate(to: ~p"/projects/#{project.slug}/editor")}
 
@@ -303,6 +313,33 @@ defmodule IdeWeb.ProjectsLive do
 
   @spec present_name?(term()) :: boolean()
   defp present_name?(name), do: not blank?(to_string(name || ""))
+
+  @spec autofill_create_name_from_template(socket(), String.t()) :: socket()
+  defp autofill_create_name_from_template(socket, template_key) do
+    name = Phoenix.HTML.Form.input_value(socket.assigns.form, :name)
+
+    if blank?(name) or not socket.assigns.create_name_user_edited do
+      title = ProjectTemplates.picker_title(template_key)
+
+      params =
+        socket.assigns.form.params
+        |> Map.put("name", title)
+        |> Map.put("template", template_key)
+        |> normalize_create_params()
+
+      form =
+        %Project{}
+        |> Project.changeset(params)
+        |> Map.put(:action, :validate)
+        |> to_form()
+
+      socket
+      |> assign(:form, form)
+      |> assign(:create_name_user_edited, false)
+    else
+      socket
+    end
+  end
 
   @spec format_import_error(ProjectTypes.project_error()) :: String.t()
   defp format_import_error(:github_not_connected),

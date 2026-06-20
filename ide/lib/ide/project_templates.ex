@@ -187,6 +187,17 @@ defmodule Ide.ProjectTemplates do
   end
 
   @doc """
+  Returns the short display title for a template key (as shown in the create-project picker).
+  """
+  @spec picker_title(String.t()) :: String.t()
+  def picker_title(template_key) when is_binary(template_key) do
+    case Enum.find(options(), fn {_label, key} -> key == template_key end) do
+      {label, _} -> parse_picker_label(label).title
+      nil -> template_key
+    end
+  end
+
+  @doc """
   Returns select options for template pickers.
   """
   @spec options() :: [{String.t(), String.t()}]

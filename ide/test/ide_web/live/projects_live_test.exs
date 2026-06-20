@@ -127,12 +127,39 @@ defmodule IdeWeb.ProjectsLiveTest do
     assert {:ok, view, _html} = live(conn, ~p"/projects")
 
     view |> element("button", "Create project") |> render_click()
-    assert has_element?(view, "button[form='project-form'][disabled]")
+    refute has_element?(view, "button[form='project-form'][disabled]")
 
     view
-    |> form("#project-form", %{"project" => %{"name" => "Named"}})
+    |> form("#project-form", %{"project" => %{"name" => ""}})
     |> render_change()
 
+    assert has_element?(view, "button[form='project-form'][disabled]")
+  end
+
+  test "selecting a template autofills the project name when empty", %{conn: conn} do
+    assert {:ok, view, _html} = live(conn, ~p"/projects")
+
+    view |> element("button", "Create project") |> render_click()
+
+    view
+    |> form("#project-form", %{"project" => %{"name" => ""}})
+    |> render_change()
+
+    html =
+      view
+      |> element("button[phx-value-template='watchface-digital']")
+      |> render_click()
+
+    assert html =~ ~s(value="Digital")
+    refute has_element?(view, "button[form='project-form'][disabled]")
+  end
+
+  test "opening create modal prefills name from default starter template", %{conn: conn} do
+    assert {:ok, view, _html} = live(conn, ~p"/projects")
+
+    html = view |> element("button", "Create project") |> render_click()
+
+    assert html =~ ~s(value="Starter")
     refute has_element?(view, "button[form='project-form'][disabled]")
   end
 
