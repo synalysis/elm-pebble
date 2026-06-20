@@ -11,7 +11,50 @@ defmodule Ide.Debugger.TangramCatalogFollowupsTest do
   end
 
   @tag timeout: 180_000
-  test "CatalogReceived Ok schedules SvgReceived http follow-up" do
+  test "RequestFigure schedules SvgReceived http follow-up" do
+    slug = "tangram-request-followups-#{System.unique_integer([:positive])}"
+
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "TangramRequestFollowups",
+               "slug" => slug,
+               "target_type" => "watchface",
+               "template" => "watchface-tangram-time"
+             })
+
+    on_exit(fn -> Projects.delete_project(project) end)
+
+    phone_workspace = project |> Projects.project_workspace_path() |> Path.join("phone")
+    revision = "request-followups-" <> Integer.to_string(:erlang.unique_integer([:positive]))
+
+    assert {:ok, manifest, init_model} =
+             Corpus.corpus_phone_init_execute!(phone_workspace, revision: revision)
+
+    assert {:ok, payload} =
+             RuntimeExecutor.execute(%{
+               elmx_manifest: manifest,
+               elmx_revision: revision,
+               current_model: %{"runtime_model" => init_model},
+               message: "FromWatch",
+               message_value: %{"ctor" => "Ok", "args" => [%{"ctor" => "RequestFigure", "args" => []}]},
+               introspect: %{},
+               source: "",
+               source_root: "phone",
+               rel_path: "src/CompanionApp.elm",
+               current_view_tree: %{}
+             })
+
+    followups = payload[:followup_messages] || []
+
+    assert Enum.any?(followups, fn row ->
+             Map.get(row, "message") == "SvgReceived" and
+               String.contains?(get_in(row, ["command", "url"]) || "", "tangrams-svg")
+           end),
+           "expected fetchFigure http follow-up after RequestFigure, got: #{inspect(followups)}"
+  end
+
+  @tag timeout: 180_000
+  test "CatalogReceived Ok updates catalog names without scheduling svg fetch" do
     slug = "tangram-catalog-followups-#{System.unique_integer([:positive])}"
 
     assert {:ok, project} =
@@ -48,11 +91,11 @@ defmodule Ide.Debugger.TangramCatalogFollowupsTest do
 
     followups = payload[:followup_messages] || []
 
-    assert Enum.any?(followups, fn row ->
-             Map.get(row, "message") == "SvgReceived" and
-               String.contains?(get_in(row, ["command", "url"]) || "", "tangrams-svg")
-           end),
-           "expected fetchFigure http follow-up after CatalogReceived, got: #{inspect(followups)}"
+    refute Enum.any?(followups, fn row ->
+             Map.get(row, "message") == "SvgReceived"
+           end)
+
+    assert get_in(payload, [:model_patch, "runtime_model", "names"]) != nil
   end
 
   @tag timeout: 180_000

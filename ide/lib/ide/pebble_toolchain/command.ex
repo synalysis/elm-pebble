@@ -97,6 +97,16 @@ defmodule Ide.PebbleToolchain.Command do
 
   @spec elm_bin() :: {:ok, String.t()} | {:error, :elm_compiler_not_found}
   def elm_bin do
+    elm_bin_candidates()
+    |> Enum.find_value(&working_elm_bin/1)
+    |> case do
+      {:ok, path} -> {:ok, path}
+      _ -> {:error, :elm_compiler_not_found}
+    end
+  end
+
+  @spec elm_bin_candidates() :: [String.t()]
+  def elm_bin_candidates do
     configured =
       Application.get_env(:ide, Ide.PebbleToolchain, [])
       |> Keyword.get(:elm_bin)
@@ -106,18 +116,32 @@ defmodule Ide.PebbleToolchain.Command do
     [
       configured,
       env_bin,
-      System.find_executable("elm"),
-      Path.expand("../../../elm_pebble_dev/node_modules/.bin/elm", __DIR__)
+      bundled_elm_bin(),
+      System.find_executable("elm")
     ]
-    |> Enum.find_value(fn
-      path when is_binary(path) and path != "" ->
-        expanded = Path.expand(path)
-        if File.exists?(expanded), do: {:ok, expanded}
-
-      _ ->
-        nil
-    end) || {:error, :elm_compiler_not_found}
+    |> Enum.reject(&(is_nil(&1) or &1 == ""))
+    |> Enum.map(&Path.expand/1)
+    |> Enum.uniq()
   end
+
+  @spec bundled_elm_bin() :: String.t()
+  def bundled_elm_bin do
+    Path.expand("../../../../elm_pebble_dev/node_modules/.bin/elm", __DIR__)
+  end
+
+  @spec working_elm_bin(String.t()) :: {:ok, String.t()} | nil
+  def working_elm_bin(path) when is_binary(path) do
+    expanded = Path.expand(path)
+
+    if File.exists?(expanded) do
+      {_output, exit_code} =
+        System.cmd(expanded, ["--version"], stderr_to_stdout: true, env: [{"LC_ALL", "C"}])
+
+      if exit_code == 0, do: {:ok, expanded}
+    end
+  end
+
+  def working_elm_bin(_), do: nil
 
   @spec template_app_root() :: {:ok, String.t()} | {:error, :template_app_root_not_found}
   def template_app_root do

@@ -834,4 +834,51 @@ defmodule Ide.PebbleToolchainTest do
     assert check_result.status == :error
     assert check_result.error_count >= 1
   end
+
+  test "elm_bin prefers a working compiler over a broken asdf shim" do
+    alias Ide.PebbleToolchain.Command
+
+    bundled = Command.bundled_elm_bin()
+    assert File.exists?(bundled), "bundled elm is not installed; run npm install in elm_pebble_dev"
+
+    shim_dir =
+      Path.join(
+        System.tmp_dir!(),
+        "ide_elm_bin_shim_#{System.unique_integer([:positive])}"
+      )
+
+    shim_path = Path.join(shim_dir, "elm")
+    File.mkdir_p!(shim_dir)
+
+    File.write!(shim_path, """
+    #!/bin/sh
+    echo "No version is set for command elm" 1>&2
+    exit 126
+    """)
+
+    File.chmod!(shim_path, 0o755)
+
+    original = Application.get_env(:ide, Ide.PebbleToolchain, [])
+    original_path = System.get_env("PATH")
+    original_elm_bin = System.get_env("ELM_BIN")
+
+    Application.put_env(:ide, Ide.PebbleToolchain, Keyword.put(original, :elm_bin, nil))
+    System.put_env("ELM_BIN", "")
+    System.put_env("PATH", "#{shim_dir}:#{original_path}")
+
+    on_exit(fn ->
+      Application.put_env(:ide, Ide.PebbleToolchain, original)
+
+      if is_binary(original_path), do: System.put_env("PATH", original_path), else: System.delete_env("PATH")
+
+      if is_binary(original_elm_bin),
+        do: System.put_env("ELM_BIN", original_elm_bin),
+        else: System.delete_env("ELM_BIN")
+
+      File.rm_rf(shim_dir)
+    end)
+
+    assert {:ok, resolved} = Command.elm_bin()
+    assert Path.expand(resolved) == Path.expand(bundled)
+  end
 end

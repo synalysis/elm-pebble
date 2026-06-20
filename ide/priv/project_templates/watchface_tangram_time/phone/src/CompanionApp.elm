@@ -109,7 +109,7 @@ update msg model =
 
                 names ->
                     ( { model | figure = 0, names = names, rotationsSinceDownload = 0 }
-                    , fetchFigure 0 (currentName { model | figure = 0, names = names })
+                    , Cmd.none
                     )
 
         CatalogReceived (Err _) ->
