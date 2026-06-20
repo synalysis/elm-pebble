@@ -27,6 +27,10 @@ defmodule Elmc.Backend.CCodegen.Hoist do
     |> Map.get(hoisted_native_bool_key(expr))
   end
 
+  defp hoisted_native_bool_key(%{op: :case, subject: subject} = expr) do
+    {:case, Map.get(expr, :platform_static_macro), hoisted_native_bool_key(subject)}
+  end
+
   defp hoisted_native_bool_key(%{op: :qualified_call, target: target, args: args})
        when is_binary(target) do
     {:qualified, Host.normalize_special_target(target),

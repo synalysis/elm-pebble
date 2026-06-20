@@ -3942,7 +3942,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
 
     refute view_body =~ "elmc_fn_Pebble_Platform_displayShapeIsRound"
-    assert view_body =~ "const bool native_b_"
+    assert view_body =~ "#if defined(PBL_ROUND)"
+    refute view_body =~ "native_union_subject_"
+    refute view_body =~ "if (native_b_"
     refute view_body =~ "elmc_new_int(1)"
   end
 

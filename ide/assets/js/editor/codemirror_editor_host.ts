@@ -14,15 +14,16 @@ import type {HookContext} from "../types/liveview_hook"
 import {Channel, Socket} from "phoenix"
 import {
   Decoration,
+  drawSelection,
   EditorView,
   keymap,
   lineNumbers,
   highlightActiveLine,
   type ViewUpdate
 } from "@codemirror/view"
-import {defaultKeymap, history, historyKeymap, indentLess, indentSelection} from "@codemirror/commands"
+import {defaultKeymap, history, historyKeymap, indentLess, indentSelection, redo, selectAll, undo} from "@codemirror/commands"
 import {searchKeymap} from "@codemirror/search"
-import {acceptCompletion, completionKeymap, startCompletion} from "@codemirror/autocomplete"
+import {acceptCompletion, closeCompletion, completionStatus, startCompletion} from "@codemirror/autocomplete"
 import {codeFolding, foldGutter, foldKeymap, foldService, indentService, indentUnit, IndentContext} from "@codemirror/language"
 import {lintGutter, setDiagnostics, type Diagnostic} from "@codemirror/lint"
 import {LSPClient, formatKeymap, hoverTooltips, serverCompletion, serverDiagnostics} from "@codemirror/lsp-client"
@@ -65,14 +66,16 @@ const resolvedEditorTheme = (theme: EditorTheme): "dark" | "light" => {
   return "light"
 }
 
-const hasPrimaryModifier = (event: KeyboardEvent): boolean => event.metaKey || event.ctrlKey
-const isSaveKey = (event: KeyboardEvent): boolean =>
-  hasPrimaryModifier(event) && safeLower(event.key) === "s"
-const isManualCompletionKey = (event: KeyboardEvent): boolean =>
-  hasPrimaryModifier(event) && (event.key === " " || event.code === "Space")
 const nextIndentStop = (column: number): number => {
   const remainder = column % INDENT_WIDTH
   return column + (remainder === 0 ? INDENT_WIDTH : INDENT_WIDTH - remainder)
+}
+
+const vimDebugEnabled = (): boolean =>
+  typeof localStorage !== "undefined" && localStorage.getItem("ide-vim-debug") === "1"
+
+function vimDebug(...args: unknown[]): void {
+  if (vimDebugEnabled()) console.log("[ide-vim]", ...args)
 }
 
 function clearAppTimeout(timer: ReturnType<typeof setTimeout> | null): void {
@@ -256,8 +259,8 @@ function sanitizeTokenClass(value: unknown): string {
 function buildTokenHighlights(state: EditorState, tokens: TokenHighlight[]) {
   if (!Array.isArray(tokens) || tokens.length === 0) return Decoration.none
 
-  const builder = new RangeSetBuilder<Decoration>()
   const docLength = state.doc.length
+  const spans: {from: number; to: number; className: string}[] = []
 
   for (const token of tokens) {
     const lineNumber = Number(token && token.line)
@@ -272,7 +275,16 @@ function buildTokenHighlights(state: EditorState, tokens: TokenHighlight[]) {
     const to = clamp(from + length, from, docLength)
     if (to <= from) continue
 
-    builder.add(from, to, Decoration.mark({class: sanitizeTokenClass(token.class)}))
+    spans.push({from, to, className: sanitizeTokenClass(token.class)})
+  }
+
+  if (spans.length === 0) return Decoration.none
+
+  spans.sort((a, b) => a.from - b.from || a.to - b.to)
+
+  const builder = new RangeSetBuilder<Decoration>()
+  for (const span of spans) {
+    builder.add(span.from, span.to, Decoration.mark({class: span.className}))
   }
 
   return builder.finish()
@@ -281,6 +293,30 @@ function buildTokenHighlights(state: EditorState, tokens: TokenHighlight[]) {
 let cmVisibilityStyleInjected = false
 let vimWriteCommandRegistered = false
 const vimHostByCm = new WeakMap<object, CodeMirrorEditorHost>()
+
+function ensureVimOnlyEditorStyles() {
+  if (cmVisibilityStyleInjected) return
+
+  const style = document.createElement("style")
+  style.id = "cm-vim-editor-styles"
+  style.textContent = `
+    /* Standard caret in regular mode (never strip the border globally). */
+    [data-role="cm-root"] .cm-editor:not(.cm-fat-cursor) .cm-cursor,
+    [data-role="cm-root"] .cm-editor:not(.cm-fat-cursor) .cm-dropCursor {
+      border-left-width: 2px !important;
+      border-left-style: solid !important;
+      background: transparent !important;
+    }
+
+    /* Vim block cursor layer sits above text; keep it visible in our theme. */
+    [data-role="cm-root"] .cm-vimCursorLayer .cm-fat-cursor {
+      background: var(--cm-cursor-bg, rgba(244, 244, 245, 0.85)) !important;
+      color: var(--cm-editor-fg, #f4f4f5) !important;
+    }
+  `
+  document.head.appendChild(style)
+  cmVisibilityStyleInjected = true
+}
 
 function ensureVimWriteCommandRegistered() {
   if (vimWriteCommandRegistered) return
@@ -295,29 +331,6 @@ function ensureVimWriteCommandRegistered() {
   }
 
   vimWriteCommandRegistered = true
-}
-
-function ensureVisibilityOverrideStyle() {
-  if (cmVisibilityStyleInjected) return
-
-  const style = document.createElement("style")
-  style.id = "cm-vim-visibility-override"
-  style.textContent = `
-    .cm-editor.cm-force-visible-text .cm-cursorLayer .cm-cursor {
-      border-left: none !important;
-      background: var(--cm-cursor-bg, rgba(244, 244, 245, 0.85)) !important;
-    }
-
-    .cm-editor.cm-force-visible-text .cm-selectionLayer .cm-selectionBackground,
-    .cm-editor.cm-force-visible-text.cm-focused .cm-selectionBackground,
-    .cm-editor.cm-force-visible-text .cm-content ::selection {
-      background: var(--cm-selection-bg, rgba(56, 189, 248, 0.32)) !important;
-      color: var(--cm-selection-fg, #f4f4f5) !important;
-      -webkit-text-fill-color: var(--cm-selection-fg, #f4f4f5) !important;
-    }
-  `
-  document.head.appendChild(style)
-  cmVisibilityStyleInjected = true
 }
 
 export class CodeMirrorEditorHost {
@@ -353,6 +366,7 @@ export class CodeMirrorEditorHost {
   pendingEnterIndent = false
   restoringState = false
   modeCompartment = new Compartment()
+  keymapCompartment = new Compartment()
   themeCompartment = new Compartment()
   lineNumbersCompartment = new Compartment()
   activeLineCompartment = new Compartment()
@@ -364,6 +378,7 @@ export class CodeMirrorEditorHost {
   onFocusOut?: () => void
   onScroll?: () => void
   onSubmit?: () => void
+  vimModeListener?: (event: {mode?: string; subMode?: string}) => void
 
   constructor(hook: HookContext) {
     this.hook = hook
@@ -412,6 +427,7 @@ export class CodeMirrorEditorHost {
     this.pendingEnterIndent = false
     this.restoringState = false
     this.modeCompartment = new Compartment()
+    this.keymapCompartment = new Compartment()
     this.themeCompartment = new Compartment()
     this.lineNumbersCompartment = new Compartment()
     this.activeLineCompartment = new Compartment()
@@ -433,10 +449,9 @@ export class CodeMirrorEditorHost {
       })
     })
 
-    ensureVisibilityOverrideStyle()
-    this.view.dom.classList.add("cm-force-visible-text")
+    ensureVimOnlyEditorStyles()
     this.bindDomEvents()
-    this.ensureNoFatCursor()
+    this.syncEditorPresentation()
     this.updateModeBadge()
     this.bindVimInstance()
     this.restoreState(initialRestoreState)
@@ -446,21 +461,18 @@ export class CodeMirrorEditorHost {
 
   editorExtensions() {
     const extensions = [
+      // Vim must load before other keymaps so normal-mode bindings win.
+      this.modeCompartment.of(this.modeExtension()),
+      this.workspaceShortcutsExtension(),
+      this.clipboardShortcutsExtension(),
+      this.vimKeydownBridgeExtension(),
+      this.vimInputGuardExtension(),
+      drawSelection(),
       this.lineNumbersCompartment.of(this.lineNumbersExtension()),
       history(),
       this.activeLineCompartment.of(this.activeLineExtension()),
       this.tabKeymapExtension(),
-      keymap.of([
-        {
-          key: "Ctrl-Space",
-          mac: "Cmd-Space",
-          run: view => this.runManualCompletion(view)
-        },
-        ...defaultKeymap,
-        ...historyKeymap,
-        ...completionKeymap,
-        ...foldKeymap
-      ]),
+      this.keymapCompartment.of(keymap.of(this.sharedKeymapBindings())),
       Prec.high(
         EditorView.domEventHandlers({
           keydown: event => this.handleSemanticDomKeydown(event)
@@ -485,7 +497,6 @@ export class CodeMirrorEditorHost {
         return to > from ? {from, to} : null
       }),
       indentService.of((context, pos) => this.indentColumnForLine(context, pos)),
-      this.modeCompartment.of(this.modeExtension()),
       this.themeCompartment.of(this.themeExtension()),
       EditorState.tabSize.of(INDENT_WIDTH),
       indentUnit.of("    "),
@@ -508,6 +519,284 @@ export class CodeMirrorEditorHost {
     }
 
     return extensions
+  }
+
+  sharedKeymapBindings() {
+    // completionKeymap comes from LSP autocompletion; duplicating it fights vim.
+    return [...defaultKeymap, ...historyKeymap, ...foldKeymap]
+  }
+
+  shouldDeferToWorkspaceShortcut(event: KeyboardEvent): boolean {
+    const mod = event.metaKey || event.ctrlKey
+    if (mod && safeLower(event.key) === "s") return true
+    if (mod && (event.key === " " || event.code === "Space")) return true
+    if (event.altKey && !mod && (event.key === "ArrowDown" || event.key === "ArrowUp")) return true
+    return false
+  }
+
+  selectedEditorText(view: EditorView): string | null {
+    const parts: string[] = []
+
+    for (const range of view.state.selection.ranges) {
+      if (!range.empty) parts.push(view.state.sliceDoc(range.from, range.to))
+    }
+
+    if (parts.length === 0) return null
+    return parts.join(view.state.lineBreak)
+  }
+
+  async writeClipboardText(text: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      const target = document.createElement("textarea")
+      target.style.cssText = "position: fixed; left: -10000px; top: 10px"
+      target.value = text
+      document.body.appendChild(target)
+      target.focus()
+      target.select()
+      try {
+        document.execCommand("copy")
+      } finally {
+        target.remove()
+      }
+    }
+  }
+
+  copyEditorSelection(view: EditorView = this.view!): boolean {
+    const text = this.selectedEditorText(view)
+    if (!text) return false
+    void this.writeClipboardText(text)
+    return true
+  }
+
+  cutEditorSelection(view: EditorView = this.view!): boolean {
+    if (this.readOnly) return false
+    const text = this.selectedEditorText(view)
+    if (!text) return false
+    const changes = view.state.selection.ranges
+      .filter(range => !range.empty)
+      .map(range => ({from: range.from, to: range.to}))
+    void this.writeClipboardText(text)
+    view.dispatch({changes, userEvent: "delete.cut"})
+    return true
+  }
+
+  async pasteEditorSelection(view: EditorView = this.view!): Promise<boolean> {
+    if (this.readOnly) return false
+    try {
+      const text = await navigator.clipboard.readText()
+      if (!text) return false
+      const {from, to} = view.state.selection.main
+      view.dispatch({
+        changes: {from, to, insert: text},
+        selection: {anchor: from + text.length},
+        scrollIntoView: true,
+        userEvent: "input.paste"
+      })
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  runContextAction(action: string): void {
+    const view = this.view
+    if (!view) return
+
+    switch (action) {
+      case "copy":
+        this.copyEditorSelection(view)
+        break
+      case "cut":
+        this.cutEditorSelection(view)
+        break
+      case "paste":
+        void this.pasteEditorSelection(view)
+        break
+      case "undo":
+        undo(view)
+        break
+      case "redo":
+        redo(view)
+        break
+      case "select-all":
+        selectAll(view)
+        break
+      case "save":
+        this.pushSaveEvent()
+        break
+      case "format":
+        this.requestFormatDocument()
+        break
+      default:
+        return
+    }
+
+    view.focus()
+  }
+
+  clipboardShortcutsExtension() {
+    // Must run before vimKeydownBridgeExtension — vim maps <C-c> to <Esc>.
+    return Prec.highest(
+      EditorView.domEventHandlers({
+        keydown: (event, view) => {
+          const mod = event.metaKey || event.ctrlKey
+          if (!mod) return false
+
+          const key = safeLower(event.key)
+          if (key === "c") {
+            const text = this.selectedEditorText(view)
+            if (!text) return false
+            event.preventDefault()
+            this.copyEditorSelection(view)
+            return true
+          }
+
+          if (key === "x" && !this.readOnly) {
+            if (!this.selectedEditorText(view)) return false
+            event.preventDefault()
+            this.cutEditorSelection(view)
+            return true
+          }
+
+          return false
+        }
+      })
+    )
+  }
+
+  dispatchVimTextInput(cm: NonNullable<ReturnType<typeof getCM>>, text: string): void {
+    if (completionStatus(cm.cm6.state) === "active") closeCompletion(cm.cm6)
+
+    for (const char of text) {
+      const vimKey =
+        char === "\n" || char === "\r" ? "<CR>" : char === "\t" ? "<Tab>" : char
+      Vim.multiSelectHandleKey(cm, vimKey, "user")
+    }
+  }
+
+  vimKeydownBridgeExtension() {
+    // Opt-in trace: localStorage.setItem("ide-vim-debug", "1") then hard-refresh.
+    return Prec.highest(
+      EditorView.domEventHandlers({
+        keydown: (event, view) => {
+          vimDebug("keydown:event", event.key)
+          if (this.editorMode !== "vim") return false
+          if (this.shouldDeferToWorkspaceShortcut(event)) return false
+          if (this.selectedEditorText(view)) {
+            const mod = event.metaKey || event.ctrlKey
+            if (mod && (safeLower(event.key) === "c" || safeLower(event.key) === "x")) return false
+          }
+
+          const cm = getCM(view)
+          if (!cm) {
+            vimDebug("keydown: no cm bridge on view", event.key)
+            return false
+          }
+
+          const vim = cm.state?.vim
+          if (!vim) {
+            vimDebug("keydown: vim state missing", event.key)
+            return false
+          }
+
+          // Insert-mode typing is handled by the vim plugin + contenteditable.
+          if (vim.insertMode) return false
+
+          if (completionStatus(view.state) === "active") closeCompletion(view)
+
+          const key = Vim.vimKeyFromEvent(event, vim)
+          if (!key) {
+            vimDebug("keydown: no vim key mapping", event.key)
+            return false
+          }
+
+          const handled = !!Vim.multiSelectHandleKey(cm, key, "user")
+          vimDebug("keydown", {
+            key: event.key,
+            vimKey: key,
+            handled,
+            insertMode: vim.insertMode,
+            visualMode: vim.visualMode
+          })
+
+          if (handled) {
+            event.preventDefault()
+            event.stopPropagation()
+          }
+
+          return handled
+        }
+      })
+    )
+  }
+
+  vimInputGuardExtension() {
+    // Runs before @replit/codemirror-vim's inputHandler. In normal/visual mode we must
+    // dispatch keys through vim — not only block insertion (which breaks Firefox/Linux
+    // Dead-key and useNextTextInput paths if we return true unconditionally).
+    return Prec.highest(
+      EditorView.inputHandler.of((view, from, to, text) => {
+        if (this.editorMode !== "vim" || view.composing) return false
+
+        const cm = getCM(view)
+        if (!cm) return false
+
+        const vim = cm.state?.vim
+        const vimPlugin = cm.state?.vimPlugin as {useNextTextInput?: boolean} | undefined
+        if (!vim || vim.insertMode) return false
+        if (cm.curOp?.isVimOp) return false
+        if (!text) return false
+        if (text === "\0\0") return true
+
+        // Let the vim plugin handle IME / Dead-key / Firefox-Linux text-input fallback.
+        if (vimPlugin?.useNextTextInput && text.length === 1) return false
+
+        this.dispatchVimTextInput(cm, text)
+        vimDebug("input->vim", {
+          text: JSON.stringify(text),
+          insertMode: vim.insertMode
+        })
+        return true
+      })
+    )
+  }
+
+  workspaceShortcutsExtension() {
+    return Prec.highest(
+      keymap.of([
+        {
+          key: "Mod-s",
+          run: () => {
+            if (!this.saveEvent) return false
+            this.pushSaveEvent()
+            return true
+          }
+        },
+        {
+          key: "Mod-Space",
+          mac: "Cmd-Space",
+          run: view => this.runManualCompletion(view)
+        },
+        {
+          key: "Alt-ArrowDown",
+          run: () => {
+            if (!this.focusNextEvent) return false
+            this.hook.pushEvent(this.focusNextEvent, {})
+            return true
+          }
+        },
+        {
+          key: "Alt-ArrowUp",
+          run: () => {
+            if (!this.focusPrevEvent) return false
+            this.hook.pushEvent(this.focusPrevEvent, {})
+            return true
+          }
+        }
+      ])
+    )
   }
 
   tabKeymapExtension() {
@@ -571,7 +860,11 @@ export class CodeMirrorEditorHost {
       },
       ".cm-content": {padding: "0.75rem", tabSize: "4", color: "#f4f4f5"},
       ".cm-line": {color: "#f4f4f5"},
-      ".cm-cursor, .cm-dropCursor": {borderLeftColor: "#f4f4f5"},
+      ".cm-cursor, .cm-dropCursor": {
+        borderLeftWidth: "2px",
+        borderLeftStyle: "solid",
+        borderLeftColor: "#f4f4f5"
+      },
       ".cm-gutters": {
         backgroundColor: "#18181b",
         color: "#71717a",
@@ -622,7 +915,11 @@ export class CodeMirrorEditorHost {
       },
       ".cm-content": {padding: "0.75rem", tabSize: "4", color: "#18181b"},
       ".cm-line": {color: "#18181b"},
-      ".cm-cursor, .cm-dropCursor": {borderLeftColor: "#18181b"},
+      ".cm-cursor, .cm-dropCursor": {
+        borderLeftWidth: "2px",
+        borderLeftStyle: "solid",
+        borderLeftColor: "#18181b"
+      },
       ".cm-gutters": {
         backgroundColor: "#fafafa",
         color: "#71717a",
@@ -671,12 +968,21 @@ export class CodeMirrorEditorHost {
     if (!cm) return
     ensureVimWriteCommandRegistered()
     vimHostByCm.set(cm, this)
+
+    if (this.vimModeListener) cm.off("vim-mode-change", this.vimModeListener)
+
+    this.vimModeListener = event => {
+      if (event.mode === "normal" && this.view) closeCompletion(this.view)
+      this.updateModeBadge(event.mode, event.subMode)
+    }
+
+    cm.on("vim-mode-change", this.vimModeListener)
+
+    if (this.editorMode === "vim") closeCompletion(this.view)
   }
 
   onUpdate(update: ViewUpdate): void {
-    this.ensureNoFatCursor()
-
-    if (this.view) this.view.dom.classList.add("cm-force-visible-text")
+    this.syncEditorPresentation()
 
     if (update.docChanged) {
       if (this.updateInsertedNewline(update)) this.pendingEnterIndent = true
@@ -708,8 +1014,7 @@ export class CodeMirrorEditorHost {
     this.onContextMenu = event => this.handleContextMenu(event)
     this.onClick = event => this.handleClick(event)
     this.onFocusIn = () => {
-      view.dom.classList.add("cm-force-visible-text")
-      this.ensureNoFatCursor()
+      this.syncEditorPresentation()
     }
     this.onFocusOut = () => {}
     this.onScroll = () => this.reportEditorStateDebounced()
@@ -740,10 +1045,15 @@ export class CodeMirrorEditorHost {
     if (this.form && onSubmit) this.form.removeEventListener("submit", onSubmit)
   }
 
-  ensureNoFatCursor() {
+  syncEditorPresentation(): void {
     if (!this.view) return
-    if (this.view.dom.classList.contains("cm-fat-cursor")) {
-      this.view.dom.classList.remove("cm-fat-cursor")
+
+    const {dom, scrollDOM} = this.view
+    dom.classList.remove("cm-force-visible-text")
+
+    if (this.editorMode === "regular") {
+      dom.classList.remove("cm-fat-cursor")
+      scrollDOM.classList.remove("cm-vimMode")
     }
   }
 
@@ -756,9 +1066,22 @@ export class CodeMirrorEditorHost {
     this.el.appendChild(this.modeBadge)
   }
 
-  updateModeBadge() {
+  updateModeBadge(vimMode?: string, vimSubMode?: string): void {
     if (!this.modeBadge) return
-    this.modeBadge.textContent = this.editorMode === "vim" ? "VIM" : "REGULAR"
+
+    if (this.editorMode !== "vim") {
+      this.modeBadge.textContent = "REGULAR"
+      return
+    }
+
+    const cm = this.view ? getCM(this.view) : null
+    const vim = cm?.state?.vim
+    const modeLabel =
+      vim?.insertMode === true
+        ? "INSERT"
+        : (vimMode || vim?.mode || "normal").toUpperCase()
+    const subMode = vimSubMode ? ` ${vimSubMode.toUpperCase()}` : ""
+    this.modeBadge.textContent = `VIM ${modeLabel}${subMode}`
   }
 
   getSelection() {
@@ -1083,29 +1406,8 @@ export class CodeMirrorEditorHost {
   }
 
   handleKeydown(event: KeyboardEvent): void {
-    if (isSaveKey(event) && this.saveEvent) {
-      event.preventDefault()
-      this.pushSaveEvent()
-      return
-    }
-
     if (event.key === "Enter" && !event.metaKey && !event.ctrlKey && !event.altKey && !event.isComposing) {
       this.pendingEnterIndent = true
-    }
-
-    if (isManualCompletionKey(event)) {
-      event.preventDefault()
-      this.requestCompletions()
-      return
-    }
-
-    if (!event.altKey) return
-    if (event.key === "ArrowDown" && this.focusNextEvent) {
-      event.preventDefault()
-      this.hook.pushEvent(this.focusNextEvent, {})
-    } else if (event.key === "ArrowUp" && this.focusPrevEvent) {
-      event.preventDefault()
-      this.hook.pushEvent(this.focusPrevEvent, {})
     }
   }
 
@@ -1185,8 +1487,16 @@ export class CodeMirrorEditorHost {
     const nextMode = safeLower(this.el.dataset.editorMode) === "vim" ? "vim" : "regular"
     if (nextMode !== this.editorMode) {
       this.editorMode = nextMode
-      this.view.dispatch({effects: this.modeCompartment.reconfigure(this.modeExtension())})
+      this.view.dispatch({
+        effects: [
+          this.modeCompartment.reconfigure(this.modeExtension()),
+          this.keymapCompartment.reconfigure(keymap.of(this.sharedKeymapBindings()))
+        ]
+      })
       this.updateModeBadge()
+      this.syncEditorPresentation()
+      this.bindVimInstance()
+      if (this.view) closeCompletion(this.view)
     }
 
     const nextTheme = parseEditorTheme(this.el.dataset.editorTheme)

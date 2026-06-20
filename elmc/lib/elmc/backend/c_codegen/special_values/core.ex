@@ -1349,10 +1349,10 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
     do: %{op: :int_literal, value: 0}
 
   def special_value_from_target("Pebble.Platform.displayShapeIsRound", [shape]),
-    do: platform_union_is_constructor(shape, "Round", 2)
+    do: platform_union_is_constructor(shape, "Round", 2, "PBL_ROUND")
 
   def special_value_from_target("Pebble.Platform.colorCapabilityIsColor", [capability]),
-    do: platform_union_is_constructor(capability, "Color", 2)
+    do: platform_union_is_constructor(capability, "Color", 2, "PBL_COLOR")
 
   # --- Partial application: zero-arg references to known stdlib functions ---
   # When a qualified call is used as a value (0 args), wrap it in a lambda.
@@ -2986,9 +2986,9 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
 
   defp text_options_update_expr(_options, _field, _value), do: %{op: :unsupported}
 
-  @spec platform_union_is_constructor(Types.ir_expr(), String.t(), non_neg_integer()) ::
+  @spec platform_union_is_constructor(Types.ir_expr(), String.t(), non_neg_integer(), String.t() | nil) ::
           Types.ir_expr()
-  defp platform_union_is_constructor(shape, name, tag)
+  defp platform_union_is_constructor(shape, name, tag, platform_static_macro)
        when is_map(shape) and is_binary(name) and is_integer(tag) do
     %{
       op: :case,
@@ -3004,7 +3004,13 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
         }
       ]
     }
+    |> maybe_put_platform_static_macro(platform_static_macro)
   end
+
+  defp maybe_put_platform_static_macro(expr, macro) when is_binary(macro),
+    do: Map.put(expr, :platform_static_macro, macro)
+
+  defp maybe_put_platform_static_macro(expr, _), do: expr
 
   @spec tagged_value_expr(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
   defp tagged_value_expr(tag, value_expr) when is_map(tag) and is_map(value_expr) do

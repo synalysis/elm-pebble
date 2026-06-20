@@ -9,6 +9,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   alias Elmc.Backend.CCodegen.Native.RecordFields
   alias Elmc.Backend.CCodegen.Native.TypedReturn
   alias Elmc.Backend.CCodegen.Patterns
+  alias Elmc.Backend.CCodegen.PlatformStatic
   alias Elmc.Backend.CCodegen.Types
 
   @native_bool_c_type "bool"
@@ -17,12 +18,16 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   @spec compile_expr(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
           compile_result()
   def compile_expr(expr, env, counter) do
-    case Hoist.hoisted_native_bool_ref(env, expr) do
-      ref when is_binary(ref) ->
-        {"", ref, counter}
+    if PlatformStatic.platform_static?(expr) do
+      compile_expr_uncached(expr, env, counter)
+    else
+      case Hoist.hoisted_native_bool_ref(env, expr) do
+        ref when is_binary(ref) ->
+          {"", ref, counter}
 
-      nil ->
-        compile_expr_uncached(expr, env, counter)
+        nil ->
+          compile_expr_uncached(expr, env, counter)
+      end
     end
   end
 

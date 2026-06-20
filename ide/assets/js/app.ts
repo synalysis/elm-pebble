@@ -405,9 +405,20 @@ function applyIdeTheme(theme: string | undefined) {
 applyIdeTheme(document.body.dataset.ideTheme)
 window.addEventListener("phx:ide-theme-changed", event => applyIdeTheme(event.detail?.theme))
 
-const isTypingTarget = (target: EventTarget | null): target is HTMLElement =>
-  target instanceof HTMLElement &&
-  (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
+const isTypingTarget = (target: EventTarget | null): target is HTMLElement => {
+  const candidates: HTMLElement[] = []
+
+  if (target instanceof HTMLElement) candidates.push(target)
+  if (document.activeElement instanceof HTMLElement) candidates.push(document.activeElement)
+
+  return candidates.some(
+    node =>
+      node.tagName === "INPUT" ||
+      node.tagName === "TEXTAREA" ||
+      node.isContentEditable ||
+      node.closest(".cm-editor") != null
+  )
+}
 
 let loadCodeMirrorHostPromise: Promise<typeof CodeMirrorEditorHost> | null = null
 
@@ -449,6 +460,10 @@ const TokenEditor: ViewHook = {
         payload as Parameters<CodeMirrorEditorHost["applyLintDiagnostics"]>[0]
       )
     )
+    this.handleEvent("token-editor-context-action", payload => {
+      const action = typeof payload?.action === "string" ? payload.action : ""
+      if (action) this.editorHost?.runContextAction(action)
+    })
     this.editorHost.mount()
   },
 

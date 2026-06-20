@@ -1,6 +1,8 @@
 defmodule Elmc.Backend.CCodegen.NativeBoolUnionCaseTest do
   use ExUnit.Case, async: true
 
+  alias Elmc.Test.CCodegenExtract
+
   @source_fixture Path.expand("../../fixtures/simple_project", __DIR__)
   @project_dir Path.expand("../../tmp/native_bool_union_case_project", __DIR__)
   @out_dir Path.expand("../../tmp/native_bool_union_case_codegen", __DIR__)
@@ -88,25 +90,25 @@ defmodule Elmc.Backend.CCodegen.NativeBoolUnionCaseTest do
     :ok
   end
 
-  test "displayShapeIsRound compiles to native bool without boxed int temp" do
+  test "displayShapeIsRound if in view uses PBL_ROUND preprocessor branches" do
     generated_c = File.read!(Path.join(@out_dir, "c/elmc_generated.c"))
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
 
-    view_body =
-      generated_c
-      |> String.split("static RC elmc_fn_Main_view_commands_append")
-      |> List.last()
-      |> String.split(~r/static (?:RC |ElmcValue \*|elmc_int_t )elmc_fn_/, parts: 2)
-      |> hd()
-
-    assert view_body =~ "const bool native_b_"
-    assert view_body =~ ~r/ElmcValue \*native_union_subject_\d+ = ELMC_RECORD_GET_INDEX\(model,/
-    assert view_body =~ "ELMC_RECORD_GET_INDEX(model,"
-    assert view_body =~ "ELMC_TAG_INT && elmc_as_int"
-    assert Regex.scan(~r/ELMC_RECORD_GET_INDEX\(model,/, view_body) |> length() >= 1
-    refute view_body =~ "elmc_record_get_index(model"
+    assert view_body =~ "#if defined(PBL_ROUND)"
+    refute view_body =~ "native_union_subject_"
+    refute view_body =~ "if (native_b_"
     refute view_body =~ "tmp_2 = elmc_new_int(1)"
-    refute view_body =~ "elmc_as_int(tmp_2)"
-    refute view_body =~ "elmc_release(tmp_1)"
+  end
+
+  test "boardLayout uses PBL_ROUND preprocessor branches without runtime shape check" do
+    generated_c = File.read!(Path.join(@out_dir, "c/elmc_generated.c"))
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+
+    assert view_body =~ "#if defined(PBL_ROUND)"
+    assert view_body =~ "direct_native_record_branch__then_cell_0 = 10"
+    assert view_body =~ "direct_native_record_branch__else_cell_0 = 11"
+    refute view_body =~ "native_union_subject_"
+    refute view_body =~ "if (native_b_"
   end
 
   test "lte-style bool conditions compile to native bool without boxed temps" do

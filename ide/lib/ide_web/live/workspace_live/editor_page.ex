@@ -456,9 +456,31 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
 
           <div
             :if={@editor_context_menu}
-            class="fixed z-[60] rounded-md border border-zinc-200 bg-white py-1 text-xs shadow-lg"
+            class="fixed z-[60] min-w-[12rem] rounded-md border border-zinc-200 bg-white py-1 text-xs shadow-lg"
             style={"left: #{@editor_context_menu.x}px; top: #{@editor_context_menu.y}px;"}
           >
+            <.editor_context_menu_item action="cut" label="Cut" shortcut="Ctrl+X" readonly={@editor_context_menu.readonly} />
+            <.editor_context_menu_item action="copy" label="Copy" shortcut="Ctrl+C" />
+            <.editor_context_menu_item action="paste" label="Paste" shortcut="Ctrl+V" readonly={@editor_context_menu.readonly} />
+            <div class="my-1 border-t border-zinc-200" />
+            <.editor_context_menu_item action="undo" label="Undo" shortcut="Ctrl+Z" />
+            <.editor_context_menu_item action="redo" label="Redo" shortcut="Ctrl+Shift+Z" />
+            <div class="my-1 border-t border-zinc-200" />
+            <.editor_context_menu_item action="select-all" label="Select all" shortcut="Ctrl+A" />
+            <div class="my-1 border-t border-zinc-200" />
+            <.editor_context_menu_item
+              action="format"
+              label="Format document"
+              shortcut="Shift+Alt+F"
+              readonly={@editor_context_menu.readonly}
+            />
+            <.editor_context_menu_item
+              action="save"
+              label="Save"
+              shortcut="Ctrl+S"
+              readonly={@editor_context_menu.readonly}
+            />
+            <div class="my-1 border-t border-zinc-200" />
             <button
               type="button"
               phx-click="editor-context-open-docs"
@@ -661,6 +683,30 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
         </div>
       </section>
     <% end %>
+    """
+  end
+
+  attr(:action, :string, required: true)
+  attr(:label, :string, required: true)
+  attr(:shortcut, :string, default: nil)
+  attr(:readonly, :boolean, default: false)
+
+  defp editor_context_menu_item(assigns) do
+    ~H"""
+    <button
+      type="button"
+      phx-click="editor-context-action"
+      phx-value-action={@action}
+      disabled={@readonly}
+      class={[
+        "flex w-full items-center justify-between gap-4 px-3 py-2 text-left",
+        @readonly && "cursor-not-allowed text-zinc-400",
+        !@readonly && "hover:bg-zinc-100"
+      ]}
+    >
+      <span>{@label}</span>
+      <span :if={@shortcut} class="text-[10px] text-zinc-400">{@shortcut}</span>
+    </button>
     """
   end
 

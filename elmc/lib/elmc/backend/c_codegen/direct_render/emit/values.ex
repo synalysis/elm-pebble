@@ -3,6 +3,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
 
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.PlatformStatic
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
 
@@ -55,26 +56,45 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
         env,
         counter
       ) do
-    {cond_code, cond_ref, cond_release, counter} =
-      if Host.native_bool_expr?(cond, env) do
-        {code, ref, c} = Host.compile_native_bool_expr(cond, env, counter)
-        {code, ref, "", c}
-      else
-        {code, var, c} = Host.compile_expr(cond, env, counter)
-        {code, "elmc_as_int(#{var}) != 0", "  elmc_release(#{var});", c}
-      end
+    case PlatformStatic.platform_static_macro(cond) do
+      macro when is_binary(macro) ->
+        {then_code, then_ref, counter} = int_value(then_expr, env, counter)
+        {else_code, else_ref, counter} = int_value(else_expr, env, counter)
+        next = counter + 1
+        value_ref = "direct_native_if_#{next}"
 
-    {then_code, then_ref, counter} = int_value(then_expr, env, counter)
-    {else_code, else_ref, counter} = int_value(else_expr, env, counter)
-    next = counter + 1
-    value_ref = "direct_native_if_#{next}"
+        code = """
+        #{then_code}#{else_code}  #if defined(#{macro})
+          const elmc_int_t #{value_ref} = #{then_ref};
+          #else
+          const elmc_int_t #{value_ref} = #{else_ref};
+          #endif
+        """
 
-    code = """
-    #{cond_code}#{then_code}#{else_code}#{cond_release}
-      const elmc_int_t #{value_ref} = (#{cond_ref}) ? #{then_ref} : #{else_ref};
-    """
+        {code, value_ref, next}
 
-    {code, value_ref, next}
+      nil ->
+        {cond_code, cond_ref, cond_release, counter} =
+          if Host.native_bool_expr?(cond, env) do
+            {code, ref, c} = Host.compile_native_bool_expr(cond, env, counter)
+            {code, ref, "", c}
+          else
+            {code, var, c} = Host.compile_expr(cond, env, counter)
+            {code, "elmc_as_int(#{var}) != 0", "  elmc_release(#{var});", c}
+          end
+
+        {then_code, then_ref, counter} = int_value(then_expr, env, counter)
+        {else_code, else_ref, counter} = int_value(else_expr, env, counter)
+        next = counter + 1
+        value_ref = "direct_native_if_#{next}"
+
+        code = """
+        #{cond_code}#{then_code}#{else_code}#{cond_release}
+          const elmc_int_t #{value_ref} = (#{cond_ref}) ? #{then_ref} : #{else_ref};
+        """
+
+        {code, value_ref, next}
+    end
   end
 
   def int_value(%{op: :char_literal, value: value}, _env, counter),

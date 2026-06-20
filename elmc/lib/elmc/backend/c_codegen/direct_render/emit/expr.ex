@@ -11,6 +11,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
   alias Elmc.Backend.CCodegen.Hoist
   alias Elmc.Backend.CCodegen.Native.TypedReturn
   alias Elmc.Backend.CCodegen.Patterns
+  alias Elmc.Backend.CCodegen.PlatformStatic
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
 
@@ -233,30 +234,12 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
         env,
         counter
       ) do
-    {cond_code, cond_ref, cond_release, counter} =
-      if Host.native_bool_expr?(cond_expr, env) do
-        {code, ref, counter} = Host.compile_native_bool_expr(cond_expr, env, counter)
-        {code, ref, "", counter}
-      else
-        {code, var, counter} = Host.compile_expr(cond_expr, env, counter)
-        {code, "elmc_as_int(#{var}) != 0", "  elmc_release(#{var});", counter}
-      end
+    case PlatformStatic.platform_static_macro(cond_expr) do
+      macro when is_binary(macro) ->
+        emit_platform_static_expr(macro, then_expr, else_expr, env, counter)
 
-    then_env = Hoist.put_hoisted_native_bool(env, cond_expr, "1")
-    else_env = Hoist.put_hoisted_native_bool(env, cond_expr, "0")
-    hoisted_before = Process.get(:elmc_hoisted_native_int_inits, %{})
-
-    with {:ok, then_code, counter} <- emit_expr(then_expr, then_env, counter),
-         {:ok, else_code, counter} <- emit_expr(else_expr, else_env, counter) do
-      branch_hoists =
-        hoisted_before
-        |> Hoist.hoisted_native_int_branch_preamble()
-        |> Hoist.drop_branch_only_redeclared_hoists(then_code, else_code)
-
-      {:ok, branch_hoists <> If.if_code(cond_code, cond_ref, then_code, else_code, cond_release),
-       counter}
-    else
-      _ -> :error
+      nil ->
+        emit_runtime_if_expr(cond_expr, then_expr, else_expr, env, counter)
     end
   end
 
@@ -951,6 +934,58 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
 
       _ ->
         false
+    end
+  end
+
+  defp emit_platform_static_expr(macro, then_expr, else_expr, env, counter) do
+    hoisted_before = Process.get(:elmc_hoisted_native_int_inits, %{})
+
+    with {:ok, then_code, counter} <- emit_expr(then_expr, env, counter),
+         {:ok, else_code, counter} <- emit_expr(else_expr, env, counter) do
+      branch_hoists =
+        hoisted_before
+        |> Hoist.hoisted_native_int_branch_preamble()
+        |> Hoist.drop_branch_only_redeclared_hoists(then_code, else_code)
+
+      code =
+        branch_hoists <>
+          """
+          #if defined(#{macro})
+          #{then_code}#else
+          #{else_code}#endif
+          """
+
+      {:ok, code, counter}
+    else
+      _ -> :error
+    end
+  end
+
+  defp emit_runtime_if_expr(cond_expr, then_expr, else_expr, env, counter) do
+    {cond_code, cond_ref, cond_release, counter} =
+      if Host.native_bool_expr?(cond_expr, env) do
+        {code, ref, counter} = Host.compile_native_bool_expr(cond_expr, env, counter)
+        {code, ref, "", counter}
+      else
+        {code, var, counter} = Host.compile_expr(cond_expr, env, counter)
+        {code, "elmc_as_int(#{var}) != 0", "  elmc_release(#{var});", counter}
+      end
+
+    then_env = Hoist.put_hoisted_native_bool(env, cond_expr, "1")
+    else_env = Hoist.put_hoisted_native_bool(env, cond_expr, "0")
+    hoisted_before = Process.get(:elmc_hoisted_native_int_inits, %{})
+
+    with {:ok, then_code, counter} <- emit_expr(then_expr, then_env, counter),
+         {:ok, else_code, counter} <- emit_expr(else_expr, else_env, counter) do
+      branch_hoists =
+        hoisted_before
+        |> Hoist.hoisted_native_int_branch_preamble()
+        |> Hoist.drop_branch_only_redeclared_hoists(then_code, else_code)
+
+      {:ok, branch_hoists <> If.if_code(cond_code, cond_ref, then_code, else_code, cond_release),
+       counter}
+    else
+      _ -> :error
     end
   end
 end

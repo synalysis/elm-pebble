@@ -5,6 +5,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
   alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.PlatformStatic
   alias Elmc.Backend.CCodegen.SpecialValues
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
@@ -269,19 +270,27 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
          counter
        ) do
     if Host.native_bool_expr?(cond_expr, env) do
-      {cond_code, cond_ref, counter} = Host.compile_native_bool_expr(cond_expr, env, counter)
-
-      case cond_ref do
-        "1" ->
+      case PlatformStatic.platform_static_macro(cond_expr) do
+        macro when is_binary(macro) ->
           {then_code, copy_code, cleanup_code, counter} = text_copy_code(then_expr, env, counter)
-          {cond_code <> then_code, copy_code, cleanup_code, counter}
+          {else_code, else_copy, else_cleanup, counter} = text_copy_code(else_expr, env, counter)
 
-        "0" ->
-          {else_code, copy_code, cleanup_code, counter} = text_copy_code(else_expr, env, counter)
-          {cond_code <> else_code, copy_code, cleanup_code, counter}
+          code =
+            Enum.join(
+              [
+                "#if defined(#{macro})",
+                then_code,
+                "#else",
+                else_code,
+                "#endif"
+              ],
+              "\n"
+            )
 
-        _ ->
-          text_copy_dynamic_if_code(cond_code, cond_ref, then_expr, else_expr, env, counter)
+          {code, copy_code <> else_copy, cleanup_code <> else_cleanup, counter}
+
+        nil ->
+          text_copy_native_bool_if_code(cond_expr, then_expr, else_expr, env, counter)
       end
     else
       text_copy_boxed_code(
@@ -385,6 +394,23 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
     """
 
     {left_code <> right_code, copy_code, cleanup_code, counter}
+  end
+
+  defp text_copy_native_bool_if_code(cond_expr, then_expr, else_expr, env, counter) do
+    {cond_code, cond_ref, counter} = Host.compile_native_bool_expr(cond_expr, env, counter)
+
+    case cond_ref do
+      "1" ->
+        {then_code, copy_code, cleanup_code, counter} = text_copy_code(then_expr, env, counter)
+        {cond_code <> then_code, copy_code, cleanup_code, counter}
+
+      "0" ->
+        {else_code, copy_code, cleanup_code, counter} = text_copy_code(else_expr, env, counter)
+        {cond_code <> else_code, copy_code, cleanup_code, counter}
+
+      _ ->
+        text_copy_dynamic_if_code(cond_code, cond_ref, then_expr, else_expr, env, counter)
+    end
   end
 
   defp text_copy_dynamic_if_code(cond_code, cond_ref, then_expr, else_expr, env, counter) do

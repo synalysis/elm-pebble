@@ -7,6 +7,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
   alias Elmc.Backend.CCodegen.HelperParams
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.String, as: NativeString
+  alias Elmc.Backend.CCodegen.PlatformStatic
   alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
@@ -74,6 +75,16 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
           Types.compile_counter()
         ) :: Types.compile_result()
   defp compile_native_bool_branches(cond_expr, then_expr, else_expr, env, counter) do
+    case PlatformStatic.platform_static_macro(cond_expr) do
+      macro when is_binary(macro) ->
+        compile_platform_static_branches(macro, then_expr, else_expr, env, counter)
+
+      nil ->
+        compile_runtime_native_bool_branches(cond_expr, then_expr, else_expr, env, counter)
+    end
+  end
+
+  defp compile_runtime_native_bool_branches(cond_expr, then_expr, else_expr, env, counter) do
     {cond_code, cond_ref, counter} = Host.compile_native_bool_expr(cond_expr, env, counter)
 
     case cond_ref do
@@ -124,6 +135,41 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
 
         {code, out, counter}
     end
+  end
+
+  defp compile_platform_static_branches(macro, then_expr, else_expr, env, counter) do
+    {out, branch_counter, declare_out?} = CaseCompile.result_out_binding(env, counter)
+    branch_counter = CaseCompile.advance_counter_past_out(branch_counter, out, declare_out?)
+
+    then_env = branch_env(env, out)
+    else_env = branch_env(env, out)
+
+    {then_code, then_assignment, counter} =
+      CaseCompile.branch_assignment(then_expr, out, then_env, branch_counter)
+
+    {else_code, else_assignment, counter} =
+      CaseCompile.branch_assignment(else_expr, out, else_env, counter)
+
+    then_body =
+      maybe_extract_if_branch_helper(then_expr, then_env, out, then_code, then_assignment)
+
+    else_body =
+      maybe_extract_if_branch_helper(else_expr, else_env, out, else_code, else_assignment)
+
+    code =
+      Enum.join(
+        [
+          CaseCompile.result_out_decl(out, declare_out?),
+          "#if defined(#{macro})",
+          format_if_branch_body(then_body),
+          "#else",
+          format_if_branch_body(else_body),
+          "#endif"
+        ],
+        "\n"
+      )
+
+    {code, out, counter}
   end
 
   @spec compile_boxed_cond(

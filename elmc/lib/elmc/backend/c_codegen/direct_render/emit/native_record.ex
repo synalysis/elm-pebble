@@ -9,6 +9,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
   alias Elmc.Backend.CCodegen.Hoist
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.RecordFields
+  alias Elmc.Backend.CCodegen.PlatformStatic
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.CCodegen.VarAnalysis
@@ -215,13 +216,22 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
           record_type_for_entries(field_entries, env) ||
           helper_record_type(value_expr, env)
 
-      {cond_code, cond_ref, cond_cleanup, counter} =
-        if Host.native_bool_expr?(cond, env) do
-          {code, ref, c} = Host.compile_native_bool_expr(cond, env, counter)
-          {code, ref, "", c}
-        else
-          {code, var, c} = Host.compile_expr(cond, env, counter)
-          {code, "elmc_as_int(#{var}) != 0", "  elmc_release(#{var});\n", c}
+      {cond_code, cond_ref, cond_cleanup, counter, platform_macro} =
+        case PlatformStatic.platform_static_macro(cond) do
+          macro when is_binary(macro) ->
+            {"", nil, "", counter, macro}
+
+          nil ->
+            {cond_code, cond_ref, cond_cleanup, counter} =
+              if Host.native_bool_expr?(cond, env) do
+                {code, ref, c} = Host.compile_native_bool_expr(cond, env, counter)
+                {code, ref, "", c}
+              else
+                {code, var, c} = Host.compile_expr(cond, env, counter)
+                {code, "elmc_as_int(#{var}) != 0", "  elmc_release(#{var});\n", c}
+              end
+
+            {cond_code, cond_ref, cond_cleanup, counter, nil}
         end
 
       counter = counter_after_emitted_code(cond_code <> cond_cleanup, counter)
@@ -252,14 +262,19 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
               else_ref = Map.fetch!(else_refs, field)
               kind = Map.fetch!(then_kinds, field)
 
-              merge_code = branch_merge_decl(kind, var, cond_ref, then_ref, else_ref)
+              merge_code =
+                if is_binary(platform_macro) do
+                  platform_branch_merge_decl(kind, var, platform_macro, then_ref, else_ref)
+                else
+                  branch_merge_decl(kind, var, cond_ref, then_ref, else_ref)
+                end
               {code_acc <> merge_code, Map.put(map_acc, field, var), next}
           end)
 
         body_env =
           env
           |> put_native_record_binding(name, field_map, value_expr, then_entries ++ else_entries)
-          |> Hoist.put_hoisted_native_bool(cond, cond_ref)
+          |> maybe_put_hoisted_native_bool(cond, cond_ref, platform_macro)
           |> Hoist.merge_process_hoisted_native_ints()
 
         {:ok, minmax_preamble <> cond_code <> cond_cleanup <> then_code <> else_code <> field_code, body_env, counter}
@@ -395,6 +410,41 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
   defp branch_merge_decl(_kind, var, cond_ref, then_ref, else_ref) do
     "  const elmc_int_t #{var} = (#{cond_ref}) ? #{then_ref} : #{else_ref};\n"
   end
+
+  defp platform_branch_merge_decl("String", var, macro, then_ref, else_ref) do
+    """
+      #if defined(#{macro})
+      const char *#{var} = #{then_ref};
+      #else
+      const char *#{var} = #{else_ref};
+      #endif
+    """
+  end
+
+  defp platform_branch_merge_decl("Float", var, macro, then_ref, else_ref) do
+    """
+      #if defined(#{macro})
+      const double #{var} = #{then_ref};
+      #else
+      const double #{var} = #{else_ref};
+      #endif
+    """
+  end
+
+  defp platform_branch_merge_decl(_kind, var, macro, then_ref, else_ref) do
+    """
+      #if defined(#{macro})
+      const elmc_int_t #{var} = #{then_ref};
+      #else
+      const elmc_int_t #{var} = #{else_ref};
+      #endif
+    """
+  end
+
+  defp maybe_put_hoisted_native_bool(env, cond, cond_ref, nil),
+    do: Hoist.put_hoisted_native_bool(env, cond, cond_ref)
+
+  defp maybe_put_hoisted_native_bool(env, _cond, _cond_ref, _macro), do: env
 
   defp sort_branch_field_entries(field_entries) do
     names = MapSet.new(Enum.map(field_entries, &elem(&1, 0)))

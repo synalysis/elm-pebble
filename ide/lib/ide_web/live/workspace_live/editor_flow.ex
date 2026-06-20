@@ -30,6 +30,7 @@ defmodule IdeWeb.WorkspaceLive.EditorFlow do
     save-file
     editor-context-menu
     editor-context-dismiss
+    editor-context-action
     editor-context-open-docs
     toggle-editor-docs-panel
     set-editor-docs-width
@@ -590,12 +591,23 @@ defmodule IdeWeb.WorkspaceLive.EditorFlow do
     x = parse_non_negative_int(params["x"]) || 0
     y = parse_non_negative_int(params["y"]) || 0
     offset = parse_non_negative_int(offset) || 0
+    readonly = context_menu_read_only?(socket)
 
-    {:noreply, assign(socket, :editor_context_menu, %{x: x, y: y, offset: offset})}
+    {:noreply, assign(socket, :editor_context_menu, %{x: x, y: y, offset: offset, readonly: readonly})}
   end
 
   def handle_event("editor-context-dismiss", _params, socket) do
     {:noreply, assign(socket, :editor_context_menu, nil)}
+  end
+
+  @editor_context_client_actions ~w(copy paste cut undo redo select-all save format)
+
+  def handle_event("editor-context-action", %{"action" => action}, socket)
+      when action in @editor_context_client_actions do
+    {:noreply,
+     socket
+     |> assign(:editor_context_menu, nil)
+     |> push_event("token-editor-context-action", %{action: action})}
   end
 
   def handle_event("editor-context-open-docs", params, socket) do
@@ -1096,4 +1108,11 @@ defmodule IdeWeb.WorkspaceLive.EditorFlow do
     to: EditorSupport
 
   defdelegate schedule_compiler_check(socket), to: BuildFlow
+
+  defp context_menu_read_only?(socket) do
+    case active_tab(socket) do
+      %{read_only: true} -> true
+      tab -> read_only_tab?(tab)
+    end
+  end
 end
