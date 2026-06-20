@@ -155,8 +155,23 @@ defmodule Elmx.Runtime.Http do
   end
 
   defp normalize_expect(expect) when is_function(expect, 1) do
-    # Curried `Http.expectString Msg` applied at GET time — treat as string expect with unknown ctor.
-    %{"kind" => "string", "to_msg" => "HttpResponse", "decoder" => nil}
+    # Curried `Http.expectString Msg` applied at GET time — apply to a stub request.
+    stub = %{
+      "method" => "GET",
+      "url" => "",
+      "headers" => [],
+      "body" => empty_body(),
+      "timeout" => nil,
+      "tracker" => nil
+    }
+
+    case expect.(stub) do
+      %{"expect" => nested} when is_map(nested) -> normalize_expect(nested)
+      %{expect: nested} when is_map(nested) -> normalize_expect(nested)
+      %{"kind" => _} = descriptor -> descriptor
+      descriptor when is_map(descriptor) -> normalize_expect(descriptor)
+      _ -> %{"kind" => "string", "to_msg" => "HttpResponse", "decoder" => nil}
+    end
   end
 
   defp normalize_expect(_), do: %{"kind" => "whatever", "to_msg" => "HttpResponse", "decoder" => nil}
@@ -189,7 +204,29 @@ defmodule Elmx.Runtime.Http do
   defp message_ctor({ctor, _}) when is_atom(ctor), do: Atom.to_string(ctor)
   defp message_ctor(msg) when is_binary(msg), do: msg
   defp message_ctor(msg) when is_atom(msg), do: Atom.to_string(msg)
+
+  defp message_ctor(fun) when is_function(fun, 1) do
+    case callback_ctor_name(fun) do
+      ctor when is_binary(ctor) and ctor != "" -> ctor
+      _ -> "HttpResponse"
+    end
+  end
+
   defp message_ctor(_), do: "HttpResponse"
+
+  @http_expect_probe "__elmx_http_expect_ctor_probe__"
+
+  defp callback_ctor_name(fun) when is_function(fun, 1) do
+    case fun.(@http_expect_probe) do
+      {ctor, _} when is_atom(ctor) -> Atom.to_string(ctor)
+      {ctor, _} when is_binary(ctor) -> ctor
+      %{"ctor" => ctor, "args" => _} when is_binary(ctor) -> ctor
+      %{ctor: ctor, args: _} when is_atom(ctor) -> Atom.to_string(ctor)
+      _ -> nil
+    end
+  rescue
+    _ -> nil
+  end
 
   defp field(map, key) when is_map(map) and is_binary(key) do
     Map.get(map, key) || Map.get(map, String.to_existing_atom(key))

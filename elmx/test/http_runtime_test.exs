@@ -23,6 +23,20 @@ defmodule Elmx.HttpRuntimeTest do
     assert cmd["expect"]["to_msg"] == "CatalogReceived"
   end
 
+  test "Http.expectString preserves Msg constructor callback tag" do
+    svg_received = fn result -> {:SvgReceived, result} end
+
+    cmd =
+      Http.get([
+        %{
+          "url" => "https://example.test/figure.svg",
+          "expect" => Http.expect_string([svg_received])
+        }
+      ])
+
+    assert cmd["expect"]["to_msg"] == "SvgReceived"
+  end
+
   test "LaunchContext.launch_screen includes legacy is_color and is_round booleans" do
     screen =
       LaunchContext.normalize(%{
