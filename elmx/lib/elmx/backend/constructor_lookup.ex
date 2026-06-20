@@ -89,4 +89,30 @@ defmodule Elmx.Backend.ConstructorLookup do
   end
 
   defp pick_unqualified_entry([entry | _]), do: entry
+
+  @spec payload_kind(t() | map() | nil, String.t(), String.t() | nil) ::
+          :none | :single | :multi | :function_like | nil
+  def payload_kind(nil, _name, _module), do: nil
+
+  def payload_kind(lookup, name, current_module) when is_binary(name) and is_map(lookup) do
+    case resolve(lookup, name, current_module) do
+      %{payload_kind: kind} -> kind
+      _ -> nil
+    end
+  end
+
+  @doc """
+  True when a constructor's declared payload is a single value but IR supplies
+  multiple expressions (parenthesized tuple application), so emit wraps them.
+  """
+  @spec wrap_flattened_payload?(t() | map(), String.t(), String.t() | nil, pos_integer()) :: boolean()
+  def wrap_flattened_payload?(_lookup, ctor, _module, arg_count)
+      when ctor in ["Ok", "Err", "Just"] and arg_count > 1,
+      do: true
+
+  def wrap_flattened_payload?(lookup, name, current_module, arg_count) when arg_count > 1 do
+    payload_kind(lookup, name, current_module) == :single
+  end
+
+  def wrap_flattened_payload?(_lookup, _name, _module, _arg_count), do: false
 end

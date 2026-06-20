@@ -64,7 +64,7 @@ defmodule Elmx.TypesContractTest do
         %{"ctor" => "Tuple", "args" => [1, "a"]}
       ])
 
-    assert dict == [{1, "a"}]
+    assert dict == {:elmx_dict, %{1 => "a"}}
   end
 
   test "pebble colors accept ui_color wire and packed ints" do

@@ -50,6 +50,12 @@ defmodule Elmx.Runtime.Core.Collections.Array do
   def array_repeat(n, value) when is_integer(n), do: List.duplicate(value, max(n, 0))
 
   @spec array_initialize(integer(), term()) :: list()
+  def array_initialize(n, _fun) when is_integer(n) and n <= 0, do: []
+
+  def array_initialize(n, fun) when is_integer(n) and is_function(fun, 1) do
+    for i <- 0..(n - 1)//1, do: Core.apply1(fun, i)
+  end
+
   def array_initialize(n, value) when is_integer(n), do: List.duplicate(value, max(n, 0))
 
   @spec array_is_empty(list()) :: boolean()

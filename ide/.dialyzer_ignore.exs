@@ -71,5 +71,9 @@
   {"lib/ide_web/live/workspace_live/debugger_support/timeline/debugger_rows.ex", :invalid_contract},
   {"lib/ide_web/live/workspace_live/debugger_support/live/triggers.ex", :no_return},
   {"lib/ide_web/live/workspace_live/debugger_page/core.ex", :guard_fail_pat},
-  {"lib/ide_web/live/workspace_live/debugger_page/export.ex", :pattern_match}
+  {"lib/ide_web/live/workspace_live/debugger_page/export.ex", :pattern_match},
+  # Preview PNG generator calls corpus bootstrap; Dialyzer cannot prove template validation succeeds.
+  {"lib/ide/project_template_previews.ex", :pattern_match},
+  {"lib/ide/project_template_previews.ex", :no_return},
+  {"lib/ide/project_template_previews.ex", :unused_fun}
 ]

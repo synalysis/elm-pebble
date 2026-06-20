@@ -12,6 +12,9 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Platform do
     case target do
       "Platform.Cmd.batch" -> cmd_batch(args)
       "Pebble.Cmd.batch" -> cmd_batch(args)
+      "Platform.Cmd.map" -> cmd_map(args)
+      "Pebble.Cmd.map" -> cmd_map(args)
+      "Cmd.map" -> cmd_map(args)
       "Platform.Cmd.none" -> {:ok, %{op: :cmd_none}}
       "Pebble.Cmd.none" -> {:ok, %{op: :cmd_none}}
       "Platform.Cmd.getCurrentTimeString" -> ui_call("elmx_time_current_time_string", args)
@@ -24,6 +27,9 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Platform do
       "Platform.Cmd.storageDelete" -> ui_call("elmx_storage_delete", args)
       "Platform.Cmd.backlight" -> ui_call("elmx_cmd_backlight", args)
       "Platform.Sub.none" -> {:ok, %{op: :int_literal, value: 0}}
+      "Platform.Sub.map" -> sub_map(args)
+      "Pebble.Sub.map" -> sub_map(args)
+      "Sub.map" -> sub_map(args)
       "Platform.worker" -> {:ok, %{op: :int_literal, value: 0}}
       "Platform.application" -> ui_call("elmx_platform_application", args)
       "Platform.Sub.batch" -> subscription_batch(args)
@@ -32,6 +38,7 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Platform do
       "Pebble.Platform.watchface" -> ui_call("elmx_platform_watchface", args)
       "Pebble.Platform.displayShapeIsRound" -> ui_call("elmx_platform_display_shape_is_round", args)
       "Pebble.Platform.colorCapabilityIsColor" -> ui_call("elmx_platform_color_capability_is_color", args)
+      "Elm.Kernel.List.cons" when args == [] -> :unmatched
       "Elm.Kernel.List.cons" -> {:ok, %{op: :runtime_call, function: "elmx_list_cons", args: args}}
       _ -> :unmatched
     end

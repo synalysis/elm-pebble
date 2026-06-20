@@ -41,35 +41,62 @@ defmodule Elmx.Runtime.Core do
   def basics_mod_by(base, value) when is_integer(base) and base != 0, do: Integer.mod(value, base)
   def basics_mod_by(_base, _value), do: 0
 
+  @spec basics_idiv(integer(), integer()) :: integer()
+  def basics_idiv(_a, 0), do: 0
+
+  def basics_idiv(a, b) when is_integer(a) and is_integer(b), do: Integer.floor_div(a, b)
+
   @spec basics_clamp(Types.comparable(), Types.comparable(), Types.comparable()) ::
           Types.comparable()
   def basics_clamp(low, high, value), do: max(low, min(high, value))
 
-  @spec new_char(integer()) :: binary()
-  def new_char(code) when is_integer(code), do: <<code::utf8>>
-  def new_char(_), do: ""
+  @spec new_char(integer()) :: {:elmx_char, integer()}
+  def new_char(code) when is_integer(code) do
+    if valid_char_code?(code) do
+      try do
+        <<code::utf8>>
+        {:elmx_char, code}
+      rescue
+        ArgumentError -> {:elmx_char, 0xFFFD}
+      end
+    else
+      {:elmx_char, 0xFFFD}
+    end
+  end
 
-  @spec basics_compare(Types.comparable(), Types.comparable()) :: -1 | 0 | 1
+  def new_char(_), do: {:elmx_char, 0xFFFD}
+
+  defp valid_char_code?(code) when is_integer(code), do: code >= 0 and code <= 0x10FFFF
+
+  @spec basics_compare(Types.comparable(), Types.comparable()) :: :LT | :EQ | :GT
   def basics_compare(a, b) when is_binary(a) and is_binary(b) do
     cond do
-      a < b -> -1
-      a > b -> 1
-      true -> 0
+      a < b -> :LT
+      a > b -> :GT
+      true -> :EQ
     end
   end
 
   def basics_compare(a, b) when is_number(a) and is_number(b) do
     cond do
-      a < b -> -1
-      a > b -> 1
-      true -> 0
+      a < b -> :LT
+      a > b -> :GT
+      true -> :EQ
+    end
+  end
+
+  def basics_compare({:elmx_char, ca}, {:elmx_char, cb}) when is_integer(ca) and is_integer(cb) do
+    cond do
+      ca < cb -> :LT
+      ca > cb -> :GT
+      true -> :EQ
     end
   end
 
   def basics_compare(a, b) do
     case {to_number(a), to_number(b)} do
       {{:ok, na}, {:ok, nb}} -> basics_compare(na, nb)
-      _ -> 0
+      _ -> :EQ
     end
   end
 
@@ -83,6 +110,7 @@ defmodule Elmx.Runtime.Core do
 
   @spec apply1(Types.elm_hof(), Types.elm_value()) :: Types.elm_value()
   defdelegate apply1(fun, arg), to: Elmx.Runtime.Core.Apply
+  defdelegate fix(f), to: Elmx.Runtime.Core.Apply
 
   @spec apply2(Types.elm_hof(), Types.elm_value(), Types.elm_value()) :: Types.elm_value()
   defdelegate apply2(fun, a, b), to: Elmx.Runtime.Core.Apply
@@ -99,6 +127,9 @@ defmodule Elmx.Runtime.Core do
           Types.elm_value()
         ) :: Types.elm_value()
   defdelegate apply4(fun, a, b, c, d), to: Elmx.Runtime.Core.Apply
+  defdelegate apply5(fun, a, b, c, d, e), to: Elmx.Runtime.Core.Apply
+  defdelegate apply6(fun, a, b, c, d, e, f), to: Elmx.Runtime.Core.Apply
+  defdelegate apply7(fun, a, b, c, d, e, f, g), to: Elmx.Runtime.Core.Apply
 
   defp to_number(n) when is_integer(n), do: {:ok, n}
   defp to_number(n) when is_float(n), do: {:ok, n}
@@ -124,6 +155,8 @@ defmodule Elmx.Runtime.Core do
   defdelegate list_intersperse(sep, list), to: Elmx.Runtime.Core.List
   defdelegate list_map2(fun, as, bs), to: Elmx.Runtime.Core.List
   defdelegate list_map3(fun, as, bs, cs), to: Elmx.Runtime.Core.List
+  defdelegate list_map4(fun, as, bs, cs, ds), to: Elmx.Runtime.Core.List
+  defdelegate list_map5(fun, as, bs, cs, ds, es), to: Elmx.Runtime.Core.List
   defdelegate list_repeat(n, value), to: Elmx.Runtime.Core.List
   defdelegate map(fun, list), to: Elmx.Runtime.Core.List
   defdelegate filter(fun, list), to: Elmx.Runtime.Core.List

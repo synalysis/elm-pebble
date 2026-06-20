@@ -24,6 +24,7 @@ defmodule Elmx.Backend.ElixirCodegen do
 
       emit_modules = modules_for_emit(ir, opts)
       cross_module_arities = cross_module_arities_from_modules(emit_modules)
+      port_signatures = port_signatures_from_modules(emit_modules)
       emit_module_names = Enum.map(emit_modules, & &1.name)
 
       function_results =
@@ -41,11 +42,14 @@ defmodule Elmx.Backend.ElixirCodegen do
               decl,
               record_field_types,
               zero_arity_fns,
-              function_arities,
+              function_arities.callable,
+              function_arities.explicit,
               constructor_lookup,
               cross_module_arities,
               emit_module_names,
-              Map.get(opts, :mode, :library)
+              port_signatures,
+              Map.get(opts, :mode, :library),
+              ir_sha256
             )
           end)
         end)
@@ -136,10 +140,33 @@ defmodule Elmx.Backend.ElixirCodegen do
 
   defp cross_module_arities_from_modules(modules) when is_list(modules) do
     modules
-    |> Enum.flat_map(fn mod ->
+    |> Enum.map(fn mod ->
+      arities = function_arities_from_declarations(mod.declarations)
+
       mod.declarations
       |> Enum.filter(&(&1.kind == :function and is_binary(&1.name)))
-      |> Enum.map(fn decl -> {{mod.name, decl.name}, length(decl.args || [])} end)
+      |> Enum.map(fn decl ->
+        name = decl.name
+
+        {{mod.name, name},
+         %{
+           explicit: Map.get(arities.explicit, name, 0),
+           callable: Map.get(arities.callable, name, 0)
+         }}
+      end)
+    end)
+    |> List.flatten()
+    |> Map.new()
+  end
+
+  defp port_signatures_from_modules(modules) when is_list(modules) do
+    modules
+    |> Enum.flat_map(fn mod ->
+      ports = Map.get(mod, :ports, [])
+
+      for name <- ports, is_binary(name) do
+        {{mod.name, name}, true}
+      end
     end)
     |> Map.new()
   end
@@ -168,12 +195,157 @@ defmodule Elmx.Backend.ElixirCodegen do
   end
 
   defp function_arities_from_declarations(declarations) when is_list(declarations) do
-    declarations
-    |> Enum.filter(fn decl ->
-      decl.kind == :function and is_binary(decl.name) and is_map(decl.expr)
-    end)
-    |> Map.new(fn decl -> {decl.name, length(decl.args || [])} end)
+    explicit =
+      declarations
+      |> Enum.filter(fn decl ->
+        decl.kind == :function and is_binary(decl.name) and is_map(decl.expr)
+      end)
+      |> Map.new(fn decl -> {decl.name, length(decl.args || [])} end)
+
+    callable =
+      declarations
+      |> Enum.filter(fn decl ->
+        decl.kind == :function and is_binary(decl.name) and is_map(decl.expr)
+      end)
+      |> Map.new(fn decl ->
+        {decl.name, effective_function_arity(decl, explicit)}
+      end)
+
+  %{callable: callable, explicit: explicit}
   end
+
+  defp effective_function_arity(%{args: args} = decl, _explicit) when is_list(args) and args != [] do
+    length(args) + infer_nested_lambda_arity(decl.expr)
+  end
+
+  defp effective_function_arity(%{expr: expr}, arities) do
+    infer_callable_arity(expr, arities)
+  end
+
+  defp infer_nested_lambda_arity(%{op: :lambda, args: lambda_args, body: body}) when is_list(lambda_args) do
+    length(lambda_args) + infer_nested_lambda_arity(body)
+  end
+
+  defp infer_nested_lambda_arity(_), do: 0
+
+  defp infer_callable_arity(%{op: :lambda, args: args, body: body}, arities) when is_list(args) do
+    length(args) + infer_callable_arity(body, arities)
+  end
+
+  defp infer_callable_arity(%{op: :lambda, args: args}, _arities) when is_list(args), do: length(args)
+
+  defp infer_callable_arity(%{op: :call, name: name, args: args}, _arities)
+       when name in ["__add__", "__sub__", "__mul__", "__fdiv__", "__idiv__", "__append__"] and is_list(args) do
+    max(2 - length(args), 0)
+  end
+
+  defp infer_callable_arity(%{op: :call, name: name, args: args}, _arities)
+       when name in ["__eq__", "__neq__", "__lt__", "__lte__", "__gt__", "__gte__"] and is_list(args) do
+    max(2 - length(args), 0)
+  end
+
+  defp infer_callable_arity(%{op: :call, name: name, args: args}, arities)
+       when is_binary(name) and is_list(args) do
+    target_arity = Map.get(arities, name, 0)
+    max(target_arity - length(args), 0)
+  end
+
+  defp infer_callable_arity(%{op: op, target: target, args: args}, arities)
+       when op in [:qualified_call, :call] and is_binary(target) and is_list(args) do
+    case Elmx.Runtime.Stdlib.qualified_full_arity(target) do
+      {:ok, full_arity} ->
+        max(full_arity - length(args), 0)
+
+      :error ->
+        case Elmx.Backend.QualifiedPartials.rewrite(target, args) do
+          {:ok, %{op: :lambda, args: lambda_args}} when is_list(lambda_args) ->
+            length(lambda_args)
+
+          _ ->
+            infer_user_callable_arity(target, args, arities)
+        end
+    end
+  end
+
+  defp infer_callable_arity(_expr, _arities), do: 0
+
+  defp infer_user_callable_arity(target, args, arities) do
+    case Elmx.Backend.CrossModuleCall.split_target(target) do
+      {module, name} ->
+        target_arity = Map.get(arities, name, Map.get(arities, "#{module}.#{name}", 0))
+        max(target_arity - length(args), 0)
+
+      nil ->
+        name = target |> String.split(".") |> List.last()
+        target_arity = Map.get(arities, name, Map.get(arities, target, 0))
+        max(target_arity - length(args), 0)
+    end
+  end
+
+  defp maybe_saturate_value_function_expr(expr, _decl_args, arity, callable_arities, explicit_arities)
+       when is_map(expr) and is_integer(arity) and arity > 0 do
+    case expr do
+      %{op: op, args: args} = call when op in [:qualified_call, :call] and is_list(args) ->
+        name = call_target_name(call)
+        explicit = Map.get(explicit_arities, name, 0)
+        callable = Map.get(callable_arities, name, 0)
+        given = length(args)
+
+        if given == explicit and callable > explicit do
+          {:apply_saturated, call, arity}
+        else
+          extra =
+            Enum.map(1..arity, fn i ->
+              %{op: :var, name: "__p#{i}"}
+            end)
+
+          Map.put(call, :args, args ++ extra)
+        end
+
+      _ ->
+        expr
+    end
+  end
+
+  defp maybe_saturate_value_function_expr(expr, _, _, _, _), do: expr
+
+  defp call_target_name(%{op: :call, name: name}) when is_binary(name), do: name
+
+  defp call_target_name(%{op: :qualified_call, target: target}) when is_binary(target),
+    do: call_target_name(target)
+
+  defp call_target_name(target) when is_binary(target) do
+    case Elmx.Backend.CrossModuleCall.split_target(target) do
+      {_module, name} -> name
+      nil -> target |> String.split(".") |> List.last()
+    end
+  end
+
+  defp compile_apply_saturated_body(%{op: _} = call, sat_arity, env) do
+    env = Map.put(env, :emit_partial_value, true)
+    {call_code, env, _} = Emit.compile_expr(call, env, 0)
+
+    param_refs =
+      Enum.map(1..sat_arity, fn i ->
+        Elmx.Backend.ElixirCodegen.Emit.Helpers.binding_ref("__p#{i}", env)
+      end)
+
+    code = [
+      "Elmx.Runtime.Core.Apply.apply#{sat_arity}(",
+      call_code,
+      ", ",
+      Enum.intersperse(param_refs, ", "),
+      ")"
+    ]
+
+    {code, env}
+  end
+
+  defp unwrap_nested_lambdas(%{op: :lambda, args: args, body: body}, acc) when is_list(args) do
+    unwrap_nested_lambdas(body, acc ++ args)
+  end
+
+  defp unwrap_nested_lambdas(expr, acc), do: {expr, acc}
 
   defp emit_function(
          module_name,
@@ -181,10 +353,13 @@ defmodule Elmx.Backend.ElixirCodegen do
          record_field_types,
          zero_arity_fns,
          function_arities,
+         explicit_function_arities,
          constructor_lookup,
          cross_module_arities,
          emit_module_names,
-         emit_mode
+         port_signatures,
+         emit_mode,
+         ir_sha256
        ) do
     env =
       module_name
@@ -192,28 +367,138 @@ defmodule Elmx.Backend.ElixirCodegen do
       |> Map.put(:record_field_types, record_field_types)
       |> Map.put(:zero_arity_fns, zero_arity_fns)
       |> Map.put(:function_arities, function_arities)
+      |> Map.put(:explicit_function_arities, explicit_function_arities)
       |> Map.put(:constructor_lookup, constructor_lookup)
       |> Map.put(:cross_module_arities, cross_module_arities)
+      |> Map.put(:port_signatures, port_signatures)
       |> Map.put(:emit_module_names, emit_module_names)
       |> Map.put(:emit_mode, emit_mode)
 
-    {body, env, _} = Emit.compile_expr(decl.expr, env, 0)
+    {expr0, synthetic_params} =
+      if (decl.args || []) == [] do
+        unwrap_nested_lambdas(decl.expr, [])
+      else
+        {decl.expr, []}
+      end
+
+    saturated_arity =
+      if (decl.args || []) == [] and synthetic_params == [] do
+        effective_function_arity(decl, function_arities)
+      else
+        0
+      end
+
+    param_source =
+      cond do
+        is_list(decl.args) and decl.args != [] ->
+          decl.args
+
+        synthetic_params != [] ->
+          synthetic_params
+
+        saturated_arity > 0 ->
+          Enum.map(1..saturated_arity, &"__p#{&1}")
+
+        true ->
+          []
+      end
+
+    arity =
+      if param_source != [] do
+        length(param_source)
+      else
+        0
+      end
+
+    env =
+      Enum.reduce(param_source, env, fn arg, acc ->
+        Map.put(acc, String.to_atom(Emit.param_name(arg)), true)
+      end)
+
+    expr =
+      cond do
+        synthetic_params != [] ->
+          expr0
+
+        (decl.args || []) == [] ->
+          maybe_saturate_value_function_expr(
+            decl.expr,
+            decl.args || [],
+            arity,
+            function_arities,
+            explicit_function_arities
+          )
+
+        true ->
+          decl.expr
+      end
+
+    {body, env} =
+      case expr do
+        {:apply_saturated, call, sat_arity} ->
+          compile_apply_saturated_body(call, sat_arity, env)
+
+        other ->
+          {compiled, env, _} = Emit.compile_expr(other, env, 0)
+          {compiled, env}
+      end
     uses_bitwise = Map.get(env, :uses_bitwise, false)
     fn_name = function_symbol(module_name, decl.name)
-    params = param_list(decl.args || [])
+    params = param_list(param_source, if(param_source == [], do: arity, else: nil))
+    body_str = IO.iodata_to_binary(body)
 
-    source = """
-    def #{fn_name}(#{params}) do
-      #{IO.iodata_to_binary(body)}
-    end
-    """
+    source =
+      if module_value_binding?(decl, synthetic_params, saturated_arity) do
+        cache_key = {:elmx, ir_sha256, module_name, decl.name}
+
+        """
+        def #{fn_name}() do
+          try do
+            :persistent_term.get(#{inspect(cache_key)})
+          rescue
+            ArgumentError ->
+              value = #{body_str}
+              :persistent_term.put(#{inspect(cache_key)}, value)
+              value
+          end
+        end
+        """
+      else
+        """
+        def #{fn_name}(#{params}) do
+          #{body_str}
+        end
+        """
+      end
 
     {source, uses_bitwise}
   end
 
-  defp param_list(args) when is_list(args) do
-    Enum.map_join(args, ", ", fn arg ->
-      arg |> Emit.param_name() |> Elmx.Backend.ElixirCodegen.Emit.Helpers.param_var_name(%{})
+  defp module_value_binding?(decl, synthetic_params, saturated_arity) do
+    (decl.args || []) == [] and synthetic_params == [] and saturated_arity == 0 and
+      not function_like_value_expr?(decl.expr)
+  end
+
+  defp function_like_value_expr?(%{op: :lambda}), do: true
+  defp function_like_value_expr?(%{op: :qualified_call, args: []}), do: true
+  defp function_like_value_expr?(%{op: :var}), do: true
+  defp function_like_value_expr?(_), do: false
+
+  defp param_list(args, arity) when is_list(args) do
+    names =
+      cond do
+        args != [] ->
+          Enum.map(args, &Emit.param_name/1)
+
+        is_integer(arity) and arity > 0 ->
+          Enum.map(1..arity, &"__p#{&1}")
+
+        true ->
+          []
+      end
+
+    Enum.map_join(names, ", ", fn name ->
+      name |> Elmx.Backend.ElixirCodegen.Emit.Helpers.param_var_name(%{})
     end)
   end
 

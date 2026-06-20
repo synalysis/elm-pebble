@@ -2,6 +2,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified.Collections do
   @moduledoc false
 
   alias Elmx.Backend.ElixirCodegen.Emit.Helpers
+  alias Elmx.Runtime.CodegenRefs
   alias Elmx.Runtime.Stdlib.QualifiedCodegen
   alias Elmx.Backend.ElixirCodegen.Emit.Qualified.Context
 
@@ -39,6 +40,34 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified.Collections do
 
   def compile("Set.member", [value], env, counter),
     do: compile_collections_op("set", "member", [value], nil, env, counter, "elmx_set")
+
+  def compile("Set.insert", [], env, counter) do
+    {:ok, "&#{CodegenRefs.core_collections()}.set_insert/2", env, counter}
+  end
+
+  def compile("Set.insert", [value], env, counter),
+    do: compile_collections_op("set", "insert", [value], nil, env, counter, "elmx_set")
+
+  def compile("Set.insert", [value, set], env, counter),
+    do: compile_collections_op("set", "insert", [value], set, env, counter, "elmx_set")
+
+  def compile("Set.empty", [], env, counter) do
+    {:ok, "#{CodegenRefs.core_collections()}.set_empty()", env, counter}
+  end
+
+  def compile("Dict.empty", [], env, counter) do
+    {:ok, "#{CodegenRefs.core_collections()}.dict_empty()", env, counter}
+  end
+
+  def compile("Set.remove", [], env, counter) do
+    {:ok, "&#{CodegenRefs.core_collections()}.set_remove/2", env, counter}
+  end
+
+  def compile("Set.remove", [value], env, counter),
+    do: compile_collections_op("set", "remove", [value], nil, env, counter, "elmx_set")
+
+  def compile("Set.remove", [value, set], env, counter),
+    do: compile_collections_op("set", "remove", [value], set, env, counter, "elmx_set")
 
   def compile("Array.get", [index, array], env, counter),
     do: compile_collections_op("array", "get", [index], array, env, counter, "elmx_array")

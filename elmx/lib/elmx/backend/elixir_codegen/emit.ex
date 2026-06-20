@@ -21,7 +21,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit do
     end)
   end
 
-  @spec compile_expr(map(), env(), Types.emit_counter()) :: Types.compile_expr_result()
+  @spec compile_expr(Types.ir_expr(), env(), Types.emit_counter()) :: Types.compile_expr_result()
   def compile_expr(expr, env, counter) when is_map(expr) do
     case Map.get(expr, :op) do
       :int_literal ->
@@ -34,7 +34,14 @@ defmodule Elmx.Backend.ElixirCodegen.Emit do
         {inspect(expr.value), env, counter}
 
       :char_literal ->
-        {inspect(expr.value), env, counter}
+        codepoint =
+          case expr.value do
+            v when is_integer(v) -> v
+            <<c::utf8>> -> c
+            v when is_binary(v) -> v |> String.to_charlist() |> hd()
+          end
+
+        {["#{CodegenRefs.core()}.new_char(", Integer.to_string(codepoint), ")"], env, counter}
 
       :bool_literal ->
         {to_string(expr.value == true), env, counter}
@@ -97,6 +104,14 @@ defmodule Elmx.Backend.ElixirCodegen.Emit do
 
       :constructor_call ->
         Constructor.compile_constructor(expr, env, counter)
+
+      :constructor_ref ->
+        target = Map.get(expr, :target) || Map.get(expr, :name)
+        args = Map.get(expr, :args, [])
+        Constructor.compile_constructor(%{name: target, args: args}, env, counter)
+
+      :partial_constructor ->
+        Constructor.compile_partial_constructor(expr, env, counter)
 
       :runtime_call ->
         Expr.compile_runtime_call(expr, env, counter)

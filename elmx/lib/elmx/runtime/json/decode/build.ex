@@ -1,6 +1,7 @@
 defmodule Elmx.Runtime.Json.Decode.Build do
   @moduledoc false
 
+  alias Elmx.Runtime.Core
   alias Elmx.Types
 
   @type decoder :: Types.json_decoder()
@@ -69,27 +70,39 @@ defmodule Elmx.Runtime.Json.Decode.Build do
   def map_n(fun, decoders) when is_function(fun) and is_list(decoders),
     do: {:json_decoder, {:map_n, fun, decoders}}
 
-  @spec map2(fun(), decoder(), decoder()) :: decoder()
-  def map2(fun, d1, d2) when is_function(fun, 2), do: map_n(fun, [d1, d2])
+  @spec map2(Types.elm_hof(), decoder(), decoder()) :: decoder()
+  def map2(fun, d1, d2) do
+    map_n(fn a, b -> Core.apply2(fun, a, b) end, [d1, d2])
+  end
 
-  @spec map3(fun(), decoder(), decoder(), decoder()) :: decoder()
-  def map3(fun, d1, d2, d3) when is_function(fun, 3), do: map_n(fun, [d1, d2, d3])
+  @spec map3(Types.elm_hof(), decoder(), decoder(), decoder()) :: decoder()
+  def map3(fun, d1, d2, d3) do
+    map_n(fn a, b, c -> Core.apply3(fun, a, b, c) end, [d1, d2, d3])
+  end
 
-  @spec map4(fun(), decoder(), decoder(), decoder(), decoder()) :: decoder()
-  def map4(fun, d1, d2, d3, d4) when is_function(fun, 4), do: map_n(fun, [d1, d2, d3, d4])
+  @spec map4(Types.elm_hof(), decoder(), decoder(), decoder(), decoder()) :: decoder()
+  def map4(fun, d1, d2, d3, d4) do
+    map_n(fn a, b, c, d -> Core.apply4(fun, a, b, c, d) end, [d1, d2, d3, d4])
+  end
 
-  @spec map5(fun(), decoder(), decoder(), decoder(), decoder(), decoder()) :: decoder()
-  def map5(fun, d1, d2, d3, d4, d5) when is_function(fun, 5), do: map_n(fun, [d1, d2, d3, d4, d5])
+  @spec map5(Types.elm_hof(), decoder(), decoder(), decoder(), decoder(), decoder()) :: decoder()
+  def map5(fun, d1, d2, d3, d4, d5) do
+    map_n(fn a, b, c, d, e -> Core.apply5(fun, a, b, c, d, e) end, [d1, d2, d3, d4, d5])
+  end
 
-  @spec map6(fun(), decoder(), decoder(), decoder(), decoder(), decoder(), decoder()) ::
+  @spec map6(Types.elm_hof(), decoder(), decoder(), decoder(), decoder(), decoder(), decoder()) ::
           decoder()
-  def map6(fun, d1, d2, d3, d4, d5, d6) when is_function(fun, 6),
-    do: map_n(fun, [d1, d2, d3, d4, d5, d6])
+  def map6(fun, d1, d2, d3, d4, d5, d6) do
+    map_n(fn a, b, c, d, e, f -> Core.apply6(fun, a, b, c, d, e, f) end, [d1, d2, d3, d4, d5, d6])
+  end
 
-  @spec map7(fun(), decoder(), decoder(), decoder(), decoder(), decoder(), decoder(), decoder()) ::
+  @spec map7(Types.elm_hof(), decoder(), decoder(), decoder(), decoder(), decoder(), decoder(), decoder()) ::
           decoder()
-  def map7(fun, d1, d2, d3, d4, d5, d6, d7) when is_function(fun, 7),
-    do: map_n(fun, [d1, d2, d3, d4, d5, d6, d7])
+  def map7(fun, d1, d2, d3, d4, d5, d6, d7) do
+    map_n(fn a, b, c, d, e, f, g -> Core.apply7(fun, a, b, c, d, e, f, g) end,
+      [d1, d2, d3, d4, d5, d6, d7]
+    )
+  end
 
   @spec succeed(Types.json_value()) :: decoder()
   def succeed(value), do: {:json_decoder, {:succeed, value}}

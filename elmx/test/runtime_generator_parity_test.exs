@@ -78,6 +78,6 @@ defmodule Elmx.RuntimeGeneratorParityTest do
     assert {:ok, [1, 2, 3]} = Generator.apply("elmc_list_append", [[1], [2, 3]])
     assert {:ok, 2} = Generator.apply("elmc_basics_mod_by", [4, 10])
     assert {:ok, true} = Generator.apply("elmc_dict_member", [1, [{1, :a}]])
-    assert {:ok, {:Ok, 42}} = Generator.apply("elmc_task_succeed", [42])
+    assert {:ok, {:elmx_task, :succeed, 42}} = Generator.apply("elmc_task_succeed", [42])
   end
 end

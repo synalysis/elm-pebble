@@ -1,7 +1,7 @@
 defmodule Elmx.Runtime.Core.Bitwise do
   @moduledoc false
 
-  @mask64 0xFFFFFFFFFFFFFFFF
+  @mask32 0xFFFFFFFF
 
   @spec and_(integer(), integer()) :: integer()
   def and_(left, right), do: :erlang.band(left, right)
@@ -23,8 +23,8 @@ defmodule Elmx.Runtime.Core.Bitwise do
 
   @spec shift_right_zf_by(integer(), integer()) :: integer()
   def shift_right_zf_by(bits, value) do
-    raw = :erlang.band(value, @mask64)
-    :erlang.bsr(raw, clamp_shift(bits))
+    raw = :erlang.band(value, @mask32)
+    Bitwise.>>>(raw, clamp_shift(bits))
   end
 
   defp clamp_shift(bits) when bits < 0, do: 0

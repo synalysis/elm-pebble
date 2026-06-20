@@ -35,7 +35,7 @@ defmodule Elmx.CoreComplianceRuntimeTest do
   test "fundamentals, bitwise, modBy, char, strings", %{compiled: m} do
     assert cc(m, "fundamentalsMix", [20, 1]) == 10
     assert cc(m, "bitwiseMix", [5]) == 15
-    assert cc(m, "bitwiseExtras", [0]) == 9_223_372_036_854_775_807
+    assert cc(m, "bitwiseExtras", [0]) == 2_147_483_647
     assert cc(m, "modByNeg", [-1]) == 4
     assert cc(m, "charCodeRoundtrip", [65]) == 65
     assert cc(m, "stringEmptyCheck", [""]) == true
@@ -54,7 +54,7 @@ defmodule Elmx.CoreComplianceRuntimeTest do
     assert cc(m, "first", [{2, 5}]) == 2
     assert cc(m, "second", [{2, 5}]) == 5
     assert cc(m, "debugEcho", [7]) == 7
-    assert cc(m, "charFromCode", [65]) == "A"
+    assert cc(m, "charFromCode", [65]) == {:elmx_char, 65}
   end
 
   test "dict and set", %{compiled: m} do
@@ -92,12 +92,12 @@ defmodule Elmx.CoreComplianceRuntimeTest do
   end
 
   test "task and process", %{compiled: m} do
-    assert cc(m, "taskSucceedInt") == {:Ok, 7}
-    assert cc(m, "taskFailInt") == {:Err, 5}
-    assert cc(m, "taskSucceedArg", [42]) == {:Ok, 42}
-    assert cc(m, "taskFailArg", [42]) == {:Err, 42}
-    assert cc(m, "taskSucceedNested") == {:Ok, {:Err, 9}}
-    assert cc(m, "taskFailNested") == {:Err, {:Ok, 11}}
+    assert cc(m, "taskSucceedInt") == {:elmx_task, :succeed, 7}
+    assert cc(m, "taskFailInt") == {:elmx_task, :fail, 5}
+    assert cc(m, "taskSucceedArg", [42]) == {:elmx_task, :succeed, 42}
+    assert cc(m, "taskFailArg", [42]) == {:elmx_task, :fail, 42}
+    assert cc(m, "taskSucceedNested") == {:elmx_task, :succeed, {:elmx_task, :fail, 9}}
+    assert cc(m, "taskFailNested") == {:elmx_task, :fail, {:elmx_task, :succeed, 11}}
     assert cc(m, "processSleepOk") == 1
     assert cc(m, "processKillOk") == 1
 

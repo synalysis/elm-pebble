@@ -14,7 +14,7 @@ defmodule Elmx.DictHofTest do
         dict
       )
 
-    assert mapped == [{1, 11}, {2, 22}]
+    assert Collections.dict_to_list(mapped) == [{1, 11}, {2, 22}]
   end
 
   test "dict_foldl and dict_filter use separate key and value args" do
@@ -22,11 +22,12 @@ defmodule Elmx.DictHofTest do
 
     assert Collections.dict_foldl(fn _k, v, acc -> acc + v end, 0, dict) == 12
 
-    assert Collections.dict_filter(fn k, _v -> rem(k, 2) == 1 end, dict) == [{1, 2}, {3, 4}, {5, 6}]
+    assert Collections.dict_to_list(Collections.dict_filter(fn k, _v -> rem(k, 2) == 1 end, dict)) ==
+             [{1, 2}, {3, 4}, {5, 6}]
 
     {yes, no} = Collections.dict_partition(fn k, _v -> k <= 3 end, dict)
-    assert yes == [{1, 2}, {3, 4}]
-    assert no == [{5, 6}]
+    assert Collections.dict_to_list(yes) == [{1, 2}, {3, 4}]
+    assert Collections.dict_to_list(no) == [{5, 6}]
   end
 
   test "elmc_dict_map intrinsic matches Collections.dict_map" do
@@ -35,7 +36,7 @@ defmodule Elmx.DictHofTest do
     assert {:ok, mapped} =
              Generator.apply("elmc_dict_map", [fn k, v -> k + v end, dict])
 
-    assert mapped == [{0, 5}]
+    assert Collections.dict_to_list(mapped) == [{0, 5}]
   end
 
   test "curried dict_map step still works via Core.apply2" do

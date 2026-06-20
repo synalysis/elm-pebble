@@ -141,7 +141,7 @@ defmodule Elmx.CasePatternEmitTest do
     {code, _, _} = Emit.compile_expr(expr, env, 0)
     source = IO.iodata_to_binary(code)
 
-    assert source =~ "label.(8).(9).(\"hi\")"
+    assert source =~ "Elmx.Runtime.Core.apply3(label, 8, 9, \"hi\")"
     refute source =~ "label.(8, 9, \"hi\")"
     refute source =~ "elmx_fn_Main_label"
   end
@@ -278,7 +278,7 @@ defmodule Elmx.CasePatternEmitTest do
     {code, _, _} = Emit.compile_expr(expr, env, 0)
     source = IO.iodata_to_binary(code)
 
-    assert source =~ "[first | [second | []]]"
+    assert source =~ "[first, second | []]"
     assert source =~ "second"
   end
 
@@ -411,7 +411,7 @@ defmodule Elmx.CasePatternEmitTest do
     {code, _, _} = Emit.compile_expr(expr, env, 0)
     source = IO.iodata_to_binary(code)
 
-    assert source =~ ~s/%{"moving": _, "slot": _}/
+    assert source =~ ~s/%{"moving" => moving, "slot" => slot}/
     refute source =~ "%{moving: _, slot: _}"
   end
 

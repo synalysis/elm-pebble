@@ -111,6 +111,6 @@ defmodule Elmx.CrossModuleEmitTest do
                user_module_names: ["Main", "Helper"]
              })
 
-    assert source =~ "&elmx_fn_Helper_add(1, &1)"
+    assert source =~ "fn elmx_p1 -> elmx_fn_Helper_add(1, elmx_p1) end"
   end
 end

@@ -31,9 +31,18 @@ defmodule Elmx.Runtime.Core.Math do
   def truncate(n) when is_number(n), do: trunc(n)
   def truncate(_), do: 0
 
-  @spec sqrt(Types.numeric_input()) :: float()
+  @spec sqrt(Types.numeric_input()) :: float() | :nan
   def sqrt(n) when is_number(n) and n >= 0, do: :math.sqrt(n * 1.0)
-  def sqrt(_), do: 0.0
+  def sqrt(n) when is_number(n) and n < 0, do: :nan
+  def sqrt(_), do: :nan
+
+  @spec fdiv(number(), number()) :: float() | :infinity | :negative_infinity | :nan
+  def fdiv(a, 0) when is_number(a) and a < 0, do: :negative_infinity
+  def fdiv(_a, 0), do: :infinity
+  def fdiv(a, +0.0) when is_number(a) and a < 0, do: :negative_infinity
+  def fdiv(_a, +0.0), do: :infinity
+
+  def fdiv(a, b) when is_number(a) and is_number(b), do: a * 1.0 / (b * 1.0)
 
   @spec sin(Types.numeric_input()) :: float()
   def sin(n) when is_number(n), do: :math.sin(n * 1.0)
@@ -77,9 +86,17 @@ defmodule Elmx.Runtime.Core.Math do
   @spec is_infinite(Types.float_marker() | term()) :: boolean()
   def is_infinite(:infinity), do: true
   def is_infinite(:negative_infinity), do: true
+  def is_infinite(n) when is_float(n) do
+    case :erlang.float_to_binary(n, [:compact]) do
+      "inf" -> true
+      "-inf" -> true
+      _ -> false
+    end
+  end
   def is_infinite(_), do: false
 
   @spec is_nan(float() | term()) :: boolean()
+  def is_nan(:nan), do: true
   def is_nan(n) when is_float(n), do: n != n
   def is_nan(_), do: false
 

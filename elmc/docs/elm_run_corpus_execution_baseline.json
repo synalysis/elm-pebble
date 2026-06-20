@@ -6,11 +6,11 @@
   },
   "elmx": {
     "attempted": 395,
-    "run_ok_min": 151
+    "run_ok_min": 395
   },
   "elmc_smoke": {
     "attempted": 7,
     "run_ok_min": 7
   },
-  "notes": "Strict gold programs exclude corpus metadata known_gold_diff entries. Baselines raised after identical-if folding, lambda boxed-capture fix, partial-closure into_out, and borrowed record-field release guards (elmc 395)."
+  "notes": "Strict gold programs exclude corpus metadata known_gold_diff entries. elmc 395; elmx 395 after payload_kind ctor emit, letrec topo sort, sequential let IIFE, pipeline flatten, map-backed Dict, module value memoization, codepoint String.reverse."
 }

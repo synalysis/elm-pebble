@@ -10,6 +10,8 @@ defmodule ElmEx.CoreIR.Types.Module do
           required(:name) => String.t(),
           required(:imports) => [String.t()],
           required(:unions) => unions(),
-          required(:declarations) => [Declaration.t() | map()]
+          required(:declarations) => [Declaration.t() | map()],
+          optional(:ports) => [String.t()],
+          optional(:port_module) => boolean()
         }
 end

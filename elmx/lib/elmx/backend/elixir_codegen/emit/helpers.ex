@@ -90,16 +90,32 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Helpers do
   end
 
   def function_arity(env, name) when is_binary(name) do
-    case Map.get(Map.get(env, :function_arities, %{}), name) do
-      nil -> :unresolved
-      arity when is_integer(arity) -> arity
+    case Map.get(Map.get(env, :explicit_function_arities, %{}), name) do
+      nil ->
+        case Map.get(Map.get(env, :function_arities, %{}), name) do
+          nil -> :unresolved
+          arity when is_integer(arity) -> arity
+        end
+
+      arity when is_integer(arity) ->
+        arity
     end
   end
 
   def partial_application_fun(module, name, fixed_parts, 1) do
     fn_sym = module_fn(module, name)
+    param = let_emit_name("__p1")
 
-    ["&", fn_sym, "(", Enum.intersperse(fixed_parts, ", "), ", &1)"]
+    [
+      "fn ",
+      param,
+      " -> ",
+      fn_sym,
+      "(",
+      Enum.intersperse(fixed_parts ++ [param], ", "),
+      ")",
+      " end"
+    ]
   end
 
   def partial_application_fun(module, name, fixed_parts, remaining) when remaining > 1 do
@@ -171,11 +187,43 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Helpers do
     end
   end
 
+  @operator_vars ~w(__add__ __sub__ __mul__ __fdiv__ __idiv__ __append__ __pow__ __eq__ __neq__ __lt__ __lte__ __gt__ __gte__)
+
+  @spec operator_var_code(String.t()) :: String.t() | nil
+  def operator_var_code(name) when name in @operator_vars do
+    case name do
+      "__add__" -> "fn a, b -> a + b end"
+      "__sub__" -> "fn a, b -> a - b end"
+      "__mul__" -> "fn a, b -> a * b end"
+      "__fdiv__" -> "fn a, b -> a / b end"
+      "__idiv__" -> "fn a, b -> Elmx.Runtime.Core.basics_idiv(a, b) end"
+      "__append__" -> "fn a, b -> Elmx.Runtime.Core.append(a, b) end"
+      "__pow__" -> "fn a, b -> trunc(Elmx.Runtime.Core.Math.pow(a, b)) end"
+      "__eq__" -> "fn a, b -> a == b end"
+      "__neq__" -> "fn a, b -> a != b end"
+      "__lt__" -> "fn a, b -> a < b end"
+      "__lte__" -> "fn a, b -> a <= b end"
+      "__gt__" -> "fn a, b -> a > b end"
+      "__gte__" -> "fn a, b -> a >= b end"
+    end
+  end
+
+  def operator_var_code(_), do: nil
+
   # Elm record-update bases like `{ model.player | ... }` lower to a var named `"model.player"`.
   # Compiler-generated names must not start with `_` in emitted Elixir (unused-var / underscore rules).
+  @elixir_reserved ~w(
+    after alias and catch cond def defdelegate defexception defmacro defmacrop defmodule defp defprotocol
+    defstruct do else end false fn for if import in nil not or quote raise receive require reraise
+    rescue super throw true try unquote unquote_splicing use when while
+  )
+
   def let_emit_name("__tupleBind_" <> rest), do: "tupleBind_" <> rest
   def let_emit_name("__" <> rest), do: "elmx_" <> rest
-  def let_emit_name(name) when is_binary(name), do: name
+
+  def let_emit_name(name) when is_binary(name) do
+    if name in @elixir_reserved, do: "elmx_" <> name, else: name
+  end
 
   @spec param_var_name(String.t(), map()) :: String.t()
   def param_var_name(name, _env) when is_binary(name), do: let_emit_name(name)

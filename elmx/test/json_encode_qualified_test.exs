@@ -42,8 +42,11 @@ defmodule Elmx.JsonEncodeQualifiedTest do
     assert {:ok, %{op: :runtime_call, function: "elmx_json_encode_object", args: [^pairs]}} =
              SpecialValues.rewrite("Json.Encode.object", [pairs])
 
-    assert %{"kind" => "string", "value" => "dark"} =
-             Pebble.runtime_dispatch("elmx_json_encode_object", [pairs])
+    assert ~s({"kind":"string","value":"dark"}) =
+             Pebble.runtime_dispatch("elmx_json_encode_encode", [
+               0,
+               Pebble.runtime_dispatch("elmx_json_encode_object", [pairs])
+             ])
 
     assert {:ok, code} = Stdlib.qualified_call("Json.Encode.null", "")
     assert code == "Elmx.Runtime.Json.Encode.null()"

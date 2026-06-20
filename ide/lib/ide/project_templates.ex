@@ -22,10 +22,12 @@ defmodule Ide.ProjectTemplates do
           | File.posix()
           | Jason.EncodeError.t()
 
-  @template_keys ~w(starter watchface-digital watchface-smoke-screen watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time watchface-weather-animated watchface-poke-battle companion-demo-phone-status companion-demo-weather-env companion-demo-calendar companion-demo-geolocation companion-demo-storage companion-demo-settings companion-demo-websocket companion-demo-timeline watch-demo-accel watch-demo-vibes watch-demo-data-log watch-demo-app-focus watch-demo-compass watch-demo-dictation watch-demo-health watch-demo-light watch-demo-watch-info watch-demo-drawing-showcase game-basic game-tiny-bird game-jump-n-run game-2048 game-elmtris)
+  @template_keys ~w(starter app-minimal watchface-minimal watchface-digital watchface-smoke-screen watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time watchface-weather-animated watchface-poke-battle companion-demo-phone-status companion-demo-weather-env companion-demo-calendar companion-demo-geolocation companion-demo-storage companion-demo-settings companion-demo-websocket companion-demo-timeline watch-demo-accel watch-demo-vibes watch-demo-data-log watch-demo-app-focus watch-demo-compass watch-demo-dictation watch-demo-health watch-demo-light watch-demo-watch-info watch-demo-drawing-showcase game-basic game-tiny-bird game-jump-n-run game-2048 game-elmtris)
 
   @template_dirs %{
     "starter" => "starter_watch",
+    "app-minimal" => "app_minimal",
+    "watchface-minimal" => "watchface_minimal",
     "watchface-digital" => "watchface_digital",
     "watchface-smoke-screen" => "watchface_smoke_screen",
     "watchface-analog" => "watchface_analog",
@@ -86,6 +88,7 @@ defmodule Ide.ProjectTemplates do
   @spec target_type_for_template(String.t()) :: String.t()
   def target_type_for_template(template)
       when template in [
+             "watchface-minimal",
              "watchface-digital",
              "watchface-smoke-screen",
              "watchface-analog",
@@ -144,6 +147,45 @@ defmodule Ide.ProjectTemplates do
     end)
   end
 
+  @category_order ~w(starter watchface companion watch_demo game)
+
+  @category_labels %{
+    "starter" => "Starter",
+    "watchface" => "Watchfaces",
+    "companion" => "Companion demos",
+    "watch_demo" => "Watch demos",
+    "game" => "Games"
+  }
+
+  @doc """
+  Returns project templates grouped for the create-project picker UI.
+  """
+  @spec picker_categories() :: [map()]
+  def picker_categories do
+    @category_order
+    |> Enum.map(fn category_id ->
+      templates =
+        options()
+        |> Enum.filter(fn {_label, key} -> category_for_key(key) == category_id end)
+        |> Enum.map(&picker_entry/1)
+
+      %{
+        id: category_id,
+        label: Map.fetch!(@category_labels, category_id),
+        templates: templates
+      }
+    end)
+    |> Enum.reject(&(Enum.empty?(&1.templates)))
+  end
+
+  @doc """
+  Public URL for a template preview screenshot in the create-project picker.
+  """
+  @spec preview_image_url(String.t()) :: String.t()
+  def preview_image_url(template_key) when is_binary(template_key) do
+    "/images/template-previews/#{template_key}.png"
+  end
+
   @doc """
   Returns select options for template pickers.
   """
@@ -151,6 +193,8 @@ defmodule Ide.ProjectTemplates do
   def options do
     [
       {"Starter (watch, protocol, phone)", "starter"},
+      {"Minimal app (watch-only)", "app-minimal"},
+      {"Watchface: Minimal (watch-only)", "watchface-minimal"},
       {"Watchface: Digital (watch-only)", "watchface-digital"},
       {"Watchface: Smoke screen (checkerboard, emulator debug)", "watchface-smoke-screen"},
       {"Watchface: Analog (watch-only)", "watchface-analog"},
@@ -207,6 +251,12 @@ defmodule Ide.ProjectTemplates do
     case template do
       "starter" ->
         seed_multi_root_workspace(workspace_path)
+
+      "app-minimal" ->
+        seed_watch_only_workspace(workspace_path, "app_minimal")
+
+      "watchface-minimal" ->
+        seed_watch_only_workspace(workspace_path, "watchface_minimal")
 
       "watchface-digital" ->
         seed_watch_only_workspace(workspace_path, "watchface_digital")
@@ -1074,6 +1124,48 @@ defmodule Ide.ProjectTemplates do
 
   @spec template_dir(String.t()) :: String.t() | nil
   defp template_dir(template), do: Map.get(@template_dirs, template)
+
+  @spec category_for_key(String.t()) :: String.t()
+  defp category_for_key("starter"), do: "starter"
+  defp category_for_key("app-minimal"), do: "starter"
+  defp category_for_key("watchface-" <> _), do: "watchface"
+  defp category_for_key("companion-demo-" <> _), do: "companion"
+  defp category_for_key("watch-demo-" <> _), do: "watch_demo"
+  defp category_for_key("game-" <> _), do: "game"
+  defp category_for_key(_), do: "starter"
+
+  @spec picker_entry({String.t(), String.t()}) :: map()
+  defp picker_entry({label, key}) do
+    parsed = parse_picker_label(label)
+
+    %{
+      key: key,
+      title: parsed.title,
+      description: parsed.description,
+      target_type: target_type_for_template(key),
+      screenshot_url: preview_image_url(key)
+    }
+  end
+
+  @spec parse_picker_label(String.t()) :: %{title: String.t(), description: String.t() | nil}
+  defp parse_picker_label(label) when is_binary(label) do
+    rest =
+      case String.split(label, ": ", parts: 2) do
+        [_category, body] -> body
+        [body] -> body
+      end
+
+    case Regex.run(~r/^(.*?)(?: \((.+)\))?$/, rest) do
+      [_, title, description] when is_binary(description) and description != "" ->
+        %{title: String.trim(title), description: String.trim(description)}
+
+      [_, title] ->
+        %{title: String.trim(title), description: nil}
+
+      _ ->
+        %{title: String.trim(rest), description: nil}
+    end
+  end
 
   @spec load_template_metadata(String.t()) :: map()
   defp load_template_metadata(template) do

@@ -43,7 +43,13 @@ defmodule Elmx.Runtime.Core.List do
   def list_singleton(value), do: [value]
 
   @spec list_range(integer(), integer()) :: elm_list()
-  def list_range(lo, hi) when is_integer(lo) and is_integer(hi), do: Enum.to_list(lo..hi)
+  def list_range(lo, hi) when is_integer(lo) and is_integer(hi) do
+    if lo > hi do
+      []
+    else
+      Enum.to_list(lo..hi)
+    end
+  end
 
   @spec list_take(integer(), elm_list()) :: elm_list()
   def list_take(n, list) when is_integer(n) and is_list(list), do: Enum.take(list, max(n, 0))
@@ -82,8 +88,25 @@ defmodule Elmx.Runtime.Core.List do
 
   @spec list_map3(Types.elm_hof(), elm_list(), elm_list(), elm_list()) :: elm_list()
   def list_map3(fun, as, bs, cs) when is_list(as) and is_list(bs) and is_list(cs) do
-    Enum.map(Enum.zip([as, bs, cs]), fn [a, b, c] -> Core.apply3(fun, a, b, c) end)
+    Enum.map(Enum.zip(as, Enum.zip(bs, cs)), fn {a, {b, c}} -> Core.apply3(fun, a, b, c) end)
   end
+
+  @spec list_map4(Types.elm_hof(), elm_list(), elm_list(), elm_list(), elm_list()) :: elm_list()
+  def list_map4(fun, as, bs, cs, ds) when is_list(as) and is_list(bs) and is_list(cs) and is_list(ds) do
+    Enum.map(Enum.zip(as, Enum.zip(bs, Enum.zip(cs, ds))), fn {a, {b, {c, d}}} ->
+      Core.apply4(fun, a, b, c, d)
+    end)
+  end
+
+  @spec list_map5(Types.elm_hof(), elm_list(), elm_list(), elm_list(), elm_list(), elm_list()) ::
+          elm_list()
+  def list_map5(fun, as, bs, cs, ds, es)
+      when is_list(as) and is_list(bs) and is_list(cs) and is_list(ds) and is_list(es) do
+    Enum.map(Enum.zip(as, Enum.zip(bs, Enum.zip(cs, Enum.zip(ds, es)))), fn {a, {b, {c, {d, e}}}} ->
+      Core.apply5(fun, a, b, c, d, e)
+    end)
+  end
+
   @doc "Elm `List.map` with unary or partially applied callbacks."
   @spec map(Types.elm_hof(), elm_list()) :: elm_list()
   def map(fun, list) when is_list(list) do
@@ -183,7 +206,7 @@ defmodule Elmx.Runtime.Core.List do
   def list_maximum([]), do: :Nothing
   def list_maximum([first | rest]) do
     Enum.reduce(rest, first, fn item, acc ->
-      if Core.basics_compare(item, acc) == 1, do: item, else: acc
+      if Core.basics_compare(item, acc) == :GT, do: item, else: acc
     end)
     |> just_wrap()
   end
@@ -193,7 +216,7 @@ defmodule Elmx.Runtime.Core.List do
   def list_minimum([]), do: :Nothing
   def list_minimum([first | rest]) do
     Enum.reduce(rest, first, fn item, acc ->
-      if Core.basics_compare(item, acc) == -1, do: item, else: acc
+      if Core.basics_compare(item, acc) == :LT, do: item, else: acc
     end)
     |> just_wrap()
   end

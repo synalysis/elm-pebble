@@ -34,7 +34,8 @@ defmodule Elmx.DispatchModulesTest do
   end
 
   test "Json encode object" do
-    assert Json.encode_object([[{"a", 1}]]) == %{"a" => 1}
+    assert Json.encode_object([[{"a", 1}]]) == {:elmx_json_object, [{"a", 1}]}
+    assert Json.encode_encode([0, Json.encode_object([[{"a", 1}]])]) == ~s({"a":1})
   end
 
   test "Dispatch defdelegates preserve registry entry points" do

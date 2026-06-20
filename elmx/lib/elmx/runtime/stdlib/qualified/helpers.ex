@@ -73,6 +73,18 @@ defmodule Elmx.Runtime.Stdlib.Qualified.Helpers do
     container_dict(arg_code, "dict_member", 2)
   end
 
+  def set_insert(arg_code) do
+    container_set(arg_code, "set_insert", 2)
+  end
+
+  def set_remove(arg_code) do
+    container_set(arg_code, "set_remove", 2)
+  end
+
+  def set_member(arg_code) do
+    container_set(arg_code, "set_member", 2)
+  end
+
   def container_dict(arg_code, fun, arity) do
     mod = CodegenRefs.core_collections()
 
@@ -81,6 +93,16 @@ defmodule Elmx.Runtime.Stdlib.Qualified.Helpers do
       {2, [a]} -> QualifiedCodegen.with_container(mod, fun, [a], nil)
       {3, [a, b, c]} -> QualifiedCodegen.with_container(mod, fun, [a, b], c)
       {3, [a, b]} -> QualifiedCodegen.with_container(mod, fun, [a, b], nil)
+      _ -> :error
+    end
+  end
+
+  def container_set(arg_code, fun, arity) do
+    mod = CodegenRefs.core_collections()
+
+    case {arity, split_args(arg_code)} do
+      {2, [a, b]} -> QualifiedCodegen.with_container(mod, fun, [a], b, container_param: "elmx_set")
+      {2, [a]} -> QualifiedCodegen.with_container(mod, fun, [a], nil, container_param: "elmx_set")
       _ -> :error
     end
   end

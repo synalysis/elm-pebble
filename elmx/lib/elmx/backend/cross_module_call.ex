@@ -1,6 +1,8 @@
 defmodule Elmx.Backend.CrossModuleCall do
   @moduledoc false
 
+  alias Elmx.Backend.ElixirCodegen.Emit.Helpers
+
   @spec split_target(String.t()) :: {String.t(), String.t()} | nil
   def split_target(target) when is_binary(target) do
     case String.split(target, ".") do
@@ -40,21 +42,42 @@ defmodule Elmx.Backend.CrossModuleCall do
         {arg_parts, env, c1} = compile_arg_parts.(args, env, counter)
         fn_sym = function_symbol(module, name)
         given = length(args)
-        arity = cross_module_arity(env, module, name)
+        %{explicit: explicit, callable: callable} = cross_module_arity(env, module, name)
 
         code =
           cond do
-            given == 0 and arity == 0 ->
+            Map.get(env, :emit_partial_value) == true and given < explicit ->
+              [fn_sym, "(", Enum.intersperse(arg_parts, ", "), ")"]
+
+            given == 0 and explicit == 0 and callable == 0 ->
               "#{fn_sym}()"
 
             given == 0 ->
-              "&#{fn_sym}/#{max(arity, 1)}"
+              "&#{fn_sym}/#{max(callable, 1)}"
 
-            given >= arity ->
+            given > explicit ->
+              if explicit == 0 and given == callable do
+                [fn_sym, "(", Enum.intersperse(arg_parts, ", "), ")"]
+              else
+                {fixed, extra} = Enum.split(arg_parts, explicit)
+
+                base =
+                  if fixed == [] do
+                    "&#{fn_sym}/#{max(callable, 1)}"
+                  else
+                    [fn_sym, "(", Enum.intersperse(fixed, ", "), ")"]
+                  end
+
+                Enum.reduce(extra, base, fn arg, acc ->
+                  ["Elmx.Runtime.Core.Apply.apply1(", acc, ", ", arg, ")"]
+                end)
+              end
+
+            given == explicit ->
               [fn_sym, "(", Enum.intersperse(arg_parts, ", "), ")"]
 
             true ->
-              partial_application(fn_sym, arg_parts, max(arity - given, 1))
+              partial_application(fn_sym, arg_parts, max(explicit - given, 1))
           end
 
         {:ok, code, env, c1}
@@ -68,17 +91,26 @@ defmodule Elmx.Backend.CrossModuleCall do
   end
 
   defp cross_module_arity(env, module, name) do
-    env
-    |> Map.get(:cross_module_arities, %{})
-    |> Map.get({module, name}, 0)
+    Map.get(Map.get(env, :cross_module_arities, %{}), {module, name}, %{explicit: 0, callable: 0})
   end
 
   defp partial_application(fn_sym, fixed_parts, 1) do
-    ["&", fn_sym, "(", Enum.intersperse(fixed_parts, ", "), ", &1)"]
+    param = Helpers.let_emit_name("__p1")
+
+    [
+      "fn ",
+      param,
+      " -> ",
+      fn_sym,
+      "(",
+      Enum.intersperse(fixed_parts ++ [param], ", "),
+      ")",
+      " end"
+    ]
   end
 
   defp partial_application(fn_sym, fixed_parts, remaining) when remaining > 1 do
-    param_names = Enum.map(1..remaining, &"__p#{&1}")
+    param_names = Enum.map(1..remaining, &Helpers.let_emit_name("__p#{&1}"))
     all_args = fixed_parts ++ param_names
     inner = [fn_sym, "(", Enum.intersperse(all_args, ", "), ")"]
 

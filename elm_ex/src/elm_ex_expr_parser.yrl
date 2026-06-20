@@ -77,7 +77,7 @@ case_branch -> pattern arrow pipe_right_expr : #{pattern => '$1', expr => '$3'}.
 pattern -> wildcard : #{kind => wildcard}.
 pattern -> lower_qid : build_pattern_var(token_value('$1')).
 pattern -> int_lit : #{kind => int, value => token_value('$1')}.
-pattern -> char_lit : #{kind => int, value => parse_char(token_value('$1'))}.
+pattern -> char_lit : #{kind => char, value => parse_char(token_value('$1'))}.
 pattern -> string_lit : #{kind => string, value => parse_string(token_value('$1'))}.
 pattern -> lparen rparen : build_pattern_ctor(<<"()">>, none).
 pattern -> lbrace pattern_record_fields rbrace as_kw lower_qid :
@@ -98,7 +98,7 @@ pattern -> upper_qid cons pattern :
 pattern -> string_lit cons pattern :
   build_pattern_cons(#{kind => string, value => parse_string(token_value('$1'))}, '$3').
 pattern -> char_lit cons pattern :
-  build_pattern_cons(#{kind => int, value => parse_char(token_value('$1'))}, '$3').
+  build_pattern_cons(#{kind => char, value => parse_char(token_value('$1'))}, '$3').
 pattern -> lparen pattern comma pattern rparen cons pattern :
   build_pattern_cons(build_pattern_tuple('$2', '$4'), '$7').
 pattern -> lower_qid cons pattern : build_pattern_cons(build_pattern_var(token_value('$1')), '$3').
@@ -116,7 +116,7 @@ ctor_pattern_args -> pattern_arg : ['$1'].
 pattern_arg -> wildcard : #{kind => wildcard}.
 pattern_arg -> lower_qid : build_pattern_var(token_value('$1')).
 pattern_arg -> int_lit : #{kind => int, value => token_value('$1')}.
-pattern_arg -> char_lit : #{kind => int, value => parse_char(token_value('$1'))}.
+pattern_arg -> char_lit : #{kind => char, value => parse_char(token_value('$1'))}.
 pattern_arg -> string_lit : #{kind => string, value => parse_string(token_value('$1'))}.
 pattern_arg -> upper_qid : build_pattern_ctor(token_value('$1'), none).
 pattern_arg -> lparen rparen : build_pattern_ctor(<<"()">>, none).

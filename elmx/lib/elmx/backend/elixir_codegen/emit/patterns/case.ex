@@ -25,7 +25,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Case do
         "  #{pattern} ->\n    #{IO.iodata_to_binary(body)}"
       end)
 
-    {["case ", subj, " do\n", Enum.join(clauses, "\n"), "\nend"], env, counter}
+    {["case ", "Elmx.Runtime.Core.Task.force(", subj, ") do\n", Enum.join(clauses, "\n"), "\nend"], env, counter}
   end
 
   def compile_case(%{subject: subject, branches: branches}, env, counter) do
@@ -41,7 +41,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Case do
         "  #{pattern} ->\n    #{IO.iodata_to_binary(body)}"
       end)
 
-    {["case ", subj, " do\n", Enum.join(clauses, "\n"), "\nend"], env, c1}
+    {["case ", "Elmx.Runtime.Core.Task.force(", subj, ") do\n", Enum.join(clauses, "\n"), "\nend"], env, c1}
   end
   def order_case_branches(branches) when is_list(branches) do
     branches

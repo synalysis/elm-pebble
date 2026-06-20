@@ -19,7 +19,9 @@ defmodule IdeWeb.ProjectsLive do
     {:ok,
      socket
      |> assign(:page_title, "Projects")
-     |> assign(:template_options, ProjectTemplates.options())
+     |> assign(:template_categories, ProjectTemplates.picker_categories())
+     |> assign(:show_create_modal, false)
+     |> assign(:selected_template, "starter")
      |> assign(:form, to_form(Project.changeset(%Project{}, default_attrs())))
      |> assign(:show_import_form, false)
      |> assign(:import_mode, :local)
@@ -32,7 +34,10 @@ defmodule IdeWeb.ProjectsLive do
   @impl true
   @spec handle_event(String.t(), map(), socket()) :: lv_noreply()
   def handle_event("validate", %{"project" => params}, socket) do
-    params = normalize_create_params(params)
+    params =
+      params
+      |> Map.put("template", socket.assigns.selected_template)
+      |> normalize_create_params()
 
     form =
       %Project{}
@@ -44,28 +49,15 @@ defmodule IdeWeb.ProjectsLive do
   end
 
   def handle_event("create", %{"project" => params}, socket) do
-    case Projects.create_project(normalize_create_params(params), socket.assigns.current_user) do
-      {:ok, project} ->
-        {:noreply,
-         socket
-         |> put_flash(:info, "Project created.")
-         |> load_projects()
-         |> assign(:form, to_form(Project.changeset(%Project{}, default_attrs())))
-         |> push_navigate(to: ~p"/projects/#{project.slug}/editor")}
+    params =
+      params
+      |> Map.put("template", socket.assigns.selected_template)
+      |> normalize_create_params()
 
-      {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply,
-         socket
-         |> put_flash(:error, "Could not create project. Fix the errors below.")
-         |> assign(:form, to_form(Map.put(changeset, :action, :insert)))}
-
-      {:error, reason} ->
-        {:noreply,
-         put_flash(
-           socket,
-           :error,
-           "Could not create project: #{BootstrapError.describe(reason, %{template: Map.get(params, "template", "starter")})}"
-         )}
+    if create_project_name_given?(params) do
+      do_create_project(params, socket)
+    else
+      {:noreply, socket}
     end
   end
 
@@ -143,6 +135,26 @@ defmodule IdeWeb.ProjectsLive do
     {:noreply, assign(socket, :show_import_form, not socket.assigns.show_import_form)}
   end
 
+  def handle_event("open-create-modal", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:show_create_modal, true)
+     |> assign(:selected_template, "starter")
+     |> assign(:form, to_form(Project.changeset(%Project{}, default_attrs())))}
+  end
+
+  def handle_event("close-create-modal", _params, socket) do
+    {:noreply, assign(socket, :show_create_modal, false)}
+  end
+
+  def handle_event("select-template", %{"template" => template}, socket) do
+    if template in ProjectTemplates.template_keys() do
+      {:noreply, assign(socket, :selected_template, template)}
+    else
+      {:noreply, socket}
+    end
+  end
+
   def handle_event("set-import-mode", %{"mode" => mode}, socket)
       when mode in ["local", "github"] do
     {:noreply, assign(socket, :import_mode, String.to_existing_atom(mode))}
@@ -175,6 +187,35 @@ defmodule IdeWeb.ProjectsLive do
   @spec load_projects(socket()) :: socket()
   defp load_projects(socket) do
     assign(socket, :projects, Projects.list_projects(socket.assigns.current_user))
+  end
+
+  @spec do_create_project(map(), socket()) :: lv_noreply()
+  defp do_create_project(params, socket) do
+    case Projects.create_project(params, socket.assigns.current_user) do
+      {:ok, project} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Project created.")
+         |> load_projects()
+         |> assign(:show_create_modal, false)
+         |> assign(:selected_template, "starter")
+         |> assign(:form, to_form(Project.changeset(%Project{}, default_attrs())))
+         |> push_navigate(to: ~p"/projects/#{project.slug}/editor")}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "Could not create project. Fix the errors below.")
+         |> assign(:form, to_form(Map.put(changeset, :action, :insert)))}
+
+      {:error, reason} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Could not create project: #{BootstrapError.describe(reason, %{template: Map.get(params, "template", "starter")})}"
+         )}
+    end
   end
 
   @spec default_attrs() :: map()
@@ -247,6 +288,22 @@ defmodule IdeWeb.ProjectsLive do
   defp blank?(value) when is_binary(value), do: String.trim(value) == ""
   defp blank?(_), do: true
 
+  @spec create_project_name_given?(map() | Phoenix.HTML.Form.t()) :: boolean()
+  defp create_project_name_given?(%Phoenix.HTML.Form{} = form) do
+    form
+    |> Phoenix.HTML.Form.input_value(:name)
+    |> present_name?()
+  end
+
+  defp create_project_name_given?(params) when is_map(params) do
+    params
+    |> Map.get("name")
+    |> present_name?()
+  end
+
+  @spec present_name?(term()) :: boolean()
+  defp present_name?(name), do: not blank?(to_string(name || ""))
+
   @spec format_import_error(ProjectTypes.project_error()) :: String.t()
   defp format_import_error(:github_not_connected),
     do: "GitHub is not connected. Open Settings and connect your account."
@@ -296,33 +353,24 @@ defmodule IdeWeb.ProjectsLive do
       </section>
 
       <section class="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
-        <h2 class="text-base font-semibold">Create project</h2>
-        <.form
-          for={@form}
-          id="project-form"
-          class="mt-4 grid gap-4 md:grid-cols-3"
-          phx-change="validate"
-          phx-submit="create"
-        >
-          <.input field={@form[:name]} type="text" label="Name" required />
-          <.input field={@form[:slug]} type="text" label="Slug" required />
-          <.input field={@form[:template]} type="select" label="Template" options={@template_options} />
-          <div class="md:col-span-3">
-            <.button>Create project</.button>
-          </div>
-        </.form>
-      </section>
-
-      <section class="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
         <div class="flex items-center justify-between gap-3">
           <h2 class="text-base font-semibold">Projects</h2>
-          <button
-            type="button"
-            phx-click="toggle-import-form"
-            class="rounded bg-zinc-100 px-3 py-2 text-sm text-zinc-800"
-          >
-            Import
-          </button>
+          <div class="flex flex-wrap gap-2">
+            <button
+              type="button"
+              phx-click="open-create-modal"
+              class="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              Create project
+            </button>
+            <button
+              type="button"
+              phx-click="toggle-import-form"
+              class="rounded bg-zinc-100 px-3 py-2 text-sm text-zinc-800"
+            >
+              Import
+            </button>
+          </div>
         </div>
         <div :if={@show_import_form} class="mt-4 rounded border border-zinc-200 bg-zinc-50 p-4">
           <div class="flex flex-wrap gap-2 text-sm">
@@ -490,6 +538,84 @@ defmodule IdeWeb.ProjectsLive do
           </table>
         </div>
       </section>
+
+      <div :if={@show_create_modal} class="fixed inset-0 z-50 grid place-items-center p-4">
+        <div class="absolute inset-0 bg-black/40" phx-click="close-create-modal"></div>
+        <div class="relative z-10 flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg bg-white shadow-xl">
+          <div class="border-b border-zinc-200 px-5 py-4">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <h3 class="text-base font-semibold text-zinc-900">Create project</h3>
+                <p class="mt-1 text-sm text-zinc-600">
+                  Choose a template, then name your project. The slug is derived from the name.
+                </p>
+              </div>
+              <button
+                type="button"
+                phx-click="close-create-modal"
+                class="rounded px-2 py-1 text-sm text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800"
+                aria-label="Close"
+              >
+                Close
+              </button>
+            </div>
+            <.form
+              for={@form}
+              id="project-form"
+              class="mt-4"
+              phx-change="validate"
+              phx-submit="create"
+            >
+              <.input field={@form[:name]} type="text" label="Project name" required />
+            </.form>
+          </div>
+          <div class="overflow-y-auto px-5 py-4">
+            <div :for={category <- @template_categories} class="space-y-3">
+              <h4 class="text-sm font-semibold text-zinc-800">{category.label}</h4>
+              <div class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <button
+                  :for={template <- category.templates}
+                  type="button"
+                  phx-click="select-template"
+                  phx-value-template={template.key}
+                  class={[
+                    "rounded-lg border p-3 text-left transition",
+                    @selected_template == template.key &&
+                      "border-blue-500 bg-blue-50 ring-2 ring-blue-200",
+                    @selected_template != template.key &&
+                      "border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50"
+                  ]}
+                >
+                  <div class="overflow-hidden rounded border border-zinc-200 bg-zinc-100">
+                    <img
+                      src={template.screenshot_url}
+                      alt={"#{template.title} preview"}
+                      class="mx-auto h-36 w-full object-contain"
+                      loading="lazy"
+                    />
+                  </div>
+                  <p class="mt-3 text-sm font-medium text-zinc-900">{template.title}</p>
+                  <p :if={template.description} class="mt-1 text-xs text-zinc-600">
+                    {template.description}
+                  </p>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="flex justify-end gap-2 border-t border-zinc-200 px-5 py-4">
+            <button
+              type="button"
+              phx-click="close-create-modal"
+              class="rounded px-3 py-2 text-sm text-zinc-600 hover:bg-zinc-100"
+            >
+              Cancel
+            </button>
+            <.button form="project-form" type="submit" disabled={not create_project_name_given?(@form)}>
+              Create project
+            </.button>
+          </div>
+        </div>
+      </div>
 
       <section
         :if={Auth.public_mode?() and @current_user}

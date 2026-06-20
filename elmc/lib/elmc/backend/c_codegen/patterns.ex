@@ -21,6 +21,10 @@ defmodule Elmc.Backend.CCodegen.Patterns do
     "#{subject_ref} && (#{subject_ref}->tag == ELMC_TAG_INT || #{subject_ref}->tag == ELMC_TAG_CHAR) && elmc_as_int(#{subject_ref}) == #{value}"
   end
 
+  def pattern_condition(subject_ref, %{kind: :char, value: value}) when is_integer(value) do
+    "#{subject_ref} && #{subject_ref}->tag == ELMC_TAG_CHAR && elmc_as_int(#{subject_ref}) == #{value}"
+  end
+
   def pattern_condition(subject_ref, %{kind: :tuple, elements: elements})
       when is_list(elements) and length(elements) > 2 do
     pattern_condition(subject_ref, nest_tuple_pattern(elements))

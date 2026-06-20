@@ -39,6 +39,7 @@ defmodule Elmx.Runtime.Json.Decode do
   defdelegate map7(fun, d1, d2, d3, d4, d5, d6, d7), to: Build
   defdelegate succeed(value), to: Build
   defdelegate one_of(decoders), to: Build
+  defdelegate apply_decoder(decoder, value), to: Runtime
 
   @spec decode_string(decoder(), String.t()) :: decode_result()
   def decode_string(decoder, json) when is_binary(json), do: decode_value(decoder, json)

@@ -19,6 +19,14 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Helpers do
 
   def cmd_batch(_), do: :error
 
+  @spec cmd_map(Types.ir_arg_list()) :: Types.rewrite_result()
+  def cmd_map([fun, cmd]), do: {:ok, %{op: :runtime_call, function: "elmx_cmd_map", args: [fun, cmd]}}
+  def cmd_map(_), do: :error
+
+  @spec sub_map(Types.ir_arg_list()) :: Types.rewrite_result()
+  def sub_map([fun, sub]), do: {:ok, %{op: :runtime_call, function: "elmx_sub_map", args: [fun, sub]}}
+  def sub_map(_), do: :error
+
   @spec subscription_mask(String.t()) :: Types.rewrite_result()
   def subscription_mask(target) when is_binary(target) do
     case Subscriptions.mask(target) do
@@ -28,16 +36,36 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Helpers do
   end
 
   @spec subscription_batch(Types.ir_arg_list()) :: Types.rewrite_result()
-  def subscription_batch([%{op: :list_literal, items: items}]) when is_list(items) do
-    {:ok, %{op: :int_literal, value: Subscriptions.batch_mask(items)}}
+  def subscription_batch([%{op: :list_literal, items: items} = list]) when is_list(items) do
+    if port_subscription_items?(items) do
+      {:ok, %{op: :runtime_call, function: "elmx_sub_batch", args: [list]}}
+    else
+      {:ok, %{op: :int_literal, value: Subscriptions.batch_mask(items)}}
+    end
   end
 
   def subscription_batch([list]) when is_map(list) do
     items = Map.get(list, :items) || Map.get(list, "items") || []
-    {:ok, %{op: :int_literal, value: Subscriptions.batch_mask(items)}}
+
+    if port_subscription_items?(items) do
+      {:ok, %{op: :runtime_call, function: "elmx_sub_batch", args: [list]}}
+    else
+      {:ok, %{op: :int_literal, value: Subscriptions.batch_mask(items)}}
+    end
   end
 
   def subscription_batch(_), do: :error
+
+  defp port_subscription_items?(items) when is_list(items) do
+    Enum.any?(items, &port_subscription_item?/1)
+  end
+
+  defp port_subscription_item?(%{op: :call, name: name}) when name in ["incoming"], do: true
+  defp port_subscription_item?(%{op: :qualified_call, target: target}) when is_binary(target) do
+    String.ends_with?(target, ".incoming")
+  end
+
+  defp port_subscription_item?(_), do: false
 
   @spec frame_subscription(Types.ir_arg_list()) :: Types.rewrite_result()
   def frame_subscription(args),

@@ -129,17 +129,23 @@ defmodule Elmx.Types do
   @typedoc "Elm function passed to higher-order runtime helpers (callback or curried partial)."
   @type elm_hof :: (elm_value() -> elm_value()) | term()
 
-  @typedoc "Elm `Dict` runtime representation (association list with integer keys)."
-  @type elm_dict :: [{integer(), elm_value()}]
+  @typedoc "Elm `Dict` runtime representation (map-backed, ordered on export)."
+  @type elm_dict :: {:elmx_dict, %{term() => elm_value()}}
 
-  @typedoc "Elm `Set` runtime representation (list of members)."
-  @type elm_set :: [elm_value()]
+  @typedoc "Elm `Set` runtime representation."
+  @type elm_set :: {:elmx_set, [elm_value()]} | [elm_value()]
+
+  @typedoc "Elm `Char` runtime representation."
+  @type elm_char :: {:elmx_char, integer()}
+
+  @typedoc "Opaque Elm `Task` / `Process.spawn` value."
+  @type elm_task :: {:elmx_task, atom(), elm_value()}
 
   @typedoc "Elm `List` runtime representation."
   @type elm_list :: [elm_value()]
 
-  @typedoc "Elm `String.toList` runtime representation (single-character UTF-8 strings)."
-  @type elm_char_list :: [String.t()]
+  @typedoc "Elm `String.toList` runtime representation."
+  @type elm_char_list :: [elm_char() | String.t()]
 
   @typedoc "Elm `Array` runtime representation (list-backed in the Elixir runtime)."
   @type elm_array :: [elm_value()]
@@ -190,7 +196,8 @@ defmodule Elmx.Types do
   @typedoc "Elm `Result` in native or wire form."
   @type result_native :: {:Ok, elm_value()} | {:Err, elm_value()}
   @type result_wire :: wire_ctor()
-  @type result_like :: result_native() | result_wire()
+  @type task_native :: elm_task()
+  @type result_like :: result_native() | result_wire() | task_native()
 
   @typedoc "Normalized Pebble UI preview node from `Elmx.Runtime.Pebble.Ui`."
   @type ui_node :: %{
@@ -338,11 +345,14 @@ defmodule Elmx.Types do
   @type random_generator :: %{required(:low) => integer(), required(:high) => integer()}
 
   @typedoc "JSON-compatible value from `Elmx.Runtime.Json.Encode`."
+  @type json_object_value :: {:elmx_json_object, [json_object_pair()]}
+
   @type json_value ::
           nil
           | boolean()
           | number()
           | String.t()
+          | json_object_value()
           | [json_value()]
           | %{String.t() => json_value()}
 
@@ -467,6 +477,7 @@ defmodule Elmx.Types do
           optional(:function_arities) => map(),
           optional(:cross_module_arities) => map(),
           optional(:emit_module_names) => [String.t()],
+          optional(:emit_partial_value) => boolean(),
           optional(:uses_bitwise) => boolean()
         }
 

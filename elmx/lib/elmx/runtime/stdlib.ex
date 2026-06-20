@@ -53,11 +53,16 @@ defmodule Elmx.Runtime.Stdlib do
     end
   end
 
+  def special_call("Tuple.first", ""), do: {:ok, "fn tuple -> elem(tuple, 0) end"}
   def special_call("Tuple.first", arg_code), do: {:ok, "elem(#{arg_code}, 0)"}
+  def special_call("Tuple.second", ""), do: {:ok, "fn tuple -> elem(tuple, 1) end"}
   def special_call("Tuple.second", arg_code), do: {:ok, "elem(#{arg_code}, 1)"}
   def special_call("String.length", arg_code), do: {:ok, "String.length(#{arg_code})"}
-  def special_call("Char.fromCode", arg_code), do: {:ok, "<<#{arg_code}::utf8>>"}
-  def special_call("Char.toCode", arg_code), do: {:ok, "hd(String.to_charlist(#{arg_code}))"}
+  def special_call("Char.fromCode", arg_code),
+    do: {:ok, "#{CodegenRefs.core()}.new_char(#{arg_code})"}
+
+  def special_call("Char.toCode", arg_code),
+    do: {:ok, "#{CodegenRefs.core_chars()}.to_code(#{arg_code})"}
   def special_call("String.fromInt", arg_code), do: {:ok, "Integer.to_string(#{arg_code})"}
   def special_call("fromInt", arg_code), do: {:ok, "Integer.to_string(#{arg_code})"}
 
@@ -82,7 +87,7 @@ defmodule Elmx.Runtime.Stdlib do
   def special_call("max", arg_code), do: special_call("Basics.max", arg_code)
 
   def special_call("Platform.Cmd.batch", arg_code),
-    do: {:ok, "#{CodegenRefs.values()}.cmd_batch([#{arg_code}])"}
+    do: {:ok, "#{CodegenRefs.values()}.cmd_batch(#{arg_code})"}
 
   def special_call("Pebble.Cmd.batch", arg_code), do: special_call("Platform.Cmd.batch", arg_code)
 
@@ -115,6 +120,119 @@ defmodule Elmx.Runtime.Stdlib do
 
   def special_call(target, _arg_code) do
     if Pebble.special_call?(target), do: Pebble.special_call_code(target), else: :error
+  end
+
+  @qualified_full_arities %{
+    "List.map" => 2,
+    "List.filter" => 2,
+    "List.filterMap" => 2,
+    "List.foldl" => 3,
+    "List.foldr" => 3,
+    "List.concatMap" => 2,
+    "List.sortBy" => 2,
+    "List.sortWith" => 2,
+    "List.any" => 2,
+    "List.all" => 2,
+    "List.member" => 2,
+    "List.map2" => 3,
+    "List.map3" => 4,
+    "List.map4" => 5,
+    "List.map5" => 6,
+    "Result.map" => 2,
+    "Result.andThen" => 2,
+    "Result.mapError" => 2,
+    "Maybe.map" => 2,
+    "Maybe.andThen" => 2,
+    "Maybe.map2" => 3,
+    "Task.map" => 2,
+    "Task.andThen" => 2,
+    "Task.map2" => 3,
+    "Basics.compare" => 2,
+    "Basics.max" => 2,
+    "Basics.min" => 2,
+    "Basics.modBy" => 2,
+    "Basics.remainderBy" => 2,
+    "Basics.logBase" => 2,
+    "Basics.atan2" => 2,
+    "Basics.clamp" => 3,
+    "Basics.xor" => 2,
+    "Dict.get" => 2,
+    "Dict.insert" => 3,
+    "Dict.remove" => 2,
+    "Dict.member" => 2,
+    "Dict.update" => 3,
+    "Cmd.map" => 2,
+    "Sub.map" => 2,
+    "Set.insert" => 2,
+    "Set.remove" => 2,
+    "Set.member" => 2
+  }
+
+  @spec qualified_full_arity(String.t()) :: {:ok, pos_integer()} | :error
+  def qualified_full_arity(target) when is_binary(target) do
+    case Map.fetch(@qualified_full_arities, target) do
+      {:ok, arity} -> {:ok, arity}
+      :error -> collection_qualified_full_arity(target)
+    end
+  end
+
+  defp collection_qualified_full_arity(target) do
+    cond do
+      String.starts_with?(target, "Dict.") -> {:ok, collection_op_arity(target, 2)}
+      String.starts_with?(target, "Set.") -> {:ok, collection_op_arity(target, 2)}
+      String.starts_with?(target, "Array.") -> {:ok, collection_op_arity(target, 2)}
+      true -> :error
+    end
+  end
+
+  defp collection_op_arity(target, default) do
+    op = target |> String.split(".") |> List.last()
+
+    case {target |> String.split(".") |> Enum.at(0), op} do
+      {"Dict", "empty"} -> 0
+      {"Dict", "singleton"} -> 2
+      {"Dict", "insert"} -> 3
+      {"Dict", "remove"} -> 2
+      {"Dict", "get"} -> 2
+      {"Dict", "member"} -> 2
+      {"Dict", "update"} -> 3
+      {"Dict", "merge"} -> 6
+      {"Dict", op} when op in ~w(fromList toList keys values size isEmpty) -> 1
+      {"Dict", op} when op in ~w(map filter partition union intersect diff) -> 2
+      {"Dict", op} when op in ~w(foldl foldr) -> 3
+
+      {"Set", "empty"} -> 0
+      {"Set", "singleton"} -> 1
+      {"Set", "insert"} -> 2
+      {"Set", "remove"} -> 2
+      {"Set", "member"} -> 2
+      {"Set", op} when op in ~w(fromList toList size isEmpty) -> 1
+      {"Set", op} when op in ~w(map filter partition union intersect diff) -> 2
+      {"Set", op} when op in ~w(foldl foldr) -> 3
+
+      {"Array", "empty"} -> 0
+      {"Array", "repeat"} -> 2
+      {"Array", "initialize"} -> 2
+      {"Array", "set"} -> 3
+      {"Array", "get"} -> 2
+      {"Array", "push"} -> 2
+      {"Array", "append"} -> 2
+      {"Array", "slice"} -> 3
+      {"Array", op} when op in ~w(fromList toList length isEmpty toIndexedList) -> 1
+      {"Array", op} when op in ~w(map indexedMap filter) -> 2
+      {"Array", op} when op in ~w(foldl foldr) -> 3
+
+      {_, "singleton"} -> 2
+      {_, "insert"} -> 3
+      {_, "merge"} -> 6
+      {_, "initialize"} -> 2
+      {_, "repeat"} -> 2
+      {_, "set"} -> 3
+      {_, "get"} -> 2
+      {_, "append"} -> 2
+      {_, "slice"} -> 3
+      {_, _} -> default
+    end
   end
 
   @spec handles_qualified?(String.t()) :: boolean()

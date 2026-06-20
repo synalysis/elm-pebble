@@ -48,11 +48,49 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Constructor do
         _ ->
           case args do
             [] -> zero_arg_constructor_code(name, env)
-            _ -> "#{CodegenRefs.values()}.ctor(#{inspect(ctor_name)}, [#{arg_str}])"
+            _ -> ide_runtime_constructor_code(ctor_name, args, arg_str, name, env)
           end
       end
 
     {code, env, c1}
+  end
+
+  def compile_partial_constructor(
+        %{target: target, args: bound_args, arity: full_arity} = expr,
+        env,
+        counter
+      ) do
+    ctor_name = partial_constructor_emit_name(target, expr, env)
+    bound_args = bound_args || []
+    remaining = max(full_arity - length(bound_args), 0)
+    {bound_parts, env, c1} = Helpers.compile_arg_parts(bound_args, env, counter)
+
+    code =
+      if remaining == 0 do
+        ["{:", ctor_name, ", ", Enum.intersperse(bound_parts, ", "), "}"]
+      else
+        curried_ctor_closure(ctor_name, bound_parts, remaining)
+      end
+
+    {code, env, c1}
+  end
+
+  defp partial_constructor_emit_name(target, _expr, env) when is_binary(target) do
+    case String.split(target, ".") do
+      [_single] -> constructor_emit_name(target, env)
+      _parts -> constructor_emit_name(target, env)
+    end
+  end
+
+  defp curried_ctor_closure(ctor_name, bound_parts, remaining) when remaining > 0 do
+    params = Enum.map(1..remaining, &Helpers.let_emit_name("__p#{&1}"))
+
+    body =
+      ["{:", ctor_name, ", ", Enum.intersperse(bound_parts ++ params, ", "), "}"]
+
+    Enum.reduce(Enum.reverse(params), body, fn param, inner ->
+      ["fn ", param, " -> ", inner, " end"]
+    end)
   end
 
   def constructor_emit_name(name, env) do
@@ -92,27 +130,26 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Constructor do
     do: zero_arg_constructor_code(name, env)
 
   # Tagged tuples match `case` patterns (`{:Just, x}`, `{:Ctor, a, b}`).
-  def ide_runtime_constructor_code(ctor, args, arg_str, _name, _env)
+  def ide_runtime_constructor_code(ctor, args, arg_str, name, env)
        when is_list(args) and length(args) <= 4 do
-    "{:#{ctor}, #{arg_str}}"
+    lookup = Map.get(env, :constructor_lookup)
+
+    if ConstructorLookup.wrap_flattened_payload?(lookup, name, Map.get(env, :module), length(args)) do
+      "{:#{ctor}, {#{arg_str}}}"
+    else
+      "{:#{ctor}, #{arg_str}}"
+    end
   end
 
   def ide_runtime_constructor_code(ctor, _args, arg_str, _name, _env) do
     "#{CodegenRefs.values()}.ctor(#{inspect(ctor)}, [#{arg_str}])"
   end
 
-  def zero_arg_constructor_code_library(name, ctor, env) do
-    case Map.get(env, :constructor_lookup) do
-      lookup when is_map(lookup) ->
-        case ConstructorLookup.resolve(lookup, name, Map.get(env, :module)) do
-          %{tag: tag} when is_integer(tag) -> Integer.to_string(tag)
-          _ -> ":#{ctor}"
-        end
+  def zero_arg_constructor_code_library("True", _ctor, _env), do: "true"
+  def zero_arg_constructor_code_library("False", _ctor, _env), do: "false"
+  def zero_arg_constructor_code_library("()", _ctor, _env), do: "nil"
 
-      _ ->
-        ":#{ctor}"
-    end
-  end
+  def zero_arg_constructor_code_library(_name, ctor, _env), do: ":#{ctor}"
 
   def compile_var(name, env, counter) when is_binary(name) do
     case String.split(name, ".") do
@@ -132,6 +169,23 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Constructor do
   end
 
   def compile_var_simple(name, env, counter) when is_binary(name) do
+    case Helpers.operator_var_code(name) do
+      code when is_binary(code) ->
+        {:ok, code, env, counter}
+
+      nil ->
+        :error
+    end
+    |> case do
+      {:ok, code, env, c} ->
+        {:ok, code, env, c}
+
+      :error ->
+        compile_var_simple_after_operator(name, env, counter)
+    end
+  end
+
+  defp compile_var_simple_after_operator(name, env, counter) when is_binary(name) do
     case Helpers.compile_constructor_reference(name, env, counter) do
       {:ok, code, env, c} ->
         {:ok, code, env, c}

@@ -93,19 +93,47 @@ defmodule IdeWeb.ProjectsLiveTest do
 
     assert {:ok, view, _html} = live(conn, ~p"/projects")
 
+    view |> element("button", "Create project") |> render_click()
+    view |> element("button[phx-value-template='watchface-digital']") |> render_click()
+
     html =
       view
       |> form("#project-form", %{
         "project" => %{
-          "name" => "Digital",
-          "slug" => "digital",
-          "template" => "watchface-digital"
+          "name" => "Digital"
         }
       })
       |> render_submit()
 
     assert html =~ "Could not create project"
-    assert html =~ "is already in use"
+    assert html =~ "id=\"project-form\""
+  end
+
+  test "create project modal groups templates by category", %{conn: conn} do
+    assert {:ok, view, html} = live(conn, ~p"/projects")
+    refute html =~ "Watchfaces"
+
+    html = view |> element("button", "Create project") |> render_click()
+
+    assert html =~ "Create project"
+    assert html =~ "Watchfaces"
+    assert html =~ "Companion demos"
+    assert html =~ "Watch demos"
+    assert html =~ "Games"
+    assert html =~ "/images/template-previews/watchface-digital.png"
+  end
+
+  test "create project submit stays disabled until a project name is entered", %{conn: conn} do
+    assert {:ok, view, _html} = live(conn, ~p"/projects")
+
+    view |> element("button", "Create project") |> render_click()
+    assert has_element?(view, "button[form='project-form'][disabled]")
+
+    view
+    |> form("#project-form", %{"project" => %{"name" => "Named"}})
+    |> render_change()
+
+    refute has_element?(view, "button[form='project-form'][disabled]")
   end
 
   test "delete my data removes account and redirects to login", %{conn: conn} do

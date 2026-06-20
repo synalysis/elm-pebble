@@ -32,4 +32,30 @@ defmodule ElmEx.Frontend.GeneratedContractBuilderTest do
     assert String.contains?(view.body, "]")
     refute match?(%{op: :unsupported}, view.expr)
   end
+
+  test "block comment prose with equals signs is not parsed as function definitions" do
+    source = """
+    module InlineBoxIntCorruption exposing (main)
+
+    {-| stores the value at `cursorReg + ELMVALUE_AS_INT_OFF` (= cursorReg + 8), but cursorReg
+    points to the GcHeader base, not the ElmValue.
+    -}
+
+    pow2Loop acc n =
+        acc
+
+    main =
+        pow2Loop 1 48
+    """
+
+    declarations =
+      "InlineBoxIntCorruption.elm"
+      |> GeneratedContractBuilder.build(source, "InlineBoxIntCorruption", [])
+      |> Map.get(:declarations)
+
+    names = Enum.map(declarations, & &1.name)
+    assert "pow2Loop" in names
+    assert "main" in names
+    refute "at" in names
+  end
 end

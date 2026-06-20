@@ -8,6 +8,7 @@ defmodule Elmx.Runtime.Core.Collections do
   @type set :: Types.elm_set()
   @type array :: Types.elm_array()
 
+  defdelegate dict_empty(), to: Dict
   defdelegate dict_from_list(pairs), to: Dict
   defdelegate dict_insert(key, value, dict), to: Dict
   defdelegate dict_get(key, dict), to: Dict
@@ -31,6 +32,7 @@ defmodule Elmx.Runtime.Core.Collections do
   defdelegate dict_merge(left_step, both_step, right_step, left, right, result), to: Dict
   defdelegate dict_merge(left_step, both_step, right_step, left, right), to: Dict
   defdelegate dict_update(key, alter, dict), to: Dict
+  defdelegate set_empty(), to: Set
   defdelegate set_from_list(items), to: Set
   defdelegate set_insert(value, set), to: Set
   defdelegate set_member(value, set), to: Set
@@ -47,6 +49,7 @@ defmodule Elmx.Runtime.Core.Collections do
   defdelegate set_foldr(fun, acc, set), to: Set
   defdelegate set_filter(fun, set), to: Set
   defdelegate set_partition(fun, set), to: Set
+  defdelegate array_empty(), to: Array
   defdelegate array_from_list(items), to: Array
   defdelegate array_length(array), to: Array
   defdelegate array_get(index, array), to: Array

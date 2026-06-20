@@ -11,6 +11,11 @@ defmodule Elmx.Runtime.Pebble.Registry.Cmd do
   def handlers do
     %{
       "elmx_cmd_batch" => {Values, :cmd_batch},
+      "elmx_cmd_map" => {Values, :cmd_map},
+      "elmx_sub_map" => {Values, :sub_map},
+      "elmx_sub_batch" => {Values, :sub_batch},
+      "elmx_port_outgoing" => {Values, :port_outgoing},
+      "elmx_port_incoming_sub" => {Values, :port_incoming_sub},
       "elmx_cmd_random_generate" => {Dispatch, :random_generate_cmd},
       "elmx_cmd_timer_after" => {Dispatch, :timer_after_cmd},
       "elmx_cmd_backlight" => {Dispatch, :backlight_cmd},

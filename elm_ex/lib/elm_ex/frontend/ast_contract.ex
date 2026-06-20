@@ -446,6 +446,7 @@ defmodule ElmEx.Frontend.AstContract do
   end
 
   defp validate_pattern(%{kind: :int, value: value}) when is_integer(value), do: :ok
+  defp validate_pattern(%{kind: :char, value: value}) when is_integer(value), do: :ok
   defp validate_pattern(%{kind: :string, value: value}) when is_binary(value), do: :ok
 
   defp validate_pattern(%{kind: :record, fields: fields} = pattern) when is_list(fields) do

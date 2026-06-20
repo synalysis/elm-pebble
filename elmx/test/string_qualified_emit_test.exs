@@ -41,7 +41,7 @@ defmodule Elmx.StringQualifiedEmitTest do
       ])
 
     assert source =~ "Elmx.Runtime.Core.basics_compare(1, 2)"
-    assert Core.basics_compare(1, 2) == -1
+    assert Core.basics_compare(1, 2) == :LT
   end
 
   test "partial String.join via Stdlib.Qualified" do

@@ -36,6 +36,23 @@ defmodule Elmx.Backend.QualifiedPartials do
       {"String.words", []} -> unary("elmc_string_words", "__s")
       {"String.lines", []} -> unary("elmc_string_lines", "__s")
 
+      # --- Tuple ---
+      {"Tuple.first", []} ->
+        {:ok,
+         %{
+           op: :lambda,
+           args: ["__tuple"],
+           body: %{op: :tuple_first, arg: %{op: :var, name: "__tuple"}}
+         }}
+
+      {"Tuple.second", []} ->
+        {:ok,
+         %{
+           op: :lambda,
+           args: ["__tuple"],
+           body: %{op: :tuple_second, arg: %{op: :var, name: "__tuple"}}
+         }}
+
       # --- Char ---
       {"Char.toCode", []} -> unary("elmc_char_to_code", "__ch")
       {"Char.fromCode", []} -> unary("elmc_new_char", "__c")
@@ -122,6 +139,11 @@ defmodule Elmx.Backend.QualifiedPartials do
         ternary_bound("elmx_core_task_map2", [fun, a], ["__b"])
 
       {"Task.andThen", [fun]} -> unary_bound("elmx_core_task_and_then", [fun], "__t")
+
+      {"Cmd.map", [fun]} -> unary_bound("elmx_cmd_map", [fun], "__cmd")
+      {"Platform.Cmd.map", [fun]} -> unary_bound("elmx_cmd_map", [fun], "__cmd")
+      {"Sub.map", [fun]} -> unary_bound("elmx_sub_map", [fun], "__sub")
+      {"Platform.Sub.map", [fun]} -> unary_bound("elmx_sub_map", [fun], "__sub")
 
       # --- Tuple (pair uses tuple2 IR, not a runtime call) ---
       {"Tuple.pair", []} ->

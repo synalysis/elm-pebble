@@ -5,7 +5,7 @@ defmodule Elmx.Runtime.Core.Strings do
   alias Elmx.Types
 
   @spec append(Types.string_like(), Types.string_like()) :: String.t()
-  def append(left, right), do: to_string(left) <> to_string(right)
+  def append(left, right), do: stringify(left) <> stringify(right)
 
   @spec is_empty(Types.string_like() | nil) :: boolean()
   def is_empty(value), do: value == "" or value == [] or value == nil
@@ -33,28 +33,56 @@ defmodule Elmx.Runtime.Core.Strings do
 
   def to_int(_), do: :Nothing
 
-  @spec to_float(String.t()) :: Types.result_like()
+  @spec to_float(String.t()) :: Types.maybe_like()
   def to_float(text) when is_binary(text) do
     case Float.parse(String.trim(text)) do
-      {f, ""} -> {:Ok, f}
-      _ -> {:Err, "NOT_A_FLOAT"}
+      {f, ""} -> {:Just, f}
+      _ -> :Nothing
     end
   end
 
+  def to_float(_), do: :Nothing
+
   @spec to_list(String.t()) :: Types.elm_char_list()
   def to_list(text) when is_binary(text) do
-    for <<c::utf8 <- text>>, do: <<c::utf8>>
+    for <<c::utf8 <- text>>, do: {:elmx_char, c}
   end
 
   @spec from_list(Types.elm_char_list()) :: String.t()
-  def from_list(chars) when is_list(chars), do: Enum.join(chars, "")
+  def from_list(chars) when is_list(chars) do
+    chars
+    |> Enum.map(&char_to_binary/1)
+    |> IO.iodata_to_binary()
+  end
 
-  @spec from_char(String.t() | integer()) :: String.t()
+  defp string_grapheme_chars(text) when is_binary(text) do
+    Enum.map(string_codepoint_segments(text), fn segment ->
+      {:elmx_char, grapheme_codepoint(segment)}
+    end)
+  end
+
+  defp string_codepoint_segments(text) when is_binary(text) do
+    for <<c::utf8 <- text>>, do: <<c::utf8>>
+  end
+
+  defp grapheme_codepoint(<<c::utf8>>), do: c
+
+  defp char_to_binary({:elmx_char, code}) when is_integer(code), do: <<code::utf8>>
+  defp char_to_binary({:elmx_char, bin}) when is_binary(bin), do: bin
+  defp char_to_binary(c) when is_integer(c), do: <<c::utf8>>
+  defp char_to_binary(c) when is_binary(c), do: c
+  defp char_to_binary(c), do: stringify(c)
+
+  @spec from_char(String.t() | integer() | {:elmx_char, integer()}) :: String.t()
+  def from_char({:elmx_char, code}) when is_integer(code), do: <<code::utf8>>
   def from_char(ch) when is_binary(ch), do: ch
   def from_char(ch) when is_integer(ch), do: <<ch::utf8>>
   def from_char(_), do: ""
 
-  @spec cons(String.t() | integer(), String.t()) :: String.t()
+  @spec cons(String.t() | integer() | {:elmx_char, integer()}, String.t()) :: String.t()
+  def cons({:elmx_char, code}, tail) when is_integer(code) and is_binary(tail),
+    do: <<code::utf8>> <> tail
+
   def cons(head, tail) when is_binary(tail), do: to_string(head) <> tail
 
   @spec uncons(String.t()) :: Types.maybe_like()
@@ -64,7 +92,9 @@ defmodule Elmx.Runtime.Core.Strings do
   def uncons(binary) when is_binary(binary), do: {:Just, {binary, ""}}
 
   @spec reverse(String.t()) :: String.t()
-  def reverse(text) when is_binary(text), do: String.reverse(text)
+  def reverse(text) when is_binary(text) do
+    text |> string_codepoint_segments() |> Enum.reverse() |> IO.iodata_to_binary()
+  end
 
   @spec split(String.t(), String.t()) :: [String.t()]
   def split(sep, text) when is_binary(text), do: String.split(text, to_string(sep))
@@ -75,10 +105,21 @@ defmodule Elmx.Runtime.Core.Strings do
   def join(sep, parts) when is_list(parts), do: Enum.join(parts, to_string(sep))
 
   @spec slice(Types.ui_coord(), Types.ui_coord(), String.t()) :: String.t()
-  def slice(start, length, text) when is_binary(text) do
-    start = to_int(start, 0)
-    len = to_int(length, 0)
-    String.slice(text, start, len)
+  def slice(start, end_index, text) when is_binary(text) do
+    len = byte_size(text)
+    start_i = normalize_slice_index(to_int(start, 0), len)
+    end_i = normalize_slice_index(to_int(end_index, 0), len)
+
+    if end_i <= start_i do
+      ""
+    else
+      String.slice(text, start_i, end_i - start_i)
+    end
+  end
+
+  defp normalize_slice_index(index, len) when is_integer(index) and is_integer(len) do
+    index = if index < 0, do: len + index, else: index
+    max(min(index, len), 0)
   end
 
   @spec left(Types.ui_coord(), String.t()) :: String.t()
@@ -135,33 +176,41 @@ defmodule Elmx.Runtime.Core.Strings do
 
   @spec map(Types.elm_hof(), String.t()) :: String.t()
   def map(fun, text) when is_binary(text) do
-    text |> String.graphemes() |> Enum.map(&Core.apply1(fun, &1)) |> Enum.join()
+    text
+    |> string_grapheme_chars()
+    |> Enum.map(&Core.apply1(fun, &1))
+    |> Enum.map(&char_to_binary/1)
+    |> IO.iodata_to_binary()
   end
 
   @spec filter(Types.elm_hof(), String.t()) :: String.t()
   def filter(fun, text) when is_binary(text) do
-    text |> String.graphemes() |> Enum.filter(&Core.apply1(fun, &1)) |> Enum.join()
+    text
+    |> string_grapheme_chars()
+    |> Enum.filter(&Core.apply1(fun, &1))
+    |> Enum.map(&char_to_binary/1)
+    |> IO.iodata_to_binary()
   end
 
   @spec foldl(Types.elm_hof(), Types.fold_acc(), String.t()) :: Types.fold_acc()
   def foldl(fun, acc, text) when is_binary(text) do
-    Enum.reduce(String.graphemes(text), acc, fn ch, acc0 -> Core.apply2(fun, ch, acc0) end)
+    Enum.reduce(string_grapheme_chars(text), acc, fn ch, acc0 -> Core.apply2(fun, ch, acc0) end)
   end
 
   @spec foldr(Types.elm_hof(), Types.fold_acc(), String.t()) :: Types.fold_acc()
   def foldr(fun, acc, text) when is_binary(text) do
-    Enum.reduce(Enum.reverse(String.graphemes(text)), acc, fn ch, acc0 ->
+    Enum.reduce(Enum.reverse(string_grapheme_chars(text)), acc, fn ch, acc0 ->
       Core.apply2(fun, ch, acc0)
     end)
   end
 
   @spec any(Types.elm_hof(), String.t()) :: boolean()
   def any(fun, text) when is_binary(text),
-    do: Enum.any?(String.graphemes(text), &Core.apply1(fun, &1))
+    do: Enum.any?(string_grapheme_chars(text), &Core.apply1(fun, &1))
 
   @spec all(Types.elm_hof(), String.t()) :: boolean()
   def all(fun, text) when is_binary(text),
-    do: Enum.all?(String.graphemes(text), &Core.apply1(fun, &1))
+    do: Enum.all?(string_grapheme_chars(text), &Core.apply1(fun, &1))
 
   @spec lines(String.t()) :: [String.t()]
   def lines(text) when is_binary(text), do: String.split(text, "\n")
@@ -200,4 +249,8 @@ defmodule Elmx.Runtime.Core.Strings do
   defp to_int(n, _default) when is_integer(n), do: n
   defp to_int(n, _default) when is_float(n), do: trunc(n)
   defp to_int(_other, default), do: default
+
+  defp stringify({:elmx_char, code}) when is_integer(code), do: <<code::utf8>>
+  defp stringify(bin) when is_binary(bin), do: bin
+  defp stringify(other), do: Kernel.to_string(other)
 end

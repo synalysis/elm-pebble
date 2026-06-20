@@ -11,6 +11,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified do
   """
 
   alias Elmx.Backend.CrossModuleCall
+  alias Elmx.Backend.ElixirCodegen.Emit
   alias Elmx.Backend.ElixirCodegen.Emit.Helpers
   alias Elmx.Backend.ElixirCodegen.Emit.Qualified.Basics, as: QualifiedBasics
   alias Elmx.Backend.ElixirCodegen.Emit.Qualified.Bitwise, as: QualifiedBitwise
@@ -29,6 +30,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified do
   @type ir_arg_list :: Context.ir_arg_list()
   @type compile_expr_result :: Context.compile_expr_result()
   @type qualified_result :: Context.qualified_result()
+
+  @pipeline_flatten_threshold 16
 
   def compile_qualified_call1(%{target: target}, env, counter) when is_binary(target) do
     case Elmx.Backend.ElixirCodegen.Emit.Helpers.compile_constructor_reference(target, env, counter) do
@@ -54,7 +57,17 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified do
     end
   end
 
-  def compile_qualified_call(%{target: target, args: args}, env, counter) do
+  def compile_qualified_call(%{target: _target, args: _args} = expr, env, counter) do
+    case unwrap_qualified_pipeline(expr) do
+      {:ok, targets, base} when length(targets) >= @pipeline_flatten_threshold ->
+        compile_qualified_pipeline_block(targets, base, env, counter)
+
+      _ ->
+        do_compile_qualified_call(expr, env, counter)
+    end
+  end
+
+  defp do_compile_qualified_call(%{target: target, args: args}, env, counter) do
     case QualifiedRewrite.rewrite(target, args) do
       {:ok, rewritten} ->
         Elmx.Backend.ElixirCodegen.Emit.compile_expr(rewritten, env, counter)
@@ -68,6 +81,61 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified do
             dispatch_qualified(target, args, env, counter)
         end
     end
+  end
+
+  defp unwrap_qualified_pipeline(expr), do: unwrap_qualified_pipeline(expr, [])
+
+  defp unwrap_qualified_pipeline(%{op: :qualified_call, target: target, args: [inner]}, acc)
+       when is_binary(target) do
+    case inner do
+      %{op: :qualified_call, args: [_single_arg]} ->
+        unwrap_qualified_pipeline(inner, [target | acc])
+
+      _ ->
+        if acc == [] do
+          :error
+        else
+          {:ok, Enum.reverse([target | acc]), inner}
+        end
+    end
+  end
+
+  defp unwrap_qualified_pipeline(_base, _acc), do: :error
+
+  defp compile_qualified_pipeline_block(targets, base, env, counter) do
+    {base_code, env, c0} = Emit.compile_expr(base, env, counter)
+    acc_name = Helpers.let_emit_name("__pipe_acc")
+    acc_atom = String.to_atom(acc_name)
+    acc_var = Macro.to_string(Macro.var(acc_atom, nil))
+    step_env = Map.put(env, acc_atom, true)
+
+    {step_lines, _, c} =
+      Enum.reduce(Enum.reverse(targets), {[], step_env, c0}, fn target, {lines, env, c} ->
+        step_expr = %{
+          op: :qualified_call,
+          target: target,
+          args: [%{op: :var, name: acc_name}]
+        }
+
+        {step_code, _, c1} = do_compile_qualified_call(step_expr, env, c)
+        line = [acc_var, " = ", step_code, "\n"]
+        {[line | lines], env, c1}
+      end)
+
+    step_lines = Enum.reverse(step_lines)
+
+    code = [
+      "(fn ->\n",
+      acc_var,
+      " = ",
+      base_code,
+      "\n",
+      step_lines,
+      acc_var,
+      "\nend).()"
+    ]
+
+    {code, env, c}
   end
 
   defp dispatch_qualified(target, args, env, counter) do

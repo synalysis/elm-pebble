@@ -56,7 +56,7 @@ defmodule Elmx.PebbleUiHelperEmitTest do
     assert emitted =~ "fn x ->"
     assert emitted =~ "fn y ->"
     assert emitted =~ "fn text_ ->"
-    assert emitted =~ "label.(8).(36).(\"hi\")"
+    assert emitted =~ "Elmx.Runtime.Core.apply3(label, 8, 36, \"hi\")"
     refute emitted =~ "label.(8, 36, \"hi\")"
   end
 end

@@ -28,8 +28,7 @@ defmodule Elmx.Runtime.Pebble.Registry do
 
   @wrap_modules [
     Elmx.Runtime.Pebble.Dispatch,
-    Elmx.Runtime.Http,
-    Elmx.Runtime.Values
+    Elmx.Runtime.Http
   ]
 
   @spec handlers() :: %{String.t() => handler()}

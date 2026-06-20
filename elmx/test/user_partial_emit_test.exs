@@ -19,7 +19,7 @@ defmodule Elmx.UserPartialEmitTest do
     {code, _, _} = Emit.compile_expr(expr, env(), 0)
     source = IO.iodata_to_binary(code)
 
-    assert source == "&elmx_fn_Main_add2(1, &1)"
+    assert source == "fn elmx_p1 -> elmx_fn_Main_add2(1, elmx_p1) end"
   end
 
   test "partial user call with two fixed args emits one remaining capture" do
@@ -32,6 +32,6 @@ defmodule Elmx.UserPartialEmitTest do
     {code, _, _} = Emit.compile_expr(expr, env(), 0)
     source = IO.iodata_to_binary(code)
 
-    assert source == "&elmx_fn_Main_triple(1, 2, &1)"
+    assert source == "fn elmx_p1 -> elmx_fn_Main_triple(1, 2, elmx_p1) end"
   end
 end

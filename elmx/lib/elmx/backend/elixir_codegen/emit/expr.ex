@@ -1,10 +1,13 @@
 defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
   @moduledoc false
 
+  @let_iife_threshold 32
+
   alias Elmx.Backend.ConstructorLookup
   alias Elmx.Backend.ElixirCodegen.Emit
   alias Elmx.Backend.ElixirCodegen.Emit.Constructor
   alias Elmx.Backend.ElixirCodegen.Emit.Helpers
+  alias Elmx.Runtime.CodegenRefs
   alias Elmx.Runtime.Generator
   alias Elmx.Runtime.Stdlib
 
@@ -49,10 +52,22 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
     {["(", l, " ", op, " ", r, ")"], env, c2}
   end
 
-  def compile_tuple2(%{left: %{op: :int_literal, value: _tag, union_ctor: qualified}, right: right}, env, counter)
+  def compile_tuple2(%{left: %{op: :int_literal, value: _tag, union_ctor: qualified} = left, right: right}, env, counter)
        when is_binary(qualified) do
     ctor = union_ctor_emit_name(qualified, env)
-    compile_flat_tagged_ctor(ctor, right, env, counter)
+
+    cond do
+      ctor in ["Ok", "Err", "Just"] ->
+        compile_flat_tagged_ctor(ctor, right, env, counter, qualified)
+
+      match?(%{op: :tuple2}, right) and union_ctor_payload_atoms_only?(right) ->
+        {l, env, c1} = Emit.compile_expr(left, env, counter)
+        {r, env, c2} = Emit.compile_expr(right, env, c1)
+        {["{", l, ", ", r, "}"], env, c2}
+
+      true ->
+        compile_flat_tagged_ctor(ctor, right, env, counter, qualified)
+    end
   end
 
   def compile_tuple2(%{left: left, right: right}, env, counter) do
@@ -61,11 +76,23 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
     {["{", l, ", ", r, "}"], env, c2}
   end
 
-  def compile_flat_tagged_ctor("()", _right, env, counter) do
+  def compile_flat_tagged_ctor(ctor, right, env, counter, qualified \\ nil)
+
+  def compile_flat_tagged_ctor("()", _right, env, counter, _qualified) do
     {"nil", env, counter}
   end
 
-  def compile_flat_tagged_ctor(ctor, right, env, counter) do
+  def compile_flat_tagged_ctor(ctor, right, env, counter, _qualified)
+      when ctor in ["Ok", "Err", "Just"] do
+    {code, env, c1} = Emit.compile_expr(right, env, counter)
+    {["{:", ctor, ", ", code, "}"], env, c1}
+  end
+
+  def compile_flat_tagged_ctor(ctor, right, env, counter, qualified) do
+    lookup = Map.get(env, :constructor_lookup)
+    module = Map.get(env, :module)
+    ctor_name = qualified || ctor
+
     case flatten_ctor_payload_exprs(right) do
       [single] ->
         {code, env, c1} = Emit.compile_expr(single, env, counter)
@@ -73,9 +100,21 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
 
       args ->
         {arg_code, env, c1} = Helpers.compile_arg_list(args, env, counter)
-        {["{:", ctor, ", ", arg_code, "}"], env, c1}
+
+        payload =
+          if ConstructorLookup.wrap_flattened_payload?(lookup, ctor_name, module, length(args)) do
+            ["{", arg_code, "}"]
+          else
+            arg_code
+          end
+
+        {["{:", ctor, ", ", payload, "}"], env, c1}
     end
   end
+
+  def flatten_ctor_payload_exprs(%{op: :tuple2, left: %{union_ctor: qualified}, right: _right} = expr)
+       when is_binary(qualified),
+       do: [expr]
 
   def flatten_ctor_payload_exprs(%{op: :tuple2, left: left, right: right}) do
     flatten_ctor_payload_exprs(left) ++ flatten_ctor_payload_exprs(right)
@@ -83,9 +122,19 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
 
   def flatten_ctor_payload_exprs(other), do: [other]
 
+  defp union_ctor_payload_atoms_only?(expr) do
+    expr
+    |> flatten_ctor_payload_exprs()
+    |> Enum.all?(fn
+      %{op: :int_literal, union_ctor: qualified} when is_binary(qualified) -> true
+      %{op: :var, name: _} -> false
+      _ -> false
+    end)
+  end
+
   def compile_int_literal(expr, env) do
-    case {Map.get(env, :emit_mode), Map.get(expr, :union_ctor)} do
-      {:ide_runtime, qualified} when is_binary(qualified) ->
+    case Map.get(expr, :union_ctor) do
+      qualified when is_binary(qualified) ->
         Constructor.ide_runtime_ctor_atom(union_ctor_emit_name(qualified, env))
 
       _ ->
@@ -164,7 +213,183 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
     {code, env, c1}
   end
 
-  def compile_let_in(%{name: name, value_expr: value, in_expr: body}, env, counter) do
+  def compile_let_in(%{op: :let_in} = expr, env, counter) do
+    {bindings, body} = collect_let_bindings(expr)
+
+    cond do
+      function_letrec?(bindings) ->
+        compile_function_letrec_block(bindings, body, env, counter)
+
+      length(bindings) >= @let_iife_threshold ->
+        compile_sequential_let_block(bindings, body, env, counter)
+
+      true ->
+        compile_single_let_in(expr, env, counter)
+    end
+  end
+
+  defp collect_let_bindings(%{op: :let_in, name: name, value_expr: value, in_expr: inner}) do
+    {rest, body} = collect_let_bindings(inner)
+    {[{name, value} | rest], body}
+  end
+
+  defp collect_let_bindings(body), do: {[], body}
+
+  defp function_letrec?(bindings) do
+    bindings != [] and
+      (Enum.all?(bindings, fn {_name, value} -> function_like?(value) end) or
+         (length(bindings) > 1 and
+            Enum.any?(bindings, fn {_name, value} -> function_like?(value) end)))
+  end
+
+  defp function_like?(%{op: :lambda}), do: true
+
+  defp function_like?(%{op: :qualified_call, args: []}), do: true
+
+  defp function_like?(%{op: :var}), do: true
+
+  defp function_like?(_), do: false
+
+  defp compile_function_letrec_block(bindings, body, env, counter) do
+    sorted = order_letrec_bindings(bindings)
+
+    {binding_lines, body_env, final_counter} =
+      Enum.reduce(sorted, {[], env, counter}, fn {name, value}, {lines, acc_env, c} ->
+        {value_code, c2} = letrec_binding_value(name, value, acc_env, c)
+        emit_name = Helpers.let_emit_name(name)
+        var = Macro.to_string(Macro.var(String.to_atom(emit_name), nil))
+        line = [var, " = ", value_code, "\n"]
+        {[line | lines], Map.put(acc_env, String.to_atom(name), true), c2}
+      end)
+
+    binding_lines = Enum.reverse(binding_lines)
+
+    {body_code, _, c1} = Emit.compile_expr(body, body_env, final_counter)
+
+    code = ["(fn ->\n", binding_lines, body_code, "\nend).()"]
+
+    {code, env, c1}
+  end
+
+  defp compile_sequential_let_block(bindings, body, env, counter) do
+    {binding_lines, body_env, final_counter} =
+      Enum.reduce(bindings, {[], env, counter}, fn {name, value}, {lines, acc_env, c} ->
+        {value_code, _, c2} = Emit.compile_expr(value, acc_env, c)
+        emit_name = Helpers.let_emit_name(name)
+        var = Macro.to_string(Macro.var(String.to_atom(emit_name), nil))
+        line = [var, " = ", value_code, "\n"]
+        {[line | lines], Map.put(acc_env, String.to_atom(name), true), c2}
+      end)
+
+    binding_lines = Enum.reverse(binding_lines)
+    {body_code, _, c1} = Emit.compile_expr(body, body_env, final_counter)
+    code = ["(fn ->\n", binding_lines, body_code, "\nend).()"]
+    {code, env, c1}
+  end
+
+  defp order_letrec_bindings(bindings) do
+    names = MapSet.new(Enum.map(bindings, &elem(&1, 0)))
+
+    deps =
+      Map.new(bindings, fn {name, value} ->
+        refs =
+          value
+          |> referenced_binding_names()
+          |> MapSet.intersection(names)
+          |> MapSet.delete(name)
+
+        {name, refs}
+      end)
+
+    topo_sort_letrec_bindings(bindings, deps)
+  end
+
+  defp topo_sort_letrec_bindings(bindings, deps) do
+    binding_map = Map.new(bindings)
+
+    {sorted, _} =
+      Enum.reduce(1..length(bindings), {[], MapSet.new()}, fn _, {acc, done} ->
+        case Enum.find(bindings, fn {name, _} ->
+               name not in acc and MapSet.subset?(Map.get(deps, name, MapSet.new()), done)
+             end) do
+          {name, _} ->
+            {[name | acc], MapSet.put(done, name)}
+
+          nil ->
+            {acc, done}
+        end
+      end)
+
+    sorted_reversed = Enum.reverse(sorted)
+    remainder = Enum.map(bindings, &elem(&1, 0)) -- sorted_reversed
+
+    Enum.map(sorted_reversed ++ remainder, fn name ->
+      {name, Map.fetch!(binding_map, name)}
+    end)
+  end
+
+  defp referenced_binding_names(expr), do: referenced_binding_names(expr, MapSet.new())
+
+  defp referenced_binding_names(%{op: :var, name: name}, acc) when is_binary(name),
+    do: MapSet.put(acc, name)
+
+  defp referenced_binding_names(%{op: :call, name: name}, acc) when is_binary(name),
+    do: MapSet.put(acc, name)
+
+  defp referenced_binding_names(map, acc) when is_map(map) do
+    Enum.reduce(map, acc, fn {_k, v}, a -> referenced_binding_names(v, a) end)
+  end
+
+  defp referenced_binding_names(list, acc) when is_list(list) do
+    Enum.reduce(list, acc, &referenced_binding_names/2)
+  end
+
+  defp referenced_binding_names(_, acc), do: acc
+
+  defp letrec_binding_value(name, %{op: :lambda} = value, env, counter) do
+    self_ref? = self_references?(name, value)
+
+    env_for_value =
+      if self_ref?, do: Map.put(env, String.to_atom(name), true), else: env
+
+    {value_code, _, c} = Emit.compile_expr(value, env_for_value, counter)
+
+    code =
+      if self_ref? do
+        param = Helpers.let_emit_name(name)
+        var = Macro.to_string(Macro.var(String.to_atom(param), nil))
+        ["Elmx.Runtime.Core.Apply.fix(fn ", var, " -> ", value_code, " end)"]
+      else
+        value_code
+      end
+
+    {code, c}
+  end
+
+  defp letrec_binding_value(_name, value, env, counter) do
+    {value_code, _, c} = Emit.compile_expr(value, env, counter)
+    {value_code, c}
+  end
+
+  defp self_references?(name, expr), do: ir_references_name?(expr, name)
+
+  defp ir_references_name?(%{op: :call, name: n} = map, target) when is_binary(target) do
+    n == target or ir_references_name?(Map.get(map, :args) || [], target)
+  end
+
+  defp ir_references_name?(%{op: :var, name: n}, target) when is_binary(n) and is_binary(target),
+    do: n == target
+
+  defp ir_references_name?(map, name) when is_map(map) do
+    map |> Map.values() |> Enum.any?(&ir_references_name?(&1, name))
+  end
+
+  defp ir_references_name?(list, name) when is_list(list),
+    do: Enum.any?(list, &ir_references_name?(&1, name))
+
+  defp ir_references_name?(_, _), do: false
+
+  defp compile_single_let_in(%{name: name, value_expr: value, in_expr: body}, env, counter) do
     {value_code, env, c1} = Emit.compile_expr(value, env, counter)
     emit_name = Helpers.let_emit_name(name)
     body_env = Map.put(env, String.to_atom(name), true)
@@ -210,7 +435,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
 
   def compile_char_from_code(%{arg: arg}, env, counter) do
     {a, env, c1} = Emit.compile_expr(arg, env, counter)
-    {["<<", a, "::utf8>>"], env, c1}
+    mod = CodegenRefs.core()
+    {[mod, ".new_char(", a, ")"], env, c1}
   end
 
 end

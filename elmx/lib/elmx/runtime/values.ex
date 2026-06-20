@@ -3,13 +3,54 @@ defmodule Elmx.Runtime.Values do
   Wire-format helpers for generated Elm code and debugger execution.
   """
 
+  alias Elmx.Runtime.Platform.Manager
   alias Elmx.Types
 
   @spec cmd_none() :: Types.wire_cmd()
   def cmd_none, do: Elmx.Runtime.Cmd.none()
 
   @spec cmd_batch([Types.wire_cmd_input()]) :: Types.wire_cmd()
-  def cmd_batch(commands) when is_list(commands), do: Elmx.Runtime.Cmd.batch(commands)
+  def cmd_batch(commands) when is_list(commands) do
+    if manager_batch?(commands) do
+      Manager.batch(Enum.map(commands, &manager_value/1))
+    else
+      Elmx.Runtime.Cmd.batch(commands)
+    end
+  end
+
+  @spec cmd_map(term(), Types.wire_cmd_input()) :: Types.wire_cmd()
+  def cmd_map(fun, cmd), do: Manager.map(fun, manager_value(cmd))
+
+  def cmd_map(fun), do: fn cmd -> cmd_map(fun, cmd) end
+
+  @spec sub_batch([term()]) :: term()
+  def sub_batch(subs) when is_list(subs), do: Manager.batch(Enum.map(subs, &manager_value/1))
+
+  @spec sub_map(term(), term()) :: term()
+  def sub_map(fun, sub), do: Manager.map(fun, manager_value(sub))
+
+  def sub_map(fun), do: fn sub -> sub_map(fun, sub) end
+
+  @spec port_outgoing(String.t(), term()) :: Types.wire_cmd()
+  def port_outgoing(port_key, payload) when is_binary(port_key),
+    do: Manager.port(port_key, payload)
+
+  @spec port_incoming_sub(String.t(), term()) :: term()
+  def port_incoming_sub(port_key, callback) when is_binary(port_key),
+    do: Manager.port(port_key, callback)
+
+  defp manager_value(value), do: value
+
+  defp manager_batch?(commands) when is_list(commands) do
+    Enum.any?(commands, &manager_item?/1)
+  end
+
+  defp manager_item?(item) when is_map(item) do
+    Map.has_key?(item, "$") or Map.has_key?(item, :"$")
+  end
+
+  defp manager_item?(item) when is_function(item), do: true
+  defp manager_item?(_), do: false
 
   @spec ctor(String.t(), [Types.wire_input()]) :: Types.wire_ctor()
   def ctor(name, args) when is_binary(name) and is_list(args) do

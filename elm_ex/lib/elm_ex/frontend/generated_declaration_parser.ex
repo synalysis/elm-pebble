@@ -129,8 +129,9 @@ defmodule ElmEx.Frontend.GeneratedDeclarationParser do
     source
     |> String.split("\n")
     |> Enum.with_index(1)
-    |> Enum.map(fn {line, line_no} ->
-      trimmed = String.trim(line)
+    |> Enum.map_reduce(0, fn {line, line_no}, comment_depth ->
+      {code_line, new_depth} = strip_block_comments_on_line(line, comment_depth)
+      trimmed = String.trim(code_line)
       indented? = String.starts_with?(line, " ") or String.starts_with?(line, "\t")
       parse_allowed? = trimmed != "" and not String.starts_with?(trimmed, "--")
 
@@ -147,10 +148,10 @@ defmodule ElmEx.Frontend.GeneratedDeclarationParser do
         end
 
       function_header =
-        if parse_allowed? and not indented? and String.contains?(line, "=") and
+        if parse_allowed? and not indented? and String.contains?(code_line, "=") and
              (decl == :none or match?({:ok, {:function_header, _, _}}, decl)) and
              not non_function_declaration_prefix?(trimmed) do
-          case parse_function_header_line(String.trim_trailing(line)) do
+          case parse_function_header_line(String.trim_trailing(code_line)) do
             {:ok, parsed} -> {:ok, parsed}
             _ -> :none
           end
@@ -158,7 +159,7 @@ defmodule ElmEx.Frontend.GeneratedDeclarationParser do
           :none
         end
 
-      %{
+      scanned = %{
         line_no: line_no,
         raw_line: line,
         trimmed: trimmed,
@@ -166,7 +167,46 @@ defmodule ElmEx.Frontend.GeneratedDeclarationParser do
         decl: decl,
         function_header: function_header
       }
+
+      {scanned, new_depth}
     end)
+    |> elem(0)
+  end
+
+  @spec strip_block_comments_on_line(String.t(), non_neg_integer()) ::
+          {String.t(), non_neg_integer()}
+  defp strip_block_comments_on_line(line, depth) when is_binary(line) and depth >= 0 do
+  do_strip_block_comments_on_line(line, depth, "")
+  end
+
+  defp do_strip_block_comments_on_line(<<>>, depth, acc), do: {acc, depth}
+
+  defp do_strip_block_comments_on_line(source, depth, acc) do
+    case depth do
+      0 ->
+        case source do
+          <<"{-", rest::binary>> ->
+            do_strip_block_comments_on_line(rest, 1, acc <> "  ")
+
+          <<char::utf8, rest::binary>> ->
+            do_strip_block_comments_on_line(rest, 0, acc <> <<char::utf8>>)
+        end
+
+      n when n > 0 ->
+        case source do
+          <<"{-", rest::binary>> ->
+            do_strip_block_comments_on_line(rest, n + 1, acc)
+
+          <<"-}", rest::binary>> ->
+            do_strip_block_comments_on_line(rest, n - 1, acc <> "  ")
+
+          <<_char::utf8, rest::binary>> ->
+            do_strip_block_comments_on_line(rest, n, acc <> " ")
+
+          <<>> ->
+            {acc, n}
+        end
+    end
   end
 
   @spec non_function_declaration_prefix?(String.t()) :: boolean()

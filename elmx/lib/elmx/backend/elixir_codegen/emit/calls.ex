@@ -13,6 +13,44 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
 
 @comparison_ops ~w(__eq__ __neq__ __lt__ __lte__ __gt__ __gte__)
 
+  def compile_call(%{name: "__apply__", args: [fun, arg]}, env, counter) do
+    case fun do
+      %{op: :var, name: name} when is_binary(name) ->
+        compile_apply_to_target(name, [arg], env, counter)
+
+      _ ->
+        {fun_code, env, c1} = Emit.compile_expr(fun, env, counter)
+        {arg_code, env, c2} = Emit.compile_expr(arg, env, c1)
+        {["Elmx.Runtime.Core.Apply.apply1(", fun_code, ", ", arg_code, ")"], env, c2}
+    end
+  end
+
+  def compile_call(%{name: "__apply__", args: args}, env, counter) when is_list(args) and length(args) >= 2 do
+    [fun | rest] = args
+
+    case fun do
+      %{op: :var, name: name} when is_binary(name) ->
+        compile_apply_to_target(name, rest, env, counter)
+
+      _ ->
+        {fun_code, env, c} = Emit.compile_expr(fun, env, counter)
+
+        {code, env, final_c} =
+          Enum.reduce(rest, {fun_code, env, c}, fn arg, {acc, acc_env, acc_c} ->
+            {arg_code, acc_env, next_c} = Emit.compile_expr(arg, acc_env, acc_c)
+            {["Elmx.Runtime.Core.Apply.apply1(", acc, ", ", arg_code, ")"], acc_env, next_c}
+          end)
+
+        {code, env, final_c}
+    end
+  end
+
+  def compile_call(%{name: "__pow__", args: [left, right]}, env, counter) do
+    {l, env, c1} = Emit.compile_expr(left, env, counter)
+    {r, env, c2} = Emit.compile_expr(right, env, c1)
+    {["trunc(Elmx.Runtime.Core.Math.pow(", l, ", ", r, "))"], env, c2}
+  end
+
   def compile_call(%{name: name, args: [left, right]}, env, counter)
        when name in ["__append__", "__add__", "__sub__", "__mul__", "__fdiv__", "__idiv__" | @comparison_ops] do
     {l, env, c1} = Emit.compile_expr(left, env, counter)
@@ -21,8 +59,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
     code =
       case name do
         "__append__" -> [@rt_core, ".append(", l, ", ", r, ")"]
-        "__idiv__" -> ["div(", l, ", ", r, ")"]
-        "__fdiv__" -> ["(", l, " / ", r, ")"]
+        "__idiv__" -> [@rt_core, ".basics_idiv(", l, ", ", r, ")"]
+        "__fdiv__" -> ["Elmx.Runtime.Core.Math.fdiv(", l, ", ", r, ")"]
         other -> ["(", l, " ", operator_symbol(other), " ", r, ")"]
       end
 
@@ -57,13 +95,13 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
   def compile_call(%{name: "__fdiv__", args: [arg]}, env, counter) do
     {fixed, env, c1} = Emit.compile_expr(arg, env, counter)
     rhs = Helpers.let_emit_name("__rhs")
-    {["fn ", rhs, " -> (", rhs, " / ", fixed, ") end"], env, c1}
+    {["fn ", rhs, " -> Elmx.Runtime.Core.Math.fdiv(", rhs, ", ", fixed, ") end"], env, c1}
   end
 
   def compile_call(%{name: "__idiv__", args: [arg]}, env, counter) do
     {fixed, env, c1} = Emit.compile_expr(arg, env, counter)
     rhs = Helpers.let_emit_name("__rhs")
-    {["fn ", rhs, " -> div(", rhs, ", ", fixed, ") end"], env, c1}
+    {["fn ", rhs, " -> ", @rt_core, ".basics_idiv(", rhs, ", ", fixed, ") end"], env, c1}
   end
 
   def compile_call(%{name: "__append__", args: [arg]}, env, counter) do
@@ -83,6 +121,10 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
 
   def compile_call(%{name: name}, env, counter) do
     compile_call1(%{name: name}, env, counter)
+  end
+
+  defp compile_apply_to_target(name, args, env, counter) when is_binary(name) and is_list(args) do
+    compile_user_call(name, args, env, counter)
   end
 
   def operator_symbol("__append__"), do: "++"
@@ -114,11 +156,19 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
   def compile_user_call(name, args, env, counter) when is_binary(name) and is_list(args) do
     if Map.get(env, String.to_atom(name)) == true do
       {arg_parts, env, c1} = Helpers.compile_arg_parts(args, env, counter)
+      ref = Helpers.binding_ref(name, env)
 
       code =
-        Enum.reduce(arg_parts, Helpers.binding_ref(name, env), fn arg, acc ->
-          [acc, ".(", arg, ")"]
-        end)
+        case arg_parts do
+          [] ->
+            ref
+
+          [arg] ->
+            [ref, ".(", arg, ")"]
+
+          parts ->
+            apply_call(ref, parts)
+        end
 
       {[code], env, c1}
     else
@@ -150,10 +200,22 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
 
   def compile_module_call(name, arg_parts, env) do
     module = Map.get(env, :module, "Main")
+
+    if port_signature?(env, module, name) do
+      compile_port_call(module, name, arg_parts)
+    else
+      compile_module_call_body(name, arg_parts, env, module)
+    end
+  end
+
+  defp compile_module_call_body(name, arg_parts, env, module) do
     arity = Helpers.function_arity(env, name)
     given = length(arg_parts)
 
     cond do
+      Map.get(env, :emit_partial_value) == true and given < arity ->
+        [Helpers.module_fn(module, name), "(", Enum.intersperse(arg_parts, ", "), ")"]
+
       arity == :unresolved ->
         if given == 0, do: name, else: [name, "(", Enum.intersperse(arg_parts, ", "), ")"]
 
@@ -163,7 +225,28 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
       given == 0 ->
         Helpers.function_reference(module, name, env)
 
-      given >= arity ->
+      given > arity ->
+        explicit = arity
+        callable = Map.get(Map.get(env, :function_arities, %{}), name, explicit)
+
+        if explicit == 0 and given == callable do
+          [Helpers.module_fn(module, name), "(", Enum.intersperse(arg_parts, ", "), ")"]
+        else
+          {fixed, extra} = Enum.split(arg_parts, explicit)
+
+          base =
+            if fixed == [] do
+              Helpers.function_reference(module, name, env)
+            else
+              [Helpers.module_fn(module, name), "(", Enum.intersperse(fixed, ", "), ")"]
+            end
+
+          Enum.reduce(extra, base, fn arg, acc ->
+            ["Elmx.Runtime.Core.Apply.apply1(", acc, ", ", arg, ")"]
+          end)
+        end
+
+      given == arity ->
         [Helpers.module_fn(module, name), "(", Enum.intersperse(arg_parts, ", "), ")"]
 
       true ->
@@ -176,5 +259,26 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
 
   def compile_qualified_call(expr, env, counter),
     do: QualifiedEmit.compile_qualified_call(expr, env, counter)
+
+  defp apply_call(ref, parts) when is_list(parts) and length(parts) > 1 do
+    n = length(parts)
+    [@rt_core, ".apply#{n}(", ref, ", ", Enum.intersperse(parts, ", "), ")"]
+  end
+
+  defp port_signature?(env, module, name) do
+    Map.get(Map.get(env, :port_signatures, %{}), {module, name}) == true
+  end
+
+  defp compile_port_call(module, "outgoing", [payload]) do
+    [@rt_values, ".port_outgoing(", inspect("#{module}.outgoing"), ", ", payload, ")"]
+  end
+
+  defp compile_port_call(module, "incoming", [callback]) do
+    [@rt_values, ".port_incoming_sub(", inspect("#{module}.incoming"), ", ", callback, ")"]
+  end
+
+  defp compile_port_call(_module, _name, arg_parts) do
+  [@rt_values, ".port_outgoing(", inspect("unknown.port"), ", ", Enum.at(arg_parts, 0, "nil"), ")"]
+  end
 
 end

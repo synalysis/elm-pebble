@@ -21,6 +21,56 @@ defmodule Ide.ProjectTemplatesTest do
     assert "gabbro" in platforms
   end
 
+  test "picker_categories groups templates for the create-project modal" do
+    categories = ProjectTemplates.picker_categories()
+
+    assert Enum.map(categories, & &1.id) == [
+             "starter",
+             "watchface",
+             "companion",
+             "watch_demo",
+             "game"
+           ]
+
+    starter = Enum.find(categories, &(&1.id == "starter"))
+    assert Enum.any?(starter.templates, &(&1.key == "app-minimal"))
+
+    watchface = Enum.find(categories, &(&1.id == "watchface"))
+    minimal = Enum.find(watchface.templates, &(&1.key == "watchface-minimal"))
+    digital = Enum.find(watchface.templates, &(&1.key == "watchface-digital"))
+
+    assert minimal.title == "Minimal"
+    assert minimal.description == "watch-only"
+    assert minimal.screenshot_url == "/images/template-previews/watchface-minimal.png"
+
+    assert digital.title == "Digital"
+    assert digital.description == "watch-only"
+    assert digital.screenshot_url == "/images/template-previews/watchface-digital.png"
+  end
+
+  test "minimal templates seed bare watch-only Elm apps" do
+    for {template, platform_entry} <- [
+          {"watchface-minimal", "Platform.watchface"},
+          {"app-minimal", "Platform.application"}
+        ] do
+      slug = "minimal-template-#{template}-#{System.unique_integer([:positive])}"
+
+      assert {:ok, project} =
+               Projects.create_project(%{
+                 "name" => "MinimalTemplate",
+                 "slug" => slug,
+                 "template" => template
+               })
+
+      base = Projects.project_workspace_path(project)
+      assert {:ok, watch_main} = Projects.read_source_file(project, "watch", "src/Main.elm")
+      assert String.contains?(watch_main, platform_entry)
+      assert String.contains?(watch_main, "Ui.clear Color.white")
+      refute File.exists?(Path.join(base, "protocol/elm.json"))
+      refute File.exists?(Path.join(base, "phone/elm.json"))
+    end
+  end
+
   test "watchface package writes ELMC_WATCHFACE_MODE build flags" do
     workspace =
       Path.join(

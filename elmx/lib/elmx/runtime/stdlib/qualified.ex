@@ -84,7 +84,7 @@ defmodule Elmx.Runtime.Stdlib.Qualified do
   end
   def call("List.range", arg_code) do
     case Helpers.split_args(arg_code) do
-      [first, last] -> {:ok, "Enum.to_list(#{first}..#{last})"}
+      [first, last] -> {:ok, "Elmx.Runtime.Core.List.list_range(#{first}, #{last})"}
       _ -> :error
     end
   end
@@ -208,6 +208,10 @@ defmodule Elmx.Runtime.Stdlib.Qualified do
   def call("Dict.insert", arg_code), do: Helpers.dict_insert(arg_code)
   def call("Dict.remove", arg_code), do: Helpers.dict_remove(arg_code)
   def call("Dict.member", arg_code), do: Helpers.dict_member(arg_code)
+
+  def call("Set.insert", arg_code), do: Helpers.set_insert(arg_code)
+  def call("Set.remove", arg_code), do: Helpers.set_remove(arg_code)
+  def call("Set.member", arg_code), do: Helpers.set_member(arg_code)
 
   def call("Dict." <> rest, arg_code),
     do: QualifiedCodegen.collection_call(CodegenRefs.core_collections(), "dict", rest, arg_code)

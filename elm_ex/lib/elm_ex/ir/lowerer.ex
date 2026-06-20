@@ -305,7 +305,9 @@ defmodule ElmEx.IR.Lowerer do
           name: frontend_module.name,
           imports: frontend_module.imports,
           unions: unions,
-          declarations: ordered_declarations
+          declarations: ordered_declarations,
+          ports: Map.get(frontend_module, :ports, []),
+          port_module: Map.get(frontend_module, :port_module, false)
         }
       end)
 

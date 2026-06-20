@@ -901,7 +901,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
           |> List.wrap()
           |> Enum.any?(&(&1 not in ["clear", "windowStack", "window", "canvasLayer", ""]))
 
-        unless drawable? or tree_drawable? or template_key in ["starter"] or
+        unless drawable? or tree_drawable? or
+                 template_key in ["starter", "watchface-minimal", "app-minimal"] or
                  Enum.any?(output_kinds, &(&1 not in ["clear", "push_context", "pop_context"])) do
           raise "template #{template_key}: preview only has clear/style ops"
         end

@@ -109,6 +109,13 @@ defmodule Elmx.JsonDecodeComposeTest do
     assert {:Err, _} = Decode.decode_value(decoder, "true")
   end
 
+  test "int decoder rejects JSON floats so oneOf can fall through" do
+    decoder = Decode.one_of([Decode.int(), Decode.map(&Kernel.round/1, Decode.float())])
+
+    assert {:Ok, 4} = Decode.decode_value(decoder, 3.7)
+    assert {:Err, _} = Decode.apply_decoder({:json_decoder, :int}, 3.7)
+  end
+
   test "decodeString parses JSON document" do
     theme_decoder =
       Decode.one_of([

@@ -7,110 +7,161 @@ defmodule Elmx.Runtime.Core.Collections.Dict do
 
   @type dict :: Types.elm_dict()
 
-  @spec dict_from_list([Types.dict_entry_input()]) :: dict()
-  def dict_from_list(pairs) when is_list(pairs) do
-    Enum.reduce(pairs, [], fn pair, acc ->
-      {key, value} = Pairs.normalize_pair(pair)
-      dict_insert(key, value, acc)
+  defp wrap(map) when is_map(map), do: {:elmx_dict, map}
+
+  defp unwrap({:elmx_dict, map}) when is_map(map), do: map
+
+  defp unwrap({:elmx_dict, pairs}) when is_list(pairs) do
+    Enum.reduce(pairs, %{}, fn {k, v}, acc -> Map.put(acc, k, v) end)
+  end
+
+  defp unwrap(items) when is_list(items) do
+    Enum.reduce(items, %{}, fn {k, v}, acc -> Map.put(acc, k, v) end)
+  end
+
+  defp sorted_pairs(dict) do
+    dict
+    |> unwrap()
+    |> Map.to_list()
+    |> Enum.sort(fn {ka, _}, {kb, _} ->
+      case Core.basics_compare(ka, kb) do
+        :LT -> true
+        _ -> false
+      end
     end)
   end
 
-  @spec dict_insert(integer(), term(), dict()) :: dict()
-  def dict_insert(key, value, dict) when is_integer(key) and is_list(dict) do
-    dict = Enum.reject(dict, fn {k, _} -> k == key end)
-    [{key, value} | dict]
+  @spec dict_empty() :: dict()
+  def dict_empty, do: wrap(%{})
+
+  @spec dict_from_list([Types.dict_entry_input()]) :: dict()
+  def dict_from_list(pairs) when is_list(pairs) do
+    pairs
+    |> Enum.reduce(%{}, fn pair, acc ->
+      {key, value} = Pairs.normalize_pair(pair)
+      Map.put(acc, key, value)
+    end)
+    |> wrap()
   end
 
-  @spec dict_get(integer(), dict()) :: term()
-  def dict_get(key, dict) when is_integer(key) do
-    case Enum.find(dict, fn {k, _} -> k == key end) do
-      {_, value} -> {:Just, value}
-      _ -> :Nothing
+  @spec dict_insert(term(), term(), dict()) :: dict()
+  def dict_insert(key, value, dict), do: wrap(Map.put(unwrap(dict), key, value))
+
+  @spec dict_get(term(), dict()) :: term()
+  def dict_get(key, dict) do
+    case Map.fetch(unwrap(dict), key) do
+      {:ok, value} -> {:Just, value}
+      :error -> :Nothing
     end
   end
 
-  @spec dict_get_with_default_int(integer(), integer(), dict()) :: integer()
-  def dict_get_with_default_int(default, key, dict) when is_integer(default) and is_integer(key) do
+  @spec dict_get_with_default_int(integer(), term(), dict()) :: integer()
+  def dict_get_with_default_int(default, key, dict) when is_integer(default) do
     case dict_get(key, dict) do
       {:Just, value} -> Pairs.to_int(value, default)
       _ -> default
     end
   end
 
-  @spec dict_member(integer(), dict()) :: boolean()
-  def dict_member(key, dict) when is_integer(key),
-    do: Enum.any?(dict, fn {k, _} -> k == key end)
+  @spec dict_member(term(), dict()) :: boolean()
+  def dict_member(key, dict), do: Map.has_key?(unwrap(dict), key)
 
   @spec dict_size(dict()) :: integer()
-  def dict_size(dict) when is_list(dict), do: length(dict)
+  def dict_size(dict), do: map_size(unwrap(dict))
 
-  @spec dict_remove(integer(), dict()) :: dict()
-  def dict_remove(key, dict) when is_integer(key),
-    do: Enum.reject(dict, fn {k, _} -> k == key end)
+  @spec dict_remove(term(), dict()) :: dict()
+  def dict_remove(key, dict), do: wrap(Map.delete(unwrap(dict), key))
 
   @spec dict_is_empty(dict()) :: boolean()
-  def dict_is_empty(dict), do: dict == []
+  def dict_is_empty(dict), do: unwrap(dict) == %{}
 
-  @spec dict_singleton(integer(), term()) :: dict()
-  def dict_singleton(key, value) when is_integer(key), do: [{key, value}]
+  @spec dict_singleton(term(), term()) :: dict()
+  def dict_singleton(key, value), do: wrap(%{key => value})
 
   @spec dict_keys(dict()) :: list()
-  def dict_keys(dict), do: Enum.map(dict, fn {k, _} -> k end)
+  def dict_keys(dict) do
+    dict
+    |> sorted_pairs()
+    |> Enum.map(fn {k, _} -> k end)
+  end
 
   @spec dict_values(dict()) :: list()
-  def dict_values(dict), do: Enum.map(dict, fn {_, v} -> v end)
+  def dict_values(dict) do
+    dict
+    |> sorted_pairs()
+    |> Enum.map(fn {_, v} -> v end)
+  end
 
   @spec dict_to_list(dict()) :: list()
-  def dict_to_list(dict), do: Enum.map(dict, fn {k, v} -> {k, v} end)
+  def dict_to_list(dict), do: sorted_pairs(dict)
 
   @spec dict_map(term(), dict()) :: dict()
-  def dict_map(fun, dict) when is_list(dict) do
-    Enum.map(dict, fn {k, v} -> {k, Core.apply2(fun, k, v)} end)
+  def dict_map(fun, dict) do
+    dict
+    |> sorted_pairs()
+    |> Enum.map(fn {k, v} -> {k, Core.apply2(fun, k, v)} end)
+    |> Map.new()
+    |> wrap()
   end
 
   @spec dict_foldl(term(), term(), dict()) :: term()
-  def dict_foldl(fun, acc, dict) when is_list(dict) do
-    Enum.reduce(dict, acc, fn {k, v}, acc0 -> Core.apply3(fun, k, v, acc0) end)
+  def dict_foldl(fun, acc, dict) do
+    Enum.reduce(sorted_pairs(dict), acc, fn {k, v}, acc0 -> Core.apply3(fun, k, v, acc0) end)
   end
 
   @spec dict_foldr(term(), term(), dict()) :: term()
-  def dict_foldr(fun, acc, dict) when is_list(dict) do
-    Enum.reduce(Enum.reverse(dict), acc, fn {k, v}, acc0 -> Core.apply3(fun, k, v, acc0) end)
+  def dict_foldr(fun, acc, dict) do
+    dict
+    |> sorted_pairs()
+    |> Enum.reverse()
+    |> Enum.reduce(acc, fn {k, v}, acc0 -> Core.apply3(fun, k, v, acc0) end)
   end
 
   @spec dict_filter(term(), dict()) :: dict()
-  def dict_filter(fun, dict) when is_list(dict) do
-    Enum.filter(dict, fn {k, v} -> Core.apply2(fun, k, v) end)
+  def dict_filter(fun, dict) do
+    dict
+    |> sorted_pairs()
+    |> Enum.filter(fn {k, v} -> Core.apply2(fun, k, v) end)
+    |> Map.new()
+    |> wrap()
   end
 
   @spec dict_partition(term(), dict()) :: {dict(), dict()}
-  def dict_partition(fun, dict) when is_list(dict) do
-    Enum.split_with(dict, fn {k, v} -> Core.apply2(fun, k, v) end)
+  def dict_partition(fun, dict) do
+    {yes, no} = Enum.split_with(sorted_pairs(dict), fn {k, v} -> Core.apply2(fun, k, v) end)
+    {wrap(Map.new(yes)), wrap(Map.new(no))}
   end
 
   @spec dict_union(dict(), dict()) :: dict()
-  def dict_union(left, right) when is_list(left) and is_list(right) do
-    Enum.reduce(right, left, fn {k, v}, acc -> dict_insert(k, v, acc) end)
+  def dict_union(left, right) do
+    wrap(Map.merge(unwrap(left), unwrap(right)))
   end
 
   @spec dict_intersect(dict(), dict()) :: dict()
-  def dict_intersect(left, right) when is_list(left) and is_list(right) do
-    right_map = Map.new(right)
+  def dict_intersect(left, right) do
+    right_map = unwrap(right)
 
     left
+    |> unwrap()
     |> Enum.filter(fn {k, _} -> Map.has_key?(right_map, k) end)
     |> Enum.map(fn {k, _} -> {k, Map.fetch!(right_map, k)} end)
+    |> Map.new()
+    |> wrap()
   end
 
   @spec dict_diff(dict(), dict()) :: dict()
-  def dict_diff(left, right) when is_list(left) and is_list(right) do
-    right_keys = MapSet.new(Enum.map(right, fn {k, _} -> k end))
-    Enum.reject(left, fn {k, _} -> MapSet.member?(right_keys, k) end)
+  def dict_diff(left, right) do
+    right_keys = MapSet.new(Map.keys(unwrap(right)))
+
+    left
+    |> unwrap()
+    |> Enum.reject(fn {k, _} -> MapSet.member?(right_keys, k) end)
+    |> Map.new()
+    |> wrap()
   end
 
   @spec dict_merge(term(), term(), term(), dict(), dict(), term()) :: term()
-  def dict_merge(left_step, both_step, right_step, left, right, result)
-      when is_list(left) and is_list(right) do
+  def dict_merge(left_step, both_step, right_step, left, right, result) do
     keys =
       (dict_keys(left) ++ dict_keys(right))
       |> Enum.uniq()
@@ -140,13 +191,12 @@ defmodule Elmx.Runtime.Core.Collections.Dict do
   end
 
   @spec dict_merge(term(), term(), term(), dict(), dict()) :: term()
-  def dict_merge(left_step, both_step, right_step, left, right)
-      when is_list(left) and is_list(right) do
-    dict_merge(left_step, both_step, right_step, left, right, [])
+  def dict_merge(left_step, both_step, right_step, left, right) do
+    dict_merge(left_step, both_step, right_step, left, right, wrap(%{}))
   end
 
-  @spec dict_update(integer(), term(), dict()) :: dict()
-  def dict_update(key, alter, dict) when is_integer(key) do
+  @spec dict_update(term(), term(), dict()) :: dict()
+  def dict_update(key, alter, dict) do
     current =
       case dict_get(key, dict) do
         {:Just, value} -> {:Just, value}
@@ -165,11 +215,10 @@ defmodule Elmx.Runtime.Core.Collections.Dict do
     end
   end
 
-  def dict_fetch!(key, dict) when is_integer(key) do
-    case Enum.find(dict, fn {k, _} -> k == key end) do
-      {_, value} -> value
-      nil -> raise ArgumentError, "dict_fetch! missing key #{inspect(key)}"
+  def dict_fetch!(key, dict) do
+    case Map.fetch(unwrap(dict), key) do
+      {:ok, value} -> value
+      :error -> raise ArgumentError, "dict_fetch! missing key #{inspect(key)}"
     end
   end
-
 end

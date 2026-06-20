@@ -16,6 +16,7 @@ defmodule Elmx.Runtime.Json.Decode.Runtime do
 
   def normalize_input(value) when is_map(value), do: {:ok, value}
   def normalize_input(value) when is_list(value), do: {:ok, value}
+  def normalize_input(value) when is_float(value), do: {:ok, value}
   def normalize_input(nil), do: {:ok, nil}
   def normalize_input(_), do: {:Err, "expected JSON value"}
 
@@ -30,9 +31,6 @@ defmodule Elmx.Runtime.Json.Decode.Runtime do
   end
 
   def apply_decoder({:json_decoder, :int}, value) when is_integer(value), do: {:Ok, value}
-
-  def apply_decoder({:json_decoder, :int}, value) when is_float(value),
-    do: {:Ok, trunc(value)}
 
   def apply_decoder({:json_decoder, :int}, value) when is_binary(value) do
     case Integer.parse(value) do

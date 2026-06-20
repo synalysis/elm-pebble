@@ -12,6 +12,18 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified.List do
   @type qualified_result :: Context.qualified_result()
 
   @spec compile(String.t(), ir_arg_list(), env(), emit_counter()) :: qualified_result()
+  def compile("List.cons", [], env, counter) do
+    {:ok, "&#{CodegenRefs.core()}.list_cons/2", env, counter}
+  end
+
+  def compile("List.foldl", [], env, counter) do
+    {:ok, "&#{CodegenRefs.core()}.foldl/3", env, counter}
+  end
+
+  def compile("List.foldr", [], env, counter) do
+    {:ok, "&#{CodegenRefs.core()}.foldr/3", env, counter}
+  end
+
   def compile("List.filter", [pred, list], env, counter),
     do: compile_list_core_hof("filter", pred, list, env, counter)
 
@@ -94,7 +106,15 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified.List do
   def compile("List.range", [first, last], env, counter) do
     {a, env, c1} = Elmx.Backend.ElixirCodegen.Emit.compile_expr(first, env, counter)
     {b, env, c2} = Elmx.Backend.ElixirCodegen.Emit.compile_expr(last, env, c1)
-    {:ok, ["Enum.to_list(", a, "..", b, ")"], env, c2}
+
+    {:ok,
+     [
+       "Elmx.Runtime.Core.List.list_range(",
+       a,
+       ", ",
+       b,
+       ")"
+     ], env, c2}
   end
 
   def compile("List.singleton", [value], env, counter) do
@@ -190,6 +210,14 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified.List do
     compile_core_nary("list_map3", [fun, as, bs, cs], env, counter)
   end
 
+  def compile("List.map4", [fun, as, bs, cs, ds], env, counter) do
+    compile_core_nary("list_map4", [fun, as, bs, cs, ds], env, counter)
+  end
+
+  def compile("List.map5", [fun, as, bs, cs, ds, es], env, counter) do
+    compile_core_nary("list_map5", [fun, as, bs, cs, ds, es], env, counter)
+  end
+
   def compile("List.intersperse", [sep, list], env, counter) do
     compile_core_nary("list_intersperse", [sep, list], env, counter)
   end
@@ -277,6 +305,11 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified.List do
   end
 
   @comparison_ops ~w(__eq__ __neq__ __lt__ __lte__ __gt__ __gte__)
+
+  defp compile_fold_fun(%{op: :qualified_call} = call, env, counter) do
+    {code, env, c} = Elmx.Backend.ElixirCodegen.Emit.Qualified.compile_qualified_call(call, env, counter)
+    {code, env, c}
+  end
 
   defp compile_fold_fun(%{op: :var, name: name}, env, counter) when name in @comparison_ops do
     op = fold_operator_symbol(name)

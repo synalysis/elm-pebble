@@ -22,6 +22,9 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
   def branch_pattern(%{pattern: %{kind: :string, value: value}}, _env) when is_binary(value),
     do: inspect(value)
 
+  def branch_pattern(%{pattern: %{kind: :char, value: value}}, _env) when is_integer(value),
+    do: "{:elmx_char, #{value}}"
+
   def branch_pattern(%{pattern: %{kind: :int, value: value}}, _env) when is_integer(value),
     do: Integer.to_string(value)
 
@@ -75,19 +78,26 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
 
   def branch_pattern(%{pattern: %{op: :var, name: name}}, _env), do: Helpers.binding_ref(name, %{})
 
-  def branch_pattern(%{pattern: %{op: :alias, pattern: inner}}, env),
-    do: branch_pattern(%{pattern: inner}, env)
+  def branch_pattern(%{pattern: %{kind: :record, bind: bind, fields: fields}}, _env)
+       when is_list(fields) do
+    record_case_pattern(bind, fields)
+  end
+
+  def branch_pattern(%{pattern: %{kind: :record, fields: fields}}, _env) when is_list(fields) do
+    record_case_pattern(nil, fields)
+  end
 
   def branch_pattern(%{pattern: %{op: :record, fields: fields}}, _env) when is_list(fields) do
-    parts =
-      Enum.map(fields, fn
-        %{name: name} -> "#{record_pattern_key(name)}: _"
-        {name, _} -> "#{record_pattern_key(name)}: _"
-        name when is_binary(name) or is_atom(name) -> "#{record_pattern_key(name)}: _"
-      end)
-
-    "%{#{Enum.join(parts, ", ")}}"
+    record_case_pattern(nil, fields)
   end
+
+  def branch_pattern(%{pattern: %{op: :alias, bind: bind, pattern: inner}}, env) do
+    inner_pat = branch_pattern(%{pattern: inner}, env)
+    if is_binary(bind) and bind != "", do: "#{inner_pat} = #{bind}", else: inner_pat
+  end
+
+  def branch_pattern(%{pattern: %{op: :alias, pattern: inner}}, env),
+    do: branch_pattern(%{pattern: inner}, env)
 
   def branch_pattern(%{pattern: %{op: :constructor_call, name: "::", args: args}}, _env) do
     cons_list_case_pattern(%{kind: :tuple, elements: args})
@@ -115,6 +125,25 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
   @spec record_pattern_key(String.t() | atom()) :: String.t()
   def record_pattern_key(name) when is_binary(name) or is_atom(name), do: inspect(name)
 
+  @spec record_case_pattern(String.t() | nil, list()) :: String.t()
+  def record_case_pattern(bind, fields) when is_list(fields) do
+    parts =
+      Enum.map(fields, fn
+        name when is_binary(name) -> "#{record_pattern_key(name)} => #{name}"
+        name when is_atom(name) -> "#{record_pattern_key(name)} => #{name}"
+        %{name: name} -> "#{record_pattern_key(name)} => #{name}"
+        {name, _} when is_binary(name) or is_atom(name) -> "#{record_pattern_key(name)} => #{name}"
+      end)
+
+    map_pat = "%{#{Enum.join(parts, ", ")}}"
+
+    if is_binary(bind) and bind != "" do
+      "#{map_pat} = #{bind}"
+    else
+      map_pat
+    end
+  end
+
   @spec bool_case_pattern(String.t(), String.t()) :: String.t()
   def bool_case_pattern("True", _default), do: "true"
   def bool_case_pattern("False", _default), do: "false"
@@ -122,17 +151,24 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
 
   @spec cons_list_case_pattern(map()) :: String.t()
   def cons_list_case_pattern(%{kind: :tuple, elements: [head, tail]}) do
-    "[#{pattern_arg(head)} | #{cons_pattern_tail(tail)}]"
+    {heads, final_tail} = flatten_cons_pattern(head, tail)
+    "[#{Enum.join(heads, ", ")} | #{final_tail}]"
   end
 
   def cons_list_case_pattern(_), do: "_"
 
-  @spec cons_pattern_tail(map()) :: String.t()
-  def cons_pattern_tail(%{kind: :constructor, name: "::", arg_pattern: arg}),
-    do: cons_list_case_pattern(arg)
+  defp flatten_cons_pattern(head, tail) do
+    {rest_heads, final_tail} = flatten_cons_tail(tail)
+    {[pattern_arg(head) | rest_heads], final_tail}
+  end
 
-  def cons_pattern_tail(%{kind: :constructor, name: "[]"}), do: "[]"
-  def cons_pattern_tail(other), do: list_tail_pattern(other)
+  defp flatten_cons_tail(%{kind: :constructor, name: "::", arg_pattern: %{kind: :tuple, elements: [head, tail]}}) do
+    {rest_heads, final_tail} = flatten_cons_tail(tail)
+    {[pattern_arg(head) | rest_heads], final_tail}
+  end
+
+  defp flatten_cons_tail(%{kind: :constructor, name: "[]"}), do: {[], "[]"}
+  defp flatten_cons_tail(other), do: {[], list_tail_pattern(other)}
 
   @spec tuple_case_elem(map()) :: String.t()
   def tuple_case_elem(%{kind: :constructor, name: name, bind: bind, arg_pattern: nil})
@@ -141,7 +177,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
   end
 
   def tuple_case_elem(%{kind: :constructor, name: name, arg_pattern: ap}) when is_map(ap) do
-    "{:#{pattern_ctor_name(name)}, #{pattern_arg(ap, %{})}}"
+    ctor = pattern_ctor_name(name)
+    constructor_case_pattern(ctor, ap, %{})
   end
 
   def tuple_case_elem(%{kind: :var, name: name}) when is_binary(name), do: name
@@ -161,6 +198,9 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
   end
 
   def pattern_arg(%{kind: :string, value: value}, _env) when is_binary(value), do: inspect(value)
+  def pattern_arg(%{kind: :char, value: value}, _env) when is_integer(value),
+    do: "{:elmx_char, #{value}}"
+
   def pattern_arg(%{kind: :int, value: value}, _env) when is_integer(value), do: Integer.to_string(value)
 
   def pattern_arg(%{kind: :bool, value: value}, _env) when is_boolean(value),
@@ -209,18 +249,29 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
 
   def constructor_case_pattern(ctor, %{kind: :tuple, elements: elements}, env) when is_list(elements) do
     bindings =
-      if plain_product_tuple_elements?(elements) do
-        "{" <> Enum.map_join(elements, ", ", &pattern_arg(&1, env)) <> "}"
-      else
-        elements
-        |> flatten_ctor_payload_pattern_elements(env)
-        |> Enum.map_join(", ", &pattern_arg(&1, env))
+      cond do
+        length(elements) == 1 ->
+          pattern_arg(hd(elements), env)
+
+        single_tuple_payload_ctor?(ctor) ->
+          "{" <> Enum.map_join(elements, ", ", &pattern_arg(&1, env)) <> "}"
+
+        plain_product_tuple_elements?(elements) ->
+          "{" <> Enum.map_join(elements, ", ", &pattern_arg(&1, env)) <> "}"
+
+        true ->
+          elements
+          |> flatten_ctor_payload_pattern_elements(env)
+          |> Enum.map_join(", ", &pattern_arg(&1, env))
       end
 
     "{:#{ctor}, #{bindings}}"
   end
 
   def constructor_case_pattern(ctor, other, env), do: "{:#{ctor}, #{pattern_arg(other, env)}}"
+
+  defp single_tuple_payload_ctor?(ctor) when ctor in ["Ok", "Err", "Just"], do: true
+  defp single_tuple_payload_ctor?(_), do: false
 
   @spec plain_product_tuple_elements?([map()]) :: boolean()
   def plain_product_tuple_elements?(elements) when is_list(elements) do

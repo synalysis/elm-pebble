@@ -1,6 +1,7 @@
 defmodule Elmx.Runtime.Core.MaybeResult do
   @moduledoc false
 
+  alias Elmx.Runtime.Core
   alias Elmx.Types
 
   @spec maybe_with_default(default, Types.maybe_like()) :: default when default: term
@@ -65,8 +66,13 @@ defmodule Elmx.Runtime.Core.MaybeResult do
   @spec result_map(Types.elm_hof(), Types.result_like()) :: Types.result_like()
   def result_map(_f, {:Err, _} = err), do: err
   def result_map(_f, %{"ctor" => "Err"} = err), do: err
-  def result_map(f, {:Ok, value}) when is_function(f, 1), do: {:Ok, f.(value)}
-  def result_map(f, %{"ctor" => "Ok", "args" => [value]}) when is_function(f, 1), do: {:Ok, f.(value)}
+  def result_map(f, {:Ok, value}) do
+    {:Ok, Core.apply1(f, value)}
+  end
+
+  def result_map(f, %{"ctor" => "Ok", "args" => [value]}) do
+    {:Ok, Core.apply1(f, value)}
+  end
   def result_map(_f, other), do: other
 
   @spec result_and_then(Types.elm_hof(), Types.result_like()) :: Types.result_like()

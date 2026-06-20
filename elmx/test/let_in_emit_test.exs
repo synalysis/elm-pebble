@@ -31,9 +31,9 @@ defmodule Elmx.LetInEmitTest do
     {code, _, _} = Emit.compile_expr(outer, env(), 0)
     source = IO.iodata_to_binary(code)
 
-    assert source =~ "(fn f ->"
-    assert source =~ "(fn g ->"
-    assert source =~ " end).("
-    assert String.split(source, " end).(") |> length() >= 3
+    assert source =~ "(fn ->"
+    assert source =~ "f = "
+    assert source =~ "g = "
+    assert source =~ "end).()"
   end
 end

@@ -15,6 +15,7 @@ defmodule ElmEx.Frontend.AstContract.Types.Pattern do
           optional(:bind) => String.t(),
           optional(:arg_pattern) => t()
         }
+  @type char_pattern :: %{required(:kind) => :char, required(:value) => integer()}
   @type int_pattern :: %{required(:kind) => :int, required(:value) => integer()}
   @type string_pattern :: %{required(:kind) => :string, required(:value) => String.t()}
   @type record_pattern :: %{
@@ -30,6 +31,7 @@ defmodule ElmEx.Frontend.AstContract.Types.Pattern do
           | tuple_pattern()
           | constructor_pattern()
           | int_pattern()
+          | char_pattern()
           | string_pattern()
           | record_pattern()
           | %{required(:kind) => atom(), optional(atom()) => AstTypes.invalid_input()}

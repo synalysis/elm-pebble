@@ -25,6 +25,8 @@ defmodule Elmx.TestSupport.CoverageGate do
                    :qualified_call,
                    :qualified_call1,
                    :constructor_call,
+                   :constructor_ref,
+                   :partial_constructor,
                    :runtime_call,
                    :let_in,
                    :if,

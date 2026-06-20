@@ -4,7 +4,7 @@ defmodule Elmx.Runtime.Pebble.Dispatch.Json do
   alias Elmx.Runtime.Json.Encode
   alias Elmx.Types
 
-  @spec encode_object(Types.registry_args()) :: %{String.t() => Types.json_value()}
+  @spec encode_object(Types.registry_args()) :: Types.json_object_value()
   def encode_object(args), do: Encode.object(List.first(args) || [])
 
   @spec encode_string(Types.registry_args()) :: String.t()

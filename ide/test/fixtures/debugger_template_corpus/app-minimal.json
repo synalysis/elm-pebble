@@ -1,0 +1,80 @@
+{
+  "preview_diagnostics": {
+    "render_source": "runtime_view_output",
+    "root_type": "windowStack",
+    "runtime_view_output_kinds": [
+      "clear"
+    ],
+    "status": "ok"
+  },
+  "preview_ops": [
+    {
+      "color": 255,
+      "kind": "clear"
+    }
+  ],
+  "preview_ops_sha256": "44ca600f0afd31654de4e6efc441793d726daee7c69c75acad4636b2803be9a5",
+  "render_tree": {
+    "node_count": 4,
+    "node_types": [
+      "canvasLayer",
+      "clear",
+      "window",
+      "windowStack"
+    ],
+    "root_type": "windowStack",
+    "tree": {
+      "box": {
+        "h": 168,
+        "text": null,
+        "w": 144,
+        "x": 0,
+        "y": 0
+      },
+      "children": [
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "children": [],
+                  "color": 255,
+                  "label": "",
+                  "text": null,
+                  "type": "clear"
+                }
+              ],
+              "id": 1,
+              "label": "",
+              "text": null,
+              "type": "canvasLayer"
+            }
+          ],
+          "id": 1,
+          "label": "",
+          "text": null,
+          "type": "window"
+        }
+      ],
+      "label": "",
+      "text": null,
+      "type": "windowStack"
+    }
+  },
+  "runtime_model": {
+    "runtime_view_output": [],
+    "timeString": null
+  },
+  "template": "app-minimal",
+  "timeline_init_messages": [
+    "init:init"
+  ],
+  "view_tree_type": "windowStack",
+  "watch_model": {
+    "debugger_init_complete": true,
+    "runtime_model": {},
+    "runtime_view_output": [],
+    "timeString": null,
+    "watch_profile_id": "aplite"
+  }
+}

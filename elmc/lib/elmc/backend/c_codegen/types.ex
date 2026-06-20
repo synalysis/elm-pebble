@@ -216,6 +216,7 @@ defmodule Elmc.Backend.CCodegen.Types do
           :wildcard
           | :var
           | :int
+          | :char
           | :tuple
           | :constructor
           | :record

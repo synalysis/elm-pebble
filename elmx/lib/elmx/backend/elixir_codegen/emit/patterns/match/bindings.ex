@@ -38,6 +38,19 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Bindings do
     pattern_binding_names(pattern)
   end
 
+  def pattern_binding_names(%{kind: :record, bind: bind, fields: fields})
+       when is_list(fields) do
+    field_names =
+      Enum.map(fields, fn
+        name when is_binary(name) -> name
+        name when is_atom(name) -> Atom.to_string(name)
+        %{name: name} -> to_string(name)
+        {name, _} when is_binary(name) or is_atom(name) -> to_string(name)
+      end)
+
+    Enum.reject([bind | field_names], &(&1 in [nil, ""]))
+  end
+
   def pattern_binding_names(%{kind: :alias, pattern: inner, bind: bind})
        when is_binary(bind) and bind != "" do
     [bind | pattern_binding_names(inner)]

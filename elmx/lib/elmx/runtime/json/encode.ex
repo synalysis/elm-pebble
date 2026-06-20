@@ -35,16 +35,21 @@ defmodule Elmx.Runtime.Json.Encode do
   def list(_encoder, items) when is_list(items), do: items
   def list(_encoder, _items), do: []
 
-  @spec object([Types.json_object_pair()]) :: %{String.t() => Types.json_value()}
+  @spec object([Types.json_object_pair()]) :: Types.json_object_value()
   def object(pairs) when is_list(pairs) do
-    Enum.reduce(pairs, %{}, &object_pair/2)
+    ordered =
+      pairs
+      |> Enum.reduce([], fn
+        {key, value}, acc when is_binary(key) -> [{key, value} | acc]
+        [key, value], acc when is_binary(key) -> [{key, value} | acc]
+        _pair, acc -> acc
+      end)
+      |> Enum.reverse()
+
+    {:elmx_json_object, ordered}
   end
 
-  defp object_pair({key, value}, acc) when is_binary(key), do: Map.put(acc, key, value)
-  defp object_pair([key, value], acc) when is_binary(key), do: Map.put(acc, key, value)
-  defp object_pair(_pair, acc), do: acc
-
-  @spec dict(Types.elm_hof(), Types.elm_dict()) :: %{String.t() => Types.json_value()}
+  @spec dict(Types.elm_hof(), Types.elm_dict() | list()) :: Types.json_object_value()
   def dict(encoder, pairs) when is_list(pairs) do
     pairs
     |> Enum.map(fn
@@ -56,11 +61,67 @@ defmodule Elmx.Runtime.Json.Encode do
 
   @spec encode(non_neg_integer(), Types.json_value()) :: String.t()
   def encode(indent, value) when is_integer(indent) and indent >= 0 do
-    opts = if indent > 0, do: [pretty: true], else: []
+    encode_value(value, indent, 0)
+  end
 
-    case Jason.encode(value, opts) do
+  defp encode_value({:elmx_json_object, pairs}, indent, depth) when is_list(pairs) do
+    if indent > 0 do
+      inner_indent = indent_string(indent, depth + 1)
+
+      "{\n" <>
+        Enum.map_join(pairs, ",\n", fn pair ->
+          inner_indent <> encode_object_pair(pair, indent, depth + 1)
+        end) <>
+        "\n" <> indent_string(indent, depth) <> "}"
+    else
+      "{" <> Enum.map_join(pairs, ",", &encode_object_pair(&1, indent, depth)) <> "}"
+    end
+  end
+
+  defp encode_value(value, indent, depth) when is_list(value) do
+    if indent > 0 do
+      inner_indent = indent_string(indent, depth + 1)
+
+      "[\n" <>
+        Enum.map_join(value, ",\n", fn item ->
+          inner_indent <> encode_value(item, indent, depth + 1)
+        end) <>
+        "\n" <> indent_string(indent, depth) <> "]"
+    else
+      "[" <> Enum.map_join(value, ",", &encode_value(&1, indent, depth)) <> "]"
+    end
+  end
+
+  defp encode_value(value, _indent, _depth) when is_boolean(value) or is_nil(value) or is_number(value) do
+    case Jason.encode(value) do
       {:ok, encoded} -> encoded
       _ -> "null"
     end
   end
+
+  defp encode_value(value, _indent, _depth) when is_binary(value) do
+    case Jason.encode(value) do
+      {:ok, encoded} -> encoded
+      _ -> "\"\""
+    end
+  end
+
+  defp encode_value(value, indent, depth) when is_map(value) do
+    case Jason.encode(value, maps: :naive) do
+      {:ok, encoded} -> encoded
+      _ -> encode_value(object(Map.to_list(value)), indent, depth)
+    end
+  end
+
+  defp encode_value(_value, _indent, _depth), do: "null"
+
+  defp encode_object_pair({key, value}, indent, depth) when is_binary(key) do
+    case Jason.encode(key) do
+      {:ok, encoded_key} -> encoded_key <> ":" <> encode_value(value, indent, depth)
+      _ -> "\"\":" <> encode_value(value, indent, depth)
+    end
+  end
+
+  defp indent_string(_indent, depth) when depth <= 0, do: ""
+  defp indent_string(indent, depth) when indent > 0 and depth > 0, do: String.duplicate(" ", indent * depth)
 end

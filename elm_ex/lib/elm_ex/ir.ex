@@ -19,7 +19,7 @@ defmodule ElmEx.IR.Module do
   @type t() :: ModuleTypes.t()
 
   @enforce_keys [:name, :imports, :declarations]
-  defstruct [:name, :imports, :declarations, unions: %{}]
+  defstruct [:name, :imports, :declarations, unions: %{}, ports: [], port_module: false]
 end
 
 defmodule ElmEx.IR.Declaration do
