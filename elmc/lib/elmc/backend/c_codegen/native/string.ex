@@ -4,16 +4,21 @@ defmodule Elmc.Backend.CCodegen.Native.String do
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.TypedReturn
+  alias Elmc.Backend.CCodegen.StaticString
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
 
   @spec compile_expr(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
           Types.native_string_compile_result()
-  def compile_expr(%{op: :string_literal, value: value}, _env, counter) do
+  def compile_expr(expr, env, counter) do
+    compile_expr_impl(StaticString.fold_append_literals(expr), env, counter)
+  end
+
+  defp compile_expr_impl(%{op: :string_literal, value: value}, _env, counter) do
     {"", "\"#{Util.escape_c_string(value)}\"", [], counter}
   end
 
-  def compile_expr(%{op: :var, name: name} = expr, env, counter) do
+  defp compile_expr_impl(%{op: :var, name: name} = expr, env, counter) do
     case EnvBindings.native_string_binding(env, name) do
       native_ref when is_binary(native_ref) ->
         {"", native_ref, [], counter}
@@ -32,7 +37,7 @@ defmodule Elmc.Backend.CCodegen.Native.String do
     end
   end
 
-  def compile_expr(
+  defp compile_expr_impl(
         %{op: :if, cond: cond_expr, then_expr: then_expr, else_expr: else_expr} = expr,
         env,
         counter
@@ -67,14 +72,14 @@ defmodule Elmc.Backend.CCodegen.Native.String do
     end
   end
 
-  def compile_expr(%{op: :qualified_call, target: target, args: args} = expr, env, counter) do
+  defp compile_expr_impl(%{op: :qualified_call, target: target, args: args} = expr, env, counter) do
     case Host.special_value_from_target(Host.normalize_special_target(target), args || []) do
       nil -> compile_fallback(expr, env, counter)
       rewritten -> compile_expr(rewritten, env, counter)
     end
   end
 
-  def compile_expr(
+  defp compile_expr_impl(
         %{op: :runtime_call, function: "elmc_string_from_int", args: [value]} = expr,
         env,
         counter
@@ -98,7 +103,7 @@ defmodule Elmc.Backend.CCodegen.Native.String do
     end
   end
 
-  def compile_expr(
+  defp compile_expr_impl(
         %{op: :runtime_call, function: "elmc_append", args: [left, right]} = expr,
         env,
         counter
@@ -136,7 +141,7 @@ defmodule Elmc.Backend.CCodegen.Native.String do
     end
   end
 
-  def compile_expr(%{op: :call, name: "__append__", args: [left, right]}, env, counter) do
+  defp compile_expr_impl(%{op: :call, name: "__append__", args: [left, right]}, env, counter) do
     compile_expr(
       %{op: :runtime_call, function: "elmc_append", args: [left, right]},
       env,
@@ -144,7 +149,7 @@ defmodule Elmc.Backend.CCodegen.Native.String do
     )
   end
 
-  def compile_expr(expr, env, counter), do: compile_fallback(expr, env, counter)
+  defp compile_expr_impl(expr, env, counter), do: compile_fallback(expr, env, counter)
 
   @spec expr?(Types.ir_expr(), Types.compile_env()) :: boolean()
   def expr?(%{op: :string_literal}, _env), do: true

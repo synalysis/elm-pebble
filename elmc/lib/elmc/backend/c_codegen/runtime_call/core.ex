@@ -18,6 +18,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
   alias Elmc.Backend.CCodegen.Native.TypedReturn, as: NativeTypedReturn
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.RecordCompile
+  alias Elmc.Backend.CCodegen.StaticString
   alias Elmc.Backend.CCodegen.TypeParsing
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.VarAnalysis
@@ -57,21 +58,19 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
   @spec compile(Types.ir_runtime_call_expr(), Types.compile_env(), Types.compile_counter()) ::
           Types.compile_result()
   def compile(%{op: :runtime_call, function: "elmc_append", args: [left, right]}, env, counter) do
-    append_expr = %{op: :runtime_call, function: "elmc_append", args: [left, right]}
+    case StaticString.fold_append_literals(%{
+           op: :runtime_call,
+           function: "elmc_append",
+           args: [left, right]
+         }) do
+      %{op: :string_literal, value: value} ->
+        Host.compile_expr(%{op: :string_literal, value: value}, env, counter)
 
-    cond do
-      NativeString.expr?(left, env) and NativeString.expr?(right, env) ->
-        compile_native_append(left, right, env, counter)
+      %{op: :call, name: "__append__", args: [folded_left, folded_right]} ->
+        compile_folded_append(folded_left, folded_right, env, counter)
 
-      true ->
-        {:ok, segments} = collect_append_segments(append_expr)
-
-        if length(segments) >= @min_list_append_concat_segments and
-             list_append_concat_segments?(segments, env) do
-          compile_list_concat(segments, env, counter)
-        else
-          compile_generic(append_expr, env, counter)
-        end
+      %{op: :runtime_call, function: "elmc_append", args: [folded_left, folded_right]} ->
+        compile_folded_append(folded_left, folded_right, env, counter)
     end
   end
 
@@ -574,6 +573,30 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
   end
 
   defp compile_string_concat_segments(segments, env, counter) do
+    segments = Enum.map(segments, &StaticString.fold_append_literals/1)
+
+    cond do
+      Enum.all?(segments, &match?(%{op: :string_literal, value: _}, &1)) ->
+        merged = %{op: :string_literal, value: Enum.map_join(segments, & &1.value)}
+        {code, ref, _releases, counter} = NativeString.compile_expr(merged, env, counter)
+        next = counter + 1
+        out = "tmp_#{next}"
+        assign = RcRuntimeEmit.assign_or_fusion(env, out, "elmc_new_string", ref)
+
+        code =
+          code <>
+            """
+              #{assign}
+            """
+
+        {code, out, next}
+
+      true ->
+        compile_string_concat_segments_loop(segments, env, counter)
+    end
+  end
+
+  defp compile_string_concat_segments_loop(segments, env, counter) do
     {segment_code, segment_boxes, segment_releases, counter} =
       Enum.reduce(segments, {"", [], [], counter}, fn segment, {code_acc, boxes_acc, releases_acc, c} ->
         {code, ref, releases, c2} = NativeString.compile_expr(segment, env, c)
@@ -655,6 +678,25 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     """
 
     {:ok, code, out_ref, counter}
+  end
+
+  defp compile_folded_append(left, right, env, counter) do
+    append_expr = %{op: :runtime_call, function: "elmc_append", args: [left, right]}
+
+    cond do
+      NativeString.expr?(left, env) and NativeString.expr?(right, env) ->
+        compile_native_append(left, right, env, counter)
+
+      true ->
+        {:ok, segments} = collect_append_segments(append_expr)
+
+        if length(segments) >= @min_list_append_concat_segments and
+             list_append_concat_segments?(segments, env) do
+          compile_list_concat(segments, env, counter)
+        else
+          compile_generic(append_expr, env, counter)
+        end
+    end
   end
 
   defp compile_native_append(left, right, env, counter) do

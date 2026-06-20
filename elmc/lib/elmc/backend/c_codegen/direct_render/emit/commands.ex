@@ -7,6 +7,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.PlatformStatic
   alias Elmc.Backend.CCodegen.SpecialValues
+  alias Elmc.Backend.CCodegen.StaticString
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
 
@@ -261,7 +262,16 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
   end
 
   defp text_copy_code(%{op: :call, name: "__append__", args: [left, right]}, env, counter) do
-    text_copy_append_code(left, right, env, counter)
+    case StaticString.fold_append_literals(%{op: :call, name: "__append__", args: [left, right]}) do
+      %{op: :string_literal, value: value} ->
+        text_copy_code(%{op: :string_literal, value: value}, env, counter)
+
+      %{op: :call, name: "__append__", args: [folded_left, folded_right]} ->
+        text_copy_append_code(folded_left, folded_right, env, counter)
+
+      %{op: :runtime_call, function: "elmc_append", args: [folded_left, folded_right]} ->
+        text_copy_append_code(folded_left, folded_right, env, counter)
+    end
   end
 
   defp text_copy_code(
