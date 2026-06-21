@@ -383,7 +383,9 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     end
   end
 
-  defp fresh_tmp_var(counter, env) do
+  @spec fresh_tmp_var(Types.compile_counter(), Types.compile_env()) ::
+          {String.t(), Types.compile_counter()}
+  def fresh_tmp_var(counter, env \\ %{}) do
     next = counter + 1
     var = "tmp_#{next}"
 

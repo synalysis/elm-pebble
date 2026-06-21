@@ -341,8 +341,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     assert native_bool_helper_body =~ " = elmc_retain(tmp_"
     refute native_bool_helper_body =~ "if (elmc_as_int(tmp_"
     refute native_bool_helper_body =~ " ? elmc_retain(tmp_"
-    assert native_bool_helper_body =~ "native_if_3 = 192;"
-    assert native_bool_helper_body =~ "native_if_3 = 255;"
+    assert native_bool_helper_body =~ ~r/native_if_\d+ = 192;/
+    assert native_bool_helper_body =~ ~r/native_if_\d+ = 255;/
 
     refute Regex.match?(
              ~r/ElmcValue \*tmp_\d+ = elmc_new_int\(192\);\s+tmp_\d+ = tmp_\d+;/,
@@ -1307,7 +1307,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_directTypedIntResultReuse_commands_append")
 
     assert typed_int_direct_body =~ "elmc_fn_Main_opaqueStringLength"
-    assert typed_int_direct_body =~ "elmc_as_int(tmp_"
+    assert typed_int_direct_body =~ ~r/(?:elmc_as_int\((?:tmp_\d+|owned\[\d+\])\)|const elmc_int_t native_i_\d+ = elmc_as_int\(owned\[\d+\]\))/
 
     refute Regex.match?(
              ~r/tmp_\d+ \? elmc_retain\(tmp_\d+\) : elmc_int_zero\(\)/,

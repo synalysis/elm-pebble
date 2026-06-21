@@ -259,11 +259,15 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     |> CSource.indent(2)
   end
 
+  @foldl_borrowed_var ~r/^list_foldl_(cursor|head|node)_\d+$/
+
   defp switch_branch_cleanup(expr_code, assignment_code, out) do
     body =
       [expr_code, assignment_code]
       |> Enum.filter(&is_binary/1)
       |> Enum.join("\n")
+
+    loop_scoped = loop_scoped_assignments(body)
 
     assigned =
       Regex.scan(~r/ElmcValue \*([A-Za-z_][A-Za-z0-9_]*)\s*=/, body)
@@ -281,8 +285,10 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     |> Enum.reject(fn name ->
       name == out or
         String.starts_with?(name, "__") or
+        Regex.match?(@foldl_borrowed_var, name) or
         MapSet.member?(released, name) or
         MapSet.member?(cow_drop_skip, name) or
+        MapSet.member?(loop_scoped, name) or
         ValueSlots.transferred?(name, body) or
         OwnershipTransfer.transferred_in_c_source?(name, body)
     end)
@@ -290,6 +296,28 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
       ValueSlots.release(name)
       "elmc_release(#{name});"
     end)
+  end
+
+  defp loop_scoped_assignments(body) when is_binary(body) do
+    body
+    |> String.split("\n")
+    |> Enum.reduce({0, MapSet.new()}, fn line, {while_depth, scoped} ->
+      while_depth =
+        cond do
+          String.contains?(line, "while (") -> while_depth + 1
+          String.trim(line) == "}" and while_depth > 0 -> while_depth - 1
+          true -> while_depth
+        end
+
+      scoped =
+        case Regex.run(~r/^\s+ElmcValue \*([A-Za-z_][A-Za-z0-9_]*)\s*=/, line) do
+          [_, var] when while_depth > 0 -> MapSet.put(scoped, var)
+          _ -> scoped
+        end
+
+      {while_depth, scoped}
+    end)
+    |> elem(1)
   end
 
   @spec case_label(Types.pattern(), Types.compile_env()) :: String.t()

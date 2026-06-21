@@ -840,7 +840,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
 
       retain_code =
         code <>
-          "\n  ElmcValue *#{retain_var} = elmc_retain(#{var});\n"
+          "\n  " <> ValueSlots.boxed_decl(retain_var, "elmc_retain(#{var})") <> "\n"
 
       {retain_code, retain_var, next}
     else

@@ -1,10 +1,13 @@
 module Main exposing (main)
 
 import Json.Decode as Decode
-import Pebble.Platform as Platform
+import Pebble.Cmd as PebbleCmd
+import Pebble.Events as Events
+import Pebble.Platform
 import Pebble.Storage as Storage
 import Pebble.Ui as Ui
 import Pebble.Ui.Color as Color
+import Pebble.Ui.Resources as Resources
 
 
 type alias GridModel =
@@ -155,7 +158,7 @@ addTile seed cells =
     ( cells, seed + 1 )
 
 
-slideGrid : Dir -> GridModel -> ( GridModel, Platform.Cmd msg )
+slideGrid : Dir -> GridModel -> ( GridModel, Cmd msg )
 slideGrid direction model =
     let
         faced =
@@ -168,7 +171,7 @@ slideGrid direction model =
             unfaceGrid direction squashed.cells
     in
     if restored == model.cells then
-        ( model, Platform.Cmd.none )
+        ( model, PebbleCmd.none )
 
     else
         let
@@ -186,7 +189,7 @@ slideGrid direction model =
                     Storage.writeString 99 (String.fromInt nextBest)
 
                 else
-                    Platform.Cmd.none
+                    PebbleCmd.none
         in
         ( { model
             | cells = nextCells
@@ -206,7 +209,7 @@ init _ =
       , best = 0
       , turn = 0
       }
-    , Platform.Cmd.none
+    , PebbleCmd.none
     )
 
 
@@ -226,15 +229,18 @@ update msg model =
 
 
 view model =
-    Ui.toUiNode [ Ui.clear Color.white, Ui.text (String.fromInt model.turn) ]
+    Ui.toUiNode
+        [ Ui.clear Color.white
+        , Ui.textInt Resources.DefaultFont { x = 0, y = 0 } model.turn
+        ]
 
 
 subscriptions _ =
-    Platform.Sub.none
+    Events.batch []
 
 
 main =
-    Platform.application
+    Pebble.Platform.application
         { init = init
         , update = update
         , view = view

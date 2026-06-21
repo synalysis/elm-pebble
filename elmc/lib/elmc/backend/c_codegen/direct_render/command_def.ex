@@ -9,6 +9,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
+  alias Elmc.Backend.CCodegen.ValueSlots
 
   @type arg_kind :: Types.direct_command_arg_kind()
   @type c_arg_binding :: Types.c_arg_binding()
@@ -110,6 +111,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
     Process.delete(:elmc_hoisted_native_int_inits)
     Process.put(:elmc_hoisted_native_ints_scope, true)
     Process.put(:elmc_direct_helper_defs, [])
+    ValueSlots.reset()
 
     try do
       {field_hoist_preamble, start_counter} = DuplicateFieldHoists.preamble(decl.expr, env, 0)
@@ -214,6 +216,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
     Process.delete(:elmc_hoisted_native_int_inits)
     Process.put(:elmc_hoisted_native_ints_scope, true)
     Process.put(:elmc_direct_helper_defs, [])
+    ValueSlots.reset()
 
     try do
       {field_hoist_preamble, start_counter} = DuplicateFieldHoists.preamble(decl.expr, native_env, 0)

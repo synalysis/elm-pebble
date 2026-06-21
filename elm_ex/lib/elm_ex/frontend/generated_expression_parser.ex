@@ -620,7 +620,7 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
           if String.ends_with?(String.trim(current), " of") do
             " "
           else
-            " ; "
+            " ;; "
           end
 
         updated = current <> separator <> String.trim(line)

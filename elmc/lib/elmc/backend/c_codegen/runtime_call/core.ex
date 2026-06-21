@@ -2714,10 +2714,10 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
       {copy, next} = CaseCompile.fresh_var(counter, env)
 
       copy_code =
-        """
-        ElmcValue *#{copy} = #{tail} ? elmc_list_copy_take(#{tail}) : elmc_int_zero();
-        """
-        |> String.trim()
+        ValueSlots.boxed_decl(
+          copy,
+          "#{tail} ? elmc_list_copy_take(#{tail}) : elmc_int_zero()"
+        )
 
       {arg_code <> "\n  " <> copy_code, [head, copy], next, true}
     else

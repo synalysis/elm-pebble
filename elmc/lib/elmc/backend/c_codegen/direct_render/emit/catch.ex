@@ -1,6 +1,8 @@
 defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Catch do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.ValueSlots
+
   @spec header_macros() :: String.t()
   def header_macros do
     ""
@@ -8,9 +10,17 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Catch do
 
   @spec function_body_prefix() :: String.t()
   def function_body_prefix do
+    owned = ValueSlots.owned_declaration()
+
+    owned_line =
+      case owned do
+        "" -> ""
+        decl -> decl <> "\n\n"
+      end
+
     """
     RC Rc = RC_SUCCESS;
-    static ElmcPebbleDrawCmd scene_cmd;
+    #{owned_line}static ElmcPebbleDrawCmd scene_cmd;
 
     CATCH_BEGIN
     """
@@ -20,9 +30,25 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Catch do
 
   @spec function_body_suffix() :: String.t()
   def function_body_suffix do
+    cleanup = ValueSlots.failure_cleanup()
+
+    cleanup_block =
+      case cleanup do
+        "" ->
+          ""
+
+        code ->
+          """
+
+          if (Rc != RC_SUCCESS) {
+            #{code}
+          }
+          """
+      end
+
     """
 
-    CATCH_END;
+    CATCH_END;#{cleanup_block}
 
     return Rc;
     """

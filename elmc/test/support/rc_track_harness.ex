@@ -276,6 +276,7 @@ defmodule Elmc.Test.RcTrackHarness do
       #endif
         ElmcValue *out = fn();
         if (release_result && out) elmc_release(out);
+        elmc_process_release_all_slots();
         if (!elmc_rc_track_check_balanced()) {
           fprintf(stderr, "rc leak in %s\\n", name);
           return 1;
@@ -343,6 +344,7 @@ defmodule Elmc.Test.RcTrackHarness do
           elmc_rc_track_reset();
           ElmcValue *out = fn();
           if (release_result && out) elmc_release(out);
+          elmc_process_release_all_slots();
           if (!elmc_rc_track_check_balanced()) {
             fprintf(stderr, "rc leak in %s at iteration %d\\n", name, i);
             return 1;

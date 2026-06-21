@@ -988,6 +988,7 @@ defmodule Elmc.Runtime.Generator do
     ElmcValue *elmc_task_perform(ElmcValue *to_msg, ElmcValue *task);
     ElmcValue *elmc_task_force(ElmcValue *task);
     ElmcValue *elmc_process_spawn(ElmcValue *task);
+    void elmc_process_release_all_slots(void);
     ElmcValue *elmc_process_sleep(ElmcValue *milliseconds);
     ElmcValue *elmc_process_kill(ElmcValue *pid);
     ElmcValue *elmc_time_now_millis(void);
@@ -1475,6 +1476,14 @@ defmodule Elmc.Runtime.Generator do
     #endif
       slot->active = 0;
       slot->pid = 0;
+    }
+
+    void elmc_process_release_all_slots(void) {
+    #ifndef ELMC_PEBBLE_PLATFORM
+      for (int i = 0; i < ELMC_PROCESS_MAX_SLOTS; i++) {
+        elmc_process_release_slot(&ELMC_PROCESS_SLOTS[i]);
+      }
+    #endif
     }
 
     #ifdef ELMC_PEBBLE_PLATFORM
@@ -4220,6 +4229,7 @@ defmodule Elmc.Runtime.Generator do
       ElmcValue *out = NULL;
       if (elmc_result_ok(&out, pid) != RC_SUCCESS) out = NULL;
       elmc_release(pid);
+      if (out) out->scalar = ELMC_TASK_SPAWN_SCALAR;
       return out;
     #else
       return elmc_task_wrap(task, ELMC_TASK_SPAWN_SCALAR);

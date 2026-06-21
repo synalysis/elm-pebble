@@ -634,11 +634,11 @@
     "risk": 3
   },
   "code_size_indicators": {
-    "boxed_tmp_declarations": 138,
+    "boxed_tmp_declarations": 85,
     "closure_allocations": 0,
     "direct_command_defs": 0,
-    "generated_c_bytes": 50571,
-    "generated_c_lines": 1564,
+    "generated_c_bytes": 50420,
+    "generated_c_lines": 1559,
     "generic_function_defs": 5,
     "linked_binary": {
       "reason": "binary size is available after platform or host linking, not during C source generation",

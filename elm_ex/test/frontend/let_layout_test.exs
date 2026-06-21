@@ -198,6 +198,25 @@ defmodule ElmEx.Frontend.LetLayoutTest do
             }} = GeneratedExpressionParser.parse(source)
   end
 
+  test "parses nested case expression as outer case branch body" do
+    source = """
+    case msg of
+        MinuteChanged minute ->
+            case model.now of
+                Nothing ->
+                    ( model, Cmd.none )
+
+                Just now ->
+                    ( { model | now = Just { now | minute = minute } }
+                    , Cmd.none
+                    )
+    """
+
+    assert {:ok, %{op: :case, branches: branches}} = GeneratedExpressionParser.parse(source)
+    assert length(branches) == 1
+    assert match?(%{pattern: %{name: "MinuteChanged"}}, hd(branches))
+  end
+
   test "starter watch template Main.elm parses through generated frontend" do
     path =
       Path.expand(

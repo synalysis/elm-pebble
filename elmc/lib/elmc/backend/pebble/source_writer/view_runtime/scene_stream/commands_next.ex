@@ -25,7 +25,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime.SceneStream.CommandsNext 
         ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_SCENE_NEXT_EXIT);
         ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_next", 0);
       }
-      if (app->scene.dirty) {
+      if (app->scene.dirty && app->scene_draw_byte_offset == 0) {
         ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_SCENE_NEXT_EXIT);
         ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_next", 0);
       }

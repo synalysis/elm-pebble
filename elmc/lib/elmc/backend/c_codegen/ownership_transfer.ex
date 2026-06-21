@@ -40,9 +40,23 @@ defmodule Elmc.Backend.CCodegen.OwnershipTransfer do
         ~r/list_items_\d+\[\d+\]\s*=\s*\{[^}]*\b#{escaped}\b[^}]*\}[\s\S]*?elmc_list_from_values_take/,
         body
       ) or
-      Regex.match?(~r/elmc_tuple2_take\s*\([^)]*\b#{escaped}\b/, body) or
-      Regex.match?(~r/elmc_record_new_values_take_value\s*\([^;]*\b#{escaped}\b/, body) or
-      Regex.match?(~r/elmc_list_cons_take\s*\(\s*#{escaped}\s*,/, body) or
+      Regex.match?(
+        ~r/elmc_tuple2_take(?:_value)?\s*\([^)]*\b#{escaped}\b/,
+        body
+      ) or
+      Regex.match?(
+        ~r/elmc_list_from_values_take(?:_value)?\s*\([^)]*\b#{escaped}\b/,
+        body
+      ) or
+      Regex.match?(
+        ~r/elmc_record_new(?:_static)?_take(?:_value)?\s*\([^;]*\b#{escaped}\b/,
+        body
+      ) or
+      Regex.match?(
+        ~r/elmc_record_new_values_take(?:_value)?\s*\([^;]*\b#{escaped}\b/,
+        body
+      ) or
+      Regex.match?(~r/elmc_list_cons(?:_take)?\s*\(\s*#{escaped}\s*,/, body) or
       Regex.match?(~r/elmc_cmd_batch\s*\(\s*#{escaped}\s*\)/, body)
   end
 

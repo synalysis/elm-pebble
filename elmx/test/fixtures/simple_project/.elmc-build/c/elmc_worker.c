@@ -60,68 +60,96 @@ static ElmcValue *elmc_cmd_none(void) {
   return elmc_int_zero();
 }
 
-static ElmcValue *elmc_cmd_singleton(ElmcValue *cmd) {
-  ElmcValue *empty = elmc_list_nil();
-  ElmcValue *list = elmc_list_cons_take(cmd, empty);
-  elmc_release(empty);
-  return list ? list : elmc_cmd_none();
+static ElmcValue *elmc_cmd_queue_push_back_take(ElmcValue *queue, ElmcValue *cmd) {
+  if (!cmd || elmc_cmd_is_none(cmd)) {
+    elmc_release(cmd);
+    return queue ? queue : elmc_cmd_none();
+  }
+
+  ElmcValue *cell = elmc_list_cons_take(cmd, elmc_list_nil());
+  if (!cell || elmc_cmd_is_none(cell)) {
+    elmc_release(cmd);
+    return queue ? queue : elmc_cmd_none();
+  }
+
+  if (!queue || elmc_cmd_is_none(queue)) {
+    elmc_release(queue);
+    return cell;
+  }
+
+  if (queue->tag == ELMC_TAG_CMD) {
+    ElmcValue *head_cell = elmc_list_cons_take(queue, cell);
+    return head_cell ? head_cell : cell;
+  }
+
+  if (queue->tag != ELMC_TAG_LIST) {
+    elmc_release(cell);
+    return queue;
+  }
+
+  ElmcValue **tail = &queue;
+  ElmcValue *cursor = queue;
+  while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
+    ElmcCons *node = (ElmcCons *)cursor->payload;
+    tail = &node->tail;
+    cursor = node->tail;
+  }
+  *tail = cell;
+  return queue;
 }
 
-static ElmcValue *elmc_cmd_queue_append(ElmcValue *existing, ElmcValue *next) {
-  if (elmc_cmd_is_none(existing) && elmc_cmd_is_none(next)) {
-    elmc_release(existing);
-    elmc_release(next);
-    return elmc_cmd_none();
+static ElmcValue *elmc_cmd_queue_concat_take(ElmcValue *left, ElmcValue *right) {
+  if (!left || elmc_cmd_is_none(left)) {
+    elmc_release(left);
+    return right ? right : elmc_cmd_none();
   }
-  if (elmc_cmd_is_none(existing)) {
-    elmc_release(existing);
-    return next;
-  }
-  if (elmc_cmd_is_none(next)) {
-    elmc_release(next);
-    return existing;
+  if (!right || elmc_cmd_is_none(right)) {
+    elmc_release(right);
+    return left;
   }
 
-  if (existing->tag == ELMC_TAG_LIST && next->tag == ELMC_TAG_LIST) {
-    ElmcValue *merged = elmc_list_append_take(existing, next);
-    elmc_release(existing);
-    elmc_release(next);
-    return merged;
+  if (left->tag == ELMC_TAG_CMD) {
+    if (right->tag == ELMC_TAG_CMD) {
+      ElmcValue *tail_cell = elmc_list_cons_take(right, elmc_list_nil());
+      return elmc_list_cons_take(left, tail_cell ? tail_cell : elmc_list_nil());
+    }
+    if (right->tag == ELMC_TAG_LIST) {
+      return elmc_list_cons_take(left, right);
+    }
+    elmc_release(right);
+    return left;
   }
 
-  if (existing->tag == ELMC_TAG_LIST) {
-    ElmcValue *next_list = elmc_cmd_singleton(next);
-    ElmcValue *merged = elmc_list_append_take(existing, next_list);
-    elmc_release(next_list);
-    elmc_release(existing);
-    elmc_release(next);
-    return merged;
+  if (right->tag == ELMC_TAG_CMD) {
+    return elmc_cmd_queue_push_back_take(left, right);
   }
 
-  ElmcValue *existing_list = elmc_cmd_singleton(existing);
-
-  if (next->tag == ELMC_TAG_LIST) {
-    ElmcValue *merged = elmc_list_append_take(existing_list, next);
-    elmc_release(existing_list);
-    elmc_release(existing);
-    elmc_release(next);
-    return merged;
+  if (right->tag != ELMC_TAG_LIST) {
+    elmc_release(right);
+    return left;
   }
 
-  ElmcValue *next_list = elmc_cmd_singleton(next);
-  ElmcValue *merged = elmc_list_append_take(existing_list, next_list);
-  elmc_release(existing_list);
-  elmc_release(next_list);
-  elmc_release(existing);
-  elmc_release(next);
-  return merged;
+  if (left->tag != ELMC_TAG_LIST) {
+    elmc_release(left);
+    return right;
+  }
+
+  ElmcValue **tail = &left;
+  ElmcValue *cursor = left;
+  while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
+    ElmcCons *node = (ElmcCons *)cursor->payload;
+    tail = &node->tail;
+    cursor = node->tail;
+  }
+  *tail = right;
+  return left;
 }
 
 static ElmcValue *elmc_cmd_queue_push_entry(ElmcValue *flat, ElmcValue *entry) {
-  if (!entry) return flat ? flat : elmc_new_int_take(0);
+  if (!entry) return flat ? flat : elmc_cmd_none();
   if (elmc_cmd_is_none(entry)) {
     elmc_release(entry);
-    return flat ? flat : elmc_new_int_take(0);
+    return flat ? flat : elmc_cmd_none();
   }
 
   if (entry->tag == ELMC_TAG_LIST) {
@@ -130,7 +158,7 @@ static ElmcValue *elmc_cmd_queue_push_entry(ElmcValue *flat, ElmcValue *entry) {
       ElmcCons *node = (ElmcCons *)cursor->payload;
       ElmcValue *head = node->head;
       node->head = NULL;
-      flat = elmc_cmd_queue_push_entry(flat, head);
+      flat = elmc_cmd_queue_push_back_take(flat, head);
       ElmcValue *next = node->tail;
       node->tail = NULL;
       elmc_release(cursor);
@@ -139,8 +167,7 @@ static ElmcValue *elmc_cmd_queue_push_entry(ElmcValue *flat, ElmcValue *entry) {
     return flat;
   }
 
-  ElmcValue *single = elmc_cmd_singleton(entry);
-  return elmc_cmd_queue_append(flat, single);
+  return elmc_cmd_queue_push_back_take(flat, entry);
 }
 
 static ElmcValue *elmc_cmd_queue_normalize(ElmcValue *cmd) {
@@ -287,10 +314,12 @@ int elmc_worker_dispatch(ElmcWorkerState *state, ElmcValue *msg) {
   }
   if (next_model != state->model) {
     elmc_release(state->model);
+  } else if (next_model->rc > 1) {
+    elmc_release(next_model);
   }
   state->model = next_model;
   ElmcValue *next_cmd = elmc_cmd_queue_normalize(extract_cmd_take(result));
-  state->pending_cmd = elmc_cmd_queue_append(state->pending_cmd, next_cmd);
+  state->pending_cmd = elmc_cmd_queue_concat_take(state->pending_cmd, next_cmd);
   elmc_release(result);
   elmc_worker_heap_log("update:end");
   return 0;

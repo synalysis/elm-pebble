@@ -481,7 +481,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
 
   defp partial_closure(module_name, name, arity, arg_vars, env, counter, out) when is_binary(out) do
     env = Map.delete(env, :__into_out__)
-    {cap_index, next} = CaseCompile.fresh_var(counter, env)
+    {cap_index, next} = CaseCompile.fresh_tmp_var(counter, env)
     c_name = Util.module_fn_name(module_name, name)
     bound_count = length(arg_vars)
     remaining = max(arity - bound_count, 0)

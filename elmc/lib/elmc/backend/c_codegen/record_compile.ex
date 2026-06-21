@@ -9,6 +9,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   alias Elmc.Backend.CCodegen.FunctionCallCompile
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.CaseCompile
+  alias Elmc.Backend.CCodegen.OwnershipTransfer
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Native.RecordFields
   alias Elmc.Backend.CCodegen.Types
@@ -150,10 +151,11 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     {field_code, field_refs, counter, post_release} =
       compile_field_exprs(ordered_fields, env, counter, &Host.compile_native_int_expr/3)
 
-    next = counter + 1
-    out = literal_result_out(env, next)
+    suffix = counter + 1
+    {out, bind_counter, declare_out?} = CaseCompile.result_out_binding(env, suffix)
+    next = CaseCompile.advance_counter_past_out(bind_counter, out, declare_out?)
     values_array = Enum.join(field_refs, ", ")
-    values_decl = "elmc_int_t rec_values_#{next}[#{field_count}] = { #{values_array} };"
+    values_decl = "elmc_int_t rec_values_#{suffix}[#{field_count}] = { #{values_array} };"
     names = Enum.map(ordered_fields, & &1.name)
     use_named? = Process.get(:elmc_named_record_literals, false) and field_count > 0
 
@@ -164,14 +166,14 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
           |> Enum.map_join(", ", fn name -> "\"#{Util.escape_c_string(name)}\"" end)
 
         """
-        const char *rec_names_#{next}[#{max(field_count, 1)}] = { #{names_array} };
+        const char *rec_names_#{suffix}[#{max(field_count, 1)}] = { #{names_array} };
         #{RcRuntimeEmit.assign_call(env, out, "elmc_record_new_static_ints",
-          "#{field_count}, rec_names_#{next}, rec_values_#{next}"
+          "#{field_count}, rec_names_#{suffix}, rec_values_#{suffix}"
         )}
         """
       else
         RcRuntimeEmit.assign_call(env, out, "elmc_record_new_values_ints",
-          "#{field_count}, rec_values_#{next}"
+          "#{field_count}, rec_values_#{suffix}"
         )
       end
 
@@ -287,11 +289,6 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
       prior = Enum.take(field_refs, idx)
       if ref in prior, do: [], else: [ref]
     end)
-  end
-
-  defp literal_result_out(env, counter) do
-    {out, _next, _} = CaseCompile.result_out_binding(env, counter)
-    out
   end
 
   defp remap_literal_fields(ordered_fields, canonical_names) do
@@ -1426,6 +1423,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     |> Enum.filter(&boxed_release_var?/1)
     |> Enum.reject(&field_ref_still_uses_cache_ref?(&1, field_refs))
     |> Enum.reject(&released_in_field_code?(&1, field_code))
+    |> Enum.reject(&orphan_cache_release?(&1, field_code))
     |> Enum.uniq()
   end
 
@@ -1438,6 +1436,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
       |> Enum.filter(&boxed_release_var?/1)
       |> Enum.reject(&(&1 in field_refs))
       |> Enum.reject(&released_in_field_code?(&1, field_code))
+      |> Enum.reject(&orphan_cache_release?(&1, field_code))
       |> Enum.uniq()
 
     if clear?, do: Process.put(:elmc_record_field_sources, MapSet.new())
@@ -1472,7 +1471,19 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     |> Enum.reject(&MapSet.member?(skip_refs, &1))
     |> Enum.reject(&MapSet.member?(already_released, &1))
     |> Enum.reject(&released_in_field_code?(&1, field_code))
+    |> Enum.reject(&orphan_cache_release?(&1, field_code))
     |> Enum.uniq()
+  end
+
+  defp orphan_cache_release?(ref, field_code) when is_binary(ref) and is_binary(field_code) do
+    not declared_boxed_var?(ref, field_code) or
+      OwnershipTransfer.transferred_in_c_source?(ref, field_code)
+  end
+
+  defp orphan_cache_release?(_ref, _field_code), do: false
+
+  defp declared_boxed_var?(ref, field_code) when is_binary(ref) and is_binary(field_code) do
+    Regex.match?(~r/ElmcValue \*#{Regex.escape(ref)}(?!\w)\s*=/, field_code)
   end
 
   defp released_vars_in_code(code) when is_binary(code) do

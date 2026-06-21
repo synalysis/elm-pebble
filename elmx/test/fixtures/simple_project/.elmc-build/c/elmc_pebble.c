@@ -2625,15 +2625,11 @@ int elmc_pebble_init_with_mode(ElmcPebbleApp *app, ElmcValue *flags, int run_mod
       return count;
     }
     void elmc_pebble_clear_view_cache(ElmcPebbleApp *app) {
-      if (!app) return;
-    #if defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)
-      (void)app;
-    #else
-      if (app->stream_view_result) {
-        elmc_release(app->stream_view_result);
-        app->stream_view_result = NULL;
-      }
-    #endif
+  if (!app) return;
+  if (app->stream_view_result) {
+    elmc_release(app->stream_view_result);
+    app->stream_view_result = NULL;
+  }
     }
 
     int elmc_pebble_ensure_scene(ElmcPebbleApp *app) {
@@ -2809,7 +2805,7 @@ static int elmc_pebble_scene_decode_from(
         ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_SCENE_NEXT_EXIT);
         ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_next", 0);
       }
-      if (app->scene.dirty) {
+      if (app->scene.dirty && app->scene_draw_byte_offset == 0) {
         ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_SCENE_NEXT_EXIT);
         ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_next", 0);
       }

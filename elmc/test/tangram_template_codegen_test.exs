@@ -22,7 +22,7 @@ defmodule Elmc.TangramTemplateCodegenTest do
 
     assert generated =~ "ELMC_RENDER_OP_FILL_CIRCLE"
     assert generated =~ "elmc_fn_Main_tangramFaceOps"
-    assert generated =~ "Rc = elmc_fn_Main_tangramFaceOps(&tmp_1, call_args_1, 1)"
+    assert generated =~ ~r/Rc = elmc_fn_Main_tangramFaceOps\(&(?:tmp_\d+|owned\[\d+\]), call_args_1, 1\)/
 
     refute generated =~
              ~r/if \(native_b_\d+\) \{\n\s+ElmcValue \*tmp_\d+ = NULL;\n\s+Rc = elmc_new_int\(&tmp_/,

@@ -169,6 +169,10 @@ typedef enum {
 #define CATCH_BEGIN     do {
 #define CATCH_END       } while (0)
 
+#ifndef DIM
+#define DIM(arr) (sizeof(arr) / sizeof((arr)[0]))
+#endif
+
 #ifndef ELMC_CHECK_RC_BREAK
 /* break must target CATCH_BEGIN's loop — never wrap it in do/while. */
 #define ELMC_CHECK_RC_BREAK(rc, file, line) \
@@ -366,6 +370,7 @@ ElmcValue *elmc_task_and_then(ElmcValue *f, ElmcValue *task);
 ElmcValue *elmc_task_perform(ElmcValue *to_msg, ElmcValue *task);
 ElmcValue *elmc_task_force(ElmcValue *task);
 ElmcValue *elmc_process_spawn(ElmcValue *task);
+void elmc_process_release_all_slots(void);
 ElmcValue *elmc_process_sleep(ElmcValue *milliseconds);
 ElmcValue *elmc_process_kill(ElmcValue *pid);
 ElmcValue *elmc_time_now_millis(void);
@@ -1290,6 +1295,17 @@ ElmcValue *elmc_retain(ElmcValue *value);
 void elmc_release(ElmcValue *value);
 #endif
 void elmc_release_deep(ElmcValue *value);
+
+
+static inline void elmc_release_array_lifo(ElmcValue **slots, size_t count) {
+  while (count-- > 0) {
+    ElmcValue *value = slots[count];
+    if (value) {
+      elmc_release(value);
+      slots[count] = NULL;
+    }
+  }
+}
 
 
 #ifndef ELMC_ALLOC_TRACK

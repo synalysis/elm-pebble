@@ -267,6 +267,14 @@ static void elmc_process_release_slot(ElmcProcessSlot *slot) {
   slot->pid = 0;
 }
 
+void elmc_process_release_all_slots(void) {
+#ifndef ELMC_PEBBLE_PLATFORM
+  for (int i = 0; i < ELMC_PROCESS_MAX_SLOTS; i++) {
+    elmc_process_release_slot(&ELMC_PROCESS_SLOTS[i]);
+  }
+#endif
+}
+
 #ifdef ELMC_PEBBLE_PLATFORM
 static void elmc_process_spawn_timer_cb(void *data) {
   ElmcProcessSlot *slot = (ElmcProcessSlot *)data;
@@ -1144,12 +1152,33 @@ static int elmc_list_all_tag(ElmcValue *list, elmc_int_t tag) {
   return saw_any;
 }
 
+static ElmcValue *elmc_cmd_batch_push_back(ElmcValue *flat, ElmcValue *entry) {
+  if (!entry) return flat;
+  ElmcValue *cell = NULL;
+  if (elmc_list_cons(&cell, entry, elmc_list_nil()) != RC_SUCCESS) return flat;
+  if (!flat || (flat->tag == ELMC_TAG_LIST && flat->payload == NULL)) {
+    elmc_release(flat);
+    return cell;
+  }
+  if (flat->tag != ELMC_TAG_LIST) {
+    elmc_release(cell);
+    return flat;
+  }
+  ElmcValue **tail = &flat;
+  ElmcValue *cursor = flat;
+  while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
+    ElmcCons *node = (ElmcCons *)cursor->payload;
+    tail = &node->tail;
+    cursor = node->tail;
+  }
+  *tail = cell;
+  return flat;
+}
+
 static ElmcValue *elmc_cmd_batch_append_entry(ElmcValue *flat, ElmcValue *entry) {
   if (!entry) return flat;
   if (entry->tag == ELMC_TAG_CMD) {
-    ElmcValue *next = NULL;
-    if (elmc_list_cons(&next, entry, elmc_list_nil()) != RC_SUCCESS) return flat;
-    return flat ? elmc_list_append_take(flat, next) : next;
+    return elmc_cmd_batch_push_back(flat, entry);
   }
   if (entry->tag == ELMC_TAG_LIST) {
     ElmcValue *cursor = entry;
@@ -1160,9 +1189,7 @@ static ElmcValue *elmc_cmd_batch_append_entry(ElmcValue *flat, ElmcValue *entry)
     }
     return flat;
   }
-  ElmcValue *next = NULL;
-  if (elmc_list_cons(&next, entry, elmc_list_nil()) != RC_SUCCESS) return flat;
-  return flat ? elmc_list_append_take(flat, next) : next;
+  return elmc_cmd_batch_push_back(flat, entry);
 }
 
 ElmcValue *elmc_cmd_batch(ElmcValue *commands) {
@@ -2991,6 +3018,7 @@ ElmcValue *elmc_process_spawn(ElmcValue *task) {
   ElmcValue *out = NULL;
   if (elmc_result_ok(&out, pid) != RC_SUCCESS) out = NULL;
   elmc_release(pid);
+  if (out) out->scalar = ELMC_TASK_SPAWN_SCALAR;
   return out;
 #else
   return elmc_task_wrap(task, ELMC_TASK_SPAWN_SCALAR);
