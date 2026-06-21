@@ -130,6 +130,7 @@ defmodule Elmc.TangramTemplateCodegenTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        "-lm",
         "-o",
         binary_path
       ])

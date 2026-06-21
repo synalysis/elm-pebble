@@ -3,6 +3,11 @@ defmodule Elmc.Test.RcTrackHarness do
 
   import ExUnit.Assertions, only: [assert: 2, flunk: 1]
 
+  @runtime_link_stub Path.join(__DIR__, "elmc_runtime_link_stubs.c")
+
+  @spec runtime_link_stub() :: String.t()
+  def runtime_link_stub, do: @runtime_link_stub
+
   @type compile_opts :: keyword()
 
   @spec compile!(String.t(), String.t(), compile_opts()) :: :ok
@@ -40,6 +45,41 @@ defmodule Elmc.Test.RcTrackHarness do
     ] ++ Keyword.get(opts, :extra_flags, []) ++ ["-lm"]
   end
 
+  @spec with_runtime_link_stub([String.t()]) :: [String.t()]
+  def with_runtime_link_stub(sources) do
+    if Enum.any?(sources, &links_generated_c?/1), do: sources, else: sources ++ [@runtime_link_stub]
+  end
+
+  defp links_generated_c?(path) do
+    cond do
+      String.contains?(path, "elmc_generated.c") ->
+        true
+
+      String.ends_with?(path, "_harness.c") or String.ends_with?(path, "harness.c") ->
+        case File.read(path) do
+          {:ok, source} -> String.contains?(source, ~s/#include "elmc_generated.c"/)
+          _ -> false
+        end
+
+      true ->
+        false
+    end
+  end
+
+  @spec compile_c(String.t(), [String.t()], String.t(), keyword()) :: {String.t(), non_neg_integer()}
+  def compile_c(out_dir, sources, binary_path, opts \\ []) do
+    cc = System.find_executable("cc") || flunk("cc not available for C harness compile")
+
+    System.cmd(cc, cc_flags(out_dir, opts) ++ with_runtime_link_stub(sources) ++ ["-o", binary_path])
+  end
+
+  @spec compile_c!(String.t(), [String.t()], String.t(), keyword()) :: :ok
+  def compile_c!(out_dir, sources, binary_path, opts \\ []) do
+    {compile_out, compile_code} = compile_c(out_dir, sources, binary_path, opts)
+    if compile_code != 0, do: flunk("C compile failed:\n#{compile_out}")
+    :ok
+  end
+
   @spec run_harness!(String.t(), String.t(), String.t(), keyword()) :: String.t()
   def run_harness!(out_dir, harness_path, binary_name, opts \\ []) do
     {out, code} = run_harness_capture(out_dir, harness_path, binary_name, opts)
@@ -63,7 +103,7 @@ defmodule Elmc.Test.RcTrackHarness do
     binary_path = Path.join(out_dir, binary_name)
 
     {compile_out, compile_code} =
-      System.cmd(cc, cc_flags(out_dir, opts) ++ sources ++ ["-o", binary_path])
+      System.cmd(cc, cc_flags(out_dir, opts) ++ with_runtime_link_stub(sources) ++ ["-o", binary_path])
 
     if compile_code != 0, do: flunk("harness compile failed:\n#{compile_out}")
 
@@ -231,21 +271,21 @@ defmodule Elmc.Test.RcTrackHarness do
 
       static int run_probe(const char *name, ElmcValue *(*fn)(void), int release_result) {
         elmc_rc_track_reset();
-    #if ELMC_ALLOC_TRACK
+      #if ELMC_ALLOC_TRACK
         elmc_alloc_track_reset();
-    #endif
+      #endif
         ElmcValue *out = fn();
         if (release_result && out) elmc_release(out);
         if (!elmc_rc_track_check_balanced()) {
           fprintf(stderr, "rc leak in %s\\n", name);
           return 1;
         }
-    #if ELMC_ALLOC_TRACK
+      #if ELMC_ALLOC_TRACK
         if (!elmc_alloc_track_check_balanced()) {
           fprintf(stderr, "malloc leak in %s\\n", name);
           return 1;
         }
-    #endif
+      #endif
         return 0;
       }
 

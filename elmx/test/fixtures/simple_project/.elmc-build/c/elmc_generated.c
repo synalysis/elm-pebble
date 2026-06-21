@@ -541,6 +541,9 @@ static RC elmc_fn_Main_handleAppMsg(ElmcValue **out, ElmcValue ** const args, co
         Rc = elmc_tuple2_take(&tmp_1, tmp_4, tmp_5);
         CHECK_RC(Rc);
 
+        elmc_release(tmp_2_boxed_int);
+        elmc_release(tmp_4);
+        elmc_release(tmp_5);
         break;
       }
       case ELMC_PEBBLE_MSG_DECREMENT: {
@@ -565,6 +568,9 @@ static RC elmc_fn_Main_handleAppMsg(ElmcValue **out, ElmcValue ** const args, co
         Rc = elmc_tuple2_take(&tmp_1, tmp_9, tmp_10);
         CHECK_RC(Rc);
 
+        elmc_release(tmp_7_boxed_int);
+        elmc_release(tmp_9);
+        elmc_release(tmp_10);
         break;
       }
       case ELMC_PEBBLE_MSG_PROVIDETEMPERATURE: {
@@ -587,6 +593,10 @@ static RC elmc_fn_Main_handleAppMsg(ElmcValue **out, ElmcValue ** const args, co
         Rc = elmc_tuple2_take(&tmp_1, tmp_15, tmp_16);
         CHECK_RC(Rc);
 
+        elmc_release(tmp_12_boxed_int);
+        elmc_release(tmp_14);
+        elmc_release(tmp_15);
+        elmc_release(tmp_16);
         break;
       }
       case ELMC_PEBBLE_MSG_CURRENTTIMESTRING: {
@@ -595,6 +605,8 @@ static RC elmc_fn_Main_handleAppMsg(ElmcValue **out, ElmcValue ** const args, co
         Rc = elmc_tuple2_take(&tmp_1, tmp_18, tmp_19);
         CHECK_RC(Rc);
 
+        elmc_release(tmp_18);
+        elmc_release(tmp_19);
         break;
       }
       case ELMC_PEBBLE_MSG_CLOCKSTYLE24H: {
@@ -603,6 +615,8 @@ static RC elmc_fn_Main_handleAppMsg(ElmcValue **out, ElmcValue ** const args, co
         Rc = elmc_tuple2_take(&tmp_1, tmp_21, tmp_22);
         CHECK_RC(Rc);
 
+        elmc_release(tmp_21);
+        elmc_release(tmp_22);
         break;
       }
       case ELMC_PEBBLE_MSG_TIMEZONEISSET: {
@@ -611,6 +625,8 @@ static RC elmc_fn_Main_handleAppMsg(ElmcValue **out, ElmcValue ** const args, co
         Rc = elmc_tuple2_take(&tmp_1, tmp_24, tmp_25);
         CHECK_RC(Rc);
 
+        elmc_release(tmp_24);
+        elmc_release(tmp_25);
         break;
       }
       case ELMC_PEBBLE_MSG_TIMEZONENAME: {
@@ -619,6 +635,8 @@ static RC elmc_fn_Main_handleAppMsg(ElmcValue **out, ElmcValue ** const args, co
         Rc = elmc_tuple2_take(&tmp_1, tmp_27, tmp_28);
         CHECK_RC(Rc);
 
+        elmc_release(tmp_27);
+        elmc_release(tmp_28);
         break;
       }
       case ELMC_PEBBLE_MSG_WATCHMODELNAME: {
@@ -627,6 +645,8 @@ static RC elmc_fn_Main_handleAppMsg(ElmcValue **out, ElmcValue ** const args, co
         Rc = elmc_tuple2_take(&tmp_1, tmp_30, tmp_31);
         CHECK_RC(Rc);
 
+        elmc_release(tmp_30);
+        elmc_release(tmp_31);
         break;
       }
       case ELMC_PEBBLE_MSG_WATCHCOLORNAME: {
@@ -635,6 +655,8 @@ static RC elmc_fn_Main_handleAppMsg(ElmcValue **out, ElmcValue ** const args, co
         Rc = elmc_tuple2_take(&tmp_1, tmp_33, tmp_34);
         CHECK_RC(Rc);
 
+        elmc_release(tmp_33);
+        elmc_release(tmp_34);
         break;
       }
       case ELMC_PEBBLE_MSG_FIRMWAREVERSIONSTRING: {
@@ -643,6 +665,8 @@ static RC elmc_fn_Main_handleAppMsg(ElmcValue **out, ElmcValue ** const args, co
         Rc = elmc_tuple2_take(&tmp_1, tmp_36, tmp_37);
         CHECK_RC(Rc);
 
+        elmc_release(tmp_36);
+        elmc_release(tmp_37);
         break;
       }
       default: {
@@ -651,6 +675,8 @@ static RC elmc_fn_Main_handleAppMsg(ElmcValue **out, ElmcValue ** const args, co
         Rc = elmc_tuple2_take(&tmp_1, tmp_39, tmp_40);
         CHECK_RC(Rc);
 
+        elmc_release(tmp_39);
+        elmc_release(tmp_40);
         break;
       }
 
@@ -717,6 +743,9 @@ static RC elmc_fn_Main_handlePlatformMsg(ElmcValue **out, ElmcValue ** const arg
 
         elmc_release(tmp_2);
 
+        elmc_release(tmp_4_boxed_int);
+        elmc_release(tmp_6);
+        elmc_release(tmp_7);
         break;
       }
       case ELMC_PEBBLE_MSG_UPPRESSED: {
@@ -748,6 +777,9 @@ static RC elmc_fn_Main_handlePlatformMsg(ElmcValue **out, ElmcValue ** const arg
 
         elmc_release(tmp_9);
 
+        elmc_release(tmp_10_boxed_int);
+        elmc_release(tmp_12);
+        elmc_release(tmp_13);
         break;
       }
       case ELMC_PEBBLE_MSG_SELECTPRESSED: {
@@ -777,6 +809,9 @@ static RC elmc_fn_Main_handlePlatformMsg(ElmcValue **out, ElmcValue ** const arg
         Rc = elmc_tuple2_take(&tmp_1, tmp_15, tmp_20);
         CHECK_RC(Rc);
 
+        elmc_release(tmp_15);
+        elmc_release(tmp_18);
+        elmc_release(tmp_20);
         break;
       }
       case ELMC_PEBBLE_MSG_DOWNPRESSED: {
@@ -802,6 +837,9 @@ static RC elmc_fn_Main_handlePlatformMsg(ElmcValue **out, ElmcValue ** const arg
         Rc = elmc_tuple2_take(&tmp_1, tmp_24, tmp_25);
         CHECK_RC(Rc);
 
+        elmc_release(tmp_22_boxed_int);
+        elmc_release(tmp_24);
+        elmc_release(tmp_25);
         break;
       }
       case ELMC_PEBBLE_MSG_ACCELTAP: {
@@ -826,6 +864,9 @@ static RC elmc_fn_Main_handlePlatformMsg(ElmcValue **out, ElmcValue ** const arg
         Rc = elmc_tuple2_take(&tmp_1, tmp_29, tmp_30);
         CHECK_RC(Rc);
 
+        elmc_release(tmp_27_boxed_int);
+        elmc_release(tmp_29);
+        elmc_release(tmp_30);
         break;
       }
       default: {
@@ -834,6 +875,8 @@ static RC elmc_fn_Main_handlePlatformMsg(ElmcValue **out, ElmcValue ** const arg
         Rc = elmc_tuple2_take(&tmp_1, tmp_32, tmp_33);
         CHECK_RC(Rc);
 
+        elmc_release(tmp_32);
+        elmc_release(tmp_33);
         break;
       }
 

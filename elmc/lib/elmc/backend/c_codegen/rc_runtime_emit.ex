@@ -128,7 +128,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     "elmc_closure_new"
   ])
 
-  @fresh_owned_slot ~r/^(tmp_\d+|head_\d+|call_args_\d+|list_items_\d+|rec_values_\d+|list_map_item_\d+|list_map_cons_\d+|list_map_rev_\d+|list_fwd_cell_\d+|list_repeat_cons_\d+)$/
+  @fresh_owned_slot ~r/^(tmp_\d+|head_\d+|owned\[\d+\]|call_args_\d+|list_items_\d+|rec_values_\d+|list_map_item_\d+|list_map_cons_\d+|list_map_rev_\d+|list_fwd_cell_\d+|list_repeat_cons_\d+)$/
 
   @take_wrappers %{
     "elmc_new_int" => "elmc_new_int_take",
@@ -263,24 +263,17 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   @spec assign_call(map(), String.t(), String.t(), String.t()) :: String.t()
   def assign_call(env, out, function, call_args) do
     cond do
-      not rc_allocator?(function) and predeclared_out_slot?(env, out) ->
+      not rc_allocator?(function) and (predeclared_out_slot?(env, out) or rc_owned_slot?(out)) ->
         "#{out} = #{function}(#{call_args});"
 
       not rc_allocator?(function) ->
-        "ElmcValue *#{out} = #{function}(#{call_args});"
+        ValueSlots.boxed_decl(out, "#{function}(#{call_args})")
 
       rc_allocator_emit_mode?(env) and predeclared_out_slot?(env, out) ->
         assign_into(env, out, function, call_args)
 
       rc_allocator_emit_mode?(env) ->
-        ValueSlots.track(out)
-
-        """
-        ElmcValue *#{out} = NULL;
-        Rc = #{function}(&#{out}, #{call_args});
-        CHECK_RC(Rc);
-        """
-        |> String.trim()
+        rc_allocator_stmt(env, out, function, call_args)
 
       true ->
         fusion_assign(out, function, call_args, env)
@@ -288,7 +281,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   end
 
   @doc """
-  Assign into a pre-declared slot (for example `ElmcValue *tmp_4;` in if-branches).
+  Assign into a pre-declared slot (for example `owned[3]` in if-branches).
   """
   @spec assign_into(map(), String.t(), String.t(), String.t()) :: String.t()
   def assign_into(env, out, function, call_args) do
@@ -297,13 +290,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
         "#{out} = #{function}(#{call_args});"
 
       rc_allocator_emit_mode?(env) ->
-        ValueSlots.track(out)
-
-        """
-        Rc = #{function}(&#{out}, #{call_args});
-        CHECK_RC(Rc);
-        """
-        |> String.trim()
+        rc_allocator_stmt(env, out, function, call_args, declare_out?: false)
 
       Map.has_key?(@take_wrappers, function) ->
         take_fn = Map.fetch!(@take_wrappers, function)
@@ -318,14 +305,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   @spec list_cons_retain_assign(String.t(), String.t(), map(), keyword()) :: String.t()
   def list_cons_retain_assign(out, call_args, env \\ %{}, opts \\ []) do
     if rc_allocator_emit_mode?(env) do
-      ValueSlots.track(out)
-
-      """
-      ElmcValue *#{out} = NULL;
-      Rc = elmc_list_cons(&#{out}, #{call_args});
-      CHECK_RC(Rc);
-      """
-      |> String.trim()
+      rc_allocator_stmt(env, out, "elmc_list_cons", call_args, opts)
     else
       legacy_rc_allocator_stmt(
         out,
@@ -340,14 +320,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   @spec assign_or_fusion(map(), String.t(), String.t(), String.t()) :: String.t()
   def assign_or_fusion(env, out, function, call_args) do
     if rc_allocator_emit_mode?(env) do
-      ValueSlots.track(out)
-
-      """
-      ElmcValue *#{out} = NULL;
-      Rc = #{function}(&#{out}, #{call_args});
-      CHECK_RC(Rc);
-      """
-      |> String.trim()
+      rc_allocator_stmt(env, out, function, call_args)
     else
       fusion_assign(out, function, call_args, env)
     end
@@ -358,14 +331,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   def fusion_assign(out, function, call_args, env \\ %{}, opts \\ []) do
     cond do
       rc_allocator_emit_mode?(env) ->
-        ValueSlots.track(out)
-
-        """
-        ElmcValue *#{out} = NULL;
-        Rc = #{function}(&#{out}, #{call_args});
-        CHECK_RC(Rc);
-        """
-        |> String.trim()
+        rc_allocator_stmt(env, out, function, call_args, opts)
 
       Map.has_key?(@take_wrappers, function) and predeclared_out_slot?(env, out) ->
         take_fn = Map.fetch!(@take_wrappers, function)
@@ -373,7 +339,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
 
       Map.has_key?(@take_wrappers, function) ->
         take_fn = Map.fetch!(@take_wrappers, function)
-        "ElmcValue *#{out} = #{take_fn}(#{call_args});"
+        ValueSlots.boxed_decl(out, "#{take_fn}(#{call_args})")
 
       true ->
         legacy_rc_allocator_stmt(out, function, call_args, Keyword.merge(opts, env: env))
@@ -483,5 +449,25 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
 
   defp predeclared_out_slot?(env, out) do
     declared_out_slot?(env, out) or Map.get(env, :__into_out__) == out
+  end
+
+  defp rc_owned_slot?(out), do: ValueSlots.owned_ref?(out)
+
+  defp rc_allocator_stmt(env, out, function, call_args, opts \\ []) do
+    ValueSlots.track(out)
+    declare? = Keyword.get(opts, :declare_out?, not rc_owned_slot?(out) and not predeclared_out_slot?(env, out))
+
+    init =
+      if declare? do
+        "#{ValueSlots.boxed_null_decl(out)}\n"
+      else
+        ""
+      end
+
+    """
+    #{init}Rc = #{function}(&#{out}, #{call_args});
+    CHECK_RC(Rc);
+    """
+    |> String.trim()
   end
 end

@@ -11,6 +11,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   alias Elmc.Backend.CCodegen.Patterns
   alias Elmc.Backend.CCodegen.PlatformStatic
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.CCodegen.UnionMacros
 
   @native_bool_c_type "bool"
   @type compile_result :: Types.native_scalar_compile_result()
@@ -302,6 +303,9 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
 
         {code, out, next}
 
+      union_tag_compare_safe?(operator, left, right, env) ->
+        compile_union_tag_compare(left, right, operator, env, counter)
+
       true ->
         {left_code, left_var, counter} = Host.compile_expr(left, env, counter)
         {right_code, right_var, counter} = Host.compile_expr(right, env, counter)
@@ -369,6 +373,77 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   end
 
   defp list_int_compare_safe?(_operator, _left, _right, _env), do: false
+
+  defp union_tag_compare_safe?(operator, left, right, env)
+       when operator in ["__eq__", "__neq__"] do
+    union_tag_compare_pair(left, right, env) != :error or
+      union_tag_compare_pair(right, left, env) != :error
+  end
+
+  defp union_tag_compare_safe?(_operator, _left, _right, _env), do: false
+
+  defp compile_union_tag_compare(left, right, operator, env, counter) do
+    case union_tag_compare_pair(left, right, env) do
+      :error ->
+        {:ok, var_code, var_ref, tag_ref, skip_release?} =
+          union_tag_compare_pair(right, left, env)
+
+        build_union_tag_compare(var_code, var_ref, tag_ref, skip_release?, operator, counter)
+
+      {:ok, var_code, var_ref, tag_ref, skip_release?} ->
+        build_union_tag_compare(var_code, var_ref, tag_ref, skip_release?, operator, counter)
+    end
+  end
+
+  defp build_union_tag_compare(var_code, var_ref, tag_ref, skip_release?, operator, counter) do
+    next = counter + 1
+    out = "native_cmp_#{next}"
+    cmp = if operator == "__eq__", do: "==", else: "!="
+    negate = if operator == "__neq__", do: "!", else: ""
+
+    release =
+      if skip_release?, do: "", else: "  elmc_release(#{var_ref});\n"
+
+    code =
+      var_code <>
+        "  const #{@native_bool_c_type} #{out} = #{negate}(elmc_as_int(#{var_ref}) #{cmp} #{tag_ref});\n" <>
+        release
+
+    {code, out, next}
+  end
+
+  defp union_tag_compare_pair(
+         %{op: :var, name: var_name},
+         %{op: :int_literal, union_ctor: _} = literal,
+         env
+       ) do
+    with tag_ref when is_binary(tag_ref) <- UnionMacros.literal_ref(literal, env),
+         {:ok, var_code, var_ref, skip_release?} <- union_compare_var(var_name, env) do
+      {:ok, var_code, var_ref, tag_ref, skip_release?}
+    else
+      _ -> :error
+    end
+  end
+
+  defp union_tag_compare_pair(_, _, _), do: :error
+
+  defp union_compare_var(name, env) do
+    case EnvBindings.lookup_binding(env, name) do
+      ref when is_binary(ref) and ref != "" ->
+        if union_compare_var_ref?(ref) do
+          {:ok, "", ref, true}
+        else
+          :error
+        end
+
+      _ ->
+        :error
+    end
+  end
+
+  defp union_compare_var_ref?(ref) do
+    Regex.match?(~r/^[A-Za-z_][A-Za-z0-9_]*$/, ref)
+  end
 
   @spec expr?(Types.ir_expr(), Types.compile_env()) :: boolean()
   def expr?(%{op: :var, name: name}, env) when is_binary(name) or is_atom(name),

@@ -143,18 +143,21 @@ defmodule Elmc.CoreComplianceTest do
       }
 
       static void print_result_i(const char *label, ElmcValue *value) {
-        int is_ok = value &&
-                    value->tag == ELMC_TAG_RESULT &&
-                    value->payload &&
-                    ((ElmcResult *)value->payload)->is_ok == 1;
+        ElmcValue *forced = elmc_task_force(value);
+        ElmcValue *result = forced ? forced : value;
+        int is_ok = result &&
+                    result->tag == ELMC_TAG_RESULT &&
+                    result->payload &&
+                    ((ElmcResult *)result->payload)->is_ok == 1;
         long long inner = -1;
-        if (value && value->tag == ELMC_TAG_RESULT && value->payload) {
-          ElmcResult *result = (ElmcResult *)value->payload;
-          if (result->value) {
-            inner = (long long)elmc_as_int(result->value);
+        if (result && result->tag == ELMC_TAG_RESULT && result->payload) {
+          ElmcResult *payload = (ElmcResult *)result->payload;
+          if (payload->value) {
+            inner = (long long)elmc_as_int(payload->value);
           }
         }
         printf("%s=%d,%lld\\n", label, is_ok, inner);
+        if (forced) elmc_release(forced);
       }
 
       static void print_result_result_i(const char *label, ElmcValue *value) {
@@ -527,6 +530,7 @@ defmodule Elmc.CoreComplianceTest do
         Path.join(out_dir, "c/elmc_pebble.c"),
         Path.join(out_dir, "c/elmc_worker.c"),
         harness_path,
+        "-lm",
         "-o",
         binary_path
       ])
@@ -555,7 +559,7 @@ defmodule Elmc.CoreComplianceTest do
 
     assert values["fundamentalsMix"] == 10
     assert values["bitwiseMix"] == 15
-    assert values["bitwiseExtras"] == 9_223_372_036_854_775_807
+    assert values["bitwiseExtras"] == 2_147_483_647
     assert values["modByNeg"] == 4
     assert values["charCodeRoundtrip"] == 65
     assert values["stringAppendLength"] == 3

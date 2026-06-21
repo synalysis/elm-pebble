@@ -216,6 +216,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
              direct_args?,
              rc_required?
            ) do
+      RecordCompile.reset_borrowed_field_refs()
       {entry_probe, exit_probe} = DebugProbes.entry_exit_probes(module_name, decl.name)
 
       body =
@@ -235,6 +236,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   defp emit_boxed_body(decl, module_name, function_arities, decl_map, direct_args?) do
     rc_required? = RcRequired.rc_required?(module_name, decl.name)
     if rc_required?, do: ValueSlots.reset()
+    RecordCompile.reset_borrowed_field_refs()
 
     arg_names = decl.args || []
     arg_bindings = c_arg_bindings(arg_names)
@@ -340,8 +342,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
          direct_args?
        ) do
     body_text = Enum.join(List.wrap(core_body), "\n")
-    owned_decls = ValueSlots.owned_declarations_for_body(body_text)
-    failure_cleanup = ValueSlots.failure_cleanup_for_body(body_text)
+    owned_decls = ValueSlots.owned_declaration()
+    failure_cleanup = ValueSlots.failure_cleanup()
     unused_casts = unused_arg_casts(arg_bindings, core_body)
     needs_catch? = rc_body_needs_catch?(body_text)
 
@@ -359,9 +361,9 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
     core =
       if needs_catch? do
-        ["", "CATCH_BEGIN"] ++ core_body ++ ["CATCH_END;", ""]
+        ["", "CATCH_BEGIN"] ++ [body_text] ++ ["CATCH_END;", ""]
       else
-        ["" | core_body] ++ [""]
+        ["" , body_text, ""]
       end
 
     format_rc_function_body(prefix ++ core ++ suffix)
@@ -949,6 +951,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
          collect_generic_helpers?
        ) do
     RecordCompile.reset_deferred_call_operand_releases()
+    RecordCompile.reset_borrowed_field_refs()
 
     {body_code, body_var, _counter} =
       compile_native_body(decl, module_name, decl_map, native_env, return_kind, arg_kinds)

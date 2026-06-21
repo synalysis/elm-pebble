@@ -264,7 +264,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
     inline_body = format_if_branch_body(Enum.join([branch_code, assignment_code], "\n"))
 
     if extract_if_branch_helper?(env, inline_body) do
-      case if_branch_helper_params(expr, env) do
+      case if_branch_helper_params(expr, env, branch_code, assignment_code) do
         {:ok, params} when params != [] ->
           helper_id = Process.get(:elmc_generic_helper_counter, 0) + 1
           Process.put(:elmc_generic_helper_counter, helper_id)
@@ -311,10 +311,19 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
 
   defp emitted_line_count(code), do: code |> String.split("\n") |> length()
 
-  defp if_branch_helper_params(expr, env) do
-    expr
-    |> external_vars()
-    |> MapSet.to_list()
+  defp if_branch_helper_params(expr, env, branch_code, assignment_code) do
+    code = Enum.join([branch_code, assignment_code], "\n")
+
+    ir_vars =
+      expr
+      |> external_vars()
+      |> MapSet.to_list()
+
+    code_vars = HelperParams.vars_in_c_source(code, env)
+
+    (ir_vars ++ code_vars)
+    |> Enum.uniq()
+    |> Enum.sort()
     |> HelperParams.collect(env)
   end
 

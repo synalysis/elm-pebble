@@ -19,6 +19,10 @@ defmodule Elmc.Runtime.RcMacros do
     #define CATCH_BEGIN     do {
     #define CATCH_END       } while (0)
 
+    #ifndef DIM
+    #define DIM(arr) (sizeof(arr) / sizeof((arr)[0]))
+    #endif
+
     #ifndef ELMC_CHECK_RC_BREAK
     /* break must target CATCH_BEGIN's loop — never wrap it in do/while. */
     #define ELMC_CHECK_RC_BREAK(rc, file, line) \\
@@ -95,6 +99,21 @@ defmodule Elmc.Runtime.RcMacros do
       if (!value) return RC_ERR_OUT_OF_MEMORY;
       if (out) *out = value;
       return RC_SUCCESS;
+    }
+    """
+  end
+
+  @spec release_array_lifo_declaration() :: String.t()
+  def release_array_lifo_declaration do
+    """
+    static inline void elmc_release_array_lifo(ElmcValue **slots, size_t count) {
+      while (count-- > 0) {
+        ElmcValue *value = slots[count];
+        if (value) {
+          elmc_release(value);
+          slots[count] = NULL;
+        }
+      }
     }
     """
   end

@@ -119,7 +119,7 @@ defmodule Elmc.ConditionalSubscriptionsCodegenTest do
     assert next_index_native =~ "% 8 /* List.length Main.pages */"
 
     refute subs_body =~ "elmc_fn_Main_pages"
-    assert subs_body =~ "% 8 /* List.length Main.pages */"
-    assert subs_body =~ "Main.pages[n] static table"
+    assert subs_body =~ "elmc_fn_Main_currentPage_native"
+    assert subs_body =~ "ELMC_FIELD_MAIN_MODEL_PAGEINDEX"
   end
 end

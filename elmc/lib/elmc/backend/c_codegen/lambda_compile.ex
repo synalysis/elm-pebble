@@ -173,26 +173,30 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
         body_env
       end
 
-    parent_slots = Process.get(:elmc_value_slots, MapSet.new())
+    parent_slots = Process.get(:elmc_value_slots, %{live: MapSet.new(), transferred: MapSet.new()})
 
     if rc_lambda? do
-      Process.put(:elmc_value_slots, MapSet.new())
+      ValueSlots.reset()
     end
 
     {body_code, body_var, _body_counter} = Host.compile_expr(body, body_env, 0)
 
-    {owned_decls, failure_cleanup} =
+    {owned_decls, body_code, failure_cleanup} =
       if rc_lambda? do
-        if Regex.match?(~r/^tmp_\d+$/, body_var) do
-          ValueSlots.track(body_var)
+        if ValueSlots.owned_ref?(body_var) do
+          :ok
+        else
+          if Regex.match?(~r/^tmp_\d+$/, body_var) do
+            ValueSlots.track(body_var)
+          end
         end
 
-        decls = ValueSlots.owned_declarations_for_body(body_code)
-        cleanup = ValueSlots.failure_cleanup_for_body(body_code)
+        decls = ValueSlots.owned_declaration()
+        cleanup = ValueSlots.failure_cleanup()
         Process.put(:elmc_value_slots, parent_slots)
-        {decls, cleanup}
+        {decls, body_code, cleanup}
       else
-        {"", ""}
+        {"", body_code, ""}
       end
 
     unless lambda_signature && Map.has_key?(Process.get(:elmc_lambda_defs, %{}), lambda_signature) do

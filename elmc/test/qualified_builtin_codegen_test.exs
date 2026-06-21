@@ -70,6 +70,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
           "c/elmc_worker.c",
           "c/elmc_pebble.c",
           "c/complete_basics_harness.c",
+          "-lm",
           "-o",
           "complete_basics_harness"
         ],
@@ -121,6 +122,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
           "c/elmc_worker.c",
           "c/elmc_pebble.c",
           "c/operator_section_cons_harness.c",
+          "-lm",
           "-o",
           "operator_section_cons_harness"
         ],
@@ -817,7 +819,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     native_div_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeLiteralDivision_native")
 
-    assert native_div_body =~ "elmc_string_from_native_int_take(((value * 328) / 100))"
+    assert native_div_body =~ "elmc_string_from_native_int_take(elmc_int_idiv((value * 328), 100))"
     refute native_div_body =~ "native_den_"
     refute native_div_body =~ "== 0 ? 0"
   end
@@ -1096,7 +1098,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     assert use_body =~ ~r/direct_native_let_radius_\d+ = native_max_/
     assert use_body =~ "direct_native_let_markerTopX_"
-    assert use_body =~ ~r/direct_native_let_radius_\d+\) \/ 1000\)/
+    assert use_body =~ ~r/elmc_int_idiv\(\(direct_hoisted_int_\d+ \* direct_native_let_radius_\d+\), 1000\)/
     refute use_body =~ "elmc_fn_Main_handX_native"
     refute use_body =~ "elmc_new_int(native_max"
     refute use_body =~ "elmc_fn_Main_unit12X_native"
@@ -1619,6 +1621,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
           "c/elmc_worker.c",
           "c/elmc_pebble.c",
           "c/cmd_batch_harness.c",
+          "-lm",
           "-o",
           "cmd_batch_harness"
         ],
@@ -1678,6 +1681,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
           "c/elmc_worker.c",
           "c/elmc_pebble.c",
           "c/generic_ui_harness.c",
+          "-lm",
           "-o",
           "generic_ui_harness"
         ],
@@ -1744,6 +1748,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
           "c/elmc_worker.c",
           "c/elmc_pebble.c",
           "c/top_level_function_reference_harness.c",
+          "-lm",
           "-o",
           "top_level_function_reference_harness"
         ],
@@ -3981,7 +3986,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     assert Regex.scan(~r/const elmc_int_t native_min_left_\d+ =/, view_body) |> length() == 1
     assert view_body =~ "(#{view_min_result} * 4)"
     assert view_body =~ "native_min_"
-    assert view_body =~ "/ 48"
+    assert view_body =~ "elmc_int_idiv(native_min_"
+    assert view_body =~ ", 48)"
   end
 
   test "direct view uses native packed textOptions without record allocation" do
@@ -5613,6 +5619,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
           "c/elmc_worker.c",
           "c/elmc_pebble.c",
           "c/game_elmtris_harness.c",
+          "-lm",
           "-o",
           "game_elmtris_harness"
         ],

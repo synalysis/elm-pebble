@@ -31,6 +31,7 @@ defmodule Elmc.BackendCoverageGateTest do
                    :call,
                    :qualified_call,
                    :constructor_call,
+                   :partial_constructor,
                    :runtime_call,
                    :let_in,
                    :if,

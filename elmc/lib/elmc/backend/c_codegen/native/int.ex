@@ -434,6 +434,8 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
         end
 
       {:ok, source} when is_binary(source) ->
+        RecordCompile.mark_record_field_container(source)
+
         getter =
           Host.record_get_int_expr(
             source,

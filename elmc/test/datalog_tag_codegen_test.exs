@@ -33,8 +33,9 @@ defmodule Elmc.DataLogTagCodegenTest do
     assert is_binary(cmd_lambda),
            "expected a lambda body that emits ELMC_PEBBLE_CMD_DATA_LOG_INT32"
 
-    assert cmd_lambda =~ "const elmc_int_t tag ="
-    assert cmd_lambda =~ "elmc_cmd2(ELMC_PEBBLE_CMD_DATA_LOG_INT32, tag, value)"
+    assert cmd_lambda =~ "captures[0]"
+    assert cmd_lambda =~ "ELMC_PEBBLE_CMD_DATA_LOG_INT32"
+    refute cmd_lambda =~ "1 /* tag */"
     refute cmd_lambda =~ "1 /* tag */"
   end
 

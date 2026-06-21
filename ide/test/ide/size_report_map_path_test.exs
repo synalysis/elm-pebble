@@ -122,17 +122,19 @@ defmodule Ide.SizeReportMapPathTest do
   end
 
   defp extract_json!(output) do
-    starts = for {start, _} <- :binary.matches(output, "{"), do: start
+    marker = ~s({\n  "templates":)
 
-    Enum.find_value(Enum.reverse(starts), fn start ->
-      case Jason.decode(String.slice(output, start..-1//1)) do
-        {:ok, %{"templates" => _} = json} -> json
-        _ -> nil
-      end
-    end)
-    |> case do
-      %{} = json -> json
-      _ -> flunk("could not find size report JSON in mix output")
+    case :binary.match(output, marker) do
+      {start, _} ->
+        json_bin = :binary.part(output, start, byte_size(output) - start)
+
+        case Jason.decode(to_string(json_bin)) do
+          {:ok, json} -> json
+          {:error, reason} -> flunk("could not decode size report JSON: #{inspect(reason)}")
+        end
+
+      :nomatch ->
+        flunk("could not find size report JSON in mix output")
     end
   end
 end

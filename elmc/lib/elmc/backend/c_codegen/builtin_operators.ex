@@ -13,6 +13,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
   alias Elmc.Backend.CCodegen.RuntimeCall
   alias Elmc.Backend.CCodegen.SpecialValues
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.CCodegen.ValueSlots
 
   @basics_operator_names ~w(
     __add__ __sub__ __mul__ __pow__ __fdiv__ __idiv__ __append__
@@ -505,10 +506,15 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
         {right_code, right_var, counter} = retain_declared_out_operand(right_code, right_var, env, counter)
         {out, next} = CaseCompile.fresh_var(counter, env)
 
+        assign_prefix =
+          if ValueSlots.owned_ref?(out),
+            do: "#{out} =",
+            else: "ElmcValue *#{out} ="
+
         code = """
         #{left_code}
           #{right_code}
-              ElmcValue *#{out} =
+              #{assign_prefix}
                   ((#{left_var} && #{left_var}->tag == ELMC_TAG_FLOAT) || (#{right_var} && #{right_var}->tag == ELMC_TAG_FLOAT))
                       ? elmc_new_float_take(elmc_as_float(#{left_var}) #{operator} elmc_as_float(#{right_var}))
                       : elmc_new_int_take(elmc_as_int(#{left_var}) #{operator} elmc_as_int(#{right_var}));
@@ -633,7 +639,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
         #{right_code}
           const double __denf_#{next} = elmc_as_float(#{right_var});
           const double __numf_#{next} = elmc_as_float(#{left_var});
-        ElmcValue *#{out} = elmc_new_float_take(__numf_#{next} / __denf_#{next});
+        #{ValueSlots.boxed_decl(out, "elmc_new_float_take(__numf_#{next} / __denf_#{next})")}
         elmc_release(#{left_var});
         elmc_release(#{right_var});
       """

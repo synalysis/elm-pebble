@@ -25,7 +25,9 @@ defmodule Elmc.JsonRuntimeTest do
           "-Wextra",
           "-Iruntime",
           "runtime/elmc_runtime.c",
+          Elmc.Test.RcTrackHarness.runtime_link_stub(),
           "json_runtime_harness.c",
+          "-lm",
           "-o",
           "json_runtime_harness"
         ],

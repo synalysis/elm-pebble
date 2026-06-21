@@ -21,6 +21,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
   alias Elmc.Backend.CCodegen.StaticString
   alias Elmc.Backend.CCodegen.TypeParsing
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.CCodegen.ValueSlots
   alias Elmc.Backend.CCodegen.VarAnalysis
 
   @float_unary_functions ~w(
@@ -2682,7 +2683,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     assign =
       cond do
         suffix_cons_take? ->
-          "ElmcValue *#{out} = elmc_list_cons_take(#{call_args});"
+          ValueSlots.boxed_decl(out, "elmc_list_cons_take(#{call_args})")
 
         function == "elmc_list_cons" and Enum.any?(arg_borrowed?) ->
           RcRuntimeEmit.list_cons_retain_assign(out, call_args, env)

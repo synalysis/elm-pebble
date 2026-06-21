@@ -1,13 +1,30 @@
 Nonterminals let_expr let_bindings let_binding if_expr case_expr case_after_of case_branches case_branch pattern pattern_arg ctor_pattern_args
-             lambda_expr lambda_args lambda_arg pipe_right_expr plain_pipe_expr apply_left_expr bool_or_expr bool_and_expr compare_expr compare_op cons_expr append_expr add_expr mul_expr pow_expr app_expr atom list_expr
+             lambda_expr lambda_args lambda_arg pipe_right_expr plain_pipe_expr apply_left_expr bool_or_expr bool_and_expr compare_expr compare_op cons_expr append_expr add_expr mul_expr pow_expr app_expr primary opt_field_accessor list_expr
              list_items tuple_items record_expr record_fields record_field pattern_record_fields pattern_list_items.
 Terminals lparen rparen lbracket rbracket lbrace rbrace comma semicolon cons append plus minus shl shr pipe_right pipe apply_left eq eqeq gt lt gte lte neq bslash arrow
          times pow int_div divide pipe_dot pipe_eq
           andand oror let_kw in_kw if_kw then_kw else_kw case_kw of_kw as_kw wildcard
-         int_lit float_lit string_lit char_lit field_accessor lower_qid upper_qid.
+         int_lit float_lit string_lit char_lit field_accessor lower_qid upper_qid case_sep.
+
+%% Operator precedence (lowest number = loosest binding). Rule precedence is taken
+%% from the rightmost terminal on each production unless a nonterminal carries Unary.
+Right 100 cons.
+Right 110 append.
+Left 120 oror.
+Left 130 andand.
+Nonassoc 140 eqeq gt lt gte lte neq.
+Left 150 plus minus.
+Left 160 times divide int_div.
+Right 170 pow.
+Left 180 shl shr.
+Left 190 apply_left.
+Left 200 pipe_right pipe_dot pipe_eq.
+Unary 210 primary.
+Left 220 case_sep.
+Left 225 field_accessor.
 
 Rootsymbol pipe_right_expr.
-Expect 6.
+Expect 0.
 
 pipe_right_expr -> let_expr : '$1'.
 pipe_right_expr -> if_expr : '$1'.
@@ -37,7 +54,6 @@ let_expr -> let_kw let_bindings in_kw pipe_right_expr :
   build_let_bindings('$2', '$4').
 
 let_bindings -> let_binding semicolon let_bindings : ['$1' | '$3'].
-let_bindings -> let_binding let_bindings : ['$1' | '$2'].
 let_bindings -> let_binding : ['$1'].
 
 let_binding -> lower_qid eq pipe_right_expr : {token_value('$1'), '$3'}.
@@ -69,7 +85,7 @@ case_expr -> case_kw pipe_right_expr of_kw case_after_of case_branches :
 case_after_of -> semicolon : ok.
 case_after_of -> '$empty' : ok.
 
-case_branches -> case_branches semicolon case_branch : '$1' ++ ['$3'].
+case_branches -> case_branches case_sep case_branch : '$1' ++ ['$3'].
 case_branches -> case_branch : ['$1'].
 
 case_branch -> pattern arrow pipe_right_expr : #{pattern => '$1', expr => '$3'}.
@@ -178,42 +194,41 @@ mul_expr -> pow_expr : '$1'.
 pow_expr -> app_expr pow pow_expr : build_pow('$1', '$3').
 pow_expr -> app_expr : '$1'.
 
-app_expr -> app_expr atom : build_app('$1', ['$2']).
-app_expr -> atom : '$1'.
+app_expr -> app_expr primary : build_app('$1', ['$2']).
+app_expr -> primary : '$1'.
 
-atom -> lparen pipe_right_expr rparen field_accessor :
-  build_postfix_field_access('$2', token_value('$4')).
-atom -> int_lit : #{op => int_literal, value => token_value('$1')}.
-atom -> float_lit : #{op => float_literal, value => token_value('$1')}.
-atom -> string_lit : #{op => string_literal, value => parse_string(token_value('$1'))}.
-atom -> char_lit : #{op => char_literal, value => parse_char(token_value('$1'))}.
-atom -> field_accessor : build_field_accessor(token_value('$1')).
-atom -> lower_qid : build_lower_qid(token_value('$1')).
-atom -> upper_qid : build_upper_qid(token_value('$1')).
-atom -> lparen plus rparen : build_operator_section(plus).
-atom -> lparen minus rparen : build_operator_section(minus).
-atom -> lparen times rparen : build_operator_section(times).
-atom -> lparen pow rparen : build_operator_section(pow).
-atom -> lparen eqeq rparen : build_operator_section(eqeq).
-atom -> lparen neq rparen : build_operator_section(neq).
-atom -> lparen lt rparen : build_operator_section(lt).
-atom -> lparen lte rparen : build_operator_section(lte).
-atom -> lparen gt rparen : build_operator_section(gt).
-atom -> lparen gte rparen : build_operator_section(gte).
-atom -> lparen shl rparen : build_operator_section(shl).
-atom -> lparen shr rparen : build_operator_section(shr).
-atom -> lparen cons rparen : build_operator_section(cons).
-atom -> lparen apply_left rparen : build_operator_section(apply_left).
-atom -> lparen pipe_dot rparen : build_operator_section(pipe_dot).
-atom -> lparen pipe_eq rparen : build_operator_section(pipe_eq).
-atom -> lparen rparen : #{op => constructor_ref, target => <<"()">>}.
-atom -> lparen apply_left_expr shl apply_left_expr rparen : build_compose_left('$2', '$4').
-atom -> lparen apply_left_expr shr apply_left_expr rparen : build_compose_right('$2', '$4').
-atom -> lparen pipe_right_expr rparen : '$2'.
+primary -> lparen pipe_right_expr rparen opt_field_accessor :
+  build_paren_primary('$2', '$4').
+primary -> int_lit : #{op => int_literal, value => token_value('$1')}.
+primary -> float_lit : #{op => float_literal, value => token_value('$1')}.
+primary -> string_lit : #{op => string_literal, value => parse_string(token_value('$1'))}.
+primary -> char_lit : #{op => char_literal, value => parse_char(token_value('$1'))}.
+primary -> field_accessor : build_field_accessor(token_value('$1')).
+primary -> lower_qid : build_lower_qid(token_value('$1')).
+primary -> upper_qid : build_upper_qid(token_value('$1')).
+primary -> lparen plus rparen : build_operator_section(plus).
+primary -> lparen minus rparen : build_operator_section(minus).
+primary -> lparen times rparen : build_operator_section(times).
+primary -> lparen pow rparen : build_operator_section(pow).
+primary -> lparen eqeq rparen : build_operator_section(eqeq).
+primary -> lparen neq rparen : build_operator_section(neq).
+primary -> lparen lt rparen : build_operator_section(lt).
+primary -> lparen lte rparen : build_operator_section(lte).
+primary -> lparen gt rparen : build_operator_section(gt).
+primary -> lparen gte rparen : build_operator_section(gte).
+primary -> lparen shl rparen : build_operator_section(shl).
+primary -> lparen shr rparen : build_operator_section(shr).
+primary -> lparen cons rparen : build_operator_section(cons).
+primary -> lparen apply_left rparen : build_operator_section(apply_left).
+primary -> lparen pipe_dot rparen : build_operator_section(pipe_dot).
+primary -> lparen pipe_eq rparen : build_operator_section(pipe_eq).
+primary -> lparen rparen : #{op => constructor_ref, target => <<"()">>}.
+primary -> lparen apply_left_expr shl apply_left_expr rparen : build_compose_left('$2', '$4').
+primary -> lparen apply_left_expr shr apply_left_expr rparen : build_compose_right('$2', '$4').
 
-atom -> lparen tuple_items rparen : build_tuple('$2').
-atom -> list_expr : '$1'.
-atom -> record_expr : '$1'.
+primary -> lparen tuple_items rparen : build_tuple('$2').
+primary -> list_expr : '$1'.
+primary -> record_expr : '$1'.
 
 tuple_items -> pipe_right_expr comma pipe_right_expr comma pipe_right_expr : ['$1', '$3', '$5'].
 tuple_items -> pipe_right_expr comma pipe_right_expr : ['$1', '$3'].
@@ -221,28 +236,27 @@ tuple_items -> pipe_right_expr comma pipe_right_expr : ['$1', '$3'].
 list_expr -> lbracket list_items rbracket : #{op => list_literal, items => '$2'}.
 list_expr -> lbracket rbracket : #{op => list_literal, items => []}.
 
-list_items -> pipe_right_expr comma list_items : ['$1' | '$3'].
-list_items -> pipe_right_expr comma : ['$1'].
 list_items -> pipe_right_expr : ['$1'].
+list_items -> list_items comma pipe_right_expr : '$1' ++ ['$3'].
+
+record_fields -> record_field : ['$1'].
+record_fields -> record_fields comma record_field : '$1' ++ ['$3'].
+
+pattern_list_items -> pattern : ['$1'].
+pattern_list_items -> pattern_list_items comma pattern : '$1' ++ ['$3'].
+
+pattern_record_fields -> lower_qid : [token_value('$1')].
+pattern_record_fields -> pattern_record_fields comma lower_qid : '$1' ++ [token_value('$3')].
 
 record_expr -> lbrace rbrace : #{op => record_literal, fields => []}.
 record_expr -> lbrace record_fields rbrace : #{op => record_literal, fields => '$2'}.
 record_expr -> lbrace lower_qid pipe record_fields rbrace :
   #{op => record_update, base => #{op => var, name => token_value('$2')}, fields => '$4'}.
 
-record_fields -> record_field comma record_fields : ['$1' | '$3'].
-record_fields -> record_field comma : ['$1'].
-record_fields -> record_field : ['$1'].
-
 record_field -> lower_qid eq pipe_right_expr : build_record_field(token_value('$1'), '$3').
 
-pattern_record_fields -> lower_qid comma pattern_record_fields : [token_value('$1') | '$3'].
-pattern_record_fields -> lower_qid comma : [token_value('$1')].
-pattern_record_fields -> lower_qid : [token_value('$1')].
-
-pattern_list_items -> pattern comma pattern_list_items : ['$1' | '$3'].
-pattern_list_items -> pattern comma : ['$1'].
-pattern_list_items -> pattern : ['$1'].
+opt_field_accessor -> field_accessor : token_value('$1').
+opt_field_accessor -> '$empty' : nil.
 
 Erlang code.
 
@@ -692,6 +706,11 @@ build_upper_qid(Text) ->
     true -> #{op => qualified_ref, target => Text};
     false -> #{op => constructor_ref, target => Text}
   end.
+
+build_paren_primary(Expr, nil) ->
+  Expr;
+build_paren_primary(Expr, FieldAccessor) ->
+  build_postfix_field_access(Expr, FieldAccessor).
 
 build_postfix_field_access(Expr, <<$., Field/binary>>) ->
   #{op => field_access, arg => Expr, field => Field};

@@ -89,6 +89,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        "-lm",
         "-o",
         binary_path
       ])
@@ -156,6 +157,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        "-lm",
         "-o",
         binary_path
       ])
@@ -220,6 +222,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        "-lm",
         "-o",
         binary_path
       ])
@@ -291,6 +294,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        "-lm",
         "-o",
         binary_path
       ])
@@ -360,6 +364,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        "-lm",
         "-o",
         binary_path
       ])
@@ -428,6 +433,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        "-lm",
         "-o",
         binary_path
       ])
@@ -502,6 +508,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        "-lm",
         "-o",
         binary_path
       ])
@@ -574,6 +581,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        "-lm",
         "-o",
         binary_path
       ])
@@ -653,6 +661,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        "-lm",
         "-o",
         binary_path
       ])
@@ -734,6 +743,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        "-lm",
         "-o",
         binary_path
       ])
@@ -816,6 +826,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        "-lm",
         "-o",
         binary_path
       ])
@@ -922,6 +933,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        "-lm",
         "-o",
         binary_path
       ])
@@ -1007,6 +1019,7 @@ defmodule Elmc.PebbleShimTest do
           Path.join(out_dir, "c/elmc_worker.c"),
           Path.join(out_dir, "c/elmc_pebble.c"),
           harness_path,
+          "-lm",
           "-o",
           binary_path
         ])
@@ -1080,6 +1093,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        "-lm",
         "-o",
         binary_path
       ])
@@ -1158,6 +1172,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        "-lm",
         "-o",
         binary_path
       ])
@@ -1184,7 +1199,7 @@ defmodule Elmc.PebbleShimTest do
 
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     assert String.contains?(generated, "elmc_partial_ref_")
-    assert String.contains?(generated, "elmc_record_get_index(head_")
+    assert String.contains?(generated, "elmc_list_head(")
 
     harness_path = Path.join(out_dir, "c/partial_collision_harness.c")
 
@@ -1251,6 +1266,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        "-lm",
         "-o",
         binary_path
       ])
@@ -1425,6 +1441,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        "-lm",
         "-o",
         binary_path
       ])
@@ -1450,6 +1467,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         rotation_harness_path,
+        "-lm",
         "-o",
         rotation_binary_path
       ])
@@ -1574,6 +1592,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        "-lm",
         "-o",
         binary_path
       ])
@@ -1650,6 +1669,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        "-lm",
         "-o",
         binary_path
       ])
@@ -1724,6 +1744,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        "-lm",
         "-o",
         binary_path
       ])
@@ -1918,6 +1939,7 @@ defmodule Elmc.PebbleShimTest do
                 Path.join(out_dir, "c/elmc_worker.c"),
                 Path.join(out_dir, "c/elmc_pebble.c"),
                 harness_path,
+                "-lm",
                 "-o",
                 binary_path
               ]

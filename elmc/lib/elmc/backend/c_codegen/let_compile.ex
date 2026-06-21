@@ -12,6 +12,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
   alias Elmc.Backend.CCodegen.Native.String, as: NativeString
   alias Elmc.Backend.CCodegen.Native.TypedReturn
   alias Elmc.Backend.CCodegen.Native.UsageAnalysis, as: NativeUsageAnalysis
+  alias Elmc.Backend.CCodegen.ValueSlots
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.Types
@@ -264,7 +265,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
     #{value_code}
           #{after_probe}
       #{body_code}
-      #{let_value_release(env, value_var)}
+      #{let_value_release(env, value_var, body_code)}
     """
 
     {code, body_var, counter}
@@ -481,9 +482,20 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
 
   defp flatten_let_chain(body), do: {[], body}
 
-  defp let_value_release(env, value_var) when is_binary(value_var) do
-    if EnvBindings.borrowed_arg_ref?(env, value_var),
-      do: "",
-      else: "elmc_release(#{value_var});"
+  defp let_value_release(env, value_var, body_code) when is_binary(value_var) do
+    cond do
+      EnvBindings.borrowed_arg_ref?(env, value_var) -> ""
+      ValueSlots.transferred?(value_var, body_code) -> ""
+      released_in_let_body?(value_var, body_code) -> ""
+      true ->
+        ValueSlots.release(value_var)
+        "elmc_release(#{value_var});"
+    end
   end
+
+  defp released_in_let_body?(var, body_code) when is_binary(var) and is_binary(body_code) do
+    String.contains?(body_code, "elmc_release(#{var})")
+  end
+
+  defp released_in_let_body?(_var, _body_code), do: false
 end

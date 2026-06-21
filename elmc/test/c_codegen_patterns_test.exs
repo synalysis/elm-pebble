@@ -125,14 +125,13 @@ defmodule Elmc.CCodegenPatternsTest do
     assert generated_c =~ "elmc_fn_Main_dropStep"
     assert generated_c =~ @just_payload_borrow
 
-    assert generated_c =~
-             "ELMC_RECORD_GET_INDEX(tmp_7, ELMC_FIELD_MAIN_ACTIVEPIECE_KIND)"
+    assert generated_c =~ ~r/ELMC_RECORD_GET_INDEX\((tmp_5|owned\[\d+\]), ELMC_FIELD_MAIN_ACTIVEPIECE_KIND\)/
 
-    assert generated_c =~ "ELMC_RECORD_GET_INDEX(tmp_7, ELMC_FIELD_MAIN_ACTIVEPIECE_ROT)"
-    assert generated_c =~ "ELMC_RECORD_GET_INDEX(tmp_7, ELMC_FIELD_MAIN_ACTIVEPIECE_X)"
+    assert generated_c =~ ~r/ELMC_RECORD_GET_INDEX\((tmp_5|owned\[\d+\]), ELMC_FIELD_MAIN_ACTIVEPIECE_ROT\)/
+    assert generated_c =~ ~r/ELMC_RECORD_GET_INDEX\((tmp_5|owned\[\d+\]), ELMC_FIELD_MAIN_ACTIVEPIECE_X\)/
 
     assert generated_c =~
-             "elmc_record_update_index(tmp_7, ELMC_FIELD_MAIN_ACTIVEPIECE_Y, tmp_"
+             ~r/elmc_record_update_index\((tmp_5|tmp_7|owned\[\d+\]), ELMC_FIELD_MAIN_ACTIVEPIECE_Y, (tmp_|owned\[)/
 
     refute generated_c =~ ~r/elmc_record_get_index\(tmp_\d+, 0 \/\* rot \*\)/
     refute generated_c =~ ~r/elmc_record_update_index\(tmp_\d+, 0 \/\* y \*\)/
@@ -964,7 +963,7 @@ defmodule Elmc.CCodegenPatternsTest do
     assert generated_c =~ "static RC elmc_fn_Main_collapseRow(ElmcValue **out, ElmcValue *row)"
 
     assert generated_c =~
-             ~r/elmc_fn_Main_collapseRow[\s\S]*?elmc_record_get(?:_index)?\(tmp_\d+, (?:0 \/\* cells \*\/|ELMC_FIELD_.*_CELLS)\)/
+             ~r/elmc_fn_Main_collapseRow[\s\S]*?elmc_record_get(?:_index)?\((tmp_\d+|owned\[\d+\]), (?:0 \/\* cells \*\/|ELMC_FIELD_.*_CELLS)\)/
 
     collapse_row_body =
       generated_c
@@ -3492,7 +3491,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert generated_c =~ ~r/if \(elmc_as_int\(tmp_\d+\) != 0\)/
+    assert generated_c =~ ~r/if \(elmc_as_int\((tmp_\d+|owned\[\d+\])\) != 0\)/
     assert generated_c =~ "elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_TEXT)"
     assert generated_c =~ "elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_CLEAR)"
     refute generated_c =~ "if (ELMC_RECORD_GET_INDEX_INT(model, 0 /* value */) == 0)"

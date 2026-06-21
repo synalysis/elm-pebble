@@ -45,6 +45,21 @@ defmodule Elmc.Backend.CCodegen.HelperParams do
     end
   end
 
+  @spec vars_in_c_source(String.t(), Types.compile_env()) :: [String.t()]
+  def vars_in_c_source(code, env) when is_binary(code) do
+    env
+    |> Map.keys()
+    |> Enum.filter(&(is_binary(&1) and not String.starts_with?(&1, "__")))
+    |> Enum.filter(fn var ->
+      case resolve(env, var) do
+        {:ok, spec} -> c_ref_in_source?(spec, code)
+        _ -> false
+      end
+    end)
+    |> Enum.uniq()
+    |> Enum.sort()
+  end
+
   @spec param_decls([{String.t(), param_spec()}]) :: String.t()
   def param_decls(params) do
     params
@@ -69,6 +84,14 @@ defmodule Elmc.Backend.CCodegen.HelperParams do
 
   defp c_identifier?(value) when is_binary(value),
     do: Regex.match?(~r/^[A-Za-z_][A-Za-z0-9_]*$/, value)
+
+  defp c_ref_in_source?({:native_int, ref}, code), do: c_ref_in_source?(ref, code)
+  defp c_ref_in_source?({:native_bool, ref}, code), do: c_ref_in_source?(ref, code)
+  defp c_ref_in_source?({:boxed, ref}, code), do: c_ref_in_source?(ref, code)
+
+  defp c_ref_in_source?(ref, code) when is_binary(ref) and is_binary(code) do
+    Regex.match?(~r/\b#{Regex.escape(ref)}\b/, code)
+  end
 
   defp zero_arg_function_var?(env, var) do
     module_name = Map.get(env, :__module__, "Main")

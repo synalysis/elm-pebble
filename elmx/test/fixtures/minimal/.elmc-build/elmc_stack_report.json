@@ -1,9 +1,14 @@
 {
   "functions": [],
+  "summary": {
+    "ok": 0,
+    "warn": 0,
+    "risk": 0
+  },
   "code_size_indicators": {
-    "direct_command_defs": 0,
     "boxed_tmp_declarations": 0,
     "closure_allocations": 0,
+    "direct_command_defs": 0,
     "generated_c_bytes": 1092,
     "generated_c_lines": 38,
     "generic_function_defs": 0,
@@ -19,10 +24,5 @@
       "elmc_list_filter_map": 0,
       "elmc_list_map": 0
     }
-  },
-  "summary": {
-    "ok": 0,
-    "warn": 0,
-    "risk": 0
   }
 }

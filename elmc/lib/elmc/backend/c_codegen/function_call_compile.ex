@@ -135,13 +135,13 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
               {closure_code, tmp, next} = top_level_closure(module_name, name, arity, env, counter)
               {closure_code, tmp, next}
             else
-              next = counter + 1
-              tmp = "tmp_#{next}"
+              {var, next} = CaseCompile.fresh_var(counter, env)
               c_name = Util.module_fn_name(module_name, name)
+              if caller_rc?(env), do: ValueSlots.track(var)
 
               {
-                "ElmcValue *#{tmp} = #{zero_arg_call_expr(env, module_name, name, c_name)};\n",
-                tmp,
+                "#{boxed_out_decl(env, var, zero_arg_call_expr(env, module_name, name, c_name))}\n",
+                var,
                 next
               }
             end
@@ -437,6 +437,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
 
       :error ->
         c_name = Util.module_fn_name(module_name, name)
+        if caller_rc?(env), do: ValueSlots.track(var)
 
         {"ElmcValue *#{var} = #{zero_arg_call_expr(env, module_name, name, c_name)};", var, next}
     end
@@ -758,6 +759,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
       end)
 
     {default_out, next} = CaseCompile.fresh_var(counter, env)
+    call_args_id = counter + 1
 
     out =
       case Map.get(env, :__into_out__) do
@@ -765,7 +767,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
         _ -> default_out
       end
 
-    if rc_callee?, do: ValueSlots.track(out)
+    if caller_rc?, do: ValueSlots.track(out)
     argc = length(arg_vars)
 
     after_args_probe =
@@ -801,8 +803,8 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
           rest_exprs = Enum.drop(args, arity)
           first_args = Enum.join(first_vars, ", ")
           rest_args = Enum.join(rest_vars, ", ")
-          head_var = "head_#{next}"
-          first_args_var = "call_args_#{next}"
+          head_var = "head_#{call_args_id}"
+          first_args_var = "call_args_#{call_args_id}"
           rest_args_var = "extra_args_#{next}"
 
           head_shape =
@@ -888,8 +890,8 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
           """
 
         arity == 0 and argc > 0 ->
-          head_var = "head_#{next}"
-          args_var = "call_args_#{next}"
+          head_var = "head_#{call_args_id}"
+          args_var = "call_args_#{call_args_id}"
           arg_list = Enum.join(arg_vars, ", ")
           zero_call = zero_arg_call_expr(env, module_name, name, c_name)
 
@@ -918,7 +920,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
               #{releases}
             """
           else
-            args_var = "call_args_#{next}"
+            args_var = "call_args_#{call_args_id}"
             arg_list = Enum.join(arg_vars, ", ")
 
             call_expr =
@@ -940,11 +942,13 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
           end
       end
 
-    {code, out, next}
+    {code, out, max(next, call_args_id + 1)}
   end
 
   defp rc_call_assignment(env, out, call_expr, true, true) do
-    if predeclared_out?(env, out) do
+    if caller_rc?(env), do: ValueSlots.track(out)
+
+    if predeclared_out?(env, out) or ValueSlots.owned_ref?(out) do
       """
       Rc = #{call_expr};
       CHECK_RC(Rc);
@@ -952,7 +956,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
       |> String.trim()
     else
       """
-      ElmcValue *#{out};
+      ElmcValue *#{out} = NULL;
       Rc = #{call_expr};
       CHECK_RC(Rc);
       """
@@ -996,8 +1000,13 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     boxed_out_decl(env, out, call_expr)
   end
 
+  defp caller_rc?(env),
+    do: Map.get(env, :__rc_required__, false) or Map.get(env, :__rc_catch__, false)
+
   defp boxed_out_decl(env, out, rhs) do
-    if predeclared_out?(env, out) do
+    if caller_rc?(env), do: ValueSlots.track(out)
+
+    if predeclared_out?(env, out) or ValueSlots.owned_ref?(out) do
       "#{out} = #{rhs};"
     else
       "ElmcValue *#{out} = #{rhs};"

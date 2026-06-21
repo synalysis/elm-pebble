@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.CCodegen.CollectionCompile do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.BuiltinUnion
   alias Elmc.Backend.CCodegen.ConstantInt
   alias Elmc.Backend.CCodegen.DebugProbes
@@ -9,6 +10,7 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.CCodegen.ValueSlots
 
   @spec compile(Types.ir_collection_expr(), Types.compile_env(), Types.compile_counter()) ::
           Types.compile_result()
@@ -75,12 +77,11 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
 
   def compile(%{op: :char_from_code_expr, arg: arg_expr}, env, counter) do
     {arg_code, arg_var, counter} = Host.compile_expr(arg_expr, env, counter)
-    next = counter + 1
-    var = "tmp_#{next}"
+    {var, next} = CaseCompile.fresh_var(counter, env)
 
     code = """
     #{arg_code}
-      ElmcValue *#{var} = elmc_char_from_code(#{arg_var});
+      #{boxed_slot_assign(var, "elmc_char_from_code(#{arg_var})")}
       elmc_release(#{arg_var});
     """
 
@@ -93,13 +94,7 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
     if tuple2_native_int_operands?(left, right, env) do
       {left_code, left_ref, counter} = Host.compile_native_int_expr(left, child_env, counter)
       {right_code, right_ref, counter} = Host.compile_native_int_expr(right, child_env, counter)
-      next = counter + 1
-
-      out =
-        case Map.get(env, :__into_out__) do
-          into_out when is_binary(into_out) -> into_out
-          _ -> "tmp_#{next}"
-        end
+      {out, next, _} = CaseCompile.result_out_binding(env, counter)
 
       code = """
       #{left_code}
@@ -111,18 +106,14 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
     else
       {left_code, left_var, counter} = Host.compile_expr(left, child_env, counter)
       {right_code, right_var, counter} = Host.compile_expr(right, child_env, counter)
-      next = counter + 1
-
-      out =
-        case Map.get(env, :__into_out__) do
-          into_out when is_binary(into_out) -> into_out
-          _ -> "tmp_#{next}"
-        end
+      {out, next, _} = CaseCompile.result_out_binding(env, counter)
+      nulls = ValueSlots.transfer_and_null_refs([left_var, right_var])
 
       code = """
       #{left_code}
       #{right_code}
       #{RcRuntimeEmit.assign_call(env, out, "elmc_tuple2_take", "#{left_var}, #{right_var}")}
+      #{nulls}
       """
 
       {code, out, next}
@@ -149,17 +140,18 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
         {acc_code <> "\n  " <> code, vars ++ [var], c1}
       end)
 
-    next = counter + 1
-    out = Map.get(env, :__into_out__) || "tmp_#{next}"
+    {out, next, _} = CaseCompile.result_out_binding(env, counter)
+    list_items_id = counter + 1
     count = length(item_vars)
-    array_name = "list_items_#{next}"
+    array_name = "list_items_#{list_items_id}"
     item_list = Enum.join(item_vars, ", ")
-    list_probe = DebugProbes.list_literal_probe(env, out, next)
+    list_probe = DebugProbes.list_literal_probe(env, out, list_items_id)
+    nulls = if count == 0, do: "", else: ValueSlots.transfer_and_null_refs(Enum.uniq(item_vars))
 
     code =
       if count == 0 do
         """
-        ElmcValue *#{out} = elmc_list_nil();
+        #{boxed_slot_assign(out, "elmc_list_nil()")}
           #{list_probe}
         """
       else
@@ -167,11 +159,12 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
         #{item_code}
           ElmcValue *#{array_name}[#{count}] = { #{item_list} };
           #{RcRuntimeEmit.assign_call(env, out, "elmc_list_from_values_take", "#{array_name}, #{count}")}
+          #{nulls}
           #{list_probe}
         """
       end
 
-    {code, out, next}
+    {code, out, max(next, list_items_id + 1)}
   end
 
   defp static_list_literal(items, env, counter) when length(items) >= 4 do
@@ -190,11 +183,11 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
   defp static_list_literal(_items, _env, _counter), do: :error
 
   defp compile_static_int_list(items, env, counter) do
-    next = counter + 1
-    out = "tmp_#{next}"
+    {out, next, _} = CaseCompile.result_out_binding(env, counter)
+    values_id = counter + 1
     count = length(items)
-    values_name = "list_int_values_#{next}"
-    list_probe = DebugProbes.list_literal_probe(env, out, next)
+    values_name = "list_int_values_#{values_id}"
+    list_probe = DebugProbes.list_literal_probe(env, out, values_id)
 
     values =
       items
@@ -207,15 +200,15 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
       #{list_probe}
     """
 
-    {code, out, next}
+    {code, out, max(next, values_id + 1)}
   end
 
   defp compile_static_tuple2_int_list(items, env, counter) do
-    next = counter + 1
-    out = "tmp_#{next}"
+    {out, next, _} = CaseCompile.result_out_binding(env, counter)
+    values_id = counter + 1
     count = length(items)
-    values_name = "list_tuple2_values_#{next}"
-    list_probe = DebugProbes.list_literal_probe(env, out, next)
+    values_name = "list_tuple2_values_#{values_id}"
+    list_probe = DebugProbes.list_literal_probe(env, out, values_id)
 
     values =
       items
@@ -228,7 +221,7 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
       #{list_probe}
     """
 
-    {code, out, next}
+    {code, out, max(next, values_id + 1)}
   end
 
   defp static_int_literal?(%{op: :int_literal, value: value}) when is_integer(value), do: true
@@ -260,12 +253,13 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
           Types.compile_result()
   defp compile_bound_tuple_second(env, name, counter) do
     {source_code, source, counter} = resolve_env_source(env, name, counter)
-    next = counter + 1
-    var = "tmp_#{next}"
+    {var, next} = CaseCompile.fresh_var(counter, env)
 
     code = """
-    #{source_code}  ElmcValue *#{var} = elmc_tuple_second(#{source});
+    #{source_code}  #{boxed_slot_assign(var, "elmc_tuple_second(#{source})")}
     """
+
+    if RcRuntimeEmit.rc_allocator_emit_mode?(env), do: ValueSlots.track(var)
 
     {code, var, next}
   end
@@ -274,12 +268,13 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
           Types.compile_result()
   defp compile_bound_tuple_first(env, name, counter) do
     {source_code, source, counter} = resolve_env_source(env, name, counter)
-    next = counter + 1
-    var = "tmp_#{next}"
+    {var, next} = CaseCompile.fresh_var(counter, env)
 
     code = """
-    #{source_code}  ElmcValue *#{var} = elmc_tuple_first(#{source});
+    #{source_code}  #{boxed_slot_assign(var, "elmc_tuple_first(#{source})")}
     """
+
+    if RcRuntimeEmit.rc_allocator_emit_mode?(env), do: ValueSlots.track(var)
 
     {code, var, next}
   end
@@ -288,8 +283,7 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
           Types.compile_result()
   defp compile_bound_string_length(env, name, counter) do
     {source_code, source, counter} = resolve_env_source(env, name, counter)
-    next = counter + 1
-    var = "tmp_#{next}"
+    {var, next} = CaseCompile.fresh_var(counter, env)
 
     code =
       source_code <>
@@ -302,8 +296,7 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
           Types.compile_result()
   defp compile_bound_char_from_code(env, name, counter) do
     {source_code, source, counter} = resolve_env_source(env, name, counter)
-    next = counter + 1
-    var = "tmp_#{next}"
+    {var, next} = CaseCompile.fresh_var(counter, env)
 
     char_expr =
       case EnvBindings.native_int_binding(env, name) do
@@ -312,7 +305,7 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
       end
 
     code = """
-    #{source_code}  ElmcValue *#{var} = #{char_expr};
+    #{source_code}  #{boxed_slot_assign(var, char_expr)}
     """
 
     {code, var, next}
@@ -326,14 +319,16 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
         ) :: Types.compile_result()
   defp compile_expr_tuple_access(arg_expr, c_fn, env, counter) do
     {arg_code, arg_var, counter} = Host.compile_expr(arg_expr, env, counter)
-    next = counter + 1
-    var = "tmp_#{next}"
+    {var, next} = CaseCompile.fresh_var(counter, env)
 
     code = """
     #{arg_code}
-      ElmcValue *#{var} = #{c_fn}(#{arg_var});
+      #{boxed_slot_assign(var, "#{c_fn}(#{arg_var})")}
       elmc_release(#{arg_var});
     """
+
+    if RcRuntimeEmit.rc_allocator_emit_mode?(env), do: ValueSlots.track(var)
+    if RcRuntimeEmit.rc_allocator_emit_mode?(env), do: ValueSlots.release(arg_var)
 
     {code, var, next}
   end
@@ -346,15 +341,16 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
         ) :: Types.compile_result()
   defp compile_expr_unary(arg_expr, c_expr_prefix, env, counter) do
     {arg_code, arg_var, counter} = Host.compile_expr(arg_expr, env, counter)
-    next = counter + 1
-    var = "tmp_#{next}"
+    {var, next} = CaseCompile.fresh_var(counter, env)
 
     code = """
     #{arg_code}
-      ElmcValue *#{var} = #{c_expr_prefix}(#{arg_var}));
+      #{boxed_slot_assign(var, "#{c_expr_prefix}(#{arg_var}))")}
       elmc_release(#{arg_var});
     """
 
     {code, var, next}
   end
+
+  defp boxed_slot_assign(var, rhs), do: ValueSlots.boxed_decl(var, rhs)
 end

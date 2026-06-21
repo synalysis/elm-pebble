@@ -986,6 +986,7 @@ defmodule Elmc.Runtime.Generator do
     ElmcValue *elmc_task_map2(ElmcValue *f, ElmcValue *a, ElmcValue *b);
     ElmcValue *elmc_task_and_then(ElmcValue *f, ElmcValue *task);
     ElmcValue *elmc_task_perform(ElmcValue *to_msg, ElmcValue *task);
+    ElmcValue *elmc_task_force(ElmcValue *task);
     ElmcValue *elmc_process_spawn(ElmcValue *task);
     ElmcValue *elmc_process_sleep(ElmcValue *milliseconds);
     ElmcValue *elmc_process_kill(ElmcValue *pid);
@@ -1244,6 +1245,8 @@ defmodule Elmc.Runtime.Generator do
     uint64_t elmc_rc_released_count(void);
 
     #{RcTrack.header_declarations()}
+
+    #{RcMacros.release_array_lifo_declaration()}
 
     #{AllocTrack.header_declarations()}
 
@@ -2351,10 +2354,65 @@ defmodule Elmc.Runtime.Generator do
       return saw_any;
     }
 
-    ElmcValue *elmc_cmd_batch(ElmcValue *commands) {
-      if (elmc_list_all_tag(commands, ELMC_TAG_CMD)) {
-        return commands ? elmc_retain(commands) : elmc_list_nil();
+    static ElmcValue *elmc_cmd_batch_push_back(ElmcValue *flat, ElmcValue *entry) {
+      if (!entry) return flat;
+      ElmcValue *cell = NULL;
+      if (elmc_list_cons(&cell, entry, elmc_list_nil()) != RC_SUCCESS) return flat;
+      if (!flat || (flat->tag == ELMC_TAG_LIST && flat->payload == NULL)) {
+        elmc_release(flat);
+        return cell;
       }
+      if (flat->tag != ELMC_TAG_LIST) {
+        elmc_release(cell);
+        return flat;
+      }
+      ElmcValue **tail = &flat;
+      ElmcValue *cursor = flat;
+      while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
+        ElmcCons *node = (ElmcCons *)cursor->payload;
+        tail = &node->tail;
+        cursor = node->tail;
+      }
+      *tail = cell;
+      return flat;
+    }
+
+    static ElmcValue *elmc_cmd_batch_append_entry(ElmcValue *flat, ElmcValue *entry) {
+      if (!entry) return flat;
+      if (entry->tag == ELMC_TAG_CMD) {
+        return elmc_cmd_batch_push_back(flat, entry);
+      }
+      if (entry->tag == ELMC_TAG_LIST) {
+        ElmcValue *cursor = entry;
+        while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
+          ElmcCons *node = (ElmcCons *)cursor->payload;
+          flat = elmc_cmd_batch_append_entry(flat, node->head);
+          cursor = node->tail;
+        }
+        return flat;
+      }
+      return elmc_cmd_batch_push_back(flat, entry);
+    }
+
+    ElmcValue *elmc_cmd_batch(ElmcValue *commands) {
+      if (!commands) return elmc_list_nil();
+      if (commands->tag == ELMC_TAG_CMD) {
+        ElmcValue *next = NULL;
+        if (elmc_list_cons(&next, commands, elmc_list_nil()) != RC_SUCCESS) return elmc_list_nil();
+        return next;
+      }
+      if (commands->tag != ELMC_TAG_LIST) {
+        return elmc_platform_manager_batch(2, commands);
+      }
+      if (elmc_list_all_tag(commands, ELMC_TAG_CMD)) {
+        return elmc_retain(commands);
+      }
+
+      ElmcValue *flat = elmc_cmd_batch_append_entry(NULL, commands);
+      if (elmc_list_all_tag(flat, ELMC_TAG_CMD)) {
+        return flat ? flat : elmc_list_nil();
+      }
+      if (flat) elmc_release(flat);
       return elmc_platform_manager_batch(2, commands);
     }
 
@@ -4056,6 +4114,91 @@ defmodule Elmc.Runtime.Generator do
       return elmc_task_wrap_pair(f, task, ELMC_TASK_AND_THEN_SCALAR);
     }
 
+    ElmcValue *elmc_task_force(ElmcValue *task);
+
+    static ElmcValue *elmc_task_force_pair_step(ElmcValue *pair_value, elmc_int_t kind) {
+      if (!pair_value || pair_value->tag != ELMC_TAG_TUPLE2 || !pair_value->payload) return NULL;
+      ElmcTuple2 *pair = (ElmcTuple2 *)pair_value->payload;
+      ElmcValue *forced = elmc_task_force(pair->second);
+      if (!forced) return NULL;
+      if (forced->tag != ELMC_TAG_RESULT || !forced->payload) {
+        elmc_release(forced);
+        return NULL;
+      }
+      ElmcResult *inner = (ElmcResult *)forced->payload;
+      if (!inner->is_ok) {
+        ElmcValue *err = elmc_retain(forced);
+        elmc_release(forced);
+        return err;
+      }
+      ElmcValue *args[1] = { inner->value };
+      ElmcValue *step = NULL;
+      RC rc = elmc_closure_call_rc(&step, pair->first, args, 1);
+      elmc_release(forced);
+      if (rc != RC_SUCCESS) {
+        elmc_release(step);
+        return NULL;
+      }
+      if (kind == ELMC_TASK_AND_THEN_SCALAR) {
+        ElmcValue *out = elmc_task_force(step);
+        elmc_release(step);
+        return out;
+      }
+      ElmcValue *out = NULL;
+      if (elmc_result_ok(&out, step) != RC_SUCCESS) {
+        elmc_release(step);
+        return NULL;
+      }
+      elmc_release(step);
+      return out;
+    }
+
+    ElmcValue *elmc_task_force(ElmcValue *task) {
+      if (!task) return NULL;
+      if (!elmc_is_task_result(task)) return elmc_retain(task);
+      if (!task->payload) return NULL;
+      ElmcResult *result = (ElmcResult *)task->payload;
+
+      switch (task->scalar) {
+        case ELMC_TASK_SUCCEED_SCALAR: {
+          ElmcValue *out = NULL;
+          ElmcValue *value = result->value ? elmc_retain(result->value) : elmc_int_zero();
+          if (elmc_result_ok(&out, value) != RC_SUCCESS) out = NULL;
+          elmc_release(value);
+          return out;
+        }
+        case ELMC_TASK_FAIL_SCALAR: {
+          ElmcValue *out = NULL;
+          ElmcValue *value = result->value ? elmc_retain(result->value) : elmc_int_zero();
+          if (elmc_result_err(&out, value) != RC_SUCCESS) out = NULL;
+          elmc_release(value);
+          return out;
+        }
+        case ELMC_TASK_MAP_SCALAR:
+          return elmc_task_force_pair_step(result->value, ELMC_TASK_MAP_SCALAR);
+        case ELMC_TASK_AND_THEN_SCALAR:
+          return elmc_task_force_pair_step(result->value, ELMC_TASK_AND_THEN_SCALAR);
+        case ELMC_TASK_SPAWN_SCALAR: {
+          ElmcProcessSlot *slot = elmc_process_alloc_slot();
+          if (!slot) {
+            ElmcValue *out = NULL;
+            ElmcValue *zero = elmc_int_zero();
+            if (elmc_result_ok(&out, zero) != RC_SUCCESS) out = NULL;
+            elmc_release(zero);
+            return out;
+          }
+          if (result->value) slot->task = elmc_retain(result->value);
+          ElmcValue *pid = elmc_new_int_take(slot->pid);
+          ElmcValue *out = NULL;
+          if (elmc_result_ok(&out, pid) != RC_SUCCESS) out = NULL;
+          elmc_release(pid);
+          return out;
+        }
+        default:
+          return elmc_retain(task);
+      }
+    }
+
     ElmcValue *elmc_task_perform(ElmcValue *to_msg, ElmcValue *task) {
       (void)to_msg;
       (void)task;
@@ -4063,7 +4206,24 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_process_spawn(ElmcValue *task) {
+    #ifndef ELMC_PEBBLE_PLATFORM
+      ElmcProcessSlot *slot = elmc_process_alloc_slot();
+      if (!slot) {
+        ElmcValue *out = NULL;
+        ElmcValue *zero = elmc_int_zero();
+        if (elmc_result_ok(&out, zero) != RC_SUCCESS) out = NULL;
+        elmc_release(zero);
+        return out;
+      }
+      slot->task = task ? elmc_retain(task) : NULL;
+      ElmcValue *pid = elmc_new_int_take(slot->pid);
+      ElmcValue *out = NULL;
+      if (elmc_result_ok(&out, pid) != RC_SUCCESS) out = NULL;
+      elmc_release(pid);
+      return out;
+    #else
       return elmc_task_wrap(task, ELMC_TASK_SPAWN_SCALAR);
+    #endif
     }
 
     ElmcValue *elmc_process_sleep(ElmcValue *milliseconds) {
@@ -7693,6 +7853,7 @@ defmodule Elmc.Runtime.Generator do
       return elmc_new_float_take(elmc_basics_log_double(elmc_as_float(x)) / denominator);
     }
 
+    #ifdef ELMC_PEBBLE_PLATFORM
     static double elmc_basics_normalize_radians(double x) {
       const double pi = 3.14159265358979323846;
       const double two_pi = 6.28318530717958647692;
@@ -7700,6 +7861,7 @@ defmodule Elmc.Runtime.Generator do
       while (x < -pi) x += two_pi;
       return x;
     }
+    #endif
 
     double elmc_basics_sin_double(double x) {
       #ifndef ELMC_PEBBLE_PLATFORM

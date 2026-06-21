@@ -120,8 +120,10 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
 
     """
         #{cons}
-        #{release_owned}*#{tail} = #{cell};
-        #{tail} = &((ElmcCons *)#{cell}->payload)->tail;
+        #{release_owned}if (#{cell}) {
+          *#{tail} = #{cell};
+          #{tail} = &((ElmcCons *)#{cell}->payload)->tail;
+        }
     """
   end
 

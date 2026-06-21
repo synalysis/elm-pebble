@@ -157,11 +157,12 @@ static ElmcValue *elmc_cmd_queue_normalize(ElmcValue *cmd) {
 
 static int elmc_sub_tag_slot(int64_t mask) {
   if (mask == 0) return -1;
-  if ((mask & (1LL << 13)) != 0) return 13;
-  if ((mask & (mask - 1)) != 0) return -1;
-  int bit = 0;
-  while (bit < 32 && (mask & (1LL << bit)) == 0) bit++;
-  return bit < 32 ? bit : -1;
+  switch (mask) {
+    case 16: return ELMC_WORKER_SLOT_ACCEL_TAP;
+    case 1: return ELMC_WORKER_SLOT_SECOND_CHANGE;
+    default: return -1;
+  }
+
 }
 
 static void elmc_worker_clear_sub_tags(ElmcWorkerState *state) {

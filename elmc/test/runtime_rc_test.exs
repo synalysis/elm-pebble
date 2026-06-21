@@ -1,6 +1,8 @@
 defmodule Elmc.RuntimeRCTest do
   use ExUnit.Case
 
+  alias Elmc.Test.RcTrackHarness
+
   @deep_list_cells 200
   @deep_list_stack_kb 32
 
@@ -77,7 +79,9 @@ defmodule Elmc.RuntimeRCTest do
         "-Wextra",
         "-I#{Path.join(out_dir, "runtime")}",
         Path.join(out_dir, "runtime/elmc_runtime.c"),
+        RcTrackHarness.runtime_link_stub(),
         harness_path,
+        "-lm",
         "-o",
         binary_path
       ])
@@ -132,7 +136,9 @@ defmodule Elmc.RuntimeRCTest do
         "-Wextra",
         "-I#{Path.join(out_dir, "runtime")}",
         Path.join(out_dir, "runtime/elmc_runtime.c"),
+        RcTrackHarness.runtime_link_stub(),
         harness_path,
+        "-lm",
         "-o",
         binary_path
       ])
@@ -204,6 +210,7 @@ defmodule Elmc.RuntimeRCTest do
         Path.join(out_dir, "c/elmc_pebble.c"),
         Path.join(out_dir, "c/elmc_worker.c"),
         harness_path,
+        "-lm",
         "-o",
         binary_path
       ])
@@ -230,7 +237,7 @@ defmodule Elmc.RuntimeRCTest do
     File.write!(
       harness_path,
       """
-      #include "runtime/elmc_runtime.h"
+      #include "elmc_runtime.h"
       #include <stdio.h>
 
       static RC fail_alloc_lambda(
@@ -270,9 +277,11 @@ defmodule Elmc.RuntimeRCTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
-        "-I#{out_dir}",
+        "-I#{Path.join(out_dir, "runtime")}",
         Path.join(out_dir, "runtime/elmc_runtime.c"),
+        RcTrackHarness.runtime_link_stub(),
         harness_path,
+        "-lm",
         "-o",
         binary_path
       ])
@@ -343,7 +352,9 @@ defmodule Elmc.RuntimeRCTest do
         "-Wextra",
         "-I#{Path.join(out_dir, "runtime")}",
         Path.join(out_dir, "runtime/elmc_runtime.c"),
+        RcTrackHarness.runtime_link_stub(),
         harness_path,
+        "-lm",
         "-o",
         binary_path
       ])

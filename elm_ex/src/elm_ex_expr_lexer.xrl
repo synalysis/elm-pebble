@@ -27,6 +27,7 @@ _ : {token, {wildcard, TokenLine}}.
 \] : {token, {rbracket, TokenLine}}.
 \{ : {token, {lbrace, TokenLine}}.
 \} : {token, {rbrace, TokenLine}}.
+\;\; : {token, {case_sep, TokenLine}}.
 \; : {token, {semicolon, TokenLine}}.
 :: : {token, {cons, TokenLine}}.
 \/= : {token, {neq, TokenLine}}.

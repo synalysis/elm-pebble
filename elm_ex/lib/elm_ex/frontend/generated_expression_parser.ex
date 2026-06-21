@@ -54,7 +54,10 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
     |> normalize_compose_source()
     |> normalize_let_source()
     |> normalize_case_source()
+    |> normalize_inline_case_branch_separators()
+    |> String.replace(~r/\bof\s*;;\s*/u, "of ")
     |> normalize_minus_numeric_source()
+    |> normalize_trailing_commas()
     |> close_unbalanced_brackets_before_final_pipe()
     |> split_inline_let_in_lines()
   end
@@ -542,7 +545,7 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
       if is_binary(current), do: items ++ [String.trim(current)], else: items
 
     normalized_items = Enum.map(normalized_items, &wrap_branch_case_expression/1)
-    {Enum.join(normalized_items, " ; "), rest}
+    {Enum.join(normalized_items, ";;"), rest}
   end
 
   @spec wrap_branch_case_expression(source()) :: source()
@@ -565,16 +568,23 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
   @spec build_embedded_case_expr(source(), source()) :: source()
   defp build_embedded_case_expr(case_header, branches_text)
        when is_binary(case_header) and is_binary(branches_text) do
-    if String.contains?(case_header, "++ case ") do
-      case String.split(case_header, "++ case ", parts: 2) do
+    branches =
+      branches_text
+      |> String.trim_leading()
+      |> String.replace(~r/^;;\s*/, "")
+
+    header = String.trim_trailing(case_header)
+
+    if String.contains?(header, "++ case ") do
+      case String.split(header, "++ case ", parts: 2) do
         [before_append, case_rest] ->
-          before_append <> "++ (case " <> case_rest <> " " <> branches_text <> ")"
+          before_append <> "++ (case " <> case_rest <> " " <> branches <> ")"
 
         _ ->
-          case_header <> " " <> branches_text
+          header <> " " <> branches
       end
     else
-      case_header <> " " <> branches_text
+      header <> " " <> branches
     end
   end
 
@@ -807,6 +817,27 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
   defp unbalanced_multiline_string_delimiter?(source) when is_binary(source) do
     occurrences = Regex.scan(~r/\"\"\"/u, source) |> length()
     rem(occurrences, 2) == 1
+  end
+
+  @spec normalize_inline_case_branch_separators(source()) :: source()
+  defp normalize_inline_case_branch_separators(source) when is_binary(source) do
+    if String.contains?(source, "case ") and String.contains?(source, " of") and
+         not String.contains?(source, " of\n") do
+      Regex.replace(
+        ~r/(?<!;)(?<!of);\s*(?=(?:True|False|_|'[^']*'|\"[^\"]*\"|0x[0-9A-Fa-f]+|[0-9]+|\(\)|\[\]|\([^)]+\)|\{[^}]+\}|[A-Z][A-Za-z0-9_.']*|[a-z][A-Za-z0-9_']*)\s*->)/u,
+        source,
+        ";; "
+      )
+    else
+      source
+    end
+  end
+
+  @spec normalize_trailing_commas(source()) :: source()
+  defp normalize_trailing_commas(source) when is_binary(source) do
+    source
+    |> String.replace(~r/,\s*\]/u, "]")
+    |> String.replace(~r/,\s*\}/u, "}")
   end
 
   @spec normalize_minus_numeric_source(source()) :: source()

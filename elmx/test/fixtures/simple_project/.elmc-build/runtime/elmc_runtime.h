@@ -364,6 +364,7 @@ ElmcValue *elmc_task_map(ElmcValue *f, ElmcValue *task);
 ElmcValue *elmc_task_map2(ElmcValue *f, ElmcValue *a, ElmcValue *b);
 ElmcValue *elmc_task_and_then(ElmcValue *f, ElmcValue *task);
 ElmcValue *elmc_task_perform(ElmcValue *to_msg, ElmcValue *task);
+ElmcValue *elmc_task_force(ElmcValue *task);
 ElmcValue *elmc_process_spawn(ElmcValue *task);
 ElmcValue *elmc_process_sleep(ElmcValue *milliseconds);
 ElmcValue *elmc_process_kill(ElmcValue *pid);

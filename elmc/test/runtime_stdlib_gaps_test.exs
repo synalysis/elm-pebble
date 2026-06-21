@@ -242,7 +242,9 @@ defmodule Elmc.RuntimeStdlibGapsTest do
         "-Wextra",
         "-I#{runtime_dir}",
         Path.join(runtime_dir, "elmc_runtime.c"),
+        Elmc.Test.RcTrackHarness.runtime_link_stub(),
         harness_path,
+        "-lm",
         "-o",
         binary_path
       ])

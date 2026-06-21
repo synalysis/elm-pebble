@@ -3,6 +3,8 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
 
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.CSource
+  alias Elmc.Backend.CCodegen.OwnershipTransfer
+  alias Elmc.Backend.CCodegen.ValueSlots
   alias Elmc.Backend.CCodegen.PebbleMsgTag
   alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
@@ -89,7 +91,7 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
           Host.compile_case_branch_assignment(branch.expr, out, branch_env, c)
 
         snippet =
-          switch_branch_snippet(case_label(branch.pattern, env), expr_code, assignment_code)
+          switch_branch_snippet(case_label(branch.pattern, env), expr_code, assignment_code, out)
 
         {acc <> snippet <> "\n", c2}
       end)
@@ -158,7 +160,7 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
           Host.compile_case_branch_assignment(branch.expr, out, branch_env, c)
 
         snippet =
-          switch_branch_snippet(case_label(branch.pattern, env), expr_code, assignment_code)
+          switch_branch_snippet(case_label(branch.pattern, env), expr_code, assignment_code, out)
 
         {acc <> snippet <> "\n", c2}
       end)
@@ -240,9 +242,11 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     Host.compile_expr(subject_expr, env, counter)
   end
 
-  defp switch_branch_snippet(label, expr_code, assignment_code) do
+  defp switch_branch_snippet(label, expr_code, assignment_code, out) do
+    cleanup = switch_branch_cleanup(expr_code, assignment_code, out)
+
     body =
-      [expr_code, assignment_code, "break;"]
+      [expr_code, assignment_code, cleanup, "break;"]
       |> Enum.reject(&(String.trim(&1) == ""))
       |> Enum.join("\n")
 
@@ -253,6 +257,39 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     """
     |> String.trim_trailing()
     |> CSource.indent(2)
+  end
+
+  defp switch_branch_cleanup(expr_code, assignment_code, out) do
+    body =
+      [expr_code, assignment_code]
+      |> Enum.filter(&is_binary/1)
+      |> Enum.join("\n")
+
+    assigned =
+      Regex.scan(~r/ElmcValue \*([A-Za-z_][A-Za-z0-9_]*)\s*=/, body)
+      |> Enum.map(fn [_, name] -> name end)
+      |> Enum.uniq()
+
+    released =
+      Regex.scan(~r/elmc_release\(([A-Za-z_][A-Za-z0-9_]*)\)/, body)
+      |> Enum.map(fn [_, name] -> name end)
+      |> MapSet.new()
+
+    cow_drop_skip = OwnershipTransfer.cow_drop_chain_sources_to_skip(body, out)
+
+    assigned
+    |> Enum.reject(fn name ->
+      name == out or
+        String.starts_with?(name, "__") or
+        MapSet.member?(released, name) or
+        MapSet.member?(cow_drop_skip, name) or
+        ValueSlots.transferred?(name, body) or
+        OwnershipTransfer.transferred_in_c_source?(name, body)
+    end)
+    |> Enum.map_join("\n", fn name ->
+      ValueSlots.release(name)
+      "elmc_release(#{name});"
+    end)
   end
 
   @spec case_label(Types.pattern(), Types.compile_env()) :: String.t()

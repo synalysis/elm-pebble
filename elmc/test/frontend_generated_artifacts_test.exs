@@ -771,7 +771,7 @@ defmodule Elmc.FrontendGeneratedArtifactsTest do
              ElmEx.Frontend.GeneratedExpressionParser.parse("case ch of\n'a' -> 1\n_ -> 0")
 
     assert expr49[:op] == :case
-    assert Enum.at(expr49[:branches], 0)[:pattern][:kind] == :int
+    assert Enum.at(expr49[:branches], 0)[:pattern][:kind] == :char
     assert Enum.at(expr49[:branches], 0)[:pattern][:value] == ?a
 
     assert {:ok, expr49b} =

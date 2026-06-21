@@ -26,6 +26,7 @@ defmodule Elmc.PortsRoundtripTest do
         Path.join(out_dir, "c/elmc_pebble.c"),
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/host_harness.c"),
+        "-lm",
         "-o",
         binary_path
       ])

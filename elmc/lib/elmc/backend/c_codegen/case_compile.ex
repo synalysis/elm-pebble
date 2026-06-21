@@ -331,8 +331,13 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
   def result_out_binding(env, counter) do
     case Map.get(env, :__into_out__) do
       nil ->
-        next = counter + 1
-        {"tmp_#{next}", next, true}
+        if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
+          {ref, index} = ValueSlots.alloc()
+          {ref, max(counter, index + 1), false}
+        else
+          next = counter + 1
+          {"tmp_#{next}", next, true}
+        end
 
       out ->
         {out, counter, false}
@@ -341,27 +346,49 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
 
   @spec result_out_decl(String.t(), boolean()) :: String.t()
   def result_out_decl(_out, false), do: ""
-  def result_out_decl(out, true), do: "ElmcValue *#{out} = NULL;"
+  def result_out_decl(out, true), do: ValueSlots.boxed_null_decl(out)
 
   @spec advance_counter_past_out(Types.compile_counter(), String.t(), boolean()) ::
           Types.compile_counter()
   def advance_counter_past_out(counter, _out, false), do: counter
 
   def advance_counter_past_out(counter, out, true) do
-    case Regex.run(~r/^tmp_(\d+)$/, out) do
-      [_, digits] -> max(counter, String.to_integer(digits) + 1)
-      _ -> counter
+    cond do
+      match = Regex.run(~r/^tmp_(\d+)$/, out) ->
+        [_, digits] = match
+        max(counter, String.to_integer(digits) + 1)
+
+      match = Regex.run(~r/^owned\[(\d+)\]$/, out) ->
+        [_, digits] = match
+        max(counter, String.to_integer(digits) + 1)
+
+      true ->
+        counter
     end
   end
 
   @spec fresh_var(Types.compile_counter(), Types.compile_env()) ::
           {String.t(), Types.compile_counter()}
   def fresh_var(counter, env) do
+    if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
+      {ref, index} = ValueSlots.alloc()
+
+      if MapSet.member?(Map.get(env, :__declared_outs__, MapSet.new()), ref) do
+        fresh_var(max(counter, index + 1), env)
+      else
+        {ref, max(counter, index + 1)}
+      end
+    else
+      fresh_tmp_var(counter, env)
+    end
+  end
+
+  defp fresh_tmp_var(counter, env) do
     next = counter + 1
     var = "tmp_#{next}"
 
     if MapSet.member?(Map.get(env, :__declared_outs__, MapSet.new()), var) do
-      fresh_var(next, env)
+      fresh_tmp_var(next, env)
     else
       {var, next}
     end
@@ -411,8 +438,11 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
       )
 
     if extract_branch_helper?(branch_env, inline_body) do
-      case branch_helper_params(branch, branch_env, subject_ref) do
+      case branch_helper_params(branch, branch_env, subject_ref, expr_code, assignment_code) do
         {:ok, params} when params != [] ->
+          if helper_params_collide_with_locals?(params, inline_body) do
+            inline_body
+          else
           helper_id = Process.get(:elmc_generic_helper_counter, 0) + 1
           Process.put(:elmc_generic_helper_counter, helper_id)
 
@@ -444,6 +474,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
           """
               #{out} = #{helper_name}(#{call_args});
           """
+          end
 
         _ ->
           inline_body
@@ -461,18 +492,43 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
 
   defp emitted_line_count(code), do: code |> String.split("\n") |> length()
 
-  defp branch_helper_params(branch, branch_env, subject_ref) do
+  defp helper_params_collide_with_locals?(params, body) when is_binary(body) do
+    param_refs =
+      params
+      |> Enum.map(fn {_var, spec} -> elem(spec, 1) end)
+      |> MapSet.new()
+
+    local_decls =
+      body
+      |> then(fn source ->
+        Regex.scan(~r/ElmcValue \*([A-Za-z_][A-Za-z0-9_]*)\s*=/, source)
+      end)
+      |> Enum.map(fn [_, name] -> name end)
+      |> MapSet.new()
+
+    not MapSet.disjoint?(param_refs, local_decls)
+  end
+
+  defp branch_helper_params(branch, branch_env, subject_ref, expr_code, assignment_code) do
     excluded =
       case branch.pattern do
         %{kind: :var, name: name} when is_binary(name) -> MapSet.new([name])
         _ -> MapSet.new()
       end
 
-    vars =
+    code = Enum.join([expr_code, assignment_code], "\n")
+
+    ir_vars =
       branch.expr
       |> external_vars()
       |> MapSet.to_list()
       |> Enum.reject(&MapSet.member?(excluded, &1))
+
+    code_vars = HelperParams.vars_in_c_source(code, branch_env)
+
+    vars =
+      (ir_vars ++ code_vars)
+      |> Enum.uniq()
       |> Enum.sort()
 
     case HelperParams.collect(vars, branch_env) do

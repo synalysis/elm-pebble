@@ -428,7 +428,9 @@ defmodule ElmcTest do
           "-DELMC_PEBBLE_INT32",
           "-Iruntime",
           "runtime/elmc_runtime.c",
+          Elmc.Test.RcTrackHarness.runtime_link_stub(),
           "list_cell_harness.c",
+          "-lm",
           "-o",
           "list_cell_harness"
         ],
