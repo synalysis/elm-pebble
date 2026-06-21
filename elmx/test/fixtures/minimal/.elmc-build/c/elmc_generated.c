@@ -5,7 +5,15 @@
 
 #if defined(__GNUC__)
 #pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wunused-variable"
 #endif
+
+const char *elmc_debug_union_ctor_name(elmc_int_t tag) {
+  switch (tag) {
+
+    default: return NULL;
+  }
+}
 
 #if defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_CHALK) || defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_FLINT) || defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_GABBRO)
 #include <pebble.h>

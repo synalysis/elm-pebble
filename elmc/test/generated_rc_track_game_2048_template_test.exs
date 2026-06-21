@@ -208,6 +208,7 @@ defmodule Elmc.GeneratedRcTrackGame2048TemplateTest do
         for (int i = 0; i < 100; i++) {
           if (elmc_pebble_dispatch_int(&app, dir_msgs[i % 4]) != 0) return 5;
           drain_cmds(&app);
+          if (i % 10 == 9 && model_cells_len(&app) != 16) return 14;
         }
 
         if (drain_view(&app) < 17) return 6;

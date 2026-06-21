@@ -1,6 +1,7 @@
 #ifndef ELMC_PEBBLE_H
 #define ELMC_PEBBLE_H
 
+#define ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE 1
 typedef struct ElmcPebbleApp ElmcPebbleApp;
 
 enum {
@@ -129,7 +130,7 @@ void elmc_scene_writer_init_app(ElmcSceneWriter *writer, ElmcPebbleApp *app);
 #endif
 
 #ifndef ELMC_PEBBLE_SCENE_INITIAL_CAPACITY
-#define ELMC_PEBBLE_SCENE_INITIAL_CAPACITY 512
+#define ELMC_PEBBLE_SCENE_INITIAL_CAPACITY 1024
 #endif
 
 #ifndef ELMC_PEBBLE_SCENE_GROW_CHUNK
@@ -141,24 +142,20 @@ void elmc_scene_writer_init_app(ElmcSceneWriter *writer, ElmcPebbleApp *app);
 #endif
 
 #ifndef ELMC_PEBBLE_SCENE_TRIM_SLACK
-#if defined(PBL_PLATFORM_APLITE)
-#define ELMC_PEBBLE_SCENE_TRIM_SLACK 16
-#else
 #define ELMC_PEBBLE_SCENE_TRIM_SLACK 0
 #endif
+
+/* Retained scene-byte pools: grow once per slot, never shrink or realloc per frame. */
+#ifndef ELMC_PEBBLE_SCENE_POOL_SLOTS
+#define ELMC_PEBBLE_SCENE_POOL_SLOTS 10
 #endif
 
-/* Optional fixed scene arena (BSS). Prefer chained heap chunks on Aplite instead. */
 #ifndef ELMC_PEBBLE_SCENE_STATIC_CAPACITY
 #define ELMC_PEBBLE_SCENE_STATIC_CAPACITY 0
 #endif
 
 #ifndef ELMC_PEBBLE_SCENE_CHUNK_SIZE
-#if defined(PBL_PLATFORM_APLITE)
-#define ELMC_PEBBLE_SCENE_CHUNK_SIZE 256
-#else
 #define ELMC_PEBBLE_SCENE_CHUNK_SIZE 0
-#endif
 #endif
 
     #ifndef ELMC_PEBBLE_DRAW_PATH_PROBES
@@ -202,6 +199,7 @@ typedef struct {
   int command_count;
   uint64_t hash;
   int dirty;
+  int pool_slot;
 #if ELMC_PEBBLE_SCENE_CHUNK_SIZE > 0
   struct ElmcPebbleSceneChunk *chunks;
 #endif

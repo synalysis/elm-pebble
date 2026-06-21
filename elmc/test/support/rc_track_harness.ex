@@ -1,7 +1,7 @@
 defmodule Elmc.Test.RcTrackHarness do
   @moduledoc false
 
-  import ExUnit.Assertions, only: [flunk: 1]
+  import ExUnit.Assertions, only: [assert: 2, flunk: 1]
 
   @type compile_opts :: keyword()
 
@@ -82,6 +82,54 @@ defmodule Elmc.Test.RcTrackHarness do
       true ->
         flunk("expected balanced rc/alloc registry, got:\n#{run_out}")
     end
+  end
+
+  @spec parse_alloc_probe_update_rc_nets(String.t()) :: [{non_neg_integer(), non_neg_integer()}]
+  def parse_alloc_probe_update_rc_nets(out) do
+    Regex.scan(~r/probe move(\d+) update: rc_live \+\d+ rc_net \+(\d+)/, out)
+    |> Enum.map(fn [_, move, net] -> {String.to_integer(move), String.to_integer(net)} end)
+  end
+
+  @spec parse_alloc_probe_view_leaks(String.t()) :: non_neg_integer()
+  def parse_alloc_probe_view_leaks(out) do
+    Regex.scan(~r/probe move\d+ view: rc_live \+\d+ rc_net \+\d+/, out)
+    |> length()
+  end
+
+  @spec assert_alloc_probe_thresholds!(String.t(), keyword()) :: :ok
+  def assert_alloc_probe_thresholds!(out, opts \\ []) do
+    early_strict_moves = Keyword.get(opts, :early_strict_moves, 10)
+    max_update_rc_net = Keyword.get(opts, :max_update_rc_net, 2)
+
+    update_rc_nets = parse_alloc_probe_update_rc_nets(out)
+
+    early_strict_leaks =
+      Enum.count(update_rc_nets, fn {move, net} -> move < early_strict_moves and net != 0 end)
+
+    catastrophic_update_leaks =
+      Enum.count(update_rc_nets, fn {_move, net} -> net >= 10 end)
+
+    max_net =
+      case update_rc_nets do
+        [] -> 0
+        nets -> nets |> Enum.map(&elem(&1, 1)) |> Enum.max()
+      end
+
+    view_leaks = parse_alloc_probe_view_leaks(out)
+
+    assert early_strict_leaks == 0,
+           "early-game update should be RC-balanced (moves 0-#{early_strict_moves - 1}); see probe output above"
+
+    assert catastrophic_update_leaks == 0,
+           "catastrophic fused native leak (rc_net >= 10 on an update move); see probe output above"
+
+    assert max_net <= max_update_rc_net,
+           "unexpected large per-move update rc_net (max +#{max_net}); see probe output above"
+
+    assert view_leaks == 0,
+           "unexpected view alloc leak (#{view_leaks} regions); see probe output above"
+
+    :ok
   end
 
   @spec worker_sources(String.t()) :: [String.t()]

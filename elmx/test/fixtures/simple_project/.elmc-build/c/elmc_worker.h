@@ -3,10 +3,8 @@
 
 #include "elmc_generated.h"
 
-#define ELMC_WORKER_MAX_BUTTON_RAW_SUBS 3
-#define ELMC_WORKER_SUB_TAG_SLOTS 2
-#define ELMC_WORKER_SLOT_ACCEL_TAP 0
-#define ELMC_WORKER_SLOT_SECOND_CHANGE 1
+#define ELMC_WORKER_MAX_BUTTON_RAW_SUBS 16
+#define ELMC_WORKER_SUB_TAG_SLOTS 32
 
 
 typedef struct {

@@ -27,13 +27,15 @@ typedef enum {
   ELMC_TAG_RESULT = 5,
   ELMC_TAG_MAYBE = 6,
   ELMC_TAG_TUPLE2 = 7,
+  ELMC_TAG_CHAR = 8,
   ELMC_TAG_PORT_PAYLOAD = 9,
   ELMC_TAG_FLOAT = 10,
   ELMC_TAG_RECORD = 11,
   ELMC_TAG_CLOSURE = 12,
   ELMC_TAG_FORWARD_REF = 13,
   ELMC_TAG_CMD = 14,
-  ELMC_TAG_SUB = 15
+  ELMC_TAG_SUB = 15,
+  ELMC_TAG_ORDER = 16
 } ElmcTag;
 
 typedef struct ElmcValue {
@@ -53,6 +55,9 @@ typedef struct ElmcCons {
 #endif
 #ifndef ELMC_LIST_CELL_SCALAR
 #define ELMC_LIST_CELL_SCALAR ((elmc_int_t)0x1EC011)
+#endif
+#ifndef ELMC_DICT_SCALAR
+#define ELMC_DICT_SCALAR ((elmc_int_t)0x1EC012)
 #endif
 
 typedef struct ElmcTuple2 {
@@ -255,8 +260,13 @@ typedef struct ElmcClosure {
 RC elmc_new_int(ElmcValue **out, elmc_int_t value);
 RC elmc_new_bool(ElmcValue **out, int value);
 ElmcValue *elmc_new_char(elmc_int_t value);
+ElmcValue *elmc_char_from_code(ElmcValue *code);
+ElmcValue *elmc_char_from_code_int(elmc_int_t code);
+ElmcValue *elmc_new_order(elmc_int_t value);
 RC elmc_new_string(ElmcValue **out, const char *value);
+RC elmc_new_string_len(ElmcValue **out, const char *value, size_t len);
 ElmcValue *elmc_int_zero(void);
+ElmcValue *elmc_unit(void);
 ElmcValue *elmc_list_nil(void);
 RC elmc_list_cons(ElmcValue **out, ElmcValue *head, ElmcValue *tail);
 ElmcValue *elmc_list_cons_take(ElmcValue *head, ElmcValue *tail);
@@ -273,8 +283,15 @@ RC elmc_result_ok(ElmcValue **out, ElmcValue *value);
 RC elmc_result_err(ElmcValue **out, ElmcValue *value);
 RC elmc_tuple2(ElmcValue **out, ElmcValue *first, ElmcValue *second);
 RC elmc_tuple2_take(ElmcValue **out, ElmcValue *first, ElmcValue *second);
+ElmcValue *elmc_build_constructor_payload(ElmcValue **values, int count);
 RC elmc_tuple2_ints(ElmcValue **out, elmc_int_t first, elmc_int_t second);
 ElmcValue *elmc_cmd0(elmc_int_t kind);
+ElmcValue *elmc_cmd_batch(ElmcValue *commands);
+ElmcValue *elmc_cmd_map(ElmcValue *f, ElmcValue *cmd);
+ElmcValue *elmc_sub_batch(ElmcValue *subs);
+ElmcValue *elmc_sub_map(ElmcValue *f, ElmcValue *sub);
+ElmcValue *elmc_port_outgoing(ElmcValue *port_name, ElmcValue *payload);
+ElmcValue *elmc_port_incoming_sub(ElmcValue *port_name, ElmcValue *callback);
 ElmcValue *elmc_cmd1(elmc_int_t kind, elmc_int_t p0);
 ElmcValue *elmc_cmd1_string(elmc_int_t kind, elmc_int_t p0, const char *text);
 ElmcValue *elmc_cmd2(elmc_int_t kind, elmc_int_t p0, elmc_int_t p1);
@@ -289,6 +306,8 @@ ElmcValue *elmc_sub4(elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p
 ElmcValue *elmc_sub5(elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3, elmc_int_t p4);
 
 elmc_int_t elmc_as_int(ElmcValue *value);
+int elmc_value_is_unit(ElmcValue *value);
+elmc_int_t elmc_int_idiv(elmc_int_t numerator, elmc_int_t denominator);
 elmc_int_t elmc_as_bool(ElmcValue *value);
 int elmc_value_equal(ElmcValue *left, ElmcValue *right);
 int elmc_list_equal_int(ElmcValue *left, ElmcValue *right);
@@ -316,6 +335,7 @@ ElmcValue *elmc_char_to_code(ElmcValue *value);
 ElmcValue *elmc_debug_log(ElmcValue *label, ElmcValue *value);
 ElmcValue *elmc_debug_todo(ElmcValue *label);
 ElmcValue *elmc_debug_to_string(ElmcValue *value);
+ElmcValue *elmc_debug_set_to_string(ElmcValue *set);
 ElmcValue *elmc_append(ElmcValue *left, ElmcValue *right);
 RC elmc_string_append(ElmcValue **out, ElmcValue *left, ElmcValue *right);
 RC elmc_string_append_native(ElmcValue **out, const char *left, const char *right);
@@ -343,6 +363,7 @@ ElmcValue *elmc_task_fail(ElmcValue *value);
 ElmcValue *elmc_task_map(ElmcValue *f, ElmcValue *task);
 ElmcValue *elmc_task_map2(ElmcValue *f, ElmcValue *a, ElmcValue *b);
 ElmcValue *elmc_task_and_then(ElmcValue *f, ElmcValue *task);
+ElmcValue *elmc_task_perform(ElmcValue *to_msg, ElmcValue *task);
 ElmcValue *elmc_process_spawn(ElmcValue *task);
 ElmcValue *elmc_process_sleep(ElmcValue *milliseconds);
 ElmcValue *elmc_process_kill(ElmcValue *pid);
@@ -388,6 +409,8 @@ RC elmc_list_unzip(ElmcValue **out, ElmcValue *list);
 RC elmc_list_intersperse(ElmcValue **out, ElmcValue *sep, ElmcValue *list);
 RC elmc_list_map2(ElmcValue **out, ElmcValue *f, ElmcValue *a, ElmcValue *b);
 RC elmc_list_map3(ElmcValue **out, ElmcValue *f, ElmcValue *a, ElmcValue *b, ElmcValue *c);
+RC elmc_list_map4(ElmcValue **out, ElmcValue *f, ElmcValue *a, ElmcValue *b, ElmcValue *c, ElmcValue *d);
+RC elmc_list_map5(ElmcValue **out, ElmcValue *f, ElmcValue *a, ElmcValue *b, ElmcValue *c, ElmcValue *d, ElmcValue *e);
 
 /* --- Maybe operations --- */
 ElmcValue *elmc_maybe_with_default(ElmcValue *default_val, ElmcValue *maybe);
@@ -420,6 +443,7 @@ RC elmc_string_trim(ElmcValue **out, ElmcValue *s);
 RC elmc_string_trim_left(ElmcValue **out, ElmcValue *s);
 RC elmc_string_trim_right(ElmcValue **out, ElmcValue *s);
 ElmcValue *elmc_string_contains(ElmcValue *sub, ElmcValue *s);
+int elmc_string_equals_cstr(ElmcValue *value, const char *literal);
 ElmcValue *elmc_string_starts_with(ElmcValue *prefix, ElmcValue *s);
 ElmcValue *elmc_string_ends_with(ElmcValue *suffix, ElmcValue *s);
 RC elmc_string_split(ElmcValue **out, ElmcValue *sep, ElmcValue *s);
@@ -617,6 +641,11 @@ static inline ElmcValue *elmc_new_string_take(const char *value) {
   return elmc_new_string(&out, value) == RC_SUCCESS ? out : elmc_int_zero();
 }
 
+static inline ElmcValue *elmc_new_string_len_take(const char *value, size_t len) {
+  ElmcValue *out = NULL;
+  return elmc_new_string_len(&out, value, len) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
 static inline ElmcValue *elmc_new_float_take(double value) {
   ElmcValue *out = NULL;
   return elmc_new_float(&out, value) == RC_SUCCESS ? out : elmc_int_zero();
@@ -803,6 +832,16 @@ static inline ElmcValue *elmc_list_map2_take(ElmcValue *f, ElmcValue *a, ElmcVal
 static inline ElmcValue *elmc_list_map3_take(ElmcValue *f, ElmcValue *a, ElmcValue *b, ElmcValue *c) {
   ElmcValue *out = NULL;
   return elmc_list_map3(&out, f, a, b, c) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_map4_take(ElmcValue *f, ElmcValue *a, ElmcValue *b, ElmcValue *c, ElmcValue *d) {
+  ElmcValue *out = NULL;
+  return elmc_list_map4(&out, f, a, b, c, d) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_map5_take(ElmcValue *f, ElmcValue *a, ElmcValue *b, ElmcValue *c, ElmcValue *d, ElmcValue *e) {
+  ElmcValue *out = NULL;
+  return elmc_list_map5(&out, f, a, b, c, d, e) == RC_SUCCESS ? out : elmc_int_zero();
 }
 
 static inline ElmcValue *elmc_list_sum_take(ElmcValue *list) {
@@ -1239,6 +1278,8 @@ void elmc_rc_track_reset(void);
 uint32_t elmc_rc_track_live_count(void);
 int elmc_rc_track_check_balanced(void);
 void elmc_rc_track_dump_live(FILE *out);
+void elmc_rc_track_dump_since(uint32_t min_id, FILE *out);
+uint32_t elmc_rc_track_next_alloc_id(void);
 ElmcValue *elmc_rc_track_retain(ElmcValue *value, const char *file, int line);
 void elmc_rc_track_release(ElmcValue *value, const char *file, int line);
 #define elmc_retain(value) elmc_rc_track_retain((value), __FILE__, __LINE__)
@@ -1248,6 +1289,70 @@ ElmcValue *elmc_retain(ElmcValue *value);
 void elmc_release(ElmcValue *value);
 #endif
 void elmc_release_deep(ElmcValue *value);
+
+
+#ifndef ELMC_ALLOC_TRACK
+#define ELMC_ALLOC_TRACK 0
+#endif
+
+#if ELMC_ALLOC_TRACK
+#include <stdio.h>
+void elmc_alloc_track_reset(void);
+uint32_t elmc_alloc_track_live_count(void);
+int elmc_alloc_track_check_balanced(void);
+void elmc_alloc_track_dump_live(FILE *out);
+void elmc_alloc_track_dump_since(uint32_t min_id, FILE *out);
+uint32_t elmc_alloc_track_next_alloc_id(void);
+#endif
+
+#ifndef ELMC_ALLOC_TRACE
+#define ELMC_ALLOC_TRACE 0
+#endif
+
+#if ELMC_ALLOC_TRACK && !ELMC_ALLOC_TRACE
+#undef ELMC_ALLOC_TRACE
+#define ELMC_ALLOC_TRACE 1
+#endif
+
+#if ELMC_ALLOC_TRACK
+#define elmc_free(ptr) elmc_free_impl((ptr), __func__, __FILE__, __LINE__)
+#else
+#define elmc_free(ptr) free(ptr)
+#endif
+
+
+#ifndef ELMC_ALLOC_PROBE
+#define ELMC_ALLOC_PROBE 0
+#endif
+
+#if ELMC_ALLOC_PROBE && !ELMC_RC_TRACK
+#undef ELMC_RC_TRACK
+#define ELMC_RC_TRACK 1
+#endif
+
+#if ELMC_ALLOC_PROBE && !ELMC_ALLOC_TRACK
+#undef ELMC_ALLOC_TRACK
+#define ELMC_ALLOC_TRACK 1
+#endif
+
+#if ELMC_ALLOC_PROBE
+#include <stdio.h>
+
+typedef struct ElmcAllocProbeSnap {
+  uint32_t rc_live;
+  uint64_t rc_allocated;
+  uint64_t rc_released;
+  uint32_t rc_next_id;
+#if ELMC_ALLOC_TRACK
+  uint32_t malloc_live;
+  uint32_t malloc_next_id;
+#endif
+} ElmcAllocProbeSnap;
+
+void elmc_alloc_probe_snap(ElmcAllocProbeSnap *snap);
+void elmc_alloc_probe_diff(const ElmcAllocProbeSnap *before, const char *label, FILE *out);
+int elmc_alloc_probe_diff_balanced(const ElmcAllocProbeSnap *before, const char *label, FILE *out);
+#endif
 
 
 #endif

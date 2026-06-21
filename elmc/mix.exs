@@ -42,6 +42,7 @@ defmodule Elmc.MixProject do
   defp aliases do
     [
       "test.rc": ["test --only rc_track"],
+      "test.rc_2048": ["test --only rc_track_2048"],
       "test.rc_gate": ["test --only rc_track_gate"],
       "test.rc_stress": ["test --only rc_track_stress"],
       "test.corpus": ["test --only corpus"],
@@ -57,6 +58,7 @@ defmodule Elmc.MixProject do
     [
       preferred_envs: [
         "test.rc": :test,
+        "test.rc_2048": :test,
         "test.rc_gate": :test,
         "test.rc_stress": :test,
         "test.corpus": :test,

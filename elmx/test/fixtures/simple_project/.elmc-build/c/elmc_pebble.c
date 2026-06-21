@@ -23,7 +23,7 @@
 #endif
 #include "elmc_pebble.h"
 
-#if defined(ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW) && (!defined(PBL_PLATFORM_APLITE) || defined(ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE))
+#if defined(ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW)
 #define ELMC_PEBBLE_DIRECT_VIEW_SCENE 1
 #endif
 
@@ -429,6 +429,72 @@ static int elmc_decode_path_payload(ElmcValue *payload, ElmcPebbleDrawCmd *out_c
           cmd->text[0] = '\0';
         }
 
+#if ELMC_PEBBLE_SCENE_POOL_SLOTS > 0
+typedef struct {
+  unsigned char *bytes;
+  int capacity;
+} ElmcPebbleScenePoolSlot;
+
+static ElmcPebbleScenePoolSlot elmc_pebble_scene_pool[ELMC_PEBBLE_SCENE_POOL_SLOTS];
+
+static int elmc_pebble_scene_using_pool(const ElmcPebbleSceneBuffer *scene) {
+  return scene && scene->pool_slot >= 0 && scene->pool_slot < ELMC_PEBBLE_SCENE_POOL_SLOTS;
+}
+
+static void elmc_pebble_scene_pool_sync_from_slot(ElmcPebbleSceneBuffer *scene) {
+  if (!elmc_pebble_scene_using_pool(scene)) return;
+  ElmcPebbleScenePoolSlot *slot = &elmc_pebble_scene_pool[scene->pool_slot];
+  scene->bytes = slot->bytes;
+  scene->byte_capacity = slot->capacity;
+}
+
+static int elmc_pebble_scene_pool_grow_slot(ElmcPebbleSceneBuffer *scene, int min_capacity) {
+  if (!scene || min_capacity < 0) return -1;
+  if (!elmc_pebble_scene_using_pool(scene)) return -1;
+  ElmcPebbleScenePoolSlot *slot = &elmc_pebble_scene_pool[scene->pool_slot];
+  if (slot->capacity >= min_capacity) {
+    elmc_pebble_scene_pool_sync_from_slot(scene);
+    return 0;
+  }
+  int next_capacity = slot->capacity > 0 ? slot->capacity : 0;
+  while (next_capacity < min_capacity) {
+    if (next_capacity == 0) {
+      next_capacity = ELMC_PEBBLE_SCENE_INITIAL_CAPACITY;
+    } else if (next_capacity < ELMC_PEBBLE_SCENE_INITIAL_CAPACITY) {
+      next_capacity += ELMC_PEBBLE_SCENE_GROW_CHUNK;
+    } else {
+      next_capacity *= 2;
+    }
+  }
+  unsigned char *grown = (unsigned char *)malloc((size_t)next_capacity);
+  if (!grown) return -2;
+  if (slot->bytes && scene->byte_count > 0) {
+    memcpy(grown, slot->bytes, (size_t)scene->byte_count);
+  }
+  free(slot->bytes);
+  slot->bytes = grown;
+  slot->capacity = next_capacity;
+  elmc_pebble_scene_pool_sync_from_slot(scene);
+  return 0;
+}
+
+static void elmc_pebble_scene_pool_free_all(void) {
+  for (int i = 0; i < ELMC_PEBBLE_SCENE_POOL_SLOTS; i++) {
+    free(elmc_pebble_scene_pool[i].bytes);
+    elmc_pebble_scene_pool[i].bytes = NULL;
+    elmc_pebble_scene_pool[i].capacity = 0;
+  }
+}
+#else
+static int elmc_pebble_scene_using_pool(const ElmcPebbleSceneBuffer *scene) {
+  (void)scene;
+  return 0;
+}
+
+static void elmc_pebble_scene_pool_free_all(void) {
+}
+#endif
+
     #if ELMC_PEBBLE_SCENE_STATIC_CAPACITY > 0
     static unsigned char elmc_pebble_scene_static_bytes[ELMC_PEBBLE_SCENE_STATIC_CAPACITY];
 
@@ -440,11 +506,6 @@ static int elmc_decode_path_payload(ElmcValue *payload, ElmcPebbleDrawCmd *out_c
       if (!scene) return;
       scene->bytes = elmc_pebble_scene_static_bytes;
       scene->byte_capacity = ELMC_PEBBLE_SCENE_STATIC_CAPACITY;
-    }
-    #else
-    static int elmc_pebble_scene_using_static(const ElmcPebbleSceneBuffer *scene) {
-      (void)scene;
-      return 0;
     }
     #endif
 
@@ -484,14 +545,15 @@ static int elmc_pebble_scene_chunk_append(ElmcPebbleSceneBuffer *scene) {
 }
 
 static int elmc_pebble_scene_materialize_chunks(ElmcPebbleSceneBuffer *scene) {
-  if (!scene || !scene->chunks || scene->byte_count <= 0) return 0;
-  unsigned char *dest = scene->bytes;
-  if (!dest || scene->byte_capacity < scene->byte_count) {
-    dest = (unsigned char *)realloc(scene->bytes, (size_t)scene->byte_count);
-    if (!dest) return -2;
-    scene->bytes = dest;
-    scene->byte_capacity = scene->byte_count;
+  if (!scene || !scene->chunks) return 0;
+  if (scene->byte_count <= 0) {
+    elmc_pebble_scene_chunks_free(scene);
+    return 0;
   }
+  unsigned char *dest = (unsigned char *)realloc(scene->bytes, (size_t)scene->byte_count);
+  if (!dest) return -2;
+  scene->bytes = dest;
+  scene->byte_capacity = scene->byte_count;
   int pos = 0;
   for (ElmcPebbleSceneChunk *chunk = scene->chunks; chunk; chunk = chunk->next) {
     memcpy(dest + pos, chunk->bytes, (size_t)chunk->used);
@@ -516,15 +578,11 @@ static int elmc_pebble_scene_materialize_chunks(ElmcPebbleSceneBuffer *scene) {
       app->scene.dirty = 1;
     }
 
-    static void elmc_pebble_scene_buffer_free_for_app(ElmcPebbleApp *app, ElmcPebbleSceneBuffer *scene) {
-      (void)app;
+    static void elmc_pebble_scene_buffer_detach(ElmcPebbleSceneBuffer *scene) {
       if (!scene) return;
     #if ELMC_PEBBLE_SCENE_CHUNK_SIZE > 0
       elmc_pebble_scene_chunks_free(scene);
     #endif
-      if (scene->bytes && !elmc_pebble_scene_using_static(scene)) {
-        free(scene->bytes);
-      }
       scene->bytes = NULL;
       scene->byte_count = 0;
       scene->byte_capacity = 0;
@@ -537,14 +595,17 @@ static int elmc_pebble_scene_materialize_chunks(ElmcPebbleSceneBuffer *scene) {
       if (!app) return;
       elmc_pebble_clear_view_cache(app);
       elmc_pebble_scene_discard_build(app);
-      elmc_pebble_scene_buffer_free_for_app(app, &app->scene);
+      elmc_pebble_scene_buffer_detach(&app->scene);
     }
 
     static void elmc_pebble_scene_free(ElmcPebbleApp *app) {
       if (!app) return;
-      elmc_pebble_scene_buffer_free_for_app(app, &app->scene);
+      elmc_pebble_scene_buffer_detach(&app->scene);
     #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
-      elmc_pebble_scene_buffer_free_for_app(app, &app->prev_scene);
+      elmc_pebble_scene_buffer_detach(&app->prev_scene);
+    #endif
+      elmc_pebble_scene_pool_free_all();
+    #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
       app->dirty_rect_valid = 0;
       app->dirty_rect_full = 1;
     #endif
@@ -558,15 +619,21 @@ static void elmc_pebble_mark_scene_dirty(ElmcPebbleApp *app) {
 static void elmc_pebble_prepare_scene_rebuild(ElmcPebbleApp *app) {
   if (!app) return;
 #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
-  elmc_pebble_scene_buffer_free_for_app(app, &app->prev_scene);
+  elmc_pebble_scene_buffer_detach(&app->prev_scene);
   app->prev_scene = app->scene;
   app->scene.bytes = NULL;
   app->scene.byte_count = 0;
   app->scene.byte_capacity = 0;
+  app->scene.pool_slot = app->prev_scene.pool_slot == 0 ? 1 : 0;
 #else
   app->scene.byte_count = 0;
+#if ELMC_PEBBLE_SCENE_POOL_SLOTS > 0
+  elmc_pebble_scene_pool_sync_from_slot(&app->scene);
+#endif
 #if ELMC_PEBBLE_SCENE_CHUNK_SIZE > 0
   elmc_pebble_scene_chunks_free(&app->scene);
+  /* byte_capacity tracks chunk reservation during build; reset before chunk append. */
+  app->scene.byte_capacity = 0;
 #endif
 #endif
   app->scene.command_count = 0;
@@ -608,6 +675,14 @@ static int elmc_pebble_scene_reserve_capacity(ElmcPebbleApp *app, int min_capaci
   }
   return 0;
 #else
+#if ELMC_PEBBLE_SCENE_POOL_SLOTS > 0
+  if (app->scene.pool_slot < 0) {
+    app->scene.pool_slot = 0;
+  }
+  if (elmc_pebble_scene_using_pool(&app->scene)) {
+    return elmc_pebble_scene_pool_grow_slot(&app->scene, min_capacity);
+  }
+#endif
 #if ELMC_PEBBLE_SCENE_STATIC_CAPACITY > 0
   if (!app->scene.bytes) {
     elmc_pebble_scene_bind_static(&app->scene);
@@ -621,41 +696,39 @@ static int elmc_pebble_scene_reserve_capacity(ElmcPebbleApp *app, int min_capaci
   int next_capacity = app->scene.byte_capacity > 0 ? app->scene.byte_capacity : 0;
   while (next_capacity < min_capacity) {
     if (next_capacity == 0) {
-#if defined(PBL_PLATFORM_APLITE)
-      next_capacity = ELMC_PEBBLE_SCENE_GROW_CHUNK;
-#else
       next_capacity = ELMC_PEBBLE_SCENE_INITIAL_CAPACITY;
-#endif
     } else if (next_capacity < ELMC_PEBBLE_SCENE_INITIAL_CAPACITY) {
       next_capacity += ELMC_PEBBLE_SCENE_GROW_CHUNK;
     } else {
       next_capacity *= 2;
     }
   }
-  unsigned char *next = (unsigned char *)realloc(app->scene.bytes, (size_t)next_capacity);
+  unsigned char *next = (unsigned char *)malloc((size_t)next_capacity);
   if (!next) return -2;
+  if (app->scene.bytes && app->scene.byte_count > 0) {
+    memcpy(next, app->scene.bytes, (size_t)app->scene.byte_count);
+  }
+  free(app->scene.bytes);
   app->scene.bytes = next;
   app->scene.byte_capacity = next_capacity;
   return 0;
 #endif
 }
 
+#if ELMC_PEBBLE_SCENE_TRIM_SLACK > 0
 static void elmc_pebble_scene_trim_capacity(ElmcPebbleApp *app) {
-#if ELMC_PEBBLE_SCENE_CHUNK_SIZE > 0
-  (void)app;
-#elif ELMC_PEBBLE_SCENE_TRIM_SLACK > 0
   if (!app || !app->scene.bytes || app->scene.byte_count <= 0) return;
+#if ELMC_PEBBLE_SCENE_STATIC_CAPACITY > 0
   if (elmc_pebble_scene_using_static(&app->scene)) return;
+#endif
   int target = app->scene.byte_count + ELMC_PEBBLE_SCENE_TRIM_SLACK;
   if (app->scene.byte_capacity <= target) return;
   unsigned char *next = (unsigned char *)realloc(app->scene.bytes, (size_t)target);
   if (!next) return;
   app->scene.bytes = next;
   app->scene.byte_capacity = target;
-#else
-  (void)app;
-#endif
 }
+#endif
 
 static int elmc_pebble_scene_reserve(ElmcPebbleApp *app, int extra) {
   if (!app || extra < 0) return -1;
@@ -1980,11 +2053,18 @@ static int elmc_msg_constructor_arity(elmc_int_t tag) {
       elmc_pebble_heap_log("dispatch:prepare:before");
       elmc_pebble_clear_view_cache(app);
     #if !ELMC_PEBBLE_DIRTY_REGION_ENABLED
-      /* Retain scene heap capacity across dispatches; freeing here forces realloc on
-         a fragmented heap after update and can fail on tight Aplite targets. */
+      /* Invalidate encoded scene; retain materialized bytes to avoid heap churn on Aplite.
+         Chunked rebuild uses scene.chunks; stale bytes are not read while dirty. */
       app->scene.byte_count = 0;
       app->scene.command_count = 0;
       app->scene.hash = 0;
+    #if ELMC_PEBBLE_SCENE_POOL_SLOTS > 0
+      elmc_pebble_scene_pool_sync_from_slot(&app->scene);
+    #endif
+    #if ELMC_PEBBLE_SCENE_CHUNK_SIZE > 0
+      elmc_pebble_scene_chunks_free(&app->scene);
+      app->scene.byte_capacity = 0;
+    #endif
     #endif
       elmc_pebble_mark_scene_dirty(app);
     #if ELMC_PEBBLE_SCENE_CACHE_ENABLED
@@ -2022,9 +2102,11 @@ int elmc_pebble_init_with_mode(ElmcPebbleApp *app, ElmcValue *flags, int run_mod
 #if ELMC_PEBBLE_SCENE_STATIC_CAPACITY > 0
   elmc_pebble_scene_bind_static(&app->scene);
   app->scene.byte_count = 0;
+  app->scene.pool_slot = -1;
 #else
   app->scene.bytes = NULL;
   app->scene.byte_capacity = 0;
+  app->scene.pool_slot = 0;
 #if ELMC_PEBBLE_SCENE_CHUNK_SIZE > 0
   app->scene.chunks = NULL;
 #endif
@@ -2042,6 +2124,7 @@ int elmc_pebble_init_with_mode(ElmcPebbleApp *app, ElmcValue *flags, int run_mod
   app->prev_scene.command_count = 0;
   app->prev_scene.hash = 0;
   app->prev_scene.dirty = 1;
+  app->prev_scene.pool_slot = 1;
   app->dirty_rect.x = 0;
   app->dirty_rect.y = 0;
   app->dirty_rect.w = 0;
@@ -2641,7 +2724,12 @@ int elmc_pebble_init_with_mode(ElmcPebbleApp *app, ElmcValue *flags, int run_mod
         elmc_pebble_scene_compute_dirty_rect(app);
       }
     #endif
+    #if ELMC_PEBBLE_SCENE_POOL_SLOTS > 0
+      elmc_pebble_scene_pool_sync_from_slot(&app->scene);
+    #endif
+    #if ELMC_PEBBLE_SCENE_TRIM_SLACK > 0
       elmc_pebble_scene_trim_capacity(app);
+    #endif
       ELMC_PEBBLE_SCENE_LOG("elmc-scene ensure ok cmds=%d bytes=%d cap=%d",
               app->scene.command_count, app->scene.byte_count, app->scene.byte_capacity);
       ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", 0);
@@ -2721,7 +2809,7 @@ static int elmc_pebble_scene_decode_from(
         ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_SCENE_NEXT_EXIT);
         ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_next", 0);
       }
-      if (app->scene.dirty && app->scene_draw_byte_offset <= 0) {
+      if (app->scene.dirty) {
         ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_SCENE_NEXT_EXIT);
         ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_next", 0);
       }

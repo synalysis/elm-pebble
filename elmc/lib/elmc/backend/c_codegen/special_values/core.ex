@@ -2986,10 +2986,10 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
 
   defp text_options_update_expr(_options, _field, _value), do: %{op: :unsupported}
 
-  @spec platform_union_is_constructor(Types.ir_expr(), String.t(), non_neg_integer(), String.t() | nil) ::
+  @spec platform_union_is_constructor(Types.ir_expr(), String.t(), non_neg_integer(), String.t()) ::
           Types.ir_expr()
   defp platform_union_is_constructor(shape, name, tag, platform_static_macro)
-       when is_map(shape) and is_binary(name) and is_integer(tag) do
+       when is_map(shape) and is_binary(name) and is_integer(tag) and is_binary(platform_static_macro) do
     %{
       op: :case,
       subject: shape,
@@ -3009,8 +3009,6 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
 
   defp maybe_put_platform_static_macro(expr, macro) when is_binary(macro),
     do: Map.put(expr, :platform_static_macro, macro)
-
-  defp maybe_put_platform_static_macro(expr, _), do: expr
 
   @spec tagged_value_expr(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
   defp tagged_value_expr(tag, value_expr) when is_map(tag) and is_map(value_expr) do

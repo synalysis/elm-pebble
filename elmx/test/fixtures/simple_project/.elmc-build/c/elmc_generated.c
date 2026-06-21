@@ -5,6 +5,7 @@
 
 #if defined(__GNUC__)
 #pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wunused-variable"
 #endif
 
 #define ELMC_UNION_ACCELTAP 7
@@ -81,6 +82,18 @@
 #define ELMC_UNION_WATCHCOLORNAME 14
 #define ELMC_UNION_WATCHMODELNAME 13
 #define ELMC_UNION_ZURICH 3
+
+const char *elmc_debug_union_ctor_name(elmc_int_t tag) {
+  switch (tag) {
+    case 10: return "ClockStyle24h";
+    case 11: return "TimezoneIsSet";
+    case 12: return "TimezoneName";
+    case 13: return "WatchModelName";
+    case 14: return "WatchColorName";
+    case 15: return "FirmwareVersionString";
+    default: return NULL;
+  }
+}
 
 #define ELMC_FIELD_MAIN_MODEL_TEMPERATURE 1
 #define ELMC_FIELD_MAIN_MODEL_VALUE 0
@@ -310,17 +323,21 @@ static RC elmc_fn_Main_requestWeather(ElmcValue **out, ElmcValue ** const args, 
   CATCH_BEGIN
 
     ElmcValue *tmp_1 = NULL;
-    Rc = elmc_tuple2_ints(&tmp_1, ELMC_UNION_COMPANION_TYPES_REQUESTWEATHER, elmc_as_int(location));
+    Rc = elmc_new_int(&tmp_1, ELMC_UNION_COMPANION_TYPES_REQUESTWEATHER);
+    CHECK_RC(Rc);
+    ElmcValue *tmp_2 = elmc_retain(location);
+    ElmcValue *tmp_3 = NULL;
+    Rc = elmc_tuple2_take(&tmp_3, tmp_1, tmp_2);
     CHECK_RC(Rc);
 
-    ElmcValue *call_args_2[1] = { tmp_1 };
-    ElmcValue *tmp_2;
-    Rc = elmc_fn_Companion_Watch_sendWatchToPhone(&tmp_2, call_args_2, 1);
+    ElmcValue *call_args_4[1] = { tmp_3 };
+    ElmcValue *tmp_4;
+    Rc = elmc_fn_Companion_Watch_sendWatchToPhone(&tmp_4, call_args_4, 1);
     CHECK_RC(Rc);
 
-    elmc_release(tmp_1);
+    elmc_release(tmp_3);
 
-    *out = tmp_2;
+    *out = tmp_4;
   CATCH_END;
 
   return Rc;
@@ -354,7 +371,10 @@ static RC elmc_fn_Main_requestSystemInfo(ElmcValue **out, ElmcValue ** const arg
     Rc = elmc_list_from_values_take(&tmp_8, list_items_8, 7);
     CHECK_RC(Rc);
 
-    *out = tmp_8;
+    ElmcValue *tmp_9 = elmc_cmd_batch(tmp_8);
+    elmc_release(tmp_8);
+
+    *out = tmp_9;
   CATCH_END;
 
   return Rc;
@@ -381,6 +401,7 @@ RC elmc_fn_Main_init(ElmcValue **out, ElmcValue ** const args, const int argc) {
     ElmcValue *tmp_3_boxed_int = elmc_new_int_take(native_let_initial_3);
 
     ElmcValue *tmp_4 = elmc_maybe_nothing();
+
     ElmcValue *rec_values_5[2] = { tmp_3_boxed_int, tmp_4 };
     ElmcValue *tmp_5 = NULL;
     Rc = elmc_record_new_values_take(&tmp_5, 2, rec_values_5);
@@ -404,11 +425,14 @@ RC elmc_fn_Main_init(ElmcValue **out, ElmcValue ** const args, const int argc) {
     Rc = elmc_list_from_values_take(&tmp_9, list_items_9, 2);
     CHECK_RC(Rc);
 
-    ElmcValue *tmp_10 = NULL;
-    Rc = elmc_tuple2_take(&tmp_10, tmp_5, tmp_9);
+    ElmcValue *tmp_10 = elmc_cmd_batch(tmp_9);
+    elmc_release(tmp_9);
+
+    ElmcValue *tmp_11 = NULL;
+    Rc = elmc_tuple2_take(&tmp_11, tmp_5, tmp_10);
     CHECK_RC(Rc);
 
-    *out = tmp_10;
+    *out = tmp_11;
   CATCH_END;
 
   return Rc;
@@ -747,7 +771,10 @@ static RC elmc_fn_Main_handlePlatformMsg(ElmcValue **out, ElmcValue ** const arg
         Rc = elmc_list_from_values_take(&tmp_19, list_items_19, 2);
         CHECK_RC(Rc);
 
-        Rc = elmc_tuple2_take(&tmp_1, tmp_15, tmp_19);
+        ElmcValue *tmp_20 = elmc_cmd_batch(tmp_19);
+        elmc_release(tmp_19);
+
+        Rc = elmc_tuple2_take(&tmp_1, tmp_15, tmp_20);
         CHECK_RC(Rc);
 
         break;
@@ -756,23 +783,23 @@ static RC elmc_fn_Main_handlePlatformMsg(ElmcValue **out, ElmcValue ** const arg
 
         // inlined Main.counterOf
 
-        const elmc_int_t native_let_counter_21 = ELMC_RECORD_GET_INDEX_INT(model, ELMC_FIELD_MAIN_MODEL_VALUE);
+        const elmc_int_t native_let_counter_22 = ELMC_RECORD_GET_INDEX_INT(model, ELMC_FIELD_MAIN_MODEL_VALUE);
 
-        ElmcValue *tmp_21_boxed_int = elmc_new_int_take((native_let_counter_21 - 1));
+        ElmcValue *tmp_22_boxed_int = elmc_new_int_take((native_let_counter_22 - 1));
 
-        ElmcValue *call_args_22[1] = { model };
-        ElmcValue *tmp_22;
-        Rc = elmc_fn_Main_temperatureOf(&tmp_22, call_args_22, 1);
+        ElmcValue *call_args_23[1] = { model };
+        ElmcValue *tmp_23;
+        Rc = elmc_fn_Main_temperatureOf(&tmp_23, call_args_23, 1);
         CHECK_RC(Rc);
 
-        ElmcValue *rec_values_23[2] = { tmp_21_boxed_int, tmp_22 };
-        ElmcValue *tmp_23 = NULL;
-        Rc = elmc_record_new_values_take(&tmp_23, 2, rec_values_23);
+        ElmcValue *rec_values_24[2] = { tmp_22_boxed_int, tmp_23 };
+        ElmcValue *tmp_24 = NULL;
+        Rc = elmc_record_new_values_take(&tmp_24, 2, rec_values_24);
         CHECK_RC(Rc);
 
-        ElmcValue *tmp_24 = elmc_cmd1(ELMC_PEBBLE_CMD_STORAGE_DELETE, 1);
+        ElmcValue *tmp_25 = elmc_cmd1(ELMC_PEBBLE_CMD_STORAGE_DELETE, 1);
 
-        Rc = elmc_tuple2_take(&tmp_1, tmp_23, tmp_24);
+        Rc = elmc_tuple2_take(&tmp_1, tmp_24, tmp_25);
         CHECK_RC(Rc);
 
         break;
@@ -781,30 +808,30 @@ static RC elmc_fn_Main_handlePlatformMsg(ElmcValue **out, ElmcValue ** const arg
 
         // inlined Main.counterOf
 
-        const elmc_int_t native_let_counter_26 = ELMC_RECORD_GET_INDEX_INT(model, ELMC_FIELD_MAIN_MODEL_VALUE);
+        const elmc_int_t native_let_counter_27 = ELMC_RECORD_GET_INDEX_INT(model, ELMC_FIELD_MAIN_MODEL_VALUE);
 
-        ElmcValue *tmp_26_boxed_int = elmc_new_int_take((native_let_counter_26 + 1));
+        ElmcValue *tmp_27_boxed_int = elmc_new_int_take((native_let_counter_27 + 1));
 
-        ElmcValue *call_args_27[1] = { model };
-        ElmcValue *tmp_27;
-        Rc = elmc_fn_Main_temperatureOf(&tmp_27, call_args_27, 1);
+        ElmcValue *call_args_28[1] = { model };
+        ElmcValue *tmp_28;
+        Rc = elmc_fn_Main_temperatureOf(&tmp_28, call_args_28, 1);
         CHECK_RC(Rc);
 
-        ElmcValue *rec_values_28[2] = { tmp_26_boxed_int, tmp_27 };
-        ElmcValue *tmp_28 = NULL;
-        Rc = elmc_record_new_values_take(&tmp_28, 2, rec_values_28);
+        ElmcValue *rec_values_29[2] = { tmp_27_boxed_int, tmp_28 };
+        ElmcValue *tmp_29 = NULL;
+        Rc = elmc_record_new_values_take(&tmp_29, 2, rec_values_29);
         CHECK_RC(Rc);
 
-        ElmcValue *tmp_29 = elmc_int_zero();
-        Rc = elmc_tuple2_take(&tmp_1, tmp_28, tmp_29);
+        ElmcValue *tmp_30 = elmc_int_zero();
+        Rc = elmc_tuple2_take(&tmp_1, tmp_29, tmp_30);
         CHECK_RC(Rc);
 
         break;
       }
       default: {
-        ElmcValue *tmp_31 = model ? elmc_retain(model) : elmc_int_zero();
-        ElmcValue *tmp_32 = elmc_int_zero();
-        Rc = elmc_tuple2_take(&tmp_1, tmp_31, tmp_32);
+        ElmcValue *tmp_32 = model ? elmc_retain(model) : elmc_int_zero();
+        ElmcValue *tmp_33 = elmc_int_zero();
+        Rc = elmc_tuple2_take(&tmp_1, tmp_32, tmp_33);
         CHECK_RC(Rc);
 
         break;
@@ -917,32 +944,33 @@ static RC elmc_fn_Main_statusDraw(ElmcValue **out, ElmcValue ** const args, cons
       Rc = elmc_new_int(&tmp_18, 28);
       CHECK_RC(Rc);
       ElmcValue *tmp_19 = elmc_int_zero();
-
-      ElmcValue *tmp_20 = NULL;
-      Rc = elmc_tuple2_ints(&tmp_20, 0, ELMC_UNION_PEBBLE_UI_WAITINGFORCOMPANION);
-      CHECK_RC(Rc);
-
+      ElmcValue *tmp_20 = elmc_int_zero();
       ElmcValue *tmp_21 = NULL;
-      Rc = elmc_tuple2_take(&tmp_21, tmp_19, tmp_20);
+      Rc = elmc_new_int(&tmp_21, ELMC_UNION_PEBBLE_UI_WAITINGFORCOMPANION);
       CHECK_RC(Rc);
-
       ElmcValue *tmp_22 = NULL;
-      Rc = elmc_tuple2_take(&tmp_22, tmp_18, tmp_21);
+      Rc = elmc_tuple2_take(&tmp_22, tmp_20, tmp_21);
       CHECK_RC(Rc);
 
       ElmcValue *tmp_23 = NULL;
-      Rc = elmc_tuple2_take(&tmp_23, tmp_17, tmp_22);
+      Rc = elmc_tuple2_take(&tmp_23, tmp_19, tmp_22);
       CHECK_RC(Rc);
 
       ElmcValue *tmp_24 = NULL;
-      Rc = elmc_tuple2_take(&tmp_24, tmp_16, tmp_23);
+      Rc = elmc_tuple2_take(&tmp_24, tmp_18, tmp_23);
       CHECK_RC(Rc);
 
-      Rc = elmc_tuple2_take(&tmp_2, tmp_15, tmp_24);
+      ElmcValue *tmp_25 = NULL;
+      Rc = elmc_tuple2_take(&tmp_25, tmp_17, tmp_24);
+      CHECK_RC(Rc);
+
+      ElmcValue *tmp_26 = NULL;
+      Rc = elmc_tuple2_take(&tmp_26, tmp_16, tmp_25);
+      CHECK_RC(Rc);
+
+      Rc = elmc_tuple2_take(&tmp_2, tmp_15, tmp_26);
       CHECK_RC(Rc);
     }
-
-    elmc_release(tmp_1);
 
     *out = tmp_2;
   CATCH_END;
@@ -1217,7 +1245,6 @@ static RC elmc_fn_Companion_Watch_sendWatchToPhone(ElmcValue **out, ElmcValue **
   return Rc;
 }
 
-#if !defined(PBL_PLATFORM_APLITE)
 static RC elmc_fn_Main_view_commands_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer);
 
 static RC elmc_fn_Main_view_commands_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {
@@ -1491,4 +1518,3 @@ static RC elmc_fn_Main_view_commands_append(ElmcValue ** const args, const int a
 RC elmc_fn_Main_view_scene_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {
   return elmc_fn_Main_view_commands_append(args, argc, writer);
 }
-#endif

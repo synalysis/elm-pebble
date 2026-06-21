@@ -192,11 +192,12 @@ defmodule Elmc.GeneratedRcTrackGame2048AllocProbeTest do
         _ -> flunk("missing leaks count in:\n#{out}")
       end
 
-    update_rc_nets =
-      Regex.scan(~r/probe move(\d+) update: rc_live \+\d+ rc_net \+(\d+)/, out)
-      |> Enum.map(fn [_, move, net] -> {String.to_integer(move), String.to_integer(net)} end)
+    update_rc_nets = RcTrackHarness.parse_alloc_probe_update_rc_nets(out)
 
     update_leaks = length(update_rc_nets)
+
+    early_strict_leaks =
+      Enum.count(update_rc_nets, fn {move, net} -> move < 10 and net != 0 end)
 
     catastrophic_update_leaks =
       Enum.count(update_rc_nets, fn {_move, net} -> net >= 10 end)
@@ -207,26 +208,18 @@ defmodule Elmc.GeneratedRcTrackGame2048AllocProbeTest do
         nets -> nets |> Enum.map(&elem(&1, 1)) |> Enum.max()
       end
 
-    view_leaks =
-      Regex.scan(~r/probe move\d+ view: rc_live \+\d+ rc_net \+\d+/, out)
-      |> length()
+    view_leaks = RcTrackHarness.parse_alloc_probe_view_leaks(out)
 
     IO.puts("""
     2048 alloc probe (clockwise Up→Right→Down→Left, #{@move_count} moves):
       total unbalanced regions: #{leaks}
       update regions with rc_net>0: #{update_leaks} (max rc_net +#{max_update_rc_net})
+      early-game strict leaks (moves 0-9, rc_net!=0): #{early_strict_leaks}
       catastrophic update regions (rc_net>=10): #{catastrophic_update_leaks}
       view regions with rc_net>0: #{view_leaks}
-    Run: mix test test/generated_rc_track_game_2048_alloc_probe_test.exs --include alloc_probe
+    Run: mix test.rc_2048
     """)
 
-    assert view_leaks == 0,
-           "unexpected view alloc leak (#{view_leaks} regions); see probe output above"
-
-    assert catastrophic_update_leaks == 0,
-           "catastrophic fused moveBoard leak (rc_net >= 10 on an update move); see probe output above"
-
-    assert max_update_rc_net <= 2,
-           "unexpected large per-move update rc_net (max +#{max_update_rc_net}); see probe output above"
+    RcTrackHarness.assert_alloc_probe_thresholds!(out, early_strict_moves: 10)
   end
 end

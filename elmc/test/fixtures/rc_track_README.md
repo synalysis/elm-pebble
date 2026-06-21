@@ -49,10 +49,21 @@ Variants are listed in `RcTrackMatrix.@variant_probes` and included in module `@
 ```bash
 cd elmc
 mix test.rc           # all @tag :rc_track
+mix test.rc_2048      # game-2048 template + alloc probe + worker ownership gates
 mix test.rc_gate      # matrix ↔ probe registry only
 mix test.rc_stress    # 100-iteration subset (@tag :rc_track_stress)
 mix test --only rc_track_core
+mix test --only rc_track_fusion --include alloc_probe
 ```
+
+## Fusion and worker ownership checklist
+
+When touching `:rc_native` fusion or [`worker.ex`](../../lib/elmc/backend/worker.ex):
+
+1. **New `:rc_native` fusion** — add a pattern fixture (different field/function names), an alloc probe harness (`@tag :rc_track_fusion`), and exercise the fusion through a second app/template via normal `update` → worker dispatch.
+2. **Worker / ownership changes** — run `mix test.rc_2048`; add or extend a worker harness that checks model fields survive in-place pointer returns.
+3. **RC thresholds** — never relax the catastrophic `rc_net >= 10` gate; document any other relaxation (for example Pebble small-int pool promotion allowing `max_update_rc_net <= 2` after move 10).
+4. **PR question** — does this path return the same record pointer? If yes, is ownership transferred (not retain-then-release-result)?
 
 ## Limitations
 

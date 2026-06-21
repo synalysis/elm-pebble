@@ -45,6 +45,10 @@ jobs:
         working-directory: elmc
         run: mix test
 
+      - name: Run 2048 RC integration gates
+        working-directory: elmc
+        run: mix test.rc_2048
+
       - name: Run elm-run corpus compile gate
         working-directory: elmc
         run: mix test.corpus

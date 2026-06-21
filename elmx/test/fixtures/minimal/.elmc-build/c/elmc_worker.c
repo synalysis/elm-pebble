@@ -31,20 +31,25 @@ static void elmc_worker_heap_log(const char *label) {
 #define elmc_worker_heap_log(label) do { (void)(label); } while (0)
 #endif
 
-static ElmcValue *extract_model(ElmcValue *value) {
+/* Transfer ownership from (model, cmd) tuple without retaining or double-freeing. */
+static ElmcValue *extract_model_take(ElmcValue *value) {
   if (!value) return elmc_new_int_take(0);
   if (value->tag != ELMC_TAG_TUPLE2 || value->payload == NULL) return elmc_retain(value);
   ElmcTuple2 *pair = (ElmcTuple2 *)value->payload;
   if (!pair->first) return elmc_new_int_take(0);
-  return elmc_retain(pair->first);
+  ElmcValue *model = pair->first;
+  pair->first = NULL;
+  return model;
 }
 
-static ElmcValue *extract_cmd(ElmcValue *value) {
+static ElmcValue *extract_cmd_take(ElmcValue *value) {
   if (!value) return elmc_new_int_take(0);
   if (value->tag != ELMC_TAG_TUPLE2 || value->payload == NULL) return elmc_new_int_take(0);
   ElmcTuple2 *pair = (ElmcTuple2 *)value->payload;
   if (!pair->second) return elmc_new_int_take(0);
-  return elmc_retain(pair->second);
+  ElmcValue *cmd = pair->second;
+  pair->second = NULL;
+  return cmd;
 }
 
 static int elmc_cmd_is_none(ElmcValue *value) {
@@ -234,13 +239,13 @@ int elmc_worker_init(ElmcWorkerState *state, ElmcValue *flags) {
   (void)flags;
   ElmcValue *result = elmc_new_int_take(0);
 
-  ElmcValue *next_model = extract_model(result);
+  ElmcValue *next_model = extract_model_take(result);
   if (!next_model) {
     elmc_release(result);
     return -2;
   }
   state->model = next_model;
-  state->pending_cmd = elmc_cmd_queue_normalize(extract_cmd(result));
+  state->pending_cmd = elmc_cmd_queue_normalize(extract_cmd_take(result));
   elmc_release(result);
   state->subscriptions = compute_subscriptions(state);
   elmc_worker_heap_log("init:end");
@@ -254,14 +259,16 @@ int elmc_worker_dispatch(ElmcWorkerState *state, ElmcValue *msg) {
   (void)msg;
   ElmcValue *result = elmc_new_int_take(0);
 
-  ElmcValue *next_model = extract_model(result);
+  ElmcValue *next_model = extract_model_take(result);
   if (!next_model) {
     elmc_release(result);
     return -2;
   }
-  elmc_release(state->model);
+  if (next_model != state->model) {
+    elmc_release(state->model);
+  }
   state->model = next_model;
-  ElmcValue *next_cmd = elmc_cmd_queue_normalize(extract_cmd(result));
+  ElmcValue *next_cmd = elmc_cmd_queue_normalize(extract_cmd_take(result));
   state->pending_cmd = elmc_cmd_queue_append(state->pending_cmd, next_cmd);
   elmc_release(result);
   elmc_worker_heap_log("update:end");
