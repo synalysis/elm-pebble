@@ -7,8 +7,8 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
   alias Elmc.Backend.CCodegen.ImmortalStaticList
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.CCodegen.IntLiteralRef
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
-  alias Elmc.Backend.CCodegen.UnionMacros
   alias Elmc.Backend.CCodegen.Util
 
   @int_binops ~w(__add__ __sub__ __mul__ __idiv__)
@@ -259,9 +259,9 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
           {:ok, String.t(), String.t(), Types.compile_counter()} | :error
   def compile_boxed(expr, env, counter) do
     case literal_value(expr, env) do
-      {:ok, value} ->
+      {:ok, _value} ->
         {out, counter} = boxed_out_slot(env, counter)
-        ref = UnionMacros.literal_ref(expr, env) || format_annotated_int(value, literal_decl_name(expr, env))
+        ref = IntLiteralRef.ref(expr, env)
         {:ok, RcRuntimeEmit.assign_call(env, out, "elmc_new_int", ref) <> "\n", out, counter}
 
       :error ->

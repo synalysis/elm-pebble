@@ -103,7 +103,10 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
      socket
      |> assign(:compile_status, :running)
      |> start_async(:run_compile, fn ->
-       Compiler.compile(Projects.scope_key(project), workspace_root: workspace_root)
+       Compiler.compile(
+         Projects.scope_key(project),
+         Compiler.build_page_compile_opts(workspace_root: workspace_root)
+       )
      end)}
   end
 
@@ -654,7 +657,10 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     with {:ok, check_result} <- Compiler.check(scoped_slug, workspace_root: root_path) do
       if check_result.status == :ok do
         with {:ok, compile_result} <-
-               Compiler.compile(scoped_slug, workspace_root: root_path),
+               Compiler.compile(
+                 scoped_slug,
+                 Compiler.build_page_compile_opts(workspace_root: root_path)
+               ),
              {:ok, manifest_result} <-
                Compiler.manifest(scoped_slug, workspace_root: root_path, strict: strict?) do
           {:ok,
@@ -715,6 +721,8 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
   @spec package_for_emulator_session(Project.t(), String.t(), String.t(), keyword()) ::
           {:ok, PebbleToolchain.package_result()} | {:error, PebbleToolchain.toolchain_error()}
   def package_for_emulator_session(project, workspace_root, emulator_target, opts \\ []) do
+    production_build? = IdeWeb.WorkspaceLive.EmulatorFlow.project_emulator_production_build(project)
+
     package_opts =
       [
         workspace_root: workspace_root,
@@ -723,7 +731,9 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
         target_platforms: [emulator_target],
         source_roots: project.source_roots,
         emulator_storage_logs: Keyword.get(opts, :emulator_storage_logs, false),
-        emulator_heap_log: Keyword.get(opts, :emulator_heap_log, false)
+        emulator_heap_log: Keyword.get(opts, :emulator_heap_log, false),
+        prod: production_build?,
+        debug_usage_policy: :error
       ]
 
     with :ok <- Projects.ensure_packagable_workspace(project),

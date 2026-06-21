@@ -47,6 +47,8 @@ defmodule Ide.PebbleToolchain.Types do
           | {:emulator_agent_probes, boolean()}
           | {:emulator_heap_log, boolean()}
           | {:emulator_debug_logs, boolean()}
+          | {:prod, boolean()}
+          | {:debug_usage_policy, :error | :warn | :warning}
           | {:capabilities, [String.t()] | String.t()}
         ]
 
@@ -93,7 +95,9 @@ defmodule Ide.PebbleToolchain.Types do
           required(:prune_runtime) => true,
           required(:prune_native_wrappers) => true,
           required(:pebble_int32) => true,
-          required(:strip_dead_code) => true
+          required(:strip_dead_code) => true,
+          optional(:prod) => boolean(),
+          optional(:debug_usage_policy) => :error | :warn | :warning
         }
   @type elmc_compile_result :: %{
           optional(atom()) => term(),

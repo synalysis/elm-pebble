@@ -24,7 +24,8 @@ Left 220 case_sep.
 Left 225 field_accessor.
 
 Rootsymbol pipe_right_expr.
-Expect 0.
+%% Shift/reduce ambiguities (pipes, composition, field access, case) are resolved
+%% by the precedence declarations above; do not add `Expect 0` (yecc will warn).
 
 pipe_right_expr -> let_expr : '$1'.
 pipe_right_expr -> if_expr : '$1'.

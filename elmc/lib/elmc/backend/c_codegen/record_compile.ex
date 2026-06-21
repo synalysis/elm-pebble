@@ -1427,7 +1427,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     |> Enum.uniq()
   end
 
-  defp record_field_source_release_refs(field_refs, field_code, opts \\ []) do
+  defp record_field_source_release_refs(field_refs, field_code, opts) do
     clear? = Keyword.get(opts, :clear?, true)
 
     refs =
@@ -1458,7 +1458,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
   defp field_ref_still_uses_cache_ref?(_cached_ref, _field_refs), do: false
 
-  defp post_record_cache_release_refs(env, field_refs, field_code, skip_refs \\ MapSet.new()) do
+  defp post_record_cache_release_refs(env, field_refs, field_code, skip_refs) do
     already_released = released_vars_in_code(field_code)
 
     env

@@ -331,7 +331,7 @@ defmodule Elmc.CLI do
   end
 
   @spec compile_warnings(%{project: ElmEx.Frontend.Project.t(), ir: ElmEx.IR.t()}) :: [map()]
-  defp compile_warnings(%{project: project, ir: ir}) do
+  defp compile_warnings(%{project: project, ir: ir} = result) do
     project_warnings = Map.get(project, :diagnostics, [])
 
     ir_warnings =
@@ -355,7 +355,9 @@ defmodule Elmc.CLI do
         }
       end)
 
-    dedupe_warnings(project_warnings ++ ir_warnings)
+    debug_usage_warnings = Map.get(result, :debug_usage_diagnostics, [])
+
+    dedupe_warnings(project_warnings ++ ir_warnings ++ debug_usage_warnings)
   end
 
   @spec error_diagnostics?([map()]) :: boolean()

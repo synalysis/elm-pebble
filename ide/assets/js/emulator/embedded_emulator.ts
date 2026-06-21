@@ -88,6 +88,7 @@ const WEATHER_CONDITION_WIRE_CODES = {
 const EMBEDDED_EMULATOR_UI_BUILD = "v24-display-ready"
 const PHOENIX_SOCKET_OPEN_TIMEOUT_MS = 10_000
 const VNC_CHANNEL_JOIN_TIMEOUT_MS = 10_000
+const APP_RUN_STATE_START_DEBOUNCE_MS = 2_000
 
 const persistedStateFields = [
   "session",
@@ -275,6 +276,8 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
   faultDetail: HTMLElement | null = null
   watchFault: WatchFault | null = null
   watchAppLogShippingEnabled = false
+  lastAppRunStateStartKey: string | null = null
+  lastAppRunStateStartAt = 0
 
   constructor(hook: HookContext) {
     this.hook = hook
@@ -1064,14 +1067,8 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
       const endpoint = view.getUint16(2, false)
       if (endpoint === 0x0030 || endpoint === 0x0034 || endpoint === ENDPOINT_APP_LOG || endpoint === ENDPOINT_DATA_LOGGING) {
         const payload = frame.slice(4)
-        if (endpoint === 0x0034 && opcode === 0x00 && payload[0] === 0x01) {
-          if (this.rfb) this.scheduleVncViewportConfig(this.rfb, "app_start", 500)
-          if (this.emulatorDebugEnabled()) {
-            this.scheduleVncCanvasSample("after_app_start_250ms", 250)
-            this.scheduleVncCanvasSample("after_app_start_1500ms", 1500)
-          }
-          this.scheduleWeatherSimulatorInject("after_app_start")
-          this.scheduleCompanionWatchReadySignal("after_app_start")
+        if (endpoint === 0x0034 && opcode === 0x00 && this.acceptAppRunStateStart(payload)) {
+          this.handleAppRunStateStart()
         }
         if (this.emulatorDebugEnabled() && endpoint === 0x0030 && opcode === 0x01) {
           this.scheduleVncCanvasSample("after_phone_appmessage_250ms", 250)
@@ -1090,6 +1087,42 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
     if (data instanceof Blob) return data.arrayBuffer()
     if (typeof data === "string") return new TextEncoder().encode(data).buffer
     return new ArrayBuffer(0)
+  }
+
+  acceptAppRunStateStart(payload: Uint8Array): boolean {
+    if (payload.length < 17 || payload[0] !== 0x01) return false
+    const appUuid = this.session?.app_uuid
+    if (!appUuid) return false
+    const frameUuid = this.uuidString(payload.slice(1, 17))
+    if (frameUuid !== appUuid.toLowerCase()) return false
+
+    const now = Date.now()
+    if (
+      this.lastAppRunStateStartKey === frameUuid &&
+      now - this.lastAppRunStateStartAt < APP_RUN_STATE_START_DEBOUNCE_MS
+    ) {
+      return false
+    }
+
+    this.lastAppRunStateStartKey = frameUuid
+    this.lastAppRunStateStartAt = now
+    return true
+  }
+
+  handleAppRunStateStart(): void {
+    if (this.rfb) this.scheduleVncViewportConfig(this.rfb, "app_start", 500)
+    if (this.emulatorDebugEnabled()) {
+      this.scheduleVncCanvasSample("after_app_start_250ms", 250)
+      this.scheduleVncCanvasSample("after_app_start_1500ms", 1500)
+    }
+    this.scheduleWeatherSimulatorInject("after_app_start")
+    this.scheduleCompanionWatchReadySignal("after_app_start")
+  }
+
+  uuidString(bytes: Uint8Array): string {
+    if (bytes.length !== 16) return ""
+    const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, "0"))
+    return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10).join("")}`
   }
 
   pressButton(name: EmulatorButtonName, down: boolean): void {

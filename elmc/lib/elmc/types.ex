@@ -8,6 +8,8 @@ defmodule Elmc.Types do
   @type module_name :: String.t()
   @type function_name :: String.t()
 
+  @type debug_usage_policy :: :error | :warn | :warning
+
   @type compile_options :: %{
           optional(:entry_module) => module_name(),
           optional(:out_dir) => String.t() | nil,
@@ -18,6 +20,8 @@ defmodule Elmc.Types do
           optional(:direct_render_only) => boolean(),
           optional(:prune_direct_generic) => boolean(),
           optional(:pebble_int32) => boolean(),
-          optional(:linked_binary_map) => String.t()
+          optional(:linked_binary_map) => String.t(),
+          optional(:prod) => boolean(),
+          optional(:debug_usage_policy) => debug_usage_policy()
         }
 end

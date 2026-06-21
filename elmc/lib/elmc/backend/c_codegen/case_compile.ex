@@ -8,6 +8,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
   alias Elmc.Backend.CCodegen.Expr
   alias Elmc.Backend.CCodegen.HelperParams
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.IntLiteralRef
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.Native.IntCase, as: NativeIntCase
   alias Elmc.Backend.CCodegen.Patterns
@@ -81,7 +82,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
         branch_assignment_rc(env, out, "elmc_new_bool", Integer.to_string(value), counter)
 
       true ->
-        branch_assignment_int_literal(value, out, env, counter)
+        branch_assignment_int_literal(expr, out, env, counter)
     end
   end
 
@@ -626,11 +627,12 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     {"", RcRuntimeEmit.assign_into(env, out, function, call_args), counter}
   end
 
-  defp branch_assignment_int_literal(0, out, _env, counter),
+  defp branch_assignment_int_literal(%{op: :int_literal, value: 0}, out, _env, counter),
     do: {"", "#{out} = elmc_int_zero();", counter}
 
-  defp branch_assignment_int_literal(value, out, env, counter) when is_integer(value) do
-    branch_assignment_rc(env, out, "elmc_new_int", Integer.to_string(value), counter)
+  defp branch_assignment_int_literal(%{op: :int_literal} = expr, out, env, counter) do
+    ref = IntLiteralRef.ref(expr, env)
+    branch_assignment_rc(env, out, "elmc_new_int", ref, counter)
   end
 
   defp function_returns_bool?(env) when is_map(env) do

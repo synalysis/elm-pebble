@@ -3,6 +3,8 @@ defmodule Elmc.Backend.CCodegen.LiteralCompile do
 
   alias Elmc.Backend.CCodegen.BuiltinUnion
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.IntLiteralRef
+  alias Elmc.Backend.CCodegen.ResourceSlotMacros
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.ResourceUnion
   alias Elmc.Backend.CCodegen.Types
@@ -78,12 +80,12 @@ defmodule Elmc.Backend.CCodegen.LiteralCompile do
 
   defp compile_int_literal(%{op: :int_literal} = expr, env, counter) do
     value = ResourceUnion.int_literal_value(expr)
-    macro_ref = UnionMacros.literal_ref(expr, env)
-    ref = macro_ref || Integer.to_string(value)
+    ref = IntLiteralRef.ref(expr, env)
     {var, counter} = literal_out_slot(env, counter)
 
     code =
-      if value == 0 and is_nil(macro_ref) do
+      if value == 0 and ResourceSlotMacros.literal_ref(expr) == nil and
+           UnionMacros.literal_ref(expr, env) == nil do
         if Map.get(env, :__into_out__) == var do
           "#{var} = elmc_int_zero();"
         else

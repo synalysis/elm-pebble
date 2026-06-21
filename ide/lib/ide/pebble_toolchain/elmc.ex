@@ -8,9 +8,9 @@ defmodule Ide.PebbleToolchain.Elmc do
   @type elmc_compile_result :: Types.elmc_compile_result()
   @type toolchain_error :: Types.toolchain_error()
 
-  @spec watch_compile_opts(String.t(), [String.t()]) :: Types.watch_compile_opts()
-  def watch_compile_opts(out_dir, target_platforms)
-      when is_binary(out_dir) and is_list(target_platforms) do
+  @spec watch_compile_opts(String.t(), [String.t()], map()) :: Types.watch_compile_opts()
+  def watch_compile_opts(out_dir, target_platforms, extra \\ %{})
+      when is_binary(out_dir) and is_list(target_platforms) and is_map(extra) do
     %{
       out_dir: out_dir,
       entry_module: "Main",
@@ -19,8 +19,11 @@ defmodule Ide.PebbleToolchain.Elmc do
       prune_runtime: true,
       prune_native_wrappers: true,
       pebble_int32: true,
-      strip_dead_code: true
+      strip_dead_code: true,
+      prod: true,
+      debug_usage_policy: :error
     }
+    |> Map.merge(extra)
   end
 
   @spec target_platforms_for_project_dir(String.t()) :: [String.t()] | nil
@@ -36,12 +39,17 @@ defmodule Ide.PebbleToolchain.Elmc do
     end
   end
 
-  @spec compile_for_project_dir(String.t(), String.t()) :: Elmc.CLI.project_run()
-  def compile_for_project_dir(project_dir, out_dir) when is_binary(project_dir) and is_binary(out_dir) do
+  @spec compile_for_project_dir(String.t(), String.t(), map()) :: Elmc.CLI.project_run()
+  def compile_for_project_dir(project_dir, out_dir, extra_opts \\ %{})
+      when is_binary(project_dir) and is_binary(out_dir) and is_map(extra_opts) do
     elmc_opts =
       case target_platforms_for_project_dir(project_dir) do
-        nil -> %{out_dir: out_dir, strip_dead_code: true}
-        target_platforms -> watch_compile_opts(out_dir, target_platforms)
+        nil ->
+          %{out_dir: out_dir, strip_dead_code: true}
+          |> Map.merge(extra_opts)
+
+        target_platforms ->
+          watch_compile_opts(out_dir, target_platforms, extra_opts)
       end
 
     Elmc.CLI.compile_project(project_dir, out_dir, elmc_opts: elmc_opts)
@@ -54,7 +62,11 @@ defmodule Ide.PebbleToolchain.Elmc do
     stage_out_dir = Path.join(app_root, "src/c/elmc")
     target_platforms = Keyword.get(opts, :target_platforms, [])
 
-    compile_opts = watch_compile_opts(compile_out_dir, target_platforms)
+    compile_opts =
+      watch_compile_opts(compile_out_dir, target_platforms, %{
+        prod: Keyword.get(opts, :prod, true),
+        debug_usage_policy: Keyword.get(opts, :debug_usage_policy, :error)
+      })
 
     with :ok <- reset_generated_dir(compile_out_dir),
          :ok <- reset_generated_dir(stage_out_dir),

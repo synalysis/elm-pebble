@@ -4,6 +4,7 @@ defmodule Elmc do
   """
 
   alias Elmc.Backend.CCodegen
+  alias Elmc.Backend.DebugUsage
   alias Elmc.Backend.Pebble
   alias Elmc.Backend.Ports
   alias Elmc.Backend.Worker
@@ -27,11 +28,13 @@ defmodule Elmc do
   """
   @spec compile(String.t(), compile_options()) :: {:ok, map()} | {:error, term()}
   def compile(project_dir, opts \\ %{}) do
+    opts = normalize_compile_opts(opts)
     entry_module = opts[:entry_module] || "Main"
 
     with {:ok, project} <- Bridge.load_project(project_dir),
          {:ok, ir0} <- Lowerer.lower_project(project),
          ir <- maybe_strip_dead_code(ir0, entry_module, opts[:strip_dead_code]),
+         {:ok, ir, debug_usage_diagnostics} <- check_debug_usage(ir, opts),
          :ok <- Ports.write_port_headers(ir, opts[:out_dir] || "build"),
          :ok <-
            Pebble.write_pebble_shim(
@@ -58,7 +61,27 @@ defmodule Elmc do
              prune_from_dir: if(opts[:prune_runtime], do: opts[:out_dir] || "build", else: nil),
              pebble_int32: opts[:pebble_int32] || false
            ) do
-      {:ok, %{project: project, ir: ir}}
+      {:ok, %{project: project, ir: ir, debug_usage_diagnostics: debug_usage_diagnostics}}
+    end
+  end
+
+  @spec normalize_compile_opts(compile_options() | keyword()) :: compile_options()
+  defp normalize_compile_opts(opts) when is_list(opts), do: Map.new(opts)
+  defp normalize_compile_opts(opts) when is_map(opts), do: opts
+
+  @spec check_debug_usage(ElmEx.IR.t(), compile_options()) ::
+          {:ok, ElmEx.IR.t(), [map()]}
+          | {:error, {:compile_diagnostics, [map()]}}
+  defp check_debug_usage(ir, opts) do
+    case DebugUsage.check(ir, opts) do
+      :ok ->
+        {:ok, ir, []}
+
+      {:warn, diagnostics} ->
+        {:ok, ir, diagnostics}
+
+      {:error, diagnostics} ->
+        {:error, {:compile_diagnostics, diagnostics}}
     end
   end
 

@@ -308,21 +308,23 @@ export class EmulatorSimulatorDelivery {
       this.host.weatherPushTimer = null
       const weather = this.resolveWeatherSimulatorSettings() ?? DEFAULT_SIMULATOR_WEATHER
       const bridgeSent = this.pushSimulatorSettingsToPhoneBridgeNow()
-      const injectTimerId = window.setTimeout(() => {
-        this.host.weatherPushRetryTimers = this.host.weatherPushRetryTimers.filter(
-          id => id !== injectTimerId
-        )
-        const injected = this.enqueueWeatherDebugPush(weather, {quiet: true, force: true})
-        if (!injected && options.quiet === false) {
-          this.host.appendLog(
-            `skipped simulator weather inject: ${this.parseSimulatorTemperatureC(weather?.temperatureC) ?? "?"}°C ${weather?.condition || "clear"}`
+      if (this.shouldPushWeatherDirectlyToWatch()) {
+        const injectTimerId = window.setTimeout(() => {
+          this.host.weatherPushRetryTimers = this.host.weatherPushRetryTimers.filter(
+            id => id !== injectTimerId
           )
-        }
-      }, 400)
-      this.host.weatherPushRetryTimers.push(injectTimerId)
-      this.scheduleWeatherDebugFallback(weather ?? DEFAULT_SIMULATOR_WEATHER, {
-        quiet: options.quiet !== false
-      })
+          const injected = this.enqueueWeatherDebugPush(weather, {quiet: true, force: true})
+          if (!injected && options.quiet === false) {
+            this.host.appendLog(
+              `skipped simulator weather inject: ${this.parseSimulatorTemperatureC(weather?.temperatureC) ?? "?"}°C ${weather?.condition || "clear"}`
+            )
+          }
+        }, 400)
+        this.host.weatherPushRetryTimers.push(injectTimerId)
+        this.scheduleWeatherDebugFallback(weather ?? DEFAULT_SIMULATOR_WEATHER, {
+          quiet: options.quiet !== false
+        })
+      }
       if (options.quiet === false) {
         if (bridgeSent) {
           this.host.appendLog(
@@ -333,6 +335,10 @@ export class EmulatorSimulatorDelivery {
         }
       }
     }, 150)
+  }
+
+  shouldPushWeatherDirectlyToWatch(): boolean {
+    return this.host.session?.has_phone_companion !== true
   }
 
   scheduleWeatherDebugFallback(
@@ -379,6 +385,7 @@ export class EmulatorSimulatorDelivery {
     options: WeatherDebugOptions = {}
   ): boolean {
     if (!this.simulatorWeatherEnabled()) return false
+    if (!this.shouldPushWeatherDirectlyToWatch()) return false
     if (!this.host.session?.app_uuid) {
       if (options.quiet === false) {
         this.host.appendLog("skipped simulator weather: install a PBW on the emulator first")
@@ -511,6 +518,7 @@ export class EmulatorSimulatorDelivery {
 
   scheduleWeatherSimulatorInject(reason: string): void {
     if (!this.simulatorWeatherEnabled()) return
+    if (!this.shouldPushWeatherDirectlyToWatch()) return
     this.host.weatherInjectTimers.forEach(timerId => window.clearTimeout(timerId))
     const timerId = window.setTimeout(() => {
       this.host.weatherInjectTimers = this.host.weatherInjectTimers.filter(id => id !== timerId)

@@ -136,6 +136,7 @@ defmodule IdeWeb.WorkspaceLive do
 
     selected_emulator_target = EmulatorFlow.project_emulator_target(project)
     emulator_mode = EmulatorFlow.project_emulator_mode(project)
+    emulator_production_build = EmulatorFlow.project_emulator_production_build(project)
 
     project_data = %{
       tree: tree,
@@ -150,6 +151,7 @@ defmodule IdeWeb.WorkspaceLive do
       publish_readiness: publish_readiness,
       selected_emulator_target: selected_emulator_target,
       emulator_mode: emulator_mode,
+      emulator_production_build: emulator_production_build,
       packages_target_root: EditorSupport.preferred_packages_target_root(socket, project),
       debugger_timeline_mode: DebuggerFlow.project_debugger_timeline_mode(project),
       companion_app_present: Projects.companion_app_present?(project)

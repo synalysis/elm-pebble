@@ -159,7 +159,11 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     {union_constructor_defines, union_constructor_macros} =
       UnionMacros.definitions(ir, used_union_ctors: used_union_ctors)
 
-    union_debug_ctor_fn = UnionMacros.debug_ctor_name_fn(ir, used_union_ctors: used_union_ctors)
+    union_debug_ctor_fn =
+      UnionMacros.debug_ctor_name_fn(ir,
+        used_union_ctors: used_union_ctors,
+        prod: Map.get(opts, :prod, false)
+      )
 
     Process.put(:elmc_union_constructor_macros, union_constructor_macros)
 
@@ -256,6 +260,13 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
         opts
       )
 
+    resource_slot_defines =
+      Emit.generated_resource_slot_defines(
+        [lambda_defs, function_defs, direct_command_defs],
+        opts,
+        ir
+      )
+
     """
     #include "elmc_generated.h"
     #include "elmc_pebble.h"
@@ -273,9 +284,11 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
     #{record_field_defines}
 
+    #{resource_slot_defines}
+
     #{magic_number_defines}
 
-    #{Emit.pebble_debug_probe_prelude()}
+    #{Emit.pebble_debug_probe_prelude(opts)}
 
     #{trig_fallback_prelude}
 

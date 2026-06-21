@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.UnionMacros do
   @moduledoc false
 
   alias ElmEx.IR
+  alias Elmc.Backend.CCodegen.ProdMode
   alias Elmc.Backend.CCodegen.ResourceUnion
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
@@ -107,6 +108,23 @@ defmodule Elmc.Backend.CCodegen.UnionMacros do
 
   @spec debug_ctor_name_fn(IR.t(), keyword()) :: String.t()
   def debug_ctor_name_fn(%IR{} = ir, opts \\ []) do
+    if ProdMode.enabled?() or prod_from_opts?(opts) do
+      debug_ctor_name_stub()
+    else
+      debug_ctor_name_fn_impl(ir, opts)
+    end
+  end
+
+  defp debug_ctor_name_stub do
+    """
+    const char *elmc_debug_union_ctor_name(elmc_int_t tag) {
+      (void)tag;
+      return NULL;
+    }
+    """
+  end
+
+  defp debug_ctor_name_fn_impl(%IR{} = ir, opts) do
     used = Keyword.get(opts, :used_union_ctors)
 
     entries =
@@ -159,5 +177,13 @@ defmodule Elmc.Backend.CCodegen.UnionMacros do
 
   defp escape_c_string(name) when is_binary(name) do
     name |> String.replace("\\", "\\\\") |> String.replace("\"", "\\\"")
+  end
+
+  defp prod_from_opts?(opts) when is_list(opts) do
+    case Keyword.get(opts, :prod) do
+      true -> true
+      false -> false
+      _ -> ProdMode.enabled?()
+    end
   end
 end

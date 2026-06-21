@@ -2,6 +2,8 @@ defmodule Elmc.Backend.CCodegen.Emit do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.Constants
+  alias Elmc.Backend.CCodegen.ProdMode
+  alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.Pebble.Kinds
   alias Elmc.Backend.Pebble.Util
 
@@ -36,8 +38,18 @@ defmodule Elmc.Backend.CCodegen.Emit do
     """
   end
 
-  @spec pebble_debug_probe_prelude() :: String.t()
-  def pebble_debug_probe_prelude do
+  @spec pebble_debug_probe_prelude(Types.codegen_opts() | nil) :: String.t()
+  def pebble_debug_probe_prelude(opts \\ nil) do
+    if prod_mode?(opts), do: "", else: pebble_debug_probe_prelude_impl()
+  end
+
+  defp prod_mode?(nil), do: ProdMode.enabled?()
+
+  defp prod_mode?(opts) when is_map(opts), do: Map.get(opts, :prod, false) == true
+
+  defp prod_mode?(_), do: ProdMode.enabled?()
+
+  defp pebble_debug_probe_prelude_impl do
     """
     #if defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_CHALK) || defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_FLINT) || defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_GABBRO)
     #include <pebble.h>
@@ -150,6 +162,25 @@ defmodule Elmc.Backend.CCodegen.Emit do
 
   defp fixed_magic_number_defines do
     fixed_magic_number_lines()
+    |> Enum.map_join("\n", fn {macro, value} -> "#define #{macro} #{value}" end)
+  end
+
+  @spec generated_resource_slot_defines([String.t()], keyword() | map(), ElmEx.IR.t()) :: String.t()
+  def generated_resource_slot_defines(chunks, opts, %ElmEx.IR{} = ir) do
+    lines = Elmc.Backend.CCodegen.ResourceSlotMacros.define_lines(ir)
+
+    filtered =
+      if opts[:strip_dead_code] == false do
+        lines
+      else
+        used_tokens = used_macro_tokens(Enum.join(chunks, "\n"))
+
+        Enum.filter(lines, fn {macro, _value} ->
+          MapSet.member?(used_tokens, macro)
+        end)
+      end
+
+    filtered
     |> Enum.map_join("\n", fn {macro, value} -> "#define #{macro} #{value}" end)
   end
 

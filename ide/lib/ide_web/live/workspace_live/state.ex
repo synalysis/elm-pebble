@@ -26,6 +26,7 @@ defmodule IdeWeb.WorkspaceLive.State do
           required(:publish_readiness) => list(),
           required(:selected_emulator_target) => String.t(),
           required(:emulator_mode) => String.t(),
+          required(:emulator_production_build) => boolean(),
           required(:packages_target_root) => String.t(),
           required(:debugger_timeline_mode) => atom() | String.t(),
           required(:companion_app_present) => boolean()
@@ -84,7 +85,9 @@ defmodule IdeWeb.WorkspaceLive.State do
     )
     |> assign(
       :emulator_form,
-      to_form(%{"target" => default_emulator_target, "mode" => "embedded"}, as: :emulator)
+      to_form(%{"target" => default_emulator_target, "mode" => "embedded", "production_build" => "true"},
+        as: :emulator
+      )
     )
     |> assign(:emulator_mode, "embedded")
     |> assign(:publish_status, :idle)
@@ -307,6 +310,7 @@ defmodule IdeWeb.WorkspaceLive.State do
     publish_readiness = Map.fetch!(data, :publish_readiness)
     selected_emulator_target = Map.fetch!(data, :selected_emulator_target)
     emulator_mode = Map.fetch!(data, :emulator_mode)
+    emulator_production_build = Map.fetch!(data, :emulator_production_build)
 
     socket
     |> assign(:project, project)
@@ -366,7 +370,11 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(
       :emulator_form,
       to_form(
-        %{"target" => selected_emulator_target, "mode" => emulator_mode},
+        %{
+          "target" => selected_emulator_target,
+          "mode" => emulator_mode,
+          "production_build" => to_string(emulator_production_build)
+        },
         as: :emulator
       )
     )

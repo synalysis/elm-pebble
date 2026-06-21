@@ -304,8 +304,15 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
   def handle_event("set-emulator-target", %{"emulator" => params}, socket) do
     target = normalize_emulator_target(Map.get(params, "target"))
     mode = normalize_emulator_mode(target, Map.get(params, "mode"))
+    production_build? =
+      if Map.has_key?(params, "production_build") do
+        emulator_production_build_from_params(params)
+      else
+        project_emulator_production_build(socket.assigns.project)
+      end
 
-    project = persist_project_emulator_selection(socket.assigns.project, target, mode)
+    project =
+      persist_project_emulator_selection(socket.assigns.project, target, mode, production_build?)
 
     socket =
       socket
@@ -314,7 +321,17 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
       |> assign(:emulator_mode, mode)
       |> assign(:external_emulator_running, false)
       |> assign(:emulator_mode_options, ToolchainPresenter.emulator_mode_options(target))
-      |> assign(:emulator_form, to_form(%{"target" => target, "mode" => mode}, as: :emulator))
+      |> assign(
+        :emulator_form,
+        to_form(
+          %{
+            "target" => target,
+            "mode" => mode,
+            "production_build" => to_string(production_build?)
+          },
+          as: :emulator
+        )
+      )
       |> check_emulator_installation()
 
     socket =
@@ -327,6 +344,12 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
 
     {:noreply, socket}
   end
+
+  defp emulator_production_build_from_params(%{"production_build" => value}) do
+    value in [true, "true", "on", "1"]
+  end
+
+  defp emulator_production_build_from_params(_params), do: true
 
   defp do_handle_async(:check_emulator_installation, {:ok, status}, socket) do
     {:noreply, assign(socket, :emulator_installation_status, status)}
@@ -601,8 +624,11 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
     end)
   end
 
-  @spec persist_project_emulator_selection(Project.t(), String.t(), String.t()) :: Project.t()
-  def persist_project_emulator_selection(%Project{} = project, target, mode) do
+  @spec persist_project_emulator_selection(Project.t(), String.t(), String.t(), boolean() | nil) ::
+          Project.t()
+  def persist_project_emulator_selection(project, target, mode, production_build? \\ nil)
+
+  def persist_project_emulator_selection(%Project{} = project, target, mode, production_build?) do
     selected_target = normalize_emulator_target(target)
     selected_mode = normalize_emulator_mode(selected_target, mode)
     settings = project.debugger_settings || %{}
@@ -615,6 +641,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
         "watch_profile_id",
         DebuggerFlow.normalize_debugger_watch_profile_id(selected_target)
       )
+      |> maybe_put_emulator_production_build(production_build?)
 
     case Projects.update_project(project, %{"debugger_settings" => updated_settings}) do
       {:ok, updated} -> updated
@@ -622,7 +649,27 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
     end
   end
 
-  def persist_project_emulator_selection(project, _target, _mode), do: project
+  def persist_project_emulator_selection(project, _target, _mode, _production_build?),
+    do: project
+
+  defp maybe_put_emulator_production_build(settings, nil), do: settings
+
+  defp maybe_put_emulator_production_build(settings, production_build?) when is_boolean(production_build?) do
+    Map.put(settings, "emulator_production_build", production_build?)
+  end
+
+  @spec project_emulator_production_build(Project.t()) :: boolean()
+  def project_emulator_production_build(%Project{} = project) do
+    settings = project.debugger_settings || %{}
+
+    case Map.get(settings, "emulator_production_build") do
+      false -> false
+      "false" -> false
+      _ -> true
+    end
+  end
+
+  def project_emulator_production_build(_), do: true
 
   @spec project_emulator_target(Project.t()) :: String.t()
   def project_emulator_target(%Project{} = project) do

@@ -224,6 +224,22 @@ defmodule Ide.Compiler do
   end
 
   @doc """
+  Compile options for the Build page: production mode with warnings for Debug usage.
+  """
+  @spec build_page_compile_opts(opts()) :: opts()
+  def build_page_compile_opts(opts) when is_list(opts) do
+    Keyword.merge(opts, prod: true, debug_usage_policy: :warn)
+  end
+
+  @doc """
+  Compile options for publish/emulator production packaging.
+  """
+  @spec production_compile_opts(opts()) :: opts()
+  def production_compile_opts(opts) when is_list(opts) do
+    Keyword.merge(opts, prod: true, debug_usage_policy: :error)
+  end
+
+  @doc """
   Runs `elmc compile` for a workspace and returns parsed diagnostics.
   """
   @spec compile(project_slug(), opts()) :: {:ok, compile_result()} | {:error, compiler_error()}
@@ -261,7 +277,10 @@ defmodule Ide.Compiler do
          }}
 
       project_dir ->
-        revision = workspace_revision(project_dir) <> pebble_compile_revision_suffix(project_dir)
+        revision =
+          workspace_revision(project_dir) <>
+            pebble_compile_revision_suffix(project_dir) <>
+            compile_mode_revision_suffix(opts)
 
         case Cache.get(project_slug, revision) do
           {:ok, entry} ->
@@ -502,10 +521,15 @@ defmodule Ide.Compiler do
   defp run_elmc_compile(project_dir, revision, opts) do
     out_dir = Path.join(project_dir, ".elmc-build")
 
+    elmc_extra_opts = %{
+      prod: Keyword.get(opts, :prod, false),
+      debug_usage_policy: Keyword.get(opts, :debug_usage_policy, :error)
+    }
+
     result =
       try do
         project_dir
-        |> PebbleToolchainElmc.compile_for_project_dir(out_dir)
+        |> PebbleToolchainElmc.compile_for_project_dir(out_dir, elmc_extra_opts)
         |> ElmcCliIngestBridge.to_compile_result(compiled_path: out_dir, revision: revision)
       rescue
         error -> compile_result_from_exception(error, out_dir, revision)
@@ -992,6 +1016,13 @@ defmodule Ide.Compiler do
       nil -> ""
       platforms -> ":pebble=" <> Enum.join(platforms, ",")
     end
+  end
+
+  @spec compile_mode_revision_suffix(opts()) :: String.t()
+  defp compile_mode_revision_suffix(opts) do
+    prod = Keyword.get(opts, :prod, false)
+    policy = Keyword.get(opts, :debug_usage_policy, :error)
+    ":prod=#{prod}:#{policy}"
   end
 
   @spec source_files_for_revision(String.t()) :: [String.t()]

@@ -41,7 +41,15 @@ defmodule Elmc.Test.RcTrackCoreTest do
     heap_probes = RcTrackMatrix.heap_result_probes(module_name)
 
     File.rm_rf!(out_dir)
-    RcTrackHarness.compile!(project_dir, out_dir, entry_module: entry.module)
+
+    compile_opts =
+      if module_name == "Debug" do
+        [entry_module: entry.module, prod: false]
+      else
+        [entry_module: entry.module]
+      end
+
+    RcTrackHarness.compile!(project_dir, out_dir, compile_opts)
 
     int_out =
       if int_probes == [] do

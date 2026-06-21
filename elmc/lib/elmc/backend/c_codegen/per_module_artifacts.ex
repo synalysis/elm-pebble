@@ -115,7 +115,7 @@ defmodule Elmc.Backend.CCodegen.PerModuleArtifacts do
     #include "elmc_#{safe_name}.h"
     #include "elmc_generated.h"
 
-    #{Emit.pebble_debug_probe_prelude()}
+    #{Emit.pebble_debug_probe_prelude(Process.get(:elmc_codegen_opts, %{}))}
 
     #{function_defs}
     """

@@ -337,6 +337,10 @@ def _phone_pbw_with_js(runner):
     return None
 
 
+def runner_has_phone_companion(runner):
+    return _phone_pbw_with_js(runner) is not None
+
+
 def patch_companion_cache_install():
     original_on_message = WebsocketRunner.on_message
 
@@ -543,6 +547,16 @@ def companion_app_uuid(runner):
 
 
 def send_simulator_weather_to_watch(runner, reason, retry_count=0, ws=None):
+    if runner_has_phone_companion(runner):
+        weather_trace_log(
+            runner,
+            ws or getattr(runner, "_elm_pebble_last_ws", None),
+            "inject_skipped",
+            detail="phone companion handles simulator weather",
+            reason=reason,
+        )
+        return False
+
     settings = getattr(runner, "_elm_pebble_last_simulator_settings", None)
     if settings is None:
         settings = getattr(runner, "_elm_pebble_pending_simulator_settings", None)

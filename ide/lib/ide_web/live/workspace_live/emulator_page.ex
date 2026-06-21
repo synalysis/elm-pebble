@@ -163,7 +163,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
           </div>
         </div>
         <div class="mt-4 grid gap-4 lg:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)] lg:items-start">
-          <div class="w-fit max-w-full">
+          <div class="min-w-0 w-fit max-w-full">
             <div class="rounded border border-zinc-300 bg-black p-1">
               <div class="flex min-w-0 flex-col gap-2">
                 <div class="flex items-center gap-1.5">
@@ -231,6 +231,25 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
             >
               Embedded emulator is idle.
             </p>
+            <.form
+              for={@emulator_form}
+              id="emulator-production-build-form"
+              phx-change="set-emulator-target"
+              class="mx-auto mt-3 min-w-0 rounded border border-zinc-200 bg-white px-3 py-2"
+              style={emulator_production_build_form_style(@selected_emulator_target)}
+            >
+              <input type="hidden" name="emulator[target]" value={@selected_emulator_target} />
+              <input type="hidden" name="emulator[mode]" value={@emulator_mode} />
+              <.input
+                field={@emulator_form[:production_build]}
+                type="checkbox"
+                label="Production build"
+              />
+              <p class="mt-1 min-w-0 break-words text-[11px] leading-snug text-zinc-600">
+                When enabled, Debug.log, Debug.todo, and Debug.toString are rejected — same as publish.
+                Uncheck to allow Debug calls while testing in the emulator.
+              </p>
+            </.form>
           </div>
           <div class="space-y-3">
             <.simulator_settings_form
@@ -844,6 +863,15 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
   defp emulator_status_style(target) do
     {width, _height} = emulator_screen_size(target)
     "width: #{width}px;"
+  end
+
+  @production_build_form_width_factor 1.7
+
+  @spec emulator_production_build_form_style(String.t()) :: String.t()
+  defp emulator_production_build_form_style(target) do
+    {width, _height} = emulator_screen_size(target)
+    form_width = round(width * @production_build_form_width_factor)
+    "width: #{form_width}px;"
   end
 
   @spec emulator_display_shape(String.t()) :: String.t()

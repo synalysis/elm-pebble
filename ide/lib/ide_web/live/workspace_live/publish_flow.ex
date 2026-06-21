@@ -92,7 +92,9 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
              source_roots: Map.get(project, :source_roots),
              version: release_summary["version_label"],
              description: app_description(project),
-             capabilities: capabilities(project)
+             capabilities: capabilities(project),
+             prod: true,
+             debug_usage_policy: :error
            ) do
       target_platforms = target_platforms(project)
       screenshots = load_screenshots(project)

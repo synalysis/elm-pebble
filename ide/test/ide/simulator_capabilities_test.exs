@@ -295,5 +295,11 @@ defmodule Ide.SimulatorCapabilitiesTest do
     assert embedded_js =~ "readVncFramebufferSize"
     assert vnc_js =~ "clipViewport"
     assert embedded_js =~ "expectedScreenSize"
+    assert embedded_js =~ "acceptAppRunStateStart"
+    assert embedded_js =~ "payload.length < 17"
+    assert embedded_js =~ "frameUuid !== appUuid.toLowerCase()"
+    assert embedded_js =~ "APP_RUN_STATE_START_DEBOUNCE_MS"
+    assert delivery_js =~ "shouldPushWeatherDirectlyToWatch"
+    assert delivery_js =~ "has_phone_companion !== true"
   end
 end

@@ -837,6 +837,82 @@ defmodule Elmc.PebbleShimTest do
     assert run_code == 0
   end
 
+  test "chunked context groups preserve nested text commands" do
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available for pebble shim C test")
+
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/context_group_text_project", __DIR__)
+    out_dir = Path.expand("tmp/context_group_text_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(source_fixture, project_dir)
+    write_context_group_text_view_app!(project_dir)
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    harness_path = Path.join(out_dir, "c/context_group_text_harness.c")
+
+    File.write!(
+      harness_path,
+      """
+      #include "elmc_pebble.h"
+
+      int main(void) {
+        ElmcPebbleApp app = {0};
+        ElmcValue *flags = elmc_new_int_take(0);
+        if (elmc_pebble_init(&app, flags) != 0) return 2;
+        elmc_release(flags);
+
+        ElmcPebbleDrawCmd chunk[1] = {0};
+        int saw_text = 0;
+        for (int skip = 0; skip < 16; skip++) {
+          chunk[0].kind = ELMC_PEBBLE_DRAW_NONE;
+          int count = elmc_pebble_view_commands_from(&app, chunk, 1, skip);
+          if (count < 0) return 3;
+          if (count == 0) break;
+          if (chunk[0].kind == ELMC_PEBBLE_DRAW_TEXT) {
+            saw_text = 1;
+            if (chunk[0].p1 != 10 || chunk[0].p2 != 20 || chunk[0].p3 != 80 || chunk[0].p4 != 18) return 4;
+            if (chunk[0].text[0] != 'H' || chunk[0].text[1] != 'i') return 5;
+          }
+        }
+
+        if (!saw_text) return 6;
+        elmc_pebble_deinit(&app);
+        return 0;
+      }
+      """
+    )
+
+    binary_path = Path.join(out_dir, "context_group_text_harness")
+
+    {compile_out, compile_code} =
+      System.cmd(cc, [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-I#{Path.join(out_dir, "runtime")}",
+        "-I#{Path.join(out_dir, "ports")}",
+        "-I#{Path.join(out_dir, "c")}",
+        Path.join(out_dir, "runtime/elmc_runtime.c"),
+        Path.join(out_dir, "ports/elmc_ports.c"),
+        Path.join(out_dir, "c/elmc_generated.c"),
+        Path.join(out_dir, "c/elmc_worker.c"),
+        Path.join(out_dir, "c/elmc_pebble.c"),
+        harness_path,
+        "-lm",
+        "-o",
+        binary_path
+      ])
+
+    assert compile_code == 0, compile_out
+
+    {_run_out, run_code} = System.cmd(binary_path, [])
+    assert run_code == 0
+  end
+
   test "pebble shim decodes appmessage payloads and drives worker loop" do
     cc = System.find_executable("cc")
     if is_nil(cc), do: flunk("cc not available for pebble shim C test")
@@ -3134,6 +3210,59 @@ defmodule Elmc.PebbleShimTest do
     view _ =
         Ui.toUiNode
             [ Ui.text Resources.DefaultFont (Ui.alignCenter Ui.defaultTextOptions) { x = 10, y = 20, w = 30, h = 18 } "2"
+            ]
+    """)
+  end
+
+  defp write_context_group_text_view_app!(project_dir) do
+    File.write!(Path.join(project_dir, "src/Main.elm"), """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type Msg
+        = NoOp
+
+
+    main : Program Decode.Value Int Msg
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( 0, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    label =
+        Ui.group
+            (Ui.context
+                [ Ui.textColor Color.black ]
+                [ Ui.text Resources.DefaultFont (Ui.alignCenter Ui.defaultTextOptions) { x = 10, y = 20, w = 80, h = 18 } "Hi" ]
+            )
+
+
+    view _ =
+        Ui.toUiNode
+            [ Ui.clear Color.white
+            , label
             ]
     """)
   end
