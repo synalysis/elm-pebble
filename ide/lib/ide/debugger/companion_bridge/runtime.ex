@@ -120,7 +120,8 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
     previous_weather = Map.get(previous_settings, "weather") || %{}
     new_weather = Map.get(new_settings, "weather") || %{}
 
-    with true <- new_weather != %{} and new_weather != previous_weather,
+    with true <- new_settings["use_simulator_weather"] != false,
+         true <- new_weather != %{} and new_weather != previous_weather,
          true <- companion_weather_delivery_ready?(state),
          %{} = contract <-
            Enum.find(CompanionBridge.subscription_contracts(), &(Map.get(&1, :source) == "weather")) do

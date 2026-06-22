@@ -156,7 +156,7 @@
       "color": 248,
       "compositing_mode": 0,
       "cx": 25,
-      "cy": 32,
+      "cy": 31,
       "fill_color": 248,
       "kind": "fill_circle",
       "r": 3,
@@ -174,11 +174,11 @@
       "text_color": 255,
       "text_overflow": "word_wrap",
       "w": 72,
-      "x": 64,
+      "x": 36,
       "y": 108
     }
   ],
-  "preview_ops_sha256": "28aac31e204d24caa631aed6bfa8a40895c0626c1b90821a0bfab904a492f8dd",
+  "preview_ops_sha256": "0af565bfdde7fa4b9570e76f77de0b4c441031803583e76523d7fed7873e87c2",
   "render_tree": {
     "node_count": 15,
     "node_types": [
@@ -305,7 +305,7 @@
                   "children": [],
                   "color": 248,
                   "cx": 25,
-                  "cy": 32,
+                  "cy": 31,
                   "kind": "fillCircle",
                   "label": "fillCircle",
                   "r": 3,
@@ -321,7 +321,7 @@
                             "h": 22,
                             "text": null,
                             "w": 72,
-                            "x": 64,
+                            "x": 36,
                             "y": 108
                           },
                           "children": [],
@@ -415,12 +415,31 @@
   },
   "template": "watchface-tangram-time",
   "timeline_init_messages": [
+    "update:FromWatch (Ok RequestFigure)",
     "update:CurrentDateTime {\"day\":27,\"dayOfWeek\":{\"args\":[],\"ctor\":\"Wednesday\"},\"hour\":8,\"minute\":53,\"month\":5,\"second\":0,\"utcOffsetMinutes\":0,\"year\":2026}",
+    "init:init",
+    "update:SvgReceived SvgReceived (Ok \"<?xml version=\\\"1.0\\\" encoding=\\\"utf-8\\\"?>\\n<svg baseProfile=\\\"full\\\" height=\\\"100%\\\" version=\\\"1.1\\\" viewBox=\\\"0 0 144.0 144.0\\\" width=\\\"100%\\\" xmlns=\\\"http://www.w3.org/2000/svg\\\" xmlns:ev=\\\"http://www.w3.org/2001/xml-events\\\" xmlns:xlink=\\\"http://www.w3.org/1999/xlink\\\"><defs/><polygon fill=\\\"lightgray\\\" id=\\\"1\\\" points=\\\"48.0,48.0 96.0,48.0 96.0,0.0 48.0,0.0\\\" stroke=\\\"white\\\" strokewidth=\\\"1\\\"/><polygon fill=\\\"lightgray\\\" id=\\\"2\\\" points=\\\"48.0,96.0 96.0,96.0 48.0,144.0 0.0,144.0\\\" stroke=\\\"white\\\" strokewidth=\\\"1\\\"/><polygon fill=\\\"lightgray\\\" id=\\\"3\\\" points=\\\"0.0,144.0 48.0,96.0 0.0,96.0\\\" stroke=\\\"white\\\" strokewidth=\\\"1\\\"/><polygon fill=\\\"lightgray\\\" id=\\\"4\\\" points=\\\"48.0,48.0 48.0,0.0 0.0,0.0\\\" stroke=\\\"white\\\" strokewidth=\\\"1\\\"/><polygon fill=\\\"lightgray\\\" id=\\\"5\\\" points=\\\"96.0,96.0 144.0,48.0 48.0,48.0\\\" stroke=\\\"white\\\" strokewidth=\\\"1\\\"/><polygon fill=\\\"lightgray\\\" id=\\\"6\\\" points=\\\"144.0,144.0 48.0,144.0 144.0,48.0\\\" stroke=\\\"white\\\" strokewidth=\\\"1\\\"/><polygon fill=\\\"lightgray\\\" id=\\\"7\\\" points=\\\"0.0,96.0 96.0,96.0 0.0,0.0\\\" stroke=\\\"white\\\" strokewidth=\\\"1\\\"/></svg>\")",
+    "update:FromWatch (Ok RequestFigure)",
+    "update:FromPhone (ProvideFigure 0)",
+    "update:CatalogReceived CatalogReceived (Ok \"{\\\"page1-0\\\": {\\\"snd\\\": 0.8833333333333334, \\\"pnd\\\": 0.8885185185185186, \\\"psa\\\": 4.355555555555555, \\\"annotations\\\": [{\\\"whole\\\": {\\\"wholeAnnotation\\\": \\\"chair\\\", \\\"timestamp\\\": \\\"2021-07-07 08:36:28.599000+00:00\\\"}, \\\"part\\\": {\\\"3\\\": \\\"base\\\", \\\"2\\\": \\\"base\\\", \\\"6\\\": \\\"base\\\", \\\"7\\\": \\\"backrest\\\", \\\"4\\\": \\\"backrest\\\", \\\"1\\\": \\\"backrest\\\", \\\"5\\\": \\\"seat\\\"}, \\\"workerId\\\": \\\"cf2758c436dea58a49440527d4a556bf\\\", \\\"metadata\\\": {\\\"0\\\": {\\\"final\\\": true, \\\"pieces\\\": [5], \\\"annotation\\\": \\\"seat\\\", \\\"timestamp\\\": \\\"2021-07-07 08:36:31.351000+00:00\\\"}, \\\"2\\\": {\\\"final\\\": false, \\\"pieces\\\": [1, 4, 7], \\\"timestamp\\\": \\\"2021-07-07 08:36:38.783000+00:00\\\", \\\"annotation\\\": \\\"backrest\\\"}, \\\"3\\\": {\\\"final\\\": true, \\\"timestamp\\\": \\\"2021-07-07 08:36:45.049000+00:00\\\", \\\"pieces\\\": [1, 4, 7], \\\"annotation\\\": \\\"backrest\\\"}, \\\"4\\\": {\\\"timestamp\\\": \\\"2021-07-07 08:36:49.303000+00:00\\\", \\\"pieces\\\": [2, 3, 6], \\\"final\\\": true, \\\"annotation\\\": \\\"base\\\"}, \\\"1\\\": {\\\"final\\\": false, \\\"pieces\\\": [1], \\\"timestamp\\\": \\\"2021-07-07 08:36:33.850000+00:00\\\", \\\"annotation\\\": \\\"backrest\\\"}}}, {\\\"whole\\\": {\\\"timestamp\\\": \\\"2021-07-08 23:25:19.396000+00:00\\\", \\\"wholeAnnotation\\\": \\\"snake\\\"}, \\\"part\\\": {\\\"5\\\": \\\"body\\\", \\\"2\\\": \\\"body\\\", \\\"3\\\": \\\"body\\\", \\\"4\\\": \\\"body\\\", \\\"6\\\": \\\"body\\\", \\\"1\\\": \\\"body\\\", \\\"7\\\": \\\"head\\\"}, \\\"workerId\\\": \\\"8d48c2ee0596126c8f36408fb15b7a8a\\\", \\\"metadata\\\": {\\\"0\\\": {\\\"pieces\\\": [7], \\\"final\\\": true, \\\"annotation\\\": \\\"head\\\", \\\"timestamp\\\": \\\"2021-07-08 23:25:25.146000+00:00\\\"}, \\\"1\\\": {\\\"timestamp\\\": \\\"2021-07-08 23:25:31.597000+00:00\\\", \\\"pieces\\\": [1, 2, 3, 4, 5, 6], \\\"annotation\\\": \\\"body\\\", \\\"final\\\": true}}}, {\\\"whole\\\": {\\\"timestamp\\\": \\\"2021-07-05 18:48:32.061000+00:00\\\", \\\"wholeAnnotation\\\": \\\"areal view of a house\\\"}, \\\"part\\\": {\\\"5\\\": \\\"roof of house\\\", \\\"1\\\": \\\"swimming pool\\\", \\\"2\\\": \\\"drive way\\\", \\\"6\\\": \\\"yard\\\", \\\"3\\\": \\\"yard\\\", \\\"7\\\": \\\"roof of house\\\", \\\"4\\\": \\\"roof of house\\\"}, \\\"workerId\\\": \\\"39ed6c244167e343f6309ce6a7a6ddb5\\\", \\\"metadata\\\": {\\\"0\\\": {\\\"annotation\\\": \\\"swimming pool\\\", \\\"pieces\\\": [1], \\\"final\\\": true, \\\"timestamp\\\": \\\"2021-07-05 18:48:42.639000+00:00\\\"}, \\\"1\\\": {\\\"annotation\\\": \\\"drive way\\\", \\\"timestamp\\\": \\\"2021-07-05 18:49:12.124000+00:00\\\", \\\"pieces\\\": [2], \\\"final\\\": true}, \\\"3\\\": {\\\"pieces\\\": [4, 5, 7], \\\"annotation\\\": \\\"roof of house\\\", \\\"final\\\": true, \\\"timestamp\\\": \\\"2021-07-05 18:49:41.245000+00:00\\\"}, \\\"2\\\": {\\\"final\\\": true, \\\"annotation\\\": \\\"yard\\\", \\\"pieces\\\": [3, 6], \\\"timestamp\\\": \\\"2021-07-05 18:49:21.468000+00:00\\\"}}}, {\\\"whole\\\": {\\\"wholeAnnotation\\\": \\\"kitchen counter\\\", \\\"timestamp\\\": \\\"2021-07-08 05:55:11.117000+00:00\\\"}, \\\"part\\\": {\\\"3\\\": \\\"cabinets\\\", \\\"6\\\": \\\"cabinets\\\", \\\"1\\\": \\\"microwave\\\", \\\"4\\\": \\\"backsplash\\\", \\\"5\\\": \\\"countertop\\\", \\\"7\\\": \\\"cabinets\\\", \\\"2\\\": \\\"cabinets\\\"}, \\\"workerId\\\": \\\"ec710c541943cf30f3b8ae5a3b8b01f3\\\", \\\"metadata\\\": {\\\"2\\\": {\\\"timestamp\\\": \\\"2021-07-08 05:55:26.782000+00:00\\\", \\\"annotation\\\": \\\"backsplash\\\", \\\"final\\\": true, \\\"pieces\\\": [4]}, \\\"3\\\": {\\\"timestamp\\\": \\\"2021-07-08 05:55:36.942000+00:00\\\", \\\"final\\\": true, \\\"annotation\\\": \\\"cabinets\\\", \\\"pieces\\\": [2, 3, 6, 7]}, \\\"1\\\": {\\\"final\\\": true, \\\"pieces\\\": [5], \\\"timestamp\\\": \\\"2021-07-08 05:55:21.677000+00:00\\\", \\\"annotation\\\": \\\"countertop\\\"}, \\\"0\\\": {\\\"final\\\": true, \\\"pieces\\\": [1], \\\"annotation\\\": \\\"microwave\\\", \\\"timestamp\\\": \\\"2021-07-08 05:55:16.430000+00:00\\\"}}}, {\\\"whole\\\": {\\\"timestamp\\\": \\\"2021-06-29 17:09:22.305000+00:00\\\", \\\"wholeAnnotation\\\": \\\"arm chair\\\"}, \\\"part\\\": {\\\"6\\\": \\\"seat\\\", \\\"1\\\": \\\"head rest\\\", \\\"4\\\": \\\"head rest\\\", \\\"5\\\": \\\"seat\\\", \\\"3\\\": \\\"seat\\\", \\\"2\\\": \\\"seat\\\", \\\"7\\\": \\\"back bracing\\\"}, \\\"workerId\\\": \\\"b74b0954bbc780a9c1bea103370ca369\\\", \\\"metadata\\\": {\\\"2\\\": {\\\"timestamp\\\": \\\"2021-06-29 17:09:59.894000+00:00\\\", \\\"pieces\\\": [1, 4], \\\"final\\\": true, \\\"annotation\\\": \\\"head rest\\\"}, \\\"1\\\": {\\\"pieces\\\": [7], \\\"annotation\\\": \\\"back bracing\\\", \\\"timestamp\\\": \\\"2021-06-29 17:09:53.627000+00:00\\\", \\\"final\\\": true}, \\\"0\\\": {\\\"pieces\\\": [2, 3, 5, 6], \\\"final\\\": true, \\\"annotation\\\": \\\"seat\\\", \\\"timestamp\\\": \\\"2021-06-29 17:09:43.811000+00:00\\\"}}}, {\\\"whole\\\": {\\\"timestamp\\\": \\\"2021-07-09 21:48:10.191000+00:00\\\", \\\"wholeAnnotation\\\": \\\"a person hugging a pillow\\\"}, \\\"part\\\": {\\\"1\\\": \\\"head\\\", \\\"2\\\": \\\"legs\\\", \\\"6\\\": \\\"legs\\\", \\\"7\\\": \\\"arms\\\", \\\"3\\\": \\\"legs\\\", \\\"5\\\": \\\"pillow\\\", \\\"4\\\": \\\"body\\\"}, \\\"workerId\\\": \\\"9ad3f29349346c1ad66b70d98316d97d\\\", \\\"metadata\\\": {\\\"1\\\": {\\\"final\\\": true, \\\"pieces\\\": [4], \\\"timestamp\\\": \\\"2021-07-09 21:48:22.897000+00:00\\\", \\\"annotation\\\": \\\"body\\\"}, \\\"3\\\": {\\\"annotation\\\": \\\"head\\\", \\\"pieces\\\": [1], \\\"timestamp\\\": \\\"2021-07-09 21:48:27.973000+00:00\\\", \\\"final\\\": true}, \\\"0\\\": {\\\"timestamp\\\": \\\"2\" <> ...)",
     "init:init"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
+    "elmc_compile_cached": "false",
+    "elmc_compile_error_count": 0,
+    "elmc_compile_revision": "ca158bae3843b0bc7f0849c7454cd325363413d6386f2d0a7089784e3497baf0:pebble=basalt,chalk,diorite,emery,flint,gabbro:prod=false:error",
+    "elmc_compile_status": "ok",
+    "elmc_compile_warning_count": 0,
+    "elmc_compiled_path": "/home/ape/projects/elm-pebble/ide/workspace_projects/corpus-watchface-tangram-time-11459/phone/.elmc-build",
+    "elmc_diagnostic_preview": [],
+    "protocol_inbound_count": 10,
+    "protocol_last_inbound_from": "companion",
+    "protocol_last_inbound_message": "EndFigure 0",
+    "protocol_last_trigger": "runtime_followup",
+    "protocol_last_view_message": "EndFigure 0",
+    "protocol_message_count": 10,
     "runtime_model": {
       "colorMode": {
         "args": [],

@@ -24,6 +24,7 @@ defmodule Ide.Debugger.SimulatorSettings do
       "network_online" => true,
       "notifications_enabled" => true,
       "quiet_hours" => false,
+      "use_simulator_weather" => true,
       "weather" => %{
         "temperatureC" => 21,
         "condition" => "clear",
@@ -127,6 +128,11 @@ defmodule Ide.Debugger.SimulatorSettings do
         ),
       "quiet_hours" =>
         normalize_boolean(WireValues.map_value(settings, "quiet_hours"), defaults["quiet_hours"]),
+      "use_simulator_weather" =>
+        normalize_boolean(
+          WireValues.map_value(settings, "use_simulator_weather"),
+          defaults["use_simulator_weather"]
+        ),
       "weather" =>
         normalize_weather_settings(WireValues.map_value(settings, "weather"), defaults["weather"]),
       "calendar_events" =>

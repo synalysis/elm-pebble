@@ -117,6 +117,16 @@ export class EmulatorSimulatorDelivery {
     return this.simulatorCapabilities().has("weather")
   }
 
+  useSimulatorWeather(settings: SimulatorSettings | null = this.host.simulatorSettings): boolean {
+    if (!this.simulatorWeatherEnabled()) return false
+    if (!settings || typeof settings !== "object") return true
+
+    const record = settings as Record<string, unknown>
+    if (record.use_simulator_weather === false) return false
+    if (record.use_simulator_weather === "false") return false
+    return true
+  }
+
   refreshSimulatorCapabilities(): void {
     this.host._simulatorCapabilities = this.parseSimulatorCapabilities()
   }
@@ -233,7 +243,7 @@ export class EmulatorSimulatorDelivery {
     if (this.shouldSyncCompanionSimulator(options)) {
       const quiet = options.quiet ?? options.source === "dataset"
       this.pushSimulatorSettingsToPhoneBridgeNow({quiet})
-      if (this.simulatorWeatherEnabled()) {
+      if (this.useSimulatorWeather(settings)) {
         this.scheduleWeatherPush({quiet})
       }
     }
@@ -247,11 +257,15 @@ export class EmulatorSimulatorDelivery {
     settings: SimulatorSettings | null = this.host.simulatorSettings
   ): SimulatorSettingsPayload {
     if (!settings || typeof settings !== "object") {
-      return this.simulatorWeatherEnabled() ? {weather: {...DEFAULT_SIMULATOR_WEATHER}} : {}
+      return this.useSimulatorWeather()
+        ? {use_simulator_weather: true, weather: {...DEFAULT_SIMULATOR_WEATHER}}
+        : {use_simulator_weather: false}
     }
 
     const payload: SimulatorSettingsPayload = {...settings}
-    const weather = this.resolveWeatherSimulatorSettings(settings)
+    const weather = this.useSimulatorWeather(settings)
+      ? this.resolveWeatherSimulatorSettings(settings)
+      : null
 
     if (weather) {
       payload.weather = weather
@@ -276,7 +290,7 @@ export class EmulatorSimulatorDelivery {
 
     const payload = this.simulatorSettingsPayload()
     const sent = this.sendSimulatorSettingsToPhoneBridge(payload)
-    if (sent && options.quiet === false && this.simulatorWeatherEnabled()) {
+    if (sent && options.quiet === false && this.useSimulatorWeather(payload)) {
       const weather = this.resolveWeatherSimulatorSettings(payload)
       this.host.appendLog(
         `synced simulator weather via phone bridge: ${this.parseSimulatorTemperatureC(weather?.temperatureC) ?? "?"}°C ${weather?.condition || "clear"}`
@@ -286,7 +300,7 @@ export class EmulatorSimulatorDelivery {
   }
 
   scheduleWeatherPush(options: SimulatorSettingsOptions = {}): void {
-    if (!this.simulatorWeatherEnabled()) return
+    if (!this.useSimulatorWeather()) return
     if (!this.shouldSyncCompanionSimulator(options)) return
     this.resetWeatherDebugQueueIfStuck("new settings push")
     this.host.weatherDebugInFlight = false
@@ -384,7 +398,7 @@ export class EmulatorSimulatorDelivery {
     weather: WeatherSimulatorSettings,
     options: WeatherDebugOptions = {}
   ): boolean {
-    if (!this.simulatorWeatherEnabled()) return false
+    if (!this.useSimulatorWeather()) return false
     if (!this.shouldPushWeatherDirectlyToWatch()) return false
     if (!this.host.session?.app_uuid) {
       if (options.quiet === false) {
@@ -481,8 +495,10 @@ export class EmulatorSimulatorDelivery {
   resolveWeatherSimulatorSettings(
     settings: SimulatorSettings | null = this.host.simulatorSettings
   ): WeatherSimulatorSettings | null {
+    if (!this.useSimulatorWeather(settings)) return null
+
     if (!settings || typeof settings !== "object") {
-      return this.simulatorWeatherEnabled() ? DEFAULT_SIMULATOR_WEATHER : null
+      return DEFAULT_SIMULATOR_WEATHER
     }
 
     const record = settings as Record<string, unknown>
@@ -513,11 +529,11 @@ export class EmulatorSimulatorDelivery {
       }
     }
 
-    return this.simulatorWeatherEnabled() ? DEFAULT_SIMULATOR_WEATHER : null
+    return DEFAULT_SIMULATOR_WEATHER
   }
 
   scheduleWeatherSimulatorInject(reason: string): void {
-    if (!this.simulatorWeatherEnabled()) return
+    if (!this.useSimulatorWeather()) return
     if (!this.shouldPushWeatherDirectlyToWatch()) return
     this.host.weatherInjectTimers.forEach(timerId => window.clearTimeout(timerId))
     const timerId = window.setTimeout(() => {
@@ -539,7 +555,7 @@ export class EmulatorSimulatorDelivery {
   }
 
   injectWeatherSimulatorSettings(reason: string): void {
-    if (!this.simulatorWeatherEnabled()) return
+    if (!this.useSimulatorWeather()) return
     const weather = this.resolveWeatherSimulatorSettings()
     if (!weather) return
     const sent = this.pushWeatherDebugAppMessage(weather, {quiet: true})
@@ -554,7 +570,7 @@ export class EmulatorSimulatorDelivery {
     weather: WeatherSimulatorSettings,
     options: QuietOptions = {}
   ): boolean {
-    if (!this.simulatorWeatherEnabled()) return false
+    if (!this.useSimulatorWeather()) return false
     const resolved =
       weather && typeof weather === "object" ? weather : DEFAULT_SIMULATOR_WEATHER
     const temperatureC = this.parseSimulatorTemperatureC(resolved.temperatureC)

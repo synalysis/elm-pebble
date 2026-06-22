@@ -257,9 +257,11 @@
   },
   "template": "watch-demo-health",
   "timeline_init_messages": [
-    "update:GotStepsToday 9100",
-    "update:GotStepsNow 4200",
-    "update:GotSupported True",
+    "update:GotStepsToday GotStepsToday 9100",
+    "update:GotStepsNow GotStepsNow 4200",
+    "update:GotStepsToday GotStepsToday 9100",
+    "update:GotStepsNow GotStepsNow 4200",
+    "update:GotSupported GotSupported true",
     "init:init"
   ],
   "view_tree_type": "windowStack",

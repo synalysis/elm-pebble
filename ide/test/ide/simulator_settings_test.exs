@@ -35,6 +35,28 @@ defmodule Ide.SimulatorSettingsTest do
     assert "clock_24h" in keys
   end
 
+  test "emulator mode shows simulator weather toggle in weather group" do
+    phone_source = """
+    module CompanionApp exposing (main)
+
+    import Pebble.Companion.Weather as Weather
+
+    subscriptions _ =
+        Weather.onWeather GotWeather
+    """
+
+    {:ok, phone} = Ide.Debugger.CompileContract.analyze_source(phone_source, "CompanionApp.elm")
+    debugger_state = %{phone: %{model: %{"debugger_contract" => Map.fetch!(phone, "debugger_contract")}}}
+
+    keys =
+      debugger_state
+      |> then(&SimulatorSettings.active_groups(nil, &1, :emulator))
+      |> Enum.flat_map(fn {_group, _title, fields} -> Enum.map(fields, & &1.key) end)
+
+    assert "use_simulator_weather" in keys
+    assert "weather_temperatureC" in keys
+  end
+
   test "debugger mode includes simulated time fields when watch_time capability applies" do
     debugger_state = watch_time_debugger_state()
 

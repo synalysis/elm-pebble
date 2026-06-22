@@ -107,6 +107,9 @@ var APP_MESSAGE_BASE_DELAY_MS = 200;
 var COMPANION_WATCH_READY_BOOT_TIMEOUT_MS = 12000;
 var lifecycleReadyDelivered = false;
 var companionSimulatorSettingsReady = false;
+var lastCompanionSimulatorWeatherKey = null;
+var lastWatchWeatherDeliveryKey = null;
+var lastCompanionSimulatorWeatherMode = null;
 
 function markCompanionWatchAppReady(source) {
     if (companionWatchAppReady) {
@@ -123,6 +126,7 @@ function markCompanionWatchAppReady(source) {
 
     console.log("Elm companion watch app ready", source || "");
     drainAppMessageOutbox();
+    maybeDeliverWeatherToWatchFromSettings(source || "watch_ready");
 }
 
 function scheduleCompanionWatchReadyBootTimeout() {
@@ -1112,8 +1116,7 @@ function weatherConditionWireCode(condition) {
     return WEATHER_CONDITION_WIRE_CODES[normalized] || WEATHER_CONDITION_WIRE_CODES.clear;
 }
 
-function deliverWeatherToWatch() {
-    var info = weatherFromSettings();
+function deliverWeatherToWatchFromInfo(info) {
     if (!info) {
         return false;
     }
@@ -1128,6 +1131,10 @@ function deliverWeatherToWatch() {
         provide_condition_field1: weatherConditionWireCode(info.condition)
     }, 350);
     return true;
+}
+
+function deliverWeatherToWatch() {
+    return deliverWeatherToWatchFromInfo(weatherFromSettings());
 }
 
 function conditionToWeatherCode(condition) {
@@ -1161,10 +1168,36 @@ function openMeteoJsonFromSettings() {
     });
 }
 
+function companionSimulatorWeatherModeEnabled(settings) {
+    if (!settings || typeof settings !== "object") {
+        return true;
+    }
+
+    if (settings.use_simulator_weather === false) {
+        return false;
+    }
+
+    if (settings.use_simulator_weather === "false") {
+        return false;
+    }
+
+    return true;
+}
+
 function shouldUseSimulatorWeather() {
+    var pending = peekPendingCompanionSimulatorSettings();
+    if (pending && !companionSimulatorWeatherModeEnabled(pending)) {
+        return false;
+    }
+
+    if (!companionSimulatorWeatherModeEnabled(currentCompanionSimulatorSettings())) {
+        return false;
+    }
+
     return (
+        companionSimulatorSettingsReady ||
         hasExplicitCompanionSimulatorWeather(currentCompanionSimulatorSettings()) ||
-        hasExplicitCompanionSimulatorWeather(peekPendingCompanionSimulatorSettings())
+        hasExplicitCompanionSimulatorWeather(pending)
     );
 }
 
@@ -1290,8 +1323,17 @@ function fetchWeatherFromGeolocation(callback) {
     );
 }
 
-function resolveWeatherInfo(callback) {
+function resolveWeatherInfo(callback, attempt) {
+    attempt = typeof attempt === "number" ? attempt : 0;
+
     if (shouldUseSimulatorWeather()) {
+        if (!companionSimulatorSettingsReady && companionSimulatorSettingsPending() && attempt < 40) {
+            setTimeout(function () {
+                resolveWeatherInfo(callback, attempt + 1);
+            }, 50);
+            return;
+        }
+
         callback(weatherFromSettings());
         return;
     }
@@ -1481,6 +1523,64 @@ function companionSupportsCalendarPlatform() {
     );
 }
 
+function companionSimulatorWeatherKey(info) {
+    if (!info) {
+        return null;
+    }
+
+    return String(info.temperatureC) + ":" + String(info.condition || "clear");
+}
+
+function maybeDeliverWeatherToWatchFromSettings(source) {
+    if (!shouldUseSimulatorWeather()) {
+        return false;
+    }
+
+    if (!companionWatchAppReady || !companionSimulatorSettingsReady) {
+        return false;
+    }
+
+    var info = weatherFromSettings();
+    if (!info) {
+        return false;
+    }
+
+    var key = companionSimulatorWeatherKey(info);
+    if (!key || key === lastWatchWeatherDeliveryKey) {
+        return false;
+    }
+
+    lastWatchWeatherDeliveryKey = key;
+    deliverWeatherToWatchFromInfo(info);
+    return true;
+}
+
+function maybeDeliverSimulatorWeatherFromSettings(settings) {
+    if (!companionSupportsWeatherPlatform()) {
+        return;
+    }
+
+    if (!companionSimulatorWeatherModeEnabled(settings)) {
+        return;
+    }
+
+    var info = weatherFromSettingsObject(normalizeCompanionSimulatorSettings(settings));
+    if (!info) {
+        return;
+    }
+
+    var key = companionSimulatorWeatherKey(info);
+    if (!key || key === lastCompanionSimulatorWeatherKey) {
+        return;
+    }
+
+    lastCompanionSimulatorWeatherKey = key;
+    setTimeout(function () {
+        deliverWeatherCurrent(null);
+        maybeDeliverWeatherToWatchFromSettings("simulator_settings");
+    }, 150);
+}
+
 function companionApplySimulatorSettings(settings) {
     if (!settings || typeof settings !== "object") {
         return;
@@ -1498,6 +1598,21 @@ function companionApplySimulatorSettings(settings) {
     companionSimulatorSettings = normalizeCompanionSimulatorSettings(settings);
     companionGlobalRoot().__elmPebbleCompanionSimulatorSettings = companionSimulatorSettings;
     markCompanionSimulatorSettingsReady();
+
+    var modeEnabled = companionSimulatorWeatherModeEnabled(companionSimulatorSettings);
+    if (modeEnabled !== lastCompanionSimulatorWeatherMode) {
+        lastCompanionSimulatorWeatherMode = modeEnabled;
+        lastWatchWeatherDeliveryKey = null;
+        lastCompanionSimulatorWeatherKey = null;
+
+        if (!modeEnabled) {
+            setTimeout(function () {
+                deliverWeatherCurrent(null);
+            }, 150);
+        }
+    }
+
+    maybeDeliverSimulatorWeatherFromSettings(settings);
 
     if (companionSupportsCalendarPlatform()) {
         deliverCalendarUpcoming(null, calendarEventsFromSettings());
@@ -1734,8 +1849,20 @@ function installXmlHttpRequestCompatibility() {
     };
 }
 
-function simulatedHttpResponse(method, _url) {
+function simulatedHttpResponse(method, url) {
     if (String(method || "").toUpperCase() !== "GET") {
+        return null;
+    }
+
+    if (!shouldUseSimulatorWeather()) {
+        return null;
+    }
+
+    var urlText = String(url || "");
+    if (
+        urlText.indexOf("open-meteo.com") === -1 &&
+        urlText.indexOf("openmeteo") === -1
+    ) {
         return null;
     }
 

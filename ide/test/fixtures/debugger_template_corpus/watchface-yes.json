@@ -122,7 +122,7 @@
       "kind": "line",
       "stroke_color": 248,
       "stroke_width": 1,
-      "x1": 44,
+      "x1": 45,
       "x2": 47,
       "y1": 132,
       "y2": 127
@@ -162,7 +162,7 @@
       "stroke_width": 1,
       "x1": 24,
       "x2": 29,
-      "y1": 111,
+      "y1": 112,
       "y2": 109
     },
     {
@@ -238,7 +238,7 @@
       "stroke_width": 1,
       "x1": 24,
       "x2": 29,
-      "y1": 56,
+      "y1": 57,
       "y2": 59
     },
     {
@@ -274,7 +274,7 @@
       "kind": "line",
       "stroke_color": 248,
       "stroke_width": 1,
-      "x1": 45,
+      "x1": 44,
       "x2": 47,
       "y1": 36,
       "y2": 41
@@ -572,7 +572,7 @@
       "y": 50
     }
   ],
-  "preview_ops_sha256": "3d2320009a40fb98567682d3d64cca4493d7a384dc402a5fff92ba21e34fc259",
+  "preview_ops_sha256": "3aa90380d0d66fdd20528cc48c3883aec92b66422f8dbb6c7b8a3c7be3b813e7",
   "render_tree": {
     "node_count": 76,
     "node_types": [
@@ -1287,7 +1287,7 @@
                   "label": "line",
                   "text": null,
                   "type": "line",
-                  "x1": 44,
+                  "x1": 45,
                   "x2": 47,
                   "y1": 132,
                   "y2": 127
@@ -1313,7 +1313,7 @@
                   "type": "line",
                   "x1": 24,
                   "x2": 29,
-                  "y1": 111,
+                  "y1": 112,
                   "y2": 109
                 },
                 {
@@ -1361,7 +1361,7 @@
                   "type": "line",
                   "x1": 24,
                   "x2": 29,
-                  "y1": 56,
+                  "y1": 57,
                   "y2": 59
                 },
                 {
@@ -1383,7 +1383,7 @@
                   "label": "line",
                   "text": null,
                   "type": "line",
-                  "x1": 45,
+                  "x1": 44,
                   "x2": 47,
                   "y1": 36,
                   "y2": 41
@@ -1675,9 +1675,11 @@
   },
   "template": "watchface-yes",
   "timeline_init_messages": [
-    "update:ConnectionChanged True",
-    "update:BatteryLevelChanged 88",
+    "update:ConnectionChanged ConnectionChanged true",
+    "update:BatteryLevelChanged BatteryLevelChanged 88",
     "update:CurrentDateTime {\"day\":27,\"dayOfWeek\":{\"args\":[],\"ctor\":\"Wednesday\"},\"hour\":8,\"minute\":53,\"month\":5,\"second\":0,\"utcOffsetMinutes\":0,\"year\":2026}",
+    "update:FromWatch (Ok RequestUpdate)",
+    "init:init",
     "init:init"
   ],
   "view_tree_type": "windowStack",

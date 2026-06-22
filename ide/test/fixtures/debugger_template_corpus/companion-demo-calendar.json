@@ -177,12 +177,31 @@
   },
   "template": "companion-demo-calendar",
   "timeline_init_messages": [
-    "update:CurrentTimeString \"08:53\"",
-    "init:init"
+    "update:FromPhone (NoUpcomingEvents)",
+    "update:GotCalendar GotCalendar (Ok [])",
+    "update:CurrentTimeString CurrentTimeString \"08:53\"",
+    "runtime_exec_error:GotCalendar",
+    "update:FromWatch (Ok RequestCalendar)",
+    "init:init",
+    "update:FromPhone (NoUpcomingEvents)",
+    "update:GotCalendar GotCalendar (Ok [])"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
+    "elmc_compile_cached": "false",
+    "elmc_compile_error_count": 0,
+    "elmc_compile_revision": "76d4cdde668e656a26ed4c2da3d9165a3749e5b127d5825962349de324a5e153:pebble=aplite,basalt,chalk,diorite,emery,flint,gabbro:prod=false:error",
+    "elmc_compile_status": "ok",
+    "elmc_compile_warning_count": 0,
+    "elmc_compiled_path": "/home/ape/projects/elm-pebble/ide/workspace_projects/corpus-companion-demo-calendar-14019/phone/.elmc-build",
+    "elmc_diagnostic_preview": [],
+    "protocol_inbound_count": 2,
+    "protocol_last_inbound_from": "companion",
+    "protocol_last_inbound_message": "NoUpcomingEvents",
+    "protocol_last_trigger": "calendar",
+    "protocol_last_view_message": "NoUpcomingEvents",
+    "protocol_message_count": 2,
     "runtime_model": {
       "nextEvent": {
         "args": [],

@@ -295,8 +295,9 @@ defmodule Ide.PebbleToolchainTest do
     companion =
       File.read!("priv/project_templates/watchface_weather_animated/phone/src/CompanionApp.elm")
 
-    assert companion =~ "Weather.onCurrent"
+    assert companion =~ "Weather.onWeather"
     assert companion =~ "Weather.current"
+    assert companion =~ "refreshWeather"
   end
 
   test "Elm companion index serves calendar bridge data from simulator settings" do
@@ -317,11 +318,12 @@ defmodule Ide.PebbleToolchainTest do
     assert source =~ "function companionSupportsWeatherPlatform"
     assert source =~ "function companionSupportsCalendarPlatform"
     assert source =~ "function companionSupportsWeatherPlatform()"
+    assert source =~ "function companionSimulatorWeatherModeEnabled"
     assert source =~ "function shouldUseSimulatorWeather()"
     assert source =~ "function weatherFromSettings()"
     assert source =~ "function normalizeCompanionSimulatorSettings("
     assert source =~ "function deliverWeatherToWatch()"
-    assert source =~ "function simulatedHttpResponse(method"
+    assert source =~ "open-meteo.com"
     assert source =~ "deliverWeatherCurrent"
     assert source =~ "applyPendingCompanionSimulatorSettings();"
     refute source =~ "deliverWeatherToWatchWithRetry();"
@@ -341,7 +343,6 @@ defmodule Ide.PebbleToolchainTest do
     assert source =~ "function sendImmediateAppMessage"
     assert source =~ "deliverWeatherToWatch = deliverWeatherToWatch"
     refute source =~ "companion weather apply"
-    refute source =~ "deliverWeatherToWatch();"
     refute source =~ "finishCompanionBoot();\n    requestCompanionWeatherRefresh"
     refute source =~ "function requestCompanionWeatherRefresh"
     refute source =~ "Weather data unavailable from this Pebble companion runtime"

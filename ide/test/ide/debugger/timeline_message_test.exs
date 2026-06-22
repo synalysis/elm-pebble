@@ -7,7 +7,7 @@ defmodule Ide.Debugger.TimelineMessageTest do
     value = %{"ctor" => "CurrentDateTime", "args" => [%{"minute" => 7, "hour" => 8}]}
 
     assert TimelineMessage.format("CurrentDateTime", value) ==
-             "CurrentDateTime {\"hour\":8,\"minute\":7}"
+             "CurrentDateTime { hour = 8, minute = 7 }"
   end
 
   test "message_value_for_step parses minute and json payloads" do
@@ -49,7 +49,7 @@ defmodule Ide.Debugger.TimelineMessageTest do
       }
 
     assert TimelineMessage.format("FromPhone", provide_piece) ==
-             "FromPhone (ProvidePiece 0 [0, 4, -13, -13, 13, -13, 13, -38, -13, -38])"
+             "FromPhone (ProvidePiece 0 [0,4,-13,-13,13,-13,13,-38,-13,-38])"
 
     begin_figure =
       %{
@@ -82,5 +82,42 @@ defmodule Ide.Debugger.TimelineMessageTest do
 
     assert TimelineMessage.format("FromPhone", value) ==
              "FromPhone (ProvideTemperature (Celsius 28))"
+  end
+
+  test "format protocol matrix wire values with Elm-style display" do
+    assert TimelineMessage.format("FromPhone", %{
+             "ctor" => "FromPhone",
+             "args" => [%{"x" => 1, "y" => 2}]
+           }) == "FromPhone ({ x = 1, y = 2 })"
+
+    assert TimelineMessage.format("FromPhone", %{
+             "ctor" => "FromPhone",
+             "args" => [%{"ctor" => "EchoPoint", "args" => [%{"x" => 1, "y" => 2}]}]
+           }) == "FromPhone (EchoPoint { x = 1, y = 2 })"
+
+    assert TimelineMessage.format("PushBool", %{
+             "ctor" => "PushBool",
+             "args" => [true]
+           }) == "PushBool True"
+
+    assert TimelineMessage.format("PushBool", %{
+             "ctor" => "PushBool",
+             "args" => [false]
+           }) == "PushBool False"
+
+    assert TimelineMessage.format("PushLabels", %{
+             "ctor" => "PushLabels",
+             "args" => [{:elmx_dict, %{"k" => 9}}]
+           }) == "PushLabels HashMap.fromList [(\"k\",9)]"
+
+    assert TimelineMessage.format("SendPoint", %{
+             "ctor" => "SendPoint",
+             "args" => [%{"x" => 1, "y" => 2}]
+           }) == "SendPoint { x = 1, y = 2 }"
+
+    assert TimelineMessage.format("EchoPoint", %{
+             "ctor" => "EchoPoint",
+             "args" => [%{"x" => 1, "y" => 2}]
+           }) == "EchoPoint { x = 1, y = 2 }"
   end
 end

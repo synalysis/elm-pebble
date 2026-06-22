@@ -16,61 +16,61 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 18,
-      "h": 18,
+      "font_size": 16,
+      "h": 16,
       "kind": "text_label",
-      "text": "08:53",
+      "text": "Protocol matrix",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
-      "w": 128,
-      "x": 8,
-      "y": 36
+      "w": 136,
+      "x": 4,
+      "y": 4
     },
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 18,
-      "h": 18,
+      "font_size": 16,
+      "h": 16,
       "kind": "text_label",
-      "text": "Lat 48.13",
+      "text": "1/6 PASS",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
-      "w": 128,
-      "x": 8,
-      "y": 54
+      "w": 136,
+      "x": 4,
+      "y": 14
     },
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 18,
-      "h": 18,
+      "font_size": 16,
+      "h": 16,
       "kind": "text_label",
-      "text": "Lon 11.57",
+      "text": "Ping OK",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
-      "w": 128,
-      "x": 8,
-      "y": 72
+      "w": 136,
+      "x": 4,
+      "y": 28
     },
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 18,
-      "h": 18,
+      "font_size": 16,
+      "h": 16,
       "kind": "text_label",
-      "text": "±25m",
+      "text": "SEL run  DN next",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
-      "w": 128,
-      "x": 8,
-      "y": 90
+      "w": 136,
+      "x": 4,
+      "y": 44
     }
   ],
-  "preview_ops_sha256": "cbfae3d076373f49ed7eb4c3870f94f328de98248e3bbf8f63452ecb729707f3",
+  "preview_ops_sha256": "89e4b17021a95c8a02be8429d42b1ddba8ba580cd5f44bee559edf24e93a1dbb",
   "render_tree": {
     "node_count": 8,
     "node_types": [
@@ -85,13 +85,6 @@
     ],
     "root_type": "windowStack",
     "tree": {
-      "box": {
-        "h": 168,
-        "text": null,
-        "w": 144,
-        "x": 0,
-        "y": 0
-      },
       "children": [
         {
           "children": [
@@ -107,72 +100,72 @@
                 },
                 {
                   "bounds": {
-                    "h": 18,
+                    "h": 16,
                     "text": null,
-                    "w": 128,
-                    "x": 8,
-                    "y": 36
+                    "w": 136,
+                    "x": 4,
+                    "y": 14
                   },
                   "children": [],
                   "font": "DefaultFont",
                   "kind": "text",
-                  "label": "08:53",
+                  "label": "1/6 PASS",
                   "options": [],
-                  "text": "<TIME>",
+                  "text": "1/6 PASS",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
                   "type": "text"
                 },
                 {
                   "bounds": {
-                    "h": 18,
+                    "h": 16,
                     "text": null,
-                    "w": 128,
-                    "x": 8,
-                    "y": 54
+                    "w": 136,
+                    "x": 4,
+                    "y": 28
                   },
                   "children": [],
                   "font": "DefaultFont",
                   "kind": "text",
-                  "label": "Lat 48.13",
+                  "label": "Ping OK",
                   "options": [],
-                  "text": "Lat 48.13",
+                  "text": "Ping OK",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
                   "type": "text"
                 },
                 {
                   "bounds": {
-                    "h": 18,
+                    "h": 16,
                     "text": null,
-                    "w": 128,
-                    "x": 8,
-                    "y": 72
+                    "w": 136,
+                    "x": 4,
+                    "y": 4
                   },
                   "children": [],
                   "font": "DefaultFont",
                   "kind": "text",
-                  "label": "Lon 11.57",
+                  "label": "Protocol matrix",
                   "options": [],
-                  "text": "Lon 11.57",
+                  "text": "Protocol matrix",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
                   "type": "text"
                 },
                 {
                   "bounds": {
-                    "h": 18,
+                    "h": 16,
                     "text": null,
-                    "w": 128,
-                    "x": 8,
-                    "y": 90
+                    "w": 136,
+                    "x": 4,
+                    "y": 44
                   },
                   "children": [],
                   "font": "DefaultFont",
                   "kind": "text",
-                  "label": "±25m",
+                  "label": "SEL run  DN next",
                   "options": [],
-                  "text": "±25m",
+                  "text": "SEL run  DN next",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
                   "type": "text"
@@ -199,23 +192,74 @@
     }
   },
   "runtime_model": {
-    "accuracyM": 25,
-    "latitudeE6": 48137154,
-    "longitudeE6": 11576124,
+    "active": {
+      "args": [],
+      "ctor": "Nothing"
+    },
+    "cases": [
+      {
+        "name": "Ping",
+        "status": {
+          "args": [],
+          "ctor": "Pass"
+        }
+      },
+      {
+        "name": "Enum",
+        "status": {
+          "args": [],
+          "ctor": "Pending"
+        }
+      },
+      {
+        "name": "Union",
+        "status": {
+          "args": [],
+          "ctor": "Pending"
+        }
+      },
+      {
+        "name": "Record",
+        "status": {
+          "args": [],
+          "ctor": "Pending"
+        }
+      },
+      {
+        "name": "List",
+        "status": {
+          "args": [],
+          "ctor": "Pending"
+        }
+      },
+      {
+        "name": "Extras",
+        "status": {
+          "args": [],
+          "ctor": "Pending"
+        }
+      }
+    ],
+    "extras": {
+      "boolOk": false,
+      "labelsOk": false,
+      "pointsOk": false,
+      "stringOk": false
+    },
     "runtime_view_output": [],
     "screenH": 168,
     "screenW": 144,
-    "timeString": "<TIME>"
+    "selected": 0,
+    "timeString": null
   },
-  "template": "companion-demo-geolocation",
+  "template": "companion-demo-protocol-matrix",
   "timeline_init_messages": [
-    "update:CurrentTimeString CurrentTimeString \"08:53\"",
-    "update:FromPhone (ProvidePosition 48137154 11576124 25)",
-    "update:GotPosition GotPosition (Ok %{\"accuracy\" => 25.0, \"latitude\" => 48.137154, \"longitude\" => 11.576124})",
-    "update:FromWatch (Ok RequestPosition)",
+    "update:FromPhone (Pong)",
     "init:init",
-    "update:FromPhone (ProvidePosition 48137154 11576124 25)",
-    "update:GotPosition GotPosition (Ok %{\"accuracy\" => 25.0, \"latitude\" => 48.137154, \"longitude\" => 11.576124})",
+    "update:FromPhone (Pong)",
+    "update:FromWatch (Ok Ping)",
+    "init:init",
+    "update:FromWatch (Ok Ping)",
     "init:init"
   ],
   "view_tree_type": "windowStack",
@@ -223,24 +267,75 @@
     "debugger_init_complete": true,
     "elmc_compile_cached": "false",
     "elmc_compile_error_count": 0,
-    "elmc_compile_revision": "d46e4a72b7962ac830f80e54f9bfc125b592433e58a234c16a92b3bcaf746be0:pebble=aplite,basalt,chalk,diorite,emery,flint,gabbro:prod=false:error",
+    "elmc_compile_revision": "52e1307de48921ca568fe4fcb101b1cdf1796a62262a1842e5dce46553dd485b:pebble=aplite,basalt,chalk,diorite,emery,flint,gabbro:prod=false:error",
     "elmc_compile_status": "ok",
     "elmc_compile_warning_count": 0,
-    "elmc_compiled_path": "/home/ape/projects/elm-pebble/ide/workspace_projects/corpus-companion-demo-geolocation-60226/phone/.elmc-build",
+    "elmc_compiled_path": "/home/ape/projects/elm-pebble/ide/workspace_projects/corpus-protocol-matrix-14919/phone/.elmc-build",
     "elmc_diagnostic_preview": [],
     "protocol_inbound_count": 2,
     "protocol_last_inbound_from": "companion",
-    "protocol_last_inbound_message": "ProvidePosition 48137154 11576124 25",
-    "protocol_last_trigger": "companion_bridge_command",
-    "protocol_last_view_message": "ProvidePosition 48137154 11576124 25",
+    "protocol_last_inbound_message": "Pong",
+    "protocol_last_trigger": "protocol_rx",
+    "protocol_last_view_message": "Pong",
     "protocol_message_count": 2,
     "runtime_model": {
-      "accuracyM": 25,
-      "latitudeE6": 48137154,
-      "longitudeE6": 11576124,
+      "active": {
+        "args": [],
+        "ctor": "Nothing"
+      },
+      "cases": [
+        {
+          "name": "Ping",
+          "status": {
+            "args": [],
+            "ctor": "Pass"
+          }
+        },
+        {
+          "name": "Enum",
+          "status": {
+            "args": [],
+            "ctor": "Pending"
+          }
+        },
+        {
+          "name": "Union",
+          "status": {
+            "args": [],
+            "ctor": "Pending"
+          }
+        },
+        {
+          "name": "Record",
+          "status": {
+            "args": [],
+            "ctor": "Pending"
+          }
+        },
+        {
+          "name": "List",
+          "status": {
+            "args": [],
+            "ctor": "Pending"
+          }
+        },
+        {
+          "name": "Extras",
+          "status": {
+            "args": [],
+            "ctor": "Pending"
+          }
+        }
+      ],
+      "extras": {
+        "boolOk": false,
+        "labelsOk": false,
+        "pointsOk": false,
+        "stringOk": false
+      },
       "screenH": 168,
       "screenW": 144,
-      "timeString": "08:53"
+      "selected": 0
     },
     "runtime_view_output": [],
     "timeString": null,

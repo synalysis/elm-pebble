@@ -890,7 +890,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
 
   @emulator_simulator_setting_keys ~w(
     battery_percent charging connected clock_24h timeline_peek
-    compass_heading_deg compass_valid weather
+    compass_heading_deg compass_valid use_simulator_weather weather
   )
 
   @spec emulator_simulator_capabilities_json(Project.t() | map() | nil, map() | nil) ::

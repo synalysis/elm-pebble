@@ -100,99 +100,75 @@
                 {
                   "children": [],
                   "color": 255,
-                  "kind": "clear",
-                  "label": "clear",
+                  "label": "",
                   "text": null,
                   "type": "clear"
                 },
                 {
-                  "bounds": {
-                    "h": 18,
-                    "text": null,
-                    "w": 128,
-                    "x": 8,
-                    "y": 72
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Config none",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 18,
+                  "label": "",
                   "text": "Config none",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 128,
+                  "x": 8,
+                  "y": 72
                 },
                 {
-                  "bounds": {
-                    "h": 18,
-                    "text": null,
-                    "w": 128,
-                    "x": 8,
-                    "y": 54
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Lifecycle waiting",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 18,
+                  "label": "",
                   "text": "Lifecycle waiting",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 128,
+                  "x": 8,
+                  "y": 54
                 },
                 {
-                  "bounds": {
-                    "h": 18,
-                    "text": null,
-                    "w": 128,
-                    "x": 8,
-                    "y": 90
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Select = open",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 18,
+                  "label": "",
                   "text": "Select = open",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 128,
+                  "x": 8,
+                  "y": 90
                 },
                 {
-                  "bounds": {
-                    "h": 18,
-                    "text": null,
-                    "w": 128,
-                    "x": 8,
-                    "y": 36
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Settings demo",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 18,
+                  "label": "",
                   "text": "Settings demo",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 128,
+                  "x": 8,
+                  "y": 36
                 }
               ],
-              "id": "1",
-              "kind": "canvasLayer",
+              "id": 1,
               "label": "",
               "text": null,
               "type": "canvasLayer"
             }
           ],
-          "id": "1",
-          "kind": "window",
+          "id": 1,
           "label": "",
           "text": null,
           "type": "window"
         }
       ],
-      "kind": "windowStack",
       "label": "",
       "text": null,
       "type": "windowStack"
@@ -211,11 +187,20 @@
   },
   "template": "companion-demo-settings",
   "timeline_init_messages": [
+    "init:init",
+    "init:init",
     "init:init"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
+    "elmc_compile_cached": "false",
+    "elmc_compile_error_count": 0,
+    "elmc_compile_revision": "eb601d06c27e89cb5799a7a0509612b87a21391ec5ad89f7fed3d17f02d20f5e:pebble=aplite,basalt,chalk,diorite,emery,flint,gabbro:prod=false:error",
+    "elmc_compile_status": "ok",
+    "elmc_compile_warning_count": 0,
+    "elmc_compiled_path": "/home/ape/projects/elm-pebble/ide/workspace_projects/corpus-companion-demo-settings-4547/phone/.elmc-build",
+    "elmc_diagnostic_preview": [],
     "runtime_model": {
       "configOutcome": {
         "args": [],

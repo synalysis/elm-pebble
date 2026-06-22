@@ -246,6 +246,20 @@ defmodule Ide.SimulatorSettings do
       hint: nil
     },
     %{
+      key: "use_simulator_weather",
+      type: :checkbox,
+      label: "Use simulator weather",
+      capabilities: ["weather"],
+      group: :companion_weather,
+      min: nil,
+      max: nil,
+      step: nil,
+      options: nil,
+      optional: false,
+      hint:
+        "When enabled, companion weather and Open-Meteo HTTP responses use the values below. When disabled, the companion uses live geolocation and network weather."
+    },
+    %{
       key: "weather_temperatureC",
       type: :number,
       label: "Temperature (°C)",

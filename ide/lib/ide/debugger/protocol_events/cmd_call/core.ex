@@ -1093,6 +1093,14 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall.Core do
           Types.protocol_wire_arg(),
           Types.protocol_wire_arg()
         ) :: {String.t(), Types.protocol_ctor_value()} | :error
+  def normalize_protocol_message_value_from_schema(schema, :watch_to_phone, message_value, _message)
+      when is_map(schema) and is_map(message_value) do
+    case watch_to_phone_tag_value_wire(message_value) do
+      {:ok, tag, value} -> decode_watch_to_phone_tag_value(schema, tag, value)
+      :error -> :error
+    end
+  end
+
   def normalize_protocol_message_value_from_schema(schema, direction, message_value, message)
       when direction in [:watch_to_phone, :phone_to_watch] and is_map(schema) do
     ctor = protocol_message_ctor(message_value) || message_constructor(message)
@@ -1121,6 +1129,74 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall.Core do
         _message
       ),
       do: :error
+
+  @spec watch_to_phone_tag_value_wire(Types.protocol_wire_arg()) ::
+          {:ok, integer(), integer()} | :error
+  defp watch_to_phone_tag_value_wire(%{"tag" => tag, "value" => value})
+       when is_integer(tag) and is_integer(value),
+       do: {:ok, tag, value}
+
+  defp watch_to_phone_tag_value_wire(%{tag: tag, value: value})
+       when is_integer(tag) and is_integer(value),
+       do: {:ok, tag, value}
+
+  defp watch_to_phone_tag_value_wire(_wire), do: :error
+
+  @spec decode_watch_to_phone_tag_value(Types.protocol_schema(), integer(), integer()) ::
+          {String.t(), Types.protocol_ctor_value()} | :error
+  defp decode_watch_to_phone_tag_value(schema, tag, value) when is_map(schema) do
+    case Enum.find(Map.get(schema, :watch_to_phone, []), &(Map.get(&1, :tag) == tag)) do
+      nil ->
+        :error
+
+      %{name: name, fields: []} ->
+        normalized = %{"ctor" => name, "args" => []}
+        {name, normalized}
+
+      %{name: name, fields: [field]} ->
+        if composite_watch_to_phone_field?(field) do
+          :error
+        else
+          decoded_arg = decode_watch_to_phone_scalar_field(schema, field, value)
+          normalized = %{"ctor" => name, "args" => [decoded_arg]}
+          {protocol_message_display(name, [decoded_arg]), normalized}
+        end
+
+      _ ->
+        :error
+    end
+  end
+
+  @spec composite_watch_to_phone_field?(Types.protocol_field()) :: boolean()
+  defp composite_watch_to_phone_field?(%{wire_type: {:record, _, _}}), do: true
+  defp composite_watch_to_phone_field?(%{wire_type: {:list, _}}), do: true
+  defp composite_watch_to_phone_field?(%{wire_type: {:dict, _}}), do: true
+  defp composite_watch_to_phone_field?(_field), do: false
+
+  @spec decode_watch_to_phone_scalar_field(
+          Types.protocol_schema(),
+          Types.protocol_field(),
+          integer()
+        ) :: Types.protocol_wire_arg()
+  defp decode_watch_to_phone_scalar_field(schema, %{wire_type: {:union, type}}, value)
+       when is_map(schema) and is_binary(type) and is_integer(value) do
+    union_ctors = Map.get(schema, :payload_unions, %{}) |> Map.get(type, [])
+
+    case Enum.at(union_ctors, value - Ide.CompanionProtocolGenerator.wire_code_base()) do
+      %{name: ctor, args: []} when is_binary(ctor) ->
+        %{"ctor" => ctor, "args" => []}
+
+      %{name: ctor} when is_binary(ctor) ->
+        %{"ctor" => ctor, "args" => [0]}
+
+      _ ->
+        value
+    end
+  end
+
+  defp decode_watch_to_phone_scalar_field(schema, field, value) do
+    normalize_protocol_wire_value(schema, value, Map.get(field, :wire_type))
+  end
 
   @spec protocol_schema_message(
           Types.protocol_schema(),

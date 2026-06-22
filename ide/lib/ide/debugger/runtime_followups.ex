@@ -794,7 +794,7 @@ defmodule Ide.Debugger.RuntimeFollowups do
     weather = Map.get(settings, "weather")
 
     extras =
-      if is_map(weather) and map_size(weather) > 0,
+      if settings["use_simulator_weather"] != false and is_map(weather) and map_size(weather) > 0,
         do: [simulator_weather: weather],
         else: []
 

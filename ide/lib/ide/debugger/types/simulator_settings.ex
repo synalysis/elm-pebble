@@ -59,6 +59,7 @@ defmodule Ide.Debugger.Types.SimulatorSettings do
           optional(:network_online) => boolean(),
           optional(:notifications_enabled) => boolean(),
           optional(:quiet_hours) => boolean(),
+          optional(:use_simulator_weather) => boolean(),
           optional(:weather) => weather(),
           optional(:calendar_events) => [calendar_event()],
           optional(:storage_values) => StorageValue.values_map(),

@@ -87,9 +87,9 @@
       "stroke_color": 192,
       "stroke_width": 1,
       "x1": 72,
-      "x2": 30,
+      "x2": 29,
       "y1": 84,
-      "y2": 60
+      "y2": 59
     },
     {
       "antialiased": true,
@@ -104,7 +104,7 @@
       "stroke_width": 1
     }
   ],
-  "preview_ops_sha256": "57c4beb60459025732bd330f0d8d70a0c507432a964377ad2cb12f627e4dadd1",
+  "preview_ops_sha256": "6ec3db2c68b5abe0c591eb9e924fc9156e1de9fe2c94edfec00754d335247fc6",
   "render_tree": {
     "node_count": 12,
     "node_types": [
@@ -185,9 +185,9 @@
                   "text": null,
                   "type": "line",
                   "x1": 72,
-                  "x2": 30,
+                  "x2": 29,
                   "y1": 84,
-                  "y2": 60
+                  "y2": 59
                 },
                 {
                   "children": [],

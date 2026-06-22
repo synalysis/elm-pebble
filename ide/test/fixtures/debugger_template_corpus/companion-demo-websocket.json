@@ -47,7 +47,7 @@
       "font_size": 18,
       "h": 18,
       "kind": "text_label",
-      "text": "waiting",
+      "text": "connecting",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -70,7 +70,7 @@
       "y": 90
     }
   ],
-  "preview_ops_sha256": "4219f86ec9c253c43e84b301ba13fe360710b341e14003995683dfbca2f79a68",
+  "preview_ops_sha256": "8ef3cec85497a2a0842c881e101fdf017406de60422c2c43f73489b400e40bb1",
   "render_tree": {
     "node_count": 8,
     "node_types": [
@@ -170,9 +170,9 @@
                   "children": [],
                   "font": "DefaultFont",
                   "kind": "text",
-                  "label": "waiting",
+                  "label": "connecting",
                   "options": [],
-                  "text": "waiting",
+                  "text": "connecting",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
                   "type": "text"
@@ -202,16 +202,35 @@
     "runtime_view_output": [],
     "screenH": 168,
     "screenW": 144,
-    "statusDetail": "waiting",
+    "statusDetail": "connecting",
     "timeString": null
   },
   "template": "companion-demo-websocket",
   "timeline_init_messages": [
+    "update:FromPhone (ProvideWebSocketStatus Closed \"connecting\")",
+    "update:FromWatch (Ok RequestWebSocketStatus)",
+    "init:init",
+    "init:init",
+    "update:FromPhone (ProvideWebSocketStatus \"idle\" nil)",
+    "update:FromWatch (Ok RequestWebSocketStatus)",
     "init:init"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
+    "elmc_compile_cached": "false",
+    "elmc_compile_error_count": 0,
+    "elmc_compile_revision": "de5861b8d35f4c3cd0a541b0ce58ac436df00f5fd46d13827577f927a47f31fb:pebble=aplite,basalt,chalk,diorite,emery,flint,gabbro:prod=false:error",
+    "elmc_compile_status": "ok",
+    "elmc_compile_warning_count": 0,
+    "elmc_compiled_path": "/home/ape/projects/elm-pebble/ide/workspace_projects/corpus-companion-demo-websocket-11074/phone/.elmc-build",
+    "elmc_diagnostic_preview": [],
+    "protocol_inbound_count": 2,
+    "protocol_last_inbound_from": "companion",
+    "protocol_last_inbound_message": "ProvideWebSocketStatus Closed \"connecting\"",
+    "protocol_last_trigger": "protocol_rx",
+    "protocol_last_view_message": "ProvideWebSocketStatus Closed \"connecting\"",
+    "protocol_message_count": 2,
     "runtime_model": {
       "screenH": 168,
       "screenW": 144,
@@ -219,7 +238,7 @@
         "args": [],
         "ctor": "Closed"
       },
-      "statusDetail": "waiting"
+      "statusDetail": "connecting"
     },
     "runtime_view_output": [],
     "timeString": null,

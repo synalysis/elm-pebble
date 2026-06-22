@@ -100,99 +100,75 @@
                 {
                   "children": [],
                   "color": 255,
-                  "kind": "clear",
-                  "label": "clear",
+                  "label": "",
                   "text": null,
                   "type": "clear"
                 },
                 {
-                  "bounds": {
-                    "h": 18,
-                    "text": null,
-                    "w": 128,
-                    "x": 8,
-                    "y": 90
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Select = cycle",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 18,
+                  "label": "",
                   "text": "Select = cycle",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 128,
+                  "x": 8,
+                  "y": 90
                 },
                 {
-                  "bounds": {
-                    "h": 18,
-                    "text": null,
-                    "w": 128,
-                    "x": 8,
-                    "y": 36
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Storage demo",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 18,
+                  "label": "",
                   "text": "Storage demo",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 128,
+                  "x": 8,
+                  "y": 36
                 },
                 {
-                  "bounds": {
-                    "h": 18,
-                    "text": null,
-                    "w": 128,
-                    "x": 8,
-                    "y": 54
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Theme --",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 18,
+                  "label": "",
                   "text": "Theme --",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 128,
+                  "x": 8,
+                  "y": 54
                 },
                 {
-                  "bounds": {
-                    "h": 18,
-                    "text": null,
-                    "w": 128,
-                    "x": 8,
-                    "y": 72
-                  },
                   "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Units --",
-                  "options": [],
+                  "font_id": 0,
+                  "h": 18,
+                  "label": "",
                   "text": "Units --",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text"
+                  "type": "text",
+                  "w": 128,
+                  "x": 8,
+                  "y": 72
                 }
               ],
-              "id": "1",
-              "kind": "canvasLayer",
+              "id": 1,
               "label": "",
               "text": null,
               "type": "canvasLayer"
             }
           ],
-          "id": "1",
-          "kind": "window",
+          "id": 1,
           "label": "",
           "text": null,
           "type": "window"
         }
       ],
-      "kind": "windowStack",
       "label": "",
       "text": null,
       "type": "windowStack"
@@ -214,11 +190,25 @@
   },
   "template": "companion-demo-storage",
   "timeline_init_messages": [
-    "init:init"
+    "update:GotPreference GotPreference (Ok {\"units\", nil})",
+    "update:GotStorage GotStorage (Ok \"Storage key not found\")",
+    "update:FromWatch (Ok RequestStoredValues)",
+    "init:init",
+    "update:GotPreference GotPreference (Ok {\"units\", nil})",
+    "update:GotStorage GotStorage (Ok \"Storage key not found\")",
+    "init:init",
+    "update:FromWatch (Ok RequestStoredValues)"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
+    "elmc_compile_cached": "false",
+    "elmc_compile_error_count": 0,
+    "elmc_compile_revision": "b64bd612ba9d68eed6641ffcda61c8fd2d23d67e3c2e87d4315a700a104e229f:pebble=aplite,basalt,chalk,diorite,emery,flint,gabbro:prod=false:error",
+    "elmc_compile_status": "ok",
+    "elmc_compile_warning_count": 0,
+    "elmc_compiled_path": "/home/ape/projects/elm-pebble/ide/workspace_projects/corpus-companion-demo-storage-7875/phone/.elmc-build",
+    "elmc_diagnostic_preview": [],
     "runtime_model": {
       "screenH": 168,
       "screenW": 144,

@@ -1560,8 +1560,8 @@
   },
   "template": "game-2048",
   "timeline_init_messages": [
-    "update:RandomGenerated <seed>",
-    "update:BestLoaded \"\"",
+    "update:RandomGenerated RandomGenerated 42424242",
+    "update:BestLoaded BestLoaded \"\"",
     "init:init"
   ],
   "view_tree_type": "windowStack",

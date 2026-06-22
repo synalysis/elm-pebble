@@ -3,6 +3,7 @@ defmodule Ide.Debugger.ProtocolEvents.Subscription do
 
   alias Ide.Debugger.ProtocolEvents
   alias Ide.Debugger.Types
+  alias Ide.Debugger.WireDisplay
 
   @protocol_subscription_wrapper_ctors ~w(FromWatch FromPhone)
 
@@ -189,10 +190,15 @@ defmodule Ide.Debugger.ProtocolEvents.Subscription do
   @spec protocol_arg_display(Types.protocol_wire_arg()) :: String.t()
   defp protocol_arg_display(%{"ctor" => ctor, "args" => []}) when is_binary(ctor), do: ctor
   defp protocol_arg_display(%{ctor: ctor, args: []}) when is_binary(ctor), do: ctor
-  defp protocol_arg_display(value) when is_binary(value), do: inspect(value)
 
-  defp protocol_arg_display(value) when is_integer(value) or is_float(value) or is_boolean(value),
-    do: to_string(value)
+  defp protocol_arg_display(%{"ctor" => ctor, "args" => args}) when is_binary(ctor) and is_list(args) do
+    inner = protocol_message_display(ctor, args)
+    if String.contains?(inner, " "), do: "(#{inner})", else: inner
+  end
 
-  defp protocol_arg_display(value), do: inspect(value)
+  defp protocol_arg_display(%{ctor: ctor, args: args}) when is_binary(ctor) and is_list(args) do
+    protocol_arg_display(%{"ctor" => ctor, "args" => args})
+  end
+
+  defp protocol_arg_display(value), do: WireDisplay.format(value)
 end

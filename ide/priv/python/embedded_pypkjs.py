@@ -546,6 +546,12 @@ def companion_app_uuid(runner):
     return None
 
 
+def simulator_weather_mode_enabled(settings):
+    if not isinstance(settings, dict):
+        return True
+    return settings.get("use_simulator_weather") not in (False, "false")
+
+
 def send_simulator_weather_to_watch(runner, reason, retry_count=0, ws=None):
     if runner_has_phone_companion(runner):
         weather_trace_log(
@@ -560,6 +566,15 @@ def send_simulator_weather_to_watch(runner, reason, retry_count=0, ws=None):
     settings = getattr(runner, "_elm_pebble_last_simulator_settings", None)
     if settings is None:
         settings = getattr(runner, "_elm_pebble_pending_simulator_settings", None)
+    if not simulator_weather_mode_enabled(settings):
+        weather_trace_log(
+            runner,
+            ws or getattr(runner, "_elm_pebble_last_ws", None),
+            "inject_skipped",
+            detail="simulator weather disabled; companion uses live weather",
+            reason=reason,
+        )
+        return False
     weather = simulator_weather_from_settings(settings)
     if weather is None:
         weather_trace_log(

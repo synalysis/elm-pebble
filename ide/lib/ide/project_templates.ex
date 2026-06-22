@@ -22,7 +22,7 @@ defmodule Ide.ProjectTemplates do
           | File.posix()
           | Jason.EncodeError.t()
 
-  @template_keys ~w(starter app-minimal watchface-minimal watchface-digital watchface-smoke-screen watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time watchface-weather-animated watchface-poke-battle companion-demo-phone-status companion-demo-weather-env companion-demo-calendar companion-demo-geolocation companion-demo-storage companion-demo-settings companion-demo-websocket companion-demo-timeline watch-demo-accel watch-demo-vibes watch-demo-data-log watch-demo-app-focus watch-demo-compass watch-demo-dictation watch-demo-health watch-demo-light watch-demo-watch-info watch-demo-drawing-showcase game-basic game-tiny-bird game-jump-n-run game-2048 game-elmtris)
+  @template_keys ~w(starter app-minimal watchface-minimal watchface-digital watchface-smoke-screen watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time watchface-weather-animated watchface-poke-battle companion-demo-phone-status companion-demo-protocol-matrix companion-demo-weather-env companion-demo-calendar companion-demo-geolocation companion-demo-storage companion-demo-settings companion-demo-websocket companion-demo-timeline watch-demo-accel watch-demo-vibes watch-demo-data-log watch-demo-app-focus watch-demo-compass watch-demo-dictation watch-demo-health watch-demo-light watch-demo-watch-info watch-demo-drawing-showcase game-basic game-tiny-bird game-jump-n-run game-2048 game-elmtris)
 
   @template_dirs %{
     "starter" => "starter_watch",
@@ -37,6 +37,7 @@ defmodule Ide.ProjectTemplates do
     "watchface-weather-animated" => "watchface_weather_animated",
     "watchface-poke-battle" => "watchface_poke_battle",
     "companion-demo-phone-status" => "companion_demo_phone_status",
+    "companion-demo-protocol-matrix" => "companion_demo_protocol_matrix",
     "companion-demo-weather-env" => "companion_demo_weather_env",
     "companion-demo-calendar" => "companion_demo_calendar",
     "companion-demo-geolocation" => "companion_demo_geolocation",
@@ -255,6 +256,7 @@ defmodule Ide.ProjectTemplates do
       {"Watchface: Poke Battle (watch-only, health steps)", "watchface-poke-battle"},
       {"Companion demo: Phone status (battery, locale, network, notifications)",
        "companion-demo-phone-status"},
+      {"Companion demo: Protocol matrix (AppMessage wire types)", "companion-demo-protocol-matrix"},
       {"Companion demo: Weather & environment", "companion-demo-weather-env"},
       {"Companion demo: Calendar", "companion-demo-calendar"},
       {"Companion demo: Geolocation (lat/long watchface)", "companion-demo-geolocation"},
@@ -333,6 +335,9 @@ defmodule Ide.ProjectTemplates do
 
       "companion-demo-phone-status" ->
         seed_companion_demo_workspace(workspace_path, "companion_demo_phone_status")
+
+      "companion-demo-protocol-matrix" ->
+        seed_companion_demo_workspace(workspace_path, "companion_demo_protocol_matrix")
 
       "companion-demo-weather-env" ->
         seed_companion_demo_workspace(workspace_path, "companion_demo_weather_env")
@@ -881,6 +886,7 @@ defmodule Ide.ProjectTemplates do
               "watchface_tangram_time",
               "watchface_weather_animated",
               "companion_demo_phone_status",
+              "companion_demo_protocol_matrix",
               "companion_demo_weather_env",
               "companion_demo_calendar",
               "companion_demo_geolocation",

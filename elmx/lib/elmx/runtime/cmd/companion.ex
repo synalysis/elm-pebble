@@ -21,6 +21,25 @@ defmodule Elmx.Runtime.Cmd.Companion do
   end
 
   @doc """
+  Watch `companionSend tag value` wire path (elmc C runtime / `Internal.watchToPhoneTag`).
+
+  Carries only message tag plus one scalar int; debugger decodes via project schema.
+  """
+  @spec protocol_watch_to_phone_tag_value(integer(), integer()) :: Types.wire_cmd()
+  def protocol_watch_to_phone_tag_value(tag, value)
+      when is_integer(tag) and is_integer(value) do
+    %{
+      "kind" => "protocol",
+      "package" => "companion-protocol",
+      "direction" => "watch_to_phone",
+      "from" => "watch",
+      "to" => "companion",
+      "message" => "tag:#{tag}",
+      "message_value" => %{"tag" => tag, "value" => value}
+    }
+  end
+
+  @doc """
   Companion platform bridge command (storage, preferences, weather, …).
 
   `target` uses `Pebble.Companion.<Module>.<op>` so IDE bridge request extraction matches Core IR.

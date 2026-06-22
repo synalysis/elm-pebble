@@ -1027,7 +1027,7 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
         break
       case 0x0e:
         if (data[1] === 0) {
-          if (this.simulatorWeatherEnabled()) {
+          if (this.useSimulatorWeather()) {
             const weather = this.resolveWeatherSimulatorSettings()
             this.appendLog(
               `weather trace [browser_ack]: ${this.parseSimulatorTemperatureC(weather?.temperatureC) ?? "?"}°C ${weather?.condition || "clear"}`
@@ -1035,7 +1035,7 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
           }
         } else {
           this.appendLog("simulator settings sync failed")
-          if (this.simulatorWeatherEnabled()) {
+          if (this.useSimulatorWeather()) {
             this.scheduleWeatherPush({quiet: true})
           }
         }
@@ -1220,6 +1220,10 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
   }
   simulatorWeatherEnabled(): boolean {
     return this.simulatorDelivery.simulatorWeatherEnabled()
+  }
+
+  useSimulatorWeather(settings?: SimulatorSettings | null): boolean {
+    return this.simulatorDelivery.useSimulatorWeather(settings)
   }
   refreshSimulatorCapabilities(): void {
     return this.simulatorDelivery.refreshSimulatorCapabilities()

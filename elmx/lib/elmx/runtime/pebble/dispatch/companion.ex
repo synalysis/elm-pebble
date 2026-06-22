@@ -8,6 +8,10 @@ defmodule Elmx.Runtime.Pebble.Dispatch.Companion do
 
   @spec send_cmd(Types.registry_args()) :: Types.wire_cmd()
   def send_cmd([message]), do: Cmd.protocol_watch_to_phone(message)
+
+  def send_cmd([tag, value]) when is_integer(tag) and is_integer(value),
+    do: Cmd.protocol_watch_to_phone_tag_value(tag, value)
+
   def send_cmd(_), do: Cmd.none()
 
   @spec send_phone_cmd(Types.registry_args()) :: Types.wire_cmd()

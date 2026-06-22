@@ -186,7 +186,7 @@
   },
   "template": "game-basic",
   "timeline_init_messages": [
-    "update:StorageStringLoaded \"\"",
+    "update:StorageStringLoaded StorageStringLoaded \"\"",
     "init:init"
   ],
   "view_tree_type": "windowStack",

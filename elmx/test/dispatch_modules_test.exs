@@ -29,6 +29,15 @@ defmodule Elmx.DispatchModulesTest do
     assert %{"kind" => "protocol"} = Companion.send_cmd(["msg"])
   end
 
+  test "Companion send cmd encodes tag+value watch wire" do
+    assert %{
+             "kind" => "protocol",
+             "direction" => "watch_to_phone",
+             "message" => "tag:2",
+             "message_value" => %{"tag" => 2, "value" => 5}
+           } = Companion.send_cmd([2, 5])
+  end
+
   test "Platform launch reason" do
     assert is_integer(Platform.launch_reason([%{"ctor" => "LaunchUser", "args" => []}]))
   end

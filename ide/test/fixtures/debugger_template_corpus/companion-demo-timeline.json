@@ -33,7 +33,7 @@
       "font_size": 18,
       "h": 18,
       "kind": "text_label",
-      "text": "Token loading",
+      "text": "Token demo-timeline-token",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -70,7 +70,7 @@
       "y": 90
     }
   ],
-  "preview_ops_sha256": "bff3d88d6431247788af7b6c76088c58b3e4008453e97e09bf2993694d9097bc",
+  "preview_ops_sha256": "0db0819e1281cdb6616f4f9395f14ae22811d6e73e53bcb6bfdd0132206cc9a7",
   "render_tree": {
     "node_count": 8,
     "node_types": [
@@ -170,9 +170,9 @@
                   "children": [],
                   "font": "DefaultFont",
                   "kind": "text",
-                  "label": "Token loading",
+                  "label": "Token demo-timeline-token",
                   "options": [],
-                  "text": "Token loading",
+                  "text": "Token demo-timeline-token",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
                   "type": "text"
@@ -207,15 +207,35 @@
     "screenH": 168,
     "screenW": 144,
     "timeString": null,
-    "tokenPreview": "loading"
+    "tokenPreview": "demo-timeline-token"
   },
   "template": "companion-demo-timeline",
   "timeline_init_messages": [
-    "init:init"
+    "update:FromPhone (ProvideTimelineToken \"demo-timeline-token\")",
+    "update:GotToken GotToken (Ok \"demo-timeline-token\")",
+    "update:FromPhone (ProvideTimelineToken \"demo-timeline-token\")",
+    "update:GotToken GotToken (Ok \"demo-timeline-token\")",
+    "update:FromWatch (Ok RequestTimelineToken)",
+    "init:init",
+    "update:FromPhone (ProvideTimelineToken \"demo-timeline-token\")",
+    "update:GotToken GotToken (Ok \"demo-timeline-token\")"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
+    "elmc_compile_cached": "false",
+    "elmc_compile_error_count": 0,
+    "elmc_compile_revision": "a817177970bb4a94d09ec3b121a7ece7275e3ed3980fe65d65df8f4510cfc9d5:pebble=aplite,basalt,chalk,diorite,emery,flint,gabbro:prod=false:error",
+    "elmc_compile_status": "ok",
+    "elmc_compile_warning_count": 0,
+    "elmc_compiled_path": "/home/ape/projects/elm-pebble/ide/workspace_projects/corpus-companion-demo-timeline-26178/phone/.elmc-build",
+    "elmc_diagnostic_preview": [],
+    "protocol_inbound_count": 4,
+    "protocol_last_inbound_from": "companion",
+    "protocol_last_inbound_message": "ProvideTimelineToken \"demo-timeline-token\"",
+    "protocol_last_trigger": "timeline",
+    "protocol_last_view_message": "ProvideTimelineToken \"demo-timeline-token\"",
+    "protocol_message_count": 4,
     "runtime_model": {
       "pinStatus": {
         "args": [],
@@ -223,7 +243,7 @@
       },
       "screenH": 168,
       "screenW": 144,
-      "tokenPreview": "loading"
+      "tokenPreview": "demo-timeline-token"
     },
     "runtime_view_output": [],
     "timeString": null,

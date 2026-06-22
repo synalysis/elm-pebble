@@ -12,6 +12,7 @@ type alias Model =
     { lastResponse : Int
     , lastCondition : Maybe WeatherCondition
     , replyToWatch : Bool
+    , sentToWatch : Bool
     , errors : List String
     }
 
@@ -25,26 +26,53 @@ type Msg
 init : Decode.Value -> ( Model, Cmd Msg )
 init _ =
     ( initialModel
-    , Lifecycle.setup
+    , Cmd.batch
+        [ Lifecycle.setup
+        , refreshWeather
+        ]
     )
 
 
 initialModel : Model
 initialModel =
-    { lastResponse = 0, lastCondition = Nothing, replyToWatch = False, errors = [] }
+    { lastResponse = 0, lastCondition = Nothing, replyToWatch = False, sentToWatch = False, errors = [] }
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         FromWatch (Ok (RequestWeather _)) ->
-            ( { model | replyToWatch = True }, refreshWeather )
+            case model.lastCondition of
+                Just condition ->
+                    ( { model | replyToWatch = False }
+                    , Cmd.batch
+                        [ CompanionPhone.sendPhoneToWatch (ProvideTemperature (Celsius model.lastResponse))
+                        , CompanionPhone.sendPhoneToWatch (ProvideCondition condition)
+                        ]
+                    )
+
+                Nothing ->
+                    ( { model | replyToWatch = True }, refreshWeather )
 
         FromWatch (Err error) ->
             ( addError ("Watch message error: " ++ error) model, Cmd.none )
 
         LifecycleChanged Lifecycle.Ready ->
-            ( model, Cmd.none )
+            case model.lastCondition of
+                Just condition ->
+                    if model.sentToWatch then
+                        ( model, Cmd.none )
+
+                    else
+                        ( { model | sentToWatch = True, replyToWatch = False }
+                        , Cmd.batch
+                            [ CompanionPhone.sendPhoneToWatch (ProvideTemperature (Celsius model.lastResponse))
+                            , CompanionPhone.sendPhoneToWatch (ProvideCondition condition)
+                            ]
+                        )
+
+                Nothing ->
+                    ( model, Cmd.none )
 
         LifecycleChanged _ ->
             ( model, Cmd.none )
@@ -56,9 +84,27 @@ update msg model =
 
                 alreadyCurrent =
                     model.lastResponse == info.temperatureC && model.lastCondition == Just condition
+
+                shouldSendToWatch =
+                    model.replyToWatch
+                        || not model.sentToWatch
+                        || (model.sentToWatch && model.lastCondition /= Nothing)
             in
             if alreadyCurrent then
                 ( { model | replyToWatch = False }, Cmd.none )
+
+            else if shouldSendToWatch then
+                ( { model
+                    | lastResponse = info.temperatureC
+                    , lastCondition = Just condition
+                    , replyToWatch = False
+                    , sentToWatch = True
+                  }
+                , Cmd.batch
+                    [ CompanionPhone.sendPhoneToWatch (ProvideTemperature (Celsius info.temperatureC))
+                    , CompanionPhone.sendPhoneToWatch (ProvideCondition condition)
+                    ]
+                )
 
             else
                 ( { model
@@ -66,10 +112,7 @@ update msg model =
                     , lastCondition = Just condition
                     , replyToWatch = False
                   }
-                , Cmd.batch
-                    [ CompanionPhone.sendPhoneToWatch (ProvideTemperature (Celsius info.temperatureC))
-                    , CompanionPhone.sendPhoneToWatch (ProvideCondition condition)
-                    ]
+                , Cmd.none
                 )
 
         GotWeather (Err error) ->
@@ -134,7 +177,7 @@ subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.batch
         [ CompanionPhone.onWatchToPhone FromWatch
-        , Weather.onCurrent (GotWeather << Result.map Weather.Current)
+        , Weather.onWeather GotWeather
         , Lifecycle.onLifecycle LifecycleChanged
         ]
 

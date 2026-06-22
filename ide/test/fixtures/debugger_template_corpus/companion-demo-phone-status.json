@@ -33,7 +33,7 @@
       "font_size": 18,
       "h": 18,
       "kind": "text_label",
-      "text": "Bat 0% idle",
+      "text": "Bat 88% idle",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -61,7 +61,7 @@
       "font_size": 18,
       "h": 18,
       "kind": "text_label",
-      "text": "Net offline",
+      "text": "Net online",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -75,7 +75,7 @@
       "font_size": 18,
       "h": 18,
       "kind": "text_label",
-      "text": "Notif off",
+      "text": "Notif on",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -84,7 +84,7 @@
       "y": 108
     }
   ],
-  "preview_ops_sha256": "f057b29c650ed569c64ff7cd5d77433abd816ce385571a04110acf413de45326",
+  "preview_ops_sha256": "cb3fefd20b0e7787ee56fbf6f0cbef53693df796d379c0f9cfa3a4585b5e38e6",
   "render_tree": {
     "node_count": 9,
     "node_types": [
@@ -100,6 +100,13 @@
     ],
     "root_type": "windowStack",
     "tree": {
+      "box": {
+        "h": 168,
+        "text": null,
+        "w": 144,
+        "x": 0,
+        "y": 0
+      },
       "children": [
         {
           "children": [
@@ -142,9 +149,9 @@
                   "children": [],
                   "font": "DefaultFont",
                   "kind": "text",
-                  "label": "Bat 0% idle",
+                  "label": "Bat 88% idle",
                   "options": [],
-                  "text": "Bat 0% idle",
+                  "text": "Bat 88% idle",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
                   "type": "text"
@@ -178,9 +185,9 @@
                   "children": [],
                   "font": "DefaultFont",
                   "kind": "text",
-                  "label": "Net offline",
+                  "label": "Net online",
                   "options": [],
-                  "text": "Net offline",
+                  "text": "Net online",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
                   "type": "text"
@@ -196,9 +203,9 @@
                   "children": [],
                   "font": "DefaultFont",
                   "kind": "text",
-                  "label": "Notif off",
+                  "label": "Notif on",
                   "options": [],
-                  "text": "Notif off",
+                  "text": "Notif on",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
                   "type": "text"
@@ -225,11 +232,11 @@
     }
   },
   "runtime_model": {
-    "batteryPercent": 0,
+    "batteryPercent": 88,
     "charging": false,
     "locale": "en-US",
-    "notificationsEnabled": false,
-    "online": false,
+    "notificationsEnabled": true,
+    "online": true,
     "quietHours": false,
     "runtime_view_output": [],
     "screenH": 168,
@@ -238,18 +245,37 @@
   },
   "template": "companion-demo-phone-status",
   "timeline_init_messages": [
-    "update:CurrentTimeString \"08:53\"",
-    "init:init"
+    "update:FromPhone (ProvideNotifications true false)",
+    "update:FromPhone (ProvideNotifications true false)",
+    "update:FromPhone (ProvideNotifications true false)",
+    "update:GotNotifications GotNotifications (Ok %{\"notificationsEnabled\" => true, \"quietHours\" => false})",
+    "update:FromPhone (ProvideConnectivity true)",
+    "update:FromPhone (ProvideConnectivity true)",
+    "update:FromPhone (ProvideConnectivity false)",
+    "update:GotConnectivity GotConnectivity (Ok true)"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
+    "elmc_compile_cached": "false",
+    "elmc_compile_error_count": 0,
+    "elmc_compile_revision": "054fcbbca680363e087dfd1887249f74555792e8f2af1c98f00a1c0d423e22d8:pebble=aplite,basalt,chalk,diorite,emery,flint,gabbro:prod=false:error",
+    "elmc_compile_status": "ok",
+    "elmc_compile_warning_count": 0,
+    "elmc_compiled_path": "/home/ape/projects/elm-pebble/ide/workspace_projects/corpus-companion-demo-phone-status-4226/phone/.elmc-build",
+    "elmc_diagnostic_preview": [],
+    "protocol_inbound_count": 32,
+    "protocol_last_inbound_from": "companion",
+    "protocol_last_inbound_message": "FromPhone (ProvideNotifications true false)",
+    "protocol_last_trigger": "phone_to_watch",
+    "protocol_last_view_message": "FromPhone (ProvideNotifications true false)",
+    "protocol_message_count": 25,
     "runtime_model": {
-      "batteryPercent": 0,
+      "batteryPercent": 88,
       "charging": false,
       "locale": "en-US",
-      "notificationsEnabled": false,
-      "online": false,
+      "notificationsEnabled": true,
+      "online": true,
       "quietHours": false,
       "screenH": 168,
       "screenW": 144,

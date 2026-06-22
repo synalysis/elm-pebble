@@ -74,6 +74,9 @@ defmodule Elmx.Runtime.Cmd do
   @spec protocol_watch_to_phone(Types.elm_msg()) :: Types.wire_cmd()
   defdelegate protocol_watch_to_phone(message), to: Companion
 
+  @spec protocol_watch_to_phone_tag_value(integer(), integer()) :: Types.wire_cmd()
+  defdelegate protocol_watch_to_phone_tag_value(tag, value), to: Companion
+
   @spec companion_bridge(String.t(), String.t(), Types.companion_bridge_opts()) :: Types.wire_cmd()
   defdelegate companion_bridge(api, op, opts \\ []), to: Companion
 

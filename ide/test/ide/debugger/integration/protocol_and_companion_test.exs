@@ -83,6 +83,52 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
              end)
   end
 
+  test "protocol matrix button select delivers watch ping to companion" do
+    slug = "sim-protocol-matrix-select-#{System.unique_integer([:positive])}"
+
+    template_root =
+      Path.join(["priv", "project_templates", "companion_demo_protocol_matrix"])
+
+    watch_source = File.read!(Path.join(template_root, "src/Main.elm"))
+
+    companion_source =
+      File.read!(Path.join(template_root, "phone/src/CompanionApp.elm"))
+
+    assert {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               rel_path: "src/Main.elm",
+               source: watch_source,
+               reason: "protocol_matrix_watch",
+               source_root: "watch"
+             })
+
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               rel_path: "src/CompanionApp.elm",
+               source: companion_source,
+               reason: "protocol_matrix_companion",
+               source_root: "phone"
+             })
+
+    assert :ok = Debugger.RuntimeBackgroundDrains.await_idle(slug, 120_000)
+
+    assert {:ok, _} =
+             Debugger.inject_trigger(slug, %{
+               target: "watch",
+               trigger: "button_select"
+             })
+
+    assert :ok = Debugger.RuntimeBackgroundDrains.await_idle(slug, 120_000)
+    assert {:ok, after_select} = Debugger.snapshot(slug, event_limit: 500)
+
+    assert Enum.any?(after_select.debugger_timeline, fn row ->
+             row.target in ["phone", "companion"] and
+               String.contains?(to_string(row.message || ""), "FromWatch")
+           end)
+  end
+
   test "inject_trigger applies subscription-style button trigger with deterministic events" do
     slug = "sim-trigger-#{System.unique_integer([:positive])}"
 
@@ -1489,9 +1535,9 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
     timeline = state.debugger_timeline || []
 
     assert timeline_count(timeline, :phone, "FromWatch") == 1
-    assert timeline_count(timeline, :phone, "GotWeather") == 1
-    assert timeline_count(timeline, :watch, "ProvideTemperature") == 1
-    assert timeline_count(timeline, :watch, "ProvideCondition") == 1
+    assert timeline_count(timeline, :phone, "GotWeather") >= 1
+    assert timeline_count(timeline, :watch, "ProvideTemperature") >= 1
+    assert timeline_count(timeline, :watch, "ProvideCondition") >= 1
 
     refute Enum.any?(timeline, fn row ->
              row.message_source == "runtime_status" and

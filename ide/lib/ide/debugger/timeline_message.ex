@@ -3,6 +3,7 @@ defmodule Ide.Debugger.TimelineMessage do
 
   alias Ide.Debugger.RuntimeModelMessages
   alias Ide.Debugger.Types
+  alias Ide.Debugger.WireDisplay
 
   @subscription_wrapper_ctors ~w(FromPhone FromWatch)
 
@@ -19,7 +20,13 @@ defmodule Ide.Debugger.TimelineMessage do
       message_value != nil ->
         ctor = RuntimeModelMessages.wire_constructor(trimmed) || trimmed
 
-        case payload_text(message_value) do
+        payload =
+          case matching_ctor_payload(ctor, message_value) do
+            nil -> payload_text(message_value)
+            text -> text
+          end
+
+        case payload do
           "" -> ctor
           payload -> "#{ctor} #{payload}"
         end
@@ -121,6 +128,32 @@ defmodule Ide.Debugger.TimelineMessage do
     end
   end
 
+  @spec matching_ctor_payload(String.t(), Types.protocol_wire_arg()) :: String.t() | nil
+  defp matching_ctor_payload(ctor, _message_value) when ctor in @subscription_wrapper_ctors, do: nil
+
+  defp matching_ctor_payload(ctor, message_value) when is_binary(ctor) do
+    case wire_ctor_parts(message_value) do
+      {^ctor, args} -> display_args_payload(args)
+      _ -> nil
+    end
+  end
+
+  defp matching_ctor_payload(_ctor, _message_value), do: nil
+
+  @spec display_args_payload([Types.protocol_wire_arg()]) :: String.t()
+  defp display_args_payload([]), do: ""
+
+  defp display_args_payload([single]) do
+    if is_map(single) and not protocol_constructor?(single) do
+      WireDisplay.format(single)
+    else
+      protocol_arg_display(single)
+    end
+  end
+
+  defp display_args_payload(args) when is_list(args),
+    do: Enum.map_join(args, " ", &protocol_arg_display/1)
+
   @spec payload_text(Types.protocol_wire_arg()) :: String.t()
   defp payload_text(value) do
     case wire_ctor_parts(value) do
@@ -148,19 +181,7 @@ defmodule Ide.Debugger.TimelineMessage do
   defp wire_ctor_parts(_value), do: {nil, []}
 
   @spec wire_ctor_display(Types.protocol_wire_arg()) :: String.t()
-  defp wire_ctor_display(value) do
-    case wire_ctor_parts(value) do
-      {_ctor, [single]} ->
-        if is_map(single) and not protocol_constructor?(single) do
-          Jason.encode!(single)
-        else
-          wire_ctor_display_inner(value)
-        end
-
-      _ ->
-        wire_ctor_display_inner(value)
-    end
-  end
+  defp wire_ctor_display(value), do: wire_ctor_display_inner(value)
 
   defp wire_ctor_display_inner(value) do
     case wire_ctor_parts(value) do
@@ -198,16 +219,15 @@ defmodule Ide.Debugger.TimelineMessage do
     protocol_arg_display(%{"ctor" => ctor, "args" => args})
   end
 
-  defp protocol_arg_display(value) when is_integer(value) or is_float(value) or is_boolean(value),
-    do: to_string(value)
+  defp protocol_arg_display(value) when is_list(value), do: WireDisplay.format(value)
 
-  defp protocol_arg_display(value) when is_binary(value), do: inspect(value, charlists: :as_lists)
-  defp protocol_arg_display(value), do: inspect(value, charlists: :as_lists)
+  defp protocol_arg_display(value) when is_integer(value) or is_float(value) or is_boolean(value),
+    do: WireDisplay.format(value)
+
+  defp protocol_arg_display(value) when is_binary(value), do: WireDisplay.format(value)
+  defp protocol_arg_display(value) when is_map(value), do: WireDisplay.format(value)
+  defp protocol_arg_display(value), do: WireDisplay.format(value)
 
   @spec primitive_payload_text(Types.protocol_wire_arg()) :: String.t()
-  defp primitive_payload_text(value) when is_integer(value), do: Integer.to_string(value)
-  defp primitive_payload_text(value) when is_boolean(value), do: if(value, do: "True", else: "False")
-  defp primitive_payload_text(value) when is_binary(value), do: inspect(value, charlists: :as_lists)
-  defp primitive_payload_text(%{} = value), do: Jason.encode!(value)
-  defp primitive_payload_text(value), do: inspect(value, charlists: :as_lists)
+  defp primitive_payload_text(value), do: WireDisplay.format(value)
 end
