@@ -17,12 +17,18 @@ type alias Model =
     , temperature : Maybe Temperature
     , condition : Maybe WeatherCondition
     , displayedCondition : Maybe WeatherCondition
-    , activeTransition : Maybe Resources.AnimatedVector
+    , activeAnimation : Maybe ActiveAnimation
+    , nextAnimationId : Int
     , suppressWeatherTransitions : Bool
     , warmupTicksRemaining : Int
-    , transitionTicksRemaining : Maybe Int
     , screenW : Int
     , screenH : Int
+    }
+
+
+type alias ActiveAnimation =
+    { id : Ui.AnimationId
+    , vector : Resources.AnimatedVector
     }
 
 
@@ -31,7 +37,7 @@ type Msg
     | FromPhone PhoneToWatch
     | MinuteChanged Int
     | SecondElapsed
-    | TransitionFinished
+    | AnimationFinished Ui.AnimationId
     | EnableWeatherTransitions
 
 
@@ -41,10 +47,10 @@ init context =
       , temperature = Nothing
       , condition = Nothing
       , displayedCondition = Nothing
-      , activeTransition = Nothing
+      , activeAnimation = Nothing
+      , nextAnimationId = 1
       , suppressWeatherTransitions = True
       , warmupTicksRemaining = msToWholeSeconds weatherTransitionWarmupMs
-      , transitionTicksRemaining = Nothing
       , screenW = context.screen.width
       , screenH = context.screen.height
       }
@@ -73,35 +79,36 @@ update msg model =
             )
 
         SecondElapsed ->
-            case model.transitionTicksRemaining of
-                Just 1 ->
-                    update TransitionFinished model
+            if model.warmupTicksRemaining > 0 then
+                let
+                    next =
+                        model.warmupTicksRemaining - 1
+                in
+                if next == 0 then
+                    update EnableWeatherTransitions { model | warmupTicksRemaining = 0 }
 
-                Just ticks ->
-                    ( { model | transitionTicksRemaining = Just (ticks - 1) }, Cmd.none )
+                else
+                    ( { model | warmupTicksRemaining = next }, Cmd.none )
 
-                Nothing ->
-                    if model.warmupTicksRemaining > 0 then
-                        let
-                            next =
-                                model.warmupTicksRemaining - 1
-                        in
-                        if next == 0 then
-                            update EnableWeatherTransitions { model | warmupTicksRemaining = 0 }
+            else
+                ( model, Cmd.none )
 
-                    else
-                        ( { model | warmupTicksRemaining = next }, Cmd.none )
+        AnimationFinished finishedId ->
+            case model.activeAnimation of
+                Just animation ->
+                    if animation.id == finishedId then
+                        ( { model
+                            | displayedCondition = model.condition
+                            , activeAnimation = Nothing
+                          }
+                        , Cmd.none
+                        )
 
                     else
                         ( model, Cmd.none )
 
-        TransitionFinished ->
-            ( { model
-                | displayedCondition = model.condition
-                , activeTransition = Nothing
-              }
-            , Cmd.none
-            )
+                Nothing ->
+                    ( model, Cmd.none )
 
         EnableWeatherTransitions ->
             ( { model | suppressWeatherTransitions = False }, Cmd.none )
@@ -126,8 +133,8 @@ updateFromPhone message model =
                     if newCondition == displayed then
                         ( nextModel, Cmd.none )
 
-                    else if model.suppressWeatherTransitions || model.activeTransition /= Nothing then
-                        ( { nextModel | displayedCondition = Just newCondition, activeTransition = Nothing }
+                    else if model.suppressWeatherTransitions || model.activeAnimation /= Nothing then
+                        ( { nextModel | displayedCondition = Just newCondition, activeAnimation = Nothing }
                         , Cmd.none
                         )
 
@@ -137,10 +144,14 @@ updateFromPhone message model =
                                 ( { nextModel | displayedCondition = Just newCondition }, Cmd.none )
 
                             Just vector ->
+                                let
+                                    animationId =
+                                        Ui.AnimationId model.nextAnimationId
+                                in
                                 ( { nextModel
-                                    | activeTransition = Just vector
-                                    , transitionTicksRemaining =
-                                        Just (msToWholeSeconds transitionDurationMs)
+                                    | activeAnimation =
+                                        Just { id = animationId, vector = vector }
+                                    , nextAnimationId = model.nextAnimationId + 1
                                   }
                                 , Cmd.none
                                 )
@@ -150,6 +161,7 @@ subscriptions : Model -> Sub Msg
 subscriptions _ =
     Events.batch
         [ Events.onSecondChange (\_ -> SecondElapsed)
+        , Events.onAnimationFinished AnimationFinished
         , Events.onMinuteChange MinuteChanged
         , CompanionWatch.onPhoneToWatch FromPhone
         ]
@@ -183,9 +195,9 @@ weatherIconOps model origin =
     else
         case ( model.temperature, model.condition ) of
             ( Just _, Just _ ) ->
-                case model.activeTransition of
-                    Just vector ->
-                        [ Ui.drawVectorSequenceAt vector origin ]
+                case model.activeAnimation of
+                    Just animation ->
+                        [ Ui.drawVectorSequenceAt animation.id animation.vector origin ]
 
                     Nothing ->
                         case model.displayedCondition of
@@ -522,11 +534,6 @@ transitionVector from to =
 iconSize : Int
 iconSize =
     48
-
-
-transitionDurationMs : Int
-transitionDurationMs =
-    900
 
 
 weatherTransitionWarmupMs : Int

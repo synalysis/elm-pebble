@@ -1216,13 +1216,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     runtime = %{
       model: %{
         "runtime_view_output" => [
-          %{"kind" => "vector_sequence_at", "vector_id" => 3, "x" => 11, "y" => 22}
+          %{"kind" => "vector_sequence_at", "animation_id" => 4, "vector_id" => 3, "x" => 11, "y" => 22}
         ]
       }
     }
 
     [op] = DebuggerPreview.svg_ops(nil, runtime)
     assert op.kind == :vector_sequence_at
+    assert op.animation_id == 4
     assert op.vector_id == 3
     assert op.x == 11
     assert op.y == 22
@@ -1235,6 +1236,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
         %{
           "type" => "drawVectorSequenceAt",
           "children" => [
+            %{"type" => "expr", "value" => 9},
             %{"type" => "expr", "value" => 2},
             %{"type" => "expr", "value" => 5},
             %{"type" => "expr", "value" => 7}
@@ -1245,6 +1247,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
 
     [op] = DebuggerPreview.svg_ops(tree, %{model: %{}})
     assert op.kind == :vector_sequence_at
+    assert op.animation_id == 9
     assert op.vector_id == 2
     assert op.x == 5
     assert op.y == 7
@@ -1291,7 +1294,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
 
     [anim_op] =
       DebuggerPreview.hydrate_vector_svg_ops(
-        [%{kind: :vector_sequence_at, vector_id: vector_id, x: 10, y: 20}],
+        [%{kind: :vector_sequence_at, animation_id: 3, vector_id: vector_id, x: 10, y: 20}],
         project
       )
 

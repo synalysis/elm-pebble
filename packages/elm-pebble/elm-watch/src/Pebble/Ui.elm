@@ -1,5 +1,6 @@
 module Pebble.Ui exposing
-    ( AnimatedBitmap
+    ( AnimationId(..)
+    , AnimatedBitmap
     , AnimatedVector
     , Context
     , ContextSetting(..)
@@ -87,7 +88,7 @@ render bridge to keep view logic in pure Elm.
 
 # Drawing operations
 
-@docs RenderOp, text, textInt, textLabel, clear, fillRect, pixel, line, rect, circle, fillCircle, drawBitmapInRect, drawBitmapSequenceAt, drawRotatedBitmap, drawVectorAt, drawVectorSequenceAt, group, pathFilled, pathOutline, pathOutlineOpen, roundRect, arc, fillRadial
+@docs RenderOp, text, textInt, textLabel, clear, fillRect, pixel, line, rect, circle, fillCircle, drawBitmapInRect, drawBitmapSequenceAt, drawRotatedBitmap, drawVectorAt, drawVectorSequenceAt, group, pathFilled, pathOutline, pathOutlineOpen, roundRect, arc, fillRadial, AnimationId
 
 
 # Resources, labels and path/context helpers
@@ -139,7 +140,7 @@ type RenderOp
     | BitmapInRect StaticBitmap Int Int Int Int
     | RotatedBitmap StaticBitmap Int Int Int Int Int
     | VectorAt StaticVector Int Int
-    | VectorSequenceAt AnimatedVector Int Int
+    | VectorSequenceAt AnimationId AnimatedVector Int Int
     | BitmapSequenceAt AnimatedBitmap Int Int
     | PathFilled Path
     | PathOutline Path
@@ -189,6 +190,16 @@ type alias StaticVector =
 -}
 type alias AnimatedVector =
     UiResources.AnimatedVector
+
+
+{-| Opaque playback instance for `drawVectorSequenceAt`.
+
+Assign a fresh id per animation play. The runtime tracks progress per id so the
+same resource can animate at multiple positions and restarts only when the id
+changes.
+-}
+type AnimationId
+    = AnimationId Int
 
 
 {-| Path geometry for path draw operations.
@@ -457,10 +468,14 @@ drawVectorAt staticVector origin =
 
 
 {-| Draw an animated Pebble Draw Command sequence at the given origin.
+
+Use a fresh `AnimationId` for each play. Keep the same id in `view` while the
+clip should continue; the runtime dispatches `Pebble.Events.onAnimationFinished`
+when that id completes.
 -}
-drawVectorSequenceAt : AnimatedVector -> Point -> RenderOp
-drawVectorSequenceAt animatedVector origin =
-    VectorSequenceAt animatedVector origin.x origin.y
+drawVectorSequenceAt : AnimationId -> AnimatedVector -> Point -> RenderOp
+drawVectorSequenceAt (AnimationId animId) animatedVector origin =
+    VectorSequenceAt (AnimationId animId) animatedVector origin.x origin.y
 
 
 {-| Group operations under a temporary style context.

@@ -28,6 +28,7 @@ module Elm.Kernel.PebbleWatch exposing
     , none
     , onAccelData
     , onAccelTap
+    , onAnimationFinished
     , onAppFocusChange
     , onBatteryChange
     , onButtonDown
@@ -52,7 +53,6 @@ module Elm.Kernel.PebbleWatch exposing
     , onUnobstructedDidChange
     , onUnobstructedWillChange
     , onYearChange
-    , listNthInt
     , storageDelete
     , storageReadInt
     , storageReadString
@@ -107,17 +107,6 @@ storageReadInt key toMsg =
             ( key, toMsg )
     in
     Cmd.none
-
-
-{-| O(1)-indexed read for flat `List Int` boards without allocating `List.drop` tails.
--}
-listNthInt : Int -> List Int -> Int
-listNthInt index list =
-    let
-        keep =
-            ( index, list )
-    in
-    0
 
 
 storageDelete : Int -> Cmd msg
@@ -449,6 +438,11 @@ onDictationResult _ =
 
 onSecondChange : (Int -> msg) -> Sub msg
 onSecondChange _ =
+    Sub.none
+
+
+onAnimationFinished : (a -> msg) -> Sub msg
+onAnimationFinished _ =
     Sub.none
 
 

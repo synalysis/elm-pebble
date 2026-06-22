@@ -334,6 +334,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered.ViewOutput do
           "type" => "drawVectorSequenceAt",
           "label" => "",
           "children" => [],
+          "animation_id" => WireMap.map_integer(row, "animation_id", 0),
           "vector_id" => WireMap.map_integer(row, "vector_id", 0),
           "x" => WireMap.map_integer(row, "x", 0),
           "y" => WireMap.map_integer(row, "y", 0)

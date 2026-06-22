@@ -166,11 +166,12 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Qualified.Draws do
         counter
       )
 
-  def emit("Pebble.Ui.drawVectorSequenceAt", [vector, origin], env, counter),
+  def emit("Pebble.Ui.drawVectorSequenceAt", [anim_id, vector, origin], env, counter),
     do:
       Commands.append(
         draw_kind(:vector_sequence_at),
         [
+          anim_id,
           vector,
           SpecialValues.field_access_expr(origin, "x"),
           SpecialValues.field_access_expr(origin, "y")
@@ -256,7 +257,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Qualified.Draws do
     do: {:ok, [:boxed, :boxed]}
 
   def usage_arg_kinds("Pebble.Ui.drawVectorAt", [_vector, _origin]), do: {:ok, [:boxed, :boxed]}
-  def usage_arg_kinds("Pebble.Ui.drawVectorSequenceAt", [_vector, _origin]), do: {:ok, [:boxed, :boxed]}
+  def usage_arg_kinds("Pebble.Ui.drawVectorSequenceAt", [_anim_id, _vector, _origin]),
+    do: {:ok, [:boxed, :boxed, :boxed]}
   def usage_arg_kinds("Pebble.Ui.drawBitmapSequenceAt", [_animation, _origin]), do: {:ok, [:boxed, :boxed]}
 
   def usage_arg_kinds("Pebble.Ui.drawRotatedBitmap", [_bitmap, _bounds, _rotation, _center]),

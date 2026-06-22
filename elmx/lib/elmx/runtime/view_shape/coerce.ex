@@ -102,11 +102,11 @@ defmodule Elmx.Runtime.ViewShape.Coerce do
   def coerce_ctor("DrawVectorAt", [resource, origin]),
     do: PebbleUi.draw_vector_at(resource, origin)
 
-  def coerce_ctor("DrawVectorSequenceAt", [resource, frame, origin, rotation]),
-    do: PebbleUi.draw_vector_sequence_at(resource, frame, origin, rotation)
+  def coerce_ctor("DrawVectorSequenceAt", [animation_id, resource, frame, origin, rotation]),
+    do: PebbleUi.draw_vector_sequence_at(animation_id, resource, frame, origin, rotation)
 
-  def coerce_ctor("DrawVectorSequenceAt", [resource, origin]),
-    do: PebbleUi.draw_vector_sequence_at(resource, origin)
+  def coerce_ctor("DrawVectorSequenceAt", [animation_id, resource, origin]),
+    do: PebbleUi.draw_vector_sequence_at(animation_id, resource, origin)
 
   def coerce_ctor("Text", [font, options, bounds, value]),
     do: PebbleUi.text(font, options, bounds, value)

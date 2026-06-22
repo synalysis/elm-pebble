@@ -2,11 +2,11 @@ defmodule Elmc.Backend.Pebble.SourceWriter.EventDispatch.SubscriptionEvents.Plat
   @moduledoc false
 
   alias Elmc.Backend.Pebble.Types
-  alias Elmc.Backend.Pebble.SourceWriter.EventDispatch.SubscriptionEvents.Platform.{Clock, Services}
+  alias Elmc.Backend.Pebble.SourceWriter.EventDispatch.SubscriptionEvents.Platform.{Animation, Clock, Services}
 
   @spec body() :: Types.c_source()
   def body do
-    [Services.body(), Clock.body()]
+    [Services.body(), Clock.body(), Animation.body()]
     |> IO.iodata_to_binary()
   end
 end

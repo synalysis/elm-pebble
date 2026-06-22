@@ -387,13 +387,23 @@ staticVectorOps model =
     [ Ui.drawVectorAt Resources.VectorStaticWeatherClear origin ]
 
 
+animatedVectorAnimId : Ui.AnimationId
+animatedVectorAnimId =
+    Ui.AnimationId 1
+
+
+combinedVectorAnimId : Ui.AnimationId
+combinedVectorAnimId =
+    Ui.AnimationId 2
+
+
 animatedVectorOps : Model -> List Ui.RenderOp
 animatedVectorOps model =
     let
         origin =
             iconOrigin model 40
     in
-    [ Ui.drawVectorSequenceAt Resources.VectorAnimatedTransitionClearToCloudy origin ]
+    [ Ui.drawVectorSequenceAt animatedVectorAnimId Resources.VectorAnimatedTransitionClearToCloudy origin ]
 
 
 combinedOps : Model -> List Ui.RenderOp
@@ -415,7 +425,7 @@ combinedOps model =
         "All kinds"
     , Ui.drawBitmapInRect Resources.BitmapStaticBtIcon { x = 4, y = y0 + 28, w = 20, h = 20 }
     , Ui.drawVectorAt Resources.VectorStaticWeatherClear { x = 32, y = y0 + 24 }
-    , Ui.drawVectorSequenceAt Resources.VectorAnimatedTransitionClearToCloudy { x = 72, y = y0 + 24 }
+    , Ui.drawVectorSequenceAt combinedVectorAnimId Resources.VectorAnimatedTransitionClearToCloudy { x = 72, y = y0 + 24 }
     , Ui.drawBitmapSequenceAt Resources.BitmapAnimatedSparkle
         { x = model.screenW // 2 - spriteSize // 2, y = spriteY }
     , Ui.line { x = 4, y = spriteY + spriteSize + 4 }

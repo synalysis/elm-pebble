@@ -41,23 +41,30 @@ defmodule Elmx.Runtime.Pebble.Ui.Assets do
     do: draw_vector_at(resource, 0, origin, 0)
 
   @spec draw_vector_sequence_at(
+          Types.ui_coord(),
           Types.ui_resource(),
           Types.ui_coord(),
           Types.ui_point(),
           Types.ui_coord()
         ) :: Types.ui_node()
-  def draw_vector_sequence_at(resource, frame, origin, rotation),
+  def draw_vector_sequence_at(animation_id, resource, frame, origin, rotation),
     do: %{
       type: "drawVectorSequenceAt",
       label: "drawVectorSequenceAt",
+      animation_id: coerce_animation_id(animation_id),
       resource: resource,
       frame: frame,
       origin: origin,
       rotation: rotation
     }
 
-  def draw_vector_sequence_at(resource, origin),
-    do: draw_vector_sequence_at(resource, 0, origin, 0)
+  def draw_vector_sequence_at(animation_id, resource, origin),
+    do: draw_vector_sequence_at(animation_id, resource, 0, origin, 0)
+
+  defp coerce_animation_id(%{"ctor" => "AnimationId", "args" => [value]}), do: value
+  defp coerce_animation_id(%{ctor: "AnimationId", args: [value]}), do: value
+  defp coerce_animation_id(value) when is_integer(value), do: value
+  defp coerce_animation_id(value), do: value
 
   @spec draw_bitmap_sequence_at(
           Types.ui_resource(),

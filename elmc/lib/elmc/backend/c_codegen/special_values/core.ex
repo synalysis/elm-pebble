@@ -409,16 +409,17 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
         3
       )
 
-  def special_value_from_target("Pebble.Ui.drawVectorSequenceAt", [vector, origin]),
+  def special_value_from_target("Pebble.Ui.drawVectorSequenceAt", [anim_id, vector, origin]),
     do:
       encoded_draw_field_cmd_expr(
         draw_kind(:vector_sequence_at),
         [
+          animation_id_int_expr(anim_id),
           vector,
           field_access_expr(origin, "x"),
           field_access_expr(origin, "y")
         ],
-        3
+        4
       )
 
   def special_value_from_target("Pebble.Ui.drawBitmapSequenceAt", [animation, origin]),
@@ -850,6 +851,12 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.onYearChange", args),
     do: subscription_special_value("Elm.Kernel.PebbleWatch.onYearChange", args)
+
+  def special_value_from_target("Pebble.Events.onAnimationFinished", args),
+    do: subscription_special_value("Pebble.Events.onAnimationFinished", args)
+
+  def special_value_from_target("Elm.Kernel.PebbleWatch.onAnimationFinished", args),
+    do: subscription_special_value("Elm.Kernel.PebbleWatch.onAnimationFinished", args)
 
   def special_value_from_target("Pebble.Button.onPress", args),
     do: subscription_special_value("Pebble.Button.onPress", args)
@@ -2940,6 +2947,18 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
   end
 
   defp constructor_tag_expr(_), do: %{op: :int_literal, value: 0}
+
+  defp animation_id_int_expr(%{op: :int_literal, union_ctor: ctor, value: value})
+       when is_binary(ctor) and is_integer(value) do
+    %{op: :int_literal, value: value}
+  end
+
+  defp animation_id_int_expr(%{op: :int_literal, value: value}) when is_integer(value),
+    do: %{op: :int_literal, value: value}
+
+  defp animation_id_int_expr(%{op: :field_access} = expr), do: expr
+  defp animation_id_int_expr(%{op: :var} = expr), do: expr
+  defp animation_id_int_expr(expr), do: expr
 
   defp msg_constructor_name?(name) when is_binary(name) do
     short = constructor_short_name(name)

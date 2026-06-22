@@ -28,6 +28,7 @@ module Elm.Kernel.PebbleWatch exposing
     , none
     , onAccelData
     , onAccelTap
+    , onAnimationFinished
     , onAppFocusChange
     , onBatteryChange
     , onButtonDown
@@ -437,6 +438,11 @@ onDictationResult _ =
 
 onSecondChange : (Int -> msg) -> Sub msg
 onSecondChange _ =
+    Sub.none
+
+
+onAnimationFinished : (a -> msg) -> Sub msg
+onAnimationFinished _ =
     Sub.none
 
 

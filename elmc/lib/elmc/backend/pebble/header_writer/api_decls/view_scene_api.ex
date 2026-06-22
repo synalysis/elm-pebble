@@ -2,6 +2,7 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.ApiDecls.ViewSceneApi do
   @moduledoc false
 
   alias Elmc.Backend.Pebble.Types
+  alias Elmc.Backend.Pebble.SourceWriter.DrawRuntime.VectorSequenceInstances
 
   @spec body() :: Types.c_source()
   def body do
@@ -17,6 +18,7 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.ApiDecls.ViewSceneApi do
     int elmc_pebble_scene_command_count(ElmcPebbleApp *app);
     int elmc_pebble_scene_dirty_rect(ElmcPebbleApp *app, ElmcPebbleRect *out_rect, int *out_full);
     void elmc_pebble_invalidate_scene(ElmcPebbleApp *app);
+    #{VectorSequenceInstances.header_decls()}
 """
   end
 end

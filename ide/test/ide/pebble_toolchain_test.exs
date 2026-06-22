@@ -116,11 +116,10 @@ defmodule Ide.PebbleToolchainTest do
     assert template =~ "gbitmap_sequence_update_bitmap_next_frame"
     assert source =~ "ApngPatch.pebble_stage_bytes"
     assert template =~ "PLAY_COUNT_INFINITE"
-    assert template =~ "vector_sequence_playable_duration_ms"
-    assert template =~ "vector_sequence_frame_at_elapsed"
-    assert template =~ "elmc_pebble_invalidate_scene"
-    refute template =~ "s_vector_sequence_anim_origin_seq"
-    assert template =~ "gdraw_command_frame_get_duration"
+    assert template =~ "elmc_vector_sequence_frame_begin"
+    assert template =~ "elmc_vector_sequence_draw_at"
+    assert template =~ "elmc_pebble_schedule_layer_redraw"
+    refute template =~ "s_vector_sequence_anim_origin_resource_id"
   end
 
   test "emulator packaging writes storage log build flags header" do

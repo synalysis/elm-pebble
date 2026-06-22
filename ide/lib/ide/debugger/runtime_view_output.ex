@@ -323,6 +323,7 @@ defmodule Ide.Debugger.RuntimeViewOutput do
           "type" => "drawVectorSequenceAt",
           "label" => "",
           "children" => [],
+          "animation_id" => integer_or_zero(WireValues.map_value(row, "animation_id")),
           "vector_id" => integer_or_zero(WireValues.map_value(row, "vector_id")),
           "x" => integer_or_zero(WireValues.map_value(row, "x")),
           "y" => integer_or_zero(WireValues.map_value(row, "y"))

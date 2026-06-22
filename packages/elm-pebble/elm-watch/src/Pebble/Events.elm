@@ -1,5 +1,6 @@
 module Pebble.Events exposing
     ( batch
+    , onAnimationFinished
     , onDayChange
     , onHourChange
     , onMinuteChange
@@ -16,11 +17,15 @@ Each helper turns a platform event into a regular Elm `Sub msg`.
 # Time
 @docs onSecondChange, onMinuteChange, onHourChange, onDayChange, onMonthChange, onYearChange
 
+# Animation
+@docs onAnimationFinished
+
 # Composition
 @docs batch
 
 -}
 
+import Pebble.Ui exposing (AnimationId)
 
 import Elm.Kernel.PebbleWatch
 
@@ -77,6 +82,16 @@ The value is the current full year, for example `2026`.
 onYearChange : (Int -> msg) -> Sub msg
 onYearChange =
     Elm.Kernel.PebbleWatch.onYearChange
+
+
+{-| Receive a message when a `drawVectorSequenceAt` instance finishes playing.
+
+The runtime passes the `AnimationId` from the draw call. Use a fresh id for
+each new play so replays and multiple on-screen instances stay independent.
+-}
+onAnimationFinished : (AnimationId -> msg) -> Sub msg
+onAnimationFinished =
+    Elm.Kernel.PebbleWatch.onAnimationFinished
 
 
 {-| Combine multiple Pebble subscriptions into one.

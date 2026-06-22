@@ -21,8 +21,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.Hydration do
       %{kind: :vector_at, vector_id: vector_id, x: x, y: y} when vector_id >= 1 ->
         hydrate_static_vector(project, vector_id, x, y)
 
-      %{kind: :vector_sequence_at, vector_id: vector_id, x: x, y: y} when vector_id >= 1 ->
-        hydrate_vector_sequence(project, vector_id, x, y)
+      %{kind: :vector_sequence_at, animation_id: animation_id, vector_id: vector_id, x: x, y: y}
+      when vector_id >= 1 ->
+        hydrate_vector_sequence(project, animation_id || 0, vector_id, x, y)
 
       %{kind: kind, vector_id: 0} when kind in [:vector_at, :vector_sequence_at] ->
         []
@@ -136,8 +137,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.Hydration do
     end
   end
 
-  @spec hydrate_vector_sequence(Project.t(), pos_integer(), integer(), integer()) :: [svg_op()]
-  defp hydrate_vector_sequence(project, vector_id, x, y) do
+  @spec hydrate_vector_sequence(Project.t(), integer(), pos_integer(), integer(), integer()) ::
+          [svg_op()]
+  defp hydrate_vector_sequence(project, animation_id, vector_id, x, y) do
     case read_vector_bytes(project, vector_id) do
       {:ok, bytes} ->
         case PdcDecoder.decode_sequence(bytes) do
@@ -145,7 +147,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.Hydration do
             [
               %{
                 kind: :vector_sequence_anim,
-                anim_id: vector_sequence_anim_id(vector_id, x, y),
+                anim_id: vector_sequence_anim_id(animation_id, vector_id, x, y),
                 vector_id: vector_id,
                 x: x,
                 y: y,
@@ -198,6 +200,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.Hydration do
     }
   end
 
-  @spec vector_sequence_anim_id(pos_integer(), integer(), integer()) :: String.t()
-  defp vector_sequence_anim_id(vector_id, x, y), do: "debugger-vseq-#{vector_id}-#{x}-#{y}"
+  @spec vector_sequence_anim_id(integer(), pos_integer(), integer(), integer()) :: String.t()
+  defp vector_sequence_anim_id(animation_id, vector_id, x, y),
+    do: "debugger-vseq-#{animation_id}-#{vector_id}-#{x}-#{y}"
 end

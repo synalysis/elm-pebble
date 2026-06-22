@@ -385,7 +385,7 @@
   {
     "aliases": [],
     "binops": [],
-    "comment": "Generic watch-side event subscriptions.\n\nEach helper turns a platform event into a regular Elm `Sub msg`.\n\n# Time\n@docs onSecondChange, onMinuteChange, onHourChange, onDayChange, onMonthChange, onYearChange\n\n# Composition\n@docs batch",
+    "comment": "Generic watch-side event subscriptions.\n\nEach helper turns a platform event into a regular Elm `Sub msg`.\n\n# Time\n@docs onSecondChange, onMinuteChange, onHourChange, onDayChange, onMonthChange, onYearChange\n\n# Animation\n@docs onAnimationFinished\n\n# Composition\n@docs batch",
     "name": "Pebble.Events",
     "native_api_links": [
       {
@@ -424,6 +424,11 @@
         "comment": "Receive a message when the local year changes.\n\nThe value is the current full year, for example `2026`.",
         "name": "onYearChange",
         "type": "(Int -> msg) -> Sub msg"
+      },
+      {
+        "comment": "Receive a message when a `drawVectorSequenceAt` instance finishes playing.\n\nThe runtime passes the `AnimationId` from the draw call. Use a fresh id for\neach new play so replays and multiple on-screen instances stay independent.",
+        "name": "onAnimationFinished",
+        "type": "(AnimationId -> msg) -> Sub msg"
       },
       {
         "comment": "Combine multiple Pebble subscriptions into one.",
@@ -1222,21 +1227,33 @@
       },
       {
         "args": [],
-        "comment": "Bitmap resource handle from `Pebble.Ui.Resources`.",
-        "name": "Bitmap",
-        "type": "UiResources.Bitmap"
+        "comment": "Static bitmap resource handle from `Pebble.Ui.Resources`.",
+        "name": "StaticBitmap",
+        "type": "UiResources.StaticBitmap"
+      },
+      {
+        "args": [],
+        "comment": "Animated bitmap (APNG) resource handle from `Pebble.Ui.Resources`.",
+        "name": "AnimatedBitmap",
+        "type": "UiResources.AnimatedBitmap"
+      },
+      {
+        "args": [],
+        "comment": "Static vector resource handle from `Pebble.Ui.Resources`.",
+        "name": "StaticVector",
+        "type": "UiResources.StaticVector"
+      },
+      {
+        "args": [],
+        "comment": "Animated vector sequence resource handle from `Pebble.Ui.Resources`.",
+        "name": "AnimatedVector",
+        "type": "UiResources.AnimatedVector"
       },
       {
         "args": [],
         "comment": "Font resource handle from `Pebble.Ui.Resources`.",
         "name": "Font",
         "type": "UiResources.Font"
-      },
-      {
-        "args": [],
-        "comment": "Vector graphic resource handle from `Pebble.Ui.Resources`.",
-        "name": "VectorGraphic",
-        "type": "UiResources.VectorGraphic"
       },
       {
         "args": [],
@@ -1264,7 +1281,7 @@
       }
     ],
     "binops": [],
-    "comment": "Retained virtual UI model for Pebble rendering.\n\n`Pebble.Ui` provides a declarative scene graph for watch windows, layers,\nand drawing operations. Build values here and emit them through your app's\nrender bridge to keep view logic in pure Elm.\n\n    mainWindow : WindowNode\n    mainWindow =\n        window 1\n            [ canvasLayer 2\n                [ fillRect\n                    { x = 0, y = 0, w = 144, h = 168 }\n                    UiColor.black\n                ]\n            ]\n\n\n# Core nodes\n\n@docs UiNode, WindowNode, LayerNode, toUiNode, windowStack, window, canvasLayer\n\n\n# Drawing operations\n\n@docs RenderOp, text, textInt, textLabel, clear, fillRect, pixel, line, rect, circle, fillCircle, drawBitmapInRect, drawRotatedBitmap, drawVectorAt, drawVectorSequenceAt, group, pathFilled, pathOutline, pathOutlineOpen, roundRect, arc, fillRadial\n\n\n# Resources, labels and path/context helpers\n\n@docs Label, Context, Bitmap, Font, VectorGraphic, Path, Point, Rect, Rotation, TextAlignment, TextOverflow, TextOptions, defaultTextOptions, alignLeft, alignCenter, alignRight, wordWrap, trailingEllipsis, fillOverflow, context, path, rotationFromPebbleAngle, rotationFromDegrees\n\n\n# Drawing settings\n\n@docs ContextSetting, strokeWidth, antialiased, strokeColor, fillColor, textColor, compositingMode",
+    "comment": "Retained virtual UI model for Pebble rendering.\n\n`Pebble.Ui` provides a declarative scene graph for watch windows, layers,\nand drawing operations. Build values here and emit them through your app's\nrender bridge to keep view logic in pure Elm.\n\n    mainWindow : WindowNode\n    mainWindow =\n        window 1\n            [ canvasLayer 2\n                [ fillRect\n                    { x = 0, y = 0, w = 144, h = 168 }\n                    UiColor.black\n                ]\n            ]\n\n\n# Core nodes\n\n@docs UiNode, WindowNode, LayerNode, toUiNode, windowStack, window, canvasLayer\n\n\n# Drawing operations\n\n@docs RenderOp, text, textInt, textLabel, clear, fillRect, pixel, line, rect, circle, fillCircle, drawBitmapInRect, drawBitmapSequenceAt, drawRotatedBitmap, drawVectorAt, drawVectorSequenceAt, group, pathFilled, pathOutline, pathOutlineOpen, roundRect, arc, fillRadial, AnimationId\n\n\n# Resources, labels and path/context helpers\n\n@docs Label, Context, StaticBitmap, AnimatedBitmap, StaticVector, AnimatedVector, Font, Path, Point, Rect, Rotation, TextAlignment, TextOverflow, TextOptions, defaultTextOptions, alignLeft, alignCenter, alignRight, wordWrap, trailingEllipsis, fillOverflow, context, path, rotationFromPebbleAngle, rotationFromDegrees\n\n\n# Drawing settings\n\n@docs ContextSetting, strokeWidth, antialiased, strokeColor, fillColor, textColor, compositingMode",
     "name": "Pebble.Ui",
     "native_api_links": [
       {
@@ -1296,6 +1313,19 @@
         "cases": [],
         "comment": "Drawing operations for a canvas layer.",
         "name": "RenderOp"
+      },
+      {
+        "args": [],
+        "cases": [
+          [
+            "AnimationId",
+            [
+              "Int"
+            ]
+          ]
+        ],
+        "comment": "Opaque playback instance for `drawVectorSequenceAt`.\n\nAssign a fresh id per animation play. The runtime tracks progress per id so the\nsame resource can animate at multiple positions and restarts only when the id\nchanges.",
+        "name": "AnimationId"
       },
       {
         "args": [],
@@ -1470,22 +1500,27 @@
       {
         "comment": "Draw bitmap resource in the provided rectangle.",
         "name": "drawBitmapInRect",
-        "type": "Bitmap -> Rect -> RenderOp"
+        "type": "StaticBitmap -> Rect -> RenderOp"
+      },
+      {
+        "comment": "Draw an animated bitmap (APNG) sequence at the given origin.",
+        "name": "drawBitmapSequenceAt",
+        "type": "AnimatedBitmap -> Point -> RenderOp"
       },
       {
         "comment": "Draw bitmap resource using width/height, angle and center point.",
         "name": "drawRotatedBitmap",
-        "type": "Bitmap -> Rect -> Rotation -> Point -> RenderOp"
+        "type": "StaticBitmap -> Rect -> Rotation -> Point -> RenderOp"
       },
       {
-        "comment": "Draw a Pebble Draw Command vector resource at the given origin.",
+        "comment": "Draw a static Pebble Draw Command vector resource at the given origin.",
         "name": "drawVectorAt",
-        "type": "VectorGraphic -> Point -> RenderOp"
+        "type": "StaticVector -> Point -> RenderOp"
       },
       {
-        "comment": "Draw a Pebble Draw Command sequence resource at the given origin.",
+        "comment": "Draw an animated Pebble Draw Command sequence at the given origin.\n\nUse a fresh `AnimationId` for each play. Keep the same id in `view` while the\nclip should continue; the runtime dispatches `Pebble.Events.onAnimationFinished`\nwhen that id completes.",
         "name": "drawVectorSequenceAt",
-        "type": "VectorGraphic -> Point -> RenderOp"
+        "type": "AnimationId -> AnimatedVector -> Point -> RenderOp"
       },
       {
         "comment": "Group operations under a temporary style context.",

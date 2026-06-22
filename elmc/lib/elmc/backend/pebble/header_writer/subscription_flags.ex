@@ -26,6 +26,7 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.SubscriptionFlags do
     #define ELMC_PEBBLE_SUB_COMPASS (1 << 20)
     #define ELMC_PEBBLE_SUB_DICTATION (1 << 21)
     #define ELMC_PEBBLE_SUB_UNOBSTRUCTED_AREA (1 << 22)
+    #define ELMC_PEBBLE_SUB_ANIMATION_FINISHED (1 << 23)
     #define ELMC_PEBBLE_SUB_HEALTH (1LL << 31)
 """
   end

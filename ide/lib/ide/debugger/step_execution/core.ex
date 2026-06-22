@@ -827,8 +827,9 @@ defmodule Ide.Debugger.StepExecution.Core do
 
   defp view_output_scene_token("vector_sequence_at", row),
     do:
-      {:vector_sequence_at, view_output_row_int(row, "vector_id", 0),
-       view_output_row_int(row, "x", 0), view_output_row_int(row, "y", 0)}
+      {:vector_sequence_at, view_output_row_int(row, "animation_id", 0),
+       view_output_row_int(row, "vector_id", 0), view_output_row_int(row, "x", 0),
+       view_output_row_int(row, "y", 0)}
 
   defp view_output_scene_token(kind, row),
     do: {String.to_atom(kind), stable_term_sha256(row)}

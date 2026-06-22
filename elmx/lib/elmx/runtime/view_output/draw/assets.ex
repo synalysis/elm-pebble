@@ -78,6 +78,7 @@ defmodule Elmx.Runtime.ViewOutput.Draw.Assets do
     %{
       "kind" => "vector_sequence_at",
       "resource" => Resources.resource_name(resource),
+      "animation_id" => Geometry.int_field(node, "animation_id", 0),
       "vector_id" => Resources.vector_id(node, resource, indices),
       "x" => x,
       "y" => y

@@ -108,16 +108,17 @@ defmodule Elmx.Runtime.Pebble.Ui do
     do: Assets.draw_vector_at(resource, origin)
 
   @spec draw_vector_sequence_at(
+          Types.ui_coord(),
           Types.ui_resource(),
           Types.ui_coord(),
           Types.ui_point(),
           Types.ui_coord()
         ) :: Types.ui_node()
-  def draw_vector_sequence_at(resource, frame, origin, rotation),
-    do: Assets.draw_vector_sequence_at(resource, frame, origin, rotation)
+  def draw_vector_sequence_at(animation_id, resource, frame, origin, rotation),
+    do: Assets.draw_vector_sequence_at(animation_id, resource, frame, origin, rotation)
 
-  def draw_vector_sequence_at(resource, origin),
-    do: Assets.draw_vector_sequence_at(resource, origin)
+  def draw_vector_sequence_at(animation_id, resource, origin),
+    do: Assets.draw_vector_sequence_at(animation_id, resource, origin)
 
   @spec draw_bitmap_sequence_at(
           Types.ui_resource(),

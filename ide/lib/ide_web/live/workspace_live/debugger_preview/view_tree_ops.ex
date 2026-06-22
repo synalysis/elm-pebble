@@ -309,6 +309,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.ViewTreeOps do
         "drawVectorSequenceAt" ->
           %{
             "kind" => "vector_sequence_at",
+            "animation_id" => Map.get(node, "animation_id") || Map.get(node, :animation_id) || 0,
             "vector_id" => Map.get(node, "vector_id") || Map.get(node, :vector_id),
             "x" => Map.get(node, "x") || Map.get(node, :x),
             "y" => Map.get(node, "y") || Map.get(node, :y)
@@ -759,39 +760,67 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.ViewTreeOps do
         end
 
       kind when kind in ["drawVectorSequenceAt", "vectorSequenceAt"] ->
-        case require_ints(ints, 3) do
-          {:ok, [vector_id, x, y]} ->
+        case require_ints(ints, 4) do
+          {:ok, [animation_id, vector_id, x, y]} ->
             if vector_id == 0 do
               []
             else
-              [%{kind: :vector_sequence_at, vector_id: vector_id, x: x, y: y}]
+              [
+                %{
+                  kind: :vector_sequence_at,
+                  animation_id: animation_id,
+                  vector_id: vector_id,
+                  x: x,
+                  y: y
+                }
+              ]
             end
 
           :error ->
             case node_children(node) do
-              [vector_node, x_node, y_node | _] ->
-                with vector_id when is_integer(vector_id) <- vector_node_id(vector_node, model),
+              [animation_node, vector_node, x_node, y_node | _] ->
+                with animation_id when is_integer(animation_id) <-
+                       node_int_value(animation_node, model),
+                     vector_id when is_integer(vector_id) <- vector_node_id(vector_node, model),
                      x when is_integer(x) <- node_int_value(x_node, model),
                      y when is_integer(y) <- node_int_value(y_node, model),
                      true <- vector_id != 0 do
-                  [%{kind: :vector_sequence_at, vector_id: vector_id, x: x, y: y}]
+                  [
+                    %{
+                      kind: :vector_sequence_at,
+                      animation_id: animation_id,
+                      vector_id: vector_id,
+                      x: x,
+                      y: y
+                    }
+                  ]
                 else
                   _ ->
-                    unresolved_node("drawVectorSequenceAt", length(ints), 3)
+                    unresolved_node("drawVectorSequenceAt", length(ints), 4)
                 end
 
-              [vector_node, point_node | _] ->
-                with vector_id when is_integer(vector_id) <- vector_node_id(vector_node, model),
+              [animation_node, vector_node, point_node | _] ->
+                with animation_id when is_integer(animation_id) <-
+                       node_int_value(animation_node, model),
+                     vector_id when is_integer(vector_id) <- vector_node_id(vector_node, model),
                      {:ok, [x, y]} <- point_pair_from_point_node(point_node),
                      true <- vector_id != 0 do
-                  [%{kind: :vector_sequence_at, vector_id: vector_id, x: x, y: y}]
+                  [
+                    %{
+                      kind: :vector_sequence_at,
+                      animation_id: animation_id,
+                      vector_id: vector_id,
+                      x: x,
+                      y: y
+                    }
+                  ]
                 else
                   _ ->
-                    unresolved_node("drawVectorSequenceAt", length(ints), 3)
+                    unresolved_node("drawVectorSequenceAt", length(ints), 4)
                 end
 
               _ ->
-                unresolved_node("drawVectorSequenceAt", length(ints), 3)
+                unresolved_node("drawVectorSequenceAt", length(ints), 4)
             end
         end
 

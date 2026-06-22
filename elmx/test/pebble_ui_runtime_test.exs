@@ -52,10 +52,11 @@ defmodule Elmx.PebbleUiRuntimeTest do
     assert "circle" in kinds
   end
 
-  test "draw_vector_sequence_at accepts two-arg surface form" do
-    op = Ui.draw_vector_sequence_at("VectorAnimatedFoo", %{x: 0, y: 0})
+  test "draw_vector_sequence_at accepts animation id and resource" do
+    op = Ui.draw_vector_sequence_at(7, "VectorAnimatedFoo", %{x: 0, y: 0})
 
     assert op.type == "drawVectorSequenceAt"
+    assert op.animation_id == 7
     assert op.frame == 0
     assert op.rotation == 0
   end

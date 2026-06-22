@@ -25,7 +25,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered.Normalize.Args do
       "bitmapInRect" -> ["bitmap_id", "x", "y", "w", "h"]
       "rotatedBitmap" -> ["bitmap_id", "src_w", "src_h", "angle", "center_x", "center_y"]
       "drawVectorAt" -> ["vector_id", "x", "y"]
-      "drawVectorSequenceAt" -> ["vector_id", "x", "y"]
+      "drawVectorSequenceAt" -> ["animation_id", "vector_id", "x", "y"]
       "drawBitmapSequenceAt" -> ["animation_id", "x", "y"]
       "textInt" -> ["font_id", "x", "y", "value"]
       "textLabel" -> ["font_id", "x", "y", "text"]

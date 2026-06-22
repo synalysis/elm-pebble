@@ -1,5 +1,6 @@
 module Pebble.Ui exposing
-    ( AnimatedBitmap
+    ( AnimationId(..)
+    , AnimatedBitmap
     , AnimatedVector
     , Context
     , ContextSetting(..)
@@ -30,6 +31,7 @@ module Pebble.Ui exposing
     , context
     , defaultTextOptions
     , drawBitmapInRect
+    , drawBitmapSequenceAt
     , drawRotatedBitmap
     , drawVectorAt
     , drawVectorSequenceAt
@@ -86,7 +88,7 @@ render bridge to keep view logic in pure Elm.
 
 # Drawing operations
 
-@docs RenderOp, text, textInt, textLabel, clear, fillRect, pixel, line, rect, circle, fillCircle, drawBitmapInRect, drawRotatedBitmap, drawVectorAt, drawVectorSequenceAt, group, pathFilled, pathOutline, pathOutlineOpen, roundRect, arc, fillRadial
+@docs RenderOp, text, textInt, textLabel, clear, fillRect, pixel, line, rect, circle, fillCircle, drawBitmapInRect, drawBitmapSequenceAt, drawRotatedBitmap, drawVectorAt, drawVectorSequenceAt, group, pathFilled, pathOutline, pathOutlineOpen, roundRect, arc, fillRadial, AnimationId
 
 
 # Resources, labels and path/context helpers
@@ -138,7 +140,7 @@ type RenderOp
     | BitmapInRect StaticBitmap Int Int Int Int
     | RotatedBitmap StaticBitmap Int Int Int Int Int
     | VectorAt StaticVector Int Int
-    | VectorSequenceAt AnimatedVector Int Int
+    | VectorSequenceAt AnimationId AnimatedVector Int Int
     | BitmapSequenceAt AnimatedBitmap Int Int
     | PathFilled Path
     | PathOutline Path
@@ -188,6 +190,16 @@ type alias StaticVector =
 -}
 type alias AnimatedVector =
     UiResources.AnimatedVector
+
+
+{-| Opaque playback instance for `drawVectorSequenceAt`.
+
+Assign a fresh id per animation play. The runtime tracks progress per id so the
+same resource can animate at multiple positions and restarts only when the id
+changes.
+-}
+type AnimationId
+    = AnimationId Int
 
 
 {-| Path geometry for path draw operations.
@@ -430,36 +442,40 @@ context settings commands =
 {-| Draw bitmap resource in the provided rectangle.
 -}
 drawBitmapInRect : StaticBitmap -> Rect -> RenderOp
-drawBitmapInRect bitmap bounds =
-    BitmapInRect bitmap bounds.x bounds.y bounds.w bounds.h
-
-
-{-| Draw bitmap resource using width/height, angle and center point.
--}
-drawRotatedBitmap : StaticBitmap -> Rect -> Rotation -> Point -> RenderOp
-drawRotatedBitmap bitmap srcRect rotation center =
-    RotatedBitmap bitmap srcRect.w srcRect.h (rotationToPebbleAngle rotation) center.x center.y
-
-
-{-| Draw a static vector resource at the given origin.
--}
-drawVectorAt : StaticVector -> Point -> RenderOp
-drawVectorAt vector origin =
-    VectorAt vector origin.x origin.y
-
-
-{-| Draw an animated vector sequence at the given origin.
--}
-drawVectorSequenceAt : AnimatedVector -> Point -> RenderOp
-drawVectorSequenceAt vector origin =
-    VectorSequenceAt vector origin.x origin.y
+drawBitmapInRect staticBitmap bounds =
+    BitmapInRect staticBitmap bounds.x bounds.y bounds.w bounds.h
 
 
 {-| Draw an animated bitmap (APNG) sequence at the given origin.
 -}
 drawBitmapSequenceAt : AnimatedBitmap -> Point -> RenderOp
-drawBitmapSequenceAt animation origin =
-    BitmapSequenceAt animation origin.x origin.y
+drawBitmapSequenceAt animatedBitmap origin =
+    BitmapSequenceAt animatedBitmap origin.x origin.y
+
+
+{-| Draw bitmap resource using width/height, angle and center point.
+-}
+drawRotatedBitmap : StaticBitmap -> Rect -> Rotation -> Point -> RenderOp
+drawRotatedBitmap staticBitmap srcRect rotation center =
+    RotatedBitmap staticBitmap srcRect.w srcRect.h (rotationToPebbleAngle rotation) center.x center.y
+
+
+{-| Draw a static Pebble Draw Command vector resource at the given origin.
+-}
+drawVectorAt : StaticVector -> Point -> RenderOp
+drawVectorAt staticVector origin =
+    VectorAt staticVector origin.x origin.y
+
+
+{-| Draw an animated Pebble Draw Command sequence at the given origin.
+
+Use a fresh `AnimationId` for each play. Keep the same id in `view` while the
+clip should continue; the runtime dispatches `Pebble.Events.onAnimationFinished`
+when that id completes.
+-}
+drawVectorSequenceAt : AnimationId -> AnimatedVector -> Point -> RenderOp
+drawVectorSequenceAt (AnimationId animId) animatedVector origin =
+    VectorSequenceAt (AnimationId animId) animatedVector origin.x origin.y
 
 
 {-| Group operations under a temporary style context.

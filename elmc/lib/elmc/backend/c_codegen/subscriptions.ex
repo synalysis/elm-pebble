@@ -281,6 +281,8 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
       "Elm.Kernel.PebbleWatch.onUnobstructedChanging" -> "ELMC_SUBSCRIPTION_UNOBSTRUCTED_AREA"
       "Elm.Kernel.PebbleWatch.onUnobstructedDidChange" -> "ELMC_SUBSCRIPTION_UNOBSTRUCTED_AREA"
       "Companion.Watch.onPhoneToWatch" -> "ELMC_SUBSCRIPTION_APPMESSAGE"
+      "Pebble.Events.onAnimationFinished" -> "ELMC_SUBSCRIPTION_ANIMATION_FINISHED"
+      "Elm.Kernel.PebbleWatch.onAnimationFinished" -> "ELMC_SUBSCRIPTION_ANIMATION_FINISHED"
       _ -> nil
     end
   end
