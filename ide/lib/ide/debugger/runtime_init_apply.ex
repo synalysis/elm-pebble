@@ -78,5 +78,4 @@ defmodule Ide.Debugger.RuntimeInitApply do
   @spec default_rel_path(Types.surface_target()) :: String.t()
   defp default_rel_path(:watch), do: "src/Main.elm"
   defp default_rel_path(:companion), do: "src/CompanionApp.elm"
-  defp default_rel_path(:phone), do: "src/CompanionApp.elm"
 end

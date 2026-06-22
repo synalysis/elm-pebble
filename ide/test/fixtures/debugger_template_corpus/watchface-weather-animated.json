@@ -268,7 +268,6 @@
     "runtime_view_output": [],
     "screenH": 168,
     "screenW": 144,
-    "suppressWeatherTransitions": false,
     "temperature": {
       "args": [
         {
@@ -279,17 +278,10 @@
         }
       ],
       "ctor": "Just"
-    },
-    "timeString": null,
-    "transitionTicksRemaining": {
-      "args": [],
-      "ctor": "Nothing"
-    },
-    "warmupTicksRemaining": 3
+    }
   },
   "template": "watchface-weather-animated",
   "timeline_init_messages": [
-    "update:EnableWeatherTransitions",
     "update:FromPhone {\"args\":[],\"ctor\":\"Fog\"}",
     "update:FromPhone 18",
     "update:CurrentDateTime {\"day\":27,\"dayOfWeek\":{\"args\":[],\"ctor\":\"Wednesday\"},\"hour\":8,\"minute\":53,\"month\":5,\"second\":0,\"utcOffsetMinutes\":0,\"year\":2026}",
@@ -341,7 +333,6 @@
       },
       "screenH": 168,
       "screenW": 144,
-      "suppressWeatherTransitions": false,
       "temperature": {
         "args": [
           {
@@ -352,12 +343,7 @@
           }
         ],
         "ctor": "Just"
-      },
-      "transitionTicksRemaining": {
-        "args": [],
-        "ctor": "Nothing"
-      },
-      "warmupTicksRemaining": 3
+      }
     },
     "runtime_view_output": [],
     "timeString": null,

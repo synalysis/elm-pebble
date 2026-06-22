@@ -58,9 +58,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.Hydration do
   @spec hydrate_animation_svg_ops([svg_op()], Project.t() | nil) :: [svg_op()]
   def hydrate_animation_svg_ops(rows, %Project{} = project) when is_list(rows) do
     Enum.map(rows, fn
-      %{kind: :bitmap_sequence_at, animation_id: animation_id, x: x, y: y} = row
-      when animation_id >= 1 ->
-        case animation_preview_op(project, animation_id, x, y) do
+      %{kind: :bitmap_sequence_at, animation_id: playback_id, bitmap_animation_id: resource_id, x: x, y: y} = row
+      when resource_id >= 1 ->
+        case animation_preview_op(project, resource_id, playback_id, x, y) do
           %{} = hydrated -> Map.merge(row, hydrated)
           nil -> row
         end
@@ -90,10 +90,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.Hydration do
   defp vector_resource_name(%{ctor: ctor}), do: to_string(ctor)
   defp vector_resource_name(_), do: ""
 
-  @spec animation_preview_op(Project.t(), pos_integer(), integer(), integer()) ::
+  @spec animation_preview_op(Project.t(), pos_integer(), integer(), integer(), integer()) ::
           animation_hydration_fields() | nil
-  defp animation_preview_op(project, animation_id, x, y) do
-    with {:ok, path} <- ResourceStore.animation_file_path_by_id(project, animation_id),
+  defp animation_preview_op(project, resource_id, playback_id, x, y) do
+    with {:ok, path} <- ResourceStore.animation_file_path_by_id(project, resource_id),
          {:ok, bytes} <- File.read(path),
          {:ok, probe} <- ApngProbe.probe_bytes(bytes),
          {:ok, preview_bytes} <- ApngStaticPreview.static_png_bytes(bytes) do
@@ -110,15 +110,16 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.Hydration do
         width: probe.width,
         height: probe.height,
         play_count: play_count,
-        anim_id: bitmap_sequence_anim_id(animation_id, x, y)
+        anim_id: bitmap_sequence_anim_id(playback_id, resource_id, x, y)
       }
     else
       _ -> nil
     end
   end
 
-  @spec bitmap_sequence_anim_id(pos_integer(), integer(), integer()) :: String.t()
-  defp bitmap_sequence_anim_id(animation_id, x, y), do: "debugger-bseq-#{animation_id}-#{x}-#{y}"
+  @spec bitmap_sequence_anim_id(integer(), pos_integer(), integer(), integer()) :: String.t()
+  defp bitmap_sequence_anim_id(playback_id, resource_id, x, y),
+    do: "debugger-bseq-#{playback_id}-#{resource_id}-#{x}-#{y}"
 
   @spec hydrate_static_vector(Project.t(), pos_integer(), integer(), integer()) :: [svg_op()]
   defp hydrate_static_vector(project, vector_id, x, y) do

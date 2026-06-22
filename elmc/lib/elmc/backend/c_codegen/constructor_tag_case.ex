@@ -508,7 +508,7 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
       |> Enum.filter(&is_binary/1)
       |> Enum.join("\n")
 
-    loop_scoped = loop_scoped_assignments(body)
+    block_scoped = block_scoped_assignments(body)
 
     assigned =
       Regex.scan(~r/ElmcValue \*([A-Za-z_][A-Za-z0-9_]*)\s*=/, body)
@@ -529,7 +529,7 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
         Regex.match?(@foldl_borrowed_var, name) or
         MapSet.member?(released, name) or
         MapSet.member?(cow_drop_skip, name) or
-        MapSet.member?(loop_scoped, name) or
+        MapSet.member?(block_scoped, name) or
         ValueSlots.transferred?(name, body) or
         OwnershipTransfer.transferred_in_c_source?(name, body)
     end)
@@ -539,24 +539,21 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     end)
   end
 
-  defp loop_scoped_assignments(body) when is_binary(body) do
+  defp block_scoped_assignments(body) when is_binary(body) do
     body
     |> String.split("\n")
-    |> Enum.reduce({0, MapSet.new()}, fn line, {while_depth, scoped} ->
-      while_depth =
-        cond do
-          String.contains?(line, "while (") -> while_depth + 1
-          String.trim(line) == "}" and while_depth > 0 -> while_depth - 1
-          true -> while_depth
-        end
+    |> Enum.reduce({0, MapSet.new()}, fn line, {brace_depth, scoped} ->
+      open_braces = line |> String.graphemes() |> Enum.count(&(&1 == "{"))
+      close_braces = line |> String.graphemes() |> Enum.count(&(&1 == "}"))
 
       scoped =
         case Regex.run(~r/^\s+ElmcValue \*([A-Za-z_][A-Za-z0-9_]*)\s*=/, line) do
-          [_, var] when while_depth > 0 -> MapSet.put(scoped, var)
+          [_, var] when brace_depth > 0 -> MapSet.put(scoped, var)
           _ -> scoped
         end
 
-      {while_depth, scoped}
+      brace_depth = max(brace_depth + open_braces - close_braces, 0)
+      {brace_depth, scoped}
     end)
     |> elem(1)
   end

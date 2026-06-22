@@ -141,7 +141,7 @@ type RenderOp
     | RotatedBitmap StaticBitmap Int Int Int Int Int
     | VectorAt StaticVector Int Int
     | VectorSequenceAt AnimationId AnimatedVector Int Int
-    | BitmapSequenceAt AnimatedBitmap Int Int
+    | BitmapSequenceAt AnimationId AnimatedBitmap Int Int
     | PathFilled Path
     | PathOutline Path
     | PathOutlineOpen Path
@@ -447,10 +447,14 @@ drawBitmapInRect staticBitmap bounds =
 
 
 {-| Draw an animated bitmap (APNG) sequence at the given origin.
+
+Use a fresh `AnimationId` for each play. Keep the same id in `view` while the
+clip should continue; the runtime dispatches `Pebble.Events.onAnimationFinished`
+when that id completes.
 -}
-drawBitmapSequenceAt : AnimatedBitmap -> Point -> RenderOp
-drawBitmapSequenceAt animatedBitmap origin =
-    BitmapSequenceAt animatedBitmap origin.x origin.y
+drawBitmapSequenceAt : AnimationId -> AnimatedBitmap -> Point -> RenderOp
+drawBitmapSequenceAt (AnimationId animId) animatedBitmap origin =
+    BitmapSequenceAt (AnimationId animId) animatedBitmap origin.x origin.y
 
 
 {-| Draw bitmap resource using width/height, angle and center point.

@@ -168,7 +168,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.CompactScene do
     do: view_output_row_int(row, "bitmap_id", 0) > 0
 
   defp view_output_row_has_resolved_resource_id?(row, "bitmap_sequence_at"),
-    do: view_output_row_int(row, "animation_id", 0) > 0
+    do: view_output_row_int(row, "bitmap_animation_id", 0) > 0
 
   defp view_output_row_has_resolved_resource_id?(_row, _kind), do: false
 
@@ -201,7 +201,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.CompactScene do
     do: compact_op_int(op, "bitmap_id", 0) > 0
 
   defp compact_op_has_resolved_resource_id?(op, "bitmap_sequence_at"),
-    do: compact_op_int(op, "animation_id", 0) > 0
+    do: compact_op_int(op, "bitmap_animation_id", 0) > 0
 
   defp compact_op_has_resolved_resource_id?(_op, _kind), do: false
 

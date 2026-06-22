@@ -38,7 +38,8 @@ defmodule Ide.Debugger.SimulatorSettingsApply do
     )
     |> GeolocationResponses.apply_simulator_settings(ctx.geolocation)
     |> CompanionBridgeEffects.apply_simulator_settings_responses(ctx.companion_bridge)
-    |> RuntimeFollowups.reapply_tracked_http_commands(ctx.runtime_followups)
+    |> maybe_apply_weather_settings_change(previous_settings, settings, ctx)
+    |> maybe_reapply_tracked_http_commands(previous_settings, settings, ctx)
     |> InitSurfaceEffects.apply_companion_bridge_commands(:companion, ctx.init_surface_effects)
     |> SimulatorWatchDelivery.inject_unobstructed_triggers(
       previous_settings,
@@ -46,5 +47,33 @@ defmodule Ide.Debugger.SimulatorSettingsApply do
       ctx.simulator_watch_delivery
     )
     |> SimulatorWatchDelivery.deliver_position(ctx.simulator_watch_delivery)
+  end
+
+  defp maybe_apply_weather_settings_change(state, previous_settings, settings, ctx)
+       when is_map(state) and is_map(previous_settings) and is_map(settings) and is_map(ctx) do
+    if weather_settings_changed?(previous_settings, settings) do
+      CompanionBridgeEffects.apply_weather_settings_change(
+        state,
+        previous_settings,
+        settings,
+        ctx.companion_bridge
+      )
+    else
+      state
+    end
+  end
+
+  defp maybe_reapply_tracked_http_commands(state, previous_settings, settings, ctx)
+       when is_map(state) and is_map(previous_settings) and is_map(settings) and is_map(ctx) do
+    if weather_settings_changed?(previous_settings, settings) do
+      state
+    else
+      RuntimeFollowups.reapply_tracked_http_commands(state, ctx.runtime_followups)
+    end
+  end
+
+  defp weather_settings_changed?(previous_settings, new_settings)
+       when is_map(previous_settings) and is_map(new_settings) do
+    (Map.get(previous_settings, "weather") || %{}) != (Map.get(new_settings, "weather") || %{})
   end
 end

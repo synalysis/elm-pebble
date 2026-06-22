@@ -84,7 +84,8 @@ onYearChange =
     Elm.Kernel.PebbleWatch.onYearChange
 
 
-{-| Receive a message when a `drawVectorSequenceAt` instance finishes playing.
+{-| Receive a message when a `drawVectorSequenceAt` or `drawBitmapSequenceAt`
+instance finishes playing.
 
 The runtime passes the `AnimationId` from the draw call. Use a fresh id for
 each new play so replays and multiple on-screen instances stay independent.

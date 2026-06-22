@@ -37,7 +37,9 @@ defmodule Ide.Debugger.InitSurfaceEffects do
           required(:protocol_events_ctx) => (-> ProtocolEvents.ctx()),
           required(:protocol_rx_ctx) => (-> ProtocolRx.ctx()),
           required(:companion_bridge_ctx) => (-> CompanionBridgeRuntime.ctx()),
-          required(:source_root_for_target) => (Types.surface_target() -> String.t())
+          required(:source_root_for_target) => (Types.surface_target() -> String.t()),
+          optional(:introspect_for) =>
+            (Types.runtime_state(), Types.surface_target() -> Types.elm_introspect())
         }
 
   @spec apply_all(Types.runtime_state(), Types.surface_target(), ctx()) :: Types.runtime_state()

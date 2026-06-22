@@ -61,6 +61,15 @@ defmodule Elmx.PebbleUiRuntimeTest do
     assert op.rotation == 0
   end
 
+  test "draw_bitmap_sequence_at accepts animation id and resource" do
+    op = Ui.draw_bitmap_sequence_at(4, "BitmapAnimatedFoo", %{x: 0, y: 0})
+
+    assert op.type == "drawBitmapSequenceAt"
+    assert op.animation_id == 4
+    assert op.frame == 0
+    assert op.rotation == 0
+  end
+
   test "view_output reads text bounds and resolves vector resources" do
     tree = %{
       "type" => "windowStack",

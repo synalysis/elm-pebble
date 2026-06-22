@@ -32,7 +32,8 @@ defmodule Elmx.Runtime.ViewOutput.Draw.Assets do
     %{
       "kind" => "bitmap_sequence_at",
       "resource" => Resources.resource_name(resource),
-      "animation_id" => Resources.resource_animation_id(resource, indices),
+      "animation_id" => Geometry.int_field(node, "animation_id", 0),
+      "bitmap_animation_id" => Resources.resource_animation_id(resource, indices),
       "x" => x,
       "y" => y
     }

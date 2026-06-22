@@ -26,7 +26,9 @@ defmodule Ide.Debugger.SimulatorWatchDeliveryContext do
                                                      | nil ->
                                                        String.t()),
           required(:simulator_settings) => (Types.runtime_state() ->
-                                              Types.simulator_settings())
+                                              Types.simulator_settings()),
+          optional(:introspect_for) =>
+            (Types.runtime_state(), Types.surface_target() -> Types.elm_introspect())
         }
 
   @spec build(host()) :: SimulatorWatchDelivery.apply_ctx()

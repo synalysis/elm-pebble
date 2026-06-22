@@ -422,16 +422,17 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
         4
       )
 
-  def special_value_from_target("Pebble.Ui.drawBitmapSequenceAt", [animation, origin]),
+  def special_value_from_target("Pebble.Ui.drawBitmapSequenceAt", [anim_id, animation, origin]),
     do:
       encoded_draw_field_cmd_expr(
         draw_kind(:bitmap_sequence_at),
         [
+          animation_id_int_expr(anim_id),
           animation,
           field_access_expr(origin, "x"),
           field_access_expr(origin, "y")
         ],
-        3
+        4
       )
 
   def special_value_from_target("Pebble.Ui.drawBitmapInRect", args),

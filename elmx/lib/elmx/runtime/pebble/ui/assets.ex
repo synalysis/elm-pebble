@@ -67,23 +67,25 @@ defmodule Elmx.Runtime.Pebble.Ui.Assets do
   defp coerce_animation_id(value), do: value
 
   @spec draw_bitmap_sequence_at(
+          Types.ui_coord(),
           Types.ui_resource(),
           Types.ui_coord(),
           Types.ui_point(),
           Types.ui_coord()
         ) :: Types.ui_node()
-  def draw_bitmap_sequence_at(resource, frame, origin, rotation),
+  def draw_bitmap_sequence_at(animation_id, resource, frame, origin, rotation),
     do: %{
       type: "drawBitmapSequenceAt",
       label: "drawBitmapSequenceAt",
+      animation_id: coerce_animation_id(animation_id),
       resource: resource,
       frame: frame,
       origin: origin,
       rotation: rotation
     }
 
-  def draw_bitmap_sequence_at(resource, origin),
-    do: draw_bitmap_sequence_at(resource, 0, origin, 0)
+  def draw_bitmap_sequence_at(animation_id, resource, origin),
+    do: draw_bitmap_sequence_at(animation_id, resource, 0, origin, 0)
 
   @spec draw_rotated_bitmap(
           Types.ui_resource(),

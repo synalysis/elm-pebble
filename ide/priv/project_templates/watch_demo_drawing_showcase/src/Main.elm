@@ -363,6 +363,16 @@ staticBitmapOps model =
     ]
 
 
+animatedBitmapAnimId : Ui.AnimationId
+animatedBitmapAnimId =
+    Ui.AnimationId 3
+
+
+combinedBitmapAnimId : Ui.AnimationId
+combinedBitmapAnimId =
+    Ui.AnimationId 4
+
+
 animatedBitmapOps : Model -> List Ui.RenderOp
 animatedBitmapOps model =
     let
@@ -375,7 +385,7 @@ animatedBitmapOps model =
         cy =
             (model.screenH + contentTop model) // 2 - spriteSize // 2
     in
-    [ Ui.drawBitmapSequenceAt Resources.BitmapAnimatedSparkle { x = cx, y = cy } ]
+    [ Ui.drawBitmapSequenceAt animatedBitmapAnimId Resources.BitmapAnimatedSparkle { x = cx, y = cy } ]
 
 
 staticVectorOps : Model -> List Ui.RenderOp
@@ -426,7 +436,7 @@ combinedOps model =
     , Ui.drawBitmapInRect Resources.BitmapStaticBtIcon { x = 4, y = y0 + 28, w = 20, h = 20 }
     , Ui.drawVectorAt Resources.VectorStaticWeatherClear { x = 32, y = y0 + 24 }
     , Ui.drawVectorSequenceAt combinedVectorAnimId Resources.VectorAnimatedTransitionClearToCloudy { x = 72, y = y0 + 24 }
-    , Ui.drawBitmapSequenceAt Resources.BitmapAnimatedSparkle
+    , Ui.drawBitmapSequenceAt combinedBitmapAnimId Resources.BitmapAnimatedSparkle
         { x = model.screenW // 2 - spriteSize // 2, y = spriteY }
     , Ui.line { x = 4, y = spriteY + spriteSize + 4 }
         { x = model.screenW - 4, y = spriteY + spriteSize + 4 }

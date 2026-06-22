@@ -19,8 +19,6 @@ type alias Model =
     , displayedCondition : Maybe WeatherCondition
     , activeAnimation : Maybe ActiveAnimation
     , nextAnimationId : Int
-    , suppressWeatherTransitions : Bool
-    , warmupTicksRemaining : Int
     , screenW : Int
     , screenH : Int
     }
@@ -36,9 +34,7 @@ type Msg
     = CurrentDateTime Time.CurrentDateTime
     | FromPhone PhoneToWatch
     | MinuteChanged Int
-    | SecondElapsed
     | AnimationFinished Ui.AnimationId
-    | EnableWeatherTransitions
 
 
 init : Platform.LaunchContext -> ( Model, Cmd Msg )
@@ -49,8 +45,6 @@ init context =
       , displayedCondition = Nothing
       , activeAnimation = Nothing
       , nextAnimationId = 1
-      , suppressWeatherTransitions = True
-      , warmupTicksRemaining = msToWholeSeconds weatherTransitionWarmupMs
       , screenW = context.screen.width
       , screenH = context.screen.height
       }
@@ -78,21 +72,6 @@ update msg model =
                 ]
             )
 
-        SecondElapsed ->
-            if model.warmupTicksRemaining > 0 then
-                let
-                    next =
-                        model.warmupTicksRemaining - 1
-                in
-                if next == 0 then
-                    update EnableWeatherTransitions { model | warmupTicksRemaining = 0 }
-
-                else
-                    ( { model | warmupTicksRemaining = next }, Cmd.none )
-
-            else
-                ( model, Cmd.none )
-
         AnimationFinished finishedId ->
             case model.activeAnimation of
                 Just animation ->
@@ -109,9 +88,6 @@ update msg model =
 
                 Nothing ->
                     ( model, Cmd.none )
-
-        EnableWeatherTransitions ->
-            ( { model | suppressWeatherTransitions = False }, Cmd.none )
 
 
 updateFromPhone : PhoneToWatch -> Model -> ( Model, Cmd Msg )
@@ -133,7 +109,7 @@ updateFromPhone message model =
                     if newCondition == displayed then
                         ( nextModel, Cmd.none )
 
-                    else if model.suppressWeatherTransitions || model.activeAnimation /= Nothing then
+                    else if model.activeAnimation /= Nothing then
                         ( { nextModel | displayedCondition = Just newCondition, activeAnimation = Nothing }
                         , Cmd.none
                         )
@@ -160,8 +136,7 @@ updateFromPhone message model =
 subscriptions : Model -> Sub Msg
 subscriptions _ =
     Events.batch
-        [ Events.onSecondChange (\_ -> SecondElapsed)
-        , Events.onAnimationFinished AnimationFinished
+        [ Events.onAnimationFinished AnimationFinished
         , Events.onMinuteChange MinuteChanged
         , CompanionWatch.onPhoneToWatch FromPhone
         ]
@@ -189,26 +164,22 @@ view model =
 
 weatherIconOps : Model -> Ui.Point -> List Ui.RenderOp
 weatherIconOps model origin =
-    if model.suppressWeatherTransitions then
-        []
+    case ( model.temperature, model.condition ) of
+        ( Just _, Just _ ) ->
+            case model.activeAnimation of
+                Just animation ->
+                    [ Ui.drawVectorSequenceAt animation.id animation.vector origin ]
 
-    else
-        case ( model.temperature, model.condition ) of
-            ( Just _, Just _ ) ->
-                case model.activeAnimation of
-                    Just animation ->
-                        [ Ui.drawVectorSequenceAt animation.id animation.vector origin ]
+                Nothing ->
+                    case model.displayedCondition of
+                        Nothing ->
+                            []
 
-                    Nothing ->
-                        case model.displayedCondition of
-                            Nothing ->
-                                []
+                        Just condition ->
+                            [ Ui.drawVectorAt (conditionVector condition) origin ]
 
-                            Just condition ->
-                                [ Ui.drawVectorAt (conditionVector condition) origin ]
-
-            _ ->
-                []
+        _ ->
+            []
 
 
 drawCentered : Model -> Color.Color -> Int -> Int -> String -> Ui.RenderOp
@@ -534,16 +505,6 @@ transitionVector from to =
 iconSize : Int
 iconSize =
     48
-
-
-weatherTransitionWarmupMs : Int
-weatherTransitionWarmupMs =
-    2500
-
-
-msToWholeSeconds : Int -> Int
-msToWholeSeconds ms =
-    (ms + 999) // 1000
 
 
 pad2 : Int -> String

@@ -105,7 +105,7 @@ defmodule Ide.Debugger.RuntimeContexts do
         model_active?: host.model_active?,
         trigger_message_for_surface: host.trigger_message_for_surface,
         simulator_settings: host.simulator_settings_from_state,
-        protocol_events_ctx: protocol_events_fn
+        introspect_for: host.introspect_for
       })
 
     companion_bridge =
@@ -158,7 +158,8 @@ defmodule Ide.Debugger.RuntimeContexts do
         protocol_events_ctx: protocol_events_fn,
         protocol_rx_ctx: protocol_rx_fn,
         companion_bridge_ctx: fn -> companion_bridge end,
-        source_root_for_target: host.source_root_for_target
+        source_root_for_target: host.source_root_for_target,
+        introspect_for: host.introspect_for
       })
 
     introspect_snapshot_apply =

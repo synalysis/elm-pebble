@@ -347,6 +347,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered.ViewOutput do
           "label" => "",
           "children" => [],
           "animation_id" => WireMap.map_integer(row, "animation_id", 0),
+          "bitmap_animation_id" => WireMap.map_integer(row, "bitmap_animation_id", 0),
           "x" => WireMap.map_integer(row, "x", 0),
           "y" => WireMap.map_integer(row, "y", 0)
         }

@@ -50,14 +50,17 @@ update msg model =
             ( model, Cmd.none )
 
         GotWeather (Ok (Weather.Current info)) ->
-            if not model.replyToWatch then
-                ( model, Cmd.none )
+            let
+                condition =
+                    toProtocolCondition info.condition
+
+                alreadyCurrent =
+                    model.lastResponse == info.temperatureC && model.lastCondition == Just condition
+            in
+            if alreadyCurrent then
+                ( { model | replyToWatch = False }, Cmd.none )
 
             else
-                let
-                    condition =
-                        toProtocolCondition info.condition
-                in
                 ( { model
                     | lastResponse = info.temperatureC
                     , lastCondition = Just condition

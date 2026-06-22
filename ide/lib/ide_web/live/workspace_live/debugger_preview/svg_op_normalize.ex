@@ -262,13 +262,19 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.SvgOpNormalize do
           end
 
         "bitmap_sequence_at" ->
-          case WireMap.map_integers_required(op, ["animation_id", "x", "y"]) do
-            {:ok, [animation_id, x, y]} ->
-              %{kind: :bitmap_sequence_at, animation_id: animation_id, x: x, y: y}
+          case WireMap.map_integers_required(op, ["animation_id", "bitmap_animation_id", "x", "y"]) do
+            {:ok, [animation_id, bitmap_animation_id, x, y]} ->
+              %{
+                kind: :bitmap_sequence_at,
+                animation_id: animation_id,
+                bitmap_animation_id: bitmap_animation_id,
+                x: x,
+                y: y
+              }
               |> maybe_put_svg_resource(op)
 
             :error ->
-              unresolved_svg_op("bitmap_sequence_at", ["animation_id", "x", "y"], op)
+              unresolved_svg_op("bitmap_sequence_at", ["animation_id", "bitmap_animation_id", "x", "y"], op)
           end
 
         "text_int" ->

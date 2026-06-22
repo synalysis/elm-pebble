@@ -597,7 +597,6 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
           end
         else
           {:error, reason} -> {:compile_error, reason}
-          _ -> {:compile_error, :init_failed}
         end
 
       {:error, reason} ->
@@ -703,7 +702,6 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
           end
         else
           {:error, reason} -> {:compile_error, reason}
-          _ -> {:compile_error, :init_failed}
         end
 
       {:error, reason} ->
@@ -773,7 +771,6 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
           end
         else
           {:error, reason} -> {:compile_error, reason}
-          _ -> {:compile_error, :init_failed}
         end
 
       {:error, reason} ->

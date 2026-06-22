@@ -231,18 +231,6 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
 
   defp template_simulator_extras(_), do: %{}
 
-  @spec after_bootstrap(String.t(), String.t()) :: :ok | {:error, term()}
-  defp after_bootstrap(slug, "watchface-weather-animated") do
-    case Debugger.inject_trigger(slug, %{
-           target: "watch",
-           trigger: "timer",
-           message: "EnableWeatherTransitions"
-         }) do
-      {:ok, _} -> :ok
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
   defp after_bootstrap(_slug, _template_key), do: :ok
 
   @spec reload_surfaces(String.t(), Projects.Project.t(), String.t()) :: :ok | {:error, term()}

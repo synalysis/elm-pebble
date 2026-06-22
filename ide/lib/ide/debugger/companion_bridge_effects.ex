@@ -45,4 +45,20 @@ defmodule Ide.Debugger.CompanionBridgeEffects do
       ctx
     )
   end
+
+  @spec apply_weather_settings_change(
+          Types.runtime_state(),
+          Types.simulator_settings(),
+          Types.simulator_settings(),
+          CompanionBridgeRuntime.ctx()
+        ) :: Types.runtime_state()
+  def apply_weather_settings_change(state, previous_settings, new_settings, ctx)
+      when is_map(state) and is_map(previous_settings) and is_map(new_settings) and is_map(ctx) do
+    CompanionBridgeRuntime.maybe_apply_weather_settings_change(
+      state,
+      previous_settings,
+      new_settings,
+      ctx
+    )
+  end
 end

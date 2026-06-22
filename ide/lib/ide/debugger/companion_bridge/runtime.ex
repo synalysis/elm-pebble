@@ -102,40 +102,85 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
       if trigger == "weather" and source == "simulator_settings" do
         acc
       else
-        callback = subscription_callback_from_state(acc, target, contract, ctx)
-
-        case callback do
-          value when is_binary(value) and value != "" ->
-            payload = bridge_payload(acc, Map.fetch!(contract, :payload), %{op: "subscribe"}, ctx)
-
-            acc
-            |> ctx.append_event.(
-              "debugger.companion_bridge",
-              Ide.Debugger.Types.CompanionBridgeEventPayload.from_subscription(
-                source_root_for_target(target),
-                trigger,
-                callback,
-                payload
-              )
-            )
-            |> apply_subscription_response(
-              target,
-              callback,
-              payload,
-              source,
-              trigger,
-              contract,
-              ctx
-            )
-
-          _ ->
-            acc
-        end
+        apply_subscription_contract(acc, target, source, contract, ctx)
       end
     end)
   end
 
   def maybe_apply_subscription_responses(state, _target, _source, _ctx), do: state
+
+  @spec maybe_apply_weather_settings_change(
+          Types.runtime_state(),
+          Types.simulator_settings(),
+          Types.simulator_settings(),
+          ctx()
+        ) :: Types.runtime_state()
+  def maybe_apply_weather_settings_change(state, previous_settings, new_settings, ctx)
+      when is_map(state) and is_map(previous_settings) and is_map(new_settings) and is_map(ctx) do
+    previous_weather = Map.get(previous_settings, "weather") || %{}
+    new_weather = Map.get(new_settings, "weather") || %{}
+
+    with true <- new_weather != %{} and new_weather != previous_weather,
+         true <- companion_weather_delivery_ready?(state),
+         %{} = contract <-
+           Enum.find(CompanionBridge.subscription_contracts(), &(Map.get(&1, :source) == "weather")) do
+      apply_subscription_contract(state, :companion, "simulator_settings", contract, ctx)
+    else
+      _ -> state
+    end
+  end
+
+  def maybe_apply_weather_settings_change(state, _previous_settings, _new_settings, _ctx),
+    do: state
+
+  defp apply_subscription_contract(state, target, source, contract, ctx)
+       when target in @companion_bridge_targets and is_map(state) and is_binary(source) and
+              is_map(contract) and is_map(ctx) do
+    trigger = Map.fetch!(contract, :source)
+    callback = subscription_callback_from_state(state, target, contract, ctx)
+
+    case callback do
+      value when is_binary(value) and value != "" ->
+        payload = bridge_payload(state, Map.fetch!(contract, :payload), %{op: "subscribe"}, ctx)
+
+        state
+        |> ctx.append_event.(
+          "debugger.companion_bridge",
+          Ide.Debugger.Types.CompanionBridgeEventPayload.from_subscription(
+            source_root_for_target(target),
+            trigger,
+            callback,
+            payload
+          )
+        )
+        |> apply_subscription_response(
+          target,
+          callback,
+          payload,
+          source,
+          trigger,
+          contract,
+          ctx
+        )
+
+      _ ->
+        state
+    end
+  end
+
+  defp companion_weather_delivery_ready?(state) when is_map(state) do
+    case get_in(state, [:companion, :model, "runtime_model"]) ||
+           get_in(state, [:phone, :model, "runtime_model"]) do
+      %{"lastCondition" => %{"ctor" => "Just", "args" => [_]}} ->
+        true
+
+      %{"lastResponse" => response} when is_integer(response) and response != 0 ->
+        true
+
+      _ ->
+        false
+    end
+  end
 
   @spec apply_init_commands(Types.runtime_state(), Types.surface_target(), ctx()) ::
           Types.runtime_state()

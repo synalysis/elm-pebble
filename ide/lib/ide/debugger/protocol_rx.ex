@@ -713,5 +713,4 @@ defmodule Ide.Debugger.ProtocolRx do
   @spec surface_label(Types.surface_target()) :: String.t()
   defp surface_label(:watch), do: "watch"
   defp surface_label(:companion), do: "companion"
-  defp surface_label(:phone), do: "phone"
 end

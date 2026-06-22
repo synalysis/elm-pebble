@@ -35,14 +35,16 @@ defmodule Ide.Debugger.SimulatorWatchDelivery do
                                                      | nil ->
                                                        String.t()),
           required(:simulator_settings) => (Types.runtime_state() ->
-                                              Types.simulator_settings())
+                                              Types.simulator_settings()),
+          optional(:introspect_for) =>
+            (Types.runtime_state(), Types.surface_target() -> Types.elm_introspect())
         }
 
   @spec deliver_position(Types.runtime_state(), apply_ctx()) :: Types.runtime_state()
   def deliver_position(state, ctx) when is_map(state) and is_map(ctx) do
     settings = ctx.simulator_settings.(state)
 
-    if phone_to_watch_active?(state, ctx) do
+    if geolocation_position_delivery_active?(state, ctx) do
       message_value = Geolocation.watch_from_phone_message_value(settings)
       {lat_e6, lon_e6, accuracy_m} = Geolocation.wire_triplet(settings)
 
@@ -155,6 +157,29 @@ defmodule Ide.Debugger.SimulatorWatchDelivery do
     row = find_phone_to_watch_row(state, ctx)
     is_map(row) and ctx.model_active?.(state, :watch, row)
   end
+
+  defp geolocation_position_delivery_active?(state, ctx) when is_map(state) and is_map(ctx) do
+    phone_to_watch_active?(state, ctx) and watch_accepts_provide_position?(state, ctx)
+  end
+
+  defp watch_accepts_provide_position?(state, ctx) when is_map(state) and is_map(ctx) do
+    case Map.get(ctx, :introspect_for) do
+      fun when is_function(fun, 2) ->
+        ei = fun.(state, :watch)
+
+        Geolocation.init_requested_from_introspect?(ei) or
+          geolocation_runtime_model?(Map.get(ei, "init_model"))
+
+      _ ->
+        false
+    end
+  end
+
+  defp geolocation_runtime_model?(init_model) when is_map(init_model) do
+    Map.has_key?(init_model, "latitudeE6") or Map.has_key?(init_model, "longitudeE6")
+  end
+
+  defp geolocation_runtime_model?(_init_model), do: false
 
   defp find_phone_to_watch_row(state, ctx) do
     state

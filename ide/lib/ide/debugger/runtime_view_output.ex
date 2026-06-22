@@ -336,6 +336,7 @@ defmodule Ide.Debugger.RuntimeViewOutput do
           "label" => "",
           "children" => [],
           "animation_id" => integer_or_zero(WireValues.map_value(row, "animation_id")),
+          "bitmap_animation_id" => integer_or_zero(WireValues.map_value(row, "bitmap_animation_id")),
           "x" => integer_or_zero(WireValues.map_value(row, "x")),
           "y" => integer_or_zero(WireValues.map_value(row, "y"))
         }

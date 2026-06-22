@@ -29,13 +29,8 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.VectorSequenceInstances d
     static uint32_t s_cached_vector_sequence_duration_ms = 0;
     static GDrawCommandSequence *s_cached_sequence = NULL;
 
-    __attribute__((weak)) void elmc_pebble_schedule_layer_redraw(void) {
-    }
-
-    __attribute__((weak)) void elmc_pebble_after_worker_dispatch(void) {
-    }
-
     static void vector_sequence_timer_callback(void *data);
+    static void vector_sequence_flush_finished(ElmcPebbleApp *app);
 
     static void vector_sequence_cache_clear(void) {
       if (s_cached_sequence) {
@@ -101,7 +96,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.VectorSequenceInstances d
       }
 
       if (total_duration_ms > 0) {
-        if (sequence_play_loops(play_count)) {
+        if (elmc_sequence_play_loops(play_count)) {
           elapsed_ms = elapsed_ms % total_duration_ms;
         } else if (play_count > 0) {
           uint32_t max_elapsed = total_duration_ms * (uint32_t)play_count;
@@ -182,7 +177,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.VectorSequenceInstances d
           memset(inst, 0, sizeof(*inst));
           inst->animation_id = animation_id;
           inst->active = 1;
-          inst->started_at_ms = monotonic_ms();
+          inst->started_at_ms = elmc_sequence_monotonic_ms();
           return inst;
         }
       }
@@ -199,12 +194,12 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.VectorSequenceInstances d
       }
 
       uint32_t play_count = inst->play_count;
-      if (sequence_play_loops(play_count) && total_duration_ms > 0) {
+      if (elmc_sequence_play_loops(play_count) && total_duration_ms > 0) {
         return true;
       }
 
       if (play_count > 0 && total_duration_ms > 0) {
-        uint32_t elapsed = (uint32_t)(monotonic_ms() - inst->started_at_ms);
+        uint32_t elapsed = (uint32_t)(elmc_sequence_monotonic_ms() - inst->started_at_ms);
         return elapsed < total_duration_ms * (uint32_t)play_count;
       }
 
@@ -213,7 +208,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.VectorSequenceInstances d
 
     static void vector_sequence_schedule_timer_if_needed(bool animating) {
       if (animating && !s_vector_sequence_timer) {
-        s_vector_sequence_timer = app_timer_register(33, elmc_vector_sequence_timer_callback, NULL);
+        s_vector_sequence_timer = app_timer_register(33, vector_sequence_timer_callback, NULL);
       } else if (!animating && s_vector_sequence_timer) {
         app_timer_cancel(s_vector_sequence_timer);
         s_vector_sequence_timer = NULL;
@@ -245,8 +240,10 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.VectorSequenceInstances d
         }
       }
 
-      vector_sequence_flush_finished(&s_elm_app);
-      elmc_pebble_invalidate_scene(&s_elm_app);
+      vector_sequence_flush_finished(s_sequence_playback_app);
+      if (s_sequence_playback_app) {
+        elmc_pebble_invalidate_scene(s_sequence_playback_app);
+      }
       elmc_pebble_schedule_layer_redraw();
       vector_sequence_schedule_timer_if_needed(any_animating);
     }
@@ -290,6 +287,8 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.VectorSequenceInstances d
         return;
       }
 
+      elmc_sequence_track_app(app);
+
       GDrawCommandSequence *sequence = vector_sequence_cached(resource_id);
       if (!sequence) {
         return;
@@ -312,10 +311,10 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.VectorSequenceInstances d
       }
 
       if (fresh) {
-        inst->started_at_ms = monotonic_ms();
+        inst->started_at_ms = elmc_sequence_monotonic_ms();
       }
 
-      uint32_t elapsed = (uint32_t)(monotonic_ms() - inst->started_at_ms);
+      uint32_t elapsed = (uint32_t)(elmc_sequence_monotonic_ms() - inst->started_at_ms);
       uint32_t total_duration = inst->duration_ms;
       GDrawCommandFrame *frame =
           vector_sequence_frame_at_elapsed(sequence, elapsed, total_duration, inst->play_count);
@@ -330,10 +329,10 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.VectorSequenceInstances d
       }
 
       vector_sequence_schedule_timer_if_needed(animating);
-      (void)app;
     }
 
     void elmc_vector_sequence_frame_end(ElmcPebbleApp *app) {
+      elmc_sequence_track_app(app);
       bool any_animating = false;
 
       for (int i = 0; i < ELMC_VECTOR_SEQUENCE_MAX_INSTANCES; i++) {
@@ -380,12 +379,10 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.VectorSequenceInstances d
   @spec header_decls() :: Types.c_source()
   def header_decls do
     """
-    #if ELMC_PEBBLE_FEATURE_DRAW_VECTOR_SEQUENCE_AT
     void elmc_vector_sequence_frame_begin(void);
     void elmc_vector_sequence_draw_at(GContext *ctx, ElmcPebbleApp *app, int32_t animation_id, uint32_t resource_id, int16_t x, int16_t y);
     void elmc_vector_sequence_frame_end(ElmcPebbleApp *app);
     void elmc_vector_sequence_deinit(void);
-    #endif
     int elmc_pebble_dispatch_animation_finished(ElmcPebbleApp *app, int animation_id);
     """
   end

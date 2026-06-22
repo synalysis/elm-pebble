@@ -1607,7 +1607,7 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
            )
   end
 
-  test "weather condition updates apply after weather transitions are enabled" do
+  test "weather condition updates apply transition animations between conditions" do
     slug = "sim-weather-transitions-#{System.unique_integer([:positive])}"
     template_root = Path.join(["priv", "project_templates", "watchface_weather_animated"])
 
@@ -1649,13 +1649,6 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
     assert {:ok, state} =
              Debugger.set_simulator_settings(slug, %{
                "weather" => %{"temperatureC" => 23, "condition" => "fog"}
-             })
-
-    assert {:ok, _state} =
-             Debugger.inject_trigger(slug, %{
-               target: "watch",
-               trigger: "timer",
-               message: "EnableWeatherTransitions"
              })
 
     assert {:ok, state} =
@@ -1700,5 +1693,121 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
       end)
 
     assert newyork_watch_updates == 0
+  end
+
+  test "weather simulator settings do not deliver ProvidePosition to watch" do
+    slug = "sim-weather-no-position-#{System.unique_integer([:positive])}"
+    template_root = Path.join(["priv", "project_templates", "watchface_weather_animated"])
+
+    watch_source = File.read!(Path.join([template_root, "src", "Main.elm"]))
+    phone_source = File.read!(Path.join([template_root, "phone", "src", "CompanionApp.elm"]))
+
+    assert {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               rel_path: "src/CompanionApp.elm",
+               source: phone_source,
+               source_root: "phone",
+               reason: "weather_no_position_phone"
+             })
+
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               rel_path: "src/Main.elm",
+               source: watch_source,
+               source_root: "watch",
+               reason: "weather_no_position_watch"
+             })
+
+    assert {:ok, state} =
+             Debugger.set_simulator_settings(slug, %{
+               "weather" => %{"temperatureC" => 21, "condition" => "clear"},
+               "latitude" => 48.137154,
+               "longitude" => 11.576124,
+               "accuracy" => 25.0
+             })
+
+    refute Enum.any?(state.debugger_timeline, fn row ->
+             row.target == "watch" and row.message_source == "simulator_settings" and
+               String.contains?(row.message, "ProvidePosition")
+           end)
+
+    refute Enum.any?(state.events, fn event ->
+             event.type == "runtime_exec_error" and
+               get_in(event, [:payload, :target]) == "watch" and
+               String.contains?(to_string(get_in(event, [:payload, :message])), "ProvidePosition")
+           end)
+  end
+
+  test "weather simulator settings change delivers GotWeather to companion subscription" do
+    slug = "sim-weather-settings-change-#{System.unique_integer([:positive])}"
+    template_root = Path.join(["priv", "project_templates", "watchface_weather_animated"])
+
+    watch_source = File.read!(Path.join([template_root, "src", "Main.elm"]))
+    phone_source = File.read!(Path.join([template_root, "phone", "src", "CompanionApp.elm"]))
+
+    assert {:ok, _} = Debugger.start_session(slug, %{watch_profile_id: "basalt"})
+
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               rel_path: "src/CompanionApp.elm",
+               source: phone_source,
+               source_root: "phone",
+               reason: "weather_settings_change_companion"
+             })
+
+    assert {:ok, _} =
+             Debugger.set_simulator_settings(slug, %{
+               "weather" => %{"temperatureC" => 21, "condition" => "clear"}
+             })
+
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               rel_path: "src/Main.elm",
+               source: watch_source,
+               source_root: "watch",
+               reason: "weather_settings_change_watch"
+             })
+
+    assert :ok = Debugger.RuntimeBackgroundDrains.await_idle(slug, 120_000)
+    assert {:ok, state} = Debugger.snapshot(slug, event_limit: 500)
+
+    timeline = state.debugger_timeline || []
+    assert timeline_count(timeline, :phone, "GotWeather") >= 1
+
+    assert {:ok, _state} =
+             Debugger.set_simulator_settings(slug, %{
+               "weather" => %{"temperatureC" => 21, "condition" => "rain"}
+             })
+
+    assert :ok = Debugger.RuntimeBackgroundDrains.await_idle(slug, 120_000)
+    assert {:ok, state} = Debugger.snapshot(slug, event_limit: 500)
+
+    timeline = state.debugger_timeline || []
+
+    assert timeline_count(timeline, :phone, "GotWeather") >= 2
+
+    companion_model = get_in(state, [:companion, :model, "runtime_model"]) || %{}
+
+    assert match?(
+             %{"ctor" => "Just", "args" => [%{"ctor" => "Rain", "args" => []}]},
+             companion_model["lastCondition"]
+           )
+
+    runtime_model = get_in(state, [:watch, :model, "runtime_model"]) || %{}
+    assert weather_condition_matches?(runtime_model["condition"], 4, "Rain")
+
+    assert {:ok, _state} =
+             Debugger.set_simulator_settings(slug, %{
+               "weather" => %{"temperatureC" => 21, "condition" => "cloudy"}
+             })
+
+    assert :ok = Debugger.RuntimeBackgroundDrains.await_idle(slug, 120_000)
+    assert {:ok, state} = Debugger.snapshot(slug, event_limit: 500)
+
+    runtime_model = get_in(state, [:watch, :model, "runtime_model"]) || %{}
+    assert weather_condition_matches?(runtime_model["condition"], 4, "Cloudy")
+    assert runtime_model["nextAnimationId"] > 1
   end
 end

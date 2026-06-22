@@ -50,7 +50,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.SvgOps do
     tree_text_ops = Enum.filter(tree_ops, &(&1.kind in @text_kinds))
 
     runtime_has_vectors? = runtime_has_kind?(runtime_ops, @vector_kinds, :vector_id, 1)
-    runtime_has_animations? = runtime_has_kind?(runtime_ops, [:bitmap_sequence_at], :animation_id, 1)
+    runtime_has_animations? = runtime_has_kind?(runtime_ops, [:bitmap_sequence_at], :bitmap_animation_id, 1)
     runtime_has_bitmaps? = runtime_has_kind?(runtime_ops, @bitmap_kinds, :bitmap_id, 1)
     runtime_has_paths? = Enum.any?(runtime_ops, &(&1.kind in @path_kinds))
     runtime_has_text? = Enum.any?(runtime_ops, &(&1.kind in @text_kinds))
@@ -124,14 +124,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.SvgOps do
         _bitmap_indices,
         animation_indices
       ) do
-    case Map.get(op, :animation_id) do
+    case Map.get(op, :bitmap_animation_id) do
       id when is_integer(id) and id > 0 ->
         op
 
       _ ->
         resource = Map.get(op, :resource) || Map.get(op, "resource")
         id = named_resource_index(resource, animation_indices)
-        if id > 0, do: Map.put(op, :animation_id, id), else: op
+        if id > 0, do: Map.put(op, :bitmap_animation_id, id), else: op
     end
   end
 

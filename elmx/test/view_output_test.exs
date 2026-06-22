@@ -95,7 +95,7 @@ defmodule Elmx.ViewOutputTest do
   test "from_view_tree emits bitmap_sequence_at and rotated_bitmap rows" do
     tree =
       Ui.to_ui_node([
-        Ui.draw_bitmap_sequence_at("BitmapAnimatedSparkle", %{x: 10, y: 20}),
+        Ui.draw_bitmap_sequence_at(3, "BitmapAnimatedSparkle", %{x: 10, y: 20}),
         Ui.draw_rotated_bitmap(
           "BitmapStaticImage",
           %{x: 0, y: 0, w: 30, h: 30},
@@ -113,8 +113,8 @@ defmodule Elmx.ViewOutputTest do
       )
 
     assert Enum.any?(rows, fn row ->
-             row["kind"] == "bitmap_sequence_at" and row["animation_id"] == 2 and row["x"] == 10 and
-               row["y"] == 20
+             row["kind"] == "bitmap_sequence_at" and row["animation_id"] == 3 and
+               row["bitmap_animation_id"] == 2 and row["x"] == 10 and row["y"] == 20
            end)
 
     assert Enum.any?(rows, fn row ->
@@ -126,7 +126,7 @@ defmodule Elmx.ViewOutputTest do
   test "view_shape normalizes RenderOp bitmap constructors" do
     tree =
       Elmx.Runtime.ViewShape.normalize([
-        {:BitmapSequenceAt, ["BitmapAnimatedSparkle", 10, 20]},
+        {:BitmapSequenceAt, [7, "BitmapAnimatedSparkle", 10, 20]},
         {:RotatedBitmap, ["BitmapStaticImage", 30, 30, 4096, 72, 84]}
       ])
 

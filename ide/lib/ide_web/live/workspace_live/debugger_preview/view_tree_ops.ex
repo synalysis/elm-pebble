@@ -293,6 +293,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.ViewTreeOps do
             "kind" => "bitmap_sequence_at",
             "resource" => Map.get(node, "resource") || Map.get(node, :resource),
             "animation_id" => Map.get(node, "animation_id") || Map.get(node, :animation_id) || 0,
+            "bitmap_animation_id" =>
+              Map.get(node, "bitmap_animation_id") || Map.get(node, :bitmap_animation_id) || 0,
             "x" => x,
             "y" => y
           }
@@ -868,9 +870,17 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.ViewTreeOps do
         end
 
       kind when kind in ["BitmapSequenceAt", "bitmapSequenceAt"] ->
-        case require_ints(ints, 3) do
-          {:ok, [animation_id, x, y]} when animation_id > 0 ->
-            [%{kind: :bitmap_sequence_at, animation_id: animation_id, x: x, y: y}]
+        case require_ints(ints, 4) do
+          {:ok, [animation_id, bitmap_animation_id, x, y]} when bitmap_animation_id > 0 ->
+            [
+              %{
+                kind: :bitmap_sequence_at,
+                animation_id: animation_id,
+                bitmap_animation_id: bitmap_animation_id,
+                x: x,
+                y: y
+              }
+            ]
 
           {:ok, _} ->
             bitmap_sequence_svg_ops_from_children(node, model, length(ints))
@@ -880,9 +890,17 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.ViewTreeOps do
         end
 
       kind when kind in ["drawBitmapSequenceAt", "bitmapSequenceAt"] ->
-        case require_ints(ints, 3) do
-          {:ok, [animation_id, x, y]} when animation_id > 0 ->
-            [%{kind: :bitmap_sequence_at, animation_id: animation_id, x: x, y: y}]
+        case require_ints(ints, 4) do
+          {:ok, [animation_id, bitmap_animation_id, x, y]} when bitmap_animation_id > 0 ->
+            [
+              %{
+                kind: :bitmap_sequence_at,
+                animation_id: animation_id,
+                bitmap_animation_id: bitmap_animation_id,
+                x: x,
+                y: y
+              }
+            ]
 
           {:ok, _} ->
             bitmap_sequence_svg_ops_from_children(node, model, length(ints))
@@ -1249,29 +1267,45 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.ViewTreeOps do
           [svg_op()]
   defp bitmap_sequence_svg_ops_from_children(node, model, int_count) do
     case node_children(node) do
-      [animation_node, x_node, y_node | _] ->
-        with animation_id when is_integer(animation_id) <-
-               animation_node_id(animation_node, model),
+      [playback_node, resource_node, x_node, y_node | _] ->
+        with playback_id when is_integer(playback_id) <- node_int_value(playback_node, model),
+             resource_id when is_integer(resource_id) <- animation_node_id(resource_node, model),
              x when is_integer(x) <- node_int_value(x_node, model),
              y when is_integer(y) <- node_int_value(y_node, model),
-             true <- animation_id > 0 do
-          [%{kind: :bitmap_sequence_at, animation_id: animation_id, x: x, y: y}]
+             true <- resource_id > 0 do
+          [
+            %{
+              kind: :bitmap_sequence_at,
+              animation_id: playback_id,
+              bitmap_animation_id: resource_id,
+              x: x,
+              y: y
+            }
+          ]
         else
-          _ -> unresolved_node("BitmapSequenceAt", int_count, 3)
+          _ -> unresolved_node("BitmapSequenceAt", int_count, 4)
         end
 
-      [animation_node, point_node | _] ->
-        with animation_id when is_integer(animation_id) <-
-               animation_node_id(animation_node, model),
+      [playback_node, resource_node, point_node | _] ->
+        with playback_id when is_integer(playback_id) <- node_int_value(playback_node, model),
+             resource_id when is_integer(resource_id) <- animation_node_id(resource_node, model),
              {:ok, [x, y]} <- point_pair_from_point_node(point_node),
-             true <- animation_id > 0 do
-          [%{kind: :bitmap_sequence_at, animation_id: animation_id, x: x, y: y}]
+             true <- resource_id > 0 do
+          [
+            %{
+              kind: :bitmap_sequence_at,
+              animation_id: playback_id,
+              bitmap_animation_id: resource_id,
+              x: x,
+              y: y
+            }
+          ]
         else
-          _ -> unresolved_node("BitmapSequenceAt", int_count, 3)
+          _ -> unresolved_node("BitmapSequenceAt", int_count, 4)
         end
 
       _ ->
-        unresolved_node("BitmapSequenceAt", int_count, 3)
+        unresolved_node("BitmapSequenceAt", int_count, 4)
     end
   end
 

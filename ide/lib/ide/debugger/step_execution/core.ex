@@ -452,10 +452,10 @@ defmodule Ide.Debugger.StepExecution.Core do
       %{kind: kind, bitmap_id: 0} when kind in [:bitmap_in_rect, :rotated_bitmap] ->
         true
 
-      %{"kind" => "bitmap_sequence_at", "animation_id" => 0} ->
+      %{"kind" => "bitmap_sequence_at", "bitmap_animation_id" => 0} ->
         true
 
-      %{kind: :bitmap_sequence_at, animation_id: 0} ->
+      %{kind: :bitmap_sequence_at, bitmap_animation_id: 0} ->
         true
 
       _ ->
@@ -818,7 +818,8 @@ defmodule Ide.Debugger.StepExecution.Core do
   defp view_output_scene_token("bitmap_sequence_at", row),
     do:
       {:bitmap_sequence_at, view_output_row_int(row, "animation_id", 0),
-       view_output_row_int(row, "x", 0), view_output_row_int(row, "y", 0)}
+       view_output_row_int(row, "bitmap_animation_id", 0), view_output_row_int(row, "x", 0),
+       view_output_row_int(row, "y", 0)}
 
   defp view_output_scene_token("vector_at", row),
     do:

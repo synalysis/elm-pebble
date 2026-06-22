@@ -23,8 +23,14 @@ defmodule Elmc.Backend.Pebble.FeatureFlags.DrawFlags.Primitives do
       draw_fill_radial: TargetSet.member?(targets, "Pebble.Ui.fillRadial"),
       draw_bitmap_in_rect: TargetSet.member?(targets, "Pebble.Ui.drawBitmapInRect"),
       draw_vector_at: TargetSet.member?(targets, "Pebble.Ui.drawVectorAt"),
-      draw_vector_sequence_at: TargetSet.member?(targets, "Pebble.Ui.drawVectorSequenceAt"),
-      draw_bitmap_sequence_at: TargetSet.member?(targets, "Pebble.Ui.drawBitmapSequenceAt"),
+      draw_vector_sequence_at:
+        TargetSet.member?(targets, "Pebble.Ui.drawVectorSequenceAt") or
+          TargetSet.member?(targets, "Pebble.Events.onAnimationFinished") or
+          TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.onAnimationFinished"),
+      draw_bitmap_sequence_at:
+        TargetSet.member?(targets, "Pebble.Ui.drawBitmapSequenceAt") or
+          TargetSet.member?(targets, "Pebble.Events.onAnimationFinished") or
+          TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.onAnimationFinished"),
       draw_rotated_bitmap: TargetSet.member?(targets, "Pebble.Ui.drawRotatedBitmap")
     }
   end

@@ -3,8 +3,8 @@ defmodule Elmc.Backend.CCodegen.OwnershipTransfer do
 
   alias Elmc.Backend.CCodegen.ValueSlots
 
-  @cow_drop_decl ~r/ElmcValue \*([A-Za-z_][A-Za-z0-9_]*) = elmc_record_update_index_cow_drop\(([A-Za-z_][A-Za-z0-9_]*),/
-  @cow_drop_reassign ~r/^([A-Za-z_][A-Za-z0-9_]*) = elmc_record_update_index_cow_drop\(([A-Za-z_][A-Za-z0-9_]*),/m
+  @cow_drop_decl ~r/ElmcValue \*([A-Za-z_][A-Za-z0-9_]*) = elmc_record_update_index_cow_drop\([^,]+,\s*[^,]+,\s*([A-Za-z_][A-Za-z0-9_]*)\)/
+  @cow_drop_reassign ~r/^([A-Za-z_][A-Za-z0-9_]*) = elmc_record_update_index_cow_drop\([^,]+,\s*[^,]+,\s*([A-Za-z_][A-Za-z0-9_]*)\)/m
 
   @doc """
   Record-update chains that end in `cow_drop` hand ownership to the result var.

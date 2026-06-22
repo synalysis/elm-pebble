@@ -75,11 +75,11 @@ defmodule Elmx.Runtime.ViewShape.Coerce do
   def coerce_ctor("BitmapInRect", [resource, x, y, w, h]) when is_integer(x),
     do: PebbleUi.draw_bitmap_in_rect(resource, Geometry.rect_map(x, y, w, h))
 
-  def coerce_ctor("DrawBitmapSequenceAt", [resource, origin]),
-    do: PebbleUi.draw_bitmap_sequence_at(resource, Geometry.coerce_point_map(origin))
+  def coerce_ctor("DrawBitmapSequenceAt", [animation_id, resource, origin]),
+    do: PebbleUi.draw_bitmap_sequence_at(animation_id, resource, Geometry.coerce_point_map(origin))
 
-  def coerce_ctor("BitmapSequenceAt", [resource, x, y]) when is_integer(x),
-    do: PebbleUi.draw_bitmap_sequence_at(resource, %{x: x, y: y})
+  def coerce_ctor("BitmapSequenceAt", [animation_id, resource, x, y]) when is_integer(x),
+    do: PebbleUi.draw_bitmap_sequence_at(animation_id, resource, %{x: x, y: y})
 
   def coerce_ctor("DrawRotatedBitmap", [resource, bounds, rotation, center]),
     do: PebbleUi.draw_rotated_bitmap(resource, Geometry.coerce_rect_map(bounds), rotation, Geometry.coerce_point_map(center))

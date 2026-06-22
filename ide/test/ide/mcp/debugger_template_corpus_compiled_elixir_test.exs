@@ -298,7 +298,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
     corpus_init_execute!("watchface-weather-animated", "corpus-weather-init-", fn model ->
       assert model["screenW"] == 144
       assert model["screenH"] == 168
-      assert model["suppressWeatherTransitions"] == true
+      assert model["displayedCondition"] == %{"$ctor" => "Nothing", "$args" => []} or
+               model["displayedCondition"] == %{"ctor" => "Nothing", "args" => []}
     end)
   end
 

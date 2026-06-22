@@ -1352,7 +1352,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
 
     [hydrated] =
       DebuggerPreview.hydrate_animation_svg_ops(
-        [%{kind: :bitmap_sequence_at, animation_id: 1, x: 12, y: 34}],
+        [%{kind: :bitmap_sequence_at, animation_id: 2, bitmap_animation_id: 1, x: 12, y: 34}],
         project
       )
 
@@ -1362,7 +1362,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert hydrated.width == 8
     assert hydrated.height == 6
     assert String.starts_with?(hydrated.href, "data:image/png;base64,")
-    assert hydrated.anim_id == "debugger-bseq-1-12-34"
+    assert hydrated.anim_id == "debugger-bseq-2-1-12-34"
   end
 
   test "svg_ops includes drawBitmapSequenceAt from view tree" do
@@ -1372,6 +1372,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
         %{
           "type" => "drawBitmapSequenceAt",
           "children" => [
+            %{"type" => "expr", "value" => 5},
             %{"type" => "expr", "value" => 1},
             %{"type" => "expr", "value" => 10},
             %{"type" => "expr", "value" => 20}
@@ -1382,7 +1383,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
 
     [op] = DebuggerPreview.svg_ops(tree, %{model: %{}})
     assert op.kind == :bitmap_sequence_at
-    assert op.animation_id == 1
+    assert op.animation_id == 5
+    assert op.bitmap_animation_id == 1
     assert op.x == 10
     assert op.y == 20
   end

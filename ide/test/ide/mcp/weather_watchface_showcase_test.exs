@@ -141,20 +141,21 @@ defmodule Ide.Mcp.WeatherWatchfaceShowcaseTest do
                reason: "weather_fog_vector_watch"
              })
 
-    assert {:ok, state} =
-             Debugger.inject_trigger(slug, %{
-               target: "watch",
-               trigger: "timer",
-               message: "EnableWeatherTransitions"
-             })
+    assert :ok = Debugger.RuntimeBackgroundDrains.await_idle(slug, 120_000)
+    assert {:ok, state} = Debugger.snapshot(slug, event_limit: 500)
 
     view_output = get_in(state, [:watch, :model, "runtime_view_output"]) || []
 
     assert Enum.any?(view_output, fn row ->
-             row["kind"] == "vector_at" and row["vector_id"] == 3
+             row["kind"] == "vector_at" and
+               (row["vector_id"] == 3 or row["resource"] == "VectorStaticWeatherFog")
            end)
 
-    fog_vector = Enum.find(view_output, &(&1["kind"] == "vector_at" and &1["vector_id"] == 3))
+    fog_vector =
+      Enum.find(view_output, fn row ->
+        row["kind"] == "vector_at" and
+          (row["vector_id"] == 3 or row["resource"] == "VectorStaticWeatherFog")
+      end)
 
     hydrated =
       DebuggerPreview.hydrate_vector_svg_ops(
@@ -162,6 +163,7 @@ defmodule Ide.Mcp.WeatherWatchfaceShowcaseTest do
           %{
             kind: :vector_at,
             vector_id: fog_vector["vector_id"],
+            resource: fog_vector["resource"],
             x: fog_vector["x"],
             y: fog_vector["y"]
           }
