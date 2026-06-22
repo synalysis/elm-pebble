@@ -116,42 +116,6 @@ defmodule Ide.Debugger.InitSurfaceEffects do
 
   @spec apply_protocol_events(Types.runtime_state(), Types.surface_target(), ctx()) ::
           Types.runtime_state()
-  def apply_protocol_events(state, target, ctx)
-      when is_map(state) and target in [:watch, :companion, :phone] and is_map(ctx) do
-    surface = Surface.from_state(state, target)
-    ei = Surface.introspect(surface)
-    model = Surface.app_model(surface)
-
-    if is_map(ei) do
-      ei
-      |> IntrospectAccess.cmd_calls("init_cmd_calls")
-      |> Enum.flat_map(
-        &ProtocolEvents.events_from_cmd_call(
-          state,
-          target,
-          &1,
-          model,
-          nil,
-          ctx.protocol_events_ctx.()
-        )
-      )
-      |> Enum.reduce(state, fn event, acc ->
-        case event.type do
-          "debugger.protocol_tx" ->
-            ctx.append_event.(acc, event.type, event.payload)
-
-          "debugger.protocol_rx" ->
-            ProtocolRx.apply_state_effects(acc, [event], ctx.protocol_rx_ctx.())
-
-          _ ->
-            ctx.append_event.(acc, event.type, event.payload)
-        end
-      end)
-    else
-      state
-    end
-  end
-
   def apply_protocol_events(state, _target, _ctx), do: state
 
   @spec apply_geolocation_response(Types.runtime_state(), Types.surface_target(), ctx()) ::
@@ -191,8 +155,13 @@ defmodule Ide.Debugger.InitSurfaceEffects do
   @spec apply_companion_bridge_commands(Types.runtime_state(), Types.surface_target(), ctx()) ::
           Types.runtime_state()
   def apply_companion_bridge_commands(state, target, ctx)
-      when target in [:companion, :phone] and is_map(state) and is_map(ctx) do
-    CompanionBridgeRuntime.apply_init_commands(state, target, ctx.companion_bridge_ctx.())
+       when target in [:companion, :phone] and is_map(state) and is_map(ctx) do
+    bridge_ctx = ctx.companion_bridge_ctx.()
+
+    state
+    |> CompanionBridgeRuntime.apply_init_commands(target, bridge_ctx)
+    |> CompanionBridgeRuntime.flush_deferred_steps(bridge_ctx)
+    |> ProtocolRx.flush_inline_protocol_deliveries(ctx.protocol_rx_ctx.())
   end
 
   def apply_companion_bridge_commands(state, _target, _ctx), do: state

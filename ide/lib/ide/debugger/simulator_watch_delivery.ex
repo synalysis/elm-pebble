@@ -7,7 +7,6 @@ defmodule Ide.Debugger.SimulatorWatchDelivery do
   alias Ide.Debugger.Types
 
   @phone_to_watch_triggers ~w(phone_to_watch on_phone_to_watch)
-  @weather_phone_messages ~w(ProvideTemperature ProvideCondition)
   @unobstructed_triggers ~w(
     on_unobstructed_will_change
     on_unobstructed_changing
@@ -36,30 +35,8 @@ defmodule Ide.Debugger.SimulatorWatchDelivery do
                                                      | nil ->
                                                        String.t()),
           required(:simulator_settings) => (Types.runtime_state() ->
-                                              Types.simulator_settings()),
-          required(:protocol_events_ctx) => (-> ProtocolEvents.ctx()),
-          required(:protocol_supports_weather?) => (Types.runtime_state() -> boolean())
+                                              Types.simulator_settings())
         }
-
-  @spec deliver_weather(Types.runtime_state(), apply_ctx()) :: Types.runtime_state()
-  def deliver_weather(state, ctx) when is_map(state) and is_map(ctx) do
-    if ctx.protocol_supports_weather?.(state) do
-      deliver_weather_when_declared(state, ctx)
-    else
-      state
-    end
-  end
-
-  @spec deliver_weather_when_declared(Types.runtime_state(), apply_ctx()) :: Types.runtime_state()
-  def deliver_weather_when_declared(state, ctx) when is_map(state) and is_map(ctx) do
-    weather = Map.get(ctx.simulator_settings.(state), "weather") || %{}
-
-    if map_size(weather) == 0 do
-      state
-    else
-      maybe_deliver_weather_messages(state, weather, ctx)
-    end
-  end
 
   @spec deliver_position(Types.runtime_state(), apply_ctx()) :: Types.runtime_state()
   def deliver_position(state, ctx) when is_map(state) and is_map(ctx) do
@@ -99,24 +76,6 @@ defmodule Ide.Debugger.SimulatorWatchDelivery do
     end
   end
 
-  @spec inject_weather_on_settings_change(
-          Types.runtime_state(),
-          Types.simulator_settings(),
-          Types.simulator_settings(),
-          apply_ctx()
-        ) :: Types.runtime_state()
-  def inject_weather_on_settings_change(state, previous_settings, new_settings, ctx)
-      when is_map(state) and is_map(previous_settings) and is_map(new_settings) and is_map(ctx) do
-    previous_weather = Map.get(previous_settings, "weather") || %{}
-    new_weather = Map.get(new_settings, "weather") || %{}
-
-    if new_weather == %{} or new_weather == previous_weather do
-      state
-    else
-      maybe_deliver_weather_messages(state, new_weather, ctx)
-    end
-  end
-
   @spec inject_subscription_trigger(Types.runtime_state(), String.t(), apply_ctx()) ::
           Types.runtime_state()
   def inject_subscription_trigger(state, trigger, ctx)
@@ -137,53 +96,6 @@ defmodule Ide.Debugger.SimulatorWatchDelivery do
       )
     else
       state
-    end
-  end
-
-  @spec protocol_supports_weather?(Types.runtime_state(), (-> ProtocolEvents.ctx())) :: boolean()
-  def protocol_supports_weather?(state, protocol_events_ctx_fun)
-      when is_map(state) and is_function(protocol_events_ctx_fun, 0) do
-    case ProtocolEvents.project_schema(state, protocol_events_ctx_fun.()) do
-      {:ok, schema} ->
-        schema
-        |> Map.get(:phone_to_watch, [])
-        |> List.wrap()
-        |> Enum.any?(fn
-          %{name: name} when is_binary(name) -> name in @weather_phone_messages
-          %{"name" => name} when is_binary(name) -> name in @weather_phone_messages
-          _ -> false
-        end)
-
-      _ ->
-        false
-    end
-  end
-
-  defp maybe_deliver_weather_messages(state, weather, ctx) when is_map(weather) and is_map(ctx) do
-    if phone_to_watch_active?(state, ctx) do
-      state
-      |> apply_weather_step(weather, "ProvideTemperature", ctx)
-      |> apply_weather_step(weather, "ProvideCondition", ctx)
-    else
-      state
-    end
-  end
-
-  defp apply_weather_step(state, weather, message_name, ctx)
-       when is_map(weather) and is_binary(message_name) and is_map(ctx) do
-    case weather_message_value(message_name, weather) do
-      %{} = message_value ->
-        ctx.apply_step_once.(
-          state,
-          :watch,
-          weather_step_message(message_name, weather),
-          message_value,
-          "simulator_settings",
-          "simulator_settings"
-        )
-
-      _ ->
-        state
     end
   end
 

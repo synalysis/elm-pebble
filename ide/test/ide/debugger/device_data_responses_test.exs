@@ -20,6 +20,23 @@ defmodule Ide.Debugger.DeviceDataResponsesTest do
                %{"target" => "A", "branch_constructor" => "Tick"}
              ]
     end
+
+    test "matches nested update branch patterns against stepped message" do
+      calls = [
+        %{"target" => "Weather.current", "branch_constructor" => "FromWatch Ok RequestWeather _"},
+        %{"target" => "Cmd.none", "branch_constructor" => "GotWeather Ok Weather.Current info"}
+      ]
+
+      assert DeviceDataResponses.filter_update_cmd_calls(
+               calls,
+               "FromWatch (Ok (RequestWeather CurrentLocation))"
+             ) == [
+               %{
+                 "target" => "Weather.current",
+                 "branch_constructor" => "FromWatch Ok RequestWeather _"
+               }
+             ]
+    end
   end
 
   describe "apply_after_step/7" do

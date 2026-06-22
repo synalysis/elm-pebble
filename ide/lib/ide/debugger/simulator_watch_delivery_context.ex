@@ -1,7 +1,6 @@
 defmodule Ide.Debugger.SimulatorWatchDeliveryContext do
   @moduledoc false
 
-  alias Ide.Debugger.ProtocolEvents
   alias Ide.Debugger.SimulatorWatchDelivery
   alias Ide.Debugger.Types
 
@@ -27,8 +26,7 @@ defmodule Ide.Debugger.SimulatorWatchDeliveryContext do
                                                      | nil ->
                                                        String.t()),
           required(:simulator_settings) => (Types.runtime_state() ->
-                                              Types.simulator_settings()),
-          required(:protocol_events_ctx) => (-> ProtocolEvents.ctx())
+                                              Types.simulator_settings())
         }
 
   @spec build(host()) :: SimulatorWatchDelivery.apply_ctx()
@@ -38,11 +36,7 @@ defmodule Ide.Debugger.SimulatorWatchDeliveryContext do
       trigger_candidates: host.trigger_candidates,
       model_active?: host.model_active?,
       trigger_message_for_surface: host.trigger_message_for_surface,
-      simulator_settings: host.simulator_settings,
-      protocol_events_ctx: host.protocol_events_ctx,
-      protocol_supports_weather?: fn state ->
-        SimulatorWatchDelivery.protocol_supports_weather?(state, host.protocol_events_ctx)
-      end
+      simulator_settings: host.simulator_settings
     }
   end
 end

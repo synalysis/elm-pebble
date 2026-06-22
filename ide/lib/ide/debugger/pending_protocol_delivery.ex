@@ -44,7 +44,7 @@ defmodule Ide.Debugger.PendingProtocolDelivery do
             try do
               drain_until_empty(project_slug, ctx)
             after
-              :ets.delete(@drain_lock_table, project_slug)
+              release_drain_lock(project_slug)
 
               st = AgentStore.fetch(project_slug)
 
@@ -56,6 +56,13 @@ defmodule Ide.Debugger.PendingProtocolDelivery do
       end
     end
 
+    :ok
+  end
+
+  @spec drain_pending_sync(String.t(), ProtocolRx.ctx()) :: :ok
+  def drain_pending_sync(project_slug, ctx)
+      when is_binary(project_slug) and is_map(ctx) do
+    drain_until_empty(project_slug, ctx)
     :ok
   end
 
@@ -165,6 +172,16 @@ defmodule Ide.Debugger.PendingProtocolDelivery do
   defp ensure_drain_lock_table do
     if :ets.whereis(@drain_lock_table) == :undefined do
       :ets.new(@drain_lock_table, [:named_table, :public, :set, read_concurrency: true])
+    end
+
+    :ok
+  end
+
+  @spec release_drain_lock(String.t()) :: :ok
+  defp release_drain_lock(project_slug) when is_binary(project_slug) do
+    case :ets.whereis(@drain_lock_table) do
+      :undefined -> :ok
+      tid -> :ets.delete(tid, project_slug)
     end
 
     :ok

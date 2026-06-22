@@ -42,6 +42,11 @@ defmodule Elmx.Runtime.MessageDecode.Wire do
     Ctor.build(ctor, Enum.map(args, &to_runtime/1))
   end
 
+  def to_runtime(%{"$ctor" => ctor, "$args" => args})
+      when is_binary(ctor) and is_list(args) do
+    Ctor.build(ctor, Enum.map(args, &to_runtime/1))
+  end
+
   def to_runtime(list) when is_list(list), do: Enum.map(list, &to_runtime/1)
 
   def to_runtime(map) when is_map(map) do

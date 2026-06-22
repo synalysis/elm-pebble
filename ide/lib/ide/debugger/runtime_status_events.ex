@@ -237,10 +237,20 @@ defmodule Ide.Debugger.RuntimeStatusEvents do
 
   @spec meaningful_init_cmd_call?(Types.cmd_call()) :: boolean()
   def meaningful_init_cmd_call?(call) when is_map(call) do
-    target = Map.get(call, "target") || Map.get(call, :target)
-    name = Map.get(call, "name") || Map.get(call, :name)
-    not (target in ["Cmd.none", "Platform.Cmd.none"] or name in ["none", "None", nil])
+    target = Map.get(call, "target") || Map.get(call, :target) || ""
+    name = Map.get(call, "name") || Map.get(call, :name) || ""
+
+    not (target in ["Cmd.none", "Platform.Cmd.none"] or name in ["none", "None", nil]) and
+      not init_cmd_status_excluded?(target, name)
   end
 
   def meaningful_init_cmd_call?(_call), do: false
+
+  @spec init_cmd_status_excluded?(String.t(), String.t()) :: boolean()
+  defp init_cmd_status_excluded?(target, name) when is_binary(target) and is_binary(name) do
+    String.contains?(target, "Lifecycle") or String.contains?(target, "Sub.batch") or
+      name in ["setup", "batch"]
+  end
+
+  defp init_cmd_status_excluded?(_target, _name), do: false
 end

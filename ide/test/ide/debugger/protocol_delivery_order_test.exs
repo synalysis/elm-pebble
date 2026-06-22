@@ -129,4 +129,98 @@ defmodule Ide.Debugger.ProtocolDeliveryOrderTest do
     rows = :ets.tab2list(timeline_log)
     assert rows == [{"update", "watch", "FromPhone (ProvideFigure 0)", "protocol_rx"}]
   end
+
+  test "runtime_cmd phone_to_watch delivery runs after the companion step completes" do
+    introspect = %{
+      "subscription_calls" => [
+        %{
+          "event_kind" => "on_phone_to_watch",
+          "callback_constructor" => "FromPhone"
+        }
+      ]
+    }
+
+    state =
+      %{
+        watch: %{
+          model: %{
+            "debugger_init_complete" => true,
+            "runtime_model" => %{}
+          },
+          shell: %{"debugger_contract" => introspect},
+          view_tree: %{"type" => "windowStack"}
+        },
+        phone: %{
+          model: %{"debugger_init_complete" => true},
+          shell: %{"debugger_contract" => introspect},
+          view_tree: %{"type" => "windowStack"}
+        }
+      }
+      |> ProtocolRx.mark_init_complete(:watch)
+      |> ProtocolRx.mark_init_complete(:phone)
+
+    payload = %{
+      "from" => "companion",
+      "to" => "watch",
+      "message" => "ProvideTemperature",
+      "message_value" => %{
+        "ctor" => "ProvideTemperature",
+        "args" => [%{"ctor" => "Celsius", "args" => [26]}]
+      },
+      "trigger" => "runtime_cmd",
+      "message_source" => "runtime_cmd"
+    }
+
+    events_ctx =
+      ProtocolContexts.events_ctx(%{
+        introspect_for: fn st, target ->
+          st |> Map.get(target, %{}) |> RuntimeArtifacts.introspect()
+        end,
+        simulator_settings_from_state: fn _st -> %{} end,
+        session_key_from_state: fn _st -> "test-project" end,
+        surface_app_model: fn st, target ->
+          st |> Map.get(target, %{}) |> Map.get(:model, %{})
+        end
+      })
+
+    rx_ctx = %{
+      append_event: fn st, _type, _payload -> st end,
+      append_debugger_event: fn st, _type, _target, _msg, _src -> st end,
+      append_runtime_exec_event_for_target: fn st, _target, _meta -> st end,
+      source_root_for_target: fn
+        :watch -> "watch"
+        :phone -> "phone"
+      end,
+      introspect_for: fn st, target ->
+        st |> Map.get(target, %{}) |> RuntimeArtifacts.introspect()
+      end,
+      introspect_cmd_calls: fn ei, key -> Map.get(ei, key, []) end,
+      apply_step_once: fn st, :watch, _message, _value, _source, _trigger ->
+        put_in(st, [:watch, :model, "runtime_model", "temperature"], %{
+          "ctor" => "Just",
+          "args" => [%{"ctor" => "Celsius", "args" => [26]}]
+        })
+      end,
+      refresh_runtime_fingerprints: fn model, _rm, _vt -> model end,
+      protocol_events_ctx: fn -> events_ctx end,
+      runtime_ready_for_delivery?: &ProtocolRx.runtime_ready_for_delivery?/2
+    }
+
+    queued =
+      ProtocolRx.apply_state_effects(
+        state,
+        [%{type: "debugger.protocol_rx", payload: payload}],
+        rx_ctx
+      )
+
+    assert ProtocolRx.inline_protocol_deliveries(queued) == [payload]
+    refute match?(%{"ctor" => "Just"}, get_in(queued, [:watch, :model, "runtime_model", "temperature"]))
+
+    flushed = ProtocolRx.flush_inline_protocol_deliveries(queued, rx_ctx)
+
+    assert match?(
+             %{"ctor" => "Just", "args" => [%{"ctor" => "Celsius", "args" => [26]}]},
+             get_in(flushed, [:watch, :model, "runtime_model", "temperature"])
+           )
+  end
 end

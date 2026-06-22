@@ -47,7 +47,7 @@ defmodule Ide.Debugger.PendingHttpFollowups do
             try do
               drain_until_empty(project_slug, ctx)
             after
-              :ets.delete(@drain_lock_table, project_slug)
+              release_drain_lock(project_slug)
 
               st = AgentStore.fetch(project_slug)
 
@@ -320,7 +320,19 @@ defmodule Ide.Debugger.PendingHttpFollowups do
   end
 
   defp clear_http_in_flight(key) do
-    ensure_in_flight_table()
-    :ets.delete(@in_flight_table, key)
+    case :ets.whereis(@in_flight_table) do
+      :undefined -> :ok
+      tid -> :ets.delete(tid, key)
+    end
+  end
+
+  @spec release_drain_lock(String.t()) :: :ok
+  defp release_drain_lock(project_slug) when is_binary(project_slug) do
+    case :ets.whereis(@drain_lock_table) do
+      :undefined -> :ok
+      tid -> :ets.delete(tid, project_slug)
+    end
+
+    :ok
   end
 end

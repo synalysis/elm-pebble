@@ -1424,7 +1424,7 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
            )
   end
 
-  test "weather animated watchface receives drizzle temperature from simulator settings via companion bridge" do
+  test "weather animated watchface receives drizzle temperature after companion handles RequestWeather" do
     slug = "sim-weather-bridge-drizzle-#{System.unique_integer([:positive])}"
     template_root = Path.join(["priv", "project_templates", "watchface_weather_animated"])
 
@@ -1442,6 +1442,11 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
              })
 
     assert {:ok, _} =
+             Debugger.set_simulator_settings(slug, %{
+               "weather" => %{"temperatureC" => 26, "condition" => "drizzle"}
+             })
+
+    assert {:ok, state} =
              Debugger.reload(slug, %{
                rel_path: "src/Main.elm",
                source: watch_source,
@@ -1449,10 +1454,8 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
                reason: "weather_bridge_watch"
              })
 
-    assert {:ok, state} =
-             Debugger.set_simulator_settings(slug, %{
-               "weather" => %{"temperatureC" => 26, "condition" => "drizzle"}
-             })
+    assert :ok = Debugger.RuntimeBackgroundDrains.await_idle(slug, 120_000)
+    assert {:ok, state} = Debugger.snapshot(slug, event_limit: 500)
 
     runtime_model =
       state
@@ -1482,9 +1485,76 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
 
     assert Enum.any?(text_nodes, &String.contains?(&1, "26C Drizzle"))
     refute Enum.any?(text_nodes, &String.contains?(&1, "Loading..."))
+
+    timeline = state.debugger_timeline || []
+
+    assert timeline_count(timeline, :phone, "FromWatch") == 1
+    assert timeline_count(timeline, :phone, "GotWeather") == 1
+    assert timeline_count(timeline, :watch, "ProvideTemperature") == 1
+    assert timeline_count(timeline, :watch, "ProvideCondition") == 1
+
+    refute Enum.any?(timeline, fn row ->
+             row.message_source == "runtime_status" and
+               String.starts_with?(row.message || "", "runtime no followups")
+           end)
+
+    refute Enum.any?(timeline, fn row ->
+             row.message_source == "runtime_followup" and String.contains?(row.message || "", "Unknown")
+           end)
   end
 
-  test "weather settings with string temperatureC deliver Celsius temperature to watch model" do
+  @tag timeout: 180_000
+  test "weather animated companion reload records a single init through protocol drain" do
+    slug = "sim-weather-bootstrap-single-init-#{System.unique_integer([:positive])}"
+    template_root = Path.join(["priv", "project_templates", "watchface_weather_animated"])
+
+    watch_source = File.read!(Path.join([template_root, "src", "Main.elm"]))
+    phone_source = File.read!(Path.join([template_root, "phone", "src", "CompanionApp.elm"]))
+
+    assert {:ok, _} = Debugger.start_session(slug, %{watch_profile_id: "basalt"})
+
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               rel_path: "src/CompanionApp.elm",
+               source: phone_source,
+               source_root: "phone",
+               reason: "weather_single_init_companion"
+             })
+
+    assert {:ok, _} =
+             Debugger.set_simulator_settings(slug, %{
+               "weather" => %{"temperatureC" => 26, "condition" => "drizzle"}
+             })
+
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               rel_path: "src/Main.elm",
+               source: watch_source,
+               source_root: "watch",
+               reason: "weather_single_init_watch"
+             })
+
+    assert :ok = Debugger.RuntimeBackgroundDrains.await_idle(slug, 120_000)
+    assert {:ok, state} = Debugger.snapshot(slug, event_limit: 500)
+
+    companion_init_count =
+      (state.debugger_timeline || [])
+      |> Enum.count(fn row -> row.target == "phone" and row.type == "init" end)
+
+    assert companion_init_count == 1
+  end
+
+  defp timeline_count(timeline, target, fragment) do
+    target_labels = [target, Atom.to_string(target)]
+
+    Enum.count(timeline, fn row ->
+      row_target = row.target
+      row_target in target_labels and is_binary(row.message) and
+        String.contains?(row.message, fragment)
+    end)
+  end
+
+  test "weather settings with string temperatureC deliver Celsius temperature after RequestWeather roundtrip" do
     slug = "sim-weather-string-temp-#{System.unique_integer([:positive])}"
     template_root = Path.join(["priv", "project_templates", "watchface_weather_animated"])
 
@@ -1502,6 +1572,11 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
              })
 
     assert {:ok, _} =
+             Debugger.set_simulator_settings(slug, %{
+               "weather" => %{"temperatureC" => "26", "condition" => "fog"}
+             })
+
+    assert {:ok, state} =
              Debugger.reload(slug, %{
                rel_path: "src/Main.elm",
                source: watch_source,
@@ -1509,10 +1584,15 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
                reason: "weather_string_temp_watch"
              })
 
-    assert {:ok, state} =
-             Debugger.set_simulator_settings(slug, %{
-               "weather" => %{"temperatureC" => "26", "condition" => "fog"}
-             })
+    runtime_model_before = get_in(state, [:watch, :model, "runtime_model"]) || %{}
+
+    refute match?(
+             %{"ctor" => "Just", "args" => [%{"ctor" => "Celsius", "args" => [26]}]},
+             runtime_model_before["temperature"]
+           )
+
+    assert :ok = Debugger.RuntimeBackgroundDrains.await_idle(slug, 120_000)
+    assert {:ok, state} = Debugger.snapshot(slug, event_limit: 500)
 
     runtime_model = get_in(state, [:watch, :model, "runtime_model"]) || %{}
 

@@ -75,13 +75,15 @@ defmodule Ide.Debugger.RuntimeFollowups do
     current_ctor = RuntimeModelMessages.wire_constructor(message)
     target_name = ctx.source_root_for_target.(target)
 
+    followups =
+      followups
+      |> Enum.filter(&is_map/1)
+      |> Enum.reject(&protocol_events_followup?/1)
+      |> Enum.reject(&companion_bridge_followup?/1)
+
     followups
-    |> Enum.filter(&is_map/1)
     |> Enum.filter(fn row ->
       cond do
-        cross_surface_protocol_followup?(row, target) ->
-          false
-
         shadowed_by_device_data?(state, target, message, row) ->
           false
 
@@ -185,45 +187,24 @@ defmodule Ide.Debugger.RuntimeFollowups do
 
   defp shadowed_by_device_data?(_state, _target, _message, _row), do: false
 
-  @spec cross_surface_protocol_followup?(Types.runtime_followup_row(), Types.surface_target()) ::
-          boolean()
-  defp cross_surface_protocol_followup?(row, target) when is_map(row) and is_atom(target) do
+  @spec protocol_events_followup?(Types.runtime_followup_row()) :: boolean()
+  defp protocol_events_followup?(row) when is_map(row) do
+    package = Map.get(row, "package") || Map.get(row, :package)
+    package == "companion-protocol"
+  end
+
+  defp protocol_events_followup?(_row), do: false
+
+  @spec companion_bridge_followup?(Types.runtime_followup_row()) :: boolean()
+  defp companion_bridge_followup?(row) when is_map(row) do
     package = Map.get(row, "package") || Map.get(row, :package)
     command = Map.get(row, "command") || Map.get(row, :command)
 
-    package == "companion-protocol" and is_map(command) and
-      case protocol_command_direction(command) do
-        :watch_to_phone when target == :watch -> true
-        :phone_to_watch when target in [:companion, :phone] -> true
-        _ -> false
-      end
+    package == "pebble/companion" and is_map(command) and
+      Map.get(command, "kind") == "cmd.companion.bridge"
   end
 
-  defp cross_surface_protocol_followup?(_row, _target), do: false
-
-  @spec protocol_command_direction(Types.wire_map()) :: :watch_to_phone | :phone_to_watch | nil
-  defp protocol_command_direction(command) when is_map(command) do
-    direction = Map.get(command, "direction") || Map.get(command, :direction)
-
-    cond do
-      direction in ["watch_to_phone", :watch_to_phone] ->
-        :watch_to_phone
-
-      direction in ["phone_to_watch", :phone_to_watch] ->
-        :phone_to_watch
-
-      Map.get(command, "from") in ["watch", :watch] and
-          Map.get(command, "to") in ["companion", "phone", :companion, :phone] ->
-        :watch_to_phone
-
-      Map.get(command, "from") in ["companion", "phone", :companion, :phone] and
-          Map.get(command, "to") in ["watch", :watch] ->
-        :phone_to_watch
-
-      true ->
-        nil
-    end
-  end
+  defp companion_bridge_followup?(_row), do: false
 
   defp blank_introspect?(surface) do
     case Surface.introspect(surface) do

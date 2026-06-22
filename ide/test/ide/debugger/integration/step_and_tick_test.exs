@@ -1280,7 +1280,7 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
     assert replay_event.payload.replay_message_counts == %{"Dec" => 1}
   end
 
-  test "weather bridge delivers simulator settings without stepping companion GotWeather" do
+  test "weather bridge delivers to watch only after companion handles RequestWeather" do
     slug = "sim-weather-bridge-direct-#{System.unique_integer([:positive])}"
     template_root = Path.join(["priv", "project_templates", "watchface_weather_animated"])
 
@@ -1298,6 +1298,11 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
              })
 
     assert {:ok, _} =
+             Debugger.set_simulator_settings(slug, %{
+               "weather" => %{"temperatureC" => 26, "condition" => "drizzle"}
+             })
+
+    assert {:ok, _} =
              Debugger.reload(slug, %{
                rel_path: "src/Main.elm",
                source: watch_source,
@@ -1305,12 +1310,8 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
                reason: "weather_bridge_watch"
              })
 
-    assert {:ok, state} =
-             Debugger.set_simulator_settings(slug, %{
-               "weather" => %{"temperatureC" => 26, "condition" => "drizzle"}
-             })
-
-    assert {:ok, state} = Debugger.tick(slug)
+    assert :ok = Debugger.RuntimeBackgroundDrains.await_idle(slug, 120_000)
+    assert {:ok, state} = Debugger.snapshot(slug, event_limit: 500)
 
     runtime_model = get_in(state, [:watch, :model, "runtime_model"]) || %{}
 
@@ -1322,13 +1323,13 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
     assert weather_condition_matches?(runtime_model["condition"], 4, "Drizzle")
 
     companion_got_weather_updates =
-      (state.events || [])
-      |> Enum.count(fn event ->
-        event.type == "update" and
-          get_in(event, [:payload, :target]) == "companion" and
-          String.starts_with?(get_in(event, [:payload, :message]) || "", "GotWeather")
+      (state.debugger_timeline || [])
+      |> Enum.count(fn row ->
+        row.type == "update" and
+          row.target == "phone" and
+          String.starts_with?(row.message || "", "GotWeather")
       end)
 
-    assert companion_got_weather_updates == 0
+    assert companion_got_weather_updates >= 1
   end
 end

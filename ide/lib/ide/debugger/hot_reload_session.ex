@@ -5,7 +5,6 @@ defmodule Ide.Debugger.HotReloadSession do
   alias Ide.Debugger.HotReload
   alias Ide.Debugger.ProjectResourceIndices
   alias Ide.Debugger.RuntimeContexts
-  alias Ide.Debugger.SimulatorWatchDelivery
   alias Ide.Debugger.SurfaceTargets
   alias Ide.Debugger.Types
 
@@ -36,7 +35,6 @@ defmodule Ide.Debugger.HotReloadSession do
       source_root,
       RuntimeContexts.hot_reload_context(ctx, rel_path, source, source_root)
     )
-    |> SimulatorWatchDelivery.deliver_weather(ctx.simulator_watch_delivery)
     |> CompanionConfiguration.attach_to_state(project_slug)
   end
 end

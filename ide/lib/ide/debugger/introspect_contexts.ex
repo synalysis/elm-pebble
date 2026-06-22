@@ -40,7 +40,9 @@ defmodule Ide.Debugger.IntrospectContexts do
                                                  String.t(),
                                                  [Types.runtime_followup_row()] ->
                                                    Types.runtime_state()),
-          required(:protocol_rx_ctx) => (-> ProtocolRx.ctx())
+          required(:protocol_rx_ctx) => (-> ProtocolRx.ctx()),
+          required(:drain_app_message_queue) => (Types.runtime_state(), Types.surface_target() ->
+                                                   Types.runtime_state())
         }
 
   @type merge_host :: %{
@@ -52,7 +54,8 @@ defmodule Ide.Debugger.IntrospectContexts do
                                                               Types.runtime_state()),
           required(:apply_simulator_settings) => (Types.runtime_state() -> Types.runtime_state()),
           required(:deliver_companion_status_after_watch_init) =>
-            (Types.runtime_state() -> Types.runtime_state())
+            (Types.runtime_state() -> Types.runtime_state()),
+          required(:protocol_rx_ctx) => (-> ProtocolRx.ctx())
         }
 
   @spec snapshot_apply(snapshot_host()) :: DebuggerContractSnapshot.apply_ctx()
@@ -66,7 +69,8 @@ defmodule Ide.Debugger.IntrospectContexts do
       apply_runtime_followups: host.apply_runtime_followups,
       drain_app_message_queue: fn st, target ->
         ProtocolRx.drain_message_queue(st, target, host.protocol_rx_ctx.())
-      end
+      end,
+      protocol_rx_ctx: host.protocol_rx_ctx
     }
   end
 
@@ -78,6 +82,7 @@ defmodule Ide.Debugger.IntrospectContexts do
       after_apply: fn state, target, _source_root ->
         state
         |> InitSurfaceEffects.apply_all(target, host.init_surface_effects_ctx.())
+        |> ProtocolRx.flush_inline_protocol_deliveries(host.protocol_rx_ctx.())
         |> then(fn reloaded ->
           reloaded =
             if target == :watch do

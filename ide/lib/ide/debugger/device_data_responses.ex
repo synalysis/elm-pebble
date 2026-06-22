@@ -125,15 +125,29 @@ defmodule Ide.Debugger.DeviceDataResponses do
   end
 
   @spec filter_update_cmd_calls([Types.cmd_call()], String.t() | nil) :: [Types.cmd_call()]
-  def filter_update_cmd_calls(calls, current_ctor) when is_list(calls) do
+  def filter_update_cmd_calls(calls, current_message) when is_list(calls) do
     branch_scoped? =
       Enum.any?(calls, fn row ->
-        is_binary(Map.get(row, "branch_constructor")) and Map.get(row, "branch_constructor") != ""
+        (is_binary(Map.get(row, "branch")) and Map.get(row, "branch") != "") or
+          (is_binary(Map.get(row, "branch_constructor")) and
+             Map.get(row, "branch_constructor") != "")
       end)
 
-    if branch_scoped? and is_binary(current_ctor) and current_ctor != "" do
+    if branch_scoped? and is_binary(current_message) and current_message != "" do
       Enum.filter(calls, fn row ->
-        Map.get(row, "branch_constructor") == current_ctor
+        branch_pattern =
+          case Map.get(row, "branch") do
+            branch when is_binary(branch) and branch != "" -> branch
+            _ -> Map.get(row, "branch_constructor")
+          end
+
+        case branch_pattern do
+          branch when is_binary(branch) and branch != "" ->
+            RuntimeModelMessages.update_branch_matches_message?(branch, current_message)
+
+          _ ->
+            true
+        end
       end)
     else
       calls

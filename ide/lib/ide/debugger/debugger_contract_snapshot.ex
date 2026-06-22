@@ -46,7 +46,8 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
                                                  [Types.runtime_followup_row()] ->
                                                    Types.runtime_state()),
           required(:drain_app_message_queue) => (Types.runtime_state(), Types.surface_target() ->
-                                                   Types.runtime_state())
+                                                   Types.runtime_state()),
+          required(:protocol_rx_ctx) => (-> ProtocolRx.ctx())
         }
 
   @type merge_ctx :: %{
@@ -303,6 +304,15 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
       end
       |> StepExecution.normalize_followup_messages()
 
+    protocol_events =
+      execution
+      |> Map.get(:protocol_events)
+      |> case do
+        events when is_list(events) -> events
+        _ -> Map.get(execution, "protocol_events", [])
+      end
+      |> StepExecution.normalize_protocol_events()
+
     state
     |> ctx.append_event.(
       "debugger.init_in",
@@ -314,10 +324,32 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
     )
     |> ctx.append_debugger_event.("init", target, "init", "init", nil)
     |> ctx.runtime_status_after_init.(target, execution, ei)
+    |> apply_init_protocol_side_effects(protocol_events, ctx)
     |> ctx.apply_runtime_followups.(target, "init", "init", followups)
     |> ProtocolRx.mark_init_complete(target)
     |> maybe_drain_app_message_queue(state, target, ctx)
+    |> flush_init_protocol_deliveries(ctx)
     |> refresh_view_preview_if_unavailable(target)
+  end
+
+  @spec apply_init_protocol_side_effects(
+          Types.runtime_state(),
+          [Types.protocol_timeline_event()],
+          apply_ctx()
+        ) :: Types.runtime_state()
+  defp apply_init_protocol_side_effects(state, [], _ctx), do: state
+
+  defp apply_init_protocol_side_effects(state, protocol_events, ctx)
+       when is_list(protocol_events) and is_map(ctx) do
+    ProtocolRx.apply_side_effects(state, protocol_events, false, ctx.protocol_rx_ctx.())
+  end
+
+  defp apply_init_protocol_side_effects(state, _protocol_events, _ctx), do: state
+
+  @spec flush_init_protocol_deliveries(Types.runtime_state(), apply_ctx()) ::
+          Types.runtime_state()
+  defp flush_init_protocol_deliveries(state, ctx) when is_map(ctx) do
+    ProtocolRx.flush_inline_protocol_deliveries(state, ctx.protocol_rx_ctx.())
   end
 
   @spec refresh_init_runtime_fingerprints(

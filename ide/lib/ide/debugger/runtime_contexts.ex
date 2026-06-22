@@ -113,9 +113,6 @@ defmodule Ide.Debugger.RuntimeContexts do
         introspect_for: host.introspect_for,
         append_event: host.append_event,
         apply_step_once: host.apply_step_once,
-        deliver_weather_to_watch: fn st ->
-          Ide.Debugger.SimulatorWatchDelivery.deliver_weather(st, simulator_watch_delivery)
-        end,
         settings: host.simulator_settings_from_state
       })
 
@@ -179,13 +176,16 @@ defmodule Ide.Debugger.RuntimeContexts do
               followups
             end
 
+          followup_ctx =
+            runtime_followups
+
           RuntimeFollowups.apply_after_step(
             st,
             target,
             message,
             source,
             followups,
-            runtime_followups
+            followup_ctx
           )
         end,
         protocol_rx_ctx: protocol_rx_fn
@@ -227,7 +227,8 @@ defmodule Ide.Debugger.RuntimeContexts do
             st,
             companion_bridge
           )
-        end
+        end,
+        protocol_rx_ctx: protocol_rx_fn
       })
 
     %{

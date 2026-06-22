@@ -4,6 +4,7 @@ defmodule Ide.Debugger.SessionApi do
   alias Ide.Debugger.AgentSession
   alias Ide.Debugger.AgentStore
   alias Ide.Debugger.AutoTickWorkers
+  alias Ide.Debugger.RuntimeBackgroundDrains
   alias Ide.Debugger.SessionStartReset
   alias Ide.Debugger.SettingsApi
   alias Ide.Debugger.Types
@@ -58,6 +59,14 @@ defmodule Ide.Debugger.SessionApi do
         project_slug,
         &SettingsApi.apply_to_state(&1, settings, hosts.simulator_settings)
       )
+      |> case do
+        {:ok, state} ->
+          RuntimeBackgroundDrains.schedule_all(project_slug, state)
+          {:ok, state}
+
+        other ->
+          other
+      end
     end)
   end
 end

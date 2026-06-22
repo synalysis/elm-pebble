@@ -191,7 +191,7 @@ defmodule Ide.SimulatorCapabilitiesTest do
 
         subscriptions _ =
             Sub.batch
-                [ Weather.onWeather GotWeather
+                [ Weather.onCurrent GotWeather
                 , Weather.current GotWeather
                 ]
         """,

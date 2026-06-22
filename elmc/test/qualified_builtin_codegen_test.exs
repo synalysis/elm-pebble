@@ -264,8 +264,11 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     assert case_body =~ "switch (case_msg_tag_"
     assert case_body =~ "case "
-    assert case_body =~ " = elmc_new_string_take(\"N\");"
-    assert case_body =~ " = elmc_new_string_take(\"S\");"
+    assert case_body =~ ~s(case_str_2 = "N")
+    assert case_body =~ ~s(case_str_2 = "S")
+    refute case_body =~ "default:"
+    refute case_body =~ "case_box_"
+    assert case_body =~ "elmc_new_string_take(case_str_2)"
     refute Regex.match?(~r/else if \(.*->tag == ELMC_TAG_TUPLE2/, case_body)
     refute Regex.match?(~r/elmc_release\(tmp_\d+\);\s+tmp_\d+ = tmp_\d+;/, case_body)
 

@@ -6,7 +6,6 @@ defmodule Ide.Debugger.ProtocolContexts do
   alias Ide.Debugger.IntrospectAccess
   alias Ide.Debugger.ProtocolEvents
   alias Ide.Debugger.ProtocolRx
-  alias Ide.Debugger.RuntimeModelMessages
   alias Ide.Debugger.StepExecution
   alias Ide.Debugger.Types
 
@@ -69,12 +68,11 @@ defmodule Ide.Debugger.ProtocolContexts do
         ) :: [Types.cmd_call()]
   def cmd_calls_for_message(state, target, message, introspect_for)
       when is_map(state) and is_binary(message) and is_function(introspect_for, 2) do
-    ctor = RuntimeModelMessages.wire_constructor(message)
     ei = introspect_for.(state, target)
 
     ei
     |> IntrospectAccess.cmd_calls("update_cmd_calls")
-    |> DeviceDataResponses.filter_update_cmd_calls(ctor)
+    |> DeviceDataResponses.filter_update_cmd_calls(message)
     |> CmdCall.expand_helpers(ei)
   end
 

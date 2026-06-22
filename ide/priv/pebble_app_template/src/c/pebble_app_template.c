@@ -3613,7 +3613,7 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   // #region agent log
   ELMC_AGENT_INIT_PROBE(0xED995201);
   // #endregion
-  if (s_inbox_snapshot_count > 1 &&
+  if (s_inbox_snapshot_count >= 1 &&
       companion_decode_and_dispatch_snapshots(
           s_inbox_snapshots, s_inbox_tuple_wire, s_inbox_snapshot_count)) {
     companion_pending_clear();
@@ -4220,10 +4220,14 @@ static void complete_elm_init(void) {
     AppMessageResult app_message_rc = app_message_open(ELMC_PEBBLE_APP_MESSAGE_INBOX_SIZE, ELMC_PEBBLE_APP_MESSAGE_OUTBOX_SIZE);
     (void)app_message_rc;
 #if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND
-    AppTimer *companion_resync_timer = app_timer_register(500, companion_resync_callback, NULL);
-    (void)companion_resync_timer;
-    companion_resync_timer = app_timer_register(1500, companion_resync_callback, NULL);
-    (void)companion_resync_timer;
+    {
+      static const uint32_t companion_resync_delays_ms[] = {500, 1500, 3000, 5000, 10000};
+      for (size_t i = 0; i < sizeof(companion_resync_delays_ms) / sizeof(companion_resync_delays_ms[0]); i++) {
+        AppTimer *companion_resync_timer =
+            app_timer_register(companion_resync_delays_ms[i], companion_resync_callback, NULL);
+        (void)companion_resync_timer;
+      }
+    }
 #endif
 #endif
     startup_cmd_callback(NULL);

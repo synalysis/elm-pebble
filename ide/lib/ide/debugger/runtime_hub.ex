@@ -3,6 +3,7 @@ defmodule Ide.Debugger.RuntimeHub do
 
   alias Ide.Debugger.HotReloadSurface
   alias Ide.Debugger.OperationHosts
+  alias Ide.Debugger.ProtocolRx
   alias Ide.Debugger.RuntimeArtifactMerge
   alias Ide.Debugger.RuntimeContexts
   alias Ide.Debugger.RuntimeHost
@@ -47,10 +48,13 @@ defmodule Ide.Debugger.RuntimeHub do
       |> RuntimeHost.build()
       |> RuntimeContexts.build()
 
-    config
-    |> then(&runtime_host_callbacks_impl(&1, {:built, stub_ctx}))
-    |> RuntimeHost.build()
-    |> RuntimeContexts.build()
+    host =
+      config
+      |> then(&runtime_host_callbacks_impl(&1, {:built, stub_ctx}))
+      |> RuntimeHost.build()
+
+    ctx = RuntimeContexts.build(host)
+    finalize_step_wiring(host, ctx)
   end
 
   @spec operation_deps(config()) :: OperationHosts.deps()
@@ -142,11 +146,44 @@ defmodule Ide.Debugger.RuntimeHub do
         source_override,
         trigger,
         opts,
-        %{step_apply: step_apply}
+        ctx
       )
       when target in [:watch, :companion, :phone] and is_list(opts) do
-    StepApply.apply(
+    complete_step(
       state,
+      target,
+      requested_message,
+      message_value,
+      source_override,
+      trigger,
+      opts,
+      ctx
+    )
+  end
+
+  @spec complete_step(
+          Types.runtime_state(),
+          Types.surface_target(),
+          String.t() | nil,
+          Types.subscription_payload() | nil,
+          String.t() | nil,
+          String.t(),
+          keyword(),
+          RuntimeContexts.t()
+        ) :: Types.runtime_state()
+  def complete_step(
+        state,
+        target,
+        requested_message,
+        message_value,
+        source_override,
+        trigger,
+        opts,
+        %{step_apply: step_apply, companion_bridge: companion_bridge, protocol_rx: protocol_rx}
+      )
+      when target in [:watch, :companion, :phone] and is_list(opts) do
+    state
+    |> StepApply.apply(
       target,
       requested_message,
       message_value,
@@ -155,6 +192,63 @@ defmodule Ide.Debugger.RuntimeHub do
       opts,
       step_apply
     )
+    |> Ide.Debugger.CompanionBridge.Runtime.flush_deferred_steps(companion_bridge)
+    |> ProtocolRx.flush_inline_protocol_deliveries(protocol_rx)
+  end
+
+  @spec finalize_step_wiring(RuntimeHost.callbacks(), RuntimeContexts.t()) ::
+          RuntimeContexts.t()
+  defp finalize_step_wiring(host, ctx) do
+    step_apply = Map.fetch!(ctx, :step_apply)
+    protocol_rx = Map.fetch!(ctx, :protocol_rx)
+    companion_bridge = Map.fetch!(ctx, :companion_bridge)
+
+    # Deferred bridge steps only run Elm update; the parent step flushes inline
+    # protocol deliveries after all deferred work completes.
+    deferred_apply =
+      fn state, target, message, message_value, source, trigger ->
+        StepApply.apply(
+          state,
+          target,
+          message,
+          message_value,
+          source,
+          trigger,
+          [],
+          step_apply
+        )
+      end
+
+    apply_step_once =
+      fn state, target, message, message_value, source, trigger ->
+        state
+        |> StepApply.apply(
+          target,
+          message,
+          message_value,
+          source,
+          trigger,
+          [],
+          step_apply
+        )
+        |> Ide.Debugger.CompanionBridge.Runtime.flush_deferred_steps(%{
+          companion_bridge
+          | apply_step: deferred_apply
+        })
+        |> ProtocolRx.flush_inline_protocol_deliveries(protocol_rx)
+      end
+
+    host =
+      Map.merge(host, %{
+        apply_step_once: apply_step_once,
+        apply_step_without_value: fn st, target, message, source, trigger ->
+          apply_step_once.(st, target, message, nil, source, trigger)
+        end
+      })
+
+    ctx = RuntimeContexts.build(host)
+
+    %{ctx | companion_bridge: %{Map.fetch!(ctx, :companion_bridge) | apply_step: deferred_apply}}
   end
 
   @spec trigger_message_for_surface(

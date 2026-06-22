@@ -4,8 +4,9 @@ defmodule Ide.Debugger.ProtocolRx do
   alias Ide.Debugger.AppMessageQueue
   alias Ide.Debugger.PendingProtocolDelivery
   alias Ide.Debugger.ProtocolEvents
-  alias Ide.Debugger.ProtocolRuntimePatch
+  alias Ide.Debugger.ProtocolEvents.CmdCall.Core, as: ProtocolCmdCallCore
   alias Ide.Debugger.RuntimeArtifacts
+  alias Ide.Debugger.SurfaceTargets
   alias Ide.Debugger.Types
 
   @type ctx :: %{
@@ -49,6 +50,7 @@ defmodule Ide.Debugger.ProtocolRx do
         }
 
   @init_complete_key "debugger_init_complete"
+  @inline_deliveries_key :pending_inline_protocol_deliveries
 
   @spec runtime_ready_for_delivery?(Types.runtime_state(), Types.surface_target()) :: boolean()
   def runtime_ready_for_delivery?(state, target)
@@ -64,7 +66,17 @@ defmodule Ide.Debugger.ProtocolRx do
   @spec mark_init_complete(Types.runtime_state(), Types.surface_target()) :: Types.runtime_state()
   def mark_init_complete(state, target)
       when is_map(state) and target in [:watch, :companion, :phone] do
-    put_in(state, [target, :model, @init_complete_key], true)
+    canonical = SurfaceTargets.normalize(target)
+
+    state
+    |> put_in([canonical, :model, @init_complete_key], true)
+    |> then(fn st ->
+      if canonical == :companion do
+        put_in(st, [:phone, :model, @init_complete_key], true)
+      else
+        st
+      end
+    end)
   end
 
   def mark_init_complete(state, _target), do: state
@@ -111,11 +123,84 @@ defmodule Ide.Debugger.ProtocolRx do
       when is_list(protocol_events) and is_map(rx_ctx) do
     Enum.reduce(protocol_events, state, fn event, acc ->
       if event.type == "debugger.protocol_rx" and is_map(event.payload) do
-        handle_protocol_rx_event(acc, event.payload, rx_ctx)
+        if inline_step_delivery?(event.payload) do
+          enqueue_inline_protocol_delivery(acc, event.payload)
+        else
+          handle_protocol_rx_event(acc, event.payload, rx_ctx)
+        end
       else
         acc
       end
     end)
+  end
+
+  @spec flush_inline_protocol_deliveries(Types.runtime_state(), ctx()) :: Types.runtime_state()
+  def flush_inline_protocol_deliveries(state, rx_ctx) when is_map(state) and is_map(rx_ctx) do
+    state
+    |> Map.get(@inline_deliveries_key, [])
+    |> case do
+      deliveries when is_list(deliveries) and deliveries != [] ->
+        state
+        |> Map.delete(@inline_deliveries_key)
+        |> deliver_inline_protocol_payloads(Enum.reverse(deliveries), rx_ctx)
+
+      _ ->
+        Map.delete(state, @inline_deliveries_key)
+    end
+  end
+
+  def flush_inline_protocol_deliveries(state, _rx_ctx) when is_map(state), do: state
+
+  @spec inline_protocol_deliveries(Types.runtime_state()) :: [Types.protocol_tx_rx_payload()]
+  def inline_protocol_deliveries(state) when is_map(state) do
+    case Map.get(state, @inline_deliveries_key) do
+      deliveries when is_list(deliveries) -> deliveries
+      _ -> []
+    end
+  end
+
+  @spec enqueue_inline_protocol_delivery(
+          Types.runtime_state(),
+          Types.protocol_tx_rx_payload()
+        ) :: Types.runtime_state()
+  def enqueue_inline_protocol_delivery(state, payload) when is_map(state) and is_map(payload) do
+    Map.update(state, @inline_deliveries_key, [payload], &[payload | &1])
+  end
+
+  @spec inline_step_delivery?(Types.protocol_tx_rx_payload()) :: boolean()
+  defp inline_step_delivery?(payload) when is_map(payload) do
+    trigger = Map.get(payload, :trigger) || Map.get(payload, "trigger")
+    source = Map.get(payload, :message_source) || Map.get(payload, "message_source")
+    from = Map.get(payload, :from) || Map.get(payload, "from")
+    to = Map.get(payload, :to) || Map.get(payload, "to")
+
+    (trigger == "runtime_cmd" or source == "runtime_cmd") and
+      ((from in ["companion", "phone"] and to == "watch") or
+         (from == "watch" and to in ["companion", "phone"]))
+  end
+
+  @spec deliver_inline_protocol_payloads(
+          Types.runtime_state(),
+          [Types.protocol_tx_rx_payload()],
+          ctx()
+        ) :: Types.runtime_state()
+  defp deliver_inline_protocol_payloads(state, deliveries, rx_ctx)
+       when is_map(state) and is_list(deliveries) and is_map(rx_ctx) do
+    deliveries
+    |> Enum.uniq_by(&inline_delivery_key/1)
+    |> Enum.reduce(state, fn payload, acc ->
+      deliver_payload(acc, payload, rx_ctx)
+    end)
+  end
+
+  @spec inline_delivery_key(Types.protocol_tx_rx_payload()) ::
+          {String.t() | nil, String.t() | nil, term()}
+  defp inline_delivery_key(payload) when is_map(payload) do
+    {
+      Map.get(payload, :to) || Map.get(payload, "to"),
+      Map.get(payload, :message) || Map.get(payload, "message"),
+      Map.get(payload, :message_value) || Map.get(payload, "message_value")
+    }
   end
 
   defp handle_protocol_rx_event(state, payload, rx_ctx) when is_map(payload) and is_map(rx_ctx) do
@@ -125,6 +210,9 @@ defmodule Ide.Debugger.ProtocolRx do
       cond do
         not rx_ctx.runtime_ready_for_delivery?.(state, recipient) ->
           AppMessageQueue.enqueue(state, recipient, payload)
+
+        defer_init_cmd_delivery?(payload) ->
+          PendingProtocolDelivery.enqueue(state, recipient, payload)
 
         PendingProtocolDelivery.async?() ->
           PendingProtocolDelivery.enqueue(state, recipient, payload)
@@ -136,6 +224,18 @@ defmodule Ide.Debugger.ProtocolRx do
       state
     end
   end
+
+  @spec defer_init_cmd_delivery?(Types.protocol_tx_rx_payload()) :: boolean()
+  defp defer_init_cmd_delivery?(payload) when is_map(payload) do
+    trigger = Map.get(payload, :trigger) || Map.get(payload, "trigger")
+    from = Map.get(payload, :from) || Map.get(payload, "from")
+    to = Map.get(payload, :to) || Map.get(payload, "to")
+
+    trigger in ["init_cmd", "init_companion_bridge"] and from == "watch" and
+      to in ["companion", "phone"]
+  end
+
+  defp defer_init_cmd_delivery?(_payload), do: false
 
   @spec deliver_payload(
           Types.runtime_state(),
@@ -284,14 +384,6 @@ defmodule Ide.Debugger.ProtocolRx do
           recipient,
           Map.put(row, "message", inbound_display_message)
         )
-        |> then(fn st ->
-          ProtocolRuntimePatch.patch_watch(
-            st,
-            :watch,
-            message_value,
-            rx_ctx.introspect_for.(st, :watch)
-          )
-        end)
         |> update_recipient_protocol_view_tree(recipient, row)
         |> refresh_runtime_surface_fingerprints(recipient, rx_ctx)
 
@@ -323,6 +415,9 @@ defmodule Ide.Debugger.ProtocolRx do
       cond do
         not rx_ctx.runtime_ready_for_delivery?.(acc, target) ->
           AppMessageQueue.enqueue(acc, target, payload)
+
+        defer_init_cmd_delivery?(payload) ->
+          PendingProtocolDelivery.enqueue(acc, target, payload)
 
         PendingProtocolDelivery.async?() ->
           PendingProtocolDelivery.enqueue(acc, target, payload)
@@ -428,12 +523,12 @@ defmodule Ide.Debugger.ProtocolRx do
           {String.t(), Types.protocol_message_wire_value()} | String.t() | nil
   defp protocol_callback_message(
          callback,
-         message,
+         _message,
          %{"ctor" => ctor, "args" => _} = message_value,
          false
        )
        when is_binary(callback) and callback != "" and callback == ctor do
-    {ProtocolEvents.inbound_display_message(message, message_value), message_value}
+    {callback, message_value}
   end
 
   defp protocol_callback_message(callback, message, message_value, wrap_result?)
@@ -450,7 +545,10 @@ defmodule Ide.Debugger.ProtocolRx do
     {display, value} =
       cond do
         already_wrapped? and is_map(message_value) ->
-          {message, message_value}
+          {
+            message,
+            ensure_protocol_callback_wire_value(callback, message_value)
+          }
 
         wrap_result? ->
           {
@@ -499,6 +597,27 @@ defmodule Ide.Debugger.ProtocolRx do
   end
 
   defp wrap_protocol_callback_value(_callback, _value), do: nil
+
+  @spec ensure_protocol_callback_wire_value(String.t(), Types.subscription_payload()) ::
+          Types.protocol_ctor_value()
+  defp ensure_protocol_callback_wire_value(callback, %{"ctor" => ctor, "args" => _} = value)
+       when is_binary(callback) and ctor == callback do
+    value
+  end
+
+  defp ensure_protocol_callback_wire_value(callback, %{ctor: ctor, args: _} = value)
+       when is_binary(callback) and ctor == callback do
+    value
+  end
+
+  defp ensure_protocol_callback_wire_value(callback, value) when is_binary(callback) do
+    normalized = ProtocolCmdCallCore.normalize_elmc_wire_ctor(value)
+
+    %{
+      "ctor" => callback,
+      "args" => [%{"ctor" => "Ok", "args" => [normalized]}]
+    }
+  end
 
   @spec protocol_callback_arg(Types.subscription_payload()) :: Types.protocol_wire_arg()
   defp protocol_callback_arg(%{"ctor" => _, "args" => _} = value), do: value
@@ -589,9 +708,7 @@ defmodule Ide.Debugger.ProtocolRx do
 
   @spec protocol_surface_key(Types.surface_label_input()) :: :watch | :companion | :phone
   defp protocol_surface_key("watch"), do: :watch
-  defp protocol_surface_key("companion"), do: :companion
-  defp protocol_surface_key("phone"), do: :phone
-  defp protocol_surface_key(_), do: :companion
+  defp protocol_surface_key(label), do: SurfaceTargets.normalize(label)
 
   @spec surface_label(Types.surface_target()) :: String.t()
   defp surface_label(:watch), do: "watch"

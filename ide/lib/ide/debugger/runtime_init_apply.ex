@@ -5,6 +5,7 @@ defmodule Ide.Debugger.RuntimeInitApply do
   alias Ide.Debugger.InitSurfaceEffects
   alias Ide.Debugger.Surface
   alias Ide.Debugger.SurfaceCompileArtifacts
+  alias Ide.Debugger.SurfaceTargets
   alias Ide.Debugger.Types
 
   @type ctx :: %{
@@ -29,19 +30,26 @@ defmodule Ide.Debugger.RuntimeInitApply do
 
   @spec needs_init?(Types.runtime_state(), Types.surface_target()) :: boolean()
   defp needs_init?(state, target) when is_map(state) and target in [:watch, :companion, :phone] do
-    SurfaceCompileArtifacts.surface_has_versioned_runtime_artifacts?(state, target) and
-      not init_executed?(state, target)
+    canonical = canonical_init_target(target)
+
+    SurfaceCompileArtifacts.surface_has_versioned_runtime_artifacts?(state, canonical) and
+      not init_executed?(state, canonical)
   end
 
   defp needs_init?(_state, _target), do: false
 
   @spec init_executed?(Types.runtime_state(), Types.surface_target()) :: boolean()
   defp init_executed?(state, target) when is_map(state) do
+    canonical = canonical_init_target(target)
+
     state
-    |> Surface.from_state(target)
+    |> Surface.from_state(canonical)
     |> Surface.app_model()
     |> Map.get("runtime_execution_mode") == "runtime_executed"
   end
+
+  @spec canonical_init_target(Types.surface_target()) :: Types.surface_target()
+  defp canonical_init_target(target), do: SurfaceTargets.normalize(target)
 
   @spec apply_init_snapshot(
           Types.runtime_state(),
@@ -50,6 +58,7 @@ defmodule Ide.Debugger.RuntimeInitApply do
         ) :: Types.runtime_state()
   defp apply_init_snapshot(state, target, snapshot_ctx)
        when is_map(state) and is_map(snapshot_ctx) do
+    target = canonical_init_target(target)
     surface = Surface.from_state(state, target)
     ei = Surface.introspect(surface)
 

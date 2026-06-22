@@ -192,10 +192,26 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall.Core do
         ) :: {String.t(), Types.protocol_message_wire_value()}
   defp wrap_watch_to_phone_protocol_payload(:watch_to_phone, message, protocol_value)
        when is_binary(message) do
+    inner_value = normalize_elmc_wire_ctor(protocol_value)
+
+    inner_message =
+      case inner_value do
+        %{"ctor" => ctor, "args" => args} when is_binary(ctor) ->
+          protocol_message_display(ctor, List.wrap(args))
+
+        _ ->
+          message
+      end
+
+    wire_value = %{
+      "ctor" => "FromWatch",
+      "args" => [%{"ctor" => "Ok", "args" => [inner_value]}]
+    }
+
     if String.starts_with?(message, "FromWatch") do
-      {message, protocol_value}
+      {inner_message |> then(&("FromWatch (Ok #{Subscription.parenthesize_elm_arg(&1)})")), wire_value}
     else
-      {"FromWatch (Ok #{Subscription.parenthesize_elm_arg(message)})", protocol_value}
+      {"FromWatch (Ok #{Subscription.parenthesize_elm_arg(inner_message)})", wire_value}
     end
   end
 
@@ -211,7 +227,7 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall.Core do
   defp protocol_message_payload_from_arg_values(cmd_call, direction) when is_map(cmd_call) do
     case protocol_ctor_from_cmd_call(cmd_call) do
       {:ok, ctor, inner_args} when is_binary(ctor) ->
-        args = List.wrap(inner_args)
+        args = inner_args |> List.wrap() |> Enum.map(&normalize_elmc_wire_ctor/1)
         inner_value = %{"ctor" => ctor, "args" => args}
         inner_message = protocol_message_display(ctor, args)
 
@@ -473,9 +489,6 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall.Core do
           %{} = record ->
             record
 
-          value when not is_nil(value) ->
-            value
-
           _ ->
             nil
         end
@@ -522,9 +535,6 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall.Core do
     case Map.get(protocol_message_var_bindings(ctx), name) do
       %{} = record ->
         record
-
-      value when not is_nil(value) ->
-        value
 
       _ ->
         protocol_binding_record_from_runtime_model(Map.get(ctx, :runtime_model))
@@ -1127,6 +1137,7 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall.Core do
   @spec protocol_message_ctor(Types.protocol_message_wire_value()) :: String.t() | nil
   def protocol_message_ctor(%{"ctor" => ctor}) when is_binary(ctor), do: ctor
   def protocol_message_ctor(%{ctor: ctor}) when is_binary(ctor), do: ctor
+  def protocol_message_ctor(%{"$ctor" => ctor}) when is_binary(ctor), do: ctor
   def protocol_message_ctor(_), do: nil
 
   @spec protocol_message_args(Types.protocol_message_wire_value(), non_neg_integer()) ::
@@ -1135,6 +1146,9 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall.Core do
     do: flatten_protocol_args(args, field_count)
 
   defp protocol_message_args(%{args: args}, field_count) when is_list(args),
+    do: flatten_protocol_args(args, field_count)
+
+  defp protocol_message_args(%{"$args" => args}, field_count) when is_list(args),
     do: flatten_protocol_args(args, field_count)
 
   defp protocol_message_args(_message_value, _field_count), do: []
@@ -1206,6 +1220,7 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall.Core do
   @spec protocol_constructor_value?(Types.protocol_ctor_value()) :: boolean()
   defp protocol_constructor_value?(%{"ctor" => ctor}) when is_binary(ctor), do: true
   defp protocol_constructor_value?(%{ctor: ctor}) when is_binary(ctor), do: true
+  defp protocol_constructor_value?(%{"$ctor" => ctor}) when is_binary(ctor), do: true
   defp protocol_constructor_value?(_value), do: false
 
   @spec protocol_message_display(String.t(), [Types.protocol_wire_arg()]) :: String.t()
@@ -1217,8 +1232,14 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall.Core do
   end
 
   @spec protocol_arg_display(Types.protocol_wire_arg()) :: String.t()
-  defp protocol_arg_display(%{"ctor" => ctor, "args" => []}) when is_binary(ctor), do: ctor
-  defp protocol_arg_display(%{ctor: ctor, args: []}) when is_binary(ctor), do: ctor
+  defp protocol_arg_display(%{"ctor" => ctor, "args" => args}) when is_binary(ctor) and is_list(args) do
+    protocol_message_display(ctor, args)
+  end
+
+  defp protocol_arg_display(%{ctor: ctor, args: args}) when is_binary(ctor) and is_list(args) do
+    protocol_message_display(ctor, args)
+  end
+
   defp protocol_arg_display(value) when is_binary(value), do: inspect(value)
 
   defp protocol_arg_display(value) when is_integer(value) or is_float(value) or is_boolean(value),
@@ -1231,8 +1252,19 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall.Core do
           Types.protocol_wire_arg(),
           Types.protocol_wire_type()
         ) :: Types.protocol_wire_arg()
+  defp normalize_protocol_wire_value(schema, %{"$ctor" => ctor, "$args" => args}, wire_type)
+       when is_map(schema) and is_binary(ctor) do
+    normalize_protocol_wire_value(
+      schema,
+      %{"ctor" => ctor, "args" => Enum.map(List.wrap(args), &normalize_elmc_wire_ctor/1)},
+      wire_type
+    )
+  end
+
   defp normalize_protocol_wire_value(schema, value, {:enum, type})
        when is_map(schema) and is_binary(type) do
+    value = normalize_elmc_wire_ctor(value)
+
     cond do
       protocol_constructor_value?(value) ->
         value
@@ -1254,5 +1286,30 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall.Core do
     end
   end
 
-  defp normalize_protocol_wire_value(_schema, value, _wire_type), do: value
+  defp normalize_protocol_wire_value(_schema, value, _wire_type),
+    do: normalize_elmc_wire_ctor(value)
+
+  @spec normalize_elmc_wire_ctor(Types.protocol_wire_arg()) :: Types.protocol_wire_arg()
+  def normalize_elmc_wire_ctor(%{"$ctor" => ctor, "$args" => args}) when is_binary(ctor) do
+    %{
+      "ctor" => ctor,
+      "args" => Enum.map(List.wrap(args), &normalize_elmc_wire_ctor/1)
+    }
+  end
+
+  def normalize_elmc_wire_ctor(%{"ctor" => ctor, "args" => args}) when is_binary(ctor) do
+    %{
+      "ctor" => ctor,
+      "args" => Enum.map(List.wrap(args), &normalize_elmc_wire_ctor/1)
+    }
+  end
+
+  def normalize_elmc_wire_ctor(%{ctor: ctor, args: args}) when is_binary(ctor) do
+    %{
+      "ctor" => ctor,
+      "args" => Enum.map(List.wrap(args), &normalize_elmc_wire_ctor/1)
+    }
+  end
+
+  def normalize_elmc_wire_ctor(value), do: value
 end

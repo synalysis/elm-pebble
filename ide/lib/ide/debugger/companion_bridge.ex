@@ -2,6 +2,7 @@ defmodule Ide.Debugger.CompanionBridge do
   @moduledoc false
 
   alias Ide.Debugger.CompanionBridge.ApiSuffixes
+  alias Ide.Debugger.ProtocolEvents
   alias Ide.Debugger.Types
 
   @spec configuration_contract() :: Types.api_suffix_contract()
@@ -148,10 +149,29 @@ defmodule Ide.Debugger.CompanionBridge do
 
   @spec weather_info(Types.simulator_settings() | nil) :: Types.weather_info_map()
   def weather_info(weather) when is_map(weather) do
-    weather
-    |> Map.take(["temperatureC", "condition", "humidityPercent", "pressureHpa", "windKph"])
-    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
-    |> Map.new()
+    info =
+      weather
+      |> Map.take(["temperatureC", "condition", "humidityPercent", "pressureHpa", "windKph"])
+      |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+      |> Map.new()
+
+    case Map.get(info, "condition") do
+      %{"ctor" => _} = condition ->
+        Map.put(info, "condition", condition)
+
+      %{"$ctor" => _} = condition ->
+        Map.put(info, "condition", ProtocolEvents.CmdCall.normalize_elmc_wire_ctor(condition))
+
+      condition when is_binary(condition) ->
+        Map.put(
+          info,
+          "condition",
+          ProtocolEvents.weather_condition_from_settings(%{"weather" => %{"condition" => condition}})
+        )
+
+      _ ->
+        info
+    end
   end
 
   def weather_info(_weather), do: %{}

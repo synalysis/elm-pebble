@@ -57,24 +57,17 @@ update msg model =
                 let
                     condition =
                         toProtocolCondition info.condition
-
-                    alreadySent =
-                        model.lastResponse == info.temperatureC && model.lastCondition == Just condition
                 in
-                if alreadySent then
-                    ( { model | replyToWatch = False }, Cmd.none )
-
-                else
-                    ( { model
-                        | lastResponse = info.temperatureC
-                        , lastCondition = Just condition
-                        , replyToWatch = False
-                      }
-                    , Cmd.batch
-                        [ CompanionPhone.sendPhoneToWatch (ProvideTemperature (Celsius info.temperatureC))
-                        , CompanionPhone.sendPhoneToWatch (ProvideCondition condition)
-                        ]
-                    )
+                ( { model
+                    | lastResponse = info.temperatureC
+                    , lastCondition = Just condition
+                    , replyToWatch = False
+                  }
+                , Cmd.batch
+                    [ CompanionPhone.sendPhoneToWatch (ProvideTemperature (Celsius info.temperatureC))
+                    , CompanionPhone.sendPhoneToWatch (ProvideCondition condition)
+                    ]
+                )
 
         GotWeather (Err error) ->
             if not model.replyToWatch then
@@ -138,6 +131,7 @@ subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.batch
         [ CompanionPhone.onWatchToPhone FromWatch
+        , Weather.onCurrent (GotWeather << Result.map Weather.Current)
         , Lifecycle.onLifecycle LifecycleChanged
         ]
 

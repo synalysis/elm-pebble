@@ -293,9 +293,8 @@ defmodule Ide.Debugger.StepApply do
 
     target_name = ctx.source_root_for_target.(target)
 
-    updated_state =
-      updated_state
-      |> ctx.append_runtime_exec.(target, %{
+    updated_state
+    |> ctx.append_runtime_exec.(target, %{
         trigger: trigger,
         message: message,
         message_source: message_source
@@ -325,17 +324,27 @@ defmodule Ide.Debugger.StepApply do
         "debugger.view_render",
         Ide.Debugger.Types.ViewRenderEventPayload.from_render(target_name, root)
       )
-
-    updated_state =
-      ctx.device_data_responses.(
-        updated_state,
-        target,
-        message,
-        updated_model,
-        message_source,
-        message_value
-      )
+      |> then(fn state_after_events ->
+        ctx.device_data_responses.(
+          state_after_events,
+          target,
+          message,
+          updated_model,
+          message_source,
+          message_value
+        )
+      end)
       |> ctx.geolocation_response.(target, message, updated_model, message_source)
+      |> ctx.static_task_followups.(target, message, message_value, message_source)
+      |> then(fn state_after_followups ->
+        ctx.runtime_followups.(
+          state_after_followups,
+          target,
+          message,
+          message_source,
+          runtime_followups
+        )
+      end)
       |> ctx.companion_bridge_command_responses.(
         target,
         message,
@@ -343,15 +352,6 @@ defmodule Ide.Debugger.StepApply do
         message_source
       )
       |> ctx.companion_bridge_responses.(target, message_source)
-      |> ctx.static_task_followups.(target, message, message_value, message_source)
-
-    ctx.runtime_followups.(
-      updated_state,
-      target,
-      message,
-      message_source,
-      runtime_followups
-    )
   end
 
   @spec timeline_message_value(

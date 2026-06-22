@@ -1055,7 +1055,7 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
     if (opcode === 0x02) {
       const text = new TextDecoder().decode(data.slice(1))
       if (/watch -> Elm companion|Elm companion|AppMessage|not responding|error|failed/i.test(text)) {
-      
+        this.appendLog(this.compactPhoneLog(text))
       }
       return
     }

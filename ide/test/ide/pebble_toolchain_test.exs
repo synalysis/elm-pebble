@@ -274,11 +274,31 @@ defmodule Ide.PebbleToolchainTest do
     source = File.read!("priv/pebble_app_template/src/pkjs/index.js")
 
     assert source =~ "settings.watchAppRunning === true"
+    assert source =~ "Object.keys(settings).length === 1"
     assert source =~ ~S/markCompanionWatchAppReady("simulator_settings")/
+    refute source =~ "requestCompanionWeatherRefresh();"
     assert source =~ ~S/markCompanionWatchAppReady("watch_appmessage")/
     assert source =~ "scheduleCompanionWatchReadyBootTimeout"
     assert source =~ "COMPANION_WATCH_READY_BOOT_TIMEOUT_MS"
     assert source =~ "wirePhoneToWatchFromElmPayload"
+  end
+
+  test "watch companion resync retries cover phone companion reload window" do
+    template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
+
+    assert template =~ "companion_resync_delays_ms"
+    assert template =~ "3000"
+    assert template =~ "10000"
+    assert template =~ "companion_resync_callback"
+    assert template =~ "s_inbox_snapshot_count >= 1"
+  end
+
+  test "weather animated companion subscribes to weather bridge responses" do
+    companion =
+      File.read!("priv/project_templates/watchface_weather_animated/phone/src/CompanionApp.elm")
+
+    assert companion =~ "Weather.onCurrent"
+    assert companion =~ "Weather.current"
   end
 
   test "Elm companion index serves calendar bridge data from simulator settings" do
@@ -298,7 +318,8 @@ defmodule Ide.PebbleToolchainTest do
     assert source =~ "function fetchWeatherFromGeolocation"
     assert source =~ "function companionSupportsWeatherPlatform"
     assert source =~ "function companionSupportsCalendarPlatform"
-    assert source =~ "companionSupportsWeatherPlatform() && shouldUseSimulatorWeather()"
+    assert source =~ "function companionSupportsWeatherPlatform()"
+    assert source =~ "function shouldUseSimulatorWeather()"
     assert source =~ "function weatherFromSettings()"
     assert source =~ "function normalizeCompanionSimulatorSettings("
     assert source =~ "function deliverWeatherToWatch()"
@@ -318,13 +339,23 @@ defmodule Ide.PebbleToolchainTest do
 
     assert source =~ "companionSimulatorSettingsReady"
     assert source =~ "function bootElmCompanionWhenReady"
-    assert source =~ "lastDeliveredCompanionWeatherSignature"
     assert source =~ "function deliverWeatherToWatch()"
     assert source =~ "function sendImmediateAppMessage"
     assert source =~ "deliverWeatherToWatch = deliverWeatherToWatch"
-    refute source =~ "deliverWeatherToWatch();\n        lastDeliveredCompanionWeatherSignature"
-    refute source =~ "requestCompanionWeatherRefresh();"
+    refute source =~ "companion weather apply"
+    refute source =~ "deliverWeatherToWatch();"
+    refute source =~ "finishCompanionBoot();\n    requestCompanionWeatherRefresh"
+    refute source =~ "function requestCompanionWeatherRefresh"
     refute source =~ "Weather data unavailable from this Pebble companion runtime"
+  end
+
+  test "Elm companion index queues deferred weather AppMessages until simulator settings ready" do
+    source = File.read!("priv/pebble_app_template/src/pkjs/index.js")
+
+    assert source =~ "Elm companion weather AppMessage deferred until simulator settings ready"
+    assert source =~ "appMessageOutbox.push(companionPhoneToWatchWirePayload(payload || {}));"
+    assert source =~ "markCompanionSimulatorSettingsReady"
+    assert source =~ "drainAppMessageOutbox();"
   end
 
   test "Elm companion index only defers weather AppMessages by payload shape, not wire tag" do

@@ -14,8 +14,18 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
-        with:
-          submodules: recursive
+
+      - name: Fetch optional elm-run corpus
+        id: elm-run-corpus
+        run: |
+          if git submodule update --init --depth=1 --recursive vendor/elm-run-test_corpus; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice title=Optional corpus unavailable::Skipping elm-run corpus gates because vendor/elm-run-test_corpus could not be fetched."
+            git submodule deinit -f vendor/elm-run-test_corpus || true
+            rm -rf .git/modules/vendor/elm-run-test_corpus vendor/elm-run-test_corpus
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Set up Erlang/Elixir
         uses: erlef/setup-beam@v1
@@ -50,10 +60,12 @@ jobs:
         run: mix test.rc_2048
 
       - name: Run elm-run corpus compile gate
+        if: steps.elm-run-corpus.outputs.available == 'true'
         working-directory: elmc
         run: mix test.corpus
 
       - name: Run elm-run corpus execution gate
+        if: steps.elm-run-corpus.outputs.available == 'true'
         working-directory: elmc
         run: mix test.corpus_run
 

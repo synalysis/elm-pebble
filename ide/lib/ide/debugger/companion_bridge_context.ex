@@ -6,7 +6,6 @@ defmodule Ide.Debugger.CompanionBridgeContext do
   alias Ide.Debugger.CompanionBridgeRequest
   alias Ide.Debugger.DeviceDataResponses
   alias Ide.Debugger.IntrospectAccess
-  alias Ide.Debugger.RuntimeModelMessages
   alias Ide.Debugger.Types
 
   @type host :: %{
@@ -24,8 +23,6 @@ defmodule Ide.Debugger.CompanionBridgeContext do
                                          String.t(),
                                          String.t() ->
                                            Types.runtime_state()),
-          required(:deliver_weather_to_watch) => (Types.runtime_state() ->
-                                                    Types.runtime_state()),
           required(:settings) => (Types.runtime_state() -> Types.runtime_state())
         }
 
@@ -45,18 +42,16 @@ defmodule Ide.Debugger.CompanionBridgeContext do
         |> CompanionBridgeRequest.from_cmd_calls()
       end,
       bridge_requests_from_update: fn state, target, message ->
-        current_ctor = RuntimeModelMessages.wire_constructor(message)
         ei = introspect_for.(state, target)
 
         ei
         |> IntrospectAccess.cmd_calls("update_cmd_calls")
-        |> DeviceDataResponses.filter_update_cmd_calls(current_ctor)
+        |> DeviceDataResponses.filter_update_cmd_calls(message)
         |> CmdCall.expand_helpers(ei)
         |> CompanionBridgeRequest.from_cmd_calls()
       end,
       append_event: host.append_event,
       apply_step: host.apply_step_once,
-      deliver_weather_to_watch: host.deliver_weather_to_watch,
       settings: host.settings
     }
   end

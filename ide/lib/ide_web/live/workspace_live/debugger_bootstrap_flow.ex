@@ -161,11 +161,16 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
 
   defp run_companion_bootstrap_body(project, scope_key, progress, opts) do
     force_sync? = Keyword.get(opts, :force_sync, false)
+    state = AgentStore.fetch(scope_key)
 
     reload =
-      with_skip_blocking_compile(scope_key, fn ->
-        companion_reload(project, progress)
-      end)
+      if companion_init_on_timeline?(state) do
+        {:ok, :skipped_reload}
+      else
+        with_skip_blocking_compile(scope_key, fn ->
+          companion_reload(project, progress)
+        end)
+      end
 
     _ = CompanionPhoneCompile.schedule_if_needed(scope_key, project)
 
@@ -247,7 +252,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
   def watch_surface_bootstrapped?(_state), do: false
 
   @spec companion_init_on_timeline?(map()) :: boolean()
-  defp companion_init_on_timeline?(state) when is_map(state) do
+  def companion_init_on_timeline?(state) when is_map(state) do
     state
     |> Map.get(:debugger_timeline, [])
     |> Enum.any?(fn row ->

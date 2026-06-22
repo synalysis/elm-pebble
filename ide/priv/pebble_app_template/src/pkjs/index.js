@@ -141,6 +141,7 @@ function scheduleCompanionWatchReadyBootTimeout() {
 
 function markCompanionSimulatorSettingsReady() {
     companionSimulatorSettingsReady = true;
+    drainAppMessageOutbox();
 }
 
 function companionSimulatorSettingsPending() {
@@ -157,15 +158,6 @@ function hasExplicitCompanionSimulatorWeather(settings) {
     }
 
     return settings.weather_temperatureC != null || settings.weather_condition != null;
-}
-
-function companionWeatherSignature(settings) {
-    var weather = weatherFromSettingsObject(settings);
-    if (!weather) {
-        return null;
-    }
-
-    return String(weather.temperatureC) + ":" + String(weather.condition || "clear");
 }
 
 function weatherFromSettingsObject(settings) {
@@ -196,8 +188,6 @@ function weatherFromSettingsObject(settings) {
         windKph: Number(weather.windKph != null ? weather.windKph : 0)
     };
 }
-
-var lastDeliveredCompanionWeatherSignature = null;
 
 function isCompanionWeatherAppMessage(payload) {
     if (!payload || typeof payload !== "object") {
@@ -372,6 +362,7 @@ function companionPhoneToWatchWirePayload(payload) {
 function sendQueuedAppMessage(payload) {
     if (!companionSimulatorSettingsReady && isCompanionWeatherAppMessage(payload)) {
         console.log("Elm companion weather AppMessage deferred until simulator settings ready");
+        appMessageOutbox.push(companionPhoneToWatchWirePayload(payload || {}));
         return;
     }
 
@@ -1474,19 +1465,6 @@ function handleCalendarCommand(request) {
     bridgeCommandError(request, "calendar", "Unsupported calendar operation: " + op);
 }
 
-function requestCompanionWeatherRefresh() {
-    if (!protocol || typeof protocol.KEY_MESSAGE_TAG !== "number") {
-        return;
-    }
-
-    var payload = {};
-    payload[wireAppMessageKey(protocol.KEY_MESSAGE_TAG)] = 2;
-    if (typeof protocol.KEY_REQUEST_WEATHER_FIELD1 === "number") {
-        payload[wireAppMessageKey(protocol.KEY_REQUEST_WEATHER_FIELD1)] = 0;
-    }
-    deliverIncoming(normalizeIncomingAppMessage(payload));
-}
-
 function companionSupportsWeatherPlatform() {
     return !!(
         platformIncomingPorts.weather ||
@@ -1508,15 +1486,13 @@ function companionApplySimulatorSettings(settings) {
         return;
     }
 
-    if (settings.watchAppRunning === true) {
+    if (
+        settings.watchAppRunning === true &&
+        Object.keys(settings).length === 1 &&
+        Object.prototype.hasOwnProperty.call(settings, "watchAppRunning")
+    ) {
         markCompanionWatchAppReady("simulator_settings");
-
-        if (
-            Object.keys(settings).length === 1 &&
-            Object.prototype.hasOwnProperty.call(settings, "watchAppRunning")
-        ) {
-            return;
-        }
+        return;
     }
 
     companionSimulatorSettings = normalizeCompanionSimulatorSettings(settings);
@@ -1525,23 +1501,6 @@ function companionApplySimulatorSettings(settings) {
 
     if (companionSupportsCalendarPlatform()) {
         deliverCalendarUpcoming(null, calendarEventsFromSettings());
-    }
-
-    if (companionSupportsWeatherPlatform() && shouldUseSimulatorWeather()) {
-        var signature = companionWeatherSignature(companionSimulatorSettings);
-
-        if (signature) {
-            console.log(
-                "companion weather apply",
-                signature,
-                JSON.stringify(weatherFromSettings() || {})
-            );
-
-            if (signature !== lastDeliveredCompanionWeatherSignature) {
-                lastDeliveredCompanionWeatherSignature = signature;
-                deliverWeatherToWatch();
-            }
-        }
     }
 }
 

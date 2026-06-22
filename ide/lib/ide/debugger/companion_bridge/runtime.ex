@@ -32,7 +32,6 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
                                     String.t(),
                                     String.t() ->
                                       Types.runtime_state()),
-          required(:deliver_weather_to_watch) => (Types.runtime_state() -> Types.runtime_state()),
           required(:settings) => (Types.runtime_state() -> Types.simulator_settings())
         }
 
@@ -42,6 +41,7 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
     init_companion_bridge
     simulator_settings
     subscription_trigger
+    protocol_rx
   )
 
   @spec maybe_apply_command_responses(
@@ -97,35 +97,40 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
       when target in @companion_bridge_targets and is_map(state) and is_binary(source) and
              is_map(ctx) do
     Enum.reduce(CompanionBridge.subscription_contracts(), state, fn contract, acc ->
-      callback = subscription_callback_from_state(acc, target, contract, ctx)
+      trigger = Map.fetch!(contract, :source)
 
-      case callback do
-        value when is_binary(value) and value != "" ->
-          payload = bridge_payload(acc, Map.fetch!(contract, :payload), %{op: "subscribe"}, ctx)
-          trigger = Map.fetch!(contract, :source)
+      if trigger == "weather" and source == "simulator_settings" do
+        acc
+      else
+        callback = subscription_callback_from_state(acc, target, contract, ctx)
 
-          acc
-          |> ctx.append_event.(
-            "debugger.companion_bridge",
-            Ide.Debugger.Types.CompanionBridgeEventPayload.from_subscription(
-              source_root_for_target(target),
-              trigger,
-              callback,
-              payload
+        case callback do
+          value when is_binary(value) and value != "" ->
+            payload = bridge_payload(acc, Map.fetch!(contract, :payload), %{op: "subscribe"}, ctx)
+
+            acc
+            |> ctx.append_event.(
+              "debugger.companion_bridge",
+              Ide.Debugger.Types.CompanionBridgeEventPayload.from_subscription(
+                source_root_for_target(target),
+                trigger,
+                callback,
+                payload
+              )
             )
-          )
-          |> apply_subscription_response(
-            target,
-            callback,
-            payload,
-            source,
-            trigger,
-            contract,
-            ctx
-          )
+            |> apply_subscription_response(
+              target,
+              callback,
+              payload,
+              source,
+              trigger,
+              contract,
+              ctx
+            )
 
-        _ ->
-          acc
+          _ ->
+            acc
+        end
       end
     end)
   end
@@ -149,10 +154,18 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
           String.t(),
           ctx()
         ) :: Types.runtime_state()
+  @pending_bridge_steps_key :pending_companion_bridge_steps
+
   def apply_requests(requests, state, target, source, ctx)
       when target in @companion_bridge_targets and is_list(requests) and is_map(state) and
              is_binary(source) and is_map(ctx) do
-    Enum.reduce(requests, state, &apply_request(&2, target, &1, source, ctx))
+    {state, deferred_steps} =
+      Enum.reduce(requests, {state, []}, fn request, {acc, steps} ->
+        {next_state, request_steps} = apply_request(acc, target, request, source, ctx)
+        {next_state, steps ++ request_steps}
+      end)
+
+    enqueue_deferred_steps(state, deferred_steps)
   end
 
   def apply_requests(_requests, state, _target, _source, _ctx), do: state
@@ -195,17 +208,25 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
 
   def subscription_callback(_ei, _contract, _ctx), do: nil
 
+  @type deferred_bridge_step :: %{
+          required(:target) => :watch | :companion | :phone,
+          required(:message) => String.t(),
+          required(:message_value) => Types.subscription_payload() | nil,
+          required(:source) => String.t(),
+          required(:trigger) => String.t()
+        }
+
   @spec apply_request(
           Types.runtime_state(),
           :companion,
           Types.companion_bridge_request(),
           String.t(),
           ctx()
-        ) :: Types.runtime_state()
+        ) :: {Types.runtime_state(), [deferred_bridge_step()]}
   defp apply_request(state, _target, %{api: "storage", op: op} = request, _source, ctx)
        when op in ["set", "remove", "clear"] do
     {next_state, _result} = storage_result(state, request, ctx)
-    next_state
+    {next_state, []}
   end
 
   defp apply_request(state, target, %{api: "storage"} = request, source, ctx) do
@@ -218,13 +239,13 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
         apply_callback(next_state, target, callback, result, source, "storage", request, ctx)
 
       _ ->
-        state
+        {state, []}
     end
   end
 
   defp apply_request(state, _target, %{api: "preferences", op: "set"} = request, _source, ctx) do
     {next_state, _result} = preferences_result(state, request, ctx)
-    next_state
+    {next_state, []}
   end
 
   defp apply_request(state, target, %{api: "preferences"} = request, source, ctx) do
@@ -238,7 +259,7 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
         apply_callback(next_state, target, callback, result, source, "preferences", request, ctx)
 
       _ ->
-        state
+        {state, []}
     end
   end
 
@@ -260,7 +281,7 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
         )
 
       _ ->
-        state
+        {state, []}
     end
   end
 
@@ -272,36 +293,11 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
         apply_callback(state, target, callback, {:ok, %{}}, source, "webSocket", request, ctx)
 
       _ ->
-        state
+        {state, []}
     end
   end
 
-  defp apply_request(state, target, %{api: "weather"} = request, _source, ctx) do
-    contract =
-      Enum.find(CompanionBridge.subscription_contracts(), &(Map.fetch!(&1, :source) == "weather"))
-
-    callback =
-      if contract, do: bridge_callback(request, state, target, contract, ctx), else: nil
-
-    payload = bridge_payload(state, :weather, request, ctx)
-
-    state
-    |> ctx.append_event.(
-      "debugger.companion_bridge",
-      Ide.Debugger.Types.CompanionBridgeEventPayload.from_response(
-        source_root_for_target(target),
-        "weather",
-        Map.get(request, :op),
-        callback,
-        payload,
-        "Ok"
-      )
-    )
-    |> ctx.deliver_weather_to_watch.()
-  end
-
-  defp apply_request(state, target, %{api: api} = request, source, ctx)
-       when is_binary(api) and api != "weather" do
+  defp apply_request(state, target, %{api: api} = request, source, ctx) when is_binary(api) do
     contract =
       Enum.find(CompanionBridge.subscription_contracts(), &(Map.fetch!(&1, :source) == api))
 
@@ -315,11 +311,11 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
         apply_callback(state, target, callback, {:ok, payload}, source, api, request, ctx)
 
       _ ->
-        state
+        {state, []}
     end
   end
 
-  defp apply_request(state, _target, _request, _source, _ctx), do: state
+  defp apply_request(state, _target, _request, _source, _ctx), do: {state, []}
 
   @spec apply_subscription_response(
           Types.runtime_state(),
@@ -333,30 +329,6 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
         ) :: Types.runtime_state()
   def apply_subscription_response(
         state,
-        :companion = _target,
-        callback,
-        payload,
-        source,
-        "weather" = _trigger,
-        _contract,
-        ctx
-      )
-      when is_map(state) and is_binary(callback) and is_binary(source) and is_map(ctx) do
-    state
-    |> ctx.append_event.(
-      "debugger.companion_bridge",
-      Ide.Debugger.Types.CompanionBridgeEventPayload.from_subscription(
-        source_root_for_target(:companion),
-        "weather",
-        callback,
-        payload
-      )
-    )
-    |> ctx.deliver_weather_to_watch.()
-  end
-
-  def apply_subscription_response(
-        state,
         _target,
         callback,
         payload,
@@ -367,13 +339,17 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
       )
       when is_map(state) and is_binary(callback) and is_binary(source) and is_binary(trigger) and
              is_map(contract) and is_map(ctx) do
-    state =
-      maybe_apply_companion_subscription_step(state, callback, payload, source, trigger, ctx)
-
     {step_target, step_trigger, message, message_value} =
       phone_to_watch_step(state, callback, payload, contract, trigger, ctx)
 
-    ctx.apply_step.(state, step_target, message, message_value, source, step_trigger)
+    steps =
+      [
+        companion_subscription_deferred_step(state, callback, payload, source, trigger, ctx),
+        deferred_bridge_step(step_target, message, message_value, source, step_trigger)
+      ]
+      |> Enum.reject(&is_nil/1)
+
+    apply_deferred_steps(state, steps, ctx)
   end
 
   @phone_to_watch_contract_sources ~w(battery locale network notifications)
@@ -397,6 +373,13 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
     message = phone_to_watch_step_message(contract, normalized)
 
     {:watch, "phone_to_watch", message, message_value}
+  end
+
+  defp phone_to_watch_step(state, callback, payload, %{source: "weather"}, trigger, ctx)
+       when is_map(state) and is_binary(callback) and is_map(ctx) do
+    target = companion_app_step_target(state, ctx, callback)
+    message_value = CompanionBridge.subscription_message_value("weather", callback, "Ok", payload)
+    {target, trigger, callback, message_value}
   end
 
   defp phone_to_watch_step(state, callback, payload, _contract, trigger, ctx)
@@ -552,39 +535,109 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
         CompanionBridge.callback_result_parts(result)
       end
 
-    state
-    |> ctx.append_event.(
-      "debugger.companion_bridge",
-      Ide.Debugger.Types.CompanionBridgeEventPayload.from_response(
-        source_root_for_target(target),
-        api,
-        Map.get(request, :op),
-        callback,
-        payload,
-        result_ctor
+    state =
+      ctx.append_event.(
+        state,
+        "debugger.companion_bridge",
+        Ide.Debugger.Types.CompanionBridgeEventPayload.from_response(
+          source_root_for_target(target),
+          api,
+          Map.get(request, :op),
+          callback,
+          payload,
+          result_ctor
+        )
       )
-    )
-    |> then(fn next_state ->
-      next_state =
-        maybe_apply_companion_subscription_step(next_state, callback, payload, source, api, ctx)
 
-      contract =
-        CompanionBridge.contract_for_source(api) ||
-          %{source: api, plain_result: plain?}
+    contract =
+      CompanionBridge.contract_for_source(api) ||
+        %{source: api, plain_result: plain?}
 
-      {step_target, step_trigger, message, step_value} =
-        phone_to_watch_step(next_state, callback, payload, contract, source, ctx)
+    {step_target, step_trigger, message, step_value} =
+      phone_to_watch_step(state, callback, payload, contract, source, ctx)
 
-      ctx.apply_step.(next_state, step_target, message, step_value, source, step_trigger)
+    steps =
+      [
+        companion_subscription_deferred_step(state, callback, payload, source, api, ctx),
+        deferred_bridge_step(step_target, message, step_value, source, step_trigger)
+      ]
+      |> Enum.reject(&is_nil/1)
+
+    {state, steps}
+  end
+
+  @spec flush_deferred_steps(Types.runtime_state(), ctx()) :: Types.runtime_state()
+  def flush_deferred_steps(state, ctx) when is_map(state) and is_map(ctx) do
+    steps =
+      state
+      |> Map.get(@pending_bridge_steps_key, [])
+      |> case do
+        list when is_list(list) -> list
+        _ -> []
+      end
+
+    state
+    |> Map.delete(@pending_bridge_steps_key)
+    |> apply_deferred_steps(steps, ctx)
+  end
+
+  def flush_deferred_steps(state, _ctx), do: state
+
+  @spec enqueue_deferred_steps(Types.runtime_state(), [deferred_bridge_step()]) ::
+          Types.runtime_state()
+  defp enqueue_deferred_steps(state, []), do: state
+
+  defp enqueue_deferred_steps(state, steps) when is_list(steps) do
+    Map.update(state, @pending_bridge_steps_key, steps, &(&1 ++ steps))
+  end
+
+  @spec apply_deferred_steps(Types.runtime_state(), [deferred_bridge_step()], ctx()) ::
+          Types.runtime_state()
+  defp apply_deferred_steps(state, steps, ctx) when is_map(state) and is_list(steps) and is_map(ctx) do
+    Enum.reduce(steps, state, fn step, acc ->
+      ctx.apply_step.(
+        acc,
+        step.target,
+        step.message,
+        step.message_value,
+        step.source,
+        step.trigger
+      )
     end)
   end
 
-  defp maybe_apply_companion_subscription_step(state, callback, payload, source, trigger, ctx)
+  @spec deferred_bridge_step(
+          :watch | :companion | :phone,
+          String.t(),
+          Types.subscription_payload() | nil,
+          String.t(),
+          String.t()
+        ) :: deferred_bridge_step()
+  defp deferred_bridge_step(target, message, message_value, source, trigger)
+       when target in [:watch, :companion, :phone] and is_binary(message) and is_binary(source) and
+              is_binary(trigger) do
+    %{
+      target: target,
+      message: message,
+      message_value: message_value,
+      source: source,
+      trigger: trigger
+    }
+  end
+
+  @spec companion_subscription_deferred_step(
+          Types.runtime_state(),
+          String.t(),
+          Types.companion_bridge_payload(),
+          String.t(),
+          String.t(),
+          ctx()
+        ) :: deferred_bridge_step() | nil
+  defp companion_subscription_deferred_step(state, callback, payload, source, trigger, ctx)
        when callback in @companion_phone_status_callbacks do
     target = companion_app_step_target(state, ctx, callback)
 
-    ctx.apply_step.(
-      state,
+    deferred_bridge_step(
       target,
       callback,
       subscription_ok_message_value(callback, payload),
@@ -593,15 +646,8 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
     )
   end
 
-  defp maybe_apply_companion_subscription_step(
-         state,
-         _callback,
-         _payload,
-         _source,
-         _trigger,
-         _ctx
-       ),
-       do: state
+  defp companion_subscription_deferred_step(_state, _callback, _payload, _source, _trigger, _ctx),
+    do: nil
 
   @spec bridge_payload(
           Types.runtime_state(),

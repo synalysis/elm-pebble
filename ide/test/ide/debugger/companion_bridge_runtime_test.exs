@@ -44,7 +44,6 @@ defmodule Ide.Debugger.CompanionBridgeRuntimeTest do
           :ets.insert(steps, {target, message, value, source, trigger})
           st
         end,
-        deliver_weather_to_watch: fn st -> st end,
         settings: fn st -> Map.get(st, :simulator_settings, %{}) end
       })
 

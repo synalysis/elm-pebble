@@ -45,11 +45,6 @@ defmodule Ide.Debugger.SimulatorSettingsApply do
       settings,
       ctx.simulator_watch_delivery
     )
-    |> SimulatorWatchDelivery.inject_weather_on_settings_change(
-      previous_settings,
-      settings,
-      ctx.simulator_watch_delivery
-    )
     |> SimulatorWatchDelivery.deliver_position(ctx.simulator_watch_delivery)
   end
 end

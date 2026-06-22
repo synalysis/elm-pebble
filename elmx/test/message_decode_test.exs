@@ -74,6 +74,26 @@ defmodule Elmx.MessageDecodeTest do
              {:GotLocale, {:Ok, %{"locale" => "en-US"}}}
   end
 
+  test "decode FromWatch RequestWeather with elmc wire location ctor" do
+    wire = %{
+      "ctor" => "FromWatch",
+      "args" => [
+        %{
+          "ctor" => "Ok",
+          "args" => [
+            %{
+              "ctor" => "RequestWeather",
+              "args" => [%{"$ctor" => "CurrentLocation", "$args" => []}]
+            }
+          ]
+        }
+      ]
+    }
+
+    assert MessageDecode.decode("FromWatch", wire) ==
+             {:FromWatch, {:Ok, {:RequestWeather, :CurrentLocation}}}
+  end
+
   test "decode GotConnectivity wire variant payload" do
     wire = %{"ctor" => "GotConnectivity", "args" => [%{"ctor" => "Online", "args" => []}]}
 

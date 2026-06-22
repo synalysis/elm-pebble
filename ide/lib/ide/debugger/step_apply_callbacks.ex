@@ -86,7 +86,8 @@ defmodule Ide.Debugger.StepApplyCallbacks do
         &companion_bridge_command_responses(&1, &2, &3, &4, &5, companion_bridge),
       companion_bridge_responses: &companion_bridge_responses(&1, &2, &3, companion_bridge),
       static_task_followups: &static_task_followups(&1, &2, &3, &4, &5, runtime_followups),
-      runtime_followups: &runtime_followups_after_step(&1, &2, &3, &4, &5, runtime_followups)
+      runtime_followups:
+        &runtime_followups_after_step(&1, &2, &3, &4, &5, %{ctx: runtime_followups})
     }
   end
 
@@ -212,16 +213,18 @@ defmodule Ide.Debugger.StepApplyCallbacks do
           String.t(),
           String.t(),
           list(),
-          RuntimeFollowups.apply_ctx()
+          %{required(:ctx) => RuntimeFollowups.apply_ctx(), required(:protocol_rx) => ProtocolRx.ctx()}
         ) :: Types.runtime_state()
-  def runtime_followups_after_step(state, target, message, source, followups, runtime_followups) do
+  def runtime_followups_after_step(state, target, message, source, followups, %{
+        ctx: followup_ctx
+      }) do
     RuntimeFollowups.apply_after_step(
       state,
       target,
       message,
       source,
       followups,
-      runtime_followups
+      followup_ctx
     )
   end
 end
