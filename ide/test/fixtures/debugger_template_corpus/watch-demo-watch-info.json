@@ -265,9 +265,9 @@
   },
   "template": "watch-demo-watch-info",
   "timeline_init_messages": [
-    "update:GotFirmware {\"major\":4,\"minor\":4,\"patch\":0}",
-    "update:GotColor GotColor Black",
-    "update:GotModel GotModel PebbleOriginal",
+    "update:GotFirmware { major = 4, minor = 4, patch = 0 }",
+    "update:GotColor Black",
+    "update:GotModel PebbleOriginal",
     "init:init"
   ],
   "view_tree_type": "windowStack",

@@ -190,24 +190,22 @@
   },
   "template": "companion-demo-storage",
   "timeline_init_messages": [
-    "update:GotPreference GotPreference (Ok {\"units\", nil})",
-    "update:GotStorage GotStorage (Ok \"Storage key not found\")",
+    "update:GotPreference (Ok (\"units\"))",
+    "update:GotStorage (Ok \"Storage key not found\")",
     "update:FromWatch (Ok RequestStoredValues)",
     "init:init",
-    "update:GotPreference GotPreference (Ok {\"units\", nil})",
-    "update:GotStorage GotStorage (Ok \"Storage key not found\")",
-    "init:init",
-    "update:FromWatch (Ok RequestStoredValues)"
+    "update:GotPreference (Ok (\"units\"))",
+    "update:GotStorage (Ok \"Storage key not found\")",
+    "update:FromWatch (Ok RequestStoredValues)",
+    "init:init"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
     "elmc_compile_cached": "false",
     "elmc_compile_error_count": 0,
-    "elmc_compile_revision": "b64bd612ba9d68eed6641ffcda61c8fd2d23d67e3c2e87d4315a700a104e229f:pebble=aplite,basalt,chalk,diorite,emery,flint,gabbro:prod=false:error",
     "elmc_compile_status": "ok",
     "elmc_compile_warning_count": 0,
-    "elmc_compiled_path": "/home/ape/projects/elm-pebble/ide/workspace_projects/corpus-companion-demo-storage-7875/phone/.elmc-build",
     "elmc_diagnostic_preview": [],
     "runtime_model": {
       "screenH": 168,

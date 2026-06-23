@@ -254,30 +254,26 @@
   },
   "template": "companion-demo-protocol-matrix",
   "timeline_init_messages": [
-    "update:FromPhone (Pong)",
     "init:init",
     "update:FromPhone (Pong)",
     "update:FromWatch (Ok Ping)",
     "init:init",
+    "update:FromPhone (Pong)",
     "update:FromWatch (Ok Ping)",
     "init:init"
   ],
-  "view_tree_type": "windowStack",
+  "view_tree_type": "Window",
   "watch_model": {
     "debugger_init_complete": true,
     "elmc_compile_cached": "false",
     "elmc_compile_error_count": 0,
-    "elmc_compile_revision": "52e1307de48921ca568fe4fcb101b1cdf1796a62262a1842e5dce46553dd485b:pebble=aplite,basalt,chalk,diorite,emery,flint,gabbro:prod=false:error",
     "elmc_compile_status": "ok",
     "elmc_compile_warning_count": 0,
-    "elmc_compiled_path": "/home/ape/projects/elm-pebble/ide/workspace_projects/corpus-protocol-matrix-14919/phone/.elmc-build",
     "elmc_diagnostic_preview": [],
-    "protocol_inbound_count": 2,
     "protocol_last_inbound_from": "companion",
     "protocol_last_inbound_message": "Pong",
     "protocol_last_trigger": "protocol_rx",
     "protocol_last_view_message": "Pong",
-    "protocol_message_count": 2,
     "runtime_model": {
       "active": {
         "args": [],
@@ -339,6 +335,6 @@
     },
     "runtime_view_output": [],
     "timeString": null,
-    "watch_profile_id": "aplite"
+    "watch_profile_id": "basalt"
   }
 }

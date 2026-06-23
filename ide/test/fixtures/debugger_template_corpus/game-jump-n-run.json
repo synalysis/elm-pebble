@@ -389,7 +389,7 @@
   },
   "template": "game-jump-n-run",
   "timeline_init_messages": [
-    "update:BestScoreLoaded BestScoreLoaded 0",
+    "update:BestScoreLoaded 0",
     "init:init"
   ],
   "view_tree_type": "windowStack",

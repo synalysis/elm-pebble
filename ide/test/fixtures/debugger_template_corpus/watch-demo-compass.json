@@ -214,7 +214,7 @@
   },
   "template": "watch-demo-compass",
   "timeline_init_messages": [
-    "update:Unknown Unknown (Ok %{\"degrees\" => 180.0, \"isValid\" => true})",
+    "update:Unknown (Ok {degrees=180,isvalid=true})",
     "init:init"
   ],
   "view_tree_type": "windowStack",

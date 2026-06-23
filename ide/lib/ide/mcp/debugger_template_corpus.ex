@@ -423,10 +423,113 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
 
   @spec normalize_timeline_message(String.t() | nil) :: String.t()
   defp normalize_timeline_message(message) when is_binary(message) do
-    Regex.replace(~r/^RandomGenerated \d+$/, message, "RandomGenerated <seed>")
+    message
+    |> dedupe_timeline_constructor_prefix()
+    |> normalize_timeline_result_wrapper()
+    |> normalize_random_generated_seed()
   end
 
   defp normalize_timeline_message(message), do: to_string(message || "")
+
+  @spec dedupe_timeline_constructor_prefix(String.t()) :: String.t()
+  defp dedupe_timeline_constructor_prefix(message) do
+    case Regex.run(~r/^([A-Za-z][A-Za-z0-9_.']*)\s+\1(?:\s+(.*))?$/, message) do
+      [_, ctor, rest] when is_binary(rest) -> "#{ctor} #{rest}"
+      [_, ctor] -> ctor
+      _ -> message
+    end
+  end
+
+  @spec normalize_timeline_result_wrapper(String.t()) :: String.t()
+  defp normalize_timeline_result_wrapper(message) do
+    case Regex.run(~r/^(.*?)\s*\((Ok|Err)\s+(.+)\)$/, message) do
+      [_, prefix, tag, payload] ->
+        prefix = String.trim(prefix)
+        normalized = normalize_timeline_payload(String.trim(payload))
+
+        if prefix == "" do
+          "(#{tag} #{normalized})"
+        else
+          "#{prefix} (#{tag} #{normalized})"
+        end
+
+      _ ->
+        message
+    end
+  end
+
+  @spec normalize_timeline_payload(String.t()) :: String.t()
+  defp normalize_timeline_payload(payload) do
+    payload = String.trim(payload)
+
+    cond do
+      String.starts_with?(payload, "%{") ->
+        payload |> parse_inspect_record_fields() |> canonical_record_fields()
+
+      String.starts_with?(payload, "{") and String.contains?(payload, " = ") ->
+        payload |> parse_elm_wire_record_fields() |> canonical_record_fields()
+
+      true ->
+        payload
+    end
+  end
+
+  @spec parse_inspect_record_fields(String.t()) :: [{String.t(), String.t()}]
+  defp parse_inspect_record_fields(payload) do
+    inner =
+      payload
+      |> String.trim_leading("%")
+      |> String.trim()
+      |> String.trim_leading("{")
+      |> String.trim_trailing("}")
+
+    ~r/"([^"]+)"\s*=>\s*([^,}]+)/
+    |> Regex.scan(inner)
+    |> Enum.map(fn [_, key, value] -> {key, String.trim(value)} end)
+  end
+
+  @spec parse_elm_wire_record_fields(String.t()) :: [{String.t(), String.t()}]
+  defp parse_elm_wire_record_fields(payload) do
+    inner =
+      payload
+      |> String.trim_leading("{")
+      |> String.trim_trailing("}")
+
+    ~r/([A-Za-z_][A-Za-z0-9_']*)\s*=\s*([^,}]+)/
+    |> Regex.scan(inner)
+    |> Enum.map(fn [_, key, value] -> {key, String.trim(value)} end)
+  end
+
+  @spec canonical_record_fields([{String.t(), String.t()}]) :: String.t()
+  defp canonical_record_fields(fields) do
+    body =
+      fields
+      |> Enum.map(fn {key, value} -> {String.downcase(key), normalize_timeline_scalar(value)} end)
+      |> Enum.sort_by(&elem(&1, 0))
+      |> Enum.map_join(",", fn {key, value} -> "#{key}=#{value}" end)
+
+    "{#{body}}"
+  end
+
+  @spec normalize_timeline_scalar(String.t()) :: String.t()
+  defp normalize_timeline_scalar(value) do
+    value =
+      value
+      |> String.trim()
+      |> String.trim("\"")
+
+    cond do
+      value in ["True", "true"] -> "true"
+      value in ["False", "false"] -> "false"
+      Regex.match?(~r/^\d+\.0$/, value) -> String.trim_trailing(value, ".0")
+      true -> value
+    end
+  end
+
+  @spec normalize_random_generated_seed(String.t()) :: String.t()
+  defp normalize_random_generated_seed(message) do
+    Regex.replace(~r/^RandomGenerated \d+$/, message, "RandomGenerated <seed>")
+  end
 
   @spec normalize_snapshot(map()) :: map()
   def normalize_snapshot(snapshot) when is_map(snapshot) do
@@ -511,6 +614,10 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
       "supports_color",
       "screen_height",
       "screen_width",
+      "elmc_compile_revision",
+      "elmc_compiled_path",
+      "protocol_inbound_count",
+      "protocol_message_count",
       "_debugger_steps"
     ])
     |> Enum.reject(fn {key, _} ->

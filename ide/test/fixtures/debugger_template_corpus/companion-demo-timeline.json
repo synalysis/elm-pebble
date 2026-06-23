@@ -212,30 +212,26 @@
   "template": "companion-demo-timeline",
   "timeline_init_messages": [
     "update:FromPhone (ProvideTimelineToken \"demo-timeline-token\")",
-    "update:GotToken GotToken (Ok \"demo-timeline-token\")",
+    "update:GotToken (Ok \"demo-timeline-token\")",
     "update:FromPhone (ProvideTimelineToken \"demo-timeline-token\")",
-    "update:GotToken GotToken (Ok \"demo-timeline-token\")",
+    "update:GotToken (Ok \"demo-timeline-token\")",
     "update:FromWatch (Ok RequestTimelineToken)",
     "init:init",
     "update:FromPhone (ProvideTimelineToken \"demo-timeline-token\")",
-    "update:GotToken GotToken (Ok \"demo-timeline-token\")"
+    "update:GotToken (Ok \"demo-timeline-token\")"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
     "elmc_compile_cached": "false",
     "elmc_compile_error_count": 0,
-    "elmc_compile_revision": "a817177970bb4a94d09ec3b121a7ece7275e3ed3980fe65d65df8f4510cfc9d5:pebble=aplite,basalt,chalk,diorite,emery,flint,gabbro:prod=false:error",
     "elmc_compile_status": "ok",
     "elmc_compile_warning_count": 0,
-    "elmc_compiled_path": "/home/ape/projects/elm-pebble/ide/workspace_projects/corpus-companion-demo-timeline-26178/phone/.elmc-build",
     "elmc_diagnostic_preview": [],
-    "protocol_inbound_count": 4,
     "protocol_last_inbound_from": "companion",
     "protocol_last_inbound_message": "ProvideTimelineToken \"demo-timeline-token\"",
     "protocol_last_trigger": "timeline",
     "protocol_last_view_message": "ProvideTimelineToken \"demo-timeline-token\"",
-    "protocol_message_count": 4,
     "runtime_model": {
       "pinStatus": {
         "args": [],

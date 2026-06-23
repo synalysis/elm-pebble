@@ -1675,9 +1675,9 @@
   },
   "template": "watchface-yes",
   "timeline_init_messages": [
-    "update:ConnectionChanged ConnectionChanged true",
-    "update:BatteryLevelChanged BatteryLevelChanged 88",
-    "update:CurrentDateTime {\"day\":27,\"dayOfWeek\":{\"args\":[],\"ctor\":\"Wednesday\"},\"hour\":8,\"minute\":53,\"month\":5,\"second\":0,\"utcOffsetMinutes\":0,\"year\":2026}",
+    "update:ConnectionChanged True",
+    "update:BatteryLevelChanged 88",
+    "update:CurrentDateTime { day = 27, dayOfWeek = Wednesday, hour = 8, minute = 53, month = 5, second = 0, utcOffsetMinutes = 0, year = 2026 }",
     "update:FromWatch (Ok RequestUpdate)",
     "init:init",
     "init:init"

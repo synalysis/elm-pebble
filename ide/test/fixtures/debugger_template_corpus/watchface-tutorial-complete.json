@@ -64,7 +64,7 @@
       "font_size": 22,
       "h": 22,
       "kind": "text_label",
-      "text": "0C Clear",
+      "text": "21C Clear",
       "text_align": "center",
       "text_color": 255,
       "text_overflow": "word_wrap",
@@ -73,7 +73,7 @@
       "y": 136
     }
   ],
-  "preview_ops_sha256": "3d87f0ed59a2fdfeb18fdc1daad3ebedf89c8354280bed6a4d62003aa771def2",
+  "preview_ops_sha256": "4d1ed5afb2c847952999a12d86b80d4c79ed6b5bd6112306ded793c4f591063d",
   "render_tree": {
     "node_count": 14,
     "node_types": [
@@ -217,9 +217,9 @@
                           "children": [],
                           "font": "Jersey",
                           "kind": "text",
-                          "label": "0C Clear",
+                          "label": "21C Clear",
                           "options": [],
-                          "text": "0C Clear",
+                          "text": "21C Clear",
                           "text_align": "center",
                           "text_overflow": "word_wrap",
                           "type": "text"
@@ -320,7 +320,7 @@
       "args": [
         {
           "args": [
-            0
+            21
           ],
           "ctor": "Celsius"
         }
@@ -335,24 +335,22 @@
   },
   "template": "watchface-tutorial-complete",
   "timeline_init_messages": [
-    "update:ConnectionStatusChanged ConnectionStatusChanged true",
-    "update:BatteryLevelChanged BatteryLevelChanged 88",
-    "update:CurrentDateTime {\"day\":27,\"dayOfWeek\":{\"args\":[],\"ctor\":\"Wednesday\"},\"hour\":8,\"minute\":53,\"month\":5,\"second\":0,\"utcOffsetMinutes\":0,\"year\":2026}",
-    "update:json_decoder json_decoder (Ok %{\"current\" => %{\"interval\" => 900, \"temperature_2m\" => 26.3, \"time\" => \"2026-06-22T12:15\", \"weather_code\" => 0}, \"current_units\" => %{\"interval\" => \"seconds\", \"temperature_2m\" => \"°C\", \"time\" => \"iso8601\", \"weather_code\" => \"wmo code\"}, \"elevation\" => 38.0, \"generationtime_ms\" => 0.05173683166503906, \"latitude\" => 52.52, \"longitude\" => 13.419998, \"timezone\" => \"GMT\", \"timezone_abbreviation\" => \"GMT\", \"utc_offset_seconds\" => 0})",
+    "update:ConnectionStatusChanged True",
+    "update:BatteryLevelChanged 88",
+    "update:CurrentDateTime { day = 27, dayOfWeek = Wednesday, hour = 8, minute = 53, month = 5, second = 0, utcOffsetMinutes = 0, year = 2026 }",
     "update:FromPhone (ProvideCondition Clear)",
-    "update:FromPhone (ProvideTemperature (Celsius 0))",
-    "update:FromWatch (Ok (RequestWeather CurrentLocation))",
-    "init:init"
+    "update:FromPhone (ProvideTemperature (Celsius 21))",
+    "update:WeatherReceived (Ok {condition=Clear,temperature=21})",
+    "update:FromPhone (ProvideCondition Clear)",
+    "update:FromPhone (ProvideTemperature (Celsius 0))"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
-    "protocol_inbound_count": 2,
     "protocol_last_inbound_from": "companion",
     "protocol_last_inbound_message": "ProvideCondition Clear",
-    "protocol_last_trigger": "protocol_rx",
+    "protocol_last_trigger": "runtime_followup",
     "protocol_last_view_message": "ProvideCondition Clear",
-    "protocol_message_count": 2,
     "runtime_model": {
       "backgroundColor": {
         "args": [],
@@ -411,7 +409,7 @@
         "args": [
           {
             "args": [
-              0
+              21
             ],
             "ctor": "Celsius"
           }

@@ -196,10 +196,8 @@
     "debugger_init_complete": true,
     "elmc_compile_cached": "false",
     "elmc_compile_error_count": 0,
-    "elmc_compile_revision": "eb601d06c27e89cb5799a7a0509612b87a21391ec5ad89f7fed3d17f02d20f5e:pebble=aplite,basalt,chalk,diorite,emery,flint,gabbro:prod=false:error",
     "elmc_compile_status": "ok",
     "elmc_compile_warning_count": 0,
-    "elmc_compiled_path": "/home/ape/projects/elm-pebble/ide/workspace_projects/corpus-companion-demo-settings-4547/phone/.elmc-build",
     "elmc_diagnostic_preview": [],
     "runtime_model": {
       "configOutcome": {
