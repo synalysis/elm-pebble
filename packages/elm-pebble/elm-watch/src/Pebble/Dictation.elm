@@ -2,6 +2,35 @@ module Pebble.Dictation exposing (Error(..), Status(..), start, stop, onStatus, 
 
 {-| Voice dictation via the Pebble microphone and phone speech recognition.
 
+Start a session with `start`, subscribe to `onStatus` and `onResult`, and call
+`stop` to cancel early if needed.
+
+    import Pebble.Dictation as Dictation
+
+    type Msg
+        = StartDictation
+        | DictationStatus Dictation.Status
+        | DictationResult (Result Dictation.Error String)
+
+    update msg model =
+        case msg of
+            StartDictation ->
+                ( model, Dictation.start )
+
+            DictationResult (Ok text) ->
+                ( { model | transcript = text }, Cmd.none )
+
+            _ ->
+                ( model, Cmd.none )
+
+    subscriptions _ =
+        Sub.batch
+            [ Dictation.onStatus DictationStatus
+            , Dictation.onResult DictationResult
+            ]
+
+For a runnable example, use the **watch-demo-dictation** project template in the IDE.
+
 @docs Error, Status, start, stop, onStatus, onResult
 
 -}

@@ -5,6 +5,18 @@ module Pebble.DataLog exposing (Tag, tag, logBytes, logInt32)
 Each log session is identified by a numeric tag (uint32 on device). Create tags
 with `tag` and pass them to `logBytes` or `logInt32`.
 
+    import Pebble.DataLog as DataLog
+
+    sessionTag : DataLog.Tag
+    sessionTag =
+        DataLog.tag 42
+
+    logScore : Int -> Cmd msg
+    logScore score =
+        DataLog.logInt32 sessionTag score
+
+For a runnable example, use the **watch-demo-data-log** project template in the IDE.
+
 @docs Tag, tag, logBytes, logInt32
 
 -}

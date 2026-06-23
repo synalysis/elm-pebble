@@ -11,7 +11,8 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Companion do
   def rewrite(target, args) when is_binary(target) and is_list(args) do
     case target do
       "Companion.Watch.sendWatchToPhone" -> ui_call("elmx_companion_send", args)
-      "Companion.Watch.onPhoneToWatch" -> subscription_mask("Companion.Watch.onPhoneToWatch")
+      "Companion.Watch.onPhoneToWatch" ->
+        subscription_register_call("Companion.Watch.onPhoneToWatch", args)
       "Pebble.Companion.Phone.sendPhoneToWatch" -> ui_call("elmx_companion_send_phone", args)
       "Pebble.Companion.Phone.outgoing" -> {:ok, %{op: :cmd_none}}
       "Pebble.Companion.Phone.send" -> companion_phone_send(args)
@@ -71,18 +72,20 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Companion do
       "Pebble.Companion.Platform.subscribe" -> companion_subscription_stub(args)
       "Pebble.Companion.Configuration.setup" -> {:ok, %{op: :cmd_none}}
       "Pebble.Companion.Lifecycle.setup" -> {:ok, %{op: :cmd_none}}
-      "Pebble.Companion.Phone.onWatchToPhone" -> subscription_mask("Pebble.Companion.Phone.onWatchToPhone")
+      "Pebble.Companion.Phone.onWatchToPhone" ->
+        subscription_register_call("Pebble.Companion.Phone.onWatchToPhone", args)
       "Pebble.Companion.Storage.setup" -> {:ok, %{op: :cmd_none}}
       "Pebble.Companion.Storage.get" -> ui_call("elmx_companion_storage_get", args)
       "Pebble.Companion.Storage.set" -> ui_call("elmx_companion_storage_set", args)
       "Pebble.Companion.Storage.remove" -> ui_call("elmx_companion_storage_remove", args)
       "Pebble.Companion.Storage.clear" -> {:ok, %{op: :cmd_none}}
-      "Pebble.Companion.Storage.onStorage" -> subscription_mask("Pebble.Companion.Storage.onStorage")
+      "Pebble.Companion.Storage.onStorage" ->
+        subscription_register_call("Pebble.Companion.Storage.onStorage", args)
       "Pebble.Companion.PreferenceStore.setup" -> {:ok, %{op: :cmd_none}}
       "Pebble.Companion.PreferenceStore.get" -> ui_call("elmx_companion_preferences_get", args)
       "Pebble.Companion.PreferenceStore.set" -> ui_call("elmx_companion_preferences_set", args)
       "Pebble.Companion.PreferenceStore.onPreference" ->
-        subscription_mask("Pebble.Companion.PreferenceStore.onPreference")
+        subscription_register_call("Pebble.Companion.PreferenceStore.onPreference", args)
 
       "Pebble.Companion." <> _rest ->
         fallback_rewrite(target, args)

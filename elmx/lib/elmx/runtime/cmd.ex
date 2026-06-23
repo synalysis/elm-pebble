@@ -39,6 +39,9 @@ defmodule Elmx.Runtime.Cmd do
   @spec storage_delete(integer()) :: Types.wire_cmd()
   defdelegate storage_delete(key), to: Storage
 
+  @spec storage_read_max_size(Types.elm_msg(), Types.wire_value()) :: Types.wire_cmd()
+  defdelegate storage_read_max_size(callback, default), to: Storage
+
   @spec data_log_int32(Types.data_log_tag(), integer()) :: Types.wire_cmd()
   def data_log_int32(tag, value) when is_integer(value) do
     case Wire.data_log_tag_id(tag) do

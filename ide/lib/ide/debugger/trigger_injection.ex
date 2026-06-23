@@ -1,7 +1,8 @@
 defmodule Ide.Debugger.TriggerInjection do
   @moduledoc false
 
-  alias Ide.Debugger.DeviceDataResponses
+  alias Ide.Debugger.RuntimeActiveSubscriptions
+  alias Ide.Debugger.RuntimeModelMessages
   alias Ide.Debugger.SubscriptionActivation
   alias Ide.Debugger.SubscriptionAutoFireState
   alias Ide.Debugger.SubscriptionPayload
@@ -28,12 +29,7 @@ defmodule Ide.Debugger.TriggerInjection do
           required(:append_event) => (Types.runtime_state(),
                                       String.t(),
                                       Types.debugger_timeline_payload() ->
-                                        Types.runtime_state()),
-          optional(:apply_device_data_responses) => (Types.runtime_state(),
-                                                     Types.surface_target(),
-                                                     String.t(),
-                                                     Types.subscription_payload() | nil ->
-                                                       Types.runtime_state())
+                                        Types.runtime_state())
         }
 
   @spec apply(Types.runtime_state(), Types.surface_target(), Types.inject_trigger_attrs(), host()) ::
@@ -65,44 +61,39 @@ defmodule Ide.Debugger.TriggerInjection do
       resolved_message =
         host.trigger_message_for_surface.(state, target, trigger, requested_message)
 
-      {_step_message, derived_message_value} =
-        TimelineMessage.message_value_for_step(resolved_message)
-
       resolved_message_value =
         SubscriptionTriggerWire.message_value(resolved_message, requested_message_value) ||
-          derived_message_value
+          case TimelineMessage.message_value_for_step(resolved_message) do
+            {_, %{} = value} -> value
+            _ -> nil
+          end ||
+          RuntimeActiveSubscriptions.message_value_for(state, target, trigger, resolved_message)
+
+      activation_message =
+        case RuntimeActiveSubscriptions.message_for_trigger(state, target, trigger, nil) do
+          {:ok, runtime_message, _} -> runtime_message
+          :error -> RuntimeModelMessages.wire_constructor(resolved_message) || resolved_message
+        end
 
       row = %{
         trigger: trigger,
-        message: resolved_message,
+        message: activation_message,
         target: host.source_root_for_target.(target)
       }
 
       if SubscriptionActivation.model_active?(state, target, row) do
-        before_seq = Map.get(state, :debugger_seq, 0)
-
-        stepped =
-          state
-          |> host.apply_step_once.(
-            target,
-            resolved_message,
-            resolved_message_value,
-            "subscription_trigger",
-            "subscription_trigger"
-          )
-          |> maybe_apply_device_data_responses(
-            before_seq,
-            target,
-            resolved_message,
-            resolved_message_value,
-            host
-          )
-          |> SubscriptionPayload.sync_simulator_clock_from_subscription(
-            resolved_message,
-            resolved_message_value
-          )
-
-        stepped
+        state
+        |> host.apply_step_once.(
+          target,
+          resolved_message,
+          resolved_message_value,
+          "subscription_trigger",
+          "subscription_trigger"
+        )
+        |> SubscriptionPayload.sync_simulator_clock_from_subscription(
+          resolved_message,
+          resolved_message_value
+        )
       else
         host.append_event.(
           state,
@@ -116,39 +107,4 @@ defmodule Ide.Debugger.TriggerInjection do
       end
     end
   end
-
-  @spec maybe_apply_device_data_responses(
-          Types.runtime_state(),
-          non_neg_integer(),
-          Types.surface_target(),
-          String.t(),
-          Types.subscription_payload() | nil,
-          host()
-        ) :: Types.runtime_state()
-  defp maybe_apply_device_data_responses(
-         state,
-         before_seq,
-         target,
-         message,
-         message_value,
-         host
-       )
-       when is_map(state) and is_integer(before_seq) and is_binary(message) and is_map(host) do
-    if DeviceDataResponses.device_data_response_appended?(
-         state,
-         before_seq,
-         target,
-         host.source_root_for_target
-       ) do
-      state
-    else
-      case Map.get(host, :apply_device_data_responses) do
-        fun when is_function(fun, 4) -> fun.(state, target, message, message_value)
-        _ -> state
-      end
-    end
-  end
-
-  defp maybe_apply_device_data_responses(state, _before_seq, _target, _message, _message_value, _host),
-    do: state
 end

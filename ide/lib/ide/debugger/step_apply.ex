@@ -51,42 +51,38 @@ defmodule Ide.Debugger.StepApply do
           required(:maybe_append_runtime_status) => (Types.runtime_state(),
                                                      Types.surface_target() ->
                                                        Types.runtime_state()),
-          required(:device_data_responses) => (Types.runtime_state(),
-                                               Types.surface_target(),
-                                               String.t(),
-                                               Types.app_model(),
-                                               String.t(),
-                                               Types.subscription_payload() | nil ->
-                                                 Types.runtime_state()),
-          required(:geolocation_response) => (Types.runtime_state(),
-                                              Types.surface_target(),
-                                              String.t(),
-                                              Types.app_model(),
-                                              String.t() ->
-                                                Types.runtime_state()),
-          required(:companion_bridge_command_responses) => (Types.runtime_state(),
-                                                            Types.surface_target(),
-                                                            String.t(),
-                                                            Types.app_model(),
-                                                            String.t() ->
-                                                              Types.runtime_state()),
-          required(:companion_bridge_responses) => (Types.runtime_state(),
-                                                    Types.surface_target(),
-                                                    String.t() ->
-                                                      Types.runtime_state()),
-          required(:static_task_followups) => (Types.runtime_state(),
-                                               Types.surface_target(),
-                                               String.t(),
-                                               Types.subscription_payload()
-                                               | nil,
-                                               String.t() ->
-                                                 Types.runtime_state()),
           required(:runtime_followups) => (Types.runtime_state(),
                                            Types.surface_target(),
                                            String.t(),
                                            String.t(),
                                            [Types.runtime_followup_row()] ->
-                                             Types.runtime_state())
+                                             Types.runtime_state()),
+          required(:device_data_responses) => (Types.runtime_state(),
+                                               Types.surface_target(),
+                                               String.t(),
+                                               Types.app_model(),
+                                               String.t(),
+                                               Types.subscription_payload() | nil,
+                                               [Types.runtime_followup_row()] ->
+                                                 Types.runtime_state()),
+          required(:geolocation_response) => (Types.runtime_state(),
+                                              Types.surface_target(),
+                                              String.t(),
+                                              Types.app_model(),
+                                              String.t(),
+                                              [Types.runtime_followup_row()] ->
+                                                Types.runtime_state()),
+          required(:companion_bridge_command_responses) => (Types.runtime_state(),
+                                                            Types.surface_target(),
+                                                            String.t(),
+                                                            Types.app_model(),
+                                                            String.t(),
+                                                            [Types.runtime_followup_row()] ->
+                                                              Types.runtime_state()),
+          required(:companion_bridge_responses) => (Types.runtime_state(),
+                                                    Types.surface_target(),
+                                                    String.t() ->
+                                                      Types.runtime_state())
         }
 
   @type apply_opts :: [suppress_protocol_events: boolean()]
@@ -325,31 +321,32 @@ defmodule Ide.Debugger.StepApply do
         Ide.Debugger.Types.ViewRenderEventPayload.from_render(target_name, root)
       )
       |> then(fn state_after_events ->
-        ctx.device_data_responses.(
-          state_after_events,
-          target,
-          message,
-          updated_model,
-          message_source,
-          message_value
-        )
-      end)
-      |> ctx.geolocation_response.(target, message, updated_model, message_source)
-      |> ctx.static_task_followups.(target, message, message_value, message_source)
-      |> then(fn state_after_followups ->
         ctx.runtime_followups.(
-          state_after_followups,
+          state_after_events,
           target,
           message,
           message_source,
           runtime_followups
         )
       end)
+      |> then(fn state_after_followups ->
+        ctx.device_data_responses.(
+          state_after_followups,
+          target,
+          message,
+          updated_model,
+          message_source,
+          message_value,
+          runtime_followups
+        )
+      end)
+      |> ctx.geolocation_response.(target, message, updated_model, message_source, runtime_followups)
       |> ctx.companion_bridge_command_responses.(
         target,
         message,
         updated_model,
-        message_source
+        message_source,
+        runtime_followups
       )
       |> ctx.companion_bridge_responses.(target, message_source)
   end

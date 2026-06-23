@@ -111,6 +111,10 @@ defmodule Ide.Resources.Types do
           | :invalid_font_height
           | :svg_conversion_failed
           | :invalid_pdc_output
+          | :unsupported_speaker_sample_type
+          | :invalid_speaker_sample
+          | :speaker_sample_too_large
+          | :speaker_sample_total_too_large
 
   @type asset_lookup_error ::
           :bitmap_not_found

@@ -185,7 +185,7 @@ defmodule Ide.Debugger.TriggerCandidates do
   def for_surface(_ei, _target_name, _model_active_fn), do: []
 
   @spec button_subscription_metadata(Types.cmd_call()) :: button_metadata()
-  defp button_subscription_metadata(%{"target" => target, "arg_snippets" => [button, event | _]})
+  def button_subscription_metadata(%{"target" => target, "arg_snippets" => [button, event | _]})
        when is_binary(target) and is_binary(button) and is_binary(event) do
     case subscription_target_name(target) do
       "on" ->
@@ -199,12 +199,12 @@ defmodule Ide.Debugger.TriggerCandidates do
     end
   end
 
-  defp button_subscription_metadata(%{"target" => target, "arg_snippets" => [button | _]})
+  def button_subscription_metadata(%{"target" => target, "arg_snippets" => [button | _]})
        when is_binary(target) and is_binary(button) do
     button_event_metadata(subscription_target_name(target), button)
   end
 
-  defp button_subscription_metadata(_op), do: %{}
+  def button_subscription_metadata(_op), do: %{}
 
   defp button_event_metadata(target_name, button) do
     case target_name do
@@ -475,7 +475,7 @@ defmodule Ide.Debugger.TriggerCandidates do
   def normalize_trigger_id(_), do: "trigger"
 
   @spec normalize_trigger_label(Types.wire_input()) :: String.t()
-  defp normalize_trigger_label(trigger) when is_binary(trigger) do
+  def normalize_trigger_label(trigger) when is_binary(trigger) do
     trigger
     |> String.replace(~r/[_\.\-]+/, " ")
     |> String.trim()
@@ -485,7 +485,7 @@ defmodule Ide.Debugger.TriggerCandidates do
     end
   end
 
-  defp normalize_trigger_label(_), do: "Trigger"
+  def normalize_trigger_label(_), do: "Trigger"
 
   @doc false
   @spec subscription_trigger_display(Types.cmd_call() | nil, String.t() | nil) :: String.t()

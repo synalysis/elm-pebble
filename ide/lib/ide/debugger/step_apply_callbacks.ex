@@ -80,12 +80,13 @@ defmodule Ide.Debugger.StepApplyCallbacks do
       append_event: host.append_event,
       append_debugger_event: host.append_debugger_event,
       maybe_append_runtime_status: host.maybe_append_runtime_status,
-      device_data_responses: &device_data_responses(&1, &2, &3, &4, &5, &6, device_data),
-      geolocation_response: &geolocation_response(&1, &2, &3, &4, &5, geolocation),
+      device_data_responses:
+        &device_data_responses(&1, &2, &3, &4, &5, &6, &7, device_data),
+      geolocation_response:
+        &geolocation_response(&1, &2, &3, &4, &5, &6, geolocation),
       companion_bridge_command_responses:
-        &companion_bridge_command_responses(&1, &2, &3, &4, &5, companion_bridge),
+        &companion_bridge_command_responses(&1, &2, &3, &4, &5, &6, companion_bridge),
       companion_bridge_responses: &companion_bridge_responses(&1, &2, &3, companion_bridge),
-      static_task_followups: &static_task_followups(&1, &2, &3, &4, &5, runtime_followups),
       runtime_followups:
         &runtime_followups_after_step(&1, &2, &3, &4, &5, %{ctx: runtime_followups})
     }
@@ -124,6 +125,19 @@ defmodule Ide.Debugger.StepApplyCallbacks do
           DeviceDataResponses.apply_ctx()
         ) :: Types.runtime_state()
   def device_data_responses(state, target, message, model, source, message_value, device_data) do
+    device_data_responses(state, target, message, model, source, message_value, device_data, [])
+  end
+
+  def device_data_responses(
+        state,
+        target,
+        message,
+        model,
+        source,
+        message_value,
+        device_data,
+        runtime_followups
+      ) do
     DeviceDataResponses.apply_after_step(
       state,
       target,
@@ -131,7 +145,8 @@ defmodule Ide.Debugger.StepApplyCallbacks do
       model,
       source,
       device_data,
-      message_value
+      message_value,
+      runtime_followups
     )
   end
 
@@ -141,10 +156,19 @@ defmodule Ide.Debugger.StepApplyCallbacks do
           String.t(),
           Types.app_model(),
           String.t(),
+          [Types.runtime_followup_row()],
           GeolocationResponses.apply_ctx()
         ) :: Types.runtime_state()
-  def geolocation_response(state, target, message, model, source, geolocation) do
-    GeolocationResponses.apply_after_step(state, target, message, model, source, geolocation)
+  def geolocation_response(state, target, message, model, source, runtime_followups, geolocation) do
+    GeolocationResponses.apply_after_step(
+      state,
+      target,
+      message,
+      model,
+      source,
+      geolocation,
+      runtime_followups
+    )
   end
 
   @spec companion_bridge_command_responses(
@@ -153,6 +177,7 @@ defmodule Ide.Debugger.StepApplyCallbacks do
           String.t(),
           Types.app_model(),
           String.t(),
+          [Types.runtime_followup_row()],
           CompanionBridgeRuntime.ctx()
         ) :: Types.runtime_state()
   def companion_bridge_command_responses(
@@ -161,6 +186,7 @@ defmodule Ide.Debugger.StepApplyCallbacks do
         message,
         model,
         message_source,
+        runtime_followups,
         companion_bridge
       ) do
     Ide.Debugger.CompanionBridgeEffects.apply_command_responses(
@@ -169,7 +195,8 @@ defmodule Ide.Debugger.StepApplyCallbacks do
       message,
       model,
       message_source,
-      companion_bridge
+      companion_bridge,
+      runtime_followups
     )
   end
 
@@ -185,25 +212,6 @@ defmodule Ide.Debugger.StepApplyCallbacks do
       target,
       message_source,
       companion_bridge
-    )
-  end
-
-  @spec static_task_followups(
-          Types.runtime_state(),
-          Types.surface_target(),
-          String.t(),
-          Types.subscription_payload() | nil,
-          String.t(),
-          RuntimeFollowups.apply_ctx()
-        ) :: Types.runtime_state()
-  def static_task_followups(state, target, message, message_value, source, runtime_followups) do
-    RuntimeFollowups.apply_static_task_after_step(
-      state,
-      target,
-      message,
-      message_value,
-      source,
-      runtime_followups
     )
   end
 

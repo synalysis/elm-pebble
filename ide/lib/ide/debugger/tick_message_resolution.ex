@@ -2,6 +2,7 @@ defmodule Ide.Debugger.TickMessageResolution do
   @moduledoc false
 
   alias Ide.Debugger.IntrospectAccess
+  alias Ide.Debugger.RuntimeActiveSubscriptions
   alias Ide.Debugger.Types
 
   @type resolve_ctx :: %{
@@ -18,6 +19,24 @@ defmodule Ide.Debugger.TickMessageResolution do
           String.t()
   def message_for_surface(state, target, ctx)
       when is_map(state) and target in [:watch, :companion, :phone] and is_map(ctx) do
+    case RuntimeActiveSubscriptions.tick_candidate(state, target) do
+      %{message: message, trigger: trigger} ->
+        ctx.attach_payload.(state, target, message, trigger)
+
+      nil ->
+        message_for_surface_from_introspect(state, target, ctx)
+    end
+  end
+
+  def message_for_surface(_state, _target, _ctx), do: "Tick"
+
+  @spec message_for_surface_from_introspect(
+          Types.runtime_state(),
+          Types.surface_target(),
+          resolve_ctx()
+        ) :: String.t()
+  defp message_for_surface_from_introspect(state, target, ctx)
+       when is_map(state) and target in [:watch, :companion, :phone] and is_map(ctx) do
     ei = ctx.introspect_for.(state, target)
     msg_constructors = IntrospectAccess.list(ei, "msg_constructors")
     update_branches = IntrospectAccess.list(ei, "update_case_branches")
@@ -38,8 +57,6 @@ defmodule Ide.Debugger.TickMessageResolution do
         Enum.find(known_messages, "Tick", &tickish_message?/1)
     end
   end
-
-  def message_for_surface(_state, _target, _ctx), do: "Tick"
 
   @spec pick_subscription_message([String.t()], [String.t()], String.t()) ::
           {String.t(), String.t() | nil}

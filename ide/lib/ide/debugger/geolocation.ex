@@ -110,6 +110,26 @@ defmodule Ide.Debugger.Geolocation do
 
   def init_requested_from_introspect?(_ei), do: false
 
+  @spec init_requested_from_runtime?(Types.runtime_state(), Types.surface_target()) :: boolean()
+  def init_requested_from_runtime?(state, target)
+      when is_map(state) and target in [:watch, :companion, :phone] do
+    subscription_callback_from_runtime(state, target) != nil
+  end
+
+  def init_requested_from_runtime?(_state, _target), do: false
+
+  @spec init_requested_for_surface?(
+          Types.runtime_state(),
+          Types.surface_target(),
+          Types.elm_introspect()
+        ) :: boolean()
+  def init_requested_for_surface?(state, target, ei)
+      when is_map(state) and target in [:watch, :companion, :phone] and is_map(ei) do
+    init_requested_from_introspect?(ei) or init_requested_from_runtime?(state, target)
+  end
+
+  def init_requested_for_surface?(_state, _target, _ei), do: false
+
   @spec subscription_callback_from_introspect(Types.elm_introspect()) :: String.t() | nil
   def subscription_callback_from_introspect(ei) when is_map(ei) do
     subscription_callback(
@@ -119,6 +139,77 @@ defmodule Ide.Debugger.Geolocation do
   end
 
   def subscription_callback_from_introspect(_ei), do: nil
+
+  @spec subscription_callback_from_runtime(Types.runtime_state(), Types.surface_target()) ::
+          String.t() | nil
+  def subscription_callback_from_runtime(state, target)
+      when is_map(state) and target in [:watch, :companion, :phone] do
+    contract = contract()
+    suffixes = Map.get(contract, :target_suffixes, []) |> List.wrap()
+
+    state
+    |> Ide.Debugger.RuntimeActiveSubscriptions.for_surface(target)
+    |> Enum.find_value(fn command ->
+      target_name = Ide.Debugger.RuntimeActiveSubscriptions.command_target(command)
+
+      if subscription_target_matches?(target_name, suffixes) do
+        message = Map.get(command, "message") || Map.get(command, :message)
+
+        if is_binary(message) and message != "" do
+          message
+        else
+          nil
+        end
+      end
+    end)
+  end
+
+  def subscription_callback_from_runtime(_state, _target), do: nil
+
+  @spec subscription_callback_for_surface(
+          Types.runtime_state(),
+          Types.surface_target(),
+          Types.elm_introspect()
+        ) :: String.t() | nil
+  def subscription_callback_for_surface(state, target, ei)
+      when is_map(state) and target in [:watch, :companion, :phone] do
+    subscription_callback_from_runtime(state, target) ||
+      subscription_callback_from_introspect(ei)
+  end
+
+  def subscription_callback_for_surface(_state, _target, _ei), do: nil
+
+  @runtime_geolocation_applied_key :runtime_geolocation_applied
+
+  @spec runtime_geolocation_applied?(Types.runtime_state()) :: boolean()
+  def runtime_geolocation_applied?(state) when is_map(state),
+    do: Map.get(state, @runtime_geolocation_applied_key) == true
+
+  def runtime_geolocation_applied?(_state), do: false
+
+  @spec mark_runtime_geolocation_applied(Types.runtime_state()) :: Types.runtime_state()
+  def mark_runtime_geolocation_applied(state) when is_map(state),
+    do: Map.put(state, @runtime_geolocation_applied_key, true)
+
+  def mark_runtime_geolocation_applied(state), do: state
+
+  @spec subscription_target_matches?(String.t(), [String.t()]) :: boolean()
+  defp subscription_target_matches?(target, suffixes)
+       when is_binary(target) and is_list(suffixes) do
+    normalized =
+      target
+      |> String.downcase()
+      |> String.replace(~r/[^a-z0-9.]+/, "")
+
+    Enum.any?(suffixes, fn suffix ->
+      suffix
+      |> to_string()
+      |> String.downcase()
+      |> then(&String.contains?(normalized, &1))
+    end)
+  end
+
+  defp subscription_target_matches?(_target, _suffixes), do: false
 
   @spec subscription_callback([Types.cmd_call()], Types.api_suffix_contract()) :: String.t() | nil
   def subscription_callback(subscription_calls, contract)

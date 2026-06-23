@@ -4,8 +4,16 @@ import Elm.Kernel.PebbleWatch
 
 {-| Runtime logging commands.
 
-This app-focused wave exposes integer code logging for deterministic C-side
-logging output.
+Emit integer codes from your update loop; the C runtime prints them to the
+device log (visible in debug builds and the IDE debugger).
+
+    import Pebble.Log as Log
+
+    reportFailure : Cmd msg
+    reportFailure =
+        Log.errorCode 3001
+
+For a runnable example, use the **watch-demo-log** project template in the IDE.
 
 @docs infoCode, warnCode, errorCode
 -}

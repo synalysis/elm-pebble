@@ -1,21 +1,38 @@
-module Pebble.Storage exposing (writeInt, readInt, writeString, readString, delete)
+module Pebble.Storage exposing (writeInt, readInt, writeString, readString, delete, maxSize)
 
 {-| Watch-local key/value storage commands.
 
-The watch runtime exposes a lightweight integer key/value store.
+The watch runtime exposes a lightweight integer- and string-keyed store.
+Keys are integers; values can be ints or strings. Use `maxSize` to learn the
+per-app byte limit on the current firmware.
 
-    saveCounter : Cmd msg
-    saveCounter =
-        writeInt 1 42
+    import Pebble.Storage as Storage
 
-    loadCounter : Cmd Msg
-    loadCounter =
-        readInt 1 CounterLoaded
+    storageKey : Int
+    storageKey =
+        1
 
+    type Msg
+        = CounterLoaded Int
+        | MaxSizeLoaded Int
+
+    init _ =
+        ( model
+        , Cmd.batch
+            [ Storage.readInt storageKey CounterLoaded
+            , Storage.maxSize MaxSizeLoaded
+            ]
+        )
+
+    saveCounter : Int -> Cmd msg
+    saveCounter value =
+        Storage.writeInt storageKey value
+
+For a runnable example, use the **watch-demo-storage** project template in the IDE.
 
 # Operations
 
-@docs writeInt, readInt, writeString, readString, delete
+@docs writeInt, readInt, writeString, readString, delete, maxSize
 
 -}
 
@@ -55,3 +72,10 @@ readString =
 delete : Int -> Cmd msg
 delete =
     Elm.Kernel.PebbleWatch.storageDelete
+
+
+{-| Query the per-app persistent storage byte limit on this firmware.
+-}
+maxSize : (Int -> msg) -> Cmd msg
+maxSize =
+    Elm.Kernel.PebbleWatch.storageReadMaxSize

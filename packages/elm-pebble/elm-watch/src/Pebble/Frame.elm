@@ -6,8 +6,23 @@ module Pebble.Frame exposing
 
 {-| Fixed-interval frame subscriptions.
 
-These subscriptions are useful for games, animations, and any watch app that
-needs a regular update loop.
+Use these for games, animations, and smooth motion. `atFps` is a convenience
+wrapper around `every` that converts frames-per-second to milliseconds.
+
+    import Pebble.Frame as Frame
+
+    type Msg
+        = Tick Frame.Frame
+
+    subscriptions _ =
+        Frame.atFps 30 Tick
+
+    update msg model =
+        case msg of
+            Tick frame ->
+                ( { model | elapsedMs = frame.elapsedMs }, Cmd.none )
+
+For a runnable example, use the **watch-demo-frame** project template in the IDE.
 
 # Types
 @docs Frame

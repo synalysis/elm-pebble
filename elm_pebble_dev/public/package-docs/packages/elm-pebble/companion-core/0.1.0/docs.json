@@ -418,7 +418,7 @@
       }
     ],
     "binops": [],
-    "comment": "Phone notification status helpers for companion apps.\n\n# Types\n\n@docs NotificationStatus\n\n# Commands\n\n@docs current, setup\n\n# Subscriptions\n\n@docs onNotificationStatus",
+    "comment": "Phone notification status helpers for companion apps.\n\n    import Pebble.Companion.Notifications as Notifications\n\n    type Msg\n        = GotNotifications (Result String Notifications.NotificationStatus)\n\n    init _ =\n        ( model, Notifications.current GotNotifications )\n\n    subscriptions _ =\n        Notifications.onNotificationStatus GotNotifications\n\nFor a runnable example, use the **companion-demo-phone-status** project template.\n\n# Types\n\n@docs NotificationStatus\n\n# Commands\n\n@docs current, setup\n\n# Subscriptions\n\n@docs onNotificationStatus",
     "name": "Pebble.Companion.Notifications",
     "unions": [],
     "values": [
@@ -442,7 +442,7 @@
   {
     "aliases": [],
     "binops": [],
-    "comment": "Generic phone-side preference storage exposed by the companion bridge.\n\n# Commands\n\n@docs get, set, setup\n\n# Subscriptions\n\n@docs onPreference",
+    "comment": "Generic phone-side preference storage exposed by the companion bridge.\n\nPreferences are JSON values keyed by string. Use `get` / `set` for one-off reads\nand writes, and `onPreference` to observe changes from the phone settings UI.\n\n    import Json.Decode as Decode\n    import Json.Encode as Encode\n    import Pebble.Companion.PreferenceStore as PreferenceStore\n\n    type Msg\n        = GotUnits (Result String ( String, Decode.Value ))\n\n    init _ =\n        ( model, PreferenceStore.get \"units\" GotUnits )\n\n    saveUnits : String -> Cmd msg\n    saveUnits value =\n        PreferenceStore.set \"units\" (Encode.string value)\n\n    subscriptions _ =\n        PreferenceStore.onPreference GotUnits\n\nFor a runnable example, use the **companion-demo-settings** project template.\n\n@docs get, set, setup\n\n# Subscriptions\n\n@docs onPreference",
     "name": "Pebble.Companion.PreferenceStore",
     "unions": [],
     "values": [
@@ -471,7 +471,7 @@
   {
     "aliases": [],
     "binops": [],
-    "comment": "Persistent companion storage helpers.\n\n# Values and errors\n\n@docs Value, Error\n\n# Commands\n\n@docs set, get, remove, clear, setup\n\n# Subscriptions\n\n@docs onStorage",
+    "comment": "Persistent companion storage helpers.\n\nStore typed values on the phone companion and read them back across sessions.\n\n    import Pebble.Companion.Storage as Storage\n\n    type Msg\n        = GotTheme (Result Storage.Error Storage.Value)\n\n    init _ =\n        ( model, Storage.get \"theme\" GotTheme )\n\n    saveTheme : String -> Cmd msg\n    saveTheme value =\n        Storage.set \"theme\" (Storage.StringValue value)\n\n    subscriptions _ =\n        Storage.onStorage GotTheme\n\nFor a runnable example, use the **companion-demo-storage** project template in the IDE.\n\n# Values and errors\n\n@docs Value, Error\n\n# Commands\n\n@docs set, get, remove, clear, setup\n\n# Subscriptions\n\n@docs onStorage",
     "name": "Pebble.Companion.Storage",
     "unions": [
       {

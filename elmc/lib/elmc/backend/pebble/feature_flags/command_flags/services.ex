@@ -4,6 +4,7 @@ defmodule Elmc.Backend.Pebble.FeatureFlags.CommandFlags.Services do
   alias Elmc.Backend.Pebble.FeatureFlags.CommandFlags.Services.{
     DeviceServices,
     Health,
+    Speaker,
     Vibes
   }
 
@@ -15,5 +16,6 @@ defmodule Elmc.Backend.Pebble.FeatureFlags.CommandFlags.Services do
     |> Vibes.compute()
     |> Map.merge(Health.compute(targets))
     |> Map.merge(DeviceServices.compute(targets))
+    |> Map.merge(Speaker.compute(targets))
   end
 end

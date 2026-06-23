@@ -53,10 +53,19 @@ defmodule Elmx.Runtime.Pebble.Dispatch do
   defdelegate vibes_double_pulse(args), to: Effects
   defdelegate vibes_pattern_cmd(args), to: Effects
   defdelegate vibes_cancel(args), to: Effects
+  defdelegate speaker_play_tone_cmd(args), to: Effects
+  defdelegate speaker_play_notes_cmd(args), to: Effects
+  defdelegate speaker_play_tracks_cmd(args), to: Effects
+  defdelegate speaker_stop_cmd(args), to: Effects
+  defdelegate speaker_set_volume_cmd(args), to: Effects
+  defdelegate speaker_stream_open_cmd(args), to: Effects
+  defdelegate speaker_stream_write_cmd(args), to: Effects
+  defdelegate speaker_stream_close_cmd(args), to: Effects
   defdelegate dictation_start(args), to: Effects
   defdelegate dictation_stop(args), to: Effects
   defdelegate backlight_cmd(args), to: Effects
   defdelegate frame_every_cmd(args), to: Effects
+  defdelegate frame_at_fps_cmd(args), to: Effects
   defdelegate unobstructed_current_bounds_cmd(args), to: Effects
   defdelegate compass_peek_cmd(args), to: Effects
 
@@ -69,6 +78,7 @@ defmodule Elmx.Runtime.Pebble.Dispatch do
   defdelegate storage_write_int_cmd(args), to: Storage, as: :write_int_cmd
   defdelegate storage_write_string_cmd(args), to: Storage, as: :write_string_cmd
   defdelegate storage_delete_cmd(args), to: Storage, as: :delete_cmd
+  defdelegate storage_read_max_size_cmd(args), to: Storage, as: :read_max_size_cmd
 
   # Platform / basics
   defdelegate platform_launch_reason(args), to: Platform, as: :launch_reason
@@ -113,12 +123,19 @@ defmodule Elmx.Runtime.Pebble.Dispatch do
 
   def random_generate_cmd(_), do: Cmd.none()
 
+  @spec subscription_call(Types.registry_args()) :: Types.wire_cmd()
+  def subscription_call([target | args]) when is_binary(target),
+    do: subscription_cmd(target, args)
+
+  def subscription_call(_), do: Cmd.none()
+
   @spec subscription_cmd(String.t(), Types.registry_args()) :: Types.wire_cmd()
   def subscription_cmd(target, args) when is_binary(target) do
     callback =
       case args do
-        [cb | _] -> cb
-        _ -> "Tick"
+        [] -> "Tick"
+        [cb] -> cb
+        args -> List.last(args)
       end
 
     Cmd.subscription_register(target, callback: callback)

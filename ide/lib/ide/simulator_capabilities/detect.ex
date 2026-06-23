@@ -36,7 +36,12 @@ defmodule Ide.SimulatorCapabilities.Detect do
     "watch_unobstructed_area" => "UnobstructedArea",
     "watch_dictation" => "Dictation",
     "watch_data_log" => "DataLog",
-    "watch_vibes" => "Vibes"
+    "watch_vibes" => "Vibes",
+    "watch_light" => "Light",
+    "watch_speaker" => "Speaker",
+    "watch_screen_change" => "Platform",
+    "watch_launch" => "Platform",
+    "watch_storage" => "Storage"
   }
 
   @spec watch_caps(Types.elm_introspect() | nil) :: MapSet.t(String.t())
@@ -91,8 +96,22 @@ defmodule Ide.SimulatorCapabilities.Detect do
     imported_module?(introspect, "Pebble." <> module_name) or
       imported_module?(introspect, module_name) or
       Enum.any?(cmd_calls(introspect), &watch_module_call?(&1, module_name)) or
-      Enum.any?(subscription_calls(introspect), &watch_module_call?(&1, module_name))
+      Enum.any?(subscription_calls(introspect), &watch_module_call?(&1, module_name)) or
+      platform_launch_usage?(introspect, module_name)
   end
+
+  defp platform_launch_usage?(introspect, "Platform") do
+    Enum.any?(subscription_calls(introspect), fn row ->
+      target = call_target(row)
+      String.contains?(target, "Platform.onScreenChange")
+    end) or
+      Enum.any?(cmd_calls(introspect), fn row ->
+        target = call_target(row)
+        String.contains?(target, "Platform.") or String.contains?(target, "Pebble.Platform.")
+      end)
+  end
+
+  defp platform_launch_usage?(_introspect, _module_name), do: false
 
   @spec watch_module_call?(map(), String.t()) :: boolean()
   defp watch_module_call?(row, module_name) do

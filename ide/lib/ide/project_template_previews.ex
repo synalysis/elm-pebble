@@ -66,7 +66,7 @@ defmodule Ide.ProjectTemplatePreviews do
       raise ArgumentError, "unknown template #{inspect(template_key)}"
     end
 
-    case DebuggerTemplateCorpus.run_template(template_key, cleanup: false) do
+    case DebuggerTemplateCorpus.bootstrap_template(template_key, cleanup: false) do
       {:ok, %{project: project}} ->
         write_preview_for_project!(template_key, project)
 

@@ -46,6 +46,11 @@ defmodule Ide.Debugger.SimulatorSettingsApply do
       settings,
       ctx.simulator_watch_delivery
     )
+    |> SimulatorWatchDelivery.inject_settings_triggers(
+      previous_settings,
+      settings,
+      ctx.simulator_watch_delivery
+    )
     |> SimulatorWatchDelivery.deliver_position(ctx.simulator_watch_delivery)
   end
 

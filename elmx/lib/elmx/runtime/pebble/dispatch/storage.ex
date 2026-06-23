@@ -35,6 +35,14 @@ defmodule Elmx.Runtime.Pebble.Dispatch.Storage do
 
   def read_string_cmd(_), do: Cmd.none()
 
+  @spec read_max_size_cmd(Types.registry_args()) :: Types.wire_cmd()
+  def read_max_size_cmd([callback, default]), do: Cmd.storage_read_max_size(callback, default)
+
+  def read_max_size_cmd([callback]) when not is_nil(callback),
+    do: Cmd.storage_read_max_size(callback, 4096)
+
+  def read_max_size_cmd(_), do: Cmd.none()
+
   @spec write_int_cmd(Types.registry_args()) :: Types.wire_cmd()
   def write_int_cmd([key, value]) when is_integer(key), do: Cmd.storage_write_int(key, value)
   def write_int_cmd(_), do: Cmd.none()

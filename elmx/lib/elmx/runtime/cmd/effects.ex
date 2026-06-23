@@ -38,7 +38,16 @@ defmodule Elmx.Runtime.Cmd.Effects do
     }
     |> Companion.maybe_put_field("variant", Keyword.get(opts, :variant))
     |> Companion.maybe_put_field("pattern", Keyword.get(opts, :pattern))
+    |> merge_extra_fields(Keyword.get(opts, :extra))
   end
+
+  defp merge_extra_fields(cmd, extra) when is_map(cmd) and is_map(extra) do
+    Enum.reduce(extra, cmd, fn {key, value}, acc ->
+      Companion.maybe_put_field(acc, to_string(key), value)
+    end)
+  end
+
+  defp merge_extra_fields(cmd, _), do: cmd
 
   @doc """
   Pebble backlight cmd from `Maybe Bool` (Nothing → interaction, Just False → disable, Just True → enable).

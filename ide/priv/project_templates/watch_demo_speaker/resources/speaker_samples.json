@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "a1b2c3d4-e5f6-4789-a012-3456789abcde",
+      "ctor": "SampleChime",
+      "base_name": "Chime",
+      "filename": "chime.pcm",
+      "mime": "application/octet-stream",
+      "bytes": 4800,
+      "format": 2,
+      "base_midi_note": 81,
+      "loop": false
+    }
+  ]
+}

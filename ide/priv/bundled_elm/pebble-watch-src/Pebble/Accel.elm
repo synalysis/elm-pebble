@@ -9,6 +9,24 @@ module Pebble.Accel exposing
 
 {-| Accelerometer subscriptions for Pebble watches.
 
+Subscribe with `onData` for continuous samples and `onTap` for shake gestures.
+Use `Pebble.Events.batch` to combine them with button or timer subscriptions.
+
+    import Pebble.Accel as Accel
+    import Pebble.Events as Events
+
+    type Msg
+        = AccelSample Accel.Sample
+        | AccelTap
+
+    subscriptions _ =
+        Events.batch
+            [ Accel.onData Accel.defaultConfig AccelSample
+            , Accel.onTap AccelTap
+            ]
+
+For a runnable example, use the **watch-demo-accel** project template in the IDE.
+
 # Types
 @docs Config, Sample, SamplingRate
 

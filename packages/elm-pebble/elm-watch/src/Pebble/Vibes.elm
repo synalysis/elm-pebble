@@ -4,6 +4,21 @@ import Elm.Kernel.PebbleWatch
 
 {-| Vibration motor controls.
 
+Use built-in pulses for simple feedback, or `pattern` for custom rhythms.
+Each pattern value is a segment duration in milliseconds, alternating ON/OFF.
+
+    import Pebble.Vibes as Vibes
+
+    sos : Cmd msg
+    sos =
+        Vibes.pattern [ 100, 100, 100, 100, 100, 300, 300, 300, 100, 100, 100 ]
+
+    onTap : Cmd msg
+    onTap =
+        Vibes.shortPulse
+
+For a runnable example, use the **watch-demo-vibes** project template in the IDE.
+
 @docs cancel, shortPulse, longPulse, doublePulse, pattern
 -}
 

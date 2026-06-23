@@ -72,7 +72,17 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered.Bounds do
         h = if is_integer(screen_h), do: screen_h, else: 0
         %{x: 0, y: 0, w: max(w, 1), h: max(h, 1)}
 
-      type when type in ["roundRect", "rect", "fillRect", "text", "bitmapInRect", "arc", "fillRadial"] ->
+      type
+      when type in [
+             "roundRect",
+             "rect",
+             "fillRect",
+             "text",
+             "bitmapInRect",
+             "drawBitmapInRect",
+             "arc",
+             "fillRadial"
+           ] ->
         rect_bounds(node)
 
       type when type in ["pathFilled", "pathOutline", "pathOutlineOpen"] ->
@@ -82,8 +92,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered.Bounds do
         line_bounds(node)
 
       "pixel" ->
-        with x when is_integer(x) <- Util.map_integer(node, :x),
-             y when is_integer(y) <- Util.map_integer(node, :y) do
+        with x when is_integer(x) <- node_point_integer(node, :x),
+             y when is_integer(y) <- node_point_integer(node, :y) do
           %{x: x, y: y, w: 1, h: 1}
         else
           _ -> nil
@@ -98,16 +108,16 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered.Bounds do
       "textLabel" ->
         text_point_bounds(node, 56, 12)
 
-      "rotatedBitmap" ->
+      type when type in ["rotatedBitmap", "drawRotatedBitmap"] ->
         rotated_bitmap_bounds(node)
 
-      "drawVectorAt" ->
+      type when type in ["drawVectorAt", "vectorAt"] ->
         vector_at_bounds(node, project, :image)
 
-      "drawVectorSequenceAt" ->
+      type when type in ["drawVectorSequenceAt", "vectorSequenceAt"] ->
         vector_at_bounds(node, project, :sequence)
 
-      "drawBitmapSequenceAt" ->
+      type when type in ["drawBitmapSequenceAt", "bitmapSequenceAt"] ->
         animation_at_bounds(node, project)
 
       _ ->
@@ -121,8 +131,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered.Bounds do
   defp animation_at_bounds(node, %Project{} = project) when is_map(node) do
     with animation_id when is_integer(animation_id) and animation_id >= 1 <-
            Util.map_integer(node, :animation_id),
-         x when is_integer(x) <- Util.map_integer(node, :x),
-         y when is_integer(y) <- Util.map_integer(node, :y),
+         x when is_integer(x) <- node_point_integer(node, :x),
+         y when is_integer(y) <- node_point_integer(node, :y),
          {:ok, path} <- ResourceStore.animation_file_path_by_id(project, animation_id),
          {:ok, probe} <- Ide.Resources.ApngProbe.probe(path) do
       %{x: x, y: y, w: max(probe.width, 1), h: max(probe.height, 1)}
@@ -136,8 +146,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered.Bounds do
   @spec vector_at_bounds(rendered_node(), Project.t() | nil, :image | :sequence) ::
           bounds_map() | nil
   defp vector_at_bounds(node, project, kind) when is_map(node) and kind in [:image, :sequence] do
-    with x when is_integer(x) <- Util.map_integer(node, :x),
-         y when is_integer(y) <- Util.map_integer(node, :y),
+    with x when is_integer(x) <- node_point_integer(node, :x),
+         y when is_integer(y) <- node_point_integer(node, :y),
          {:ok, {w, h}} <- vector_canvas_size(node, project, kind) do
       %{x: x, y: y, w: max(w, 1), h: max(h, 1)}
     else
@@ -163,14 +173,43 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered.Bounds do
 
   @spec rect_bounds(rendered_node()) :: bounds_map() | nil
   defp rect_bounds(node) when is_map(node) do
-    with x when is_integer(x) <- Util.map_integer(node, :x),
-         y when is_integer(y) <- Util.map_integer(node, :y),
-         w when is_integer(w) <- Util.map_integer(node, :w),
-         h when is_integer(h) <- Util.map_integer(node, :h) do
+    with x when is_integer(x) <- node_rect_integer(node, :x),
+         y when is_integer(y) <- node_rect_integer(node, :y),
+         w when is_integer(w) <- node_rect_integer(node, :w),
+         h when is_integer(h) <- node_rect_integer(node, :h) do
       %{x: x, y: y, w: max(w, 1), h: max(h, 1)}
     else
       _ -> nil
     end
+  end
+
+  @spec node_bounds_map(rendered_node()) :: map()
+  defp node_bounds_map(node) when is_map(node) do
+    case Util.map_map(node, :bounds) do
+      %{} = bounds -> bounds
+      _ -> %{}
+    end
+  end
+
+  @spec node_rect_integer(rendered_node(), atom()) :: integer() | nil
+  defp node_rect_integer(node, key) when is_map(node) and is_atom(key) do
+    bounds = node_bounds_map(node)
+
+    Util.map_integer(node, key) ||
+      Util.map_integer(bounds, key)
+  end
+
+  @spec node_point_integer(rendered_node(), atom()) :: integer() | nil
+  defp node_point_integer(node, key) when is_map(node) and key in [:x, :y] do
+    origin =
+      case Util.map_map(node, :origin) do
+        %{} = value -> value
+        _ -> %{}
+      end
+
+    Util.map_integer(node, key) ||
+      Util.map_integer(origin, key) ||
+      node_rect_integer(node, key)
   end
 
   @spec line_bounds(rendered_node()) :: bounds_map() | nil
@@ -189,8 +228,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered.Bounds do
 
   @spec circle_bounds(rendered_node()) :: bounds_map() | nil
   defp circle_bounds(node) when is_map(node) do
-    with cx when is_integer(cx) <- Util.map_integer(node, :cx),
-         cy when is_integer(cy) <- Util.map_integer(node, :cy),
+    with cx when is_integer(cx) <- Util.map_integer(node, :cx) || node_point_integer(node, :x),
+         cy when is_integer(cy) <- Util.map_integer(node, :cy) || node_point_integer(node, :y),
          r when is_integer(r) <- Util.map_integer(node, :r) do
       radius = max(r, 1)
       %{x: cx - radius, y: cy - radius, w: radius * 2, h: radius * 2}
@@ -201,21 +240,31 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered.Bounds do
 
   @spec text_point_bounds(rendered_node(), integer(), integer()) :: bounds_map() | nil
   defp text_point_bounds(node, default_w, default_h) when is_map(node) do
-    with x when is_integer(x) <- Util.map_integer(node, :x),
-         y when is_integer(y) <- Util.map_integer(node, :y) do
-      %{x: x, y: y - default_h, w: default_w, h: default_h}
-    else
-      _ -> nil
+    case rect_bounds(node) do
+      %{w: w, h: h} = box when w > 0 and h > 0 ->
+        box
+
+      _ ->
+        with x when is_integer(x) <- node_point_integer(node, :x),
+             y when is_integer(y) <- node_point_integer(node, :y) do
+          %{x: x, y: y - default_h, w: default_w, h: default_h}
+        else
+          _ -> nil
+        end
     end
   end
 
   @spec rotated_bitmap_bounds(rendered_node()) :: bounds_map() | nil
   defp rotated_bitmap_bounds(node) when is_map(node) do
-    with center_x when is_integer(center_x) <- Util.map_integer(node, :center_x),
-         center_y when is_integer(center_y) <- Util.map_integer(node, :center_y),
-         src_w when is_integer(src_w) <- Util.map_integer(node, :src_w),
-         src_h when is_integer(src_h) <- Util.map_integer(node, :src_h) do
-      angle = Util.map_integer(node, :angle) || 0
+    with center_x when is_integer(center_x) <-
+           Util.map_integer(node, :center_x) || node_point_integer(node, :x),
+         center_y when is_integer(center_y) <-
+           Util.map_integer(node, :center_y) || node_point_integer(node, :y),
+         src_w when is_integer(src_w) <-
+           Util.map_integer(node, :src_w) || node_rect_integer(node, :w),
+         src_h when is_integer(src_h) <-
+           Util.map_integer(node, :src_h) || node_rect_integer(node, :h) do
+      angle = Util.map_integer(node, :angle) || Util.map_integer(node, :rotation) || 0
 
       rotated_points_bounds(
         [

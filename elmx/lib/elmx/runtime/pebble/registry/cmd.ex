@@ -41,7 +41,18 @@ defmodule Elmx.Runtime.Pebble.Registry.Cmd do
       "elmx_storage_write_int" => {Dispatch, :storage_write_int_cmd},
       "elmx_storage_write_string" => {Dispatch, :storage_write_string_cmd},
       "elmx_storage_delete" => {Dispatch, :storage_delete_cmd},
+      "elmx_storage_read_max_size" => {Dispatch, :storage_read_max_size_cmd},
+      "elmx_speaker_play_tone" => {Dispatch, :speaker_play_tone_cmd},
+      "elmx_speaker_play_notes" => {Dispatch, :speaker_play_notes_cmd},
+      "elmx_speaker_play_tracks" => {Dispatch, :speaker_play_tracks_cmd},
+      "elmx_speaker_stop" => {Dispatch, :speaker_stop_cmd},
+      "elmx_speaker_set_volume" => {Dispatch, :speaker_set_volume_cmd},
+      "elmx_speaker_stream_open" => {Dispatch, :speaker_stream_open_cmd},
+      "elmx_speaker_stream_write" => {Dispatch, :speaker_stream_write_cmd},
+      "elmx_speaker_stream_close" => {Dispatch, :speaker_stream_close_cmd},
+      "elmx_subscription_call" => {Dispatch, :subscription_call},
       "elmx_frame_every" => {Dispatch, :frame_every_cmd},
+      "elmx_frame_at_fps" => {Dispatch, :frame_at_fps_cmd},
       "elmx_unobstructed_current_bounds" => {Dispatch, :unobstructed_current_bounds_cmd},
       "elmx_compass_peek" => {Dispatch, :compass_peek_cmd}
     }

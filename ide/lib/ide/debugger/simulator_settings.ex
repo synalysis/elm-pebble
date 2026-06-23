@@ -52,7 +52,11 @@ defmodule Ide.Debugger.SimulatorSettings do
       "health_steps_today" => 9100,
       "dictation_transcript" => "",
       "dictation_error" => "",
-      "vibe_pattern_ms" => []
+      "vibe_pattern_ms" => [],
+      "backlight_on" => true,
+      "launch_reason" => "LaunchUser",
+      "launch_button" => nil,
+      "quick_launch_action" => "QuickLaunchNone"
     }
   end
 
@@ -220,6 +224,26 @@ defmodule Ide.Debugger.SimulatorSettings do
         normalize_json_list(
           WireValues.map_value(settings, "vibe_pattern_ms"),
           defaults["vibe_pattern_ms"]
+        ),
+      "backlight_on" =>
+        normalize_boolean(
+          WireValues.map_value(settings, "backlight_on"),
+          defaults["backlight_on"]
+        ),
+      "launch_reason" =>
+        normalize_launch_reason(
+          WireValues.map_value(settings, "launch_reason"),
+          defaults["launch_reason"]
+        ),
+      "launch_button" =>
+        normalize_launch_button(
+          WireValues.map_value(settings, "launch_button"),
+          defaults["launch_button"]
+        ),
+      "quick_launch_action" =>
+        normalize_quick_launch_action(
+          WireValues.map_value(settings, "quick_launch_action"),
+          defaults["quick_launch_action"]
         )
     }
   end
@@ -344,4 +368,51 @@ defmodule Ide.Debugger.SimulatorSettings do
   end
 
   defp normalize_float(_value, default, _min_value, _max_value), do: default
+
+  @launch_reasons ~w(
+    LaunchSystem
+    LaunchUser
+    LaunchPhone
+    LaunchWakeup
+    LaunchWorker
+    LaunchQuickLaunch
+    LaunchTimelineAction
+    LaunchUnknown
+  )
+
+  @launch_buttons ~w(Back Up Select Down)
+
+  @quick_launch_actions ~w(
+    QuickLaunchNone
+    QuickLaunchHold
+    QuickLaunchTap
+    QuickLaunchCombo
+    QuickLaunchUnknown
+  )
+
+  @spec normalize_launch_reason(Types.wire_input(), String.t()) :: String.t()
+  defp normalize_launch_reason(value, default) when is_binary(value) do
+    trimmed = String.trim(value)
+    if trimmed in @launch_reasons, do: trimmed, else: default
+  end
+
+  defp normalize_launch_reason(_value, default), do: default
+
+  @spec normalize_launch_button(Types.wire_input(), String.t() | nil) :: String.t() | nil
+  defp normalize_launch_button(value, _default) when value in [nil, ""], do: nil
+
+  defp normalize_launch_button(value, _default) when is_binary(value) do
+    trimmed = String.trim(value)
+    if trimmed in @launch_buttons, do: trimmed, else: nil
+  end
+
+  defp normalize_launch_button(_value, default), do: default
+
+  @spec normalize_quick_launch_action(Types.wire_input(), String.t()) :: String.t()
+  defp normalize_quick_launch_action(value, default) when is_binary(value) do
+    trimmed = String.trim(value)
+    if trimmed in @quick_launch_actions, do: trimmed, else: default
+  end
+
+  defp normalize_quick_launch_action(_value, default), do: default
 end

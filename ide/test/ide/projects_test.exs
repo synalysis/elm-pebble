@@ -455,8 +455,18 @@ defmodule Ide.ProjectsTest do
       {"watch-demo-compass", "Pebble.Compass", "app"},
       {"watch-demo-dictation", "Pebble.Dictation", "app"},
       {"watch-demo-health", "Pebble.Health", "app"},
-      {"watch-demo-light", "Pebble.Light", "app"},
-      {"watch-demo-watch-info", "Pebble.WatchInfo", "app"}
+      {"watch-demo-light", "Light.onChange", "app"},
+      {"watch-demo-watch-info", "Pebble.WatchInfo", "app"},
+      {"watch-demo-speaker", "Pebble.Speaker", "app"},
+      {"watch-demo-storage", "Pebble.Storage", "app"},
+      {"watch-demo-launch", "quickLaunchAction", "app"},
+      {"watch-demo-screen-change", "onScreenChange", "app"},
+      {"watch-demo-system", "Pebble.System", "app"},
+      {"watch-demo-unobstructed", "Pebble.UnobstructedArea", "app"},
+      {"watch-demo-wakeup", "Pebble.Wakeup", "app"},
+      {"watch-demo-frame", "Pebble.Frame", "app"},
+      {"watch-demo-time", "Pebble.Time", "app"},
+      {"watch-demo-log", "Pebble.Log", "app"}
     ]
 
     for {template, snippet, target_type} <- demos do

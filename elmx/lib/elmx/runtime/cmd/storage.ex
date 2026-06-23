@@ -53,6 +53,19 @@ defmodule Elmx.Runtime.Cmd.Storage do
     }
   end
 
+  @spec storage_read_max_size(Types.elm_msg(), Types.wire_value()) :: Types.wire_cmd()
+  def storage_read_max_size(callback, default) do
+    {message, message_value} = Wire.callback_message_value(callback, default)
+
+    %{
+      "kind" => "cmd.storage.read_max_size",
+      "package" => "elm-pebble/elm-watch",
+      "message" => message,
+      "message_value" => message_value,
+      "value" => Values.wire_value(default)
+    }
+  end
+
   @spec storage_delete(integer()) :: Types.wire_cmd()
   def storage_delete(key) when is_integer(key) do
     %{

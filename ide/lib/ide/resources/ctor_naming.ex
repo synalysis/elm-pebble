@@ -11,10 +11,11 @@ defmodule Ide.Resources.CtorNaming do
     bitmap_static: "BitmapStatic",
     bitmap_animated: "BitmapAnimated",
     vector_static: "VectorStatic",
-    vector_animated: "VectorAnimated"
+    vector_animated: "VectorAnimated",
+    speaker_sample: "Sample"
   }
 
-  @type kind :: :bitmap_static | :bitmap_animated | :vector_static | :vector_animated
+  @type kind :: :bitmap_static | :bitmap_animated | :vector_static | :vector_animated | :speaker_sample
 
   @spec prefixes() :: %{kind() => String.t()}
   def prefixes, do: @prefixes

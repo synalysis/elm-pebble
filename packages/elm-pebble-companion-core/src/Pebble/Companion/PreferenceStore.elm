@@ -7,7 +7,27 @@ module Pebble.Companion.PreferenceStore exposing
 
 {-| Generic phone-side preference storage exposed by the companion bridge.
 
-# Commands
+Preferences are JSON values keyed by string. Use `get` / `set` for one-off reads
+and writes, and `onPreference` to observe changes from the phone settings UI.
+
+    import Json.Decode as Decode
+    import Json.Encode as Encode
+    import Pebble.Companion.PreferenceStore as PreferenceStore
+
+    type Msg
+        = GotUnits (Result String ( String, Decode.Value ))
+
+    init _ =
+        ( model, PreferenceStore.get "units" GotUnits )
+
+    saveUnits : String -> Cmd msg
+    saveUnits value =
+        PreferenceStore.set "units" (Encode.string value)
+
+    subscriptions _ =
+        PreferenceStore.onPreference GotUnits
+
+For a runnable example, use the **companion-demo-settings** project template.
 
 @docs get, set, setup
 

@@ -6,11 +6,9 @@ defmodule ElmEx.IR.Validation do
   """
 
   alias ElmEx.IR
-  alias ElmEx.IR.Types.Diagnostic
+  alias ElmEx.IR.Types.{Diagnostic, Expr}
 
   @type diagnostic :: Diagnostic.t()
-
-  @typep expr() :: map()
 
   @doc """
   Runs all validation passes on the IR and returns a list of diagnostics.
@@ -154,7 +152,7 @@ defmodule ElmEx.IR.Validation do
   end
 
   # Helper: collect all nodes matching a given op
-  @spec collect_ops(expr(), atom()) :: [expr()]
+  @spec collect_ops(Expr.t(), atom()) :: [Expr.t()]
   defp collect_ops(%{op: target_op} = expr, target_op) do
     [expr | collect_ops_children(expr, target_op)]
   end
@@ -165,7 +163,7 @@ defmodule ElmEx.IR.Validation do
 
   defp collect_ops(_, _), do: []
 
-  @spec collect_ops_children(expr(), atom()) :: [expr()]
+  @spec collect_ops_children(Expr.t(), atom()) :: [Expr.t()]
   defp collect_ops_children(expr, target_op) when is_map(expr) do
     expr
     |> Map.values()
@@ -184,13 +182,13 @@ defmodule ElmEx.IR.Validation do
     end)
   end
 
-  @spec count_ops(expr(), atom()) :: non_neg_integer()
+  @spec count_ops(Expr.t(), atom()) :: non_neg_integer()
   defp count_ops(expr, target_op) do
     length(collect_ops(expr, target_op))
   end
 
   # Collect qualified function call targets
-  @spec collect_function_calls(expr(), String.t(), MapSet.t()) :: [String.t()]
+  @spec collect_function_calls(Expr.t(), String.t(), MapSet.t()) :: [String.t()]
   defp collect_function_calls(
          %{op: :qualified_call, target: target, args: args},
          module,

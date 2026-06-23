@@ -4,6 +4,27 @@ defmodule Ide.Debugger.CompanionBridgeRequest do
   alias Ide.Debugger.Types
   alias Ide.Debugger.Types.CompanionBridgeRequest, as: BridgeRequestType
 
+  @spec from_bridge_command(map()) :: Types.companion_bridge_request() | nil
+  def from_bridge_command(%{"api" => api, "op" => op} = command)
+      when is_binary(api) and is_binary(op) do
+    %{
+      api: api,
+      op: op,
+      key: Map.get(command, "key") || Map.get(command, :key),
+      value: Map.get(command, "value") || Map.get(command, :value),
+      bridge_id: Map.get(command, "bridge_id") || Map.get(command, :bridge_id),
+      payload: Map.get(command, "payload") || Map.get(command, :payload),
+      callback:
+        Map.get(command, "callback_constructor") || Map.get(command, :callback_constructor) ||
+          Map.get(command, "message") || Map.get(command, :message)
+    }
+  end
+
+  def from_bridge_command(%{"kind" => "cmd.companion.bridge"} = command),
+    do: from_bridge_command(command)
+
+  def from_bridge_command(_command), do: nil
+
   @spec from_cmd_calls([Types.cmd_call()]) :: [Types.companion_bridge_request()]
   def from_cmd_calls(calls) when is_list(calls) do
     calls

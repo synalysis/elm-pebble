@@ -21,18 +21,6 @@ defmodule Ide.Debugger.Types.PackageCmdEventPayload do
 
   @type wire_map :: t() | Types.wire_map()
 
-  @spec from_static_task(String.t(), String.t(), String.t(), command_map()) :: t()
-  def from_static_task(target, package, response_message, command)
-      when is_binary(target) and is_binary(package) and is_binary(response_message) and
-             is_map(command) do
-    %{
-      target: target,
-      package: package,
-      response_message: response_message,
-      command: command
-    }
-  end
-
   @spec from_http(
           String.t(),
           String.t(),

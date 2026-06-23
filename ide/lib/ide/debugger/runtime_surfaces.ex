@@ -9,7 +9,7 @@ defmodule Ide.Debugger.RuntimeSurfaces do
   def default_watch(launch_context \\ nil)
 
   def default_watch(nil) do
-    default_watch(launch_context_for(WatchModels.default_id(), "LaunchUser"))
+    default_watch(launch_context_for(WatchModels.default_id(), "LaunchUser", %{}))
   end
 
   def default_watch(launch_context) when is_map(launch_context) do
@@ -123,7 +123,13 @@ defmodule Ide.Debugger.RuntimeSurfaces do
       when is_map(state) and is_binary(launch_reason) do
     watch_profile_id = parse_watch_profile_id(Map.get(state, :watch_profile_id))
     launch_reason = parse_launch_reason(launch_reason)
-    launch_context = launch_context_for(watch_profile_id, launch_reason)
+
+    settings =
+      state
+      |> Map.get(:simulator_settings, %{})
+      |> Map.put("launch_reason", launch_reason)
+
+    launch_context = launch_context_for(watch_profile_id, launch_reason, settings)
 
     state
     |> Map.put(:watch_profile_id, watch_profile_id)
@@ -141,6 +147,21 @@ defmodule Ide.Debugger.RuntimeSurfaces do
   @spec launch_context_for(String.t(), String.t()) :: Types.LaunchContext.t()
   def launch_context_for(watch_profile_id, launch_reason)
       when is_binary(watch_profile_id) and is_binary(launch_reason) do
+    launch_context_for(watch_profile_id, launch_reason, %{})
+  end
+
+  @spec launch_context_for(String.t(), String.t(), Types.simulator_settings() | map()) ::
+          Types.LaunchContext.t()
+  def launch_context_for(watch_profile_id, launch_reason, settings)
+      when is_binary(watch_profile_id) and is_binary(launch_reason) and is_map(settings) do
+    launch_reason =
+      settings
+      |> Map.get("launch_reason")
+      |> case do
+        nil -> parse_launch_reason(launch_reason)
+        value -> parse_launch_reason(value)
+      end
+
     profile =
       Map.get(
         WatchModels.profiles_map(),
@@ -164,7 +185,11 @@ defmodule Ide.Debugger.RuntimeSurfaces do
       "shape" => profile_shape,
       "has_microphone" => Map.get(profile, "has_microphone") == true,
       "has_compass" => Map.get(profile, "has_compass") == true,
+      "has_speaker" => Map.get(profile, "has_speaker") == true,
       "supports_health" => Map.get(profile, "supports_health") == true,
+      "launch_button" => parse_launch_button(Map.get(settings, "launch_button")),
+      "quick_launch_action" =>
+        parse_quick_launch_action(Map.get(settings, "quick_launch_action")),
       "screen" => %{
         "width" => Map.get(screen, "width") || 144,
         "height" => Map.get(screen, "height") || 168,
@@ -174,7 +199,7 @@ defmodule Ide.Debugger.RuntimeSurfaces do
     }
   end
 
-  def launch_context_for(_, _), do: launch_context_for(WatchModels.default_id(), "LaunchUser")
+  def launch_context_for(_, _, _), do: launch_context_for(WatchModels.default_id(), "LaunchUser", %{})
 
   @spec parse_watch_profile_id(Types.wire_input()) :: String.t()
   def parse_watch_profile_id(value) when is_binary(value) do
@@ -197,6 +222,8 @@ defmodule Ide.Debugger.RuntimeSurfaces do
          "LaunchPhone",
          "LaunchWakeup",
          "LaunchWorker",
+         "LaunchQuickLaunch",
+         "LaunchTimelineAction",
          "LaunchUnknown"
        ] do
       normalized
@@ -206,6 +233,34 @@ defmodule Ide.Debugger.RuntimeSurfaces do
   end
 
   def parse_launch_reason(_), do: "LaunchUser"
+
+  @launch_buttons ~w(Back Up Select Down)
+
+  @quick_launch_actions ~w(
+    QuickLaunchNone
+    QuickLaunchHold
+    QuickLaunchTap
+    QuickLaunchCombo
+    QuickLaunchUnknown
+  )
+
+  @spec parse_launch_button(Types.wire_input()) :: String.t() | nil
+  def parse_launch_button(value) when value in [nil, ""], do: nil
+
+  def parse_launch_button(value) when is_binary(value) do
+    trimmed = String.trim(value)
+    if trimmed in @launch_buttons, do: trimmed, else: nil
+  end
+
+  def parse_launch_button(_), do: nil
+
+  @spec parse_quick_launch_action(Types.wire_input()) :: String.t()
+  def parse_quick_launch_action(value) when is_binary(value) do
+    trimmed = String.trim(value)
+    if trimmed in @quick_launch_actions, do: trimmed, else: "QuickLaunchNone"
+  end
+
+  def parse_quick_launch_action(_), do: "QuickLaunchNone"
 
   @spec merge_launch_context_model(Types.app_model(), Types.launch_context()) :: Types.app_model()
   def merge_launch_context_model(model, launch_context)

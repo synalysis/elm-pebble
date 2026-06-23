@@ -224,7 +224,7 @@ defmodule Ide.PebbleToolchain.Package do
           files
           |> Enum.filter(&String.ends_with?(&1, ".pbw"))
           |> Enum.map(&Path.join(build_root, &1))
-          |> Enum.sort_by(&mtime_sort/1, :desc)
+          |> Enum.sort_by(&pbw_sort_key/1, :desc)
 
         case pbws do
           [latest | _] -> {:ok, latest}
@@ -234,6 +234,13 @@ defmodule Ide.PebbleToolchain.Package do
       {:error, reason} ->
         {:error, {:list_build_dir_failed, reason}}
     end
+  end
+
+  @spec pbw_sort_key(String.t()) ::
+          {0 | 1, {{integer(), integer(), integer()}, {integer(), integer(), integer()}}}
+  defp pbw_sort_key(path) do
+    debug_rank = if(String.ends_with?(path, "_debug.pbw"), do: 1, else: 0)
+    {debug_rank, mtime_sort(path)}
   end
 
   @spec mtime_sort(String.t()) ::

@@ -159,11 +159,23 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
     pebble_resource_union_slot_map(ir, ["Font"])
   end
 
+  @spec pebble_speaker_sample_resource_slot_map(IR.t()) :: %{String.t() => pos_integer()}
+  def pebble_speaker_sample_resource_slot_map(%IR{} = ir) do
+    pebble_resource_union_slot_map(ir, ["Sample"], ["Pebble.Speaker.Resources", "Speaker.Resources"])
+  end
+
   @spec pebble_resource_union_slot_map(IR.t(), [String.t()]) :: %{String.t() => pos_integer()}
   defp pebble_resource_union_slot_map(%IR{} = ir, union_names) when is_list(union_names) do
+    pebble_resource_union_slot_map(ir, union_names, ["Pebble.Ui.Resources", "Resources"])
+  end
+
+  @spec pebble_resource_union_slot_map(IR.t(), [String.t()], [String.t()]) ::
+          %{String.t() => pos_integer()}
+  defp pebble_resource_union_slot_map(%IR{} = ir, union_names, module_names)
+       when is_list(union_names) and is_list(module_names) do
     ir.modules
     |> Enum.find_value(%{}, fn mod ->
-      if mod.name in ["Pebble.Ui.Resources", "Resources"] do
+      if mod.name in module_names do
         union_names
         |> Enum.flat_map(&union_ctor_names(mod, &1))
         |> Enum.reject(&no_resource_ctor?/1)

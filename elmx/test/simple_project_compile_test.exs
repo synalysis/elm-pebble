@@ -28,5 +28,9 @@ defmodule Elmx.SimpleProjectCompileTest do
     patch = payload[:model_patch] || payload["model_patch"]
     runtime_model = patch["runtime_model"] || patch[:runtime_model]
     assert Map.has_key?(runtime_model, "value") or Map.has_key?(runtime_model, :value)
+
+    active = patch["active_subscriptions"] || patch[:active_subscriptions] || []
+    assert is_list(active)
+    assert Enum.any?(active, &(&1["kind"] == "cmd.subscription.register"))
   end
 end

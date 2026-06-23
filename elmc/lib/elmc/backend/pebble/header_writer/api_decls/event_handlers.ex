@@ -18,6 +18,9 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.ApiDecls.EventHandlers do
     int elmc_pebble_dispatch_connection(ElmcPebbleApp *app, int connected);
     int elmc_pebble_dispatch_health(ElmcPebbleApp *app, int event);
     int elmc_pebble_dispatch_app_focus(ElmcPebbleApp *app, int in_focus);
+    int elmc_pebble_dispatch_backlight(ElmcPebbleApp *app, int is_on);
+    int elmc_pebble_dispatch_screen_change(ElmcPebbleApp *app, int width, int height, int shape, int color_mode);
+    int elmc_pebble_dispatch_speaker_finished(ElmcPebbleApp *app, int reason);
     #if ELMC_PEBBLE_FEATURE_COMPASS_EVENTS
     int elmc_pebble_dispatch_compass_heading(ElmcPebbleApp *app, double degrees, int is_valid);
     #endif

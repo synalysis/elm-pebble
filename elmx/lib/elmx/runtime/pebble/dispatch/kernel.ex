@@ -59,6 +59,15 @@ defmodule Elmx.Runtime.Pebble.Dispatch.Kernel do
       "elmx_kernel_pebble_watch_storage_delete" ->
         Dispatch.storage_delete_cmd(args)
 
+      "elmx_kernel_pebble_watch_storage_read_max_size" ->
+        Dispatch.storage_read_max_size_cmd(args)
+
+      "elmx_kernel_pebble_watch_speaker_is_muted" ->
+        Dispatch.device_stub("speaker_is_muted", args)
+
+      "elmx_kernel_pebble_watch_speaker_get_status" ->
+        Dispatch.device_stub("speaker_status", args)
+
       "elmx_kernel_pebble_watch_health_supported" ->
         Dispatch.health_device_cmd("health_supported", args)
 

@@ -1,6 +1,7 @@
 defmodule Ide.Debugger.TriggerSurface do
   @moduledoc false
 
+  alias Ide.Debugger.RuntimeActiveSubscriptions
   alias Ide.Debugger.SubscriptionActivation
   alias Ide.Debugger.TickMessageResolution
   alias Ide.Debugger.TriggerCandidates
@@ -30,10 +31,18 @@ defmodule Ide.Debugger.TriggerSurface do
 
     model_active = fn row -> SubscriptionActivation.model_active?(state, target, row) end
 
-    TriggerCandidates.for_surface(ei, target_name, model_active)
+    if RuntimeActiveSubscriptions.present?(state, target) do
+      runtime_trigger_candidates(state, target, ei, target_name, model_active)
+    else
+      TriggerCandidates.for_surface(ei, target_name, model_active)
+    end
   end
 
   def candidates(_state, _target, _ctx), do: []
+
+  defp runtime_trigger_candidates(state, target, ei, target_name, model_active_fn) do
+    RuntimeActiveSubscriptions.trigger_candidates(state, target, ei, target_name, model_active_fn)
+  end
 
   @spec display_for(
           Types.runtime_state(),

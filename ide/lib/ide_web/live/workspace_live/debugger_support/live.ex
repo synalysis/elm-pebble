@@ -36,6 +36,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Live do
     |> Component.assign(:debugger_companion_auto_fire, false)
     |> Component.assign(:debugger_auto_fire_subscriptions, [])
     |> Component.assign(:debugger_disabled_subscriptions, [])
+    |> Component.assign(:debugger_speaker_effect, nil)
     |> Component.assign(:debugger_configuration_draft_values, %{})
     |> Component.assign(:debugger_trigger_modal_open, false)
     |> Component.assign(:debugger_trigger_form, Component.to_form(%{}, as: :debugger_trigger))

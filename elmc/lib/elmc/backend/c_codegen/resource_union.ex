@@ -46,7 +46,8 @@ defmodule Elmc.Backend.CCodegen.ResourceUnion do
         :elmc_vector_resource_slots,
         :elmc_bitmap_resource_slots,
         :elmc_animation_resource_slots,
-        :elmc_font_resource_slots
+        :elmc_font_resource_slots,
+        :elmc_speaker_sample_resource_slots
       ],
       %{},
       fn key, acc ->
@@ -69,6 +70,12 @@ defmodule Elmc.Backend.CCodegen.ResourceUnion do
         ctor != "" and not no_resource_ctor?(ctor)
 
       "Resources." <> ctor ->
+        ctor != "" and not no_resource_ctor?(ctor)
+
+      "Pebble.Speaker.Resources." <> ctor ->
+        ctor != "" and not no_resource_ctor?(ctor)
+
+      "Speaker.Resources." <> ctor ->
         ctor != "" and not no_resource_ctor?(ctor)
 
       _ ->

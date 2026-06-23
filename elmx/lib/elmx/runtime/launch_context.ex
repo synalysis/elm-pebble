@@ -17,6 +17,14 @@ defmodule Elmx.Runtime.LaunchContext do
     "LaunchUnknown" => -1
   }
 
+  @quick_launch_action_int %{
+    "QuickLaunchNone" => 0,
+    "QuickLaunchHold" => 1,
+    "QuickLaunchTap" => 2,
+    "QuickLaunchCombo" => 3,
+    "QuickLaunchUnknown" => -1
+  }
+
   @spec normalize(Types.wire_map() | map()) :: Types.launch_context()
   def normalize(context) when is_map(context) do
     reason =
@@ -57,6 +65,18 @@ defmodule Elmx.Runtime.LaunchContext do
       "supportsHealth",
       map_value(context, :supports_health) || map_value(context, :supportsHealth) || false
     )
+    |> Map.put(
+      "launchButton",
+      launch_button_maybe(
+        map_value(context, :launch_button) || map_value(context, :launchButton)
+      )
+    )
+    |> Map.put(
+      "quickLaunchAction",
+      quick_launch_action_ctor(
+        map_value(context, :quick_launch_action) || map_value(context, :quickLaunchAction)
+      )
+    )
     |> Map.put_new("configurationResponse", nil)
   end
 
@@ -80,6 +100,40 @@ defmodule Elmx.Runtime.LaunchContext do
   defp launch_reason_ctor_name({ctor, _args}) when is_atom(ctor), do: Atom.to_string(ctor)
   defp launch_reason_ctor_name(name) when is_binary(name), do: name
   defp launch_reason_ctor_name(_), do: "LaunchUnknown"
+
+  @spec quick_launch_action_ctor(Types.quick_launch_action_like()) :: Types.wire_ctor()
+  defp quick_launch_action_ctor(%{"ctor" => _} = value), do: value
+  defp quick_launch_action_ctor(%{ctor: _} = value), do: value
+  defp quick_launch_action_ctor({ctor, _args}) when is_atom(ctor), do: %{"ctor" => Atom.to_string(ctor), "args" => []}
+  defp quick_launch_action_ctor(name) when is_binary(name) and name != "", do: %{"ctor" => name, "args" => []}
+  defp quick_launch_action_ctor(tag) when is_integer(tag), do: quick_launch_action_ctor(quick_launch_action_name(tag))
+  defp quick_launch_action_ctor(_), do: %{"ctor" => "QuickLaunchNone", "args" => []}
+
+  @spec quick_launch_action_name(integer()) :: String.t()
+  defp quick_launch_action_name(tag) do
+    @quick_launch_action_int
+    |> Enum.find_value("QuickLaunchUnknown", fn {name, int} -> if int == tag, do: name end)
+  end
+
+  @launch_buttons ~w(Back Up Select Down)
+
+  @spec launch_button_maybe(Types.button_like()) :: Types.maybe_wire()
+  defp launch_button_maybe(%{"ctor" => "Nothing"} = value), do: value
+  defp launch_button_maybe(%{"ctor" => "Just", "args" => _} = value), do: value
+  defp launch_button_maybe(%{ctor: :Nothing}), do: %{"ctor" => "Nothing", "args" => []}
+  defp launch_button_maybe(%{ctor: :Just, args: [button]}), do: %{"ctor" => "Just", "args" => [button_ctor(button)]}
+  defp launch_button_maybe({:Just, button}), do: %{"ctor" => "Just", "args" => [button_ctor(button)]}
+  defp launch_button_maybe(:Nothing), do: %{"ctor" => "Nothing", "args" => []}
+  defp launch_button_maybe(nil), do: %{"ctor" => "Nothing", "args" => []}
+  defp launch_button_maybe(""), do: %{"ctor" => "Nothing", "args" => []}
+  defp launch_button_maybe(button), do: %{"ctor" => "Just", "args" => [button_ctor(button)]}
+
+  @spec button_ctor(Types.button_like()) :: Types.wire_ctor()
+  defp button_ctor(%{"ctor" => _} = value), do: value
+  defp button_ctor(%{ctor: ctor, args: args}) when is_binary(ctor), do: %{"ctor" => ctor, "args" => args || []}
+  defp button_ctor({ctor, _args}) when is_atom(ctor), do: %{"ctor" => Atom.to_string(ctor), "args" => []}
+  defp button_ctor(name) when is_binary(name) and name in @launch_buttons, do: %{"ctor" => name, "args" => []}
+  defp button_ctor(_), do: %{"ctor" => "Select", "args" => []}
 
   defp launch_screen(screen, context) when is_map(screen) and is_map(context) do
     shape = launch_shape_value(screen, context)

@@ -2271,6 +2271,59 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
              %{x: 11, y: 22, w: 6, h: 9}
   end
 
+  test "rendered_node_bounds reads nested bounds and groups like compact view trees" do
+    tree = %{
+      "type" => "windowStack",
+      "children" => [
+        %{
+          "type" => "window",
+          "children" => [
+            %{
+              "type" => "canvasLayer",
+              "children" => [
+                %{"type" => "clear", "color" => 255, "children" => []},
+                %{
+                  "type" => "text",
+                  "text" => "2048  Best 64",
+                  "bounds" => %{"x" => 4, "y" => 4, "w" => 132, "h" => 16},
+                  "children" => []
+                },
+                %{
+                  "type" => "group",
+                  "children" => [
+                    %{
+                      "type" => "rect",
+                      "bounds" => %{"x" => 15, "y" => 26, "w" => 26, "h" => 26},
+                      "children" => []
+                    },
+                    %{
+                      "type" => "text",
+                      "text" => "2",
+                      "bounds" => %{"x" => 15, "y" => 30, "w" => 26, "h" => 18},
+                      "children" => []
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+
+    assert DebuggerSupport.rendered_node_bounds(tree, "0.0.0.1", 144, 168) ==
+             %{x: 4, y: 4, w: 132, h: 16}
+
+    assert DebuggerSupport.rendered_node_bounds(tree, "0.0.0.2", 144, 168) ==
+             %{x: 15, y: 26, w: 26, h: 26}
+
+    assert DebuggerSupport.rendered_node_bounds(tree, "0.0.0.2.0", 144, 168) ==
+             %{x: 15, y: 26, w: 26, h: 26}
+
+    assert DebuggerSupport.rendered_node_bounds(tree, "0.0.0.2.1", 144, 168) ==
+             %{x: 15, y: 30, w: 26, h: 18}
+  end
+
   test "rendered_node_bounds derives drawVectorAt from project vector canvas size" do
     weather_clear =
       Path.expand(

@@ -27,7 +27,9 @@ defmodule Ide.WatchModels do
       "color_mode" => "BlackWhite",
       "has_microphone" => false,
       "has_compass" => true,
+      "has_speaker" => false,
       "supports_health" => false,
+      "storage_max_bytes" => 4096,
       "watch_info_model" => "PebbleOriginal",
       "watch_info_color" => "Black"
     },
@@ -38,7 +40,9 @@ defmodule Ide.WatchModels do
       "color_mode" => "Color",
       "has_microphone" => false,
       "has_compass" => false,
+      "has_speaker" => false,
       "supports_health" => true,
+      "storage_max_bytes" => 65_536,
       "watch_info_model" => "PebbleTime",
       "watch_info_color" => "TimeBlack"
     },
@@ -49,7 +53,9 @@ defmodule Ide.WatchModels do
       "color_mode" => "Color",
       "has_microphone" => false,
       "has_compass" => false,
+      "has_speaker" => false,
       "supports_health" => true,
+      "storage_max_bytes" => 65_536,
       "watch_info_model" => "PebbleTimeRound20",
       "watch_info_color" => "TimeBlack"
     },
@@ -60,7 +66,9 @@ defmodule Ide.WatchModels do
       "color_mode" => "BlackWhite",
       "has_microphone" => true,
       "has_compass" => false,
+      "has_speaker" => true,
       "supports_health" => true,
+      "storage_max_bytes" => 65_536,
       "watch_info_model" => "Pebble2Se",
       "watch_info_color" => "Black"
     },
@@ -71,7 +79,9 @@ defmodule Ide.WatchModels do
       "color_mode" => "Color",
       "has_microphone" => true,
       "has_compass" => false,
+      "has_speaker" => true,
       "supports_health" => true,
+      "storage_max_bytes" => 65_536,
       "watch_info_model" => "PebbleTime2",
       "watch_info_color" => "TimeBlack"
     },
@@ -82,7 +92,9 @@ defmodule Ide.WatchModels do
       "color_mode" => "Color",
       "has_microphone" => true,
       "has_compass" => false,
+      "has_speaker" => true,
       "supports_health" => true,
+      "storage_max_bytes" => 65_536,
       "watch_info_model" => "Pebble2Hr",
       "watch_info_color" => "TimeBlack"
     },
@@ -93,7 +105,9 @@ defmodule Ide.WatchModels do
       "color_mode" => "Color",
       "has_microphone" => false,
       "has_compass" => false,
+      "has_speaker" => false,
       "supports_health" => true,
+      "storage_max_bytes" => 65_536,
       "watch_info_model" => "PebbleTimeRound20",
       "watch_info_color" => "TimeBlack"
     }
@@ -160,5 +174,19 @@ defmodule Ide.WatchModels do
   def profile_screen(_profile) do
     default = Map.fetch!(@profiles, default_id())
     Map.fetch!(default, "screen")
+  end
+
+  @doc """
+  Persist storage capacity in bytes for the given watch profile.
+  """
+  @spec storage_max_bytes(String.t() | nil) :: pos_integer()
+  def storage_max_bytes(id) do
+    id
+    |> profile_for()
+    |> Map.get("storage_max_bytes", 4096)
+    |> case do
+      value when is_integer(value) and value > 0 -> value
+      _ -> 4096
+    end
   end
 end

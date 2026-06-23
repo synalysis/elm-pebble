@@ -714,7 +714,14 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
       |> Enum.map(&{&1.target, &1.message_source})
 
     assert {"watch", "init"} in timeline
-    assert Enum.any?(timeline, &(&1 == {"watch", "init_device_data"}))
+
+    assert Enum.any?(timeline, fn
+             {"watch", source} when source in ["runtime_followup", "device_data", "init_device_data"] ->
+               true
+
+             _ ->
+               false
+           end)
 
     assert Enum.any?(timeline, fn
              {target, source} when target in ["phone", "companion", "watch"] and

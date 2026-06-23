@@ -2,6 +2,7 @@ module Pebble.Platform exposing
     ( LaunchContext
     , LaunchReason(..)
     , LaunchScreen
+    , QuickLaunchAction(..)
     , ColorCapability(..)
     , DisplayShape(..)
     , application
@@ -9,6 +10,7 @@ module Pebble.Platform exposing
     , displayShapeIsRound
     , launchReasonFromTag
     , launchReasonToInt
+    , onScreenChange
     , watchface
     )
 
@@ -17,8 +19,31 @@ module Pebble.Platform exposing
 This module wraps `Platform.worker` so your `init` function receives a
 typed `LaunchContext` decoded from JSON launch metadata.
 
+    import Pebble.Platform as Platform
+
+    init context =
+        ( { model
+            | launchedByQuickLaunch =
+                context.reason == Platform.LaunchQuickLaunch
+            , launchButton = context.launchButton
+            , screen = context.screen
+          }
+        , Cmd.none
+        )
+
+    subscriptions _ =
+        Platform.onScreenChange ScreenChanged
+
+Start apps with `Platform.application` and watchfaces with `Platform.watchface`.
+
+For runnable examples, use the **watch-demo-launch** and **watch-demo-screen-change**
+project templates in the IDE.
+
 # Launch metadata
-@docs LaunchReason, LaunchScreen, LaunchContext, ColorCapability, DisplayShape, launchReasonFromTag, launchReasonToInt, colorCapabilityIsColor, displayShapeIsRound
+@docs LaunchReason, LaunchScreen, LaunchContext, QuickLaunchAction, ColorCapability, DisplayShape, launchReasonFromTag, launchReasonToInt, colorCapabilityIsColor, displayShapeIsRound
+
+# Screen changes
+@docs onScreenChange
 
 # Program entrypoint
 @docs watchface, application
@@ -27,6 +52,8 @@ typed `LaunchContext` decoded from JSON launch metadata.
 
 import Platform
 import Json.Decode as Decode
+import Pebble.Button as Button exposing (Button(..))
+import Elm.Kernel.PebbleWatch
 
 
 {-| Why the app or worker launched on the watch.
@@ -41,6 +68,16 @@ type LaunchReason
     | LaunchTimelineAction
     | LaunchSmartstrap
     | LaunchUnknown
+
+
+{-| How the user quick-launched the app, when `reason` is `LaunchQuickLaunch`.
+-}
+type QuickLaunchAction
+    = QuickLaunchNone
+    | QuickLaunchHold
+    | QuickLaunchTap
+    | QuickLaunchCombo
+    | QuickLaunchUnknown
 
 
 {-| Display shape for the currently simulated or connected watch model.
@@ -110,6 +147,8 @@ type alias LaunchContext =
     , hasMicrophone : Bool
     , hasCompass : Bool
     , supportsHealth : Bool
+    , launchButton : Maybe Button
+    , quickLaunchAction : QuickLaunchAction
     }
 
 
@@ -217,6 +256,8 @@ defaultContext =
     , hasMicrophone = False
     , hasCompass = False
     , supportsHealth = True
+    , launchButton = Nothing
+    , quickLaunchAction = QuickLaunchNone
     }
 
 
@@ -294,6 +335,11 @@ screenDecoder =
 
 contextObjectDecoder : Decoder LaunchContext
 contextObjectDecoder =
+    Decode.map2 mergeLaunchMetadata coreContextDecoder launchMetadataDecoder
+
+
+coreContextDecoder : Decoder LaunchContext
+coreContextDecoder =
     Decode.map7
         (\reason watchModel watchProfileId screen hasMicrophone hasCompass supportsHealth ->
             { reason = reason
@@ -303,6 +349,8 @@ contextObjectDecoder =
             , hasMicrophone = hasMicrophone
             , hasCompass = hasCompass
             , supportsHealth = supportsHealth
+            , launchButton = defaultContext.launchButton
+            , quickLaunchAction = defaultContext.quickLaunchAction
             }
         )
         (Decode.oneOf
@@ -338,6 +386,35 @@ contextObjectDecoder =
         )
 
 
+launchMetadataDecoder : Decoder { launchButton : Maybe Button, quickLaunchAction : QuickLaunchAction }
+launchMetadataDecoder =
+    Decode.map2
+        (\launchButton quickLaunchAction ->
+            { launchButton = launchButton, quickLaunchAction = quickLaunchAction }
+        )
+        (Decode.oneOf
+            [ decodeFieldWithDefault "launch_button" launchButtonDecoder defaultContext.launchButton
+            , decodeFieldWithDefault "launchButton" launchButtonDecoder defaultContext.launchButton
+            ]
+        )
+        (Decode.oneOf
+            [ decodeFieldWithDefault "quick_launch_action" quickLaunchActionDecoder defaultContext.quickLaunchAction
+            , decodeFieldWithDefault "quickLaunchAction" quickLaunchActionDecoder defaultContext.quickLaunchAction
+            ]
+        )
+
+
+mergeLaunchMetadata :
+    LaunchContext
+    -> { launchButton : Maybe Button, quickLaunchAction : QuickLaunchAction }
+    -> LaunchContext
+mergeLaunchMetadata context launch =
+    { context
+        | launchButton = launch.launchButton
+        , quickLaunchAction = launch.quickLaunchAction
+    }
+
+
 launchContextDecoder : Decoder LaunchContext
 launchContextDecoder =
     contextObjectDecoder
@@ -351,6 +428,88 @@ decodeLaunchContext flags =
 
         Err _ ->
             defaultContext
+
+
+quickLaunchActionFromTag : Int -> QuickLaunchAction
+quickLaunchActionFromTag tag =
+    if tag == 0 then
+        QuickLaunchNone
+    else if tag == 1 then
+        QuickLaunchHold
+    else if tag == 2 then
+        QuickLaunchTap
+    else if tag == 3 then
+        QuickLaunchCombo
+    else
+        QuickLaunchUnknown
+
+
+quickLaunchActionFromString : String -> QuickLaunchAction
+quickLaunchActionFromString value =
+    if value == "QuickLaunchNone" then
+        QuickLaunchNone
+    else if value == "QuickLaunchHold" then
+        QuickLaunchHold
+    else if value == "QuickLaunchTap" then
+        QuickLaunchTap
+    else if value == "QuickLaunchCombo" then
+        QuickLaunchCombo
+    else
+        QuickLaunchUnknown
+
+
+launchButtonFromTag : Int -> Maybe Button
+launchButtonFromTag tag =
+    if tag < 0 then
+        Nothing
+    else if tag == 0 then
+        Just Back
+    else if tag == 1 then
+        Just Up
+    else if tag == 2 then
+        Just Select
+    else if tag == 3 then
+        Just Down
+    else
+        Nothing
+
+
+launchButtonDecoder : Decoder (Maybe Button)
+launchButtonDecoder =
+    Decode.oneOf
+        [ Decode.null Nothing
+        , Decode.map launchButtonFromTag Decode.int
+        , Decode.map launchButtonFromString Decode.string
+        ]
+
+
+launchButtonFromString : String -> Maybe Button
+launchButtonFromString value =
+    if value == "Back" then
+        Just Back
+    else if value == "Up" then
+        Just Up
+    else if value == "Select" then
+        Just Select
+    else if value == "Down" then
+        Just Down
+    else
+        Nothing
+
+
+quickLaunchActionDecoder : Decoder QuickLaunchAction
+quickLaunchActionDecoder =
+    Decode.oneOf
+        [ Decode.map quickLaunchActionFromString Decode.string
+        , Decode.map quickLaunchActionFromTag Decode.int
+        ]
+
+
+{-| Receive screen dimension or capability changes from the Pebble runtime.
+-}
+onScreenChange : (LaunchScreen -> msg) -> Sub msg
+onScreenChange =
+    Elm.Kernel.PebbleWatch.onScreenChange
 
 
 {-| Start a Pebble watchface.

@@ -114,7 +114,11 @@ defmodule Ide.Debugger.AgentHosts do
       hub: hub,
       operation_deps: operation_deps,
       lifecycle: %{append_event: append_event, ensure_phone_state: ensure_phone},
-      watch_profile: %{append_event: append_event, ensure_phone_state: ensure_phone},
+      watch_profile: %{
+        append_event: append_event,
+        ensure_phone_state: ensure_phone,
+        contexts: fn -> RuntimeHub.contexts(hub) end
+      },
       step: %{
         apply_step_once: fn st, target, message, message_value, source, trigger ->
           RuntimeHub.apply_step_once(hub, st, target, message, message_value, source, trigger, [])

@@ -17,6 +17,27 @@ defmodule Elmx.SubscriptionCmdsTest do
     assert %{"kind" => "cmd.effect.vibes", "variant" => "short_pulse"} = cmd
   end
 
+  test "speaker play tone runtime dispatch carries tone parameters" do
+    cmd = Pebble.runtime_dispatch("elmx_speaker_play_tone", [880, 250, 60, 1])
+
+    assert %{
+             "kind" => "cmd.effect.speaker",
+             "variant" => "play_tone",
+             "frequency_hz" => 880,
+             "duration_ms" => 250,
+             "volume" => 60,
+             "waveform" => 1
+           } = cmd
+  end
+
+  test "speaker effect produces effect_command followup row" do
+    cmd =
+      Pebble.runtime_dispatch("elmx_speaker_play_tone", [440, 100, 80, 0])
+
+    assert [%{"source" => "effect_command", "command" => %{"kind" => "cmd.effect.speaker"}}] =
+             Followups.from_commands(cmd)
+  end
+
   test "platform application and watchface runtime dispatch emit platform effect cmds" do
     assert %{"kind" => "cmd.effect.platform", "variant" => "application"} =
              Pebble.runtime_dispatch("elmx_platform_application", [])

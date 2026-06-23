@@ -46,7 +46,18 @@ defmodule Elmc.Backend.Pebble.Kinds.Tables.CommandKinds do
     dictation_start: 37,
     dictation_stop: 38,
     unobstructed_bounds_peek: 39,
-    health_supported: 40
+    health_supported: 40,
+    storage_read_max_size: 41,
+    speaker_is_muted: 42,
+    speaker_play_tone: 43,
+    speaker_play_notes: 44,
+    speaker_play_tracks: 45,
+    speaker_stop: 46,
+    speaker_set_volume: 47,
+    speaker_get_status: 48,
+    speaker_stream_open: 49,
+    speaker_stream_write: 50,
+    speaker_stream_close: 51
   ]
 
   @command_kind_ids Map.new(@command_kinds)

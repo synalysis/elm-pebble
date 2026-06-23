@@ -37,8 +37,15 @@ defmodule Elmx.Runtime.MessageDecode.Parse do
 
       true ->
         case Integer.parse(rest) do
-          {int, ""} -> {atom, int}
-          _ -> {atom, rest}
+          {int, ""} ->
+            {atom, int}
+
+          _ ->
+            if Ctor.pascal_case_atom?(rest) do
+              {atom, String.to_atom(rest)}
+            else
+              {atom, rest}
+            end
         end
     end
   end

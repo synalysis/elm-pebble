@@ -11,7 +11,6 @@ defmodule Ide.Debugger.RuntimeContexts do
   alias Ide.Debugger.HotReloadContext
   alias Ide.Debugger.HotReloadEvents
   alias Ide.Debugger.HotReloadSurface
-  alias Ide.Debugger.InitCmdFollowups
   alias Ide.Debugger.InitSurfaceEffects
   alias Ide.Debugger.InitSurfaceEffectsContext
   alias Ide.Debugger.IntrospectContexts
@@ -117,7 +116,12 @@ defmodule Ide.Debugger.RuntimeContexts do
       })
 
     device_data = StepFollowupContexts.device_data(step_followup)
-    runtime_followups = StepFollowupContexts.runtime_followups(step_followup)
+
+    runtime_followups =
+      step_followup
+      |> StepFollowupContexts.runtime_followups()
+      |> Map.put(:companion_bridge, companion_bridge)
+
     geolocation = StepFollowupContexts.geolocation(step_followup)
     subscription_responses = StepFollowupContexts.subscription_responses(step_followup)
 
@@ -143,17 +147,6 @@ defmodule Ide.Debugger.RuntimeContexts do
       InitSurfaceEffectsContext.build(%{
         append_event: host.append_event,
         apply_step_once: host.apply_step_once,
-        apply_device_data_followups: fn st, target, message, model, source ->
-          DeviceDataResponses.apply_after_step(
-            st,
-            target,
-            message,
-            model,
-            source,
-            device_data,
-            nil
-          )
-        end,
         apply_subscription_ok_response: host.apply_subscription_ok_response,
         protocol_events_ctx: protocol_events_fn,
         protocol_rx_ctx: protocol_rx_fn,
@@ -170,23 +163,13 @@ defmodule Ide.Debugger.RuntimeContexts do
         append_debugger_event: host.append_debugger_event,
         runtime_status_after_init: host.maybe_append_runtime_status_after_init,
         apply_runtime_followups: fn st, target, message, source, followups ->
-          followups =
-            if init_runtime_followups?(message, source) do
-              InitCmdFollowups.merge_followups(followups, host.introspect_for.(st, target))
-            else
-              followups
-            end
-
-          followup_ctx =
-            runtime_followups
-
           RuntimeFollowups.apply_after_step(
             st,
             target,
             message,
             source,
             followups,
-            followup_ctx
+            runtime_followups
           )
         end,
         protocol_rx_ctx: protocol_rx_fn
@@ -266,17 +249,6 @@ defmodule Ide.Debugger.RuntimeContexts do
           trigger_candidates: trigger_candidates,
           trigger_message: host.trigger_message_for_surface,
           apply_step: host.apply_step_once,
-          apply_device_data_responses: fn st, target, message, message_value ->
-            DeviceDataResponses.apply_after_step(
-              st,
-              target,
-              message,
-              nil,
-              "subscription_auto_fire",
-              device_data,
-              message_value
-            )
-          end,
           subscription_row_enabled?: host.subscription_row_enabled?,
           auto_fire_row_enabled?: host.auto_fire_row_enabled?,
           simulator_now: host.simulator_now,
@@ -318,12 +290,6 @@ defmodule Ide.Debugger.RuntimeContexts do
       end
     })
   end
-
-  defp init_runtime_followups?(message, source) when is_binary(message) and is_binary(source) do
-    message in ["init"] and source in ["init", "init_device_data"]
-  end
-
-  defp init_runtime_followups?(_message, _source), do: false
 
   defp step_followup_host(host) do
     %{

@@ -294,7 +294,11 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
         "compass_heading_deg" => "180",
         "app_in_focus" => "false",
         "dictation_transcript" => "hello",
-        "vibe_pattern_ms" => [100, 50]
+        "vibe_pattern_ms" => [100, 50],
+        "backlight_on" => "false",
+        "launch_reason" => "LaunchQuickLaunch",
+        "launch_button" => "Up",
+        "quick_launch_action" => "QuickLaunchHold"
       })
 
     assert settings["compass_heading_deg"] == 180
@@ -302,6 +306,10 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
     assert settings["app_in_focus"] == false
     assert settings["dictation_transcript"] == "hello"
     assert settings["vibe_pattern_ms"] == [100, 50]
+    assert settings["backlight_on"] == false
+    assert settings["launch_reason"] == "LaunchQuickLaunch"
+    assert settings["launch_button"] == "Up"
+    assert settings["quick_launch_action"] == "QuickLaunchHold"
   end
 
   test "frame subscription trigger auto-fire sends frame payload" do
@@ -563,6 +571,7 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
       watch: %{
         model: %{
           "runtime_model" => %{"alive" => false},
+          "active_subscriptions" => [],
           "debugger_contract" => ei
         }
       }

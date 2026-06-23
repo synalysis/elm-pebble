@@ -10,6 +10,26 @@ module Pebble.Time exposing
 
 {-| Commands for reading watch time and timezone information.
 
+Request structured time in `init` or on a timer, and combine with
+`Pebble.Cmd.timerAfter` for periodic refresh.
+
+    import Pebble.Time as Time
+
+    type Msg
+        = GotDateTime Time.CurrentDateTime
+        | GotTimezone String
+
+    init _ =
+        ( model
+        , Cmd.batch
+            [ Time.currentDateTime GotDateTime
+            , Time.timezone GotTimezone
+            ]
+        )
+
+For scheduling refreshes, pair with `Pebble.Cmd.timerAfter` from `Pebble.Cmd`.
+See the **watch-demo-time** project template in the IDE.
+
 # Time and timezone
 @docs DayOfWeek, CurrentDateTime, currentDateTime, currentTimeString, clockStyle24h, timezoneIsSet, timezone
 

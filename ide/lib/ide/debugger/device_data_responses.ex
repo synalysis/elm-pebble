@@ -4,6 +4,7 @@ defmodule Ide.Debugger.DeviceDataResponses do
   alias Ide.Debugger.CmdCall
   alias Ide.Debugger.DeviceData
   alias Ide.Debugger.DeviceDataHints
+  alias Ide.Debugger.RuntimeFollowups
   alias Ide.Debugger.RuntimeModelMessages
   alias Ide.Debugger.Surface
   alias Ide.Debugger.Types
@@ -58,17 +59,42 @@ defmodule Ide.Debugger.DeviceDataResponses do
           apply_ctx(),
           Types.subscription_payload() | nil
         ) :: Types.runtime_state()
-  def apply_after_step(state, _target, _message, _model, "configuration", _ctx, _message_value),
+  def apply_after_step(state, _target, _message, _model, "configuration", _ctx, _message_value, _followups),
     do: state
 
-  def apply_after_step(state, target, message, _model, _message_source, ctx, message_value)
+  def apply_after_step(state, target, message, _model, _message_source, ctx, message_value, runtime_followups)
+      when is_map(state) and target in [:watch, :companion, :phone] and is_binary(message) and
+             is_map(ctx) and is_list(runtime_followups) do
+    covered = RuntimeFollowups.covered_device_response_ctors(runtime_followups)
+
+    state
+    |> requests_for_surface(target, message, message_value)
+    |> reject_covered_device_requests(covered)
+    |> apply_request_list(state, target, ctx)
+  end
+
+  def apply_after_step(state, target, message, _model, _message_source, ctx, message_value, _runtime_followups)
       when is_map(state) and target in [:watch, :companion, :phone] and is_binary(message) and
              is_map(ctx) do
     apply_responses(state, target, message, message_value, ctx)
   end
 
-  def apply_after_step(state, _target, _message, _model, _message_source, _ctx, _message_value),
+  def apply_after_step(state, _target, _message, _model, _message_source, _ctx, _message_value, _followups),
     do: state
+
+  @doc false
+  @spec apply_after_step(
+          Types.runtime_state(),
+          Types.surface_target(),
+          String.t(),
+          Types.app_model(),
+          String.t(),
+          apply_ctx(),
+          Types.subscription_payload() | nil
+        ) :: Types.runtime_state()
+  def apply_after_step(state, target, message, model, message_source, ctx, message_value) do
+    apply_after_step(state, target, message, model, message_source, ctx, message_value, [])
+  end
 
   @spec device_data_response_appended?(
           Types.runtime_state(),
@@ -109,8 +135,45 @@ defmodule Ide.Debugger.DeviceDataResponses do
   def apply_responses(state, target, message, message_value, ctx)
       when is_map(state) and target in [:watch, :companion, :phone] and is_binary(message) and
              is_map(ctx) do
-    requests_for_surface(state, target, message, message_value)
-    |> Enum.reduce(state, fn req, acc ->
+    state
+    |> requests_for_surface(target, message, message_value)
+    |> apply_request_list(state, target, ctx)
+  end
+
+  @spec reject_covered_device_requests([Types.device_request()], [String.t()]) ::
+          [Types.device_request()]
+  defp reject_covered_device_requests(requests, []), do: requests
+
+  defp reject_covered_device_requests(requests, covered_ctors)
+       when is_list(requests) and is_list(covered_ctors) do
+    Enum.reject(requests, fn req ->
+      ctor = device_request_response_ctor(req)
+      ctor in covered_ctors
+    end)
+  end
+
+  @spec device_request_response_ctor(Types.device_request()) :: String.t() | nil
+  defp device_request_response_ctor(req) when is_map(req) do
+    ctor = Map.get(req, :response_message) || Map.get(req, "response_message")
+
+    if is_binary(ctor) and ctor != "" do
+      RuntimeModelMessages.wire_constructor(ctor) || ctor
+    else
+      nil
+    end
+  end
+
+  defp device_request_response_ctor(_req), do: nil
+
+  @spec apply_request_list(
+          [Types.device_request()],
+          Types.runtime_state(),
+          Types.surface_target(),
+          apply_ctx()
+        ) :: Types.runtime_state()
+  defp apply_request_list(requests, state, target, ctx)
+       when is_list(requests) and is_map(state) and is_map(ctx) do
+    Enum.reduce(requests, state, fn req, acc ->
       target_name = ctx.source_root_for_target.(target)
 
       acc

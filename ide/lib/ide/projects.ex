@@ -806,6 +806,17 @@ defmodule Ide.Projects do
     ResourceStore.import_vector(project, upload_path, original_name)
   end
 
+  @spec list_speaker_samples(Project.t()) :: {:ok, [map()]} | {:error, Types.project_error()}
+  def list_speaker_samples(%Project{} = project) do
+    ResourceStore.list_speaker_samples(project)
+  end
+
+  @spec import_speaker_sample_resource(Project.t(), String.t(), String.t(), keyword()) ::
+          {:ok, map()} | {:error, Types.project_error()}
+  def import_speaker_sample_resource(%Project{} = project, upload_path, original_name, opts \\ []) do
+    ResourceStore.import_speaker_sample(project, upload_path, original_name, opts)
+  end
+
   @doc """
   Deletes one vector graphic resource and regenerates the generated resources Elm module.
   """

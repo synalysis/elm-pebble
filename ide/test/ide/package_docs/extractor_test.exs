@@ -26,13 +26,39 @@ defmodule Ide.PackageDocs.ExtractorTest do
     ui_path =
       Path.expand("../../../../packages/elm-pebble/elm-watch/src/Pebble/Ui.elm", __DIR__)
 
+    accel_path =
+      Path.expand("../../../../packages/elm-pebble/elm-watch/src/Pebble/Accel.elm", __DIR__)
+
+    speaker_path =
+      Path.expand("../../../../packages/elm-pebble/elm-watch/src/Pebble/Speaker.elm", __DIR__)
+
+    storage_companion_path =
+      Path.expand(
+        "../../../../packages/elm-pebble-companion-core/src/Pebble/Companion/Storage.elm",
+        __DIR__
+      )
+
     assert {:ok, cmd_doc} = Extractor.build_module_doc(cmd_path)
-    assert cmd_doc["comment"] =~ "scheduleWakeUp"
+    assert cmd_doc["comment"] =~ "timerAfter"
+    assert cmd_doc["comment"] =~ "Tick"
     assert Enum.any?(cmd_doc["values"], &(&1["name"] == "timerAfter"))
 
     assert {:ok, ui_doc} = Extractor.build_module_doc(ui_path)
     assert ui_doc["comment"] =~ "mainWindow"
+    assert ui_doc["comment"] =~ "watch-demo-drawing-showcase"
     assert Enum.any?(ui_doc["aliases"], &(&1["name"] == "StaticBitmap"))
+
+    assert {:ok, accel_doc} = Extractor.build_module_doc(accel_path)
+    assert accel_doc["comment"] =~ "watch-demo-accel"
+    assert accel_doc["comment"] =~ "onData"
+
+    assert {:ok, speaker_doc} = Extractor.build_module_doc(speaker_path)
+    assert speaker_doc["comment"] =~ "onFinished"
+    assert speaker_doc["comment"] =~ "playNotes"
+
+    assert {:ok, storage_doc} = Extractor.build_module_doc(storage_companion_path)
+    assert storage_doc["comment"] =~ "Storage.get"
+    assert storage_doc["comment"] =~ "companion-demo-storage"
 
     unobstructed_path =
       Path.expand(
@@ -46,6 +72,7 @@ defmodule Ide.PackageDocs.ExtractorTest do
              unobstructed_doc["native_api_links"]
 
     assert url == "https://developer.repebble.com/docs/c/User_Interface/UnobstructedArea/"
+    assert unobstructed_doc["comment"] =~ "currentBounds"
   end
 
   defp package_fixture do

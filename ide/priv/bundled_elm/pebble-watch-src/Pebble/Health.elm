@@ -12,6 +12,29 @@ module Pebble.Health exposing
 {-| Access Pebble Health data such as step count, active time, distance, sleep,
 calories, and heart rate.
 
+Check `supported` first on older watches, then request metrics and subscribe to
+service events for live updates.
+
+    import Pebble.Health as Health
+
+    type Msg
+        = GotSupported Bool
+        | GotSteps Int
+        | HealthEvent Health.Event
+
+    init _ =
+        ( model
+        , Cmd.batch
+            [ Health.supported GotSupported
+            , Health.value Health.StepCount GotSteps
+            ]
+        )
+
+    subscriptions _ =
+        Health.onEvent HealthEvent
+
+For a runnable example, use the **watch-demo-health** project template in the IDE.
+
 # Types
 @docs Metric, Event
 

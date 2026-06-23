@@ -28,6 +28,15 @@ defmodule Elmc.Backend.Pebble.FeatureFlags.EventFlags.Platform.SubscriptionEvent
           TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.onUnobstructedWillChange") or
           TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.onUnobstructedChanging") or
           TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.onUnobstructedDidChange"),
+      backlight_events:
+        TargetSet.member?(targets, "Pebble.Light.onChange") or
+          TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.onBacklightChange"),
+      screen_change_events:
+        TargetSet.member?(targets, "Pebble.Platform.onScreenChange") or
+          TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.onScreenChange"),
+      speaker_finished_events:
+        TargetSet.member?(targets, "Pebble.Speaker.onFinished") or
+          TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.onSpeakerFinished"),
       inbox_events: TargetSet.member?(targets, "Companion.Watch.onPhoneToWatch")
     }
   end

@@ -5,6 +5,27 @@ module Pebble.UnobstructedArea exposing (currentBounds, onChanging, onDidChange,
 Use `currentBounds` during startup to sync the initial layout, then subscribe to
 `onWillChange`, `onChanging`, and `onDidChange` to animate layout transitions.
 
+    import Pebble.UnobstructedArea as UnobstructedArea
+    import Pebble.Ui as Ui
+
+    type Msg
+        = GotBounds Ui.Rect
+        | WillChange Ui.Rect
+        | Changing Int
+        | DidChange
+
+    init _ =
+        ( model, UnobstructedArea.currentBounds GotBounds )
+
+    subscriptions _ =
+        Sub.batch
+            [ UnobstructedArea.onWillChange WillChange
+            , UnobstructedArea.onChanging Changing
+            , UnobstructedArea.onDidChange DidChange
+            ]
+
+For a runnable example, use the **watch-demo-unobstructed** project template in the IDE.
+
 @docs onWillChange, onChanging, onDidChange, currentBounds
 
 -}

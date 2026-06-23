@@ -16,6 +16,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
     Preview,
     RenderedTree,
     SessionState,
+    SpeakerSamples,
     SubscriptionControls,
     SvgRender,
     Timeline,
@@ -64,6 +65,16 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
         running: {to_string(@debugger_state.running)} · events: {length(@debugger_state.events)} · selected seq: {@debugger_cursor_seq ||
           "none"} · profile: {@debugger_state.watch_profile_id || "basalt"}
       </p>
+      <div
+        :if={@debugger_speaker_effect}
+        id="debugger-speaker-effect"
+        class="hidden"
+        phx-hook="DebuggerSpeaker"
+        data-project-slug={@project.slug}
+        data-speaker-samples={SpeakerSamples.json(@project, @speaker_samples)}
+        data-speaker-effect={Jason.encode!(@debugger_speaker_effect)}
+      >
+      </div>
       <div class="mt-3 flex flex-wrap items-center gap-2">
         <button
           type="button"

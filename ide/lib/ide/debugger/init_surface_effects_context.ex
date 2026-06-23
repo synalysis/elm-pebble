@@ -20,12 +20,6 @@ defmodule Ide.Debugger.InitSurfaceEffectsContext do
                                          String.t(),
                                          String.t() ->
                                            Types.runtime_state()),
-          required(:apply_device_data_followups) => (Types.runtime_state(),
-                                                     Types.surface_target(),
-                                                     String.t(),
-                                                     Types.app_model(),
-                                                     String.t() ->
-                                                       Types.runtime_state()),
           required(:apply_subscription_ok_response) => (Types.runtime_state(),
                                                         Types.surface_target(),
                                                         String.t(),
@@ -36,7 +30,9 @@ defmodule Ide.Debugger.InitSurfaceEffectsContext do
           required(:protocol_events_ctx) => (-> ProtocolEvents.ctx()),
           required(:protocol_rx_ctx) => (-> ProtocolRx.ctx()),
           required(:companion_bridge_ctx) => (-> CompanionBridgeRuntime.ctx()),
-          required(:source_root_for_target) => (Types.surface_target() -> String.t())
+          required(:source_root_for_target) => (Types.surface_target() -> String.t()),
+          optional(:introspect_for) =>
+            (Types.runtime_state(), Types.surface_target() -> Types.elm_introspect())
         }
 
   @spec build(host()) :: InitSurfaceEffects.ctx()

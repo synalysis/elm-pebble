@@ -16,10 +16,15 @@ defmodule Ide.PackageDocs.NativeApiLinksTest do
 
     assert health_url ==
              "https://developer.repebble.com/docs/c/Foundation/Event_Service/HealthService/"
+
+    assert [%{"label" => "Speaker", "url" => speaker_url}] =
+             NativeApiLinks.links_for_module("Pebble.Speaker")
+
+    assert speaker_url ==
+             "https://developer.repebble.com/docs/c/User_Interface/Speaker/"
   end
 
   test "returns empty list for modules without native API bindings" do
-    assert NativeApiLinks.links_for_module("Pebble.Frame") == []
     assert NativeApiLinks.links_for_module("Pebble.Game.Math") == []
   end
 end

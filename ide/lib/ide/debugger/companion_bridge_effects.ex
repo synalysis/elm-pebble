@@ -12,15 +12,20 @@ defmodule Ide.Debugger.CompanionBridgeEffects do
           String.t(),
           CompanionBridgeRuntime.ctx()
         ) :: Types.runtime_state()
-  def apply_command_responses(state, target, message, model, message_source, ctx) do
+  def apply_command_responses(state, target, message, model, message_source, ctx, runtime_followups) do
     CompanionBridgeRuntime.maybe_apply_command_responses(
       state,
       target,
       message,
       model,
       message_source,
-      ctx
+      ctx,
+      runtime_followups
     )
+  end
+
+  def apply_command_responses(state, target, message, model, message_source, ctx) do
+    apply_command_responses(state, target, message, model, message_source, ctx, [])
   end
 
   @spec apply_responses(

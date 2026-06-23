@@ -98,10 +98,18 @@ defmodule Ide.Debugger.SessionLifecycle do
   @spec build_launch_bundle(String.t(), String.t(), Types.simulator_settings() | nil) ::
           launch_bundle()
   defp build_launch_bundle(watch_profile_id, launch_reason, simulator_settings) do
+    normalized_settings = DebuggerSimulatorSettings.normalize(simulator_settings || %{})
+
+    launch_reason =
+      normalized_settings
+      |> Map.get("launch_reason", launch_reason)
+      |> RuntimeSurfaces.parse_launch_reason()
+
     %{
       watch_profile_id: watch_profile_id,
-      launch_context: RuntimeSurfaces.launch_context_for(watch_profile_id, launch_reason),
-      simulator_settings: DebuggerSimulatorSettings.normalize(simulator_settings || %{}),
+      launch_context:
+        RuntimeSurfaces.launch_context_for(watch_profile_id, launch_reason, normalized_settings),
+      simulator_settings: normalized_settings,
       launch_reason: launch_reason
     }
   end

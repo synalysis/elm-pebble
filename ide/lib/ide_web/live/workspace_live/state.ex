@@ -201,6 +201,8 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:resource_view, "bitmaps-static")
     |> assign(:animation_resources, [])
     |> assign(:animation_upload_output, nil)
+    |> assign(:speaker_samples, [])
+    |> assign(:speaker_sample_upload_output, nil)
     |> assign(:font_sources, [])
     |> assign(:font_resources, [])
     |> assign(:font_upload_output, nil)
@@ -233,6 +235,11 @@ defmodule IdeWeb.WorkspaceLive.State do
       accept: ~w(.ttf .otf),
       max_entries: 10,
       max_file_size: 2_500_000
+    )
+    |> allow_upload(:speaker_sample,
+      accept: ~w(.pcm .raw .bin),
+      max_entries: 4,
+      max_file_size: 16_384
     )
     |> allow_upload(:store_icon_small,
       accept: ~w(.png),
@@ -322,6 +329,7 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:bitmap_resources_error, Map.get(data, :bitmap_resources_error))
     |> assign(:vector_resources, Map.get(data, :vector_resources, []))
     |> assign(:animation_resources, Map.get(data, :animation_resources, []))
+    |> assign(:speaker_samples, Map.get(data, :speaker_samples, []))
     |> assign(:font_sources, Map.fetch!(data, :font_sources))
     |> assign(:font_resources, Map.fetch!(data, :font_resources))
     |> assign(:screenshots, Map.fetch!(data, :screenshots))

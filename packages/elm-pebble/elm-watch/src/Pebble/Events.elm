@@ -13,6 +13,21 @@ module Pebble.Events exposing
 {-| Generic watch-side event subscriptions.
 
 Each helper turns a platform event into a regular Elm `Sub msg`.
+Use `batch` to combine time ticks with other Pebble subscriptions.
+
+    import Pebble.Events as Events
+
+    type Msg
+        = MinuteChanged Int
+        | HourChanged Int
+
+    subscriptions _ =
+        Events.batch
+            [ Events.onMinuteChange MinuteChanged
+            , Events.onHourChange HourChanged
+            ]
+
+Watchfaces often use `onMinuteChange` to refresh the clock each minute.
 
 # Time
 @docs onSecondChange, onMinuteChange, onHourChange, onDayChange, onMonthChange, onYearChange

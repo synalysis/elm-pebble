@@ -22,7 +22,7 @@ defmodule Ide.ProjectTemplates do
           | File.posix()
           | Jason.EncodeError.t()
 
-  @template_keys ~w(starter app-minimal watchface-minimal watchface-digital watchface-smoke-screen watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time watchface-weather-animated watchface-poke-battle companion-demo-phone-status companion-demo-protocol-matrix companion-demo-weather-env companion-demo-calendar companion-demo-geolocation companion-demo-storage companion-demo-settings companion-demo-websocket companion-demo-timeline watch-demo-accel watch-demo-vibes watch-demo-data-log watch-demo-app-focus watch-demo-compass watch-demo-dictation watch-demo-health watch-demo-light watch-demo-watch-info watch-demo-drawing-showcase game-basic game-tiny-bird game-jump-n-run game-2048 game-elmtris)
+  @template_keys ~w(starter app-minimal watchface-minimal watchface-digital watchface-smoke-screen watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time watchface-weather-animated watchface-poke-battle companion-demo-phone-status companion-demo-protocol-matrix companion-demo-weather-env companion-demo-calendar companion-demo-geolocation companion-demo-storage companion-demo-settings companion-demo-websocket companion-demo-timeline watch-demo-accel watch-demo-vibes watch-demo-data-log watch-demo-app-focus watch-demo-compass watch-demo-dictation watch-demo-health watch-demo-light watch-demo-watch-info watch-demo-drawing-showcase watch-demo-speaker watch-demo-storage watch-demo-launch watch-demo-screen-change watch-demo-system watch-demo-unobstructed watch-demo-wakeup watch-demo-frame watch-demo-time watch-demo-log game-basic game-tiny-bird game-jump-n-run game-2048 game-elmtris)
 
   @template_dirs %{
     "starter" => "starter_watch",
@@ -55,6 +55,16 @@ defmodule Ide.ProjectTemplates do
     "watch-demo-light" => "watch_demo_light",
     "watch-demo-watch-info" => "watch_demo_watch_info",
     "watch-demo-drawing-showcase" => "watch_demo_drawing_showcase",
+    "watch-demo-speaker" => "watch_demo_speaker",
+    "watch-demo-storage" => "watch_demo_storage",
+    "watch-demo-launch" => "watch_demo_launch",
+    "watch-demo-screen-change" => "watch_demo_screen_change",
+    "watch-demo-system" => "watch_demo_system",
+    "watch-demo-unobstructed" => "watch_demo_unobstructed",
+    "watch-demo-wakeup" => "watch_demo_wakeup",
+    "watch-demo-frame" => "watch_demo_frame",
+    "watch-demo-time" => "watch_demo_time",
+    "watch-demo-log" => "watch_demo_log",
     "game-basic" => "game_basic",
     "game-tiny-bird" => "game_tiny_bird",
     "game-jump-n-run" => "game_jump_n_run",
@@ -274,6 +284,16 @@ defmodule Ide.ProjectTemplates do
       {"Watch demo: Backlight (app)", "watch-demo-light"},
       {"Watch demo: Watch info (app)", "watch-demo-watch-info"},
       {"Watch demo: Drawing showcase (all render ops)", "watch-demo-drawing-showcase"},
+      {"Watch demo: Speaker (tones, notes, tracks)", "watch-demo-speaker"},
+      {"Watch demo: Storage (read/write/maxSize)", "watch-demo-storage"},
+      {"Watch demo: Launch context (quick launch)", "watch-demo-launch"},
+      {"Watch demo: Screen change (onScreenChange)", "watch-demo-screen-change"},
+      {"Watch demo: System (battery, connection)", "watch-demo-system"},
+      {"Watch demo: Unobstructed area (round)", "watch-demo-unobstructed"},
+      {"Watch demo: Wakeup scheduling", "watch-demo-wakeup"},
+      {"Watch demo: Frame loop (atFps)", "watch-demo-frame"},
+      {"Watch demo: Time & timezone", "watch-demo-time"},
+      {"Watch demo: Log codes (debug builds)", "watch-demo-log"},
       {"Game: Basic", "game-basic"},
       {"Game: Tiny Bird", "game-tiny-bird"},
       {"Game: Jump'n Run", "game-jump-n-run"},
@@ -389,6 +409,36 @@ defmodule Ide.ProjectTemplates do
 
       "watch-demo-drawing-showcase" ->
         seed_watch_only_workspace(workspace_path, "watch_demo_drawing_showcase")
+
+      "watch-demo-speaker" ->
+        seed_watch_only_workspace(workspace_path, "watch_demo_speaker")
+
+      "watch-demo-storage" ->
+        seed_watch_only_workspace(workspace_path, "watch_demo_storage")
+
+      "watch-demo-launch" ->
+        seed_watch_only_workspace(workspace_path, "watch_demo_launch")
+
+      "watch-demo-screen-change" ->
+        seed_watch_only_workspace(workspace_path, "watch_demo_screen_change")
+
+      "watch-demo-system" ->
+        seed_watch_only_workspace(workspace_path, "watch_demo_system")
+
+      "watch-demo-unobstructed" ->
+        seed_watch_only_workspace(workspace_path, "watch_demo_unobstructed")
+
+      "watch-demo-wakeup" ->
+        seed_watch_only_workspace(workspace_path, "watch_demo_wakeup")
+
+      "watch-demo-frame" ->
+        seed_watch_only_workspace(workspace_path, "watch_demo_frame")
+
+      "watch-demo-time" ->
+        seed_watch_only_workspace(workspace_path, "watch_demo_time")
+
+      "watch-demo-log" ->
+        seed_watch_only_workspace(workspace_path, "watch_demo_log")
 
       "game-basic" ->
         seed_watch_only_workspace(workspace_path, "game_basic")

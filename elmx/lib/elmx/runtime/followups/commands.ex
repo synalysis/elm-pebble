@@ -157,5 +157,18 @@ defmodule Elmx.Runtime.Followups.Commands do
     ]
   end
 
+  def to_followups(%{"kind" => "cmd.effect." <> _} = command, source_root) do
+    [
+      %{
+        "message" => nil,
+        "message_value" => nil,
+        "source_root" => source_root,
+        "source" => "effect_command",
+        "package" => Map.get(command, "package", "elm-pebble/elm-watch"),
+        "command" => command
+      }
+    ]
+  end
+
   def to_followups(_command, _source_root), do: []
 end

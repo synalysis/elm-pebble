@@ -69,13 +69,13 @@ defmodule Ide.Debugger.ViewOutputRefreshTest do
 
     minute_row =
       Enum.find(rows, fn row ->
-        String.contains?(row.message || "", "MinuteChanged")
+        String.contains?(row.message || "", "MinuteChanged 54")
       end)
 
     datetime_row =
-      Enum.find(rows, fn row ->
-        String.contains?(row.message || "", "CurrentDateTime")
-      end)
+      rows
+      |> Enum.filter(fn row -> String.contains?(row.message || "", "CurrentDateTime") end)
+      |> Enum.max_by(& &1.seq, fn -> nil end)
 
     assert minute_row, "expected MinuteChanged timeline row, got: #{inspect(rows)}"
     assert datetime_row, "expected CurrentDateTime device follow-up row, got: #{inspect(rows)}"

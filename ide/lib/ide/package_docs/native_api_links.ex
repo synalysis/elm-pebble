@@ -27,6 +27,8 @@ defmodule Ide.PackageDocs.NativeApiLinks do
     "Pebble.UnobstructedArea" => ["User_Interface/UnobstructedArea"],
     "Pebble.Vibes" => ["User_Interface/Vibes"],
     "Pebble.Wakeup" => ["Foundation/Wakeup"],
+    "Pebble.Speaker" => ["User_Interface/Speaker"],
+    "Pebble.Frame" => ["Foundation/Event_Service/TickTimerService"],
     "Pebble.WatchInfo" => ["Foundation/WatchInfo"],
     "Pebble.Companion.Preferences" => ["User_Interface/Preferences"]
   }

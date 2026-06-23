@@ -10,6 +10,7 @@ defmodule Elmc.Backend.Pebble.Types.FeatureFlags.Keys.Command do
     :cmd_storage_read_string,
     :cmd_random_generate,
     :cmd_storage_delete,
+    :cmd_storage_read_max_size,
     :cmd_companion_send
   ]
 
@@ -88,7 +89,20 @@ defmodule Elmc.Backend.Pebble.Types.FeatureFlags.Keys.Command do
     :cmd_unobstructed_bounds_peek
   ]
 
-  @services_keys @vibes_keys ++ @health_keys ++ @device_services_keys
+  @speaker_keys [
+    :cmd_speaker_is_muted,
+    :cmd_speaker_play_tone,
+    :cmd_speaker_play_notes,
+    :cmd_speaker_play_tracks,
+    :cmd_speaker_stop,
+    :cmd_speaker_set_volume,
+    :cmd_speaker_get_status,
+    :cmd_speaker_stream_open,
+    :cmd_speaker_stream_write,
+    :cmd_speaker_stream_close
+  ]
+
+  @services_keys @vibes_keys ++ @health_keys ++ @device_services_keys ++ @speaker_keys
 
   @keys [:cmd_timer_after_ms | @storage_keys] ++ Enum.drop(@system_keys, 1) ++ @services_keys
 

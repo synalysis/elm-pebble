@@ -1,9 +1,6 @@
 defmodule Ide.Debugger.RuntimeStatusEvents do
   @moduledoc false
 
-  alias Ide.Debugger.CmdCall
-  alias Ide.Debugger.DeviceRequest
-  alias Ide.Debugger.InitCmdFollowups
   alias Ide.Debugger.IntrospectAccess
   alias Ide.Debugger.StepExecution
   alias Ide.Debugger.Types
@@ -112,24 +109,20 @@ defmodule Ide.Debugger.RuntimeStatusEvents do
         source_root_for_target
       )
       when target in [:watch, :companion, :phone] and is_map(execution) do
+    followup_count =
+      execution
+      |> followup_messages()
+      |> StepExecution.normalize_followup_messages()
+      |> length()
+
     runtime =
       case Map.get(execution, :runtime) || Map.get(execution, "runtime") do
         value when is_map(value) -> value
         _ -> get_in(state, [target, :model, "runtime_execution"]) || %{}
       end
       |> Map.put("init_cmd_count", meaningful_init_cmd_count(introspect))
-      |> Map.put(
-        "followup_message_count",
-        execution
-        |> followup_messages()
-        |> InitCmdFollowups.merge_followups(introspect)
-        |> StepExecution.normalize_followup_messages()
-        |> length()
-      )
-      |> Map.put(
-        "planned_init_followup_count",
-        planned_init_followup_count(execution, introspect)
-      )
+      |> Map.put("followup_message_count", followup_count)
+      |> Map.put("planned_init_followup_count", followup_count)
 
     case status_message(runtime) do
       nil ->
@@ -172,24 +165,11 @@ defmodule Ide.Debugger.RuntimeStatusEvents do
 
   @spec planned_init_followup_count(Types.runtime_step_result(), Types.elm_introspect()) ::
           non_neg_integer()
-  def planned_init_followup_count(execution, introspect) when is_map(introspect) do
-    executor_planned =
-      execution
-      |> followup_messages()
-      |> InitCmdFollowups.merge_followups(introspect)
-      |> StepExecution.normalize_followup_messages()
-      |> length()
-
-    device_planned =
-      introspect
-      |> IntrospectAccess.cmd_calls("init_cmd_calls")
-      |> CmdCall.expand_helpers(introspect)
-      |> Enum.filter(&meaningful_init_cmd_call?/1)
-      |> Enum.flat_map(&DeviceRequest.from_cmd_call/1)
-      |> Enum.uniq_by(fn req -> {req.kind, req.response_message} end)
-      |> length()
-
-    executor_planned + device_planned
+  def planned_init_followup_count(execution, _introspect) when is_map(execution) do
+    execution
+    |> followup_messages()
+    |> StepExecution.normalize_followup_messages()
+    |> length()
   end
 
   def planned_init_followup_count(_execution, _introspect), do: 0

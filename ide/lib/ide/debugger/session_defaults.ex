@@ -78,8 +78,14 @@ defmodule Ide.Debugger.SessionDefaults do
     watch_profile_id =
       persisted_watch_profile_id(session_key) || WatchModels.default_id()
 
-    launch_context = RuntimeSurfaces.launch_context_for(watch_profile_id, "LaunchUser")
     simulator_settings = persisted_simulator_settings(session_key)
+
+    launch_context =
+      RuntimeSurfaces.launch_context_for(
+        watch_profile_id,
+        Map.get(simulator_settings, "launch_reason", "LaunchUser"),
+        simulator_settings
+      )
 
     %{
       scope_key: session_key,
@@ -114,7 +120,14 @@ defmodule Ide.Debugger.SessionDefaults do
       |> Map.get("launch_reason")
       |> RuntimeSurfaces.parse_launch_reason()
 
-    launch_context = RuntimeSurfaces.launch_context_for(watch_profile_id, launch_reason)
+    settings = DebuggerSimulatorSettings.normalize(Map.get(state, :simulator_settings, %{}))
+
+    launch_reason =
+      settings
+      |> Map.get("launch_reason", launch_reason)
+      |> RuntimeSurfaces.parse_launch_reason()
+
+    launch_context = RuntimeSurfaces.launch_context_for(watch_profile_id, launch_reason, settings)
 
     state =
       if is_map(Map.get(state, :phone)) do

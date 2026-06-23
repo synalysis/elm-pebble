@@ -478,12 +478,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     compile_generic(%{op: :runtime_call, function: function, args: args}, env, counter)
   end
 
-  @spec compile_native_append(
-          Types.ir_expr(),
-          Types.ir_expr(),
-          Types.compile_env(),
-          Types.compile_counter()
-        ) :: Types.compile_result()
+  @spec collect_append_segments(Types.ir_expr()) :: {:ok, [Types.ir_expr()]}
   defp collect_append_segments(expr) do
     case unwrap_append(expr) do
       {:append, left, right} ->
@@ -511,6 +506,11 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     end)
   end
 
+  @spec compile_list_concat(
+          [Types.ir_expr()],
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
   defp compile_list_concat(segments, env, counter) do
     case compile_list_concat_segments_flatten(segments, env, counter) do
       {:ok, code, out, counter} ->
@@ -533,7 +533,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
           [Types.ir_expr()],
           Types.compile_env(),
           Types.compile_counter()
-        ) :: {:ok, String.t(), String.t(), Types.compile_counter()} | :error
+        ) :: Types.compile_ok_result()
   defp compile_list_concat_segments_flatten(segments, env, counter) do
     cond do
       Enum.all?(segments, &NativeString.expr?(&1, env)) ->
@@ -573,6 +573,11 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     end
   end
 
+  @spec compile_string_concat_segments(
+          [Types.ir_expr()],
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_string_concat_segments(segments, env, counter) do
     segments = Enum.map(segments, &StaticString.fold_append_literals/1)
 
@@ -597,6 +602,11 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     end
   end
 
+  @spec compile_string_concat_segments_loop(
+          [Types.ir_expr()],
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_string_concat_segments_loop(segments, env, counter) do
     {segment_code, segment_boxes, segment_releases, counter} =
       Enum.reduce(segments, {"", [], [], counter}, fn segment, {code_acc, boxes_acc, releases_acc, c} ->
@@ -645,6 +655,11 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     {:ok, code, out_ref, next}
   end
 
+  @spec compile_boxed_string_append_chain(
+          [Types.ir_expr()],
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_boxed_string_append_chain(segments, env, counter) do
     {segment_code, segment_vars, counter} =
       Enum.reduce(segments, {"", [], counter}, fn segment, {code_acc, vars_acc, c} ->
@@ -681,6 +696,12 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     {:ok, code, out_ref, counter}
   end
 
+  @spec compile_folded_append(
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
   defp compile_folded_append(left, right, env, counter) do
     append_expr = %{op: :runtime_call, function: "elmc_append", args: [left, right]}
 
@@ -700,6 +721,12 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     end
   end
 
+  @spec compile_native_append(
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
   defp compile_native_append(left, right, env, counter) do
     {left_code, left_ref, left_cleanup, counter} = NativeString.compile_expr(left, env, counter)
 
@@ -726,6 +753,13 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     {code, out, next}
   end
 
+  @spec compile_list_bool_expr(
+          String.t(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_list_bool_expr(function, predicate, list, env, counter) do
     with {:ok, arg, body} <- normalize_list_bool_predicate(predicate),
          {:ok, code, out, counter} <-
@@ -761,6 +795,14 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
 
   defp normalize_list_bool_predicate(_predicate), do: :error
 
+  @spec compile_list_bool_body_loop(
+          String.t(),
+          String.t(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_list_bool_body_loop(function, arg, body, list, env, counter) do
     case unwrap_tuple2_lambda_body(body, arg) do
       {:ok, left, right, inner} ->
@@ -771,6 +813,15 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     end
   end
 
+  @spec compile_list_bool_tuple2_loop(
+          String.t(),
+          String.t(),
+          String.t(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_list_bool_tuple2_loop(function, left, right, body, list, env, counter) do
     {body, substitutions} = Host.unwrap_let_chain(body, %{})
 
@@ -830,14 +881,12 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     end
   end
 
-  @spec compile_list_bool_loop(
-          String.t(),
-          String.t(),
+  @spec compile_list_filter_expr(
           Types.ir_expr(),
           Types.ir_expr(),
           Types.compile_env(),
           Types.compile_counter()
-        ) :: {:ok, String.t(), String.t(), Types.compile_counter()} | :error
+        ) :: Types.compile_ok_result()
   defp compile_list_filter_expr(predicate, list, env, counter) do
     with {:ok, arg, body} <- normalize_list_bool_predicate(predicate),
          {:ok, code, out, counter} <-
@@ -855,6 +904,13 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     end
   end
 
+  @spec compile_list_filter_body_loop(
+          String.t(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_list_filter_body_loop(arg, body, list, env, counter) do
     case unwrap_tuple2_lambda_body(body, arg) do
       {:ok, left, right, inner} ->
@@ -865,6 +921,13 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     end
   end
 
+  @spec compile_list_filter_loop(
+          String.t(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_list_filter_loop(arg, body, list, env, counter) do
     {body, substitutions} = Host.unwrap_let_chain(body, %{})
 
@@ -916,6 +979,14 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     end
   end
 
+  @spec compile_list_filter_tuple2_loop(
+          String.t(),
+          String.t(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_list_filter_tuple2_loop(left, right, body, list, env, counter) do
     {body, substitutions} = Host.unwrap_let_chain(body, %{})
 
@@ -974,6 +1045,12 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     end
   end
 
+  @spec compile_list_filter_map_expr(
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_list_filter_map_expr(%{op: :lambda, args: [arg], body: body}, list, env, counter)
        when is_binary(arg) do
     {body, substitutions} = Host.unwrap_let_chain(body, %{})
@@ -1036,6 +1113,15 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
 
   defp just_branch(_expr), do: :error
 
+  @spec compile_list_filter_map_if_loop(
+          String.t(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          {String.t(), String.t(), String.t()},
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_list_filter_map_if_loop(arg, cond, just_value, polarity, list, env, counter) do
     with {:ok, range_code, first_ref, last_ref, counter} <- range_bounds(list, env, counter) do
       loop_id = counter + 1
@@ -1086,6 +1172,15 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     end
   end
 
+  @spec compile_list_filter_map_if_list_loop(
+          String.t(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          {String.t(), String.t(), String.t()},
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_list_filter_map_if_list_loop(arg, cond, just_value, polarity, list, env, counter) do
     {list_code, list_var, counter} = Host.compile_expr(list, env, counter)
     loop_id = counter + 1
@@ -1134,6 +1229,13 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     {:ok, code, out, counter}
   end
 
+  @spec compile_list_filter_map_boxed_loop(
+          String.t(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_list_filter_map_boxed_loop(arg, body, list, env, counter) do
     {body, substitutions} = Host.unwrap_let_chain(body, %{})
 
@@ -1201,6 +1303,14 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     {:ok, code, out, counter}
   end
 
+  @spec compile_list_indexed_map_boxed_cursor_loop(
+          String.t(),
+          String.t(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_list_indexed_map_boxed_cursor_loop(
          index_arg,
          item_arg,
@@ -1262,6 +1372,14 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     {:ok, code, out, counter}
   end
 
+  @spec compile_list_bool_loop(
+          String.t(),
+          String.t(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_list_bool_loop(function, arg, body, list, env, counter) do
     {body, substitutions} = Host.unwrap_let_chain(body, %{})
 
@@ -1347,6 +1465,14 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
 
   defp two_arg_lambda(_lambda), do: :error
 
+  @spec compile_list_map_tuple2_native_int_cursor_loop(
+          String.t(),
+          String.t(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_list_map_tuple2_native_int_cursor_loop(left, right, body, list, env, counter) do
     {body, substitutions} = Host.unwrap_let_chain(body, %{})
 
@@ -1404,6 +1530,13 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     end
   end
 
+  @spec compile_list_map_native_int_cursor_loop(
+          String.t(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_list_map_native_int_cursor_loop(arg, body, list, env, counter) do
     case unwrap_tuple2_lambda_body(body, arg) do
       {:ok, left, right, inner} ->
@@ -1478,6 +1611,13 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     end
   end
 
+  @spec compile_list_map_single_native_int_cursor_loop(
+          String.t(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_list_map_single_native_int_cursor_loop(arg, body, list, env, counter) do
     {list_code, list_var, counter} = Host.compile_expr(list, env, counter)
     next = counter + 1
@@ -1520,6 +1660,13 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     end
   end
 
+  @spec compile_list_map_boxed_cursor_loop(
+          String.t(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_list_map_boxed_cursor_loop(arg, body, list, env, counter) do
     {body, substitutions} = Host.unwrap_let_chain(body, %{})
 
@@ -1588,6 +1735,13 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     end)
   end
 
+  @spec compile_list_map_int_range_loop(
+          String.t(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_list_map_int_range_loop(arg, body, list, env, counter) do
     with {:ok, range_code, first_ref, last_ref, counter} <- range_bounds(list, env, counter) do
       loop_id = counter + 1
@@ -1639,6 +1793,14 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     end
   end
 
+  @spec compile_list_indexed_map_int_loop(
+          String.t(),
+          String.t(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_list_indexed_map_int_loop(index_arg, item_arg, body, list, env, counter) do
     case compile_list_indexed_replace_int(index_arg, item_arg, body, list, env, counter) do
       {:ok, _code, _out, _counter} = ok ->
@@ -1649,6 +1811,14 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     end
   end
 
+  @spec compile_list_indexed_replace_int(
+          String.t(),
+          String.t(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_list_indexed_replace_int(index_arg, item_arg, body, list, env, counter) do
     with {:ok, target_expr, value_expr} <- indexed_replace_int_pattern(index_arg, item_arg, body),
          true <- NativeInt.expr?(value_expr, env) do
@@ -1704,6 +1874,14 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
 
   defp indexed_replace_target(_index_arg, _left, _right, _value_expr), do: :error
 
+  @spec compile_list_indexed_map_int_loop_body(
+          String.t(),
+          String.t(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_list_indexed_map_int_loop_body(index_arg, item_arg, body, list, env, counter) do
     {list_code, list_var, counter} = Host.compile_expr(list, env, counter)
     next = counter + 1
@@ -1784,6 +1962,15 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
 
   defp normalize_foldl_lambda(_lambda), do: :error
 
+  @spec compile_list_foldl_list_cursor_loop(
+          String.t(),
+          String.t(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_list_foldl_list_cursor_loop(item_arg, acc_arg, body, acc, list, env, counter) do
     case unwrap_tuple2_lambda_body(body, item_arg) do
       {:ok, left, right, inner} ->
@@ -1811,6 +1998,15 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     end
   end
 
+  @spec compile_list_foldl_single_item_list_cursor_loop(
+          String.t(),
+          String.t(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_list_foldl_single_item_list_cursor_loop(
          item_arg,
          acc_arg,
@@ -1869,6 +2065,16 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     {:ok, code, out, counter}
   end
 
+  @spec compile_list_foldl_tuple2_list_cursor_loop(
+          String.t(),
+          String.t(),
+          String.t(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_list_foldl_tuple2_list_cursor_loop(
          left,
          right,
@@ -1981,6 +2187,16 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     end
   end
 
+  @spec compile_list_foldl_int_range_loop(
+          String.t(),
+          String.t(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter(),
+          boolean()
+        ) :: Types.compile_ok_result()
   defp compile_list_foldl_int_range_loop(
          item_arg,
          acc_arg,
@@ -2092,6 +2308,8 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     end
   end
 
+  @spec range_bounds(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
+          Types.range_bounds_result()
   defp range_bounds(
          %{op: :runtime_call, function: "elmc_list_range", args: [first, last]},
          env,
@@ -2117,6 +2335,12 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
 
   defp range_bounds(_expr, _env, _counter), do: :error
 
+  @spec compile_list_repeat_int(
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_list_repeat_int(n, value, env, counter) do
     case unwrap_list_repeat_expr(value) do
       {:ok, inner_n, inner_value} ->
@@ -2137,6 +2361,12 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     end
   end
 
+  @spec compile_list_repeat_static_int_array(
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_list_repeat_static_int_array(n, value, env, counter) do
     with {:ok, count} <- ConstantInt.literal_value(n, env),
          true <- count > 0 and count <= 32,
@@ -2233,6 +2463,13 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     end
   end
 
+  @spec compile_list_repeat_from_value(
+          Types.ir_expr(),
+          String.t(),
+          String.t(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_list_repeat_from_value(n, value_code, value_ref, env, counter) do
     with {:ok, count_code, count_ref, counter, count_var} <-
            compile_int_loop_count(n, env, counter) do
@@ -2412,6 +2649,11 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     end
   end
 
+  @spec compile_list_length_int(
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_list_length_int(list, env, counter) do
     case ImmortalStaticList.static_length(list, env) do
       {:ok, count} ->
@@ -2438,6 +2680,13 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     end
   end
 
+  @spec compile_list_slice_int(
+          String.t(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_list_slice_int(function, count, list, env, counter) do
     {count_code, count_ref, counter} = Host.compile_native_int_expr(count, env, counter)
 
@@ -2469,6 +2718,11 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     {code, out, next}
   end
 
+  @spec compile_list_concat_expr(
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
   defp compile_list_concat_expr(lists_expr, env, counter) do
     lists_expr = unwrap_concat_lists_arg(lists_expr)
 

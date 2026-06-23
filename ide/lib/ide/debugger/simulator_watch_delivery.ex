@@ -3,15 +3,16 @@ defmodule Ide.Debugger.SimulatorWatchDelivery do
 
   alias Ide.Debugger.Geolocation
   alias Ide.Debugger.ProtocolEvents
+  alias Ide.Debugger.RuntimeActiveSubscriptions
+  alias Ide.Debugger.RuntimeSurfaces
   alias Ide.Debugger.SimulatorSettings, as: DebuggerSimulatorSettings
   alias Ide.Debugger.Types
 
   @phone_to_watch_triggers ~w(phone_to_watch on_phone_to_watch)
-  @unobstructed_triggers ~w(
-    on_unobstructed_will_change
-    on_unobstructed_changing
-    on_unobstructed_did_change
-  )
+  @unobstructed_target_patterns ~w(unobstructedarea.onwillchange unobstructedarea.onchanging unobstructedarea.ondidchange)
+  @backlight_target_patterns ~w(light.onchange onbacklightchange)
+  @screen_target_patterns ~w(platform.onscreenchange onscreenchange)
+  @speaker_target_patterns ~w(speaker.onfinished)
 
   @type apply_ctx :: %{
           required(:apply_step_once) => (Types.runtime_state(),
@@ -72,10 +73,31 @@ defmodule Ide.Debugger.SimulatorWatchDelivery do
     if Map.get(previous_settings, "timeline_peek") == Map.get(new_settings, "timeline_peek") do
       state
     else
-      Enum.reduce(@unobstructed_triggers, state, fn trigger, acc ->
-        inject_subscription_trigger(acc, trigger, ctx)
-      end)
+      inject_active_by_target_patterns(state, @unobstructed_target_patterns, ctx)
     end
+  end
+
+  @spec inject_settings_triggers(
+          Types.runtime_state(),
+          Types.simulator_settings(),
+          Types.simulator_settings(),
+          apply_ctx()
+        ) :: Types.runtime_state()
+  def inject_settings_triggers(state, previous_settings, new_settings, ctx)
+      when is_map(state) and is_map(previous_settings) and is_map(new_settings) and is_map(ctx) do
+    state
+    |> maybe_inject_backlight_change(previous_settings, new_settings, ctx)
+    |> maybe_apply_launch_context_settings(previous_settings, new_settings)
+  end
+
+  @spec inject_screen_change(Types.runtime_state(), apply_ctx()) :: Types.runtime_state()
+  def inject_screen_change(state, ctx) when is_map(state) and is_map(ctx) do
+    inject_active_by_target_patterns(state, @screen_target_patterns, ctx)
+  end
+
+  @spec inject_speaker_finished(Types.runtime_state(), apply_ctx()) :: Types.runtime_state()
+  def inject_speaker_finished(state, ctx) when is_map(state) and is_map(ctx) do
+    inject_active_by_target_patterns(state, @speaker_target_patterns, ctx)
   end
 
   @spec inject_subscription_trigger(Types.runtime_state(), String.t(), apply_ctx()) ::
@@ -85,20 +107,20 @@ defmodule Ide.Debugger.SimulatorWatchDelivery do
     row = find_trigger_row(state, trigger, ctx)
 
     if is_map(row) and ctx.model_active?.(state, :watch, row) do
-      message = Map.get(row, :message) || Map.get(row, "message")
-      resolved_message = ctx.trigger_message_for_surface.(state, :watch, trigger, message)
-
-      ctx.apply_step_once.(
-        state,
-        :watch,
-        resolved_message,
-        nil,
-        "simulator_settings",
-        "simulator_settings"
-      )
+      inject_row(state, row, ctx)
     else
       state
     end
+  end
+
+  @spec inject_subscription_triggers_by_patterns(
+          Types.runtime_state(),
+          [String.t()],
+          apply_ctx()
+        ) :: Types.runtime_state()
+  def inject_subscription_triggers_by_patterns(state, patterns, ctx)
+      when is_map(state) and is_list(patterns) and is_map(ctx) do
+    inject_active_by_target_patterns(state, patterns, ctx)
   end
 
   @spec weather_message_value(String.t(), Types.simulator_settings()) ::
@@ -153,6 +175,47 @@ defmodule Ide.Debugger.SimulatorWatchDelivery do
 
   def weather_step_message(message_name, _weather), do: "FromPhone (#{message_name} ...)"
 
+  @spec inject_active_by_target_patterns(Types.runtime_state(), [String.t()], apply_ctx()) ::
+          Types.runtime_state()
+  defp inject_active_by_target_patterns(state, patterns, ctx)
+       when is_map(state) and is_list(patterns) and is_map(ctx) do
+    active = RuntimeActiveSubscriptions.for_surface(state, :watch)
+
+    RuntimeActiveSubscriptions.for_target_patterns(patterns, active)
+    |> Enum.reduce(state, fn command, acc ->
+      row = trigger_row_for_command(state, command, ctx)
+
+      if is_map(row) and ctx.model_active?.(acc, :watch, row) do
+        inject_row(acc, row, ctx)
+      else
+        acc
+      end
+    end)
+  end
+
+  @spec inject_row(Types.runtime_state(), map(), apply_ctx()) :: Types.runtime_state()
+  defp inject_row(state, row, ctx) when is_map(state) and is_map(row) and is_map(ctx) do
+    trigger = Map.get(row, :trigger) || Map.get(row, "trigger")
+    message = Map.get(row, :message) || Map.get(row, "message")
+    resolved_message = ctx.trigger_message_for_surface.(state, :watch, trigger, message)
+    message_value = Map.get(row, :message_value) || Map.get(row, "message_value")
+
+    message_value =
+      case RuntimeActiveSubscriptions.match_for_row(state, :watch, row) do
+        %{} = command -> Map.get(command, "message_value") || Map.get(command, :message_value)
+        _ -> message_value
+      end
+
+    ctx.apply_step_once.(
+      state,
+      :watch,
+      resolved_message,
+      message_value,
+      "simulator_settings",
+      "simulator_settings"
+    )
+  end
+
   defp phone_to_watch_active?(state, ctx) when is_map(state) and is_map(ctx) do
     row = find_phone_to_watch_row(state, ctx)
     is_map(row) and ctx.model_active?.(state, :watch, row)
@@ -167,7 +230,7 @@ defmodule Ide.Debugger.SimulatorWatchDelivery do
       fun when is_function(fun, 2) ->
         ei = fun.(state, :watch)
 
-        Geolocation.init_requested_from_introspect?(ei) or
+        Geolocation.init_requested_for_surface?(state, :watch, ei) or
           geolocation_runtime_model?(Map.get(ei, "init_model"))
 
       _ ->
@@ -197,5 +260,49 @@ defmodule Ide.Debugger.SimulatorWatchDelivery do
       candidate_trigger = Map.get(candidate, :trigger) || Map.get(candidate, "trigger")
       candidate_trigger == trigger
     end)
+  end
+
+  defp trigger_row_for_command(state, command, ctx) do
+    message = Map.get(command, "message") || Map.get(command, :message)
+    target = RuntimeActiveSubscriptions.command_target(command)
+
+    find_trigger_row(state, subscription_event_kind_from_target(target), ctx) ||
+      find_trigger_row(state, target, ctx) ||
+      %{trigger: subscription_event_kind_from_target(target), message: message, target: "watch"}
+  end
+
+  defp subscription_event_kind_from_target(target) when is_binary(target) do
+    target
+    |> String.split(".")
+    |> List.last()
+    |> to_string()
+    |> String.replace(~r/([a-z])([A-Z])/, "\\1 \\2")
+    |> String.downcase()
+    |> String.replace(~r/[^a-z0-9]+/, "_")
+    |> String.trim("_")
+  end
+
+  defp maybe_inject_backlight_change(state, previous_settings, new_settings, ctx) do
+    if Map.get(previous_settings, "backlight_on") == Map.get(new_settings, "backlight_on") do
+      state
+    else
+      inject_active_by_target_patterns(state, @backlight_target_patterns, ctx)
+    end
+  end
+
+  defp maybe_apply_launch_context_settings(state, previous_settings, new_settings) do
+    launch_keys = ["launch_reason", "launch_button", "quick_launch_action"]
+
+    if Enum.all?(launch_keys, &(Map.get(previous_settings, &1) == Map.get(new_settings, &1))) do
+      state
+    else
+      profile_id = RuntimeSurfaces.parse_watch_profile_id(Map.get(state, :watch_profile_id))
+      launch_reason = Map.get(new_settings, "launch_reason", "LaunchUser")
+      launch_context = RuntimeSurfaces.launch_context_for(profile_id, launch_reason, new_settings)
+
+      state
+      |> Map.put(:launch_context, launch_context)
+      |> RuntimeSurfaces.apply_launch_context_to_watch()
+    end
   end
 end

@@ -2,7 +2,33 @@ module Pebble.System exposing (batteryLevel, connectionStatus, onBatteryChange, 
 
 import Elm.Kernel.PebbleWatch
 
-{-| System-state subscriptions sourced from Pebble event services.
+{-| System-state commands and subscriptions sourced from Pebble event services.
+
+Poll once in `init`, then subscribe to live updates for battery and phone link.
+
+    import Pebble.System as System
+
+    type Msg
+        = GotBattery Int
+        | BatteryChanged Int
+        | GotConnection Bool
+        | ConnectionChanged Bool
+
+    init _ =
+        ( model
+        , Cmd.batch
+            [ System.batteryLevel GotBattery
+            , System.connectionStatus GotConnection
+            ]
+        )
+
+    subscriptions _ =
+        Sub.batch
+            [ System.onBatteryChange BatteryChanged
+            , System.onConnectionChange ConnectionChanged
+            ]
+
+For a runnable example, use the **watch-demo-system** project template in the IDE.
 
 @docs batteryLevel, connectionStatus, onBatteryChange, onConnectionChange
 -}

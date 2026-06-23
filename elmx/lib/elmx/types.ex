@@ -115,6 +115,7 @@ defmodule Elmx.Types do
   @type effect_cmd_opts :: [
           {:variant, String.t() | atom()}
           | {:pattern, term()}
+          | {:extra, map()}
         ]
 
   @typedoc "Options for `Followups.from_commands/2`."
@@ -248,6 +249,23 @@ defmodule Elmx.Types do
 
   @typedoc "Launch reason ctor name, wire union, or debugger string."
   @type launch_reason_like ::
+          String.t()
+          | atom()
+          | wire_ctor()
+          | {atom(), list()}
+          | nil
+
+  @typedoc "Quick launch action ctor name, wire union, tag int, or debugger string."
+  @type quick_launch_action_like ::
+          String.t()
+          | integer()
+          | atom()
+          | wire_ctor()
+          | {atom(), list()}
+          | nil
+
+  @typedoc "Pebble button ctor name, wire union, or debugger string."
+  @type button_like ::
           String.t()
           | atom()
           | wire_ctor()

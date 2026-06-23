@@ -619,7 +619,7 @@ static bool dictation_has_microphone(void) {
 }
 #endif
 
-#if ELMC_PEBBLE_FEATURE_CMD_VIBES_CUSTOM_PATTERN || ELMC_PEBBLE_FEATURE_CMD_DATA_LOG_BYTES
+#if ELMC_PEBBLE_FEATURE_CMD_VIBES_CUSTOM_PATTERN || ELMC_PEBBLE_FEATURE_CMD_DATA_LOG_BYTES || ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_NOTES || ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_TRACKS || ELMC_PEBBLE_FEATURE_CMD_SPEAKER_STREAM_WRITE
 static int parse_int_list(const char *text, int32_t *out_values, int max_values) {
   if (!text || !out_values || max_values <= 0) {
     return 0;
@@ -641,6 +641,57 @@ static int parse_int_list(const char *text, int32_t *out_values, int max_values)
     }
   }
   return count;
+}
+#endif
+
+#if ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_TONE || ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_NOTES || ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_TRACKS
+static SpeakerWaveform speaker_waveform_from_int(int32_t value) {
+  if (value < 0 || value >= SpeakerWaveformCount) {
+    return SpeakerWaveformSine;
+  }
+  return (SpeakerWaveform)value;
+}
+#endif
+
+#if ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_NOTES || ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_TRACKS
+static void speaker_note_from_values(const int32_t *values, SpeakerNote *out_note) {
+  out_note->midi_note = (uint8_t)values[0];
+  out_note->waveform = speaker_waveform_from_int(values[1]);
+  out_note->duration_ms = (uint16_t)values[2];
+  out_note->velocity = (uint8_t)values[3];
+}
+#endif
+
+#if ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_TRACKS
+static int8_t s_speaker_sample_bytes[16384];
+static SpeakerSample s_speaker_track_samples[SPEAKER_MAX_TRACKS];
+static size_t s_speaker_sample_bytes_used = 0;
+
+static bool speaker_sample_from_index(int sample_index, SpeakerSample *out_sample) {
+  if (sample_index <= 0 || !out_sample) {
+    return false;
+  }
+
+  uint32_t resource_id = elm_pebble_speaker_sample_resource_id(sample_index);
+  if (resource_id == ELM_PEBBLE_RESOURCE_ID_MISSING) {
+    return false;
+  }
+
+  ResHandle handle = resource_get_handle(resource_id);
+  size_t size = resource_size(handle);
+  if (size == 0 || s_speaker_sample_bytes_used + size > sizeof(s_speaker_sample_bytes)) {
+    return false;
+  }
+
+  uint8_t *dest = (uint8_t *)&s_speaker_sample_bytes[s_speaker_sample_bytes_used];
+  resource_load_byte_range(handle, 0, size, dest);
+  s_speaker_sample_bytes_used += size;
+  out_sample->data = (const int8_t *)dest;
+  out_sample->num_bytes = (uint32_t)size;
+  out_sample->format = (SpeakerPcmFormat)elm_pebble_speaker_sample_format(sample_index);
+  out_sample->base_midi_note = (uint8_t)elm_pebble_speaker_sample_base_midi_note(sample_index);
+  out_sample->loop = elm_pebble_speaker_sample_loop(sample_index) != 0;
+  return true;
 }
 #endif
 
@@ -908,6 +959,198 @@ static void apply_pending_cmd(void) {
       ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "cmd storage_delete key=%lu status=%ld",
               (unsigned long)key, (long)status);
       (void)status;
+      break;
+    }
+#endif
+#if ELMC_PEBBLE_FEATURE_CMD_STORAGE_READ_MAX_SIZE
+    case ELMC_PEBBLE_CMD_STORAGE_READ_MAX_SIZE: {
+      int64_t target = cmd.p0;
+      int32_t max_size = (int32_t)persist_get_max_size();
+      int rc = target > 0 ? elmc_pebble_dispatch_tag_value(&s_elm_app, target, max_size) : -6;
+      (void)rc;
+      ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "cmd storage_read_max_size value=%ld rc=%d",
+              (long)max_size, rc);
+      break;
+    }
+#endif
+#if ELMC_PEBBLE_FEATURE_CMD_SPEAKER_IS_MUTED
+    case ELMC_PEBBLE_CMD_SPEAKER_IS_MUTED: {
+      int64_t target = cmd.p0;
+#ifdef PBL_SPEAKER
+      bool muted = speaker_is_muted();
+#else
+      bool muted = true;
+#endif
+      int rc = target > 0 ? elmc_pebble_dispatch_tag_bool(&s_elm_app, target, muted) : -6;
+      (void)rc;
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd speaker_is_muted=%d rc=%d", muted ? 1 : 0, rc);
+      break;
+    }
+#endif
+#if ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_TONE
+    case ELMC_PEBBLE_CMD_SPEAKER_PLAY_TONE: {
+      uint32_t hz = (uint32_t)cmd.p0;
+      uint32_t duration_ms = (uint32_t)cmd.p1;
+      uint8_t volume = (uint8_t)cmd.p2;
+      SpeakerWaveform waveform = speaker_waveform_from_int((int32_t)cmd.p3);
+#ifdef PBL_SPEAKER
+      bool ok = speaker_play_tone(hz, duration_ms, volume, waveform);
+#else
+      bool ok = false;
+#endif
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd speaker_play_tone hz=%lu duration=%lu volume=%u ok=%d",
+              (unsigned long)hz, (unsigned long)duration_ms, (unsigned)volume, ok ? 1 : 0);
+      break;
+    }
+#endif
+#if ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_NOTES
+    case ELMC_PEBBLE_CMD_SPEAKER_PLAY_NOTES: {
+      int32_t values[64];
+      int count = parse_int_list(cmd.text, values, 64);
+      int volume = (int)cmd.p0;
+      if (count > 0 && (count % 4) == 0) {
+        int note_count = count / 4;
+        if (note_count > SPEAKER_MAX_NOTES) {
+          note_count = SPEAKER_MAX_NOTES;
+        }
+        SpeakerNote notes[SPEAKER_MAX_NOTES];
+        for (int i = 0; i < note_count; i++) {
+          speaker_note_from_values(&values[i * 4], &notes[i]);
+        }
+#ifdef PBL_SPEAKER
+        bool ok = speaker_play_notes(notes, (uint32_t)note_count, (uint8_t)volume);
+#else
+        bool ok = false;
+#endif
+        APP_LOG(APP_LOG_LEVEL_INFO, "cmd speaker_play_notes count=%d volume=%d ok=%d", note_count, volume,
+                ok ? 1 : 0);
+      }
+      break;
+    }
+#endif
+#if ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_TRACKS
+    case ELMC_PEBBLE_CMD_SPEAKER_PLAY_TRACKS: {
+      int32_t values[64];
+      int count = parse_int_list(cmd.text, values, 64);
+      int volume = (int)cmd.p0;
+      SpeakerTrack tracks[SPEAKER_MAX_TRACKS];
+      SpeakerNote track_notes[SPEAKER_MAX_NOTES];
+      int track_count = 0;
+      int note_offset = 0;
+      int cursor = 0;
+      s_speaker_sample_bytes_used = 0;
+      while (cursor < count && track_count < SPEAKER_MAX_TRACKS) {
+        int note_count = values[cursor++];
+        if (cursor >= count) {
+          break;
+        }
+        int sample_index = values[cursor++];
+        if (note_count <= 0 || cursor + (note_count * 4) > count) {
+          break;
+        }
+        if (note_offset + note_count > SPEAKER_MAX_NOTES) {
+          break;
+        }
+        tracks[track_count].notes = &track_notes[note_offset];
+        tracks[track_count].num_notes = (uint32_t)note_count;
+        tracks[track_count].sample = NULL;
+        if (sample_index > 0 &&
+            speaker_sample_from_index(sample_index, &s_speaker_track_samples[track_count])) {
+          tracks[track_count].sample = &s_speaker_track_samples[track_count];
+        }
+        for (int i = 0; i < note_count; i++) {
+          speaker_note_from_values(&values[cursor + (i * 4)], &track_notes[note_offset + i]);
+        }
+        cursor += note_count * 4;
+        note_offset += note_count;
+        track_count++;
+      }
+      if (track_count > 0) {
+#ifdef PBL_SPEAKER
+        bool ok = speaker_play_tracks(tracks, (uint32_t)track_count, (uint8_t)volume);
+#else
+        bool ok = false;
+#endif
+        APP_LOG(APP_LOG_LEVEL_INFO, "cmd speaker_play_tracks tracks=%d volume=%d ok=%d", track_count, volume,
+                ok ? 1 : 0);
+      }
+      break;
+    }
+#endif
+#if ELMC_PEBBLE_FEATURE_CMD_SPEAKER_STOP
+    case ELMC_PEBBLE_CMD_SPEAKER_STOP: {
+#ifdef PBL_SPEAKER
+      speaker_stop();
+#endif
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd speaker_stop");
+      break;
+    }
+#endif
+#if ELMC_PEBBLE_FEATURE_CMD_SPEAKER_SET_VOLUME
+    case ELMC_PEBBLE_CMD_SPEAKER_SET_VOLUME: {
+#ifdef PBL_SPEAKER
+      speaker_set_volume((uint8_t)cmd.p0);
+#endif
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd speaker_set_volume=%ld", (long)cmd.p0);
+      break;
+    }
+#endif
+#if ELMC_PEBBLE_FEATURE_CMD_SPEAKER_GET_STATUS
+    case ELMC_PEBBLE_CMD_SPEAKER_GET_STATUS: {
+      int64_t target = cmd.p0;
+#ifdef PBL_SPEAKER
+      SpeakerStatus status = speaker_get_status();
+#else
+      SpeakerStatus status = SpeakerStatusIdle;
+#endif
+      int rc = target > 0 ? elmc_pebble_dispatch_tag_value(&s_elm_app, target, (int)status) : -6;
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd speaker_get_status=%d rc=%d", (int)status, rc);
+      break;
+    }
+#endif
+#if ELMC_PEBBLE_FEATURE_CMD_SPEAKER_STREAM_OPEN
+    case ELMC_PEBBLE_CMD_SPEAKER_STREAM_OPEN: {
+      SpeakerPcmFormat format = (SpeakerPcmFormat)cmd.p0;
+      uint8_t volume = (uint8_t)cmd.p1;
+#ifdef PBL_SPEAKER
+      bool ok = speaker_stream_open(format, volume);
+#else
+      bool ok = false;
+#endif
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd speaker_stream_open format=%d volume=%u ok=%d", (int)format,
+              (unsigned)volume, ok ? 1 : 0);
+      break;
+    }
+#endif
+#if ELMC_PEBBLE_FEATURE_CMD_SPEAKER_STREAM_WRITE
+    case ELMC_PEBBLE_CMD_SPEAKER_STREAM_WRITE: {
+      int32_t bytes[64];
+      int count = parse_int_list(cmd.text, bytes, 64);
+      if (count > 0) {
+        uint8_t payload[64];
+        for (int i = 0; i < count; i++) {
+          int value = bytes[i];
+          if (value < 0) value = 0;
+          if (value > 255) value = 255;
+          payload[i] = (uint8_t)value;
+        }
+#ifdef PBL_SPEAKER
+        uint32_t written = speaker_stream_write(payload, (uint32_t)count);
+#else
+        uint32_t written = 0;
+#endif
+        APP_LOG(APP_LOG_LEVEL_INFO, "cmd speaker_stream_write count=%d written=%lu", count,
+                (unsigned long)written);
+      }
+      break;
+    }
+#endif
+#if ELMC_PEBBLE_FEATURE_CMD_SPEAKER_STREAM_CLOSE
+    case ELMC_PEBBLE_CMD_SPEAKER_STREAM_CLOSE: {
+#ifdef PBL_SPEAKER
+      speaker_stream_close();
+#endif
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd speaker_stream_close");
       break;
     }
 #endif
@@ -3536,7 +3779,83 @@ static void app_focus_handler(bool in_focus) {
     apply_pending_cmd();
     render_model();
   }
+#if ELMC_PEBBLE_FEATURE_SCREEN_CHANGE_EVENTS
+  if (in_focus) {
+    maybe_dispatch_screen_change();
+  }
+#endif
   ELMC_PEBBLE_TRACE_EXIT("app_focus_handler");
+}
+#endif
+
+#if ELMC_PEBBLE_FEATURE_SPEAKER_FINISHED_EVENTS
+#ifdef PBL_SPEAKER
+static void speaker_finished_handler(SpeakerFinishReason reason, void *context) {
+  (void)context;
+  ELMC_PEBBLE_TRACE_ENTER("speaker_finished_handler");
+  int rc = elmc_pebble_dispatch_speaker_finished(&s_elm_app, (int)reason);
+  APP_LOG(APP_LOG_LEVEL_INFO, "speaker finished reason=%d rc=%d", (int)reason, rc);
+  if (rc == 0) {
+    apply_pending_cmd();
+    render_model();
+  }
+  ELMC_PEBBLE_TRACE_EXIT("speaker_finished_handler");
+}
+#endif
+#endif
+
+#if ELMC_PEBBLE_FEATURE_BACKLIGHT_EVENTS
+static void backlight_handler(bool is_on, void *context) {
+  (void)context;
+  ELMC_PEBBLE_TRACE_ENTER("backlight_handler");
+  int rc = elmc_pebble_dispatch_backlight(&s_elm_app, is_on ? 1 : 0);
+  APP_LOG(APP_LOG_LEVEL_INFO, "backlight is_on=%d rc=%d", is_on ? 1 : 0, rc);
+  if (rc == 0) {
+    apply_pending_cmd();
+    render_model();
+  }
+  ELMC_PEBBLE_TRACE_EXIT("backlight_handler");
+}
+#endif
+
+#if ELMC_PEBBLE_FEATURE_SCREEN_CHANGE_EVENTS
+static GRect s_last_dispatched_screen_bounds = {0};
+
+static int screen_shape_tag(void) {
+  return PBL_IF_ROUND_ELSE(ELMC_PLATFORM_DISPLAY_SHAPE_ROUND, ELMC_PLATFORM_DISPLAY_SHAPE_RECTANGULAR);
+}
+
+static int screen_color_mode_tag(void) {
+  return PBL_IF_COLOR_ELSE(ELMC_PLATFORM_COLOR_CAPABILITY_COLOR, ELMC_PLATFORM_COLOR_CAPABILITY_BLACK_WHITE);
+}
+
+static GRect current_screen_bounds(void) {
+  GRect bounds = compile_display_bounds();
+  if (s_main_window) {
+    GRect layer_bounds = layer_get_bounds(window_get_root_layer(s_main_window));
+    if (layer_bounds.size.w > 0 && layer_bounds.size.h > 0) {
+      bounds = layer_bounds;
+    }
+  }
+  return bounds;
+}
+
+static void maybe_dispatch_screen_change(void) {
+  GRect bounds = current_screen_bounds();
+  if (bounds.size.w == s_last_dispatched_screen_bounds.size.w &&
+      bounds.size.h == s_last_dispatched_screen_bounds.size.h &&
+      bounds.origin.x == s_last_dispatched_screen_bounds.origin.x &&
+      bounds.origin.y == s_last_dispatched_screen_bounds.origin.y) {
+    return;
+  }
+  s_last_dispatched_screen_bounds = bounds;
+  int rc = elmc_pebble_dispatch_screen_change(&s_elm_app, (int)bounds.size.w, (int)bounds.size.h,
+                                              screen_shape_tag(), screen_color_mode_tag());
+  APP_LOG(APP_LOG_LEVEL_INFO, "screen change w=%d h=%d rc=%d", (int)bounds.size.w, (int)bounds.size.h, rc);
+  if (rc == 0) {
+    apply_pending_cmd();
+    render_model();
+  }
 }
 #endif
 
@@ -3618,6 +3937,9 @@ static void unobstructed_did_change_handler(void *context) {
     apply_pending_cmd();
     render_model();
   }
+#if ELMC_PEBBLE_FEATURE_SCREEN_CHANGE_EVENTS
+  maybe_dispatch_screen_change();
+#endif
   ELMC_PEBBLE_TRACE_EXIT("unobstructed_did_change_handler");
 }
 #endif
@@ -3947,6 +4269,17 @@ static void complete_elm_init(void) {
         .did_focus = app_focus_handler,
     });
 #endif
+#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_BACKLIGHT_EVENTS
+    backlight_service_subscribe(backlight_handler, NULL);
+#endif
+#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_SCREEN_CHANGE_EVENTS
+    maybe_dispatch_screen_change();
+#endif
+#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_SPEAKER_FINISHED_EVENTS
+#ifdef PBL_SPEAKER
+    speaker_set_finish_callback(speaker_finished_handler, NULL);
+#endif
+#endif
 #if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_COMPASS_EVENTS
 #ifdef PBL_COMPASS
     compass_service_subscribe(compass_handler);
@@ -4069,11 +4402,27 @@ static ElmcValue *build_launch_context(AppLaunchReason launch) {
       0
 #endif
   );
+  /* launchButton: -1 = Maybe Nothing; quickLaunchAction: 0 = QuickLaunchNone */
+  int launch_button_tag = -1;
+#ifdef PBL_LAUNCH_BUTTON
+  if (launch == APP_LAUNCH_USER || launch == APP_LAUNCH_QUICK_LAUNCH) {
+    launch_button_tag = (int)launch_button();
+  }
+#endif
+  int quick_launch_action_tag = 0;
+#ifdef PBL_QUICK_LAUNCH_ACTION
+  if (launch == APP_LAUNCH_QUICK_LAUNCH) {
+    quick_launch_action_tag = (int)launch_get_quick_launch_action();
+  }
+#endif
+  ElmcValue *launch_button_value = elmc_new_int_take(launch_button_tag);
+  ElmcValue *quick_launch_action_value = elmc_new_int_take(quick_launch_action_tag);
   /* Pebble.Platform.LaunchContext: reason, watchModel, watchProfileId, screen,
-     hasMicrophone, hasCompass, supportsHealth (indices 0..6). */
+     hasMicrophone, hasCompass, supportsHealth, launchButton, quickLaunchAction (indices 0..8). */
   ElmcValue *context_values[] = {reason, watch_model, watch_profile_id, screen, has_microphone,
-                                 has_compass, supports_health};
-  ElmcValue *context = elmc_record_new_values_take_value(7, context_values);
+                                 has_compass, supports_health, launch_button_value,
+                                 quick_launch_action_value};
+  ElmcValue *context = elmc_record_new_values_take_value(9, context_values);
   ELMC_PEBBLE_TRACE_EXIT("build_launch_context");
   return context;
 }
@@ -4194,6 +4543,9 @@ static void deinit(void) {
 #endif
 #if ELMC_PEBBLE_FEATURE_APP_FOCUS_EVENTS
   app_focus_service_unsubscribe();
+#endif
+#if ELMC_PEBBLE_FEATURE_BACKLIGHT_EVENTS
+  backlight_service_unsubscribe();
 #endif
 #if ELMC_PEBBLE_FEATURE_UNOBSTRUCTED_AREA_EVENTS
   unobstructed_area_service_unsubscribe();

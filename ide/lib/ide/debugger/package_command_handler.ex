@@ -3,6 +3,7 @@ defmodule Ide.Debugger.PackageCommandHandler do
 
   alias Ide.Debugger
   alias Ide.Debugger.Types
+  alias Ide.WatchModels
 
   @type runtime_state :: Debugger.runtime_state()
 
@@ -36,6 +37,9 @@ defmodule Ide.Debugger.PackageCommandHandler do
 
       storage_command?(command) ->
         handle_storage_command(state, target_name, package, row, command)
+
+      effect_command?(source, command) ->
+        handle_effect_command(state, target_name, package, command)
 
       true ->
         :unhandled
@@ -91,6 +95,39 @@ defmodule Ide.Debugger.PackageCommandHandler do
 
   defp storage_command?(_command), do: false
 
+  @spec effect_command?(String.t() | nil, Types.cmd_call() | nil) :: boolean()
+  defp effect_command?("effect_command", %{} = command) do
+    command_kind(command) |> String.starts_with?("cmd.effect.")
+  end
+
+  defp effect_command?(_source, _command), do: false
+
+  @spec handle_effect_command(
+          runtime_state(),
+          String.t(),
+          String.t(),
+          Types.cmd_call()
+        ) :: handle_result()
+  defp handle_effect_command(state, target_name, package, command) do
+    next_state =
+      if command_kind(command) == "cmd.effect.speaker" do
+        Ide.Debugger.SpeakerEffects.enqueue(state, command)
+      else
+        state
+      end
+
+    event_payload = %{
+      target: target_name,
+      package: package,
+      response_message: nil,
+      command: command,
+      simulated: true,
+      detail: Map.get(command, "variant") || Map.get(command, :variant)
+    }
+
+    {:handled, next_state, event_payload, nil}
+  end
+
   @spec handle_storage_command(
           runtime_state(),
           String.t(),
@@ -103,6 +140,25 @@ defmodule Ide.Debugger.PackageCommandHandler do
     kind = command_kind(command)
 
     cond do
+      kind == "cmd.storage.read_max_size" ->
+        value = watch_storage_max_bytes(state)
+        response_message = Map.get(row, "message") || Map.get(row, :message)
+
+        event_payload = %{
+          target: target_name,
+          package: package,
+          response_message: response_message,
+          command: %{kind: kind, key: nil, type: "int"},
+          response: value
+        }
+
+        step = %{
+          message: response_message,
+          message_value: storage_message_value(command, row, value)
+        }
+
+        {:handled, state, event_payload, step}
+
       String.starts_with?(kind, "cmd.storage.read_") ->
         default_value = Map.get(command, "value") || Map.get(command, :value)
         value = storage_read_value(state, target_name, command, default_value)
@@ -274,5 +330,11 @@ defmodule Ide.Debugger.PackageCommandHandler do
       key: Map.get(command, "key") || Map.get(command, :key),
       type: storage_type(command)
     }
+  end
+
+  @spec watch_storage_max_bytes(runtime_state()) :: pos_integer()
+  defp watch_storage_max_bytes(state) when is_map(state) do
+    profile_id = Map.get(state, :watch_profile_id) || WatchModels.default_id()
+    WatchModels.storage_max_bytes(profile_id)
   end
 end

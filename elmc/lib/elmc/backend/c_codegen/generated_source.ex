@@ -102,6 +102,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     Process.put(:elmc_bitmap_resource_slots, IRQueries.pebble_bitmap_resource_slot_map(ir))
     Process.put(:elmc_animation_resource_slots, IRQueries.pebble_animation_resource_slot_map(ir))
     Process.put(:elmc_font_resource_slots, IRQueries.pebble_font_resource_slot_map(ir))
+    Process.put(:elmc_speaker_sample_resource_slots, IRQueries.pebble_speaker_sample_resource_slot_map(ir))
     Process.put(:elmc_enum_types, IRQueries.enum_type_set(ir))
     Process.put(:elmc_record_alias_shapes, IRQueries.record_alias_shape_map(ir))
     Process.put(:elmc_record_field_types, IRQueries.record_alias_field_types_map(ir))
@@ -248,6 +249,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     Process.delete(:elmc_bitmap_resource_slots)
     Process.delete(:elmc_animation_resource_slots)
     Process.delete(:elmc_font_resource_slots)
+    Process.delete(:elmc_speaker_sample_resource_slots)
     Process.delete(:elmc_enum_types)
     Process.delete(:elmc_named_record_literals)
 

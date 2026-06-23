@@ -19,6 +19,9 @@ defmodule Elmc.Backend.Pebble.FeatureFlags.CommandFlags.Storage do
         TargetSet.member?(targets, "Random.generate") or
           TargetSet.member?(targets, "Elm.Kernel.Random.generate"),
       cmd_storage_delete: TargetSet.member?(targets, "Pebble.Cmd.storageDelete"),
+      cmd_storage_read_max_size:
+        TargetSet.member?(targets, "Pebble.Storage.maxSize") or
+          TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.storageReadMaxSize"),
       cmd_companion_send: TargetSet.member?(targets, "Pebble.Internal.Companion.companionSend")
     }
   end

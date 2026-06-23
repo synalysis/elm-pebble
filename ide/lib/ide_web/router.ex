@@ -58,6 +58,7 @@ defmodule IdeWeb.Router do
     get "/projects/:slug/publish/pbw", ProjectPublishController, :pbw
     get "/projects/:slug/store_assets/:name", StoreAssetController, :show
     get "/projects/:slug/screenshots/:target/:name", ScreenshotController, :show
+    get "/projects/:slug/speaker_samples/:name", SpeakerSampleController, :show
 
     live_session :default, on_mount: [IdeWeb.AuthHooks] do
       live "/projects", ProjectsLive, :index

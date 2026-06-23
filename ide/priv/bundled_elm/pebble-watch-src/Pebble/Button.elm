@@ -9,6 +9,22 @@ module Pebble.Button exposing
 
 {-| Button subscriptions for Pebble watches.
 
+Use `onPress` for simple handlers, or `on` / `onLongPress` for finer control.
+Combine multiple buttons with `Pebble.Events.batch`.
+
+    import Pebble.Button as Button
+    import Pebble.Events as Events
+
+    type Msg
+        = UpPressed
+        | SelectPressed
+
+    subscriptions _ =
+        Events.batch
+            [ Button.onPress Button.Up UpPressed
+            , Button.onPress Button.Select SelectPressed
+            ]
+
 # Types
 @docs Button, Event
 

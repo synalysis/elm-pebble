@@ -4,6 +4,7 @@ defmodule Ide.Debugger.GeolocationResponses do
   alias Ide.Debugger.DeviceDataResponses
   alias Ide.Debugger.Geolocation
   alias Ide.Debugger.IntrospectAccess
+  alias Ide.Debugger.RuntimeFollowups
   alias Ide.Debugger.RuntimeModelMessages
   alias Ide.Debugger.SubscriptionResponses
   alias Ide.Debugger.Types
@@ -38,18 +39,48 @@ defmodule Ide.Debugger.GeolocationResponses do
           String.t(),
           Types.app_model(),
           String.t(),
-          apply_ctx()
+          apply_ctx(),
+          [Types.runtime_followup_row()]
         ) :: Types.runtime_state()
-  def apply_after_step(state, _target, _message, _model, source, _ctx)
+  def apply_after_step(state, _target, _message, _model, source, _ctx, _followups)
       when source in ["geolocation", "init_geolocation"],
       do: state
 
-  def apply_after_step(state, target, message, _model, _message_source, ctx)
+  def apply_after_step(state, target, message, _model, _message_source, ctx, runtime_followups)
       when is_map(state) and target in [:watch, :companion, :phone] and is_binary(message) and
-             is_map(ctx) do
+             is_map(ctx) and is_list(runtime_followups) do
+    if RuntimeFollowups.geolocation_followups?(runtime_followups) or
+         Geolocation.runtime_geolocation_applied?(state) do
+      state
+    else
+      do_apply_after_step(state, target, message, ctx)
+    end
+  end
+
+  @spec apply_after_step(
+          Types.runtime_state(),
+          Types.surface_target(),
+          String.t(),
+          Types.app_model(),
+          String.t(),
+          apply_ctx()
+        ) :: Types.runtime_state()
+  def apply_after_step(state, target, message, model, message_source, ctx) do
+    apply_after_step(state, target, message, model, message_source, ctx, [])
+  end
+
+  @spec do_apply_after_step(
+          Types.runtime_state(),
+          Types.surface_target(),
+          String.t(),
+          apply_ctx()
+        ) :: Types.runtime_state()
+  defp do_apply_after_step(state, target, message, ctx)
+       when is_map(state) and target in [:watch, :companion, :phone] and is_binary(message) and
+              is_map(ctx) do
     ei = ctx.introspect_for.(state, target)
     current_ctor = RuntimeModelMessages.wire_constructor(message)
-    callback = Geolocation.subscription_callback_from_introspect(ei)
+    callback = Geolocation.subscription_callback_for_surface(state, target, ei)
 
     with true <- is_binary(callback) and callback != "",
          true <- current_ctor != callback,
@@ -72,8 +103,6 @@ defmodule Ide.Debugger.GeolocationResponses do
     end
   end
 
-  def apply_after_step(state, _target, _message, _model, _message_source, _ctx), do: state
-
   @spec apply_subscription_response(
           Types.runtime_state(),
           Types.surface_target(),
@@ -84,7 +113,7 @@ defmodule Ide.Debugger.GeolocationResponses do
       when is_map(state) and target in [:watch, :companion, :phone] and is_binary(source) and
              is_map(ctx) do
     ei = ctx.introspect_for.(state, target)
-    callback = Geolocation.subscription_callback_from_introspect(ei)
+    callback = Geolocation.subscription_callback_for_surface(state, target, ei)
 
     if is_binary(callback) and callback != "" do
       location = Geolocation.location_from_state(state)

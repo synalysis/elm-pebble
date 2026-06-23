@@ -4,7 +4,7 @@ defmodule Elmx.SubscriptionBatchDynamicTest do
   alias Elmx.Runtime.Pebble.SpecialValues.Helpers
   alias Elmx.Runtime.Pebble.Subscriptions
 
-  test "static batch stays a folded mask literal" do
+  test "static batch uses runtime sub_batch" do
     items = [
       %{
         op: :qualified_call,
@@ -17,15 +17,10 @@ defmodule Elmx.SubscriptionBatchDynamicTest do
       %{op: :qualified_call, target: "Pebble.Compass.onChange", args: [:msg]}
     ]
 
-    assert Subscriptions.static_batch?(items)
-
     list = %{op: :list_literal, items: items}
 
-    assert {:ok, %{op: :int_literal, value: mask}} =
+    assert {:ok, %{op: :runtime_call, function: "elmx_sub_batch", args: [^list]}} =
              Helpers.subscription_batch([list])
-
-    assert mask == Subscriptions.batch_mask(items)
-    assert mask > 0
   end
 
   test "batch with a let-bound sub uses runtime sub_batch" do

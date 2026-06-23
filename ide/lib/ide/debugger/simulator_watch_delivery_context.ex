@@ -38,7 +38,8 @@ defmodule Ide.Debugger.SimulatorWatchDeliveryContext do
       trigger_candidates: host.trigger_candidates,
       model_active?: host.model_active?,
       trigger_message_for_surface: host.trigger_message_for_surface,
-      simulator_settings: host.simulator_settings
+      simulator_settings: host.simulator_settings,
+      introspect_for: Map.get(host, :introspect_for)
     }
   end
 end

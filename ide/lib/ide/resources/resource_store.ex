@@ -6,6 +6,7 @@ defmodule Ide.Resources.ResourceStore do
   alias Ide.Resources.ResourceStore.Fonts
   alias Ide.Resources.ResourceStore.GeneratedModule
   alias Ide.Resources.ResourceStore.Manifest
+  alias Ide.Resources.ResourceStore.SpeakerSamples
   alias Ide.Resources.ResourceStore.Vectors
   alias Ide.Resources.Types
 
@@ -29,7 +30,6 @@ defmodule Ide.Resources.ResourceStore do
 
   defdelegate manifest_rel_path(), to: Manifest
   defdelegate generated_module_rel_path(), to: Manifest
-  defdelegate read_only_generated_module?(source_root, rel_path), to: GeneratedModule
 
   defdelegate list(project), to: Bitmaps
   defdelegate import_bitmaps_from_directory(project, dir \\ nil, opts \\ []), to: Bitmaps
@@ -69,4 +69,13 @@ defmodule Ide.Resources.ResourceStore do
   defdelegate update_animation_base_name(project, old_ctor, new_base), to: Animations, as: :update_base_name
   defdelegate animation_file_path(project, ctor), to: Animations
   defdelegate animation_file_path_by_id(project, id), to: Animations
+
+  defdelegate list_speaker_samples(project), to: SpeakerSamples, as: :list_samples
+  defdelegate import_speaker_sample(project, upload_path, original_name, opts \\ []), to: SpeakerSamples, as: :import_sample
+
+  @spec read_only_generated_module?(String.t(), String.t()) :: boolean()
+  def read_only_generated_module?(source_root, rel_path) do
+    GeneratedModule.read_only_generated_module?(source_root, rel_path) or
+      SpeakerSamples.read_only_generated_module?(source_root, rel_path)
+  end
 end

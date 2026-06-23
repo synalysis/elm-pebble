@@ -28,6 +28,7 @@ import type {SimulatorSettings} from "./types/emulator"
 import type {FirebaseNamespace} from "./types/window"
 import type {HookContext} from "./types/liveview_hook"
 import {errMessage} from "./types/errors"
+import {playSpeakerEffect, setSpeakerSampleCatalog, type SpeakerEffectWire, type SpeakerSampleWire} from "./debugger/speaker_audio"
 
 type JsonResponse = Record<string, unknown> & {
   error?: string
@@ -943,11 +944,66 @@ const WasmEmulator: ViewHook = {
   }
 }
 
+type DebuggerSpeakerContext = HookContext & {
+  lastSeq?: number
+}
+
+const DebuggerSpeaker: ViewHook = {
+  mounted(this: DebuggerSpeakerContext) {
+    this.lastSeq = readSpeakerEffectSeq(this)
+    syncSpeakerSampleCatalog(this)
+  },
+
+  updated(this: DebuggerSpeakerContext) {
+    syncSpeakerSampleCatalog(this)
+    playSpeakerFromHook(this)
+  }
+}
+
+function readSpeakerEffectSeq(hook: DebuggerSpeakerContext): number {
+  const raw = hook.el.dataset.speakerEffect
+  if (!raw) return 0
+  try {
+    const effect = JSON.parse(raw) as SpeakerEffectWire
+    return effect.seq ?? 0
+  } catch {
+    return 0
+  }
+}
+
+function syncSpeakerSampleCatalog(hook: DebuggerSpeakerContext): void {
+  const raw = hook.el.dataset.speakerSamples
+  if (!raw) {
+    setSpeakerSampleCatalog([])
+    return
+  }
+  try {
+    setSpeakerSampleCatalog(JSON.parse(raw) as SpeakerSampleWire[])
+  } catch {
+    setSpeakerSampleCatalog([])
+  }
+}
+
+function playSpeakerFromHook(hook: DebuggerSpeakerContext): void {
+  const raw = hook.el.dataset.speakerEffect
+  if (!raw) return
+  try {
+    const effect = JSON.parse(raw) as SpeakerEffectWire
+    const seq = effect.seq ?? 0
+    if (seq <= (hook.lastSeq ?? 0)) return
+    hook.lastSeq = seq
+    void playSpeakerEffect(effect)
+  } catch {
+    // ignore malformed payloads
+  }
+}
+
 const Hooks = {
   FirebaseAuthRefresh,
   TokenEditor,
   EditorDocsResizer,
   DebuggerShortcuts,
+  DebuggerSpeaker,
   PreserveRenderedDetails,
   WatchAccelPad,
   DebuggerAccelPad,

@@ -375,10 +375,22 @@ defmodule Ide.DebuggerIntegrationExecutors do
   defmodule AliveGuardFrameExecutor do
     @moduledoc false
 
+  @frame_active [
+    %{
+      "kind" => "cmd.subscription.register",
+      "target" => "Pebble.Frame.every",
+      "interval_ms" => 33,
+      "message" => "FrameTick"
+    }
+  ]
+
     def execute(%{message: "Die"}) do
       {:ok,
        %{
-         model_patch: %{"runtime_model" => %{"alive" => "false"}},
+         model_patch: %{
+           "runtime_model" => %{"alive" => "false"},
+           "active_subscriptions" => []
+         },
          view_tree: %{"type" => "runtime-root", "children" => []},
          view_output: []
        }}
@@ -394,7 +406,8 @@ defmodule Ide.DebuggerIntegrationExecutors do
              "frame" => frame["frame"],
              "dtMs" => frame["dtMs"],
              "elapsedMs" => frame["elapsedMs"]
-           }
+           },
+           "active_subscriptions" => @frame_active
          },
          view_tree: %{"type" => "runtime-root", "children" => []},
          view_output: []
@@ -404,7 +417,10 @@ defmodule Ide.DebuggerIntegrationExecutors do
     def execute(_request) do
       {:ok,
        %{
-         model_patch: %{"runtime_model" => %{}},
+         model_patch: %{
+           "runtime_model" => %{},
+           "active_subscriptions" => @frame_active
+         },
          view_tree: %{"type" => "runtime-root", "children" => []},
          view_output: []
        }}

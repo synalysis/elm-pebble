@@ -4,7 +4,6 @@ defmodule Elmx.Runtime.Pebble.KernelTargets do
   """
 
   alias Elmx.Runtime.Pebble.Subscriptions
-  alias Elmx.Runtime.Pebble.Subscriptions.Frame, as: FrameMask
   alias Elmx.Types
 
   @watch_prefix "Elm.Kernel.PebbleWatch."
@@ -27,12 +26,12 @@ defmodule Elmx.Runtime.Pebble.KernelTargets do
   defp rewrite_watch("none", _target, _args), do: {:ok, %{op: :cmd_none}}
 
   defp rewrite_watch("onFrame", _target, args),
-    do: {:ok, %{op: :int_literal, value: FrameMask.mask(args)}}
+    do: {:ok, %{op: :runtime_call, function: "elmx_frame_every", args: args}}
 
-  defp rewrite_watch("on" <> _rest, target, _args) do
+  defp rewrite_watch("on" <> _rest, target, args) do
     case Subscriptions.mask(target) do
       nil -> :error
-      value -> {:ok, %{op: :int_literal, value: value}}
+      _ -> {:ok, %{op: :runtime_call, function: "elmx_subscription_call", args: [target_string_ir(target) | args]}}
     end
   end
 
@@ -55,4 +54,6 @@ defmodule Elmx.Runtime.Pebble.KernelTargets do
     |> Macro.underscore()
     |> then(&("elmx_kernel_pebble_phone_" <> &1))
   end
+
+  defp target_string_ir(target) when is_binary(target), do: %{op: :string_literal, value: target}
 end

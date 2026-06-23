@@ -12,6 +12,24 @@ module Pebble.WatchInfo exposing
 This API mirrors Pebble's C `WatchInfo` module and provides information such as
 watch model, watch color, and firmware version.
 
+    import Pebble.WatchInfo as WatchInfo
+
+    type Msg
+        = GotModel WatchInfo.WatchModel
+        | GotFirmware WatchInfo.FirmwareVersion
+        | GotColor WatchInfo.WatchColor
+
+    init _ =
+        ( model
+        , Cmd.batch
+            [ WatchInfo.getModel GotModel
+            , WatchInfo.getFirmwareVersion GotFirmware
+            , WatchInfo.getColor GotColor
+            ]
+        )
+
+For a runnable example, use the **watch-demo-watch-info** project template in the IDE.
+
 # Types
 @docs WatchModel, FirmwareVersion, WatchColor
 

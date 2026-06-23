@@ -7,6 +7,19 @@ module Pebble.Companion.Notifications exposing
 
 {-| Phone notification status helpers for companion apps.
 
+    import Pebble.Companion.Notifications as Notifications
+
+    type Msg
+        = GotNotifications (Result String Notifications.NotificationStatus)
+
+    init _ =
+        ( model, Notifications.current GotNotifications )
+
+    subscriptions _ =
+        Notifications.onNotificationStatus GotNotifications
+
+For a runnable example, use the **companion-demo-phone-status** project template.
+
 # Types
 
 @docs NotificationStatus

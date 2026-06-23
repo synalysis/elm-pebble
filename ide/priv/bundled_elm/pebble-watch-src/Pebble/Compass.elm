@@ -2,6 +2,22 @@ module Pebble.Compass exposing (Error(..), Heading, current, onChange)
 
 {-| Read compass heading from watches with a magnetometer.
 
+Request an initial reading in `init`, then subscribe for live heading updates.
+
+    import Pebble.Compass as Compass
+
+    type Msg
+        = GotHeading (Result Compass.Error Compass.Heading)
+        | HeadingChanged Compass.Heading
+
+    init _ =
+        ( model, Compass.current GotHeading )
+
+    subscriptions _ =
+        Compass.onChange HeadingChanged
+
+For a runnable example, use the **watch-demo-compass** project template in the IDE.
+
 @docs Error, Heading, current, onChange
 
 -}

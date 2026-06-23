@@ -15,7 +15,7 @@
       }
     ],
     "binops": [],
-    "comment": "Accelerometer subscriptions for Pebble watches.\n\n# Types\n@docs Config, Sample, SamplingRate\n\n# Defaults\n@docs defaultConfig\n\n# Subscriptions\n@docs onData, onTap",
+    "comment": "Accelerometer subscriptions for Pebble watches.\n\nSubscribe with `onData` for continuous samples and `onTap` for shake gestures.\nUse `Pebble.Events.batch` to combine them with button or timer subscriptions.\n\n    import Pebble.Accel as Accel\n    import Pebble.Events as Events\n\n    type Msg\n        = AccelSample Accel.Sample\n        | AccelTap\n\n    subscriptions _ =\n        Events.batch\n            [ Accel.onData Accel.defaultConfig AccelSample\n            , Accel.onTap AccelTap\n            ]\n\nFor a runnable example, use the **watch-demo-accel** project template in the IDE.\n\n# Types\n@docs Config, Sample, SamplingRate\n\n# Defaults\n@docs defaultConfig\n\n# Subscriptions\n@docs onData, onTap",
     "name": "Pebble.Accel",
     "native_api_links": [
       {
@@ -69,7 +69,7 @@
   {
     "aliases": [],
     "binops": [],
-    "comment": "Observe when the watch app gains or loses foreground focus.\n\n@docs State, onChange",
+    "comment": "Observe when the watch app gains or loses foreground focus.\n\nSubscribe once and update your model when the user leaves or returns to your app.\n\n    import Pebble.AppFocus as AppFocus\n\n    type Msg\n        = FocusChanged AppFocus.State\n\n    subscriptions _ =\n        AppFocus.onChange FocusChanged\n\n    update msg model =\n        case msg of\n            FocusChanged AppFocus.InFocus ->\n                ( { model | paused = False }, Cmd.none )\n\n            FocusChanged AppFocus.OutOfFocus ->\n                ( { model | paused = True }, Cmd.none )\n\nFor a runnable example, use the **watch-demo-app-focus** project template in the IDE.\n\n@docs State, onChange",
     "name": "Pebble.AppFocus",
     "native_api_links": [
       {
@@ -105,7 +105,7 @@
   {
     "aliases": [],
     "binops": [],
-    "comment": "Button subscriptions for Pebble watches.\n\n# Types\n@docs Button, Event\n\n# Subscriptions\n@docs on, onPress, onRelease, onLongPress",
+    "comment": "Button subscriptions for Pebble watches.\n\nUse `onPress` for simple handlers, or `on` / `onLongPress` for finer control.\nCombine multiple buttons with `Pebble.Events.batch`.\n\n    import Pebble.Button as Button\n    import Pebble.Events as Events\n\n    type Msg\n        = UpPressed\n        | SelectPressed\n\n    subscriptions _ =\n        Events.batch\n            [ Button.onPress Button.Up UpPressed\n            , Button.onPress Button.Select SelectPressed\n            ]\n\n# Types\n@docs Button, Event\n\n# Subscriptions\n@docs on, onPress, onRelease, onLongPress",
     "name": "Pebble.Button",
     "native_api_links": [
       {
@@ -190,7 +190,7 @@
       }
     ],
     "binops": [],
-    "comment": "Core watch commands.\n\nUse this module for generic scheduling. Hardware controls live in\n`Pebble.Hardware`, watch metadata requests live in `Pebble.WatchInfo`, and\nkey-value persistence helpers live in `Pebble.Storage`.\n\n    type Msg\n        = WakeUp\n\n    scheduleWakeUp : Cmd Msg\n    scheduleWakeUp =\n        timerAfter 1000\n\n# Scheduling\n@docs none, timerAfter\n\n# Time\n@docs CurrentDateTime, getCurrentDateTime",
+    "comment": "Core watch commands.\n\nUse this module for generic scheduling. Hardware controls live in\n`Pebble.Vibes` and `Pebble.Light`, watch metadata requests live in\n`Pebble.WatchInfo`, and key-value persistence helpers live in `Pebble.Storage`.\n\n    type Msg\n        = WakeUp\n        | Tick\n\n    init _ =\n        ( model, Cmd.timerAfter 1000 Tick )\n\n    update msg model =\n        case msg of\n            Tick ->\n                ( model, Cmd.timerAfter 1000 Tick )\n\n            WakeUp ->\n                ( model, Cmd.none )\n\n# Scheduling\n@docs none, timerAfter\n\n# Time\n@docs CurrentDateTime, getCurrentDateTime",
     "name": "Pebble.Cmd",
     "native_api_links": [
       {
@@ -227,7 +227,7 @@
       }
     ],
     "binops": [],
-    "comment": "Read compass heading from watches with a magnetometer.\n\n@docs Error, Heading, current, onChange",
+    "comment": "Read compass heading from watches with a magnetometer.\n\nRequest an initial reading in `init`, then subscribe for live heading updates.\n\n    import Pebble.Compass as Compass\n\n    type Msg\n        = GotHeading (Result Compass.Error Compass.Heading)\n        | HeadingChanged Compass.Heading\n\n    init _ =\n        ( model, Compass.current GotHeading )\n\n    subscriptions _ =\n        Compass.onChange HeadingChanged\n\nFor a runnable example, use the **watch-demo-compass** project template in the IDE.\n\n@docs Error, Heading, current, onChange",
     "name": "Pebble.Compass",
     "native_api_links": [
       {
@@ -268,7 +268,7 @@
   {
     "aliases": [],
     "binops": [],
-    "comment": "Log analytics bytes to the Pebble data logging service.\n\nEach log session is identified by a numeric tag (uint32 on device). Create tags\nwith `tag` and pass them to `logBytes` or `logInt32`.\n\n@docs Tag, tag, logBytes, logInt32",
+    "comment": "Log analytics bytes to the Pebble data logging service.\n\nEach log session is identified by a numeric tag (uint32 on device). Create tags\nwith `tag` and pass them to `logBytes` or `logInt32`.\n\n    import Pebble.DataLog as DataLog\n\n    sessionTag : DataLog.Tag\n    sessionTag =\n        DataLog.tag 42\n\n    logScore : Int -> Cmd msg\n    logScore score =\n        DataLog.logInt32 sessionTag score\n\nFor a runnable example, use the **watch-demo-data-log** project template in the IDE.\n\n@docs Tag, tag, logBytes, logInt32",
     "name": "Pebble.DataLog",
     "native_api_links": [
       {
@@ -305,7 +305,7 @@
   {
     "aliases": [],
     "binops": [],
-    "comment": "Voice dictation via the Pebble microphone and phone speech recognition.\n\n@docs Error, Status, start, stop, onStatus, onResult",
+    "comment": "Voice dictation via the Pebble microphone and phone speech recognition.\n\nStart a session with `start`, subscribe to `onStatus` and `onResult`, and call\n`stop` to cancel early if needed.\n\n    import Pebble.Dictation as Dictation\n\n    type Msg\n        = StartDictation\n        | DictationStatus Dictation.Status\n        | DictationResult (Result Dictation.Error String)\n\n    update msg model =\n        case msg of\n            StartDictation ->\n                ( model, Dictation.start )\n\n            DictationResult (Ok text) ->\n                ( { model | transcript = text }, Cmd.none )\n\n            _ ->\n                ( model, Cmd.none )\n\n    subscriptions _ =\n        Sub.batch\n            [ Dictation.onStatus DictationStatus\n            , Dictation.onResult DictationResult\n            ]\n\nFor a runnable example, use the **watch-demo-dictation** project template in the IDE.\n\n@docs Error, Status, start, stop, onStatus, onResult",
     "name": "Pebble.Dictation",
     "native_api_links": [
       {
@@ -385,7 +385,7 @@
   {
     "aliases": [],
     "binops": [],
-    "comment": "Generic watch-side event subscriptions.\n\nEach helper turns a platform event into a regular Elm `Sub msg`.\n\n# Time\n@docs onSecondChange, onMinuteChange, onHourChange, onDayChange, onMonthChange, onYearChange\n\n# Animation\n@docs onAnimationFinished\n\n# Composition\n@docs batch",
+    "comment": "Generic watch-side event subscriptions.\n\nEach helper turns a platform event into a regular Elm `Sub msg`.\nUse `batch` to combine time ticks with other Pebble subscriptions.\n\n    import Pebble.Events as Events\n\n    type Msg\n        = MinuteChanged Int\n        | HourChanged Int\n\n    subscriptions _ =\n        Events.batch\n            [ Events.onMinuteChange MinuteChanged\n            , Events.onHourChange HourChanged\n            ]\n\nWatchfaces often use `onMinuteChange` to refresh the clock each minute.\n\n# Time\n@docs onSecondChange, onMinuteChange, onHourChange, onDayChange, onMonthChange, onYearChange\n\n# Animation\n@docs onAnimationFinished\n\n# Composition\n@docs batch",
     "name": "Pebble.Events",
     "native_api_links": [
       {
@@ -426,7 +426,7 @@
         "type": "(Int -> msg) -> Sub msg"
       },
       {
-        "comment": "Receive a message when a `drawVectorSequenceAt` instance finishes playing.\n\nThe runtime passes the `AnimationId` from the draw call. Use a fresh id for\neach new play so replays and multiple on-screen instances stay independent.",
+        "comment": "Receive a message when a `drawVectorSequenceAt` or `drawBitmapSequenceAt`\ninstance finishes playing.\n\nThe runtime passes the `AnimationId` from the draw call. Use a fresh id for\neach new play so replays and multiple on-screen instances stay independent.",
         "name": "onAnimationFinished",
         "type": "(AnimationId -> msg) -> Sub msg"
       },
@@ -447,8 +447,14 @@
       }
     ],
     "binops": [],
-    "comment": "Fixed-interval frame subscriptions.\n\nThese subscriptions are useful for games, animations, and any watch app that\nneeds a regular update loop.\n\n# Types\n@docs Frame\n\n# Subscriptions\n@docs every, atFps",
+    "comment": "Fixed-interval frame subscriptions.\n\nUse these for games, animations, and smooth motion. `atFps` is a convenience\nwrapper around `every` that converts frames-per-second to milliseconds.\n\n    import Pebble.Frame as Frame\n\n    type Msg\n        = Tick Frame.Frame\n\n    subscriptions _ =\n        Frame.atFps 30 Tick\n\n    update msg model =\n        case msg of\n            Tick frame ->\n                ( { model | elapsedMs = frame.elapsedMs }, Cmd.none )\n\nFor a runnable example, use the **watch-demo-frame** project template in the IDE.\n\n# Types\n@docs Frame\n\n# Subscriptions\n@docs every, atFps",
     "name": "Pebble.Frame",
+    "native_api_links": [
+      {
+        "label": "TickTimerService",
+        "url": "https://developer.repebble.com/docs/c/Foundation/Event_Service/TickTimerService/"
+      }
+    ],
     "unions": [],
     "values": [
       {
@@ -590,7 +596,7 @@
   {
     "aliases": [],
     "binops": [],
-    "comment": "Access Pebble Health data such as step count, active time, distance, sleep,\ncalories, and heart rate.\n\n# Types\n@docs Metric, Event\n\n# Commands\n@docs supported, value, sumToday, sum, accessible\n\n# Subscriptions\n@docs onEvent",
+    "comment": "Access Pebble Health data such as step count, active time, distance, sleep,\ncalories, and heart rate.\n\nCheck `supported` first on older watches, then request metrics and subscribe to\nservice events for live updates.\n\n    import Pebble.Health as Health\n\n    type Msg\n        = GotSupported Bool\n        | GotSteps Int\n        | HealthEvent Health.Event\n\n    init _ =\n        ( model\n        , Cmd.batch\n            [ Health.supported GotSupported\n            , Health.value Health.StepCount GotSteps\n            ]\n        )\n\n    subscriptions _ =\n        Health.onEvent HealthEvent\n\nFor a runnable example, use the **watch-demo-health** project template in the IDE.\n\n# Types\n@docs Metric, Event\n\n# Commands\n@docs supported, value, sumToday, sum, accessible\n\n# Subscriptions\n@docs onEvent",
     "name": "Pebble.Health",
     "native_api_links": [
       {
@@ -701,7 +707,7 @@
       }
     ],
     "binops": [],
-    "comment": "Enhanced hardware access for Pebble watch devices.\n\nPrefer `Pebble.Vibes` for vibration and `Pebble.Light` / `Pebble.System` for backlight and status.\n\n# Types\n@docs VibrationType, VibrationPattern, BacklightLevel, HardwareCmd\n\n# Vibration\n@docs vibrate, vibratePattern\n\n# Backlight\n@docs setBacklight, enableBacklight, disableBacklight, flashBacklight\n\n# System Status\n@docs getBatteryLevel, getConnectionStatus\n\n# Audio (if supported)\n@docs playTone, stopTone",
+    "comment": "Enhanced hardware access for Pebble watch devices.\n\n**Prefer the typed modules below** — they match how Pebble apps are written in Elm:\n\n- `Pebble.Vibes` for vibration\n- `Pebble.Light` for backlight\n- `Pebble.System` for battery and phone connection\n- `Pebble.Speaker` for tones and notes on speaker-equipped watches\n\nThis module exposes a lower-level command union for advanced integrations.\n\n# Types\n@docs VibrationType, VibrationPattern, BacklightLevel, HardwareCmd\n\n# Vibration\n@docs vibrate, vibratePattern\n\n# Backlight\n@docs setBacklight, enableBacklight, disableBacklight, flashBacklight\n\n# System Status\n@docs getBatteryLevel, getConnectionStatus\n\n# Audio (if supported)\n@docs playTone, stopTone",
     "name": "Pebble.Hardware",
     "unions": [
       {
@@ -866,7 +872,7 @@
   {
     "aliases": [],
     "binops": [],
-    "comment": "Backlight controls.\n\n@docs interaction, disable, enable",
+    "comment": "Backlight controls.\n\nUse `interaction` for the default tap-to-light behavior, `enable` / `disable` to\nforce the backlight on or off, and `onChange` to observe transitions.\n\n    import Pebble.Light as Light\n\n    type Msg\n        = TurnOn\n        | LightChanged Light.State\n\n    update msg model =\n        case msg of\n            TurnOn ->\n                ( model, Light.enable )\n\n            LightChanged Light.On ->\n                ( { model | backlight = True }, Cmd.none )\n\n            LightChanged Light.Off ->\n                ( { model | backlight = False }, Cmd.none )\n\n    subscriptions _ =\n        Light.onChange LightChanged\n\nFor a runnable example, use the **watch-demo-light** project template in the IDE.\n\n@docs interaction, disable, enable, onChange, State",
     "name": "Pebble.Light",
     "native_api_links": [
       {
@@ -874,7 +880,23 @@
         "url": "https://developer.repebble.com/docs/c/User_Interface/Light/"
       }
     ],
-    "unions": [],
+    "unions": [
+      {
+        "args": [],
+        "cases": [
+          [
+            "On",
+            []
+          ],
+          [
+            "Off",
+            []
+          ]
+        ],
+        "comment": "Whether the system backlight is currently on.",
+        "name": "State"
+      }
+    ],
     "values": [
       {
         "comment": "Trigger the default interaction backlight behavior.",
@@ -890,13 +912,18 @@
         "comment": "Force backlight on.",
         "name": "enable",
         "type": "Cmd msg"
+      },
+      {
+        "comment": "Receive backlight on/off transitions from the Pebble runtime.",
+        "name": "onChange",
+        "type": "(State -> msg) -> Sub msg"
       }
     ]
   },
   {
     "aliases": [],
     "binops": [],
-    "comment": "Runtime logging commands.\n\nThis app-focused wave exposes integer code logging for deterministic C-side\nlogging output.\n\n@docs infoCode, warnCode, errorCode",
+    "comment": "Runtime logging commands.\n\nEmit integer codes from your update loop; the C runtime prints them to the\ndevice log (visible in debug builds and the IDE debugger).\n\n    import Pebble.Log as Log\n\n    reportFailure : Cmd msg\n    reportFailure =\n        Log.errorCode 3001\n\nFor a runnable example, use the **watch-demo-log** project template in the IDE.\n\n@docs infoCode, warnCode, errorCode",
     "name": "Pebble.Log",
     "native_api_links": [
       {
@@ -935,11 +962,11 @@
         "args": [],
         "comment": "Full launch metadata delivered to `init`.",
         "name": "LaunchContext",
-        "type": "    { reason : LaunchReason\n    , watchModel : String\n    , watchProfileId : String\n    , screen : LaunchScreen\n    , hasMicrophone : Bool\n    , hasCompass : Bool\n    , supportsHealth : Bool\n    }"
+        "type": "    { reason : LaunchReason\n    , watchModel : String\n    , watchProfileId : String\n    , screen : LaunchScreen\n    , hasMicrophone : Bool\n    , hasCompass : Bool\n    , supportsHealth : Bool\n    , launchButton : Maybe Button\n    , quickLaunchAction : QuickLaunchAction\n    }"
       }
     ],
     "binops": [],
-    "comment": "Platform glue for Pebble watch applications.\n\nThis module wraps `Platform.worker` so your `init` function receives a\ntyped `LaunchContext` decoded from JSON launch metadata.\n\n# Launch metadata\n@docs LaunchReason, LaunchScreen, LaunchContext, ColorCapability, DisplayShape, launchReasonFromTag, launchReasonToInt, colorCapabilityIsColor, displayShapeIsRound\n\n# Program entrypoint\n@docs watchface, application",
+    "comment": "Platform glue for Pebble watch applications.\n\nThis module wraps `Platform.worker` so your `init` function receives a\ntyped `LaunchContext` decoded from JSON launch metadata.\n\n    import Pebble.Platform as Platform\n\n    init context =\n        ( { model\n            | launchedByQuickLaunch =\n                context.reason == Platform.LaunchQuickLaunch\n            , launchButton = context.launchButton\n            , screen = context.screen\n          }\n        , Cmd.none\n        )\n\n    subscriptions _ =\n        Platform.onScreenChange ScreenChanged\n\nStart apps with `Platform.application` and watchfaces with `Platform.watchface`.\n\nFor runnable examples, use the **watch-demo-launch** and **watch-demo-screen-change**\nproject templates in the IDE.\n\n# Launch metadata\n@docs LaunchReason, LaunchScreen, LaunchContext, QuickLaunchAction, ColorCapability, DisplayShape, launchReasonFromTag, launchReasonToInt, colorCapabilityIsColor, displayShapeIsRound\n\n# Screen changes\n@docs onScreenChange\n\n# Program entrypoint\n@docs watchface, application",
     "name": "Pebble.Platform",
     "native_api_links": [
       {
@@ -995,6 +1022,33 @@
         "args": [],
         "cases": [
           [
+            "QuickLaunchNone",
+            []
+          ],
+          [
+            "QuickLaunchHold",
+            []
+          ],
+          [
+            "QuickLaunchTap",
+            []
+          ],
+          [
+            "QuickLaunchCombo",
+            []
+          ],
+          [
+            "QuickLaunchUnknown",
+            []
+          ]
+        ],
+        "comment": "How the user quick-launched the app, when `reason` is `LaunchQuickLaunch`.",
+        "name": "QuickLaunchAction"
+      },
+      {
+        "args": [],
+        "cases": [
+          [
             "BlackWhite",
             []
           ],
@@ -1044,6 +1098,11 @@
         "type": "DisplayShape -> Bool"
       },
       {
+        "comment": "Receive screen dimension or capability changes from the Pebble runtime.",
+        "name": "onScreenChange",
+        "type": "(LaunchScreen -> msg) -> Sub msg"
+      },
+      {
         "comment": "Start a Pebble watchface.\n\n`config.init` receives a typed launch context. `view` is retained as the\nwatch rendering contract, while init/update/subscriptions are forwarded to\nElm's headless `Platform.worker`.",
         "name": "watchface",
         "type": "{ init : LaunchContext -> ( model, Cmd msg )\n, update : msg -> model -> ( model, Cmd msg )\n, view : model -> view\n, subscriptions : model -> Sub msg\n}\n-> Program Decode.Value model msg"
@@ -1056,9 +1115,211 @@
     ]
   },
   {
+    "aliases": [
+      {
+        "args": [],
+        "comment": "A single note in a monophonic sequence.",
+        "name": "Note",
+        "type": "    { midiNote : Int\n    , waveform : Waveform\n    , durationMs : Int\n    , velocity : Int\n    }"
+      },
+      {
+        "args": [],
+        "comment": "A monophonic voice for `playTracks`.\n\nSet `sample` to `Just` a value from `Pebble.Speaker.Resources` for PCM-backed playback.",
+        "name": "Track",
+        "type": "    { notes : List Note\n    , sample : Maybe Sample\n    }"
+      },
+      {
+        "args": [],
+        "comment": "Speaker playback limits exposed by the Pebble SDK.",
+        "name": "Limits",
+        "type": "    { maxNotes : Int\n    , maxTracks : Int\n    , maxSampleBytesTotal : Int\n    }"
+      }
+    ],
+    "binops": [],
+    "comment": "Speaker playback for Pebble watches with `PBL_SPEAKER`.\n\nUse `limits` to validate note and track counts before calling `playNotes` or `playTracks`.\nSubscribe with `onFinished` before starting playback when you need completion callbacks.\n\n    import Pebble.Speaker as Speaker\n\n    type Msg\n        = PlayMelody\n        | SpeakerFinished Speaker.FinishReason\n\n    melody : List Speaker.Note\n    melody =\n        [ { midiNote = 60, waveform = Speaker.Sine, durationMs = 120, velocity = 100 }\n        , { midiNote = 64, waveform = Speaker.Sine, durationMs = 120, velocity = 100 }\n        , { midiNote = 67, waveform = Speaker.Sine, durationMs = 200, velocity = 100 }\n        ]\n\n    update msg model =\n        case msg of\n            PlayMelody ->\n                ( model, Speaker.playNotes melody 80 )\n\n            SpeakerFinished Speaker.FinishedDone ->\n                ( { model | playing = False }, Cmd.none )\n\n            _ ->\n                ( model, Cmd.none )\n\n    subscriptions _ =\n        Speaker.onFinished SpeakerFinished\n\nFor PCM-backed tracks, set `sample = Just …` on each `Track` using values from\n`Pebble.Speaker.Resources`. See the **watch-demo-speaker** project template.\n\n@docs Waveform, Note, Track, PcmFormat, Status, FinishReason, Limits, limits, maxNotes, maxTracks, maxSampleBytesTotal, playTone, playNotes, playTracks, stop, setVolume, status, isMuted, streamOpen, streamWrite, streamClose, onFinished",
+    "name": "Pebble.Speaker",
+    "native_api_links": [
+      {
+        "label": "Speaker",
+        "url": "https://developer.repebble.com/docs/c/User_Interface/Speaker/"
+      }
+    ],
+    "unions": [
+      {
+        "args": [],
+        "cases": [
+          [
+            "Sine",
+            []
+          ],
+          [
+            "Square",
+            []
+          ],
+          [
+            "Triangle",
+            []
+          ],
+          [
+            "Sawtooth",
+            []
+          ]
+        ],
+        "comment": "Synthesizer waveform for tones and notes.",
+        "name": "Waveform"
+      },
+      {
+        "args": [],
+        "cases": [
+          [
+            "Pcm8kHz8bit",
+            []
+          ],
+          [
+            "Pcm16kHz8bit",
+            []
+          ],
+          [
+            "Pcm8kHz16bit",
+            []
+          ],
+          [
+            "Pcm16kHz16bit",
+            []
+          ]
+        ],
+        "comment": "Mono PCM stream format for `streamOpen`.",
+        "name": "PcmFormat"
+      },
+      {
+        "args": [],
+        "cases": [
+          [
+            "Idle",
+            []
+          ],
+          [
+            "Playing",
+            []
+          ],
+          [
+            "Draining",
+            []
+          ]
+        ],
+        "comment": "Current speaker activity reported by `status`.",
+        "name": "Status"
+      },
+      {
+        "args": [],
+        "cases": [
+          [
+            "FinishedDone",
+            []
+          ],
+          [
+            "FinishedStopped",
+            []
+          ],
+          [
+            "FinishedPreempted",
+            []
+          ],
+          [
+            "FinishedError",
+            []
+          ],
+          [
+            "FinishedUnknown",
+            []
+          ]
+        ],
+        "comment": "Why speaker playback ended.",
+        "name": "FinishReason"
+      }
+    ],
+    "values": [
+      {
+        "comment": "All speaker validation limits in one record.",
+        "name": "limits",
+        "type": "Limits"
+      },
+      {
+        "comment": "SDK `SPEAKER_MAX_NOTES`.",
+        "name": "maxNotes",
+        "type": "Int"
+      },
+      {
+        "comment": "SDK `SPEAKER_MAX_TRACKS`.",
+        "name": "maxTracks",
+        "type": "Int"
+      },
+      {
+        "comment": "SDK `SPEAKER_MAX_SAMPLE_BYTES_TOTAL` (16 KiB).",
+        "name": "maxSampleBytesTotal",
+        "type": "Int"
+      },
+      {
+        "comment": "Play a single tone.\n\n`frequencyHz` is the tone frequency. `durationMs` is capped at 10 seconds on device.\n`volume` is `0`–`100`.",
+        "name": "playTone",
+        "type": "Int -> Int -> Int -> Waveform -> Cmd msg"
+      },
+      {
+        "comment": "Play a monophonic note sequence at the given global volume (`0`–`100`).",
+        "name": "playNotes",
+        "type": "List Note -> Int -> Cmd msg"
+      },
+      {
+        "comment": "Play up to four monophonic tracks mixed together.\n\nEach track is a sequential note list. Use `sample = Just …` from `Pebble.Speaker.Resources`\nfor PCM-backed tracks; leave `sample = Nothing` for synthesized waveforms.",
+        "name": "playTracks",
+        "type": "List Track -> Int -> Cmd msg"
+      },
+      {
+        "comment": "Stop any active speaker playback immediately.",
+        "name": "stop",
+        "type": "Cmd msg"
+      },
+      {
+        "comment": "Set the global speaker volume (`0`–`100`), including during playback.",
+        "name": "setVolume",
+        "type": "Int -> Cmd msg"
+      },
+      {
+        "comment": "Poll the current speaker status.",
+        "name": "status",
+        "type": "(Status -> msg) -> Cmd msg"
+      },
+      {
+        "comment": "Check whether the watch speaker is muted system-wide.",
+        "name": "isMuted",
+        "type": "(Bool -> msg) -> Cmd msg"
+      },
+      {
+        "comment": "Open a raw PCM stream at the given format and starting volume.",
+        "name": "streamOpen",
+        "type": "PcmFormat -> Int -> Cmd msg"
+      },
+      {
+        "comment": "Write signed PCM bytes (`0`–`255` wire encoding) to the open stream.",
+        "name": "streamWrite",
+        "type": "List Int -> Cmd msg"
+      },
+      {
+        "comment": "Close the open PCM stream and drain buffered audio.",
+        "name": "streamClose",
+        "type": "Cmd msg"
+      },
+      {
+        "comment": "Receive speaker playback completion events.\n\nRegister this subscription before starting playback that needs a completion callback.",
+        "name": "onFinished",
+        "type": "(FinishReason -> msg) -> Sub msg"
+      }
+    ]
+  },
+  {
     "aliases": [],
     "binops": [],
-    "comment": "Watch-local key/value storage commands.\n\nThe watch runtime exposes a lightweight integer key/value store.\n\n    saveCounter : Cmd msg\n    saveCounter =\n        writeInt 1 42\n\n    loadCounter : Cmd Msg\n    loadCounter =\n        readInt 1 CounterLoaded\n\n\n# Operations\n\n@docs writeInt, readInt, writeString, readString, delete",
+    "comment": "Watch-local key/value storage commands.\n\nThe watch runtime exposes a lightweight integer- and string-keyed store.\nKeys are integers; values can be ints or strings. Use `maxSize` to learn the\nper-app byte limit on the current firmware.\n\n    import Pebble.Storage as Storage\n\n    storageKey : Int\n    storageKey =\n        1\n\n    type Msg\n        = CounterLoaded Int\n        | MaxSizeLoaded Int\n\n    init _ =\n        ( model\n        , Cmd.batch\n            [ Storage.readInt storageKey CounterLoaded\n            , Storage.maxSize MaxSizeLoaded\n            ]\n        )\n\n    saveCounter : Int -> Cmd msg\n    saveCounter value =\n        Storage.writeInt storageKey value\n\nFor a runnable example, use the **watch-demo-storage** project template in the IDE.\n\n# Operations\n\n@docs writeInt, readInt, writeString, readString, delete, maxSize",
     "name": "Pebble.Storage",
     "native_api_links": [
       {
@@ -1092,13 +1353,18 @@
         "comment": "Remove a stored value at `key`.",
         "name": "delete",
         "type": "Int -> Cmd msg"
+      },
+      {
+        "comment": "Query the per-app persistent storage byte limit on this firmware.",
+        "name": "maxSize",
+        "type": "(Int -> msg) -> Cmd msg"
       }
     ]
   },
   {
     "aliases": [],
     "binops": [],
-    "comment": "System-state subscriptions sourced from Pebble event services.\n\n@docs batteryLevel, connectionStatus, onBatteryChange, onConnectionChange",
+    "comment": "System-state commands and subscriptions sourced from Pebble event services.\n\nPoll once in `init`, then subscribe to live updates for battery and phone link.\n\n    import Pebble.System as System\n\n    type Msg\n        = GotBattery Int\n        | BatteryChanged Int\n        | GotConnection Bool\n        | ConnectionChanged Bool\n\n    init _ =\n        ( model\n        , Cmd.batch\n            [ System.batteryLevel GotBattery\n            , System.connectionStatus GotConnection\n            ]\n        )\n\n    subscriptions _ =\n        Sub.batch\n            [ System.onBatteryChange BatteryChanged\n            , System.onConnectionChange ConnectionChanged\n            ]\n\nFor a runnable example, use the **watch-demo-system** project template in the IDE.\n\n@docs batteryLevel, connectionStatus, onBatteryChange, onConnectionChange",
     "name": "Pebble.System",
     "native_api_links": [
       {
@@ -1144,7 +1410,7 @@
       }
     ],
     "binops": [],
-    "comment": "Commands for reading watch time and timezone information.\n\n# Time and timezone\n@docs DayOfWeek, CurrentDateTime, currentDateTime, currentTimeString, clockStyle24h, timezoneIsSet, timezone",
+    "comment": "Commands for reading watch time and timezone information.\n\nRequest structured time in `init` or on a timer, and combine with\n`Pebble.Cmd.timerAfter` for periodic refresh.\n\n    import Pebble.Time as Time\n\n    type Msg\n        = GotDateTime Time.CurrentDateTime\n        | GotTimezone String\n\n    init _ =\n        ( model\n        , Cmd.batch\n            [ Time.currentDateTime GotDateTime\n            , Time.timezone GotTimezone\n            ]\n        )\n\nFor scheduling refreshes, pair with `Pebble.Cmd.timerAfter` from `Pebble.Cmd`.\nSee the **watch-demo-time** project template in the IDE.\n\n# Time and timezone\n@docs DayOfWeek, CurrentDateTime, currentDateTime, currentTimeString, clockStyle24h, timezoneIsSet, timezone",
     "name": "Pebble.Time",
     "native_api_links": [
       {
@@ -1281,7 +1547,7 @@
       }
     ],
     "binops": [],
-    "comment": "Retained virtual UI model for Pebble rendering.\n\n`Pebble.Ui` provides a declarative scene graph for watch windows, layers,\nand drawing operations. Build values here and emit them through your app's\nrender bridge to keep view logic in pure Elm.\n\n    mainWindow : WindowNode\n    mainWindow =\n        window 1\n            [ canvasLayer 2\n                [ fillRect\n                    { x = 0, y = 0, w = 144, h = 168 }\n                    UiColor.black\n                ]\n            ]\n\n\n# Core nodes\n\n@docs UiNode, WindowNode, LayerNode, toUiNode, windowStack, window, canvasLayer\n\n\n# Drawing operations\n\n@docs RenderOp, text, textInt, textLabel, clear, fillRect, pixel, line, rect, circle, fillCircle, drawBitmapInRect, drawBitmapSequenceAt, drawRotatedBitmap, drawVectorAt, drawVectorSequenceAt, group, pathFilled, pathOutline, pathOutlineOpen, roundRect, arc, fillRadial, AnimationId\n\n\n# Resources, labels and path/context helpers\n\n@docs Label, Context, StaticBitmap, AnimatedBitmap, StaticVector, AnimatedVector, Font, Path, Point, Rect, Rotation, TextAlignment, TextOverflow, TextOptions, defaultTextOptions, alignLeft, alignCenter, alignRight, wordWrap, trailingEllipsis, fillOverflow, context, path, rotationFromPebbleAngle, rotationFromDegrees\n\n\n# Drawing settings\n\n@docs ContextSetting, strokeWidth, antialiased, strokeColor, fillColor, textColor, compositingMode",
+    "comment": "Retained virtual UI model for Pebble rendering.\n\n`Pebble.Ui` provides a declarative scene graph for watch windows, layers,\nand drawing operations. Build values in `view` and return them as your program's\nUI root — the runtime diffs and renders them each frame.\n\n    import Pebble.Ui as Ui\n    import Pebble.Ui.Color as Color\n    import Pebble.Ui.Resources as Resources\n\n    view model =\n        Ui.toUiNode\n            [ Ui.clear Color.white\n            , Ui.text Resources.DefaultFont Ui.defaultTextOptions\n                { x = 4, y = 8, w = 136, h = 20 }\n                (String.fromInt model.score)\n            ]\n\nLower-level window/layer composition is also available:\n\n    mainWindow : Ui.WindowNode\n    mainWindow =\n        Ui.window 1\n            [ Ui.canvasLayer 2\n                [ Ui.fillRect { x = 0, y = 0, w = 144, h = 168 } Color.black\n                ]\n            ]\n\nFor every draw primitive, see the **watch-demo-drawing-showcase** project template.\n\n# Core nodes\n\n@docs UiNode, WindowNode, LayerNode, toUiNode, windowStack, window, canvasLayer\n\n\n# Drawing operations\n\n@docs RenderOp, text, textInt, textLabel, clear, fillRect, pixel, line, rect, circle, fillCircle, drawBitmapInRect, drawBitmapSequenceAt, drawRotatedBitmap, drawVectorAt, drawVectorSequenceAt, group, pathFilled, pathOutline, pathOutlineOpen, roundRect, arc, fillRadial, AnimationId\n\n\n# Resources, labels and path/context helpers\n\n@docs Label, Context, StaticBitmap, AnimatedBitmap, StaticVector, AnimatedVector, Font, Path, Point, Rect, Rotation, TextAlignment, TextOverflow, TextOptions, defaultTextOptions, alignLeft, alignCenter, alignRight, wordWrap, trailingEllipsis, fillOverflow, context, path, rotationFromPebbleAngle, rotationFromDegrees\n\n\n# Drawing settings\n\n@docs ContextSetting, strokeWidth, antialiased, strokeColor, fillColor, textColor, compositingMode",
     "name": "Pebble.Ui",
     "native_api_links": [
       {
@@ -1503,9 +1769,9 @@
         "type": "StaticBitmap -> Rect -> RenderOp"
       },
       {
-        "comment": "Draw an animated bitmap (APNG) sequence at the given origin.",
+        "comment": "Draw an animated bitmap (APNG) sequence at the given origin.\n\nUse a fresh `AnimationId` for each play. Keep the same id in `view` while the\nclip should continue; the runtime dispatches `Pebble.Events.onAnimationFinished`\nwhen that id completes.",
         "name": "drawBitmapSequenceAt",
-        "type": "AnimatedBitmap -> Point -> RenderOp"
+        "type": "AnimationId -> AnimatedBitmap -> Point -> RenderOp"
       },
       {
         "comment": "Draw bitmap resource using width/height, angle and center point.",
@@ -1647,7 +1913,7 @@
   {
     "aliases": [],
     "binops": [],
-    "comment": "Observe Timeline Quick View unobstructed-area changes on round watches.\n\nUse `currentBounds` during startup to sync the initial layout, then subscribe to\n`onWillChange`, `onChanging`, and `onDidChange` to animate layout transitions.\n\n@docs onWillChange, onChanging, onDidChange, currentBounds",
+    "comment": "Observe Timeline Quick View unobstructed-area changes on round watches.\n\nUse `currentBounds` during startup to sync the initial layout, then subscribe to\n`onWillChange`, `onChanging`, and `onDidChange` to animate layout transitions.\n\n    import Pebble.UnobstructedArea as UnobstructedArea\n    import Pebble.Ui as Ui\n\n    type Msg\n        = GotBounds Ui.Rect\n        | WillChange Ui.Rect\n        | Changing Int\n        | DidChange\n\n    init _ =\n        ( model, UnobstructedArea.currentBounds GotBounds )\n\n    subscriptions _ =\n        Sub.batch\n            [ UnobstructedArea.onWillChange WillChange\n            , UnobstructedArea.onChanging Changing\n            , UnobstructedArea.onDidChange DidChange\n            ]\n\nFor a runnable example, use the **watch-demo-unobstructed** project template in the IDE.\n\n@docs onWillChange, onChanging, onDidChange, currentBounds",
     "name": "Pebble.UnobstructedArea",
     "native_api_links": [
       {
@@ -1682,7 +1948,7 @@
   {
     "aliases": [],
     "binops": [],
-    "comment": "Vibration motor controls.\n\n@docs cancel, shortPulse, longPulse, doublePulse, pattern",
+    "comment": "Vibration motor controls.\n\nUse built-in pulses for simple feedback, or `pattern` for custom rhythms.\nEach pattern value is a segment duration in milliseconds, alternating ON/OFF.\n\n    import Pebble.Vibes as Vibes\n\n    sos : Cmd msg\n    sos =\n        Vibes.pattern [ 100, 100, 100, 100, 100, 300, 300, 300, 100, 100, 100 ]\n\n    onTap : Cmd msg\n    onTap =\n        Vibes.shortPulse\n\nFor a runnable example, use the **watch-demo-vibes** project template in the IDE.\n\n@docs cancel, shortPulse, longPulse, doublePulse, pattern",
     "name": "Pebble.Vibes",
     "native_api_links": [
       {
@@ -1722,7 +1988,7 @@
   {
     "aliases": [],
     "binops": [],
-    "comment": "Wakeup scheduling commands.\n\n@docs scheduleAfterSeconds, cancel",
+    "comment": "Wakeup scheduling commands.\n\nSchedule the app to relaunch after a delay. When the wakeup fires, `init` receives\n`LaunchWakeup` in `Platform.LaunchContext.reason`.\n\n    import Pebble.Wakeup as Wakeup\n\n    type Msg\n        = ScheduleReminder\n\n    update msg model =\n        case msg of\n            ScheduleReminder ->\n                ( model, Wakeup.scheduleAfterSeconds 60 )\n\nPass the wakeup id returned by the native runtime to `cancel` if you need to\nrevoke a pending wakeup before it fires.\n\nFor a runnable example, use the **watch-demo-wakeup** project template in the IDE.\n\n@docs scheduleAfterSeconds, cancel",
     "name": "Pebble.Wakeup",
     "native_api_links": [
       {
@@ -1754,7 +2020,7 @@
       }
     ],
     "binops": [],
-    "comment": "Access information about the watch itself.\n\nThis API mirrors Pebble's C `WatchInfo` module and provides information such as\nwatch model, watch color, and firmware version.\n\n# Types\n@docs WatchModel, FirmwareVersion, WatchColor\n\n# Device info\n@docs getModel, getFirmwareVersion, getColor",
+    "comment": "Access information about the watch itself.\n\nThis API mirrors Pebble's C `WatchInfo` module and provides information such as\nwatch model, watch color, and firmware version.\n\n    import Pebble.WatchInfo as WatchInfo\n\n    type Msg\n        = GotModel WatchInfo.WatchModel\n        | GotFirmware WatchInfo.FirmwareVersion\n        | GotColor WatchInfo.WatchColor\n\n    init _ =\n        ( model\n        , Cmd.batch\n            [ WatchInfo.getModel GotModel\n            , WatchInfo.getFirmwareVersion GotFirmware\n            , WatchInfo.getColor GotColor\n            ]\n        )\n\nFor a runnable example, use the **watch-demo-watch-info** project template in the IDE.\n\n# Types\n@docs WatchModel, FirmwareVersion, WatchColor\n\n# Device info\n@docs getModel, getFirmwareVersion, getColor",
     "name": "Pebble.WatchInfo",
     "native_api_links": [
       {

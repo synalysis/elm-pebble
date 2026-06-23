@@ -352,20 +352,24 @@ defmodule Ide.PebbleToolchain.Prepare do
          {:ok, font_entries} <- stage_font_resources(workspace_root, app_root),
          {:ok, vector_entries} <- stage_vector_resources(workspace_root, app_root),
          {:ok, animation_entries} <- stage_animation_resources(workspace_root, app_root),
+         {:ok, speaker_sample_entries} <- stage_speaker_sample_resources(workspace_root, app_root),
          :ok <-
            write_resource_id_header(
              app_root,
              bitmap_entries,
              font_entries,
              vector_entries,
-             animation_entries
+             animation_entries,
+             speaker_sample_entries
            ) do
-      {:ok, bitmap_entries ++ font_entries ++ vector_entries ++ animation_entries}
+      {:ok,
+       bitmap_entries ++ font_entries ++ vector_entries ++ animation_entries ++ speaker_sample_entries}
     end
   end
 
   @spec write_resource_id_header(
           String.t(),
+          [pebble_media_entry()],
           [pebble_media_entry()],
           [pebble_media_entry()],
           [pebble_media_entry()],
@@ -377,7 +381,8 @@ defmodule Ide.PebbleToolchain.Prepare do
          bitmap_entries,
          font_entries,
          vector_entries,
-         animation_entries
+         animation_entries,
+         speaker_sample_entries
        ) do
     header_path = Path.join(app_root, "src/c/generated/resource_ids.h")
 
@@ -414,6 +419,34 @@ defmodule Ide.PebbleToolchain.Prepare do
       |> Enum.with_index(1)
       |> Enum.map_join("\n", fn {entry, index} ->
         "    case #{index}: return RESOURCE_ID_#{Map.fetch!(entry, "name")};"
+      end)
+
+    speaker_sample_cases =
+      speaker_sample_entries
+      |> Enum.with_index(1)
+      |> Enum.map_join("\n", fn {entry, index} ->
+        "    case #{index}: return RESOURCE_ID_#{Map.fetch!(entry, "name")};"
+      end)
+
+    speaker_sample_format_cases =
+      speaker_sample_entries
+      |> Enum.with_index(1)
+      |> Enum.map_join("\n", fn {entry, index} ->
+        "    case #{index}: return #{Map.get(entry, "format", 0)};"
+      end)
+
+    speaker_sample_base_note_cases =
+      speaker_sample_entries
+      |> Enum.with_index(1)
+      |> Enum.map_join("\n", fn {entry, index} ->
+        "    case #{index}: return #{Map.get(entry, "base_midi_note", 60)};"
+      end)
+
+    speaker_sample_loop_cases =
+      speaker_sample_entries
+      |> Enum.with_index(1)
+      |> Enum.map_join("\n", fn {entry, index} ->
+        "    case #{index}: return #{if Map.get(entry, "loop", false), do: 1, else: 0};"
       end)
 
     source = """
@@ -456,6 +489,34 @@ defmodule Ide.PebbleToolchain.Prepare do
       switch (animation_id) {
     #{animation_cases}
         default: return ELM_PEBBLE_RESOURCE_ID_MISSING;
+      }
+    }
+
+    static inline uint32_t elm_pebble_speaker_sample_resource_id(int64_t sample_id) {
+      switch (sample_id) {
+    #{speaker_sample_cases}
+        default: return ELM_PEBBLE_RESOURCE_ID_MISSING;
+      }
+    }
+
+    static inline int64_t elm_pebble_speaker_sample_format(int64_t sample_id) {
+      switch (sample_id) {
+    #{speaker_sample_format_cases}
+        default: return 0;
+      }
+    }
+
+    static inline int64_t elm_pebble_speaker_sample_base_midi_note(int64_t sample_id) {
+      switch (sample_id) {
+    #{speaker_sample_base_note_cases}
+        default: return 60;
+      }
+    }
+
+    static inline int64_t elm_pebble_speaker_sample_loop(int64_t sample_id) {
+      switch (sample_id) {
+    #{speaker_sample_loop_cases}
+        default: return 0;
       }
     }
 
@@ -713,6 +774,59 @@ defmodule Ide.PebbleToolchain.Prepare do
                     "type" => "raw",
                     "name" => "ANIMATION_" <> macro_name(ctor),
                     "file" => package_rel
+                  }
+                ]
+              else
+                []
+              end
+            end)
+
+          {:ok, media_entries}
+        else
+          _ -> {:ok, []}
+        end
+
+      {:error, :enoent} ->
+        {:ok, []}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @spec stage_speaker_sample_resources(String.t(), String.t()) ::
+          {:ok, [pebble_media_entry()]} | {:error, toolchain_error()}
+  defp stage_speaker_sample_resources(workspace_root, app_root) do
+    manifest_path = Path.join(workspace_root, "watch/resources/speaker_samples.json")
+    assets_root = Path.join(workspace_root, "watch/resources/speaker_samples")
+
+    case File.read(manifest_path) do
+      {:ok, json} ->
+        with {:ok, decoded} <- Jason.decode(json),
+             entries when is_list(entries) <- Map.get(decoded, "entries", []) do
+          media_entries =
+            entries
+            |> Enum.filter(&is_map/1)
+            |> Enum.flat_map(fn row ->
+              ctor = to_string(Map.get(row, "ctor", "Sample"))
+              filename = to_string(Map.get(row, "filename", ""))
+              source_path = Path.join(assets_root, filename)
+              package_rel = Path.join("speaker_samples", filename)
+              target_rel = Path.join("resources", package_rel)
+              target_path = Path.join(app_root, target_rel)
+
+              if filename != "" and File.exists?(source_path) do
+                :ok = File.mkdir_p(Path.dirname(target_path))
+                :ok = File.cp(source_path, target_path)
+
+                [
+                  %{
+                    "type" => "raw",
+                    "name" => "SPEAKER_SAMPLE_" <> macro_name(ctor),
+                    "file" => package_rel,
+                    "format" => Map.get(row, "format", 1),
+                    "base_midi_note" => Map.get(row, "base_midi_note", 60),
+                    "loop" => Map.get(row, "loop", false) == true
                   }
                 ]
               else

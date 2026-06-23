@@ -23,6 +23,7 @@
     "Pebble.Light",
     "Pebble.Log",
     "Pebble.Platform",
+    "Pebble.Speaker",
     "Pebble.Storage",
     "Pebble.System",
     "Pebble.Time",

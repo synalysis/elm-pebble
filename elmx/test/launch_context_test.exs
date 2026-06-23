@@ -23,6 +23,35 @@ defmodule Elmx.LaunchContextTest do
     assert Map.get(normalized, "configurationResponse") == nil
   end
 
+  test "normalize maps quick_launch_action string to ctor" do
+    normalized =
+      LaunchContext.normalize(%{
+        "launch_reason" => "LaunchUser",
+        "quick_launch_action" => "QuickLaunchHold"
+      })
+
+    assert normalized["quickLaunchAction"] == %{"ctor" => "QuickLaunchHold", "args" => []}
+  end
+
+  test "normalize maps nil launch_button to Maybe Nothing" do
+    normalized = LaunchContext.normalize(%{"launch_reason" => "LaunchUser"})
+
+    assert normalized["launchButton"] == %{"ctor" => "Nothing", "args" => []}
+  end
+
+  test "normalize maps launch_button string to Maybe Just" do
+    normalized =
+      LaunchContext.normalize(%{
+        "launch_reason" => "LaunchUser",
+        "launch_button" => "Select"
+      })
+
+    assert normalized["launchButton"] == %{
+             "ctor" => "Just",
+             "args" => [%{"ctor" => "Select", "args" => []}]
+           }
+  end
+
   test "normalize is idempotent for round screen shape ctors" do
     once =
       LaunchContext.normalize(%{

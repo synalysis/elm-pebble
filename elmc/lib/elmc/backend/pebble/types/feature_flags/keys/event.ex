@@ -28,6 +28,9 @@ defmodule Elmc.Backend.Pebble.Types.FeatureFlags.Keys.Event do
     :compass_events,
     :dictation_events,
     :unobstructed_area_events,
+    :backlight_events,
+    :screen_change_events,
+    :speaker_finished_events,
     :inbox_events
   ]
 

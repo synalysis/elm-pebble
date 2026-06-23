@@ -2,7 +2,7 @@ defmodule Elmc.Test.RcTrackMatrix do
   @moduledoc false
 
   @matrix_path Path.expand("../../docs/CODEGEN_COVERAGE_MATRIX.md", __DIR__)
-  @core_ex_path Path.expand("../../lib/elmc/backend/c_codegen/special_values/core.ex", __DIR__)
+  @special_values_dir Path.expand("../../lib/elmc/backend/c_codegen/special_values", __DIR__)
 
   @elm_core_prefixes ~w(
     Basics Bitwise List Maybe Result String Char Tuple Dict Set Array Debug Task Process
@@ -256,7 +256,7 @@ defmodule Elmc.Test.RcTrackMatrix do
       |> Enum.sort()
 
     if missing_in_core != [] do
-      raise "CODEGEN_COVERAGE_MATRIX documents elm/core functions missing from core.ex: #{inspect(missing_in_core)}"
+      raise "CODEGEN_COVERAGE_MATRIX documents elm/core functions missing from special_values handlers: #{inspect(missing_in_core)}"
     end
 
     :ok
@@ -321,10 +321,23 @@ defmodule Elmc.Test.RcTrackMatrix do
   end
 
   defp core_ex_functions do
-    content = File.read!(@core_ex_path)
+    dir = @special_values_dir
+    root_files = dir |> File.ls!() |> Enum.filter(&String.ends_with?(&1, ".ex"))
+    stdlib_files =
+      case File.ls(Path.join(dir, "stdlib")) do
+        {:ok, files} -> Enum.map(files, &Path.join("stdlib", &1))
+        {:error, _} -> []
+      end
 
-    Regex.scan(~r/def special_value_from_target\("([^"]+)"/, content)
-    |> Enum.map(fn [_, target] -> target end)
+    (root_files ++ stdlib_files)
+    |> Enum.filter(&String.ends_with?(&1, ".ex"))
+    |> Enum.flat_map(fn file ->
+      path = Path.join(dir, file)
+      content = File.read!(path)
+
+      Regex.scan(~r/def special_value_from_target\("([^"]+)"/, content)
+      |> Enum.map(fn [_, target] -> target end)
+    end)
     |> Enum.filter(fn target ->
       Enum.any?(@elm_core_prefixes, &String.starts_with?(target, &1 <> "."))
     end)

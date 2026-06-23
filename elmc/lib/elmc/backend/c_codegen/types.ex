@@ -181,6 +181,9 @@ defmodule Elmc.Backend.CCodegen.Types do
   @type compile_counter :: non_neg_integer()
   @type compile_result :: {String.t(), String.t(), compile_counter()}
   @type compile_result_or_nil :: compile_result() | nil
+  @type compile_ok_result :: {:ok, String.t(), String.t(), compile_counter()} | :error
+  @type range_bounds_result ::
+          {:ok, String.t(), String.t(), String.t(), compile_counter()} | :error
   @type direct_emit_result :: {:ok, String.t(), compile_counter()} | :error
 
   @type static_draw_row_kind :: :clear | :text_int | :pixel | :rect | :fill_rect
@@ -361,4 +364,10 @@ defmodule Elmc.Backend.CCodegen.Types do
   @type direct_function_use_sites :: %{
           function_decl_key() => [direct_function_use_site()]
         }
+
+  @typedoc "Result of lowering a qualified Pebble/stdlib target via `SpecialValues`."
+  @type special_value_result :: ir_expr() | nil
+
+  @typedoc "Argument list passed to `SpecialValues.special_value_from_target/2`."
+  @type special_value_args :: [ir_expr()]
 end

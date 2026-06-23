@@ -3,7 +3,7 @@ defmodule Elmx.Runtime.Executor do
   Debugger execution contract for compiled Elixir Elm apps (`elmx.runtime_executor.v1`).
   """
 
-  alias Elmx.Runtime.Executor.{Model, Run, View}
+  alias Elmx.Runtime.Executor.{Model, Run, Subscriptions, View}
   alias Elmx.Runtime.Followups
   alias Elmx.Runtime.LaunchContext
   alias Elmx.Types
@@ -52,13 +52,15 @@ defmodule Elmx.Runtime.Executor do
 
       view_tree = View.safe_view(module, runtime_model)
       view_output = View.preview_rows(view_tree, request, runtime_model)
+      active_subscriptions = Subscriptions.evaluate(module, runtime_model)
 
       {:ok,
        %{
          model_patch: %{
            "runtime_model" => runtime_model,
            "runtime_model_source" => runtime_model_source,
-           "runtime_execution_mode" => "runtime_executed"
+           "runtime_execution_mode" => "runtime_executed",
+           "active_subscriptions" => active_subscriptions
          },
          view_tree: view_tree,
          view_output: view_output,

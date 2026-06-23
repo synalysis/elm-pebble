@@ -17,14 +17,18 @@ defmodule Ide.PebbleToolchain.Build do
     case Keyword.get(opts, :app_root) do
       app_root when is_binary(app_root) and app_root != "" ->
         with {:ok, result} <-
-               Command.run_pebble(["build"], cwd: app_root, env: Command.build_env(opts)) do
+               Command.run_pebble(build_args(opts), cwd: app_root, env: Command.build_env(opts)) do
           _ = enrich_stack_report(app_root)
           {:ok, result}
         end
 
       _ ->
-        Command.run_pebble(["build"], env: Command.build_env(opts))
+        Command.run_pebble(build_args(opts), env: Command.build_env(opts))
     end
+  end
+
+  defp build_args(opts) do
+    if Keyword.get(opts, :debug_build) == true, do: ["build", "--debug"], else: ["build"]
   end
 
   defp enrich_stack_report(app_root) do

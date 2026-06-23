@@ -8,15 +8,23 @@ module Pebble.Cmd exposing
 {-| Core watch commands.
 
 Use this module for generic scheduling. Hardware controls live in
-`Pebble.Hardware`, watch metadata requests live in `Pebble.WatchInfo`, and
-key-value persistence helpers live in `Pebble.Storage`.
+`Pebble.Vibes` and `Pebble.Light`, watch metadata requests live in
+`Pebble.WatchInfo`, and key-value persistence helpers live in `Pebble.Storage`.
 
     type Msg
         = WakeUp
+        | Tick
 
-    scheduleWakeUp : Cmd Msg
-    scheduleWakeUp =
-        timerAfter 1000
+    init _ =
+        ( model, Cmd.timerAfter 1000 Tick )
+
+    update msg model =
+        case msg of
+            Tick ->
+                ( model, Cmd.timerAfter 1000 Tick )
+
+            WakeUp ->
+                ( model, Cmd.none )
 
 # Scheduling
 @docs none, timerAfter

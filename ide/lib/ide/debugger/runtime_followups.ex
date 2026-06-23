@@ -1,13 +1,12 @@
 defmodule Ide.Debugger.RuntimeFollowups do
   @moduledoc false
 
-  alias Ide.Debugger.CmdCall
+  alias Ide.Debugger.CompanionBridge.Runtime, as: CompanionBridgeRuntime
   alias Ide.Debugger.DeviceData
   alias Ide.Debugger.DeviceDataResponses
   alias Ide.Debugger.DeviceRequest
   alias Ide.Debugger.TimelineMessage
   alias Ide.Debugger.HttpExecutor
-  alias Ide.Debugger.IntrospectAccess
   alias Ide.Debugger.PendingHttpFollowups
   alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Debugger.RuntimeModelMessages
@@ -40,7 +39,8 @@ defmodule Ide.Debugger.RuntimeFollowups do
           required(:source_root_for_target) => (Types.surface_target() -> String.t()),
           required(:track_http_command) => (Types.runtime_state(), Types.tracked_http_command() ->
                                               Types.runtime_state()),
-          required(:simulator_settings) => (Types.runtime_state() -> Types.simulator_settings())
+          required(:simulator_settings) => (Types.runtime_state() -> Types.simulator_settings()),
+          optional(:companion_bridge) => CompanionBridgeRuntime.ctx()
         }
 
   @spec apply_after_step(
@@ -54,16 +54,142 @@ defmodule Ide.Debugger.RuntimeFollowups do
   def apply_after_step(state, target, message, message_source, followups, ctx),
     do: apply_runtime(state, target, message, message_source, followups, ctx)
 
-  @spec apply_static_task_after_step(
-          Types.runtime_state(),
-          Types.surface_target(),
-          String.t(),
-          Types.subscription_payload(),
-          String.t(),
-          apply_ctx()
-        ) :: Types.runtime_state()
-  def apply_static_task_after_step(state, target, message, message_value, message_source, ctx),
-    do: apply_static_task(state, target, message, message_value, message_source, ctx)
+  @doc false
+  @spec executor_followups?([Types.runtime_followup_row()]) :: boolean()
+  def executor_followups?(followups) when is_list(followups), do: followups != []
+  def executor_followups?(_followups), do: false
+
+  @doc false
+  @spec companion_bridge_followups?([Types.runtime_followup_row()]) :: boolean()
+  def companion_bridge_followups?(followups) when is_list(followups) do
+    Enum.any?(followups, &companion_bridge_followup?/1)
+  end
+
+  def companion_bridge_followups?(_followups), do: false
+
+  @doc false
+  @spec geolocation_followups?([Types.runtime_followup_row()]) :: boolean()
+  def geolocation_followups?(followups) when is_list(followups) do
+    Enum.any?(followups, &geolocation_followup_row?/1)
+  end
+
+  def geolocation_followups?(_followups), do: false
+
+  @doc false
+  @spec covered_device_response_ctors([Types.runtime_followup_row()]) :: [String.t()]
+  def covered_device_response_ctors(followups) when is_list(followups) do
+    followups
+    |> Enum.flat_map(fn row ->
+      if device_followup_row?(row) do
+        case followup_response_ctor(row) do
+          ctor when is_binary(ctor) and ctor != "" -> [ctor]
+          _ -> []
+        end
+      else
+        []
+      end
+    end)
+    |> Enum.uniq()
+  end
+
+  def covered_device_response_ctors(_followups), do: []
+
+  @doc false
+  @spec covered_companion_bridge_requests([Types.runtime_followup_row()]) ::
+          [Types.companion_bridge_request()]
+  def covered_companion_bridge_requests(followups) when is_list(followups) do
+    followups
+    |> Enum.filter(&companion_bridge_followup_row?/1)
+    |> Enum.map(fn row -> Map.get(row, "command") || Map.get(row, :command) end)
+    |> Enum.map(&Ide.Debugger.CompanionBridgeRequest.from_bridge_command/1)
+    |> Enum.reject(&is_nil/1)
+  end
+
+  def covered_companion_bridge_requests(_followups), do: []
+
+  @doc false
+  @spec companion_bridge_request_covered?(
+          Types.companion_bridge_request(),
+          [Types.companion_bridge_request()]
+        ) :: boolean()
+  def companion_bridge_request_covered?(request, covered)
+      when is_map(request) and is_list(covered) do
+    Enum.any?(covered, &same_bridge_request?(request, &1))
+  end
+
+  def companion_bridge_request_covered?(_request, _covered), do: false
+
+  @spec same_bridge_request?(
+          Types.companion_bridge_request(),
+          Types.companion_bridge_request()
+        ) :: boolean()
+  defp same_bridge_request?(left, right) when is_map(left) and is_map(right) do
+    Map.get(left, :api) == Map.get(right, :api) and Map.get(left, :op) == Map.get(right, :op) and
+      bridge_request_key(left) == bridge_request_key(right)
+  end
+
+  defp same_bridge_request?(_left, _right), do: false
+
+  @spec bridge_request_key(Types.companion_bridge_request()) :: String.t()
+  defp bridge_request_key(request) when is_map(request) do
+    request
+    |> Map.get(:key)
+    |> case do
+      key when is_binary(key) -> key
+      _ -> ""
+    end
+  end
+
+  @doc false
+  @spec geolocation_followup_row?(Types.runtime_followup_row()) :: boolean()
+  def geolocation_followup_row?(row) when is_map(row) do
+    command = Map.get(row, "command") || Map.get(row, :command) || %{}
+
+    case Map.get(command, "api") || Map.get(command, :api) do
+      "geolocation" -> true
+      _ -> false
+    end
+  end
+
+  def geolocation_followup_row?(_row), do: false
+
+  @doc false
+  @spec device_followup_row?(Types.runtime_followup_row()) :: boolean()
+  def device_followup_row?(row) when is_map(row) do
+    source = Map.get(row, "source") || Map.get(row, :source)
+    command = Map.get(row, "command") || Map.get(row, :command)
+
+    source == "device_command" or
+      (is_map(command) and
+         command
+         |> Map.get("kind", Map.get(command, :kind))
+         |> to_string()
+         |> String.starts_with?("cmd.device."))
+  end
+
+  def device_followup_row?(_row), do: false
+
+  defp followup_response_ctor(row) when is_map(row) do
+    message = Map.get(row, "message") || Map.get(row, :message)
+
+    cond do
+      is_binary(message) and message != "" ->
+        RuntimeModelMessages.wire_constructor(message) || message
+
+      true ->
+        row
+        |> Map.get("message_value", Map.get(row, :message_value))
+        |> case do
+          %{"ctor" => ctor} when is_binary(ctor) -> ctor
+          %{ctor: ctor} when is_binary(ctor) -> ctor
+          _ -> nil
+        end
+    end
+  end
+
+  @doc false
+  @spec companion_bridge_followup_row?(Types.runtime_followup_row()) :: boolean()
+  def companion_bridge_followup_row?(row), do: companion_bridge_followup?(row)
 
   defp apply_runtime(state, _target, _message, "runtime_followup", _followups, _ctx),
     do: state
@@ -77,10 +203,23 @@ defmodule Ide.Debugger.RuntimeFollowups do
     current_ctor = RuntimeModelMessages.wire_constructor(message)
     target_name = ctx.source_root_for_target.(target)
 
-    followups =
-      followups
-      |> Enum.filter(&is_map/1)
-      |> Enum.reject(&companion_bridge_followup?/1)
+    mapped_followups = Enum.filter(followups, &is_map/1)
+    {bridge_followups, followups} = Enum.split_with(mapped_followups, &companion_bridge_followup?/1)
+
+    state =
+      case Map.get(ctx, :companion_bridge) do
+        %{} = bridge_ctx ->
+          CompanionBridgeRuntime.apply_followup_rows(
+            state,
+            target,
+            companion_bridge_source(message_source),
+            bridge_followups,
+            bridge_ctx
+          )
+
+        _ ->
+          state
+      end
 
     {protocol_followups, runtime_followups} =
       case message_source do
@@ -99,9 +238,6 @@ defmodule Ide.Debugger.RuntimeFollowups do
     runtime_followups
     |> Enum.filter(fn row ->
       cond do
-        shadowed_by_device_data?(state, target, message, row) ->
-          false
-
         is_map(Map.get(row, "command") || Map.get(row, :command)) ->
           true
 
@@ -150,58 +286,6 @@ defmodule Ide.Debugger.RuntimeFollowups do
   defp apply_runtime(state, _target, _message, _message_source, _followups, _ctx),
     do: state
 
-  @spec init_device_followup_shadowed?(
-          Surface.t() | Surface.surface_map(),
-          String.t(),
-          String.t()
-        ) ::
-          boolean()
-  defp init_device_followup_shadowed?(surface, "init", followup_message)
-       when is_binary(followup_message) and followup_message != "" do
-    surface
-    |> Surface.introspect()
-    |> init_device_callback_messages()
-    |> MapSet.member?(followup_message)
-  end
-
-  defp init_device_followup_shadowed?(_surface, _message, _followup_message), do: false
-
-  @spec init_device_callback_messages(Types.elm_introspect()) :: MapSet.t(String.t())
-  defp init_device_callback_messages(ei) when is_map(ei) do
-    ei
-    |> IntrospectAccess.cmd_calls("init_cmd_calls")
-    |> CmdCall.expand_helpers(ei)
-    |> Enum.flat_map(&DeviceRequest.from_cmd_call/1)
-    |> Enum.map(&DeviceData.response_message/1)
-    |> Enum.reject(&(&1 in [nil, ""]))
-    |> MapSet.new()
-  end
-
-  defp init_device_callback_messages(_), do: MapSet.new()
-
-  defp shadowed_by_device_data?(state, target, message, row)
-       when is_map(state) and target in [:watch, :companion, :phone] and is_binary(message) and
-              is_map(row) do
-    surface = Surface.from_state(state, target)
-
-    if blank_introspect?(surface) do
-      false
-    else
-      package = Map.get(row, "package") || Map.get(row, :package)
-      followup_message = Map.get(row, "message") || Map.get(row, :message)
-
-      package == "elm-pebble/elm-watch" and is_binary(followup_message) and
-        (init_device_followup_shadowed?(surface, message, followup_message) or
-           Enum.any?(DeviceDataResponses.requests_for_surface(state, target, message), fn req ->
-             DeviceData.response_message(req) == followup_message or
-               RuntimeModelMessages.wire_constructor(DeviceData.response_message(req)) ==
-                 followup_message
-           end))
-    end
-  end
-
-  defp shadowed_by_device_data?(_state, _target, _message, _row), do: false
-
   @spec protocol_events_followup?(Types.runtime_followup_row()) :: boolean()
   defp protocol_events_followup?(row) when is_map(row) do
     package = Map.get(row, "package") || Map.get(row, :package)
@@ -236,190 +320,52 @@ defmodule Ide.Debugger.RuntimeFollowups do
         TimelineMessage.format(step_message, step_value)
       )
     )
-    |> ctx.apply_step_once.(
-      target,
-      step_message,
-      step_value,
-      "runtime_followup",
-      "runtime_followup"
-    )
+    |> maybe_apply_runtime_followup_step(target, step_message, step_value, ctx)
   end
+
+  @spec maybe_apply_runtime_followup_step(
+          Types.runtime_state(),
+          Types.surface_target(),
+          String.t(),
+          Types.subscription_payload() | map() | nil,
+          apply_ctx()
+        ) :: Types.runtime_state()
+  defp maybe_apply_runtime_followup_step(state, target, step_message, message_value, ctx)
+       when is_map(state) and target in [:watch, :companion, :phone] and is_map(ctx) do
+    if is_binary(step_message) and String.trim(step_message) != "" do
+      ctx.apply_step_once.(
+        state,
+        target,
+        step_message,
+        message_value,
+        "runtime_followup",
+        "runtime_followup"
+      )
+    else
+      state
+    end
+  end
+
+  defp maybe_apply_runtime_followup_step(state, _target, _step_message, _message_value, _ctx),
+    do: state
 
   @spec companion_bridge_followup?(Types.runtime_followup_row()) :: boolean()
   defp companion_bridge_followup?(row) when is_map(row) do
+    source = Map.get(row, "source") || Map.get(row, :source)
     package = Map.get(row, "package") || Map.get(row, :package)
     command = Map.get(row, "command") || Map.get(row, :command)
 
-    package == "pebble/companion" and is_map(command) and
-      Map.get(command, "kind") == "cmd.companion.bridge"
+    source == "companion_bridge_command" or
+      (package == "pebble/companion" and is_map(command) and
+         Map.get(command, "kind") == "cmd.companion.bridge")
   end
 
   defp companion_bridge_followup?(_row), do: false
 
-  defp blank_introspect?(surface) do
-    case Surface.introspect(surface) do
-      ei when is_map(ei) and map_size(ei) > 0 -> false
-      _ -> true
-    end
-  end
-
-  defp apply_static_task(
-         state,
-         _target,
-         _message,
-         _message_value,
-         "runtime_followup",
-         _ctx
-       ),
-       do: state
-
-  defp apply_static_task(state, target, message, message_value, _message_source, ctx)
-       when is_map(state) and target in [:watch, :companion, :phone] and is_binary(message) and
-              is_map(ctx) do
-    ei = Surface.from_state(state, target) |> Surface.introspect()
-    current_ctor = RuntimeModelMessages.wire_constructor(message)
-    target_name = ctx.source_root_for_target.(target)
-
-    ei
-    |> static_task_followup_rows(current_ctor)
-    |> Enum.take(3)
-    |> Enum.reduce(state, fn row, acc ->
-      callback = Map.get(row, "callback_constructor")
-
-      with true <- is_binary(callback) and callback != "" and callback != current_ctor,
-           {:ok, followup_value} <- static_task_followup_message_value(row, message_value, acc) do
-        acc
-        |> ctx.append_event.(
-          "debugger.package_cmd",
-          Ide.Debugger.Types.PackageCmdEventPayload.from_static_task(
-            target_name,
-            "elm/core",
-            callback,
-            %{
-              "kind" => "cmd.task.perform",
-              "task_sources" => Map.get(row, "task_sources", [])
-            }
-          )
-        )
-        |> ctx.apply_step_once.(
-          target,
-          callback,
-          followup_value,
-          "runtime_followup",
-          "runtime_followup"
-        )
-      else
-        _ -> acc
-      end
-    end)
-  end
-
-  defp apply_static_task(state, _target, _message, _message_value, _message_source, _ctx),
-    do: state
-
-  @spec static_task_followup_rows(Types.elm_introspect(), String.t() | nil) :: [Types.cmd_call()]
-  defp static_task_followup_rows(ei, current_ctor)
-       when is_map(ei) and is_binary(current_ctor) and current_ctor != "" do
-    helper_calls =
-      ei
-      |> Map.get("function_cmd_calls", %{})
-      |> case do
-        value when is_map(value) -> value
-        _ -> %{}
-      end
-
-    ei
-    |> IntrospectAccess.cmd_calls("update_cmd_calls")
-    |> DeviceDataResponses.filter_update_cmd_calls(current_ctor)
-    |> Enum.flat_map(fn row ->
-      helper_name = Map.get(row, "target") || Map.get(row, "name")
-
-      case Map.get(helper_calls, helper_name) do
-        calls when is_list(calls) -> calls
-        _ -> []
-      end
-    end)
-    |> Enum.filter(fn row ->
-      CmdCall.name?(row, "perform") or CmdCall.target_ends_with?(row, ".perform")
-    end)
-  end
-
-  defp static_task_followup_rows(_ei, _current_ctor), do: []
-
-  @spec static_task_followup_message_value(
-          Types.cmd_call(),
-          Types.subscription_payload(),
-          Types.runtime_state()
-        ) :: {:ok, Types.protocol_ctor_value() | map()} | :error
-  defp static_task_followup_message_value(row, current_message_value, state)
-       when is_map(row) and is_map(state) do
-    callback = Map.get(row, "callback_constructor")
-    captured_count = Map.get(row, "callback_arg_count", 0)
-
-    with true <- is_binary(callback) and callback != "",
-         {:ok, task_value} <- static_task_value(Map.get(row, "task_sources", []), state) do
-      captured_args = captured_message_args(current_message_value, captured_count)
-      {:ok, %{"ctor" => callback, "args" => captured_args ++ [task_value]}}
-    else
-      _ -> :error
-    end
-  end
-
-  defp static_task_followup_message_value(_row, _current_message_value, _state), do: :error
-
-  @spec captured_message_args(Types.subscription_payload(), non_neg_integer()) ::
-          [Types.protocol_wire_arg()]
-  defp captured_message_args(_message_value, count) when not is_integer(count) or count <= 0,
-    do: []
-
-  defp captured_message_args(%{"args" => args}, count) when is_list(args) do
-    args
-    |> Enum.flat_map(&unwrap_result_payload/1)
-    |> Enum.take(count)
-  end
-
-  defp captured_message_args(%{args: args}, count) when is_list(args) do
-    args
-    |> Enum.flat_map(&unwrap_result_payload/1)
-    |> Enum.take(count)
-  end
-
-  defp captured_message_args(_message_value, _count), do: []
-
-  @spec unwrap_result_payload(Types.subscription_payload()) :: [Types.protocol_wire_arg()]
-  defp unwrap_result_payload(%{"ctor" => "Ok", "args" => [value]}), do: [value]
-  defp unwrap_result_payload(%{ctor: "Ok", args: [value]}), do: [value]
-  defp unwrap_result_payload(value), do: [value]
-
-  @spec static_task_value([String.t()], Types.runtime_state()) ::
-          {:ok, Types.static_task_result()} | :error
-  defp static_task_value(sources, _state) when is_list(sources) do
-    cond do
-      "Time.now" in sources and "Time.getZoneName" in sources ->
-        {:ok, {static_time_posix(), static_time_zone_name()}}
-
-      "Time.now" in sources ->
-        {:ok, static_time_posix()}
-
-      "Time.getZoneName" in sources ->
-        {:ok, static_time_zone_name()}
-
-      true ->
-        :error
-    end
-  end
-
-  defp static_task_value(_sources, _state), do: :error
-
-  @spec static_time_posix() :: Types.protocol_ctor_value()
-  defp static_time_posix do
-    %{"ctor" => "Posix", "args" => [System.system_time(:millisecond)]}
-  end
-
-  @spec static_time_zone_name() :: Types.protocol_ctor_value()
-  defp static_time_zone_name do
-    %{"ctor" => "Offset", "args" => [utc_offset_minutes_now()]}
-  end
+  @spec companion_bridge_source(String.t()) :: String.t()
+  defp companion_bridge_source("init"), do: "init_companion_bridge"
+  defp companion_bridge_source(source) when source in ["runtime_followup", "companion_bridge_command"], do: source
+  defp companion_bridge_source(_source), do: "companion_bridge_command"
 
   @spec execute_http_command(
           Types.runtime_state(),
@@ -673,12 +619,11 @@ defmodule Ide.Debugger.RuntimeFollowups do
             TimelineMessage.format(step_message, message_value)
           )
         )
-        |> ctx.apply_step_once.(
+        |> maybe_apply_runtime_followup_step(
           target,
           step_message,
           message_value,
-          "runtime_followup",
-          "runtime_followup"
+          ctx
         )
     end
   end
@@ -714,8 +659,18 @@ defmodule Ide.Debugger.RuntimeFollowups do
               is_map(row) do
     cond do
       is_map(followup_message_value) ->
+        value =
+          refresh_device_followup_value(
+            state,
+            target,
+            parent_message,
+            followup_message,
+            followup_message_value,
+            row
+          )
+
         {RuntimeModelMessages.wire_constructor(followup_message || "") || followup_message || "",
-         followup_message_value}
+         value}
 
       is_binary(followup_message) and followup_message != "" ->
         case TimelineMessage.message_value_for_step(followup_message) do
@@ -744,6 +699,39 @@ defmodule Ide.Debugger.RuntimeFollowups do
          _row
        ),
        do: {"", nil}
+
+  @spec refresh_device_followup_value(
+          Types.runtime_state(),
+          Types.surface_target(),
+          String.t(),
+          String.t() | nil,
+          Types.subscription_payload() | map(),
+          Types.runtime_followup_row()
+        ) :: Types.subscription_payload() | map()
+  defp refresh_device_followup_value(
+         state,
+         target,
+         parent_message,
+         followup_message,
+         default_value,
+         row
+       )
+       when is_map(state) and is_binary(parent_message) and is_map(row) do
+    ctor =
+      followup_message
+      |> case do
+        message when is_binary(message) and message != "" -> message
+        _ -> Map.get(default_value, "ctor") || Map.get(default_value, :ctor)
+      end
+
+    case device_command_wire_value(state, target, parent_message, ctor, row) do
+      %{} = value -> value
+      _ -> default_value
+    end
+  end
+
+  defp refresh_device_followup_value(_state, _target, _parent_message, _followup_message, default_value, _row),
+    do: default_value
 
   @spec device_command_wire_value(
           Types.runtime_state(),
@@ -887,19 +875,6 @@ defmodule Ide.Debugger.RuntimeFollowups do
   end
 
   defp callback_wire_from_surface(_state, _target, _ctor, _current_message), do: nil
-
-  @spec utc_offset_minutes_now() :: integer()
-  defp utc_offset_minutes_now do
-    local_seconds =
-      :calendar.local_time()
-      |> :calendar.datetime_to_gregorian_seconds()
-
-    utc_seconds =
-      :calendar.universal_time()
-      |> :calendar.datetime_to_gregorian_seconds()
-
-    div(local_seconds - utc_seconds, 60)
-  end
 
   @spec http_eval_context(Types.execution_model(), Types.simulator_settings()) ::
           Types.eval_context()

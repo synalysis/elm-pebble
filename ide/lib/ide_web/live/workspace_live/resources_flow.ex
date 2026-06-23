@@ -64,6 +64,28 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
     upload_summary(results, "animation", "animations")
   end
 
+  @spec speaker_sample_upload_output([upload_result_row()]) :: String.t()
+  def speaker_sample_upload_output([]), do: "No file uploaded."
+
+  def speaker_sample_upload_output(results) when is_list(results) do
+    upload_summary(results, "speaker sample", "speaker samples")
+  end
+
+  @spec load_speaker_samples(Project.t()) :: [map()]
+  def load_speaker_samples(%Project{} = project) do
+    case Projects.list_speaker_samples(project) do
+      {:ok, entries} ->
+        Enum.with_index(entries, 1)
+        |> Enum.map(fn {entry, idx} ->
+          Map.new(entry, fn {k, v} -> {String.to_atom(to_string(k)), v} end)
+          |> Map.put(:resource_id, idx)
+        end)
+
+      _ ->
+        []
+    end
+  end
+
   @spec filter_vectors([vector_resource_row()], :static | :animated) :: [vector_resource_row()]
   def filter_vectors(resources, :static) when is_list(resources) do
     Enum.filter(resources, fn row -> Map.get(row, :kind) != "sequence" end)
@@ -139,6 +161,18 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
 
       :malformed_apng ->
         "Animated PNG is missing frame metadata (fcTL chunks). Re-export the APNG or upload a GIF."
+
+      :unsupported_speaker_sample_type ->
+        "Unsupported speaker sample type. Use .pcm, .raw, or .bin mono PCM."
+
+      :invalid_speaker_sample ->
+        "Speaker sample file is empty or invalid."
+
+      :speaker_sample_too_large ->
+        "Speaker sample exceeds 16 KiB."
+
+      :speaker_sample_total_too_large ->
+        "Total speaker sample size would exceed 16 KiB across all samples."
 
       :unsupported_format ->
         "Unsupported file type. Use .gif or animated .png."
@@ -527,6 +561,7 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
     upload-animation-resource
     delete-animation-resource
     update-animation-base-name
+    upload-speaker-sample-resource
     upload-font-resource
     add-font-variant
     update-font-variant
@@ -645,6 +680,29 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Could not delete vector: #{inspect(reason)}")}
     end
+  end
+
+  def handle_event("upload-speaker-sample-resource", _params, socket) do
+    project = socket.assigns.project
+
+    {socket, results, output} =
+      consume_resource_upload(socket, :speaker_sample, fn %{path: path}, entry ->
+        case Projects.import_speaker_sample_resource(project, path, entry.client_name) do
+          {:ok, result} -> {:ok, result}
+          {:error, reason} -> {:ok, %{error: resource_import_error_message(reason)}}
+        end
+      end)
+
+    output = upload_result_message(output, results, &speaker_sample_upload_output/1)
+
+    socket =
+      socket
+      |> assign(:speaker_samples, load_speaker_samples(project))
+      |> assign(:speaker_sample_upload_output, output)
+      |> maybe_flash_upload_result(output, results)
+      |> EditorSupport.refresh_tree()
+
+    {:noreply, socket}
   end
 
   def handle_event("upload-animation-resource", _params, socket) do

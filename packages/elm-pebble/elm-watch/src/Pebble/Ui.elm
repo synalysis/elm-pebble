@@ -67,19 +67,32 @@ module Pebble.Ui exposing
 {-| Retained virtual UI model for Pebble rendering.
 
 `Pebble.Ui` provides a declarative scene graph for watch windows, layers,
-and drawing operations. Build values here and emit them through your app's
-render bridge to keep view logic in pure Elm.
+and drawing operations. Build values in `view` and return them as your program's
+UI root — the runtime diffs and renders them each frame.
 
-    mainWindow : WindowNode
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+    view model =
+        Ui.toUiNode
+            [ Ui.clear Color.white
+            , Ui.text Resources.DefaultFont Ui.defaultTextOptions
+                { x = 4, y = 8, w = 136, h = 20 }
+                (String.fromInt model.score)
+            ]
+
+Lower-level window/layer composition is also available:
+
+    mainWindow : Ui.WindowNode
     mainWindow =
-        window 1
-            [ canvasLayer 2
-                [ fillRect
-                    { x = 0, y = 0, w = 144, h = 168 }
-                    UiColor.black
+        Ui.window 1
+            [ Ui.canvasLayer 2
+                [ Ui.fillRect { x = 0, y = 0, w = 144, h = 168 } Color.black
                 ]
             ]
 
+For every draw primitive, see the **watch-demo-drawing-showcase** project template.
 
 # Core nodes
 

@@ -3,9 +3,13 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
 
   alias Ide.Debugger.CompanionBridge
   alias Ide.Debugger.CompanionBridge.SimulatorStore
+  alias Ide.Debugger.CompanionBridgeRequest
   alias Ide.Debugger.Geolocation
   alias Ide.Debugger.IntrospectAccess
+  alias Ide.Debugger.RuntimeFollowups
   alias Ide.Debugger.Types
+
+  @runtime_bridge_applied_key :runtime_companion_bridge_applied
 
   @companion_bridge_targets [:companion, :phone]
 
@@ -50,8 +54,45 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
           String.t(),
           Types.app_model(),
           String.t(),
-          ctx()
+          ctx(),
+          [Types.runtime_followup_row()]
         ) :: Types.runtime_state()
+  def maybe_apply_command_responses(
+        state,
+        target,
+        message,
+        model,
+        message_source,
+        ctx,
+        runtime_followups
+      )
+      when target in @companion_bridge_targets and is_map(state) and is_binary(message) and
+             is_map(model) and is_map(ctx) and is_list(runtime_followups) do
+    if message_source in ["companion_bridge_command", "init_companion_bridge"] do
+      state
+    else
+      covered = RuntimeFollowups.covered_companion_bridge_requests(runtime_followups)
+
+      state
+      |> then(fn acc ->
+        ctx.bridge_requests_from_update.(acc, target, message)
+        |> Enum.reject(&RuntimeFollowups.companion_bridge_request_covered?(&1, covered))
+        |> apply_requests(acc, target, "companion_bridge_command", ctx)
+      end)
+    end
+  end
+
+  def maybe_apply_command_responses(
+        state,
+        _target,
+        _message,
+        _model,
+        _message_source,
+        _ctx,
+        _runtime_followups
+      ),
+      do: state
+
   def maybe_apply_command_responses(
         state,
         target,
@@ -62,12 +103,7 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
       )
       when target in @companion_bridge_targets and is_map(state) and is_binary(message) and
              is_map(model) and is_map(ctx) do
-    if message_source in ["companion_bridge_command", "init_companion_bridge"] do
-      state
-    else
-      ctx.bridge_requests_from_update.(state, target, message)
-      |> apply_requests(state, target, "companion_bridge_command", ctx)
-    end
+    maybe_apply_command_responses(state, target, message, model, message_source, ctx, [])
   end
 
   def maybe_apply_command_responses(state, _target, _message, _model, _message_source, _ctx),
@@ -187,11 +223,86 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
           Types.runtime_state()
   def apply_init_commands(state, target, ctx)
       when target in @companion_bridge_targets and is_map(state) and is_map(ctx) do
-    ctx.bridge_requests_from_init.(state, target)
-    |> apply_requests(state, target, "init_companion_bridge", ctx)
+    if runtime_bridge_followups_applied?(state, target) do
+      state
+    else
+      ctx.bridge_requests_from_init.(state, target)
+      |> apply_requests(state, target, "init_companion_bridge", ctx)
+    end
   end
 
   def apply_init_commands(state, _target, _ctx), do: state
+
+  @spec apply_followup_rows(
+          Types.runtime_state(),
+          Types.surface_target(),
+          String.t(),
+          [Types.runtime_followup_row()],
+          ctx()
+        ) :: Types.runtime_state()
+  def apply_followup_rows(state, target, source, followups, ctx)
+      when target in @companion_bridge_targets and is_list(followups) and is_map(ctx) do
+    requests =
+      followups
+      |> Enum.filter(&RuntimeFollowups.companion_bridge_followup_row?/1)
+      |> Enum.map(fn row -> Map.get(row, "command") || Map.get(row, :command) end)
+      |> Enum.map(&CompanionBridgeRequest.from_bridge_command/1)
+      |> Enum.reject(&is_nil/1)
+
+    case requests do
+      [] ->
+        state
+
+      _ ->
+        requests
+        |> apply_requests(state, target, source, ctx)
+        |> mark_runtime_bridge_followups_applied(target)
+        |> maybe_mark_geolocation_applied(requests)
+        |> flush_deferred_steps(ctx)
+    end
+  end
+
+  def apply_followup_rows(state, _target, _source, _followups, _ctx), do: state
+
+  @spec runtime_bridge_followups_applied?(Types.runtime_state(), Types.surface_target()) ::
+          boolean()
+  def runtime_bridge_followups_applied?(state, target)
+      when is_map(state) and target in @companion_bridge_targets do
+    target_name = source_root_for_target(target)
+
+    case Map.get(state, @runtime_bridge_applied_key) do
+      %{^target_name => true} -> true
+      %{} = applied -> Map.get(applied, to_string(target_name)) == true
+      _ -> false
+    end
+  end
+
+  def runtime_bridge_followups_applied?(_state, _target), do: false
+
+  @spec mark_runtime_bridge_followups_applied(Types.runtime_state(), Types.surface_target()) ::
+          Types.runtime_state()
+  def mark_runtime_bridge_followups_applied(state, target)
+      when is_map(state) and target in @companion_bridge_targets do
+    target_name = source_root_for_target(target)
+    applied = Map.get(state, @runtime_bridge_applied_key, %{})
+    Map.put(state, @runtime_bridge_applied_key, Map.put(applied, target_name, true))
+  end
+
+  def mark_runtime_bridge_followups_applied(state, _target), do: state
+
+  @spec maybe_mark_geolocation_applied(
+          Types.runtime_state(),
+          [Types.companion_bridge_request()]
+        ) :: Types.runtime_state()
+  defp maybe_mark_geolocation_applied(state, requests) when is_map(state) and is_list(requests) do
+    if Enum.any?(requests, &(Map.get(&1, :api) == "geolocation")) do
+      Geolocation.mark_runtime_geolocation_applied(state)
+    else
+      state
+    end
+  end
+
+  defp maybe_mark_geolocation_applied(state, _requests), do: state
 
   @spec apply_requests(
           [Types.companion_bridge_request()],

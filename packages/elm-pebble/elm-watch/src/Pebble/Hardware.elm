@@ -17,7 +17,14 @@ module Pebble.Hardware exposing
 
 {-| Enhanced hardware access for Pebble watch devices.
 
-Prefer `Pebble.Vibes` for vibration and `Pebble.Light` / `Pebble.System` for backlight and status.
+**Prefer the typed modules below** — they match how Pebble apps are written in Elm:
+
+- `Pebble.Vibes` for vibration
+- `Pebble.Light` for backlight
+- `Pebble.System` for battery and phone connection
+- `Pebble.Speaker` for tones and notes on speaker-equipped watches
+
+This module exposes a lower-level command union for advanced integrations.
 
 # Types
 @docs VibrationType, VibrationPattern, BacklightLevel, HardwareCmd

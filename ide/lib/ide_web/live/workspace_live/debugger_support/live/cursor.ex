@@ -60,6 +60,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Live.Cursor do
       Triggers.auto_fire_subscriptions(debugger_state)
     )
     |> Component.assign(:debugger_disabled_subscriptions, Triggers.disabled_subscriptions(debugger_state))
+    |> Component.assign(:debugger_speaker_effect, Ide.Debugger.SpeakerEffects.latest(debugger_state))
   end
 
   @spec assign_cursor(socket(), maybe_non_neg_integer()) :: socket()

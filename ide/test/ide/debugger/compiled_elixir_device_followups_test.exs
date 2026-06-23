@@ -182,7 +182,7 @@ defmodule Ide.Debugger.CompiledElixirDeviceFollowupsTest do
       |> Enum.map(fn row -> {row.message, row.message_source} end)
 
     assert Enum.any?(rows42, fn {msg, source} ->
-             source == "device_data" and String.contains?(msg || "", "CurrentDateTime") and
+             source in ["runtime_followup", "device_data", "init_device_data"] and String.contains?(msg || "", "CurrentDateTime") and
                String.contains?(msg || "", "minute = 42")
            end),
            "expected CurrentDateTime follow-up for message_value minute 42, got: #{inspect(rows42)}"

@@ -35,49 +35,36 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Helpers do
     end
   end
 
+  @doc """
+  Lowers a Pebble subscription call to a runtime register cmd so `subscriptions/1`
+  preserves callback constructors and intervals (debugger + elmx executor).
+  """
+  @spec subscription_register_call(String.t(), Types.ir_arg_list()) :: Types.rewrite_result()
+  def subscription_register_call(target, args) when is_binary(target) and is_list(args) do
+    {:ok,
+     %{
+       op: :runtime_call,
+       function: "elmx_subscription_call",
+       args: [string_literal_ir(target) | args]
+     }}
+  end
+
+  @spec frame_subscription_register(Types.ir_arg_list()) :: Types.rewrite_result()
+  def frame_subscription_register(args),
+    do: {:ok, %{op: :runtime_call, function: "elmx_frame_every", args: args}}
+
+  @spec frame_fps_subscription_register(Types.ir_arg_list()) :: Types.rewrite_result()
+  def frame_fps_subscription_register(args),
+    do: {:ok, %{op: :runtime_call, function: "elmx_frame_at_fps", args: args}}
+
   @spec subscription_batch(Types.ir_arg_list()) :: Types.rewrite_result()
-  def subscription_batch([%{op: :list_literal, items: items} = list]) when is_list(items) do
-    if runtime_subscription_batch?(items) do
-      {:ok, %{op: :runtime_call, function: "elmx_sub_batch", args: [list]}}
-    else
-      {:ok, %{op: :int_literal, value: Subscriptions.batch_mask(items)}}
-    end
-  end
+  def subscription_batch([%{op: :list_literal} = list]),
+    do: {:ok, %{op: :runtime_call, function: "elmx_sub_batch", args: [list]}}
 
-  def subscription_batch([list]) when is_map(list) do
-    items = Map.get(list, :items) || Map.get(list, "items") || []
-
-    if runtime_subscription_batch?(items) do
-      {:ok, %{op: :runtime_call, function: "elmx_sub_batch", args: [list]}}
-    else
-      {:ok, %{op: :int_literal, value: Subscriptions.batch_mask(items)}}
-    end
-  end
+  def subscription_batch([list]) when is_map(list),
+    do: {:ok, %{op: :runtime_call, function: "elmx_sub_batch", args: [list]}}
 
   def subscription_batch(_), do: :error
-
-  defp runtime_subscription_batch?(items) when is_list(items) do
-    port_subscription_items?(items) or not Subscriptions.static_batch?(items)
-  end
-
-  defp port_subscription_items?(items) when is_list(items) do
-    Enum.any?(items, &port_subscription_item?/1)
-  end
-
-  defp port_subscription_item?(%{op: :call, name: name}) when name in ["incoming"], do: true
-  defp port_subscription_item?(%{op: :qualified_call, target: target}) when is_binary(target) do
-    String.ends_with?(target, ".incoming")
-  end
-
-  defp port_subscription_item?(_), do: false
-
-  @spec frame_subscription(Types.ir_arg_list()) :: Types.rewrite_result()
-  def frame_subscription(args),
-    do: {:ok, %{op: :int_literal, value: Subscriptions.Frame.mask(args)}}
-
-  @spec frame_fps_subscription(Types.ir_arg_list()) :: Types.rewrite_result()
-  def frame_fps_subscription(args),
-    do: {:ok, %{op: :int_literal, value: Subscriptions.Frame.fps_mask(args)}}
 
   @spec data_log_tag(Types.ir_arg_list()) :: Types.rewrite_result()
   def data_log_tag([value]), do: {:ok, %{op: :runtime_call, function: "elmx_datalog_tag", args: [value]}}

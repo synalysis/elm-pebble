@@ -32,6 +32,11 @@ defmodule Elmx.MessageDecodeTest do
     assert MessageDecode.decode("StorageStringLoaded saved") == {:StorageStringLoaded, "saved"}
   end
 
+  test "decode message with nested union constructor payload" do
+    assert MessageDecode.decode("SpeakerFinished FinishedDone") ==
+             {:SpeakerFinished, :FinishedDone}
+  end
+
   test "decode FromPhone wire message_value into tagged tuple msg" do
     wire = %{
       "ctor" => "FromPhone",

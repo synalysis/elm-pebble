@@ -6,6 +6,7 @@ defmodule Ide.Debugger.RuntimeBackgroundDrains do
   alias Ide.Debugger.CompanionBridge.Runtime, as: CompanionBridgeRuntime
   alias Ide.Debugger.PendingHttpFollowups
   alias Ide.Debugger.PendingProtocolDelivery
+  alias Ide.Debugger.PendingSpeakerFollowups
   alias Ide.Debugger.ProtocolRx
   alias Ide.Debugger.RuntimeBackgroundWork
   alias Ide.Debugger.Types
@@ -15,6 +16,7 @@ defmodule Ide.Debugger.RuntimeBackgroundDrains do
       when is_binary(project_slug) and is_map(state) do
     PendingProtocolDelivery.maybe_schedule_drain(project_slug, state)
     PendingHttpFollowups.maybe_schedule_drain(project_slug, state)
+    PendingSpeakerFollowups.maybe_schedule(project_slug, state)
     :ok
   end
 

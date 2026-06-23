@@ -56,6 +56,11 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
             uploads={@uploads}
             output={@font_upload_output}
           />
+          <.speaker_samples_upload_sidebar
+            :if={@resource_view == "speaker-samples"}
+            uploads={@uploads}
+            output={@speaker_sample_upload_output}
+          />
         </div>
       </aside>
 
@@ -79,6 +84,10 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
           :if={@resource_view == "fonts"}
           font_sources={@font_sources}
           font_resources={@font_resources}
+        />
+        <.speaker_samples_panel
+          :if={@resource_view == "speaker-samples"}
+          speaker_samples={@speaker_samples}
         />
       </main>
     </section>
@@ -110,6 +119,12 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
           class={settings_tab_class(@resource_view, "fonts")}
         >
           Fonts
+        </.link>
+        <.link
+          patch={~p"/projects/#{@project.slug}/resources/speaker-samples"}
+          class={settings_tab_class(@resource_view, "speaker-samples")}
+        >
+          Speaker samples
         </.link>
       </div>
       <div
@@ -288,6 +303,68 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
         <.button type="submit" disabled={not upload_ready?(@uploads.font)}>Upload font</.button>
       </.form>
       <p :if={@output} class="mt-2 text-xs text-zinc-600">{@output}</p>
+    </div>
+    """
+  end
+
+  attr :uploads, :map, required: true
+  attr :output, :string, default: nil
+
+  defp speaker_samples_upload_sidebar(assigns) do
+    ~H"""
+    <div class="rounded border border-zinc-200 bg-zinc-50 p-3">
+      <h3 class="text-sm font-semibold text-zinc-700">Speaker PCM uploads</h3>
+      <p class="mt-1 text-xs text-zinc-500">
+        Mono signed PCM (.pcm, .raw, .bin). Total size across samples is capped at 16 KiB.
+      </p>
+      <.form
+        for={%{}}
+        phx-change="validate-resource-upload"
+        phx-submit="upload-speaker-sample-resource"
+        multipart
+        class="mt-2 space-y-2"
+      >
+        <div class="sr-only" aria-hidden="true">
+          <.live_file_input upload={@uploads.speaker_sample} />
+        </div>
+        <label
+          for={@uploads.speaker_sample.ref}
+          class="flex cursor-pointer items-center justify-center rounded border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-100"
+        >
+          Choose file
+        </label>
+        <.button type="submit" disabled={not upload_ready?(@uploads.speaker_sample)}>
+          Upload sample
+        </.button>
+      </.form>
+      <p :if={@output} class="mt-2 text-xs text-zinc-600">{@output}</p>
+    </div>
+    """
+  end
+
+  attr :speaker_samples, :list, required: true
+
+  defp speaker_samples_panel(assigns) do
+    ~H"""
+    <div>
+      <h3 class="text-sm font-semibold uppercase tracking-wide text-zinc-500">Speaker samples</h3>
+      <div
+        :if={@speaker_samples == []}
+        class="mt-3 rounded border border-dashed border-zinc-300 bg-zinc-50 p-4 text-sm text-zinc-600"
+      >
+        No speaker samples uploaded yet.
+      </div>
+      <div :if={@speaker_samples != []} class="mt-3 space-y-2">
+        <article
+          :for={sample <- @speaker_samples}
+          class="rounded border border-zinc-200 bg-zinc-50 p-3 text-xs"
+        >
+          <div class="font-semibold text-zinc-800">{sample.ctor}</div>
+          <div class="mt-1 text-zinc-600">
+            id={sample.resource_id} · {sample.bytes} bytes · format={sample.format} · base MIDI={sample.base_midi_note}
+          </div>
+        </article>
+      </div>
     </div>
     """
   end

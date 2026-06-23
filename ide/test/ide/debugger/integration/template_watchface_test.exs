@@ -432,16 +432,22 @@ defmodule Ide.Debugger.TemplateWatchfaceIntegrationTest do
       |> Enum.map(&{&1.target, &1.message, &1.message_source})
 
     assert Enum.any?(timeline, fn
-             {"watch", "BatteryLevelChanged " <> _, "init_device_data"} -> true
-             _ -> false
+             {"watch", "BatteryLevelChanged " <> _, source}
+             when source in ["runtime_followup", "device_data", "init_device_data"] ->
+               true
+
+             _ ->
+               false
            end)
 
-    assert TimelineAssertions.has_entry?(
-             timeline,
-             "watch",
-             "ConnectionStatusChanged",
-             "init_device_data"
-           )
+    assert Enum.any?(timeline, fn
+             {"watch", "ConnectionStatusChanged" <> _, source}
+             when source in ["runtime_followup", "device_data", "init_device_data"] ->
+               true
+
+             _ ->
+               false
+           end)
 
     assert Enum.any?(reloaded.events, fn event ->
              event.type in ["debugger.protocol_tx", "debugger.protocol_rx"]

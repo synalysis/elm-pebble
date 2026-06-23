@@ -1,7 +1,7 @@
 defmodule Ide.Debugger.AutoFireRuntime do
   @moduledoc false
 
-  alias Ide.Debugger.DeviceDataResponses
+  alias Ide.Debugger.RuntimeActiveSubscriptions
   alias Ide.Debugger.SubscriptionActivation
   alias Ide.Debugger.SubscriptionAutoFireState
   alias Ide.Debugger.SubscriptionPayload
@@ -37,11 +37,6 @@ defmodule Ide.Debugger.AutoFireRuntime do
           required(:simulator_now) => (Types.runtime_state(), Types.surface_target() ->
                                          NaiveDateTime.t()),
           required(:source_root_for_target) => (Types.surface_target() -> String.t()),
-          optional(:apply_device_data_responses) => (Types.runtime_state(),
-                                                     Types.surface_target(),
-                                                     String.t(),
-                                                     Types.subscription_payload() | nil ->
-                                                       Types.runtime_state()),
           optional(:default_interval_ms) => pos_integer()
         }
 
@@ -62,8 +57,12 @@ defmodule Ide.Debugger.AutoFireRuntime do
             ctx.trigger_message.(row_acc, target, trigger, message)
             |> resolved_auto_fire_message(message)
 
-          {_step_message, message_value} =
-            TimelineMessage.message_value_for_step(resolved_message)
+          message_value =
+            case TimelineMessage.message_value_for_step(resolved_message) do
+              {_, %{} = value} -> value
+              _ -> nil
+            end ||
+              RuntimeActiveSubscriptions.message_value_for(row_acc, target, trigger, message)
 
           row_acc
           |> apply_auto_fire_step(target, resolved_message, message_value, trigger, ctx)
@@ -102,32 +101,14 @@ defmodule Ide.Debugger.AutoFireRuntime do
 
   defp apply_auto_fire_step(state, target, message, message_value, trigger, ctx)
        when target in [:watch, :companion, :phone] and is_map(state) and is_map(ctx) do
-    before_seq = Map.get(state, :debugger_seq, 0)
-
-    stepped =
-      ctx.apply_step.(
-        state,
-        target,
-        message,
-        message_value,
-        "subscription_auto_fire",
-        trigger
-      )
-
-    if DeviceDataResponses.device_data_response_appended?(
-         stepped,
-         before_seq,
-         target,
-         ctx.source_root_for_target
-       ) do
-      stepped
-    else
-      case Map.get(ctx, :apply_device_data_responses) do
-        fun when is_function(fun, 4) -> fun.(stepped, target, message, message_value)
-        fun when is_function(fun, 3) -> fun.(stepped, target, message)
-        _ -> stepped
-      end
-    end
+    ctx.apply_step.(
+      state,
+      target,
+      message,
+      message_value,
+      "subscription_auto_fire",
+      trigger
+    )
   end
 
   @spec subscription_due?(
@@ -260,11 +241,24 @@ defmodule Ide.Debugger.AutoFireRuntime do
       when is_map(state) and is_list(targets) and is_list(subscriptions) and is_map(ctx) do
     default_ms = Map.get(ctx, :default_interval_ms, @default_interval_ms)
 
-    targets
-    |> Enum.flat_map(&ctx.trigger_candidates.(state, &1))
-    |> Enum.filter(&row_selected?(&1, subscriptions))
-    |> Enum.map(&(Map.get(&1, :interval_ms) || Map.get(&1, "interval_ms")))
-    |> Enum.filter(&is_integer/1)
+    runtime_intervals =
+      targets
+      |> Enum.flat_map(fn target ->
+        if RuntimeActiveSubscriptions.present?(state, target) do
+          RuntimeActiveSubscriptions.auto_fire_intervals(state, target)
+        else
+          []
+        end
+      end)
+
+    catalog_intervals =
+      targets
+      |> Enum.flat_map(&ctx.trigger_candidates.(state, &1))
+      |> Enum.filter(&row_selected?(&1, subscriptions))
+      |> Enum.map(&(Map.get(&1, :interval_ms) || Map.get(&1, "interval_ms")))
+      |> Enum.filter(&is_integer/1)
+
+    (runtime_intervals ++ catalog_intervals)
     |> case do
       [] -> default_ms
       intervals -> intervals |> Enum.min() |> TriggerCandidates.clamp_auto_fire_interval_ms()

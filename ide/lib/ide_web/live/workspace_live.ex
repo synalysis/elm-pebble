@@ -49,6 +49,7 @@ defmodule IdeWeb.WorkspaceLive do
     vectors-static
     vectors-animated
     fonts
+    speaker-samples
   )
 
   @editor_flow_events EditorFlow.editor_events() ++ EditorFlow.file_tab_events()
@@ -127,6 +128,7 @@ defmodule IdeWeb.WorkspaceLive do
     {bitmap_resources, bitmap_resources_error} = ResourcesFlow.load_bitmap_resources(project)
     vector_resources = ResourcesFlow.load_vector_resources(project)
     animation_resources = ResourcesFlow.load_animation_resources(project)
+    speaker_samples = ResourcesFlow.load_speaker_samples(project)
     font_sources = ResourcesFlow.load_font_sources(project)
     font_resources = ResourcesFlow.load_font_resources(project)
     screenshots = ResourcesFlow.load_screenshots(project)
@@ -144,6 +146,7 @@ defmodule IdeWeb.WorkspaceLive do
       bitmap_resources_error: bitmap_resources_error,
       vector_resources: vector_resources,
       animation_resources: animation_resources,
+      speaker_samples: speaker_samples,
       font_sources: font_sources,
       font_resources: font_resources,
       screenshots: screenshots,

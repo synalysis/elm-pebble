@@ -3,7 +3,7 @@ defmodule Ide.Resources.ResourceStore.Manifest do
 
   alias Ide.Projects
   alias Ide.Projects.Project
-  alias Ide.Resources.ResourceStore.{GeneratedModule, Migration}
+  alias Ide.Resources.ResourceStore.{GeneratedModule, Migration, SpeakerSamples}
   alias Ide.Resources.Types
 
   @manifest_rel_path "watch/resources/bitmaps.json"
@@ -121,7 +121,8 @@ defmodule Ide.Resources.ResourceStore.Manifest do
                vector_entries,
                animation_entries
              )
-           ) do
+           ),
+         :ok <- SpeakerSamples.write_generated_module(workspace) do
       _ = File.rm(legacy)
       :ok
     end

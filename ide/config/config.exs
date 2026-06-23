@@ -140,8 +140,10 @@ config :logger, :console,
 config :phoenix, :json_library, Jason
 
 # Pebble Draw Command vector resources use the `.pdc` extension.
+# Speaker sample uploads use mono PCM blobs (`.pcm`, `.raw`, `.bin`).
 config :mime, :types, %{
-  "application/vnd.pebble.pdc" => ["pdc"]
+  "application/vnd.pebble.pdc" => ["pdc"],
+  "application/octet-stream" => ["pcm", "raw", "bin"]
 }
 
 # Import environment specific config. This must remain at the bottom

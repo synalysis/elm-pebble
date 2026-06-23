@@ -13,6 +13,8 @@ import Pebble.Ui.Resources as Resources
 type alias Model =
     { modeIndex : Int
     , applies : Int
+    , backlight : Maybe Light.State
+    , lightChanges : Int
     }
 
 
@@ -20,6 +22,7 @@ type Msg
     = UpPressed
     | SelectPressed
     | DownPressed
+    | LightChanged Light.State
 
 
 modes : List ( String, Cmd Msg )
@@ -32,7 +35,7 @@ modes =
 
 init : Platform.LaunchContext -> ( Model, Cmd Msg )
 init _ =
-    ( { modeIndex = 0, applies = 0 }, Cmd.none )
+    ( { modeIndex = 0, applies = 0, backlight = Nothing, lightChanges = 0 }, Cmd.none )
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -46,6 +49,9 @@ update msg model =
 
         SelectPressed ->
             applyMode { model | applies = model.applies + 1 }
+
+        LightChanged state ->
+            ( { model | backlight = Just state, lightChanges = model.lightChanges + 1 }, Cmd.none )
 
 
 applyMode : Model -> ( Model, Cmd Msg )
@@ -85,12 +91,26 @@ modeLabel model =
     Tuple.first (currentMode model.modeIndex)
 
 
+lightLabel : Maybe Light.State -> String
+lightLabel maybeState =
+    case maybeState of
+        Nothing ->
+            "Backlight: --"
+
+        Just Light.On ->
+            "Backlight: on"
+
+        Just Light.Off ->
+            "Backlight: off"
+
+
 subscriptions : Model -> Sub Msg
 subscriptions _ =
     Events.batch
         [ Button.onPress Button.Up UpPressed
         , Button.onPress Button.Select SelectPressed
         , Button.onPress Button.Down DownPressed
+        , Light.onChange LightChanged
         ]
 
 
@@ -100,8 +120,9 @@ view model =
         [ Ui.clear Color.white
         , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 8, w = 136, h = 20 } "Light demo"
         , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 36, w = 136, h = 20 } (modeLabel model)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 64, w = 136, h = 20 } (String.fromInt model.applies)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 92, w = 136, h = 40 } "Up/Down: mode Select: apply"
+        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 64, w = 136, h = 20 } (lightLabel model.backlight)
+        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 88, w = 136, h = 20 } (String.fromInt model.lightChanges)
+        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 112, w = 136, h = 40 } "Up/Down: mode Select: apply"
         ]
 
 

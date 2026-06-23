@@ -54,6 +54,13 @@ defmodule Ide.ProjectTemplatesTest do
     assert ProjectTemplates.picker_title("game-2048") == "2048"
   end
 
+  test "every watch demo template key has a static preview screenshot" do
+    for key <- ProjectTemplates.template_keys(), String.starts_with?(key, "watch-demo-") do
+      assert Ide.ProjectTemplatePreviews.screenshot_available?(key),
+             "missing preview screenshot for #{key}"
+    end
+  end
+
   test "companion_for_template reflects whether a template seeds phone companion" do
     assert ProjectTemplates.companion_for_template("starter")
     assert ProjectTemplates.companion_for_template("watchface-yes")
@@ -135,6 +142,37 @@ defmodule Ide.ProjectTemplatesTest do
 
     package_json = Jason.decode!(File.read!(Path.join(workspace, ".pebble-sdk/app/package.json")))
     assert get_in(package_json, ["pebble", "watchapp", "watchface"]) == true
+  end
+
+  test "watch-demo-speaker seeds bundled PCM sample and generated Resources module" do
+    slug = "speaker-template-#{System.unique_integer([:positive])}"
+
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "SpeakerTemplate",
+               "slug" => slug,
+               "template" => "watch-demo-speaker"
+             })
+
+    base = Projects.project_workspace_path(project)
+    pcm_path = Path.join(base, "watch/resources/speaker_samples/chime.pcm")
+    assert File.regular?(pcm_path)
+    assert File.stat!(pcm_path).size == 4800
+
+    manifest =
+      base
+      |> Path.join("watch/resources/speaker_samples.json")
+      |> File.read!()
+      |> Jason.decode!()
+
+    assert [%{"ctor" => "SampleChime", "filename" => "chime.pcm"}] = manifest["entries"]
+
+    resources_elm = File.read!(Path.join(base, "watch/src/Pebble/Speaker/Resources.elm"))
+    assert resources_elm =~ "SampleChime"
+    assert resources_elm =~ "allSamples =\n    [ SampleChime ]"
+
+    assert {:ok, main_elm} = Projects.read_source_file(project, "watch", "src/Main.elm")
+    assert main_elm =~ "Speaker.playTracks"
   end
 
   test "watchface-smoke-screen seeds checkerboard Main.elm" do

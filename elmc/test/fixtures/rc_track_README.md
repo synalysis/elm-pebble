@@ -11,7 +11,7 @@ Host-side refcount probes for `elm/core` stdlib functions compiled through **elm
 
 ## Authoring probes
 
-1. Add a row to [`../../docs/CODEGEN_COVERAGE_MATRIX.md`](../../docs/CODEGEN_COVERAGE_MATRIX.md) and `special_value_from_target` in `core.ex`.
+1. Add a row to [`../../docs/CODEGEN_COVERAGE_MATRIX.md`](../../docs/CODEGEN_COVERAGE_MATRIX.md) and `special_value_from_target` in the appropriate `special_values/*.ex` or `special_values/stdlib/*.ex` handler module.
 2. Add a nullary `probeFoo : Int` (or heap-return type) to the fixture Elm module.
 3. Register the probe in `RcTrackMatrix.@registry`.
 4. Run `mix test.rc_gate` — it fails if matrix and probes drift.

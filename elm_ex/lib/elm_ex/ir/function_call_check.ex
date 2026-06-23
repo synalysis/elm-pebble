@@ -8,8 +8,9 @@ defmodule ElmEx.IR.FunctionCallCheck do
   alias ElmEx.IR.ImportResolution
   alias ElmEx.IR.TypeSignature
 
-  @typep expr() :: map()
-  @typep diagnostic() :: map()
+  alias ElmEx.IR.Types.{Diagnostic, Expr}
+
+  @typep diagnostic() :: Diagnostic.t()
 
   @skip_call_prefixes ~w(__)
 
@@ -215,7 +216,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
   defp binding_types(_decl), do: %{}
 
   @spec expr_function_call_diagnostics(
-          expr(),
+          Expr.t(),
           map(),
           map(),
           map(),
@@ -322,8 +323,8 @@ defmodule ElmEx.IR.FunctionCallCheck do
 
   @spec call_site_diagnostics(
           String.t() | nil,
-          [expr()],
-          expr(),
+          [Expr.t()],
+          Expr.t(),
           map(),
           map(),
           map(),
@@ -497,12 +498,12 @@ defmodule ElmEx.IR.FunctionCallCheck do
 
   @spec return_type_mismatch?(
           String.t(),
-          expr(),
+          Expr.t(),
           map(),
           map(),
           map(),
           map()
-        ) :: {boolean(), String.t() | nil, expr() | nil, String.t() | nil}
+        ) :: {boolean(), String.t() | nil, Expr.t() | nil, String.t() | nil}
   defp return_type_mismatch?(expected, expr, import_lookup, signature_lookup, type_alias_lookup, binding_types) do
     expected_elems = TypeSignature.tuple_element_types(expected)
 
@@ -580,7 +581,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
 
   @spec record_literal_validation_issues(
           String.t(),
-          expr(),
+          Expr.t(),
           map(),
           map(),
           map(),
@@ -655,7 +656,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
   @spec function_return_message(
           String.t(),
           String.t() | nil,
-          expr() | nil,
+          Expr.t() | nil,
           map(),
           map(),
           map(),
@@ -727,7 +728,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
     {occurrence, Map.put(call_context, :occurrence_counts, Map.put(counts, pattern, occurrence))}
   end
 
-  @spec call_source_pattern(expr(), String.t()) :: String.t()
+  @spec call_source_pattern(Expr.t(), String.t()) :: String.t()
   defp call_source_pattern(%{op: :qualified_call, target: target}, _resolved)
        when is_binary(target),
        do: target
@@ -865,7 +866,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
       unqualified in ["identity", "always", "never"]
   end
 
-  @spec call_target(expr(), map()) :: String.t() | nil
+  @spec call_target(Expr.t(), map()) :: String.t() | nil
   defp call_target(%{op: :qualified_call, target: target}, import_lookup)
        when is_binary(target) do
     ImportResolution.resolve(target, import_lookup)
@@ -877,7 +878,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
 
   defp call_target(_, _), do: nil
 
-  @spec infer_expr_type(expr(), map(), map(), map(), map()) :: String.t() | nil
+  @spec infer_expr_type(Expr.t(), map(), map(), map(), map()) :: String.t() | nil
   defp infer_expr_type(expr, import_lookup, signature_lookup, type_alias_lookup, binding_types)
 
   defp infer_expr_type(%{op: :int_literal}, _, _, _, _), do: "Int"
@@ -1103,7 +1104,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
           map(),
           map(),
           String.t() | nil,
-          expr() | nil
+          Expr.t() | nil
         ) :: boolean()
   defp incompatible_types?(_expected, nil, _import_lookup, _type_alias_lookup, _target, _arg),
     do: false
@@ -1171,11 +1172,11 @@ defmodule ElmEx.IR.FunctionCallCheck do
   defp primitive_type?(type), do: type in @primitive_types
 
   # Elm allows integer number literals to satisfy Float parameters (not Int variables).
-  @spec elm_number_literal_coercion?(String.t(), String.t(), expr() | nil) :: boolean()
+  @spec elm_number_literal_coercion?(String.t(), String.t(), Expr.t() | nil) :: boolean()
   defp elm_number_literal_coercion?("Float", "Int", arg), do: int_number_literal?(arg)
   defp elm_number_literal_coercion?(_expected, _inferred, _arg), do: false
 
-  @spec int_number_literal?(expr() | nil) :: boolean()
+  @spec int_number_literal?(Expr.t() | nil) :: boolean()
   defp int_number_literal?(%{op: :int_literal}), do: true
 
   defp int_number_literal?(%{op: op, target: "Basics.negate", args: [inner]})

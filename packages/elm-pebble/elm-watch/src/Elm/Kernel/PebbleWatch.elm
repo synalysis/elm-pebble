@@ -30,6 +30,9 @@ module Elm.Kernel.PebbleWatch exposing
     , onAccelTap
     , onAnimationFinished
     , onAppFocusChange
+    , onBacklightChange
+    , onScreenChange
+    , onSpeakerFinished
     , onBatteryChange
     , onButtonDown
     , onButtonLongDown
@@ -53,8 +56,19 @@ module Elm.Kernel.PebbleWatch exposing
     , onUnobstructedDidChange
     , onUnobstructedWillChange
     , onYearChange
+    , speakerGetStatus
+    , speakerIsMuted
+    , speakerPlayNotes
+    , speakerPlayTone
+    , speakerPlayTracks
+    , speakerSetVolume
+    , speakerStop
+    , speakerStreamClose
+    , speakerStreamOpen
+    , speakerStreamWrite
     , storageDelete
     , storageReadInt
+    , storageReadMaxSize
     , storageReadString
     , storageWriteInt
     , storageWriteString
@@ -134,6 +148,100 @@ storageReadString key toMsg =
             ( key, toMsg )
     in
     Cmd.none
+
+
+storageReadMaxSize : (Int -> msg) -> Cmd msg
+storageReadMaxSize toMsg =
+    let
+        keep =
+            toMsg
+    in
+    Cmd.none
+
+
+speakerIsMuted : (Bool -> msg) -> Cmd msg
+speakerIsMuted toMsg =
+    let
+        keep =
+            toMsg
+    in
+    Cmd.none
+
+
+speakerPlayTone : Int -> Int -> Int -> Int -> Cmd msg
+speakerPlayTone frequency duration volume waveform =
+    let
+        keep =
+            ( frequency, duration, volume, waveform )
+    in
+    Cmd.none
+
+
+speakerPlayNotes notes volume =
+    let
+        keep =
+            ( notes, volume )
+    in
+    Cmd.none
+
+
+speakerPlayTracks tracks volume =
+    let
+        keep =
+            ( tracks, volume )
+    in
+    Cmd.none
+
+
+speakerStop : Cmd msg
+speakerStop =
+    Cmd.none
+
+
+speakerSetVolume : Int -> Cmd msg
+speakerSetVolume volume =
+    let
+        keep =
+            volume
+    in
+    Cmd.none
+
+
+speakerGetStatus : (a -> msg) -> Cmd msg
+speakerGetStatus toMsg =
+    let
+        keep =
+            toMsg
+    in
+    Cmd.none
+
+
+speakerStreamOpen : Int -> Int -> Cmd msg
+speakerStreamOpen format volume =
+    let
+        keep =
+            ( format, volume )
+    in
+    Cmd.none
+
+
+speakerStreamWrite : List Int -> Cmd msg
+speakerStreamWrite bytes =
+    let
+        keep =
+            bytes
+    in
+    Cmd.none
+
+
+speakerStreamClose : Cmd msg
+speakerStreamClose =
+    Cmd.none
+
+
+onSpeakerFinished : (a -> msg) -> Sub msg
+onSpeakerFinished _ =
+    Sub.none
 
 
 companionSend : Int -> Int -> Cmd msg
@@ -394,6 +502,16 @@ dictationStop =
 
 onAppFocusChange : (a -> msg) -> Sub msg
 onAppFocusChange _ =
+    Sub.none
+
+
+onBacklightChange : (a -> msg) -> Sub msg
+onBacklightChange _ =
+    Sub.none
+
+
+onScreenChange : (a -> msg) -> Sub msg
+onScreenChange _ =
     Sub.none
 
 

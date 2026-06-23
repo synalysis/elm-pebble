@@ -43,6 +43,7 @@ defmodule Ide.SimulatorSettings do
     companion_storage: "Storage",
     companion_preferences: "Preferences",
     watch_sensors: "Sensors & input",
+    watch_platform: "Platform & launch",
     emulator_extras: "Emulator"
   }
 
@@ -540,6 +541,79 @@ defmodule Ide.SimulatorSettings do
       options: nil,
       optional: true,
       hint: "JSON array of segment durations; ON/OFF alternating from ON."
+    },
+    %{
+      key: "backlight_on",
+      type: :checkbox,
+      label: "Backlight on",
+      capabilities: ["watch_light"],
+      group: :watch_sensors,
+      min: nil,
+      max: nil,
+      step: nil,
+      options: nil,
+      optional: false,
+      hint: "Toggle to simulate backlight state changes."
+    },
+    %{
+      key: "launch_reason",
+      type: :select,
+      label: "Launch reason",
+      capabilities: ["watch_launch"],
+      group: :watch_platform,
+      min: nil,
+      max: nil,
+      step: nil,
+      options: [
+        {"LaunchUser", "User launch"},
+        {"LaunchSystem", "System launch"},
+        {"LaunchPhone", "Phone launch"},
+        {"LaunchWakeup", "Wakeup launch"},
+        {"LaunchWorker", "Worker launch"},
+        {"LaunchQuickLaunch", "Quick launch"},
+        {"LaunchTimelineAction", "Timeline action"},
+        {"LaunchUnknown", "Unknown"}
+      ],
+      optional: false,
+      hint: nil
+    },
+    %{
+      key: "launch_button",
+      type: :select,
+      label: "Launch button",
+      capabilities: ["watch_launch"],
+      group: :watch_platform,
+      min: nil,
+      max: nil,
+      step: nil,
+      options: [
+        {"", "None"},
+        {"Back", "Back"},
+        {"Up", "Up"},
+        {"Select", "Select"},
+        {"Down", "Down"}
+      ],
+      optional: true,
+      hint: "Physical button that launched the app, when applicable."
+    },
+    %{
+      key: "quick_launch_action",
+      type: :select,
+      label: "Quick launch action",
+      capabilities: ["watch_launch"],
+      group: :watch_platform,
+      min: nil,
+      max: nil,
+      step: nil,
+      options: [
+        {"QuickLaunchNone", "None"},
+        {"QuickLaunchHold", "Hold"},
+        {"QuickLaunchTap", "Tap"},
+        {"QuickLaunchCombo", "Combo"},
+        {"QuickLaunchUnknown", "Unknown"}
+      ],
+      optional: false,
+      hint: "Used when launch reason is Quick launch."
     }
   ]
 
@@ -691,17 +765,18 @@ defmodule Ide.SimulatorSettings do
   defp group_order(:watch_device), do: 0
   defp group_order(:watch_time), do: 1
   defp group_order(:watch_sensors), do: 2
-  defp group_order(:companion_battery), do: 3
-  defp group_order(:companion_locale), do: 4
-  defp group_order(:companion_network), do: 5
-  defp group_order(:companion_notifications), do: 6
-  defp group_order(:companion_weather), do: 7
-  defp group_order(:companion_calendar), do: 8
-  defp group_order(:companion_environment), do: 9
-  defp group_order(:companion_geolocation), do: 10
-  defp group_order(:companion_storage), do: 11
-  defp group_order(:companion_preferences), do: 12
-  defp group_order(:emulator_extras), do: 13
+  defp group_order(:watch_platform), do: 3
+  defp group_order(:companion_battery), do: 4
+  defp group_order(:companion_locale), do: 5
+  defp group_order(:companion_network), do: 6
+  defp group_order(:companion_notifications), do: 7
+  defp group_order(:companion_weather), do: 8
+  defp group_order(:companion_calendar), do: 9
+  defp group_order(:companion_environment), do: 10
+  defp group_order(:companion_geolocation), do: 11
+  defp group_order(:companion_storage), do: 12
+  defp group_order(:companion_preferences), do: 13
+  defp group_order(:emulator_extras), do: 14
   defp group_order(_), do: 99
 
   @spec project_simulator_settings(Project.t()) :: Ide.Projects.Types.debugger_settings()

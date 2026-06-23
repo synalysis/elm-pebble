@@ -1,8 +1,13 @@
 defmodule Ide.Debugger.SubscriptionPayload do
   @moduledoc false
 
+  alias Ide.Debugger.CompanionSubscriptionTrigger
+  alias Ide.Debugger.DeviceData
+  alias Ide.Debugger.RuntimeActiveSubscriptions
   alias Ide.Debugger.RuntimeModelMessages
   alias Ide.Debugger.SimulatorSettings, as: DebuggerSimulatorSettings
+  alias Ide.Debugger.TimelineMessage
+  alias Ide.Debugger.TriggerCandidates
   alias Ide.Debugger.Types
 
   @type attach_ctx :: %{
@@ -10,20 +15,6 @@ defmodule Ide.Debugger.SubscriptionPayload do
                                       Types.elm_introspect() | nil),
           optional(:settings) => (Types.runtime_state() -> Types.simulator_settings())
         }
-
-  defp resolve_introspect(state, target, ctx) do
-    case Map.get(ctx || %{}, :introspect) do
-      fun when is_function(fun, 2) -> fun.(state, target) || %{}
-      _ -> %{}
-    end
-  end
-
-  defp resolve_settings(state, ctx) do
-    case Map.get(ctx || %{}, :settings) do
-      fun when is_function(fun, 1) -> fun.(state)
-      _ -> DebuggerSimulatorSettings.from_state(state)
-    end
-  end
 
   @spec attach(
           Types.runtime_state(),
@@ -39,120 +30,55 @@ defmodule Ide.Debugger.SubscriptionPayload do
       when is_map(state) and is_binary(message) and is_binary(trigger) do
     message_text = String.trim(message)
 
-    if message_text == "" or message_has_payload?(message_text) do
-      message
-    else
-      now = simulator_now_for_target(state, target)
-      # `subscription_event_kind/1` turns e.g. `PebbleEvents.onHourChange` into `on_hour_change`.
-      # Match after removing punctuation so "on_hour_change", "onHourChange", and "onhourchange"
-      # all line up the same way.
-      t =
-        trigger
-        |> to_string()
-        |> String.downcase()
-        |> String.replace(~r/[^a-z0-9]/, "")
+    cond do
+      message_text == "" ->
+        message
 
-      cond do
-        Ide.Debugger.CompanionSubscriptionTrigger.companion_trigger?(trigger) ->
-          message
+      message_has_payload?(message_text) ->
+        message
 
-        frame_subscription_trigger?(trigger) and
-            subscription_message_arity(state, target, message_text, ctx) == 1 ->
-          "#{message_text} #{Jason.encode!(subscription_frame_payload(state, target))}"
+      CompanionSubscriptionTrigger.companion_trigger?(trigger) ->
+        message
 
-        (String.contains?(t, "secondchange") or String.contains?(t, "onsecond")) and
-            subscription_message_arity(state, target, message_text, ctx) == 1 ->
-          "#{message_text} #{now.second}"
+      true ->
+        case RuntimeActiveSubscriptions.format_step_message(state, target, trigger, message_text) do
+          {:ok, stepped, value} when is_binary(stepped) ->
+            if message_has_payload?(stepped) do
+              stepped
+            else
+              runtime_formatted_message(message_text, value) ||
+                attach_simulator_stub(state, target, message_text, trigger, ctx)
+            end
 
-        # Minute before hour so a hypothetical name containing both substrings is unambiguous.
-        String.contains?(t, "minutechange") or String.contains?(t, "onminute") ->
-          "#{message_text} #{now.minute}"
-
-        String.contains?(t, "hourchange") or String.contains?(t, "onhour") ->
-          "#{message_text} #{now.hour}"
-
-        String.contains?(t, "daychange") or String.contains?(t, "onday") ->
-          "#{message_text} #{now.day}"
-
-        String.contains?(t, "monthchange") or String.contains?(t, "onmonth") ->
-          "#{message_text} #{now.month}"
-
-        String.contains?(t, "yearchange") or String.contains?(t, "onyear") ->
-          "#{message_text} #{now.year}"
-
-        String.contains?(t, "batterychange") or String.contains?(t, "onbattery") ->
-          "#{message_text} #{subscription_battery_level(state, target, ctx)}"
-
-        String.contains?(t, "connectionchange") or String.contains?(t, "onconnection") ->
-          "#{message_text} #{subscription_connection_status(state, target, ctx)}"
-
-        String.contains?(t, "compasschange") or String.contains?(t, "oncompass") or
-            (String.contains?(t, "onchange") and
-               compass_heading_message?(state, target, message_text, ctx)) ->
-          compass_payload = subscription_compass_heading(state, target, ctx)
-
-          if subscription_message_arity(state, target, message_text, ctx) == 1 do
-            "#{message_text} #{Jason.encode!(compass_payload)}"
-          else
-            message
-          end
-
-        String.contains?(t, "appfocuschange") or String.contains?(t, "onappfocus") ->
-          focus_state = subscription_app_focus_state(state, target, ctx)
-
-          if subscription_message_arity(state, target, message_text, ctx) == 1 do
-            "#{message_text} #{focus_state}"
-          else
-            message
-          end
-
-        String.contains?(t, "unobstructedwillchange") or String.contains?(t, "onunobstructedwill") ->
-          rect = subscription_unobstructed_rect(state, target, ctx)
-
-          if subscription_message_arity(state, target, message_text, ctx) == 1 do
-            "#{message_text} #{Jason.encode!(rect)}"
-          else
-            message
-          end
-
-        String.contains?(t, "unobstructedchanging") or String.contains?(t, "onunobstructedchang") ->
-          progress = subscription_unobstructed_progress(state)
-
-          if subscription_message_arity(state, target, message_text, ctx) == 1 do
-            "#{message_text} #{progress}"
-          else
-            message
-          end
-
-        String.contains?(t, "dictationstatus") or String.contains?(t, "ondictationstatus") ->
-          status = subscription_dictation_status(state, target, ctx)
-
-          if subscription_message_arity(state, target, message_text, ctx) == 1 do
-            "#{message_text} #{status}"
-          else
-            message
-          end
-
-        String.contains?(t, "dictationresult") or String.contains?(t, "ondictationresult") ->
-          result_payload = subscription_dictation_result_payload(state, target, ctx)
-
-          if subscription_message_arity(state, target, message_text, ctx) == 1 do
-            "#{message_text} #{Jason.encode!(result_payload)}"
-          else
-            message
-          end
-
-        subscription_message_arity(state, target, message_text, ctx) == 1 ->
-          case subscription_simulated_arg(state, target, message_text, ctx) do
-            {:ok, arg} -> "#{message_text} #{arg}"
-            :error -> message
-          end
-
-        true ->
-          message
-      end
+          _ ->
+            runtime_formatted_message(
+              message_text,
+              RuntimeActiveSubscriptions.message_value_for(state, target, trigger, message_text)
+            ) ||
+              attach_simulator_stub(state, target, message_text, trigger, ctx)
+        end
     end
   end
+
+  @spec runtime_formatted_message(String.t(), Types.subscription_payload() | nil) ::
+          String.t() | nil
+  defp runtime_formatted_message(message_text, value) when is_binary(message_text) do
+    case value do
+      %{} = wire_value ->
+        formatted = TimelineMessage.format(message_text, wire_value)
+
+        if message_has_payload?(formatted) do
+          formatted
+        else
+          nil
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp runtime_formatted_message(_message_text, _value), do: nil
 
   def attach(_state, _target, message, _trigger, _ctx) when is_binary(message), do: message
 
@@ -203,14 +129,14 @@ defmodule Ide.Debugger.SubscriptionPayload do
         ) :: Types.runtime_state()
   def sync_simulator_clock_from_subscription(state, message, message_value)
       when is_map(state) and is_binary(message) do
-    overrides = Ide.Debugger.DeviceData.subscription_clock_overrides(message, message_value)
+    overrides = DeviceData.subscription_clock_overrides(message, message_value)
 
     if map_size(overrides) > 0 do
       settings = DebuggerSimulatorSettings.from_state(state)
 
       if settings["use_simulated_time"] == true do
         now = simulator_now_from_settings(settings)
-        next = Ide.Debugger.DeviceData.apply_subscription_clock_overrides(now, overrides)
+        next = DeviceData.apply_subscription_clock_overrides(now, overrides)
 
         next_settings = %{
           settings
@@ -232,6 +158,157 @@ defmodule Ide.Debugger.SubscriptionPayload do
   def sync_simulator_clock_from_subscription(state, _message, _message_value) when is_map(state),
     do: state
 
+  @spec frame_subscription_trigger?(String.t()) :: boolean()
+  def frame_subscription_trigger?(trigger) when is_binary(trigger) do
+    normalized =
+      trigger
+      |> String.downcase()
+      |> String.replace(~r/[^a-z0-9]+/, "")
+
+    String.contains?(normalized, "frame") or String.contains?(normalized, "onframe")
+  end
+
+  @spec advance_simulator_clock_for_auto_fire(Types.runtime_state(), String.t()) ::
+          Types.runtime_state()
+  def advance_simulator_clock_for_auto_fire(state, trigger)
+      when is_map(state) and is_binary(trigger) do
+    settings = DebuggerSimulatorSettings.from_state(state)
+
+    if settings["use_simulated_time"] == true do
+      case clock_unit_for_trigger(state, trigger) do
+        unit when unit in [:second, :minute, :hour, :day, :month, :year] ->
+          now = simulator_now_from_settings(settings)
+          next = advance_naive_datetime(now, unit)
+
+          next_settings = %{
+            settings
+            | "simulated_date" => next |> NaiveDateTime.to_date() |> Date.to_iso8601(),
+              "simulated_time" => next |> NaiveDateTime.to_time() |> format_simulated_time()
+          }
+
+          state
+          |> Map.put(:simulator_settings, next_settings)
+          |> Ide.Debugger.SimulatorSurfaceSettings.apply_to_state()
+
+        _ ->
+          state
+      end
+    else
+      state
+    end
+  end
+
+  def advance_simulator_clock_for_auto_fire(state, _trigger) when is_map(state), do: state
+
+  @spec attach_simulator_stub(
+          Types.runtime_state(),
+          Types.surface_target(),
+          String.t(),
+          String.t(),
+          attach_ctx() | nil
+        ) :: String.t()
+  defp attach_simulator_stub(state, target, message_text, trigger, ctx) do
+    row = %{trigger: trigger, message: message_text}
+    cmd = RuntimeActiveSubscriptions.match_for_row(state, target, row)
+    cmd_target = if cmd, do: RuntimeActiveSubscriptions.command_target(cmd), else: ""
+
+    case simulator_stub_suffix(state, target, message_text, cmd_target, ctx) do
+      suffix when is_binary(suffix) and suffix != "" -> "#{message_text} #{suffix}"
+      _ -> message_text
+    end
+  end
+
+  @spec simulator_stub_suffix(
+          Types.runtime_state(),
+          Types.surface_target(),
+          String.t(),
+          String.t(),
+          attach_ctx() | nil
+        ) :: String.t() | nil
+  defp simulator_stub_suffix(state, target, _message_text, cmd_target, ctx) do
+    normalized = normalize_target(cmd_target)
+    now = simulator_now_for_target(state, target)
+
+    cond do
+      frame_target?(normalized) ->
+        Jason.encode!(subscription_frame_payload(state, target))
+
+      clock_target?(normalized, "secondchange") or clock_target?(normalized, "onsecond") ->
+        Integer.to_string(now.second)
+
+      clock_target?(normalized, "minutechange") or clock_target?(normalized, "onminute") ->
+        Integer.to_string(now.minute)
+
+      clock_target?(normalized, "hourchange") or clock_target?(normalized, "onhour") ->
+        Integer.to_string(now.hour)
+
+      clock_target?(normalized, "daychange") or clock_target?(normalized, "onday") ->
+        Integer.to_string(now.day)
+
+      clock_target?(normalized, "monthchange") or clock_target?(normalized, "onmonth") ->
+        Integer.to_string(now.month)
+
+      clock_target?(normalized, "yearchange") or clock_target?(normalized, "onyear") ->
+        Integer.to_string(now.year)
+
+      String.contains?(normalized, "onbatterychange") or String.contains?(normalized, "batterychange") ->
+        Integer.to_string(subscription_battery_level(state, target, ctx))
+
+      String.contains?(normalized, "onconnectionchange") or
+          String.contains?(normalized, "connectionchange") ->
+        subscription_connection_status(state, target, ctx)
+
+      String.contains?(normalized, "oncompasschange") or String.contains?(normalized, "compasschange") ->
+        Jason.encode!(subscription_compass_heading(state, target, ctx))
+
+      String.contains?(normalized, "onappfocuschange") or String.contains?(normalized, "appfocuschange") ->
+        subscription_app_focus_state(state, target, ctx)
+
+      String.contains?(normalized, "onbacklightchange") or String.contains?(normalized, "backlightchange") ->
+        if Map.get(resolve_settings(state, ctx), "backlight_on", true) == true, do: "On", else: "Off"
+
+      String.contains?(normalized, "onscreenchange") or String.contains?(normalized, "screenchange") ->
+        Jason.encode!(subscription_screen_payload(state, target, ctx))
+
+      String.contains?(normalized, "unobstructedwillchange") ->
+        Jason.encode!(subscription_unobstructed_rect(state, target, ctx))
+
+      String.contains?(normalized, "unobstructedchanging") ->
+        Integer.to_string(subscription_unobstructed_progress(state))
+
+      String.contains?(normalized, "dictationstatus") ->
+        subscription_dictation_status(state, target, ctx)
+
+      String.contains?(normalized, "dictationresult") ->
+        Jason.encode!(subscription_dictation_result_payload(state, target, ctx))
+
+      true ->
+        nil
+    end
+  end
+
+  defp normalize_target(target) when is_binary(target) do
+    target |> String.downcase() |> String.replace(~r/[^a-z0-9]/, "")
+  end
+
+  defp normalize_target(_), do: ""
+
+  defp frame_target?(normalized) do
+    String.contains?(normalized, "frameevery") or String.contains?(normalized, "frameatfps") or
+      String.contains?(normalized, "onframe")
+  end
+
+  defp clock_target?(normalized, fragment) do
+    String.contains?(normalized, fragment)
+  end
+
+  defp resolve_settings(state, ctx) do
+    case Map.get(ctx || %{}, :settings) do
+      fun when is_function(fun, 1) -> fun.(state)
+      _ -> DebuggerSimulatorSettings.from_state(state)
+    end
+  end
+
   @spec explicit_payload_text(String.t() | nil, Types.subscription_payload() | nil) ::
           String.t() | nil
   defp explicit_payload_text(_message, value) when is_integer(value), do: Integer.to_string(value)
@@ -249,7 +326,7 @@ defmodule Ide.Debugger.SubscriptionPayload do
   defp wire_ctor_from_value(%{ctor: ctor}) when is_binary(ctor), do: ctor
   defp wire_ctor_from_value(_value), do: nil
 
-  @spec simulator_now_for_target(Types.runtime_state(), :watch | :companion | :phone) ::
+  @spec simulator_now_for_target(Types.runtime_state(), Types.surface_target()) ::
           NaiveDateTime.t()
   def simulator_now_for_target(state, target)
       when is_map(state) and target in [:watch, :companion, :phone] do
@@ -262,8 +339,7 @@ defmodule Ide.Debugger.SubscriptionPayload do
           Types.runtime_state(),
           Types.surface_target(),
           attach_ctx() | nil
-        ) ::
-          map()
+        ) :: map()
   defp subscription_compass_heading(state, _target, ctx) when is_map(state) do
     settings = resolve_settings(state, ctx)
 
@@ -277,20 +353,39 @@ defmodule Ide.Debugger.SubscriptionPayload do
           Types.runtime_state(),
           Types.surface_target(),
           attach_ctx() | nil
-        ) ::
-          String.t()
+        ) :: String.t()
   defp subscription_app_focus_state(state, _target, ctx) when is_map(state) do
     settings = resolve_settings(state, ctx)
 
     if Map.get(settings, "app_in_focus", true) == true, do: "InFocus", else: "OutOfFocus"
   end
 
+  @spec subscription_screen_payload(
+          Types.runtime_state(),
+          Types.surface_target(),
+          attach_ctx() | nil
+        ) :: map()
+  defp subscription_screen_payload(state, _target, _ctx) when is_map(state) do
+    launch_context =
+      get_in(state, [:watch, :model, "launch_context"]) ||
+        get_in(state, [:watch, :model, "runtime_model", "launch_context"]) ||
+        %{}
+
+    screen = Map.get(launch_context, "screen") || %{}
+
+    %{
+      "width" => Map.get(screen, "width") || 144,
+      "height" => Map.get(screen, "height") || 168,
+      "shape" => Map.get(screen, "shape") || "Rectangular",
+      "colorMode" => Map.get(screen, "color_mode") || Map.get(screen, "colorMode") || "Color"
+    }
+  end
+
   @spec subscription_unobstructed_rect(
           Types.runtime_state(),
           Types.surface_target(),
           attach_ctx() | nil
-        ) ::
-          map()
+        ) :: map()
   defp subscription_unobstructed_rect(state, _target, ctx) when is_map(state) do
     settings = resolve_settings(state, ctx)
 
@@ -318,8 +413,7 @@ defmodule Ide.Debugger.SubscriptionPayload do
           Types.runtime_state(),
           Types.surface_target(),
           attach_ctx() | nil
-        ) ::
-          String.t()
+        ) :: String.t()
   defp subscription_dictation_status(state, _target, ctx) when is_map(state) do
     settings = resolve_settings(state, ctx)
 
@@ -333,8 +427,7 @@ defmodule Ide.Debugger.SubscriptionPayload do
           Types.runtime_state(),
           Types.surface_target(),
           attach_ctx() | nil
-        ) ::
-          map()
+        ) :: map()
   defp subscription_dictation_result_payload(state, _target, ctx) when is_map(state) do
     settings = resolve_settings(state, ctx)
 
@@ -353,109 +446,6 @@ defmodule Ide.Debugger.SubscriptionPayload do
   @spec blank_string?(Types.wire_scalar() | Types.protocol_ctor_value() | list()) :: boolean()
   defp blank_string?(value) when is_binary(value), do: String.trim(value) == ""
   defp blank_string?(_value), do: true
-
-  @spec subscription_simulated_arg(
-          Types.runtime_state(),
-          Types.surface_target(),
-          String.t(),
-          attach_ctx() | nil
-        ) ::
-          {:ok, String.t()} | :error
-  defp subscription_simulated_arg(state, target, constructor, ctx)
-       when is_map(state) and is_binary(constructor) do
-    with %{} = ei <- resolve_introspect(state, target, ctx),
-         arg_type when is_binary(arg_type) <-
-           Map.get(ei, "msg_constructor_arg_types", %{}) |> Map.get(constructor) do
-      simulated_value_for_msg_arg_type(arg_type, state, target, ctx)
-    else
-      _ -> :error
-    end
-  end
-
-  @spec simulated_value_for_msg_arg_type(
-          String.t(),
-          Types.runtime_state(),
-          Types.surface_target(),
-          attach_ctx() | nil
-        ) ::
-          {:ok, String.t()} | :error
-  defp simulated_value_for_msg_arg_type(type, state, target, ctx) when is_binary(type) do
-    normalized =
-      type
-      |> String.replace(" ", "")
-      |> String.downcase()
-
-    cond do
-      String.contains?(normalized, "appfocus") and String.ends_with?(normalized, "state") ->
-        {:ok, subscription_app_focus_state(state, target, ctx)}
-
-      String.contains?(normalized, "compass") and String.contains?(normalized, "heading") ->
-        {:ok, Jason.encode!(subscription_compass_heading(state, target, ctx))}
-
-      true ->
-        :error
-    end
-  end
-
-  @spec compass_heading_message?(
-          Types.runtime_state(),
-          Types.surface_target(),
-          String.t(),
-          attach_ctx() | nil
-        ) :: boolean()
-  defp compass_heading_message?(state, target, message, ctx)
-       when is_map(state) and is_binary(message) do
-    with %{} = ei <- resolve_introspect(state, target, ctx),
-         arg_type when is_binary(arg_type) <-
-           Map.get(ei, "msg_constructor_arg_types", %{}) |> Map.get(message) do
-      normalized = arg_type |> String.replace(" ", "") |> String.downcase()
-
-      String.contains?(normalized, "compass") and String.contains?(normalized, "heading")
-    else
-      _ -> false
-    end
-  end
-
-  @spec subscription_message_arity(
-          Types.runtime_state(),
-          Types.surface_target(),
-          String.t(),
-          attach_ctx() | nil
-        ) ::
-          non_neg_integer()
-  defp subscription_message_arity(state, target, message, ctx)
-       when is_map(state) and is_binary(message) do
-    case resolve_introspect(state, target, ctx) do
-      %{"msg_constructor_arities" => arities} when is_map(arities) ->
-        arities
-        |> Map.get(message, 0)
-        |> normalize_integer(0)
-
-      %{} = ei ->
-        case Map.get(ei, "msg_constructor_arities") do
-          arities when is_map(arities) ->
-            arities
-            |> Map.get(message, 0)
-            |> normalize_integer(0)
-
-          _ ->
-            0
-        end
-
-      _ ->
-        0
-    end
-  end
-
-  @spec frame_subscription_trigger?(String.t()) :: boolean()
-  def frame_subscription_trigger?(trigger) when is_binary(trigger) do
-    normalized =
-      trigger
-      |> String.downcase()
-      |> String.replace(~r/[^a-z0-9]+/, "")
-
-    String.contains?(normalized, "frame") or String.contains?(normalized, "onframe")
-  end
 
   @spec subscription_frame_payload(Types.runtime_state(), Types.surface_target()) ::
           Types.wire_map()
@@ -489,8 +479,7 @@ defmodule Ide.Debugger.SubscriptionPayload do
           Types.runtime_state(),
           Types.surface_target(),
           attach_ctx() | nil
-        ) ::
-          integer()
+        ) :: integer()
   defp subscription_battery_level(state, target, ctx) when is_map(state) do
     settings = resolve_settings(state, ctx)
 
@@ -506,8 +495,7 @@ defmodule Ide.Debugger.SubscriptionPayload do
           Types.runtime_state(),
           Types.surface_target(),
           attach_ctx() | nil
-        ) ::
-          String.t()
+        ) :: String.t()
   defp subscription_connection_status(state, target, ctx) when is_map(state) do
     settings = resolve_settings(state, ctx)
 
@@ -602,62 +590,64 @@ defmodule Ide.Debugger.SubscriptionPayload do
 
   defp parse_simulated_time(_value, fallback), do: fallback
 
-  @spec advance_simulator_clock_for_auto_fire(Types.runtime_state(), String.t()) ::
-          Types.runtime_state()
-  def advance_simulator_clock_for_auto_fire(state, trigger)
-      when is_map(state) and is_binary(trigger) do
-    settings = DebuggerSimulatorSettings.from_state(state)
+  @spec clock_unit_for_trigger(Types.runtime_state(), String.t()) ::
+          :second | :minute | :hour | :day | :month | :year | nil
+  defp clock_unit_for_trigger(state, trigger) when is_map(state) and is_binary(trigger) do
+    active = RuntimeActiveSubscriptions.for_surface(state, :watch)
 
-    if settings["use_simulated_time"] == true do
-      case clock_unit_for_trigger(trigger) do
-        unit when unit in [:second, :minute, :hour, :day, :month, :year] ->
-          now = simulator_now_from_settings(settings)
-          next = advance_naive_datetime(now, unit)
+    target =
+      active
+      |> Enum.find_value(fn command ->
+        id = RuntimeActiveSubscriptions.command_target(command)
 
-          next_settings = %{
-            settings
-            | "simulated_date" => next |> NaiveDateTime.to_date() |> Date.to_iso8601(),
-              "simulated_time" => next |> NaiveDateTime.to_time() |> format_simulated_time()
-          }
+        if TriggerCandidates.normalize_trigger_id(trigger) ==
+             command_trigger_for_target(id) do
+          id
+        end
+      end) || trigger
 
-          state
-          |> Map.put(:simulator_settings, next_settings)
-          |> Ide.Debugger.SimulatorSurfaceSettings.apply_to_state()
+    normalized = normalize_target(target)
 
-        _ ->
-          state
-      end
-    else
-      state
+    cond do
+      clock_target?(normalized, "secondchange") or clock_target?(normalized, "onsecond") ->
+        :second
+
+      clock_target?(normalized, "minutechange") or clock_target?(normalized, "onminute") ->
+        :minute
+
+      clock_target?(normalized, "hourchange") or clock_target?(normalized, "onhour") ->
+        :hour
+
+      clock_target?(normalized, "daychange") or clock_target?(normalized, "onday") ->
+        :day
+
+      clock_target?(normalized, "monthchange") or clock_target?(normalized, "onmonth") ->
+        :month
+
+      clock_target?(normalized, "yearchange") or clock_target?(normalized, "onyear") ->
+        :year
+
+      true ->
+        nil
     end
   end
 
-  def advance_simulator_clock_for_auto_fire(state, _trigger) when is_map(state), do: state
-
-  @spec clock_unit_for_trigger(String.t()) ::
-          :second | :minute | :hour | :day | :month | :year | nil
-  defp clock_unit_for_trigger(trigger) when is_binary(trigger) do
-    t =
-      trigger
-      |> String.downcase()
-      |> String.replace(~r/[^a-z0-9]/, "")
-
-    cond do
-      String.contains?(t, "secondchange") or String.contains?(t, "onsecond") -> :second
-      String.contains?(t, "minutechange") or String.contains?(t, "onminute") -> :minute
-      String.contains?(t, "hourchange") or String.contains?(t, "onhour") -> :hour
-      String.contains?(t, "daychange") or String.contains?(t, "onday") -> :day
-      String.contains?(t, "monthchange") or String.contains?(t, "onmonth") -> :month
-      String.contains?(t, "yearchange") or String.contains?(t, "onyear") -> :year
-      true -> nil
-    end
+  defp command_trigger_for_target(target) when is_binary(target) do
+    target
+    |> String.split(".")
+    |> List.last()
+    |> to_string()
+    |> String.replace(~r/([a-z])([A-Z])/, "\\1 \\2")
+    |> String.downcase()
+    |> String.replace(~r/[^a-z0-9]+/, "_")
+    |> String.trim("_")
+    |> then(&Ide.Debugger.TriggerCandidates.normalize_trigger_id/1)
   end
 
   @spec advance_naive_datetime(
           NaiveDateTime.t(),
           :second | :minute | :hour | :day | :month | :year
-        ) ::
-          NaiveDateTime.t()
+        ) :: NaiveDateTime.t()
   defp advance_naive_datetime(%NaiveDateTime{} = now, :second),
     do: NaiveDateTime.add(now, 1, :second)
 

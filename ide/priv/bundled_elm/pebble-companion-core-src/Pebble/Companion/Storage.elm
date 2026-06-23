@@ -11,6 +11,25 @@ module Pebble.Companion.Storage exposing
 
 {-| Persistent companion storage helpers.
 
+Store typed values on the phone companion and read them back across sessions.
+
+    import Pebble.Companion.Storage as Storage
+
+    type Msg
+        = GotTheme (Result Storage.Error Storage.Value)
+
+    init _ =
+        ( model, Storage.get "theme" GotTheme )
+
+    saveTheme : String -> Cmd msg
+    saveTheme value =
+        Storage.set "theme" (Storage.StringValue value)
+
+    subscriptions _ =
+        Storage.onStorage GotTheme
+
+For a runnable example, use the **companion-demo-storage** project template in the IDE.
+
 # Values and errors
 
 @docs Value, Error

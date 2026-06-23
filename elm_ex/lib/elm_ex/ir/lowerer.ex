@@ -11,18 +11,10 @@ defmodule ElmEx.IR.Lowerer do
   alias ElmEx.IR.ImportResolution
   alias ElmEx.IR.Module
 
-  @typep expr() :: map()
-  @typep pattern() :: map()
-  @typep lookup() :: map()
+  alias ElmEx.IR.Types.{Diagnostic, Expr, Lookup, Pattern}
+
   @typep name() :: String.t() | nil
   @typep payload_kind() :: :none | :single | :multi | :function_like
-  @typep diagnostic() :: map()
-  @typep constructor_lookup() :: %{
-           required(:local) => map(),
-           required(:unqualified) => map(),
-           required(:qualified) => map(),
-           optional(:alias_map) => map()
-         }
 
   @pebble_ui_window_stack_tag 1000
   @pebble_ui_window_node_tag 1001
@@ -31,7 +23,6 @@ defmodule ElmEx.IR.Lowerer do
   @dialyzer [
     {:nowarn_function, rewrite_expr: 2},
     {:nowarn_function, rewrite_case_subject: 2},
-    {:nowarn_function, rewrite_pattern: 2},
     {:nowarn_function, resolve_constructor_tag: 2},
     {:nowarn_function, build_constructor_payload: 1},
     {:nowarn_function, lower_declaration: 3}
@@ -433,7 +424,7 @@ defmodule ElmEx.IR.Lowerer do
     end
   end
 
-  @spec rewrite_expr(expr(), lookup()) :: expr()
+  @spec rewrite_expr(Expr.t(), Lookup.t()) :: Expr.t()
   defp rewrite_expr(nil, _lookup), do: nil
 
   defp rewrite_expr(%{op: :constructor_call, target: target, args: args} = expr, lookup) do
@@ -762,13 +753,13 @@ defmodule ElmEx.IR.Lowerer do
     %{op: :call, name: "__apply__", args: [expr, operand]}
   end
 
-  @spec rewrite_case_subject(expr() | String.t(), lookup()) :: expr() | String.t()
+  @spec rewrite_case_subject(Expr.t() | String.t(), Lookup.t()) :: Expr.t() | String.t()
   defp rewrite_case_subject(subject, lookup) when is_map(subject),
     do: rewrite_expr(subject, lookup)
 
   defp rewrite_case_subject(subject, _lookup), do: subject
 
-  @spec canonicalize_record_field_types(map() | nil, lookup()) :: map()
+  @spec canonicalize_record_field_types(map() | nil, Lookup.t()) :: map()
   defp canonicalize_record_field_types(field_types, lookup) when is_map(field_types) do
     Map.new(field_types, fn {field, type} ->
       {field, canonicalize_type_annotation(type, lookup)}
@@ -777,7 +768,7 @@ defmodule ElmEx.IR.Lowerer do
 
   defp canonicalize_record_field_types(_field_types, _lookup), do: %{}
 
-  @spec canonicalize_type_annotation(String.t() | nil, lookup()) :: String.t() | nil
+  @spec canonicalize_type_annotation(String.t() | nil, Lookup.t()) :: String.t() | nil
   defp canonicalize_type_annotation(type, lookup) when is_binary(type) do
     alias_map = Map.get(lookup, :alias_map, %{})
     type_unqualified_map = Map.get(lookup, :type_unqualified_map, %{})
@@ -1228,7 +1219,7 @@ defmodule ElmEx.IR.Lowerer do
   defp known_wildcard_exports("Debug"), do: ~w(log todo toString)
   defp known_wildcard_exports(_), do: []
 
-  @spec rewrite_pattern(map() | nil, lookup()) :: map() | nil
+  @spec rewrite_pattern(Pattern.t() | nil, Lookup.t()) :: Pattern.t() | nil
   defp rewrite_pattern(%{kind: :constructor, name: name} = pattern, lookup) do
     resolved_name = resolve_alias(name, lookup)
     tag = resolve_constructor_tag(resolved_name, lookup)
@@ -1269,7 +1260,7 @@ defmodule ElmEx.IR.Lowerer do
 
   defp rewrite_pattern(pattern, _lookup), do: pattern
 
-  @spec rewrite_constructor_value(String.t(), [expr()], lookup()) :: expr() | nil
+  @spec rewrite_constructor_value(String.t(), [Expr.t()], Lookup.t()) :: Expr.t() | nil
   defp rewrite_constructor_value(resolved_target, rewritten_args, lookup)
        when is_binary(resolved_target) and is_list(rewritten_args) do
     case rewrite_virtual_ui_constructor(resolved_target, rewritten_args, lookup) do
@@ -1298,7 +1289,7 @@ defmodule ElmEx.IR.Lowerer do
     end
   end
 
-  @spec rewrite_virtual_ui_constructor(String.t(), [expr()], lookup()) :: expr() | nil
+  @spec rewrite_virtual_ui_constructor(String.t(), [Expr.t()], Lookup.t()) :: Expr.t() | nil
   defp rewrite_virtual_ui_constructor(resolved_target, rewritten_args, lookup) do
     case qualify_constructor_target(resolved_target, lookup) do
       "Pebble.Ui.WindowStack" ->
@@ -1345,7 +1336,7 @@ defmodule ElmEx.IR.Lowerer do
     end
   end
 
-  @spec qualify_constructor_target(String.t(), lookup()) :: String.t()
+  @spec qualify_constructor_target(String.t(), Lookup.t()) :: String.t()
   defp qualify_constructor_target(target, lookup) when is_binary(target) do
     if String.contains?(target, ".") do
       target
@@ -1360,7 +1351,7 @@ defmodule ElmEx.IR.Lowerer do
     end
   end
 
-  @spec tagged_constructor_value(integer(), [expr()], String.t()) :: expr()
+  @spec tagged_constructor_value(integer(), [Expr.t()], String.t()) :: Expr.t()
   defp tagged_constructor_value(tag, rewritten_args, qualified) when is_binary(qualified) do
     case rewritten_args do
       [] ->
@@ -1389,7 +1380,7 @@ defmodule ElmEx.IR.Lowerer do
   defp builtin_constructor_tag("Nothing"), do: 0
   defp builtin_constructor_tag(_), do: nil
 
-  @spec resolve_constructor_tag(String.t(), lookup()) :: integer() | nil
+  @spec resolve_constructor_tag(String.t(), Lookup.t()) :: integer() | nil
   defp resolve_constructor_tag(target, lookup) when is_binary(target) do
     segments = String.split(target, ".")
     unqualified_name = List.last(segments)
@@ -1407,7 +1398,7 @@ defmodule ElmEx.IR.Lowerer do
     end
   end
 
-  @spec build_constructor_payload([expr()]) :: expr()
+  @spec build_constructor_payload([Expr.t()]) :: Expr.t()
   defp build_constructor_payload([left, right]), do: %{op: :tuple2, left: left, right: right}
 
   defp build_constructor_payload([head | tail]) do
@@ -1415,7 +1406,7 @@ defmodule ElmEx.IR.Lowerer do
   end
 
   @spec collect_constructor_arity_diagnostics([ElmEx.IR.Module.t()], map(), map()) :: [
-          diagnostic()
+          Diagnostic.t()
         ]
   defp collect_constructor_arity_diagnostics(
          modules,
@@ -1454,7 +1445,7 @@ defmodule ElmEx.IR.Lowerer do
     end)
   end
 
-  @spec collect_constructor_call_arity_diagnostics([map()], map(), map()) :: [diagnostic()]
+  @spec collect_constructor_call_arity_diagnostics([map()], map(), map()) :: [Diagnostic.t()]
   defp collect_constructor_call_arity_diagnostics(
          frontend_modules,
          payload_arity_lookup,
@@ -1506,7 +1497,7 @@ defmodule ElmEx.IR.Lowerer do
     end)
   end
 
-  @spec collect_preferences_schema_field_order_diagnostics([map()]) :: [diagnostic()]
+  @spec collect_preferences_schema_field_order_diagnostics([map()]) :: [Diagnostic.t()]
   defp collect_preferences_schema_field_order_diagnostics(frontend_modules)
        when is_list(frontend_modules) do
     Enum.flat_map(frontend_modules, fn frontend_module ->
@@ -1542,12 +1533,12 @@ defmodule ElmEx.IR.Lowerer do
   end
 
   @spec expr_preferences_schema_field_order_diagnostics(
-          expr(),
+          Expr.t(),
           map(),
           name() | nil,
           name() | nil,
           integer() | nil
-        ) :: [diagnostic()]
+        ) :: [Diagnostic.t()]
   defp expr_preferences_schema_field_order_diagnostics(
          expr,
          alias_fields,
@@ -1606,7 +1597,7 @@ defmodule ElmEx.IR.Lowerer do
           name() | nil,
           name() | nil,
           integer() | nil
-        ) :: [diagnostic()]
+        ) :: [Diagnostic.t()]
   defp nested_preferences_schema_field_order_diagnostics(
          expr,
          alias_fields,
@@ -1648,7 +1639,7 @@ defmodule ElmEx.IR.Lowerer do
     end)
   end
 
-  @spec preferences_schema_field_order(expr()) ::
+  @spec preferences_schema_field_order(Expr.t()) ::
           {:ok, String.t(), [String.t()]} | :error
   defp preferences_schema_field_order(%{op: :qualified_call, target: target, args: args})
        when is_binary(target) and is_list(args) do
@@ -1685,7 +1676,7 @@ defmodule ElmEx.IR.Lowerer do
 
   defp preferences_schema_field_order(_expr), do: :error
 
-  @spec preferences_section_fields(expr()) :: {:ok, [String.t()]} | :error
+  @spec preferences_section_fields(Expr.t()) :: {:ok, [String.t()]} | :error
   defp preferences_section_fields(%{op: :qualified_call, target: target, args: args})
        when is_binary(target) and is_list(args) do
     if preferences_call?(target, "field") do
@@ -1716,12 +1707,12 @@ defmodule ElmEx.IR.Lowerer do
   end
 
   @spec expr_constructor_call_arity_diagnostics(
-          expr(),
-          lookup(),
+          Expr.t(),
+          Lookup.t(),
           name() | nil,
           name() | nil,
           integer() | nil
-        ) :: [diagnostic()]
+        ) :: [Diagnostic.t()]
   defp expr_constructor_call_arity_diagnostics(
          %{op: :constructor_call, target: target, args: args},
          arity_lookup,
@@ -1826,7 +1817,7 @@ defmodule ElmEx.IR.Lowerer do
        ),
        do: []
 
-  @spec resolve_payload_arity(String.t(), lookup()) :: non_neg_integer() | nil
+  @spec resolve_payload_arity(String.t(), Lookup.t()) :: non_neg_integer() | nil
   defp resolve_payload_arity(target, lookup) when is_binary(target) do
     segments = String.split(target, ".")
     unqualified_name = List.last(segments)
@@ -1844,7 +1835,7 @@ defmodule ElmEx.IR.Lowerer do
     end
   end
 
-  @spec resolve_constructor_arity(String.t(), constructor_lookup()) :: non_neg_integer() | nil
+  @spec resolve_constructor_arity(String.t(), Lookup.constructor_t()) :: non_neg_integer() | nil
   defp resolve_constructor_arity(target, lookup) when is_binary(target) do
     segments = String.split(target, ".")
     unqualified_name = List.last(segments)
@@ -1862,7 +1853,7 @@ defmodule ElmEx.IR.Lowerer do
     end
   end
 
-  @spec resolve_constructor_payload_kind(String.t(), constructor_lookup()) ::
+  @spec resolve_constructor_payload_kind(String.t(), Lookup.constructor_t()) ::
           payload_kind() | nil
   defp resolve_constructor_payload_kind(target, lookup) when is_binary(target) do
     segments = String.split(target, ".")
@@ -1882,12 +1873,12 @@ defmodule ElmEx.IR.Lowerer do
   end
 
   @spec expr_constructor_arity_diagnostics(
-          expr(),
-          lookup(),
+          Expr.t(),
+          Lookup.t(),
           name() | nil,
           name() | nil,
           integer() | nil
-        ) :: [diagnostic()]
+        ) :: [Diagnostic.t()]
   defp expr_constructor_arity_diagnostics(
          %{op: :case, subject: subject, branches: branches},
          lookup,
@@ -1968,12 +1959,12 @@ defmodule ElmEx.IR.Lowerer do
     do: []
 
   @spec pattern_constructor_arity_diagnostics(
-          pattern(),
-          lookup(),
+          Pattern.t(),
+          Lookup.t(),
           name() | nil,
           name() | nil,
           integer() | nil
-        ) :: [diagnostic()]
+        ) :: [Diagnostic.t()]
   defp pattern_constructor_arity_diagnostics(
          %{kind: :constructor, name: name} = pattern,
          lookup,

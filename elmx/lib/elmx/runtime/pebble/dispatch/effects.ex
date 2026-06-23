@@ -2,6 +2,7 @@ defmodule Elmx.Runtime.Pebble.Dispatch.Effects do
   @moduledoc false
 
   alias Elmx.Runtime.Cmd
+  alias Elmx.Runtime.Pebble.Dispatch.Speaker
   alias Elmx.Types
 
   @spec events_batch(Types.registry_args()) :: Types.wire_cmd()
@@ -37,6 +38,21 @@ defmodule Elmx.Runtime.Pebble.Dispatch.Effects do
   @spec vibes_cancel(Types.registry_args()) :: Types.wire_cmd()
   def vibes_cancel(_), do: Cmd.effect("vibes", variant: "cancel")
 
+  defdelegate speaker_play_tone_cmd(args), to: Speaker, as: :play_tone_cmd
+  defdelegate speaker_play_notes_cmd(args), to: Speaker, as: :play_notes_cmd
+  defdelegate speaker_play_tracks_cmd(args), to: Speaker, as: :play_tracks_cmd
+  defdelegate speaker_stop_cmd(args), to: Speaker, as: :stop_cmd
+  defdelegate speaker_set_volume_cmd(args), to: Speaker, as: :set_volume_cmd
+
+  @spec speaker_stream_open_cmd(Types.registry_args()) :: Types.wire_cmd()
+  def speaker_stream_open_cmd(_), do: Cmd.effect("speaker", variant: "stream_open")
+
+  @spec speaker_stream_write_cmd(Types.registry_args()) :: Types.wire_cmd()
+  def speaker_stream_write_cmd(_), do: Cmd.effect("speaker", variant: "stream_write")
+
+  @spec speaker_stream_close_cmd(Types.registry_args()) :: Types.wire_cmd()
+  def speaker_stream_close_cmd(_), do: Cmd.effect("speaker", variant: "stream_close")
+
   @spec dictation_start(Types.registry_args()) :: Types.wire_cmd()
   def dictation_start(_), do: Cmd.dictation_start()
 
@@ -57,6 +73,18 @@ defmodule Elmx.Runtime.Pebble.Dispatch.Effects do
   end
 
   def frame_every_cmd(_), do: Cmd.subscription_register("Pebble.Frame.every", interval_ms: 33)
+
+  @spec frame_at_fps_cmd(Types.registry_args()) :: Types.wire_cmd()
+  def frame_at_fps_cmd([fps, callback]) when is_integer(fps) do
+    interval_ms = div(1_000, max(fps, 1))
+    Cmd.subscription_register("Pebble.Frame.atFps", interval_ms: interval_ms, callback: callback)
+  end
+
+  def frame_at_fps_cmd([fps | rest]) when is_integer(fps) do
+    frame_at_fps_cmd([fps, List.first(rest)])
+  end
+
+  def frame_at_fps_cmd(_), do: Cmd.subscription_register("Pebble.Frame.atFps", interval_ms: 33)
 
   @spec unobstructed_current_bounds_cmd(Types.registry_args()) :: Types.wire_cmd()
   def unobstructed_current_bounds_cmd(args) when is_list(args) do

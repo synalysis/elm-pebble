@@ -6,6 +6,9 @@ defmodule Elmc.Backend.Pebble.SourceWriter.SceneHost.CmdFromValue.FromValue.Tupl
   alias Elmc.Backend.Pebble.SourceWriter.SceneHost.CmdFromValue.FromValue.TupleSpecial.{
     DataLogBytes,
     PayloadArray,
+    SpeakerPlayNotes,
+    SpeakerPlayTracks,
+    SpeakerStreamWrite,
     StorageWriteString,
     TupleOpen,
     VibesCustomPattern
@@ -18,6 +21,9 @@ defmodule Elmc.Backend.Pebble.SourceWriter.SceneHost.CmdFromValue.FromValue.Tupl
       StorageWriteString.body(),
       VibesCustomPattern.body(),
       DataLogBytes.body(),
+      SpeakerPlayNotes.body(),
+      SpeakerPlayTracks.body(),
+      SpeakerStreamWrite.body(),
       PayloadArray.body()
     ]
     |> IO.iodata_to_binary()

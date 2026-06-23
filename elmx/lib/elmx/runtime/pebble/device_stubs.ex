@@ -42,6 +42,9 @@ defmodule Elmx.Runtime.Pebble.DeviceStubs do
   def value("health_sum"), do: %{"value" => 0}
   def value("health_accessible"), do: true
   def value("connection_status"), do: true
+  def value("speaker_is_muted"), do: false
+  def value("speaker_status"), do: 0
+  def value("storage_read_max_size"), do: 4096
   def value("unobstructed_bounds"), do: %{"x" => 0, "y" => 0, "w" => 144, "h" => 168}
   def value(_), do: nil
 end
