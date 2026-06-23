@@ -169,8 +169,9 @@ jobs:
         run: |
           pipx install pebble-tool
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          pebble sdk install 4.9.169
-          pebble sdk activate 4.9.169
+          pebble sdk install latest
+          latest_sdk="$(pebble sdk list | awk '/^Available SDKs:/{f=1;next} f&&/^[^ ]/{l=$1} END{print l}')"
+          pebble sdk activate "${latest_sdk}"
           pebble sdk list
 
       - name: Install Elm compiler

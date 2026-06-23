@@ -42,7 +42,15 @@ defmodule Elmc.Test.RcTrackHarness do
       "-I#{Path.join(out_dir, "runtime")}",
       "-I#{Path.join(out_dir, "ports")}",
       "-I#{Path.join(out_dir, "c")}"
-    ] ++ Keyword.get(opts, :extra_flags, []) ++ ["-lm"]
+    ] ++ Keyword.get(opts, :extra_flags, [])
+  end
+
+  @spec link_flags(keyword()) :: [String.t()]
+  def link_flags(_opts \\ []), do: ["-lm"]
+
+  @spec compile_and_link_args(String.t(), [String.t()], String.t(), keyword()) :: [String.t()]
+  defp compile_and_link_args(out_dir, sources, binary_path, opts) do
+    cc_flags(out_dir, opts) ++ with_runtime_link_stub(sources) ++ link_flags(opts) ++ ["-o", binary_path]
   end
 
   @spec with_runtime_link_stub([String.t()]) :: [String.t()]
@@ -70,7 +78,7 @@ defmodule Elmc.Test.RcTrackHarness do
   def compile_c(out_dir, sources, binary_path, opts \\ []) do
     cc = System.find_executable("cc") || flunk("cc not available for C harness compile")
 
-    System.cmd(cc, cc_flags(out_dir, opts) ++ with_runtime_link_stub(sources) ++ ["-o", binary_path])
+    System.cmd(cc, compile_and_link_args(out_dir, sources, binary_path, opts))
   end
 
   @spec compile_c!(String.t(), [String.t()], String.t(), keyword()) :: :ok
@@ -103,7 +111,7 @@ defmodule Elmc.Test.RcTrackHarness do
     binary_path = Path.join(out_dir, binary_name)
 
     {compile_out, compile_code} =
-      System.cmd(cc, cc_flags(out_dir, opts) ++ with_runtime_link_stub(sources) ++ ["-o", binary_path])
+      System.cmd(cc, compile_and_link_args(out_dir, sources, binary_path, opts))
 
     if compile_code != 0, do: flunk("harness compile failed:\n#{compile_out}")
 

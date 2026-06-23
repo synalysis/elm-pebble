@@ -44,7 +44,7 @@ RUN apt-get update && \
 
 FROM debian:bookworm-slim AS runner
 
-ARG PEBBLE_SDK_VERSION=4.9.169
+ARG PEBBLE_SDK_VERSION=latest
 
 COPY --from=gif2apng-builder /usr/local/bin/gif2apng /usr/local/bin/gif2apng
 
@@ -84,6 +84,7 @@ ENV PROJECTS_ROOT=/var/lib/ide/workspace_projects
 ENV SETTINGS_FILE=/var/lib/ide/config/settings.json
 ENV PEBBLE_SDK_VERSION=${PEBBLE_SDK_VERSION}
 ENV INSTALL_PEBBLE_SDK=1
+ENV ELM_PEBBLE_SDK_INSTALL_ROOT=/var/lib/ide/.pebble-sdk/SDKs/current
 ENV ELM_PEBBLE_QEMU_BIN=/var/lib/ide/.pebble-sdk/SDKs/current/toolchain/bin/qemu-pebble
 ENV ELM_PEBBLE_PYPKJS_BIN=/opt/pipx/venvs/pebble-tool/bin/pypkjs
 ENV ELM_PEBBLE_QEMU_IMAGE_ROOT=/var/lib/ide/.pebble-sdk/SDKs/current/sdk-core/pebble
