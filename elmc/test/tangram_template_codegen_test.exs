@@ -1,10 +1,10 @@
 defmodule Elmc.TangramTemplateCodegenTest do
   use ExUnit.Case
 
-  @repo_root Path.expand("../..", __DIR__)
+  alias Elmc.TestSupport.TangramTemplate
 
   test "tangram watchface view codegen does not reference phantom Main.start helpers" do
-    project_dir = scaffold_tangram_project()
+    project_dir = TangramTemplate.scaffold_project()
     out_dir = Path.join(System.tmp_dir!(), "tangram-codegen-#{System.unique_integer([:positive])}")
     File.rm_rf!(out_dir)
 
@@ -31,7 +31,7 @@ defmodule Elmc.TangramTemplateCodegenTest do
 
   @tag :tangram_host
   test "tangram watchface ensure_scene builds without heap corruption" do
-    project_dir = scaffold_tangram_project()
+    project_dir = TangramTemplate.scaffold_project()
     out_dir = Path.join(System.tmp_dir!(), "tangram-host-#{System.unique_integer([:positive])}")
     File.rm_rf!(out_dir)
 
@@ -139,48 +139,5 @@ defmodule Elmc.TangramTemplateCodegenTest do
 
     {_run_out, run_code} = System.cmd(binary_path, [], stderr_to_stdout: true)
     assert run_code == 0
-  end
-
-  defp scaffold_tangram_project do
-    tmp =
-      Path.join(
-        System.tmp_dir!(),
-        "elmc-tangram-#{System.unique_integer([:positive])}"
-      )
-
-    template_src =
-      Path.join(@repo_root, "ide/priv/project_templates/watchface_tangram_time")
-
-    File.mkdir_p!(Path.join(tmp, "src"))
-    File.mkdir_p!(Path.join(tmp, "protocol/src"))
-    File.cp_r!(Path.join(template_src, "src"), Path.join(tmp, "src"))
-    File.cp_r!(Path.join(template_src, "protocol/src"), Path.join(tmp, "protocol/src"))
-
-    sources = [
-      "src",
-      "protocol/src",
-      Path.join(@repo_root, "ide/priv/bundled_elm/pebble-watch-src"),
-      Path.join(@repo_root, "ide/priv/bundled_elm/shared-elm/shared/elm"),
-      Path.join(@repo_root, "ide/priv/internal_packages/elm-time/src"),
-      Path.join(@repo_root, "ide/priv/internal_packages/elm-random/src")
-    ]
-
-    elm_json = %{
-      "type" => "application",
-      "source-directories" => sources,
-      "elm-version" => "0.19.1",
-      "dependencies" => %{
-        "direct" => %{
-          "elm/core" => "1.0.5",
-          "elm/json" => "1.1.3",
-          "elm/time" => "1.0.0"
-        },
-        "indirect" => %{}
-      },
-      "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
-    }
-
-    File.write!(Path.join(tmp, "elm.json"), Jason.encode!(elm_json, pretty: true))
-    tmp
   end
 end
