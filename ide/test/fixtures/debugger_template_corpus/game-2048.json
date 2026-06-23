@@ -1560,9 +1560,9 @@
   },
   "template": "game-2048",
   "timeline_init_messages": [
-    "update:RandomGenerated <seed>",
+    "init:init",
     "update:BestLoaded \"\"",
-    "init:init"
+    "update:RandomGenerated <seed>"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {

@@ -41,13 +41,15 @@ defmodule Ide.Debugger.RuntimeBackgroundWork do
     if inflight?(project_slug) do
       false
     else
-      state = AgentStore.fetch(project_slug, timeout: 5_000)
+      state = AgentStore.fetch(project_slug, timeout: 30_000)
 
       PendingHttpFollowups.pending(state) == [] and
         PendingProtocolDelivery.pending(state) == []
     end
   rescue
     _ -> false
+  catch
+    :exit, _ -> false
   end
 
   @spec inc(String.t()) :: non_neg_integer()

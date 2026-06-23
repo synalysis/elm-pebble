@@ -233,6 +233,28 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
 
   defp after_bootstrap(_slug, _template_key), do: :ok
 
+  @spec fetch_render_tree(String.t(), pos_integer()) :: {:ok, map()} | {:error, term()}
+  defp fetch_render_tree(slug, attempts \\ 8)
+
+  defp fetch_render_tree(slug, attempts) when is_binary(slug) and attempts > 0 do
+    case Tools.call(
+           "debugger.render_tree",
+           %{"slug" => slug, "target" => "watch", "include_tree" => true},
+           @capabilities
+         ) do
+      {:ok, _} = ok ->
+        ok
+
+      {:error, _} = err ->
+        if attempts == 1 do
+          err
+        else
+          Process.sleep(250)
+          fetch_render_tree(slug, attempts - 1)
+        end
+    end
+  end
+
   @spec reload_surfaces(String.t(), Projects.Project.t(), String.t()) :: :ok | {:error, term()}
   defp reload_surfaces(slug, project, template_key) do
     with :ok <- maybe_reload_phone(slug, project, template_key),
@@ -284,18 +306,14 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   @spec capture(String.t(), Projects.Project.t(), String.t()) ::
           {:ok, map()} | {:error, String.t() | term()}
   defp capture(slug, project, template_key) do
-    with {:ok, models} <-
+    with :ok <- await_background_idle!(slug),
+         {:ok, models} <-
            Tools.call(
              "debugger.models",
              %{"slug" => slug, "target" => "watch", "include_view_output" => true},
              @capabilities
            ),
-         {:ok, render_tree} <-
-           Tools.call(
-             "debugger.render_tree",
-             %{"slug" => slug, "target" => "watch", "include_tree" => true},
-             @capabilities
-           ),
+         {:ok, render_tree} <- fetch_render_tree(slug),
          {:ok, diagnostics} <-
            Tools.call(
              "debugger.preview_diagnostics",
@@ -413,6 +431,10 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   defp timeline_init_messages(state) when is_map(state) do
     state
     |> Map.get(:debugger_timeline, [])
+    |> Enum.reject(fn row ->
+      type = Map.get(row, :type) || Map.get(row, "type")
+      type in ["runtime_exec_error"]
+    end)
     |> Enum.take(8)
     |> Enum.map(fn row ->
       type = Map.get(row, :type) || Map.get(row, "type")
@@ -543,7 +565,10 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
 
   @spec normalize_timeline_messages([String.t()]) :: [String.t()]
   defp normalize_timeline_messages(messages) when is_list(messages) do
-    Enum.map(messages, &normalize_timeline_entry/1)
+    messages
+    |> Enum.map(&normalize_timeline_entry/1)
+    |> Enum.sort()
+    |> Enum.uniq()
   end
 
   defp normalize_timeline_entry(entry) when is_binary(entry) do
@@ -1026,7 +1051,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     |> Enum.join("\n")
   end
 
-  @corpus_drain_timeout_ms 45_000
+  @corpus_drain_timeout_ms 120_000
 
   @spec await_background_idle!(String.t()) :: :ok | {:error, term()}
   defp await_background_idle!(slug) when is_binary(slug) do

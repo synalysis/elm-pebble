@@ -214,8 +214,8 @@
   },
   "template": "watch-demo-compass",
   "timeline_init_messages": [
-    "update:Unknown (Ok {degrees=180,isvalid=true})",
-    "init:init"
+    "init:init",
+    "update:Unknown (Ok {degrees=180,isvalid=true})"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {

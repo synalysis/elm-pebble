@@ -25,4 +25,29 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusNormalizeTest do
     assert DebuggerTemplateCorpus.normalize_snapshot(legacy) ==
              DebuggerTemplateCorpus.normalize_snapshot(wire)
   end
+
+  test "normalize_snapshot dedupes duplicate init timeline entries" do
+    with_dupes = %{
+      "timeline_init_messages" => [
+        "init:init",
+        "update:CurrentDateTime { day = 27, hour = 8, minute = 53 }",
+        "update:CurrentDateTime { day = 27, hour = 8, minute = 53 }",
+        "update:FromPhone (ProvideCondition Fog)",
+        "update:GotWeather (Ok (Current { condition = Fog, temperatureC = 18 }))",
+        "update:GotWeather (Ok (Current { condition = Fog, temperatureC = 18 }))"
+      ]
+    }
+
+    without_dupes = %{
+      "timeline_init_messages" => [
+        "init:init",
+        "update:CurrentDateTime { day = 27, hour = 8, minute = 53 }",
+        "update:FromPhone (ProvideCondition Fog)",
+        "update:GotWeather (Ok (Current { condition = Fog, temperatureC = 18 }))"
+      ]
+    }
+
+    assert DebuggerTemplateCorpus.normalize_snapshot(with_dupes) ==
+             DebuggerTemplateCorpus.normalize_snapshot(without_dupes)
+  end
 end

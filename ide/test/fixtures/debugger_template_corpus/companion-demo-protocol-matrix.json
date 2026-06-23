@@ -255,12 +255,12 @@
   "template": "companion-demo-protocol-matrix",
   "timeline_init_messages": [
     "init:init",
-    "update:FromPhone (Pong)",
-    "update:FromWatch (Ok Ping)",
+    "init:init",
     "init:init",
     "update:FromPhone (Pong)",
+    "update:FromPhone (Pong)",
     "update:FromWatch (Ok Ping)",
-    "init:init"
+    "update:FromWatch (Ok Ping)"
   ],
   "view_tree_type": "Window",
   "watch_model": {

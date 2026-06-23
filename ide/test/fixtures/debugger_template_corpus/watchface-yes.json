@@ -1675,12 +1675,12 @@
   },
   "template": "watchface-yes",
   "timeline_init_messages": [
-    "update:ConnectionChanged True",
-    "update:BatteryLevelChanged 88",
-    "update:CurrentDateTime { day = 27, dayOfWeek = Wednesday, hour = 8, minute = 53, month = 5, second = 0, utcOffsetMinutes = 0, year = 2026 }",
-    "update:FromWatch (Ok RequestUpdate)",
     "init:init",
-    "init:init"
+    "init:init",
+    "update:BatteryLevelChanged 88",
+    "update:ConnectionChanged True",
+    "update:CurrentDateTime { day = 27, dayOfWeek = Wednesday, hour = 8, minute = 53, month = 5, second = 0, utcOffsetMinutes = 0, year = 2026 }",
+    "update:FromWatch (Ok RequestUpdate)"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {

@@ -245,14 +245,14 @@
   },
   "template": "companion-demo-phone-status",
   "timeline_init_messages": [
-    "update:FromPhone (ProvideNotifications True False)",
-    "update:FromPhone (ProvideNotifications True False)",
-    "update:FromPhone (ProvideNotifications True False)",
-    "update:GotNotifications (Ok {notificationsenabled=true,quiethours=false})",
-    "update:FromPhone (ProvideConnectivity True)",
-    "update:FromPhone (ProvideConnectivity True)",
     "update:FromPhone (ProvideConnectivity False)",
-    "update:GotConnectivity (Ok True)"
+    "update:FromPhone (ProvideConnectivity True)",
+    "update:FromPhone (ProvideConnectivity True)",
+    "update:FromPhone (ProvideNotifications True False)",
+    "update:FromPhone (ProvideNotifications True False)",
+    "update:FromPhone (ProvideNotifications True False)",
+    "update:GotConnectivity (Ok True)",
+    "update:GotNotifications (Ok {notificationsenabled=true,quiethours=false})"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {

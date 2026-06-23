@@ -207,13 +207,13 @@
   },
   "template": "companion-demo-websocket",
   "timeline_init_messages": [
-    "update:FromPhone (ProvideWebSocketStatus Closed \"connecting\")",
-    "update:FromWatch (Ok RequestWebSocketStatus)",
+    "init:init",
     "init:init",
     "init:init",
     "update:FromPhone (ProvideWebSocketStatus \"idle\" ())",
+    "update:FromPhone (ProvideWebSocketStatus Closed \"connecting\")",
     "update:FromWatch (Ok RequestWebSocketStatus)",
-    "init:init"
+    "update:FromWatch (Ok RequestWebSocketStatus)"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {

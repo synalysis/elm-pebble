@@ -190,14 +190,14 @@
   },
   "template": "companion-demo-storage",
   "timeline_init_messages": [
-    "update:GotPreference (Ok (\"units\"))",
-    "update:GotStorage (Ok \"Storage key not found\")",
-    "update:FromWatch (Ok RequestStoredValues)",
     "init:init",
+    "init:init",
+    "update:FromWatch (Ok RequestStoredValues)",
+    "update:FromWatch (Ok RequestStoredValues)",
+    "update:GotPreference (Ok (\"units\"))",
     "update:GotPreference (Ok (\"units\"))",
     "update:GotStorage (Ok \"Storage key not found\")",
-    "update:FromWatch (Ok RequestStoredValues)",
-    "init:init"
+    "update:GotStorage (Ok \"Storage key not found\")"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {

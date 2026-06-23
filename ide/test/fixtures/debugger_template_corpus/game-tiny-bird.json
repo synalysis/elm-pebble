@@ -337,8 +337,8 @@
   },
   "template": "game-tiny-bird",
   "timeline_init_messages": [
-    "update:StorageStringLoaded \"\"",
-    "init:init"
+    "init:init",
+    "update:StorageStringLoaded \"\""
   ],
   "view_tree_type": "windowStack",
   "watch_model": {

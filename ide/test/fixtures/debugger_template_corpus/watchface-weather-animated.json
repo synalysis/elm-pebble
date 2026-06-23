@@ -291,14 +291,14 @@
   },
   "template": "watchface-weather-animated",
   "timeline_init_messages": [
+    "init:init",
     "update:CurrentDateTime { day = 27, dayOfWeek = Wednesday, hour = 8, minute = 53, month = 5, second = 0, utcOffsetMinutes = 0, year = 2026 }",
-    "update:GotWeather (Ok (Current { condition = Fog, temperatureC = 18 }))",
+    "update:CurrentDateTime { day = 27, dayOfWeek = Wednesday, hour = 8, minute = 53, month = 5, second = 0, utcOffsetMinutes = 0, year = 2026 }",
     "update:FromPhone (ProvideCondition Fog)",
     "update:FromPhone (ProvideTemperature (Celsius 18))",
     "update:FromWatch (Ok (RequestWeather CurrentLocation))",
-    "init:init",
-    "update:FromPhone (ProvideCondition Fog)",
-    "update:FromPhone (ProvideTemperature (Celsius 18))"
+    "update:GotWeather (Ok (Current { condition = Fog, temperatureC = 18 }))",
+    "update:GotWeather (Ok (Current { condition = Fog, temperatureC = 18 }))"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {

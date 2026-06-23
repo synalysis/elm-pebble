@@ -257,12 +257,12 @@
   },
   "template": "watch-demo-health",
   "timeline_init_messages": [
-    "update:GotStepsToday 9100",
+    "init:init",
+    "update:GotStepsNow 4200",
     "update:GotStepsNow 4200",
     "update:GotStepsToday 9100",
-    "update:GotStepsNow 4200",
-    "update:GotSupported True",
-    "init:init"
+    "update:GotStepsToday 9100",
+    "update:GotSupported True"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {

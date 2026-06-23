@@ -362,18 +362,23 @@
   },
   "template": "starter",
   "timeline_init_messages": [
-    "update:FirmwareVersionString {\"major\":4,\"minor\":4,\"patch\":0}",
-    "update:WatchColorName {\"args\":[],\"ctor\":\"Black\"}",
-    "update:WatchModelName {\"args\":[],\"ctor\":\"PebbleOriginal\"}",
-    "update:TimezoneName",
-    "update:TimezoneIsSet True",
+    "init:init",
     "update:ClockStyle24h True",
     "update:CurrentTimeString \"08:53\"",
-    "init:init"
+    "update:FirmwareVersionString { major = 4, minor = 4, patch = 0 }",
+    "update:TimezoneIsSet True",
+    "update:TimezoneName",
+    "update:WatchColorName Black",
+    "update:WatchModelName PebbleOriginal"
   ],
-  "view_tree_type": "windowStack",
+  "view_tree_type": "Window",
   "watch_model": {
     "debugger_init_complete": true,
+    "elmc_compile_cached": "false",
+    "elmc_compile_error_count": 0,
+    "elmc_compile_status": "ok",
+    "elmc_compile_warning_count": 0,
+    "elmc_diagnostic_preview": [],
     "runtime_model": {
       "temperature": {
         "args": [],

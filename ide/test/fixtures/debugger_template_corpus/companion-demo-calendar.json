@@ -177,13 +177,13 @@
   },
   "template": "companion-demo-calendar",
   "timeline_init_messages": [
-    "update:FromPhone (NoUpcomingEvents)",
-    "update:GotCalendar (Ok [])",
-    "update:CurrentTimeString \"08:53\"",
-    "runtime_exec_error:GotCalendar",
-    "update:FromWatch (Ok RequestCalendar)",
     "init:init",
+    "init:init",
+    "update:CurrentTimeString \"08:53\"",
     "update:FromPhone (NoUpcomingEvents)",
+    "update:FromPhone (NoUpcomingEvents)",
+    "update:FromWatch (Ok RequestCalendar)",
+    "update:GotCalendar (Ok [])",
     "update:GotCalendar (Ok [])"
   ],
   "view_tree_type": "windowStack",

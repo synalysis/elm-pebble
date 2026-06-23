@@ -441,8 +441,8 @@
   },
   "template": "game-elmtris",
   "timeline_init_messages": [
-    "update:BestLoaded \"\"",
-    "init:init"
+    "init:init",
+    "update:BestLoaded \"\""
   ],
   "view_tree_type": "windowStack",
   "watch_model": {

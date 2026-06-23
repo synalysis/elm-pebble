@@ -209,14 +209,14 @@
   },
   "template": "companion-demo-geolocation",
   "timeline_init_messages": [
+    "init:init",
+    "init:init",
     "update:CurrentTimeString \"08:53\"",
     "update:FromPhone (ProvidePosition 48137154 11576124 25)",
-    "update:GotPosition (Ok {accuracy=25,latitude=48.137154,longitude=11.576124})",
-    "update:FromWatch (Ok RequestPosition)",
-    "init:init",
     "update:FromPhone (ProvidePosition 48137154 11576124 25)",
+    "update:FromWatch (Ok RequestPosition)",
     "update:GotPosition (Ok {accuracy=25,latitude=48.137154,longitude=11.576124})",
-    "init:init"
+    "update:GotPosition (Ok {accuracy=25,latitude=48.137154,longitude=11.576124})"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {

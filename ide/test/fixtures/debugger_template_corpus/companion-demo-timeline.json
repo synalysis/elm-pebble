@@ -211,13 +211,13 @@
   },
   "template": "companion-demo-timeline",
   "timeline_init_messages": [
-    "update:FromPhone (ProvideTimelineToken \"demo-timeline-token\")",
-    "update:GotToken (Ok \"demo-timeline-token\")",
-    "update:FromPhone (ProvideTimelineToken \"demo-timeline-token\")",
-    "update:GotToken (Ok \"demo-timeline-token\")",
-    "update:FromWatch (Ok RequestTimelineToken)",
     "init:init",
     "update:FromPhone (ProvideTimelineToken \"demo-timeline-token\")",
+    "update:FromPhone (ProvideTimelineToken \"demo-timeline-token\")",
+    "update:FromPhone (ProvideTimelineToken \"demo-timeline-token\")",
+    "update:FromWatch (Ok RequestTimelineToken)",
+    "update:GotToken (Ok \"demo-timeline-token\")",
+    "update:GotToken (Ok \"demo-timeline-token\")",
     "update:GotToken (Ok \"demo-timeline-token\")"
   ],
   "view_tree_type": "windowStack",

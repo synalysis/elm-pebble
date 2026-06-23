@@ -144,8 +144,8 @@
   },
   "template": "watchface-digital",
   "timeline_init_messages": [
-    "update:CurrentTimeString \"08:53\"",
-    "init:init"
+    "init:init",
+    "update:CurrentTimeString \"08:53\""
   ],
   "view_tree_type": "windowStack",
   "watch_model": {

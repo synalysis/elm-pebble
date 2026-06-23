@@ -260,8 +260,8 @@
   },
   "template": "watchface-analog",
   "timeline_init_messages": [
-    "update:CurrentDateTime { day = 27, dayOfWeek = Wednesday, hour = 8, minute = 53, month = 5, second = 0, utcOffsetMinutes = 0, year = 2026 }",
-    "init:init"
+    "init:init",
+    "update:CurrentDateTime { day = 27, dayOfWeek = Wednesday, hour = 8, minute = 53, month = 5, second = 0, utcOffsetMinutes = 0, year = 2026 }"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
