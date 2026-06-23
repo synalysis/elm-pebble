@@ -461,7 +461,8 @@ const TokenEditor: ViewHook = {
       )
     )
     this.handleEvent("token-editor-context-action", payload => {
-      const action = typeof payload?.action === "string" ? payload.action : ""
+      const typed = payload as { action?: string }
+      const action = typeof typed.action === "string" ? typed.action : ""
       if (action) this.editorHost?.runContextAction(action)
     })
     this.editorHost.mount()

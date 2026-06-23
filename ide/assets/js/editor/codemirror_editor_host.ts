@@ -1387,7 +1387,7 @@ export class CodeMirrorEditorHost {
     const prefix = content.slice(0, cursor)
     if (prefix.endsWith(".")) return "."
     const match = prefix.match(/([A-Za-z_][A-Za-z0-9_']*)$/)
-    return match ? match[1] : ""
+    return match?.[1] ?? ""
   }
 
   cursorOffsetFromEvent(event: MouseEvent): number {
