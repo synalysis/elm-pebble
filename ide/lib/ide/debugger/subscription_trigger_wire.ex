@@ -39,7 +39,7 @@ defmodule Ide.Debugger.SubscriptionTriggerWire do
       contains_any?(normalized, ["on_battery_change", "onbatterychange"]) or
       contains_any?(normalized, ["on_connection_change", "onconnectionchange"]) or
       contains_any?(normalized, ["on_second_change", "onsecondchange"]) or
-      contains_any?(normalized, ["on_compass_change", "oncompasschange"]) or
+      contains_any?(normalized, ["on_compass_change", "oncompasschange", "on_change"]) or
       contains_any?(normalized, ["on_app_focus_change", "onappfocuschange"]) or
       contains_any?(normalized, ["on_unobstructed_will_change", "onunobstructedwillchange"]) or
       contains_any?(normalized, ["on_unobstructed_changing", "onunobstructedchanging"]) or

@@ -206,27 +206,13 @@ defmodule Elmx.Runtime.Http do
   defp message_ctor(msg) when is_atom(msg), do: Atom.to_string(msg)
 
   defp message_ctor(fun) when is_function(fun, 1) do
-    case callback_ctor_name(fun) do
+    case Elmx.Runtime.Cmd.Wire.callback_ctor_name(fun) do
       ctor when is_binary(ctor) and ctor != "" -> ctor
       _ -> "HttpResponse"
     end
   end
 
   defp message_ctor(_), do: "HttpResponse"
-
-  @http_expect_probe "__elmx_http_expect_ctor_probe__"
-
-  defp callback_ctor_name(fun) when is_function(fun, 1) do
-    case fun.(@http_expect_probe) do
-      {ctor, _} when is_atom(ctor) -> Atom.to_string(ctor)
-      {ctor, _} when is_binary(ctor) -> ctor
-      %{"ctor" => ctor, "args" => _} when is_binary(ctor) -> ctor
-      %{ctor: ctor, args: _} when is_atom(ctor) -> Atom.to_string(ctor)
-      _ -> nil
-    end
-  rescue
-    _ -> nil
-  end
 
   defp field(map, key) when is_map(map) and is_binary(key) do
     Map.get(map, key) || Map.get(map, String.to_existing_atom(key))

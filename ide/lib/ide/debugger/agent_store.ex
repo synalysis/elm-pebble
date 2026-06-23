@@ -94,20 +94,25 @@ defmodule Ide.Debugger.AgentStore do
   @spec forget(String.t(), keyword()) :: :ok
   def forget(project_slug, opts \\ []) when is_binary(project_slug) do
     agent = Keyword.get(opts, :agent, @default_agent)
+    timeout = Keyword.get(opts, :timeout, @default_timeout_ms)
     on_remove = Keyword.get(opts, :on_remove, fn _state -> :ok end)
 
     :ok = ensure_started(agent)
 
-    Agent.update(agent, fn store ->
-      case Map.pop(store, project_slug) do
-        {state, next_store} when is_map(state) ->
-          on_remove.(state)
-          next_store
+    Agent.update(
+      agent,
+      fn store ->
+        case Map.pop(store, project_slug) do
+          {state, next_store} when is_map(state) ->
+            on_remove.(state)
+            next_store
 
-        {_state, next_store} ->
-          next_store
-      end
-    end)
+          {_state, next_store} ->
+            next_store
+        end
+      end,
+      timeout
+    )
   end
 
   @spec fetch_or_default(store(), String.t(), default_state_fn()) :: Types.runtime_state()

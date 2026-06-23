@@ -41,7 +41,43 @@ defmodule Elmx.Runtime.Cmd.Wire do
   def message_wire(tag) when is_integer(tag),
     do: {"tag:#{tag}", %{"ctor" => "tag:#{tag}", "args" => []}}
 
-  def message_wire(other),
+  def message_wire(fun) when is_function(fun, 0), do: fun.() |> message_wire()
+
+  def message_wire(fun) when is_function(fun, 1) do
+    case callback_ctor_name(fun) do
+      ctor when is_binary(ctor) and ctor != "" ->
+        {ctor, %{"ctor" => ctor, "args" => []}}
+
+      _ ->
+        unknown_message_wire(fun)
+    end
+  end
+
+  def message_wire(other), do: unknown_message_wire(other)
+
+  @callback_ctor_probe :__elmx_callback_ctor_probe__
+
+  @doc """
+  Resolves the Msg constructor name from a curried callback (`fn arg -> {:Ctor, arg} end`)
+  emitted by elmx ide_runtime partial constructors.
+  """
+  @spec callback_ctor_name((term() -> term())) :: String.t() | nil
+  def callback_ctor_name(fun) when is_function(fun, 1) do
+    case fun.(@callback_ctor_probe) do
+      {ctor, _} when is_atom(ctor) -> Atom.to_string(ctor)
+      {ctor, _} when is_binary(ctor) -> ctor
+      %{"ctor" => ctor, "args" => _} when is_binary(ctor) -> ctor
+      %{ctor: ctor, args: _} when is_atom(ctor) -> Atom.to_string(ctor)
+      _ -> nil
+    end
+  rescue
+    _ -> nil
+  end
+
+  def callback_ctor_name(_), do: nil
+
+  @spec unknown_message_wire(term()) :: {String.t(), Types.wire_map()}
+  defp unknown_message_wire(other),
     do: {"Unknown", %{"ctor" => "Unknown", "args" => [Values.wire_value(other)]}}
 
   @spec wire_ctor_args(list()) :: [Types.wire_value()]

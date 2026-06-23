@@ -37,7 +37,7 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Helpers do
 
   @spec subscription_batch(Types.ir_arg_list()) :: Types.rewrite_result()
   def subscription_batch([%{op: :list_literal, items: items} = list]) when is_list(items) do
-    if port_subscription_items?(items) do
+    if runtime_subscription_batch?(items) do
       {:ok, %{op: :runtime_call, function: "elmx_sub_batch", args: [list]}}
     else
       {:ok, %{op: :int_literal, value: Subscriptions.batch_mask(items)}}
@@ -47,7 +47,7 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Helpers do
   def subscription_batch([list]) when is_map(list) do
     items = Map.get(list, :items) || Map.get(list, "items") || []
 
-    if port_subscription_items?(items) do
+    if runtime_subscription_batch?(items) do
       {:ok, %{op: :runtime_call, function: "elmx_sub_batch", args: [list]}}
     else
       {:ok, %{op: :int_literal, value: Subscriptions.batch_mask(items)}}
@@ -55,6 +55,10 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Helpers do
   end
 
   def subscription_batch(_), do: :error
+
+  defp runtime_subscription_batch?(items) when is_list(items) do
+    port_subscription_items?(items) or not Subscriptions.static_batch?(items)
+  end
 
   defp port_subscription_items?(items) when is_list(items) do
     Enum.any?(items, &port_subscription_item?/1)

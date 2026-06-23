@@ -237,9 +237,14 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
 
   defp function_letrec?(bindings) do
     bindings != [] and
-      (Enum.all?(bindings, fn {_name, value} -> function_like?(value) end) or
-         (length(bindings) > 1 and
-            Enum.any?(bindings, fn {_name, value} -> function_like?(value) end)))
+      letrec_like_bindings?(bindings) and
+      Enum.all?(bindings, fn {_name, value} -> function_like?(value) end)
+  end
+
+  defp letrec_like_bindings?(bindings) do
+    Enum.any?(bindings, fn {_name, value} ->
+      match?(%{op: :lambda}, value) or match?(%{op: :qualified_call, args: []}, value)
+    end)
   end
 
   defp function_like?(%{op: :lambda}), do: true
@@ -272,13 +277,19 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
   end
 
   defp compile_sequential_let_block(bindings, body, env, counter) do
+    used_names = used_let_binding_names(bindings, body)
+
     {binding_lines, body_env, final_counter} =
       Enum.reduce(bindings, {[], env, counter}, fn {name, value}, {lines, acc_env, c} ->
-        {value_code, _, c2} = Emit.compile_expr(value, acc_env, c)
-        emit_name = Helpers.let_emit_name(name)
-        var = Macro.to_string(Macro.var(String.to_atom(emit_name), nil))
-        line = [var, " = ", value_code, "\n"]
-        {[line | lines], Map.put(acc_env, String.to_atom(name), true), c2}
+        if MapSet.member?(used_names, name) do
+          {value_code, _, c2} = Emit.compile_expr(value, acc_env, c)
+          emit_name = Helpers.let_emit_name(name)
+          var = Macro.to_string(Macro.var(String.to_atom(emit_name), nil))
+          line = [var, " = ", value_code, "\n"]
+          {[line | lines], Map.put(acc_env, String.to_atom(name), true), c2}
+        else
+          {lines, acc_env, c}
+        end
       end)
 
     binding_lines = Enum.reverse(binding_lines)
@@ -330,11 +341,35 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
 
   defp referenced_binding_names(expr), do: referenced_binding_names(expr, MapSet.new())
 
+  defp referenced_binding_names(%{op: :call} = map, acc) do
+    acc =
+      case Map.get(map, :name) do
+        name when is_binary(name) -> MapSet.put(acc, name)
+        _ -> acc
+      end
+
+    referenced_binding_names(Map.get(map, :args) || [], acc)
+  end
+
+  defp referenced_binding_names(%{op: :qualified_call} = map, acc),
+    do: referenced_binding_names(Map.get(map, :args) || [], acc)
+
   defp referenced_binding_names(%{op: :var, name: name}, acc) when is_binary(name),
     do: MapSet.put(acc, name)
 
-  defp referenced_binding_names(%{op: :call, name: name}, acc) when is_binary(name),
-    do: MapSet.put(acc, name)
+  defp referenced_binding_names(%{op: :field_access, arg: arg}, acc) when is_binary(arg),
+    do: MapSet.put(acc, arg)
+
+  defp referenced_binding_names(%{op: :case, subject: subject}, acc) when is_binary(subject),
+    do: MapSet.put(acc, subject)
+
+  defp referenced_binding_names(%{op: op, arg: arg}, acc)
+       when op in [:tuple_first_expr, :tuple_second_expr] and is_map(arg),
+       do: referenced_binding_names(arg, acc)
+
+  defp referenced_binding_names(%{op: op, var: name}, acc)
+       when op in [:add_const, :add_vars, :sub_const] and is_binary(name),
+       do: MapSet.put(acc, name)
 
   defp referenced_binding_names(map, acc) when is_map(map) do
     Enum.reduce(map, acc, fn {_k, v}, a -> referenced_binding_names(v, a) end)
@@ -345,6 +380,17 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
   end
 
   defp referenced_binding_names(_, acc), do: acc
+
+  defp used_let_binding_names(bindings, body) do
+    Enum.reduce(Enum.reverse(bindings), referenced_binding_names(body, MapSet.new()), fn
+      {name, value}, acc ->
+        if MapSet.member?(acc, name) do
+          referenced_binding_names(value, acc)
+        else
+          acc
+        end
+    end)
+  end
 
   defp letrec_binding_value(name, %{op: :lambda} = value, env, counter) do
     self_ref? = self_references?(name, value)
@@ -390,22 +436,36 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
   defp ir_references_name?(_, _), do: false
 
   defp compile_single_let_in(%{name: name, value_expr: value, in_expr: body}, env, counter) do
+    used? = MapSet.member?(referenced_binding_names(body, MapSet.new()), name)
     {value_code, env, c1} = Emit.compile_expr(value, env, counter)
-    emit_name = Helpers.let_emit_name(name)
-    body_env = Map.put(env, String.to_atom(name), true)
-    {body_code, _, c2} = Emit.compile_expr(body, body_env, c1)
 
-    param = Macro.var(String.to_atom(emit_name), nil) |> Macro.to_string()
+    if used? do
+      emit_name = Helpers.let_emit_name(name)
+      body_env = Map.put(env, String.to_atom(name), true)
+      {body_code, _, c2} = Emit.compile_expr(body, body_env, c1)
 
-    {[
-       "(fn ",
-       param,
-       " -> ",
-       body_code,
-       " end).(",
-       value_code,
-       ")"
-     ], env, c2}
+      param = Macro.var(String.to_atom(emit_name), nil) |> Macro.to_string()
+
+      {[
+         "(fn ",
+         param,
+         " -> ",
+         body_code,
+         " end).(",
+         value_code,
+         ")"
+       ], env, c2}
+    else
+      {body_code, _, c2} = Emit.compile_expr(body, env, c1)
+
+      {[
+         "(fn -> _ = ",
+         value_code,
+         "\n",
+         body_code,
+         "\nend).()"
+       ], env, c2}
+    end
   end
 
   def compile_if(%{cond: condition, then_expr: then_expr, else_expr: else_expr}, env, counter) do

@@ -33,7 +33,7 @@
       "font_size": 20,
       "h": 20,
       "kind": "text_label",
-      "text": "--",
+      "text": "180 deg",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -47,7 +47,7 @@
       "font_size": 20,
       "h": 20,
       "kind": "text_label",
-      "text": "Waiting",
+      "text": "Valid",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -84,7 +84,7 @@
       "y": 108
     }
   ],
-  "preview_ops_sha256": "cbe0ef6959e07af6a2af0d441f84bd609f871d042a6407b515b6e24380f686a2",
+  "preview_ops_sha256": "1bbbb1962877c8088e7d0cb520edb6c6b0e0a4273b548273b0d55134c3c46311",
   "render_tree": {
     "node_count": 9,
     "node_types": [
@@ -124,19 +124,6 @@
                   "font_id": 0,
                   "h": 20,
                   "label": "",
-                  "text": "--",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 136,
-                  "x": 4,
-                  "y": 36
-                },
-                {
-                  "children": [],
-                  "font_id": 0,
-                  "h": 20,
-                  "label": "",
                   "text": "0",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
@@ -144,6 +131,19 @@
                   "w": 136,
                   "x": 4,
                   "y": 84
+                },
+                {
+                  "children": [],
+                  "font_id": 0,
+                  "h": 20,
+                  "label": "",
+                  "text": "180 deg",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 36
                 },
                 {
                   "children": [],
@@ -176,7 +176,7 @@
                   "font_id": 0,
                   "h": 20,
                   "label": "",
-                  "text": "Waiting",
+                  "text": "Valid",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
                   "type": "text",
@@ -205,8 +205,13 @@
   "runtime_model": {
     "hasCompass": true,
     "heading": {
-      "args": [],
-      "ctor": "Nothing"
+      "args": [
+        {
+          "degrees": 180.0,
+          "isValid": true
+        }
+      ],
+      "ctor": "Just"
     },
     "refreshes": 0,
     "runtime_view_output": [],
@@ -215,7 +220,7 @@
   "template": "watch-demo-compass",
   "timeline_init_messages": [
     "init:init",
-    "update:Unknown (Ok {degrees=180,isvalid=true})"
+    "update:GotHeading (Ok {degrees=180,isvalid=true})"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
@@ -223,8 +228,13 @@
     "runtime_model": {
       "hasCompass": true,
       "heading": {
-        "args": [],
-        "ctor": "Nothing"
+        "args": [
+          {
+            "degrees": 180.0,
+            "isValid": true
+          }
+        ],
+        "ctor": "Just"
       },
       "refreshes": 0
     },

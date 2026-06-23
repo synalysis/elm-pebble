@@ -86,7 +86,9 @@ defmodule Ide.Debugger.SubscriptionPayload do
         String.contains?(t, "connectionchange") or String.contains?(t, "onconnection") ->
           "#{message_text} #{subscription_connection_status(state, target, ctx)}"
 
-        String.contains?(t, "compasschange") or String.contains?(t, "oncompass") ->
+        String.contains?(t, "compasschange") or String.contains?(t, "oncompass") or
+            (String.contains?(t, "onchange") and
+               compass_heading_message?(state, target, message_text, ctx)) ->
           compass_payload = subscription_compass_heading(state, target, ctx)
 
           if subscription_message_arity(state, target, message_text, ctx) == 1 do
@@ -387,8 +389,30 @@ defmodule Ide.Debugger.SubscriptionPayload do
       String.contains?(normalized, "appfocus") and String.ends_with?(normalized, "state") ->
         {:ok, subscription_app_focus_state(state, target, ctx)}
 
+      String.contains?(normalized, "compass") and String.contains?(normalized, "heading") ->
+        {:ok, Jason.encode!(subscription_compass_heading(state, target, ctx))}
+
       true ->
         :error
+    end
+  end
+
+  @spec compass_heading_message?(
+          Types.runtime_state(),
+          Types.surface_target(),
+          String.t(),
+          attach_ctx() | nil
+        ) :: boolean()
+  defp compass_heading_message?(state, target, message, ctx)
+       when is_map(state) and is_binary(message) do
+    with %{} = ei <- resolve_introspect(state, target, ctx),
+         arg_type when is_binary(arg_type) <-
+           Map.get(ei, "msg_constructor_arg_types", %{}) |> Map.get(message) do
+      normalized = arg_type |> String.replace(" ", "") |> String.downcase()
+
+      String.contains?(normalized, "compass") and String.contains?(normalized, "heading")
+    else
+      _ -> false
     end
   end
 

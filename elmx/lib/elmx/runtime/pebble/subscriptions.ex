@@ -37,4 +37,36 @@ defmodule Elmx.Runtime.Pebble.Subscriptions do
   def item_mask(_), do: 0
 
   defp item_mask_from_call(target, _args), do: mask(target) || 0
+
+  @doc """
+  True when every batch entry can be OR'd into a compile-time subscription mask.
+
+  Lists that mention variables, conditionals, or non-mask runtime subs need
+  `elmx_sub_batch/1` instead of a folded integer literal.
+  """
+  @spec static_batch?(Types.ir_arg_list()) :: boolean()
+  def static_batch?(items) when is_list(items), do: Enum.all?(items, &static_batch_item?/1)
+
+  @spec static_batch_item?(Types.subscription_mask_item()) :: boolean()
+  def static_batch_item?(%{op: :int_literal, value: value}) when is_integer(value), do: true
+
+  def static_batch_item?(%{op: :qualified_call, target: target, args: args})
+      when is_binary(target) and is_list(args) do
+    cond do
+      Map.has_key?(@frame_targets, target) -> static_frame_args?(args)
+      mask(target) != nil -> true
+      true -> false
+    end
+  end
+
+  def static_batch_item?(%{op: :qualified_call1, target: target}) when is_binary(target),
+    do: mask(target) != nil
+
+  def static_batch_item?(_), do: false
+
+  defp static_frame_args?([%{op: :int_literal, value: interval} | _msg])
+       when is_integer(interval),
+       do: true
+
+  defp static_frame_args?(_), do: false
 end

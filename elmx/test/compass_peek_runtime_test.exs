@@ -36,4 +36,19 @@ defmodule Elmx.CompassPeekRuntimeTest do
     assert heading["degrees"] == 180.0
     assert heading["isValid"] == true
   end
+
+  test "compass peek resolves curried GotHeading callback from partial constructor" do
+    callback = fn result -> {:GotHeading, result} end
+
+    cmd = Pebble.runtime_dispatch("elmx_compass_peek", [callback])
+
+    assert cmd["message"] == "GotHeading"
+    assert %{"ctor" => "GotHeading", "args" => [result]} = cmd["message_value"]
+    assert %{"ctor" => "Ok", "args" => [heading]} = result
+    assert heading["degrees"] == 180.0
+    assert heading["isValid"] == true
+
+    assert [%{"source" => "device_command", "message" => "GotHeading"}] =
+             Followups.from_commands(cmd)
+  end
 end
