@@ -66,13 +66,11 @@ defmodule Ide.Debugger.ProtocolRx do
   @spec mark_init_complete(Types.runtime_state(), Types.surface_target()) :: Types.runtime_state()
   def mark_init_complete(state, target)
       when is_map(state) and target in [:watch, :companion, :phone] do
-    canonical = SurfaceTargets.normalize(target)
-
     state
-    |> put_in([canonical, :model, @init_complete_key], true)
+    |> put_init_complete_on(target)
     |> then(fn st ->
-      if canonical == :companion do
-        put_in(st, [:phone, :model, @init_complete_key], true)
+      if target == :companion and Map.has_key?(st, :phone) do
+        put_init_complete_on(st, :phone)
       else
         st
       end
@@ -80,6 +78,13 @@ defmodule Ide.Debugger.ProtocolRx do
   end
 
   def mark_init_complete(state, _target), do: state
+
+  defp put_init_complete_on(state, target) do
+    surface = Map.get(state, target, %{})
+    model = Map.get(surface, :model) || Map.get(surface, "model") || %{}
+
+    Map.put(state, target, Map.put(surface, :model, Map.put(model, @init_complete_key, true)))
+  end
 
   @spec apply_side_effects(
           Types.runtime_state(),

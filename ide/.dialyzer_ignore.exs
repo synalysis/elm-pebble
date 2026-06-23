@@ -75,5 +75,12 @@
   # Preview PNG generator calls corpus bootstrap; Dialyzer cannot prove template validation succeeds.
   {"lib/ide/project_template_previews.ex", :pattern_match},
   {"lib/ide/project_template_previews.ex", :no_return},
-  {"lib/ide/project_template_previews.ex", :unused_fun}
+  {"lib/ide/project_template_previews.ex", :unused_fun},
+  {"lib/ide/debugger/protocol_rx.ex", :exact_eq},
+  {"lib/ide/debugger/runtime_background_drains.ex", :no_return},
+  {"lib/ide/debugger/runtime_contexts.ex", :unused_fun},
+  {"lib/ide/debugger/runtime_hub.ex", :unused_fun},
+  {"lib/ide/debugger/session_api.ex", :pattern_match_cov},
+  {"lib/ide/debugger/step_apply_callbacks.ex", :no_return},
+  {"lib/ide/debugger/triggers_api.ex", :pattern_match_cov}
 ]

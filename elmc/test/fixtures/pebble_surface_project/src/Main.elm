@@ -73,6 +73,7 @@ type Msg
     | GotCompassHeading (Result PebbleCompass.Error PebbleCompass.Heading)
     | DictationStatus PebbleDictation.Status
     | DictationResult (Result PebbleDictation.Error String)
+    | AnimationFinished PebbleUi.AnimationId
 
 
 coveredSurfaceFunctions : List String
@@ -104,6 +105,7 @@ coveredSurfaceFunctions =
     , "Pebble.Events.onDayChange"
     , "Pebble.Events.onMonthChange"
     , "Pebble.Events.onYearChange"
+    , "Pebble.Events.onAnimationFinished"
     , "Pebble.Frame.atFps"
     , "Pebble.Frame.every"
     , "Pebble.Health.accessible"
@@ -368,6 +370,9 @@ update msg model =
             in
             ( model, Cmd.none )
 
+        AnimationFinished _ ->
+            ( model, Cmd.none )
+
         GotClockStyle24h _ ->
             ( model, Cmd.none )
 
@@ -416,6 +421,7 @@ subscriptions _ =
         , PebbleDictation.onStatus DictationStatus
         , PebbleDictation.onResult DictationResult
         , PebbleHealth.onEvent HealthEvent
+        , PebbleEvents.onAnimationFinished AnimationFinished
         ]
 
 

@@ -349,7 +349,7 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
                       · {diagnostic_file_position_label(diag)}
                     </span>
                   </p>
-                  <p class="mt-1 whitespace-pre-wrap text-sm">{diag.message}</p>
+                  <p class="mt-1 whitespace-pre-wrap font-mono text-xs leading-relaxed">{diag.message}</p>
                   <p
                     :if={diagnostic_editor_jumpable?(diag, active)}
                     class="mt-2 text-xs font-medium text-rose-800"
@@ -1061,6 +1061,8 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
   end
 
   @spec editor_check_engine_label(String.t()) :: String.t()
-  defp editor_check_engine_label("phone"), do: "Elm compiler"
+  defp editor_check_engine_label(source_root) when source_root in ["phone", "protocol"],
+    do: "Elm compiler"
+
   defp editor_check_engine_label(_source_root), do: "elmc check"
 end

@@ -1204,6 +1204,841 @@ static int elmc_pebble_scene_decode_payload(
 #endif
   return -4;
 }
+#if ELMC_PEBBLE_FEATURE_DRAW_VECTOR_SEQUENCE_AT || ELMC_PEBBLE_FEATURE_DRAW_BITMAP_SEQUENCE_AT
+#ifndef ELM_PEBBLE_RESOURCE_ID_MISSING
+#define ELM_PEBBLE_RESOURCE_ID_MISSING UINT32_MAX
+#endif
+#ifndef PLAY_COUNT_INFINITE
+#define PLAY_COUNT_INFINITE 0xFFFF
+#endif
+
+static ElmcPebbleApp *s_sequence_playback_app = NULL;
+
+static void elmc_sequence_track_app(ElmcPebbleApp *app) {
+  if (app) {
+    s_sequence_playback_app = app;
+  }
+}
+
+static int64_t elmc_sequence_monotonic_ms(void) {
+#ifdef ELMC_PEBBLE_PLATFORM
+  time_t seconds = 0;
+  uint16_t milliseconds = 0;
+  time_ms(&seconds, &milliseconds);
+  return ((int64_t)seconds * 1000) + milliseconds;
+#else
+  return (int64_t)time(NULL) * 1000;
+#endif
+}
+
+static bool elmc_sequence_play_loops(uint32_t play_count) {
+  return play_count == 0 || play_count == PLAY_COUNT_INFINITE || play_count == 0xFFFF;
+}
+
+__attribute__((weak)) void elmc_pebble_schedule_layer_redraw(void) {
+}
+
+__attribute__((weak)) void elmc_pebble_after_worker_dispatch(void) {
+}
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_VECTOR_SEQUENCE_AT
+#ifdef ELMC_PEBBLE_PLATFORM
+#define ELMC_VECTOR_SEQUENCE_MAX_INSTANCES 8
+
+typedef struct {
+  int32_t animation_id;
+  uint32_t resource_id;
+  int16_t origin_x;
+  int16_t origin_y;
+  int64_t started_at_ms;
+  uint32_t duration_ms;
+  uint16_t play_count;
+  uint8_t active;
+  uint8_t seen_this_frame;
+  uint8_t finished_pending;
+} ElmcVectorSequenceInstance;
+
+static ElmcVectorSequenceInstance s_vector_sequence_instances[ELMC_VECTOR_SEQUENCE_MAX_INSTANCES];
+static AppTimer *s_vector_sequence_timer = NULL;
+static uint32_t s_cached_sequence_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
+static uint32_t s_failed_vector_sequence_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
+static uint32_t s_cached_vector_sequence_duration_ms = 0;
+static GDrawCommandSequence *s_cached_sequence = NULL;
+
+static void vector_sequence_timer_callback(void *data);
+static void vector_sequence_flush_finished(ElmcPebbleApp *app);
+
+static void vector_sequence_cache_clear(void) {
+  if (s_cached_sequence) {
+    gdraw_command_sequence_destroy(s_cached_sequence);
+    s_cached_sequence = NULL;
+  }
+  s_cached_sequence_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
+  s_failed_vector_sequence_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
+  s_cached_vector_sequence_duration_ms = 0;
+}
+
+static uint32_t vector_sequence_total_duration_ms(GDrawCommandSequence *sequence) {
+  if (!sequence) {
+    return 0;
+  }
+
+  uint32_t frame_count = gdraw_command_sequence_get_num_frames(sequence);
+  if (frame_count == 0) {
+    return 0;
+  }
+
+  uint32_t total_ms = 0;
+  for (uint32_t index = 0; index < frame_count; index++) {
+    GDrawCommandFrame *frame = gdraw_command_sequence_get_frame_by_index(sequence, index);
+    if (!frame) {
+      continue;
+    }
+    total_ms += gdraw_command_frame_get_duration(frame);
+  }
+
+  return total_ms;
+}
+
+static uint32_t vector_sequence_playable_duration_ms(GDrawCommandSequence *sequence) {
+  if (!sequence) {
+    return 0;
+  }
+
+  uint32_t total_ms = gdraw_command_sequence_get_total_duration(sequence);
+  if (total_ms > 0) {
+    return total_ms;
+  }
+
+  return vector_sequence_total_duration_ms(sequence);
+}
+
+static GDrawCommandFrame *vector_sequence_frame_at_elapsed(
+    GDrawCommandSequence *sequence,
+    uint32_t elapsed_ms,
+    uint32_t total_duration_ms,
+    uint16_t play_count) {
+  if (!sequence) {
+    return NULL;
+  }
+
+  uint32_t frame_count = gdraw_command_sequence_get_num_frames(sequence);
+  if (frame_count == 0) {
+    return NULL;
+  }
+
+  if (total_duration_ms == 0) {
+    total_duration_ms = vector_sequence_playable_duration_ms(sequence);
+  }
+
+  if (total_duration_ms > 0) {
+    if (elmc_sequence_play_loops(play_count)) {
+      elapsed_ms = elapsed_ms % total_duration_ms;
+    } else if (play_count > 0) {
+      uint32_t max_elapsed = total_duration_ms * (uint32_t)play_count;
+      if (elapsed_ms >= max_elapsed) {
+        elapsed_ms = max_elapsed > 0 ? max_elapsed - 1 : 0;
+      }
+    }
+
+    uint32_t remaining = elapsed_ms;
+    for (uint32_t index = 0; index < frame_count; index++) {
+      GDrawCommandFrame *frame = gdraw_command_sequence_get_frame_by_index(sequence, index);
+      if (!frame) {
+        continue;
+      }
+      uint32_t frame_duration = gdraw_command_frame_get_duration(frame);
+      if (frame_duration == 0) {
+        frame_duration = total_duration_ms / frame_count;
+        if (frame_duration == 0) {
+          frame_duration = 100;
+        }
+      }
+      if (remaining < frame_duration || index + 1 == frame_count) {
+        return frame;
+      }
+      remaining -= frame_duration;
+    }
+  }
+
+  return gdraw_command_sequence_get_frame_by_index(sequence, frame_count - 1);
+}
+
+static GDrawCommandSequence *vector_sequence_cached(uint32_t resource_id) {
+  if (resource_id == ELM_PEBBLE_RESOURCE_ID_MISSING) {
+    return NULL;
+  }
+  if (resource_id == s_failed_vector_sequence_resource_id) {
+    return NULL;
+  }
+  if (s_cached_sequence && s_cached_sequence_resource_id == resource_id) {
+    return s_cached_sequence;
+  }
+  vector_sequence_cache_clear();
+  s_cached_sequence_resource_id = resource_id;
+  s_cached_sequence = gdraw_command_sequence_create_with_resource(resource_id);
+  if (!s_cached_sequence) {
+    s_failed_vector_sequence_resource_id = resource_id;
+    APP_LOG(APP_LOG_LEVEL_WARNING, "vector sequence load failed resource_id=%lu", (unsigned long)resource_id);
+    return NULL;
+  }
+
+  s_cached_vector_sequence_duration_ms = vector_sequence_playable_duration_ms(s_cached_sequence);
+  if (s_cached_vector_sequence_duration_ms == 0) {
+    APP_LOG(APP_LOG_LEVEL_WARNING, "vector sequence has no playable frames resource_id=%lu",
+            (unsigned long)resource_id);
+  }
+  return s_cached_sequence;
+}
+
+static ElmcVectorSequenceInstance *vector_sequence_instance_find(int32_t animation_id) {
+  for (int i = 0; i < ELMC_VECTOR_SEQUENCE_MAX_INSTANCES; i++) {
+    ElmcVectorSequenceInstance *inst = &s_vector_sequence_instances[i];
+    if (inst->active && inst->animation_id == animation_id) {
+      return inst;
+    }
+  }
+  return NULL;
+}
+
+static ElmcVectorSequenceInstance *vector_sequence_instance_alloc(int32_t animation_id) {
+  ElmcVectorSequenceInstance *existing = vector_sequence_instance_find(animation_id);
+  if (existing) {
+    return existing;
+  }
+
+  for (int i = 0; i < ELMC_VECTOR_SEQUENCE_MAX_INSTANCES; i++) {
+    ElmcVectorSequenceInstance *inst = &s_vector_sequence_instances[i];
+    if (!inst->active) {
+      memset(inst, 0, sizeof(*inst));
+      inst->animation_id = animation_id;
+      inst->active = 1;
+      inst->started_at_ms = elmc_sequence_monotonic_ms();
+      return inst;
+    }
+  }
+
+  return NULL;
+}
+
+static bool vector_sequence_instance_animating(
+    ElmcVectorSequenceInstance *inst,
+    GDrawCommandSequence *sequence,
+    uint32_t total_duration_ms) {
+  if (!inst || !sequence) {
+    return false;
+  }
+
+  uint32_t play_count = inst->play_count;
+  if (elmc_sequence_play_loops(play_count) && total_duration_ms > 0) {
+    return true;
+  }
+
+  if (play_count > 0 && total_duration_ms > 0) {
+    uint32_t elapsed = (uint32_t)(elmc_sequence_monotonic_ms() - inst->started_at_ms);
+    return elapsed < total_duration_ms * (uint32_t)play_count;
+  }
+
+  return false;
+}
+
+static void vector_sequence_schedule_timer_if_needed(bool animating) {
+  if (animating && !s_vector_sequence_timer) {
+    s_vector_sequence_timer = app_timer_register(33, vector_sequence_timer_callback, NULL);
+  } else if (!animating && s_vector_sequence_timer) {
+    app_timer_cancel(s_vector_sequence_timer);
+    s_vector_sequence_timer = NULL;
+  }
+}
+
+static void vector_sequence_timer_callback(void *data) {
+  (void)data;
+  s_vector_sequence_timer = NULL;
+  bool any_animating = false;
+
+  for (int i = 0; i < ELMC_VECTOR_SEQUENCE_MAX_INSTANCES; i++) {
+    ElmcVectorSequenceInstance *inst = &s_vector_sequence_instances[i];
+    if (!inst->active) {
+      continue;
+    }
+
+    GDrawCommandSequence *sequence = vector_sequence_cached(inst->resource_id);
+    if (!sequence) {
+      inst->active = 0;
+      continue;
+    }
+
+    if (vector_sequence_instance_animating(inst, sequence, inst->duration_ms)) {
+      any_animating = true;
+    } else {
+      inst->finished_pending = 1;
+      inst->active = 0;
+    }
+  }
+
+  vector_sequence_flush_finished(s_sequence_playback_app);
+  if (s_sequence_playback_app) {
+    elmc_pebble_invalidate_scene(s_sequence_playback_app);
+  }
+  elmc_pebble_schedule_layer_redraw();
+  vector_sequence_schedule_timer_if_needed(any_animating);
+}
+
+static void vector_sequence_flush_finished(ElmcPebbleApp *app) {
+  if (!app) {
+    return;
+  }
+
+  for (int i = 0; i < ELMC_VECTOR_SEQUENCE_MAX_INSTANCES; i++) {
+    ElmcVectorSequenceInstance *inst = &s_vector_sequence_instances[i];
+    if (!inst->finished_pending) {
+      continue;
+    }
+
+    int rc = elmc_pebble_dispatch_animation_finished(app, inst->animation_id);
+    if (rc == 0) {
+      elmc_pebble_after_worker_dispatch();
+    }
+    inst->finished_pending = 0;
+    inst->active = 0;
+  }
+}
+
+void elmc_vector_sequence_frame_begin(void) {
+  for (int i = 0; i < ELMC_VECTOR_SEQUENCE_MAX_INSTANCES; i++) {
+    if (s_vector_sequence_instances[i].active) {
+      s_vector_sequence_instances[i].seen_this_frame = 0;
+    }
+  }
+}
+
+void elmc_vector_sequence_draw_at(
+    GContext *ctx,
+    ElmcPebbleApp *app,
+    int32_t animation_id,
+    uint32_t resource_id,
+    int16_t x,
+    int16_t y) {
+  if (!ctx || animation_id <= 0) {
+    return;
+  }
+
+  elmc_sequence_track_app(app);
+
+  GDrawCommandSequence *sequence = vector_sequence_cached(resource_id);
+  if (!sequence) {
+    return;
+  }
+
+  ElmcVectorSequenceInstance *inst = vector_sequence_instance_alloc(animation_id);
+  if (!inst) {
+    return;
+  }
+
+  bool fresh = inst->resource_id == 0;
+  inst->resource_id = resource_id;
+  inst->origin_x = x;
+  inst->origin_y = y;
+  inst->seen_this_frame = 1;
+  inst->play_count = gdraw_command_sequence_get_play_count(sequence);
+  inst->duration_ms = vector_sequence_playable_duration_ms(sequence);
+  if (inst->duration_ms == 0 && s_cached_vector_sequence_duration_ms > 0) {
+    inst->duration_ms = s_cached_vector_sequence_duration_ms;
+  }
+
+  if (fresh) {
+    inst->started_at_ms = elmc_sequence_monotonic_ms();
+  }
+
+  uint32_t elapsed = (uint32_t)(elmc_sequence_monotonic_ms() - inst->started_at_ms);
+  uint32_t total_duration = inst->duration_ms;
+  GDrawCommandFrame *frame =
+      vector_sequence_frame_at_elapsed(sequence, elapsed, total_duration, inst->play_count);
+  if (frame) {
+    gdraw_command_frame_draw(ctx, sequence, frame, GPoint(x, y));
+  }
+
+  bool animating = vector_sequence_instance_animating(inst, sequence, total_duration);
+  if (!animating) {
+    inst->finished_pending = 1;
+    inst->active = 0;
+  }
+
+  vector_sequence_schedule_timer_if_needed(animating);
+}
+
+void elmc_vector_sequence_frame_end(ElmcPebbleApp *app) {
+  elmc_sequence_track_app(app);
+  bool any_animating = false;
+
+  for (int i = 0; i < ELMC_VECTOR_SEQUENCE_MAX_INSTANCES; i++) {
+    ElmcVectorSequenceInstance *inst = &s_vector_sequence_instances[i];
+    if (!inst->active) {
+      continue;
+    }
+
+    if (!inst->seen_this_frame) {
+      inst->active = 0;
+      continue;
+    }
+
+    GDrawCommandSequence *sequence = vector_sequence_cached(inst->resource_id);
+    if (!sequence) {
+      inst->active = 0;
+      continue;
+    }
+
+    if (vector_sequence_instance_animating(inst, sequence, inst->duration_ms)) {
+      any_animating = true;
+    } else {
+      inst->finished_pending = 1;
+      inst->active = 0;
+    }
+  }
+
+  vector_sequence_flush_finished(app);
+  vector_sequence_schedule_timer_if_needed(any_animating);
+}
+
+void elmc_vector_sequence_deinit(void) {
+  if (s_vector_sequence_timer) {
+    app_timer_cancel(s_vector_sequence_timer);
+    s_vector_sequence_timer = NULL;
+  }
+  vector_sequence_cache_clear();
+  memset(s_vector_sequence_instances, 0, sizeof(s_vector_sequence_instances));
+}
+#else
+void elmc_vector_sequence_frame_begin(void) {
+}
+
+void elmc_vector_sequence_draw_at(
+    GContext *ctx,
+    ElmcPebbleApp *app,
+    int32_t animation_id,
+    uint32_t resource_id,
+    int16_t x,
+    int16_t y) {
+  (void)ctx;
+  (void)app;
+  (void)animation_id;
+  (void)resource_id;
+  (void)x;
+  (void)y;
+}
+
+void elmc_vector_sequence_frame_end(ElmcPebbleApp *app) {
+  (void)app;
+}
+
+void elmc_vector_sequence_deinit(void) {
+}
+#endif
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_BITMAP_SEQUENCE_AT
+#ifdef ELMC_PEBBLE_PLATFORM
+#define ELMC_BITMAP_SEQUENCE_MAX_INSTANCES 8
+
+typedef struct {
+  int32_t animation_id;
+  uint32_t resource_id;
+  int16_t origin_x;
+  int16_t origin_y;
+  int64_t started_at_ms;
+  uint32_t duration_ms;
+  uint16_t play_count;
+  GBitmapSequence *sequence;
+  uint8_t active;
+  uint8_t seen_this_frame;
+  uint8_t finished_pending;
+} ElmcBitmapSequenceInstance;
+
+static ElmcBitmapSequenceInstance s_bitmap_sequence_instances[ELMC_BITMAP_SEQUENCE_MAX_INSTANCES];
+static AppTimer *s_bitmap_sequence_timer = NULL;
+static uint32_t s_failed_bitmap_sequence_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
+
+static void bitmap_sequence_timer_callback(void *data);
+
+static void bitmap_sequence_normalize_play_count(GBitmapSequence *sequence) {
+  if (!sequence) {
+    return;
+  }
+
+  if (gbitmap_sequence_get_play_count(sequence) == 0) {
+    gbitmap_sequence_set_play_count(sequence, PLAY_COUNT_INFINITE);
+  }
+}
+
+static uint32_t bitmap_sequence_total_duration_ms(GBitmapSequence *sequence) {
+  if (!sequence) {
+    return 0;
+  }
+
+  uint16_t frame_count = gbitmap_sequence_get_total_num_frames(sequence);
+  if (frame_count == 0) {
+    return 0;
+  }
+
+  GSize size = gbitmap_sequence_get_bitmap_size(sequence);
+  if (size.w <= 0 || size.h <= 0) {
+    return 0;
+  }
+
+  GBitmap *scratch = gbitmap_create_blank(size, GBitmapFormat8Bit);
+  if (!scratch) {
+    return 0;
+  }
+
+  gbitmap_sequence_restart(sequence);
+  uint32_t total_ms = 0;
+  uint32_t delay_ms = 0;
+
+  for (uint16_t frame = 0; frame < frame_count; frame++) {
+    if (!gbitmap_sequence_update_bitmap_next_frame(sequence, scratch, &delay_ms)) {
+      break;
+    }
+    total_ms += delay_ms;
+  }
+
+  gbitmap_destroy(scratch);
+  gbitmap_sequence_restart(sequence);
+  return total_ms;
+}
+
+static GBitmapSequence *bitmap_sequence_create(uint32_t resource_id) {
+  if (resource_id == ELM_PEBBLE_RESOURCE_ID_MISSING) {
+    return NULL;
+  }
+  if (resource_id == s_failed_bitmap_sequence_resource_id) {
+    return NULL;
+  }
+
+  GBitmapSequence *sequence = gbitmap_sequence_create_with_resource(resource_id);
+  if (!sequence) {
+    s_failed_bitmap_sequence_resource_id = resource_id;
+    APP_LOG(APP_LOG_LEVEL_WARNING, "bitmap sequence load failed resource_id=%lu",
+            (unsigned long)resource_id);
+    return NULL;
+  }
+
+  bitmap_sequence_normalize_play_count(sequence);
+  return sequence;
+}
+
+static void bitmap_sequence_instance_release(ElmcBitmapSequenceInstance *inst) {
+  if (!inst) {
+    return;
+  }
+
+  if (inst->sequence) {
+    gbitmap_sequence_destroy(inst->sequence);
+    inst->sequence = NULL;
+  }
+}
+
+static ElmcBitmapSequenceInstance *bitmap_sequence_instance_find(int32_t animation_id) {
+  for (int i = 0; i < ELMC_BITMAP_SEQUENCE_MAX_INSTANCES; i++) {
+    ElmcBitmapSequenceInstance *inst = &s_bitmap_sequence_instances[i];
+    if (inst->active && inst->animation_id == animation_id) {
+      return inst;
+    }
+  }
+  return NULL;
+}
+
+static ElmcBitmapSequenceInstance *bitmap_sequence_instance_alloc(int32_t animation_id) {
+  ElmcBitmapSequenceInstance *existing = bitmap_sequence_instance_find(animation_id);
+  if (existing) {
+    return existing;
+  }
+
+  for (int i = 0; i < ELMC_BITMAP_SEQUENCE_MAX_INSTANCES; i++) {
+    ElmcBitmapSequenceInstance *inst = &s_bitmap_sequence_instances[i];
+    if (!inst->active) {
+      memset(inst, 0, sizeof(*inst));
+      inst->animation_id = animation_id;
+      inst->active = 1;
+      inst->started_at_ms = elmc_sequence_monotonic_ms();
+      return inst;
+    }
+  }
+
+  return NULL;
+}
+
+static bool bitmap_sequence_seek_elapsed(
+    GBitmapSequence *sequence,
+    GBitmap *bitmap,
+    uint32_t elapsed_ms,
+    uint32_t total_duration_ms,
+    uint16_t play_count) {
+  if (!sequence || !bitmap) {
+    return false;
+  }
+
+  gbitmap_sequence_restart(sequence);
+  bitmap_sequence_normalize_play_count(sequence);
+
+  if (total_duration_ms > 0) {
+    if (elmc_sequence_play_loops(play_count)) {
+      elapsed_ms = elapsed_ms % total_duration_ms;
+    } else if (play_count > 0) {
+      uint32_t max_elapsed = total_duration_ms * (uint32_t)play_count;
+      if (elapsed_ms >= max_elapsed) {
+        return false;
+      }
+    }
+  }
+
+  uint32_t accumulated = 0;
+  while (true) {
+    uint32_t delay_ms = 0;
+    if (!gbitmap_sequence_update_bitmap_next_frame(sequence, bitmap, &delay_ms)) {
+      return accumulated <= elapsed_ms;
+    }
+
+    if (delay_ms == 0) {
+      delay_ms = 1;
+    }
+
+    if (accumulated + delay_ms > elapsed_ms) {
+      return true;
+    }
+
+    accumulated += delay_ms;
+  }
+}
+
+static bool bitmap_sequence_instance_animating(ElmcBitmapSequenceInstance *inst) {
+  if (!inst) {
+    return false;
+  }
+
+  if (elmc_sequence_play_loops(inst->play_count) && inst->duration_ms > 0) {
+    return true;
+  }
+
+  if (inst->play_count > 0 && inst->duration_ms > 0) {
+    uint32_t elapsed = (uint32_t)(elmc_sequence_monotonic_ms() - inst->started_at_ms);
+    return elapsed < inst->duration_ms * (uint32_t)inst->play_count;
+  }
+
+  return false;
+}
+
+static void bitmap_sequence_schedule_timer_if_needed(bool animating) {
+  if (animating && !s_bitmap_sequence_timer) {
+    s_bitmap_sequence_timer = app_timer_register(33, bitmap_sequence_timer_callback, NULL);
+  } else if (!animating && s_bitmap_sequence_timer) {
+    app_timer_cancel(s_bitmap_sequence_timer);
+    s_bitmap_sequence_timer = NULL;
+  }
+}
+
+static void bitmap_sequence_flush_finished(ElmcPebbleApp *app) {
+  if (!app) {
+    return;
+  }
+
+  for (int i = 0; i < ELMC_BITMAP_SEQUENCE_MAX_INSTANCES; i++) {
+    ElmcBitmapSequenceInstance *inst = &s_bitmap_sequence_instances[i];
+    if (!inst->finished_pending) {
+      continue;
+    }
+
+    int rc = elmc_pebble_dispatch_animation_finished(app, inst->animation_id);
+    if (rc == 0) {
+      elmc_pebble_after_worker_dispatch();
+    }
+    inst->finished_pending = 0;
+    bitmap_sequence_instance_release(inst);
+    inst->active = 0;
+  }
+}
+
+static void bitmap_sequence_timer_callback(void *data) {
+  (void)data;
+  s_bitmap_sequence_timer = NULL;
+  bool any_animating = false;
+
+  for (int i = 0; i < ELMC_BITMAP_SEQUENCE_MAX_INSTANCES; i++) {
+    ElmcBitmapSequenceInstance *inst = &s_bitmap_sequence_instances[i];
+    if (!inst->active) {
+      continue;
+    }
+
+    if (!inst->sequence) {
+      inst->active = 0;
+      continue;
+    }
+
+    if (bitmap_sequence_instance_animating(inst)) {
+      any_animating = true;
+    } else {
+      inst->finished_pending = 1;
+      inst->active = 0;
+    }
+  }
+
+  bitmap_sequence_flush_finished(s_sequence_playback_app);
+  if (s_sequence_playback_app) {
+    elmc_pebble_invalidate_scene(s_sequence_playback_app);
+  }
+  elmc_pebble_schedule_layer_redraw();
+  bitmap_sequence_schedule_timer_if_needed(any_animating);
+}
+
+void elmc_bitmap_sequence_frame_begin(void) {
+  for (int i = 0; i < ELMC_BITMAP_SEQUENCE_MAX_INSTANCES; i++) {
+    if (s_bitmap_sequence_instances[i].active) {
+      s_bitmap_sequence_instances[i].seen_this_frame = 0;
+    }
+  }
+}
+
+void elmc_bitmap_sequence_draw_at(
+    GContext *ctx,
+    ElmcPebbleApp *app,
+    int32_t animation_id,
+    uint32_t resource_id,
+    int16_t x,
+    int16_t y) {
+  if (!ctx || animation_id <= 0) {
+    return;
+  }
+
+  elmc_sequence_track_app(app);
+
+  ElmcBitmapSequenceInstance *inst = bitmap_sequence_instance_alloc(animation_id);
+  if (!inst) {
+    return;
+  }
+
+  bool fresh = inst->resource_id == 0;
+  bool resource_changed = inst->resource_id != 0 && inst->resource_id != resource_id;
+
+  if (fresh || resource_changed || !inst->sequence) {
+    bitmap_sequence_instance_release(inst);
+    inst->sequence = bitmap_sequence_create(resource_id);
+    if (!inst->sequence) {
+      inst->active = 0;
+      return;
+    }
+    inst->started_at_ms = elmc_sequence_monotonic_ms();
+    inst->duration_ms = bitmap_sequence_total_duration_ms(inst->sequence);
+    inst->play_count = gbitmap_sequence_get_play_count(inst->sequence);
+    if (inst->duration_ms == 0) {
+      APP_LOG(APP_LOG_LEVEL_WARNING, "bitmap sequence has no playable frames resource_id=%lu",
+              (unsigned long)resource_id);
+    }
+  }
+
+  inst->resource_id = resource_id;
+  inst->origin_x = x;
+  inst->origin_y = y;
+  inst->seen_this_frame = 1;
+
+  GSize size = gbitmap_sequence_get_bitmap_size(inst->sequence);
+  if (size.w <= 0 || size.h <= 0) {
+    return;
+  }
+
+  GBitmap *frame = gbitmap_create_blank(size, GBitmapFormat8Bit);
+  if (!frame) {
+    return;
+  }
+
+  uint32_t elapsed = (uint32_t)(elmc_sequence_monotonic_ms() - inst->started_at_ms);
+  bool has_frame = bitmap_sequence_seek_elapsed(
+      inst->sequence,
+      frame,
+      elapsed,
+      inst->duration_ms,
+      inst->play_count);
+
+  if (has_frame) {
+    graphics_draw_bitmap_in_rect(ctx, frame, GRect(x, y, size.w, size.h));
+  }
+
+  gbitmap_destroy(frame);
+
+  bool animating = bitmap_sequence_instance_animating(inst);
+  if (!animating) {
+    inst->finished_pending = 1;
+    inst->active = 0;
+  }
+
+  bitmap_sequence_schedule_timer_if_needed(animating);
+}
+
+void elmc_bitmap_sequence_frame_end(ElmcPebbleApp *app) {
+  elmc_sequence_track_app(app);
+  bool any_animating = false;
+
+  for (int i = 0; i < ELMC_BITMAP_SEQUENCE_MAX_INSTANCES; i++) {
+    ElmcBitmapSequenceInstance *inst = &s_bitmap_sequence_instances[i];
+    if (!inst->active) {
+      continue;
+    }
+
+    if (!inst->seen_this_frame) {
+      inst->active = 0;
+      bitmap_sequence_instance_release(inst);
+      continue;
+    }
+
+    if (bitmap_sequence_instance_animating(inst)) {
+      any_animating = true;
+    } else {
+      inst->finished_pending = 1;
+      inst->active = 0;
+    }
+  }
+
+  bitmap_sequence_flush_finished(app);
+  bitmap_sequence_schedule_timer_if_needed(any_animating);
+}
+
+void elmc_bitmap_sequence_deinit(void) {
+  if (s_bitmap_sequence_timer) {
+    app_timer_cancel(s_bitmap_sequence_timer);
+    s_bitmap_sequence_timer = NULL;
+  }
+
+  for (int i = 0; i < ELMC_BITMAP_SEQUENCE_MAX_INSTANCES; i++) {
+    bitmap_sequence_instance_release(&s_bitmap_sequence_instances[i]);
+  }
+
+  memset(s_bitmap_sequence_instances, 0, sizeof(s_bitmap_sequence_instances));
+  s_failed_bitmap_sequence_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
+}
+#else
+void elmc_bitmap_sequence_frame_begin(void) {
+}
+
+void elmc_bitmap_sequence_draw_at(
+    GContext *ctx,
+    ElmcPebbleApp *app,
+    int32_t animation_id,
+    uint32_t resource_id,
+    int16_t x,
+    int16_t y) {
+  (void)ctx;
+  (void)app;
+  (void)animation_id;
+  (void)resource_id;
+  (void)x;
+  (void)y;
+}
+
+void elmc_bitmap_sequence_frame_end(ElmcPebbleApp *app) {
+  (void)app;
+}
+
+void elmc_bitmap_sequence_deinit(void) {
+}
+#endif
+#endif
         void elmc_scene_writer_init_app(ElmcSceneWriter *writer, ElmcPebbleApp *app) {
           if (!writer) return;
           writer->app = app;
@@ -1685,19 +2520,21 @@ static void elmc_pebble_scene_compute_dirty_rect(ElmcPebbleApp *app) {
           if (*count >= max_cmds) return 0;
 
           ElmcValue *setting_cursor = ctx->first;
-          while (setting_cursor && setting_cursor->tag == ELMC_TAG_LIST && setting_cursor->payload != NULL && *count < max_cmds) {
+          while (setting_cursor && setting_cursor->tag == ELMC_TAG_LIST && setting_cursor->payload != NULL) {
             ElmcCons *node = (ElmcCons *)setting_cursor->payload;
             ElmcPebbleDrawCmd setting_cmd;
             if (elmc_draw_setting_cmd_from_value(node->head, &setting_cmd) == 0) {
               elmc_emit_draw_cmd(&setting_cmd, out_cmds, max_cmds, count, emitted, skip);
+              if (*count >= max_cmds) return 0;
             }
             setting_cursor = node->tail;
           }
 
           ElmcValue *cmd_cursor = ctx->second;
-          while (cmd_cursor && cmd_cursor->tag == ELMC_TAG_LIST && cmd_cursor->payload != NULL && *count < max_cmds) {
+          while (cmd_cursor && cmd_cursor->tag == ELMC_TAG_LIST && cmd_cursor->payload != NULL) {
             ElmcCons *node = (ElmcCons *)cmd_cursor->payload;
             elmc_append_draw_cmd_from_value_window(node->head, out_cmds, max_cmds, count, emitted, skip, depth + 1);
+            if (*count >= max_cmds) return 0;
             cmd_cursor = node->tail;
           }
 
@@ -2519,6 +3356,14 @@ int elmc_pebble_init_with_mode(ElmcPebbleApp *app, ElmcValue *flags, int run_mod
           if (tag <= 0) return -6;
           return elmc_pebble_dispatch_tag_value(app, tag, year);
         }
+
+    int elmc_pebble_dispatch_animation_finished(ElmcPebbleApp *app, int animation_id) {
+      if (!app || !app->initialized) return -1;
+      if (!elmc_pebble_is_subscribed(app, ELMC_PEBBLE_SUB_ANIMATION_FINISHED)) return -8;
+      elmc_int_t tag = elmc_pebble_sub_tag(app, ELMC_PEBBLE_SUB_ANIMATION_FINISHED);
+      if (tag <= 0) return -6;
+      return elmc_pebble_dispatch_tag_value(app, tag, animation_id);
+    }
 
     int elmc_pebble_dispatch_storage_string(ElmcPebbleApp *app, const char *value) {
       if (!app || !app->initialized) return -1;

@@ -550,6 +550,7 @@ typedef enum {
     #define ELMC_PEBBLE_SUB_COMPASS (1 << 20)
     #define ELMC_PEBBLE_SUB_DICTATION (1 << 21)
     #define ELMC_PEBBLE_SUB_UNOBSTRUCTED_AREA (1 << 22)
+    #define ELMC_PEBBLE_SUB_ANIMATION_FINISHED (1 << 23)
     #define ELMC_PEBBLE_SUB_HEALTH (1LL << 31)
 #ifndef ELMC_PEBBLE_ACCEL_SAMPLES_PER_UPDATE
 #define ELMC_PEBBLE_ACCEL_SAMPLES_PER_UPDATE 1
@@ -602,6 +603,8 @@ typedef enum {
     int elmc_pebble_dispatch_day(ElmcPebbleApp *app, int day);
     int elmc_pebble_dispatch_month(ElmcPebbleApp *app, int month);
     int elmc_pebble_dispatch_year(ElmcPebbleApp *app, int year);
+    typedef struct GContext GContext;
+
     int elmc_pebble_take_cmd(ElmcPebbleApp *app, ElmcPebbleCmd *out_cmd);
     int elmc_pebble_view_command(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmd);
     int elmc_pebble_view_commands(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds);
@@ -613,6 +616,17 @@ typedef enum {
     int elmc_pebble_scene_command_count(ElmcPebbleApp *app);
     int elmc_pebble_scene_dirty_rect(ElmcPebbleApp *app, ElmcPebbleRect *out_rect, int *out_full);
     void elmc_pebble_invalidate_scene(ElmcPebbleApp *app);
+    void elmc_vector_sequence_frame_begin(void);
+void elmc_vector_sequence_draw_at(GContext *ctx, ElmcPebbleApp *app, int32_t animation_id, uint32_t resource_id, int16_t x, int16_t y);
+void elmc_vector_sequence_frame_end(ElmcPebbleApp *app);
+void elmc_vector_sequence_deinit(void);
+int elmc_pebble_dispatch_animation_finished(ElmcPebbleApp *app, int animation_id);
+
+    void elmc_bitmap_sequence_frame_begin(void);
+void elmc_bitmap_sequence_draw_at(GContext *ctx, ElmcPebbleApp *app, int32_t animation_id, uint32_t resource_id, int16_t x, int16_t y);
+void elmc_bitmap_sequence_frame_end(ElmcPebbleApp *app);
+void elmc_bitmap_sequence_deinit(void);
+
     void elmc_pebble_clear_view_cache(ElmcPebbleApp *app);
     int elmc_pebble_tick(ElmcPebbleApp *app);
     int64_t elmc_pebble_active_subscriptions(ElmcPebbleApp *app);

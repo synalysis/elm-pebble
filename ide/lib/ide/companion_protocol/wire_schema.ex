@@ -114,4 +114,6 @@ defmodule Ide.CompanionProtocol.WireSchema do
   @type key_ids :: %{optional(String.t()) => pos_integer()}
 
   @type runtime_tags :: %{optional(String.t()) => %{optional(String.t()) => non_neg_integer()}}
+
+  @type schema :: Ide.Debugger.Protocol.Schema.t()
 end

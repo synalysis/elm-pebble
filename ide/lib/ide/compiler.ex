@@ -1,11 +1,13 @@
 defmodule Ide.Compiler do
   alias Ide.Compiler.Cache
   alias Ide.Compiler.Diagnostics
+  alias Ide.CompanionProtocolGenerator
   alias Ide.Debugger.Types.ElmcCliIngestBridge
   alias Ide.PebbleToolchain.Elmc, as: PebbleToolchainElmc
   alias Ide.Compiler.ManifestCache
   alias Ide.PebbleToolchain
   alias ElmEx.Frontend.Bridge
+  alias Ide.Projects.FileStore
 
   @moduledoc """
   Boundary for compiler job orchestration and diagnostics streaming.
@@ -14,12 +16,14 @@ defmodule Ide.Compiler do
   @type project_slug :: String.t()
   @type opts :: keyword()
   @type diagnostic :: %{
-          severity: String.t(),
-          message: String.t(),
-          source: String.t(),
-          file: String.t() | nil,
-          line: integer() | nil,
-          column: integer() | nil
+          required(:severity) => String.t(),
+          required(:message) => String.t(),
+          required(:source) => String.t(),
+          required(:file) => String.t() | nil,
+          required(:line) => integer() | nil,
+          required(:column) => integer() | nil,
+          optional(:end_line) => integer() | nil,
+          optional(:end_column) => integer() | nil
         }
   @type check_result :: %{
           status: :ok | :error,
@@ -65,6 +69,9 @@ defmodule Ide.Compiler do
   @type manifest_data :: normalized_manifest()
 
   @type compiler_error :: atom() | String.t() | tuple()
+
+  # Shared companion Elm packages validated by upstream `elm make` (phone + protocol).
+  @elm_make_source_roots ~w(phone protocol)
 
   @type manifest_result :: %{
           status: :ok | :error,
@@ -128,8 +135,9 @@ defmodule Ide.Compiler do
   @doc """
   Runs the editor save-time check for a specific source root.
 
-  The companion phone app is validated with the upstream Elm compiler. Watch-side
-  roots are validated with elmc so the editor matches the Pebble runtime compiler.
+  Companion `phone` and shared `protocol` packages are validated with upstream
+  `elm make` so naming, imports, and type errors match the pkjs build. Watch-side
+  roots use elmc so the editor matches the Pebble runtime compiler.
   """
   @spec check_source_root(project_slug(), opts()) ::
           {:ok, check_result()} | {:error, compiler_error()}
@@ -141,7 +149,7 @@ defmodule Ide.Compiler do
     project_dir =
       if File.exists?(Path.join(source_dir, "elm.json")), do: source_dir, else: workspace_root
 
-    if source_root == "phone" do
+    if source_root in @elm_make_source_roots do
       run_elm_check(project_dir)
     else
       case run_editor_parser_check(project_dir) do
@@ -210,7 +218,14 @@ defmodule Ide.Compiler do
     |> Enum.reduce_while(:ok, fn {label, root_path}, :ok ->
       scoped_slug = Ide.Projects.compiler_cache_key(project_slug, label)
 
-      case check(scoped_slug, workspace_root: root_path, source_roots: nil) do
+      check_result =
+        if label in @elm_make_source_roots do
+          run_elm_check(root_path)
+        else
+          check(scoped_slug, workspace_root: root_path, source_roots: nil)
+        end
+
+      case check_result do
         {:ok, %{status: :ok}} ->
           {:cont, :ok}
 
@@ -368,6 +383,8 @@ defmodule Ide.Compiler do
 
   @spec run_elm_check(String.t()) :: {:ok, check_result()} | {:error, compiler_error()}
   defp run_elm_check(project_dir) do
+    _ = regenerate_companion_internal_elm(project_dir)
+
     with {:ok, elm_json} <- read_elm_json(project_dir),
          {:ok, elm_bin} <- PebbleToolchain.elm_bin(),
          {:ok, entries} <- elm_make_entries(project_dir, elm_json) do
@@ -386,32 +403,25 @@ defmodule Ide.Compiler do
            ])}
 
         [_ | _] ->
-          output_path =
-            Path.join(
-              System.tmp_dir!(),
-              "elm-pebble-editor-check-#{System.unique_integer([:positive])}.js"
+          # Verify compilation only — protocol packages may not define `main`.
+          output_path = "/dev/null"
+
+          {output, exit_code} =
+            System.cmd(
+              elm_bin,
+              ["make" | entries] ++ ["--report=json", "--output", output_path],
+              cd: project_dir,
+              stderr_to_stdout: true
             )
 
-          try do
-            {output, exit_code} =
-              System.cmd(
-                elm_bin,
-                ["make" | entries] ++ ["--report=json", "--output", output_path],
-                cd: project_dir,
-                stderr_to_stdout: true
-              )
+          status = if exit_code == 0, do: :ok, else: :error
 
-            status = if exit_code == 0, do: :ok, else: :error
+          diagnostics =
+            status
+            |> parse_elm_diagnostics(output, project_dir)
+            |> Diagnostics.normalize_list()
 
-            diagnostics =
-              status
-              |> parse_elm_diagnostics(output, project_dir)
-              |> Diagnostics.normalize_list()
-
-            {:ok, elm_check_result(status, project_dir, output, diagnostics)}
-          after
-            File.rm(output_path)
-          end
+          {:ok, elm_check_result(status, project_dir, output, diagnostics)}
       end
     else
       {:error, reason} ->
@@ -431,6 +441,21 @@ defmodule Ide.Compiler do
     end
   rescue
     error -> {:error, error}
+  end
+
+  @spec regenerate_companion_internal_elm(String.t()) :: :ok
+  defp regenerate_companion_internal_elm(project_dir) do
+    types_elm = Path.join(project_dir, "src/Companion/Types.elm")
+    internal_elm = Path.join(project_dir, "src/Companion/Internal.elm")
+
+    if File.exists?(types_elm) do
+      case CompanionProtocolGenerator.generate_elm_internal(types_elm, internal_elm) do
+        :ok -> :ok
+        {:error, _reason} -> :ok
+      end
+    else
+      :ok
+    end
   end
 
   @spec run_editor_parser_check(String.t()) :: {:ok, check_result()}
@@ -818,8 +843,14 @@ defmodule Ide.Compiler do
 
     entries =
       case preferred_entries do
-        [] -> Path.wildcard(Path.join([project_dir, "src", "**", "*.elm"]))
-        [_ | _] -> preferred_entries
+        [_ | _] = found ->
+          found
+
+        [] ->
+          case FileStore.protocol_elm_check_entry_paths(project_dir) do
+            [_ | _] = protocol_entries -> protocol_entries
+            _ -> Path.wildcard(Path.join([project_dir, "src", "**", "*.elm"]))
+          end
       end
       |> Enum.uniq()
       |> Enum.sort()
@@ -891,10 +922,11 @@ defmodule Ide.Compiler do
 
   defp elm_compile_error_diagnostics(_, _project_dir), do: []
 
-  @spec elm_problem_to_diagnostic(elm_report(), String.t() | nil, String.t()) :: diagnostic()
+  @spec elm_problem_to_diagnostic(map(), String.t() | nil, String.t()) :: diagnostic()
   defp elm_problem_to_diagnostic(problem, path, project_dir) when is_map(problem) do
     region = Map.get(problem, "region", %{})
     start = Map.get(region, "start", %{})
+    ending = Map.get(region, "end", %{})
 
     title =
       problem
@@ -909,7 +941,9 @@ defmodule Ide.Compiler do
       message: [title, body] |> Enum.reject(&(&1 == "")) |> Enum.join("\n\n"),
       file: normalize_elm_report_path(path, project_dir),
       line: normalize_json_integer(Map.get(start, "line")),
-      column: normalize_json_integer(Map.get(start, "column"))
+      column: normalize_json_integer(Map.get(start, "column")),
+      end_line: normalize_json_integer(Map.get(ending, "line")),
+      end_column: normalize_json_integer(Map.get(ending, "column"))
     }
   end
 

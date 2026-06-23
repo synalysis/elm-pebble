@@ -1,10 +1,12 @@
 import json
+import io
 import os
 import struct
 import sys
 import tempfile
 import time
 import traceback
+import zipfile
 from uuid import UUID
 
 from libpebble2.protocol.logs import AppLogMessage, LogDumpShipping, LogMessage, RequestLogs
@@ -16,8 +18,11 @@ from pypkjs.runner.websocket import run_tool, WebsocketRunner
 
 DEBUG_LOG_PATH = "/home/ape/projects/elm-pebble/.cursor/debug-edf96a.log"
 MAX_EARLY_APPMESSAGES = 20
+MAX_PENDING_INBOUND_APPMESSAGES = 32
 DEBUG_SIMULATOR_KEY_WEATHER_TEMPERATURE_C = 0x454C4D12
 DEBUG_SIMULATOR_KEY_WEATHER_CONDITION_WIRE = 0x454C4D13
+DEBUG_SIMULATOR_KEY_COMPANION_RESYNC = 0x454C4D14
+_inbound_appmessage_original = None
 WEATHER_CONDITION_WIRE_CODES = {
     "clear": 1,
     "cloudy": 2,
@@ -330,11 +335,28 @@ def _get_js_lifecycle_lock():
     return _js_lifecycle_lock
 
 
-def _phone_pbw_with_js(runner):
+def _phone_pbw_with_js(runner, preferred_uuid=None):
+    if preferred_uuid is not None:
+        pbw = runner.pbws.get(preferred_uuid)
+        if pbw is not None and pbw.src is not None:
+            return pbw
+
+    running_uuid = getattr(runner, "running_uuid", None)
+    if running_uuid is not None:
+        pbw = runner.pbws.get(running_uuid)
+        if pbw is not None and pbw.src is not None:
+            return pbw
+
     for pbw in runner.pbws.values():
         if pbw.src is not None:
             return pbw
     return None
+
+
+def _uuid_from_pbw_bytes(pbw_bytes):
+    with zipfile.ZipFile(io.BytesIO(pbw_bytes)) as archive:
+        manifest = json.loads(archive.open("appinfo.json").read())
+    return UUID(manifest["uuid"])
 
 
 def runner_has_phone_companion(runner):
@@ -385,13 +407,18 @@ def patch_companion_cache_install():
                             "Companion cache refresh loading PBW (%d bytes)..."
                             % len(pbw_bytes)
                         )
+                        preferred_uuid = _uuid_from_pbw_bytes(pbw_bytes)
                         runner.load_pbws([f.name], cache=True, start=False)
-                        phone_pbw = _phone_pbw_with_js(runner)
+                        phone_pbw = _phone_pbw_with_js(runner, preferred_uuid)
                         if phone_pbw is None:
                             raise ValueError("PBW has no pebble-js-app.js (phone companion)")
 
                         runner.start_js(phone_pbw)
                         apply_pending_simulator_settings(runner)
+                        if runner_has_phone_companion(runner):
+                            schedule_companion_watch_resync(
+                                runner, "companion_cache_refresh"
+                            )
                         loaded = [
                             str(app_uuid)
                             for app_uuid, pbw in runner.pbws.items()
@@ -466,15 +493,57 @@ def patch_debug_appmessage_send():
 patch_debug_appmessage_send()
 
 
-def wire_appmessage_plain_dict(runtime, message):
-    with runtime.context:
-        runtime.context.locals["__elmPebbleAppMessage"] = message
-        json_text = runtime.context.eval(
-            "(function(m){ return JSON.stringify(m); })(__elmPebbleAppMessage)"
-        )
-    if not isinstance(json_text, str):
+def _plain_wire_value(value):
+    import STPyV8 as v8
+
+    if value is None:
         return None
-    return json.loads(json_text)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return value
+    if isinstance(value, v8.JSArray):
+        return [_plain_wire_value(item) for item in list(value)]
+    if isinstance(value, (list, tuple)):
+        return [_plain_wire_value(item) for item in value]
+    if hasattr(value, "value"):
+        try:
+            return int(value.value)
+        except (TypeError, ValueError):
+            pass
+    return value
+
+
+def wire_appmessage_plain_dict(runtime, message):
+    """Extract a JSON-safe dict from a JS AppMessage object (stock sendAppMessage shape)."""
+    if message is None:
+        return None
+
+    if isinstance(message, dict):
+        return {str(key): _plain_wire_value(val) for key, val in message.items()}
+
+    try:
+        keys = list(message.keys())
+    except Exception:
+        return None
+
+    plain = {}
+    for key in keys:
+        key_str = str(key)
+        try:
+            value = message[key_str]
+        except (KeyError, TypeError, AttributeError):
+            try:
+                value = message[key]
+            except (KeyError, TypeError, AttributeError):
+                continue
+        plain[key_str] = _plain_wire_value(value)
+
+    return plain
 
 
 def appmessage_number_value(value):
@@ -667,6 +736,222 @@ def send_simulator_weather_to_watch(runner, reason, retry_count=0, ws=None):
     return sent
 
 
+def pending_inbound_appmessages(runner):
+    pending = getattr(runner, "_elm_pebble_pending_inbound_appmessages", None)
+    if pending is None:
+        pending = []
+        runner._elm_pebble_pending_inbound_appmessages = pending
+    return pending
+
+
+def pebble_js_runtime(pebble):
+    """Return the JSRuntime backing a Pebble JS object (pebble.runtime, not pebble.runtime.js)."""
+    runtime = getattr(pebble, "runtime", None)
+    if runtime is None or not hasattr(runtime, "enqueue"):
+        return None
+    return runtime
+
+
+def companion_js_eval_ready(pebble):
+    runtime = pebble_js_runtime(pebble)
+    if runtime is None:
+        return False
+
+    context = getattr(runtime, "context", None)
+    return context is not None and hasattr(context, "eval")
+
+
+def inbound_plain_dict(dictionary):
+    from libpebble2.services.appmessage import ByteArray, CString
+
+    plain = {}
+    for key, value in dictionary.items():
+        key_int = int(key)
+        if isinstance(value, CString):
+            plain[key_int] = value.value
+        elif isinstance(value, ByteArray):
+            plain[key_int] = value.value.decode("utf-8", errors="replace").rstrip("\0")
+        elif isinstance(value, (bytes, bytearray)):
+            plain[key_int] = bytes(value).decode("utf-8", errors="replace").rstrip("\0")
+        elif isinstance(value, str):
+            plain[key_int] = value
+        else:
+            plain[key_int] = appmessage_number_value(value)
+    return plain
+
+
+def _companion_deliver_inbound_js_source(inbound_plain):
+    payload_json = json.dumps({str(k): v for k, v in inbound_plain.items()}, sort_keys=True)
+    return (
+        "(function(p){"
+        "var g=typeof globalThis!=='undefined'?globalThis:this;"
+        "var fn=g.deliverCompanionWatchInboundFromWire;"
+        "if(typeof fn!=='function'&&g.companionGlobalRoot){"
+        "fn=g.companionGlobalRoot().deliverCompanionWatchInboundFromWire;"
+        "}"
+        "if(typeof fn==='function'){fn(p);return;}"
+        "console.log('Companion inbound bridge missing deliverCompanionWatchInboundFromWire');"
+        "})("
+        + payload_json
+        + ")"
+    )
+
+
+def deliver_watch_inbound_to_companion_js(pebble, dictionary):
+    js = pebble_js_runtime(pebble)
+    if js is None:
+        return False
+
+    inbound_plain = inbound_plain_dict(dictionary)
+    source = _companion_deliver_inbound_js_source(inbound_plain)
+    message_tag = inbound_plain.get(10)
+
+    def do_deliver():
+        js_now = pebble_js_runtime(pebble)
+        if js_now is None:
+            return
+
+        context = getattr(js_now, "context", None)
+        if context is None or not hasattr(context, "eval"):
+            return
+
+        try:
+            with context:
+                context.eval(source)
+            runner = getattr(pebble.runtime, "runner", None)
+            if runner is not None:
+                runner.log_output(
+                    "Companion watch inbound delivered to Elm tag=%s" % message_tag
+                )
+        except Exception as exc:
+            runner = getattr(pebble.runtime, "runner", None)
+            if runner is not None:
+                runner.log_output(
+                    "Companion watch inbound delivery failed tag=%s: %s: %s"
+                    % (message_tag, type(exc).__name__, exc)
+                )
+            traceback.print_exc()
+
+    js.enqueue(do_deliver)
+    return True
+
+
+def flush_pending_inbound_appmessages(runner):
+    if not getattr(runner, "js", None):
+        return 0
+
+    pending = pending_inbound_appmessages(runner)
+    if not pending:
+        return 0
+
+    items = list(pending)
+    pending.clear()
+    replayed = 0
+
+    for pebble, _tid, _uuid, inbound in items:
+        if deliver_watch_inbound_to_companion_js(pebble, inbound):
+            replayed += 1
+
+    if replayed:
+        runner.log_output(
+            "Replayed %d inbound AppMessage(s) after companion JS start" % replayed
+        )
+
+    return replayed
+
+
+def send_companion_watch_resync(runner, reason="companion_resync"):
+    app_uuid = companion_app_uuid(runner)
+    if app_uuid is None:
+        return False
+
+    try:
+        runner.appmessage.send_message(
+            app_uuid, {DEBUG_SIMULATOR_KEY_COMPANION_RESYNC: Int32(1)}
+        )
+        runner.log_output("Companion watch resync sent (%s)" % reason)
+        return True
+    except Exception as exc:
+        runner.log_output(
+            "Companion watch resync failed (%s): %s: %s"
+            % (reason, type(exc).__name__, exc)
+        )
+        return False
+
+
+def schedule_companion_watch_resync(runner, reason, delays=(2.5,)):
+    if getattr(runner, "_elm_companion_resync_scheduled", False):
+        return
+
+    runner._elm_companion_resync_scheduled = True
+    import gevent
+
+    for delay in delays:
+
+        def fire(delay=delay):
+            send_companion_watch_resync(runner, "%s@%.1fs" % (reason, delay))
+
+        gevent.spawn_later(delay, fire)
+
+
+def _companion_watch_ping_source():
+    return (
+        "(function(){"
+        "var g=typeof globalThis!=='undefined'?globalThis:this;"
+        "var fn=g.deliverCompanionWatchPing;"
+        "if(typeof fn!=='function'&&g.companionGlobalRoot){"
+        "fn=g.companionGlobalRoot().deliverCompanionWatchPing;"
+        "}"
+        "if(typeof fn==='function'){fn();}"
+        "})();"
+    )
+
+
+def deliver_companion_watch_ping(runner, reason="bootstrap"):
+    js = getattr(runner, "js", None)
+    if js is None:
+        return False
+
+    source = _companion_watch_ping_source()
+
+    def do_deliver():
+        js_now = getattr(runner, "js", None)
+        if js_now is None:
+            return
+
+        context = getattr(js_now, "context", None)
+        if context is None or not hasattr(context, "eval"):
+            return
+
+        try:
+            with context:
+                context.eval(source)
+            runner.log_output("Companion bootstrap watch Ping delivered (%s)" % reason)
+        except Exception as exc:
+            runner.log_output(
+                "Companion bootstrap watch Ping failed (%s): %s: %s"
+                % (reason, type(exc).__name__, exc)
+            )
+
+    js.enqueue(do_deliver)
+    return True
+
+
+def schedule_companion_watch_ping(runner, reason, delays=(1.0, 2.5)):
+    if getattr(runner, "_elm_companion_watch_ping_scheduled", False):
+        return
+
+    runner._elm_companion_watch_ping_scheduled = True
+    import gevent
+
+    for delay in delays:
+
+        def fire(delay=delay):
+            deliver_companion_watch_ping(runner, "%s@%.1fs" % (reason, delay))
+
+        gevent.spawn_later(delay, fire)
+
+
 def schedule_simulator_weather_to_watch(runner, reason, delay_seconds=0.35, ws=None):
     import gevent
 
@@ -839,8 +1124,11 @@ def send_wire_appmessage(pebble, message):
     from pypkjs.javascript.pebble import JSRuntimeException
 
     plain = wire_appmessage_plain_dict(pebble.runtime, message)
-    if plain is None:
-        raise JSRuntimeException("Failed to serialize AppMessage payload")
+    if not plain:
+        raise JSRuntimeException(
+            "Failed to serialize AppMessage payload (no keys: %s)"
+            % type(message).__name__
+        )
 
     dictionary = build_appmessage_dictionary(plain, pebble.app_keys)
     log_payload = {
@@ -861,20 +1149,47 @@ def send_wire_appmessage(pebble, message):
     return transaction_id
 
 
+def companion_wire_message_tag(plain):
+    if not isinstance(plain, dict):
+        return None
+
+    for key in ("message_tag", "10", 10):
+        if key in plain:
+            return plain[key]
+
+    return None
+
+
 def patch_pebble_send_appmessage():
-    """Use stock pypkjs sendAppMessage (companion already calls it from the JS event loop)."""
+    """Route companion JS sendAppMessage through the wire encoder with visible logging."""
     from pypkjs.javascript.pebble import JSRuntimeException, Pebble
 
     if getattr(Pebble.sendAppMessage, "__elm_patched__", False):
         return
 
-    original_send_appmessage = Pebble.sendAppMessage
-
     def sendAppMessage(self, message, success=None, failure=None):
         self._check_ready()
+        runner = getattr(self.runtime, "runner", None)
+        plain = None
         try:
-            original_send_appmessage(self, message, success, failure)
+            plain = wire_appmessage_plain_dict(self.runtime, message)
+            tid = send_wire_appmessage(self, message)
+            self.pending_acks[tid] = (success, failure)
+            if runner is not None:
+                runner.log_output(
+                    "Companion phone→watch AppMessage sent tag=%s tid=%s keys=%s"
+                    % (
+                        companion_wire_message_tag(plain),
+                        tid,
+                        sorted(str(k) for k in plain.keys()) if plain else [],
+                    )
+                )
         except Exception as exc:
+            if runner is not None:
+                runner.log_output(
+                    "Companion phone→watch AppMessage failed tag=%s: %s: %s"
+                    % (companion_wire_message_tag(plain), type(exc).__name__, exc)
+                )
             if callable(failure):
                 self.runtime.enqueue(failure, exc)
             else:
@@ -900,11 +1215,7 @@ def patch_pebble_appmessage_acks():
         def deliver():
             original_handle_response(self, tid, did_succeed)
 
-        js = getattr(self.runtime, "js", None)
-        if js is None:
-            deliver()
-        else:
-            self.runtime.enqueue(deliver)
+        self.runtime.enqueue(deliver)
 
     _handle_response.__elm_patched__ = True
     Pebble._handle_response = _handle_response
@@ -915,30 +1226,63 @@ patch_pebble_appmessage_acks()
 
 def patch_pebble_inbound_appmessage():
     """Deliver watch→phone AppMessages on the JS runtime queue (STPyV8 is not thread-safe)."""
+    global _inbound_appmessage_original
     from pypkjs.javascript.pebble import Pebble
 
     if getattr(Pebble._handle_message, "__elm_patched__", False):
         return
 
     original_handle_message = Pebble._handle_message
+    _inbound_appmessage_original = original_handle_message
+
+    def queue_inbound_appmessage(pebble, tid, uuid, inbound):
+        runner = getattr(pebble.runtime, "runner", None)
+        if runner is None:
+            return False
+
+        pending = pending_inbound_appmessages(runner)
+        pending.append((pebble, tid, uuid, inbound))
+
+        while len(pending) > MAX_PENDING_INBOUND_APPMESSAGES:
+            pending.pop(0)
+
+        return True
 
     def _handle_message(self, tid, uuid, dictionary):
-        if uuid != self.uuid:
-            return original_handle_message(self, tid, uuid, dictionary)
+        runner = getattr(self.runtime, "runner", None)
 
-        inbound = {int(key): value for key, value in dictionary.items()}
+        if uuid != self.uuid:
+            running_uuid = getattr(runner, "running_uuid", None) if runner is not None else None
+            if running_uuid is not None and uuid == running_uuid:
+                if runner is not None:
+                    runner.log_output(
+                        "Companion rebinding watch AppMessage uuid %s (js had %s)"
+                        % (uuid, self.uuid)
+                    )
+                self.uuid = uuid
+            else:
+                if runner is not None:
+                    runner.log_output(
+                        "Discarded watch AppMessage for %s (companion js uuid %s running %s)"
+                        % (uuid, self.uuid, running_uuid)
+                    )
+                return
+
+        inbound = inbound_plain_dict(dictionary)
+        message_tag = inbound.get(10)
+        if message_tag is not None and runner is not None:
+            runner.log_output("Watch companion AppMessage tag=%s" % message_tag)
+
+        if not companion_js_eval_ready(self):
+            if queue_inbound_appmessage(self, tid, uuid, inbound):
+                return
+            return
 
         def deliver():
-            if getattr(self.runtime, "js", None) is None:
+            if not companion_js_eval_ready(self):
+                queue_inbound_appmessage(self, tid, uuid, inbound)
                 return
-            try:
-                original_handle_message(self, tid, uuid, inbound)
-            except Exception as exc:
-                self.runtime.log_output(
-                    "Inbound AppMessage delivery failed: %s: %s"
-                    % (type(exc).__name__, exc)
-                )
-                traceback.print_exc()
+            deliver_watch_inbound_to_companion_js(self, inbound)
 
         self.runtime.enqueue(deliver)
 
@@ -1169,11 +1513,16 @@ def patch_runner_lifecycle_logging():
             })
             # endregion
             result = original_start_js(runner, pbw)
+            flush_pending_inbound_appmessages(runner)
+            if runner_has_phone_companion(runner):
+                schedule_companion_watch_resync(runner, "start_js")
             schedule_simulator_weather_to_watch(runner, "start_js", delay_seconds=2.0)
             return result
 
     def stop_js(runner):
         with _get_js_lifecycle_lock():
+            runner._elm_companion_resync_scheduled = False
+            runner._elm_companion_watch_ping_scheduled = False
             # region agent log
             agent_log("initial", "H37", "embedded_pypkjs.py:runner:stop_js", "pypkjs stopping js runtime", {
                 "running_uuid": str(runner.running_uuid) if runner.running_uuid else None,

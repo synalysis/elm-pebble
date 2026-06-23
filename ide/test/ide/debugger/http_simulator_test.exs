@@ -120,4 +120,27 @@ defmodule Ide.Debugger.HttpSimulatorTest do
                "condition" => "clear"
              })
   end
+
+  test "simulated_response synthesizes Open-Meteo JSON for compiled function decoders" do
+    command = %{
+      "kind" => "http",
+      "method" => "GET",
+      "url" => "https://api.open-meteo.com/v1/forecast?latitude=52.52",
+      "expect" => %{
+        "kind" => "json",
+        "to_msg" => "WeatherReceived",
+        "decoder" => fn _json -> :ok end
+      }
+    }
+
+    assert {:ok, %{"status" => 200, "body" => body}} =
+             HttpSimulator.simulated_response(command, @weather_settings)
+
+    assert Jason.decode!(body) == %{
+             "current" => %{
+               "temperature_2m" => 18.0,
+               "weather_code" => 61
+             }
+           }
+  end
 end

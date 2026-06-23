@@ -40,6 +40,12 @@ defmodule Ide.Projects.FileStore do
       ])
   }
 
+  # Elm `make` roots for shared companion protocol packages (watch-only glue excluded).
+  @protocol_elm_check_rel_paths ~w(
+    src/Companion/Types.elm
+    src/Companion/Internal.elm
+  )
+
   @type tree_node :: FileTypes.tree_node()
   @type source_tree :: FileTypes.source_tree()
 
@@ -86,6 +92,20 @@ defmodule Ide.Projects.FileStore do
         end
       end)
     end
+  end
+
+  @doc """
+  Elm `make` entry files for a shared companion `protocol/` package.
+
+  Checks user-editable `Companion.Types` and generated `Companion.Internal`.
+  Watch-only glue (`Companion.Watch`, Pebble kernel imports) is excluded — that
+  path is validated by elmc on the watch root instead.
+  """
+  @spec protocol_elm_check_entry_paths(String.t()) :: [String.t()]
+  def protocol_elm_check_entry_paths(protocol_root) when is_binary(protocol_root) do
+    @protocol_elm_check_rel_paths
+    |> Enum.map(&Path.join(protocol_root, &1))
+    |> Enum.filter(&File.exists?/1)
   end
 
   @doc """

@@ -43,6 +43,9 @@ defmodule Ide.CompanionProtocol.WireFlatten do
   def resolve_type("Dict String " <> value_type, enums, payload_unions, aliases),
     do: {:dict, resolve_type(value_type, enums, payload_unions, aliases)}
 
+  def resolve_type("Dict.Dict String " <> value_type, enums, payload_unions, aliases),
+    do: {:dict, resolve_type(value_type, enums, payload_unions, aliases)}
+
   def resolve_type(type, enums, payload_unions, aliases) do
     cond do
       Map.has_key?(enums, type) ->

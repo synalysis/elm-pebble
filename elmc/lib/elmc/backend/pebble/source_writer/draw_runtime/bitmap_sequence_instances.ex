@@ -7,6 +7,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.BitmapSequenceInstances d
   def body do
     """
     #if ELMC_PEBBLE_FEATURE_DRAW_BITMAP_SEQUENCE_AT
+    #ifdef ELMC_PEBBLE_PLATFORM
     #define ELMC_BITMAP_SEQUENCE_MAX_INSTANCES 8
 
     typedef struct {
@@ -382,6 +383,32 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.BitmapSequenceInstances d
       memset(s_bitmap_sequence_instances, 0, sizeof(s_bitmap_sequence_instances));
       s_failed_bitmap_sequence_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
     }
+    #else
+    void elmc_bitmap_sequence_frame_begin(void) {
+    }
+
+    void elmc_bitmap_sequence_draw_at(
+        GContext *ctx,
+        ElmcPebbleApp *app,
+        int32_t animation_id,
+        uint32_t resource_id,
+        int16_t x,
+        int16_t y) {
+      (void)ctx;
+      (void)app;
+      (void)animation_id;
+      (void)resource_id;
+      (void)x;
+      (void)y;
+    }
+
+    void elmc_bitmap_sequence_frame_end(ElmcPebbleApp *app) {
+      (void)app;
+    }
+
+    void elmc_bitmap_sequence_deinit(void) {
+    }
+    #endif
     #endif
     """
   end

@@ -177,6 +177,8 @@ const char *elmc_debug_union_ctor_name(elmc_int_t tag) {
 #define ELMC_FIELD_PEBBLE_WATCHINFO_FIRMWAREVERSION_MINOR 1
 #define ELMC_FIELD_PEBBLE_WATCHINFO_FIRMWAREVERSION_PATCH 2
 
+#define ELMC_RESOURCE_SLOT_DEFAULTFONT 1
+
 #define ELMC_RENDER_OP_CLEAR 2
 #define ELMC_RENDER_OP_PIXEL 3
 #define ELMC_RENDER_OP_LINE 4
@@ -915,7 +917,7 @@ static RC elmc_fn_Main_statusDraw(ElmcValue **out, ElmcValue ** const args, cons
       CHECK_RC(Rc);
 
       ElmcValue *tmp_4 = NULL;
-      Rc = elmc_new_int(&tmp_4, ELMC_UNION_PEBBLE_UI_RESOURCES_DEFAULTFONT);
+      Rc = elmc_new_int(&tmp_4, ELMC_RESOURCE_SLOT_DEFAULTFONT);
       CHECK_RC(Rc);
       ElmcValue *tmp_5 = elmc_int_zero();
       ElmcValue *tmp_6 = NULL;
@@ -956,7 +958,7 @@ static RC elmc_fn_Main_statusDraw(ElmcValue **out, ElmcValue ** const args, cons
       CHECK_RC(Rc);
 
       ElmcValue *tmp_10 = NULL;
-      Rc = elmc_new_int(&tmp_10, ELMC_UNION_PEBBLE_UI_RESOURCES_DEFAULTFONT);
+      Rc = elmc_new_int(&tmp_10, ELMC_RESOURCE_SLOT_DEFAULTFONT);
       CHECK_RC(Rc);
       ElmcValue *tmp_11 = elmc_int_zero();
       ElmcValue *tmp_12 = NULL;
@@ -1020,7 +1022,7 @@ static RC elmc_fn_Main_counterDraw(ElmcValue **out, ElmcValue ** const args, con
     CHECK_RC(Rc);
 
     ElmcValue *tmp_2 = NULL;
-    Rc = elmc_new_int(&tmp_2, ELMC_UNION_PEBBLE_UI_RESOURCES_DEFAULTFONT);
+    Rc = elmc_new_int(&tmp_2, ELMC_RESOURCE_SLOT_DEFAULTFONT);
     CHECK_RC(Rc);
     ElmcValue *tmp_3 = elmc_int_zero();
     ElmcValue *tmp_4 = NULL;
@@ -1101,59 +1103,51 @@ static RC elmc_fn_Pebble_Platform_launchReasonToInt(ElmcValue **out, ElmcValue *
   CATCH_BEGIN
 
     const int case_msg_tag_1 = (launchReason && (launchReason)->tag == ELMC_TAG_INT ? elmc_as_int(launchReason) : (launchReason && (launchReason)->tag == ELMC_TAG_TUPLE2 && (launchReason)->payload != NULL ? elmc_as_int(((ElmcTuple2 *)(launchReason)->payload)->first) : -1));
-    ElmcValue *tmp_1 = NULL;
+    ElmcValue *tmp_2 = NULL;
+    elmc_int_t case_int_2 = 0;
     switch (case_msg_tag_1) {
-      case ELMC_UNION_LAUNCHSYSTEM: {
-        tmp_1 = elmc_int_zero();
+      case ELMC_UNION_LAUNCHSYSTEM:
+        tmp_2 = elmc_int_zero();
         break;
-      }
+
       case ELMC_UNION_LAUNCHUSER: {
-        Rc = elmc_new_int(&tmp_1, 1);
-        CHECK_RC(Rc);
+        case_int_2 = 1;
         break;
       }
       case ELMC_UNION_LAUNCHPHONE: {
-        Rc = elmc_new_int(&tmp_1, 2);
-        CHECK_RC(Rc);
+        case_int_2 = 2;
         break;
       }
       case ELMC_UNION_LAUNCHWAKEUP: {
-        Rc = elmc_new_int(&tmp_1, 3);
-        CHECK_RC(Rc);
+        case_int_2 = 3;
         break;
       }
       case ELMC_UNION_LAUNCHWORKER: {
-        Rc = elmc_new_int(&tmp_1, 4);
-        CHECK_RC(Rc);
+        case_int_2 = 4;
         break;
       }
       case ELMC_UNION_LAUNCHQUICKLAUNCH: {
-        Rc = elmc_new_int(&tmp_1, 5);
-        CHECK_RC(Rc);
+        case_int_2 = 5;
         break;
       }
       case ELMC_UNION_LAUNCHTIMELINEACTION: {
-        Rc = elmc_new_int(&tmp_1, 6);
-        CHECK_RC(Rc);
+        case_int_2 = 6;
         break;
       }
       case ELMC_UNION_LAUNCHSMARTSTRAP: {
-        Rc = elmc_new_int(&tmp_1, 7);
-        CHECK_RC(Rc);
+        case_int_2 = 7;
         break;
       }
       case ELMC_UNION_LAUNCHUNKNOWN: {
-        Rc = elmc_new_int(&tmp_1, -1);
-        CHECK_RC(Rc);
+        case_int_2 = -1;
         break;
       }
-      default:
-        tmp_1 = elmc_int_zero();
-        break;
 
     }
+    Rc = elmc_new_int(&tmp_2, case_int_2);
+    CHECK_RC(Rc);
 
-    *out = tmp_1;
+    *out = tmp_2;
   CATCH_END;
 
   return Rc;
@@ -1168,35 +1162,31 @@ static RC elmc_fn_Companion_Internal_encodeLocationCode(ElmcValue **out, ElmcVal
   CATCH_BEGIN
 
     const int case_msg_tag_1 = (value && (value)->tag == ELMC_TAG_INT ? elmc_as_int(value) : (value && (value)->tag == ELMC_TAG_TUPLE2 && (value)->payload != NULL ? elmc_as_int(((ElmcTuple2 *)(value)->payload)->first) : -1));
-    ElmcValue *tmp_1 = NULL;
+    ElmcValue *tmp_2 = NULL;
+    elmc_int_t case_int_2 = 0;
     switch (case_msg_tag_1) {
       case ELMC_UNION_COMPANION_TYPES_CURRENTLOCATION: {
-        Rc = elmc_new_int(&tmp_1, 1);
-        CHECK_RC(Rc);
+        case_int_2 = 1;
         break;
       }
       case ELMC_UNION_COMPANION_TYPES_BERLIN: {
-        Rc = elmc_new_int(&tmp_1, 2);
-        CHECK_RC(Rc);
+        case_int_2 = 2;
         break;
       }
       case ELMC_UNION_COMPANION_TYPES_ZURICH: {
-        Rc = elmc_new_int(&tmp_1, 3);
-        CHECK_RC(Rc);
+        case_int_2 = 3;
         break;
       }
       case ELMC_UNION_COMPANION_TYPES_NEWYORK: {
-        Rc = elmc_new_int(&tmp_1, 4);
-        CHECK_RC(Rc);
+        case_int_2 = 4;
         break;
       }
-      default:
-        tmp_1 = elmc_int_zero();
-        break;
 
     }
+    Rc = elmc_new_int(&tmp_2, case_int_2);
+    CHECK_RC(Rc);
 
-    *out = tmp_1;
+    *out = tmp_2;
   CATCH_END;
 
   return Rc;

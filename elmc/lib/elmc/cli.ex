@@ -126,12 +126,12 @@ defmodule Elmc.CLI do
   @doc false
   @spec compile_with_opts(String.t(), map()) :: {:ok, map()} | {:error, term()}
   def compile_with_opts(project_dir, opts) when is_binary(project_dir) and is_map(opts) do
-    with {:ok, result} <- Elmc.compile(project_dir, opts),
-         :ok <- validate_compile_result(result) do
-      {:ok, result}
-    else
-      {:error, warnings} when is_list(warnings) ->
-        {:error, {:compile_diagnostics, warnings}}
+    case Elmc.compile(project_dir, opts) do
+      {:ok, result} ->
+        case validate_compile_result(result) do
+          :ok -> {:ok, result}
+          {:error, warnings} -> {:error, {:compile_diagnostics, warnings}}
+        end
 
       {:error, reason} ->
         {:error, reason}
@@ -174,7 +174,7 @@ defmodule Elmc.CLI do
   @doc """
   Returns `:ok` when a compile result has no error-severity diagnostics.
   """
-  @spec validate_compile_result(%{project: map(), ir: map()}) :: :ok | {:error, [map()]}
+  @spec validate_compile_result(any()) :: :ok | {:error, [map()]}
   def validate_compile_result(%{project: _, ir: _} = result) do
     warnings = result |> compile_warnings() |> dedupe_warnings()
 
@@ -330,7 +330,7 @@ defmodule Elmc.CLI do
     """)
   end
 
-  @spec compile_warnings(%{project: ElmEx.Frontend.Project.t(), ir: ElmEx.IR.t()}) :: [map()]
+  @spec compile_warnings(map()) :: [map()]
   defp compile_warnings(%{project: project, ir: ir} = result) do
     project_warnings = Map.get(project, :diagnostics, [])
 

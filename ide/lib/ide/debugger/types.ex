@@ -208,6 +208,8 @@ defmodule Ide.Debugger.Types do
 
   @type protocol_schema :: Schema.t() | Schema.wire_schema()
 
+  @type protocol_field :: Schema.field()
+
   @type protocol_error :: atom() | String.t() | tuple()
 
   @type protocol_wire_type :: Schema.wire_type()

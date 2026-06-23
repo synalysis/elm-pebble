@@ -1,5 +1,8 @@
 module Companion.Types exposing (Color(..), Measure(..), PhoneToWatch(..), Point, WatchToPhone(..))
 
+import Dict
+
+
 {-| Companion protocol wire-type matrix.
 
 Each constructor exercises a supported AppMessage shape. Use the
@@ -61,4 +64,4 @@ type PhoneToWatch
     | PushBool Bool
     | PushString String
     | PushPoints (List Point)
-    | PushLabels (Dict String Int)
+    | PushLabels (Dict.Dict String Int)

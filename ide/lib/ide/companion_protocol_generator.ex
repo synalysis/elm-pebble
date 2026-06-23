@@ -343,7 +343,7 @@ defmodule Ide.CompanionProtocolGenerator do
       schema.watch_to_phone
       |> Enum.map_join("\n", fn msg ->
         field = List.first(msg.fields)
-        writes = c_write_tuple(field, schema.key_ids)
+        writes = c_write_watch_to_phone_field(field, schema)
 
         """
             case COMPANION_PROTOCOL_TAG_#{macro_name(msg.name)}:
@@ -358,6 +358,7 @@ defmodule Ide.CompanionProtocolGenerator do
       |> Enum.flat_map(fn msg ->
         msg.fields
         |> Enum.with_index()
+        |> Enum.reject(fn {field, _index} -> c_wire_only_decode_field?(field.wire_type) end)
         |> Enum.map(fn {field, index} -> c_decode_tuple_cases(field, index) end)
       end)
       |> Enum.join("\n")
@@ -367,7 +368,7 @@ defmodule Ide.CompanionProtocolGenerator do
     finish_cases =
       schema.phone_to_watch
       |> Enum.map_join("\n", fn msg ->
-        missing_field_defaults = c_missing_field_defaults(msg)
+        missing_field_defaults = c_missing_field_defaults(msg, schema)
 
         required =
           msg.fields
@@ -626,6 +627,19 @@ defmodule Ide.CompanionProtocolGenerator do
     Enum.any?(schema.phone_to_watch, &(not native_int_payload_message?(&1)))
   end
 
+  defp c_dispatch_case(%{fields: []} = msg, phone_to_watch_tag) do
+    """
+        case COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_#{macro_name(msg.name)}: {
+          if (ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET <= 0) return -7;
+          ElmcValue *payload = elmc_new_int_take(#{phone_to_watch_tag});
+          if (!payload) return -2;
+          int rc = elmc_pebble_dispatch_tag_payload(app, ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET, payload);
+          elmc_release(payload);
+          return rc;
+        }
+    """
+  end
+
   defp c_dispatch_case(msg, phone_to_watch_tag) do
     if native_int_payload_message?(msg) do
       values =
@@ -633,18 +647,12 @@ defmodule Ide.CompanionProtocolGenerator do
         |> Enum.with_index()
         |> Enum.map_join(", ", fn {field, index} -> c_native_int_value_expr(field, index) end)
 
-      values_decl =
-        case msg.fields do
-          [] -> ""
-          _ -> "      const int64_t payload_values[] = { #{values} };\n"
-        end
-
-      values_ref = if msg.fields == [], do: "NULL", else: "payload_values"
+      values_decl = "      const int64_t payload_values[] = { #{values} };\n"
 
       """
           case COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_#{macro_name(msg.name)}: {
             if (ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET <= 0) return -7;
-      #{values_decl}      return elmc_pebble_dispatch_tag_int_values(app, ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET, #{phone_to_watch_tag}, #{length(msg.fields)}, #{values_ref});
+      #{values_decl}      return elmc_pebble_dispatch_tag_int_values(app, ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET, #{phone_to_watch_tag}, #{length(msg.fields)}, payload_values);
           }
       """
     else
@@ -769,6 +777,7 @@ defmodule Ide.CompanionProtocolGenerator do
     Enum.all?(msg.fields, fn field ->
       case field.wire_type do
         :int -> true
+        {:enum, _} -> true
         {:list, :int} -> true
         _ -> false
       end
@@ -1037,10 +1046,8 @@ defmodule Ide.CompanionProtocolGenerator do
           "                    #{msg.tag} ->\n                        Ok #{msg.name}\n"
 
         [field] ->
-          key = field.key
-
           "                    #{msg.tag} ->\n" <>
-            "                        Decode.decodeValue (Decode.field \"#{key}\" #{elm_decoder(field)}) value\n" <>
+            "                        Decode.decodeValue (#{elm_watch_to_phone_field_decoder(schema, field)}) value\n" <>
             "                            |> Result.mapError Decode.errorToString\n" <>
             "                            |> Result.andThen\n" <>
             "                                (\\field1 ->\n" <>
@@ -1051,7 +1058,7 @@ defmodule Ide.CompanionProtocolGenerator do
           decoder =
             fields
             |> Enum.reduce(nil, fn field, acc ->
-              part = "(Decode.field \"#{field.key}\" #{elm_decoder(field)})"
+              part = "(#{elm_watch_to_phone_field_decoder(schema, field)})"
 
               if is_nil(acc) do
                 part
@@ -1136,7 +1143,7 @@ defmodule Ide.CompanionProtocolGenerator do
           "        #{msg.name} ->\n            0\n"
 
         [field] ->
-          "        #{msg.name} field1 ->\n            #{elm_encode_value(schema, field, "field1")}\n"
+          "        #{msg.name} field1 ->\n            #{elm_watch_to_phone_wire_value(schema, field, "field1")}\n"
 
         fields ->
           "        #{msg.name}#{elm_ignore_pattern_args(fields)} ->\n            0\n"
@@ -1188,20 +1195,52 @@ defmodule Ide.CompanionProtocolGenerator do
     "\n                , ( \"#{field.key}\", #{elm_encoder(schema, field, value)} )"
   end
 
-  defp elm_decoder(%{wire_type: :bool}),
+  @spec elm_watch_to_phone_field_decoder(WireSchema.schema(), WireSchema.field()) :: String.t()
+  defp elm_watch_to_phone_field_decoder(schema, %{wire_type: {:union, type}, key: key}) do
+    if WireFlatten.legacy_union?(schema, type) do
+      "decode#{type}WatchScalar \"#{key}\""
+    else
+      "decode#{type}Wire \"#{key}\""
+    end
+  end
+
+  defp elm_watch_to_phone_field_decoder(_schema, %{wire_type: wire_type, key: key}) do
+    if elm_scalar_watch_field?(wire_type) do
+      "Decode.field \"#{key}\" #{elm_scalar_field_decoder(wire_type)}"
+    else
+      elm_decode_expr(wire_type, "\"#{key}\"", :raw)
+    end
+  end
+
+  defp elm_scalar_watch_field?(wire_type),
+    do: wire_type in [:int, :bool, :string] or match?({:enum, _}, wire_type)
+
+  defp elm_scalar_field_decoder(:int), do: "Decode.int"
+
+  defp elm_scalar_field_decoder(:bool),
     do:
       "(Decode.andThen (\\value -> if value == #{@wire_true_code} then Decode.succeed True else if value == #{@wire_false_code} then Decode.succeed False else Decode.fail \"Invalid bool wire code\") Decode.int)"
 
-  defp elm_decoder(%{wire_type: :string}), do: "Decode.string"
-  defp elm_decoder(%{wire_type: {:list, :int}, key: key}), do: "decodeListInt \"#{key}\""
-  defp elm_decoder(%{wire_type: {:union, _type}}), do: "Decode.int"
-  defp elm_decoder(%{wire_type: :int}), do: "Decode.int"
-  defp elm_decoder(%{wire_type: {:enum, _type}}), do: "Decode.int"
+  defp elm_scalar_field_decoder(:string), do: "Decode.string"
+  defp elm_scalar_field_decoder({:enum, _type}), do: "Decode.int"
 
-  defp elm_decoder(%{wire_type: wire_type, key: key}),
-    do: elm_decode_expr(wire_type, "\"#{key}\"", :raw)
+  @spec elm_watch_to_phone_wire_value(WireSchema.schema(), WireSchema.field(), String.t()) ::
+          String.t()
+  defp elm_watch_to_phone_wire_value(schema, %{wire_type: wire_type} = field, value)
+       when wire_type in [:int, :bool, :string] do
+    elm_encode_value(schema, field, value)
+  end
 
-  defp elm_decoder(_field), do: "Decode.int"
+  defp elm_watch_to_phone_wire_value(schema, %{wire_type: {:enum, _}} = field, value) do
+    elm_encode_value(schema, field, value)
+  end
+
+  defp elm_watch_to_phone_wire_value(schema, %{wire_type: {:union, _}} = field, value) do
+    elm_encode_value(schema, field, value)
+  end
+
+  # Record/list/dict payloads use expanded wire keys; companionSend keeps scalar 0.
+  defp elm_watch_to_phone_wire_value(_schema, _field, _value), do: "0"
 
   defp elm_encoder(_schema, %{wire_type: :bool}, value),
     do: "Encode.int (#{elm_encode_value(%{}, %{wire_type: :bool}, value)})"
@@ -1487,6 +1526,7 @@ defmodule Ide.CompanionProtocolGenerator do
     do:
       "decodeDictStringBy #{prefix} (\\valuePrefix -> #{elm_decode_expr(elem, "valuePrefix", :offset)})"
 
+  defp elm_decode_expr({:union, type}, prefix, _mode), do: "decode#{type}Wire #{prefix}"
   defp elm_decode_expr({:union, type, _ctors}, prefix, _mode), do: "decode#{type}Wire #{prefix}"
 
   defp elm_encode_pairs_expr(_schema, :int, prefix, value, :offset),
@@ -1522,6 +1562,14 @@ defmodule Ide.CompanionProtocolGenerator do
   defp elm_encode_pairs_expr(schema, {:dict, elem}, prefix, value, _mode),
     do:
       "encodeDictStringBy #{prefix} (\\valuePrefix dictValue -> #{elm_encode_pairs_expr(schema, elem, "valuePrefix", "dictValue", :offset)}) #{value}"
+
+  defp elm_encode_pairs_expr(schema, {:union, type}, prefix, value, _mode) do
+    if WireFlatten.legacy_union?(schema, type) do
+      "[ ( #{prefix} ++ \"_tag\", Encode.int (#{elm_union_tag_encode_name(type)} #{value}) ), ( #{prefix} ++ \"_value\", Encode.int (#{elm_union_value_encode_name(type)} #{value}) ) ]"
+    else
+      "encode#{type}Wire #{prefix} #{value}"
+    end
+  end
 
   defp elm_encode_pairs_expr(_schema, {:union, type, _ctors}, prefix, value, _mode),
     do: "encode#{type}Wire #{prefix} #{value}"
@@ -1570,11 +1618,51 @@ defmodule Ide.CompanionProtocolGenerator do
         """
 
       if legacy do
-        legacy_helpers
+        legacy_helpers <>
+          "\n\n" <> elm_legacy_union_watch_scalar_helper(type) <>
+          "\n\n" <> elm_legacy_union_wire_helper(type)
       else
         legacy_helpers <> "\n\n" <> elm_generic_union_helpers(schema, type, ctors)
       end
     end)
+  end
+
+  defp elm_legacy_union_watch_scalar_helper(type) do
+    """
+    decode#{type}WatchScalar : String -> Decode.Decoder #{type}
+    decode#{type}WatchScalar prefix =
+        Decode.field (prefix ++ "_tag") Decode.int
+            |> Decode.andThen
+                (\\tag ->
+                    case #{elm_union_decode_name(type)} tag 0 of
+                        Just decoded ->
+                            Decode.succeed decoded
+
+                        Nothing ->
+                            Decode.fail ("Unknown #{type} tag: " ++ String.fromInt tag)
+                )
+    """
+  end
+
+  defp elm_legacy_union_wire_helper(type) do
+    """
+    decode#{type}LegacyWire : String -> Decode.Decoder #{type}
+    decode#{type}LegacyWire prefix =
+        Decode.field (prefix ++ "_tag") Decode.int
+            |> Decode.andThen
+                (\\tag ->
+                    Decode.field (prefix ++ "_value") Decode.int
+                        |> Decode.andThen
+                            (\\wireValue ->
+                                case #{elm_union_decode_name(type)} tag wireValue of
+                                    Just decoded ->
+                                        Decode.succeed decoded
+
+                                    Nothing ->
+                                        Decode.fail ("Unknown #{type} tag/value")
+                            )
+                )
+    """
   end
 
   defp elm_generic_union_helpers(schema, type, ctors) do
@@ -1745,16 +1833,39 @@ defmodule Ide.CompanionProtocolGenerator do
     known <> "\n\n        _ ->\n            Nothing"
   end
 
-  defp c_write_tuple(nil, _key_ids), do: ""
+  defp c_write_watch_to_phone_field(nil, _schema), do: ""
 
-  defp c_write_tuple(field, _key_ids) do
-    key_macro = "COMPANION_PROTOCOL_KEY_#{macro_name(field.key)}"
+  defp c_write_watch_to_phone_field(%{wire_type: :string, key: key}, _schema) do
+    key_macro = "COMPANION_PROTOCOL_KEY_#{macro_name(key)}"
+    "      dict_write_cstring(iter, #{key_macro}, \"\");"
+  end
 
-    case field.wire_type do
-      :string -> "      dict_write_cstring(iter, #{key_macro}, \"\");"
-      _ -> "      dict_write_int32(iter, #{key_macro}, value);"
+  defp c_write_watch_to_phone_field(%{wire_type: wire_type, key: key}, _schema)
+       when wire_type in [:int, :bool] do
+    key_macro = "COMPANION_PROTOCOL_KEY_#{macro_name(key)}"
+    "      dict_write_int32(iter, #{key_macro}, value);"
+  end
+
+  defp c_write_watch_to_phone_field(%{wire_type: {:enum, _type}, key: key}, _schema) do
+    key_macro = "COMPANION_PROTOCOL_KEY_#{macro_name(key)}"
+    "      dict_write_int32(iter, #{key_macro}, value);"
+  end
+
+  defp c_write_watch_to_phone_field(%{wire_type: {:union, type}, key: key}, schema) do
+    if WireFlatten.legacy_union?(schema, type) do
+      tag_macro = "COMPANION_PROTOCOL_KEY_#{macro_name(key <> "_tag")}"
+      value_macro = "COMPANION_PROTOCOL_KEY_#{macro_name(key <> "_value")}"
+
+      """
+            dict_write_int32(iter, #{tag_macro}, value);
+            dict_write_int32(iter, #{value_macro}, 0);
+      """
+    else
+      ""
     end
   end
+
+  defp c_write_watch_to_phone_field(_field, _schema), do: ""
 
   defp c_required_field_expr(%{wire_type: {:union, _type}}, index),
     do: "decoder->saw_fields[#{index}] && decoder->saw_union_value_fields[#{index}]"
@@ -1769,15 +1880,15 @@ defmodule Ide.CompanionProtocolGenerator do
   defp c_required_field_expr(_field, index), do: "decoder->saw_fields[#{index}]"
 
   # Treat missing enum/union tag fields as the first 1-based wire code when AppMessage omits keys.
-  defp c_missing_field_defaults(%{fields: fields}) do
+  defp c_missing_field_defaults(%{fields: fields}, schema) do
     fields
     |> Enum.with_index()
     |> Enum.map_join("\n", fn {field, index} ->
-      c_missing_field_default(field, index)
+      c_missing_field_default(field, index, schema)
     end)
   end
 
-  defp c_missing_field_default(%{wire_type: {:union, _type}}, index) do
+  defp c_missing_field_default(%{wire_type: {:union, _type}}, index, _schema) do
     """
           if (!decoder->saw_fields[#{index}]) {
             decoder->saw_fields[#{index}] = true;
@@ -1790,7 +1901,7 @@ defmodule Ide.CompanionProtocolGenerator do
     """
   end
 
-  defp c_missing_field_default(%{wire_type: :bool}, index) do
+  defp c_missing_field_default(%{wire_type: :bool}, index, _schema) do
     """
           if (!decoder->saw_fields[#{index}]) {
             decoder->saw_fields[#{index}] = true;
@@ -1799,15 +1910,15 @@ defmodule Ide.CompanionProtocolGenerator do
     """
   end
 
-  defp c_missing_field_default(%{wire_type: :int}, index) do
+  defp c_missing_field_default(%{wire_type: :int}, index, _schema) do
     c_missing_int_field_default(index)
   end
 
-  defp c_missing_field_default(%{wire_type: {:enum, _type}}, index) do
+  defp c_missing_field_default(%{wire_type: {:enum, _type}}, index, _schema) do
     c_missing_tag_field_default(index)
   end
 
-  defp c_missing_field_default(%{wire_type: {:list, :int}}, index) do
+  defp c_missing_field_default(%{wire_type: {:list, :int}}, index, _schema) do
     missing_elements =
       0..(@list_max_elements - 1)
       |> Enum.map_join("\n", fn elem_index ->
@@ -1828,25 +1939,23 @@ defmodule Ide.CompanionProtocolGenerator do
     """
   end
 
-  defp c_missing_field_default(%{wire_type: wire_type, key: key}, _index)
+  defp c_missing_field_default(%{wire_type: wire_type, key: key}, _index, schema)
        when tuple_size(wire_type) in [2, 3] do
     if c_composite_wire_type?(wire_type) do
       WireFlatten.slots_for_field(
         %{key: key, name: key, type: key, wire_type: wire_type},
-        %{
-        enums: %{},
-        payload_unions: %{},
-        type_aliases: %{},
-        watch_to_phone: [],
-        phone_to_watch: []
-      })
+        schema
+      )
       |> Enum.map_join("\n", &c_missing_wire_slot_default/1)
     else
       ""
     end
   end
 
-  defp c_missing_field_default(_field, _index), do: ""
+  defp c_missing_field_default(_field, _index, _schema), do: ""
+
+  @spec c_wire_only_decode_field?(WireSchema.wire_type()) :: boolean()
+  defp c_wire_only_decode_field?(wire_type), do: c_composite_wire_type?(wire_type)
 
   defp c_missing_wire_slot_default(%{storage_type: :string, c_name: c_name}) do
     """
@@ -2034,8 +2143,6 @@ defmodule Ide.CompanionProtocolGenerator do
     """
   end
 
-  defp c_payload_expr(%{fields: []}), do: "      ElmcValue *payload = elmc_new_int_take(0);"
-
   defp c_payload_expr(%{fields: [field]}) do
     "      ElmcValue *payload = #{c_value_expr(field, 0)};"
   end
@@ -2189,7 +2296,7 @@ defmodule Ide.CompanionProtocolGenerator do
         ElmcValue *#{var_prefix}_values[] = { #{values} };
         """
 
-    {body, "elmc_record_new_take(#{length(fields)}, #{var_prefix}_names, #{var_prefix}_values)"}
+    {body, "elmc_record_new_take_value(#{length(fields)}, #{var_prefix}_names, #{var_prefix}_values)"}
   end
 
   defp c_build_value_from_wire({:list, elem_type}, key, schema, var_prefix) do
@@ -2224,7 +2331,7 @@ defmodule Ide.CompanionProtocolGenerator do
       #{element_builds}
     """
 
-    {body, "elmc_list_from_values_take(#{var_prefix}_items, #{var_prefix}_count)"}
+    {body, "elmc_list_from_values_take_value(#{var_prefix}_items, #{var_prefix}_count)"}
   end
 
   defp c_build_value_from_wire({:dict, value_type}, key, schema, var_prefix) do
@@ -2267,7 +2374,7 @@ defmodule Ide.CompanionProtocolGenerator do
         if (#{var_prefix}_count > #{@dict_max_entries}) #{var_prefix}_count = #{@dict_max_entries};
         ElmcValue *#{var_prefix}_pairs[#{@dict_max_entries}];
       #{entry_builds}
-        ElmcValue *#{var_prefix}_pair_list = elmc_list_from_values_take(#{var_prefix}_pairs, #{var_prefix}_count);
+        ElmcValue *#{var_prefix}_pair_list = elmc_list_from_values_take_value(#{var_prefix}_pairs, #{var_prefix}_count);
         if (!#{var_prefix}_pair_list) return NULL;
         ElmcValue *#{var_prefix}_dict = elmc_dict_from_list_take(#{var_prefix}_pair_list);
         elmc_release(#{var_prefix}_pair_list);

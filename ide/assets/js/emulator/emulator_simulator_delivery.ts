@@ -33,7 +33,8 @@ const DEBUG_SIMULATOR = {
   compassHeading: 0x454c4d10,
   dictationText: 0x454c4d11,
   weatherTemperatureC: 0x454c4d12,
-  weatherConditionWire: 0x454c4d13
+  weatherConditionWire: 0x454c4d13,
+  companionResync: 0x454c4d14
 } as const
 
 const QEMU_PROTOCOL_NAMES: Record<number, string> = {
@@ -552,6 +553,17 @@ export class EmulatorSimulatorDelivery {
         this.host.appendLog(`signaled companion watch app ready (${reason})`)
       }
     }, 500)
+
+    window.setTimeout(() => {
+      this.sendCompanionResyncDebugAppMessage({quiet: true})
+    }, 2500)
+  }
+
+  sendCompanionResyncDebugAppMessage(options: QuietOptions = {}): boolean {
+    return this.host.sendDebugAppMessage(
+      [{key: DEBUG_SIMULATOR.companionResync, type: "int", value: 1}],
+      options
+    )
   }
 
   injectWeatherSimulatorSettings(reason: string): void {

@@ -70,6 +70,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
       </div>
       <.form
         for={@emulator_form}
+        id="emulator-target-form"
         phx-change="set-emulator-target"
         class="mt-3 grid gap-3 md:grid-cols-2"
       >

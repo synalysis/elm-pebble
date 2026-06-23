@@ -350,6 +350,7 @@ enum {
   ELMC_DEBUG_SIMULATOR_KEY_DICTATION_TEXT = 0x454c4d11,
   ELMC_DEBUG_SIMULATOR_KEY_WEATHER_TEMPERATURE_C = 0x454c4d12,
   ELMC_DEBUG_SIMULATOR_KEY_WEATHER_CONDITION_WIRE = 0x454c4d13,
+  ELMC_DEBUG_SIMULATOR_KEY_COMPANION_RESYNC = 0x454c4d14,
 };
 static int64_t s_last_render_request_ms = 0;
 static int s_render_sequence = 0;
@@ -377,6 +378,9 @@ static int s_pending_request_value = 0;
 static bool s_last_companion_request_valid = false;
 static int s_last_companion_request_tag = 0;
 static int s_last_companion_request_value = 0;
+static AppTimer *s_companion_outbox_retry_timer = NULL;
+static int64_t s_last_companion_outbox_attempt_ms = 0;
+#define COMPANION_RESYNC_MIN_INTERVAL_MS 2000
 #endif
 #if ELMC_PEBBLE_FEATURE_COMPASS_EVENTS || ELMC_PEBBLE_FEATURE_CMD_COMPASS_PEEK
 static double s_simulator_compass_heading_degrees = 180.0;
@@ -2573,13 +2577,41 @@ static void flush_pending_companion_request(void) {
   ELMC_PEBBLE_TRACE_EXIT("flush_pending_companion_request");
 }
 
+static void companion_outbox_retry_callback(void *data) {
+  s_companion_outbox_retry_timer = NULL;
+  companion_resync_callback(data);
+}
+
+static void schedule_companion_outbox_retry(uint32_t delay_ms) {
+  if (s_companion_outbox_retry_timer != NULL) {
+    return;
+  }
+  if (delay_ms < 100) {
+    delay_ms = 100;
+  }
+  s_companion_outbox_retry_timer = app_timer_register(delay_ms, companion_outbox_retry_callback, NULL);
+}
+
 static void companion_resync_callback(void *data) {
   ELMC_PEBBLE_TRACE_ENTER("companion_resync_callback");
   (void)data;
   flush_pending_companion_request();
-  if (s_last_companion_request_valid) {
-    (void)send_companion_request(s_last_companion_request_tag, s_last_companion_request_value);
+  if (!s_last_companion_request_valid) {
+    ELMC_PEBBLE_TRACE_EXIT("companion_resync_callback");
+    return;
   }
+
+  int64_t now = monotonic_ms();
+  if (s_last_companion_outbox_attempt_ms > 0 &&
+      (now - s_last_companion_outbox_attempt_ms) < COMPANION_RESYNC_MIN_INTERVAL_MS) {
+    uint32_t wait_ms =
+        (uint32_t)(COMPANION_RESYNC_MIN_INTERVAL_MS - (now - s_last_companion_outbox_attempt_ms));
+    schedule_companion_outbox_retry(wait_ms);
+    ELMC_PEBBLE_TRACE_EXIT("companion_resync_callback");
+    return;
+  }
+
+  (void)send_companion_request(s_last_companion_request_tag, s_last_companion_request_value);
   ELMC_PEBBLE_TRACE_EXIT("companion_resync_callback");
 }
 #endif
@@ -3165,6 +3197,18 @@ static void companion_pending_append(void) {
 }
 #endif
 
+#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND
+static bool handle_debug_companion_resync(void) {
+  for (int i = 0; i < s_inbox_snapshot_count; i++) {
+    if (s_inbox_snapshots[i].key == ELMC_DEBUG_SIMULATOR_KEY_COMPANION_RESYNC) {
+      companion_resync_callback(NULL);
+      return true;
+    }
+  }
+  return false;
+}
+#endif
+
 #if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
 static bool handle_debug_simulator_settings(void) {
 #if ELMC_PEBBLE_FEATURE_COMPASS_EVENTS || ELMC_PEBBLE_FEATURE_CMD_COMPASS_PEEK || ELMC_PEBBLE_FEATURE_DICTATION_EVENTS || ELMC_PEBBLE_FEATURE_CMD_DICTATION_START || ELMC_PEBBLE_FEATURE_CMD_DICTATION_STOP || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
@@ -3215,6 +3259,12 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     ELMC_PEBBLE_TRACE_EXIT("inbox_received_handler");
     return;
   }
+#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND
+  if (handle_debug_companion_resync()) {
+    ELMC_PEBBLE_TRACE_EXIT("inbox_received_handler");
+    return;
+  }
+#endif
   if (handle_debug_simulator_settings()) {
     apply_pending_cmd();
     render_model();
@@ -3256,7 +3306,7 @@ static void outbox_sent_handler(DictionaryIterator *iter, void *context) {
   ELMC_PEBBLE_TRACE_ENTER("outbox_sent_handler");
   (void)iter;
   (void)context;
-  APP_LOG(APP_LOG_LEVEL_INFO, "outbox sent");
+  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "outbox sent");
   ELMC_PEBBLE_TRACE_EXIT("outbox_sent_handler");
 }
 
@@ -3274,8 +3324,7 @@ static void outbox_failed_handler(DictionaryIterator *iter, AppMessageResult rea
   }
 #if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND
   if (s_pending_companion_request || s_last_companion_request_valid) {
-    AppTimer *retry_timer = app_timer_register(250, companion_resync_callback, NULL);
-    (void)retry_timer;
+    schedule_companion_outbox_retry(500);
   }
 #endif
   ELMC_PEBBLE_TRACE_EXIT("outbox_failed_handler");
@@ -3840,7 +3889,7 @@ static void complete_elm_init(void) {
     (void)app_message_rc;
 #if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND
     {
-      static const uint32_t companion_resync_delays_ms[] = {500, 1500, 3000, 5000, 10000};
+      static const uint32_t companion_resync_delays_ms[] = {3000, 10000};
       for (size_t i = 0; i < sizeof(companion_resync_delays_ms) / sizeof(companion_resync_delays_ms[0]); i++) {
         AppTimer *companion_resync_timer =
             app_timer_register(companion_resync_delays_ms[i], companion_resync_callback, NULL);

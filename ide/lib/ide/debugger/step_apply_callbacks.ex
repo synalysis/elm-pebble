@@ -213,7 +213,7 @@ defmodule Ide.Debugger.StepApplyCallbacks do
           String.t(),
           String.t(),
           list(),
-          %{required(:ctx) => RuntimeFollowups.apply_ctx(), required(:protocol_rx) => ProtocolRx.ctx()}
+          %{required(:ctx) => RuntimeFollowups.apply_ctx()}
         ) :: Types.runtime_state()
   def runtime_followups_after_step(state, target, message, source, followups, %{
         ctx: followup_ctx

@@ -105,11 +105,18 @@ var companionWatchReadyBootTimer = null;
 var APP_MESSAGE_MAX_RETRIES = 24;
 var APP_MESSAGE_BASE_DELAY_MS = 200;
 var COMPANION_WATCH_READY_BOOT_TIMEOUT_MS = 12000;
+var COMPANION_RESYNC_APPMESSAGE_KEY = 0x454c4d14;
 var lifecycleReadyDelivered = false;
 var companionSimulatorSettingsReady = false;
 var lastCompanionSimulatorWeatherKey = null;
 var lastWatchWeatherDeliveryKey = null;
 var lastCompanionSimulatorWeatherMode = null;
+
+function nudgeWatchCompanionResync() {
+    var payload = {};
+    payload[String(COMPANION_RESYNC_APPMESSAGE_KEY)] = 1;
+    sendImmediateAppMessage(payload, 250);
+}
 
 function markCompanionWatchAppReady(source) {
     if (companionWatchAppReady) {
@@ -456,6 +463,7 @@ function drainAppMessageOutbox() {
     sendPebbleWireAppMessage(
         payload,
         function () {
+            console.log("Companion phone→watch sent", JSON.stringify(payload || {}));
             appMessageOutbox.shift();
             appMessageSending = false;
             appMessageHeadRetries = 0;
@@ -715,6 +723,8 @@ function finishCompanionBoot() {
     applyPendingCompanionSimulatorSettings();
     deliverLifecycleReadyOnce();
     scheduleCompanionWatchReadyBootTimeout();
+    // Phone→watch resync uses IDE/Python debug AppMessage keys; pkjs Pebble.sendAppMessage
+    // cannot emit undeclared simulator keys.
 }
 
 function deliverIncoming(payload) {
@@ -1619,10 +1629,32 @@ function companionApplySimulatorSettings(settings) {
     }
 }
 
+function deliverCompanionWatchPing() {
+    var payload = { message_tag: 2 };
+    if (typeof protocol.KEY_MESSAGE_TAG === "number") {
+        payload[String(protocol.KEY_MESSAGE_TAG)] = 2;
+    }
+    deliverIncoming(normalizeIncomingAppMessage(payload));
+}
+
+function deliverCompanionWatchInboundFromWire(inbound) {
+    if (!inbound || typeof inbound !== "object") {
+        return;
+    }
+
+    var payload = {};
+    Object.keys(inbound).forEach(function (key) {
+        payload[key] = inbound[key];
+    });
+    deliverIncoming(normalizeIncomingAppMessage(payload));
+}
+
 companionGlobalRoot().companionApplySimulatorSettings = companionApplySimulatorSettings;
 companionGlobalRoot().markCompanionWatchAppReady = markCompanionWatchAppReady;
 companionGlobalRoot().syncCompanionSimulatorSettingsFromGlobal = syncCompanionSimulatorSettingsFromGlobal;
 companionGlobalRoot().deliverWeatherToWatch = deliverWeatherToWatch;
+companionGlobalRoot().deliverCompanionWatchPing = deliverCompanionWatchPing;
+companionGlobalRoot().deliverCompanionWatchInboundFromWire = deliverCompanionWatchInboundFromWire;
 
 function handleNotificationsCommand(request) {
     bridgeCommandError(request, "notifications", "Notification status unavailable from this Pebble companion runtime");
@@ -1756,7 +1788,14 @@ function handleOutgoing(payload) {
     }
 
     if (payload && payload.api === "appMessage" && payload.op === "send") {
-        sendQueuedAppMessage(payload.payload || {});
+        var outgoingPayload = payload.payload || {};
+        var outgoingTag = typeof outgoingPayload.message_tag === "number"
+            ? outgoingPayload.message_tag
+            : outgoingPayload[String(protocol.KEY_MESSAGE_TAG)];
+        if (typeof outgoingTag === "number") {
+            console.log("Elm companion phone→watch enqueue tag=" + outgoingTag);
+        }
+        sendQueuedAppMessage(outgoingPayload);
         return;
     }
 

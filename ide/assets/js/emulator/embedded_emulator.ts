@@ -67,7 +67,8 @@ const DEBUG_SIMULATOR = {
   compassHeading: 0x454c4d10,
   dictationText: 0x454c4d11,
   weatherTemperatureC: 0x454c4d12,
-  weatherConditionWire: 0x454c4d13
+  weatherConditionWire: 0x454c4d13,
+  companionResync: 0x454c4d14
 }
 const DEFAULT_SIMULATOR_WEATHER = {
   temperatureC: 21,

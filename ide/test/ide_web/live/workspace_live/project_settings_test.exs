@@ -19,7 +19,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
     refute html =~ "data-emulator-stop"
 
     view
-    |> form("form[phx-change='set-emulator-target']", %{
+    |> form("#emulator-target-form[phx-change='set-emulator-target']", %{
       "emulator" => %{"target" => "emery"}
     })
     |> render_change()
@@ -43,7 +43,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
     assert {:ok, view, _html} = live(conn, ~p"/projects/#{project.slug}/emulator")
 
     view
-    |> form("form[phx-change='set-emulator-target']", %{
+    |> form("#emulator-target-form[phx-change='set-emulator-target']", %{
       "emulator" => %{"target" => "emery", "mode" => "wasm"}
     })
     |> render_change()
@@ -75,7 +75,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
     assert {:ok, view, _html} = live(conn, ~p"/projects/#{project.slug}/emulator")
 
     view
-    |> form("form[phx-change='set-emulator-target']", %{
+    |> form("#emulator-target-form[phx-change='set-emulator-target']", %{
       "emulator" => %{"target" => "gabbro", "mode" => "wasm"}
     })
     |> render_change()
@@ -100,7 +100,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
     assert {:ok, view, _html} = live(conn, ~p"/projects/#{project.slug}/emulator")
 
     view
-    |> form("form[phx-change='set-emulator-target']", %{
+    |> form("#emulator-target-form[phx-change='set-emulator-target']", %{
       "emulator" => %{"target" => "chalk", "mode" => "wasm"}
     })
     |> render_change()

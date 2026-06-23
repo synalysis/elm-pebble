@@ -1438,7 +1438,16 @@ defmodule Ide.ProjectsTest do
                source_root: "watch"
              })
 
-    assert AppMessageQueue.pending?(after_watch, :companion)
+    assert Enum.any?(after_watch.debugger_timeline, fn row ->
+             row.type == "init" and row.target == "phone"
+           end)
+
+    assert Enum.any?(after_watch.debugger_timeline, fn row ->
+             row.target == "phone" and row.type == "update" and
+               String.contains?(to_string(row.message || ""), "FromWatch")
+           end)
+
+    refute AppMessageQueue.pending?(after_watch, :companion)
 
     assert {:ok, reloaded} =
              Debugger.reload(slug, %{

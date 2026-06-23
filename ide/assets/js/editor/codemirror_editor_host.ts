@@ -836,6 +836,9 @@ export class CodeMirrorEditorHost {
         lineHeight: "1.5rem",
         fontSize: "0.875rem"
       },
+      ".cm-content, .cm-line": {
+        fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+      },
       ".cm-tooltip.cm-tooltip-lint .cm-diagnostic.cm-diagnostic-warning": {color: "#b45309"},
       ".cm-tooltip.cm-tooltip-lint .cm-diagnostic.cm-diagnostic-error": {color: "#b91c1c"},
       ".cm-tooltip.cm-tooltip-lint .cm-diagnostic.cm-diagnostic-info": {color: "#1d4ed8"},
@@ -1191,7 +1194,14 @@ export class CodeMirrorEditorHost {
       let to
       if (Number.isInteger(endLine) && Number.isInteger(endColumn) && endLine >= line) {
         const endLineInfo = this.view.state.doc.line(clamp(endLine, 1, this.view.state.doc.lines))
+        // Elm regions use an exclusive end column; map to CodeMirror's exclusive `to` offset.
         to = clamp(endLineInfo.from + Math.max(endColumn - 1, 0), from + 1, this.view.state.doc.length)
+      } else if (Number.isInteger(startColumn)) {
+        const lineText = lineInfo.text
+        const offsetInLine = Math.max(startColumn - 1, 0)
+        const tokenMatch = lineText.slice(offsetInLine).match(/^[A-Za-z_][A-Za-z0-9_]*/)
+        const span = tokenMatch ? tokenMatch[0].length : 1
+        to = clamp(from + span, from + 1, this.view.state.doc.length)
       } else {
         to = clamp(from + 1, from + 1, this.view.state.doc.length)
       }

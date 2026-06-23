@@ -358,6 +358,12 @@ body[data-ide-theme="dark"] a.text-white {
 
 [data-role="cm-root"] .cm-scroller {
   overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+[data-role="cm-root"] .cm-content,
+[data-role="cm-root"] .cm-line {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 [data-role="cm-root"] .cm-fat-cursor .cm-cursor {

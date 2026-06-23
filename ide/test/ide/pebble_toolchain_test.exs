@@ -276,6 +276,10 @@ defmodule Ide.PebbleToolchainTest do
     assert source =~ ~S/markCompanionWatchAppReady("simulator_settings")/
     refute source =~ "requestCompanionWeatherRefresh();"
     assert source =~ ~S/markCompanionWatchAppReady("watch_appmessage")/
+    assert source =~ "function nudgeWatchCompanionResync"
+    assert source =~ "deliverCompanionWatchPing"
+    assert source =~ "deliverCompanionWatchInboundFromWire"
+    assert source =~ "COMPANION_RESYNC_APPMESSAGE_KEY"
     assert source =~ "scheduleCompanionWatchReadyBootTimeout"
     assert source =~ "COMPANION_WATCH_READY_BOOT_TIMEOUT_MS"
     assert source =~ "wirePhoneToWatchFromElmPayload"
@@ -288,6 +292,8 @@ defmodule Ide.PebbleToolchainTest do
     assert template =~ "3000"
     assert template =~ "10000"
     assert template =~ "companion_resync_callback"
+    assert template =~ "ELMC_DEBUG_SIMULATOR_KEY_COMPANION_RESYNC"
+    assert template =~ "handle_debug_companion_resync"
     assert template =~ "s_inbox_snapshot_count >= 1"
   end
 

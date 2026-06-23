@@ -10,6 +10,9 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.SequenceHelpers do
     #ifndef ELM_PEBBLE_RESOURCE_ID_MISSING
     #define ELM_PEBBLE_RESOURCE_ID_MISSING UINT32_MAX
     #endif
+    #ifndef PLAY_COUNT_INFINITE
+    #define PLAY_COUNT_INFINITE 0xFFFF
+    #endif
 
     static ElmcPebbleApp *s_sequence_playback_app = NULL;
 
@@ -20,10 +23,14 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.SequenceHelpers do
     }
 
     static int64_t elmc_sequence_monotonic_ms(void) {
+    #ifdef ELMC_PEBBLE_PLATFORM
       time_t seconds = 0;
       uint16_t milliseconds = 0;
       time_ms(&seconds, &milliseconds);
       return ((int64_t)seconds * 1000) + milliseconds;
+    #else
+      return (int64_t)time(NULL) * 1000;
+    #endif
     }
 
     static bool elmc_sequence_play_loops(uint32_t play_count) {

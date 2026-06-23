@@ -7,6 +7,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.VectorSequenceInstances d
   def body do
     """
     #if ELMC_PEBBLE_FEATURE_DRAW_VECTOR_SEQUENCE_AT
+    #ifdef ELMC_PEBBLE_PLATFORM
     #define ELMC_VECTOR_SEQUENCE_MAX_INSTANCES 8
 
     typedef struct {
@@ -372,6 +373,32 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.VectorSequenceInstances d
       vector_sequence_cache_clear();
       memset(s_vector_sequence_instances, 0, sizeof(s_vector_sequence_instances));
     }
+    #else
+    void elmc_vector_sequence_frame_begin(void) {
+    }
+
+    void elmc_vector_sequence_draw_at(
+        GContext *ctx,
+        ElmcPebbleApp *app,
+        int32_t animation_id,
+        uint32_t resource_id,
+        int16_t x,
+        int16_t y) {
+      (void)ctx;
+      (void)app;
+      (void)animation_id;
+      (void)resource_id;
+      (void)x;
+      (void)y;
+    }
+
+    void elmc_vector_sequence_frame_end(ElmcPebbleApp *app) {
+      (void)app;
+    }
+
+    void elmc_vector_sequence_deinit(void) {
+    }
+    #endif
     #endif
     """
   end

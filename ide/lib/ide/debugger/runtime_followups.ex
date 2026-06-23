@@ -11,7 +11,9 @@ defmodule Ide.Debugger.RuntimeFollowups do
   alias Ide.Debugger.PendingHttpFollowups
   alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Debugger.RuntimeModelMessages
+  alias Ide.Debugger.SimulatorWatchDelivery
   alias Ide.Debugger.Surface
+  alias Ide.Debugger.SurfaceTargets
   alias Ide.Debugger.Types
 
   @type apply_ctx :: %{
@@ -69,7 +71,7 @@ defmodule Ide.Debugger.RuntimeFollowups do
   defp apply_runtime(state, _target, _message, "configuration", _followups, _ctx),
     do: state
 
-  defp apply_runtime(state, target, message, _message_source, followups, ctx)
+  defp apply_runtime(state, target, message, message_source, followups, ctx)
        when target in [:watch, :companion, :phone] and is_binary(message) and is_list(followups) and
               is_map(ctx) do
     current_ctor = RuntimeModelMessages.wire_constructor(message)
@@ -78,10 +80,23 @@ defmodule Ide.Debugger.RuntimeFollowups do
     followups =
       followups
       |> Enum.filter(&is_map/1)
-      |> Enum.reject(&protocol_events_followup?/1)
       |> Enum.reject(&companion_bridge_followup?/1)
 
-    followups
+    {protocol_followups, runtime_followups} =
+      case message_source do
+        src when src in ["http", "runtime_followup"] ->
+          Enum.split_with(followups, &protocol_events_followup?/1)
+
+        _ ->
+          {[], Enum.reject(followups, &protocol_events_followup?/1)}
+      end
+
+    state =
+      Enum.reduce(protocol_followups, state, fn row, acc ->
+        apply_protocol_runtime_followup(acc, row, ctx)
+      end)
+
+    runtime_followups
     |> Enum.filter(fn row ->
       cond do
         shadowed_by_device_data?(state, target, message, row) ->
@@ -194,6 +209,41 @@ defmodule Ide.Debugger.RuntimeFollowups do
   end
 
   defp protocol_events_followup?(_row), do: false
+
+  @spec apply_protocol_runtime_followup(Types.runtime_state(), Types.runtime_followup_row(), apply_ctx()) ::
+          Types.runtime_state()
+  defp apply_protocol_runtime_followup(state, row, ctx) when is_map(state) and is_map(row) and is_map(ctx) do
+    command = Map.get(row, "command") || Map.get(row, :command) || %{}
+    message = Map.get(row, "message") || Map.get(row, :message)
+    message_value = Map.get(row, "message_value") || Map.get(row, :message_value)
+    to = Map.get(command, "to") || Map.get(command, :to) || "watch"
+    target = SurfaceTargets.normalize(to)
+    target_name = ctx.source_root_for_target.(target)
+
+    {step_message, step_value} =
+      if is_binary(message) and message != "" do
+        {message, message_value}
+      else
+        resolve_runtime_followup_step(state, target, "", message, message_value, row)
+      end
+
+    state
+    |> ctx.append_event.(
+      "debugger.package_cmd",
+      Ide.Debugger.Types.PackageCmdEventPayload.from_followup(
+        target_name,
+        "companion-protocol",
+        TimelineMessage.format(step_message, step_value)
+      )
+    )
+    |> ctx.apply_step_once.(
+      target,
+      step_message,
+      step_value,
+      "runtime_followup",
+      "runtime_followup"
+    )
+  end
 
   @spec companion_bridge_followup?(Types.runtime_followup_row()) :: boolean()
   defp companion_bridge_followup?(row) when is_map(row) do
@@ -437,6 +487,12 @@ defmodule Ide.Debugger.RuntimeFollowups do
           "http",
           "runtime_followup"
         )
+        |> deliver_http_phone_to_watch_followups(
+          target,
+          response_message,
+          message_value,
+          ctx
+        )
 
       {:error, reason} ->
         ctx.append_event.(
@@ -450,6 +506,63 @@ defmodule Ide.Debugger.RuntimeFollowups do
           )
         )
     end
+  end
+
+  @phone_to_watch_weather_messages ~w(ProvideTemperature ProvideCondition)
+
+  @spec deliver_http_phone_to_watch_followups(
+          Types.runtime_state(),
+          Types.surface_target(),
+          String.t(),
+          Types.protocol_message_wire_value() | nil,
+          apply_ctx()
+        ) :: Types.runtime_state()
+  defp deliver_http_phone_to_watch_followups(
+         state,
+         target,
+         response_message,
+         message_value,
+         ctx
+       )
+       when target in [:companion, :phone] and is_map(state) and is_map(ctx) do
+    with true <- weather_received_message?(response_message, message_value),
+         settings when is_map(settings) <- ctx.simulator_settings.(state) do
+      weather = Map.get(settings, "weather") || %{}
+
+      Enum.reduce(@phone_to_watch_weather_messages, state, fn message_name, acc ->
+        case SimulatorWatchDelivery.weather_message_value(message_name, weather) do
+          nil ->
+            acc
+
+          wire_value ->
+            step_message = SimulatorWatchDelivery.weather_step_message(message_name, weather)
+
+            acc
+            |> ctx.apply_step_once.(
+              :watch,
+              step_message,
+              wire_value,
+              "http",
+              "runtime_followup"
+            )
+        end
+      end)
+    else
+      _ -> state
+    end
+  end
+
+  defp deliver_http_phone_to_watch_followups(state, _target, _response_message, _message_value, _ctx),
+    do: state
+
+  defp weather_received_message?(response_message, message_value) do
+    ctor =
+      response_message
+      |> to_string()
+      |> RuntimeModelMessages.wire_constructor()
+
+    match?(%{"ctor" => "WeatherReceived", "args" => [%{"ctor" => "Ok", "args" => [_]}]}, message_value) or
+      ctor == "WeatherReceived"
   end
 
   @spec apply_runtime_http_followup(

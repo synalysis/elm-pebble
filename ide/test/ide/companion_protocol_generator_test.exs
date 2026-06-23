@@ -58,6 +58,75 @@ defmodule Ide.CompanionProtocolGeneratorTest do
     end
   end
 
+  test "generates composite watch-to-phone decode without nested Decode.field" do
+    tmp =
+      Path.join(
+        System.tmp_dir!(),
+        "elm-pebble-protocol-composite-w2p-#{System.unique_integer([:positive])}"
+      )
+
+    types = Path.join(tmp, "Types.elm")
+    internal = Path.join(tmp, "Companion/Internal.elm")
+
+    try do
+      File.mkdir_p!(Path.dirname(types))
+
+      File.write!(types, """
+      module Companion.Types exposing (Color(..), Measure(..), PhoneToWatch(..), Point, WatchToPhone(..))
+
+      type Color
+          = Red
+          | Green
+
+      type Measure
+          = Liters Int
+          | Pounds Int
+
+      type alias Point =
+          { x : Int, y : Int }
+
+      type WatchToPhone
+          = SendColor Color
+          | SendMeasure Measure
+          | SendPoint Point
+          | SendCounts (List Int)
+
+      type PhoneToWatch
+          = Pong
+      """)
+
+      assert :ok = CompanionProtocolGenerator.generate_elm_internal(types, internal)
+
+      generated_internal = File.read!(internal)
+
+      assert generated_internal =~
+               "Decode.decodeValue (Decode.field \"send_color_field1\" Decode.int) value"
+
+      assert generated_internal =~ "decodeMeasureWatchScalar : String -> Decode.Decoder Measure"
+      assert generated_internal =~ "Decode.decodeValue (decodeMeasureWatchScalar \"send_measure_field1\") value"
+      assert generated_internal =~ "decodeMeasureLegacyWire : String -> Decode.Decoder Measure"
+      refute generated_internal =~ "decodeMeasureWire"
+
+      assert generated_internal =~
+               "Decode.decodeValue (decodePoint \"send_point_field1\") value"
+
+      assert generated_internal =~
+               "Decode.decodeValue (decodeListInt \"send_counts_field1\") value"
+
+      refute generated_internal =~
+               "Decode.field \"send_point_field1\" decodePoint"
+
+      refute generated_internal =~
+               "Decode.field \"send_counts_field1\" decodeListInt"
+
+      assert generated_internal =~ "SendPoint field1 ->\n            0"
+      assert generated_internal =~ "SendCounts field1 ->\n            0"
+      assert generated_internal =~ "SendMeasure field1 ->\n            encodeMeasureTag field1"
+    after
+      File.rm_rf(tmp)
+    end
+  end
+
   test "extracts generic ADT schema without app-specific query data" do
     assert {:ok, schema} = CompanionProtocolGenerator.schema_from_source(@types)
 
@@ -301,7 +370,7 @@ defmodule Ide.CompanionProtocolGeneratorTest do
       assert generated_header =~ "int32_t wire_set_origin_field1_x;"
       assert generated_header =~ "bool saw_wire_set_origin_field1_x;"
       assert generated_source =~ "companion_protocol_build_set_origin_field1"
-      assert generated_source =~ "elmc_record_new_take"
+      assert generated_source =~ "elmc_record_new_take_value"
       assert generated_source =~ ~s<const char *v_names[] = { "x", "y" };>
 
       assert generated_js =~
@@ -377,6 +446,47 @@ defmodule Ide.CompanionProtocolGeneratorTest do
     end
   end
 
+  test "resolves Dict.Dict String Int payload fields for phone-to-watch encode" do
+    types = """
+    module Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))
+
+    type WatchToPhone
+        = RequestFigure
+
+    type PhoneToWatch
+        = PushLabels (Dict.Dict String Int)
+    """
+
+    assert {:ok, schema} = CompanionProtocolGenerator.schema_from_source(types)
+
+    [%{fields: [field]}] = schema.phone_to_watch
+    assert field.wire_type == {:dict, :int}
+
+    tmp = Path.join(System.tmp_dir!(), "elm-pebble-protocol-dict-#{System.unique_integer([:positive])}")
+    types_path = Path.join(tmp, "Types.elm")
+    internal = Path.join(tmp, "Companion/Internal.elm")
+    header = Path.join(tmp, "generated/companion_protocol.h")
+    source = Path.join(tmp, "generated/companion_protocol.c")
+    js = Path.join(tmp, "pkjs/companion-protocol.js")
+
+    try do
+      File.mkdir_p!(Path.dirname(internal))
+      File.write!(types_path, types)
+      assert :ok = CompanionProtocolGenerator.generate(types_path, header, source, js)
+      assert :ok = CompanionProtocolGenerator.generate_elm_internal(types_path, internal)
+
+      generated_internal = File.read!(internal)
+      generated_source = File.read!(source)
+
+      assert generated_internal =~ "encodeDictStringBy \"push_labels_field1\""
+      refute generated_internal =~ ~s|"push_labels_field1", Encode.int field1|
+      assert generated_source =~ "COMPANION_PROTOCOL_KEY_PUSH_LABELS_FIELD1_COUNT"
+      refute generated_source =~ "COMPANION_PROTOCOL_KEY_PUSH_LABELS_FIELD1)"
+    after
+      File.rm_rf(tmp)
+    end
+  end
+
   test "generates variant-specific wire slots for multi-argument unions" do
     tmp =
       Path.join(
@@ -426,6 +536,99 @@ defmodule Ide.CompanionProtocolGeneratorTest do
                "encodeShapeWire : String -> Shape -> List ( String, Encode.Value )"
 
       assert generated_internal =~ "++ encodeShapeWire \"set_shape_field1\" field1"
+    after
+      File.rm_rf(tmp)
+    end
+  end
+
+  test "dispatches tag-only phone-to-watch messages as bare union tags" do
+    tmp =
+      Path.join(
+        System.tmp_dir!(),
+        "elm-pebble-protocol-pong-#{System.unique_integer([:positive])}"
+      )
+
+    types = Path.join(tmp, "Types.elm")
+    source = Path.join(tmp, "generated/companion_protocol.c")
+
+    try do
+      File.mkdir_p!(Path.dirname(types))
+
+      File.write!(types, """
+      module Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))
+
+      type WatchToPhone
+          = Ping
+
+      type PhoneToWatch
+          = Pong
+          | EchoColor Int
+      """)
+
+      assert :ok =
+               CompanionProtocolGenerator.generate(
+                 types,
+                 Path.join(tmp, "generated/companion_protocol.h"),
+                 source,
+                 Path.join(tmp, "pkjs/companion-protocol.js")
+               )
+
+      generated_source = File.read!(source)
+
+      assert generated_source =~ "COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_PONG"
+      assert generated_source =~ "ElmcValue *payload = elmc_new_int_take(1);"
+      assert generated_source =~
+               "elmc_pebble_dispatch_tag_payload(app, ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET, payload);"
+
+      refute generated_source =~
+               "COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_PONG: {\n          if (ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET <= 0) return -7;\n      return elmc_pebble_dispatch_tag_int_values"
+    after
+      File.rm_rf(tmp)
+    end
+  end
+
+  test "writes legacy union watch-to-phone scalar wire with zero value slot" do
+    tmp =
+      Path.join(
+        System.tmp_dir!(),
+        "elm-pebble-protocol-measure-w2p-#{System.unique_integer([:positive])}"
+      )
+
+    types = Path.join(tmp, "Types.elm")
+    source = Path.join(tmp, "generated/companion_protocol.c")
+
+    try do
+      File.mkdir_p!(Path.dirname(types))
+
+      File.write!(types, """
+      module Companion.Types exposing (Measure(..), PhoneToWatch(..), WatchToPhone(..))
+
+      type Measure
+          = Liters Int
+          | Pounds Int
+
+      type WatchToPhone
+          = SendMeasure Measure
+
+      type PhoneToWatch
+          = Pong
+      """)
+
+      assert :ok =
+               CompanionProtocolGenerator.generate(
+                 types,
+                 Path.join(tmp, "generated/companion_protocol.h"),
+                 source,
+                 Path.join(tmp, "pkjs/companion-protocol.js")
+               )
+
+      generated_source = File.read!(source)
+
+      assert generated_source =~
+               "dict_write_int32(iter, COMPANION_PROTOCOL_KEY_SEND_MEASURE_FIELD1_TAG, value);"
+
+      assert generated_source =~
+               "dict_write_int32(iter, COMPANION_PROTOCOL_KEY_SEND_MEASURE_FIELD1_VALUE, 0);"
     after
       File.rm_rf(tmp)
     end

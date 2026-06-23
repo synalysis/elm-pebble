@@ -17,7 +17,25 @@ defmodule Ide.Debugger.HttpSimulator do
         weather
       )
       when is_map(weather) and map_size(weather) > 0 and not is_nil(decoder) do
-    case build_json_body(decoder, weather) do
+    simulate_json_body(decoder, weather)
+  end
+
+  def simulated_response(
+        %{"expect" => %{"kind" => "json"}} = _command,
+        weather
+      )
+      when is_map(weather) and map_size(weather) > 0 do
+    simulate_json_body(nil, weather)
+  end
+
+  def simulated_response(_command, _weather), do: :skip
+
+  @spec simulate_json_body(json_decoder() | function() | nil, weather_map()) ::
+          {:ok, Types.http_simulated_response()} | :skip
+  defp simulate_json_body(decoder, weather) when is_map(weather) do
+    body = json_body_from_decoder(decoder, weather)
+
+    case body do
       body when is_map(body) and map_size(body) > 0 ->
         {:ok, %{"status" => 200, "body" => Jason.encode!(body)}}
 
@@ -26,7 +44,33 @@ defmodule Ide.Debugger.HttpSimulator do
     end
   end
 
-  def simulated_response(_command, _weather), do: :skip
+  defp json_body_from_decoder(decoder, weather) when is_map(weather) do
+    cond do
+      match?({:json_decoder, _}, decoder) ->
+        case build_json_body(decoder, weather) do
+          body when is_map(body) and map_size(body) > 0 -> body
+          _ -> open_meteo_current_forecast_body(weather)
+        end
+
+      function_decoder?(decoder) or is_nil(decoder) ->
+        open_meteo_current_forecast_body(weather)
+
+      true ->
+        open_meteo_current_forecast_body(weather)
+    end
+  end
+
+  @spec open_meteo_current_forecast_body(weather_map()) :: json_object()
+  def open_meteo_current_forecast_body(weather) when is_map(weather) do
+    %{
+      "current" => %{
+        "temperature_2m" => float_value("temperature_2m", weather),
+        "weather_code" => condition_weather_code(Map.get(weather, "condition"))
+      }
+    }
+  end
+
+  defp function_decoder?(decoder), do: is_function(decoder, 1)
 
   @type json_object :: %{optional(String.t()) => json_leaf()}
 
@@ -58,6 +102,19 @@ defmodule Ide.Debugger.HttpSimulator do
       _ ->
         merged
     end
+  end
+
+  defp decoder_object({:json_decoder, {:map, _fun, inner}}, weather),
+    do: decoder_object(inner, weather)
+
+  defp decoder_object({:json_decoder, {:map_n, _fun, decoders}}, weather) when is_list(decoders) do
+    results =
+      Enum.map(decoders, fn
+        {:json_decoder, inner} -> decoder_object(inner, weather)
+        inner -> decoder_object(inner, weather)
+      end)
+
+    merge_objects(results)
   end
 
   defp decoder_object({:json_decoder, {:and_then, _fun, inner}}, weather),

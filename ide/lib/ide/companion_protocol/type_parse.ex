@@ -132,5 +132,8 @@ defmodule Ide.CompanionProtocol.TypeParse do
   defp normalize_container_type("Dict String " <> rest),
     do: "Dict String " <> normalize_type(rest)
 
+  defp normalize_container_type("Dict.Dict String " <> rest),
+    do: "Dict String " <> normalize_type(rest)
+
   defp normalize_container_type(type), do: type
 end

@@ -10,6 +10,8 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.ApiDecls.ViewSceneApi do
   @spec body() :: Types.c_source()
   def body do
     """
+    typedef struct GContext GContext;
+
     int elmc_pebble_take_cmd(ElmcPebbleApp *app, ElmcPebbleCmd *out_cmd);
     int elmc_pebble_view_command(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmd);
     int elmc_pebble_view_commands(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds);
