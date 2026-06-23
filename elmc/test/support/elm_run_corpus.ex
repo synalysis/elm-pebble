@@ -223,6 +223,11 @@ defmodule Elmc.Test.ElmRunCorpus do
     |> normalize_output()
   end
 
+  @spec expected_available?(String.t()) :: boolean()
+  def expected_available?(rel_path) when is_binary(rel_path) do
+    available?() and File.regular?(expected_path(rel_path))
+  end
+
   @spec normalize_output(String.t()) :: String.t()
   def normalize_output(text) when is_binary(text) do
     text |> String.trim() |> String.trim_trailing("\n")

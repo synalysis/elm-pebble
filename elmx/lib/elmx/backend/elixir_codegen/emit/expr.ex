@@ -360,16 +360,31 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
   defp referenced_binding_names(%{op: :field_access, arg: arg}, acc) when is_binary(arg),
     do: MapSet.put(acc, arg)
 
-  defp referenced_binding_names(%{op: :case, subject: subject}, acc) when is_binary(subject),
-    do: MapSet.put(acc, subject)
+  defp referenced_binding_names(%{op: :case} = map, acc) do
+    acc =
+      case Map.get(map, :subject) do
+        subject when is_binary(subject) -> MapSet.put(acc, subject)
+        subject when is_map(subject) -> referenced_binding_names(subject, acc)
+        _ -> acc
+      end
+
+    referenced_binding_names(Map.get(map, :branches, []), acc)
+  end
 
   defp referenced_binding_names(%{op: op, arg: arg}, acc)
        when op in [:tuple_first_expr, :tuple_second_expr] and is_map(arg),
        do: referenced_binding_names(arg, acc)
 
   defp referenced_binding_names(%{op: op, var: name}, acc)
-       when op in [:add_const, :add_vars, :sub_const] and is_binary(name),
+       when op in [:add_const, :sub_const] and is_binary(name),
        do: MapSet.put(acc, name)
+
+  defp referenced_binding_names(%{op: op, left: left, right: right}, acc)
+       when op in [:add_vars, :sub_vars] do
+    acc
+    |> referenced_binding_name(left)
+    |> referenced_binding_name(right)
+  end
 
   defp referenced_binding_names(map, acc) when is_map(map) do
     Enum.reduce(map, acc, fn {_k, v}, a -> referenced_binding_names(v, a) end)
@@ -380,6 +395,10 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
   end
 
   defp referenced_binding_names(_, acc), do: acc
+
+  defp referenced_binding_name(acc, name) when is_binary(name), do: MapSet.put(acc, name)
+  defp referenced_binding_name(acc, expr) when is_map(expr), do: referenced_binding_names(expr, acc)
+  defp referenced_binding_name(acc, _), do: acc
 
   defp used_let_binding_names(bindings, body) do
     Enum.reduce(Enum.reverse(bindings), referenced_binding_names(body, MapSet.new()), fn

@@ -150,15 +150,19 @@ defmodule Elmx.CompanionSpecialValuesTest do
   end
 
   test "companion platform subscriptions rewrite to zero mask" do
+    callback = %{op: :var, name: "GotLocation"}
+
     for target <- [
           "Pebble.Companion.Weather.onWeather",
           "Pebble.Companion.Environment.onEnvironment",
           "Pebble.Companion.Battery.onBattery",
           "Pebble.Companion.WebSocket.onWebSocket",
           "Pebble.Companion.Timeline.onToken",
-          "Pebble.Companion.Lifecycle.onLifecycle"
+          "Pebble.Companion.Lifecycle.onLifecycle",
+          "Pebble.Companion.Geolocation.onCurrentPosition"
         ] do
       assert {:ok, %{op: :int_literal, value: 0}} = SpecialValues.rewrite(target, [])
+      assert {:ok, %{op: :int_literal, value: 0}} = SpecialValues.rewrite(target, [callback])
     end
   end
 

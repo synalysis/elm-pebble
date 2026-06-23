@@ -18,7 +18,8 @@ jobs:
       - name: Fetch optional elm-run corpus
         id: elm-run-corpus
         run: |
-          if git submodule update --init --depth=1 --recursive vendor/elm-run-test_corpus; then
+          git submodule sync -- vendor/elm-run-test_corpus
+          if git submodule update --init --recursive vendor/elm-run-test_corpus; then
             echo "available=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice title=Optional corpus unavailable::Skipping elm-run corpus gates because vendor/elm-run-test_corpus could not be fetched."
@@ -169,10 +170,23 @@ jobs:
         run: |
           pipx install pebble-tool
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          rm -rf "$HOME/.pebble-sdk" "$HOME/.pebble" || true
           pebble sdk install latest
-          latest_sdk="$(pebble sdk list | awk '/^Available SDKs:/{f=1;next} f&&/^[^ ]/{l=$1} END{print l}')"
+          latest_sdk="$(pebble sdk list | awk '/^Available SDKs:/{in_available=1; next} /^Installed SDKs:/{in_available=0} in_available && $1 ~ /^[0-9]/ {last=$1} END {print last}')"
+          if [ -z "${latest_sdk}" ]; then
+            echo "Could not resolve latest Pebble SDK" >&2
+            pebble sdk list >&2
+            exit 1
+          fi
+          pebble sdk install "${latest_sdk}"
           pebble sdk activate "${latest_sdk}"
+          if ! pebble sdk list | awk '/\(active\)/ {found=1} END {exit !found}'; then
+            echo "No active Pebble SDK after install" >&2
+            pebble sdk list >&2
+            exit 1
+          fi
           pebble sdk list
+          echo "PEBBLE_SDK_ROOT=$HOME/.pebble-sdk/SDKs/current" >> "$GITHUB_ENV"
 
       - name: Install Elm compiler
         run: npm install -g elm@0.19.1-6

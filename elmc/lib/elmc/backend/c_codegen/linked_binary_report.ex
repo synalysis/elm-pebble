@@ -134,15 +134,37 @@ defmodule Elmc.Backend.CCodegen.LinkedBinaryReport do
   defp find_arm_size do
     sdk_root = System.get_env("PEBBLE_SDK_ROOT")
 
+    version_candidates =
+      case System.get_env("ELM_PEBBLE_SDK_CORE_VERSION") do
+        version when is_binary(version) and version != "" ->
+          [
+            Path.expand(
+              "~/.pebble-sdk/SDKs/#{version}/toolchain/arm-none-eabi/bin/arm-none-eabi-size"
+            )
+          ]
+
+        _ ->
+          []
+      end
+
     candidates =
       [
         System.find_executable("arm-none-eabi-size"),
         sdk_root && Path.join(sdk_root, "toolchain/arm-none-eabi/bin/arm-none-eabi-size"),
-        Path.expand("~/.pebble-sdk/SDKs/4.9.169/toolchain/arm-none-eabi/bin/arm-none-eabi-size")
-      ]
-      |> Enum.reject(&is_nil/1)
+        Path.expand(
+          "~/.pebble-sdk/SDKs/current/toolchain/arm-none-eabi/bin/arm-none-eabi-size"
+        )
+      ] ++
+        version_candidates ++
+        [
+          Path.expand(
+            "~/.pebble-sdk/SDKs/4.9.169/toolchain/arm-none-eabi/bin/arm-none-eabi-size"
+          )
+        ]
 
-    Enum.find(candidates, &File.regular?/1)
+    candidates
+    |> Enum.reject(&is_nil/1)
+    |> Enum.find(&File.regular?/1)
   end
 
   defp parse_size_line(nil), do: nil

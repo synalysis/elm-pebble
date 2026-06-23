@@ -106,8 +106,7 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Companion do
 
   def fallback_rewrite(_target, _args), do: :unmatched
 
-  defp companion_subscription_stub([]), do: companion_subscription_zero()
-  defp companion_subscription_stub(_args), do: :unmatched
+  defp companion_subscription_stub(_args), do: companion_subscription_zero()
 
   defp companion_configuration_on_closed([]), do: companion_subscription_zero()
 

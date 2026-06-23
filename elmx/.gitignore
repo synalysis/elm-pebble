@@ -2,3 +2,4 @@
 /elixir/
 /generated/
 *.beam
+tmp_*.exs

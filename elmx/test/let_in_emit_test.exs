@@ -152,6 +152,55 @@ defmodule Elmx.LetInEmitTest do
     assert source =~ "availableW"
   end
 
+  test "case with string subject still tracks bindings in branches" do
+    body = %{
+      op: :case,
+      subject: "caseSubject",
+      branches: [
+        %{
+          expr: %{
+            op: :add_vars,
+            left: "moonPhaseY",
+            right: "phase"
+          },
+          pattern: %{kind: :constructor, name: "Just"}
+        },
+        %{
+          expr: %{op: :int_literal, value: 0},
+          pattern: %{kind: :constructor, name: "Nothing"}
+        }
+      ]
+    }
+
+    let = %{
+      name: "moonPhaseY",
+      op: :let_in,
+      value_expr: %{op: :int_literal, value: 10},
+      in_expr: body
+    }
+
+    {code, _, _} = Emit.compile_expr(let, env(), 0)
+    source = IO.iodata_to_binary(code)
+
+    assert source =~ "moonPhaseY"
+    refute source =~ "(fn -> _ = "
+  end
+
+  test "single let_in keeps binding referenced via add_vars in the body" do
+    let = %{
+      name: "offset",
+      op: :let_in,
+      value_expr: %{op: :int_literal, value: 1},
+      in_expr: %{op: :add_vars, left: "cx", right: "offset"}
+    }
+
+    {code, _, _} = Emit.compile_expr(let, env(), 0)
+    source = IO.iodata_to_binary(code)
+
+    assert source =~ "offset"
+    refute source =~ "(fn -> _ = "
+  end
+
   test "sequential let block omits bindings not referenced in the body" do
     bindings =
       [{"v1", %{op: :int_literal, value: 0}}] ++
