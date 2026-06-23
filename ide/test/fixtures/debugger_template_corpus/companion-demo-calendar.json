@@ -68,102 +68,7 @@
       "window",
       "windowStack"
     ],
-    "root_type": "windowStack",
-    "tree": {
-      "box": {
-        "h": 168,
-        "text": null,
-        "w": 144,
-        "x": 0,
-        "y": 0
-      },
-      "children": [
-        {
-          "children": [
-            {
-              "children": [
-                {
-                  "children": [],
-                  "color": 255,
-                  "kind": "clear",
-                  "label": "clear",
-                  "text": null,
-                  "type": "clear"
-                },
-                {
-                  "bounds": {
-                    "h": 18,
-                    "text": null,
-                    "w": 128,
-                    "x": 8,
-                    "y": 36
-                  },
-                  "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "08:53",
-                  "options": [],
-                  "text": "<TIME>",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text"
-                },
-                {
-                  "bounds": {
-                    "h": 18,
-                    "text": null,
-                    "w": 128,
-                    "x": 8,
-                    "y": 54
-                  },
-                  "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Next event",
-                  "options": [],
-                  "text": "Next event",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text"
-                },
-                {
-                  "bounds": {
-                    "h": 18,
-                    "text": null,
-                    "w": 128,
-                    "x": 8,
-                    "y": 72
-                  },
-                  "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "No events",
-                  "options": [],
-                  "text": "No events",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text"
-                }
-              ],
-              "id": "1",
-              "kind": "canvasLayer",
-              "label": "",
-              "text": null,
-              "type": "canvasLayer"
-            }
-          ],
-          "id": "1",
-          "kind": "window",
-          "label": "",
-          "text": null,
-          "type": "window"
-        }
-      ],
-      "kind": "windowStack",
-      "label": "",
-      "text": null,
-      "type": "windowStack"
-    }
+    "root_type": "windowStack"
   },
   "runtime_model": {
     "nextEvent": {
@@ -178,12 +83,9 @@
   "template": "companion-demo-calendar",
   "timeline_init_messages": [
     "init:init",
-    "init:init",
     "update:CurrentTimeString \"08:53\"",
     "update:FromPhone (NoUpcomingEvents)",
-    "update:FromPhone (NoUpcomingEvents)",
     "update:FromWatch (Ok RequestCalendar)",
-    "update:GotCalendar (Ok [])",
     "update:GotCalendar (Ok [])"
   ],
   "view_tree_type": "windowStack",
@@ -209,6 +111,6 @@
     },
     "runtime_view_output": [],
     "timeString": null,
-    "watch_profile_id": "aplite"
+    "watch_profile_id": "basalt"
   }
 }

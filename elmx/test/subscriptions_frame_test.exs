@@ -24,4 +24,9 @@ defmodule Elmx.SubscriptionsFrameTest do
     assert Bitwise.band(mask, 16) == 16
     assert Bitwise.band(mask, 8192) == 8192
   end
+
+  test "onAnimationFinished subscription mask matches elmc" do
+    assert Subscriptions.mask("Pebble.Events.onAnimationFinished") == 8_388_608
+    assert Subscriptions.mask("Elm.Kernel.PebbleWatch.onAnimationFinished") == 8_388_608
+  end
 end

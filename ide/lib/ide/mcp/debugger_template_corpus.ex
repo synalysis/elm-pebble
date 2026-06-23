@@ -427,6 +427,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     }
   end
 
+  @bootstrap_timeline_types ~w(init update)
+
   @spec timeline_init_messages(map()) :: [String.t()]
   defp timeline_init_messages(state) when is_map(state) do
     state
@@ -435,7 +437,10 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
       type = Map.get(row, :type) || Map.get(row, "type")
       type in ["runtime_exec_error"]
     end)
-    |> Enum.take(8)
+    |> Enum.filter(fn row ->
+      type = Map.get(row, :type) || Map.get(row, "type")
+      type in @bootstrap_timeline_types
+    end)
     |> Enum.map(fn row ->
       type = Map.get(row, :type) || Map.get(row, "type")
       message = Map.get(row, :message) || Map.get(row, "message")
@@ -589,7 +594,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   defp normalize_render_tree_field(snapshot) do
     Map.update(snapshot, "render_tree", %{}, fn tree ->
       tree
-      |> Map.update("tree", nil, &normalize_render_tree/1)
+      |> Map.take(["root_type", "node_count", "node_types"])
       |> Map.update("node_types", [], fn types ->
         types |> List.wrap() |> Enum.sort()
       end)

@@ -50,4 +50,27 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusNormalizeTest do
     assert DebuggerTemplateCorpus.normalize_snapshot(with_dupes) ==
              DebuggerTemplateCorpus.normalize_snapshot(without_dupes)
   end
+
+  test "normalize_snapshot compares render_tree by summary fields only" do
+    with_tree = %{
+      "render_tree" => %{
+        "root_type" => "windowStack",
+        "node_count" => 2,
+        "node_types" => ["clear", "windowStack"],
+        "tree" => %{"type" => "windowStack", "children" => [%{"type" => "clear"}]}
+      }
+    }
+
+    with_box = %{
+      "render_tree" => %{
+        "root_type" => "windowStack",
+        "node_count" => 2,
+        "node_types" => ["windowStack", "clear"],
+        "tree" => %{"type" => "windowStack", "box" => %{"x" => 0, "y" => 0}}
+      }
+    }
+
+    assert DebuggerTemplateCorpus.normalize_snapshot(with_tree) ==
+             DebuggerTemplateCorpus.normalize_snapshot(with_box)
+  end
 end

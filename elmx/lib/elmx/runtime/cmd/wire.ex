@@ -49,7 +49,7 @@ defmodule Elmx.Runtime.Cmd.Wire do
         {ctor, %{"ctor" => ctor, "args" => []}}
 
       _ ->
-        unknown_message_wire(fun)
+        {"Unknown", %{"ctor" => "Unknown", "args" => [Values.wire_value("<callback>")]}}
     end
   end
 

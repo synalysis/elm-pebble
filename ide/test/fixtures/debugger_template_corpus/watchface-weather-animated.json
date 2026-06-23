@@ -87,149 +87,7 @@
       "window",
       "windowStack"
     ],
-    "root_type": "windowStack",
-    "tree": {
-      "box": {
-        "h": 168,
-        "text": null,
-        "w": 144,
-        "x": 0,
-        "y": 0
-      },
-      "children": [
-        {
-          "children": [
-            {
-              "children": [
-                {
-                  "children": [],
-                  "color": 255,
-                  "kind": "clear",
-                  "label": "clear",
-                  "text": null,
-                  "type": "clear"
-                },
-                {
-                  "children": [],
-                  "frame": 0,
-                  "kind": "drawVectorAt",
-                  "label": "drawVectorAt",
-                  "origin": {
-                    "text": null,
-                    "x": 48,
-                    "y": 102
-                  },
-                  "resource": "VectorStaticWeatherFog",
-                  "rotation": 0,
-                  "text": null,
-                  "type": "drawVectorAt"
-                },
-                {
-                  "children": [
-                    {
-                      "children": [
-                        {
-                          "bounds": {
-                            "h": 40,
-                            "text": null,
-                            "w": 144,
-                            "x": 0,
-                            "y": 56
-                          },
-                          "children": [],
-                          "font": "DefaultFont",
-                          "kind": "text",
-                          "label": "08:53",
-                          "options": {
-                            "key": "align_center",
-                            "text": null,
-                            "type": "contextSetting",
-                            "value": []
-                          },
-                          "text": "<TIME>",
-                          "text_align": "center",
-                          "text_overflow": "word_wrap",
-                          "type": "text"
-                        }
-                      ],
-                      "kind": "group",
-                      "label": "",
-                      "style": {
-                        "text": null,
-                        "text_color": 192
-                      },
-                      "text": null,
-                      "type": "group"
-                    }
-                  ],
-                  "kind": "group",
-                  "label": "",
-                  "text": null,
-                  "type": "group"
-                },
-                {
-                  "children": [
-                    {
-                      "children": [
-                        {
-                          "bounds": {
-                            "h": 18,
-                            "text": null,
-                            "w": 144,
-                            "x": 0,
-                            "y": 92
-                          },
-                          "children": [],
-                          "font": "DefaultFont",
-                          "kind": "text",
-                          "label": "18C Fog",
-                          "options": {
-                            "key": "align_center",
-                            "text": null,
-                            "type": "contextSetting",
-                            "value": []
-                          },
-                          "text": "18C Fog",
-                          "text_align": "center",
-                          "text_overflow": "word_wrap",
-                          "type": "text"
-                        }
-                      ],
-                      "kind": "group",
-                      "label": "",
-                      "style": {
-                        "text": null,
-                        "text_color": 192
-                      },
-                      "text": null,
-                      "type": "group"
-                    }
-                  ],
-                  "kind": "group",
-                  "label": "",
-                  "text": null,
-                  "type": "group"
-                }
-              ],
-              "id": "1",
-              "kind": "canvasLayer",
-              "label": "",
-              "text": null,
-              "type": "canvasLayer"
-            }
-          ],
-          "id": "1",
-          "kind": "window",
-          "label": "",
-          "text": null,
-          "type": "window"
-        }
-      ],
-      "kind": "windowStack",
-      "label": "",
-      "text": null,
-      "type": "windowStack"
-    }
+    "root_type": "windowStack"
   },
   "runtime_model": {
     "activeAnimation": {
@@ -293,11 +151,9 @@
   "timeline_init_messages": [
     "init:init",
     "update:CurrentDateTime { day = 27, dayOfWeek = Wednesday, hour = 8, minute = 53, month = 5, second = 0, utcOffsetMinutes = 0, year = 2026 }",
-    "update:CurrentDateTime { day = 27, dayOfWeek = Wednesday, hour = 8, minute = 53, month = 5, second = 0, utcOffsetMinutes = 0, year = 2026 }",
     "update:FromPhone (ProvideCondition Fog)",
     "update:FromPhone (ProvideTemperature (Celsius 18))",
     "update:FromWatch (Ok (RequestWeather CurrentLocation))",
-    "update:GotWeather (Ok (Current { condition = Fog, temperatureC = 18 }))",
     "update:GotWeather (Ok (Current { condition = Fog, temperatureC = 18 }))"
   ],
   "view_tree_type": "windowStack",

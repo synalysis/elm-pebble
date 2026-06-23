@@ -64,7 +64,7 @@
       "font_size": 22,
       "h": 22,
       "kind": "text_label",
-      "text": "21C Clear",
+      "text": "0C Clear",
       "text_align": "center",
       "text_color": 255,
       "text_overflow": "word_wrap",
@@ -73,7 +73,7 @@
       "y": 136
     }
   ],
-  "preview_ops_sha256": "4d1ed5afb2c847952999a12d86b80d4c79ed6b5bd6112306ded793c4f591063d",
+  "preview_ops_sha256": "3d87f0ed59a2fdfeb18fdc1daad3ebedf89c8354280bed6a4d62003aa771def2",
   "render_tree": {
     "node_count": 14,
     "node_types": [
@@ -92,174 +92,7 @@
       "window",
       "windowStack"
     ],
-    "root_type": "windowStack",
-    "tree": {
-      "box": {
-        "h": 168,
-        "text": null,
-        "w": 144,
-        "x": 0,
-        "y": 0
-      },
-      "children": [
-        {
-          "children": [
-            {
-              "children": [
-                {
-                  "children": [],
-                  "color": 192,
-                  "kind": "clear",
-                  "label": "clear",
-                  "text": null,
-                  "type": "clear"
-                },
-                {
-                  "children": [
-                    {
-                      "children": [
-                        {
-                          "bounds": {
-                            "h": 4,
-                            "text": null,
-                            "w": 59,
-                            "x": 38,
-                            "y": 8
-                          },
-                          "children": [],
-                          "color": 204,
-                          "kind": "fillRect",
-                          "label": "fillRect",
-                          "text": null,
-                          "type": "fillRect"
-                        },
-                        {
-                          "children": [],
-                          "color": 255,
-                          "h": 8,
-                          "kind": "roundRect",
-                          "label": "roundRect",
-                          "radius": 2,
-                          "text": null,
-                          "type": "roundRect",
-                          "w": 72,
-                          "x": 36,
-                          "y": 6
-                        }
-                      ],
-                      "kind": "group",
-                      "label": "",
-                      "style": {
-                        "fill_color": 204,
-                        "stroke_color": 255,
-                        "text": null,
-                        "text_color": 255
-                      },
-                      "text": null,
-                      "type": "group"
-                    }
-                  ],
-                  "kind": "group",
-                  "label": "",
-                  "text": null,
-                  "type": "group"
-                },
-                {
-                  "children": [
-                    {
-                      "children": [
-                        {
-                          "bounds": {
-                            "h": 56,
-                            "text": null,
-                            "w": 144,
-                            "x": 0,
-                            "y": 46
-                          },
-                          "children": [],
-                          "font": "Jersey",
-                          "kind": "text",
-                          "label": "08:53",
-                          "options": [],
-                          "text": "<TIME>",
-                          "text_align": "center",
-                          "text_overflow": "word_wrap",
-                          "type": "text"
-                        }
-                      ],
-                      "kind": "group",
-                      "label": "",
-                      "style": {
-                        "text": null,
-                        "text_color": 255
-                      },
-                      "text": null,
-                      "type": "group"
-                    }
-                  ],
-                  "kind": "group",
-                  "label": "",
-                  "text": null,
-                  "type": "group"
-                },
-                {
-                  "children": [
-                    {
-                      "children": [
-                        {
-                          "bounds": {
-                            "h": 22,
-                            "text": null,
-                            "w": 144,
-                            "x": 0,
-                            "y": 136
-                          },
-                          "children": [],
-                          "font": "Jersey",
-                          "kind": "text",
-                          "label": "21C Clear",
-                          "options": [],
-                          "text": "21C Clear",
-                          "text_align": "center",
-                          "text_overflow": "word_wrap",
-                          "type": "text"
-                        }
-                      ],
-                      "kind": "group",
-                      "label": "",
-                      "style": {
-                        "text": null,
-                        "text_color": 255
-                      },
-                      "text": null,
-                      "type": "group"
-                    }
-                  ],
-                  "kind": "group",
-                  "label": "",
-                  "text": null,
-                  "type": "group"
-                }
-              ],
-              "id": "1",
-              "kind": "canvasLayer",
-              "label": "",
-              "text": null,
-              "type": "canvasLayer"
-            }
-          ],
-          "id": "1",
-          "kind": "window",
-          "label": "",
-          "text": null,
-          "type": "window"
-        }
-      ],
-      "kind": "windowStack",
-      "label": "",
-      "text": null,
-      "type": "windowStack"
-    }
+    "root_type": "windowStack"
   },
   "runtime_model": {
     "backgroundColor": {
@@ -320,7 +153,7 @@
       "args": [
         {
           "args": [
-            21
+            0
           ],
           "ctor": "Celsius"
         }
@@ -335,21 +168,21 @@
   },
   "template": "watchface-tutorial-complete",
   "timeline_init_messages": [
+    "init:init",
     "update:BatteryLevelChanged 88",
     "update:ConnectionStatusChanged True",
     "update:CurrentDateTime { day = 27, dayOfWeek = Wednesday, hour = 8, minute = 53, month = 5, second = 0, utcOffsetMinutes = 0, year = 2026 }",
     "update:FromPhone (ProvideCondition Clear)",
-    "update:FromPhone (ProvideCondition Clear)",
     "update:FromPhone (ProvideTemperature (Celsius 0))",
-    "update:FromPhone (ProvideTemperature (Celsius 21))",
-    "update:WeatherReceived (Ok {condition=Clear,temperature=21})"
+    "update:FromWatch (Ok (RequestWeather CurrentLocation))",
+    "update:json_decoder (Ok {current={ temperature_2m = 21,weather_code=0})"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
     "protocol_last_inbound_from": "companion",
     "protocol_last_inbound_message": "ProvideCondition Clear",
-    "protocol_last_trigger": "runtime_followup",
+    "protocol_last_trigger": "protocol_rx",
     "protocol_last_view_message": "ProvideCondition Clear",
     "runtime_model": {
       "backgroundColor": {
@@ -409,7 +242,7 @@
         "args": [
           {
             "args": [
-              21
+              0
             ],
             "ctor": "Celsius"
           }

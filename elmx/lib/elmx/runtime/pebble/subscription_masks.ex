@@ -17,6 +17,8 @@ defmodule Elmx.Runtime.Pebble.SubscriptionMasks do
     "Elm.Kernel.PebbleWatch.onMonthChange" => 131_072,
     "Pebble.Events.onYearChange" => 262_144,
     "Elm.Kernel.PebbleWatch.onYearChange" => 262_144,
+    "Pebble.Events.onAnimationFinished" => 8_388_608,
+    "Elm.Kernel.PebbleWatch.onAnimationFinished" => 8_388_608,
     "Pebble.Button.on" => 16_384,
     "Pebble.Button.onPress" => 16_384,
     "Pebble.Button.onRelease" => 16_384,

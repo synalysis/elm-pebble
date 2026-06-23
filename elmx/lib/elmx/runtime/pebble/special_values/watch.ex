@@ -47,6 +47,8 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Watch do
       "Elm.Kernel.PebbleWatch.onMonthChange" -> subscription_mask("Elm.Kernel.PebbleWatch.onMonthChange")
       "Pebble.Events.onYearChange" -> subscription_mask("Pebble.Events.onYearChange")
       "Elm.Kernel.PebbleWatch.onYearChange" -> subscription_mask("Elm.Kernel.PebbleWatch.onYearChange")
+      "Pebble.Events.onAnimationFinished" -> subscription_mask("Pebble.Events.onAnimationFinished")
+      "Elm.Kernel.PebbleWatch.onAnimationFinished" -> subscription_mask("Elm.Kernel.PebbleWatch.onAnimationFinished")
       "Pebble.Button.on" -> subscription_mask("Pebble.Button.on")
       "Pebble.Button.onPress" -> subscription_mask("Pebble.Button.onPress")
       "Pebble.Button.onLongPress" -> subscription_mask("Pebble.Button.onLongPress")
