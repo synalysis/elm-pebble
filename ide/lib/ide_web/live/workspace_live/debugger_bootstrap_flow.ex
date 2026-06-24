@@ -3,11 +3,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
 
   alias Ide.Compiler
   alias Ide.Compiler.Diagnostics
+  alias Ide.Debugger.AgentHosts
   alias Ide.Debugger.AgentSession
   alias Ide.Debugger.AgentStore
   alias Ide.Debugger.BootstrapInit
   alias Ide.Debugger.CompanionBootstrapLock
   alias Ide.Debugger.CompanionPhoneCompile
+  alias Ide.Debugger.PendingProtocolDelivery
+  alias Ide.Debugger.ProtocolRx
   alias Ide.Debugger.RuntimeBackgroundDrains
   alias Ide.Debugger.Types.CompileIngestBridge
   alias Ide.Projects
@@ -176,9 +179,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
 
     case reload do
       {:ok, _} ->
-        if force_sync? do
+        if not companion_bootstrap_async?() or force_sync? do
           progress.("Waiting for companion follow-ups...")
-          _ = RuntimeBackgroundDrains.await_idle(scope_key, 120_000)
+          drain_companion_bootstrap_followups(scope_key)
+          :ok = RuntimeBackgroundDrains.await_idle(scope_key, 120_000)
         end
 
         {:ok, %{reload: reload}}
@@ -466,6 +470,22 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
         {:error, message} -> {:error, message}
       end
     end
+  end
+
+  @spec drain_companion_bootstrap_followups(String.t()) :: :ok
+  defp drain_companion_bootstrap_followups(scope_key) when is_binary(scope_key) do
+    hosts = AgentSession.hosts()
+    protocol_rx = hosts |> AgentHosts.contexts() |> Map.fetch!(:protocol_rx)
+
+    {:ok, _} =
+      AgentSession.mutate(scope_key, fn state ->
+        state
+        |> ProtocolRx.drain_message_queue(:companion, protocol_rx)
+        |> ProtocolRx.drain_message_queue(:watch, protocol_rx)
+      end)
+
+    PendingProtocolDelivery.drain_pending_sync(scope_key, protocol_rx)
+    :ok
   end
 
   defp debugger_bootstrap_elm_source(project, bootstrap_tab) do

@@ -64,8 +64,6 @@ defmodule Ide.Resources.ResourceStore.SpeakerSamples do
     else
       %{} = duplicate -> {:ok, %{duplicate: true, entry: duplicate}}
       {:error, reason} -> {:error, reason}
-      nil -> {:error, :duplicate_asset}
-      other -> other
     end
   end
 

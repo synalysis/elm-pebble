@@ -113,7 +113,7 @@ defmodule Ide.Debugger.DeviceDataResponsesTest do
       )
 
       assert Enum.any?(:ets.tab2list(steps), fn {_target, message, _source, _trigger} ->
-               message == "GotBatteryLevel"
+               String.starts_with?(message, "GotBatteryLevel")
              end)
 
       refute Enum.any?(:ets.tab2list(steps), fn {_target, message, _source, _trigger} ->

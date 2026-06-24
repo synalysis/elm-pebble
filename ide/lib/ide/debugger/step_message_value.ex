@@ -15,14 +15,36 @@ defmodule Ide.Debugger.StepMessageValue do
 
   def normalize(state, target, message_value, model, events_ctx)
       when is_map(state) and is_map(message_value) and is_function(events_ctx, 0) do
-    ProtocolEvents.normalize_subscription_message_value(
-      state,
-      target,
-      message_value,
-      model,
-      events_ctx.()
-    )
+    if explicit_subscription_inject_value?(message_value) do
+      message_value
+    else
+      ProtocolEvents.normalize_subscription_message_value(
+        state,
+        target,
+        message_value,
+        model,
+        events_ctx.()
+      )
+    end
   end
 
   def normalize(_state, _target, message_value, _model, _events_ctx), do: message_value
+
+  @spec explicit_subscription_inject_value?(Types.subscription_payload()) :: boolean()
+  defp explicit_subscription_inject_value?(%{"ctor" => _ctor, "args" => [first | _]})
+       when is_map(first) do
+    case Map.get(first, "ctor") do
+      result when result in ["Ok", "Err"] -> true
+      _ -> false
+    end
+  end
+
+  defp explicit_subscription_inject_value?(%{ctor: _ctor, args: [first | _]}) when is_map(first) do
+    case Map.get(first, :ctor) do
+      result when result in ["Ok", "Err"] -> true
+      _ -> false
+    end
+  end
+
+  defp explicit_subscription_inject_value?(_value), do: false
 end

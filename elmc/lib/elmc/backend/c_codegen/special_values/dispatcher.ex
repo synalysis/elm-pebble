@@ -15,10 +15,10 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Dispatcher do
     Stdlib.Json,
     Stdlib.List,
     Stdlib.MaybeResult,
-    Stdlib.Set,
-    Stdlib.String
+    Stdlib.Set
   }
 
+  alias Elmc.Backend.CCodegen.SpecialValues.Stdlib.String, as: StdlibString
   alias Elmc.Backend.CCodegen.Types
 
   @handlers [
@@ -31,7 +31,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Dispatcher do
     Dict,
     Set,
     Array,
-    String,
+    StdlibString,
     Basics,
     MaybeResult,
     Json,

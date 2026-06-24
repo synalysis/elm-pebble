@@ -30,7 +30,7 @@ defmodule Ide.Debugger.HttpFlightCommit do
       |> Enum.filter(fn event -> session_seq(event) > basis_seq end)
 
     current
-    |> Map.put(target, Map.get(applied, target))
+    |> merge_changed_surfaces(applied, basis)
     |> Map.put(
       :pending_http_followups,
       merge_pending_items(
@@ -52,6 +52,20 @@ defmodule Ide.Debugger.HttpFlightCommit do
     |> Map.update(:events, new_events, &(new_events ++ &1))
     |> Map.put(:debugger_seq, max(dbg_seq(current), dbg_seq(applied)))
     |> Map.put(:seq, max(session_seq(current), session_seq(applied)))
+  end
+
+  defp merge_changed_surfaces(current, applied, basis)
+       when is_map(current) and is_map(applied) and is_map(basis) do
+    Enum.reduce(@surfaces, current, fn surface, acc ->
+      applied_surface = Map.get(applied, surface)
+      basis_surface = Map.get(basis, surface)
+
+      if is_map(applied_surface) and applied_surface != basis_surface do
+        Map.put(acc, surface, applied_surface)
+      else
+        acc
+      end
+    end)
   end
 
   defp merge_pending_items(current_items, applied_items, basis_items)

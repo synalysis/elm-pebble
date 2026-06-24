@@ -223,12 +223,8 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
           Types.runtime_state()
   def apply_init_commands(state, target, ctx)
       when target in @companion_bridge_targets and is_map(state) and is_map(ctx) do
-    if runtime_bridge_followups_applied?(state, target) do
-      state
-    else
-      ctx.bridge_requests_from_init.(state, target)
-      |> apply_requests(state, target, "init_companion_bridge", ctx)
-    end
+    ctx.bridge_requests_from_init.(state, target)
+    |> apply_requests(state, target, "init_companion_bridge", ctx)
   end
 
   def apply_init_commands(state, _target, _ctx), do: state

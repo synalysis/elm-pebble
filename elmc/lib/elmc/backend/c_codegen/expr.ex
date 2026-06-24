@@ -47,8 +47,8 @@ defmodule Elmc.Backend.CCodegen.Expr do
   def record_field_expr(%{op: :field_access}, _field), do: nil
   def record_field_expr(_expr, _field), do: nil
 
-  @spec substitute_expr(Types.ir_expr() | [term()], Types.let_substitutions()) ::
-          Types.ir_expr() | [term()]
+  @spec substitute_expr(Types.ir_expr() | [Types.ir_expr()], Types.let_substitutions()) ::
+          Types.ir_expr() | [Types.ir_expr()]
   def substitute_expr(%{op: :var, name: name}, substitutions) do
     key = Host.binding_key(name)
 

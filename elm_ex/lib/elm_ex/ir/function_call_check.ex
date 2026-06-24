@@ -5,16 +5,21 @@ defmodule ElmEx.IR.FunctionCallCheck do
   """
 
   alias ElmEx.Frontend.DefaultImports
+  alias ElmEx.Frontend.Types.ImportEntry
   alias ElmEx.IR.ImportResolution
   alias ElmEx.IR.TypeSignature
-
-  alias ElmEx.IR.Types.{Diagnostic, Expr}
-
-  @typep diagnostic() :: Diagnostic.t()
+  alias ElmEx.IR.Types.Diagnostic
+  alias ElmEx.IR.Types.Expr
+  alias ElmEx.IR.Types.FunctionCallCheck, as: FCC
 
   @skip_call_prefixes ~w(__)
 
-  @spec collect_project_diagnostics([map()], map(), String.t(), [String.t()]) :: [diagnostic()]
+  @spec collect_project_diagnostics(
+          [FCC.frontend_module()],
+          FCC.project_module_exports(),
+          String.t(),
+          [String.t()]
+        ) :: [Diagnostic.t()]
   def collect_project_diagnostics(
         frontend_modules,
         project_module_exports,
@@ -86,7 +91,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
     |> Enum.uniq()
   end
 
-  @spec application_module?(map(), [String.t()]) :: boolean()
+  @spec application_module?(FCC.frontend_module(), [String.t()]) :: boolean()
   defp application_module?(%{path: path}, application_roots) when is_binary(path) do
     expanded = Path.expand(path)
 
@@ -97,7 +102,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
 
   defp application_module?(_, _), do: false
 
-  @spec relative_module_file(map(), String.t()) :: String.t() | nil
+  @spec relative_module_file(FCC.frontend_module(), String.t()) :: String.t() | nil
   defp relative_module_file(%{path: path}, project_dir)
        when is_binary(path) and is_binary(project_dir) do
     expanded_project = Path.expand(project_dir)
@@ -115,7 +120,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
 
   defp relative_module_file(_, _), do: nil
 
-  @spec build_signature_lookup([map()]) :: %{String.t() => String.t()}
+  @spec build_signature_lookup([FCC.frontend_module()]) :: FCC.signature_lookup()
   defp build_signature_lookup(frontend_modules) do
     frontend_modules
     |> Enum.flat_map(fn frontend_module ->
@@ -131,7 +136,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
     |> Map.new()
   end
 
-  @spec build_type_alias_lookup([map()]) :: %{String.t() => map()}
+  @spec build_type_alias_lookup([FCC.frontend_module()]) :: FCC.type_alias_lookup()
   defp build_type_alias_lookup(frontend_modules) do
     frontend_modules
     |> Enum.flat_map(fn frontend_module ->
@@ -161,7 +166,8 @@ defmodule ElmEx.IR.FunctionCallCheck do
     |> Map.new()
   end
 
-  @spec build_module_import_lookup(map(), map()) :: map()
+  @spec build_module_import_lookup(FCC.frontend_module(), FCC.project_module_exports()) ::
+          FCC.import_lookup()
   defp build_module_import_lookup(frontend_module, project_module_exports) do
     import_entries =
       frontend_module
@@ -187,7 +193,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
     }
   end
 
-  @spec signature_type_for(map(), String.t() | nil) :: String.t() | nil
+  @spec signature_type_for(FCC.frontend_module(), String.t() | nil) :: String.t() | nil
   defp signature_type_for(_frontend_module, nil), do: nil
 
   defp signature_type_for(frontend_module, name) when is_binary(name) do
@@ -200,7 +206,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
     end)
   end
 
-  @spec binding_types(map()) :: %{String.t() => String.t()}
+  @spec binding_types(map()) :: FCC.binding_types()
   defp binding_types(%{args: args, type: type})
        when is_list(args) and is_binary(type) and args != [] do
     TypeSignature.param_types(type)
@@ -217,11 +223,11 @@ defmodule ElmEx.IR.FunctionCallCheck do
 
   @spec expr_function_call_diagnostics(
           Expr.t(),
-          map(),
-          map(),
-          map(),
-          map()
-        ) :: {[diagnostic()], map()}
+          FCC.import_lookup(),
+          FCC.signature_lookup(),
+          FCC.type_alias_lookup(),
+          FCC.call_context_wire()
+        ) :: FCC.diagnostics_result()
   defp expr_function_call_diagnostics(
          %{op: op, args: args} = expr,
          import_lookup,
@@ -325,11 +331,11 @@ defmodule ElmEx.IR.FunctionCallCheck do
           String.t() | nil,
           [Expr.t()],
           Expr.t(),
-          map(),
-          map(),
-          map(),
-          map()
-        ) :: {[diagnostic()], map()}
+          FCC.import_lookup(),
+          FCC.signature_lookup(),
+          FCC.type_alias_lookup(),
+          FCC.call_context_wire()
+        ) :: FCC.diagnostics_result()
   defp call_site_diagnostics(
          target,
          args,
@@ -436,11 +442,11 @@ defmodule ElmEx.IR.FunctionCallCheck do
 
   @spec function_return_diagnostics(
           map(),
-          map(),
-          map(),
-          map(),
-          map()
-        ) :: [diagnostic()]
+          FCC.import_lookup(),
+          FCC.signature_lookup(),
+          FCC.type_alias_lookup(),
+          FCC.call_context_wire()
+        ) :: [Diagnostic.t()]
   defp function_return_diagnostics(
          decl,
          import_lookup,
@@ -499,10 +505,10 @@ defmodule ElmEx.IR.FunctionCallCheck do
   @spec return_type_mismatch?(
           String.t(),
           Expr.t(),
-          map(),
-          map(),
-          map(),
-          map()
+          FCC.import_lookup(),
+          FCC.signature_lookup(),
+          FCC.type_alias_lookup(),
+          FCC.binding_types()
         ) :: {boolean(), String.t() | nil, Expr.t() | nil, String.t() | nil}
   defp return_type_mismatch?(expected, expr, import_lookup, signature_lookup, type_alias_lookup, binding_types) do
     expected_elems = TypeSignature.tuple_element_types(expected)
@@ -574,19 +580,14 @@ defmodule ElmEx.IR.FunctionCallCheck do
     end
   end
 
-  @type record_validation_issue ::
-          {:extra_field, String.t()}
-          | {:missing_field, String.t()}
-          | {:field_type, String.t(), String.t(), String.t()}
-
   @spec record_literal_validation_issues(
           String.t(),
           Expr.t(),
-          map(),
-          map(),
-          map(),
-          map()
-        ) :: [record_validation_issue()]
+          FCC.import_lookup(),
+          FCC.signature_lookup(),
+          FCC.type_alias_lookup(),
+          FCC.binding_types()
+        ) :: [FCC.record_validation_issue()]
   defp record_literal_validation_issues(
          expected,
          expr,
@@ -657,10 +658,10 @@ defmodule ElmEx.IR.FunctionCallCheck do
           String.t(),
           String.t() | nil,
           Expr.t() | nil,
-          map(),
-          map(),
-          map(),
-          map()
+          FCC.type_alias_lookup(),
+          FCC.import_lookup(),
+          FCC.signature_lookup(),
+          FCC.binding_types()
         ) :: String.t()
   defp function_return_message(
          expected,
@@ -721,7 +722,8 @@ defmodule ElmEx.IR.FunctionCallCheck do
     end
   end
 
-  @spec next_call_occurrence(map(), String.t()) :: {pos_integer(), map()}
+  @spec next_call_occurrence(FCC.call_context_wire(), String.t()) ::
+          {pos_integer(), FCC.call_context_wire()}
   defp next_call_occurrence(call_context, pattern) when is_binary(pattern) do
     counts = Map.get(call_context, :occurrence_counts, %{})
     occurrence = Map.get(counts, pattern, 0) + 1
@@ -749,7 +751,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
           String.t(),
           String.t(),
           keyword()
-        ) :: diagnostic()
+        ) :: Diagnostic.t()
   defp diagnostic(
          severity,
          code,
@@ -777,7 +779,8 @@ defmodule ElmEx.IR.FunctionCallCheck do
     |> Map.merge(Map.new(extra))
   end
 
-  @spec call_site_position(map(), String.t(), pos_integer()) :: {integer() | nil, integer() | nil}
+  @spec call_site_position(FCC.call_context_wire(), String.t(), pos_integer()) ::
+          {integer() | nil, integer() | nil}
   defp call_site_position(call_context, pattern, occurrence)
        when is_binary(pattern) and is_integer(occurrence) and occurrence > 0 do
     decl = Map.get(call_context, :decl, %{})
@@ -796,7 +799,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
     end
   end
 
-  @spec call_site_matches_in_source(map(), String.t(), pos_integer(), pos_integer()) ::
+  @spec call_site_matches_in_source(FCC.call_context_wire(), String.t(), pos_integer(), pos_integer()) ::
           [{pos_integer(), pos_integer()}]
   defp call_site_matches_in_source(%{module_path: path}, pattern, start_line, end_line)
        when is_binary(path) and is_binary(pattern) and is_integer(start_line) and
@@ -831,7 +834,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
     end
   end
 
-  @spec call_site_position_from_body(map(), String.t(), pos_integer()) ::
+  @spec call_site_position_from_body(FCC.call_context_wire(), String.t(), pos_integer()) ::
           {integer() | nil, integer() | nil}
   defp call_site_position_from_body(decl, pattern, occurrence)
        when is_map(decl) and is_binary(pattern) and is_integer(occurrence) and occurrence > 0 do
@@ -856,7 +859,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
     end
   end
 
-  @spec skip_call_target?(String.t(), map()) :: boolean()
+  @spec skip_call_target?(String.t(), FCC.import_lookup()) :: boolean()
   defp skip_call_target?(target, import_lookup) do
     local_call_names = Map.get(import_lookup, :local_call_names, MapSet.new())
     unqualified = target |> String.split(".") |> List.last()
@@ -866,7 +869,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
       unqualified in ["identity", "always", "never"]
   end
 
-  @spec call_target(Expr.t(), map()) :: String.t() | nil
+  @spec call_target(Expr.t(), FCC.import_lookup()) :: String.t() | nil
   defp call_target(%{op: :qualified_call, target: target}, import_lookup)
        when is_binary(target) do
     ImportResolution.resolve(target, import_lookup)
@@ -878,7 +881,13 @@ defmodule ElmEx.IR.FunctionCallCheck do
 
   defp call_target(_, _), do: nil
 
-  @spec infer_expr_type(Expr.t(), map(), map(), map(), map()) :: String.t() | nil
+  @spec infer_expr_type(
+          Expr.t(),
+          FCC.import_lookup(),
+          FCC.signature_lookup(),
+          FCC.type_alias_lookup(),
+          FCC.binding_types()
+        ) :: String.t() | nil
   defp infer_expr_type(expr, import_lookup, signature_lookup, type_alias_lookup, binding_types)
 
   defp infer_expr_type(%{op: :int_literal}, _, _, _, _), do: "Int"
@@ -1020,7 +1029,11 @@ defmodule ElmEx.IR.FunctionCallCheck do
 
   defp value_type(_), do: nil
 
-  @spec find_matching_alias([String.t()], map(), map()) :: String.t() | nil
+  @spec find_matching_alias(
+          [String.t()],
+          FCC.type_alias_lookup(),
+          FCC.field_types_map()
+        ) :: String.t() | nil
   defp find_matching_alias(field_names, type_alias_lookup, inferred_field_types)
        when is_list(field_names) and is_map(inferred_field_types) do
     candidates =
@@ -1044,16 +1057,21 @@ defmodule ElmEx.IR.FunctionCallCheck do
     end
   end
 
-  @spec alias_field_names(map() | [String.t()]) :: [String.t()]
+  @spec alias_field_names(FCC.type_alias_spec() | [String.t()]) :: [String.t()]
   defp alias_field_names(%{fields: fields}) when is_list(fields), do: Enum.sort(fields)
   defp alias_field_names(fields) when is_list(fields), do: Enum.sort(fields)
   defp alias_field_names(_), do: []
 
-  @spec alias_field_types(map()) :: %{String.t() => String.t()}
+  @spec alias_field_types(FCC.type_alias_spec() | map()) :: FCC.field_types_map()
   defp alias_field_types(%{field_types: field_types}) when is_map(field_types), do: field_types
   defp alias_field_types(_), do: %{}
 
-  @spec infer_record_field_type(String.t(), String.t(), map(), map()) :: String.t() | nil
+  @spec infer_record_field_type(
+          String.t(),
+          String.t(),
+          FCC.import_lookup(),
+          FCC.type_alias_lookup()
+        ) :: String.t() | nil
   defp infer_record_field_type(parent_type, field, import_lookup, type_alias_lookup)
        when is_binary(parent_type) and is_binary(field) do
     resolved = resolve_type_reference(parent_type, import_lookup)
@@ -1070,7 +1088,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
     end
   end
 
-  @spec alias_field_types_compatible?(map(), map()) :: boolean()
+  @spec alias_field_types_compatible?(FCC.field_types_map(), FCC.field_types_map()) :: boolean()
   defp alias_field_types_compatible?(alias_types, inferred_types)
        when is_map(alias_types) and is_map(inferred_types) do
     Enum.all?(alias_types, fn {field, expected} ->
@@ -1101,8 +1119,8 @@ defmodule ElmEx.IR.FunctionCallCheck do
   @spec incompatible_types?(
           String.t(),
           String.t() | nil,
-          map(),
-          map(),
+          FCC.import_lookup(),
+          FCC.type_alias_lookup(),
           String.t() | nil,
           Expr.t() | nil
         ) :: boolean()
@@ -1203,14 +1221,15 @@ defmodule ElmEx.IR.FunctionCallCheck do
     end
   end
 
-  @spec canonical_type_identity(String.t(), map(), map()) :: String.t()
+  @spec canonical_type_identity(String.t(), FCC.type_resolution_context(), FCC.type_alias_lookup()) ::
+          String.t()
   defp canonical_type_identity(type, context, type_alias_lookup) do
     type
     |> resolve_type_reference(context)
     |> type_identity_key(type_alias_lookup)
   end
 
-  @spec resolve_type_reference(String.t(), map()) :: String.t()
+  @spec resolve_type_reference(String.t(), FCC.type_resolution_context()) :: String.t()
   defp resolve_type_reference(type, context) when is_binary(type) do
     alias_map = Map.get(context, :alias_map, %{})
     type_map = Map.get(context, :type_unqualified_map, %{})
@@ -1240,7 +1259,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
     end
   end
 
-  @spec resolve_unqualified_type(String.t(), String.t() | nil, map(), String.t() | nil) ::
+  @spec resolve_unqualified_type(String.t(), String.t() | nil, FCC.import_lookup(), String.t() | nil) ::
           String.t()
   defp resolve_unqualified_type(name, declaring_module, type_map, current_module)
        when is_binary(name) do
@@ -1263,7 +1282,8 @@ defmodule ElmEx.IR.FunctionCallCheck do
     end
   end
 
-  @spec match_unqualified_type_export(String.t(), map()) :: String.t() | nil
+  @spec match_unqualified_type_export(String.t(), FCC.project_module_exports()) ::
+          String.t() | nil
   defp match_unqualified_type_export(name, type_map) when is_binary(name) and is_map(type_map) do
     case Map.get(type_map, name) do
       module when is_binary(module) -> "#{module}.#{name}"
@@ -1271,7 +1291,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
     end
   end
 
-  @spec resolve_module_prefix(String.t(), map()) :: String.t()
+  @spec resolve_module_prefix(String.t(), FCC.import_lookup()) :: String.t()
   defp resolve_module_prefix(prefix, alias_map) when is_binary(prefix) and is_map(alias_map) do
     case String.split(prefix, ".", parts: 2) do
       [head, rest] ->
@@ -1282,7 +1302,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
     end
   end
 
-  @spec type_identity_key(String.t(), map()) :: String.t()
+  @spec type_identity_key(String.t(), FCC.type_alias_lookup()) :: String.t()
   defp type_identity_key(resolved, type_alias_lookup) when is_binary(resolved) do
     lookup_name =
       if Map.has_key?(type_alias_lookup, resolved) do
@@ -1305,7 +1325,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
     end
   end
 
-  @spec normalize_alias_name(String.t(), map()) :: String.t()
+  @spec normalize_alias_name(String.t(), FCC.type_alias_lookup()) :: String.t()
   defp normalize_alias_name(type, type_alias_lookup) do
     fields = alias_fields(type, type_alias_lookup)
     key = unqualified_type_name(type)
@@ -1317,7 +1337,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
     end
   end
 
-  @spec alias_type?(String.t(), map()) :: boolean()
+  @spec alias_type?(String.t(), FCC.type_alias_lookup()) :: boolean()
   defp alias_type?(type, type_alias_lookup) do
     Map.has_key?(type_alias_lookup, type) or
       type
@@ -1328,28 +1348,28 @@ defmodule ElmEx.IR.FunctionCallCheck do
       end
   end
 
-  @spec alias_compatible_with_record?(String.t(), String.t(), map()) :: boolean()
+  @spec alias_compatible_with_record?(String.t(), String.t(), FCC.type_alias_lookup()) :: boolean()
   defp alias_compatible_with_record?(alias_name, record_type, type_alias_lookup) do
     expected_fields = alias_fields(alias_name, type_alias_lookup) |> Enum.sort()
     inferred_fields = record_field_names(record_type, type_alias_lookup) |> Enum.sort()
     expected_fields != [] and expected_fields == inferred_fields
   end
 
-  @spec record_fields_compatible?(String.t(), String.t(), map()) :: boolean()
+  @spec record_fields_compatible?(String.t(), String.t(), FCC.type_alias_lookup()) :: boolean()
   defp record_fields_compatible?(left, right, type_alias_lookup) do
     left_fields = record_field_names(left, type_alias_lookup) |> Enum.sort()
     right_fields = record_field_names(right, type_alias_lookup) |> Enum.sort()
     left_fields != [] and left_fields == right_fields
   end
 
-  @spec alias_fields(String.t(), map()) :: [String.t()]
+  @spec alias_fields(String.t(), FCC.type_alias_lookup()) :: [String.t()]
   defp alias_fields(alias_name, type_alias_lookup) do
     alias_name
     |> alias_spec(type_alias_lookup)
     |> alias_field_names()
   end
 
-  @spec alias_spec(String.t(), map()) :: map() | nil
+  @spec alias_spec(String.t(), FCC.type_alias_lookup()) :: FCC.type_alias_spec() | nil
   defp alias_spec(alias_name, type_alias_lookup) do
     Map.get(type_alias_lookup, alias_name) ||
       case String.split(alias_name, ".", parts: 2) do
@@ -1358,7 +1378,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
       end
   end
 
-  @spec record_field_names(String.t(), map()) :: [String.t()]
+  @spec record_field_names(String.t(), FCC.type_alias_lookup()) :: [String.t()]
   defp record_field_names(type, type_alias_lookup) do
     cond do
       alias_type?(type, type_alias_lookup) ->
@@ -1385,7 +1405,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
     target |> String.split(".") |> List.last() |> to_string()
   end
 
-  @spec ensure_default_import_entries([map()]) :: [map()]
+  @spec ensure_default_import_entries([ImportEntry.wire_map()]) :: [ImportEntry.wire_map()]
   defp ensure_default_import_entries(import_entries) when is_list(import_entries) do
     existing =
       import_entries
@@ -1403,8 +1423,8 @@ defmodule ElmEx.IR.FunctionCallCheck do
     import_entries ++ default_entries
   end
 
-  @spec build_import_resolution([map()], map()) ::
-          {map(), map(), [String.t()], map()}
+  @spec build_import_resolution([ImportEntry.wire_map()], FCC.project_module_exports()) ::
+          FCC.import_resolution_maps()
   defp build_import_resolution(import_entries, project_module_exports)
        when is_list(import_entries) and is_map(project_module_exports) do
     Enum.reduce(import_entries, {%{}, %{}, [], %{}}, fn entry,
@@ -1468,7 +1488,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
 
   defp build_import_resolution(_import_entries, _project_module_exports), do: {%{}, %{}, [], %{}}
 
-  @spec maybe_put_alias(map(), String.t() | nil, String.t()) :: map()
+  @spec maybe_put_alias(FCC.name_map(), String.t() | nil, String.t()) :: FCC.name_map()
   defp maybe_put_alias(acc, alias_name, module_name)
        when is_map(acc) and is_binary(module_name) do
     if is_binary(alias_name) and alias_name != "" do
@@ -1478,7 +1498,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
     end
   end
 
-  @spec put_unqualified_name(map(), String.t(), String.t()) :: map()
+  @spec put_unqualified_name(FCC.name_map(), String.t(), String.t()) :: FCC.name_map()
   defp put_unqualified_name(acc, name, module_name)
        when is_binary(name) and is_binary(module_name) do
     case Map.get(acc, name) do
@@ -1493,7 +1513,8 @@ defmodule ElmEx.IR.FunctionCallCheck do
     if value in list, do: list, else: list ++ [value]
   end
 
-  @spec register_wildcard_exports(map(), String.t(), map()) :: map()
+  @spec register_wildcard_exports(FCC.name_map(), String.t(), FCC.project_module_exports()) ::
+          FCC.name_map()
   defp register_wildcard_exports(acc, module_name, project_module_exports)
        when is_map(acc) and is_binary(module_name) and is_map(project_module_exports) do
     module_exports =
@@ -1504,7 +1525,8 @@ defmodule ElmEx.IR.FunctionCallCheck do
     |> Enum.reduce(acc, &put_unqualified_name(&2, &1, module_name))
   end
 
-  @spec register_wildcard_type_exports(map(), String.t(), map()) :: map()
+  @spec register_wildcard_type_exports(FCC.name_map(), String.t(), FCC.project_module_exports()) ::
+          FCC.name_map()
   defp register_wildcard_type_exports(acc, module_name, project_module_exports)
        when is_map(acc) and is_binary(module_name) and is_map(project_module_exports) do
     module_exports =
@@ -1516,7 +1538,8 @@ defmodule ElmEx.IR.FunctionCallCheck do
     |> Enum.reduce(acc, &put_unqualified_name(&2, &1, module_name))
   end
 
-  @spec expand_import_exposing_names([String.t()], String.t(), map()) :: [String.t()]
+  @spec expand_import_exposing_names([String.t()], String.t(), FCC.project_module_exports()) ::
+          [String.t()]
   defp expand_import_exposing_names(names, module_name, project_module_exports)
        when is_list(names) and is_binary(module_name) and is_map(project_module_exports) do
     module_exports =
@@ -1538,7 +1561,8 @@ defmodule ElmEx.IR.FunctionCallCheck do
 
   defp expand_import_exposing_names(_names, _module_name, _project_module_exports), do: []
 
-  @spec expand_import_exposing_type_names([String.t()], String.t(), map()) :: [String.t()]
+  @spec expand_import_exposing_type_names([String.t()], String.t(), FCC.project_module_exports()) ::
+          [String.t()]
   defp expand_import_exposing_type_names(names, module_name, project_module_exports)
        when is_list(names) and is_binary(module_name) and is_map(project_module_exports) do
     module_exports =

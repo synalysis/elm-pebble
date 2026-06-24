@@ -2,10 +2,10 @@ defmodule Elmx.RuntimeDispatchCoverageTest do
   use ExUnit.Case, async: true
 
   alias Elmx.Runtime.Pebble
+  alias Elmx.Runtime.Pebble.Dispatch
   alias Elmx.Runtime.Pebble.Registry
 
   @special_values_glob Path.expand("../lib/elmx/runtime/pebble/special_values/**/*.ex", __DIR__)
-  @dispatch_ex Path.expand("../lib/elmx/runtime/pebble/dispatch.ex", __DIR__)
 
   @ui_call_re ~r/ui_call\("(elmx_[a-z0-9_]+)"/
   @runtime_call_re ~r/function: "(elmx_[a-z0-9_]+)"/
@@ -13,12 +13,11 @@ defmodule Elmx.RuntimeDispatchCoverageTest do
   test "static SpecialValues runtime functions are handled by runtime_dispatch" do
     emitted = emitted_runtime_functions()
     handled = Registry.handlers() |> Map.keys() |> MapSet.new()
-    kernel_fallback? = File.read!(@dispatch_ex) =~ "def kernel_runtime_stub"
 
     missing =
       emitted
       |> Enum.reject(&(&1 in handled))
-      |> Enum.reject(&(kernel_fallback? and kernel_function?(&1)))
+      |> Enum.reject(&Dispatch.kernel_runtime_function?/1)
 
     assert missing == [],
            """
@@ -64,6 +63,4 @@ defmodule Elmx.RuntimeDispatchCoverageTest do
     end)
     |> List.flatten()
   end
-
-  defp kernel_function?(name), do: String.starts_with?(name, "elmx_kernel_pebble_")
 end

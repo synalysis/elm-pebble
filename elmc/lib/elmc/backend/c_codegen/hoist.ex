@@ -5,6 +5,9 @@ defmodule Elmc.Backend.CCodegen.Hoist do
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Types
 
+  @type hoisted_native_bool_key :: term()
+  @type hoisted_native_int_map :: %{hoisted_native_bool_key() => String.t()}
+
   @spec put_hoisted_native_bool(Types.compile_env(), Types.ir_expr(), String.t()) ::
           Types.compile_env()
   def put_hoisted_native_bool(env, expr, ref) when is_binary(ref) do
@@ -27,6 +30,7 @@ defmodule Elmc.Backend.CCodegen.Hoist do
     |> Map.get(hoisted_native_bool_key(expr))
   end
 
+  @spec hoisted_native_bool_key(Types.ir_expr() | term()) :: hoisted_native_bool_key()
   defp hoisted_native_bool_key(%{op: :case, subject: subject} = expr) do
     {:case, Map.get(expr, :platform_static_macro), hoisted_native_bool_key(subject)}
   end
@@ -59,6 +63,9 @@ defmodule Elmc.Backend.CCodegen.Hoist do
 
   defp hoisted_native_bool_key(other), do: other
 
+  @spec hoisted_native_bool_key_aliases(Types.ir_expr(), String.t()) :: [
+          {hoisted_native_bool_key(), String.t()}
+        ]
   defp hoisted_native_bool_key_aliases(expr, ref) do
     base = [{hoisted_native_bool_key(expr), ref}]
 
@@ -68,6 +75,7 @@ defmodule Elmc.Backend.CCodegen.Hoist do
     end
   end
 
+  @spec inverse_native_bool_key(Types.ir_expr()) :: hoisted_native_bool_key() | nil
   defp inverse_native_bool_key(%{op: :compare, kind: kind, left: left, right: right})
        when kind in [:eq, :neq, "eq", "neq"] do
     inverse_kind =
@@ -96,10 +104,13 @@ defmodule Elmc.Backend.CCodegen.Hoist do
 
   defp inverse_native_bool_key(_expr), do: nil
 
+  @spec inverse_ref(String.t()) :: String.t()
   defp inverse_ref("1"), do: "0"
   defp inverse_ref("0"), do: "1"
   defp inverse_ref(ref), do: "!(" <> ref <> ")"
 
+  @spec hoisted_native_bool_arg_key(Types.ir_expr() | String.t() | atom()) ::
+          hoisted_native_bool_key()
   defp hoisted_native_bool_arg_key(name) when is_binary(name) or is_atom(name),
     do: {:var, EnvBindings.binding_key(name)}
 
@@ -114,9 +125,11 @@ defmodule Elmc.Backend.CCodegen.Hoist do
       Process.get(:elmc_hoisted_native_ints_scope, false)
   end
 
+  @spec hoisted_native_int_key(Types.ir_expr()) :: hoisted_native_bool_key()
   defp hoisted_native_int_key(expr),
     do: expr |> hoisted_native_int_key_raw() |> normalize_hoist_key()
 
+  @spec hoisted_native_int_key_raw(Types.ir_expr()) :: hoisted_native_bool_key()
   defp hoisted_native_int_key_raw(%{op: :c_int_expr, value: value}) when is_binary(value),
     do: {:c_int, value}
 
@@ -138,6 +151,7 @@ defmodule Elmc.Backend.CCodegen.Hoist do
 
   defp hoisted_native_int_key_raw(expr), do: hoisted_native_bool_key(expr)
 
+  @spec minmax_arg_keys([Types.ir_expr()] | Types.ir_expr() | nil) :: [hoisted_native_bool_key()]
   defp minmax_arg_keys(args) do
     args
     |> List.wrap()
@@ -145,6 +159,7 @@ defmodule Elmc.Backend.CCodegen.Hoist do
     |> Enum.sort()
   end
 
+  @spec normalize_hoist_key(hoisted_native_bool_key()) :: hoisted_native_bool_key()
   defp normalize_hoist_key({:minmax, name, keys}) when is_list(keys),
     do: {:minmax, name, Enum.sort(Enum.map(keys, &normalize_hoist_key/1))}
 
@@ -165,6 +180,7 @@ defmodule Elmc.Backend.CCodegen.Hoist do
   defp normalize_hoist_key({:char, value}), do: {:char, value}
   defp normalize_hoist_key(other), do: other
 
+  @spec normalize_hoist_arg_key(Types.ir_expr() | String.t() | atom()) :: hoisted_native_bool_key()
   defp normalize_hoist_arg_key(name) when is_binary(name) or is_atom(name),
     do: {:var, EnvBindings.binding_key(name)}
 
@@ -242,6 +258,7 @@ defmodule Elmc.Backend.CCodegen.Hoist do
     end)
   end
 
+  @spec drop_unused_native_minmax_decl_lines([String.t()]) :: [String.t()]
   defp drop_unused_native_minmax_decl_lines(lines) do
     case find_removable_native_minmax_line(lines) do
       nil ->
@@ -254,6 +271,7 @@ defmodule Elmc.Backend.CCodegen.Hoist do
     end
   end
 
+  @spec find_removable_native_minmax_line([String.t()]) :: non_neg_integer() | nil
   defp find_removable_native_minmax_line(lines) do
     body = Enum.join(lines, "\n")
 
@@ -268,6 +286,7 @@ defmodule Elmc.Backend.CCodegen.Hoist do
     end)
   end
 
+  @spec native_minmax_hoist_used?(String.t(), String.t()) :: boolean()
   defp native_minmax_hoist_used?(body, ref) when is_binary(body) and is_binary(ref) do
     Regex.scan(~r/\b#{Regex.escape(ref)}\b/, body) |> length() > 1
   end
@@ -299,10 +318,12 @@ defmodule Elmc.Backend.CCodegen.Hoist do
     end
   end
 
+  @spec hoist_ref_used?(String.t(), String.t()) :: boolean()
   defp hoist_ref_used?(body, ref) do
     String.contains?(body, ref) and not String.contains?(body, "const elmc_int_t #{ref} =")
   end
 
+  @spec hoisted_native_int_key_aliases(Types.ir_expr()) :: [hoisted_native_bool_key()]
   defp hoisted_native_int_key_aliases(expr) do
     [hoisted_native_int_key(expr) | minmax_cross_form_keys(expr)]
     |> Enum.uniq()
@@ -387,6 +408,7 @@ defmodule Elmc.Backend.CCodegen.Hoist do
     end
   end
 
+  @spec hoisted_native_int_map(Types.compile_env()) :: hoisted_native_int_map()
   defp hoisted_native_int_map(env) do
     Map.merge(
       Map.get(env, :__hoisted_native_ints__, %{}),
@@ -394,6 +416,8 @@ defmodule Elmc.Backend.CCodegen.Hoist do
     )
   end
 
+  @spec hoisted_minmax_lookup(hoisted_native_int_map(), Types.ir_expr()) ::
+          {:ok, String.t()} | :error
   defp hoisted_minmax_lookup(hoisted, %{op: :call, name: name, args: args})
        when name in ["min", "max"] do
     lookup_minmax_keys(hoisted, name, minmax_arg_keys(args))
@@ -412,6 +436,8 @@ defmodule Elmc.Backend.CCodegen.Hoist do
 
   defp hoisted_minmax_lookup(_hoisted, _expr), do: :error
 
+  @spec lookup_minmax_keys(hoisted_native_int_map(), String.t(), [hoisted_native_bool_key()]) ::
+          {:ok, String.t()} | :error
   defp lookup_minmax_keys(hoisted, name, arg_keys) do
     case Map.get(hoisted, {:minmax, name, arg_keys}) do
       ref when is_binary(ref) ->

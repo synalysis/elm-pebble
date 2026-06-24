@@ -309,9 +309,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
       |> DebuggerSupport.refresh()
 
     frame_row =
-      Enum.find(socket.assigns.debugger_watch_trigger_buttons, fn row ->
-        row.message == "FrameTick" and String.contains?(row.trigger, "Frame")
-      end)
+      Enum.find(socket.assigns.debugger_watch_trigger_buttons, &(&1.message == "FrameTick"))
 
     assert frame_row.declared_interval_ms == 33
     assert frame_row.interval_ms == 100

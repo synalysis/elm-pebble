@@ -50,6 +50,7 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
 
   def subscription_batch_expr(_), do: nil
 
+  @spec batch_list_item_expr(Types.ir_expr()) :: [Types.ir_expr()]
   defp batch_list_item_expr(item) do
     case subscription_item_sub_expr(item) do
       :none -> []
@@ -58,6 +59,7 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
     end
   end
 
+  @spec subscription_item_sub_expr(Types.ir_expr()) :: optional_sub_item()
   defp subscription_item_sub_expr(%{op: :if, then_expr: then_expr, else_expr: else_expr}) do
     merge_optional_subscription_item(
       subscription_item_sub_expr(then_expr),
@@ -87,6 +89,8 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
 
   defp subscription_item_sub_expr(_), do: nil
 
+  @spec merge_optional_subscription_item(optional_sub_item(), optional_sub_item()) ::
+          Types.ir_expr() | nil
   defp merge_optional_subscription_item(:none, sub) when is_map(sub), do: sub
   defp merge_optional_subscription_item(sub, :none) when is_map(sub), do: sub
   defp merge_optional_subscription_item(sub, sub) when is_map(sub), do: sub
@@ -118,10 +122,12 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
     end
   end
 
+  @spec button_event_for_target(String.t()) :: button_event()
   defp button_event_for_target("Pebble.Button.onPress"), do: :pressed
   defp button_event_for_target("Pebble.Button.onRelease"), do: :released
   defp button_event_for_target("Pebble.Button.onLongPress"), do: :long_pressed
 
+  @spec button_event_sub_params([Types.ir_expr()], button_event()) :: [Types.ir_expr()]
   defp button_event_sub_params([button, msg], event) do
     with btn when not is_nil(btn) <- button_int_expr(button),
          %{op: :msg_tag_expr} = tag <- SpecialValues.msg_tag_param(msg) do
@@ -131,6 +137,7 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
     end
   end
 
+  @spec button_raw_sub_params([Types.ir_expr()]) :: [Types.ir_expr()]
   defp button_raw_sub_params([button, event, msg]) do
     with btn when not is_nil(btn) <- button_int_expr(button),
          evt when not is_nil(evt) <- button_event_int_expr(event),
@@ -143,10 +150,12 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
 
   defp button_raw_sub_params(_), do: []
 
+  @spec button_event_expr(button_event()) :: Types.ir_expr()
   defp button_event_expr(:pressed), do: %{op: :c_int_expr, value: "ELMC_BUTTON_EVENT_PRESSED"}
   defp button_event_expr(:released), do: %{op: :c_int_expr, value: "ELMC_BUTTON_EVENT_RELEASED"}
   defp button_event_expr(:long_pressed), do: %{op: :c_int_expr, value: "ELMC_BUTTON_EVENT_LONG_PRESSED"}
 
+  @spec button_int_expr(Types.ir_expr()) :: Types.ir_expr() | nil
   defp button_int_expr(%{op: :c_int_expr, value: value}) when is_binary(value),
     do: %{op: :c_int_expr, value: value}
 
@@ -160,11 +169,13 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
     end
   end
 
+  @spec button_plain_int_expr(Types.ir_expr()) :: Types.ir_expr() | nil
   defp button_plain_int_expr(%{op: :int_literal, value: value}) when is_integer(value),
     do: %{op: :int_literal, value: value}
 
   defp button_plain_int_expr(_), do: nil
 
+  @spec button_event_int_expr(Types.ir_expr()) :: Types.ir_expr() | nil
   defp button_event_int_expr(%{op: :int_literal, value: value}) when is_integer(value),
     do: %{op: :int_literal, value: value}
 
@@ -177,6 +188,7 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
     end
   end
 
+  @spec button_ctor_short_name(Types.ir_expr()) :: String.t() | nil
   defp button_ctor_short_name(%{op: :int_literal, union_ctor: ctor}) when is_binary(ctor),
     do: ctor |> String.split(".") |> List.last()
 
@@ -194,10 +206,12 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
   defp button_ctor_short_name(%{op: :var, name: name}) when is_binary(name), do: name
   defp button_ctor_short_name(_), do: nil
 
+  @spec subscription_mask_c_expr(String.t(), [Types.ir_expr()]) :: subscription_mask_c_result()
   defp subscription_mask_c_expr(target, args) do
     subscription_item_c_expr(%{op: :qualified_call, target: target, args: args})
   end
 
+  @spec subscription_params_valid?([Types.ir_expr()], [Types.ir_expr()]) :: boolean()
   defp subscription_params_valid?([], []), do: true
 
   defp subscription_params_valid?(args, params) when args != [] do
@@ -207,13 +221,16 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
     end
   end
 
+  @spec pebble_sub_eligible?([Types.ir_expr()]) :: boolean()
   defp pebble_sub_eligible?(params) do
     length(params) <= 5 and Enum.all?(params, &pebble_sub_param?/1)
   end
 
+  @spec pebble_sub_param?(Types.ir_expr()) :: boolean()
   defp pebble_sub_param?(%{op: op}) when op in [:int_literal, :c_int_expr, :msg_tag_expr], do: true
   defp pebble_sub_param?(_), do: false
 
+  @spec subscription_item_c_expr(Types.ir_expr()) :: subscription_mask_c_result()
   defp subscription_item_c_expr(%{op: :qualified_call, target: target, args: args})
        when is_binary(target) and is_list(args) do
     case SpecialValues.normalize_special_target(target) do
@@ -293,12 +310,14 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
     end
   end
 
+  @spec frame_subscription_c_expr([Types.ir_expr()]) :: subscription_mask_c_result()
   defp frame_subscription_c_expr([%{op: :int_literal, value: ms}, _to_msg]) when is_integer(ms) do
     "(ELMC_SUBSCRIPTION_FRAME_BASE + (#{clamp_frame_interval_ms(ms)} << 16))"
   end
 
   defp frame_subscription_c_expr(_args), do: nil
 
+  @spec frame_fps_subscription_c_expr([Types.ir_expr()]) :: subscription_mask_c_result()
   defp frame_fps_subscription_c_expr([%{op: :int_literal, value: fps}, _to_msg])
        when is_integer(fps) do
     "(ELMC_SUBSCRIPTION_FRAME_BASE + (#{clamp_frame_interval_ms(div(1000, max(fps, 1)))} << 16))"
@@ -321,13 +340,26 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
           has_frame: boolean()
         }
 
-  @type subscription_analysis :: subscription_mask_analysis | %{
+  @type subscription_analysis :: subscription_mask_analysis() | %{
           tag_masks: [String.t()],
           button_raw_count: non_neg_integer(),
           compact: boolean(),
           dynamic?: boolean(),
           has_frame: boolean(),
           model_dependent?: boolean()
+        }
+
+  @type optional_sub_item :: Types.ir_expr() | nil | :none
+
+  @type button_event :: :pressed | :released | :long_pressed
+
+  @type subscription_mask_c_result :: String.t() | nil
+
+  @type subscription_spec_acc :: %{
+          required(:tag_masks) => [String.t()],
+          required(:button_raw_count) => non_neg_integer(),
+          required(:dynamic?) => boolean(),
+          optional(:bindings) => %{String.t() => Types.ir_expr()}
         }
 
   @spec model_dependent?(map() | nil) :: boolean()
@@ -340,7 +372,7 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
 
   def model_dependent?(_), do: false
 
-  @spec analyze_subscription_masks(term()) :: subscription_mask_analysis()
+  @spec analyze_subscription_masks(Types.ir_expr() | term()) :: subscription_mask_analysis()
   def analyze_subscription_masks(expr) do
     acc = %{tag_masks: [], button_raw_count: 0, dynamic?: false, bindings: %{}}
     acc = collect_subscription_specs(expr, acc)
@@ -374,10 +406,12 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
     String.contains?(mask, "ELMC_SUBSCRIPTION_FRAME_BASE")
   end
 
+  @spec static_mask?(String.t()) :: boolean()
   defp static_mask?(mask) when is_binary(mask) do
     not frame_mask?(mask)
   end
 
+  @spec collect_subscription_specs(term(), subscription_spec_acc()) :: subscription_spec_acc()
   defp collect_subscription_specs(nil, acc), do: acc
 
   defp collect_subscription_specs(list, acc) when is_list(list) do
@@ -447,6 +481,8 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
   defp collect_subscription_specs(_expr, acc), do: acc
 
   @dialyzer :no_match
+  @spec collect_single_subscription_specs(String.t(), [Types.ir_expr()], subscription_spec_acc()) ::
+              subscription_spec_acc()
   defp collect_single_subscription_specs(normalized, args, acc) do
     case subscription_sub_expr(normalized, args) do
       %{op: :pebble_sub, mask: %{op: :c_int_expr, value: @button_raw_mask}} ->
@@ -467,6 +503,8 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
     end
   end
 
+  @spec expr_uses_param?(Types.ir_expr() | String.t(), String.t(), Types.var_name_set()) ::
+          boolean()
   defp expr_uses_param?(%{op: :var, name: name}, param, bound) when is_binary(name) do
     name == param and not MapSet.member?(bound, name)
   end

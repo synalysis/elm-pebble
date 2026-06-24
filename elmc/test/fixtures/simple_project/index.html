@@ -2884,10 +2884,11 @@ var $elm$core$Result$isOk = function (result) {
 };
 var $elm$json$Json$Decode$decodeValue = _Json_run;
 var $author$project$Pebble$Platform$LaunchUser = {$: 'LaunchUser'};
+var $author$project$Pebble$Platform$QuickLaunchNone = {$: 'QuickLaunchNone'};
 var $author$project$Pebble$Platform$Color = {$: 'Color'};
 var $author$project$Pebble$Platform$Rectangular = {$: 'Rectangular'};
 var $author$project$Pebble$Platform$defaultScreen = {colorMode: $author$project$Pebble$Platform$Color, height: 168, shape: $author$project$Pebble$Platform$Rectangular, width: 144};
-var $author$project$Pebble$Platform$defaultContext = {hasCompass: false, hasMicrophone: false, reason: $author$project$Pebble$Platform$LaunchUser, screen: $author$project$Pebble$Platform$defaultScreen, supportsHealth: true, watchModel: 'Pebble Time Steel', watchProfileId: 'basalt'};
+var $author$project$Pebble$Platform$defaultContext = {hasCompass: false, hasMicrophone: false, launchButton: $elm$core$Maybe$Nothing, quickLaunchAction: $author$project$Pebble$Platform$QuickLaunchNone, reason: $author$project$Pebble$Platform$LaunchUser, screen: $author$project$Pebble$Platform$defaultScreen, supportsHealth: true, watchModel: 'Pebble Time Steel', watchProfileId: 'basalt'};
 var $elm$json$Json$Decode$bool = _Json_decodeBool;
 var $elm$json$Json$Decode$field = _Json_decodeField;
 var $elm$json$Json$Decode$oneOf = _Json_oneOf;
@@ -2990,11 +2991,11 @@ var $author$project$Pebble$Platform$screenDecoder = A5(
 					$elm$json$Json$Decode$bool,
 					$author$project$Pebble$Platform$colorCapabilityIsColor($author$project$Pebble$Platform$defaultScreen.colorMode)))
 			])));
-var $author$project$Pebble$Platform$contextObjectDecoder = A8(
+var $author$project$Pebble$Platform$coreContextDecoder = A8(
 	$elm$json$Json$Decode$map7,
 	F7(
 		function (reason, watchModel, watchProfileId, screen, hasMicrophone, hasCompass, supportsHealth) {
-			return {hasCompass: hasCompass, hasMicrophone: hasMicrophone, reason: reason, screen: screen, supportsHealth: supportsHealth, watchModel: watchModel, watchProfileId: watchProfileId};
+			return {hasCompass: hasCompass, hasMicrophone: hasMicrophone, launchButton: $author$project$Pebble$Platform$defaultContext.launchButton, quickLaunchAction: $author$project$Pebble$Platform$defaultContext.quickLaunchAction, reason: reason, screen: screen, supportsHealth: supportsHealth, watchModel: watchModel, watchProfileId: watchProfileId};
 		}),
 	$elm$json$Json$Decode$oneOf(
 		_List_fromArray(
@@ -3033,6 +3034,66 @@ var $author$project$Pebble$Platform$contextObjectDecoder = A8(
 				A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'supports_health', $elm$json$Json$Decode$bool, $author$project$Pebble$Platform$defaultContext.supportsHealth),
 				A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'supportsHealth', $elm$json$Json$Decode$bool, $author$project$Pebble$Platform$defaultContext.supportsHealth)
 			])));
+var $author$project$Pebble$Button$Back = {$: 'Back'};
+var $author$project$Pebble$Button$Down = {$: 'Down'};
+var $author$project$Pebble$Button$Select = {$: 'Select'};
+var $author$project$Pebble$Button$Up = {$: 'Up'};
+var $author$project$Pebble$Platform$launchButtonFromString = function (value) {
+	return (value === 'Back') ? $elm$core$Maybe$Just($author$project$Pebble$Button$Back) : ((value === 'Up') ? $elm$core$Maybe$Just($author$project$Pebble$Button$Up) : ((value === 'Select') ? $elm$core$Maybe$Just($author$project$Pebble$Button$Select) : ((value === 'Down') ? $elm$core$Maybe$Just($author$project$Pebble$Button$Down) : $elm$core$Maybe$Nothing)));
+};
+var $author$project$Pebble$Platform$launchButtonFromTag = function (tag) {
+	return (tag < 0) ? $elm$core$Maybe$Nothing : ((!tag) ? $elm$core$Maybe$Just($author$project$Pebble$Button$Back) : ((tag === 1) ? $elm$core$Maybe$Just($author$project$Pebble$Button$Up) : ((tag === 2) ? $elm$core$Maybe$Just($author$project$Pebble$Button$Select) : ((tag === 3) ? $elm$core$Maybe$Just($author$project$Pebble$Button$Down) : $elm$core$Maybe$Nothing))));
+};
+var $elm$json$Json$Decode$null = _Json_decodeNull;
+var $author$project$Pebble$Platform$launchButtonDecoder = $elm$json$Json$Decode$oneOf(
+	_List_fromArray(
+		[
+			$elm$json$Json$Decode$null($elm$core$Maybe$Nothing),
+			A2($elm$json$Json$Decode$map, $author$project$Pebble$Platform$launchButtonFromTag, $elm$json$Json$Decode$int),
+			A2($elm$json$Json$Decode$map, $author$project$Pebble$Platform$launchButtonFromString, $elm$json$Json$Decode$string)
+		]));
+var $elm$json$Json$Decode$map2 = _Json_map2;
+var $author$project$Pebble$Platform$QuickLaunchCombo = {$: 'QuickLaunchCombo'};
+var $author$project$Pebble$Platform$QuickLaunchHold = {$: 'QuickLaunchHold'};
+var $author$project$Pebble$Platform$QuickLaunchTap = {$: 'QuickLaunchTap'};
+var $author$project$Pebble$Platform$QuickLaunchUnknown = {$: 'QuickLaunchUnknown'};
+var $author$project$Pebble$Platform$quickLaunchActionFromString = function (value) {
+	return (value === 'QuickLaunchNone') ? $author$project$Pebble$Platform$QuickLaunchNone : ((value === 'QuickLaunchHold') ? $author$project$Pebble$Platform$QuickLaunchHold : ((value === 'QuickLaunchTap') ? $author$project$Pebble$Platform$QuickLaunchTap : ((value === 'QuickLaunchCombo') ? $author$project$Pebble$Platform$QuickLaunchCombo : $author$project$Pebble$Platform$QuickLaunchUnknown)));
+};
+var $author$project$Pebble$Platform$quickLaunchActionFromTag = function (tag) {
+	return (!tag) ? $author$project$Pebble$Platform$QuickLaunchNone : ((tag === 1) ? $author$project$Pebble$Platform$QuickLaunchHold : ((tag === 2) ? $author$project$Pebble$Platform$QuickLaunchTap : ((tag === 3) ? $author$project$Pebble$Platform$QuickLaunchCombo : $author$project$Pebble$Platform$QuickLaunchUnknown)));
+};
+var $author$project$Pebble$Platform$quickLaunchActionDecoder = $elm$json$Json$Decode$oneOf(
+	_List_fromArray(
+		[
+			A2($elm$json$Json$Decode$map, $author$project$Pebble$Platform$quickLaunchActionFromString, $elm$json$Json$Decode$string),
+			A2($elm$json$Json$Decode$map, $author$project$Pebble$Platform$quickLaunchActionFromTag, $elm$json$Json$Decode$int)
+		]));
+var $author$project$Pebble$Platform$launchMetadataDecoder = A3(
+	$elm$json$Json$Decode$map2,
+	F2(
+		function (launchButton, quickLaunchAction) {
+			return {launchButton: launchButton, quickLaunchAction: quickLaunchAction};
+		}),
+	$elm$json$Json$Decode$oneOf(
+		_List_fromArray(
+			[
+				A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'launch_button', $author$project$Pebble$Platform$launchButtonDecoder, $author$project$Pebble$Platform$defaultContext.launchButton),
+				A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'launchButton', $author$project$Pebble$Platform$launchButtonDecoder, $author$project$Pebble$Platform$defaultContext.launchButton)
+			])),
+	$elm$json$Json$Decode$oneOf(
+		_List_fromArray(
+			[
+				A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'quick_launch_action', $author$project$Pebble$Platform$quickLaunchActionDecoder, $author$project$Pebble$Platform$defaultContext.quickLaunchAction),
+				A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'quickLaunchAction', $author$project$Pebble$Platform$quickLaunchActionDecoder, $author$project$Pebble$Platform$defaultContext.quickLaunchAction)
+			])));
+var $author$project$Pebble$Platform$mergeLaunchMetadata = F2(
+	function (context, launch) {
+		return _Utils_update(
+			context,
+			{launchButton: launch.launchButton, quickLaunchAction: launch.quickLaunchAction});
+	});
+var $author$project$Pebble$Platform$contextObjectDecoder = A3($elm$json$Json$Decode$map2, $author$project$Pebble$Platform$mergeLaunchMetadata, $author$project$Pebble$Platform$coreContextDecoder, $author$project$Pebble$Platform$launchMetadataDecoder);
 var $author$project$Pebble$Platform$launchContextDecoder = $author$project$Pebble$Platform$contextObjectDecoder;
 var $author$project$Pebble$Platform$decodeLaunchContext = function (flags) {
 	var _v0 = A2($elm$json$Json$Decode$decodeValue, $author$project$Pebble$Platform$launchContextDecoder, flags);
@@ -3203,14 +3264,11 @@ var $author$project$Main$init = function (launchContext) {
 				])));
 };
 var $author$project$Main$AccelTap = {$: 'AccelTap'};
-var $author$project$Pebble$Button$Down = {$: 'Down'};
 var $author$project$Main$DownPressed = {$: 'DownPressed'};
-var $author$project$Pebble$Button$Select = {$: 'Select'};
 var $author$project$Main$SelectPressed = {$: 'SelectPressed'};
 var $author$project$Main$Tick = function (a) {
 	return {$: 'Tick', a: a};
 };
-var $author$project$Pebble$Button$Up = {$: 'Up'};
 var $author$project$Main$UpPressed = {$: 'UpPressed'};
 var $elm$core$Platform$Sub$batch = _Platform_batch;
 var $elm$core$Platform$Sub$none = $elm$core$Platform$Sub$batch(_List_Nil);

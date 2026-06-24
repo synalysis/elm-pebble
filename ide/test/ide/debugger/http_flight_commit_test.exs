@@ -41,6 +41,38 @@ defmodule Ide.Debugger.HttpFlightCommitTest do
     assert [%{"followup_message" => "SvgReceived"}] = Map.get(committed, :pending_http_followups)
   end
 
+  test "commit merges watch surface updates produced during companion http flight" do
+    basis = %{
+      debugger_seq: 1,
+      seq: 1,
+      debugger_timeline: [],
+      events: [],
+      app_message_queues: %{watch: [], companion: [], phone: []},
+      watch: %{model: %{"runtime_model" => %{"temperature" => %{"ctor" => "Just", "args" => [%{"ctor" => "Celsius", "args" => [0]}]}}}},
+      companion: %{model: %{"runtime_model" => %{"lastResponse" => 0}}},
+      phone: %{model: %{}}
+    }
+
+    current = basis
+
+    applied =
+      basis
+      |> put_in([:watch, :model, "runtime_model", "temperature"], %{
+        "ctor" => "Just",
+        "args" => [%{"ctor" => "Celsius", "args" => [21]}]
+      })
+      |> put_in([:companion, :model, "runtime_model", "lastResponse"], 21)
+      |> Map.put(:debugger_seq, 2)
+
+    committed = HttpFlightCommit.commit(current, applied, basis, :companion)
+
+    assert get_in(committed, [:watch, :model, "runtime_model", "temperature"]) == %{
+             "ctor" => "Just",
+             "args" => [%{"ctor" => "Celsius", "args" => [21]}]
+           }
+    assert get_in(committed, [:companion, :model, "runtime_model", "lastResponse"]) == 21
+  end
+
   test "commit appends protocol deliveries instead of replacing in-flight queue" do
     basis = %{
       debugger_seq: 1,

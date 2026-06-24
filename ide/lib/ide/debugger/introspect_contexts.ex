@@ -40,6 +40,9 @@ defmodule Ide.Debugger.IntrospectContexts do
                                                  String.t(),
                                                  [Types.runtime_followup_row()] ->
                                                    Types.runtime_state()),
+          required(:apply_init_device_data) => (Types.runtime_state(),
+                                                Types.surface_target() ->
+                                                  Types.runtime_state()),
           required(:protocol_rx_ctx) => (-> ProtocolRx.ctx()),
           required(:drain_app_message_queue) => (Types.runtime_state(), Types.surface_target() ->
                                                    Types.runtime_state())
@@ -67,6 +70,7 @@ defmodule Ide.Debugger.IntrospectContexts do
       append_debugger_event: host.append_debugger_event,
       runtime_status_after_init: host.runtime_status_after_init,
       apply_runtime_followups: host.apply_runtime_followups,
+      apply_init_device_data: host.apply_init_device_data,
       drain_app_message_queue: fn st, target ->
         ProtocolRx.drain_message_queue(st, target, host.protocol_rx_ctx.())
       end,

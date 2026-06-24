@@ -68,30 +68,34 @@ defmodule Ide.ProjectsTest do
     template_src = Paths.priv_path("project_templates/starter_watch")
     backup = template_src <> ".test_bak.#{System.unique_integer([:positive])}"
 
-    if File.dir?(template_src) do
-      File.rename!(template_src, backup)
+    :global.trans({:ide, :starter_watch_template_test_lock}, fn ->
+      if File.dir?(template_src) do
+        File.rename!(template_src, backup)
 
-      on_exit(fn ->
-        if File.dir?(backup) and not File.dir?(template_src) do
-          File.rename!(backup, template_src)
+        try do
+          assert {:error, {:missing_template_asset, missing_path}} =
+                   Projects.create_project(%{
+                     "name" => "Bootstrap Failure",
+                     "slug" => slug,
+                     "target_type" => "app"
+                   })
+
+          assert missing_path =~ "starter_watch"
+
+          workspace = Path.join(Projects.projects_root(), slug)
+          refute File.exists?(workspace)
+          refute Projects.get_project_by_slug(slug)
+        after
+          if File.dir?(backup) and not File.dir?(template_src) do
+            File.rename!(backup, template_src)
+          end
         end
-      end)
-    else
-      flunk("starter_watch template missing at #{template_src}")
-    end
 
-    assert {:error, {:missing_template_asset, missing_path}} =
-             Projects.create_project(%{
-               "name" => "Bootstrap Failure",
-               "slug" => slug,
-               "target_type" => "app"
-             })
-
-    assert missing_path =~ "starter_watch"
-
-    workspace = Path.join(Projects.projects_root(), slug)
-    refute File.exists?(workspace)
-    refute Projects.get_project_by_slug(slug)
+        :ok
+      else
+        flunk("starter_watch template missing at #{template_src}")
+      end
+    end)
   end
 
   test "project ownership scopes slugs and workspaces" do

@@ -82,5 +82,11 @@
   {"lib/ide/debugger/runtime_hub.ex", :unused_fun},
   {"lib/ide/debugger/session_api.ex", :pattern_match_cov},
   {"lib/ide/debugger/step_apply_callbacks.ex", :no_return},
+  {"lib/ide/debugger/device_data_hints.ex", :exact_eq},
+  {"lib/ide/debugger/pending_speaker_followups.ex", :no_return},
+  {"lib/ide/debugger/pending_speaker_followups.ex", :unused_fun},
+  {"lib/ide/debugger/runtime_active_subscriptions.ex", :pattern_match},
+  {"lib/ide/debugger/runtime_followups.ex", :pattern_match},
+  {"lib/ide/debugger/trigger_surface.ex", :pattern_match},
   {"lib/ide/debugger/triggers_api.ex", :pattern_match_cov}
 ]

@@ -56,6 +56,8 @@ defmodule Elmc.Backend.CCodegen.TypeParsing do
     |> Enum.map(&String.trim/1)
   end
 
+  @spec split_top_level_arrows([String.t()], [String.t()], String.t(), non_neg_integer()) ::
+          [String.t()]
   defp split_top_level_arrows(["-" | [">" | rest]], parts, current, 0) do
     split_top_level_arrows(rest, [current | parts], "", 0)
   end
@@ -77,6 +79,7 @@ defmodule Elmc.Backend.CCodegen.TypeParsing do
 
   defp split_top_level_arrows([], parts, current, _depth), do: Enum.reverse([current | parts])
 
+  @spec strip_wrapping_parens(String.t()) :: String.t()
   defp strip_wrapping_parens("(" <> rest = type) do
     if String.ends_with?(type, ")") do
       rest

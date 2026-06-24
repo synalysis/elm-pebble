@@ -60,6 +60,8 @@ defmodule Ide.Debugger.SubscriptionPayload do
     end
   end
 
+  def attach(_state, _target, message, _trigger, _ctx) when is_binary(message), do: message
+
   @spec runtime_formatted_message(String.t(), Types.subscription_payload() | nil) ::
           String.t() | nil
   defp runtime_formatted_message(message_text, value) when is_binary(message_text) do
@@ -77,10 +79,6 @@ defmodule Ide.Debugger.SubscriptionPayload do
         nil
     end
   end
-
-  defp runtime_formatted_message(_message_text, _value), do: nil
-
-  def attach(_state, _target, message, _trigger, _ctx) when is_binary(message), do: message
 
   @spec message_has_payload?(String.t()) :: boolean()
   def message_has_payload?(message) when is_binary(message) do

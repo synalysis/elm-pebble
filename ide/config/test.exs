@@ -44,9 +44,6 @@ config :ide, :debugger_async_companion_bootstrap, false
 # Run debugger start inline in tests so LiveView assertions see a finished bootstrap.
 config :ide, :debugger_sync_bootstrap, true
 
-# Apply HTTP follow-ups synchronously in tests (deterministic Agent state).
-config :ide, :debugger_async_http_followups, false
-
 # Deliver AppMessage subscription effects synchronously in tests.
 config :ide, :debugger_async_protocol_delivery, false
 

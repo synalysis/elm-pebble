@@ -334,7 +334,7 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   """
   @spec maybe_unwrap_var_branch(
           Types.compile_env(),
-          map(),
+          Types.case_branch(),
           Types.subject_ref(),
           integer(),
           Types.case_subject() | nil
@@ -362,6 +362,11 @@ defmodule Elmc.Backend.CCodegen.Patterns do
     end
   end
 
+  @spec put_maybe_unwrapped_var_type(
+          Types.compile_env(),
+          Types.case_subject(),
+          String.t()
+        ) :: Types.compile_env()
   defp put_maybe_unwrapped_var_type(env, case_subject, bind) when not is_nil(case_subject) do
     subject_expr =
       case case_subject do
@@ -377,6 +382,8 @@ defmodule Elmc.Backend.CCodegen.Patterns do
 
   defp put_maybe_unwrapped_var_type(env, _case_subject, _bind), do: env
 
+  @spec put_just_bind_var_type(Types.compile_env(), Types.subject_ref(), String.t() | nil) ::
+          Types.compile_env()
   defp put_just_bind_var_type(env, _subject_ref, bind) when bind in [nil, "", "_"], do: env
 
   defp put_just_bind_var_type(env, subject_ref, bind) when is_binary(bind) and is_binary(subject_ref) do
@@ -424,6 +431,7 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   defp pattern_subject_ref(%{"name" => name}) when is_binary(name), do: name
   defp pattern_subject_ref(subject_ref), do: inspect(subject_ref)
 
+  @spec list_int_subject?(Types.compile_env(), String.t()) :: boolean()
   defp list_int_subject?(env, subject_ref) when is_binary(subject_ref) do
     env
     |> Map.get(:__var_types__, %{})
@@ -431,6 +439,8 @@ defmodule Elmc.Backend.CCodegen.Patterns do
     |> Kernel.==("List Int")
   end
 
+  @spec maybe_mark_list_int_cons(Types.compile_env(), Types.pattern(), Types.pattern(), boolean()) ::
+          Types.compile_env()
   defp maybe_mark_list_int_cons(env, head, tail, true) do
     env
     |> mark_list_int_head(head)
@@ -439,6 +449,7 @@ defmodule Elmc.Backend.CCodegen.Patterns do
 
   defp maybe_mark_list_int_cons(env, _head, _tail, _list_int?), do: env
 
+  @spec mark_list_int_head(Types.compile_env(), Types.pattern()) :: Types.compile_env()
   defp mark_list_int_head(env, %{kind: :var, name: name}) when name not in ["_", ""] do
     env
     |> EnvBindings.put_boxed_int_binding(name, true)
@@ -447,6 +458,7 @@ defmodule Elmc.Backend.CCodegen.Patterns do
 
   defp mark_list_int_head(env, _pattern), do: env
 
+  @spec mark_list_int_tail(Types.compile_env(), Types.pattern()) :: Types.compile_env()
   defp mark_list_int_tail(env, %{kind: :var, name: name}) when name not in ["_", ""] do
     EnvBindings.put_var_type(env, name, "List Int")
   end
@@ -470,6 +482,11 @@ defmodule Elmc.Backend.CCodegen.Patterns do
     " && (#{pattern_condition(value_ref, arg_pattern)})"
   end
 
+  @spec put_pattern_field_record_shape(
+          Types.compile_env(),
+          String.t(),
+          Types.record_field_names() | term()
+        ) :: Types.compile_env()
   defp put_pattern_field_record_shape(env, name, shape) when is_list(shape) do
     shapes = Map.get(env, :__record_shapes__, %{})
     Map.put(env, :__record_shapes__, Map.put(shapes, EnvBindings.binding_key(name), shape))
@@ -477,10 +494,12 @@ defmodule Elmc.Backend.CCodegen.Patterns do
 
   defp put_pattern_field_record_shape(env, _name, _shape), do: env
 
+  @spec bool_constructor_name(Types.pattern() | map()) :: String.t() | nil
   defp bool_constructor_name(%{resolved_name: name}) when name in ["True", "False"], do: name
   defp bool_constructor_name(%{name: name}) when name in ["True", "False"], do: name
   defp bool_constructor_name(_), do: nil
 
+  @spec bool_constructor_condition(String.t(), boolean()) :: String.t()
   defp bool_constructor_condition(subject_ref, true_value?) do
     bool_match =
       if true_value? do
@@ -499,18 +518,22 @@ defmodule Elmc.Backend.CCodegen.Patterns do
     "(#{subject_ref}) && (#{bool_match} || #{int_match})"
   end
 
+  @spec order_constructor_name(Types.pattern() | map()) :: String.t() | nil
   defp order_constructor_name(%{resolved_name: name}) when name in ["LT", "EQ", "GT"], do: name
   defp order_constructor_name(%{name: name}) when name in ["LT", "EQ", "GT"], do: name
   defp order_constructor_name(_), do: nil
 
+  @spec order_scalar(String.t()) :: -1 | 0 | 1
   defp order_scalar("LT"), do: -1
   defp order_scalar("EQ"), do: 0
   defp order_scalar("GT"), do: 1
 
+  @spec order_constructor_condition(String.t(), integer()) :: String.t()
   defp order_constructor_condition(subject_ref, scalar) do
     "(#{subject_ref}) && (#{subject_ref})->tag == ELMC_TAG_ORDER && elmc_as_int(#{subject_ref}) == #{scalar}"
   end
 
+  @spec nest_tuple_pattern([Types.pattern()]) :: Types.pattern()
   defp nest_tuple_pattern([left, right]) do
     %{kind: :tuple, elements: [left, right]}
   end

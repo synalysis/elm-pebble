@@ -4,6 +4,8 @@ defmodule Ide.Debugger.ConfigurationApi do
   alias Ide.Debugger.AgentSession
   alias Ide.Debugger.ConfigurationReload
   alias Ide.Debugger.ConfigurationSession
+  alias Ide.Debugger.RuntimeBackgroundDrains
+  alias Ide.Debugger.RuntimeExecutorConfig
   alias Ide.Debugger.Types
 
   @type runtime_state :: Types.RuntimeState.t() | Types.RuntimeState.wire_map()
@@ -11,10 +13,17 @@ defmodule Ide.Debugger.ConfigurationApi do
   @spec save_configuration(String.t(), Types.save_configuration_attrs()) :: {:ok, runtime_state()}
   def save_configuration(project_slug, values) when is_binary(project_slug) and is_map(values) do
     AgentSession.with_hosts(fn hosts ->
-      AgentSession.mutate(
-        project_slug,
-        &ConfigurationSession.save(&1, project_slug, values, hosts.configuration_session)
-      )
+      with {:ok, _state} <-
+             AgentSession.mutate(
+               project_slug,
+               &ConfigurationSession.save(&1, project_slug, values, hosts.configuration_session)
+             ) do
+        :ok = RuntimeBackgroundDrains.await_idle(project_slug)
+
+        AgentSession.mutate(project_slug, fn state ->
+          RuntimeExecutorConfig.refresh_for_target(state, :watch)
+        end)
+      end
     end)
   end
 

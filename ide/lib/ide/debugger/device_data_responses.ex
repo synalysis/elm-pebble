@@ -7,6 +7,7 @@ defmodule Ide.Debugger.DeviceDataResponses do
   alias Ide.Debugger.RuntimeFollowups
   alias Ide.Debugger.RuntimeModelMessages
   alias Ide.Debugger.Surface
+  alias Ide.Debugger.TimelineMessage
   alias Ide.Debugger.Types
 
   @type apply_ctx :: %{
@@ -140,6 +141,24 @@ defmodule Ide.Debugger.DeviceDataResponses do
     |> apply_request_list(state, target, ctx)
   end
 
+  @spec apply_init_device_responses(
+          Types.runtime_state(),
+          Types.surface_target(),
+          apply_ctx()
+        ) :: Types.runtime_state()
+  def apply_init_device_responses(state, target, ctx)
+      when is_map(state) and target in [:watch, :companion, :phone] and is_map(ctx) do
+    surface = Surface.from_state(state, target)
+    model = Surface.app_model(surface)
+
+    state
+    |> requests_for_surface(target, "init")
+    |> Enum.reject(&DeviceData.init_request_already_satisfied?(model, &1))
+    |> apply_request_list(state, target, ctx)
+  end
+
+  def apply_init_device_responses(state, _target, _ctx), do: state
+
   @spec reject_covered_device_requests([Types.device_request()], [String.t()]) ::
           [Types.device_request()]
   defp reject_covered_device_requests(requests, []), do: requests
@@ -235,33 +254,34 @@ defmodule Ide.Debugger.DeviceDataResponses do
         DeviceData.response_wire_for_callback(introspect, model, ctor, nil)
 
     step_message =
-      cond do
-        is_map(wire_value) and is_binary(ctor) and ctor != "" ->
-          ctor
+      case DeviceData.response_message(req) do
+        message when is_binary(message) and message != "" -> message
+        _ -> ctor
+      end
 
-        true ->
-          case DeviceData.response_message(req) do
-            message when is_binary(message) and message != "" -> message
-            _ -> ctor
-          end
+    formatted_message =
+      if is_binary(step_message) and step_message != "" and not is_nil(wire_value) do
+        TimelineMessage.format(step_message, wire_value)
+      else
+        step_message
       end
 
     cond do
-      is_binary(step_message) and step_message != "" and is_map(wire_value) ->
+      is_binary(formatted_message) and formatted_message != "" and is_map(wire_value) ->
         ctx.apply_step_once.(
           state,
           target,
-          step_message,
+          formatted_message,
           wire_value,
           "device_data",
           "device_data"
         )
 
-      is_binary(step_message) and step_message != "" ->
+      is_binary(formatted_message) and formatted_message != "" ->
         ctx.apply_step_once.(
           state,
           target,
-          step_message,
+          formatted_message,
           wire_value,
           "device_data",
           "device_data"

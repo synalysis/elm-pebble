@@ -81,19 +81,22 @@ defmodule Ide.Debugger.CompanionBridge.SimulatorStore do
   def storage_value_to_elm_value(value), do: %{"ctor" => "JsonValue", "args" => [value]}
 
   @spec command_value_to_storage_value(Types.simulator_command_input()) :: Types.StorageValue.t()
-  def command_value_to_storage_value(%{"$ctor" => ctor, "$args" => [value | _]})
+  def command_value_to_storage_value(%{"$ctor" => ctor, "$args" => [value | _]}),
+    do: command_value_to_storage_value(%{"ctor" => ctor, "args" => [value]})
+
+  def command_value_to_storage_value(%{"ctor" => ctor, "args" => [value | _]})
       when ctor in ["StringValue", "Storage.StringValue"] and is_binary(value),
       do: %{"kind" => "string", "value" => value}
 
-  def command_value_to_storage_value(%{"$ctor" => ctor, "$args" => [value | _]})
+  def command_value_to_storage_value(%{"ctor" => ctor, "args" => [value | _]})
       when ctor in ["IntValue", "Storage.IntValue"] and is_integer(value),
       do: %{"kind" => "int", "value" => value}
 
-  def command_value_to_storage_value(%{"$ctor" => ctor, "$args" => [value | _]})
+  def command_value_to_storage_value(%{"ctor" => ctor, "args" => [value | _]})
       when ctor in ["BoolValue", "Storage.BoolValue"] and is_boolean(value),
       do: %{"kind" => "bool", "value" => value}
 
-  def command_value_to_storage_value(%{"$ctor" => _ctor, "$args" => [value | _]}),
+  def command_value_to_storage_value(%{"ctor" => _ctor, "args" => [value | _]}),
     do: %{"kind" => "json", "value" => value}
 
   def command_value_to_storage_value(value), do: %{"kind" => "json", "value" => value}

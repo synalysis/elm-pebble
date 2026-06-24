@@ -2,9 +2,12 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.Tuple2CaseTable
+  alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
 
   @type callee_key :: {String.t(), String.t()}
+  @type callee_key_set :: MapSet.t(callee_key())
+  @type var_name_set :: MapSet.t(String.t())
 
   @spec ok(String.t(), [callee_key()]) :: {:ok, String.t(), [callee_key()]}
   def ok(code, runtime_callees \\ []), do: {:ok, code, runtime_callees}
@@ -71,6 +74,7 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
     end
   end
 
+  @spec resolve_product(map(), String.t(), String.t(), String.t()) :: {:ok, integer()} | :error
   defp resolve_product(decl_map, module_name, a, b) do
     with {:ok, ac} <- resolve_int_constant(decl_map, module_name, a),
          {:ok, bc} <- resolve_int_constant(decl_map, module_name, b) do
@@ -91,6 +95,7 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
     end
   end
 
+  @spec flat_list_index_uses_cols?(Types.ir_expr() | map(), String.t()) :: boolean()
   defp flat_list_index_uses_cols?(expr, cols_var) do
     case expr do
       %{op: :qualified_call, target: "Maybe.withDefault", args: [_default, index_expr]} ->
@@ -119,6 +124,7 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
     end
   end
 
+  @spec index_lt_zero?(Types.ir_expr() | map()) :: boolean()
   defp index_lt_zero?(%{
          op: :compare,
          left: %{op: :var, name: "index"},
@@ -141,10 +147,12 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
 
   defp index_lt_zero?(_), do: false
 
+  @spec maybe_nothing?(Types.ir_expr() | map()) :: boolean()
   defp maybe_nothing?(%{union_ctor: "Maybe.Nothing"}), do: true
   defp maybe_nothing?(%{op: :int_literal, union_ctor: "Maybe.Nothing"}), do: true
   defp maybe_nothing?(_), do: false
 
+  @spec nth_maybe_body?(Types.ir_expr() | map()) :: boolean()
   defp nth_maybe_body?(%{
          op: :runtime_call,
          function: "elmc_list_nth_maybe",
@@ -157,6 +165,7 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
 
   defp nth_maybe_body?(_), do: false
 
+  @spec list_drop_index_values?(Types.ir_expr() | map()) :: boolean()
   defp list_drop_index_values?(%{
          op: :qualified_call,
          target: target,
@@ -254,6 +263,7 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
 
   def cols_from_row_mul_plus_col(_), do: :error
 
+  @spec cols_from_mul_cols_var(Types.ir_expr() | map()) :: {:ok, String.t()} | :error
   defp cols_from_mul_cols_var(%{op: :call, name: mul, args: [_row, %{op: :var, name: cols_var}]})
        when mul in @mul_ops and is_binary(cols_var),
        do: {:ok, cols_var}
@@ -322,6 +332,7 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
 
   def two_arg_row_board_call?(_, _), do: false
 
+  @spec board_var?(Types.ir_expr() | map(), String.t()) :: boolean()
   defp board_var?(%{op: :var, name: name}, board_var), do: name == board_var
   defp board_var?(_, _), do: false
 
@@ -348,6 +359,7 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
   @spec sub_one_dim_vars(map() | list() | any()) :: [String.t()]
   def sub_one_dim_vars(expr), do: sub_one_dim_vars(expr, []) |> Enum.uniq()
 
+  @spec sub_one_dim_vars(Types.ir_expr() | map() | list() | term(), [String.t()]) :: [String.t()]
   defp sub_one_dim_vars(%{op: :sub_const, var: var, value: 1}, acc) when is_binary(var),
     do: [var | acc]
 
@@ -379,6 +391,7 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
     end
   end
 
+  @spec expr_var_names(Types.ir_expr() | map() | list() | term(), var_name_set()) :: var_name_set()
   defp expr_var_names(%{op: :var, name: name}, acc) when is_binary(name), do: MapSet.put(acc, name)
 
   defp expr_var_names(%{op: :call, name: name, args: []}, acc) when is_binary(name),
@@ -414,6 +427,8 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
     |> MapSet.to_list()
   end
 
+  @spec collect_call_keys(Types.ir_expr() | map() | list() | term(), String.t(), callee_key_set()) ::
+          callee_key_set()
   defp collect_call_keys(%{op: :qualified_call, target: target, args: args}, module_name, acc) do
     acc = MapSet.put(acc, callee_key(module_name, target))
     Enum.reduce(args || [], acc, &collect_call_keys(&1, module_name, &2))

@@ -419,6 +419,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
     )
   end
 
+  @spec float_operator_name(String.t()) :: String.t()
   defp float_operator_name("+"), do: "__add__"
   defp float_operator_name("-"), do: "__sub__"
   defp float_operator_name("*"), do: "__mul__"
@@ -463,6 +464,13 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
     int_binop_dispatch(left, right, operator, env, counter)
   end
 
+  @spec int_binop_dispatch(
+          Types.ir_expr(),
+          Types.ir_expr(),
+          String.t(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
   defp int_binop_dispatch(left, right, operator, env, counter) when operator in ["+", "-", "*"] do
     case ConstantInt.literal_binop(operator, left, right, env) do
       {:ok, value} ->
@@ -477,6 +485,13 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
     int_binop_dispatch_values(left, right, operator, env, counter)
   end
 
+  @spec int_binop_dispatch_values(
+          Types.ir_expr(),
+          Types.ir_expr(),
+          String.t(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
   defp int_binop_dispatch_values(left, right, operator, env, counter) do
     cond do
       both_native_int_operands?(left, right, env) ->
@@ -528,10 +543,13 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
 
   @spec both_native_int_operands?(Types.ir_expr(), Types.ir_expr(), Types.compile_env()) ::
           boolean()
+  @spec both_native_int_operands?(Types.ir_expr(), Types.ir_expr(), Types.compile_env()) ::
+          boolean()
   defp both_native_int_operands?(left, right, env) do
     native_int_operand_available?(left, env) and native_int_operand_available?(right, env)
   end
 
+  @spec native_int_operand_available?(Types.ir_expr(), Types.compile_env()) :: boolean()
   @spec native_int_operand_available?(Types.ir_expr(), Types.compile_env()) :: boolean()
   defp native_int_operand_available?(%{op: :var, name: name}, env)
        when is_binary(name) or is_atom(name) do
@@ -542,6 +560,11 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
   defp native_int_operand_available?(expr, env),
     do: Host.native_int_expr?(expr, env) or ConstantInt.native_let_value?(expr, env)
 
+  @spec compile_native_int_operand(
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: {String.t(), String.t(), Types.compile_counter()}
   @spec compile_native_int_operand(
           Types.ir_expr(),
           Types.compile_env(),
@@ -716,6 +739,12 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
     end
   end
 
+  @spec list_int_compare_safe?(
+          String.t(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env()
+        ) :: boolean()
   defp list_int_compare_safe?(operator, left, right, env)
        when operator in ["__eq__", "__neq__"] do
     TypedReturn.list_int_expr?(left, env) and TypedReturn.list_int_expr?(right, env)
@@ -723,6 +752,13 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
 
   defp list_int_compare_safe?(_operator, _left, _right, _env), do: false
 
+  @spec list_int_compare_operator(
+          Types.ir_expr(),
+          Types.ir_expr(),
+          String.t(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
   defp list_int_compare_operator(left, right, operator, env, counter) do
     {left_code, left_var, counter, left_borrowed?} = compile_compare_operand(left, env, counter)
 
@@ -745,6 +781,11 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
     {code, out, next}
   end
 
+  @spec compile_compare_operand(
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: {String.t(), String.t(), Types.compile_counter(), boolean()}
   defp compile_compare_operand(%{op: :var, name: name}, env, counter) do
     case EnvBindings.lookup_binding(env, name) do
       source when is_binary(source) ->
@@ -766,12 +807,14 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
     {code, var, counter, false}
   end
 
+  @spec compare_operand_release(Types.compile_env(), String.t(), boolean()) :: String.t()
   defp compare_operand_release(_env, _var, true), do: ""
 
   defp compare_operand_release(env, var, false) do
     OwnershipCompile.release_if_owned(env, var, :compare)
   end
 
+  @spec c_identifier?(String.t()) :: boolean()
   defp c_identifier?(value) when is_binary(value),
     do: Regex.match?(~r/^[A-Za-z_][A-Za-z0-9_]*$/, value)
 
@@ -831,9 +874,16 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
     {code, out, next}
   end
 
+  @spec binop_operand_release(String.t(), String.t()) :: String.t()
   defp binop_operand_release(var, out) when var == out, do: ""
   defp binop_operand_release(var, _out), do: "elmc_release(#{var});"
 
+  @spec retain_declared_out_operand(
+          String.t(),
+          String.t(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
   defp retain_declared_out_operand(code, var, env, counter) do
     if MapSet.member?(Map.get(env, :__declared_outs__, MapSet.new()), var) do
       {retain_var, next} = CaseCompile.fresh_var(counter, env)
@@ -848,6 +898,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
     end
   end
 
+  @spec ambient_math_constant_resolvable?(Types.compile_env(), String.t()) :: boolean()
   defp ambient_math_constant_resolvable?(env, name) when is_binary(name) do
     not Map.has_key?(env, name) and
       is_nil(EnvBindings.lookup_binding(env, name)) and

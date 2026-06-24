@@ -9,6 +9,7 @@ defmodule ElmEx.IR.Types do
   @type declaration :: Declaration.t()
   @type diagnostic :: Diagnostic.t()
   @type expr :: Expr.t()
+  @type import_resolution :: Lookup.import_resolution_t()
   @type lookup :: Lookup.t()
   @type module_t :: Module.t()
   @type pattern :: Pattern.t()

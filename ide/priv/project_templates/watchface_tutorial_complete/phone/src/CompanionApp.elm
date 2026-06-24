@@ -75,8 +75,8 @@ update msg model =
                         { url = "https://api.open-meteo.com/v1/forecast?" ++ locationQuery location ++ "&current=temperature_2m,weather_code&forecast_days=1"
                         , expect =
                             Http.expectJson
-                                WeatherReceived
                                 weatherReportDecoder
+                                WeatherReceived
                         }
 
             in

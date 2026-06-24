@@ -220,9 +220,11 @@ defmodule Ide.Debugger.DeviceDataHints do
 
   defp unique_scalar_runtime_model_key(_model, _runtime_model, _kind), do: :error
 
-  defp scalar_kind?(value, :string), do: is_binary(value)
-  defp scalar_kind?(value, :integer), do: is_integer(value)
-  defp scalar_kind?(value, :boolean), do: is_boolean(value)
+  defp scalar_kind?(value, kind) when kind in [:string, :integer, :boolean] do
+    (kind == :string and is_binary(value)) or
+      (kind == :integer and is_integer(value)) or
+      (kind == :boolean and is_boolean(value))
+  end
 
   @spec maybe_put_device_preview(Types.app_model(), Types.device_request()) :: Types.app_model()
   defp maybe_put_device_preview(model, req) when is_map(model) and is_map(req) do

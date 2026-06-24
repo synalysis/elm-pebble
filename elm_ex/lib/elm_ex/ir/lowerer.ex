@@ -14,19 +14,11 @@ defmodule ElmEx.IR.Lowerer do
   alias ElmEx.IR.Types.{Diagnostic, Expr, Lookup, Pattern}
 
   @typep name() :: String.t() | nil
-  @typep payload_kind() :: :none | :single | :multi | :function_like
+  @typep payload_kind() :: Lookup.payload_kind()
 
   @pebble_ui_window_stack_tag 1000
   @pebble_ui_window_node_tag 1001
   @pebble_ui_canvas_layer_tag 1002
-
-  @dialyzer [
-    {:nowarn_function, rewrite_expr: 2},
-    {:nowarn_function, rewrite_case_subject: 2},
-    {:nowarn_function, resolve_constructor_tag: 2},
-    {:nowarn_function, build_constructor_payload: 1},
-    {:nowarn_function, lower_declaration: 3}
-  ]
 
   @spec lower_project(Project.t()) :: {:ok, IR.t()}
   def lower_project(%Project{} = project) do
@@ -847,7 +839,7 @@ defmodule ElmEx.IR.Lowerer do
 
   defp builtin_type_name?(_name), do: false
 
-  @spec resolve_alias(String.t(), map()) :: String.t()
+  @spec resolve_alias(String.t(), Lookup.t()) :: String.t()
   defp resolve_alias(target, lookup) when is_binary(target),
     do: ImportResolution.resolve(target, lookup)
 

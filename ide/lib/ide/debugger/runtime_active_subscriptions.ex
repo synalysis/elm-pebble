@@ -1,6 +1,7 @@
 defmodule Ide.Debugger.RuntimeActiveSubscriptions do
   @moduledoc false
 
+  alias Ide.Debugger.CompanionSubscriptionTrigger
   alias Ide.Debugger.IntrospectAccess
   alias Ide.Debugger.RuntimeModelMessages
   alias Ide.Debugger.Surface
@@ -44,7 +45,8 @@ defmodule Ide.Debugger.RuntimeActiveSubscriptions do
       command_trigger = command_trigger_id(command)
       command_message = command_message(command)
 
-      command_trigger == row_trigger and messages_compatible?(row_message, command_message)
+      triggers_equivalent?(row_trigger, command_trigger) and
+        messages_compatible?(row_message, command_message)
     end)
   end
 
@@ -63,7 +65,8 @@ defmodule Ide.Debugger.RuntimeActiveSubscriptions do
       command_trigger = command_trigger_id(command)
       command_message = command_message(command)
 
-      command_trigger == row_trigger and messages_compatible?(row_message, command_message)
+      triggers_equivalent?(row_trigger, command_trigger) and
+        messages_compatible?(row_message, command_message)
     end)
   end
 
@@ -125,10 +128,11 @@ defmodule Ide.Debugger.RuntimeActiveSubscriptions do
     active = for_surface(state, target)
 
     Enum.find(active, fn command ->
-      command_trigger_id(command) == normalized and command_message(command) != ""
+      triggers_equivalent?(normalized, command_trigger_id(command)) and
+        command_message(command) != ""
     end) ||
       Enum.find(active, fn command ->
-        command_trigger_id(command) == normalized
+        triggers_equivalent?(normalized, command_trigger_id(command))
       end)
   end
 
@@ -284,22 +288,32 @@ defmodule Ide.Debugger.RuntimeActiveSubscriptions do
         ) :: Types.trigger_candidate() | nil
   defp trigger_row_from_command(command, ei, target_name, model_active_fn)
        when is_map(command) and is_binary(target_name) do
-    trigger = command_trigger_id(command)
+    catalog = catalog_op_for_command(ei, command)
+    trigger = catalog_trigger_id(catalog, command)
     message = command_message(command)
 
     if trigger == "" or message == "" do
       nil
     else
-      catalog = catalog_op_for_command(ei, command)
       label = catalog_label(catalog, trigger)
-      trigger_display = TriggerCandidates.subscription_trigger_display(catalog || %{}, trigger)
+
+      trigger_display =
+        case catalog do
+          %{} = op -> TriggerCandidates.subscription_trigger_display(op, trigger)
+          _ -> TriggerCandidates.subscription_trigger_display(%{}, trigger)
+        end
 
       trigger_row = %{trigger: trigger, message: message, target: target_name}
 
       metadata =
         case catalog do
-          %{} = op -> TriggerCandidates.button_subscription_metadata(op)
-          _ -> %{}
+          %{} = op ->
+            op
+            |> TriggerCandidates.button_subscription_metadata()
+            |> Map.merge(TriggerCandidates.subscription_timing_metadata(op))
+
+          _ ->
+            %{}
         end
 
       interval_ms =
@@ -321,7 +335,7 @@ defmodule Ide.Debugger.RuntimeActiveSubscriptions do
 
       row =
         if is_integer(interval_ms) do
-          Map.merge(row, %{interval_ms: interval_ms, declared_interval_ms: interval_ms})
+          Map.put(row, :interval_ms, interval_ms)
         else
           row
         end
@@ -331,6 +345,23 @@ defmodule Ide.Debugger.RuntimeActiveSubscriptions do
   end
 
   defp trigger_row_from_command(_command, _ei, _target_name, _model_active_fn), do: nil
+
+  @spec catalog_trigger_id(Types.cmd_call() | nil, active_command()) :: String.t()
+  defp catalog_trigger_id(%{} = catalog, command) do
+    case TriggerCandidates.subscription_trigger_for_call(catalog) do
+      trigger when is_binary(trigger) and trigger != "" ->
+        if frame_subscription_target?(trigger) do
+          TriggerCandidates.normalize_trigger_id(trigger)
+        else
+          subscription_event_kind_from_target(trigger)
+        end
+
+      _ ->
+        command_trigger_id(command)
+    end
+  end
+
+  defp catalog_trigger_id(_catalog, command), do: command_trigger_id(command)
 
   @spec catalog_op_for_command(Types.elm_introspect(), active_command()) ::
           Types.cmd_call() | nil
@@ -459,6 +490,25 @@ defmodule Ide.Debugger.RuntimeActiveSubscriptions do
   end
 
   defp messages_compatible?(_, _), do: false
+
+  @spec triggers_equivalent?(String.t(), String.t()) :: boolean()
+  def triggers_equivalent?(left, right) when is_binary(left) and is_binary(right) do
+    left == right or companion_triggers_equivalent?(left, right)
+  end
+
+  def triggers_equivalent?(_, _), do: false
+
+  @spec companion_triggers_equivalent?(String.t(), String.t()) :: boolean()
+  defp companion_triggers_equivalent?(left, right) do
+    case {CompanionSubscriptionTrigger.contract_for_trigger(left),
+          CompanionSubscriptionTrigger.contract_for_trigger(right)} do
+      {{:ok, left_contract}, {:ok, right_contract}} ->
+        Map.get(left_contract, :source) == Map.get(right_contract, :source)
+
+      _ ->
+        false
+    end
+  end
 
   @spec target_matches_patterns?(String.t(), [String.t()]) :: boolean()
   defp target_matches_patterns?(target, patterns) when is_binary(target) and is_list(patterns) do

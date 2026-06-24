@@ -184,6 +184,20 @@ defmodule Elmc.Backend.CCodegen.Types do
   @type compile_ok_result :: {:ok, String.t(), String.t(), compile_counter()} | :error
   @type range_bounds_result ::
           {:ok, String.t(), String.t(), String.t(), compile_counter()} | :error
+  @type ir_lambda_arg_body :: {:ok, String.t(), ir_expr()} | :error
+  @type ir_two_arg_lambda :: {:ok, String.t(), String.t(), ir_expr()} | :error
+  @type append_unwrap :: {:append, ir_expr(), ir_expr()} | {:leaf, ir_expr()}
+  @type list_loop_polarity :: {String.t(), String.t(), String.t()}
+  @type filter_map_if_polarity :: :skip_on_true | :keep_on_true
+  @type filter_map_if_match ::
+          {:ok, ir_expr(), ir_expr(), filter_map_if_polarity()} | :error
+  @type just_branch_result :: {:ok, ir_expr()} | :error
+  @type reverse_foldl_range_result ::
+          {:ok, binding_name(), binding_name(), ir_expr(), ir_expr(), ir_expr()} | :error
+  @type list_repeat_unwrap :: {:ok, ir_expr(), ir_expr()} | :error
+  @type concat_append_repeat_unwrap :: {:ok, ir_expr(), ir_expr(), ir_expr()} | :error
+  @type concat_literal_segments :: {:ok, [ir_expr()]} | :error
+  @type repeat_element_result :: {String.t(), String.t(), compile_counter()}
   @type direct_emit_result :: {:ok, String.t(), compile_counter()} | :error
 
   @type static_draw_row_kind :: :clear | :text_int | :pixel | :rect | :fill_rect

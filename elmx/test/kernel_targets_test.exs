@@ -3,8 +3,13 @@ defmodule Elmx.KernelTargetsTest do
 
   alias Elmx.Runtime.Pebble.KernelTargets
 
-  test "Elm.Kernel.PebbleWatch.onBatteryChange maps to subscription mask" do
-    assert {:ok, %{op: :int_literal, value: 32}} =
+  test "Elm.Kernel.PebbleWatch.onBatteryChange maps to subscription register call" do
+    assert {:ok,
+            %{
+              op: :runtime_call,
+              function: "elmx_subscription_call",
+              args: [%{op: :string_literal, value: "Elm.Kernel.PebbleWatch.onBatteryChange"}]
+            }} =
              KernelTargets.rewrite("Elm.Kernel.PebbleWatch.onBatteryChange", [])
   end
 

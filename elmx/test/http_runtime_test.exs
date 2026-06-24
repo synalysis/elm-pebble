@@ -37,6 +37,28 @@ defmodule Elmx.HttpRuntimeTest do
     assert cmd["expect"]["to_msg"] == "SvgReceived"
   end
 
+  test "Http.expectJson accepts decoder and toMsg in either order" do
+    decoder = {:json_decoder, {:field, "temperature_2m", {:json_decoder, :float}}}
+
+    swapped =
+      Http.expect_json([
+        "WeatherReceived",
+        decoder
+      ])
+
+    assert swapped["to_msg"] == "WeatherReceived"
+    assert swapped["decoder"] == decoder
+
+    canonical =
+      Http.expect_json([
+        decoder,
+        "WeatherReceived"
+      ])
+
+    assert canonical["to_msg"] == "WeatherReceived"
+    assert canonical["decoder"] == decoder
+  end
+
   test "LaunchContext.launch_screen includes legacy is_color and is_round booleans" do
     screen =
       LaunchContext.normalize(%{

@@ -706,7 +706,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
 
     socket =
       socket
-      |> BuildFlow.apply_warm_compile_results(result.compile_results, result.primary)
+      |> BuildFlow.apply_warm_compile_results(result.compile_results, result.primary,
+        ingest: false
+      )
       |> DebuggerSupport.refresh()
 
     socket =

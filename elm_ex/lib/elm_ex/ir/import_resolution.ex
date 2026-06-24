@@ -6,12 +6,9 @@ defmodule ElmEx.IR.ImportResolution do
   app-specific import aliases such as `Platform.*` for `Pebble.Platform.*`.
   """
 
-  @type lookup :: %{
-          optional(:alias_map) => %{String.t() => String.t()},
-          optional(:import_unqualified_map) => map(),
-          optional(:local_call_names) => MapSet.t(String.t()),
-          optional(:current_module) => String.t()
-        }
+  alias ElmEx.IR.Types.{Expr, Lookup}
+
+  @type lookup :: Lookup.import_resolution_t() | Lookup.rewrite_t()
 
   @doc """
   Resolves a call or value reference to its fully qualified `Module.name` form.
@@ -68,7 +65,7 @@ defmodule ElmEx.IR.ImportResolution do
   @doc """
   Walks an IR expression tree and rewrites call targets to fully qualified names.
   """
-  @spec normalize_expr(term(), lookup()) :: term()
+  @spec normalize_expr(Expr.t() | term(), lookup()) :: Expr.t() | term()
   def normalize_expr(nil, _lookup), do: nil
 
   def normalize_expr(%{op: :qualified_call, target: target, args: args} = expr, lookup) do
@@ -107,7 +104,7 @@ defmodule ElmEx.IR.ImportResolution do
 
   def normalize_expr(other, _lookup), do: other
 
-  @spec normalize_list(list() | nil, lookup()) :: list() | nil
+  @spec normalize_list([Expr.t() | term()] | nil, lookup()) :: [Expr.t() | term()] | nil
   defp normalize_list(nil, _lookup), do: nil
 
   defp normalize_list(items, lookup) when is_list(items) do

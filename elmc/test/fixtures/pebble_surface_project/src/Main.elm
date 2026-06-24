@@ -53,6 +53,7 @@ type Msg
     | GotTimezoneIsSet Bool
     | GotTimezone String
     | GotStoredInt Int
+    | GotMaxSize Int
     | GotStorageString String
     | FrameTick PebbleFrame.Frame
     | UpPressed
@@ -68,6 +69,7 @@ type Msg
     | GotHealthSum Int
     | GotHealthAccessible Bool
     | HealthEvent PebbleHealth.Event
+    | LightChanged PebbleLight.State
     | AppFocusChanged PebbleAppFocus.State
     | CompassChanged PebbleCompass.Heading
     | GotCompassHeading (Result PebbleCompass.Error PebbleCompass.Heading)
@@ -117,10 +119,12 @@ coveredSurfaceFunctions =
     , "Pebble.Light.disable"
     , "Pebble.Light.enable"
     , "Pebble.Light.interaction"
+    , "Pebble.Light.onChange"
     , "Pebble.Log.errorCode"
     , "Pebble.Log.infoCode"
     , "Pebble.Log.warnCode"
     , "Pebble.Storage.delete"
+    , "Pebble.Storage.maxSize"
     , "Pebble.Storage.readInt"
     , "Pebble.Storage.readString"
     , "Pebble.Storage.writeInt"
@@ -182,6 +186,7 @@ init launchContext =
         , PebbleTime.timezone GotTimezone
         , PebbleStorage.writeInt 7 42
         , PebbleStorage.readInt 7 GotStoredInt
+        , PebbleStorage.maxSize GotMaxSize
         , PebbleStorage.writeString 8 "saved"
         , PebbleStorage.readString 8 GotStorageString
         , PebbleStorage.delete 7
@@ -283,6 +288,9 @@ update msg model =
         GotStoredInt value ->
             ( { model | ticks = value }, Cmd.none )
 
+        GotMaxSize value ->
+            ( { model | ticks = value }, Cmd.none )
+
         GotStorageString value ->
             ( { model | latestTime = value }, Cmd.none )
 
@@ -332,6 +340,13 @@ update msg model =
             let
                 _ =
                     event
+            in
+            ( model, Cmd.none )
+
+        LightChanged state ->
+            let
+                _ =
+                    state
             in
             ( model, Cmd.none )
 
@@ -421,6 +436,7 @@ subscriptions _ =
         , PebbleDictation.onStatus DictationStatus
         , PebbleDictation.onResult DictationResult
         , PebbleHealth.onEvent HealthEvent
+        , PebbleLight.onChange LightChanged
         , PebbleEvents.onAnimationFinished AnimationFinished
         ]
 

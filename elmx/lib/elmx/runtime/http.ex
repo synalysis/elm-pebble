@@ -69,11 +69,13 @@ defmodule Elmx.Runtime.Http do
   def expect_string(_), do: expect_descriptor("string", "HttpResponse", nil)
 
   @spec expect_json(Types.registry_args()) :: Types.http_expect() | Types.wire_cmd()
-  def expect_json([decoder, to_msg, req]) when is_map(req) do
+  def expect_json([first, second, req]) when is_map(req) do
+    {decoder, to_msg} = normalize_expect_json_args(first, second)
     put_expect(req, expect_descriptor("json", to_msg, decoder))
   end
 
-  def expect_json([decoder, to_msg]) do
+  def expect_json([first, second]) do
+    {decoder, to_msg} = normalize_expect_json_args(first, second)
     expect_descriptor("json", to_msg, decoder)
   end
 
@@ -213,6 +215,30 @@ defmodule Elmx.Runtime.Http do
   end
 
   defp message_ctor(_), do: "HttpResponse"
+
+  # Apps occasionally pass `(toMsg, decoder)` instead of `(decoder, toMsg)`; pick the
+  # json decoder term when only one side carries `{:json_decoder, _}`.
+  @spec normalize_expect_json_args(term(), term()) :: {term(), term()}
+  defp normalize_expect_json_args(first, second) do
+    cond do
+      json_decoder_term?(first) -> {first, second}
+      json_decoder_term?(second) -> {second, first}
+      true -> {first, second}
+    end
+  end
+
+  @spec json_decoder_term?(term()) :: boolean()
+  defp json_decoder_term?({:json_decoder, _}), do: true
+
+  defp json_decoder_term?(value) when is_map(value) do
+    case Map.get(value, "tag") || Map.get(value, :tag) do
+      "json_decoder" -> true
+      :json_decoder -> true
+      _ -> false
+    end
+  end
+
+  defp json_decoder_term?(_), do: false
 
   defp field(map, key) when is_map(map) and is_binary(key) do
     Map.get(map, key) || Map.get(map, String.to_existing_atom(key))

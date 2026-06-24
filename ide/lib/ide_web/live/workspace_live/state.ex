@@ -19,6 +19,7 @@ defmodule IdeWeb.WorkspaceLive.State do
           optional(:bitmap_resources_error) => String.t() | nil,
           optional(:vector_resources) => list(),
           optional(:animation_resources) => list(),
+          optional(:speaker_samples) => list(),
           required(:font_sources) => list(),
           required(:font_resources) => list(),
           required(:screenshots) => list(),

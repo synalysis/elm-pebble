@@ -101,14 +101,18 @@ defmodule Elmc.Backend.CCodegen.VarAnalysis do
 
   def used_vars(_), do: MapSet.new()
 
+  @spec field_arg_vars(Types.ir_expr() | String.t()) :: Types.var_name_set()
   defp field_arg_vars(arg) when is_binary(arg), do: MapSet.new([arg])
   defp field_arg_vars(arg) when is_map(arg), do: used_vars(arg)
   defp field_arg_vars(_arg), do: MapSet.new()
 
+  @spec compose_used_vars(Types.ir_expr() | String.t(), Types.ir_expr() | String.t()) ::
+          Types.var_name_set()
   defp compose_used_vars(f, g) do
     MapSet.union(compose_side_vars(f), compose_side_vars(g))
   end
 
+  @spec compose_side_vars(Types.ir_expr() | String.t()) :: Types.var_name_set()
   defp compose_side_vars(name) when is_binary(name), do: MapSet.new([name])
   defp compose_side_vars(expr) when is_map(expr), do: used_vars(expr)
   defp compose_side_vars(_), do: MapSet.new()

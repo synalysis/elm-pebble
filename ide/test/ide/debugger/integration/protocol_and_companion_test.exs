@@ -335,18 +335,27 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
     import Pebble.Ui.Color as Color
 
     type alias Model =
-        { frame : Int }
+        { frame : Int
+        , dtMs : Int
+        , elapsedMs : Int
+        }
 
     type Msg
         = FrameTick Frame.Frame
 
     init _ =
-        ( { frame = 0 }, Cmd.none )
+        ( { frame = 0, dtMs = 0, elapsedMs = 0 }, Cmd.none )
 
     update msg model =
         case msg of
             FrameTick frame ->
-                ( { model | frame = frame.frame }, Cmd.none )
+                ( { model
+                    | frame = frame.frame
+                    , dtMs = frame.dtMs
+                    , elapsedMs = frame.elapsedMs
+                  }
+                , Cmd.none
+                )
 
     subscriptions _ =
         Frame.every 33 FrameTick

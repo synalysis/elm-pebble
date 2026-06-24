@@ -444,17 +444,23 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     {:ok, results, primary}
   end
 
-  @spec apply_warm_compile_results(socket(), warm_compile_results(), warm_compile_primary()) ::
+  @spec apply_warm_compile_results(socket(), warm_compile_results(), warm_compile_primary(), keyword()) ::
           socket()
-  def apply_warm_compile_results(socket, results, primary) do
-    socket =
-      Enum.reduce(results, socket, fn
-        {label, {:ok, result}}, acc ->
-          DebuggerBridge.sync_compile(acc, Map.put(result, :source_root, label))
+  def apply_warm_compile_results(socket, results, primary, opts \\ []) do
+    ingest? = Keyword.get(opts, :ingest, true)
 
-        {_label, {:error, reason}}, acc ->
-          DebuggerBridge.sync_compile_failed(acc, inspect(reason))
-      end)
+    socket =
+      if ingest? do
+        Enum.reduce(results, socket, fn
+          {label, {:ok, result}}, acc ->
+            DebuggerBridge.sync_compile(acc, Map.put(result, :source_root, label))
+
+          {_label, {:error, reason}}, acc ->
+            DebuggerBridge.sync_compile_failed(acc, inspect(reason))
+        end)
+      else
+        socket
+      end
 
     case primary do
       {_label, {:ok, result}} ->

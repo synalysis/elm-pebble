@@ -223,7 +223,7 @@ defmodule Ide.Debugger.TriggerCandidates do
   end
 
   @spec subscription_timing_metadata(Types.cmd_call()) :: timing_metadata()
-  defp subscription_timing_metadata(%{"target" => target, "arg_snippets" => snippets})
+  def subscription_timing_metadata(%{"target" => target, "arg_snippets" => snippets})
        when is_binary(target) and is_list(snippets) do
     if frame_subscription_target?(target) do
       case frame_subscription_interval_ms(target, snippets) do
@@ -241,7 +241,7 @@ defmodule Ide.Debugger.TriggerCandidates do
     end
   end
 
-  defp subscription_timing_metadata(_op), do: %{}
+  def subscription_timing_metadata(_op), do: %{}
 
   @spec frame_subscription_interval_ms(String.t(), [Types.wire_map()]) :: integer() | nil
   defp frame_subscription_interval_ms(target, snippets)

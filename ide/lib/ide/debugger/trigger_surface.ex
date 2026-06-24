@@ -1,6 +1,7 @@
 defmodule Ide.Debugger.TriggerSurface do
   @moduledoc false
 
+  alias Ide.Debugger.IntrospectAccess
   alias Ide.Debugger.RuntimeActiveSubscriptions
   alias Ide.Debugger.SubscriptionActivation
   alias Ide.Debugger.TickMessageResolution
@@ -30,18 +31,66 @@ defmodule Ide.Debugger.TriggerSurface do
     target_name = source_root_for_target.(target)
 
     model_active = fn row -> SubscriptionActivation.model_active?(state, target, row) end
+    catalog_rows = TriggerCandidates.for_surface(ei, target_name, model_active)
 
-    if RuntimeActiveSubscriptions.present?(state, target) do
-      runtime_trigger_candidates(state, target, ei, target_name, model_active)
-    else
-      TriggerCandidates.for_surface(ei, target_name, model_active)
+    cond do
+      RuntimeActiveSubscriptions.present?(state, target) and
+          not incomplete_runtime_manifest?(state, target, ei) ->
+        RuntimeActiveSubscriptions.trigger_candidates(state, target, ei, target_name, model_active)
+
+      RuntimeActiveSubscriptions.present?(state, target) ->
+        runtime_rows =
+          RuntimeActiveSubscriptions.trigger_candidates(state, target, ei, target_name, model_active)
+
+        merge_catalog_runtime_trigger_candidates(catalog_rows, runtime_rows)
+
+      true ->
+        catalog_rows
     end
   end
 
   def candidates(_state, _target, _ctx), do: []
 
-  defp runtime_trigger_candidates(state, target, ei, target_name, model_active_fn) do
-    RuntimeActiveSubscriptions.trigger_candidates(state, target, ei, target_name, model_active_fn)
+  defp incomplete_runtime_manifest?(state, target, ei) do
+    if is_map(ei) do
+      catalog_count =
+        ei
+        |> IntrospectAccess.cmd_calls("subscription_calls")
+        |> length()
+
+      runtime_count =
+        state
+        |> RuntimeActiveSubscriptions.for_surface(target)
+        |> length()
+
+      catalog_count > runtime_count
+    else
+      false
+    end
+  end
+
+  defp merge_catalog_runtime_trigger_candidates(catalog_rows, runtime_rows) do
+    runtime_by_message =
+      Map.new(runtime_rows, fn row -> {row.message, row} end)
+
+    merged_catalog =
+      Enum.map(catalog_rows, fn catalog_row ->
+        case Map.get(runtime_by_message, catalog_row.message) do
+          %{} = runtime_row ->
+            catalog_row
+            |> Map.merge(Map.take(runtime_row, [:interval_ms, :declared_interval_ms, :model_active]))
+
+          _ ->
+            catalog_row
+        end
+      end)
+
+    catalog_messages = MapSet.new(catalog_rows, & &1.message)
+
+    runtime_only =
+      Enum.reject(runtime_rows, fn row -> row.message in catalog_messages end)
+
+    merged_catalog ++ runtime_only
   end
 
   @spec display_for(

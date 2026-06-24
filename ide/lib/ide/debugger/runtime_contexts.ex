@@ -172,6 +172,9 @@ defmodule Ide.Debugger.RuntimeContexts do
             runtime_followups
           )
         end,
+        apply_init_device_data: fn state, target ->
+          DeviceDataResponses.apply_init_device_responses(state, target, device_data)
+        end,
         protocol_rx_ctx: protocol_rx_fn
       })
 

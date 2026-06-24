@@ -172,7 +172,7 @@ speakerPlayTone : Int -> Int -> Int -> Int -> Cmd msg
 speakerPlayTone frequency duration volume waveform =
     let
         keep =
-            ( frequency, duration, volume, waveform )
+            ( frequency, duration, ( volume, waveform ) )
     in
     Cmd.none
 

@@ -185,10 +185,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered.Bounds do
 
   @spec node_bounds_map(rendered_node()) :: map()
   defp node_bounds_map(node) when is_map(node) do
-    case Util.map_map(node, :bounds) do
-      %{} = bounds -> bounds
-      _ -> %{}
-    end
+    Util.map_map(node, :bounds)
   end
 
   @spec node_rect_integer(rendered_node(), atom()) :: integer() | nil
@@ -201,11 +198,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered.Bounds do
 
   @spec node_point_integer(rendered_node(), atom()) :: integer() | nil
   defp node_point_integer(node, key) when is_map(node) and key in [:x, :y] do
-    origin =
-      case Util.map_map(node, :origin) do
-        %{} = value -> value
-        _ -> %{}
-      end
+    origin = Util.map_map(node, :origin)
 
     Util.map_integer(node, key) ||
       Util.map_integer(origin, key) ||
