@@ -21,7 +21,7 @@ defmodule Ide.Debugger.Types.CompileIngestAttrs do
           optional(:warning_count) => non_neg_integer(),
           optional(:detail) => String.t(),
           optional(:source_root) => String.t(),
-          optional(:schema_version) => String.t() | integer() | map() | nil,
+          optional(:schema_version) => String.t() | integer() | Types.wire_map() | nil,
           optional(:diagnostics) => list(),
           optional(:elmx_manifest) => Types.elmx_manifest(),
           optional(:elmx_revision) => String.t(),

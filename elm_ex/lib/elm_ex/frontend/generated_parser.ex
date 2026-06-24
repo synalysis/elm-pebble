@@ -29,6 +29,7 @@ defmodule ElmEx.Frontend.GeneratedParser do
 
   alias ElmEx.Frontend.GeneratedContractBuilder
   alias ElmEx.Frontend.AstContract
+  alias ElmEx.Frontend.Types.ImportEntry
   alias ElmEx.Types
 
   @typep token() :: tuple()
@@ -342,7 +343,7 @@ defmodule ElmEx.Frontend.GeneratedParser do
     |> Enum.map(&Enum.reverse/1)
   end
 
-  @spec parse_import_entry(tokens(), [tokens()], non_neg_integer()) :: map() | nil
+  @spec parse_import_entry(tokens(), [tokens()], non_neg_integer()) :: ImportEntry.wire_map() | nil
   defp parse_import_entry([{:import_kw, _}, {:upper_id, _, module_segment} | rest], lines, idx) do
     {module_parts, line} = take_module_path(rest, [module_segment])
     module_name = Enum.join(module_parts, ".")

@@ -5,6 +5,7 @@ defmodule Ide.GitHub.Repositories do
 
   alias Ide.GitHub.{Client, Credentials, Types}
   alias Ide.Projects.Project
+  alias Ide.Projects.Types, as: ProjectsTypes
 
   @type repo_status ::
           :idle
@@ -15,7 +16,9 @@ defmodule Ide.GitHub.Repositories do
           | :forbidden
           | :error
 
-  @spec lookup_status(map(), keyword()) ::
+  @type create_repo_params :: Types.create_repo_params()
+
+  @spec lookup_status(ProjectsTypes.github_config(), keyword()) ::
           repo_status() | {:error, Types.connection_error() | Types.http_error()}
   def lookup_status(repo_config, opts \\ []) when is_map(repo_config) do
     with {:ok, repo} <- fetch_field(repo_config, "repo"),
@@ -34,8 +37,8 @@ defmodule Ide.GitHub.Repositories do
     end
   end
 
-  @spec create_repository(Project.t(), Ide.Projects.Types.github_config(), keyword()) ::
-          {:ok, map()} | {:error, Types.github_error()}
+  @spec create_repository(Project.t(), ProjectsTypes.github_config(), keyword()) ::
+          {:ok, Types.create_repo_summary()} | {:error, Types.github_error()}
   def create_repository(%Project{} = project, repo_config, opts \\ []) when is_map(repo_config) do
     with {:ok, repo} <- fetch_field(repo_config, "repo"),
          :ok <- validate_repo_name(repo),
@@ -90,7 +93,7 @@ defmodule Ide.GitHub.Repositories do
   def format_error({:missing_repo_field, field}), do: "Missing repository field: #{field}"
   def format_error(reason), do: inspect(reason)
 
-  @spec config_owner(map()) :: String.t()
+  @spec config_owner(ProjectsTypes.github_config()) :: String.t()
   defp config_owner(map) when is_map(map) do
     map
     |> Map.get("owner", Map.get(map, :owner, ""))
@@ -98,7 +101,8 @@ defmodule Ide.GitHub.Repositories do
     |> String.trim()
   end
 
-  @spec fetch_field(map(), String.t()) :: {:ok, String.t()} | {:error, :missing_field}
+  @spec fetch_field(ProjectsTypes.github_config(), String.t()) ::
+          {:ok, String.t()} | {:error, :missing_field}
   defp fetch_field(map, key) when is_map(map) do
     value = Map.get(map, key) || Map.get(map, String.to_atom(key))
 
@@ -135,7 +139,7 @@ defmodule Ide.GitHub.Repositories do
     end
   end
 
-  @spec fetch_visibility(map()) :: {:ok, String.t()}
+  @spec fetch_visibility(ProjectsTypes.github_config()) :: {:ok, String.t()}
   defp fetch_visibility(_repo_config), do: {:ok, "public"}
 
   @spec validate_repo_name(String.t()) :: :ok | {:error, {:invalid_repo_name, String.t()}}
@@ -151,7 +155,7 @@ defmodule Ide.GitHub.Repositories do
     end
   end
 
-  @spec create_params(Project.t(), String.t(), String.t(), keyword()) :: map()
+  @spec create_params(Project.t(), String.t(), String.t(), keyword()) :: create_repo_params()
   defp create_params(%Project{} = project, repo, visibility, opts) do
     description =
       Keyword.get_lazy(opts, :description, fn ->
@@ -167,12 +171,12 @@ defmodule Ide.GitHub.Repositories do
     |> maybe_put_description(description)
   end
 
-  @spec maybe_put_description(map(), String.t()) :: map()
+  @spec maybe_put_description(create_repo_params(), String.t()) :: create_repo_params()
   defp maybe_put_description(params, ""), do: params
   defp maybe_put_description(params, description), do: Map.put(params, "description", description)
 
-  @spec create_for_owner(String.t(), String.t(), map(), keyword()) ::
-          {:ok, map()} | {:error, Types.api_error()}
+  @spec create_for_owner(String.t(), String.t(), Types.create_repo_params(), keyword()) ::
+          {:ok, Types.repository()} | {:error, Types.api_error()}
   defp create_for_owner(token, owner, params, opts) do
     user_login = Keyword.get(opts, :user_login) || Credentials.current().user_login
 

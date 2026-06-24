@@ -4,6 +4,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Live do
 
   alias Phoenix.Component
   alias Ide.Debugger
+  alias Ide.Debugger.Types, as: DebuggerTypes
   alias Ide.Projects
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Live.{Cursor, RuntimeSnapshot, Triggers}
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Types
@@ -154,7 +155,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Live do
   end
 
   @spec snapshot_project_state(Projects.Project.t(), Types.socket()) ::
-          {:ok, map()} | :agent_busy
+          {:ok, DebuggerTypes.runtime_state()} | :agent_busy
   defp snapshot_project_state(project, socket) do
     opts = [
       event_limit: socket.assigns[:debugger_event_limit] || @default_event_limit,

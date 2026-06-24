@@ -5,6 +5,8 @@ defmodule Ide.Emulator.Workflow do
 
   alias Ide.Emulator
   alias Ide.Emulator.Session.Startup
+  alias Ide.Emulator.Types, as: EmulatorTypes
+  alias Ide.PebbleToolchain.Types, as: ToolchainTypes
   alias Ide.Projects
   alias Ide.WatchModels
   alias IdeWeb.WorkspaceLive.BuildFlow
@@ -15,8 +17,17 @@ defmodule Ide.Emulator.Workflow do
           required(:platform) => String.t()
         }
 
-  @spec launch_project(Projects.Project.t() | map(), String.t() | nil) ::
-          {:ok, launch_result()} | {:error, term()}
+  @type launch_error ::
+          EmulatorTypes.emulator_error()
+          | ToolchainTypes.toolchain_error()
+          | Projects.workspace_error()
+          | :compile_project_root_not_found
+          | {:embedded_emulator_unavailable, [String.t()]}
+
+  @type install_error_input :: EmulatorTypes.install_error() | atom() | String.t() | tuple()
+
+  @spec launch_project(Projects.Project.t(), String.t() | nil) ::
+          {:ok, launch_result()} | {:error, launch_error()}
   def launch_project(project, platform) do
     platform = normalize_platform(platform)
 
@@ -47,7 +58,8 @@ defmodule Ide.Emulator.Workflow do
   Launch already packages once; this avoids stale artifacts when the IDE server or build
   flags change between launch and install.
   """
-  @spec refresh_session_artifact(map()) :: {:ok, map()} | {:error, term()}
+  @spec refresh_session_artifact(EmulatorTypes.session_state()) ::
+          {:ok, EmulatorTypes.session_state()} | {:error, ToolchainTypes.toolchain_error()}
   def refresh_session_artifact(%{project_slug: slug, platform: platform} = state)
       when is_binary(slug) and slug != "" and is_binary(platform) and platform != "" do
     with %Projects.Project{} = project <- Projects.get_project_by_scope_key(slug),
@@ -70,7 +82,7 @@ defmodule Ide.Emulator.Workflow do
 
   def refresh_session_artifact(state) when is_map(state), do: {:ok, state}
 
-  @spec wait_display_ready(String.t(), keyword()) :: :ok | {:error, term()}
+  @spec wait_display_ready(String.t(), keyword()) :: :ok | {:error, EmulatorTypes.display_ready_error()}
   def wait_display_ready(session_id, opts \\ []) when is_binary(session_id) do
     timeout_ms = Keyword.get(opts, :timeout_ms, 120_000)
     interval_ms = Keyword.get(opts, :interval_ms, 250)
@@ -78,7 +90,7 @@ defmodule Ide.Emulator.Workflow do
     poll_display_ready(session_id, deadline, interval_ms)
   end
 
-  @spec launch_error_message(term()) :: String.t()
+  @spec launch_error_message(launch_error()) :: String.t()
   def launch_error_message({:daemon_exited_before_ready, _port}) do
     "The phone bridge (pypkjs) exited before it could connect to the watch emulator. " <>
       "Try launching again; if it keeps failing, restart the IDE server to clear stale emulator processes."
@@ -156,7 +168,7 @@ defmodule Ide.Emulator.Workflow do
 
   defp protocol_router_detail(reason), do: inspect(reason)
 
-  @spec install_error_message(term()) :: String.t()
+  @spec install_error_message(install_error_input()) :: String.t()
   def install_error_message(:artifact_not_found),
     do: "PBW artifact not found for this emulator session."
 

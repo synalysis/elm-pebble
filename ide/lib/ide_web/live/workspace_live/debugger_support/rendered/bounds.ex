@@ -183,7 +183,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered.Bounds do
     end
   end
 
-  @spec node_bounds_map(rendered_node()) :: map()
+  @spec node_bounds_map(rendered_node()) :: bounds_map()
   defp node_bounds_map(node) when is_map(node) do
     Util.map_map(node, :bounds)
   end

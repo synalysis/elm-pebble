@@ -1,11 +1,12 @@
 defmodule Ide.Formatter.Printer.ModuleHeader do
   @moduledoc false
+  alias ElmEx.Frontend.Types.ImportEntry
   alias Ide.Formatter.Doc
   alias Ide.Formatter.Types
 
   @type exposing :: nil | String.t() | [String.t()]
 
-  @spec normalize(String.t(), map()) :: String.t()
+  @spec normalize(String.t(), Types.metadata()) :: String.t()
   def normalize(source, metadata) when is_binary(source) and is_map(metadata) do
     module_name = metadata[:module]
     module_line = get_in(metadata, [:header_lines, :module])
@@ -66,7 +67,8 @@ defmodule Ide.Formatter.Printer.ModuleHeader do
 
   defp normalize_module_line(line, _module_name, _module_line, _exposing, _line_no), do: line
 
-  @spec normalize_import_line(String.t(), map(), pos_integer()) :: String.t()
+  @spec normalize_import_line(String.t(), %{optional(integer()) => ImportEntry.wire_map()}, pos_integer()) ::
+          String.t()
   defp normalize_import_line(line, import_entries_by_line, line_no) do
     if leading_indent(line) != 0 do
       line
@@ -93,7 +95,7 @@ defmodule Ide.Formatter.Printer.ModuleHeader do
     if trimmed == "", do: "", else: " " <> trimmed
   end
 
-  @spec render_import_suffix(map()) :: String.t()
+  @spec render_import_suffix(ImportEntry.wire_map()) :: String.t()
   defp render_import_suffix(entry) when is_map(entry) do
     as_clause =
       case entry["as"] do
@@ -121,7 +123,7 @@ defmodule Ide.Formatter.Printer.ModuleHeader do
 
   defp render_exposing_clause(_), do: ""
 
-  @spec usable_exposing?(exposing() | list() | map() | atom()) :: boolean()
+  @spec usable_exposing?(exposing() | atom()) :: boolean()
   defp usable_exposing?(nil), do: true
   defp usable_exposing?(".."), do: true
 
@@ -221,7 +223,7 @@ defmodule Ide.Formatter.Printer.ModuleHeader do
     end
   end
 
-  @spec normalize_header_separator(Types.line_list(), map()) :: Types.line_list()
+  @spec normalize_header_separator(Types.line_list(), Types.metadata()) :: Types.line_list()
   defp normalize_header_separator(lines, metadata) when is_list(lines) and is_map(metadata) do
     module_line = get_in(metadata, [:header_lines, :module])
     import_lines = get_in(metadata, [:header_lines, :imports]) || []

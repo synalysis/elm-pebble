@@ -12,7 +12,10 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
     "elmc_list_drop" => :list_drop
   }
 
-  @spec report(ElmEx.IR.t(), String.t()) :: map()
+  alias Elmc.Backend.CCodegen.Types.LinkedBinary, as: LinkedBinaryTypes
+  alias Elmc.Backend.CCodegen.Types.StackEstimate, as: StackEstimateTypes
+
+  @spec report(ElmEx.IR.t(), String.t()) :: StackEstimateTypes.t()
   def report(ir, c_source) do
     ir_entries = ir_entries(ir)
     c_entries = c_entries(c_source)
@@ -71,7 +74,8 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
     }
   end
 
-  @spec put_linked_binary(map(), map()) :: map()
+  @spec put_linked_binary(StackEstimateTypes.wire_map(), LinkedBinaryTypes.wire_map()) ::
+          StackEstimateTypes.wire_map()
   def put_linked_binary(report, linked) when is_map(report) and is_map(linked) do
     indicators =
       report

@@ -3,6 +3,7 @@ defmodule Ide.Mcp.ToolSupport do
 
   alias Ide.Debugger
   alias Ide.Debugger.Types
+  alias Ide.Mcp.Types, as: McpTypes
   alias Ide.Mcp.WireTypes
   alias Ide.PebbleToolchain
   alias Ide.Projects
@@ -10,11 +11,7 @@ defmodule Ide.Mcp.ToolSupport do
 
   @type maybe_since :: DateTime.t() | nil
   @type maybe_slug :: String.t() | nil
-  @type timestamped_entry :: %{
-          optional(:at) => String.t(),
-          optional(atom()) => WireTypes.json_value(),
-          optional(String.t()) => WireTypes.json_value()
-        }
+  @type timestamped_entry :: McpTypes.compiler_history_entry() | McpTypes.audit_entry()
 
   @spec normalize_mcp_simulator_settings(Types.SimulatorSettings.wire_map()) ::
           Types.simulator_settings()

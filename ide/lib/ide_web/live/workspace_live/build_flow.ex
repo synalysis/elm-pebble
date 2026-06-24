@@ -11,8 +11,10 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
   alias IdeWeb.WorkspaceLive.DebuggerBridge
   alias IdeWeb.WorkspaceLive.PublishFlow
   alias IdeWeb.WorkspaceLive.ToolchainPresenter
+  alias IdeWeb.WorkspaceLive.Types
 
   @type socket :: Phoenix.LiveView.Socket.t()
+  @type lv_noreply :: {:noreply, socket()}
   @type root_pair :: {String.t(), String.t()}
   @type wire_input :: String.t() | integer() | boolean() | nil
 
@@ -37,9 +39,15 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
           status: :ok | :error,
           output: String.t(),
           primary: root_build_result() | nil,
-          package: map(),
-          issues: [map()],
+          package: package_validation_result(),
+          issues: [build_issue()],
           roots: [root_build_result()]
+        }
+
+  @type build_issue :: %{
+          required(:title) => String.t(),
+          required(:message) => String.t(),
+          optional(:detail) => String.t()
         }
 
   @type emulator_install_result :: %{
@@ -62,6 +70,9 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
 
   @build_asyncs [:run_check, :run_build, :run_compile, :run_manifest, :run_pebble_build]
 
+  @type build_async_name ::
+          :run_check | :run_build | :run_compile | :run_manifest | :run_pebble_build
+
   @spec build_events() :: [String.t()]
   def build_events, do: @build_events
 
@@ -71,7 +82,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
   @spec handles?(String.t()) :: boolean()
   def handles?(event) when is_binary(event), do: event in @build_events
 
-  @spec handle_event(String.t(), map(), Phoenix.LiveView.Socket.t()) ::
+  @spec handle_event(String.t(), Types.event_params(), Phoenix.LiveView.Socket.t()) ::
           {:noreply, Phoenix.LiveView.Socket.t()}
   def handle_event("run-check", _params, socket) do
     {:noreply, schedule_compiler_check(socket)}
@@ -366,6 +377,9 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
      |> assign(:pebble_build_output, "Build task exited: #{inspect(reason)}")}
   end
 
+  @spec handle_async(build_async_name(), Types.async_result(), socket()) :: lv_noreply()
+  def handle_async(_async, _result, socket), do: {:noreply, socket}
+
   defp package_app_root(%{raw: %{app_root: app_root}}) when is_binary(app_root), do: app_root
   defp package_app_root(_package), do: nil
 
@@ -413,9 +427,11 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
   end
 
   @type warm_compile_results :: [
-          {String.t(), {:ok, map()} | {:error, term()}}
+          {String.t(), {:ok, Compiler.compile_result()} | {:error, Compiler.compiler_error()}}
         ]
-  @type warm_compile_primary :: {String.t(), {:ok, map()} | {:error, term()}} | nil
+  @type warm_compile_primary ::
+          {String.t(), {:ok, Compiler.compile_result()} | {:error, Compiler.compiler_error()}}
+          | nil
 
   @spec warm_debugger_compile_context_work(Project.t(), keyword()) ::
           {:ok, warm_compile_results(), warm_compile_primary()}
@@ -535,7 +551,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
      }}
   end
 
-  @spec build_issues([map()], map()) :: [map()]
+  @spec build_issues([root_build_result()], package_validation_result()) :: [build_issue()]
   def build_issues(root_results, package_result) do
     root_issues =
       root_results
@@ -558,7 +574,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     root_issues ++ package_issues
   end
 
-  @spec package_output_issues(String.t()) :: [map()]
+  @spec package_output_issues(String.t()) :: [build_issue()]
   def package_output_issues(output) when is_binary(output) do
     [Ide.PebbleToolchain.BuildDiagnostics.package_issue(output)]
   end

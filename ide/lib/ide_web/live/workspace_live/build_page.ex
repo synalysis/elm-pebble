@@ -2,9 +2,10 @@ defmodule IdeWeb.WorkspaceLive.BuildPage do
   @moduledoc false
   use IdeWeb, :html
 
+  alias IdeWeb.WorkspaceLive.BuildPage.Assigns
   alias Phoenix.LiveView.Rendered
 
-  @type assigns :: map()
+  @type assigns :: Assigns.t()
   @type rendered :: Rendered.t()
   @type flow_status :: :idle | :running | :ok | :error
 

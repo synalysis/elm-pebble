@@ -1,6 +1,7 @@
 defmodule Ide.Packages.IndexDiskCache do
   @moduledoc false
 
+  alias Ide.Packages.Http
   alias Ide.Packages.Types
 
   @doc """
@@ -33,7 +34,8 @@ defmodule Ide.Packages.IndexDiskCache do
   @doc """
   Persist index payload and validators (async) after a successful download.
   """
-  @spec schedule_persist(Types.index_cache_key(), map(), Types.search_payload()) :: :ok
+  @spec schedule_persist(Types.index_cache_key(), Http.response_cache(), Types.search_payload()) ::
+          :ok
   def schedule_persist(key, meta, payload) when is_map(meta) do
     if enabled?() do
       _ =
@@ -45,7 +47,7 @@ defmodule Ide.Packages.IndexDiskCache do
     :ok
   end
 
-  @spec persist_sync(Types.index_cache_key(), map(), Types.search_payload()) :: :ok
+  @spec persist_sync(Types.index_cache_key(), Http.response_cache(), Types.search_payload()) :: :ok
   defp persist_sync(key, meta, payload) do
     dir = cache_dir()
     :ok = File.mkdir_p(dir)

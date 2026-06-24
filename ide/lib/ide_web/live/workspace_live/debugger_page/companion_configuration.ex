@@ -36,14 +36,16 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.CompanionConfiguration do
     end)
   end
 
-  @spec put_section_values(map(), draft_values()) :: map()
+  @type config_section :: SupportTypes.wire_map()
+
+  @spec put_section_values(config_section(), draft_values()) :: config_section()
   defp put_section_values(%{"fields" => fields} = section, values) when is_list(fields) do
     Map.put(section, "fields", Enum.map(fields, &put_field_value(&1, values)))
   end
 
   defp put_section_values(section, _values), do: section
 
-  @spec put_field_value(map(), draft_values()) :: map()
+  @spec put_field_value(config_field(), draft_values()) :: config_field()
   defp put_field_value(%{"id" => id, "control" => %{}} = field, values)
        when is_binary(id) do
     if Map.has_key?(values, id) do
@@ -73,7 +75,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.CompanionConfiguration do
   def truthy?(value) when value in [true, "true", "True", "on", "1", 1], do: true
   def truthy?(_value), do: false
 
-  @spec input_step(String.t(), map()) :: String.t() | number() | nil
+  @spec input_step(String.t(), config_field()) :: String.t() | number() | nil
   def input_step("number", control) when is_map(control) do
     Map.get(control, "step") || "any"
   end

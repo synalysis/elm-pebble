@@ -4,6 +4,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridge do
   alias Ide.Compiler.Diagnostics
   alias Ide.Debugger.Types.CompileIngestBridge
   alias Ide.Projects
+  alias Ide.Projects.Project
   alias IdeWeb.WorkspaceLive.DebuggerSupport
 
   @type socket :: Phoenix.LiveView.Socket.t()
@@ -11,9 +12,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridge do
           Ide.Compiler.check_result()
           | Ide.Compiler.compile_result()
           | Ide.Compiler.manifest_result()
-          | map()
 
-  @spec sync_check(Phoenix.LiveView.Socket.t(), map()) :: Phoenix.LiveView.Socket.t()
+  @spec sync_check(socket(), compiler_result()) :: socket()
   def sync_check(socket, result) do
     case socket.assigns[:project] do
       %{slug: slug} = project when not is_nil(slug) ->
@@ -69,7 +69,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridge do
     end
   end
 
-  @spec sync_compile(Phoenix.LiveView.Socket.t(), map()) :: Phoenix.LiveView.Socket.t()
+  @spec sync_compile(socket(), compiler_result()) :: socket()
   def sync_compile(socket, result) do
     case socket.assigns[:project] do
       project when is_map(project) ->
@@ -98,7 +98,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridge do
     end
   end
 
-  @spec sync_emulator_rc_fail(Phoenix.LiveView.Socket.t(), term(), term()) ::
+  @spec sync_emulator_rc_fail(Phoenix.LiveView.Socket.t(), non_neg_integer() | String.t() | nil, non_neg_integer() | String.t() | nil) ::
           Phoenix.LiveView.Socket.t()
   def sync_emulator_rc_fail(socket, code, line) do
     case socket.assigns[:project] do
@@ -150,7 +150,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridge do
     end
   end
 
-  @spec sync_manifest(Phoenix.LiveView.Socket.t(), map()) :: Phoenix.LiveView.Socket.t()
+  @spec sync_manifest(socket(), compiler_result()) :: socket()
   def sync_manifest(socket, result) do
     case socket.assigns[:project] do
       project when is_map(project) ->
@@ -219,7 +219,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridge do
     end
   end
 
-  @spec manifest_schema_version_from_result(map()) :: integer() | String.t() | nil
+  @spec manifest_schema_version_from_result(compiler_result()) :: integer() | String.t() | nil
   defp manifest_schema_version_from_result(result) do
     case Map.get(result, :manifest) do
       %{"schema_version" => v} -> v
@@ -249,7 +249,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridge do
     |> Diagnostics.normalize_list()
   end
 
-  @spec compile_result_source_root(Phoenix.LiveView.Socket.t(), map()) :: String.t() | nil
+  @spec compile_result_source_root(socket(), compiler_result()) :: String.t() | nil
   defp compile_result_source_root(socket, result) when is_map(result) do
     explicit = Map.get(result, :source_root) || Map.get(result, "source_root")
 
@@ -286,6 +286,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridge do
     match?(%{running: true}, socket.assigns[:debugger_state])
   end
 
-  @spec project_session_key(map()) :: String.t()
+  @spec project_session_key(Project.t()) :: String.t()
   defp project_session_key(project), do: Projects.scope_key(project)
 end

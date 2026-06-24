@@ -1,10 +1,15 @@
 defmodule Ide.ElmFormat do
   @moduledoc false
 
+  alias Ide.Formatter.Types, as: FormatterTypes
+
   @formatter "elm-format"
   @elm_version_args ["--yes", "--elm-version", "0.19"]
 
-  @spec format(String.t(), keyword()) :: {:ok, map()} | {:error, map()}
+  @type format_result :: FormatterTypes.format_result()
+  @type format_error :: FormatterTypes.diagnostic()
+
+  @spec format(String.t(), keyword()) :: {:ok, format_result()} | {:error, format_error()}
   def format(source, opts \\ []) when is_binary(source) do
     cwd = Keyword.get(opts, :cwd, File.cwd!())
 
@@ -27,7 +32,7 @@ defmodule Ide.ElmFormat do
     end
   end
 
-  @spec run_elm_format(String.t(), String.t()) :: {:ok, String.t()} | {:error, map()}
+  @spec run_elm_format(String.t(), String.t()) :: {:ok, String.t()} | {:error, format_error()}
   defp run_elm_format(source, cwd) do
     input_path = temp_path(".elm")
     output_path = temp_path(".elm")
@@ -57,7 +62,7 @@ defmodule Ide.ElmFormat do
   end
 
   @spec run_elm_format_file(String.t(), String.t(), String.t()) ::
-          {:ok, String.t()} | {:error, map()}
+          {:ok, String.t()} | {:error, format_error()}
   defp run_elm_format_file(input_path, output_path, cwd) do
     args = [input_path, "--output", output_path | @elm_version_args]
 

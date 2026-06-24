@@ -9,6 +9,8 @@ defmodule Ide.Mcp.Handlers.Projects do
   alias Ide.ProjectTemplates
   alias Ide.Projects
   alias Ide.Projects.BootstrapError
+  alias Ide.Projects.FileTypes
+  alias Ide.Projects.Types, as: ProjectsTypes
 
   def call("templates.list", _args) do
     {:ok, %{templates: ProjectTemplates.catalog()}}
@@ -312,7 +314,7 @@ defmodule Ide.Mcp.Handlers.Projects do
     %{slug: slug, tree: tree}
   end
 
-  @spec count_files([map()]) :: non_neg_integer()
+  @spec count_files([FileTypes.tree_node()]) :: non_neg_integer()
   defp count_files(nodes) when is_list(nodes) do
     Enum.reduce(nodes, 0, fn node, acc ->
       children = Map.get(node, :children, [])
@@ -326,7 +328,8 @@ defmodule Ide.Mcp.Handlers.Projects do
     end)
   end
 
-  @spec maybe_put_existing(map(), map(), String.t()) :: map()
+  @spec maybe_put_existing(ProjectsTypes.project_attrs(), ToolTypes.tool_args(), String.t()) ::
+          ProjectsTypes.project_attrs()
   defp maybe_put_existing(acc, source, key) when is_map(source) do
     case ToolSupport.map_value(source, key) do
       nil -> acc
@@ -334,7 +337,8 @@ defmodule Ide.Mcp.Handlers.Projects do
     end
   end
 
-  @spec maybe_put_string_setting(map(), map(), String.t()) :: map()
+  @spec maybe_put_string_setting(ProjectsTypes.project_attrs(), ToolTypes.tool_args(), String.t()) ::
+          ProjectsTypes.project_attrs()
   defp maybe_put_string_setting(acc, source, key) when is_map(source) do
     case ToolSupport.map_value(source, key) do
       value when is_binary(value) -> Map.put(acc, key, String.trim(value))
@@ -342,7 +346,8 @@ defmodule Ide.Mcp.Handlers.Projects do
     end
   end
 
-  @spec maybe_put_string_list_setting(map(), map(), String.t()) :: map()
+  @spec maybe_put_string_list_setting(ProjectsTypes.project_attrs(), ToolTypes.tool_args(), String.t()) ::
+          ProjectsTypes.project_attrs()
   defp maybe_put_string_list_setting(acc, source, key) when is_map(source) do
     case ToolSupport.map_value(source, key) do
       values when is_list(values) ->
@@ -359,7 +364,8 @@ defmodule Ide.Mcp.Handlers.Projects do
     end
   end
 
-  @spec maybe_put_boolean_setting(map(), map(), String.t()) :: map()
+  @spec maybe_put_boolean_setting(ProjectsTypes.project_attrs(), ToolTypes.tool_args(), String.t()) ::
+          ProjectsTypes.project_attrs()
   defp maybe_put_boolean_setting(acc, source, key) when is_map(source) do
     case ToolSupport.map_value(source, key) do
       nil -> acc
@@ -367,7 +373,8 @@ defmodule Ide.Mcp.Handlers.Projects do
     end
   end
 
-  @spec maybe_put_inclusion_setting(map(), map(), String.t(), [String.t()]) :: map()
+  @spec maybe_put_inclusion_setting(ProjectsTypes.project_attrs(), ToolTypes.tool_args(), String.t(), [String.t()]) ::
+          ProjectsTypes.project_attrs()
   defp maybe_put_inclusion_setting(acc, source, key, allowed) when is_map(source) do
     case ToolSupport.map_value(source, key) do
       value when is_binary(value) ->
@@ -398,7 +405,8 @@ defmodule Ide.Mcp.Handlers.Projects do
     }
   end
 
-  @spec project_settings_update_attrs(map(), map()) :: {:ok, map()} | {:error, String.t()}
+  @spec project_settings_update_attrs(Ide.Projects.Project.t(), ToolTypes.tool_args()) ::
+          {:ok, ProjectsTypes.project_attrs()} | {:error, String.t()}
   defp project_settings_update_attrs(project, args) when is_map(project) and is_map(args) do
     attrs =
       %{}
@@ -447,7 +455,7 @@ defmodule Ide.Mcp.Handlers.Projects do
     {:ok, attrs}
   end
 
-  @spec safe_release_defaults(map()) :: map()
+  @spec safe_release_defaults(ToolTypes.tool_args()) :: ProjectsTypes.release_defaults()
   defp safe_release_defaults(map) when is_map(map) do
     %{}
     |> maybe_put_string_setting(map, "version_label")
@@ -456,7 +464,7 @@ defmodule Ide.Mcp.Handlers.Projects do
     |> maybe_put_string_list_setting(map, "capabilities")
   end
 
-  @spec safe_github_settings(map()) :: map()
+  @spec safe_github_settings(ToolTypes.tool_args()) :: ProjectsTypes.github_config()
   defp safe_github_settings(map) when is_map(map) do
     visibility =
       map
@@ -480,7 +488,7 @@ defmodule Ide.Mcp.Handlers.Projects do
 
   defp safe_github_settings(_), do: %{}
 
-  @spec safe_debugger_settings(map()) :: map()
+  @spec safe_debugger_settings(ToolTypes.tool_args()) :: ProjectsTypes.debugger_settings()
   defp safe_debugger_settings(map) when is_map(map) do
     %{}
     |> maybe_put_existing(map, "timeline_mode")
@@ -499,7 +507,7 @@ defmodule Ide.Mcp.Handlers.Projects do
 
   defp safe_debugger_settings(_), do: %{"simulator" => Debugger.default_simulator_settings()}
 
-  @spec safe_debugger_settings_update(map()) :: map()
+  @spec safe_debugger_settings_update(ToolTypes.tool_args()) :: ProjectsTypes.debugger_settings()
   defp safe_debugger_settings_update(map) when is_map(map) do
     %{}
     |> maybe_put_inclusion_setting(map, "timeline_mode", ~w(watch companion mixed separate))
@@ -508,7 +516,7 @@ defmodule Ide.Mcp.Handlers.Projects do
     |> maybe_put_inclusion_setting(map, "emulator_mode", EmulatorSupport.allowed_mode_ids())
   end
 
-  @spec project_source_file_path(map(), String.t(), String.t()) ::
+  @spec project_source_file_path(Projects.Project.t(), String.t(), String.t()) ::
           {:ok, String.t()} | {:error, atom()}
   defp project_source_file_path(project, source_root, rel_path)
        when is_binary(source_root) and is_binary(rel_path) do
@@ -568,7 +576,7 @@ defmodule Ide.Mcp.Handlers.Projects do
 
   defp replace_once(_content, _old_string, _new_string), do: {:error, :invalid_patch}
 
-  @spec search_source_roots(map(), WireTypes.json_value()) ::
+  @spec search_source_roots(Projects.Project.t(), WireTypes.json_value()) ::
           {:ok, [String.t()]} | {:error, atom()}
   defp search_source_roots(project, nil), do: {:ok, project.source_roots}
   defp search_source_roots(project, ""), do: {:ok, project.source_roots}
@@ -583,7 +591,8 @@ defmodule Ide.Mcp.Handlers.Projects do
 
   defp search_source_roots(_project, _source_root), do: {:error, :invalid_source_root}
 
-  @spec search_source_root(map(), String.t(), String.t()) :: [map()]
+  @spec search_source_root(Projects.Project.t(), String.t(), String.t()) ::
+          [ToolTypes.files_search_match()]
   defp search_source_root(_project, _source_root, ""), do: []
 
   defp search_source_root(project, source_root, query) do
@@ -602,7 +611,7 @@ defmodule Ide.Mcp.Handlers.Projects do
     end)
   end
 
-  @spec flatten_tree_files([map()]) :: [String.t()]
+  @spec flatten_tree_files([FileTypes.tree_node()]) :: [String.t()]
   defp flatten_tree_files(nodes) when is_list(nodes) do
     Enum.flat_map(nodes, fn
       %{type: :file, rel_path: rel_path} -> [rel_path]
@@ -613,7 +622,8 @@ defmodule Ide.Mcp.Handlers.Projects do
     end)
   end
 
-  @spec search_file_content(String.t(), String.t(), binary(), String.t()) :: [map()]
+  @spec search_file_content(String.t(), String.t(), binary(), String.t()) ::
+          [ToolTypes.files_search_match()]
   defp search_file_content(source_root, rel_path, content, query) do
     content
     |> String.split("\n")

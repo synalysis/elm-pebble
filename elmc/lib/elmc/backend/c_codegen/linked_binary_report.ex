@@ -3,7 +3,9 @@ defmodule Elmc.Backend.CCodegen.LinkedBinaryReport do
 
   @symbol_line_re ~r/^\s+0x[0-9a-fA-F]+\s+0x([0-9a-fA-F]+)\s+(.+)$/
 
-  @spec from_app_build(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  alias Elmc.Backend.CCodegen.Types.LinkedBinary, as: LinkedBinaryTypes
+
+  @spec from_app_build(String.t(), keyword()) :: {:ok, LinkedBinaryTypes.wire_map()} | {:error, term()}
   def from_app_build(app_root, opts \\ []) when is_binary(app_root) do
     build_dir = Path.join(app_root, "build")
     platform = Keyword.get(opts, :platform)
@@ -18,7 +20,7 @@ defmodule Elmc.Backend.CCodegen.LinkedBinaryReport do
     end
   end
 
-  @spec from_map(String.t(), keyword()) :: map()
+  @spec from_map(String.t(), keyword()) :: LinkedBinaryTypes.t()
   def from_map(contents, opts \\ []) when is_binary(contents) do
     symbols = parse_symbols(contents)
     elmc_symbols = Enum.filter(symbols, &elmc_symbol?/1)

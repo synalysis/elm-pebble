@@ -16,9 +16,29 @@ defmodule Ide.Projects.Types do
           optional(String.t()) => String.t()
         }
 
+  @type github_import_repo :: %{
+          required(:owner) => String.t(),
+          required(:repo) => String.t(),
+          required(:branch) => String.t()
+        }
+
+  @type github_clone_params :: %{
+          optional(:owner) => String.t(),
+          optional(:repo) => String.t(),
+          optional(:branch) => String.t(),
+          optional(:repo_url) => String.t(),
+          optional(String.t()) => String.t()
+        }
+
   @type release_defaults :: %{
           optional(:is_published) => boolean(),
           optional(String.t()) => String.t() | [String.t()] | boolean() | nil
+        }
+
+  @type release_defaults_carrier :: %{
+          optional(:release_defaults) => release_defaults(),
+          optional(:slug) => String.t(),
+          optional(atom()) => term()
         }
 
   @type package_metadata :: %{
@@ -51,7 +71,9 @@ defmodule Ide.Projects.Types do
   @type read_result :: FileTypes.read_result()
   @type write_result :: FileTypes.write_result()
 
-  @type project_attrs :: map()
+  @type project_attrs :: %{
+          optional(String.t()) => String.t() | [String.t()] | boolean() | release_defaults() | github_config() | nil
+        }
   @type project_error :: atom() | String.t() | tuple() | Ecto.Changeset.t()
 
   @type create_result :: {:ok, Ide.Projects.Project.t()} | {:error, project_error()}

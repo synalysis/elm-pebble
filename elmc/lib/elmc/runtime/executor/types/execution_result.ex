@@ -3,19 +3,29 @@ defmodule Elmc.Runtime.Executor.Types.ExecutionResult do
   Successful return map from `Elmc.Runtime.Executor.execute/1`.
   """
 
-  @type model_patch :: map()
-  @type runtime_snapshot :: map()
+  alias Elmc.Runtime.Executor.Types.{RuntimeSnapshot, ViewTree, WireJson}
 
-  @type t :: %{
-          required(:model_patch) => model_patch(),
-          required(:view_output) => [map()],
-          required(:runtime) => runtime_snapshot(),
-          required(:protocol_events) => [map()],
-          required(:followup_messages) => [map() | String.t()],
-          optional(:view_tree) => map() | nil,
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+  @type model_patch :: %{
+          optional(atom()) => WireJson.t(),
+          optional(String.t()) => WireJson.t()
         }
 
-  @type wire_map :: t() | map()
+  @type wire_model_patch :: model_patch()
+
+  @type protocol_event :: %{optional(atom()) => WireJson.t(), optional(String.t()) => WireJson.t()}
+
+  @type followup_message :: protocol_event() | String.t()
+
+  @type t :: %{
+          required(:model_patch) => wire_model_patch(),
+          required(:view_output) => [ViewTree.t()],
+          required(:runtime) => RuntimeSnapshot.t(),
+          required(:protocol_events) => [protocol_event()],
+          required(:followup_messages) => [followup_message()],
+          optional(:view_tree) => ViewTree.t() | nil,
+          optional(atom()) => WireJson.t(),
+          optional(String.t()) => WireJson.t()
+        }
+
+  @type wire_map :: t() | %{optional(atom()) => term(), optional(String.t()) => term()}
 end

@@ -4,9 +4,10 @@ defmodule Elmc.Backend.CCodegen.Hoist do
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.CCodegen.Types.Hoist, as: HoistTypes
 
-  @type hoisted_native_bool_key :: term()
-  @type hoisted_native_int_map :: %{hoisted_native_bool_key() => String.t()}
+  @type hoisted_native_bool_key :: HoistTypes.key()
+  @type hoisted_native_int_map :: HoistTypes.native_int_map()
 
   @spec put_hoisted_native_bool(Types.compile_env(), Types.ir_expr(), String.t()) ::
           Types.compile_env()

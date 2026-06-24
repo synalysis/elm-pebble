@@ -4,6 +4,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.WatchButtons do
   alias IdeWeb.WorkspaceLive.DebuggerPage.SubscriptionControls
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Types, as: SupportTypes
 
+  alias IdeWeb.WorkspaceLive.DebuggerFlow.Types, as: FlowTypes
+
   @type trigger_row :: SupportTypes.trigger_button_row()
   @type watch_button :: :back | :up | :select | :down
   @type watch_button_control :: %{
@@ -11,14 +13,15 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.WatchButtons do
           required(:label) => String.t(),
           required(:trigger) => String.t(),
           required(:target) => String.t(),
-          required(:message) => term(),
+          required(:message) => String.t(),
           required(:enabled) => boolean(),
           required(:title) => String.t()
         }
 
   @watch_buttons [:back, :up, :select, :down]
 
-  @spec controls([trigger_row()], list()) :: %{watch_button() => watch_button_control()}
+  @spec controls([trigger_row()], [FlowTypes.auto_fire_subscription_row()]) ::
+          %{watch_button() => watch_button_control()}
   def controls(rows, disabled_subscriptions) when is_list(rows) do
     Map.new(@watch_buttons, fn button ->
       row = button_row(rows, button)
@@ -29,7 +32,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.WatchButtons do
   def controls(_rows, disabled_subscriptions),
     do: controls([], disabled_subscriptions)
 
-  @spec button_control(watch_button(), trigger_row() | nil, list()) :: watch_button_control()
+  @spec button_control(
+          watch_button(),
+          trigger_row() | nil,
+          [FlowTypes.auto_fire_subscription_row()]
+        ) :: watch_button_control()
   defp button_control(button, row, disabled_subscriptions) when is_map(row) do
     enabled? =
       SubscriptionControls.enabled?(
@@ -63,7 +70,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.WatchButtons do
     }
   end
 
-  @spec button_row([map()], watch_button()) :: map() | nil
+  @spec button_row([trigger_row()], watch_button()) :: trigger_row() | nil
   defp button_row(rows, button) when is_list(rows) do
     button_name = Atom.to_string(button)
 

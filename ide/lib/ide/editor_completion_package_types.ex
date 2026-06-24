@@ -2,8 +2,12 @@ defmodule Ide.EditorCompletionPackageTypes do
   @moduledoc false
 
   alias Ide.EditorCompletionTypeParse
+  alias Ide.EditorCompletion.Types, as: CompletionTypes
 
-  @spec build([map()] | nil) :: map()
+  @type package_type_maps :: CompletionTypes.package_type_maps()
+  @type doc_package_row :: CompletionTypes.doc_package_row()
+
+  @spec build([doc_package_row()] | nil) :: package_type_maps()
   def build(rows) when is_list(rows) do
     Enum.reduce(rows, %{}, fn row, acc ->
       module_docs = row[:docs] || row["docs"] || []

@@ -165,7 +165,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
           Types.compile_env(),
           Types.compile_counter(),
           keyword()
-        ) :: {String.t(), String.t(), Types.compile_counter(), boolean()}
+        ) :: Types.compile_operand_inner_result()
   def compile_call_operand_inner(%{op: :var, name: name}, env, counter, opts) do
     borrow_args? = Keyword.get(opts, :borrow_args?, false)
 
@@ -210,7 +210,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
           Types.compile_env(),
           Types.compile_counter()
         ) ::
-          {String.t(), String.t(), Types.compile_counter(), boolean()}
+          Types.compile_operand_inner_result()
   def compile_retaining_call_operand(%{op: :var, name: name}, env, counter) do
     case Map.get(env, name) do
       source when is_binary(source) ->

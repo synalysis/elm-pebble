@@ -4,6 +4,11 @@ defmodule Ide.Emulator.LogCapture do
   alias Ide.Emulator.PebbleProtocol.{LogLines, Router}
   alias Ide.Emulator.Session.ProcessHost
 
+  @type capture_context :: %{
+          optional(:console_port) => pos_integer() | nil,
+          optional(:protocol_router_pid) => pid() | nil
+        }
+
   @type snapshot :: %{
           required(:source) => String.t(),
           required(:duration_ms) => pos_integer(),
@@ -19,7 +24,7 @@ defmodule Ide.Emulator.LogCapture do
 
   @default_duration_ms 5_000
 
-  @spec snapshot(map(), keyword()) :: snapshot()
+  @spec snapshot(capture_context(), keyword()) :: snapshot()
   def snapshot(session_fields, opts \\ []) when is_map(session_fields) do
     duration_ms = parse_duration_ms(opts)
     console_port = Map.get(session_fields, :console_port)

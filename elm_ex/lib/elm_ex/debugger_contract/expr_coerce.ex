@@ -1,6 +1,8 @@
 defmodule ElmEx.DebuggerContract.ExprCoerce do
   @moduledoc false
 
+  alias ElmEx.Frontend.AstContract.Types, as: AstTypes
+
   @known_ops ~w(
     call qualified_call qualified_call1 constructor_call list_literal
     let_in case if var expr int_literal string_literal float_literal bool_literal char_literal
@@ -17,12 +19,14 @@ defmodule ElmEx.DebuggerContract.ExprCoerce do
 
   @string_keys Map.new(@field_keys, fn k -> {k, String.to_atom(k)} end)
 
-  @spec to_ast(map() | list() | term()) :: map() | list() | term()
+  @spec to_ast(map()) :: AstTypes.expr()
+  @spec to_ast(list()) :: list()
+  @spec to_ast(term()) :: term()
   def to_ast(%{} = map), do: coerce_map(map)
   def to_ast(list) when is_list(list), do: Enum.map(list, &to_ast/1)
   def to_ast(other), do: other
 
-  @spec coerce_map(map()) :: map()
+  @spec coerce_map(map()) :: AstTypes.expr()
   defp coerce_map(map) do
     Map.new(map, fn {k, v} ->
       key = coerce_key(k)

@@ -278,7 +278,7 @@ defmodule Elmc.CLI do
     end
   end
 
-  @spec build_manifest(String.t(), map()) :: map()
+  @spec build_manifest(String.t(), Types.manifest_project()) :: Types.project_manifest()
   defp build_manifest(project_dir, project) do
     dependencies = load_declared_dependencies(project_dir)
     compatibility = dependency_compatibility_rows(dependencies)
@@ -429,7 +429,7 @@ defmodule Elmc.CLI do
   defp dependency_keys(map) when is_map(map), do: Map.keys(map)
   defp dependency_keys(_), do: []
 
-  @spec dependency_compatibility_rows([String.t()]) :: [map()]
+  @spec dependency_compatibility_rows([String.t()]) :: [Types.dependency_compatibility_row()]
   defp dependency_compatibility_rows(packages) when is_list(packages) do
     packages
     |> Enum.filter(&is_binary/1)

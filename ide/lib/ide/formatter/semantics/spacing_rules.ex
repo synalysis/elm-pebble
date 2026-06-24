@@ -1,11 +1,12 @@
 defmodule Ide.Formatter.Semantics.SpacingRules do
   @moduledoc false
   alias Ide.Formatter.Semantics.TextOps
+  alias Ide.Formatter.Types, as: FormatterTypes
 
   @spec comma_char?(String.t()) :: boolean()
   def comma_char?(char) when is_binary(char), do: char == ","
 
-  @spec normalize_comma_spacing(String.t(), [map()] | nil) :: String.t()
+  @spec normalize_comma_spacing(String.t(), [FormatterTypes.format_token()] | nil) :: String.t()
   def normalize_comma_spacing(source, tokens \\ nil)
 
   def normalize_comma_spacing(source, tokens) when is_binary(source) and is_list(tokens) do

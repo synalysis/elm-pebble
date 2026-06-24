@@ -49,6 +49,9 @@ defmodule Elmc.Backend.Pebble.Types.FeatureFlags.Keys do
   @spec command_device_services_keys() :: [Types.feature_flag_key()]
   defdelegate command_device_services_keys(), to: Command, as: :device_services_keys
 
+  @spec command_speaker_keys() :: [Types.feature_flag_key()]
+  defdelegate command_speaker_keys(), to: Command, as: :speaker_keys
+
   @spec draw_primitive_keys() :: [Types.feature_flag_key()]
   defdelegate draw_primitive_keys(), to: Draw, as: :primitive_keys
 

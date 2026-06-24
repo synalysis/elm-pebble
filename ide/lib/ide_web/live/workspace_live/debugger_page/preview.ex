@@ -102,11 +102,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Preview do
     "debugger-preview-svg-#{:erlang.phash2(key)}"
   end
 
-  @spec pebble_angle_deg(integer() | term()) :: float()
+  @spec pebble_angle_deg(integer() | float() | nil) :: float()
   def pebble_angle_deg(angle) when is_integer(angle), do: angle * 360.0 / 65_536.0
   def pebble_angle_deg(_), do: 0.0
 
-  @spec unresolved_svg_summary([map()]) :: String.t()
+  @spec unresolved_svg_summary([svg_op()]) :: String.t()
   def unresolved_svg_summary(rows), do: DebuggerPreview.unresolved_summary(rows)
 
   @spec svg_op_tooltip(svg_op()) :: String.t() | nil

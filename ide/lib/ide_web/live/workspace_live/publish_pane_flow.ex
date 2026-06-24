@@ -22,10 +22,13 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
   alias IdeWeb.WorkspaceLive.PublishFlow
   alias IdeWeb.WorkspaceLive.State
   alias IdeWeb.WorkspaceLive.ToolchainPresenter
+  alias IdeWeb.WorkspaceLive.Types
 
   @type socket :: Phoenix.LiveView.Socket.t()
   @type lv_noreply :: {:noreply, socket()}
   @type wire_input :: String.t() | integer() | float() | boolean() | nil
+  @type publish_submit_options :: PublishFlow.publish_submit_option_map()
+  @type release_summary :: PublishFlow.release_summary()
 
   @publish_events ~w(
     update-release-summary
@@ -58,7 +61,7 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
   @spec handles?(String.t()) :: boolean()
   def handles?(event) when is_binary(event), do: event in @publish_events
 
-  @spec handle_event(String.t(), map(), socket()) :: lv_noreply()
+  @spec handle_event(String.t(), Types.event_params(), socket()) :: lv_noreply()
   def handle_event("update-release-summary", params, socket) do
     __MODULE__.handle_event("update-publish-form", params, socket)
   end
@@ -633,7 +636,8 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
      |> assign(:release_notes_output, "Release notes export task exited: #{inspect(reason)}")}
   end
 
-  @spec merge_publish_submit_options(map(), map()) :: map()
+  @spec merge_publish_submit_options(publish_submit_options(), publish_submit_options()) ::
+          publish_submit_options()
   def merge_publish_submit_options(existing, updates)
       when is_map(existing) and is_map(updates) do
     existing
@@ -664,7 +668,8 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
   @spec to_bool(wire_input()) :: boolean()
   defp to_bool(value) when value in [true, "true", "on", "1", 1], do: true
   defp to_bool(_), do: false
-  @spec persist_project_publish_metadata(Project.t(), map(), map()) :: Project.t()
+  @spec persist_project_publish_metadata(Project.t(), release_summary(), release_summary()) ::
+          Project.t()
   def persist_project_publish_metadata(
         %Project{} = project,
         submitted_release_summary,
@@ -721,7 +726,15 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
     end
   end
 
-  @spec handle_async(atom(), term(), socket()) :: lv_noreply()
+  @type publish_async_name ::
+          :prepare_release
+          | :prepare_publish_artifact
+          | :submit_publish_release
+          | :push_project_snapshot
+          | :export_publish_manifest
+          | :export_release_notes
+
+  @spec handle_async(publish_async_name(), Types.async_result(), socket()) :: lv_noreply()
   def handle_async(async, result, socket) when async in @publish_asyncs do
     do_handle_async(async, result, socket)
   end

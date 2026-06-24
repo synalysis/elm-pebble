@@ -8,7 +8,8 @@ defmodule Ide.PebbleToolchain.Elmc do
   @type elmc_compile_result :: Types.elmc_compile_result()
   @type toolchain_error :: Types.toolchain_error()
 
-  @spec watch_compile_opts(String.t(), [String.t()], map()) :: Types.watch_compile_opts()
+  @spec watch_compile_opts(String.t(), [String.t()], Types.elmc_extra_opts()) ::
+          Types.watch_compile_opts()
   def watch_compile_opts(out_dir, target_platforms, extra \\ %{})
       when is_binary(out_dir) and is_list(target_platforms) and is_map(extra) do
     %{
@@ -39,7 +40,8 @@ defmodule Ide.PebbleToolchain.Elmc do
     end
   end
 
-  @spec compile_for_project_dir(String.t(), String.t(), map()) :: Elmc.CLI.project_run()
+  @spec compile_for_project_dir(String.t(), String.t(), Types.elmc_extra_opts()) ::
+          Elmc.CLI.project_run()
   def compile_for_project_dir(project_dir, out_dir, extra_opts \\ %{})
       when is_binary(project_dir) and is_binary(out_dir) and is_map(extra_opts) do
     elmc_opts =

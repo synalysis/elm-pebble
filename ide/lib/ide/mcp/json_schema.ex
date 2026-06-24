@@ -1,7 +1,20 @@
 defmodule Ide.Mcp.JsonSchema do
   @moduledoc false
 
-  @spec object(map(), keyword()) :: map()
+  @type property_field :: %{
+          optional(atom()) => String.t() | boolean() | number() | integer() | [String.t()],
+          optional(String.t()) => term()
+        }
+
+  @type properties :: %{optional(String.t()) => property_field()}
+  @type schema_object :: %{
+          required(:type) => String.t(),
+          required(:additionalProperties) => boolean(),
+          required(:properties) => properties(),
+          optional(:required) => [atom() | String.t()]
+        }
+
+  @spec object(properties(), keyword()) :: schema_object()
   def object(properties, opts \\ []) when is_map(properties) do
     schema = %{
       type: "object",

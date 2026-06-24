@@ -193,7 +193,8 @@ defmodule Ide.Debugger.SimulatorWatchDelivery do
     end)
   end
 
-  @spec inject_row(Types.runtime_state(), map(), apply_ctx()) :: Types.runtime_state()
+  @spec inject_row(Types.runtime_state(), Types.subscription_row_input(), apply_ctx()) ::
+          Types.runtime_state()
   defp inject_row(state, row, ctx) when is_map(state) and is_map(row) and is_map(ctx) do
     trigger = Map.get(row, :trigger) || Map.get(row, "trigger")
     message = Map.get(row, :message) || Map.get(row, "message")

@@ -51,7 +51,7 @@ defmodule Ide.Debugger.RuntimeStatusFacades do
           host(),
           Types.runtime_state(),
           Types.surface_target(),
-          map()
+          Types.RuntimeExecEventPayload.extra()
         ) :: Types.runtime_state()
   def append_runtime_exec_for_target(host, state, target, extra)
       when is_map(host) and is_map(state) and target in [:watch, :companion, :phone] and
@@ -78,8 +78,8 @@ defmodule Ide.Debugger.RuntimeStatusFacades do
           host(),
           Types.runtime_state(),
           Types.surface_target(),
-          map(),
-          Types.elm_introspect() | map()
+          Types.runtime_step_result(),
+          Types.elm_introspect()
         ) :: Types.runtime_state()
   def maybe_append_after_execution(host, state, target, execution, introspect)
       when is_map(host) and is_map(state) and target in [:watch, :companion, :phone] and

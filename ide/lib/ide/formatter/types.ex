@@ -5,13 +5,16 @@ defmodule Ide.Formatter.Types do
 
   alias Ide.Formatter.Semantics.HeaderMetadata
   alias Ide.Formatter.Semantics.Parse
+  alias Ide.Tokenizer.Types, as: TokenizerTypes
 
   @type source :: String.t()
   @type source_line :: String.t()
   @type format_opts :: keyword()
-  @type parse_error :: map()
+  @type parse_error :: diagnostic() | %{optional(atom()) => term(), optional(String.t()) => term()}
   @type parse_payload :: Parse.parse_payload()
   @type metadata :: HeaderMetadata.metadata()
+  @type format_token :: TokenizerTypes.token()
+
   @type diagnostic :: %{
           severity: String.t(),
           source: String.t(),
@@ -20,12 +23,19 @@ defmodule Ide.Formatter.Types do
           column: integer() | nil
         }
 
+  @type format_details :: %{
+          optional(:parser_payload_reused?) => boolean(),
+          optional(:pipeline) => String.t(),
+          optional(atom()) => term(),
+          optional(String.t()) => term()
+        }
+
   @type format_result :: %{
           formatted_source: String.t(),
           changed?: boolean(),
           diagnostics: [diagnostic()],
           formatter: String.t(),
-          details: map()
+          details: format_details()
         }
   @type edit_result :: %{
           next_content: String.t(),
@@ -48,6 +58,25 @@ defmodule Ide.Formatter.Types do
         }
 
   @type parity_phase_gate :: :disabled | :empty | :skipped | :failed | :passed
+
+  @type multiline_if_layout :: %{
+          required(:else_indent) => non_neg_integer(),
+          required(:branch_indent) => non_neg_integer(),
+          optional(:phase) => :then | :waiting_else | :else
+        }
+
+  @type non_empty_line_context :: %{
+          required(:line) => source_line(),
+          required(:trimmed) => String.t(),
+          required(:indent) => non_neg_integer()
+        }
+
+  @type union_align_state :: %{
+          required(:in_type_decl) => boolean(),
+          required(:declaration_indent) => non_neg_integer(),
+          required(:pipe_indent) => non_neg_integer() | nil,
+          required(:pending_blanks) => non_neg_integer()
+        }
 
   @type mix_task_args :: [String.t()]
 end

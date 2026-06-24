@@ -25,7 +25,12 @@ defmodule Ide.Compiler.Diagnostics do
         }
 
   @type diagnostic_field :: String.t() | integer() | boolean() | nil
-  @type wire_diagnostics :: list() | map() | nil
+  @type wire_diagnostics :: [wire_diagnostic()] | wire_diagnostic() | nil
+
+  @type wire_diagnostic :: %{
+          optional(atom()) => diagnostic_field(),
+          optional(String.t()) => diagnostic_field()
+        }
 
   @spec normalize_list(wire_diagnostics()) :: [diagnostic_map()]
   def normalize_list(value) when is_list(value) do
@@ -49,7 +54,7 @@ defmodule Ide.Compiler.Diagnostics do
     end)
   end
 
-  @spec normalize_diagnostic(map()) :: diagnostic_map()
+  @spec normalize_diagnostic(wire_diagnostic()) :: diagnostic_map()
   def normalize_diagnostic(diagnostic) when is_map(diagnostic) do
     severity =
       diagnostic
@@ -74,7 +79,7 @@ defmodule Ide.Compiler.Diagnostics do
     }
   end
 
-  @spec value(map(), atom() | String.t(), diagnostic_field()) :: diagnostic_field()
+  @spec value(wire_diagnostic(), atom() | String.t(), diagnostic_field()) :: diagnostic_field()
   defp value(map, key, default \\ nil) do
     cond do
       Map.has_key?(map, key) -> Map.get(map, key)

@@ -10,6 +10,7 @@ defmodule ElmEx.IR.Validation do
 
   @type diagnostic :: Diagnostic.t()
   @type bound_names :: MapSet.t(String.t())
+  @type function_key :: String.t()
 
   @doc """
   Runs all validation passes on the IR and returns a list of diagnostics.
@@ -33,7 +34,7 @@ defmodule ElmEx.IR.Validation do
   end
 
   # Check that no :unsupported ops survive in any expression tree
-  @spec check_no_unsupported_ops(ElmEx.IR.t()) :: [diagnostic()]
+  @spec check_no_unsupported_ops(IR.t()) :: [diagnostic()]
   defp check_no_unsupported_ops(%IR{} = ir) do
     ir.modules
     |> Enum.flat_map(fn mod ->
@@ -56,7 +57,7 @@ defmodule ElmEx.IR.Validation do
 
   # Check that all function declarations with bodies have no nil exprs
   # (except type_alias and union declarations)
-  @spec check_no_missing_declarations(ElmEx.IR.t()) :: [diagnostic()]
+  @spec check_no_missing_declarations(IR.t()) :: [diagnostic()]
   defp check_no_missing_declarations(%IR{} = ir) do
     all_function_names =
       ir.modules
@@ -96,7 +97,7 @@ defmodule ElmEx.IR.Validation do
   end
 
   # Check basic arity sanity: functions with args should have matching declarations
-  @spec check_function_arity_sanity(ElmEx.IR.t()) :: [diagnostic()]
+  @spec check_function_arity_sanity(IR.t()) :: [diagnostic()]
   defp check_function_arity_sanity(%IR{} = ir) do
     ir.modules
     |> Enum.flat_map(fn mod ->
@@ -125,7 +126,7 @@ defmodule ElmEx.IR.Validation do
   end
 
   # Deep check for :unsupported inside expressions
-  @spec check_no_residual_unsupported_in_expressions(ElmEx.IR.t()) :: [diagnostic()]
+  @spec check_no_residual_unsupported_in_expressions(IR.t()) :: [diagnostic()]
   defp check_no_residual_unsupported_in_expressions(%IR{} = ir) do
     ir.modules
     |> Enum.flat_map(fn mod ->
@@ -153,7 +154,7 @@ defmodule ElmEx.IR.Validation do
   end
 
   # Helper: collect all nodes matching a given op
-  @spec collect_ops(Expr.t() | map(), atom()) :: [Expr.t()]
+  @spec collect_ops(Expr.t() | map(), Expr.op()) :: [Expr.t()]
   defp collect_ops(%{op: target_op} = expr, target_op) do
     [expr | collect_ops_children(expr, target_op)]
   end
@@ -164,7 +165,7 @@ defmodule ElmEx.IR.Validation do
 
   defp collect_ops(_, _), do: []
 
-  @spec collect_ops_children(Expr.t() | map(), atom()) :: [Expr.t()]
+  @spec collect_ops_children(Expr.t() | map(), Expr.op()) :: [Expr.t()]
   defp collect_ops_children(expr, target_op) when is_map(expr) do
     expr
     |> Map.values()
@@ -183,13 +184,13 @@ defmodule ElmEx.IR.Validation do
     end)
   end
 
-  @spec count_ops(Expr.t() | map(), atom()) :: non_neg_integer()
+  @spec count_ops(Expr.t() | map(), Expr.op()) :: non_neg_integer()
   defp count_ops(expr, target_op) do
     length(collect_ops(expr, target_op))
   end
 
   # Collect qualified function call targets
-  @spec collect_function_calls(Expr.t() | map(), String.t(), bound_names()) :: [String.t()]
+  @spec collect_function_calls(Expr.t() | map(), String.t(), bound_names()) :: [function_key()]
   defp collect_function_calls(
          %{op: :qualified_call, target: target, args: args},
          module,

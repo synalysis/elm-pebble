@@ -10,7 +10,7 @@ defmodule Ide.Packages.WatchCompatibility do
   Drops catalog entries whose latest-version dependency tree includes any
   `watch_forbidden_packages` (browser / DOM stack unsuitable for Pebble watch).
   """
-  @spec filter_entries([map()], Types.provider_spec()) :: [map()]
+  @spec filter_entries([Types.search_entry()], Types.provider_spec()) :: [Types.search_entry()]
   def filter_entries(entries, provider) when is_list(entries) do
     # Own the ETS table in this process so short-lived Task workers cannot delete it.
     _ = cache_table()
@@ -49,7 +49,8 @@ defmodule Ide.Packages.WatchCompatibility do
     :ok
   end
 
-  @spec entry_compatible?(map(), Types.watch_compat_callbacks(), [String.t()]) :: boolean()
+  @spec entry_compatible?(Types.search_entry(), Types.watch_compat_callbacks(), [String.t()]) ::
+          boolean()
   defp entry_compatible?(%{name: name}, callbacks, forbidden) when is_binary(name) do
     compatible_cached?(name, callbacks, forbidden)
   end
@@ -117,7 +118,7 @@ defmodule Ide.Packages.WatchCompatibility do
     end
   end
 
-  @spec release_dependency_names(map()) :: [String.t()]
+  @spec release_dependency_names(Types.elm_json()) :: [String.t()]
   defp release_dependency_names(elm_json) when is_map(elm_json) do
     deps = Map.get(elm_json, "dependencies", %{})
 

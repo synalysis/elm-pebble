@@ -3,10 +3,13 @@ defmodule Ide.Mcp.Handlers.Emulator do
 
   alias Ide.Emulator
   alias Ide.Emulator.LogCapture
+  alias Ide.Emulator.Types, as: EmulatorTypes
   alias Ide.Emulator.Workflow
+  alias Ide.Mcp.ToolTypes
   alias Ide.Mcp.ToolSupport
   alias Ide.Mcp.WireTypes
   alias Ide.PebbleToolchain
+  alias Ide.Projects
   alias Ide.WatchModels
 
   def call("emulator.launch", %{"slug" => slug} = args) do
@@ -85,8 +88,8 @@ defmodule Ide.Mcp.Handlers.Emulator do
 
   def call(name, _args), do: {:error, "unknown emulator tool: #{name}"}
 
-  @spec run_launched_session(String.t(), Workflow.launch_result(), map(), boolean(), boolean(), non_neg_integer()) ::
-          {:ok, map()} | {:error, String.t()}
+  @spec run_launched_session(String.t(), Workflow.launch_result(), ToolTypes.tool_args(), boolean(), boolean(), non_neg_integer()) ::
+          {:ok, ToolTypes.emulator_run_result()} | {:error, String.t()}
   defp run_launched_session(slug, launched, args, install?, kill_after?, boot_wait_ms) do
     session_id = launched.session.id
     args = Map.put_new(args, "logs_snapshot_seconds", 20)
@@ -127,7 +130,7 @@ defmodule Ide.Mcp.Handlers.Emulator do
     end
   end
 
-  @spec launch_payload(String.t(), Workflow.launch_result()) :: map()
+  @spec launch_payload(String.t(), Workflow.launch_result()) :: ToolTypes.emulator_launch_payload()
   defp launch_payload(slug, %{session: session, artifact_path: artifact_path, platform: platform}) do
     %{
       slug: slug,
@@ -137,7 +140,8 @@ defmodule Ide.Mcp.Handlers.Emulator do
     }
   end
 
-  @spec resolve_platform(map(), map()) :: {:ok, String.t()} | {:error, term()}
+  @spec resolve_platform(ToolTypes.tool_args(), Projects.Project.t()) ::
+          {:ok, String.t()} | {:error, term()}
   defp resolve_platform(args, project) do
     case Map.get(args, "platform") || Map.get(args, "emulator_target") do
       platform when is_binary(platform) ->
@@ -154,7 +158,7 @@ defmodule Ide.Mcp.Handlers.Emulator do
     end
   end
 
-  @spec default_platform(map()) :: String.t()
+  @spec default_platform(Projects.Project.t()) :: String.t()
   defp default_platform(project) do
     project
     |> Map.get(:debugger_settings, %{})
@@ -169,7 +173,8 @@ defmodule Ide.Mcp.Handlers.Emulator do
     end
   end
 
-  @spec validate_platform(String.t()) :: {:ok, String.t()} | {:error, term()}
+  @spec validate_platform(String.t()) ::
+          {:ok, String.t()} | {:error, EmulatorTypes.unsupported_emulator_target()}
   defp validate_platform(platform) do
     allowed = PebbleToolchain.supported_emulator_targets()
 
@@ -180,7 +185,8 @@ defmodule Ide.Mcp.Handlers.Emulator do
     end
   end
 
-  @spec maybe_wait_display_ready(String.t(), map()) :: :ok | {:error, term()}
+  @spec maybe_wait_display_ready(String.t(), ToolTypes.tool_args()) ::
+          :ok | {:error, EmulatorTypes.display_ready_error()}
   defp maybe_wait_display_ready(session_id, args) do
     if wait_display_ready?(args) do
       wait_display_ready(session_id, args)
@@ -189,18 +195,19 @@ defmodule Ide.Mcp.Handlers.Emulator do
     end
   end
 
-  @spec wait_display_ready(String.t(), map()) :: :ok | {:error, term()}
+  @spec wait_display_ready(String.t(), ToolTypes.tool_args()) ::
+          :ok | {:error, EmulatorTypes.display_ready_error()}
   defp wait_display_ready(session_id, args) do
     Workflow.wait_display_ready(session_id, timeout_ms: parse_display_ready_timeout_ms(args))
   end
 
-  @spec wait_display_ready?(map()) :: boolean()
+  @spec wait_display_ready?(ToolTypes.tool_args()) :: boolean()
   defp wait_display_ready?(args) do
     ToolSupport.normalize_mcp_boolean(Map.get(args, "wait_display_ready"), true)
   end
 
-  @spec run_optional_install(String.t(), boolean(), map()) ::
-          {:ok, map() | nil} | {:error, term()}
+  @spec run_optional_install(String.t(), boolean(), ToolTypes.tool_args()) ::
+          {:ok, EmulatorTypes.pbw_install_result() | nil} | {:error, term()}
   defp run_optional_install(_session_id, false, _args), do: {:ok, nil}
 
   defp run_optional_install(session_id, true, _args) do
@@ -220,7 +227,7 @@ defmodule Ide.Mcp.Handlers.Emulator do
 
   @button_protocol 8
   @button_select_mask 4
-  @spec start_log_capture_task(String.t(), map()) :: Task.t()
+  @spec start_log_capture_task(String.t(), ToolTypes.tool_args()) :: Task.t()
   defp start_log_capture_task(session_id, args) do
     context =
       case Emulator.log_capture_context(session_id) do
@@ -251,7 +258,8 @@ defmodule Ide.Mcp.Handlers.Emulator do
   @spec log_capture_task_timeout_ms() :: pos_integer()
   defp log_capture_task_timeout_ms, do: 40_000
 
-  @spec capture_logs_snapshot(map(), map()) :: LogCapture.snapshot()
+  @spec capture_logs_snapshot(LogCapture.capture_context(), ToolTypes.tool_args()) ::
+          LogCapture.snapshot()
   defp capture_logs_snapshot(context, args) when is_map(context) do
     seconds = Map.get(args, "logs_snapshot_seconds")
 
@@ -265,7 +273,7 @@ defmodule Ide.Mcp.Handlers.Emulator do
     LogCapture.snapshot(context, opts)
   end
 
-  @spec capture_logs_snapshot(String.t(), map()) :: LogCapture.snapshot()
+  @spec capture_logs_snapshot(String.t(), ToolTypes.tool_args()) :: LogCapture.snapshot()
   defp capture_logs_snapshot(session_id, args) when is_binary(session_id) do
     case Emulator.log_capture_context(session_id) do
       {:ok, context} -> capture_logs_snapshot(context, args)
@@ -273,7 +281,7 @@ defmodule Ide.Mcp.Handlers.Emulator do
     end
   end
 
-  @spec logs_payload(Ide.Emulator.LogCapture.snapshot()) :: map()
+  @spec logs_payload(LogCapture.snapshot()) :: ToolTypes.emulator_logs_payload()
   defp logs_payload(snapshot) do
     %{
       source: snapshot.source,
@@ -286,7 +294,7 @@ defmodule Ide.Mcp.Handlers.Emulator do
     }
   end
 
-  @spec maybe_open_from_launcher(String.t(), map()) :: :ok
+  @spec maybe_open_from_launcher(String.t(), ToolTypes.tool_args()) :: :ok
   defp maybe_open_from_launcher(session_id, args) do
     if ToolSupport.normalize_mcp_boolean(Map.get(args, "open_from_launcher"), false) do
       press_select_button(session_id)
@@ -320,7 +328,7 @@ defmodule Ide.Mcp.Handlers.Emulator do
     end
   end
 
-  @spec parse_display_ready_timeout_ms(map()) :: pos_integer()
+  @spec parse_display_ready_timeout_ms(ToolTypes.tool_args()) :: pos_integer()
   defp parse_display_ready_timeout_ms(args) do
     parse_positive_ms(Map.get(args, "display_ready_timeout_ms"), 120_000, 600_000)
   end

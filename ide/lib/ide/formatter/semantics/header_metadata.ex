@@ -1,6 +1,8 @@
 defmodule Ide.Formatter.Semantics.HeaderMetadata do
   @moduledoc false
 
+  alias ElmEx.Frontend.Types.ImportEntry
+
   @type header_lines :: %{module: integer() | nil, imports: [integer()]}
   @type lexer_token :: tuple()
   @type token_line :: [lexer_token()]
@@ -9,7 +11,7 @@ defmodule Ide.Formatter.Semantics.HeaderMetadata do
           module: String.t() | nil,
           imports: [String.t()],
           module_exposing: nil | exposing_clause(),
-          import_entries: [map()],
+          import_entries: [ImportEntry.wire_map()],
           port_module: boolean(),
           ports: [String.t()],
           header_lines: header_lines()
@@ -138,7 +140,7 @@ defmodule Ide.Formatter.Semantics.HeaderMetadata do
   end
 
   @spec parse_import_entry(token_line(), [token_line()], non_neg_integer(), pos_integer()) ::
-          map() | nil
+          ImportEntry.wire_map() | nil
   defp parse_import_entry(
          [{:import_kw, _}, {:upper_id, _, module_name} | line],
          lines,

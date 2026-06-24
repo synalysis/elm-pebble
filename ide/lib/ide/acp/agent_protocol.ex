@@ -9,6 +9,7 @@ defmodule Ide.Acp.AgentProtocol do
 
   alias Ide.Mcp.Protocol, as: McpProtocol
   alias Ide.Mcp.Tools
+  alias Ide.Acp.Types, as: AcpTypes
 
   @protocol_version 1
 
@@ -25,7 +26,7 @@ defmodule Ide.Acp.AgentProtocol do
     }
   end
 
-  @spec handle_message(map(), t()) :: {t(), [map()]}
+  @spec handle_message(AcpTypes.wire_message(), t()) :: {t(), [AcpTypes.wire_message()]}
   def handle_message(%{"id" => id, "method" => method, "params" => params}, state) do
     handle_request(id, method, params || %{}, state)
   end

@@ -3,11 +3,13 @@ defmodule Ide.Packages.ModuleDoc do
 
   alias Ide.Packages.Types
 
+  alias Ide.PackageDocs.Types, as: PackageDocsTypes
+
   @doc """
   Converts a single module entry from package.elm-lang.org `docs.json` into Markdown
   suitable for `Ide.Markdown.readme_to_html/1`.
   """
-  @spec json_to_markdown(map()) :: String.t()
+  @spec json_to_markdown(PackageDocsTypes.module_doc()) :: String.t()
   def json_to_markdown(mod) when is_map(mod) do
     name = mod["name"] || ""
 

@@ -327,7 +327,7 @@ defmodule Ide.Debugger.RuntimeFollowups do
           Types.runtime_state(),
           Types.surface_target(),
           String.t(),
-          Types.subscription_payload() | map() | nil,
+          Types.timeline_step_message_value() | nil,
           apply_ctx()
         ) :: Types.runtime_state()
   defp maybe_apply_runtime_followup_step(state, target, step_message, message_value, ctx)
@@ -386,9 +386,9 @@ defmodule Ide.Debugger.RuntimeFollowups do
           Types.surface_target(),
           String.t(),
           String.t(),
-          map(),
+          Types.cmd_call(),
           String.t() | nil,
-          {:ok, map()} | {:error, term()},
+          HttpExecutor.result(),
           apply_ctx()
         ) :: Types.runtime_state()
   def apply_http_executor_result(
@@ -516,7 +516,7 @@ defmodule Ide.Debugger.RuntimeFollowups do
           Types.surface_target(),
           String.t(),
           String.t(),
-          map(),
+          Types.cmd_call(),
           String.t() | nil,
           apply_ctx()
         ) :: Types.runtime_state()
@@ -560,7 +560,7 @@ defmodule Ide.Debugger.RuntimeFollowups do
           Types.surface_target(),
           String.t(),
           String.t(),
-          map(),
+          Types.runtime_followup_row(),
           String.t(),
           apply_ctx()
         ) :: Types.runtime_state()
@@ -644,9 +644,9 @@ defmodule Ide.Debugger.RuntimeFollowups do
           Types.surface_target(),
           String.t(),
           String.t() | nil,
-          Types.subscription_payload() | map() | nil,
-          map()
-        ) :: {String.t(), map() | nil}
+          Types.timeline_step_message_value() | nil,
+          Types.runtime_followup_row()
+        ) :: {String.t(), Types.timeline_step_message_value() | nil}
   defp resolve_runtime_followup_step(
          state,
          target,
@@ -705,9 +705,9 @@ defmodule Ide.Debugger.RuntimeFollowups do
           Types.surface_target(),
           String.t(),
           String.t() | nil,
-          Types.subscription_payload() | map(),
+          Types.subscription_payload(),
           Types.runtime_followup_row()
-        ) :: Types.subscription_payload() | map()
+        ) :: Types.subscription_payload()
   defp refresh_device_followup_value(
          state,
          target,

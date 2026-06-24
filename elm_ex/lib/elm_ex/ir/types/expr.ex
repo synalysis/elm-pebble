@@ -56,7 +56,7 @@ defmodule ElmEx.IR.Types.Expr do
           optional(atom()) => term()
         }
 
-  @type wire_expr :: map()
+  @type wire_expr :: t()
 
   @type compose_left :: %{
           required(:op) => :compose_left,

@@ -4,7 +4,9 @@ defmodule Ide.Debugger.HttpSimulator do
   alias Ide.Debugger.Types
   alias Ide.Debugger.Types.SimulatorSettings
 
-  @type json_decoder :: tuple() | atom() | list()
+  @type json_decoder_node :: tuple() | atom() | [json_decoder_node()]
+
+  @type json_decoder :: {:json_decoder, json_decoder_node()} | atom() | [json_decoder_node()]
 
   @type json_leaf :: Types.wire_scalar() | Types.wire_map() | [json_leaf()]
 

@@ -1,16 +1,19 @@
 defmodule Ide.Formatter.Semantics.Parse do
   @moduledoc false
+
   alias Ide.Formatter.Semantics.HeaderMetadata
+  alias Ide.Formatter.Types
 
   @type parse_payload :: %{
-          diagnostics: [map()],
+          diagnostics: [Types.diagnostic()],
           metadata: HeaderMetadata.metadata(),
           source_hash: integer(),
           reused?: boolean(),
           fallback?: boolean()
         }
 
-  @spec validate_with_parser(String.t(), keyword()) :: {:ok, parse_payload()} | {:error, map()}
+  @spec validate_with_parser(String.t(), keyword()) ::
+          {:ok, parse_payload()} | {:error, Types.parse_error()}
   def validate_with_parser(source, opts \\ []) when is_binary(source) do
     with {:ok, payload} <- maybe_use_precomputed_payload(source, opts) do
       {:ok, payload}
@@ -34,7 +37,7 @@ defmodule Ide.Formatter.Semantics.Parse do
     end
   end
 
-  @spec parse_source(String.t()) :: {:ok, parse_payload()} | {:error, map()}
+  @spec parse_source(String.t()) :: {:ok, parse_payload()} | {:error, Types.parse_error()}
   defp parse_source(source) do
     with :ok <- ensure_elm_ex_modules_loaded(),
          {:ok, values, tokens} <- parse_metadata_values(source) do
@@ -99,7 +102,14 @@ defmodule Ide.Formatter.Semantics.Parse do
        }}
   end
 
-  @spec parse_metadata_values(String.t()) :: {:ok, list(), list()} | {:error, map()}
+  @type parse_metadata_error :: %{
+          required(:line) => integer(),
+          required(:column) => pos_integer(),
+          required(:message) => String.t()
+        }
+
+  @spec parse_metadata_values(String.t()) ::
+          {:ok, list(), list()} | {:error, parse_metadata_error()}
   defp parse_metadata_values(source) do
     metadata_source = ElmEx.Frontend.GeneratedParser.normalize_source_for_metadata(source)
 
@@ -125,7 +135,7 @@ defmodule Ide.Formatter.Semantics.Parse do
     end
   end
 
-  @spec valid_payload_shape?(map()) :: boolean()
+  @spec valid_payload_shape?(parse_payload()) :: boolean()
   defp valid_payload_shape?(%{
          diagnostics: diagnostics,
          metadata: metadata,

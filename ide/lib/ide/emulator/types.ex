@@ -67,6 +67,13 @@ defmodule Ide.Emulator.Types do
           required(:qemu_features) => qemu_features()
         }
 
+  @type direct_install_context :: %{
+          required(:qemu_port) => pos_integer(),
+          required(:artifact_path) => String.t(),
+          required(:platform) => String.t(),
+          required(:app_uuid) => String.t() | nil
+        }
+
   @type install_context :: %{
           required(:protocol_router_pid) => pid(),
           required(:artifact_path) => String.t(),
@@ -181,6 +188,26 @@ defmodule Ide.Emulator.Types do
           required(:installable) => boolean()
         }
 
+  @type installation_checking :: %{
+          required(:status) => :checking,
+          required(:platform) => String.t(),
+          required(:components) => [runtime_component()],
+          required(:missing) => [runtime_component()],
+          required(:installable) => boolean()
+        }
+
+  @type installation_error :: %{
+          required(:status) => :error,
+          required(:components) => [runtime_component()],
+          required(:missing) => [runtime_component()],
+          required(:installable) => boolean(),
+          required(:error) => String.t(),
+          optional(:platform) => String.t()
+        }
+
+  @type installation_status ::
+          runtime_status() | installation_checking() | installation_error() | nil
+
   @type install_step_name :: :pebble_tool | :pebble_sdk | :qemu_images
 
   @type install_step_result :: %{
@@ -252,7 +279,31 @@ defmodule Ide.Emulator.Types do
           | :uv_or_pipx_not_found
           | :not_found
 
-  @type error_detail :: String.t() | atom() | map() | integer() | binary() | [String.t() | atom()]
+  @type unsupported_emulator_target :: {:unsupported_emulator_target, String.t(), [String.t()]}
+
+  @type display_ready_error :: :display_ready_timeout | session_atom_error()
+
+  @type vnc_pixel_format :: %{
+          required(:bpp) => pos_integer(),
+          required(:depth) => pos_integer(),
+          required(:big_endian) => boolean(),
+          required(:true_color) => boolean(),
+          required(:red_max) => pos_integer(),
+          required(:green_max) => pos_integer(),
+          required(:blue_max) => pos_integer(),
+          required(:red_shift) => pos_integer(),
+          required(:green_shift) => pos_integer(),
+          required(:blue_shift) => pos_integer()
+        }
+
+  @type error_detail ::
+          String.t()
+          | atom()
+          | integer()
+          | binary()
+          | [String.t() | atom()]
+          | vnc_pixel_format()
+          | putbytes_phase_meta()
 
   @type session_tuple_error ::
           {:install_retry_reset_failed, error_detail(), error_detail()}
@@ -312,7 +363,7 @@ defmodule Ide.Emulator.Types do
           | {:vnc_incomplete_framebuffer, non_neg_integer(), non_neg_integer()}
           | {:vnc_framebuffer_too_small, pos_integer(), pos_integer(), pos_integer(),
              pos_integer()}
-          | {:vnc_unsupported_pixel_format, map()}
+          | {:vnc_unsupported_pixel_format, vnc_pixel_format()}
           | {:vnc_rectangle_too_large, non_neg_integer()}
           | {:vnc_unsupported_encoding, non_neg_integer()}
           | {:screenshot_failed, non_neg_integer()}
@@ -332,7 +383,7 @@ defmodule Ide.Emulator.Types do
           | packet_decode_error()
           | :timeout
           | {:putbytes_failed, putbytes_phase_meta(),
-             packet_decode_error() | :timeout | {:timeout, map() | non_neg_integer()}}
+             packet_decode_error() | :timeout | {:timeout, [term()] | non_neg_integer()}}
           | {:blob_insert_failed, non_neg_integer()}
           | {:wrong_blob_token, non_neg_integer(), non_neg_integer()}
           | {:wrong_app_fetch_uuid, String.t(), String.t()}

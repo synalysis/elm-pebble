@@ -5,26 +5,36 @@ defmodule IdeWeb.WorkspaceLive.State do
   import Phoenix.LiveView, only: [allow_upload: 3]
 
   alias Ide.Projects
+  alias Ide.Projects.FileTypes
   alias Ide.Projects.Project
+  alias Ide.PublishReadiness
+  alias Ide.Resources.Types, as: ResourceTypes
+  alias Ide.Screenshots
   alias Ide.Settings
+  alias Ide.StoreAssets
   alias IdeWeb.WorkspaceLive.DebuggerSupport
   alias IdeWeb.WorkspaceLive.PublishFlow
+  alias IdeWeb.WorkspaceLive.ResourcesFlow
   alias IdeWeb.WorkspaceLive.ToolchainPresenter
+
+  @type project_settings_form :: %{
+          optional(String.t()) => String.t() | [String.t()] | boolean()
+        }
 
   @type socket :: Phoenix.LiveView.Socket.t()
   @type settings :: Settings.values()
   @type project_assign_data :: %{
-          required(:tree) => list(),
-          required(:bitmap_resources) => list(),
+          required(:tree) => FileTypes.source_tree(),
+          required(:bitmap_resources) => [ResourceTypes.bitmap_entry()],
           optional(:bitmap_resources_error) => String.t() | nil,
-          optional(:vector_resources) => list(),
-          optional(:animation_resources) => list(),
-          optional(:speaker_samples) => list(),
-          required(:font_sources) => list(),
-          required(:font_resources) => list(),
-          required(:screenshots) => list(),
-          required(:screenshot_groups) => list(),
-          required(:publish_readiness) => list(),
+          optional(:vector_resources) => [ResourceTypes.vector_entry()],
+          optional(:animation_resources) => [ResourceTypes.animation_resource_entry()],
+          optional(:speaker_samples) => [ResourcesFlow.speaker_sample_row()],
+          required(:font_sources) => [ResourceTypes.font_source()],
+          required(:font_resources) => [ResourceTypes.font_entry()],
+          required(:screenshots) => [Screenshots.screenshot()],
+          required(:screenshot_groups) => [PublishFlow.screenshot_group()],
+          required(:publish_readiness) => [PublishReadiness.screenshot_readiness()],
           required(:selected_emulator_target) => String.t(),
           required(:emulator_mode) => String.t(),
           required(:emulator_production_build) => boolean(),
@@ -392,11 +402,11 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:publish_submit_options, PublishFlow.publish_submit_options(project))
   end
 
-  @spec store_assets_assigns(Ide.Projects.Project.t()) :: map()
-  def store_assets_assigns(%Ide.Projects.Project{} = project) do
+  @spec store_assets_assigns(Project.t()) :: StoreAssets.status_map()
+  def store_assets_assigns(%Project{} = project) do
     alias Ide.StoreAssets
 
-    workspace_root = Ide.Projects.project_workspace_path(project)
+    workspace_root = Projects.project_workspace_path(project)
 
     StoreAssets.status(workspace_root)
     |> Enum.map(fn {key, info} ->
@@ -410,7 +420,7 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> Map.new()
   end
 
-  @spec project_settings_form_data(Project.t() | nil) :: map()
+  @spec project_settings_form_data(Project.t() | nil) :: project_settings_form()
   def project_settings_form_data(%Project{} = project) do
     defaults = project.release_defaults || %{}
     github = Projects.github_config(project)

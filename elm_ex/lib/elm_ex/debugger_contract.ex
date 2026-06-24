@@ -56,7 +56,7 @@ defmodule ElmEx.DebuggerContract do
   @doc """
   Unwraps a shell map or bare contract to the inner `elm_introspect` payload map.
   """
-  @spec unwrap_shell(map()) :: map() | nil
+  @spec unwrap_shell(Types.introspect_snapshot() | map()) :: Types.elm_introspect() | nil
   def unwrap_shell(shell) when is_map(shell) do
     case Map.get(shell, "debugger_contract") || Map.get(shell, :debugger_contract) do
       contract when is_map(contract) -> contract

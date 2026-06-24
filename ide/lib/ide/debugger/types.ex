@@ -3,6 +3,7 @@ defmodule Ide.Debugger.Types do
   Shared types for debugger runtime state, timeline rows, and compiler ingest payloads.
   """
 
+  alias ElmEx.CoreIR.Types, as: CoreIRTypes
   alias ElmEx.DebuggerContract.Payload
   alias Ide.CompanionProtocol.WireSchema
   alias Ide.Debugger.Protocol.{ConstructorValue, Event, Schema}
@@ -15,10 +16,12 @@ defmodule Ide.Debugger.Types do
     SourceLocation,
     HttpSimulatedResponse,
     AppModel,
+    ActiveSubscription,
     AvailableTriggersAttrs,
     AutoTick,
     CmdCall,
     CompanionBridgeRequest,
+    CompanionSubscriptionFieldDef,
     CompileIngestAttrs,
     CompileIngestBridge,
     ElmcCliIngestBridge,
@@ -54,7 +57,10 @@ defmodule Ide.Debugger.Types do
     SaveConfigurationAttrs,
     RuntimeEventPayload,
     SessionAttrs,
+    SimulatorSubscriptionPayload,
     SnapshotContinueAttrs,
+    SpeakerCommand,
+    SpeakerEffect,
     StepAttrs,
     RuntimeState,
     RuntimeStepResult,
@@ -67,8 +73,8 @@ defmodule Ide.Debugger.Types do
     WatchProfile
   }
 
-  @type core_ir :: map() | nil
-  @type core_ir_expr :: map()
+  @type core_ir :: CoreIRTypes.wire_core_ir() | nil
+  @type core_ir_expr :: CoreIRTypes.expr() | CoreIRTypes.Expr.wire_expr()
   @type introspect_snapshot :: Payload.snapshot()
 
   @type launch_context :: LaunchContext.t() | LaunchContext.wire_map()
@@ -162,6 +168,12 @@ defmodule Ide.Debugger.Types do
           ExecutionRuntimeSnapshot.t() | ExecutionRuntimeSnapshot.wire_map()
 
   @type compile_ingest_attrs :: CompileIngestAttrs.t() | CompileIngestAttrs.wire_map()
+
+  @type emulator_rc_fail_attrs :: %{
+          optional(:code) => non_neg_integer() | String.t() | nil,
+          optional(:line) => non_neg_integer() | String.t() | nil,
+          optional(String.t()) => non_neg_integer() | String.t() | nil
+        }
 
   @type step_executor_request :: StepExecutionContract.executor_request()
 
@@ -279,13 +291,7 @@ defmodule Ide.Debugger.Types do
           | {:ok, companion_bridge_payload()}
           | {:error, String.t()}
 
-  @type companion_subscription_field_def :: %{
-          required(:key) => String.t(),
-          required(:label) => String.t(),
-          required(:type) => :boolean | :integer | :string,
-          optional(:setting) => String.t(),
-          required(:default) => boolean() | integer() | String.t()
-        }
+  @type companion_subscription_field_def :: CompanionSubscriptionFieldDef.t()
 
   @type companion_subscription_contract :: %{
           required(:source) => String.t(),
@@ -296,6 +302,25 @@ defmodule Ide.Debugger.Types do
           optional(:plain_result) => boolean(),
           optional(:ok_result_variant) => String.t()
         }
+
+  @type watch_subscription_contract :: %{
+          required(:id) => atom(),
+          required(:target_suffixes) => [String.t()],
+          optional(:simulator_arg_types) => %{String.t() => String.t()}
+        }
+
+  @type speaker_command :: SpeakerCommand.t() | SpeakerCommand.wire_map()
+
+  @type speaker_effect :: SpeakerEffect.t() | SpeakerEffect.wire_map()
+
+  @type active_subscription :: ActiveSubscription.t() | ActiveSubscription.wire_map()
+
+  @type simulator_compass_heading ::
+          SimulatorSubscriptionPayload.compass_heading()
+
+  @type simulator_screen_payload :: SimulatorSubscriptionPayload.screen()
+
+  @type simulator_rect_payload :: SimulatorSubscriptionPayload.rect()
 
   @type companion_injection_form_data :: wire_map()
 
@@ -382,6 +407,17 @@ defmodule Ide.Debugger.Types do
   @type subscription_payload :: wire_map() | protocol_ctor_value() | wire_scalar()
 
   @type view_output_row :: Elmx.Types.view_output_row()
+
+  @type view_output_scene_token ::
+          {:text, term(), integer(), integer()}
+          | {:text_label, term(), integer(), integer()}
+          | {:text_int, term(), integer(), integer()}
+          | {:bitmap_in_rect, integer(), integer(), integer(), integer(), integer()}
+          | {:rotated_bitmap, integer(), integer(), integer()}
+          | {:bitmap_sequence_at, integer(), integer(), integer(), integer()}
+          | {:vector_at, integer(), integer(), integer()}
+          | {:vector_sequence_at, integer(), integer(), integer(), integer()}
+          | {atom(), term()}
 
   @type view_output_node :: view_output_row() | Elmx.Types.view_output_tree()
 

@@ -5,6 +5,7 @@ defmodule Ide.Compiler do
   alias Ide.Debugger.Types.ElmcCliIngestBridge
   alias Ide.PebbleToolchain.Elmc, as: PebbleToolchainElmc
   alias Ide.Compiler.ManifestCache
+  alias Ide.Packages.Types, as: PackageTypes
   alias Ide.PebbleToolchain
   alias ElmEx.Frontend.Bridge
   alias Ide.Projects.FileStore
@@ -43,13 +44,29 @@ defmodule Ide.Compiler do
           required(:revision) => String.t(),
           required(:cached?) => boolean(),
           optional(:elmx_manifest) => Ide.Debugger.Types.elmx_manifest(),
-          optional(:elmx_revision) => String.t()
+          optional(:elmx_revision) => String.t(),
+          optional(:elmx_compile_error) => term(),
+          optional(:elmx_compile_error_message) => String.t(),
+          optional(:detail) => String.t(),
+          optional(atom()) => term(),
+          optional(String.t()) => term()
         }
-  @type elm_json :: %{
-          optional(String.t()) => String.t() | integer() | boolean() | list() | map() | nil
+  @type elm_json :: PackageTypes.elm_json()
+
+  @type elm_report :: ElmEx.Types.elm_report()
+
+  @typedoc "Per-problem entry inside Elm JSON compile-error reports (`ElmEx.Types.ElmReport.problem/0`)."
+  @type elm_problem :: %{
+          optional(atom()) => String.t() | [term()] | elm_message_part() | nil,
+          optional(String.t()) => String.t() | [term()] | elm_message_part() | nil
         }
 
-  @type elm_report :: %{optional(String.t()) => term()}
+  @typedoc "Nested Elm compiler problem message AST (`ElmEx.Types.elm_message_part/0`)."
+  @type elm_message_part ::
+          String.t()
+          | %{optional(atom()) => String.t() | boolean()}
+          | %{optional(String.t()) => String.t() | boolean()}
+          | [elm_message_part()]
 
   @type dependency_compatibility_row :: %{
           required(:package) => String.t(),
@@ -67,6 +84,11 @@ defmodule Ide.Compiler do
         }
 
   @type manifest_data :: normalized_manifest()
+
+  @type wire_manifest_payload :: %{
+          optional(String.t()) =>
+            list() | PackageTypes.json_wire_object() | String.t() | integer() | boolean() | nil
+        }
 
   @type compiler_error :: atom() | String.t() | tuple()
 
@@ -686,7 +708,7 @@ defmodule Ide.Compiler do
   defp elmx_compile_error_message(reason), do: "elmx compile failed: #{inspect(reason)}"
 
   # elmx is debugger-only; keep elmc compile status so PBW packaging is not blocked.
-  @spec record_elmx_compile_gap(map()) :: map()
+  @spec record_elmx_compile_gap(compile_result()) :: compile_result()
   defp record_elmx_compile_gap(result) when is_map(result) do
     Map.update(result, :output, nil, fn existing ->
       message = Map.get(result, :elmx_compile_error_message)
@@ -922,7 +944,7 @@ defmodule Ide.Compiler do
 
   defp elm_compile_error_diagnostics(_, _project_dir), do: []
 
-  @spec elm_problem_to_diagnostic(map(), String.t() | nil, String.t()) :: diagnostic()
+  @spec elm_problem_to_diagnostic(elm_problem(), String.t() | nil, String.t()) :: diagnostic()
   defp elm_problem_to_diagnostic(problem, path, project_dir) when is_map(problem) do
     region = Map.get(problem, "region", %{})
     start = Map.get(region, "start", %{})
@@ -958,7 +980,7 @@ defmodule Ide.Compiler do
 
   defp normalize_elm_report_path(_path, _project_dir), do: nil
 
-  @spec elm_message_to_text(list() | map() | String.t()) :: String.t()
+  @spec elm_message_to_text(elm_message_part()) :: String.t()
   defp elm_message_to_text(message) when is_list(message) do
     message
     |> Enum.map(&elm_message_to_text/1)
@@ -1072,7 +1094,7 @@ defmodule Ide.Compiler do
   @doc """
   Normalizes manifest payloads into a stable schema and emits validation diagnostics.
   """
-  @spec normalize_manifest_payload(manifest_data() | map() | nil) ::
+  @spec normalize_manifest_payload(manifest_data() | wire_manifest_payload() | nil) ::
           {normalized_manifest() | nil, [diagnostic()]}
   def normalize_manifest_payload(nil) do
     {nil,
@@ -1126,7 +1148,7 @@ defmodule Ide.Compiler do
     {normalized, diagnostics}
   end
 
-  @spec normalize_string_list(list() | map() | nil) :: {[String.t()], [String.t()]}
+  @spec normalize_string_list(list() | wire_manifest_payload() | nil) :: {[String.t()], [String.t()]}
   defp normalize_string_list(value) when is_list(value) do
     if Enum.all?(value, &is_binary/1) do
       {value, []}
@@ -1144,7 +1166,7 @@ defmodule Ide.Compiler do
     {[], ["Manifest field had unexpected type; using empty list."]}
   end
 
-  @spec normalize_dependency_compatibility(list() | map() | nil) ::
+  @spec normalize_dependency_compatibility(list() | wire_manifest_payload() | nil) ::
           {[dependency_compatibility_row()], [String.t()]}
   defp normalize_dependency_compatibility(value) when is_list(value) do
     rows =

@@ -113,7 +113,7 @@ defmodule Ide.SimulatorCapabilities.Detect do
 
   defp platform_launch_usage?(_introspect, _module_name), do: false
 
-  @spec watch_module_call?(map(), String.t()) :: boolean()
+  @spec watch_module_call?(Types.cmd_call(), String.t()) :: boolean()
   defp watch_module_call?(row, module_name) do
     target = call_target(row)
     name = call_name(row)
@@ -124,7 +124,7 @@ defmodule Ide.SimulatorCapabilities.Detect do
       (name in ["onData", "onTap"] and module_name == "Accel")
   end
 
-  @spec vibes_pattern_call?(map()) :: boolean()
+  @spec vibes_pattern_call?(Types.cmd_call()) :: boolean()
   defp vibes_pattern_call?(row) do
     call_name(row) == "pattern" and watch_module_call?(row, "Vibes")
   end
@@ -155,7 +155,7 @@ defmodule Ide.SimulatorCapabilities.Detect do
     Enum.any?(subscription_calls(introspect), &accel_tap_subscription?/1)
   end
 
-  @spec accel_tap_subscription?(map()) :: boolean()
+  @spec accel_tap_subscription?(Types.cmd_call()) :: boolean()
   defp accel_tap_subscription?(row) when is_map(row) do
     name = call_name(row)
     target = call_target(row)
@@ -177,7 +177,7 @@ defmodule Ide.SimulatorCapabilities.Detect do
       Enum.any?(cmd_calls(introspect), &companion_call?(&1, module_name))
   end
 
-  @spec companion_call?(map(), String.t()) :: boolean()
+  @spec companion_call?(Types.cmd_call(), String.t()) :: boolean()
   defp companion_call?(row, module_name) do
     target = call_target(row)
 
@@ -186,7 +186,7 @@ defmodule Ide.SimulatorCapabilities.Detect do
       String.contains?(target, "." <> module_name <> ".")
   end
 
-  @spec watch_name_match?(map(), [String.t()]) :: boolean()
+  @spec watch_name_match?(Types.cmd_call(), [String.t()]) :: boolean()
   defp watch_name_match?(row, names) do
     name = call_name(row)
     target = call_target(row)

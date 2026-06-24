@@ -3,7 +3,11 @@ defmodule Ide.Mcp.Audit do
   Append-only audit log helpers for MCP action traces.
   """
 
-  @spec append(map()) :: :ok
+  alias Ide.Mcp.Types
+
+  @type audit_entry :: Types.audit_entry()
+
+  @spec append(audit_entry()) :: :ok
   def append(entry) when is_map(entry) do
     line = Jason.encode!(entry) <> "\n"
     _ = File.mkdir_p(audit_dir())
@@ -11,7 +15,7 @@ defmodule Ide.Mcp.Audit do
     :ok
   end
 
-  @spec recent(non_neg_integer()) :: [map()]
+  @spec recent(non_neg_integer()) :: [audit_entry()]
   def recent(limit \\ 20) when is_integer(limit) and limit >= 0 do
     case File.read(audit_path()) do
       {:ok, body} ->

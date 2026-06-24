@@ -12,6 +12,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
   alias Ide.Debugger.PendingProtocolDelivery
   alias Ide.Debugger.ProtocolRx
   alias Ide.Debugger.RuntimeBackgroundDrains
+  alias Ide.Debugger.Types, as: DebuggerTypes
   alias Ide.Debugger.Types.CompileIngestBridge
   alias Ide.Projects
   alias Ide.Projects.Project
@@ -25,8 +26,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
           }
           | nil
   @type progress :: (String.t() -> :ok)
-  @type compile_results :: [{String.t(), {:ok, map()} | {:error, term()}}]
-  @type primary_compile :: {String.t(), {:ok, map()} | {:error, term()}} | nil
+  @type compile_results :: [
+          {String.t(), {:ok, Compiler.compile_result()} | {:error, Compiler.compiler_error()}}
+        ]
+
+  @type primary_compile ::
+          {String.t(), {:ok, Compiler.compile_result()} | {:error, Compiler.compiler_error()}}
+          | nil
+  @type debugger_state_map :: DebuggerTypes.runtime_state()
 
   @type result :: %{
           message: String.t(),
@@ -36,9 +43,18 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
           scope_key: String.t()
         }
 
+  @type companion_reload_inner ::
+          {:ok, :skipped_reload}
+          | {:ok, debugger_state_map()}
+          | {:error, Compiler.compiler_error() | String.t()}
+          | :skipped
+
+  @type companion_bootstrap_reload ::
+          :skipped | {:ok, companion_reload_inner()}
+
   @type companion_bootstrap_result :: %{
-          optional(:phone_compile) => {:ok, map()} | {:error, term()} | :skipped,
-          optional(:reload) => {:ok, term()} | {:error, term()} | :skipped
+          optional(:phone_compile) => :skipped,
+          optional(:reload) => companion_bootstrap_reload()
         }
 
   @spec run(Project.t(), keyword()) :: {:ok, result()} | {:error, String.t()}
@@ -195,7 +211,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
     end
   end
 
-  @spec companion_reload(Project.t()) :: {:ok, term()} | {:error, term()} | :skipped
+  @spec companion_reload(Project.t()) ::
+          {:ok, debugger_state_map()} | {:error, Compiler.compiler_error() | String.t()} | :skipped
   def companion_reload(%Project{} = project) do
     companion_reload(project, fn _ -> :ok end)
   end
@@ -227,35 +244,35 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
     Application.get_env(:ide, :debugger_async_companion_bootstrap, true)
   end
 
-  @spec companion_bootstrapped?(map() | nil) :: boolean()
+  @spec companion_bootstrapped?(debugger_state_map() | nil) :: boolean()
   def companion_bootstrapped?(state) when is_map(state) do
     companion_runtime_model_bootstrapped?(state)
   end
 
   def companion_bootstrapped?(_state), do: false
 
-  @spec companion_bootstrap_incomplete?(map() | nil) :: boolean()
+  @spec companion_bootstrap_incomplete?(debugger_state_map() | nil) :: boolean()
   def companion_bootstrap_incomplete?(state) when is_map(state) do
     companion_surface_init_started?(state) and not companion_bootstrapped?(state)
   end
 
   def companion_bootstrap_incomplete?(_state), do: false
 
-  @spec companion_surface_init_started?(map() | nil) :: boolean()
+  @spec companion_surface_init_started?(debugger_state_map() | nil) :: boolean()
   def companion_surface_init_started?(state) when is_map(state) do
     companion_init_on_timeline?(state)
   end
 
   def companion_surface_init_started?(_state), do: false
 
-  @spec watch_surface_bootstrapped?(map() | nil) :: boolean()
+  @spec watch_surface_bootstrapped?(debugger_state_map() | nil) :: boolean()
   def watch_surface_bootstrapped?(state) when is_map(state) do
     watch_init_on_timeline?(state) or watch_runtime_model_bootstrapped?(state)
   end
 
   def watch_surface_bootstrapped?(_state), do: false
 
-  @spec companion_init_on_timeline?(map()) :: boolean()
+  @spec companion_init_on_timeline?(debugger_state_map()) :: boolean()
   def companion_init_on_timeline?(state) when is_map(state) do
     state
     |> Map.get(:debugger_timeline, [])
@@ -268,7 +285,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
     end)
   end
 
-  @spec watch_init_on_timeline?(map()) :: boolean()
+  @spec watch_init_on_timeline?(debugger_state_map()) :: boolean()
   defp watch_init_on_timeline?(state) when is_map(state) do
     state
     |> Map.get(:debugger_timeline, [])
@@ -281,7 +298,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
     end)
   end
 
-  @spec watch_runtime_model_bootstrapped?(map()) :: boolean()
+  @spec watch_runtime_model_bootstrapped?(debugger_state_map()) :: boolean()
   defp watch_runtime_model_bootstrapped?(state) when is_map(state) do
     runtime_model =
       get_in(state, [:watch, :model, "runtime_model"]) ||
@@ -293,7 +310,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
       not Map.has_key?(runtime_model, :runtime_execution_error)
   end
 
-  @spec companion_runtime_model_bootstrapped?(map()) :: boolean()
+  @spec companion_runtime_model_bootstrapped?(debugger_state_map()) :: boolean()
   defp companion_runtime_model_bootstrapped?(state) when is_map(state) do
     runtime_model =
       get_in(state, [:companion, :model, "runtime_model"]) ||
@@ -304,7 +321,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
       not companion_protocol_only_model?(runtime_model)
   end
 
-  @spec companion_protocol_only_model?(map()) :: boolean()
+  @spec companion_protocol_only_model?(DebuggerTypes.execution_model()) :: boolean()
   defp companion_protocol_only_model?(model) when is_map(model) do
     keys =
       model
@@ -378,7 +395,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
     end
   end
 
-  @spec compile_phone_root(Project.t()) :: :skipped | {:ok, map()}
+  @spec compile_phone_root(Project.t()) :: :skipped | {:ok, Compiler.compile_result()}
   defp compile_phone_root(%Project{} = project) do
     workspace_root = Projects.project_workspace_path(project)
     roots = BuildFlow.build_roots(workspace_root, project.source_roots || [])
@@ -411,7 +428,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
     :ok
   end
 
-  @spec ingest_compile_result(String.t(), map(), String.t()) :: :ok
+  @spec ingest_compile_result(String.t(), Ide.Compiler.compile_result(), String.t()) :: :ok
   defp ingest_compile_result(scope_key, result, source_root)
        when is_binary(scope_key) and is_map(result) and is_binary(source_root) do
     diagnostics = Map.get(result, :diagnostics) || Map.get(result, "diagnostics") || []
@@ -429,7 +446,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
     :ok
   end
 
-  @spec ingest_phone_compile(String.t(), map()) :: :ok
+  @spec ingest_phone_compile(String.t(), Ide.Compiler.compile_result()) :: :ok
   defp ingest_phone_compile(scope_key, result) when is_binary(scope_key) and is_map(result) do
     ingest_compile_result(scope_key, result, "phone")
   end

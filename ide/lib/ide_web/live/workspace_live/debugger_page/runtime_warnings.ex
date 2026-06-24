@@ -1,7 +1,10 @@
 defmodule IdeWeb.WorkspaceLive.DebuggerPage.RuntimeWarnings do
   @moduledoc false
 
-  @type runtime :: map() | nil
+  alias Ide.Debugger.Types, as: DebuggerTypes
+  alias IdeWeb.WorkspaceLive.DebuggerSupport.Types, as: SupportTypes
+
+  @type runtime :: SupportTypes.execution_model() | nil
 
   @spec text(runtime()) :: String.t() | nil
   def text(runtime) do
@@ -21,7 +24,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.RuntimeWarnings do
     end
   end
 
-  @spec raw_runtime_model(runtime()) :: map()
+  @spec raw_runtime_model(runtime()) :: DebuggerTypes.app_model()
   defp raw_runtime_model(%{} = runtime) do
     case Map.get(runtime, :model) || Map.get(runtime, "model") do
       %{} = model -> model
@@ -31,7 +34,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.RuntimeWarnings do
 
   defp raw_runtime_model(_), do: %{}
 
-  @spec elmx_compile_warning(map()) :: String.t() | nil
+  @spec elmx_compile_warning(DebuggerTypes.app_model()) :: String.t() | nil
   defp elmx_compile_warning(model) when is_map(model) do
     case Map.get(model, "elmx_compile_error_message") ||
            Map.get(model, :elmx_compile_error_message) do
@@ -43,7 +46,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.RuntimeWarnings do
     end
   end
 
-  @spec runtime_execution_warning(map()) :: String.t() | nil
+  @spec runtime_execution_warning(DebuggerTypes.app_model()) :: String.t() | nil
   defp runtime_execution_warning(model) when is_map(model) do
     case Map.get(model, "runtime_execution_error") || Map.get(model, :runtime_execution_error) do
       message when is_binary(message) and message != "" ->
@@ -54,7 +57,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.RuntimeWarnings do
     end
   end
 
-  @spec elmc_runtime_fail_warning(map()) :: String.t() | nil
+  @spec elmc_runtime_fail_warning(DebuggerTypes.app_model()) :: String.t() | nil
   defp elmc_runtime_fail_warning(model) when is_map(model) do
     code = Map.get(model, "elmc_last_fail_code") || Map.get(model, :elmc_last_fail_code)
     line = Map.get(model, "elmc_last_fail_line") || Map.get(model, :elmc_last_fail_line)
@@ -76,7 +79,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.RuntimeWarnings do
     end
   end
 
-  @spec unresolved_runtime_model_warning(map()) :: String.t() | nil
+  @spec unresolved_runtime_model_warning(DebuggerTypes.app_model()) :: String.t() | nil
   defp unresolved_runtime_model_warning(model) when is_map(model) do
     case Ide.Debugger.RuntimeModelQuality.unresolved_field_names(model) do
       [] ->

@@ -69,6 +69,7 @@ defmodule Elmc.Backend.Pebble.Types do
   @type command_vibes_flags :: FeatureFlags.command_vibes_flags()
   @type command_health_flags :: FeatureFlags.command_health_flags()
   @type command_device_services_flags :: FeatureFlags.command_device_services_flags()
+  @type command_speaker_flags :: FeatureFlags.command_speaker_flags()
   @type command_services_flags :: FeatureFlags.command_services_flags()
   @type draw_feature_flags :: FeatureFlags.draw_feature_flags()
   @type draw_primitive_flags :: FeatureFlags.draw_primitive_flags()

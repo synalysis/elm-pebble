@@ -1861,7 +1861,7 @@ defmodule Ide.Tokenizer do
     end
   end
 
-  @spec parser_diagnostic(String.t(), integer() | nil, map() | String.t()) ::
+  @spec parser_diagnostic(String.t(), integer() | nil, Types.parser_reason()) ::
           Types.parser_diagnostic_map()
   defp parser_diagnostic(source_name, line, reason) do
     reason_map =
@@ -2467,7 +2467,7 @@ defmodule Ide.Tokenizer do
     end)
   end
 
-  @spec top_level_declaration_line_diagnostics([token()], String.t()) :: [map()]
+  @spec top_level_declaration_line_diagnostics([token()], String.t()) :: [Types.parser_diagnostic_map()]
   defp top_level_declaration_line_diagnostics(line_tokens, source_line)
        when is_list(line_tokens) do
     non_trivia = line_non_trivia_tokens(line_tokens)
@@ -2506,7 +2506,8 @@ defmodule Ide.Tokenizer do
     Enum.any?(tokens, &(&1.text in [":", "="]))
   end
 
-  @spec top_level_declaration_start_diagnostic(token() | nil, String.t()) :: [map()]
+  @spec top_level_declaration_start_diagnostic(token() | nil, String.t()) ::
+          [Types.parser_diagnostic_map()]
   defp top_level_declaration_start_diagnostic(
          %{class: "type_identifier", line: line, column: column, text: name},
          source_line

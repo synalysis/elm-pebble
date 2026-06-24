@@ -48,7 +48,7 @@ defmodule Ide.PebblePreferences do
         }
 
   @type preferences_error ::
-          {:preferences_project_load_failed, atom() | String.t() | map()}
+          {:preferences_project_load_failed, term()}
           | File.posix()
 
   @doc """

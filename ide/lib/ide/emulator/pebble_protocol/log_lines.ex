@@ -1,6 +1,7 @@
 defmodule Ide.Emulator.PebbleProtocol.LogLines do
   @moduledoc false
 
+  alias Ide.Emulator.PebbleProtocol.Frame
   alias Ide.Emulator.PebbleProtocol.Packets
 
   @endpoint_system_log 0x07D2
@@ -17,7 +18,7 @@ defmodule Ide.Emulator.PebbleProtocol.LogLines do
     250 => "ALWAYS"
   }
 
-  @spec format_frame(map()) :: [String.t()]
+  @spec format_frame(Frame.t()) :: [String.t()]
   def format_frame(%{endpoint: endpoint, payload: payload}) when is_binary(payload) do
     cond do
       endpoint == @endpoint_put_bytes and putbytes_noise?(payload) ->

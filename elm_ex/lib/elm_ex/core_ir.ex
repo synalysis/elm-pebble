@@ -19,7 +19,14 @@ defmodule ElmEx.CoreIR do
   @spec validate_shape(Types.wire_core_ir()) :: {:ok, t()} | {:error, [Validate.shape_error()]}
   defdelegate validate_shape(core_ir), to: Validate
 
-  @spec from_ir(IR.t(), keyword()) :: {:ok, t()} | {:error, map()}
+  @type from_ir_error :: %{
+          required(:type) => String.t(),
+          required(:message) => String.t(),
+          optional(:diagnostics) => [Types.normalized_diagnostic()],
+          optional(:shape_errors) => [Types.shape_error()]
+        }
+
+  @spec from_ir(IR.t(), keyword()) :: {:ok, t()} | {:error, from_ir_error()}
   def from_ir(%IR{} = ir, opts \\ []) do
     strict? = Keyword.get(opts, :strict?, false)
 
@@ -68,7 +75,7 @@ defmodule ElmEx.CoreIR do
     end
   end
 
-  @spec normalize_module(ElmEx.IR.Module.t()) :: map()
+  @spec normalize_module(ElmEx.IR.Module.t()) :: Types.Module.wire_t()
   defp normalize_module(module) do
     %{
       "name" => module.name,
@@ -78,7 +85,8 @@ defmodule ElmEx.CoreIR do
     }
   end
 
-  @spec normalize_unions(map() | list() | atom() | nil) :: map()
+  @spec normalize_unions(ElmEx.IR.Types.Module.unions() | map() | list() | atom() | nil) ::
+          %{String.t() => Types.normalized_value()}
   defp normalize_unions(unions) when is_map(unions) do
     unions
     |> Enum.map(fn {name, constructors} ->
@@ -103,7 +111,7 @@ defmodule ElmEx.CoreIR do
 
   defp normalize_constructors(other), do: normalize_value(other)
 
-  @spec normalize_declaration(ElmEx.IR.Declaration.t()) :: map()
+  @spec normalize_declaration(ElmEx.IR.Declaration.t()) :: Types.Module.wire_declaration()
   defp normalize_declaration(decl) do
     %{
       "kind" => to_string(decl.kind),
@@ -138,7 +146,7 @@ defmodule ElmEx.CoreIR do
   defp normalize_value(value) when is_list(value), do: Enum.map(value, &normalize_value/1)
   defp normalize_value(value), do: value
 
-  @spec normalize_diagnostic(map()) :: map()
+  @spec normalize_diagnostic(ElmEx.IR.Types.Diagnostic.t() | map()) :: Types.Diagnostic.wire_t()
   defp normalize_diagnostic(diagnostic) when is_map(diagnostic) do
     %{
       "severity" => to_string(Map.get(diagnostic, :severity, :warning)),

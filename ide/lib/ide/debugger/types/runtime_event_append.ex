@@ -5,6 +5,10 @@ defmodule Ide.Debugger.Types.RuntimeEventAppend do
 
   alias Ide.Debugger.Types.{RuntimeEventLog, RuntimeEventPayload}
 
+  @type internal_wire_kind :: :elmc_check | :elmc_compile | :elmc_manifest
+
+  @type wire_types_map :: %{String.t() => RuntimeEventLog.kind() | internal_wire_kind()}
+
   @wire_types %{
     elmc_check: "debugger.elmc_check",
     elmc_compile: "debugger.elmc_compile",
@@ -31,8 +35,11 @@ defmodule Ide.Debugger.Types.RuntimeEventAppend do
     RuntimeEventLog.wire_type?(type) or Map.has_key?(wire_types_by_string(), type)
   end
 
-  @spec wire_types_by_string() :: map()
+  @spec wire_types_by_string() :: wire_types_map()
   defp wire_types_by_string do
-    Map.merge(RuntimeEventLog.known_wire_types(), @wire_types)
+    internal =
+      Map.new(@wire_types, fn {kind, wire} -> {wire, kind} end)
+
+    Map.merge(RuntimeEventLog.known_wire_types(), internal)
   end
 end

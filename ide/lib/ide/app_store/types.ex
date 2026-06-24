@@ -4,10 +4,29 @@ defmodule Ide.AppStore.Types do
   """
 
   alias Ide.Packages.Types, as: PackageTypes
+  alias Ide.Projects.Project
+  alias Ide.Projects.Types, as: ProjectsTypes
   alias Ide.ZipArchive
 
-  @type http_body :: map() | String.t() | binary() | nil
-  @type http_response :: map() | String.t() | binary()
+  @type json_field :: String.t() | integer() | boolean() | [json_field()] | json_object() | nil
+
+  @typedoc "Decoded App Store / PBW JSON object (string keys)."
+  @type json_object :: %{optional(String.t()) => json_field()}
+
+  @type http_body :: json_object() | String.t() | binary() | nil
+  @type http_response :: json_object() | String.t() | binary()
+
+  @type publish_project :: Project.t() | ProjectsTypes.release_defaults_carrier()
+
+  @type multipart_form_fields :: %{optional(String.t()) => String.t() | nil}
+
+  @type store_icons :: %{optional(String.t()) => String.t()}
+
+  @type zip_manifest_json :: json_object()
+
+  @type pebble_watchapp_json :: %{
+          optional(String.t()) => boolean() | String.t() | integer()
+        }
 
   @type publish_opts :: [
           {:app_root, String.t()}
@@ -22,7 +41,7 @@ defmodule Ide.AppStore.Types do
           | {:visibility, Ide.AppStore.PublishFlags.visibility()}
           | {:all_platforms, boolean()}
           | {:gif_all_platforms, boolean()}
-          | {:store_icons, map()}
+          | {:store_icons, store_icons()}
           | {:generate_store_graphics, boolean()}
           | {:website, String.t()}
           | {:source, String.t()}
@@ -53,11 +72,9 @@ defmodule Ide.AppStore.Types do
           required(:opts) => publish_opts()
         }
 
-  @type developer_me :: %{
-          optional(String.t()) => String.t() | integer() | boolean() | map() | list() | nil
-        }
+  @type developer_me :: json_object()
 
-  @type api_payload :: map()
+  @type api_payload :: json_object()
 
   @type api_status_error :: {pos_integer(), api_payload()}
 

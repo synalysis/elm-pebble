@@ -11,8 +11,9 @@ defmodule IdeWeb.EmulatorController do
   alias Ide.PebblePreferences
   alias Ide.Projects
   alias Ide.Screenshots
+  alias IdeWeb.Types
 
-  @spec screenshot(Plug.Conn.t(), %{required(String.t()) => term()}) :: Plug.Conn.t()
+  @spec screenshot(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def screenshot(conn, %{"slug" => slug, "image" => image} = params) do
     emulator_target = Map.get(params, "platform", "basalt")
 
@@ -35,7 +36,7 @@ defmodule IdeWeb.EmulatorController do
     conn |> put_status(:bad_request) |> json(%{error: "Expected image data URL"})
   end
 
-  @spec launch(Plug.Conn.t(), %{required(String.t()) => term()}) :: Plug.Conn.t()
+  @spec launch(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def launch(conn, %{"slug" => slug} = params) do
     platform = Map.get(params, "platform")
 
@@ -80,7 +81,7 @@ defmodule IdeWeb.EmulatorController do
 
   defp qemu_payload(_payload), do: {:error, :invalid_qemu_payload}
 
-  @spec ping(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  @spec ping(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def ping(conn, %{"id" => id}) do
     case Emulator.ping(id) do
       {:ok, info} -> json(conn, Map.put(info, :alive, true))
@@ -88,13 +89,13 @@ defmodule IdeWeb.EmulatorController do
     end
   end
 
-  @spec kill(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  @spec kill(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def kill(conn, %{"id" => id}) do
     _ = Emulator.kill(id)
     json(conn, %{status: "ok"})
   end
 
-  @spec install(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  @spec install(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def install(conn, %{"id" => id}) do
     case Emulator.install(id) do
       {:ok, result} ->
@@ -110,7 +111,7 @@ defmodule IdeWeb.EmulatorController do
     end
   end
 
-  @spec request_app_logs(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  @spec request_app_logs(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def request_app_logs(conn, %{"id" => id}) do
     case Emulator.request_app_logs(id) do
       :ok ->
@@ -129,7 +130,7 @@ defmodule IdeWeb.EmulatorController do
     end
   end
 
-  @spec control(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  @spec control(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def control(conn, %{"id" => id} = params) do
     with {:ok, protocol} <- qemu_protocol(Map.get(params, "protocol")),
          {:ok, payload} <- qemu_payload(Map.get(params, "payload", [])),
@@ -149,7 +150,7 @@ defmodule IdeWeb.EmulatorController do
     end
   end
 
-  @spec simulator_settings(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  @spec simulator_settings(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def simulator_settings(conn, %{"id" => id, "settings" => settings}) when is_map(settings) do
     normalized = SimulatorSettings.normalize(settings)
 
@@ -169,7 +170,7 @@ defmodule IdeWeb.EmulatorController do
     conn |> put_status(:bad_request) |> json(%{error: "Missing settings object"})
   end
 
-  @spec config_return(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  @spec config_return(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def config_return(conn, _params) do
     html(conn, """
     <!doctype html>
@@ -181,7 +182,7 @@ defmodule IdeWeb.EmulatorController do
     """)
   end
 
-  @spec companion_preferences(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  @spec companion_preferences(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def companion_preferences(conn, %{"slug" => slug}) do
     with project when not is_nil(project) <-
            Projects.get_project_by_slug(slug, conn.assigns[:current_user]),
@@ -208,7 +209,7 @@ defmodule IdeWeb.EmulatorController do
     end
   end
 
-  @spec artifact(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  @spec artifact(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def artifact(conn, %{"id" => id}) do
     with {:ok, pid} <- Emulator.lookup(id),
          path when is_binary(path) <- Ide.Emulator.Session.artifact_file_path(pid),
@@ -222,10 +223,10 @@ defmodule IdeWeb.EmulatorController do
     end
   end
 
-  @spec ws_vnc(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  @spec ws_vnc(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def ws_vnc(conn, %{"id" => id}), do: proxy(conn, id, :vnc)
 
-  @spec ws_phone(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  @spec ws_phone(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def ws_phone(conn, %{"id" => id}), do: proxy(conn, id, :phone)
 
   defp proxy(conn, id, kind) do

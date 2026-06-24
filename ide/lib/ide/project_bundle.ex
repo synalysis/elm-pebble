@@ -5,15 +5,19 @@ defmodule Ide.ProjectBundle do
 
   alias Ide.PebbleToolchain
   alias Ide.Projects.Project
+  alias Ide.Projects.Types, as: ProjectsTypes
+  alias Ide.Packages.Types, as: PackageTypes
 
   @manifest_filename "elm-pebble.project.json"
   @default_source_roots ["watch", "protocol", "phone"]
   @default_import_path "."
 
-  @type manifest_json :: map()
+  @type manifest_json :: %{optional(String.t()) => attrs_value() | [attrs_value()]}
+  @type import_attrs :: ProjectsTypes.project_attrs()
+  @type manifest_section_json :: manifest_json()
   @type manifest_field_error :: {:invalid_manifest_field, String.t()}
   @type wire_uuid :: String.t() | atom() | nil
-  @type attrs_value :: String.t() | [String.t()] | map() | nil
+  @type attrs_value :: String.t() | [String.t()] | manifest_json() | nil
 
   @type metadata :: %{
           name: String.t(),
@@ -24,10 +28,10 @@ defmodule Ide.ProjectBundle do
           store_app_id: String.t() | nil,
           app_uuid: String.t() | nil,
           latest_published_version: String.t() | nil,
-          package_metadata_cache: map(),
-          release_defaults: map(),
-          github: map(),
-          debugger_settings: map(),
+          package_metadata_cache: PackageTypes.package_metadata_cache(),
+          release_defaults: ProjectsTypes.release_defaults(),
+          github: ProjectsTypes.github_config(),
+          debugger_settings: ProjectsTypes.debugger_settings(),
           template: String.t() | nil
         }
 
@@ -97,7 +101,7 @@ defmodule Ide.ProjectBundle do
   @doc """
   Fills missing import attrs from bundle metadata when available.
   """
-  @spec merge_attrs_from_manifest(map(), String.t()) :: map()
+  @spec merge_attrs_from_manifest(import_attrs(), String.t()) :: import_attrs()
   def merge_attrs_from_manifest(attrs, import_root) do
     attrs = Map.new(attrs)
 
@@ -263,7 +267,7 @@ defmodule Ide.ProjectBundle do
   @doc """
   Resolves the source directory to copy based on import root and manifest import path.
   """
-  @spec resolve_import_source(String.t(), map()) ::
+  @spec resolve_import_source(String.t(), import_attrs()) ::
           {:ok, String.t()} | {:error, import_source_error()}
   def resolve_import_source(import_root, attrs) do
     import_path =
@@ -399,7 +403,7 @@ defmodule Ide.ProjectBundle do
   end
 
   @spec fetch_optional_map(manifest_json(), String.t()) ::
-          {:ok, map()} | {:error, manifest_field_error()}
+          {:ok, manifest_section_json()} | {:error, manifest_field_error()}
   defp fetch_optional_map(map, key) do
     case Map.get(map, key) do
       nil -> {:ok, %{}}
@@ -408,7 +412,7 @@ defmodule Ide.ProjectBundle do
     end
   end
 
-  @spec put_if_blank(map(), String.t(), attrs_value()) :: map()
+  @spec put_if_blank(import_attrs(), String.t(), attrs_value()) :: import_attrs()
   defp put_if_blank(attrs, key, value) do
     case Map.get(attrs, key) do
       nil ->
@@ -422,7 +426,7 @@ defmodule Ide.ProjectBundle do
     end
   end
 
-  @spec maybe_put_template(map(), String.t() | nil) :: map()
+  @spec maybe_put_template(manifest_json(), String.t() | nil) :: manifest_json()
   defp maybe_put_template(payload, template) when is_binary(template) do
     Map.put(payload, "template", template)
   end

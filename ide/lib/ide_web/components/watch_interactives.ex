@@ -3,8 +3,15 @@ defmodule IdeWeb.WatchInteractives do
 
   use IdeWeb, :html
 
+  alias Ide.Debugger.Types, as: DebuggerTypes
+  alias Ide.Projects.Project
   alias Ide.SimulatorSettings
+  alias IdeWeb.WatchInteractives.Assigns
   alias Phoenix.LiveView.Rendered
+
+  @type accel_control :: Assigns.accel_control()
+  @type assigns :: Assigns.t()
+  @type rendered :: Rendered.t()
 
   @interactive_caps ~w(
     watch_accel
@@ -17,8 +24,13 @@ defmodule IdeWeb.WatchInteractives do
   )
 
   @doc false
-  @spec show_accel_tap?(map() | nil, map() | nil, :debugger | :emulator, list(), list()) ::
-          boolean()
+  @spec show_accel_tap?(
+          Project.t() | nil,
+          DebuggerTypes.runtime_state() | nil,
+          :debugger | :emulator,
+          [Assigns.trigger_row()],
+          [Assigns.disabled_subscription() | Assigns.auto_fire_row()]
+        ) :: boolean()
   def show_accel_tap?(
         project,
         debugger_state,
@@ -31,9 +43,6 @@ defmodule IdeWeb.WatchInteractives do
     MapSet.member?(caps, "watch_accel_tap") or
       tap_control?(watch_trigger_buttons, disabled_subscriptions)
   end
-
-  @type assigns :: map()
-  @type rendered :: Rendered.t()
 
   attr :id, :string, required: true
   attr :project, :map, required: true
@@ -211,7 +220,9 @@ defmodule IdeWeb.WatchInteractives do
     """
   end
 
-  @spec tap_button_data_attrs(String.t()) :: map()
+  @type tap_data_attrs :: %{optional(String.t()) => String.t()}
+
+  @spec tap_button_data_attrs(String.t()) :: tap_data_attrs()
   defp tap_button_data_attrs("wasm-tap"), do: %{"data-wasm-tap" => ""}
   defp tap_button_data_attrs(_data_tap), do: %{"data-emulator-tap" => ""}
 
@@ -373,7 +384,8 @@ defmodule IdeWeb.WatchInteractives do
     Enum.any?(@interactive_caps, &MapSet.member?(caps, &1))
   end
 
-  @spec accel_control(list(), list()) :: map() | nil
+  @spec accel_control([Assigns.trigger_row()], [Assigns.disabled_subscription() | Assigns.auto_fire_row()]) ::
+          accel_control() | nil
   defp accel_control(rows, disabled_subscriptions) when is_list(rows) do
     rows
     |> Enum.find(&accel_trigger_row?/1)
@@ -397,7 +409,7 @@ defmodule IdeWeb.WatchInteractives do
 
   defp accel_control(_rows, _disabled_subscriptions), do: default_accel_control()
 
-  @spec default_accel_control() :: map()
+  @spec default_accel_control() :: accel_control()
   defp default_accel_control do
     %{trigger: "on_accel_data", target: "watch", message: nil}
   end
@@ -415,7 +427,7 @@ defmodule IdeWeb.WatchInteractives do
 
   defp tap_control?(_rows, _disabled_subscriptions), do: false
 
-  @spec accel_trigger_row?(map()) :: boolean()
+  @spec accel_trigger_row?(Assigns.trigger_row()) :: boolean()
   defp accel_trigger_row?(row) when is_map(row) do
     trigger = Map.get(row, :trigger) || Map.get(row, "trigger")
     trigger in ["on_accel", "on_accel_data"]

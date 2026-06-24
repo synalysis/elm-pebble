@@ -9,16 +9,19 @@ defmodule Ide.AppStore.Listing do
 
   alias Ide.Auth
   alias Ide.ProjectBundle
+  alias Ide.Projects.Types, as: ProjectsTypes
   alias Ide.StoreListingUrls
   alias IdeWeb.WorkspaceLive.State
+
+  @type listing_project :: ProjectsTypes.release_defaults_carrier()
 
   @type result :: %{
           status: :ok | :error,
           output: String.t(),
-          project_attrs: map()
+          project_attrs: ProjectsTypes.project_attrs()
         }
 
-  @spec update_metadata(map(), keyword()) :: {:ok, result()}
+  @spec update_metadata(listing_project(), keyword()) :: {:ok, result()}
   def update_metadata(project, opts \\ []) when is_map(project) do
     api_base = Keyword.get(opts, :api_base, Auth.appstore_api_base()) |> String.trim_trailing("/")
     token = Keyword.get(opts, :firebase_id_token, "") |> to_string() |> String.trim()
@@ -91,6 +94,8 @@ defmodule Ide.AppStore.Listing do
     end
   end
 
+  @spec listing_project_attrs(listing_project(), String.t(), String.t() | nil) ::
+          ProjectsTypes.project_attrs()
   defp listing_project_attrs(project, app_id, workspace_root) do
     attrs =
       if blank?(Map.get(project, :store_app_id)) do

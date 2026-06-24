@@ -4,6 +4,7 @@ defmodule Ide.Diagnostics.TokenizerParserMapper do
   """
 
   alias Ide.Diagnostics.ElmSyntaxCatalog
+  alias Ide.Tokenizer.Types, as: TokenizerTypes
 
   @type diagnostic :: %{
           required(:severity) => String.t(),
@@ -25,7 +26,13 @@ defmodule Ide.Diagnostics.TokenizerParserMapper do
   @type catalog_id :: atom()
   @type diagnostic_extra :: keyword()
   @type diagnostic_field_value :: String.t() | integer() | atom() | nil
-  @type wire_reason :: String.t() | list() | atom() | number() | map() | tuple()
+  @type wire_reason ::
+          String.t() | list() | atom() | number() | TokenizerTypes.wire_map() | tuple()
+  @type parser_hint_input :: TokenizerTypes.parser_line_diagnostic() | diagnostic()
+  @type diagnostic_map_input :: %{
+          optional(atom()) => diagnostic_field_value(),
+          optional(String.t()) => diagnostic_field_value()
+        }
 
   @spec unterminated_block_comment(integer(), integer(), integer(), integer()) :: diagnostic()
   def unterminated_block_comment(line, column, end_line, end_column) do
@@ -56,12 +63,12 @@ defmodule Ide.Diagnostics.TokenizerParserMapper do
     base(:missing_single_quote, "warning", "tokenizer", line, column)
   end
 
-  @spec unclosed_delimiter(String.t(), map()) :: diagnostic()
+  @spec unclosed_delimiter(String.t(), TokenizerTypes.token()) :: diagnostic()
   def unclosed_delimiter(expected, token) when is_binary(expected) and is_map(token) do
     unclosed_delimiter(expected, token, :unclosed_delimiter)
   end
 
-  @spec unclosed_delimiter(String.t(), map(), atom()) :: diagnostic()
+  @spec unclosed_delimiter(String.t(), TokenizerTypes.token(), atom()) :: diagnostic()
   def unclosed_delimiter(expected, token, title_id)
       when is_binary(expected) and is_map(token) and is_atom(title_id) do
     base(
@@ -74,7 +81,7 @@ defmodule Ide.Diagnostics.TokenizerParserMapper do
     )
   end
 
-  @spec unexpected_closing_delimiter(String.t(), map()) :: diagnostic()
+  @spec unexpected_closing_delimiter(String.t(), TokenizerTypes.token()) :: diagnostic()
   def unexpected_closing_delimiter(closing, token) when is_binary(closing) and is_map(token) do
     base(
       :unexpected_closing_delimiter,
@@ -86,7 +93,7 @@ defmodule Ide.Diagnostics.TokenizerParserMapper do
     )
   end
 
-  @spec unexpected_capital_field(map()) :: diagnostic()
+  @spec unexpected_capital_field(TokenizerTypes.token()) :: diagnostic()
   def unexpected_capital_field(token) when is_map(token) do
     base(
       :unexpected_capital_letter,
@@ -100,7 +107,7 @@ defmodule Ide.Diagnostics.TokenizerParserMapper do
     )
   end
 
-  @spec compiler_parser_hint(map()) :: diagnostic()
+  @spec compiler_parser_hint(parser_hint_input()) :: diagnostic()
   def compiler_parser_hint(diag) when is_map(diag) do
     source_name = get(diag, :source, "elmc_parser")
     line = get(diag, :line)
@@ -209,7 +216,8 @@ defmodule Ide.Diagnostics.TokenizerParserMapper do
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
-  @spec get(map(), atom() | String.t(), diagnostic_field_value()) :: diagnostic_field_value()
+  @spec get(diagnostic_map_input(), atom() | String.t(), diagnostic_field_value()) ::
+          diagnostic_field_value()
   defp get(map, key, default \\ nil) when is_map(map) do
     Map.get(map, key) || Map.get(map, Atom.to_string(key), default)
   end

@@ -38,7 +38,7 @@ defmodule Ide.EditorDocLinks do
     end
   end
 
-  @spec import_entries_from_snapshot(map()) ::
+  @spec import_entries_from_snapshot(CompileContract.wire_snapshot()) ::
           {:ok, [import_entry()]} | {:error, :no_import_metadata}
   defp import_entries_from_snapshot(%{"debugger_contract" => %{"import_entries" => imports}})
        when is_list(imports),

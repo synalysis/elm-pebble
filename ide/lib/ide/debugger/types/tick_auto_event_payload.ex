@@ -11,7 +11,7 @@ defmodule Ide.Debugger.Types.TickAutoEventPayload do
           optional(:count) => non_neg_integer() | nil,
           optional(:trigger) => String.t() | nil,
           optional(:enabled) => boolean(),
-          optional(:subscriptions) => [map()],
+          optional(:subscriptions) => [DisabledSubscription.wire_map()],
           optional(atom()) => Types.wire_input(),
           optional(String.t()) => Types.wire_input()
         }

@@ -26,6 +26,7 @@ defmodule Ide.WasmEmulator do
   ]
 
   @type asset_path_error :: :invalid_asset_path | :not_found
+  @type status :: Ide.WasmEmulator.Types.status()
 
   @spec asset_root() :: String.t()
   def asset_root do
@@ -55,7 +56,7 @@ defmodule Ide.WasmEmulator do
     Ide.WasmEmulator.FirmwareSync.sync_sdk_firmware_if_needed()
   end
 
-  @spec status() :: map()
+  @spec status() :: status()
   def status do
     root = asset_root()
     runtime_missing = Enum.reject(@runtime_assets, &File.regular?(Path.join(root, &1)))

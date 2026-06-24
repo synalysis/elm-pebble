@@ -7,6 +7,7 @@ defmodule ElmEx.IR.DeadCode do
   """
 
   alias ElmEx.IR
+  alias ElmEx.IR.Types.{DeadCode, Expr}
 
   @default_roots ["init", "update", "view", "subscriptions", "main"]
 
@@ -43,7 +44,7 @@ defmodule ElmEx.IR.DeadCode do
     %{ir | modules: modules}
   end
 
-  @spec function_map(IR.t()) :: map()
+  @spec function_map(IR.t()) :: DeadCode.function_map()
   defp function_map(%IR{} = ir) do
     ir.modules
     |> Enum.flat_map(fn mod ->
@@ -56,7 +57,8 @@ defmodule ElmEx.IR.DeadCode do
     |> Map.new()
   end
 
-  @spec walk_reachable(map(), MapSet.t(), [String.t()]) :: MapSet.t()
+  @spec walk_reachable(DeadCode.function_map(), MapSet.t(), [DeadCode.function_key()]) ::
+          MapSet.t()
   defp walk_reachable(_function_map, seen, []), do: seen
 
   defp walk_reachable(function_map, seen, [current | rest]) do
@@ -72,14 +74,14 @@ defmodule ElmEx.IR.DeadCode do
     walk_reachable(function_map, seen, rest ++ next_calls)
   end
 
-  @spec collect_calls(map() | nil, String.t()) :: [String.t()]
+  @spec collect_calls(Expr.t() | map() | nil, String.t()) :: [DeadCode.function_key()]
   defp collect_calls(nil, _mod), do: []
 
   defp collect_calls(%{} = expr, mod) do
     call_reference_targets(expr, mod) ++ collect_calls_from_children(expr, mod)
   end
 
-  @spec call_reference_targets(map(), String.t()) :: [String.t()]
+  @spec call_reference_targets(Expr.t() | map(), String.t()) :: [DeadCode.function_key()]
   defp call_reference_targets(%{op: :qualified_call, target: target}, _mod)
        when is_binary(target),
        do: [target]
@@ -110,7 +112,7 @@ defmodule ElmEx.IR.DeadCode do
 
   defp call_reference_targets(_expr, _mod), do: []
 
-  @spec local_call_target(String.t(), String.t()) :: String.t()
+  @spec local_call_target(String.t(), String.t()) :: DeadCode.function_key()
   defp local_call_target(name, mod) do
     if String.contains?(name, ".") do
       name
@@ -119,7 +121,7 @@ defmodule ElmEx.IR.DeadCode do
     end
   end
 
-  @spec collect_calls_from_children(map(), String.t()) :: [String.t()]
+  @spec collect_calls_from_children(Expr.t() | map(), String.t()) :: [DeadCode.function_key()]
   defp collect_calls_from_children(expr, mod) when is_map(expr) do
     Enum.flat_map(expr, fn
       {_key, child} when is_map(child) ->

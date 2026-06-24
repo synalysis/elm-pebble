@@ -7,6 +7,7 @@ defmodule ElmEx.DebuggerContract.Payload do
   """
 
   alias ElmEx.DebuggerContract.CmdCall
+  alias ElmEx.DebuggerContract.Types.SourceLocation
 
   @type json_value ::
           String.t()
@@ -22,7 +23,7 @@ defmodule ElmEx.DebuggerContract.Payload do
   @type import_entry :: %{optional(String.t()) => json_value(), optional(atom()) => json_value()}
   @type function_cmd_calls :: %{optional(String.t()) => [cmd_op_row()]}
   @type function_types :: %{optional(String.t()) => String.t()}
-  @type view_source_locations :: %{optional(String.t()) => map()}
+  @type view_source_locations :: %{optional(String.t()) => [SourceLocation.t()]}
 
   @type t :: %{
           optional(:source) => String.t(),

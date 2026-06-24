@@ -1,6 +1,13 @@
 defmodule Ide.Emulator.PebbleProtocol.Trace do
   @moduledoc false
 
+  alias Ide.Emulator.PebbleProtocol.Frame
+
+  @type emit_frame :: %{
+          required(:endpoint) => non_neg_integer(),
+          required(:payload) => binary()
+        }
+
   @endpoint_names %{
     0x0011 => "PhoneVersion",
     0x0034 => "AppRunState",
@@ -19,7 +26,7 @@ defmodule Ide.Emulator.PebbleProtocol.Trace do
     System.get_env("ELM_PEBBLE_PROTOCOL_TRACE") in ["1", "true", "TRUE", "yes", "YES"]
   end
 
-  @spec emit(String.t(), map()) :: :ok
+  @spec emit(String.t(), emit_frame() | Frame.t()) :: :ok
   def emit(direction, %{endpoint: endpoint, payload: payload}) do
     line = format(direction, endpoint, payload)
 

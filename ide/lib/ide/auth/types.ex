@@ -3,8 +3,20 @@ defmodule Ide.Auth.Types do
 
   alias Ide.Packages.Types, as: PackageTypes
 
-  @type firebase_user :: map()
-  @type developer_profile :: map()
+  @type firebase_config :: %{
+          required(:apiKey) => String.t(),
+          required(:authDomain) => String.t(),
+          required(:projectId) => String.t(),
+          required(:storageBucket) => String.t(),
+          required(:messagingSenderId) => String.t(),
+          required(:appId) => String.t()
+        }
+
+  @type firebase_user :: %{
+          optional(String.t()) => String.t() | boolean() | nil,
+          optional(atom()) => String.t() | boolean() | nil
+        }
+  @type developer_profile :: PackageTypes.json_wire_object()
 
   @type network_error :: PackageTypes.network_error()
 
@@ -14,19 +26,21 @@ defmodule Ide.Auth.Types do
 
   @type firebase_token_error ::
           :missing_id_token
-          | {:firebase_lookup_failed, pos_integer(), map() | String.t()}
+          | {:firebase_lookup_failed, pos_integer(), firebase_error_body()}
           | network_error()
 
   @type developer_status_error ::
           :missing_id_token
           | :unauthorized
           | :not_developer
-          | {:appstore_status_failed, pos_integer(), map() | String.t()}
+          | {:appstore_status_failed, pos_integer(), firebase_error_body()}
           | network_error()
 
-  @type mail_delivery_response :: map()
+  @type firebase_error_body :: PackageTypes.json_wire_object() | String.t()
 
-  @type mail_payload :: String.t() | map() | integer() | atom()
+  @type mail_delivery_response :: PackageTypes.json_wire_object()
+
+  @type mail_payload :: String.t() | firebase_error_body() | integer() | atom()
 
   @type mail_delivery_error ::
           atom()

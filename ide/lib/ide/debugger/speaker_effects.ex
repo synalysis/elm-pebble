@@ -2,11 +2,12 @@ defmodule Ide.Debugger.SpeakerEffects do
   @moduledoc false
 
   alias Ide.Debugger
-
   alias Ide.Debugger.SpeakerPlayback
+  alias Ide.Debugger.Types
 
   @type runtime_state :: Debugger.runtime_state()
-  @type speaker_cmd :: map()
+  @type speaker_cmd :: Types.speaker_command()
+  @type speaker_effect :: Types.speaker_effect()
 
   @spec enqueue(runtime_state(), speaker_cmd()) :: runtime_state()
   def enqueue(state, %{} = command) when is_map(state) do
@@ -33,7 +34,7 @@ defmodule Ide.Debugger.SpeakerEffects do
     end
   end
 
-  @spec latest(runtime_state()) :: map() | nil
+  @spec latest(runtime_state()) :: speaker_effect() | nil
   def latest(state) when is_map(state), do: Map.get(state, :speaker_effect)
   def latest(_), do: nil
 end

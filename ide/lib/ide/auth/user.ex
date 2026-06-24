@@ -17,6 +17,16 @@ defmodule Ide.Auth.User do
           password_hash: String.t() | nil
         }
 
+  @type changeset_attrs :: %{
+          optional(:firebase_uid) => String.t(),
+          optional(:display_name) => String.t()
+        }
+
+  @type email_changeset_attrs :: %{
+          required(:email) => String.t(),
+          optional(:display_name) => String.t()
+        }
+
   schema "users" do
     field :firebase_uid, :string
     field :email_hash, :string
@@ -30,7 +40,7 @@ defmodule Ide.Auth.User do
     timestamps(type: :utc_datetime)
   end
 
-  @spec changeset(t(), map()) :: Ecto.Changeset.t()
+  @spec changeset(t(), changeset_attrs()) :: Ecto.Changeset.t()
   def changeset(user, attrs) do
     user
     |> cast(attrs, [:firebase_uid, :display_name])
@@ -38,7 +48,7 @@ defmodule Ide.Auth.User do
     |> unique_constraint(:firebase_uid, name: :users_firebase_uid_index)
   end
 
-  @spec email_changeset(t(), map()) :: Ecto.Changeset.t()
+  @spec email_changeset(t(), email_changeset_attrs()) :: Ecto.Changeset.t()
   def email_changeset(user, attrs) do
     user
     |> cast(attrs, [:email, :display_name])

@@ -26,16 +26,18 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
 
   alias IdeWeb.WorkspaceLive.DebuggerSupport
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Types, as: SupportTypes
+  alias Ide.Debugger.Types, as: DebuggerTypes
+  alias Ide.Projects.Project
   alias Phoenix.LiveView.Rendered
 
   @type assigns :: Assigns.t()
   @type rendered :: Rendered.t()
   @type model_node :: SupportTypes.wire_map()
   @type config_field :: SupportTypes.wire_map()
-  @type trigger_row :: map()
+  @type trigger_row :: SupportTypes.trigger_button_row()
   @type svg_op :: SupportTypes.svg_op()
-  @type wire_input :: String.t() | integer() | float() | boolean() | list() | nil
-  @type model_value :: map() | list() | String.t() | number() | boolean() | nil
+  @type wire_input :: DebuggerTypes.wire_input()
+  @type model_value :: SupportTypes.wire_value()
 
   @spec render(assigns()) :: rendered()
   def render(assigns) do
@@ -600,14 +602,15 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
   @spec debugger_model_children(model_node()) :: [%{label: String.t(), value: model_value()}]
   defp debugger_model_children(value), do: ModelTree.debugger_model_children(value)
 
-  @spec debugger_model_tooltip(String.t(), model_node(), [map()], String.t()) :: String.t()
+  @spec debugger_model_tooltip(String.t(), model_node(), [ModelTree.model_child_row()], String.t()) ::
+          String.t()
   defp debugger_model_tooltip(label, value, children, scalar),
     do: ModelTree.debugger_model_tooltip(label, value, children, scalar)
 
   @spec debugger_model_scalar(model_node()) :: String.t()
   defp debugger_model_scalar(value), do: ModelTree.debugger_model_scalar(value)
 
-  @spec debugger_model_container_label(map() | list()) :: String.t()
+  @spec debugger_model_container_label(SupportTypes.model_map() | list()) :: String.t()
   defp debugger_model_container_label(value), do: ModelTree.debugger_model_container_label(value)
 
   attr(:open, :boolean, required: true)
@@ -864,7 +867,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
     """
   end
 
-  @spec subscription_trigger_enabled?([map()], String.t(), String.t()) :: boolean()
+  @spec subscription_trigger_enabled?(
+          [IdeWeb.WorkspaceLive.DebuggerFlow.Types.auto_fire_subscription_row()],
+          String.t(),
+          String.t()
+        ) :: boolean()
   defp subscription_trigger_enabled?(disabled_subscriptions, target, trigger),
     do: SubscriptionControls.enabled?(disabled_subscriptions, target, trigger)
 
@@ -875,11 +882,19 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
   @spec subscription_trigger_button_title(trigger_row()) :: String.t()
   defp subscription_trigger_button_title(row), do: SubscriptionControls.button_title(row)
 
-  @spec subscription_auto_fire_enabled?([map()], String.t(), String.t()) :: boolean()
+  @spec subscription_auto_fire_enabled?(
+          [IdeWeb.WorkspaceLive.DebuggerFlow.Types.auto_fire_subscription_row()],
+          String.t(),
+          String.t()
+        ) :: boolean()
   defp subscription_auto_fire_enabled?(auto_fire_subscriptions, target, trigger),
     do: SubscriptionControls.auto_fire_enabled?(auto_fire_subscriptions, target, trigger)
 
-  @spec subscription_auto_fire_toggle_visible?([map()], String.t(), trigger_row()) :: boolean()
+  @spec subscription_auto_fire_toggle_visible?(
+          [IdeWeb.WorkspaceLive.DebuggerFlow.Types.auto_fire_subscription_row()],
+          String.t(),
+          trigger_row()
+        ) :: boolean()
   defp subscription_auto_fire_toggle_visible?(auto_fire_subscriptions, target, row),
     do: SubscriptionControls.auto_fire_toggle_visible?(auto_fire_subscriptions, target, row)
 
@@ -1364,10 +1379,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
     """
   end
 
-  @spec debugger_watch_svg_ops(map() | nil, map() | nil) :: [svg_op()]
+  @spec debugger_watch_svg_ops(SupportTypes.view_tree() | nil, SupportTypes.runtime_input()) ::
+          [svg_op()]
   defp debugger_watch_svg_ops(tree, runtime), do: DebuggerPreview.svg_ops(tree, runtime)
 
-  @spec hydrate_bitmap_svg_ops([svg_op()], map(), String.t() | nil) :: [svg_op()]
+  @spec hydrate_bitmap_svg_ops([svg_op()], Project.t() | nil, String.t() | nil) :: [svg_op()]
   defp hydrate_bitmap_svg_ops(rows, project, color_mode),
     do: BitmapHydration.hydrate_svg_ops(rows, project, color_mode)
 
@@ -1413,9 +1429,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
     """
   end
 
-  @spec debugger_runtime_model(assigns()) :: map()
+  @spec debugger_runtime_model(SupportTypes.runtime_input()) :: SupportTypes.model_map()
   defp debugger_runtime_model(runtime), do: DebuggerPreview.runtime_model(runtime)
 
-  @spec debugger_rendered_tree(map() | nil) :: map() | nil
+  @spec debugger_rendered_tree(SupportTypes.runtime_input()) :: DebuggerTypes.rendered_tree() | nil
   defp debugger_rendered_tree(runtime), do: DebuggerSupport.rendered_tree(runtime)
 end

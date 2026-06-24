@@ -3,7 +3,9 @@ defmodule Ide.GitHub.AuthFlow do
 
   alias Ide.GitHub.{Client, Credentials, Types}
 
-  @spec start_device_flow() :: {:ok, map()} | {:error, Types.api_error()}
+  @type status :: Credentials.t()
+
+  @spec start_device_flow() :: {:ok, Types.device_flow_payload()} | {:error, Types.api_error()}
   def start_device_flow do
     with {:ok, result} <- Client.start_device_flow(Client.oauth_scope()),
          true <- is_binary(result["device_code"]),
@@ -56,7 +58,7 @@ defmodule Ide.GitHub.AuthFlow do
     Credentials.clear()
   end
 
-  @spec status() :: map()
+  @spec status() :: status()
   def status do
     Credentials.current()
   end

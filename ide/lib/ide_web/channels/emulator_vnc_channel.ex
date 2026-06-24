@@ -14,17 +14,32 @@ defmodule IdeWeb.EmulatorVncChannel do
   alias Ide.Emulator
   alias Ide.Emulator.{Session, VncReady}
   alias IdeWeb.EmulatorVncChannel.State, as: ChannelState
+  alias IdeWeb.Types
+
+  @type channel_stop_reason ::
+          :invalid_frame
+          | :normal
+          | {:tcp_send_failed, atom()}
+          | {:tcp_error, atom()}
+
+  @type channel_info_message ::
+          {:tcp, port(), binary()}
+          | {:tcp_closed, port()}
+          | {:tcp_error, port(), atom()}
 
   @vnc_connect_timeout 250
   @read_banner_ms 1_000
 
   @type channel_state :: ChannelState.t()
   @type join_reply :: %{required(:initial) => String.t()}
-
   @type join_error :: %{required(:reason) => String.t()}
+  @typedoc "Channel `frame` event with base64-encoded RFB payload (`b64` key)."
+  @type frame_params :: Types.wire_params()
+  @type handle_in_payload :: frame_params() | {:binary, binary()}
+  @type handle_in_reply :: %{}
 
   @impl true
-  @spec join(String.t(), map(), Phoenix.Socket.t()) ::
+  @spec join(String.t(), Types.wire_params(), Phoenix.Socket.t()) ::
           {:ok, join_reply(), Phoenix.Socket.t()}
           | {:error, join_error()}
           | {:ok, Phoenix.Socket.t()}
@@ -69,9 +84,9 @@ defmodule IdeWeb.EmulatorVncChannel do
   end
 
   @impl true
-  @spec handle_in(String.t(), map() | {:binary, binary()}, Phoenix.Socket.t()) ::
-          {:reply, {:ok, map()}, Phoenix.Socket.t()}
-          | {:stop, term(), Phoenix.Socket.t()}
+  @spec handle_in(String.t(), handle_in_payload(), Phoenix.Socket.t()) ::
+          {:reply, {:ok, handle_in_reply()}, Phoenix.Socket.t()}
+          | {:stop, channel_stop_reason(), Phoenix.Socket.t()}
           | {:noreply, Phoenix.Socket.t()}
   def handle_in("frame", %{"b64" => encoded}, socket) when is_binary(encoded) do
     case Base.decode64(encoded) do
@@ -92,8 +107,8 @@ defmodule IdeWeb.EmulatorVncChannel do
   end
 
   @impl true
-  @spec handle_info(term(), Phoenix.Socket.t()) ::
-          {:noreply, Phoenix.Socket.t()} | {:stop, term(), Phoenix.Socket.t()}
+  @spec handle_info(channel_info_message(), Phoenix.Socket.t()) ::
+          {:noreply, Phoenix.Socket.t()} | {:stop, channel_stop_reason(), Phoenix.Socket.t()}
   def handle_info({:tcp, tcp, data}, socket) when is_binary(data) do
     %{tcp: expected} = ChannelState.from_socket(socket)
     true = tcp == expected

@@ -95,7 +95,7 @@ defmodule Ide.ProjectCapabilities.Detect do
     end)
   end
 
-  @spec watch_module_call?(map(), String.t()) :: boolean()
+  @spec watch_module_call?(Types.cmd_call(), String.t()) :: boolean()
   defp watch_module_call?(row, module_name) do
     target = call_target(row)
 
@@ -117,33 +117,33 @@ defmodule Ide.ProjectCapabilities.Detect do
       task_source_module?(row, "Geolocation")
   end
 
-  @spec geolocation_subscription?(map()) :: boolean()
+  @spec geolocation_subscription?(Types.cmd_call()) :: boolean()
   defp geolocation_subscription?(row) do
     call_name(row) in @geolocation_subscriptions or
       (call_target_module?(row, "Geolocation") and call_name(row) in @geolocation_subscriptions)
   end
 
-  @spec configuration_command?(map()) :: boolean()
+  @spec configuration_command?(Types.cmd_call()) :: boolean()
   defp configuration_command?(row) do
     (call_target_module?(row, "Configuration") and call_name(row) in @configuration_commands) or
       task_source_module?(row, "Configuration") or
       Enum.any?(arg_value_calls(row), &configuration_call_source?/1)
   end
 
-  @spec configuration_subscription?(map()) :: boolean()
+  @spec configuration_subscription?(Types.cmd_call()) :: boolean()
   defp configuration_subscription?(row) do
     call_name(row) in @configuration_subscriptions or
       String.ends_with?(call_target(row), ".onConfiguration") or
       String.ends_with?(call_target(row), ".onClosed")
   end
 
-  @spec health_command?(map()) :: boolean()
+  @spec health_command?(Types.cmd_call()) :: boolean()
   defp health_command?(row) do
     (health_target?(call_target(row)) and call_name(row) in @health_api_commands) or
       task_source_module?(row, "Health")
   end
 
-  @spec health_subscription?(map()) :: boolean()
+  @spec health_subscription?(Types.cmd_call()) :: boolean()
   defp health_subscription?(row) do
     target = call_target(row)
 
@@ -159,7 +159,7 @@ defmodule Ide.ProjectCapabilities.Detect do
       String.contains?(target, "Elm.Kernel.PebbleWatch.onHealthEvent")
   end
 
-  @spec task_source_module?(map(), String.t()) :: boolean()
+  @spec task_source_module?(Types.cmd_call(), String.t()) :: boolean()
   defp task_source_module?(row, module_name) when is_binary(module_name) do
     row
     |> Map.get("task_sources", [])
@@ -169,7 +169,7 @@ defmodule Ide.ProjectCapabilities.Detect do
     end)
   end
 
-  @spec arg_value_calls(map()) :: [String.t()]
+  @spec arg_value_calls(Types.cmd_call()) :: [String.t()]
   defp arg_value_calls(row) do
     row
     |> Map.get("arg_values", [])
@@ -177,7 +177,7 @@ defmodule Ide.ProjectCapabilities.Detect do
     |> Enum.flat_map(&collect_arg_calls/1)
   end
 
-  @spec collect_arg_calls(map()) :: [String.t()]
+  @spec collect_arg_calls(%{optional(String.t()) => String.t()}) :: [String.t()]
   defp collect_arg_calls(%{"$call" => call}) when is_binary(call), do: [call]
   defp collect_arg_calls(_), do: []
 
@@ -188,7 +188,7 @@ defmodule Ide.ProjectCapabilities.Detect do
     Enum.at(parts, 0) == "Configuration" and Enum.at(parts, 1) in @configuration_commands
   end
 
-  @spec call_target_module?(map(), String.t()) :: boolean()
+  @spec call_target_module?(Types.cmd_call(), String.t()) :: boolean()
   defp call_target_module?(row, module_name) when is_binary(module_name) do
     target = call_target(row)
 

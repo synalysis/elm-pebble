@@ -27,7 +27,7 @@ defmodule Elmc.Backend.Pebble.FeatureFlags.CommandFlags.Services.Speaker do
     "Elm.Kernel.PebbleWatch.speakerStreamClose"
   ]
 
-  @spec compute(Types.call_target_set()) :: map()
+  @spec compute(Types.call_target_set()) :: Types.command_speaker_flags()
   def compute(targets) do
     enabled? = Enum.any?(@speaker_targets, &TargetSet.member?(targets, &1))
 

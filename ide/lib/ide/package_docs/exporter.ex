@@ -12,7 +12,7 @@ defmodule Ide.PackageDocs.Exporter do
           required(:root) => String.t()
         }
 
-  @spec export(keyword()) :: {:ok, map()} | {:error, Types.export_error()}
+  @spec export(keyword()) :: {:ok, Types.export_result()} | {:error, Types.export_error()}
   def export(opts \\ []) do
     output_root = Keyword.get(opts, :output_root, @default_output)
     packages = Keyword.get(opts, :packages, packages())
@@ -30,7 +30,7 @@ defmodule Ide.PackageDocs.Exporter do
   end
 
   @spec export_packages([package_spec()], String.t()) ::
-          {:ok, [map()]} | {:error, Types.export_error()}
+          {:ok, [Types.package_export_summary()]} | {:error, Types.export_error()}
   defp export_packages(packages, output_root) do
     packages
     |> Enum.reduce_while({:ok, []}, fn package, {:ok, acc} ->
@@ -61,7 +61,7 @@ defmodule Ide.PackageDocs.Exporter do
   end
 
   @spec export_package(package_spec(), String.t()) ::
-          {:ok, map()} | {:error, Types.export_error()}
+          {:ok, Types.package_export_summary()} | {:error, Types.export_error()}
   defp export_package(%{name: package_name, root: package_root}, output_root) do
     with {:ok, elm_json} <- Extractor.read_elm_json(package_root),
          :ok <- validate_package_name(package_name, elm_json),
@@ -146,7 +146,7 @@ defmodule Ide.PackageDocs.Exporter do
     :ok
   end
 
-  @spec write_package(String.t(), String.t(), map(), [map()]) ::
+  @spec write_package(String.t(), String.t(), Types.elm_json(), [Types.module_doc()]) ::
           :ok | {:error, Types.export_error()}
   defp write_package(output_root, package_name, elm_json, docs) do
     version = elm_json["version"] || "latest"
@@ -161,7 +161,8 @@ defmodule Ide.PackageDocs.Exporter do
     end
   end
 
-  @spec write_json(String.t(), map() | [map()]) :: :ok | {:error, Types.export_error()}
+  @spec write_json(String.t(), Types.elm_json() | [Types.module_doc()]) ::
+          :ok | {:error, Types.export_error()}
   defp write_json(path, payload) do
     json = Jason.encode!(payload, pretty: true)
 
@@ -171,7 +172,7 @@ defmodule Ide.PackageDocs.Exporter do
     end
   end
 
-  @spec validate_package_name(String.t(), map()) :: :ok | {:error, Types.export_error()}
+  @spec validate_package_name(String.t(), Types.elm_json()) :: :ok | {:error, Types.export_error()}
   defp validate_package_name(expected, %{"name" => expected}), do: :ok
 
   defp validate_package_name(expected, %{"name" => actual}),

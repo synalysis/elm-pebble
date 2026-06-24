@@ -1,7 +1,14 @@
 defmodule ElmEx.DebuggerContract.EffectNormalize do
   @moduledoc false
 
-  @spec normalize_subscription_calls([map()], [String.t()], map()) :: [map()]
+  alias ElmEx.DebuggerContract.CmdCall
+  alias ElmEx.DebuggerContract.Types.MsgTagIndex
+
+  @spec normalize_subscription_calls(
+          [CmdCall.wire_map()],
+          [String.t()],
+          MsgTagIndex.t()
+        ) :: [CmdCall.wire_map()]
   def normalize_subscription_calls(calls, imports, msg_tag_index)
       when is_list(calls) and is_list(imports) and is_map(msg_tag_index) do
     Enum.map(calls, fn row ->
@@ -18,7 +25,7 @@ defmodule ElmEx.DebuggerContract.EffectNormalize do
 
   def normalize_subscription_calls(calls, _, _), do: calls
 
-  @spec normalize_target(map(), [String.t()]) :: map()
+  @spec normalize_target(CmdCall.wire_map(), [String.t()]) :: CmdCall.wire_map()
   defp normalize_target(%{"target" => target} = row, imports)
        when is_binary(target) and is_list(imports) do
     Map.put(row, "target", shorten_imported_target(target, imports))
@@ -46,7 +53,7 @@ defmodule ElmEx.DebuggerContract.EffectNormalize do
     end
   end
 
-  @spec normalize_callback(map(), map()) :: map()
+  @spec normalize_callback(CmdCall.wire_map(), MsgTagIndex.t()) :: CmdCall.wire_map()
   defp normalize_callback(%{"callback_constructor" => nil} = row, msg_tag_index)
        when is_map(msg_tag_index) do
     row
@@ -79,7 +86,7 @@ defmodule ElmEx.DebuggerContract.EffectNormalize do
 
   defp normalize_callback(row, _), do: row
 
-  @spec msg_ctor_for_tagged_literal(map(), map()) :: String.t() | nil
+  @spec msg_ctor_for_tagged_literal(CmdCall.wire_map(), MsgTagIndex.t()) :: String.t() | nil
   defp msg_ctor_for_tagged_literal(_row, msg_tag_index) when is_map(msg_tag_index) do
     Map.get(msg_tag_index, "1") ||
       Map.get(msg_tag_index, 1) ||
@@ -89,7 +96,7 @@ defmodule ElmEx.DebuggerContract.EffectNormalize do
       end
   end
 
-  @spec callback_from_row_args(map(), map()) :: String.t() | nil
+  @spec callback_from_row_args(CmdCall.wire_map(), MsgTagIndex.t()) :: String.t() | nil
   defp callback_from_row_args(%{"arg_values" => values}, msg_tag_index) when is_list(values) do
     Enum.find_value(values, &msg_ctor_from_value(&1, msg_tag_index))
   end
@@ -97,7 +104,7 @@ defmodule ElmEx.DebuggerContract.EffectNormalize do
   defp callback_from_row_args(%{"arg_snippets" => [_ | _]}, _msg_tag_index), do: nil
   defp callback_from_row_args(_, _), do: nil
 
-  @spec msg_ctor_from_value(term(), map()) :: String.t() | nil
+  @spec msg_ctor_from_value(term(), MsgTagIndex.t()) :: String.t() | nil
   defp msg_ctor_from_value(%{"op" => "int_literal", "value" => v}, msg_tag_index),
     do: Map.get(msg_tag_index, to_string(v)) || Map.get(msg_tag_index, v)
 
@@ -125,7 +132,7 @@ defmodule ElmEx.DebuggerContract.EffectNormalize do
     end
   end
 
-  @spec msg_tag_index_from_unions(map()) :: map()
+  @spec msg_tag_index_from_unions(ElmEx.CoreIR.Types.Module.wire_t() | map()) :: MsgTagIndex.t()
   def msg_tag_index_from_unions(%{"unions" => unions}) when is_map(unions),
     do: msg_tag_index_from_unions_map(unions)
 
@@ -134,7 +141,7 @@ defmodule ElmEx.DebuggerContract.EffectNormalize do
 
   def msg_tag_index_from_unions(_), do: %{}
 
-  @spec msg_tag_index_from_unions_map(map()) :: map()
+  @spec msg_tag_index_from_unions_map(map()) :: MsgTagIndex.t()
   defp msg_tag_index_from_unions_map(unions) when is_map(unions) do
     case Map.get(unions, "Msg") || Map.get(unions, :Msg) do
       %{} = msg_union -> build_msg_tag_index(msg_union)
@@ -142,7 +149,7 @@ defmodule ElmEx.DebuggerContract.EffectNormalize do
     end
   end
 
-  @spec build_msg_tag_index(map()) :: map()
+  @spec build_msg_tag_index(map()) :: MsgTagIndex.t()
   defp build_msg_tag_index(msg_union) when is_map(msg_union) do
     tags = Map.get(msg_union, "tags") || Map.get(msg_union, :tags) || %{}
 

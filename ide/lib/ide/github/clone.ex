@@ -21,7 +21,7 @@ defmodule Ide.GitHub.Clone do
   end
 
   @doc false
-  @spec parse_repo_ref(String.t()) :: {:ok, map()} | {:error, Types.clone_error()}
+  @spec parse_repo_ref(String.t()) :: {:ok, Types.repo_ref()} | {:error, Types.clone_error()}
   def parse_repo_ref(ref) when is_binary(ref) do
     ref = String.trim(ref)
 
@@ -52,7 +52,7 @@ defmodule Ide.GitHub.Clone do
 
   def parse_repo_ref(_), do: {:error, :invalid_repo_ref}
 
-  @spec parse_github_url(String.t()) :: {:ok, map()} | {:error, :invalid_repo_ref}
+  @spec parse_github_url(String.t()) :: {:ok, Types.repo_ref()} | {:error, :invalid_repo_ref}
   defp parse_github_url(url) do
     uri = URI.parse(url)
     segments = uri.path |> to_string() |> String.trim("/") |> String.split("/", trim: true)
@@ -66,7 +66,7 @@ defmodule Ide.GitHub.Clone do
     end
   end
 
-  @spec parse_git_ssh_url(String.t()) :: {:ok, map()} | {:error, :invalid_repo_ref}
+  @spec parse_git_ssh_url(String.t()) :: {:ok, Types.repo_ref()} | {:error, :invalid_repo_ref}
   defp parse_git_ssh_url(url) do
     case String.split(url, ":", parts: 2) do
       ["git@github.com", path] ->

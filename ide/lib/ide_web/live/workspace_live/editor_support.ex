@@ -4,17 +4,19 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
   import Phoenix.Component, only: [assign: 2, assign: 3, to_form: 2]
   import Phoenix.LiveView, only: [connected?: 1, push_event: 3, start_async: 3]
 
+  alias Ide.Projects.Project
   alias Ide.Compiler
   alias Ide.ElmFormat
   alias Ide.EditorDocLinks
   alias Ide.Formatter
   alias Ide.Markdown
   alias Ide.Packages
+  alias Ide.Packages.Types, as: PackageTypes
   alias Ide.PebblePreferences
   alias Ide.Projects
-  alias Ide.Projects.Project
   alias Ide.Resources.ResourceStore
   alias Ide.Tokenizer
+  alias Ide.Tokenizer.Types, as: TokenizerTypes
   alias IdeWeb.WorkspaceLive.EditorDependencies
   alias IdeWeb.WorkspaceLive.EditorSupport.Types, as: EditorTypes
   alias IdeWeb.WorkspaceLive.PackagesFlow
@@ -174,7 +176,7 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
 
   @spec maybe_start_editor_dependencies_refresh(
           EditorTypes.socket(),
-          map(),
+          Project.t(),
           String.t(),
           String.t(),
           integer()
@@ -198,7 +200,8 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
     end
   end
 
-  @spec assign_dependency_lists(EditorTypes.socket(), map()) :: EditorTypes.socket()
+  @spec assign_dependency_lists(EditorTypes.socket(), EditorDependencies.dependency_payload()) ::
+          EditorTypes.socket()
   defp assign_dependency_lists(socket, payload) do
     if Map.get(payload, :dependencies_available?) == true do
       socket
@@ -419,7 +422,7 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
   def maybe_put_kw(opts, _key, ""), do: opts
   def maybe_put_kw(opts, key, value), do: Keyword.put(opts, key, value)
 
-  @spec apply_text_patch(String.t(), map()) :: String.t()
+  @spec apply_text_patch(String.t(), EditorTypes.edit_patch()) :: String.t()
   def apply_text_patch(content, %{replace_from: from, replace_to: to, inserted_text: inserted})
       when is_binary(content) and is_integer(from) and is_integer(to) and is_binary(inserted) do
     String.slice(content, 0, from) <>
@@ -444,7 +447,7 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
     |> Keyword.get(:semantic_edit_ops, true)
   end
 
-  @spec render_format_output(map()) :: String.t()
+  @spec render_format_output(EditorTypes.format_result()) :: String.t()
   def render_format_output(result) do
     diagnostics =
       case result.diagnostics do
@@ -460,7 +463,7 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
     """
   end
 
-  @spec format_parser_reuse(map()) :: boolean() | String.t()
+  @spec format_parser_reuse(EditorTypes.format_result()) :: boolean() | String.t()
   def format_parser_reuse(%{details: %{parser_payload_reused?: value}}), do: value
   def format_parser_reuse(_), do: "unknown"
 
@@ -553,7 +556,7 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
     lines ++ ["#{label}=#{rendered}"]
   end
 
-  @spec tokenize_content(String.t(), String.t(), keyword()) :: map()
+  @spec tokenize_content(String.t(), String.t(), keyword()) :: EditorTypes.tokenize_result()
   def tokenize_content(content, rel_path, opts) do
     if elm_source_file?(rel_path) do
       result = Tokenizer.tokenize(content, opts)
@@ -683,7 +686,7 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
   @spec push_editor_fold_ranges(
           EditorTypes.socket(),
           String.t(),
-          [map()],
+          [TokenizerTypes.token()],
           EditorTypes.parser_payload()
         ) :: EditorTypes.socket()
   def push_editor_fold_ranges(socket, content, tokens, parser_payload)
@@ -1020,7 +1023,8 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
 
   def parse_non_negative_number(_), do: nil
 
-  @spec maybe_put_state(EditorTypes.editor_state(), atom(), EditorTypes.wire_input()) :: map()
+  @spec maybe_put_state(EditorTypes.editor_state(), atom(), EditorTypes.wire_input()) ::
+          EditorTypes.editor_state()
   def maybe_put_state(state, _key, nil), do: state
   def maybe_put_state(state, key, value), do: Map.put(state, key, value)
 
@@ -1034,7 +1038,8 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
     end)
   end
 
-  @spec restore_editor_state(EditorTypes.socket(), EditorTypes.tab()) :: EditorTypes.socket()
+  @spec restore_editor_state(EditorTypes.socket(), EditorTypes.editor_restore_state()) ::
+          EditorTypes.socket()
   def restore_editor_state(socket, state) when is_map(state) do
     cursor_offset = state[:cursor_offset] || 0
     scroll_top = state[:scroll_top] || 0
@@ -1198,7 +1203,7 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
     |> Path.join(source_root)
   end
 
-  @spec token_diagnostics_by_line([EditorTypes.diagnostic()]) :: map()
+  @spec token_diagnostics_by_line([EditorTypes.diagnostic()]) :: EditorTypes.diagnostics_by_line()
   def token_diagnostics_by_line(diagnostics) do
     diagnostics
     |> Enum.filter(&is_integer(&1[:line]))
@@ -1248,7 +1253,7 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
 
   def refresh_tab_read_only(tab), do: tab
 
-  @spec tab_with_save_content(EditorTypes.tab(), map()) :: EditorTypes.tab()
+  @spec tab_with_save_content(EditorTypes.tab(), EditorTypes.tab_save_params()) :: EditorTypes.tab()
   def tab_with_save_content(tab, %{"content" => content}) when is_binary(content) do
     %{tab | content: content}
   end
@@ -1370,7 +1375,7 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
           EditorTypes.socket(),
           String.t(),
           String.t(),
-          [map()]
+          [Compiler.diagnostic()]
         ) :: EditorTypes.socket()
   def push_editor_check_lint_diagnostics(socket, source_root, rel_path, diagnostics) do
     case active_tab(socket) do
@@ -1384,7 +1389,8 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
     end
   end
 
-  @spec editor_check_diagnostic_matches_rel_path?(map(), String.t()) :: boolean()
+  @spec editor_check_diagnostic_matches_rel_path?(Ide.Compiler.diagnostic(), String.t()) ::
+          boolean()
   defp editor_check_diagnostic_matches_rel_path?(diag, rel_path)
        when is_map(diag) and is_binary(rel_path) do
     case Map.get(diag, :file) || Map.get(diag, "file") do
@@ -1490,7 +1496,8 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
     assign(socket, :editor_doc_html, Markdown.readme_to_html(header <> markdown))
   end
 
-  @spec apply_doc_catalog_rows(EditorTypes.socket(), [map()]) :: EditorTypes.socket()
+  @spec apply_doc_catalog_rows(EditorTypes.socket(), [PackageTypes.doc_catalog_entry()]) ::
+          EditorTypes.socket()
   def apply_doc_catalog_rows(socket, rows) when is_list(rows) do
     socket = assign(socket, :editor_doc_packages, rows)
 
@@ -1532,7 +1539,8 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
     end
   end
 
-  @spec editor_doc_modules_for_package([map()], String.t(), String.t()) :: [String.t()]
+  @spec editor_doc_modules_for_package([PackageTypes.doc_catalog_entry()], String.t(), String.t()) ::
+          [String.t()]
   def editor_doc_modules_for_package(rows, pkg, query \\ "")
 
   def editor_doc_modules_for_package(rows, pkg, query) when is_list(rows) and is_binary(pkg) do
@@ -1547,7 +1555,8 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
 
   def editor_doc_modules_for_package(_, _, _), do: []
 
-  @spec init_editor_doc_selection(EditorTypes.socket(), map()) :: EditorTypes.socket()
+  @spec init_editor_doc_selection(EditorTypes.socket(), PackageTypes.doc_catalog_entry()) ::
+          EditorTypes.socket()
   defp init_editor_doc_selection(socket, row) do
     mod = List.first(row.modules) || ""
 

@@ -19,8 +19,10 @@ defmodule IdeWeb.CoreComponents do
 
   alias Phoenix.LiveView.JS
   alias Phoenix.LiveView.Rendered
+  alias IdeWeb.CoreComponents.Assigns
 
-  @type assigns :: map()
+  @type assigns :: Assigns.t()
+  @type footer_assigns :: Assigns.footer()
   @type translation :: {String.t(), keyword()}
   @type field_errors :: [{atom() | String.t(), translation()}]
 
@@ -713,7 +715,7 @@ defmodule IdeWeb.CoreComponents do
   """
   attr :class, :string, default: nil
 
-  @spec local_run_footer(map()) :: Rendered.t()
+  @spec local_run_footer(footer_assigns()) :: Rendered.t()
   def local_run_footer(assigns) do
     assigns = assign(assigns, :repo_url, @local_run_repo_url)
 

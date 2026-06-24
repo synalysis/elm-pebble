@@ -6,6 +6,7 @@ defmodule Ide.GitHub.Credentials do
   alias Ide.GitHub.Types
 
   @type wire_value :: String.t() | integer() | atom() | nil
+  @type file_values :: Types.credentials_file_values()
 
   @type t :: %{
           connected?: boolean(),
@@ -34,7 +35,7 @@ defmodule Ide.GitHub.Credentials do
     }
   end
 
-  @spec put(map()) :: :ok | {:error, Types.credentials_error()}
+  @spec put(Types.credentials_file_values()) :: :ok | {:error, Types.credentials_error()}
   def put(attrs) when is_map(attrs) do
     cleaned =
       attrs
@@ -69,7 +70,7 @@ defmodule Ide.GitHub.Credentials do
     current().access_token
   end
 
-  @spec read_file_values() :: map()
+  @spec read_file_values() :: file_values()
   defp read_file_values do
     path = credentials_path()
 
@@ -85,7 +86,7 @@ defmodule Ide.GitHub.Credentials do
     end
   end
 
-  @spec write_file_values(map()) :: :ok | {:error, Types.credentials_error()}
+  @spec write_file_values(file_values()) :: :ok | {:error, Types.credentials_error()}
   defp write_file_values(values) do
     path = credentials_path()
     parent = Path.dirname(path)
@@ -103,13 +104,13 @@ defmodule Ide.GitHub.Credentials do
     |> Keyword.fetch!(:credentials_path)
   end
 
-  @spec maybe_put(map(), String.t()) :: map()
+  @spec maybe_put(file_values(), String.t()) :: file_values()
   defp maybe_put(map, key) do
     value = Map.get(map, key) || Map.get(map, String.to_atom(key))
     put_clean_string(map, key, value)
   end
 
-  @spec maybe_put_int(map(), String.t()) :: map()
+  @spec maybe_put_int(file_values(), String.t()) :: file_values()
   defp maybe_put_int(map, key) do
     value = Map.get(map, key) || Map.get(map, String.to_atom(key))
 
@@ -119,7 +120,7 @@ defmodule Ide.GitHub.Credentials do
     end
   end
 
-  @spec put_clean_string(map(), String.t(), wire_value()) :: map()
+  @spec put_clean_string(file_values(), String.t(), wire_value()) :: file_values()
   defp put_clean_string(map, _key, nil), do: map
 
   defp put_clean_string(map, key, value) when is_binary(value) do

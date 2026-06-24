@@ -326,7 +326,8 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec normalize_multiline_if_line(String.t(), map() | nil) :: {String.t(), map() | nil}
+  @spec normalize_multiline_if_line(String.t(), Types.multiline_if_layout() | nil) ::
+          {String.t(), Types.multiline_if_layout() | nil}
   defp normalize_multiline_if_line(line, state) do
     trimmed = String.trim(line)
 
@@ -358,7 +359,7 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec multiline_if_layout(String.t()) :: {:ok, map()} | :error
+  @spec multiline_if_layout(String.t()) :: {:ok, Types.multiline_if_layout()} | :error
   defp multiline_if_layout(line) do
     trimmed = String.trim_leading(line)
     indent = leading_indent(line)

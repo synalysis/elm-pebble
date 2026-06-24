@@ -19,7 +19,7 @@ defmodule Ide.WatchModels.Profile do
   @type t :: %{
           optional(:name) => String.t(),
           optional(:shape) => shape(),
-          optional(:screen) => screen() | map(),
+          optional(:screen) => wire_screen(),
           optional(:color_mode) => color_mode(),
           optional(:has_microphone) => boolean(),
           optional(:has_compass) => boolean(),
@@ -27,6 +27,6 @@ defmodule Ide.WatchModels.Profile do
           optional(String.t()) => term()
         }
 
-  @type wire_screen :: screen() | %{String.t() => term()}
-  @type wire :: t() | %{String.t() => term()}
+  @type wire_screen :: screen() | %{String.t() => String.t() | integer() | boolean() | nil}
+  @type wire :: t() | %{String.t() => String.t() | integer() | boolean() | nil}
 end

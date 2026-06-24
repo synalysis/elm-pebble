@@ -4,17 +4,44 @@ defmodule Ide.Mcp.ToolTypes do
   """
 
   alias Ide.AppStore.Types, as: AppStoreTypes
+  alias Ide.Compiler
+  alias Ide.Compiler.Diagnostics, as: CompilerDiagnostics
   alias Ide.Debugger.Types, as: DebuggerTypes
+  alias Ide.Emulator.LogCapture
+  alias Ide.Emulator.Types, as: EmulatorTypes
+  alias Ide.Mcp.Types, as: McpTypes
   alias Ide.Mcp.WireTypes
+  alias Ide.PebbleToolchain.Types, as: PebbleToolchainTypes
   alias Ide.Projects.Types, as: ProjectsTypes
+  alias Ide.Screenshots
   alias Ide.WatchModels
 
   @type json_value :: WireTypes.json_value()
   @type file_mtime :: :calendar.datetime()
 
-  @type tool_result :: {:ok, map()} | {:error, String.t()}
-  @type tool_persist_error :: atom() | String.t() | Ecto.Changeset.t() | map()
-  @type tool_args :: map()
+  @type files_search_match :: %{
+          required(:source_root) => String.t(),
+          required(:rel_path) => String.t(),
+          required(:line) => pos_integer(),
+          required(:text) => String.t()
+        }
+
+  @type files_search_result :: %{
+          required(:slug) => String.t(),
+          required(:query) => String.t(),
+          required(:count) => non_neg_integer(),
+          required(:matches) => [files_search_match()]
+        }
+
+  @type tool_wire_map :: %{
+          optional(atom()) => tool_payload_value(),
+          optional(String.t()) => tool_payload_value()
+        }
+
+  @type tool_result :: {:ok, tool_wire_map()} | {:error, String.t()}
+  @type tool_persist_error :: atom() | String.t() | Ecto.Changeset.t() | tool_wire_map()
+  @type tool_args :: %{optional(String.t()) => json_value(), optional(atom()) => json_value()}
+  @type tool_audit_args :: tool_args()
 
   @type release_defaults :: ProjectsTypes.release_defaults()
   @type debugger_settings :: ProjectsTypes.debugger_settings()
@@ -24,13 +51,34 @@ defmodule Ide.Mcp.ToolTypes do
   @type debugger_runtime_state :: DebuggerTypes.runtime_state()
   @type debugger_screen :: WatchModels.wire_screen()
 
+  @type emulator_launch_payload :: %{
+          required(:slug) => String.t(),
+          required(:platform) => String.t(),
+          required(:artifact_path) => String.t(),
+          required(:session) => EmulatorTypes.session_info()
+        }
+
+  @type emulator_run_result :: %{
+          required(:slug) => String.t(),
+          required(:platform) => String.t(),
+          required(:artifact_path) => String.t(),
+          required(:session) => EmulatorTypes.session_info(),
+          required(:installed) => boolean(),
+          required(:install_result) => EmulatorTypes.pbw_install_result() | nil,
+          required(:logs) => emulator_logs_payload(),
+          required(:fault_detected) => boolean(),
+          required(:session_killed) => boolean()
+        }
+
+  @type emulator_logs_payload :: LogCapture.snapshot()
+
   @type render_tree_result :: %{
           required(:slug) => String.t(),
           required(:target) => String.t(),
           required(:screen) => debugger_screen(),
           required(:root_type) => String.t(),
           required(:node_count) => non_neg_integer(),
-          required(:nodes) => [map()],
+          required(:nodes) => [DebuggerTypes.view_output_row()],
           optional(:tree) => DebuggerTypes.rendered_tree()
         }
 
@@ -50,8 +98,8 @@ defmodule Ide.Mcp.ToolTypes do
           required(:revision) => String.t(),
           required(:cached) => boolean(),
           required(:strict) => boolean(),
-          required(:manifest) => map() | nil,
-          required(:diagnostics) => [map()],
+          required(:manifest) => Compiler.manifest_data() | nil,
+          required(:diagnostics) => [CompilerDiagnostics.diagnostic_map()],
           required(:error_count) => non_neg_integer(),
           required(:warning_count) => non_neg_integer(),
           required(:output) => String.t()
@@ -74,7 +122,9 @@ defmodule Ide.Mcp.ToolTypes do
           optional(String.t()) => json_value()
         }
 
-  @type ingest_compile_result :: {:ok, map()} | {:error, String.t()}
+  @type publish_tool_fields :: %{optional(atom()) => json_value(), optional(String.t()) => json_value()}
+
+  @type ingest_compile_result :: {:ok, Compiler.compile_result()} | {:error, String.t()}
 
   @type files_read_result :: %{
           required(:slug) => String.t(),
@@ -96,7 +146,7 @@ defmodule Ide.Mcp.ToolTypes do
           required(:compiled_path) => String.t(),
           required(:revision) => String.t(),
           required(:cached) => boolean(),
-          required(:diagnostics) => [map()],
+          required(:diagnostics) => [CompilerDiagnostics.diagnostic_map()],
           required(:error_count) => non_neg_integer(),
           required(:warning_count) => non_neg_integer(),
           required(:output) => String.t()
@@ -136,7 +186,7 @@ defmodule Ide.Mcp.ToolTypes do
           required(:slug) => String.t(),
           required(:status) => :ok | :error,
           optional(:detail) => String.t(),
-          optional(:diagnostics) => [map()],
+          optional(:diagnostics) => [CompilerDiagnostics.diagnostic_map()],
           optional(String.t()) => json_value()
         }
 
@@ -183,15 +233,23 @@ defmodule Ide.Mcp.ToolTypes do
   @type projects_graph_result :: %{required(:projects) => [project_graph_entry()]}
 
   @type audit_recent_result :: %{
-          required(:entries) => [map()],
+          required(:entries) => [McpTypes.audit_entry()],
           required(:limit) => pos_integer(),
           required(:since) => String.t() | nil
+        }
+
+  @type render_tree_flat_node :: %{
+          required(:path) => String.t(),
+          required(:type) => String.t(),
+          optional(:label) => String.t() | nil,
+          optional(:bounds) => DebuggerTypes.wire_map() | nil,
+          optional(:source) => String.t() | nil
         }
 
   @type debugger_render_tree_summary :: %{
           optional(:root_type) => String.t(),
           optional(:node_count) => non_neg_integer(),
-          optional(:nodes) => [map()],
+          optional(:nodes) => [render_tree_flat_node()],
           optional(atom()) => json_value()
         }
 
@@ -209,7 +267,7 @@ defmodule Ide.Mcp.ToolTypes do
         }
 
   @type compiler_recent_result :: %{
-          required(:entries) => [map()],
+          required(:entries) => [McpTypes.compiler_history_entry()],
           required(:limit) => pos_integer(),
           optional(:slug) => String.t() | nil,
           required(:since) => String.t() | nil
@@ -238,7 +296,7 @@ defmodule Ide.Mcp.ToolTypes do
           required(:slug) => String.t(),
           required(:status) => :ok | :error,
           required(:checked_path) => String.t(),
-          required(:diagnostics) => [map()],
+          required(:diagnostics) => [CompilerDiagnostics.diagnostic_map()],
           required(:error_count) => non_neg_integer(),
           required(:warning_count) => non_neg_integer(),
           required(:output) => String.t(),
@@ -251,7 +309,7 @@ defmodule Ide.Mcp.ToolTypes do
           required(:artifact_path) => String.t(),
           optional(:package_path) => String.t(),
           required(:app_root) => String.t(),
-          required(:build_result) => map()
+          required(:build_result) => PebbleToolchainTypes.command_result()
         }
 
   @type debugger_timeline_event :: %{
@@ -274,15 +332,20 @@ defmodule Ide.Mcp.ToolTypes do
 
   @type slug_ok_result :: %{required(:slug) => String.t(), required(:deleted) => true}
 
+  @type compiler_cached_payload_result ::
+          Compiler.check_result()
+          | Compiler.compile_result()
+          | Compiler.manifest_result()
+
   @type compiler_cached_result :: %{
           required(:slug) => String.t(),
           required(:cached) => true,
           required(:at) => String.t(),
-          required(:result) => map(),
+          required(:result) => compiler_cached_payload_result(),
           optional(:revision) => String.t()
         }
 
-  @type tool_payload_value :: json_value() | map() | [map()]
+  @type tool_payload_value :: json_value() | tool_wire_map() | [tool_payload_value()]
 
   @type debugger_preview_diagnostics_result :: %{
           required(:slug) => String.t(),
@@ -298,13 +361,29 @@ defmodule Ide.Mcp.ToolTypes do
           optional(:trace_id) => String.t() | nil,
           optional(:slug) => String.t() | nil,
           required(:since) => String.t() | nil,
-          required(:window) => map(),
-          required(:latest_status) => map(),
-          required(:actions) => [map()]
+          required(:window) => McpTypes.traces_summary_window(),
+          required(:latest_status) => McpTypes.traces_summary_latest_status(),
+          required(:actions) => [McpTypes.audit_action_count()]
+        }
+
+  @type sessions_recent_activity_entry :: %{
+          required(:slug) => String.t(),
+          required(:name) => String.t(),
+          required(:target_type) => String.t(),
+          required(:active) => boolean(),
+          required(:screenshot_count) => non_neg_integer(),
+          required(:latest_check) => McpTypes.compiler_history_entry() | nil,
+          required(:latest_compile) => McpTypes.compiler_history_entry() | nil,
+          required(:latest_manifest) => McpTypes.compiler_history_entry() | nil,
+          required(:latest_manifest_strict) => boolean() | nil,
+          required(:recent_checks) => [McpTypes.compiler_history_entry()],
+          required(:recent_compiles) => [McpTypes.compiler_history_entry()],
+          required(:recent_manifests) => [McpTypes.compiler_history_entry()],
+          required(:recent_actions) => [McpTypes.audit_entry()]
         }
 
   @type sessions_recent_activity_result :: %{
-          required(:projects) => [map()],
+          required(:projects) => [sessions_recent_activity_entry()],
           required(:limit) => pos_integer(),
           optional(:slug) => String.t() | nil,
           required(:since) => String.t() | nil
@@ -314,7 +393,7 @@ defmodule Ide.Mcp.ToolTypes do
           required(:slug) => String.t(),
           required(:cursor_seq) => non_neg_integer() | nil,
           required(:event_window) => non_neg_integer(),
-          required(:snapshot_refs) => [map()],
+          required(:snapshot_refs) => [DebuggerTypes.trace_snapshot_reference_row()],
           optional(atom()) => tool_payload_value(),
           optional(String.t()) => tool_payload_value()
         }
@@ -323,9 +402,9 @@ defmodule Ide.Mcp.ToolTypes do
           required(:slug) => String.t(),
           required(:cursor_seq) => non_neg_integer() | nil,
           required(:event_window) => non_neg_integer(),
-          required(:snapshot_refs) => [map()],
-          required(:elmc_diagnostics) => [map()],
-          required(:runtime_fingerprint_digest) => map(),
+          required(:snapshot_refs) => [DebuggerTypes.trace_snapshot_reference_row()],
+          required(:elmc_diagnostics) => [DebuggerTypes.elmc_diagnostic_row()],
+          required(:runtime_fingerprint_digest) => DebuggerTypes.wire_map(),
           optional(atom()) => tool_payload_value(),
           optional(String.t()) => tool_payload_value()
         }
@@ -397,8 +476,8 @@ defmodule Ide.Mcp.ToolTypes do
         }
 
   @type trace_bundle_compiler_context :: %{
-          required(:latest) => map(),
-          required(:recent) => map()
+          required(:latest) => McpTypes.trace_compiler_latest(),
+          required(:recent) => McpTypes.trace_compiler_recent()
         }
 
   @type trace_bundle :: %{
@@ -406,7 +485,7 @@ defmodule Ide.Mcp.ToolTypes do
           optional(:slug) => String.t() | nil,
           required(:limit) => pos_integer(),
           required(:since) => String.t() | nil,
-          required(:audit_entries) => [map()],
+          required(:audit_entries) => [McpTypes.audit_entry()],
           required(:compiler_context) => trace_bundle_compiler_context()
         }
 
@@ -426,7 +505,7 @@ defmodule Ide.Mcp.ToolTypes do
 
   @type policy_validation_result :: %{
           required(:status) => String.t(),
-          required(:findings) => [map()]
+          required(:findings) => [McpTypes.policy_finding()]
         }
 
   @type sessions_trace_health_result :: %{
@@ -478,7 +557,7 @@ defmodule Ide.Mcp.ToolTypes do
   @type traces_policy_validate_result :: %{
           required(:status) => String.t(),
           required(:policy) => traces_policy_effective_settings(),
-          required(:findings) => [map()]
+          required(:findings) => [McpTypes.policy_finding()]
         }
 
   @type packages_module_docs_result :: %{
@@ -488,7 +567,9 @@ defmodule Ide.Mcp.ToolTypes do
           required(:markdown) => String.t()
         }
 
-  @type debugger_watch_profiles_result :: %{required(:watch_profiles) => list()}
+  @type debugger_watch_profiles_result :: %{
+          required(:watch_profiles) => [DebuggerTypes.watch_profile_list_item()]
+        }
 
   @type debugger_simulator_settings_state_result :: %{
           required(:slug) => String.t(),
@@ -561,7 +642,7 @@ defmodule Ide.Mcp.ToolTypes do
   @type pebble_install_result :: %{
           required(:slug) => String.t(),
           required(:artifact_path) => String.t(),
-          required(:install_result) => map()
+          required(:install_result) => EmulatorTypes.pbw_install_result()
         }
 
   @type screenshot_entry :: %{
@@ -593,7 +674,7 @@ defmodule Ide.Mcp.ToolTypes do
 
   @type screenshots_capture_result :: %{
           required(:slug) => String.t(),
-          required(:screenshot) => map() | nil,
+          required(:screenshot) => Screenshots.screenshot() | nil,
           required(:output) => String.t(),
           required(:exit_code) => integer(),
           required(:command) => String.t(),

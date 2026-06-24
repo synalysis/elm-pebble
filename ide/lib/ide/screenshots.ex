@@ -37,6 +37,13 @@ defmodule Ide.Screenshots do
 
   @type screenshot_error :: atom() | String.t() | tuple()
 
+  @type file_metadata :: %{
+          optional(:schema_version) => integer(),
+          optional(:mime_type) => String.t(),
+          optional(:captured_at) => String.t(),
+          optional(String.t()) => String.t() | integer() | boolean() | nil
+        }
+
   @callback list(project_slug(), opts()) :: {:ok, [screenshot()]} | {:error, screenshot_error()}
   @callback list_grouped_by_emulator(project_slug(), opts()) ::
               {:ok, [{String.t(), [screenshot()]}]} | {:error, screenshot_error()}
@@ -484,7 +491,7 @@ defmodule Ide.Screenshots do
     end
   end
 
-  @spec read_metadata(String.t()) :: map()
+  @spec read_metadata(String.t()) :: file_metadata()
   defp read_metadata(absolute_path) do
     with {:ok, json} <- File.read(metadata_path(absolute_path)),
          {:ok, metadata} when is_map(metadata) <- Jason.decode(json) do
@@ -653,7 +660,11 @@ defmodule Ide.Screenshots do
 
   @type progress_payload ::
           {:phase, String.t()}
-          | {:close, step_ok_value() | {:ok, map()} | {:error, screenshot_error()} | nil}
+          | {:close,
+             step_ok_value()
+             | {:ok, capture_all_result()}
+             | {:error, screenshot_error()}
+             | nil}
           | {:target, String.t(), atom()}
           | {:target, String.t(), atom(), progress_detail()}
           | {:target, String.t(), atom(), atom(), progress_detail()}
@@ -661,7 +672,12 @@ defmodule Ide.Screenshots do
           | {:target, String.t(), atom(), pos_integer(), pos_integer()}
           | {:target, String.t(), atom(), pos_integer(), pos_integer(), progress_detail()}
 
-  @type step_ok_value :: map() | binary() | :ok
+  @type step_ok_value ::
+          capture_all_result()
+          | capture_result()
+          | PebbleToolchain.command_result()
+          | binary()
+          | :ok
 
   @spec maybe_progress((progress_payload() -> :ok) | nil, progress_payload()) :: :ok
   defp maybe_progress(progress, payload) when is_function(progress, 1), do: progress.(payload)

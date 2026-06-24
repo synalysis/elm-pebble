@@ -13,6 +13,7 @@ defmodule Ide.Projects do
   alias Ide.Compiler
   alias Ide.Debugger
   alias Ide.Resources.ResourceStore
+  alias Ide.Resources.Types, as: ResourceTypes
   alias Ide.ProjectBundle
   alias Ide.PebbleToolchain
   alias Ide.GitHub.Clone, as: GitHubClone
@@ -155,7 +156,7 @@ defmodule Ide.Projects do
   @doc """
   Clones a GitHub repository and imports it as an IDE project workspace.
   """
-  @spec import_from_github(map(), map(), Types.scope_user(), keyword()) ::
+  @spec import_from_github(Types.project_attrs(), Types.github_clone_params(), Types.scope_user(), keyword()) ::
           {:ok, Project.t()} | {:error, Types.project_error()}
   def import_from_github(attrs, github_params, user \\ nil, opts \\ []) do
     with {:ok, repo_ref} <- resolve_github_repo_ref(github_params),
@@ -170,7 +171,7 @@ defmodule Ide.Projects do
     end
   end
 
-  @spec clone_path_for_import(map(), keyword()) ::
+  @spec clone_path_for_import(Types.github_import_repo(), keyword()) ::
           {:ok, String.t()} | {:error, Types.project_error()}
   defp clone_path_for_import(repo_ref, opts) do
     case Keyword.get(opts, :clone_path) do
@@ -179,7 +180,8 @@ defmodule Ide.Projects do
     end
   end
 
-  @spec resolve_github_repo_ref(map()) :: {:ok, map()} | {:error, Types.project_error()}
+  @spec resolve_github_repo_ref(Types.github_clone_params()) ::
+          {:ok, Types.github_import_repo()} | {:error, Types.project_error()}
   defp resolve_github_repo_ref(params) when is_map(params) do
     owner =
       params |> Map.get("owner", Map.get(params, :owner, "")) |> to_string() |> String.trim()
@@ -221,7 +223,8 @@ defmodule Ide.Projects do
     end
   end
 
-  @spec attrs_for_github_import(map(), String.t(), map()) :: map()
+  @spec attrs_for_github_import(Types.project_attrs(), String.t(), Types.github_import_repo()) ::
+          Types.project_attrs()
   defp attrs_for_github_import(attrs, clone_path, %{owner: owner, repo: repo, branch: branch}) do
     attrs =
       attrs
@@ -247,7 +250,7 @@ defmodule Ide.Projects do
     attrs
   end
 
-  @spec maybe_put(map(), String.t(), String.t(), String.t()) :: map()
+  @spec maybe_put(Types.project_attrs(), String.t(), String.t(), String.t()) :: Types.project_attrs()
   defp maybe_put(attrs, key, "", fallback), do: Map.put(attrs, key, fallback)
   defp maybe_put(attrs, key, value, _fallback) when value != "", do: Map.put(attrs, key, value)
 
@@ -774,7 +777,7 @@ defmodule Ide.Projects do
   Removes one monochrome or color variant from a bitmap resource.
   """
   @spec clear_bitmap_variant_resource(Project.t(), String.t(), String.t()) ::
-          {:ok, [map()]} | {:error, Types.project_error()}
+          ResourceTypes.delete_entries_result() | {:error, Types.project_error()}
   def clear_bitmap_variant_resource(%Project{} = project, ctor, color_mode) do
     ResourceStore.clear_bitmap_variant(project, ctor, color_mode)
   end
@@ -783,7 +786,7 @@ defmodule Ide.Projects do
   Deletes one bitmap resource and regenerates the generated resources Elm module.
   """
   @spec delete_bitmap_resource(Project.t(), String.t()) ::
-          {:ok, [map()]} | {:error, Types.project_error()}
+          ResourceTypes.delete_entries_result() | {:error, Types.project_error()}
   def delete_bitmap_resource(%Project{} = project, ctor) do
     ResourceStore.delete_bitmap(project, ctor)
   end
@@ -806,13 +809,14 @@ defmodule Ide.Projects do
     ResourceStore.import_vector(project, upload_path, original_name)
   end
 
-  @spec list_speaker_samples(Project.t()) :: {:ok, [map()]} | {:error, Types.project_error()}
+  @spec list_speaker_samples(Project.t()) ::
+          {:ok, [ResourceTypes.speaker_sample_entry()]} | {:error, Types.project_error()}
   def list_speaker_samples(%Project{} = project) do
     ResourceStore.list_speaker_samples(project)
   end
 
   @spec import_speaker_sample_resource(Project.t(), String.t(), String.t(), keyword()) ::
-          {:ok, map()} | {:error, Types.project_error()}
+          {:ok, ResourceTypes.speaker_sample_import_ok()} | {:error, Types.project_error()}
   def import_speaker_sample_resource(%Project{} = project, upload_path, original_name, opts \\ []) do
     ResourceStore.import_speaker_sample(project, upload_path, original_name, opts)
   end
@@ -1074,16 +1078,16 @@ defmodule Ide.Projects do
     from(p in Project, where: p.active == true and p.owner_id == ^owner_id)
   end
 
-  @spec template_key(map()) :: String.t()
+  @spec template_key(Types.project_attrs()) :: String.t()
   defp template_key(attrs), do: Map.get(attrs, "template", "starter")
 
-  @spec infer_target_type_from_template(map()) :: map()
+  @spec infer_target_type_from_template(Types.project_attrs()) :: Types.project_attrs()
   defp infer_target_type_from_template(attrs) do
     template = Map.get(attrs, "template", "starter")
     Map.put(attrs, "target_type", Ide.ProjectTemplates.target_type_for_template(template))
   end
 
-  @spec merge_template_release_defaults(map()) :: map()
+  @spec merge_template_release_defaults(Types.project_attrs()) :: Types.project_attrs()
   defp merge_template_release_defaults(attrs) do
     template = Map.get(attrs, "template", "starter")
     template_defaults = Ide.ProjectTemplates.default_release_defaults(template)
@@ -1115,7 +1119,7 @@ defmodule Ide.Projects do
     error -> {:error, error}
   end
 
-  @spec assign_default_app_uuid(map()) :: map()
+  @spec assign_default_app_uuid(Types.project_attrs()) :: Types.project_attrs()
   defp assign_default_app_uuid(attrs) do
     case normalize_app_uuid(Map.get(attrs, "app_uuid")) do
       nil ->

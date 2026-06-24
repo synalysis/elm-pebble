@@ -8,6 +8,7 @@ defmodule Ide.Debugger.Types.ElmcCliIngestBridge do
   alias Elmc.CLI.Types, as: CliTypes
   alias Ide.Compiler
   alias Ide.Compiler.Diagnostics
+  alias Ide.Debugger.Types, as: DebuggerTypes
   alias Ide.Debugger.Types.{CompileIngestAttrs, CompileIngestBridge}
 
   @type ingest_opts :: keyword()
@@ -109,7 +110,7 @@ defmodule Ide.Debugger.Types.ElmcCliIngestBridge do
   end
 
   @spec manifest_schema_version(Compiler.manifest_data() | nil) ::
-          String.t() | integer() | map() | nil
+          String.t() | integer() | DebuggerTypes.wire_map() | nil
   defp manifest_schema_version(%{"schema_version" => v}), do: v
   defp manifest_schema_version(%{schema_version: v}), do: v
   defp manifest_schema_version(_), do: nil

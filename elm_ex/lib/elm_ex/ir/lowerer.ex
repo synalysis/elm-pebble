@@ -3,6 +3,9 @@ defmodule ElmEx.IR.Lowerer do
   Lowers frontend modules into ownership-annotated IR.
   """
 
+  alias ElmEx.Frontend.AstContract.Types.Declaration, as: AstDeclaration
+  alias ElmEx.Frontend.Module, as: FrontendModule
+  alias ElmEx.Frontend.Types.ImportEntry
   alias ElmEx.Frontend.Project
   alias ElmEx.Frontend.DefaultImports
   alias ElmEx.IR
@@ -11,7 +14,7 @@ defmodule ElmEx.IR.Lowerer do
   alias ElmEx.IR.ImportResolution
   alias ElmEx.IR.Module
 
-  alias ElmEx.IR.Types.{Diagnostic, Expr, Lookup, Pattern}
+  alias ElmEx.IR.Types.{Diagnostic, Expr, Lookup, ModuleExports, Pattern}
 
   @typep name() :: String.t() | nil
   @typep payload_kind() :: Lookup.payload_kind()
@@ -316,7 +319,8 @@ defmodule ElmEx.IR.Lowerer do
     {:ok, %IR{modules: modules, diagnostics: diagnostics}}
   end
 
-  @spec lower_declaration(map(), map() | nil, map()) :: ElmEx.IR.Declaration.t() | nil
+  @spec lower_declaration(AstDeclaration.t(), AstDeclaration.t() | nil, Lookup.t()) ::
+          Declaration.t() | nil
   defp lower_declaration(decl, definition, lookup)
 
   defp lower_declaration(
@@ -751,7 +755,8 @@ defmodule ElmEx.IR.Lowerer do
 
   defp rewrite_case_subject(subject, _lookup), do: subject
 
-  @spec canonicalize_record_field_types(map() | nil, Lookup.t()) :: map()
+  @spec canonicalize_record_field_types(ModuleExports.record_field_types() | nil, Lookup.t()) ::
+          ModuleExports.record_field_types()
   defp canonicalize_record_field_types(field_types, lookup) when is_map(field_types) do
     Map.new(field_types, fn {field, type} ->
       {field, canonicalize_type_annotation(type, lookup)}
@@ -845,7 +850,10 @@ defmodule ElmEx.IR.Lowerer do
 
   defp resolve_alias(target, _lookup), do: target
 
-  @spec build_import_resolution([map()], map()) :: {map(), map(), [String.t()], map()}
+  @spec build_import_resolution(
+          [ImportEntry.wire_map()],
+          ModuleExports.project_exports()
+        ) :: Lookup.import_resolution_bundle()
   defp build_import_resolution(import_entries, project_module_exports)
        when is_list(import_entries) and is_map(project_module_exports) do
     entries = ensure_default_import_entries(import_entries)
@@ -911,7 +919,7 @@ defmodule ElmEx.IR.Lowerer do
 
   defp build_import_resolution(_import_entries, _project_module_exports), do: {%{}, %{}, [], %{}}
 
-  @spec build_project_module_exports([map()]) :: map()
+  @spec build_project_module_exports([FrontendModule.t()]) :: ModuleExports.project_exports()
   defp build_project_module_exports(frontend_modules) when is_list(frontend_modules) do
     frontend_modules
     |> Enum.reduce(%{}, fn frontend_module, acc ->
@@ -927,7 +935,7 @@ defmodule ElmEx.IR.Lowerer do
 
   defp build_project_module_exports(_), do: %{}
 
-  @spec collect_module_exports(map()) :: map()
+  @spec collect_module_exports(FrontendModule.t() | map()) :: ModuleExports.module_export()
   defp collect_module_exports(frontend_module) when is_map(frontend_module) do
     exposing = Map.get(frontend_module, :module_exposing)
     union_constructors = module_union_constructors(frontend_module)
@@ -999,7 +1007,7 @@ defmodule ElmEx.IR.Lowerer do
 
   defp exposed_type_names(_exposing, _type_names), do: []
 
-  @spec module_union_constructors(map()) :: map()
+  @spec module_union_constructors(FrontendModule.t() | map()) :: ModuleExports.union_constructors()
   defp module_union_constructors(frontend_module) when is_map(frontend_module) do
     frontend_module
     |> Map.get(:declarations, [])
@@ -1018,7 +1026,7 @@ defmodule ElmEx.IR.Lowerer do
     end)
   end
 
-  @spec expand_exposing_names([String.t()], map()) :: [String.t()]
+  @spec expand_exposing_names([String.t()], ModuleExports.union_constructors()) :: [String.t()]
   defp expand_exposing_names(names, union_constructors) do
     names
     |> Enum.flat_map(fn name ->
@@ -1032,7 +1040,7 @@ defmodule ElmEx.IR.Lowerer do
     end)
   end
 
-  @spec union_export_names(map()) :: [String.t()]
+  @spec union_export_names(ModuleExports.union_constructors()) :: [String.t()]
   defp union_export_names(union_constructors) when is_map(union_constructors) do
     union_constructors
     |> Enum.flat_map(fn {type_name, constructors} -> [type_name | constructors] end)
@@ -1045,7 +1053,11 @@ defmodule ElmEx.IR.Lowerer do
 
   defp type_wildcard_name(_), do: nil
 
-  @spec expand_import_exposing_names([String.t()], String.t(), map()) :: [String.t()]
+  @spec expand_import_exposing_names(
+          [String.t()],
+          String.t(),
+          ModuleExports.project_exports()
+        ) :: [String.t()]
   defp expand_import_exposing_names(names, module_name, project_module_exports)
        when is_list(names) and is_binary(module_name) and is_map(project_module_exports) do
     module_exports =
@@ -1064,7 +1076,11 @@ defmodule ElmEx.IR.Lowerer do
 
   defp expand_import_exposing_names(_names, _module_name, _project_module_exports), do: []
 
-  @spec expand_import_exposing_type_names([String.t()], String.t(), map()) :: [String.t()]
+  @spec expand_import_exposing_type_names(
+          [String.t()],
+          String.t(),
+          ModuleExports.project_exports()
+        ) :: [String.t()]
   defp expand_import_exposing_type_names(names, module_name, project_module_exports)
        when is_list(names) and is_binary(module_name) and is_map(project_module_exports) do
     module_exports =
@@ -1087,7 +1103,7 @@ defmodule ElmEx.IR.Lowerer do
 
   defp expand_import_exposing_type_names(_names, _module_name, _project_module_exports), do: []
 
-  @spec ensure_default_import_entries([map()]) :: [map()]
+  @spec ensure_default_import_entries([ImportEntry.wire_map()]) :: [ImportEntry.wire_map()]
   defp ensure_default_import_entries(import_entries) do
     existing_modules =
       import_entries
@@ -1105,7 +1121,7 @@ defmodule ElmEx.IR.Lowerer do
     import_entries ++ default_entries
   end
 
-  @spec maybe_put_alias(map(), String.t(), String.t()) :: map()
+  @spec maybe_put_alias(Lookup.name_map(), String.t(), String.t()) :: Lookup.name_map()
   defp maybe_put_alias(map, alias_name, module_name)
        when is_map(map) and is_binary(alias_name) and alias_name != "" and is_binary(module_name) do
     Map.put_new(map, alias_name, module_name)
@@ -1120,7 +1136,8 @@ defmodule ElmEx.IR.Lowerer do
 
   defp add_unique_string(values, _value), do: values
 
-  @spec put_unqualified_name(map(), String.t(), String.t()) :: map()
+  @spec put_unqualified_name(Lookup.import_unqualified_map(), String.t(), String.t()) ::
+          Lookup.import_unqualified_map()
   defp put_unqualified_name(acc, name, module_name)
        when is_map(acc) and is_binary(name) and is_binary(module_name) do
     case Map.get(acc, name) do
@@ -1130,7 +1147,11 @@ defmodule ElmEx.IR.Lowerer do
     end
   end
 
-  @spec register_wildcard_exports(map(), String.t(), map()) :: map()
+  @spec register_wildcard_exports(
+          Lookup.import_unqualified_map(),
+          String.t(),
+          ModuleExports.project_exports()
+        ) :: Lookup.import_unqualified_map()
   defp register_wildcard_exports(acc, module_name, project_module_exports)
        when is_map(acc) and is_binary(module_name) and is_map(project_module_exports) do
     module_exports =
@@ -1143,7 +1164,11 @@ defmodule ElmEx.IR.Lowerer do
     |> Enum.reduce(acc, fn name, a -> put_unqualified_name(a, name, module_name) end)
   end
 
-  @spec register_wildcard_type_exports(map(), String.t(), map()) :: map()
+  @spec register_wildcard_type_exports(
+          Lookup.import_unqualified_map(),
+          String.t(),
+          ModuleExports.project_exports()
+        ) :: Lookup.import_unqualified_map()
   defp register_wildcard_type_exports(acc, module_name, project_module_exports)
        when is_map(acc) and is_binary(module_name) and is_map(project_module_exports) do
     module_exports =
@@ -1397,9 +1422,11 @@ defmodule ElmEx.IR.Lowerer do
     %{op: :tuple2, left: head, right: build_constructor_payload(tail)}
   end
 
-  @spec collect_constructor_arity_diagnostics([ElmEx.IR.Module.t()], map(), map()) :: [
-          Diagnostic.t()
-        ]
+  @spec collect_constructor_arity_diagnostics(
+          [Module.t()],
+          Lookup.kind_map(),
+          Lookup.kind_map()
+        ) :: [Diagnostic.t()]
   defp collect_constructor_arity_diagnostics(
          modules,
          payload_kind_lookup,
@@ -1437,7 +1464,11 @@ defmodule ElmEx.IR.Lowerer do
     end)
   end
 
-  @spec collect_constructor_call_arity_diagnostics([map()], map(), map()) :: [Diagnostic.t()]
+  @spec collect_constructor_call_arity_diagnostics(
+          [FrontendModule.t()],
+          Lookup.arity_map(),
+          Lookup.arity_map()
+        ) :: [Diagnostic.t()]
   defp collect_constructor_call_arity_diagnostics(
          frontend_modules,
          payload_arity_lookup,

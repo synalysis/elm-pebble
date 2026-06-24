@@ -27,7 +27,8 @@ defmodule Ide.Emulator.Session.InstallCalls do
   end
 
   @spec direct_install_context(Types.session_state()) ::
-          {:reply, {:ok, map()} | {:error, Types.session_atom_error()}, Types.session_state()}
+          {:reply, {:ok, Types.direct_install_context()} | {:error, Types.session_atom_error()},
+           Types.session_state()}
   def direct_install_context(%{qemu_pid: nil} = state),
     do: {:reply, {:error, :embedded_protocol_router_not_started}, state}
 

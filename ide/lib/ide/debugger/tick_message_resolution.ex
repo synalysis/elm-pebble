@@ -7,7 +7,7 @@ defmodule Ide.Debugger.TickMessageResolution do
 
   @type resolve_ctx :: %{
           required(:introspect_for) => (Types.runtime_state(), Types.surface_target() ->
-                                          Types.elm_introspect() | map()),
+                                          Types.elm_introspect()),
           required(:attach_payload) => (Types.runtime_state(),
                                         Types.surface_target(),
                                         String.t(),

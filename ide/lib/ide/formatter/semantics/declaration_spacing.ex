@@ -12,6 +12,12 @@ defmodule Ide.Formatter.Semantics.DeclarationSpacing do
           | {:starter, String.t()}
           | nil
 
+  @type spacing_state :: %{
+          required(:prev_decl) => declaration_tag(),
+          required(:pending_blanks) => non_neg_integer(),
+          required(:in_block_comment) => boolean()
+        }
+
   @spec normalize(String.t()) :: String.t()
   def normalize(source) when is_binary(source) do
     lines = String.split(source, "\n", trim: false)
@@ -28,7 +34,7 @@ defmodule Ide.Formatter.Semantics.DeclarationSpacing do
     |> Enum.join("\n")
   end
 
-  @spec normalize_declaration_lines(Types.line_list(), map(), Types.line_list()) ::
+  @spec normalize_declaration_lines(Types.line_list(), spacing_state(), Types.line_list()) ::
           Types.line_list()
   defp normalize_declaration_lines([], state, acc) do
     emit_blanks(acc, state.pending_blanks)

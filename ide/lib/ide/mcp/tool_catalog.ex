@@ -3,11 +3,13 @@ defmodule Ide.Mcp.ToolCatalog do
 
   alias Ide.Mcp.ToolCatalog.Auth
   alias Ide.Mcp.ToolCatalog.Core
+  alias Ide.Mcp.ToolCatalog.Types, as: CatalogTypes
 
   @type capability :: :read | :edit | :build | :publish
   @type tool_name :: String.t()
+  @type tool_definition :: CatalogTypes.tool_definition()
 
-  @spec tool_definitions([capability()]) :: [map()]
+  @spec tool_definitions([capability()]) :: [tool_definition()]
   defdelegate tool_definitions(capabilities), to: Core
 
   @spec catalog_version() :: String.t()

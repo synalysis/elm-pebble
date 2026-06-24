@@ -4,8 +4,9 @@ defmodule IdeWeb.ScreenshotController do
   alias Ide.Projects
   alias Ide.Projects.Project
   alias Ide.Screenshots
+  alias IdeWeb.Types
 
-  @spec show(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  @spec show(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def show(conn, %{"slug" => slug, "target" => target, "name" => name}) do
     with %{} = project <- Projects.get_project_by_slug(slug, conn.assigns.current_user),
          {:ok, emulator_target} <- Screenshots.normalize_emulator_target_public(target),

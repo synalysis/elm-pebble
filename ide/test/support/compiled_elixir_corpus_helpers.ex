@@ -4,6 +4,10 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   alias Ide.Debugger.CompanionBridge
   alias Ide.Debugger.CompanionBridge.SimulatorStore
   alias Ide.Debugger.SimulatorSettings, as: DebuggerSimulatorSettings
+  alias Ide.Debugger.Types, as: DebuggerTypes
+
+  @type launch_context :: DebuggerTypes.launch_context()
+  @type wire_message :: DebuggerTypes.wire_map()
 
   @spec corpus_enabled?() :: boolean()
   def corpus_enabled? do
@@ -34,12 +38,12 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
       message: "elmx compile gap (zero-gap policy): #{inspect(reason)}"
   end
 
-  @spec corpus_launch_context() :: map()
+  @spec corpus_launch_context() :: launch_context()
   def corpus_launch_context do
     corpus_launch_context_for("basalt")
   end
 
-  @spec corpus_launch_context_for(String.t()) :: map()
+  @spec corpus_launch_context_for(String.t()) :: launch_context()
   def corpus_launch_context_for(watch_profile_id) when is_binary(watch_profile_id) do
     Ide.Debugger.RuntimeSurfaces.launch_context_for(watch_profile_id, "LaunchUser")
   end
@@ -47,7 +51,7 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   @doc """
   Builds a protocol `FromPhone` wire `message_value` for companion watch steps.
   """
-  @spec companion_from_phone_value(String.t(), list()) :: map()
+  @spec companion_from_phone_value(String.t(), list()) :: wire_message()
   def companion_from_phone_value(inner_ctor, args) when is_binary(inner_ctor) and is_list(args) do
     companion_from_phone_inner(inner_ctor, args)
   end
@@ -55,7 +59,7 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   @doc """
   Wire `message_value` for watch `FromPhone` with a nullary `PhoneToWatch` constructor.
   """
-  @spec companion_from_phone_nullary(String.t()) :: map()
+  @spec companion_from_phone_nullary(String.t()) :: wire_message()
   def companion_from_phone_nullary(inner_ctor) when is_binary(inner_ctor) do
     companion_from_phone_inner(inner_ctor, [])
   end
@@ -85,25 +89,25 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   @doc """
   Wire `Just` wrapper for optional companion bridge record fields.
   """
-  @spec companion_wire_just(term()) :: map()
+  @spec companion_wire_just(term()) :: wire_message()
   def companion_wire_just(value), do: %{"ctor" => "Just", "args" => [value]}
 
   @doc """
   Wire `Nothing` for optional companion bridge record fields.
   """
-  @spec companion_wire_nothing() :: map()
+  @spec companion_wire_nothing() :: wire_message()
   def companion_wire_nothing(), do: %{"ctor" => "Nothing", "args" => []}
 
   @doc """
   Wire Elm unit `()` for `Result` Ok payloads (e.g. `PinInserted (Ok ())`).
   """
-  @spec companion_wire_unit() :: map()
+  @spec companion_wire_unit() :: wire_message()
   def companion_wire_unit(), do: %{"ctor" => "()", "args" => []}
 
   @doc """
   Wire `message_value` for phone `GotToken (Ok token)`.
   """
-  @spec companion_got_token_ok_value(String.t()) :: map()
+  @spec companion_got_token_ok_value(String.t()) :: wire_message()
   def companion_got_token_ok_value(token) when is_binary(token) do
     %{
       "ctor" => "GotToken",
@@ -119,7 +123,7 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   @doc """
   Wire `message_value` for phone `PinInserted (Ok ())`.
   """
-  @spec companion_pin_inserted_ok_value() :: map()
+  @spec companion_pin_inserted_ok_value() :: wire_message()
   def companion_pin_inserted_ok_value do
     %{
       "ctor" => "PinInserted",
@@ -135,7 +139,7 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   @doc """
   Wire `message_value` for phone `GotBattery (Ok {percent, charging})` subscription followups.
   """
-  @spec companion_got_battery_ok_value(integer(), boolean()) :: map()
+  @spec companion_got_battery_ok_value(integer(), boolean()) :: wire_message()
   def companion_got_battery_ok_value(percent, charging)
       when is_integer(percent) and is_boolean(charging) do
     %{
@@ -152,7 +156,7 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   @doc """
   Wire `message_value` for phone `GotLocale (Ok {locale})`.
   """
-  @spec companion_got_locale_ok_value(String.t()) :: map()
+  @spec companion_got_locale_ok_value(String.t()) :: wire_message()
   def companion_got_locale_ok_value(locale) when is_binary(locale) do
     %{
       "ctor" => "GotLocale",
@@ -168,7 +172,7 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   @doc """
   Wire `message_value` for phone `GotConnectivity Online|Offline` (no Result wrapper).
   """
-  @spec companion_got_connectivity_value(atom() | String.t()) :: map()
+  @spec companion_got_connectivity_value(atom() | String.t()) :: wire_message()
   def companion_got_connectivity_value(ctor) when is_atom(ctor) do
     companion_got_connectivity_value(Atom.to_string(ctor))
   end
@@ -183,7 +187,7 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   @doc """
   Wire `message_value` for phone `GotNotifications (Ok {notificationsEnabled, quietHours})`.
   """
-  @spec companion_got_notifications_ok_value(boolean(), boolean()) :: map()
+  @spec companion_got_notifications_ok_value(boolean(), boolean()) :: wire_message()
   def companion_got_notifications_ok_value(enabled, quiet_hours)
       when is_boolean(enabled) and is_boolean(quiet_hours) do
     %{
@@ -202,7 +206,7 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   @doc """
   Wire `message_value` for phone `GotCalendar (Ok events)`.
   """
-  @spec companion_got_calendar_ok_events(list(map())) :: map()
+  @spec companion_got_calendar_ok_events([wire_message()]) :: wire_message()
   def companion_got_calendar_ok_events(events) when is_list(events) do
     %{
       "ctor" => "GotCalendar",
@@ -218,7 +222,7 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   @doc """
   Wire `message_value` for phone `GotStorage (Ok (Storage.StringValue text))`.
   """
-  @spec companion_got_storage_string_ok_value(String.t()) :: map()
+  @spec companion_got_storage_string_ok_value(String.t()) :: wire_message()
   def companion_got_storage_string_ok_value(text) when is_binary(text) do
     %{
       "ctor" => "GotStorage",
@@ -238,7 +242,7 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
 
   Uses an Erlang pair tuple in `Ok` args (matches `CompanionBridge.subscription_result_message_value/3`).
   """
-  @spec companion_got_preference_ok_value(String.t(), String.t()) :: map()
+  @spec companion_got_preference_ok_value(String.t(), String.t()) :: wire_message()
   def companion_got_preference_ok_value(key, pref_value)
       when is_binary(key) and is_binary(pref_value) do
     %{
@@ -255,7 +259,7 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   @doc """
   Weather info map for `Weather.Current` bridge payloads.
   """
-  @spec companion_weather_info(keyword()) :: map()
+  @spec companion_weather_info(keyword()) :: wire_message()
   def companion_weather_info(opts \\ []) when is_list(opts) do
     condition = Keyword.get(opts, :condition, "Clear")
 
@@ -271,7 +275,7 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   @doc """
   Wire `message_value` for phone `GotWeather (Ok (Weather.Current info))`.
   """
-  @spec companion_got_weather_current_ok_value(map()) :: map()
+  @spec companion_got_weather_current_ok_value(wire_message()) :: wire_message()
   def companion_got_weather_current_ok_value(info) when is_map(info) do
     %{
       "ctor" => "GotWeather",
@@ -289,7 +293,7 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   @doc """
   Environment info map for `Environment.current` bridge payloads.
   """
-  @spec companion_environment_info(keyword()) :: map()
+  @spec companion_environment_info(keyword()) :: wire_message()
   def companion_environment_info(opts \\ []) when is_list(opts) do
     %{
       "sun" =>
@@ -310,7 +314,7 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   @doc """
   Geolocation location map for `Geolocation.currentPosition` bridge payloads.
   """
-  @spec companion_location_info(keyword()) :: map()
+  @spec companion_location_info(keyword()) :: wire_message()
   def companion_location_info(opts \\ []) when is_list(opts) do
     %{
       "latitude" => Keyword.get(opts, :latitude, 12.345),
@@ -322,7 +326,7 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   @doc """
   Wire `message_value` for phone `GotPosition (Ok location)`.
   """
-  @spec companion_got_position_ok_value(map()) :: map()
+  @spec companion_got_position_ok_value(wire_message()) :: wire_message()
   def companion_got_position_ok_value(location) when is_map(location) do
     %{
       "ctor" => "GotPosition",
@@ -338,7 +342,7 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   @doc """
   Wire `message_value` for phone `Connected (Ok ())`.
   """
-  @spec companion_connected_ok_value() :: map()
+  @spec companion_connected_ok_value() :: wire_message()
   def companion_connected_ok_value do
     %{
       "ctor" => "Connected",
@@ -354,7 +358,7 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   @doc """
   Wire `message_value` for phone `WebSocketCommand (Ok ())`.
   """
-  @spec companion_websocket_command_ok_value() :: map()
+  @spec companion_websocket_command_ok_value() :: wire_message()
   def companion_websocket_command_ok_value do
     %{
       "ctor" => "WebSocketCommand",
@@ -370,7 +374,7 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   @doc """
   Wire `message_value` for phone `WebSocketEvent event`.
   """
-  @spec companion_websocket_event_value(String.t(), keyword()) :: map()
+  @spec companion_websocket_event_value(String.t(), keyword()) :: wire_message()
   def companion_websocket_event_value(event_ctor, opts \\ [])
       when is_binary(event_ctor) and is_list(opts) do
     event_args =
@@ -395,7 +399,7 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   @doc """
   Wire `message_value` for phone `LifecycleChanged event`.
   """
-  @spec companion_lifecycle_changed_value(String.t(), keyword()) :: map()
+  @spec companion_lifecycle_changed_value(String.t(), keyword()) :: wire_message()
   def companion_lifecycle_changed_value(event_ctor, opts \\ [])
       when is_binary(event_ctor) and is_list(opts) do
     event_args =
@@ -424,7 +428,7 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   @doc """
   Wire `message_value` for phone `ConfigurationClosed maybeResponse`.
   """
-  @spec companion_configuration_closed_value(String.t() | nil) :: map()
+  @spec companion_configuration_closed_value(String.t() | nil) :: wire_message()
   def companion_configuration_closed_value(nil) do
     %{
       "ctor" => "ConfigurationClosed",
@@ -442,7 +446,7 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   @doc """
   Wire `message_value` for phone `GotEnvironment (Ok info)`.
   """
-  @spec companion_got_environment_ok_value(map()) :: map()
+  @spec companion_got_environment_ok_value(wire_message()) :: wire_message()
   def companion_got_environment_ok_value(info) when is_map(info) do
     %{
       "ctor" => "GotEnvironment",
@@ -458,7 +462,7 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   @doc """
   Builds a single calendar event map for companion bridge payloads.
   """
-  @spec companion_calendar_event(keyword()) :: map()
+  @spec companion_calendar_event(keyword()) :: wire_message()
   def companion_calendar_event(opts) when is_list(opts) do
     %{
       "id" => Keyword.get(opts, :id, "event-1"),
@@ -782,7 +786,12 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   Applies `cmd.companion.bridge` init followups from an executor payload, mirroring
   debugger simulator bridge responses (subscription-style APIs, storage, preferences).
   """
-  @spec corpus_apply_companion_bridge_init_followups(map(), map(), map(), keyword()) :: map()
+  @spec corpus_apply_companion_bridge_init_followups(
+          wire_message(),
+          wire_message(),
+          wire_message(),
+          keyword()
+        ) :: wire_message()
   def corpus_apply_companion_bridge_init_followups(
         init_request,
         runtime_model,
@@ -818,7 +827,8 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
     end)
   end
 
-  @spec companion_bridge_followup_step(map(), map()) :: {String.t(), map()} | nil
+  @spec companion_bridge_followup_step(wire_message(), DebuggerSimulatorSettings.t() | map()) ::
+          {String.t(), wire_message()} | nil
   defp companion_bridge_followup_step(row, settings) when is_map(row) and is_map(settings) do
     source = Map.get(row, "source") || Map.get(row, :source)
     package = Map.get(row, "package") || Map.get(row, :package)
@@ -844,8 +854,12 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
     end
   end
 
-  @spec companion_bridge_message_value(String.t(), map(), term(), map()) ::
-          {:ok, map()} | :error
+  @spec companion_bridge_message_value(
+          String.t(),
+          wire_message(),
+          term(),
+          DebuggerSimulatorSettings.t() | map()
+        ) :: {:ok, wire_message()} | :error
   defp companion_bridge_message_value(callback, command, _existing_value, settings)
        when is_binary(callback) and is_map(command) and is_map(settings) do
     case companion_bridge_callback_result(command, settings) do
@@ -858,7 +872,7 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
     end
   end
 
-  @spec companion_bridge_callback_result(map(), map()) ::
+  @spec companion_bridge_callback_result(wire_message(), DebuggerSimulatorSettings.t() | map()) ::
           {:ok, {:ok, term()} | {:error, String.t()}} | :error
   defp companion_bridge_callback_result(command, settings)
        when is_map(command) and is_map(settings) do

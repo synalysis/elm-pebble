@@ -4,7 +4,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.ModelTree do
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Types, as: SupportTypes
 
   @type model_node :: SupportTypes.wire_map()
-  @type model_value :: map() | list() | String.t() | number() | boolean() | nil
+  @type model_value :: SupportTypes.wire_value()
+
+  @typedoc "Elm custom-type wire shape (`ctor`/`args` or `$ctor`/`$args`, atom or string keys)."
+  @type elm_constructor_wire :: %{
+          optional(:ctor) => String.t(),
+          optional(:args) => [model_value()],
+          optional(String.t()) => model_value()
+        }
 
   @spec debugger_model_children(model_node()) :: [%{label: String.t(), value: model_value()}]
   def debugger_model_children(value) when is_map(value) do
@@ -25,7 +32,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.ModelTree do
 
   def debugger_model_children(_value), do: []
 
-  @spec debugger_model_tooltip(String.t(), model_node(), [map()], String.t()) :: String.t()
+  @type model_child_row :: %{required(:label) => String.t(), required(:value) => model_value()}
+
+  @spec debugger_model_tooltip(String.t(), model_node(), [model_child_row()], String.t()) ::
+          String.t()
   def debugger_model_tooltip(label, _value, [], scalar)
       when is_binary(label) and is_binary(scalar),
       do: "#{label} = #{scalar}"
@@ -51,7 +61,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.ModelTree do
   def debugger_model_scalar(value) when is_atom(value), do: Atom.to_string(value)
   def debugger_model_scalar(value), do: inspect(value)
 
-  @spec debugger_model_container_label(map() | list()) :: String.t()
+  @spec debugger_model_container_label(model_node() | list()) :: String.t()
   def debugger_model_container_label(value) when is_map(value) do
     if debugger_model_elm_constructor?(value),
       do: debugger_model_elm_value(value),
@@ -60,7 +70,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.ModelTree do
 
   def debugger_model_container_label(value) when is_list(value), do: "[#{length(value)}]"
 
-  @spec debugger_model_elm_constructor?(map()) :: boolean()
+  @spec debugger_model_elm_constructor?(model_node()) :: boolean()
   def debugger_model_elm_constructor?(value) when is_map(value) do
     ctor = Map.get(value, "ctor") || Map.get(value, "$ctor") || Map.get(value, :ctor)
     args = Map.get(value, "args") || Map.get(value, "$args") || Map.get(value, :args) || []
@@ -71,7 +81,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.ModelTree do
       |> Enum.all?(&(to_string(&1) in ["ctor", "args", "$ctor", "$args"]))
   end
 
-  @spec debugger_model_elm_value(map()) :: String.t()
+  @spec debugger_model_elm_value(elm_constructor_wire() | model_node()) :: String.t()
   def debugger_model_elm_value(%{} = value) do
     ctor = Map.get(value, "ctor") || Map.get(value, "$ctor") || Map.get(value, :ctor)
     args = Map.get(value, "args") || Map.get(value, "$args") || Map.get(value, :args) || []
@@ -93,7 +103,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.ModelTree do
     end
   end
 
-  @spec debugger_model_elm_arg_value(map()) :: String.t()
+  @spec debugger_model_elm_arg_value(model_node() | model_value()) :: String.t()
   def debugger_model_elm_arg_value(%{} = value) do
     if debugger_model_elm_constructor?(value) do
       rendered = debugger_model_elm_value(value)
@@ -122,7 +132,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.ModelTree do
 
   def debugger_model_elm_arg_value(value), do: debugger_model_scalar(value)
 
-  @spec debugger_model_elm_record_value(map()) :: String.t()
+  @spec debugger_model_elm_record_value(model_node()) :: String.t()
   def debugger_model_elm_record_value(value) when is_map(value) do
     inner =
       value
@@ -135,7 +145,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.ModelTree do
     "{ " <> inner <> " }"
   end
 
-  @spec constructor_arg_count(map()) :: non_neg_integer()
+  @spec constructor_arg_count(elm_constructor_wire() | model_node()) :: non_neg_integer()
   def constructor_arg_count(%{} = value) do
     args = Map.get(value, "args") || Map.get(value, "$args") || Map.get(value, :args) || []
     if is_list(args), do: length(args), else: 0

@@ -28,7 +28,7 @@ defmodule Elmc.Backend.Worker do
     end
   end
 
-  @spec subscription_analysis(IR.t(), String.t()) :: map()
+  @spec subscription_analysis(IR.t(), String.t()) :: Subscriptions.worker_subscription_layout()
   def subscription_analysis(%IR{} = ir, entry_module) do
     case subscriptions_expr(ir, entry_module) do
       nil ->

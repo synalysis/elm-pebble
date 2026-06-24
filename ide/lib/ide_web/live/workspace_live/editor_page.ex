@@ -16,11 +16,19 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
           | :resources
           | :packages
           | atom()
-  @type assigns :: map()
+  alias Ide.Tokenizer.Types, as: TokenizerTypes
+  alias IdeWeb.WorkspaceLive.EditorPage.Assigns
+
+  @type assigns :: Assigns.t()
   @type rendered :: Rendered.t()
-  @type tab :: map()
-  @type tree_node :: map()
-  @type diagnostic :: Ide.Compiler.diagnostic() | map()
+  alias Ide.Packages.Types, as: PackageTypes
+  alias IdeWeb.WorkspaceLive.EditorSupport.Types, as: EditorTabTypes
+  alias Ide.Projects.FileTypes
+
+  @type tab :: EditorTabTypes.tab()
+  @type tree_node :: FileTypes.tree_node()
+  @type source_root_tree :: FileTypes.source_root_tree()
+  @type diagnostic :: Ide.Compiler.diagnostic() | TokenizerTypes.diagnostic()
 
   @protected_editor_rel_paths [
     "src/Main.elm",
@@ -815,7 +823,8 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
   @spec tree_dir_key(String.t(), String.t()) :: String.t()
   defp tree_dir_key(source_root, rel_path), do: "#{source_root}:#{rel_path}"
 
-  @spec editor_doc_modules_for_package([map()], String.t(), String.t()) :: [String.t()]
+  @spec editor_doc_modules_for_package([PackageTypes.doc_catalog_entry()], String.t(), String.t()) ::
+          [String.t()]
   def editor_doc_modules_for_package(rows, pkg, query \\ "")
 
   def editor_doc_modules_for_package(rows, pkg, query) when is_list(rows) and is_binary(pkg) do
@@ -893,7 +902,7 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
     end
   end
 
-  @spec editor_files_tree([map()]) :: [map()]
+  @spec editor_files_tree([source_root_tree()]) :: [source_root_tree()]
   defp editor_files_tree(tree) when is_list(tree) do
     Enum.map(tree, fn %{source_root: source_root, nodes: nodes} ->
       src_children =

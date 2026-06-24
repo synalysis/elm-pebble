@@ -180,6 +180,7 @@ defmodule Elmc.Backend.CCodegen.Types do
 
   @type compile_counter :: non_neg_integer()
   @type compile_result :: {String.t(), String.t(), compile_counter()}
+  @type compile_operand_inner_result :: {String.t(), String.t(), compile_counter(), boolean()}
   @type compile_result_or_nil :: compile_result() | nil
   @type compile_ok_result :: {:ok, String.t(), String.t(), compile_counter()} | :error
   @type range_bounds_result ::
@@ -355,8 +356,9 @@ defmodule Elmc.Backend.CCodegen.Types do
           {:ok, affine_draw_spec(), String.t(), String.t()} | :error
   @type affine_emit_result :: {:ok, String.t(), compile_counter()} | :error
 
-  @type hoist_key :: term()
-  @type hoisted_native_map :: %{hoist_key() => native_ref()}
+  @type hoist_key :: Elmc.Backend.CCodegen.Types.Hoist.key()
+  @type hoist_native_int_map :: Elmc.Backend.CCodegen.Types.Hoist.native_int_map()
+  @type hoisted_native_map :: hoist_native_int_map()
 
   @type direct_target_sets :: {
           MapSet.t(function_decl_key()),

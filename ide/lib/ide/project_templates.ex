@@ -7,12 +7,13 @@ defmodule Ide.ProjectTemplates do
   alias Ide.InternalPackages
   alias Ide.Paths
   alias Ide.PebbleToolchain
+  alias Ide.ProjectTemplates.Types, as: TemplateTypes
   alias Ide.Resources.ResourceStore
 
   @type workspace_path :: String.t()
   @type template_dir_name :: String.t()
   @type seed_result :: :ok | {:error, template_error()}
-  @type wire_target_platforms :: list() | nil | boolean() | number() | String.t() | map()
+  @type wire_target_platforms :: [String.t()] | String.t() | nil | boolean() | number()
   @type template_error ::
           {:unknown_template, String.t()}
           | {:missing_template_asset, String.t()}
@@ -139,7 +140,9 @@ defmodule Ide.ProjectTemplates do
   `target` is `"all"`, `"watchface"`, or `"app"`.
   `companion` is `"all"`, `"with"`, or `"without"`.
   """
-  @spec filter_picker_categories([map()], String.t(), String.t()) :: [map()]
+  @spec filter_picker_categories([TemplateTypes.picker_category()], String.t(), String.t()) :: [
+          TemplateTypes.picker_category()
+        ]
   def filter_picker_categories(categories, target \\ "all", companion \\ "all") do
     categories
     |> Enum.map(fn category ->
@@ -176,7 +179,7 @@ defmodule Ide.ProjectTemplates do
   @doc """
   Default `release_defaults` map for a newly created project from `template`.
   """
-  @spec default_release_defaults(String.t()) :: map()
+  @spec default_release_defaults(String.t()) :: TemplateTypes.release_defaults()
   def default_release_defaults(template) when is_binary(template) do
     %{"target_platforms" => target_platforms_for_template(template)}
   end
@@ -184,7 +187,7 @@ defmodule Ide.ProjectTemplates do
   @doc """
   Returns template metadata for automation and MCP consumers.
   """
-  @spec catalog() :: [map()]
+  @spec catalog() :: [TemplateTypes.catalog_entry()]
   def catalog do
     Enum.map(options(), fn {label, key} ->
       %{
@@ -209,7 +212,7 @@ defmodule Ide.ProjectTemplates do
   @doc """
   Returns project templates grouped for the create-project picker UI.
   """
-  @spec picker_categories() :: [map()]
+  @spec picker_categories() :: [TemplateTypes.picker_category()]
   def picker_categories do
     @category_order
     |> Enum.map(fn category_id ->
@@ -551,7 +554,8 @@ defmodule Ide.ProjectTemplates do
     )
   end
 
-  @spec ensure_root_elm_json(String.t(), map(), String.t()) :: :ok | {:error, template_error()}
+  @spec ensure_root_elm_json(String.t(), TemplateTypes.elm_json(), String.t()) ::
+          :ok | {:error, template_error()}
   defp ensure_root_elm_json(root_path, template, marker_source_path) do
     elm_json_path = Path.join(root_path, "elm.json")
 
@@ -570,7 +574,7 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
-  @spec watchface_elm_json_template() :: map()
+  @spec watchface_elm_json_template() :: TemplateTypes.elm_json()
   defp watchface_elm_json_template do
     %{
       "type" => "application",
@@ -588,7 +592,7 @@ defmodule Ide.ProjectTemplates do
     }
   end
 
-  @spec protocol_elm_json_template() :: map()
+  @spec protocol_elm_json_template() :: TemplateTypes.elm_json()
   defp protocol_elm_json_template do
     %{
       "type" => "application",
@@ -602,7 +606,7 @@ defmodule Ide.ProjectTemplates do
     }
   end
 
-  @spec phone_elm_json_template() :: map()
+  @spec phone_elm_json_template() :: TemplateTypes.elm_json()
   defp phone_elm_json_template do
     %{
       "type" => "application",
@@ -913,7 +917,7 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
-  @spec watch_direct_dependencies(String.t()) :: map()
+  @spec watch_direct_dependencies(String.t()) :: TemplateTypes.dependency_map()
   defp watch_direct_dependencies(template_dir) do
     deps = %{
       "elm/core" => "1.0.5",
@@ -1111,7 +1115,7 @@ defmodule Ide.ProjectTemplates do
     |> Enum.map(&Path.expand/1)
   end
 
-  @spec remove_phone_obsolete_dependencies(map()) :: map()
+  @spec remove_phone_obsolete_dependencies(TemplateTypes.elm_json()) :: TemplateTypes.elm_json()
   defp remove_phone_obsolete_dependencies(%{} = elm_json) do
     case get_in(elm_json, ["dependencies", "direct"]) do
       %{} = deps ->
@@ -1216,7 +1220,8 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
-  @spec write_json_if_missing(String.t(), map()) :: :ok | {:error, template_error()}
+  @spec write_json_if_missing(String.t(), TemplateTypes.elm_json()) ::
+          :ok | {:error, template_error()}
   defp write_json_if_missing(path, payload) do
     if File.exists?(path) do
       :ok
@@ -1239,7 +1244,7 @@ defmodule Ide.ProjectTemplates do
   defp category_for_key("game-" <> _), do: "game"
   defp category_for_key(_), do: "starter"
 
-  @spec picker_entry({String.t(), String.t()}) :: map()
+  @spec picker_entry({String.t(), String.t()}) :: TemplateTypes.picker_entry()
   defp picker_entry({label, key}) do
     parsed = parse_picker_label(label)
 
@@ -1283,7 +1288,7 @@ defmodule Ide.ProjectTemplates do
   defp picker_companion_matches?(false, "without"), do: true
   defp picker_companion_matches?(_, _), do: false
 
-  @spec load_template_metadata(String.t()) :: map()
+  @spec load_template_metadata(String.t()) :: TemplateTypes.template_metadata()
   defp load_template_metadata(template) do
     case template_dir(template) do
       nil ->

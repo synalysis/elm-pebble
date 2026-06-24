@@ -3,10 +3,11 @@ defmodule IdeWeb.SpeakerSampleController do
 
   alias Ide.Projects
   alias Ide.Projects.Project
+  alias IdeWeb.Types
 
   @allowed_extensions ~w(.pcm .raw .bin)
 
-  @spec show(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  @spec show(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def show(conn, %{"slug" => slug, "name" => name}) do
     with %Project{} = project <- Projects.get_project_by_slug(slug, conn.assigns.current_user),
          {:ok, filename} <- normalize_filename(name),

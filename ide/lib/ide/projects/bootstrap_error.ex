@@ -19,7 +19,7 @@ defmodule Ide.Projects.BootstrapError do
           | File.posix()
           | tuple()
           | String.t()
-          | map()
+          | %{optional(atom() | String.t()) => term()}
 
   @doc """
   Returns a user-facing explanation for a project bootstrap failure.

@@ -4,9 +4,11 @@ defmodule Ide.Mcp.ToolCatalog.Core do
   alias Ide.EmulatorSupport
   alias Ide.Mcp.ConversionOpts
   alias Ide.Mcp.JsonSchema
+  alias Ide.Mcp.ToolCatalog.Types, as: CatalogTypes
   alias Ide.ProjectTemplates
 
   @type capability :: :read | :edit | :build | :publish
+  @type tool_definition :: CatalogTypes.tool_definition()
 
   @tool_version "1.0.0"
   @catalog_version "2026-06-04"
@@ -1569,7 +1571,7 @@ defmodule Ide.Mcp.ToolCatalog.Core do
                                  end)
   @internal_tool_names MapSet.new(Map.keys(@public_tool_names_by_internal))
 
-  @spec tool_definitions([capability()]) :: [map()]
+  @spec tool_definitions([capability()]) :: [tool_definition()]
   def tool_definitions(capabilities) do
     []
     |> add_if(:read in capabilities, @read_tools)
@@ -1589,7 +1591,7 @@ defmodule Ide.Mcp.ToolCatalog.Core do
     if condition, do: list ++ entries, else: list
   end
 
-  @spec publish_tool_name(map()) :: map()
+  @spec publish_tool_name(tool_definition()) :: tool_definition()
   defp publish_tool_name(%{name: name} = tool) when is_binary(name) do
     %{tool | name: Map.fetch!(@public_tool_names_by_internal, name)}
   end

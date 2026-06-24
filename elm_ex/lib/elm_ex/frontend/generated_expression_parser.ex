@@ -3,14 +3,21 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
   Generated expression parser adapter based on leex/yecc artifacts.
   """
 
+  alias ElmEx.Frontend.AstContract.Types, as: AstTypes
   alias ElmEx.Frontend.LetLayout
   alias ElmEx.Types
 
   @typep source() :: String.t()
   @typep line() :: String.t()
   @typep lines() :: [line()]
-  @typep expr() :: map()
-  @typep normalized_value() :: map() | list() | String.t() | number() | boolean() | nil | atom()
+  @typep expr() :: AstTypes.expr()
+  @typep normalized_value() :: AstTypes.expr() | list() | String.t() | number() | boolean() | nil | atom()
+
+  @typep let_rewrite_block :: %{
+          index: non_neg_integer(),
+          bindings: [String.t()],
+          in_lines: lines()
+        }
 
   @spec parse(String.t()) :: {:ok, expr()} | {:error, Types.parse_error_reason()}
   def parse(source) when is_binary(source) do
@@ -312,7 +319,7 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
     end
   end
 
-  @spec find_rewritable_let_block(lines()) :: map() | nil
+  @spec find_rewritable_let_block(lines()) :: let_rewrite_block() | nil
   defp find_rewritable_let_block(lines) when is_list(lines) do
     lines
     |> Enum.with_index()

@@ -5,6 +5,9 @@ defmodule ElmEx.DebuggerContract.EffectsFromCoreIR do
   alias ElmEx.DebuggerContract.EffectAnalysis
   alias ElmEx.DebuggerContract.EffectNormalize
   alias ElmEx.DebuggerContract.ExprCoerce
+  alias ElmEx.DebuggerContract.Types
+  alias ElmEx.CoreIR.Types, as: CoreIRTypes
+  alias ElmEx.Frontend.AstContract.Types, as: AstTypes
   alias ElmEx.Frontend.Module
 
   @effect_field_keys ~w(
@@ -21,7 +24,7 @@ defmodule ElmEx.DebuggerContract.EffectsFromCoreIR do
 
   Reuses `EffectAnalysis` on Core IR expressions coerced to frontend AST shape.
   """
-  @spec effect_fields(map(), String.t()) :: map()
+  @spec effect_fields(CoreIRTypes.wire_core_ir(), String.t()) :: Types.effect_fields()
   def effect_fields(core_ir, entry_module) when is_map(core_ir) and is_binary(entry_module) do
     core_ir
     |> modules_list()
@@ -32,12 +35,12 @@ defmodule ElmEx.DebuggerContract.EffectsFromCoreIR do
     end
   end
 
-  @spec modules_list(map()) :: [map()]
+  @spec modules_list(CoreIRTypes.wire_core_ir() | map()) :: [CoreIRTypes.Module.wire_t()]
   def modules_list(%{"modules" => modules}) when is_list(modules), do: modules
   def modules_list(%{modules: modules}) when is_list(modules), do: modules
   def modules_list(_), do: []
 
-  @spec find_module([map()], String.t()) :: map() | nil
+  @spec find_module([CoreIRTypes.Module.wire_t()], String.t()) :: CoreIRTypes.Module.wire_t() | nil
   defp find_module(modules, entry) when is_list(modules) and is_binary(entry) do
     Enum.find(modules, fn
       %{"name" => ^entry} -> true
@@ -46,7 +49,7 @@ defmodule ElmEx.DebuggerContract.EffectsFromCoreIR do
     end)
   end
 
-  @spec effect_fields_for_module(map()) :: map()
+  @spec effect_fields_for_module(CoreIRTypes.Module.wire_t()) :: Types.effect_fields()
   defp effect_fields_for_module(core_mod) when is_map(core_mod) do
     mod = pseudo_module(core_mod)
 
@@ -83,11 +86,11 @@ defmodule ElmEx.DebuggerContract.EffectsFromCoreIR do
     |> Map.new()
   end
 
-  @spec calls_or_empty(map() | nil, (map() -> list())) :: list()
+  @spec calls_or_empty(Types.ast_expr() | nil, (Types.ast_expr() -> list())) :: list()
   defp calls_or_empty(%{} = expr, fun) when is_function(fun, 1), do: fun.(expr)
   defp calls_or_empty(_expr, _fun), do: []
 
-  @spec pseudo_module(map()) :: Module.t()
+  @spec pseudo_module(CoreIRTypes.Module.wire_t()) :: Module.t()
   defp pseudo_module(core_mod) when is_map(core_mod) do
     name = Map.get(core_mod, "name") || Map.get(core_mod, :name) || "Main"
     imports = Map.get(core_mod, "imports") || Map.get(core_mod, :imports) || []
@@ -106,7 +109,8 @@ defmodule ElmEx.DebuggerContract.EffectsFromCoreIR do
     }
   end
 
-  @spec declaration_to_frontend(map()) :: map() | nil
+  @spec declaration_to_frontend(CoreIRTypes.Module.wire_declaration() | map()) ::
+          AstTypes.declaration() | nil
   defp declaration_to_frontend(%{"kind" => "function", "name" => name} = decl)
        when is_binary(name) do
     %{
@@ -137,7 +141,7 @@ defmodule ElmEx.DebuggerContract.EffectsFromCoreIR do
     end
   end
 
-  @spec function_expr(Module.t(), String.t()) :: map() | nil
+  @spec function_expr(Module.t(), String.t()) :: Types.ast_expr() | nil
   defp function_expr(%Module{} = mod, function_name) when is_binary(function_name) do
     case DebuggerContract.find_function_definition(mod, function_name) do
       %{expr: %{} = expr} -> expr

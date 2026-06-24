@@ -11,7 +11,7 @@ defmodule Ide.Debugger.Types.ReplayAttrs do
           optional(:cursor_seq) => non_neg_integer() | String.t() | nil,
           optional(:replay_mode) => String.t() | nil,
           optional(:replay_drift_seq) => non_neg_integer() | String.t() | nil,
-          optional(:replay_rows) => [Types.replay_row()] | list(),
+          optional(:replay_rows) => [Types.replay_row()],
           optional(String.t()) => Types.wire_input(),
           optional(atom()) => Types.wire_input()
         }

@@ -1,10 +1,10 @@
 defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   @moduledoc false
 
-  alias IdeWeb.WorkspaceLive.DebuggerPage.{Core, SessionState}
+  alias IdeWeb.WorkspaceLive.DebuggerPage.{Assigns, Core, SessionState}
   alias Phoenix.LiveView.Rendered
 
-  @type assigns :: map()
+  @type assigns :: Assigns.t()
   @type rendered :: Rendered.t()
 
   @spec render(assigns()) :: rendered()

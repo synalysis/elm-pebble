@@ -25,7 +25,7 @@ defmodule Ide.Formatter do
           cursor_end: non_neg_integer()
         }
 
-  @spec format(String.t(), keyword()) :: {:ok, format_result()} | {:error, map()}
+  @spec format(String.t(), keyword()) :: {:ok, format_result()} | {:error, Types.parse_error()}
   def format(source, opts \\ []) when is_binary(source) do
     if semantics_pipeline_enabled?(opts) do
       format_with_semantics_pipeline(source, opts)
@@ -35,7 +35,7 @@ defmodule Ide.Formatter do
   end
 
   @spec format_with_semantics_pipeline(String.t(), Types.format_opts()) ::
-          {:ok, format_result()} | {:error, map()}
+          {:ok, format_result()} | {:error, Types.parse_error()}
   defp format_with_semantics_pipeline(source, opts) do
     with {:ok, parser_payload} <- parse_stage(source, opts),
          {:ok, laid_out} <- layout_stage(source),
@@ -56,7 +56,7 @@ defmodule Ide.Formatter do
   end
 
   @spec format_with_legacy_pipeline(String.t(), Types.format_opts()) ::
-          {:ok, format_result()} | {:error, map()}
+          {:ok, format_result()} | {:error, Types.parse_error()}
   defp format_with_legacy_pipeline(source, opts) do
     with {:ok, parser_payload} <- parse_stage(source, opts),
          {:ok, laid_out} <- layout_stage(source),
@@ -110,11 +110,11 @@ defmodule Ide.Formatter do
           {:ok, Types.parse_payload()} | {:error, Types.parse_error()}
   defp parse_stage(source, opts), do: Parse.validate_with_parser(source, opts)
 
-  @spec layout_stage(String.t()) :: {:ok, String.t()} | {:error, map()}
+  @spec layout_stage(String.t()) :: {:ok, String.t()} | {:error, Types.parse_error()}
   defp layout_stage(source), do: {:ok, Layout.normalize_layout(source)}
 
   @spec normalize_stage(String.t(), Types.parse_payload(), Types.format_opts()) ::
-          {:ok, String.t()} | {:error, map()}
+          {:ok, String.t()} | {:error, Types.parse_error()}
   defp normalize_stage(source, parser_payload, opts) when is_map(parser_payload) do
     metadata = parser_payload.metadata
 
@@ -125,7 +125,7 @@ defmodule Ide.Formatter do
     end
   end
 
-  @spec finalize_stage(String.t()) :: {:ok, String.t()} | {:error, map()}
+  @spec finalize_stage(String.t()) :: {:ok, String.t()} | {:error, Types.parse_error()}
   defp finalize_stage(source), do: {:ok, Finalize.finalize(source)}
 
   @spec semantics_pipeline_enabled?(Types.format_opts()) :: boolean()

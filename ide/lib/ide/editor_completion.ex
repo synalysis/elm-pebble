@@ -3,8 +3,11 @@ defmodule Ide.EditorCompletion do
   Aggregates completion candidates from parser/token context and workspace package knowledge.
   """
 
+  alias Ide.EditorCompletion.Types, as: CompletionTypes
+  alias Ide.EditorCompletionDeclarationIndex
   alias Ide.EditorCompletionPackageTypes
   alias Ide.EditorCompletionRecordResolver
+  alias Ide.Tokenizer.Types, as: TokenizerTypes
 
   @default_limit 24
 
@@ -40,22 +43,7 @@ defmodule Ide.EditorCompletion do
   @type suggestion :: candidate_row()
   @type candidate_list :: [candidate_row()]
 
-  @type context :: %{
-          optional(:prefix) => String.t() | nil,
-          optional(:parser_payload) => map() | nil,
-          optional(:token_tokens) => [map()],
-          optional(:package_doc_index) => map(),
-          optional(:editor_doc_packages) => [map()],
-          optional(:direct_dependencies) => [map()],
-          optional(:indirect_dependencies) => [map()],
-          optional(:record_fields) => [String.t()],
-          optional(:context_kind) => atom(),
-          optional(:qualifier) => String.t() | nil,
-          optional(:declaration_index) => map(),
-          optional(:source) => String.t(),
-          optional(:cursor_offset) => non_neg_integer(),
-          optional(:limit) => pos_integer()
-        }
+  @type context :: CompletionTypes.completion_context()
 
   @spec suggest(context()) :: [suggestion()]
   def suggest(context) when is_map(context) do
@@ -93,7 +81,7 @@ defmodule Ide.EditorCompletion do
     end)
   end
 
-  @spec parser_candidates(map() | nil) :: candidate_list()
+  @spec parser_candidates(TokenizerTypes.parser_payload() | nil) :: candidate_list()
   defp parser_candidates(%{metadata: metadata}) when is_map(metadata) do
     imports = List.wrap(metadata[:imports])
     ports = List.wrap(metadata[:ports])
@@ -132,7 +120,7 @@ defmodule Ide.EditorCompletion do
 
   defp parser_candidates(_), do: []
 
-  @spec token_candidates([map()] | nil) :: candidate_list()
+  @spec token_candidates([TokenizerTypes.token()] | nil) :: candidate_list()
   defp token_candidates(tokens) when is_list(tokens) do
     tokens
     |> Enum.flat_map(fn token ->
@@ -149,7 +137,7 @@ defmodule Ide.EditorCompletion do
 
   defp token_candidates(_), do: []
 
-  @spec field_candidates(map()) :: candidate_list()
+  @spec field_candidates(context()) :: candidate_list()
   defp field_candidates(context) when is_map(context) do
     fields =
       case contextual_record_fields(context) do
@@ -167,7 +155,7 @@ defmodule Ide.EditorCompletion do
     record_field_candidates(fields)
   end
 
-  @spec contextual_qualifier?(map()) :: boolean()
+  @spec contextual_qualifier?(context()) :: boolean()
   defp contextual_qualifier?(context) do
     case context[:qualifier] do
       qualifier when is_binary(qualifier) -> String.trim(qualifier) != ""
@@ -175,7 +163,7 @@ defmodule Ide.EditorCompletion do
     end
   end
 
-  @spec contextual_record_fields(map()) :: [String.t()]
+  @spec contextual_record_fields(context()) :: [String.t()]
   defp contextual_record_fields(context) do
     qualifier = context[:qualifier]
     index = context[:declaration_index] || %{}
@@ -189,7 +177,7 @@ defmodule Ide.EditorCompletion do
     end
   end
 
-  @spec flat_record_fields(map()) :: [String.t()]
+  @spec flat_record_fields(context()) :: [String.t()]
   defp flat_record_fields(context) do
     case declaration_index_values(context, :record_fields) do
       [] -> context[:record_fields] || []
@@ -198,7 +186,7 @@ defmodule Ide.EditorCompletion do
     |> List.wrap()
   end
 
-  @spec with_package_type_maps(map()) :: map()
+  @spec with_package_type_maps(context()) :: context()
   defp with_package_type_maps(context) do
     if is_map(context[:package_type_maps]) do
       context
@@ -220,7 +208,7 @@ defmodule Ide.EditorCompletion do
     end)
   end
 
-  @spec type_candidates(map()) :: candidate_list()
+  @spec type_candidates(context()) :: candidate_list()
   defp type_candidates(context) when is_map(context) do
     context
     |> declaration_index_values(:types)
@@ -229,7 +217,7 @@ defmodule Ide.EditorCompletion do
     end)
   end
 
-  @spec declaration_value_candidates(map()) :: candidate_list()
+  @spec declaration_value_candidates(context()) :: candidate_list()
   defp declaration_value_candidates(context) when is_map(context) do
     values =
       context
@@ -253,7 +241,7 @@ defmodule Ide.EditorCompletion do
     values ++ constructors
   end
 
-  @spec package_module_candidates(map() | nil) :: candidate_list()
+  @spec package_module_candidates(CompletionTypes.package_doc_index() | nil) :: candidate_list()
   defp package_module_candidates(index) when is_map(index) do
     Enum.map(index, fn {module_name, _package} ->
       %{
@@ -267,7 +255,7 @@ defmodule Ide.EditorCompletion do
 
   defp package_module_candidates(_), do: []
 
-  @spec editor_doc_module_candidates([map()] | nil) :: candidate_list()
+  @spec editor_doc_module_candidates([CompletionTypes.doc_package_row()] | nil) :: candidate_list()
   defp editor_doc_module_candidates(rows) when is_list(rows) do
     rows
     |> Enum.flat_map(fn row ->
@@ -286,7 +274,7 @@ defmodule Ide.EditorCompletion do
 
   defp editor_doc_module_candidates(_), do: []
 
-  @spec module_member_candidates(map()) :: candidate_list()
+  @spec module_member_candidates(context()) :: candidate_list()
   defp module_member_candidates(context) when is_map(context) do
     qualifier = resolved_module_qualifier(context[:qualifier], context[:declaration_index])
 
@@ -298,7 +286,7 @@ defmodule Ide.EditorCompletion do
     doc_members ++ core_module_member_candidates(qualifier)
   end
 
-  @spec import_exposing_candidates(map()) :: candidate_list()
+  @spec import_exposing_candidates(context()) :: candidate_list()
   defp import_exposing_candidates(context) when is_map(context) do
     expose_all = [
       %{label: "..", insert_text: "..", kind: "keyword", source: "language/import-exposing"}
@@ -307,7 +295,8 @@ defmodule Ide.EditorCompletion do
     expose_all ++ module_member_candidates(context)
   end
 
-  @spec resolved_module_qualifier(String.t() | nil, map() | nil) :: String.t() | nil
+  @spec resolved_module_qualifier(String.t() | nil, EditorCompletionDeclarationIndex.t() | nil) ::
+          String.t() | nil
   defp resolved_module_qualifier(qualifier, index) when is_binary(qualifier) do
     aliases = Map.get(index || %{}, :import_aliases, %{})
     Map.get(aliases, qualifier, qualifier)
@@ -392,7 +381,8 @@ defmodule Ide.EditorCompletion do
     end)
   end
 
-  @spec dependency_candidates([map()] | nil, String.t()) :: candidate_list()
+  @spec dependency_candidates([CompletionTypes.dependency_row()] | nil, String.t()) ::
+          candidate_list()
   defp dependency_candidates(rows, source) when is_list(rows) and is_binary(source) do
     Enum.map(rows, fn row ->
       name = row[:name] || row["name"] || ""
@@ -402,7 +392,7 @@ defmodule Ide.EditorCompletion do
 
   defp dependency_candidates(_, _), do: []
 
-  @spec candidates(map(), atom()) :: candidate_list()
+  @spec candidates(context(), atom()) :: candidate_list()
   defp candidates(context, :record_field_access), do: field_candidates(context)
   defp candidates(context, :module_qualified_access), do: module_member_candidates(context)
   defp candidates(context, :import_exposing), do: import_exposing_candidates(context)
@@ -421,11 +411,11 @@ defmodule Ide.EditorCompletion do
 
   defp candidates(context, _unknown), do: candidates(context, :value_expression)
 
-  @spec completion_context_kind(map()) :: atom()
+  @spec completion_context_kind(context()) :: atom()
   defp completion_context_kind(%{context_kind: kind}) when is_atom(kind), do: kind
   defp completion_context_kind(_context), do: :value_expression
 
-  @spec declaration_index_values(map(), atom()) :: [String.t()]
+  @spec declaration_index_values(context(), atom()) :: [String.t()]
   defp declaration_index_values(context, key) when is_map(context) do
     index = context[:declaration_index] || %{}
     Map.get(index, key) || Map.get(index, Atom.to_string(key)) || []

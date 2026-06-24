@@ -206,7 +206,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
     end)
   end
 
-  @spec binding_types(map()) :: FCC.binding_types()
+  @spec binding_types(FCC.function_decl_context()) :: FCC.binding_types()
   defp binding_types(%{args: args, type: type})
        when is_list(args) and is_binary(type) and args != [] do
     TypeSignature.param_types(type)
@@ -441,7 +441,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
   defp call_site_diagnostics(_, _, _, _, _, _, call_context), do: {[], call_context}
 
   @spec function_return_diagnostics(
-          map(),
+          FCC.function_decl_context(),
           FCC.import_lookup(),
           FCC.signature_lookup(),
           FCC.type_alias_lookup(),
@@ -1259,7 +1259,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
     end
   end
 
-  @spec resolve_unqualified_type(String.t(), String.t() | nil, FCC.import_lookup(), String.t() | nil) ::
+  @spec resolve_unqualified_type(String.t(), String.t() | nil, FCC.name_map(), String.t() | nil) ::
           String.t()
   defp resolve_unqualified_type(name, declaring_module, type_map, current_module)
        when is_binary(name) do
@@ -1282,8 +1282,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
     end
   end
 
-  @spec match_unqualified_type_export(String.t(), FCC.project_module_exports()) ::
-          String.t() | nil
+  @spec match_unqualified_type_export(String.t(), FCC.name_map()) :: String.t() | nil
   defp match_unqualified_type_export(name, type_map) when is_binary(name) and is_map(type_map) do
     case Map.get(type_map, name) do
       module when is_binary(module) -> "#{module}.#{name}"
@@ -1291,7 +1290,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
     end
   end
 
-  @spec resolve_module_prefix(String.t(), FCC.import_lookup()) :: String.t()
+  @spec resolve_module_prefix(String.t(), FCC.name_map()) :: String.t()
   defp resolve_module_prefix(prefix, alias_map) when is_binary(prefix) and is_map(alias_map) do
     case String.split(prefix, ".", parts: 2) do
       [head, rest] ->

@@ -150,7 +150,7 @@ defmodule Ide.Debugger.RuntimeSurfaces do
     launch_context_for(watch_profile_id, launch_reason, %{})
   end
 
-  @spec launch_context_for(String.t(), String.t(), Types.simulator_settings() | map()) ::
+  @spec launch_context_for(String.t(), String.t(), Types.simulator_settings()) ::
           Types.LaunchContext.t()
   def launch_context_for(watch_profile_id, launch_reason, settings)
       when is_binary(watch_profile_id) and is_binary(launch_reason) and is_map(settings) do

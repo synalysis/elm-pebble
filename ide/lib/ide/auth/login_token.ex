@@ -16,6 +16,12 @@ defmodule Ide.Auth.LoginToken do
           used_at: DateTime.t() | nil
         }
 
+  @type changeset_attrs :: %{
+          required(:user_id) => integer(),
+          required(:token_hash) => String.t(),
+          required(:expires_at) => DateTime.t()
+        }
+
   schema "login_tokens" do
     belongs_to :user, User
 
@@ -26,7 +32,7 @@ defmodule Ide.Auth.LoginToken do
     timestamps(type: :utc_datetime, updated_at: false)
   end
 
-  @spec changeset(t(), map()) :: Ecto.Changeset.t()
+  @spec changeset(t(), changeset_attrs()) :: Ecto.Changeset.t()
   def changeset(token, attrs) do
     token
     |> cast(attrs, [:user_id, :token_hash, :expires_at])

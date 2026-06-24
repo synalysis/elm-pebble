@@ -1,8 +1,10 @@
 defmodule IdeWeb.WorkspaceLive.DebuggerPage.SessionState do
   @moduledoc false
 
+  alias Ide.Debugger.Types, as: DebuggerTypes
+
   @type bootstrap_status :: atom()
-  @type debugger_state :: map() | nil
+  @type debugger_state :: DebuggerTypes.runtime_state() | nil
 
   @spec bootstrap_busy?(bootstrap_status()) :: boolean()
   def bootstrap_busy?(:running), do: true

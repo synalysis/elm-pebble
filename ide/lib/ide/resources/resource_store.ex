@@ -23,6 +23,7 @@ defmodule Ide.Resources.ResourceStore do
   @type font_variant_result :: Types.font_variant_result()
   @type vector_import_result :: Types.vector_import_result()
   @type animation_import_result :: Types.animation_import_result()
+  @type speaker_sample_entry :: Types.speaker_sample_entry()
   @type delete_entries_result :: Types.delete_entries_result()
   @type rename_result :: Types.rename_result()
   @type font_form_params :: Types.font_form_params()

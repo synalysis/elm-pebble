@@ -7,11 +7,13 @@ defmodule IdeWeb.WorkspaceLive.PackagesPage do
   alias Ide.Markdown
   alias Ide.Packages
   alias Ide.Packages.Types, as: PackageTypes
+  alias IdeWeb.WorkspaceLive.PackagesPage.Assigns
   alias Phoenix.LiveView.Rendered
 
-  @type assigns :: map()
+  @type assigns :: Assigns.t()
   @type rendered :: Rendered.t()
-  @type package_entry :: map()
+  @type package_entry :: Assigns.package_entry()
+  @type dependency_row :: Assigns.dependency_row()
 
   @spec render(assigns()) :: rendered()
   def render(assigns) do

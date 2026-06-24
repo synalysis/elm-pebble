@@ -20,7 +20,7 @@ defmodule Ide.AppStore.Publisher do
           cwd: String.t()
         }
 
-  @spec publish(Project.t() | map(), Types.publish_opts()) ::
+  @spec publish(Types.publish_project(), Types.publish_opts()) ::
           {:ok, command_result()} | {:error, Types.publish_error()}
   def publish(%Project{} = project, opts) do
     app_root = Keyword.get(opts, :app_root, "")
@@ -289,7 +289,7 @@ defmodule Ide.AppStore.Publisher do
   end
 
   @doc "Builds a multipart/form-data request body for App Store uploads."
-  @spec multipart_body(String.t(), map(), [{String.t(), String.t()}]) ::
+  @spec multipart_body(String.t(), Types.multipart_form_fields(), [{String.t(), String.t()}]) ::
           {:ok, iodata()} | {:error, Types.multipart_error()}
   def multipart_body(boundary, fields, files) do
     field_parts =
@@ -371,7 +371,7 @@ defmodule Ide.AppStore.Publisher do
     end)
   end
 
-  @spec pbw_metadata(String.t(), String.t()) :: {:ok, Types.pbw_metadata()} | {:ok, map()}
+  @spec pbw_metadata(String.t(), String.t()) :: {:ok, Types.pbw_metadata()}
   defp pbw_metadata(pbw_path, app_root) do
     package_metadata = package_metadata(app_root)
 
@@ -593,7 +593,7 @@ defmodule Ide.AppStore.Publisher do
 
   defp publish_version_warning(_, _), do: nil
 
-  @spec app_type_from_watchapp(map()) :: String.t()
+  @spec app_type_from_watchapp(Types.pebble_watchapp_json()) :: String.t()
   defp app_type_from_watchapp(watchapp) when is_map(watchapp) do
     watchface? = Map.get(watchapp, "watchface") in [true, "true", 1]
 
@@ -670,7 +670,7 @@ defmodule Ide.AppStore.Publisher do
     end
   end
 
-  @spec pbw_metadata_uuid(map()) :: binary() | nil
+  @spec pbw_metadata_uuid(Types.zip_manifest_json()) :: binary() | nil
   defp pbw_metadata_uuid(metadata) do
     case to_string(metadata["uuid"] || "") |> String.trim() do
       "" -> nil
@@ -688,7 +688,8 @@ defmodule Ide.AppStore.Publisher do
     end
   end
 
-  @spec read_zip_json(String.t(), String.t()) :: {:ok, map()} | {:error, Types.zip_json_error()}
+  @spec read_zip_json(String.t(), String.t()) ::
+          {:ok, Types.zip_manifest_json()} | {:error, Types.zip_json_error()}
   defp read_zip_json(artifact_path, entry) do
     case Ide.ZipArchive.read_entry(artifact_path, entry) do
       {:ok, data} ->

@@ -1,27 +1,34 @@
 defmodule IdeWeb.WorkspaceLive.EditorDependencies do
   @moduledoc false
 
+  alias Ide.EditorCompletion.Types, as: CompletionTypes
   alias Ide.Packages
+  alias Ide.Packages.Types, as: PackageTypes
   alias Ide.Projects
+  alias Ide.Projects.Project
+
+  @type dependency_row :: CompletionTypes.dependency_row()
 
   @type dependency_payload :: %{
-          direct: [map()],
-          indirect: [map()],
+          direct: [dependency_row()],
+          indirect: [dependency_row()],
           dependencies_available?: boolean()
         }
 
   @type docs_payload :: %{
-          package_doc_index: map(),
-          editor_doc_packages: [map()]
+          package_doc_index: CompletionTypes.package_doc_index(),
+          editor_doc_packages: [CompletionTypes.doc_package_row()]
         }
 
-  @spec build_payload(map(), String.t(), String.t()) :: %{
-          direct: [map()],
-          indirect: [map()],
-          dependencies_available?: boolean(),
-          package_doc_index: map(),
-          editor_doc_packages: [map()]
+  @type editor_payload :: %{
+          required(:direct) => [dependency_row()],
+          required(:indirect) => [dependency_row()],
+          optional(:dependencies_available?) => boolean(),
+          required(:package_doc_index) => CompletionTypes.package_doc_index(),
+          required(:editor_doc_packages) => [CompletionTypes.doc_package_row()]
         }
+
+  @spec build_payload(Project.t(), String.t(), String.t()) :: editor_payload()
   def build_payload(project, packages_root, doc_root)
       when is_map(project) and is_binary(packages_root) and is_binary(doc_root) do
     deps = build_dependency_payload(project, packages_root)
@@ -30,13 +37,13 @@ defmodule IdeWeb.WorkspaceLive.EditorDependencies do
     Map.merge(deps, docs)
   end
 
-  @spec build_dependency_payload(map(), String.t()) :: dependency_payload()
+  @spec build_dependency_payload(Project.t(), String.t()) :: dependency_payload()
   def build_dependency_payload(project, packages_root)
       when is_map(project) and is_binary(packages_root) do
     read_dependency_lists(project, packages_root, usage: true)
   end
 
-  @spec build_docs_payload(map(), String.t()) :: docs_payload()
+  @spec build_docs_payload(Project.t(), String.t()) :: docs_payload()
   def build_docs_payload(project, doc_root)
       when is_map(project) and is_binary(doc_root) do
     platform_target =
@@ -68,11 +75,7 @@ defmodule IdeWeb.WorkspaceLive.EditorDependencies do
     }
   end
 
-  @spec read_dependency_lists(map(), String.t(), keyword()) :: %{
-          direct: [map()],
-          indirect: [map()],
-          dependencies_available?: boolean()
-        }
+  @spec read_dependency_lists(Project.t(), String.t(), keyword()) :: dependency_payload()
   def read_dependency_lists(project, packages_root, opts \\ [])
       when is_map(project) and is_binary(packages_root) and is_list(opts) do
     include_usage? = Keyword.get(opts, :usage, false)
@@ -114,7 +117,8 @@ defmodule IdeWeb.WorkspaceLive.EditorDependencies do
     }
   end
 
-  @spec normalize_dep_list(Projects.Project.t(), map(), String.t(), boolean()) :: [map()]
+  @spec normalize_dep_list(Project.t(), PackageTypes.dependency_versions_map(), String.t(), boolean()) ::
+          [dependency_row()]
   defp normalize_dep_list(project, map, packages_root, include_usage?) when is_map(map) do
     packages = Map.keys(map)
 
@@ -135,7 +139,8 @@ defmodule IdeWeb.WorkspaceLive.EditorDependencies do
     end)
   end
 
-  @spec enrich_editor_doc_packages([map()]) :: [map()]
+  @spec enrich_editor_doc_packages([PackageTypes.doc_catalog_entry()]) ::
+          [CompletionTypes.doc_package_row()]
   defp enrich_editor_doc_packages(rows) when is_list(rows) do
     Enum.map(rows, fn row ->
       package = row[:package] || row["package"]

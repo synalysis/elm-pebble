@@ -151,7 +151,7 @@ defmodule Ide.Emulator.Session do
   end
 
   @spec log_capture_context(pid()) ::
-          {:ok, map()} | {:error, Types.session_atom_error()}
+          {:ok, LogCapture.capture_context()} | {:error, Types.session_atom_error()}
   def log_capture_context(pid) do
     GenServer.call(pid, :log_capture_context, 5_000)
   catch

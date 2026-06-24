@@ -2,8 +2,9 @@ defmodule IdeWeb.ProjectExportController do
   use IdeWeb, :controller
 
   alias Ide.Projects
+  alias IdeWeb.Types
 
-  @spec show(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  @spec show(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def show(conn, %{"id" => id}) do
     project = Projects.get_project!(id, conn.assigns.current_user)
 

@@ -6,6 +6,7 @@ defmodule Ide.Lsp.Server do
   alias Ide.EditorDocLinks
   alias Ide.ElmFormat
   alias Ide.Formatter
+  alias Ide.Lsp.Types, as: LspTypes
   alias Ide.Projects
   alias Ide.Settings
   alias Ide.Tokenizer
@@ -15,8 +16,8 @@ defmodule Ide.Lsp.Server do
 
   @type state :: %{
           project_slug: String.t(),
-          documents: map(),
-          dependency_payloads: map()
+          documents: %{optional(String.t()) => LspTypes.document()},
+          dependency_payloads: %{optional(String.t()) => EditorDependencies.editor_payload()}
         }
 
   @spec new(String.t()) :: state()
@@ -24,7 +25,7 @@ defmodule Ide.Lsp.Server do
     %{project_slug: project_slug, documents: %{}, dependency_payloads: %{}}
   end
 
-  @spec handle(String.t(), state()) :: {[map()], state()}
+  @spec handle(String.t(), state()) :: {[LspTypes.wire_message()], state()}
   def handle(raw, state) when is_binary(raw) do
     case Jason.decode(raw) do
       {:ok, %{"method" => method} = message} ->
@@ -38,7 +39,7 @@ defmodule Ide.Lsp.Server do
     end
   end
 
-  @spec dispatch(String.t(), map(), state()) :: {[map()], state()}
+  @spec dispatch(String.t(), LspTypes.wire_message(), state()) :: {[LspTypes.wire_message()], state()}
   defp dispatch("initialize", %{"id" => id}, state) do
     {[response(id, initialize_result())], state}
   end
@@ -160,7 +161,7 @@ defmodule Ide.Lsp.Server do
 
   defp dispatch(_method, _message, state), do: {[], state}
 
-  @spec initialize_result() :: map()
+  @spec initialize_result() :: LspTypes.initialize_result()
   defp initialize_result do
     %{
       "capabilities" => %{

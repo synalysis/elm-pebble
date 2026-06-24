@@ -86,7 +86,7 @@ defmodule Ide.Debugger.RuntimeApi do
     end)
   end
 
-  @spec ingest_emulator_rc_fail(String.t(), map()) :: {:ok, runtime_state()}
+  @spec ingest_emulator_rc_fail(String.t(), Types.emulator_rc_fail_attrs()) :: {:ok, runtime_state()}
   def ingest_emulator_rc_fail(project_slug, attrs)
       when is_binary(project_slug) and is_map(attrs) do
     EmulatorRcFailApply.apply(project_slug, attrs)

@@ -7,18 +7,7 @@ defmodule Ide.Emulator.ScreenshotPostprocess do
   alias Ide.ScreenshotDimensions
   alias Ide.WatchModels
 
-  @type pixel_format :: %{
-          bpp: pos_integer(),
-          depth: pos_integer(),
-          big_endian: boolean(),
-          true_color: boolean(),
-          red_max: pos_integer(),
-          green_max: pos_integer(),
-          blue_max: pos_integer(),
-          red_shift: pos_integer(),
-          green_shift: pos_integer(),
-          blue_shift: pos_integer()
-        }
+  @type pixel_format :: Types.vnc_pixel_format()
 
   @spec screen_size(String.t()) :: {pos_integer(), pos_integer()}
   def screen_size(platform) do

@@ -3,10 +3,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.SubscriptionControls do
 
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Types, as: SupportTypes
 
+  alias IdeWeb.WorkspaceLive.DebuggerFlow.Types, as: FlowTypes
+
   @type trigger_row :: SupportTypes.trigger_button_row()
   @type wire_input :: SupportTypes.wire_value()
 
-  @spec enabled?([map()], String.t(), String.t()) :: boolean()
+  @spec enabled?([FlowTypes.auto_fire_subscription_row()], String.t(), String.t()) :: boolean()
   def enabled?(disabled_subscriptions, target, trigger)
       when is_list(disabled_subscriptions) and is_binary(target) and is_binary(trigger) do
     not Enum.any?(disabled_subscriptions, fn row ->
@@ -39,7 +41,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.SubscriptionControls do
     end
   end
 
-  @spec auto_fire_enabled?([map()], String.t(), String.t()) :: boolean()
+  @spec auto_fire_enabled?([FlowTypes.auto_fire_subscription_row()], String.t(), String.t()) ::
+          boolean()
   def auto_fire_enabled?(auto_fire_subscriptions, target, trigger)
       when is_list(auto_fire_subscriptions) and is_binary(target) and is_binary(trigger) do
     Enum.any?(auto_fire_subscriptions, fn row ->
@@ -53,7 +56,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.SubscriptionControls do
 
   def auto_fire_enabled?(_auto_fire_subscriptions, _target, _trigger), do: false
 
-  @spec auto_fire_toggle_visible?([map()], String.t(), trigger_row()) :: boolean()
+  @spec auto_fire_toggle_visible?(
+          [FlowTypes.auto_fire_subscription_row()],
+          String.t(),
+          trigger_row()
+        ) :: boolean()
   def auto_fire_toggle_visible?(auto_fire_subscriptions, target, row)
       when is_list(auto_fire_subscriptions) and is_binary(target) and is_map(row) do
     trigger = to_string(Map.get(row, :trigger) || Map.get(row, "trigger") || "")

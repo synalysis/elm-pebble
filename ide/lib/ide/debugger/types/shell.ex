@@ -12,11 +12,14 @@ defmodule Ide.Debugger.Types.Shell do
 
   @type t :: %{
           optional(:debugger_contract) => Payload.wire_payload(),
+          optional(:debugger_contract_b64) => String.t(),
+          optional(:debugger_contract_version) => String.t(),
           optional(:elm_introspect) => Payload.wire_payload(),
           optional(:elmx_manifest) => Types.elmx_manifest(),
           optional(:elmx_revision) => String.t(),
           optional(:vector_resource_indices) => ArtifactTypes.resource_indices(),
           optional(:bitmap_resource_indices) => ArtifactTypes.resource_indices(),
+          optional(:animation_resource_indices) => ArtifactTypes.resource_indices(),
           optional(String.t()) => Types.wire_input(),
           optional(atom()) => Types.wire_input()
         }

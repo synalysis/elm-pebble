@@ -7,12 +7,14 @@ defmodule Ide.Acp.McpServers do
   ACP transport client.
   """
 
+  alias Ide.Acp.Types
+
   @valid_capabilities ~w(read edit build)
 
   @doc """
   Returns a stdio MCP server declaration for the IDE's own MCP server.
   """
-  @spec ide_stdio(keyword()) :: map()
+  @spec ide_stdio(keyword()) :: Types.mcp_server_stdio()
   def ide_stdio(opts \\ []) do
     capabilities =
       opts

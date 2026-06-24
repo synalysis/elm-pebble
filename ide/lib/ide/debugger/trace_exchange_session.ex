@@ -61,7 +61,7 @@ defmodule Ide.Debugger.TraceExchangeSession do
 
   @spec import(String.t(), Types.import_trace_input(), keyword(), import_host()) ::
           {:ok, Types.runtime_state()}
-          | {:error, Types.protocol_error() | atom() | String.t() | map()}
+          | {:error, Types.protocol_error() | atom() | String.t() | Types.wire_map()}
   def import(session_key, input, opts, host)
       when is_binary(session_key) and is_map(host) do
     human_slug = host.human_slug_from_session_key.(session_key)

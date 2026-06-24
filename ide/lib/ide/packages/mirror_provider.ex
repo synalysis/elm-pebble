@@ -31,7 +31,7 @@ defmodule Ide.Packages.MirrorProvider do
 
   @impl true
   @spec package_release(String.t(), String.t(), keyword()) ::
-          {:ok, map()} | {:error, Types.catalog_error()}
+          {:ok, Types.elm_json()} | {:error, Types.catalog_error()}
   def package_release(package, version, opts),
     do: GenericProvider.package_release(package, version, with_defaults(opts))
 

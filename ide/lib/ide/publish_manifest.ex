@@ -3,9 +3,34 @@ defmodule Ide.PublishManifest do
   Exports publish bundle metadata linking PBW artifacts and screenshots.
   """
 
+  @type screenshot_entry :: %{
+          required(:filename) => String.t(),
+          required(:url) => String.t(),
+          required(:absolute_path) => String.t(),
+          required(:captured_at) => String.t()
+        }
+
+  @type screenshots_by_target_entry :: %{
+          required(:target) => String.t(),
+          required(:screenshots) => [screenshot_entry()]
+        }
+
+  @type publish_bundle_payload :: %{
+          required(:schema_version) => pos_integer(),
+          required(:project_slug) => String.t(),
+          required(:generated_at) => String.t(),
+          required(:artifact) => %{
+            required(:pbw_path) => String.t() | nil,
+            required(:exists) => boolean()
+          },
+          required(:required_targets) => [String.t()],
+          required(:readiness) => [term()],
+          required(:screenshots_by_target) => [screenshots_by_target_entry()]
+        }
+
   @type export_result :: %{
           path: String.t(),
-          payload: map()
+          payload: publish_bundle_payload()
         }
   @type release_notes_result :: %{path: String.t(), markdown: String.t()}
 

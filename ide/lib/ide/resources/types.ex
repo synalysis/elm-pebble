@@ -3,6 +3,11 @@ defmodule Ide.Resources.Types do
   Shared types for project resource manifests and generated Elm modules.
   """
 
+  alias Ide.Debugger.Types, as: DebuggerTypes
+  alias Ide.Resources.ConversionReport
+
+  @type vector_import_report :: ConversionReport.t() | ConversionReport.wire()
+
   @type bitmap_variant_entry :: %{
           filename: String.t(),
           mime: String.t(),
@@ -12,49 +17,71 @@ defmodule Ide.Resources.Types do
         }
 
   @type bitmap_entry :: %{
-          id: String.t(),
-          ctor: String.t(),
-          base_name: String.t(),
-          filename: String.t() | nil,
-          mime: String.t() | nil,
-          bytes: non_neg_integer(),
-          width: non_neg_integer(),
-          height: non_neg_integer(),
-          variants: %{optional(String.t()) => bitmap_variant_entry()}
+          required(:id) => String.t(),
+          required(:ctor) => String.t(),
+          required(:base_name) => String.t(),
+          required(:filename) => String.t() | nil,
+          required(:mime) => String.t() | nil,
+          required(:bytes) => non_neg_integer(),
+          required(:width) => non_neg_integer(),
+          required(:height) => non_neg_integer(),
+          required(:variants) => %{optional(String.t()) => bitmap_variant_entry()},
+          optional(:resource_id) => pos_integer(),
+          optional(:ctor_prefix) => String.t(),
+          optional(:variant_slots) => [bitmap_variant_slot()],
+          optional(:legacy_preview_data_url) => String.t() | nil,
+          optional(:has_legacy) => boolean()
+        }
+
+  @type bitmap_variant_slot :: %{
+          required(:color_mode) => String.t(),
+          required(:label) => String.t(),
+          required(:platforms) => String.t(),
+          required(:preview_data_url) => String.t() | nil,
+          required(:preview_skipped) => boolean(),
+          optional(:filename) => String.t() | nil,
+          optional(:bytes) => non_neg_integer() | nil
         }
 
   @type font_entry :: %{
-          id: String.t(),
-          ctor: String.t(),
-          source_id: String.t(),
-          filename: String.t(),
-          mime: String.t(),
-          bytes: non_neg_integer(),
-          height: non_neg_integer(),
-          characters: String.t(),
-          tracking_adjust: integer(),
-          compatibility: String.t(),
-          target_platforms: [String.t()]
+          required(:id) => String.t(),
+          required(:ctor) => String.t(),
+          required(:source_id) => String.t(),
+          required(:filename) => String.t(),
+          required(:mime) => String.t(),
+          required(:bytes) => non_neg_integer(),
+          required(:height) => non_neg_integer(),
+          required(:characters) => String.t(),
+          required(:tracking_adjust) => integer(),
+          required(:compatibility) => String.t(),
+          required(:target_platforms) => [String.t()],
+          optional(:resource_id) => pos_integer()
         }
 
   @type font_source :: %{
-          id: String.t(),
-          filename: String.t(),
-          mime: String.t(),
-          bytes: non_neg_integer()
+          required(:id) => String.t(),
+          required(:filename) => String.t(),
+          required(:mime) => String.t(),
+          required(:bytes) => non_neg_integer(),
+          optional(:resource_id) => pos_integer()
         }
 
   @type vector_entry :: %{
-          id: String.t(),
-          ctor: String.t(),
-          base_name: String.t(),
-          filename: String.t(),
-          mime: String.t(),
-          bytes: non_neg_integer(),
-          source: String.t(),
-          kind: String.t(),
-          frames: non_neg_integer() | nil,
-          frame_duration_ms: non_neg_integer() | nil
+          required(:id) => String.t(),
+          required(:ctor) => String.t(),
+          required(:base_name) => String.t(),
+          required(:filename) => String.t(),
+          required(:mime) => String.t(),
+          required(:bytes) => non_neg_integer(),
+          required(:source) => String.t(),
+          required(:kind) => String.t(),
+          required(:frames) => non_neg_integer() | nil,
+          required(:frame_duration_ms) => non_neg_integer() | nil,
+          optional(:resource_id) => pos_integer(),
+          optional(:ctor_prefix) => String.t(),
+          optional(:kind_label) => String.t(),
+          optional(:preview_svg) => String.t() | nil,
+          optional(:sequence_label) => String.t() | nil
         }
 
   @type animation_entry :: %{
@@ -68,17 +95,27 @@ defmodule Ide.Resources.Types do
         }
 
   @type animation_resource_entry :: %{
-          id: String.t(),
-          ctor: String.t(),
-          base_name: String.t(),
-          filename: String.t(),
-          mime: String.t(),
-          bytes: non_neg_integer(),
-          width: non_neg_integer(),
-          height: non_neg_integer(),
-          frame_count: non_neg_integer(),
-          duration_ms: non_neg_integer(),
-          play_count: non_neg_integer() | :infinite
+          required(:id) => String.t(),
+          required(:ctor) => String.t(),
+          required(:base_name) => String.t(),
+          required(:filename) => String.t(),
+          required(:mime) => String.t(),
+          required(:bytes) => non_neg_integer(),
+          required(:width) => non_neg_integer(),
+          required(:height) => non_neg_integer(),
+          required(:frame_count) => non_neg_integer(),
+          required(:duration_ms) => non_neg_integer(),
+          required(:play_count) => non_neg_integer() | :infinite,
+          optional(:resource_id) => pos_integer(),
+          optional(:ctor_prefix) => String.t(),
+          optional(:preview_data_url) => String.t() | nil,
+          optional(:loop_label) => String.t() | nil
+        }
+
+  @type speaker_sample_import_ok :: %{
+          optional(:entry) => manifest_wire_row(),
+          optional(:entries) => [manifest_wire_row()],
+          optional(:duplicate) => boolean()
         }
 
   @type manifest_entry ::
@@ -97,7 +134,7 @@ defmodule Ide.Resources.Types do
 
   @type workspace_path :: String.t()
 
-  @type wire_input :: String.t() | integer() | boolean() | list() | map() | nil
+  @type wire_input :: DebuggerTypes.wire_input()
 
   @type font_lookup_error :: :font_source_not_found
 
@@ -174,7 +211,7 @@ defmodule Ide.Resources.Types do
           required(:entry) => manifest_wire_row(),
           required(:entries) => [manifest_wire_row()],
           optional(:preview_svg) => String.t() | nil,
-          optional(:report) => map() | nil
+          optional(:report) => vector_import_report() | nil
         }
 
   @type vector_import_result ::
@@ -183,7 +220,7 @@ defmodule Ide.Resources.Types do
   @type vector_import_extras :: %{
           optional(:kind) => String.t(),
           optional(:preview_svg) => String.t() | nil,
-          optional(:report) => map() | nil,
+          optional(:report) => vector_import_report() | nil,
           optional(:frames) => non_neg_integer(),
           optional(:frame_duration_ms) => non_neg_integer()
         }
@@ -193,4 +230,6 @@ defmodule Ide.Resources.Types do
 
   @type animation_import_result ::
           {:ok, manifest_entries_update() | import_duplicate()} | {:error, resource_error()}
+
+  @type speaker_sample_entry :: manifest_wire_row()
 end

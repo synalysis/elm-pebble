@@ -152,7 +152,7 @@ defmodule Ide.ProjectTemplatePreviews.Svg do
 
   defp render_op(_op), do: ""
 
-  @spec pebble_angle_deg(integer() | term()) :: float()
+  @spec pebble_angle_deg(integer() | float() | nil) :: float()
   defp pebble_angle_deg(angle) when is_integer(angle), do: angle * 360.0 / 65_536.0
   defp pebble_angle_deg(_), do: 0.0
 

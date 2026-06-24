@@ -59,7 +59,7 @@ defmodule Ide.Formatter.Parity do
           actionable_parity_pct: float(),
           parity_pct: float(),
           comparable_parity_pct: float(),
-          category_counts: map(),
+          category_counts: %{optional(mismatch_category()) => non_neg_integer()},
           results: [case_result()]
         }
 

@@ -26,7 +26,13 @@ defmodule Ide.EditorCompletionContext do
           declaration_index: EditorCompletionDeclarationIndex.t()
         }
 
-  @spec analyze(map()) :: t()
+  @type analyze_opts :: %{
+          required(:source) => String.t(),
+          required(:offset) => non_neg_integer(),
+          optional(:declaration_index) => EditorCompletionDeclarationIndex.t()
+        }
+
+  @spec analyze(analyze_opts()) :: t()
   def analyze(%{source: source, offset: offset} = opts)
       when is_binary(source) and is_integer(offset) do
     safe_offset = min(max(offset, 0), String.length(source))

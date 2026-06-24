@@ -3,6 +3,6 @@ defmodule Ide.Mcp.ToolCatalog.Definitions.Files do
 
   alias Ide.Mcp.ToolCatalog.Core
 
-  @spec tools() :: [map()]
+  @spec tools() :: [Ide.Mcp.ToolCatalog.Types.tool_definition()]
   def tools, do: Core.tool_definitions([:read, :edit, :build, :publish])
 end

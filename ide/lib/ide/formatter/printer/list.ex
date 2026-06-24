@@ -9,7 +9,7 @@ defmodule Ide.Formatter.Printer.List do
   @type opening_comma_result ::
           {:ok, String.t(), String.t(), String.t(), non_neg_integer()} | :error
 
-  @spec normalize_item_splits(String.t(), [map()] | nil) :: String.t()
+  @spec normalize_item_splits(String.t(), [Types.format_token()] | nil) :: String.t()
   def normalize_item_splits(source, tokens) when is_binary(source) and is_list(tokens) do
     split_targets = list_item_split_targets(tokens)
 
@@ -69,7 +69,7 @@ defmodule Ide.Formatter.Printer.List do
     |> Enum.join("\n")
   end
 
-  @spec normalize_opening_indentation(String.t(), [map()] | nil) :: String.t()
+  @spec normalize_opening_indentation(String.t(), [Types.format_token()] | nil) :: String.t()
   def normalize_opening_indentation(source, tokens) when is_binary(source) and is_list(tokens) do
     {normalized_rev, _prev_indent} =
       source
@@ -137,7 +137,7 @@ defmodule Ide.Formatter.Printer.List do
     |> Enum.join("\n")
   end
 
-  @spec normalize_alignment(String.t(), [map()] | nil) :: String.t()
+  @spec normalize_alignment(String.t(), [Types.format_token()] | nil) :: String.t()
   def normalize_alignment(source, _tokens) when is_binary(source) do
     {normalized_rev, _indent_stack} =
       source
@@ -170,7 +170,7 @@ defmodule Ide.Formatter.Printer.List do
     |> Enum.join("\n")
   end
 
-  @spec list_item_split_targets([map()]) :: %{pos_integer() => [split_target()]}
+  @spec list_item_split_targets([Types.format_token()]) :: %{pos_integer() => [split_target()]}
   defp list_item_split_targets(tokens) do
     ordered =
       tokens

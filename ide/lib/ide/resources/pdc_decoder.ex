@@ -41,6 +41,14 @@ defmodule Ide.Resources.PdcDecoder do
           | :pdc_dimensions_too_large
           | :pdc_too_many_frames
 
+  @type debugger_op_kind ::
+          :path_filled | :path_outline | :path_outline_open | :fill_circle | :circle
+
+  @type debugger_op :: %{
+          required(:kind) => debugger_op_kind(),
+          optional(atom()) => integer() | [point()] | nil
+        }
+
   @max_watch_bytes 65_536
   @max_watch_dimension 200
   @max_watch_frames 64
@@ -134,7 +142,7 @@ defmodule Ide.Resources.PdcDecoder do
     |> Enum.join("\n")
   end
 
-  @spec to_debugger_ops(image(), integer(), integer()) :: [map()]
+  @spec to_debugger_ops(image(), integer(), integer()) :: [debugger_op()]
   def to_debugger_ops(%{commands: commands}, offset_x, offset_y)
       when is_integer(offset_x) and is_integer(offset_y) do
     Enum.flat_map(commands, &command_to_debugger_ops(&1, offset_x, offset_y))

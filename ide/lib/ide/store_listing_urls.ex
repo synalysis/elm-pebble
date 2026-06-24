@@ -3,8 +3,12 @@ defmodule Ide.StoreListingUrls do
   Default App Store listing URLs (website and source code) resolved from project settings.
   """
 
+  alias Ide.AppStore.Types, as: AppStoreTypes
   alias Ide.ProjectReadme
   alias Ide.Projects.Project
+  alias Ide.Projects.Types, as: ProjectsTypes
+
+  @type listing_url_project :: AppStoreTypes.publish_project()
 
   @default_source_repo "https://github.com/synalysis/elm-pebble"
 
@@ -18,7 +22,7 @@ defmodule Ide.StoreListingUrls do
   Website URL sent on App Store create (`website` field).
   Uses `release_defaults["website_url"]` when set, otherwise https://elm-pebble.dev.
   """
-  @spec website_url(map()) :: String.t()
+  @spec website_url(listing_url_project()) :: String.t()
   def website_url(project) when is_map(project) do
     project
     |> stored_url("website_url")
@@ -33,7 +37,7 @@ defmodule Ide.StoreListingUrls do
   Uses `release_defaults["source_url"]` when set; otherwise a public GitHub repo from project
   settings, otherwise https://github.com/synalysis/elm-pebble.
   """
-  @spec source_url(map()) :: String.t()
+  @spec source_url(listing_url_project()) :: String.t()
   def source_url(project) when is_map(project) do
     project
     |> stored_url("source_url")
@@ -43,7 +47,7 @@ defmodule Ide.StoreListingUrls do
     end
   end
 
-  @spec default_source_url(map()) :: String.t()
+  @spec default_source_url(listing_url_project()) :: String.t()
   def default_source_url(project) when is_map(project) do
     public_github_repo_url(project) || default_source_repo_url()
   end
@@ -51,7 +55,8 @@ defmodule Ide.StoreListingUrls do
   @doc """
   Returns `https://github.com/owner/repo` when GitHub visibility is public and owner/repo are set.
   """
-  @spec public_github_repo_url(map()) :: String.t() | nil
+  @spec public_github_repo_url(listing_url_project() | ProjectsTypes.github_config()) ::
+          String.t() | nil
   def public_github_repo_url(%Project{} = project),
     do: public_github_repo_url(project.github || %{})
 
@@ -67,7 +72,7 @@ defmodule Ide.StoreListingUrls do
     end
   end
 
-  @spec form_website_url(map()) :: String.t()
+  @spec form_website_url(listing_url_project()) :: String.t()
   def form_website_url(project) do
     case stored_url(project, "website_url") do
       "" -> default_website_url()
@@ -75,7 +80,7 @@ defmodule Ide.StoreListingUrls do
     end
   end
 
-  @spec form_source_url(map()) :: String.t()
+  @spec form_source_url(listing_url_project()) :: String.t()
   def form_source_url(project) do
     case stored_url(project, "source_url") do
       "" -> default_source_url(project)
@@ -83,7 +88,7 @@ defmodule Ide.StoreListingUrls do
     end
   end
 
-  @spec stored_url(map(), String.t()) :: String.t()
+  @spec stored_url(listing_url_project(), String.t()) :: String.t()
   defp stored_url(project, key) when is_map(project) and is_binary(key) do
     project
     |> Map.get(:release_defaults, %{})

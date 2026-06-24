@@ -9,6 +9,11 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
   @type callee_key_set :: MapSet.t(callee_key())
   @type var_name_set :: MapSet.t(String.t())
 
+  @type fusion_tree_expr ::
+          Types.ir_expr()
+          | %{optional(atom()) => term()}
+          | [fusion_tree_expr()]
+
   @spec ok(String.t(), [callee_key()]) :: {:ok, String.t(), [callee_key()]}
   def ok(code, runtime_callees \\ []), do: {:ok, code, runtime_callees}
 
@@ -353,13 +358,13 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
     end
   end
 
-  @spec expr_var_names(map() | list() | any()) :: [String.t()]
+  @spec expr_var_names(fusion_tree_expr()) :: [String.t()]
   def expr_var_names(expr), do: expr_var_names(expr, MapSet.new()) |> MapSet.to_list()
 
-  @spec sub_one_dim_vars(map() | list() | any()) :: [String.t()]
+  @spec sub_one_dim_vars(fusion_tree_expr()) :: [String.t()]
   def sub_one_dim_vars(expr), do: sub_one_dim_vars(expr, []) |> Enum.uniq()
 
-  @spec sub_one_dim_vars(Types.ir_expr() | map() | list() | term(), [String.t()]) :: [String.t()]
+  @spec sub_one_dim_vars(fusion_tree_expr(), [String.t()]) :: [String.t()]
   defp sub_one_dim_vars(%{op: :sub_const, var: var, value: 1}, acc) when is_binary(var),
     do: [var | acc]
 
@@ -378,7 +383,8 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
 
   defp sub_one_dim_vars(_other, acc), do: acc
 
-  @spec grid_dim_constants(map(), map(), String.t()) :: {:ok, String.t(), String.t()} | :error
+  @spec grid_dim_constants(fusion_tree_expr(), map(), String.t()) ::
+          {:ok, String.t(), String.t()} | :error
   def grid_dim_constants(expr, decl_map, module_name) do
     int_dims =
       expr
@@ -391,7 +397,7 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
     end
   end
 
-  @spec expr_var_names(Types.ir_expr() | map() | list() | term(), var_name_set()) :: var_name_set()
+  @spec expr_var_names(fusion_tree_expr(), var_name_set()) :: var_name_set()
   defp expr_var_names(%{op: :var, name: name}, acc) when is_binary(name), do: MapSet.put(acc, name)
 
   defp expr_var_names(%{op: :call, name: name, args: []}, acc) when is_binary(name),
@@ -427,8 +433,7 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
     |> MapSet.to_list()
   end
 
-  @spec collect_call_keys(Types.ir_expr() | map() | list() | term(), String.t(), callee_key_set()) ::
-          callee_key_set()
+  @spec collect_call_keys(fusion_tree_expr(), String.t(), callee_key_set()) :: callee_key_set()
   defp collect_call_keys(%{op: :qualified_call, target: target, args: args}, module_name, acc) do
     acc = MapSet.put(acc, callee_key(module_name, target))
     Enum.reduce(args || [], acc, &collect_call_keys(&1, module_name, &2))

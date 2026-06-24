@@ -141,4 +141,7 @@ defmodule Elmc.Backend.Pebble.Types.FeatureFlags.Keys.Command do
 
   @spec device_services_keys() :: [Types.feature_flag_key()]
   def device_services_keys, do: @device_services_keys
+
+  @spec speaker_keys() :: [Types.feature_flag_key()]
+  def speaker_keys, do: @speaker_keys
 end

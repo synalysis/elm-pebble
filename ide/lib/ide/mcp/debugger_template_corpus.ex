@@ -15,7 +15,10 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   alias Ide.Debugger.TriggerCandidates
   alias Ide.Debugger.SurfaceCompileArtifacts
   alias Ide.Mcp.ToolSupport
+  alias Ide.Mcp.ToolTypes
   alias Ide.Mcp.Tools
+  alias Ide.Debugger.Types, as: DebuggerTypes
+  alias Ide.Mcp.DebuggerTemplateCorpus.Types, as: CorpusTypes
   alias Ide.ProjectTemplates
   alias Ide.ProjectTemplates.SourceValidation
   alias Ide.Projects
@@ -66,8 +69,9 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   Creates the project, starts the debugger, reloads template sources, and returns a snapshot map.
   """
   @spec run_template(String.t(), keyword()) ::
-          {:ok, %{slug: String.t(), project: Projects.Project.t(), snapshot: map()}}
-          | {:error, term()}
+          {:ok,
+           %{slug: String.t(), project: Projects.Project.t(), snapshot: CorpusTypes.normalized_snapshot()}}
+          | {:error, CorpusTypes.corpus_error()}
   def run_template(template_key, opts \\ []) when is_binary(template_key) do
     unless template_key in template_keys() do
       raise ArgumentError, "unknown template #{inspect(template_key)}"
@@ -93,7 +97,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   Used to exercise subscription steps after bootstrap without mutating corpus fixtures.
   """
   @spec bootstrap_template(String.t(), keyword()) ::
-          {:ok, %{slug: String.t(), project: Projects.Project.t()}} | {:error, term()}
+          {:ok, %{slug: String.t(), project: Projects.Project.t()}} | {:error, CorpusTypes.corpus_error()}
   def bootstrap_template(template_key, opts \\ []) when is_binary(template_key) do
     unless template_key in template_keys() do
       raise ArgumentError, "unknown template #{inspect(template_key)}"
@@ -125,7 +129,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   end
 
   @doc "Loads the checked-in fixture for a template, if present."
-  @spec load_fixture(String.t()) :: {:ok, map()} | {:error, :missing}
+  @spec load_fixture(String.t()) :: {:ok, CorpusTypes.normalized_snapshot()} | {:error, :missing}
   def load_fixture(template_key) when is_binary(template_key) do
     path = fixture_path(template_key)
 
@@ -137,7 +141,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   end
 
   @doc "Writes a normalized snapshot fixture for a template."
-  @spec write_fixture!(String.t(), map()) :: :ok
+  @spec write_fixture!(String.t(), CorpusTypes.normalized_snapshot()) :: :ok
   def write_fixture!(template_key, snapshot) when is_binary(template_key) and is_map(snapshot) do
     path = fixture_path(template_key)
     File.mkdir_p!(Path.dirname(path))
@@ -149,7 +153,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   end
 
   @doc "Compares a captured snapshot to an expected fixture map."
-  @spec compare_snapshots(map(), map()) :: :ok | {:error, String.t()}
+  @spec compare_snapshots(CorpusTypes.normalized_snapshot(), CorpusTypes.normalized_snapshot()) ::
+          :ok | {:error, String.t()}
   def compare_snapshots(actual, expected) when is_map(actual) and is_map(expected) do
     actual_norm = normalize_snapshot(actual)
     expected_norm = normalize_snapshot(expected)
@@ -163,7 +168,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   end
 
   @spec create_project(String.t(), String.t()) ::
-          {:ok, Projects.Project.t()} | {:error, term()}
+          {:ok, Projects.Project.t()} | {:error, CorpusTypes.corpus_error()}
   defp create_project(slug, template_key) do
     with {:ok, created} <-
            Tools.call(
@@ -183,7 +188,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     end
   end
 
-  @spec bootstrap(String.t(), Projects.Project.t(), String.t()) :: :ok | {:error, term()}
+  @spec bootstrap(String.t(), Projects.Project.t(), String.t()) :: :ok | {:error, CorpusTypes.corpus_error()}
   defp bootstrap(slug, project, template_key) do
     seed_corpus_random!()
 
@@ -204,7 +209,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     end
   end
 
-  @spec apply_simulator_settings(String.t(), String.t()) :: {:ok, map()} | {:error, term()}
+  @spec apply_simulator_settings(String.t(), String.t()) ::
+          {:ok, DebuggerTypes.wire_map()} | {:error, CorpusTypes.corpus_error()}
   defp apply_simulator_settings(slug, template_key) do
     settings =
       %{
@@ -222,7 +228,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     )
   end
 
-  @spec template_simulator_extras(String.t()) :: map()
+  @spec template_simulator_extras(String.t()) :: CorpusTypes.simulator_extras()
   defp template_simulator_extras("watchface-weather-animated"),
     do: %{"weather" => %{"temperatureC" => 18, "condition" => "fog"}}
 
@@ -233,7 +239,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
 
   defp after_bootstrap(_slug, _template_key), do: :ok
 
-  @spec fetch_render_tree(String.t(), pos_integer()) :: {:ok, map()} | {:error, term()}
+  @spec fetch_render_tree(String.t(), pos_integer()) ::
+          {:ok, ToolTypes.render_tree_result()} | {:error, CorpusTypes.corpus_error()}
   defp fetch_render_tree(slug, attempts \\ 8)
 
   defp fetch_render_tree(slug, attempts) when is_binary(slug) and attempts > 0 do
@@ -255,7 +262,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     end
   end
 
-  @spec reload_surfaces(String.t(), Projects.Project.t(), String.t()) :: :ok | {:error, term()}
+  @spec reload_surfaces(String.t(), Projects.Project.t(), String.t()) ::
+          :ok | {:error, CorpusTypes.corpus_error()}
   defp reload_surfaces(slug, project, template_key) do
     with :ok <- maybe_reload_phone(slug, project, template_key),
          {:ok, _} <- reload_watch(slug, project) do
@@ -263,7 +271,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     end
   end
 
-  @spec maybe_reload_phone(String.t(), Projects.Project.t(), String.t()) :: :ok | {:error, term()}
+  @spec maybe_reload_phone(String.t(), Projects.Project.t(), String.t()) ::
+          :ok | {:error, CorpusTypes.corpus_error()}
   defp maybe_reload_phone(slug, project, template_key) do
     if template_key in @phone_first_templates do
       with {:ok, source} <- Projects.read_source_file(project, "phone", "src/CompanionApp.elm"),
@@ -286,7 +295,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     end
   end
 
-  @spec reload_watch(String.t(), Projects.Project.t()) :: {:ok, map()} | {:error, term()}
+  @spec reload_watch(String.t(), Projects.Project.t()) ::
+          {:ok, DebuggerTypes.execution_model()} | {:error, CorpusTypes.corpus_error()}
   defp reload_watch(slug, project) do
     with {:ok, source} <- Projects.read_source_file(project, "watch", "src/Main.elm") do
       Tools.call(
@@ -304,7 +314,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   end
 
   @spec capture(String.t(), Projects.Project.t(), String.t()) ::
-          {:ok, map()} | {:error, String.t() | term()}
+          {:ok, CorpusTypes.normalized_snapshot()} | {:error, CorpusTypes.corpus_error()}
   defp capture(slug, project, template_key) do
     with :ok <- await_background_idle!(slug),
          {:ok, models} <-
@@ -356,7 +366,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     end
   end
 
-  @spec preview_ops_for_runtime(map(), Projects.Project.t()) :: [map()]
+  @spec preview_ops_for_runtime(DebuggerTypes.runtime_state(), Projects.Project.t()) ::
+          [CorpusTypes.svg_op_wire()]
   defp preview_ops_for_runtime(runtime, project) when is_map(runtime) do
     tree = Map.get(runtime, :view_tree) || Map.get(runtime, "view_tree")
 
@@ -368,7 +379,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     |> Enum.reject(&is_nil/1)
   end
 
-  @spec canonical_svg_op(map()) :: map() | nil
+  @spec canonical_svg_op(CorpusTypes.svg_op_wire()) :: CorpusTypes.svg_op_wire() | nil
   defp canonical_svg_op(op) when is_map(op) do
     kind = op |> Map.get(:kind) |> normalize_kind()
 
@@ -392,12 +403,12 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
 
   defp canonical_svg_op(_), do: nil
 
-  @spec normalize_kind(term()) :: String.t()
+  @spec normalize_kind(atom() | String.t() | term()) :: String.t()
   defp normalize_kind(kind) when is_atom(kind), do: Atom.to_string(kind)
   defp normalize_kind(kind) when is_binary(kind), do: kind
   defp normalize_kind(_), do: "unknown"
 
-  @spec render_tree_payload(map()) :: map()
+  @spec render_tree_payload(CorpusTypes.render_tree_payload()) :: CorpusTypes.render_tree_summary()
   defp render_tree_payload(render_tree) when is_map(render_tree) do
     tree = Map.get(render_tree, :tree) || Map.get(render_tree, "tree")
     nodes = Map.get(render_tree, :nodes) || Map.get(render_tree, "nodes") || []
@@ -415,7 +426,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     }
   end
 
-  @spec preview_diagnostics_payload(map()) :: map()
+  @spec preview_diagnostics_payload(CorpusTypes.preview_diagnostics()) ::
+          CorpusTypes.preview_diagnostics()
   defp preview_diagnostics_payload(diag) when is_map(diag) do
     %{
       "status" => Map.get(diag, :status) || Map.get(diag, "status"),
@@ -429,7 +441,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
 
   @bootstrap_timeline_types ~w(init update)
 
-  @spec timeline_init_messages(map()) :: [String.t()]
+  @spec timeline_init_messages(DebuggerTypes.execution_model()) :: [String.t()]
   defp timeline_init_messages(state) when is_map(state) do
     state
     |> Map.get(:debugger_timeline, [])
@@ -558,7 +570,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     Regex.replace(~r/^RandomGenerated \d+$/, message, "RandomGenerated <seed>")
   end
 
-  @spec normalize_snapshot(map()) :: map()
+  @spec normalize_snapshot(CorpusTypes.corpus_snapshot()) :: CorpusTypes.normalized_snapshot()
   def normalize_snapshot(snapshot) when is_map(snapshot) do
     snapshot
     |> normalize_model_field("watch_model")
@@ -585,12 +597,13 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
 
   defp normalize_timeline_entry(entry), do: entry
 
-  @spec normalize_model_field(map(), String.t()) :: map()
+  @spec normalize_model_field(CorpusTypes.corpus_snapshot(), String.t()) ::
+          CorpusTypes.corpus_snapshot()
   defp normalize_model_field(snapshot, key) do
     Map.update(snapshot, key, %{}, &normalize_model/1)
   end
 
-  @spec normalize_render_tree_field(map()) :: map()
+  @spec normalize_render_tree_field(CorpusTypes.corpus_snapshot()) :: CorpusTypes.corpus_snapshot()
   defp normalize_render_tree_field(snapshot) do
     Map.update(snapshot, "render_tree", %{}, fn tree ->
       tree
@@ -601,7 +614,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     end)
   end
 
-  @spec normalize_model(map()) :: map()
+  @spec normalize_model(CorpusTypes.app_model()) :: CorpusTypes.normalized_snapshot()
   defp normalize_model(model) when is_map(model) do
     model
     |> drop_volatile_model_keys()
@@ -612,7 +625,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
 
   defp normalize_model(other), do: other
 
-  @spec drop_volatile_model_keys(map()) :: map()
+  @spec drop_volatile_model_keys(CorpusTypes.app_model()) :: CorpusTypes.app_model()
   defp drop_volatile_model_keys(model) do
     model
     |> Map.drop([
@@ -657,7 +670,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     |> Map.new()
   end
 
-  @spec normalize_time_fields(map()) :: map()
+  @spec normalize_time_fields(CorpusTypes.app_model()) :: CorpusTypes.app_model()
   defp normalize_time_fields(model) do
     model
     |> Map.update("timeString", nil, &normalize_time_string/1)
@@ -666,14 +679,14 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     end)
   end
 
-  @spec normalize_time_string(term()) :: term()
+  @spec normalize_time_string(String.t() | term()) :: String.t() | term()
   defp normalize_time_string(value) when is_binary(value) do
     if Regex.match?(~r/^\d{2}:\d{2}$/, value), do: "<TIME>", else: value
   end
 
   defp normalize_time_string(value), do: value
 
-  @spec normalize_view_output_row(map()) :: map()
+  @spec normalize_view_output_row(CorpusTypes.view_tree()) :: CorpusTypes.view_tree()
   defp normalize_view_output_row(row) when is_map(row) do
     row
     |> Map.new(fn {k, v} -> {to_string(k), v} end)
@@ -683,7 +696,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
 
   defp normalize_view_output_row(row), do: row
 
-  @spec normalize_render_tree(term()) :: term()
+  @spec normalize_render_tree(CorpusTypes.normalized_json() | term()) ::
+          CorpusTypes.normalized_json()
   defp normalize_render_tree(tree) when is_map(tree) do
     tree
     |> Map.drop(["source"])
@@ -699,7 +713,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
 
   defp normalize_render_tree(other), do: normalize_value(other)
 
-  @spec render_tree_sort_key(term()) :: term()
+  @spec render_tree_sort_key(CorpusTypes.normalized_json() | term()) ::
+          CorpusTypes.render_tree_sort_key()
   defp render_tree_sort_key(node) when is_map(node) do
     {Map.get(node, "type"), Map.get(node, "kind"), Map.get(node, "text"), Map.get(node, "label")}
   end
@@ -717,7 +732,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     runtime_model_sha256
   )
 
-  @spec normalize_value(term()) :: term()
+  @spec normalize_value(CorpusTypes.normalized_json() | term()) :: CorpusTypes.normalized_json()
   defp normalize_value(map) when is_map(map) do
     map
     |> Map.drop(@snapshot_hash_keys)
@@ -756,7 +771,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   end
 
   @doc false
-  @spec assert_surfaces_versioned_runtime_artifacts!(map(), String.t()) :: :ok
+  @spec assert_surfaces_versioned_runtime_artifacts!(DebuggerTypes.execution_model(), String.t()) ::
+          :ok
   def assert_surfaces_versioned_runtime_artifacts!(state, template_key)
       when is_map(state) and is_binary(template_key) do
     unless SurfaceCompileArtifacts.surface_has_versioned_runtime_artifacts?(state, :watch) do
@@ -773,7 +789,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   end
 
   @doc false
-  @spec assert_companion_runtime_model!(map(), String.t()) :: :ok
+  @spec assert_companion_runtime_model!(DebuggerTypes.app_model(), String.t()) :: :ok
   def assert_companion_runtime_model!(state, template_key)
       when is_map(state) and is_binary(template_key) do
     if template_key in @phone_first_templates do
@@ -802,7 +818,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   end
 
   @doc false
-  @spec assert_watch_executor_ready!(map(), String.t()) :: :ok
+  @spec assert_watch_executor_ready!(DebuggerTypes.app_model(), String.t()) :: :ok
   def assert_watch_executor_ready!(state, template_key)
       when is_map(state) and is_binary(template_key) do
     operation_source =
@@ -817,7 +833,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   end
 
   @doc false
-  @spec assert_companion_executor_ready!(map(), String.t()) :: :ok
+  @spec assert_companion_executor_ready!(DebuggerTypes.app_model(), String.t()) :: :ok
   def assert_companion_executor_ready!(state, template_key)
       when is_map(state) and is_binary(template_key) do
     if template_key in @phone_first_templates do
@@ -865,7 +881,9 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     )
   end
 
-  @spec steppable_watch_triggers([map()]) :: [map()]
+  @spec steppable_watch_triggers([DebuggerTypes.trigger_candidate()]) :: [
+          DebuggerTypes.trigger_candidate()
+        ]
   defp steppable_watch_triggers(triggers) when is_list(triggers) do
     triggers
     |> Enum.filter(fn row ->
@@ -878,7 +896,9 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     |> Enum.sort_by(&watch_trigger_step_priority/1)
   end
 
-  @spec steppable_companion_triggers([map()]) :: [map()]
+  @spec steppable_companion_triggers([DebuggerTypes.trigger_candidate()]) :: [
+          DebuggerTypes.trigger_candidate()
+        ]
   defp steppable_companion_triggers(triggers) when is_list(triggers) do
     Enum.filter(triggers, fn row ->
       trigger = trigger_row_string(row, :trigger)
@@ -889,7 +909,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     end)
   end
 
-  @spec watch_trigger_step_priority(map()) :: integer()
+  @spec watch_trigger_step_priority(DebuggerTypes.trigger_candidate()) :: integer()
   defp watch_trigger_step_priority(row) do
     trigger = trigger_row_string(row, :trigger)
     message = trigger_row_string(row, :message)
@@ -901,7 +921,9 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     end
   end
 
-  @spec exercise_subscription_triggers!(String.t(), String.t(), String.t(), [map()]) :: :ok
+  @spec exercise_subscription_triggers!(String.t(), String.t(), String.t(), [
+          DebuggerTypes.trigger_candidate()
+        ]) :: :ok
   defp exercise_subscription_triggers!(_slug, _template_key, _target, []), do: :ok
 
   defp exercise_subscription_triggers!(slug, template_key, target, rows) do
@@ -926,7 +948,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     end
   end
 
-  @spec try_subscription_trigger_step(String.t(), String.t(), map()) :: :ok | {:skip, String.t()}
+  @spec try_subscription_trigger_step(String.t(), String.t(), DebuggerTypes.trigger_candidate()) ::
+          :ok | {:skip, String.t()}
   defp try_subscription_trigger_step(slug, target, row) do
     trigger = trigger_row_string(row, :trigger)
     message = trigger_row_string(row, :message)
@@ -957,7 +980,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     end
   end
 
-  @spec step_operation_source(map(), String.t()) :: String.t() | nil
+  @spec step_operation_source(DebuggerTypes.execution_model(), String.t()) :: String.t() | nil
   defp step_operation_source(stepped, target) do
     surface_key = if target == "phone", do: :companion, else: :watch
 
@@ -965,12 +988,12 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
       get_in(stepped, [surface_key, :model, :runtime_execution, :operation_source])
   end
 
-  @spec trigger_row_string(map(), atom()) :: String.t()
+  @spec trigger_row_string(DebuggerTypes.trigger_candidate(), atom()) :: String.t()
   defp trigger_row_string(row, key) when is_map(row) and is_atom(key) do
     row |> TriggerCandidates.row_field(key) |> to_string()
   end
 
-  @spec trigger_row_active?(map()) :: boolean()
+  @spec trigger_row_active?(DebuggerTypes.trigger_candidate()) :: boolean()
   defp trigger_row_active?(row) when is_map(row) do
     case TriggerCandidates.row_field(row, :model_active) do
       false -> false
@@ -991,7 +1014,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   end
 
   @doc "Contract checks that every template should satisfy after bootstrap."
-  @spec assert_contract!(map(), String.t()) :: :ok
+  @spec assert_contract!(DebuggerTypes.wire_map(), String.t()) :: :ok
   def assert_contract!(snapshot, template_key)
       when is_map(snapshot) and is_binary(template_key) do
     view_tree_type = Map.get(snapshot, "view_tree_type")
@@ -1036,7 +1059,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     end
   end
 
-  @spec snapshot_diff(map(), map()) :: String.t()
+  @spec snapshot_diff(CorpusTypes.normalized_snapshot(), CorpusTypes.normalized_snapshot()) ::
+          String.t()
   defp snapshot_diff(actual, expected) do
     keys = (Map.keys(actual) ++ Map.keys(expected)) |> Enum.uniq() |> Enum.sort()
 
@@ -1058,7 +1082,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
 
   @corpus_drain_timeout_ms 120_000
 
-  @spec await_background_idle!(String.t()) :: :ok | {:error, term()}
+  @spec await_background_idle!(String.t()) :: :ok | {:error, CorpusTypes.background_drain_error()}
   defp await_background_idle!(slug) when is_binary(slug) do
     case RuntimeBackgroundDrains.await_idle(slug, @corpus_drain_timeout_ms) do
       :ok -> :ok

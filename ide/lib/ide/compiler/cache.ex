@@ -5,13 +5,15 @@ defmodule Ide.Compiler.Cache do
 
   use Agent
 
+  alias Ide.Compiler
+
   @history_limit 200
 
   @type entry :: %{
           slug: String.t(),
           revision: String.t(),
           at: String.t(),
-          result: map()
+          result: Compiler.compile_result()
         }
 
   @spec start_link(keyword()) :: GenServer.on_start()
@@ -19,7 +21,7 @@ defmodule Ide.Compiler.Cache do
     Agent.start_link(fn -> %{by_key: %{}, latest_by_slug: %{}, history: []} end, name: __MODULE__)
   end
 
-  @spec put(String.t(), String.t(), map()) :: :ok
+  @spec put(String.t(), String.t(), Compiler.compile_result()) :: :ok
   def put(slug, revision, result)
       when is_binary(slug) and is_binary(revision) and is_map(result) do
     entry = %{

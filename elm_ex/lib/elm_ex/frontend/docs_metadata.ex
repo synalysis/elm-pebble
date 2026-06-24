@@ -8,6 +8,7 @@ defmodule ElmEx.Frontend.DocsMetadata do
   """
 
   alias ElmEx.Frontend.GeneratedParser
+  alias ElmEx.Frontend.DocsMetadata.Types, as: DocsTypes
   alias ElmEx.Types
 
   @type declaration :: %{
@@ -29,7 +30,7 @@ defmodule ElmEx.Frontend.DocsMetadata do
           required(:declarations) => %{optional(String.t()) => declaration()}
         }
 
-  @spec parse_file(String.t()) :: {:ok, t()} | {:error, map()}
+  @spec parse_file(String.t()) :: {:ok, t()} | {:error, DocsTypes.parse_error()}
   def parse_file(path) when is_binary(path) do
     with {:ok, source} <- File.read(path),
          :ok <- tokenize_source(source),
@@ -150,7 +151,7 @@ defmodule ElmEx.Frontend.DocsMetadata do
     Enum.reverse([current |> Enum.reverse() |> to_string() | parts])
   end
 
-  @spec tokenize_source(String.t()) :: :ok | {:error, map()}
+  @spec tokenize_source(String.t()) :: :ok | {:error, DocsTypes.tokenize_error()}
   defp tokenize_source(source) do
     case :elm_ex_elm_lexer.string(String.to_charlist(source)) do
       {:ok, _tokens, _line} ->
@@ -161,7 +162,7 @@ defmodule ElmEx.Frontend.DocsMetadata do
     end
   end
 
-  @spec parse_lines([String.t()], map()) :: map()
+  @spec parse_lines([String.t()], DocsTypes.parse_state()) :: DocsTypes.parse_state()
   defp parse_lines(lines, state) do
     if state.i >= length(lines) do
       state
@@ -215,13 +216,13 @@ defmodule ElmEx.Frontend.DocsMetadata do
     end
   end
 
-  @spec maybe_assign_module_doc?(String.t(), map()) :: boolean()
+  @spec maybe_assign_module_doc?(String.t(), DocsTypes.parse_state()) :: boolean()
   defp maybe_assign_module_doc?(trimmed, state) do
     not state.seen_declaration and is_binary(state.pending_doc) and is_nil(state.module_comment) and
       (String.starts_with?(trimmed, "import ") or declaration_line?(trimmed))
   end
 
-  @spec maybe_promote_pending_to_module_doc(map()) :: map()
+  @spec maybe_promote_pending_to_module_doc(DocsTypes.parse_state()) :: DocsTypes.parse_state()
   defp maybe_promote_pending_to_module_doc(state) do
     if is_nil(state.module_comment) and is_binary(state.pending_doc) and
          String.contains?(state.pending_doc, "@docs") do
@@ -332,7 +333,7 @@ defmodule ElmEx.Frontend.DocsMetadata do
   defp union_type_line?(trimmed),
     do: String.starts_with?(trimmed, "type ") and not type_alias_line?(trimmed)
 
-  @spec add_value(map(), [String.t()]) :: map()
+  @spec add_value(DocsTypes.parse_state(), [String.t()]) :: DocsTypes.parse_state()
   defp add_value(state, lines) do
     line = Enum.at(lines, state.i) || ""
     trimmed = String.trim(line)
@@ -375,7 +376,7 @@ defmodule ElmEx.Frontend.DocsMetadata do
     end
   end
 
-  @spec add_type_alias(map(), [String.t()]) :: map()
+  @spec add_type_alias(DocsTypes.parse_state(), [String.t()]) :: DocsTypes.parse_state()
   defp add_type_alias(state, lines) do
     line = Enum.at(lines, state.i) || ""
     trimmed = String.trim(line)
@@ -433,7 +434,7 @@ defmodule ElmEx.Frontend.DocsMetadata do
     end
   end
 
-  @spec add_union(map(), [String.t()]) :: map()
+  @spec add_union(DocsTypes.parse_state(), [String.t()]) :: DocsTypes.parse_state()
   defp add_union(state, lines) do
     line = Enum.at(lines, state.i) || ""
     trimmed = String.trim(line)
@@ -526,7 +527,7 @@ defmodule ElmEx.Frontend.DocsMetadata do
     |> Enum.reject(&(&1 == ""))
   end
 
-  @spec pop_pending_doc(map()) :: {String.t(), map()}
+  @spec pop_pending_doc(DocsTypes.parse_state()) :: {String.t(), DocsTypes.parse_state()}
   defp pop_pending_doc(state) do
     case state.pending_doc do
       doc when is_binary(doc) -> {doc, %{state | pending_doc: nil}}
@@ -534,7 +535,7 @@ defmodule ElmEx.Frontend.DocsMetadata do
     end
   end
 
-  @spec put_declaration(map(), String.t(), declaration()) :: map()
+  @spec put_declaration(DocsTypes.parse_state(), String.t(), declaration()) :: DocsTypes.parse_state()
   defp put_declaration(state, name, declaration) do
     %{state | declarations: Map.put(state.declarations, name, declaration)}
   end

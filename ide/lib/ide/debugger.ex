@@ -92,7 +92,7 @@ defmodule Ide.Debugger do
   @spec step(String.t(), Types.step_attrs()) :: {:ok, runtime_state()}
   defdelegate step(project_slug, attrs \\ %{}), to: RuntimeApi
 
-  @spec ingest_emulator_rc_fail(String.t(), map()) :: {:ok, runtime_state()}
+  @spec ingest_emulator_rc_fail(String.t(), Types.emulator_rc_fail_attrs()) :: {:ok, runtime_state()}
   defdelegate ingest_emulator_rc_fail(project_slug, attrs), to: RuntimeApi
 
   # Companion configuration
@@ -125,7 +125,7 @@ defmodule Ide.Debugger do
   defdelegate snapshot(project_slug, opts \\ []), to: TraceApi
 
   # Triggers and subscriptions
-  @spec trigger_candidates(runtime_state() | map(), :watch | :companion | :phone | nil) ::
+  @spec trigger_candidates(runtime_state(), :watch | :companion | :phone | nil) ::
           [Types.trigger_candidate()]
   defdelegate trigger_candidates(state, target \\ :watch), to: TriggersApi
 
@@ -146,7 +146,7 @@ defmodule Ide.Debugger do
   @spec subscription_trigger_display(Types.cmd_call() | nil, String.t() | nil) :: String.t()
   defdelegate subscription_trigger_display(op, trigger), to: TriggersApi
 
-  @spec subscription_trigger_display_for(runtime_state() | map(), String.t(), String.t()) ::
+  @spec subscription_trigger_display_for(runtime_state(), String.t(), String.t()) ::
           String.t()
   defdelegate subscription_trigger_display_for(state, trigger, target_name), to: TriggersApi
 

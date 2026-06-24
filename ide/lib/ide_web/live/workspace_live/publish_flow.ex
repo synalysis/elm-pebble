@@ -2,9 +2,11 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
   @moduledoc false
 
   alias Ide.PebbleToolchain
-  alias Ide.Projects
-  alias Ide.PublishManifest
   alias Ide.PublishReadiness
+  alias Ide.Projects
+  alias Ide.Projects.Project
+  alias Ide.Projects.Types, as: ProjectsTypes
+  alias Ide.PublishManifest
   alias Ide.Screenshots
   alias Ide.StoreAssets
   alias IdeWeb.WorkspaceLive.ToolchainPresenter
@@ -12,13 +14,45 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
   @type wire_input :: String.t() | integer() | boolean() | nil
   @type project_type :: :watchface | :watchapp
   @type prepare_release_error :: PebbleToolchain.toolchain_error() | atom() | tuple()
+  @type release_summary :: ProjectsTypes.release_defaults()
+  @type publish_check :: PublishReadiness.readiness_check()
+  @type screenshot_readiness :: PublishReadiness.screenshot_readiness()
+
+  @type publish_summary :: %{
+          required(:status) => :idle | :ready | :blocked,
+          required(:blockers) => non_neg_integer(),
+          required(:warnings) => non_neg_integer(),
+          required(:passed) => non_neg_integer()
+        }
+
+  @type publish_warning :: %{
+          required(:id) => String.t(),
+          required(:label) => String.t(),
+          required(:message) => String.t()
+        }
+
+  @type publish_type_guidance :: %{
+          required(:headline) => String.t(),
+          required(:items) => [String.t()]
+        }
+
+  @type publish_metrics :: %{
+          optional(:total_runs) => non_neg_integer(),
+          optional(:successful_runs) => non_neg_integer(),
+          optional(:last_duration_ms) => non_neg_integer(),
+          optional(:last_finished_at) => String.t(),
+          optional(:in_ide_completion_rate) => String.t()
+        }
+
+  @type release_project :: Project.t() | ProjectsTypes.release_defaults_carrier() | nil
+  @type screenshot_group :: {String.t(), [Screenshots.screenshot()]}
 
   @type prepare_release_result :: %{
-          project: map(),
-          release_summary: map(),
+          project: Project.t(),
+          release_summary: release_summary(),
           validation_status: :ok | :error,
-          checks: [map()],
-          readiness: map(),
+          checks: [publish_check()],
+          readiness: [screenshot_readiness()],
           artifact_path: String.t(),
           app_root: String.t(),
           manifest_status: :ok | :error,
@@ -35,10 +69,10 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
 
   @generate_store_graphics_key "generate_store_graphics"
 
-  @spec default_release_summary() :: map()
+  @spec default_release_summary() :: release_summary()
   def default_release_summary(), do: default_release_summary(nil)
 
-  @spec default_release_summary(map() | nil) :: map()
+  @spec default_release_summary(release_project()) :: release_summary()
   def default_release_summary(project) do
     defaults = release_defaults(project)
 
@@ -50,7 +84,7 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
     }
   end
 
-  @spec merge_release_summary(map(), map()) :: map()
+  @spec merge_release_summary(release_summary(), release_summary()) :: release_summary()
   def merge_release_summary(existing, updates) do
     existing
     |> Map.merge(updates)
@@ -77,7 +111,7 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
     end
   end
 
-  @spec run_prepare_release(map(), String.t(), map()) ::
+  @spec run_prepare_release(release_project(), String.t(), release_summary()) ::
           {:ok, prepare_release_result()} | {:error, prepare_release_error()}
   def run_prepare_release(project, workspace_root, release_summary) do
     started_at_ms = System.monotonic_time(:millisecond)
@@ -186,14 +220,14 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
   @doc """
   Drops screenshots that fail platform dimension checks; keeps every valid shot per target.
   """
-  @spec publish_ready_screenshot_groups([{String.t(), [map()]}]) :: [{String.t(), [map()]}]
+  @spec publish_ready_screenshot_groups([screenshot_group()]) :: [screenshot_group()]
   def publish_ready_screenshot_groups(screenshot_groups) when is_list(screenshot_groups) do
     Enum.map(screenshot_groups, fn {target, shots} ->
       {target, Enum.filter(shots, &valid_screenshot_dimensions?(target, &1))}
     end)
   end
 
-  @spec stage_publish_screenshots(String.t(), [{String.t(), [map()]}]) ::
+  @spec stage_publish_screenshots(String.t(), [screenshot_group()]) ::
           {:ok, [String.t()]} | {:error, prepare_release_error()}
   def stage_publish_screenshots(app_root, screenshot_groups)
       when is_binary(app_root) and is_list(screenshot_groups) do
@@ -213,7 +247,7 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
 
   def stage_publish_screenshots(_app_root, _screenshot_groups), do: {:ok, []}
 
-  @spec target_platforms(map() | nil) :: [String.t()]
+  @spec target_platforms(release_project()) :: [String.t()]
   def target_platforms(nil), do: ToolchainPresenter.emulator_targets()
 
   def target_platforms(project) do
@@ -339,7 +373,7 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
     |> String.trim()
   end
 
-  @spec store_release_notes(map()) :: String.t()
+  @spec store_release_notes(release_summary()) :: String.t()
   def store_release_notes(release_summary) when is_map(release_summary) do
     release_summary
     |> Map.get("changelog", "")
@@ -349,8 +383,13 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
 
   def store_release_notes(_), do: ""
 
-  @spec release_notes_markdown([map()], [map()], String.t() | nil, String.t(), map()) ::
-          String.t()
+  @spec release_notes_markdown(
+          [publish_check()],
+          [screenshot_readiness()],
+          String.t() | nil,
+          String.t(),
+          release_summary()
+        ) :: String.t()
   def release_notes_markdown(checks, readiness, artifact_path, project_slug, release_summary) do
     check_lines =
       Enum.map(checks, fn check ->
@@ -385,7 +424,8 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
     |> String.trim()
   end
 
-  @spec publish_summary([map()], [map()], [map()]) :: map()
+  @spec publish_summary([publish_check()], [publish_warning()], [screenshot_readiness()]) ::
+          publish_summary()
   def publish_summary([], warnings, _readiness) do
     %{status: :idle, blockers: 0, warnings: length(warnings), passed: 0}
   end
@@ -404,7 +444,8 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
     }
   end
 
-  @spec publish_warnings(map() | nil, [map()], map()) :: [map()]
+  @spec publish_warnings(release_project(), [screenshot_readiness()], release_summary()) ::
+          [publish_warning()]
   def publish_warnings(project, readiness, release_summary) do
     type = project_type(project)
     low_coverage_threshold = if(type == :watchface, do: 2, else: 1)
@@ -437,7 +478,8 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
     readiness_warnings ++ changelog_warning
   end
 
-  @spec publish_type_guidance(map() | nil, [map()] | nil) :: map()
+  @spec publish_type_guidance(release_project(), [screenshot_readiness()] | nil) ::
+          publish_type_guidance()
   def publish_type_guidance(nil, _readiness) do
     %{
       headline: "Publish checklist adapts after release validation runs.",
@@ -473,7 +515,7 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
     end
   end
 
-  @spec update_publish_metrics(map(), map()) :: map()
+  @spec update_publish_metrics(publish_metrics(), prepare_release_result()) :: publish_metrics()
   def update_publish_metrics(metrics, result) do
     total_runs = (metrics[:total_runs] || 0) + 1
 
@@ -491,7 +533,8 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
     }
   end
 
-  @spec publish_project_attrs_from_submit(map(), map()) :: map()
+  @spec publish_project_attrs_from_submit(release_project(), release_summary()) ::
+          ProjectsTypes.project_attrs()
   def publish_project_attrs_from_submit(project, release_summary) do
     now = DateTime.utc_now()
     latest_version = blank_to_nil(release_summary["version_label"])
@@ -512,7 +555,8 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
     }
   end
 
-  @spec publish_readiness(map() | nil, [map()]) :: [map()]
+  @spec publish_readiness(release_project(), [Screenshots.screenshot()]) ::
+          [screenshot_readiness()]
   def publish_readiness(project, shots) do
     ToolchainPresenter.publish_readiness(shots, target_platforms(project))
   end
@@ -534,7 +578,7 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
     |> Enum.sort_by(fn {emulator_target, _} -> emulator_target end)
   end
 
-  @spec project_type(map()) :: project_type()
+  @spec project_type(release_project()) :: project_type()
   defp project_type(%{target_type: "watchface"}), do: :watchface
   defp project_type(%{target_type: "watchapp"}), do: :watchapp
   defp project_type(_), do: :watchapp
@@ -546,7 +590,7 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
   @doc """
   Whether the next App Store **create** should send `iconPrompt` for AI-generated icons.
   """
-  @spec generate_store_graphics?(map(), map()) :: boolean()
+  @spec generate_store_graphics?(release_project(), publish_submit_option_map()) :: boolean()
   def generate_store_graphics?(project, submit_options \\ %{}) do
     case Map.get(submit_options, @generate_store_graphics_key) do
       nil ->
@@ -563,13 +607,14 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
   @doc """
   True for new watchapps with no uploaded store icons (AI generation can be offered).
   """
-  @spec offers_ai_store_graphics?(map(), String.t() | map()) :: boolean()
+  @spec offers_ai_store_graphics?(release_project(), String.t() | StoreAssets.status_map()) ::
+          boolean()
   def offers_ai_store_graphics?(project, store_assets_or_workspace) do
     new_store_listing?(project) and project.target_type == "app" and
       StoreAssets.ai_graphics_available?(store_assets_or_workspace)
   end
 
-  @spec new_store_listing?(map()) :: boolean()
+  @spec new_store_listing?(release_project()) :: boolean()
   def new_store_listing?(project) do
     case Map.get(project, :store_app_id) do
       id when is_binary(id) -> String.trim(id) == ""
@@ -579,7 +624,7 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
 
   @type publish_submit_option_map :: %{String.t() => boolean()}
 
-  @spec publish_submit_options(map()) :: publish_submit_option_map()
+  @spec publish_submit_options(release_project()) :: publish_submit_option_map()
   def publish_submit_options(project) when is_map(project) do
     %{
       "is_published" => default_is_published(project),
@@ -588,7 +633,7 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
     }
   end
 
-  @spec default_is_published(map()) :: boolean()
+  @spec default_is_published(release_project()) :: boolean()
   def default_is_published(project) when is_map(project) do
     project
     |> release_defaults()
@@ -599,7 +644,7 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
   @spec default_all_platforms() :: boolean()
   def default_all_platforms, do: :erlang.xor(false, false)
 
-  @spec release_defaults(map() | nil) :: map()
+  @spec release_defaults(release_project()) :: release_summary()
   defp release_defaults(%{release_defaults: defaults}) when is_map(defaults), do: defaults
   defp release_defaults(_), do: %{}
 
@@ -617,7 +662,7 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
 
   defp blank_to_nil(_), do: nil
 
-  @spec bump_release_summary(map()) :: map()
+  @spec bump_release_summary(release_summary()) :: release_summary()
   def bump_release_summary(summary) when is_map(summary) do
     version_label = Map.get(summary, "version_label", "")
 

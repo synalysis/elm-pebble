@@ -16,6 +16,7 @@ defmodule Elmc.Backend.Pebble.Types.FeatureFlags do
   @type command_vibes_flags :: Command.vibes_flags()
   @type command_health_flags :: Command.health_flags()
   @type command_device_services_flags :: Command.device_services_flags()
+  @type command_speaker_flags :: Command.speaker_flags()
   @type command_services_flags :: Command.services_flags()
   @type command_feature_flags :: Command.feature_flags()
 
@@ -48,6 +49,7 @@ defmodule Elmc.Backend.Pebble.Types.FeatureFlags do
   defdelegate command_vibes_keys, to: Keys
   defdelegate command_health_keys, to: Keys
   defdelegate command_device_services_keys, to: Keys
+  defdelegate command_speaker_keys, to: Keys
   defdelegate draw_primitive_keys, to: Keys
   defdelegate draw_context_keys, to: Keys
   defdelegate draw_text_keys, to: Keys

@@ -7,10 +7,12 @@ defmodule Ide.Mcp.Handlers.Compiler do
   alias Ide.Compiler.ManifestCache
   alias Ide.Mcp.Audit
   alias Ide.Mcp.CheckCache
+  alias Ide.Mcp.Types, as: McpTypes
   alias Ide.Mcp.ToolSupport
   alias Ide.Mcp.ToolTypes
   alias Ide.Debugger
   alias Ide.Projects
+  alias Ide.Projects.Project
   alias Ide.AppStore.Publisher, as: AppStorePublisher
   alias Ide.PublishManifest
   alias Ide.PublishReadiness
@@ -29,7 +31,7 @@ defmodule Ide.Mcp.Handlers.Compiler do
          session_key = Projects.scope_key(project),
          {:ok, result} <-
            compiler.check(session_key, workspace_root: Projects.project_workspace_path(project)) do
-      diagnostics = Diagnostics.normalize_list(result.diagnostics || [])
+      diagnostics = Diagnostics.normalize_list(result.diagnostics)
       counts = Diagnostics.summary(diagnostics)
       :ok = CheckCache.put(session_key, result)
 
@@ -52,7 +54,7 @@ defmodule Ide.Mcp.Handlers.Compiler do
                  workspace_root: Projects.project_workspace_path(project),
                  source_root: source_root
                ) do
-          diagnostics = Diagnostics.normalize_list(result.diagnostics || [])
+          diagnostics = Diagnostics.normalize_list(result.diagnostics)
           counts = Diagnostics.summary(diagnostics)
 
           {:ok,
@@ -79,7 +81,7 @@ defmodule Ide.Mcp.Handlers.Compiler do
              source_roots: project.source_roots
            ),
          :ok <- ingest_compile_result(slug, project, result) do
-      diagnostics = Diagnostics.normalize_list(result.diagnostics || [])
+      diagnostics = Diagnostics.normalize_list(result.diagnostics)
       counts = Diagnostics.summary(diagnostics)
 
       {:ok, compiler_compile_payload(slug, result, diagnostics, counts)}
@@ -99,7 +101,7 @@ defmodule Ide.Mcp.Handlers.Compiler do
              workspace_root: Projects.project_workspace_path(project),
              strict: strict?
            ) do
-      diagnostics = Diagnostics.normalize_list(result.diagnostics || [])
+      diagnostics = Diagnostics.normalize_list(result.diagnostics)
       counts = Diagnostics.summary(diagnostics)
 
       {:ok, compiler_manifest_payload(slug, result, diagnostics, counts)}
@@ -305,14 +307,18 @@ defmodule Ide.Mcp.Handlers.Compiler do
     }
   end
 
-  @spec audit_recent_payload([map()], pos_integer(), DateTime.t() | nil) ::
+  @spec audit_recent_payload([McpTypes.audit_entry()], pos_integer(), DateTime.t() | nil) ::
           ToolTypes.audit_recent_result()
   defp audit_recent_payload(entries, limit, since) do
     %{entries: entries, limit: limit, since: ToolSupport.format_since(since)}
   end
 
-  @spec compiler_check_payload(String.t(), Ide.Compiler.check_result(), [map()], map()) ::
-          ToolTypes.compiler_check_result()
+  @spec compiler_check_payload(
+          String.t(),
+          Ide.Compiler.check_result(),
+          [Ide.Compiler.diagnostic()],
+          Diagnostics.summary()
+        ) :: ToolTypes.compiler_check_result()
   defp compiler_check_payload(slug, result, diagnostics, counts) do
     %{
       slug: slug,
@@ -329,8 +335,8 @@ defmodule Ide.Mcp.Handlers.Compiler do
           String.t(),
           String.t(),
           Ide.Compiler.check_result(),
-          [map()],
-          map()
+          [Ide.Compiler.diagnostic()],
+          Diagnostics.summary()
         ) :: ToolTypes.compiler_check_result()
   defp compiler_check_source_root_payload(slug, source_root, result, diagnostics, counts) do
     %{
@@ -348,8 +354,8 @@ defmodule Ide.Mcp.Handlers.Compiler do
   @spec compiler_compile_payload(
           String.t(),
           Ide.Compiler.compile_result(),
-          [map()],
-          map()
+          [Diagnostics.diagnostic_map()],
+          Diagnostics.summary()
         ) :: ToolTypes.compiler_compile_result()
   defp compiler_compile_payload(slug, result, diagnostics, counts) do
     %{
@@ -370,8 +376,12 @@ defmodule Ide.Mcp.Handlers.Compiler do
   defp normalize_compiler_status("ok"), do: :ok
   defp normalize_compiler_status(_), do: :error
 
-  @spec compiler_manifest_payload(String.t(), map(), [map()], map()) ::
-          ToolTypes.compiler_manifest_result()
+  @spec compiler_manifest_payload(
+          String.t(),
+          Ide.Compiler.manifest_result(),
+          [Ide.Compiler.diagnostic()],
+          Diagnostics.summary()
+        ) :: ToolTypes.compiler_manifest_result()
   defp compiler_manifest_payload(slug, result, diagnostics, counts) when is_map(result) do
     %{
       slug: slug,
@@ -403,27 +413,30 @@ defmodule Ide.Mcp.Handlers.Compiler do
     end
   end
 
-  @spec publish_prepare_payload(String.t(), map()) :: ToolTypes.publish_prepare_result()
+  @spec publish_prepare_payload(String.t(), ToolTypes.publish_tool_fields()) ::
+          ToolTypes.publish_prepare_result()
   defp publish_prepare_payload(slug, fields) when is_map(fields) do
     %{slug: slug, status: Map.fetch!(fields, :status)}
     |> Map.merge(Map.drop(fields, [:status]))
   end
 
-  @spec publish_submit_payload(String.t(), map()) :: ToolTypes.publish_submit_result()
+  @spec publish_submit_payload(String.t(), ToolTypes.publish_tool_fields()) ::
+          ToolTypes.publish_submit_result()
   defp publish_submit_payload(slug, fields) when is_map(fields) do
     %{slug: slug, status: Map.fetch!(fields, :status)}
     |> Map.merge(Map.drop(fields, [:status]))
   end
 
-  @spec publish_validate_payload(String.t(), map()) :: ToolTypes.publish_validate_result()
+  @spec publish_validate_payload(String.t(), ToolTypes.publish_tool_fields()) ::
+          ToolTypes.publish_validate_result()
   defp publish_validate_payload(slug, fields) when is_map(fields) do
     %{slug: slug, status: Map.fetch!(fields, :status)}
     |> Map.merge(Map.drop(fields, [:status]))
   end
 
-  @spec ingest_compile_result(String.t(), map(), map()) :: :ok
-  defp ingest_compile_result(slug, project, result)
-       when is_binary(slug) and is_map(result) do
+  @spec ingest_compile_result(String.t(), Project.t(), Ide.Compiler.compile_result()) :: :ok
+  defp ingest_compile_result(slug, %Project{} = project, %{} = result)
+       when is_binary(slug) do
     attrs =
       result
       |> Map.put_new(:source_root, compile_result_source_root(project, result))
@@ -434,8 +447,8 @@ defmodule Ide.Mcp.Handlers.Compiler do
 
   defp ingest_compile_result(_slug, _project, _result), do: :ok
 
-  @spec compile_result_source_root(map(), map()) :: String.t()
-  defp compile_result_source_root(project, result) when is_map(result) do
+  @spec compile_result_source_root(Project.t(), Ide.Compiler.compile_result()) :: String.t()
+  defp compile_result_source_root(%Project{} = project, result) when is_map(result) do
     workspace = Projects.project_workspace_path(project)
     compiled_path = Map.get(result, :compiled_path) || Map.get(result, "compiled_path")
 

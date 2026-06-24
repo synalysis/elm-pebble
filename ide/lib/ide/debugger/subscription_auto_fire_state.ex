@@ -145,7 +145,7 @@ defmodule Ide.Debugger.SubscriptionAutoFireState do
   @spec auto_fire_subscription_enabled?(
           Types.runtime_state(),
           Types.surface_target(),
-          map(),
+          Types.trigger_candidate(),
           (Types.surface_target() -> String.t())
         ) :: boolean()
   def auto_fire_subscription_enabled?(state, target, row, source_root_for_target)

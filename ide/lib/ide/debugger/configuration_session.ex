@@ -12,8 +12,7 @@ defmodule Ide.Debugger.ConfigurationSession do
           (Types.runtime_state(),
            Types.surface_target(),
            String.t(),
-           Types.subscription_payload()
-           | map(),
+           Types.timeline_step_message_value() | nil,
            String.t(),
            String.t() ->
              Types.runtime_state())

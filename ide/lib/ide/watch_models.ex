@@ -9,6 +9,7 @@ defmodule Ide.WatchModels do
   `Ide.Emulator.Types` for session and screenshot contracts.
   """
 
+  alias Ide.Debugger.Types
   alias Ide.WatchModels.Profile
 
   @type screen :: Profile.screen()
@@ -136,7 +137,7 @@ defmodule Ide.WatchModels do
     |> Map.get("watch_info_color", "UnknownColor")
   end
 
-  @spec watch_info_model_ctor_from_launch_context(map()) :: String.t()
+  @spec watch_info_model_ctor_from_launch_context(Types.launch_context()) :: String.t()
   def watch_info_model_ctor_from_launch_context(launch_context) when is_map(launch_context) do
     profile_id =
       Map.get(launch_context, "watch_profile_id") ||
@@ -146,7 +147,7 @@ defmodule Ide.WatchModels do
     watch_info_model_ctor(profile_id)
   end
 
-  @spec watch_info_color_ctor_from_launch_context(map()) :: String.t()
+  @spec watch_info_color_ctor_from_launch_context(Types.launch_context()) :: String.t()
   def watch_info_color_ctor_from_launch_context(launch_context) when is_map(launch_context) do
     profile_id =
       Map.get(launch_context, "watch_profile_id") ||

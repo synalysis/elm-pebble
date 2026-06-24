@@ -788,7 +788,8 @@ defmodule Ide.Debugger.StepExecution.Core do
 
   defp view_output_scene_tokens(_), do: []
 
-  @spec view_output_scene_token(String.t(), Types.view_output_row()) :: term()
+  @spec view_output_scene_token(String.t(), Types.view_output_row()) ::
+          Types.view_output_scene_token()
   defp view_output_scene_token("text", row),
     do:
       {:text, Map.get(row, "text"), view_output_row_int(row, "x", 0),

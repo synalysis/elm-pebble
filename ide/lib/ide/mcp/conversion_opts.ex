@@ -1,7 +1,17 @@
 defmodule Ide.Mcp.ConversionOpts do
   @moduledoc false
 
-  @spec schema() :: map()
+  alias Ide.Mcp.ToolTypes
+
+  @type field_schema :: %{
+          optional(atom()) => String.t() | boolean() | number() | integer() | [String.t()],
+          optional(String.t()) => term()
+        }
+
+  @type schema_map :: %{optional(String.t()) => field_schema()}
+  @type wire_properties :: %{optional(String.t()) => field_schema()}
+
+  @spec schema() :: schema_map()
   def schema do
     %{
       "precise" => %{type: "boolean", default: false},
@@ -18,7 +28,7 @@ defmodule Ide.Mcp.ConversionOpts do
     }
   end
 
-  @spec from_args(map()) :: keyword()
+  @spec from_args(ToolTypes.tool_args()) :: keyword()
   def from_args(args) when is_map(args) do
     [
       precise: boolean_arg(args, "precise", false),
@@ -64,7 +74,7 @@ defmodule Ide.Mcp.ConversionOpts do
     end
   end
 
-  @spec input_schema_properties() :: map()
+  @spec input_schema_properties() :: wire_properties()
   def input_schema_properties do
     schema()
     |> Enum.map(fn {key, meta} ->

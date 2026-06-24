@@ -13,7 +13,7 @@ defmodule Ide.Formatter.Printer.Pipeline do
   alias Ide.Formatter.Semantics.Rules
   alias Ide.Formatter.Types
 
-  @spec apply(String.t(), map(), keyword()) :: String.t()
+  @spec apply(String.t(), Types.metadata(), keyword()) :: String.t()
   def apply(source, metadata, opts \\ []) when is_binary(source) and is_map(metadata) do
     source
     |> normalize_legacy_module_syntax()
@@ -58,7 +58,7 @@ defmodule Ide.Formatter.Printer.Pipeline do
     |> Enum.join("\n")
   end
 
-  @spec normalize_module_and_import_lines(String.t(), map()) :: String.t()
+  @spec normalize_module_and_import_lines(String.t(), Types.metadata()) :: String.t()
   defp normalize_module_and_import_lines(source, metadata) do
     ModuleHeader.normalize(source, metadata)
   end
@@ -110,7 +110,7 @@ defmodule Ide.Formatter.Printer.Pipeline do
     end
   end
 
-  @spec normalize_definition_rhs_indentation(String.t(), [map()] | nil) :: String.t()
+  @spec normalize_definition_rhs_indentation(String.t(), [Types.format_token()] | nil) :: String.t()
   defp normalize_definition_rhs_indentation(source, _tokens) when is_binary(source) do
     {normalized_rev, _pending, _in_block_comment} =
       source

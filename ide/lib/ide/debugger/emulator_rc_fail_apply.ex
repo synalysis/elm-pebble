@@ -5,7 +5,7 @@ defmodule Ide.Debugger.EmulatorRcFailApply do
   alias Ide.Debugger.RuntimeSurfaceMerge
   alias Ide.Debugger.Types
 
-  @spec apply(String.t(), map()) :: {:ok, Types.runtime_state()}
+  @spec apply(String.t(), Types.emulator_rc_fail_attrs()) :: {:ok, Types.runtime_state()}
   def apply(project_slug, attrs) when is_binary(project_slug) and is_map(attrs) do
     code = parse_nonneg_int(Map.get(attrs, :code) || Map.get(attrs, "code"))
     line = parse_nonneg_int(Map.get(attrs, :line) || Map.get(attrs, "line"))

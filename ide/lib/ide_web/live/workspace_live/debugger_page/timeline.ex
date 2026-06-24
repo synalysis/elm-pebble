@@ -1,8 +1,10 @@
 defmodule IdeWeb.WorkspaceLive.DebuggerPage.Timeline do
   @moduledoc false
 
-  @type timeline_row :: map()
-  @type selected_row :: map() | nil
+  alias IdeWeb.WorkspaceLive.DebuggerSupport.Types, as: SupportTypes
+
+  @type timeline_row :: SupportTypes.debugger_row()
+  @type selected_row :: SupportTypes.debugger_row() | nil
 
   @spec row_class(timeline_row(), selected_row()) :: [String.t() | boolean()]
   def row_class(row, selected_row) do

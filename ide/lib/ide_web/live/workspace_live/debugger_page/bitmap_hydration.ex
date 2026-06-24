@@ -7,7 +7,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.BitmapHydration do
 
   @type svg_op :: SupportTypes.svg_op()
 
-  @spec hydrate_svg_ops([svg_op()], Project.t() | map() | nil, String.t() | nil) :: [svg_op()]
+  @spec hydrate_svg_ops([svg_op()], Project.t() | nil, String.t() | nil) :: [svg_op()]
   def hydrate_svg_ops(rows, %Project{} = project, color_mode) when is_list(rows) do
     Enum.map(rows, fn
       %{kind: :bitmap_in_rect, bitmap_id: bitmap_id} = row when bitmap_id > 0 ->

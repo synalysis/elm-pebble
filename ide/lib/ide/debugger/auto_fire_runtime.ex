@@ -80,7 +80,7 @@ defmodule Ide.Debugger.AutoFireRuntime do
           Types.surface_target(),
           NaiveDateTime.t(),
           apply_ctx()
-        ) :: {[map()], Types.runtime_state()}
+        ) :: {[Types.trigger_candidate()], Types.runtime_state()}
   def subscription_candidates(state, target, %NaiveDateTime{} = now, ctx)
       when is_map(state) and target in [:watch, :companion, :phone] and is_map(ctx) do
     rows =
@@ -114,7 +114,7 @@ defmodule Ide.Debugger.AutoFireRuntime do
   @spec subscription_due?(
           Types.runtime_state(),
           Types.surface_target(),
-          map(),
+          Types.trigger_candidate(),
           NaiveDateTime.t(),
           apply_ctx()
         ) :: boolean()

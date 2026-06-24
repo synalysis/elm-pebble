@@ -18,6 +18,20 @@ defmodule Ide.StoreAssets do
           height: pos_integer()
         }
 
+  @type icon_status :: %{
+          required(:key) => icon_key(),
+          required(:filename) => String.t(),
+          required(:width) => pos_integer(),
+          required(:height) => pos_integer(),
+          required(:path) => String.t(),
+          required(:present) => boolean(),
+          optional(:actual_width) => pos_integer(),
+          optional(:actual_height) => pos_integer(),
+          optional(:preview_url) => String.t() | nil
+        }
+
+  @type status_map :: %{required(icon_key()) => icon_status()}
+
   @type store_asset_error ::
           :invalid_icon_key
           | :invalid_png
@@ -95,7 +109,7 @@ defmodule Ide.StoreAssets do
   def public_path(:icon_small), do: @icon_small_filename
   def public_path(:icon_large), do: @icon_large_filename
 
-  @spec status(String.t()) :: map()
+  @spec status(String.t()) :: status_map()
   def status(workspace_root) when is_binary(workspace_root) do
     Enum.reduce(@icon_specs, %{}, fn spec, acc ->
       path = Path.join(root_path(workspace_root), spec.filename)
@@ -104,7 +118,7 @@ defmodule Ide.StoreAssets do
     end)
   end
 
-  @spec icons_uploaded?(String.t() | map()) :: boolean()
+  @spec icons_uploaded?(String.t() | status_map()) :: boolean()
   def icons_uploaded?(workspace_root) when is_binary(workspace_root) do
     workspace_root |> publish_icon_paths() |> map_size() > 0
   end
@@ -118,7 +132,7 @@ defmodule Ide.StoreAssets do
   @doc """
   True when a watchapp can request Rebble `iconPrompt` generation (no icons uploaded yet).
   """
-  @spec ai_graphics_available?(String.t() | map()) :: boolean()
+  @spec ai_graphics_available?(String.t() | status_map()) :: boolean()
   def ai_graphics_available?(workspace_root_or_assets) do
     not icons_uploaded?(workspace_root_or_assets)
   end

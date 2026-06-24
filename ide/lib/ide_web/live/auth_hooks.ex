@@ -5,8 +5,9 @@ defmodule IdeWeb.AuthHooks do
   import Phoenix.LiveView
 
   alias Ide.Auth
+  alias IdeWeb.WorkspaceLive.Types
 
-  @spec on_mount(atom(), map(), map(), Phoenix.LiveView.Socket.t()) ::
+  @spec on_mount(atom(), Types.wire_params(), Types.session_params(), Phoenix.LiveView.Socket.t()) ::
           {:cont, Phoenix.LiveView.Socket.t()} | {:halt, Phoenix.LiveView.Socket.t()}
   def on_mount(:default, _params, session, socket) do
     user = Auth.get_user(session["user_id"])

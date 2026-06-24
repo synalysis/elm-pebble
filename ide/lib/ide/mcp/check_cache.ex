@@ -5,12 +5,14 @@ defmodule Ide.Mcp.CheckCache do
 
   use Agent
 
+  alias Ide.Compiler
+
   @default_history_limit 200
 
   @type cached_entry :: %{
           slug: String.t(),
           at: String.t(),
-          result: map()
+          result: Compiler.check_result()
         }
 
   @spec start_link(keyword()) :: GenServer.on_start()
@@ -18,7 +20,7 @@ defmodule Ide.Mcp.CheckCache do
     Agent.start_link(fn -> %{latest: %{}, history: []} end, name: __MODULE__)
   end
 
-  @spec put(String.t(), map()) :: :ok
+  @spec put(String.t(), Compiler.check_result()) :: :ok
   def put(slug, result) when is_binary(slug) and is_map(result) do
     entry = %{slug: slug, at: DateTime.utc_now() |> DateTime.to_iso8601(), result: result}
 

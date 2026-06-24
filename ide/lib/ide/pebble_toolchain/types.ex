@@ -1,6 +1,7 @@
 defmodule Ide.PebbleToolchain.Types do
   @moduledoc false
 
+  alias ElmEx.CoreIR.Types, as: CoreIRTypes
   alias Ide.CompanionProtocol.WireSchema
 
   @type project_slug :: String.t()
@@ -87,6 +88,22 @@ defmodule Ide.PebbleToolchain.Types do
 
   @type elmc_compile_opts :: Elmc.Types.compile_options()
 
+  @typedoc "Partial elmc options merged into watch compile opts (local mirror of `Elmc.Types.compile_options/0`)."
+  @type elmc_extra_opts :: %{
+          optional(:entry_module) => String.t(),
+          optional(:out_dir) => String.t() | nil,
+          optional(:runtime_dir) => String.t(),
+          optional(:strip_dead_code) => boolean(),
+          optional(:prune_runtime) => boolean(),
+          optional(:prune_native_wrappers) => boolean(),
+          optional(:direct_render_only) => boolean(),
+          optional(:prune_direct_generic) => boolean(),
+          optional(:pebble_int32) => boolean(),
+          optional(:linked_binary_map) => String.t(),
+          optional(:prod) => boolean(),
+          optional(:debug_usage_policy) => :error | :warn | :warning
+        }
+
   @type watch_compile_opts :: %{
           required(:out_dir) => String.t(),
           required(:entry_module) => String.t(),
@@ -109,7 +126,8 @@ defmodule Ide.PebbleToolchain.Types do
           optional(String.t()) => wire_input()
         }
 
-  @type core_ir_expr :: ElmEx.CoreIR.Types.Expr.t() | ElmEx.CoreIR.Types.Expr.wire_expr()
+  @type core_ir :: CoreIRTypes.wire_core_ir() | nil
+  @type core_ir_expr :: CoreIRTypes.expr() | CoreIRTypes.Expr.wire_expr()
   @type app_message_keys :: WireSchema.key_ids()
   @type preferences_schema :: Ide.PebblePreferences.schema() | nil
 end

@@ -58,7 +58,8 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Helpers do
     end
   end
 
-  @spec encoded_cmd_expr(non_neg_integer(), [map()], non_neg_integer()) :: map()
+  @spec encoded_cmd_expr(non_neg_integer(), [Types.ir_expr()], non_neg_integer()) ::
+          Types.ir_expr()
   def encoded_cmd_expr(kind, args, arity) do
     if length(args) == arity do
       if pebble_cmd_eligible?(args) do
@@ -74,7 +75,8 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Helpers do
   # Draw op ids overlap runtime command ids (e.g. fill_circle and get_clock_style_24h are
   # both 8). Field-expanded draw args must always encode as render-op tuples, never
   # :pebble_cmd with command_kind_expr/1.
-  @spec encoded_draw_field_cmd_expr(non_neg_integer(), [map()], non_neg_integer()) :: map()
+  @spec encoded_draw_field_cmd_expr(non_neg_integer(), [Types.ir_expr()], non_neg_integer()) ::
+          Types.ir_expr()
   def encoded_draw_field_cmd_expr(kind, args, arity) do
     if length(args) == arity do
       encoded_cmd_as_tuple(draw_kind_expr(kind), args)
@@ -83,7 +85,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Helpers do
     end
   end
 
-  @spec encoded_cmd_as_tuple(map(), [map()]) :: map()
+  @spec encoded_cmd_as_tuple(Types.ir_expr(), [Types.ir_expr()]) :: Types.ir_expr()
   def encoded_cmd_as_tuple(kind_expr, args) when is_list(args) do
     arity = length(args)
     payload = args ++ List.duplicate(%{op: :int_literal, value: 0}, max(0, 6 - arity))
@@ -200,7 +202,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Helpers do
     %{op: :constructor_call, target: "Pebble.Http.Request", args: [req, to_msg]}
   end
 
-  @spec constructor_tag_expr(map()) :: map()
+  @spec constructor_tag_expr(Types.ir_expr()) :: Types.ir_expr()
   def constructor_tag_expr(%{op: :int_literal, union_ctor: ctor}) when is_binary(ctor) do
     msg_tag_expr(ctor)
   end

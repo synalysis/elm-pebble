@@ -69,7 +69,7 @@ defmodule Ide.Auth do
   @spec app_store_publish_enabled?() :: boolean()
   def app_store_publish_enabled?, do: mode() in [:local, :public_pebble]
 
-  @spec firebase_config() :: map()
+  @spec firebase_config() :: AuthTypes.firebase_config()
   def firebase_config do
     config = Application.get_env(:ide, __MODULE__, [])
 
@@ -119,7 +119,8 @@ defmodule Ide.Auth do
   defp normalize_mail_from(address) when is_binary(address), do: {"elm-pebble IDE", address}
   defp normalize_mail_from(_), do: {"elm-pebble IDE", "noreply@elm-pebble.dev"}
 
-  @spec upsert_firebase_user(map()) :: {:ok, User.t()} | {:error, AuthTypes.firebase_user_error()}
+  @spec upsert_firebase_user(AuthTypes.firebase_user()) ::
+          {:ok, User.t()} | {:error, AuthTypes.firebase_user_error()}
   def upsert_firebase_user(%{"localId" => uid} = payload) when is_binary(uid) and uid != "" do
     attrs = %{
       firebase_uid: uid,

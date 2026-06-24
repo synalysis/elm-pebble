@@ -620,7 +620,7 @@ defmodule Ide.SimulatorSettings do
   @doc """
   Returns `{latitude, longitude, accuracy}` from normalized simulator settings.
   """
-  @spec geolocation(t() | map()) :: {float() | nil, float() | nil, float() | nil}
+  @spec geolocation(t()) :: {float() | nil, float() | nil, float() | nil}
   def geolocation(settings) when is_map(settings) do
     {
       numeric_setting(settings, "latitude"),
@@ -631,7 +631,7 @@ defmodule Ide.SimulatorSettings do
 
   def geolocation(_settings), do: {nil, nil, nil}
 
-  @spec numeric_setting(map(), String.t()) :: float() | nil
+  @spec numeric_setting(display_values(), String.t()) :: float() | nil
   defp numeric_setting(settings, key) do
     case Map.get(settings, key) do
       value when is_integer(value) -> value * 1.0
@@ -643,7 +643,7 @@ defmodule Ide.SimulatorSettings do
   @doc """
   Returns active field groups for the given project, optional debugger state, and UI mode.
   """
-  @spec active_groups(Project.t() | nil, map() | nil, :debugger | :emulator) :: [
+  @spec active_groups(Project.t() | nil, Types.runtime_state() | nil, :debugger | :emulator) :: [
           {atom(), String.t(), [field_spec()]}
         ]
   def active_groups(project, debugger_state \\ nil, mode \\ :debugger) do
@@ -661,7 +661,7 @@ defmodule Ide.SimulatorSettings do
   end
 
   @doc false
-  @spec capabilities_for(Project.t() | nil, map() | nil, :debugger | :emulator) ::
+  @spec capabilities_for(Project.t() | nil, Types.runtime_state() | nil, :debugger | :emulator) ::
           MapSet.t(String.t())
   def capabilities_for(project, debugger_state, mode) do
     caps = SimulatorCapabilities.infer(project, debugger_state)
@@ -703,7 +703,7 @@ defmodule Ide.SimulatorSettings do
   @doc """
   Merges form params with existing project simulator settings and normalizes the result.
   """
-  @spec save_from_form(t() | map(), form_params()) :: t()
+  @spec save_from_form(t(), form_params()) :: t()
   def save_from_form(existing_settings, form_params) when is_map(form_params) do
     canonical = existing_settings |> Debugger.normalize_simulator_settings()
     display = expand_display_values(canonical)
@@ -719,7 +719,7 @@ defmodule Ide.SimulatorSettings do
     do: Debugger.normalize_simulator_settings(existing_settings)
 
   @doc false
-  @spec raw_settings_for(Project.t() | nil, Types.runtime_state() | nil) :: t() | map()
+  @spec raw_settings_for(Project.t() | nil, Types.runtime_state() | nil) :: t()
   def raw_settings_for(project, debugger_state \\ nil) do
     cond do
       is_map(debugger_state) and is_map(Map.get(debugger_state, :simulator_settings)) ->
@@ -882,7 +882,7 @@ defmodule Ide.SimulatorSettings do
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
-  @spec map_get(map(), String.t()) :: Types.wire_input() | nil
+  @spec map_get(form_params(), String.t()) :: Types.wire_input() | nil
   defp map_get(map, key) when is_map(map) do
     case Map.fetch(map, key) do
       {:ok, value} -> value
@@ -890,7 +890,7 @@ defmodule Ide.SimulatorSettings do
     end
   end
 
-  @spec find_atom_key(map(), String.t()) :: Types.wire_input() | nil
+  @spec find_atom_key(form_params(), String.t()) :: Types.wire_input() | nil
   defp find_atom_key(map, key) do
     Enum.find_value(map, fn
       {atom_key, value} when is_atom(atom_key) ->

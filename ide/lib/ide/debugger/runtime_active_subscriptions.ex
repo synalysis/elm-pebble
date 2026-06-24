@@ -9,7 +9,9 @@ defmodule Ide.Debugger.RuntimeActiveSubscriptions do
   alias Ide.Debugger.TriggerCandidates
   alias Ide.Debugger.Types
 
-  @type active_command :: Types.wire_map()
+  @type active_command :: Types.active_subscription()
+  @type subscription_row_like :: Types.trigger_candidate() | Types.replay_row()
+  @type subscription_row_ref :: subscription_row_like() | Types.subscription_row_input()
 
   @spec present?(Types.runtime_state(), Types.surface_target()) :: boolean()
   def present?(state, target) when is_map(state) and target in [:watch, :companion, :phone] do
@@ -34,7 +36,7 @@ defmodule Ide.Debugger.RuntimeActiveSubscriptions do
   def for_surface(_state, _target), do: []
 
   @spec row_active?(
-          Types.trigger_candidate() | Types.replay_row() | map(),
+          subscription_row_ref(),
           [active_command()]
         ) :: boolean()
   def row_active?(row, active) when is_map(row) and is_list(active) do
@@ -55,7 +57,7 @@ defmodule Ide.Debugger.RuntimeActiveSubscriptions do
   @spec match_for_row(
           Types.runtime_state(),
           Types.surface_target(),
-          Types.trigger_candidate() | Types.replay_row() | map()
+          subscription_row_ref()
         ) :: active_command() | nil
   def match_for_row(state, target, row) when is_map(state) and is_map(row) do
     row_trigger = row_trigger_id(row)
@@ -181,7 +183,7 @@ defmodule Ide.Debugger.RuntimeActiveSubscriptions do
           Types.surface_target(),
           Types.elm_introspect(),
           String.t(),
-          (map() -> boolean())
+          (Types.trigger_candidate() -> boolean())
         ) :: [Types.trigger_candidate()]
   def trigger_candidates(state, target, ei, target_name, model_active_fn)
       when is_map(state) and target in [:watch, :companion, :phone] and is_binary(target_name) and
@@ -256,7 +258,7 @@ defmodule Ide.Debugger.RuntimeActiveSubscriptions do
 
   def tick_candidate(_state, _target), do: nil
 
-  @spec tick_sort_key(map()) :: {integer(), String.t()}
+  @spec tick_sort_key(Types.trigger_candidate()) :: {integer(), String.t()}
   defp tick_sort_key(%{trigger: trigger, target: target}) when is_binary(trigger) do
     {tick_priority_rank(trigger, target), trigger}
   end
@@ -284,7 +286,7 @@ defmodule Ide.Debugger.RuntimeActiveSubscriptions do
           active_command(),
           Types.elm_introspect(),
           String.t(),
-          (map() -> boolean())
+          (Types.trigger_candidate() -> boolean())
         ) :: Types.trigger_candidate() | nil
   defp trigger_row_from_command(command, ei, target_name, model_active_fn)
        when is_map(command) and is_binary(target_name) do
@@ -411,7 +413,7 @@ defmodule Ide.Debugger.RuntimeActiveSubscriptions do
     |> to_string()
   end
 
-  @spec row_trigger_id(map()) :: String.t()
+  @spec row_trigger_id(subscription_row_ref()) :: String.t()
   defp row_trigger_id(row) do
     row
     |> TriggerCandidates.row_field(:trigger)
@@ -419,7 +421,7 @@ defmodule Ide.Debugger.RuntimeActiveSubscriptions do
     |> TriggerCandidates.normalize_trigger_id()
   end
 
-  @spec row_message(map()) :: String.t()
+  @spec row_message(subscription_row_ref()) :: String.t()
   defp row_message(row) do
     row
     |> TriggerCandidates.row_field(:message)

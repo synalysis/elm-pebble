@@ -16,12 +16,16 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
   alias Ide.Resources.Types, as: ResourceTypes
   alias Ide.Screenshots
   alias IdeWeb.WorkspaceLive.EditorSupport
+  alias IdeWeb.WorkspaceLive.Types
 
   @type socket :: Phoenix.LiveView.Socket.t()
   @type lv_noreply :: {:noreply, socket()}
   @type upload_config :: Phoenix.LiveView.UploadConfig.t()
   @type upload_entry :: Phoenix.LiveView.UploadEntry.t()
-  @type upload_entry_meta :: %{required(:path) => String.t(), optional(atom()) => term()}
+  @type upload_entry_meta :: %{
+          required(:path) => String.t(),
+          optional(atom()) => String.t() | integer() | boolean() | nil
+        }
   @type upload_import_fn :: (upload_entry_meta(), upload_entry() -> {:ok, upload_result_row()})
   @type upload_result_row ::
           ResourceTypes.manifest_entries_update()
@@ -30,11 +34,47 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
           | ResourceTypes.import_duplicate()
           | ResourceTypes.import_source_duplicate()
           | %{required(:error) => String.t()}
-  @type bitmap_resource_row :: ResourceTypes.bitmap_entry() | map()
-  @type font_resource_row :: ResourceTypes.font_entry() | map()
-  @type font_source_row :: ResourceTypes.font_source() | map()
-  @type vector_resource_row :: ResourceTypes.vector_entry() | map()
-  @type animation_resource_row :: ResourceTypes.animation_resource_entry() | map()
+  @type bitmap_resource_row :: ResourceTypes.bitmap_entry()
+  @type font_resource_row :: ResourceTypes.font_entry()
+  @type font_source_row :: ResourceTypes.font_source()
+  @type vector_resource_row :: ResourceTypes.vector_entry()
+  @type animation_resource_row :: ResourceTypes.animation_resource_entry()
+  @type speaker_sample_row ::
+          ResourceTypes.speaker_sample_entry()
+          | %{required(:resource_id) => pos_integer(), optional(atom()) => String.t() | integer()}
+
+  @type upload_error :: :too_large | :not_accepted | :too_many_files | atom()
+
+  @type resource_import_error ::
+          :monochrome_converter_missing
+          | :monochrome_conversion_failed
+          | :gif_converter_missing
+          | :gif_conversion_failed
+          | :not_animated
+          | :requires_apng8
+          | :malformed_apng
+          | :unsupported_speaker_sample_type
+          | :invalid_speaker_sample
+          | :speaker_sample_too_large
+          | :speaker_sample_total_too_large
+          | :unsupported_format
+          | :file_too_large
+          | :too_many_frames
+          | :dimensions_too_large
+          | :invalid_png
+          | :unsupported_bitmap_type
+          | :invalid_bitmap_image
+          | :bitmap_converter_missing
+          | :bitmap_conversion_failed
+          | :invalid_animation
+          | :invalid_manifest
+          | :invalid_watch_pdc
+          | :pdc_too_large
+          | :pdc_dimensions_too_large
+          | :pdc_too_many_frames
+          | String.t()
+          | ResourceTypes.resource_error()
+          | atom()
 
   @spec bitmap_upload_output([upload_result_row()]) :: String.t()
   def bitmap_upload_output([]), do: "No file uploaded."
@@ -71,7 +111,7 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
     upload_summary(results, "speaker sample", "speaker samples")
   end
 
-  @spec load_speaker_samples(Project.t()) :: [map()]
+  @spec load_speaker_samples(Project.t()) :: [speaker_sample_row()]
   def load_speaker_samples(%Project{} = project) do
     case Projects.list_speaker_samples(project) do
       {:ok, entries} ->
@@ -138,7 +178,7 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
     |> Enum.join(" ")
   end
 
-  @spec resource_import_error_message(term()) :: String.t()
+  @spec resource_import_error_message(resource_import_error()) :: String.t()
   def resource_import_error_message(reason) do
     case reason do
       :monochrome_converter_missing ->
@@ -284,7 +324,7 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
       {socket, [], Exception.message(error)}
   end
 
-  @spec format_upload_error(term()) :: String.t()
+  @spec format_upload_error(upload_error()) :: String.t()
   def format_upload_error(:too_large), do: "File is too large."
   def format_upload_error(:not_accepted), do: "File type is not accepted."
   def format_upload_error(:too_many_files), do: "Too many files selected."
@@ -584,7 +624,7 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
     |> assign(:bitmap_resources_error, error)
   end
 
-  @spec handle_event(String.t(), map(), socket()) :: lv_noreply()
+  @spec handle_event(String.t(), Types.event_params(), socket()) :: lv_noreply()
   def handle_event("upload-bitmap-resource", params, socket) do
     project = socket.assigns.project
     import_opts = bitmap_import_opts(params)

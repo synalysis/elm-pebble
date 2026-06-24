@@ -2,12 +2,14 @@ defmodule Ide.Mcp.VectorResources do
   @moduledoc false
 
   alias Ide.Mcp.ConversionOpts
+  alias Ide.Mcp.ToolTypes
+  alias Ide.Mcp.Types
   alias Ide.Projects
   alias Ide.Resources.{ConversionReport, PdcDecoder, ResourceStore, SvgConverter}
 
   @vector_opts_schema ConversionOpts.schema()
 
-  @spec list(String.t()) :: {:ok, map()} | {:error, String.t()}
+  @spec list(String.t()) :: {:ok, Types.vector_tool_result()} | {:error, String.t()}
   def list(slug) when is_binary(slug) do
     with {:ok, project} <- fetch_project(slug),
          {:ok, entries} <- Projects.list_vector_resources(project) do
@@ -26,7 +28,7 @@ defmodule Ide.Mcp.VectorResources do
     end
   end
 
-  @spec convert(map()) :: {:ok, map()} | {:error, String.t()}
+  @spec convert(ToolTypes.tool_args()) :: {:ok, Types.vector_tool_result()} | {:error, String.t()}
   def convert(args) when is_map(args) do
     svg = Map.get(args, "svg") || Map.get(args, :svg)
     opts = ConversionOpts.from_args(args)
@@ -46,7 +48,8 @@ defmodule Ide.Mcp.VectorResources do
     end
   end
 
-  @spec convert_sequence(map()) :: {:ok, map()} | {:error, String.t()}
+  @spec convert_sequence(ToolTypes.tool_args()) ::
+          {:ok, Types.vector_tool_result()} | {:error, String.t()}
   def convert_sequence(args) when is_map(args) do
     frames = Map.get(args, "frames") || Map.get(args, :frames) || []
     opts = ConversionOpts.from_args(args)
@@ -67,7 +70,7 @@ defmodule Ide.Mcp.VectorResources do
     end
   end
 
-  @spec import(map()) :: {:ok, map()} | {:error, String.t()}
+  @spec import(ToolTypes.tool_args()) :: {:ok, Types.vector_tool_result()} | {:error, String.t()}
   def import(args) when is_map(args) do
     slug = Map.get(args, "slug") || Map.get(args, :slug)
     svg = Map.get(args, "svg") || Map.get(args, :svg)
@@ -86,7 +89,8 @@ defmodule Ide.Mcp.VectorResources do
     end
   end
 
-  @spec import_sequence(map()) :: {:ok, map()} | {:error, String.t()}
+  @spec import_sequence(ToolTypes.tool_args()) ::
+          {:ok, Types.vector_tool_result()} | {:error, String.t()}
   def import_sequence(args) when is_map(args) do
     slug = Map.get(args, "slug") || Map.get(args, :slug)
     frames = Map.get(args, "frames") || Map.get(args, :frames) || []
@@ -103,7 +107,7 @@ defmodule Ide.Mcp.VectorResources do
     end
   end
 
-  @spec preview(map()) :: {:ok, map()} | {:error, String.t()}
+  @spec preview(ToolTypes.tool_args()) :: {:ok, Types.vector_tool_result()} | {:error, String.t()}
   def preview(args) when is_map(args) do
     slug = Map.get(args, "slug")
     ctor = Map.get(args, "ctor")
@@ -128,7 +132,7 @@ defmodule Ide.Mcp.VectorResources do
     end
   end
 
-  @spec delete(map()) :: {:ok, map()} | {:error, String.t()}
+  @spec delete(ToolTypes.tool_args()) :: {:ok, Types.vector_tool_result()} | {:error, String.t()}
   def delete(%{"slug" => slug, "ctor" => ctor}) when is_binary(slug) and is_binary(ctor) do
     with {:ok, project} <- fetch_project(slug),
          {:ok, entries} <- ResourceStore.delete_vector(project, ctor) do
@@ -140,7 +144,7 @@ defmodule Ide.Mcp.VectorResources do
 
   def delete(_), do: {:error, "slug and ctor are required"}
 
-  @spec opts_schema() :: map()
+  @spec opts_schema() :: ConversionOpts.schema_map()
   def opts_schema, do: @vector_opts_schema
 
   defp preview_bytes(bytes, frame) do

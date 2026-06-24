@@ -9,6 +9,18 @@ defmodule Ide.EditorCompletionDeclarationIndex do
     Bool Char Cmd Dict Float Int List Maybe Never Order Platform.Program Result String Sub
   )
 
+  @type contract_declaration :: %{
+          optional(atom()) => term(),
+          optional(String.t()) => term()
+        }
+
+  @type function_scope :: %{
+          required(:name) => String.t(),
+          required(:start_line) => non_neg_integer(),
+          required(:end_line) => non_neg_integer(),
+          required(:bindings) => %{optional(String.t()) => String.t()}
+        }
+
   @type t :: %{
           types: [String.t()],
           values: [String.t()],
@@ -16,7 +28,7 @@ defmodule Ide.EditorCompletionDeclarationIndex do
           record_fields: [String.t()],
           record_fields_by_type: %{String.t() => [String.t()]},
           field_types_by_type: %{String.t() => %{String.t() => String.t()}},
-          function_scopes: [map()],
+          function_scopes: [function_scope()],
           import_aliases: %{String.t() => String.t()}
         }
 
@@ -57,12 +69,12 @@ defmodule Ide.EditorCompletionDeclarationIndex do
       empty() |> Map.put(:import_aliases, parse_import_aliases(source))
   end
 
-  @spec from_declarations([map()]) :: t()
+  @spec from_declarations([contract_declaration()]) :: t()
   def from_declarations(declarations) when is_list(declarations) do
     from_declarations("", declarations)
   end
 
-  @spec from_declarations(String.t(), [map()]) :: t()
+  @spec from_declarations(String.t(), [contract_declaration()]) :: t()
   def from_declarations(source, declarations) when is_binary(source) and is_list(declarations) do
     index =
       Enum.reduce(declarations, empty(), fn declaration, acc ->

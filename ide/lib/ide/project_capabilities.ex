@@ -1,6 +1,7 @@
 defmodule Ide.ProjectCapabilities do
   @moduledoc false
 
+  alias Ide.Debugger.Types, as: DebuggerTypes
   alias Ide.PebblePreferences
   alias Ide.ProjectCapabilities.Detect
 
@@ -65,7 +66,7 @@ defmodule Ide.ProjectCapabilities do
   @doc """
   Infers capabilities from a single Elm module snapshot.
   """
-  @spec infer_introspect(map(), String.t()) :: MapSet.t(String.t())
+  @spec infer_introspect(DebuggerTypes.elm_introspect(), String.t()) :: MapSet.t(String.t())
   def infer_introspect(%{} = introspect, source_root) when is_binary(source_root) do
     caps = MapSet.new()
 

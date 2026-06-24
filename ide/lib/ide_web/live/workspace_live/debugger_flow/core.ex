@@ -8,10 +8,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
   alias Ide.EmulatorSupport
   alias Ide.PebbleToolchain
   alias Ide.Projects
+  alias Ide.Debugger.Types, as: DebuggerTypes
   alias Ide.Projects.Project
   alias Ide.SimulatorSettings
   alias IdeWeb.WorkspaceLive.BuildFlow
   alias IdeWeb.WorkspaceLive.DebuggerBootstrapFlow
+  alias IdeWeb.WorkspaceLive.DebuggerFlow.Types, as: FlowTypes
   alias IdeWeb.WorkspaceLive.DebuggerSupport
   alias IdeWeb.WorkspaceLive.EditorSupport
   alias IdeWeb.WorkspaceLive.Types
@@ -23,7 +25,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
   @debugger_auto_fire_refresh_interval_ms 1_000
   @debugger_auto_fire_min_refresh_interval_ms 100
 
-  @spec handle_simulator_save_settings_event(map(), socket()) :: {:noreply, socket()}
+  @spec handle_simulator_save_settings_event(FlowTypes.wire_map(), socket()) :: {:noreply, socket()}
   def handle_simulator_save_settings_event(params, socket) when is_map(params) do
     values =
       Map.get(params, "simulator") || Map.get(params, "debugger_simulator") || %{}
@@ -544,6 +546,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
      }}
   end
 
+  @type debugger_async_name :: :debugger_bootstrap
+
+  @spec handle_async(debugger_async_name(), Types.async_result(), socket()) :: lv_noreply()
   def handle_async(:debugger_bootstrap, {:ok, {:ok, result}}, socket) do
     {:noreply, complete_debugger_bootstrap(socket, result)}
   end
@@ -662,7 +667,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
     debugger_state_running?(socket.assigns[:debugger_state])
   end
 
-  @spec debugger_state_running?(map() | nil) :: boolean()
+  @spec debugger_state_running?(DebuggerTypes.runtime_state() | nil) :: boolean()
   defp debugger_state_running?(%{running: true}), do: true
   defp debugger_state_running?(_), do: false
 
@@ -897,7 +902,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
 
   defp persist_project_debugger_watch_profile(project, _watch_profile_id), do: project
 
-  @spec persist_project_debugger_simulator_settings(Project.t(), map()) :: Project.t()
+  @spec persist_project_debugger_simulator_settings(Project.t(), DebuggerTypes.simulator_settings()) ::
+          Project.t()
   defp persist_project_debugger_simulator_settings(%Project{} = project, settings)
        when is_map(settings) do
     current_settings = project.debugger_settings || %{}
@@ -932,7 +938,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
     end
   end
 
-  @spec persist_project_debugger_configuration_values(Project.t(), map()) :: Project.t()
+  @spec persist_project_debugger_configuration_values(
+          Project.t(),
+          FlowTypes.configuration_form_values()
+        ) :: Project.t()
   defp persist_project_debugger_configuration_values(%Project{} = project, values)
        when is_map(values) do
     settings = project.debugger_settings || %{}
@@ -946,7 +955,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
 
   defp persist_project_debugger_configuration_values(project, _values), do: project
 
-  @spec normalize_configuration_form_values(map()) :: map()
+  @spec normalize_configuration_form_values(FlowTypes.configuration_form_values()) ::
+          FlowTypes.configuration_form_values()
   defp normalize_configuration_form_values(values) when is_map(values) do
     Map.new(values, fn
       {key, list} when is_list(list) -> {key, normalize_configuration_form_list_value(list)}
@@ -1034,7 +1044,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
     |> Enum.filter(&is_binary/1)
   end
 
-  @spec open_debugger_trigger_modal(socket(), map()) :: socket()
+  @spec open_debugger_trigger_modal(socket(), FlowTypes.wire_map()) :: socket()
   defp open_debugger_trigger_modal(socket, params) when is_map(params) do
     trigger = Map.get(params, "trigger") || ""
     target = Map.get(params, "target") || "watch"
@@ -1065,7 +1075,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
     )
   end
 
-  @spec debugger_trigger_modal_supported?(socket(), map()) :: boolean()
+  @spec debugger_trigger_modal_supported?(socket(), FlowTypes.wire_map()) :: boolean()
   defp debugger_trigger_modal_supported?(socket, params) when is_map(params) do
     state = socket.assigns[:debugger_state]
 
@@ -1086,7 +1096,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
     )
   end
 
-  @spec merge_debugger_trigger_form(socket(), map()) :: map()
+  @spec merge_debugger_trigger_form(socket(), FlowTypes.wire_map()) :: FlowTypes.trigger_form_source()
   defp merge_debugger_trigger_form(socket, params) when is_map(params) do
     previous =
       case socket.assigns[:debugger_trigger_form] do
@@ -1100,7 +1110,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
     |> ensure_debugger_trigger_error_message()
   end
 
-  @spec sync_debugger_trigger_companion_fields(map(), map()) :: map()
+  @spec sync_debugger_trigger_companion_fields(
+          FlowTypes.trigger_form_source(),
+          FlowTypes.wire_map()
+        ) :: FlowTypes.trigger_form_source()
   defp sync_debugger_trigger_companion_fields(%{"companion_fields" => fields} = merged, params)
        when is_list(fields) and is_map(params) do
     updated_fields =
@@ -1121,7 +1134,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
 
   defp sync_debugger_trigger_companion_fields(merged, _params), do: merged
 
-  @spec ensure_debugger_trigger_error_message(map()) :: map()
+  @spec ensure_debugger_trigger_error_message(FlowTypes.trigger_form_source()) ::
+          FlowTypes.trigger_form_source()
   defp ensure_debugger_trigger_error_message(%{"result" => "Err"} = params) do
     case Map.get(params, "error_message") do
       msg when is_binary(msg) ->
@@ -1136,7 +1150,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
 
   defp ensure_debugger_trigger_error_message(params), do: params
 
-  @spec default_debugger_trigger_form(String.t(), String.t(), String.t(), String.t()) :: map()
+  @spec default_debugger_trigger_form(String.t(), String.t(), String.t(), String.t()) ::
+          FlowTypes.trigger_form_source()
   defp default_debugger_trigger_form(trigger, target, message, trigger_display) do
     constructor =
       case message do
@@ -1221,7 +1236,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
     end
   end
 
-  @spec debugger_trigger_submit_message(map()) :: String.t()
+  @spec debugger_trigger_submit_message(FlowTypes.trigger_form_source()) :: String.t()
   defp debugger_trigger_submit_message(params) when is_map(params) do
     case Map.get(params, "payload_kind") do
       "companion_bridge" ->
@@ -1249,7 +1264,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
     end
   end
 
-  @spec maybe_put_trigger_message_value(map(), map()) :: map()
+  @spec maybe_put_trigger_message_value(
+          DebuggerTypes.wire_map(),
+          FlowTypes.trigger_form_source()
+        ) :: DebuggerTypes.wire_map()
   defp maybe_put_trigger_message_value(attrs, %{"payload_kind" => "companion_bridge"} = params) do
     case Ide.Debugger.CompanionSubscriptionTrigger.message_value(params) do
       %{} = message_value -> Map.put(attrs, :message_value, message_value)
@@ -1273,7 +1291,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
     end
   end
 
-  @spec persist_project_auto_fire_setting(Project.t(), map()) :: Project.t()
+  @spec persist_project_auto_fire_setting(Project.t(), FlowTypes.subscription_toggle_attrs()) ::
+          Project.t()
   defp persist_project_auto_fire_setting(%Project{} = project, attrs) when is_map(attrs) do
     target = debugger_auto_fire_target(Map.get(attrs, :target) || Map.get(attrs, "target"))
     trigger = Map.get(attrs, :trigger) || Map.get(attrs, "trigger")
@@ -1305,7 +1324,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
 
   defp persist_project_auto_fire_setting(project, _attrs), do: project
 
-  @spec persist_project_subscription_enabled_setting(Project.t(), map()) :: Project.t()
+  @spec persist_project_subscription_enabled_setting(
+          Project.t(),
+          FlowTypes.subscription_toggle_attrs()
+        ) :: Project.t()
   defp persist_project_subscription_enabled_setting(%Project{} = project, attrs)
        when is_map(attrs) do
     target = debugger_auto_fire_target(Map.get(attrs, :target) || Map.get(attrs, "target"))

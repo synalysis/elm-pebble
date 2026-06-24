@@ -4,17 +4,22 @@ defmodule IdeWeb.ProjectsLive do
   alias Ide.Auth
   alias Ide.GitHub.Credentials
   alias Ide.ProjectTemplates
+  alias Ide.ProjectTemplates.Types, as: TemplateTypes
   alias Ide.Projects
   alias Ide.Projects.BootstrapError
   alias Ide.Projects.Project
   alias Ide.Projects.Types, as: ProjectTypes
+  alias IdeWeb.ProjectsLive.Assigns
+  alias IdeWeb.WorkspaceLive.Types
 
   @type socket :: Phoenix.LiveView.Socket.t()
   @type lv_mount :: {:ok, socket()}
   @type lv_noreply :: {:noreply, socket()}
+  @type assigns :: Assigns.t()
+  @type project_attrs :: ProjectTypes.project_attrs()
 
   @impl true
-  @spec mount(map(), map(), socket()) :: lv_mount()
+  @spec mount(Types.wire_params(), Types.session_params(), socket()) :: lv_mount()
   def mount(_params, _session, socket) do
     {:ok,
      socket
@@ -35,7 +40,7 @@ defmodule IdeWeb.ProjectsLive do
   end
 
   @impl true
-  @spec handle_event(String.t(), map(), socket()) :: lv_noreply()
+  @spec handle_event(String.t(), Types.event_params(), socket()) :: lv_noreply()
   def handle_event("validate", %{"project" => params}, socket) do
     params =
       params
@@ -218,7 +223,7 @@ defmodule IdeWeb.ProjectsLive do
     assign(socket, :projects, Projects.list_projects(socket.assigns.current_user))
   end
 
-  @spec do_create_project(map(), socket()) :: lv_noreply()
+  @spec do_create_project(Types.event_params(), socket()) :: lv_noreply()
   defp do_create_project(params, socket) do
     case Projects.create_project(params, socket.assigns.current_user) do
       {:ok, project} ->
@@ -248,7 +253,7 @@ defmodule IdeWeb.ProjectsLive do
     end
   end
 
-  @spec default_attrs() :: map()
+  @spec default_attrs() :: project_attrs()
   defp default_attrs do
     %{
       "target_type" => "app",
@@ -257,7 +262,7 @@ defmodule IdeWeb.ProjectsLive do
     }
   end
 
-  @spec default_github_import_attrs() :: map()
+  @spec default_github_import_attrs() :: project_attrs()
   defp default_github_import_attrs do
     %{
       "repo_url" => "",
@@ -269,7 +274,7 @@ defmodule IdeWeb.ProjectsLive do
     }
   end
 
-  @spec normalize_create_params(map()) :: map()
+  @spec normalize_create_params(project_attrs()) :: project_attrs()
   defp normalize_create_params(params) when is_map(params) do
     template = Map.get(params, "template", "starter")
     name = Map.get(params, "name", "")
@@ -282,7 +287,7 @@ defmodule IdeWeb.ProjectsLive do
     |> Map.put_new("source_roots", ["watch", "protocol", "phone"])
   end
 
-  @spec normalize_github_import_attrs(map()) :: map()
+  @spec normalize_github_import_attrs(project_attrs()) :: project_attrs()
   defp normalize_github_import_attrs(params) when is_map(params) do
     name = Map.get(params, "name", "") |> to_string() |> String.trim()
     slug = Map.get(params, "slug", "") |> to_string() |> String.trim()
@@ -318,7 +323,7 @@ defmodule IdeWeb.ProjectsLive do
   defp blank?(value) when is_binary(value), do: String.trim(value) == ""
   defp blank?(_), do: true
 
-  @spec create_project_name_given?(map() | Phoenix.HTML.Form.t()) :: boolean()
+  @spec create_project_name_given?(project_attrs() | Phoenix.HTML.Form.t()) :: boolean()
   defp create_project_name_given?(%Phoenix.HTML.Form{} = form) do
     form
     |> Phoenix.HTML.Form.input_value(:name)
@@ -331,7 +336,7 @@ defmodule IdeWeb.ProjectsLive do
     |> present_name?()
   end
 
-  @spec present_name?(term()) :: boolean()
+  @spec present_name?(String.t() | nil) :: boolean()
   defp present_name?(name), do: not blank?(to_string(name || ""))
 
   @spec autofill_create_name_from_template(socket(), String.t()) :: socket()
@@ -361,7 +366,7 @@ defmodule IdeWeb.ProjectsLive do
     end
   end
 
-  @spec filtered_template_categories(map()) :: [map()]
+  @spec filtered_template_categories(assigns()) :: [TemplateTypes.picker_category()]
   defp filtered_template_categories(assigns) do
     ProjectTemplates.filter_picker_categories(
       assigns.template_categories,
@@ -422,7 +427,7 @@ defmodule IdeWeb.ProjectsLive do
   end
 
   @impl true
-  @spec render(map()) :: Phoenix.LiveView.Rendered.t()
+  @spec render(assigns()) :: Phoenix.LiveView.Rendered.t()
   def render(assigns) do
     ~H"""
     <div class="mx-auto max-w-6xl space-y-8 p-6">

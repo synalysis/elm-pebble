@@ -3,8 +3,16 @@ defmodule Ide.AppStore.PublishFlags do
 
   alias Ide.Projects.Project
 
+  alias Ide.Projects.Types, as: ProjectsTypes
+
   @type visibility :: :published | :draft
   @type publish_flag_input :: boolean() | String.t() | integer() | nil
+
+  @typedoc "MCP publish tool args carrying release visibility (`is_published`)."
+  @type mcp_publish_args :: %{
+          optional(:is_published) => publish_flag_input(),
+          optional(String.t()) => publish_flag_input()
+        }
 
   @spec resolve_visibility(Project.t(), keyword()) :: visibility()
   def resolve_visibility(%Project{} = project, opts) do
@@ -24,14 +32,14 @@ defmodule Ide.AppStore.PublishFlags do
     |> published?()
   end
 
-  @spec from_mcp_args(map()) :: boolean()
+  @spec from_mcp_args(mcp_publish_args()) :: boolean()
   def from_mcp_args(args) when is_map(args) do
     args
     |> visibility_from_mcp_args()
     |> published?()
   end
 
-  @spec visibility_from_mcp_args(map()) :: visibility()
+  @spec visibility_from_mcp_args(mcp_publish_args()) :: visibility()
   def visibility_from_mcp_args(args) when is_map(args) do
     case Map.get(args, "is_published") do
       nil -> env_default_visibility()
@@ -69,7 +77,8 @@ defmodule Ide.AppStore.PublishFlags do
     end
   end
 
-  @spec release_defaults_visibility(map() | list() | nil) :: visibility()
+  @spec release_defaults_visibility(ProjectsTypes.release_defaults() | list() | nil) ::
+          visibility()
   def release_defaults_visibility(defaults) when is_map(defaults) do
     case Map.get(defaults, "is_published") do
       nil ->

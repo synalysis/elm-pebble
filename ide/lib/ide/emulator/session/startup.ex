@@ -56,11 +56,12 @@ defmodule Ide.Emulator.Session.Startup do
     end
   end
 
-  @spec maybe_start_qemu(Types.session_state()) :: {:ok, Types.session_state()} | {:error, term()}
+  @spec maybe_start_qemu(Types.session_state()) ::
+          {:ok, Types.session_state()} | {:error, Types.session_error()}
   def maybe_start_qemu(state), do: maybe_start_qemu(state, true)
 
   @spec maybe_start_qemu(Types.session_state(), boolean()) ::
-          {:ok, Types.session_state()} | {:error, term()}
+          {:ok, Types.session_state()} | {:error, Types.session_error()}
   def maybe_start_qemu(state, allow_flash_reset?) do
     if Config.start_processes?() do
       with {:ok, qemu_bin} <- Bins.qemu_bin(),

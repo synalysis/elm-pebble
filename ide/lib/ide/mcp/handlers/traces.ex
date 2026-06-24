@@ -7,6 +7,7 @@ defmodule Ide.Mcp.Handlers.Traces do
   alias Ide.Mcp.CheckCache
   alias Ide.Mcp.ToolSupport
   alias Ide.Mcp.ToolTypes
+  alias Ide.Mcp.Types, as: McpTypes
   alias Ide.Mcp.WireTypes
   alias Ide.Projects
   alias Ide.Screenshots
@@ -14,6 +15,8 @@ defmodule Ide.Mcp.Handlers.Traces do
   @type maybe_since :: DateTime.t() | nil
   @type maybe_slug :: String.t() | nil
   @type maybe_trace_id :: String.t() | nil
+  @type audit_entry :: McpTypes.audit_entry()
+  @type compiler_history_entry :: McpTypes.compiler_history_entry()
 
   defp mcp_tools_config, do: Application.get_env(:ide, Ide.Mcp.Tools, [])
 
@@ -331,6 +334,12 @@ defmodule Ide.Mcp.Handlers.Traces do
     }
   end
 
+  @spec sessions_recent_activity_payload(
+          [ToolTypes.sessions_recent_activity_entry()],
+          pos_integer(),
+          String.t() | nil,
+          DateTime.t() | nil
+        ) :: ToolTypes.sessions_recent_activity_result()
   defp sessions_recent_activity_payload(projects, limit, slug, since) do
     %{projects: projects, limit: limit, slug: slug, since: ToolSupport.format_since(since)}
   end
@@ -399,7 +408,7 @@ defmodule Ide.Mcp.Handlers.Traces do
     }
   end
 
-  @spec traces_export_write_payload(map(), non_neg_integer(), String.t(), String.t()) ::
+  @spec traces_export_write_payload(ToolTypes.traces_export_result(), non_neg_integer(), String.t(), String.t()) ::
           ToolTypes.traces_export_write_result()
   defp traces_export_write_payload(export, bytes, path, file_name)
        when is_map(export) and is_integer(bytes) and is_binary(path) and is_binary(file_name) do
@@ -496,7 +505,13 @@ defmodule Ide.Mcp.Handlers.Traces do
     %{status: validation.status, policy: effective, findings: validation.findings}
   end
 
-  @spec traces_summary_payload(map(), [map()], [map()], [map()], [map()]) ::
+  @spec traces_summary_payload(
+          ToolTypes.trace_bundle(),
+          [audit_entry()],
+          [compiler_history_entry()],
+          [compiler_history_entry()],
+          [compiler_history_entry()]
+        ) ::
           ToolTypes.traces_summary_result()
   defp traces_summary_payload(bundle, actions, checks, compiles, manifests) when is_map(bundle) do
     %{
@@ -520,7 +535,7 @@ defmodule Ide.Mcp.Handlers.Traces do
     }
   end
 
-  @spec build_trace_bundle(map()) ::
+  @spec build_trace_bundle(McpTypes.trace_bundle_args()) ::
           {:ok, ToolTypes.trace_bundle()} | {:error, String.t()}
   defp build_trace_bundle(args) do
     limit =
@@ -574,7 +589,7 @@ defmodule Ide.Mcp.Handlers.Traces do
   defp maybe_filter_projects(projects, nil), do: projects
   defp maybe_filter_projects(projects, slug), do: Enum.filter(projects, &(&1.slug == slug))
 
-  @spec recent_project_actions(String.t(), pos_integer(), maybe_since()) :: [map()]
+  @spec recent_project_actions(String.t(), pos_integer(), maybe_since()) :: [audit_entry()]
   defp recent_project_actions(project_slug, limit, since) do
     Audit.recent(limit * 5)
     |> Enum.filter(fn entry ->
@@ -602,13 +617,13 @@ defmodule Ide.Mcp.Handlers.Traces do
   end
 
   defp parse_prune_keep_latest(_), do: default_keep_latest()
-  @spec maybe_filter_trace_id([map()], maybe_trace_id()) :: [map()]
+  @spec maybe_filter_trace_id([audit_entry()], maybe_trace_id()) :: [audit_entry()]
   defp maybe_filter_trace_id(entries, nil), do: entries
 
   defp maybe_filter_trace_id(entries, trace_id),
     do: Enum.filter(entries, &(&1["trace_id"] == trace_id))
 
-  @spec maybe_filter_audit_slug([map()], maybe_slug()) :: [map()]
+  @spec maybe_filter_audit_slug([audit_entry()], maybe_slug()) :: [audit_entry()]
   defp maybe_filter_audit_slug(entries, nil), do: entries
 
   defp maybe_filter_audit_slug(entries, slug) do
@@ -619,7 +634,7 @@ defmodule Ide.Mcp.Handlers.Traces do
     end)
   end
 
-  @spec infer_slug_from_audit_entries([map()]) :: maybe_slug()
+  @spec infer_slug_from_audit_entries([audit_entry()]) :: maybe_slug()
   defp infer_slug_from_audit_entries(entries) do
     entries
     |> Enum.find_value(fn entry ->
@@ -629,7 +644,7 @@ defmodule Ide.Mcp.Handlers.Traces do
     end)
   end
 
-  @spec latest_entry(module(), maybe_slug(), maybe_since()) :: map() | nil
+  @spec latest_entry(module(), maybe_slug(), maybe_since()) :: compiler_history_entry() | nil
   defp latest_entry(_cache_module, nil, _since), do: nil
 
   defp latest_entry(cache_module, slug, since) do
@@ -639,7 +654,7 @@ defmodule Ide.Mcp.Handlers.Traces do
     end
   end
 
-  @spec status_of_entry(map() | nil) :: :ok | :error | String.t() | nil
+  @spec status_of_entry(compiler_history_entry() | nil) :: :ok | :error | String.t() | nil
   defp status_of_entry(nil), do: nil
 
   defp status_of_entry(entry) when is_map(entry) do
@@ -648,7 +663,7 @@ defmodule Ide.Mcp.Handlers.Traces do
     |> Map.get(:status)
   end
 
-  @spec strict_of_entry(map() | nil) :: boolean() | nil
+  @spec strict_of_entry(compiler_history_entry() | nil) :: boolean() | nil
   defp strict_of_entry(nil), do: nil
 
   defp strict_of_entry(entry) when is_map(entry) do
@@ -657,7 +672,7 @@ defmodule Ide.Mcp.Handlers.Traces do
     |> Map.get(:strict?)
   end
 
-  @spec action_counts([map()]) :: [map()]
+  @spec action_counts([audit_entry()]) :: [McpTypes.audit_action_count()]
   defp action_counts(entries) when is_list(entries) do
     entries
     |> Enum.group_by(&Map.get(&1, "action", "unknown"))
@@ -672,7 +687,14 @@ defmodule Ide.Mcp.Handlers.Traces do
     |> Enum.sort_by(& &1.action)
   end
 
-  @spec encode_canonical_json(WireTypes.json_value() | map()) :: String.t()
+  @type canonical_json_input ::
+          WireTypes.json_value()
+          | %{
+              optional(atom()) => WireTypes.json_value(),
+              optional(String.t()) => WireTypes.json_value()
+            }
+
+  @spec encode_canonical_json(canonical_json_input()) :: String.t()
   defp encode_canonical_json(value) when is_map(value) do
     members =
       value
@@ -811,7 +833,8 @@ defmodule Ide.Mcp.Handlers.Traces do
     end
   end
 
-  @spec validate_trace_policy(map()) :: [map()]
+  @spec validate_trace_policy(ToolTypes.traces_policy_effective_settings()) ::
+          [McpTypes.policy_finding()]
   defp validate_trace_policy(policy) when is_map(policy) do
     []
     |> maybe_add_finding(
@@ -846,7 +869,7 @@ defmodule Ide.Mcp.Handlers.Traces do
     )
   end
 
-  @spec findings_status([map()]) :: String.t()
+  @spec findings_status([McpTypes.policy_finding()]) :: String.t()
   defp findings_status(findings) when is_list(findings) do
     cond do
       Enum.any?(findings, &(&1.severity == "error")) -> "error"
@@ -855,13 +878,20 @@ defmodule Ide.Mcp.Handlers.Traces do
     end
   end
 
-  @spec policy_validation_payload(map()) :: ToolTypes.policy_validation_result()
+  @spec policy_validation_payload(ToolTypes.traces_policy_effective_settings()) ::
+          ToolTypes.policy_validation_result()
   defp policy_validation_payload(policy) when is_map(policy) do
     findings = validate_trace_policy(policy)
     %{status: findings_status(findings), findings: findings}
   end
 
-  @spec maybe_add_finding([map()], boolean(), String.t(), String.t(), String.t()) :: [map()]
+  @spec maybe_add_finding(
+          [McpTypes.policy_finding()],
+          boolean(),
+          String.t(),
+          String.t(),
+          String.t()
+        ) :: [McpTypes.policy_finding()]
   defp maybe_add_finding(findings, condition, severity, code, message)
        when is_boolean(condition) do
     if condition do

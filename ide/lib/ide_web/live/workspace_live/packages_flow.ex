@@ -5,12 +5,31 @@ defmodule IdeWeb.WorkspaceLive.PackagesFlow do
   import Phoenix.LiveView, only: [put_flash: 3, start_async: 3]
 
   alias Ide.Packages
+  alias Ide.Packages.Types, as: PackageTypes
+  alias Ide.Projects.Project
   alias Ide.Projects.Types, as: ProjectTypes
   alias IdeWeb.WorkspaceLive.EditorSupport
+  alias IdeWeb.WorkspaceLive.Types
+
+  alias IdeWeb.WorkspaceLive.EditorDependencies
 
   @type socket :: Phoenix.LiveView.Socket.t()
   @type lv_noreply :: {:noreply, socket()}
-  @type dependency_row :: map()
+  @type dependency_row :: EditorDependencies.dependency_row()
+
+  @type packages_search_async ::
+          {:ok,
+           {{:ok, PackageTypes.search_result()} | {:error, PackageTypes.package_error()},
+            reference()}}
+          | {:exit, Types.async_exit_reason()}
+
+  @type packages_inspect_async ::
+          {:ok,
+           {:ok, Types.packages_inspection()}
+           | {:error, String.t(), PackageTypes.package_error()}}
+          | {:exit, Types.async_exit_reason()}
+
+  @type packages_async :: packages_search_async() | packages_inspect_async()
 
   @type search_progress ::
           {:phase, atom() | {atom(), non_neg_integer()}}
@@ -89,7 +108,7 @@ defmodule IdeWeb.WorkspaceLive.PackagesFlow do
     end
   end
 
-  @spec default_packages_target_root(map()) :: String.t()
+  @spec default_packages_target_root(Project.t()) :: String.t()
   def default_packages_target_root(project) do
     roots = Packages.package_elm_json_roots(project)
 
@@ -101,7 +120,7 @@ defmodule IdeWeb.WorkspaceLive.PackagesFlow do
     end
   end
 
-  @spec sanitize_target_root(map(), String.t() | nil) :: String.t()
+  @spec sanitize_target_root(Project.t(), String.t() | nil) :: String.t()
   def sanitize_target_root(project, source_root) do
     allowed = Packages.package_elm_json_roots(project)
     root = source_root || default_packages_target_root(project)
@@ -109,9 +128,8 @@ defmodule IdeWeb.WorkspaceLive.PackagesFlow do
   end
 
   @spec fetch_package_inspection(String.t()) ::
-          {:ok,
-           %{package: String.t(), details: map(), versions: [String.t()], readme: String.t()}}
-          | {:error, String.t(), atom() | tuple() | String.t()}
+          {:ok, Types.packages_inspection()}
+          | {:error, String.t(), PackageTypes.package_error()}
   def fetch_package_inspection(package) when is_binary(package) do
     with {:ok, details} <- Packages.package_details(package, []),
          {:ok, versions_payload} <- Packages.versions(package, []),
@@ -147,7 +165,7 @@ defmodule IdeWeb.WorkspaceLive.PackagesFlow do
   @spec packages_asyncs() :: [atom()]
   def packages_asyncs, do: @packages_asyncs
 
-  @spec handle_event(String.t(), map(), socket()) :: lv_noreply()
+  @spec handle_event(String.t(), Types.event_params(), socket()) :: lv_noreply()
   def handle_event("packages-search", params, socket) do
     search_params = Map.get(params, "packages_search") || %{}
     query = Map.get(search_params, "query", "") |> String.trim()
@@ -307,7 +325,8 @@ defmodule IdeWeb.WorkspaceLive.PackagesFlow do
      |> assign(:packages_dep_readme, readme)}
   end
 
-  @spec handle_async(atom(), term(), socket()) :: lv_noreply()
+  @spec handle_async(:packages_search | :packages_inspect, packages_async(), socket()) ::
+          lv_noreply()
   def handle_async(:packages_search, {:ok, {{:ok, result}, token}}, socket) do
     if socket.assigns.packages_search_token == token do
       {:noreply,

@@ -9,7 +9,7 @@ defmodule Ide.Debugger.Types.SubscriptionToggleEventPayload do
           optional(:trigger) => String.t(),
           optional(:message) => String.t(),
           optional(:enabled) => boolean(),
-          optional(:disabled_subscriptions) => [map()],
+          optional(:disabled_subscriptions) => [DisabledSubscription.wire_map()],
           optional(atom()) => Types.wire_input(),
           optional(String.t()) => Types.wire_input()
         }

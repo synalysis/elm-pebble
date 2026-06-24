@@ -2,8 +2,12 @@ defmodule IdeWeb.WorkspaceLive.ToolchainPresenter do
   @moduledoc false
 
   alias Ide.EmulatorSupport
+  alias Ide.PebbleToolchain
+  alias Ide.PublishManifest
+  alias Ide.PublishReadiness
+  alias Ide.Screenshots
 
-  @spec render_toolchain_output(map()) :: String.t()
+  @spec render_toolchain_output(PebbleToolchain.command_result()) :: String.t()
   def render_toolchain_output(result) do
     """
     cwd: #{result.cwd}
@@ -14,7 +18,7 @@ defmodule IdeWeb.WorkspaceLive.ToolchainPresenter do
     """
   end
 
-  @spec render_screenshot_output(map()) :: String.t()
+  @spec render_screenshot_output(Screenshots.capture_result()) :: String.t()
   def render_screenshot_output(result) do
     """
     command: #{result.command}
@@ -28,7 +32,7 @@ defmodule IdeWeb.WorkspaceLive.ToolchainPresenter do
     """
   end
 
-  @spec render_capture_all_output(map()) :: String.t()
+  @spec render_capture_all_output(Screenshots.capture_all_result()) :: String.t()
   def render_capture_all_output(result) do
     lines =
       Enum.map(result.results, fn
@@ -57,7 +61,7 @@ defmodule IdeWeb.WorkspaceLive.ToolchainPresenter do
     """
   end
 
-  @spec render_publish_output(map()) :: String.t()
+  @spec render_publish_output(PebbleToolchain.package_result()) :: String.t()
   def render_publish_output(result) do
     """
     command: #{result.build_result.command}
@@ -68,7 +72,7 @@ defmodule IdeWeb.WorkspaceLive.ToolchainPresenter do
     """
   end
 
-  @spec render_manifest_export_output(map()) :: String.t()
+  @spec render_manifest_export_output(PublishManifest.export_result()) :: String.t()
   def render_manifest_export_output(result) do
     screenshot_count =
       result.payload.screenshots_by_target
@@ -102,7 +106,8 @@ defmodule IdeWeb.WorkspaceLive.ToolchainPresenter do
     EmulatorSupport.mode_options(target)
   end
 
-  @spec publish_readiness([map()], [String.t()]) :: [map()]
+  @spec publish_readiness([Screenshots.screenshot()], [String.t()]) ::
+          [PublishReadiness.screenshot_readiness()]
   def publish_readiness(shots, targets) do
     counts =
       shots

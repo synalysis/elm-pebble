@@ -12,7 +12,11 @@ defmodule Ide.PublishReadiness do
           required(:message) => String.t()
         }
 
-  @type appinfo_parse :: {:ok, map()} | {:error, atom() | String.t()}
+  @type appinfo_json :: %{
+          optional(String.t()) => String.t() | boolean() | integer() | [String.t()] | nil
+        }
+
+  @type appinfo_parse :: {:ok, appinfo_json()} | {:error, atom() | String.t()}
 
   @type screenshot_readiness :: %{
           required(:target) => String.t(),

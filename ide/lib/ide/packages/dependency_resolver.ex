@@ -12,8 +12,8 @@ defmodule Ide.Packages.DependencyResolver do
   Returns new `direct` and `indirect` version maps (pinned versions), or an error if
   the package was not a direct dependency or resolution fails.
   """
-  @spec resolve_after_removing_direct(map(), String.t(), callbacks()) ::
-          {:ok, map()} | {:error, map()}
+  @spec resolve_after_removing_direct(Types.dependencies_section(), String.t(), callbacks()) ::
+          {:ok, Types.resolve_after_remove_result()} | {:error, Types.resolver_error()}
   def resolve_after_removing_direct(section_map, removed_package, callbacks)
       when is_map(section_map) and is_binary(removed_package) do
     direct_existing = normalize_dependency_map(section_map["direct"])
@@ -66,7 +66,8 @@ defmodule Ide.Packages.DependencyResolver do
     end
   end
 
-  @spec resolve(map(), String.t(), String.t(), callbacks()) :: {:ok, map()} | {:error, map()}
+  @spec resolve(Types.dependencies_section(), String.t(), String.t(), callbacks()) ::
+          {:ok, Types.resolve_result()} | {:error, Types.resolver_error()}
   def resolve(section_map, package, scope, callbacks) when is_map(section_map) do
     direct_existing = normalize_dependency_map(section_map["direct"])
     indirect_existing = normalize_dependency_map(section_map["indirect"])
@@ -271,7 +272,8 @@ defmodule Ide.Packages.DependencyResolver do
   end
 
   @spec fetch_versions(String.t(), callbacks(), Types.resolver_state()) ::
-          {:ok, [String.t()], Types.resolver_state()} | {:error, term(), Types.resolver_state()}
+          {:ok, [String.t()], Types.resolver_state()}
+          | {:error, Types.package_error(), Types.resolver_state()}
   defp fetch_versions(package, callbacks, state) do
     case state.versions_cache do
       %{^package => versions} ->
@@ -318,7 +320,7 @@ defmodule Ide.Packages.DependencyResolver do
     end
   end
 
-  @spec extract_dependency_constraints(map()) :: Types.dependency_constraints_map()
+  @spec extract_dependency_constraints(Types.elm_json()) :: Types.dependency_constraints_map()
   defp extract_dependency_constraints(elm_json) do
     deps = Map.get(elm_json, "dependencies", %{})
 
@@ -334,14 +336,16 @@ defmodule Ide.Packages.DependencyResolver do
     end
   end
 
-  @spec merge_constraint_maps([map() | nil]) :: Types.dependency_constraints_map()
+  @spec merge_constraint_maps([Types.dependency_constraints_map() | nil]) ::
+          Types.dependency_constraints_map()
   defp merge_constraint_maps(maps) do
     maps
     |> Enum.map(&normalize_dependency_map/1)
     |> Enum.reduce(%{}, fn map, acc -> Map.merge(acc, map) end)
   end
 
-  @spec normalize_dependency_map(map() | list() | nil) :: Types.dependency_constraints_map()
+  @spec normalize_dependency_map(Types.dependency_constraints_map() | list() | nil) ::
+          Types.dependency_constraints_map()
   defp normalize_dependency_map(value) when is_map(value) do
     value
     |> Enum.reduce(%{}, fn {pkg, constraint}, acc ->
@@ -430,7 +434,7 @@ defmodule Ide.Packages.DependencyResolver do
     end
   end
 
-  @spec sort_map(map()) :: Types.dependency_versions_map()
+  @spec sort_map(Types.dependency_versions_map()) :: Types.dependency_versions_map()
   defp sort_map(map) do
     map
     |> Enum.sort_by(fn {key, _value} -> key end)

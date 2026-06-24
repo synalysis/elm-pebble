@@ -4,17 +4,19 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
 
   import IdeWeb.WatchInteractives
 
+  alias Ide.Debugger.Types, as: DebuggerTypes
   alias Ide.Emulator.Types, as: EmulatorTypes
   alias Ide.Projects
   alias Ide.Projects.Project
   alias Ide.SimulatorSettings
   alias Ide.WatchModels
+  alias IdeWeb.WorkspaceLive.EmulatorPage.Assigns
   alias Phoenix.LiveView.Rendered
 
-  @type assigns :: map()
+  @type assigns :: Assigns.t()
   @type rendered :: Rendered.t()
-  @type flow_status :: :idle | :running | :ok | :error
-  @type installation_status :: map()
+  @type flow_status :: Assigns.flow_status()
+  @type installation_status :: Assigns.installation_status()
 
   @spec render(assigns()) :: rendered()
   def render(assigns) do
@@ -882,7 +884,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
     |> Map.get("shape", "rect")
   end
 
-  @spec emulator_settings_path(Project.t() | map() | nil) :: String.t()
+  @spec emulator_settings_path(Project.t() | nil) :: String.t()
   defp emulator_settings_path(%{slug: slug}) when is_binary(slug) do
     "/settings?return_to=" <> URI.encode_www_form("/projects/#{slug}/emulator")
   end
@@ -894,7 +896,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
     compass_heading_deg compass_valid use_simulator_weather weather
   )
 
-  @spec emulator_simulator_capabilities_json(Project.t() | map() | nil, map() | nil) ::
+  @spec emulator_simulator_capabilities_json(Project.t() | nil, DebuggerTypes.runtime_state() | nil) ::
           String.t()
   defp emulator_simulator_capabilities_json(project, debugger_state) do
     project
@@ -903,7 +905,8 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
     |> Jason.encode!()
   end
 
-  @spec emulator_simulator_settings_json(Project.t() | map() | nil, map() | nil) :: String.t()
+  @spec emulator_simulator_settings_json(Project.t() | nil, DebuggerTypes.runtime_state() | nil) ::
+          String.t()
   defp emulator_simulator_settings_json(project, debugger_state) do
     caps = SimulatorSettings.capabilities_for(project, debugger_state, :emulator)
 

@@ -53,4 +53,11 @@ defmodule ElmEx.IR.Types.Lookup do
         }
 
   @type t :: rewrite_t() | constructor_t() | payload_kind_t() | import_resolution_t()
+
+  @type import_resolution_bundle :: {
+          name_map(),
+          import_unqualified_map(),
+          [String.t()],
+          name_map()
+        }
 end

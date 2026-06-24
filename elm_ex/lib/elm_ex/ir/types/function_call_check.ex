@@ -3,16 +3,18 @@ defmodule ElmEx.IR.Types.FunctionCallCheck do
   Types for `ElmEx.IR.FunctionCallCheck` import resolution and call-site analysis.
   """
 
+  alias ElmEx.Frontend.AstContract.Types.Declaration, as: AstDeclaration
   alias ElmEx.Frontend.Module
   alias ElmEx.IR.Types.Diagnostic
   alias ElmEx.IR.Types.Lookup
+  alias ElmEx.IR.Types.ModuleExports
 
   @type binding_types :: Lookup.name_map()
 
   @type signature_lookup :: %{String.t() => String.t()}
 
   @type type_alias_spec :: %{
-          required(:fields) => list(),
+          required(:fields) => [String.t()],
           required(:field_types) => %{String.t() => String.t()}
         }
 
@@ -37,17 +39,26 @@ defmodule ElmEx.IR.Types.FunctionCallCheck do
 
   @type occurrence_counts :: %{String.t() => non_neg_integer()}
 
+  @type function_decl_context ::
+          AstDeclaration.function_definition()
+          | %{optional(atom()) => term(), optional(String.t()) => term()}
+
   @type call_context :: %{
           required(:module_name) => String.t(),
           required(:function_name) => String.t(),
           optional(:file) => String.t() | nil,
           optional(:module_path) => String.t() | nil,
-          optional(:decl) => map(),
+          optional(:decl) => function_decl_context(),
           optional(:binding_types) => binding_types(),
           optional(:occurrence_counts) => occurrence_counts()
         }
 
-  @type call_context_wire :: call_context() | map()
+  @type call_context_wire :: call_context() | call_context_partial()
+
+  @type call_context_partial :: %{
+          optional(atom()) => term(),
+          optional(String.t()) => term()
+        }
 
   @type diagnostics_result :: {[Diagnostic.t()], call_context_wire()}
 
@@ -56,13 +67,12 @@ defmodule ElmEx.IR.Types.FunctionCallCheck do
           | {:missing_field, String.t()}
           | {:field_type, String.t(), String.t(), String.t()}
 
-  @type project_module_exports :: %{String.t() => map()}
+  @type project_module_exports :: ModuleExports.project_exports()
 
-  @type field_types_map :: Lookup.name_map()
+  @type field_types_map :: %{String.t() => String.t()}
   @type name_map :: Lookup.name_map()
 
-  @type frontend_module :: Module.t() | map()
+  @type frontend_module :: Module.t()
 
-  @type import_resolution_maps ::
-          {Lookup.name_map(), Lookup.name_map(), [String.t()], Lookup.name_map()}
+  @type import_resolution_maps :: Lookup.import_resolution_bundle()
 end

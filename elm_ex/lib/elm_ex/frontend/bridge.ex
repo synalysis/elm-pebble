@@ -4,11 +4,13 @@ defmodule ElmEx.Frontend.Bridge do
   producing compiler-friendly metadata for code generation.
   """
 
+  alias ElmEx.Frontend.Bridge.Types, as: BridgeTypes
   alias ElmEx.Frontend.Project
   alias ElmEx.IR.Lowerer
+  alias ElmEx.IR.Types.Diagnostic, as: IRDiagnostic
   alias ElmEx.Types
 
-  @spec load_project(String.t()) :: {:ok, Project.t()} | {:error, map()}
+  @spec load_project(String.t()) :: {:ok, Project.t()} | {:error, BridgeTypes.bridge_error()}
   def load_project(project_dir) do
     load_project_from_sources(project_dir, %{})
   end
@@ -19,7 +21,7 @@ defmodule ElmEx.Frontend.Bridge do
   `source_overrides` keys are paths relative to `project_dir` (for example `"src/Main.elm"`).
   """
   @spec load_project_from_sources(String.t(), %{String.t() => String.t()}) ::
-          {:ok, Project.t()} | {:error, map()}
+          {:ok, Project.t()} | {:error, BridgeTypes.bridge_error()}
   def load_project_from_sources(project_dir, source_overrides \\ %{})
       when is_binary(project_dir) and is_map(source_overrides) do
     project_dir = Path.expand(project_dir)
@@ -40,8 +42,10 @@ defmodule ElmEx.Frontend.Bridge do
     end
   end
 
-  @spec apply_source_overrides(String.t(), [ElmEx.Frontend.Module.t()], map()) ::
-          {:ok, [ElmEx.Frontend.Module.t()]} | {:error, map()}
+  @spec apply_source_overrides(String.t(), [ElmEx.Frontend.Module.t()], %{
+          String.t() => String.t()
+        }) ::
+          {:ok, [ElmEx.Frontend.Module.t()]} | {:error, BridgeTypes.parse_error()}
   defp apply_source_overrides(_project_dir, modules, overrides)
        when map_size(overrides) == 0,
        do: {:ok, modules}
@@ -67,7 +71,7 @@ defmodule ElmEx.Frontend.Bridge do
     end
   end
 
-  @spec read_elm_json(String.t()) :: {:ok, map()} | {:error, map()}
+  @spec read_elm_json(String.t()) :: {:ok, Types.elm_json()} | {:error, BridgeTypes.config_error()}
   defp read_elm_json(project_dir) do
     elm_json_path = Path.join(project_dir, "elm.json")
 
@@ -83,7 +87,8 @@ defmodule ElmEx.Frontend.Bridge do
     end
   end
 
-  @spec run_elm_check(String.t(), [String.t()]) :: {:ok, [map()]} | {:error, map()}
+  @spec run_elm_check(String.t(), [String.t()]) ::
+          {:ok, [Types.elm_report()]} | {:error, BridgeTypes.elm_check_failed()}
   defp run_elm_check(_project_dir, []), do: {:ok, []}
 
   defp run_elm_check(project_dir, module_paths) do
@@ -96,7 +101,8 @@ defmodule ElmEx.Frontend.Bridge do
     end
   end
 
-  @spec run_elm_make_check(String.t(), [String.t()]) :: {:ok, [map()]} | {:error, map()}
+  @spec run_elm_make_check(String.t(), [String.t()]) ::
+          {:ok, [Types.elm_report()]} | {:error, BridgeTypes.elm_check_failed()}
   defp run_elm_make_check(project_dir, module_paths) do
     entry =
       Enum.find(module_paths, fn path -> String.ends_with?(path, "Main.elm") end) ||
@@ -116,7 +122,7 @@ defmodule ElmEx.Frontend.Bridge do
     end
   end
 
-  @spec parse_diagnostics(String.t()) :: [map()]
+  @spec parse_diagnostics(String.t()) :: [Types.elm_report()]
   defp parse_diagnostics(stdout) do
     stdout
     |> String.split("\n", trim: true)
@@ -130,7 +136,8 @@ defmodule ElmEx.Frontend.Bridge do
     end)
   end
 
-  @spec discover_module_paths(String.t(), map()) :: {:ok, [String.t()]} | {:error, map()}
+  @spec discover_module_paths(String.t(), Types.elm_json()) ::
+          {:ok, [String.t()]} | {:error, BridgeTypes.bridge_error()}
   defp discover_module_paths(project_dir, elm_json) do
     source_dirs =
       Map.get(elm_json, "source-directories", ["src"]) ++ builtin_source_dirs(elm_json)
@@ -182,7 +189,7 @@ defmodule ElmEx.Frontend.Bridge do
     |> Enum.join(".")
   end
 
-  @spec builtin_source_dirs(map()) :: [String.t()]
+  @spec builtin_source_dirs(Types.elm_json()) :: [String.t()]
   defp builtin_source_dirs(elm_json) when is_map(elm_json) do
     deps =
       elm_json
@@ -204,7 +211,8 @@ defmodule ElmEx.Frontend.Bridge do
   defp dependency_names(deps) when is_map(deps), do: Map.keys(deps)
   defp dependency_names(_), do: []
 
-  @spec load_modules([String.t()]) :: {:ok, [ElmEx.Frontend.Module.t()]} | {:error, map()}
+  @spec load_modules([String.t()]) ::
+          {:ok, [ElmEx.Frontend.Module.t()]} | {:error, BridgeTypes.parse_error()}
   defp load_modules(module_paths) do
     backend = parser_backend()
 
@@ -261,7 +269,7 @@ defmodule ElmEx.Frontend.Bridge do
     %{project | diagnostics: project.diagnostics ++ lowerer_diagnostics}
   end
 
-  @spec bridge_lowerer_diagnostic(map()) :: map()
+  @spec bridge_lowerer_diagnostic(IRDiagnostic.t()) :: BridgeTypes.lowerer_diagnostic()
   defp bridge_lowerer_diagnostic(diagnostic) when is_map(diagnostic) do
     %{
       "type" => "lowerer-warning",

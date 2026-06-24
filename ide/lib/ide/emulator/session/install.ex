@@ -31,7 +31,7 @@ defmodule Ide.Emulator.Session.Install do
     end
   end
 
-  @spec retryable_install_error?(term()) :: boolean()
+  @spec retryable_install_error?(Types.install_error()) :: boolean()
   def retryable_install_error?({:putbytes_failed, _meta, :timeout}), do: true
   def retryable_install_error?({:putbytes_failed, _meta, {:timeout, _observed}}), do: true
   def retryable_install_error?({:blob_insert_failed, _response}), do: true

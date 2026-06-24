@@ -16,6 +16,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
   alias Ide.Projects
   alias IdeWeb.WorkspaceLive.PublishFlow
   alias IdeWeb.WorkspaceLive.State
+  alias IdeWeb.WorkspaceLive.Types
 
   @type socket :: Phoenix.LiveView.Socket.t()
   @type lv_noreply :: {:noreply, socket()}
@@ -48,7 +49,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
   @spec handles?(String.t()) :: boolean()
   def handles?(event) when is_binary(event), do: event in @settings_events
 
-  @spec handle_event(String.t(), map(), socket()) :: lv_noreply()
+  @spec handle_event(String.t(), Types.event_params(), socket()) :: lv_noreply()
   def handle_event("firebase-auth-refreshed", %{"id_token" => id_token}, socket) do
     with {:ok, payload} <- Auth.verify_firebase_id_token(id_token),
          {:ok, user} <- Auth.upsert_firebase_user(payload) do
@@ -633,7 +634,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
 
   def format_github_push_error(reason), do: GitHubRepositories.format_error(reason)
 
-  @spec github_push_success_output(map()) :: String.t()
+  @spec github_push_success_output(Types.github_push_result()) :: String.t()
   def github_push_success_output(result) do
     commit_line =
       if Map.get(result, :committed, true) do
@@ -650,7 +651,13 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
     |> Enum.join("\n")
   end
 
-  @spec handle_async(atom(), term(), socket()) :: lv_noreply()
+  @type settings_async_name ::
+          :sync_store_listing_metadata
+          | :github_repo_status_check
+          | :create_github_repository
+          | :create_github_repository_and_push
+
+  @spec handle_async(settings_async_name(), Types.async_result(), socket()) :: lv_noreply()
   def handle_async(async, result, socket) when async in @settings_asyncs do
     do_handle_async(async, result, socket)
   end

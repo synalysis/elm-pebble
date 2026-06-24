@@ -31,6 +31,8 @@ defmodule IdeWeb.WorkspaceLive do
   alias IdeWeb.WorkspaceLive.DebuggerFlow
   alias IdeWeb.WorkspaceLive.DebuggerPage
   alias IdeWeb.WorkspaceLive.State
+  alias IdeWeb.WorkspaceLive.EditorDependencies
+  alias IdeWeb.WorkspaceLive.Assigns, as: SocketAssigns
   alias IdeWeb.WorkspaceLive.Types
 
   alias Phoenix.LiveView.Rendered
@@ -38,10 +40,10 @@ defmodule IdeWeb.WorkspaceLive do
   @type socket :: Phoenix.LiveView.Socket.t()
   @type lv_mount :: {:ok, socket()}
   @type lv_noreply :: {:noreply, socket()}
-  @type assigns :: map()
+  @type assigns :: SocketAssigns.t()
   @type wire_input :: String.t() | integer() | float() | boolean() | nil | [wire_input()]
   @type pane :: atom()
-  @type dependency_row :: map()
+  @type dependency_row :: EditorDependencies.dependency_row()
 
   @valid_resource_views ~w(
     bitmaps-static
@@ -66,7 +68,7 @@ defmodule IdeWeb.WorkspaceLive do
   @packages_flow_asyncs PackagesFlow.packages_asyncs()
 
   @impl true
-  @spec mount(map(), map(), socket()) :: lv_mount()
+  @spec mount(Types.wire_params(), Types.session_params(), socket()) :: lv_mount()
   def mount(_params, _session, socket) do
     settings = Settings.current()
 
@@ -74,7 +76,7 @@ defmodule IdeWeb.WorkspaceLive do
   end
 
   @impl true
-  @spec handle_params(map(), String.t(), socket()) :: lv_noreply()
+  @spec handle_params(Types.wire_params(), String.t(), socket()) :: lv_noreply()
   def handle_params(%{"slug" => slug} = params, _uri, socket) do
     case Projects.get_project_by_slug(slug, socket.assigns.current_user) do
       nil ->
@@ -194,7 +196,7 @@ defmodule IdeWeb.WorkspaceLive do
   end
 
   @impl true
-  @spec handle_event(String.t(), map(), socket()) :: lv_noreply()
+  @spec handle_event(String.t(), Types.event_params(), socket()) :: lv_noreply()
   def handle_event(event, params, socket) when event in @editor_flow_events do
     EditorFlow.handle_event(event, params, socket)
   end
@@ -265,7 +267,9 @@ defmodule IdeWeb.WorkspaceLive do
     route_info(msg, socket)
   end
 
-  @spec route_info(term(), socket()) :: lv_noreply()
+  @type routed_info_message :: Types.info_message() | Types.liveview_system_message()
+
+  @spec route_info(routed_info_message() | term(), socket()) :: lv_noreply()
   defp route_info({:companion_debugger_bootstrapped, _, _} = msg, socket),
     do: DebuggerFlow.handle_info(msg, socket)
 

@@ -11,7 +11,7 @@ defmodule Ide.Resources.ResourceStore.SpeakerSamples do
   @generated_module_rel_path "watch/src/Pebble/Speaker/Resources.elm"
   @max_total_bytes 16 * 1024
 
-  @spec list_samples(Project.t()) :: {:ok, [map()]} | {:error, Types.resource_error()}
+  @spec list_samples(Project.t()) :: {:ok, [Types.speaker_sample_entry()]} | {:error, Types.resource_error()}
   def list_samples(%Project{} = project) do
     workspace = Projects.project_workspace_path(project)
 
@@ -21,7 +21,7 @@ defmodule Ide.Resources.ResourceStore.SpeakerSamples do
   end
 
   @spec import_sample(Project.t(), String.t(), String.t(), keyword()) ::
-          {:ok, map()} | {:error, term()}
+          {:ok, Types.speaker_sample_import_ok()} | {:error, term()}
   def import_sample(%Project{} = project, upload_path, original_name, opts \\ [])
       when is_binary(upload_path) and is_binary(original_name) do
     workspace = Projects.project_workspace_path(project)

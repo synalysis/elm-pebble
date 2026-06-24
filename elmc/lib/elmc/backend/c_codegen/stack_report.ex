@@ -3,6 +3,7 @@ defmodule Elmc.Backend.CCodegen.StackReport do
 
   alias Elmc.Backend.CCodegen.LinkedBinaryReport
   alias Elmc.Backend.CCodegen.StackEstimate
+  alias Elmc.Backend.CCodegen.Types.LinkedBinary, as: LinkedBinaryTypes
 
   @spec enrich_file(String.t(), String.t(), keyword()) :: :ok | {:error, term()}
   def enrich_file(stack_report_path, app_root, opts \\ []) when is_binary(stack_report_path) do
@@ -30,7 +31,7 @@ defmodule Elmc.Backend.CCodegen.StackReport do
     end
   end
 
-  @spec flash_detail(map()) :: String.t() | nil
+  @spec flash_detail(LinkedBinaryTypes.wire_map()) :: String.t() | nil
   def flash_detail(%{"available" => true} = linked) do
     text =
       case Map.get(linked, "elf_size") do
@@ -57,7 +58,7 @@ defmodule Elmc.Backend.CCodegen.StackReport do
 
   def flash_detail(_), do: nil
 
-  @spec read_linked_binary(String.t()) :: map() | nil
+  @spec read_linked_binary(String.t()) :: LinkedBinaryTypes.wire_map() | nil
   def read_linked_binary(stack_report_path) when is_binary(stack_report_path) do
     with {:ok, contents} <- File.read(stack_report_path),
          {:ok, %{"code_size_indicators" => %{"linked_binary" => linked}}} <- Jason.decode(contents),

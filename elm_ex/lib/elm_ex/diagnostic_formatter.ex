@@ -4,8 +4,9 @@ defmodule ElmEx.DiagnosticFormatter do
   """
 
   alias ElmEx.Types
+  alias ElmEx.Frontend.Bridge.Types, as: BridgeTypes
 
-  @spec format_error(map()) :: String.t()
+  @spec format_error(BridgeTypes.bridge_error()) :: String.t()
   def format_error(%{kind: :config_error, reason: :missing_elm_json, path: path}) do
     [
       "-- MISSING elm.json -------------------------------------------------------- elm_ex\n\n",
@@ -64,7 +65,7 @@ defmodule ElmEx.DiagnosticFormatter do
       inspect(error, pretty: true) <> "\n"
   end
 
-  @spec format_warnings([map()]) :: String.t()
+  @spec format_warnings([BridgeTypes.lowerer_warning()]) :: String.t()
   def format_warnings(warnings) when is_list(warnings) do
     warnings
     |> Enum.map(&format_warning/1)
@@ -72,7 +73,7 @@ defmodule ElmEx.DiagnosticFormatter do
     |> Enum.join("\n\n")
   end
 
-  @spec format_warning(map()) :: String.t()
+  @spec format_warning(BridgeTypes.lowerer_warning()) :: String.t()
   defp format_warning(%{"type" => "lowerer-warning"} = warning) do
     source = Map.get(warning, "source", "lowerer")
     module_name = Map.get(warning, "module", "<unknown>")
@@ -122,7 +123,7 @@ defmodule ElmEx.DiagnosticFormatter do
     "#{module_name}.#{function_name}"
   end
 
-  @spec format_structured_warning_details(map()) :: String.t()
+  @spec format_structured_warning_details(BridgeTypes.lowerer_warning()) :: String.t()
   defp format_structured_warning_details(warning) when is_map(warning) do
     code = Map.get(warning, "code", Map.get(warning, :code))
     constructor = Map.get(warning, "constructor", Map.get(warning, :constructor))
@@ -184,7 +185,7 @@ defmodule ElmEx.DiagnosticFormatter do
 
   defp format_elm_report(_), do: ""
 
-  @spec format_problem(String.t(), map()) :: String.t()
+  @spec format_problem(String.t(), ElmEx.Types.ElmReport.problem()) :: String.t()
   defp format_problem(path, problem) do
     title = Map.get(problem, "title", "ELM ERROR")
     region = Map.get(problem, "region", %{})

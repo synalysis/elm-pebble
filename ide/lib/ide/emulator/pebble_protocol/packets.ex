@@ -102,9 +102,14 @@ defmodule Ide.Emulator.PebbleProtocol.Packets do
 
   def decode_app_fetch_request(payload), do: {:error, {:unexpected_app_fetch_payload, payload}}
 
+  @type blob_db_response :: %{
+          required(:token) => non_neg_integer(),
+          required(:response) => non_neg_integer(),
+          required(:success?) => boolean()
+        }
+
   @spec decode_blob_response(binary()) ::
-          {:ok, %{token: non_neg_integer(), response: non_neg_integer(), success?: boolean()}}
-          | {:error, Types.packet_decode_error()}
+          {:ok, blob_db_response()} | {:error, Types.packet_decode_error()}
   def decode_blob_response(<<token::little-16, response>>) do
     {:ok, %{token: token, response: response, success?: response == @blob_success}}
   end

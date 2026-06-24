@@ -10,5 +10,5 @@ defmodule ElmEx.IR.Types.Pattern do
           optional(atom()) => term()
         }
 
-  @type wire_pattern :: map()
+  @type wire_pattern :: t()
 end

@@ -3,23 +3,14 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
   use IdeWeb, :html
 
   alias Ide.Auth
+  alias IdeWeb.WorkspaceLive.PublishPage.Assigns
   alias Phoenix.LiveView.Rendered
 
-  alias Ide.Mcp.WireTypes
-
-  @type assigns :: map()
+  @type assigns :: Assigns.t()
   @type rendered :: Rendered.t()
-  @type flow_status :: :idle | :running | :ok | :error
-  @type publish_summary :: %{
-          required(:status) => :idle | :ready | :blocked,
-          required(:blockers) => non_neg_integer(),
-          required(:warnings) => non_neg_integer(),
-          required(:passed) => non_neg_integer()
-        }
-  @type publish_check :: %{
-          required(:status) => :ok | :error | atom(),
-          optional(atom()) => WireTypes.json_value()
-        }
+  @type flow_status :: Assigns.flow_status()
+  @type publish_summary :: Assigns.publish_summary()
+  @type publish_check :: Assigns.publish_check()
 
   @spec render(assigns()) :: rendered()
   def render(assigns) do

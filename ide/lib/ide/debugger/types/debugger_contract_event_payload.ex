@@ -13,7 +13,7 @@ defmodule Ide.Debugger.Types.DebuggerContractEventPayload do
           optional(:source_byte_size) => non_neg_integer() | nil,
           optional(:source_line_count) => non_neg_integer() | nil,
           optional(:port_module) => boolean(),
-          optional(:module_exposing) => String.t() | list() | nil,
+          optional(:module_exposing) => String.t() | [String.t()] | nil,
           optional(:module_exposing_preview) => String.t(),
           optional(:msg_count) => non_neg_integer(),
           optional(:update_branch_count) => non_neg_integer(),

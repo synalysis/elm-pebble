@@ -5,8 +5,8 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis do
   alias ElmEx.DebuggerContract.EffectAnalysis.CmdCalls
   alias ElmEx.DebuggerContract.EffectAnalysis.Subscriptions
   alias ElmEx.DebuggerContract.EffectAnalysis.Support
-  alias ElmEx.DebuggerContract.Types
 
+  @spec main_program_outline(Types.ast_expr() | nil) :: Types.program_outline()
   def main_program_outline(nil), do: nil
 
   def main_program_outline(expr) do

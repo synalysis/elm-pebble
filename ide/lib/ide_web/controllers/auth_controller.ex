@@ -2,8 +2,9 @@ defmodule IdeWeb.AuthController do
   use IdeWeb, :controller
 
   alias Ide.Auth
+  alias IdeWeb.Types
 
-  @spec login(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  @spec login(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def login(conn, _params) do
     if Auth.public_mode?() and conn.assigns[:current_user] do
       redirect(conn, to: ~p"/projects")
@@ -25,7 +26,7 @@ defmodule IdeWeb.AuthController do
     end
   end
 
-  @spec status(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  @spec status(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def status(conn, _params) do
     user = conn.assigns[:current_user]
     token = conn.assigns[:firebase_id_token]
@@ -43,7 +44,7 @@ defmodule IdeWeb.AuthController do
     })
   end
 
-  @spec firebase(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  @spec firebase(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def firebase(conn, %{"id_token" => id_token}) do
     with {:ok, payload} <- Auth.verify_firebase_id_token(id_token),
          {:ok, user} <- Auth.upsert_firebase_user(payload) do
@@ -70,7 +71,7 @@ defmodule IdeWeb.AuthController do
     conn |> put_status(:bad_request) |> json(%{error: "Missing id_token"})
   end
 
-  @spec email_continue(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  @spec email_continue(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def email_continue(conn, %{"email" => email}) when is_binary(email) do
     if Auth.public_custom_mode?() do
       email = Ide.Auth.User.normalize_email(email)
@@ -113,7 +114,7 @@ defmodule IdeWeb.AuthController do
     conn |> put_flash(:error, "Email is required.") |> redirect(to: ~p"/login")
   end
 
-  @spec email_verify(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  @spec email_verify(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def email_verify(conn, %{"token" => token}) when is_binary(token) do
     if Auth.public_custom_mode?() do
       case Auth.verify_login_token(token) do
@@ -152,7 +153,7 @@ defmodule IdeWeb.AuthController do
     |> redirect(to: ~p"/login")
   end
 
-  @spec refresh(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  @spec refresh(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def refresh(conn, %{"id_token" => id_token}) do
     with user when not is_nil(user) <- conn.assigns[:current_user],
          {:ok, payload} <- Auth.verify_firebase_id_token(id_token),
@@ -172,14 +173,14 @@ defmodule IdeWeb.AuthController do
     conn |> put_status(:bad_request) |> json(%{error: "Missing id_token"})
   end
 
-  @spec logout(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  @spec logout(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def logout(conn, _params) do
     conn
     |> renew_session()
     |> json(%{logged_in: false})
   end
 
-  @spec delete_data(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  @spec delete_data(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def delete_data(conn, _params) do
     if Auth.public_mode?() do
       case conn.assigns[:current_user] do

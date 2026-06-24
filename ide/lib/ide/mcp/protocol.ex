@@ -185,7 +185,7 @@ defmodule Ide.Mcp.Protocol do
     end
   end
 
-  @spec audit(String.t(), String.t(), String.t(), map(), String.t() | nil) :: :ok
+  @spec audit(String.t(), String.t(), String.t(), json_rpc_request(), String.t() | nil) :: :ok
   defp audit(action, status, trace_id, params, error_message \\ nil) do
     entry = %{
       at: DateTime.utc_now() |> DateTime.to_iso8601(),

@@ -11,6 +11,7 @@ defmodule Ide.GitHub.Push do
   alias Ide.ProjectReadme
   alias Ide.Projects
   alias Ide.Projects.Project
+  alias Ide.Projects.Types, as: ProjectsTypes
 
   @mirror_dir ".elm-pebble-github"
 
@@ -36,8 +37,8 @@ defmodule Ide.GitHub.Push do
   deps/
   """
 
-  @spec push_project_snapshot(Project.t(), map(), keyword()) ::
-          {:ok, map()} | {:error, Types.push_error()}
+  @spec push_project_snapshot(Project.t(), ProjectsTypes.github_config(), keyword()) ::
+          {:ok, Types.push_snapshot_result()} | {:error, Types.push_error()}
   def push_project_snapshot(%Project{} = project, repo_config, opts \\ []) do
     with {:ok, project} <- Projects.ensure_app_uuid(project),
          {:ok, token} <- fetch_access_token(),
@@ -83,7 +84,7 @@ defmodule Ide.GitHub.Push do
     end
   end
 
-  @spec fetch_repo_value(map(), String.t()) ::
+  @spec fetch_repo_value(ProjectsTypes.github_config(), String.t()) ::
           {:ok, String.t()} | {:error, Types.repo_field_error()}
   defp fetch_repo_value(map, key) when is_map(map) do
     value = Map.get(map, key) || Map.get(map, String.to_atom(key))
@@ -100,7 +101,7 @@ defmodule Ide.GitHub.Push do
 
   defp fetch_repo_value(_map, key), do: {:error, {:missing_repo_field, key}}
 
-  @spec fetch_branch(map()) :: String.t()
+  @spec fetch_branch(ProjectsTypes.github_config()) :: String.t()
   defp fetch_branch(map) when is_map(map) do
     branch = Map.get(map, "branch") || Map.get(map, :branch) || "main"
     trimmed = if is_binary(branch), do: String.trim(branch), else: ""

@@ -9,7 +9,7 @@ defmodule Ide.Debugger.TriggerMessageSurface do
 
   @type resolve_ctx :: %{
           required(:introspect_for) => (Types.runtime_state(), Types.surface_target() ->
-                                          Types.elm_introspect() | map()),
+                                          Types.elm_introspect()),
           required(:attach_payload) => (Types.runtime_state(),
                                         Types.surface_target(),
                                         String.t(),
@@ -19,8 +19,8 @@ defmodule Ide.Debugger.TriggerMessageSurface do
 
   @type payload_ctx :: %{
           optional(:introspect) => (Types.runtime_state(), Types.surface_target() ->
-                                      Types.elm_introspect() | map()),
-          optional(:settings) => (Types.runtime_state() -> map())
+                                      Types.elm_introspect()),
+          optional(:settings) => (Types.runtime_state() -> Types.simulator_settings())
         }
 
   @spec resolve(
@@ -84,7 +84,7 @@ defmodule Ide.Debugger.TriggerMessageSurface do
   end
 
   @spec attach_payload(
-          Types.runtime_state() | map(),
+          Types.runtime_state() | Types.wire_map(),
           Types.surface_target(),
           String.t(),
           String.t(),

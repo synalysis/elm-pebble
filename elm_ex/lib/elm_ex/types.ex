@@ -3,6 +3,8 @@ defmodule ElmEx.Types do
   Shared types used across elm_ex packages.
   """
 
+  alias ElmEx.Types.ElmReport
+
   @type module_exposing :: nil | String.t() | [String.t()]
 
   @type package_versions :: %{String.t() => String.t()}
@@ -20,11 +22,16 @@ defmodule ElmEx.Types do
           | %{optional(atom()) => String.t() | boolean()}
           | [elm_message_part()]
 
-  @type elm_report :: map() | list()
+  @type elm_report :: ElmReport.t() | [ElmReport.t()]
 
   @type parse_error_reason ::
           atom()
           | {integer(), module(), [term()]}
           | String.t()
           | tuple()
+
+  @type json_field :: String.t() | integer() | boolean() | list() | map() | nil
+
+  @typedoc "Decoded `elm.json` project metadata (string keys)."
+  @type elm_json :: %{optional(String.t()) => json_field()}
 end

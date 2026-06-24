@@ -299,7 +299,8 @@ defmodule ElmEx.DebuggerContract.ViewTree do
     Map.update(counters, target, 1, &(&1 + 1))
   end
 
-  @spec source_location_at([map()], non_neg_integer()) :: map() | nil
+  @spec source_location_at([Types.source_location()], non_neg_integer()) ::
+          Types.source_location() | nil
   defp source_location_at([], _index), do: nil
 
   defp source_location_at(locations, index) when is_list(locations) and is_integer(index) do
@@ -307,7 +308,7 @@ defmodule ElmEx.DebuggerContract.ViewTree do
   end
 
   @spec source_locations_for_target(String.t(), Types.view_build_metadata()) ::
-          [map()]
+          [Types.source_location()]
   defp source_locations_for_target(target, api_metadata)
        when is_binary(target) and is_map(api_metadata) do
     lines = Map.get(api_metadata, :source_lines, [])

@@ -70,7 +70,7 @@ defmodule Ide.Debugger.TimelineMessage do
     do: message_value_for_step(to_string(message || ""), explicit_value)
 
   @spec split(String.t()) ::
-          {String.t(), String.t(), map() | integer() | boolean() | String.t() | nil}
+          {String.t(), String.t(), Types.timeline_step_message_value()}
   def split(message) when is_binary(message) do
     trimmed = String.trim(message)
 
@@ -87,7 +87,7 @@ defmodule Ide.Debugger.TimelineMessage do
   end
 
   @spec wire_value_from_payload(String.t(), String.t()) ::
-          map() | integer() | boolean() | String.t() | nil
+          Types.timeline_step_message_value()
   defp wire_value_from_payload(_ctor, ""), do: nil
 
   defp wire_value_from_payload(ctor, payload) when is_binary(ctor) and is_binary(payload) do

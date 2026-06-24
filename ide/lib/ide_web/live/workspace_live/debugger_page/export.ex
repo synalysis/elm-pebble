@@ -4,6 +4,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Export do
   alias Ide.Debugger
   alias Ide.Projects
   alias Ide.Projects.Project
+  alias Ide.Debugger.Surface
   alias IdeWeb.WorkspaceLive.DebuggerPage.{
     Assigns,
     ModelMetadata,
@@ -18,7 +19,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Export do
 
   @type assigns :: Assigns.t()
   @type runtime_input :: SupportTypes.runtime_input()
-  @type export_snapshot :: {String.t(), map() | nil, non_neg_integer() | nil}
+  @type debugger_state_map :: SupportTypes.debugger_state_map()
+  @type export_snapshot :: {String.t(), debugger_state_map() | nil, non_neg_integer() | nil}
   @type surface :: :watch | :companion | :phone
 
   @spec snapshot(assigns(), Project.t() | nil) :: export_snapshot()
@@ -55,7 +57,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Export do
     {timeline_text, Map.get(assigns, :debugger_state), selected_seq}
   end
 
-  @spec watch_runtime(map(), non_neg_integer() | nil, non_neg_integer() | nil) ::
+  @spec watch_runtime(debugger_state_map(), non_neg_integer() | nil, non_neg_integer() | nil) ::
           runtime_input() | nil
   def watch_runtime(%{} = state, selected_seq, cursor_seq) do
     surface_runtime(state, selected_seq, cursor_seq, :watch)
@@ -63,7 +65,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Export do
 
   def watch_runtime(_state, _selected_seq, _cursor_seq), do: nil
 
-  @spec companion_runtime(map(), non_neg_integer() | nil, non_neg_integer() | nil) ::
+  @spec companion_runtime(debugger_state_map(), non_neg_integer() | nil, non_neg_integer() | nil) ::
           runtime_input() | nil
   def companion_runtime(%{} = state, selected_seq, cursor_seq) do
     surface_runtime(state, selected_seq, cursor_seq, :companion)
@@ -71,8 +73,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Export do
 
   def companion_runtime(_state, _selected_seq, _cursor_seq), do: nil
 
-  @spec watch_view_runtime(map(), non_neg_integer() | nil, non_neg_integer() | nil) ::
-          map() | nil
+  @spec watch_view_runtime(debugger_state_map(), non_neg_integer() | nil, non_neg_integer() | nil) ::
+          Surface.surface_map() | nil
   def watch_view_runtime(%{} = state, selected_seq, cursor_seq) do
     case surface_runtime(state, selected_seq, cursor_seq, :watch) do
       %{} = watch_runtime ->
@@ -89,7 +91,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Export do
 
   def watch_view_runtime(_state, _selected_seq, _cursor_seq), do: nil
 
-  @spec surface_runtime(map(), non_neg_integer() | nil, non_neg_integer() | nil, surface()) ::
+  @spec surface_runtime(
+          debugger_state_map(),
+          non_neg_integer() | nil,
+          non_neg_integer() | nil,
+          surface()
+        ) ::
           runtime_input() | nil
   def surface_runtime(state, selected_seq, cursor_seq, surface)
       when surface in [:watch, :companion, :phone] do
@@ -167,17 +174,17 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Export do
     })
   end
 
-  @spec session_running?(map() | nil) :: boolean() | nil
+  @spec session_running?(debugger_state_map() | nil) :: boolean() | nil
   defp session_running?(state) do
     if is_map(state), do: SessionState.running?(state)
   end
 
-  @spec session_event_count(map() | nil) :: non_neg_integer() | nil
+  @spec session_event_count(debugger_state_map() | nil) :: non_neg_integer() | nil
   defp session_event_count(state) do
     if is_map(state), do: length(state.events)
   end
 
-  @spec watch_profile_id(map() | nil, Project.t() | nil) :: String.t() | nil
+  @spec watch_profile_id(debugger_state_map() | nil, Project.t() | nil) :: String.t() | nil
   defp watch_profile_id(state, project) do
     if is_map(state), do: WatchProfiles.state_id(state, project)
   end

@@ -1,7 +1,11 @@
 defmodule Ide.Debugger.SpeakerPlayback do
   @moduledoc false
 
-  @spec duration_ms(map()) :: non_neg_integer()
+  alias Ide.Debugger.Types
+
+  @type speaker_cmd :: Types.speaker_command()
+
+  @spec duration_ms(speaker_cmd()) :: non_neg_integer()
   def duration_ms(%{"variant" => "play_tone"} = command) do
     command
     |> Map.get("duration_ms", Map.get(command, :duration_ms, 200))

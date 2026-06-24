@@ -18,6 +18,7 @@ defmodule IdeWeb.WorkspaceLive.EditorFlow do
   alias IdeWeb.WorkspaceLive.DebuggerFlow
   alias IdeWeb.WorkspaceLive.DebuggerSupport
   alias IdeWeb.WorkspaceLive.EditorSupport
+  alias IdeWeb.WorkspaceLive.Types
 
   @type socket :: Phoenix.LiveView.Socket.t()
   @type lv_noreply :: {:noreply, socket()}
@@ -81,7 +82,7 @@ defmodule IdeWeb.WorkspaceLive.EditorFlow do
   def handles?(event) when is_binary(event),
     do: event in @editor_events or event in @file_tab_events
 
-  @spec handle_event(String.t(), map(), socket()) :: lv_noreply()
+  @spec handle_event(String.t(), Types.event_params(), socket()) :: lv_noreply()
   def handle_event("open-file", %{"source-root" => source_root, "rel-path" => rel_path}, socket) do
     tab_id = tab_id(source_root, rel_path)
     existing_tab = Enum.find(socket.assigns.tabs, &(&1.id == tab_id))
@@ -1035,7 +1036,14 @@ defmodule IdeWeb.WorkspaceLive.EditorFlow do
      |> assign(:format_output, "Format task exited: #{inspect(reason)}")}
   end
 
-  @spec handle_async(atom(), term(), socket()) :: lv_noreply()
+  @type editor_async_name ::
+          :open_file
+          | :editor_check
+          | :format_file
+          | :refresh_editor_dependencies
+          | :refresh_editor_dependency_usage
+
+  @spec handle_async(editor_async_name(), Types.async_result(), socket()) :: lv_noreply()
   def handle_async(async, result, socket) when async in @editor_asyncs do
     do_handle_async(async, result, socket)
   end

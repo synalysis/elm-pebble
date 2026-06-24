@@ -2,9 +2,10 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
   @moduledoc false
 
   alias Ide.Debugger.Types
+  alias Ide.Debugger.Types.CompanionSubscriptionFieldDef
 
   @type field_value :: boolean() | integer() | String.t()
-  @type raw_value :: Types.wire_scalar() | Types.wire_map() | list() | nil
+  @type raw_value :: Types.wire_scalar() | Types.wire_map() | [Types.wire_scalar()] | nil
 
   defmodule ApiSuffixes do
     @moduledoc false
@@ -407,7 +408,7 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
 
   defp calendar_event_setting_value(_settings, _key), do: nil
 
-  @spec encode_field_value(atom(), raw_value()) :: String.t()
+  @spec encode_field_value(CompanionSubscriptionFieldDef.field_type(), raw_value()) :: String.t()
   defp encode_field_value(:boolean, value),
     do: if(value in [true, "true", "1", 1], do: "true", else: "false")
 
@@ -513,7 +514,7 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
     end
   end
 
-  @spec decode_field_value(atom(), raw_value()) :: field_value()
+  @spec decode_field_value(CompanionSubscriptionFieldDef.field_type(), raw_value()) :: field_value()
   defp decode_field_value(:boolean, value), do: value in [true, "true", "True", "1", 1]
   defp decode_field_value(:integer, value), do: normalize_integer(value, 0)
   defp decode_field_value(_type, value), do: to_string(value || "")

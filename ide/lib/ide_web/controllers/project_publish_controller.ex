@@ -5,8 +5,9 @@ defmodule IdeWeb.ProjectPublishController do
   use IdeWeb, :controller
 
   alias Ide.Projects
+  alias IdeWeb.Types
 
-  @spec pbw(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  @spec pbw(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def pbw(conn, %{"slug" => slug}) do
     project = Projects.get_project_by_slug(slug, conn.assigns.current_user)
 

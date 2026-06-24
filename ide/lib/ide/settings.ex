@@ -5,6 +5,7 @@ defmodule Ide.Settings do
 
   alias Ide.Auth
   alias Ide.Auth.User
+  alias Ide.Debugger.Types, as: DebuggerTypes
 
   @defaults %{
     "auto_format_on_save" => false,
@@ -25,8 +26,10 @@ defmodule Ide.Settings do
   @type editor_theme :: :system | :dark | :light
   @type formatter_backend :: :built_in | :elm_format
   @type capability :: :read | :edit | :build
-  @type wire_input :: String.t() | integer() | boolean() | list() | nil
-  @type file_values :: %{optional(String.t()) => boolean() | String.t() | integer() | list()}
+  @type wire_input :: DebuggerTypes.wire_input()
+  @type file_values :: %{
+          optional(String.t()) => boolean() | String.t() | integer() | [String.t()]
+        }
   @type settings_write_result :: :ok | {:error, File.posix() | Jason.EncodeError.t()}
   @type settings_error ::
           File.posix()

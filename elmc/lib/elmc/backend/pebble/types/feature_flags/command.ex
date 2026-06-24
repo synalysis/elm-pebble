@@ -18,6 +18,7 @@ defmodule Elmc.Backend.Pebble.Types.FeatureFlags.Command do
   def_flags_type vibes_flags, Keys.Command.vibes_keys()
   def_flags_type health_flags, Keys.Command.health_keys()
   def_flags_type device_services_flags, Keys.Command.device_services_keys()
+  def_flags_type speaker_flags, Keys.Command.speaker_keys()
   def_flags_type services_flags, Keys.command_services_keys()
   def_flags_type feature_flags, Keys.command_keys()
 end

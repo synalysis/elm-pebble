@@ -1,7 +1,18 @@
 defmodule Ide.EditorCompletionRecordResolver do
   @moduledoc false
 
-  @spec resolve_fields(map(), String.t(), non_neg_integer(), String.t(), map()) :: [String.t()]
+  alias Ide.EditorCompletion.Types, as: CompletionTypes
+  alias Ide.EditorCompletionDeclarationIndex
+
+  @type resolve_context :: CompletionTypes.completion_context()
+
+  @spec resolve_fields(
+          EditorCompletionDeclarationIndex.t(),
+          String.t(),
+          non_neg_integer(),
+          String.t(),
+          resolve_context()
+        ) :: [String.t()]
   def resolve_fields(index, qualifier, offset, source, context)
       when is_map(index) and is_binary(qualifier) and is_integer(offset) and is_binary(source) and
              is_map(context) do

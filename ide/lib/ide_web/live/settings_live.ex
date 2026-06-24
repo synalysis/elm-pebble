@@ -2,23 +2,29 @@ defmodule IdeWeb.SettingsLive do
   use IdeWeb, :live_view
 
   alias Ide.Emulator
+  alias Ide.Emulator.Types, as: EmulatorTypes
   alias Ide.GitHub.AuthFlow
   alias Ide.GitHub.Types, as: GitHubTypes
   alias Ide.Settings
+  alias IdeWeb.SettingsLive.Assigns
   alias IdeWeb.WorkspaceLive.ToolchainPresenter
+  alias IdeWeb.WorkspaceLive.Types
 
   alias Phoenix.LiveView.Rendered
 
   @type socket :: Phoenix.LiveView.Socket.t()
   @type lv_mount :: {:ok, socket()}
   @type lv_noreply :: {:noreply, socket()}
-  @type assigns :: map()
+  @type assigns :: Assigns.t()
   @type wire_input :: String.t() | integer() | boolean() | nil | [wire_input()]
-  @type emulator_installation_status :: map()
-  @type info_message :: :clear_info_flash | {:github_poll, String.t()}
+  @type emulator_installation_status :: Assigns.emulator_installation_status()
+  @type info_message :: Assigns.info_message()
+
+  @type settings_emulator_async_name ::
+          :check_emulator_installation | :install_emulator_dependencies
 
   @impl true
-  @spec mount(map(), map(), socket()) :: lv_mount()
+  @spec mount(Types.wire_params(), Types.session_params(), socket()) :: lv_mount()
   def mount(_params, _session, socket) do
     settings = Settings.current()
 
@@ -41,13 +47,13 @@ defmodule IdeWeb.SettingsLive do
   end
 
   @impl true
-  @spec handle_params(map(), String.t(), socket()) :: lv_noreply()
+  @spec handle_params(Types.wire_params(), String.t(), socket()) :: lv_noreply()
   def handle_params(params, _uri, socket) do
     {:noreply, assign(socket, :return_to, sanitize_return_to(params["return_to"]))}
   end
 
   @impl true
-  @spec handle_event(String.t(), map(), socket()) :: lv_noreply()
+  @spec handle_event(String.t(), Types.event_params(), socket()) :: lv_noreply()
   def handle_event("save", %{"settings" => params}, socket) do
     auto_format = parse_checkbox(params["auto_format_on_save"])
     debug_mode = parse_checkbox(params["debug_mode"])
@@ -263,6 +269,7 @@ defmodule IdeWeb.SettingsLive do
   end
 
   @impl true
+  @spec handle_async(settings_emulator_async_name(), Types.async_result(), socket()) :: lv_noreply()
   def handle_async(:check_emulator_installation, {:ok, status}, socket) do
     {:noreply, assign(socket, :emulator_installation_status, status)}
   end
@@ -1029,7 +1036,11 @@ defmodule IdeWeb.SettingsLive do
   defp parse_editor_theme("light"), do: :light
   defp parse_editor_theme(_), do: :system
 
-  @spec github_status_line(map()) :: String.t()
+  @type integration_settings_form :: %{
+          optional(String.t()) => String.t() | boolean() | [String.t()]
+        }
+
+  @spec github_status_line(Ide.GitHub.Credentials.t()) :: String.t()
   defp github_status_line(%{connected?: true} = status) do
     login = status.user_login || "unknown user"
     scope = status.scope || Ide.GitHub.Client.oauth_scope()
@@ -1073,7 +1084,8 @@ defmodule IdeWeb.SettingsLive do
 
   defp maybe_check_emulator_installation(socket), do: socket
 
-  @spec persist_integration_settings(map(), atom()) :: Ide.Settings.settings_set_result()
+  @spec persist_integration_settings(integration_settings_form(), atom()) ::
+          Ide.Settings.settings_set_result()
   defp persist_integration_settings(_params, mode) when mode != :local, do: :ok
 
   defp persist_integration_settings(params, :local) do
@@ -1100,9 +1112,9 @@ defmodule IdeWeb.SettingsLive do
           atom(),
           boolean(),
           boolean(),
-          map(),
+          Types.event_params(),
           atom()
-        ) :: map()
+        ) :: Settings.values()
   defp build_saved_settings(
          auto_format,
          debug_mode,
@@ -1231,7 +1243,7 @@ defmodule IdeWeb.SettingsLive do
 
   @type emulator_component_status :: :ok | :missing | atom()
 
-  @spec emulator_components(emulator_installation_status()) :: [map()]
+  @spec emulator_components(emulator_installation_status()) :: [EmulatorTypes.runtime_component()]
   defp emulator_components(%{components: components}) when is_list(components), do: components
   defp emulator_components(_), do: []
 

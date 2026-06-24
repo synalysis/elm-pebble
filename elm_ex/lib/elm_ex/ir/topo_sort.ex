@@ -5,6 +5,7 @@ defmodule ElmEx.IR.TopoSort do
   """
 
   alias ElmEx.IR
+  alias ElmEx.IR.Types.TopoSort
 
   @spec sort_modules(IR.t()) :: {:ok, [ElmEx.IR.Module.t()]} | {:error, {:cycle, [String.t()]}}
   def sort_modules(%IR{} = ir) do
@@ -36,7 +37,8 @@ defmodule ElmEx.IR.TopoSort do
     end
   end
 
-  @spec topo_sort([String.t()], map()) :: {:ok, [String.t()]} | {:error, {:cycle, [String.t()]}}
+  @spec topo_sort([TopoSort.module_name()], TopoSort.dependency_graph()) ::
+          {:ok, [TopoSort.module_name()]} | {:error, {:cycle, [TopoSort.module_name()]}}
   defp topo_sort(nodes, deps) do
     # Kahn's algorithm
     in_degree =
@@ -81,8 +83,13 @@ defmodule ElmEx.IR.TopoSort do
     do_topo_sort(queue, in_degree, reverse_deps, [])
   end
 
-  @spec do_topo_sort([String.t()], map(), map(), [String.t()]) ::
-          {:ok, [String.t()]} | {:error, {:cycle, [String.t()]}}
+  @spec do_topo_sort(
+          [TopoSort.module_name()],
+          TopoSort.in_degree_map(),
+          TopoSort.reverse_dependency_graph(),
+          [TopoSort.module_name()]
+        ) ::
+          {:ok, [TopoSort.module_name()]} | {:error, {:cycle, [TopoSort.module_name()]}}
   defp do_topo_sort([], in_degree, _reverse_deps, result) do
     remaining =
       in_degree

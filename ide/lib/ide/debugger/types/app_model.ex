@@ -3,6 +3,8 @@ defmodule Ide.Debugger.Types.AppModel do
   User-facing Elm app state on a debugger surface (stripped of shell artifacts).
 
   Produced by `RuntimeArtifacts.app_model/1` and `RuntimeArtifacts.public_model/1`.
+  Wire maps use string keys (`"active_subscriptions"`, `"debugger_contract"`); atom
+  keys in `t/0` document the same fields for Dialyzer.
   """
 
   alias Ide.Debugger.Types
@@ -20,6 +22,8 @@ defmodule Ide.Debugger.Types.AppModel do
           optional(:step_counter) => integer(),
           optional(:runtime_execution) => ExecutionRuntimeSnapshot.t()
                                            | ExecutionRuntimeSnapshot.wire_map(),
+          optional(:active_subscriptions) => [Types.active_subscription()],
+          optional(:debugger_contract) => Types.debugger_contract(),
           optional(String.t()) => Types.wire_input(),
           optional(atom()) => Types.wire_input()
         }

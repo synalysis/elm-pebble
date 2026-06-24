@@ -27,7 +27,8 @@ defmodule Ide.Formatter.Printer.TypeDecl do
     |> Enum.join("\n")
   end
 
-  @spec normalize_union_lines(Types.line_list(), map(), Types.line_list()) :: Types.line_list()
+  @spec normalize_union_lines(Types.line_list(), Types.union_align_state(), Types.line_list()) ::
+          Types.line_list()
   defp normalize_union_lines([], state, acc) do
     emit_blanks(acc, state.pending_blanks)
   end

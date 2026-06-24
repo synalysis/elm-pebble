@@ -76,7 +76,7 @@ defmodule Ide.Debugger.AutoTickWorkers do
           Types.runtime_state(),
           String.t(),
           [Types.surface_target()],
-          [map()],
+          [Types.trigger_candidate()],
           update_fn(),
           fire_ctx()
         ) :: Types.runtime_state()

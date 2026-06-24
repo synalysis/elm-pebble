@@ -35,15 +35,20 @@ defmodule Ide.Debugger.WatchSubscriptionContracts do
 
   @contracts [@speaker_finished_contract]
 
-  @spec speaker_finished() :: map()
+  @spec contracts() :: [Types.watch_subscription_contract()]
+  def contracts, do: @contracts
+
+  @spec speaker_finished() :: Types.watch_subscription_contract()
   def speaker_finished, do: @speaker_finished_contract
 
-  @spec find_subscription_call(Types.elm_introspect(), map()) :: Types.cmd_call() | nil
+  @spec find_subscription_call(Types.elm_introspect(), Types.watch_subscription_contract()) ::
+          Types.cmd_call() | nil
   def find_subscription_call(ei, contract) when is_map(ei) and is_map(contract) do
     SubscriptionCallLookup.find_by_target_suffixes(ei, Map.get(contract, :target_suffixes, []))
   end
 
-  @spec trigger_for_contract(Types.elm_introspect(), map()) :: String.t() | nil
+  @spec trigger_for_contract(Types.elm_introspect(), Types.watch_subscription_contract()) ::
+          String.t() | nil
   def trigger_for_contract(ei, contract) when is_map(ei) and is_map(contract) do
     case find_subscription_call(ei, contract) do
       nil -> nil
@@ -51,7 +56,8 @@ defmodule Ide.Debugger.WatchSubscriptionContracts do
     end
   end
 
-  @spec message_for_contract(Types.elm_introspect(), map()) :: String.t() | nil
+  @spec message_for_contract(Types.elm_introspect(), Types.watch_subscription_contract()) ::
+          String.t() | nil
   def message_for_contract(ei, contract) when is_map(ei) and is_map(contract) do
     case find_subscription_call(ei, contract) do
       %{"callback_constructor" => message} when is_binary(message) and message != "" -> message
@@ -59,7 +65,11 @@ defmodule Ide.Debugger.WatchSubscriptionContracts do
     end
   end
 
-  @spec simulator_payload_suffix(Types.elm_introspect(), String.t(), map()) :: String.t() | nil
+  @spec simulator_payload_suffix(
+          Types.elm_introspect(),
+          String.t(),
+          Types.watch_subscription_contract()
+        ) :: String.t() | nil
   def simulator_payload_suffix(ei, message_ctor, contract)
       when is_map(ei) and is_binary(message_ctor) and is_map(contract) do
     with type when is_binary(type) <- msg_constructor_arg_type(ei, message_ctor),
@@ -95,7 +105,8 @@ defmodule Ide.Debugger.WatchSubscriptionContracts do
 
   def simulator_payload_suffix_for_trigger(_ei, _trigger, _message_ctor), do: nil
 
-  @spec contract_for_trigger(Types.elm_introspect(), String.t()) :: map() | nil
+  @spec contract_for_trigger(Types.elm_introspect(), String.t()) ::
+          Types.watch_subscription_contract() | nil
   defp contract_for_trigger(ei, trigger) when is_map(ei) and is_binary(trigger) do
     Enum.find_value(@contracts, fn contract ->
       case find_subscription_call(ei, contract) do

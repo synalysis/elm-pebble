@@ -87,8 +87,10 @@ defmodule Ide.Emulator.PBWInstaller.BlobDb do
     end
   end
 
-  @doc false
-  @spec verify_blob_response(map(), non_neg_integer()) :: :ok | {:error, Types.install_error()}
+  alias Ide.Emulator.PebbleProtocol.Packets
+
+  @spec verify_blob_response(Packets.blob_db_response(), non_neg_integer()) ::
+          :ok | {:error, Types.install_error()}
   def verify_blob_response(%{success?: true, token: token}, token), do: :ok
 
   def verify_blob_response(%{token: actual}, expected) when actual != expected,

@@ -43,7 +43,7 @@ defmodule Ide.Debugger.Types.CompileIngestBridge do
           optional(:revision) => String.t(),
           optional(:cached?) => boolean(),
           optional(:strict?) => boolean(),
-          optional(:schema_version) => String.t() | integer() | map() | nil,
+          optional(:schema_version) => String.t() | integer() | Types.wire_map() | nil,
           optional(:detail) => String.t(),
           optional(:diagnostics) => list(),
           optional(:error_count) => non_neg_integer(),

@@ -15,9 +15,12 @@ defmodule Ide.Packages do
   """
 
   alias Ide.Packages.ElmJsonEditor
+  alias Ide.Projects.Project
   alias Ide.Packages.ElmSourceDocs
   alias Ide.Packages.GenericProvider
   alias Ide.Packages.Types
+  alias Ide.PackageDocs.Types, as: PackageDocsTypes
+  alias Ide.Projects.FileTypes
   alias Ide.Packages.WatchCompatibility
   alias Ide.Projects
 
@@ -99,7 +102,7 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec attach_compatibility(map(), atom()) :: map()
+  @spec attach_compatibility(Types.search_entry(), atom()) :: Types.catalog_entry_with_compat()
   defp attach_compatibility(entry, platform_target) when is_map(entry) do
     name = Map.get(entry, :name) || Map.get(entry, "name")
 
@@ -141,7 +144,7 @@ defmodule Ide.Packages do
   @doc """
   Loads structured module documentation for a built-in source-backed package.
   """
-  @spec builtin_package_docs(String.t()) :: {:ok, [map()]}
+  @spec builtin_package_docs(String.t()) :: {:ok, [PackageDocsTypes.module_doc()]}
   def builtin_package_docs(package) when is_binary(package) do
     with {:ok, source_root} <- builtin_docs_source_root(package),
          {:ok, docs} <- builtin_package_docs_from_source_root(source_root, package) do
@@ -152,7 +155,7 @@ defmodule Ide.Packages do
   end
 
   @spec builtin_package_docs_from_source_root(String.t(), String.t()) ::
-          {:ok, [map()]}
+          {:ok, [PackageDocsTypes.module_doc()]}
   defp builtin_package_docs_from_source_root(source_root, package) do
     case ElmSourceDocs.package_docs(source_root) do
       {:ok, [_ | _] = docs} ->
@@ -258,9 +261,9 @@ defmodule Ide.Packages do
     Keyword.merge(defaults, provider.opts)
   end
 
-  @spec preview_add_to_project(map(), String.t(), keyword()) ::
-          {:ok, map()} | {:error, Types.package_error()}
-  def preview_add_to_project(project, package, opts \\ []) when is_map(project) do
+  @spec preview_add_to_project(Project.t(), String.t(), keyword()) ::
+          {:ok, Types.package_preview_add()} | {:error, Types.package_error()}
+  def preview_add_to_project(%Project{} = project, package, opts \\ []) do
     with :ok <- validate_add_package_target(package, opts),
          {:ok, provider, _details} <-
            with_provider(opts, &call_provider(&1, :package_details, [package])),
@@ -270,9 +273,9 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec add_to_project(map(), String.t(), keyword()) ::
-          {:ok, map()} | {:error, Types.package_error()}
-  def add_to_project(project, package, opts \\ []) when is_map(project) do
+  @spec add_to_project(Project.t(), String.t(), keyword()) ::
+          {:ok, Types.package_add_to_project_result()} | {:error, Types.package_error()}
+  def add_to_project(%Project{} = project, package, opts \\ []) do
     with :ok <- validate_add_package_target(package, opts),
          {:ok, provider, details} <-
            with_provider(opts, &call_provider(&1, :package_details, [package])),
@@ -280,7 +283,7 @@ defmodule Ide.Packages do
          {:ok, result} <- ElmJsonEditor.add_package(project, package, editor_opts),
          {:ok, project} <-
            cache_package_metadata(project, package, result.selected_version, details) do
-      {:ok, Map.put(result, :project, project)}
+      {:ok, package_add_to_project_result(result, project)}
     end
   end
 
@@ -336,9 +339,9 @@ defmodule Ide.Packages do
 
   def pebble_builtin_packages(_source_root), do: pebble_builtin_packages()
 
-  @spec remove_from_project(map(), String.t(), keyword()) ::
-          {:ok, map()} | {:error, Types.package_error()}
-  def remove_from_project(project, package, opts \\ []) when is_map(project) do
+  @spec remove_from_project(Project.t(), String.t(), keyword()) ::
+          {:ok, Types.package_mutation_result()} | {:error, Types.package_error()}
+  def remove_from_project(%Project{} = project, package, opts \\ []) do
     source_root = Keyword.get(opts, :source_root)
 
     cond do
@@ -358,14 +361,14 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec package_used?(map(), String.t(), keyword()) :: boolean()
+  @spec package_used?(Project.t(), String.t(), keyword()) :: boolean()
   def package_used?(project, package, opts \\ []) when is_map(project) and is_binary(package) do
     project
     |> package_usage([package], opts)
     |> Map.get(package, false)
   end
 
-  @spec package_usage(map(), [String.t()], keyword()) :: %{optional(String.t()) => boolean()}
+  @spec package_usage(Project.t(), [String.t()], keyword()) :: %{optional(String.t()) => boolean()}
   def package_usage(project, packages, opts \\ []) when is_map(project) and is_list(packages) do
     source_root =
       Keyword.get(opts, :source_root) || List.first(ElmJsonEditor.candidate_roots(project))
@@ -397,7 +400,7 @@ defmodule Ide.Packages do
   end
 
   @spec module_index_for_packages(
-          map(),
+          Project.t(),
           [String.t()],
           keyword(),
           atom(),
@@ -422,7 +425,7 @@ defmodule Ide.Packages do
     end)
   end
 
-  @spec exposed_modules_for_usage_package(map(), String.t(), keyword(), String.t() | nil) ::
+  @spec exposed_modules_for_usage_package(Project.t(), String.t(), keyword(), String.t() | nil) ::
           [String.t()]
   defp exposed_modules_for_usage_package(project, pkg, pkg_opts, version) do
     case fallback_builtin_source_modules(pkg) do
@@ -446,14 +449,20 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec cache_package_metadata(map(), String.t(), String.t() | nil, Types.package_details()) ::
-          {:ok, map()} | {:error, Types.package_error()}
+  @spec cache_package_metadata(Project.t(), String.t(), String.t() | nil, Types.package_details()) ::
+          Ide.Projects.Types.update_result()
   defp cache_package_metadata(project, package, version, details)
        when is_map(project) and is_binary(package) and is_map(details) do
     modules = exposed_modules_for_package(package, [], details)
 
+    version_text =
+      case version do
+        v when is_binary(v) and v != "" -> v
+        _ -> Map.get(details, :latest_version) || ""
+      end
+
     entry = %{
-      "version" => to_string(version || details[:latest_version] || ""),
+      "version" => to_string(version_text),
       "exposed_modules" => modules,
       "cached_at" => DateTime.utc_now() |> DateTime.to_iso8601()
     }
@@ -467,7 +476,31 @@ defmodule Ide.Packages do
     Projects.update_project(project, %{"package_metadata_cache" => cache})
   end
 
-  @spec cached_package_exposed_modules(map(), String.t(), String.t() | nil) :: [String.t()]
+  @spec package_add_to_project_result(
+          Types.package_mutation_result(),
+          Project.t()
+        ) :: Types.package_add_to_project_result()
+  defp package_add_to_project_result(result, project) do
+    %{
+      source_root: result.source_root,
+      rel_path: result.rel_path,
+      package: result.package,
+      section: result.section,
+      project: project,
+      scope: Map.get(result, :scope),
+      selected_version: Map.get(result, :selected_version),
+      existing_constraint: Map.get(result, :existing_constraint),
+      existing_location: Map.get(result, :existing_location),
+      already_present: Map.get(result, :already_present),
+      resolved_direct: Map.get(result, :resolved_direct),
+      resolved_indirect: Map.get(result, :resolved_indirect),
+      changed: Map.get(result, :changed),
+      previous_version: Map.get(result, :previous_version),
+      dependency_diff: Map.get(result, :dependency_diff)
+    }
+  end
+
+  @spec cached_package_exposed_modules(Project.t(), String.t(), String.t() | nil) :: [String.t()]
   defp cached_package_exposed_modules(project, package, version)
        when is_map(project) and is_binary(package) do
     cache = normalize_package_metadata_cache(Map.get(project, :package_metadata_cache, %{}))
@@ -490,7 +523,21 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec normalize_package_metadata_cache(map() | list() | nil) :: Types.package_metadata_cache()
+  @typedoc "Decoded package metadata cache before normalization (`packages` / `schema_version`, atom or string keys)."
+  @type package_metadata_cache_input ::
+          Types.package_metadata_cache()
+          | %{
+              optional(:packages) => %{optional(String.t()) => Types.package_metadata_entry()},
+              optional(:schema_version) => integer(),
+              optional(String.t()) => Types.package_metadata_entry() | integer()
+            }
+
+  @type exposed_modules_input ::
+          [String.t()]
+          | %{optional(String.t()) => String.t() | [String.t()]}
+
+  @spec normalize_package_metadata_cache(package_metadata_cache_input()) ::
+          Types.package_metadata_cache()
   defp normalize_package_metadata_cache(cache) when is_map(cache) do
     packages =
       cache
@@ -508,7 +555,7 @@ defmodule Ide.Packages do
   @doc """
   Maps exposed module names (e.g. `\"Json.Encode\"`) to package names for documentation links.
   """
-  @spec build_doc_module_index(map(), keyword()) :: {:ok, Types.module_index()}
+  @spec build_doc_module_index(Project.t(), keyword()) :: {:ok, Types.module_index()}
   def build_doc_module_index(project, opts \\ []) when is_map(project) do
     source_root =
       Keyword.get(opts, :source_root) || ElmJsonEditor.candidate_roots(project) |> List.first()
@@ -547,7 +594,7 @@ defmodule Ide.Packages do
   @doc """
   Packages and versions to populate editor documentation dropdowns (platform packages + elm.json deps).
   """
-  @spec list_doc_package_rows(map(), keyword()) :: {:ok, [Types.doc_catalog_entry()]}
+  @spec list_doc_package_rows(Project.t(), keyword()) :: {:ok, [Types.doc_catalog_entry()]}
   def list_doc_package_rows(project, opts \\ []) when is_map(project) do
     source_root =
       Keyword.get(opts, :source_root) || ElmJsonEditor.candidate_roots(project) |> List.first()
@@ -813,7 +860,7 @@ defmodule Ide.Packages do
 
   defp fallback_builtin_source_modules(_), do: []
 
-  @spec dependency_versions(map(), String.t()) :: Types.dependency_versions_map()
+  @spec dependency_versions(Project.t(), String.t()) :: Types.dependency_versions_map()
   defp dependency_versions(project, source_root)
        when is_map(project) and is_binary(source_root) do
     with {:ok, content} <- Projects.read_source_file(project, source_root, "elm.json"),
@@ -829,14 +876,16 @@ defmodule Ide.Packages do
 
   defp dependency_versions(_project, _source_root), do: %{}
 
-  @spec ensure_string_map(map() | list() | nil) :: Types.dependency_versions_map()
+  @type dependency_map_input :: %{optional(String.t()) => String.t() | atom() | integer()}
+
+  @spec ensure_string_map(dependency_map_input() | list() | nil) :: Types.dependency_versions_map()
   defp ensure_string_map(value) when is_map(value) do
     Map.new(value, fn {key, version} -> {to_string(key), to_string(version)} end)
   end
 
   defp ensure_string_map(_), do: %{}
 
-  @spec imported_modules(map(), String.t()) :: [String.t()]
+  @spec imported_modules(Project.t(), String.t()) :: [String.t()]
   defp imported_modules(project, source_root) when is_map(project) and is_binary(source_root) do
     project
     |> Projects.list_source_tree()
@@ -854,7 +903,7 @@ defmodule Ide.Packages do
     |> Enum.uniq()
   end
 
-  @spec elm_rel_paths([map()]) :: [String.t()]
+  @spec elm_rel_paths([FileTypes.tree_node()]) :: [String.t()]
   defp elm_rel_paths(nodes) when is_list(nodes) do
     Enum.flat_map(nodes, fn
       %{type: :file, rel_path: rel_path} ->
@@ -908,7 +957,7 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec normalize_exposed_modules(list() | map()) ::
+  @spec normalize_exposed_modules(exposed_modules_input()) ::
           {:ok, [String.t()]} | {:error, :invalid_exposed_modules}
   defp normalize_exposed_modules(modules) when is_list(modules) do
     {:ok, modules |> Enum.filter(&is_binary/1) |> Enum.sort()}
@@ -923,7 +972,7 @@ defmodule Ide.Packages do
 
   defp normalize_exposed_modules(_), do: {:error, :invalid_exposed_modules}
 
-  @spec candidate_elm_json_roots(map()) :: [String.t()]
+  @spec candidate_elm_json_roots(Project.t()) :: [String.t()]
   def candidate_elm_json_roots(project), do: ElmJsonEditor.candidate_roots(project)
 
   @doc """
@@ -931,7 +980,7 @@ defmodule Ide.Packages do
 
   Excludes `protocol`.
   """
-  @spec package_elm_json_roots(map()) :: [String.t()]
+  @spec package_elm_json_roots(Project.t()) :: [String.t()]
   def package_elm_json_roots(project), do: ElmJsonEditor.roots_for_package_management(project)
 
   @spec with_provider(

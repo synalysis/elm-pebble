@@ -8,7 +8,7 @@ defmodule Ide.AppStore do
   alias Ide.AppStore.Types, as: AppStoreTypes
 
   @spec fetch_app_by_id(String.t(), keyword()) ::
-          {:ok, map()} | {:error, AppStoreTypes.fetch_app_error()}
+          {:ok, AppStoreTypes.json_object()} | {:error, AppStoreTypes.fetch_app_error()}
   def fetch_app_by_id(app_id, opts \\ []) when is_binary(app_id) do
     app_id = String.trim(app_id)
     hardware = Keyword.get(opts, :hardware, "basalt")
@@ -36,8 +36,8 @@ defmodule Ide.AppStore do
     |> Keyword.get(:base_url, "https://appstore-api.repebble.com")
   end
 
-  @spec extract_single_app(map()) ::
-          {:ok, map()} | {:error, :app_not_found | :invalid_appstore_response}
+  @spec extract_single_app(AppStoreTypes.json_object()) ::
+          {:ok, AppStoreTypes.json_object()} | {:error, :app_not_found | :invalid_appstore_response}
   defp extract_single_app(%{"data" => [%{} = app | _]}), do: {:ok, app}
   defp extract_single_app(%{"data" => []}), do: {:error, :app_not_found}
   defp extract_single_app(_), do: {:error, :invalid_appstore_response}

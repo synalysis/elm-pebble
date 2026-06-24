@@ -9,7 +9,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.WatchProfiles do
   @type assigns :: Assigns.t()
   @type wire_input :: SupportTypes.wire_value()
 
-  @spec selected_id(assigns(), map() | nil) :: String.t()
+  @type debugger_state :: SupportTypes.debugger_state_map()
+
+  @spec selected_id(assigns(), debugger_state() | nil) :: String.t()
   def selected_id(%{watch_profile_id: watch_profile_id}, _project)
       when is_binary(watch_profile_id) do
     normalize_id(watch_profile_id)
@@ -17,7 +19,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.WatchProfiles do
 
   def selected_id(_debugger_state, project), do: project_id(project)
 
-  @spec state_id(map(), Project.t() | nil) :: String.t() | nil
+  @spec state_id(debugger_state(), Project.t() | nil) :: String.t() | nil
   def state_id(%{} = state, project) do
     case Map.get(state, :watch_profile_id) do
       nil -> selected_id(state, project)

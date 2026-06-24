@@ -4,6 +4,30 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
   alias Elmc.Backend.CCodegen.SpecialValues
   alias Elmc.Backend.CCodegen.Types
 
+  @type subscription_slot_entry :: {String.t(), non_neg_integer()}
+  @type subscription_slot_map :: %{String.t() => subscription_slot_entry()}
+
+  @type worker_subscription_layout ::
+          subscription_analysis()
+          | %{
+              tag_masks: [String.t()],
+              button_raw_count: non_neg_integer(),
+              compact: boolean(),
+              dynamic?: boolean(),
+              has_frame: boolean(),
+              model_dependent?: boolean(),
+              slot_map: subscription_slot_map(),
+              frame_slot: non_neg_integer() | nil,
+              sub_tag_slots: pos_integer(),
+              button_raw_subs: pos_integer()
+            }
+
+  @type subscription_tree_expr ::
+          Types.ir_expr()
+          | %{optional(atom()) => term()}
+          | [subscription_tree_expr()]
+          | nil
+
   @spec clamp_frame_interval_ms(integer()) :: pos_integer()
   def clamp_frame_interval_ms(ms) when is_integer(ms) do
     ms
@@ -362,7 +386,10 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
           optional(:bindings) => %{String.t() => Types.ir_expr()}
         }
 
-  @spec model_dependent?(map() | nil) :: boolean()
+  @spec model_dependent?(
+          %{optional(:args) => [String.t()], optional(:expr) => term(), optional(atom()) => term()}
+          | nil
+        ) :: boolean()
   def model_dependent?(nil), do: false
 
   def model_dependent?(%{args: [param | _], expr: expr})
@@ -372,7 +399,7 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
 
   def model_dependent?(_), do: false
 
-  @spec analyze_subscription_masks(Types.ir_expr() | term()) :: subscription_mask_analysis()
+  @spec analyze_subscription_masks(subscription_tree_expr()) :: subscription_mask_analysis()
   def analyze_subscription_masks(expr) do
     acc = %{tag_masks: [], button_raw_count: 0, dynamic?: false, bindings: %{}}
     acc = collect_subscription_specs(expr, acc)
@@ -411,7 +438,8 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
     not frame_mask?(mask)
   end
 
-  @spec collect_subscription_specs(term(), subscription_spec_acc()) :: subscription_spec_acc()
+  @spec collect_subscription_specs(subscription_tree_expr(), subscription_spec_acc()) ::
+          subscription_spec_acc()
   defp collect_subscription_specs(nil, acc), do: acc
 
   defp collect_subscription_specs(list, acc) when is_list(list) do

@@ -2,8 +2,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.SpeakerSamples do
   @moduledoc false
 
   alias Ide.Projects.Project
+  alias Ide.Resources.Types, as: ResourceTypes
 
-  @spec json(Project.t() | nil, [map()]) :: String.t()
+  @spec json(Project.t() | nil, [ResourceTypes.speaker_sample_entry()]) :: String.t()
   def json(%Project{} = project, samples) when is_list(samples) do
     samples
     |> Enum.map(&wire_row(project, &1))

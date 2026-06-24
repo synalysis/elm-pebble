@@ -5,6 +5,8 @@ defmodule IdeWeb.EmulatorProxySocket do
 
   require Logger
 
+  alias IdeWeb.EmulatorProxy.Types, as: ProxyTypes
+
   @type init_arg :: %{:target => {:tcp, String.t(), char()} | String.t()} | %{:url => String.t()}
 
   @type proxy_state :: %{
@@ -14,7 +16,8 @@ defmodule IdeWeb.EmulatorProxySocket do
         }
 
   @impl true
-  @spec init(init_arg()) :: {:ok, proxy_state()} | {:stop, term(), proxy_state()}
+  @spec init(init_arg()) ::
+          {:ok, proxy_state()} | {:stop, ProxyTypes.stop_reason(), proxy_state()}
   def init(%{target: {:tcp, host, port}}) do
     case :gen_tcp.connect(String.to_charlist(host), port, [:binary, active: false], 5_000) do
       {:ok, socket} ->
@@ -35,7 +38,7 @@ defmodule IdeWeb.EmulatorProxySocket do
   def init(%{url: url}) when is_binary(url), do: init_url(url)
 
   @spec init_url(String.t()) ::
-          {:ok, proxy_state()} | {:stop, {:ws_connect_failed, term()}, proxy_state()}
+          {:ok, proxy_state()} | {:stop, {:ws_connect_failed, ProxyTypes.ws_start_error()}, proxy_state()}
   defp init_url(url) when is_binary(url) do
     owner = self()
 
@@ -109,7 +112,7 @@ defmodule IdeWeb.EmulatorProxySocket do
   def handle_info(_message, state), do: {:ok, state}
 
   @impl true
-  @spec terminate(term(), proxy_state()) :: :ok
+  @spec terminate(ProxyTypes.terminate_reason(), proxy_state()) :: :ok
   def terminate(_reason, state) do
     if is_port(state[:tcp]) do
       :gen_tcp.close(state.tcp)

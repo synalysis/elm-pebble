@@ -3,7 +3,7 @@ defmodule Ide.Emulator do
   Runtime boundary for embedded Pebble emulator sessions.
   """
 
-  alias Ide.Emulator.{Screenshot, Session, Session.RuntimeSetup, SlotLimiter, Types}
+  alias Ide.Emulator.{LogCapture, Screenshot, Session, Session.RuntimeSetup, SlotLimiter, Types}
 
   @type launch_opts :: Types.launch_opts()
 
@@ -97,7 +97,8 @@ defmodule Ide.Emulator do
     end
   end
 
-  @spec log_capture_context(String.t()) :: {:ok, map()} | {:error, Types.session_error()}
+  @spec log_capture_context(String.t()) ::
+          {:ok, LogCapture.capture_context()} | {:error, Types.session_error()}
   def log_capture_context(id) when is_binary(id) do
     with {:ok, pid} <- lookup(id) do
       Session.log_capture_context(pid)

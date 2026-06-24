@@ -15,10 +15,13 @@ defmodule IdeWeb.WorkspaceLive.Types do
   alias IdeWeb.WorkspaceLive.EditorDependencies
   alias IdeWeb.WorkspaceLive.PackagesFlow
   alias IdeWeb.WorkspaceLive.PublishFlow
+  alias Ide.Emulator.Types, as: EmulatorTypes
 
   @type async_exit_reason :: async_error() | atom() | tuple() | String.t()
 
   @type file_error :: File.posix() | atom() | String.t()
+
+  @type unstructured_error :: %{optional(atom()) => IdeWeb.Types.json_value()}
 
   @type async_error ::
           Compiler.compiler_error()
@@ -31,10 +34,13 @@ defmodule IdeWeb.WorkspaceLive.Types do
           | PublishManifest.publish_error()
           | Screenshots.screenshot_error()
           | file_error()
-          | map()
+          | unstructured_error()
           | tuple()
 
-  @type format_tab :: map()
+  alias IdeWeb.WorkspaceLive.DebuggerBootstrapFlow
+  alias IdeWeb.WorkspaceLive.EditorSupport.Types, as: EditorTabTypes
+
+  @type format_tab :: EditorTabTypes.tab()
 
   @type format_success :: %{
           tab: format_tab(),
@@ -49,7 +55,7 @@ defmodule IdeWeb.WorkspaceLive.Types do
 
   @type packages_inspection :: %{
           package: String.t(),
-          details: map(),
+          details: PackageTypes.package_details(),
           versions: [String.t()],
           readme: String.t()
         }
@@ -84,15 +90,9 @@ defmodule IdeWeb.WorkspaceLive.Types do
           cwd: String.t()
         }
 
-  @type emulator_runtime_status :: map()
+  @type emulator_runtime_status :: EmulatorTypes.runtime_status()
 
-  @type emulator_dependency_install_result :: %{
-          platform: String.t(),
-          before: emulator_runtime_status(),
-          after: emulator_runtime_status(),
-          results: [map()],
-          output: String.t()
-        }
+  @type emulator_dependency_install_result :: EmulatorTypes.install_dependencies_result()
 
   @type async_payload ::
           {:ok, Compiler.check_result()}
@@ -139,6 +139,8 @@ defmodule IdeWeb.WorkspaceLive.Types do
           | {:error, PublishManifest.publish_error()}
           | {:ok, PublishManifest.release_notes_result()}
           | {:error, PublishManifest.publish_error()}
+          | {:ok, DebuggerBootstrapFlow.result()}
+          | {:error, String.t()}
 
   @type async_result :: {:ok, async_payload()} | {:exit, async_exit_reason()}
 
@@ -148,7 +150,8 @@ defmodule IdeWeb.WorkspaceLive.Types do
           | {:debugger_bootstrap_progress, pos_integer(), String.t()}
           | {:debugger_companion_bootstrap_progress, String.t()}
           | {:debugger_runtime_refresh, integer()}
-          | {:companion_debugger_bootstrapped, String.t(), term()}
+          | {:companion_debugger_bootstrapped, String.t(),
+             {:ok, DebuggerBootstrapFlow.companion_bootstrap_result()} | {:error, String.t()}}
           | {:capture_all_progress, pos_integer(), Screenshots.progress_payload()}
           | {:packages_search_progress, reference(), PackagesFlow.search_progress()}
 
@@ -156,4 +159,13 @@ defmodule IdeWeb.WorkspaceLive.Types do
           {:EXIT, pid(), async_exit_reason()}
           | {:DOWN, reference(), :process | :port, pid() | port(), async_exit_reason()}
           | reference()
+
+  @typedoc "Phoenix LiveView `handle_event/3` params (string keys)."
+  @type event_params :: IdeWeb.Types.wire_params()
+
+  @typedoc "Phoenix LiveView `mount/3` and `handle_params/3` session/connect params."
+  @type session_params :: IdeWeb.Types.wire_params()
+
+  @typedoc "Phoenix LiveView route/connect params (string keys)."
+  @type wire_params :: IdeWeb.Types.wire_params()
 end

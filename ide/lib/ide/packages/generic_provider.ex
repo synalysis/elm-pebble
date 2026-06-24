@@ -103,7 +103,7 @@ defmodule Ide.Packages.GenericProvider do
 
   @impl true
   @spec package_release(String.t(), String.t(), keyword()) ::
-          {:ok, map()} | {:error, Types.catalog_error()}
+          {:ok, Types.elm_json()} | {:error, Types.catalog_error()}
   def package_release(package, version, opts) do
     package_elm_json(package, version, opts)
   end
@@ -254,7 +254,8 @@ defmodule Ide.Packages.GenericProvider do
     Map.put(acc, k, v)
   end
 
-  @spec index_cache_put(Types.index_cache_key(), map(), Types.search_payload()) :: :ok
+  @spec index_cache_put(Types.index_cache_key(), Http.response_cache(), Types.search_payload()) ::
+          :ok
   defp index_cache_put(key, meta, payload) do
     etag = Map.get(meta, :etag)
     last_modified = Map.get(meta, :last_modified)
@@ -271,7 +272,7 @@ defmodule Ide.Packages.GenericProvider do
   end
 
   @spec package_elm_json(String.t(), String.t(), Types.catalog_opts()) ::
-          {:ok, map()} | {:error, Types.catalog_error()}
+          {:ok, Types.elm_json()} | {:error, Types.catalog_error()}
   defp package_elm_json(package, version, opts) do
     encoded = encode_package(package)
     Http.get_json("/packages/#{encoded}/#{version}/elm.json", opts)
@@ -325,7 +326,11 @@ defmodule Ide.Packages.GenericProvider do
     |> Enum.sort_by(& &1.name)
   end
 
-  @spec normalize_search_entry(map()) :: Types.search_entry() | nil
+  @type catalog_search_wire_entry :: %{
+          optional(String.t()) => String.t() | nil
+        }
+
+  @spec normalize_search_entry(catalog_search_wire_entry()) :: Types.search_entry() | nil
   defp normalize_search_entry(%{"name" => name} = entry) do
     %{
       name: to_string(name),
@@ -346,7 +351,7 @@ defmodule Ide.Packages.GenericProvider do
 
   defp normalize_search_entry(_), do: nil
 
-  @spec normalize_exposed_modules(list() | map() | nil) :: [String.t()]
+  @spec normalize_exposed_modules(Types.exposed_modules_input()) :: [String.t()]
   defp normalize_exposed_modules(nil), do: []
   defp normalize_exposed_modules(list) when is_list(list), do: list
 

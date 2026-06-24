@@ -27,9 +27,10 @@ defmodule Ide.Packages.Http do
           {:status, integer()}
           | {:headers, header_list()}
           | {:data, binary()}
-          | {:trailers, term()}
+          | {:trailers, header_list()}
 
-  @spec get_json(String.t(), keyword()) :: {:ok, map() | list()} | {:error, Types.catalog_error()}
+  @spec get_json(String.t(), keyword()) ::
+          {:ok, Types.http_json_body()} | {:error, Types.catalog_error()}
   def get_json(path, opts) when is_binary(path) and is_list(opts) do
     with {:ok, body} <- get_text(path, opts),
          {:ok, decoded} <- Jason.decode(body) do
@@ -46,7 +47,7 @@ defmodule Ide.Packages.Http do
   Returns `{:ok, decoded, cache_meta}` on 200, `:not_modified` on 304, or `{:error, reason}`.
   """
   @spec get_json_conditional(String.t(), keyword(), conditional()) ::
-          {:ok, map() | list(), response_cache()}
+          {:ok, Types.http_json_body(), response_cache()}
           | :not_modified
           | {:error, Types.catalog_error()}
   def get_json_conditional(path, opts, conditional \\ %{})

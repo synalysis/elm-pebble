@@ -33,7 +33,9 @@ defmodule Ide.PackageDocs.NativeApiLinks do
     "Pebble.Companion.Preferences" => ["User_Interface/Preferences"]
   }
 
-  @spec links_for_module(String.t()) :: [map()]
+  alias Ide.PackageDocs.NativeApiLinks.Types, as: LinkTypes
+
+  @spec links_for_module(String.t()) :: [LinkTypes.api_link()]
   def links_for_module(module_name) when is_binary(module_name) do
     @module_paths
     |> Map.get(module_name, [])
@@ -42,7 +44,7 @@ defmodule Ide.PackageDocs.NativeApiLinks do
 
   def links_for_module(_module_name), do: []
 
-  @spec link_entry(String.t()) :: map()
+  @spec link_entry(String.t()) :: LinkTypes.api_link()
   defp link_entry(path) when is_binary(path) do
     %{
       "label" => path |> String.split("/") |> List.last(),

@@ -4,12 +4,33 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
   expression contract consumed by lowering and codegen.
   """
 
-  alias ElmEx.Frontend.Module
+  alias ElmEx.Frontend.AstContract.Types, as: AstTypes
   alias ElmEx.Frontend.GeneratedDeclarationParser
+  alias ElmEx.Frontend.GeneratedDeclarationParser, as: DeclParser
   alias ElmEx.Frontend.GeneratedExpressionParser
+  alias ElmEx.Frontend.Module
 
-  @typep expr() :: map() | nil
-  @typep decl() :: map()
+  @typep union_constructor :: %{required(:name) => String.t(), required(:arg) => String.t() | term()}
+
+  @typep union_builder :: %{
+          required(:name) => String.t(),
+          required(:constructors) => [union_constructor()],
+          required(:start_line) => pos_integer(),
+          required(:end_line) => pos_integer()
+        }
+
+  @typep function_builder :: %{
+          required(:name) => String.t(),
+          required(:args) => [String.t()],
+          required(:body_lines) => [String.t()],
+          required(:start_line) => pos_integer(),
+          required(:end_line) => pos_integer(),
+          required(:in_multiline_string?) => boolean()
+        }
+
+  @typep expr :: AstTypes.expr() | nil
+  @typep decl :: AstTypes.declaration()
+  @typep scanned_line :: DeclParser.scanned_line()
 
   @spec build(String.t(), String.t(), String.t(), [String.t()]) :: Module.t()
   def build(path, source, module_name, imports) do
@@ -35,12 +56,12 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
     }
   end
 
-  @spec hydrate_multiline_non_function_decls([map()]) :: [map()]
+  @spec hydrate_multiline_non_function_decls([scanned_line()]) :: [scanned_line()]
   defp hydrate_multiline_non_function_decls(scanned_lines) do
     do_hydrate_multiline_non_function_decls(scanned_lines, [])
   end
 
-  @spec do_hydrate_multiline_non_function_decls([map()], [map()]) :: [map()]
+  @spec do_hydrate_multiline_non_function_decls([scanned_line()], [scanned_line()]) :: [scanned_line()]
   defp do_hydrate_multiline_non_function_decls([], acc), do: Enum.reverse(acc)
 
   defp do_hydrate_multiline_non_function_decls([line_info | rest], acc) do
@@ -73,37 +94,37 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
     end
   end
 
-  @spec multiline_signature_start?(map()) :: boolean()
+  @spec multiline_signature_start?(scanned_line()) :: boolean()
   defp multiline_signature_start?(line_info) do
     line_info.decl == :none and
       not line_info.indented? and
       Regex.match?(~r/^[a-z][A-Za-z0-9_']*\s*:\s*$/u, line_info.trimmed)
   end
 
-  @spec multiline_type_alias_start?(map()) :: boolean()
+  @spec multiline_type_alias_start?(scanned_line()) :: boolean()
   defp multiline_type_alias_start?(line_info) do
     line_info.decl == :none and
       not line_info.indented? and
       String.starts_with?(line_info.trimmed, "type alias ")
   end
 
-  @spec multiline_union_start?(map()) :: boolean()
+  @spec multiline_union_start?(scanned_line()) :: boolean()
   defp multiline_union_start?(line_info) do
     match?({:ok, {:union_start, _, :none}}, line_info.decl)
   end
 
-  @spec multiline_continuation_line?(map()) :: boolean()
+  @spec multiline_continuation_line?(scanned_line()) :: boolean()
   defp multiline_continuation_line?(line_info) do
     line_info.indented? or line_info.trimmed == "" or String.starts_with?(line_info.trimmed, "--")
   end
 
-  @spec function_body_continuation_line?(map()) :: boolean()
+  @spec function_body_continuation_line?(scanned_line()) :: boolean()
   defp function_body_continuation_line?(line_info) do
     line_info.indented? or line_info.trimmed == "" or
       String.starts_with?(line_info.trimmed, "--")
   end
 
-  @spec hydrate_multiline_signature_decl(map(), [map()]) :: map()
+  @spec hydrate_multiline_signature_decl(scanned_line(), [scanned_line()]) :: scanned_line()
   defp hydrate_multiline_signature_decl(line_info, continuation) do
     name = line_info.trimmed |> String.trim_trailing(":") |> String.trim()
 
@@ -119,7 +140,7 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
     end
   end
 
-  @spec hydrate_multiline_type_alias_decl(map(), [map()]) :: map()
+  @spec hydrate_multiline_type_alias_decl(scanned_line(), [scanned_line()]) :: scanned_line()
   defp hydrate_multiline_type_alias_decl(line_info, continuation) do
     alias_tail =
       continuation
@@ -143,7 +164,7 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
     end
   end
 
-  @spec hydrate_multiline_union_decl(map(), [map()]) :: {map(), [map()]}
+  @spec hydrate_multiline_union_decl(scanned_line(), [scanned_line()]) :: {scanned_line(), [scanned_line()]}
   defp hydrate_multiline_union_decl(line_info, continuation) do
     union_tail =
       continuation
@@ -165,14 +186,14 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
     end
   end
 
-  @spec mark_hydrated_union_consumed([map()]) :: [map()]
+  @spec mark_hydrated_union_consumed([scanned_line()]) :: [scanned_line()]
   defp mark_hydrated_union_consumed(continuation) do
     Enum.map(continuation, fn line_info ->
       %{line_info | decl: :none, trimmed: ""}
     end)
   end
 
-  @spec collect_non_function_declarations([map()]) :: %{
+  @spec collect_non_function_declarations([scanned_line()]) :: %{
           type_aliases: [decl()],
           unions: [decl()],
           signatures: [decl()]
@@ -343,7 +364,7 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
     end
   end
 
-  @spec parse_function_definitions([map()]) :: [decl()]
+  @spec parse_function_definitions([scanned_line()]) :: [decl()]
   defp parse_function_definitions(scanned_lines) do
     scanned_lines
     |> Enum.reduce({[], nil}, fn line_info, {acc, current} ->
@@ -392,7 +413,7 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
     end)
   end
 
-  @spec maybe_flush_function([decl()], map() | nil) :: [decl()]
+  @spec maybe_flush_function([decl()], function_builder() | nil) :: [decl()]
   defp maybe_flush_function(acc, nil), do: acc
 
   defp maybe_flush_function(acc, current) do
@@ -430,7 +451,7 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
     end
   end
 
-  @spec parse_expression(String.t() | nil, String.t()) :: map()
+  @spec parse_expression(String.t() | nil, String.t()) :: AstTypes.expr()
   defp parse_expression(_name, body) do
     body = String.trim(body)
     generated_expr = maybe_generated_expr(body)
@@ -462,7 +483,7 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
     end
   end
 
-  @spec normalize_generated_expr(map()) :: map()
+  @spec normalize_generated_expr(AstTypes.expr()) :: AstTypes.expr()
   defp normalize_generated_expr(%{op: :qualified_ref, target: target})
        when is_binary(target) do
     if Regex.match?(~r/^[a-z][A-Za-z0-9_]*(\.[a-z][A-Za-z0-9_]*)+$/, target) do
@@ -611,7 +632,7 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
 
   defp normalize_generated_expr(expr), do: expr
 
-  @spec nested_field_access_expr([String.t()]) :: map()
+  @spec nested_field_access_expr([String.t()]) :: AstTypes.expr()
   defp nested_field_access_expr([base | fields]) do
     Enum.reduce(fields, %{op: :var, name: base}, fn field, arg ->
       %{op: :field_access, arg: arg, field: field}
@@ -747,7 +768,8 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
     }
   end
 
-  @spec parse_union_line(map(), [map()], map() | nil) :: {[map()], map() | nil}
+  @spec parse_union_line(scanned_line(), [decl()], union_builder() | nil) ::
+          {[decl()], union_builder() | nil}
   defp parse_union_line(line_info, acc, current) do
     line_no = line_info.line_no
 
@@ -790,7 +812,7 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
     end
   end
 
-  @spec normalize_union_ctors(list()) :: [map()]
+  @spec normalize_union_ctors(list()) :: [union_constructor()]
   defp normalize_union_ctors(constructors) when is_list(constructors) do
     constructors
     |> Enum.reduce([], fn
@@ -810,12 +832,12 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
     end)
   end
 
-  @spec union_trivia_line?(map()) :: boolean()
+  @spec union_trivia_line?(scanned_line()) :: boolean()
   defp union_trivia_line?(line_info) do
     line_info.trimmed == "" or String.starts_with?(line_info.trimmed, "--")
   end
 
-  @spec flush_union([decl()], map() | nil) :: [decl()]
+  @spec flush_union([decl()], union_builder() | nil) :: [decl()]
   defp flush_union(acc, nil), do: acc
 
   defp flush_union(acc, current) do

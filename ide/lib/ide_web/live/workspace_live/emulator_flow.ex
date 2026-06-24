@@ -21,6 +21,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
   alias IdeWeb.WorkspaceLive.PublishFlow
   alias IdeWeb.WorkspaceLive.ResourcesFlow
   alias IdeWeb.WorkspaceLive.ToolchainPresenter
+  alias IdeWeb.WorkspaceLive.Types
 
   @type socket :: Phoenix.LiveView.Socket.t()
   @type lv_noreply :: {:noreply, socket()}
@@ -61,7 +62,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
   @spec handles?(String.t()) :: boolean()
   def handles?(event) when is_binary(event), do: event in @emulator_events
 
-  @spec handle_event(String.t(), map(), socket()) :: lv_noreply()
+  @spec handle_event(String.t(), Types.event_params(), socket()) :: lv_noreply()
   def handle_event("run-emulator-install", _params, socket) do
     if external_emulator_blocked?(socket) do
       {:noreply, put_flash(socket, :error, external_emulator_disabled_message())}
@@ -684,14 +685,22 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
     normalize_emulator_mode(target, Map.get(settings, "emulator_mode"))
   end
 
+  alias IdeWeb.WorkspaceLive.Types, as: WorkspaceTypes
+
+  @spec atomize_screenshot(WorkspaceTypes.wire_params()) :: screenshot_row()
   def atomize_screenshot(screenshot) when is_map(screenshot) do
+    filename = Map.get(screenshot, "filename") || Map.get(screenshot, :filename)
+
     %{
-      filename: Map.get(screenshot, "filename") || Map.get(screenshot, :filename),
+      filename: filename,
       emulator_target:
         Map.get(screenshot, "emulator_target") || Map.get(screenshot, :emulator_target),
       url: Map.get(screenshot, "url") || Map.get(screenshot, :url),
       absolute_path: Map.get(screenshot, "absolute_path") || Map.get(screenshot, :absolute_path),
-      captured_at: Map.get(screenshot, "captured_at") || Map.get(screenshot, :captured_at)
+      captured_at: Map.get(screenshot, "captured_at") || Map.get(screenshot, :captured_at),
+      mime_type:
+        Map.get(screenshot, "mime_type") || Map.get(screenshot, :mime_type) ||
+          Screenshots.mime_type_for_path(filename || "")
     }
   end
 
@@ -719,9 +728,13 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
   @type capture_progress ::
           Screenshots.progress_payload()
           | {:target, String.t(), :captured, Screenshots.screenshot()}
-          | {:close, {:ok, map()} | {:error, String.t() | atom() | map()}}
+          | {:close,
+             Screenshots.step_ok_value()
+             | {:ok, Screenshots.capture_all_result()}
+             | {:error, Screenshots.screenshot_error()}
+             | nil}
   @type target_statuses :: %{String.t() => String.t()}
-  @type screenshot_row :: Screenshots.screenshot() | map()
+  @type screenshot_row :: Screenshots.screenshot()
   @type screenshot_identity ::
           {:path, String.t()} | {:filename, String.t()} | {:fallback, String.t()}
   @type screenshot_sort_key :: integer() | String.t()
@@ -871,7 +884,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
 
   @spec merge_capture_all_result_statuses(
           target_statuses(),
-          Screenshots.capture_all_result() | map()
+          Screenshots.capture_all_result()
         ) ::
           target_statuses()
   def merge_capture_all_result_statuses(statuses, result) when is_map(result) do
@@ -908,7 +921,16 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
     "Emulator install failed before execution: #{inspect(reason)}"
   end
 
-  @spec handle_async(atom(), term(), socket()) :: lv_noreply()
+  @type emulator_async_name ::
+          :check_emulator_installation
+          | :install_emulator_dependencies
+          | :run_emulator_install
+          | :stop_emulator
+          | :external_emulator_control
+          | :capture_screenshot
+          | :capture_all_screenshots
+
+  @spec handle_async(emulator_async_name(), Types.async_result(), socket()) :: lv_noreply()
   def handle_async(async, result, socket) when async in @emulator_asyncs do
     do_handle_async(async, result, socket)
   end

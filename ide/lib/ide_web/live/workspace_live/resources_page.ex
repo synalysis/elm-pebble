@@ -7,9 +7,10 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
   import IdeWeb.WorkspaceLive.ResourcesFlow,
     only: [filter_vectors: 2, format_upload_error: 1, upload_ready?: 1]
 
+  alias IdeWeb.WorkspaceLive.ResourcesPage.Assigns
   alias Phoenix.LiveView.Rendered
 
-  @type assigns :: map()
+  @type assigns :: Assigns.t()
   @type rendered :: Rendered.t()
 
   @spec render(assigns()) :: rendered()

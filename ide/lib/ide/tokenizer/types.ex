@@ -40,7 +40,7 @@ defmodule Ide.Tokenizer.Types do
         }
 
   @type parser_payload :: %{
-          diagnostics: [map()],
+          diagnostics: [diagnostic()],
           metadata: Ide.Formatter.Semantics.HeaderMetadata.metadata(),
           source_hash: integer(),
           fallback?: boolean()
@@ -57,15 +57,15 @@ defmodule Ide.Tokenizer.Types do
   @type unterminated_kind :: atom()
 
   @type compiler_lex_ok :: %{
-          tokens: [map()],
+          tokens: [elmc_token()],
           diagnostics: [diagnostic()],
           parser_payload: parser_payload() | nil
         }
 
-  @type compiler_lex_result :: {:ok, compiler_lex_ok()} | {:error, map()}
+  @type compiler_lex_result :: {:ok, compiler_lex_ok()} | {:error, parser_reason()}
 
   @type run_elm_ex_lex_result ::
-          {:ok, list(), [diagnostic()], parser_payload() | nil} | {:error, map()}
+          {:ok, list(), [diagnostic()], parser_payload() | nil} | {:error, parser_reason()}
 
   @type tokenize_result :: %{
           tokens: [token()],
@@ -77,7 +77,16 @@ defmodule Ide.Tokenizer.Types do
   @type token_key :: {integer(), integer(), String.t()}
   @type lines_map :: %{optional(integer()) => tokens()}
   @type annotation_context :: %{optional(integer()) => non_neg_integer()}
-  @type elmc_token :: map()
+  @typedoc """
+  Wire-encoded elmc lexer token (string keys: `type`, `line`, `value`, `text`).
+  """
+  @type elmc_token :: %{
+          optional(:type) => String.t(),
+          optional(:line) => integer() | nil,
+          optional(:value) => String.t(),
+          optional(:text) => String.t(),
+          optional(String.t()) => String.t() | integer() | nil
+        }
   @type indexed_lines :: [{String.t(), pos_integer()}]
   @type delim_stack_entry :: {String.t(), token()}
   @type delimiter_stack :: [delim_stack_entry()]
@@ -86,7 +95,11 @@ defmodule Ide.Tokenizer.Types do
   @type take_literal_result :: {String.t(), String.t(), boolean()}
   @type elmc_lex_state :: %{optional(integer()) => [elmc_token()]}
   @type ensure_loaded_error :: String.t()
-  @type parser_reason :: atom() | String.t() | map() | tuple()
+
+  @typedoc "Opaque term maps from lexer/parser Erlang interop."
+  @type wire_map :: %{optional(atom() | String.t()) => term()}
+
+  @type parser_reason :: atom() | String.t() | tuple() | wire_map()
 
   @type parser_diagnostic_map :: %{
           required(:source) => String.t(),
@@ -98,7 +111,12 @@ defmodule Ide.Tokenizer.Types do
         }
 
   @type elmc_raw_token ::
-          {atom(), integer(), elmc_value()} | {atom(), integer()} | map() | atom() | String.t()
+          {atom(), integer(), elmc_value()} | {atom(), integer()} | elmc_token() | wire_map() |
+            atom() | String.t()
+
+  @type elmc_value_map :: %{optional(atom() | String.t()) => elmc_value()}
+
   @type elmc_value ::
-          String.t() | charlist() | atom() | number() | boolean() | list() | map() | nil
+          String.t() | charlist() | atom() | number() | boolean() | [elmc_value()] |
+            elmc_value_map() | nil
 end

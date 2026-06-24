@@ -69,7 +69,7 @@ defmodule Ide.Debugger.AgentSession do
           Types.surface_target(),
           String.t(),
           String.t(),
-          map() | integer() | boolean() | String.t() | nil
+          Types.timeline_step_message_value()
         ) :: runtime_state()
   def append_debugger_event_host(state, type, target, message, message_source, message_value)
       when is_map(state) do
@@ -93,7 +93,7 @@ defmodule Ide.Debugger.AgentSession do
           Types.surface_target(),
           String.t(),
           String.t(),
-          map() | integer() | boolean() | String.t() | nil
+          Types.timeline_step_message_value()
         ) :: runtime_state()
   def append_debugger_event(state, type, target, message, message_source, message_value)
       when is_map(state) do

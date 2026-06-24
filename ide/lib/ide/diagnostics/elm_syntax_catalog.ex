@@ -6,7 +6,29 @@ defmodule Ide.Diagnostics.ElmSyntaxCatalog do
   @catalog_version "elm-compiler-0.19.1-syntax-full-v1"
   @source_reference "https://github.com/elm/compiler/blob/master/compiler/src/Reporting/Error/Syntax.hs"
 
-  @type detail_wire_value :: String.t() | atom() | list() | number() | boolean() | tuple() | map()
+  alias Ide.Tokenizer.Types, as: TokenizerTypes
+
+  @type detail_wire_value ::
+          String.t() | atom() | list() | number() | boolean() | tuple() | TokenizerTypes.wire_map()
+
+  @type span_semantics :: :start_to_eof | :token | :opening_to_eof | :inferred
+
+  @type catalog_entry :: %{
+          required(:title) => String.t(),
+          required(:source_title) => String.t(),
+          required(:summary) => String.t(),
+          required(:hint) => String.t(),
+          required(:example) => String.t(),
+          required(:span_semantics) => span_semantics()
+        }
+
+  @type coverage_matrix_row :: %{
+          required(:title) => String.t(),
+          required(:catalog_id) => atom(),
+          required(:mapper_entrypoint) => String.t(),
+          required(:compiler_hint_entrypoint) => String.t(),
+          required(:default_origin) => String.t()
+        }
 
   @syntax_titles [
     "BAD INFIX",
@@ -216,7 +238,7 @@ defmodule Ide.Diagnostics.ElmSyntaxCatalog do
     |> Enum.sort()
   end
 
-  @spec coverage_matrix() :: [map()]
+  @spec coverage_matrix() :: [coverage_matrix_row()]
   def coverage_matrix do
     Enum.map(@syntax_titles, fn title ->
       id = title_to_id(title)
@@ -231,10 +253,10 @@ defmodule Ide.Diagnostics.ElmSyntaxCatalog do
     end)
   end
 
-  @spec entry(atom()) :: map() | nil
+  @spec entry(atom()) :: catalog_entry() | nil
   def entry(id) when is_atom(id), do: Map.get(@entries, id)
 
-  @spec entry_by_title(String.t()) :: map() | nil
+  @spec entry_by_title(String.t()) :: catalog_entry() | nil
   def entry_by_title(title) when is_binary(title) do
     title
     |> title_to_id()
@@ -246,7 +268,12 @@ defmodule Ide.Diagnostics.ElmSyntaxCatalog do
     Map.get(@title_to_id, title, :syntax_problem)
   end
 
-  @spec build_message(atom(), map()) :: String.t()
+  @type message_details :: %{
+          optional(:detail) => detail_wire_value(),
+          optional(String.t()) => detail_wire_value()
+        }
+
+  @spec build_message(atom(), message_details()) :: String.t()
   def build_message(id, details \\ %{}) when is_atom(id) and is_map(details) do
     case entry(id) do
       nil ->

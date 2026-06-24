@@ -3,6 +3,8 @@ defmodule Elmc.CLI.Types do
   Typed results returned by in-process `Elmc.CLI` project runners.
   """
 
+  alias Elmc.CLI.Types.{Manifest, Project}
+
   @type cli_diagnostic :: %{
           optional(:severity) => String.t(),
           optional(:message) => String.t(),
@@ -30,6 +32,10 @@ defmodule Elmc.CLI.Types do
           required(:status) => run_status(),
           required(:output) => String.t(),
           required(:warnings) => [cli_diagnostic()],
-          required(:manifest) => map() | nil
+          required(:manifest) => Manifest.wire_map() | nil
         }
+
+  @type project_manifest :: Manifest.t()
+  @type dependency_compatibility_row :: Manifest.dependency_compatibility_row()
+  @type manifest_project :: Project.t()
 end

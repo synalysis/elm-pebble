@@ -4,12 +4,17 @@ defmodule Ide.Packages.ElmJsonEditor do
   alias Ide.Packages.DependencyResolver
   alias Ide.Packages.Types
   alias Ide.Projects
+  alias Ide.Projects.Project
 
-  @type elm_json_map :: map()
-  @type preview_map :: map()
+  @type project :: Project.t()
 
-  @spec preview_add(map(), String.t(), keyword()) ::
-          {:ok, map()} | {:error, Types.project_package_error()}
+  @type elm_json_map :: Types.elm_json()
+  @type preview_add_result :: Types.package_preview_add()
+  @type preview_remove_result :: Types.package_preview_remove()
+  @type mutation_result :: Types.package_mutation_result()
+
+  @spec preview_add(project(), String.t(), keyword()) ::
+          {:ok, preview_add_result()} | {:error, Types.project_package_error()}
   def preview_add(project, package, opts) do
     with {:ok, root, decoded} <- load_elm_json(project, opts[:source_root]),
          section <- normalize_section(opts[:section]),
@@ -35,8 +40,8 @@ defmodule Ide.Packages.ElmJsonEditor do
     end
   end
 
-  @spec preview_remove(map(), String.t(), keyword()) ::
-          {:ok, map()} | {:error, Types.project_package_error()}
+  @spec preview_remove(project(), String.t(), keyword()) ::
+          {:ok, preview_remove_result()} | {:error, Types.project_package_error()}
   def preview_remove(project, package, opts) do
     with {:ok, root, decoded} <- load_elm_json(project, opts[:source_root]),
          section <- normalize_section(opts[:section] || "dependencies"),
@@ -57,8 +62,8 @@ defmodule Ide.Packages.ElmJsonEditor do
     end
   end
 
-  @spec remove_package(map(), String.t(), keyword()) ::
-          {:ok, map()} | {:error, Types.project_package_error()}
+  @spec remove_package(project(), String.t(), keyword()) ::
+          {:ok, mutation_result()} | {:error, Types.project_package_error()}
   def remove_package(project, package, opts) do
     with {:ok, root, decoded, original_json} <-
            load_elm_json(project, opts[:source_root], include_text: true),
@@ -67,21 +72,17 @@ defmodule Ide.Packages.ElmJsonEditor do
          encoded <- Jason.encode!(updated, pretty: true) <> "\n",
          :ok <- maybe_write(project, root, encoded, original_json) do
       {:ok,
-       Map.merge(preview, %{
-         changed: encoded != original_json,
-         previous_version: previous_version,
-         dependency_diff: %{
-           package: package,
-           from: previous_version,
-           to: nil,
-           section: preview.section
-         }
-       })}
+       mutation_from_remove_preview(
+         preview,
+         package,
+         encoded != original_json,
+         previous_version
+       )}
     end
   end
 
-  @spec add_package(map(), String.t(), keyword()) ::
-          {:ok, map()} | {:error, Types.project_package_error()}
+  @spec add_package(project(), String.t(), keyword()) ::
+          {:ok, mutation_result()} | {:error, Types.project_package_error()}
   def add_package(project, package, opts) do
     with {:ok, root, decoded, original_json} <-
            load_elm_json(project, opts[:source_root], include_text: true),
@@ -90,21 +91,73 @@ defmodule Ide.Packages.ElmJsonEditor do
          encoded <- Jason.encode!(updated, pretty: true) <> "\n",
          :ok <- maybe_write(project, root, encoded, original_json) do
       {:ok,
-       Map.merge(preview, %{
-         changed: encoded != original_json,
-         previous_version: previous_version,
-         dependency_diff: %{
-           package: package,
-           from: previous_version,
-           to: preview.selected_version,
-           section: preview.section,
-           scope: preview.scope
-         }
-       })}
+       mutation_from_add_preview(
+         preview,
+         package,
+         encoded != original_json,
+         previous_version
+       )}
     end
   end
 
-  @spec candidate_roots(map()) :: [String.t()]
+  @spec mutation_from_remove_preview(
+          preview_remove_result(),
+          String.t(),
+          boolean(),
+          String.t() | nil
+        ) :: mutation_result()
+  defp mutation_from_remove_preview(preview, package, changed?, previous_version) do
+    %{
+      source_root: preview.source_root,
+      rel_path: preview.rel_path,
+      package: preview.package,
+      section: preview.section,
+      resolved_direct: Map.get(preview, :resolved_direct),
+      resolved_indirect: Map.get(preview, :resolved_indirect),
+      removed: Map.get(preview, :removed),
+      changed: changed?,
+      previous_version: previous_version,
+      dependency_diff: %{
+        package: package,
+        from: previous_version,
+        to: nil,
+        section: preview.section
+      }
+    }
+  end
+
+  @spec mutation_from_add_preview(
+          preview_add_result(),
+          String.t(),
+          boolean(),
+          String.t() | nil
+        ) :: mutation_result()
+  defp mutation_from_add_preview(preview, package, changed?, previous_version) do
+    %{
+      source_root: preview.source_root,
+      rel_path: preview.rel_path,
+      package: preview.package,
+      section: preview.section,
+      scope: preview.scope,
+      selected_version: preview.selected_version,
+      existing_constraint: preview.existing_constraint,
+      existing_location: preview.existing_location,
+      already_present: preview.already_present,
+      resolved_direct: preview.resolved_direct,
+      resolved_indirect: preview.resolved_indirect,
+      changed: changed?,
+      previous_version: previous_version,
+      dependency_diff: %{
+        package: package,
+        from: previous_version,
+        to: preview.selected_version,
+        section: preview.section,
+        scope: preview.scope
+      }
+    }
+  end
+
+  @spec candidate_roots(project()) :: [String.t()]
   def candidate_roots(project) do
     prioritized = ["watch", "protocol", "phone"]
     source_roots = Map.get(project, :source_roots, [])
@@ -116,12 +169,12 @@ defmodule Ide.Packages.ElmJsonEditor do
 
   Omits `protocol` — that tree is for shared protocol types, not third-party Elm deps.
   """
-  @spec roots_for_package_management(map()) :: [String.t()]
+  @spec roots_for_package_management(project()) :: [String.t()]
   def roots_for_package_management(project) do
     project |> candidate_roots() |> Enum.reject(&(&1 == "protocol"))
   end
 
-  @spec maybe_write(map(), String.t(), String.t(), String.t()) ::
+  @spec maybe_write(project(), String.t(), String.t(), String.t()) ::
           :ok | {:error, Types.project_package_error()}
   defp maybe_write(_project, _root, encoded, original) when encoded == original, do: :ok
 
@@ -129,7 +182,8 @@ defmodule Ide.Packages.ElmJsonEditor do
     Projects.write_source_file(project, root, "elm.json", encoded)
   end
 
-  @spec apply_dependency(elm_json_map(), preview_map()) :: {elm_json_map(), String.t() | nil}
+  @spec apply_dependency(elm_json_map(), Types.package_preview_add()) ::
+          {elm_json_map(), String.t() | nil}
   defp apply_dependency(decoded, preview) do
     section = preview.section
     package = preview.package
@@ -147,7 +201,8 @@ defmodule Ide.Packages.ElmJsonEditor do
     {updated, previous}
   end
 
-  @spec apply_removal(elm_json_map(), preview_map()) :: {elm_json_map(), String.t() | nil}
+  @spec apply_removal(elm_json_map(), preview_remove_result()) ::
+          {elm_json_map(), String.t() | nil}
   defp apply_removal(decoded, preview) do
     section = preview.section
     package = preview.package
@@ -165,7 +220,7 @@ defmodule Ide.Packages.ElmJsonEditor do
     {updated, previous}
   end
 
-  @spec load_elm_json(map(), String.t() | nil, keyword()) ::
+  @spec load_elm_json(project(), String.t() | nil, keyword()) ::
           {:ok, String.t(), elm_json_map()}
           | {:ok, String.t(), elm_json_map(), String.t()}
           | {:error, Types.project_package_error()}
@@ -224,7 +279,7 @@ defmodule Ide.Packages.ElmJsonEditor do
     }
   end
 
-  @spec previous_version(map(), String.t()) :: String.t() | nil
+  @spec previous_version(Types.dependencies_section(), String.t()) :: String.t() | nil
   defp previous_version(section_map, package) do
     direct = section_map |> Map.get("direct", %{}) |> ensure_map()
     indirect = section_map |> Map.get("indirect", %{}) |> ensure_map()
@@ -244,11 +299,11 @@ defmodule Ide.Packages.ElmJsonEditor do
   defp normalize_scope("indirect"), do: "indirect"
   defp normalize_scope(_), do: "direct"
 
-  @spec ensure_map(map() | list() | String.t() | nil) :: map()
+  @spec ensure_map(Types.elm_json() | list() | String.t() | nil) :: elm_json_map()
   defp ensure_map(value) when is_map(value), do: value
   defp ensure_map(_), do: %{}
 
-  @spec ensure_ordered_map(map()) :: map()
+  @spec ensure_ordered_map(elm_json_map()) :: elm_json_map()
   defp ensure_ordered_map(map) do
     map
     |> Enum.sort_by(fn {key, _value} -> to_string(key) end)

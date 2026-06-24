@@ -19,8 +19,8 @@ defmodule ElmEx.CoreIR.Types do
 
   @type wire_map :: %{optional(String.t()) => wire_input(), optional(atom()) => wire_input()}
 
-  @type normalized_module :: module_t()
-  @type normalized_diagnostic :: diagnostic()
+  @type normalized_module :: module_t() | Module.wire_t()
+  @type normalized_diagnostic :: diagnostic() | Diagnostic.wire_t()
   @type normalized_value :: Expr.normalized_value()
 
   @type wire_core_ir :: wire_map() | ElmEx.CoreIR.t()

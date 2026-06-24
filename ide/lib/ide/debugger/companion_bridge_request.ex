@@ -4,7 +4,7 @@ defmodule Ide.Debugger.CompanionBridgeRequest do
   alias Ide.Debugger.Types
   alias Ide.Debugger.Types.CompanionBridgeRequest, as: BridgeRequestType
 
-  @spec from_bridge_command(map()) :: Types.companion_bridge_request() | nil
+  @spec from_bridge_command(Types.wire_map()) :: Types.companion_bridge_request() | nil
   def from_bridge_command(%{"api" => api, "op" => op} = command)
       when is_binary(api) and is_binary(op) do
     %{

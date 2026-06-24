@@ -3,14 +3,16 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
   use IdeWeb, :html
 
   alias Ide.Auth
+  alias Ide.Projects.Project
+  alias IdeWeb.WorkspaceLive.ProjectSettingsPage.Assigns
   alias Phoenix.LiveView.Rendered
 
   @settings_panes [:settings, :settings_store, :settings_github]
 
-  @type assigns :: map()
+  @type assigns :: Assigns.t()
   @type rendered :: Rendered.t()
-  @type settings_pane :: :settings | :settings_store | :settings_github
-  @type flow_status :: :idle | :running | :ok | :error
+  @type settings_pane :: Assigns.settings_pane()
+  @type flow_status :: Assigns.flow_status()
 
   @spec render(assigns()) :: rendered()
   def render(assigns) do
@@ -91,12 +93,19 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
     """
   end
 
+  @type settings_nav_assigns :: %{
+          required(:pane) => settings_pane() | atom(),
+          required(:project) => Project.t(),
+          optional(:auth_mode) => Assigns.auth_mode(),
+          optional(:class) => String.t()
+        }
+
   attr :pane, :atom, required: true
-  attr :project, :map, required: true
+  attr :project, Project, required: true
   attr :auth_mode, :atom, default: :local
   attr :class, :string, default: "mt-4"
 
-  @spec settings_nav(map()) :: Phoenix.LiveView.Rendered.t()
+  @spec settings_nav(settings_nav_assigns()) :: Phoenix.LiveView.Rendered.t()
   def settings_nav(assigns) do
     ~H"""
     <nav class={[@class, "flex flex-wrap gap-2 border-b border-zinc-200 pb-2 text-sm"]}>

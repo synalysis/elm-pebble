@@ -1,6 +1,8 @@
 defmodule ElmEx.Frontend.DefaultImports do
   @moduledoc false
 
+  alias ElmEx.Frontend.Types.ImportEntry
+
   @default_module_names ["Basics", "List", "Maybe", "Result", "String", "Char", "Tuple", "Debug"]
 
   @default_import_entries [
@@ -17,6 +19,6 @@ defmodule ElmEx.Frontend.DefaultImports do
   @spec module_names() :: [String.t()]
   def module_names, do: @default_module_names
 
-  @spec import_entries() :: [map()]
+  @spec import_entries() :: [ImportEntry.wire_map()]
   def import_entries, do: @default_import_entries
 end

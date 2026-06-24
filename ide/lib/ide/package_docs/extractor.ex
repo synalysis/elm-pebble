@@ -2,10 +2,11 @@ defmodule Ide.PackageDocs.Extractor do
   @moduledoc false
 
   alias ElmEx.Frontend.DocsMetadata
+  alias ElmEx.Types, as: ElmExTypes
   alias Ide.PackageDocs.NativeApiLinks
   alias Ide.PackageDocs.Types
 
-  @spec build_package_docs(String.t()) :: {:ok, [map()]} | {:error, Types.export_error()}
+  @spec build_package_docs(String.t()) :: {:ok, [Types.module_doc()]} | {:error, Types.export_error()}
   def build_package_docs(package_root) when is_binary(package_root) do
     with {:ok, elm_json} <- read_elm_json(package_root),
          {:ok, modules} <- exposed_modules(elm_json) do
@@ -25,7 +26,7 @@ defmodule Ide.PackageDocs.Extractor do
     end
   end
 
-  @spec read_elm_json(String.t()) :: {:ok, map()} | {:error, Types.export_error()}
+  @spec read_elm_json(String.t()) :: {:ok, Types.elm_json()} | {:error, Types.export_error()}
   def read_elm_json(package_root) when is_binary(package_root) do
     path = Path.join(package_root, "elm.json")
 
@@ -39,7 +40,7 @@ defmodule Ide.PackageDocs.Extractor do
     end
   end
 
-  @spec build_module_doc(String.t()) :: {:ok, map()} | {:error, Types.export_error()}
+  @spec build_module_doc(String.t()) :: {:ok, Types.module_doc()} | {:error, Types.export_error()}
   def build_module_doc(path) when is_binary(path) do
     with {:ok, metadata} <- apply(DocsMetadata, :parse_file, [path]),
          :ok <- validate_module_docs(metadata) do
@@ -47,7 +48,7 @@ defmodule Ide.PackageDocs.Extractor do
     end
   end
 
-  @spec exposed_modules(map()) :: {:ok, [String.t()]} | {:error, Types.export_error()}
+  @spec exposed_modules(Types.elm_json()) :: {:ok, [String.t()]} | {:error, Types.export_error()}
   defp exposed_modules(%{"exposed-modules" => modules}) when is_list(modules) do
     {:ok, Enum.map(modules, &to_string/1)}
   end
@@ -77,7 +78,7 @@ defmodule Ide.PackageDocs.Extractor do
     Path.join([package_root, "src", rel])
   end
 
-  @spec validate_module_docs(map()) :: :ok | {:error, Types.export_error()}
+  @spec validate_module_docs(Types.module_metadata()) :: :ok | {:error, Types.export_error()}
   defp validate_module_docs(metadata) do
     docs = metadata.docs
     declarations = metadata.declarations
@@ -98,7 +99,12 @@ defmodule Ide.PackageDocs.Extractor do
     end
   end
 
-  @spec validate_docs_references(map(), [String.t()], map(), map()) ::
+  @spec validate_docs_references(
+          Types.module_metadata(),
+          [String.t()],
+          %{optional(String.t()) => Types.declaration()},
+          Types.exposed_visibility_map()
+        ) ::
           :ok | {:error, Types.export_error()}
   defp validate_docs_references(metadata, docs, declarations, exposed) do
     Enum.reduce_while(docs, :ok, fn doc_name, :ok ->
@@ -112,7 +118,7 @@ defmodule Ide.PackageDocs.Extractor do
         not Map.has_key?(exposed, name) ->
           {:halt, {:error, {:docs_reference_not_exposed, metadata.name, name, metadata.path}}}
 
-        String.trim(decl.comment || "") == "" ->
+        String.trim(decl.comment) == "" ->
           {:halt, {:error, {:missing_declaration_comment, metadata.name, name, metadata.path}}}
 
         true ->
@@ -121,7 +127,12 @@ defmodule Ide.PackageDocs.Extractor do
     end)
   end
 
-  @spec validate_all_exposed_documented(map(), [String.t()], map(), map()) ::
+  @spec validate_all_exposed_documented(
+          Types.module_metadata(),
+          [String.t()],
+          %{optional(String.t()) => Types.declaration()},
+          Types.exposed_visibility_map()
+        ) ::
           :ok | {:error, Types.export_error()}
   defp validate_all_exposed_documented(metadata, docs, declarations, exposed) do
     documented = docs |> Enum.map(&exposed_name/1) |> MapSet.new()
@@ -137,7 +148,7 @@ defmodule Ide.PackageDocs.Extractor do
           {:halt,
            {:error, {:exposed_declaration_missing_from_docs, metadata.name, name, metadata.path}}}
 
-        String.trim(decl.comment || "") == "" ->
+        String.trim(decl.comment) == "" ->
           {:halt, {:error, {:missing_declaration_comment, metadata.name, name, metadata.path}}}
 
         true ->
@@ -146,7 +157,7 @@ defmodule Ide.PackageDocs.Extractor do
     end)
   end
 
-  @spec metadata_to_module_doc(map()) :: map()
+  @spec metadata_to_module_doc(Types.module_metadata()) :: Types.module_doc()
   defp metadata_to_module_doc(metadata) do
     exposed = exposed_declarations(metadata.module_exposing, metadata.declarations)
 
@@ -185,7 +196,7 @@ defmodule Ide.PackageDocs.Extractor do
     |> maybe_put_native_api_links(metadata.name)
   end
 
-  @spec maybe_put_native_api_links(map(), String.t()) :: map()
+  @spec maybe_put_native_api_links(Types.module_doc(), String.t()) :: Types.module_doc()
   defp maybe_put_native_api_links(doc, module_name) when is_map(doc) do
     case NativeApiLinks.links_for_module(module_name) do
       [] -> doc
@@ -193,7 +204,7 @@ defmodule Ide.PackageDocs.Extractor do
     end
   end
 
-  @spec union_doc(map(), list()) :: map()
+  @spec union_doc(Types.declaration(), list()) :: Types.declaration_doc()
   defp union_doc(declaration, cases) do
     %{
       "name" => declaration.name,
@@ -203,7 +214,7 @@ defmodule Ide.PackageDocs.Extractor do
     }
   end
 
-  @spec alias_doc(map()) :: map()
+  @spec alias_doc(Types.declaration()) :: Types.declaration_doc()
   defp alias_doc(declaration) do
     %{
       "name" => declaration.name,
@@ -213,7 +224,7 @@ defmodule Ide.PackageDocs.Extractor do
     }
   end
 
-  @spec value_doc(map()) :: map()
+  @spec value_doc(Types.declaration()) :: Types.declaration_doc()
   defp value_doc(declaration) do
     %{
       "name" => declaration.name,
@@ -222,8 +233,11 @@ defmodule Ide.PackageDocs.Extractor do
     }
   end
 
-  @spec exposed_declarations(String.t() | [String.t()], map()) ::
-          %{optional(String.t()) => :open | :opaque}
+  @spec exposed_declarations(
+          ElmExTypes.module_exposing(),
+          %{optional(String.t()) => Types.declaration()}
+        ) ::
+          Types.exposed_visibility_map()
   defp exposed_declarations("..", declarations) do
     declarations
     |> Map.keys()

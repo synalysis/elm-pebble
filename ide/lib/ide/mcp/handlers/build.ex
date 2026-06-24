@@ -1,11 +1,13 @@
 defmodule Ide.Mcp.Handlers.Build do
   @moduledoc false
 
+  alias Ide.Emulator.Types, as: EmulatorTypes
   alias Ide.Mcp.ToolSupport
   alias Ide.Mcp.ToolTypes
   alias Ide.Mcp.WireTypes
   alias Ide.PebbleToolchain
   alias Ide.Projects
+  alias Ide.Projects.Project
   alias Ide.Screenshots
 
   def call("pebble.package", %{"slug" => slug}) do
@@ -108,7 +110,8 @@ defmodule Ide.Mcp.Handlers.Build do
 
   defp mcp_tools_config, do: Application.get_env(:ide, Ide.Mcp.Tools, [])
 
-  @spec pebble_install_payload(String.t(), String.t(), map()) :: ToolTypes.pebble_install_result()
+  @spec pebble_install_payload(String.t(), String.t(), EmulatorTypes.pbw_install_result()) ::
+          ToolTypes.pebble_install_result()
   defp pebble_install_payload(slug, artifact_path, install_result)
        when is_binary(slug) and is_binary(artifact_path) and is_map(install_result) do
     %{slug: slug, artifact_path: artifact_path, install_result: install_result}
@@ -147,7 +150,7 @@ defmodule Ide.Mcp.Handlers.Build do
     "pebble package failed: #{inspect(reason)}"
   end
 
-  @spec mcp_screenshot_entry(map()) :: ToolTypes.screenshot_entry()
+  @spec mcp_screenshot_entry(Screenshots.screenshot()) :: ToolTypes.screenshot_entry()
   defp mcp_screenshot_entry(shot) when is_map(shot) do
     target = Map.get(shot, :emulator_target)
     captured_at = Map.get(shot, :captured_at)
@@ -164,7 +167,8 @@ defmodule Ide.Mcp.Handlers.Build do
     }
   end
 
-  @spec find_screenshot([map()], String.t(), String.t()) :: {:ok, map()} | {:error, atom()}
+  @spec find_screenshot([Screenshots.screenshot()], String.t(), String.t()) ::
+          {:ok, Screenshots.screenshot()} | {:error, atom()}
   defp find_screenshot(shots, emulator_target, filename) do
     case Enum.find(shots, &screenshot_match?(&1, emulator_target, filename)) do
       nil -> {:error, :screenshot_not_found}
@@ -172,7 +176,7 @@ defmodule Ide.Mcp.Handlers.Build do
     end
   end
 
-  @spec screenshot_match?(map(), String.t(), String.t()) :: boolean()
+  @spec screenshot_match?(Screenshots.screenshot(), String.t(), String.t()) :: boolean()
   defp screenshot_match?(shot, emulator_target, filename) do
     Map.get(shot, :emulator_target) == emulator_target and Map.get(shot, :filename) == filename and
       is_binary(Map.get(shot, :absolute_path))
@@ -193,7 +197,7 @@ defmodule Ide.Mcp.Handlers.Build do
 
   @spec screenshots_capture_payload(
           String.t(),
-          map(),
+          Screenshots.screenshot() | nil,
           String.t(),
           integer(),
           String.t(),
@@ -213,14 +217,15 @@ defmodule Ide.Mcp.Handlers.Build do
     }
   end
 
-  @spec screenshots_list_payload(String.t(), [map()]) :: ToolTypes.screenshots_list_result()
+  @spec screenshots_list_payload(String.t(), [Screenshots.screenshot()]) ::
+          ToolTypes.screenshots_list_result()
   defp screenshots_list_payload(slug, entries) when is_binary(slug) and is_list(entries) do
     %{slug: slug, count: length(entries), screenshots: entries}
   end
 
   @spec screenshots_read_payload(
           String.t(),
-          map(),
+          ToolTypes.screenshot_entry(),
           String.t(),
           non_neg_integer(),
           String.t(),
@@ -252,7 +257,7 @@ defmodule Ide.Mcp.Handlers.Build do
     |> Keyword.get(:pebble_toolchain_module, PebbleToolchain)
   end
 
-  @spec resolve_install_package_path(map(), map(), module()) ::
+  @spec resolve_install_package_path(Project.t(), ToolTypes.tool_args(), module()) ::
           {:ok, String.t()} | {:error, ToolTypes.tool_persist_error()}
   defp resolve_install_package_path(project, args, toolchain) do
     case Map.get(args, "package_path") do

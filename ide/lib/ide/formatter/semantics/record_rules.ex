@@ -1,6 +1,7 @@
 defmodule Ide.Formatter.Semantics.RecordRules do
   @moduledoc false
   alias Ide.Formatter.Semantics.TextOps
+  alias Ide.Formatter.Types, as: FormatterTypes
   alias Ide.Formatter.Types
 
   @type record_entry :: %{close_indent: non_neg_integer(), comma_indent: non_neg_integer()}
@@ -301,7 +302,8 @@ defmodule Ide.Formatter.Semantics.RecordRules do
     |> Enum.join("\n")
   end
 
-  @spec opening_record_candidate?(String.t(), map() | nil) :: boolean()
+  @spec opening_record_candidate?(String.t(), FormatterTypes.non_empty_line_context() | nil) ::
+          boolean()
   defp opening_record_candidate?(line, prev_non_empty) when is_map(prev_non_empty) do
     trimmed = String.trim_leading(line)
 

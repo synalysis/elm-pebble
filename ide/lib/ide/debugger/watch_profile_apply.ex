@@ -1,6 +1,7 @@
 defmodule Ide.Debugger.WatchProfileApply do
   @moduledoc false
 
+  alias Ide.Debugger.RuntimeContexts
   alias Ide.Debugger.RuntimeExecutorConfig
   alias Ide.Debugger.RuntimeSurfaces
   alias Ide.Debugger.SimulatorSurfaceSettings
@@ -16,7 +17,7 @@ defmodule Ide.Debugger.WatchProfileApply do
   @type host :: %{
           required(:append_event) => append_event_fn(),
           required(:ensure_phone_state) => ensure_phone_fn(),
-          optional(:contexts) => (-> map())
+          optional(:contexts) => (-> RuntimeContexts.t())
         }
 
   @spec apply(Types.runtime_state(), Types.session_attrs(), host()) :: Types.runtime_state()

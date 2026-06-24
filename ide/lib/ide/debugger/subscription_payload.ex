@@ -337,7 +337,7 @@ defmodule Ide.Debugger.SubscriptionPayload do
           Types.runtime_state(),
           Types.surface_target(),
           attach_ctx() | nil
-        ) :: map()
+        ) :: Types.simulator_compass_heading()
   defp subscription_compass_heading(state, _target, ctx) when is_map(state) do
     settings = resolve_settings(state, ctx)
 
@@ -362,7 +362,7 @@ defmodule Ide.Debugger.SubscriptionPayload do
           Types.runtime_state(),
           Types.surface_target(),
           attach_ctx() | nil
-        ) :: map()
+        ) :: Types.simulator_screen_payload()
   defp subscription_screen_payload(state, _target, _ctx) when is_map(state) do
     launch_context =
       get_in(state, [:watch, :model, "launch_context"]) ||
@@ -383,7 +383,7 @@ defmodule Ide.Debugger.SubscriptionPayload do
           Types.runtime_state(),
           Types.surface_target(),
           attach_ctx() | nil
-        ) :: map()
+        ) :: Types.simulator_rect_payload()
   defp subscription_unobstructed_rect(state, _target, ctx) when is_map(state) do
     settings = resolve_settings(state, ctx)
 
@@ -425,7 +425,7 @@ defmodule Ide.Debugger.SubscriptionPayload do
           Types.runtime_state(),
           Types.surface_target(),
           attach_ctx() | nil
-        ) :: map()
+        ) :: Types.protocol_ctor_value()
   defp subscription_dictation_result_payload(state, _target, ctx) when is_map(state) do
     settings = resolve_settings(state, ctx)
 

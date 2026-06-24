@@ -17,13 +17,13 @@ defmodule Ide.Mcp.Tools do
   @type capability :: :read | :edit | :build | :publish
   @type tool_result :: ToolTypes.tool_result()
 
-  @spec tool_definitions([capability()]) :: [map()]
+  @spec tool_definitions([capability()]) :: [ToolCatalog.tool_definition()]
   def tool_definitions(capabilities), do: ToolCatalog.tool_definitions(capabilities)
 
   @spec catalog_version() :: String.t()
   def catalog_version, do: ToolCatalog.catalog_version()
 
-  @spec call(String.t(), map(), [capability()]) :: {:ok, map()} | {:error, String.t()}
+  @spec call(String.t(), ToolTypes.tool_args(), [capability()]) :: tool_result()
   def call(name, args, capabilities) when is_binary(name) and is_map(args) do
     internal_name = ToolCatalog.internal_tool_name(name)
 
@@ -34,14 +34,14 @@ defmodule Ide.Mcp.Tools do
     end
   end
 
-  @spec audit_arguments(String.t(), map()) :: map()
+  @spec audit_arguments(String.t(), ToolTypes.tool_args()) :: ToolTypes.tool_audit_args()
   def audit_arguments(name, args) when is_binary(name) and is_map(args) do
     name
     |> ToolCatalog.internal_tool_name()
     |> do_audit_arguments(args)
   end
 
-  @spec do_audit_arguments(String.t(), map()) :: map()
+  @spec do_audit_arguments(String.t(), ToolTypes.tool_args()) :: ToolTypes.tool_audit_args()
   defp do_audit_arguments("files.write", %{"content" => content} = args)
        when is_binary(content) do
     args
@@ -108,7 +108,7 @@ defmodule Ide.Mcp.Tools do
 
   defp do_audit_arguments(_name, args) when is_map(args), do: args
 
-  @spec do_call(String.t(), map()) :: tool_result()
+  @spec do_call(String.t(), ToolTypes.tool_args()) :: tool_result()
   defp do_call("templates." <> _rest = name, args), do: ProjectsHandler.call(name, args)
   defp do_call("projects." <> _rest = name, args), do: ProjectsHandler.call(name, args)
   defp do_call("files." <> _rest = name, args), do: ProjectsHandler.call(name, args)
@@ -137,7 +137,7 @@ defmodule Ide.Mcp.Tools do
   defp do_call("resources.vectors.delete", args), do: VectorResources.delete(args)
   defp do_call(name, _args), do: {:error, "unknown tool: #{name}"}
 
-  @spec redact_patch_argument(map(), String.t()) :: map()
+  @spec redact_patch_argument(ToolTypes.tool_audit_args(), String.t()) :: ToolTypes.tool_audit_args()
   defp redact_patch_argument(args, key) do
     case Map.get(args, key) do
       value when is_binary(value) ->

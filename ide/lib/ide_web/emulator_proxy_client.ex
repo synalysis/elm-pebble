@@ -3,9 +3,11 @@ defmodule IdeWeb.EmulatorProxyClient do
 
   use WebSockex
 
+  alias IdeWeb.EmulatorProxy.Types, as: ProxyTypes
+
   @type client_state :: %{required(:owner) => pid()}
 
-  @spec start_link(String.t(), pid()) :: {:ok, pid()} | {:error, term()}
+  @spec start_link(String.t(), pid()) :: {:ok, pid()} | {:error, ProxyTypes.ws_start_error()}
   def start_link(url, owner) when is_binary(url) and is_pid(owner) do
     WebSockex.start_link(url, __MODULE__, %{owner: owner})
   end
@@ -35,7 +37,7 @@ defmodule IdeWeb.EmulatorProxyClient do
   def handle_cast(:close, state), do: {:close, state}
 
   @impl true
-  @spec terminate(term(), client_state()) :: :ok
+  @spec terminate(ProxyTypes.terminate_reason(), client_state()) :: :ok
   def terminate(reason, state) do
     send(state.owner, {:emulator_proxy_closed, reason})
     :ok

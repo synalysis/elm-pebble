@@ -77,7 +77,7 @@ defmodule Ide.Debugger.SubscriptionTriggerWire do
 
   @type injection_modal_ctx :: %{
           required(:introspect_for) => (Types.runtime_state(), Types.surface_target() ->
-                                          Types.elm_introspect() | map()),
+                                          Types.elm_introspect()),
           required(:normalize_target) => (String.t() -> Types.surface_target())
         }
 

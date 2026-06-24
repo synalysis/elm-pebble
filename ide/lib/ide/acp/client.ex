@@ -9,6 +9,7 @@ defmodule Ide.Acp.Client do
   use GenServer
 
   alias Ide.Acp.McpServers
+  alias Ide.Acp.Types, as: AcpTypes
 
   @protocol_version 1
   @default_timeout 30_000
@@ -31,9 +32,9 @@ defmodule Ide.Acp.Client do
     client_capabilities: %{}
   ]
 
-  @type acp_error :: String.t() | map() | atom() | tuple()
+  @type acp_error :: AcpTypes.acp_error()
 
-  @type request_result :: {:ok, map() | list() | nil} | {:error, acp_error()}
+  @type request_result :: {:ok, AcpTypes.json_rpc_result()} | {:error, acp_error()}
 
   @doc """
   Starts an ACP client and launches the configured agent subprocess.
@@ -110,7 +111,8 @@ defmodule Ide.Acp.Client do
   @doc """
   Sends content blocks to an ACP session.
   """
-  @spec prompt(GenServer.server(), String.t(), [map()], keyword()) :: request_result()
+  @spec prompt(GenServer.server(), String.t(), [AcpTypes.prompt_content_block()], keyword()) ::
+          request_result()
   def prompt(client, session_id, content_blocks, opts \\ [])
       when is_binary(session_id) and is_list(content_blocks) do
     params = %{"sessionId" => session_id, "prompt" => content_blocks}
@@ -149,7 +151,7 @@ defmodule Ide.Acp.Client do
   @doc """
   Sends a raw JSON-RPC request to the agent.
   """
-  @spec request(GenServer.server(), String.t(), map() | list() | nil, timeout()) ::
+  @spec request(GenServer.server(), String.t(), AcpTypes.json_rpc_params(), timeout()) ::
           request_result()
   def request(client, method, params, timeout \\ @default_timeout) when is_binary(method) do
     GenServer.call(client, {:request, method, params, timeout}, timeout + 1_000)
@@ -158,7 +160,7 @@ defmodule Ide.Acp.Client do
   @doc """
   Sends a raw JSON-RPC notification to the agent.
   """
-  @spec notify(GenServer.server(), String.t(), map() | list() | nil) :: :ok
+  @spec notify(GenServer.server(), String.t(), AcpTypes.json_rpc_params()) :: :ok
   def notify(client, method, params) when is_binary(method) do
     GenServer.cast(client, {:notify, method, params})
   end
