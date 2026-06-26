@@ -1665,45 +1665,40 @@ static GColor color_from_code(int64_t value) {
 
 #if ELMC_PEBBLE_FEATURE_DRAW_TEXT
 static GTextAlignment text_alignment_from_options(int32_t options) {
-  switch (options & 0x3) {
-  case 0:
-    return GTextAlignmentLeft;
-  case 2:
-    return GTextAlignmentRight;
-  case 1:
-  default:
-    return GTextAlignmentCenter;
-  }
+  static const GTextAlignment alignment_lut[4] = {
+    GTextAlignmentLeft,
+    GTextAlignmentCenter,
+    GTextAlignmentRight,
+    GTextAlignmentCenter,
+  };
+  return alignment_lut[options & 0x3];
 }
 
 static GTextOverflowMode text_overflow_from_options(int32_t options) {
-  switch ((options >> 2) & 0x3) {
-  case 1:
-    return GTextOverflowModeTrailingEllipsis;
-  case 2:
-    return GTextOverflowModeFill;
-  case 0:
-  default:
-    return GTextOverflowModeWordWrap;
-  }
+  static const GTextOverflowMode overflow_lut[4] = {
+    GTextOverflowModeWordWrap,
+    GTextOverflowModeTrailingEllipsis,
+    GTextOverflowModeFill,
+    GTextOverflowModeWordWrap,
+  };
+  return overflow_lut[(options >> 2) & 0x3];
 }
 #endif
 
 #if ELMC_PEBBLE_FEATURE_DRAW_COMPOSITING_MODE
 static GCompOp compositing_from_code(int64_t value) {
-  switch ((int)value) {
-    case 1:
-      return GCompOpAnd;
-    case 2:
-      return GCompOpOr;
-    case 3:
-      return GCompOpSet;
-    case 4:
-      return GCompOpClear;
-    case 0:
-    default:
-      return GCompOpAssign;
+  static const GCompOp compositing_lut[5] = {
+    GCompOpAssign,
+    GCompOpAnd,
+    GCompOpOr,
+    GCompOpSet,
+    GCompOpClear,
+  };
+  int idx = (int)value;
+  if (idx < 0 || idx > 4) {
+    return GCompOpAssign;
   }
+  return compositing_lut[idx];
 }
 #endif
 
