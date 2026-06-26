@@ -66,8 +66,8 @@ defmodule Elmc.GoldenSnapshotTest do
 
   test "generated c contains concrete helper calls for lowered expressions" do
     project_dir = Path.expand("fixtures/simple_project", __DIR__)
-    out_dir = Path.expand("tmp/snapshots", __DIR__)
-    File.rm_rf!(out_dir)
+    out_dir = Path.expand("tmp/snapshots_#{System.unique_integer([:positive])}", __DIR__)
+    on_exit(fn -> File.rm_rf!(out_dir) end)
     {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
 
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))

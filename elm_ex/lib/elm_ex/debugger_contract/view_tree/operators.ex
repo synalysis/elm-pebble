@@ -340,6 +340,16 @@ defmodule ElmEx.DebuggerContract.ViewTree.Operators do
     }
   end
 
+  def expr_to_view_tree(%{op: :pipe_chain, steps: steps, base: base}, d, max, api_metadata)
+      when d < max and is_list(steps) do
+    desugared =
+      Enum.reduce(steps, base, fn step, acc ->
+        ElmEx.IR.PipeChain.append_pipe_arg(step, acc)
+      end)
+
+    expr_to_view_tree(desugared, d, max, api_metadata)
+  end
+
   def expr_to_view_tree(%{op: op}, _, _, _api_metadata) do
     %{"type" => "expr", "label" => to_string(op), "children" => [], "op" => to_string(op)}
   end

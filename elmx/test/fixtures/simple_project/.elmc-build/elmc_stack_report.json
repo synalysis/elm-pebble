@@ -693,7 +693,7 @@
     "boxed_tmp_declarations": 85,
     "closure_allocations": 0,
     "direct_command_defs": 0,
-    "generated_c_bytes": 51031,
+    "generated_c_bytes": 51023,
     "generated_c_lines": 1566,
     "generic_function_defs": 5,
     "linked_binary": {

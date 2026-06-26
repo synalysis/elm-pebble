@@ -24,6 +24,7 @@ defmodule Elmx.TestSupport.CoverageGate do
                    :call,
                    :qualified_call,
                    :qualified_call1,
+                   :qualified_ref,
                    :constructor_call,
                    :constructor_ref,
                    :partial_constructor,
@@ -38,6 +39,7 @@ defmodule Elmx.TestSupport.CoverageGate do
                    :tuple_second_expr,
                    :string_length_expr,
                    :char_from_code_expr,
+                   :pipe_chain,
                    :unsupported
                  ])
 

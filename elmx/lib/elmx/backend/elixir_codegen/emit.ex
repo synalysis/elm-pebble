@@ -102,6 +102,9 @@ defmodule Elmx.Backend.ElixirCodegen.Emit do
       :qualified_call1 ->
         Calls.compile_qualified_call1(expr, env, counter)
 
+      :qualified_ref ->
+        Calls.compile_qualified_call1(%{target: expr.target}, env, counter)
+
       :pipe_chain ->
         Calls.compile_pipe_chain(expr, env, counter)
 

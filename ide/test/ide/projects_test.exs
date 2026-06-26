@@ -62,40 +62,32 @@ defmodule Ide.ProjectsTest do
   end
 
   test "failed create removes workspace directories" do
-    alias Ide.Paths
-
     slug = "bootstrap-failure-#{System.unique_integer([:positive])}"
-    template_src = Paths.priv_path("project_templates/starter_watch")
-    backup = template_src <> ".test_bak.#{System.unique_integer([:positive])}"
+    fake_priv = Path.join(System.tmp_dir!(), "ide_fake_priv_#{System.unique_integer([:positive])}")
+    templates_dir = Path.join(fake_priv, "project_templates")
+    File.mkdir_p!(templates_dir)
 
-    :global.trans({:ide, :starter_watch_template_test_lock}, fn ->
-      if File.dir?(template_src) do
-        File.rename!(template_src, backup)
+    prev_paths_config = Application.get_env(:ide, Ide.Paths, [])
 
-        try do
-          assert {:error, {:missing_template_asset, missing_path}} =
-                   Projects.create_project(%{
-                     "name" => "Bootstrap Failure",
-                     "slug" => slug,
-                     "target_type" => "app"
-                   })
-
-          assert missing_path =~ "starter_watch"
-
-          workspace = Path.join(Projects.projects_root(), slug)
-          refute File.exists?(workspace)
-          refute Projects.get_project_by_slug(slug)
-        after
-          if File.dir?(backup) and not File.dir?(template_src) do
-            File.rename!(backup, template_src)
-          end
-        end
-
-        :ok
-      else
-        flunk("starter_watch template missing at #{template_src}")
-      end
+    on_exit(fn ->
+      Application.put_env(:ide, Ide.Paths, prev_paths_config)
+      File.rm_rf(fake_priv)
     end)
+
+    Application.put_env(:ide, Ide.Paths, Keyword.put(prev_paths_config, :priv_dir, fake_priv))
+
+    assert {:error, {:missing_template_asset, missing_path}} =
+             Projects.create_project(%{
+               "name" => "Bootstrap Failure",
+               "slug" => slug,
+               "target_type" => "app"
+             })
+
+    assert missing_path =~ "starter_watch"
+
+    workspace = Path.join(Projects.projects_root(), slug)
+    refute File.exists?(workspace)
+    refute Projects.get_project_by_slug(slug)
   end
 
   test "project ownership scopes slugs and workspaces" do

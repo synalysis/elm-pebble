@@ -60,6 +60,13 @@ typedef struct ElmcCons {
 #define ELMC_DICT_SCALAR ((elmc_int_t)0x1EC012)
 #endif
 
+#define ELMC_SMALL_INT_MIN (-1)
+#define ELMC_SMALL_INT_MAX 64
+extern const ElmcValue ELMC_SMALL_INTS[ELMC_SMALL_INT_MAX - ELMC_SMALL_INT_MIN + 1];
+extern ElmcValue ELMC_LIST_NIL;
+#define ELMC_STATIC_INT(n) ((ElmcValue *)&ELMC_SMALL_INTS[(n) - ELMC_SMALL_INT_MIN])
+#define ELMC_STATIC_LIST_NIL (&ELMC_LIST_NIL)
+
 typedef struct ElmcTuple2 {
   ElmcValue *first;
   ElmcValue *second;

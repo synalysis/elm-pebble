@@ -382,26 +382,44 @@ static int elmc_decode_path_payload(ElmcValue *payload, ElmcPebbleDrawCmd *out_c
     #endif
       out_cmd->text[0] = '\0';
 
-      switch (setting_tag) {
-    #if ELMC_PEBBLE_FEATURE_DRAW_STROKE_WIDTH
-        case 1: out_cmd->kind = ELMC_PEBBLE_DRAW_STROKE_WIDTH; return 0;
-    #endif
-    #if ELMC_PEBBLE_FEATURE_DRAW_ANTIALIASED
-        case 2: out_cmd->kind = ELMC_PEBBLE_DRAW_ANTIALIASED; return 0;
-    #endif
-    #if ELMC_PEBBLE_FEATURE_DRAW_STROKE_COLOR
-        case 3: out_cmd->kind = ELMC_PEBBLE_DRAW_STROKE_COLOR; return 0;
-    #endif
-    #if ELMC_PEBBLE_FEATURE_DRAW_FILL_COLOR
-        case 4: out_cmd->kind = ELMC_PEBBLE_DRAW_FILL_COLOR; return 0;
-    #endif
-    #if ELMC_PEBBLE_FEATURE_DRAW_TEXT_COLOR
-        case 5: out_cmd->kind = ELMC_PEBBLE_DRAW_TEXT_COLOR; return 0;
-    #endif
-    #if ELMC_PEBBLE_FEATURE_DRAW_COMPOSITING_MODE
-        case 6: out_cmd->kind = ELMC_PEBBLE_DRAW_COMPOSITING_MODE; return 0;
-    #endif
-        default: return -3;
+      static const int16_t elmc_pebble_draw_setting_kind_lut[7] = {
+#if ELMC_PEBBLE_FEATURE_DRAW_STROKE_WIDTH
+  [1] = ELMC_PEBBLE_DRAW_STROKE_WIDTH,
+#else
+  [1] = -1,
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_ANTIALIASED
+  [2] = ELMC_PEBBLE_DRAW_ANTIALIASED,
+#else
+  [2] = -1,
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_STROKE_COLOR
+  [3] = ELMC_PEBBLE_DRAW_STROKE_COLOR,
+#else
+  [3] = -1,
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_FILL_COLOR
+  [4] = ELMC_PEBBLE_DRAW_FILL_COLOR,
+#else
+  [4] = -1,
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT_COLOR
+  [5] = ELMC_PEBBLE_DRAW_TEXT_COLOR,
+#else
+  [5] = -1,
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_COMPOSITING_MODE
+  [6] = ELMC_PEBBLE_DRAW_COMPOSITING_MODE,
+#else
+  [6] = -1,
+#endif
+};
+      if (setting_tag < 1 || setting_tag > 6) return -3;
+      {
+        const int16_t mapped = elmc_pebble_draw_setting_kind_lut[setting_tag];
+        if (mapped < 0) return -3;
+        out_cmd->kind = mapped;
+        return 0;
       }
     }
 
@@ -1229,13 +1247,13 @@ static int elmc_pebble_scene_decode_payload(
 
 static ElmcPebbleApp *s_sequence_playback_app = NULL;
 
-static void elmc_sequence_track_app(ElmcPebbleApp *app) {
+static void __attribute__((unused)) elmc_sequence_track_app(ElmcPebbleApp *app) {
   if (app) {
     s_sequence_playback_app = app;
   }
 }
 
-static int64_t elmc_sequence_monotonic_ms(void) {
+static int64_t __attribute__((unused)) elmc_sequence_monotonic_ms(void) {
 #ifdef ELMC_PEBBLE_PLATFORM
   time_t seconds = 0;
   uint16_t milliseconds = 0;
@@ -1246,7 +1264,7 @@ static int64_t elmc_sequence_monotonic_ms(void) {
 #endif
 }
 
-static bool elmc_sequence_play_loops(uint32_t play_count) {
+static bool __attribute__((unused)) elmc_sequence_play_loops(uint32_t play_count) {
   return play_count == 0 || play_count == PLAY_COUNT_INFINITE || play_count == 0xFFFF;
 }
 
@@ -2373,65 +2391,67 @@ static int elmc_pebble_cmd_visual_bounds(const ElmcPebbleDrawCmd *cmd, ElmcPebbl
   }
 }
 
-    static int elmc_pebble_cmd_is_visual(const ElmcPebbleDrawCmd *cmd) {
-      if (!cmd) return 0;
-      switch (cmd->kind) {
-        case ELMC_PEBBLE_DRAW_CLEAR:
-        case ELMC_PEBBLE_DRAW_PIXEL:
-        case ELMC_PEBBLE_DRAW_LINE:
-        case ELMC_PEBBLE_DRAW_RECT:
-        case ELMC_PEBBLE_DRAW_FILL_RECT:
-        case ELMC_PEBBLE_DRAW_ROUND_RECT:
-        case ELMC_PEBBLE_DRAW_ARC:
-        case ELMC_PEBBLE_DRAW_FILL_RADIAL:
-        case ELMC_PEBBLE_DRAW_CIRCLE:
-        case ELMC_PEBBLE_DRAW_FILL_CIRCLE:
-        case ELMC_PEBBLE_DRAW_TEXT_INT_WITH_FONT:
-        case ELMC_PEBBLE_DRAW_TEXT_LABEL_WITH_FONT:
-        case ELMC_PEBBLE_DRAW_TEXT:
-        case ELMC_PEBBLE_DRAW_BITMAP_IN_RECT:
-        case ELMC_PEBBLE_DRAW_ROTATED_BITMAP:
-        case ELMC_PEBBLE_DRAW_VECTOR_AT:
-        case ELMC_PEBBLE_DRAW_VECTOR_SEQUENCE_AT:
-      #if ELMC_PEBBLE_FEATURE_DRAW_PATH
-        case ELMC_PEBBLE_DRAW_PATH_FILLED:
-        case ELMC_PEBBLE_DRAW_PATH_OUTLINE:
-        case ELMC_PEBBLE_DRAW_PATH_OUTLINE_OPEN:
-      #endif
-          return 1;
-        default:
-          return 0;
-      }
-    }
+static const uint8_t elmc_pebble_draw_kind_visual_lut[33] = {
+  [2] = 1,
+  [3] = 1,
+  [4] = 1,
+  [5] = 1,
+  [6] = 1,
+  [7] = 1,
+  [8] = 1,
+  [17] = 1,
+  [18] = 1,
+  [23] = 1,
+  [25] = 1,
+  [26] = 1,
+  [27] = 1,
+  [28] = 1,
+  [29] = 1,
+  [30] = 1,
+  [31] = 1,
+#if ELMC_PEBBLE_FEATURE_DRAW_PATH
+  [20] = 1,
+  [21] = 1,
+  [22] = 1,
+#endif
 
-    static int elmc_pebble_cmd_requires_full_dirty(const ElmcPebbleDrawCmd *cmd) {
-      if (!cmd) return 1;
-      switch (cmd->kind) {
-        case ELMC_PEBBLE_DRAW_CLEAR:
-        case ELMC_PEBBLE_DRAW_PUSH_CONTEXT:
-        case ELMC_PEBBLE_DRAW_POP_CONTEXT:
-        case ELMC_PEBBLE_DRAW_STROKE_WIDTH:
-        case ELMC_PEBBLE_DRAW_ANTIALIASED:
-        case ELMC_PEBBLE_DRAW_STROKE_COLOR:
-        case ELMC_PEBBLE_DRAW_FILL_COLOR:
-        case ELMC_PEBBLE_DRAW_TEXT_COLOR:
-        case ELMC_PEBBLE_DRAW_CONTEXT_GROUP:
-        case ELMC_PEBBLE_DRAW_COMPOSITING_MODE:
-        case ELMC_PEBBLE_DRAW_TEXT_INT_WITH_FONT:
-        case ELMC_PEBBLE_DRAW_TEXT_LABEL_WITH_FONT:
-        case ELMC_PEBBLE_DRAW_ROTATED_BITMAP:
-        case ELMC_PEBBLE_DRAW_VECTOR_AT:
-        case ELMC_PEBBLE_DRAW_VECTOR_SEQUENCE_AT:
-      #if ELMC_PEBBLE_FEATURE_DRAW_PATH
-        case ELMC_PEBBLE_DRAW_PATH_FILLED:
-        case ELMC_PEBBLE_DRAW_PATH_OUTLINE:
-        case ELMC_PEBBLE_DRAW_PATH_OUTLINE_OPEN:
-      #endif
-          return 1;
-        default:
-          return 0;
-      }
-    }
+};
+static int elmc_pebble_cmd_is_visual(const ElmcPebbleDrawCmd *cmd) {
+  if (!cmd) return 0;
+  return ((cmd->kind) >= 0 && (cmd->kind) <= 32)
+  ? elmc_pebble_draw_kind_visual_lut[(cmd->kind)]
+  : 0;
+}
+
+static const uint8_t elmc_pebble_draw_kind_full_dirty_lut[33] = {
+  [2] = 1,
+  [10] = 1,
+  [11] = 1,
+  [12] = 1,
+  [13] = 1,
+  [14] = 1,
+  [15] = 1,
+  [16] = 1,
+  [19] = 1,
+  [24] = 1,
+  [26] = 1,
+  [27] = 1,
+  [28] = 1,
+  [30] = 1,
+  [31] = 1,
+#if ELMC_PEBBLE_FEATURE_DRAW_PATH
+  [20] = 1,
+  [21] = 1,
+  [22] = 1,
+#endif
+
+};
+static int elmc_pebble_cmd_requires_full_dirty(const ElmcPebbleDrawCmd *cmd) {
+  if (!cmd) return 1;
+  return ((cmd->kind) >= 0 && (cmd->kind) <= 32)
+  ? elmc_pebble_draw_kind_full_dirty_lut[(cmd->kind)]
+  : 0;
+}
 
 static void elmc_pebble_scene_compute_dirty_rect(ElmcPebbleApp *app) {
   if (!app) return;

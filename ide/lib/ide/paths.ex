@@ -4,7 +4,12 @@ defmodule Ide.Paths do
   @app :ide
 
   @spec priv_dir() :: String.t()
-  def priv_dir, do: :code.priv_dir(@app)
+  def priv_dir do
+    case Application.get_env(@app, __MODULE__, []) |> Keyword.get(:priv_dir) do
+      dir when is_binary(dir) -> dir
+      _ -> :code.priv_dir(@app)
+    end
+  end
 
   @spec priv_path(String.t()) :: String.t()
   def priv_path(relative) when is_binary(relative), do: Path.join(priv_dir(), relative)

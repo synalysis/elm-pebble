@@ -39,7 +39,7 @@ static ElmcValue ELMC_BOOL_TRUE = { ELMC_RC_IMMORTAL, ELMC_TAG_BOOL, NULL, 1 };
 #define ELMC_TASK_SPAWN_SCALAR ((elmc_int_t)0x1EC01F)
 #define ELMC_SMALL_INT_MIN (-1)
 #define ELMC_SMALL_INT_MAX 64
-static const ElmcValue ELMC_SMALL_INTS[ELMC_SMALL_INT_MAX - ELMC_SMALL_INT_MIN + 1] = {
+const ElmcValue ELMC_SMALL_INTS[ELMC_SMALL_INT_MAX - ELMC_SMALL_INT_MIN + 1] = {
       { ELMC_RC_IMMORTAL, ELMC_TAG_INT, NULL, -1 },
       { ELMC_RC_IMMORTAL, ELMC_TAG_INT, NULL, 0 },
       { ELMC_RC_IMMORTAL, ELMC_TAG_INT, NULL, 1 },
@@ -111,7 +111,7 @@ static ElmcMaybe ELMC_MAYBE_NOTHING_PAYLOAD = { 0, NULL };
 static ElmcValue ELMC_MAYBE_NOTHING ELMC_UNUSED = { ELMC_RC_IMMORTAL, ELMC_TAG_MAYBE, &ELMC_MAYBE_NOTHING_PAYLOAD, 0 };
 static char ELMC_EMPTY_STRING_PAYLOAD[] = "";
 static ElmcValue ELMC_EMPTY_STRING = { ELMC_RC_IMMORTAL, ELMC_TAG_STRING, ELMC_EMPTY_STRING_PAYLOAD, 0 };
-static ElmcValue ELMC_LIST_NIL = { ELMC_RC_IMMORTAL, ELMC_TAG_LIST, NULL, 0 };
+ElmcValue ELMC_LIST_NIL = { ELMC_RC_IMMORTAL, ELMC_TAG_LIST, NULL, 0 };
 static ElmcValue ELMC_UNIT = { ELMC_RC_IMMORTAL, ELMC_TAG_INT, NULL, ELMC_UNIT_SCALAR };
 
 typedef struct {
@@ -9709,13 +9709,12 @@ static void elmc_alloc_track_register(void *ptr, size_t size, const char *contex
 
 static void elmc_alloc_track_unregister(void *ptr) {
   if (!ptr) return;
-  for (uint32_t i = 0; i < ELMC_ALLOC_TRACK_COUNT; i++) {
-    if (ELMC_ALLOC_TRACK_ENTRIES[i].ptr != ptr) continue;
-    ELMC_ALLOC_TRACK_COUNT -= 1;
-    if (i < ELMC_ALLOC_TRACK_COUNT) {
-      ELMC_ALLOC_TRACK_ENTRIES[i] = ELMC_ALLOC_TRACK_ENTRIES[ELMC_ALLOC_TRACK_COUNT];
-    }
-    return;
+  ElmcAllocTrackEntry *entry = elmc_alloc_track_find(ptr);
+  if (!entry) return;
+  uint32_t i = (uint32_t)(entry - ELMC_ALLOC_TRACK_ENTRIES);
+  ELMC_ALLOC_TRACK_COUNT -= 1;
+  if (i < ELMC_ALLOC_TRACK_COUNT) {
+    ELMC_ALLOC_TRACK_ENTRIES[i] = ELMC_ALLOC_TRACK_ENTRIES[ELMC_ALLOC_TRACK_COUNT];
   }
 }
 

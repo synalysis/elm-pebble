@@ -1121,12 +1121,12 @@ static RC elmc_fn_Pebble_Platform_launchReasonToInt(ElmcValue **out, ElmcValue *
 
     const int case_msg_tag_1 = (launchReason && (launchReason)->tag == ELMC_TAG_INT ? elmc_as_int(launchReason) : (launchReason && (launchReason)->tag == ELMC_TAG_TUPLE2 && (launchReason)->payload != NULL ? elmc_as_int(((ElmcTuple2 *)(launchReason)->payload)->first) : -1));
     ElmcValue *tmp_2 = NULL;
-    elmc_int_t case_int_2 = 0;
+    elmc_int_t case_int_2;
     switch (case_msg_tag_1) {
-      case ELMC_UNION_LAUNCHSYSTEM:
-        tmp_2 = elmc_int_zero();
+      case ELMC_UNION_LAUNCHSYSTEM: {
+        case_int_2 = 0;
         break;
-
+      }
       case ELMC_UNION_LAUNCHUSER: {
         case_int_2 = 1;
         break;
@@ -1180,7 +1180,7 @@ static RC elmc_fn_Companion_Internal_encodeLocationCode(ElmcValue **out, ElmcVal
 
     const int case_msg_tag_1 = (value && (value)->tag == ELMC_TAG_INT ? elmc_as_int(value) : (value && (value)->tag == ELMC_TAG_TUPLE2 && (value)->payload != NULL ? elmc_as_int(((ElmcTuple2 *)(value)->payload)->first) : -1));
     ElmcValue *tmp_2 = NULL;
-    elmc_int_t case_int_2 = 0;
+    elmc_int_t case_int_2;
     switch (case_msg_tag_1) {
       case ELMC_UNION_COMPANION_TYPES_CURRENTLOCATION: {
         case_int_2 = 1;
