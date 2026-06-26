@@ -12,10 +12,10 @@ defmodule Ide.Debugger.Types.ProtocolTxRxPayload do
           optional(:message_value) => Types.subscription_payload() | nil,
           optional(:trigger) => String.t(),
           optional(:message_source) => String.t(),
-          optional(atom()) => Types.wire_input(),
           optional(String.t()) => Types.wire_input()
         }
 
+  @typedoc "JSON-shaped map when atom-key `t/0` is unavailable at the wire boundary."
   @type wire_map :: t() | Types.wire_map()
 
   @spec from_reload(String.t(), String.t()) :: t()

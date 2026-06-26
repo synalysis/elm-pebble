@@ -25,7 +25,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
   @debugger_auto_fire_refresh_interval_ms 1_000
   @debugger_auto_fire_min_refresh_interval_ms 100
 
-  @spec handle_simulator_save_settings_event(FlowTypes.wire_map(), socket()) :: {:noreply, socket()}
+  @spec handle_simulator_save_settings_event(FlowTypes.live_event_params(), socket()) ::
+          {:noreply, socket()}
   def handle_simulator_save_settings_event(params, socket) when is_map(params) do
     values =
       Map.get(params, "simulator") || Map.get(params, "debugger_simulator") || %{}
@@ -1044,7 +1045,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
     |> Enum.filter(&is_binary/1)
   end
 
-  @spec open_debugger_trigger_modal(socket(), FlowTypes.wire_map()) :: socket()
+  @spec open_debugger_trigger_modal(socket(), FlowTypes.live_event_params()) :: socket()
   defp open_debugger_trigger_modal(socket, params) when is_map(params) do
     trigger = Map.get(params, "trigger") || ""
     target = Map.get(params, "target") || "watch"
@@ -1075,7 +1076,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
     )
   end
 
-  @spec debugger_trigger_modal_supported?(socket(), FlowTypes.wire_map()) :: boolean()
+  @spec debugger_trigger_modal_supported?(socket(), FlowTypes.live_event_params()) :: boolean()
   defp debugger_trigger_modal_supported?(socket, params) when is_map(params) do
     state = socket.assigns[:debugger_state]
 
@@ -1096,7 +1097,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
     )
   end
 
-  @spec merge_debugger_trigger_form(socket(), FlowTypes.wire_map()) :: FlowTypes.trigger_form_source()
+  @spec merge_debugger_trigger_form(socket(), IdeWeb.Types.wire_params()) :: FlowTypes.trigger_form_source()
   defp merge_debugger_trigger_form(socket, params) when is_map(params) do
     previous =
       case socket.assigns[:debugger_trigger_form] do
@@ -1112,7 +1113,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
 
   @spec sync_debugger_trigger_companion_fields(
           FlowTypes.trigger_form_source(),
-          FlowTypes.wire_map()
+          IdeWeb.Types.wire_params()
         ) :: FlowTypes.trigger_form_source()
   defp sync_debugger_trigger_companion_fields(%{"companion_fields" => fields} = merged, params)
        when is_list(fields) and is_map(params) do
@@ -1265,9 +1266,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
   end
 
   @spec maybe_put_trigger_message_value(
-          DebuggerTypes.wire_map(),
+          DebuggerTypes.inject_trigger_attrs(),
           FlowTypes.trigger_form_source()
-        ) :: DebuggerTypes.wire_map()
+        ) :: DebuggerTypes.inject_trigger_attrs()
   defp maybe_put_trigger_message_value(attrs, %{"payload_kind" => "companion_bridge"} = params) do
     case Ide.Debugger.CompanionSubscriptionTrigger.message_value(params) do
       %{} = message_value -> Map.put(attrs, :message_value, message_value)

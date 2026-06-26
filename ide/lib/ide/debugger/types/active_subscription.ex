@@ -16,9 +16,9 @@ defmodule Ide.Debugger.Types.ActiveSubscription do
           optional(:message_value) => Types.subscription_payload() | nil,
           optional(:interval_ms) => non_neg_integer(),
           optional(:event_kind) => String.t(),
-          optional(String.t()) => Types.wire_input(),
-          optional(atom()) => Types.wire_input()
+          optional(String.t()) => Types.wire_input()
         }
 
+  @typedoc "JSON-shaped map when atom-key `t/0` is unavailable at the wire boundary."
   @type wire_map :: t() | Types.wire_map()
 end

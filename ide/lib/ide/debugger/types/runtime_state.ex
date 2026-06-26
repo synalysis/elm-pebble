@@ -9,7 +9,6 @@ defmodule Ide.Debugger.Types.RuntimeState do
   alias Ide.Debugger.Types.{
     AutoTick,
     DebuggerTimelineRow,
-    DisabledSubscription,
     LaunchContext,
     RuntimeEvent,
     SimulatorSettings,
@@ -37,13 +36,14 @@ defmodule Ide.Debugger.Types.RuntimeState do
           required(:phone) => Surface.surface_map(),
           required(:storage) => session_storage(),
           required(:auto_tick) => auto_tick(),
-          required(:disabled_subscriptions) => [DisabledSubscription.wire_map()],
+          required(:disabled_subscriptions) => [Types.disabled_subscription()],
           required(:events) => [runtime_event()],
           required(:debugger_timeline) => [debugger_event()],
           required(:debugger_seq) => non_neg_integer(),
           required(:seq) => non_neg_integer(),
-          optional(atom()) => Types.wire_input()
+          optional(String.t()) => Types.wire_input()
         }
 
+  @typedoc "JSON-shaped map when atom-key `t/0` is unavailable at the wire boundary."
   @type wire_map :: t() | Types.wire_map()
 end

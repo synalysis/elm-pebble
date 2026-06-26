@@ -70,12 +70,23 @@ defmodule Ide.CompanionProtocol.WireSchema do
 
   @type type_aliases :: %{optional(String.t()) => [alias_field()]}
 
-  @type type_resolution_context :: %{
+  @type schema_resolution :: %{
+          required(:enums) => enums(),
+          required(:payload_unions) => payload_unions(),
+          required(:type_aliases) => type_aliases()
+        }
+
+  @type type_resolution_context :: schema_resolution()
+
+  @typedoc "Schema map passed through wire flattening (resolution tables plus optional message tables)."
+  @type flatten_context :: %{
           required(:enums) => enums(),
           required(:payload_unions) => payload_unions(),
           required(:type_aliases) => type_aliases(),
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(:watch_to_phone) => [message()],
+          optional(:phone_to_watch) => [message()],
+          optional(:wire_slots) => wire_slots(),
+          optional(:key_ids) => key_ids()
         }
 
   @type field :: %{
@@ -91,8 +102,6 @@ defmodule Ide.CompanionProtocol.WireSchema do
           required(:fields) => [field()]
         }
 
-  @type flatten_context :: type_resolution_context()
-
   @type message_build_context :: %{
           required(:enums) => enums(),
           required(:payload_unions) => payload_unions(),
@@ -100,9 +109,7 @@ defmodule Ide.CompanionProtocol.WireSchema do
           required(:watch_to_phone) => [message()],
           required(:phone_to_watch) => [message()],
           required(:wire_slots) => wire_slots(),
-          optional(:key_ids) => key_ids(),
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(:key_ids) => key_ids()
         }
 
   @type wire_schema_too_large_detail :: %{

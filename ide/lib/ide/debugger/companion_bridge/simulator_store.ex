@@ -4,7 +4,7 @@ defmodule Ide.Debugger.CompanionBridge.SimulatorStore do
   alias Ide.Debugger.SimulatorSettings, as: DebuggerSimulatorSettings
   alias Ide.Debugger.Types
 
-  @spec storage_result(Types.simulator_settings(), Types.wire_map()) ::
+  @spec storage_result(Types.simulator_settings(), Types.companion_bridge_request()) ::
           {Types.simulator_settings(), {:ok, Types.protocol_ctor_value()} | {:error, String.t()}}
   def storage_result(settings, request) when is_map(settings) and is_map(request) do
     values = Map.get(settings, "storage_values", %{})
@@ -36,7 +36,7 @@ defmodule Ide.Debugger.CompanionBridge.SimulatorStore do
     end
   end
 
-  @spec preferences_result(Types.simulator_settings(), Types.wire_map()) ::
+  @spec preferences_result(Types.simulator_settings(), Types.companion_bridge_request()) ::
           {Types.simulator_settings(),
            {:ok, {String.t(), Types.wire_input()}} | {:error, String.t()}}
   def preferences_result(settings, request) when is_map(settings) and is_map(request) do
@@ -65,7 +65,8 @@ defmodule Ide.Debugger.CompanionBridge.SimulatorStore do
   @spec normalize_settings(Types.SimulatorSettings.wire_map()) :: Types.simulator_settings()
   def normalize_settings(settings), do: DebuggerSimulatorSettings.normalize(settings)
 
-  @spec storage_value_to_elm_value(Types.wire_map()) :: Types.protocol_ctor_value()
+  @spec storage_value_to_elm_value(Types.StorageValue.t() | Types.wire_string_map()) ::
+          Types.protocol_ctor_value()
   def storage_value_to_elm_value(%{"kind" => "string", "value" => value}) when is_binary(value),
     do: %{"ctor" => "StringValue", "args" => [value]}
 
@@ -102,7 +103,7 @@ defmodule Ide.Debugger.CompanionBridge.SimulatorStore do
   def command_value_to_storage_value(value), do: %{"kind" => "json", "value" => value}
 
   @spec command_json_value(Types.simulator_command_input()) ::
-          Types.wire_scalar() | Types.elmc_wire_ctor_call() | Types.wire_map()
+          Types.wire_scalar() | Types.elmc_wire_ctor_call() | Types.wire_string_map()
   def command_json_value(%{"$call" => target, "$args" => [value | _]}) when is_binary(target) do
     cond do
       String.ends_with?(target, ".string") and is_binary(value) -> value

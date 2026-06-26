@@ -6,7 +6,6 @@ defmodule Ide.Debugger.Types.TickEventPayload do
           optional(:target) => String.t() | nil,
           optional(:count) => non_neg_integer(),
           optional(:targets) => [String.t()],
-          optional(atom()) => Types.wire_input(),
           optional(String.t()) => Types.wire_input()
         }
 

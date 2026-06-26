@@ -10,7 +10,7 @@ defmodule Ide.Emulator.Session.Startup do
   @default_idle_timeout_ms 5 * 60 * 1000
 
   @spec build_state(Types.session_launch_opts()) ::
-          {:ok, Types.session_state()} | {:error, term()}
+          {:ok, Types.session_state()} | {:error, Types.session_error()}
   def build_state(opts) do
     platform = Keyword.fetch!(opts, :platform)
     project_slug = Keyword.get(opts, :project_slug, "")
@@ -113,7 +113,7 @@ defmodule Ide.Emulator.Session.Startup do
   end
 
   @spec maybe_start_protocol_router(Types.session_state()) ::
-          {:ok, Types.session_state()} | {:error, term()}
+          {:ok, Types.session_state()} | {:error, Types.session_error()}
   def maybe_start_protocol_router(state) do
     if Config.start_processes?() do
       case Router.start_link(qemu_port: state.bt_port, proxy_port: state.protocol_proxy_port) do
@@ -142,11 +142,11 @@ defmodule Ide.Emulator.Session.Startup do
   end
 
   @spec maybe_start_pypkjs(Types.session_state()) ::
-          {:ok, Types.session_state()} | {:error, term()}
+          {:ok, Types.session_state()} | {:error, Types.session_error()}
   def maybe_start_pypkjs(state), do: Pypkjs.maybe_start(state)
 
   @spec prepare_running_session_for_install(Types.session_state()) ::
-          {:ok, Types.session_state()} | {:error, term()}
+          {:ok, Types.session_state()} | {:error, Types.session_error()}
   def prepare_running_session_for_install(state) do
     state = %{state | installing?: true, last_ping_ms: Lifecycle.now_ms()}
 
@@ -158,7 +158,7 @@ defmodule Ide.Emulator.Session.Startup do
   end
 
   @spec reset_for_install(Types.session_state()) ::
-          {:ok, Types.session_state()} | {:error, term()}
+          {:ok, Types.session_state()} | {:error, Types.session_error()}
   def reset_for_install(state) do
     Vnc.close_tcp_port(state.vnc_tcp)
 
@@ -189,7 +189,7 @@ defmodule Ide.Emulator.Session.Startup do
   end
 
   @spec ensure_protocol_router(Types.session_state()) ::
-          {:ok, Types.session_state()} | {:error, term()}
+          {:ok, Types.session_state()} | {:error, Types.session_error()}
   def ensure_protocol_router(%{protocol_router_pid: pid} = state) when is_pid(pid) do
     if ProcessHost.live_pid?(pid),
       do: {:ok, state},

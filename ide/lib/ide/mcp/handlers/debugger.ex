@@ -15,10 +15,7 @@ defmodule Ide.Mcp.Handlers.Debugger do
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Types, as: SupportTypes
   alias IdeWeb.WorkspaceLive.DebuggerBootstrapFlow
 
-  @type debugger_generic_result :: %{
-          optional(atom()) => term(),
-          optional(String.t()) => term()
-        }
+  @type debugger_generic_result :: WireTypes.json_value()
 
   @type debugger_export_payload :: %{
           required(:json) => String.t(),
@@ -26,10 +23,10 @@ defmodule Ide.Mcp.Handlers.Debugger do
           required(:byte_size) => non_neg_integer()
         }
 
-  @type debugger_snapshot_ref :: DebuggerTypes.wire_map()
-  @type runtime_fingerprint_payload :: DebuggerTypes.wire_map()
-  @type runtime_fingerprint_digest :: DebuggerTypes.wire_map()
-  @type compact_event_payload :: DebuggerTypes.wire_map()
+  @type debugger_snapshot_ref :: DebuggerTypes.trace_snapshot_reference_row()
+  @type runtime_fingerprint_payload :: DebuggerTypes.runtime_fingerprint()
+  @type runtime_fingerprint_digest :: DebuggerTypes.runtime_fingerprint_digest()
+  @type compact_event_payload :: DebuggerTypes.compact_timeline_event_payload()
 
   @type debugger_result ::
           ToolTypes.debugger_state_result()
@@ -678,8 +675,8 @@ defmodule Ide.Mcp.Handlers.Debugger do
 
   @spec debugger_auto_fire_settings_state_payload(
           String.t(),
-          DebuggerTypes.wire_map(),
-          [DebuggerTypes.wire_map()],
+          ProjectsTypes.auto_fire_targets(),
+          [ProjectsTypes.subscription_row()],
           DebuggerTypes.runtime_state()
         ) :: ToolTypes.debugger_auto_fire_settings_state_result()
   defp debugger_auto_fire_settings_state_payload(slug, auto_fire, auto_fire_subscriptions, state)
@@ -817,7 +814,7 @@ defmodule Ide.Mcp.Handlers.Debugger do
   @spec debugger_models_payload(
           String.t(),
           DebuggerTypes.runtime_state(),
-          DebuggerTypes.wire_map()
+          ToolTypes.debugger_models_map()
         ) ::
           ToolTypes.debugger_models_result()
   defp debugger_models_payload(slug, state, models) when is_map(state) and is_map(models) do
@@ -1016,7 +1013,7 @@ defmodule Ide.Mcp.Handlers.Debugger do
     Projects.update_project(project, %{"debugger_settings" => settings})
   end
 
-  @spec persist_project_auto_fire_setting(Project.t(), ToolTypes.tool_args()) ::
+  @spec persist_project_auto_fire_setting(Project.t(), ToolTypes.debugger_subscription_setting_attrs()) ::
           {:ok, Project.t()} | {:error, ToolTypes.tool_persist_error()}
   defp persist_project_auto_fire_setting(project, attrs) when is_map(project) and is_map(attrs) do
     target = debugger_setting_target(ToolSupport.map_value(attrs, "target"))
@@ -1044,7 +1041,10 @@ defmodule Ide.Mcp.Handlers.Debugger do
     Projects.update_project(project, %{"debugger_settings" => updated_settings})
   end
 
-  @spec persist_project_disabled_subscription_setting(Project.t(), ToolTypes.tool_args()) ::
+  @spec persist_project_disabled_subscription_setting(
+          Project.t(),
+          ToolTypes.debugger_subscription_setting_attrs()
+        ) ::
           {:ok, Project.t()} | {:error, ToolTypes.tool_persist_error()}
   defp persist_project_disabled_subscription_setting(project, attrs)
        when is_map(project) and is_map(attrs) do
@@ -1220,7 +1220,7 @@ defmodule Ide.Mcp.Handlers.Debugger do
     }
   end
 
-  @spec compact_debugger_model(DebuggerTypes.wire_map(), boolean()) :: DebuggerTypes.wire_map()
+  @spec compact_debugger_model(DebuggerTypes.app_model(), boolean()) :: DebuggerTypes.app_model()
   defp compact_debugger_model(model, include_view_output?) when is_map(model) do
     drop_keys =
       [
@@ -1240,7 +1240,7 @@ defmodule Ide.Mcp.Handlers.Debugger do
 
   defp compact_debugger_model(_model, _include_view_output?), do: %{}
 
-  @spec model_keys(DebuggerTypes.wire_map()) :: [String.t()]
+  @spec model_keys(DebuggerTypes.app_model()) :: [String.t()]
   defp model_keys(model) when is_map(model) do
     model
     |> Map.keys()
@@ -1476,7 +1476,8 @@ defmodule Ide.Mcp.Handlers.Debugger do
 
   defp fingerprint_view_tree_sha256_mismatch?(_displayed, _fingerprint), do: false
 
-  @spec stable_term_sha256(term()) :: String.t()
+  @spec stable_term_sha256(DebuggerTypes.view_output_tree() | DebuggerTypes.wire_string_map()) ::
+          String.t()
   defp stable_term_sha256(term) do
     :crypto.hash(:sha256, :erlang.term_to_binary(term))
     |> Base.encode16(case: :lower)
@@ -1503,7 +1504,7 @@ defmodule Ide.Mcp.Handlers.Debugger do
     }
   end
 
-  @spec compact_event_target(DebuggerTypes.wire_map()) :: String.t() | nil
+  @spec compact_event_target(DebuggerTypes.event_payload()) :: String.t() | nil
   defp compact_event_target(payload) when is_map(payload) do
     value =
       ToolSupport.map_get_any(
@@ -1524,7 +1525,7 @@ defmodule Ide.Mcp.Handlers.Debugger do
 
   @spec compact_event_summary(
           DebuggerTypes.runtime_event() | DebuggerTypes.debugger_event(),
-          DebuggerTypes.wire_map()
+          DebuggerTypes.event_payload()
         ) :: String.t()
   defp compact_event_summary(event, payload) do
     type = Map.get(event, :type) || Map.get(event, "type") || "event"
@@ -1544,7 +1545,7 @@ defmodule Ide.Mcp.Handlers.Debugger do
   end
 
   @spec compact_event_payload(DebuggerTypes.debugger_timeline_payload()) ::
-          DebuggerTypes.wire_map()
+          DebuggerTypes.compact_timeline_event_payload()
   defp compact_event_payload(payload) when is_map(payload) do
     payload
     |> Map.take([
@@ -1576,7 +1577,8 @@ defmodule Ide.Mcp.Handlers.Debugger do
     |> stringify_map_keys()
   end
 
-  @spec stringify_map_keys(DebuggerTypes.wire_map()) :: DebuggerTypes.wire_map()
+  @spec stringify_map_keys(DebuggerTypes.wire_map() | DebuggerTypes.wire_string_map()) ::
+          DebuggerTypes.wire_string_map()
   defp stringify_map_keys(map) when is_map(map) do
     Map.new(map, fn {key, value} -> {to_string(key), value} end)
   end
@@ -1641,7 +1643,7 @@ defmodule Ide.Mcp.Handlers.Debugger do
     }
   end
 
-  @spec runtime_model_map(DebuggerTypes.execution_model()) :: DebuggerTypes.wire_map()
+  @spec runtime_model_map(DebuggerTypes.execution_model()) :: DebuggerTypes.inner_runtime_model()
   defp runtime_model_map(runtime) when is_map(runtime) do
     case ToolSupport.map_get_any(runtime, ["model", :model], %{}) do
       model when is_map(model) -> model
@@ -1767,7 +1769,7 @@ defmodule Ide.Mcp.Handlers.Debugger do
   end
 
   @spec runtime_fingerprint_digest(SupportTypes.surface_fingerprints_at_cursor()) ::
-          DebuggerTypes.wire_map()
+          DebuggerTypes.runtime_fingerprint_digest()
   defp runtime_fingerprint_digest(runtime_fingerprints) when is_map(runtime_fingerprints) do
     [:watch, :companion, :phone]
     |> Enum.reduce(%{}, fn surface, acc ->
@@ -1804,7 +1806,7 @@ defmodule Ide.Mcp.Handlers.Debugger do
           SupportTypes.surface_fingerprints_at_cursor(),
           integer() | nil,
           integer() | nil
-        ) :: DebuggerTypes.fingerprint_compare_result() | nil
+        ) :: DebuggerTypes.mcp_fingerprint_compare_result() | nil
   defp runtime_fingerprint_compare(_events, _current, _current_seq, nil), do: nil
 
   defp runtime_fingerprint_compare(_events, _current, current_seq, _compare_cursor_seq)
@@ -1886,10 +1888,10 @@ defmodule Ide.Mcp.Handlers.Debugger do
   defp runtime_fingerprint_compare(_events, _current, _current_seq, _compare_cursor_seq), do: nil
 
   @spec maybe_put_runtime_fingerprint_compare(
-          ToolTypes.debugger_state_result(),
-          DebuggerTypes.fingerprint_compare_result() | nil
+          ToolTypes.debugger_state_result() | ToolTypes.debugger_cursor_inspect_result(),
+          DebuggerTypes.mcp_fingerprint_compare_result() | nil
         ) ::
-          ToolTypes.debugger_state_result()
+          ToolTypes.debugger_state_result() | ToolTypes.debugger_cursor_inspect_result()
   defp maybe_put_runtime_fingerprint_compare(payload, nil), do: payload
 
   defp maybe_put_runtime_fingerprint_compare(payload, compare) when is_map(compare) do
@@ -1919,8 +1921,11 @@ defmodule Ide.Mcp.Handlers.Debugger do
   defp parse_replay_drift_seq(_),
     do: {:error, "invalid replay_drift_seq (expected non-negative integer)"}
 
-  @spec maybe_put_replay_metadata(DebuggerTypes.wire_map(), SupportTypes.replay_metadata() | nil) ::
-          DebuggerTypes.wire_map()
+  @spec maybe_put_replay_metadata(
+          ToolTypes.debugger_state_result() | ToolTypes.debugger_cursor_inspect_result(),
+          DebuggerTypes.replay_metadata() | nil
+        ) ::
+          ToolTypes.debugger_state_result() | ToolTypes.debugger_cursor_inspect_result()
   defp maybe_put_replay_metadata(payload, replay_metadata) when is_map(payload) do
     if is_nil(replay_metadata) and Map.has_key?(payload, :replay_metadata) do
       Map.delete(payload, :replay_metadata)

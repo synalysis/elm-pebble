@@ -59,11 +59,12 @@ defmodule Ide.Resources.Types do
         }
 
   @type font_source :: %{
-          required(:id) => String.t(),
-          required(:filename) => String.t(),
-          required(:mime) => String.t(),
-          required(:bytes) => non_neg_integer(),
-          optional(:resource_id) => pos_integer()
+          optional(:id) => String.t(),
+          optional(:filename) => String.t(),
+          optional(:mime) => String.t(),
+          optional(:bytes) => non_neg_integer(),
+          optional(:resource_id) => pos_integer(),
+          optional(String.t()) => wire_input()
         }
 
   @type vector_entry :: %{
@@ -122,8 +123,7 @@ defmodule Ide.Resources.Types do
           bitmap_entry() | font_entry() | font_source() | vector_entry() | animation_entry()
 
   @type manifest_wire_row :: %{
-          optional(String.t()) => wire_input(),
-          optional(atom()) => wire_input()
+          optional(String.t()) => wire_input()
         }
 
   @type manifest :: %{
@@ -190,8 +190,7 @@ defmodule Ide.Resources.Types do
           {:ok, manifest_entries_update()} | {:error, resource_error()}
 
   @type font_manifest_payload :: %{
-          optional(String.t()) => wire_input(),
-          optional(atom()) => wire_input()
+          optional(String.t()) => wire_input()
         }
 
   @type font_delete_source_ok :: %{
@@ -203,8 +202,7 @@ defmodule Ide.Resources.Types do
           {:ok, font_delete_source_ok()} | {:error, resource_error()}
 
   @type font_form_params :: %{
-          optional(String.t()) => wire_input(),
-          optional(atom()) => wire_input()
+          optional(String.t()) => wire_input()
         }
 
   @type vector_import_wire_ok :: %{

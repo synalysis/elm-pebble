@@ -25,6 +25,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
   }
 
   alias IdeWeb.WorkspaceLive.DebuggerSupport
+  alias Ide.Debugger.Types.CompanionConfiguration, as: ConfigTypes
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Types, as: SupportTypes
   alias Ide.Debugger.Types, as: DebuggerTypes
   alias Ide.Projects.Project
@@ -32,11 +33,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
 
   @type assigns :: Assigns.t()
   @type rendered :: Rendered.t()
-  @type model_node :: SupportTypes.wire_map()
-  @type config_field :: SupportTypes.wire_map()
+  @type model_node :: SupportTypes.model_tree_node()
+  @type config_field :: ConfigTypes.field()
   @type trigger_row :: SupportTypes.trigger_button_row()
   @type svg_op :: SupportTypes.svg_op()
   @type wire_input :: DebuggerTypes.wire_input()
+  @type view_preview_assigns :: Assigns.view_preview_assigns()
   @type model_value :: SupportTypes.wire_value()
 
   @spec render(assigns()) :: rendered()
@@ -909,7 +911,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
   attr(:hovered_rendered_scope, :any, default: nil)
   attr(:hovered_rendered_path, :any, default: nil)
 
-  @spec debugger_view_preview(assigns()) :: rendered()
+  @spec debugger_view_preview(view_preview_assigns()) :: rendered()
   defp debugger_view_preview(assigns) do
     tree = Preview.preview_tree(assigns.runtime)
     rendered_tree = debugger_rendered_tree(assigns.runtime)
@@ -917,8 +919,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
     {screen_w, screen_h} = Preview.dimensions(assigns.runtime, preview_tree)
     screen_round? = DebuggerPreview.screen_round?(assigns.runtime, tree)
     clip_radius = min(screen_w, screen_h) / 2
-    clip_id = Preview.clip_id(assigns, screen_w, screen_h, screen_round?)
-    svg_id = Preview.svg_id(assigns)
+    clip_id = Preview.clip_id(assigns.title, assigns.hover_scope, screen_w, screen_h, screen_round?)
+    svg_id = Preview.svg_id(assigns.title, assigns.hover_scope)
 
     color_mode = Preview.watch_color_mode(assigns.runtime)
 

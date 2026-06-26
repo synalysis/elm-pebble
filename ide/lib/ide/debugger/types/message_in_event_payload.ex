@@ -9,10 +9,10 @@ defmodule Ide.Debugger.Types.MessageInEventPayload do
           optional(:target) => String.t(),
           optional(:message) => String.t(),
           optional(:message_source) => String.t() | nil,
-          optional(atom()) => Types.wire_input(),
           optional(String.t()) => Types.wire_input()
         }
 
+  @typedoc "JSON-shaped map when atom-key `t/0` is unavailable at the wire boundary."
   @type wire_map :: t() | Types.wire_map()
 
   @spec from_message(String.t(), String.t(), String.t() | nil) :: t()

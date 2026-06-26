@@ -193,7 +193,7 @@ defmodule Ide.Debugger.TimelineMessage do
     end
   end
 
-  @spec protocol_constructor?(term()) :: boolean()
+  @spec protocol_constructor?(Types.wire_input()) :: boolean()
   defp protocol_constructor?(%{"ctor" => ctor}) when is_binary(ctor), do: true
   defp protocol_constructor?(%{ctor: ctor}) when is_binary(ctor), do: true
   defp protocol_constructor?(_), do: false

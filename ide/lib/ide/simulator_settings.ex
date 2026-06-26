@@ -933,7 +933,7 @@ defmodule Ide.SimulatorSettings do
 
   defp decode_json_list(_value), do: nil
 
-  @spec decode_json_map(Types.wire_input()) :: Types.wire_map() | nil
+  @spec decode_json_map(Types.wire_input()) :: Types.wire_string_map() | nil
   defp decode_json_map(value) when is_map(value), do: value
 
   defp decode_json_map(value) when is_binary(value) do

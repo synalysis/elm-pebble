@@ -28,9 +28,14 @@ defmodule Ide.Diagnostics.TokenizerParserMapper do
   @type diagnostic_field_value :: String.t() | integer() | atom() | nil
   @type wire_reason ::
           String.t() | list() | atom() | number() | TokenizerTypes.wire_map() | tuple()
-  @type parser_hint_input :: TokenizerTypes.parser_line_diagnostic() | diagnostic()
+  @type parser_hint_input :: TokenizerTypes.parser_line_diagnostic() | diagnostic_map_input()
   @type diagnostic_map_input :: %{
-          optional(atom()) => diagnostic_field_value(),
+          optional(:source) => diagnostic_field_value(),
+          optional(:line) => diagnostic_field_value(),
+          optional(:column) => diagnostic_field_value(),
+          optional(:message) => diagnostic_field_value(),
+          optional(:elm_title) => diagnostic_field_value(),
+          optional(:detail) => diagnostic_field_value(),
           optional(String.t()) => diagnostic_field_value()
         }
 

@@ -51,7 +51,7 @@ defmodule Ide.Debugger.RuntimeModelQuality do
   def drop_parser_artifacts(_model), do: %{}
 
   @doc false
-  @spec unresolved_value?(term()) :: boolean()
+  @spec unresolved_value?(Types.wire_input()) :: boolean()
   def unresolved_value?(%{"$opaque" => true}), do: true
   def unresolved_value?(%{:"$opaque" => true}), do: true
   def unresolved_value?(%{"$var" => name}) when is_binary(name), do: true

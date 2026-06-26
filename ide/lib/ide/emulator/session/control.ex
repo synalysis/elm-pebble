@@ -7,7 +7,7 @@ defmodule Ide.Emulator.Session.Control do
   alias Ide.Emulator.Session.ProcessHost
 
   @spec handle_qemu_packet(Types.session_state(), non_neg_integer(), binary()) ::
-          {:reply, :ok | {:error, term()}, Types.session_state()}
+          {:reply, :ok | {:error, Types.session_error()}, Types.session_state()}
   def handle_qemu_packet(state, protocol, payload) do
     with :ok <- QemuControl.validate_payload(protocol, payload) do
       if ProcessHost.live_pid?(state.protocol_router_pid) do

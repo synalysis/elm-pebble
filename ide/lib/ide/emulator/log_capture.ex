@@ -3,11 +3,17 @@ defmodule Ide.Emulator.LogCapture do
 
   alias Ide.Emulator.PebbleProtocol.{LogLines, Router}
   alias Ide.Emulator.Session.ProcessHost
+  alias Ide.Emulator.Types, as: EmulatorTypes
 
   @type capture_context :: %{
           optional(:console_port) => pos_integer() | nil,
           optional(:protocol_router_pid) => pid() | nil
         }
+
+  @type capture_error ::
+          EmulatorTypes.router_error()
+          | :embedded_protocol_router_not_started
+          | {:error, atom()}
 
   @type snapshot :: %{
           required(:source) => String.t(),
@@ -15,10 +21,13 @@ defmodule Ide.Emulator.LogCapture do
           required(:output) => String.t(),
           required(:lines) => [String.t()],
           required(:fault_detected) => boolean(),
-          required(:console) => %{required(:output) => String.t(), required(:error) => term() | nil},
+          required(:console) => %{
+            required(:output) => String.t(),
+            required(:error) => capture_error() | nil
+          },
           required(:protocol) => %{
             required(:lines) => [String.t()],
-            required(:error) => term() | nil
+            required(:error) => capture_error() | nil
           }
         }
 
@@ -73,7 +82,7 @@ defmodule Ide.Emulator.LogCapture do
   end
 
   @spec capture_console(pos_integer() | nil, pos_integer()) ::
-          {:ok, String.t()} | {:error, term()}
+          {:ok, String.t()} | {:error, {:error, atom()}}
   defp capture_console(port, _duration_ms) when not is_integer(port), do: {:ok, ""}
 
   defp capture_console(port, duration_ms) when is_integer(port) and port > 0 do

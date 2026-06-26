@@ -382,7 +382,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered.Bounds do
 
   defp normalize_path_points_from_node(points), do: normalize_path_points(points)
 
-  @spec normalize_path_points(list()) :: [{integer(), integer()}]
+  @spec normalize_path_points([path_point()]) :: [{integer(), integer()}]
   defp normalize_path_points(points) when is_list(points) do
     points
     |> Enum.map(&normalize_path_point/1)

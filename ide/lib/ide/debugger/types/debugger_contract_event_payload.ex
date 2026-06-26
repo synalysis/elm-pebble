@@ -51,14 +51,14 @@ defmodule Ide.Debugger.Types.DebuggerContractEventPayload do
           optional(:main_kind) => String.t() | nil,
           optional(:main_target) => String.t() | nil,
           optional(:main_field_count) => non_neg_integer(),
-          optional(:init_params) => list(),
-          optional(:update_params) => list(),
-          optional(:view_params) => list(),
-          optional(:subscriptions_params) => list(),
-          optional(atom()) => Types.wire_input(),
+          optional(:init_params) => [String.t()],
+          optional(:update_params) => [String.t()],
+          optional(:view_params) => [String.t()],
+          optional(:subscriptions_params) => [String.t()],
           optional(String.t()) => Types.wire_input()
         }
 
+  @typedoc "JSON-shaped map when atom-key `t/0` is unavailable at the wire boundary."
   @type wire_map :: t() | Types.wire_map()
 
   @spec from_introspect(Types.elm_introspect(), String.t() | nil, String.t(), boolean()) :: t()
@@ -238,7 +238,7 @@ defmodule Ide.Debugger.Types.DebuggerContractEventPayload do
   defp target_label("phone"), do: "phone"
   defp target_label(_), do: "watch"
 
-  @spec preview_join(list(), non_neg_integer(), String.t()) :: String.t()
+  @spec preview_join([String.t()], non_neg_integer(), String.t()) :: String.t()
   defp preview_join(items, take_count, separator) when is_list(items) do
     items
     |> Enum.take(take_count)

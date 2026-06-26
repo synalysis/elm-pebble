@@ -41,6 +41,11 @@ defmodule Ide.Debugger.Types do
     PendingProtocolDeliveryItem,
     ImportTraceBody,
     TraceExportWire,
+    RuntimeFingerprint,
+    ElmxManifest,
+    CompanionInjectionForm,
+    AutoFireClock,
+    DevicePreview,
     ExecutionModel,
     ExecutionRuntimeSnapshot,
     ExportTraceOpts,
@@ -50,6 +55,7 @@ defmodule Ide.Debugger.Types do
     LaunchContext,
     ProtocolTxRxPayload,
     ReplayAttrs,
+    ReplayEventPayload,
     ReplayRow,
     RuntimeExecEventPayload,
     RuntimeStatusEventPayload,
@@ -118,6 +124,14 @@ defmodule Ide.Debugger.Types do
   @type protocol_tx_rx_payload :: ProtocolTxRxPayload.t() | ProtocolTxRxPayload.wire_map()
 
   @type replay_row :: ReplayRow.t() | ReplayRow.wire_map()
+
+  @type replay_metadata :: ReplayEventPayload.metadata()
+
+  @type replay_preview_row :: ReplayEventPayload.replay_preview_row()
+
+  @type replay_telemetry :: ReplayEventPayload.replay_telemetry()
+
+  @type replay_count_map :: ReplayEventPayload.count_map()
 
   @type save_configuration_attrs :: SaveConfigurationAttrs.t() | SaveConfigurationAttrs.wire_map()
 
@@ -235,22 +249,22 @@ defmodule Ide.Debugger.Types do
   @type protocol_schema_message :: Schema.message() | Schema.runtime_message()
 
   @type protocol_message_wire_value ::
-          protocol_ctor_value() | wire_map() | String.t() | nil
+          protocol_ctor_value() | wire_string_map() | String.t() | nil
 
   @type protocol_wire_scalar :: String.t() | integer() | float() | boolean()
 
   @type protocol_wire_arg ::
-          protocol_ctor_value() | protocol_wire_scalar() | tuple() | wire_map() | nil
+          protocol_ctor_value() | protocol_wire_scalar() | tuple() | wire_string_map() | nil
 
   @type protocol_wire_normalize_input :: protocol_wire_arg()
 
-  @type init_model_values :: wire_map()
+  @type init_model_values :: wire_string_map()
 
   @type debugger_contract :: Payload.wire_payload()
 
   @type elm_introspect :: debugger_contract()
 
-  @type elmx_manifest :: wire_map()
+  @type elmx_manifest :: ElmxManifest.t() | ElmxManifest.wire_map()
 
   @type inner_runtime_model :: InnerRuntimeModel.t() | InnerRuntimeModel.wire_map()
 
@@ -272,12 +286,19 @@ defmodule Ide.Debugger.Types do
 
   @type wire_input :: Elmx.Types.wire_input()
 
+  @typedoc "String-keyed wire map (JSON export, protocol payloads, corpus snapshots)."
+  @type wire_string_map :: %{optional(String.t()) => wire_input()}
+
+  @typedoc """
+  Generic debugger wire map for runtime payloads with mixed atom/string keys.
+  Prefer `wire_string_map/0` or closed row types when the shape is known.
+  """
   @type wire_map :: %{optional(String.t()) => wire_input(), optional(atom()) => wire_input()}
 
   @type companion_bridge_payload ::
           boolean()
-          | wire_map()
-          | [wire_map()]
+          | wire_string_map()
+          | [wire_string_map()]
           | String.t()
           | integer()
           | nil
@@ -322,7 +343,9 @@ defmodule Ide.Debugger.Types do
 
   @type simulator_rect_payload :: SimulatorSubscriptionPayload.rect()
 
-  @type companion_injection_form_data :: wire_map()
+  @type companion_injection_form_data :: CompanionInjectionForm.t()
+
+  @type companion_injection_field_entry :: CompanionInjectionForm.companion_field_entry()
 
   @type pending_protocol_delivery_item ::
           PendingProtocolDeliveryItem.t() | PendingProtocolDeliveryItem.wire_item()
@@ -336,9 +359,9 @@ defmodule Ide.Debugger.Types do
           optional(:ok_result_variant) => String.t()
         }
 
-  @type protocol_metadata_value :: wire_scalar() | wire_map() | nil
+  @type protocol_metadata_value :: wire_scalar() | wire_string_map() | nil
 
-  @type phone_to_watch_message_value :: protocol_ctor_value() | wire_map()
+  @type phone_to_watch_message_value :: protocol_ctor_value() | wire_string_map()
 
   @type phone_to_watch_payload :: subscription_payload() | boolean() | String.t()
 
@@ -347,19 +370,36 @@ defmodule Ide.Debugger.Types do
   @type elmc_wire_ctor_value :: wire_ctor()
 
   @type simulator_command_input ::
-          elmc_wire_ctor_value() | elmc_wire_ctor_call() | wire_scalar() | wire_map()
+          elmc_wire_ctor_value() | elmc_wire_ctor_call() | wire_scalar() | wire_string_map()
 
-  @type subscription_row_input :: DisabledSubscription.wire_map() | wire_map()
+  @type subscription_row_input :: DisabledSubscription.wire_map()
 
-  @type runtime_model_patch :: %{optional(String.t()) => wire_input()}
+  @type runtime_model_patch :: wire_string_map()
 
   @type timeline_step_message_value :: subscription_payload() | wire_scalar() | nil
 
-  @type debugger_timeline_payload :: wire_map()
+  @type debugger_timeline_payload :: event_payload()
 
-  @type protocol_binding_record :: %{
-          optional(String.t()) => wire_input()
+  @typedoc "MCP/export compact timeline event payload (`target`, `message`, `status`, etc.)."
+  @type compact_timeline_event_payload :: %{
+          optional(String.t()) => wire_scalar() | nil
         }
+
+  @type runtime_fingerprint_digest :: RuntimeFingerprint.digest_surfaces()
+
+  @type mcp_fingerprint_compare_result :: RuntimeFingerprint.mcp_compare_result()
+
+  @type auto_fire_clock :: AutoFireClock.t()
+
+  @type auto_fire_clock_entry :: AutoFireClock.entry()
+
+  @type current_date_time_preview :: DevicePreview.current_date_time()
+
+  @type firmware_version_record :: DevicePreview.firmware_version()
+
+  @type surface_fingerprints :: RuntimeFingerprint.surface_fingerprints()
+
+  @type protocol_binding_record :: wire_string_map()
 
   @type preview_view_derivation :: %{
           required(:view_output) => runtime_view_nodes(),
@@ -383,9 +423,31 @@ defmodule Ide.Debugger.Types do
 
   @type api_suffix_contract :: %{required(:target_suffixes) => [String.t()]}
 
-  @type eval_context :: wire_map()
+  @type protocol_eval_context :: %{
+          required(:message_value) => protocol_message_wire_value() | nil,
+          required(:runtime_model) => inner_runtime_model(),
+          required(:simulator_settings) => simulator_settings(),
+          required(:protocol_ctor) => String.t() | nil,
+          required(:arg_index) => non_neg_integer() | nil,
+          required(:direction) => :watch_to_phone | :phone_to_watch,
+          required(:schema) => Schema.t() | Schema.wire_schema() | nil,
+          required(:message_fields) => [Schema.field()] | nil
+        }
 
-  @type protocol_var_bindings :: wire_map()
+  @type resource_index_map :: %{optional(String.t()) => non_neg_integer()}
+
+  @type http_eval_context :: %{
+          optional(:module) => String.t() | nil,
+          optional(:source_module) => String.t() | nil,
+          optional(:vector_resource_indices) => resource_index_map(),
+          optional(:bitmap_resource_indices) => resource_index_map(),
+          optional(:animation_resource_indices) => resource_index_map(),
+          optional(:simulator_weather) => device_preview_map() | wire_string_map()
+        }
+
+  @type eval_context :: protocol_eval_context() | http_eval_context()
+
+  @type protocol_var_bindings :: wire_string_map()
 
   @type screen_dimension_patch :: %{
           optional(String.t()) => pos_integer()
@@ -397,27 +459,26 @@ defmodule Ide.Debugger.Types do
 
   @type device_preview :: nil | boolean() | String.t() | device_preview_map()
 
-  @type elm_maybe :: protocol_ctor_value() | wire_map() | nil
+  @type elm_maybe :: protocol_ctor_value() | wire_string_map() | nil
 
   @type protocol_inbound_row :: %{
-          optional(String.t()) => String.t() | wire_map() | list() | nil,
-          optional(atom()) => String.t() | wire_map() | list() | nil
+          optional(String.t()) => String.t() | wire_string_map() | list() | nil
         }
 
-  @type subscription_payload :: wire_map() | protocol_ctor_value() | wire_scalar()
+  @type subscription_payload :: wire_string_map() | protocol_ctor_value() | wire_scalar()
 
   @type view_output_row :: Elmx.Types.view_output_row()
 
   @type view_output_scene_token ::
-          {:text, term(), integer(), integer()}
-          | {:text_label, term(), integer(), integer()}
-          | {:text_int, term(), integer(), integer()}
+          {:text, wire_value(), integer(), integer()}
+          | {:text_label, wire_value(), integer(), integer()}
+          | {:text_int, wire_value(), integer(), integer()}
           | {:bitmap_in_rect, integer(), integer(), integer(), integer(), integer()}
           | {:rotated_bitmap, integer(), integer(), integer()}
           | {:bitmap_sequence_at, integer(), integer(), integer(), integer()}
           | {:vector_at, integer(), integer(), integer()}
           | {:vector_sequence_at, integer(), integer(), integer(), integer()}
-          | {atom(), term()}
+          | {atom(), String.t()}
 
   @type view_output_node :: view_output_row() | Elmx.Types.view_output_tree()
 
@@ -499,6 +560,8 @@ defmodule Ide.Debugger.Types do
 
   @type json_decoder_spec :: Elmx.Types.json_decoder_spec()
 
+  @type json_decoder :: Elmx.Types.json_decoder()
+
   @type compile_failure_detail :: Elmx.Types.compile_failure_detail()
 
   @type parse_error :: :parse_error | :entry_not_found | atom() | String.t()
@@ -519,13 +582,16 @@ defmodule Ide.Debugger.Types do
 
   @type replay_step_message :: ReplayRow.t()
 
-  @type runtime_fingerprint :: wire_map()
+  @type runtime_fingerprint :: RuntimeFingerprint.runtime_fingerprint()
 
-  @type fingerprint_compare_result :: wire_map()
+  @type fingerprint_compare_result :: RuntimeFingerprint.fingerprint_compare_result()
 
-  @type fingerprint_compare_surface_row :: wire_map()
+  @type fingerprint_compare_surface_row :: RuntimeFingerprint.fingerprint_compare_surface_row()
 
-  @type normalized_export_term :: wire_scalar() | wire_map() | [normalized_export_term()]
+  @type normalized_export_wire :: %{optional(String.t()) => normalized_export_term()}
+
+  @type normalized_export_term ::
+          wire_scalar() | normalized_export_wire() | [normalized_export_term()]
 
   @type static_task_result ::
           protocol_ctor_value() | {protocol_ctor_value(), protocol_ctor_value()}

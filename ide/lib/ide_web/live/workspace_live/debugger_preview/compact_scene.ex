@@ -14,6 +14,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.CompactScene do
   @type unresolved_row :: PreviewTypes.unresolved_row()
   @type compact_scene_op :: PreviewTypes.compact_scene_op()
   @type hash_input :: PreviewTypes.hash_input()
+  @type model_map :: PreviewTypes.model_map()
+  @type draw_op_map :: PreviewTypes.draw_op_map()
   @type preview_target :: :watch | :companion | :phone
 
   @path_drawable_kinds ~w(path_filled path_outline path_outline_open)
@@ -106,7 +108,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.CompactScene do
 
   @spec build_compact_scene_from_view_output_rows(
           runtime_input(),
-          PreviewTypes.wire_map(),
+          model_map(),
           [PreviewTypes.view_output_row()]
         ) :: compact_scene()
   defp build_compact_scene_from_view_output_rows(runtime, model, rows)
@@ -230,7 +232,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.CompactScene do
     to_string(Map.get(row, "kind") || Map.get(row, :kind) || "")
   end
 
-  @spec normalize_compact_scene(PreviewTypes.compact_scene() | PreviewTypes.wire_map()) ::
+  @spec normalize_compact_scene(compact_scene() | PreviewTypes.wire_string_map()) ::
           compact_scene()
   defp normalize_compact_scene(scene) when is_map(scene) do
     ops =
@@ -283,7 +285,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.CompactScene do
     %{version: 1, ops: rows, hash: stable_hash(Enum.map(rows, & &1.hash))}
   end
 
-  @spec atomize_known_op(PreviewTypes.wire_map()) :: svg_op()
+  @spec atomize_known_op(draw_op_map()) :: svg_op()
   defp atomize_known_op(op) when is_map(op) do
     Enum.reduce(op, %{}, fn
       {"kind", value}, acc -> Map.put(acc, :kind, normalize_kind_atom(value))
@@ -492,6 +494,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.CompactScene do
     |> Base.encode16(case: :lower)
   end
 
-  @spec map_get_any(PreviewTypes.wire_map() | nil, String.t()) :: wire_value()
+  @spec map_get_any(PreviewTypes.wire_map() | PreviewTypes.draw_op_map() | PreviewTypes.model_map() | nil, String.t()) ::
+          wire_value()
   defp map_get_any(map, key), do: Wire.map_get_any(map, key)
 end

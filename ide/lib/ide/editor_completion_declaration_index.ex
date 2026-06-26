@@ -4,15 +4,30 @@ defmodule Ide.EditorCompletionDeclarationIndex do
   """
 
   alias Ide.EditorCompletionTypeParse
+  alias ElmEx.Frontend.AstContract.Types, as: AstContractTypes
 
   @builtin_types ~w(
     Bool Char Cmd Dict Float Int List Maybe Never Order Platform.Program Result String Sub
   )
 
-  @type contract_declaration :: %{
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+  @type declaration_span ::
+          AstContractTypes.span()
+          | %{
+              optional(:start_line) => non_neg_integer(),
+              optional(:end_line) => non_neg_integer(),
+              optional(String.t()) => non_neg_integer()
+            }
+
+  @typedoc "Type alias rows from `GeneratedContractBuilder` with record field metadata."
+  @type enriched_type_alias :: %{
+          required(:kind) => :type_alias,
+          required(:name) => String.t(),
+          required(:fields) => [String.t()],
+          required(:field_types) => %{optional(String.t()) => String.t()},
+          required(:span) => declaration_span()
         }
+
+  @type contract_declaration :: AstContractTypes.Declaration.t() | enriched_type_alias()
 
   @type function_scope :: %{
           required(:name) => String.t(),

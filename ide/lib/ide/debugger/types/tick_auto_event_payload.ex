@@ -1,7 +1,6 @@
 defmodule Ide.Debugger.Types.TickAutoEventPayload do
   @moduledoc "Payload for `debugger.tick_auto` auto-fire control events."
   alias Ide.Debugger.Types
-  alias Ide.Debugger.Types.DisabledSubscription
 
   @type t :: %{
           optional(:action) => String.t(),
@@ -11,8 +10,7 @@ defmodule Ide.Debugger.Types.TickAutoEventPayload do
           optional(:count) => non_neg_integer() | nil,
           optional(:trigger) => String.t() | nil,
           optional(:enabled) => boolean(),
-          optional(:subscriptions) => [DisabledSubscription.wire_map()],
-          optional(atom()) => Types.wire_input(),
+          optional(:subscriptions) => [Types.disabled_subscription()],
           optional(String.t()) => Types.wire_input()
         }
 
@@ -41,7 +39,7 @@ defmodule Ide.Debugger.Types.TickAutoEventPayload do
           String.t() | nil,
           boolean(),
           [String.t()],
-          [DisabledSubscription.wire_map()]
+          [Types.disabled_subscription()]
         ) :: t()
   def set_auto_fire(target, trigger, enabled?, targets, subscriptions)
       when is_binary(target) and is_boolean(enabled?) and is_list(targets) and

@@ -199,7 +199,7 @@ defmodule Ide.Debugger.ProtocolRx do
   end
 
   @spec inline_delivery_key(Types.protocol_tx_rx_payload()) ::
-          {String.t() | nil, String.t() | nil, term()}
+          {String.t() | nil, String.t() | nil, Types.subscription_payload() | nil}
   defp inline_delivery_key(payload) when is_map(payload) do
     {
       Map.get(payload, :to) || Map.get(payload, "to"),

@@ -32,9 +32,24 @@ defmodule Ide.Debugger.Types.SimulatorSettings do
           optional(String.t()) => Types.wire_input()
         }
 
-  @type tide :: Types.wire_map()
+  @type tide :: %{
+          optional(:nextMin) => integer(),
+          optional(:levelCm) => integer(),
+          optional(:rising) => boolean(),
+          optional(String.t()) => Types.wire_input()
+        }
 
-  @type calendar_event :: Types.wire_map()
+  @type calendar_event :: %{
+          optional(:id) => String.t(),
+          optional(:title) => String.t(),
+          optional(:location) => String.t() | nil,
+          optional(:startMillis) => integer(),
+          optional(:endMillis) => integer(),
+          optional(:allDay) => boolean(),
+          optional(String.t()) => Types.wire_input()
+        }
+
+  @type preferences :: %{optional(String.t()) => Types.wire_scalar()}
 
   @type environment :: %{
           optional(:sun) => sun(),
@@ -63,7 +78,7 @@ defmodule Ide.Debugger.Types.SimulatorSettings do
           optional(:weather) => weather(),
           optional(:calendar_events) => [calendar_event()],
           optional(:storage_values) => StorageValue.values_map(),
-          optional(:preferences) => Types.wire_map(),
+          optional(:preferences) => preferences(),
           optional(:environment) => environment(),
           optional(:latitude) => float(),
           optional(:longitude) => float(),
@@ -77,9 +92,9 @@ defmodule Ide.Debugger.Types.SimulatorSettings do
           optional(:dictation_transcript) => String.t(),
           optional(:dictation_error) => String.t(),
           optional(:vibe_pattern_ms) => [integer()],
-          optional(String.t()) => Types.wire_input(),
-          optional(atom()) => Types.wire_input()
+          optional(String.t()) => Types.wire_input()
         }
 
+  @typedoc "JSON-shaped map when atom-key `t/0` is unavailable at the wire boundary."
   @type wire_map :: t() | Types.wire_map()
 end

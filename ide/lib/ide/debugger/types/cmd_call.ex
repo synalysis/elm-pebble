@@ -14,8 +14,7 @@ defmodule Ide.Debugger.Types.CmdCall do
           optional(:kind) => String.t(),
           optional(:subject) => String.t(),
           optional(:branch) => String.t(),
-          optional(String.t()) => json_value(),
-          optional(atom()) => json_value()
+          optional(String.t()) => json_value()
         }
 
   @type t :: %{
@@ -32,9 +31,9 @@ defmodule Ide.Debugger.Types.CmdCall do
           optional(:task_sources) => [String.t()],
           optional(:activation_guards) => [activation_guard()],
           optional(:kind) => String.t(),
-          optional(String.t()) => json_value(),
-          optional(atom()) => json_value()
+          optional(String.t()) => json_value()
         }
 
+  @typedoc "JSON-shaped map when atom-key `t/0` is unavailable at the wire boundary."
   @type wire_map :: t() | Types.wire_map()
 end

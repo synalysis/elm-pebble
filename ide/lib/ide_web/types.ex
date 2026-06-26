@@ -18,5 +18,5 @@ defmodule IdeWeb.Types do
   @type wire_params :: %{optional(String.t()) => json_value()}
 
   @typedoc "Phoenix error view render assigns (unused by default implementations)."
-  @type error_render_assigns :: %{optional(atom()) => json_value()}
+  @type error_render_assigns :: %{optional(String.t()) => json_value()}
 end

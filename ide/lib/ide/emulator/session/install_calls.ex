@@ -47,7 +47,7 @@ defmodule Ide.Emulator.Session.InstallCalls do
   end
 
   @spec prepare_for_install(Types.session_state()) ::
-          {:reply, :ok | {:error, term()}, Types.session_state()}
+          {:reply, :ok | {:error, Types.session_error()}, Types.session_state()}
   def prepare_for_install(state) do
     if not Config.start_processes?() do
       {:reply, {:error, :embedded_protocol_router_not_started}, %{state | installing?: false}}
@@ -113,7 +113,7 @@ defmodule Ide.Emulator.Session.InstallCalls do
   end
 
   @spec reset_for_install(Types.session_state()) ::
-          {:reply, :ok | {:error, term()}, Types.session_state()}
+          {:reply, :ok | {:error, Types.session_error()}, Types.session_state()}
   def reset_for_install(state) do
     Logger.debug(
       "embedded emulator reset_for_install session=#{state.id} platform=#{state.platform}"
@@ -129,7 +129,7 @@ defmodule Ide.Emulator.Session.InstallCalls do
   end
 
   @spec reset_for_install_retry(Types.session_state()) ::
-          {:reply, :ok | {:error, term()}, Types.session_state()}
+          {:reply, :ok | {:error, Types.session_error()}, Types.session_state()}
   def reset_for_install_retry(state) do
     case Startup.reset_for_install(state) do
       {:ok, state} -> {:reply, :ok, state}
@@ -138,7 +138,7 @@ defmodule Ide.Emulator.Session.InstallCalls do
   end
 
   @spec restart_protocol_router(Types.session_state()) ::
-          {:reply, :ok | {:error, term()}, Types.session_state()}
+          {:reply, :ok | {:error, Types.session_error()}, Types.session_state()}
   def restart_protocol_router(%{protocol_router_pid: nil} = state) do
     case Startup.maybe_start_protocol_router(state) do
       {:ok, state} -> {:reply, :ok, %{state | installing?: false}}
@@ -149,7 +149,7 @@ defmodule Ide.Emulator.Session.InstallCalls do
   def restart_protocol_router(state), do: {:reply, :ok, state}
 
   @spec restart_pypkjs(Types.session_state()) ::
-          {:reply, :ok | {:error, term()}, Types.session_state()}
+          {:reply, :ok | {:error, Types.session_error()}, Types.session_state()}
   def restart_pypkjs(state) do
     ProcessHost.cleanup_process(state.pypkjs_pid)
     state = %{state | pypkjs_pid: nil}

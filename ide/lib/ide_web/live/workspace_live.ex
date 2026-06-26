@@ -269,7 +269,7 @@ defmodule IdeWeb.WorkspaceLive do
 
   @type routed_info_message :: Types.info_message() | Types.liveview_system_message()
 
-  @spec route_info(routed_info_message() | term(), socket()) :: lv_noreply()
+  @spec route_info(routed_info_message(), socket()) :: lv_noreply()
   defp route_info({:companion_debugger_bootstrapped, _, _} = msg, socket),
     do: DebuggerFlow.handle_info(msg, socket)
 

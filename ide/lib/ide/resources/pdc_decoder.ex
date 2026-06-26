@@ -46,7 +46,17 @@ defmodule Ide.Resources.PdcDecoder do
 
   @type debugger_op :: %{
           required(:kind) => debugger_op_kind(),
-          optional(atom()) => integer() | [point()] | nil
+          optional(:points) => [%{optional(String.t()) => integer()}],
+          optional(:offset_x) => integer(),
+          optional(:offset_y) => integer(),
+          optional(:rotation) => integer(),
+          optional(:stroke_color) => integer(),
+          optional(:stroke_width) => integer(),
+          optional(:fill_color) => integer(),
+          optional(:cx) => integer(),
+          optional(:cy) => integer(),
+          optional(:r) => integer(),
+          optional(:color) => integer()
         }
 
   @max_watch_bytes 65_536

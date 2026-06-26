@@ -2,11 +2,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.CompanionConfiguration do
   @moduledoc false
 
   alias IdeWeb.WorkspaceLive.DebuggerPreview
+  alias Ide.Debugger.Types.CompanionConfiguration, as: ConfigTypes
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Types, as: SupportTypes
 
   @type runtime_input :: SupportTypes.runtime_input()
-  @type configuration :: SupportTypes.wire_map()
-  @type config_field :: SupportTypes.wire_map()
+  @type configuration :: ConfigTypes.t() | ConfigTypes.wire_map()
+  @type config_field :: ConfigTypes.field()
+  @type config_section :: ConfigTypes.section()
   @type draft_values :: %{optional(String.t()) => SupportTypes.wire_value()}
 
   @spec model(runtime_input()) :: configuration() | nil
@@ -35,8 +37,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.CompanionConfiguration do
         other
     end)
   end
-
-  @type config_section :: SupportTypes.wire_map()
 
   @spec put_section_values(config_section(), draft_values()) :: config_section()
   defp put_section_values(%{"fields" => fields} = section, values) when is_list(fields) do

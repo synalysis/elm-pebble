@@ -3,6 +3,7 @@ defmodule Ide.Debugger.Types.CompileIngestAttrs do
   Attributes for `Debugger.ingest_elmc_check/2`, `ingest_elmc_compile/2`, and `ingest_elmc_manifest/2`.
   """
 
+  alias Ide.Compiler
   alias Ide.Debugger.Types
 
   @type status :: :ok | :error | String.t()
@@ -21,13 +22,16 @@ defmodule Ide.Debugger.Types.CompileIngestAttrs do
           optional(:warning_count) => non_neg_integer(),
           optional(:detail) => String.t(),
           optional(:source_root) => String.t(),
-          optional(:schema_version) => String.t() | integer() | Types.wire_map() | nil,
-          optional(:diagnostics) => list(),
+          optional(:schema_version) => String.t() | integer() | nil,
+          optional(:diagnostics) => [Compiler.diagnostic()],
           optional(:elmx_manifest) => Types.elmx_manifest(),
           optional(:elmx_revision) => String.t(),
-          optional(String.t()) => Types.wire_input(),
-          optional(atom()) => Types.wire_input()
+          optional(:elmx_compile_error) => Compiler.elmx_compile_error(),
+          optional(:elmx_compile_error_message) => String.t(),
+          optional(:elmc_linked_binary) => Types.wire_string_map(),
+          optional(String.t()) => Types.wire_input()
         }
 
+  @typedoc "JSON-shaped map when atom-key `t/0` is unavailable at the wire boundary."
   @type wire_map :: t() | Types.wire_map()
 end

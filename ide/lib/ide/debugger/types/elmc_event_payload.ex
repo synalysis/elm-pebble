@@ -5,7 +5,7 @@ defmodule Ide.Debugger.Types.ElmcEventPayload do
 
   alias Ide.Compiler
   alias Ide.Debugger.Types
-  alias Ide.Debugger.Types.{CompileIngestAttrs, ElmcDiagnosticPreview}
+  alias Ide.Debugger.Types.ElmcDiagnosticPreview
 
   @type status :: String.t()
 
@@ -24,13 +24,14 @@ defmodule Ide.Debugger.Types.ElmcEventPayload do
           optional(:warning_count) => non_neg_integer(),
           optional(:detail) => String.t(),
           optional(:diagnostic_preview) => diagnostic_preview(),
-          optional(atom()) => Types.wire_input(),
+          optional(:elmx_compile_error_message) => String.t(),
           optional(String.t()) => Types.wire_input()
         }
 
+  @typedoc "JSON-shaped map when atom-key `t/0` is unavailable at the wire boundary."
   @type wire_map :: t() | Types.wire_map()
 
-  @spec from_check(CompileIngestAttrs.t() | CompileIngestAttrs.wire_map()) :: t()
+  @spec from_check(Types.compile_ingest_attrs()) :: t()
   def from_check(attrs) when is_map(attrs) do
     %{
       status: status_string(Map.get(attrs, :status) || Map.get(attrs, "status")),
@@ -41,7 +42,7 @@ defmodule Ide.Debugger.Types.ElmcEventPayload do
     |> merge_diagnostic_preview(attrs)
   end
 
-  @spec from_compile(CompileIngestAttrs.t() | CompileIngestAttrs.wire_map()) :: t()
+  @spec from_compile(Types.compile_ingest_attrs()) :: t()
   def from_compile(attrs) when is_map(attrs) do
     detail = Map.get(attrs, :detail) || Map.get(attrs, "detail")
 
@@ -74,7 +75,7 @@ defmodule Ide.Debugger.Types.ElmcEventPayload do
     |> merge_diagnostic_preview(attrs)
   end
 
-  @spec from_manifest(CompileIngestAttrs.t() | CompileIngestAttrs.wire_map()) :: t()
+  @spec from_manifest(Types.compile_ingest_attrs()) :: t()
   def from_manifest(attrs) when is_map(attrs) do
     detail = Map.get(attrs, :detail) || Map.get(attrs, "detail")
 
@@ -102,7 +103,7 @@ defmodule Ide.Debugger.Types.ElmcEventPayload do
     merge_diagnostic_preview(payload, attrs)
   end
 
-  @spec merge_diagnostic_preview(t(), CompileIngestAttrs.t() | CompileIngestAttrs.wire_map()) ::
+  @spec merge_diagnostic_preview(t(), Types.compile_ingest_attrs()) ::
           t()
   def merge_diagnostic_preview(payload, attrs) when is_map(payload) and is_map(attrs) do
     cond do

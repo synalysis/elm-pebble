@@ -3,7 +3,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.ModelTree do
 
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Types, as: SupportTypes
 
-  @type model_node :: SupportTypes.wire_map()
+  @type model_node :: SupportTypes.model_tree_node()
   @type model_value :: SupportTypes.wire_value()
 
   @typedoc "Elm custom-type wire shape (`ctor`/`args` or `$ctor`/`$args`, atom or string keys)."

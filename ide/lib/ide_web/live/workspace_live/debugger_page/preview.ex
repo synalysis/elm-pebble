@@ -58,15 +58,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Preview do
   @spec dimensions(runtime_input() | nil, view_tree()) :: {pos_integer(), pos_integer()}
   def dimensions(runtime, tree), do: DebuggerPreview.screen_dimensions(runtime, tree)
 
-  @spec clip_id(assigns(), pos_integer(), pos_integer(), boolean()) :: String.t()
-  def clip_id(assigns, screen_w, screen_h, screen_round?) do
-    key = {
-      Map.get(assigns, :title),
-      Map.get(assigns, :hover_scope),
-      screen_w,
-      screen_h,
-      screen_round?
-    }
+  @spec clip_id(String.t() | nil, String.t() | nil, pos_integer(), pos_integer(), boolean()) ::
+          String.t()
+  def clip_id(title, hover_scope, screen_w, screen_h, screen_round?) do
+    key = {title, hover_scope, screen_w, screen_h, screen_round?}
 
     "debugger-preview-clip-#{:erlang.phash2(key)}"
   end
@@ -96,9 +91,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Preview do
     ]
   end
 
-  @spec svg_id(assigns()) :: String.t()
-  def svg_id(assigns) do
-    key = {Map.get(assigns, :title), Map.get(assigns, :hover_scope)}
+  @spec svg_id(String.t() | nil, String.t() | nil) :: String.t()
+  def svg_id(title, hover_scope) do
+    key = {title, hover_scope}
     "debugger-preview-svg-#{:erlang.phash2(key)}"
   end
 

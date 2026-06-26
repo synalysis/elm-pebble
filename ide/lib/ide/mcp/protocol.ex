@@ -26,6 +26,18 @@ defmodule Ide.Mcp.Protocol do
         }
   @type request_result :: {:ok, WireTypes.json_value()} | {:error, integer(), String.t()}
 
+  @type json_safe_datetime :: Date.t() | Time.t() | NaiveDateTime.t() | DateTime.t()
+
+  @type json_safe_opaque :: pid() | reference() | function() | port() | tuple()
+
+  @typedoc "Values accepted by MCP JSON encoding (tool payloads, datetimes, opaque terms)."
+  @type json_safe_input ::
+          WireTypes.json_value()
+          | atom()
+          | json_safe_datetime()
+          | json_safe_opaque()
+          | map()
+
   @doc """
   Handles an MCP JSON-RPC request body.
 
@@ -115,7 +127,7 @@ defmodule Ide.Mcp.Protocol do
   @type capability_input :: String.t() | atom()
 
   @doc false
-  @spec json_safe(WireTypes.json_value() | term()) :: WireTypes.json_value()
+  @spec json_safe(json_safe_input()) :: WireTypes.json_value()
   def json_safe(value)
       when is_nil(value) or is_boolean(value) or is_number(value) or is_binary(value),
       do: value

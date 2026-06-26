@@ -10,5 +10,6 @@ defmodule Ide.Debugger.Types.SaveConfigurationAttrs do
 
   @type t :: values_map()
 
+  @typedoc "JSON-shaped map when atom-key `t/0` is unavailable at the wire boundary."
   @type wire_map :: t() | Types.wire_map()
 end

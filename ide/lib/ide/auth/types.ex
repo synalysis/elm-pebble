@@ -12,10 +12,8 @@ defmodule Ide.Auth.Types do
           required(:appId) => String.t()
         }
 
-  @type firebase_user :: %{
-          optional(String.t()) => String.t() | boolean() | nil,
-          optional(atom()) => String.t() | boolean() | nil
-        }
+  @typedoc "Firebase Identity Toolkit user record (`accounts:lookup` / sign-in payload)."
+  @type firebase_user :: PackageTypes.json_wire_object()
   @type developer_profile :: PackageTypes.json_wire_object()
 
   @type network_error :: PackageTypes.network_error()

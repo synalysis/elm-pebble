@@ -12,7 +12,7 @@ defmodule Ide.Debugger.RuntimeArtifacts.Types do
           optional(:elmx_revision) => String.t(),
           optional(:vector_resource_indices) => resource_indices(),
           optional(:bitmap_resource_indices) => resource_indices(),
-          optional(String.t()) => Types.wire_input(),
-          optional(atom()) => Types.wire_input()
+          optional(:animation_resource_indices) => resource_indices(),
+          optional(String.t()) => Types.wire_input()
         }
 end

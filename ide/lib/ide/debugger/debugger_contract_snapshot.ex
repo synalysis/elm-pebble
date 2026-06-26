@@ -458,7 +458,7 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
     end
   end
 
-  @spec execution_error_detail(term()) :: String.t()
+  @spec execution_error_detail(Types.execution_error()) :: String.t()
   defp execution_error_detail({:core_ir_execution_failed, {:missing_elmx_manifest, detail}})
        when is_binary(detail),
        do: detail

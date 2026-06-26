@@ -210,7 +210,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   end
 
   @spec apply_simulator_settings(String.t(), String.t()) ::
-          {:ok, DebuggerTypes.wire_map()} | {:error, CorpusTypes.corpus_error()}
+          {:ok, ToolTypes.debugger_simulator_settings_result()} | {:error, CorpusTypes.corpus_error()}
   defp apply_simulator_settings(slug, template_key) do
     settings =
       %{
@@ -403,7 +403,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
 
   defp canonical_svg_op(_), do: nil
 
-  @spec normalize_kind(atom() | String.t() | term()) :: String.t()
+  @spec normalize_kind(atom() | String.t() | boolean() | number() | nil) :: String.t()
   defp normalize_kind(kind) when is_atom(kind), do: Atom.to_string(kind)
   defp normalize_kind(kind) when is_binary(kind), do: kind
   defp normalize_kind(_), do: "unknown"
@@ -679,7 +679,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     end)
   end
 
-  @spec normalize_time_string(String.t() | term()) :: String.t() | term()
+  @spec normalize_time_string(CorpusTypes.normalized_json()) :: CorpusTypes.normalized_json()
   defp normalize_time_string(value) when is_binary(value) do
     if Regex.match?(~r/^\d{2}:\d{2}$/, value), do: "<TIME>", else: value
   end
@@ -696,8 +696,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
 
   defp normalize_view_output_row(row), do: row
 
-  @spec normalize_render_tree(CorpusTypes.normalized_json() | term()) ::
-          CorpusTypes.normalized_json()
+  @spec normalize_render_tree(CorpusTypes.normalizer_input()) :: CorpusTypes.normalized_json()
   defp normalize_render_tree(tree) when is_map(tree) do
     tree
     |> Map.drop(["source"])
@@ -713,7 +712,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
 
   defp normalize_render_tree(other), do: normalize_value(other)
 
-  @spec render_tree_sort_key(CorpusTypes.normalized_json() | term()) ::
+  @spec render_tree_sort_key(CorpusTypes.normalizer_input()) ::
           CorpusTypes.render_tree_sort_key()
   defp render_tree_sort_key(node) when is_map(node) do
     {Map.get(node, "type"), Map.get(node, "kind"), Map.get(node, "text"), Map.get(node, "label")}
@@ -732,7 +731,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     runtime_model_sha256
   )
 
-  @spec normalize_value(CorpusTypes.normalized_json() | term()) :: CorpusTypes.normalized_json()
+  @spec normalize_value(CorpusTypes.normalizer_input()) :: CorpusTypes.normalized_json()
   defp normalize_value(map) when is_map(map) do
     map
     |> Map.drop(@snapshot_hash_keys)
@@ -1014,7 +1013,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   end
 
   @doc "Contract checks that every template should satisfy after bootstrap."
-  @spec assert_contract!(DebuggerTypes.wire_map(), String.t()) :: :ok
+  @spec assert_contract!(CorpusTypes.normalized_snapshot(), String.t()) :: :ok
   def assert_contract!(snapshot, template_key)
       when is_map(snapshot) and is_binary(template_key) do
     view_tree_type = Map.get(snapshot, "view_tree_type")

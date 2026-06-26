@@ -216,7 +216,7 @@ defmodule IdeWeb.SimulatorSettingsForm do
           Types.wire_input() | nil
   defp field_value(settings, key) when is_map(settings), do: Map.get(settings, key)
 
-  @spec optional_string(Types.wire_scalar() | list() | Types.wire_map()) :: String.t()
+  @spec optional_string(Types.wire_input()) :: String.t()
   defp optional_string(value) when is_binary(value), do: value
   defp optional_string(nil), do: ""
   defp optional_string(value) when is_number(value), do: to_string(value)

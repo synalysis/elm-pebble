@@ -141,7 +141,7 @@ defmodule Ide.Mcp.Handlers.Emulator do
   end
 
   @spec resolve_platform(ToolTypes.tool_args(), Projects.Project.t()) ::
-          {:ok, String.t()} | {:error, term()}
+          {:ok, String.t()} | {:error, EmulatorTypes.unsupported_emulator_target()}
   defp resolve_platform(args, project) do
     case Map.get(args, "platform") || Map.get(args, "emulator_target") do
       platform when is_binary(platform) ->
@@ -207,7 +207,7 @@ defmodule Ide.Mcp.Handlers.Emulator do
   end
 
   @spec run_optional_install(String.t(), boolean(), ToolTypes.tool_args()) ::
-          {:ok, EmulatorTypes.pbw_install_result() | nil} | {:error, term()}
+          {:ok, EmulatorTypes.pbw_install_result() | nil} | {:error, EmulatorTypes.session_error()}
   defp run_optional_install(_session_id, false, _args), do: {:ok, nil}
 
   defp run_optional_install(session_id, true, _args) do
@@ -313,7 +313,12 @@ defmodule Ide.Mcp.Handlers.Emulator do
     :ok
   end
 
-  @spec format_run_error(term()) :: String.t()
+  @type run_error ::
+          EmulatorTypes.unsupported_emulator_target()
+          | Workflow.launch_error()
+          | Workflow.install_error_input()
+
+  @spec format_run_error(run_error()) :: String.t()
   defp format_run_error({:unsupported_emulator_target, platform, allowed}) do
     "unsupported emulator target #{inspect(platform)}; allowed: #{Enum.join(allowed, ", ")}"
   end

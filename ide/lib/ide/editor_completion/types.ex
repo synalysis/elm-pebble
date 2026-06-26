@@ -21,10 +21,12 @@ defmodule Ide.EditorCompletion.Types do
   @type package_type_maps :: %{optional(String.t()) => type_entry()}
 
   @type doc_package_row :: %{
-          optional(:package) => String.t(),
-          optional(:docs) => [PackageDocsTypes.module_doc()],
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          required(:package) => String.t(),
+          required(:version) => String.t(),
+          required(:modules) => [String.t()],
+          required(:builtin?) => boolean(),
+          required(:label) => String.t(),
+          optional(:docs) => [PackageDocsTypes.module_doc()]
         }
 
   @type package_doc_index :: PackageTypes.module_index()

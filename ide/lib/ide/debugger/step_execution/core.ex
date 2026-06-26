@@ -768,14 +768,14 @@ defmodule Ide.Debugger.StepExecution.Core do
     compositing_mode
   )
 
-  @spec view_output_scene_signature(Types.runtime_view_nodes()) :: [term()]
+  @spec view_output_scene_signature(Types.runtime_view_nodes()) :: [Types.view_output_scene_token()]
   defp view_output_scene_signature(rows) when is_list(rows) do
     rows
     |> Enum.flat_map(&view_output_scene_tokens/1)
     |> Enum.sort()
   end
 
-  @spec view_output_scene_tokens(Types.view_output_row()) :: [term()]
+  @spec view_output_scene_tokens(Types.view_output_row()) :: [Types.view_output_scene_token()]
   defp view_output_scene_tokens(row) when is_map(row) do
     kind = to_string(Map.get(row, "kind") || Map.get(row, :kind) || "")
 
@@ -845,7 +845,7 @@ defmodule Ide.Debugger.StepExecution.Core do
     }
   end
 
-  @spec positive_dimension(term()) :: non_neg_integer()
+  @spec positive_dimension(Types.wire_scalar() | nil) :: non_neg_integer()
   defp positive_dimension(value) when is_integer(value) and value > 0, do: value
   defp positive_dimension(value) when is_float(value) and value > 0, do: trunc(value)
   defp positive_dimension(_), do: 0
@@ -1223,7 +1223,7 @@ defmodule Ide.Debugger.StepExecution.Core do
   def view_tree_node_count(%{}), do: 1
   def view_tree_node_count(_), do: 0
 
-  @spec stable_term_sha256(Types.normalized_export_term() | list()) :: String.t()
+  @spec stable_term_sha256(Types.normalized_export_term() | [Types.wire_input()]) :: String.t()
   def stable_term_sha256(term) do
     :crypto.hash(:sha256, :erlang.term_to_binary(term))
     |> Base.encode16(case: :lower)

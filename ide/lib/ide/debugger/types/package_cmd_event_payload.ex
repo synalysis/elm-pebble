@@ -15,10 +15,10 @@ defmodule Ide.Debugger.Types.PackageCmdEventPayload do
           optional(:response) => Types.subscription_payload(),
           optional(:simulated) => boolean(),
           optional(:detail) => String.t(),
-          optional(atom()) => Types.wire_input(),
           optional(String.t()) => Types.wire_input()
         }
 
+  @typedoc "JSON-shaped map when atom-key `t/0` is unavailable at the wire boundary."
   @type wire_map :: t() | Types.wire_map()
 
   @spec from_http(
@@ -52,7 +52,7 @@ defmodule Ide.Debugger.Types.PackageCmdEventPayload do
     }
   end
 
-  @spec from_handler(wire_map()) :: t()
+  @spec from_handler(t() | Types.wire_map()) :: t()
   def from_handler(%{} = payload), do: Map.take(payload, payload_keys())
 
   defp payload_keys do

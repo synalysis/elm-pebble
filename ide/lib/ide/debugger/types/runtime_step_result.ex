@@ -6,9 +6,8 @@ defmodule Ide.Debugger.Types.RuntimeStepResult do
   alias Ide.Debugger.Protocol.Event
   alias Ide.Debugger.RuntimeExecutor.Types, as: ExecutorTypes
   alias Ide.Debugger.Types
-  alias Ide.Debugger.Types.ExecutionRuntimeSnapshot
 
-  @type runtime_snapshot :: ExecutionRuntimeSnapshot.t() | ExecutionRuntimeSnapshot.wire_map()
+  @type runtime_snapshot :: Types.execution_runtime_snapshot()
 
   @type model_patch :: Types.runtime_model_patch()
 
@@ -22,10 +21,10 @@ defmodule Ide.Debugger.Types.RuntimeStepResult do
           optional(:runtime) => runtime_snapshot(),
           optional(:protocol_events) => [Event.t() | Event.wire_event()],
           optional(:followup_messages) => [followup_message()],
-          optional(String.t()) => Types.wire_input(),
-          optional(atom()) => Types.wire_input()
+          optional(String.t()) => Types.wire_input()
         }
 
+  @typedoc "JSON-shaped map when atom-key `t/0` is unavailable at the wire boundary."
   @type wire_result :: t() | Types.wire_map()
 
   @spec from_executor_result(ExecutorTypes.execution_result()) :: t()

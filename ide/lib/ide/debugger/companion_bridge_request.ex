@@ -168,7 +168,7 @@ defmodule Ide.Debugger.CompanionBridgeRequest do
 
   def from_cmd_call(_row), do: []
 
-  @spec envelope_requests_from_value(term(), %{optional(:callback) => String.t() | nil}) ::
+  @spec envelope_requests_from_value(Types.protocol_wire_arg(), %{optional(:callback) => String.t() | nil}) ::
           BridgeRequestType.from_cmd_result()
   defp envelope_requests_from_value(value, meta) do
     case envelope_fields(value) do
@@ -190,7 +190,7 @@ defmodule Ide.Debugger.CompanionBridgeRequest do
     end
   end
 
-  @spec envelope_fields(term()) :: BridgeRequestType.envelope_fields() | nil
+  @spec envelope_fields(Types.protocol_wire_arg()) :: BridgeRequestType.envelope_fields() | nil
   defp envelope_fields(%{"api" => api, "op" => op} = map) when is_binary(api) and is_binary(op) do
     %{
       api: api,

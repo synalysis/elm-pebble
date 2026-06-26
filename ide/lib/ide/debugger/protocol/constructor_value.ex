@@ -8,8 +8,7 @@ defmodule Ide.Debugger.Protocol.ConstructorValue do
   @type t :: %{
           optional(:ctor) => String.t(),
           optional(:args) => [Types.protocol_wire_arg()],
-          optional(String.t()) => Types.wire_input(),
-          optional(atom()) => Types.wire_input()
+          optional(String.t()) => Types.wire_input()
         }
 
   @type wire_value :: t() | Types.wire_map()

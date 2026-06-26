@@ -5,21 +5,23 @@ defmodule IdeWeb.EmulatorProxy.Types do
 
   @type ws_start_error :: :already_started | atom()
 
+  @type ws_close_reason :: atom() | String.t()
+
   @type stop_reason ::
           :normal
           | {:tcp_connect_failed, tcp_error_reason()}
-          | {:ws_connect_failed, ws_start_error() | term()}
+          | {:ws_connect_failed, ws_start_error()}
           | {:tcp_send_failed, atom()}
 
   @type ws_terminate_reason ::
-          {:error, term()}
+          {:error, ws_close_reason()}
           | {:local, :normal | pos_integer()}
           | {:remote, :closed | :normal | pos_integer()}
           | {:local, pos_integer(), binary()}
           | {:remote, pos_integer(), binary()}
           | stop_reason()
           | :killed
-          | {:shutdown, term()}
+          | {:shutdown, ws_close_reason()}
 
   @type terminate_reason :: ws_terminate_reason()
 

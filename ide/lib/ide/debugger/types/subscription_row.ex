@@ -12,9 +12,9 @@ defmodule Ide.Debugger.Types.SubscriptionRow do
           optional(:target) => target_filter(),
           optional(:trigger) => String.t(),
           optional(:enabled) => boolean(),
-          optional(atom()) => Types.wire_input(),
           optional(String.t()) => Types.wire_input()
         }
 
+  @typedoc "JSON-shaped map when atom-key `t/0` is unavailable at the wire boundary."
   @type wire_map :: t() | Types.wire_map()
 end

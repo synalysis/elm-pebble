@@ -7,6 +7,7 @@ defmodule Ide.Debugger.Types.WatchProfile do
   alias Ide.WatchModels.Profile, as: CatalogProfile
 
   @type screen :: CatalogProfile.screen()
+  @type wire_screen :: CatalogProfile.wire_screen()
   @type profile :: CatalogProfile.t()
   @type wire_profile :: CatalogProfile.wire()
 
@@ -15,13 +16,14 @@ defmodule Ide.Debugger.Types.WatchProfile do
           optional(:label) => String.t(),
           optional(:name) => String.t(),
           optional(:shape) => CatalogProfile.shape(),
-          optional(:screen) => screen() | Types.wire_map(),
+          optional(:screen) => screen() | wire_screen(),
           optional(:color_mode) => CatalogProfile.color_mode(),
           optional(:has_microphone) => boolean(),
           optional(:has_compass) => boolean(),
           optional(:supports_health) => boolean(),
-          optional(String.t()) => term()
+          optional(String.t()) => Types.wire_input()
         }
 
-  @type wire_list_item :: list_item() | Types.wire_map()
+  @typedoc "Wire JSON list item when atom-key `list_item/0` is unavailable."
+  @type wire_list_item :: list_item() | wire_profile()
 end

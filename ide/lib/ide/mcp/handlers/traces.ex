@@ -690,8 +690,8 @@ defmodule Ide.Mcp.Handlers.Traces do
   @type canonical_json_input ::
           WireTypes.json_value()
           | %{
-              optional(atom()) => WireTypes.json_value(),
-              optional(String.t()) => WireTypes.json_value()
+              required(:export_version) => pos_integer(),
+              required(:trace_bundle) => ToolTypes.trace_bundle()
             }
 
   @spec encode_canonical_json(canonical_json_input()) :: String.t()

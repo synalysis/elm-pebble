@@ -192,7 +192,7 @@ defmodule Ide.Debugger.HttpExecutor do
   defp decode_http_response(_command, _response, _eval_context),
     do: {:error, :invalid_http_command}
 
-  @spec http_result(String.t(), http_response(), term(), Types.eval_context()) ::
+  @spec http_result(String.t(), http_response(), Types.json_decoder() | Types.wire_input() | nil, Types.eval_context()) ::
           Types.protocol_ctor_value()
   defp http_result(kind, response, decoder, eval_context) when is_map(response) do
     case map_value(response, "error") do
@@ -227,7 +227,7 @@ defmodule Ide.Debugger.HttpExecutor do
     end
   end
 
-  @spec decode_success_body(String.t(), String.t(), term(), Types.eval_context()) ::
+  @spec decode_success_body(String.t(), String.t(), Types.json_decoder() | Types.wire_input() | nil, Types.eval_context()) ::
           {:ok, Types.wire_value()} | {:error, {:bad_body, String.t()}}
   defp decode_success_body(kind, body, decoder, eval_context) when kind in ["json", :json] do
     body_text = to_string(body || "")
@@ -305,7 +305,7 @@ defmodule Ide.Debugger.HttpExecutor do
   defp http_error(error) when is_map(error),
     do: %{"ctor" => "NetworkError", "args" => [inspect(error)]}
 
-  @spec message_name(term()) :: String.t()
+  @spec message_name(Types.elm_msg() | nil) :: String.t()
   defp message_name({:function_ref, name}) when is_binary(name), do: name
   defp message_name({:function_ref, _module, name}) when is_binary(name), do: name
   defp message_name(%{"ctor" => ctor}) when is_binary(ctor), do: ctor

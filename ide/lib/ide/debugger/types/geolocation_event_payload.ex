@@ -7,7 +7,6 @@ defmodule Ide.Debugger.Types.GeolocationEventPayload do
           optional(:target) => String.t(),
           optional(:response_message) => String.t() | nil,
           optional(:response_value) => Types.subscription_payload(),
-          optional(atom()) => Types.wire_input(),
           optional(String.t()) => Types.wire_input()
         }
 

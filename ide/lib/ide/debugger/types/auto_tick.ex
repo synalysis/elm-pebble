@@ -4,7 +4,6 @@ defmodule Ide.Debugger.Types.AutoTick do
   """
 
   alias Ide.Debugger.Types
-  alias Ide.Debugger.Types.DisabledSubscription
 
   @type t :: %{
           optional(:enabled) => boolean(),
@@ -13,9 +12,9 @@ defmodule Ide.Debugger.Types.AutoTick do
           optional(:targets) => [String.t()],
           optional(:count) => pos_integer() | nil,
           optional(:worker_pid) => pid() | nil,
-          optional(:subscriptions) => [DisabledSubscription.wire_map()],
-          optional(atom()) => Types.wire_input()
+          optional(:subscriptions) => [Types.disabled_subscription()]
         }
 
+  @typedoc "JSON-shaped map when atom-key `t/0` is unavailable at the wire boundary."
   @type wire_map :: t() | Types.wire_map()
 end

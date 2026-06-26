@@ -1,7 +1,10 @@
 defmodule Ide.PebbleToolchain.Types do
   @moduledoc false
 
+  alias ElmEx.Frontend.Project, as: FrontendProject
+  alias ElmEx.IR
   alias ElmEx.CoreIR.Types, as: CoreIRTypes
+  alias Elmc.CLI.Types, as: ElmcCliTypes
   alias Ide.CompanionProtocol.WireSchema
 
   @type project_slug :: String.t()
@@ -53,25 +56,104 @@ defmodule Ide.PebbleToolchain.Types do
           | {:capabilities, [String.t()] | String.t()}
         ]
 
+  @typedoc "Local mirror of `Ide.CompanionProtocolGenerator.generator_error/0`."
+  @type companion_protocol_generator_error ::
+          {:missing_union, String.t()}
+          | {:wire_schema_too_large, WireSchema.wire_schema_too_large_detail()}
+          | File.posix()
+
+  @typedoc "Local mirror of `Elmx.Types.emit_error/0` plus other in-memory compile failures."
+  @type elmx_emit_error ::
+          {:unsupported_op, atom(), String.t()}
+          | {:emit_failed, String.t()}
+
+  @type file_posix :: File.posix()
+
+  @type compiler_catch_scalar :: atom() | String.t() | integer() | float() | boolean() | nil
+
+  @type compiler_catch_reason ::
+          compiler_catch_scalar()
+          | [compiler_catch_reason()]
+          | %{optional(String.t()) => compiler_catch_reason()}
+
+  @type compiler_exception ::
+          {:compiler_exception, module(), String.t()}
+          | {:compiler_exception, atom(), compiler_catch_reason()}
+
+  @typedoc "Local mirror of ElmEx bridge/load failures surfaced through `Elmc.compile/2`."
+  @type elm_bridge_error :: %{
+          optional(:kind) => :config_error | :parse_error | :elm_check_failed | atom(),
+          optional(:reason) => atom() | String.t(),
+          optional(:path) => String.t(),
+          optional(:line) => integer() | String.t() | nil,
+          optional(:diagnostics) => [ElmcCliTypes.cli_diagnostic()],
+          optional(:raw) => String.t(),
+          optional(String.t()) => wire_input()
+        }
+
+  @type runtime_reprune_failure :: file_posix() | :unbalanced_braces
+
+  @type elmc_failure_reason ::
+          {:compile_diagnostics, [ElmcCliTypes.cli_diagnostic()]}
+          | compiler_exception()
+          | elm_bridge_error()
+          | file_posix()
+          | atom()
+          | String.t()
+          | Exception.t()
+
+  @type phone_companion_elm_make_result :: %{
+          required(:command) => String.t(),
+          required(:output) => String.t(),
+          required(:exit_code) => integer(),
+          required(:cwd) => String.t()
+        }
+
+  @type toolchain_error_atom ::
+          :compile_project_root_not_found
+          | :elm_compiler_not_found
+          | :external_emulator_disabled
+          | :invalid_button
+          | :invalid_button_action
+          | :invalid_compass_heading
+          | :invalid_percent
+          | :invalid_set_time
+          | :invalid_tap_direction
+          | :not_found
+          | :package_path_required
+          | :pbw_artifact_not_found
+          | :pebble_cli_not_found
+          | :publish_app_root_required
+          | :template_app_root_not_found
+          | :timeout
+          | :timeout_utility_not_found
+          | :workspace_root_required
+          | file_posix()
+
   @type toolchain_error ::
-          atom()
+          toolchain_error_atom()
           | String.t()
           | Exception.t()
           | {:workspace_root_not_found, String.t()}
-          | {:build_app_root_failed, File.posix()}
-          | {:copy_file_failed, String.t(), File.posix()}
+          | {:build_app_root_failed, file_posix()}
+          | {:copy_file_failed, String.t(), file_posix()}
           | {:pebble_build_failed, command_result()}
           | {:pebble_wipe_failed, command_result()}
+          | {:forbidden_build_warnings, [String.t()], command_result()}
           | {:pebble_emulator_slots_unavailable, String.t()}
-          | {:unsupported_emulator_control, term()}
+          | {:unsupported_emulator_control, wire_input() | nil}
           | {:package_path_not_found, String.t()}
           | {:package_path_not_pbw, String.t()}
-          | {:latest_pbw_not_found, String.t()}
-          | {:elmc_compile_failed, term()}
-          | {:compiler_exception, term(), term()}
-          | {:companion_protocol_schema_failed, term()}
-          | {:runtime_generation_failed, term()}
-          | tuple()
+          | {:publish_app_root_not_found, String.t()}
+          | {:list_build_dir_failed, file_posix()}
+          | {:bitmap_resource_stage_failed, String.t(), file_posix()}
+          | {:elmc_compile_failed, elmc_failure_reason()}
+          | {:companion_protocol_schema_failed, companion_protocol_generator_error()}
+          | {:companion_protocol_generation_failed, companion_protocol_generator_error()}
+          | {:companion_protocol_elm_generation_failed, companion_protocol_generator_error()}
+          | {:read_companion_index_template_failed, file_posix()}
+          | {:phone_companion_elm_make_failed, phone_companion_elm_make_result()}
+          | {:runtime_reprune_failed, runtime_reprune_failure()}
 
   @type pebble_package :: %{optional(String.t()) => pebble_package_value()}
   @type pebble_package_value ::
@@ -117,8 +199,9 @@ defmodule Ide.PebbleToolchain.Types do
           optional(:debug_usage_policy) => :error | :warn | :warning
         }
   @type elmc_compile_result :: %{
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          required(:project) => FrontendProject.t(),
+          required(:ir) => IR.t(),
+          required(:debug_usage_diagnostics) => [ElmcCliTypes.cli_diagnostic()]
         }
 
   @type emulator_control_params :: %{

@@ -18,10 +18,10 @@ defmodule Ide.Debugger.Types.ElmcDiagnosticPreview do
           optional(:warning_constructor) => String.t() | nil,
           optional(:warning_expected_kind) => String.t() | nil,
           optional(:warning_has_arg_pattern) => boolean() | nil,
-          optional(String.t()) => Types.wire_input(),
-          optional(atom()) => Types.wire_input()
+          optional(String.t()) => Types.wire_input()
         }
 
+  @typedoc "JSON-shaped map when atom-key `t/0` is unavailable at the wire boundary."
   @type wire_row :: row() | Types.wire_map()
 
   @type preview :: [row()] | [wire_row()]

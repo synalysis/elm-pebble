@@ -24,7 +24,6 @@ defmodule IdeWeb.WatchInteractives.Assigns do
           optional(:watch_trigger_buttons) => [trigger_row()],
           optional(:disabled_subscriptions) => [disabled_subscription() | auto_fire_row()],
           optional(:running) => boolean(),
-          optional(:class) => String.t() | nil,
-          optional(atom()) => term()
+          optional(:class) => String.t() | nil
         }
 end

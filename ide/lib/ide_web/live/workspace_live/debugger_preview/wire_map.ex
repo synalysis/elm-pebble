@@ -4,10 +4,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.WireMap do
   alias IdeWeb.WorkspaceLive.DebuggerPreview.Geometry
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Types, as: PreviewTypes
 
+  @type draw_op_map :: PreviewTypes.draw_op_map()
   @type wire_map :: PreviewTypes.wire_map()
   @type svg_path :: PreviewTypes.svg_path()
 
-  @spec map_integer(wire_map(), String.t(), integer() | atom() | nil) ::
+  @spec map_integer(draw_op_map(), String.t(), integer() | atom() | nil) ::
           integer() | atom() | nil
   def map_integer(map, key, fallback) when is_map(map) and is_binary(key) do
     atom_key = atom_key_for(key)
@@ -31,7 +32,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.WireMap do
     end
   end
 
-  @spec map_integer_required(wire_map(), String.t()) :: {:ok, integer()} | :error
+  @spec map_integer_required(draw_op_map(), String.t()) :: {:ok, integer()} | :error
   def map_integer_required(map, key) when is_map(map) and is_binary(key) do
     value = map_integer(map, key, :__missing__)
     if is_integer(value), do: {:ok, value}, else: :error
@@ -39,7 +40,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.WireMap do
 
   def map_integer_required(_map, _key), do: :error
 
-  @spec map_integers_required(wire_map(), [String.t()]) :: {:ok, [integer()]} | :error
+  @spec map_integers_required(draw_op_map(), [String.t()]) :: {:ok, [integer()]} | :error
   def map_integers_required(map, keys) when is_map(map) and is_list(keys) do
     values = Enum.map(keys, &map_integer_required(map, &1))
 
@@ -52,7 +53,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.WireMap do
 
   def map_integers_required(_map, _keys), do: :error
 
-  @spec map_path_required(wire_map()) :: {:ok, svg_path()} | :error
+  @spec map_path_required(draw_op_map()) :: {:ok, svg_path()} | :error
   def map_path_required(map) when is_map(map) do
     with {:ok, points} <- map_points_required(map),
          {:ok, offset_x} <- map_integer_required(map, "offset_x"),
@@ -64,7 +65,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.WireMap do
     end
   end
 
-  @spec map_points_required(wire_map()) :: {:ok, [[integer()]]} | :error
+  @spec map_points_required(draw_op_map()) :: {:ok, [[integer()]]} | :error
   def map_points_required(map) when is_map(map) do
     points = Map.get(map, "points") || Map.get(map, :points)
 

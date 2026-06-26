@@ -31,7 +31,7 @@ defmodule Ide.Debugger.AgentSession do
     SnapshotQuery.fetch(project_slug, opts, hosts().snapshot_query)
   end
 
-  @spec with_hosts((AgentHosts.t() -> term())) :: term()
+  @spec with_hosts((AgentHosts.t() -> return)) :: return when return: var
   def with_hosts(fun) when is_function(fun, 1), do: fun.(hosts())
 
   @spec mutate_ingest(

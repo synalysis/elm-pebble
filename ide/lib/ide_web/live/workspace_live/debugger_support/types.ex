@@ -4,13 +4,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Types do
 
   alias Ide.Debugger.RuntimeArtifacts.Types, as: ArtifactTypes
   alias Ide.Debugger.Types, as: DebuggerTypes
+  alias IdeWeb.WorkspaceLive.DebuggerSupport.Types.NormalizedSvg
 
   @type debugger_timeline_mode :: String.t()
   @type debugger_surface_target :: String.t()
   @type debugger_event :: DebuggerTypes.debugger_event()
   @type debugger_row_source :: debugger_state_map() | events() | nil
   @type debugger_row_wire :: debugger_event() | wire_map()
-  @type elmc_lifecycle_payload :: wire_map()
+  @type elmc_lifecycle_payload :: DebuggerTypes.event_payload()
 
   @type socket :: Phoenix.LiveView.Socket.t()
   @type maybe_non_neg_integer :: non_neg_integer() | nil
@@ -41,7 +42,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Types do
           optional(:watch) => execution_model(),
           optional(:companion) => execution_model(),
           optional(:phone) => execution_model(),
-          optional(:payload) => wire_map(),
+          optional(:payload) => DebuggerTypes.event_payload(),
           required(:seq) => non_neg_integer(),
           required(:debugger_seq) => non_neg_integer(),
           required(:raw_seq) => non_neg_integer(),
@@ -65,7 +66,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Types do
           type: String.t(),
           summary: String.t()
         }
-  @type replay_preview_row :: DebuggerTypes.ReplayEventPayload.replay_preview_row()
+  @type replay_preview_row :: DebuggerTypes.replay_preview_row()
 
   @type replay_compare_status :: :none | :match | :mismatch
   @type replay_compare_reason :: String.t() | nil
@@ -84,17 +85,36 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Types do
 
   @type wire_input :: String.t() | integer() | nil
   @type wire_map :: DebuggerTypes.wire_map()
+  @type wire_string_map :: DebuggerTypes.wire_string_map()
   @type wire_value :: DebuggerTypes.wire_value()
   @type view_tree :: DebuggerTypes.view_output_tree()
   @type rendered_node :: DebuggerTypes.view_output_tree()
+
+  @typedoc "Recursive runtime model value shown in the debugger model tree."
+  @type model_tree_node ::
+          wire_value()
+          | DebuggerTypes.protocol_ctor_value()
+          | %{optional(String.t()) => model_tree_node()}
+          | [model_tree_node()]
+
   @type view_output_row :: DebuggerTypes.view_output_row()
   @type view_node :: view_output_row() | view_tree()
-  @type svg_op :: view_output_row() | DebuggerTypes.wire_map()
-  @type resource_index_map :: ArtifactTypes.resource_indices()
-  @type svg_style :: DebuggerTypes.wire_map()
-  @type svg_style_stack :: [svg_style()]
   @type runtime_input :: DebuggerTypes.execution_model() | nil
   @type model_map :: DebuggerTypes.app_model() | DebuggerTypes.execution_model()
+
+  @typedoc "Flattened draw op from view_output; fields may use atom or string keys."
+  @type draw_op_map :: view_output_row() | wire_map()
+
+  @typedoc "Evaluation env for preview text resolution (`%{\"model\" => model}`)."
+  @type preview_eval_env :: %{
+          optional(:model) => model_map(),
+          optional(String.t()) => wire_value() | model_map()
+        }
+
+  @type svg_op :: NormalizedSvg.svg_op()
+  @type resource_index_map :: ArtifactTypes.resource_indices()
+  @type svg_style :: NormalizedSvg.style()
+  @type svg_style_stack :: [svg_style()]
 
   @type bounds_map :: %{
           optional(:x) => integer(),
@@ -110,8 +130,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Types do
           optional(:op) => svg_op(),
           optional(:bounds) => bounds_map() | nil,
           optional(:hash) => String.t(),
-          optional(String.t()) => wire_value(),
-          optional(atom()) => wire_value()
+          optional(String.t()) => wire_value()
         }
 
   @type compact_scene :: %{
@@ -131,7 +150,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Types do
           optional(:node_type) => String.t(),
           optional(:provided_int_count) => non_neg_integer(),
           optional(:required_int_count) => non_neg_integer(),
-          optional(atom()) => wire_value(),
           optional(String.t()) => wire_value()
         }
 
@@ -143,7 +161,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Types do
           required(:anim_id) => String.t()
         }
 
-  @type resource_ctor_ref :: String.t() | atom() | wire_map()
+  @type resource_ctor_ref :: String.t() | atom() | DebuggerTypes.protocol_ctor_value()
 
   @type svg_path :: %{
           required(:points) => [[integer()]],
@@ -153,13 +171,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Types do
         }
 
   @type path_payload :: %{
-          optional(:points) => [{integer(), integer()}] | list(),
+          optional(:points) => [{integer(), integer()}],
           optional(:offset_x) => integer(),
           optional(:offset_y) => integer(),
           optional(:rotation) => integer()
         }
 
-  @type group_style_map :: wire_map()
+  @type group_style_map :: DebuggerTypes.wire_string_map()
   @type elm_introspect :: Ide.Debugger.Types.elm_introspect()
 
   @type flattened_rendered_node :: %{
@@ -170,35 +188,23 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Types do
           optional(:source) => String.t() | nil
         }
 
-  @type hash_input :: DebuggerTypes.wire_map() | [String.t()]
+  @type hash_input :: DebuggerTypes.wire_string_map() | [String.t()]
 
   @type timeline_event :: DebuggerTypes.runtime_event() | DebuggerTypes.debugger_event()
   @type events :: [timeline_event()]
 
-  @type replay_count_map :: DebuggerTypes.ReplayEventPayload.count_map()
-  @type replay_telemetry :: DebuggerTypes.ReplayEventPayload.replay_telemetry()
+  @type replay_count_map :: DebuggerTypes.replay_count_map()
+  @type replay_telemetry :: DebuggerTypes.replay_telemetry()
   @type replay_preview_row_wire :: replay_preview_row() | wire_map()
   @type replay_preview_opts :: %{
           optional(:count) => wire_input(),
           optional(:target) => wire_input(),
           optional(:cursor_seq) => maybe_non_neg_integer(),
-          optional(atom()) => wire_input(),
           optional(String.t()) => wire_input()
         }
   @type replay_target_filter :: replay_surface_target() | nil
 
-  @type replay_metadata :: %{
-          optional(:seq) => non_neg_integer(),
-          optional(:target) => String.t() | nil,
-          optional(:replay_source) => String.t() | nil,
-          optional(:requested_count) => non_neg_integer() | nil,
-          optional(:replayed_count) => non_neg_integer() | nil,
-          optional(:cursor_seq) => non_neg_integer() | nil,
-          optional(:replay_telemetry) => replay_telemetry(),
-          optional(:replay_target_counts) => replay_count_map(),
-          optional(:replay_message_counts) => replay_count_map(),
-          optional(:replay_preview) => [replay_preview_row()]
-        }
+  @type replay_metadata :: DebuggerTypes.replay_metadata()
 
   @type diagnostics_preview_source ::
           String.t()
@@ -221,21 +227,19 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Types do
         }
 
   @type trigger_button_row :: %{
-          optional(:id) => String.t(),
-          optional(:label) => String.t(),
-          optional(:trigger) => String.t(),
-          optional(:trigger_display) => String.t(),
-          optional(:target) => String.t(),
-          optional(:message) => String.t(),
-          optional(:source) => String.t(),
+          optional(:id) => String.t() | nil,
+          optional(:label) => String.t() | nil,
+          optional(:trigger) => String.t() | nil,
+          optional(:trigger_display) => String.t() | nil,
+          optional(:target) => String.t() | nil,
+          optional(:message) => String.t() | nil,
+          optional(:source) => String.t() | nil,
           optional(:button) => wire_value(),
           optional(:button_event) => wire_value(),
           optional(:interval_ms) => wire_value(),
           optional(:declared_interval_ms) => wire_value(),
           optional(:model_active?) => boolean(),
-          optional(:injection_supported?) => boolean(),
-          optional(atom()) => wire_value(),
-          optional(String.t()) => wire_value()
+          optional(:injection_supported?) => boolean()
         }
 
   @type cursor_snapshot_runtime :: %{
@@ -254,7 +258,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Types do
         }
 
   @type runtime_value :: DebuggerTypes.wire_value()
-  @type json_export_input :: wire_map() | view_tree() | [wire_value()] | wire_value()
+  @type json_export_input ::
+          DebuggerTypes.wire_string_map() | view_tree() | [wire_value()] | wire_value()
   @type module_exposing :: String.t() | [String.t()]
 
   @type debugger_state_export_ctx :: %{

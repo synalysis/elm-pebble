@@ -23,7 +23,7 @@ defmodule Ide.Debugger.Surface do
           shell: Types.shell(),
           view_tree: Types.view_output_tree() | nil,
           last_message: String.t() | nil,
-          protocol_messages: list() | nil
+          protocol_messages: [Types.protocol_tx_rx_payload()] | nil
         }
 
   @type surface_map :: %{
@@ -31,7 +31,7 @@ defmodule Ide.Debugger.Surface do
           optional(:shell) => Types.shell(),
           optional(:view_tree) => Types.view_output_tree(),
           optional(:last_message) => String.t() | nil,
-          optional(:protocol_messages) => list(),
+          optional(:protocol_messages) => [Types.protocol_tx_rx_payload()],
           optional(String.t()) => Types.wire_input()
         }
 

@@ -281,7 +281,7 @@ defmodule Ide.Debugger.RuntimeArtifacts do
 
   def execution_artifacts(_model), do: %{}
 
-  @spec eval_context(execution_model(), keyword()) :: Types.eval_context()
+  @spec eval_context(execution_model(), keyword()) :: Types.http_eval_context()
   def eval_context(model, extras \\ [])
 
   def eval_context(model, extras) when is_map(model) and is_list(extras) do
@@ -334,11 +334,10 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   def merge_shell_artifacts(base, _shell) when is_map(base), do: base
   def merge_shell_artifacts(_base, _shell), do: %{}
 
-  @spec put_vector_resource_indices_on_request(
-          execution_model(),
-          ArtifactTypes.resource_indices()
-        ) ::
-          execution_model()
+  @type request_attrs :: ArtifactTypes.t() | map()
+
+  @spec put_vector_resource_indices_on_request(request_attrs(), Types.execution_model()) ::
+          request_attrs()
   def put_vector_resource_indices_on_request(request, model)
       when is_map(request) and is_map(model) do
     case vector_resource_indices(model) do
@@ -353,11 +352,8 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   def put_vector_resource_indices_on_request(request, _model) when is_map(request), do: request
   def put_vector_resource_indices_on_request(request, _model), do: request
 
-  @spec put_bitmap_resource_indices_on_request(
-          execution_model(),
-          ArtifactTypes.resource_indices()
-        ) ::
-          execution_model()
+  @spec put_bitmap_resource_indices_on_request(request_attrs(), Types.execution_model()) ::
+          request_attrs()
   def put_bitmap_resource_indices_on_request(request, model)
       when is_map(request) and is_map(model) do
     case bitmap_resource_indices(model) do
@@ -372,11 +368,8 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   def put_bitmap_resource_indices_on_request(request, _model) when is_map(request), do: request
   def put_bitmap_resource_indices_on_request(request, _model), do: request
 
-  @spec put_animation_resource_indices_on_request(
-          execution_model(),
-          ArtifactTypes.resource_indices()
-        ) ::
-          execution_model()
+  @spec put_animation_resource_indices_on_request(request_attrs(), Types.execution_model()) ::
+          request_attrs()
   def put_animation_resource_indices_on_request(request, model)
       when is_map(request) and is_map(model) do
     case animation_resource_indices(model) do

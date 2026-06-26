@@ -59,7 +59,8 @@ defmodule Ide.Debugger.Geolocation do
     }
   end
 
-  @spec simulator_wire_int(Types.eval_context() | ProtocolResolutionCtx.t()) :: integer() | nil
+  @spec simulator_wire_int(Types.protocol_eval_context() | ProtocolResolutionCtx.t()) ::
+          integer() | nil
   def simulator_wire_int(ctx) when is_map(ctx) do
     with %{} = settings <- Map.get(ctx, :simulator_settings),
          index when is_integer(index) <- Map.get(ctx, :arg_index) do

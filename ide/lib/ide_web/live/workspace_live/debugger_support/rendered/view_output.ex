@@ -115,7 +115,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered.ViewOutput do
 
   defp maybe_put_group_style(group, _style), do: group
 
-  @spec style_node(view_output_row()) :: wire_map()
+  @spec style_node(view_output_row()) :: group_style_map()
   defp style_node(row) when is_map(row) do
     kind = row_kind(row)
 

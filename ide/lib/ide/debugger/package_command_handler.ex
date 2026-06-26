@@ -12,8 +12,7 @@ defmodule Ide.Debugger.PackageCommandHandler do
   @type handle_step :: %{
           optional(:message) => String.t(),
           optional(:message_value) => Types.protocol_wire_arg(),
-          optional(String.t()) => Types.wire_input(),
-          optional(atom()) => Types.wire_input()
+          optional(String.t()) => Types.wire_input()
         }
 
   @type storage_command_summary :: %{

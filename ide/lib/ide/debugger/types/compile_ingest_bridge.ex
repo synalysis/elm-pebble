@@ -11,10 +11,9 @@ defmodule Ide.Debugger.Types.CompileIngestBridge do
           optional(:status) => :ok | :error | String.t(),
           optional(:checked_path) => String.t(),
           optional(:output) => String.t(),
-          optional(:diagnostics) => list(),
+          optional(:diagnostics) => [Compiler.diagnostic()],
           optional(:error_count) => non_neg_integer(),
           optional(:warning_count) => non_neg_integer(),
-          optional(atom()) => Types.wire_input(),
           optional(String.t()) => Types.wire_input()
         }
 
@@ -24,14 +23,16 @@ defmodule Ide.Debugger.Types.CompileIngestBridge do
           optional(:revision) => String.t(),
           optional(:cached?) => boolean(),
           optional(:output) => String.t(),
-          optional(:diagnostics) => list(),
+          optional(:diagnostics) => [Compiler.diagnostic()],
           optional(:error_count) => non_neg_integer(),
           optional(:warning_count) => non_neg_integer(),
           optional(:detail) => String.t(),
           optional(:source_root) => String.t(),
           optional(:elmx_manifest) => Types.elmx_manifest(),
           optional(:elmx_revision) => String.t(),
-          optional(atom()) => Types.wire_input(),
+          optional(:elmx_compile_error) => Compiler.elmx_compile_error(),
+          optional(:elmx_compile_error_message) => String.t(),
+          optional(:elmc_linked_binary) => Types.wire_string_map(),
           optional(String.t()) => Types.wire_input()
         }
 
@@ -43,28 +44,35 @@ defmodule Ide.Debugger.Types.CompileIngestBridge do
           optional(:revision) => String.t(),
           optional(:cached?) => boolean(),
           optional(:strict?) => boolean(),
-          optional(:schema_version) => String.t() | integer() | Types.wire_map() | nil,
+          optional(:schema_version) => String.t() | integer() | nil,
+          optional(:manifest) => Compiler.manifest_data() | nil,
+          optional(:output) => String.t(),
           optional(:detail) => String.t(),
-          optional(:diagnostics) => list(),
+          optional(:diagnostics) => [Compiler.diagnostic()],
           optional(:error_count) => non_neg_integer(),
           optional(:warning_count) => non_neg_integer(),
-          optional(atom()) => Types.wire_input(),
           optional(String.t()) => Types.wire_input()
         }
 
-  @spec from_compiler_check_result(check_result() | Compiler.check_result()) ::
+  @spec from_compiler_check_result(
+          check_result() | Compiler.check_result() | compile_result() | manifest_result()
+        ) ::
           CompileIngestAttrs.t()
   def from_compiler_check_result(%{} = result), do: from_check_result(result)
 
-  @spec from_compiler_compile_result(compile_result() | Compiler.compile_result()) ::
+  @spec from_compiler_compile_result(
+          compile_result() | Compiler.compile_result() | check_result() | manifest_result()
+        ) ::
           CompileIngestAttrs.t()
   def from_compiler_compile_result(%{} = result), do: from_compile_result(result)
 
-  @spec from_compiler_manifest_result(manifest_result() | Compiler.manifest_result()) ::
+  @spec from_compiler_manifest_result(
+          manifest_result() | Compiler.manifest_result() | Compiler.compile_result() | check_result()
+        ) ::
           CompileIngestAttrs.t()
   def from_compiler_manifest_result(%{} = result), do: from_manifest_result(result)
 
-  @spec from_check_result(check_result()) :: CompileIngestAttrs.t()
+  @spec from_check_result(check_result() | Compiler.check_result()) :: CompileIngestAttrs.t()
   def from_check_result(result) when is_map(result) do
     %{
       status: Map.get(result, :status) || Map.get(result, "status"),
@@ -76,7 +84,7 @@ defmodule Ide.Debugger.Types.CompileIngestBridge do
     |> drop_nil_fields()
   end
 
-  @spec from_compile_result(compile_result()) :: CompileIngestAttrs.t()
+  @spec from_compile_result(compile_result() | Compiler.compile_result()) :: CompileIngestAttrs.t()
   def from_compile_result(result) when is_map(result) do
     %{
       status: Map.get(result, :status) || Map.get(result, "status"),
@@ -100,7 +108,7 @@ defmodule Ide.Debugger.Types.CompileIngestBridge do
     |> drop_nil_fields()
   end
 
-  @spec from_manifest_result(manifest_result()) :: CompileIngestAttrs.t()
+  @spec from_manifest_result(manifest_result() | Compiler.manifest_result()) :: CompileIngestAttrs.t()
   def from_manifest_result(result) when is_map(result) do
     %{
       status: Map.get(result, :status) || Map.get(result, "status"),
@@ -144,7 +152,7 @@ defmodule Ide.Debugger.Types.CompileIngestBridge do
     end
   end
 
-  @spec drop_nil_fields(CompileIngestAttrs.t()) :: CompileIngestAttrs.t()
+  @spec drop_nil_fields(map()) :: CompileIngestAttrs.t()
   defp drop_nil_fields(map) when is_map(map) do
     Map.reject(map, fn {_key, value} -> is_nil(value) end)
   end

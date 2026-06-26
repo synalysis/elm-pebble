@@ -7,9 +7,9 @@ defmodule Ide.Debugger.ConfigurationSave do
   alias Ide.Debugger.ProtocolRx
   alias Ide.Debugger.Types
 
-  @type bridge_ctx :: %{
-          optional(atom()) => term()
-        }
+  alias Ide.Debugger.CompanionBridge.Runtime, as: CompanionBridgeRuntime
+
+  @type bridge_ctx :: CompanionBridgeRuntime.ctx()
 
   @spec closed_bridge_event(Types.companion_configuration_values()) :: Types.wire_map()
   def closed_bridge_event(encoded_values) when is_map(encoded_values) do

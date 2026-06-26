@@ -17,9 +17,7 @@ defmodule Ide.Debugger.Protocol.Schema do
   @type field :: WireSchema.field()
   @type message :: WireSchema.message()
 
-  @type runtime_message ::
-          message()
-          | %{optional(String.t() | atom()) => term()}
+  @type runtime_message :: message() | Types.wire_string_map()
 
   @type t :: %{
           required(:enums) => WireSchema.enums(),

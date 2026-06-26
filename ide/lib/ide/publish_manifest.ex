@@ -3,6 +3,8 @@ defmodule Ide.PublishManifest do
   Exports publish bundle metadata linking PBW artifacts and screenshots.
   """
 
+  alias Ide.PublishReadiness
+
   @type screenshot_entry :: %{
           required(:filename) => String.t(),
           required(:url) => String.t(),
@@ -24,7 +26,7 @@ defmodule Ide.PublishManifest do
             required(:exists) => boolean()
           },
           required(:required_targets) => [String.t()],
-          required(:readiness) => [term()],
+          required(:readiness) => [PublishReadiness.screenshot_readiness()],
           required(:screenshots_by_target) => [screenshots_by_target_entry()]
         }
 

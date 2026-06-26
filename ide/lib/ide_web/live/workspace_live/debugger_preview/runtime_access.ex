@@ -5,6 +5,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.RuntimeAccess do
 
   @type runtime_input :: PreviewTypes.runtime_input()
   @type model_map :: PreviewTypes.model_map()
+  @type draw_op_map :: PreviewTypes.draw_op_map()
+  @type preview_eval_env :: PreviewTypes.preview_eval_env()
   @type wire_map :: PreviewTypes.wire_map()
   @type wire_value :: PreviewTypes.wire_value()
   @type view_node :: PreviewTypes.view_node()
@@ -109,7 +111,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.RuntimeAccess do
 
   def field_access_int(_node, _model), do: nil
 
-  @spec resolve_text_label_value(view_node(), wire_map()) :: String.t() | nil
+  @spec resolve_text_label_value(view_node(), preview_eval_env() | model_map()) :: String.t() | nil
   defp resolve_text_label_value(node, env) when is_map(node) and is_map(env) do
     value = Map.get(node, "value") || Map.get(node, :value)
     op = (Map.get(node, "op") || Map.get(node, :op) || "") |> to_string()
@@ -166,7 +168,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.RuntimeAccess do
     target in ["String.fromInt", "Basics.String.fromInt"] or type == "fromInt"
   end
 
-  @spec resolve_field_access_text(view_node(), wire_map()) :: String.t() | nil
+  @spec resolve_field_access_text(view_node(), preview_eval_env() | model_map()) :: String.t() | nil
   defp resolve_field_access_text(node, env) when is_map(node) and is_map(env) do
     label = (Map.get(node, "label") || Map.get(node, :label) || "") |> to_string()
 
@@ -199,7 +201,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.RuntimeAccess do
 
   defp resolve_field_access_text(_node, _env), do: nil
 
-  @spec resolve_raw_value(view_node(), wire_map()) :: wire_value()
+  @spec resolve_raw_value(view_node(), preview_eval_env() | model_map()) :: wire_value()
   defp resolve_raw_value(node, env) when is_map(node) and is_map(env) do
     value = Map.get(node, "value") || Map.get(node, :value)
     type = (Map.get(node, "type") || Map.get(node, :type) || "") |> to_string()
@@ -235,7 +237,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.RuntimeAccess do
 
   defp normalize_text_value(_value), do: nil
 
-  @spec map_value_by_key(wire_map(), String.t()) :: wire_value()
+  @spec map_value_by_key(wire_map() | model_map(), String.t()) :: wire_value()
   defp map_value_by_key(map, key) when is_map(map) and is_binary(key) do
     Map.get(map, key) ||
       Enum.find_value(map, fn

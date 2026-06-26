@@ -9,7 +9,6 @@ defmodule Ide.Debugger.Types.ReplayEventPayload do
           optional(:seq) => non_neg_integer() | nil,
           optional(:target) => String.t(),
           optional(:message) => String.t(),
-          optional(atom()) => Types.wire_input(),
           optional(String.t()) => Types.wire_input()
         }
 
@@ -23,8 +22,21 @@ defmodule Ide.Debugger.Types.ReplayEventPayload do
           optional(:replayed_count) => non_neg_integer(),
           optional(:used_frozen_preview) => boolean(),
           optional(:used_live_query) => boolean(),
-          optional(atom()) => Types.wire_input(),
           optional(String.t()) => Types.wire_input()
+        }
+
+  @typedoc "Replay batch metadata attached to MCP debugger state/cursor payloads."
+  @type metadata :: %{
+          optional(:seq) => non_neg_integer(),
+          optional(:target) => String.t() | nil,
+          optional(:replay_source) => String.t() | nil,
+          optional(:requested_count) => non_neg_integer() | nil,
+          optional(:replayed_count) => non_neg_integer() | nil,
+          optional(:cursor_seq) => non_neg_integer() | nil,
+          optional(:replay_telemetry) => replay_telemetry(),
+          optional(:replay_target_counts) => count_map(),
+          optional(:replay_message_counts) => count_map(),
+          optional(:replay_preview) => [replay_preview_row()]
         }
 
   @type t :: %{
@@ -37,7 +49,6 @@ defmodule Ide.Debugger.Types.ReplayEventPayload do
           optional(:replay_target_counts) => count_map(),
           optional(:replay_message_counts) => count_map(),
           optional(:replay_preview) => [replay_preview_row()],
-          optional(atom()) => Types.wire_input(),
           optional(String.t()) => Types.wire_input()
         }
 

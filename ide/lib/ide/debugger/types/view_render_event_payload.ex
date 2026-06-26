@@ -7,7 +7,6 @@ defmodule Ide.Debugger.Types.ViewRenderEventPayload do
   @type t :: %{
           optional(:target) => String.t(),
           optional(:root) => root(),
-          optional(atom()) => Types.wire_input(),
           optional(String.t()) => Types.wire_input()
         }
 

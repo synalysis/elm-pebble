@@ -261,7 +261,7 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
 
   def form_data(_state, _trigger, _message_constructor), do: nil
 
-  @spec message_value(Types.wire_map()) :: Types.protocol_ctor_value() | nil
+  @spec message_value(Types.companion_injection_form_data()) :: Types.protocol_ctor_value() | nil
   def message_value(params) when is_map(params) do
     contract_source =
       Map.get(params, "companion_contract") || Map.get(params, :companion_contract)
@@ -415,8 +415,8 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
   defp encode_field_value(:integer, value) when is_integer(value), do: Integer.to_string(value)
   defp encode_field_value(_type, value), do: to_string(value)
 
-  @spec build_record_payload(Types.companion_subscription_contract(), Types.wire_map()) ::
-          Types.protocol_ctor_value() | Types.wire_map() | list()
+  @spec build_record_payload(Types.companion_subscription_contract(), Types.companion_injection_form_data()) ::
+          Types.protocol_ctor_value() | Types.wire_string_map() | list()
   defp build_record_payload(%{payload: :environment} = contract, params) do
     contract
     |> Map.get(:fields, [])
@@ -461,8 +461,8 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
     end)
   end
 
-  @spec build_calendar_event(Types.companion_subscription_contract(), Types.wire_map()) ::
-          Types.wire_map()
+  @spec build_calendar_event(Types.companion_subscription_contract(), Types.companion_injection_form_data()) ::
+          Types.wire_string_map()
   defp build_calendar_event(contract, params) do
     contract
     |> Map.get(:fields, [])
@@ -472,7 +472,7 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
     |> drop_blank_calendar_location()
   end
 
-  @spec drop_blank_calendar_location(Types.wire_map()) :: Types.wire_map()
+  @spec drop_blank_calendar_location(Types.wire_string_map()) :: Types.wire_string_map()
   defp drop_blank_calendar_location(%{"location" => location} = event)
        when location in [nil, ""] do
     Map.delete(event, "location")
@@ -480,8 +480,8 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
 
   defp drop_blank_calendar_location(event), do: event
 
-  @spec build_weather_info(Types.companion_subscription_contract(), Types.wire_map()) ::
-          Types.wire_map()
+  @spec build_weather_info(Types.companion_subscription_contract(), Types.companion_injection_form_data()) ::
+          Types.wire_string_map()
   defp build_weather_info(contract, params) do
     contract
     |> Map.get(:fields, [])
@@ -490,7 +490,7 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
     end)
   end
 
-  @spec field_param(Types.wire_map(), String.t()) :: raw_value()
+  @spec field_param(Types.companion_injection_form_data(), String.t()) :: raw_value()
   defp field_param(params, key) when is_map(params) and is_binary(key) do
     Map.get(params, "companion_field_" <> key) ||
       Map.get(params, :"companion_field_#{key}") ||
@@ -499,7 +499,7 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
 
   defp field_param(_params, _key), do: nil
 
-  @spec nested_companion_field(Types.wire_map(), String.t()) :: raw_value()
+  @spec nested_companion_field(Types.companion_injection_form_data(), String.t()) :: raw_value()
   defp nested_companion_field(params, key) do
     case Map.get(params, "companion_fields") || Map.get(params, :companion_fields) do
       fields when is_list(fields) ->

@@ -24,9 +24,9 @@ defmodule Ide.Debugger.Types.LaunchContext do
           optional(:has_compass) => boolean(),
           optional(:supports_health) => boolean(),
           optional(:screen) => screen(),
-          optional(String.t()) => Types.wire_input(),
-          optional(atom()) => Types.wire_input()
+          optional(String.t()) => Types.wire_input()
         }
 
+  @typedoc "JSON-shaped map when atom-key `t/0` is unavailable at the wire boundary."
   @type wire_map :: t() | Types.wire_map()
 end

@@ -4,6 +4,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.Wire do
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Types, as: PreviewTypes
 
   @type wire_value :: PreviewTypes.wire_value()
+  @type draw_op_map :: PreviewTypes.draw_op_map()
+  @type model_map :: PreviewTypes.model_map()
   @type wire_map :: PreviewTypes.wire_map()
 
   @spec first_map([wire_value()]) :: wire_map()
@@ -16,7 +18,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.Wire do
     Enum.find(values, fn value -> not is_nil(value) end)
   end
 
-  @spec map_get_any(wire_map() | nil, String.t()) :: wire_value()
+  @spec map_get_any(wire_map() | draw_op_map() | model_map() | nil, String.t()) :: wire_value()
   def map_get_any(map, key) when is_map(map) and is_binary(key) do
     case Map.fetch(map, key) do
       {:ok, value} -> value

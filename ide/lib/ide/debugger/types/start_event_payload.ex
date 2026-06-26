@@ -5,7 +5,6 @@ defmodule Ide.Debugger.Types.StartEventPayload do
   @type t :: %{
           optional(:launch_reason) => String.t(),
           optional(:watch_profile_id) => String.t(),
-          optional(atom()) => Types.wire_input(),
           optional(String.t()) => Types.wire_input()
         }
 

@@ -12,7 +12,6 @@ defmodule Ide.Debugger.Types.CompanionBridgeEventPayload do
           optional(:response_message) => String.t() | nil,
           optional(:response_value) => Types.companion_bridge_payload(),
           optional(:result) => result_label(),
-          optional(atom()) => Types.wire_input(),
           optional(String.t()) => Types.wire_input()
         }
 

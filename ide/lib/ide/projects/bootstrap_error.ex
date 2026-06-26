@@ -3,6 +3,7 @@ defmodule Ide.Projects.BootstrapError do
 
   require Logger
 
+  alias Ide.Packages.Types, as: PackageTypes
   alias Ide.Paths
   alias Ide.Projects.Project
 
@@ -19,7 +20,7 @@ defmodule Ide.Projects.BootstrapError do
           | File.posix()
           | tuple()
           | String.t()
-          | %{optional(atom() | String.t()) => term()}
+          | PackageTypes.json_wire_object()
 
   @doc """
   Returns a user-facing explanation for a project bootstrap failure.

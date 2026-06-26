@@ -17,10 +17,11 @@ defmodule Ide.Debugger.RuntimeExecutor.Types do
           optional(:message) => String.t() | nil,
           optional(:message_value) => Types.protocol_message_wire_value(),
           optional(:update_branches) => [String.t()] | nil,
-          optional(:elmx_manifest) => Types.wire_map(),
+          optional(:elmx_manifest) => Types.elmx_manifest(),
           optional(:elmx_revision) => String.t(),
           optional(:vector_resource_indices) => ArtifactTypes.resource_indices(),
-          optional(:bitmap_resource_indices) => ArtifactTypes.resource_indices()
+          optional(:bitmap_resource_indices) => ArtifactTypes.resource_indices(),
+          optional(:animation_resource_indices) => ArtifactTypes.resource_indices()
         }
 
   @type execution_input :: Request.t() | execution_input_map()
@@ -38,9 +39,7 @@ defmodule Ide.Debugger.RuntimeExecutor.Types do
 
   @type elmx_view_preview_payload :: Elmx.Types.view_preview_payload()
 
-  @type executor_wire_result ::
-          elmx_execution_payload()
-          | %{optional(atom()) => Types.wire_input(), optional(String.t()) => Types.wire_input()}
+  @type executor_wire_result :: elmx_execution_payload() | Types.wire_map()
 
   @type adapter_request_map ::
           Types.elmx_executor_request()
@@ -60,7 +59,6 @@ defmodule Ide.Debugger.RuntimeExecutor.Types do
               optional(:vector_resource_indices) => ArtifactTypes.resource_indices(),
               optional(:bitmap_resource_indices) => ArtifactTypes.resource_indices(),
               optional(:animation_resource_indices) => ArtifactTypes.resource_indices(),
-              optional(atom()) => Types.wire_input(),
               optional(String.t()) => Types.wire_input()
             }
 end

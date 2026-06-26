@@ -80,7 +80,7 @@ defmodule Ide.Emulator.Session.Pypkjs do
   end
 
   @spec handle_local_port(Types.session_state()) ::
-          {:reply, pos_integer() | {:error, term()}, Types.session_state()}
+          {:reply, pos_integer() | {:error, Types.session_error()}, Types.session_state()}
   def handle_local_port(%{pypkjs_pid: nil} = state) do
     case maybe_start(state) do
       {:ok, state} -> {:reply, state.phone_ws_port, state}

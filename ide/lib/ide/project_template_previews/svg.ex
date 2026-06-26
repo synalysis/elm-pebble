@@ -156,7 +156,7 @@ defmodule Ide.ProjectTemplatePreviews.Svg do
   defp pebble_angle_deg(angle) when is_integer(angle), do: angle * 360.0 / 65_536.0
   defp pebble_angle_deg(_), do: 0.0
 
-  @spec escape_text(term()) :: String.t()
+  @spec escape_text(String.t() | number() | atom() | boolean()) :: String.t()
   defp escape_text(text) do
     text
     |> to_string()

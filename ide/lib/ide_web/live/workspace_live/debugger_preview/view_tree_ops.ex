@@ -74,7 +74,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.ViewTreeOps do
       group_style_nodes(node) ++ children ++ [%{"type" => "pop_context"}]
   end
 
-  @spec group_style_nodes(view_node()) :: [wire_map()]
+  @spec group_style_nodes(view_node()) :: [PreviewTypes.group_style_map()]
   defp group_style_nodes(node) when is_map(node) do
     style =
       case Map.get(node, "style") || Map.get(node, :style) do
@@ -90,7 +90,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.ViewTreeOps do
     |> Enum.reject(&is_nil/1)
   end
 
-  @spec style_node(wire_map(), String.t()) :: wire_map() | nil
+  @spec style_node(PreviewTypes.group_style_map(), String.t()) :: PreviewTypes.group_style_map() | nil
   defp style_node(style, key) when is_map(style) and is_binary(key) do
     case Map.get(style, key) || Map.get(style, String.to_atom(key)) do
       value when is_integer(value) -> %{"type" => key, "color" => value}
@@ -127,7 +127,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.ViewTreeOps do
 
   defp svg_op_from_node(_node, _primary_int, _model), do: []
 
-  @spec concrete_svg_op_from_node(view_node()) :: wire_map() | nil
+  @spec concrete_svg_op_from_node(view_node()) :: svg_op() | nil
   defp concrete_svg_op_from_node(node) when is_map(node) do
     type = node |> Map.get("type", Map.get(node, :type, "")) |> to_string()
 

@@ -28,7 +28,19 @@ defmodule Ide.Compiler.Diagnostics do
   @type wire_diagnostics :: [wire_diagnostic()] | wire_diagnostic() | nil
 
   @type wire_diagnostic :: %{
-          optional(atom()) => diagnostic_field(),
+          optional(:severity) => diagnostic_field(),
+          optional(:message) => diagnostic_field(),
+          optional(:source) => diagnostic_field(),
+          optional(:file) => diagnostic_field(),
+          optional(:line) => diagnostic_field(),
+          optional(:column) => diagnostic_field(),
+          optional(:end_line) => diagnostic_field(),
+          optional(:end_column) => diagnostic_field(),
+          optional(:warning_type) => diagnostic_field(),
+          optional(:warning_code) => diagnostic_field(),
+          optional(:warning_constructor) => diagnostic_field(),
+          optional(:warning_expected_kind) => diagnostic_field(),
+          optional(:warning_has_arg_pattern) => diagnostic_field(),
           optional(String.t()) => diagnostic_field()
         }
 

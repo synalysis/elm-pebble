@@ -15,6 +15,7 @@ defmodule Ide.Mcp.ToolTypes do
   alias Ide.Projects.Types, as: ProjectsTypes
   alias Ide.Screenshots
   alias Ide.WatchModels
+  alias IdeWeb.WorkspaceLive.DebuggerSupport.Types, as: DebuggerSupportTypes
 
   @type json_value :: WireTypes.json_value()
   @type file_mtime :: :calendar.datetime()
@@ -33,15 +34,19 @@ defmodule Ide.Mcp.ToolTypes do
           required(:matches) => [files_search_match()]
         }
 
-  @type tool_wire_map :: %{
-          optional(atom()) => tool_payload_value(),
-          optional(String.t()) => tool_payload_value()
-        }
+  @typedoc "JSON-serializable nested tool payload object (string keys on the wire)."
+  @type tool_wire_map :: %{optional(String.t()) => tool_payload_value()}
 
-  @type tool_result :: {:ok, tool_wire_map()} | {:error, String.t()}
-  @type tool_persist_error :: atom() | String.t() | Ecto.Changeset.t() | tool_wire_map()
-  @type tool_args :: %{optional(String.t()) => json_value(), optional(atom()) => json_value()}
+  @type tool_result :: {:ok, map()} | {:error, String.t()}
+  @type tool_persist_error :: atom() | String.t() | Ecto.Changeset.t() | map()
+  @type tool_args :: %{optional(String.t()) => json_value()}
   @type tool_audit_args :: tool_args()
+
+  @type debugger_subscription_setting_attrs :: %{
+          required(:target) => String.t() | atom() | nil,
+          required(:trigger) => String.t() | nil,
+          required(:enabled) => WireTypes.boolean_input()
+        }
 
   @type release_defaults :: ProjectsTypes.release_defaults()
   @type debugger_settings :: ProjectsTypes.debugger_settings()
@@ -111,7 +116,14 @@ defmodule Ide.Mcp.ToolTypes do
         }
 
   @type projects_settings_result :: %{
-          optional(atom()) => json_value(),
+          required(:name) => String.t() | nil,
+          required(:slug) => String.t() | nil,
+          required(:target_type) => String.t() | nil,
+          required(:source_roots) => [String.t()],
+          required(:active) => boolean(),
+          required(:release_defaults) => release_defaults(),
+          required(:github) => github_config(),
+          required(:debugger) => debugger_settings(),
           optional(String.t()) => json_value()
         }
 
@@ -122,7 +134,23 @@ defmodule Ide.Mcp.ToolTypes do
           optional(String.t()) => json_value()
         }
 
-  @type publish_tool_fields :: %{optional(atom()) => json_value(), optional(String.t()) => json_value()}
+  @type publish_tool_fields :: %{
+          required(:status) => :ok | :error,
+          optional(:artifact_path) => String.t(),
+          optional(:app_root) => String.t(),
+          optional(:required_targets) => json_value(),
+          optional(:readiness) => json_value(),
+          optional(:checks) => json_value(),
+          optional(:manifest_path) => String.t(),
+          optional(:release_notes_path) => String.t(),
+          optional(:release_notes_md) => String.t(),
+          optional(:build_result) => json_value(),
+          optional(:output) => String.t(),
+          optional(:command) => String.t(),
+          optional(:exit_code) => integer(),
+          optional(:cwd) => String.t(),
+          optional(String.t()) => json_value()
+        }
 
   @type ingest_compile_result :: {:ok, Compiler.compile_result()} | {:error, String.t()}
 
@@ -157,27 +185,31 @@ defmodule Ide.Mcp.ToolTypes do
           required(:status) => :ok | :error,
           optional(:artifact_path) => String.t(),
           optional(:app_root) => String.t(),
-          optional(atom()) => json_value(),
+          optional(:required_targets) => json_value(),
+          optional(:readiness) => json_value(),
+          optional(:checks) => json_value(),
+          optional(:release_notes_md) => String.t(),
+          optional(:build_result) => json_value(),
           optional(String.t()) => json_value()
         }
 
   @type debugger_state_replay_result :: %{
           required(:slug) => String.t(),
           required(:event_window) => non_neg_integer(),
-          required(:runtime_fingerprint_digest) => DebuggerTypes.wire_map(),
+          required(:runtime_fingerprint_digest) => DebuggerTypes.runtime_fingerprint_digest(),
           required(:snapshot_refs) => [DebuggerTypes.trace_snapshot_reference_row()],
-          optional(atom()) => json_value(),
-          optional(String.t()) => json_value()
+          optional(:runtime_fingerprint_compare) => DebuggerTypes.mcp_fingerprint_compare_result(),
+          optional(:replay_metadata) => DebuggerTypes.replay_metadata()
         }
 
   @type debugger_state_full_result :: %{
           required(:slug) => String.t(),
           required(:state) => debugger_runtime_state(),
-          required(:runtime_fingerprints) => DebuggerTypes.wire_map(),
-          required(:runtime_fingerprint_digest) => DebuggerTypes.wire_map(),
+          required(:runtime_fingerprints) => DebuggerTypes.surface_fingerprints(),
+          required(:runtime_fingerprint_digest) => DebuggerTypes.runtime_fingerprint_digest(),
           required(:snapshot_refs) => [DebuggerTypes.trace_snapshot_reference_row()],
-          optional(atom()) => json_value(),
-          optional(String.t()) => json_value()
+          optional(:runtime_fingerprint_compare) => DebuggerTypes.mcp_fingerprint_compare_result(),
+          optional(:replay_metadata) => DebuggerTypes.replay_metadata()
         }
 
   @type debugger_state_result :: debugger_state_replay_result() | debugger_state_full_result()
@@ -194,7 +226,14 @@ defmodule Ide.Mcp.ToolTypes do
           required(:slug) => String.t(),
           required(:status) => :ok | :error,
           optional(:artifact_path) => String.t(),
-          optional(atom()) => json_value(),
+          optional(:app_root) => String.t(),
+          optional(:required_targets) => json_value(),
+          optional(:readiness) => json_value(),
+          optional(:checks) => json_value(),
+          optional(:manifest_path) => String.t(),
+          optional(:release_notes_path) => String.t(),
+          optional(:release_notes_md) => String.t(),
+          optional(:build_result) => json_value(),
           optional(String.t()) => json_value()
         }
 
@@ -242,15 +281,14 @@ defmodule Ide.Mcp.ToolTypes do
           required(:path) => String.t(),
           required(:type) => String.t(),
           optional(:label) => String.t() | nil,
-          optional(:bounds) => DebuggerTypes.wire_map() | nil,
+          optional(:bounds) => DebuggerTypes.wire_string_map() | nil,
           optional(:source) => String.t() | nil
         }
 
   @type debugger_render_tree_summary :: %{
           optional(:root_type) => String.t(),
           optional(:node_count) => non_neg_integer(),
-          optional(:nodes) => [render_tree_flat_node()],
-          optional(atom()) => json_value()
+          optional(:nodes) => [render_tree_flat_node()]
         }
 
   @type debugger_surface_state_result :: %{
@@ -260,10 +298,9 @@ defmodule Ide.Mcp.ToolTypes do
           required(:screen) => debugger_screen(),
           required(:model) => debugger_surface_model_entry(),
           optional(:last_message) => String.t() | nil,
-          optional(:protocol_messages) => list(),
-          optional(:runtime_fingerprint) => DebuggerTypes.wire_map() | nil,
-          optional(:render_tree) => debugger_render_tree_summary() | nil,
-          optional(atom()) => json_value()
+          optional(:protocol_messages) => [DebuggerTypes.protocol_tx_rx_payload()],
+          optional(:runtime_fingerprint) => DebuggerTypes.runtime_fingerprint() | nil,
+          optional(:render_tree) => debugger_render_tree_summary() | nil
         }
 
   @type compiler_recent_result :: %{
@@ -275,12 +312,18 @@ defmodule Ide.Mcp.ToolTypes do
 
   @type debugger_surface_model_entry :: %{
           required(:target) => String.t(),
-          required(:model) => DebuggerTypes.wire_map(),
-          required(:runtime_model) => DebuggerTypes.wire_map(),
+          required(:model) => DebuggerTypes.app_model(),
+          required(:runtime_model) => DebuggerTypes.inner_runtime_model(),
           required(:model_keys) => [String.t()],
           required(:runtime_model_keys) => [String.t()],
-          optional(atom()) => json_value(),
-          optional(String.t()) => json_value()
+          required(:last_message) => String.t() | nil,
+          required(:view_tree_type) => String.t() | nil
+        }
+
+  @type debugger_models_map :: %{
+          optional(:watch) => debugger_surface_model_entry(),
+          optional(:companion) => debugger_surface_model_entry(),
+          optional(:phone) => debugger_surface_model_entry()
         }
 
   @type debugger_models_result :: %{
@@ -289,7 +332,7 @@ defmodule Ide.Mcp.ToolTypes do
           required(:running) => boolean(),
           required(:revision) => String.t() | nil,
           required(:watch_profile_id) => String.t(),
-          required(:models) => %{optional(atom()) => debugger_surface_model_entry()}
+          required(:models) => debugger_models_map()
         }
 
   @type compiler_check_result :: %{
@@ -313,7 +356,11 @@ defmodule Ide.Mcp.ToolTypes do
         }
 
   @type debugger_timeline_event :: %{
-          optional(atom()) => json_value(),
+          optional(:seq) => non_neg_integer() | nil,
+          optional(:type) => String.t() | nil,
+          optional(:target) => String.t() | nil,
+          optional(:summary) => String.t() | nil,
+          optional(:payload) => DebuggerTypes.compact_timeline_event_payload(),
           optional(String.t()) => json_value()
         }
 
@@ -353,7 +400,22 @@ defmodule Ide.Mcp.ToolTypes do
           required(:status) => String.t(),
           required(:render_source) => String.t(),
           required(:node_count) => non_neg_integer(),
-          optional(atom()) => tool_payload_value(),
+          optional(:seq) => non_neg_integer() | nil,
+          optional(:revision) => String.t() | nil,
+          optional(:watch_profile_id) => String.t() | nil,
+          optional(:screen) => debugger_screen(),
+          optional(:root_type) => String.t() | nil,
+          optional(:runtime_view_output_count) => non_neg_integer(),
+          optional(:runtime_view_output_kinds) => [String.t()],
+          optional(:runtime_view_tree_type) => String.t() | nil,
+          optional(:model_keys) => [String.t()],
+          optional(:runtime_model_keys) => [String.t()],
+          optional(:runtime_fingerprint) => DebuggerTypes.runtime_fingerprint() | nil,
+          optional(:surface_tree_sha256) => String.t() | nil,
+          optional(:fingerprint_view_tree_sha256) => String.t() | nil,
+          optional(:latest_render_events) => [DebuggerSupportTypes.render_event_row()],
+          optional(:latest_lifecycle) => [DebuggerSupportTypes.lifecycle_row()],
+          optional(:findings) => [String.t()],
           optional(String.t()) => tool_payload_value()
         }
 
@@ -394,8 +456,8 @@ defmodule Ide.Mcp.ToolTypes do
           required(:cursor_seq) => non_neg_integer() | nil,
           required(:event_window) => non_neg_integer(),
           required(:snapshot_refs) => [DebuggerTypes.trace_snapshot_reference_row()],
-          optional(atom()) => tool_payload_value(),
-          optional(String.t()) => tool_payload_value()
+          optional(:runtime_fingerprint_compare) => DebuggerTypes.mcp_fingerprint_compare_result(),
+          optional(:replay_metadata) => DebuggerTypes.replay_metadata()
         }
 
   @type debugger_cursor_inspect_full_result :: %{
@@ -404,8 +466,17 @@ defmodule Ide.Mcp.ToolTypes do
           required(:event_window) => non_neg_integer(),
           required(:snapshot_refs) => [DebuggerTypes.trace_snapshot_reference_row()],
           required(:elmc_diagnostics) => [DebuggerTypes.elmc_diagnostic_row()],
-          required(:runtime_fingerprint_digest) => DebuggerTypes.wire_map(),
-          optional(atom()) => tool_payload_value(),
+          required(:runtime_fingerprint_digest) => DebuggerTypes.runtime_fingerprint_digest(),
+          optional(:elmc_diagnostics_source) => String.t() | nil,
+          optional(:debugger_contract) => DebuggerTypes.debugger_contract(),
+          optional(:elm_introspect) => DebuggerTypes.elm_introspect(),
+          optional(:runtime_fingerprints) => DebuggerTypes.surface_fingerprints(),
+          optional(:runtime_fingerprint_compare) => DebuggerTypes.mcp_fingerprint_compare_result(),
+          optional(:replay_metadata) => DebuggerTypes.replay_metadata(),
+          optional(:update_messages) => [DebuggerSupportTypes.update_message_row()],
+          optional(:protocol_exchange) => [DebuggerSupportTypes.protocol_row()],
+          optional(:view_renders) => [DebuggerSupportTypes.render_event_row()],
+          optional(:lifecycle) => [DebuggerSupportTypes.lifecycle_row()],
           optional(String.t()) => tool_payload_value()
         }
 
@@ -519,15 +590,15 @@ defmodule Ide.Mcp.ToolTypes do
 
   @type debugger_auto_fire_result :: %{
           required(:slug) => String.t(),
-          required(:auto_fire) => DebuggerTypes.wire_map(),
-          required(:auto_fire_subscriptions) => [DebuggerTypes.wire_map()],
+          required(:auto_fire) => ProjectsTypes.auto_fire_targets(),
+          required(:auto_fire_subscriptions) => [ProjectsTypes.subscription_row()],
           required(:runtime_auto_tick) => DebuggerTypes.auto_tick()
         }
 
   @type debugger_disabled_subscriptions_result :: %{
           required(:slug) => String.t(),
-          required(:disabled_subscriptions) => list(),
-          required(:runtime_disabled_subscriptions) => list()
+          required(:disabled_subscriptions) => [ProjectsTypes.subscription_row()],
+          required(:runtime_disabled_subscriptions) => [DebuggerTypes.disabled_subscription()]
         }
 
   @type debugger_slug_state_result :: %{
@@ -585,8 +656,8 @@ defmodule Ide.Mcp.ToolTypes do
 
   @type debugger_auto_fire_settings_state_result :: %{
           required(:slug) => String.t(),
-          required(:auto_fire) => DebuggerTypes.wire_map(),
-          required(:auto_fire_subscriptions) => [DebuggerTypes.wire_map()],
+          required(:auto_fire) => ProjectsTypes.auto_fire_targets(),
+          required(:auto_fire_subscriptions) => [ProjectsTypes.subscription_row()],
           required(:state) => debugger_runtime_state()
         }
 

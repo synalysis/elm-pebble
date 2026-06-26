@@ -158,7 +158,7 @@ defmodule Ide.Debugger.AutoFireRuntime do
   def subscription_due?(_state, _target, _row, _now, _ctx), do: false
 
   @spec clock_for_target(Types.runtime_state(), Types.surface_target(), apply_ctx()) ::
-          Types.wire_map()
+          Types.auto_fire_clock_entry()
   def clock_for_target(state, target, ctx) when is_map(state) and is_map(ctx) do
     state
     |> Map.get(:auto_fire_clock, %{})

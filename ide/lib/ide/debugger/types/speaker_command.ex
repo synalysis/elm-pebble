@@ -15,8 +15,7 @@ defmodule Ide.Debugger.Types.SpeakerCommand do
           optional(:duration_ms) => number(),
           optional(:volume) => number(),
           optional(:waveform) => number(),
-          optional(String.t()) => Types.wire_input(),
-          optional(atom()) => Types.wire_input()
+          optional(String.t()) => Types.wire_input()
         }
 
   @type play_notes :: %{
@@ -24,8 +23,7 @@ defmodule Ide.Debugger.Types.SpeakerCommand do
           optional(:kind) => String.t(),
           optional(:note_values) => [number()],
           optional(:volume) => number(),
-          optional(String.t()) => Types.wire_input(),
-          optional(atom()) => Types.wire_input()
+          optional(String.t()) => Types.wire_input()
         }
 
   @type play_tracks :: %{
@@ -33,18 +31,19 @@ defmodule Ide.Debugger.Types.SpeakerCommand do
           optional(:kind) => String.t(),
           optional(:track_values) => [number()],
           optional(:volume) => number(),
-          optional(String.t()) => Types.wire_input(),
-          optional(atom()) => Types.wire_input()
+          optional(String.t()) => Types.wire_input()
         }
 
   @type stop :: %{
           optional(:variant) => String.t(),
           optional(:kind) => String.t(),
-          optional(String.t()) => Types.wire_input(),
-          optional(atom()) => Types.wire_input()
+          optional(String.t()) => Types.wire_input()
         }
 
-  @type t :: play_tone() | play_notes() | play_tracks() | stop() | wire_map()
+  @type unknown_variant :: Types.wire_string_map()
 
+  @type t :: play_tone() | play_notes() | play_tracks() | stop() | unknown_variant()
+
+  @typedoc "JSON-shaped map when atom-key `t/0` is unavailable at the wire boundary."
   @type wire_map :: t() | Types.wire_map()
 end

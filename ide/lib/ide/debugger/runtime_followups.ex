@@ -877,7 +877,7 @@ defmodule Ide.Debugger.RuntimeFollowups do
   defp callback_wire_from_surface(_state, _target, _ctor, _current_message), do: nil
 
   @spec http_eval_context(Types.execution_model(), Types.simulator_settings()) ::
-          Types.eval_context()
+          Types.http_eval_context()
   defp http_eval_context(model, settings) when is_map(model) and is_map(settings) do
     weather = Map.get(settings, "weather")
 

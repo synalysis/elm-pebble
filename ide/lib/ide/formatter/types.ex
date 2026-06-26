@@ -10,7 +10,13 @@ defmodule Ide.Formatter.Types do
   @type source :: String.t()
   @type source_line :: String.t()
   @type format_opts :: keyword()
-  @type parse_error :: diagnostic() | %{optional(atom()) => term(), optional(String.t()) => term()}
+  @type parse_metadata_error :: %{
+          required(:line) => integer(),
+          required(:column) => pos_integer(),
+          required(:message) => String.t()
+        }
+
+  @type parse_error :: diagnostic() | parse_metadata_error()
   @type parse_payload :: Parse.parse_payload()
   @type metadata :: HeaderMetadata.metadata()
   @type format_token :: TokenizerTypes.token()
@@ -26,8 +32,8 @@ defmodule Ide.Formatter.Types do
   @type format_details :: %{
           optional(:parser_payload_reused?) => boolean(),
           optional(:pipeline) => String.t(),
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(:backend) => atom(),
+          optional(:command) => String.t()
         }
 
   @type format_result :: %{

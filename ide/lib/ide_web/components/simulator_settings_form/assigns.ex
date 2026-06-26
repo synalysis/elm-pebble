@@ -21,7 +21,6 @@ defmodule IdeWeb.SimulatorSettingsForm.Assigns do
           optional(:group_columns) => pos_integer(),
           optional(:groups) => [settings_group()],
           optional(:settings) => settings_values(),
-          optional(:empty?) => boolean(),
-          optional(atom()) => term()
+          optional(:empty?) => boolean()
         }
 end

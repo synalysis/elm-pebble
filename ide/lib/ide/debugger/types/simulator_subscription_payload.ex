@@ -11,8 +11,7 @@ defmodule Ide.Debugger.Types.SimulatorSubscriptionPayload do
   @type compass_heading :: %{
           optional(:degrees) => number(),
           optional(:isValid) => boolean(),
-          optional(String.t()) => Types.wire_input(),
-          optional(atom()) => Types.wire_input()
+          optional(String.t()) => Types.wire_input()
         }
 
   @type screen :: %{
@@ -20,8 +19,7 @@ defmodule Ide.Debugger.Types.SimulatorSubscriptionPayload do
           optional(:height) => non_neg_integer(),
           optional(:shape) => String.t(),
           optional(:colorMode) => String.t(),
-          optional(String.t()) => Types.wire_input(),
-          optional(atom()) => Types.wire_input()
+          optional(String.t()) => Types.wire_input()
         }
 
   @type rect :: %{
@@ -29,7 +27,6 @@ defmodule Ide.Debugger.Types.SimulatorSubscriptionPayload do
           optional(:y) => non_neg_integer(),
           optional(:w) => non_neg_integer(),
           optional(:h) => non_neg_integer(),
-          optional(String.t()) => Types.wire_input(),
-          optional(atom()) => Types.wire_input()
+          optional(String.t()) => Types.wire_input()
         }
 end

@@ -8,7 +8,6 @@ defmodule Ide.Mcp.ToolCatalog.Types do
   @type tool_definition :: %{
           required(:name) => String.t(),
           optional(:description) => String.t(),
-          optional(:inputSchema) => input_schema(),
-          optional(atom()) => term()
+          optional(:inputSchema) => input_schema()
         }
 end

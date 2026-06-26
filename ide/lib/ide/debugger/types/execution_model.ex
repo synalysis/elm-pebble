@@ -11,7 +11,6 @@ defmodule Ide.Debugger.Types.ExecutionModel do
   alias Ide.Debugger.RuntimeArtifacts.Types, as: ArtifactTypes
   alias Ide.Debugger.Surface
   alias Ide.Debugger.Types
-  alias Ide.Debugger.Types.{ExecutionRuntimeSnapshot, InnerRuntimeModel, LaunchContext}
 
   @type t :: wire_map()
 
@@ -25,20 +24,18 @@ defmodule Ide.Debugger.Types.ExecutionModel do
           optional(:vector_resource_indices) => ArtifactTypes.resource_indices(),
           optional(:bitmap_resource_indices) => ArtifactTypes.resource_indices(),
           optional(:animation_resource_indices) => ArtifactTypes.resource_indices(),
-          optional(:launch_context) => LaunchContext.t() | LaunchContext.wire_map(),
+          optional(:launch_context) => Types.launch_context(),
           optional(:last_path) => String.t(),
           optional(:last_source) => String.t(),
-          optional(:runtime_model) => InnerRuntimeModel.t() | InnerRuntimeModel.wire_map(),
+          optional(:runtime_model) => Types.inner_runtime_model(),
           optional(:runtime_view_output) => Types.runtime_view_nodes(),
           optional(:runtime_model_source) => String.t(),
           optional(:last_message) => String.t() | nil,
           optional(:last_operation) => String.t(),
           optional(:step_counter) => integer(),
-          optional(:runtime_execution) => ExecutionRuntimeSnapshot.t()
-                                           | ExecutionRuntimeSnapshot.wire_map(),
+          optional(:runtime_execution) => Types.execution_runtime_snapshot(),
           optional(:active_subscriptions) => [Types.active_subscription()],
-          optional(String.t()) => Types.wire_input(),
-          optional(atom()) => Types.wire_input()
+          optional(String.t()) => Types.wire_input()
         }
 
   @spec from_surface(Surface.surface_map()) :: t()

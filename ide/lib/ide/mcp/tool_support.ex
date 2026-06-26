@@ -13,7 +13,7 @@ defmodule Ide.Mcp.ToolSupport do
   @type maybe_slug :: String.t() | nil
   @type timestamped_entry :: McpTypes.compiler_history_entry() | McpTypes.audit_entry()
 
-  @spec normalize_mcp_simulator_settings(Types.SimulatorSettings.wire_map()) ::
+  @spec normalize_mcp_simulator_settings(Types.simulator_settings() | Types.wire_string_map()) ::
           Types.simulator_settings()
   def normalize_mcp_simulator_settings(settings) when is_map(settings) do
     Debugger.normalize_simulator_settings(settings)
@@ -39,13 +39,15 @@ defmodule Ide.Mcp.ToolSupport do
     end
   end
 
-  @spec map_value(Types.wire_map(), String.t()) :: WireTypes.map_value_result()
+  @spec map_value(Types.wire_map() | Types.wire_string_map(), String.t()) ::
+          WireTypes.map_value_result()
   def map_value(map, key) when is_map(map) and is_binary(key),
     do: Map.get(map, key) || Map.get(map, String.to_atom(key))
 
   def map_value(_map, _key), do: nil
 
-  @spec map_get_any(Types.wire_map(), [atom() | String.t()], term()) :: term()
+  @spec map_get_any(Types.wire_map() | Types.wire_string_map(), [atom() | String.t()], WireTypes.json_value()) ::
+          WireTypes.json_value()
   def map_get_any(map, keys, default) when is_map(map) and is_list(keys) do
     Enum.find_value(keys, default, fn key ->
       case Map.fetch(map, key) do

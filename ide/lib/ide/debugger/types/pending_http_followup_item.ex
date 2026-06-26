@@ -11,9 +11,9 @@ defmodule Ide.Debugger.Types.PendingHttpFollowupItem do
           required(:package) => String.t(),
           required(:command) => Types.cmd_call(),
           optional(:followup_message) => String.t() | nil,
-          optional(String.t()) => Types.wire_input(),
-          optional(atom()) => Types.wire_input()
+          optional(String.t()) => Types.wire_input()
         }
 
+  @typedoc "JSON-shaped map when atom-key `t/0` is unavailable at the wire boundary."
   @type wire_item :: t() | Types.wire_map()
 end

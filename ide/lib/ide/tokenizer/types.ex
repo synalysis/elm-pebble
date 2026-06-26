@@ -97,7 +97,7 @@ defmodule Ide.Tokenizer.Types do
   @type ensure_loaded_error :: String.t()
 
   @typedoc "Opaque term maps from lexer/parser Erlang interop."
-  @type wire_map :: %{optional(atom() | String.t()) => term()}
+  @type wire_map :: elmc_value_map()
 
   @type parser_reason :: atom() | String.t() | tuple() | wire_map()
 

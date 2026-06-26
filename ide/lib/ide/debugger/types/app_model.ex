@@ -8,10 +8,10 @@ defmodule Ide.Debugger.Types.AppModel do
   """
 
   alias Ide.Debugger.Types
-  alias Ide.Debugger.Types.{ExecutionRuntimeSnapshot, InnerRuntimeModel, LaunchContext}
+  alias Ide.Debugger.Types.InnerRuntimeModel
 
   @type t :: %{
-          optional(:launch_context) => LaunchContext.t() | LaunchContext.wire_map(),
+          optional(:launch_context) => Types.launch_context(),
           optional(:last_path) => String.t(),
           optional(:last_source) => String.t(),
           optional(:runtime_model) => InnerRuntimeModel.t(),
@@ -20,13 +20,12 @@ defmodule Ide.Debugger.Types.AppModel do
           optional(:last_message) => String.t() | nil,
           optional(:last_operation) => String.t(),
           optional(:step_counter) => integer(),
-          optional(:runtime_execution) => ExecutionRuntimeSnapshot.t()
-                                           | ExecutionRuntimeSnapshot.wire_map(),
+          optional(:runtime_execution) => Types.execution_runtime_snapshot(),
           optional(:active_subscriptions) => [Types.active_subscription()],
           optional(:debugger_contract) => Types.debugger_contract(),
-          optional(String.t()) => Types.wire_input(),
-          optional(atom()) => Types.wire_input()
+          optional(String.t()) => Types.wire_input()
         }
 
+  @typedoc "JSON-shaped map when atom-key `t/0` is unavailable at the wire boundary."
   @type wire_map :: t() | Types.wire_map()
 end

@@ -1,7 +1,7 @@
 defmodule Ide.Emulator.Session.Config do
   @moduledoc false
 
-  @spec config(atom(), term()) :: term()
+  @spec config(atom(), default) :: default when default: var
   def config(key, default),
     do: Application.get_env(:ide, Ide.Emulator.Session, []) |> Keyword.get(key, default)
 

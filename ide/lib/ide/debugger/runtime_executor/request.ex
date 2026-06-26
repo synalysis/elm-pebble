@@ -9,6 +9,7 @@ defmodule Ide.Debugger.RuntimeExecutor.Request do
   alias ElmEx.DebuggerContract.Payload
   alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Debugger.RuntimeArtifacts.Types, as: ArtifactTypes
+  alias Ide.Compiler
   alias Ide.Debugger.RuntimeExecutor.Types, as: ExecutorTypes
   alias Ide.Debugger.Surface
   alias Ide.Debugger.Types
@@ -52,7 +53,7 @@ defmodule Ide.Debugger.RuntimeExecutor.Request do
           update_branches: [String.t()] | nil,
           elmx_manifest: Types.elmx_manifest() | nil,
           elmx_revision: String.t() | nil,
-          elmx_compile_error: term() | nil,
+          elmx_compile_error: Compiler.elmx_compile_error() | nil,
           elmx_compile_error_message: String.t() | nil,
           vector_resource_indices: ArtifactTypes.resource_indices() | nil,
           bitmap_resource_indices: ArtifactTypes.resource_indices() | nil,

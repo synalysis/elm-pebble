@@ -9,7 +9,6 @@ defmodule Ide.Debugger.Types.DeviceDataEventPayload do
           optional(:request) => DeviceRequest.kind(),
           optional(:response_message) => String.t(),
           optional(:response_value) => DeviceRequest.preview(),
-          optional(atom()) => Types.wire_input(),
           optional(String.t()) => Types.wire_input()
         }
 

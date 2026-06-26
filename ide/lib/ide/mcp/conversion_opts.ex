@@ -1,12 +1,10 @@
 defmodule Ide.Mcp.ConversionOpts do
   @moduledoc false
 
+  alias Ide.Mcp.JsonSchema
   alias Ide.Mcp.ToolTypes
 
-  @type field_schema :: %{
-          optional(atom()) => String.t() | boolean() | number() | integer() | [String.t()],
-          optional(String.t()) => term()
-        }
+  @type field_schema :: JsonSchema.property_field()
 
   @type schema_map :: %{optional(String.t()) => field_schema()}
   @type wire_properties :: %{optional(String.t()) => field_schema()}

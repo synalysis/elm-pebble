@@ -4,7 +4,6 @@ defmodule Ide.Debugger.Types.RuntimeStatusEventPayload do
   """
 
   alias Ide.Debugger.Types
-  alias Ide.Debugger.Types.ExecutionRuntimeSnapshot
 
   @type t :: %{
           optional(:target) => String.t(),
@@ -14,13 +13,13 @@ defmodule Ide.Debugger.Types.RuntimeStatusEventPayload do
           optional(:external_fallback_reason) => String.t() | nil,
           optional(:followup_message_count) => non_neg_integer() | nil,
           optional(:init_cmd_count) => non_neg_integer() | nil,
-          optional(atom()) => Types.wire_input(),
           optional(String.t()) => Types.wire_input()
         }
 
+  @typedoc "JSON-shaped map when atom-key `t/0` is unavailable at the wire boundary."
   @type wire_map :: t() | Types.wire_map()
 
-  @spec from_runtime(ExecutionRuntimeSnapshot.wire_map(), String.t(), String.t()) :: t()
+  @spec from_runtime(Types.execution_runtime_snapshot(), String.t(), String.t()) :: t()
   def from_runtime(runtime, target_label, message)
       when is_map(runtime) and is_binary(target_label) and is_binary(message) do
     %{

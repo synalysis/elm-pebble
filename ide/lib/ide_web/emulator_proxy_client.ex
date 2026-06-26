@@ -26,7 +26,7 @@ defmodule IdeWeb.EmulatorProxyClient do
   end
 
   @impl WebSockex
-  @spec handle_connect(term(), client_state()) :: {:ok, client_state()}
+  @spec handle_connect(map(), client_state()) :: {:ok, client_state()}
   def handle_connect(_conn, state) do
     send(state.owner, :emulator_proxy_upstream_connected)
     {:ok, state}

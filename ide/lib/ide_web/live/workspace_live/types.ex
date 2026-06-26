@@ -21,7 +21,12 @@ defmodule IdeWeb.WorkspaceLive.Types do
 
   @type file_error :: File.posix() | atom() | String.t()
 
-  @type unstructured_error :: %{optional(atom()) => IdeWeb.Types.json_value()}
+  @typedoc "Unstructured async failure map (atom keys in-process; string keys on the wire)."
+  @type unstructured_error :: %{
+          optional(:reason) => String.t() | atom(),
+          optional(:tab) => IdeWeb.WorkspaceLive.EditorSupport.Types.tab() | nil,
+          optional(String.t()) => IdeWeb.Types.json_value()
+        }
 
   @type async_error ::
           Compiler.compiler_error()
@@ -37,8 +42,8 @@ defmodule IdeWeb.WorkspaceLive.Types do
           | unstructured_error()
           | tuple()
 
-  alias IdeWeb.WorkspaceLive.DebuggerBootstrapFlow
   alias IdeWeb.WorkspaceLive.EditorSupport.Types, as: EditorTabTypes
+  alias IdeWeb.WorkspaceLive.DebuggerBootstrapFlow
 
   @type format_tab :: EditorTabTypes.tab()
 

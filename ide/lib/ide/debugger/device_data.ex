@@ -414,7 +414,8 @@ defmodule Ide.Debugger.DeviceData do
   def elm_literal(value) when is_binary(value), do: inspect(value)
   def elm_literal(value), do: inspect(value)
 
-  @spec current_date_time_message_payload(Types.wire_map()) :: Types.wire_map()
+  @spec current_date_time_message_payload(Types.current_date_time_preview()) ::
+          Types.current_date_time_preview()
   def current_date_time_message_payload(preview) when is_map(preview) do
     Map.update(preview, "dayOfWeek", nil, fn
       value when is_binary(value) -> %{"ctor" => value, "args" => []}
@@ -662,22 +663,22 @@ defmodule Ide.Debugger.DeviceData do
 
   defp init_request_deferred?(_req), do: false
 
-  @spec watch_info_model_ctor_literal(Types.wire_map() | String.t()) :: String.t()
+  @spec watch_info_model_ctor_literal(Types.LaunchContext.wire_map() | String.t()) :: String.t()
   defp watch_info_model_ctor_literal(launch_context) when is_map(launch_context) do
     WatchModels.watch_info_model_ctor_from_launch_context(launch_context)
   end
 
   defp watch_info_model_ctor_literal(preview) when is_binary(preview), do: preview
 
-  @spec watch_info_color_ctor_literal(Types.wire_map() | String.t()) :: String.t()
+  @spec watch_info_color_ctor_literal(Types.LaunchContext.wire_map() | String.t()) :: String.t()
   defp watch_info_color_ctor_literal(launch_context) when is_map(launch_context) do
     WatchModels.watch_info_color_ctor_from_launch_context(launch_context)
   end
 
   defp watch_info_color_ctor_literal(preview) when is_binary(preview), do: preview
 
-  @spec firmware_version_wire_record(String.t() | Types.wire_map() | nil) ::
-          Types.wire_map() | nil
+  @spec firmware_version_wire_record(String.t() | Types.current_date_time_preview() | nil) ::
+          Types.firmware_version_record() | nil
   def firmware_version_wire_record(version) when is_binary(version) do
     trimmed =
       version

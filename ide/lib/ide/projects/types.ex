@@ -38,7 +38,10 @@ defmodule Ide.Projects.Types do
   @type release_defaults_carrier :: %{
           optional(:release_defaults) => release_defaults(),
           optional(:slug) => String.t(),
-          optional(atom()) => term()
+          optional(:name) => String.t(),
+          optional(:store_app_id) => String.t() | nil,
+          optional(:app_uuid) => String.t() | nil,
+          optional(:github) => github_config()
         }
 
   @type package_metadata :: %{
@@ -50,21 +53,35 @@ defmodule Ide.Projects.Types do
         }
 
   @type subscription_row :: %{
-          optional(String.t()) => String.t() | integer() | boolean() | nil,
-          optional(atom()) => String.t() | integer() | boolean() | nil
+          optional(:target) => String.t(),
+          optional(:trigger) => String.t(),
+          optional(String.t()) => String.t() | integer() | boolean() | nil
+        }
+
+  @type auto_fire_targets :: %{
+          optional(:watch) => boolean(),
+          optional(:companion) => boolean(),
+          optional(:phone) => boolean(),
+          optional(String.t()) => boolean()
         }
 
   @type debugger_settings :: %{
           optional(:platform_target) => String.t(),
           optional(:timeline_limit) => pos_integer() | integer(),
-          optional(:auto_fire) => boolean() | DebuggerTypes.wire_map(),
+          optional(:timeline_mode) => String.t(),
           optional(:watch_profile_id) => String.t(),
-          optional(:geolocation) => DebuggerTypes.wire_map(),
-          optional(:companion_bridge) => DebuggerTypes.wire_map(),
+          optional(:emulator_target) => String.t(),
+          optional(:emulator_mode) => String.t(),
+          optional(:configuration_values) => DebuggerTypes.CompanionConfiguration.values(),
+          optional(:auto_fire) => auto_fire_targets(),
           optional(:auto_fire_subscriptions) => [subscription_row()],
           optional(:disabled_subscriptions) => [subscription_row()],
-          optional(String.t()) => wire_input() | [subscription_row()] | DebuggerTypes.wire_map(),
-          optional(atom()) => wire_input() | [subscription_row()] | DebuggerTypes.wire_map()
+          optional(:simulator) => DebuggerTypes.simulator_settings(),
+          optional(String.t()) =>
+            wire_input()
+            | [subscription_row()]
+            | auto_fire_targets()
+            | DebuggerTypes.simulator_settings()
         }
 
   @type source_tree :: FileTypes.source_tree()

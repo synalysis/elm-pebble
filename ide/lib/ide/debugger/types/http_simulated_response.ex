@@ -7,8 +7,10 @@ defmodule Ide.Debugger.Types.HttpSimulatedResponse do
 
   @type t :: %{
           required(:status) => pos_integer(),
-          required(:body) => String.t()
+          required(:body) => String.t(),
+          optional(:headers) => [{String.t(), String.t()}] | map()
         }
 
-  @type wire_map :: t() | Types.wire_map()
+  @typedoc "Wire JSON shape (`status`, `body`, optional `headers` / `error`)."
+  @type wire_map :: t() | Types.wire_string_map()
 end

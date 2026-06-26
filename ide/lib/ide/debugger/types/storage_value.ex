@@ -9,16 +9,16 @@ defmodule Ide.Debugger.Types.StorageValue do
 
   @type scalar_value :: String.t() | integer() | boolean()
 
-  @type value :: scalar_value() | Types.wire_map()
+  @type value :: scalar_value() | Types.wire_string_map()
 
   @type t :: %{
           optional(:kind) => kind(),
           optional(:value) => value(),
-          optional(atom()) => Types.wire_input(),
           optional(String.t()) => Types.wire_input()
         }
 
-  @type values_map :: %{optional(String.t()) => t() | wire_map()}
+  @type values_map :: %{optional(String.t()) => t() | Types.wire_string_map()}
 
+  @typedoc "JSON-shaped map when atom-key `t/0` is unavailable at the wire boundary."
   @type wire_map :: t() | Types.wire_map()
 end

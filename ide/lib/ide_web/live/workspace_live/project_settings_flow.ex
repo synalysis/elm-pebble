@@ -14,6 +14,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
   alias Ide.GitHub.Push, as: GitHubPush
   alias Ide.GitHub.Repositories, as: GitHubRepositories
   alias Ide.Projects
+  alias Ide.Projects.Project
   alias IdeWeb.WorkspaceLive.PublishFlow
   alias IdeWeb.WorkspaceLive.State
   alias IdeWeb.WorkspaceLive.Types
@@ -22,6 +23,12 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
   @type lv_noreply :: {:noreply, socket()}
   @type wire_input :: String.t() | integer() | float() | boolean() | nil
   @type settings_section :: :release | :store | :github
+
+  @typedoc "Deferred store-listing sync after Firebase token refresh."
+  @type pending_store_listing_sync :: %{
+          required(:project) => Project.t(),
+          required(:workspace_root) => String.t()
+        }
 
   @settings_events ~w(
     validate-project-settings

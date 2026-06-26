@@ -10,5 +10,6 @@ defmodule Ide.Debugger.Types.PendingProtocolDeliveryItem do
           required(:payload) => Types.protocol_tx_rx_payload()
         }
 
+  @typedoc "JSON-shaped map when atom-key `t/0` is unavailable at the wire boundary."
   @type wire_item :: t() | Types.wire_map()
 end

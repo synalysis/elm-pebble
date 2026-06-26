@@ -6,7 +6,7 @@ defmodule Ide.Application do
   use Application
 
   @impl true
-  @spec start(Application.start_type(), term()) :: Supervisor.on_start()
+  @spec start(Application.start_type(), any()) :: Supervisor.on_start()
   def start(_type, _args) do
     Application.put_env(
       :elm_ex,

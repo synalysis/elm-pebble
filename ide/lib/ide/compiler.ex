@@ -5,6 +5,7 @@ defmodule Ide.Compiler do
   alias Ide.Debugger.Types.ElmcCliIngestBridge
   alias Ide.PebbleToolchain.Elmc, as: PebbleToolchainElmc
   alias Ide.Compiler.ManifestCache
+  alias Ide.Debugger.Types, as: DebuggerTypes
   alias Ide.Packages.Types, as: PackageTypes
   alias Ide.PebbleToolchain
   alias ElmEx.Frontend.Bridge
@@ -27,13 +28,22 @@ defmodule Ide.Compiler do
           optional(:end_column) => integer() | nil
         }
   @type check_result :: %{
-          status: :ok | :error,
-          diagnostics: [diagnostic()],
-          error_count: non_neg_integer(),
-          warning_count: non_neg_integer(),
-          output: String.t(),
-          checked_path: String.t()
+          required(:status) => :ok | :error,
+          required(:diagnostics) => [diagnostic()],
+          required(:error_count) => non_neg_integer(),
+          required(:warning_count) => non_neg_integer(),
+          required(:output) => String.t(),
+          required(:checked_path) => String.t(),
+          optional(:source_root) => String.t()
         }
+  @typedoc "Local mirror of `Elmx.Types.emit_error/0` plus other in-memory elmx failures."
+  @type elmx_compile_error ::
+          {:unsupported_op, atom(), String.t()}
+          | {:emit_failed, String.t()}
+          | atom()
+          | String.t()
+          | tuple()
+
   @type compile_result :: %{
           required(:status) => :ok | :error,
           required(:diagnostics) => [diagnostic()],
@@ -43,13 +53,14 @@ defmodule Ide.Compiler do
           required(:compiled_path) => String.t(),
           required(:revision) => String.t(),
           required(:cached?) => boolean(),
-          optional(:elmx_manifest) => Ide.Debugger.Types.elmx_manifest(),
+          optional(:elmx_manifest) => DebuggerTypes.elmx_manifest(),
           optional(:elmx_revision) => String.t(),
-          optional(:elmx_compile_error) => term(),
+          optional(:elmx_compile_error) => elmx_compile_error(),
           optional(:elmx_compile_error_message) => String.t(),
           optional(:detail) => String.t(),
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(:elmc_linked_binary) => DebuggerTypes.wire_string_map(),
+          optional(:source_root) => String.t(),
+          optional(String.t()) => DebuggerTypes.elm_introspect() | String.t()
         }
   @type elm_json :: PackageTypes.elm_json()
 
@@ -57,14 +68,12 @@ defmodule Ide.Compiler do
 
   @typedoc "Per-problem entry inside Elm JSON compile-error reports (`ElmEx.Types.ElmReport.problem/0`)."
   @type elm_problem :: %{
-          optional(atom()) => String.t() | [term()] | elm_message_part() | nil,
-          optional(String.t()) => String.t() | [term()] | elm_message_part() | nil
+          optional(String.t()) => String.t() | [elm_message_part()] | elm_message_part() | nil
         }
 
   @typedoc "Nested Elm compiler problem message AST (`ElmEx.Types.elm_message_part/0`)."
   @type elm_message_part ::
           String.t()
-          | %{optional(atom()) => String.t() | boolean()}
           | %{optional(String.t()) => String.t() | boolean()}
           | [elm_message_part()]
 
@@ -96,16 +105,17 @@ defmodule Ide.Compiler do
   @elm_make_source_roots ~w(phone protocol)
 
   @type manifest_result :: %{
-          status: :ok | :error,
-          diagnostics: [diagnostic()],
-          error_count: non_neg_integer(),
-          warning_count: non_neg_integer(),
-          output: String.t(),
-          manifest_path: String.t(),
-          revision: String.t(),
-          cached?: boolean(),
-          strict?: boolean(),
-          manifest: manifest_data() | nil
+          required(:status) => :ok | :error,
+          required(:diagnostics) => [diagnostic()],
+          required(:error_count) => non_neg_integer(),
+          required(:warning_count) => non_neg_integer(),
+          required(:output) => String.t(),
+          required(:manifest_path) => String.t(),
+          required(:revision) => String.t(),
+          required(:cached?) => boolean(),
+          required(:strict?) => boolean(),
+          required(:manifest) => manifest_data() | nil,
+          optional(:source_root) => String.t()
         }
 
   @callback check(project_slug(), opts()) :: {:ok, check_result()} | {:error, compiler_error()}
@@ -585,7 +595,7 @@ defmodule Ide.Compiler do
     {:ok, maybe_attach_runtime_artifacts(result, project_dir, revision, opts)}
   end
 
-  @spec compile_result_from_exception(term(), String.t(), String.t()) :: compile_result()
+  @spec compile_result_from_exception(Exception.t(), String.t(), String.t()) :: compile_result()
   defp compile_result_from_exception(error, compiled_path, revision) do
     message = Exception.message(error)
 
@@ -775,8 +785,8 @@ defmodule Ide.Compiler do
   Compiles Elm → Elixir → BEAM in memory for debugger hot-reload (`:compiled_elixir` backend).
   """
   @spec build_elmx_artifacts_in_memory(String.t(), keyword()) ::
-          {:ok, %{elmx_manifest: Ide.Debugger.Types.elmx_manifest(), elmx_revision: String.t()}}
-          | {:error, term()}
+          {:ok, %{elmx_manifest: DebuggerTypes.elmx_manifest(), elmx_revision: String.t()}}
+          | {:error, elmx_compile_error()}
   def build_elmx_artifacts_in_memory(project_dir, opts \\ []) when is_binary(project_dir) do
     revision = Keyword.get(opts, :revision)
     entry_module = Keyword.get(opts, :entry_module) || default_elmx_entry_module(project_dir)

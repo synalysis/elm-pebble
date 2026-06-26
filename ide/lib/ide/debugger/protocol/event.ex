@@ -15,8 +15,7 @@ defmodule Ide.Debugger.Protocol.Event do
           optional(:message_value) => Types.protocol_message_wire_value(),
           optional(:trigger) => String.t(),
           optional(:message_source) => String.t(),
-          optional(String.t()) => Types.wire_input(),
-          optional(atom()) => Types.wire_input()
+          optional(String.t()) => Types.wire_input()
         }
 
   @type wire_event :: t() | Types.wire_map()

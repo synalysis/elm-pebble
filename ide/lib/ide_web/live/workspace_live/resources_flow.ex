@@ -23,8 +23,7 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
   @type upload_config :: Phoenix.LiveView.UploadConfig.t()
   @type upload_entry :: Phoenix.LiveView.UploadEntry.t()
   @type upload_entry_meta :: %{
-          required(:path) => String.t(),
-          optional(atom()) => String.t() | integer() | boolean() | nil
+          required(:path) => String.t()
         }
   @type upload_import_fn :: (upload_entry_meta(), upload_entry() -> {:ok, upload_result_row()})
   @type upload_result_row ::
@@ -39,9 +38,19 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
   @type font_source_row :: ResourceTypes.font_source()
   @type vector_resource_row :: ResourceTypes.vector_entry()
   @type animation_resource_row :: ResourceTypes.animation_resource_entry()
-  @type speaker_sample_row ::
-          ResourceTypes.speaker_sample_entry()
-          | %{required(:resource_id) => pos_integer(), optional(atom()) => String.t() | integer()}
+  @typedoc "Speaker manifest row with UI `resource_id` (1-based index in the manifest list)."
+  @type speaker_sample_row :: %{
+          required(:resource_id) => pos_integer(),
+          optional(:id) => String.t(),
+          optional(:ctor) => String.t(),
+          optional(:base_name) => String.t(),
+          optional(:filename) => String.t(),
+          optional(:mime) => String.t(),
+          optional(:bytes) => non_neg_integer(),
+          optional(:format) => integer(),
+          optional(:base_midi_note) => integer(),
+          optional(:loop) => boolean()
+        }
 
   @type upload_error :: :too_large | :not_accepted | :too_many_files | atom()
 

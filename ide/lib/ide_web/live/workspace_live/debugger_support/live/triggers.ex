@@ -4,6 +4,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Live.Triggers do
 
   alias Ide.Debugger
   alias Ide.Debugger.Types, as: DebuggerTypes
+  alias IdeWeb.WorkspaceLive.DebuggerFlow.Types, as: FlowTypes
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Types
 
   @type debugger_state_map :: Types.debugger_state_map()
@@ -50,7 +51,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Live.Triggers do
 
   def auto_fire_enabled?(_debugger_state, _target), do: false
 
-  @spec auto_fire_subscriptions(debugger_state_map()) :: [String.t()]
+  @spec auto_fire_subscriptions(debugger_state_map()) :: [FlowTypes.auto_fire_subscription_row()]
   def auto_fire_subscriptions(debugger_state) when is_map(debugger_state) do
     auto_tick = Map.get(debugger_state, :auto_tick, %{})
 
@@ -60,7 +61,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Live.Triggers do
     end
   end
 
-  @spec disabled_subscriptions(debugger_state_map()) :: [String.t()]
+  @spec disabled_subscriptions(debugger_state_map()) :: [DebuggerTypes.disabled_subscription()]
   def disabled_subscriptions(debugger_state) when is_map(debugger_state) do
     case Map.get(debugger_state, :disabled_subscriptions) ||
            Map.get(debugger_state, "disabled_subscriptions") do

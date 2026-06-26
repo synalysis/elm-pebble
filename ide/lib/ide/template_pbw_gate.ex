@@ -9,6 +9,7 @@ defmodule Ide.TemplatePbwGate do
   """
 
   alias Ide.PebbleToolchain
+  alias Ide.PebbleToolchain.Types, as: ToolchainTypes
   alias Ide.ProjectTemplates
 
   @type package_meta :: %{
@@ -17,9 +18,11 @@ defmodule Ide.TemplatePbwGate do
           platforms: [String.t()]
         }
 
+  @type error_kind :: :build_failed | :package | :missing_pbw | :exception
+
   @type error_meta :: %{
-          optional(:kind) => atom(),
-          optional(:reason) => term(),
+          optional(:kind) => error_kind(),
+          optional(:reason) => ToolchainTypes.toolchain_error(),
           optional(:tail) => String.t(),
           optional(:message) => String.t()
         }

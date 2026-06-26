@@ -5,7 +5,7 @@ defmodule Ide.Debugger.Types.CompanionConfiguration do
 
   alias Ide.Debugger.Types
 
-  @type field_control :: Types.wire_map()
+  @type field_control :: Types.wire_string_map()
 
   @type field :: %{
           optional(:id) => String.t(),
@@ -16,7 +16,7 @@ defmodule Ide.Debugger.Types.CompanionConfiguration do
 
   @type section :: %{
           optional(:title) => String.t(),
-          optional(:fields) => [field() | Types.wire_map()],
+          optional(:fields) => [field()],
           optional(String.t()) => Types.wire_input()
         }
 
@@ -24,10 +24,11 @@ defmodule Ide.Debugger.Types.CompanionConfiguration do
 
   @type t :: %{
           optional(:title) => String.t(),
-          optional(:sections) => [section() | Types.wire_map()],
+          optional(:sections) => [section()],
           optional(:values) => values(),
           optional(String.t()) => Types.wire_input()
         }
 
+  @typedoc "JSON-shaped map when atom-key `t/0` is unavailable at the wire boundary."
   @type wire_map :: t() | Types.wire_map()
 end

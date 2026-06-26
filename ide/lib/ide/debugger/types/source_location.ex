@@ -12,5 +12,6 @@ defmodule Ide.Debugger.Types.SourceLocation do
           optional(String.t()) => String.t() | integer() | nil
         }
 
+  @typedoc "JSON-shaped map when atom-key `t/0` is unavailable at the wire boundary."
   @type wire_map :: t() | Types.wire_map()
 end

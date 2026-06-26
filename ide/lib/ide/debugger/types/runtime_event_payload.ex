@@ -187,10 +187,8 @@ defmodule Ide.Debugger.Types.RuntimeEventPayload do
 
   @type elmc :: ElmcEventPayload.t()
 
-  @type generic :: %{
-          optional(atom()) => Types.wire_input(),
-          optional(String.t()) => Types.wire_input()
-        }
+  @typedoc "Fallback payload for runtime event variants without a dedicated struct."
+  @type generic :: %{optional(String.t()) => Types.wire_input()}
 
   @type t ::
           start()

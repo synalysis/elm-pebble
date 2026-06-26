@@ -45,9 +45,9 @@ defmodule Ide.Emulator.Session.Health do
 
   def child_role(_state, _pid), do: nil
 
-  @spec handle_exit(Types.session_state(), pid(), term()) ::
+  @spec handle_exit(Types.session_state(), pid(), Types.exit_reason()) ::
           {:noreply, Types.session_state()}
-          | {:stop, {:shutdown, {:child_exited, atom(), term()}}, Types.session_state()}
+          | {:stop, {:shutdown, {:child_exited, atom(), Types.exit_reason()}}, Types.session_state()}
   def handle_exit(state, pid, reason) do
     case child_role(state, pid) do
       nil when reason in [:normal, :shutdown] ->

@@ -813,7 +813,7 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
     CompanionBridge.payload(ctx.settings.(state), kind, request)
   end
 
-  @spec storage_result(Types.runtime_state(), Types.wire_map(), ctx()) ::
+  @spec storage_result(Types.runtime_state(), Types.companion_bridge_request(), ctx()) ::
           {Types.runtime_state(), {:ok, Types.wire_map()} | {:error, String.t()}}
   defp storage_result(state, request, ctx)
        when is_map(state) and is_map(request) and is_map(ctx) do
@@ -822,7 +822,7 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
     {Map.put(state, :simulator_settings, next_settings), result}
   end
 
-  @spec preferences_result(Types.runtime_state(), Types.wire_map(), ctx()) ::
+  @spec preferences_result(Types.runtime_state(), Types.companion_bridge_request(), ctx()) ::
           {Types.runtime_state(), {:ok, {String.t(), Types.wire_input()}} | {:error, String.t()}}
   defp preferences_result(state, request, ctx)
        when is_map(state) and is_map(request) and is_map(ctx) do

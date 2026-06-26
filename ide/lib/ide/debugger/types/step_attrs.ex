@@ -12,9 +12,9 @@ defmodule Ide.Debugger.Types.StepAttrs do
           optional(:interval_ms) => pos_integer() | String.t() | nil,
           optional(:enabled) => boolean() | String.t() | nil,
           optional(:trigger) => String.t() | nil,
-          optional(String.t()) => Types.wire_input(),
-          optional(atom()) => Types.wire_input()
+          optional(String.t()) => Types.wire_input()
         }
 
+  @typedoc "JSON-shaped map when atom-key `t/0` is unavailable at the wire boundary."
   @type wire_map :: t() | Types.wire_map()
 end

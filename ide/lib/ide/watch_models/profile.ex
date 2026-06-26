@@ -9,11 +9,12 @@ defmodule Ide.WatchModels.Profile do
 
   @type shape :: String.t()
   @type color_mode :: String.t()
+  @type wire_scalar :: String.t() | integer() | boolean() | nil
 
   @type screen :: %{
           optional(:width) => pos_integer(),
           optional(:height) => pos_integer(),
-          optional(String.t()) => term()
+          optional(String.t()) => wire_scalar()
         }
 
   @type t :: %{
@@ -24,7 +25,7 @@ defmodule Ide.WatchModels.Profile do
           optional(:has_microphone) => boolean(),
           optional(:has_compass) => boolean(),
           optional(:supports_health) => boolean(),
-          optional(String.t()) => term()
+          optional(String.t()) => wire_scalar() | wire_screen()
         }
 
   @type wire_screen :: screen() | %{String.t() => String.t() | integer() | boolean() | nil}

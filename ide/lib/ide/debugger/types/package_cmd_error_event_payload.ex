@@ -12,10 +12,10 @@ defmodule Ide.Debugger.Types.PackageCmdErrorEventPayload do
           optional(:package) => String.t(),
           optional(:command) => command_map(),
           optional(:error) => String.t(),
-          optional(atom()) => Types.wire_input(),
           optional(String.t()) => Types.wire_input()
         }
 
+  @typedoc "JSON-shaped map when atom-key `t/0` is unavailable at the wire boundary."
   @type wire_map :: t() | Types.wire_map()
 
   @spec from_error(String.t(), String.t(), command_map(), Types.execution_fallback_reason()) ::

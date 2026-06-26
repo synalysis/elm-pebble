@@ -12,8 +12,16 @@ defmodule Ide.Mcp.Types do
           | Jason.DecodeError.t()
           | atom()
 
+  @typedoc """
+  Audit log row. Append uses atom keys; JSON round-trip uses string keys.
+  """
   @type audit_entry :: %{
-          optional(atom()) => WireTypes.json_value(),
+          optional(:at) => String.t(),
+          optional(:trace_id) => String.t(),
+          optional(:action) => String.t(),
+          optional(:status) => String.t(),
+          optional(:arguments) => WireTypes.json_value(),
+          optional(:error) => String.t(),
           optional(String.t()) => WireTypes.json_value()
         }
 

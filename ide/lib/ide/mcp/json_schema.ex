@@ -1,9 +1,19 @@
 defmodule Ide.Mcp.JsonSchema do
   @moduledoc false
 
+  @type json_schema_scalar :: String.t() | boolean() | number() | integer()
+
   @type property_field :: %{
-          optional(atom()) => String.t() | boolean() | number() | integer() | [String.t()],
-          optional(String.t()) => term()
+          optional(:type) => String.t(),
+          optional(:enum) => [String.t()],
+          optional(:default) => json_schema_scalar() | [String.t()],
+          optional(:minimum) => number(),
+          optional(:maximum) => number(),
+          optional(:description) => String.t(),
+          optional(:items) => property_field(),
+          optional(:properties) => properties(),
+          optional(String.t()) =>
+            json_schema_scalar() | [String.t()] | property_field() | properties()
         }
 
   @type properties :: %{optional(String.t()) => property_field()}

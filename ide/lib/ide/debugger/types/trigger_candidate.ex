@@ -15,11 +15,13 @@ defmodule Ide.Debugger.Types.TriggerCandidate do
           optional(:message) => String.t(),
           optional(:source) => source(),
           optional(:model_active) => boolean(),
+          optional(:button) => Types.wire_input(),
+          optional(:button_event) => Types.wire_input(),
           optional(:interval_ms) => pos_integer(),
           optional(:declared_interval_ms) => pos_integer(),
-          optional(atom()) => Types.wire_input(),
           optional(String.t()) => Types.wire_input()
         }
 
+  @typedoc "JSON-shaped map when atom-key `t/0` is unavailable at the wire boundary."
   @type wire_map :: t() | Types.wire_map()
 end

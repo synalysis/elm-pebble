@@ -5,6 +5,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.SvgOpNormalize do
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Types, as: PreviewTypes
 
   @type svg_op :: PreviewTypes.svg_op()
+  @type draw_op_map :: PreviewTypes.draw_op_map()
   @type wire_map :: PreviewTypes.wire_map()
 
   defp compact_scene_text_label(op) when is_map(op) do
@@ -36,7 +37,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.SvgOpNormalize do
       _ -> -1
     end
   end
-  @spec normalize(wire_map()) :: svg_op() | nil
+  @spec normalize(draw_op_map()) :: svg_op() | nil
   def normalize(op) when is_map(op) do
     kind = to_string(Map.get(op, "kind") || Map.get(op, :kind) || "")
 
@@ -332,7 +333,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.SvgOpNormalize do
 
   def normalize(_op), do: nil
 
-  @spec maybe_put_svg_source(svg_op(), wire_map()) :: svg_op()
+  @spec maybe_put_svg_source(svg_op(), draw_op_map()) :: svg_op()
   defp maybe_put_svg_source(%{} = normalized, original) when is_map(original) do
     case Map.get(original, "source") || Map.get(original, :source) do
       %{} = source -> Map.put(normalized, :source, source)
@@ -342,7 +343,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.SvgOpNormalize do
 
   defp maybe_put_svg_source(normalized, _original), do: normalized
 
-  @spec maybe_put_svg_resource(svg_op(), wire_map()) :: svg_op()
+  @spec maybe_put_svg_resource(svg_op(), draw_op_map()) :: svg_op()
   defp maybe_put_svg_resource(op, original) when is_map(op) and is_map(original) do
     case Map.get(original, "resource") || Map.get(original, :resource) do
       value when is_binary(value) or is_atom(value) -> Map.put(op, :resource, value)
@@ -354,7 +355,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.SvgOpNormalize do
 
   defp maybe_put_svg_resource(op, _original), do: op
 
-  @spec text_box_svg_op(wire_map(), integer(), integer(), String.t()) :: svg_op()
+  @spec text_box_svg_op(draw_op_map(), integer(), integer(), String.t()) :: svg_op()
   defp text_box_svg_op(op, x, y, text) when is_map(op) and is_integer(x) and is_integer(y) do
     base = %{kind: :text_label, x: x, y: y, text: text}
 
@@ -379,7 +380,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.SvgOpNormalize do
     end
   end
 
-  @spec normalize_style_color_op(atom(), wire_map(), String.t(), String.t()) :: svg_op()
+  @spec normalize_style_color_op(atom(), draw_op_map(), String.t(), String.t()) :: svg_op()
   defp normalize_style_color_op(kind, op, node_type, value_key \\ "color")
        when is_atom(kind) and is_map(op) and is_binary(node_type) and is_binary(value_key) do
     value =
@@ -400,7 +401,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.SvgOpNormalize do
     end
   end
 
-  @spec unresolved_svg_op(String.t(), [String.t()], wire_map()) :: svg_op()
+  @spec unresolved_svg_op(String.t(), [String.t()], draw_op_map()) :: svg_op()
   defp unresolved_svg_op(node_type, required_keys, op) do
     %{
       kind: :unresolved,

@@ -5,7 +5,6 @@ defmodule Ide.Debugger.Types.SnapshotContinueEventPayload do
   @type t :: %{
           optional(:cursor_seq) => non_neg_integer() | nil,
           optional(:source) => String.t(),
-          optional(atom()) => Types.wire_input(),
           optional(String.t()) => Types.wire_input()
         }
 
