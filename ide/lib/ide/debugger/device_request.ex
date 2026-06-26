@@ -87,7 +87,8 @@ defmodule Ide.Debugger.DeviceRequest do
   defp health_cmd_target?(cmd_call) when is_map(cmd_call) do
     target = (Map.get(cmd_call, "target") || Map.get(cmd_call, :target) || "") |> to_string()
 
-    String.contains?(target, "Health.") or
+    String.contains?(target, "Pebble.Health") or
+      String.contains?(target, "Health.") or
       String.contains?(target, "PebbleWatch.health") or
       String.contains?(target, "Elm.Kernel.PebbleWatch.health")
   end

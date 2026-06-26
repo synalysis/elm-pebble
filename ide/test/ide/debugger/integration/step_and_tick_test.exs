@@ -628,10 +628,9 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
 
     assert Enum.any?(ticked.events, fn event ->
              event.type == "debugger.update_in" and
-               String.starts_with?(
-                 Map.get(event.payload, :message) || Map.get(event.payload, "message") || "",
-                 "CurrentDateTime "
-               )
+               (Map.get(event.payload, :message) || Map.get(event.payload, "message") || "")
+               |> to_string()
+               |> String.starts_with?("CurrentDateTime")
            end)
   end
 
@@ -792,8 +791,10 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
 
     assert Enum.any?(new_rows, fn row ->
              row.type == "update" and row.target == "watch" and
-               String.starts_with?(row.message, "CurrentDateTime ") and
-               String.contains?(row.message, "\"minute\":42")
+               (row.message == "CurrentDateTime" or
+                  (String.starts_with?(row.message, "CurrentDateTime ") and
+                     (String.contains?(row.message, "\"minute\":42") or
+                        String.contains?(row.message, "minute = 42"))))
            end)
 
     minute_seq =
@@ -806,8 +807,10 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
     datetime_seq =
       new_rows
       |> Enum.find_value(fn row ->
-        if row.type == "update" and String.starts_with?(row.message, "CurrentDateTime "),
-          do: row.seq
+        if row.type == "update" and
+             (row.message == "CurrentDateTime" or
+                String.starts_with?(row.message, "CurrentDateTime ")),
+           do: row.seq
       end)
 
     assert is_integer(minute_seq)

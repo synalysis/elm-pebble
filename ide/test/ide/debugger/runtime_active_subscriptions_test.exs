@@ -28,6 +28,28 @@ defmodule Ide.Debugger.RuntimeActiveSubscriptionsTest do
     assert SubscriptionActivation.model_active?(state, :watch, row)
   end
 
+  test "triggers_equivalent matches phone_to_watch gateway aliases" do
+    assert RuntimeActiveSubscriptions.triggers_equivalent?("phone_to_watch", "on_phone_to_watch")
+    assert RuntimeActiveSubscriptions.triggers_equivalent?("watch_to_phone", "on_watch_to_phone")
+    refute RuntimeActiveSubscriptions.triggers_equivalent?("phone_to_watch", "on_watch_to_phone")
+  end
+
+  test "empty active_subscriptions still allows fallback catalog triggers" do
+    state = %{
+      watch: %{
+        model: %{
+          "runtime_model" => %{"n" => 0},
+          "active_subscriptions" => [],
+          "debugger_contract" => %{"subscription_calls" => []}
+        }
+      }
+    }
+
+    row = %{trigger: "button_up", message: "ButtonPressed", target: "watch"}
+
+    assert SubscriptionActivation.model_active?(state, :watch, row)
+  end
+
   test "empty active_subscriptions marks row inactive even when guards would pass" do
     state = %{
       watch: %{
@@ -52,6 +74,33 @@ defmodule Ide.Debugger.RuntimeActiveSubscriptionsTest do
     row = %{trigger: "Pebble.Frame.every", message: "FrameTick", target: "watch"}
 
     refute SubscriptionActivation.model_active?(state, :watch, row)
+  end
+
+  test "empty active_subscriptions allows unguarded catalog subscriptions" do
+    state = %{
+      watch: %{
+        shell: %{
+          "debugger_contract" => %{
+            "subscription_calls" => [
+              %{
+                "target" => "Pebble.Speaker.onFinished",
+                "name" => "onFinished",
+                "event_kind" => "on_finished",
+                "callback_constructor" => "SpeakerFinished"
+              }
+            ]
+          }
+        },
+        model: %{
+          "runtime_model" => %{},
+          "active_subscriptions" => []
+        }
+      }
+    }
+
+    row = %{trigger: "on_finished", message: "SpeakerFinished", target: "watch"}
+
+    assert SubscriptionActivation.model_active?(state, :watch, row)
   end
 
   test "match_for_row returns runtime register command" do

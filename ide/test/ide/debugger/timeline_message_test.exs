@@ -23,6 +23,15 @@ defmodule Ide.Debugger.TimelineMessageTest do
     assert payload["hour"] == 8
   end
 
+  test "message_value_for_step parses nested protocol constructor payloads" do
+    assert TimelineMessage.message_value_for_step("SpeakerFinished FinishedDone") ==
+             {"SpeakerFinished",
+              %{
+                "ctor" => "SpeakerFinished",
+                "args" => [%{"ctor" => "FinishedDone", "args" => []}]
+              }}
+  end
+
   test "format ignores constructor-only trailing whitespace" do
     assert TimelineMessage.format("MinuteChanged ", nil) == "MinuteChanged"
   end

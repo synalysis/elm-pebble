@@ -9,6 +9,7 @@ defmodule Ide.Debugger.SubscriptionPayload do
   alias Ide.Debugger.TimelineMessage
   alias Ide.Debugger.TriggerCandidates
   alias Ide.Debugger.Types
+  alias Ide.Debugger.WatchSubscriptionContracts
 
   @type attach_ctx :: %{
           optional(:introspect) => (Types.runtime_state(), Types.surface_target() ->
@@ -43,11 +44,16 @@ defmodule Ide.Debugger.SubscriptionPayload do
       true ->
         case RuntimeActiveSubscriptions.format_step_message(state, target, trigger, message_text) do
           {:ok, stepped, value} when is_binary(stepped) ->
-            if message_has_payload?(stepped) do
-              stepped
-            else
-              runtime_formatted_message(message_text, value) ||
-                attach_simulator_stub(state, target, message_text, trigger, ctx)
+            cond do
+              message_has_payload?(stepped) ->
+                stepped
+
+              nullary_subscription_message?(ctx, state, target, value) ->
+                stepped
+
+              true ->
+                runtime_formatted_message(message_text, value) ||
+                  attach_simulator_stub(state, target, message_text, trigger, ctx)
             end
 
           _ ->
@@ -77,6 +83,43 @@ defmodule Ide.Debugger.SubscriptionPayload do
 
       _ ->
         nil
+    end
+  end
+
+  @spec nullary_subscription_message?(
+          attach_ctx() | nil,
+          Types.runtime_state(),
+          Types.surface_target(),
+          Types.subscription_payload()
+        ) :: boolean()
+  defp nullary_subscription_message?(ctx, state, target, value) when is_map(value) do
+    ctor = Map.get(value, "ctor") || Map.get(value, :ctor)
+    args = Map.get(value, "args") || Map.get(value, :args) || []
+
+    if args != [] do
+      false
+    else
+      with true <- is_binary(ctor),
+           ei when is_map(ei) <- introspect_from_ctx(ctx, state, target),
+           0 <- Map.get(Map.get(ei, "msg_constructor_arities") || %{}, ctor) do
+        true
+      else
+        _ -> false
+      end
+    end
+  end
+
+  defp nullary_subscription_message?(_ctx, _state, _target, _value), do: false
+
+  @spec introspect_from_ctx(
+          attach_ctx() | nil,
+          Types.runtime_state(),
+          Types.surface_target()
+        ) :: Types.elm_introspect() | nil
+  defp introspect_from_ctx(ctx, state, target) do
+    case ctx do
+      %{introspect: fun} when is_function(fun, 2) -> fun.(state, target)
+      _ -> nil
     end
   end
 
@@ -210,7 +253,7 @@ defmodule Ide.Debugger.SubscriptionPayload do
     cmd = RuntimeActiveSubscriptions.match_for_row(state, target, row)
     cmd_target = if cmd, do: RuntimeActiveSubscriptions.command_target(cmd), else: ""
 
-    case simulator_stub_suffix(state, target, message_text, cmd_target, ctx) do
+    case simulator_stub_suffix(state, target, message_text, cmd_target, trigger, ctx) do
       suffix when is_binary(suffix) and suffix != "" -> "#{message_text} #{suffix}"
       _ -> message_text
     end
@@ -221,9 +264,10 @@ defmodule Ide.Debugger.SubscriptionPayload do
           Types.surface_target(),
           String.t(),
           String.t(),
+          String.t(),
           attach_ctx() | nil
         ) :: String.t() | nil
-  defp simulator_stub_suffix(state, target, _message_text, cmd_target, ctx) do
+  defp simulator_stub_suffix(state, target, message_text, cmd_target, trigger, ctx) do
     normalized = normalize_target(cmd_target)
     now = simulator_now_for_target(state, target)
 
@@ -281,7 +325,28 @@ defmodule Ide.Debugger.SubscriptionPayload do
         Jason.encode!(subscription_dictation_result_payload(state, target, ctx))
 
       true ->
-        nil
+        contract_payload_suffix(state, target, message_text, trigger, ctx)
+    end
+  end
+
+  @spec contract_payload_suffix(
+          Types.runtime_state(),
+          Types.surface_target(),
+          String.t(),
+          String.t(),
+          attach_ctx() | nil
+        ) :: String.t() | nil
+  defp contract_payload_suffix(state, target, message_text, trigger, ctx) do
+    with ei when is_map(ei) <- introspect_from_ctx(ctx, state, target),
+         suffix when is_binary(suffix) and suffix != "" <-
+           WatchSubscriptionContracts.simulator_payload_suffix_for_trigger(
+             ei,
+             trigger,
+             RuntimeModelMessages.wire_constructor(message_text) || message_text
+           ) do
+      suffix
+    else
+      _ -> nil
     end
   end
 

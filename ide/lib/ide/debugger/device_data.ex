@@ -603,7 +603,8 @@ defmodule Ide.Debugger.DeviceData do
         []
       end
 
-    (update_requests ++ init_requests ++ got_supported_health_requests(model, current_ctor))
+    (update_requests ++ init_requests ++ got_supported_health_requests(model, current_ctor) ++
+       supplemental_supported_health_requests(model, current_ctor))
     |> Enum.reject(&health_metric_request_disabled?(model, &1))
     |> Enum.reject(fn req ->
       not is_binary(req.response_message) or req.response_message == "" or
@@ -639,6 +640,41 @@ defmodule Ide.Debugger.DeviceData do
   end
 
   defp got_supported_health_requests(_model, _current_ctor), do: []
+
+  @spec supplemental_supported_health_requests(Types.app_model(), String.t()) ::
+          [Types.device_request()]
+  defp supplemental_supported_health_requests(model, current_ctor)
+       when is_map(model) and is_binary(current_ctor) do
+    if current_ctor == "init" and got_supported_health_active?(model) and
+         not health_metrics_populated?(model) do
+      [
+        %{kind: "health_value", response_message: "GotStepsNow"},
+        %{kind: "health_sum_today", response_message: "GotStepsToday"}
+      ]
+    else
+      []
+    end
+  end
+
+  defp supplemental_supported_health_requests(_model, _current_ctor), do: []
+
+  @spec health_metrics_populated?(Types.app_model()) :: boolean()
+  defp health_metrics_populated?(model) when is_map(model) do
+    runtime = Map.get(model, "runtime_model") || %{}
+
+    health_metric_populated?(runtime, "stepsNow") and
+      health_metric_populated?(runtime, "stepsToday")
+  end
+
+  @spec health_metric_populated?(Types.inner_runtime_model(), String.t()) :: boolean()
+  defp health_metric_populated?(runtime, key) when is_map(runtime) and is_binary(key) do
+    case Map.get(runtime, key) do
+      %{"ctor" => "Just", "args" => [value]} when not is_nil(value) -> true
+      _ -> false
+    end
+  end
+
+  defp health_metric_populated?(_runtime, _key), do: false
 
   @spec got_supported_health_ctor?(String.t()) :: boolean()
   defp got_supported_health_ctor?(ctor) when is_binary(ctor) do

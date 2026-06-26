@@ -26,7 +26,13 @@ defmodule Ide.Debugger.SubscriptionActivation do
       RuntimeActiveSubscriptions.row_active?(row, active) ->
         true
 
-      companion_catalog_active?(state, target, row) ->
+      companion_subscription_active?(target, row) ->
+        true
+
+      catalog_subscription_active?(state, target, row) ->
+        true
+
+      active == [] and fallback_catalog_trigger?(state, target, row) ->
         true
 
       true ->
@@ -36,25 +42,56 @@ defmodule Ide.Debugger.SubscriptionActivation do
 
   def model_active?(_state, _target, _row), do: true
 
-  @spec companion_catalog_active?(
+  @spec catalog_subscription_active?(
           Types.runtime_state(),
           Types.surface_target(),
           TriggerCandidate.wire_map()
         ) :: boolean()
-  defp companion_catalog_active?(state, target, row)
+  defp catalog_subscription_active?(state, target, row)
+       when is_map(state) and target in [:watch, :companion, :phone] and is_map(row) do
+    active = RuntimeActiveSubscriptions.for_surface(state, target)
+
+    if active == [] do
+      catalog_subscription_row?(state, target, row)
+    else
+      false
+    end
+  end
+
+  defp catalog_subscription_active?(_state, _target, _row), do: false
+
+  @spec companion_subscription_active?(Types.surface_target(), TriggerCandidate.wire_map()) ::
+          boolean()
+  defp companion_subscription_active?(target, row)
+       when target in [:companion, :phone] and is_map(row) do
+    row
+    |> TriggerCandidates.row_field(:trigger)
+    |> to_string()
+    |> CompanionSubscriptionTrigger.companion_trigger?()
+  end
+
+  defp companion_subscription_active?(_target, _row), do: false
+
+  @spec catalog_subscription_row?(
+          Types.runtime_state(),
+          Types.surface_target(),
+          TriggerCandidate.wire_map()
+        ) :: boolean()
+  defp catalog_subscription_row?(state, target, row)
        when is_map(state) and target in [:watch, :companion, :phone] and is_map(row) do
     trigger = TriggerCandidates.row_field(row, :trigger) |> to_string()
     message = row_message(row)
 
-    with true <- CompanionSubscriptionTrigger.companion_trigger?(trigger),
-         %{} = ei <- Surface.from_state(state, target) |> Surface.introspect() do
+    with %{} = ei <- Surface.from_state(state, target) |> Surface.introspect() do
       ei
       |> IntrospectAccess.cmd_calls("subscription_calls")
       |> Enum.any?(fn call ->
         catalog_trigger = TriggerCandidates.subscription_trigger_for_call(call) |> to_string()
         catalog_message = Map.get(call, "callback_constructor") || ""
+        guards = Map.get(call, "activation_guards") || Map.get(call, :activation_guards) || []
 
-        RuntimeActiveSubscriptions.triggers_equivalent?(trigger, catalog_trigger) and
+        guards == [] and
+          RuntimeActiveSubscriptions.triggers_equivalent?(trigger, catalog_trigger) and
           messages_compatible?(message, catalog_message)
       end)
     else
@@ -62,7 +99,35 @@ defmodule Ide.Debugger.SubscriptionActivation do
     end
   end
 
-  defp companion_catalog_active?(_state, _target, _row), do: false
+  defp catalog_subscription_row?(_state, _target, _row), do: false
+
+  @spec fallback_catalog_trigger?(
+          Types.runtime_state(),
+          Types.surface_target(),
+          TriggerCandidate.wire_map()
+        ) :: boolean()
+  defp fallback_catalog_trigger?(state, target, row)
+       when is_map(state) and target in [:watch, :companion, :phone] and is_map(row) do
+    trigger = TriggerCandidates.row_field(row, :trigger) |> to_string()
+
+    if TriggerCandidates.fallback_catalog_trigger?(trigger) do
+      ei = Surface.from_state(state, target) |> Surface.introspect() || %{}
+
+      catalog_triggers =
+        ei
+        |> IntrospectAccess.cmd_calls("subscription_calls")
+        |> Enum.map(&TriggerCandidates.subscription_trigger_for_call/1)
+        |> Enum.map(&to_string/1)
+
+      not Enum.any?(catalog_triggers, fn catalog_trigger ->
+        RuntimeActiveSubscriptions.triggers_equivalent?(trigger, catalog_trigger)
+      end)
+    else
+      false
+    end
+  end
+
+  defp fallback_catalog_trigger?(_state, _target, _row), do: false
 
   @spec row_message(TriggerCandidate.wire_map()) :: String.t()
   defp row_message(row) do

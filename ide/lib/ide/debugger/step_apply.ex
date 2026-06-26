@@ -288,18 +288,19 @@ defmodule Ide.Debugger.StepApply do
       end
 
     target_name = ctx.source_root_for_target.(target)
+    event_message = TimelineMessage.format(message, timeline_message_value)
 
     updated_state
     |> ctx.append_runtime_exec.(target, %{
         trigger: trigger,
-        message: message,
+        message: event_message,
         message_source: message_source
       })
       |> ctx.append_event.(
         "debugger.update_in",
         Ide.Debugger.Types.MessageInEventPayload.from_message(
           target_name,
-          message,
+          event_message,
           message_source
         )
       )

@@ -61,13 +61,18 @@ defmodule Ide.Debugger.TriggerInjection do
       resolved_message =
         host.trigger_message_for_surface.(state, target, trigger, requested_message)
 
+      parsed_message_value =
+        case TimelineMessage.message_value_for_step(resolved_message) do
+          {_, %{} = value} -> value
+          _ -> nil
+        end
+
+      runtime_message_value =
+        RuntimeActiveSubscriptions.message_value_for(state, target, trigger, resolved_message)
+
       resolved_message_value =
         SubscriptionTriggerWire.message_value(resolved_message, requested_message_value) ||
-          case TimelineMessage.message_value_for_step(resolved_message) do
-            {_, %{} = value} -> value
-            _ -> nil
-          end ||
-          RuntimeActiveSubscriptions.message_value_for(state, target, trigger, resolved_message)
+          prefer_message_value(parsed_message_value, runtime_message_value)
 
       activation_message =
         case RuntimeActiveSubscriptions.message_for_trigger(state, target, trigger, nil) do
@@ -107,4 +112,14 @@ defmodule Ide.Debugger.TriggerInjection do
       end
     end
   end
+
+  defp prefer_message_value(parsed, runtime) when is_map(parsed) do
+    if empty_ctor_args?(runtime) and not empty_ctor_args?(parsed), do: parsed, else: runtime || parsed
+  end
+
+  defp prefer_message_value(parsed, runtime), do: runtime || parsed
+
+  defp empty_ctor_args?(%{"ctor" => _, "args" => []}), do: true
+  defp empty_ctor_args?(%{ctor: _, args: []}), do: true
+  defp empty_ctor_args?(_), do: false
 end

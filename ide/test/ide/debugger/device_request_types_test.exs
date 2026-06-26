@@ -50,4 +50,17 @@ defmodule Ide.Debugger.DeviceRequestTypesTest do
     assert req.kind == "health_value"
     assert req.response_message == "HealthSteps"
   end
+
+  test "from_cmd_call maps health metric cmd on Pebble.Health target" do
+    health_call = %{
+      "name" => "value",
+      "target" => "Pebble.Health",
+      "callback_constructor" => "GotStepsNow"
+    }
+
+    [req] = DeviceRequest.from_cmd_call(health_call)
+
+    assert req.kind == "health_value"
+    assert req.response_message == "GotStepsNow"
+  end
 end

@@ -4,6 +4,7 @@ defmodule Ide.Debugger.RuntimeActiveSubscriptions do
   alias Ide.Debugger.CompanionSubscriptionTrigger
   alias Ide.Debugger.IntrospectAccess
   alias Ide.Debugger.RuntimeModelMessages
+  alias Ide.Debugger.SubscriptionTriggerWire
   alias Ide.Debugger.Surface
   alias Ide.Debugger.TimelineMessage
   alias Ide.Debugger.TriggerCandidates
@@ -495,10 +496,32 @@ defmodule Ide.Debugger.RuntimeActiveSubscriptions do
 
   @spec triggers_equivalent?(String.t(), String.t()) :: boolean()
   def triggers_equivalent?(left, right) when is_binary(left) and is_binary(right) do
-    left == right or companion_triggers_equivalent?(left, right)
+    left == right or companion_triggers_equivalent?(left, right) or
+      opaque_gateway_triggers_equivalent?(left, right)
   end
 
   def triggers_equivalent?(_, _), do: false
+
+  @spec opaque_gateway_triggers_equivalent?(String.t(), String.t()) :: boolean()
+  defp opaque_gateway_triggers_equivalent?(left, right) do
+    SubscriptionTriggerWire.opaque_gateway_trigger?(left) and
+      SubscriptionTriggerWire.opaque_gateway_trigger?(right) and
+      opaque_gateway_kind(left) == opaque_gateway_kind(right)
+  end
+
+  @spec opaque_gateway_kind(String.t()) :: :phone_to_watch | :watch_to_phone | nil
+  defp opaque_gateway_kind(trigger) when is_binary(trigger) do
+    normalized =
+      trigger
+      |> String.downcase()
+      |> String.replace(~r/[^a-z0-9]/, "")
+
+    cond do
+      String.contains?(normalized, "phonetowatch") -> :phone_to_watch
+      String.contains?(normalized, "watchtophone") -> :watch_to_phone
+      true -> nil
+    end
+  end
 
   @spec companion_triggers_equivalent?(String.t(), String.t()) :: boolean()
   defp companion_triggers_equivalent?(left, right) do

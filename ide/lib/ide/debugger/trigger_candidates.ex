@@ -568,17 +568,31 @@ defmodule Ide.Debugger.TriggerCandidates do
 
   defp camel_case_trigger_id(_trigger), do: "Trigger"
 
+  @fallback_catalog_triggers ~w(
+    button_up
+    button_long_up
+    button_down
+    button_long_down
+    button_select
+    button_long_select
+    button_back
+    tick
+  )
+
+  @spec fallback_catalog_trigger?(String.t()) :: boolean()
+  def fallback_catalog_trigger?(trigger) when is_binary(trigger) do
+    normalize_trigger_id(trigger) in @fallback_catalog_triggers
+  end
+
+  def fallback_catalog_trigger?(_trigger), do: false
+
   @spec fallback_trigger_seed_rows(String.t()) :: [Types.trigger_candidate()]
-  defp fallback_trigger_seed_rows(target_name) when is_binary(target_name) do
-    [
-      %{trigger: "button_up", label: "Button Up"},
-      %{trigger: "button_long_up", label: "Button Long Up"},
-      %{trigger: "button_down", label: "Button Down"},
-      %{trigger: "button_long_down", label: "Button Long Down"},
-      %{trigger: "button_select", label: "Button Select"},
-      %{trigger: "button_long_select", label: "Button Long Select"},
-      %{trigger: "button_back", label: "Button Back"},
-      %{trigger: "tick", label: "Tick"}
-    ]
+  defp fallback_trigger_seed_rows(_target_name) do
+    Enum.map(@fallback_catalog_triggers, fn trigger ->
+      %{
+        trigger: trigger,
+        label: normalize_trigger_label(trigger)
+      }
+    end)
   end
 end

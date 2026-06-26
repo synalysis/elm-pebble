@@ -67,11 +67,15 @@ defmodule Ide.Debugger.DeviceDataResponses do
       when is_map(state) and target in [:watch, :companion, :phone] and is_binary(message) and
              is_map(ctx) and is_list(runtime_followups) do
     covered = RuntimeFollowups.covered_device_response_ctors(runtime_followups)
+    requests = requests_for_surface(state, target, message, message_value)
 
     state
-    |> requests_for_surface(target, message, message_value)
-    |> reject_covered_device_requests(covered)
-    |> apply_request_list(state, target, ctx)
+    |> apply_covered_device_previews(requests, covered, target)
+    |> then(fn acc ->
+      requests
+      |> reject_covered_device_requests(covered)
+      |> apply_request_list(acc, target, ctx)
+    end)
   end
 
   def apply_after_step(state, target, message, _model, _message_source, ctx, message_value, _runtime_followups)
@@ -158,6 +162,27 @@ defmodule Ide.Debugger.DeviceDataResponses do
   end
 
   def apply_init_device_responses(state, _target, _ctx), do: state
+
+  @spec apply_covered_device_previews(
+          Types.runtime_state(),
+          [Types.device_request()],
+          [String.t()],
+          Types.surface_target()
+        ) :: Types.runtime_state()
+  defp apply_covered_device_previews(state, _requests, [], _target), do: state
+
+  defp apply_covered_device_previews(state, requests, covered, target)
+       when is_map(state) and is_list(requests) and is_list(covered) and covered != [] and
+              target in [:watch, :companion, :phone] do
+    requests
+    |> Enum.filter(fn req ->
+      ctor = device_request_response_ctor(req)
+      is_binary(ctor) and ctor in covered
+    end)
+    |> Enum.reduce(state, fn req, acc ->
+      DeviceDataHints.apply_to_state(acc, target, req)
+    end)
+  end
 
   @spec reject_covered_device_requests([Types.device_request()], [String.t()]) ::
           [Types.device_request()]

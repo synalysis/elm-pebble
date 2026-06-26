@@ -786,8 +786,9 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
       Enum.find(reloaded.events, fn event ->
         event.type == "debugger.update_in" and
           String.starts_with?(
-            Map.get(event.payload, :message) || Map.get(event.payload, "message") || "",
-            "CurrentDateTime "
+            (Map.get(event.payload, :message) || Map.get(event.payload, "message") || "")
+            |> to_string(),
+            "CurrentDateTime"
           )
       end)
 
@@ -827,8 +828,9 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     assert Enum.any?(first_reload.events, fn event ->
              event.type == "debugger.update_in" and
                String.starts_with?(
-                 Map.get(event.payload, :message) || Map.get(event.payload, "message") || "",
-                 "CurrentDateTime "
+                 (Map.get(event.payload, :message) || Map.get(event.payload, "message") || "")
+                 |> to_string(),
+                 "CurrentDateTime"
                )
            end)
 
@@ -843,8 +845,9 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     assert Enum.any?(second_reload.events, fn event ->
              event.seq > first_seq and event.type == "debugger.update_in" and
                String.starts_with?(
-                 Map.get(event.payload, :message) || Map.get(event.payload, "message") || "",
-                 "CurrentDateTime "
+                 (Map.get(event.payload, :message) || Map.get(event.payload, "message") || "")
+                 |> to_string(),
+                 "CurrentDateTime"
                )
            end)
   end

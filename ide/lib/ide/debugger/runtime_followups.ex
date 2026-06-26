@@ -3,6 +3,7 @@ defmodule Ide.Debugger.RuntimeFollowups do
 
   alias Ide.Debugger.CompanionBridge.Runtime, as: CompanionBridgeRuntime
   alias Ide.Debugger.DeviceData
+  alias Ide.Debugger.DeviceDataHints
   alias Ide.Debugger.DeviceDataResponses
   alias Ide.Debugger.DeviceRequest
   alias Ide.Debugger.TimelineMessage
@@ -611,6 +612,14 @@ defmodule Ide.Debugger.RuntimeFollowups do
           )
 
         state
+        |> apply_device_preview_from_row(
+          target,
+          target_name,
+          parent_message,
+          row,
+          followup_message,
+          ctx
+        )
         |> ctx.append_event.(
           "debugger.package_cmd",
           Ide.Debugger.Types.PackageCmdEventPayload.from_followup(
@@ -744,9 +753,9 @@ defmodule Ide.Debugger.RuntimeFollowups do
        when is_map(state) and is_binary(parent_message) and is_binary(followup_message) and
               is_map(row) do
     command = Map.get(row, "command") || Map.get(row, :command)
+    kind = followup_command_kind(command)
 
-    with %{"kind" => kind} when is_binary(kind) <- command,
-         true <- String.starts_with?(kind, "cmd.device.") do
+    if is_binary(kind) and String.starts_with?(kind, "cmd.device.") do
       model = Surface.app_model(Surface.from_state(state, target))
 
       row
@@ -763,12 +772,81 @@ defmodule Ide.Debugger.RuntimeFollowups do
           |> DeviceData.response_wire_value()
       end
     else
-      _ -> nil
+      nil
     end
   end
 
   defp device_command_wire_value(_state, _target, _parent_message, _followup_message, _row),
     do: nil
+
+  @spec followup_command_kind(Types.cmd_call() | map() | nil) :: String.t() | nil
+  defp followup_command_kind(command) when is_map(command) do
+    case Map.get(command, "kind") || Map.get(command, :kind) do
+      kind when is_binary(kind) -> kind
+      kind when is_atom(kind) -> Atom.to_string(kind)
+      _ -> nil
+    end
+  end
+
+  defp followup_command_kind(_command), do: nil
+
+  @spec apply_device_preview_from_row(
+          Types.runtime_state(),
+          Types.surface_target(),
+          String.t(),
+          String.t(),
+          Types.runtime_followup_row(),
+          String.t() | nil,
+          apply_ctx()
+        ) :: Types.runtime_state()
+  defp apply_device_preview_from_row(
+         state,
+         target,
+         target_name,
+         parent_message,
+         row,
+         followup_message,
+         ctx
+       )
+       when is_map(state) and target in [:watch, :companion, :phone] and is_binary(parent_message) and
+              is_binary(target_name) and is_map(row) and is_map(ctx) do
+    if device_followup_row?(row) do
+      model = Surface.from_state(state, target) |> Surface.app_model()
+      ctor = followup_message || Map.get(row, "message") || Map.get(row, :message) || ""
+
+      row
+      |> device_request_row(to_string(ctor))
+      |> DeviceRequest.from_cmd_call()
+      |> List.first()
+      |> case do
+        nil ->
+          state
+
+        req ->
+          req = DeviceData.finalize_request(req, model, parent_message)
+
+          state
+          |> DeviceDataHints.apply_to_state(target, req)
+          |> ctx.append_event.(
+            "debugger.device_data",
+            Ide.Debugger.Types.DeviceDataEventPayload.from_request(target_name, req)
+          )
+      end
+    else
+      state
+    end
+  end
+
+  defp apply_device_preview_from_row(
+         state,
+         _target,
+         _target_name,
+         _parent_message,
+         _row,
+         _followup_message,
+         _ctx
+       ),
+       do: state
 
   @spec device_request_row(Types.runtime_followup_row(), String.t()) :: Types.cmd_call()
   defp device_request_row(row, followup_message) when is_map(row) do

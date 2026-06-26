@@ -93,7 +93,11 @@ defmodule Ide.Debugger.TimelineMessage do
   defp wire_value_from_payload(ctor, payload) when is_binary(ctor) and is_binary(payload) do
     case literal_payload(payload) do
       nil ->
-        nil
+        if protocol_constructor_token?(payload) do
+          %{"ctor" => ctor, "args" => [%{"ctor" => payload, "args" => []}]}
+        else
+          nil
+        end
 
       value when is_integer(value) or is_boolean(value) or is_binary(value) ->
         %{"ctor" => ctor, "args" => [value]}
@@ -101,6 +105,11 @@ defmodule Ide.Debugger.TimelineMessage do
       value when is_map(value) or is_list(value) ->
         %{"ctor" => ctor, "args" => [value]}
     end
+  end
+
+  @spec protocol_constructor_token?(String.t()) :: boolean()
+  defp protocol_constructor_token?(token) when is_binary(token) do
+    Regex.match?(~r/^[A-Z][a-zA-Z0-9]*$/, token)
   end
 
   @spec literal_payload(String.t()) :: Types.protocol_wire_arg() | nil

@@ -42,7 +42,8 @@ defmodule Ide.Debugger.TriggerMessageSurface do
             runtime_message
 
           :error ->
-            if RuntimeActiveSubscriptions.present?(state, target) do
+            if RuntimeActiveSubscriptions.present?(state, target) and
+                 RuntimeActiveSubscriptions.for_surface(state, target) != [] do
               case RuntimeActiveSubscriptions.command_for_trigger(state, target, trigger) do
                 %{} = command ->
                   case RuntimeActiveSubscriptions.command_message(command) do

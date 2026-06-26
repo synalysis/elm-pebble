@@ -345,9 +345,31 @@ defmodule Ide.DebuggerIntegrationExecutors do
   defmodule FrameRuntimeExecutor do
     @moduledoc false
 
-    def execute(%{message: "FrameTick " <> encoded}) do
-      {:ok, frame} = Jason.decode(encoded)
+    def execute(request) when is_map(request) do
+      message = Map.get(request, :message) || Map.get(request, "message") || ""
 
+      cond do
+        String.starts_with?(message, "FrameTick ") ->
+          encoded = String.replace_prefix(message, "FrameTick ", "")
+          {:ok, frame} = Jason.decode(encoded)
+          frame_result(frame)
+
+        message == "FrameTick" ->
+          frame =
+            case Map.get(request, :message_value) || Map.get(request, "message_value") do
+              %{"args" => [frame]} when is_map(frame) -> frame
+              %{args: [frame]} when is_map(frame) -> frame
+              _ -> %{"frame" => 1, "dtMs" => 16, "elapsedMs" => 16}
+            end
+
+          frame_result(frame)
+
+        true ->
+          empty_result()
+      end
+    end
+
+    defp frame_result(frame) when is_map(frame) do
       {:ok,
        %{
          model_patch: %{
@@ -362,7 +384,7 @@ defmodule Ide.DebuggerIntegrationExecutors do
        }}
     end
 
-    def execute(_request) do
+    defp empty_result do
       {:ok,
        %{
          model_patch: %{"runtime_model" => %{}},
