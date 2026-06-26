@@ -71,6 +71,25 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusNormalizeTest do
              DebuggerTemplateCorpus.normalize_snapshot(without_unknown)
   end
 
+  test "normalize_snapshot collapses large tangram timeline payloads" do
+    detailed = %{
+      "timeline_init_messages" => [
+        "update:CatalogReceived (Ok \"{\\\"page\\\":1}\")",
+        "update:SvgReceived (Ok \"<svg></svg>\")"
+      ]
+    }
+
+    canonical = %{
+      "timeline_init_messages" => [
+        "update:CatalogReceived <catalog>",
+        "update:SvgReceived <svg>"
+      ]
+    }
+
+    assert DebuggerTemplateCorpus.normalize_snapshot(detailed) ==
+             DebuggerTemplateCorpus.normalize_snapshot(canonical)
+  end
+
   test "normalize_snapshot compares render_tree by summary fields only" do
     with_tree = %{
       "render_tree" => %{

@@ -110,9 +110,8 @@ static uint32_t agent_probe_count_byte(int value) {
 #undef APP_LOG
 #define APP_LOG(level, ...) \
   do { \
-    (void)(level); \
     if (0) { \
-      (void)__VA_ARGS__; \
+      app_log((level), __FILE_NAME__, __LINE__, __VA_ARGS__); \
     } \
   } while (0)
 #endif

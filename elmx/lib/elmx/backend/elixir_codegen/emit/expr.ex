@@ -10,6 +10,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
   alias Elmx.Runtime.CodegenRefs
   alias Elmx.Runtime.Generator
   alias Elmx.Runtime.Stdlib
+  alias Elmx.Types
 
   def compile_add_const(%{var: name, value: value}, env, counter) do
     ref = Helpers.binding_ref(name, env)
@@ -339,7 +340,10 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
     end)
   end
 
-  @spec referenced_binding_names(Types.ir_expr() | map() | list()) :: MapSet.t(String.t())
+  @spec referenced_binding_names(Types.ir_expr() | map() | list() | tuple()) :: MapSet.t(String.t())
+  def referenced_binding_names({:apply_saturated, call, _arity}) when is_map(call),
+    do: referenced_binding_names(call)
+
   def referenced_binding_names(expr) when is_map(expr) or is_list(expr),
     do: referenced_binding_names(expr, MapSet.new())
 

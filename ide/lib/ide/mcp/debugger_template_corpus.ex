@@ -8,6 +8,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   """
 
   alias Ide.Debugger
+  alias Ide.Debugger.HttpExecutor
   alias Ide.Debugger.CompanionSubscriptionTrigger
   alias Ide.Debugger.RuntimeBackgroundDrains
   alias Ide.Debugger.StepExecution
@@ -77,18 +78,20 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
       raise ArgumentError, "unknown template #{inspect(template_key)}"
     end
 
-    seed_corpus_random!()
+    with_corpus_debugger_sync(fn ->
+      seed_corpus_random!()
 
-    slug = Keyword.get(opts, :slug) || unique_slug(template_key)
-    cleanup? = Keyword.get(opts, :cleanup, true)
+      slug = Keyword.get(opts, :slug) || unique_slug(template_key)
+      cleanup? = Keyword.get(opts, :cleanup, true)
 
-    with :ok <- SourceValidation.validate_template(template_key),
-         {:ok, project} <- create_project(slug, template_key),
-         :ok <- bootstrap(slug, project, template_key),
-         {:ok, snapshot} <- capture(slug, project, template_key) do
-      if cleanup?, do: _ = Projects.delete_project(project)
-      {:ok, %{slug: slug, project: project, snapshot: snapshot}}
-    end
+      with :ok <- SourceValidation.validate_template(template_key),
+           {:ok, project} <- create_project(slug, template_key),
+           :ok <- bootstrap(slug, project, template_key),
+           {:ok, snapshot} <- capture(slug, project, template_key) do
+        if cleanup?, do: _ = Projects.delete_project(project)
+        {:ok, %{slug: slug, project: project, snapshot: snapshot}}
+      end
+    end)
   end
 
   @doc """
@@ -103,15 +106,17 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
       raise ArgumentError, "unknown template #{inspect(template_key)}"
     end
 
-    slug = Keyword.get(opts, :slug) || unique_slug(template_key)
-    cleanup? = Keyword.get(opts, :cleanup, true)
+    with_corpus_debugger_sync(fn ->
+      slug = Keyword.get(opts, :slug) || unique_slug(template_key)
+      cleanup? = Keyword.get(opts, :cleanup, true)
 
-    with :ok <- SourceValidation.validate_template(template_key),
-         {:ok, project} <- create_project(slug, template_key),
-         :ok <- bootstrap(slug, project, template_key) do
-      if cleanup?, do: _ = Projects.delete_project(project)
-      {:ok, %{slug: slug, project: project}}
-    end
+      with :ok <- SourceValidation.validate_template(template_key),
+           {:ok, project} <- create_project(slug, template_key),
+           :ok <- bootstrap(slug, project, template_key) do
+        if cleanup?, do: _ = Projects.delete_project(project)
+        {:ok, %{slug: slug, project: project}}
+      end
+    end)
   end
 
   @doc """
@@ -193,16 +198,16 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     seed_corpus_random!()
 
     with {:ok, _} <- Tools.call("debugger.start", %{"slug" => slug}, @capabilities),
-         {:ok, _} <-
-           Tools.call(
-             "debugger.set_watch_profile",
-             %{"slug" => slug, "watch_profile_id" => watch_profile_for(template_key)},
-             @capabilities
-           ),
-         {:ok, _} <- apply_simulator_settings(slug, template_key),
-         :ok <- reload_surfaces(slug, project, template_key),
-         :ok <- after_bootstrap(slug, template_key),
-         :ok <- await_background_idle!(slug) do
+           {:ok, _} <-
+             Tools.call(
+               "debugger.set_watch_profile",
+               %{"slug" => slug, "watch_profile_id" => watch_profile_for(template_key)},
+               @capabilities
+             ),
+           {:ok, _} <- apply_simulator_settings(slug, template_key),
+           :ok <- reload_surfaces(slug, project, template_key),
+           :ok <- after_bootstrap(slug, template_key),
+           :ok <- await_background_idle!(slug) do
       :ok
     else
       {:error, reason} -> {:error, reason}
@@ -237,6 +242,20 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
 
   defp template_simulator_extras(_), do: %{}
 
+  @tangram_catalog_json ~s({"page1-0": {"wholeAnnotation": "chair"}})
+
+  @tangram_svg ~s(
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 132 126">
+      <polygon points="58,52 16,22 6,62" fill="#0055FF"/>
+      <polygon points="74,52 108,22 118,62" fill="#00AAFF"/>
+      <polygon points="48,60 66,46 84,60 66,76" fill="#55FFFF"/>
+      <polygon points="84,54 102,46 98,66" fill="#00FFFF"/>
+      <polygon points="48,66 26,58 20,74 42,82" fill="#001133"/>
+      <polygon points="61,76 38,92 70,90" fill="#0055DD"/>
+      <polygon points="72,76 100,90 78,94" fill="#AADDFF"/>
+    </svg>
+  )
+
   defp after_bootstrap(_slug, _template_key), do: :ok
 
   @spec fetch_render_tree(String.t(), pos_integer()) ::
@@ -262,12 +281,28 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     end
   end
 
+  @phone_first_watch_reload_templates ~w(watchface-tangram-time)
+
   @spec reload_surfaces(String.t(), Projects.Project.t(), String.t()) ::
           :ok | {:error, CorpusTypes.corpus_error()}
   defp reload_surfaces(slug, project, template_key) do
-    with :ok <- maybe_reload_phone(slug, project, template_key),
-         {:ok, _} <- reload_watch(slug, project) do
-      :ok
+    cond do
+      template_key in @phone_first_watch_reload_templates ->
+        with {:ok, _} <- reload_watch(slug, project),
+             :ok <- maybe_reload_phone(slug, project, template_key) do
+          :ok
+        end
+
+      template_key in @phone_first_templates ->
+        with :ok <- maybe_reload_phone(slug, project, template_key),
+             {:ok, _} <- reload_watch(slug, project) do
+          :ok
+        end
+
+      true ->
+        with {:ok, _} <- reload_watch(slug, project) do
+          :ok
+        end
     end
   end
 
@@ -460,11 +495,17 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     end)
   end
 
+  @spec normalize_timeline_large_payloads(String.t()) :: String.t()
+  defp normalize_timeline_large_payloads("CatalogReceived " <> _), do: "CatalogReceived <catalog>"
+  defp normalize_timeline_large_payloads("SvgReceived " <> _), do: "SvgReceived <svg>"
+  defp normalize_timeline_large_payloads(message), do: message
+
   @spec normalize_timeline_message(String.t() | nil) :: String.t()
   defp normalize_timeline_message(message) when is_binary(message) do
     message
     |> dedupe_timeline_constructor_prefix()
     |> normalize_timeline_result_wrapper()
+    |> normalize_timeline_large_payloads()
     |> normalize_random_generated_seed()
   end
 
@@ -1106,6 +1147,88 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     :rand.seed(:exsss, {0, 0, 1})
     Process.put(:elmx_corpus_fixed_random_int, 42_424_242)
     Application.put_env(:elmx, :corpus_fixed_random_int, 42_424_242)
+    :ok
+  end
+
+  @spec with_corpus_debugger_sync((-> term())) :: term()
+  defp with_corpus_debugger_sync(fun) when is_function(fun, 0) do
+    previous_http = Application.get_env(:ide, :debugger_async_http_followups)
+    previous_protocol = Application.get_env(:ide, :debugger_async_protocol_delivery)
+    previous_companion = Application.get_env(:ide, :debugger_async_companion_bootstrap)
+    previous_http_executor = Application.get_env(:ide, HttpExecutor)
+    Application.put_env(:ide, :debugger_async_http_followups, false)
+    Application.put_env(:ide, :debugger_async_protocol_delivery, false)
+    Application.put_env(:ide, :debugger_async_companion_bootstrap, false)
+    install_corpus_http_executor!(previous_http_executor)
+
+    try do
+      fun.()
+    after
+      restore_corpus_debugger_async_env!(:debugger_async_http_followups, previous_http)
+      restore_corpus_debugger_async_env!(:debugger_async_protocol_delivery, previous_protocol)
+      restore_corpus_debugger_async_env!(:debugger_async_companion_bootstrap, previous_companion)
+      restore_corpus_http_executor!(previous_http_executor)
+    end
+  end
+
+  @spec install_corpus_http_executor!(term()) :: :ok
+  defp install_corpus_http_executor!(previous_executor) do
+    previous_kw = if is_list(previous_executor), do: previous_executor, else: []
+    previous_fun = Keyword.get(previous_kw, :request_fun)
+
+    wrapped =
+      fn command ->
+        case corpus_http_stub_response(command) do
+          {:ok, response} ->
+            {:ok, response}
+
+          :pass when is_function(previous_fun, 1) ->
+            previous_fun.(command)
+
+          :pass ->
+            {:ok, %{"status" => 404, "body" => "", "headers" => []}}
+        end
+      end
+
+    Application.put_env(:ide, HttpExecutor, Keyword.put(previous_kw, :request_fun, wrapped))
+    :ok
+  end
+
+  @spec restore_corpus_http_executor!(term()) :: :ok
+  defp restore_corpus_http_executor!(nil) do
+    Application.delete_env(:ide, HttpExecutor)
+    :ok
+  end
+
+  defp restore_corpus_http_executor!(value) do
+    Application.put_env(:ide, HttpExecutor, value)
+    :ok
+  end
+
+  @spec corpus_http_stub_response(map()) :: {:ok, map()} | :pass
+  defp corpus_http_stub_response(command) when is_map(command) do
+    url = Map.get(command, "url") || Map.get(command, :url) || ""
+
+    cond do
+      String.contains?(url, "dense10.json") ->
+        {:ok, %{"status" => 200, "body" => @tangram_catalog_json, "headers" => []}}
+
+      String.contains?(url, "tangrams-svg") ->
+        {:ok, %{"status" => 200, "body" => @tangram_svg, "headers" => []}}
+
+      true ->
+        :pass
+    end
+  end
+
+  @spec restore_corpus_debugger_async_env!(atom(), term()) :: :ok
+  defp restore_corpus_debugger_async_env!(key, nil) when is_atom(key) do
+    Application.delete_env(:ide, key)
+    :ok
+  end
+
+  defp restore_corpus_debugger_async_env!(key, value) when is_atom(key) do
+    Application.put_env(:ide, key, value)
     :ok
   end
 end

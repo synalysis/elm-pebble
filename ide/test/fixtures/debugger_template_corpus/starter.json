@@ -4,9 +4,18 @@
     "root_type": "windowStack",
     "runtime_view_output_kinds": [
       "clear",
+      "stroke_color",
+      "fill_color",
+      "text_color",
       "round_rect",
+      "arc",
+      "path_outline",
+      "path_filled",
+      "path_outline_open",
       "line",
-      "pixel"
+      "pixel",
+      "text_label",
+      "text_int"
     ],
     "status": "ok"
   },
@@ -97,8 +106,8 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "kind": "text_int",
-      "text": "21",
+      "kind": "text_label",
+      "text": "Waiting for companion app",
       "text_color": 192,
       "x": 0,
       "y": 28
@@ -113,7 +122,7 @@
       "y": 56
     }
   ],
-  "preview_ops_sha256": "15b20fba4ec2d4ffdf8e75b885123c877626ade8ac1b687a614bb0a55b61a1a7",
+  "preview_ops_sha256": "a16518ac814782a2de602d82696f0d0bdc5eab75a507a81035769041af9bd847",
   "render_tree": {
     "node_count": 16,
     "node_types": [
@@ -130,7 +139,7 @@
       "style",
       "style",
       "textInt",
-      "textInt",
+      "textLabel",
       "window",
       "windowStack"
     ],
@@ -139,15 +148,8 @@
   "runtime_model": {
     "runtime_view_output": [],
     "temperature": {
-      "args": [
-        {
-          "args": [
-            21
-          ],
-          "ctor": "Celsius"
-        }
-      ],
-      "ctor": "Just"
+      "args": [],
+      "ctor": "Nothing"
     },
     "timeString": null,
     "value": 1
@@ -158,19 +160,13 @@
     "update:ClockStyle24h True",
     "update:CurrentTimeString \"08:53\"",
     "update:FirmwareVersionString { major = 4, minor = 4, patch = 0 }",
-    "update:FromPhone (ProvideCondition Clear)",
-    "update:FromPhone (ProvideTemperature (Celsius 21))",
     "update:FromWatch (Ok (RequestWeather Berlin))",
-    "update:HttpResponse (Ok \"{\\\"args\\\":{},\\\"data\\\":{\\\"event\\\":\\\"weather-request\\\",\\\"location\\\":\\\"Berlin\\\"},\\\"files\\\":{},\\\"form\\\":{},\\\"headers\\\":{\\\"accept-encoding\\\":\\\"gzip, br\\\",\\\"content-length\\\":\\\"47\\\",\\\"content-type\\\":\\\"application/json\\\",\\\"host\\\":\\\"postman-echo.com\\\",\\\"user-agent\\\":\\\"req/0.5.17\\\",\\\"x-forwarded-proto\\\":\\\"https\\\"},\\\"json\\\":{\\\"event\\\":\\\"weather-request\\\",\\\"location\\\":\\\"Berlin\\\"},\\\"url\\\":\\\"https://postman-echo.com/post\\\"}\")",
-    "update:ProvideCondition Clear",
-    "update:ProvideTemperature (Celsius 21)",
     "update:TimezoneIsSet True",
     "update:TimezoneName \"UTC\"",
     "update:WatchColorName Black",
-    "update:WatchModelName PebbleOriginal",
-    "update:WeatherReceived (Ok {condition=Clear,temperature=21})"
+    "update:WatchModelName PebbleOriginal"
   ],
-  "view_tree_type": "windowStack",
+  "view_tree_type": "Window",
   "watch_model": {
     "debugger_init_complete": true,
     "elmc_compile_cached": "false",
@@ -178,21 +174,10 @@
     "elmc_compile_status": "ok",
     "elmc_compile_warning_count": 0,
     "elmc_diagnostic_preview": [],
-    "protocol_last_inbound_from": "companion",
-    "protocol_last_inbound_message": "ProvideCondition Clear",
-    "protocol_last_trigger": "runtime_followup",
-    "protocol_last_view_message": "ProvideCondition Clear",
     "runtime_model": {
       "temperature": {
-        "args": [
-          {
-            "args": [
-              21
-            ],
-            "ctor": "Celsius"
-          }
-        ],
-        "ctor": "Just"
+        "args": [],
+        "ctor": "Nothing"
       },
       "value": 1
     },

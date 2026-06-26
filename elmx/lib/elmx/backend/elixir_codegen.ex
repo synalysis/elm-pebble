@@ -444,7 +444,18 @@ defmodule Elmx.Backend.ElixirCodegen do
       end
     uses_bitwise = Map.get(env, :uses_bitwise, false)
     fn_name = function_symbol(module_name, decl.name)
-    used_params = Emit.referenced_binding_names(expr)
+
+    used_params =
+      case expr do
+        {:apply_saturated, call, sat_arity} when is_map(call) and is_integer(sat_arity) and
+                                                    sat_arity > 0 ->
+          Enum.reduce(1..sat_arity, Emit.referenced_binding_names(call), fn i, acc ->
+            MapSet.put(acc, "__p#{i}")
+          end)
+
+        other ->
+          Emit.referenced_binding_names(other)
+      end
 
     params =
       param_list(param_source, if(param_source == [], do: arity, else: nil), used_params)
@@ -504,7 +515,7 @@ defmodule Elmx.Backend.ElixirCodegen do
     Enum.map_join(Enum.with_index(names), ", ", fn {name, index} ->
       emit_name = name |> Elmx.Backend.ElixirCodegen.Emit.Helpers.param_var_name(%{})
 
-      if MapSet.member?(used_params, name) do
+      if MapSet.member?(used_params, name) or MapSet.member?(used_params, emit_name) do
         emit_name
       else
         "_unused#{index}"
