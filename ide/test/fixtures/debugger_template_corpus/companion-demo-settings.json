@@ -83,96 +83,7 @@
       "window",
       "windowStack"
     ],
-    "root_type": "windowStack",
-    "tree": {
-      "box": {
-        "h": 168,
-        "text": null,
-        "w": 144,
-        "x": 0,
-        "y": 0
-      },
-      "children": [
-        {
-          "children": [
-            {
-              "children": [
-                {
-                  "children": [],
-                  "color": 255,
-                  "label": "",
-                  "text": null,
-                  "type": "clear"
-                },
-                {
-                  "children": [],
-                  "font_id": 0,
-                  "h": 18,
-                  "label": "",
-                  "text": "Config none",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 128,
-                  "x": 8,
-                  "y": 72
-                },
-                {
-                  "children": [],
-                  "font_id": 0,
-                  "h": 18,
-                  "label": "",
-                  "text": "Lifecycle waiting",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 128,
-                  "x": 8,
-                  "y": 54
-                },
-                {
-                  "children": [],
-                  "font_id": 0,
-                  "h": 18,
-                  "label": "",
-                  "text": "Select = open",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 128,
-                  "x": 8,
-                  "y": 90
-                },
-                {
-                  "children": [],
-                  "font_id": 0,
-                  "h": 18,
-                  "label": "",
-                  "text": "Settings demo",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 128,
-                  "x": 8,
-                  "y": 36
-                }
-              ],
-              "id": 1,
-              "label": "",
-              "text": null,
-              "type": "canvasLayer"
-            }
-          ],
-          "id": 1,
-          "label": "",
-          "text": null,
-          "type": "window"
-        }
-      ],
-      "label": "",
-      "text": null,
-      "type": "windowStack"
-    }
+    "root_type": "windowStack"
   },
   "runtime_model": {
     "configOutcome": {
@@ -187,8 +98,6 @@
   },
   "template": "companion-demo-settings",
   "timeline_init_messages": [
-    "init:init",
-    "init:init",
     "init:init"
   ],
   "view_tree_type": "windowStack",

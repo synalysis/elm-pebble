@@ -19,7 +19,7 @@
       "font_size": 20,
       "h": 20,
       "kind": "text_label",
-      "text": "Compass demo",
+      "text": "Speaker demo",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -33,27 +33,13 @@
       "font_size": 20,
       "h": 20,
       "kind": "text_label",
-      "text": "180 deg",
+      "text": "Tone 440Hz",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
       "w": 136,
       "x": 4,
-      "y": 36
-    },
-    {
-      "antialiased": true,
-      "compositing_mode": 0,
-      "font_size": 20,
-      "h": 20,
-      "kind": "text_label",
-      "text": "Valid",
-      "text_align": "center",
-      "text_color": null,
-      "text_overflow": "word_wrap",
-      "w": 136,
-      "x": 4,
-      "y": 60
+      "y": 32
     },
     {
       "antialiased": true,
@@ -67,24 +53,38 @@
       "text_overflow": "word_wrap",
       "w": 136,
       "x": 4,
-      "y": 84
+      "y": 56
     },
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 24,
-      "h": 24,
+      "font_size": 20,
+      "h": 20,
       "kind": "text_label",
-      "text": "Select: peek heading",
+      "text": "Waiting",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
       "w": 136,
       "x": 4,
-      "y": 108
+      "y": 80
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 40,
+      "h": 40,
+      "kind": "text_label",
+      "text": "Up/Down: mode Select: play",
+      "text_align": "center",
+      "text_color": null,
+      "text_overflow": "word_wrap",
+      "w": 136,
+      "x": 4,
+      "y": 104
     }
   ],
-  "preview_ops_sha256": "1bbbb1962877c8088e7d0cb520edb6c6b0e0a4273b548273b0d55134c3c46311",
+  "preview_ops_sha256": "41e5d706db166d09f984165b04d952eca22adabca401b2133fb4bd77429b6566",
   "render_tree": {
     "node_count": 9,
     "node_types": [
@@ -101,43 +101,26 @@
     "root_type": "windowStack"
   },
   "runtime_model": {
-    "hasCompass": true,
-    "heading": {
-      "args": [
-        {
-          "degrees": 180.0,
-          "isValid": true
-        }
-      ],
-      "ctor": "Just"
-    },
-    "refreshes": 0,
+    "lastFinish": "Waiting",
+    "modeIndex": 0,
+    "plays": 0,
     "runtime_view_output": [],
     "timeString": null
   },
-  "template": "watch-demo-compass",
+  "template": "watch-demo-speaker",
   "timeline_init_messages": [
-    "init:init",
-    "update:GotHeading (Ok {degrees=180,isvalid=true})"
+    "init:init"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
     "runtime_model": {
-      "hasCompass": true,
-      "heading": {
-        "args": [
-          {
-            "degrees": 180.0,
-            "isValid": true
-          }
-        ],
-        "ctor": "Just"
-      },
-      "refreshes": 0
+      "lastFinish": "Waiting",
+      "modeIndex": 0,
+      "plays": 0
     },
     "runtime_view_output": [],
     "timeString": null,
-    "watch_profile_id": "aplite"
+    "watch_profile_id": "diorite"
   }
 }

@@ -51,6 +51,26 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusNormalizeTest do
              DebuggerTemplateCorpus.normalize_snapshot(without_dupes)
   end
 
+  test "normalize_snapshot drops unknown timeline followups" do
+    with_unknown = %{
+      "timeline_init_messages" => [
+        "init:init",
+        "update:GotPosition (Ok {accuracy=25,latitude=48.137154,longitude=11.576124})",
+        "update:Unknown (Ok {accuracy=25,latitude=48.137154,longitude=11.576124})"
+      ]
+    }
+
+    without_unknown = %{
+      "timeline_init_messages" => [
+        "init:init",
+        "update:GotPosition (Ok {accuracy=25,latitude=48.137154,longitude=11.576124})"
+      ]
+    }
+
+    assert DebuggerTemplateCorpus.normalize_snapshot(with_unknown) ==
+             DebuggerTemplateCorpus.normalize_snapshot(without_unknown)
+  end
+
   test "normalize_snapshot compares render_tree by summary fields only" do
     with_tree = %{
       "render_tree" => %{

@@ -83,96 +83,7 @@
       "window",
       "windowStack"
     ],
-    "root_type": "windowStack",
-    "tree": {
-      "box": {
-        "h": 168,
-        "text": null,
-        "w": 144,
-        "x": 0,
-        "y": 0
-      },
-      "children": [
-        {
-          "children": [
-            {
-              "children": [
-                {
-                  "children": [],
-                  "color": 255,
-                  "label": "",
-                  "text": null,
-                  "type": "clear"
-                },
-                {
-                  "children": [],
-                  "font_id": 0,
-                  "h": 18,
-                  "label": "",
-                  "text": "Select = cycle",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 128,
-                  "x": 8,
-                  "y": 90
-                },
-                {
-                  "children": [],
-                  "font_id": 0,
-                  "h": 18,
-                  "label": "",
-                  "text": "Storage demo",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 128,
-                  "x": 8,
-                  "y": 36
-                },
-                {
-                  "children": [],
-                  "font_id": 0,
-                  "h": 18,
-                  "label": "",
-                  "text": "Theme --",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 128,
-                  "x": 8,
-                  "y": 54
-                },
-                {
-                  "children": [],
-                  "font_id": 0,
-                  "h": 18,
-                  "label": "",
-                  "text": "Units --",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 128,
-                  "x": 8,
-                  "y": 72
-                }
-              ],
-              "id": 1,
-              "label": "",
-              "text": null,
-              "type": "canvasLayer"
-            }
-          ],
-          "id": 1,
-          "label": "",
-          "text": null,
-          "type": "window"
-        }
-      ],
-      "label": "",
-      "text": null,
-      "type": "windowStack"
-    }
+    "root_type": "windowStack"
   },
   "runtime_model": {
     "runtime_view_output": [],
@@ -191,12 +102,8 @@
   "template": "companion-demo-storage",
   "timeline_init_messages": [
     "init:init",
-    "init:init",
-    "update:FromWatch (Ok RequestStoredValues)",
     "update:FromWatch (Ok RequestStoredValues)",
     "update:GotPreference (Ok (\"units\"))",
-    "update:GotPreference (Ok (\"units\"))",
-    "update:GotStorage (Ok \"Storage key not found\")",
     "update:GotStorage (Ok \"Storage key not found\")"
   ],
   "view_tree_type": "windowStack",

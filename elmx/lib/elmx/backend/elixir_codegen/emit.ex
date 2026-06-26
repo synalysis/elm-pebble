@@ -153,4 +153,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit do
 
   @spec param_name(Types.ir_expr() | atom() | String.t() | map()) :: String.t()
   defdelegate param_name(arg), to: Helpers
+
+  @spec referenced_binding_names(Types.ir_expr() | map() | list()) :: MapSet.t(String.t())
+  defdelegate referenced_binding_names(expr), to: Expr
 end

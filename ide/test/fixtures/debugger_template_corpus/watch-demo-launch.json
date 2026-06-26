@@ -19,7 +19,7 @@
       "font_size": 20,
       "h": 20,
       "kind": "text_label",
-      "text": "Compass demo",
+      "text": "Launch context",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -33,13 +33,13 @@
       "font_size": 20,
       "h": 20,
       "kind": "text_label",
-      "text": "180 deg",
+      "text": "Reason: user",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
       "w": 136,
       "x": 4,
-      "y": 36
+      "y": 28
     },
     {
       "antialiased": true,
@@ -47,13 +47,13 @@
       "font_size": 20,
       "h": 20,
       "kind": "text_label",
-      "text": "Valid",
+      "text": "Aplite",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
       "w": 136,
       "x": 4,
-      "y": 60
+      "y": 48
     },
     {
       "antialiased": true,
@@ -61,35 +61,50 @@
       "font_size": 20,
       "h": 20,
       "kind": "text_label",
-      "text": "0",
+      "text": "Button: none",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
       "w": 136,
       "x": 4,
-      "y": 84
+      "y": 68
     },
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 24,
-      "h": 24,
+      "font_size": 20,
+      "h": 20,
       "kind": "text_label",
-      "text": "Select: peek heading",
+      "text": "Quick: none",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
       "w": 136,
       "x": 4,
-      "y": 108
+      "y": 88
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 40,
+      "h": 40,
+      "kind": "text_label",
+      "text": "Read LaunchContext in init",
+      "text_align": "center",
+      "text_color": null,
+      "text_overflow": "word_wrap",
+      "w": 136,
+      "x": 4,
+      "y": 112
     }
   ],
-  "preview_ops_sha256": "1bbbb1962877c8088e7d0cb520edb6c6b0e0a4273b548273b0d55134c3c46311",
+  "preview_ops_sha256": "572e6aea915ad9b270424077db2beab6146e41897c885126174fd9a5eda38c27",
   "render_tree": {
-    "node_count": 9,
+    "node_count": 10,
     "node_types": [
       "canvasLayer",
       "clear",
+      "text",
       "text",
       "text",
       "text",
@@ -101,40 +116,43 @@
     "root_type": "windowStack"
   },
   "runtime_model": {
-    "hasCompass": true,
-    "heading": {
-      "args": [
-        {
-          "degrees": 180.0,
-          "isValid": true
-        }
-      ],
-      "ctor": "Just"
+    "launchButton": {
+      "args": [],
+      "ctor": "Nothing"
     },
-    "refreshes": 0,
+    "launchReason": {
+      "args": [],
+      "ctor": "LaunchUser"
+    },
+    "quickLaunchAction": {
+      "args": [],
+      "ctor": "QuickLaunchNone"
+    },
     "runtime_view_output": [],
-    "timeString": null
+    "timeString": null,
+    "watchModel": "Aplite"
   },
-  "template": "watch-demo-compass",
+  "template": "watch-demo-launch",
   "timeline_init_messages": [
-    "init:init",
-    "update:GotHeading (Ok {degrees=180,isvalid=true})"
+    "init:init"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
     "runtime_model": {
-      "hasCompass": true,
-      "heading": {
-        "args": [
-          {
-            "degrees": 180.0,
-            "isValid": true
-          }
-        ],
-        "ctor": "Just"
+      "launchButton": {
+        "args": [],
+        "ctor": "Nothing"
       },
-      "refreshes": 0
+      "launchReason": {
+        "args": [],
+        "ctor": "LaunchUser"
+      },
+      "quickLaunchAction": {
+        "args": [],
+        "ctor": "QuickLaunchNone"
+      },
+      "watchModel": "Aplite"
     },
     "runtime_view_output": [],
     "timeString": null,

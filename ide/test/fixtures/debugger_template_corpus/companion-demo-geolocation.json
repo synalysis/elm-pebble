@@ -33,7 +33,7 @@
       "font_size": 18,
       "h": 18,
       "kind": "text_label",
-      "text": "Lat 48.13",
+      "text": "Lat 0.00",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -47,7 +47,7 @@
       "font_size": 18,
       "h": 18,
       "kind": "text_label",
-      "text": "Lon 11.57",
+      "text": "Lon 0.00",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -61,7 +61,7 @@
       "font_size": 18,
       "h": 18,
       "kind": "text_label",
-      "text": "±25m",
+      "text": "±0m",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -70,7 +70,7 @@
       "y": 90
     }
   ],
-  "preview_ops_sha256": "cbfae3d076373f49ed7eb4c3870f94f328de98248e3bbf8f63452ecb729707f3",
+  "preview_ops_sha256": "bf1b138ccf8ee954d78f397d8583a82e6dedae6ecab1d0dc2a7e94f83d7cac7c",
   "render_tree": {
     "node_count": 8,
     "node_types": [
@@ -83,125 +83,12 @@
       "window",
       "windowStack"
     ],
-    "root_type": "windowStack",
-    "tree": {
-      "box": {
-        "h": 168,
-        "text": null,
-        "w": 144,
-        "x": 0,
-        "y": 0
-      },
-      "children": [
-        {
-          "children": [
-            {
-              "children": [
-                {
-                  "children": [],
-                  "color": 255,
-                  "kind": "clear",
-                  "label": "clear",
-                  "text": null,
-                  "type": "clear"
-                },
-                {
-                  "bounds": {
-                    "h": 18,
-                    "text": null,
-                    "w": 128,
-                    "x": 8,
-                    "y": 36
-                  },
-                  "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "08:53",
-                  "options": [],
-                  "text": "<TIME>",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text"
-                },
-                {
-                  "bounds": {
-                    "h": 18,
-                    "text": null,
-                    "w": 128,
-                    "x": 8,
-                    "y": 54
-                  },
-                  "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Lat 48.13",
-                  "options": [],
-                  "text": "Lat 48.13",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text"
-                },
-                {
-                  "bounds": {
-                    "h": 18,
-                    "text": null,
-                    "w": 128,
-                    "x": 8,
-                    "y": 72
-                  },
-                  "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Lon 11.57",
-                  "options": [],
-                  "text": "Lon 11.57",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text"
-                },
-                {
-                  "bounds": {
-                    "h": 18,
-                    "text": null,
-                    "w": 128,
-                    "x": 8,
-                    "y": 90
-                  },
-                  "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "±25m",
-                  "options": [],
-                  "text": "±25m",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text"
-                }
-              ],
-              "id": "1",
-              "kind": "canvasLayer",
-              "label": "",
-              "text": null,
-              "type": "canvasLayer"
-            }
-          ],
-          "id": "1",
-          "kind": "window",
-          "label": "",
-          "text": null,
-          "type": "window"
-        }
-      ],
-      "kind": "windowStack",
-      "label": "",
-      "text": null,
-      "type": "windowStack"
-    }
+    "root_type": "windowStack"
   },
   "runtime_model": {
-    "accuracyM": 25,
-    "latitudeE6": 48137154,
-    "longitudeE6": 11576124,
+    "accuracyM": 0,
+    "latitudeE6": 0,
+    "longitudeE6": 0,
     "runtime_view_output": [],
     "screenH": 168,
     "screenW": 144,
@@ -210,12 +97,9 @@
   "template": "companion-demo-geolocation",
   "timeline_init_messages": [
     "init:init",
-    "init:init",
     "update:CurrentTimeString \"08:53\"",
     "update:FromPhone (ProvidePosition 48137154 11576124 25)",
-    "update:FromPhone (ProvidePosition 48137154 11576124 25)",
     "update:FromWatch (Ok RequestPosition)",
-    "update:GotPosition (Ok {accuracy=25,latitude=48.137154,longitude=11.576124})",
     "update:GotPosition (Ok {accuracy=25,latitude=48.137154,longitude=11.576124})"
   ],
   "view_tree_type": "windowStack",
@@ -228,12 +112,12 @@
     "elmc_diagnostic_preview": [],
     "protocol_last_inbound_from": "companion",
     "protocol_last_inbound_message": "ProvidePosition 48137154 11576124 25",
-    "protocol_last_trigger": "companion_bridge_command",
+    "protocol_last_trigger": "init_companion_bridge",
     "protocol_last_view_message": "ProvidePosition 48137154 11576124 25",
     "runtime_model": {
-      "accuracyM": 25,
-      "latitudeE6": 48137154,
-      "longitudeE6": 11576124,
+      "accuracyM": 0,
+      "latitudeE6": 0,
+      "longitudeE6": 0,
       "screenH": 168,
       "screenW": 144,
       "timeString": "08:53"

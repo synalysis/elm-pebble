@@ -5,8 +5,7 @@
     "runtime_view_output_kinds": [
       "clear",
       "text_color",
-      "text",
-      "vector_at"
+      "text"
     ],
     "status": "ok"
   },
@@ -35,49 +34,21 @@
       "font_size": 18,
       "h": 18,
       "kind": "text_label",
-      "text": "18C Fog",
+      "text": "Loading...",
       "text_align": "center",
       "text_color": 192,
       "text_overflow": "word_wrap",
       "w": 144,
       "x": 0,
       "y": 92
-    },
-    {
-      "fill_color": 192,
-      "kind": "path_filled",
-      "offset_x": 0,
-      "offset_y": 0,
-      "rotation": 0,
-      "stroke_color": 0,
-      "stroke_width": 1
-    },
-    {
-      "fill_color": 192,
-      "kind": "path_filled",
-      "offset_x": 0,
-      "offset_y": 0,
-      "rotation": 0,
-      "stroke_color": 0,
-      "stroke_width": 1
-    },
-    {
-      "fill_color": 192,
-      "kind": "path_filled",
-      "offset_x": 0,
-      "offset_y": 0,
-      "rotation": 0,
-      "stroke_color": 0,
-      "stroke_width": 1
     }
   ],
-  "preview_ops_sha256": "eab81f2b6a75bab7cea1128308cd1888dad98673fe11531e826adce9879322e9",
+  "preview_ops_sha256": "87aeec81bbe3272ffcbf4522a0750e8caebb8e14e9e9872ce6569cfaf94a9785",
   "render_tree": {
-    "node_count": 11,
+    "node_count": 10,
     "node_types": [
       "canvasLayer",
       "clear",
-      "drawVectorAt",
       "group",
       "group",
       "group",
@@ -95,22 +66,12 @@
       "ctor": "Nothing"
     },
     "condition": {
-      "args": [
-        {
-          "args": [],
-          "ctor": "Fog"
-        }
-      ],
-      "ctor": "Just"
+      "args": [],
+      "ctor": "Nothing"
     },
     "displayedCondition": {
-      "args": [
-        {
-          "args": [],
-          "ctor": "Fog"
-        }
-      ],
-      "ctor": "Just"
+      "args": [],
+      "ctor": "Nothing"
     },
     "nextAnimationId": 1,
     "now": {
@@ -135,15 +96,8 @@
     "screenH": 168,
     "screenW": 144,
     "temperature": {
-      "args": [
-        {
-          "args": [
-            18
-          ],
-          "ctor": "Celsius"
-        }
-      ],
-      "ctor": "Just"
+      "args": [],
+      "ctor": "Nothing"
     },
     "timeString": null
   },
@@ -174,22 +128,12 @@
         "ctor": "Nothing"
       },
       "condition": {
-        "args": [
-          {
-            "args": [],
-            "ctor": "Fog"
-          }
-        ],
-        "ctor": "Just"
+        "args": [],
+        "ctor": "Nothing"
       },
       "displayedCondition": {
-        "args": [
-          {
-            "args": [],
-            "ctor": "Fog"
-          }
-        ],
-        "ctor": "Just"
+        "args": [],
+        "ctor": "Nothing"
       },
       "nextAnimationId": 1,
       "now": {
@@ -213,15 +157,8 @@
       "screenH": 168,
       "screenW": 144,
       "temperature": {
-        "args": [
-          {
-            "args": [
-              18
-            ],
-            "ctor": "Celsius"
-          }
-        ],
-        "ctor": "Just"
+        "args": [],
+        "ctor": "Nothing"
       }
     },
     "runtime_view_output": [],

@@ -584,9 +584,20 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   defp normalize_timeline_messages(messages) when is_list(messages) do
     messages
     |> Enum.map(&normalize_timeline_entry/1)
+    |> Enum.reject(&unknown_timeline_entry?/1)
     |> Enum.sort()
     |> Enum.uniq()
   end
+
+  @spec unknown_timeline_entry?(String.t()) :: boolean()
+  defp unknown_timeline_entry?(entry) when is_binary(entry) do
+    case String.split(entry, ":", parts: 2) do
+      ["update", "Unknown" <> _] -> true
+      _ -> false
+    end
+  end
+
+  defp unknown_timeline_entry?(_entry), do: false
 
   defp normalize_timeline_entry(entry) when is_binary(entry) do
     case String.split(entry, ":", parts: 2) do
@@ -629,6 +640,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   defp drop_volatile_model_keys(model) do
     model
     |> Map.drop([
+      "active_subscriptions",
       "elm_introspect",
       "debugger_contract",
       "debugger_contract_b64",

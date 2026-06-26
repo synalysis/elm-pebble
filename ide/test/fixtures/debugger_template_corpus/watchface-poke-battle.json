@@ -336,11 +336,8 @@
     "update:BatteryLevelChanged 88",
     "update:ClockStyle24h True",
     "update:CurrentDateTime { day = 27, dayOfWeek = Wednesday, hour = 8, minute = 53, month = 5, second = 0, utcOffsetMinutes = 0, year = 2026 }",
-    "update:CustomNameLoaded \"\"",
     "update:HealthSupported True",
-    "update:PlayerSettingLoaded 0",
-    "update:ShowDateSettingLoaded 0",
-    "update:ShowStepsSettingLoaded 0"
+    "update:PlayerSettingLoaded 0"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {

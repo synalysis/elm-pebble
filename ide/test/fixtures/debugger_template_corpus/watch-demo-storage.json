@@ -19,7 +19,7 @@
       "font_size": 20,
       "h": 20,
       "kind": "text_label",
-      "text": "Compass demo",
+      "text": "Storage demo",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -33,13 +33,13 @@
       "font_size": 20,
       "h": 20,
       "kind": "text_label",
-      "text": "180 deg",
+      "text": "Value: 0",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
       "w": 136,
       "x": 4,
-      "y": 36
+      "y": 32
     },
     {
       "antialiased": true,
@@ -47,13 +47,13 @@
       "font_size": 20,
       "h": 20,
       "kind": "text_label",
-      "text": "Valid",
+      "text": "Max: 4096",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
       "w": 136,
       "x": 4,
-      "y": 60
+      "y": 56
     },
     {
       "antialiased": true,
@@ -61,30 +61,30 @@
       "font_size": 20,
       "h": 20,
       "kind": "text_label",
-      "text": "0",
+      "text": "Writes: 0",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
       "w": 136,
       "x": 4,
-      "y": 84
+      "y": 80
     },
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 24,
-      "h": 24,
+      "font_size": 40,
+      "h": 40,
       "kind": "text_label",
-      "text": "Select: peek heading",
+      "text": "Select:+1 Up:read Down:delete",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
       "w": 136,
       "x": 4,
-      "y": 108
+      "y": 104
     }
   ],
-  "preview_ops_sha256": "1bbbb1962877c8088e7d0cb520edb6c6b0e0a4273b548273b0d55134c3c46311",
+  "preview_ops_sha256": "6d7cca25bbcc5e2e1e40c16060a141838404ec520f5ed446404606bc5bcd613c",
   "render_tree": {
     "node_count": 9,
     "node_types": [
@@ -101,40 +101,45 @@
     "root_type": "windowStack"
   },
   "runtime_model": {
-    "hasCompass": true,
-    "heading": {
+    "maxBytes": {
       "args": [
-        {
-          "degrees": 180.0,
-          "isValid": true
-        }
+        4096
       ],
       "ctor": "Just"
     },
-    "refreshes": 0,
     "runtime_view_output": [],
-    "timeString": null
+    "timeString": null,
+    "value": {
+      "args": [
+        0
+      ],
+      "ctor": "Just"
+    },
+    "writes": 0
   },
-  "template": "watch-demo-compass",
+  "template": "watch-demo-storage",
   "timeline_init_messages": [
     "init:init",
-    "update:GotHeading (Ok {degrees=180,isvalid=true})"
+    "update:GotMaxSize 4096",
+    "update:GotValue 0"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
     "runtime_model": {
-      "hasCompass": true,
-      "heading": {
+      "maxBytes": {
         "args": [
-          {
-            "degrees": 180.0,
-            "isValid": true
-          }
+          4096
         ],
         "ctor": "Just"
       },
-      "refreshes": 0
+      "value": {
+        "args": [
+          0
+        ],
+        "ctor": "Just"
+      },
+      "writes": 0
     },
     "runtime_view_output": [],
     "timeString": null,

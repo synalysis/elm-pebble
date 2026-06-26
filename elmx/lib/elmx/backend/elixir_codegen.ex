@@ -444,7 +444,11 @@ defmodule Elmx.Backend.ElixirCodegen do
       end
     uses_bitwise = Map.get(env, :uses_bitwise, false)
     fn_name = function_symbol(module_name, decl.name)
-    params = param_list(param_source, if(param_source == [], do: arity, else: nil))
+    used_params = Emit.referenced_binding_names(expr)
+
+    params =
+      param_list(param_source, if(param_source == [], do: arity, else: nil), used_params)
+
     body_str = IO.iodata_to_binary(body)
 
     source =
@@ -484,7 +488,7 @@ defmodule Elmx.Backend.ElixirCodegen do
   defp function_like_value_expr?(%{op: :var}), do: true
   defp function_like_value_expr?(_), do: false
 
-  defp param_list(args, arity) when is_list(args) do
+  defp param_list(args, arity, used_params) when is_list(args) do
     names =
       cond do
         args != [] ->
@@ -497,8 +501,14 @@ defmodule Elmx.Backend.ElixirCodegen do
           []
       end
 
-    Enum.map_join(names, ", ", fn name ->
-      name |> Elmx.Backend.ElixirCodegen.Emit.Helpers.param_var_name(%{})
+    Enum.map_join(Enum.with_index(names), ", ", fn {name, index} ->
+      emit_name = name |> Elmx.Backend.ElixirCodegen.Emit.Helpers.param_var_name(%{})
+
+      if MapSet.member?(used_params, name) do
+        emit_name
+      else
+        "_unused#{index}"
+      end
     end)
   end
 

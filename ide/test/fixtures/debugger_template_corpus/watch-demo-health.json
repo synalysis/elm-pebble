@@ -113,122 +113,7 @@
       "window",
       "windowStack"
     ],
-    "root_type": "windowStack",
-    "tree": {
-      "box": {
-        "h": 168,
-        "text": null,
-        "w": 144,
-        "x": 0,
-        "y": 0
-      },
-      "children": [
-        {
-          "children": [
-            {
-              "children": [
-                {
-                  "children": [],
-                  "color": 255,
-                  "label": "",
-                  "text": null,
-                  "type": "clear"
-                },
-                {
-                  "children": [],
-                  "font_id": 0,
-                  "h": 20,
-                  "label": "",
-                  "text": "0",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 136,
-                  "x": 4,
-                  "y": 96
-                },
-                {
-                  "children": [],
-                  "font_id": 0,
-                  "h": 20,
-                  "label": "",
-                  "text": "Health demo",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 136,
-                  "x": 4,
-                  "y": 8
-                },
-                {
-                  "children": [],
-                  "font_id": 0,
-                  "h": 20,
-                  "label": "",
-                  "text": "Now: 4200",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 136,
-                  "x": 4,
-                  "y": 32
-                },
-                {
-                  "children": [],
-                  "font_id": 0,
-                  "h": 20,
-                  "label": "",
-                  "text": "Select: refresh",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 136,
-                  "x": 4,
-                  "y": 120
-                },
-                {
-                  "children": [],
-                  "font_id": 0,
-                  "h": 20,
-                  "label": "",
-                  "text": "Today: 9100",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 136,
-                  "x": 4,
-                  "y": 52
-                },
-                {
-                  "children": [],
-                  "font_id": 0,
-                  "h": 20,
-                  "label": "",
-                  "text": "Waiting",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 136,
-                  "x": 4,
-                  "y": 76
-                }
-              ],
-              "id": 1,
-              "label": "",
-              "text": null,
-              "type": "canvasLayer"
-            }
-          ],
-          "id": 1,
-          "label": "",
-          "text": null,
-          "type": "window"
-        }
-      ],
-      "label": "",
-      "text": null,
-      "type": "windowStack"
-    }
+    "root_type": "windowStack"
   },
   "runtime_model": {
     "events": 0,
@@ -259,8 +144,6 @@
   "timeline_init_messages": [
     "init:init",
     "update:GotStepsNow 4200",
-    "update:GotStepsNow 4200",
-    "update:GotStepsToday 9100",
     "update:GotStepsToday 9100",
     "update:GotSupported True"
   ],

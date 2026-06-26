@@ -339,7 +339,11 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
     end)
   end
 
-  defp referenced_binding_names(expr), do: referenced_binding_names(expr, MapSet.new())
+  @spec referenced_binding_names(Types.ir_expr() | map() | list()) :: MapSet.t(String.t())
+  def referenced_binding_names(expr) when is_map(expr) or is_list(expr),
+    do: referenced_binding_names(expr, MapSet.new())
+
+  def referenced_binding_names(_expr), do: MapSet.new()
 
   defp referenced_binding_names(%{op: :call} = map, acc) do
     acc =

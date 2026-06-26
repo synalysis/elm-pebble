@@ -2,19 +2,6 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
   @moduledoc false
   use Ide.DebuggerIntegrationCase, async: false
 
-  alias Ide.DebuggerIntegrationExecutors.AccelRuntimeExecutor
-  alias Ide.DebuggerIntegrationExecutors.AliveGuardFrameExecutor
-  alias Ide.DebuggerIntegrationExecutors.DebuggerRuntimeExecutor
-  alias Ide.DebuggerIntegrationExecutors.FailingExternalRuntimeExecutor
-  alias Ide.DebuggerIntegrationExecutors.FrameRuntimeExecutor
-  alias Ide.DebuggerIntegrationExecutors.HttpFollowupRuntimeExecutor
-  alias Ide.DebuggerIntegrationExecutors.InitNoFollowupRuntimeExecutor
-  alias Ide.DebuggerIntegrationExecutors.InitRandomFollowupRuntimeExecutor
-  alias Ide.DebuggerIntegrationExecutors.MaybeShapeRuntimeExecutor
-  alias Ide.DebuggerIntegrationExecutors.NilMaybeRuntimeExecutor
-  alias Ide.DebuggerIntegrationExecutors.StorageFollowupRuntimeExecutor
-  alias Ide.DebuggerIntegrationExecutors.TupleMaybeRuntimeExecutor
-
   test "start, reload, and reset maintain deterministic event sequencing" do
     slug = "debugger-test-#{System.unique_integer([:positive])}"
 

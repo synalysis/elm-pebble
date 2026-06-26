@@ -19,7 +19,7 @@
       "font_size": 20,
       "h": 20,
       "kind": "text_label",
-      "text": "Compass demo",
+      "text": "Time demo",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -33,13 +33,13 @@
       "font_size": 20,
       "h": 20,
       "kind": "text_label",
-      "text": "180 deg",
+      "text": "08:53:00",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
       "w": 136,
       "x": 4,
-      "y": 36
+      "y": 32
     },
     {
       "antialiased": true,
@@ -47,13 +47,13 @@
       "font_size": 20,
       "h": 20,
       "kind": "text_label",
-      "text": "Valid",
+      "text": "24h: yes",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
       "w": 136,
       "x": 4,
-      "y": 60
+      "y": 56
     },
     {
       "antialiased": true,
@@ -61,30 +61,30 @@
       "font_size": 20,
       "h": 20,
       "kind": "text_label",
-      "text": "0",
+      "text": "TZ set: yes",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
       "w": 136,
       "x": 4,
-      "y": 84
+      "y": 80
     },
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 24,
-      "h": 24,
+      "font_size": 40,
+      "h": 40,
       "kind": "text_label",
-      "text": "Select: peek heading",
+      "text": "TZ: UTC Select: refresh",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
       "w": 136,
       "x": 4,
-      "y": 108
+      "y": 104
     }
   ],
-  "preview_ops_sha256": "1bbbb1962877c8088e7d0cb520edb6c6b0e0a4273b548273b0d55134c3c46311",
+  "preview_ops_sha256": "fb75d8d3913a79c402920fe73b6d076a4e739bcc74104dad715be7441033bacc",
   "render_tree": {
     "node_count": 9,
     "node_types": [
@@ -101,40 +101,95 @@
     "root_type": "windowStack"
   },
   "runtime_model": {
-    "hasCompass": true,
-    "heading": {
+    "clock": {
       "args": [
         {
-          "degrees": 180.0,
-          "isValid": true
+          "day": 27,
+          "dayOfWeek": {
+            "args": [],
+            "ctor": "Wednesday"
+          },
+          "hour": 8,
+          "minute": 53,
+          "month": 5,
+          "second": 0,
+          "utcOffsetMinutes": 0,
+          "year": 2026
         }
+      ],
+      "ctor": "Just"
+    },
+    "clock24h": {
+      "args": [
+        true
       ],
       "ctor": "Just"
     },
     "refreshes": 0,
     "runtime_view_output": [],
-    "timeString": null
+    "timeString": null,
+    "timezoneName": {
+      "args": [
+        "UTC"
+      ],
+      "ctor": "Just"
+    },
+    "timezoneSet": {
+      "args": [
+        true
+      ],
+      "ctor": "Just"
+    }
   },
-  "template": "watch-demo-compass",
+  "template": "watch-demo-time",
   "timeline_init_messages": [
     "init:init",
-    "update:GotHeading (Ok {degrees=180,isvalid=true})"
+    "update:GotClock24h True",
+    "update:GotDateTime { day = 27, dayOfWeek = Wednesday, hour = 8, minute = 53, month = 5, second = 0, utcOffsetMinutes = 0, year = 2026 }",
+    "update:GotTimezone \"UTC\"",
+    "update:GotTimezoneSet True"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
     "runtime_model": {
-      "hasCompass": true,
-      "heading": {
+      "clock": {
         "args": [
           {
-            "degrees": 180.0,
-            "isValid": true
+            "day": 27,
+            "dayOfWeek": {
+              "args": [],
+              "ctor": "Wednesday"
+            },
+            "hour": 8,
+            "minute": 53,
+            "month": 5,
+            "second": 0,
+            "utcOffsetMinutes": 0,
+            "year": 2026
           }
         ],
         "ctor": "Just"
       },
-      "refreshes": 0
+      "clock24h": {
+        "args": [
+          true
+        ],
+        "ctor": "Just"
+      },
+      "refreshes": 0,
+      "timezoneName": {
+        "args": [
+          "UTC"
+        ],
+        "ctor": "Just"
+      },
+      "timezoneSet": {
+        "args": [
+          true
+        ],
+        "ctor": "Just"
+      }
     },
     "runtime_view_output": [],
     "timeString": null,

@@ -19,7 +19,7 @@
       "font_size": 20,
       "h": 20,
       "kind": "text_label",
-      "text": "Compass demo",
+      "text": "Log demo",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -33,7 +33,7 @@
       "font_size": 20,
       "h": 20,
       "kind": "text_label",
-      "text": "180 deg",
+      "text": "Code: 1000",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -47,50 +47,35 @@
       "font_size": 20,
       "h": 20,
       "kind": "text_label",
-      "text": "Valid",
+      "text": "Sent: 0",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
       "w": 136,
       "x": 4,
-      "y": 60
+      "y": 64
     },
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 20,
-      "h": 20,
+      "font_size": 40,
+      "h": 40,
       "kind": "text_label",
-      "text": "0",
+      "text": "Select: emit info/warn/error",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
       "w": 136,
       "x": 4,
-      "y": 84
-    },
-    {
-      "antialiased": true,
-      "compositing_mode": 0,
-      "font_size": 24,
-      "h": 24,
-      "kind": "text_label",
-      "text": "Select: peek heading",
-      "text_align": "center",
-      "text_color": null,
-      "text_overflow": "word_wrap",
-      "w": 136,
-      "x": 4,
-      "y": 108
+      "y": 92
     }
   ],
-  "preview_ops_sha256": "1bbbb1962877c8088e7d0cb520edb6c6b0e0a4273b548273b0d55134c3c46311",
+  "preview_ops_sha256": "9e79f8914d81c3caa5d5ff0a32ab91913233d18064c00914ba6f57b2f4e374bc",
   "render_tree": {
-    "node_count": 9,
+    "node_count": 8,
     "node_types": [
       "canvasLayer",
       "clear",
-      "text",
       "text",
       "text",
       "text",
@@ -101,40 +86,21 @@
     "root_type": "windowStack"
   },
   "runtime_model": {
-    "hasCompass": true,
-    "heading": {
-      "args": [
-        {
-          "degrees": 180.0,
-          "isValid": true
-        }
-      ],
-      "ctor": "Just"
-    },
-    "refreshes": 0,
+    "code": 1000,
+    "emissions": 0,
     "runtime_view_output": [],
     "timeString": null
   },
-  "template": "watch-demo-compass",
+  "template": "watch-demo-log",
   "timeline_init_messages": [
-    "init:init",
-    "update:GotHeading (Ok {degrees=180,isvalid=true})"
+    "init:init"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
     "runtime_model": {
-      "hasCompass": true,
-      "heading": {
-        "args": [
-          {
-            "degrees": 180.0,
-            "isValid": true
-          }
-        ],
-        "ctor": "Just"
-      },
-      "refreshes": 0
+      "code": 1000,
+      "emissions": 0
     },
     "runtime_view_output": [],
     "timeString": null,

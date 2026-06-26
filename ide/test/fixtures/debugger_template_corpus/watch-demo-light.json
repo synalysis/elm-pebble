@@ -47,13 +47,27 @@
       "font_size": 20,
       "h": 20,
       "kind": "text_label",
-      "text": "0",
+      "text": "Backlight: --",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
       "w": 136,
       "x": 4,
       "y": 64
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 20,
+      "h": 20,
+      "kind": "text_label",
+      "text": "0",
+      "text_align": "center",
+      "text_color": null,
+      "text_overflow": "word_wrap",
+      "w": 136,
+      "x": 4,
+      "y": 88
     },
     {
       "antialiased": true,
@@ -67,12 +81,12 @@
       "text_overflow": "word_wrap",
       "w": 136,
       "x": 4,
-      "y": 92
+      "y": 112
     }
   ],
-  "preview_ops_sha256": "acc29e5dd2c5e096ce4ce67d48cd8dc1325634e8ec55ab40031c89443c489de6",
+  "preview_ops_sha256": "28148dd55b654752d71b1a4df71f1eb332ba2b2ec92067761b0e58177883af41",
   "render_tree": {
-    "node_count": 8,
+    "node_count": 9,
     "node_types": [
       "canvasLayer",
       "clear",
@@ -80,102 +94,19 @@
       "text",
       "text",
       "text",
+      "text",
       "window",
       "windowStack"
     ],
-    "root_type": "windowStack",
-    "tree": {
-      "box": {
-        "h": 168,
-        "text": null,
-        "w": 144,
-        "x": 0,
-        "y": 0
-      },
-      "children": [
-        {
-          "children": [
-            {
-              "children": [
-                {
-                  "children": [],
-                  "color": 255,
-                  "label": "",
-                  "text": null,
-                  "type": "clear"
-                },
-                {
-                  "children": [],
-                  "font_id": 0,
-                  "h": 20,
-                  "label": "",
-                  "text": "0",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 136,
-                  "x": 4,
-                  "y": 64
-                },
-                {
-                  "children": [],
-                  "font_id": 0,
-                  "h": 20,
-                  "label": "",
-                  "text": "Interaction",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 136,
-                  "x": 4,
-                  "y": 36
-                },
-                {
-                  "children": [],
-                  "font_id": 0,
-                  "h": 20,
-                  "label": "",
-                  "text": "Light demo",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 136,
-                  "x": 4,
-                  "y": 8
-                },
-                {
-                  "children": [],
-                  "font_id": 0,
-                  "h": 40,
-                  "label": "",
-                  "text": "Up/Down: mode Select: apply",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 136,
-                  "x": 4,
-                  "y": 92
-                }
-              ],
-              "id": 1,
-              "label": "",
-              "text": null,
-              "type": "canvasLayer"
-            }
-          ],
-          "id": 1,
-          "label": "",
-          "text": null,
-          "type": "window"
-        }
-      ],
-      "label": "",
-      "text": null,
-      "type": "windowStack"
-    }
+    "root_type": "windowStack"
   },
   "runtime_model": {
     "applies": 0,
+    "backlight": {
+      "args": [],
+      "ctor": "Nothing"
+    },
+    "lightChanges": 0,
     "modeIndex": 0,
     "runtime_view_output": [],
     "timeString": null
@@ -189,6 +120,11 @@
     "debugger_init_complete": true,
     "runtime_model": {
       "applies": 0,
+      "backlight": {
+        "args": [],
+        "ctor": "Nothing"
+      },
+      "lightChanges": 0,
       "modeIndex": 0
     },
     "runtime_view_output": [],
