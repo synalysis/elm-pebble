@@ -8,6 +8,8 @@ defmodule Elmc.Backend.CCodegen.Fusion do
   `{:ok, c_source, runtime_callees}`; unmatched IR returns `:error`.
   """
 
+  alias ElmEx.IR.PipeChain
+
   alias Elmc.Backend.CCodegen.{
     FilterMapRowDrop,
     FoldlOffsetPatch,
@@ -36,6 +38,8 @@ defmodule Elmc.Backend.CCodegen.Fusion do
   @spec try_emit(String.t(), String.t(), map() | nil, map()) ::
           {:ok, String.t(), [FusionSupport.callee_key()]} | {:ok, String.t(), [FusionSupport.callee_key()], :rc_native} | :error
   def try_emit(module_name, name, expr, decl_map) do
+    expr = fusion_expr(expr)
+
     Enum.find_value(@providers, :error, fn {mod, arity} ->
       case apply(mod, :try_emit, apply_args(arity, module_name, name, expr, decl_map)) do
         {:ok, code, callees, :rc_native} -> {:ok, code, callees, :rc_native}
@@ -49,7 +53,7 @@ defmodule Elmc.Backend.CCodegen.Fusion do
   @spec runtime_callees(String.t(), String.t(), map() | nil, map()) ::
           [FusionSupport.callee_key()] | nil
   def runtime_callees(module_name, name, expr, decl_map) do
-    case try_emit(module_name, name, expr, decl_map) do
+    case try_emit(module_name, name, fusion_expr(expr), decl_map) do
       {:ok, _, callees, :rc_native} -> callees
       {:ok, _, callees} -> callees
       :error -> nil
@@ -58,4 +62,7 @@ defmodule Elmc.Backend.CCodegen.Fusion do
 
   defp apply_args(3, module_name, name, expr, _decl_map), do: [module_name, name, expr]
   defp apply_args(4, module_name, name, expr, decl_map), do: [module_name, name, expr, decl_map]
+
+  defp fusion_expr(%{op: :pipe_chain} = expr), do: PipeChain.desugar(expr)
+  defp fusion_expr(expr), do: expr
 end

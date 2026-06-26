@@ -51,6 +51,9 @@ defmodule Elmc.MixProject do
       "test.corpus_run": ["test --only corpus_run"],
       "test.corpus_run_smoke": ["test --only corpus_run_smoke"],
       "test.corpus_parity": ["test --only corpus_parity"],
+      "test.corpus_elmx": ["test --only corpus_elmx"],
+      "test.corpus_elmx_smoke": ["test --only corpus_elmx_smoke"],
+      "test.fixture_codegen": ["test --only fixture_codegen"],
       "test.ts_corpus": ["cmd --cd ../elm_ex mix test.ts_corpus"],
       "test.ts_corpus_smoke": ["cmd --cd ../elm_ex mix test.ts_corpus_smoke"]
     ]
@@ -69,6 +72,9 @@ defmodule Elmc.MixProject do
         "test.corpus_run": :test,
         "test.corpus_run_smoke": :test,
         "test.corpus_parity": :test,
+        "test.corpus_elmx": :test,
+        "test.corpus_elmx_smoke": :test,
+        "test.fixture_codegen": :test,
         "test.ts_corpus": :test,
         "test.ts_corpus_smoke": :test
       ]

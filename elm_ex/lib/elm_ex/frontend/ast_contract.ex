@@ -194,6 +194,9 @@ defmodule ElmEx.Frontend.AstContract do
       :qualified_call ->
         validate_call_like(expr[:target], expr[:args], :invalid_qualified_call_expr)
 
+      :pipe_chain ->
+        validate_pipe_chain(expr)
+
       :constructor_call ->
         validate_call_like(expr[:target], expr[:args], :invalid_constructor_call_expr)
 
@@ -340,6 +343,16 @@ defmodule ElmEx.Frontend.AstContract do
   end
 
   defp validate_field_call(_), do: {:error, :invalid_field_call_expr}
+
+  @spec validate_pipe_chain(map()) :: :ok | {:error, atom()}
+  defp validate_pipe_chain(%{steps: steps, base: base}) when is_list(steps) do
+    with :ok <- validate_expr(base),
+         :ok <- validate_expr_list(steps, :invalid_pipe_chain_expr) do
+      :ok
+    end
+  end
+
+  defp validate_pipe_chain(_), do: {:error, :invalid_pipe_chain_expr}
 
   @spec validate_compose(Types.compose_expr() | Types.invalid_input(), atom()) ::
           :ok | {:error, atom()}

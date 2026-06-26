@@ -6,6 +6,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.HelperParams
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.IntIfChain
   alias Elmc.Backend.CCodegen.Native.String, as: NativeString
   alias Elmc.Backend.CCodegen.PlatformStatic
   alias Elmc.Backend.CCodegen.RecordCompile
@@ -43,6 +44,16 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
           Types.compile_counter()
         ) :: Types.compile_result()
   defp compile_branches(cond_expr, then_expr, else_expr, env, counter) do
+    with {:ok, subject, branches} <-
+           IntIfChain.parse_if_chain(cond_expr, then_expr, else_expr, env) do
+      CaseCompile.dispatch(subject, branches, env, counter)
+    else
+      :error ->
+        compile_branches_fallback(cond_expr, then_expr, else_expr, env, counter)
+    end
+  end
+
+  defp compile_branches_fallback(cond_expr, then_expr, else_expr, env, counter) do
     cond do
       identical_branch_exprs?(then_expr, else_expr) ->
         Host.compile_expr(then_expr, env, counter)

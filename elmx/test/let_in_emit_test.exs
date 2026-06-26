@@ -220,4 +220,31 @@ defmodule Elmx.LetInEmitTest do
     refute source =~ "deadMargin"
     assert source =~ "v31"
   end
+
+  test "field_call with binary receiver keeps parameter referenced in emitted lambda" do
+    env =
+      Emit.function_env("Main", ["api", "child", "key"])
+      |> Map.put(:module, "Main")
+      |> Map.put(:function_arities, %{})
+      |> Map.put(:zero_arity_fns, MapSet.new())
+      |> Map.put(:constructor_lookup, %{})
+
+    expr = %{
+      op: :field_call,
+      field: "read",
+      arg: %{
+        op: :field_call,
+        field: "child",
+        arg: "api",
+        args: [%{op: :var, name: "child"}]
+      },
+      args: [%{op: :var, name: "key"}]
+    }
+
+    {code, _, _} = Emit.compile_expr(expr, env, 0)
+    source = IO.iodata_to_binary(code)
+
+    assert source =~ "api"
+    refute source =~ "_unused0"
+  end
 end

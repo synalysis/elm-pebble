@@ -132,6 +132,11 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified.String do
   def compile("String.join", [sep, list], env, counter),
     do: compile_string_binary("join", sep, list, env, counter)
 
+  def compile("String.concat", [strings], env, counter) do
+    {list_code, env, c1} = Elmx.Backend.ElixirCodegen.Emit.compile_expr(strings, env, counter)
+    {:ok, ["Enum.join(", list_code, ", \"\")"], env, c1}
+  end
+
   def compile("String.contains", [sub], env, counter) do
     compile_string_binary_partial("contains", sub, env, counter)
   end

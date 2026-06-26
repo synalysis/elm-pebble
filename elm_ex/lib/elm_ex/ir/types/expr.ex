@@ -45,6 +45,7 @@ defmodule ElmEx.IR.Types.Expr do
           | :qualified_call
           | :qualified_call1
           | :qualified_ref
+          | :pipe_chain
           | :call
           | :compose_left
           | :compose_right

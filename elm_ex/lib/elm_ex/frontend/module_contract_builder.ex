@@ -525,6 +525,14 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
     %{op: :qualified_call, target: target, args: Enum.map(args, &normalize_generated_expr/1)}
   end
 
+  defp normalize_generated_expr(%{op: :pipe_chain, steps: steps, base: base}) do
+    %{
+      op: :pipe_chain,
+      steps: Enum.map(steps, &normalize_generated_expr/1),
+      base: normalize_generated_expr(base)
+    }
+  end
+
   defp normalize_generated_expr(%{op: :constructor_call, target: target, args: args}) do
     %{op: :constructor_call, target: target, args: Enum.map(args, &normalize_generated_expr/1)}
   end
@@ -665,6 +673,10 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
 
   defp allow_generated_expr?(%{op: :qualified_call, args: args}) do
     Enum.all?(args, &allow_generated_expr?/1)
+  end
+
+  defp allow_generated_expr?(%{op: :pipe_chain, steps: steps, base: base}) do
+    allow_generated_expr?(base) and Enum.all?(steps, &allow_generated_expr?/1)
   end
 
   defp allow_generated_expr?(%{op: :constructor_call, args: args}) do

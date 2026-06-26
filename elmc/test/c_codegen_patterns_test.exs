@@ -568,11 +568,59 @@ defmodule Elmc.CCodegenPatternsTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "elmc_fn_Main_blankRow"
-    assert generated_c =~ "ELMC_ZERO_N = 4"
-    assert generated_c =~ "elmc_zero_list_tmp_"
+    assert generated_c =~ "elmc_immortal_list_Main_blankRow_get"
+    assert generated_c =~ ".head = ELMC_STATIC_INT(0)"
+    assert generated_c =~ ".tail = &elmc_immortal_list_Main_blankRow_cells[2].value"
+    refute generated_c =~ "elmc_zero_list_tmp_"
+    refute generated_c =~ "elmc_immortal_list_Main_blankRow_ready"
+    refute generated_c =~ "while (elmc_"
     refute generated_c =~ "list_repeat_i_"
     refute generated_c =~ "elmc_list_repeat_count("
     refute generated_c =~ "elmc_list_repeat("
+  end
+
+  test "zero-arg List.repeat n 0 hoists unrolled immortal prelude" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    emptyBoard : List Int
+    emptyBoard =
+        List.repeat 16 0
+
+    init _ = ( { board = emptyBoard }, Platform.Cmd.none )
+    update _ m = ( m, Platform.Cmd.none )
+    view m = Ui.toUiNode [ Ui.clear Color.white, Ui.text (String.fromInt (List.length m.board)) ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/list_repeat_zero_hoist", __DIR__)
+    out_dir = Path.expand("tmp/list_repeat_zero_hoist_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert generated_c =~ "elmc_immortal_list_Main_emptyBoard_get"
+    assert generated_c =~ ".tail = &elmc_immortal_list_Main_emptyBoard_cells[14].value"
+    assert generated_c =~ ".head = ELMC_STATIC_INT(0)"
+    assert generated_c =~ "*out = elmc_retain(elmc_immortal_list_Main_emptyBoard_get());"
+    refute generated_c =~ "elmc_zero_list_tmp_"
+    refute generated_c =~ "elmc_immortal_list_Main_emptyBoard_ready"
+    refute generated_c =~ "if (!elmc_immortal_list_Main_emptyBoard_ready)"
   end
 
   test "List.repeat with literal nonzero int uses static int array" do
@@ -810,6 +858,56 @@ defmodule Elmc.CCodegenPatternsTest do
     refute generated_c =~ "elmc_list_reverse("
     refute generated_c =~ "elmc_list_foldl("
     refute generated_c =~ "elmc_closure_new(elmc_lambda_"
+  end
+
+  test "homogeneous long pipe_chain lowers to a C loop instead of nested calls" do
+    source = """
+    module Main exposing (main)
+
+    add1 : Int -> Int
+    add1 x =
+        x + 1
+
+    main : Int
+    main =
+        0
+            |> add1
+            |> add1
+            |> add1
+            |> add1
+            |> add1
+            |> add1
+            |> add1
+            |> add1
+            |> add1
+            |> add1
+            |> add1
+            |> add1
+            |> add1
+            |> add1
+            |> add1
+            |> add1
+            |> add1
+    """
+
+    project_dir = Path.expand("tmp/homogeneous_pipe_chain", __DIR__)
+    out_dir = Path.expand("tmp/homogeneous_pipe_chain_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert generated_c =~ "for (elmc_int_t pipe_i_"
+    assert generated_c =~ "elmc_fn_Main_add1(pipe_args_"
+    refute generated_c =~ "elmc_fn_Main_add1(call_args_"
   end
 
   test "native int minus List.length uses cursor count without boxing length" do

@@ -140,7 +140,8 @@ defmodule Elmc.ResourceSlotMacrosTest do
     assert Regex.scan(~r/elmc_new_int\(&#{out},/, code) |> length() == 1
     refute code =~ "case ELMC_UNION"
     assert code =~ "default:"
-    assert code =~ "elmc_int_zero()"
+    assert code =~ "case_int_2 = 0"
+    refute code =~ "elmc_int_zero()"
   end
 
   test "exhaustive constructor tag switch omits default and boxes int once" do
@@ -191,6 +192,44 @@ defmodule Elmc.ResourceSlotMacrosTest do
     refute code =~ "default:"
     refute code =~ "case_box_"
     refute code =~ "if (case_int_2"
+    refute code =~ ~r/elmc_int_t case_int_2 =/
+    assert code =~ "Rc = elmc_new_int(&#{out}, case_int_2);"
+  end
+
+  test "exhaustive constructor tag switch assigns zero literal to int scratch" do
+    branches = [
+      %{
+        pattern: %{kind: :constructor, tag: 0, name: "StepCount", arg_pattern: nil},
+        expr: %{op: :int_literal, value: 0}
+      },
+      %{
+        pattern: %{kind: :constructor, tag: 1, name: "ActiveMinutes", arg_pattern: nil},
+        expr: %{op: :int_literal, value: 1}
+      },
+      %{
+        pattern: %{kind: :constructor, tag: 2, name: "DistanceMeters", arg_pattern: nil},
+        expr: %{op: :int_literal, value: 2}
+      },
+      %{
+        pattern: %{kind: :constructor, tag: 3, name: "SleepSeconds", arg_pattern: nil},
+        expr: %{op: :int_literal, value: 3}
+      }
+    ]
+
+    env = %{
+      "metric" => "metric_var",
+      __rc_catch__: true,
+      __rc_required__: true
+    }
+
+    {code, out, _counter} =
+      ConstructorTagCase.compile_boxed_subject("metric", branches, env, 0)
+
+    assert out == "tmp_2"
+    refute code =~ ~r/elmc_int_t case_int_2 =/
+    refute code =~ "elmc_int_zero()"
+    assert code =~ "case_int_2 = 0"
+    assert code =~ "case_int_2 = 1"
     assert code =~ "Rc = elmc_new_int(&#{out}, case_int_2);"
   end
 

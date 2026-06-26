@@ -109,10 +109,21 @@ defmodule Elmc.CodegenCorpusTest do
     parse_ok = Enum.count(results, &(&1.parse == :ok))
     lower_ok = Enum.count(results, &(&1.lower == :ok))
     codegen_ok = Enum.count(results, &(&1.codegen == :ok))
+    total = length(results)
 
-    assert parse_ok >= 2, "Expected at least 2 projects to parse, got #{parse_ok}"
-    assert lower_ok >= 2, "Expected at least 2 projects to lower, got #{lower_ok}"
-    assert codegen_ok >= 2, "Expected at least 2 projects to generate code, got #{codegen_ok}"
+    failed =
+      results
+      |> Enum.filter(fn r -> r.parse != :ok or r.lower != :ok or r.codegen != :ok end)
+      |> Enum.map(& &1.fixture)
+
+    assert parse_ok == total,
+           "Expected all #{total} fixture projects to parse; failed: #{inspect(failed)}"
+
+    assert lower_ok == total,
+           "Expected all #{total} fixture projects to lower; failed: #{inspect(failed)}"
+
+    assert codegen_ok == total,
+           "Expected all #{total} fixture projects to generate code; failed: #{inspect(failed)}"
   end
 
   defp count_unsupported_ops(%ElmEx.IR{} = ir) do

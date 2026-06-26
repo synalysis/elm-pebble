@@ -11,6 +11,7 @@ defmodule Elmc do
   alias ElmEx.Frontend.Bridge
   alias ElmEx.IR.DeadCode
   alias ElmEx.IR.Lowerer
+  alias ElmEx.IR.PipeChain
   alias Elmc.Runtime.Generator
 
   @type compile_options :: Elmc.Types.compile_options()
@@ -33,6 +34,7 @@ defmodule Elmc do
 
     with {:ok, project} <- Bridge.load_project(project_dir),
          {:ok, ir0} <- Lowerer.lower_project(project),
+         ir0 = PipeChain.desugar_project(ir0),
          ir <- maybe_strip_dead_code(ir0, entry_module, opts[:strip_dead_code]),
          {:ok, ir, debug_usage_diagnostics} <- check_debug_usage(ir, opts),
          :ok <- Ports.write_port_headers(ir, opts[:out_dir] || "build"),

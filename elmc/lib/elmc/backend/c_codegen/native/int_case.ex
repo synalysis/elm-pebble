@@ -5,7 +5,9 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
   alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.IntLiteralRef
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.Types
   @spec branches?(Types.int_case_branches()) :: boolean()
@@ -66,6 +68,30 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
   end
 
   defp compile(subject_expr, branches, env, counter, :boxed) do
+    if boxed_lookup_table_eligible?(branches, env) do
+      compile_boxed_lookup_table(subject_expr, branches, env, counter)
+    else
+      compile_boxed_switch(subject_expr, branches, env, counter)
+    end
+  end
+
+  defp compile(subject_expr, branches, env, counter, :native_int) do
+    case_expr = %{op: :case, subject: subject_expr, branches: branches}
+
+    case ConstantInt.literal_value(case_expr, env) do
+      {:ok, value} ->
+        {"", Integer.to_string(value), counter}
+
+      :error ->
+        if lookup_table_eligible?(branches) do
+          compile_lookup_table(subject_expr, branches, env, counter)
+        else
+          compile_scalar_switch(subject_expr, branches, env, counter)
+        end
+    end
+  end
+
+  defp compile_boxed_switch(subject_expr, branches, env, counter) do
     {subject_code, subject_ref, counter} = NativeInt.compile_expr(subject_expr, env, counter)
     next = counter + 1
     out = "tmp_#{next}"
@@ -104,19 +130,48 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
     {code, out, final_counter}
   end
 
-  defp compile(subject_expr, branches, env, counter, :native_int) do
+  defp compile_boxed_lookup_table(subject_expr, branches, env, counter) do
+    {literal_entries, size, int_count, has_wildcard?} = lookup_table_boxed_entries(branches)
+    refs =
+      Enum.map(literal_entries, fn expr ->
+        {:ok, ref} = lookup_table_branch_ref(expr, env)
+        ref
+      end)
     case_expr = %{op: :case, subject: subject_expr, branches: branches}
 
     case ConstantInt.literal_value(case_expr, env) do
-      {:ok, value} ->
-        {"", Integer.to_string(value), counter}
+      {:ok, subject_value} ->
+        index = bounded_lookup_index_value(subject_value, int_count, has_wildcard?)
+        ref = Enum.at(refs, index)
+        next = counter + 1
+        out = "tmp_#{next}"
+
+        code =
+          """
+            ElmcValue *#{out} = NULL;
+            #{RcRuntimeEmit.assign_into(env, out, "elmc_new_int", ref)}
+          """
+
+        {code, out, next}
 
       :error ->
-        if lookup_table_eligible?(branches) do
-          compile_lookup_table(subject_expr, branches, env, counter)
-        else
-          compile_scalar_switch(subject_expr, branches, env, counter)
-        end
+        {subject_code, subject_ref, counter} = NativeInt.compile_expr(subject_expr, env, counter)
+        next = counter + 1
+        lut = "native_lut_#{next}"
+        scratch = "native_case_#{next}"
+        out = "tmp_#{next}"
+        values = Enum.join(refs, ", ")
+        index = bounded_lookup_index(subject_ref, int_count, has_wildcard?)
+
+        code = """
+        #{subject_code}
+          static const elmc_int_t #{lut}[#{size}] = { #{values} };
+          elmc_int_t #{scratch} = #{lut}[#{index}];
+          ElmcValue *#{out} = NULL;
+          #{RcRuntimeEmit.assign_into(env, out, "elmc_new_int", scratch)}
+        """
+
+        {code, out, next}
     end
   end
 
@@ -206,9 +261,118 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
   end
 
   defp lookup_table_eligible?(branches) do
+    native_lookup_table_eligible?(branches)
+  end
+
+  defp native_lookup_table_eligible?(branches) do
     branches?(branches) and
       Enum.all?(branches, fn %{expr: expr} -> match?(%{op: :int_literal, value: _}, expr) end)
   end
+
+  defp boxed_lookup_table_eligible?(branches, env) do
+    branches?(branches) and dense_continuous_keys?(branches) and
+      Enum.all?(branches, fn %{expr: expr} ->
+        match?({:ok, _}, lookup_table_branch_ref(expr, env))
+      end)
+  end
+
+  defp lookup_table_branch_ref(expr, env) do
+    case normalize_lookup_branch_expr(expr) do
+      %{op: :int_literal} = lit ->
+        {:ok, IntLiteralRef.ref(lit, env)}
+
+      %{op: :c_int_expr, value: value} when is_binary(value) ->
+        {:ok, value}
+
+      _ ->
+        :error
+    end
+  end
+
+  defp normalize_lookup_branch_expr(%{op: :qualified_call, target: target} = expr) do
+    args = Map.get(expr, :args, [])
+
+    case Host.special_value_from_target(Host.normalize_special_target(target), args) do
+      nil -> expr
+      rewritten -> normalize_lookup_branch_expr(rewritten)
+    end
+  end
+
+  defp normalize_lookup_branch_expr(%{op: :call, name: name, args: args}) when is_binary(name) do
+    case Host.special_value_from_target(name, args || []) do
+      nil -> %{op: :call, name: name, args: args}
+      rewritten -> normalize_lookup_branch_expr(rewritten)
+    end
+  end
+
+  defp normalize_lookup_branch_expr(expr), do: expr
+
+  defp dense_continuous_keys?(branches) do
+    keys =
+      branches
+      |> Enum.flat_map(fn
+        %{pattern: %{kind: :int, value: value}} when is_integer(value) -> [value]
+        _ -> []
+      end)
+      |> Enum.sort()
+
+    keys == Enum.to_list(0..(length(keys) - 1))
+  end
+
+  defp lookup_table_boxed_entries(branches) do
+    default_expr =
+      branches
+      |> Enum.find_value(fn branch ->
+        case branch do
+          %{pattern: %{kind: :wildcard}, expr: expr} -> expr
+          _ -> nil
+        end
+      end)
+
+    int_expr_map =
+      branches
+      |> Enum.flat_map(fn branch ->
+        case branch do
+          %{pattern: %{kind: :int, value: key}, expr: expr} -> [{key, expr}]
+          _ -> []
+        end
+      end)
+      |> Map.new()
+
+    int_keys = int_expr_map |> Map.keys() |> Enum.sort()
+    int_count = length(int_keys)
+
+    has_wildcard? =
+      Enum.any?(branches, fn %{pattern: pattern} -> match?(%{kind: :wildcard}, pattern) end)
+
+    max_key = Enum.max(int_keys, fn -> -1 end)
+
+    size =
+      cond do
+        max_key < 0 and has_wildcard? -> 1
+        has_wildcard? -> max_key + 2
+        true -> max_key + 1
+      end
+
+    entries =
+      for index <- 0..(size - 1) do
+        Map.get(int_expr_map, index, default_expr)
+      end
+
+    {entries, size, int_count, has_wildcard?}
+  end
+
+  defp bounded_lookup_index(subject_ref, int_count, has_wildcard?) when has_wildcard? do
+    "((#{subject_ref}) >= 0 && (#{subject_ref}) < #{int_count}) ? (#{subject_ref}) : #{int_count}"
+  end
+
+  defp bounded_lookup_index(subject_ref, _int_count, false), do: subject_ref
+
+  defp bounded_lookup_index_value(subject_value, int_count, has_wildcard?) when has_wildcard? do
+    if subject_value >= 0 and subject_value < int_count, do: subject_value, else: int_count
+  end
+
+  defp bounded_lookup_index_value(subject_value, _int_count, false), do: subject_value
 
   defp lookup_table_entries(branches) do
     default =

@@ -267,6 +267,15 @@ defmodule Elmx.Backend.ElixirCodegen do
     end
   end
 
+  defp infer_callable_arity(%{op: :partial_constructor, arity: full_arity, args: bound_args}, _arities)
+       when is_integer(full_arity) and is_list(bound_args) do
+    max(full_arity - length(bound_args), 0)
+  end
+
+  defp infer_callable_arity(%{op: :var, name: name}, arities) when is_binary(name) do
+    Map.get(arities, name, 0)
+  end
+
   defp infer_callable_arity(_expr, _arities), do: 0
 
   defp infer_user_callable_arity(target, args, arities) do
@@ -300,6 +309,23 @@ defmodule Elmx.Backend.ElixirCodegen do
             end)
 
           Map.put(call, :args, args ++ extra)
+        end
+
+      %{op: :partial_constructor, arity: full_arity, args: bound_args} = pc
+      when is_list(bound_args) ->
+        remaining = max(full_arity - length(bound_args), 0)
+
+        if remaining == arity do
+          {:apply_saturated, pc, arity}
+        else
+          expr
+        end
+
+      %{op: :var, name: name} = var when is_binary(name) ->
+        if arity > 0 and Map.get(callable_arities, name, 0) == arity do
+          {:apply_saturated, var, arity}
+        else
+          expr
         end
 
       _ ->
@@ -497,6 +523,12 @@ defmodule Elmx.Backend.ElixirCodegen do
   defp function_like_value_expr?(%{op: :lambda}), do: true
   defp function_like_value_expr?(%{op: :qualified_call, args: []}), do: true
   defp function_like_value_expr?(%{op: :var}), do: true
+
+  defp function_like_value_expr?(%{op: :partial_constructor, arity: full_arity, args: bound_args})
+       when is_integer(full_arity) and is_list(bound_args) do
+    full_arity > length(bound_args)
+  end
+
   defp function_like_value_expr?(_), do: false
 
   defp param_list(args, arity, used_params) when is_list(args) do

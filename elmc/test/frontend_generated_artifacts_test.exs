@@ -274,8 +274,16 @@ defmodule Elmc.FrontendGeneratedArtifactsTest do
                "values |> List.map ((+) 1) |> List.foldl (+) 0"
              )
 
-    assert expr10[:op] == :qualified_call
-    assert expr10[:target] == "List.foldl"
+    assert expr10[:op] == :pipe_chain
+    assert expr10[:base][:op] == :var
+    assert expr10[:base][:name] == "values"
+    assert length(expr10[:steps]) == 2
+    assert Enum.at(expr10[:steps], 0)[:target] == "List.map"
+    assert Enum.at(expr10[:steps], 1)[:target] == "List.foldl"
+
+    desugared10 = ElmEx.IR.PipeChain.desugar(expr10)
+    assert desugared10[:op] == :qualified_call
+    assert desugared10[:target] == "List.foldl"
 
     assert {:ok, expr10b} =
              ElmEx.Frontend.GeneratedExpressionParser.parse("succeed identity |. spaces |= term")
@@ -674,9 +682,14 @@ defmodule Elmc.FrontendGeneratedArtifactsTest do
     assert {:ok, expr37} =
              ElmEx.Frontend.GeneratedExpressionParser.parse("values |> List.map .value")
 
-    assert expr37[:op] == :qualified_call
-    assert expr37[:target] == "List.map"
-    assert length(expr37[:args]) == 2
+    assert expr37[:op] == :pipe_chain
+    assert expr37[:base][:name] == "values"
+    assert Enum.at(expr37[:steps], 0)[:target] == "List.map"
+
+    desugared37 = ElmEx.IR.PipeChain.desugar(expr37)
+    assert desugared37[:op] == :qualified_call
+    assert desugared37[:target] == "List.map"
+    assert length(desugared37[:args]) == 2
 
     assert {:ok, expr38} =
              ElmEx.Frontend.GeneratedExpressionParser.parse("1.5 + 2.25")

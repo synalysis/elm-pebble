@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.ImmortalStaticList do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.CSource
+  alias Elmc.Backend.CCodegen.CodegenListHelpers
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
@@ -200,16 +201,41 @@ defmodule Elmc.Backend.CCodegen.ImmortalStaticList do
           boolean()
         ) :: {:ok, String.t(), String.t()} | :error
   def try_emit_function_prelude_and_body(module_name, fun_name, expr, direct_args?, rc_required?) do
-    with true <- match?(%{op: :list_literal, items: _}, expr),
-         {:ok, prelude, return_expr} <- emit_list(module_name, fun_name, expr) do
-      body =
-        emit_function_body(direct_args?, return_expr, rc_required?)
-
+    with {:ok, prelude, return_expr} <- emit_static_body_expr(module_name, fun_name, expr) do
+      body = emit_function_body(direct_args?, return_expr, rc_required?)
       {:ok, prelude, body}
     else
       _ -> :error
     end
   end
+
+  defp emit_static_body_expr(module_name, fun_name, %{op: :list_literal, items: items}) do
+    emit_list(module_name, fun_name, %{op: :list_literal, items: items})
+  end
+
+  defp emit_static_body_expr(module_name, fun_name, expr) do
+    with {:ok, count} <- repeat_zero_literal_count(expr) do
+      sym = immortal_symbol(module_name, fun_name)
+      {:ok, CodegenListHelpers.emit_zero_repeat_prelude(sym, count), "#{sym}_get()"}
+    end
+  end
+
+  defp repeat_zero_literal_count(%{
+         op: :qualified_call,
+         target: target,
+         args: [n, %{op: :int_literal, value: 0}]
+       })
+       when target in ["List.repeat", "Elm.Kernel.List.repeat"] do
+    case n do
+      %{op: :int_literal, value: count} when is_integer(count) and count > 0 and count <= 32 ->
+        {:ok, count}
+
+      _ ->
+        :error
+    end
+  end
+
+  defp repeat_zero_literal_count(_expr), do: :error
 
   defp emit_list(_module_name, _fun_name, %{op: :list_literal, items: []}) do
     {:ok, "", "elmc_list_nil()"}

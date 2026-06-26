@@ -12,7 +12,13 @@ defmodule Elmc.Test.ElmRunCorpus do
   @metadata_compile_error_types ~w(error_pattern exit_code timeout)
 
   @parity_smoke_tests [
-    "Basics/DecTest.elm"
+    "Basics/ChainedArithmetic.elm",
+    "Basics/BoolIntrinsicWrappers.elm",
+    "Basics/DecTest.elm",
+    "Basics/MainLiteral.elm",
+    "Advanced/MainRecordUpdateNested.elm",
+    "Unicode/CharLiterals.elm",
+    "TailDef/Main.elm"
   ]
 
   @execution_smoke_candidates [
@@ -46,6 +52,32 @@ defmodule Elmc.Test.ElmRunCorpus do
     "Bugs/A64FieldArgCorruption.elm",
     "Compatibility/ProcessSendDead.elm",
     "Collections/BenchDictIntLookup.elm"
+  ]
+
+  @elmx_smoke_tests [
+    "Basics/ChainedArithmetic.elm",
+    "Basics/BoolIntrinsicWrappers.elm",
+    "Basics/AsBound.elm",
+    "Advanced/MainRecordUpdateNested.elm",
+    "Basics/DictUnionTypeLookup.elm",
+    "Binary/FixedWidthHash.elm",
+    "Compiler/UnprovenCtorFields.elm",
+    "TailDef/Main.elm",
+    "Bitwise/BitwiseSpec.elm",
+    "Array/PushSharedBranches.elm",
+    "Optimization/DictInsertKeysAssert.elm",
+    "KernelLowering/JsArrayFilter.elm",
+    "Unicode/CharCase.elm",
+    "Iterative/Collections.elm",
+    "Kernel/DiagAbs10.elm",
+    "Json/MainDecodeArrayPrimitive.elm",
+    "Graph/MainDictGet.elm",
+    "Compiler/BccBinopTypeLoss.elm",
+    "Collections/BenchDictIntLookup.elm",
+    "Compatibility/ProcessSendDead.elm",
+    "Compiler/LssOpaqueBinaryFunRef.elm",
+    "Kernel/MainPartialList.elm",
+    "Basics/VmValidateRepro.elm"
   ]
 
   @type tier ::
@@ -94,8 +126,13 @@ defmodule Elmc.Test.ElmRunCorpus do
   @spec smoke_tests() :: [String.t()]
   def smoke_tests, do: @smoke_tests
 
+  @spec elmx_smoke_tests() :: [String.t()]
+  def elmx_smoke_tests, do: @elmx_smoke_tests
+
   @spec parity_smoke_tests() :: [String.t()]
-  def parity_smoke_tests, do: @parity_smoke_tests
+  def parity_smoke_tests do
+    Enum.filter(@parity_smoke_tests, &File.exists?(expected_path(&1)))
+  end
 
   @spec execution_smoke_tests() :: [String.t()]
   def execution_smoke_tests do
@@ -604,6 +641,24 @@ defmodule Elmc.Test.ElmRunCorpus do
     end
   end
 
+  @spec elmx_compile_probe!(String.t(), String.t(), keyword()) :: :ok | {:error, term()}
+  def elmx_compile_probe!(rel_path, tmp_root, opts \\ []) do
+    timeout_ms = Keyword.get(opts, :timeout_ms, 30_000)
+
+    task =
+      Task.async(fn ->
+        do_elmx_compile_probe(rel_path, tmp_root)
+      end)
+
+    try do
+      Task.await(task, timeout_ms)
+    catch
+      :exit, {:timeout, _} ->
+        Task.shutdown(task, :brutal_kill)
+        {:error, :timeout}
+    end
+  end
+
   defp do_compile_probe(rel_path, tmp_root) do
     module = module_name(rel_path)
     tmp_dir = Path.join(tmp_root, path_slug(rel_path))
@@ -624,6 +679,34 @@ defmodule Elmc.Test.ElmRunCorpus do
            out_dir: out_dir,
            strip_dead_code: false,
            entry_module: module
+         }) do
+      {:ok, _} ->
+        :ok
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp do_elmx_compile_probe(rel_path, tmp_root) do
+    module = module_name(rel_path)
+    tmp_dir = Path.join(tmp_root, path_slug(rel_path))
+    src_path = Path.join(corpus_dir(), rel_path)
+
+    File.rm_rf!(tmp_dir)
+    File.mkdir_p!(tmp_dir)
+    File.cp!(src_path, Path.join(tmp_dir, Path.basename(src_path)))
+
+    File.write!(
+      Path.join(tmp_dir, "elm.json"),
+      Jason.encode!(minimal_elm_json(), pretty: true) <> "\n"
+    )
+
+    case Elmx.compile_in_memory(tmp_dir, %{
+           entry_module: module,
+           strip_dead_code: false,
+           mode: :library,
+           revision: "corpus-" <> path_slug(rel_path)
          }) do
       {:ok, _} ->
         :ok
@@ -670,6 +753,63 @@ defmodule Elmc.Test.ElmRunCorpus do
     failed = length(results) - ok
 
   %{
+      "corpus_sha" => index["corpus_sha"],
+      "generated_at" => DateTime.utc_now() |> DateTime.to_iso8601(),
+      "summary" => %{
+        "attempted" => length(results),
+        "compile_ok" => ok,
+        "compile_failed" => failed,
+        "compile_ok_pct" =>
+          if(length(results) == 0,
+            do: 0.0,
+            else: Float.round(ok * 100.0 / length(results), 2)
+          )
+      },
+      "results" => results
+    }
+  end
+
+  @spec run_elmx_compile_gate!(keyword()) :: map()
+  def run_elmx_compile_gate!(opts \\ []) do
+    index = Keyword.get_lazy(opts, :index, &build_index/0)
+    tmp_root =
+      Keyword.get(opts, :tmp_root, Path.expand("../tmp/elm_run_corpus_elmx_compile", __DIR__))
+      |> Path.expand()
+
+    paths = Keyword.get(opts, :paths, compile_eligible_paths(index))
+    timeout_ms = Keyword.get(opts, :timeout_ms, 30_000)
+    progress? = Keyword.get(opts, :progress, false)
+
+    File.mkdir_p!(tmp_root)
+
+    results =
+      Enum.map(paths, fn path ->
+        if progress?, do: IO.write(:stderr, "corpus elmx compile #{path}\n")
+
+        started = System.monotonic_time(:millisecond)
+
+        {status, detail} =
+          case elmx_compile_probe!(path, tmp_root, timeout_ms: timeout_ms) do
+            :ok -> {:ok, nil}
+            {:error, :timeout} -> {:error, "timeout after #{timeout_ms}ms"}
+            {:error, reason} -> {:error, inspect(reason, limit: 8)}
+          end
+
+        elapsed_ms = System.monotonic_time(:millisecond) - started
+
+        %{
+          "path" => path,
+          "status" => Atom.to_string(status),
+          "detail" => detail,
+          "elapsed_ms" => elapsed_ms
+        }
+      end)
+
+    ok = Enum.count(results, &(&1["status"] == "ok"))
+    failed = length(results) - ok
+
+    %{
+      "backend" => "elmx",
       "corpus_sha" => index["corpus_sha"],
       "generated_at" => DateTime.utc_now() |> DateTime.to_iso8601(),
       "summary" => %{

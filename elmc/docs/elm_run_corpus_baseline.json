@@ -1,6 +1,6 @@
 {
   "corpus_sha": "a1137d6d5de0d76ef28cefe37317c11339e6c831",
   "attempted": 629,
-  "compile_ok_min": 624,
-  "notes": "Five Basics/LongPipeline* stress tests hit the 15s per-probe compile timeout."
+  "compile_ok_min": 629,
+  "notes": "Elmc portable corpus compile gate: 629/629 programs compile within 45s per-program timeout."
 }

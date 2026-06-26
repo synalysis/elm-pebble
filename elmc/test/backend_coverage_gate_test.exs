@@ -45,6 +45,7 @@ defmodule Elmc.BackendCoverageGateTest do
                    :string_length_expr,
                    :char_from_code,
                    :char_from_code_expr,
+                   :pipe_chain,
                    :unsupported
                  ])
 

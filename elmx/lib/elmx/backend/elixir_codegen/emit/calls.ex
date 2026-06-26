@@ -12,6 +12,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
   @rt_pebble_ui CodegenRefs.pebble_ui()
 
 @comparison_ops ~w(__eq__ __neq__ __lt__ __lte__ __gt__ __gte__)
+  @pipeline_flatten_threshold 16
 
   def compile_call(%{name: "__apply__", args: [fun, arg]}, env, counter) do
     case fun do
@@ -108,6 +109,30 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
     {fixed, env, c1} = Emit.compile_expr(arg, env, counter)
     rhs = Helpers.let_emit_name("__rhs")
     {["fn ", rhs, " -> ", @rt_core, ".append(", fixed, ", ", rhs, ") end"], env, c1}
+  end
+
+  def compile_call(%{name: "<|", args: [fun, arg]}, env, counter) do
+    {fun_code, env, c1} = Emit.compile_expr(fun, env, counter)
+    {arg_code, env, c2} = Emit.compile_expr(arg, env, c1)
+    {["Elmx.Runtime.Core.Apply.apply1(", fun_code, ", ", arg_code, ")"], env, c2}
+  end
+
+  def compile_call(%{name: "|>", args: [arg, fun]}, env, counter) do
+    expr = %{op: :call, name: "|>", args: [arg, fun]}
+
+    case unwrap_pipe_pipeline(expr) do
+      {:ok, steps, base} when length(steps) >= @pipeline_flatten_threshold ->
+        if homogeneous_pipe_steps?(steps) do
+          compile_homogeneous_pipe_block(hd(steps), length(steps), base, env, counter)
+        else
+          compile_pipe_pipeline_block(steps, base, env, counter)
+        end
+
+      _ ->
+        {fun_code, env, c1} = Emit.compile_expr(fun, env, counter)
+        {arg_code, env, c2} = Emit.compile_expr(arg, env, c1)
+        {["Elmx.Runtime.Core.Apply.apply1(", fun_code, ", ", arg_code, ")"], env, c2}
+    end
   end
 
   def compile_call(%{name: name, args: args}, env, counter) when is_list(args) do
@@ -260,6 +285,124 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
   def compile_qualified_call(expr, env, counter),
     do: QualifiedEmit.compile_qualified_call(expr, env, counter)
 
+  def compile_pipe_chain(%{steps: steps, base: base}, env, counter) when is_list(steps) do
+    {homogeneous_prefix, rest} = split_homogeneous_prefix_steps(steps)
+
+    if length(homogeneous_prefix) >= @pipeline_flatten_threshold do
+      compile_homogeneous_pipe_steps(hd(homogeneous_prefix), length(homogeneous_prefix), base, rest, env, counter)
+    else
+      compile_pipe_steps_iterative(steps, base, env, counter)
+    end
+  end
+
+  defp split_homogeneous_prefix_steps([]), do: {[], []}
+
+  defp split_homogeneous_prefix_steps([first | rest]) do
+    {same, other} = Enum.split_while(rest, &(&1 == first))
+    {[first | same], other}
+  end
+
+  defp compile_homogeneous_pipe_steps(step, count, base, rest, env, counter) do
+    {base_code, env, c0} = Emit.compile_expr(base, env, counter)
+    {step_code, env, c1} = Emit.compile_expr(step, env, c0)
+
+    reduce_code = [
+      "Elmx.Runtime.Core.Apply.repeat1(",
+      step_code,
+      ", ",
+      Integer.to_string(count),
+      ", ",
+      base_code,
+      ")"
+    ]
+
+    {final_code, env, c} =
+      case rest do
+        [] ->
+          {reduce_code, env, c1}
+
+        _ ->
+          acc_name = Helpers.let_emit_name("__pipe_acc")
+          acc_atom = String.to_atom(acc_name)
+          acc_var = Macro.to_string(Macro.var(acc_atom, nil))
+          step_env = Map.put(env, acc_atom, true)
+
+          {rest_lines, _, c} =
+            Enum.reduce(rest, {[], step_env, c1}, fn rest_step, {lines, env, c} ->
+              {step_code, _, c1} = compile_pipe_step(rest_step, acc_name, env, c)
+              {[ [acc_var, " = ", step_code, "\n"] | lines], env, c1}
+            end)
+
+          code = [
+            "(fn ->\n",
+            acc_var,
+            " = ",
+            reduce_code,
+            "\n",
+            Enum.reverse(rest_lines),
+            acc_var,
+            "\nend).()"
+          ]
+
+          {code, env, c}
+      end
+
+    {final_code, env, c}
+  end
+
+  defp compile_pipe_step(step, acc_name, env, counter) do
+    acc_expr = %{op: :var, name: acc_name}
+    Emit.compile_expr(append_pipe_arg(step, acc_expr), env, counter)
+  end
+
+  defp append_pipe_arg(%{op: :qualified_call, target: target, args: args}, arg) when is_list(args) do
+    %{op: :qualified_call, target: target, args: args ++ [arg]}
+  end
+
+  defp append_pipe_arg(%{op: :call, name: name, args: args}, arg) when is_binary(name) and is_list(args) do
+    %{op: :call, name: name, args: args ++ [arg]}
+  end
+
+  defp append_pipe_arg(%{op: :var, name: name}, arg) when is_binary(name) do
+    %{op: :call, name: name, args: [arg]}
+  end
+
+  defp append_pipe_arg(%{op: :qualified_ref, target: target}, arg) do
+    %{op: :qualified_call, target: target, args: [arg]}
+  end
+
+  defp append_pipe_arg(step, arg) do
+    %{op: :call, name: "|>", args: [arg, step]}
+  end
+
+  defp compile_pipe_steps_iterative(steps, base, env, counter) do
+    {base_code, env, c0} = Emit.compile_expr(base, env, counter)
+    acc_name = Helpers.let_emit_name("__pipe_acc")
+    acc_atom = String.to_atom(acc_name)
+    acc_var = Macro.to_string(Macro.var(acc_atom, nil))
+    step_env = Map.put(env, acc_atom, true)
+
+    {step_lines, _, c} =
+      Enum.reduce(steps, {[], step_env, c0}, fn step, {lines, env, c} ->
+        {step_code, _, c1} = compile_pipe_step(step, acc_name, env, c)
+        line = [acc_var, " = ", step_code, "\n"]
+        {[line | lines], env, c1}
+      end)
+
+    code = [
+      "(fn ->\n",
+      acc_var,
+      " = ",
+      base_code,
+      "\n",
+      Enum.reverse(step_lines),
+      acc_var,
+      "\nend).()"
+    ]
+
+    {code, env, c}
+  end
+
   defp apply_call(ref, parts) when is_list(parts) and length(parts) > 1 do
     n = length(parts)
     [@rt_core, ".apply#{n}(", ref, ", ", Enum.intersperse(parts, ", "), ")"]
@@ -279,6 +422,66 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
 
   defp compile_port_call(_module, _name, arg_parts) do
   [@rt_values, ".port_outgoing(", inspect("unknown.port"), ", ", Enum.at(arg_parts, 0, "nil"), ")"]
+  end
+
+  defp unwrap_pipe_pipeline(expr), do: unwrap_pipe_pipeline(expr, [])
+
+  defp unwrap_pipe_pipeline(%{op: :call, name: "|>", args: [left, fun]}, acc) do
+    case left do
+      %{op: :call, name: "|>", args: [inner_left, inner_fun]} ->
+        unwrap_pipe_pipeline(%{op: :call, name: "|>", args: [inner_left, inner_fun]}, [fun | acc])
+
+      base ->
+        {:ok, Enum.reverse([fun | acc]), base}
+    end
+  end
+
+  defp unwrap_pipe_pipeline(_expr, _acc), do: :error
+
+  defp homogeneous_pipe_steps?([step | rest]), do: Enum.all?(rest, &(&1 == step))
+
+  defp compile_homogeneous_pipe_block(step, count, base, env, counter) do
+    {base_code, env, c0} = Emit.compile_expr(base, env, counter)
+    {step_code, env, c1} = Emit.compile_expr(step, env, c0)
+
+    code = [
+      "Elmx.Runtime.Core.Apply.repeat1(",
+      step_code,
+      ", ",
+      Integer.to_string(count),
+      ", ",
+      base_code,
+      ")"
+    ]
+
+    {code, env, c1}
+  end
+
+  defp compile_pipe_pipeline_block(steps, base, env, counter) do
+    {base_code, env, c0} = Emit.compile_expr(base, env, counter)
+    acc_name = Helpers.let_emit_name("__pipe_acc")
+    acc_atom = String.to_atom(acc_name)
+    acc_var = Macro.to_string(Macro.var(acc_atom, nil))
+
+    {step_lines, _, c} =
+      Enum.reduce(steps, {[], env, c0}, fn step, {lines, step_env, c} ->
+        {step_code, _, c1} = Emit.compile_expr(step, step_env, c)
+        line = [acc_var, " = Elmx.Runtime.Core.Apply.apply1(", step_code, ", ", acc_var, ")\n"]
+        {[line | lines], step_env, c1}
+      end)
+
+    code = [
+      "(fn ->\n",
+      acc_var,
+      " = ",
+      base_code,
+      "\n",
+      Enum.reverse(step_lines),
+      acc_var,
+      "\nend).()"
+    ]
+
+    {code, env, c}
   end
 
 end

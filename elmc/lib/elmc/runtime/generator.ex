@@ -756,6 +756,8 @@ defmodule Elmc.Runtime.Generator do
 
   @spec runtime_header(write_opts()) :: String.t()
   defp runtime_header(opts) do
+    {small_min, small_max} = small_int_bounds(opts)
+
     int32_define =
       if Keyword.get(opts, :pebble_int32, false), do: "#define ELMC_PEBBLE_INT32 1\n", else: ""
 
@@ -821,6 +823,13 @@ defmodule Elmc.Runtime.Generator do
     #ifndef ELMC_DICT_SCALAR
     #define ELMC_DICT_SCALAR ((elmc_int_t)0x1EC012)
     #endif
+
+    #define ELMC_SMALL_INT_MIN (#{small_min})
+    #define ELMC_SMALL_INT_MAX #{small_max}
+    extern const ElmcValue ELMC_SMALL_INTS[ELMC_SMALL_INT_MAX - ELMC_SMALL_INT_MIN + 1];
+    extern ElmcValue ELMC_LIST_NIL;
+    #define ELMC_STATIC_INT(n) ((ElmcValue *)&ELMC_SMALL_INTS[(n) - ELMC_SMALL_INT_MIN])
+    #define ELMC_STATIC_LIST_NIL (&ELMC_LIST_NIL)
 
     typedef struct ElmcTuple2 {
       ElmcValue *first;
@@ -1350,14 +1359,14 @@ defmodule Elmc.Runtime.Generator do
     #define ELMC_TASK_SPAWN_SCALAR ((elmc_int_t)0x1EC01F)
     #define ELMC_SMALL_INT_MIN (#{small_min})
     #define ELMC_SMALL_INT_MAX #{small_max}
-    static const ElmcValue ELMC_SMALL_INTS[ELMC_SMALL_INT_MAX - ELMC_SMALL_INT_MIN + 1] = {
+    const ElmcValue ELMC_SMALL_INTS[ELMC_SMALL_INT_MAX - ELMC_SMALL_INT_MIN + 1] = {
     #{small_int_table_entries(small_min, small_max)}
     };
     static ElmcMaybe ELMC_MAYBE_NOTHING_PAYLOAD = { 0, NULL };
     static ElmcValue ELMC_MAYBE_NOTHING ELMC_UNUSED = { ELMC_RC_IMMORTAL, ELMC_TAG_MAYBE, &ELMC_MAYBE_NOTHING_PAYLOAD, 0 };
     static char ELMC_EMPTY_STRING_PAYLOAD[] = "";
     static ElmcValue ELMC_EMPTY_STRING = { ELMC_RC_IMMORTAL, ELMC_TAG_STRING, ELMC_EMPTY_STRING_PAYLOAD, 0 };
-    static ElmcValue ELMC_LIST_NIL = { ELMC_RC_IMMORTAL, ELMC_TAG_LIST, NULL, 0 };
+    ElmcValue ELMC_LIST_NIL = { ELMC_RC_IMMORTAL, ELMC_TAG_LIST, NULL, 0 };
     static ElmcValue ELMC_UNIT = { ELMC_RC_IMMORTAL, ELMC_TAG_INT, NULL, ELMC_UNIT_SCALAR };
 
     typedef struct {

@@ -368,6 +368,17 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
   defp referenced_binding_names(%{op: :field_access, arg: arg}, acc) when is_binary(arg),
     do: MapSet.put(acc, arg)
 
+  defp referenced_binding_names(%{op: :field_call} = map, acc) do
+    acc =
+      case Map.get(map, :arg) || Map.get(map, :target) do
+        name when is_binary(name) -> MapSet.put(acc, name)
+        expr when is_map(expr) -> referenced_binding_names(expr, acc)
+        _ -> acc
+      end
+
+    referenced_binding_names(Map.get(map, :args) || [], acc)
+  end
+
   defp referenced_binding_names(%{op: :case} = map, acc) do
     acc =
       case Map.get(map, :subject) do

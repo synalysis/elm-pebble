@@ -90,15 +90,21 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Helpers do
   end
 
   def function_arity(env, name) when is_binary(name) do
-    case Map.get(Map.get(env, :explicit_function_arities, %{}), name) do
-      nil ->
-        case Map.get(Map.get(env, :function_arities, %{}), name) do
-          nil -> :unresolved
-          arity when is_integer(arity) -> arity
-        end
+    explicit = Map.get(Map.get(env, :explicit_function_arities, %{}), name)
+    callable = Map.get(Map.get(env, :function_arities, %{}), name)
 
-      arity when is_integer(arity) ->
-        arity
+    cond do
+      is_integer(callable) and callable > 0 and explicit in [nil, 0] ->
+        callable
+
+      is_integer(explicit) ->
+        explicit
+
+      is_integer(callable) ->
+        callable
+
+      true ->
+        :unresolved
     end
   end
 
@@ -187,11 +193,13 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Helpers do
     end
   end
 
-  @operator_vars ~w(__add__ __sub__ __mul__ __fdiv__ __idiv__ __append__ __pow__ __eq__ __neq__ __lt__ __lte__ __gt__ __gte__)
+  @operator_vars ~w(<| |> __add__ __sub__ __mul__ __fdiv__ __idiv__ __append__ __pow__ __eq__ __neq__ __lt__ __lte__ __gt__ __gte__)
 
   @spec operator_var_code(String.t()) :: String.t() | nil
   def operator_var_code(name) when name in @operator_vars do
     case name do
+      "<|" -> "fn fun, arg -> Elmx.Runtime.Core.Apply.apply1(fun, arg) end"
+      "|>" -> "fn arg, fun -> Elmx.Runtime.Core.Apply.apply1(fun, arg) end"
       "__add__" -> "fn a, b -> a + b end"
       "__sub__" -> "fn a, b -> a - b end"
       "__mul__" -> "fn a, b -> a * b end"

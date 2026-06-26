@@ -225,9 +225,6 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
           case spec do
             {:slot, ref} ->
               deferred_int_box_slot_snippet(case_label(branch.pattern, env), ref, int_scratch)
-
-            :zero ->
-              deferred_int_box_zero_snippet(case_label(branch.pattern, env), out)
           end
 
         {acc <> snippet <> "\n", c}
@@ -238,13 +235,18 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
 
     switch_body = CSource.indent(branch_code <> default_case, 2)
 
-    int_init = if exhaustive?, do: "0", else: "-1"
+    int_decl =
+      if exhaustive? do
+        "elmc_int_t #{int_scratch};"
+      else
+        "elmc_int_t #{int_scratch} = -1;"
+      end
 
     code = """
     #{subject_setup}
       const int #{tag_ref} = #{message_tag_expr(subject_ref)};
       ElmcValue *#{out} = NULL;
-      elmc_int_t #{int_scratch} = #{int_init};
+      #{int_decl}
       switch (#{tag_ref}) {
     #{switch_body}
       }
@@ -412,21 +414,15 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     specs = Enum.map(branches, &branch_int_box_spec(&1, env))
     slot_count = Enum.count(specs, &match?({:slot, _}, &1))
 
-    slot_count >= 2 and Enum.all?(specs, fn
-      {:slot, _} -> true
-      :zero -> true
-      _ -> false
-    end)
+    slot_count >= 2 and Enum.all?(specs, &match?({:slot, _}, &1))
   end
 
   defp deferred_int_box_eligible?(_branches, _env), do: false
 
   defp branch_int_box_spec(%{expr: expr}, env), do: int_box_expr_spec(expr, env)
 
-  defp int_box_expr_spec(%{op: :int_literal, value: 0}, _env), do: :zero
-
   defp int_box_expr_spec(%{op: :int_literal, value: value} = expr, env)
-       when is_integer(value) and value != 0 do
+       when is_integer(value) do
     {:slot, IntLiteralRef.ref(expr, env)}
   end
 

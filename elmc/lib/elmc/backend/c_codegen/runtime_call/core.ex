@@ -2575,29 +2575,12 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     out = "tmp_#{next}"
     sym = "elmc_zero_list_#{out}"
 
+    {:ok, count} = immortal_zero_repeat_count(count_ref, count_var)
+
     code = """
     #{count_code}#{value_code}
       ElmcValue *#{out};
-      {
-        enum { ELMC_ZERO_N = #{count_ref} };
-        static struct {
-          ElmcValue value;
-          ElmcCons cons;
-        } #{sym}_cells[ELMC_ZERO_N];
-        static int #{sym}_ready = 0;
-        while (#{sym}_ready < ELMC_ZERO_N) {
-          int i = #{sym}_ready++;
-          ElmcCons *cell_cons = &#{sym}_cells[i].cons;
-          ElmcValue *cell_value = &#{sym}_cells[i].value;
-          cell_cons->head = elmc_int_zero();
-          cell_cons->tail = (i == 0) ? elmc_list_nil() : &#{sym}_cells[i - 1].value;
-          cell_value->rc = ELMC_RC_IMMORTAL;
-          cell_value->tag = ELMC_TAG_LIST;
-          cell_value->payload = cell_cons;
-          cell_value->scalar = ELMC_LIST_CELL_SCALAR;
-        }
-        #{out} = &#{sym}_cells[ELMC_ZERO_N - 1].value;
-      }
+      #{CodegenListHelpers.emit_immortal_zero_list(sym, out, count)}
     #{count_release}
     """
 

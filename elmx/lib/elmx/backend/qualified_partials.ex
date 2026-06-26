@@ -71,6 +71,9 @@ defmodule Elmx.Backend.QualifiedPartials do
       {"Basics.always", [x]} ->
         {:ok, %{op: :lambda, args: ["__ignored"], body: x}}
 
+      {"Basics.always", [x, _y]} ->
+        {:ok, x}
+
       {"Basics.negate", []} -> unary("elmc_basics_negate", "__x")
       {"Basics.not", []} -> unary("elmc_basics_not", "__x")
       {"Basics.abs", []} -> unary("elmc_basics_abs", "__x")
@@ -120,6 +123,111 @@ defmodule Elmx.Backend.QualifiedPartials do
       {"Basics.xor", [a]} -> binary_bound("elmc_basics_xor", [a], "__b")
 
       {"Basics.compare", [a]} -> binary_bound("elmc_basics_compare", [a], "__b")
+
+      {"String.append", []} ->
+        {:ok,
+         %{
+           op: :lambda,
+           args: ["__a", "__b"],
+           body: %{
+             op: :call,
+             name: "__append__",
+             args: [%{op: :var, name: "__a"}, %{op: :var, name: "__b"}]
+           }
+         }}
+
+      {"List.map2", []} ->
+        {:ok,
+         %{
+           op: :lambda,
+           args: ["__f", "__as", "__bs"],
+           body: %{
+             op: :qualified_call,
+             target: "List.map2",
+             args: [
+               %{op: :var, name: "__f"},
+               %{op: :var, name: "__as"},
+               %{op: :var, name: "__bs"}
+             ]
+           }
+         }}
+
+      {"List.map2", [fun]} ->
+        {:ok,
+         %{
+           op: :lambda,
+           args: ["__as", "__bs"],
+           body: %{
+             op: :qualified_call,
+             target: "List.map2",
+             args: [fun, %{op: :var, name: "__as"}, %{op: :var, name: "__bs"}]
+           }
+         }}
+
+      {"List.map2", [fun, as]} ->
+        {:ok,
+         %{
+           op: :lambda,
+           args: ["__bs"],
+           body: %{
+             op: :qualified_call,
+             target: "List.map2",
+             args: [fun, as, %{op: :var, name: "__bs"}]
+           }
+         }}
+
+      {"List.map3", []} ->
+        {:ok,
+         %{
+           op: :lambda,
+           args: ["__f", "__as", "__bs", "__cs"],
+           body: %{
+             op: :qualified_call,
+             target: "List.map3",
+             args: [
+               %{op: :var, name: "__f"},
+               %{op: :var, name: "__as"},
+               %{op: :var, name: "__bs"},
+               %{op: :var, name: "__cs"}
+             ]
+           }
+         }}
+
+      {"List.map3", [fun]} ->
+        {:ok,
+         %{
+           op: :lambda,
+           args: ["__as", "__bs", "__cs"],
+           body: %{
+             op: :qualified_call,
+             target: "List.map3",
+             args: [fun, %{op: :var, name: "__as"}, %{op: :var, name: "__bs"}, %{op: :var, name: "__cs"}]
+           }
+         }}
+
+      {"List.map3", [fun, as]} ->
+        {:ok,
+         %{
+           op: :lambda,
+           args: ["__bs", "__cs"],
+           body: %{
+             op: :qualified_call,
+             target: "List.map3",
+             args: [fun, as, %{op: :var, name: "__bs"}, %{op: :var, name: "__cs"}]
+           }
+         }}
+
+      {"List.map3", [fun, as, bs]} ->
+        {:ok,
+         %{
+           op: :lambda,
+           args: ["__cs"],
+           body: %{
+             op: :qualified_call,
+             target: "List.map3",
+             args: [fun, as, bs, %{op: :var, name: "__cs"}]
+           }
+         }}
 
       {"Task.map", [fun]} -> unary_bound("elmx_core_task_map", [fun], "__t")
 

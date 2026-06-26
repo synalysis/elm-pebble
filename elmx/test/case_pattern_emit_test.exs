@@ -5,6 +5,83 @@ defmodule Elmx.CasePatternEmitTest do
   alias Elmx.Backend.ElixirCodegen.Emit
   alias ElmEx.IR
 
+  test "case on :: as-pattern binds alias and head variables" do
+    expr = %{
+      op: :case,
+      subject: "values",
+      branches: [
+        %{
+          pattern: %{
+            kind: :constructor,
+            name: "::",
+            bind: "full",
+            arg_pattern: %{
+              kind: :tuple,
+              elements: [
+                %{kind: :var, name: "x"},
+                %{kind: :var, name: "xs"}
+              ]
+            }
+          },
+          expr: %{
+            op: :call,
+            name: "__add__",
+            args: [
+              %{op: :var, name: "x"},
+              %{
+                op: :qualified_call,
+                target: "List.length",
+                args: [%{op: :var, name: "full"}]
+              }
+            ]
+          }
+        }
+      ]
+    }
+
+    env =
+      Emit.function_env("AsPattern", ["values"])
+      |> Map.put(:module, "AsPattern")
+      |> Map.put(:zero_arity_fns, MapSet.new())
+      |> Map.put(:function_arities, %{})
+
+    {code, _, _} = Emit.compile_expr(expr, env, 0)
+    source = IO.iodata_to_binary(code)
+
+    assert source =~ "[x | xs] = full"
+    assert source =~ "full"
+    refute source =~ "_unused"
+  end
+
+  test "case on Just binds reserved-name payload variables" do
+    expr = %{
+      op: :case,
+      subject: "maybeDef",
+      branches: [
+        %{
+          pattern: %{
+            kind: :constructor,
+            name: "Just",
+            arg_pattern: %{kind: :var, name: "def"}
+          },
+          expr: %{op: :field_access, arg: "def", field: "name"}
+        }
+      ]
+    }
+
+    env =
+      Emit.function_env("DictUnionTypeLookup", ["maybeDef"])
+      |> Map.put(:module, "DictUnionTypeLookup")
+      |> Map.put(:zero_arity_fns, MapSet.new())
+      |> Map.put(:function_arities, %{})
+
+    {code, _, _} = Emit.compile_expr(expr, env, 0)
+    source = IO.iodata_to_binary(code)
+
+    assert source =~ "{:Just, elmx_def}"
+    assert source =~ "Map.get(elmx_def, \"name\")"
+  end
+
   test "case on :: binds head and tail as variables" do
     expr = %{
       op: :case,

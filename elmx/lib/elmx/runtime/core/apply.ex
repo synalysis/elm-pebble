@@ -38,6 +38,18 @@ defmodule Elmx.Runtime.Core.Apply do
     end
   end
 
+  @doc "Apply the same unary callback `count` times, starting from `arg`."
+  @spec repeat1(Types.elm_hof(), non_neg_integer(), Types.elm_value()) :: Types.elm_value()
+  def repeat1(fun, count, arg) when is_integer(count) and count >= 0 do
+    repeat1_loop(fun, count, arg)
+  end
+
+  defp repeat1_loop(_fun, 0, acc), do: acc
+
+  defp repeat1_loop(fun, count, acc) when count > 0 do
+    repeat1_loop(fun, count - 1, apply1(fun, acc))
+  end
+
   @doc """
   Apply an Elm-style function that may be 2-arity or curried `\\a -> \\b ->`.
   """

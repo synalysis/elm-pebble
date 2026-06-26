@@ -17,7 +17,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
   end
 
   def branch_pattern(%{pattern: %{kind: :var, name: name}}, _env) when is_binary(name),
-    do: Helpers.binding_ref(name, %{})
+    do: Helpers.let_emit_name(name)
 
   def branch_pattern(%{pattern: %{kind: :string, value: value}}, _env) when is_binary(value),
     do: inspect(value)
@@ -51,8 +51,16 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
 
   def branch_pattern(%{pattern: %{kind: :constructor, name: "[]"}}, _env), do: "[]"
 
-  def branch_pattern(%{pattern: %{kind: :constructor, name: "::", arg_pattern: arg}}, _env) do
-    cons_list_case_pattern(arg)
+  def branch_pattern(%{pattern: %{kind: :constructor, name: "::", arg_pattern: arg} = pat}, _env) do
+    inner = cons_list_case_pattern(arg)
+
+    case Map.get(pat, :bind) do
+      bind when is_binary(bind) and bind != "" ->
+        "#{inner} = #{Helpers.let_emit_name(bind)}"
+
+      _ ->
+        inner
+    end
   end
 
   def branch_pattern(%{pattern: %{kind: :constructor, name: name} = pat}, env) do
@@ -65,7 +73,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
       nil ->
         case Map.get(pat, :bind) do
           bind when is_binary(bind) and bind != "" ->
-            bool_case_pattern(ctor, "{:#{ctor}, #{bind}}")
+            bool_case_pattern(ctor, "{:#{ctor}, #{Helpers.let_emit_name(bind)}}")
 
           _ ->
             bool_case_pattern(ctor, ":#{ctor}")
@@ -76,7 +84,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
     end
   end
 
-  def branch_pattern(%{pattern: %{op: :var, name: name}}, _env), do: Helpers.binding_ref(name, %{})
+  def branch_pattern(%{pattern: %{op: :var, name: name}}, _env) when is_binary(name),
+    do: Helpers.let_emit_name(name)
 
   def branch_pattern(%{pattern: %{kind: :record, bind: bind, fields: fields}}, _env)
        when is_list(fields) do
@@ -181,7 +190,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
     constructor_case_pattern(ctor, ap, %{})
   end
 
-  def tuple_case_elem(%{kind: :var, name: name}) when is_binary(name), do: name
+  def tuple_case_elem(%{kind: :var, name: name}) when is_binary(name), do: Helpers.let_emit_name(name)
   def tuple_case_elem(other), do: pattern_arg(other, %{})
 
   @spec pattern_arg(map(), env()) :: String.t()
@@ -189,13 +198,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
 
   def pattern_arg(%{kind: :wildcard}, _env), do: "_"
 
-  def pattern_arg(%{kind: :var, name: name}, env) when is_binary(name) do
-    if Map.get(env, String.to_atom(name)) == true do
-      Helpers.param_var_name(name, env)
-    else
-      name
-    end
-  end
+  def pattern_arg(%{kind: :var, name: name}, _env) when is_binary(name),
+    do: Helpers.let_emit_name(name)
 
   def pattern_arg(%{kind: :string, value: value}, _env) when is_binary(value), do: inspect(value)
   def pattern_arg(%{kind: :char, value: value}, _env) when is_integer(value),
@@ -210,6 +214,14 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
     do: if(value, do: "true", else: "false")
 
   def pattern_arg(%{kind: :list, elements: []}, _env), do: "[]"
+
+  def pattern_arg(%{kind: :record, bind: bind, fields: fields}, _env) when is_list(fields) do
+    record_case_pattern(bind, fields)
+  end
+
+  def pattern_arg(%{kind: :record, fields: fields}, _env) when is_list(fields) do
+    record_case_pattern(nil, fields)
+  end
 
   def pattern_arg(%{kind: :cons, head: head, tail: tail}, env),
     do: "[#{pattern_arg(head, env)} | #{list_tail_pattern(tail)}]"
@@ -231,7 +243,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
       nil ->
         case Map.get(pat, :bind) do
           bind when is_binary(bind) and bind != "" ->
-            bool_case_pattern(ctor, "{:#{ctor}, #{bind}}")
+            bool_case_pattern(ctor, "{:#{ctor}, #{Helpers.let_emit_name(bind)}}")
 
           _ ->
             bool_case_pattern(ctor, ":#{ctor}")
@@ -246,6 +258,10 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
 
   @spec constructor_case_pattern(String.t(), map(), env()) :: String.t()
   def constructor_case_pattern(ctor, %{kind: :constructor, name: "()"}, _env), do: "{:#{ctor}, nil}"
+
+  def constructor_case_pattern(ctor, %{kind: :record} = record, env) do
+    "{:#{ctor}, #{pattern_arg(record, env)}}"
+  end
 
   def constructor_case_pattern(ctor, %{kind: :tuple, elements: elements}, env) when is_list(elements) do
     bindings =
@@ -296,7 +312,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
 
   @spec list_tail_pattern(map()) :: String.t()
   def list_tail_pattern(%{kind: :list, elements: []}), do: "[]"
-  def list_tail_pattern(%{kind: :var, name: name}) when is_binary(name), do: name
+  def list_tail_pattern(%{kind: :var, name: name}) when is_binary(name), do: Helpers.let_emit_name(name)
   def list_tail_pattern(%{kind: :wildcard}), do: "_"
   def list_tail_pattern(_), do: "_"
 end

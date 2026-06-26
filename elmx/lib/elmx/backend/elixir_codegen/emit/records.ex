@@ -62,6 +62,13 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Records do
     compile_field_access(%{target: arg, field: field}, env, counter)
   end
 
+  def compile_field_call(%{target: target, field: field, args: args}, env, counter)
+      when is_binary(target) do
+    ref = Helpers.binding_ref(target, env)
+    {arg_code, env, c1} = Helpers.compile_arg_list(args, env, counter)
+    {[@rt_values, ".field_call(", ref, ", ", inspect(field), ", [", arg_code, "])"], env, c1}
+  end
+
   def compile_field_call(%{target: target, field: field, args: args}, env, counter) do
     {t, env, c1} = Emit.compile_expr(target, env, counter)
     {arg_code, env, c2} = Helpers.compile_arg_list(args, env, c1)

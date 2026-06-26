@@ -454,6 +454,14 @@ defmodule ElmEx.IR.Lowerer do
     %{expr | target: resolved_target}
   end
 
+  defp rewrite_expr(%{op: :pipe_chain, steps: steps, base: base} = expr, lookup) do
+    %{
+      expr
+      | steps: Enum.map(steps || [], &rewrite_expr(&1, lookup)),
+        base: rewrite_expr(base, lookup)
+    }
+  end
+
   defp rewrite_expr(%{op: :call, name: name, args: args}, lookup) when is_binary(name) do
     rewritten_args = Enum.map(args || [], &rewrite_expr(&1, lookup))
     resolved_name = resolve_alias(name, lookup)

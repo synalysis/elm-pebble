@@ -8,6 +8,7 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
   alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.ResourceUnion
   alias Elmc.Backend.CCodegen.SpecialValues
+  alias Elmc.Backend.CCodegen.SpecialValues.ElmCore
   alias Elmc.Backend.CCodegen.TypeParsing
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
@@ -97,35 +98,38 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
   end
 
   defp compile_qualified_call(target, args, env, counter) do
-    case SpecialValues.special_value_from_target(target, args) do
-      nil ->
-        cond do
-          ResourceUnion.constructor?(target, args) ->
-            Host.compile_expr(ResourceUnion.index_expr(target), env, counter)
+    result =
+      case SpecialValues.special_value_from_target(target, args) do
+        nil ->
+          cond do
+            ResourceUnion.constructor?(target, args) ->
+              Host.compile_expr(ResourceUnion.index_expr(target), env, counter)
 
-          true ->
-            case let_bound_closure_call(target, args, env, counter) do
-              {:ok, result} ->
-                result
+            true ->
+              case let_bound_closure_call(target, args, env, counter) do
+                {:ok, inner_result} ->
+                  inner_result
 
-              :error ->
-                case BuiltinOperators.qualified_operator_name(target) do
-                  nil ->
-                    FunctionCallCompile.compile_cross_module(target, args, env, counter)
+                :error ->
+                  case BuiltinOperators.qualified_operator_name(target) do
+                    nil ->
+                      FunctionCallCompile.compile_cross_module(target, args, env, counter)
 
-                  builtin_name ->
-                    case BuiltinOperators.call(builtin_name, args, env, counter) do
-                      nil -> FunctionCallCompile.compile_cross_module(target, args, env, counter)
-                      result -> result
-                    end
-                end
-            end
-        end
+                    builtin_name ->
+                      case BuiltinOperators.call(builtin_name, args, env, counter) do
+                        nil -> FunctionCallCompile.compile_cross_module(target, args, env, counter)
+                        inner_result -> inner_result
+                      end
+                  end
+              end
+          end
 
-      expr ->
-        expr = typed_debug_to_string_expr(target, args, expr, env)
-        Host.compile_expr(expr, env, counter)
-    end
+        expr ->
+          expr = typed_debug_to_string_expr(target, args, expr, env)
+          Host.compile_expr(expr, env, counter)
+      end
+
+    ElmCore.with_comment(result, target)
   end
 
   defp typed_debug_to_string_expr("Debug.toString", [value], _expr, env) do

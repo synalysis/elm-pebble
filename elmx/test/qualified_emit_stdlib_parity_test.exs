@@ -205,6 +205,33 @@ defmodule Elmx.QualifiedEmitStdlibParityTest do
     assert stdlib_code == "#{CodegenRefs.core()}.append(a, b)"
   end
 
+  test "Basics.always saturated with two args emits first argument" do
+    expr = %{
+      op: :qualified_call,
+      target: "Basics.always",
+      args: [%{op: :int_literal, value: 99}, %{op: :int_literal, value: 0}]
+    }
+
+    {emit_code, _, _} = QualifiedEmit.compile_qualified_call(expr, env(), 0)
+    assert IO.iodata_to_binary(emit_code) == "99"
+  end
+
+  test "String.concat emits Enum.join on string lists" do
+    expr = %{
+      op: :qualified_call,
+      target: "String.concat",
+      args: [
+        %{
+          op: :list_literal,
+          items: [%{op: :string_literal, value: "a"}, %{op: :string_literal, value: "b"}]
+        }
+      ]
+    }
+
+    {emit_code, _, _} = QualifiedEmit.compile_qualified_call(expr, env(), 0)
+    assert IO.iodata_to_binary(emit_code) == ~s|Enum.join(["a", "b"], "")|
+  end
+
   test "Basics.sin and Char.toUpper emit fallback match Stdlib.qualified_call" do
   env = env() |> Map.put(:theta, true) |> Map.put(:ch, true)
 

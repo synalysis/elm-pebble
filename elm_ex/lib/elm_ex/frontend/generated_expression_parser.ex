@@ -143,7 +143,7 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
   @spec normalize_compose_source(source()) :: source()
   defp normalize_compose_source(source) when is_binary(source) do
     Regex.replace(
-      ~r/\b([A-Za-z][A-Za-z0-9_.]*)\s*(<<|>>)\s*([A-Za-z][A-Za-z0-9_.]*)\b/u,
+      ~r/(?<![A-Za-z0-9_.])([A-Za-z_][A-Za-z0-9_]*)\s*(<<|>>)\s*([A-Za-z_][A-Za-z0-9_]*)\b(?![A-Za-z0-9_])/u,
       source,
       "(\\1 \\2 \\3)"
     )
@@ -900,7 +900,10 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
 
   @spec validate_source_compat(source()) :: :ok | {:error, {atom(), atom()}}
   defp validate_source_compat(source) when is_binary(source) do
-    scrubbed = scrub_string_and_char_literals(source)
+    scrubbed =
+      source
+      |> scrub_string_and_char_literals()
+      |> scrub_scientific_float_literals()
 
     cond do
       Regex.match?(~r/\b(?!0[xXbBoO])[0-9]+[A-DF-Za-df-z_][A-Za-z0-9_]*\b/u, scrubbed) ->
@@ -957,5 +960,10 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
   defp scrub_string_and_char_literals(source) when is_binary(source) do
     scrubbed_strings = Regex.replace(~r/"(?:[^"\\]|\\.)*"/u, source, "\"\"")
     Regex.replace(~r/'(?:[^'\\]|\\.)'/u, scrubbed_strings, "''")
+  end
+
+  @spec scrub_scientific_float_literals(source()) :: source()
+  defp scrub_scientific_float_literals(source) when is_binary(source) do
+    Regex.replace(~r/\b[0-9]+(?:\.[0-9]+)?[eE][+\-]?[0-9]+\b/u, source, "0.0")
   end
 end

@@ -56,4 +56,20 @@ defmodule Elmx.QualifiedPipelineTest do
     assert Stdlib.handles_qualified?("Basics.isInfinite")
     assert Stdlib.handles_qualified?("Char.isDigit")
   end
+
+  test "homogeneous qualified pipeline prefix compiles to Enum.reduce" do
+    targets = Enum.map(1..20, fn _ -> "Basics.identity" end)
+
+    expr =
+      Enum.reduce(Enum.reverse(targets), %{op: :int_literal, value: 0}, fn target, inner ->
+        %{op: :qualified_call, target: target, args: [inner]}
+      end)
+
+    env = env()
+
+    {emit_code, _, _} = QualifiedEmit.compile_qualified_call(expr, env, 0)
+    code = IO.iodata_to_binary(emit_code)
+
+    assert code =~ "Apply.repeat1"
+  end
 end

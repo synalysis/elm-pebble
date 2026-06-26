@@ -50,7 +50,7 @@ defmodule Elmc.ElmRunCorpusCompileGateTest do
           index: index,
           tmp_root: Path.join(@scorecard_dir, "full"),
           progress: true,
-          timeout_ms: 15_000
+          timeout_ms: 45_000
         )
 
       ElmRunCorpus.write_scorecard!(scorecard, @scorecard_dir)

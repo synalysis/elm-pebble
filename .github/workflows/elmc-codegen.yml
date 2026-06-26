@@ -83,6 +83,21 @@ jobs:
         working-directory: elmc
         run: mix test.corpus_run
 
+      - name: Run elm-run corpus elmx compile gate
+        if: steps.elm-run-corpus.outputs.available == 'true'
+        working-directory: elmc
+        run: mix test.corpus_elmx_smoke
+
+      - name: Run elm-run corpus full elmx compile gate
+        if: steps.elm-run-corpus.outputs.available == 'true'
+        working-directory: elmc
+        timeout-minutes: 15
+        run: mix test.corpus_elmx
+
+      - name: Run fixture codegen dual-backend gate
+        working-directory: elmc
+        run: mix test.fixture_codegen
+
       - name: Run tree-sitter corpus smoke parse gate
         if: steps.tree-sitter-corpus.outputs.available == 'true'
         working-directory: elm_ex

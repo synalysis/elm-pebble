@@ -59,6 +59,7 @@ let_bindings -> let_binding semicolon let_bindings : ['$1' | '$3'].
 let_bindings -> let_binding : ['$1'].
 
 let_binding -> lower_qid eq pipe_right_expr : {token_value('$1'), '$3'}.
+let_binding -> wildcard eq pipe_right_expr : {discard_bind, '$3'}.
 let_binding -> lower_qid lambda_args eq pipe_right_expr : {token_value('$1'), build_lambda_args('$2', '$4')}.
 let_binding -> lparen wildcard comma lower_qid rparen eq pipe_right_expr :
   {pattern_bind, build_pattern_tuple(#{kind => wildcard}, build_pattern_var(token_value('$4'))), '$7'}.
@@ -166,6 +167,8 @@ lambda_arg -> lparen lower_qid comma wildcard comma lower_qid rparen :
   {tuple3_wild_middle, token_value('$2'), token_value('$6')}.
 lambda_arg -> lparen lower_qid comma lower_qid comma wildcard rparen :
   {tuple3_wild_right, token_value('$2'), token_value('$4')}.
+lambda_arg -> lparen lower_qid comma wildcard comma wildcard rparen :
+  {tuple3_wild_only_first, token_value('$2')}.
 lambda_arg -> lparen pattern rparen : {pattern, '$2'}.
 
 compare_expr -> cons_expr compare_op cons_expr : build_compare('$1', '$2', '$3').
@@ -222,6 +225,7 @@ primary -> lparen shl rparen : build_operator_section(shl).
 primary -> lparen shr rparen : build_operator_section(shr).
 primary -> lparen cons rparen : build_operator_section(cons).
 primary -> lparen apply_left rparen : build_operator_section(apply_left).
+primary -> lparen pipe_right rparen : build_operator_section(pipe_right).
 primary -> lparen pipe_dot rparen : build_operator_section(pipe_dot).
 primary -> lparen pipe_eq rparen : build_operator_section(pipe_eq).
 primary -> lparen rparen : #{op => constructor_ref, target => <<"()">>}.
@@ -365,8 +369,12 @@ build_let_bindings([{pattern_bind, Pattern, ValueExpr}], InExpr) ->
   TmpName = make_pattern_bind_name(Pattern),
   CaseExpr = #{op => 'case', subject => #{op => var, name => TmpName}, branches => [#{pattern => Pattern, expr => InExpr}]},
   build_let(TmpName, ValueExpr, CaseExpr);
+build_let_bindings([{discard_bind, ValueExpr}], InExpr) ->
+  build_let(<<"_">>, ValueExpr, InExpr);
 build_let_bindings([{Name, ValueExpr}], InExpr) ->
   build_let(Name, ValueExpr, InExpr);
+build_let_bindings([{discard_bind, ValueExpr} | Rest], InExpr) ->
+  build_let(<<"_">>, ValueExpr, build_let_bindings(Rest, InExpr));
 build_let_bindings([{tuple2_bind, Left, Right, ValueExpr} | Rest], InExpr) ->
   TmpName = make_tuple_bind_name([Left, Right]),
   TmpVar = #{op => var, name => TmpName},
@@ -426,7 +434,12 @@ build_apply_left(FnExpr, ArgExpr) ->
   build_app(FnExpr, [ArgExpr]).
 
 build_pipe_right(ArgExpr, FnExpr) ->
-  build_app(FnExpr, [ArgExpr]).
+  case ArgExpr of
+    #{op := pipe_chain, steps := Steps, base := Base} ->
+      #{op => pipe_chain, steps => Steps ++ [FnExpr], base => Base};
+    _ ->
+      #{op => pipe_chain, steps => [FnExpr], base => ArgExpr}
+  end.
 
 build_pipe_dot(LeftExpr, RightExpr) ->
   #{op => call, name => <<"|.">>, args => [LeftExpr, RightExpr]}.
@@ -611,6 +624,17 @@ normalize_lambda_args([{tuple3_wild_right, Left, Middle} | Rest], Counter, Acc) 
     Counter + 1,
     [{tuple3_wild_right, Placeholder, Left, Middle} | Acc]
   );
+normalize_lambda_args([{tuple3_wild_only_first, Left} | Rest], Counter, Acc) ->
+  Placeholder =
+    case Counter of
+      1 -> <<"tupleArg">>;
+      _ -> list_to_binary("tupleArg" ++ integer_to_list(Counter))
+    end,
+  normalize_lambda_args(
+    Rest,
+    Counter + 1,
+    [{tuple3_wild_only_first, Placeholder, Left} | Acc]
+  );
 normalize_lambda_args([Arg | Rest], Counter, Acc) ->
   normalize_lambda_args(Rest, Counter + 1, [{simple, Arg} | Acc]).
 
@@ -679,6 +703,11 @@ build_lambda_spec({tuple3_wild_right, Placeholder, Left, Middle}, Body) ->
   MiddleExpr = #{op => qualified_call, target => <<"Tuple.first">>, args => [TailExpr]},
   ExpandedBody =
     build_let(Left, FirstExpr, build_let(Middle, MiddleExpr, Body)),
+  build_lambda(Placeholder, ExpandedBody);
+build_lambda_spec({tuple3_wild_only_first, Placeholder, Left}, Body) ->
+  PlaceholderVar = #{op => var, name => Placeholder},
+  FirstExpr = #{op => qualified_call, target => <<"Tuple.first">>, args => [PlaceholderVar]},
+  ExpandedBody = build_let(Left, FirstExpr, Body),
   build_lambda(Placeholder, ExpandedBody).
 
 build_record_pattern_lets([], _Placeholder, Body) ->
@@ -769,6 +798,8 @@ build_operator_section(cons) ->
   #{op => qualified_ref, target => <<"List.cons">>};
 build_operator_section(apply_left) ->
   #{op => var, name => <<"<|">>};
+build_operator_section(pipe_right) ->
+  #{op => var, name => <<"|>">>};
 build_operator_section(pipe_dot) ->
   #{op => var, name => <<"|.">>};
 build_operator_section(pipe_eq) ->

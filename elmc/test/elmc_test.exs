@@ -269,7 +269,7 @@ defmodule ElmcTest do
     assert header =~ "elmc_int_t scalar;"
     assert runtime =~ "static ElmcValue ELMC_BOOL_FALSE"
     assert runtime =~ "#define ELMC_SMALL_INT_MAX 64"
-    assert runtime =~ "static const ElmcValue ELMC_SMALL_INTS"
+    assert runtime =~ "const ElmcValue ELMC_SMALL_INTS"
     assert runtime =~ "static ElmcValue ELMC_MAYBE_NOTHING"
     assert runtime =~ "return &ELMC_MAYBE_NOTHING;"
     assert runtime =~ "elmc_rc_assign_value(out, elmc_alloc_scalar(ELMC_TAG_INT, value))"

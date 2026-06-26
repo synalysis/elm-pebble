@@ -13,5 +13,7 @@ defmodule Elmc.Backend.CCodegen.IntLiteralRef do
       Integer.to_string(ResourceUnion.int_literal_value(expr))
   end
 
+  def ref(%{op: :c_int_expr, value: value}, _env) when is_binary(value), do: value
+
   def ref(_expr, _env), do: "0"
 end

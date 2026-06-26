@@ -16,6 +16,7 @@ defmodule Elmc.Backend.CCodegen.ExprCompile do
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.VarArithCompile
   alias Elmc.Backend.CCodegen.VarCompile
+  alias Elmc.Backend.CCodegen.PipeChainCompile
 
   @literal_ops [
     :int_literal,
@@ -91,6 +92,9 @@ defmodule Elmc.Backend.CCodegen.ExprCompile do
 
   def compile(%{op: :lambda} = expr, env, counter),
     do: LambdaCompile.compile(expr, env, counter)
+
+  def compile(%{op: :pipe_chain} = expr, env, counter),
+    do: PipeChainCompile.compile(expr, env, counter)
 
   def compile(%{op: :unsupported}, _env, counter),
     do: compile_zero(counter)

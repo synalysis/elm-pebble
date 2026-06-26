@@ -325,6 +325,11 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified.List do
   defp compile_fold_fun(%{op: :var, name: "__append__"}, env, counter),
     do: {["fn a, b -> ", CodegenRefs.core(), ".append(a, b) end"], env, counter}
 
+  defp compile_fold_fun(%{op: :var, name: name}, env, counter) when is_binary(name) do
+    module = Map.get(env, :module, "Main")
+    {[Helpers.function_reference_uncurried(module, name, env)], env, counter}
+  end
+
   defp compile_fold_fun(fun, env, counter),
     do: Elmx.Backend.ElixirCodegen.Emit.compile_expr(fun, env, counter)
 

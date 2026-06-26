@@ -187,6 +187,58 @@ defmodule ElmEx.Frontend.LetLayoutTest do
     assert {:ok, %{op: :let_in}} = GeneratedExpressionParser.parse(source)
   end
 
+  test "parses discard wildcard binding in let" do
+    source = """
+    let
+        _ =
+            value
+    in
+    0
+    """
+
+    assert {:ok, %{op: :let_in, name: "_"}} = GeneratedExpressionParser.parse(source)
+  end
+
+  test "parses discard wildcard binding inside case branch" do
+    source = """
+    case msg of
+        BatteryChanged value ->
+            let
+                _ =
+                    value
+            in
+            ( model, Cmd.none )
+    """
+
+    assert {:ok, %{op: :case}} = GeneratedExpressionParser.parse(source)
+  end
+
+  test "parses scientific notation float literals" do
+    assert {:ok, %{op: :float_literal, value: 5.0e-324}} =
+             GeneratedExpressionParser.parse("5.0e-324")
+
+    assert {:ok, %{op: :float_literal}} = GeneratedExpressionParser.parse("1.0e-300")
+  end
+
+  test "parses operator sections for apL and apR" do
+    assert {:ok, %{op: :var, name: "<|"}} = GeneratedExpressionParser.parse("(<|)")
+    assert {:ok, %{op: :var, name: "|>"}} = GeneratedExpressionParser.parse("(|>)")
+    assert {:ok, %{op: :call, name: "|>"}} = GeneratedExpressionParser.parse("(|>) 10 f")
+  end
+
+  test "parses field accessor composition without breaking .term" do
+    source = "Maybe.map (.term >> blockRefs)"
+
+    assert {:ok, %{op: :qualified_call, target: "Maybe.map"}} =
+             GeneratedExpressionParser.parse(source)
+  end
+
+  test "parses lambda tuple pattern with trailing wildcards" do
+    source = "\\( revEntries, _, _ ) -> List.reverse revEntries"
+
+    assert {:ok, %{op: :lambda}} = GeneratedExpressionParser.parse(source)
+  end
+
   test "GeneratedExpressionParser preserves triple-quoted string contents" do
     source = ~S|D.decodeString (D.field "name" D.string) """{"name": "Alice"}"""|
 

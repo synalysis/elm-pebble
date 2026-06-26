@@ -16,10 +16,12 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified do
   alias Elmx.Backend.ElixirCodegen.Emit.Qualified.Basics, as: QualifiedBasics
   alias Elmx.Backend.ElixirCodegen.Emit.Qualified.Bitwise, as: QualifiedBitwise
   alias Elmx.Backend.ElixirCodegen.Emit.Qualified.Collections, as: QualifiedCollections
+  alias Elmx.Backend.ElixirCodegen.Emit.Qualified.CorpusPackages, as: QualifiedCorpusPackages
   alias Elmx.Backend.ElixirCodegen.Emit.Qualified.Context
   alias Elmx.Backend.ElixirCodegen.Emit.Qualified.List, as: QualifiedList
   alias Elmx.Backend.ElixirCodegen.Emit.Qualified.PebbleUi, as: QualifiedPebbleUi
   alias Elmx.Backend.ElixirCodegen.Emit.Qualified.String, as: QualifiedString
+  alias Elmx.Backend.OversaturatedQualified
   alias Elmx.Backend.QualifiedRewrite
   alias Elmx.Runtime.Pebble
   alias Elmx.Runtime.Pebble.SpecialValues
@@ -58,12 +60,20 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified do
   end
 
   def compile_qualified_call(%{target: _target, args: _args} = expr, env, counter) do
-    case unwrap_qualified_pipeline(expr) do
-      {:ok, targets, base} when length(targets) >= @pipeline_flatten_threshold ->
-        compile_qualified_pipeline_block(targets, base, env, counter)
+    expr = OversaturatedQualified.normalize(expr)
 
-      _ ->
-        do_compile_qualified_call(expr, env, counter)
+    case expr do
+      %{op: op} when op != :qualified_call ->
+        Emit.compile_expr(expr, env, counter)
+
+      normalized ->
+        case unwrap_qualified_pipeline(normalized) do
+          {:ok, targets, base} when length(targets) >= @pipeline_flatten_threshold ->
+            compile_qualified_pipeline_block(targets, base, env, counter)
+
+          _ ->
+            do_compile_qualified_call(normalized, env, counter)
+        end
     end
   end
 
@@ -103,6 +113,78 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified do
   defp unwrap_qualified_pipeline(_base, _acc), do: :error
 
   defp compile_qualified_pipeline_block(targets, base, env, counter) do
+    {rest, homogeneous} = split_homogeneous_run(targets)
+
+    if length(homogeneous) >= @pipeline_flatten_threshold do
+      compile_qualified_homogeneous_run(hd(homogeneous), length(homogeneous), base, rest, env, counter)
+    else
+      compile_qualified_pipeline_iterative(targets, base, env, counter)
+    end
+  end
+
+  defp split_homogeneous_run(targets) do
+    case Enum.reverse(targets) do
+      [first | rest] ->
+        {same, other} = Enum.split_while(rest, &(&1 == first))
+        homogeneous = Enum.reverse([first | same])
+        remainder = Enum.reverse(other)
+        {remainder, homogeneous}
+
+      [] ->
+        {[], []}
+    end
+  end
+
+  defp compile_qualified_homogeneous_run(target, count, base, rest, env, counter) do
+    {base_code, env, c0} = Emit.compile_expr(base, env, counter)
+    acc_name = Helpers.let_emit_name("__pipe_acc")
+    acc_atom = String.to_atom(acc_name)
+    acc_var = Macro.to_string(Macro.var(acc_atom, nil))
+    step_env = Map.put(env, acc_atom, true)
+
+    step_expr = %{
+      op: :qualified_call,
+      target: target,
+      args: [%{op: :var, name: acc_name}]
+    }
+
+    {step_code, _, c1} = do_compile_qualified_call(step_expr, step_env, c0)
+
+    {rest_lines, _, c} =
+      Enum.reduce(Enum.reverse(rest), {[], step_env, c1}, fn rest_target, {lines, env, c} ->
+        rest_step = %{
+          op: :qualified_call,
+          target: rest_target,
+          args: [%{op: :var, name: acc_name}]
+        }
+
+        {rest_code, _, c2} = do_compile_qualified_call(rest_step, env, c)
+        {[ [acc_var, " = ", rest_code, "\n"] | lines], env, c2}
+      end)
+
+    code = [
+      "(fn ->\n",
+      acc_var,
+      " = ",
+      base_code,
+      "\n",
+      acc_var,
+      " = Elmx.Runtime.Core.Apply.repeat1(",
+      step_code,
+      ", ",
+      Integer.to_string(count),
+      ", ",
+      acc_var,
+      ")\n",
+      Enum.reverse(rest_lines),
+      acc_var,
+      "\nend).()"
+    ]
+
+    {code, env, c}
+  end
+
+  defp compile_qualified_pipeline_iterative(targets, base, env, counter) do
     {base_code, env, c0} = Emit.compile_expr(base, env, counter)
     acc_name = Helpers.let_emit_name("__pipe_acc")
     acc_atom = String.to_atom(acc_name)
@@ -149,6 +231,17 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified do
   end
 
   defp try_domain_qualified(target, args, env, counter) do
+    QualifiedCorpusPackages.compile(target, args, env, counter)
+    |> case do
+      {:ok, _, _, _} = ok ->
+        ok
+
+      :error ->
+        try_domain_qualified_stdlib(target, args, env, counter)
+    end
+  end
+
+  defp try_domain_qualified_stdlib(target, args, env, counter) do
     QualifiedPebbleUi.compile(target, args, env, counter)
     |> case do
       {:ok, _, _, _} = ok ->
