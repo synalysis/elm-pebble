@@ -285,15 +285,21 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
             {pos, len} = List.last(matches)
             before = trimmed |> String.slice(0, pos) |> String.trim_trailing()
 
-            in_expr =
-              trimmed
-              |> String.slice(pos + len, String.length(trimmed) - pos - len)
-              |> String.trim_leading()
+            rest_len = String.length(trimmed) - pos - len
 
-            if String.contains?(before, "let ") do
-              {:ok, before, in_expr}
-            else
+            if rest_len < 0 do
               :error
+            else
+              in_expr =
+                trimmed
+                |> String.slice(pos + len, rest_len)
+                |> String.trim_leading()
+
+              if String.contains?(before, "let ") do
+                {:ok, before, in_expr}
+              else
+                :error
+              end
             end
         end
     end

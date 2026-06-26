@@ -1,3 +1,6 @@
 [submodule "vendor/elm-run-test_corpus"]
 	path = vendor/elm-run-test_corpus
 	url = https://github.com/synalysis/elm_run_test_corpus.git
+[submodule "vendor/tree-sitter-elm-test-corpus"]
+	path = vendor/tree-sitter-elm-test-corpus
+	url = https://github.com/synalysis/tree-sitter-elm-test-corpus.git

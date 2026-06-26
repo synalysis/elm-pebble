@@ -168,6 +168,11 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Helpers do
     string_literal_ir(union_ctor_short_name(ctor))
   end
 
+  defp companion_bridge_callback_arg(%{op: :partial_constructor, target: target})
+       when is_binary(target) do
+    string_literal_ir(union_ctor_short_name(target))
+  end
+
   defp companion_bridge_callback_arg(%{"ctor" => ctor, "args" => _}) when is_binary(ctor),
     do: string_literal_ir(ctor)
 

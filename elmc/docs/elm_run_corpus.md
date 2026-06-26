@@ -52,3 +52,7 @@ Parity smoke currently uses `Basics/DecTest.elm` only — expand as backends con
 Set `CORPUS_SKIP=1` or omit the submodule to skip corpus tests locally.
 
 Override corpus location with `ELM_RUN_CORPUS_DIR`.
+
+## See also
+
+- [tree-sitter-elm parse corpus](../elm_ex/docs/tree_sitter_corpus.md) — real-world Elm sources for parser regression (~20k files).

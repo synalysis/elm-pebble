@@ -303,7 +303,7 @@ defmodule Ide.Debugger.SubscriptionPayload do
       String.contains?(normalized, "oncompasschange") or String.contains?(normalized, "compasschange") ->
         Jason.encode!(subscription_compass_heading(state, target, ctx))
 
-      String.contains?(normalized, "onappfocuschange") or String.contains?(normalized, "appfocuschange") ->
+      app_focus_target?(normalized) ->
         subscription_app_focus_state(state, target, ctx)
 
       String.contains?(normalized, "onbacklightchange") or String.contains?(normalized, "backlightchange") ->
@@ -359,6 +359,12 @@ defmodule Ide.Debugger.SubscriptionPayload do
   defp frame_target?(normalized) do
     String.contains?(normalized, "frameevery") or String.contains?(normalized, "frameatfps") or
       String.contains?(normalized, "onframe")
+  end
+
+  defp app_focus_target?(normalized) do
+    String.contains?(normalized, "onappfocuschange") or
+      String.contains?(normalized, "appfocuschange") or
+      (String.contains?(normalized, "appfocus") and String.contains?(normalized, "onchange"))
   end
 
   defp clock_target?(normalized, fragment) do

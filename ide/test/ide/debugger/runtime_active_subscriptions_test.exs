@@ -34,6 +34,18 @@ defmodule Ide.Debugger.RuntimeActiveSubscriptionsTest do
     refute RuntimeActiveSubscriptions.triggers_equivalent?("phone_to_watch", "on_watch_to_phone")
   end
 
+  test "triggers_equivalent matches frame subscription ids with and without Pebble prefix" do
+    assert RuntimeActiveSubscriptions.triggers_equivalent?(
+             "pebble_frame_atfps",
+             "frame_atfps"
+           )
+
+    assert RuntimeActiveSubscriptions.triggers_equivalent?(
+             "Pebble.Frame.atFps",
+             "frame_atfps"
+           )
+  end
+
   test "empty active_subscriptions still allows fallback catalog triggers" do
     state = %{
       watch: %{

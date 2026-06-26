@@ -87,6 +87,19 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v5
 
+      - name: Fetch optional tree-sitter-elm corpus
+        id: tree-sitter-corpus
+        run: |
+          git submodule sync -- vendor/tree-sitter-elm-test-corpus
+          if git submodule update --init --recursive vendor/tree-sitter-elm-test-corpus; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice title=Optional corpus unavailable::Skipping tree-sitter corpus gates because vendor/tree-sitter-elm-test-corpus could not be fetched."
+            git submodule deinit -f vendor/tree-sitter-elm-test-corpus || true
+            rm -rf .git/modules/vendor/tree-sitter-elm-test-corpus vendor/tree-sitter-elm-test-corpus
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up Erlang/Elixir
         uses: erlef/setup-beam@v1
         with:
@@ -103,6 +116,10 @@ jobs:
         working-directory: elmx
         run: mix deps.get
 
+      - name: Install elm_ex dependencies
+        working-directory: elm_ex
+        run: mix deps.get
+
       - name: Run elmx unit tests
         working-directory: elmx
         run: mix test
@@ -117,6 +134,11 @@ jobs:
           mix test test/backend_coverage_gate_test.exs \
             test/qualified_call_audit_test.exs \
             test/phone_template_audit_test.exs
+
+      - name: Run tree-sitter corpus smoke parse gate
+        if: steps.tree-sitter-corpus.outputs.available == 'true'
+        working-directory: elmx
+        run: mix test.ts_corpus_smoke
 
       - name: Install IDE dependencies
         working-directory: ide

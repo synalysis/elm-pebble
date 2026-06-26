@@ -44,7 +44,7 @@ defmodule ElmEx.Frontend.GeneratedParser do
 
   @spec parse_source(String.t(), String.t()) :: {:ok, ElmEx.Frontend.Module.t()} | {:error, map()}
   def parse_source(path, source) when is_binary(path) and is_binary(source) do
-    with {:ok, metadata} <- parse_metadata(source) do
+    with {:ok, metadata} <- parse_metadata(source, path) do
       module_from_source(path, source, metadata)
     end
   end
@@ -70,48 +70,92 @@ defmodule ElmEx.Frontend.GeneratedParser do
     end
   end
 
-  @spec parse_metadata(String.t()) :: {:ok, map()} | {:error, map()}
-  defp parse_metadata(source) do
+  @spec parse_metadata(String.t(), String.t()) :: {:ok, map()} | {:error, map()}
+  defp parse_metadata(source, path) when is_binary(source) and is_binary(path) do
     metadata_source = normalize_source_for_metadata(source)
 
     with {:ok, tokens, _line} <- :elm_ex_elm_lexer.string(String.to_charlist(metadata_source)) do
       lines = split_token_lines(tokens)
 
       module_name =
-        Enum.find_value(lines, fn
-          [{:module_kw, _}, {:upper_id, _, name} | _] -> name
-          [{:port_kw, _}, {:module_kw, _}, {:upper_id, _, name} | _] -> name
-          [{:effect_kw, _}, {:module_kw, _}, {:upper_id, _, name} | _] -> name
-          _ -> nil
-        end)
+        module_name_from_header_lines(lines) || infer_module_name_from_path(path)
 
-      if is_binary(module_name) do
-        %{
-          module_exposing: module_exposing,
-          import_entries: import_entries,
-          port_module: port_module?,
-          ports: ports
-        } = extract_header_metadata(tokens)
+      %{
+        module_exposing: module_exposing,
+        import_entries: import_entries,
+        port_module: port_module?,
+        ports: ports
+      } = extract_header_metadata(tokens)
 
-        imports =
-          import_entries
-          |> Enum.map(& &1["module"])
+      imports =
+        import_entries
+        |> Enum.map(& &1["module"])
 
-        {:ok,
-         %{
-           module: module_name,
-           imports: imports,
-           module_exposing: module_exposing,
-           import_entries: import_entries,
-           port_module: port_module?,
-           ports: ports
-         }}
-      else
-        {:error, %{kind: :parse_error, reason: :missing_module_header, line: 1}}
-      end
+      {:ok,
+       %{
+         module: module_name,
+         imports: imports,
+         module_exposing: module_exposing,
+         import_entries: import_entries,
+         port_module: port_module?,
+         ports: ports
+       }}
     else
       {:error, reason, line} -> {:error, %{kind: :parse_error, reason: reason, line: line}}
     end
+  end
+
+  @spec module_name_from_header_lines([tokens()]) :: String.t() | nil
+  defp module_name_from_header_lines(lines) do
+    Enum.find_value(lines, fn
+      [{:module_kw, _}, {:upper_id, _, name} | _] -> name
+      [{:port_kw, _}, {:module_kw, _}, {:upper_id, _, name} | _] -> name
+      [{:effect_kw, _}, {:module_kw, _}, {:upper_id, _, name} | _] -> name
+      _ -> nil
+    end)
+  end
+
+  @doc false
+  @spec infer_module_name_from_path(String.t()) :: String.t()
+  def infer_module_name_from_path(path) when is_binary(path) do
+    path
+    |> Path.split()
+    |> drop_path_prefix_before_source_root()
+    |> Enum.map(&path_segment_to_module_part/1)
+    |> Enum.reject(&(&1 == ""))
+    |> case do
+      [] -> "Main"
+      parts -> Enum.join(parts, ".")
+    end
+  end
+
+  @spec drop_path_prefix_before_source_root([String.t()]) :: [String.t()]
+  defp drop_path_prefix_before_source_root(parts) do
+    case Enum.find_index(parts, &(&1 in ["src", "Source", "lib", "app", "examples"])) do
+      nil -> parts |> List.last() |> List.wrap()
+      idx -> Enum.drop(parts, idx + 1)
+    end
+  end
+
+  @spec path_segment_to_module_part(String.t()) :: String.t()
+  defp path_segment_to_module_part(segment) do
+    segment
+    |> Path.rootname(".elm")
+    |> String.split(~r/[^A-Za-z0-9]+/, trim: true)
+    |> Enum.map(&capitalize_module_part/1)
+    |> Enum.reject(&(&1 == ""))
+    |> case do
+      [] -> "Main"
+      [single] -> single
+      parts -> Enum.join(parts, "")
+    end
+  end
+
+  @spec capitalize_module_part(String.t()) :: String.t()
+  defp capitalize_module_part(<<>>), do: ""
+
+  defp capitalize_module_part(<<first::utf8, rest::binary>>) do
+    String.upcase(<<first::utf8>>) <> rest
   end
 
   @doc false

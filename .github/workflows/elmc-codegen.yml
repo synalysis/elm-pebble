@@ -28,6 +28,19 @@ jobs:
             echo "available=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Fetch optional tree-sitter-elm corpus
+        id: tree-sitter-corpus
+        run: |
+          git submodule sync -- vendor/tree-sitter-elm-test-corpus
+          if git submodule update --init --recursive vendor/tree-sitter-elm-test-corpus; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice title=Optional corpus unavailable::Skipping tree-sitter corpus gates because vendor/tree-sitter-elm-test-corpus could not be fetched."
+            git submodule deinit -f vendor/tree-sitter-elm-test-corpus || true
+            rm -rf .git/modules/vendor/tree-sitter-elm-test-corpus vendor/tree-sitter-elm-test-corpus
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up Erlang/Elixir
         uses: erlef/setup-beam@v1
         with:
@@ -69,6 +82,17 @@ jobs:
         if: steps.elm-run-corpus.outputs.available == 'true'
         working-directory: elmc
         run: mix test.corpus_run
+
+      - name: Run tree-sitter corpus smoke parse gate
+        if: steps.tree-sitter-corpus.outputs.available == 'true'
+        working-directory: elm_ex
+        run: mix test.ts_corpus_smoke
+
+      - name: Run tree-sitter corpus full parse gate
+        if: steps.tree-sitter-corpus.outputs.available == 'true'
+        working-directory: elm_ex
+        timeout-minutes: 30
+        run: mix test.ts_corpus
 
       - name: Run elmc Dialyzer
         working-directory: elmc

@@ -12,8 +12,25 @@ defmodule Elmx.MixProject do
         ignore_warnings: ".dialyzer_ignore.exs"
       ],
       deps: deps(),
+      aliases: aliases(),
       escript: [main_module: Elmx.CLI],
       elixirc_paths: elixirc_paths(Mix.env())
+    ]
+  end
+
+  defp aliases do
+    [
+      "test.ts_corpus": ["cmd --cd ../elm_ex mix test.ts_corpus"],
+      "test.ts_corpus_smoke": ["cmd --cd ../elm_ex mix test.ts_corpus_smoke"]
+    ]
+  end
+
+  def cli do
+    [
+      preferred_envs: [
+        "test.ts_corpus": :test,
+        "test.ts_corpus_smoke": :test
+      ]
     ]
   end
 

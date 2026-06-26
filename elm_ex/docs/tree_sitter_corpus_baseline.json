@@ -1,0 +1,7 @@
+{
+  "corpus_sha": "9984b6a6f9b16c2bd3f84efa2dcc64e76961edb2",
+  "attempted": 20075,
+  "parse_ok_min": 20075,
+  "crash_max": 0,
+  "notes": "Eligible files are <=512KiB; 42 larger files skipped."
+}

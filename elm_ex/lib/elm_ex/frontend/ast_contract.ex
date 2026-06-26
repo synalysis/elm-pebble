@@ -331,6 +331,14 @@ defmodule ElmEx.Frontend.AstContract do
        when is_binary(arg) and is_binary(field) and is_list(args),
        do: validate_expr_list(args, :invalid_field_call_expr)
 
+  defp validate_field_call(%{arg: arg, field: field, args: args})
+       when is_map(arg) and is_binary(field) and is_list(args) do
+    with :ok <- validate_expr(arg),
+         :ok <- validate_expr_list(args, :invalid_field_call_expr) do
+      :ok
+    end
+  end
+
   defp validate_field_call(_), do: {:error, :invalid_field_call_expr}
 
   @spec validate_compose(Types.compose_expr() | Types.invalid_input(), atom()) ::

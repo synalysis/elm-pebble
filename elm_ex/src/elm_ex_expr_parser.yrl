@@ -836,9 +836,22 @@ unescape_acc(<<"\\\\", Rest/binary>>, Acc) ->
   unescape_acc(Rest, <<Acc/binary, $\\>>);
 unescape_acc(<<"\\u{", Rest/binary>>, Acc) ->
   case take_unicode_escape(Rest, <<>>) of
+    {ok, Code, Rest2} when Code >= 16#D800, Code =< 16#DBFF ->
+      case take_unicode_escape_after_surrogate(Rest2) of
+        {ok, Low, Rest3} when Low >= 16#DC00, Low =< 16#DFFF ->
+          Combined = 16#10000 + ((Code - 16#D800) bsl 10) + (Low - 16#DC00),
+          Char = unicode:characters_to_binary([Combined]),
+          unescape_acc(Rest3, <<Acc/binary, Char/binary>>);
+        _ ->
+          unescape_acc(Rest2, Acc)
+      end;
     {ok, Code, Rest2} when Code >= 0, Code =< 16#10FFFF ->
-      Char = unicode:characters_to_binary([Code]),
-      unescape_acc(Rest2, <<Acc/binary, Char/binary>>);
+      case unicode:characters_to_binary([Code]) of
+        Bin when is_binary(Bin) ->
+          unescape_acc(Rest2, <<Acc/binary, Bin/binary>>);
+        _ ->
+          unescape_acc(Rest2, Acc)
+      end;
     _ ->
       unescape_acc(Rest, <<Acc/binary, "\\u{">>)
   end;
@@ -854,4 +867,9 @@ take_unicode_escape(<<C, Rest/binary>>, Acc) when C >= $a, C =< $f ->
 take_unicode_escape(<<C, Rest/binary>>, Acc) when C >= $A, C =< $F ->
   take_unicode_escape(Rest, <<Acc/binary, C>>);
 take_unicode_escape(_, _) ->
+  error.
+
+take_unicode_escape_after_surrogate(<<"\\u{", Rest/binary>>) ->
+  take_unicode_escape(Rest, <<>>);
+take_unicode_escape_after_surrogate(_) ->
   error.

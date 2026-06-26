@@ -63,6 +63,21 @@ defmodule Elmx.CompanionSpecialValuesTest do
             }} = SpecialValues.rewrite("Pebble.Companion.Timeline.getToken", [callback])
   end
 
+  test "companion timeline getToken uses partial constructor callback name" do
+    callback = %{op: :partial_constructor, target: "CompanionApp.GotToken", args: []}
+
+    assert {:ok,
+            %{
+              op: :runtime_call,
+              function: "elmx_companion_bridge_cmd",
+              args: [
+                %{op: :string_literal, value: "timeline"},
+                %{op: :string_literal, value: "getToken"},
+                %{op: :string_literal, value: "GotToken"}
+              ]
+            }} = SpecialValues.rewrite("Pebble.Companion.Timeline.getToken", [callback])
+  end
+
   test "companion timeline insertPin uses last arg as callback" do
     pin_json = %{op: :var, name: "pinJson"}
     callback = %{op: :int_literal, value: 1, union_ctor: "CompanionApp.Msg.PinInserted"}

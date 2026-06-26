@@ -350,21 +350,35 @@ defmodule Ide.Debugger.RuntimeActiveSubscriptions do
   defp trigger_row_from_command(_command, _ei, _target_name, _model_active_fn), do: nil
 
   @spec catalog_trigger_id(Types.cmd_call() | nil, active_command()) :: String.t()
-  defp catalog_trigger_id(%{} = catalog, command) do
-    case TriggerCandidates.subscription_trigger_for_call(catalog) do
-      trigger when is_binary(trigger) and trigger != "" ->
-        if frame_subscription_target?(trigger) do
-          TriggerCandidates.normalize_trigger_id(trigger)
-        else
-          subscription_event_kind_from_target(trigger)
-        end
+  defp catalog_trigger_id(catalog, command) do
+    target =
+      case command_target(command) do
+        "" -> catalog_subscription_target(catalog)
+        target -> target
+      end
+
+    case target do
+      target when is_binary(target) and target != "" ->
+        subscription_trigger_id_for_target(target)
 
       _ ->
         command_trigger_id(command)
     end
   end
 
-  defp catalog_trigger_id(_catalog, command), do: command_trigger_id(command)
+  @spec catalog_subscription_target(Types.cmd_call() | nil) :: String.t()
+  defp catalog_subscription_target(%{"target" => target}) when is_binary(target), do: target
+  defp catalog_subscription_target(%{target: target}) when is_binary(target), do: target
+  defp catalog_subscription_target(_catalog), do: ""
+
+  @spec subscription_trigger_id_for_target(String.t()) :: String.t()
+  defp subscription_trigger_id_for_target(target) when is_binary(target) do
+    if frame_subscription_target?(target) do
+      TriggerCandidates.normalize_trigger_id(target)
+    else
+      subscription_event_kind_from_target(target)
+    end
+  end
 
   @spec catalog_op_for_command(Types.elm_introspect(), active_command()) ::
           Types.cmd_call() | nil
@@ -497,10 +511,18 @@ defmodule Ide.Debugger.RuntimeActiveSubscriptions do
   @spec triggers_equivalent?(String.t(), String.t()) :: boolean()
   def triggers_equivalent?(left, right) when is_binary(left) and is_binary(right) do
     left == right or companion_triggers_equivalent?(left, right) or
-      opaque_gateway_triggers_equivalent?(left, right)
+      opaque_gateway_triggers_equivalent?(left, right) or
+      canonical_subscription_trigger_id(left) == canonical_subscription_trigger_id(right)
   end
 
   def triggers_equivalent?(_, _), do: false
+
+  @spec canonical_subscription_trigger_id(String.t()) :: String.t()
+  defp canonical_subscription_trigger_id(trigger) when is_binary(trigger) do
+    trigger
+    |> TriggerCandidates.normalize_trigger_id()
+    |> String.replace_prefix("pebble_", "")
+  end
 
   @spec opaque_gateway_triggers_equivalent?(String.t(), String.t()) :: boolean()
   defp opaque_gateway_triggers_equivalent?(left, right) do
