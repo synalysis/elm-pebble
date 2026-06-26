@@ -16,13 +16,13 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.SequenceHelpers do
 
     static ElmcPebbleApp *s_sequence_playback_app = NULL;
 
-    static void elmc_sequence_track_app(ElmcPebbleApp *app) {
+    static void __attribute__((unused)) elmc_sequence_track_app(ElmcPebbleApp *app) {
       if (app) {
         s_sequence_playback_app = app;
       }
     }
 
-    static int64_t elmc_sequence_monotonic_ms(void) {
+    static int64_t __attribute__((unused)) elmc_sequence_monotonic_ms(void) {
     #ifdef ELMC_PEBBLE_PLATFORM
       time_t seconds = 0;
       uint16_t milliseconds = 0;
@@ -33,7 +33,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.SequenceHelpers do
     #endif
     }
 
-    static bool elmc_sequence_play_loops(uint32_t play_count) {
+    static bool __attribute__((unused)) elmc_sequence_play_loops(uint32_t play_count) {
       return play_count == 0 || play_count == PLAY_COUNT_INFINITE || play_count == 0xFFFF;
     }
 

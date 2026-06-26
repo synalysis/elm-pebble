@@ -11,7 +11,9 @@ ExUnit.configure(
     :template_corpus_step,
     :compiled_elixir_corpus,
     :template_compile_gate,
-    :template_pbw_gate
+    :template_pbw_gate,
+    :imagemagick,
+    :gif2apng
   ]
 )
 

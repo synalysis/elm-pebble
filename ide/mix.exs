@@ -108,13 +108,13 @@ defmodule Ide.MixProject do
         "ecto.create --quiet",
         "ecto.migrate --quiet",
         "ide.boundary_check",
-        "test --exclude integration --exclude slow --exclude live_emulator --exclude template_corpus --exclude template_corpus_step --exclude compiled_elixir_corpus --exclude template_compile_gate --exclude template_pbw_gate --max-cases 4"
+        "test --exclude integration --exclude slow --exclude live_emulator --exclude template_corpus --exclude template_corpus_step --exclude compiled_elixir_corpus --exclude template_compile_gate --exclude template_pbw_gate --exclude imagemagick --exclude gif2apng --max-cases 4"
       ],
       "test.integration": [
         "ecto.create --quiet",
         "ecto.migrate --quiet",
         "ide.boundary_check",
-        "test --only integration --include slow --max-cases 1"
+        "test test/ide/debugger/integration test/ide/debugger/configuration_callback_probe_test.exs test/ide/debugger/deferred_companion_bootstrap_test.exs --only integration --include slow --max-cases 1"
       ],
       "test.slow": [
         "ecto.create --quiet",

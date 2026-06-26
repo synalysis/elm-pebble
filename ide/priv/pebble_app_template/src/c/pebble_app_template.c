@@ -108,7 +108,13 @@ static uint32_t agent_probe_count_byte(int value) {
 
 #if !ELMC_PEBBLE_RUNTIME_LOGS && !ELMC_PEBBLE_DEBUG_LOGS && !ELMC_PEBBLE_HEAP_LOG
 #undef APP_LOG
-#define APP_LOG(level, ...) do { (void)(level); } while (0)
+#define APP_LOG(level, ...) \
+  do { \
+    (void)(level); \
+    if (0) { \
+      (void)__VA_ARGS__; \
+    } \
+  } while (0)
 #endif
 
 #ifndef ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
@@ -436,6 +442,9 @@ static GRect compile_display_bounds(void);
 #if ELMC_PEBBLE_FEATURE_CMD_UNOBSTRUCTED_BOUNDS_PEEK || ELMC_PEBBLE_FEATURE_UNOBSTRUCTED_AREA_EVENTS
 static GRect current_unobstructed_bounds(void);
 #endif
+#if ELMC_PEBBLE_FEATURE_CMD_UNOBSTRUCTED_BOUNDS_PEEK
+static int dispatch_unobstructed_bounds_result(int64_t target, GRect bounds);
+#endif
 static void complete_elm_init(void);
 #ifdef ELMC_WATCHFACE_MODE
 static bool display_bounds_ready(void);
@@ -654,6 +663,15 @@ static SpeakerWaveform speaker_waveform_from_int(int32_t value) {
 #endif
 
 #if ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_NOTES || ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_TRACKS
+#ifndef SPEAKER_MAX_NOTES
+#define SPEAKER_MAX_NOTES 16
+#endif
+#ifndef SPEAKER_MAX_TRACKS
+#define SPEAKER_MAX_TRACKS 4
+#endif
+#endif
+
+#if ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_NOTES || ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_TRACKS
 static void speaker_note_from_values(const int32_t *values, SpeakerNote *out_note) {
   out_note->midi_note = (uint8_t)values[0];
   out_note->waveform = speaker_waveform_from_int(values[1]);
@@ -684,7 +702,7 @@ static bool speaker_sample_from_index(int sample_index, SpeakerSample *out_sampl
   }
 
   uint8_t *dest = (uint8_t *)&s_speaker_sample_bytes[s_speaker_sample_bytes_used];
-  resource_load_byte_range(handle, 0, size, dest);
+  resource_load_byte_range(handle, 0, dest, size);
   s_speaker_sample_bytes_used += size;
   out_sample->data = (const int8_t *)dest;
   out_sample->num_bytes = (uint32_t)size;
@@ -965,7 +983,13 @@ static void apply_pending_cmd(void) {
 #if ELMC_PEBBLE_FEATURE_CMD_STORAGE_READ_MAX_SIZE
     case ELMC_PEBBLE_CMD_STORAGE_READ_MAX_SIZE: {
       int64_t target = cmd.p0;
+#if defined(PERSIST_DATA_MAX_LENGTH)
+      int32_t max_size = (int32_t)PERSIST_DATA_MAX_LENGTH;
+#elif defined(persist_get_max_size)
       int32_t max_size = (int32_t)persist_get_max_size();
+#else
+      int32_t max_size = 256;
+#endif
       int rc = target > 0 ? elmc_pebble_dispatch_tag_value(&s_elm_app, target, max_size) : -6;
       (void)rc;
       ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "cmd storage_read_max_size value=%ld rc=%d",
@@ -1005,6 +1029,7 @@ static void apply_pending_cmd(void) {
 #endif
 #if ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_NOTES
     case ELMC_PEBBLE_CMD_SPEAKER_PLAY_NOTES: {
+#ifdef PBL_SPEAKER
       int32_t values[64];
       int count = parse_int_list(cmd.text, values, 64);
       int volume = (int)cmd.p0;
@@ -1017,19 +1042,17 @@ static void apply_pending_cmd(void) {
         for (int i = 0; i < note_count; i++) {
           speaker_note_from_values(&values[i * 4], &notes[i]);
         }
-#ifdef PBL_SPEAKER
         bool ok = speaker_play_notes(notes, (uint32_t)note_count, (uint8_t)volume);
-#else
-        bool ok = false;
-#endif
         APP_LOG(APP_LOG_LEVEL_INFO, "cmd speaker_play_notes count=%d volume=%d ok=%d", note_count, volume,
                 ok ? 1 : 0);
       }
+#endif
       break;
     }
 #endif
 #if ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_TRACKS
     case ELMC_PEBBLE_CMD_SPEAKER_PLAY_TRACKS: {
+#ifdef PBL_SPEAKER
       int32_t values[64];
       int count = parse_int_list(cmd.text, values, 64);
       int volume = (int)cmd.p0;
@@ -1066,14 +1089,11 @@ static void apply_pending_cmd(void) {
         track_count++;
       }
       if (track_count > 0) {
-#ifdef PBL_SPEAKER
         bool ok = speaker_play_tracks(tracks, (uint32_t)track_count, (uint8_t)volume);
-#else
-        bool ok = false;
-#endif
         APP_LOG(APP_LOG_LEVEL_INFO, "cmd speaker_play_tracks tracks=%d volume=%d ok=%d", track_count, volume,
                 ok ? 1 : 0);
       }
+#endif
       break;
     }
 #endif
@@ -3818,6 +3838,12 @@ static void backlight_handler(bool is_on, void *context) {
 }
 #endif
 
+/* Pebble.Platform union constructor tags (bundled elmc IR contract). */
+#define ELMC_PLATFORM_DISPLAY_SHAPE_RECTANGULAR 1
+#define ELMC_PLATFORM_DISPLAY_SHAPE_ROUND 2
+#define ELMC_PLATFORM_COLOR_CAPABILITY_BLACK_WHITE 1
+#define ELMC_PLATFORM_COLOR_CAPABILITY_COLOR 2
+
 #if ELMC_PEBBLE_FEATURE_SCREEN_CHANGE_EVENTS
 static GRect s_last_dispatched_screen_bounds = {0};
 
@@ -4051,12 +4077,6 @@ static int launch_reason_to_elm_tag(AppLaunchReason launch) {
   return (int)launch;
 }
 
-/* Pebble.Platform union constructor tags (bundled elmc IR contract). */
-#define ELMC_PLATFORM_DISPLAY_SHAPE_RECTANGULAR 1
-#define ELMC_PLATFORM_DISPLAY_SHAPE_ROUND 2
-#define ELMC_PLATFORM_COLOR_CAPABILITY_BLACK_WHITE 1
-#define ELMC_PLATFORM_COLOR_CAPABILITY_COLOR 2
-
 static GRect compile_display_bounds(void) {
 #ifdef PBL_DISPLAY_WIDTH
   const int16_t compile_w = PBL_DISPLAY_WIDTH;
@@ -4270,7 +4290,9 @@ static void complete_elm_init(void) {
     });
 #endif
 #if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_BACKLIGHT_EVENTS
+#if defined(backlight_service_subscribe)
     backlight_service_subscribe(backlight_handler, NULL);
+#endif
 #endif
 #if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_SCREEN_CHANGE_EVENTS
     maybe_dispatch_screen_change();
@@ -4545,7 +4567,9 @@ static void deinit(void) {
   app_focus_service_unsubscribe();
 #endif
 #if ELMC_PEBBLE_FEATURE_BACKLIGHT_EVENTS
+#if defined(backlight_service_unsubscribe)
   backlight_service_unsubscribe();
+#endif
 #endif
 #if ELMC_PEBBLE_FEATURE_UNOBSTRUCTED_AREA_EVENTS
   unobstructed_area_service_unsubscribe();

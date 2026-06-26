@@ -1,6 +1,9 @@
 defmodule Ide.Debugger.SpeakerFinishedIntegrationTest do
   use Ide.DataCase, async: false
 
+  @moduletag :integration
+  @moduletag :slow
+
   alias Ide.Debugger
   alias Ide.Debugger.AgentStore
   alias Ide.Debugger.ContractTestSupport
@@ -22,7 +25,6 @@ defmodule Ide.Debugger.SpeakerFinishedIntegrationTest do
     :ok
   end
 
-  @tag :integration
   @tag timeout: 120_000
   test "speaker finished subscription applies platform payload from parsed contract" do
     slug = "speaker-finished-#{System.unique_integer([:positive])}"

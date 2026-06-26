@@ -2,6 +2,7 @@ defmodule Ide.Debugger.InitLightEnableFollowupTest do
   use Ide.DataCase, async: false
 
   @moduletag :debugger_session
+  @moduletag :compiled_elixir_corpus
 
   alias Ide.Debugger
   alias Ide.Debugger.CompiledElixirCorpusHelpers, as: Corpus

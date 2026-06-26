@@ -23,8 +23,9 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusTest do
     assert listed_keys == DebuggerTemplateCorpus.template_keys() |> Enum.sort()
   end
 
-  # Preview bootstrap is currently flaky for this template (watch stays on
-  # previewUnavailable); covered by compiled_elixir corpus tests instead.
+  # Snapshot goldens skip companion-demo-weather-env: MCP preview bootstrap leaves
+  # watch on previewUnavailable. Step coverage lives in
+  # debugger_template_corpus_compiled_elixir_test.exs (ELMX_TEMPLATE_CORPUS=1).
   @snapshot_excluded ~w(companion-demo-weather-env)
 
   for template <- DebuggerTemplateCorpus.template_keys() -- @snapshot_excluded do

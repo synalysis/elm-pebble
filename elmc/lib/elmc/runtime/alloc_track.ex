@@ -97,13 +97,12 @@ defmodule Elmc.Runtime.AllocTrack do
 
     static void elmc_alloc_track_unregister(void *ptr) {
       if (!ptr) return;
-      for (uint32_t i = 0; i < ELMC_ALLOC_TRACK_COUNT; i++) {
-        if (ELMC_ALLOC_TRACK_ENTRIES[i].ptr != ptr) continue;
-        ELMC_ALLOC_TRACK_COUNT -= 1;
-        if (i < ELMC_ALLOC_TRACK_COUNT) {
-          ELMC_ALLOC_TRACK_ENTRIES[i] = ELMC_ALLOC_TRACK_ENTRIES[ELMC_ALLOC_TRACK_COUNT];
-        }
-        return;
+      ElmcAllocTrackEntry *entry = elmc_alloc_track_find(ptr);
+      if (!entry) return;
+      uint32_t i = (uint32_t)(entry - ELMC_ALLOC_TRACK_ENTRIES);
+      ELMC_ALLOC_TRACK_COUNT -= 1;
+      if (i < ELMC_ALLOC_TRACK_COUNT) {
+        ELMC_ALLOC_TRACK_ENTRIES[i] = ELMC_ALLOC_TRACK_ENTRIES[ELMC_ALLOC_TRACK_COUNT];
       }
     }
 

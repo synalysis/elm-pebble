@@ -23,7 +23,7 @@ defmodule Ide.Resources.ResourceStore.SpeakerGeneratedModule do
     ctors =
       case rows do
         [] -> ["NoSample"]
-        list -> Enum.map(list, & &1.ctor)
+        list -> ["NoSample" | Enum.map(list, & &1.ctor)]
       end
 
     type_decl =
@@ -55,42 +55,45 @@ defmodule Ide.Resources.ResourceStore.SpeakerGeneratedModule do
       end
 
     sample_id_cases =
-      if rows == [] do
-        "        NoSample ->\n            0"
-      else
-        rows
-        |> Enum.with_index(1)
-        |> Enum.map_join("\n", fn {row, index} ->
-          "        #{row.ctor} ->\n            #{index}"
-        end)
-      end
+      "        NoSample ->\n            0" <>
+        if rows == [] do
+          ""
+        else
+          "\n" <>
+            (rows
+             |> Enum.with_index(1)
+             |> Enum.map_join("\n", fn {row, index} ->
+               "        #{row.ctor} ->\n            #{index}"
+             end))
+        end
 
     info_cases =
-      if rows == [] do
-        """
-                NoSample ->
-                    { sample = NoSample
-                    , name = "NoSample"
-                    , format = 0
-                    , baseMidiNote = 60
-                    , loop = False
-                    , numBytes = 0
-                    }
-        """
-      else
-        Enum.map_join(rows, "\n", fn row ->
-          """
-                  #{row.ctor} ->
-                      { sample = #{row.ctor}
-                      , name = #{inspect(row.name)}
-                      , format = #{row.format}
-                      , baseMidiNote = #{row.base_midi_note}
-                      , loop = #{row.loop}
-                      , numBytes = #{row.num_bytes}
-                      }
-          """
-        end)
-      end
+      """
+              NoSample ->
+                  { sample = NoSample
+                  , name = "NoSample"
+                  , format = 0
+                  , baseMidiNote = 60
+                  , loop = False
+                  , numBytes = 0
+                  }
+      """ <>
+        if rows == [] do
+          ""
+        else
+          "\n" <> Enum.map_join(rows, "\n", fn row ->
+            """
+                    #{row.ctor} ->
+                        { sample = #{row.ctor}
+                        , name = #{inspect(row.name)}
+                        , format = #{row.format}
+                        , baseMidiNote = #{row.base_midi_note}
+                        , loop = #{row.loop}
+                        , numBytes = #{row.num_bytes}
+                        }
+            """
+          end)
+        end
 
     """
     module Pebble.Speaker.Resources exposing

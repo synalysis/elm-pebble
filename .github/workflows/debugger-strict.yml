@@ -47,6 +47,38 @@ jobs:
         working-directory: ide
         run: mix test test/ide/mcp/debugger_template_corpus_test.exs --only template_corpus_step --max-cases 1
 
+  ide-debugger-integration:
+    name: IDE debugger integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Erlang/Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27.3.3"
+          elixir-version: "1.20.1"
+          version-type: strict
+          install-rebar: false
+          rebar3-version: "3.24.0"
+          hexpm-mirrors: |
+            https://builds.hex.pm
+            https://cdn.jsdelivr.net/hex
+
+      - name: Install IDE dependencies
+        working-directory: ide
+        run: mix deps.get
+
+      - name: Run debugger integration suite
+        working-directory: ide
+        run: |
+          mix test test/ide/debugger/integration \
+            test/ide/debugger/configuration_callback_probe_test.exs \
+            test/ide/debugger/deferred_companion_bootstrap_test.exs \
+            --only integration --include slow --max-cases 1
+
   elmx-compiled-elixir:
     name: elmx compile + compiled_elixir corpus
     runs-on: ubuntu-latest
@@ -94,8 +126,7 @@ jobs:
         working-directory: ide
         env:
           ELMX_TEMPLATE_CORPUS: "1"
-        run: |
-          mix test test/ide/mcp/debugger_template_corpus_compiled_elixir_test.exs --only compiled_elixir_corpus
+        run: mix test --only compiled_elixir_corpus --max-cases 1
 
       - name: Run elmx template compile gate
         working-directory: ide

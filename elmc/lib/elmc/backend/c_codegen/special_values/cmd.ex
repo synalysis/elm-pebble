@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Cmd do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.SpecialValues.Helpers
+  alias Elmc.Backend.CCodegen.SpecialValues.Stdlib.Effects
   alias Elmc.Backend.CCodegen.Types
 
   @behaviour Elmc.Backend.CCodegen.SpecialValues.Handler
@@ -385,6 +386,11 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Cmd do
   def special_value_from_target("Elm.Kernel.PebbleWatch.dictationStop", _args),
     do: Helpers.command_kind_expr(:dictation_stop)
 
+  def special_value_from_target("Pebble.Cmd.batch", args),
+    do: Effects.special_value_from_target("Cmd.batch", args)
+
+  def special_value_from_target("Elm.Kernel.PebbleWatch.batch", args),
+    do: Effects.special_value_from_target("Cmd.batch", args)
 
   def special_value_from_target(_target, _args), do: nil
 end

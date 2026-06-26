@@ -198,6 +198,25 @@ defmodule Elmc.Runtime.Generator do
       |> Enum.uniq()
 
     maybe_seed_rc_prune_refs(expanded, contents)
+    |> maybe_seed_speaker_serialize_refs(contents)
+  end
+
+  defp maybe_seed_speaker_serialize_refs(expanded, contents) do
+    joined = Enum.join(contents, "\n")
+
+    if String.contains?(joined, "elmc_serialize_speaker_note") do
+      (expanded ++
+         [
+           "elmc_record_get",
+           "elmc_record_get_at",
+           "elmc_record_get_int",
+           "elmc_record_get_at_int",
+           "elmc_as_int"
+         ])
+      |> Enum.uniq()
+    else
+      expanded
+    end
   end
 
   defp maybe_seed_rc_prune_refs(expanded, contents) do

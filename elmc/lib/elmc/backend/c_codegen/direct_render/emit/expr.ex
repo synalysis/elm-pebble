@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.ConstructorTagCase
   alias Elmc.Backend.CCodegen.DirectRender.CommandDef
   alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.DirectRender.Emit.If
@@ -193,10 +194,10 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
             :error
         end
 
-      fragment_expr?(value_expr, env) ->
+      fragment_expr?(value_expr, env) and not pattern_bind_let_name?(name) ->
         emit_expr(in_expr, Map.put(env, name, {:direct_fragment, value_expr}), counter)
 
-      inline_render_expr?(value_expr, env) ->
+      inline_render_expr?(value_expr, env) and not pattern_bind_let_name?(name) ->
         emit_expr(in_expr, Map.put(env, name, {:direct_fragment, value_expr}), counter)
 
       true ->
@@ -244,7 +245,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
   end
 
   def emit_expr(%{op: :case, subject: subject, branches: branches}, env, counter) do
-    subject_ref = Map.get(env, subject, subject)
+    {subject_setup, subject_ref, counter} =
+      ConstructorTagCase.compile_subject_ref(subject, env, counter)
+
     hoisted_before = Process.get(:elmc_hoisted_native_int_inits, %{})
 
     case_env =
@@ -309,7 +312,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
     case result do
       {:ok, branch_code, counter} ->
         branch_hoists = Hoist.hoisted_native_int_branch_preamble(hoisted_before)
-        {:ok, branch_hoists <> branch_code, counter}
+        {:ok, branch_hoists <> subject_setup <> branch_code, counter}
 
       :error ->
         :error
@@ -897,6 +900,12 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
   defp fragment_expr?(_, _env), do: false
 
   defp inline_render_expr?(expr, env), do: render_list_expr?(expr, env)
+
+  defp pattern_bind_let_name?(name) when is_binary(name) do
+    String.starts_with?(name, "__patternBind_") or String.starts_with?(name, "__tupleBind_")
+  end
+
+  defp pattern_bind_let_name?(_name), do: false
 
   defp qualified_direct_fragment?(target, env) do
     targets = Map.get(env, :__direct_targets__, MapSet.new())

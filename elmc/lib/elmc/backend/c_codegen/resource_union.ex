@@ -6,7 +6,9 @@ defmodule Elmc.Backend.CCodegen.ResourceUnion do
 
   @spec constructor?(String.t(), [Types.ir_expr()]) :: boolean()
   def constructor?(target, args) when is_binary(target) and is_list(args) do
-    args == [] and (Map.has_key?(slot_map(), ctor_name(target)) or resource_ctor_target?(target))
+    args == [] and
+      (Map.has_key?(slot_map(), ctor_name(target)) or resource_ctor_target?(target) or
+         placeholder_resource_ctor_target?(target))
   end
 
   def constructor?(_target, _args), do: false
@@ -30,12 +32,16 @@ defmodule Elmc.Backend.CCodegen.ResourceUnion do
   def slot_index(target) when is_binary(target) do
     ctor = ctor_name(target)
 
-    case slot_map() do
-      %{^ctor => index} when is_integer(index) and index > 0 ->
-        index
+    if placeholder_resource_ctor_target?(target) do
+      0
+    else
+      case slot_map() do
+        %{^ctor => index} when is_integer(index) and index > 0 ->
+          index
 
-      _ ->
-        SpecialValues.constructor_tag(target) + 1
+        _ ->
+          SpecialValues.constructor_tag(target) + 1
+      end
     end
   end
 
@@ -77,6 +83,25 @@ defmodule Elmc.Backend.CCodegen.ResourceUnion do
 
       "Speaker.Resources." <> ctor ->
         ctor != "" and not no_resource_ctor?(ctor)
+
+      _ ->
+        false
+    end
+  end
+
+  defp placeholder_resource_ctor_target?(target) when is_binary(target) do
+    case target do
+      "Pebble.Ui.Resources." <> ctor ->
+        ctor != "" and no_resource_ctor?(ctor)
+
+      "Resources." <> ctor ->
+        ctor != "" and no_resource_ctor?(ctor)
+
+      "Pebble.Speaker.Resources." <> ctor ->
+        ctor != "" and no_resource_ctor?(ctor)
+
+      "Speaker.Resources." <> ctor ->
+        ctor != "" and no_resource_ctor?(ctor)
 
       _ ->
         false
