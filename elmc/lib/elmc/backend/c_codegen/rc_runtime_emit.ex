@@ -262,7 +262,26 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
 
   @spec rc_allocator_emit_mode?(map()) :: boolean()
   def rc_allocator_emit_mode?(env),
-    do: Map.get(env, :__rc_required__, false) or Map.get(env, :__rc_catch__, false)
+    do:
+      Map.get(env, :__rc_required__, false) or Map.get(env, :__rc_catch__, false) or
+        Map.get(env, :__native_rc_out__, false)
+
+  @spec rc_catch_env(map()) :: map()
+  def rc_catch_env(env), do: Map.put(env, :__rc_catch__, true)
+
+  @spec rc_style_codegen_body?(String.t()) :: boolean()
+  def rc_style_codegen_body?(body) when is_binary(body) do
+    body =~ "CHECK_RC(" or body =~ ~r/\bRc\s*=/ or body =~ "owned[" or body =~ "CATCH_BEGIN"
+  end
+
+  @spec generic_helper_extraction_allowed?(map(), String.t()) :: boolean()
+  def generic_helper_extraction_allowed?(env, body) when is_binary(body) do
+    not Map.get(env, :__rc_catch__, false) and
+      not Map.get(env, :__rc_required__, false) and
+      not Map.get(env, :__native_rc_out__, false) and
+      not Map.get(env, :__inside_lambda__, false) and
+      not rc_style_codegen_body?(body)
+  end
 
   @spec assign_call(map(), String.t(), String.t(), String.t()) :: String.t()
   def assign_call(env, out, function, call_args) do
@@ -369,13 +388,15 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
         "return #{take_fn}(#{call_args});"
 
       true ->
+        failure = failure_return(env)
+
         """
         {
           ElmcValue *__rc_ret = NULL;
           RC __alloc_rc = #{function}(&__rc_ret, #{call_args});
           if (__alloc_rc != RC_SUCCESS) {
             ELMC_RC_LOG_FAIL(__alloc_rc, "#{function}", "allocation failed");
-            return NULL;
+            #{failure}
           }
           return __rc_ret;
         }
@@ -390,7 +411,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
 
     init =
       if declare_out? do
-        "ElmcValue *#{out} = NULL"
+        ValueSlots.boxed_decl(out, "NULL")
       else
         "#{out} = NULL"
       end
@@ -434,10 +455,12 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
 
   @spec failure_return(map()) :: String.t()
   def failure_return(env) do
-    case Map.get(env, :__native_return_kind__) do
-      :native_int -> "return 0"
-      :native_bool -> "return 0"
-      _ -> "return NULL"
+    cond do
+      Map.get(env, :__rc_catch__) -> "return Rc"
+      Map.get(env, :__native_rc_out__) -> "return __alloc_rc"
+      Map.get(env, :__native_return_kind__) == :native_int -> "return 0"
+      Map.get(env, :__native_return_kind__) == :native_bool -> "return 0"
+      true -> "return NULL"
     end
   end
 

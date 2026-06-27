@@ -10,8 +10,10 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
   alias Elmc.Backend.CCodegen.Native.String, as: NativeString
   alias Elmc.Backend.CCodegen.PlatformStatic
   alias Elmc.Backend.CCodegen.RecordCompile
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
+  alias Elmc.Backend.CCodegen.ValueSlots
 
   @spec compile(Types.ir_if_expr(), Types.compile_env(), Types.compile_counter()) ::
           Types.compile_result()
@@ -274,7 +276,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
   defp maybe_extract_if_branch_helper(expr, env, out, branch_code, assignment_code) do
     inline_body = format_if_branch_body(Enum.join([branch_code, assignment_code], "\n"))
 
-    if extract_if_branch_helper?(env, inline_body) do
+    if extract_if_branch_helper?(env, inline_body) and not ValueSlots.owned_ref?(out) do
       case if_branch_helper_params(expr, env, branch_code, assignment_code) do
         {:ok, params} when params != [] ->
           helper_id = Process.get(:elmc_generic_helper_counter, 0) + 1
@@ -314,9 +316,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
   end
 
   defp extract_if_branch_helper?(env, body) do
-    not Map.get(env, :__rc_catch__, false) and
-      not Map.get(env, :__rc_required__, false) and
-      not Map.get(env, :__inside_lambda__, false) and
+    RcRuntimeEmit.generic_helper_extraction_allowed?(env, body) and
       Process.get(:elmc_generic_helper_defs) != nil and emitted_line_count(body) >= 70
   end
 

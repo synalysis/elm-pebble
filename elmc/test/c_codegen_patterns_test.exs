@@ -100,10 +100,10 @@ defmodule Elmc.CCodegenPatternsTest do
 
     {code, out, counter} = FunctionCallCompile.compile_var("fragment", env, 0)
 
-    assert out == "tmp_2"
-    assert counter == 2
+    assert out == "tmp_3"
+    assert counter == 3
     assert code =~ "elmc_new_int_take(42)"
-    assert code =~ "ElmcValue *tmp_2 = elmc_retain(tmp_1);"
+    assert code =~ "ElmcValue *tmp_3 = elmc_retain(tmp_2);"
     refute code =~ ~r/ElmcValue \*tmp_1 = elmc_retain\(tmp_1\);/
   end
 
@@ -133,13 +133,16 @@ defmodule Elmc.CCodegenPatternsTest do
     assert generated_c =~ "elmc_fn_Main_dropStep"
     assert generated_c =~ @just_payload_borrow
 
-    assert generated_c =~ ~r/ELMC_RECORD_GET_INDEX\((tmp_5|owned\[\d+\]), ELMC_FIELD_MAIN_ACTIVEPIECE_KIND\)/
-
-    assert generated_c =~ ~r/ELMC_RECORD_GET_INDEX\((tmp_5|owned\[\d+\]), ELMC_FIELD_MAIN_ACTIVEPIECE_ROT\)/
-    assert generated_c =~ ~r/ELMC_RECORD_GET_INDEX\((tmp_5|owned\[\d+\]), ELMC_FIELD_MAIN_ACTIVEPIECE_X\)/
+    assert generated_c =~
+             ~r/ELMC_RECORD_GET_INDEX(?:_INT)?\((tmp_5|owned\[\d+\]), ELMC_FIELD_MAIN_ACTIVEPIECE_KIND\)/
 
     assert generated_c =~
-             ~r/elmc_record_update_index\((tmp_5|tmp_7|owned\[\d+\]), ELMC_FIELD_MAIN_ACTIVEPIECE_Y, (tmp_|owned\[)/
+             ~r/ELMC_RECORD_GET_INDEX(?:_INT)?\((tmp_5|owned\[\d+\]), ELMC_FIELD_MAIN_ACTIVEPIECE_ROT\)/
+    assert generated_c =~
+             ~r/ELMC_RECORD_GET_INDEX(?:_INT)?\((tmp_5|owned\[\d+\]), ELMC_FIELD_MAIN_ACTIVEPIECE_X\)/
+
+    assert generated_c =~
+             ~r/elmc_record_update_index\((tmp_5|tmp_\d+|owned\[\d+\]), ELMC_FIELD_MAIN_ACTIVEPIECE_Y, (tmp_|owned\[)/
 
     refute generated_c =~ ~r/elmc_record_get_index\(tmp_\d+, 0 \/\* rot \*\)/
     refute generated_c =~ ~r/elmc_record_update_index\(tmp_\d+, 0 \/\* y \*\)/
@@ -1256,7 +1259,8 @@ defmodule Elmc.CCodegenPatternsTest do
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert generated_c =~ "list_map_cursor_"
+    assert generated_c =~ "list_map_head_"
+    assert generated_c =~ "ELMC_TAG_INT_LIST"
     assert generated_c =~ "elmc_fn_Main_tagItems"
     refute generated_c =~ "elmc_list_map("
     refute generated_c =~ "elmc_closure_new(elmc_lambda_"
@@ -1307,7 +1311,7 @@ defmodule Elmc.CCodegenPatternsTest do
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert generated_c =~ "list_map_cursor_"
+    assert generated_c =~ "list_map_head_"
     assert generated_c =~ "elmc_fn_Main_slots"
     refute generated_c =~ "elmc_list_map("
     refute generated_c =~ "elmc_lambda_"
@@ -1566,7 +1570,7 @@ defmodule Elmc.CCodegenPatternsTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "// List.map"
-    assert generated_c =~ "list_map_cursor_"
+    assert generated_c =~ "list_map_head_"
     assert generated_c =~ "list_fwd_head_"
     assert generated_c =~ "list_fwd_tail_"
     assert generated_c =~ "elmc_fn_Main_double"
@@ -2411,9 +2415,9 @@ defmodule Elmc.CCodegenPatternsTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     assert generated_c =~ "pieceOffsets_table[k][r]"
     refute generated_c =~ "elmc_fn_Main_pieceSlots_native"
-    refute generated_c =~ "elmc_fn_Main_canPlace_native"
+    assert generated_c =~ "elmc_fn_Main_canPlace_native"
     assert generated_c =~ "elmc_fn_Main_lockedSlotsFromBoard_native"
-    refute generated_c =~ "elmc_fn_Main_canPlace_offset_fits"
+    assert generated_c =~ "elmc_fn_Main_offsetFits_native"
     assert generated_c =~ "elmc_fn_Main_stampPiece_native"
     assert generated_c =~ "patches[patch_count++]"
     refute generated_c =~ "elmc_fn_Main_boardLayout_native"
@@ -2422,7 +2426,7 @@ defmodule Elmc.CCodegenPatternsTest do
     refute generated_c =~ "elmc_fn_Main_rotateActive_native"
     refute generated_c =~ "elmc_fn_Main_dropStep_native"
     refute generated_c =~ "elmc_fn_Main_softDrop_native"
-    refute generated_c =~ "elmc_fn_Main_spawnPiece_native"
+    assert generated_c =~ "elmc_fn_Main_spawnPiece_native"
     refute generated_c =~ "elmc_list_concat("
     refute generated_c =~ "record_update_helper_Main_withPiece"
     assert generated_c =~ "elmc_list_replace_nth_int"
@@ -3702,7 +3706,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert generated_c =~ ~r/if \(elmc_as_int\(direct_node_\d+->head\) == 0\)/
+    assert generated_c =~ ~r/if \(direct_affine_item_\d+ == 0\)/
     assert generated_c =~ "scene_cmd.text[0] = '.';"
     assert generated_c =~ "elmc_scene_text_from_nonzero_int"
     refute generated_c =~ ~r/if \(elmc_as_int\(direct_node_\d+->head\) != 0\) \{\s*elmc_draw_cmd_init\(&scene_cmd, ELMC_RENDER_OP_TEXT\)/
@@ -3828,7 +3832,7 @@ defmodule Elmc.CCodegenPatternsTest do
       |> hd()
 
     assert update_body =~
-             "elmc_record_update_index(model, ELMC_FIELD_MAIN_MODEL_TIMESTRING, tmp_"
+             ~r/elmc_record_update_index\(model, ELMC_FIELD_MAIN_MODEL_TIMESTRING, (tmp_|owned\[)/
     refute update_body =~ "elmc_retain(model)"
     refute update_body =~ ~s/elmc_record_update(tmp_2, "timeString"/
   end
@@ -4223,10 +4227,11 @@ defmodule Elmc.CCodegenPatternsTest do
              "static elmc_int_t elmc_fn_Main_nthEmptyIndexHelp_native(const elmc_int_t target, const elmc_int_t index, ElmcValue * const cells)"
 
     assert generated_c =~
-             "static elmc_int_t elmc_fn_Main_nthEmptyIndex_native(ElmcValue * const target, ElmcValue * const cells)"
+             "static elmc_int_t elmc_fn_Main_nthEmptyIndex_native(const elmc_int_t target, ElmcValue * const cells)"
 
-    assert generated_c =~ "list_search_cursor_"
-    assert generated_c =~ ~r/elmc_as_int\(list_search_node_\d+->head\)/
+    assert generated_c =~ "list_search_head_"
+    assert generated_c =~ "ELMC_TAG_INT_LIST"
+    assert generated_c =~ "_ilp_"
     refute generated_c =~ "elmc_fn_Main_nthEmptyIndexHelp(target"
     assert generated_c =~ "elmc_fn_Main_nthEmptyIndexHelp_native("
     assert generated_c =~ "elmc_fn_Main_nthEmptyIndex_native("
@@ -4263,7 +4268,7 @@ defmodule Elmc.CCodegenPatternsTest do
     assert generated_h =~ "elmc_fn_Main_init("
     assert generated_h =~ "elmc_fn_Main_update("
     refute generated_h =~ "elmc_fn_Main_spawnTileWithSeed("
-    assert generated_c =~ "static RC elmc_fn_Main_spawnTileWithSeed(ElmcValue **out,"
+    assert generated_c =~ "static RC elmc_fn_Main_spawnTileWithSeed_native(ElmcValue **out,"
     assert generated_c =~ "while (Rc == RC_SUCCESS && direct_cursor_"
     assert generated_c =~ "ELMC_RENDER_OP_RECT"
     assert generated_c =~ "scene_cmd.text[0] = '.';"

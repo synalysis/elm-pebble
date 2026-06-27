@@ -1872,11 +1872,11 @@ defmodule Elmc.PebbleShimTest do
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
-    assert String.contains?(generated, "static ElmcValue *elmc_fn_Main_pointAt_native")
+    assert String.contains?(generated, "static RC elmc_fn_Main_pointAt_native")
 
     point_at_body =
       generated
-      |> String.split("static ElmcValue *elmc_fn_Main_pointAt_native")
+      |> String.split("static RC elmc_fn_Main_pointAt_native")
       |> List.last()
       |> String.split("ElmcValue *elmc_fn_Main_", parts: 2)
       |> hd()
@@ -1952,8 +1952,7 @@ defmodule Elmc.PebbleShimTest do
         if (!face_ops || face_ops->tag != ELMC_TAG_LIST || list_length(face_ops) <= 0) return 7;
 
         ElmcValue *dial_args[4] = { model, elmc_new_int_take(72), elmc_new_int_take(84), elmc_new_int_take(64) };
-        ElmcValue *dial = NULL;
-        if (elmc_fn_Main_drawDial(&dial, dial_args, 4) != RC_SUCCESS) return 9;
+        ElmcValue *dial = elmc_fn_Main_drawDial(dial_args, 4);
         if (!dial || dial->tag != ELMC_TAG_LIST || list_length(dial) <= 0) return 9;
         elmc_release(dial_args[1]);
         elmc_release(dial_args[2]);

@@ -22,11 +22,61 @@ defmodule Elmc.TangramTemplateCodegenTest do
 
     assert generated =~ "ELMC_RENDER_OP_FILL_CIRCLE"
     assert generated =~ "elmc_fn_Main_tangramFaceOps"
+    assert generated =~
+             ~r/clockPoint_native\(ElmcValue \*\*out, const elmc_int_t cx, const elmc_int_t cy, const elmc_int_t slot, const elmc_int_t radius\)/
+    assert generated =~ "elmc_fn_Main_hourMarkers_native"
+    assert generated =~
+             ~r/(?:Rc = elmc_fn_Main_hourMarkers_native\(&(?:tmp_\d+|owned\[\d+\]), native_let_cx_\d+, native_let_cy_\d+, native_let_markerRadius_\d+, owned\[\d+\]\)|ElmcValue \*tmp_\d+ = elmc_fn_Main_hourMarkers_native\(native_let_cx_\d+, native_let_cy_\d+, native_let_markerRadius_\d+, owned\[\d+\]\))/
+    refute generated =~
+             ~r/elmc_new_int\(&owned\[\d+\], native_let_cx_\d+\);\s*\n\s*CHECK_RC\(Rc\);\s*\n\s*\n\s*Rc = elmc_new_int\(&owned\[\d+\], native_let_cy_\d+\);\s*\n\s*CHECK_RC\(Rc\);\s*\n\s*\n\s*Rc = elmc_new_int\(&owned\[\d+\], native_let_markerRadius_\d+\);\s*\n\s*CHECK_RC\(Rc\);\s*\n\s*\n\s*ElmcValue \*call_args_\d+\[1\] = \{ model \};\s*\n\s*Rc = elmc_fn_Main_foregroundColor\(&owned\[\d+\], call_args_\d+, 1\);\s*\n\s*CHECK_RC\(Rc\);\s*\n\s*\n\s*ElmcValue \*call_args_\d+\[4\] = \{ owned\[\d+\], owned\[\d+\], owned\[\d+\], owned\[\d+\] \};\s*\n\s*Rc = elmc_fn_Main_hourMarkers/
     assert generated =~ ~r/Rc = elmc_fn_Main_tangramFaceOps\(&(?:tmp_\d+|owned\[\d+\]), call_args_1, 1\)/
 
-    refute generated =~
-             ~r/if \(native_b_\d+\) \{\n\s+ElmcValue \*tmp_\d+ = NULL;\n\s+Rc = elmc_new_int\(&tmp_/,
-           "if-branch color literals must assign into the shared result slot without orphan temps"
+    refute generated =~ ~r/ELMC_RC_LOG_FAIL\(__call_rc, "elmc_fn_Main_p_native"/
+
+    form_origin =
+      Elmc.Test.CCodegenExtract.fn_body(generated, "elmc_fn_Main_formOrigin_native")
+
+    assert form_origin =~ "CATCH_BEGIN"
+    assert form_origin =~ "ElmcValue *owned["
+    assert form_origin =~ "Rc = elmc_fn_Main_p_native(&"
+    assert form_origin =~ "CHECK_RC(Rc);"
+    assert form_origin =~ "ELMC_RELEASE(owned["
+    refute form_origin =~ ~r/elmc_release\(owned\[\d+\]\);/
+    refute form_origin =~ ~r/owned\[\d+\] = owned\[\d+\];/
+    refute form_origin =~ "ELMC_RC_LOG_FAIL(__call_rc"
+
+    vector_draw_origin =
+      Elmc.Test.CCodegenExtract.fn_body(generated, "elmc_fn_Main_vectorDrawOrigin_native")
+
+    assert vector_draw_origin =~ "elmc_record_new_values_take(&owned"
+    assert vector_draw_origin =~ "CHECK_RC(Rc);"
+
+    catch_body =
+      case Regex.run(~r/CATCH_BEGIN([\s\S]*?)CATCH_END;/, vector_draw_origin) do
+        [_, body] -> body
+        _ -> flunk("expected vectorDrawOrigin_native to use CATCH_BEGIN/CATCH_END")
+      end
+
+    refute catch_body =~ ~r/\breturn\b/
+    assert catch_body =~ "*out = owned[0];"
+    refute vector_draw_origin =~ "owned[0] = NULL;"
+    assert Regex.scan(~r/return Rc;/, vector_draw_origin) |> length() == 1
+    assert vector_draw_origin =~ "return Rc;"
+
+    piece_color =
+      Elmc.Test.CCodegenExtract.fn_body(generated, "elmc_fn_Main_pieceColor_native")
+
+    piece_catch =
+      case Regex.run(~r/CATCH_BEGIN([\s\S]*?)CATCH_END;/, piece_color) do
+        [_, body] -> body
+        _ -> flunk("expected pieceColor_native to use CATCH_BEGIN/CATCH_END")
+      end
+
+    assert piece_color =~ "CHECK_RC(Rc);"
+    refute piece_catch =~ ~r/\breturn\b/
+    assert piece_catch =~ ~r/\*out = tmp_\d+;/
+    assert Regex.scan(~r/return Rc;/, piece_color) |> length() == 1
+    assert piece_color =~ "return Rc;"
   end
 
   @tag :tangram_host

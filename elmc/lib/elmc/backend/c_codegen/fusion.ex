@@ -96,4 +96,9 @@ defmodule Elmc.Backend.CCodegen.Fusion do
 
   defp fusion_expr(%{op: :pipe_chain} = expr), do: PipeChain.desugar(expr)
   defp fusion_expr(expr), do: expr
+
+  @spec rc_native_fusion?(String.t(), String.t(), map() | nil, map()) :: boolean()
+  def rc_native_fusion?(module_name, name, expr, decl_map) do
+    match?({:ok, _, _, :rc_native}, try_emit(module_name, name, expr, decl_map))
+  end
 end

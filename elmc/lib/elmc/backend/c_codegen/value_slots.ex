@@ -95,6 +95,20 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
     :ok
   end
 
+  @doc """
+  Emit a release for `var`. Owned slots use `ELMC_RELEASE` so failure cleanup
+  via `elmc_release_array_lifo` cannot double-free after an early release.
+  """
+  @spec release_stmt(String.t()) :: String.t()
+  def release_stmt(var) when is_binary(var) do
+    if owned_ref?(var) do
+      release(var)
+      "ELMC_RELEASE(#{var});"
+    else
+      "elmc_release(#{var});"
+    end
+  end
+
   @spec null_assignment(String.t() | non_neg_integer()) :: String.t()
   def null_assignment(var) when is_binary(var) do
     "#{var} = NULL;"

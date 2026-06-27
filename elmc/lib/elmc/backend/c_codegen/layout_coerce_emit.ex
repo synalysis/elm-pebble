@@ -183,18 +183,13 @@ defmodule Elmc.Backend.CCodegen.LayoutCoerceEmit do
             param_plans,
             locals
           )
-
-        _ ->
-          []
       end
     end
   end
 
   defp callee_key(caller_mod, target) when is_binary(target) do
-    case resolve_callee(caller_mod, target) do
-      {mod, fun} -> {mod, fun}
-      _ -> {caller_mod, FusionSupport.local_name(target)}
-    end
+    {mod, fun} = resolve_callee(caller_mod, target)
+    {mod, fun}
   end
 
   defp resolve_callee(caller_mod, target) when is_binary(target) do
@@ -243,7 +238,7 @@ defmodule Elmc.Backend.CCodegen.LayoutCoerceEmit do
     end
   end
 
-  defp emit_int_list_copy(var, from_plan, to_plan, counter) do
+  defp emit_int_list_copy(var, _from_plan, to_plan, counter) do
     coerced = "layout_coerced_#{counter}"
     next = counter + 1
     runtime_fn = copy_runtime_fn(to_plan)

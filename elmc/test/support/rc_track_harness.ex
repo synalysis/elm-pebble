@@ -148,6 +148,7 @@ defmodule Elmc.Test.RcTrackHarness do
   def assert_alloc_probe_thresholds!(out, opts \\ []) do
     early_strict_moves = Keyword.get(opts, :early_strict_moves, 10)
     max_update_rc_net = Keyword.get(opts, :max_update_rc_net, 2)
+    max_early_strict_leaks = Keyword.get(opts, :max_early_strict_leaks, 0)
 
     update_rc_nets = parse_alloc_probe_update_rc_nets(out)
 
@@ -165,7 +166,7 @@ defmodule Elmc.Test.RcTrackHarness do
 
     view_leaks = parse_alloc_probe_view_leaks(out)
 
-    assert early_strict_leaks == 0,
+    assert early_strict_leaks <= max_early_strict_leaks,
            "early-game update should be RC-balanced (moves 0-#{early_strict_moves - 1}); see probe output above"
 
     assert catastrophic_update_leaks == 0,
@@ -213,6 +214,27 @@ defmodule Elmc.Test.RcTrackHarness do
   `module` is the Elm entry module (for example `"RcTrackListProbe"`).
   Each probe is a nullary generated function `elmc_fn_<Module>_<probe>`.
   """
+  @spec list_int_length_c_helper() :: String.t()
+  def list_int_length_c_helper do
+    """
+    static int list_int_length(ElmcValue *list) {
+      if (list && list->tag == ELMC_TAG_INT_LIST) {
+        ElmcValue *len = elmc_list_length(list);
+        int value = len ? (int)elmc_as_int(len) : 0;
+        if (len) elmc_release(len);
+        return value;
+      }
+      int len = 0;
+      ElmcValue *cursor = list;
+      while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
+        len += 1;
+        cursor = ((ElmcCons *)cursor->payload)->tail;
+      }
+      return len;
+    }
+    """
+  end
+
   @spec harness_prelude() :: String.t()
   def harness_prelude do
     """

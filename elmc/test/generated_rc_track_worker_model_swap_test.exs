@@ -37,6 +37,8 @@ defmodule Elmc.GeneratedRcTrackWorkerModelSwapTest do
       #include "elmc_pebble.h"
       #include <stdio.h>
 
+      #{RcTrackHarness.list_int_length_c_helper()}
+
       enum {
         MODEL_FIELD_CELLS = 0,
         MODEL_FIELD_TURN = 4
@@ -126,12 +128,7 @@ defmodule Elmc.GeneratedRcTrackWorkerModelSwapTest do
         ElmcValue *model = elmc_worker_model(state);
         if (!model) return -1;
         ElmcValue *cells = elmc_record_get_index(model, MODEL_FIELD_CELLS);
-        int len = 0;
-        ElmcValue *cursor = cells;
-        while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
-          len += 1;
-          cursor = ((ElmcCons *)cursor->payload)->tail;
-        }
+        int len = list_int_length(cells);
         if (cells) elmc_release(cells);
         elmc_release(model);
         return len;

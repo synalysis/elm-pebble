@@ -7,6 +7,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
   alias Elmc.Backend.CCodegen.DebugProbes
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Expr
+  alias Elmc.Backend.CCodegen.FunctionEmit
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.LayoutCoerceEmit
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
@@ -14,6 +15,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
   alias Elmc.Backend.CCodegen.OwnershipCompile
   alias Elmc.Backend.CCodegen.RcRequired
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
+  alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.CCodegen.ValueSlots
@@ -343,8 +345,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
   @spec compile_var(String.t(), Types.compile_env(), Types.compile_counter()) ::
           Types.compile_result()
   def compile_var(name, env, counter) do
-    next = counter + 1
-    var = "tmp_#{next}"
+    {var, next} = CaseCompile.fresh_var(counter, env)
 
     case EnvBindings.native_string_binding(env, name) do
       native_ref when is_binary(native_ref) ->
@@ -355,7 +356,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     end
   end
 
-  defp compile_var_native_or_boxed(name, env, counter, var, next) do
+  defp compile_var_native_or_boxed(name, env, _counter, var, next) do
     case {EnvBindings.native_int_binding(env, name), EnvBindings.native_bool_binding(env, name),
           EnvBindings.native_float_binding(env, name)} do
       {native_ref, _, _} when is_binary(native_ref) ->
@@ -379,7 +380,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
             {"ElmcValue *#{var} = elmc_forward_ref_get(#{slot});", var, next}
 
           {:ok, {:direct_fragment, fragment}} ->
-            {frag_code, frag_var, next2} = Host.compile_expr(fragment, env, counter)
+            {frag_code, frag_var, next2} = Host.compile_expr(fragment, env, next)
             retain_next = next2 + 1
             retain_var = "tmp_#{retain_next}"
 
@@ -402,18 +403,18 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
                   end
               end
 
-            {"ElmcValue *#{var} = #{retain_expr};", var, next}
+            {ValueSlots.boxed_decl(var, retain_expr), var, next}
 
           :error ->
-            case BuiltinOperators.call(name, [], env, counter) do
+            case BuiltinOperators.call(name, [], env, next) do
               nil ->
                 module_name = Map.get(env, :__module__, "Main")
                 arity = EnvBindings.function_arity(env, module_name, name, [])
 
                 if arity > 0 do
-                  top_level_closure(module_name, name, arity, env, counter)
+                  top_level_closure(module_name, name, arity, env, next)
                 else
-                  compile_zero_arg_constant(module_name, name, env, counter, var, next)
+                  compile_zero_arg_constant(module_name, name, env, next, var, next)
                 end
 
               result ->
@@ -440,7 +441,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
         c_name = Util.module_fn_name(module_name, name)
         if caller_rc?(env), do: ValueSlots.track(var)
 
-        {"ElmcValue *#{var} = #{zero_arg_call_expr(env, module_name, name, c_name)};", var, next}
+        {ValueSlots.boxed_decl(var, zero_arg_call_expr(env, module_name, name, c_name)) <> "\n", var, next}
     end
   end
 
@@ -646,21 +647,23 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
 
   defp compile_native_record_box_ints(var, field_names, fields, next) do
     count = length(field_names)
+    rec_suffix = RecordCompile.fresh_rec_values_suffix()
 
     values_array =
       field_names
       |> Enum.map_join(", ", fn field -> Map.fetch!(fields, field) end)
 
     code = """
-    elmc_int_t rec_values_#{next}[#{count}] = { #{values_array} };
-      ElmcValue *#{var} = elmc_record_new_values_ints_take(#{count}, rec_values_#{next});
+    elmc_int_t rec_values_#{rec_suffix}[#{count}] = { #{values_array} };
+      #{ValueSlots.boxed_decl(var, "elmc_record_new_values_ints_take(#{count}, rec_values_#{rec_suffix})")}
     """
 
-    {code, var, next}
+    {code, var, next + 1}
   end
 
   defp compile_native_record_box_mixed(var, name, field_names, fields, env, next) do
     count = length(field_names)
+    rec_suffix = RecordCompile.fresh_rec_values_suffix()
 
     {field_code, value_vars, next} =
       Enum.reduce(field_names, {"", [], next}, fn field, {code_acc, vars_acc, c} ->
@@ -675,11 +678,11 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
 
     code = """
     #{field_code}
-      ElmcValue *rec_values_#{next}[#{count}] = { #{values_array} };
-      ElmcValue *#{var} = elmc_record_new_values_take(#{count}, rec_values_#{next});
+      ElmcValue *rec_values_#{rec_suffix}[#{count}] = { #{values_array} };
+      #{ValueSlots.boxed_decl(var, "elmc_record_new_values_take(#{count}, rec_values_#{rec_suffix})")}
     """
 
-    {code, var, next}
+    {code, var, next + 1}
   end
 
   defp native_record_field_box_expr(env, record_name, field, ref) do
@@ -746,16 +749,43 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
         _ -> []
       end
 
+    decl = Map.get(decl_map, {callee_mod, callee_fun})
+
+    direct_mixed? =
+      is_map(decl) and
+        EnvBindings.direct_call_target?(env, callee_mod, callee_fun) and
+        FunctionEmit.mixed_direct_abi?(decl, callee_mod, decl_map)
+
+    arg_kinds =
+      if direct_mixed?, do: NativeFunctionCall.arg_kinds(decl, callee_mod, decl_map), else: []
+
     Enum.reduce(Enum.with_index(args), {"", [], [], counter}, fn {arg_expr, idx},
                                                                  {code_acc, vars_acc,
                                                                   passthrough_acc, c} ->
+      kind = if direct_mixed?, do: Enum.at(arg_kinds, idx, :boxed), else: :boxed
+
       {code, var, c2, passthrough?} =
-        compile_call_operand_inner(arg_expr, operand_env, c, operand_opts)
+        case kind do
+          :native_int ->
+            {arg_code, native_ref, c3} = Host.compile_native_int_expr(arg_expr, operand_env, c)
+            {arg_code, native_ref, c3, true}
+
+          :native_bool ->
+            {arg_code, native_ref, c3} = Host.compile_native_bool_expr(arg_expr, operand_env, c)
+            {arg_code, native_ref, c3, true}
+
+          :boxed ->
+            compile_call_operand_inner(arg_expr, operand_env, c, operand_opts)
+        end
 
       param = Enum.at(param_names, idx)
 
       {coerce_code, coerced_var, c3, coerced_temp?} =
-        LayoutCoerceEmit.coerce_call_operand(var, arg_expr, callee_mod, callee_fun, param, env, c2)
+        if kind == :boxed do
+          LayoutCoerceEmit.coerce_call_operand(var, arg_expr, callee_mod, callee_fun, param, env, c2)
+        else
+          {"", var, c2, false}
+        end
 
       final_var = coerced_var
       final_passthrough = passthrough? and not coerced_temp?
@@ -815,7 +845,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
       if borrow_args? do
         release_borrowed_call_operands(env, arg_vars, arg_passthrough)
       else
-        release_call_operands(env, arg_vars)
+        release_call_operands(env, arg_vars, arg_passthrough)
       end
 
     code =
@@ -1000,17 +1030,15 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
   end
 
   defp rc_call_assignment(env, out, call_expr, true, false) do
-    failure_return = RcRuntimeEmit.failure_return(env)
-
-    if predeclared_out?(env, out) do
+    if predeclared_out?(env, out) or ValueSlots.owned_ref?(out) do
       """
-      #{out} = NULL;
+      #{ValueSlots.boxed_decl(out, "NULL")}
       {
         RC __call_rc = #{call_expr};
         if (__call_rc != RC_SUCCESS) {
-          elmc_release(#{out});
+          #{ValueSlots.release_stmt(out)}
           #{out} = NULL;
-          #{failure_return};
+          #{rc_call_failure_return(env)};
         }
       }
       """
@@ -1023,11 +1051,19 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
         if (__call_rc != RC_SUCCESS) {
           elmc_release(#{out});
           #{out} = NULL;
-          #{failure_return};
+          #{rc_call_failure_return(env)};
         }
       }
       """
       |> String.trim()
+    end
+  end
+
+  defp rc_call_failure_return(env) do
+    cond do
+      Map.get(env, :__rc_catch__) -> "return Rc"
+      Map.get(env, :__native_rc_out__) -> "return __call_rc"
+      true -> RcRuntimeEmit.failure_return(env)
     end
   end
 
@@ -1095,14 +1131,23 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
 
   defp rc_closure_return_body(module_name, name, c_name, call_args_spec, env) do
     rc_callee? = rc_closure_callee?(module_name, name, env)
+    decl_map = Map.get(env, :__program_decls__)
 
-    with false <- rc_callee?,
-         decl_map when is_map(decl_map) <- Map.get(env, :__program_decls__),
+    with decl_map when is_map(decl_map) <- decl_map,
          {:ok, decl} <- Map.fetch(decl_map, {module_name, name}),
-         true <- NativeFunctionCall.native_scalar_fn?(decl, module_name, decl_map) do
-      native_scalar_closure_return_body(c_name, call_args_spec, module_name, name, decl, env)
+         true <- EnvBindings.direct_call_target?(env, module_name, name),
+         true <- FunctionEmit.mixed_direct_abi?(decl, module_name, decl_map) do
+      mixed_direct_closure_return_body(c_name, call_args_spec, module_name, name, decl, env, rc_callee?)
     else
-      _ -> boxed_closure_return_body(module_name, name, c_name, call_args_spec, env, rc_callee?)
+      _ ->
+        with false <- rc_callee?,
+             decl_map when is_map(decl_map) <- decl_map,
+             {:ok, decl} <- Map.fetch(decl_map, {module_name, name}),
+             true <- NativeFunctionCall.native_scalar_fn?(decl, module_name, decl_map) do
+          native_scalar_closure_return_body(c_name, call_args_spec, module_name, name, decl, env)
+        else
+          _ -> boxed_closure_return_body(module_name, name, c_name, call_args_spec, env, rc_callee?)
+        end
     end
   end
 
@@ -1168,7 +1213,71 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
       case return_kind do
         :native_int -> "return elmc_new_int_take(#{c_name}_native(#{native_args}));"
         :native_bool -> "return elmc_new_bool_take(#{c_name}_native(#{native_args}));"
-        :boxed -> "return #{c_name}_native(#{native_args});"
+        :boxed ->
+          if NativeFunctionCall.native_boxed_rc_abi?(decl, module_name, decl_map) do
+            """
+            ElmcValue *out = NULL;
+            if (#{c_name}_native(&out, #{native_args}) != RC_SUCCESS) return NULL;
+            return out;
+            """
+            |> String.trim()
+          else
+            "return #{c_name}_native(#{native_args});"
+          end
+      end
+
+    argc_void =
+      cond do
+        arity == 0 and call_args_spec == "args, argc" ->
+          "(void)args;\n(void)argc;"
+
+        call_args_spec == "args, argc" ->
+          "(void)argc;"
+
+        true ->
+          ""
+      end
+
+    """
+    #{argc_void}
+    #{bindings}
+    #{return_stmt}
+    """
+    |> String.trim()
+  end
+
+  defp mixed_direct_closure_return_body(c_name, call_args_spec, module_name, name, decl, env, rc_callee?) do
+    decl_map = Map.fetch!(env, :__program_decls__)
+    {args_var, arity} = closure_call_args(call_args_spec, module_name, name, env)
+    arg_kinds = NativeFunctionCall.arg_kinds(decl, module_name, decl_map)
+
+    {bindings, call_arg_names} =
+      0..(arity - 1)
+      |> Enum.map(fn index ->
+        kind = Enum.at(arg_kinds, index, :boxed)
+        c_arg = "closure_direct_arg_#{index}"
+        {closure_native_arg_binding(args_var, index, c_arg, kind), c_arg}
+      end)
+      |> Enum.unzip()
+
+    call_args = Enum.join(call_arg_names, ", ")
+    bindings = Enum.join(bindings, "\n  ")
+
+    return_stmt =
+      if rc_callee? do
+        """
+        ElmcValue *out = NULL;
+        {
+          RC __call_rc = #{c_name}(&out, #{call_args});
+          if (__call_rc != RC_SUCCESS) {
+            ELMC_RC_LOG_FAIL(__call_rc, "#{c_name}", "closure call failed");
+            return NULL;
+          }
+        }
+        return out;
+        """
+      else
+        "return #{c_name}(#{call_args});"
       end
 
     argc_void =
@@ -1235,11 +1344,18 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     end
   end
 
-  defp release_call_operands(env, arg_vars) do
+  defp release_call_operands(env, arg_vars, arg_passthrough) do
     arg_vars
-    |> Enum.reject(&EnvBindings.borrowed_arg_ref?(env, &1))
-    |> Enum.map_join("\n  ", &"elmc_release(#{&1});")
+    |> Enum.with_index()
+    |> Enum.reject(fn {var, index} ->
+      passthrough?(arg_passthrough, index) or EnvBindings.borrowed_arg_ref?(env, var)
+    end)
+    |> Enum.map(fn {var, _index} -> var end)
+    |> Enum.map_join("\n  ", &ValueSlots.release_stmt/1)
   end
+
+  defp passthrough?(nil, _index), do: false
+  defp passthrough?(arg_passthrough, index), do: Enum.at(arg_passthrough, index, false)
 
   defp release_borrowed_call_operands(env, arg_vars, arg_passthrough) do
     arg_vars
@@ -1247,7 +1363,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     |> Enum.reject(fn {var, passthrough?} ->
       passthrough? or EnvBindings.borrowed_arg_ref?(env, var)
     end)
-    |> Enum.map_join("\n  ", fn {var, _} -> "elmc_release(#{var});" end)
+    |> Enum.map_join("\n  ", fn {var, _} -> ValueSlots.release_stmt(var) end)
   end
 
   defp field_accessor_field(%{op: :field_access, field: field}) when is_binary(field),

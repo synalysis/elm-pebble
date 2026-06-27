@@ -3,6 +3,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
   alias Elmc.Backend.CCodegen.DebugProbes
   alias Elmc.Backend.CCodegen.CSource
+  alias Elmc.Backend.CCodegen.ConstantInt
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Expr
   alias Elmc.Backend.CCodegen.Host
@@ -13,6 +14,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   alias Elmc.Backend.CCodegen.Native.ListIntReduce
   alias Elmc.Backend.CCodegen.Native.ListIntSearch
   alias Elmc.Backend.CCodegen.RcRequired
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.TypeParsing
   alias Elmc.Backend.CCodegen.Fusion
@@ -75,8 +77,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
       signature =
         cond do
-          rc_required? -> rc_function_params(direct_args?, decl)
-          direct_args? -> boxed_direct_params(decl)
+          rc_required? -> rc_function_params(direct_args?, decl, module_name, decl_map)
+          direct_args? -> direct_params(decl, module_name, decl_map)
           true -> "ElmcValue ** const args, const int argc"
         end
 
@@ -95,6 +97,38 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
+  defp skip_native_def?(decl, module_name, decl_map) do
+    skippable_zero_arg_native?(decl, module_name, decl_map)
+  end
+
+  defp emit_native_prototype?(decl, module_name, decl_map) do
+    emit_native_function?(decl, module_name, decl_map) or
+      not skippable_zero_arg_native?(decl, module_name, decl_map)
+  end
+
+  defp skippable_zero_arg_native?(decl, module_name, decl_map) do
+    (decl.args || []) == [] and
+      not NativeFunctionCall.native_args?(decl, module_name, decl_map) and
+      not ListIntSearch.recognized?(decl, module_name, decl_map) and
+      not match?({:ok, _}, ListIntReduce.recognize(decl, module_name, decl_map)) and
+      NativeFunctionCall.return_kind(decl, module_name, decl_map) in [:native_int, :native_bool] and
+      native_zero_arg_literal_body?(decl)
+  end
+
+  defp native_zero_arg_literal_body?(%{expr: expr}) do
+    case expr do
+      %{op: op, value: _} when op in [:int_literal, :char_literal, :bool_literal, :c_int_expr] ->
+        true
+
+      _ ->
+        false
+    end
+  end
+
+  defp emit_native_function?(decl, module_name, decl_map) do
+    not skip_native_def?(decl, module_name, decl_map)
+  end
+
   @spec function_linkage_prefix(String.t(), String.t()) :: String.t()
   defp function_linkage_prefix(module_name, decl_name) do
     exported? =
@@ -104,11 +138,16 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     if exported?, do: "", else: "static "
   end
 
-  @spec rc_function_params(boolean(), Types.function_declaration()) :: String.t()
-  defp rc_function_params(direct_args?, decl) do
+  @spec rc_function_params(
+          boolean(),
+          Types.function_declaration(),
+          String.t(),
+          Types.function_decl_map()
+        ) :: String.t()
+  defp rc_function_params(direct_args?, decl, module_name, decl_map) do
     params =
       if direct_args? do
-        boxed_direct_params(decl)
+        direct_params(decl, module_name, decl_map)
       else
         "ElmcValue ** const args, const int argc"
       end
@@ -132,10 +171,45 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
-  @spec boxed_direct_prototype(Types.function_declaration(), String.t(), String.t(), String.t()) ::
+  @spec mixed_direct_abi?(Types.function_declaration(), String.t(), Types.function_decl_map()) ::
+          boolean()
+  def mixed_direct_abi?(decl, module_name, decl_map) do
+    decl
+    |> NativeFunctionCall.arg_kinds(module_name, decl_map)
+    |> Enum.any?(&(&1 in [:native_int, :native_bool]))
+  end
+
+  @spec direct_params(Types.function_declaration(), String.t(), Types.function_decl_map()) ::
           String.t()
-  def boxed_direct_prototype(decl, c_name, module_name, decl_name) do
-    params = boxed_direct_params(decl)
+  def direct_params(decl, module_name, decl_map) do
+    case c_arg_bindings(decl.args || []) do
+      [] ->
+        "void"
+
+      bindings ->
+        kinds = NativeFunctionCall.arg_kinds(decl, module_name, decl_map)
+
+        bindings
+        |> Enum.zip(kinds)
+        |> Enum.map_join(", ", fn {{_arg, c_arg, _index}, kind} ->
+          case kind do
+            :native_int -> "elmc_int_t #{c_arg}"
+            :native_bool -> "bool #{c_arg}"
+            :boxed -> "ElmcValue *#{c_arg}"
+          end
+        end)
+    end
+  end
+
+  @spec boxed_direct_prototype(
+          Types.function_declaration(),
+          String.t(),
+          String.t(),
+          String.t(),
+          Types.function_decl_map()
+        ) :: String.t()
+  def boxed_direct_prototype(decl, c_name, module_name, decl_name, decl_map) do
+    params = direct_params(decl, module_name, decl_map)
 
     if RcRequired.rc_required?(module_name, decl_name) do
       case params do
@@ -163,14 +237,14 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         if emit_wrapper? or NativeFunctionCall.native_scalar_fn?(decl, module_name, decl_map) do
           "RC #{c_name}(ElmcValue **out, ElmcValue ** const args, const int argc);"
         else
-          boxed_direct_prototype(decl, c_name, module_name, decl.name)
+          boxed_direct_prototype(decl, c_name, module_name, decl.name, decl_map)
         end
 
       emit_wrapper? or NativeFunctionCall.native_scalar_fn?(decl, module_name, decl_map) ->
         "ElmcValue *#{c_name}(ElmcValue ** const args, const int argc);"
 
       true ->
-        boxed_direct_prototype(decl, c_name, module_name, decl.name)
+        boxed_direct_prototype(decl, c_name, module_name, decl.name, decl_map)
     end
   end
 
@@ -243,6 +317,13 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     {entry_probe, exit_probe} = DebugProbes.entry_exit_probes(module_name, decl.name)
     arg_binding_code = arg_binding_code(arg_bindings, direct_args?)
 
+    arg_kinds =
+      if direct_args? and mixed_direct_abi?(decl, module_name, decl_map) do
+        NativeFunctionCall.arg_kinds(decl, module_name, decl_map)
+      else
+        List.duplicate(:boxed, length(arg_names))
+      end
+
     env =
       arg_bindings
       |> Enum.reduce(%{__module__: module_name}, fn arg, acc ->
@@ -251,6 +332,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       end)
       |> Map.put(:__function_name__, decl.name)
       |> put_typed_arg_bindings(arg_bindings, decl.type)
+      |> put_direct_native_param_bindings(arg_bindings, arg_kinds)
       |> Map.put(:__function_arities__, function_arities)
       |> Map.put(:__program_decls__, decl_map)
       |> maybe_put_direct_args(direct_args?)
@@ -285,8 +367,6 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       :error ->
         compile_env =
           if rc_required?, do: Map.put(env, :__rc_catch__, true), else: env
-
-        arg_kinds = List.duplicate(:boxed, length(arg_names))
 
         {code, result_var, _counter} =
           case compile_tail_recursive(
@@ -390,6 +470,27 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
   defp maybe_put_direct_param_refs(env, _, _arg_bindings), do: env
 
+  defp put_direct_native_param_bindings(env, arg_bindings, arg_kinds) do
+    arg_bindings
+    |> Enum.zip(arg_kinds)
+    |> Enum.reduce(env, fn {{source_arg, c_arg, _index}, kind}, acc ->
+      case kind do
+        :native_int ->
+          acc
+          |> EnvBindings.put_native_int_binding(source_arg, c_arg)
+          |> EnvBindings.put_boxed_int_binding(source_arg, false)
+
+        :native_bool ->
+          acc
+          |> EnvBindings.put_native_bool_binding(source_arg, c_arg)
+          |> EnvBindings.put_boxed_bool_binding(source_arg, false)
+
+        :boxed ->
+          acc
+      end
+    end)
+  end
+
   defp arg_binding_code(arg_bindings, direct_args?) do
     if direct_args? do
       ""
@@ -446,7 +547,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
            helper_c,
            entry_probe,
            exit_probe,
-           arg_binding_code
+           arg_binding_code,
+           rc_required?
          )}
 
       {:ok, helper_c, _} when tuple2_table? ->
@@ -538,7 +640,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
          helper_c,
          entry_probe,
          exit_probe,
-         arg_binding_code
+         arg_binding_code,
+         rc_required?
        ) do
     c_name = Util.module_fn_name(module_name, decl.name)
     native = "#{c_name}_native"
@@ -548,23 +651,38 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       [helper_c | Process.get(:elmc_generic_helper_defs, [])]
     )
 
-    native_args =
-      if direct_args? do
-        (["out"] ++ Enum.map(arg_bindings, fn {_arg, c_arg, _index} -> c_arg end))
-        |> Enum.join(", ")
-      else
-        native_call_args =
-          Enum.map(arg_bindings, fn {_arg, c_arg, _index} -> c_arg end)
+    call_args =
+      arg_bindings
+      |> Enum.map(fn {_arg, c_arg, _index} -> c_arg end)
+      |> Enum.join(", ")
 
-        (["out" | native_call_args])
-        |> Enum.join(", ")
+    core_body =
+      cond do
+        rc_required? ->
+          native_args =
+            if direct_args? do
+              (["out"] ++ Enum.map(arg_bindings, fn {_arg, c_arg, _index} -> c_arg end))
+              |> Enum.join(", ")
+            else
+              (["out" | Enum.map(arg_bindings, fn {_arg, c_arg, _index} -> c_arg end)])
+              |> Enum.join(", ")
+            end
+
+          [
+            entry_probe,
+            "return #{native}(#{native_args});",
+            exit_probe
+          ]
+
+        true ->
+          [
+            entry_probe,
+            "ElmcValue *tmp_result = NULL;",
+            "if (#{native}(&tmp_result, #{call_args}) != RC_SUCCESS) return NULL;",
+            exit_probe,
+            "return tmp_result;"
+          ]
       end
-
-    core_body = [
-      entry_probe,
-      "return #{native}(#{native_args});",
-      exit_probe
-    ]
 
     unused_casts = unused_arg_casts(arg_bindings, core_body)
 
@@ -654,13 +772,16 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       mod.declarations
       |> Enum.filter(
         &(&1.kind == :function and MapSet.member?(generic_targets, {mod.name, &1.name}) and
-            NativeFunctionCall.native_scalar_fn?(&1, mod.name, decl_map))
+            NativeFunctionCall.native_scalar_fn?(&1, mod.name, decl_map) and
+            emit_native_prototype?(&1, mod.name, decl_map) and
+            not Fusion.rc_native_fusion?(mod.name, &1.name, &1.expr, decl_map))
       )
       |> Enum.map(fn decl ->
         c_name = Util.module_fn_name(mod.name, decl.name)
         return_kind = NativeFunctionCall.return_kind(decl, mod.name, decl_map)
+        {return_type, params} = NativeFunctionCall.native_def_signature(decl, mod.name, decl_map, return_kind)
 
-        "static #{native_return_prefix(return_kind)}#{c_name}_native(#{NativeFunctionCall.params(decl, mod.name, decl_map)});"
+        "static #{return_type} #{c_name}_native(#{params});"
       end)
     end)
     |> Enum.join("\n")
@@ -779,20 +900,12 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     {entry_probe, exit_probe} = DebugProbes.entry_exit_probes(module_name, decl.name)
 
     wrapper_bindings =
+      native_wrapper_bindings(c_arg_bindings, arg_kinds, rc_native_fusion?(module_name, decl, decl_map))
+
+    boxed_native_args =
       c_arg_bindings
-      |> Enum.zip(arg_kinds)
-      |> Enum.map_join("\n  ", fn {{_arg, c_arg, index}, kind} ->
-        case kind do
-          :native_int ->
-            "elmc_int_t #{c_arg} = (argc > #{index} && args[#{index}]) ? elmc_as_int(args[#{index}]) : 0;"
-
-          :native_bool ->
-            "elmc_int_t #{c_arg} = (argc > #{index} && args[#{index}]) ? elmc_as_bool(args[#{index}]) : 0;"
-
-          :boxed ->
-            "ElmcValue *#{c_arg} = (argc > #{index}) ? args[#{index}] : NULL;"
-        end
-      end)
+      |> Enum.map(fn {_arg, c_arg, _index} -> c_arg end)
+      |> Enum.join(", ")
 
     native_args =
       c_arg_bindings
@@ -801,8 +914,9 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
     return_kind = NativeFunctionCall.return_kind(decl, module_name, decl_map)
     native_env = native_env(decl, module_name, function_arities, decl_map, return_kind)
+    skip_native? = skip_native_def?(decl, module_name, decl_map)
 
-    collect_generic_helpers? = return_kind == :boxed
+    collect_generic_helpers? = return_kind == :boxed and not skip_native?
 
     if collect_generic_helpers? do
       Process.put(:elmc_generic_helper_defs, [])
@@ -810,45 +924,49 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
 
     {helper_defs, native_def} =
-      case return_kind do
-        :boxed ->
-          case native_boxed_special_emit(module_name, decl, decl_map) do
-            {:ok, helper_c, _callees, :rc_native} ->
-              {helper_c <> "\n", ""}
+      if skip_native? do
+        {"", ""}
+      else
+        case return_kind do
+          :boxed ->
+            case native_boxed_special_emit(module_name, decl, decl_map) do
+              {:ok, helper_c, _callees, :rc_native} ->
+                {helper_c <> "\n", ""}
 
-            {:ok, helper_c, _callees} ->
-              {helper_c <> "\n", ""}
+              {:ok, helper_c, _callees} ->
+                {helper_c <> "\n", ""}
 
-            :error ->
-              compile_native_function_body(
-                decl,
-                module_name,
-                c_name,
-                decl_map,
-                native_env,
-                return_kind,
-                arg_kinds,
-                c_arg_bindings,
-                entry_probe,
-                exit_probe,
-                collect_generic_helpers?
-              )
-          end
+              :error ->
+                compile_native_function_body(
+                  decl,
+                  module_name,
+                  c_name,
+                  decl_map,
+                  native_env,
+                  return_kind,
+                  arg_kinds,
+                  c_arg_bindings,
+                  entry_probe,
+                  exit_probe,
+                  collect_generic_helpers?
+                )
+            end
 
-        _ ->
-          compile_native_function_body(
-            decl,
-            module_name,
-            c_name,
-            decl_map,
-            native_env,
-            return_kind,
-            arg_kinds,
-            c_arg_bindings,
-            entry_probe,
-            exit_probe,
-            false
-          )
+          _ ->
+            compile_native_function_body(
+              decl,
+              module_name,
+              c_name,
+              decl_map,
+              native_env,
+              return_kind,
+              arg_kinds,
+              c_arg_bindings,
+              entry_probe,
+              exit_probe,
+              false
+            )
+        end
       end
 
     wrapper_def =
@@ -865,12 +983,43 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
         return_stmt =
           cond do
+            skip_native? ->
+              wrapper_return_skipped_native(
+                decl,
+                module_name,
+                decl_map,
+                c_name,
+                native_args,
+                return_kind,
+                rc_required?
+              )
+
+            rc_native_fusion?(module_name, decl, decl_map) and return_kind == :boxed and rc_required? ->
+              "return #{c_name}_native(out, #{boxed_native_args});"
+
+            rc_native_fusion?(module_name, decl, decl_map) and return_kind == :boxed ->
+              """
+              ElmcValue *tmp_result = NULL;
+              if (#{c_name}_native(&tmp_result, #{boxed_native_args}) != RC_SUCCESS) return NULL;
+              return tmp_result;
+              """
+
             rc_required? and return_kind == :boxed ->
-              """
-              ElmcValue *tmp_result = #{c_name}_native(#{native_args});
-              *out = tmp_result;
-              return RC_SUCCESS;
-              """
+              if NativeFunctionCall.native_boxed_rc_abi?(decl, module_name, decl_map) do
+                """
+                ElmcValue *tmp_result = NULL;
+                Rc = #{c_name}_native(&tmp_result, #{native_args});
+                if (Rc != RC_SUCCESS) return Rc;
+                *out = tmp_result;
+                return RC_SUCCESS;
+                """
+              else
+                """
+                ElmcValue *tmp_result = #{c_name}_native(#{native_args});
+                *out = tmp_result;
+                return RC_SUCCESS;
+                """
+              end
 
             rc_required? and return_kind == :native_int ->
               """
@@ -885,7 +1034,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
               """
 
             true ->
-              wrapper_return(c_name, native_args, return_kind)
+              wrapper_return(c_name, native_args, return_kind, decl, module_name, decl_map)
           end
 
         wrapper_unused_casts =
@@ -921,6 +1070,34 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
+  defp rc_native_fusion?(module_name, decl, decl_map) do
+    Fusion.rc_native_fusion?(module_name, decl.name, decl.expr, decl_map)
+  end
+
+  defp native_wrapper_bindings(c_arg_bindings, _arg_kinds, true) do
+    c_arg_bindings
+    |> Enum.map_join("\n  ", fn {_arg, c_arg, index} ->
+      "ElmcValue *#{c_arg} = (argc > #{index}) ? args[#{index}] : NULL;"
+    end)
+  end
+
+  defp native_wrapper_bindings(c_arg_bindings, arg_kinds, false) do
+    c_arg_bindings
+    |> Enum.zip(arg_kinds)
+    |> Enum.map_join("\n  ", fn {{_arg, c_arg, index}, kind} ->
+      case kind do
+        :native_int ->
+          "elmc_int_t #{c_arg} = (argc > #{index} && args[#{index}]) ? elmc_as_int(args[#{index}]) : 0;"
+
+        :native_bool ->
+          "elmc_int_t #{c_arg} = (argc > #{index} && args[#{index}]) ? elmc_as_bool(args[#{index}]) : 0;"
+
+        :boxed ->
+          "ElmcValue *#{c_arg} = (argc > #{index}) ? args[#{index}] : NULL;"
+      end
+    end)
+  end
+
   defp compile_native_function_body(
          decl,
          module_name,
@@ -936,9 +1113,12 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
        ) do
     RecordCompile.reset_deferred_call_operand_releases()
     RecordCompile.reset_borrowed_field_refs()
+    if return_kind == :boxed, do: ValueSlots.reset()
 
     {body_code, body_var, _counter} =
       compile_native_body(decl, module_name, decl_map, native_env, return_kind, arg_kinds)
+
+    if return_kind == :boxed, do: ValueSlots.track(body_var)
 
     deferred_release_code = RecordCompile.deferred_call_operand_release_code()
 
@@ -952,17 +1132,175 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         ""
       end
 
-    native_def = """
-    static #{native_return_prefix(return_kind)}#{c_name}_native(#{NativeFunctionCall.params(decl, module_name, decl_map)}) {
-      #{unused_casts}
-      #{entry_probe}
-      #{body_code}#{deferred_release_code}
-      #{exit_probe}
-      return #{body_var};
+    native_def =
+      if return_kind == :boxed do
+        wrap_native_boxed_function_body(
+          c_name,
+          decl,
+          module_name,
+          decl_map,
+          body_code,
+          deferred_release_code,
+          body_var,
+          entry_probe,
+          exit_probe,
+          unused_casts,
+          case_helpers
+        )
+      else
+        """
+        #{case_helpers}static #{native_return_prefix(return_kind)}#{c_name}_native(#{NativeFunctionCall.params(decl, module_name, decl_map)}) {
+          #{unused_casts}
+          #{entry_probe}
+          #{body_code}#{deferred_release_code}
+          #{exit_probe}
+          return #{body_var};
+        }
+        """
+      end
+
+    {"", native_def}
+  end
+
+  defp wrap_native_boxed_function_body(
+         c_name,
+         decl,
+         module_name,
+         decl_map,
+         body_code,
+         deferred_release_code,
+         body_var,
+         entry_probe,
+         exit_probe,
+         unused_casts,
+         case_helpers
+       ) do
+    body_text =
+      [entry_probe, body_code, deferred_release_code, exit_probe]
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.join("\n")
+
+    owned_decls = ValueSlots.owned_declaration()
+    failure_cleanup = ValueSlots.failure_cleanup()
+
+    rc_abi? = NativeFunctionCall.native_boxed_rc_candidate?(decl, module_name, decl_map)
+    register_native_boxed_rc_abi!(module_name, decl.name, rc_abi?)
+
+    needs_catch? = rc_body_needs_catch?(body_text) or owned_decls != "" or rc_abi?
+
+    {return_type, signature_params} =
+      if rc_abi? do
+        {"RC", "ElmcValue **out, #{NativeFunctionCall.params(decl, module_name, decl_map)}"}
+      else
+        {"ElmcValue *", NativeFunctionCall.params(decl, module_name, decl_map)}
+      end
+
+    {hoisted_decl, catch_body} =
+      if needs_catch? do
+        prepare_native_boxed_catch_body(body_text, body_var)
+      else
+        if rc_abi? do
+          {"", body_text}
+        else
+          {"", body_text <> "\nreturn #{body_var};"}
+        end
+      end
+
+    prefix =
+      (if needs_catch?, do: ["RC Rc = RC_SUCCESS;"], else: []) ++
+        List.wrap(hoisted_decl) ++
+        List.wrap(owned_decls) ++
+        List.wrap(unused_casts)
+
+    catch_body_with_out =
+      if needs_catch? and rc_abi? do
+        catch_body <> "\n    *out = #{body_var};"
+      else
+        catch_body
+      end
+
+    core =
+      if needs_catch? do
+        """
+        CATCH_BEGIN
+        #{catch_body_with_out}
+        CATCH_END;
+        """
+      else
+        catch_body
+      end
+
+    suffix =
+      cond do
+        needs_catch? and rc_abi? ->
+          failure_block =
+            if failure_cleanup == "" do
+              ""
+            else
+              """
+              if (Rc != RC_SUCCESS) {
+                #{failure_cleanup}
+              }
+              """
+            end
+
+          failure_block <> "\nreturn Rc;"
+
+        needs_catch? ->
+          failure_block =
+            if failure_cleanup == "",
+              do: "if (Rc != RC_SUCCESS)\n    return NULL;\n",
+              else: "if (Rc != RC_SUCCESS) {\n#{failure_cleanup}\n  return NULL;\n}\n"
+
+          failure_block <> "return #{body_var};"
+
+        rc_abi? ->
+          "*out = #{body_var};\n  return RC_SUCCESS;"
+
+        true ->
+          ""
+      end
+
+    """
+    #{case_helpers}static #{return_type} #{c_name}_native(#{signature_params}) {
+      #{Enum.join(prefix, "\n")}
+      #{core}
+      #{suffix}
     }
     """
+  end
 
-    {case_helpers, native_def}
+  defp prepare_native_boxed_catch_body(body_text, body_var) do
+    body_text =
+      body_text
+      |> String.replace("return #{body_var};", "")
+      |> String.trim_trailing()
+
+    hoist_result_decl(body_text, body_var)
+  end
+
+  defp hoist_result_decl(body_text, body_var) do
+    if ValueSlots.owned_ref?(body_var) do
+      {"", body_text}
+    else
+      hoist_boxed_result_decl(body_text, body_var)
+    end
+  end
+
+  defp hoist_boxed_result_decl(body_text, body_var) do
+    null_decl = "ElmcValue *#{body_var} = NULL;"
+
+    cond do
+      String.contains?(body_text, null_decl) ->
+        {null_decl, String.replace(body_text, null_decl, "", global: false) |> String.trim_trailing()}
+
+      String.contains?(body_text, "ElmcValue *#{body_var};") ->
+        bare_decl = "ElmcValue *#{body_var};"
+        {bare_decl, String.replace(body_text, bare_decl, "", global: false) |> String.trim_trailing()}
+
+      true ->
+        {null_decl, body_text}
+    end
   end
 
   defp generic_helper_defs_and_clear do
@@ -1007,6 +1345,16 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       )
     )
     |> Map.put(:__native_return_kind__, return_kind)
+    |> then(fn env ->
+      if return_kind == :boxed and
+           NativeFunctionCall.native_boxed_rc_candidate?(decl, module_name, decl_map) do
+        env
+        |> Map.put(:__native_rc_out__, true)
+        |> RcRuntimeEmit.rc_catch_env()
+      else
+        env
+      end
+    end)
   end
 
   defp compile_native_body(decl, module_name, decl_map, env, return_kind, arg_kinds)
@@ -1456,15 +1804,73 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     """
   end
 
-  defp wrapper_return(c_name, native_args, :native_int),
+  defp register_native_boxed_rc_abi!(module_name, name, rc_abi?) do
+    table = Process.get(:elmc_native_boxed_rc_abi, %{})
+    Process.put(:elmc_native_boxed_rc_abi, Map.put(table, {module_name, name}, rc_abi?))
+  end
+
+  defp wrapper_return(c_name, native_args, :boxed, decl, module_name, decl_map) do
+    if NativeFunctionCall.native_boxed_rc_abi?(decl, module_name, decl_map) do
+      """
+      ElmcValue *tmp_result = NULL;
+      if (#{c_name}_native(&tmp_result, #{native_args}) != RC_SUCCESS) return NULL;
+      return tmp_result;
+      """
+      |> String.trim()
+    else
+      "return #{c_name}_native(#{native_args});"
+    end
+  end
+
+  defp wrapper_return(c_name, native_args, return_kind, _decl, _module_name, _decl_map) do
+    wrapper_return_scalar(c_name, native_args, return_kind)
+  end
+
+  defp wrapper_return_scalar(c_name, native_args, :native_int),
     do: "return elmc_new_int_take(#{c_name}_native(#{native_args}));"
 
-  defp wrapper_return(c_name, native_args, :native_bool),
+  defp wrapper_return_scalar(c_name, native_args, :native_bool),
     do: "return elmc_new_bool_take(#{c_name}_native(#{native_args}));"
 
-  defp wrapper_return(c_name, native_args, :boxed), do: "return #{c_name}_native(#{native_args});"
+  defp wrapper_return_skipped_native(
+         decl,
+         module_name,
+         decl_map,
+         c_name,
+         native_args,
+         return_kind,
+         rc_required?
+       ) do
+    literal_expr = skipped_native_boxed_literal(decl, module_name, decl_map, return_kind)
 
-  defp native_return_prefix(:boxed), do: "ElmcValue *"
+    cond do
+      rc_required? and is_binary(literal_expr) ->
+        "*out = #{literal_expr};\nreturn RC_SUCCESS;"
+
+      is_binary(literal_expr) ->
+        "return #{literal_expr};"
+
+      true ->
+        wrapper_return(c_name, native_args, return_kind, decl, module_name, decl_map)
+    end
+  end
+
+  defp skipped_native_boxed_literal(decl, module_name, decl_map, :native_int) do
+    env = %{__module__: module_name, __program_decls__: decl_map}
+
+    case ConstantInt.literal_value(decl.expr || %{op: :int_literal, value: 0}, env) do
+      {:ok, value} -> "elmc_new_int_take(#{value})"
+      :error -> nil
+    end
+  end
+
+  defp skipped_native_boxed_literal(%{expr: %{op: :bool_literal, value: value}}, _module, _decl_map, :native_bool) do
+    c_value = if value, do: "true", else: "false"
+    "elmc_new_bool_take(#{c_value})"
+  end
+
+  defp skipped_native_boxed_literal(_decl, _module, _decl_map, _return_kind), do: nil
+
   defp native_return_prefix(return_kind), do: "#{NativeFunctionCall.c_return_type(return_kind)} "
 
   @doc false

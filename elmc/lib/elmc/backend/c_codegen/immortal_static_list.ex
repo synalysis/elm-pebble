@@ -258,7 +258,7 @@ defmodule Elmc.Backend.CCodegen.ImmortalStaticList do
        when length(items) >= @min_items do
     with {:ok, :int, values} <- static_int_items(items) do
       sym = immortal_symbol(module_name, fun_name)
-      {:ok, emit_int_prelude(sym, values), "(ElmcValue *)&#{sym}_value"}
+      {:ok, emit_int_prelude(sym, values), "#{sym}_get()"}
     end
   end
 
@@ -283,7 +283,14 @@ defmodule Elmc.Backend.CCodegen.ImmortalStaticList do
     count = length(values)
     values_str = Enum.join(values, ", ")
 
-    Elmc.Runtime.IntList.emit_immortal_static_prelude(sym, values_str, count)
+    """
+    #{Elmc.Runtime.IntList.emit_immortal_static_prelude(sym, values_str, count)}
+
+    static ElmcValue *#{sym}_get(void) {
+      return (ElmcValue *)&#{sym}_value;
+    }
+    """
+    |> String.trim_trailing()
   end
 
   defp emit_function_body(direct_args?, return_expr, rc_required?) do

@@ -8,6 +8,7 @@ defmodule Elmc.Backend.CCodegen.SpawnTileChain do
   alias Elmc.Backend.CCodegen.{
     FusionSupport,
     ImmortalStaticList,
+    Native.FunctionCall,
     SpawnTileInline,
     Util
   }
@@ -119,14 +120,14 @@ defmodule Elmc.Backend.CCodegen.SpawnTileChain do
   defp var_ref?(name, bind) when is_binary(name), do: name == bind
   defp var_ref?(_, _), do: false
 
-  defp parse_spawn_call(%{op: :qualified_call, target: target, args: args}, module_name) do
+  defp parse_spawn_call(%{op: :qualified_call, target: target, args: args}, _module_name) do
     with [seed, cells] <- args || [],
          true <- is_binary(FusionSupport.local_name(target)) do
       {:ok, FusionSupport.local_name(target), seed, cells}
     end
   end
 
-  defp parse_spawn_call(%{op: :call, name: name, args: args}, module_name) when is_binary(name) do
+  defp parse_spawn_call(%{op: :call, name: name, args: args}, _module_name) when is_binary(name) do
     with [seed, cells] <- args || [] do
       {:ok, name, seed, cells}
     end
@@ -158,14 +159,15 @@ defmodule Elmc.Backend.CCodegen.SpawnTileChain do
   defp emit(module_name, name, _spawn_fn, seed_param, board_expr, count, decl_map) do
     c_prefix = Util.module_fn_name(module_name, name)
     board_load = emit_board_load(board_expr, count, decl_map, module_name)
+    {seed_sig, seed_work_expr} = seed_param_emit(decl_map, module_name, name, seed_param)
 
     """
-    static RC #{c_prefix}_native(ElmcValue **out, ElmcValue *#{seed_param}) {
+    static RC #{c_prefix}_native(ElmcValue **out, #{seed_sig}) {
       RC Rc = RC_SUCCESS;
       CATCH_BEGIN
         elmc_int_t buf[#{count}];
         #{board_load}
-        elmc_int_t seed_work = elmc_as_int(#{seed_param});
+        elmc_int_t seed_work = #{seed_work_expr};
         #{SpawnTileInline.emit("spawn_a", "buf", count, "seed_work")}
         seed_work = spawn_a_after_tile;
         #{SpawnTileInline.emit("spawn_b", "buf", count, "seed_work")}
@@ -183,6 +185,29 @@ defmodule Elmc.Backend.CCodegen.SpawnTileChain do
       return Rc;
     }
     """
+  end
+
+  defp seed_param_emit(decl_map, module_name, fn_name, seed_param) do
+    direct_call? =
+      Process.get(:elmc_direct_call_targets, MapSet.new())
+      |> MapSet.member?({module_name, fn_name})
+
+    case Map.get(decl_map, {module_name, fn_name}) do
+      decl when is_map(decl) ->
+        case {direct_call?, FunctionCall.arg_kinds(decl, module_name, decl_map)} do
+          {true, [:native_int | _]} ->
+            {"const elmc_int_t #{seed_param}", seed_param}
+
+          {true, [:native_bool | _]} ->
+            {"const bool #{seed_param}", "(#{seed_param} ? 1 : 0)"}
+
+          _ ->
+            {"ElmcValue *#{seed_param}", "elmc_as_int(#{seed_param})"}
+        end
+
+      _ ->
+        {"ElmcValue *#{seed_param}", "elmc_as_int(#{seed_param})"}
+    end
   end
 
   defp emit_board_load(board_expr, count, _decl_map, module_name) do

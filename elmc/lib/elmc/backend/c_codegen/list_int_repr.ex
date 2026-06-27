@@ -286,8 +286,6 @@ defmodule Elmc.Backend.CCodegen.ListIntRepr do
     %{fa | arg: Expr.normalize_field_access_arg(arg)}
   end
 
-  defp normalize_field_access(expr), do: expr
-
   defp int_list_record_fields do
     Process.get(:elmc_record_field_types, %{})
     |> Enum.flat_map(fn {{mod, record}, fields} ->
@@ -452,7 +450,7 @@ defmodule Elmc.Backend.CCodegen.ListIntRepr do
     |> Enum.into(%{})
   end
 
-  defp resolve_let_arg(%{op: :field_access, arg: arg, field: field} = fa, let_bindings)
+  defp resolve_let_arg(%{op: :field_access, arg: _arg, field: field} = fa, let_bindings)
        when is_binary(field) do
   fa = normalize_field_access(fa)
 
@@ -531,8 +529,6 @@ defmodule Elmc.Backend.CCodegen.ListIntRepr do
     end)
   end
 
-  defp expr_repr_impl(expr, decl_map, ctx)
-
   defp expr_repr_impl(%{op: :list_literal, items: []}, _decl_map, _ctx),
     do: :mixed
 
@@ -571,7 +567,7 @@ defmodule Elmc.Backend.CCodegen.ListIntRepr do
     end
   end
 
-  defp expr_repr_impl(%{op: :field_access, arg: arg, field: field} = expr, decl_map, ctx)
+  defp expr_repr_impl(%{op: :field_access, arg: _arg, field: field} = expr, decl_map, ctx)
        when is_binary(field) do
     %{op: :field_access, arg: arg, field: field} = normalize_field_access(expr)
 
@@ -591,41 +587,9 @@ defmodule Elmc.Backend.CCodegen.ListIntRepr do
     end
   end
 
-  defp fused_call_cells_field_repr(target, args, field, decl_map, ctx) when is_binary(field) do
-    with {mod, name} <- resolve_callee(target, module_from_ctx(ctx)),
-         true <- fused_record_cells_field?({mod, name}, Map.get(decl_map, {mod, name}), decl_map),
-         [list_arg | _] <- args || [],
-         true <- expr_repr_impl(list_arg, decl_map, ctx) == compact_repr() do
-      compact_repr()
-    else
-      _ -> :mixed
-    end
-  end
-
-  defp field_access_from_record_type(arg, field, decl_map, ctx) do
-    env = %{__program_decls__: decl_map}
-    locals = ctx_locals(ctx)
-
-    lt = list_type()
-
-    case {record_type_for_arg(arg, locals, env), field_type_for_record(arg, field, locals, env)} do
-      {record_type, ^lt} when is_binary(record_type) ->
-        key = record_field_key(record_type, env, field)
-        cr = compact_repr()
-
-        case Map.get(ctx_field(ctx), key) do
-          ^cr -> compact_repr()
-          _ -> :mixed
-        end
-
-      _ ->
-        :mixed
-    end
-  end
-
   defp expr_repr_impl(%{op: :call, name: name, args: args}, decl_map, ctx)
        when is_binary(name) do
-  callee_return_list_repr(
+    callee_return_list_repr(
       {Map.get(ctx_locals(ctx), :__module__, "Main"), name},
       args,
       decl_map,
@@ -704,6 +668,38 @@ defmodule Elmc.Backend.CCodegen.ListIntRepr do
 
   defp expr_repr_impl(_expr, _decl_map, _ctx), do: :mixed
 
+  defp fused_call_cells_field_repr(target, args, field, decl_map, ctx) when is_binary(field) do
+    with {mod, name} <- resolve_callee(target, module_from_ctx(ctx)),
+         true <- fused_record_cells_field?({mod, name}, Map.get(decl_map, {mod, name}), decl_map),
+         [list_arg | _] <- args || [],
+         true <- expr_repr_impl(list_arg, decl_map, ctx) == compact_repr() do
+      compact_repr()
+    else
+      _ -> :mixed
+    end
+  end
+
+  defp field_access_from_record_type(arg, field, decl_map, ctx) do
+    env = %{__program_decls__: decl_map}
+    locals = ctx_locals(ctx)
+
+    lt = list_type()
+
+    case {record_type_for_arg(arg, locals, env), field_type_for_record(arg, field, locals, env)} do
+      {record_type, ^lt} when is_binary(record_type) ->
+        key = record_field_key(record_type, env, field)
+        cr = compact_repr()
+
+        case Map.get(ctx_field(ctx), key) do
+          ^cr -> compact_repr()
+          _ -> :mixed
+        end
+
+      _ ->
+        :mixed
+    end
+  end
+
   defp extend_locals_for_binding(%{name: name, expr: expr}, ctx, decl_map)
        when is_binary(name) do
     repr = expr_repr_impl(expr, decl_map, ctx)
@@ -722,18 +718,12 @@ defmodule Elmc.Backend.CCodegen.ListIntRepr do
       end
 
     locals =
-      case tuple_first_spawn_cells_repr(expr, decl_map, ctx) do
-        r ->
-          if r == compact_repr() do
-            locals
-            |> Map.put(name, list_type())
-            |> Map.put({:binding_repr, name}, compact_repr())
-          else
-            locals
-          end
-
-        _ ->
-          locals
+      if tuple_first_spawn_cells_repr(expr, decl_map, ctx) == compact_repr() do
+        locals
+        |> Map.put(name, list_type())
+        |> Map.put({:binding_repr, name}, compact_repr())
+      else
+        locals
       end
 
     ctx = ctx_put_locals(ctx, locals)
@@ -761,10 +751,7 @@ defmodule Elmc.Backend.CCodegen.ListIntRepr do
   end
 
   defp tuple_first_repr(arg, decl_map, ctx) do
-    case tuple_first_cells_repr(arg, decl_map, ctx) do
-      r -> if r == compact_repr(), do: compact_repr(), else: :mixed
-      _ -> :mixed
-    end
+    if tuple_first_cells_repr(arg, decl_map, ctx) == compact_repr(), do: compact_repr(), else: :mixed
   end
 
   defp tuple_first_cells_repr(expr, decl_map, ctx) do

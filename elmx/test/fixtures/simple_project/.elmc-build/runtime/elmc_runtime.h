@@ -35,7 +35,11 @@ typedef enum {
   ELMC_TAG_FORWARD_REF = 13,
   ELMC_TAG_CMD = 14,
   ELMC_TAG_SUB = 15,
-  ELMC_TAG_ORDER = 16
+  ELMC_TAG_ORDER = 16,
+  ELMC_TAG_INT_LIST = 17,
+  ELMC_TAG_INT_SPINE = 18,
+  ELMC_TAG_RECORD_SEQ = 19,
+  ELMC_TAG_FLOAT_LIST = 20
 } ElmcTag;
 
 typedef struct ElmcValue {
@@ -49,6 +53,66 @@ typedef struct ElmcCons {
   ElmcValue *head;
   ElmcValue *tail;
 } ElmcCons;
+
+#ifndef ELMC_INT_LIST_CELL_SCALAR
+#define ELMC_INT_LIST_CELL_SCALAR ((elmc_int_t)0x1EC013)
+#endif
+
+#ifndef ELMC_INT_SPINE_CELL_SCALAR
+#define ELMC_INT_SPINE_CELL_SCALAR ((elmc_int_t)0x1EC01A)
+#endif
+
+#ifndef ELMC_RECORD_SEQ_CELL_SCALAR
+#define ELMC_RECORD_SEQ_CELL_SCALAR ((elmc_int_t)0x1EC01B)
+#endif
+
+typedef struct ElmcIntListPayload {
+  elmc_int_t *values;
+  int length;
+  unsigned char owns_buffer;
+} ElmcIntListPayload;
+
+typedef struct ElmcIntListCell {
+  ElmcValue value;
+  ElmcIntListPayload data;
+} ElmcIntListCell;
+
+typedef struct ElmcIntSpine {
+  elmc_int_t head;
+  struct ElmcValue *tail;
+} ElmcIntSpine;
+
+typedef struct ElmcIntSpineCell {
+  ElmcValue value;
+  ElmcIntSpine spine;
+} ElmcIntSpineCell;
+
+typedef struct ElmcRecordSeqPayload {
+  struct ElmcValue **items;
+  int length;
+  unsigned char owns_buffer;
+} ElmcRecordSeqPayload;
+
+typedef struct ElmcRecordSeqCell {
+  ElmcValue value;
+  ElmcRecordSeqPayload data;
+} ElmcRecordSeqCell;
+
+#ifndef ELMC_FLOAT_LIST_CELL_SCALAR
+#define ELMC_FLOAT_LIST_CELL_SCALAR ((elmc_int_t)0x1EC014)
+#endif
+
+typedef struct ElmcFloatListPayload {
+  double *values;
+  int length;
+  unsigned char owns_buffer;
+} ElmcFloatListPayload;
+
+typedef struct ElmcFloatListCell {
+  ElmcValue value;
+  ElmcFloatListPayload data;
+} ElmcFloatListCell;
+
 
 #ifndef ELMC_RC_IMMORTAL
 #define ELMC_RC_IMMORTAL UINT16_MAX
@@ -283,7 +347,27 @@ RC elmc_list_cons(ElmcValue **out, ElmcValue *head, ElmcValue *tail);
 ElmcValue *elmc_list_cons_take(ElmcValue *head, ElmcValue *tail);
 RC elmc_list_from_values(ElmcValue **out, ElmcValue **items, int count);
 RC elmc_list_from_values_take(ElmcValue **out, ElmcValue **items, int count);
+int elmc_int_list_is_empty(ElmcValue *list);
+ElmcValue *elmc_int_list_head_boxed(ElmcValue *list);
+ElmcValue *elmc_int_list_tail_take(ElmcValue *list);
+int elmc_float_list_is_empty(ElmcValue *list);
+ElmcValue *elmc_float_list_head_boxed(ElmcValue *list);
+ElmcValue *elmc_float_list_tail_take(ElmcValue *list);
+int elmc_record_seq_is_empty(ElmcValue *list);
+int elmc_record_seq_length(ElmcValue *list);
+ElmcValue *elmc_record_seq_get(ElmcValue *list, elmc_int_t index);
+ElmcValue *elmc_record_seq_head_boxed(ElmcValue *list);
+ElmcValue *elmc_record_seq_tail_take(ElmcValue *list);
+int elmc_int_spine_is_empty(ElmcValue *list);
+ElmcValue *elmc_int_spine_head_boxed(ElmcValue *list);
+ElmcValue *elmc_int_spine_tail_take(ElmcValue *list);
 RC elmc_list_from_int_array(ElmcValue **out, const elmc_int_t *items, int count);
+RC elmc_list_from_int_array_reuse(ElmcValue **out, ElmcValue *existing, const elmc_int_t *items, int count);
+RC elmc_int_list_to_cons(ElmcValue **out, ElmcValue *list);
+RC elmc_int_list_to_spine(ElmcValue **out, ElmcValue *list);
+RC elmc_list_from_float_array(ElmcValue **out, const double *items, int count);
+RC elmc_list_from_record_array(ElmcValue **out, ElmcValue **items, int count);
+RC elmc_record_seq_to_cons(ElmcValue **out, ElmcValue *list);
 RC elmc_list_from_tuple2_int_array(ElmcValue **out, const elmc_int_t items[][2], int count);
 ElmcValue *elmc_list_replace_nth_int(ElmcValue *list, elmc_int_t index, elmc_int_t value);
 ElmcValue *elmc_maybe_nothing(void);
@@ -667,6 +751,16 @@ static inline ElmcValue *elmc_new_float_take(double value) {
 static inline ElmcValue *elmc_list_from_int_array_take(const elmc_int_t *items, int count) {
   ElmcValue *out = NULL;
   return elmc_list_from_int_array(&out, items, count) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_from_float_array_take(const double *items, int count) {
+  ElmcValue *out = NULL;
+  return elmc_list_from_float_array(&out, items, count) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_from_record_array_take(ElmcValue **items, int count) {
+  ElmcValue *out = NULL;
+  return elmc_list_from_record_array(&out, items, count) == RC_SUCCESS ? out : elmc_int_zero();
 }
 
 static inline ElmcValue *elmc_list_from_values_take_value(ElmcValue **items, int count) {
@@ -1239,6 +1333,8 @@ ElmcValue *elmc_record_update(ElmcValue *record, const char *field_name, ElmcVal
 ElmcValue *elmc_record_update_index(ElmcValue *record, int index, ElmcValue *new_value);
 ElmcValue *elmc_record_update_index_cow(ElmcValue *record, int index, ElmcValue *new_value);
 ElmcValue *elmc_record_update_index_cow_drop(ElmcValue *record, int index, ElmcValue *new_value);
+ElmcValue *elmc_record_update_index_int_cow(ElmcValue *record, int index, elmc_int_t new_value);
+ElmcValue *elmc_record_update_index_int_cow_drop(ElmcValue *record, int index, elmc_int_t new_value);
 
 RC elmc_closure_new(ElmcValue **out, ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count), int arity, int capture_count, ElmcValue **captures);
 RC elmc_closure_new_rc(ElmcValue **out, RC (*rc_fn)(ElmcValue **out, ElmcValue **args, int argc, ElmcValue **captures, int capture_count), int arity, int capture_count, ElmcValue **captures);

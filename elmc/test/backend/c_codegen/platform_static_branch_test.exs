@@ -7,9 +7,11 @@ defmodule Elmc.Backend.CCodegen.PlatformStaticBranchTest do
   @project_dir Path.expand("../../tmp/platform_static_branch_project", __DIR__)
   @out_dir Path.expand("../../tmp/platform_static_branch_codegen", __DIR__)
 
+  @moduletag :sequential
+
   setup do
-    File.rm_rf!(@project_dir)
-    File.rm_rf!(@out_dir)
+    File.rm_rf(@project_dir)
+    File.rm_rf(@out_dir)
     File.mkdir_p!(Path.dirname(@project_dir))
     File.cp_r!(@source_fixture, @project_dir)
 

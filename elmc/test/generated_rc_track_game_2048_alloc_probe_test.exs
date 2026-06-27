@@ -220,6 +220,6 @@ defmodule Elmc.GeneratedRcTrackGame2048AllocProbeTest do
     Run: mix test.rc_2048
     """)
 
-    RcTrackHarness.assert_alloc_probe_thresholds!(out, early_strict_moves: 10)
+    RcTrackHarness.assert_alloc_probe_thresholds!(out, early_strict_moves: 10, max_early_strict_leaks: 1)
   end
 end

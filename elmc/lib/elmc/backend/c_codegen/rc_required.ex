@@ -119,6 +119,9 @@ defmodule Elmc.Backend.CCodegen.RcRequired do
     end
   end
 
+  @spec body_allocates?(Types.ir_expr() | nil) :: boolean()
+  def body_allocates?(expr), do: expr_allocates?(expr || %{op: :int_literal, value: 0})
+
   defp callee_closure(required, decl_map) do
     expanded =
       Enum.reduce(required, required, fn {mod, name}, acc ->

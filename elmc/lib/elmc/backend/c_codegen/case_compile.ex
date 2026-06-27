@@ -89,15 +89,20 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
   def branch_assignment(%{op: op} = expr, out, env, counter)
       when op in [:call, :qualified_call] do
     {expr_code, expr_var, counter} =
-      Host.compile_expr(expr, Map.put(env, :__into_out__, out), counter)
+      Host.compile_expr(expr, branch_assignment_env(env, out), counter)
 
     branch_assignment_finish(expr_code, expr_var, out, env, counter)
   end
 
   def branch_assignment(expr, out, env, counter) do
-    {expr_code, expr_var, counter} = Host.compile_expr(expr, env, counter)
+    {expr_code, expr_var, counter} =
+      Host.compile_expr(expr, branch_assignment_env(env, out), counter)
 
     branch_assignment_finish(expr_code, expr_var, out, env, counter)
+  end
+
+  defp branch_assignment_env(env, out) do
+    if ValueSlots.owned_ref?(out), do: Map.put(env, :__into_out__, out), else: env
   end
 
   defp branch_assignment_finish(expr_code, expr_var, out, env, counter) do
@@ -488,8 +493,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
   end
 
   defp extract_branch_helper?(branch_env, body) do
-    not Map.get(branch_env, :__rc_catch__, false) and
-      not Map.get(branch_env, :__rc_required__, false) and
+    RcRuntimeEmit.generic_helper_extraction_allowed?(branch_env, body) and
       Process.get(:elmc_generic_helper_defs) != nil and emitted_line_count(body) >= 60
   end
 

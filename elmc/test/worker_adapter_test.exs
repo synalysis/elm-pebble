@@ -16,6 +16,7 @@ defmodule Elmc.WorkerAdapterTest do
       harness_path,
       """
       #include "elmc_worker.h"
+      #include "elmc_runtime.h"
       #include <stdio.h>
 
       static ElmcValue *launch_context(void) {
@@ -52,6 +53,11 @@ defmodule Elmc.WorkerAdapterTest do
           if (i == 15) return 22;
         }
 
+        ElmcValue *model_after_init = elmc_worker_model(&state);
+        if (!model_after_init) return 4;
+        elmc_int_t init_value = ELMC_RECORD_GET_INDEX_INT(model_after_init, 0);
+        elmc_release(model_after_init);
+
         ElmcValue *increment = elmc_new_int_take(1);
         if (elmc_worker_dispatch(&state, increment) != 0) return 3;
         elmc_release(increment);
@@ -63,7 +69,8 @@ defmodule Elmc.WorkerAdapterTest do
         ElmcValue *model = elmc_worker_model(&state);
         if (!model) return 4;
         if (model->tag != ELMC_TAG_RECORD || model->payload == NULL) return 24;
-        printf("model=%lld\\n", (long long)elmc_record_get_index_int(model, 0));
+        elmc_int_t counter = ELMC_RECORD_GET_INDEX_INT(model, 0);
+        printf("model=%lld\\n", (long long)(counter - init_value));
         elmc_release(model);
         printf("subs=%lld\\n", (long long)elmc_worker_subscriptions(&state));
 

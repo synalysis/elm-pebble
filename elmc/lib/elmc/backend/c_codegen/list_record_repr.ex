@@ -23,7 +23,9 @@ defmodule Elmc.Backend.CCodegen.ListRecordRepr do
       for {{mod, fun}, decl} <- decl_map,
           is_binary(decl.type),
           {arg, idx} <- Enum.with_index(decl.args || []),
-          not is_nil(record_list_elem(Enum.at(TypeParsing.function_arg_types(decl.type), idx), registry)) do
+          type = Enum.at(TypeParsing.function_arg_types(decl.type), idx),
+          not is_nil(type),
+          not is_nil(record_list_elem(type, registry)) do
         {mod, fun, arg}
       end
 
@@ -55,6 +57,8 @@ defmodule Elmc.Backend.CCodegen.ListRecordRepr do
         nil
     end
   end
+
+  defp record_list_elem(nil, _registry), do: nil
 
   defp record_list_elem(type, registry) when is_binary(type) do
     type = Host.normalize_type_name(type)
@@ -122,12 +126,6 @@ defmodule Elmc.Backend.CCodegen.ListRecordRepr do
     end)
   end
 
-  defp fold_subexprs(list, caller_mod, caller_fun, acc, decl_map, let_bindings) when is_list(list) do
-    Enum.reduce(list, acc, &walk_expr_for_calls(&1, caller_mod, caller_fun, &2, decl_map, let_bindings))
-  end
-
-  defp fold_subexprs(_other, _caller_mod, _caller_fun, acc, _decl_map, _let_bindings), do: acc
-
   defp record_call_sites(caller_mod, caller_fun, name, args, acc, decl_map, let_bindings) do
     case Map.get(decl_map, {caller_mod, name}) do
       %{args: param_names} when is_list(param_names) ->
@@ -154,7 +152,7 @@ defmodule Elmc.Backend.CCodegen.ListRecordRepr do
     end
   end
 
-  defp zip_call_args(caller_mod, caller_fun, {mod, name}, param_names, args, acc, let_bindings) do
+  defp zip_call_args(caller_mod, caller_fun, {mod, name}, param_names, args, acc, _let_bindings) do
     Enum.with_index(param_names)
     |> Enum.reduce(acc, fn {param, idx}, inner_acc ->
       case Enum.at(args, idx) do
@@ -270,7 +268,7 @@ defmodule Elmc.Backend.CCodegen.ListRecordRepr do
     end
   end
 
-  defp expr_repr(expr, elem, decl_map \\ nil, registry \\ nil)
+  defp expr_repr(expr, elem, decl_map, registry)
 
   defp expr_repr(%{op: :var, name: name}, elem, decl_map, registry)
        when is_binary(name) and is_map(decl_map) do

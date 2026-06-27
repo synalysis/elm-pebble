@@ -12,6 +12,7 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
   alias Elmc.Backend.CCodegen.TypeParsing
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
+  alias Elmc.Backend.CCodegen.ValueSlots
 
   @spec compile(Types.ir_call_expr(), Types.compile_env(), Types.compile_counter()) ::
           Types.compile_result()
@@ -223,7 +224,7 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
 
     releases =
       arg_vars
-      |> Enum.map_join("\n  ", fn var -> "elmc_release(#{var});" end)
+      |> Enum.map_join("\n  ", &ValueSlots.release_stmt/1)
 
     code = """
     #{arg_code}
@@ -258,7 +259,7 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
 
     releases =
       arg_vars
-      |> Enum.map_join("\n  ", fn var -> "elmc_release(#{var});" end)
+      |> Enum.map_join("\n  ", &ValueSlots.release_stmt/1)
 
     code = """
     #{arg_code}

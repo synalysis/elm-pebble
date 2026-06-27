@@ -1,8 +1,5 @@
 module Main exposing (main)
 
-import Array
-
-
 type alias Cell =
     { row : Int
     , col : Int

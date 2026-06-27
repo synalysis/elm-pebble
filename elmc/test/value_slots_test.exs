@@ -19,6 +19,17 @@ defmodule Elmc.Backend.CCodegen.ValueSlotsTest do
     assert ValueSlots.addr(1) == "&owned[1]"
   end
 
+  test "release_stmt uses ELMC_RELEASE for owned refs" do
+    {ref, _} = ValueSlots.alloc()
+
+    assert ValueSlots.release_stmt(ref) == "ELMC_RELEASE(owned[0]);"
+    refute ValueSlots.transferred?(ref)
+  end
+
+  test "release_stmt uses elmc_release for temps" do
+    assert ValueSlots.release_stmt("tmp_1") == "elmc_release(tmp_1);"
+  end
+
   test "owned_declaration and failure_cleanup use array lifo release" do
     ValueSlots.alloc()
     ValueSlots.alloc()

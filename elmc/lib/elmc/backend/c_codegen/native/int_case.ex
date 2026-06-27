@@ -3,6 +3,7 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
 
   alias Elmc.Backend.CCodegen.ConstantInt
   alias Elmc.Backend.CCodegen.CSource
+  alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.IntLiteralRef
@@ -93,14 +94,18 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
 
   defp compile_boxed_switch(subject_expr, branches, env, counter) do
     {subject_code, subject_ref, counter} = NativeInt.compile_expr(subject_expr, env, counter)
-    next = counter + 1
-    out = "tmp_#{next}"
+    {out, next, declare_out?} = CaseCompile.result_out_binding(env, counter)
     exhaustive? = has_default?(branches)
     initial_value = if exhaustive?, do: nil, else: "elmc_int_zero()"
+    rc_catch? = RcRuntimeEmit.rc_allocator_emit_mode?(env)
 
     {branch_code, final_counter} =
       Enum.reduce(branches, {"", next}, fn branch, {acc, c} ->
-        branch_env = RecordCompile.fresh_subexpr_cache(env)
+        branch_env =
+          env
+          |> RecordCompile.fresh_subexpr_cache()
+          |> Map.put(:__into_out__, out)
+          |> Map.put(:__rc_catch__, false)
 
         {expr_code, assignment_code, c2} =
           Host.compile_case_branch_assignment(branch.expr, out, branch_env, c)
@@ -119,15 +124,55 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
         {acc <> snippet, c2}
       end)
 
+    result_decl =
+      cond do
+        declare_out? -> CaseCompile.result_out_decl(out, true)
+        rc_catch? and initial_value == nil -> ""
+        rc_catch? -> "#{out} = #{initial_value};"
+        true -> boxed_result_decl(out, initial_value)
+      end
+
+    post_switch = if rc_catch?, do: "  CHECK_RC(Rc);", else: ""
+
     code = """
     #{subject_code}
-      #{boxed_result_decl(out, initial_value)}
+      #{result_decl}
       switch (#{subject_ref}) {
       #{branch_code}
       }
+    #{post_switch}
     """
 
     {code, out, final_counter}
+  end
+
+  defp format_lut_initializer(values) when is_list(values) do
+    flat = Enum.join(values, ", ")
+
+    if length(values) <= 4 and String.length(flat) <= 72 do
+      {:inline, flat}
+    else
+      body =
+        values
+        |> Enum.map(&"    #{&1}")
+        |> Enum.intersperse(",\n")
+        |> IO.iodata_to_binary()
+
+      {:multiline, body}
+    end
+  end
+
+  defp lut_array_decl(lut, size, {:inline, values}) do
+    "static const elmc_int_t #{lut}[#{size}] = { #{values} };"
+  end
+
+  defp lut_array_decl(lut, size, {:multiline, values}) do
+    """
+    static const elmc_int_t #{lut}[#{size}] = {
+    #{values}
+    };
+    """
+    |> String.trim_trailing()
   end
 
   defp compile_boxed_lookup_table(subject_expr, branches, env, counter) do
@@ -149,7 +194,7 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
         code =
           """
             ElmcValue *#{out} = NULL;
-            #{RcRuntimeEmit.assign_into(env, out, "elmc_new_int", ref)}
+            #{RcRuntimeEmit.assign_into(RcRuntimeEmit.rc_catch_env(env), out, "elmc_new_int", ref)}
           """
 
         {code, out, next}
@@ -160,15 +205,15 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
         lut = "native_lut_#{next}"
         scratch = "native_case_#{next}"
         out = "tmp_#{next}"
-        values = Enum.join(refs, ", ")
+        values = format_lut_initializer(refs)
         index = bounded_lookup_index(subject_ref, int_count, has_wildcard?)
 
         code = """
         #{subject_code}
-          static const elmc_int_t #{lut}[#{size}] = { #{values} };
+          #{lut_array_decl(lut, size, values)}
           elmc_int_t #{scratch} = #{lut}[#{index}];
           ElmcValue *#{out} = NULL;
-          #{RcRuntimeEmit.assign_into(env, out, "elmc_new_int", scratch)}
+          #{RcRuntimeEmit.assign_into(RcRuntimeEmit.rc_catch_env(env), out, "elmc_new_int", scratch)}
         """
 
         {code, out, next}
@@ -240,12 +285,12 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
             next = counter + 1
             lut = "native_lut_#{next}"
             out = "native_case_#{next}"
-            values = Enum.join(entries, ", ")
+            values = format_lut_initializer(entries)
             index = lookup_table_index(subject_ref, size)
 
             code = """
             #{subject_code}
-              const elmc_int_t #{lut}[#{size}] = { #{values} };
+              #{lut_array_decl(lut, size, values)}
               elmc_int_t #{out} = #{lut}[#{index}];
             """
 

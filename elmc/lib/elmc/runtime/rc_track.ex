@@ -315,6 +315,9 @@ defmodule Elmc.Runtime.RcTrack do
         cursor = next;
         elmc_release_list_cell_payload(cell);
       }
+      if (cursor && cursor->rc != ELMC_RC_IMMORTAL && cursor->tag != ELMC_TAG_LIST) {
+        elmc_release(cursor);
+      }
     }
 
     static void elmc_release_impl(ElmcValue *value) {

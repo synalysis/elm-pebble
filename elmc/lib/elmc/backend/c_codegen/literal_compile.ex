@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.LiteralCompile do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.BuiltinUnion
+  alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.IntLiteralRef
   alias Elmc.Backend.CCodegen.ResourceSlotMacros
@@ -10,6 +11,7 @@ defmodule Elmc.Backend.CCodegen.LiteralCompile do
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.UnionMacros
   alias Elmc.Backend.CCodegen.Util
+  alias Elmc.Backend.CCodegen.ValueSlots
   alias Elmc.Backend.Pebble.Util, as: PebbleUtil
 
   @spec compile(Types.ir_literal_expr(), Types.compile_env(), Types.compile_counter()) ::
@@ -86,16 +88,20 @@ defmodule Elmc.Backend.CCodegen.LiteralCompile do
     code =
       if value == 0 and ResourceSlotMacros.literal_ref(expr) == nil and
            UnionMacros.literal_ref(expr, env) == nil do
-        if Map.get(env, :__into_out__) == var do
-          "#{var} = elmc_int_zero();"
-        else
-          "ElmcValue *#{var} = elmc_int_zero();"
-        end
+        int_zero_assign(var, env)
       else
         RcRuntimeEmit.assign_call(env, var, "elmc_new_int", ref)
       end
 
     {code, var, counter}
+  end
+
+  defp int_zero_assign(var, env) do
+    if ValueSlots.owned_ref?(var) or Map.get(env, :__into_out__) == var do
+      "#{var} = elmc_int_zero();"
+    else
+      "ElmcValue *#{var} = elmc_int_zero();"
+    end
   end
 
   defp literal_out_slot(env, counter) do
@@ -104,8 +110,7 @@ defmodule Elmc.Backend.CCodegen.LiteralCompile do
         {into_out, counter}
 
       _ ->
-        next = counter + 1
-        {"tmp_#{next}", next}
+        CaseCompile.fresh_var(counter, env)
     end
   end
 end

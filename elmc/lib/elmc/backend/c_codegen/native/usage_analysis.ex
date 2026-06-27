@@ -111,13 +111,23 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
         nil
 
       decl ->
-        arg_kinds = NativeFunctionCall.arg_kinds(decl, elem(target, 0), decl_map)
+        arg_kinds = native_function_arg_kinds_for_analysis(decl, elem(target, 0), decl_map)
 
         if Enum.any?(arg_kinds, &(&1 in [:native_int, :native_bool])) do
           {args, arg_kinds}
         else
           nil
         end
+    end
+  end
+
+  defp native_function_arg_kinds_for_analysis(decl, module_name, decl_map) do
+    Process.put(:elmc_skip_int_usage_recursion, true)
+
+    try do
+      NativeFunctionCall.arg_kinds(decl, module_name, decl_map)
+    after
+      Process.delete(:elmc_skip_int_usage_recursion)
     end
   end
 
@@ -138,8 +148,6 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
     is_binary(mod) and is_binary(fun) and
       Elmc.Backend.CCodegen.BindingPlans.scalar_unboxed?(mod, fun, to_string(name), kind)
   end
-
-  defp binding_scalar_unboxed?(_env, _name, _kind), do: false
 
   defp int_let_without_union_guard?(name, value_expr, in_expr, env) do
     usage =

@@ -9,11 +9,6 @@ defmodule Elmc.Runtime.RecordSeq do
       return (ElmcRecordSeqPayload *)list->payload;
     }
 
-    static int elmc_record_seq_length_native(ElmcValue *list) {
-      ElmcRecordSeqPayload *payload = elmc_record_seq_payload(list);
-      return payload ? payload->length : 0;
-    }
-
     static int elmc_record_seq_cell_release(ElmcValue *value) {
       if (!value || value->tag != ELMC_TAG_RECORD_SEQ || value->scalar != ELMC_RECORD_SEQ_CELL_SCALAR) return 0;
       ElmcRecordSeqCell *cell = (ElmcRecordSeqCell *)value;
@@ -31,6 +26,11 @@ defmodule Elmc.Runtime.RecordSeq do
     int elmc_record_seq_is_empty(ElmcValue *list) {
       ElmcRecordSeqPayload *payload = elmc_record_seq_payload(list);
       return !payload || payload->length <= 0;
+    }
+
+    int elmc_record_seq_length(ElmcValue *list) {
+      ElmcRecordSeqPayload *payload = elmc_record_seq_payload(list);
+      return payload ? payload->length : 0;
     }
 
     ElmcValue *elmc_record_seq_get(ElmcValue *list, elmc_int_t index) {
@@ -84,6 +84,35 @@ defmodule Elmc.Runtime.RecordSeq do
 
     RC elmc_list_from_record_array(ElmcValue **out, ElmcValue **items, int count) {
       return elmc_record_seq_alloc_copy(out, items, count);
+    }
+
+    RC elmc_record_seq_to_cons(ElmcValue **out, ElmcValue *list) {
+      ElmcRecordSeqPayload *payload = elmc_record_seq_payload(list);
+      RC rc = RC_SUCCESS;
+      ElmcValue *result = elmc_list_nil();
+      ElmcValue *next = NULL;
+      CATCH_BEGIN
+        if (!payload || payload->length <= 0) {
+          rc = elmc_rc_assign_value(out, result);
+          CHECK_RC(rc);
+          result = NULL;
+        } else {
+          for (int i = payload->length - 1; i >= 0; i--) {
+            next = NULL;
+            rc = elmc_list_cons(&next, payload->items[i], result);
+            CHECK_RC(rc);
+            elmc_release(result);
+            result = next;
+            next = NULL;
+          }
+          rc = elmc_rc_assign_value(out, result);
+          CHECK_RC(rc);
+          result = NULL;
+        }
+      CATCH_END;
+      elmc_release(next);
+      elmc_release(result);
+      return rc;
     }
 
     static RC elmc_record_seq_drop(ElmcValue **out, int count, ElmcValue *list) {

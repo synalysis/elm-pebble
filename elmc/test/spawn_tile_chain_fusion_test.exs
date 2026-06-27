@@ -22,10 +22,13 @@ defmodule Elmc.SpawnTileChainFusionTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert generated_c =~ "static RC elmc_fn_Main_initialBoard_native("
+    assert generated_c =~
+             ~r/static RC elmc_fn_Main_initialBoard_native\(ElmcValue \*\*out, (?:const elmc_int_t|ElmcValue \*) ?seed\)/
     assert generated_c =~ "spawn_a_after_tile"
     assert generated_c =~ "spawn_b_after_tile"
     assert generated_c =~ "return elmc_fn_Main_initialBoard_native(out, seed);"
+    refute generated_c =~ "elmc_fn_Main_initialBoard_native(ElmcValue **out, ElmcValue *seed, "
+    refute generated_c =~ "ElmcValue *owned[0] = ({"
     assert generated_c =~
              ~r/static RC elmc_fn_Main_initialBoard_native[\s\S]*?elmc_tuple2_take\(&pair, cells_out, seed_out\);\s*CHECK_RC\(Rc\);\s*\*out = pair;/
     refute generated_c =~ "elmc_fn_Main_spawnTileWithSeed(&tmp_"

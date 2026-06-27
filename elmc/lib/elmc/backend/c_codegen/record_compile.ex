@@ -19,6 +19,19 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
   @uncached_compile &Host.compile_expr/3
 
+  @spec fresh_rec_values_suffix() :: non_neg_integer()
+  def fresh_rec_values_suffix do
+    id = Process.get(:elmc_rec_values_suffix, 0) + 1
+    Process.put(:elmc_rec_values_suffix, id)
+    id
+  end
+
+  @spec reset_rec_values_suffix() :: :ok
+  def reset_rec_values_suffix do
+    Process.put(:elmc_rec_values_suffix, 0)
+    :ok
+  end
+
   @spec with_subexpr_cache(Types.compile_env()) :: Types.compile_env()
   def with_subexpr_cache(env), do: field_subexpr_cache_env(env)
 
@@ -152,10 +165,11 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
       compile_field_exprs(ordered_fields, env, counter, &Host.compile_native_int_expr/3)
 
     suffix = counter + 1
+    rec_suffix = fresh_rec_values_suffix()
     {out, bind_counter, declare_out?} = CaseCompile.result_out_binding(env, suffix)
     next = CaseCompile.advance_counter_past_out(bind_counter, out, declare_out?)
     values_array = Enum.join(field_refs, ", ")
-    values_decl = "elmc_int_t rec_values_#{suffix}[#{field_count}] = { #{values_array} };"
+    values_decl = "elmc_int_t rec_values_#{rec_suffix}[#{field_count}] = { #{values_array} };"
     names = Enum.map(ordered_fields, & &1.name)
     use_named? = Process.get(:elmc_named_record_literals, false) and field_count > 0
 
@@ -168,12 +182,12 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
         """
         const char *rec_names_#{suffix}[#{max(field_count, 1)}] = { #{names_array} };
         #{RcRuntimeEmit.assign_call(env, out, "elmc_record_new_static_ints",
-          "#{field_count}, rec_names_#{suffix}, rec_values_#{suffix}"
+          "#{field_count}, rec_names_#{suffix}, rec_values_#{rec_suffix}"
         )}
         """
       else
         RcRuntimeEmit.assign_call(env, out, "elmc_record_new_values_ints",
-          "#{field_count}, rec_values_#{suffix}"
+          "#{field_count}, rec_values_#{rec_suffix}"
         )
       end
 
@@ -213,10 +227,13 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   end
 
   defp compile_inline_boxed_literal(ordered_fields, field_count, env, counter) do
+    env = native_boxed_rc_env(env)
+
     {field_code, field_refs, counter, post_release} =
       compile_field_exprs(ordered_fields, env, counter, &compile_boxed_field_value_expr/3)
 
-    {out, next, _} = CaseCompile.result_out_binding(env, counter)
+    rec_suffix = fresh_rec_values_suffix()
+    {out, counter2, _} = CaseCompile.result_out_binding(env, counter)
     values_array = record_values_array(field_refs)
     nulls = ValueSlots.transfer_and_null_refs(unique_field_refs(field_refs))
     names = Enum.map(ordered_fields, & &1.name)
@@ -231,17 +248,17 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
         alloc =
           RcRuntimeEmit.assign_call(env, out, "elmc_record_new_static_take",
-            "#{field_count}, rec_names_#{next}, rec_values_#{next}"
+            "#{field_count}, rec_names_#{rec_suffix}, rec_values_#{rec_suffix}"
           )
 
         {
-          "const char *rec_names_#{next}[#{max(field_count, 1)}] = { #{names_array} };",
+          "const char *rec_names_#{rec_suffix}[#{max(field_count, 1)}] = { #{names_array} };",
           alloc
         }
       else
         alloc =
           RcRuntimeEmit.assign_call(env, out, "elmc_record_new_values_take",
-            "#{field_count}, rec_values_#{next}"
+            "#{field_count}, rec_values_#{rec_suffix}"
           )
 
         {"", alloc}
@@ -251,14 +268,14 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
       """
       #{field_code}
         #{names_decl}
-        ElmcValue *rec_values_#{next}[#{max(field_count, 1)}] = { #{values_array} };
+        ElmcValue *rec_values_#{rec_suffix}[#{max(field_count, 1)}] = { #{values_array} };
         #{allocator}
         #{nulls}
       """ <> post_release
 
     :ok = put_literal_record_meta(out, ordered_fields, env)
 
-    {code, out, next}
+    {code, out, counter2}
   end
 
   defp record_values_array(field_refs) do
@@ -1519,5 +1536,11 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
   defp boxed_release_var?(var) do
     Util.boxed_temp_var?(var) and not EnvBindings.borrowed_arg_ref?(%{}, var)
+  end
+
+  defp native_boxed_rc_env(env) do
+    if Map.get(env, :__native_return_kind__) == :boxed,
+      do: RcRuntimeEmit.rc_catch_env(env),
+      else: env
   end
 end

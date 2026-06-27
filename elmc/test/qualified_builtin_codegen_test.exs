@@ -165,7 +165,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     assert typed_access_body =~ "elmc_record_get_index("
 
     assert typed_access_body =~
-             ~r/elmc_record_get_index\(tmp_\d+, (?:ELMC_FIELD_MAIN_TYPEDBOUNDS_X|2 \/\* x \*\/)\)/
+             ~r/elmc_record_get_index\((?:tmp_\d+|owned\[\d+\]), (?:ELMC_FIELD_MAIN_TYPEDBOUNDS_X|2 \/\* x \*\/)\)/
     refute typed_access_body =~ "elmc_record_get(tmp_"
   end
 
@@ -229,9 +229,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     assert case_body =~ "switch (month)"
     assert case_body =~ "case 1:"
-    assert case_body =~ " = elmc_new_string_take(\"Jan\");"
+    assert case_body =~ "Rc = elmc_new_string(&owned[0], \"Jan\");"
     assert case_body =~ "case 2:"
-    assert case_body =~ " = elmc_new_string_take(\"Feb\");"
+    assert case_body =~ "Rc = elmc_new_string(&owned[0], \"Feb\");"
 
     refute Regex.match?(
              ~r/ElmcValue \*tmp_\d+ = elmc_new_string\(\"Jan\"\);\s+tmp_\d+ = tmp_\d+;/,
@@ -371,7 +371,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     native_bool_maybe_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeBoolMaybeBranchReuse")
 
     assert native_bool_maybe_body =~ "if (flag)"
-    assert native_bool_maybe_body =~ "ElmcValue *tmp_1 = NULL;"
+    assert native_bool_maybe_body =~ "ElmcValue *tmp_3 = NULL;"
     refute native_bool_maybe_body =~ "ElmcValue *tmp_1 = elmc_int_zero();"
   end
 
@@ -513,13 +513,13 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     native_string_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeStringFromInt_native")
 
-    assert native_string_body =~ "elmc_string_from_native_int_take((value + 1))"
+    assert native_string_body =~ "Rc = elmc_string_from_native_int(&tmp_1, (value + 1));"
     refute native_string_body =~ "elmc_new_int((value + 1))"
     refute native_string_body =~ "elmc_string_from_int"
 
     native_append_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeStringAppend_native")
 
-    assert native_append_body =~ ~r/elmc_string_append_native(_take)?\(\"0\", native_string_/
+    assert native_append_body =~ ~r/elmc_string_append_native\(&tmp_\d+, \"0\", native_string_/
     assert native_append_body =~ "snprintf(native_string_buf_"
     refute native_append_body =~ "elmc_new_string(\"0\")"
     refute native_append_body =~ "elmc_string_from_native_int(value)"
@@ -564,7 +564,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute boxed_string_if_body =~ "&& tmp_"
 
     assert boxed_string_if_body =~ "snprintf(native_string_buf_"
-    assert boxed_string_if_body =~ ~r/elmc_string_append_native(_take)?\(native_string_/
+    assert boxed_string_if_body =~ ~r/elmc_string_append_native\(&tmp_\d+, native_string_/
   end
 
   test "Maybe.withDefault Int feeds String.fromInt without boxed default or result" do
@@ -630,7 +630,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeMaybeDefaultDictString")
 
     assert maybe_dict_body =~ "elmc_dict_get_with_default_int(0, key,"
-    assert maybe_dict_body =~ "elmc_string_from_native_int_take(native_maybe_default_"
+    assert maybe_dict_body =~ "Rc = elmc_string_from_native_int(&tmp_3, native_maybe_default_"
     refute maybe_dict_body =~ "elmc_dict_get("
     refute maybe_dict_body =~ "elmc_maybe_with_default_int("
   end
@@ -657,20 +657,20 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~
-             "static ElmcValue *elmc_fn_Main_nativeBoolBranch_native(const bool enabled, const elmc_int_t value)" or
+             "static RC elmc_fn_Main_nativeBoolBranch_native(ElmcValue **out, const bool enabled, const elmc_int_t value)" or
              generated_c =~
-               "static ElmcValue *elmc_fn_Main_nativeBoolBranch_native(const elmc_int_t enabled, const elmc_int_t value)"
+               "static RC elmc_fn_Main_nativeBoolBranch_native(ElmcValue **out, const elmc_int_t enabled, const elmc_int_t value)"
 
     assert generated_c =~ "elmc_as_bool(args[0])"
 
     call_body =
       generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_nativeBoolCall_native")
+      |> String.split("static RC elmc_fn_Main_nativeBoolCall")
       |> List.last()
 
-    [native_call_body | _rest] = String.split(call_body, "static ElmcValue *elmc_fn_", parts: 2)
+    [native_call_body | _rest] = String.split(call_body, "static RC elmc_fn_Main_", parts: 2)
 
-    assert native_call_body =~ "elmc_fn_Main_nativeBoolBranch_native(enabled, 7)"
+    assert native_call_body =~ "elmc_fn_Main_nativeBoolBranch_native(&owned[0], enabled, 7)"
     refute native_call_body =~ "elmc_new_bool(enabled)"
 
     refute generated_c =~ "elmc_fn_Main_nativeBoolCaptured_native"
@@ -687,9 +687,13 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     native_compare_call_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeBoolCompareCall")
 
     assert native_compare_call_body =~
-             "elmc_fn_Main_nativeBoolBranch_native(!(((bool)elmc_as_bool(left) == (bool)elmc_as_bool(right))), 3)" or
+             "elmc_fn_Main_nativeBoolBranch_native(&tmp_1, !(((bool)elmc_as_bool(left) == (bool)elmc_as_bool(right))), 3)" or
              native_compare_call_body =~
-               "elmc_fn_Main_nativeBoolBranch_native(!((elmc_as_bool(left) == elmc_as_bool(right))), 3)"
+               "elmc_fn_Main_nativeBoolBranch_native(&tmp_1, !((elmc_as_bool(left) == elmc_as_bool(right))), 3)" or
+             native_compare_call_body =~
+               "elmc_fn_Main_nativeBoolBranch_native(&owned[0], !(((bool)elmc_as_bool(left) == (bool)elmc_as_bool(right))), 3)" or
+             native_compare_call_body =~
+               "elmc_fn_Main_nativeBoolBranch_native(&owned[0], !((elmc_as_bool(left) == elmc_as_bool(right))), 3)"
 
     refute native_compare_call_body =~ "elmc_new_bool"
     refute native_compare_call_body =~ "elmc_value_equal"
@@ -822,7 +826,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     native_div_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeLiteralDivision_native")
 
-    assert native_div_body =~ "elmc_string_from_native_int_take(elmc_int_idiv((value * 328), 100))"
+    assert native_div_body =~ "Rc = elmc_string_from_native_int(&tmp_1, elmc_int_idiv((value * 328), 100));"
     refute native_div_body =~ "native_den_"
     refute native_div_body =~ "== 0 ? 0"
   end
@@ -965,9 +969,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     native_helper_body =
       CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeTextFromHelper_commands_append")
 
-    assert native_helper_body =~ "ElmcValue *tmp_"
+    assert native_helper_body =~ "owned[0]"
     assert native_helper_body =~ "const char *native_string_"
-    assert native_helper_body =~ "(const char *)tmp_"
+    refute native_helper_body =~ "(const char *)tmp_"
     refute native_helper_body =~ "ELMC_TAG_LIST"
     refute native_helper_body =~ "elmc_string_from_list"
   end
@@ -1514,14 +1518,14 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute generated_h =~ "elmc_fn_Main_figureOriginOffsetY("
     refute generated_h =~ "elmc_fn_Main_vectorDrawOrigin("
 
+    refute generated_c =~ "static elmc_int_t elmc_fn_Main_figureOriginOffsetX_native"
+    refute generated_c =~ "static elmc_int_t elmc_fn_Main_figureOriginOffsetY_native"
+
     native_pos = :binary.match(generated_c, "elmc_fn_Main_vectorDrawOrigin_native")
 
-    offset_x_pos =
-      :binary.match(generated_c, "static elmc_int_t elmc_fn_Main_figureOriginOffsetX_native")
-
     assert native_pos != :nomatch
-    assert offset_x_pos != :nomatch
-    assert elem(offset_x_pos, 0) < elem(native_pos, 0)
+    assert generated_c =~ "66 /* figureOriginOffsetX */"
+    assert generated_c =~ "58 /* figureOriginOffsetY */"
   end
 
   test "unreachable direct command helpers are not emitted in stripped builds" do
@@ -1661,7 +1665,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     assert generated_c =~ "ELMC_UI_NODE_WINDOW_STACK"
     assert generated_c =~ "ELMC_UI_NODE_WINDOW"
     assert generated_c =~ "ELMC_UI_NODE_CANVAS_LAYER"
-    assert generated_c =~ ~r/elmc_new_int_take\(ELMC_UI_NODE_WINDOW_STACK\)|elmc_new_int\(&tmp_\d+, ELMC_UI_NODE_WINDOW_STACK\)/
+    assert generated_c =~ ~r/elmc_new_int_take\(ELMC_UI_NODE_WINDOW_STACK\)|elmc_new_int\(&(?:tmp_\d+|owned\[\d+\]), ELMC_UI_NODE_WINDOW_STACK\)/
 
     File.write!(Path.join(out_dir, "c/generic_ui_harness.c"), generic_ui_harness_source())
 
@@ -3840,8 +3844,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     assert view_body =~ "ELMC_RENDER_OP_RECT"
     assert view_body =~ "ELMC_RENDER_OP_FILL_RECT"
-    assert view_body =~ "if (elmc_as_int(direct_node_"
-    assert view_body =~ "ELMC_RENDER_OP_FILL_RECT"
+    assert view_body =~ "if (direct_affine_item_"
     assert view_body =~ "!= 0)"
     refute view_body =~ "elmc_fn_Main_drawCell_commands_append_native"
   end

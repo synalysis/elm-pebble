@@ -29,11 +29,6 @@ defmodule Elmc.Runtime.FloatList do
       return (ElmcFloatListPayload *)list->payload;
     }
 
-    static int elmc_float_list_length_native(ElmcValue *list) {
-      ElmcFloatListPayload *payload = elmc_float_list_payload(list);
-      return payload ? payload->length : 0;
-    }
-
     static int elmc_float_list_cell_release(ElmcValue *value) {
       if (!value || value->tag != ELMC_TAG_FLOAT_LIST || value->scalar != ELMC_FLOAT_LIST_CELL_SCALAR) return 0;
       ElmcFloatListCell *cell = (ElmcFloatListCell *)value;

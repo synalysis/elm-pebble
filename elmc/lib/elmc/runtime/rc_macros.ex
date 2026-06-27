@@ -48,6 +48,14 @@ defmodule Elmc.Runtime.RcMacros do
           ELMC_CHECK_RC_BREAK((rc_var), __FILE__, __LINE__); \\
         } \\
       } while (0)
+
+    #ifndef ELMC_RELEASE
+    #define ELMC_RELEASE(var) \\
+      do { \\
+        elmc_release(var); \\
+        (var) = NULL; \\
+      } while (0)
+    #endif
     #endif
 
     extern volatile RC elmc_last_fail_rc;

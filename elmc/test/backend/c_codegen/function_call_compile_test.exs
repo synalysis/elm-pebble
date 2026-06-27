@@ -21,7 +21,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompileTest do
     {code, var, next} = FunctionCallCompile.compile_var("layout", env, 10)
 
     assert var == "tmp_11"
-    assert next == 11
+    assert next == 12
     assert code =~ "elmc_record_new_values_ints_take(4"
     refute code =~ "rec_field_ids_"
     assert code =~ "direct_native_record_layout_x_1"

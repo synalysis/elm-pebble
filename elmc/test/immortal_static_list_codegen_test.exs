@@ -14,7 +14,7 @@ defmodule Elmc.ImmortalStaticListCodegenTest do
 
     assert prelude =~ "elmc_immortal_list_Main_pages_values[4] = { 1, 2, 3, 4 }"
     assert prelude =~ "ELMC_TAG_INT_LIST"
-    assert body =~ "return elmc_retain((ElmcValue *)&elmc_immortal_list_Main_pages_value)"
+    assert body =~ "return elmc_retain(elmc_immortal_list_Main_pages_get())"
     refute prelude =~ "elmc_immortal_list_Main_pages_storage"
     refute body =~ "elmc_list_from_int_array"
   end

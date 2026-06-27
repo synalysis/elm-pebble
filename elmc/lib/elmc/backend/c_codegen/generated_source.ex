@@ -14,9 +14,11 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
   alias Elmc.Backend.CCodegen.SchemaRegistry
   alias Elmc.Backend.CCodegen.MacroReachability
   alias Elmc.Backend.CCodegen.Tuple2CaseTable
+  alias Elmc.Backend.CCodegen.Native.DefRegistry
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.RcRequired
+  alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.RecordFieldMacros
   alias Elmc.Backend.CCodegen.SpecialValues
   alias Elmc.Backend.CCodegen.UnionMacros
@@ -86,6 +88,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     Process.put(:elmc_lambda_counter, 0)
     Process.put(:elmc_lambda_defs, %{})
     Process.put(:elmc_borrowed_field_refs, MapSet.new())
+    RecordCompile.reset_rec_values_suffix()
 
     function_arities =
       ir.modules
@@ -176,6 +179,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     exported_targets = Analysis.exported_function_targets(decl_map, opts, direct_command_targets)
 
     Process.put(:elmc_direct_call_targets, direct_call_targets)
+    Process.put(:elmc_native_boxed_rc_abi, %{})
     Process.put(:elmc_exported_targets, exported_targets)
     Process.put(:elmc_function_arities, function_arities)
     Process.put(:elmc_program_decls, decl_map)
@@ -191,6 +195,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     )
 
     Process.put(:elmc_codegen_opts, opts)
+    DefRegistry.reset()
     _ = RcRequired.run!(decl_map, opts)
 
     generic_native_prototypes =
@@ -248,6 +253,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
     Process.delete(:elmc_lambdas)
     Process.delete(:elmc_direct_call_targets)
+    Process.delete(:elmc_native_boxed_rc_abi)
     Process.delete(:elmc_exported_targets)
     Process.delete(:elmc_function_arities)
     Process.delete(:elmc_program_decls)

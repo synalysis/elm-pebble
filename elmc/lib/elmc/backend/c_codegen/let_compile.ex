@@ -3,6 +3,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
 
   alias Elmc.Backend.CCodegen.DebugProbes
   alias Elmc.Backend.CCodegen.CSource
+  alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Expr
   alias Elmc.Backend.CCodegen.HelperParams
@@ -204,7 +205,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
 
     cleanup_code =
       cleanup_refs
-      |> Enum.map_join("\n  ", fn ref -> "elmc_release(#{ref});" end)
+      |> Enum.map_join("\n  ", &ValueSlots.release_stmt/1)
 
     {body_code, body_var, counter} = Host.compile_expr(in_expr, body_env, counter)
 
@@ -293,8 +294,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
   defp compile_boxed_let_value(value_expr, env, counter) do
     if Host.native_int_expr?(value_expr, env) do
       {native_code, native_ref, counter} = Host.compile_native_int_expr(value_expr, env, counter)
-      counter = counter + 1
-      value_var = "tmp_#{counter}"
+      {value_var, counter} = CaseCompile.fresh_var(counter, env)
 
       value_code = """
       #{native_code}#{RcRuntimeEmit.assign_call(env, value_var, "elmc_new_int", native_ref)}
@@ -336,7 +336,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
 
           helper_def = """
           static ElmcValue *#{helper_name}(#{helper_param_decls}) {
-          #{CSource.indent(body_code, 2)}
+          #{CSource.indent(sanitize_let_helper_body(body_code), 2)}
             return #{body_var};
           }
           """
@@ -365,14 +365,18 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
   end
 
   defp extract_boxed_let_body?(env, body_code) do
-    not Map.get(env, :__rc_catch__, false) and
-      not Map.get(env, :__rc_required__, false) and
-      not Map.get(env, :__inside_lambda__, false) and
+    RcRuntimeEmit.generic_helper_extraction_allowed?(env, body_code) and
       not Map.get(env, :__skip_let_body_helper__, false) and
       Process.get(:elmc_generic_helper_defs) != nil and emitted_line_count(body_code) >= 100
   end
 
   defp emitted_line_count(code), do: code |> String.split("\n") |> length()
+
+  defp sanitize_let_helper_body(code) when is_binary(code) do
+    code
+    |> String.replace("return __alloc_rc;", "return NULL;")
+    |> String.replace("return Rc;", "return NULL;")
+  end
 
   defp boxed_let_body_helper_params(expr, env, body_code) do
     vars =
@@ -488,13 +492,13 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
       ValueSlots.transferred?(value_var, body_code) -> ""
       released_in_let_body?(value_var, body_code) -> ""
       true ->
-        ValueSlots.release(value_var)
-        "elmc_release(#{value_var});"
+        ValueSlots.release_stmt(value_var)
     end
   end
 
   defp released_in_let_body?(var, body_code) when is_binary(var) and is_binary(body_code) do
-    String.contains?(body_code, "elmc_release(#{var})")
+    String.contains?(body_code, "elmc_release(#{var})") or
+      String.contains?(body_code, "ELMC_RELEASE(#{var})")
   end
 
   defp released_in_let_body?(_var, _body_code), do: false
