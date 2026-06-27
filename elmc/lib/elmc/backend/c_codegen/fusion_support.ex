@@ -22,7 +22,61 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
 
   @spec field_macro(String.t(), String.t(), String.t()) :: String.t() | nil
   def field_macro(module_name, type_name, field) do
-    Map.get(Process.get(:elmc_record_field_macros, %{}), {module_name, type_name, field})
+    case Map.get(Process.get(:elmc_record_field_macros, %{}), {module_name, type_name, field}) do
+      macro when is_binary(macro) ->
+        macro
+
+      _ ->
+        field_macro_fallback(module_name, type_name, field)
+    end
+  end
+
+  defp field_macro_fallback(module_name, type_name, field) do
+    shapes = record_alias_shapes()
+
+    case Map.get(shapes, {module_name, type_name}) do
+      fields when is_list(fields) ->
+        case Enum.find_index(fields, &(&1 == field)) do
+          nil -> nil
+          index -> Integer.to_string(index)
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp record_alias_shapes do
+    case Process.get(:elmc_record_alias_shapes) do
+      %{} = shapes when map_size(shapes) > 0 ->
+        shapes
+
+      _ ->
+        Process.get(:elmc_record_field_types, %{})
+        |> Enum.map(fn {{mod, record}, fields} ->
+          field_names =
+            Enum.map(fields, fn
+              {name, _type} when is_binary(name) -> name
+              name when is_binary(name) -> name
+              _ -> nil
+            end)
+            |> Enum.reject(&is_nil/1)
+
+          {{mod, record}, field_names}
+        end)
+        |> Map.new()
+    end
+  end
+
+  @spec superseded_fusion_callee?({String.t(), String.t()}, {String.t(), String.t()}, map()) :: boolean()
+  def superseded_fusion_callee?({caller_mod, caller_fun}, {callee_mod, callee_fun}, decl_map) do
+    with %{expr: expr} <- Map.get(decl_map, {caller_mod, caller_fun}),
+         callees when is_list(callees) <-
+           Elmc.Backend.CCodegen.Fusion.runtime_callees(caller_mod, caller_fun, expr, decl_map) do
+      {callee_mod, callee_fun} in callees
+    else
+      _ -> false
+    end
   end
 
   @spec local_name(String.t()) :: String.t()

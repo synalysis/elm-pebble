@@ -81,6 +81,7 @@ defmodule Elmc.Runtime.RcTrack do
         case ELMC_TAG_BOOL: return "Bool";
         case ELMC_TAG_STRING: return "String";
         case ELMC_TAG_LIST: return "List";
+        case ELMC_TAG_INT_LIST: return "IntList";
         case ELMC_TAG_RESULT: return "Result";
         case ELMC_TAG_MAYBE: return "Maybe";
         case ELMC_TAG_TUPLE2: return "Tuple2";
@@ -324,6 +325,38 @@ defmodule Elmc.Runtime.RcTrack do
       if (value->rc > 0) return;
       if (value->tag == ELMC_TAG_INT || value->tag == ELMC_TAG_BOOL) {
         /* Scalar values live inline in ElmcValue, not in heap payloads. */
+      } else if (value->tag == ELMC_TAG_INT_LIST) {
+        if (elmc_int_list_cell_release(value)) {
+        #if ELMC_RC_TRACK
+          elmc_rc_track_drop_owned(value);
+        #endif
+          ELMC_RELEASED += 1;
+          return;
+        }
+      } else if (value->tag == ELMC_TAG_INT_SPINE) {
+        if (elmc_int_spine_cell_release(value)) {
+        #if ELMC_RC_TRACK
+          elmc_rc_track_drop_owned(value);
+        #endif
+          ELMC_RELEASED += 1;
+          return;
+        }
+      } else if (value->tag == ELMC_TAG_FLOAT_LIST) {
+        if (elmc_float_list_cell_release(value)) {
+        #if ELMC_RC_TRACK
+          elmc_rc_track_drop_owned(value);
+        #endif
+          ELMC_RELEASED += 1;
+          return;
+        }
+      } else if (value->tag == ELMC_TAG_RECORD_SEQ) {
+        if (elmc_record_seq_cell_release(value)) {
+        #if ELMC_RC_TRACK
+          elmc_rc_track_drop_owned(value);
+        #endif
+          ELMC_RELEASED += 1;
+          return;
+        }
       } else if (value->tag == ELMC_TAG_LIST && value->payload != NULL) {
         elmc_release_list_spine(value);
         return;
@@ -365,6 +398,34 @@ defmodule Elmc.Runtime.RcTrack do
         elmc_free(clo->captures);
       } else if (value->tag == ELMC_TAG_FORWARD_REF && value->payload != NULL) {
         elmc_free(value->payload);
+      }
+      if (value->tag == ELMC_TAG_INT_LIST && elmc_int_list_cell_release(value)) {
+      #if ELMC_RC_TRACK
+        elmc_rc_track_drop_owned(value);
+      #endif
+        ELMC_RELEASED += 1;
+        return;
+      }
+      if (value->tag == ELMC_TAG_INT_SPINE && elmc_int_spine_cell_release(value)) {
+      #if ELMC_RC_TRACK
+        elmc_rc_track_drop_owned(value);
+      #endif
+        ELMC_RELEASED += 1;
+        return;
+      }
+      if (value->tag == ELMC_TAG_FLOAT_LIST && elmc_float_list_cell_release(value)) {
+      #if ELMC_RC_TRACK
+        elmc_rc_track_drop_owned(value);
+      #endif
+        ELMC_RELEASED += 1;
+        return;
+      }
+      if (value->tag == ELMC_TAG_RECORD_SEQ && elmc_record_seq_cell_release(value)) {
+      #if ELMC_RC_TRACK
+        elmc_rc_track_drop_owned(value);
+      #endif
+        ELMC_RELEASED += 1;
+        return;
       }
       if (value->tag == ELMC_TAG_LIST && elmc_list_cell_release(value)) {
       #if ELMC_RC_TRACK

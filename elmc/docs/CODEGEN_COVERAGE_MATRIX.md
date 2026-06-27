@@ -389,6 +389,20 @@ Functions marked with (λ) also have zero-arg partial-application wrappers.
 | `ELMC_TAG_FLOAT` (10) | `double *` | free payload | Real |
 | `ELMC_TAG_RECORD` (11) | `ElmcRecord *` | release values, free names | Real |
 | `ELMC_TAG_CLOSURE` (12) | `ElmcClosure *` | release captures, free array | Real |
+| `ELMC_TAG_INT_LIST` (17) | `ElmcIntListPayload *` | free values buffer if owned | Real — compact `List Int` / `Array Int` |
+| `ELMC_TAG_INT_SPINE` (18) | `ElmcIntSpine *` | release tail spine | Real — native linked unboxed ints |
+| `ELMC_TAG_RECORD_SEQ` (19) | `ElmcRecordSeqPayload *` | release items buffer if owned | Real — compact AoS record arrays |
+
+### Layout analysis (`StoragePlan`)
+
+| Feature | Status | Notes |
+|---|---|---|
+| `LayoutSolver` param/field fixed-point | Done | Replaces ad-hoc `ListIntRepr`; see `storage_plan.md` |
+| `SchemaRegistry` from IR | Done | Record aliases, `all_native?`, primitives |
+| Compact-only codegen loops | Done | No `list_walk_cursor_` when plan is `:compact` |
+| `Array.get` on compact int buffer | Done | O(1) index; was cons walk |
+| Native linked widen at producers | Done | `filter`, unknown length |
+| Record seq compact (`List Point`) | Partial | all-native records only |
 
 ## Multi-Module Compilation
 

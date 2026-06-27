@@ -38,6 +38,29 @@ defmodule Elmc.Backend.Pebble.SourceWriter.SceneHost.CmdFromValue.SerializeList 
       if (!value) return 0;
 
       size_t used = 0;
+      if (value->tag == ELMC_TAG_INT_LIST) {
+        ElmcIntListPayload *payload = elmc_int_list_payload(value);
+        if (!payload) return 0;
+        for (int i = 0; i < payload->length; i++) {
+          if (elmc_serialize_append_int(out_text, out_size, &used, out_count, payload->values[i]) != 0) {
+            return -2;
+          }
+          if (*out_count >= 64) break;
+        }
+        return 0;
+      }
+      if (value->tag == ELMC_TAG_INT_SPINE) {
+        ElmcValue *cursor = value;
+        while (cursor && cursor->tag == ELMC_TAG_INT_SPINE && cursor->payload != NULL) {
+          if (elmc_serialize_append_int(out_text, out_size, &used, out_count,
+                                        ((ElmcIntSpine *)cursor->payload)->head) != 0) {
+            return -2;
+          }
+          cursor = ((ElmcIntSpine *)cursor->payload)->tail;
+          if (*out_count >= 64) break;
+        }
+        return 0;
+      }
       ElmcValue *cursor = value;
       while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
         ElmcCons *node = (ElmcCons *)cursor->payload;

@@ -27,7 +27,11 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
   def compile(%{op: :list_literal, items: items}, env, counter) do
     case static_list_literal(items, env, counter) do
       {:ok, result} -> result
-      :error -> compile_dynamic_list_literal(items, env, counter)
+      :error ->
+        case static_record_list_literal(items, env, counter) do
+          {:ok, result} -> result
+          :error -> compile_dynamic_list_literal(items, env, counter)
+        end
     end
   end
 
@@ -134,6 +138,15 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
   defp compile_dynamic_list_literal(items, env, counter) do
     item_env = Map.delete(env, :__into_out__)
 
+    if Enum.all?(items, &all_native_primitive_record_literal?/1) do
+      compile_record_array_list_literal(items, item_env, env, counter)
+    else
+      compile_generic_list_literal(items, item_env, env, counter)
+    end
+  end
+
+  defp compile_generic_list_literal(items, item_env, env, counter) do
+
     {item_code, item_vars, counter} =
       Enum.reduce(items, {"", [], counter}, fn item, {acc_code, vars, c} ->
         {code, var, c1} = Host.compile_expr(item, item_env, c)
@@ -166,6 +179,63 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
 
     {code, out, max(next, list_items_id + 1)}
   end
+
+  defp static_record_list_literal(items, env, counter) when is_list(items) and items != [] do
+    if Enum.all?(items, &all_native_primitive_record_literal?/1) do
+      {:ok, compile_record_array_list_literal(items, env, env, counter)}
+    else
+      :error
+    end
+  end
+
+  defp static_record_list_literal(_items, _env, _counter), do: :error
+
+  defp compile_record_array_list_literal(items, item_env, env, counter) do
+    {item_code, item_vars, counter} =
+      Enum.reduce(items, {"", [], counter}, fn item, {acc_code, vars, c} ->
+        {code, var, c1} = Host.compile_expr(item, item_env, c)
+        {acc_code <> "\n  " <> code, vars ++ [var], c1}
+      end)
+
+    {out, next, _} = CaseCompile.result_out_binding(env, counter)
+    list_items_id = counter + 1
+    count = length(item_vars)
+    array_name = "list_record_items_#{list_items_id}"
+    item_list = Enum.join(item_vars, ", ")
+    list_probe = DebugProbes.list_literal_probe(env, out, list_items_id)
+    nulls = ValueSlots.transfer_and_null_refs(Enum.uniq(item_vars))
+
+    code = """
+    #{item_code}
+      ElmcValue *#{array_name}[#{count}] = { #{item_list} };
+      #{RcRuntimeEmit.assign_call(env, out, "elmc_list_from_record_array", "#{array_name}, #{count}")}
+      #{nulls}
+      #{list_probe}
+    """
+
+    {code, out, max(next, list_items_id + 1)}
+  end
+
+  defp all_native_primitive_record_literal?(%{op: :record_literal, fields: fields}) when is_list(fields) do
+    fields != [] and
+      Enum.all?(fields, fn
+        %{expr: %{op: op}} when op in [:int_literal, :float_literal, :bool_literal, :char_literal] ->
+          true
+
+        _ ->
+          false
+      end)
+  end
+
+  defp all_native_primitive_record_literal?(%{op: :record_literal, fields: fields}) when is_map(fields) do
+    fields != %{} and
+      Enum.all?(fields, fn {_field, expr} ->
+        match?(%{op: :int_literal}, expr) or match?(%{op: :float_literal}, expr) or
+          match?(%{op: :bool_literal}, expr) or match?(%{op: :char_literal}, expr)
+      end)
+  end
+
+  defp all_native_primitive_record_literal?(_), do: false
 
   defp static_list_literal(items, env, counter) when length(items) >= 4 do
     cond do

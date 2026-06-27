@@ -19,9 +19,12 @@ defmodule Elmc.Backend.CCodegen.Fusion do
     PermuteMergeInversePipeline,
     ReverseFoldlOccupied,
     RowSliceAdjacentMerge,
+    SpawnTileChain,
     Tuple2CaseTable,
     UnionCaseFourPerm
   }
+
+  @runtime_callees_cache_key :elmc_fusion_runtime_callees_cache
 
   @providers [
     {FilterMapRowDrop, 4},
@@ -29,6 +32,7 @@ defmodule Elmc.Backend.CCodegen.Fusion do
     {UnionCaseFourPerm, 4},
     {ListConcatReversedRowSlices, 4},
     {RowSliceAdjacentMerge, 4},
+    {SpawnTileChain, 4},
     {PermuteMergeInversePipeline, 4},
     {ListMapStaticIndexAt, 4},
     {ReverseFoldlOccupied, 4},
@@ -50,9 +54,36 @@ defmodule Elmc.Backend.CCodegen.Fusion do
     end)
   end
 
+  @spec reset_caches!() :: :ok
+  def reset_caches! do
+    Process.put(@runtime_callees_cache_key, %{})
+    :ok
+  end
+
   @spec runtime_callees(String.t(), String.t(), map() | nil, map()) ::
           [FusionSupport.callee_key()] | nil
-  def runtime_callees(module_name, name, expr, decl_map) do
+  def runtime_callees(module_name, name, _expr, decl_map) do
+    key = {module_name, name}
+    cache = Process.get(@runtime_callees_cache_key, %{})
+
+    case Map.fetch(cache, key) do
+      {:ok, callees} ->
+        callees
+
+      :error ->
+        expr =
+          case Map.get(decl_map, key) do
+            %{expr: decl_expr} -> decl_expr
+            _ -> nil
+          end
+
+        callees = compute_runtime_callees(module_name, name, expr, decl_map)
+        Process.put(@runtime_callees_cache_key, Map.put(cache, key, callees))
+        callees
+    end
+  end
+
+  defp compute_runtime_callees(module_name, name, expr, decl_map) do
     case try_emit(module_name, name, fusion_expr(expr), decl_map) do
       {:ok, _, callees, :rc_native} -> callees
       {:ok, _, callees} -> callees

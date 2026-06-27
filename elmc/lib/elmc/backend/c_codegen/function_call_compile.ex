@@ -8,6 +8,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Expr
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.LayoutCoerceEmit
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Native.RecordFields
   alias Elmc.Backend.CCodegen.OwnershipCompile
@@ -736,6 +737,38 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     end
   end
 
+  defp compile_callee_operands(args, callee_mod, callee_fun, env, operand_env, counter, operand_opts) do
+    decl_map = Map.get(env, :__program_decls__, %{})
+
+    param_names =
+      case Map.get(decl_map, {callee_mod, callee_fun}) do
+        %{args: names} when is_list(names) -> names
+        _ -> []
+      end
+
+    Enum.reduce(Enum.with_index(args), {"", [], [], counter}, fn {arg_expr, idx},
+                                                                 {code_acc, vars_acc,
+                                                                  passthrough_acc, c} ->
+      {code, var, c2, passthrough?} =
+        compile_call_operand_inner(arg_expr, operand_env, c, operand_opts)
+
+      param = Enum.at(param_names, idx)
+
+      {coerce_code, coerced_var, c3, coerced_temp?} =
+        LayoutCoerceEmit.coerce_call_operand(var, arg_expr, callee_mod, callee_fun, param, env, c2)
+
+      final_var = coerced_var
+      final_passthrough = passthrough? and not coerced_temp?
+
+      {
+        code_acc <> "\n  " <> code <> coerce_code,
+        vars_acc ++ [final_var],
+        passthrough_acc ++ [final_passthrough],
+        c3
+      }
+    end)
+  end
+
   defp compile_boxed(module_name, name, args, env, counter, arity, c_name) do
     rc_callee? = RcRequired.rc_required?(module_name, name)
     caller_rc? =
@@ -750,13 +783,15 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     operand_env = Map.delete(env, :__into_out__)
 
     {arg_code, arg_vars, arg_passthrough, counter} =
-      Enum.reduce(args, {"", [], [], counter}, fn arg_expr,
-                                                  {code_acc, vars_acc, passthrough_acc, c} ->
-        {code, var, c2, passthrough?} =
-          compile_call_operand_inner(arg_expr, operand_env, c, operand_opts)
-
-        {code_acc <> "\n  " <> code, vars_acc ++ [var], passthrough_acc ++ [passthrough?], c2}
-      end)
+      compile_callee_operands(
+        args,
+        module_name,
+        name,
+        env,
+        operand_env,
+        counter,
+        operand_opts
+      )
 
     {default_out, next} = CaseCompile.fresh_var(counter, env)
     call_args_id = counter + 1

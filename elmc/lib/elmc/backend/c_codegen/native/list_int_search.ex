@@ -3,6 +3,7 @@ defmodule Elmc.Backend.CCodegen.Native.ListIntSearch do
 
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.SequenceLoopCodegen
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
 
@@ -132,32 +133,38 @@ defmodule Elmc.Backend.CCodegen.Native.ListIntSearch do
          list_ref when is_binary(list_ref) <- Map.get(env, list_arg),
          {not_found_code, not_found_ref, _} <- compile_step.(not_found, env, return_kind, 0) do
       loop_id = System.unique_integer([:positive])
-      cursor = "list_search_cursor_#{loop_id}"
-      node = "list_search_node_#{loop_id}"
       head_native = "list_search_head_#{loop_id}"
       target_loop = "list_search_target_#{loop_id}"
       index_loop = "list_search_index_#{loop_id}"
       result = "list_search_result_#{loop_id}"
+
+      loop_body = """
+        if ((#{head_native} == 0)) {
+          if ((#{target_loop} == 0)) {
+            #{result} = #{index_loop};
+            break;
+          }
+          #{target_loop} -= 1;
+        }
+        #{index_loop} += 1;
+      """
+
+      walk =
+        SequenceLoopCodegen.emit_native_head_loop(
+          list_ref,
+          loop_id,
+          head_native,
+          loop_body,
+          env,
+          list_arg
+        )
 
       code = """
       #{not_found_code}
         elmc_int_t #{target_loop} = #{target_ref};
         elmc_int_t #{index_loop} = #{index_ref};
         elmc_int_t #{result} = #{not_found_ref};
-        ElmcValue *#{cursor} = #{list_ref};
-        while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
-          ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
-          const elmc_int_t #{head_native} = elmc_as_int(#{node}->head);
-          if ((#{head_native} == 0)) {
-            if ((#{target_loop} == 0)) {
-              #{result} = #{index_loop};
-              break;
-            }
-            #{target_loop} -= 1;
-          }
-          #{index_loop} += 1;
-          #{cursor} = #{node}->tail;
-        }
+      #{walk}
       """
 
       {:ok, code, result}

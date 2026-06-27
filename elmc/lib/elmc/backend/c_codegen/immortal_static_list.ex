@@ -49,9 +49,22 @@ defmodule Elmc.Backend.CCodegen.ImmortalStaticList do
   defp zero_arg_function_list_length(_expr, _env), do: :error
 
   defp zero_arg_decl_list_length(module_name, name, env) do
-    case zero_arg_decl_list_literal(module_name, name, env) do
-      {:ok, items} -> {:ok, length(items)}
-      :error -> :error
+    case Map.get(env, :__program_decls__, %{}) do
+      %{} = decl_map ->
+        case Map.get(decl_map, {module_name, name}) do
+          %{args: args, expr: %{op: :list_literal, items: items}}
+          when args in [[], nil] and is_list(items) ->
+            {:ok, length(items)}
+
+          %{args: args, expr: expr} when args in [[], nil] ->
+            repeat_zero_literal_count(expr)
+
+          _ ->
+            :error
+        end
+
+      _ ->
+        :error
     end
   end
 
@@ -216,7 +229,7 @@ defmodule Elmc.Backend.CCodegen.ImmortalStaticList do
   defp emit_static_body_expr(module_name, fun_name, expr) do
     with {:ok, count} <- repeat_zero_literal_count(expr) do
       sym = immortal_symbol(module_name, fun_name)
-      {:ok, CodegenListHelpers.emit_zero_repeat_prelude(sym, count), "#{sym}_get()"}
+      {:ok, CodegenListHelpers.emit_zero_repeat_prelude(sym, count), "(ElmcValue *)&#{sym}_value"}
     end
   end
 
@@ -245,7 +258,7 @@ defmodule Elmc.Backend.CCodegen.ImmortalStaticList do
        when length(items) >= @min_items do
     with {:ok, :int, values} <- static_int_items(items) do
       sym = immortal_symbol(module_name, fun_name)
-      {:ok, emit_int_prelude(sym, values), "#{sym}_get()"}
+      {:ok, emit_int_prelude(sym, values), "(ElmcValue *)&#{sym}_value"}
     end
   end
 
@@ -269,44 +282,8 @@ defmodule Elmc.Backend.CCodegen.ImmortalStaticList do
   defp emit_int_prelude(sym, values) do
     count = length(values)
     values_str = Enum.join(values, ", ")
-    last = count - 1
 
-    """
-    static const elmc_int_t #{sym}_values[#{count}] = { #{values_str} };
-
-    static struct {
-      ElmcValue int_heads[#{count}];
-      ElmcValue list_cells[#{count}];
-      ElmcCons cons[#{count}];
-    } #{sym}_storage;
-
-    static ElmcValue *#{sym}_ptr;
-    static int #{sym}_ready;
-
-    static ElmcValue *#{sym}_get(void) {
-      if (!#{sym}_ready) {
-        for (int i = #{last}; i >= 0; i--) {
-          ElmcValue *head = &#{sym}_storage.int_heads[i];
-          ElmcCons *cell_cons = &#{sym}_storage.cons[i];
-          ElmcValue *cell_value = &#{sym}_storage.list_cells[i];
-          head->rc = ELMC_RC_IMMORTAL;
-          head->tag = ELMC_TAG_INT;
-          head->payload = NULL;
-          head->scalar = #{sym}_values[i];
-          cell_cons->head = head;
-          cell_cons->tail = (i == #{last}) ? elmc_list_nil() : &#{sym}_storage.list_cells[i + 1];
-          cell_value->rc = ELMC_RC_IMMORTAL;
-          cell_value->tag = ELMC_TAG_LIST;
-          cell_value->payload = cell_cons;
-          cell_value->scalar = ELMC_LIST_CELL_SCALAR;
-        }
-        #{sym}_ptr = &#{sym}_storage.list_cells[0];
-        #{sym}_ready = 1;
-      }
-      return #{sym}_ptr;
-    }
-    """
-    |> String.trim_trailing()
+    Elmc.Runtime.IntList.emit_immortal_static_prelude(sym, values_str, count)
   end
 
   defp emit_function_body(direct_args?, return_expr, rc_required?) do

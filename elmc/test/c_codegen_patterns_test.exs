@@ -568,9 +568,9 @@ defmodule Elmc.CCodegenPatternsTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "elmc_fn_Main_blankRow"
-    assert generated_c =~ "elmc_immortal_list_Main_blankRow_get"
-    assert generated_c =~ ".head = ELMC_STATIC_INT(0)"
-    assert generated_c =~ ".tail = &elmc_immortal_list_Main_blankRow_cells[2].value"
+    assert generated_c =~ "ELMC_TAG_INT_LIST"
+    assert generated_c =~ "elmc_immortal_list_Main_blankRow_values"
+    refute generated_c =~ "elmc_immortal_list_Main_blankRow_cells["
     refute generated_c =~ "elmc_zero_list_tmp_"
     refute generated_c =~ "elmc_immortal_list_Main_blankRow_ready"
     refute generated_c =~ "while (elmc_"
@@ -614,11 +614,11 @@ defmodule Elmc.CCodegenPatternsTest do
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert generated_c =~ "elmc_immortal_list_Main_emptyBoard_get"
-    assert generated_c =~ ".tail = &elmc_immortal_list_Main_emptyBoard_cells[14].value"
-    assert generated_c =~ ".head = ELMC_STATIC_INT(0)"
-    assert generated_c =~ "*out = elmc_retain(elmc_immortal_list_Main_emptyBoard_get());"
+    assert generated_c =~ "elmc_immortal_list_Main_emptyBoard_values[16]"
+    assert generated_c =~ "ELMC_TAG_INT_LIST"
+    assert generated_c =~ "*out = elmc_retain((ElmcValue *)&elmc_immortal_list_Main_emptyBoard_value)"
     refute generated_c =~ "elmc_zero_list_tmp_"
+    refute generated_c =~ "elmc_immortal_list_Main_emptyBoard_cells["
     refute generated_c =~ "elmc_immortal_list_Main_emptyBoard_ready"
     refute generated_c =~ "if (!elmc_immortal_list_Main_emptyBoard_ready)"
   end
@@ -4156,8 +4156,8 @@ defmodule Elmc.CCodegenPatternsTest do
     assert generated_c =~
              "static elmc_int_t elmc_fn_Main_countZeros_native(ElmcValue * const xs)"
 
-    assert generated_c =~ "list_reduce_cursor_"
-    assert generated_c =~ ~r/elmc_as_int\(list_reduce_node_\d+->head\)/
+    assert generated_c =~ "list_walk_cursor_"
+    assert generated_c =~ ~r/elmc_as_int\(list_walk_node_\d+->head\)/
     refute generated_c =~ "elmc_fn_Main_countEmpty(cells)"
     refute generated_c =~ "elmc_fn_Main_countZeros(xs)"
 

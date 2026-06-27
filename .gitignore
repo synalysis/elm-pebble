@@ -50,7 +50,9 @@ ide/priv/pebble_app_template/src/elm/Companion/Internal.elm
 ide/priv/pebble_app_template/src/pkjs/companion-protocol.js
 
 # Keep only source snapshots in tests, ignore generated tmp harness output
-elmc/test/tmp/
+elmc/test/tmp*/
+# Local compile scratch (e.g. mix run -o x)
+elmc/x/
 
 # IDE generated workspace projects (templates live under ide/priv/project_templates)
 ide/workspace_projects/**

@@ -124,11 +124,22 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
   @spec int_let?(Types.binding_name(), Types.ir_expr(), Types.ir_expr(), Types.compile_env()) ::
           boolean()
   def int_let?(name, value_expr, in_expr, env) when is_binary(name) or is_atom(name) do
-    not union_ctor_literal?(value_expr) and
-      int_let_without_union_guard?(name, value_expr, in_expr, env)
+  not union_ctor_literal?(value_expr) and
+      (binding_scalar_unboxed?(env, name, :int) or
+         int_let_without_union_guard?(name, value_expr, in_expr, env))
   end
 
   def int_let?(_name, _value_expr, _in_expr, _env), do: false
+
+  defp binding_scalar_unboxed?(env, name, kind) when is_binary(name) or is_atom(name) do
+    mod = Map.get(env, :__module__)
+    fun = Map.get(env, :__function_name__)
+
+    is_binary(mod) and is_binary(fun) and
+      Elmc.Backend.CCodegen.BindingPlans.scalar_unboxed?(mod, fun, to_string(name), kind)
+  end
+
+  defp binding_scalar_unboxed?(_env, _name, _kind), do: false
 
   defp int_let_without_union_guard?(name, value_expr, in_expr, env) do
     usage =

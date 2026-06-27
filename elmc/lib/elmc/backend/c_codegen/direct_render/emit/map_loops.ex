@@ -516,31 +516,30 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
        ) do
     {list_code, list_var, counter} = Host.compile_expr(list_expr, env, counter)
 
+    head_native = "direct_native_head_#{next}"
+
     arg_list =
       Enum.join(
         prefix_refs ++
-          ["direct_index_#{next}", "elmc_as_int(direct_node_#{next}->head)"],
+          ["direct_index_#{next}", head_native],
         ", "
       )
+
+    loop_body = """
+           RC direct_rc_#{next} = #{c_name}_commands_append_native(#{arg_list}, writer);
+           if (direct_rc_#{next} != RC_SUCCESS) {
+             Rc = direct_rc_#{next};
+             elmc_release(#{list_var});
+     #{prefix_release_code}
+             break;
+           }
+    """
 
     {:ok,
      """
      #{list_code}
      #{prefix_code}
-     ElmcValue *direct_cursor_#{next} = #{list_var};
-        elmc_int_t direct_index_#{next} = 0;
-     while (Rc == RC_SUCCESS && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
-       ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
-       RC direct_rc_#{next} = #{c_name}_commands_append_native(#{arg_list}, writer);
-       if (direct_rc_#{next} != RC_SUCCESS) {
-         Rc = direct_rc_#{next};
-         elmc_release(#{list_var});
-     #{prefix_release_code}
-         break;
-       }
-       direct_index_#{next} += 1;
-       direct_cursor_#{next} = direct_node_#{next}->tail;
-     }
+     #{direct_list_walk_native_int_head(list_var, next, true, loop_body)}
      elmc_release(#{list_var});
      #{prefix_release_code}
      """, counter}
@@ -571,32 +570,14 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
       end)
 
     loop_prefix_release_code = prefix_release_code <> prefix_boxed_release_code
+    arg_count = prefix_count + 2
 
     {:ok,
      """
      #{list_code}
      #{prefix_code}
      #{prefix_setup_code}
-     ElmcValue *direct_cursor_#{next} = #{list_var};
-        elmc_int_t direct_index_#{next} = 0;
-     while (Rc == RC_SUCCESS && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
-       ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
-       ElmcValue *direct_index_value_#{next} = elmc_new_int_take(direct_index_#{next});
-       ElmcValue *direct_call_args_#{next}[#{max(prefix_count + 2, 1)}] = {0};
-     #{prefix_arg_bindings}
-       direct_call_args_#{next}[#{prefix_count}] = direct_index_value_#{next};
-       direct_call_args_#{next}[#{prefix_count + 1}] = direct_node_#{next}->head;
-       RC direct_rc_#{next} = #{c_name}_commands_append(direct_call_args_#{next}, #{prefix_count + 2}, writer);
-       elmc_release(direct_index_value_#{next});
-       if (direct_rc_#{next} != RC_SUCCESS) {
-         Rc = direct_rc_#{next};
-         elmc_release(#{list_var});
-     #{loop_prefix_release_code}
-         break;
-       }
-       direct_index_#{next} += 1;
-       direct_cursor_#{next} = direct_node_#{next}->tail;
-     }
+     #{direct_list_walk_indexed_boxed_head(list_var, next, prefix_count, prefix_arg_bindings, arg_count, c_name, loop_prefix_release_code)}
      elmc_release(#{list_var});
      #{loop_prefix_release_code}
      """, counter}
@@ -813,25 +794,26 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
        ) do
     {list_code, list_var, counter} = Host.compile_expr(list_expr, env, counter)
 
+    head_native = "direct_native_head_#{next}"
+
     arg_list =
-      Enum.join(prefix_refs ++ ["elmc_as_int(direct_node_#{next}->head)"], ", ")
+      Enum.join(prefix_refs ++ [head_native], ", ")
+
+    loop_body = """
+           RC direct_rc_#{next} = #{c_name}_commands_append_native(#{arg_list}, writer);
+           if (direct_rc_#{next} != RC_SUCCESS) {
+             Rc = direct_rc_#{next};
+             elmc_release(#{list_var});
+     #{prefix_release_code}
+             break;
+           }
+    """
 
     {:ok,
      """
      #{list_code}
      #{prefix_code}
-     ElmcValue *direct_cursor_#{next} = #{list_var};
-     while (Rc == RC_SUCCESS && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
-       ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
-       RC direct_rc_#{next} = #{c_name}_commands_append_native(#{arg_list}, writer);
-       if (direct_rc_#{next} != RC_SUCCESS) {
-         Rc = direct_rc_#{next};
-         elmc_release(#{list_var});
-     #{prefix_release_code}
-         break;
-       }
-       direct_cursor_#{next} = direct_node_#{next}->tail;
-     }
+     #{direct_list_walk_native_int_head(list_var, next, false, loop_body)}
      elmc_release(#{list_var});
      #{prefix_release_code}
      """, counter}
@@ -862,27 +844,14 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
       end)
 
     loop_prefix_release_code = prefix_release_code <> prefix_boxed_release_code
+    arg_count = prefix_count + 1
 
     {:ok,
      """
      #{list_code}
      #{prefix_code}
      #{prefix_setup_code}
-     ElmcValue *direct_cursor_#{next} = #{list_var};
-     while (Rc == RC_SUCCESS && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
-       ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
-       ElmcValue *direct_call_args_#{next}[#{max(prefix_count + 1, 1)}] = {0};
-     #{prefix_arg_bindings}
-       direct_call_args_#{next}[#{prefix_count}] = direct_node_#{next}->head;
-       RC direct_rc_#{next} = #{c_name}_commands_append(direct_call_args_#{next}, #{prefix_count + 1}, writer);
-       if (direct_rc_#{next} != RC_SUCCESS) {
-         Rc = direct_rc_#{next};
-         elmc_release(#{list_var});
-     #{loop_prefix_release_code}
-         break;
-       }
-       direct_cursor_#{next} = direct_node_#{next}->tail;
-     }
+     #{direct_list_walk_boxed_head(list_var, next, prefix_count, prefix_arg_bindings, arg_count, c_name, loop_prefix_release_code)}
      elmc_release(#{list_var});
      #{loop_prefix_release_code}
      """, counter}
@@ -1082,17 +1051,21 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
         body_env = Map.put(env, arg, item_var)
 
         with {:ok, body_code, counter} <- Host.direct_emit_expr(body, body_env, counter) do
-          {:ok,
-           """
-           #{list_code}
-             ElmcValue *direct_cursor_#{next} = #{list_var};
-             while (Rc == RC_SUCCESS && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
-               ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
-           #{CSource.indent(body_code, 4)}
-               direct_cursor_#{next} = direct_node_#{next}->tail;
-             }
+          item_boxed = "direct_il_item_#{next}"
+
+          body_env_int =
+            env
+            |> Map.delete(arg)
+            |> Map.put(arg, item_boxed)
+
+          with {:ok, body_code_int, counter} <- Host.direct_emit_expr(body, body_env_int, counter) do
+            {:ok,
+             """
+             #{list_code}
+             #{direct_list_walk_lambda_body(list_var, next, item_boxed, body_code, body_code_int)}
              elmc_release(#{list_var});
-           """, counter}
+             """, counter}
+          end
         else
           _ -> :error
         end
@@ -1125,4 +1098,158 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
   end
 
   defp boxed_elmc_value_ref?(_), do: false
+
+  defp direct_list_walk_native_int_head(list_var, next, indexed?, loop_body)
+       when is_binary(list_var) and is_binary(loop_body) do
+    head = "direct_native_head_#{next}"
+    index_decl = if indexed?, do: "  elmc_int_t direct_index_#{next} = 0;\n", else: ""
+    index_inc = if indexed?, do: "      direct_index_#{next} += 1;\n", else: ""
+
+    """
+    #{index_decl}if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
+      ElmcIntListPayload *direct_ilp_#{next} = (ElmcIntListPayload *)#{list_var}->payload;
+      int direct_ilen_#{next} = direct_ilp_#{next} ? direct_ilp_#{next}->length : 0;
+      for (int direct_ii_#{next} = 0; Rc == RC_SUCCESS && direct_ii_#{next} < direct_ilen_#{next}; direct_ii_#{next}++) {
+        const elmc_int_t #{head} = direct_ilp_#{next}->values[direct_ii_#{next}];
+    #{loop_body}
+    #{index_inc}
+      }
+    } else {
+      ElmcValue *direct_cursor_#{next} = #{list_var};
+    #{if indexed?, do: "  elmc_int_t direct_index_#{next} = 0;\n", else: ""}
+      while (Rc == RC_SUCCESS && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
+        ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
+        const elmc_int_t #{head} = elmc_as_int(direct_node_#{next}->head);
+    #{loop_body}
+    #{index_inc}
+        direct_cursor_#{next} = direct_node_#{next}->tail;
+      }
+    }
+    """
+  end
+
+  defp direct_list_walk_indexed_boxed_head(
+         list_var,
+         next,
+         prefix_count,
+         prefix_bindings,
+         arg_count,
+         c_name,
+         loop_prefix_release_code
+       ) do
+    """
+    if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
+      ElmcIntListPayload *direct_ilp_#{next} = (ElmcIntListPayload *)#{list_var}->payload;
+      int direct_ilen_#{next} = direct_ilp_#{next} ? direct_ilp_#{next}->length : 0;
+      elmc_int_t direct_index_#{next} = 0;
+      for (int direct_ii_#{next} = 0; Rc == RC_SUCCESS && direct_ii_#{next} < direct_ilen_#{next}; direct_ii_#{next}++) {
+        ElmcValue *direct_index_value_#{next} = elmc_new_int_take(direct_index_#{next});
+        ElmcValue *direct_item_value_#{next} = elmc_new_int_take(direct_ilp_#{next}->values[direct_ii_#{next}]);
+        ElmcValue *direct_call_args_#{next}[#{max(arg_count, 1)}] = {0};
+    #{prefix_bindings}
+        direct_call_args_#{next}[#{prefix_count}] = direct_index_value_#{next};
+        direct_call_args_#{next}[#{prefix_count + 1}] = direct_item_value_#{next};
+        RC direct_rc_#{next} = #{c_name}_commands_append(direct_call_args_#{next}, #{arg_count}, writer);
+        elmc_release(direct_index_value_#{next});
+        elmc_release(direct_item_value_#{next});
+        if (direct_rc_#{next} != RC_SUCCESS) {
+          Rc = direct_rc_#{next};
+          elmc_release(#{list_var});
+    #{loop_prefix_release_code}
+          break;
+        }
+        direct_index_#{next} += 1;
+      }
+    } else {
+      ElmcValue *direct_cursor_#{next} = #{list_var};
+      elmc_int_t direct_index_#{next} = 0;
+      while (Rc == RC_SUCCESS && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
+        ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
+        ElmcValue *direct_index_value_#{next} = elmc_new_int_take(direct_index_#{next});
+        ElmcValue *direct_call_args_#{next}[#{max(arg_count, 1)}] = {0};
+    #{prefix_bindings}
+        direct_call_args_#{next}[#{prefix_count}] = direct_index_value_#{next};
+        direct_call_args_#{next}[#{prefix_count + 1}] = direct_node_#{next}->head;
+        RC direct_rc_#{next} = #{c_name}_commands_append(direct_call_args_#{next}, #{arg_count}, writer);
+        elmc_release(direct_index_value_#{next});
+        if (direct_rc_#{next} != RC_SUCCESS) {
+          Rc = direct_rc_#{next};
+          elmc_release(#{list_var});
+    #{loop_prefix_release_code}
+          break;
+        }
+        direct_index_#{next} += 1;
+        direct_cursor_#{next} = direct_node_#{next}->tail;
+      }
+    }
+    """
+  end
+
+  defp direct_list_walk_boxed_head(
+         list_var,
+         next,
+         prefix_count,
+         prefix_bindings,
+         arg_count,
+         c_name,
+         loop_prefix_release_code
+       ) do
+    """
+    if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
+      ElmcIntListPayload *direct_ilp_#{next} = (ElmcIntListPayload *)#{list_var}->payload;
+      int direct_ilen_#{next} = direct_ilp_#{next} ? direct_ilp_#{next}->length : 0;
+      for (int direct_ii_#{next} = 0; Rc == RC_SUCCESS && direct_ii_#{next} < direct_ilen_#{next}; direct_ii_#{next}++) {
+        ElmcValue *direct_item_value_#{next} = elmc_new_int_take(direct_ilp_#{next}->values[direct_ii_#{next}]);
+        ElmcValue *direct_call_args_#{next}[#{max(arg_count, 1)}] = {0};
+    #{prefix_bindings}
+        direct_call_args_#{next}[#{prefix_count}] = direct_item_value_#{next};
+        RC direct_rc_#{next} = #{c_name}_commands_append(direct_call_args_#{next}, #{arg_count}, writer);
+        elmc_release(direct_item_value_#{next});
+        if (direct_rc_#{next} != RC_SUCCESS) {
+          Rc = direct_rc_#{next};
+          elmc_release(#{list_var});
+    #{loop_prefix_release_code}
+          break;
+        }
+      }
+    } else {
+      ElmcValue *direct_cursor_#{next} = #{list_var};
+      while (Rc == RC_SUCCESS && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
+        ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
+        ElmcValue *direct_call_args_#{next}[#{max(arg_count, 1)}] = {0};
+    #{prefix_bindings}
+        direct_call_args_#{next}[#{prefix_count}] = direct_node_#{next}->head;
+        RC direct_rc_#{next} = #{c_name}_commands_append(direct_call_args_#{next}, #{arg_count}, writer);
+        if (direct_rc_#{next} != RC_SUCCESS) {
+          Rc = direct_rc_#{next};
+          elmc_release(#{list_var});
+    #{loop_prefix_release_code}
+          break;
+        }
+        direct_cursor_#{next} = direct_node_#{next}->tail;
+      }
+    }
+    """
+  end
+
+  defp direct_list_walk_lambda_body(list_var, next, item_boxed, cons_body, int_body) do
+    """
+    if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
+      ElmcIntListPayload *direct_ilp_#{next} = (ElmcIntListPayload *)#{list_var}->payload;
+      int direct_ilen_#{next} = direct_ilp_#{next} ? direct_ilp_#{next}->length : 0;
+      for (int direct_ii_#{next} = 0; Rc == RC_SUCCESS && direct_ii_#{next} < direct_ilen_#{next}; direct_ii_#{next}++) {
+        ElmcValue *#{item_boxed} = elmc_new_int_take(direct_ilp_#{next}->values[direct_ii_#{next}]);
+    #{CSource.indent(int_body, 4)}
+        elmc_release(#{item_boxed});
+      }
+    } else {
+      ElmcValue *direct_cursor_#{next} = #{list_var};
+      while (Rc == RC_SUCCESS && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
+        ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
+    #{CSource.indent(cons_body, 4)}
+        direct_cursor_#{next} = direct_node_#{next}->tail;
+      }
+    }
+    """
+  end
 end

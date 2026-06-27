@@ -54,6 +54,7 @@ defmodule Elmc.MixProject do
       "test.corpus_elmx": ["test --only corpus_elmx"],
       "test.corpus_elmx_smoke": ["test --only corpus_elmx_smoke"],
       "test.fixture_codegen": ["test --only fixture_codegen"],
+      "test.storage_plan": ["test --only storage_plan"],
       "test.ts_corpus": ["cmd --cd ../elm_ex mix test.ts_corpus"],
       "test.ts_corpus_smoke": ["cmd --cd ../elm_ex mix test.ts_corpus_smoke"]
     ]
@@ -75,6 +76,7 @@ defmodule Elmc.MixProject do
         "test.corpus_elmx": :test,
         "test.corpus_elmx_smoke": :test,
         "test.fixture_codegen": :test,
+        "test.storage_plan": :test,
         "test.ts_corpus": :test,
         "test.ts_corpus_smoke": :test
       ]

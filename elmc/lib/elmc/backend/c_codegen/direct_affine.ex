@@ -3,6 +3,8 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
 
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.CSource
+  alias Elmc.Backend.CCodegen.LayoutSolver
+  alias Elmc.Backend.CCodegen.StoragePlan
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
 
@@ -1304,21 +1306,18 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
 
       command_emits = affine_draw_range_command_emits(hoisted_spec, next, mode)
 
+      loop_body = """
+              #{hoist_loop_head}
+              #{command_emits}
+      """
+
       {:ok,
        """
        #{list_code}
        #{prefix_code}
        #{context_prelude}
        #{hoist_before_loop}
-       ElmcValue *direct_cursor_#{next} = #{list_var};
-       elmc_int_t direct_index_#{next} = 0;
-       while (Rc == RC_SUCCESS && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
-         ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
-         #{hoist_loop_head}
-         #{command_emits}
-         direct_index_#{next} += 1;
-         direct_cursor_#{next} = direct_node_#{next}->tail;
-       }
+       #{emit_affine_indexed_list_walk(list_var, next, loop_body, list_expr, env)}
        elmc_release(#{list_var});
        #{context_epilogue}
        #{prefix_release_code}
@@ -1437,17 +1436,16 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
            emit_affine_context_epilogue(Map.get(spec, :context_settings, []), env, counter) do
       command_emits = affine_draw_range_command_emits(spec, next, {:map_list, item_param})
 
+      loop_body = """
+         #{command_emits}
+      """
+
       {:ok,
        """
        #{list_code}
        #{prefix_code}
        #{context_prelude}
-       ElmcValue *direct_cursor_#{next} = #{list_var};
-       while (Rc == RC_SUCCESS && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
-         ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
-         #{command_emits}
-         direct_cursor_#{next} = direct_node_#{next}->tail;
-       }
+       #{emit_affine_map_list_walk(list_var, next, loop_body, list_expr, env)}
        elmc_release(#{list_var});
        #{context_epilogue}
        #{prefix_release_code}
@@ -1770,7 +1768,7 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
         "direct_index_#{next}"
 
       affine_param_names_match?(param_name, item_param) ->
-        "elmc_as_int(direct_node_#{next}->head)"
+        "direct_affine_item_#{next}"
 
       true ->
         "direct_item_i_#{next}"
@@ -1791,7 +1789,7 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
   end
 
   defp affine_loop_ref(_param_name, next, {:map_list, _item_param}),
-    do: "elmc_as_int(direct_node_#{next}->head)"
+    do: "direct_affine_item_#{next}"
 
   defp affine_loop_ref(_param_name, next, :map), do: "direct_item_i_#{next}"
 
@@ -1942,5 +1940,132 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
   defp affine_grid_text_y_offset_c({:prefix_idiv, idx, field, subtrahend, divisor}, _next, mode) do
     field_ref = affine_prefix_field_ref(mode, idx, field)
     "((#{field_ref} - #{subtrahend}) / #{divisor})"
+  end
+
+  defp emit_affine_indexed_list_walk(list_var, next, loop_body, list_expr, env)
+       when is_binary(list_var) and is_binary(loop_body) do
+    repr = affine_list_repr(list_expr, env)
+
+    case repr do
+      :int_list ->
+        """
+        elmc_int_t direct_index_#{next} = 0;
+        if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
+          ElmcIntListPayload *direct_ilp_#{next} = (ElmcIntListPayload *)#{list_var}->payload;
+          int direct_ilen_#{next} = direct_ilp_#{next} ? direct_ilp_#{next}->length : 0;
+          for (int direct_ii_#{next} = 0; Rc == RC_SUCCESS && direct_ii_#{next} < direct_ilen_#{next}; direct_ii_#{next}++) {
+            const elmc_int_t direct_affine_item_#{next} = direct_ilp_#{next}->values[direct_ii_#{next}];
+        #{loop_body}
+            direct_index_#{next}++;
+          }
+        }
+        """
+
+      _ ->
+        """
+        elmc_int_t direct_index_#{next} = 0;
+        if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
+          ElmcIntListPayload *direct_ilp_#{next} = (ElmcIntListPayload *)#{list_var}->payload;
+          int direct_ilen_#{next} = direct_ilp_#{next} ? direct_ilp_#{next}->length : 0;
+          for (int direct_ii_#{next} = 0; Rc == RC_SUCCESS && direct_ii_#{next} < direct_ilen_#{next}; direct_ii_#{next}++) {
+            const elmc_int_t direct_affine_item_#{next} = direct_ilp_#{next}->values[direct_ii_#{next}];
+        #{loop_body}
+            direct_index_#{next}++;
+          }
+        } else {
+          ElmcValue *direct_cursor_#{next} = #{list_var};
+          while (Rc == RC_SUCCESS && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
+            ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
+            const elmc_int_t direct_affine_item_#{next} = elmc_as_int(direct_node_#{next}->head);
+        #{loop_body}
+            direct_index_#{next}++;
+            direct_cursor_#{next} = direct_node_#{next}->tail;
+          }
+        }
+        """
+    end
+  end
+
+  defp emit_affine_map_list_walk(list_var, next, loop_body, list_expr, env)
+       when is_binary(list_var) and is_binary(loop_body) do
+    repr = affine_list_repr(list_expr, env)
+
+    case repr do
+      :int_list ->
+        """
+        if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
+          ElmcIntListPayload *direct_ilp_#{next} = (ElmcIntListPayload *)#{list_var}->payload;
+          int direct_ilen_#{next} = direct_ilp_#{next} ? direct_ilp_#{next}->length : 0;
+          for (int direct_ii_#{next} = 0; Rc == RC_SUCCESS && direct_ii_#{next} < direct_ilen_#{next}; direct_ii_#{next}++) {
+            const elmc_int_t direct_affine_item_#{next} = direct_ilp_#{next}->values[direct_ii_#{next}];
+        #{loop_body}
+          }
+        }
+        """
+
+      _ ->
+        """
+        if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
+          ElmcIntListPayload *direct_ilp_#{next} = (ElmcIntListPayload *)#{list_var}->payload;
+          int direct_ilen_#{next} = direct_ilp_#{next} ? direct_ilp_#{next}->length : 0;
+          for (int direct_ii_#{next} = 0; Rc == RC_SUCCESS && direct_ii_#{next} < direct_ilen_#{next}; direct_ii_#{next}++) {
+            const elmc_int_t direct_affine_item_#{next} = direct_ilp_#{next}->values[direct_ii_#{next}];
+        #{loop_body}
+          }
+        } else {
+          ElmcValue *direct_cursor_#{next} = #{list_var};
+          while (Rc == RC_SUCCESS && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
+            ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
+            const elmc_int_t direct_affine_item_#{next} = elmc_as_int(direct_node_#{next}->head);
+        #{loop_body}
+            direct_cursor_#{next} = direct_node_#{next}->tail;
+          }
+        }
+        """
+    end
+  end
+
+  defp affine_list_repr(list_expr, env) do
+    decl_map = Map.get(env, :__program_decls__, Process.get(:elmc_program_decls, %{}))
+
+    locals =
+      case {Map.get(env, :__module__), Map.get(env, :__function_name__)} do
+        {mod, fun} when is_binary(mod) and is_binary(fun) ->
+          case Map.get(decl_map, {mod, fun}) do
+            %{type: type, args: args} when is_binary(type) ->
+              type
+              |> Elmc.Backend.CCodegen.TypeParsing.function_arg_types()
+              |> Enum.with_index()
+              |> Enum.reduce(%{}, fn {arg_type, idx}, acc ->
+                case Enum.at(args || [], idx) do
+                  name when is_binary(name) ->
+                    Map.put(acc, name, Elmc.Backend.CCodegen.Host.normalize_type_name(arg_type))
+
+                  _ ->
+                    acc
+                end
+              end)
+
+            _ ->
+              %{}
+          end
+
+        _ ->
+          %{}
+      end
+
+    caller =
+      case {Map.get(env, :__module__), Map.get(env, :__function_name__)} do
+        {mod, fun} when is_binary(mod) and is_binary(fun) -> {mod, fun}
+        _ -> nil
+      end
+
+    plan =
+      LayoutSolver.expr_plan(list_expr, decl_map,
+        locals: locals,
+        caller: caller
+      )
+
+    if StoragePlan.compact_only?(plan), do: :int_list, else: :mixed
   end
 end

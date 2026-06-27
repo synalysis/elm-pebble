@@ -118,17 +118,46 @@ defmodule Elmc.GeneratedRcTrackGame2048TemplateTest do
         return texts;
       }
 
-      static int model_nonzero_cells(ElmcPebbleApp *app) {
-        ElmcValue *model = elmc_worker_model(&app->worker);
-        if (!model) return -1;
-        ElmcValue *cells = elmc_record_get_index(model, MODEL_FIELD_CELLS);
+      static int list_int_length(ElmcValue *list) {
+        if (list && list->tag == ELMC_TAG_INT_LIST) {
+          ElmcValue *len = elmc_list_length(list);
+          int value = len ? (int)elmc_as_int(len) : 0;
+          if (len) elmc_release(len);
+          return value;
+        }
+        int len = 0;
+        ElmcValue *cursor = list;
+        while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
+          len += 1;
+          cursor = ((ElmcCons *)cursor->payload)->tail;
+        }
+        return len;
+      }
+
+      static int list_int_nonzero_count(ElmcValue *list) {
+        if (list && list->tag == ELMC_TAG_INT_LIST) {
+          int len = list_int_length(list);
+          int count = 0;
+          for (int i = 0; i < len; i++) {
+            if (elmc_array_get_with_default_int(0, i, list) != 0) count += 1;
+          }
+          return count;
+        }
         int count = 0;
-        ElmcValue *cursor = cells;
+        ElmcValue *cursor = list;
         while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
           ElmcCons *node = (ElmcCons *)cursor->payload;
           if (node->head && elmc_as_int(node->head) != 0) count += 1;
           cursor = node->tail;
         }
+        return count;
+      }
+
+      static int model_nonzero_cells(ElmcPebbleApp *app) {
+        ElmcValue *model = elmc_worker_model(&app->worker);
+        if (!model) return -1;
+        ElmcValue *cells = elmc_record_get_index(model, MODEL_FIELD_CELLS);
+        int count = list_int_nonzero_count(cells);
         if (cells) elmc_release(cells);
         elmc_release(model);
         return count;
@@ -153,12 +182,7 @@ defmodule Elmc.GeneratedRcTrackGame2048TemplateTest do
         ElmcValue *model = elmc_worker_model(&app->worker);
         if (!model) return -1;
         ElmcValue *cells = elmc_record_get_index(model, MODEL_FIELD_CELLS);
-        int len = 0;
-        ElmcValue *cursor = cells;
-        while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
-          len += 1;
-          cursor = ((ElmcCons *)cursor->payload)->tail;
-        }
+        int len = list_int_length(cells);
         if (cells) elmc_release(cells);
         elmc_release(model);
         return len;

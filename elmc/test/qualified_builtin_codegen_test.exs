@@ -3926,6 +3926,41 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
            "expected per-command scene writer pushes in affine indexedMap loop"
   end
 
+  test "direct List.indexedMap affine grid walks compact int lists" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_indexed_affine_int_list_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_indexed_affine_int_list_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+
+    source =
+      direct_indexed_map_affine_layout_cells_source()
+      |> String.replace(
+        "init _ =\n        ( { cells = [ 0, 2, 4, 8 ] }, Cmd.none )",
+        "init _ =\n        ( { cells = List.repeat 16 0 }, Cmd.none )"
+      )
+
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+
+    assert view_body =~ "ELMC_TAG_INT_LIST"
+    assert view_body =~ "direct_affine_item_"
+    assert view_body =~ "direct_ilp_"
+    assert view_body =~ "ELMC_RENDER_OP_RECT"
+    refute view_body =~ "elmc_fn_Main_drawCell_commands_append_native"
+  end
+
   test "direct view reuses hoisted displayShapeIsRound across layout and chrome lets" do
     source_fixture = Path.expand("fixtures/simple_project", __DIR__)
     project_dir = Path.expand("tmp/direct_display_shape_hoist_project", __DIR__)

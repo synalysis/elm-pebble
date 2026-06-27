@@ -12,12 +12,10 @@ defmodule Elmc.ImmortalStaticListCodegenTest do
     assert {:ok, prelude, body} =
              ImmortalStaticList.try_emit_function_prelude_and_body("Main", "pages", expr, true, false)
 
-    assert prelude =~ "elmc_immortal_list_Main_pages_storage"
-    assert prelude =~ "ELMC_RC_IMMORTAL"
-    assert prelude =~ "static const elmc_int_t elmc_immortal_list_Main_pages_values[4] = { 1, 2, 3, 4 };"
-    assert prelude =~ "for (int i = 3; i >= 0; i--)"
-    assert prelude =~ "elmc_immortal_list_Main_pages_ptr = &elmc_immortal_list_Main_pages_storage.list_cells[0]"
-    assert body =~ "return elmc_retain(elmc_immortal_list_Main_pages_get());"
+    assert prelude =~ "elmc_immortal_list_Main_pages_values[4] = { 1, 2, 3, 4 }"
+    assert prelude =~ "ELMC_TAG_INT_LIST"
+    assert body =~ "return elmc_retain((ElmcValue *)&elmc_immortal_list_Main_pages_value)"
+    refute prelude =~ "elmc_immortal_list_Main_pages_storage"
     refute body =~ "elmc_list_from_int_array"
   end
 

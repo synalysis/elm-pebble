@@ -554,23 +554,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         |> Enum.join(", ")
       else
         native_call_args =
-          case decl do
-            %{type: type} when is_binary(type) ->
-              arg_types = Host.function_arg_types(type)
-
-              arg_bindings
-              |> Enum.zip(arg_types)
-              |> Enum.map(fn {{_arg, c_arg, _index}, arg_type} ->
-                case Host.normalize_type_name(arg_type) do
-                  "Int" -> "elmc_as_int(#{c_arg})"
-                  "Bool" -> "elmc_as_bool(#{c_arg})"
-                  _other -> c_arg
-                end
-              end)
-
-            _ ->
-              Enum.map(arg_bindings, fn {_arg, c_arg, _index} -> c_arg end)
-          end
+          Enum.map(arg_bindings, fn {_arg, c_arg, _index} -> c_arg end)
 
         (["out" | native_call_args])
         |> Enum.join(", ")

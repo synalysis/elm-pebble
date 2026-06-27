@@ -32,21 +32,65 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     end
   end
 
-  @spec emit_length_native_count(String.t(), pos_integer()) :: {String.t(), String.t()}
-  def emit_length_native_count(list_var, loop_id) do
+  @spec emit_length_native_count(String.t(), pos_integer(), keyword()) :: {String.t(), String.t()}
+  def emit_length_native_count(list_var, loop_id, opts \\ []) do
     cursor = "list_length_cursor_#{loop_id}"
     node = "list_length_node_#{loop_id}"
     count = "list_length_count_#{loop_id}"
 
-    code = """
-      #{runtime_source_comment_line("elmc_list_length", 6)}elmc_int_t #{count} = 0;
-      ElmcValue *#{cursor} = #{list_var};
-      while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
-        ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
-        #{count} += 1;
-        #{cursor} = #{node}->tail;
-      }
-    """
+    code =
+      case Keyword.get(opts, :repr, :dual) do
+        :int_list ->
+          """
+            #{runtime_source_comment_line("elmc_list_length", 6)}elmc_int_t #{count} = 0;
+            if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
+              ElmcIntListPayload *_int_list_payload_#{loop_id} = (ElmcIntListPayload *)#{list_var}->payload;
+              #{count} = _int_list_payload_#{loop_id} ? _int_list_payload_#{loop_id}->length : 0;
+            }
+          """
+
+        :cons ->
+          """
+            #{runtime_source_comment_line("elmc_list_length", 6)}elmc_int_t #{count} = 0;
+            ElmcValue *#{cursor} = #{list_var};
+            while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
+              ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
+              #{count} += 1;
+              #{cursor} = #{node}->tail;
+            }
+          """
+
+        :native_linked ->
+          """
+            #{runtime_source_comment_line("elmc_list_length", 6)}elmc_int_t #{count} = 0;
+            if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
+              ElmcIntListPayload *_int_list_payload_#{loop_id} = (ElmcIntListPayload *)#{list_var}->payload;
+              #{count} = _int_list_payload_#{loop_id} ? _int_list_payload_#{loop_id}->length : 0;
+            } else {
+              ElmcValue *#{cursor} = #{list_var};
+              while (#{cursor} && #{cursor}->tag == ELMC_TAG_INT_SPINE && #{cursor}->payload != NULL) {
+                #{count} += 1;
+                #{cursor} = ((ElmcIntSpine *)#{cursor}->payload)->tail;
+              }
+            }
+          """
+
+        _ ->
+          """
+            #{runtime_source_comment_line("elmc_list_length", 6)}elmc_int_t #{count} = 0;
+            if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
+              ElmcIntListPayload *_int_list_payload_#{loop_id} = (ElmcIntListPayload *)#{list_var}->payload;
+              #{count} = _int_list_payload_#{loop_id} ? _int_list_payload_#{loop_id}->length : 0;
+            } else {
+              ElmcValue *#{cursor} = #{list_var};
+              while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
+                ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
+                #{count} += 1;
+                #{cursor} = #{node}->tail;
+              }
+            }
+          """
+      end
 
     {code, count}
   end
@@ -153,6 +197,203 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
           String.t(),
           String.t()
         ) :: String.t()
+  @spec emit_native_list_int_head_loop(String.t(), pos_integer(), String.t(), String.t(), keyword()) ::
+          String.t()
+  def emit_native_list_int_head_loop(list_ref, loop_id, head_native_var, inner_body, opts \\ [])
+      when is_binary(list_ref) and is_binary(head_native_var) and is_binary(inner_body) do
+    case Keyword.get(opts, :repr, :dual) do
+      :int_list ->
+        emit_native_list_int_head_loop_only(list_ref, loop_id, head_native_var, inner_body)
+
+      :float_list ->
+        emit_native_float_list_head_loop_only(list_ref, loop_id, head_native_var, inner_body)
+
+      :record_seq ->
+        emit_native_record_seq_head_loop_only(list_ref, loop_id, head_native_var, inner_body)
+
+      :native_linked ->
+        emit_native_linked_int_head_loop(list_ref, loop_id, head_native_var, inner_body)
+
+      :cons ->
+        emit_native_list_cons_head_loop_only(list_ref, loop_id, head_native_var, inner_body)
+
+      _ ->
+        emit_native_list_int_head_loop_dual(list_ref, loop_id, head_native_var, inner_body)
+    end
+  end
+
+  defp emit_native_linked_int_head_loop(list_ref, loop_id, head_native_var, inner_body) do
+    cursor = "list_spine_cursor_#{loop_id}"
+
+    """
+    if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_INT_LIST) {
+      ElmcIntListPayload *_ilp_#{loop_id} = (ElmcIntListPayload *)#{list_ref}->payload;
+      int _ilen_#{loop_id} = _ilp_#{loop_id} ? _ilp_#{loop_id}->length : 0;
+      for (int _ii_#{loop_id} = 0; _ii_#{loop_id} < _ilen_#{loop_id}; _ii_#{loop_id}++) {
+        const elmc_int_t #{head_native_var} = _ilp_#{loop_id}->values[_ii_#{loop_id}];
+    #{inner_body}
+      }
+    } else {
+      ElmcValue *#{cursor} = #{list_ref};
+      while (#{cursor} && #{cursor}->tag == ELMC_TAG_INT_SPINE && #{cursor}->payload != NULL) {
+        const elmc_int_t #{head_native_var} = ((ElmcIntSpine *)#{cursor}->payload)->head;
+    #{inner_body}
+        #{cursor} = ((ElmcIntSpine *)#{cursor}->payload)->tail;
+      }
+    }
+    """
+  end
+
+  defp emit_native_list_int_head_loop_only(list_ref, loop_id, head_native_var, inner_body) do
+    """
+    if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_INT_LIST) {
+      ElmcIntListPayload *_ilp_#{loop_id} = (ElmcIntListPayload *)#{list_ref}->payload;
+      int _ilen_#{loop_id} = _ilp_#{loop_id} ? _ilp_#{loop_id}->length : 0;
+      for (int _ii_#{loop_id} = 0; _ii_#{loop_id} < _ilen_#{loop_id}; _ii_#{loop_id}++) {
+        const elmc_int_t #{head_native_var} = _ilp_#{loop_id}->values[_ii_#{loop_id}];
+    #{inner_body}
+      }
+    }
+    """
+  end
+
+  defp emit_native_list_cons_head_loop_only(list_ref, loop_id, head_native_var, inner_body) do
+    cursor = "list_walk_cursor_#{loop_id}"
+    node = "list_walk_node_#{loop_id}"
+
+    """
+    ElmcValue *#{cursor} = #{list_ref};
+    while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
+      ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
+      const elmc_int_t #{head_native_var} = elmc_as_int(#{node}->head);
+    #{inner_body}
+      #{cursor} = #{node}->tail;
+    }
+    """
+  end
+
+  defp emit_native_list_int_head_loop_dual(list_ref, loop_id, head_native_var, inner_body) do
+    cursor = "list_walk_cursor_#{loop_id}"
+    node = "list_walk_node_#{loop_id}"
+
+    """
+    if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_INT_LIST) {
+      ElmcIntListPayload *_ilp_#{loop_id} = (ElmcIntListPayload *)#{list_ref}->payload;
+      int _ilen_#{loop_id} = _ilp_#{loop_id} ? _ilp_#{loop_id}->length : 0;
+      for (int _ii_#{loop_id} = 0; _ii_#{loop_id} < _ilen_#{loop_id}; _ii_#{loop_id}++) {
+        const elmc_int_t #{head_native_var} = _ilp_#{loop_id}->values[_ii_#{loop_id}];
+    #{inner_body}
+      }
+    } else {
+      ElmcValue *#{cursor} = #{list_ref};
+      while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
+        ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
+        const elmc_int_t #{head_native_var} = elmc_as_int(#{node}->head);
+    #{inner_body}
+        #{cursor} = #{node}->tail;
+      }
+    }
+    """
+  end
+
+  @doc false
+  @spec emit_boxed_head_list_walk(String.t(), pos_integer(), String.t(), String.t(), keyword()) ::
+          String.t()
+  def emit_boxed_head_list_walk(list_ref, loop_id, head_var, inner_body, opts \\ [])
+      when is_binary(list_ref) and is_binary(head_var) and is_binary(inner_body) do
+    case Keyword.get(opts, :repr, :dual) do
+      :int_list ->
+        emit_boxed_head_int_list_walk_only(list_ref, loop_id, head_var, inner_body)
+
+      :cons ->
+        emit_boxed_head_cons_walk_only(list_ref, loop_id, head_var, inner_body)
+
+      :native_linked ->
+        emit_boxed_head_native_linked_walk(list_ref, loop_id, head_var, inner_body)
+
+      _ ->
+        emit_boxed_head_list_walk_dual(list_ref, loop_id, head_var, inner_body)
+    end
+  end
+
+  defp emit_boxed_head_int_list_walk_only(list_ref, loop_id, head_var, inner_body) do
+    """
+    if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_INT_LIST) {
+      ElmcIntListPayload *_ilp_#{loop_id} = (ElmcIntListPayload *)#{list_ref}->payload;
+      int _ilen_#{loop_id} = _ilp_#{loop_id} ? _ilp_#{loop_id}->length : 0;
+      for (int _ii_#{loop_id} = 0; _ii_#{loop_id} < _ilen_#{loop_id}; _ii_#{loop_id}++) {
+        ElmcValue *#{head_var} = elmc_new_int_take(_ilp_#{loop_id}->values[_ii_#{loop_id}]);
+    #{inner_body}
+        elmc_release(#{head_var});
+      }
+    }
+    """
+  end
+
+  defp emit_boxed_head_cons_walk_only(list_ref, loop_id, head_var, inner_body) do
+    cursor = "list_walk_cursor_#{loop_id}"
+    node = "list_walk_node_#{loop_id}"
+
+    """
+    ElmcValue *#{cursor} = #{list_ref};
+    while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
+      ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
+      ElmcValue *#{head_var} = #{node}->head;
+    #{inner_body}
+      #{cursor} = #{node}->tail;
+    }
+    """
+  end
+
+  defp emit_boxed_head_native_linked_walk(list_ref, loop_id, head_var, inner_body) do
+    cursor = "list_spine_cursor_#{loop_id}"
+
+    """
+    if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_INT_LIST) {
+      ElmcIntListPayload *_ilp_#{loop_id} = (ElmcIntListPayload *)#{list_ref}->payload;
+      int _ilen_#{loop_id} = _ilp_#{loop_id} ? _ilp_#{loop_id}->length : 0;
+      for (int _ii_#{loop_id} = 0; _ii_#{loop_id} < _ilen_#{loop_id}; _ii_#{loop_id}++) {
+        ElmcValue *#{head_var} = elmc_new_int_take(_ilp_#{loop_id}->values[_ii_#{loop_id}]);
+    #{inner_body}
+        elmc_release(#{head_var});
+      }
+    } else {
+      ElmcValue *#{cursor} = #{list_ref};
+      while (#{cursor} && #{cursor}->tag == ELMC_TAG_INT_SPINE && #{cursor}->payload != NULL) {
+        ElmcValue *#{head_var} = elmc_int_spine_head_boxed(#{cursor});
+    #{inner_body}
+        elmc_release(#{head_var});
+        #{cursor} = ((ElmcIntSpine *)#{cursor}->payload)->tail;
+      }
+    }
+    """
+  end
+
+  defp emit_boxed_head_list_walk_dual(list_ref, loop_id, head_var, inner_body) do
+    cursor = "list_walk_cursor_#{loop_id}"
+    node = "list_walk_node_#{loop_id}"
+
+    """
+    if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_INT_LIST) {
+      ElmcIntListPayload *_ilp_#{loop_id} = (ElmcIntListPayload *)#{list_ref}->payload;
+      int _ilen_#{loop_id} = _ilp_#{loop_id} ? _ilp_#{loop_id}->length : 0;
+      for (int _ii_#{loop_id} = 0; _ii_#{loop_id} < _ilen_#{loop_id}; _ii_#{loop_id}++) {
+        ElmcValue *#{head_var} = elmc_new_int_take(_ilp_#{loop_id}->values[_ii_#{loop_id}]);
+    #{inner_body}
+        elmc_release(#{head_var});
+      }
+    } else {
+      ElmcValue *#{cursor} = #{list_ref};
+      while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
+        ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
+        ElmcValue *#{head_var} = #{node}->head;
+    #{inner_body}
+        #{cursor} = #{node}->tail;
+      }
+    }
+    """
+  end
+
   def emit_ascending_int_range_loop(first_ref, last_ref, item_var, step_var, body) do
     """
     if (#{first_ref} <= #{last_ref}) {
@@ -179,6 +420,32 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
       for (elmc_int_t #{item_var} = #{last_ref}; ; #{item_var} += #{step_var}) {
     #{body}
         if (#{item_var} == #{first_ref}) break;
+      }
+    }
+    """
+  end
+
+  defp emit_native_float_list_head_loop_only(list_ref, loop_id, head_native_var, inner_body) do
+    """
+    if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_FLOAT_LIST) {
+      ElmcFloatListPayload *_flp_#{loop_id} = (ElmcFloatListPayload *)#{list_ref}->payload;
+      int _flen_#{loop_id} = _flp_#{loop_id} ? _flp_#{loop_id}->length : 0;
+      for (int _fi_#{loop_id} = 0; _fi_#{loop_id} < _flen_#{loop_id}; _fi_#{loop_id}++) {
+        const double #{head_native_var} = _flp_#{loop_id}->values[_fi_#{loop_id}];
+    #{inner_body}
+      }
+    }
+    """
+  end
+
+  defp emit_native_record_seq_head_loop_only(list_ref, loop_id, head_var, inner_body) do
+    """
+    if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_RECORD_SEQ) {
+      ElmcRecordSeqPayload *_rsp_#{loop_id} = (ElmcRecordSeqPayload *)#{list_ref}->payload;
+      int _rlen_#{loop_id} = _rsp_#{loop_id} ? _rsp_#{loop_id}->length : 0;
+      for (int _ri_#{loop_id} = 0; _ri_#{loop_id} < _rlen_#{loop_id}; _ri_#{loop_id}++) {
+        ElmcValue *#{head_var} = _rsp_#{loop_id}->items[_ri_#{loop_id}];
+    #{inner_body}
       }
     }
     """

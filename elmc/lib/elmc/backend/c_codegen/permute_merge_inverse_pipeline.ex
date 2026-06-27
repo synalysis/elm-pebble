@@ -10,6 +10,7 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
     FusionSupport,
     RowMajorLayout,
     RowSliceAdjacentMerge,
+    SpawnTileInline,
     UnionCaseFourPerm,
     Util
   }
@@ -554,6 +555,7 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
         const elmc_int_t model_turn = ELMC_RECORD_GET_INDEX_INT(model, #{turn_macro});
         const elmc_int_t next_score = model_score + merge_score;
         const elmc_int_t next_best = (model_best >= next_score) ? model_best : next_score;
+        const elmc_int_t next_turn = model_turn + 1;
         ElmcValue *next_best_val = NULL;
         Rc = elmc_new_int(&next_best_val, next_best);
         CHECK_RC(Rc);
@@ -565,17 +567,13 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
         } else {
           save_cmd = elmc_int_zero();
         }
-        ElmcValue *turn_val = NULL;
-        Rc = elmc_new_int(&turn_val, model_turn + 1);
-        CHECK_RC(Rc);
         ElmcValue *next_model = elmc_record_update_index_cow_drop(model, #{best_macro}, next_best_val);
         next_model = elmc_record_update_index_cow_drop(next_model, #{cells_macro}, next_cells);
-        next_model = elmc_record_update_index_cow_drop(next_model, #{score_macro}, elmc_new_int_take(next_score));
+        next_model = elmc_record_update_index_int_cow_drop(next_model, #{score_macro}, next_score);
         next_model = elmc_record_update_index_cow_drop(next_model, #{seed_macro}, next_seed);
-        next_model = elmc_record_update_index_cow_drop(next_model, #{turn_macro}, turn_val);
+        next_model = elmc_record_update_index_int_cow_drop(next_model, #{turn_macro}, next_turn);
         elmc_release(next_cells);
         elmc_release(next_seed);
-        elmc_release(turn_val);
         elmc_release(next_best_val);
         ElmcValue *cmd_copy = save_cmd ? elmc_retain(save_cmd) : elmc_int_zero();
         ElmcValue *result = NULL;
@@ -591,40 +589,15 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
   end
 
   defp emit_inline_spawn_tile(_module_name, seed_macro, count) do
-    """
-    elmc_int_t spawn_empty_count = 0;
-    for (elmc_int_t spawn_scan_i = 0; spawn_scan_i < #{count}; spawn_scan_i++) {
-      if (out_buf[spawn_scan_i] == 0) spawn_empty_count++;
-    }
-    const elmc_int_t spawn_model_seed = ELMC_RECORD_GET_INDEX_INT(model, #{seed_macro});
-    elmc_int_t spawn_seed_after_choice = ((spawn_model_seed * 16807) + 11) % 2147483647;
-    if (spawn_seed_after_choice < 0) spawn_seed_after_choice += 2147483647;
-    elmc_int_t spawn_seed_after_tile = ((spawn_seed_after_choice * 16807) + 11) % 2147483647;
-    if (spawn_seed_after_tile < 0) spawn_seed_after_tile += 2147483647;
-    ElmcValue *next_seed = NULL;
-    Rc = elmc_new_int(&next_seed, spawn_seed_after_tile);
-    CHECK_RC(Rc);
-    if (spawn_empty_count > 0) {
-      elmc_int_t spawn_pick = spawn_seed_after_choice % spawn_empty_count;
-      if (spawn_pick < 0) spawn_pick += spawn_empty_count;
-      elmc_int_t spawn_seen_empty = 0;
-      elmc_int_t spawn_tile_index = 0;
-      for (elmc_int_t spawn_scan_i = 0; spawn_scan_i < #{count}; spawn_scan_i++) {
-        if (out_buf[spawn_scan_i] != 0) continue;
-        if (spawn_seen_empty == spawn_pick) {
-          spawn_tile_index = spawn_scan_i;
-          break;
-        }
-        spawn_seen_empty++;
-      }
-      elmc_int_t spawn_tile_roll = spawn_seed_after_tile % 10;
-      if (spawn_tile_roll < 0) spawn_tile_roll += 10;
-      out_buf[spawn_tile_index] = spawn_tile_roll == 0 ? 4 : 2;
-    }
-    ElmcValue *next_cells = NULL;
-    if (elmc_list_from_int_array(&next_cells, out_buf, #{count}) != RC_SUCCESS)
-      next_cells = elmc_list_nil();
-    """
-    |> String.trim()
+  """
+  #{SpawnTileInline.emit("spawn", "out_buf", count, "ELMC_RECORD_GET_INDEX_INT(model, #{seed_macro})")}
+  ElmcValue *next_seed = NULL;
+  Rc = elmc_new_int(&next_seed, spawn_after_tile);
+  CHECK_RC(Rc);
+  ElmcValue *next_cells = NULL;
+  if (elmc_list_from_int_array_reuse(&next_cells, model_cells, out_buf, #{count}) != RC_SUCCESS)
+    next_cells = elmc_list_nil();
+  """
+  |> String.trim()
   end
 end

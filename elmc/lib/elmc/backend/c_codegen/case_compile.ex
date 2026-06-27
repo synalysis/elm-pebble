@@ -558,7 +558,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
 
   defp pattern_condition_code(subject, subject_ref, pattern, env) do
     case native_bool_pattern_condition(subject, pattern, env) do
-      nil -> Patterns.pattern_condition(subject_ref, pattern)
+      nil -> Patterns.pattern_condition(subject_ref, pattern, env)
       code -> code
     end
   end

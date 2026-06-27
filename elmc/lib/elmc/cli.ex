@@ -356,8 +356,9 @@ defmodule Elmc.CLI do
       end)
 
     debug_usage_warnings = Map.get(result, :debug_usage_diagnostics, [])
+    layout_warnings = Map.get(result, :layout_coercion_diagnostics, [])
 
-    dedupe_warnings(project_warnings ++ ir_warnings ++ debug_usage_warnings)
+    dedupe_warnings(project_warnings ++ ir_warnings ++ debug_usage_warnings ++ layout_warnings)
   end
 
   @spec error_diagnostics?([map()]) :: boolean()

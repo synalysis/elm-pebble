@@ -4,6 +4,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.FunctionCallCompile
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.LayoutCoerceEmit
   alias Elmc.Backend.CCodegen.Native.ListIntReduce
   alias Elmc.Backend.CCodegen.Native.ListIntSearch
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
@@ -114,10 +115,17 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
     arg_kinds = arg_kinds(decl, module_name, decl_map)
     borrow_args? = :borrow_arg in List.wrap(decl.ownership)
 
+    param_names =
+      case decl do
+        %{args: names} when is_list(names) -> names
+        _ -> []
+      end
+
     {arg_code, arg_refs, release_refs, counter} =
       args
+      |> Enum.with_index()
       |> Enum.zip(arg_kinds)
-      |> Enum.reduce({"", [], [], counter}, fn {arg_expr, kind},
+      |> Enum.reduce({"", [], [], counter}, fn {{arg_expr, idx}, kind},
                                                {code_acc, refs_acc, releases_acc, c} ->
         case kind do
           :native_int ->
@@ -134,19 +142,37 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
                 borrow_args?: borrow_args?
               )
 
+            param = Enum.at(param_names, idx)
+
+            {coerce_code, coerced_ref, c3, coerced_temp?} =
+              LayoutCoerceEmit.coerce_call_operand(
+                ref,
+                arg_expr,
+                module_name,
+                name,
+                param,
+                env,
+                c2
+              )
+
+            final_ref = coerced_ref
+
             releases_acc =
               cond do
+                coerced_temp? ->
+                  releases_acc ++ [final_ref]
+
                 passthrough? or EnvBindings.borrowed_arg_ref?(env, ref) ->
                   releases_acc
 
                 borrow_args? ->
-                  releases_acc ++ [ref]
+                  releases_acc ++ [final_ref]
 
                 true ->
-                  releases_acc ++ [ref]
+                  releases_acc ++ [final_ref]
               end
 
-            {code_acc <> "\n  " <> code, refs_acc ++ [ref], releases_acc, c2}
+            {code_acc <> "\n  " <> code <> coerce_code, refs_acc ++ [final_ref], releases_acc, c3}
         end
       end)
 

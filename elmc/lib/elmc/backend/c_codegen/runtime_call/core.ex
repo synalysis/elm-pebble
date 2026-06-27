@@ -1639,8 +1639,6 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
   defp compile_list_map_single_native_int_cursor_loop(arg, body, list, env, counter) do
     {list_code, list_var, counter} = Host.compile_expr(list, env, counter)
     next = counter + 1
-    cursor = "list_map_cursor_#{next}"
-    node = "list_map_node_#{next}"
     head = "list_map_head_#{next}"
     item_value = "list_map_item_#{next}"
     out = "tmp_#{next}"
@@ -1655,19 +1653,19 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     if NativeInt.expr?(body, body_env) do
       {body_code, body_ref, counter} = NativeInt.compile_expr(body, body_env, next)
 
+      loop_body = """
+      #{indent_loop_body(body_code)}
+          #{RcRuntimeEmit.assign_or_fusion(env, item_value, "elmc_new_int", body_ref)}
+      #{ListLoopCodegen.emit_forward_list_append(next, item_value, owned: true, env: env)}
+      """
+
+      walk = ListLoopCodegen.emit_boxed_head_list_walk(list_var, next, head, loop_body)
+
       code = """
       #{list_code}
       #{forward_init}
         #{ListLoopCodegen.runtime_source_comment_line("elmc_list_map")}
-        ElmcValue *#{cursor} = #{list_var};
-        while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
-          ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
-          ElmcValue *#{head} = #{node}->head;
-      #{indent_loop_body(body_code)}
-          #{RcRuntimeEmit.assign_or_fusion(env, item_value, "elmc_new_int", body_ref)}
-      #{ListLoopCodegen.emit_forward_list_append(next, item_value, owned: true, env: env)}
-          #{cursor} = #{node}->tail;
-        }
+      #{walk}
       #{ListLoopCodegen.finalize_forward_cursor_list(next, out)}
         elmc_release(#{list_var});
       """
@@ -1697,8 +1695,6 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
 
     {list_code, list_var, counter} = Host.compile_expr(list, env, counter)
     loop_id = counter + 1
-    cursor = "list_map_cursor_#{loop_id}"
-    node = "list_map_node_#{loop_id}"
     head = "list_map_head_#{loop_id}"
     item_value = "list_map_item_#{loop_id}"
     {forward_init, _forward_head} = ListLoopCodegen.emit_forward_list_init(loop_id)
@@ -1712,20 +1708,20 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     counter = counter + 1
     out = "tmp_#{counter}"
 
-    code = """
-    #{list_code}
-    #{forward_init}
-      #{ListLoopCodegen.runtime_source_comment_line("elmc_list_map", 6)}
-      ElmcValue *#{cursor} = #{list_var};
-      while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
-        ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
-        ElmcValue *#{head} = #{node}->head;
+    loop_body = """
     #{indent_loop_body(body_code)}
         ElmcValue *#{item_value} = #{body_var} ? elmc_retain(#{body_var}) : elmc_int_zero();
         elmc_release(#{body_var});
     #{ListLoopCodegen.emit_forward_list_append(loop_id, item_value, owned: true, env: env)}
-        #{cursor} = #{node}->tail;
-      }
+    """
+
+    walk = ListLoopCodegen.emit_boxed_head_list_walk(list_var, loop_id, head, loop_body)
+
+    code = """
+    #{list_code}
+    #{forward_init}
+      #{ListLoopCodegen.runtime_source_comment_line("elmc_list_map", 6)}
+    #{walk}
     #{ListLoopCodegen.finalize_forward_cursor_list(loop_id, out)}
       elmc_release(#{list_var});
     """

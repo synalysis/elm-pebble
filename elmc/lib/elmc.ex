@@ -63,7 +63,19 @@ defmodule Elmc do
              prune_from_dir: if(opts[:prune_runtime], do: opts[:out_dir] || "build", else: nil),
              pebble_int32: opts[:pebble_int32] || false
            ) do
-      {:ok, %{project: project, ir: ir, debug_usage_diagnostics: debug_usage_diagnostics}}
+      layout_coercion_diagnostics =
+        Process.get(:elmc_layout_coercion_diagnostics, [])
+        |> Elmc.Backend.CCodegen.LayoutCoerceEmit.format_compile_warnings()
+
+      Process.delete(:elmc_layout_coercion_diagnostics)
+
+      {:ok,
+       %{
+         project: project,
+         ir: ir,
+         debug_usage_diagnostics: debug_usage_diagnostics,
+         layout_coercion_diagnostics: layout_coercion_diagnostics
+       }}
     end
   end
 

@@ -151,6 +151,16 @@ defmodule Elmc.Runtime.RcMacros do
       return elmc_list_from_int_array(&out, items, count) == RC_SUCCESS ? out : elmc_int_zero();
     }
 
+    static inline ElmcValue *elmc_list_from_float_array_take(const double *items, int count) {
+      ElmcValue *out = NULL;
+      return elmc_list_from_float_array(&out, items, count) == RC_SUCCESS ? out : elmc_int_zero();
+    }
+
+    static inline ElmcValue *elmc_list_from_record_array_take(ElmcValue **items, int count) {
+      ElmcValue *out = NULL;
+      return elmc_list_from_record_array(&out, items, count) == RC_SUCCESS ? out : elmc_int_zero();
+    }
+
     static inline ElmcValue *elmc_list_from_values_take_value(ElmcValue **items, int count) {
       ElmcValue *out = NULL;
       return elmc_list_from_values_take(&out, items, count) == RC_SUCCESS ? out : elmc_int_zero();

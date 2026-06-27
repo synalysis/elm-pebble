@@ -3,6 +3,7 @@ defmodule Elmc.Backend.CCodegen.Native.ListIntReduce do
 
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.SequenceLoopCodegen
   alias Elmc.Backend.CCodegen.Types
 
   @type spec :: %{
@@ -42,8 +43,6 @@ defmodule Elmc.Backend.CCodegen.Native.ListIntReduce do
     with list_ref when is_binary(list_ref) <- Map.get(env, list_arg),
          {base_code, base_ref, _} <- compile_step.(base, env, return_kind, 0) do
       loop_id = System.unique_integer([:positive])
-      cursor = "list_reduce_cursor_#{loop_id}"
-      node = "list_reduce_node_#{loop_id}"
       head_native = "list_reduce_head_#{loop_id}"
       acc = "list_reduce_acc_#{loop_id}"
 
@@ -54,17 +53,25 @@ defmodule Elmc.Backend.CCodegen.Native.ListIntReduce do
 
       {step_code, step_ref, _} = compile_step.(step, loop_env, return_kind, 0)
 
+      loop_body = """
+      #{step_code}
+          #{acc} += #{step_ref};
+      """
+
+      walk =
+        SequenceLoopCodegen.emit_native_head_loop(
+          list_ref,
+          loop_id,
+          head_native,
+          loop_body,
+          loop_env,
+          list_arg
+        )
+
       code = """
       #{base_code}
         elmc_int_t #{acc} = #{base_ref};
-        ElmcValue *#{cursor} = #{list_ref};
-        while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
-          ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
-          const elmc_int_t #{head_native} = elmc_as_int(#{node}->head);
-      #{step_code}
-          #{acc} += #{step_ref};
-          #{cursor} = #{node}->tail;
-        }
+      #{walk}
       """
 
       {:ok, code, acc}

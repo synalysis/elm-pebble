@@ -10,6 +10,8 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
   alias Elmc.Backend.CCodegen.FunctionEmit
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.IRQueries
+  alias Elmc.Backend.CCodegen.LayoutSolver
+  alias Elmc.Backend.CCodegen.SchemaRegistry
   alias Elmc.Backend.CCodegen.MacroReachability
   alias Elmc.Backend.CCodegen.Tuple2CaseTable
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
@@ -108,6 +110,9 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     Process.put(:elmc_record_field_types, IRQueries.record_alias_field_types_map(ir))
     Process.put(:elmc_union_type_names, IRQueries.union_type_name_set(ir))
 
+    schema_registry = SchemaRegistry.build(ir)
+    Process.put(:elmc_schema_registry, schema_registry)
+
     entry_module = opts[:entry_module] || "Main"
     Process.put(:elmc_named_record_literals, opts[:named_record_literals] == true)
 
@@ -174,6 +179,17 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     Process.put(:elmc_exported_targets, exported_targets)
     Process.put(:elmc_function_arities, function_arities)
     Process.put(:elmc_program_decls, decl_map)
+    storage_plans = LayoutSolver.analyze(decl_map, schema_registry)
+    Process.put(:elmc_storage_plans, storage_plans)
+
+    Process.put(
+      :elmc_layout_coercion_diagnostics,
+      Elmc.Backend.CCodegen.LayoutCoerceEmit.collect_call_warnings(
+        decl_map,
+        storage_plans.param_plans
+      )
+    )
+
     Process.put(:elmc_codegen_opts, opts)
     _ = RcRequired.run!(decl_map, opts)
 
@@ -235,6 +251,8 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     Process.delete(:elmc_exported_targets)
     Process.delete(:elmc_function_arities)
     Process.delete(:elmc_program_decls)
+    Process.delete(:elmc_storage_plans)
+    Process.delete(:elmc_schema_registry)
     Process.delete(:elmc_codegen_opts)
     Process.delete(:elmc_rc_required)
     Process.delete(:elmc_lambda_counter)
