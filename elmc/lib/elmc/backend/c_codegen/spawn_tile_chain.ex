@@ -164,6 +164,8 @@ defmodule Elmc.Backend.CCodegen.SpawnTileChain do
     """
     static RC #{c_prefix}_native(ElmcValue **out, #{seed_sig}) {
       RC Rc = RC_SUCCESS;
+      #define ELMC_FN_OUT (*out)
+      ElmcValue *owned[2] = {0};
       CATCH_BEGIN
         elmc_int_t buf[#{count}];
         #{board_load}
@@ -171,17 +173,16 @@ defmodule Elmc.Backend.CCodegen.SpawnTileChain do
         #{SpawnTileInline.emit("spawn_a", "buf", count, "seed_work")}
         seed_work = spawn_a_after_tile;
         #{SpawnTileInline.emit("spawn_b", "buf", count, "seed_work")}
-        ElmcValue *cells_out = NULL;
-        if (elmc_list_from_int_array(&cells_out, buf, #{count}) != RC_SUCCESS)
-          cells_out = elmc_list_nil();
-        ElmcValue *seed_out = NULL;
-        Rc = elmc_new_int(&seed_out, spawn_b_after_tile);
+        Rc = elmc_list_from_int_array(&owned[0], buf, #{count});
         CHECK_RC(Rc);
-        ElmcValue *pair = NULL;
-        Rc = elmc_tuple2_take(&pair, cells_out, seed_out);
+        Rc = elmc_new_int(&owned[1], spawn_b_after_tile);
         CHECK_RC(Rc);
-        *out = pair;
+        Rc = elmc_tuple2_take(out, owned[0], owned[1]);
+        CHECK_RC(Rc);
+        owned[0] = NULL;
+        owned[1] = NULL;
       CATCH_END;
+      elmc_release_array_lifo(owned, DIM(owned));
       return Rc;
     }
     """

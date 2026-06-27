@@ -19,11 +19,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Case do
     clauses =
       branches
       |> order_case_branches()
-      |> Enum.map(fn branch ->
-        pattern = Match.branch_pattern(branch, case_env)
-        {body, _, _} = Elmx.Backend.ElixirCodegen.Emit.compile_expr(branch.expr, Match.branch_env(branch, env), 0)
-        "  #{pattern} ->\n    #{IO.iodata_to_binary(body)}"
-      end)
+      |> Enum.map(&compile_case_branch(&1, case_env, env))
 
     {["case ", "Elmx.Runtime.Core.Task.force(", subj, ") do\n", Enum.join(clauses, "\n"), "\nend"], env, counter}
   end
@@ -35,14 +31,28 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Case do
     clauses =
       branches
       |> order_case_branches()
-      |> Enum.map(fn branch ->
-        pattern = Match.branch_pattern(branch, case_env)
-        {body, _, _} = Elmx.Backend.ElixirCodegen.Emit.compile_expr(branch.expr, Match.branch_env(branch, env), 0)
-        "  #{pattern} ->\n    #{IO.iodata_to_binary(body)}"
-      end)
+      |> Enum.map(&compile_case_branch(&1, case_env, env))
 
     {["case ", "Elmx.Runtime.Core.Task.force(", subj, ") do\n", Enum.join(clauses, "\n"), "\nend"], env, c1}
   end
+  defp compile_case_branch(branch, case_env, env) do
+    {body, _, _} =
+      Elmx.Backend.ElixirCodegen.Emit.compile_expr(branch.expr, Match.branch_env(branch, env), 0)
+
+    body_str = IO.iodata_to_binary(body)
+
+    used_bindings =
+      branch
+      |> Match.branch_pattern_root()
+      |> Match.Bindings.pattern_binding_names()
+      |> then(&Elmx.Backend.ElixirCodegen.Emit.Helpers.pattern_bindings_referenced_in_body(body_str, &1))
+
+    branch_case_env = Map.put(case_env, :used_pattern_bindings, used_bindings)
+    pattern = Match.branch_pattern(branch, branch_case_env)
+
+    "  #{pattern} ->\n    #{body_str}"
+  end
+
   def order_case_branches(branches) when is_list(branches) do
     branches
     |> Enum.sort_by(&case_branch_sort_key/1)

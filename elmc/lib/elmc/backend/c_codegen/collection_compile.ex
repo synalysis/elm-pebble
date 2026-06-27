@@ -93,7 +93,7 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
   end
 
   defp compile_generic_tuple2(left, right, env, counter) do
-    child_env = Map.delete(env, :__into_out__)
+    child_env = RcRuntimeEmit.strip_function_tail_scope(env)
 
     if tuple2_native_int_operands?(left, right, env) do
       {left_code, left_ref, counter} = Host.compile_native_int_expr(left, child_env, counter)
@@ -136,7 +136,7 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
   defp tuple2_unspecialized_var?(_expr, _env), do: false
 
   defp compile_dynamic_list_literal(items, env, counter) do
-    item_env = Map.delete(env, :__into_out__)
+    item_env = RcRuntimeEmit.strip_function_tail_scope(env)
 
     if Enum.all?(items, &all_native_primitive_record_literal?/1) do
       compile_record_array_list_literal(items, item_env, env, counter)

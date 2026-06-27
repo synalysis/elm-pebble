@@ -545,20 +545,28 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
         compile_boxed_string_append_chain(segments, env, counter)
 
       list_append_concat_segments?(segments, env) ->
+        segment_env = RcRuntimeEmit.strip_function_tail_scope(env)
+
         {segment_code, segment_vars, counter} =
           Enum.reduce(segments, {"", [], counter}, fn segment, {code_acc, vars_acc, c} ->
-            {code, var, c2} = Host.compile_expr(segment, env, c)
+            {code, var, c2} = Host.compile_expr(segment, segment_env, c)
             {code_acc <> code, vars_acc ++ [var], c2}
           end)
 
         next = counter + 1
-        out = "tmp_#{next}"
+
+        out =
+          if RcRuntimeEmit.function_tail_compile?(env),
+            do: RcRuntimeEmit.function_out_ref(),
+            else: "tmp_#{next}"
+
         segments_array = "list_concat_segments_#{next}"
         call_args = Enum.join(segment_vars, ", ")
 
         releases =
           segment_vars
-          |> Enum.map_join("\n  ", fn var -> "elmc_release(#{var});" end)
+          |> Enum.reject(&(RcRuntimeEmit.function_out_ref?(&1)))
+          |> Enum.map_join("\n  ", &ValueSlots.post_call_operand_release/1)
 
         code = """
         #{segment_code}
@@ -663,9 +671,11 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
           Types.compile_counter()
         ) :: Types.compile_ok_result()
   defp compile_boxed_string_append_chain(segments, env, counter) do
+    segment_env = RcRuntimeEmit.strip_function_tail_scope(env)
+
     {segment_code, segment_vars, counter} =
       Enum.reduce(segments, {"", [], counter}, fn segment, {code_acc, vars_acc, c} ->
-        {code, var, c2} = Host.compile_expr(segment, env, c)
+        {code, var, c2} = Host.compile_expr(segment, segment_env, c)
         {code_acc <> code, vars_acc ++ [var], c2}
       end)
 
@@ -2936,7 +2946,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
           Types.compile_counter()
         ) :: Types.compile_result()
   defp compile_generic(%{op: :runtime_call, function: function, args: args}, env, counter) do
-    operand_env = Map.delete(env, :__into_out__)
+    operand_env = RcRuntimeEmit.strip_function_tail_scope(env)
 
     compile_operand =
       if MapSet.member?(@retaining_runtime_functions, function) do
@@ -2970,7 +2980,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
       |> Enum.zip(arg_borrowed?)
       |> Enum.reject(fn {_var, borrowed?} -> borrowed? end)
       |> Enum.reject(fn {_var, _borrowed?} -> cons_take_transfer? end)
-      |> Enum.map_join("\n  ", fn {var, _borrowed?} -> "elmc_release(#{var});" end)
+      |> Enum.map_join("\n  ", fn {var, _borrowed?} -> ValueSlots.post_call_operand_release(var) end)
 
     assign =
       cond do

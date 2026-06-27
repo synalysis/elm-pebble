@@ -53,9 +53,7 @@ defmodule Elmx.PebbleUiHelperEmitTest do
     {code, _, _} = Emit.compile_expr(expr, env, 0)
     emitted = IO.iodata_to_binary(code)
 
-    assert emitted =~ "fn x ->"
-    assert emitted =~ "fn y ->"
-    assert emitted =~ "fn text_ ->"
+    assert emitted =~ "fn _unused"
     assert emitted =~ "Elmx.Runtime.Core.apply3(label, 8, 36, \"hi\")"
     refute emitted =~ "label.(8, 36, \"hi\")"
   end

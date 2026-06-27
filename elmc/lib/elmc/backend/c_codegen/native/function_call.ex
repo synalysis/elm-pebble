@@ -3,6 +3,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
 
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.FunctionCallCompile
+  alias Elmc.Backend.CCodegen.FunctionEmit
   alias Elmc.Backend.CCodegen.Fusion
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.LayoutCoerceEmit
@@ -117,7 +118,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
   defp compile_native_result(module_name, name, args, env, counter, decl, decl_map, return_kind) do
     arg_kinds = arg_kinds(decl, module_name, decl_map)
     borrow_args? = :borrow_arg in List.wrap(decl.ownership)
-    arg_env = Map.delete(env, :__into_out__)
+    arg_env = RcRuntimeEmit.strip_function_tail_scope(env)
 
     param_names =
       case decl do
@@ -239,7 +240,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
           boolean()
   def native_scalar_return?(%{type: type, expr: expr} = decl, module_name, decl_map)
       when is_binary(type) do
-    env = callee_env(decl, module_name, decl_map)
+    env = analysis_env(decl, module_name, decl_map)
 
     case Host.function_return_type(type) do
       "Bool" -> Host.native_bool_expr?(expr || %{op: :int_literal, value: 0}, env)
@@ -263,7 +264,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
   def return_kind(_decl, _module_name, _decl_map), do: :boxed
 
   defp scalar_return_kind(decl, module_name, decl_map, type, expr) do
-    env = callee_env(decl, module_name, decl_map)
+    env = analysis_env(decl, module_name, decl_map)
 
     case Host.function_return_type(type) do
       "Int" ->
@@ -481,6 +482,9 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
 
   defp native_rc_out_slot(env, next) do
     case Map.get(env, :__into_out__) do
+      "ELMC_FN_OUT" ->
+        {RcRuntimeEmit.function_out_ref(), next}
+
       into_out when is_binary(into_out) ->
         if ValueSlots.owned_ref?(into_out) do
           ValueSlots.track(into_out)
@@ -509,13 +513,16 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
       Map.get(env, :__rc_required__, false) or Map.get(env, :__rc_catch__, false) or
         Map.get(env, :__native_rc_out__, false)
 
-    call = "#{c_name}_native(&#{out}, #{arg_list})"
+    call = "#{c_name}_native(#{RcRuntimeEmit.allocator_out_arg(out)}, #{arg_list})"
 
     if caller_rc? do
+      unless RcRuntimeEmit.function_out_ref?(out), do: ValueSlots.track(out)
+
       prelude =
-        if ValueSlots.owned_ref?(out) or Map.get(env, :__into_out__) == out,
-          do: "",
-          else: ValueSlots.boxed_decl(out, "NULL") <> "\n"
+        if ValueSlots.owned_ref?(out) or Map.get(env, :__into_out__) == out or
+             RcRuntimeEmit.function_out_ref?(out),
+           do: "",
+           else: ValueSlots.boxed_decl(out, "NULL") <> "\n"
 
       prelude <> "Rc = #{call};\nCHECK_RC(Rc);"
     else
@@ -530,6 +537,14 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
       }
       """
     end
+  end
+
+  defp analysis_env(decl, module_name, decl_map) do
+    callee_env(decl, module_name, decl_map)
+    |> FunctionEmit.put_typed_arg_bindings(
+      FunctionEmit.c_arg_bindings(decl.args || []),
+      decl.type
+    )
   end
 
   defp callee_env(decl, module_name, decl_map) do

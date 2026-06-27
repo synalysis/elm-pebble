@@ -137,47 +137,56 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified do
 
   defp compile_qualified_homogeneous_run(target, count, base, rest, env, counter) do
     {base_code, env, c0} = Emit.compile_expr(base, env, counter)
-    acc_name = Helpers.let_emit_name("__pipe_acc")
-    acc_atom = String.to_atom(acc_name)
-    acc_var = Macro.to_string(Macro.var(acc_atom, nil))
-    step_env = Map.put(env, acc_atom, true)
+    slot0 = Helpers.pipe_slot_name(0)
+    slot1 = Helpers.pipe_slot_name(1)
 
     step_expr = %{
       op: :qualified_call,
       target: target,
-      args: [%{op: :var, name: acc_name}]
+      args: [%{op: :var, name: slot0}]
     }
 
-    {step_code, _, c1} = do_compile_qualified_call(step_expr, step_env, c0)
+    {step_code, _, c1} =
+      do_compile_qualified_call(step_expr, Map.put(env, String.to_atom(slot0), true), c0)
 
-    {rest_lines, _, c} =
-      Enum.reduce(Enum.reverse(rest), {[], step_env, c1}, fn rest_target, {lines, env, c} ->
-        rest_step = %{
-          op: :qualified_call,
-          target: rest_target,
-          args: [%{op: :var, name: acc_name}]
-        }
-
-        {rest_code, _, c2} = do_compile_qualified_call(rest_step, env, c)
-        {[ [acc_var, " = ", rest_code, "\n"] | lines], env, c2}
-      end)
-
-    code = [
-      "(fn ->\n",
-      acc_var,
-      " = ",
-      base_code,
-      "\n",
-      acc_var,
-      " = Elmx.Runtime.Core.Apply.repeat1(",
+    repeat_code = [
+      "Elmx.Runtime.Core.Apply.repeat1(",
       step_code,
       ", ",
       Integer.to_string(count),
       ", ",
-      acc_var,
-      ")\n",
+      slot0,
+      ")"
+    ]
+
+    {rest_lines, final_slot, c} =
+      Enum.reduce(Enum.with_index(Enum.reverse(rest), 2), {[], slot1, c1}, fn {rest_target, idx},
+                                                                               {lines, prev_slot, c} ->
+        step_env = Map.put(env, String.to_atom(prev_slot), true)
+
+        rest_step = %{
+          op: :qualified_call,
+          target: rest_target,
+          args: [%{op: :var, name: prev_slot}]
+        }
+
+        {rest_code, _, c1} = do_compile_qualified_call(rest_step, step_env, c)
+        slot = Helpers.pipe_slot_name(idx)
+        {[ [slot, " = ", rest_code, "\n"] | lines], slot, c1}
+      end)
+
+    code = [
+      "(fn ->\n",
+      slot0,
+      " = ",
+      base_code,
+      "\n",
+      slot1,
+      " = ",
+      repeat_code,
+      "\n",
       Enum.reverse(rest_lines),
-      acc_var,
+      final_slot,
       "\nend).()"
     ]
 
@@ -186,37 +195,21 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified do
 
   defp compile_qualified_pipeline_iterative(targets, base, env, counter) do
     {base_code, env, c0} = Emit.compile_expr(base, env, counter)
-    acc_name = Helpers.let_emit_name("__pipe_acc")
-    acc_atom = String.to_atom(acc_name)
-    acc_var = Macro.to_string(Macro.var(acc_atom, nil))
-    step_env = Map.put(env, acc_atom, true)
 
-    {step_lines, _, c} =
-      Enum.reduce(Enum.reverse(targets), {[], step_env, c0}, fn target, {lines, env, c} ->
-        step_expr = %{
-          op: :qualified_call,
-          target: target,
-          args: [%{op: :var, name: acc_name}]
-        }
+    compile_step = fn target, prev_slot, c ->
+      step_env = Map.put(env, String.to_atom(prev_slot), true)
 
-        {step_code, _, c1} = do_compile_qualified_call(step_expr, env, c)
-        line = [acc_var, " = ", step_code, "\n"]
-        {[line | lines], env, c1}
-      end)
+      step_expr = %{
+        op: :qualified_call,
+        target: target,
+        args: [%{op: :var, name: prev_slot}]
+      }
 
-    step_lines = Enum.reverse(step_lines)
+      {step_code, _, c1} = do_compile_qualified_call(step_expr, step_env, c)
+      {step_code, c1}
+    end
 
-    code = [
-      "(fn ->\n",
-      acc_var,
-      " = ",
-      base_code,
-      "\n",
-      step_lines,
-      acc_var,
-      "\nend).()"
-    ]
-
+    {code, _, c} = Helpers.compile_pipe_iife(base_code, Enum.reverse(targets), compile_step, c0)
     {code, env, c}
   end
 

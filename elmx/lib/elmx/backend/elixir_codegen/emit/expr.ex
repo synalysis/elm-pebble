@@ -175,12 +175,24 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
     name = :"elmx_lambda_#{counter}"
     counter = counter + 1
     lambda_env = Helpers.put_lambda_params(env, args)
+    used = referenced_binding_names(body)
 
     {body_code, _, _} = Emit.compile_expr(body, lambda_env, 0)
 
     code =
-      Enum.reduce(Enum.reverse(args), body_code, fn arg, inner ->
-        param = Helpers.binding_ref(Helpers.param_name(arg), lambda_env)
+      args
+      |> Enum.reverse()
+      |> Enum.with_index()
+      |> Enum.reduce(body_code, fn {arg, index}, inner ->
+        param_name = Helpers.param_name(arg)
+
+        param =
+          if MapSet.member?(used, param_name) do
+            Helpers.binding_ref(param_name, lambda_env)
+          else
+            "_unused#{index}"
+          end
+
         ["fn ", param, " -> ", inner, " end"]
       end)
 

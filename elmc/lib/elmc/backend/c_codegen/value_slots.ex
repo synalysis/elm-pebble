@@ -5,15 +5,21 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
 
   @owned_ref ~r/^owned\[(\d+)\]$/
 
-  @spec reset() :: :ok
-  def reset do
+  @spec reset(keyword()) :: :ok
+  def reset(opts \\ []) do
     Process.put(:elmc_value_slots, %{
       next: 0,
       live: MapSet.new(),
-      transferred: MapSet.new()
+      transferred: MapSet.new(),
+      epilogue_lifo: Keyword.get(opts, :epilogue_lifo, false)
     })
 
     :ok
+  end
+
+  @spec epilogue_lifo?() :: boolean()
+  def epilogue_lifo? do
+    Map.get(slots_state(), :epilogue_lifo, false)
   end
 
   @spec alloc() :: {String.t(), non_neg_integer()}
@@ -102,8 +108,11 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
   @spec release_stmt(String.t()) :: String.t()
   def release_stmt(var) when is_binary(var) do
     if owned_ref?(var) do
-      release(var)
-      "ELMC_RELEASE(#{var});"
+      if epilogue_lifo?() do
+        ""
+      else
+        release_owned_and_null(var)
+      end
     else
       "elmc_release(#{var});"
     end
@@ -164,11 +173,38 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
 
   @spec failure_cleanup() :: String.t()
   def failure_cleanup do
-    if slot_count() == 0 do
-      ""
-    else
-      "elmc_release_array_lifo(owned, DIM(owned));"
+    epilogue_cleanup()
+  end
+
+  @doc """
+  Release still-live owned scratch slots in LIFO index order at function epilogue.
+  Transferred slots are already nulled; untracked direct assignments are untouched.
+  """
+  @spec epilogue_cleanup() :: String.t()
+  def epilogue_cleanup do
+    case slot_count() do
+      0 -> ""
+      _ -> "elmc_release_array_lifo(owned, DIM(owned));"
     end
+  end
+
+  @doc """
+  Release a call operand after the callee returns. Owned scratch in epilogue-lifo
+  functions is left for `elmc_release_array_lifo`; transfers null the slot.
+  """
+  @spec post_call_operand_release(String.t()) :: String.t()
+  def post_call_operand_release(var) when is_binary(var) do
+    cond do
+      owned_ref?(var) and epilogue_lifo?() -> ""
+      owned_ref?(var) -> release_owned_and_null(var)
+      true -> "elmc_release(#{var});"
+    end
+  end
+
+  @spec release_owned_and_null(String.t()) :: String.t()
+  def release_owned_and_null(var) when is_binary(var) do
+    release(var)
+    "ELMC_RELEASE(#{var});\n#{null_assignment(var)}"
   end
 
   @spec failure_cleanup_for_vars_list([String.t()]) :: String.t()
@@ -198,6 +234,11 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
   def untrack(var) when is_binary(var), do: release(var)
 
   defp slots_state do
-    Process.get(:elmc_value_slots, %{next: 0, live: MapSet.new(), transferred: MapSet.new()})
+    Process.get(:elmc_value_slots, %{
+      next: 0,
+      live: MapSet.new(),
+      transferred: MapSet.new(),
+      epilogue_lifo: false
+    })
   end
 end

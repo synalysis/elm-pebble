@@ -4,8 +4,6 @@ defmodule Elmc.Backend.CCodegen.RcRequired do
   alias Elmc.Backend.CCodegen.GenericReachability
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Types
-
-  # Worker glue calls these with the RC ABI; they seed reachability analysis.
   @worker_entry_points ~w(init update subscriptions)
 
   # Pebble scene glue calls `view` with the RC ABI when not using direct-render-only.
@@ -69,7 +67,9 @@ defmodule Elmc.Backend.CCodegen.RcRequired do
       |> Enum.filter(fn {_module, name} -> name in seed_entry_names(opts) end)
       |> MapSet.new()
 
-    callee_closure(seeds, decl_map)
+    decl_map
+    |> then(&callee_closure(seeds, &1))
+    |> expand_native_boxed_rc_callers(decl_map)
   end
 
   @spec rc_required?(String.t(), String.t()) :: boolean()
@@ -143,6 +143,59 @@ defmodule Elmc.Backend.CCodegen.RcRequired do
     else
       callee_closure(expanded, decl_map)
     end
+  end
+
+  # List.map and other higher-order call sites do not always surface direct callee
+  # edges, but any function that calls a native boxed RC helper must itself use the
+  # RC ABI so failures propagate through CHECK_RC instead of being swallowed.
+  defp expand_native_boxed_rc_callers(required, decl_map) do
+    expanded =
+      Enum.reduce(decl_map, required, fn {key = {mod, _name}, decl}, acc ->
+        cond do
+          MapSet.member?(acc, key) or not is_map(decl.expr) ->
+            acc
+
+          not calls_native_boxed_rc_callee?(decl.expr, mod, decl_map) ->
+            acc
+
+          callee_of_required?(key, acc, decl_map) ->
+            MapSet.put(acc, key)
+
+          true ->
+            acc
+        end
+      end)
+
+    if MapSet.equal?(expanded, required) do
+      expanded
+    else
+      expand_native_boxed_rc_callers(expanded, decl_map)
+    end
+  end
+
+  defp callee_of_required?(callee_key, required, decl_map) do
+    Enum.any?(required, fn caller_key ->
+      case Map.fetch(decl_map, caller_key) do
+        {:ok, caller_decl} ->
+          caller_decl.expr
+          |> GenericReachability.expr_callees(elem(caller_key, 0), decl_map)
+          |> Enum.member?(callee_key)
+
+        :error ->
+          false
+      end
+    end)
+  end
+
+  defp calls_native_boxed_rc_callee?(expr, module_name, decl_map) do
+    expr
+    |> GenericReachability.expr_callees(module_name, decl_map)
+    |> Enum.any?(fn {mod, _name} = key ->
+      case Map.fetch(decl_map, key) do
+        {:ok, decl} -> NativeFunctionCall.native_boxed_rc_candidate?(decl, mod, decl_map)
+        :error -> false
+      end
+    end)
   end
 
   defp calls_required?(expr, module_name, decl_map, required) do

@@ -34,7 +34,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
           Types.compile_counter()
         ) :: Types.compile_result()
   def partial_union_constructor(target, tag, bound_args, full_arity, env, counter) do
-    env = Map.delete(env, :__into_out__)
+    env = RcRuntimeEmit.strip_function_tail_scope(env)
     bound_count = length(bound_args)
     remaining = max(full_arity - bound_count, 0)
 
@@ -142,11 +142,8 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
               c_name = Util.module_fn_name(module_name, name)
               if caller_rc?(env), do: ValueSlots.track(var)
 
-              {
-                "#{boxed_out_decl(env, var, zero_arg_call_expr(env, module_name, name, c_name))}\n",
-                var,
-                next
-              }
+              code = zero_arg_call_code(env, module_name, name, c_name, var)
+              {code <> "\n", var, next}
             end
         end
     end
@@ -441,7 +438,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
         c_name = Util.module_fn_name(module_name, name)
         if caller_rc?(env), do: ValueSlots.track(var)
 
-        {ValueSlots.boxed_decl(var, zero_arg_call_expr(env, module_name, name, c_name)) <> "\n", var, next}
+        {zero_arg_call_code(env, module_name, name, c_name, var) <> "\n", var, next}
     end
   end
 
@@ -454,7 +451,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
         ) ::
           Types.compile_result()
   def top_level_closure(module_name, name, arity, env, counter) do
-    env = Map.delete(env, :__into_out__)
+    env = RcRuntimeEmit.strip_function_tail_scope(env)
     {out, next} = CaseCompile.fresh_var(counter, env)
     c_name = Util.module_fn_name(module_name, name)
     signature = {:top_level_ref, module_name, name, arity}
@@ -482,7 +479,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
   end
 
   defp partial_closure(module_name, name, arity, arg_vars, env, counter, out) when is_binary(out) do
-    env = Map.delete(env, :__into_out__)
+    env = RcRuntimeEmit.strip_function_tail_scope(env)
     {cap_index, next} = CaseCompile.fresh_tmp_var(counter, env)
     c_name = Util.module_fn_name(module_name, name)
     bound_count = length(arg_vars)
@@ -810,7 +807,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     borrow_args? = EnvBindings.callee_borrow_args?(env, module_name, name)
     operand_opts = [borrow_args?: borrow_args?]
 
-    operand_env = Map.delete(env, :__into_out__)
+    operand_env = RcRuntimeEmit.strip_function_tail_scope(env)
 
     {arg_code, arg_vars, arg_passthrough, counter} =
       compile_callee_operands(
@@ -832,7 +829,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
         _ -> default_out
       end
 
-    if caller_rc?, do: ValueSlots.track(out)
+    if caller_rc? and not RcRuntimeEmit.function_out_ref?(out), do: ValueSlots.track(out)
     argc = length(arg_vars)
 
     after_args_probe =
@@ -958,13 +955,13 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
           head_var = "head_#{call_args_id}"
           args_var = "call_args_#{call_args_id}"
           arg_list = Enum.join(arg_vars, ", ")
-          zero_call = zero_arg_call_expr(env, module_name, name, c_name)
+          head_init = zero_arg_call_code(env, module_name, name, c_name, head_var)
 
           """
           #{before_args_probe}
           #{arg_code}
             #{after_args_probe}
-            ElmcValue *#{head_var} = #{zero_call};
+            #{head_init}
             ElmcValue *#{args_var}[#{max(argc, 1)}] = { #{arg_list} };
             #{boxed_out_decl(env, out, "elmc_closure_call(#{head_var}, #{args_var}, #{argc})")}
             #{after_call_probe}
@@ -990,7 +987,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
 
             call_expr =
               if rc_callee? do
-                "#{c_name}(&#{out}, #{args_var}, #{argc})"
+                "#{c_name}(#{RcRuntimeEmit.allocator_out_arg(out)}, #{args_var}, #{argc})"
               else
                 "#{c_name}(#{args_var}, #{argc})"
               end
@@ -1011,9 +1008,10 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
   end
 
   defp rc_call_assignment(env, out, call_expr, true, true) do
-    if caller_rc?(env), do: ValueSlots.track(out)
+    if caller_rc?(env) and not RcRuntimeEmit.function_out_ref?(out), do: ValueSlots.track(out)
 
-    if predeclared_out?(env, out) or ValueSlots.owned_ref?(out) do
+    if predeclared_out?(env, out) or ValueSlots.owned_ref?(out) or
+         RcRuntimeEmit.function_out_ref?(out) do
       """
       Rc = #{call_expr};
       CHECK_RC(Rc);
@@ -1030,7 +1028,8 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
   end
 
   defp rc_call_assignment(env, out, call_expr, true, false) do
-    if predeclared_out?(env, out) or ValueSlots.owned_ref?(out) do
+    if predeclared_out?(env, out) or ValueSlots.owned_ref?(out) or
+         RcRuntimeEmit.function_out_ref?(out) do
       """
       #{ValueSlots.boxed_decl(out, "NULL")}
       {
@@ -1059,6 +1058,10 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     end
   end
 
+  defp rc_call_assignment(env, out, call_expr, false, _caller_rc?) do
+    boxed_out_decl(env, out, call_expr)
+  end
+
   defp rc_call_failure_return(env) do
     cond do
       Map.get(env, :__rc_catch__) -> "return Rc"
@@ -1067,18 +1070,15 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     end
   end
 
-  defp rc_call_assignment(env, out, call_expr, false, _caller_rc?) do
-    boxed_out_decl(env, out, call_expr)
-  end
-
   defp caller_rc?(env),
     do: Map.get(env, :__rc_required__, false) or Map.get(env, :__rc_catch__, false)
 
   defp boxed_out_decl(env, out, rhs) do
-    if caller_rc?(env), do: ValueSlots.track(out)
+    if caller_rc?(env) and not RcRuntimeEmit.function_out_ref?(out), do: ValueSlots.track(out)
 
-    if predeclared_out?(env, out) or ValueSlots.owned_ref?(out) do
-      "#{out} = #{rhs};"
+    if predeclared_out?(env, out) or ValueSlots.owned_ref?(out) or
+         RcRuntimeEmit.function_out_ref?(out) do
+      "#{RcRuntimeEmit.assignment_lhs(out)} = #{rhs};"
     else
       "ElmcValue *#{out} = #{rhs};"
     end
@@ -1095,37 +1095,71 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     do: Map.get(env, :__into_out__) == out
 
   defp direct_boxed_call_expr(c_name, arg_vars, out, rc_callee?) do
+    out_arg = RcRuntimeEmit.allocator_out_arg(out)
+
     case arg_vars do
       [] ->
-        if rc_callee?, do: "#{c_name}(&#{out})", else: "#{c_name}()"
+        if rc_callee?, do: "#{c_name}(#{out_arg})", else: "#{c_name}()"
 
       _ ->
         args = Enum.join(arg_vars, ", ")
 
         if rc_callee? do
-          "#{c_name}(&#{out}, #{args})"
+          "#{c_name}(#{out_arg}, #{args})"
         else
           "#{c_name}(#{args})"
         end
     end
   end
 
-  defp zero_arg_call_expr(env, module_name, name, c_name) do
+  defp zero_arg_call_code(env, module_name, name, c_name, out) do
     if RcRequired.rc_required?(module_name, name) do
-      call =
-        if EnvBindings.direct_call_target?(env, module_name, name) do
-          "#{c_name}(&__z)"
-        else
-          "#{c_name}(&__z, NULL, 0)"
-        end
-
-      """
-      ({ ElmcValue *__z = NULL; RC __call_rc = #{call}; if (__call_rc != RC_SUCCESS) __z = NULL; __z; })
-      """
+      zero_arg_rc_call_stmts(env, module_name, name, c_name, out)
     else
-      if EnvBindings.direct_call_target?(env, module_name, name),
-        do: "#{c_name}()",
-        else: "#{c_name}(NULL, 0)"
+      rhs = zero_arg_call_rhs(env, module_name, name, c_name)
+      boxed_out_decl(env, out, rhs)
+    end
+  end
+
+  defp zero_arg_call_rhs(env, module_name, name, c_name) do
+    if EnvBindings.direct_call_target?(env, module_name, name),
+      do: "#{c_name}()",
+      else: "#{c_name}(NULL, 0)"
+  end
+
+  defp zero_arg_rc_call_stmts(env, _module_name, _name, c_name, out) do
+    call = direct_boxed_call_expr(c_name, [], out, true)
+    init = zero_arg_rc_out_init(env, out)
+
+    if caller_rc?(env) do
+      """
+      #{init}
+      Rc = #{call};
+      CHECK_RC(Rc);
+      """
+      |> String.trim()
+    else
+      """
+      #{init}
+      {
+        RC __call_rc = #{call};
+        if (__call_rc != RC_SUCCESS) {
+          #{ValueSlots.release_stmt(out)}
+          #{out} = NULL;
+          #{rc_call_failure_return(env)};
+        }
+      }
+      """
+      |> String.trim()
+    end
+  end
+
+  defp zero_arg_rc_out_init(env, out) do
+    if ValueSlots.owned_ref?(out) or RcRuntimeEmit.function_out_ref?(out) or
+         predeclared_out?(env, out) do
+      ""
+    else
+      ValueSlots.boxed_null_decl(out)
     end
   end
 

@@ -130,7 +130,75 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     "elmc_closure_new"
   ])
 
+  @function_out_marker "ELMC_FN_OUT"
+
   @fresh_owned_slot ~r/^(tmp_\d+|head_\d+|owned\[\d+\]|call_args_\d+|list_items_\d+|rec_values_\d+|list_map_item_\d+|list_map_cons_\d+|list_map_rev_\d+|list_fwd_cell_\d+|list_repeat_cons_\d+)$/
+
+  @spec function_out_ref() :: String.t()
+  def function_out_ref, do: @function_out_marker
+
+  @spec function_out_ref?(String.t()) :: boolean()
+  def function_out_ref?(ref) when is_binary(ref), do: ref == @function_out_marker
+  def function_out_ref?(_), do: false
+
+  @spec function_out_param() :: String.t()
+  def function_out_param, do: "out"
+
+  @spec function_out_deref() :: String.t()
+  def function_out_deref, do: "*out"
+
+  @doc "C preprocessor define so `ELMC_FN_OUT` aliases the function result slot."
+  @spec function_out_define() :: String.t()
+  def function_out_define, do: "#define ELMC_FN_OUT (*out)"
+
+  @doc "C expression for reading fields from a boxed value slot."
+  @spec value_expr(String.t()) :: String.t()
+  def value_expr(ref) when is_binary(ref) do
+    if function_out_ref?(ref), do: function_out_ref(), else: ref
+  end
+
+  @doc "C lhs for assigning into a boxed value slot."
+  @spec assignment_lhs(String.t()) :: String.t()
+  def assignment_lhs(ref) when is_binary(ref) do
+    if function_out_ref?(ref), do: function_out_deref(), else: ref
+  end
+
+  @spec allocator_out_arg(String.t()) :: String.t()
+  def allocator_out_arg(out) when is_binary(out) do
+    cond do
+      function_out_ref?(out) -> function_out_param()
+      ValueSlots.owned_ref?(out) -> "&#{out}"
+      true -> "&#{out}"
+    end
+  end
+
+  @spec assigns_allocator_out?(String.t(), String.t()) :: boolean()
+  def assigns_allocator_out?(expr_code, out) when is_binary(expr_code) and is_binary(out) do
+    arg = allocator_out_arg(out)
+    String.contains?(expr_code, "#{arg},") or String.contains?(expr_code, "#{arg})")
+  end
+
+  @spec with_function_out_target(map()) :: map()
+  def with_function_out_target(env), do: Map.put(env, :__into_out__, function_out_ref())
+
+  @doc "Compile env for the function's root tail expression only."
+  @spec function_tail_env(map()) :: map()
+  def function_tail_env(env) do
+    env
+    |> Map.put(:__function_tail_compile__, true)
+    |> with_function_out_target()
+  end
+
+  @spec function_tail_compile?(map()) :: boolean()
+  def function_tail_compile?(env), do: Map.get(env, :__function_tail_compile__, false)
+
+  @doc "Strip tail-only out targeting from let values, operands, and nested scopes."
+  @spec strip_function_tail_scope(map()) :: map()
+  def strip_function_tail_scope(env) do
+    env
+    |> Map.delete(:__function_tail_compile__)
+    |> Map.delete(:__into_out__)
+  end
 
   @take_wrappers %{
     "elmc_new_int" => "elmc_new_int_take",
@@ -286,8 +354,9 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   @spec assign_call(map(), String.t(), String.t(), String.t()) :: String.t()
   def assign_call(env, out, function, call_args) do
     cond do
-      not rc_allocator?(function) and (predeclared_out_slot?(env, out) or rc_owned_slot?(out)) ->
-        "#{out} = #{function}(#{call_args});"
+      not rc_allocator?(function) and
+          (predeclared_out_slot?(env, out) or rc_owned_slot?(out) or function_out_ref?(out)) ->
+        "#{assignment_lhs(out)} = #{function}(#{call_args});"
 
       not rc_allocator?(function) ->
         ValueSlots.boxed_decl(out, "#{function}(#{call_args})")
@@ -310,7 +379,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   def assign_into(env, out, function, call_args) do
     cond do
       not rc_allocator?(function) ->
-        "#{out} = #{function}(#{call_args});"
+        "#{assignment_lhs(out)} = #{function}(#{call_args});"
 
       rc_allocator_emit_mode?(env) ->
         rc_allocator_stmt(env, out, function, call_args, declare_out?: false)
@@ -432,7 +501,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     """
     #{init};
     {
-      RC __alloc_rc = #{function}(&#{out}, #{call_args});
+      RC __alloc_rc = #{function}(#{allocator_out_arg(out)}, #{call_args});
       if (__alloc_rc != RC_SUCCESS) {
         #{failure}
       }
@@ -481,8 +550,15 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   defp rc_owned_slot?(out), do: ValueSlots.owned_ref?(out)
 
   defp rc_allocator_stmt(env, out, function, call_args, opts \\ []) do
-    ValueSlots.track(out)
-    declare? = Keyword.get(opts, :declare_out?, not rc_owned_slot?(out) and not predeclared_out_slot?(env, out))
+    unless function_out_ref?(out), do: ValueSlots.track(out)
+
+    declare? =
+      Keyword.get(
+        opts,
+        :declare_out?,
+        not rc_owned_slot?(out) and not predeclared_out_slot?(env, out) and
+          not function_out_ref?(out)
+      )
 
     init =
       if declare? do
@@ -492,7 +568,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
       end
 
     """
-    #{init}Rc = #{function}(&#{out}, #{call_args});
+    #{init}Rc = #{function}(#{allocator_out_arg(out)}, #{call_args});
     CHECK_RC(Rc);
     """
     |> String.trim()

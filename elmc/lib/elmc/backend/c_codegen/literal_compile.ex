@@ -3,6 +3,7 @@ defmodule Elmc.Backend.CCodegen.LiteralCompile do
 
   alias Elmc.Backend.CCodegen.BuiltinUnion
   alias Elmc.Backend.CCodegen.CaseCompile
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.IntLiteralRef
   alias Elmc.Backend.CCodegen.ResourceSlotMacros
@@ -97,8 +98,9 @@ defmodule Elmc.Backend.CCodegen.LiteralCompile do
   end
 
   defp int_zero_assign(var, env) do
-    if ValueSlots.owned_ref?(var) or Map.get(env, :__into_out__) == var do
-      "#{var} = elmc_int_zero();"
+    if ValueSlots.owned_ref?(var) or Map.get(env, :__into_out__) == var or
+         RcRuntimeEmit.function_out_ref?(var) do
+      "#{RcRuntimeEmit.assignment_lhs(var)} = elmc_int_zero();"
     else
       "ElmcValue *#{var} = elmc_int_zero();"
     end

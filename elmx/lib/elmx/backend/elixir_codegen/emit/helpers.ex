@@ -233,6 +233,87 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Helpers do
     if name in @elixir_reserved, do: "elmx_" <> name, else: name
   end
 
+  @spec pattern_var_name(String.t(), env()) :: String.t()
+  def pattern_var_name(name, env) when is_binary(name) do
+    emit = let_emit_name(name)
+
+    case Map.get(env, :used_pattern_bindings) do
+      %MapSet{} = used ->
+        if MapSet.member?(used, name), do: emit, else: unused_var_name(emit)
+
+      _ ->
+        emit
+    end
+  end
+
+  defp unused_var_name("_"), do: "_"
+  defp unused_var_name(name), do: "_" <> name
+
+  @spec params_referenced_in_body(String.t(), list()) :: MapSet.t(String.t())
+  def params_referenced_in_body(body_str, param_source) when is_binary(body_str) and is_list(param_source) do
+    Enum.reduce(param_source, MapSet.new(), fn arg, acc ->
+      name = param_name(arg)
+      emit_name = param_var_name(name, %{})
+
+      if param_referenced_in_body?(body_str, name, emit_name) do
+        acc |> MapSet.put(name) |> MapSet.put(emit_name)
+      else
+        acc
+      end
+    end)
+  end
+
+  defp param_referenced_in_body?(body_str, name, emit_name) do
+    binding_referenced_in_body?(body_str, name) or
+      (emit_name != name and binding_referenced_in_body?(body_str, emit_name))
+  end
+
+  @spec binding_referenced_in_body?(String.t(), String.t()) :: boolean()
+  def binding_referenced_in_body?(body_str, name) when is_binary(body_str) and is_binary(name) do
+    param_token?(body_str, name)
+  end
+
+  @spec pattern_bindings_referenced_in_body(String.t(), [String.t()]) :: MapSet.t(String.t())
+  def pattern_bindings_referenced_in_body(body_str, binding_names)
+      when is_binary(body_str) and is_list(binding_names) do
+    Enum.reduce(binding_names, MapSet.new(), fn name, acc ->
+      emit_name = let_emit_name(name)
+
+      if binding_referenced_in_body?(body_str, name) or
+           (emit_name != name and binding_referenced_in_body?(body_str, emit_name)) do
+        MapSet.put(acc, name)
+      else
+        acc
+      end
+    end)
+  end
+
+  defp param_token?(body_str, token) do
+    escaped = Regex.escape(token)
+    Regex.match?(~r/(?:^|[^\w.])(#{escaped})(?:\.(?=\()|[^\w.]|$)/, body_str)
+  end
+
+  @spec pipe_slot_name(non_neg_integer()) :: String.t()
+  def pipe_slot_name(index) when is_integer(index) and index >= 0,
+    do: let_emit_name("__pipe_slot_#{index}")
+
+  @spec compile_pipe_iife(iodata(), list(), (term(), String.t(), non_neg_integer() -> {iodata(), non_neg_integer()}), non_neg_integer()) ::
+          {iodata(), String.t(), non_neg_integer()}
+  def compile_pipe_iife(base_code, steps, compile_step, counter) when is_function(compile_step, 3) do
+    slot0 = pipe_slot_name(0)
+
+    {lines, final_slot, c} =
+      Enum.reduce(Enum.with_index(steps, 1), {[[slot0, " = ", base_code, "\n"]], slot0, counter}, fn
+        {step, index}, {lines, prev_slot, c} ->
+          {step_code, c1} = compile_step.(step, prev_slot, c)
+          slot = pipe_slot_name(index)
+          {[ [slot, " = ", step_code, "\n"] | lines], slot, c1}
+      end)
+
+    code = ["(fn ->\n", Enum.reverse(lines), final_slot, "\nend).()"]
+    {code, final_slot, c}
+  end
+
   @spec param_var_name(String.t(), map()) :: String.t()
   def param_var_name(name, _env) when is_binary(name), do: let_emit_name(name)
 

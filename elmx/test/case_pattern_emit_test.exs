@@ -48,7 +48,7 @@ defmodule Elmx.CasePatternEmitTest do
     {code, _, _} = Emit.compile_expr(expr, env, 0)
     source = IO.iodata_to_binary(code)
 
-    assert source =~ "[x | xs] = full"
+    assert source =~ "[x | _xs] = full"
     assert source =~ "full"
     refute source =~ "_unused"
   end
@@ -114,7 +114,7 @@ defmodule Elmx.CasePatternEmitTest do
     {code, _, _} = Emit.compile_expr(expr, env, 0)
     source = IO.iodata_to_binary(code)
 
-    assert source =~ "[head | tail]"
+    assert source =~ "[_head | tail]"
     refute source =~ "elmx_fn_Main_tail"
   end
 
@@ -159,7 +159,9 @@ defmodule Elmx.CasePatternEmitTest do
     {code, _, _} = Emit.compile_expr(expr, env, 0)
     source = IO.iodata_to_binary(code)
 
-    specific = String.split(source, "{:GotStorage, {:Ok, {:StringValue, themeText}}}") |> length()
+    specific =
+      String.split(source, "{:GotStorage, {:Ok, {:StringValue, _themeText}}}") |> length()
+
     catch_all = String.split(source, "{:GotStorage, _}") |> length()
     assert specific == 2
     assert catch_all == 2
@@ -193,7 +195,7 @@ defmodule Elmx.CasePatternEmitTest do
     {code, _, _} = Emit.compile_expr(expr, env, 0)
     source = IO.iodata_to_binary(code)
 
-    assert source =~ "{:Just, temperature}, {:Just, condition}"
+    assert source =~ "{:Just, temperature}, {:Just, _condition}"
     refute source =~ "elmx_fn_Main_temperature"
   end
 
@@ -260,7 +262,7 @@ defmodule Elmx.CasePatternEmitTest do
     {code, _, _} = Emit.compile_expr(expr, env, 0)
     source = IO.iodata_to_binary(code)
 
-    assert source =~ "{:FromPhone, {:ProvideBattery, percent, charging}}"
+    assert source =~ "{:FromPhone, {:ProvideBattery, percent, _charging}}"
     refute source =~ "elmx_fn_Main_percent"
   end
 
@@ -308,7 +310,7 @@ defmodule Elmx.CasePatternEmitTest do
     {code, _, _} = Emit.compile_expr(expr, env, 0)
     source = IO.iodata_to_binary(code)
 
-    assert source =~ "{:FromPhone, {:ProvidePosition, latitudeE6, longitudeE6, accuracyM}}"
+    assert source =~ "{:FromPhone, {:ProvidePosition, latitudeE6, _longitudeE6, _accuracyM}}"
     refute source =~ "{longitudeE6, accuracyM}"
   end
 
@@ -355,7 +357,7 @@ defmodule Elmx.CasePatternEmitTest do
     {code, _, _} = Emit.compile_expr(expr, env, 0)
     source = IO.iodata_to_binary(code)
 
-    assert source =~ "[first, second | []]"
+    assert source =~ "[_first, second | []]"
     assert source =~ "second"
   end
 
@@ -488,7 +490,7 @@ defmodule Elmx.CasePatternEmitTest do
     {code, _, _} = Emit.compile_expr(expr, env, 0)
     source = IO.iodata_to_binary(code)
 
-    assert source =~ ~s/%{"moving" => moving, "slot" => slot}/
+    assert source =~ ~s/%{"moving" => _moving, "slot" => _slot}/
     refute source =~ "%{moving: _, slot: _}"
   end
 

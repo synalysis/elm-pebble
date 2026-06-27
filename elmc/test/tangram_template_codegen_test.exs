@@ -40,15 +40,15 @@ defmodule Elmc.TangramTemplateCodegenTest do
     assert form_origin =~ "ElmcValue *owned["
     assert form_origin =~ "Rc = elmc_fn_Main_p_native(&"
     assert form_origin =~ "CHECK_RC(Rc);"
-    assert form_origin =~ "ELMC_RELEASE(owned["
-    refute form_origin =~ ~r/elmc_release\(owned\[\d+\]\);/
+    assert form_origin =~ "*out = elmc_fn_Main_nudgePoint"
+    assert form_origin =~ "elmc_release_array_lifo(owned, DIM(owned));"
     refute form_origin =~ ~r/owned\[\d+\] = owned\[\d+\];/
     refute form_origin =~ "ELMC_RC_LOG_FAIL(__call_rc"
 
     vector_draw_origin =
       Elmc.Test.CCodegenExtract.fn_body(generated, "elmc_fn_Main_vectorDrawOrigin_native")
 
-    assert vector_draw_origin =~ "elmc_record_new_values_take(&owned"
+    assert vector_draw_origin =~ "elmc_record_new_values_take(out,"
     assert vector_draw_origin =~ "CHECK_RC(Rc);"
 
     catch_body =
@@ -58,10 +58,15 @@ defmodule Elmc.TangramTemplateCodegenTest do
       end
 
     refute catch_body =~ ~r/\breturn\b/
-    assert catch_body =~ "*out = owned[0];"
-    refute vector_draw_origin =~ "owned[0] = NULL;"
+    refute catch_body =~ "*out = owned["
     assert Regex.scan(~r/return Rc;/, vector_draw_origin) |> length() == 1
     assert vector_draw_origin =~ "return Rc;"
+
+    minute_point =
+      Elmc.Test.CCodegenExtract.fn_body(generated, "elmc_fn_Main_minutePoint_native")
+
+    assert minute_point =~ "elmc_record_new_values_take(out,"
+    refute minute_point =~ "*out = owned["
 
     piece_color =
       Elmc.Test.CCodegenExtract.fn_body(generated, "elmc_fn_Main_pieceColor_native")

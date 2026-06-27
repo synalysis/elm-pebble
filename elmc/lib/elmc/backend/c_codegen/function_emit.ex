@@ -309,7 +309,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
   defp emit_boxed_body(decl, module_name, function_arities, decl_map, direct_args?) do
     rc_required? = RcRequired.rc_required?(module_name, decl.name)
-    if rc_required?, do: ValueSlots.reset()
+    if rc_required?, do: ValueSlots.reset(epilogue_lifo: true)
     RecordCompile.reset_borrowed_field_refs()
 
     arg_names = decl.args || []
@@ -368,6 +368,11 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         compile_env =
           if rc_required?, do: Map.put(env, :__rc_catch__, true), else: env
 
+        expr_env =
+          if rc_required?,
+            do: RcRuntimeEmit.function_tail_env(compile_env),
+            else: compile_env
+
         {code, result_var, _counter} =
           case compile_tail_recursive(
                  decl,
@@ -381,10 +386,11 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
               {loop_code, tail_result, 0}
 
             :error ->
-              Host.compile_expr(decl.expr || %{op: :int_literal, value: 0}, compile_env, 0)
+              Host.compile_expr(decl.expr || %{op: :int_literal, value: 0}, expr_env, 0)
           end
 
-        if rc_required?, do: ValueSlots.track(result_var)
+        unless rc_required? and RcRuntimeEmit.function_out_ref?(result_var),
+          do: ValueSlots.track(result_var)
 
         result_probe = DebugProbes.result_probe(module_name, decl.name, result_var)
 
@@ -394,8 +400,12 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
             code,
             exit_probe,
             result_probe,
-            if(rc_required?, do: "*out = #{result_var};", else: "return #{result_var};")
+            if(rc_required? and not RcRuntimeEmit.function_out_ref?(result_var),
+              do: publish_rc_function_out(result_var),
+              else: if(not rc_required?, do: "return #{result_var};", else: nil)
+            )
           ]
+          |> Enum.reject(&is_nil/1)
 
         if rc_required? do
           wrap_rc_function_body(
@@ -428,15 +438,12 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     needs_catch? = rc_body_needs_catch?(body_text)
 
     prefix =
-      ["RC Rc = RC_SUCCESS;"] ++
+      ["RC Rc = RC_SUCCESS;", RcRuntimeEmit.function_out_define()] ++
         List.wrap(owned_decls) ++
         [wrapper_abi_void_casts(direct_args?, arg_bindings), arg_binding_code, unused_casts]
 
     suffix =
-      if(failure_cleanup == "",
-        do: [],
-        else: ["if (Rc != RC_SUCCESS) {", failure_cleanup, "}"]
-      ) ++
+      epilogue_suffix(failure_cleanup, body_text, needs_catch?) ++
         ["return Rc;"]
 
     core =
@@ -453,6 +460,18 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     String.contains?(body_text, "CHECK_RC") or
       String.contains?(body_text, "CHECK_RC_TO") or
       String.contains?(body_text, "\nbreak;")
+  end
+
+  defp epilogue_suffix(failure_cleanup, _body_text, _needs_catch?) do
+    if failure_cleanup == "", do: [], else: [failure_cleanup]
+  end
+
+  defp publish_rc_function_out(result_var) do
+    if ValueSlots.owned_ref?(result_var) do
+      "#{RcRuntimeEmit.function_out_deref()} = #{result_var};\n#{ValueSlots.null_assignment(result_var)}"
+    else
+      "#{RcRuntimeEmit.function_out_deref()} = #{result_var};"
+    end
   end
 
   defp format_rc_function_body(parts) do
@@ -1007,11 +1026,9 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
             rc_required? and return_kind == :boxed ->
               if NativeFunctionCall.native_boxed_rc_abi?(decl, module_name, decl_map) do
                 """
-                ElmcValue *tmp_result = NULL;
-                Rc = #{c_name}_native(&tmp_result, #{native_args});
-                if (Rc != RC_SUCCESS) return Rc;
-                *out = tmp_result;
-                return RC_SUCCESS;
+                RC Rc = RC_SUCCESS;
+                Rc = #{c_name}_native(out, #{native_args});
+                return Rc;
                 """
               else
                 """
@@ -1111,14 +1128,19 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
          exit_probe,
          collect_generic_helpers?
        ) do
+    rc_abi? =
+      return_kind == :boxed and
+        NativeFunctionCall.native_boxed_rc_candidate?(decl, module_name, decl_map)
+
     RecordCompile.reset_deferred_call_operand_releases()
     RecordCompile.reset_borrowed_field_refs()
-    if return_kind == :boxed, do: ValueSlots.reset()
+    if return_kind == :boxed, do: ValueSlots.reset(epilogue_lifo: rc_abi?)
 
     {body_code, body_var, _counter} =
       compile_native_body(decl, module_name, decl_map, native_env, return_kind, arg_kinds)
 
-    if return_kind == :boxed, do: ValueSlots.track(body_var)
+    unless return_kind == :boxed and RcRuntimeEmit.function_out_ref?(body_var),
+      do: ValueSlots.track(body_var)
 
     deferred_release_code = RecordCompile.deferred_call_operand_release_code()
 
@@ -1207,14 +1229,18 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       end
 
     prefix =
-      (if needs_catch?, do: ["RC Rc = RC_SUCCESS;"], else: []) ++
+      (if needs_catch?, do: ["RC Rc = RC_SUCCESS;", RcRuntimeEmit.function_out_define()], else: []) ++
         List.wrap(hoisted_decl) ++
         List.wrap(owned_decls) ++
         List.wrap(unused_casts)
 
     catch_body_with_out =
-      if needs_catch? and rc_abi? do
-        catch_body <> "\n    *out = #{body_var};"
+      if needs_catch? and rc_abi? and not RcRuntimeEmit.function_out_ref?(body_var) and
+           not RcRuntimeEmit.assigns_allocator_out?(
+             catch_body,
+             RcRuntimeEmit.function_out_ref()
+           ) do
+        catch_body <> "\n    " <> publish_rc_function_out(body_var)
       else
         catch_body
       end
@@ -1233,18 +1259,10 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     suffix =
       cond do
         needs_catch? and rc_abi? ->
-          failure_block =
-            if failure_cleanup == "" do
-              ""
-            else
-              """
-              if (Rc != RC_SUCCESS) {
-                #{failure_cleanup}
-              }
-              """
-            end
-
-          failure_block <> "\nreturn Rc;"
+          """
+          #{Enum.join(epilogue_suffix(failure_cleanup, catch_body_with_out, true), "\n")}
+          return Rc;
+          """
 
         needs_catch? ->
           failure_block =
@@ -1280,7 +1298,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   end
 
   defp hoist_result_decl(body_text, body_var) do
-    if ValueSlots.owned_ref?(body_var) do
+    if ValueSlots.owned_ref?(body_var) or RcRuntimeEmit.function_out_ref?(body_var) do
       {"", body_text}
     else
       hoist_boxed_result_decl(body_text, body_var)
@@ -1391,7 +1409,13 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
       :error ->
         env = RecordCompile.with_subexpr_cache(env)
-        Host.compile_expr(decl.expr || %{op: :int_literal, value: 0}, env, 0)
+
+        expr_env =
+          if Map.get(env, :__native_rc_out__),
+            do: RcRuntimeEmit.function_tail_env(env),
+            else: env
+
+        Host.compile_expr(decl.expr || %{op: :int_literal, value: 0}, expr_env, 0)
     end
   end
 

@@ -322,28 +322,13 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
           {reduce_code, env, c1}
 
         _ ->
-          acc_name = Helpers.let_emit_name("__pipe_acc")
-          acc_atom = String.to_atom(acc_name)
-          acc_var = Macro.to_string(Macro.var(acc_atom, nil))
-          step_env = Map.put(env, acc_atom, true)
+          compile_step = fn rest_step, prev_slot, c ->
+            step_env = Map.put(env, String.to_atom(prev_slot), true)
+            {step_code, _, c1} = compile_pipe_step(rest_step, prev_slot, step_env, c)
+            {step_code, c1}
+          end
 
-          {rest_lines, _, c} =
-            Enum.reduce(rest, {[], step_env, c1}, fn rest_step, {lines, env, c} ->
-              {step_code, _, c1} = compile_pipe_step(rest_step, acc_name, env, c)
-              {[ [acc_var, " = ", step_code, "\n"] | lines], env, c1}
-            end)
-
-          code = [
-            "(fn ->\n",
-            acc_var,
-            " = ",
-            reduce_code,
-            "\n",
-            Enum.reverse(rest_lines),
-            acc_var,
-            "\nend).()"
-          ]
-
+          {code, _, c} = Helpers.compile_pipe_iife(reduce_code, rest, compile_step, c1)
           {code, env, c}
       end
 
@@ -377,29 +362,14 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
 
   defp compile_pipe_steps_iterative(steps, base, env, counter) do
     {base_code, env, c0} = Emit.compile_expr(base, env, counter)
-    acc_name = Helpers.let_emit_name("__pipe_acc")
-    acc_atom = String.to_atom(acc_name)
-    acc_var = Macro.to_string(Macro.var(acc_atom, nil))
-    step_env = Map.put(env, acc_atom, true)
 
-    {step_lines, _, c} =
-      Enum.reduce(steps, {[], step_env, c0}, fn step, {lines, env, c} ->
-        {step_code, _, c1} = compile_pipe_step(step, acc_name, env, c)
-        line = [acc_var, " = ", step_code, "\n"]
-        {[line | lines], env, c1}
-      end)
+    compile_step = fn step, prev_slot, c ->
+      step_env = Map.put(env, String.to_atom(prev_slot), true)
+      {step_code, _, c1} = compile_pipe_step(step, prev_slot, step_env, c)
+      {step_code, c1}
+    end
 
-    code = [
-      "(fn ->\n",
-      acc_var,
-      " = ",
-      base_code,
-      "\n",
-      Enum.reverse(step_lines),
-      acc_var,
-      "\nend).()"
-    ]
-
+    {code, _, c} = Helpers.compile_pipe_iife(base_code, steps, compile_step, c0)
     {code, env, c}
   end
 
@@ -459,28 +429,13 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
 
   defp compile_pipe_pipeline_block(steps, base, env, counter) do
     {base_code, env, c0} = Emit.compile_expr(base, env, counter)
-    acc_name = Helpers.let_emit_name("__pipe_acc")
-    acc_atom = String.to_atom(acc_name)
-    acc_var = Macro.to_string(Macro.var(acc_atom, nil))
 
-    {step_lines, _, c} =
-      Enum.reduce(steps, {[], env, c0}, fn step, {lines, step_env, c} ->
-        {step_code, _, c1} = Emit.compile_expr(step, step_env, c)
-        line = [acc_var, " = Elmx.Runtime.Core.Apply.apply1(", step_code, ", ", acc_var, ")\n"]
-        {[line | lines], step_env, c1}
-      end)
+    compile_step = fn step, prev_slot, c ->
+      {step_code, _, c1} = Emit.compile_expr(step, env, c)
+      {["Elmx.Runtime.Core.Apply.apply1(", step_code, ", ", prev_slot, ")"], c1}
+    end
 
-    code = [
-      "(fn ->\n",
-      acc_var,
-      " = ",
-      base_code,
-      "\n",
-      Enum.reverse(step_lines),
-      acc_var,
-      "\nend).()"
-    ]
-
+    {code, _, c} = Helpers.compile_pipe_iife(base_code, steps, compile_step, c0)
     {code, env, c}
   end
 

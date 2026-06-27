@@ -512,7 +512,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
                                                                                         current_passthrough?,
                                                                                         current_unique?} ->
         {field_code, field_var, c2, field_passthrough?} =
-          compile_update_operand(field.expr, Map.delete(env, :__into_out__), c)
+          compile_update_operand(field.expr, RcRuntimeEmit.strip_function_tail_scope(env), c)
 
         next = c2 + 1
         out = "tmp_#{next}"

@@ -227,7 +227,7 @@ defmodule Elmc.StoragePlanSolverTest do
         sumWeights weights
     """
 
-    {decl_map, plans, _registry} = compile_decl_map!(source, "storage_plan_float_repeat")
+    {_decl_map, plans, _registry} = compile_decl_map!(source, "storage_plan_float_repeat")
     plan = Map.get(plans.param_plans, {"Main", "sumWeights", "xs"})
     assert plan.layout == :compact
     assert plan.elem == {:primitive, :float}

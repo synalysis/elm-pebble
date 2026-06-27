@@ -470,23 +470,12 @@ defmodule Elmx.Backend.ElixirCodegen do
       end
     uses_bitwise = Map.get(env, :uses_bitwise, false)
     fn_name = function_symbol(module_name, decl.name)
+    body_str = IO.iodata_to_binary(body)
 
-    used_params =
-      case expr do
-        {:apply_saturated, call, sat_arity} when is_map(call) and is_integer(sat_arity) and
-                                                    sat_arity > 0 ->
-          Enum.reduce(1..sat_arity, Emit.referenced_binding_names(call), fn i, acc ->
-            MapSet.put(acc, "__p#{i}")
-          end)
-
-        other ->
-          Emit.referenced_binding_names(other)
-      end
+    used_params = Emit.Helpers.params_referenced_in_body(body_str, param_source)
 
     params =
       param_list(param_source, if(param_source == [], do: arity, else: nil), used_params)
-
-    body_str = IO.iodata_to_binary(body)
 
     source =
       if module_value_binding?(decl, synthetic_params, saturated_arity) do
@@ -559,7 +548,6 @@ defmodule Elmx.Backend.ElixirCodegen do
     "elmx_fn_#{module |> String.replace(".", "_")}_#{name}"
   end
 
-  defp runtime_import_header(true), do: "import Bitwise\n"
   defp runtime_import_header(_), do: ""
 
   defp write_manifest(out_dir, modules, opts) do

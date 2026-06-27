@@ -102,7 +102,9 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
   end
 
   defp branch_assignment_env(env, out) do
-    if ValueSlots.owned_ref?(out), do: Map.put(env, :__into_out__, out), else: env
+    if ValueSlots.owned_ref?(out) or RcRuntimeEmit.function_out_ref?(out),
+      do: Map.put(env, :__into_out__, out),
+      else: env
   end
 
   defp branch_assignment_finish(expr_code, expr_var, out, env, counter) do
@@ -126,14 +128,15 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
                 end
 
               :error ->
-                {expr_code, "#{out} = #{expr_var};", counter}
+                {expr_code, "#{RcRuntimeEmit.assignment_lhs(out)} = #{expr_var};", counter}
             end
         end
     end
   end
 
   defp assigns_into_out?(expr_code, out) when is_binary(expr_code) and is_binary(out) do
-    String.contains?(expr_code, "&#{out},") or String.contains?(expr_code, "&#{out})")
+    RcRuntimeEmit.assigns_allocator_out?(expr_code, out) or
+      String.contains?(expr_code, "&#{out},") or String.contains?(expr_code, "&#{out})")
   end
 
   defp strip_orphan_tmp_decl(expr_code, expr_var)
@@ -163,7 +166,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
           [_, rhs] ->
             if expr_var != out, do: ValueSlots.untrack(expr_var)
 
-            folded_last = "#{out} = #{rhs};"
+            folded_last = "#{RcRuntimeEmit.assignment_lhs(out)} = #{rhs};"
 
             folded_code =
               case prefix_lines do

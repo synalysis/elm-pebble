@@ -195,7 +195,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
   defp compile_boxed_cond(cond_expr, then_expr, else_expr, env, counter) do
     cond_env =
       env
-      |> Map.delete(:__into_out__)
+      |> RcRuntimeEmit.strip_function_tail_scope()
       |> Map.update(:__declared_outs__, MapSet.new(), fn declared ->
         out = Map.get(env, :__into_out__)
 

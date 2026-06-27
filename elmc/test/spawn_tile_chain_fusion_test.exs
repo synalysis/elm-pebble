@@ -30,7 +30,7 @@ defmodule Elmc.SpawnTileChainFusionTest do
     refute generated_c =~ "elmc_fn_Main_initialBoard_native(ElmcValue **out, ElmcValue *seed, "
     refute generated_c =~ "ElmcValue *owned[0] = ({"
     assert generated_c =~
-             ~r/static RC elmc_fn_Main_initialBoard_native[\s\S]*?elmc_tuple2_take\(&pair, cells_out, seed_out\);\s*CHECK_RC\(Rc\);\s*\*out = pair;/
+             ~r/static RC elmc_fn_Main_initialBoard_native[\s\S]*?Rc = elmc_tuple2_take\(out, owned\[0\], owned\[1\]\);\s*CHECK_RC\(Rc\);\s*owned\[0\] = NULL;\s*owned\[1\] = NULL;[\s\S]*?elmc_release_array_lifo\(owned, DIM\(owned\)\);/
     refute generated_c =~ "elmc_fn_Main_spawnTileWithSeed(&tmp_"
   end
 end

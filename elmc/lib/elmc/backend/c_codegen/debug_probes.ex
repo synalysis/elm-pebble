@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.DebugProbes do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.ProdMode
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Types
 
   @type probe_pair :: {String.t(), String.t()}
@@ -118,12 +119,14 @@ defmodule Elmc.Backend.CCodegen.DebugProbes do
   @spec shape_probe(String.t(), non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()) ::
           String.t()
   defp shape_probe(result_var, other_tag, tuple_tag, list_tag, null_tag) do
+    value = RcRuntimeEmit.value_expr(result_var)
+
     region("""
-    if (!#{result_var}) {
+    if (!#{value}) {
       elmc_agent_generated_probe(#{hex_tag(null_tag)});
-    } else if (#{result_var}->tag == ELMC_TAG_TUPLE2) {
+    } else if (#{value}->tag == ELMC_TAG_TUPLE2) {
       elmc_agent_generated_probe(#{hex_tag(tuple_tag)});
-    } else if (#{result_var}->tag == ELMC_TAG_LIST) {
+    } else if (#{value}->tag == ELMC_TAG_LIST) {
       elmc_agent_generated_probe(#{hex_tag(list_tag)});
     } else {
       elmc_agent_generated_probe(#{hex_tag(other_tag)});
@@ -134,12 +137,14 @@ defmodule Elmc.Backend.CCodegen.DebugProbes do
   @spec list_probe(String.t(), non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()) ::
           String.t()
   defp list_probe(result_var, empty_tag, nonempty_tag, other_tag, null_tag) do
+    value = RcRuntimeEmit.value_expr(result_var)
+
     region("""
-    if (!#{result_var}) {
+    if (!#{value}) {
       elmc_agent_generated_probe(#{hex_tag(null_tag)});
-    } else if (#{result_var}->tag == ELMC_TAG_LIST && #{result_var}->payload == NULL) {
+    } else if (#{value}->tag == ELMC_TAG_LIST && #{value}->payload == NULL) {
       elmc_agent_generated_probe(#{hex_tag(empty_tag)});
-    } else if (#{result_var}->tag == ELMC_TAG_LIST) {
+    } else if (#{value}->tag == ELMC_TAG_LIST) {
       elmc_agent_generated_probe(#{hex_tag(nonempty_tag)});
     } else {
       elmc_agent_generated_probe(#{hex_tag(other_tag)});

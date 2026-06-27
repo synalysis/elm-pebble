@@ -229,9 +229,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     assert case_body =~ "switch (month)"
     assert case_body =~ "case 1:"
-    assert case_body =~ "Rc = elmc_new_string(&owned[0], \"Jan\");"
+    assert case_body =~ "Rc = elmc_new_string(out, \"Jan\");"
     assert case_body =~ "case 2:"
-    assert case_body =~ "Rc = elmc_new_string(&owned[0], \"Feb\");"
+    assert case_body =~ "Rc = elmc_new_string(out, \"Feb\");"
 
     refute Regex.match?(
              ~r/ElmcValue \*tmp_\d+ = elmc_new_string\(\"Jan\"\);\s+tmp_\d+ = tmp_\d+;/,
@@ -670,7 +670,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     [native_call_body | _rest] = String.split(call_body, "static RC elmc_fn_Main_", parts: 2)
 
-    assert native_call_body =~ "elmc_fn_Main_nativeBoolBranch_native(&owned[0], enabled, 7)"
+    assert native_call_body =~ "elmc_fn_Main_nativeBoolBranch_native(out, enabled, 7)"
+    refute native_call_body =~ "*out = owned["
     refute native_call_body =~ "elmc_new_bool(enabled)"
 
     refute generated_c =~ "elmc_fn_Main_nativeBoolCaptured_native"

@@ -12,6 +12,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Native.IntCase, as: NativeIntCase
+  alias Elmc.Backend.CCodegen.Native.MaybeIntCase, as: NativeMaybeIntCase
   alias Elmc.Backend.CCodegen.Native.TypedReturn
   alias Elmc.Backend.CCodegen.Native.RecordFields, as: RecordFields
   alias Elmc.Backend.CCodegen.Native.UsageAnalysis, as: NativeUsageAnalysis
@@ -47,27 +48,30 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
   def expr?(%{op: :case, subject: subject, branches: branches}, env) do
     subject_expr = CaseCompile.subject_expr(subject)
-
-    NativeIntCase.branches?(branches) and NativeIntCase.subject_expr?(subject_expr, env) and
-      Enum.all?(branches, fn %{expr: branch_expr} -> expr?(branch_expr, env) end)
+    native_case_expr?(subject_expr, branches, env)
   end
 
   def expr?(%{op: :let_in, name: name, value_expr: value_expr, in_expr: in_expr}, env)
       when is_binary(name) or is_atom(name) do
-    value_native? = expr?(value_expr, env)
+    if case_subject_let?(name, value_expr, in_expr) do
+      subject_expr = CaseCompile.subject_expr(value_expr)
+      native_case_expr?(subject_expr, in_expr.branches, env)
+    else
+      value_native? = expr?(value_expr, env)
 
-    body_env =
-      env
-      |> Map.delete(name)
-      |> then(fn body_env ->
-        if value_native? and NativeUsageAnalysis.int_let?(name, value_expr, in_expr, env) do
-          EnvBindings.put_native_int_binding(body_env, name, "_native_let")
-        else
-          body_env
-        end
-      end)
+      body_env =
+        env
+        |> Map.delete(name)
+        |> then(fn body_env ->
+          if value_native? and NativeUsageAnalysis.int_let?(name, value_expr, in_expr, env) do
+            EnvBindings.put_native_int_binding(body_env, name, "_native_let")
+          else
+            body_env
+          end
+        end)
 
-    value_native? and expr?(in_expr, body_env)
+      value_native? and expr?(in_expr, body_env)
+    end
   end
 
   def expr?(%{op: :call, name: "__sub__", args: [left, right]}, env) do
@@ -190,6 +194,40 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   end
 
   def expr?(expr, _env), do: structural_expr?(expr)
+
+  defp native_case_expr?(subject_expr, branches, env) do
+    native_int_literal_case?(subject_expr, branches, env) or
+      native_maybe_int_case?(subject_expr, branches, env)
+  end
+
+  defp native_int_literal_case?(subject_expr, branches, env) do
+    NativeIntCase.branches?(branches) and NativeIntCase.subject_expr?(subject_expr, env) and
+      Enum.all?(branches, fn %{expr: branch_expr} -> expr?(branch_expr, env) end)
+  end
+
+  defp native_maybe_int_case?(subject_expr, branches, env) do
+    NativeMaybeIntCase.branches?(branches) and
+      NativeMaybeIntCase.subject_expr?(subject_expr, env) and
+      Enum.all?(branches, fn branch ->
+        branch_env = NativeMaybeIntCase.branch_env(branch, subject_expr, branches, env)
+        expr?(branch.expr, branch_env)
+      end)
+  end
+
+  defp case_subject_let?(name, value_expr, %{op: :case, subject: subject}) do
+    subject_binding = CaseCompile.subject_expr(subject)
+    let_binding = EnvBindings.binding_key(name)
+
+    is_map(value_expr) and case_subject_binding_matches?(subject_binding, let_binding)
+  end
+
+  defp case_subject_let?(_name, _value_expr, _in_expr), do: false
+
+  defp case_subject_binding_matches?(%{op: :var, name: subject_name}, let_binding) do
+    EnvBindings.binding_key(subject_name) == let_binding
+  end
+
+  defp case_subject_binding_matches?(_, _), do: false
 
   @spec typed_expr?(Types.ir_expr(), Types.compile_env()) :: boolean()
   def typed_expr?(%{op: :call, name: name, args: args}, env) when is_binary(name) do
@@ -1084,10 +1122,15 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   defp dispatch(%{op: :case, subject: subject, branches: branches} = expr, env, counter) do
     subject_expr = CaseCompile.subject_expr(subject)
 
-    if expr?(expr, env) do
-      NativeIntCase.compile_scalar(subject_expr, branches, env, counter)
-    else
-      compile_fallback(expr, env, counter)
+    cond do
+      native_int_literal_case?(subject_expr, branches, env) ->
+        NativeIntCase.compile_scalar(subject_expr, branches, env, counter)
+
+      native_maybe_int_case?(subject_expr, branches, env) ->
+        NativeMaybeIntCase.compile_scalar(subject, branches, env, counter)
+
+      true ->
+        compile_fallback(expr, env, counter)
     end
   end
 
@@ -1097,10 +1140,26 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
          counter
        )
        when is_binary(name) or is_atom(name) do
-    if expr?(expr, env) do
-      compile_native_int_let(name, value_expr, in_expr, env, counter)
-    else
-      compile_fallback(expr, env, counter)
+    cond do
+      case_subject_let?(name, value_expr, in_expr) ->
+        subject_expr = CaseCompile.subject_expr(value_expr)
+
+        cond do
+          native_int_literal_case?(subject_expr, in_expr.branches, env) ->
+            NativeIntCase.compile_scalar(subject_expr, in_expr.branches, env, counter)
+
+          native_maybe_int_case?(subject_expr, in_expr.branches, env) ->
+            NativeMaybeIntCase.compile_scalar(value_expr, in_expr.branches, env, counter)
+
+          true ->
+            compile_fallback(expr, env, counter)
+        end
+
+      expr?(expr, env) ->
+        compile_native_int_let(name, value_expr, in_expr, env, counter)
+
+      true ->
+        compile_fallback(expr, env, counter)
     end
   end
 

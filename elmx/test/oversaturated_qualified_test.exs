@@ -57,7 +57,7 @@ defmodule Elmx.OversaturatedQualifiedTest do
     code = IO.iodata_to_binary(emit_code)
 
     assert code =~ "Apply.repeat1(add1, 20, 0)"
-    refute code =~ "elmx_pipe_acc"
+    refute code =~ "elmx_pipe_slot_"
   end
 
   test "heterogeneous long |> chains flatten to iterative apply block" do
@@ -84,8 +84,8 @@ defmodule Elmx.OversaturatedQualifiedTest do
     {emit_code, _, _} = Calls.compile_call(expr, env, 0)
     code = IO.iodata_to_binary(emit_code)
 
-    assert code =~ "elmx_pipe_acc"
-    assert code =~ "Apply.apply1(add1, elmx_pipe_acc)"
+    assert code =~ "elmx_pipe_slot_"
+    assert code =~ "Apply.apply1(add1, elmx_pipe_slot_"
     refute String.match?(code, ~r/Apply\.apply1\(Apply\.apply1/)
   end
 end

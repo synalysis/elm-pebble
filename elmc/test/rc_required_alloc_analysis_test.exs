@@ -63,11 +63,103 @@ defmodule Elmc.RcRequiredAllocAnalysisTest do
     end
   end
 
+  test "helpers that call native boxed RC constructors are rc_required" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/rc_required_native_boxed_callers_project", __DIR__)
+    out_dir = Path.expand("tmp/rc_required_native_boxed_callers_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+
+    File.write!(
+      Path.join(project_dir, "src/Main.elm"),
+      File.read!(Path.join(project_dir, "src/Main.elm")) <>
+        """
+
+
+        type alias Point =
+            { x : Int
+            , y : Int
+            }
+
+        type alias PendingPiece =
+            { x1 : Int
+            , y1 : Int
+            , x2 : Int
+            , y2 : Int
+            }
+
+        type alias DownloadedPiece =
+            { p1 : Point
+            , p2 : Point
+            }
+
+        type alias Model =
+            { downloaded : DownloadedPiece
+            }
+
+        o : Int -> Int -> Point
+        o x y =
+            { x = x, y = y }
+
+
+        toDownloadedPiece : PendingPiece -> DownloadedPiece
+        toDownloadedPiece piece =
+            { p1 = o piece.x1 piece.y1
+            , p2 = o piece.x2 piece.y2
+            }
+
+
+        finishPiece : PendingPiece -> Model -> Model
+        finishPiece piece model =
+            { model | downloaded = toDownloadedPiece piece }
+
+
+        update : Int -> Model -> Model
+        update _ model =
+            finishPiece { x1 = 0, y1 = 0, x2 = 1, y2 = 1 } model
+        """
+    )
+
+    assert {:ok, %{ir: ir}} =
+             Elmc.compile(project_dir, %{
+               entry_module: "Main",
+               out_dir: out_dir,
+               strip_dead_code: false
+             })
+
+    decl_map = IRQueries.function_decl_map(ir)
+    required = RcRequired.analyze(decl_map, direct_render_only: true)
+
+    assert MapSet.member?(required, {"Main", "toDownloadedPiece"})
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_toDownloadedPiece")
+
+    assert generated_c =~ "RC elmc_fn_Main_toDownloadedPiece("
+    assert body =~ "CATCH_BEGIN"
+    assert body =~ "CHECK_RC(Rc)"
+    assert body =~ "Rc = elmc_fn_Main_o_native("
+    refute body =~ "ELMC_RC_LOG_FAIL(__call_rc, \"elmc_fn_Main_o_native\""
+  end
+
   test "game-2048 emptyBoard uses direct zero-arity RC call without argc wrapper" do
     generated_c = compile_2048_generated!()
 
     assert generated_c =~ "RC elmc_fn_Main_emptyBoard(ElmcValue **out)"
     refute generated_c =~ "elmc_fn_Main_emptyBoard(&__z, NULL, 0)"
+  end
+
+  test "game-2048 init uses CHECK_RC for zero-arity emptyBoard into owned slot" do
+    generated_c = compile_2048_generated!()
+    init_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_init")
+
+    assert init_body =~ "Rc = elmc_fn_Main_emptyBoard(&owned[0]);"
+    assert init_body =~ "CHECK_RC(Rc);"
+    refute init_body =~ "owned[0] = NULL;\n    Rc = elmc_fn_Main_emptyBoard"
+    refute init_body =~ "__z"
+    refute init_body =~ "({ ElmcValue *__z"
   end
 
   test "game-2048 merge uses CHECK_RC for borrowed list.cons instead of elmc_int_zero fallback" do
