@@ -144,14 +144,14 @@ defmodule Ide.Debugger.RuntimeArtifacts do
     |> maybe_merge_launch_context_preview_fields(launch_context)
   end
 
+  def preview_runtime_model(_model), do: %{}
+
   defp maybe_merge_launch_context_preview_fields(model, launch_context)
        when is_map(launch_context) and map_size(launch_context) > 0 do
     Map.merge(model, RuntimeSurfaces.launch_context_screen_fields(launch_context))
   end
 
   defp maybe_merge_launch_context_preview_fields(model, _launch_context), do: model
-
-  def preview_runtime_model(_model), do: %{}
 
   @spec execution_model(Surface.t() | Surface.surface_map()) :: execution_model()
   def execution_model(%Surface{} = surface), do: Surface.execution_model(surface)

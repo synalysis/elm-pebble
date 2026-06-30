@@ -41,7 +41,8 @@ defmodule Ide.Debugger.IntrospectContexts do
                                                  [Types.runtime_followup_row()] ->
                                                    Types.runtime_state()),
           required(:apply_init_device_data) => (Types.runtime_state(),
-                                                Types.surface_target() ->
+                                                Types.surface_target(),
+                                                [Types.runtime_followup_row()] ->
                                                   Types.runtime_state()),
           required(:protocol_rx_ctx) => (-> ProtocolRx.ctx()),
           required(:drain_app_message_queue) => (Types.runtime_state(), Types.surface_target() ->

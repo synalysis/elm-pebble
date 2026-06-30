@@ -447,24 +447,5 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
     {code, var, next}
   end
 
-  @spec compile_expr_unary(
-          Types.ir_expr(),
-          String.t(),
-          Types.compile_env(),
-          Types.compile_counter()
-        ) :: Types.compile_result()
-  defp compile_expr_unary(arg_expr, c_expr_prefix, env, counter) do
-    {arg_code, arg_var, counter} = Host.compile_expr(arg_expr, env, counter)
-    {var, next} = CaseCompile.fresh_var(counter, env)
-
-    code = """
-    #{arg_code}
-      #{boxed_slot_assign(var, "#{c_expr_prefix}(#{arg_var}))")}
-      #{ValueSlots.release_stmt(arg_var)};
-    """
-
-    {code, var, next}
-  end
-
   defp boxed_slot_assign(var, rhs), do: ValueSlots.boxed_decl(var, rhs)
 end

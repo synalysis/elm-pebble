@@ -150,6 +150,8 @@ defmodule Elmc.Backend.CCodegen.EnvBindings do
     end
   end
 
+  def function_int_param?(_env, _name), do: false
+
   defp non_native_scalar_param?(env, name) do
     case TypedReturn.expr_type(%{op: :var, name: name}, env) do
       nil -> false
@@ -160,8 +162,6 @@ defmodule Elmc.Backend.CCodegen.EnvBindings do
       _ -> true
     end
   end
-
-  def function_int_param?(_env, _name), do: false
 
   @spec put_native_int_binding(Types.compile_env(), Types.binding_name(), String.t()) :: Types.compile_env()
   def put_native_int_binding(env, name, ref)

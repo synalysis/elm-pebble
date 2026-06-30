@@ -40,20 +40,6 @@
       "font_size": 16,
       "h": 16,
       "kind": "text_label",
-      "text": "9100",
-      "text_align": "center",
-      "text_color": 255,
-      "text_overflow": "word_wrap",
-      "w": 80,
-      "x": 32,
-      "y": 28
-    },
-    {
-      "antialiased": true,
-      "compositing_mode": 0,
-      "font_size": 16,
-      "h": 16,
-      "kind": "text_label",
       "text": "PIKACHU",
       "text_align": "center",
       "text_color": 255,
@@ -68,7 +54,7 @@
       "font_size": 12,
       "h": 12,
       "kind": "text_label",
-      "text": ":L90",
+      "text": ":L4",
       "text_align": "center",
       "text_color": 255,
       "text_overflow": "word_wrap",
@@ -205,13 +191,13 @@
       "kind": "bitmap_in_rect",
       "resource": "BitmapStaticPokeball",
       "w": 24,
-      "x": 96,
-      "y": 84
+      "x": 108,
+      "y": 87
     }
   ],
-  "preview_ops_sha256": "32f7f99916c375c8049f2ad681ed09557fb9424f023c3947582a6e7188aa026c",
+  "preview_ops_sha256": "1fe15a83a0b6e718ecefef29bca572e99ad451bf821a5f4814a0b94a9ba58de4",
   "render_tree": {
-    "node_count": 35,
+    "node_count": 32,
     "node_types": [
       "arc",
       "arc",
@@ -237,11 +223,8 @@
       "group",
       "group",
       "group",
-      "group",
-      "group",
       "line",
       "line",
-      "text",
       "text",
       "text",
       "text",
@@ -292,15 +275,15 @@
     "opponent": {
       "bitmap": {
         "args": [],
-        "ctor": "BitmapStaticCharizard"
+        "ctor": "BitmapStaticCharmander"
       },
-      "levelTag": ": L42",
+      "levelTag": ": L4",
       "species": {
         "args": [],
-        "ctor": "Charizard"
+        "ctor": "Charmander"
       },
-      "x": 96,
-      "y": 49
+      "x": 108,
+      "y": 52
     },
     "opponentHealth": 1,
     "opponentPick": 0,
@@ -335,13 +318,11 @@
     "screenH": 168,
     "screenW": 144,
     "showDate": false,
-    "showSteps": 9100,
+    "showSteps": false,
     "stepGoal": 10000,
     "stepsToday": {
-      "args": [
-        9100
-      ],
-      "ctor": "Just"
+      "args": [],
+      "ctor": "Nothing"
     },
     "timeString": null,
     "use24Hour": true
@@ -353,8 +334,7 @@
     "update:ClockStyle24h True",
     "update:CurrentDateTime { day = 27, dayOfWeek = Wednesday, hour = 8, minute = 53, month = 5, second = 0, utcOffsetMinutes = 0, year = 2026 }",
     "update:HealthSupported True",
-    "update:PlayerSettingLoaded 0",
-    "update:StepsToday 9100"
+    "update:PlayerSettingLoaded 0"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
@@ -400,15 +380,15 @@
       "opponent": {
         "bitmap": {
           "args": [],
-          "ctor": "BitmapStaticCharizard"
+          "ctor": "BitmapStaticCharmander"
         },
-        "levelTag": ": L42",
+        "levelTag": ": L4",
         "species": {
           "args": [],
-          "ctor": "Charizard"
+          "ctor": "Charmander"
         },
-        "x": 96,
-        "y": 49
+        "x": 108,
+        "y": 52
       },
       "opponentHealth": 1,
       "opponentPick": 0,
@@ -442,13 +422,11 @@
       "screenH": 168,
       "screenW": 144,
       "showDate": false,
-      "showSteps": 9100,
+      "showSteps": false,
       "stepGoal": 10000,
       "stepsToday": {
-        "args": [
-          9100
-        ],
-        "ctor": "Just"
+        "args": [],
+        "ctor": "Nothing"
       },
       "use24Hour": true
     },

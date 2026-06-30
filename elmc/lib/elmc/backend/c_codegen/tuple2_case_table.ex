@@ -22,7 +22,6 @@ defmodule Elmc.Backend.CCodegen.Tuple2CaseTable do
   def recognized?(module_name, name, expr) do
     case try_emit(module_name, name, expr) do
       {:ok, _, _, _} -> true
-      {:ok, _, _} -> true
       _ -> false
     end
   end

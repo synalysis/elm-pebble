@@ -241,7 +241,18 @@
     "init:init",
     "update:CatalogReceived <catalog>",
     "update:CurrentDateTime { day = 27, dayOfWeek = Wednesday, hour = 8, minute = 53, month = 5, second = 0, utcOffsetMinutes = 0, year = 2026 }",
-    "update:FromPhone (ProvideFigure 0)"
+    "update:FromPhone (BeginFigure 0)",
+    "update:FromPhone (EndFigure 0)",
+    "update:FromPhone (ProvideFigure 0)",
+    "update:FromPhone (ProvidePiece 0 [0,3,-3,-5,-35,-28,-43,3,-43,3])",
+    "update:FromPhone (ProvidePiece 0 [1,3,9,-5,35,-28,43,3,43,3])",
+    "update:FromPhone (ProvidePiece 0 [2,4,-11,2,3,-9,17,2,3,14])",
+    "update:FromPhone (ProvidePiece 0 [3,3,17,-3,31,-9,28,6,28,6])",
+    "update:FromPhone (ProvidePiece 0 [4,4,-11,6,-28,0,-32,12,-15,18])",
+    "update:FromPhone (ProvidePiece 0 [5,3,-1,14,-18,26,6,25,6,25])",
+    "update:FromPhone (ProvidePiece 0 [6,3,8,14,29,25,12,28,12,28])",
+    "update:FromWatch (Ok RequestFigure)",
+    "update:SvgReceived <svg>"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {

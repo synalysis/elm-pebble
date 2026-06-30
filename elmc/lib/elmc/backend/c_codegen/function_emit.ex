@@ -990,11 +990,6 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     wrapper_bindings =
       native_wrapper_bindings(c_arg_bindings, wrapper_arg_kinds, false)
 
-    boxed_native_args =
-      c_arg_bindings
-      |> Enum.map(fn {_arg, c_arg, _index} -> c_arg end)
-      |> Enum.join(", ")
-
     native_args =
       c_arg_bindings
       |> Enum.map(fn {_arg, c_arg, _index} -> c_arg end)

@@ -37,6 +37,32 @@ defmodule Ide.Debugger.DeviceDataResponsesTest do
                }
              ]
     end
+
+    test "prefers branch_constructor over Elm binding names in branch" do
+      calls = [
+        %{
+          "target" => "CompanionWatch.sendWatchToPhone",
+          "branch" => "CurrentDateTime value",
+          "branch_constructor" => "CurrentDateTime"
+        },
+        %{
+          "target" => "Cmd.none",
+          "branch" => "MinuteChanged _",
+          "branch_constructor" => "MinuteChanged"
+        }
+      ]
+
+      assert DeviceDataResponses.filter_update_cmd_calls(
+               calls,
+               "CurrentDateTime { day = 1, hour = 0, minute = 0, month = 1, second = 0, year = 2026, dayOfWeek = Monday, utcOffsetMinutes = 0 }"
+             ) == [
+               %{
+                 "target" => "CompanionWatch.sendWatchToPhone",
+                 "branch" => "CurrentDateTime value",
+                 "branch_constructor" => "CurrentDateTime"
+               }
+             ]
+    end
   end
 
   describe "apply_after_step/7" do

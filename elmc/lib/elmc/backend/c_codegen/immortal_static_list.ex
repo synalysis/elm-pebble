@@ -134,7 +134,7 @@ defmodule Elmc.Backend.CCodegen.ImmortalStaticList do
     count = length(spec.values)
     index_use = native_index_use(index_ref)
     table_comment = "/* #{spec.module}.#{spec.name}[n] static table */"
-    env = Keyword.get(opts, :env, %{})
+    _env = Keyword.get(opts, :env, %{})
 
     take_block = """
     ElmcValue *#{out} = NULL;

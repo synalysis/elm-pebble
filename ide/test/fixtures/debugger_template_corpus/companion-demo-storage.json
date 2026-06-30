@@ -33,7 +33,7 @@
       "font_size": 18,
       "h": 18,
       "kind": "text_label",
-      "text": "Theme --",
+      "text": "Theme dark",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -47,7 +47,7 @@
       "font_size": 18,
       "h": 18,
       "kind": "text_label",
-      "text": "Units --",
+      "text": "Units metric",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -70,7 +70,7 @@
       "y": 90
     }
   ],
-  "preview_ops_sha256": "37ff962753cf1ebe310fc857a1b6acd35426cfbd8889f2ccb0f823f9701a67b5",
+  "preview_ops_sha256": "b5dfec0278109c471293aa822c12cb40f29280f611ab5d587328aab2a78aaaae",
   "render_tree": {
     "node_count": 8,
     "node_types": [
@@ -90,21 +90,34 @@
     "screenH": 168,
     "screenW": 144,
     "theme": {
-      "args": [],
-      "ctor": "Nothing"
+      "args": [
+        {
+          "args": [],
+          "ctor": "Dark"
+        }
+      ],
+      "ctor": "Just"
     },
     "timeString": null,
     "units": {
-      "args": [],
-      "ctor": "Nothing"
+      "args": [
+        {
+          "args": [],
+          "ctor": "Metric"
+        }
+      ],
+      "ctor": "Just"
     }
   },
   "template": "companion-demo-storage",
   "timeline_init_messages": [
     "init:init",
+    "update:FromPhone (ProvideTheme Dark Metric)",
     "update:FromWatch (Ok RequestStoredValues)",
     "update:GotPreference (Ok (\"units\"))",
-    "update:GotStorage (Ok \"Storage key not found\")"
+    "update:GotPreference (Ok (\"units\",{ $args = [{ $args = [{ $opaque = True }], $call = \"unitsToString\" }], $call = \"Encode.string\" }))",
+    "update:GotStorage (Ok \"Storage key not found\")",
+    "update:GotStorage (Ok (JsonValue { $args = [{ $opaque = True }], $call = \"themeToString\" }))"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
@@ -114,16 +127,30 @@
     "elmc_compile_status": "ok",
     "elmc_compile_warning_count": 0,
     "elmc_diagnostic_preview": [],
+    "protocol_last_inbound_from": "companion",
+    "protocol_last_inbound_message": "ProvideTheme Dark Metric",
+    "protocol_last_trigger": "companion_bridge_command",
+    "protocol_last_view_message": "ProvideTheme Dark Metric",
     "runtime_model": {
       "screenH": 168,
       "screenW": 144,
       "theme": {
-        "args": [],
-        "ctor": "Nothing"
+        "args": [
+          {
+            "args": [],
+            "ctor": "Dark"
+          }
+        ],
+        "ctor": "Just"
       },
       "units": {
-        "args": [],
-        "ctor": "Nothing"
+        "args": [
+          {
+            "args": [],
+            "ctor": "Metric"
+          }
+        ],
+        "ctor": "Just"
       }
     },
     "runtime_view_output": [],

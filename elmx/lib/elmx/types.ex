@@ -496,7 +496,8 @@ defmodule Elmx.Types do
           optional(:cross_module_arities) => map(),
           optional(:emit_module_names) => [String.t()],
           optional(:emit_partial_value) => boolean(),
-          optional(:uses_bitwise) => boolean()
+          optional(:uses_bitwise) => boolean(),
+          optional(:used_pattern_bindings) => MapSet.t(String.t())
         }
 
   @typedoc "Codegen failure from `Elmx.Backend.ElixirCodegen.emit_project/2`."

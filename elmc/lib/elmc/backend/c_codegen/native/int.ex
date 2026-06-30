@@ -564,6 +564,17 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     {"", "ELMC_PEBBLE_MSG_#{Elmc.Backend.Pebble.Util.macro_name(name)}", counter}
   end
 
+  defp dispatch(%{op: :field_access, arg: arg, field: field} = expr, env, counter)
+       when is_binary(field) do
+    case PolarPoint.try_compile_field(arg, field, env, counter) do
+      {:ok, code, ref, counter} ->
+        {code, ref, counter}
+
+      :error ->
+        dispatch_field_access(expr, env, counter)
+    end
+  end
+
   defp dispatch(%{op: :char_literal, value: value}, _env, counter),
     do: {"", "#{value}", counter}
 
@@ -582,43 +593,6 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
       end
     else
       compile_fallback(expr, env, counter)
-    end
-  end
-
-  defp compile_native_int_if(cond_expr, then_expr, else_expr, env, counter) do
-    hoisted_before = Process.get(:elmc_hoisted_native_int_inits, %{})
-    {cond_code, cond_ref, counter} = Host.compile_native_bool_expr(cond_expr, env, counter)
-    then_env = RecordCompile.fresh_subexpr_cache(env)
-    else_env = RecordCompile.fresh_subexpr_cache(env)
-    {then_code, then_ref, counter} = compile_expr(then_expr, then_env, counter)
-    {else_code, else_ref, counter} = compile_expr(else_expr, else_env, counter)
-    branch_hoists = Hoist.hoisted_native_int_branch_preamble(hoisted_before, allow_record_getters: true)
-    next = counter + 1
-    out = "native_if_#{next}"
-
-    code = """
-    #{branch_hoists}#{cond_code}
-      elmc_int_t #{out};
-      if (#{cond_ref}) {
-    #{CSource.indent(then_code, 4)}
-        #{out} = #{then_ref};
-      } else {
-    #{CSource.indent(else_code, 4)}
-        #{out} = #{else_ref};
-      }
-    """
-
-    {code, out, next}
-  end
-
-  defp dispatch(%{op: :field_access, arg: arg, field: field} = expr, env, counter)
-       when is_binary(field) do
-    case PolarPoint.try_compile_field(arg, field, env, counter) do
-      {:ok, code, ref, counter} ->
-        {code, ref, counter}
-
-      :error ->
-        dispatch_field_access(expr, env, counter)
     end
   end
 
@@ -1232,6 +1206,32 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
   defp dispatch(expr, env, counter),
     do: compile_fallback(expr, env, counter)
+
+  defp compile_native_int_if(cond_expr, then_expr, else_expr, env, counter) do
+    hoisted_before = Process.get(:elmc_hoisted_native_int_inits, %{})
+    {cond_code, cond_ref, counter} = Host.compile_native_bool_expr(cond_expr, env, counter)
+    then_env = RecordCompile.fresh_subexpr_cache(env)
+    else_env = RecordCompile.fresh_subexpr_cache(env)
+    {then_code, then_ref, counter} = compile_expr(then_expr, then_env, counter)
+    {else_code, else_ref, counter} = compile_expr(else_expr, else_env, counter)
+    branch_hoists = Hoist.hoisted_native_int_branch_preamble(hoisted_before, allow_record_getters: true)
+    next = counter + 1
+    out = "native_if_#{next}"
+
+    code = """
+    #{branch_hoists}#{cond_code}
+      elmc_int_t #{out};
+      if (#{cond_ref}) {
+    #{CSource.indent(then_code, 4)}
+        #{out} = #{then_ref};
+      } else {
+    #{CSource.indent(else_code, 4)}
+        #{out} = #{else_ref};
+      }
+    """
+
+    {code, out, next}
+  end
 
   defp compile_native_int_let(name, value_expr, in_expr, env, counter) do
     let_expr = %{op: :let_in, name: name, value_expr: value_expr, in_expr: in_expr}

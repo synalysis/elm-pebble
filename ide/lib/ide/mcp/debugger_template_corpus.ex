@@ -240,6 +240,9 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   defp template_simulator_extras("companion-demo-geolocation"),
     do: %{"latitude" => 48.137154, "longitude" => 11.576124, "accuracy" => 25.0}
 
+  defp template_simulator_extras("watchface-yes"),
+    do: %{"latitude" => 48.0, "longitude" => 10.0, "accuracy" => 25.0}
+
   defp template_simulator_extras(_), do: %{}
 
   @tangram_catalog_json ~s({"page1-0": {"wholeAnnotation": "chair"}})
@@ -281,7 +284,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     end
   end
 
-  @phone_first_watch_reload_templates ~w(watchface-tangram-time)
+  @phone_first_watch_reload_templates ~w(watchface-tangram-time watchface-yes)
 
   @spec reload_surfaces(String.t(), Projects.Project.t(), String.t()) ::
           :ok | {:error, CorpusTypes.corpus_error()}
@@ -352,6 +355,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
           {:ok, CorpusTypes.normalized_snapshot()} | {:error, CorpusTypes.corpus_error()}
   defp capture(slug, project, template_key) do
     with :ok <- await_background_idle!(slug),
+         :ok <- refresh_watch_preview_if_unavailable!(slug),
          {:ok, models} <-
            Tools.call(
              "debugger.models",
@@ -1138,6 +1142,22 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   end
 
   @corpus_drain_timeout_ms 120_000
+
+  @spec refresh_watch_preview_if_unavailable!(String.t()) :: :ok
+  defp refresh_watch_preview_if_unavailable!(slug) when is_binary(slug) do
+    {:ok, _} =
+      Ide.Debugger.AgentSession.mutate(slug, fn state ->
+        type = get_in(state, [:watch, :view_tree, "type"]) || get_in(state, [:watch, :view_tree, :type])
+
+        if type == "previewUnavailable" do
+          Ide.Debugger.RuntimeExecutorConfig.refresh_for_target(state, :watch)
+        else
+          state
+        end
+      end)
+
+    :ok
+  end
 
   @spec await_background_idle!(String.t()) :: :ok | {:error, CorpusTypes.background_drain_error()}
   defp await_background_idle!(slug) when is_binary(slug) do

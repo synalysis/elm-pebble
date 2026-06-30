@@ -184,14 +184,14 @@ defmodule Elmx.Backend.ElixirCodegen do
 
   defp zero_arity_fns_from_declarations(declarations) when is_list(declarations) do
     declarations
-    |> Enum.filter(fn
-      %{kind: :function, name: name, args: args} when is_binary(name) ->
-        args in [nil, []]
+    |> Enum.flat_map(fn
+      %{kind: :function, name: name, args: args} when is_binary(name) and args in [nil, []] ->
+        [name]
 
       _ ->
-        false
+        []
     end)
-    |> MapSet.new(& &1.name)
+    |> MapSet.new()
   end
 
   defp function_arities_from_declarations(declarations) when is_list(declarations) do
@@ -509,16 +509,27 @@ defmodule Elmx.Backend.ElixirCodegen do
       not function_like_value_expr?(decl.expr)
   end
 
-  defp function_like_value_expr?(%{op: :lambda}), do: true
-  defp function_like_value_expr?(%{op: :qualified_call, args: []}), do: true
-  defp function_like_value_expr?(%{op: :var}), do: true
+  defp function_like_value_expr?(expr) when is_map(expr) do
+    case expr do
+      %{op: :lambda} ->
+        true
 
-  defp function_like_value_expr?(%{op: :partial_constructor, arity: full_arity, args: bound_args})
-       when is_integer(full_arity) and is_list(bound_args) do
-    full_arity > length(bound_args)
+      %{op: :qualified_call, args: []} ->
+        true
+
+      %{op: :var} ->
+        true
+
+      %{op: :partial_constructor, arity: full_arity, args: bound_args}
+      when is_integer(full_arity) and is_list(bound_args) ->
+        full_arity > length(bound_args)
+
+      _ ->
+        false
+    end
   end
 
-  defp function_like_value_expr?(_), do: false
+  defp function_like_value_expr?(_expr), do: false
 
   defp param_list(args, arity, used_params) when is_list(args) do
     names =

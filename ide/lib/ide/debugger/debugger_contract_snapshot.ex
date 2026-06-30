@@ -49,7 +49,8 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
                                                  [Types.runtime_followup_row()] ->
                                                    Types.runtime_state()),
           required(:apply_init_device_data) => (Types.runtime_state(),
-                                                Types.surface_target() ->
+                                                Types.surface_target(),
+                                                [Types.runtime_followup_row()] ->
                                                   Types.runtime_state()),
           required(:drain_app_message_queue) => (Types.runtime_state(), Types.surface_target() ->
                                                    Types.runtime_state()),
@@ -340,7 +341,7 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
     |> ctx.runtime_status_after_init.(target, execution, ei)
     |> apply_init_protocol_side_effects(protocol_events, ctx)
     |> ctx.apply_runtime_followups.(target, "init", "init", followups)
-    |> ctx.apply_init_device_data.(target)
+    |> ctx.apply_init_device_data.(target, followups)
     |> refresh_watch_launch_context_model(target, launch_context)
     |> ProtocolRx.mark_init_complete(target)
     |> maybe_drain_app_message_queue(state, target, ctx)

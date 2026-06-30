@@ -71,7 +71,7 @@ defmodule Ide.Debugger.DeviceDataResponses do
 
     state
     |> apply_covered_device_previews(requests, covered, target)
-    |> then(&apply_request_list(requests, &1, target, ctx))
+    |> then(&apply_request_list(requests, &1, target, ctx, covered))
   end
 
   def apply_after_step(state, target, message, _model, _message_source, ctx, message_value, _runtime_followups)
@@ -144,20 +144,29 @@ defmodule Ide.Debugger.DeviceDataResponses do
   @spec apply_init_device_responses(
           Types.runtime_state(),
           Types.surface_target(),
-          apply_ctx()
+          apply_ctx(),
+          [Types.runtime_followup_row()]
         ) :: Types.runtime_state()
-  def apply_init_device_responses(state, target, ctx)
-      when is_map(state) and target in [:watch, :companion, :phone] and is_map(ctx) do
+  def apply_init_device_responses(state, target, ctx, runtime_followups \\ [])
+
+  def apply_init_device_responses(state, target, ctx, runtime_followups)
+      when is_map(state) and target in [:watch, :companion, :phone] and is_map(ctx) and
+             is_list(runtime_followups) do
+    covered = RuntimeFollowups.covered_device_response_ctors(runtime_followups)
     surface = Surface.from_state(state, target)
     model = Surface.app_model(surface)
 
+    requests =
+      state
+      |> requests_for_surface(target, "init")
+      |> Enum.reject(&DeviceData.init_request_already_satisfied?(model, &1))
+
     state
-    |> requests_for_surface(target, "init")
-    |> Enum.reject(&DeviceData.init_request_already_satisfied?(model, &1))
-    |> apply_request_list(state, target, ctx)
+    |> apply_covered_device_previews(requests, covered, target)
+    |> then(&apply_request_list(requests, &1, target, ctx, covered))
   end
 
-  def apply_init_device_responses(state, _target, _ctx), do: state
+  def apply_init_device_responses(state, _target, _ctx, _runtime_followups), do: state
 
   @spec apply_covered_device_previews(
           Types.runtime_state(),
@@ -197,23 +206,37 @@ defmodule Ide.Debugger.DeviceDataResponses do
           [Types.device_request()],
           Types.runtime_state(),
           Types.surface_target(),
-          apply_ctx()
+          apply_ctx(),
+          [String.t()]
         ) :: Types.runtime_state()
-  defp apply_request_list(requests, state, target, ctx)
-       when is_list(requests) and is_map(state) and is_map(ctx) do
-    Enum.reduce(requests, state, fn req, acc ->
-      target_name = ctx.source_root_for_target.(target)
+  defp apply_request_list(requests, state, target, ctx, covered \\ [])
 
-      acc
-      |> DeviceDataHints.apply_to_state(target, req)
-      |> ctx.append_event.(
-        "debugger.device_data",
-        Ide.Debugger.Types.DeviceDataEventPayload.from_request(target_name, req)
-      )
-      |> apply_device_response_step(target, req, ctx)
-      |> DeviceDataHints.apply_to_state(target, req)
+  defp apply_request_list(requests, state, target, ctx, covered)
+       when is_list(requests) and is_map(state) and is_map(ctx) and is_list(covered) do
+    Enum.reduce(requests, state, fn req, acc ->
+      if device_response_covered?(req, covered) do
+        acc
+      else
+        target_name = ctx.source_root_for_target.(target)
+
+        acc
+        |> DeviceDataHints.apply_to_state(target, req)
+        |> ctx.append_event.(
+          "debugger.device_data",
+          Ide.Debugger.Types.DeviceDataEventPayload.from_request(target_name, req)
+        )
+        |> apply_device_response_step(target, req, ctx)
+        |> DeviceDataHints.apply_to_state(target, req)
+      end
     end)
   end
+
+  defp device_response_covered?(req, covered) when is_map(req) and is_list(covered) do
+    ctor = device_request_response_ctor(req)
+    is_binary(ctor) and ctor in covered
+  end
+
+  defp device_response_covered?(_req, _covered), do: false
 
   @spec filter_update_cmd_calls([Types.cmd_call()], String.t() | nil) :: [Types.cmd_call()]
   def filter_update_cmd_calls(calls, current_message) when is_list(calls) do
@@ -227,9 +250,16 @@ defmodule Ide.Debugger.DeviceDataResponses do
     if branch_scoped? and is_binary(current_message) and current_message != "" do
       Enum.filter(calls, fn row ->
         branch_pattern =
-          case Map.get(row, "branch") do
-            branch when is_binary(branch) and branch != "" -> branch
-            _ -> Map.get(row, "branch_constructor")
+          cond do
+            is_binary(Map.get(row, "branch_constructor")) and
+                Map.get(row, "branch_constructor") != "" ->
+              Map.get(row, "branch_constructor")
+
+            is_binary(Map.get(row, "branch")) and Map.get(row, "branch") != "" ->
+              Map.get(row, "branch")
+
+            true ->
+              nil
           end
 
         case branch_pattern do
