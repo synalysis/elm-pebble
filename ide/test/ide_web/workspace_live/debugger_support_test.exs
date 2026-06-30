@@ -1568,6 +1568,30 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_y(text) == 80
   end
 
+  test "debugger preview caps SVG font size to text box height when Pebble cap is larger" do
+    runtime = %{
+      model: %{
+        "runtime_view_output" => [
+          %{
+            "kind" => "text",
+            "x" => 66,
+            "y" => 146,
+            "w" => 12,
+            "h" => 8,
+            "text" => "24",
+            "text_align" => "center"
+          }
+        ]
+      }
+    }
+
+    [text] = DebuggerPreview.svg_ops(nil, runtime)
+
+    assert text.h == 8
+    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_font_size(text) == 8
+    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_clippable?(text)
+  end
+
   test "debugger preview preserves explicit text alignment and overflow" do
     runtime = %{
       model: %{

@@ -30,7 +30,8 @@ defmodule Ide.Debugger.SimulatorSettings do
         "condition" => "clear",
         "humidityPercent" => 50,
         "pressureHpa" => 1013,
-        "windKph" => 8
+        "windKph" => 8,
+        "windDirectionDeg" => 0
       },
       "calendar_events" => [],
       "storage_values" => %{},
@@ -338,7 +339,7 @@ defmodule Ide.Debugger.SimulatorSettings do
   defp normalize_weather_settings(value, default) when is_map(value) and is_map(default) do
     weather =
       value
-      |> Map.take(["temperatureC", "condition", "humidityPercent", "pressureHpa", "windKph"])
+      |> Map.take(["temperatureC", "condition", "humidityPercent", "pressureHpa", "windKph", "windDirectionDeg"])
       |> Enum.reject(fn {_key, setting_value} -> is_nil(setting_value) or setting_value == "" end)
       |> Map.new()
 

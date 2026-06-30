@@ -3,11 +3,12 @@ defmodule Ide.Debugger.RuntimeFollowupsTest do
 
   alias Ide.Debugger.AgentSession
   alias Ide.Debugger.PendingHttpFollowups
+  alias Ide.Debugger.ProtocolRx
   alias Ide.Debugger.RuntimeFollowups
   alias Ide.Debugger.RuntimeSurfaces
 
   describe "apply_after_step/6" do
-    test "skips configuration and runtime_followup sources" do
+    test "skips configuration and non-protocol runtime_followup sources" do
       state = RuntimeSurfaces.default_watch()
       ctx = %{}
 
@@ -16,6 +17,44 @@ defmodule Ide.Debugger.RuntimeFollowupsTest do
 
       assert RuntimeFollowups.apply_after_step(state, :watch, "Tick", "runtime_followup", [], ctx) ==
                state
+    end
+
+    test "delivers companion-protocol followups from runtime_followup steps" do
+      state = RuntimeSurfaces.default_phone()
+
+      ctx = %{
+        append_event: fn st, _, _ -> st end,
+        apply_step_once: fn st, _target, _message, _message_value, _source, _trigger ->
+          flunk("phone_to_watch protocol followups should queue inline delivery")
+          st
+        end,
+        source_root_for_target: fn
+          :watch -> "watch"
+          :phone -> "phone"
+        end
+      }
+
+      followups = [
+        %{
+          "package" => "companion-protocol",
+          "message" => "ProvideTimezone",
+          "message_value" => %{"ctor" => "ProvideTimezone", "args" => [120]},
+          "command" => %{"to" => "watch", "direction" => "phone_to_watch"}
+        }
+      ]
+
+      updated =
+        RuntimeFollowups.apply_after_step(
+          state,
+          :phone,
+          "CurrentTime",
+          "runtime_followup",
+          followups,
+          ctx
+        )
+
+      assert [%{"message" => "ProvideTimezone", "to" => "watch"}] =
+               ProtocolRx.inline_protocol_deliveries(updated)
     end
   end
 

@@ -104,7 +104,8 @@
     "init:init",
     "update:FromWatch (Ok RequestStoredValues)",
     "update:GotPreference (Ok (\"units\"))",
-    "update:GotStorage (Ok \"Storage key not found\")"
+    "update:GotStorage (Ok \"Storage key not found\")",
+    "update:RequestStoredValues"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {

@@ -92,6 +92,7 @@ type alias WeatherInfo =
     , humidityPercent : Maybe Int
     , pressureHpa : Maybe Int
     , windKph : Maybe Int
+    , windDirectionDeg : Maybe Int
     }
 
 
@@ -346,12 +347,13 @@ decodeBridgeError envelope =
 
 decodeWeatherInfo : Decode.Decoder WeatherInfo
 decodeWeatherInfo =
-    Decode.map5 WeatherInfo
+    Decode.map6 WeatherInfo
         (Decode.field "temperatureC" Decode.int)
         (Decode.field "condition" conditionDecoder)
         (Decode.maybe (Decode.field "humidityPercent" Decode.int))
         (Decode.maybe (Decode.field "pressureHpa" Decode.int))
         (Decode.maybe (Decode.field "windKph" Decode.int))
+        (Decode.maybe (Decode.field "windDirectionDeg" Decode.int))
 
 
 conditionDecoder : Decode.Decoder Condition

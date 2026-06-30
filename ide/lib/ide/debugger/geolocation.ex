@@ -136,10 +136,43 @@ defmodule Ide.Debugger.Geolocation do
     subscription_callback(
       IntrospectAccess.cmd_calls(ei, "subscription_calls"),
       contract()
-    )
+    ) || init_cmd_geolocation_callback(ei)
   end
 
   def subscription_callback_from_introspect(_ei), do: nil
+
+  @spec init_cmd_geolocation_callback(Types.elm_introspect()) :: String.t() | nil
+  def init_cmd_geolocation_callback(ei) when is_map(ei) do
+    ei
+    |> IntrospectAccess.cmd_calls("init_cmd_calls")
+    |> CmdCall.expand_helpers(ei)
+    |> init_cmd_geolocation_callback_from_calls()
+  end
+
+  def init_cmd_geolocation_callback(_ei), do: nil
+
+  @spec init_cmd_geolocation_callback_from_calls([Types.cmd_call()]) :: String.t() | nil
+  def init_cmd_geolocation_callback_from_calls(calls) when is_list(calls) do
+    Enum.find_value(calls, fn row ->
+      if geolocation_init_cmd?(row) do
+        callback = Map.get(row, "callback_constructor")
+
+        if is_binary(callback) and callback != "", do: callback, else: nil
+      end
+    end)
+  end
+
+  def init_cmd_geolocation_callback_from_calls(_calls), do: nil
+
+  @spec geolocation_init_cmd?(Types.cmd_call()) :: boolean()
+  defp geolocation_init_cmd?(row) when is_map(row) do
+    CmdCall.name?(row, "currentPosition") or
+      CmdCall.name?(row, "getCurrentPosition") or
+      CmdCall.target_ends_with?(row, ".currentPosition") or
+      CmdCall.target_ends_with?(row, ".getCurrentPosition")
+  end
+
+  defp geolocation_init_cmd?(_row), do: false
 
   @spec subscription_callback_from_runtime(Types.runtime_state(), Types.surface_target()) ::
           String.t() | nil

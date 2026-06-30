@@ -15,6 +15,7 @@ defmodule Ide.Debugger.Types.SimulatorSettings do
           optional(:humidityPercent) => integer(),
           optional(:pressureHpa) => integer(),
           optional(:windKph) => integer(),
+          optional(:windDirectionDeg) => integer(),
           optional(String.t()) => Types.wire_input()
         }
 

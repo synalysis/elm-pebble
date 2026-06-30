@@ -216,10 +216,7 @@
       "args": [
         {
           "day": 27,
-          "dayOfWeek": {
-            "args": [],
-            "ctor": "Wednesday"
-          },
+          "dayOfWeek": "Wednesday",
           "hour": 8,
           "minute": 53,
           "month": 5,
@@ -243,10 +240,7 @@
   "timeline_init_messages": [
     "init:init",
     "update:CatalogReceived <catalog>",
-    "update:CurrentDateTime { day = 27, dayOfWeek = Wednesday, hour = 8, minute = 53, month = 5, second = 0, utcOffsetMinutes = 0, year = 2026 }",
-    "update:FromPhone (ProvideFigure 0)",
-    "update:FromWatch (Ok RequestFigure)",
-    "update:SvgReceived <svg>"
+    "update:FromPhone (ProvideFigure 0)"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
@@ -276,10 +270,7 @@
         "args": [
           {
             "day": 27,
-            "dayOfWeek": {
-              "args": [],
-              "ctor": "Wednesday"
-            },
+            "dayOfWeek": "Wednesday",
             "hour": 8,
             "minute": 53,
             "month": 5,

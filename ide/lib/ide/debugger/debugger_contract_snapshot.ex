@@ -8,10 +8,13 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
   alias Ide.Debugger.SurfaceCompileArtifacts
   alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Debugger.RuntimeExecutor
+  alias Ide.Debugger.RuntimeModelNormalize
   alias Ide.Debugger.RuntimePreview
+  alias Ide.Debugger.RuntimeSurfaces
   alias Ide.Debugger.RuntimeViewOutput
   alias Ide.Debugger.StepExecution
   alias Ide.Debugger.Types
+  alias Ide.Debugger.Types.StepExecutionContract
   alias Ide.Debugger.Types.DebuggerContractEventPayload
 
   @type executor :: module()
@@ -225,10 +228,18 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
     vt = Map.get(ei, "view_tree")
     runtime_vt = Map.get(execution, :view_tree)
 
+    launch_context =
+      Map.get(model, "launch_context") ||
+        Map.get(state, :launch_context) ||
+        %{}
+
+    normalized_patch = RuntimeModelNormalize.patch_values(model, model_patch)
+
     model =
       model
       |> Map.put("runtime_execution_mode", "runtime_executed")
-      |> Map.merge(model_patch)
+      |> then(&StepExecutionContract.merge_model_patch(&1, normalized_patch))
+      |> RuntimeSurfaces.merge_launch_context_model(launch_context)
       |> StepExecution.put_runtime_view_output(Map.get(execution, :view_output))
       |> refresh_init_runtime_fingerprints(runtime_vt, ei)
 
@@ -330,6 +341,7 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
     |> apply_init_protocol_side_effects(protocol_events, ctx)
     |> ctx.apply_runtime_followups.(target, "init", "init", followups)
     |> ctx.apply_init_device_data.(target)
+    |> refresh_watch_launch_context_model(target, launch_context)
     |> ProtocolRx.mark_init_complete(target)
     |> maybe_drain_app_message_queue(state, target, ctx)
     |> flush_init_protocol_deliveries(ctx)
@@ -355,6 +367,20 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
   defp flush_init_protocol_deliveries(state, ctx) when is_map(ctx) do
     ProtocolRx.flush_inline_protocol_deliveries(state, ctx.protocol_rx_ctx.())
   end
+
+  @spec refresh_watch_launch_context_model(
+          Types.runtime_state(),
+          Types.surface_target(),
+          Types.launch_context()
+        ) :: Types.runtime_state()
+  defp refresh_watch_launch_context_model(state, :watch, launch_context)
+       when is_map(state) and is_map(launch_context) do
+    update_in(state, [:watch, :model], fn model ->
+      RuntimeSurfaces.merge_launch_context_model(model, launch_context)
+    end)
+  end
+
+  defp refresh_watch_launch_context_model(state, _target, _launch_context), do: state
 
   @spec refresh_init_runtime_fingerprints(
           Types.app_model(),

@@ -1010,14 +1010,22 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
             aria-label="Watch screen preview"
             class={@preview_svg_class}
           >
-            <defs :if={@screen_round?}>
-              <clipPath id={@clip_id}>
+            <defs>
+              <clipPath :if={@screen_round?} id={@clip_id}>
                 <circle cx={@clip_cx} cy={@clip_cy} r={@clip_radius} />
               </clipPath>
+              <%= for {op, op_index} <- Enum.with_index(@svg_ops) do %>
+                <clipPath
+                  :if={SvgRender.text_clippable?(op)}
+                  id={SvgRender.text_clip_id(@svg_id, op_index)}
+                >
+                  <rect x={op.x} y={op.y} width={op.w} height={op.h} />
+                </clipPath>
+              <% end %>
             </defs>
             <g clip-path={if @screen_round?, do: "url(##{@clip_id})", else: nil}>
               <rect x="0" y="0" width={@screen_w} height={@screen_h} fill="white" />
-              <%= for op <- @svg_ops do %>
+              <%= for {op, op_index} <- Enum.with_index(@svg_ops) do %>
                 <.debugger_vector_sequence_anim :if={op.kind == :vector_sequence_anim} op={op} />
                 <image
                   :if={op.kind == :bitmap_sequence_at and is_binary(op[:href])}
@@ -1199,6 +1207,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
                     font-family="sans-serif"
                     text-anchor={SvgRender.text_anchor(op)}
                     dominant-baseline={SvgRender.text_baseline(op)}
+                    clip-path={
+                      if SvgRender.text_clippable?(op),
+                        do: "url(##{SvgRender.text_clip_id(@svg_id, op_index)})",
+                        else: nil
+                    }
                     fill={SvgRender.color(op.text_color, "#111111")}
                   >
                     {op.text}

@@ -37,8 +37,37 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.ModelMetadataTest do
   end
 
   test "public_model still hides companion-only protocol placeholders" do
-    runtime = %{model: %{"status" => "idle", "screenW" => 144}, shell: %{}}
+    runtime = %{model: %{"status" => "idle"}, shell: %{}}
 
     assert ModelMetadata.public_model(runtime) == %{}
+  end
+
+  test "public_model drops undeclared screen fields from companion apps" do
+    runtime = %{
+      model: %{
+        "runtime_model" => %{
+          "settings" => %{"ctor" => "Just", "args" => [%{}]},
+          "lastLocation" => %{"ctor" => "Nothing"},
+          "errors" => [],
+          "screenW" => 144,
+          "screenH" => 168
+        }
+      },
+      shell: %{
+        "debugger_contract" => %{
+          "init_model" => %{
+            "settings" => %{"ctor" => "Nothing"},
+            "lastLocation" => %{"ctor" => "Nothing"},
+            "errors" => []
+          }
+        }
+      }
+    }
+
+    assert ModelMetadata.public_model(runtime) == %{
+             "settings" => %{"ctor" => "Just", "args" => [%{}]},
+             "lastLocation" => %{"ctor" => "Nothing"},
+             "errors" => []
+           }
   end
 end

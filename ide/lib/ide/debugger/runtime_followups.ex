@@ -13,6 +13,7 @@ defmodule Ide.Debugger.RuntimeFollowups do
   alias Ide.Debugger.RuntimeModelMessages
   alias Ide.Debugger.SimulatorWatchDelivery
   alias Ide.Debugger.Surface
+  alias Ide.Debugger.ProtocolRx
   alias Ide.Debugger.SurfaceTargets
   alias Ide.Debugger.Types
 
@@ -192,8 +193,14 @@ defmodule Ide.Debugger.RuntimeFollowups do
   @spec companion_bridge_followup_row?(Types.runtime_followup_row()) :: boolean()
   def companion_bridge_followup_row?(row), do: companion_bridge_followup?(row)
 
-  defp apply_runtime(state, _target, _message, "runtime_followup", _followups, _ctx),
-    do: state
+  defp apply_runtime(state, target, _message, "runtime_followup", followups, ctx)
+       when target in [:watch, :companion, :phone] and is_list(followups) and is_map(ctx) do
+    followups
+    |> Enum.filter(&protocol_events_followup?/1)
+    |> Enum.reduce(state, fn row, acc ->
+      apply_protocol_runtime_followup(acc, row, ctx)
+    end)
+  end
 
   defp apply_runtime(state, _target, _message, "configuration", _followups, _ctx),
     do: state
@@ -223,13 +230,7 @@ defmodule Ide.Debugger.RuntimeFollowups do
       end
 
     {protocol_followups, runtime_followups} =
-      case message_source do
-        src when src in ["http", "runtime_followup"] ->
-          Enum.split_with(followups, &protocol_events_followup?/1)
-
-        _ ->
-          {[], Enum.reject(followups, &protocol_events_followup?/1)}
-      end
+      Enum.split_with(followups, &protocol_events_followup?/1)
 
     state =
       Enum.reduce(protocol_followups, state, fn row, acc ->
@@ -287,13 +288,14 @@ defmodule Ide.Debugger.RuntimeFollowups do
   defp apply_runtime(state, _target, _message, _message_source, _followups, _ctx),
     do: state
 
+  @doc false
   @spec protocol_events_followup?(Types.runtime_followup_row()) :: boolean()
-  defp protocol_events_followup?(row) when is_map(row) do
+  def protocol_events_followup?(row) when is_map(row) do
     package = Map.get(row, "package") || Map.get(row, :package)
     package == "companion-protocol"
   end
 
-  defp protocol_events_followup?(_row), do: false
+  def protocol_events_followup?(_row), do: false
 
   @spec apply_protocol_runtime_followup(Types.runtime_state(), Types.runtime_followup_row(), apply_ctx()) ::
           Types.runtime_state()
@@ -305,23 +307,48 @@ defmodule Ide.Debugger.RuntimeFollowups do
     target = SurfaceTargets.normalize(to)
     target_name = ctx.source_root_for_target.(target)
 
+    direction = Map.get(command, "direction") || Map.get(command, :direction)
+
     {step_message, step_value} =
-      if is_binary(message) and message != "" do
-        {message, message_value}
-      else
-        resolve_runtime_followup_step(state, target, "", message, message_value, row)
+      cond do
+        target == :watch and direction in ["phone_to_watch", :phone_to_watch] and
+            is_binary(message) and message != "" ->
+          ProtocolRx.inbound_app_message("FromPhone", message, message_value) ||
+            {message, message_value}
+
+        is_binary(message) and message != "" ->
+          {message, message_value}
+
+        true ->
+          resolve_runtime_followup_step(state, target, "", message, message_value, row)
       end
 
-    state
-    |> ctx.append_event.(
-      "debugger.package_cmd",
-      Ide.Debugger.Types.PackageCmdEventPayload.from_followup(
-        target_name,
-        "companion-protocol",
-        TimelineMessage.format(step_message, step_value)
+    state =
+      ctx.append_event.(
+        state,
+        "debugger.package_cmd",
+        Ide.Debugger.Types.PackageCmdEventPayload.from_followup(
+          target_name,
+          "companion-protocol",
+          TimelineMessage.format(step_message, step_value)
+        )
       )
-    )
-    |> maybe_apply_runtime_followup_step(target, step_message, step_value, ctx)
+
+    if target == :watch and direction in ["phone_to_watch", :phone_to_watch] and
+         is_binary(message) and message != "" do
+      from = Map.get(command, "from") || Map.get(command, :from) || "companion"
+
+      ProtocolRx.enqueue_inline_protocol_delivery(state, %{
+        "from" => from,
+        "to" => "watch",
+        "message" => message,
+        "message_value" => message_value,
+        "trigger" => "runtime_followup",
+        "message_source" => "runtime_followup"
+      })
+    else
+      maybe_apply_runtime_followup_step(state, target, step_message, step_value, ctx)
+    end
   end
 
   @spec maybe_apply_runtime_followup_step(

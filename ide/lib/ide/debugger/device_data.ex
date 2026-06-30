@@ -1,8 +1,10 @@
 defmodule Ide.Debugger.DeviceData do
   @moduledoc false
 
+  alias Ide.Debugger.DeviceDataHints
   alias Ide.Debugger.DeviceRequest
   alias Ide.Debugger.RuntimeModelMessages
+  alias Ide.Debugger.RuntimeModelNormalize
   alias Ide.Debugger.SimulatorSettings, as: DebuggerSimulatorSettings
   alias Ide.Debugger.Types
   alias Ide.WatchModels
@@ -323,7 +325,10 @@ defmodule Ide.Debugger.DeviceData do
               end
             end)
 
-          if is_binary(kind), do: {:halt, kind}, else: :cont
+          if is_binary(kind), do: {:halt, kind}, else: {:cont, nil}
+
+        _ ->
+          {:cont, nil}
       end
     end)
   end
@@ -440,12 +445,54 @@ defmodule Ide.Debugger.DeviceData do
   def health_runtime_disabled?(%{"supported" => %{"ctor" => "Just", "args" => [true]}}), do: false
   def health_runtime_disabled?(_runtime_model), do: false
   @spec init_request_already_satisfied?(Types.app_model(), Types.device_request()) :: boolean()
-  def init_request_already_satisfied?(model, %{kind: kind})
+  def init_request_already_satisfied?(model, %{kind: kind} = req)
       when is_map(model) and is_binary(kind) do
-    Map.has_key?(model, "debugger_device_#{kind}")
+    Map.has_key?(model, "debugger_device_#{kind}") and
+      device_kind_runtime_satisfied?(model, kind, req)
   end
 
   def init_request_already_satisfied?(_model, _req), do: false
+
+  @device_kind_runtime_fields DeviceDataHints.runtime_fields_by_device_kind()
+
+  @spec device_kind_runtime_satisfied?(Types.app_model(), String.t(), Types.device_request()) ::
+          boolean()
+  defp device_kind_runtime_satisfied?(model, kind, _req) when is_map(model) and is_binary(kind) do
+    runtime = Map.get(model, "runtime_model") || %{}
+    init = RuntimeModelNormalize.init_model(model)
+
+    kind
+    |> then(fn device_kind_key ->
+      if is_binary(device_kind_key),
+        do: Map.get(@device_kind_runtime_fields, device_kind_key, []),
+        else: []
+    end)
+    |> Enum.any?(fn field ->
+      Map.has_key?(init, field) and
+        runtime_field_populated?(Map.get(runtime, field), Map.get(init, field))
+    end)
+  end
+
+  defp device_kind_runtime_satisfied?(_model, _kind, _req), do: false
+
+  @spec runtime_field_populated?(Types.protocol_wire_arg(), Types.protocol_wire_arg()) ::
+          boolean()
+  defp runtime_field_populated?(%{"ctor" => "Just", "args" => [value | _]}, _init_shape),
+       do: value not in [nil]
+
+  defp runtime_field_populated?(%{"$ctor" => "Just", "$args" => [value | _]}, _init_shape),
+       do: value not in [nil]
+
+  defp runtime_field_populated?(value, init_shape) when is_integer(value) and is_integer(init_shape),
+    do: true
+
+  defp runtime_field_populated?(value, init_shape) when is_boolean(value) and is_boolean(init_shape),
+    do: true
+
+  defp runtime_field_populated?(value, init_shape) when is_binary(value) and is_binary(init_shape),
+    do: value != ""
+
+  defp runtime_field_populated?(_value, _init_shape), do: false
 
   @spec finalize_request(
           Types.device_request(),

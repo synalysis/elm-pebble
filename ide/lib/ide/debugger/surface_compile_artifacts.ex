@@ -326,6 +326,38 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
       end
   end
 
+  @spec project_companion_workspace_root(String.t()) :: {:ok, String.t()} | :error
+  defp project_companion_workspace_root(session_key) when is_binary(session_key) do
+    with %{} = project <- Projects.get_project_by_scope_key(session_key) do
+      _ = Projects.ensure_compiler_workspace(project)
+
+      workspace_root = Projects.project_workspace_path(project)
+      phone_root = Path.join(workspace_root, "phone")
+
+      if File.dir?(phone_root), do: {:ok, workspace_root}, else: :error
+    else
+      _ -> :error
+    end
+  rescue
+    DBConnection.OwnershipError ->
+      :error
+
+    error in RuntimeError ->
+      if String.contains?(Exception.message(error), "could not lookup Ecto repo") do
+        :error
+      else
+        reraise(error, __STACKTRACE__)
+      end
+  end
+
+  @spec seed_ephemeral_companion_workspace(String.t()) :: :ok
+  defp seed_ephemeral_companion_workspace(workspace) when is_binary(workspace) do
+    case ProjectTemplates.seed_ephemeral_phone_compile_workspace(workspace) do
+      :ok -> :ok
+      {:error, _} -> :ok
+    end
+  end
+
   defp ephemeral_entrypoint_artifacts(session_key, source, rel_path, "phone")
        when is_binary(session_key) and is_binary(source) and is_binary(rel_path) do
     workspace = ephemeral_workspace_path(session_key, source, rel_path)
@@ -335,7 +367,21 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
 
     unless File.dir?(phone_root) do
       File.rm_rf!(workspace)
-      :ok = ProjectTemplates.seed_ephemeral_phone_compile_workspace(workspace)
+
+      case project_companion_workspace_root(session_key) do
+        {:ok, project_workspace_root} ->
+          File.mkdir_p!(workspace)
+          File.cp_r!(Path.join(project_workspace_root, "phone"), phone_root)
+
+          protocol_root = Path.join(project_workspace_root, "protocol")
+
+          if File.dir?(protocol_root) do
+            File.cp_r!(protocol_root, Path.join(workspace, "protocol"))
+          end
+
+        :error ->
+          seed_ephemeral_companion_workspace(workspace)
+      end
     end
 
     File.mkdir_p!(Path.dirname(dest))

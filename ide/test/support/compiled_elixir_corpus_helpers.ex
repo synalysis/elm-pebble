@@ -268,7 +268,8 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
       "condition" => %{"ctor" => to_string(condition), "args" => []},
       "humidityPercent" => Keyword.get(opts, :humidity_percent, 50),
       "pressureHpa" => Keyword.get(opts, :pressure_hpa, 1013),
-      "windKph" => Keyword.get(opts, :wind_kph, 8)
+      "windKph" => Keyword.get(opts, :wind_kph, 8),
+      "windDirectionDeg" => Keyword.get(opts, :wind_direction_deg, 0)
     }
   end
 

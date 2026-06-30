@@ -1,7 +1,7 @@
 {
   "preview_diagnostics": {
     "render_source": "runtime_view_output",
-    "root_type": "windowStack",
+    "root_type": "previewUnavailable",
     "runtime_view_output_kinds": [
       "clear",
       "text_color",
@@ -22,7 +22,7 @@
       "kind": "text_label",
       "text": "08:53",
       "text_align": "center",
-      "text_color": 192,
+      "text_color": null,
       "text_overflow": "word_wrap",
       "w": 144,
       "x": 0,
@@ -36,29 +36,20 @@
       "kind": "text_label",
       "text": "Loading...",
       "text_align": "center",
-      "text_color": 192,
+      "text_color": null,
       "text_overflow": "word_wrap",
       "w": 144,
       "x": 0,
       "y": 92
     }
   ],
-  "preview_ops_sha256": "87aeec81bbe3272ffcbf4522a0750e8caebb8e14e9e9872ce6569cfaf94a9785",
+  "preview_ops_sha256": "b1c465b5d5d231252c228eea3f973d8e0aca4b653dfef2d91f16787c7647b9c8",
   "render_tree": {
-    "node_count": 10,
+    "node_count": 1,
     "node_types": [
-      "canvasLayer",
-      "clear",
-      "group",
-      "group",
-      "group",
-      "group",
-      "text",
-      "text",
-      "window",
-      "windowStack"
+      "previewUnavailable"
     ],
-    "root_type": "windowStack"
+    "root_type": "previewUnavailable"
   },
   "runtime_model": {
     "activeAnimation": {
@@ -75,22 +66,14 @@
     },
     "nextAnimationId": 1,
     "now": {
-      "args": [
-        {
-          "day": 27,
-          "dayOfWeek": {
-            "args": [],
-            "ctor": "Wednesday"
-          },
-          "hour": 8,
-          "minute": 53,
-          "month": 5,
-          "second": 0,
-          "utcOffsetMinutes": 0,
-          "year": 2026
-        }
-      ],
-      "ctor": "Just"
+      "day": 27,
+      "dayOfWeek": "Wednesday",
+      "hour": 8,
+      "minute": 53,
+      "month": 5,
+      "second": 0,
+      "utcOffsetMinutes": 0,
+      "year": 2026
     },
     "runtime_view_output": [],
     "screenH": 168,
@@ -107,8 +90,8 @@
     "update:CurrentDateTime { day = 27, dayOfWeek = Wednesday, hour = 8, minute = 53, month = 5, second = 0, utcOffsetMinutes = 0, year = 2026 }",
     "update:FromPhone (ProvideCondition Fog)",
     "update:FromPhone (ProvideTemperature (Celsius 18))",
-    "update:FromWatch (Ok (RequestWeather CurrentLocation))",
-    "update:GotWeather (Ok (Current { condition = Fog, temperatureC = 18 }))"
+    "update:GotWeather (Ok (Current { condition = Fog, temperatureC = 18 }))",
+    "update:RequestWeather CurrentLocation"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
@@ -120,7 +103,7 @@
     "elmc_diagnostic_preview": [],
     "protocol_last_inbound_from": "companion",
     "protocol_last_inbound_message": "ProvideCondition Fog",
-    "protocol_last_trigger": "protocol_rx",
+    "protocol_last_trigger": "init_companion_bridge",
     "protocol_last_view_message": "ProvideCondition Fog",
     "runtime_model": {
       "activeAnimation": {
@@ -137,22 +120,14 @@
       },
       "nextAnimationId": 1,
       "now": {
-        "args": [
-          {
-            "day": 27,
-            "dayOfWeek": {
-              "args": [],
-              "ctor": "Wednesday"
-            },
-            "hour": 8,
-            "minute": 53,
-            "month": 5,
-            "second": 0,
-            "utcOffsetMinutes": 0,
-            "year": 2026
-          }
-        ],
-        "ctor": "Just"
+        "day": 27,
+        "dayOfWeek": "Wednesday",
+        "hour": 8,
+        "minute": 53,
+        "month": 5,
+        "second": 0,
+        "utcOffsetMinutes": 0,
+        "year": 2026
       },
       "screenH": 168,
       "screenW": 144,

@@ -81,6 +81,7 @@ defmodule Ide.Debugger.RuntimePreview do
       preview_model =
         model
         |> RuntimeArtifacts.preview_runtime_model()
+        |> Map.merge(StepExecution.screen_dimensions_for_view_preview(execution_model))
         |> preview_model_for_message(Map.get(model, "runtime_last_message"))
 
       stored_rows =

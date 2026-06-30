@@ -7,10 +7,12 @@
       "fill_circle",
       "stroke_color",
       "fill_color",
+      "fill_radial",
       "circle",
       "line",
       "text_color",
-      "text"
+      "text",
+      "vector_at"
     ],
     "status": "ok"
   },
@@ -33,27 +35,71 @@
     },
     {
       "antialiased": true,
+      "compositing_mode": 0,
+      "end_angle": 65536,
+      "fill_color": 199,
+      "h": 100,
+      "kind": "fill_radial",
+      "start_angle": 51882,
+      "stroke_color": 199,
+      "stroke_width": 1,
+      "w": 100,
+      "x": 22,
+      "y": 34
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "end_angle": 21845,
+      "fill_color": 199,
+      "h": 100,
+      "kind": "fill_radial",
+      "start_angle": 0,
+      "stroke_color": 199,
+      "stroke_width": 1,
+      "w": 100,
+      "x": 22,
+      "y": 34
+    },
+    {
+      "antialiased": true,
       "color": 192,
       "compositing_mode": 0,
       "cx": 72,
       "cy": 84,
-      "fill_color": 192,
+      "fill_color": 199,
       "kind": "fill_circle",
       "r": 45,
-      "stroke_color": 192,
+      "stroke_color": 199,
       "stroke_width": 1
     },
     {
       "antialiased": true,
-      "color": 248,
       "compositing_mode": 0,
-      "cx": 72,
-      "cy": 84,
+      "end_angle": 65536,
       "fill_color": 248,
-      "kind": "fill_circle",
-      "r": 45,
+      "h": 90,
+      "kind": "fill_radial",
+      "start_angle": 51882,
       "stroke_color": 248,
-      "stroke_width": 1
+      "stroke_width": 1,
+      "w": 90,
+      "x": 27,
+      "y": 39
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "end_angle": 21845,
+      "fill_color": 248,
+      "h": 90,
+      "kind": "fill_radial",
+      "start_angle": 0,
+      "stroke_color": 248,
+      "stroke_width": 1,
+      "w": 90,
+      "x": 27,
+      "y": 39
     },
     {
       "antialiased": true,
@@ -535,15 +581,97 @@
     },
     {
       "antialiased": true,
+      "color": 234,
+      "compositing_mode": 0,
+      "cx": 72,
+      "cy": 112,
+      "fill_color": 248,
+      "kind": "fill_circle",
+      "r": 10,
+      "stroke_color": 248,
+      "stroke_width": 1
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "cx": 72,
+      "cy": 112,
+      "fill_color": 248,
+      "kind": "fill_circle",
+      "r": 10,
+      "stroke_color": 248,
+      "stroke_width": 1
+    },
+    {
+      "antialiased": true,
+      "color": 255,
+      "compositing_mode": 0,
+      "cx": 72,
+      "cy": 112,
+      "kind": "circle",
+      "r": 10,
+      "stroke_color": 248,
+      "stroke_width": 1
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "cx": 72,
+      "cy": 112,
+      "fill_color": 248,
+      "kind": "fill_circle",
+      "r": 10,
+      "stroke_color": 248,
+      "stroke_width": 1
+    },
+    {
+      "antialiased": true,
+      "color": 255,
+      "compositing_mode": 0,
+      "cx": 72,
+      "cy": 112,
+      "kind": "circle",
+      "r": 10,
+      "stroke_color": 248,
+      "stroke_width": 1
+    },
+    {
+      "antialiased": true,
       "color": 255,
       "compositing_mode": 0,
       "kind": "line",
       "stroke_color": 248,
       "stroke_width": 1,
-      "x1": 72,
-      "x2": 43,
-      "y1": 84,
-      "y2": 57
+      "x1": 68,
+      "x2": 65,
+      "y1": 80,
+      "y2": 105
+    },
+    {
+      "antialiased": true,
+      "color": 255,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 248,
+      "stroke_width": 1,
+      "x1": 65,
+      "x2": 49,
+      "y1": 105,
+      "y2": 62
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "cx": 72,
+      "cy": 84,
+      "fill_color": 248,
+      "kind": "fill_circle",
+      "r": 6,
+      "stroke_color": 248,
+      "stroke_width": 1
     },
     {
       "antialiased": true,
@@ -551,9 +679,8 @@
       "compositing_mode": 0,
       "cx": 72,
       "cy": 84,
-      "fill_color": 248,
-      "kind": "fill_circle",
-      "r": 4,
+      "kind": "circle",
+      "r": 6,
       "stroke_color": 248,
       "stroke_width": 1
     },
@@ -565,25 +692,234 @@
       "kind": "text_label",
       "text": "08:53",
       "text_align": "center",
-      "text_color": 255,
+      "text_color": 192,
       "text_overflow": "word_wrap",
       "w": 64,
       "x": 41,
       "y": 50
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 16,
+      "h": 16,
+      "kind": "text_label",
+      "text": "9100",
+      "text_align": "center",
+      "text_color": 255,
+      "text_overflow": "word_wrap",
+      "w": 40,
+      "x": 4,
+      "y": 4
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 12,
+      "h": 12,
+      "kind": "text_label",
+      "text": "Steps",
+      "text_align": "center",
+      "text_color": 213,
+      "text_overflow": "word_wrap",
+      "w": 44,
+      "x": 4,
+      "y": 20
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 14,
+      "h": 14,
+      "kind": "text_label",
+      "text": "May 27",
+      "text_align": "center",
+      "text_color": 255,
+      "text_overflow": "word_wrap",
+      "w": 48,
+      "x": 92,
+      "y": 4
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 12,
+      "h": 12,
+      "kind": "text_label",
+      "text": "2026",
+      "text_align": "center",
+      "text_color": 234,
+      "text_overflow": "word_wrap",
+      "w": 38,
+      "x": 102,
+      "y": 18
+    },
+    {
+      "fill_color": 0,
+      "kind": "path_outline_open",
+      "offset_x": 0,
+      "offset_y": 0,
+      "rotation": 0,
+      "stroke_color": 192,
+      "stroke_width": 2
+    },
+    {
+      "fill_color": 0,
+      "kind": "path_outline_open",
+      "offset_x": 0,
+      "offset_y": 0,
+      "rotation": 0,
+      "stroke_color": 192,
+      "stroke_width": 2
+    },
+    {
+      "fill_color": 0,
+      "kind": "path_outline_open",
+      "offset_x": 0,
+      "offset_y": 0,
+      "rotation": 0,
+      "stroke_color": 192,
+      "stroke_width": 2
+    },
+    {
+      "fill_color": 0,
+      "kind": "path_outline_open",
+      "offset_x": 0,
+      "offset_y": 0,
+      "rotation": 0,
+      "stroke_color": 192,
+      "stroke_width": 2
+    },
+    {
+      "fill_color": 0,
+      "kind": "path_outline_open",
+      "offset_x": 0,
+      "offset_y": 0,
+      "rotation": 0,
+      "stroke_color": 192,
+      "stroke_width": 2
+    },
+    {
+      "fill_color": 0,
+      "kind": "path_outline_open",
+      "offset_x": 0,
+      "offset_y": 0,
+      "rotation": 0,
+      "stroke_color": 192,
+      "stroke_width": 2
+    },
+    {
+      "fill_color": 0,
+      "kind": "path_outline_open",
+      "offset_x": 0,
+      "offset_y": 0,
+      "rotation": 0,
+      "stroke_color": 192,
+      "stroke_width": 2
+    },
+    {
+      "fill_color": 0,
+      "kind": "path_outline_open",
+      "offset_x": 0,
+      "offset_y": 0,
+      "rotation": 0,
+      "stroke_color": 192,
+      "stroke_width": 2
+    },
+    {
+      "cx": 28,
+      "cy": 156,
+      "fill_color": 192,
+      "kind": "fill_circle",
+      "r": 8,
+      "stroke_color": 0,
+      "stroke_width": 1
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 14,
+      "h": 14,
+      "kind": "text_label",
+      "text": "21C",
+      "text_align": "center",
+      "text_color": 255,
+      "text_overflow": "word_wrap",
+      "w": 68,
+      "x": 4,
+      "y": 150
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 12,
+      "h": 12,
+      "kind": "text_label",
+      "text": "SS",
+      "text_align": "center",
+      "text_color": 234,
+      "text_overflow": "word_wrap",
+      "w": 62,
+      "x": 80,
+      "y": 136
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 14,
+      "h": 14,
+      "kind": "text_label",
+      "text": "11:07",
+      "text_align": "center",
+      "text_color": 255,
+      "text_overflow": "word_wrap",
+      "w": 62,
+      "x": 80,
+      "y": 149
     }
   ],
-  "preview_ops_sha256": "3aa90380d0d66fdd20528cc48c3883aec92b66422f8dbb6c7b8a3c7be3b813e7",
+  "preview_ops_sha256": "a148a751d0253d31e0a5d8e95397bf8f01ae7c4cb2603d8530d15bd4c2f3c2a8",
   "render_tree": {
-    "node_count": 76,
+    "node_count": 114,
     "node_types": [
       "canvasLayer",
       "circle",
       "circle",
+      "circle",
+      "circle",
+      "circle",
       "clear",
+      "drawVectorAt",
       "fillCircle",
       "fillCircle",
       "fillCircle",
       "fillCircle",
+      "fillCircle",
+      "fillCircle",
+      "fillRadial",
+      "fillRadial",
+      "fillRadial",
+      "fillRadial",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
       "group",
       "group",
       "group",
@@ -637,6 +973,14 @@
       "line",
       "line",
       "line",
+      "line",
+      "text",
+      "text",
+      "text",
+      "text",
+      "text",
+      "text",
+      "text",
       "text",
       "text",
       "text",
@@ -672,44 +1016,36 @@
       ],
       "ctor": "Just"
     },
+    "cornerCycle": 0,
+    "cornerUpdateIntervalSec": 5,
     "displayShape": {
       "args": [],
       "ctor": "Rectangular"
     },
-    "displayUnits": {
-      "temperature": {
-        "args": [],
-        "ctor": "Celsius"
-      },
-      "wind": {
-        "args": [],
-        "ctor": "MetersPerSecond"
-      }
-    },
-    "homeLatE6": {
-      "args": [],
-      "ctor": "Nothing"
-    },
-    "homeLonE6": {
-      "args": [],
-      "ctor": "Nothing"
+    "healthSupported": {
+      "args": [
+        true
+      ],
+      "ctor": "Just"
     },
     "homeTzOffsetMin": 0,
-    "internetMode": {
-      "args": [],
-      "ctor": "InternetEnabled"
-    },
     "moonPhaseE6": {
-      "args": [],
-      "ctor": "Nothing"
+      "args": [
+        500000
+      ],
+      "ctor": "Just"
     },
     "moonriseMin": {
-      "args": [],
-      "ctor": "Nothing"
+      "args": [
+        900
+      ],
+      "ctor": "Just"
     },
     "moonsetMin": {
-      "args": [],
-      "ctor": "Nothing"
+      "args": [
+        300
+      ],
+      "ctor": "Just"
     },
     "now": {
       "args": [
@@ -732,23 +1068,66 @@
     "runtime_view_output": [],
     "screenH": 168,
     "screenW": 144,
-    "sun": {
-      "args": [],
-      "ctor": "Nothing"
+    "stepsToday": {
+      "args": [
+        9100
+      ],
+      "ctor": "Just"
     },
-    "tickSecond": 0,
+    "sun": {
+      "args": [
+        {
+          "mode": {
+            "args": [],
+            "ctor": "SunCycle"
+          },
+          "sunriseMin": 420,
+          "sunsetMin": 1200
+        }
+      ],
+      "ctor": "Just"
+    },
     "tide": {
       "args": [],
       "ctor": "Nothing"
     },
     "timeString": null,
     "weather": {
-      "args": [],
-      "ctor": "Nothing"
+      "args": [
+        {
+          "condition": {
+            "args": [],
+            "ctor": "Clear"
+          },
+          "precipMm10": 0,
+          "pressureHpa": 1013,
+          "temperature": {
+            "args": [
+              210
+            ],
+            "ctor": "Celsius"
+          },
+          "uv10": 0
+        }
+      ],
+      "ctor": "Just"
     },
     "wind": {
-      "args": [],
-      "ctor": "Nothing"
+      "args": [
+        {
+          "direction": {
+            "args": [],
+            "ctor": "North"
+          },
+          "speed": {
+            "args": [
+              2
+            ],
+            "ctor": "MetersPerSecond"
+          }
+        }
+      ],
+      "ctor": "Just"
     }
   },
   "template": "watchface-yes",
@@ -757,11 +1136,33 @@
     "update:BatteryLevelChanged 88",
     "update:ConnectionChanged True",
     "update:CurrentDateTime { day = 27, dayOfWeek = Wednesday, hour = 8, minute = 53, month = 5, second = 0, utcOffsetMinutes = 0, year = 2026 }",
-    "update:FromWatch (Ok RequestUpdate)"
+    "update:CurrentPosition (Ok {accuracy=25,latitude=48.137154,longitude=11.576124})",
+    "update:CurrentTime { accuracy = 25, latitude = 48.137154, longitude = 11.576124 } <posix>",
+    "update:FromPhone (ClearTide)",
+    "update:FromPhone (ProvideMoon 0 0 360252)",
+    "update:FromPhone (ProvideMoon 900 300 500000)",
+    "update:FromPhone (ProvideMoonPhase 360252)",
+    "update:FromPhone (ProvideMoonPhase 500000)",
+    "update:FromPhone (ProvideSun 333 1091 SunCycle)",
+    "update:FromPhone (ProvideSun 420 1200 SunCycle)",
+    "update:FromPhone (ProvideTimezone 60)",
+    "update:FromPhone (ProvideWeather (Celsius 210) Clear 0 0 1013)",
+    "update:FromPhone (ProvideWind North (MetersPerSecond 2))",
+    "update:FromPhone (SetCornerUpdateInterval 5)",
+    "update:FromWatch (Ok RequestUpdate)",
+    "update:GotEnvironment (Ok {moon=Just { moonriseMin = Just 900,moonsetmin=Just 300,phasee6=500000,sun=Just { polarDay = False,sunrisemin=420,sunsetmin=1200,tide=Nothing})",
+    "update:GotHealthSupported True",
+    "update:GotStepsToday 9100",
+    "update:GotWeather (Ok (Current { condition = Clear, humidityPercent = Just 50, pressureHpa = Just 1013, temperatureC = 21, windDirectionDeg = Just 0, windKph = Just 8 }))",
+    "update:RequestUpdate"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
+    "protocol_last_inbound_from": "companion",
+    "protocol_last_inbound_message": "ClearTide",
+    "protocol_last_trigger": "environment",
+    "protocol_last_view_message": "ClearTide",
     "runtime_model": {
       "altitude": {
         "args": [],
@@ -779,44 +1180,36 @@
         ],
         "ctor": "Just"
       },
+      "cornerCycle": 0,
+      "cornerUpdateIntervalSec": 5,
       "displayShape": {
         "args": [],
         "ctor": "Rectangular"
       },
-      "displayUnits": {
-        "temperature": {
-          "args": [],
-          "ctor": "Celsius"
-        },
-        "wind": {
-          "args": [],
-          "ctor": "MetersPerSecond"
-        }
-      },
-      "homeLatE6": {
-        "args": [],
-        "ctor": "Nothing"
-      },
-      "homeLonE6": {
-        "args": [],
-        "ctor": "Nothing"
+      "healthSupported": {
+        "args": [
+          true
+        ],
+        "ctor": "Just"
       },
       "homeTzOffsetMin": 0,
-      "internetMode": {
-        "args": [],
-        "ctor": "InternetEnabled"
-      },
       "moonPhaseE6": {
-        "args": [],
-        "ctor": "Nothing"
+        "args": [
+          500000
+        ],
+        "ctor": "Just"
       },
       "moonriseMin": {
-        "args": [],
-        "ctor": "Nothing"
+        "args": [
+          900
+        ],
+        "ctor": "Just"
       },
       "moonsetMin": {
-        "args": [],
-        "ctor": "Nothing"
+        "args": [
+          300
+        ],
+        "ctor": "Just"
       },
       "now": {
         "args": [
@@ -838,22 +1231,65 @@
       },
       "screenH": 168,
       "screenW": 144,
-      "sun": {
-        "args": [],
-        "ctor": "Nothing"
+      "stepsToday": {
+        "args": [
+          9100
+        ],
+        "ctor": "Just"
       },
-      "tickSecond": 0,
+      "sun": {
+        "args": [
+          {
+            "mode": {
+              "args": [],
+              "ctor": "SunCycle"
+            },
+            "sunriseMin": 420,
+            "sunsetMin": 1200
+          }
+        ],
+        "ctor": "Just"
+      },
       "tide": {
         "args": [],
         "ctor": "Nothing"
       },
       "weather": {
-        "args": [],
-        "ctor": "Nothing"
+        "args": [
+          {
+            "condition": {
+              "args": [],
+              "ctor": "Clear"
+            },
+            "precipMm10": 0,
+            "pressureHpa": 1013,
+            "temperature": {
+              "args": [
+                210
+              ],
+              "ctor": "Celsius"
+            },
+            "uv10": 0
+          }
+        ],
+        "ctor": "Just"
       },
       "wind": {
-        "args": [],
-        "ctor": "Nothing"
+        "args": [
+          {
+            "direction": {
+              "args": [],
+              "ctor": "North"
+            },
+            "speed": {
+              "args": [
+                2
+              ],
+              "ctor": "MetersPerSecond"
+            }
+          }
+        ],
+        "ctor": "Just"
       }
     },
     "runtime_view_output": [],

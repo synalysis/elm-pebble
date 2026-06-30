@@ -19,8 +19,8 @@
       "font_size": 18,
       "h": 18,
       "kind": "text_label",
-      "text": "WebSocket demo",
-      "text_align": "center",
+      "text": "WebSocket",
+      "text_align": "left",
       "text_color": null,
       "text_overflow": "word_wrap",
       "w": 128,
@@ -34,7 +34,7 @@
       "h": 18,
       "kind": "text_label",
       "text": "closed",
-      "text_align": "center",
+      "text_align": "left",
       "text_color": null,
       "text_overflow": "word_wrap",
       "w": 128,
@@ -48,7 +48,7 @@
       "h": 18,
       "kind": "text_label",
       "text": "connecting",
-      "text_align": "center",
+      "text_align": "left",
       "text_color": null,
       "text_overflow": "word_wrap",
       "w": 128,
@@ -61,8 +61,8 @@
       "font_size": 18,
       "h": 18,
       "kind": "text_label",
-      "text": "Select = ping",
-      "text_align": "center",
+      "text": "Sel: ping",
+      "text_align": "left",
       "text_color": null,
       "text_overflow": "word_wrap",
       "w": 128,
@@ -70,7 +70,7 @@
       "y": 90
     }
   ],
-  "preview_ops_sha256": "8ef3cec85497a2a0842c881e101fdf017406de60422c2c43f73489b400e40bb1",
+  "preview_ops_sha256": "e6099b125b3ae490670c9b4ead35e59ea0dde44feb02db4eca95d0d071840a23",
   "render_tree": {
     "node_count": 8,
     "node_types": [
@@ -97,7 +97,8 @@
     "init:init",
     "update:FromPhone (ProvideWebSocketStatus \"idle\" ())",
     "update:FromPhone (ProvideWebSocketStatus Closed \"connecting\")",
-    "update:FromWatch (Ok RequestWebSocketStatus)"
+    "update:FromWatch (Ok RequestWebSocketStatus)",
+    "update:RequestWebSocketStatus"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {

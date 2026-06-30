@@ -16,8 +16,8 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 20,
-      "h": 20,
+      "font_size": 18,
+      "h": 18,
       "kind": "text_label",
       "text": "WatchInfo demo",
       "text_align": "center",
@@ -30,8 +30,8 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 20,
-      "h": 20,
+      "font_size": 18,
+      "h": 18,
       "kind": "text_label",
       "text": "Original",
       "text_align": "center",
@@ -44,8 +44,8 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 20,
-      "h": 20,
+      "font_size": 18,
+      "h": 18,
       "kind": "text_label",
       "text": "Black",
       "text_align": "center",
@@ -58,8 +58,8 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 20,
-      "h": 20,
+      "font_size": 18,
+      "h": 18,
       "kind": "text_label",
       "text": "4.4.0",
       "text_align": "center",
@@ -72,8 +72,8 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 20,
-      "h": 20,
+      "font_size": 18,
+      "h": 18,
       "kind": "text_label",
       "text": "0",
       "text_align": "center",
@@ -86,8 +86,8 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 20,
-      "h": 20,
+      "font_size": 18,
+      "h": 18,
       "kind": "text_label",
       "text": "Select: refresh",
       "text_align": "center",
@@ -98,7 +98,7 @@
       "y": 120
     }
   ],
-  "preview_ops_sha256": "8937802352d2f34516a7f7030a831c41a78687636be4413bfdc87e9250ad3fd5",
+  "preview_ops_sha256": "66c2455ee2a3d1b5a70667e56db080215883bdc4b6bb05844867e79a40d1ac3b",
   "render_tree": {
     "node_count": 10,
     "node_types": [

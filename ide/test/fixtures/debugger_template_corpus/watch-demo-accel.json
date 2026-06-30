@@ -16,8 +16,8 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 20,
-      "h": 20,
+      "font_size": 18,
+      "h": 18,
       "kind": "text_label",
       "text": "Accel demo",
       "text_align": "center",
@@ -30,8 +30,8 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 20,
-      "h": 20,
+      "font_size": 18,
+      "h": 18,
       "kind": "text_label",
       "text": "0",
       "text_align": "center",
@@ -44,8 +44,8 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 20,
-      "h": 20,
+      "font_size": 18,
+      "h": 18,
       "kind": "text_label",
       "text": "0",
       "text_align": "center",
@@ -58,8 +58,8 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 20,
-      "h": 20,
+      "font_size": 18,
+      "h": 18,
       "kind": "text_label",
       "text": "-1000",
       "text_align": "center",
@@ -72,8 +72,8 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 20,
-      "h": 20,
+      "font_size": 18,
+      "h": 18,
       "kind": "text_label",
       "text": "0",
       "text_align": "center",
@@ -86,8 +86,8 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 20,
-      "h": 20,
+      "font_size": 18,
+      "h": 18,
       "kind": "text_label",
       "text": "Tap to count",
       "text_align": "center",
@@ -98,7 +98,7 @@
       "y": 120
     }
   ],
-  "preview_ops_sha256": "80719042deb3382ae92309780bb6a43336fbac310ffdaee9b1a22b4e9f7d4286",
+  "preview_ops_sha256": "e8b2d1fb2c21fde75b96254459f1dd0c2f13651a4ef043679117574bd17733ec",
   "render_tree": {
     "node_count": 10,
     "node_types": [

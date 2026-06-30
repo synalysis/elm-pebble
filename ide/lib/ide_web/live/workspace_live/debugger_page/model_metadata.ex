@@ -37,9 +37,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.ModelMetadata do
     protocol_outbound_count
     protocol_last_inbound_message
     protocol_last_inbound_from
-    screenW
-    screenH
-    displayShape
     colorMode
   )
 
@@ -50,6 +47,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.ModelMetadata do
     |> RuntimeModelQuality.public_runtime_model()
     |> hide_metadata()
     |> hide_companion_protocol(context_runtime || runtime)
+    |> drop_undeclared_screen_fields(context_runtime || runtime)
   end
 
   @spec raw_model(runtime_input() | nil) :: model_map()
@@ -116,4 +114,36 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.ModelMetadata do
   end
 
   defp companion_protocol_placeholder?(_runtime_model, _runtime), do: false
+
+  @undeclared_screen_fields ~w(screenW screenH displayShape)
+
+  @spec drop_undeclared_screen_fields(model_map(), runtime_input() | nil) :: model_map()
+  defp drop_undeclared_screen_fields(model, runtime) when is_map(model) do
+    declared = declared_init_model_keys(runtime)
+
+    if MapSet.member?(declared, "settings") or MapSet.member?(declared, "lastLocation") do
+      Enum.reduce(@undeclared_screen_fields, model, fn key, acc ->
+        if MapSet.member?(declared, key), do: acc, else: Map.delete(acc, key)
+      end)
+    else
+      model
+    end
+  end
+
+  defp drop_undeclared_screen_fields(model, _runtime), do: model
+
+  @spec declared_init_model_keys(runtime_input() | nil) :: MapSet.t()
+  defp declared_init_model_keys(%{} = runtime) do
+    runtime
+    |> RuntimeArtifacts.introspect()
+    |> case do
+      %{"init_model" => init_model} when is_map(init_model) ->
+        init_model |> Map.keys() |> Enum.map(&to_string/1) |> MapSet.new()
+
+      _ ->
+        MapSet.new()
+    end
+  end
+
+  defp declared_init_model_keys(_runtime), do: MapSet.new()
 end

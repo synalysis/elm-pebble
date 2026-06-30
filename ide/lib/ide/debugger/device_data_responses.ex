@@ -71,11 +71,7 @@ defmodule Ide.Debugger.DeviceDataResponses do
 
     state
     |> apply_covered_device_previews(requests, covered, target)
-    |> then(fn acc ->
-      requests
-      |> reject_covered_device_requests(covered)
-      |> apply_request_list(acc, target, ctx)
-    end)
+    |> then(&apply_request_list(requests, &1, target, ctx))
   end
 
   def apply_after_step(state, target, message, _model, _message_source, ctx, message_value, _runtime_followups)
@@ -181,18 +177,6 @@ defmodule Ide.Debugger.DeviceDataResponses do
     end)
     |> Enum.reduce(state, fn req, acc ->
       DeviceDataHints.apply_to_state(acc, target, req)
-    end)
-  end
-
-  @spec reject_covered_device_requests([Types.device_request()], [String.t()]) ::
-          [Types.device_request()]
-  defp reject_covered_device_requests(requests, []), do: requests
-
-  defp reject_covered_device_requests(requests, covered_ctors)
-       when is_list(requests) and is_list(covered_ctors) do
-    Enum.reject(requests, fn req ->
-      ctor = device_request_response_ctor(req)
-      ctor in covered_ctors
     end)
   end
 

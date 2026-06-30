@@ -734,7 +734,7 @@ defmodule Ide.Debugger.StepExecution.Core do
           stored = normalize_view_output(stored_rows)
           fresh = normalize_view_output(fresh_rows)
 
-          if should_refresh_executor_view_preview?(app_model, stored, fresh) do
+          if should_refresh_executor_view_preview?(app_model, stored, fresh, execution_model) do
             {:ok, preview}
           else
             :skip
@@ -756,9 +756,15 @@ defmodule Ide.Debugger.StepExecution.Core do
           Types.runtime_view_nodes(),
           Types.runtime_view_nodes()
         ) :: boolean()
-  def should_refresh_executor_view_preview?(app_model, stored, fresh)
+  def should_refresh_executor_view_preview?(app_model, stored, fresh, execution_model \\ %{})
       when is_map(app_model) and is_list(stored) and is_list(fresh) do
+    preview_model =
+      app_model
+      |> RuntimeArtifacts.preview_runtime_model()
+      |> Map.merge(screen_dimensions_for_view_preview(execution_model))
+
     not view_output_captured_for_model?(app_model) or
+      stale_runtime_view_output?(preview_model, stored) or
       missing_supplemental_drawables?(stored, fresh) or
       view_output_scene_signature(stored) != view_output_scene_signature(fresh)
   end

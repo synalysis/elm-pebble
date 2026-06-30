@@ -16,8 +16,8 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 20,
-      "h": 20,
+      "font_size": 18,
+      "h": 18,
       "kind": "text_label",
       "text": "Storage demo",
       "text_align": "center",
@@ -30,8 +30,8 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 20,
-      "h": 20,
+      "font_size": 18,
+      "h": 18,
       "kind": "text_label",
       "text": "Value: 0",
       "text_align": "center",
@@ -44,8 +44,8 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 20,
-      "h": 20,
+      "font_size": 18,
+      "h": 18,
       "kind": "text_label",
       "text": "Max: 4096",
       "text_align": "center",
@@ -58,8 +58,8 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 20,
-      "h": 20,
+      "font_size": 18,
+      "h": 18,
       "kind": "text_label",
       "text": "Writes: 0",
       "text_align": "center",
@@ -72,8 +72,8 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 40,
-      "h": 40,
+      "font_size": 18,
+      "h": 18,
       "kind": "text_label",
       "text": "Select:+1 Up:read Down:delete",
       "text_align": "center",
@@ -84,7 +84,7 @@
       "y": 104
     }
   ],
-  "preview_ops_sha256": "6d7cca25bbcc5e2e1e40c16060a141838404ec520f5ed446404606bc5bcd613c",
+  "preview_ops_sha256": "4f939e1444bd5afe88064e01cd25f0906f3b70bf3dd8a4517f35fa1efd77a6f3",
   "render_tree": {
     "node_count": 9,
     "node_types": [

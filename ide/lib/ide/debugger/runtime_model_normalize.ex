@@ -41,7 +41,12 @@ defmodule Ide.Debugger.RuntimeModelNormalize do
           Types.inner_runtime_model()
   defp model_values(previous, next, initial)
        when is_map(previous) and is_map(next) and is_map(initial) do
-    Map.new(next, fn {key, value} ->
+    previous
+    |> Map.merge(next)
+    |> Map.keys()
+    |> Enum.uniq()
+    |> Map.new(fn key ->
+      value = Map.get(next, key, Map.get(previous, key))
       previous_value = Map.get(previous, key)
       initial_value = Map.get(initial, key)
       shape = normalize_runtime_shape(previous_value, initial_value)
@@ -266,7 +271,12 @@ defmodule Ide.Debugger.RuntimeModelNormalize do
   defp unwrap_just_scalar(%{"ctor" => "Just", "args" => [inner]}, %{ctor: "Just", args: [_]}),
     do: %{"ctor" => "Just", "args" => [inner]}
 
-  defp unwrap_just_scalar(%{"ctor" => "Just", "args" => [inner]}, _shape), do: inner
+  defp unwrap_just_scalar(%{"ctor" => "Just", "args" => [inner]}, _shape)
+       when is_integer(inner) or is_float(inner) or is_boolean(inner) or is_binary(inner),
+       do: inner
+
+  defp unwrap_just_scalar(%{"ctor" => "Just", "args" => [inner]}, _shape),
+    do: %{"ctor" => "Just", "args" => [inner]}
 
   defp unwrap_just_scalar(value, _shape), do: value
 

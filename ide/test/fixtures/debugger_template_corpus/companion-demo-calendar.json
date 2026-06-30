@@ -86,7 +86,8 @@
     "update:CurrentTimeString \"08:53\"",
     "update:FromPhone (NoUpcomingEvents)",
     "update:FromWatch (Ok RequestCalendar)",
-    "update:GotCalendar (Ok [])"
+    "update:GotCalendar (Ok [])",
+    "update:RequestCalendar"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {

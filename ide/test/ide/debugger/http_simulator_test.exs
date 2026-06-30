@@ -19,7 +19,8 @@ defmodule Ide.Debugger.HttpSimulatorTest do
     "condition" => "rain",
     "humidityPercent" => 55,
     "pressureHpa" => 1010,
-    "windKph" => 12
+    "windKph" => 12,
+    "windDirectionDeg" => 90
   }
 
   test "build_json_body synthesizes nested JSON from decoder paths" do
@@ -139,8 +140,23 @@ defmodule Ide.Debugger.HttpSimulatorTest do
     assert Jason.decode!(body) == %{
              "current" => %{
                "temperature_2m" => 18.0,
-               "weather_code" => 61
+               "weather_code" => 61,
+               "relative_humidity_2m" => 55,
+               "surface_pressure" => 1010.0,
+               "wind_speed_10m" => 12.0,
+               "wind_direction_10m" => 90
              }
            }
+  end
+
+  test "open_meteo_current_forecast_body includes wind direction from simulator settings" do
+    assert %{
+             "current" => %{
+               "wind_direction_10m" => 90,
+               "wind_speed_10m" => 12.0
+             }
+           } =
+             HttpSimulator.open_meteo_current_forecast_body(@weather_settings)
+             |> Map.update!("current", &Map.take(&1, ["wind_direction_10m", "wind_speed_10m"]))
   end
 end

@@ -351,8 +351,15 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall.Core do
           {:ok, [Types.protocol_wire_arg()]} | :error
   defp resolve_protocol_ctor_args(inner_args, fields, schema, %ProtocolResolutionCtx{} = ctx)
        when is_list(inner_args) and is_list(fields) and is_map(schema) do
-    resolved =
+    field_count = length(fields)
+
+    expanded_args =
       inner_args
+      |> List.wrap()
+      |> flatten_protocol_args(field_count)
+
+    resolved =
+      expanded_args
       |> Enum.with_index()
       |> Enum.map(fn {arg, index} ->
         field = Enum.at(fields, index) || %{}
@@ -1283,7 +1290,49 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall.Core do
        when count > 1,
        do: do_flatten_protocol_tuple_chain(right, count - 1, [left | acc])
 
+  defp do_flatten_protocol_tuple_chain(value, count, acc) when count > 1 do
+    case flatten_nullary_union_sibling_args(value, count - length(acc)) do
+      {:ok, flat} -> acc ++ flat
+      :error -> Enum.reverse([value | acc])
+    end
+  end
+
   defp do_flatten_protocol_tuple_chain(value, _count, acc), do: Enum.reverse([value | acc])
+
+  @spec flatten_nullary_union_sibling_args(Types.protocol_wire_arg(), pos_integer()) ::
+          {:ok, [Types.protocol_wire_arg()]} | :error
+  @result_wrapper_ctors ~w(Ok Err Just Nothing)
+
+  defp flatten_nullary_union_sibling_args(%{"ctor" => outer, "args" => inner_args}, needed)
+       when is_binary(outer) and outer not in @result_wrapper_ctors and is_list(inner_args) and
+              needed > 1 do
+    siblings =
+      [%{"ctor" => outer, "args" => []}] ++ Enum.filter(inner_args, &nullary_union_ctor_wire?/1)
+
+    if length(siblings) >= needed do
+      {:ok, Enum.take(siblings, needed)}
+    else
+      :error
+    end
+  end
+
+  defp flatten_nullary_union_sibling_args(%{ctor: outer, args: inner_args}, needed)
+       when is_binary(outer) and is_list(inner_args) and needed > 1 do
+    flatten_nullary_union_sibling_args(%{"ctor" => outer, "args" => inner_args}, needed)
+  end
+
+  defp flatten_nullary_union_sibling_args(_value, _needed), do: :error
+
+  @spec nullary_union_ctor_wire?(Types.protocol_wire_arg()) :: boolean()
+  defp nullary_union_ctor_wire?(%{"ctor" => ctor, "args" => []}) when is_binary(ctor) do
+    Regex.match?(~r/^[A-Z][a-zA-Z0-9]*$/, ctor)
+  end
+
+  defp nullary_union_ctor_wire?(%{ctor: ctor, args: []}) when is_binary(ctor) do
+    Regex.match?(~r/^[A-Z][a-zA-Z0-9]*$/, ctor)
+  end
+
+  defp nullary_union_ctor_wire?(_value), do: false
 
   @spec message_constructor(String.t()) :: String.t() | nil
   defp message_constructor(message) when is_binary(message) do

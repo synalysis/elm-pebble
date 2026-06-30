@@ -32,4 +32,19 @@ defmodule Ide.Debugger.DeviceDataInitRequestsTest do
     assert "ClockStyle24h" in init_requests
     assert clock_requests == []
   end
+
+  test "device_kind_for_callback scans update_cmd_calls when init has no match" do
+    ei = %{
+      "init_cmd_calls" => [],
+      "update_cmd_calls" => [
+        %{
+          "callback_constructor" => "CurrentDateTime",
+          "target" => "Pebble.Time.currentDateTime",
+          "kind" => "cmd"
+        }
+      ]
+    }
+
+    assert DeviceData.response_wire_for_callback(ei, %{}, "MissingCtor", nil) == nil
+  end
 end

@@ -12,6 +12,7 @@ defmodule Ide.Debugger.RuntimeHub do
   alias Ide.Debugger.SessionDefaults
   alias Ide.Debugger.SimulatorSettings, as: DebuggerSimulatorSettings
   alias Ide.Debugger.StepApply
+  alias Ide.Debugger.StepDepth
   alias Ide.Debugger.SubscriptionPayload
   alias Ide.Debugger.SubscriptionResponses
   alias Ide.Debugger.SurfaceAccess
@@ -182,18 +183,26 @@ defmodule Ide.Debugger.RuntimeHub do
         %{step_apply: step_apply, companion_bridge: companion_bridge, protocol_rx: protocol_rx}
       )
       when target in [:watch, :companion, :phone] and is_list(opts) do
-    state
-    |> StepApply.apply(
-      target,
-      requested_message,
-      message_value,
-      source_override,
-      trigger,
-      opts,
-      step_apply
-    )
-    |> Ide.Debugger.CompanionBridge.Runtime.flush_deferred_steps(companion_bridge)
-    |> ProtocolRx.flush_inline_protocol_deliveries(protocol_rx)
+    StepDepth.enter()
+
+    state =
+      state
+      |> StepApply.apply(
+        target,
+        requested_message,
+        message_value,
+        source_override,
+        trigger,
+        opts,
+        step_apply
+      )
+      |> Ide.Debugger.CompanionBridge.Runtime.flush_deferred_steps(companion_bridge)
+
+    if StepDepth.leave() == 0 do
+      ProtocolRx.flush_inline_protocol_deliveries(state, protocol_rx)
+    else
+      state
+    end
   end
 
   @spec finalize_step_wiring(RuntimeHost.callbacks(), RuntimeContexts.t()) ::
@@ -221,21 +230,29 @@ defmodule Ide.Debugger.RuntimeHub do
 
     apply_step_once =
       fn state, target, message, message_value, source, trigger ->
-        state
-        |> StepApply.apply(
-          target,
-          message,
-          message_value,
-          source,
-          trigger,
-          [],
-          step_apply
-        )
-        |> Ide.Debugger.CompanionBridge.Runtime.flush_deferred_steps(%{
-          companion_bridge
-          | apply_step: deferred_apply
-        })
-        |> ProtocolRx.flush_inline_protocol_deliveries(protocol_rx)
+        StepDepth.enter()
+
+        state =
+          state
+          |> StepApply.apply(
+            target,
+            message,
+            message_value,
+            source,
+            trigger,
+            [],
+            step_apply
+          )
+          |> Ide.Debugger.CompanionBridge.Runtime.flush_deferred_steps(%{
+            companion_bridge
+            | apply_step: deferred_apply
+          })
+
+        if StepDepth.leave() == 0 do
+          ProtocolRx.flush_inline_protocol_deliveries(state, protocol_rx)
+        else
+          state
+        end
       end
 
     host =

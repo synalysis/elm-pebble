@@ -16,8 +16,8 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 20,
-      "h": 20,
+      "font_size": 18,
+      "h": 18,
       "kind": "text_label",
       "text": "Launch context",
       "text_align": "center",
@@ -30,8 +30,8 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 20,
-      "h": 20,
+      "font_size": 18,
+      "h": 18,
       "kind": "text_label",
       "text": "Reason: user",
       "text_align": "center",
@@ -44,8 +44,8 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 20,
-      "h": 20,
+      "font_size": 18,
+      "h": 18,
       "kind": "text_label",
       "text": "Aplite",
       "text_align": "center",
@@ -58,8 +58,8 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 20,
-      "h": 20,
+      "font_size": 18,
+      "h": 18,
       "kind": "text_label",
       "text": "Button: none",
       "text_align": "center",
@@ -72,8 +72,8 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 20,
-      "h": 20,
+      "font_size": 18,
+      "h": 18,
       "kind": "text_label",
       "text": "Quick: none",
       "text_align": "center",
@@ -86,8 +86,8 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 40,
-      "h": 40,
+      "font_size": 18,
+      "h": 18,
       "kind": "text_label",
       "text": "Read LaunchContext in init",
       "text_align": "center",
@@ -98,7 +98,7 @@
       "y": 112
     }
   ],
-  "preview_ops_sha256": "572e6aea915ad9b270424077db2beab6146e41897c885126174fd9a5eda38c27",
+  "preview_ops_sha256": "5ea58d0f6905a14e04c5f229325489438755b877dba8a8a2e176b63769b062b6",
   "render_tree": {
     "node_count": 10,
     "node_types": [

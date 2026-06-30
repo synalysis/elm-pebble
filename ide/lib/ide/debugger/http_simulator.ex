@@ -64,12 +64,24 @@ defmodule Ide.Debugger.HttpSimulator do
 
   @spec open_meteo_current_forecast_body(weather_map()) :: json_object()
   def open_meteo_current_forecast_body(weather) when is_map(weather) do
-    %{
-      "current" => %{
+    current =
+      %{
         "temperature_2m" => float_value("temperature_2m", weather),
         "weather_code" => condition_weather_code(Map.get(weather, "condition"))
       }
-    }
+      |> maybe_put_open_meteo_field("relative_humidity_2m", weather, "humidityPercent", &int_value/2)
+      |> maybe_put_open_meteo_field("surface_pressure", weather, "pressureHpa", &float_value/2)
+      |> maybe_put_open_meteo_field("wind_speed_10m", weather, "windKph", &float_value/2)
+      |> maybe_put_open_meteo_field("wind_direction_10m", weather, "windDirectionDeg", &int_value/2)
+
+    %{"current" => current}
+  end
+
+  defp maybe_put_open_meteo_field(body, field, weather, setting_key, value_fun) do
+    case Map.get(weather, setting_key) do
+      nil -> body
+      value -> Map.put(body, field, value_fun.(field, Map.put(weather, setting_key, value)))
+    end
   end
 
   defp function_decoder?(decoder), do: is_function(decoder, 1)
@@ -172,6 +184,9 @@ defmodule Ide.Debugger.HttpSimulator do
         field in ["wind_speed_10m", "wind", "windKph"] ->
           Map.get(weather, "windKph") || 0
 
+        field in ["wind_direction_10m", "windDirection", "windDirectionDeg"] ->
+          Map.get(weather, "windDirectionDeg") || 0
+
         true ->
           Map.get(weather, "temperatureC") || 0
       end
@@ -192,6 +207,9 @@ defmodule Ide.Debugger.HttpSimulator do
 
       field in ["wind_speed_10m", "wind", "windKph"] ->
         Map.get(weather, "windKph") || 0
+
+      field in ["wind_direction_10m", "windDirection", "windDirectionDeg"] ->
+        Map.get(weather, "windDirectionDeg") || 0
 
       true ->
         condition_weather_code(Map.get(weather, "condition"))

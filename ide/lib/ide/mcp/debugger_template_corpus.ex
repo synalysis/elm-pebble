@@ -507,9 +507,14 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     |> normalize_timeline_result_wrapper()
     |> normalize_timeline_large_payloads()
     |> normalize_random_generated_seed()
+    |> normalize_current_time_posix()
   end
 
   defp normalize_timeline_message(message), do: to_string(message || "")
+
+  defp normalize_current_time_posix(message) when is_binary(message) do
+    Regex.replace(~r/^CurrentTime (\{.*\}) \d+$/, message, "CurrentTime \\1 <posix>")
+  end
 
   @spec dedupe_timeline_constructor_prefix(String.t()) :: String.t()
   defp dedupe_timeline_constructor_prefix(message) do
@@ -1147,6 +1152,11 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     :rand.seed(:exsss, {0, 0, 1})
     Process.put(:elmx_corpus_fixed_random_int, 42_424_242)
     Application.put_env(:elmx, :corpus_fixed_random_int, 42_424_242)
+
+    corpus_posix_millis = 1_779_871_980_000
+    Process.put(:elmx_corpus_fixed_posix_millis, corpus_posix_millis)
+    Application.put_env(:elmx, :corpus_fixed_posix_millis, corpus_posix_millis)
+
     :ok
   end
 

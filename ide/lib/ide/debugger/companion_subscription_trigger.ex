@@ -164,6 +164,13 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
           type: :integer,
           setting: "weather_windKph",
           default: 0
+        },
+        %{
+          key: "windDirectionDeg",
+          label: "Wind direction (°)",
+          type: :integer,
+          setting: "weather_windDirectionDeg",
+          default: 0
         }
       ]
     },

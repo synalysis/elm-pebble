@@ -48,9 +48,27 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.SvgRender do
 
   @spec text_font_size(svg_op()) :: pos_integer()
   def text_font_size(op) do
-    op
-    |> box_text_height()
-    |> pebble_system_font_cap_height()
+    cap =
+      op
+      |> box_text_height()
+      |> pebble_system_font_cap_height()
+
+    case Map.get(op, :h) do
+      h when is_integer(h) and h > 0 -> min(cap, h)
+      _ -> cap
+    end
+  end
+
+  @spec text_clippable?(svg_op()) :: boolean()
+  def text_clippable?(%{kind: :text_label, w: w, h: h})
+      when is_number(w) and w > 0 and is_number(h) and h > 0,
+      do: true
+
+  def text_clippable?(_op), do: false
+
+  @spec text_clip_id(String.t(), non_neg_integer()) :: String.t()
+  def text_clip_id(svg_id, index) when is_binary(svg_id) and is_integer(index) and index >= 0 do
+    "#{svg_id}-text-#{index}"
   end
 
   @spec box_text_height(svg_op()) :: pos_integer() | nil

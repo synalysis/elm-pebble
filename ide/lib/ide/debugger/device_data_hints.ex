@@ -13,7 +13,7 @@ defmodule Ide.Debugger.DeviceDataHints do
 
   @device_kind_runtime_fields %{
     "current_time_string" => ["timeString"],
-    "current_date_time" => ["currentDateTime"],
+    "current_date_time" => ["now", "currentDateTime"],
     "battery_level" => ["batteryLevel", "batteryPercent"],
     "connection_status" => ["connected", "online"],
     "timezone" => ["timezone"],
@@ -21,6 +21,9 @@ defmodule Ide.Debugger.DeviceDataHints do
     "watch_color" => ["watchColor", "color"],
     "firmware_version" => ["firmwareVersion"]
   }
+
+  @spec runtime_fields_by_device_kind() :: %{String.t() => [String.t()]}
+  def runtime_fields_by_device_kind, do: @device_kind_runtime_fields
 
   @spec apply_to_state(Types.runtime_state(), Types.surface_target(), Types.device_request()) ::
           Types.runtime_state()
@@ -83,13 +86,45 @@ defmodule Ide.Debugger.DeviceDataHints do
             :string
           )
 
+        {"current_date_time", preview} when is_map(preview) ->
+          put_declared_record_device_response(runtime_model, execution_model, "now", preview)
+
+        {"battery_level", preview} when is_map(preview) ->
+          level = Map.get(preview, "batteryLevel") || Map.get(preview, "percent")
+
+          runtime_model =
+            if is_integer(level) do
+              merge_declared_scalar_device_response(
+                runtime_model,
+                execution_model,
+                req,
+                level,
+                :integer
+              )
+            else
+              runtime_model
+            end
+
+          RuntimeModelPreview.merge_matching_fields(runtime_model, preview)
+
+        {"connection_status", preview} when is_map(preview) ->
+          connected = Map.get(preview, "connected") || Map.get(preview, "online")
+
+          runtime_model =
+            if is_boolean(connected) do
+              put_boolean_device_response(runtime_model, execution_model, req, connected)
+            else
+              runtime_model
+            end
+
+          RuntimeModelPreview.merge_matching_fields(runtime_model, preview)
+
         {_kind, value} when is_map(value) ->
           RuntimeModelPreview.merge_matching_fields(runtime_model, value)
 
         _ ->
           runtime_model
       end
-      |> RuntimeModelNormalize.against_introspect(execution_model)
 
     model =
       model
@@ -290,4 +325,37 @@ defmodule Ide.Debugger.DeviceDataHints do
   end
 
   defp declared_model_fields(_bindings, _init), do: []
+
+  @spec put_declared_record_device_response(
+          Types.inner_runtime_model(),
+          Types.execution_model(),
+          String.t(),
+          Types.protocol_wire_arg()
+        ) :: Types.inner_runtime_model()
+  defp put_declared_record_device_response(runtime_model, model, field, value)
+       when is_map(runtime_model) and is_map(model) and is_binary(field) do
+    init = RuntimeModelNormalize.init_model(model)
+
+    if Map.has_key?(init, field) do
+      shape = Map.get(init, field)
+
+      wrapped =
+        case shape do
+          %{"ctor" => "Just", "args" => _} -> %{"ctor" => "Just", "args" => [value]}
+          %{"ctor" => "Nothing", "args" => _} -> %{"ctor" => "Just", "args" => [value]}
+          %{ctor: "Just", args: _} -> %{"ctor" => "Just", "args" => [value]}
+          %{ctor: "Nothing", args: _} -> %{"ctor" => "Just", "args" => [value]}
+          %{"$ctor" => "Just", "$args" => _} -> %{"ctor" => "Just", "args" => [value]}
+          %{"$ctor" => "Nothing", "$args" => _} -> %{"ctor" => "Just", "args" => [value]}
+          _ -> value
+        end
+
+      Map.put(runtime_model, field, wrapped)
+    else
+      runtime_model
+    end
+  end
+
+  defp put_declared_record_device_response(runtime_model, _model, _field, _value),
+    do: runtime_model
 end

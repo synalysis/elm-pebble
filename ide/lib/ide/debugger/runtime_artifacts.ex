@@ -9,6 +9,7 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   alias Ide.Debugger.RuntimeArtifacts.Types, as: ArtifactTypes
   alias Ide.Debugger.Surface
   alias Ide.Debugger.Types
+  alias Ide.Debugger.RuntimeSurfaces
   alias Ide.Projects
   alias Ide.Resources.ResourceStore
 
@@ -134,12 +135,21 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   @spec preview_runtime_model(app_model()) :: app_model()
   def preview_runtime_model(model) when is_map(model) do
     inner = inner_runtime_model(model)
+    launch_context = Map.get(model, "launch_context") || Map.get(model, :launch_context)
 
     model
     |> strip_shell_artifacts()
     |> Map.drop(runtime_preview_envelope_drop_keys())
     |> Map.merge(inner)
+    |> maybe_merge_launch_context_preview_fields(launch_context)
   end
+
+  defp maybe_merge_launch_context_preview_fields(model, launch_context)
+       when is_map(launch_context) and map_size(launch_context) > 0 do
+    Map.merge(model, RuntimeSurfaces.launch_context_screen_fields(launch_context))
+  end
+
+  defp maybe_merge_launch_context_preview_fields(model, _launch_context), do: model
 
   def preview_runtime_model(_model), do: %{}
 

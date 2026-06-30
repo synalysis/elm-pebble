@@ -335,6 +335,19 @@ defmodule Ide.SimulatorSettings do
       hint: nil
     },
     %{
+      key: "weather_windDirectionDeg",
+      type: :number,
+      label: "Wind direction (°)",
+      capabilities: ["weather"],
+      group: :companion_weather,
+      min: 0,
+      max: 359,
+      step: 1,
+      options: nil,
+      optional: false,
+      hint: "Meteorological degrees (0 = north, 90 = east)."
+    },
+    %{
       key: "calendar_events_json",
       type: :json,
       label: "Calendar events (JSON array)",
@@ -806,6 +819,7 @@ defmodule Ide.SimulatorSettings do
     |> Map.put("weather_humidityPercent", Map.get(weather, "humidityPercent"))
     |> Map.put("weather_pressureHpa", Map.get(weather, "pressureHpa"))
     |> Map.put("weather_windKph", Map.get(weather, "windKph"))
+    |> Map.put("weather_windDirectionDeg", Map.get(weather, "windDirectionDeg"))
     |> Map.put("environment_sunriseMin", Map.get(sun, "sunriseMin"))
     |> Map.put("environment_sunsetMin", Map.get(sun, "sunsetMin"))
     |> Map.put("environment_polarDay", Map.get(sun, "polarDay"))
@@ -823,7 +837,8 @@ defmodule Ide.SimulatorSettings do
         "condition" => map_get(params, "weather_condition"),
         "humidityPercent" => map_get(params, "weather_humidityPercent"),
         "pressureHpa" => map_get(params, "weather_pressureHpa"),
-        "windKph" => map_get(params, "weather_windKph")
+        "windKph" => map_get(params, "weather_windKph"),
+        "windDirectionDeg" => map_get(params, "weather_windDirectionDeg")
       }
       |> Enum.reject(fn {_k, v} -> is_nil(v) or v == "" end)
       |> Map.new()
@@ -852,6 +867,7 @@ defmodule Ide.SimulatorSettings do
       "weather_humidityPercent",
       "weather_pressureHpa",
       "weather_windKph",
+      "weather_windDirectionDeg",
       "environment_sunriseMin",
       "environment_sunsetMin",
       "environment_polarDay",

@@ -65,4 +65,31 @@ defmodule Ide.Debugger.RuntimeModelNormalizeTest do
              "runtime_model" => %{"count" => %{"ctor" => "Just", "args" => [2]}}
            }
   end
+
+  test "patch_values keeps prior runtime_model fields when patch only updates one key" do
+    model = %{
+      "runtime_model" => %{"screenW" => 144, "screenH" => 168, "now" => %{"ctor" => "Nothing", "args" => []}},
+      "debugger_contract" => %{
+        "init_model" => %{
+          "screenW" => 144,
+          "screenH" => 168,
+          "now" => %{"ctor" => "Nothing", "args" => []}
+        }
+      }
+    }
+
+    patch = %{
+      "runtime_model" => %{
+        "now" => %{
+          "ctor" => "Just",
+          "args" => [%{"hour" => 15, "minute" => 6}]
+        }
+      }
+    }
+
+    assert %{"runtime_model" => normalized} = RuntimeModelNormalize.patch_values(model, patch)
+    assert normalized["screenW"] == 144
+    assert normalized["screenH"] == 168
+    assert get_in(normalized, ["now", "ctor"]) == "Just"
+  end
 end

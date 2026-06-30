@@ -49,8 +49,7 @@ defmodule Ide.Debugger.GeolocationResponses do
   def apply_after_step(state, target, message, _model, _message_source, ctx, runtime_followups)
       when is_map(state) and target in [:watch, :companion, :phone] and is_binary(message) and
              is_map(ctx) and is_list(runtime_followups) do
-    if RuntimeFollowups.geolocation_followups?(runtime_followups) or
-         Geolocation.runtime_geolocation_applied?(state) do
+    if RuntimeFollowups.geolocation_followups?(runtime_followups) do
       state
     else
       do_apply_after_step(state, target, message, ctx)

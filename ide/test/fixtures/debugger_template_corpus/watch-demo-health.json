@@ -16,8 +16,8 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 20,
-      "h": 20,
+      "font_size": 18,
+      "h": 18,
       "kind": "text_label",
       "text": "Health demo",
       "text_align": "center",
@@ -30,8 +30,8 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 20,
-      "h": 20,
+      "font_size": 18,
+      "h": 18,
       "kind": "text_label",
       "text": "Now: 4200",
       "text_align": "center",
@@ -44,8 +44,8 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 20,
-      "h": 20,
+      "font_size": 18,
+      "h": 18,
       "kind": "text_label",
       "text": "Today: 9100",
       "text_align": "center",
@@ -58,8 +58,8 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 20,
-      "h": 20,
+      "font_size": 18,
+      "h": 18,
       "kind": "text_label",
       "text": "Waiting",
       "text_align": "center",
@@ -72,8 +72,8 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 20,
-      "h": 20,
+      "font_size": 18,
+      "h": 18,
       "kind": "text_label",
       "text": "0",
       "text_align": "center",
@@ -86,8 +86,8 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 20,
-      "h": 20,
+      "font_size": 18,
+      "h": 18,
       "kind": "text_label",
       "text": "Select: refresh",
       "text_align": "center",
@@ -98,7 +98,7 @@
       "y": 120
     }
   ],
-  "preview_ops_sha256": "3a2481b6c1ff2d4d0dae858a112afaef4c0d1e40b02f95d3f260c4c1d2b476e6",
+  "preview_ops_sha256": "52e2f3aa9321420c006222d70bfddb6b52ed3c40becd518ff32bf423865dc913",
   "render_tree": {
     "node_count": 10,
     "node_types": [

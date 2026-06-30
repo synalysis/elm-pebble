@@ -4,6 +4,7 @@ defmodule Ide.Debugger.StepApply do
   alias Ide.Debugger.ProtocolEvents
   alias Ide.Debugger.ProtocolRuntimePatch
   alias Ide.Debugger.ProtocolRx
+  alias Ide.Debugger.RuntimeFollowups
   alias Ide.Debugger.RuntimeModelMessages
   alias Ide.Debugger.StepExecution
   alias Ide.Debugger.StepInput
@@ -207,6 +208,13 @@ defmodule Ide.Debugger.StepApply do
       phone_to_watch_delivery_protocol_events(target, message, message_value, trigger)
 
     runtime_followups = Map.get(runtime_result, :followup_messages, [])
+
+    runtime_followups =
+      if runtime_protocol_events != [] do
+        Enum.reject(runtime_followups, &RuntimeFollowups.protocol_events_followup?/1)
+      else
+        runtime_followups
+      end
 
     protocol_events =
       (runtime_protocol_events ++ command_protocol_events ++ phone_to_watch_protocol_events)

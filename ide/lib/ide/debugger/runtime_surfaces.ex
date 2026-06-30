@@ -336,15 +336,22 @@ defmodule Ide.Debugger.RuntimeSurfaces do
           Types.app_model()
   defp patch_runtime_model_screen_fields(model, screen_fields)
        when is_map(model) and is_map(screen_fields) and map_size(screen_fields) > 0 do
-    case Map.get(model, "runtime_model") do
-      %{} = runtime_model ->
-        fields = screen_fields_for_runtime_model(screen_fields, runtime_model)
-        Map.put(model, "runtime_model", Map.merge(runtime_model, fields))
+    runtime_model =
+      case Map.get(model, "runtime_model") do
+        %{} = inner -> inner
+        _ -> %{}
+      end
 
-      _ ->
-        model
+    fields = screen_fields_for_runtime_model(screen_fields, runtime_model)
+
+    if map_size(fields) > 0 do
+      Map.put(model, "runtime_model", Map.merge(runtime_model, fields))
+    else
+      model
     end
   end
+
+  defp patch_runtime_model_screen_fields(model, _screen_fields) when is_map(model), do: model
 
   defp screen_fields_for_runtime_model(screen_fields, runtime_model) when is_map(runtime_model) do
     Enum.reduce(["screenW", "screenH", "displayShape"], screen_fields, fn key, fields ->

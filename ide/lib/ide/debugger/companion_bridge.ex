@@ -136,7 +136,7 @@ defmodule Ide.Debugger.CompanionBridge do
         }
 
       :environment ->
-        settings["environment"]
+        environment_info(settings["environment"])
 
       :timeline ->
         settings["companion_timeline_token"] || "demo-timeline-token"
@@ -149,18 +149,32 @@ defmodule Ide.Debugger.CompanionBridge do
 
   @spec weather_info(Types.simulator_settings() | nil) :: Types.weather_info_map()
   def weather_info(weather) when is_map(weather) do
-    info =
-      weather
-      |> Map.take(["temperatureC", "condition", "humidityPercent", "pressureHpa", "windKph"])
-      |> Enum.reject(fn {_key, value} -> is_nil(value) end)
-      |> Map.new()
+    weather
+    |> Map.take(["temperatureC", "condition", "humidityPercent", "pressureHpa", "windKph", "windDirectionDeg"])
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
+    |> normalize_weather_info_fields()
+  end
 
+  def weather_info(_weather), do: %{}
+
+  @spec normalize_weather_info_fields(Types.wire_map()) :: Types.wire_map()
+  defp normalize_weather_info_fields(info) when is_map(info) do
+    info
+    |> normalize_weather_condition_field()
+    |> wrap_optional_weather_int_field("humidityPercent")
+    |> wrap_optional_weather_int_field("pressureHpa")
+    |> wrap_optional_weather_int_field("windKph")
+    |> wrap_optional_weather_int_field("windDirectionDeg")
+  end
+
+  defp normalize_weather_condition_field(info) do
     case Map.get(info, "condition") do
-      %{"ctor" => _} = condition ->
-        Map.put(info, "condition", condition)
+      %{"ctor" => ctor, "args" => []} when is_binary(ctor) ->
+        info
 
-      %{"$ctor" => _} = condition ->
-        Map.put(info, "condition", ProtocolEvents.CmdCall.normalize_elmc_wire_ctor(condition))
+      %{"$ctor" => ctor, "args" => []} when is_binary(ctor) ->
+        Map.put(info, "condition", %{"ctor" => ctor, "args" => []})
 
       condition when is_binary(condition) ->
         Map.put(
@@ -174,7 +188,103 @@ defmodule Ide.Debugger.CompanionBridge do
     end
   end
 
-  def weather_info(_weather), do: %{}
+  defp wrap_optional_weather_int_field(info, key) when is_map(info) and is_binary(key) do
+    case Map.get(info, key) do
+      value when is_integer(value) -> Map.put(info, key, wire_just(value))
+      %{"ctor" => _} = value -> Map.put(info, key, value)
+      _ -> info
+    end
+  end
+
+  @spec environment_info(Types.simulator_settings() | nil) :: Types.environment_info_map()
+  def environment_info(environment) when is_map(environment) do
+    %{}
+    |> Map.put("sun", maybe_wire_value(Map.get(environment, "sun"), &sun_info/1))
+    |> Map.put("moon", maybe_wire_value(Map.get(environment, "moon"), &moon_info/1))
+    |> Map.put("tide", maybe_wire_value(Map.get(environment, "tide"), &tide_info/1))
+  end
+
+  def environment_info(_environment) do
+    %{
+      "sun" => wire_nothing(),
+      "moon" => wire_nothing(),
+      "tide" => wire_nothing()
+    }
+  end
+
+  defp sun_info(sun) when is_map(sun) do
+    %{}
+    |> maybe_put("sunriseMin", coerce_sun_int(Map.get(sun, "sunriseMin")))
+    |> maybe_put("sunsetMin", coerce_sun_int(Map.get(sun, "sunsetMin")))
+    |> maybe_put("polarDay", coerce_polar_day(Map.get(sun, "polarDay")))
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
+  end
+
+  defp coerce_sun_int(value) when is_integer(value), do: value
+
+  defp coerce_sun_int(value) when is_binary(value) do
+    case Integer.parse(String.trim(value)) do
+      {int, _} -> int
+      :error -> nil
+    end
+  end
+
+  defp coerce_sun_int(_value), do: nil
+
+  defp coerce_polar_day(true), do: true
+  defp coerce_polar_day(false), do: false
+
+  defp coerce_polar_day(value) when is_binary(value) do
+    value |> String.downcase() |> then(&(&1 in ["true", "1", "yes"]))
+  end
+
+  defp coerce_polar_day(_value), do: false
+
+  defp moon_info(moon) when is_map(moon) do
+    %{}
+    |> maybe_put("moonriseMin", maybe_int_wire_value(Map.get(moon, "moonriseMin")))
+    |> maybe_put("moonsetMin", maybe_int_wire_value(Map.get(moon, "moonsetMin")))
+    |> maybe_put("phaseE6", Map.get(moon, "phaseE6"))
+  end
+
+  defp tide_info(tide) when is_map(tide) do
+    tide
+    |> Map.take(["nextMin", "levelCm", "rising"])
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
+  end
+
+  defp maybe_wire_value(%{"ctor" => ctor} = value, _normalize)
+       when ctor in ["Just", "Nothing"] do
+    value
+  end
+
+  defp maybe_wire_value(%{"$ctor" => ctor} = value, _normalize)
+       when ctor in ["Just", "Nothing"] do
+    ProtocolEvents.CmdCall.normalize_elmc_wire_ctor(value)
+  end
+
+  defp maybe_wire_value(nil, _normalize), do: wire_nothing()
+
+  defp maybe_wire_value(value, normalize) when is_function(normalize, 1) do
+    wire_just(normalize.(value))
+  end
+
+  defp maybe_int_wire_value(%{"ctor" => ctor} = value) when ctor in ["Just", "Nothing"], do: value
+
+  defp maybe_int_wire_value(%{"$ctor" => ctor} = value) when ctor in ["Just", "Nothing"] do
+    ProtocolEvents.CmdCall.normalize_elmc_wire_ctor(value)
+  end
+
+  defp maybe_int_wire_value(value) when is_integer(value), do: wire_just(value)
+  defp maybe_int_wire_value(_value), do: wire_nothing()
+
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
+
+  defp wire_just(value), do: %{"ctor" => "Just", "args" => [value]}
+  defp wire_nothing, do: %{"ctor" => "Nothing", "args" => []}
 
   @spec subscription_message_value(
           String.t(),

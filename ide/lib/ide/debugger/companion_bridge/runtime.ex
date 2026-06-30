@@ -253,8 +253,8 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
         requests
         |> apply_requests(state, target, source, ctx)
         |> mark_runtime_bridge_followups_applied(target)
-        |> maybe_mark_geolocation_applied(requests)
         |> flush_deferred_steps(ctx)
+        |> maybe_mark_geolocation_applied(requests)
     end
   end
 
@@ -348,15 +348,23 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
       when is_map(ei) and is_map(contract) and is_map(ctx) do
     target_suffixes = Map.get(contract, :target_suffixes, []) |> List.wrap()
 
-    ei
-    |> ctx.cmd_calls.("subscription_calls")
-    |> Enum.find_value(fn row ->
-      if Ide.Debugger.CmdCall.subscription_call_matches?(row, target_suffixes) do
-        callback = Map.get(row, "callback_constructor")
+    from_subscriptions =
+      ei
+      |> ctx.cmd_calls.("subscription_calls")
+      |> Enum.find_value(fn row ->
+        if Ide.Debugger.CmdCall.subscription_call_matches?(row, target_suffixes) do
+          callback = Map.get(row, "callback_constructor")
 
-        if is_binary(callback) and callback != "", do: callback, else: nil
+          if is_binary(callback) and callback != "", do: callback, else: nil
+        end
+      end)
+
+    from_subscriptions ||
+      if contract == Geolocation.contract() do
+        Geolocation.init_cmd_geolocation_callback(ei)
+      else
+        nil
       end
-    end)
   end
 
   def subscription_callback(_ei, _contract, _ctx), do: nil
@@ -666,7 +674,7 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
   end
 
   defp bridge_callback(%{callback: callback}, _state, _target, _contract, _ctx)
-       when is_binary(callback) and callback != "",
+       when is_binary(callback) and callback != "" and callback != "Unknown",
        do: callback
 
   defp bridge_callback(request, state, target, contract, ctx) when is_map(request) do

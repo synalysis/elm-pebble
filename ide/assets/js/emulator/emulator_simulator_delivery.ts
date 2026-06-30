@@ -277,6 +277,7 @@ export class EmulatorSimulatorDelivery {
       delete payload.weather_humidityPercent
       delete payload.weather_pressureHpa
       delete payload.weather_windKph
+      delete payload.weather_windDirectionDeg
     }
 
     if (this.host.appInstalled) {
@@ -521,7 +522,8 @@ export class EmulatorSimulatorDelivery {
       record.weather_condition != null ||
       record.weather_humidityPercent != null ||
       record.weather_pressureHpa != null ||
-      record.weather_windKph != null
+      record.weather_windKph != null ||
+      record.weather_windDirectionDeg != null
     ) {
       return {
         temperatureC: (record.weather_temperatureC ??
