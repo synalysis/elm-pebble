@@ -25,7 +25,7 @@ defmodule Elmc.GeneratedRcTrack2048Test do
       #{RcTrackHarness.harness_prelude()}
 
       static ElmcValue *probe_initial_model(elmc_int_t seed) {
-        ElmcValue *seed_val = elmc_new_int_take(seed);
+        ElmcValue *seed_val = elmc_harness_new_int(seed);
         ElmcValue *args[] = { seed_val };
         ElmcValue *model = #{RcTrackHarness.generated_fn_call(@out_dir, "RcTrack2048Probe", "initialModel", "args", 1)};
         elmc_release(seed_val);
@@ -33,7 +33,7 @@ defmodule Elmc.GeneratedRcTrack2048Test do
       }
 
       static ElmcValue *probe_step(elmc_int_t dir, ElmcValue *model) {
-        ElmcValue *dir_val = elmc_new_int_take(dir);
+        ElmcValue *dir_val = elmc_harness_new_int(dir);
         ElmcValue *args[] = { dir_val, model };
         ElmcValue *next = #{RcTrackHarness.generated_fn_call(@out_dir, "RcTrack2048Probe", "step", "args", 2)};
         elmc_release(dir_val);
@@ -49,6 +49,8 @@ defmodule Elmc.GeneratedRcTrack2048Test do
       }
 
       #{body}
+      
+      
       """
     )
 
@@ -68,7 +70,7 @@ defmodule Elmc.GeneratedRcTrack2048Test do
             9, 10, 11, 12,
             13, 14, 15, 16
           };
-          ElmcValue *cells = elmc_list_from_int_array_take(board, 16);
+          ElmcValue *cells = elmc_harness_list_from_int_array(board, 16);
           elmc_rc_track_reset();
           ElmcValue *out = fn(cells);
           elmc_release(cells);
@@ -96,7 +98,8 @@ defmodule Elmc.GeneratedRcTrack2048Test do
           printf("rc_ok orient\\n");
           return 0;
         }
-        """
+        
+      """
       )
 
     out = RcTrackHarness.run_harness!(@out_dir, harness_path, "rc_track_2048_orient")
@@ -116,7 +119,7 @@ defmodule Elmc.GeneratedRcTrack2048Test do
             2, 2, 0, 0,
             0, 0, 2, 2
           };
-          ElmcValue *cells = elmc_list_from_int_array_take(board, 16);
+          ElmcValue *cells = elmc_harness_list_from_int_array(board, 16);
 
           elmc_rc_track_reset();
           ElmcValue *args[] = { cells };
@@ -128,7 +131,8 @@ defmodule Elmc.GeneratedRcTrack2048Test do
           printf("rc_ok collapseRows\\n");
           return 0;
         }
-        """
+        
+      """
       )
 
     out = RcTrackHarness.run_harness!(@out_dir, harness_path, "rc_track_2048_collapse")
@@ -153,7 +157,8 @@ defmodule Elmc.GeneratedRcTrack2048Test do
           printf("rc_ok step\\n");
           return 0;
         }
-        """
+        
+      """
       )
 
     out = RcTrackHarness.run_harness!(@out_dir, harness_path, "rc_track_2048_move")
@@ -194,7 +199,8 @@ defmodule Elmc.GeneratedRcTrack2048Test do
           printf("rc_ok round_board_x100 turns=%d\\n", turns);
           return 0;
         }
-        """
+        
+      """
       )
 
     out = RcTrackHarness.run_harness!(@out_dir, harness_path, "rc_track_2048_moves")
@@ -229,7 +235,8 @@ defmodule Elmc.GeneratedRcTrack2048Test do
           printf("rc_ok round_board_isolated_x100\\n");
           return 0;
         }
-        """
+        
+      """
       )
 
     out = RcTrackHarness.run_harness!(@out_dir, harness_path, "rc_track_2048_move_repeat")
@@ -352,6 +359,8 @@ defmodule Elmc.GeneratedRcTrack2048WorkerTest do
         printf("rc_ok worker_round_board_x100 turns=%d\\n", turns);
         return 0;
       }
+      
+      
       """
     )
 
@@ -444,6 +453,8 @@ defmodule Elmc.GeneratedRcTrack2048WorkerTest do
         printf("rc_ok view_frames_x20\\n");
         return 0;
       }
+      
+      
       """
     )
 

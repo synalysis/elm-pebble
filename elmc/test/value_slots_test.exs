@@ -26,11 +26,33 @@ defmodule Elmc.Backend.CCodegen.ValueSlotsTest do
     refute ValueSlots.transferred?(ref)
   end
 
-  test "release_stmt omits ELMC_RELEASE when epilogue lifo is enabled" do
+  test "release_stmt defers owned cleanup to epilogue lifo" do
     ValueSlots.reset(epilogue_lifo: true)
     {ref, _} = ValueSlots.alloc()
 
     assert ValueSlots.release_stmt(ref) == ""
+  end
+
+  test "release_consumed eagerly releases owned slots even with epilogue lifo" do
+    ValueSlots.reset(epilogue_lifo: true)
+    {ref, _} = ValueSlots.alloc()
+
+    assert ValueSlots.release_consumed(ref) ==
+             "ELMC_RELEASE(#{ref});\n#{ref} = NULL;"
+  end
+
+  test "release_consumed eagerly releases owned slots without epilogue lifo" do
+    {ref, _} = ValueSlots.alloc()
+
+    assert ValueSlots.release_consumed(ref) ==
+             "ELMC_RELEASE(#{ref});\n#{ref} = NULL;"
+  end
+
+  test "release_owned_and_null still defers to epilogue lifo" do
+    ValueSlots.reset(epilogue_lifo: true)
+    {ref, _} = ValueSlots.alloc()
+
+    assert ValueSlots.release_owned_and_null(ref) == ""
   end
 
   test "release_stmt uses elmc_release for temps" do
@@ -78,9 +100,17 @@ defmodule Elmc.Backend.CCodegen.ValueSlotsTest do
     refute ValueSlots.owned_ref?("tmp_3")
   end
 
-  test "release drops live slot without transfer semantics" do
-    {_ref, index} = ValueSlots.alloc()
-    assert :ok = ValueSlots.release(index)
-    refute ValueSlots.transferred?(index)
+  test "post_call_operand_release defers owned cleanup to epilogue lifo" do
+    ValueSlots.reset(epilogue_lifo: true)
+    {ref, _} = ValueSlots.alloc()
+
+    assert ValueSlots.post_call_operand_release(ref) == ""
+  end
+
+  test "post_call_operand_release still emits owned release without epilogue lifo" do
+    {ref, _} = ValueSlots.alloc()
+
+    assert ValueSlots.post_call_operand_release(ref) ==
+             "ELMC_RELEASE(owned[0]);\nowned[0] = NULL;"
   end
 end

@@ -4,6 +4,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
   alias Elmc.Backend.CCodegen.ConstructorTagCase
   alias Elmc.Backend.CCodegen.DirectRender.CommandDef
   alias Elmc.Backend.CCodegen.CSource
+  alias Elmc.Backend.CCodegen.DirectRender.Emit.Release
   alias Elmc.Backend.CCodegen.DirectRender.Emit.If
   alias Elmc.Backend.CCodegen.DirectRender.Emit.Qualified.Draws, as: QualifiedDraws
   alias Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions
@@ -95,7 +96,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
 
         cleanup_code =
           cleanup_refs
-          |> Enum.map_join("\n  ", fn ref -> "elmc_release(#{ref});" end)
+          |> then(fn refs -> Release.release_vars(refs, "  ") end)
 
         case emit_expr(in_expr, body_env, counter) do
           {:ok, body_code, counter} ->
@@ -220,7 +221,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
                  """
                  #{value_code}
                    #{body_code}
-                   elmc_release(#{value_var});
+                   #{Release.release_var(value_var, "                   ")}
                  """, counter}
 
               :error ->
@@ -381,7 +382,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
 
     releases =
       release_refs
-      |> Enum.map_join("\n  ", fn ref -> "elmc_release(#{ref});" end)
+      |> then(fn refs -> Release.release_vars(refs, "  ") end)
 
     {:ok,
      """
@@ -977,7 +978,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
         {code, ref, "", counter}
       else
         {code, var, counter} = Host.compile_expr(cond_expr, env, counter)
-        {code, "elmc_as_int(#{var}) != 0", "  elmc_release(#{var});", counter}
+        {code, "elmc_as_int(#{var}) != 0", Release.release_var(var, "  "), counter}
       end
 
     then_env = Hoist.put_hoisted_native_bool(env, cond_expr, "1")

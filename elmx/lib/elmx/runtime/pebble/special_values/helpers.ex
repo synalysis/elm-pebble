@@ -162,6 +162,17 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Helpers do
     args |> List.last() |> companion_bridge_callback_arg()
   end
 
+  defp companion_bridge_callback_arg(%{op: :compose_left, f: f, g: _g}) do
+    companion_bridge_callback_arg(f)
+  end
+
+  defp companion_bridge_callback_arg(%{op: :compose_right, f: _f, g: g}) do
+    companion_bridge_callback_arg(g)
+  end
+
+  defp companion_bridge_callback_arg(%{op: :var, name: name}) when is_binary(name),
+    do: string_literal_ir(name)
+
   defp companion_bridge_callback_arg(%{op: :var} = callback), do: callback
 
   defp companion_bridge_callback_arg(%{op: :int_literal, union_ctor: ctor}) when is_binary(ctor) do

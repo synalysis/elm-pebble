@@ -20,13 +20,18 @@ defmodule Elmc.GeneratedRcTrackConcatTest do
       #include "elmc_generated.c"
       #include <stdio.h>
 
+      #{RcTrackHarness.harness_rc_helpers()}
+
       int main(void) {
         static const elmc_int_t row0[2] = { 1, 2 };
         static const elmc_int_t row1[2] = { 3, 4 };
-        ElmcValue *r0 = elmc_list_from_int_array_take(row0, 2);
-        ElmcValue *r1 = elmc_list_from_int_array_take(row1, 2);
+        ElmcValue *r0 = elmc_harness_list_from_int_array(row0, 2);
+        ElmcValue *r1 = elmc_harness_list_from_int_array(row1, 2);
         ElmcValue *inner = elmc_list_cons_take(r1, elmc_list_nil());
         ElmcValue *outer = elmc_list_cons_take(r0, inner);
+        elmc_release(inner);
+        elmc_release(r0);
+        elmc_release(r1);
 
         elmc_rc_track_reset();
         ElmcValue *args[] = { outer };
@@ -38,6 +43,8 @@ defmodule Elmc.GeneratedRcTrackConcatTest do
         printf("rc_ok concatRows\\n");
         return 0;
       }
+      
+      
       """
     )
 

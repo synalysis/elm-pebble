@@ -103,7 +103,7 @@ defmodule Elmc.CoreDifferentialConformanceTest do
       "elmc_bitwise_shift_left_by(",
       "elmc_char_to_code(",
       "elmc_debug_log(",
-      "elmc_append(",
+      "elmc_string_length(",
       "elmc_string_is_empty(",
       "elmc_tuple_first(",
       "elmc_tuple_second(",

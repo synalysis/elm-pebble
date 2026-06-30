@@ -13,14 +13,16 @@ defmodule Elmc.RuntimeStdlibGapsTest do
 
       int main(void) {
         ElmcValue *list = elmc_list_nil();
-        list = elmc_list_cons_take(elmc_new_int_take(3), list);
-        list = elmc_list_cons_take(elmc_new_int_take(1), list);
-        list = elmc_list_cons_take(elmc_new_int_take(2), list);
+        ElmcValue *n3 = elmc_new_int_take(3);
+        list = elmc_list_cons_take(n3, list);
+        ElmcValue *n1 = elmc_new_int_take(1);
+        list = elmc_list_cons_take(n1, list);
+        ElmcValue *n2 = elmc_new_int_take(2);
+        list = elmc_list_cons_take(n2, list);
 
         ElmcValue *cap[1] = { NULL };
         ElmcValue *f = elmc_closure_new_take(by_identity, 1, 0, cap);
         ElmcValue *sorted = elmc_list_sort_by_take(f, list);
-
         ElmcValue *cursor = sorted;
         printf("%lld", (long long)elmc_as_int(((ElmcCons *)cursor->payload)->head));
         cursor = ((ElmcCons *)cursor->payload)->tail;
@@ -33,6 +35,8 @@ defmodule Elmc.RuntimeStdlibGapsTest do
         elmc_release(list);
         return 0;
       }
+      
+      
       """,
       "1 2 3"
     )
@@ -50,14 +54,16 @@ defmodule Elmc.RuntimeStdlibGapsTest do
 
       int main(void) {
         ElmcValue *list = elmc_list_nil();
-        list = elmc_list_cons_take(elmc_new_int_take(3), list);
-        list = elmc_list_cons_take(elmc_new_int_take(1), list);
-        list = elmc_list_cons_take(elmc_new_int_take(2), list);
+        ElmcValue *n3 = elmc_new_int_take(3);
+        list = elmc_list_cons_take(n3, list);
+        ElmcValue *n1 = elmc_new_int_take(1);
+        list = elmc_list_cons_take(n1, list);
+        ElmcValue *n2 = elmc_new_int_take(2);
+        list = elmc_list_cons_take(n2, list);
 
         ElmcValue *cap[1] = { NULL };
         ElmcValue *f = elmc_closure_new_take(compare_ints, 2, 0, cap);
         ElmcValue *sorted = elmc_list_sort_with_take(f, list);
-
         ElmcValue *cursor = sorted;
         printf("%lld", (long long)elmc_as_int(((ElmcCons *)cursor->payload)->head));
         cursor = ((ElmcCons *)cursor->payload)->tail;
@@ -70,6 +76,8 @@ defmodule Elmc.RuntimeStdlibGapsTest do
         elmc_release(list);
         return 0;
       }
+      
+      
       """,
       "1 2 3"
     )
@@ -81,12 +89,18 @@ defmodule Elmc.RuntimeStdlibGapsTest do
       """
       int main(void) {
         ElmcValue *s = elmc_new_string_take("a-b-a");
-        ElmcValue *out = elmc_string_replace_take(elmc_new_string_take("-"), elmc_new_string_take("+"), s);
+        ElmcValue *dash = elmc_new_string_take("-");
+        ElmcValue *plus = elmc_new_string_take("+");
+        ElmcValue *out = elmc_string_replace_take(dash, plus, s);
         printf("%s\\n", (const char *)out->payload);
         elmc_release(out);
+        elmc_release(plus);
+        elmc_release(dash);
         elmc_release(s);
         return 0;
       }
+      
+      
       """,
       "a+b+a"
     )
@@ -99,17 +113,23 @@ defmodule Elmc.RuntimeStdlibGapsTest do
       int main(void) {
         ElmcValue *empty = elmc_list_nil();
         ElmcValue *key = elmc_new_string_take("name");
-        ElmcValue *dict = elmc_dict_insert_take(key, elmc_new_int_take(42), empty);
+        ElmcValue *val = elmc_new_int_take(42);
+        ElmcValue *dict = elmc_dict_insert_take(key, val, empty);
+        elmc_release(val);
         ElmcValue *lookup_key = elmc_new_string_take("name");
         elmc_int_t found = elmc_dict_get_with_default_int_value(0, lookup_key, dict);
-        elmc_int_t missing = elmc_dict_get_with_default_int_value(7, elmc_new_string_take("other"), dict);
+        ElmcValue *other = elmc_new_string_take("other");
+        elmc_int_t missing = elmc_dict_get_with_default_int_value(7, other, dict);
         printf("%lld %lld\\n", (long long)found, (long long)missing);
+        elmc_release(other);
         elmc_release(lookup_key);
         elmc_release(key);
         elmc_release(dict);
         elmc_release(empty);
         return (found == 42 && missing == 7) ? 0 : 1;
       }
+      
+      
       """,
       "42 7"
     )
@@ -122,7 +142,9 @@ defmodule Elmc.RuntimeStdlibGapsTest do
       int main(void) {
         ElmcValue *empty = elmc_list_nil();
         ElmcValue *key = elmc_new_string_take("name");
-        ElmcValue *dict = elmc_dict_insert_take(key, elmc_new_int_take(42), empty);
+        ElmcValue *val = elmc_new_int_take(42);
+        ElmcValue *dict = elmc_dict_insert_take(key, val, empty);
+        elmc_release(val);
         ElmcValue *lookup_key = elmc_new_string_take("name");
         ElmcValue *found = elmc_dict_get_take(lookup_key, dict);
         int ok = found && found->tag == ELMC_TAG_MAYBE && found->payload &&
@@ -136,6 +158,8 @@ defmodule Elmc.RuntimeStdlibGapsTest do
         elmc_release(empty);
         return ok ? 0 : 1;
       }
+      
+      
       """,
       "1"
     )
@@ -145,36 +169,73 @@ defmodule Elmc.RuntimeStdlibGapsTest do
   test "dict merge applies left, both, and right resolvers" do
     run_harness(
       """
+      static ElmcValue *dict_insert_ret(ElmcValue *key, ElmcValue *val, ElmcValue *dict) {
+        ElmcValue *out = NULL;
+        if (elmc_dict_insert(&out, key, val, dict) != RC_SUCCESS) return NULL;
+        return out;
+      }
+
       static ElmcValue *left_only(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
         (void)captures; (void)capture_count;
-        if (argc < 3) return args[2];
-        return elmc_dict_insert_take(args[0], args[1], args[2]);
+        if (argc < 3) return args[2] ? elmc_retain(args[2]) : elmc_int_zero();
+        return dict_insert_ret(args[0], args[1], args[2]);
       }
 
       static ElmcValue *both(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
         (void)captures; (void)capture_count;
-        if (argc < 4) return args[3];
-        ElmcValue *sum = elmc_new_int_take(elmc_as_int(args[1]) + elmc_as_int(args[2]));
-        ElmcValue *out = elmc_dict_insert_take(args[0], sum, args[3]);
+        if (argc < 4) return args[3] ? elmc_retain(args[3]) : elmc_int_zero();
+        ElmcValue *sum = NULL;
+        if (elmc_new_int(&sum, elmc_as_int(args[1]) + elmc_as_int(args[2])) != RC_SUCCESS) return NULL;
+        ElmcValue *out = dict_insert_ret(args[0], sum, args[3]);
         elmc_release(sum);
         return out;
       }
 
       static ElmcValue *right_only(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
         (void)captures; (void)capture_count;
-        if (argc < 3) return args[2];
-        return elmc_dict_insert_take(args[0], args[1], args[2]);
+        if (argc < 3) return args[2] ? elmc_retain(args[2]) : elmc_int_zero();
+        return dict_insert_ret(args[0], args[1], args[2]);
+      }
+
+      static ElmcValue *pair(const char *key, elmc_int_t value) {
+        ElmcValue *k = NULL;
+        ElmcValue *v = NULL;
+        ElmcValue *pair = NULL;
+        if (elmc_new_string(&k, key) != RC_SUCCESS) return NULL;
+        if (elmc_new_int(&v, value) != RC_SUCCESS) { elmc_release(k); return NULL; }
+        if (elmc_tuple2_take(&pair, k, v) != RC_SUCCESS) {
+          elmc_release(k);
+          elmc_release(v);
+          return NULL;
+        }
+        return pair;
+      }
+
+      static ElmcValue *dict_from_pairs(ElmcValue *first, ElmcValue *second) {
+        ElmcValue *list = elmc_list_nil();
+        ElmcValue *cell = NULL;
+        if (elmc_list_cons(&cell, second, list) != RC_SUCCESS) return NULL;
+        elmc_release(second);
+        ElmcValue *out_list = NULL;
+        if (elmc_list_cons(&out_list, first, cell) != RC_SUCCESS) {
+          elmc_release(cell);
+          return NULL;
+        }
+        elmc_release(first);
+        elmc_release(cell);
+        ElmcValue *dict = NULL;
+        if (elmc_dict_from_list(&dict, out_list) != RC_SUCCESS) {
+          elmc_release(out_list);
+          return NULL;
+        }
+        elmc_release(out_list);
+        return dict;
       }
 
       int main(void) {
-        ElmcValue *a = elmc_dict_from_list_take(elmc_list_cons_take(
-          elmc_tuple2_take_value(elmc_new_string_take("x"), elmc_new_int_take(1)),
-          elmc_list_cons_take(elmc_tuple2_take_value(elmc_new_string_take("z"), elmc_new_int_take(3)), elmc_list_nil())
-        ));
-        ElmcValue *b = elmc_dict_from_list_take(elmc_list_cons_take(
-          elmc_tuple2_take_value(elmc_new_string_take("y"), elmc_new_int_take(10)),
-          elmc_list_cons_take(elmc_tuple2_take_value(elmc_new_string_take("z"), elmc_new_int_take(30)), elmc_list_nil())
-        ));
+        ElmcValue *a = dict_from_pairs(pair("x", 1), pair("z", 3));
+        ElmcValue *b = dict_from_pairs(pair("y", 10), pair("z", 30));
+        if (!a || !b) return 1;
 
         ElmcValue *cap[1] = { NULL };
         ElmcValue *lf = elmc_closure_new_take(left_only, 3, 0, cap);
@@ -205,8 +266,11 @@ defmodule Elmc.RuntimeStdlibGapsTest do
         elmc_release(rf);
         elmc_release(a);
         elmc_release(b);
+        elmc_release(empty);
         return 0;
       }
+      
+      
       """,
       "1 10 33"
     )
@@ -230,6 +294,8 @@ defmodule Elmc.RuntimeStdlibGapsTest do
       #include <stdio.h>
 
       #{body}
+      
+      
       """
     )
 

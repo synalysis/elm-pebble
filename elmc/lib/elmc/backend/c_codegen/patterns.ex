@@ -5,9 +5,11 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   alias Elmc.Backend.CCodegen.Expr
   alias Elmc.Backend.CCodegen.Native.RecordFields
   alias Elmc.Backend.CCodegen.PebbleMsgTag
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.StoragePlan
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
+  alias Elmc.Backend.CCodegen.ValueSlots
 
   @type list_pattern_mode :: :cons | :int_list | :int_spine | :float_list | :record_seq
 
@@ -70,32 +72,25 @@ defmodule Elmc.Backend.CCodegen.Patterns do
         name: "Just",
         arg_pattern: arg_pattern
       }, env) do
-    maybe_value_ref = "((ElmcMaybe *)#{subject_ref}->payload)->value"
-    tuple_value_ref = "((ElmcTuple2 *)#{subject_ref}->payload)->second"
+    cond do
+      just_arg_is_true?(arg_pattern) ->
+        "elmc_maybe_just_true(#{subject_ref})"
 
-    maybe_arg_cond =
-      if arg_pattern, do: " && (#{pattern_condition(maybe_value_ref, arg_pattern, env)})", else: ""
+      just_arg_is_false?(arg_pattern) ->
+        "elmc_maybe_just_false(#{subject_ref})"
 
-    tuple_arg_cond =
-      if arg_pattern, do: " && (#{pattern_condition(tuple_value_ref, arg_pattern, env)})", else: ""
+      bare_just_pattern?(arg_pattern) ->
+        "elmc_maybe_is_just(#{subject_ref})"
 
-    maybe_cond =
-      "#{subject_ref} && #{subject_ref}->tag == ELMC_TAG_MAYBE && ((ElmcMaybe *)#{subject_ref}->payload)->is_just == 1#{maybe_arg_cond}"
-
-    tuple_cond =
-      "#{subject_ref} && #{subject_ref}->tag == ELMC_TAG_TUPLE2 && #{subject_ref}->payload != NULL && elmc_as_int(((ElmcTuple2 *)#{subject_ref}->payload)->first) == 1#{tuple_arg_cond}"
-
-    "((#{maybe_cond}) || (#{tuple_cond}))"
+      true ->
+        payload_expr = "elmc_maybe_just_payload(#{subject_ref})"
+        arg_cond = pattern_condition(payload_expr, arg_pattern, env)
+        "(#{payload_expr}) && (#{arg_cond})"
+    end
   end
 
   def pattern_condition(subject_ref, %{kind: :constructor, name: "Nothing"}, _env) do
-    maybe_cond =
-      "#{subject_ref} && #{subject_ref}->tag == ELMC_TAG_MAYBE && ((ElmcMaybe *)#{subject_ref}->payload)->is_just == 0"
-
-    int_cond =
-      "#{subject_ref} && #{subject_ref}->tag == ELMC_TAG_INT && elmc_as_int(#{subject_ref}) == 0"
-
-    "((#{maybe_cond}) || (#{int_cond}))"
+    "elmc_maybe_is_nothing(#{subject_ref})"
   end
 
   def pattern_condition(subject_ref, %{kind: :constructor, name: "[]"}, env) do
@@ -145,23 +140,13 @@ defmodule Elmc.Backend.CCodegen.Patterns do
     value_ref = "((ElmcTuple2 *)#{subject_ref}->payload)->second"
     arg_cond = constructor_arg_condition(value_ref, arg_pattern, env)
 
-    tagged_match =
-      "((#{subject_ref})->tag == ELMC_TAG_TUPLE2 && (#{subject_ref})->payload != NULL && elmc_as_int(((ElmcTuple2 *)(#{subject_ref})->payload)->first) == #{tag_ref}#{arg_cond})"
-
-    "(#{subject_ref}) && #{tagged_match}"
+    "elmc_union_tag_matches(#{subject_ref}, #{tag_ref})#{arg_cond}"
   end
 
   def pattern_condition(subject_ref, %{kind: :constructor, tag: tag} = pattern, _env)
       when is_integer(tag) do
     tag_ref = PebbleMsgTag.tag_expr(pattern)
-
-    int_match =
-      "((#{subject_ref})->tag == ELMC_TAG_INT && elmc_as_int(#{subject_ref}) == #{tag_ref})"
-
-    tuple_match =
-      "((#{subject_ref})->tag == ELMC_TAG_TUPLE2 && (#{subject_ref})->payload != NULL && elmc_as_int(((ElmcTuple2 *)(#{subject_ref})->payload)->first) == #{tag_ref})"
-
-    "(#{subject_ref}) && (#{int_match} || #{tuple_match})"
+    "elmc_union_tag_matches(#{subject_ref}, #{tag_ref})"
   end
 
   def pattern_condition(subject_ref, %{kind: :constructor} = pattern, _env) do
@@ -171,8 +156,8 @@ defmodule Elmc.Backend.CCodegen.Patterns do
 
       _ ->
         case bool_constructor_name(pattern) do
-          "False" -> bool_constructor_condition(subject_ref, false)
-          "True" -> bool_constructor_condition(subject_ref, true)
+          "False" -> "elmc_value_is_false(#{subject_ref})"
+          "True" -> "elmc_value_is_true(#{subject_ref})"
           _ -> "0"
         end
     end
@@ -193,7 +178,11 @@ defmodule Elmc.Backend.CCodegen.Patterns do
         pattern_subject_ref(subject_ref)
       end
 
-    Map.put(env, bind, ref)
+    env
+    |> Map.put(bind, ref)
+    |> then(fn e ->
+      if Map.get(env, :maybe_unwrap_just), do: EnvBindings.put_tuple_projection_ref(e, ref), else: e
+    end)
   end
 
   def bind_pattern(env, %{kind: :var, name: bind}, subject_ref) do
@@ -248,6 +237,9 @@ defmodule Elmc.Backend.CCodegen.Patterns do
       env
       |> then(fn branch_env ->
         if is_binary(bind), do: Map.put(branch_env, bind, value_ref), else: branch_env
+      end)
+      |> then(fn branch_env ->
+        if is_binary(bind), do: EnvBindings.put_tuple_projection_ref(branch_env, value_ref), else: branch_env
       end)
       |> put_just_bind_var_type(subject_ref, bind)
 
@@ -355,6 +347,27 @@ defmodule Elmc.Backend.CCodegen.Patterns do
         ) ::
           {Types.compile_env(), String.t(), String.t(), integer()}
   def maybe_unwrap_var_branch(env, branch, subject_ref, counter, case_subject \\ nil) do
+    if int_list_cons_branch?(env, subject_ref, branch) do
+      hoist_int_list_cons_branch(env, branch, subject_ref, counter)
+    else
+      maybe_unwrap_just_var_branch(env, branch, subject_ref, counter, case_subject)
+    end
+  end
+
+  @doc false
+  @spec case_branch_bindings(
+          Types.compile_env(),
+          Types.case_branch(),
+          Types.subject_ref(),
+          integer(),
+          Types.case_subject() | nil
+        ) ::
+          {Types.compile_env(), String.t(), String.t(), integer()}
+  def case_branch_bindings(env, branch, subject_ref, counter, case_subject \\ nil) do
+    maybe_unwrap_var_branch(env, branch, subject_ref, counter, case_subject)
+  end
+
+  defp maybe_unwrap_just_var_branch(env, branch, subject_ref, counter, case_subject) do
     if Map.get(env, :maybe_unwrap_just, false) and var_branch?(branch) do
       %{pattern: %{kind: :var, name: bind}} = branch
       next = counter + 1
@@ -367,6 +380,7 @@ defmodule Elmc.Backend.CCodegen.Patterns do
       branch_env =
         env
         |> Map.put(bind, temp)
+        |> EnvBindings.put_tuple_projection_ref(temp)
         |> Map.delete(:maybe_unwrap_just)
         |> put_maybe_unwrapped_var_type(case_subject, bind)
 
@@ -465,14 +479,14 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   @spec int_list_access_expr?(String.t()) :: boolean()
   defp int_list_access_expr?(subject_ref) do
     String.contains?(subject_ref, "elmc_int_list_tail_take") or
-      String.contains?(subject_ref, "elmc_int_list_head_boxed") or
+      String.contains?(subject_ref, "elmc_int_list_head_boxed_take") or
       String.contains?(subject_ref, "elmc_int_spine_tail_take") or
-      String.contains?(subject_ref, "elmc_int_spine_head_boxed")
+      String.contains?(subject_ref, "elmc_int_spine_head_boxed_take")
   end
 
   @spec list_cons_binding_refs(String.t(), boolean()) :: {String.t(), String.t()}
   defp list_cons_binding_refs(subject_ref, true) do
-    {"elmc_int_list_head_boxed(#{subject_ref})", "elmc_int_list_tail_take(#{subject_ref})"}
+    {"elmc_int_list_head_boxed_take(#{subject_ref})", "elmc_int_list_tail_take(#{subject_ref})"}
   end
 
   defp list_cons_binding_refs(subject_ref, false) do
@@ -557,6 +571,10 @@ defmodule Elmc.Backend.CCodegen.Patterns do
     "#{subject_ref} && #{subject_ref}->tag == ELMC_TAG_RECORD_SEQ && !elmc_record_seq_is_empty(#{subject_ref})"
   end
 
+  defp list_cons_condition(:int_list, subject_ref, head_pattern, tail_pattern, env) do
+    int_list_cons_condition(subject_ref, head_pattern, tail_pattern, 0, env)
+  end
+
   defp list_cons_condition(mode, subject_ref, head_pattern, tail_pattern, env) do
     {head_ref, tail_ref} = list_head_tail_refs(mode, subject_ref)
 
@@ -567,20 +585,16 @@ defmodule Elmc.Backend.CCodegen.Patterns do
     {"((ElmcCons *)#{subject_ref}->payload)->head", "((ElmcCons *)#{subject_ref}->payload)->tail"}
   end
 
-  defp list_head_tail_refs(:int_list, subject_ref) do
-    {"elmc_int_list_head_boxed(#{subject_ref})", "elmc_int_list_tail_take(#{subject_ref})"}
-  end
-
   defp list_head_tail_refs(:int_spine, subject_ref) do
-    {"elmc_int_spine_head_boxed(#{subject_ref})", "elmc_int_spine_tail_take(#{subject_ref})"}
+    {"elmc_int_spine_head_boxed_take(#{subject_ref})", "elmc_int_spine_tail_take(#{subject_ref})"}
   end
 
   defp list_head_tail_refs(:float_list, subject_ref) do
-    {"elmc_float_list_head_boxed(#{subject_ref})", "elmc_float_list_tail_take(#{subject_ref})"}
+    {"elmc_float_list_head_boxed_take(#{subject_ref})", "elmc_float_list_tail_take(#{subject_ref})"}
   end
 
   defp list_head_tail_refs(:record_seq, subject_ref) do
-    {"elmc_record_seq_head_boxed(#{subject_ref})", "elmc_record_seq_tail_take(#{subject_ref})"}
+    {"elmc_record_seq_head_boxed_take(#{subject_ref})", "elmc_record_seq_tail_take(#{subject_ref})"}
   end
 
   @spec list_pattern_modes(Types.compile_env(), String.t()) :: [list_pattern_mode()]
@@ -657,7 +671,7 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   @spec int_spine_access_expr?(String.t()) :: boolean()
   defp int_spine_access_expr?(subject_ref) do
     String.contains?(subject_ref, "elmc_int_spine_tail_take") or
-      String.contains?(subject_ref, "elmc_int_spine_head_boxed")
+      String.contains?(subject_ref, "elmc_int_spine_head_boxed_take")
   end
 
   @spec constructor_arg_condition(String.t(), Types.pattern(), Types.compile_env()) :: String.t()
@@ -687,24 +701,12 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   defp bool_constructor_name(%{name: name}) when name in ["True", "False"], do: name
   defp bool_constructor_name(_), do: nil
 
-  @spec bool_constructor_condition(String.t(), boolean()) :: String.t()
-  defp bool_constructor_condition(subject_ref, true_value?) do
-    bool_match =
-      if true_value? do
-        "((#{subject_ref})->tag == ELMC_TAG_BOOL && elmc_as_bool(#{subject_ref}))"
-      else
-        "((#{subject_ref})->tag == ELMC_TAG_BOOL && !elmc_as_bool(#{subject_ref}))"
-      end
-
-    int_match =
-      if true_value? do
-        "((#{subject_ref})->tag == ELMC_TAG_INT && elmc_as_int(#{subject_ref}) == 1)"
-      else
-        "((#{subject_ref})->tag == ELMC_TAG_INT && elmc_as_int(#{subject_ref}) == 0)"
-      end
-
-    "(#{subject_ref}) && (#{bool_match} || #{int_match})"
-  end
+  defp just_arg_is_true?(pattern), do: bool_constructor_name(pattern) == "True"
+  defp just_arg_is_false?(pattern), do: bool_constructor_name(pattern) == "False"
+  defp bare_just_pattern?(nil), do: true
+  defp bare_just_pattern?(%{kind: :wildcard}), do: true
+  defp bare_just_pattern?(%{kind: :var}), do: true
+  defp bare_just_pattern?(_), do: false
 
   @spec order_constructor_name(Types.pattern() | map()) :: String.t() | nil
   defp order_constructor_name(%{resolved_name: name}) when name in ["LT", "EQ", "GT"], do: name
@@ -729,4 +731,154 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   defp nest_tuple_pattern([left | rest]) do
     %{kind: :tuple, elements: [left, nest_tuple_pattern(rest)]}
   end
+
+  @list_case_suffix_var ~r/^list_case_suffix_\d+$/
+
+  defp int_list_cons_branch?(env, subject_ref, %{pattern: pattern}) do
+    list_int_subject?(env, subject_ref) and cons_pattern?(pattern)
+  end
+
+  defp int_list_cons_branch?(_env, _subject_ref, _branch), do: false
+
+  defp cons_pattern?(%{kind: :constructor, name: "::"}), do: true
+  defp cons_pattern?(_), do: false
+
+  defp hoist_int_list_cons_branch(env, %{pattern: pattern}, subject_ref, counter) do
+    subject = pattern_subject_ref(subject_ref)
+
+    {branch_env, setup_lines, cleanup_vars, counter} =
+      walk_int_list_cons_pattern(env, pattern, subject, 0, counter, [], [])
+
+    setup = Enum.join(setup_lines, "\n")
+    cleanup = cleanup_vars |> Enum.uniq() |> Enum.map_join("\n", &ValueSlots.release_consumed/1)
+    {branch_env, setup, cleanup, counter}
+  end
+
+  defp walk_int_list_cons_pattern(
+         env,
+         %{kind: :constructor, name: "::", arg_pattern: %{kind: :tuple, elements: [head, tail]}},
+         subject,
+         index,
+         counter,
+         setup,
+         cleanup
+       ) do
+    env = bind_int_list_head_pattern(env, head, subject, index)
+    walk_int_list_cons_pattern(env, tail, subject, index + 1, counter, setup, cleanup)
+  end
+
+  defp walk_int_list_cons_pattern(env, %{kind: :constructor, name: "[]"}, _subject, _index, counter, setup, cleanup) do
+    {env, setup, cleanup, counter}
+  end
+
+  defp walk_int_list_cons_pattern(
+         env,
+         %{kind: :var, name: bind},
+         subject,
+         index,
+         counter,
+         setup,
+         cleanup
+       )
+       when bind not in ["", "_"] do
+    counter = counter + 1
+    var = "list_case_suffix_#{counter}"
+    stmt = int_list_suffix_hoist_stmt(var, index, subject, env)
+    env =
+      env
+      |> Map.put(bind, var)
+      |> EnvBindings.put_list_suffix_ref(var)
+      |> EnvBindings.put_var_type(bind, "List Int")
+
+    {env, [stmt | setup], [var | cleanup], counter}
+  end
+
+  defp walk_int_list_cons_pattern(env, %{kind: :wildcard}, _subject, _index, counter, setup, cleanup) do
+    {env, setup, cleanup, counter}
+  end
+
+  defp walk_int_list_cons_pattern(env, _pattern, _subject, _index, counter, setup, cleanup) do
+    {env, setup, cleanup, counter}
+  end
+
+  defp bind_int_list_head_pattern(env, %{kind: :var, name: name}, subject, index)
+       when name not in ["", "_"] do
+    nth = "elmc_list_nth_int_default(#{subject}, #{index}, 0)"
+
+    env
+    |> EnvBindings.put_native_int_binding(name, nth)
+    |> EnvBindings.put_var_type(name, "Int")
+    |> EnvBindings.put_boxed_int_binding(name, false)
+  end
+
+  defp bind_int_list_head_pattern(env, _head, _subject, _index), do: env
+
+  defp int_list_suffix_hoist_stmt(var, index, subject, env) do
+    call_args = "#{index}, #{subject}"
+    RcRuntimeEmit.assign_call(env, var, "elmc_list_drop_int", call_args)
+  end
+
+  defp int_list_cons_condition(subject, head_pat, tail_pat, index, env) do
+    parts =
+      [
+        int_list_nonempty_at(subject, index),
+        int_list_head_pattern_check(subject, head_pat, index, env),
+        int_list_tail_suffix_check(subject, tail_pat, index + 1, env)
+      ]
+      |> Enum.reject(&(&1 == "1"))
+
+    case parts do
+      [] -> "1"
+      _ -> Enum.join(parts, " && ")
+    end
+  end
+
+  defp int_list_nonempty_at(subject, 0) do
+    "#{subject} && #{subject}->tag == ELMC_TAG_INT_LIST && !elmc_int_list_is_empty(#{subject})"
+  end
+
+  defp int_list_nonempty_at(subject, index) do
+    "(#{int_list_length_expr(subject)} > #{index})"
+  end
+
+  defp int_list_length_expr(subject) do
+    "((#{subject})->tag == ELMC_TAG_INT_LIST && (#{subject})->payload ? ((ElmcIntListPayload *)(#{subject})->payload)->length : 0)"
+  end
+
+  defp int_list_head_pattern_check(_subject, %{kind: :var}, _index, _env), do: "1"
+  defp int_list_head_pattern_check(_subject, %{kind: :wildcard}, _index, _env), do: "1"
+
+  defp int_list_head_pattern_check(subject, %{kind: :int, value: value}, index, _env)
+       when is_integer(value) do
+    "((#{int_list_length_expr(subject)}) > #{index}) && elmc_list_nth_int_default(#{subject}, #{index}, #{value}) == #{value}"
+  end
+
+  defp int_list_head_pattern_check(subject, %{kind: :char, value: value}, index, _env)
+       when is_integer(value) do
+    "((#{int_list_length_expr(subject)}) > #{index}) && elmc_list_nth_int_default(#{subject}, #{index}, #{value}) == #{value}"
+  end
+
+  defp int_list_head_pattern_check(_subject, _pattern, _index, _env), do: "1"
+
+  defp int_list_tail_suffix_check(subject, %{kind: :constructor, name: "[]"}, index, _env) do
+    "#{int_list_length_expr(subject)} == #{index}"
+  end
+
+  defp int_list_tail_suffix_check(
+         subject,
+         %{kind: :constructor, name: "::", arg_pattern: %{kind: :tuple, elements: [head, tail]}},
+         index,
+         env
+       ) do
+    int_list_cons_condition(subject, head, tail, index, env)
+  end
+
+  defp int_list_tail_suffix_check(_subject, %{kind: :var}, _index, _env), do: "1"
+  defp int_list_tail_suffix_check(_subject, %{kind: :wildcard}, _index, _env), do: "1"
+  defp int_list_tail_suffix_check(_subject, _pattern, _index, _env), do: "1"
+
+  @doc false
+  @spec list_case_suffix_var?(String.t()) :: boolean()
+  def list_case_suffix_var?(var) when is_binary(var), do: Regex.match?(@list_case_suffix_var, var)
+  def list_case_suffix_var?(_), do: false
 end

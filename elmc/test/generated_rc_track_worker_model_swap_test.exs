@@ -38,6 +38,7 @@ defmodule Elmc.GeneratedRcTrackWorkerModelSwapTest do
       #include <stdio.h>
 
       #{RcTrackHarness.list_int_length_c_helper()}
+      #{RcTrackHarness.harness_rc_helpers()}
 
       enum {
         MODEL_FIELD_CELLS = 0,
@@ -45,18 +46,18 @@ defmodule Elmc.GeneratedRcTrackWorkerModelSwapTest do
       };
 
       static ElmcValue *launch_context(void) {
-        ElmcValue *reason = elmc_new_int_take(2);
-        ElmcValue *watch_model = elmc_new_string_take("");
-        ElmcValue *watch_profile_id = elmc_new_string_take("aplite");
-        ElmcValue *width = elmc_new_int_take(144);
-        ElmcValue *height = elmc_new_int_take(168);
+        ElmcValue *reason = elmc_harness_new_int(2);
+        ElmcValue *watch_model = elmc_harness_new_string("");
+        ElmcValue *watch_profile_id = elmc_harness_new_string("aplite");
+        ElmcValue *width = elmc_harness_new_int(144);
+        ElmcValue *height = elmc_harness_new_int(168);
         ElmcValue *shape = elmc_new_int_take(1);
-        ElmcValue *color_mode = elmc_new_int_take(1);
+        ElmcValue *color_mode = elmc_harness_new_int(1);
         ElmcValue *screen_values[] = {width, height, shape, color_mode};
         ElmcValue *screen = elmc_record_new_values_take_value(4, screen_values);
-        ElmcValue *has_microphone = elmc_new_int_take(0);
-        ElmcValue *has_compass = elmc_new_int_take(0);
-        ElmcValue *supports_health = elmc_new_int_take(0);
+        ElmcValue *has_microphone = elmc_harness_new_int(0);
+        ElmcValue *has_compass = elmc_harness_new_int(0);
+        ElmcValue *supports_health = elmc_harness_new_int(0);
         ElmcValue *context_values[] = {reason, watch_model, watch_profile_id, screen, has_microphone,
                                        has_compass, supports_health};
         return elmc_record_new_values_take_value(7, context_values);
@@ -72,28 +73,25 @@ defmodule Elmc.GeneratedRcTrackWorkerModelSwapTest do
         }
       }
 
-      static int dispatch_tag_string(ElmcWorkerState *state, elmc_int_t tag, const char *value) {
-        ElmcValue *tag_val = elmc_new_int_take(tag);
-        ElmcValue *payload = elmc_new_string_take(value ? value : "");
-        ElmcValue *msg = elmc_tuple2_take_value(tag_val, payload);
+      static int dispatch_tag_string(ElmcWorkerState *state, elmc_int_t tag, const char *value) {        ElmcValue *tag_val = elmc_harness_new_int(tag);
+        ElmcValue *payload = elmc_harness_new_string(value ? value : "");
+        ElmcValue *msg = elmc_harness_tuple2_take(tag_val, payload);
         if (!msg) return -1;
         int rc = elmc_worker_dispatch(state, msg);
         elmc_release(msg);
         return rc;
       }
 
-      static int dispatch_tag_value(ElmcWorkerState *state, elmc_int_t tag, elmc_int_t value) {
-        ElmcValue *tag_val = elmc_new_int_take(tag);
-        ElmcValue *payload = elmc_new_int_take(value);
-        ElmcValue *msg = elmc_tuple2_take_value(tag_val, payload);
+      static int dispatch_tag_value(ElmcWorkerState *state, elmc_int_t tag, elmc_int_t value) {        ElmcValue *tag_val = elmc_harness_new_int(tag);
+        ElmcValue *payload = elmc_harness_new_int(value);
+        ElmcValue *msg = elmc_harness_tuple2_take(tag_val, payload);
         if (!msg) return -1;
         int rc = elmc_worker_dispatch(state, msg);
         elmc_release(msg);
         return rc;
       }
 
-      static int dispatch_int(ElmcWorkerState *state, elmc_int_t msg) {
-        ElmcValue *wrapped = elmc_new_int_take(msg);
+      static int dispatch_int(ElmcWorkerState *state, elmc_int_t msg) {        ElmcValue *wrapped = elmc_harness_new_int(msg);
         int rc = elmc_worker_dispatch(state, wrapped);
         elmc_release(wrapped);
         return rc;
@@ -194,6 +192,8 @@ defmodule Elmc.GeneratedRcTrackWorkerModelSwapTest do
         printf("rc_ok worker_model_swap turns=%d\\n", turns);
         return 0;
       }
+      
+      
       """
     )
 

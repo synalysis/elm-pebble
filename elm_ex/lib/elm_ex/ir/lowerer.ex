@@ -13,6 +13,7 @@ defmodule ElmEx.IR.Lowerer do
   alias ElmEx.IR.FunctionCallCheck
   alias ElmEx.IR.ImportResolution
   alias ElmEx.IR.Module
+  alias ElmEx.IR.PipeChain
 
   alias ElmEx.IR.Types.{Diagnostic, Expr, Lookup, ModuleExports, Pattern}
 
@@ -1672,6 +1673,13 @@ defmodule ElmEx.IR.Lowerer do
 
   @spec preferences_schema_field_order(Expr.t()) ::
           {:ok, String.t(), [String.t()]} | :error
+  defp preferences_schema_field_order(%{op: :pipe_chain, base: base, steps: steps})
+       when is_list(steps) do
+    steps
+    |> Enum.reduce(base, &PipeChain.append_pipe_arg/2)
+    |> preferences_schema_field_order()
+  end
+
   defp preferences_schema_field_order(%{op: :qualified_call, target: target, args: args})
        when is_binary(target) and is_list(args) do
     cond do
@@ -1708,6 +1716,13 @@ defmodule ElmEx.IR.Lowerer do
   defp preferences_schema_field_order(_expr), do: :error
 
   @spec preferences_section_fields(Expr.t()) :: {:ok, [String.t()]} | :error
+  defp preferences_section_fields(%{op: :pipe_chain, base: base, steps: steps})
+       when is_list(steps) do
+    steps
+    |> Enum.reduce(base, &PipeChain.append_pipe_arg/2)
+    |> preferences_section_fields()
+  end
+
   defp preferences_section_fields(%{op: :qualified_call, target: target, args: args})
        when is_binary(target) and is_list(args) do
     if preferences_call?(target, "field") do

@@ -10,7 +10,9 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.LetAnalysis
   alias Elmc.Backend.CCodegen.LetRecCompile
+  alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.Native.String, as: NativeString
+  alias Elmc.Backend.CCodegen.Native.PolarPoint
   alias Elmc.Backend.CCodegen.Native.TypedReturn
   alias Elmc.Backend.CCodegen.Native.UsageAnalysis, as: NativeUsageAnalysis
   alias Elmc.Backend.CCodegen.ValueSlots
@@ -55,6 +57,12 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
 
       NativeUsageAnalysis.string_let?(name, value_expr, in_expr, env) ->
         compile_native_string_let(name, value_expr, in_expr, env, counter)
+
+      PolarPoint.polar_point_let?(name, value_expr, in_expr, env) ->
+        compile_polar_point_let(name, value_expr, in_expr, env, counter)
+
+      PolarPoint.xy_draw_center_let?(name, value_expr, in_expr, env) ->
+        compile_xy_draw_center_let(name, value_expr, in_expr, env, counter)
 
       true ->
         compile_boxed_let(name, value_expr, in_expr, env, counter)
@@ -114,8 +122,106 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
       |> EnvBindings.put_pebble_angle_binding(name, value_expr)
       |> EnvBindings.put_boxed_int_binding(name, false)
       |> EnvBindings.put_boxed_string_binding(name, false)
+      |> EnvBindings.put_let_value_expr(name, value_expr)
 
-    Host.compile_expr(in_expr, body_env, counter)
+    body_result =
+      if NativeInt.expr?(in_expr, body_env) do
+        NativeInt.compile_expr(in_expr, body_env, counter)
+      else
+        Host.compile_expr(in_expr, body_env, counter)
+      end
+
+    body_result
+  end
+
+  @spec compile_polar_point_let(
+          Types.binding_name(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
+  defp compile_polar_point_let(name, value_expr, in_expr, env, counter) do
+    case PolarPoint.compile_polar_native_record(value_expr, env, counter) do
+      {:ok, value_code, fields, counter} ->
+        before_probe = DebugProbes.let_probe(env, name, :before)
+        after_probe = DebugProbes.let_probe(env, name, :after)
+        record_shape = Expr.record_shape(value_expr, env)
+
+        body_env =
+          env
+          |> Map.delete(name)
+          |> Map.put(name, {:native_record, fields})
+          |> EnvBindings.put_let_value_expr(name, value_expr)
+          |> EnvBindings.remove_native_int_binding(name)
+          |> EnvBindings.remove_native_bool_binding(name)
+          |> EnvBindings.remove_native_float_binding(name)
+          |> EnvBindings.put_boxed_int_binding(name, false)
+          |> EnvBindings.put_boxed_string_binding(name, false)
+          |> put_boxed_record_shape(name, record_shape)
+          |> put_boxed_var_type(name, value_expr, env)
+          |> RecordCompile.fresh_subexpr_cache()
+          |> Map.put(:__rc_catch__, false)
+
+        {body_code, body_var, counter} = Host.compile_expr(in_expr, body_env, counter)
+
+        code = """
+        #{before_probe}
+        #{value_code}
+        #{after_probe}
+        #{body_code}
+        """
+
+        {code, body_var, counter}
+
+      :error ->
+        compile_boxed_let(name, value_expr, in_expr, env, counter)
+    end
+  end
+
+  @spec compile_xy_draw_center_let(
+          Types.binding_name(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
+  defp compile_xy_draw_center_let(name, value_expr, in_expr, env, counter) do
+    case PolarPoint.compile_xy_draw_center_native_record(value_expr, env, counter) do
+      {:ok, value_code, fields, counter} ->
+        before_probe = DebugProbes.let_probe(env, name, :before)
+        after_probe = DebugProbes.let_probe(env, name, :after)
+        record_shape = Expr.record_shape(value_expr, env)
+
+        body_env =
+          env
+          |> Map.delete(name)
+          |> Map.put(name, {:native_record, fields})
+          |> EnvBindings.put_let_value_expr(name, value_expr)
+          |> EnvBindings.remove_native_int_binding(name)
+          |> EnvBindings.remove_native_bool_binding(name)
+          |> EnvBindings.remove_native_float_binding(name)
+          |> EnvBindings.put_boxed_int_binding(name, false)
+          |> EnvBindings.put_boxed_string_binding(name, false)
+          |> put_boxed_record_shape(name, record_shape)
+          |> put_boxed_var_type(name, value_expr, env)
+          |> RecordCompile.fresh_subexpr_cache()
+          |> Map.put(:__rc_catch__, false)
+
+        {body_code, body_var, counter} = Host.compile_expr(in_expr, body_env, counter)
+
+        code = """
+        #{before_probe}
+        #{value_code}
+        #{after_probe}
+        #{body_code}
+        """
+
+        {code, body_var, counter}
+
+      :error ->
+        compile_boxed_let(name, value_expr, in_expr, env, counter)
+    end
   end
 
   @spec compile_native_float_let(
@@ -162,7 +268,8 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
           Types.compile_counter()
         ) :: Types.compile_result()
   defp compile_native_int_let(name, value_expr, in_expr, env, counter) do
-    {value_code, value_ref, counter} = Host.compile_native_int_expr(value_expr, env, counter)
+    value_env = RcRuntimeEmit.strip_function_tail_scope(env)
+    {value_code, value_ref, counter} = Host.compile_native_int_expr(value_expr, value_env, counter)
     next = counter + 1
     native_var = "native_let_#{Util.safe_c_suffix(name)}_#{next}"
     before_probe = DebugProbes.let_probe(env, name, :before)
@@ -176,6 +283,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
       |> EnvBindings.remove_native_float_binding(name)
       |> EnvBindings.put_boxed_int_binding(name, false)
       |> EnvBindings.put_boxed_string_binding(name, false)
+      |> EnvBindings.put_let_value_expr(name, value_expr)
 
     {body_code, body_var, counter} = Host.compile_expr(in_expr, body_env, counter)
 
@@ -253,6 +361,8 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
       |> EnvBindings.put_boxed_string_binding(name, NativeString.boxed_expr?(value_expr, env))
       |> put_boxed_record_shape(name, record_shape)
       |> put_boxed_var_type(name, value_expr, env)
+      |> EnvBindings.put_let_value_expr(name, value_expr)
+      |> maybe_put_tuple_projection_ref(name, value_var, value_code, value_expr)
       |> RecordCompile.fresh_subexpr_cache()
       |> Map.put(:__rc_catch__, false)
 
@@ -266,7 +376,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
     #{value_code}
           #{after_probe}
       #{body_code}
-      #{let_value_release(env, value_var, body_code)}
+      #{let_value_release(env, value_var, value_code, body_code, value_expr)}
     """
 
     {code, body_var, counter}
@@ -292,8 +402,10 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
           Types.compile_counter()
         ) :: {String.t(), String.t(), Types.compile_counter(), String.t() | nil}
   defp compile_boxed_let_value(value_expr, env, counter) do
-    if Host.native_int_expr?(value_expr, env) do
-      {native_code, native_ref, counter} = Host.compile_native_int_expr(value_expr, env, counter)
+    value_env = RcRuntimeEmit.strip_function_tail_scope(env)
+
+    if Host.native_int_expr?(value_expr, value_env) do
+      {native_code, native_ref, counter} = Host.compile_native_int_expr(value_expr, value_env, counter)
       {value_var, counter} = CaseCompile.fresh_var(counter, env)
 
       value_code = """
@@ -302,8 +414,6 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
 
       {value_code, value_var, counter, native_ref}
     else
-      value_env = RcRuntimeEmit.strip_function_tail_scope(env)
-
       {value_code, value_var, counter} = Host.compile_expr(value_expr, value_env, counter)
       {value_code, value_var, counter, nil}
     end
@@ -486,15 +596,81 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
 
   defp flatten_let_chain(body), do: {[], body}
 
-  defp let_value_release(env, value_var, body_code) when is_binary(value_var) do
+  defp let_value_release(env, value_var, value_code, body_code, value_expr)
+       when is_binary(value_var) do
     cond do
-      EnvBindings.borrowed_arg_ref?(env, value_var) -> ""
-      ValueSlots.transferred?(value_var, body_code) -> ""
-      released_in_let_body?(value_var, body_code) -> ""
+      RcRuntimeEmit.function_out_ref?(value_var) ->
+        ""
+
+      payload_borrow_projection?(env, value_var, value_code, value_expr) ->
+        ValueSlots.abandon_stmt(value_var)
+
+      tuple_first_second_binding?(value_var, value_code) ->
+        if released_in_let_body?(value_var, body_code) or
+             ValueSlots.transferred?(value_var, body_code) do
+          ""
+        else
+          tuple_first_second_release(value_var)
+        end
+
+      EnvBindings.borrowed_arg_ref?(env, value_var) ->
+        ""
+
+      ValueSlots.transferred?(value_var, body_code) ->
+        ""
+
+      released_in_let_body?(value_var, body_code) ->
+        ""
+
       true ->
-        ValueSlots.release_stmt(value_var)
+        release_consumed_value(value_var)
     end
   end
+
+  defp release_consumed_value(var) when is_binary(var) do
+    if ValueSlots.owned_ref?(var) and ValueSlots.epilogue_lifo?() do
+      ValueSlots.release_owned_and_null(var)
+    else
+      ValueSlots.release_consumed(var)
+    end
+  end
+
+  defp payload_borrow_projection?(env, value_var, value_code, value_expr) do
+    EnvBindings.tuple_projection_ref?(env, value_var) or
+      tuple_projection_expr?(value_expr) or
+      String.contains?(value_code, "elmc_maybe_or_tuple_just_payload_borrow(")
+  end
+
+  defp tuple_first_second_binding?(value_var, value_code)
+       when is_binary(value_var) and is_binary(value_code) do
+    String.contains?(value_code, "elmc_tuple_first(") or
+      String.contains?(value_code, "elmc_tuple_second(")
+  end
+
+  defp tuple_first_second_binding?(_value_var, _value_code), do: false
+
+  defp tuple_first_second_release(var) when is_binary(var) do
+    if ValueSlots.owned_ref?(var) do
+      ValueSlots.transfer(var)
+      "elmc_release(#{var});\n#{ValueSlots.null_assignment(var)}"
+    else
+      ValueSlots.release_stmt(var)
+    end
+  end
+
+  defp maybe_put_tuple_projection_ref(env, _name, value_var, value_code, value_expr) do
+    if payload_borrow_projection?(env, value_var, value_code, value_expr) do
+      EnvBindings.put_tuple_projection_ref(env, value_var)
+    else
+      env
+    end
+  end
+
+  defp tuple_projection_expr?(%{op: :runtime_call, function: function})
+       when function in ["elmc_maybe_or_tuple_just_payload_borrow"],
+       do: true
+
+  defp tuple_projection_expr?(_expr), do: false
 
   defp released_in_let_body?(var, body_code) when is_binary(var) and is_binary(body_code) do
     String.contains?(body_code, "elmc_release(#{var})") or

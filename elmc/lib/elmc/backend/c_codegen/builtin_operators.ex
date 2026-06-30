@@ -521,18 +521,24 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
         {right_code, right_var, counter} = retain_declared_out_operand(right_code, right_var, env, counter)
         {out, next} = CaseCompile.fresh_var(counter, env)
 
-        assign_prefix =
-          if ValueSlots.owned_ref?(out),
-            do: "#{out} =",
-            else: "ElmcValue *#{out} ="
+        {assign_prefix, env} =
+          if ValueSlots.owned_ref?(out) do
+            {"", env}
+          else
+            env =
+              Map.update(env, :__declared_outs__, MapSet.new([out]), &MapSet.put(&1, out))
+
+            {"ElmcValue *#{out} = NULL;\n      ", env}
+          end
 
         code = """
         #{left_code}
           #{right_code}
-              #{assign_prefix}
-                  ((#{left_var} && #{left_var}->tag == ELMC_TAG_FLOAT) || (#{right_var} && #{right_var}->tag == ELMC_TAG_FLOAT))
-                      ? elmc_new_float_take(elmc_as_float(#{left_var}) #{operator} elmc_as_float(#{right_var}))
-                      : elmc_new_int_take(elmc_as_int(#{left_var}) #{operator} elmc_as_int(#{right_var}));
+          #{assign_prefix}if ((#{left_var} && #{left_var}->tag == ELMC_TAG_FLOAT) || (#{right_var} && #{right_var}->tag == ELMC_TAG_FLOAT)) {
+            #{RcRuntimeEmit.fusion_assign(out, "elmc_new_float", "elmc_as_float(#{left_var}) #{operator} elmc_as_float(#{right_var})", env)}
+          } else {
+            #{RcRuntimeEmit.fusion_assign(out, "elmc_new_int", "elmc_as_int(#{left_var}) #{operator} elmc_as_int(#{right_var})", env)}
+          }
           #{binop_operand_release(left_var, out)}
           #{binop_operand_release(right_var, out)}
         """
@@ -662,7 +668,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
         #{right_code}
           const double __denf_#{next} = elmc_as_float(#{right_var});
           const double __numf_#{next} = elmc_as_float(#{left_var});
-        #{ValueSlots.boxed_decl(out, "elmc_new_float_take(__numf_#{next} / __denf_#{next})")}
+        #{ValueSlots.boxed_decl(out, "elmc_new_float(__numf_#{next} / __denf_#{next})", env)}
         elmc_release(#{left_var});
         elmc_release(#{right_var});
       """
@@ -876,7 +882,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
 
   @spec binop_operand_release(String.t(), String.t()) :: String.t()
   defp binop_operand_release(var, out) when var == out, do: ""
-  defp binop_operand_release(var, _out), do: "elmc_release(#{var});"
+  defp binop_operand_release(var, _out), do: ValueSlots.release_stmt(var)
 
   @spec retain_declared_out_operand(
           String.t(),

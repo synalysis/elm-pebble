@@ -213,11 +213,43 @@ defmodule ElmEx.Frontend.LetLayoutTest do
     assert {:ok, %{op: :case}} = GeneratedExpressionParser.parse(source)
   end
 
+  test "parses constructor pattern binding after multiline let value" do
+    source = """
+    \\title build (Schema data) ->
+        let
+            start =
+                Schema { data | currentSection = Just title, sections = data.sections ++ [ Section title [] ] }
+
+            (Schema next) =
+                build start
+        in
+        Schema { next | currentSection = data.currentSection }
+    """
+
+    assert {:ok, %{op: :lambda}} = GeneratedExpressionParser.parse(source)
+  end
+
   test "parses scientific notation float literals" do
     assert {:ok, %{op: :float_literal, value: 5.0e-324}} =
              GeneratedExpressionParser.parse("5.0e-324")
 
     assert {:ok, %{op: :float_literal}} = GeneratedExpressionParser.parse("1.0e-300")
+  end
+
+  test "parses leading-zero decimal float literals" do
+    assert {:ok, %{op: :float_literal, value: 0.9856}} =
+             GeneratedExpressionParser.parse("0.9856")
+
+    assert {:ok, %{op: :float_literal, value: 0.020}} =
+             GeneratedExpressionParser.parse("0.020")
+
+    assert {:error, {:invalid_number_literal, :leading_zero}} =
+             GeneratedExpressionParser.parse("012")
+  end
+
+  test "parses unary minus after comparison operators" do
+    assert {:ok, %{op: :compare, kind: :lt, right: %{op: :call, name: "negate"}}} =
+             GeneratedExpressionParser.parse("normalized < -pi")
   end
 
   test "parses operator sections for apL and apR" do

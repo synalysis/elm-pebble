@@ -42,6 +42,7 @@ defmodule Elmc.PebbleShimTest do
           case msg of
               RandomGenerated value ->
                   ( value, Cmd.none )
+      
       """
     )
 
@@ -70,6 +71,9 @@ defmodule Elmc.PebbleShimTest do
         elmc_pebble_deinit(&app);
         return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 7;
       }
+      
+      
+      
       """
     )
 
@@ -138,6 +142,9 @@ defmodule Elmc.PebbleShimTest do
         elmc_pebble_deinit(&app);
         return 0;
       }
+      
+      
+      
       """
     )
 
@@ -203,6 +210,9 @@ defmodule Elmc.PebbleShimTest do
         elmc_pebble_deinit(&app);
         return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 6;
       }
+      
+      
+      
       """
     )
 
@@ -275,6 +285,9 @@ defmodule Elmc.PebbleShimTest do
         elmc_pebble_deinit(&app);
         return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 9;
       }
+      
+      
+      
       """
     )
 
@@ -345,6 +358,9 @@ defmodule Elmc.PebbleShimTest do
         elmc_pebble_deinit(&app);
         return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 9;
       }
+      
+      
+      
       """
     )
 
@@ -414,6 +430,9 @@ defmodule Elmc.PebbleShimTest do
         elmc_pebble_deinit(&app);
         return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 9;
       }
+      
+      
+      
       """
     )
 
@@ -489,6 +508,9 @@ defmodule Elmc.PebbleShimTest do
         elmc_pebble_deinit(&app);
         return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 13;
       }
+      
+      
+      
       """
     )
 
@@ -562,6 +584,9 @@ defmodule Elmc.PebbleShimTest do
         elmc_pebble_deinit(&app);
         return 0;
       }
+      
+      
+      
       """
     )
 
@@ -642,6 +667,9 @@ defmodule Elmc.PebbleShimTest do
         elmc_pebble_deinit(&app);
         return 0;
       }
+      
+      
+      
       """
     )
 
@@ -724,6 +752,9 @@ defmodule Elmc.PebbleShimTest do
         elmc_pebble_deinit(&app);
         return 0;
       }
+      
+      
+      
       """
     )
 
@@ -807,6 +838,9 @@ defmodule Elmc.PebbleShimTest do
         elmc_pebble_deinit(&app);
         return 0;
       }
+      
+      
+      
       """
     )
 
@@ -882,6 +916,9 @@ defmodule Elmc.PebbleShimTest do
         elmc_pebble_deinit(&app);
         return 0;
       }
+      
+      
+      
       """
     )
 
@@ -990,6 +1027,9 @@ defmodule Elmc.PebbleShimTest do
                (unsigned long long)elmc_rc_released_count());
         return 0;
       }
+      
+      
+      
       """
     )
 
@@ -1074,6 +1114,9 @@ defmodule Elmc.PebbleShimTest do
         elmc_pebble_deinit(&app);
         return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 4;
       }
+      
+      
+      
       """
     )
 
@@ -1150,6 +1193,9 @@ defmodule Elmc.PebbleShimTest do
         elmc_pebble_deinit(&app);
         return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 6;
       }
+      
+      
+      
       """
     )
 
@@ -1228,6 +1274,9 @@ defmodule Elmc.PebbleShimTest do
         elmc_pebble_deinit(&app);
         return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 7;
       }
+      
+      
+      
       """
     )
 
@@ -1322,10 +1371,118 @@ defmodule Elmc.PebbleShimTest do
         elmc_pebble_deinit(&app);
         return 0;
       }
+      
+      
+      
       """
     )
 
     binary_path = Path.join(out_dir, "partial_collision_harness")
+
+    {compile_out, compile_code} =
+      System.cmd(cc, [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-I#{Path.join(out_dir, "runtime")}",
+        "-I#{Path.join(out_dir, "ports")}",
+        "-I#{Path.join(out_dir, "c")}",
+        Path.join(out_dir, "runtime/elmc_runtime.c"),
+        Path.join(out_dir, "ports/elmc_ports.c"),
+        Path.join(out_dir, "c/elmc_generated.c"),
+        Path.join(out_dir, "c/elmc_worker.c"),
+        Path.join(out_dir, "c/elmc_pebble.c"),
+        harness_path,
+        "-lm",
+        "-o",
+        binary_path
+      ])
+
+    assert compile_code == 0, compile_out
+
+    {run_out, run_code} = System.cmd(binary_path, [])
+    assert run_code == 0, run_out
+  end
+
+  test "game jump-n-run template survives repeated frame dispatch without heap corruption" do
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available for pebble shim C test")
+
+    repo_root = Path.expand("../..", __DIR__)
+
+    source_template =
+      Path.join(repo_root, "ide/priv/project_templates/game_jump_n_run")
+
+    project_dir = Path.expand("tmp/game_jump_n_run_project", __DIR__)
+    out_dir = Path.expand("tmp/game_jump_n_run_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.cp_r!(Path.join(source_template, "src"), Path.join(project_dir, "src"))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      Jason.encode!(%{
+        "type" => "application",
+        "source-directories" => [
+          "src",
+          Path.join(repo_root, "ide/priv/bundled_elm/pebble-watch-src"),
+          Path.join(repo_root, "ide/priv/bundled_elm/shared-elm/shared/elm"),
+          Path.join(repo_root, "ide/priv/internal_packages/elm-time/src"),
+          Path.join(repo_root, "ide/priv/internal_packages/elm-random/src")
+        ],
+        "elm-version" => "0.19.1",
+        "dependencies" => %{
+          "direct" => %{
+            "elm/core" => "1.0.5",
+            "elm/json" => "1.1.3",
+            "elm/time" => "1.0.0",
+            "elm/random" => "1.0.0"
+          },
+          "indirect" => %{}
+        },
+        "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
+      })
+    )
+
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: true
+             })
+
+    generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    assert String.contains?(generated, "elmc_fn_Main_landedOnTile_native")
+
+    harness_path = Path.join(out_dir, "c/game_jump_n_run_harness.c")
+
+    File.write!(
+      harness_path,
+      """
+      #include "elmc_pebble.h"
+
+      int main(void) {
+        ElmcPebbleApp app = {0};
+        ElmcValue *flags = elmc_new_int_take(0);
+        if (elmc_pebble_init(&app, flags) != 0) return 2;
+        elmc_release(flags);
+
+        for (int i = 0; i < 30; i++) {
+          if (elmc_pebble_dispatch_frame(&app, 33, 33 * (i + 1), i + 1) != 0) return 20 + i;
+        }
+
+        elmc_pebble_deinit(&app);
+        return 0;
+      }
+      
+      
+      
+      """
+    )
+
+    binary_path = Path.join(out_dir, "game_jump_n_run_harness")
 
     {compile_out, compile_code} =
       System.cmd(cc, [
@@ -1409,7 +1566,8 @@ defmodule Elmc.PebbleShimTest do
         ElmcValue *reason = elmc_new_int_take(1);
         const char *names[] = {"reason", "screen"};
         ElmcValue *values[] = {reason, screen};
-        return elmc_record_new_take_value(2, names, values);
+        ElmcValue *__ret = elmc_record_new_take_value(2, names, values);
+        return __ret;
       }
 
       static int count_draw_kind(const ElmcPebbleDrawCmd *cmds, int count, int32_t kind) {
@@ -1444,6 +1602,9 @@ defmodule Elmc.PebbleShimTest do
         elmc_pebble_deinit(&app);
         return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 7;
       }
+      
+      
+      
       """
     )
 
@@ -1466,7 +1627,8 @@ defmodule Elmc.PebbleShimTest do
         ElmcValue *reason = elmc_new_int_take(1);
         const char *names[] = {"reason", "screen"};
         ElmcValue *values[] = {reason, screen};
-        return elmc_record_new_take_value(2, names, values);
+        ElmcValue *__ret = elmc_record_new_take_value(2, names, values);
+        return __ret;
       }
 
       static int64_t rotated_bitmap_angle(const ElmcPebbleDrawCmd *cmds, int count) {
@@ -1498,6 +1660,9 @@ defmodule Elmc.PebbleShimTest do
         elmc_pebble_deinit(&app);
         return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 6;
       }
+      
+      
+      
       """
     )
 
@@ -1648,6 +1813,9 @@ defmodule Elmc.PebbleShimTest do
         elmc_pebble_deinit(&app);
         return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 12;
       }
+      
+      
+      
       """
     )
 
@@ -1725,6 +1893,9 @@ defmodule Elmc.PebbleShimTest do
         elmc_pebble_deinit(&app);
         return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 12;
       }
+      
+      
+      
       """
     )
 
@@ -1800,6 +1971,9 @@ defmodule Elmc.PebbleShimTest do
         elmc_pebble_deinit(&app);
         return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 10;
       }
+      
+      
+      
       """
     )
 
@@ -1915,7 +2089,6 @@ defmodule Elmc.PebbleShimTest do
         ElmcValue *screen_color_mode = elmc_new_int_take(2);
         ElmcValue *screen_values[] = {screen_width, screen_height, screen_shape, screen_color_mode};
         ElmcValue *screen = elmc_record_new_values_take_value(4, screen_values);
-
         ElmcValue *reason = elmc_new_int_take(2);
         ElmcValue *watch_model = elmc_new_string_take("");
         ElmcValue *watch_profile_id = elmc_new_string_take("flint");
@@ -1951,14 +2124,22 @@ defmodule Elmc.PebbleShimTest do
         if (elmc_fn_Main_faceOps(&face_ops, face_args, 1) != RC_SUCCESS) return 7;
         if (!face_ops || face_ops->tag != ELMC_TAG_LIST || list_length(face_ops) <= 0) return 7;
 
-        ElmcValue *dial_args[4] = { model, elmc_new_int_take(72), elmc_new_int_take(84), elmc_new_int_take(64) };
-        ElmcValue *dial = elmc_fn_Main_drawDial(dial_args, 4);
+        ElmcValue *dial_w = elmc_new_int_take(72);
+        ElmcValue *dial_h = elmc_new_int_take(84);
+        ElmcValue *dial_r = elmc_new_int_take(64);
+        ElmcValue *dial_args[4] = { model, dial_w, dial_h, dial_r };
+        ElmcValue *dial = NULL;
+        if (elmc_fn_Main_drawDial(&dial, dial_args, 4) != RC_SUCCESS) return 8;
         if (!dial || dial->tag != ELMC_TAG_LIST || list_length(dial) <= 0) return 9;
         elmc_release(dial_args[1]);
         elmc_release(dial_args[2]);
         elmc_release(dial_args[3]);
 
-        ElmcValue *point_args[4] = { elmc_new_int_take(72), elmc_new_int_take(84), elmc_new_int_take(64), elmc_new_int_take(0) };
+        ElmcValue *point_cx = elmc_new_int_take(72);
+        ElmcValue *point_cy = elmc_new_int_take(84);
+        ElmcValue *point_r = elmc_new_int_take(64);
+        ElmcValue *point_a = elmc_new_int_take(0);
+        ElmcValue *point_args[4] = { point_cx, point_cy, point_r, point_a };
         ElmcValue *point = elmc_fn_Main_pointAt(point_args, 4);
         ElmcValue *point_x = elmc_record_get_index(point, 0);
         ElmcValue *point_y = elmc_record_get_index(point, 1);
@@ -1992,6 +2173,9 @@ defmodule Elmc.PebbleShimTest do
         elmc_pebble_deinit(&app);
         return 0;
       }
+      
+      
+      
       """
     )
 
@@ -2249,7 +2433,8 @@ defmodule Elmc.PebbleShimTest do
             , subscriptions = subscriptions
             , view = view
             }
-    """)
+    
+      """)
   end
 
   defp write_fill_radial_feature_app!(project_dir) do
@@ -2302,7 +2487,8 @@ defmodule Elmc.PebbleShimTest do
                     ]
                 ]
             ]
-    """)
+    
+      """)
   end
 
   defp write_minimal_watchface!(project_dir) do
@@ -2350,7 +2536,8 @@ defmodule Elmc.PebbleShimTest do
                     [ Ui.clear Color.white ]
                 ]
             ]
-    """)
+    
+      """)
   end
 
   defp write_unreachable_feature_app!(project_dir) do
@@ -2402,7 +2589,8 @@ defmodule Elmc.PebbleShimTest do
 
     unusedArc =
         Ui.arc { x = 0, y = 0, w = 20, h = 20 } 0 180
-    """)
+    
+      """)
   end
 
   defp write_indexed_map_view!(project_dir) do
@@ -2454,7 +2642,8 @@ defmodule Elmc.PebbleShimTest do
     cell : Int -> Int -> Ui.RenderOp
     cell index value =
         Ui.textInt Resources.DefaultFont { x = index * 8, y = 0 } value
-    """)
+    
+      """)
   end
 
   defp write_partial_collision_view!(project_dir) do
@@ -2575,7 +2764,8 @@ defmodule Elmc.PebbleShimTest do
             , view = view
             , subscriptions = subscriptions
             }
-    """)
+    
+      """)
   end
 
   defp write_frame_subscription_app!(project_dir) do
@@ -2624,7 +2814,8 @@ defmodule Elmc.PebbleShimTest do
 
     view _ =
         Ui.toUiNode [ Ui.clear Color.white ]
-    """)
+    
+      """)
   end
 
   defp write_light_command_app!(project_dir) do
@@ -2670,7 +2861,8 @@ defmodule Elmc.PebbleShimTest do
 
     view _ =
         Ui.toUiNode [ Ui.clear Color.white ]
-    """)
+    
+      """)
   end
 
   defp write_storage_read_string_app!(project_dir) do
@@ -2714,7 +2906,8 @@ defmodule Elmc.PebbleShimTest do
 
     view _ =
         Ui.toUiNode [ Ui.clear Color.white ]
-    """)
+    
+      """)
   end
 
   defp write_grid_scene_app!(project_dir) do
@@ -2797,7 +2990,8 @@ defmodule Elmc.PebbleShimTest do
             , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = x, y = textY, w = layout.cell, h = 18 } label
             ]
             |> Ui.group
-    """)
+    
+      """)
   end
 
   defp write_non_direct_multi_command_view_app!(project_dir) do
@@ -2842,7 +3036,8 @@ defmodule Elmc.PebbleShimTest do
                 :: List.map
                     (\\_ -> Ui.fillRect { x = 4, y = 4, w = 8, h = 8 } Color.black)
                     (List.repeat model 3)
-    """)
+    
+      """)
   end
 
   defp write_many_draw_commands_app!(project_dir, count) do
@@ -2893,7 +3088,8 @@ defmodule Elmc.PebbleShimTest do
         Ui.toUiNode
             [ #{commands}
             ]
-    """)
+    
+      """)
   end
 
   defp write_moving_rect_app!(project_dir) do
@@ -2938,7 +3134,8 @@ defmodule Elmc.PebbleShimTest do
         Ui.toUiNode
             [ Ui.fillRect { x = 10 + model, y = 20, w = 8, h = 6 } Color.black
             ]
-    """)
+    
+      """)
   end
 
   defp write_midpoint_view_app!(project_dir) do
@@ -3002,7 +3199,8 @@ defmodule Elmc.PebbleShimTest do
         { x = (a.x + b.x) // 2
         , y = (a.y + b.y) // 2
         }
-    """)
+    
+      """)
   end
 
   defp write_digital_watch_multi_clear_scene_app!(project_dir, clear_count)
@@ -3092,7 +3290,8 @@ defmodule Elmc.PebbleShimTest do
             , Ui.text Resources.DefaultFont (Ui.alignCenter Ui.defaultTextOptions) { x = cardX, y = textY, w = cardW, h = timeH } model.timeString
             , Ui.roundRect { x = cardX, y = cardY, w = cardW, h = cardH } cornerRadius Color.black
             ]
-    """)
+    
+      """)
   end
 
   defp write_digital_watchface_scene_app!(project_dir) do
@@ -3167,7 +3366,8 @@ defmodule Elmc.PebbleShimTest do
             , Ui.roundRect { x = cardX, y = cardY, w = cardW, h = cardH } cornerRadius Color.black
             , Ui.text Resources.DefaultFont (Ui.alignCenter Ui.defaultTextOptions) { x = cardX, y = textY, w = cardW, h = timeH } model.timeString
             ]
-    """)
+    
+      """)
   end
 
   defp write_centered_text_view_app!(project_dir) do
@@ -3210,7 +3410,8 @@ defmodule Elmc.PebbleShimTest do
         Ui.toUiNode
             [ Ui.text Resources.DefaultFont (Ui.alignCenter Ui.defaultTextOptions) { x = 10, y = 20, w = 30, h = 18 } "2"
             ]
-    """)
+    
+      """)
   end
 
   defp write_context_group_text_view_app!(project_dir) do
@@ -3263,7 +3464,8 @@ defmodule Elmc.PebbleShimTest do
             [ Ui.clear Color.white
             , label
             ]
-    """)
+    
+      """)
   end
 
   test "elmc_pebble.c includes elmc_pebble.h after heap log build flags" do

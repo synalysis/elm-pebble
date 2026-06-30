@@ -7,13 +7,16 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   alias Elmc.Backend.CCodegen.Fusion
   alias Elmc.Backend.CCodegen.Hoist
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.IfCompile
   alias Elmc.Backend.CCodegen.ImmortalStaticList
   alias Elmc.Backend.CCodegen.ListLoopCodegen
   alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Native.IntCase, as: NativeIntCase
   alias Elmc.Backend.CCodegen.Native.MaybeIntCase, as: NativeMaybeIntCase
+  alias Elmc.Backend.CCodegen.ProdMode
   alias Elmc.Backend.CCodegen.Native.TypedReturn
+  alias Elmc.Backend.CCodegen.Native.PolarPoint
   alias Elmc.Backend.CCodegen.Native.RecordFields, as: RecordFields
   alias Elmc.Backend.CCodegen.Native.UsageAnalysis, as: NativeUsageAnalysis
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
@@ -21,18 +24,32 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.UnionMacros
   alias Elmc.Backend.CCodegen.Util
+  alias Elmc.Backend.CCodegen.ValueSlots
 
   @spec expr?(Types.ir_expr(), Types.compile_env()) :: boolean()
   def expr?(%{op: :var, name: name}, env) when is_binary(name) or is_atom(name) do
     EnvBindings.boxed_int_binding?(env, name) or
       is_binary(EnvBindings.native_int_binding(env, name)) or
-      ConstantInt.native_let_value?(%{op: :var, name: name}, env)
+      ConstantInt.native_let_value?(%{op: :var, name: name}, env) or
+      EnvBindings.function_int_param?(env, name)
   end
 
-  def expr?(%{op: :field_access, arg: arg, field: field}, env),
-    do:
-      RecordFields.int_field?(env, arg, field) and
-        not RecordFields.union_tag_field?(env, arg, field)
+  def expr?(%{op: :field_access, arg: arg, field: field}, env) do
+    case Host.inline_record_field_expr(arg, field, env) do
+      field_expr when is_map(field_expr) ->
+        expr?(field_expr, env)
+
+      nil ->
+        case PolarPoint.native_field_expr?(arg, env) do
+          true ->
+            true
+
+          false ->
+            RecordFields.int_field?(env, arg, field) and
+              not RecordFields.union_tag_field?(env, arg, field)
+        end
+    end
+  end
 
   # Tuple accessors yield boxed Elm values (lists, records, nested tuples). Treating them as
   # native ints would truncate pointers on 32-bit targets.
@@ -53,24 +70,37 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
   def expr?(%{op: :let_in, name: name, value_expr: value_expr, in_expr: in_expr}, env)
       when is_binary(name) or is_atom(name) do
-    if case_subject_let?(name, value_expr, in_expr) do
-      subject_expr = CaseCompile.subject_expr(value_expr)
-      native_case_expr?(subject_expr, in_expr.branches, env)
-    else
-      value_native? = expr?(value_expr, env)
+    cond do
+      case_subject_let?(name, value_expr, in_expr) ->
+        subject_expr = CaseCompile.subject_expr(value_expr)
+        native_case_expr?(subject_expr, in_expr.branches, env)
 
-      body_env =
-        env
-        |> Map.delete(name)
-        |> then(fn body_env ->
-          if value_native? and NativeUsageAnalysis.int_let?(name, value_expr, in_expr, env) do
-            EnvBindings.put_native_int_binding(body_env, name, "_native_let")
-          else
-            body_env
-          end
-        end)
+      NativeUsageAnalysis.pebble_angle_let?(name, value_expr, in_expr) ->
+        body_env =
+          env
+          |> Map.delete(name)
+          |> EnvBindings.remove_native_int_binding(name)
+          |> EnvBindings.remove_native_bool_binding(name)
+          |> EnvBindings.remove_native_float_binding(name)
+          |> EnvBindings.put_pebble_angle_binding(name, value_expr)
 
-      value_native? and expr?(in_expr, body_env)
+        expr?(in_expr, body_env)
+
+      true ->
+        value_native? = expr?(value_expr, env)
+
+        body_env =
+          env
+          |> Map.delete(name)
+          |> then(fn body_env ->
+            if value_native? and NativeUsageAnalysis.int_let?(name, value_expr, in_expr, env) do
+              EnvBindings.put_native_int_binding(body_env, name, "_native_let")
+            else
+              body_env
+            end
+          end)
+
+        value_native? and expr?(in_expr, body_env)
     end
   end
 
@@ -412,57 +442,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   defp record_field_access?(%{op: :field_access}), do: true
   defp record_field_access?(_), do: false
 
-  defp dispatch(%{op: :int_literal, value: value}, _env, counter),
-    do: {"", "#{value}", counter}
-
-  defp dispatch(%{op: :c_int_expr, value: value}, _env, counter)
-       when is_binary(value),
-       do: {"", value, counter}
-
-  defp dispatch(%{op: :msg_tag_expr, name: name}, _env, counter) when is_binary(name) do
-    {"", "ELMC_PEBBLE_MSG_#{Elmc.Backend.Pebble.Util.macro_name(name)}", counter}
-  end
-
-  defp dispatch(%{op: :char_literal, value: value}, _env, counter),
-    do: {"", "#{value}", counter}
-
-  defp dispatch(
-         %{op: :if, cond: cond_expr, then_expr: then_expr, else_expr: else_expr},
-         env,
-         counter
-       ) do
-    if expr?(then_expr, env) and expr?(else_expr, env) do
-      hoisted_before = Process.get(:elmc_hoisted_native_int_inits, %{})
-      {cond_code, cond_ref, counter} = Host.compile_native_bool_expr(cond_expr, env, counter)
-      {then_code, then_ref, counter} = compile_expr(then_expr, env, counter)
-      {else_code, else_ref, counter} = compile_expr(else_expr, env, counter)
-      branch_hoists = Hoist.hoisted_native_int_branch_preamble(hoisted_before, allow_record_getters: true)
-      next = counter + 1
-      out = "native_if_#{next}"
-
-      code = """
-      #{branch_hoists}#{cond_code}
-        elmc_int_t #{out};
-        if (#{cond_ref}) {
-      #{CSource.indent(then_code, 4)}
-          #{out} = #{then_ref};
-        } else {
-      #{CSource.indent(else_code, 4)}
-          #{out} = #{else_ref};
-        }
-      """
-
-      {code, out, next}
-    else
-      compile_fallback(
-        %{op: :if, cond: cond_expr, then_expr: then_expr, else_expr: else_expr},
-        env,
-        counter
-      )
-    end
-  end
-
-  defp dispatch(%{op: :field_access, arg: arg, field: field}, env, counter)
+  defp dispatch_field_access(%{op: :field_access, arg: arg, field: field}, env, counter)
        when is_binary(arg) do
     case Map.fetch(env, arg) do
       {:ok, {:native_record, fields}} ->
@@ -509,7 +489,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     end
   end
 
-  defp dispatch(
+  defp dispatch_field_access(
          %{op: :field_access, arg: %{op: :var, name: name}, field: field},
          env,
          counter
@@ -526,7 +506,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     end
   end
 
-  defp dispatch(%{op: :field_access, arg: arg_expr, field: field} = expr, env, counter)
+  defp dispatch_field_access(%{op: :field_access, arg: arg_expr, field: field} = expr, env, counter)
        when is_map(arg_expr) do
     case Host.inline_record_field_expr(arg_expr, field, env) do
       nil ->
@@ -562,7 +542,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
             #{before_probe}
               const elmc_int_t #{out} = #{getter};
             #{after_probe}
-              elmc_release(#{arg_var});
+              #{ValueSlots.release_stmt(arg_var)};
             """
 
             {code, out, next}
@@ -570,6 +550,75 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
       field_expr ->
         compile_expr(field_expr, env, counter)
+    end
+  end
+
+  defp dispatch(%{op: :int_literal, value: value}, _env, counter),
+    do: {"", "#{value}", counter}
+
+  defp dispatch(%{op: :c_int_expr, value: value}, _env, counter)
+       when is_binary(value),
+       do: {"", value, counter}
+
+  defp dispatch(%{op: :msg_tag_expr, name: name}, _env, counter) when is_binary(name) do
+    {"", "ELMC_PEBBLE_MSG_#{Elmc.Backend.Pebble.Util.macro_name(name)}", counter}
+  end
+
+  defp dispatch(%{op: :char_literal, value: value}, _env, counter),
+    do: {"", "#{value}", counter}
+
+  defp dispatch(
+         %{op: :if, cond: cond_expr, then_expr: then_expr, else_expr: else_expr} = expr,
+         env,
+         counter
+       ) do
+    if expr?(then_expr, env) and expr?(else_expr, env) do
+      case IfCompile.try_compile_int_branches(cond_expr, then_expr, else_expr, env, counter) do
+        {:ok, result} ->
+          result
+
+        :error ->
+          compile_native_int_if(cond_expr, then_expr, else_expr, env, counter)
+      end
+    else
+      compile_fallback(expr, env, counter)
+    end
+  end
+
+  defp compile_native_int_if(cond_expr, then_expr, else_expr, env, counter) do
+    hoisted_before = Process.get(:elmc_hoisted_native_int_inits, %{})
+    {cond_code, cond_ref, counter} = Host.compile_native_bool_expr(cond_expr, env, counter)
+    then_env = RecordCompile.fresh_subexpr_cache(env)
+    else_env = RecordCompile.fresh_subexpr_cache(env)
+    {then_code, then_ref, counter} = compile_expr(then_expr, then_env, counter)
+    {else_code, else_ref, counter} = compile_expr(else_expr, else_env, counter)
+    branch_hoists = Hoist.hoisted_native_int_branch_preamble(hoisted_before, allow_record_getters: true)
+    next = counter + 1
+    out = "native_if_#{next}"
+
+    code = """
+    #{branch_hoists}#{cond_code}
+      elmc_int_t #{out};
+      if (#{cond_ref}) {
+    #{CSource.indent(then_code, 4)}
+        #{out} = #{then_ref};
+      } else {
+    #{CSource.indent(else_code, 4)}
+        #{out} = #{else_ref};
+      }
+    """
+
+    {code, out, next}
+  end
+
+  defp dispatch(%{op: :field_access, arg: arg, field: field} = expr, env, counter)
+       when is_binary(field) do
+    case PolarPoint.try_compile_field(arg, field, env, counter) do
+      {:ok, code, ref, counter} ->
+        {code, ref, counter}
+
+      :error ->
+        dispatch_field_access(expr, env, counter)
     end
   end
 
@@ -842,6 +891,21 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   end
 
   defp dispatch(
+         %{op: :qualified_call, target: target, args: [value]},
+         env,
+         counter
+       )
+       when target in ["Basics.round", "round"] do
+    case pebble_trig_round(value, env, counter) do
+      {:ok, code, out, counter} ->
+        {code, out, counter}
+
+      _ ->
+        float_to_int_expr("elmc_basics_round", value, env, counter)
+    end
+  end
+
+  defp dispatch(
          %{op: :qualified_call, target: target, args: args} = expr,
          env,
          counter
@@ -965,7 +1029,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
           """
           #{list_code}#{index_code}#{default_code}
             const elmc_int_t #{out} = elmc_list_nth_int_default(#{list_var}, #{index_ref}, #{default_ref});
-            elmc_release(#{list_var});
+            #{ValueSlots.release_stmt(list_var)};
           """
       end
 
@@ -1141,6 +1205,9 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
        )
        when is_binary(name) or is_atom(name) do
     cond do
+      NativeUsageAnalysis.pebble_angle_let?(name, value_expr, in_expr) ->
+        compile_pebble_angle_native_int_let(name, value_expr, in_expr, env, counter)
+
       case_subject_let?(name, value_expr, in_expr) ->
         subject_expr = CaseCompile.subject_expr(value_expr)
 
@@ -1198,8 +1265,24 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     end
   end
 
+  defp compile_pebble_angle_native_int_let(name, value_expr, in_expr, env, counter) do
+    body_env =
+      env
+      |> Map.delete(name)
+      |> EnvBindings.remove_native_int_binding(name)
+      |> EnvBindings.remove_native_bool_binding(name)
+      |> EnvBindings.remove_native_float_binding(name)
+      |> EnvBindings.put_pebble_angle_binding(name, value_expr)
+      |> EnvBindings.put_boxed_int_binding(name, false)
+      |> EnvBindings.put_boxed_string_binding(name, false)
+      |> EnvBindings.put_let_value_expr(name, value_expr)
+
+    compile_expr(in_expr, body_env, counter)
+  end
+
   defp compile_native_int_let_body(name, value_expr, in_expr, env, counter) do
-    {value_code, value_ref, counter} = compile_expr(value_expr, env, counter)
+    value_env = RcRuntimeEmit.strip_function_tail_scope(env)
+    {value_code, value_ref, counter} = compile_expr(value_expr, value_env, counter)
 
     case Integer.parse(value_ref) do
       {bound, ""} ->
@@ -1322,14 +1405,32 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
           {:ok, left_code, "(#{left_ref} - #{count})", counter}
 
         :error ->
-          {list_code, list_var, counter} = Host.compile_expr(list, env, counter)
+          operand_env = RcRuntimeEmit.strip_function_tail_scope(env)
+
+          {list_code, list_var, counter, borrowed?} =
+            case Host.record_get_borrow_expr(list, operand_env) do
+              ref when is_binary(ref) ->
+                {"", ref, counter, true}
+
+              nil ->
+                {code, var, c} = Host.compile_expr(list, operand_env, counter)
+                {code, var, c, false}
+            end
+
           loop_id = counter + 1
           {length_code, count} = ListLoopCodegen.emit_length_native_count(list_var, loop_id)
+
+          release =
+            if borrowed? do
+              ""
+            else
+              RecordCompile.release_list_operand_code(env, list_var)
+            end
 
           code = """
           #{left_code}#{list_code}
           #{length_code}
-            #{RecordCompile.release_list_operand_code(env, list_var)}
+            #{release}
           """
 
           {:ok, code, "(#{left_ref} - #{count})", counter}
@@ -1417,18 +1518,28 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
           do: "generated_trig_sin_double",
           else: "generated_trig_cos_double"
 
-      code = """
-      #{angle_code}
-      #{radius_code}
-      #if defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_CHALK) || defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_FLINT) || defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_GABBRO)
+      watch_body = """
         const int32_t #{trig_var} = #{c_trig}((int32_t)#{angle_ref});
         const int32_t #{prod_var} = #{trig_var} * (int32_t)#{radius_ref};
         const elmc_int_t #{out} = (#{prod_var} + (#{prod_var} >= 0 ? (TRIG_MAX_RATIO / 2) : -(TRIG_MAX_RATIO / 2))) / TRIG_MAX_RATIO;
-      #else
-        const double native_trig_theta_#{next} = ((((double)#{angle_ref} * (double)2) * 3.141592653589793) / (double)65536);
-        const double native_trig_arg_#{next} = #{double_trig}(native_trig_theta_#{next}) * (double)#{radius_ref};
-        const elmc_int_t #{out} = (elmc_int_t)(native_trig_arg_#{next} + (native_trig_arg_#{next} >= 0 ? 0.5 : -0.5));
-      #endif
+      """
+
+      code = """
+      #{angle_code}
+      #{radius_code}
+      #{if ProdMode.pebble_watch?() do
+        watch_body
+      else
+        """
+        #if defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_CHALK) || defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_FLINT) || defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_GABBRO)
+        #{String.trim_trailing(watch_body)}
+        #else
+          const double native_trig_theta_#{next} = ((((double)#{angle_ref} * (double)2) * 3.141592653589793) / (double)65536);
+          const double native_trig_arg_#{next} = #{double_trig}(native_trig_theta_#{next}) * (double)#{radius_ref};
+          const elmc_int_t #{out} = (elmc_int_t)(native_trig_arg_#{next} + (native_trig_arg_#{next} >= 0 ? 0.5 : -0.5));
+        #endif
+        """
+      end}
       """
 
       {:ok, code, out, next}
@@ -1478,6 +1589,9 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   defp to_float_arg(%{op: :qualified_call, target: target, args: [value]})
        when target in ["Basics.toFloat", "toFloat"],
        do: {:ok, value}
+
+  defp to_float_arg(%{op: :call, name: name, args: [value]}) when name in ["toFloat"],
+    do: {:ok, value}
 
   defp to_float_arg(%{op: :runtime_call, function: "elmc_basics_to_float", args: [value]}),
     do: {:ok, value}
@@ -1635,7 +1749,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
       {"""
        #{code}
          const elmc_int_t #{out} = elmc_as_int(#{var});
-         elmc_release(#{var});
+         #{ValueSlots.release_stmt(var)};
        """, out, next}
 
     case expr do
@@ -1675,9 +1789,13 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   defp release_maybe_code(vars) when is_list(vars) do
     vars
     |> Enum.uniq()
-    |> Enum.map_join("", fn var -> "\n  elmc_release(#{var});" end)
+    |> Enum.map_join("", fn var -> "\n  " <> release_maybe_var(var) end)
   end
 
-  defp release_maybe_code(var) when is_binary(var), do: "\n  elmc_release(#{var});"
+  defp release_maybe_code(var) when is_binary(var), do: "\n  " <> release_maybe_var(var)
   defp release_maybe_code(_), do: ""
+
+  defp release_maybe_var(var) when is_binary(var) do
+    ValueSlots.release_consumed(var)
+  end
 end

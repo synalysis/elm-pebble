@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.CCodegen.EnvBindings do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.Native.TypedReturn
   alias Elmc.Backend.CCodegen.Types
 
   @spec same_binding?(Types.binding_name(), Types.binding_name()) :: boolean()
@@ -118,6 +119,50 @@ defmodule Elmc.Backend.CCodegen.EnvBindings do
 
   def boxed_string_binding?(_env, _name), do: false
 
+  @spec put_let_value_expr(Types.compile_env(), Types.binding_name(), Types.ir_expr()) ::
+          Types.compile_env()
+  def put_let_value_expr(env, name, value_expr) when is_map(value_expr) do
+    lets = Map.get(env, :__let_value_exprs__, %{})
+    Map.put(env, :__let_value_exprs__, Map.put(lets, binding_key(name), value_expr))
+  end
+
+  def put_let_value_expr(env, _name, _value_expr), do: env
+
+  @spec let_value_expr(Types.compile_env(), Types.binding_name()) :: Types.ir_expr() | nil
+  def let_value_expr(env, name) when is_binary(name) or is_atom(name) do
+    env
+    |> Map.get(:__let_value_exprs__, %{})
+    |> Map.get(binding_key(name))
+  end
+
+  def let_value_expr(_env, _name), do: nil
+
+  @spec function_int_param?(Types.compile_env(), Types.binding_name()) :: boolean()
+  def function_int_param?(env, name) when is_binary(name) or is_atom(name) do
+    key = binding_key(name)
+
+    with source when is_binary(source) <- lookup_binding(env, key),
+         true <- source == key,
+         false <- non_native_scalar_param?(env, name) do
+      true
+    else
+      _ -> false
+    end
+  end
+
+  defp non_native_scalar_param?(env, name) do
+    case TypedReturn.expr_type(%{op: :var, name: name}, env) do
+      nil -> false
+      "Int" -> false
+      "Bool" -> true
+      "String" -> true
+      "List " <> _ -> true
+      _ -> true
+    end
+  end
+
+  def function_int_param?(_env, _name), do: false
+
   @spec put_native_int_binding(Types.compile_env(), Types.binding_name(), String.t()) :: Types.compile_env()
   def put_native_int_binding(env, name, ref)
        when (is_binary(name) or is_atom(name)) and is_binary(ref) do
@@ -203,13 +248,13 @@ defmodule Elmc.Backend.CCodegen.EnvBindings do
   def capture_ref(env, var_name) do
     cond do
       is_binary(ref = native_int_binding(env, var_name)) ->
-        "elmc_new_int_take(#{ref})"
+        "elmc_new_int(#{ref})"
 
       is_binary(ref = native_bool_binding(env, var_name)) ->
-        "elmc_new_bool_take(#{ref})"
+        "elmc_new_bool(#{ref})"
 
       is_binary(ref = native_float_binding(env, var_name)) ->
-        "elmc_new_float_take(#{ref})"
+        "elmc_new_float(#{ref})"
 
       match?({:forward_ref_slot, _}, Map.get(env, var_name)) ->
         {:forward_ref_slot, slot} = Map.get(env, var_name)
@@ -311,6 +356,23 @@ defmodule Elmc.Backend.CCodegen.EnvBindings do
   end
 
   def borrowed_arg_ref?(_env, _c_ref), do: false
+
+  @spec put_tuple_projection_ref(Types.compile_env(), String.t()) :: Types.compile_env()
+  def put_tuple_projection_ref(env, c_ref) when is_binary(c_ref) do
+    refs = Map.get(env, :__tuple_projection_refs__, MapSet.new())
+    Map.put(env, :__tuple_projection_refs__, MapSet.put(refs, c_ref))
+  end
+
+  def put_tuple_projection_ref(env, _c_ref), do: env
+
+  @spec tuple_projection_ref?(Types.compile_env(), String.t()) :: boolean()
+  def tuple_projection_ref?(env, c_ref) when is_binary(c_ref) do
+    env
+    |> Map.get(:__tuple_projection_refs__, MapSet.new())
+    |> MapSet.member?(c_ref)
+  end
+
+  def tuple_projection_ref?(_env, _c_ref), do: false
 
   @spec put_borrowed_arg_refs(
           Types.compile_env(),

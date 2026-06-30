@@ -329,34 +329,34 @@ defmodule Elmc.Runtime.RcTrack do
       if (value->tag == ELMC_TAG_INT || value->tag == ELMC_TAG_BOOL) {
         /* Scalar values live inline in ElmcValue, not in heap payloads. */
       } else if (value->tag == ELMC_TAG_INT_LIST) {
+      #if ELMC_RC_TRACK
+        elmc_rc_track_drop_owned(value);
+      #endif
         if (elmc_int_list_cell_release(value)) {
-        #if ELMC_RC_TRACK
-          elmc_rc_track_drop_owned(value);
-        #endif
           ELMC_RELEASED += 1;
           return;
         }
       } else if (value->tag == ELMC_TAG_INT_SPINE) {
+      #if ELMC_RC_TRACK
+        elmc_rc_track_drop_owned(value);
+      #endif
         if (elmc_int_spine_cell_release(value)) {
-        #if ELMC_RC_TRACK
-          elmc_rc_track_drop_owned(value);
-        #endif
           ELMC_RELEASED += 1;
           return;
         }
       } else if (value->tag == ELMC_TAG_FLOAT_LIST) {
+      #if ELMC_RC_TRACK
+        elmc_rc_track_drop_owned(value);
+      #endif
         if (elmc_float_list_cell_release(value)) {
-        #if ELMC_RC_TRACK
-          elmc_rc_track_drop_owned(value);
-        #endif
           ELMC_RELEASED += 1;
           return;
         }
       } else if (value->tag == ELMC_TAG_RECORD_SEQ) {
+      #if ELMC_RC_TRACK
+        elmc_rc_track_drop_owned(value);
+      #endif
         if (elmc_record_seq_cell_release(value)) {
-        #if ELMC_RC_TRACK
-          elmc_rc_track_drop_owned(value);
-        #endif
           ELMC_RELEASED += 1;
           return;
         }
@@ -366,22 +366,43 @@ defmodule Elmc.Runtime.RcTrack do
       } else if (value->tag == ELMC_TAG_MAYBE && value->payload != NULL) {
         ElmcMaybe *maybe = (ElmcMaybe *)value->payload;
         if (maybe->value) elmc_release(maybe->value);
+      #if ELMC_RC_TRACK
+        elmc_rc_track_drop_owned(value);
+      #endif
+        if (elmc_maybe_cell_release(value)) {
+          ELMC_RELEASED += 1;
+          return;
+        }
       } else if (value->tag == ELMC_TAG_RESULT && value->payload != NULL) {
         ElmcResult *result = (ElmcResult *)value->payload;
         if (result->value) elmc_release(result->value);
+      #if ELMC_RC_TRACK
+        elmc_rc_track_drop_owned(value);
+      #endif
+        if (elmc_result_cell_release(value)) {
+          ELMC_RELEASED += 1;
+          return;
+        }
       } else if (value->tag == ELMC_TAG_TUPLE2 && value->payload != NULL) {
         ElmcTuple2 *tuple = (ElmcTuple2 *)value->payload;
         if (tuple->first) elmc_release(tuple->first);
         if (tuple->second) elmc_release(tuple->second);
+      #if ELMC_RC_TRACK
+        elmc_rc_track_drop_owned(value);
+      #endif
+        if (elmc_tuple2_cell_release(value)) {
+          ELMC_RELEASED += 1;
+          return;
+        }
       } else if (value->tag == ELMC_TAG_RECORD && value->payload != NULL) {
         ElmcRecord *rec = (ElmcRecord *)value->payload;
         for (int i = 0; i < rec->field_count; i++) {
           if (rec->field_values[i]) elmc_release(rec->field_values[i]);
         }
+      #if ELMC_RC_TRACK
+        elmc_rc_track_drop_owned(value);
+      #endif
         if (elmc_record_cell_release(value)) {
-        #if ELMC_RC_TRACK
-          elmc_rc_track_drop_owned(value);
-        #endif
           ELMC_RELEASED += 1;
           return;
         }
@@ -391,10 +412,10 @@ defmodule Elmc.Runtime.RcTrack do
         for (int i = 0; i < clo->capture_count; i++) {
           if (clo->captures[i]) elmc_release(clo->captures[i]);
         }
+      #if ELMC_RC_TRACK
+        elmc_rc_track_drop_owned(value);
+      #endif
         if (elmc_closure_cell_release(value)) {
-        #if ELMC_RC_TRACK
-          elmc_rc_track_drop_owned(value);
-        #endif
           ELMC_RELEASED += 1;
           return;
         }
@@ -403,74 +424,47 @@ defmodule Elmc.Runtime.RcTrack do
         elmc_free(value->payload);
       }
       if (value->tag == ELMC_TAG_INT_LIST && elmc_int_list_cell_release(value)) {
-      #if ELMC_RC_TRACK
-        elmc_rc_track_drop_owned(value);
-      #endif
         ELMC_RELEASED += 1;
         return;
       }
       if (value->tag == ELMC_TAG_INT_SPINE && elmc_int_spine_cell_release(value)) {
-      #if ELMC_RC_TRACK
-        elmc_rc_track_drop_owned(value);
-      #endif
         ELMC_RELEASED += 1;
         return;
       }
       if (value->tag == ELMC_TAG_FLOAT_LIST && elmc_float_list_cell_release(value)) {
-      #if ELMC_RC_TRACK
-        elmc_rc_track_drop_owned(value);
-      #endif
         ELMC_RELEASED += 1;
         return;
       }
       if (value->tag == ELMC_TAG_RECORD_SEQ && elmc_record_seq_cell_release(value)) {
-      #if ELMC_RC_TRACK
-        elmc_rc_track_drop_owned(value);
-      #endif
         ELMC_RELEASED += 1;
         return;
       }
-      if (value->tag == ELMC_TAG_LIST && elmc_list_cell_release(value)) {
+      if (value->tag == ELMC_TAG_LIST) {
       #if ELMC_RC_TRACK
         elmc_rc_track_drop_owned(value);
       #endif
-        ELMC_RELEASED += 1;
-        return;
+        if (elmc_list_cell_release(value)) {
+          ELMC_RELEASED += 1;
+          return;
+        }
       }
-      if (value->tag == ELMC_TAG_MAYBE && elmc_maybe_cell_release(value)) {
+      if (value->tag == ELMC_TAG_CMD) {
       #if ELMC_RC_TRACK
         elmc_rc_track_drop_owned(value);
       #endif
-        ELMC_RELEASED += 1;
-        return;
+        if (elmc_cmd_cell_release(value)) {
+          ELMC_RELEASED += 1;
+          return;
+        }
       }
-      if (value->tag == ELMC_TAG_RESULT && elmc_result_cell_release(value)) {
+      if (value->tag == ELMC_TAG_SUB) {
       #if ELMC_RC_TRACK
         elmc_rc_track_drop_owned(value);
       #endif
-        ELMC_RELEASED += 1;
-        return;
-      }
-      if (value->tag == ELMC_TAG_TUPLE2 && elmc_tuple2_cell_release(value)) {
-      #if ELMC_RC_TRACK
-        elmc_rc_track_drop_owned(value);
-      #endif
-        ELMC_RELEASED += 1;
-        return;
-      }
-      if (value->tag == ELMC_TAG_CMD && elmc_cmd_cell_release(value)) {
-      #if ELMC_RC_TRACK
-        elmc_rc_track_drop_owned(value);
-      #endif
-        ELMC_RELEASED += 1;
-        return;
-      }
-      if (value->tag == ELMC_TAG_SUB && elmc_sub_cell_release(value)) {
-      #if ELMC_RC_TRACK
-        elmc_rc_track_drop_owned(value);
-      #endif
-        ELMC_RELEASED += 1;
-        return;
+        if (elmc_sub_cell_release(value)) {
+          ELMC_RELEASED += 1;
+          return;
+        }
       }
       if (value->tag != ELMC_TAG_INT && value->tag != ELMC_TAG_BOOL) {
         elmc_free(value->payload);

@@ -39,6 +39,7 @@ defmodule Elmc.Backend.CCodegen.RcRequired do
     "elmc_result",
     "elmc_closure_new",
     "elmc_string_append",
+    "elmc_string_concat_parts",
     "elmc_string_from_int",
     "elmc_string_from_native_int",
     "elmc_cmd1",
@@ -46,6 +47,7 @@ defmodule Elmc.Backend.CCodegen.RcRequired do
     "elmc_cmd3",
     "elmc_cmd4",
     "elmc_cmd_queue_append",
+    "elmc_render_cmd6",
     "elmc_apply_extra",
     "elmc_forward_ref_capture"
   ])
@@ -268,7 +270,8 @@ defmodule Elmc.Backend.CCodegen.RcRequired do
       String.starts_with?(function, "elmc_string") or
       String.starts_with?(function, "elmc_dict") or
       String.starts_with?(function, "elmc_set") or
-      String.starts_with?(function, "elmc_cmd")
+      String.starts_with?(function, "elmc_cmd") or
+      String.starts_with?(function, "elmc_render_cmd")
   end
 
   defp allocating_function?(_), do: false

@@ -79,7 +79,11 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Helpers do
           Types.ir_expr()
   def encoded_draw_field_cmd_expr(kind, args, arity) do
     if length(args) == arity do
-      encoded_cmd_as_tuple(draw_kind_expr(kind), args)
+      if render_cmd_eligible?(args) do
+        %{op: :render_cmd, kind: draw_kind_expr(kind), params: args}
+      else
+        encoded_cmd_as_tuple(draw_kind_expr(kind), args)
+      end
     else
       %{op: :unsupported}
     end
@@ -117,14 +121,25 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Helpers do
   defp pebble_cmd_param?(%{op: :qualified_call, args: args}) when is_list(args),
     do: Enum.all?(args, &pebble_cmd_param?/1)
 
+  defp pebble_cmd_param?(%{op: :record_literal, fields: fields}) when is_list(fields),
+    do: Enum.all?(fields, fn %{expr: expr} -> pebble_cmd_param?(expr) end)
+
   defp pebble_cmd_param?(_), do: false
+
+  defp render_cmd_eligible?(args) do
+    length(args) <= 6 and Enum.all?(args, &pebble_cmd_param?/1)
+  end
 
   @spec encoded_draw_cmd_expr(non_neg_integer(), [Types.ir_expr()], non_neg_integer()) ::
           Types.ir_expr()
   def encoded_draw_cmd_expr(kind, args, arity) do
     if length(args) == arity do
-      payload = args ++ List.duplicate(%{op: :int_literal, value: 0}, max(0, 6 - arity))
-      %{op: :tuple2, left: draw_kind_expr(kind), right: tuple_chain(payload)}
+      if render_cmd_eligible?(args) do
+        %{op: :render_cmd, kind: draw_kind_expr(kind), params: args}
+      else
+        payload = args ++ List.duplicate(%{op: :int_literal, value: 0}, max(0, 6 - arity))
+        %{op: :tuple2, left: draw_kind_expr(kind), right: tuple_chain(payload)}
+      end
     else
       %{op: :unsupported}
     end
@@ -283,6 +298,42 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Helpers do
       |> List.last()
       |> then(&Map.get(tags, &1, 0))
     end)
+  end
+
+  @spec point_coord_exprs(Types.ir_expr()) :: {:ok, {Types.ir_expr(), Types.ir_expr()}} | :error
+  def point_coord_exprs(%{op: :record_literal, fields: fields}) when is_list(fields) do
+    with %{expr: x} <- Enum.find(fields, &(&1.name == "x")),
+         %{expr: y} <- Enum.find(fields, &(&1.name == "y")) do
+      {:ok, {x, y}}
+    else
+      _ -> :error
+    end
+  end
+
+  def point_coord_exprs(center) when is_map(center) do
+    {:ok, {field_access_expr(center, "x"), field_access_expr(center, "y")}}
+  end
+
+  def point_coord_exprs(_), do: :error
+
+  @spec encoded_draw_center_cmd_expr(non_neg_integer(), Types.ir_expr(), [Types.ir_expr()], non_neg_integer()) ::
+          Types.ir_expr()
+  def encoded_draw_center_cmd_expr(kind, center, trailing_args, arity) do
+    case point_coord_exprs(center) do
+      {:ok, {x, y}} -> encoded_draw_field_cmd_expr(kind, [x, y | trailing_args], arity)
+      :error -> %{op: :unsupported}
+    end
+  end
+
+  @spec encoded_draw_line_cmd_expr(non_neg_integer(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) ::
+          Types.ir_expr()
+  def encoded_draw_line_cmd_expr(kind, start_pos, end_pos, color) do
+    with {:ok, {sx, sy}} <- point_coord_exprs(start_pos),
+         {:ok, {ex, ey}} <- point_coord_exprs(end_pos) do
+      encoded_draw_field_cmd_expr(kind, [sx, sy, ex, ey, color], 5)
+    else
+      _ -> %{op: :unsupported}
+    end
   end
 
   @spec field_access_expr(Types.ir_expr(), String.t()) :: Types.ir_expr()

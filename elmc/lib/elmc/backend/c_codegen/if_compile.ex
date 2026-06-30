@@ -7,6 +7,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
   alias Elmc.Backend.CCodegen.HelperParams
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.IntIfChain
+  alias Elmc.Backend.CCodegen.Native.IntCase, as: NativeIntCase
   alias Elmc.Backend.CCodegen.Native.String, as: NativeString
   alias Elmc.Backend.CCodegen.PlatformStatic
   alias Elmc.Backend.CCodegen.RecordCompile
@@ -38,6 +39,34 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
     compile_branches(cond_expr, then_expr, else_expr, env, counter)
   end
 
+  @doc false
+  @spec try_compile_int_branches(
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: {:ok, Types.compile_result()} | :error
+  def try_compile_int_branches(cond_expr, then_expr, else_expr, env, counter) do
+    case int_if_chain_parse(cond_expr, then_expr, else_expr, env) do
+      {:ok, subject, branches} ->
+        {:ok, dispatch_int_if_chain(subject, branches, env, counter)}
+
+      :error ->
+        :error
+    end
+  end
+
+  defp int_if_chain_parse(cond_expr, then_expr, else_expr, env) do
+    case IntIfChain.parse_if_chain(cond_expr, then_expr, else_expr, env) do
+      {:ok, _, _} = ok ->
+        ok
+
+      :error ->
+        IntIfChain.parse_or_equality_if_chain(cond_expr, then_expr, else_expr, env)
+    end
+  end
+
   @spec compile_branches(
           Types.ir_expr(),
           Types.ir_expr(),
@@ -46,12 +75,27 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
           Types.compile_counter()
         ) :: Types.compile_result()
   defp compile_branches(cond_expr, then_expr, else_expr, env, counter) do
-    with {:ok, subject, branches} <-
-           IntIfChain.parse_if_chain(cond_expr, then_expr, else_expr, env) do
-      CaseCompile.dispatch(subject, branches, env, counter)
-    else
+    case int_if_chain_parse(cond_expr, then_expr, else_expr, env) do
+      {:ok, subject, branches} ->
+        dispatch_int_if_chain(subject, branches, env, counter)
+
       :error ->
         compile_branches_fallback(cond_expr, then_expr, else_expr, env, counter)
+    end
+  end
+
+  defp dispatch_int_if_chain(subject, branches, env, counter) do
+    if native_scalar_int_case?(env, branches) do
+      NativeIntCase.compile_scalar(subject, branches, env, counter)
+    else
+      CaseCompile.dispatch(subject, branches, env, counter)
+    end
+  end
+
+  defp native_scalar_int_case?(env, branches) do
+    case Map.get(env, :__native_return_kind__) do
+      :native_int -> true
+      _ -> Enum.all?(branches, fn %{expr: expr} -> Host.native_int_expr?(expr, env) end)
     end
   end
 
@@ -98,7 +142,8 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
   end
 
   defp compile_runtime_native_bool_branches(cond_expr, then_expr, else_expr, env, counter) do
-    {cond_code, cond_ref, counter} = Host.compile_native_bool_expr(cond_expr, env, counter)
+    cond_env = RcRuntimeEmit.strip_function_tail_scope(env)
+    {cond_code, cond_ref, counter} = Host.compile_native_bool_expr(cond_expr, cond_env, counter)
 
     case cond_ref do
       "1" ->
@@ -119,9 +164,12 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
 
         then_env = branch_env(env, out)
         else_env = branch_env(env, out)
+        slots_before = ValueSlots.snapshot()
 
         {then_code, then_assignment, counter} =
           CaseCompile.branch_assignment(then_expr, out, then_env, branch_counter)
+
+        ValueSlots.restore(slots_before)
 
         {else_code, else_assignment, counter} =
           CaseCompile.branch_assignment(else_expr, out, else_env, counter)
@@ -156,9 +204,12 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
 
     then_env = branch_env(env, out)
     else_env = branch_env(env, out)
+    slots_before = ValueSlots.snapshot()
 
     {then_code, then_assignment, counter} =
       CaseCompile.branch_assignment(then_expr, out, then_env, branch_counter)
+
+    ValueSlots.restore(slots_before)
 
     {else_code, else_assignment, counter} =
       CaseCompile.branch_assignment(else_expr, out, else_env, counter)
@@ -207,6 +258,31 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
       end)
 
     {cond_code, cond_var, counter} = Host.compile_expr(cond_expr, cond_env, counter)
+
+    case complementary_bool_branches(then_expr, else_expr) do
+      polarity when polarity in [:cond_true, :cond_false] ->
+        {out, counter, _declare?} = CaseCompile.result_out_binding(env, counter)
+        flag = if(polarity == :cond_true, do: "elmc_as_int(#{cond_var})", else: "(elmc_as_int(#{cond_var}) == 0)")
+
+        assign =
+          RcRuntimeEmit.assign_call(env, out, "elmc_new_bool", flag)
+          |> String.trim()
+
+        release =
+          if cond_var != out, do: ValueSlots.release_stmt(cond_var), else: ""
+
+        code =
+          Enum.join([cond_code, assign, release], "\n")
+          |> String.trim()
+
+        {code, out, counter}
+
+      _ ->
+        compile_boxed_cond_branches(cond_code, cond_var, then_expr, else_expr, env, counter)
+    end
+  end
+
+  defp compile_boxed_cond_branches(cond_code, cond_var, then_expr, else_expr, env, counter) do
     {out, branch_counter, declare_out?} = CaseCompile.result_out_binding(env, counter)
     branch_counter = CaseCompile.advance_counter_past_out(branch_counter, out, declare_out?)
 
@@ -232,13 +308,37 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
           "} else {",
           format_if_branch_body(else_body),
           "}",
-          if(cond_var != out, do: "elmc_release(#{cond_var});", else: "")
+          if(cond_var != out, do: ValueSlots.release_stmt(cond_var), else: "")
         ],
         "\n"
       )
 
     {code, out, counter}
   end
+
+  defp complementary_bool_branches(then_expr, else_expr) do
+    case {bool_branch_polarity(then_expr), bool_branch_polarity(else_expr)} do
+      {true, false} -> :cond_true
+      {false, true} -> :cond_false
+      _ -> nil
+    end
+  end
+
+  defp bool_branch_polarity(%{op: :bool_literal, value: value}), do: value
+
+  defp bool_branch_polarity(%{op: :int_literal, value: value}) when value in [0, 1],
+    do: value == 1
+
+  defp bool_branch_polarity(%{op: :constructor_call, target: target, args: []}) do
+    case Host.special_value_from_target(target, []) do
+      %{op: :bool_literal, value: value} -> value
+      %{op: :int_literal, value: 1} -> true
+      %{op: :int_literal, value: 0} -> false
+      _ -> nil
+    end
+  end
+
+  defp bool_branch_polarity(_), do: nil
 
   defp identical_branch_exprs?(left, right) do
     normalize_branch_expr(left) == normalize_branch_expr(right)
@@ -263,10 +363,26 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
   defp normalize_branch_expr(other), do: other
 
   defp branch_env(env, out) do
-    env
-    |> RecordCompile.fresh_subexpr_cache()
-    |> Map.put(:__into_out__, out)
-    |> Map.update(:__declared_outs__, MapSet.new([out]), &MapSet.put(&1, out))
+    env =
+      env
+      |> RecordCompile.fresh_subexpr_cache()
+      |> Map.update(:__declared_outs__, MapSet.new([out]), &MapSet.put(&1, out))
+
+    env =
+      if RcRuntimeEmit.function_out_ref?(out),
+        do: RcRuntimeEmit.strip_function_tail_scope(env),
+        else: env
+
+    cond do
+      RcRuntimeEmit.function_out_ref?(out) ->
+        Map.put(env, :__branch_out__, out)
+
+      ValueSlots.owned_ref?(out) ->
+        Map.put(env, :__into_out__, out)
+
+      true ->
+        env
+    end
   end
 
   defp format_if_branch_body(body) do

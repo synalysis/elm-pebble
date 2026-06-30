@@ -4,6 +4,7 @@ defmodule Elmc.Backend.CCodegen.OwnershipCompile do
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.CCodegen.ValueSlots
 
   @type operand_mode :: :borrow | :retain | :take
   @type use_site :: :call_arg | :compare | :record_update | :record_field | :return
@@ -29,7 +30,7 @@ defmodule Elmc.Backend.CCodegen.OwnershipCompile do
     if operand_mode(env, ref, use_site) == :borrow or not boxed_release_var?(ref) do
       ""
     else
-      "elmc_release(#{ref});\n"
+      ValueSlots.release_consumed(ref) <> "\n"
     end
   end
 
@@ -48,13 +49,31 @@ defmodule Elmc.Backend.CCodegen.OwnershipCompile do
   @spec retain_owned_expr(Types.compile_env(), Types.binding_name(), String.t()) ::
           String.t() | nil
   def retain_owned_expr(env, name, source) when is_binary(name) and is_binary(source) do
-    if Map.get(env, :__owned_list_result__, false) and
-         copy_borrowed_list_for_result?(env, name, source) do
-      "#{source} ? elmc_list_copy_take(#{source}) : elmc_int_zero()"
-    else
-      nil
+    cond do
+      tuple_projection = ValueSlots.tuple_projection_retain_c_expr(source) ->
+        tuple_projection
+
+      owned_projection_retain_expr = owned_projection_retain_expr(source) ->
+        owned_projection_retain_expr
+
+      Map.get(env, :__owned_list_result__, false) and
+          copy_borrowed_list_for_result?(env, name, source) ->
+        {:list_copy, source}
+
+      true ->
+        nil
     end
   end
+
+  @spec owned_projection_retain_expr(String.t()) :: String.t() | nil
+  def owned_projection_retain_expr(source) when is_binary(source) do
+    case Regex.run(~r/^elmc_maybe_or_tuple_just_payload_borrow\((.+)\)$/s, source) do
+      [_, maybe_ref] -> "elmc_maybe_or_tuple_just_payload(#{maybe_ref})"
+      _ -> nil
+    end
+  end
+
+  def owned_projection_retain_expr(_source), do: nil
 
   @spec copy_borrowed_list_for_result?(Types.compile_env(), Types.binding_name(), String.t()) ::
           boolean()

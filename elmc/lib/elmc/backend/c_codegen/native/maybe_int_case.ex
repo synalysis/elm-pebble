@@ -4,11 +4,13 @@ defmodule Elmc.Backend.CCodegen.Native.MaybeIntCase do
   alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.ConstructorTagCase
   alias Elmc.Backend.CCodegen.CSource
+  alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Expr
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.Patterns
   alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.CCodegen.ValueSlots
 
   @spec branches?(list()) :: boolean()
   def branches?(branches) when is_list(branches) do
@@ -73,6 +75,13 @@ defmodule Elmc.Backend.CCodegen.Native.MaybeIntCase do
     next = counter + 1
     out = "native_maybe_case_#{next}"
 
+    subject_release =
+      if subject_code != "" and not EnvBindings.borrowed_arg_ref?(env, subject_ref) do
+        ValueSlots.release_stmt(subject_ref)
+      else
+        ""
+      end
+
     code = """
     #{subject_code}
       #{just_setup}
@@ -84,6 +93,7 @@ defmodule Elmc.Backend.CCodegen.Native.MaybeIntCase do
     #{CSource.indent(nothing_code, 4)}
         #{out} = #{nothing_ref};
       }
+      #{subject_release}
     """
 
     {code, out, next}

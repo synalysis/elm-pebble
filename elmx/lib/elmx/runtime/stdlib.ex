@@ -110,6 +110,28 @@ defmodule Elmx.Runtime.Stdlib do
 
   def special_call("Time.now", _arg_code), do: {:ok, "#{CodegenRefs.core_time()}.now()"}
   def special_call("Time.getZoneName", _arg_code), do: {:ok, "#{CodegenRefs.core_time()}.get_zone_name()"}
+  def special_call("Time.utc", _arg_code), do: {:ok, "{:Zone, 0, []}"}
+
+  def special_call(target, arg_code)
+      when target in ~w(
+             Time.customZone
+             Time.posixToMillis
+             Time.millisToPosix
+             Time.toYear
+             Time.toMonth
+             Time.toDay
+             Time.toHour
+             Time.toMinute
+             Time.toSecond
+             Time.toMillis
+           ) do
+    fun =
+      target
+      |> String.replace_prefix("Time.", "")
+      |> Macro.underscore()
+
+    {:ok, "#{CodegenRefs.core_time()}.#{fun}(#{arg_code})"}
+  end
 
   def special_call("Debug.toString", arg_code) do
     case split_top_level_args(arg_code) do

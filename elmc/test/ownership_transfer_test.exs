@@ -15,4 +15,14 @@ defmodule OwnershipTransferTest do
     refute MapSet.member?(skip, "tmp_32")
     refute MapSet.member?(skip, "tmp_33")
   end
+
+  test "transferred_in_c_source? matches tuple2_take operands with nested parens" do
+    body = """
+    ElmcValue *tmp_6 = elmc_cmd1(ELMC_PEBBLE_CMD_TIMER_AFTER_MS, 1000);
+    Rc = elmc_tuple2_take(out, (*out), tmp_6);
+    elmc_release(tmp_6);
+    """
+
+    assert OwnershipTransfer.transferred_in_c_source?("tmp_6", body)
+  end
 end

@@ -11,11 +11,11 @@ defmodule Elmc.Backend.CCodegen.HelperParams do
     key = EnvBindings.binding_key(var)
 
     cond do
-      is_binary(EnvBindings.native_int_binding(env, key)) ->
-        {:ok, {:native_int, EnvBindings.native_int_binding(env, key)}}
+      is_binary(ref = EnvBindings.native_int_binding(env, key)) and c_identifier?(ref) ->
+        {:ok, {:native_int, ref}}
 
-      is_binary(EnvBindings.native_bool_binding(env, key)) ->
-        {:ok, {:native_bool, EnvBindings.native_bool_binding(env, key)}}
+      is_binary(ref = EnvBindings.native_bool_binding(env, key)) and c_identifier?(ref) ->
+        {:ok, {:native_bool, ref}}
 
       is_binary(c_ref = Map.get(env, key)) and c_identifier?(c_ref) ->
         {:ok, {:boxed, c_ref}}
@@ -70,6 +70,17 @@ defmodule Elmc.Backend.CCodegen.HelperParams do
     end)
   end
 
+  @spec unused_param_casts([{String.t(), param_spec()}], String.t()) :: String.t()
+  def unused_param_casts(params, body_text) when is_binary(body_text) do
+    params
+    |> Enum.map(fn {_var, spec} -> param_c_ref(spec) end)
+    |> Enum.reject(fn ref -> c_ref_in_source?(ref, body_text) end)
+    |> case do
+      [] -> ""
+      refs -> Enum.map_join(refs, "\n", &"(void)#{&1};")
+    end
+  end
+
   @spec call_args([{String.t(), param_spec()}]) :: String.t()
   def call_args(params) do
     params
@@ -84,6 +95,10 @@ defmodule Elmc.Backend.CCodegen.HelperParams do
 
   defp c_identifier?(value) when is_binary(value),
     do: Regex.match?(~r/^[A-Za-z_][A-Za-z0-9_]*$/, value)
+
+  defp param_c_ref({:native_int, ref}), do: ref
+  defp param_c_ref({:native_bool, ref}), do: ref
+  defp param_c_ref({:boxed, ref}), do: ref
 
   defp c_ref_in_source?({:native_int, ref}, code), do: c_ref_in_source?(ref, code)
   defp c_ref_in_source?({:native_bool, ref}, code), do: c_ref_in_source?(ref, code)

@@ -97,11 +97,78 @@ defmodule Elmx.Runtime.Core.Task do
     end
   end
 
+  @spec map3(Types.elm_hof(), Types.result_like(), Types.result_like(), Types.result_like()) ::
+          Types.result_native()
+  def map3(fun, task_a, task_b, task_c) when is_function(fun, 3) do
+    map_n_tasks(fun, [task_a, task_b, task_c])
+  end
+
+  @spec map4(
+          Types.elm_hof(),
+          Types.result_like(),
+          Types.result_like(),
+          Types.result_like(),
+          Types.result_like()
+        ) :: Types.result_native()
+  def map4(fun, task_a, task_b, task_c, task_d) when is_function(fun, 4) do
+    map_n_tasks(fun, [task_a, task_b, task_c, task_d])
+  end
+
+  @spec map5(
+          Types.elm_hof(),
+          Types.result_like(),
+          Types.result_like(),
+          Types.result_like(),
+          Types.result_like(),
+          Types.result_like()
+        ) :: Types.result_native()
+  def map5(fun, task_a, task_b, task_c, task_d, task_e) when is_function(fun, 5) do
+    map_n_tasks(fun, [task_a, task_b, task_c, task_d, task_e])
+  end
+
+  @spec sequence(list()) :: Types.result_native()
+  def sequence(tasks) when is_list(tasks) do
+    Enum.reduce(tasks, {:Ok, []}, fn
+      _task, {:Err, _} = err ->
+        err
+
+      task, {:Ok, acc} ->
+        case normalize(task) do
+          {:ok, value} -> {:Ok, acc ++ [value]}
+          {:error, reason} -> {:Err, reason}
+        end
+    end)
+  end
+
+  @spec on_error(Types.elm_hof(), Types.result_like()) :: Types.result_native()
+  def on_error(recover, task) when is_function(recover, 1) do
+    case force(task) do
+      {:Ok, _} = ok -> ok
+      {:Err, reason} -> force(recover.(reason))
+    end
+  end
+
+  @spec map_error(Types.elm_hof(), Types.result_like()) :: Types.result_native()
+  def map_error(convert, task) when is_function(convert, 1) do
+    on_error(fn err -> fail(convert.(err)) end, task)
+  end
+
+  @spec attempt(Types.elm_hof(), Types.result_like()) :: Types.wire_cmd()
+  def attempt(to_msg, task) when is_function(to_msg, 1) do
+    result_msg =
+      case force(task) do
+        {:Ok, value} -> apply_to_msg(to_msg, {:Ok, value})
+        {:Err, err} -> apply_to_msg(to_msg, {:Err, err})
+      end
+
+    Cmd.task_immediate(result_msg)
+  end
+
   @spec perform(Types.elm_hof(), Types.result_like()) :: Types.wire_cmd()
   def perform(to_msg, task) when is_function(to_msg) do
-    case normalize(task) do
-      {:ok, value} -> Cmd.task_immediate(apply_to_msg(to_msg, value))
-      {:error, _} -> Cmd.none()
+    case force(task) do
+      {:Ok, value} -> Cmd.task_immediate(apply_to_msg(to_msg, value))
+      {:Err, _} -> Cmd.none()
     end
   end
 
@@ -113,8 +180,20 @@ defmodule Elmx.Runtime.Core.Task do
   defp normalize(%{"ctor" => "Err", "args" => [reason]}), do: {:error, reason}
   defp normalize(_), do: {:error, :bad_task}
 
+  defp apply_to_msg(fun, value) when is_function(fun, 1), do: fun.(value)
   defp apply_to_msg(fun, {a, b}) when is_function(fun, 2), do: fun.(a, b)
   defp apply_to_msg(fun, [a, b]) when is_function(fun, 2), do: fun.(a, b)
-  defp apply_to_msg(fun, value) when is_function(fun, 1), do: fun.(value)
   defp apply_to_msg(_fun, _value), do: nil
+
+  defp map_n_tasks(fun, tasks) when is_function(fun) and is_list(tasks) do
+    case Enum.reduce_while(tasks, [], fn task, acc ->
+           case normalize(task) do
+             {:ok, value} -> {:cont, acc ++ [value]}
+             {:error, reason} -> {:halt, {:error, reason}}
+           end
+         end) do
+      {:error, reason} -> {:Err, reason}
+      values -> {:Ok, apply(fun, values)}
+    end
+  end
 end

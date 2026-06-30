@@ -39,7 +39,8 @@ defmodule Elmc.Backend.Pebble.SourceWriter.SceneHost.CmdFromValue.SerializeList 
 
       size_t used = 0;
       if (value->tag == ELMC_TAG_INT_LIST) {
-        ElmcIntListPayload *payload = elmc_int_list_payload(value);
+        ElmcIntListPayload *payload =
+            (value->payload != NULL) ? (ElmcIntListPayload *)value->payload : NULL;
         if (!payload) return 0;
         for (int i = 0; i < payload->length; i++) {
           if (elmc_serialize_append_int(out_text, out_size, &used, out_count, payload->values[i]) != 0) {

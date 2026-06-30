@@ -23,6 +23,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
   alias Elmc.Backend.CCodegen.SpecialValues
   alias Elmc.Backend.CCodegen.UnionMacros
   alias Elmc.Backend.CCodegen.Util
+  alias Elmc.Backend.CCodegen.ValueSlots
   alias Elmc.Backend.Pebble.IRAnalysis
 
   defp finalize_source(source), do: CSource.format(source)
@@ -84,6 +85,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
   @spec source(ElmEx.IR.t(), Types.codegen_opts()) :: String.t()
   def source(ir, opts) do
+    ValueSlots.reset()
     Process.put(:elmc_lambdas, [])
     Process.put(:elmc_lambda_counter, 0)
     Process.put(:elmc_lambda_defs, %{})
@@ -178,6 +180,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
     exported_targets = Analysis.exported_function_targets(decl_map, opts, direct_command_targets)
 
+    Process.put(:elmc_wrapper_targets, wrapper_targets)
     Process.put(:elmc_direct_call_targets, direct_call_targets)
     Process.put(:elmc_native_boxed_rc_abi, %{})
     Process.put(:elmc_exported_targets, exported_targets)
@@ -218,7 +221,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
           &(&1.kind == :function && MapSet.member?(generic_targets, {mod.name, &1.name}))
         )
         |> Enum.sort_by(fn decl ->
-          if match?({:ok, _, _}, Tuple2CaseTable.try_emit(mod.name, decl.name, decl.expr)),
+          if Tuple2CaseTable.recognized?(mod.name, decl.name, decl.expr),
             do: 0,
             else: 1
         end)
@@ -252,6 +255,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
       |> Enum.join("\n")
 
     Process.delete(:elmc_lambdas)
+    Process.delete(:elmc_wrapper_targets)
     Process.delete(:elmc_direct_call_targets)
     Process.delete(:elmc_native_boxed_rc_abi)
     Process.delete(:elmc_exported_targets)
@@ -279,6 +283,9 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
     trig_fallback_prelude =
       Emit.generated_trig_fallback_prelude([lambda_defs, function_defs, direct_command_defs])
+
+    render_cmd_prelude =
+      Emit.generated_render_cmd_prelude([lambda_defs, function_defs, direct_command_defs])
 
     magic_number_defines =
       Emit.generated_magic_number_defines(
@@ -317,6 +324,8 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     #{Emit.pebble_debug_probe_prelude(opts)}
 
     #{trig_fallback_prelude}
+
+    #{render_cmd_prelude}
 
     #{generic_native_prototypes}
 

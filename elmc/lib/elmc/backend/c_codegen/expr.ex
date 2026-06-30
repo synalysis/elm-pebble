@@ -180,12 +180,28 @@ defmodule Elmc.Backend.CCodegen.Expr do
   def inline_record_field_expr(arg_expr, field, env) do
     arg_expr = arg_expr |> Host.unwrap_affine_bindings() |> normalize_field_access_arg()
 
-    if bound_record_var?(arg_expr, env) do
-      nil
-    else
-      inline_record_field_expr_uncached(arg_expr, field, env)
+    case inline_from_let_binding(arg_expr, field, env) do
+      field_expr when is_map(field_expr) ->
+        field_expr
+
+      nil ->
+        if bound_record_var?(arg_expr, env) do
+          nil
+        else
+          inline_record_field_expr_uncached(arg_expr, field, env)
+        end
     end
   end
+
+  defp inline_from_let_binding(%{op: :var, name: name}, field, env)
+       when is_binary(name) or is_atom(name) do
+    case EnvBindings.let_value_expr(env, name) do
+      bound when is_map(bound) -> inline_record_field_expr(bound, field, env)
+      _ -> nil
+    end
+  end
+
+  defp inline_from_let_binding(_arg_expr, _field, _env), do: nil
 
   defp bound_record_var?(%{op: :var, name: name}, env) when is_binary(name) or is_atom(name) do
     bound_record_name?(env, name)
@@ -310,7 +326,7 @@ defmodule Elmc.Backend.CCodegen.Expr do
          decl_map <- Map.get(env, :__program_decls__, %{}),
          %{args: arg_names, expr: expr} when is_list(arg_names) <- Map.get(decl_map, target_key),
          args <- Map.get(arg_expr, :args, []),
-         true <- field_inline_args_static?(args),
+         true <- field_inline_args_static?(args, env),
          true <- length(arg_names) == length(args),
          substituted <- substitute_expr(expr, Map.new(Enum.zip(arg_names, args))),
          {_inner, let_bindings} <- unwrap_let_chain(substituted, %{}),
@@ -346,16 +362,19 @@ defmodule Elmc.Backend.CCodegen.Expr do
 
   defp unresolved_let_ref?(_expr, _let_names), do: false
 
-  defp field_inline_args_static?(args) when is_list(args),
-    do: Enum.all?(args, &field_inline_arg_static?/1)
+  defp field_inline_args_static?(args, env) when is_list(args),
+    do: Enum.all?(args, &field_inline_arg_static?(&1, env))
 
-  defp field_inline_arg_static?(%{op: :int_literal}), do: true
-  defp field_inline_arg_static?(%{op: :char_literal}), do: true
-  defp field_inline_arg_static?(%{op: :float_literal}), do: true
-  defp field_inline_arg_static?(%{op: :string_literal}), do: true
-  defp field_inline_arg_static?(%{op: :bool_literal}), do: true
-  defp field_inline_arg_static?(%{op: :record_literal}), do: true
-  defp field_inline_arg_static?(_arg), do: false
+  defp field_inline_arg_static?(%{op: :int_literal}, _env), do: true
+  defp field_inline_arg_static?(%{op: :char_literal}, _env), do: true
+  defp field_inline_arg_static?(%{op: :float_literal}, _env), do: true
+  defp field_inline_arg_static?(%{op: :string_literal}, _env), do: true
+  defp field_inline_arg_static?(%{op: :bool_literal}, _env), do: true
+  defp field_inline_arg_static?(%{op: :record_literal}, _env), do: true
+  defp field_inline_arg_static?(%{op: :c_int_expr}, _env), do: true
+
+  defp field_inline_arg_static?(arg, env),
+    do: Elmc.Backend.CCodegen.Native.Int.expr?(arg, env)
 
   @spec record_helper_target(Types.ir_expr(), Types.compile_env()) ::
           Types.function_decl_key() | nil

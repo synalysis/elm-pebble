@@ -143,7 +143,9 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
   @spec normalize_compose_source(source()) :: source()
   defp normalize_compose_source(source) when is_binary(source) do
     Regex.replace(
-      ~r/(?<![A-Za-z0-9_.])([A-Za-z_][A-Za-z0-9_]*)\s*(<<|>>)\s*([A-Za-z_][A-Za-z0-9_]*)\b(?![A-Za-z0-9_])/u,
+      # Do not parenthesize when the RHS continues with a qualified segment (for example
+      # `GotWeather << Result.map` must not become `(GotWeather << Result).map`).
+      ~r/(?<![A-Za-z0-9_.])([A-Za-z_][A-Za-z0-9_]*)\s*(<<|>>)\s*([A-Za-z_][A-Za-z0-9_]*)\b(?![A-Za-z0-9_.])/u,
       source,
       "(\\1 \\2 \\3)"
     )
@@ -481,6 +483,10 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
     ) or
       Regex.match?(
         ~r/^\(\s*#{binding_name}(?:\s*,\s*#{binding_name}){1,2}\s*\)\s*=(?!=)/u,
+        trimmed
+      ) or
+      Regex.match?(
+        ~r/^\(\s*[A-Z][A-Za-z0-9_]*(?:\s+[^=()]+)?\s*\)\s*=(?!=)/u,
         trimmed
       )
   end
@@ -892,7 +898,7 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
   @spec normalize_contextual_unary_minus(source()) :: source()
   defp normalize_contextual_unary_minus(source) do
     Regex.replace(
-      ~r/(\bthen\b|\belse\b|\bin\b|=|->|,|;|\[|\{|\()\s*-\s*([a-z][A-Za-z0-9_.]*|\()/u,
+      ~r/(\bthen\b|\belse\b|\bin\b|==|\/=|>=|<=|>|<|=|->|,|;|\[|\{|\()\s*-\s*([a-z][A-Za-z0-9_.]*|\()/u,
       source,
       "\\1 negate \\2"
     )
@@ -948,7 +954,7 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
       Regex.match?(~r/\b0[bBoO][0-9A-Fa-f]+\b/u, scrubbed) ->
         {:error, {:invalid_number_literal, :unsupported_base_prefix}}
 
-      Regex.match?(~r/\b0[0-9]+\b/u, scrubbed) ->
+      Regex.match?(~r/(^|[^\w.])0[0-9]+\b(?!\.)/u, scrubbed) ->
         {:error, {:invalid_number_literal, :leading_zero}}
 
       true ->

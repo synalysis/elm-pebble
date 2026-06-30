@@ -35,7 +35,7 @@ defmodule Elmc.GeneratedRcTrackTest do
 
       static ElmcValue *run_foldSum(void) {
         static const elmc_int_t items[3] = { 1, 2, 3 };
-        ElmcValue *list = elmc_list_from_int_array_take(items, 3);
+        ElmcValue *list = elmc_harness_list_from_int_array(items, 3);
         ElmcValue *args[] = { list };
         ElmcValue *out = elmc_harness_call_value(elmc_fn_RcTrackProbe_foldSum, args, 1);
         elmc_release(list);
@@ -45,8 +45,8 @@ defmodule Elmc.GeneratedRcTrackTest do
       static ElmcValue *run_concatRows(void) {
         static const elmc_int_t row0[2] = { 1, 2 };
         static const elmc_int_t row1[2] = { 3, 4 };
-        ElmcValue *r0 = elmc_list_from_int_array_take(row0, 2);
-        ElmcValue *r1 = elmc_list_from_int_array_take(row1, 2);
+        ElmcValue *r0 = elmc_harness_list_from_int_array(row0, 2);
+        ElmcValue *r1 = elmc_harness_list_from_int_array(row1, 2);
         ElmcValue *inner = elmc_list_cons_take(r1, elmc_list_nil());
         ElmcValue *outer = elmc_list_cons_take(r0, inner);
         ElmcValue *args[] = { outer };
@@ -56,11 +56,11 @@ defmodule Elmc.GeneratedRcTrackTest do
       }
 
       static ElmcValue *run_branchTupleOut(void) {
-        ElmcValue *n = elmc_new_int_take(4);
-        ElmcValue *m = elmc_new_int_take(5);
-        ElmcValue *ok = elmc_result_ok_take(n);
-        ElmcValue *just = elmc_maybe_just_take(m);
-        ElmcValue *pair = elmc_tuple2_take_value(ok, just);
+        ElmcValue *n = elmc_harness_new_int(4);
+        ElmcValue *m = elmc_harness_new_int(5);
+        ElmcValue *ok = elmc_harness_result_ok(n);
+        ElmcValue *just = elmc_harness_maybe_just(m);
+        ElmcValue *pair = elmc_harness_tuple2_take(ok, just);
         ElmcValue *args[] = { pair };
         ElmcValue *out = elmc_harness_call_value(elmc_fn_RcTrackProbe_branchTupleOut, args, 1);
         elmc_release(pair);
@@ -68,8 +68,8 @@ defmodule Elmc.GeneratedRcTrackTest do
       }
 
       static ElmcValue *run_stringAppendLength(void) {
-        ElmcValue *left = elmc_new_string_take("ab");
-        ElmcValue *right = elmc_new_string_take("cd");
+        ElmcValue *left = elmc_harness_new_string("ab");
+        ElmcValue *right = elmc_harness_new_string("cd");
         ElmcValue *args[] = { left, right };
         ElmcValue *out = elmc_harness_call_value(elmc_fn_RcTrackProbe_stringAppendLength, args, 2);
         elmc_release(left);
@@ -85,6 +85,7 @@ defmodule Elmc.GeneratedRcTrackTest do
         printf("rc_ok rc_track_probe\\n");
         return 0;
       }
+      
       """
     )
 

@@ -3,27 +3,12 @@
 
 #include "../runtime/elmc_runtime.h"
 #include "../ports/elmc_ports.h"
+RC elmc_fn_Main_init(ElmcValue **out, ElmcValue ** const args, const int argc);
+RC elmc_fn_Main_update(ElmcValue **out, ElmcValue ** const args, const int argc);
+RC elmc_fn_Main_subscriptions(ElmcValue **out, ElmcValue ** const args, const int argc);
+RC elmc_fn_Main_view(ElmcValue **out, ElmcValue *model);
 
-ElmcValue *elmc_fn_Main_parseHourFromTimeString(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Main_highRateAccelConfig(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Main_init(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Main_update(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Main_subscriptions(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Main_view(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Main_main(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Pebble_DataLog_tag(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Pebble_Light_interaction(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Pebble_Light_disable(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Pebble_Light_enable(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Pebble_Log_infoCode(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Pebble_Log_warnCode(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Pebble_Log_errorCode(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Pebble_Platform_launchReasonToInt(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Pebble_Wakeup_scheduleAfterSeconds(ElmcValue ** const args, const int argc);
-ElmcValue *elmc_fn_Pebble_Wakeup_cancel(ElmcValue ** const args, const int argc);
 #define ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW 1
-int elmc_fn_Main_view_commands(ElmcValue ** const args, const int argc, void * const out_cmds, const int max_cmds);
-int elmc_fn_Main_view_commands_from(ElmcValue ** const args, const int argc, void * const out_cmds, const int max_cmds, const int skip, int *out_emitted);
 
 
 #endif

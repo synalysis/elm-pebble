@@ -99,6 +99,18 @@ defmodule Elmx.MessageDecodeTest do
              {:FromWatch, {:Ok, {:RequestWeather, :CurrentLocation}}}
   end
 
+  test "decode FromWatch Ok RequestUpdate with full subscription wire" do
+    wire = %{
+      "ctor" => "FromWatch",
+      "args" => [
+        %{"ctor" => "Ok", "args" => [%{"ctor" => "RequestUpdate", "args" => []}]}
+      ]
+    }
+
+    assert MessageDecode.decode("FromWatch (Ok RequestUpdate)", wire) ==
+             {:FromWatch, {:Ok, :RequestUpdate}}
+  end
+
   test "decode GotConnectivity wire variant payload" do
     wire = %{"ctor" => "GotConnectivity", "args" => [%{"ctor" => "Online", "args" => []}]}
 
@@ -315,5 +327,42 @@ defmodule Elmx.MessageDecodeTest do
 
     assert MessageDecode.decode("FromPhone (ignored)", wire) ==
              {:FromPhone, {:ProvideBattery, 88, true}}
+  end
+
+  test "decode wraps inner phone_to_watch wire when message names FromPhone callback" do
+    wire = %{
+      "ctor" => "ProvideWeather",
+      "args" => [
+        %{"ctor" => "Celsius", "args" => [210]},
+        %{"ctor" => "Clear", "args" => []},
+        0,
+        0,
+        1013
+      ]
+    }
+
+    assert MessageDecode.decode("FromPhone (ProvideWeather (Celsius 210) Clear 0 0 1013)", wire) ==
+             {:FromPhone, {:ProvideWeather, {:Celsius, 210}, :Clear, 0, 0, 1013}}
+  end
+
+  test "decode parses nested paren multi-arg constructors from string fallback" do
+    assert MessageDecode.decode("FromPhone (ProvideWind North (MetersPerSecond 4))") ==
+             {:FromPhone, {:ProvideWind, :North, {:MetersPerSecond, 4}}}
+  end
+
+  test "decode flattens nested nullary union siblings in wire values" do
+    wire = %{
+      "ctor" => "ProvideWind",
+      "args" => [
+        %{"ctor" => "North", "args" => []},
+        %{
+          "ctor" => "MetersPerSecond",
+          "args" => [4]
+        }
+      ]
+    }
+
+    assert MessageDecode.decode("FromPhone (ProvideWind North (MetersPerSecond 4))", wire) ==
+             {:FromPhone, {:ProvideWind, :North, {:MetersPerSecond, 4}}}
   end
 end

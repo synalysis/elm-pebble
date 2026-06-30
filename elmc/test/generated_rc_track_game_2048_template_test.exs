@@ -34,24 +34,26 @@ defmodule Elmc.GeneratedRcTrackGame2048TemplateTest do
       #include "elmc_pebble.h"
       #include <stdio.h>
 
+      #{RcTrackHarness.harness_rc_helpers()}
+
       enum {
         MODEL_FIELD_CELLS = 0,
         MODEL_FIELD_TURN = 4
       };
 
       static ElmcValue *aplite_launch_context(void) {
-        ElmcValue *reason = elmc_new_int_take(2);
-        ElmcValue *watch_model = elmc_new_string_take("");
-        ElmcValue *watch_profile_id = elmc_new_string_take("aplite");
-        ElmcValue *width = elmc_new_int_take(144);
-        ElmcValue *height = elmc_new_int_take(168);
+        ElmcValue *reason = elmc_harness_new_int(2);
+        ElmcValue *watch_model = elmc_harness_new_string("");
+        ElmcValue *watch_profile_id = elmc_harness_new_string("aplite");
+        ElmcValue *width = elmc_harness_new_int(144);
+        ElmcValue *height = elmc_harness_new_int(168);
         ElmcValue *shape = elmc_new_int_take(1);
-        ElmcValue *color_mode = elmc_new_int_take(1);
+        ElmcValue *color_mode = elmc_harness_new_int(1);
         ElmcValue *screen_values[] = {width, height, shape, color_mode};
         ElmcValue *screen = elmc_record_new_values_take_value(4, screen_values);
-        ElmcValue *has_microphone = elmc_new_int_take(0);
-        ElmcValue *has_compass = elmc_new_int_take(0);
-        ElmcValue *supports_health = elmc_new_int_take(0);
+        ElmcValue *has_microphone = elmc_harness_new_int(0);
+        ElmcValue *has_compass = elmc_harness_new_int(0);
+        ElmcValue *supports_health = elmc_harness_new_int(0);
         ElmcValue *context_values[] = {reason, watch_model, watch_profile_id, screen, has_microphone,
                                        has_compass, supports_health};
         return elmc_record_new_values_take_value(7, context_values);
@@ -248,6 +250,8 @@ defmodule Elmc.GeneratedRcTrackGame2048TemplateTest do
         printf("game_2048_template turns=%d\\n", turns);
         return 0;
       }
+      
+      
       """
     )
 

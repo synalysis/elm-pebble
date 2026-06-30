@@ -287,7 +287,7 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
   defp apply_binop("__idiv__", left, right), do: Integer.floor_div(left, right)
 
   defp boxed_out_slot(env, counter) do
-    case Map.get(env, :__into_out__) do
+    case RcRuntimeEmit.nested_out_target(env) do
       into_out when is_binary(into_out) ->
         {into_out, counter}
 

@@ -58,10 +58,12 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
           Types.compile_counter()
         ) :: {String.t(), String.t(), Types.compile_counter()}
   def branch_assignment(%{op: :string_literal, value: value}, out, env, counter) do
-    literal = Util.string_literal_c_expr(value)
-
     if String.contains?(value, <<0>>) do
-      {"", "#{out} = #{literal};", counter}
+      escaped = Util.escape_c_string(value)
+      byte_len = byte_size(value)
+
+      {"", RcRuntimeEmit.assign_into(env, out, "elmc_new_string_len", "\"#{escaped}\", #{byte_len}"),
+       counter}
     else
       {"", RcRuntimeEmit.assign_into(env, out, "elmc_new_string", "\"#{Util.escape_c_string(value)}\""),
        counter}
@@ -76,7 +78,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
       when is_integer(value) do
     cond do
       BuiltinUnion.maybe_nothing_literal?(expr) ->
-        {"", "#{out} = elmc_maybe_nothing();", counter}
+        {"", RcRuntimeEmit.assign_stmt(out, "elmc_maybe_nothing()"), counter}
 
       value in [0, 1] and function_returns_bool?(env) ->
         branch_assignment_rc(env, out, "elmc_new_bool", Integer.to_string(value), counter)
@@ -102,9 +104,21 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
   end
 
   defp branch_assignment_env(env, out) do
-    if ValueSlots.owned_ref?(out) or RcRuntimeEmit.function_out_ref?(out),
-      do: Map.put(env, :__into_out__, out),
-      else: env
+    env =
+      if RcRuntimeEmit.function_out_ref?(out),
+        do: RcRuntimeEmit.strip_function_tail_scope(env),
+        else: env
+
+    cond do
+      RcRuntimeEmit.function_out_ref?(out) ->
+        Map.put(env, :__branch_out__, out)
+
+      ValueSlots.owned_ref?(out) ->
+        Map.put(env, :__into_out__, out)
+
+      true ->
+        env
+    end
   end
 
   defp branch_assignment_finish(expr_code, expr_var, out, env, counter) do
@@ -128,7 +142,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
                 end
 
               :error ->
-                {expr_code, "#{RcRuntimeEmit.assignment_lhs(out)} = #{expr_var};", counter}
+                {expr_code, RcRuntimeEmit.transfer_assignment(out, expr_var), counter}
             end
         end
     end
@@ -166,7 +180,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
           [_, rhs] ->
             if expr_var != out, do: ValueSlots.untrack(expr_var)
 
-            folded_last = "#{RcRuntimeEmit.assignment_lhs(out)} = #{rhs};"
+            folded_last = RcRuntimeEmit.transfer_assignment(out, rhs)
 
             folded_code =
               case prefix_lines do
@@ -244,7 +258,8 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     {subject_setup, subject_ref, counter} =
       ConstructorTagCase.compile_subject_ref(subject, env, counter)
 
-    {out, branch_counter, declare_out?} = result_out_binding(env, counter)
+    {out, branch_counter, declare_out?} =
+      result_out_binding(RcRuntimeEmit.strip_function_tail_scope(env), counter)
 
     case_env =
       env
@@ -257,10 +272,13 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
       |> put_declared_out(out)
     branch_counter = advance_counter_past_out(branch_counter, out, declare_out?)
 
+    parent_slots = ValueSlots.snapshot()
+
     {branch_code, final_counter} =
       branches
       |> Enum.with_index()
       |> Enum.reduce_while({"", branch_counter}, fn {branch, branch_index}, {acc, c} ->
+        ValueSlots.restore(parent_slots)
         last_branch? = branch_index == length(branches) - 1
 
         {branch_env, unwrap_setup, unwrap_release, c} =
@@ -338,18 +356,36 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
   @spec result_out_binding(Types.compile_env(), Types.compile_counter()) ::
           {String.t(), Types.compile_counter(), boolean()}
   def result_out_binding(env, counter) do
-    case Map.get(env, :__into_out__) do
-      nil ->
-        if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
-          {ref, index} = ValueSlots.alloc()
-          {ref, max(counter, index + 1), false}
-        else
-          next = counter + 1
-          {"tmp_#{next}", next, true}
-        end
+    cond do
+      branch_out = Map.get(env, :__branch_out__) ->
+        {branch_out, counter, false}
 
-      out ->
-        {out, counter, false}
+      RcRuntimeEmit.function_tail_compile?(env) and
+          Map.get(env, :__into_out__) == RcRuntimeEmit.function_out_ref() ->
+        {RcRuntimeEmit.function_out_ref(), counter, false}
+
+      true ->
+        case RcRuntimeEmit.nested_out_target(env) do
+          out when is_binary(out) ->
+            if RcRuntimeEmit.function_out_ref?(out) do
+              alloc_result_out_binding(env, counter)
+            else
+              {out, counter, false}
+            end
+
+          _ ->
+            alloc_result_out_binding(env, counter)
+        end
+    end
+  end
+
+  defp alloc_result_out_binding(env, counter) do
+    if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
+      {ref, index} = ValueSlots.alloc()
+      {ref, max(counter, index + 1), false}
+    else
+      next = counter + 1
+      {"tmp_#{next}", next, true}
     end
   end
 
@@ -462,10 +498,16 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
 
           helper_param_decls = HelperParams.param_decls(params)
 
+          unused_casts =
+            case HelperParams.unused_param_casts(params, inline_body) do
+              "" -> ""
+              casts -> CSource.indent(casts, 2) <> "\n"
+            end
+
           helper_def = """
           static ElmcValue *#{helper_name}(#{helper_param_decls}) {
             ElmcValue *#{out} = NULL;
-          #{CSource.indent(enter_probe, 2)}
+          #{unused_casts}#{CSource.indent(enter_probe, 2)}
           #{CSource.indent(unwrap_setup, 2)}
           #{CSource.indent(expr_code, 2)}
           #{CSource.indent(after_expr_probe, 2)}

@@ -235,7 +235,10 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     rec_suffix = fresh_rec_values_suffix()
     {out, counter2, _} = CaseCompile.result_out_binding(env, counter)
     values_array = record_values_array(field_refs)
-    nulls = ValueSlots.transfer_and_null_refs(unique_field_refs(field_refs))
+    nulls =
+      unique_field_refs(field_refs)
+      |> Enum.reject(&(&1 == out))
+      |> ValueSlots.transfer_and_null_refs()
     names = Enum.map(ordered_fields, & &1.name)
     _type_name = Expr.record_type_for_field_names(names, env)
     use_named? = Process.get(:elmc_named_record_literals, false) and field_count > 0
@@ -283,11 +286,12 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     |> Enum.with_index()
     |> Enum.map_join(", ", fn {ref, idx} ->
       prior = Enum.take(field_refs, idx)
+      c_ref = RcRuntimeEmit.value_expr(ref)
 
       if ref in prior do
-        "elmc_retain(#{ref})"
+        "elmc_retain(#{c_ref})"
       else
-        ref
+        c_ref
       end
     end)
   end
@@ -395,6 +399,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
           helper_env = env |> Map.put(:__rc_catch__, false) |> Map.put(:__rc_required__, false)
 
+          helper_params_suffix = if helper_param_decls == "", do: "", else: ", #{helper_param_decls}"
+
           {field_code, field_vars, _counter} =
             Enum.reduce(ordered_fields, {"", [], counter}, fn field, {code_acc, vars_acc, c} ->
               {code, var, c2} = Host.compile_expr(field.expr, helper_env, c)
@@ -404,7 +410,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
           values_array = field_vars |> Enum.map(fn {_name, var} -> var end) |> Enum.join(", ")
           use_named? = Process.get(:elmc_named_record_literals, false) and field_count > 0
 
-          record_return =
+              record_return =
             if use_named? do
               names_array =
                 ordered_fields
@@ -412,17 +418,25 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
               """
                 const char *rec_names[#{field_count}] = { #{names_array} };
-                return elmc_record_new_static_take_value(#{field_count}, rec_names, rec_values);
+                Rc = elmc_record_new_static_take(out, #{field_count}, rec_names, rec_values);
+                CHECK_RC(Rc);
               """
             else
-              "return elmc_record_new_values_take_value(#{field_count}, rec_values);"
+              """
+              Rc = elmc_record_new_values_take(out, #{field_count}, rec_values);
+              CHECK_RC(Rc);
+              """
             end
 
           helper_def = """
-          static ElmcValue *#{helper_name}(#{helper_param_decls}) {
+          static RC #{helper_name}(ElmcValue **out#{helper_params_suffix}) {
+            RC Rc = RC_SUCCESS;
+            CATCH_BEGIN
           #{CSource.indent(field_code, 2)}
             ElmcValue *rec_values[#{field_count}] = { #{values_array} };
           #{CSource.indent(record_return, 2)}
+            CATCH_END;
+            return Rc;
           }
           """
 
@@ -431,11 +445,29 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
             [helper_def | Process.get(:elmc_generic_helper_defs, [])]
           )
 
-          next = counter + 1
-          out = "tmp_#{next}"
+          {out, next} = CaseCompile.fresh_var(counter, env)
           call_args = Enum.map_join(params, ", ", fn {_key, c_ref, _kind} -> c_ref end)
 
-          {:ok, "  ElmcValue *#{out} = #{helper_name}(#{call_args});\n", out, next}
+          call_suffix = if call_args == "", do: "", else: ", #{call_args}"
+
+          code =
+            if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
+              if ValueSlots.owned_ref?(out) do
+                "  Rc = #{helper_name}(#{RcRuntimeEmit.allocator_out_arg(out)}#{call_suffix});\n  CHECK_RC(Rc);\n"
+              else
+                "  ElmcValue *#{out} = NULL;\n  Rc = #{helper_name}(&#{out}#{call_suffix});\n  CHECK_RC(Rc);\n"
+              end
+            else
+              failure = RcRuntimeEmit.failure_return(env)
+
+              if ValueSlots.owned_ref?(out) do
+                "  if (#{helper_name}(#{RcRuntimeEmit.allocator_out_arg(out)}#{call_suffix}) != RC_SUCCESS) #{failure}\n"
+              else
+                "  ElmcValue *#{out} = NULL;\n  if (#{helper_name}(&#{out}#{call_suffix}) != RC_SUCCESS) #{failure}\n"
+              end
+            end
+
+          {:ok, code, out, next}
 
         :error ->
           :error
@@ -503,57 +535,109 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
     record_shape = Expr.record_shape(base, env)
     record_type = Expr.record_container_type_for_expr(base, env)
+    multi_use_names = record_update_multi_use_names(fields)
 
-    {update_code, current_var, counter} =
-      Enum.reduce(fields, {base_code, base_var, counter, base_passthrough?, false}, fn field,
-                                                                                       {code_acc,
-                                                                                        current,
-                                                                                        c,
-                                                                                        current_passthrough?,
-                                                                                        current_unique?} ->
-        {field_code, field_var, c2, field_passthrough?} =
-          compile_update_operand(field.expr, RcRuntimeEmit.strip_function_tail_scope(env), c)
+    {update_code, current_var, counter, deferred_field_vars} =
+      Enum.reduce(
+        fields,
+        {base_code, base_var, counter, base_passthrough?, false, []},
+        fn field,
+           {code_acc, current, c, current_passthrough?, current_unique?, deferred} ->
+          {field_code, field_var, c2, field_passthrough?} =
+            compile_update_operand(field.expr, RcRuntimeEmit.strip_function_tail_scope(env), c)
 
-        next = c2 + 1
-        out = "tmp_#{next}"
+          {field_code, field_var} =
+            inline_immortal_record_field_operand(field_code, field_var)
 
-        update_call =
-          if current_unique? do
-            index_ref =
-              Expr.record_field_index_ref(field.name, record_shape, record_type, env)
+          next = c2 + 1
+          out = "tmp_#{next}"
 
-            "elmc_record_update_index_cow_drop(#{current}, #{index_ref}, #{field_var})"
-          else
-            Expr.record_update_expr(current, field.name, field_var, record_shape,
-              env: env,
-              type: record_type,
-              cow: false
-            )
-          end
+          update_call =
+            if current_unique? do
+              index_ref =
+                Expr.record_field_index_ref(field.name, record_shape, record_type, env)
 
-        field_release = update_operand_release(field_var, field_passthrough?)
+              "elmc_record_update_index_cow_drop(#{current}, #{index_ref}, #{field_var})"
+            else
+              Expr.record_update_expr(current, field.name, field_var, record_shape,
+                env: env,
+                type: record_type,
+                cow: false
+              )
+            end
 
-        current_release =
-          if current_unique?, do: "", else: update_operand_release(current, current_passthrough?)
+          field_release =
+            if defer_record_update_field_release?(field.expr, field_var, multi_use_names) do
+              {"", [field_var | deferred]}
+            else
+              release_code =
+                if ValueSlots.owned_ref?(field_var) do
+                  ValueSlots.release_owned_and_null(field_var) <> "\n"
+                else
+                  update_operand_release(field_var, field_passthrough?)
+                end
 
-        code = """
-        #{field_code}
-        ElmcValue *#{out} = #{update_call};
-        #{current_release}
-        #{field_release}
-        """
+              {release_code, deferred}
+            end
 
-        {code_acc <> "\n" <> code, out, next, false, true}
-      end)
-      |> then(fn {code, var, c, _, _} -> {code, var, c} end)
+          {release_code, deferred_field_vars} = field_release
 
-    full_code = update_code
+          current_release =
+            if current_unique? or borrowed_projection_operand?(current, code_acc),
+              do: "",
+              else: update_operand_release(current, current_passthrough?)
+
+          code = """
+          #{field_code}
+          ElmcValue *#{out} = #{update_call};
+          #{current_release}
+          #{release_code}
+          """
+
+          {code_acc <> "\n" <> code, out, next, false, true, deferred_field_vars}
+        end
+      )
+      |> then(fn {code, var, c, _, _, deferred} -> {code, var, c, deferred} end)
+
+    deferred_release =
+      deferred_field_vars
+      |> Enum.uniq()
+      |> Enum.map_join("\n", &ValueSlots.release_owned_and_null/1)
+
+    full_code =
+      if deferred_release == "" do
+        update_code
+      else
+        update_code <> "\n" <> deferred_release
+      end
 
     case maybe_extract_chained_update_helper(base, fields, env, full_code, current_var, counter) do
       {:ok, code, out, counter} -> {code, out, counter}
       :error -> {full_code, current_var, counter}
     end
   end
+
+  defp record_update_multi_use_names(fields) when is_list(fields) do
+    fields
+    |> Enum.flat_map(fn field -> VarAnalysis.used_vars(field.expr) end)
+    |> Enum.frequencies()
+    |> Enum.flat_map(fn
+      {name, count} when count > 1 -> [name]
+      _ -> []
+    end)
+    |> MapSet.new()
+  end
+
+  defp defer_record_update_field_release?(
+         %{op: :var, name: name},
+         field_var,
+         multi_use_names
+       )
+       when is_binary(name) and is_binary(field_var) do
+    MapSet.member?(multi_use_names, name) and ValueSlots.owned_ref?(field_var)
+  end
+
+  defp defer_record_update_field_release?(_expr, _field_var, _multi_use_names), do: false
 
   defp maybe_extract_chained_update_helper(base, fields, env, update_code, result_var, counter) do
     cond do
@@ -637,31 +721,82 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     do: Regex.match?(~r/^[A-Za-z_][A-Za-z0-9_]*$/, value)
 
   defp compile_update_operand(%{op: :var, name: name}, env, counter) do
+    operand_env = Map.put(env, :__transfer_operand__, true)
+
     case EnvBindings.lookup_binding(env, name) do
       source when is_binary(source) ->
         if c_identifier?(source) do
           {"", source, counter, true}
         else
-          {code, ref, counter} = Host.compile_expr(%{op: :var, name: name}, env, counter)
+          {code, ref, counter} = Host.compile_expr(%{op: :var, name: name}, operand_env, counter)
           {code, ref, counter, false}
         end
 
       _ ->
-        {code, ref, counter} = Host.compile_expr(%{op: :var, name: name}, env, counter)
+        {code, ref, counter} = Host.compile_expr(%{op: :var, name: name}, operand_env, counter)
         {code, ref, counter, false}
     end
   end
 
   defp compile_update_operand(expr, env, counter) do
-    {code, ref, counter} = Host.compile_expr(expr, env, counter)
+    operand_env = Map.put(env, :__transfer_operand__, true)
+    {code, ref, counter} = Host.compile_expr(expr, operand_env, counter)
     {code, ref, counter, false}
   end
 
+  defp inline_immortal_record_field_operand(field_code, field_var) do
+    case parse_single_immortal_assign(field_code, field_var) do
+      {:ok, rhs} -> {"", rhs}
+      :error -> {field_code, field_var}
+    end
+  end
+
+  defp parse_single_immortal_assign(code, field_var)
+       when is_binary(code) and is_binary(field_var) do
+    trimmed = String.trim(code)
+    lhs = RcRuntimeEmit.assignment_lhs(field_var)
+
+    cond do
+      Regex.match?(~r/^ElmcValue \*#{Regex.escape(field_var)} = (elmc_maybe_nothing\(\)|elmc_int_zero\(\));$/, trimmed) ->
+        {:ok, Regex.run(~r/^ElmcValue \*#{Regex.escape(field_var)} = (.+);$/, trimmed) |> Enum.at(1)}
+
+      true ->
+        case Regex.run(~r/^#{Regex.escape(lhs)} = (.+);$/, trimmed) do
+          [_, rhs] ->
+            if immortal_inline_rhs?(rhs), do: {:ok, rhs}, else: :error
+
+          _ ->
+            :error
+        end
+    end
+  end
+
+  defp parse_single_immortal_assign(_code, _field_var), do: :error
+
+  defp immortal_inline_rhs?("elmc_maybe_nothing()"), do: true
+  defp immortal_inline_rhs?("elmc_int_zero()"), do: true
+  defp immortal_inline_rhs?(_), do: false
+
+  defp borrowed_projection_operand?(var, code)
+       when is_binary(var) and is_binary(code) do
+    Regex.match?(
+      ~r/ElmcValue \*#{Regex.escape(var)} = elmc_maybe_or_tuple_just_payload_borrow\(/,
+      code
+    )
+  end
+
+  defp borrowed_projection_operand?(_var, _code), do: false
+
   defp update_operand_release(var, passthrough?) do
-    if passthrough? or not boxed_release_var?(var) do
-      ""
-    else
-      "elmc_release(#{var});\n"
+    cond do
+      passthrough? or not boxed_release_var?(var) ->
+        ""
+
+      ValueSlots.owned_ref?(var) ->
+        ValueSlots.abandon_stmt(var) <> "\n"
+
+      true ->
+        ValueSlots.release_stmt(var) <> "\n"
     end
   end
 
@@ -702,8 +837,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
       _ ->
         {arg_code, arg_var, counter} = Host.compile_expr(%{op: :var, name: arg}, env, counter)
-        next = counter + 1
-        var = "tmp_#{next}"
+        {var, next} = CaseCompile.fresh_var(counter, env)
+
         getter =
           record_field_get_expr(
             arg_var,
@@ -714,8 +849,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
         code = """
         #{arg_code}
-          ElmcValue *#{var} = #{getter};
-          elmc_release(#{arg_var});
+          #{ValueSlots.boxed_decl(var, getter)}
+          #{ValueSlots.release_stmt(arg_var)};
         """
 
         {code, var, next}
@@ -750,8 +885,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
           :error ->
             {code, ref, counter} = Host.compile_expr(%{op: :var, name: name}, env, counter)
-            next = counter + 1
-            var = "tmp_#{next}"
+            {var, next} = CaseCompile.fresh_var(counter, env)
+
             getter =
               record_field_get_expr(
                 ref,
@@ -763,8 +898,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
             code =
               code <>
                 """
-                  ElmcValue *#{var} = #{getter};
-                  elmc_release(#{ref});
+                  #{ValueSlots.boxed_decl(var, getter)}
+                  #{ValueSlots.release_stmt(ref)};
                 """
 
             {code, var, next}
@@ -788,15 +923,14 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     case Host.inline_record_field_expr(arg_expr, field, env) do
       nil ->
         {arg_code, arg_var, counter} = Host.compile_expr(arg_expr, env, counter)
-        next = counter + 1
-        var = "tmp_#{next}"
+        {var, next} = CaseCompile.fresh_var(counter, env)
         getter = record_field_get_expr(arg_var, field, arg_expr, env)
         :ok = Expr.put_subexpr_record_meta(var, subexpr_record_meta_for_field_access(env, arg_expr, field))
 
         code = """
         #{arg_code}
-          ElmcValue *#{var} = #{getter};
-          elmc_release(#{arg_var});
+          #{ValueSlots.boxed_decl(var, getter)}
+          #{ValueSlots.release_stmt(arg_var)};
         """
 
         mark_borrowed_record_field_ref(var, getter)
@@ -817,8 +951,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
         ) :: Types.compile_result()
   defp compile_bound_field_get(record_name, source, field, env, counter)
        when is_binary(source) do
-    next = counter + 1
-    var = "tmp_#{next}"
+    {var, next} = CaseCompile.fresh_var(counter, env)
+
     getter =
       record_field_get_expr(
         source,
@@ -835,7 +969,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
     code = """
     #{before_probe}
-      ElmcValue *#{var} = #{getter};
+      #{ValueSlots.boxed_decl(var, getter)}
       #{after_probe}
     """
 
@@ -857,8 +991,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   defp mark_borrowed_record_field_ref(_var, _getter), do: :ok
 
   defp borrowed_record_field_getter?(getter) do
-    String.starts_with?(getter, "elmc_record_get_index(") or
-      String.starts_with?(getter, "ELMC_RECORD_GET_INDEX(")
+    String.starts_with?(getter, "ELMC_RECORD_GET_INDEX(")
   end
 
   @spec compile_field_call_var(
@@ -875,7 +1008,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
         compile_bound_field_call(box_var, field, args, env, counter)
         |> then(fn {call_code, out, next} ->
-          {box_code <> call_code <> "  elmc_release(#{box_var});\n", out, next}
+          {box_code <> call_code <> "  " <> ValueSlots.release_stmt(box_var) <> "\n", out, next}
         end)
 
       {:ok, source} when is_binary(source) ->
@@ -917,24 +1050,24 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
     releases =
       arg_vars
-      |> Enum.map_join("\n  ", fn var -> "elmc_release(#{var});" end)
+      |> Enum.map_join("\n  ", &ValueSlots.release_stmt/1)
 
     code = """
     ElmcValue *#{fn_var} = elmc_record_get(#{source}, "#{Util.escape_c_string(field)}");
       #{arg_code}
       ElmcValue *#{args_array}[#{max(argc, 1)}] = { #{arg_list} };
       ElmcValue *#{out} = elmc_closure_call(#{fn_var}, #{args_array}, #{argc});
-      elmc_release(#{fn_var});
+      #{ValueSlots.release_stmt(fn_var)};
       #{releases}
     """
 
     {code, out, next2}
   end
 
-  defp compile_boxed_field_value_expr(%{op: :char_literal, value: value}, _env, counter) do
+  defp compile_boxed_field_value_expr(%{op: :char_literal, value: value}, env, counter) do
     next = counter + 1
     var = Util.temp_var(next, "boxed_char")
-    {"ElmcValue *#{var} = elmc_new_char(#{value});\n", var, next}
+    {RcRuntimeEmit.assign_call(env, var, "elmc_new_char", "#{value}") <> "\n", var, next}
   end
 
   defp compile_boxed_field_value_expr(expr, env, counter) do
@@ -943,7 +1076,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
       next = c2 + 1
       var = Util.temp_var(next, "boxed_int")
 
-      {code <> "  ElmcValue *#{var} = elmc_new_int_take(#{native_ref});\n", var, next}
+      {code <> "  " <> RcRuntimeEmit.assign_call(env, var, "elmc_new_int", native_ref) <> "\n", var, next}
     else
       Host.compile_expr(expr, env, counter)
     end
@@ -1015,7 +1148,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
   @spec release_list_operand_code(Types.compile_env(), String.t()) :: String.t()
   def release_list_operand_code(env, list_var) when is_binary(list_var) do
-    if shared_subexpr_ref?(env, list_var), do: "", else: "elmc_release(#{list_var});\n"
+    if shared_subexpr_ref?(env, list_var), do: "", else: ValueSlots.release_stmt(list_var) <> "\n"
   end
 
   @spec reset_borrowed_field_refs() :: :ok
@@ -1069,10 +1202,22 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
     refs
     |> Enum.sort()
-    |> Enum.map_join("\n  ", &"elmc_release(#{&1});")
+    |> Enum.map_join("\n  ", &ValueSlots.release_stmt/1)
     |> case do
       "" -> ""
       releases -> "\n  " <> releases <> "\n"
+    end
+  end
+
+  @spec release_compare_operand(Types.compile_env(), String.t()) :: String.t()
+  def release_compare_operand(env, var) when is_binary(var) do
+    if shared_subexpr_ref?(env, var), do: "", else: release_compare_operand_var(var)
+  end
+
+  defp release_compare_operand_var(var) do
+    cond do
+      ValueSlots.owned_ref?(var) -> ValueSlots.release_owned_and_null(var)
+      true -> ValueSlots.release_stmt(var)
     end
   end
 
@@ -1085,7 +1230,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
       |> Enum.map(fn {ref} -> ref end)
       |> Enum.filter(&boxed_release_var?/1)
       |> Enum.uniq()
-      |> Enum.map_join("\n  ", &"elmc_release(#{&1});")
+      |> Enum.map_join("\n  ", &ValueSlots.release_stmt/1)
 
     record_releases =
       env
@@ -1094,7 +1239,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
       |> Enum.map(fn {ref} -> ref end)
       |> Enum.filter(&boxed_release_var?/1)
       |> Enum.uniq()
-      |> Enum.map_join("\n  ", &"elmc_release(#{&1});")
+      |> Enum.map_join("\n  ", &ValueSlots.release_stmt/1)
 
     deferred = deferred_call_operand_release_code()
 
@@ -1226,6 +1371,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     else
       env
     end
+    |> mark_shared_subexpr_ref(ref)
   end
 
   defp compile_cached_expr(expr, env, counter, compile_fn) do
@@ -1300,10 +1446,10 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     var = Util.temp_var(next, "boxed_int")
 
     release_line =
-      if release_arg?, do: "  elmc_release(#{arg_var});\n", else: ""
+      if release_arg?, do: ValueSlots.release_stmt(arg_var) <> "\n", else: ""
 
     code = """
-    #{arg_code}  ElmcValue *#{var} = elmc_new_int_take(#{getter});
+    #{arg_code}  #{ValueSlots.boxed_decl(var, "elmc_new_int(#{getter})", env)}
     #{release_line}
     """
 
@@ -1320,7 +1466,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     shape = Expr.record_shape(arg_expr, env)
 
     release_line =
-      if release_arg?, do: "  elmc_release(#{arg_var});\n", else: ""
+      if release_arg?, do: ValueSlots.release_stmt(arg_var) <> "\n", else: ""
 
     record_type = Expr.record_container_type_for_expr(arg_expr, env)
 
@@ -1465,7 +1611,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
   defp releases_to_code(refs) do
     refs
-    |> Enum.map_join("\n  ", &"elmc_release(#{&1});")
+    |> Enum.map_join("\n  ", &ValueSlots.release_stmt/1)
     |> then(&("\n  " <> &1))
   end
 

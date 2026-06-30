@@ -63,6 +63,60 @@ defmodule Elmx.Runtime.Core.MaybeResult do
 
   def maybe_map2(_maybe_a, _maybe_b, _f), do: :Nothing
 
+  @spec maybe_map3(Types.elm_hof(), Types.maybe_like(), Types.maybe_like(), Types.maybe_like()) ::
+          Types.maybe_like()
+  def maybe_map3(fun, ma, mb, mc), do: maybe_map_n(fun, [ma, mb, mc])
+
+  @spec maybe_map4(
+          Types.elm_hof(),
+          Types.maybe_like(),
+          Types.maybe_like(),
+          Types.maybe_like(),
+          Types.maybe_like()
+        ) :: Types.maybe_like()
+  def maybe_map4(fun, ma, mb, mc, md), do: maybe_map_n(fun, [ma, mb, mc, md])
+
+  @spec maybe_map5(
+          Types.elm_hof(),
+          Types.maybe_like(),
+          Types.maybe_like(),
+          Types.maybe_like(),
+          Types.maybe_like(),
+          Types.maybe_like()
+        ) :: Types.maybe_like()
+  def maybe_map5(fun, ma, mb, mc, md, me), do: maybe_map_n(fun, [ma, mb, mc, md, me])
+
+  @spec result_map2(Types.elm_hof(), Types.result_like(), Types.result_like()) ::
+          Types.result_like()
+  def result_map2(fun, ra, rb), do: result_map_n(fun, [ra, rb])
+
+  @spec result_map3(
+          Types.elm_hof(),
+          Types.result_like(),
+          Types.result_like(),
+          Types.result_like()
+        ) :: Types.result_like()
+  def result_map3(fun, ra, rb, rc), do: result_map_n(fun, [ra, rb, rc])
+
+  @spec result_map4(
+          Types.elm_hof(),
+          Types.result_like(),
+          Types.result_like(),
+          Types.result_like(),
+          Types.result_like()
+        ) :: Types.result_like()
+  def result_map4(fun, ra, rb, rc, rd), do: result_map_n(fun, [ra, rb, rc, rd])
+
+  @spec result_map5(
+          Types.elm_hof(),
+          Types.result_like(),
+          Types.result_like(),
+          Types.result_like(),
+          Types.result_like(),
+          Types.result_like()
+        ) :: Types.result_like()
+  def result_map5(fun, ra, rb, rc, rd, re), do: result_map_n(fun, [ra, rb, rc, rd, re])
+
   @spec result_map(Types.elm_hof(), Types.result_like()) :: Types.result_like()
   def result_map(_f, {:Err, _} = err), do: err
   def result_map(_f, %{"ctor" => "Err"} = err), do: err
@@ -143,4 +197,42 @@ defmodule Elmx.Runtime.Core.MaybeResult do
   defp normalize_maybe_strict(%{ctor: :Nothing}), do: :Nothing
   defp normalize_maybe_strict(%{ctor: :Just, args: [value]}), do: {:Just, value}
   defp normalize_maybe_strict(_), do: :Nothing
+
+  defp maybe_map_n(fun, maybes) do
+    case collect_maybe_values(maybes) do
+      :nothing -> :Nothing
+      values -> {:Just, apply(fun, values)}
+    end
+  end
+
+  defp collect_maybe_values(maybes) do
+    Enum.reduce_while(maybes, [], fn maybe, acc ->
+      case normalize_maybe_strict(maybe) do
+        {:Just, value} -> {:cont, acc ++ [value]}
+        :Nothing -> {:halt, :nothing}
+      end
+    end)
+  end
+
+  defp result_map_n(fun, results) do
+    case collect_result_values(results) do
+      {:error, err} -> {:Err, err}
+      values -> {:Ok, apply(fun, values)}
+    end
+  end
+
+  defp collect_result_values(results) do
+    Enum.reduce_while(results, [], fn result, acc ->
+      case normalize_result_strict(result) do
+        {:ok, value} -> {:cont, acc ++ [value]}
+        {:error, err} -> {:halt, {:error, err}}
+      end
+    end)
+  end
+
+  defp normalize_result_strict({:Ok, value}), do: {:ok, value}
+  defp normalize_result_strict(%{"ctor" => "Ok", "args" => [value]}), do: {:ok, value}
+  defp normalize_result_strict({:Err, err}), do: {:error, err}
+  defp normalize_result_strict(%{"ctor" => "Err", "args" => [err]}), do: {:error, err}
+  defp normalize_result_strict(_), do: {:error, :bad_result}
 end

@@ -74,6 +74,35 @@ defmodule Elmc.Backend.CCodegen.Emit do
     """
   end
 
+  @spec generated_render_cmd_prelude([String.t()]) :: String.t()
+  def generated_render_cmd_prelude(chunks) do
+    source = Enum.join(chunks, "\n")
+
+    if String.contains?(source, "elmc_render_cmd6(") do
+      """
+      static inline ElmcValue *elmc_render_cmd6(
+          elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2,
+          elmc_int_t p3, elmc_int_t p4, elmc_int_t p5) {
+        ElmcValue *params = elmc_tuple2_take_value(
+          elmc_new_int_take(p0),
+          elmc_tuple2_take_value(
+            elmc_new_int_take(p1),
+            elmc_tuple2_take_value(
+              elmc_new_int_take(p2),
+              elmc_tuple2_take_value(
+                elmc_new_int_take(p3),
+                elmc_tuple2_take_value(
+                  elmc_new_int_take(p4),
+                  elmc_tuple2_take_value(elmc_new_int_take(p5), elmc_int_zero()))))));
+        return elmc_tuple2_take_value(elmc_new_int_take(kind), params);
+      }
+      """
+      |> String.trim()
+    else
+      ""
+    end
+  end
+
   @spec generated_trig_fallback_prelude([String.t()]) :: String.t()
   def generated_trig_fallback_prelude(chunks) do
     source = Enum.join(chunks, "\n")

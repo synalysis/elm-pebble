@@ -37,6 +37,41 @@ defmodule Elmx.OversaturatedQualifiedTest do
     refute code =~ "elem(ops, g, 7"
   end
 
+  test "qualified zero-arity cross-module value compiles as function call" do
+    env =
+      env()
+      |> Map.put(:emit_module_names, ["Other"])
+      |> Map.put(:cross_module_arities, %{{"Other", "zero"} => %{explicit: 0, callable: 0}})
+
+    {emit_code, _, _} =
+      QualifiedEmit.compile_qualified_call1(%{op: :qualified_ref, target: "Other.zero"}, env, 0)
+
+    assert IO.iodata_to_binary(emit_code) == "elmx_fn_Other_zero()"
+  end
+
+  test "Time.utc qualified value compiles to Zone constructor" do
+    {emit_code, _, _} =
+      QualifiedEmit.compile_qualified_call1(%{op: :qualified_ref, target: "Time.utc"}, env(), 0)
+
+    assert IO.iodata_to_binary(emit_code) == "{:Zone, 0, []}"
+  end
+
+  test "Time field extraction compiles to core time runtime" do
+    expr = %{
+      op: :qualified_call,
+      target: "Time.toDay",
+      args: [
+        %{op: :qualified_ref, target: "Time.utc"},
+        %{op: :int_literal, value: 1_672_617_600_000}
+      ]
+    }
+
+    {emit_code, _, _} = QualifiedEmit.compile_qualified_call(expr, env(), 0)
+
+    assert IO.iodata_to_binary(emit_code) ==
+             "Elmx.Runtime.Core.Time.to_day({:Zone, 0, []}, 1672617600000)"
+  end
+
   test "homogeneous long |> chains compile to Apply.repeat1" do
     steps = Enum.map(1..20, fn _ -> %{op: :var, name: "add1"} end)
     base = %{op: :int_literal, value: 0}

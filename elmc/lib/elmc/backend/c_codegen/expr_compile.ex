@@ -4,6 +4,7 @@ defmodule Elmc.Backend.CCodegen.ExprCompile do
   alias Elmc.Backend.CCodegen.CallCompile
   alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.CmdCompile
+  alias Elmc.Backend.CCodegen.RenderCmdCompile
   alias Elmc.Backend.CCodegen.SubCompile
   alias Elmc.Backend.CCodegen.CollectionCompile
   alias Elmc.Backend.CCodegen.CompareCompile
@@ -30,7 +31,6 @@ defmodule Elmc.Backend.CCodegen.ExprCompile do
     :cmd_none
   ]
 
-  @cmd_ops [:pebble_cmd]
   @sub_ops [:pebble_sub]
   @var_arith_ops [:add_const, :add_vars, :sub_const]
   @collection_ops [
@@ -54,8 +54,11 @@ defmodule Elmc.Backend.CCodegen.ExprCompile do
   def compile(%{op: op} = expr, env, counter) when op in @literal_ops,
     do: LiteralCompile.compile(expr, env, counter)
 
-  def compile(%{op: op} = expr, env, counter) when op in @cmd_ops,
+  def compile(%{op: :pebble_cmd} = expr, env, counter),
     do: CmdCompile.compile(expr, env, counter)
+
+  def compile(%{op: :render_cmd} = expr, env, counter),
+    do: RenderCmdCompile.compile(expr, env, counter)
 
   def compile(%{op: op} = expr, env, counter) when op in @sub_ops,
     do: SubCompile.compile(expr, env, counter)

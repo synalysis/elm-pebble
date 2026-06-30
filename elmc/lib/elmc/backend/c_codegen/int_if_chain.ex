@@ -8,6 +8,32 @@ defmodule Elmc.Backend.CCodegen.IntIfChain do
 
   @min_branches 3
 
+  @spec parse_or_equality_if_chain(
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env()
+        ) :: {:ok, Types.ir_expr(), Types.int_case_branches()} | :error
+  def parse_or_equality_if_chain(cond_expr, then_expr, else_expr, env) do
+    with {:ok, subject, values} <- collect_or_equalities(cond_expr, env, []),
+         true <- then_returns_subject?(then_expr, subject),
+         true <- NativeInt.expr?(then_expr, env),
+         true <- NativeInt.expr?(else_expr, env) do
+      branches =
+        Enum.map(values, fn value ->
+          %{pattern: %{kind: :int, value: value}, expr: then_expr}
+        end) ++ [%{pattern: %{kind: :wildcard}, expr: else_expr}]
+
+      if switch_eligible?(subject, branches, env) do
+        {:ok, subject, branches}
+      else
+        :error
+      end
+    else
+      _ -> :error
+    end
+  end
+
   @spec parse_if_chain(
           Types.ir_expr(),
           Types.ir_expr(),
@@ -56,6 +82,49 @@ defmodule Elmc.Backend.CCodegen.IntIfChain do
     {:ok, subject, [%{pattern: %{kind: :wildcard}, expr: else_expr}]}
   end
 
+  # `if x == 10 || x == 30 || x == 60 then x else 5` lowers to nested bool ifs:
+  # if (x == 10) then True else if (x == 30) then True else (x == 60)
+  defp collect_or_equalities(
+         %{op: :if, cond: cond, then_expr: then_expr, else_expr: else_expr},
+         env,
+         acc
+       ) do
+    with {:ok, subject, value} <- int_equality(cond, env),
+         true <- acc == [] or same_subjects?(acc, subject),
+         true <- bool_true?(then_expr) do
+      collect_or_equalities(else_expr, env, [{subject, value} | acc])
+    else
+      _ -> :error
+    end
+  end
+
+  defp collect_or_equalities(cond_expr, env, acc) when acc != [] do
+    with {:ok, subject, value} <- int_equality(cond_expr, env),
+         true <- same_subjects?(acc, subject) do
+      values = Enum.reverse([value | Enum.map(acc, fn {_, v} -> v end)])
+      {:ok, subject, values}
+    else
+      _ -> :error
+    end
+  end
+
+  defp collect_or_equalities(_cond_expr, _env, _acc), do: :error
+
+  defp bool_true?(%{op: :bool_literal, value: true}), do: true
+  defp bool_true?(%{op: :int_literal, value: 1}), do: true
+
+  defp bool_true?(%{op: :constructor_call, target: target, args: args}) when args in [nil, []] do
+    target == "True" or String.ends_with?(target, ".True")
+  end
+
+  defp bool_true?(_expr), do: false
+
+  defp then_returns_subject?(then_expr, subject), do: same_subject?(then_expr, subject)
+
+  defp same_subjects?(acc, subject) do
+    Enum.all?(acc, fn {entry_subject, _} -> same_subject?(entry_subject, subject) end)
+  end
+
   defp int_equality(cond_expr, env) do
     case cond_expr do
       %{op: :compare, kind: :eq, left: left, right: right} ->
@@ -84,17 +153,9 @@ defmodule Elmc.Backend.CCodegen.IntIfChain do
     end
   end
 
-  defp subject_expr(%{op: :var, name: name}, env) when is_binary(name) or is_atom(name) do
-    expr = %{op: :var, name: name}
-
-    if NativeInt.expr?(expr, env) do
-      expr
-    else
-      nil
-    end
+  defp subject_expr(expr, env) do
+    if NativeInt.expr?(expr, env), do: expr, else: nil
   end
-
-  defp subject_expr(_expr, _env), do: nil
 
   defp int_literal(%{op: :int_literal, value: value}) when is_integer(value), do: value
   defp int_literal(_expr), do: nil

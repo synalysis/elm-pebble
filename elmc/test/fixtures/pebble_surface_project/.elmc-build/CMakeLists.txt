@@ -5,6 +5,7 @@ add_compile_options(-ffunction-sections -fdata-sections)
 add_link_options(-Wl,--gc-sections)
 
 add_library(elmc_runtime runtime/elmc_runtime.c)
+target_link_libraries(elmc_runtime PRIVATE m)
 add_library(elmc_ports ports/elmc_ports.c)
 add_library(elmc_generated c/elmc_generated.c)
 add_library(elmc_worker c/elmc_worker.c)

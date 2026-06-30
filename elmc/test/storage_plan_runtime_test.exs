@@ -19,13 +19,15 @@ defmodule Elmc.StoragePlanRuntimeTest do
       #include "elmc_runtime.h"
       #include <stdio.h>
 
+      #{Elmc.Test.RcTrackHarness.harness_rc_helpers()}
+
       int main(void) {
         const elmc_int_t items[] = { 10, 20, 30, 40 };
-        ElmcValue *compact = elmc_list_from_int_array_take(items, 4);
+        ElmcValue *compact = elmc_harness_list_from_int_array(items, 4);
         elmc_int_t hit = elmc_array_get_with_default_int(-1, 2, compact);
         elmc_int_t miss = elmc_array_get_with_default_int(-1, 9, compact);
         elmc_int_t len = elmc_as_int(elmc_array_length(compact));
-        ElmcValue *set = elmc_array_set(elmc_new_int_take(1), elmc_new_int_take(99), compact);
+        ElmcValue *set = elmc_array_set(elmc_harness_new_int(1), elmc_harness_new_int(99), compact);
         elmc_int_t after_set = elmc_array_get_with_default_int(-1, 1, set);
 
         printf("hit=%ld miss=%ld len=%ld after_set=%ld\\n",

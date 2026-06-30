@@ -256,6 +256,7 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
     |> Enum.find_value(fn
       {{^module_name, name}, %{expr: expr}} ->
         case Tuple2CaseTable.try_emit(module_name, name, expr) do
+          {:ok, _, _, _} -> name
           {:ok, _, _} -> name
           _ -> nil
         end

@@ -31,5 +31,8 @@ defmodule Elmc.WorkerRcFailTest do
     assert worker_c =~ "elmc_worker_last_fail_code(void)"
     assert worker_c =~ "elmc_rc_fail_code()"
     assert worker_c =~ "elmc_last_fail_line"
+    refute worker_c =~ "ELMC_TAKE_OR_RETURN"
+    assert worker_c =~ "elmc_cmd_queue_normalize(&pending"
+    assert worker_c =~ "List spine cells were released in the loop"
   end
 end

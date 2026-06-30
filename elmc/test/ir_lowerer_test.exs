@@ -280,6 +280,42 @@ defmodule Elmc.IRLowererTest do
     refute Enum.any?(ir.diagnostics, &(&1.code == "preferences_schema_field_order"))
   end
 
+  test "lowerer accepts preference schema built with pipe_chain" do
+    project = %Project{
+      project_dir: "/tmp",
+      elm_json: %{},
+      modules: [
+        %FrontendModule{
+          name: "CompanionPreferences",
+          path: "/tmp/CompanionPreferences.elm",
+          imports: ["Pebble.Companion.Preferences"],
+          declarations: [
+            %{
+              kind: :type_alias,
+              name: "Settings",
+              fields: ["cornerUpdateInterval"],
+              span: %{start_line: 3, end_line: 7}
+            },
+            %{
+              kind: :function_definition,
+              name: "settings",
+              args: [],
+              span: %{start_line: 10, end_line: 24},
+              expr:
+                preferences_schema_pipe_expr(
+                  [{"Corners", ["cornerUpdateInterval"]}],
+                  "Settings"
+                )
+            }
+          ]
+        }
+      ]
+    }
+
+    assert {:ok, ir} = Lowerer.lower_project(project)
+    refute Enum.any?(ir.diagnostics, &(&1.code == "preferences_schema_field_order"))
+  end
+
   test "lowerer emits payload diagnostics from nested case used as case subject" do
     project = %Project{
       project_dir: "/tmp",
@@ -1225,6 +1261,43 @@ defmodule Elmc.IRLowererTest do
           %{op: :string_literal, value: title},
           %{op: :lambda, args: ["schema"], body: preferences_section_body(fields)},
           schema_expr
+        ]
+      }
+    end)
+  end
+
+  defp preferences_schema_pipe_expr(sections, constructor_name) do
+    %{
+      op: :pipe_chain,
+      base: preferences_schema_root(constructor_name),
+      steps:
+        Enum.map(sections, fn {title, fields} ->
+          %{
+            op: :qualified_call,
+            target: "Preferences.section",
+            args: [
+              %{op: :string_literal, value: title},
+              %{op: :lambda, args: ["schema"], body: preferences_section_pipe_body(fields)}
+            ]
+          }
+        end)
+    }
+  end
+
+  defp preferences_section_pipe_body(fields) do
+    Enum.reduce(fields, %{op: :var, name: "schema"}, fn field_id, schema_expr ->
+      %{
+        op: :pipe_chain,
+        base: schema_expr,
+        steps: [
+          %{
+            op: :qualified_call,
+            target: "Preferences.field",
+            args: [
+              %{op: :string_literal, value: field_id},
+              %{op: :qualified_call, target: "Preferences.text", args: []}
+            ]
+          }
         ]
       }
     end)

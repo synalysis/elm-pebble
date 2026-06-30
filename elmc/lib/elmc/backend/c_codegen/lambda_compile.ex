@@ -4,6 +4,7 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.RcRequired
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.ValueSlots
   alias Elmc.Backend.CCodegen.VarAnalysis
@@ -169,6 +170,7 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
         body_env
         |> Map.put(:__rc_required__, true)
         |> Map.put(:__rc_catch__, true)
+        |> RcRuntimeEmit.function_tail_env()
       else
         body_env
       end
@@ -176,7 +178,7 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
     parent_slots = Process.get(:elmc_value_slots, %{live: MapSet.new(), transferred: MapSet.new()})
 
     if rc_lambda? do
-      ValueSlots.reset()
+      ValueSlots.reset(epilogue_lifo: true)
     end
 
     {body_code, body_var, _body_counter} = Host.compile_expr(body, body_env, 0)
@@ -210,30 +212,37 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
       # Hoist the closure function to file scope via process dictionary.
       closure_fn =
         if rc_lambda? do
-          failure_block =
+          publish_out =
+            cond do
+              RcRuntimeEmit.function_out_ref?(body_var) ->
+                ""
+
+              ValueSlots.owned_ref?(body_var) ->
+                "*out = #{body_var};\n    #{ValueSlots.null_assignment(body_var)}"
+
+              true ->
+                "*out = #{body_var};"
+            end
+
+          epilogue_block =
             if failure_cleanup == "" do
               ""
             else
-              """
-
-              if (Rc != RC_SUCCESS) {
-              #{failure_cleanup}
-              }
-              """
+              "\n    #{failure_cleanup}"
             end
 
           """
           static RC #{closure_fn_name}(ElmcValue **out, ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
             RC Rc = RC_SUCCESS;
+            #{closure_void_casts}
             #{owned_decls}
             #{arg_bindings}
             #{capture_bindings}
 
             CATCH_BEGIN
               #{body_code}
-              *out = #{body_var};
-            CATCH_END;
-            #{failure_block}
+              #{publish_out}
+            CATCH_END;#{epilogue_block}
             return Rc;
           }
           """
@@ -261,12 +270,30 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
     # Build the capture array and closure allocation at the call site
     capture_count = length(free_vars)
 
-    capture_refs =
+    {capture_setup, capture_refs, next} =
       free_vars
-      |> Enum.map(&EnvBindings.capture_ref(env, &1))
+      |> Enum.reduce({[], [], next}, fn var, {stmts, refs, counter} ->
+        ref = EnvBindings.capture_ref(env, var)
 
-    capture_list = Enum.join(capture_refs, ", ")
+        case RcRuntimeEmit.parse_take_wrapper_call(ref) do
+          {:ok, take_fn, call_args} ->
+            cap_var = "cap_val_#{counter}"
+
+            stmt =
+              RcRuntimeEmit.take_wrapper_assign(cap_var, take_fn, call_args, env,
+                return_on_fail?: not rc_lambda?
+              )
+
+            {[stmt | stmts], [cap_var | refs], counter + 1}
+
+          :error ->
+            {stmts, [ref | refs], counter}
+        end
+      end)
+      |> then(fn {stmts, refs, counter} -> {Enum.reverse(stmts), Enum.reverse(refs), counter} end)
+
     out = "tmp_#{next}"
+    capture_list = Enum.join(capture_refs, ", ")
 
     {capture_array_code, capture_arg} =
       if capture_count > 0 do
@@ -275,16 +302,29 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
         {"", "NULL"}
       end
 
-    closure_new =
+    closure_args =
+      "#{closure_fn_name}, #{length(lambda_arg_names)}, #{capture_count}, #{capture_arg}"
+
+    closure_setup =
       if rc_lambda? do
-        "elmc_closure_new_rc_take(#{closure_fn_name}, #{length(lambda_arg_names)}, #{capture_count}, #{capture_arg})"
+        """
+        #{ValueSlots.boxed_null_decl(out)}
+        Rc = elmc_closure_new_rc(#{RcRuntimeEmit.allocator_out_arg(out)}, #{closure_args});
+        CHECK_RC(Rc);
+        """
       else
-        "elmc_closure_new_take(#{closure_fn_name}, #{length(lambda_arg_names)}, #{capture_count}, #{capture_arg})"
+        RcRuntimeEmit.take_wrapper_assign(out, "elmc_closure_new", closure_args, env)
       end
 
+    capture_setup_code =
+      capture_setup
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.join("\n")
+
     code = """
+      #{capture_setup_code}
       #{capture_array_code}
-      ElmcValue *#{out} = #{closure_new};
+      #{closure_setup}
     """
 
     {code, out, next}

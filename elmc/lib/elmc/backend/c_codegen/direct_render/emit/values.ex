@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.DirectRender.Emit.Release
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.PlatformStatic
@@ -80,7 +81,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
             {code, ref, "", c}
           else
             {code, var, c} = Host.compile_expr(cond, env, counter)
-            {code, "elmc_as_int(#{var}) != 0", "  elmc_release(#{var});", c}
+            {code, "elmc_as_int(#{var}) != 0", Release.release_var(var, "  "), c}
           end
 
         {then_code, then_ref, counter} = int_value(then_expr, env, counter)
@@ -300,15 +301,21 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
           Types.compile_counter()
         ) :: Types.direct_int_compile_result()
   defp int_value_field_access_fallback(arg, field, env, counter) do
-    cond do
-      field_expr = Host.record_field_expr(arg, field) ->
-        int_value(field_expr, env, counter)
+    case Elmc.Backend.CCodegen.Native.PolarPoint.try_compile_field(arg, field, env, counter) do
+      {:ok, code, ref, counter} ->
+        {code, ref, counter}
 
-      field_expr = Host.inline_record_field_expr(arg, field, env) ->
-        int_value(field_expr, env, counter)
+      :error ->
+        cond do
+          field_expr = Host.record_field_expr(arg, field) ->
+            int_value(field_expr, env, counter)
 
-      true ->
-        runtime_int_value(%{op: :field_access, arg: arg, field: field}, env, counter)
+          field_expr = Host.inline_record_field_expr(arg, field, env) ->
+            int_value(field_expr, env, counter)
+
+          true ->
+            runtime_int_value(%{op: :field_access, arg: arg, field: field}, env, counter)
+        end
     end
   end
 
@@ -478,7 +485,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
               """
               #{expr_code}
                 int64_t #{int_var} = elmc_as_int(#{expr_var});
-                elmc_release(#{expr_var});
+                #{Release.release_var(expr_var, "                ")}
               """,
               int_var,
               next

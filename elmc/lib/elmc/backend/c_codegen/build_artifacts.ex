@@ -62,11 +62,16 @@ defmodule Elmc.Backend.CCodegen.BuildArtifacts do
     }
 
     int main(void) {
-      register_incoming_port("demo", on_outgoing, NULL);
-      ElmcValue *payload = elmc_new_int_take(7);
-      send_outgoing_port("demo", payload);
-      elmc_release(payload);
-      return 0;
+      RC Rc = RC_SUCCESS;
+      CATCH_BEGIN
+        register_incoming_port("demo", on_outgoing, NULL);
+        ElmcValue *payload = NULL;
+        Rc = elmc_new_int(&payload, 7);
+        CHECK_RC(Rc);
+        send_outgoing_port("demo", payload);
+        elmc_release(payload);
+      CATCH_END
+      return (int)Rc;
     }
     """
   end

@@ -157,6 +157,9 @@ defmodule Elmc.Backend.CCodegen.Native.BindingAnalysis do
        when target in ["Basics.toFloat", "toFloat"],
        do: true
 
+  defp to_float_expr?(%{op: :call, name: name, args: [_value]}) when name in ["toFloat"],
+    do: true
+
   defp to_float_expr?(%{op: :runtime_call, function: "elmc_basics_to_float", args: [_value]}),
     do: true
 

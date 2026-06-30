@@ -27,7 +27,7 @@ defmodule Elmc.NativeMaybeIntCaseCodegenTest do
     assert generated_c =~ "elmc_int_t elmc_fn_Main_currentHour_native("
 
     native_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_currentHour")
-    assert native_body =~ "ELMC_TAG_MAYBE"
+    assert native_body =~ "elmc_maybe_is_just"
     assert native_body =~ "native_mod_"
     assert native_body =~ "ELMC_RECORD_GET_INDEX_INT"
     refute native_body =~ "elmc_new_int("
@@ -62,7 +62,7 @@ defmodule Elmc.NativeMaybeIntCaseCodegenTest do
     native_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_maybeIntBump")
 
     assert generated_c =~ "elmc_int_t elmc_fn_Main_maybeIntBump_native("
-    assert native_body =~ "ELMC_TAG_MAYBE"
+    assert native_body =~ "elmc_maybe_is_just"
     refute native_body =~ "elmc_new_int("
   end
 

@@ -1,6 +1,7 @@
 defmodule Elmc.TangramTemplateCodegenTest do
   use ExUnit.Case
 
+  alias Elmc.Test.RcTrackHarness
   alias Elmc.TestSupport.TangramTemplate
 
   test "tangram watchface view codegen does not reference phantom Main.start helpers" do
@@ -40,6 +41,7 @@ defmodule Elmc.TangramTemplateCodegenTest do
     assert form_origin =~ "ElmcValue *owned["
     assert form_origin =~ "Rc = elmc_fn_Main_p_native(&"
     assert form_origin =~ "CHECK_RC(Rc);"
+    assert form_origin =~ "elmc_fn_Main_nudgePoint(call_args_"
     assert form_origin =~ "*out = elmc_fn_Main_nudgePoint"
     assert form_origin =~ "elmc_release_array_lifo(owned, DIM(owned));"
     refute form_origin =~ ~r/owned\[\d+\] = owned\[\d+\];/
@@ -113,8 +115,11 @@ defmodule Elmc.TangramTemplateCodegenTest do
       prelude_path,
       """
       #include "elmc_runtime.h"
+      #{RcTrackHarness.harness_rc_helpers()}
       ElmcValue *elmc_fn_Companion_Internal_watchToPhoneTag(ElmcValue **a, int n);
       ElmcValue *elmc_fn_Companion_Internal_watchToPhoneValue(ElmcValue **a, int n);
+      
+      
       """
     )
 
@@ -136,21 +141,22 @@ defmodule Elmc.TangramTemplateCodegenTest do
       }
 
       static ElmcValue *basalt_launch_context(void) {
-        ElmcValue *reason = elmc_new_int_take(2);
-        ElmcValue *watch_model = elmc_new_string_take("");
-        ElmcValue *watch_profile_id = elmc_new_string_take("basalt");
-        ElmcValue *width = elmc_new_int_take(144);
-        ElmcValue *height = elmc_new_int_take(168);
+        ElmcValue *reason = elmc_harness_new_int(2);
+        ElmcValue *watch_model = elmc_harness_new_string("");
+        ElmcValue *watch_profile_id = elmc_harness_new_string("basalt");
+        ElmcValue *width = elmc_harness_new_int(144);
+        ElmcValue *height = elmc_harness_new_int(168);
         ElmcValue *shape = elmc_new_int_take(1);
-        ElmcValue *color_mode = elmc_new_int_take(1);
+        ElmcValue *color_mode = elmc_harness_new_int(1);
         ElmcValue *screen_values[] = {width, height, shape, color_mode};
         ElmcValue *screen = elmc_record_new_values_take_value(4, screen_values);
-        ElmcValue *has_microphone = elmc_new_int_take(0);
-        ElmcValue *has_compass = elmc_new_int_take(0);
-        ElmcValue *supports_health = elmc_new_int_take(0);
+        ElmcValue *has_microphone = elmc_harness_new_int(0);
+        ElmcValue *has_compass = elmc_harness_new_int(0);
+        ElmcValue *supports_health = elmc_harness_new_int(0);
         ElmcValue *context_values[] = {reason, watch_model, watch_profile_id, screen, has_microphone,
                                        has_compass, supports_health};
-        return elmc_record_new_values_take_value(7, context_values);
+        ElmcValue *ret = elmc_record_new_values_take_value(7, context_values);
+        return ret;
       }
 
       int main(void) {
@@ -166,6 +172,8 @@ defmodule Elmc.TangramTemplateCodegenTest do
         elmc_pebble_deinit(&app);
         return 0;
       }
+      
+      
       """
     )
 

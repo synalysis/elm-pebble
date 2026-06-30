@@ -6,11 +6,14 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
   alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.ImmortalStringLiteral
   alias Elmc.Backend.CCodegen.IntLiteralRef
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.Types
+
+  @min_string_lut_branches 3
   @spec branches?(Types.int_case_branches()) :: boolean()
   def branches?(branches) when is_list(branches) do
     {int_values, wildcard_indexes} =
@@ -69,10 +72,15 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
   end
 
   defp compile(subject_expr, branches, env, counter, :boxed) do
-    if boxed_lookup_table_eligible?(branches, env) do
-      compile_boxed_lookup_table(subject_expr, branches, env, counter)
-    else
-      compile_boxed_switch(subject_expr, branches, env, counter)
+    cond do
+      string_lookup_table_eligible?(branches) ->
+        compile_string_lookup_table(subject_expr, branches, env, counter)
+
+      boxed_lookup_table_eligible?(branches, env) ->
+        compile_boxed_lookup_table(subject_expr, branches, env, counter)
+
+      true ->
+        compile_boxed_switch(subject_expr, branches, env, counter)
     end
   end
 
@@ -111,7 +119,10 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
           Host.compile_case_branch_assignment(branch.expr, out, branch_env, c)
 
         label = case_label(branch.pattern)
-        release_previous = if exhaustive?, do: "", else: "elmc_release(#{out});"
+        release_previous =
+          if exhaustive? or RcRuntimeEmit.function_out_ref?(out),
+            do: "",
+            else: "elmc_release(#{RcRuntimeEmit.value_expr(out)});"
 
         snippet = """
         #{label}:
@@ -175,6 +186,45 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
     |> String.trim_trailing()
   end
 
+  defp compile_string_lookup_table(subject_expr, branches, env, counter) do
+    {entries, size, has_wildcard?} = string_lut_entries(branches)
+    case_expr = %{op: :case, subject: subject_expr, branches: branches}
+    {out, _out_next, declare_out?} = CaseCompile.result_out_binding(env, counter)
+
+    case ConstantInt.literal_value(case_expr, env) do
+      {:ok, subject_value} ->
+        index = string_lut_index_value(subject_value, size, has_wildcard?)
+        literal = Enum.at(entries, index)
+        lit_name = "native_str_immortal_#{counter + 1}"
+        decl = ImmortalStringLiteral.static_decl(lit_name, literal)
+        assign = ImmortalStringLiteral.assign_ref(env, out, "&#{lit_name}")
+
+        code =
+          """
+          #{decl}
+          #{if(declare_out?, do: CaseCompile.result_out_decl(out, true) <> "\n  ", else: "")}#{assign}
+          """
+          |> String.trim_trailing()
+
+        {code, out, counter + 1}
+
+      :error ->
+        {subject_code, subject_ref, counter} = NativeInt.compile_expr(subject_expr, env, counter)
+        next = counter + 1
+        lut = "native_str_immortal_lut_#{next}"
+        index = string_lut_index(subject_ref, size, has_wildcard?)
+        assign = ImmortalStringLiteral.assign_ref(env, out, "&#{lut}[#{index}]")
+
+        code = """
+        #{subject_code}
+          #{ImmortalStringLiteral.array_decl(lut, entries)}
+          #{if(declare_out?, do: CaseCompile.result_out_decl(out, true) <> "\n  ", else: "")}#{assign}
+        """
+
+        {code, out, next}
+    end
+  end
+
   defp compile_boxed_lookup_table(subject_expr, branches, env, counter) do
     {literal_entries, size, int_count, has_wildcard?} = lookup_table_boxed_entries(branches)
     refs =
@@ -221,6 +271,16 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
   end
 
   defp compile_scalar_switch(subject_expr, branches, env, counter) do
+    cond do
+      identity_subject_branches?(subject_expr, branches) ->
+        compile_scalar_identity_switch(subject_expr, branches, env, counter)
+
+      true ->
+        compile_scalar_switch_branches(subject_expr, branches, env, counter)
+    end
+  end
+
+  defp compile_scalar_switch_branches(subject_expr, branches, env, counter) do
     {subject_code, subject_ref, counter} = NativeInt.compile_expr(subject_expr, env, counter)
     next = counter + 1
     out = "native_case_#{next}"
@@ -252,6 +312,58 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
 
     {code, out, final_counter}
   end
+
+  defp compile_scalar_identity_switch(subject_expr, branches, env, counter) do
+    {subject_code, subject_ref, counter} = NativeInt.compile_expr(subject_expr, env, counter)
+    next = counter + 1
+    out = "native_case_#{next}"
+
+    %{expr: else_expr} = Enum.find(branches, &match?(%{pattern: %{kind: :wildcard}}, &1))
+    {else_code, else_ref, counter} = NativeInt.compile_expr(else_expr, env, counter)
+
+    case_labels =
+      branches
+      |> Enum.filter(&match?(%{pattern: %{kind: :int, value: _}}, &1))
+      |> Enum.map_join("\n", fn %{pattern: %{kind: :int, value: value}} ->
+        "    case #{value}:"
+      end)
+
+    code = """
+    #{subject_code}
+      #{else_code}
+      #{scalar_result_decl(out)}
+      switch (#{subject_ref}) {
+    #{case_labels}
+        #{out} = #{subject_ref};
+        break;
+      default:
+        #{out} = #{else_ref};
+        break;
+      }
+    """
+
+    {code, out, counter}
+  end
+
+  defp identity_subject_branches?(subject_expr, branches) do
+    int_branches = Enum.filter(branches, &match?(%{pattern: %{kind: :int, value: _}}, &1))
+    wildcard = Enum.find(branches, &match?(%{pattern: %{kind: :wildcard}}, &1))
+
+    length(int_branches) >= 2 and
+      Enum.all?(int_branches, fn %{expr: expr} ->
+        subjects_equivalent?(expr, subject_expr)
+      end) and
+      match?(%{expr: %{op: :int_literal, value: _}}, wildcard)
+  end
+
+  defp subjects_equivalent?(
+         %{op: :var, name: left},
+         %{op: :var, name: right}
+       ) do
+    EnvBindings.binding_key(left) == EnvBindings.binding_key(right)
+  end
+
+  defp subjects_equivalent?(left, right), do: left == right
 
   defp compile_lookup_table(subject_expr, branches, env, counter) do
     {entries, size} = lookup_table_entries(branches)
@@ -312,6 +424,91 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
   defp native_lookup_table_eligible?(branches) do
     branches?(branches) and
       Enum.all?(branches, fn %{expr: expr} -> match?(%{op: :int_literal, value: _}, expr) end)
+  end
+
+  defp string_lookup_table_eligible?(branches) do
+    explicit_int_branches =
+      branches
+      |> Enum.count(fn
+        %{pattern: %{kind: :int, value: _}, expr: %{op: :string_literal, value: value}}
+        when is_binary(value) ->
+          not String.contains?(value, <<0>>)
+
+        _ ->
+          false
+      end)
+
+    branches?(branches) and explicit_int_branches >= @min_string_lut_branches and
+      Enum.all?(branches, fn %{expr: expr} -> string_literal_branch?(expr) end)
+  end
+
+  defp string_literal_branch?(%{op: :string_literal, value: value}) when is_binary(value),
+    do: not String.contains?(value, <<0>>)
+
+  defp string_literal_branch?(_expr), do: false
+
+  defp string_lut_entries(branches) do
+    default_string =
+      branches
+      |> Enum.find_value(fn
+        %{pattern: %{kind: :wildcard}, expr: %{op: :string_literal, value: value}} -> value
+        _ -> nil
+      end) || ""
+
+    int_string_map =
+      branches
+      |> Enum.flat_map(fn
+        %{pattern: %{kind: :int, value: key}, expr: %{op: :string_literal, value: value}} ->
+          [{key, value}]
+
+        _ ->
+          []
+      end)
+      |> Map.new()
+
+    max_key = int_string_map |> Map.keys() |> Enum.max(fn -> -1 end)
+
+    has_wildcard? =
+      Enum.any?(branches, fn %{pattern: pattern} -> match?(%{kind: :wildcard}, pattern) end)
+
+    size =
+      cond do
+        max_key < 0 and has_wildcard? -> 1
+        has_wildcard? -> max_key + 2
+        true -> max_key + 1
+      end
+
+    entries =
+      for index <- 0..(size - 1) do
+        Map.get(int_string_map, index, default_string)
+      end
+
+    {entries, size, has_wildcard?}
+  end
+
+  defp string_lut_index(_subject_ref, 1, _has_wildcard?), do: "0"
+
+  defp string_lut_index(subject_ref, size, true) when size > 1 do
+    wildcard_index = size - 1
+    "((#{subject_ref}) >= 0 && (#{subject_ref}) < #{wildcard_index}) ? (#{subject_ref}) : #{wildcard_index}"
+  end
+
+  defp string_lut_index(subject_ref, size, false) when size > 1 do
+    "((#{subject_ref}) >= 0 && (#{subject_ref}) < #{size}) ? (#{subject_ref}) : 0"
+  end
+
+  defp string_lut_index_value(_subject_value, 1, _has_wildcard?), do: 0
+
+  defp string_lut_index_value(subject_value, size, true) when size > 1 do
+    wildcard_index = size - 1
+
+    if subject_value >= 0 and subject_value < wildcard_index,
+      do: subject_value,
+      else: wildcard_index
+  end
+
+  defp string_lut_index_value(subject_value, size, false) when size > 1 do
+    if subject_value >= 0 and subject_value < size, do: subject_value, else: 0
   end
 
   defp boxed_lookup_table_eligible?(branches, env) do

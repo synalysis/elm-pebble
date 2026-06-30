@@ -7,7 +7,6 @@ defmodule Elmc.Backend.CCodegen.LiteralCompile do
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.IntLiteralRef
   alias Elmc.Backend.CCodegen.ResourceSlotMacros
-  alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.ResourceUnion
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.UnionMacros
@@ -19,7 +18,7 @@ defmodule Elmc.Backend.CCodegen.LiteralCompile do
           Types.compile_result()
   def compile(%{op: :int_literal} = expr, env, counter) do
     if BuiltinUnion.maybe_nothing_literal?(expr) do
-      BuiltinUnion.compile_maybe_nothing(counter)
+      BuiltinUnion.compile_maybe_nothing(env, counter)
     else
       compile_int_literal(expr, env, counter)
     end
@@ -37,24 +36,32 @@ defmodule Elmc.Backend.CCodegen.LiteralCompile do
   end
 
   def compile(%{op: :string_literal, value: value}, env, counter) do
-    next = counter + 1
-    var = "tmp_#{next}"
+    {var, counter} =
+      if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
+        CaseCompile.fresh_var(counter, env)
+      else
+        next = counter + 1
+        {"tmp_#{next}", next}
+      end
 
     code =
       if String.contains?(value, <<0>>) do
-        "ElmcValue *#{var} = #{Util.string_literal_c_expr(value)};\n"
+        escaped = Util.escape_c_string(value)
+        byte_len = byte_size(value)
+
+        RcRuntimeEmit.assign_call(env, var, "elmc_new_string_len", "\"#{escaped}\", #{byte_len}") <>
+          "\n"
       else
         RcRuntimeEmit.assign_call(env, var, "elmc_new_string", "\"#{Util.escape_c_string(value)}\"") <>
           "\n"
       end
 
-    {code, var, next}
+    {code, var, counter}
   end
 
-  def compile(%{op: :char_literal, value: value}, _env, counter) do
-    next = counter + 1
-    var = "tmp_#{next}"
-    {"ElmcValue *#{var} = elmc_new_char(#{value});", var, next}
+  def compile(%{op: :char_literal, value: value}, env, counter) do
+    {var, counter} = literal_out_slot(env, counter)
+    {RcRuntimeEmit.assign_call(env, var, "elmc_new_char", "#{value}") <> "\n", var, counter}
   end
 
   def compile(%{op: :bool_literal, value: value}, env, counter) do
@@ -64,17 +71,15 @@ defmodule Elmc.Backend.CCodegen.LiteralCompile do
     {RcRuntimeEmit.assign_call(env, var, "elmc_new_bool", flag) <> "\n", var, counter}
   end
 
-  def compile(%{op: :order_literal, value: value}, _env, counter) when is_integer(value) do
-    next = counter + 1
-    var = "tmp_#{next}"
-    {"ElmcValue *#{var} = elmc_new_order(#{value});", var, next}
+  def compile(%{op: :order_literal, value: value}, env, counter) when is_integer(value) do
+    {var, counter} = literal_out_slot(env, counter)
+    {RcRuntimeEmit.assign_call(env, var, "elmc_new_order", "#{value}") <> "\n", var, counter}
   end
 
-  def compile(%{op: :float_literal, value: value}, _env, counter) do
-    next = counter + 1
-    var = "tmp_#{next}"
+  def compile(%{op: :float_literal, value: value}, env, counter) do
+    {var, counter} = literal_out_slot(env, counter)
     float_val = if is_integer(value), do: "#{value}.0", else: "#{value}"
-    {"ElmcValue *#{var} = elmc_new_float_take(#{float_val});", var, next}
+    {RcRuntimeEmit.assign_call(env, var, "elmc_new_float", float_val) <> "\n", var, counter}
   end
 
   def compile(%{op: :cmd_none}, env, counter) do
@@ -107,9 +112,14 @@ defmodule Elmc.Backend.CCodegen.LiteralCompile do
   end
 
   defp literal_out_slot(env, counter) do
-    case Map.get(env, :__into_out__) do
+    case Map.get(env, :__into_out__) || Map.get(env, :__branch_out__) ||
+           RcRuntimeEmit.nested_out_target(env) do
       into_out when is_binary(into_out) ->
-        {into_out, counter}
+        if RcRuntimeEmit.function_out_ref?(into_out) do
+          CaseCompile.fresh_var(counter, env)
+        else
+          {into_out, counter}
+        end
 
       _ ->
         CaseCompile.fresh_var(counter, env)

@@ -51,9 +51,15 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified do
                 {code, env, counter}
 
               :error ->
-                raise Elmx.Backend.UnsupportedOpError,
-                  op: :qualified_call1,
-                  expr: %{target: target}
+                case CrossModuleCall.compile_call(target, [], env, counter, &Helpers.compile_arg_parts/3) do
+                  {:ok, code, env, c} ->
+                    {code, env, c}
+
+                  :error ->
+                    raise Elmx.Backend.UnsupportedOpError,
+                      op: :qualified_call1,
+                      expr: %{target: target}
+                end
             end
         end
     end

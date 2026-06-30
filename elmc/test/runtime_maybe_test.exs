@@ -24,7 +24,6 @@ defmodule Elmc.RuntimeMaybeTest do
         ElmcValue *payload = elmc_new_int_take(42);
         ElmcValue *lowered_just = elmc_tuple2_take_value(just_tag, payload);
         ElmcValue *lowered_nothing = elmc_new_int_take(0);
-
         ElmcValue *just_result = elmc_maybe_with_default(default_value, lowered_just);
         ElmcValue *nothing_result = elmc_maybe_with_default(default_value, lowered_nothing);
 
@@ -39,6 +38,8 @@ defmodule Elmc.RuntimeMaybeTest do
         elmc_release(lowered_nothing);
         return 0;
       }
+      
+      
       """
     )
 

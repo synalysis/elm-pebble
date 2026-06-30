@@ -4,6 +4,7 @@ defmodule Elmc.Backend.CCodegen.ImmortalStaticList do
   alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.CodegenListHelpers
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
 
@@ -118,20 +119,51 @@ defmodule Elmc.Backend.CCodegen.ImmortalStaticList do
           String.t(),
           String.t(),
           String.t(),
-          String.t()
+          String.t(),
+          keyword()
         ) :: String.t()
-  def compile_static_int_list_nth_boxed(spec, index_code, index_ref, default_code, default_ref, out) do
+  def compile_static_int_list_nth_boxed(
+        spec,
+        index_code,
+        index_ref,
+        default_code,
+        default_ref,
+        out,
+        opts \\ []
+      ) do
     count = length(spec.values)
     index_use = native_index_use(index_ref)
+    table_comment = "/* #{spec.module}.#{spec.name}[n] static table */"
+    env = Keyword.get(opts, :env, %{})
 
+    take_block = """
+    ElmcValue *#{out} = NULL;
+    if (#{index_use} >= 0 && #{index_use} < #{count}) {
+      #{RcRuntimeEmit.check_rc_take(out, "elmc_new_int", "#{spec.sym}_values[#{index_use}]")}
+    } else {
+      #{out} = elmc_retain(#{default_ref});
+    }
     """
-    #{index_code}#{default_code}
-      /* #{spec.module}.#{spec.name}[n] static table */
-      ElmcValue *#{out} =
-        (#{index_use} >= 0 && #{index_use} < #{count})
-          ? elmc_new_int_take(#{spec.sym}_values[#{index_use}])
-          : elmc_retain(#{default_ref});
-    """
+
+    cond do
+      Keyword.get(opts, :fn_out?, false) and RcRuntimeEmit.function_out_ref?(out) ->
+        """
+        #{index_code}#{default_code}
+          #{table_comment}
+          if (#{index_use} >= 0 && #{index_use} < #{count}) {
+            #{RcRuntimeEmit.check_rc_take(out, "elmc_new_int", "#{spec.sym}_values[#{index_use}]")}
+          } else {
+            #{RcRuntimeEmit.function_out_deref()} = elmc_retain(#{default_ref});
+          }
+        """
+
+      true ->
+        """
+        #{index_code}#{default_code}
+          #{table_comment}
+          #{take_block}
+        """
+    end
   end
 
   defp native_index_use(index_ref) when is_binary(index_ref) do

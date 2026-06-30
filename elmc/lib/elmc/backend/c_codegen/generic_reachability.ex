@@ -33,19 +33,8 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
       MapSet.member?(excluded_targets, target) ->
         callees =
           case Map.fetch(decl_map, target) do
-            {:ok, decl} ->
-              case FusedNativeReachability.callees(
-                     elem(target, 0),
-                     elem(target, 1),
-                     decl.expr,
-                     decl_map
-                   ) do
-                keys when is_list(keys) -> keys
-                nil -> expr_callees(decl.expr, elem(target, 0), decl_map)
-              end
-
-            :error ->
-              []
+            {:ok, decl} -> merged_callees(target, decl.expr, decl_map)
+            :error -> []
           end
 
         do_reachable(rest ++ callees, decl_map, excluded_targets, seen)
@@ -58,17 +47,7 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
 
       true ->
         decl = Map.fetch!(decl_map, target)
-
-        callees =
-          case FusedNativeReachability.callees(
-                 elem(target, 0),
-                 elem(target, 1),
-                 decl.expr,
-                 decl_map
-               ) do
-            keys when is_list(keys) -> keys
-            nil -> expr_callees(decl.expr, elem(target, 0), decl_map)
-          end
+        callees = merged_callees(target, decl.expr, decl_map)
 
         do_reachable(
           rest ++ callees,
@@ -86,19 +65,8 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
       MapSet.member?(excluded_targets, target) ->
         callees =
           case Map.fetch(decl_map, target) do
-            {:ok, decl} ->
-              case FusedNativeReachability.callees(
-                     elem(target, 0),
-                     elem(target, 1),
-                     decl.expr,
-                     decl_map
-                   ) do
-                keys when is_list(keys) -> keys
-                nil -> expr_wrapper_callees(decl.expr, elem(target, 0), decl_map)
-              end
-
-            :error ->
-              []
+            {:ok, decl} -> merged_wrapper_callees(target, decl.expr, decl_map)
+            :error -> []
           end
 
         do_wrapper_reachable(rest ++ callees, decl_map, excluded_targets, seen)
@@ -112,16 +80,7 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
       true ->
         decl = Map.fetch!(decl_map, target)
 
-        callees =
-          case FusedNativeReachability.callees(
-                 elem(target, 0),
-                 elem(target, 1),
-                 decl.expr,
-                 decl_map
-               ) do
-            keys when is_list(keys) -> keys
-            nil -> expr_wrapper_callees(decl.expr, elem(target, 0), decl_map)
-          end
+        callees = merged_wrapper_callees(target, decl.expr, decl_map)
 
         do_wrapper_reachable(
           rest ++ callees,
@@ -148,6 +107,32 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
     expr
     |> expr_wrapper_callees_list(module_name, decl_map)
     |> Enum.uniq()
+  end
+
+  defp merged_callees(target, expr, decl_map) do
+    module_name = elem(target, 0)
+    name = elem(target, 1)
+
+    case FusedNativeReachability.callees(module_name, name, expr, decl_map) do
+      keys when is_list(keys) ->
+        keys
+
+      nil ->
+        expr_callees(expr, module_name, decl_map)
+    end
+  end
+
+  defp merged_wrapper_callees(target, expr, decl_map) do
+    module_name = elem(target, 0)
+    name = elem(target, 1)
+
+    case FusedNativeReachability.callees(module_name, name, expr, decl_map) do
+      keys when is_list(keys) ->
+        keys
+
+      nil ->
+        expr_wrapper_callees(expr, module_name, decl_map)
+    end
   end
 
   defp expr_wrapper_callees_list(

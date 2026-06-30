@@ -44,8 +44,7 @@ defmodule Elmc.Runtime.RecordSeq do
       ElmcRecordSeqCell *cell = NULL;
       CATCH_BEGIN
         if (!items || count <= 0) {
-          rc = elmc_rc_assign_value(out, elmc_list_nil());
-          CHECK_RC(rc);
+          *out = elmc_list_nil();
         } else {
           cell = (ElmcRecordSeqCell *)elmc_malloc(sizeof(ElmcRecordSeqCell), __func__);
           if (!cell) {
@@ -70,8 +69,7 @@ defmodule Elmc.Runtime.RecordSeq do
           cell->value.scalar = ELMC_RECORD_SEQ_CELL_SCALAR;
           ELMC_ALLOCATED += 1;
           ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
-          rc = elmc_rc_assign_value(out, &cell->value);
-          CHECK_RC(rc);
+          *out = &cell->value;
           cell = NULL;
         }
       CATCH_END;
@@ -93,8 +91,7 @@ defmodule Elmc.Runtime.RecordSeq do
       ElmcValue *next = NULL;
       CATCH_BEGIN
         if (!payload || payload->length <= 0) {
-          rc = elmc_rc_assign_value(out, result);
-          CHECK_RC(rc);
+          *out = result;
           result = NULL;
         } else {
           for (int i = payload->length - 1; i >= 0; i--) {
@@ -105,8 +102,7 @@ defmodule Elmc.Runtime.RecordSeq do
             result = next;
             next = NULL;
           }
-          rc = elmc_rc_assign_value(out, result);
-          CHECK_RC(rc);
+          *out = result;
           result = NULL;
         }
       CATCH_END;
@@ -118,22 +114,36 @@ defmodule Elmc.Runtime.RecordSeq do
     static RC elmc_record_seq_drop(ElmcValue **out, int count, ElmcValue *list) {
       ElmcRecordSeqPayload *payload = elmc_record_seq_payload(list);
       if (!payload || count <= 0) {
-        return elmc_rc_assign_value(out, elmc_retain(list));
+        *out = elmc_retain(list);
+        return RC_SUCCESS;
       }
       if (count >= payload->length) {
-        return elmc_rc_assign_value(out, elmc_list_nil());
+        *out = elmc_list_nil();
+        return RC_SUCCESS;
       }
       return elmc_record_seq_alloc_copy(out, payload->items + count, payload->length - count);
     }
 
-    ElmcValue *elmc_record_seq_head_boxed(ElmcValue *list) {
-      return elmc_record_seq_get(list, 0);
+    RC elmc_record_seq_head_boxed(ElmcValue **out, ElmcValue *list) {
+      RC rc = RC_SUCCESS;
+      CATCH_BEGIN
+        ElmcRecordSeqPayload *payload = elmc_record_seq_payload(list);
+        if (!payload || payload->length <= 0) {
+          *out = elmc_int_zero();
+        } else {
+          *out = elmc_retain(payload->items[0]);
+        }
+      CATCH_END;
+      return rc;
     }
 
-    ElmcValue *elmc_record_seq_tail_take(ElmcValue *list) {
-      ElmcValue *out = NULL;
-      if (elmc_record_seq_drop(&out, 1, list) != RC_SUCCESS) return elmc_list_nil();
-      return out;
+    RC elmc_record_seq_tail(ElmcValue **out, ElmcValue *list) {
+      RC rc = RC_SUCCESS;
+      CATCH_BEGIN
+        rc = elmc_record_seq_drop(out, 1, list);
+        CHECK_RC(rc);
+      CATCH_END;
+      return rc;
     }
     """
   end

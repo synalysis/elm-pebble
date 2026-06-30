@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.DirectRender.Emit.Catch
+  alias Elmc.Backend.CCodegen.DirectRender.Emit.Release
   alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
@@ -199,7 +200,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
           code = """
           #{bounds_code}
           #{field_code}
-            elmc_release(#{bounds_var});
+            #{Release.release_var(bounds_var, "            ")}
           """
 
           {code, field_refs, next}
@@ -323,7 +324,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
           {text_code, text_ref, cleanup, counter} =
             Host.compile_native_string_expr(expr, env, counter)
 
-          cleanup_code = Enum.map_join(cleanup, "\n", fn var -> "elmc_release(#{var});" end)
+          cleanup_code = Release.release_vars(cleanup, "")
           {text_code, text_copy_from(text_ref), cleanup_code, counter}
         else
           text_copy_boxed_code(expr, env, counter)
@@ -336,7 +337,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
       {text_code, text_ref, cleanup, counter} =
         Host.compile_native_string_expr(text_expr, env, counter)
 
-      cleanup_code = Enum.map_join(cleanup, "\n", fn var -> "elmc_release(#{var});" end)
+      cleanup_code = Release.release_vars(cleanup, "")
       {text_code, text_copy_from(text_ref), cleanup_code, counter}
     else
       text_copy_boxed_code(text_expr, env, counter)
@@ -363,9 +364,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
         {right_code, right_ref, right_cleanup, counter} =
           Host.compile_native_string_expr(right, env, counter)
 
-        cleanup_code =
-          right_cleanup
-          |> Enum.map_join("\n", fn var -> "elmc_release(#{var});" end)
+        cleanup_code = Release.release_vars(right_cleanup, "")
 
         copy_code = text_copy_literal_prefix_append(literal, right_ref)
 
@@ -382,7 +381,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
 
     cleanup_code =
       (left_cleanup ++ right_cleanup)
-      |> Enum.map_join("\n", fn var -> "elmc_release(#{var});" end)
+      |> then(fn cleanup -> Release.release_vars(cleanup, "") end)
 
     copy_code = """
     {
@@ -455,7 +454,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
     }
     """
 
-    {text_code, copy_code, "elmc_release(#{text_var});", counter}
+    {text_code, copy_code, Release.release_var(text_var, ""), counter}
   end
 
   @spec text_copy_from(String.t()) :: String.t()

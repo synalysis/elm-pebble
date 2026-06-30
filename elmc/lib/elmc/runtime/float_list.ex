@@ -48,8 +48,7 @@ defmodule Elmc.Runtime.FloatList do
       ElmcFloatListCell *cell = NULL;
       CATCH_BEGIN
         if (!items || count <= 0) {
-          rc = elmc_rc_assign_value(out, elmc_list_nil());
-          CHECK_RC(rc);
+          *out = elmc_list_nil();
         } else {
           cell = (ElmcFloatListCell *)elmc_malloc(sizeof(ElmcFloatListCell), __func__);
           if (!cell) {
@@ -72,8 +71,7 @@ defmodule Elmc.Runtime.FloatList do
           cell->value.scalar = ELMC_FLOAT_LIST_CELL_SCALAR;
           ELMC_ALLOCATED += 1;
           ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
-          rc = elmc_rc_assign_value(out, &cell->value);
-          CHECK_RC(rc);
+          *out = &cell->value;
           cell = NULL;
         }
       CATCH_END;
@@ -91,28 +89,37 @@ defmodule Elmc.Runtime.FloatList do
     static RC elmc_float_list_drop(ElmcValue **out, int count, ElmcValue *list) {
       ElmcFloatListPayload *payload = elmc_float_list_payload(list);
       if (!payload || count <= 0) {
-        return elmc_rc_assign_value(out, elmc_retain(list));
+        *out = elmc_retain(list);
+        return RC_SUCCESS;
       }
       if (count >= payload->length) {
-        return elmc_rc_assign_value(out, elmc_list_nil());
+        *out = elmc_list_nil();
+        return RC_SUCCESS;
       }
       return elmc_float_list_alloc_copy(out, payload->values + count, payload->length - count);
     }
 
-    ElmcValue *elmc_float_list_head_boxed(ElmcValue *list) {
-      ElmcFloatListPayload *payload = elmc_float_list_payload(list);
-      if (!payload || payload->length <= 0) return elmc_int_zero();
-      {
-        ElmcValue *out = NULL;
-        if (elmc_new_float(&out, payload->values[0]) != RC_SUCCESS) return elmc_int_zero();
-        return out;
-      }
+    RC elmc_float_list_head_boxed(ElmcValue **out, ElmcValue *list) {
+      RC rc = RC_SUCCESS;
+      CATCH_BEGIN
+        ElmcFloatListPayload *payload = elmc_float_list_payload(list);
+        if (!payload || payload->length <= 0) {
+          *out = elmc_int_zero();
+        } else {
+          rc = elmc_new_float(out, payload->values[0]);
+          CHECK_RC(rc);
+        }
+      CATCH_END;
+      return rc;
     }
 
-    ElmcValue *elmc_float_list_tail_take(ElmcValue *list) {
-      ElmcValue *out = NULL;
-      if (elmc_float_list_drop(&out, 1, list) != RC_SUCCESS) return elmc_int_zero();
-      return out;
+    RC elmc_float_list_tail(ElmcValue **out, ElmcValue *list) {
+      RC rc = RC_SUCCESS;
+      CATCH_BEGIN
+        rc = elmc_float_list_drop(out, 1, list);
+        CHECK_RC(rc);
+      CATCH_END;
+      return rc;
     }
     """
   end

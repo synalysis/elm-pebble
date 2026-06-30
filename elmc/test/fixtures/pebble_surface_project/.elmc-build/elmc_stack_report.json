@@ -3,961 +3,1069 @@
     {
       "function": "Elm.Kernel.PebbleWatch.backlight",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.batch",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.compassCurrent",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.dataLogBytes",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.dataLogInt32",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.dictationStart",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.dictationStop",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.getBatteryLevel",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.getClockStyle24h",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.getColor",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.getConnectionStatus",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.getCurrentDateTime",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.getCurrentTimeString",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.getFirmwareVersion",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.getTimezone",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.getTimezoneIsSet",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.getWatchModel",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.healthAccessible",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.healthSum",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.healthSumToday",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.healthValue",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.logErrorCode",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.logInfoCode",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.logWarnCode",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.none",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.onAccelData",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.onAccelTap",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Elm.Kernel.PebbleWatch.onAnimationFinished",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.onAppFocusChange",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Elm.Kernel.PebbleWatch.onBacklightChange",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.onBatteryChange",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.onButtonRaw",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.onCompassChange",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.onConnectionChange",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.onDayChange",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.onDictationResult",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.onDictationStatus",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.onFrame",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.onHealthEvent",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.onHourChange",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.onMinuteChange",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.onMonthChange",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.onSecondChange",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.onYearChange",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.storageDelete",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.storageReadInt",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Elm.Kernel.PebbleWatch.storageReadMaxSize",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.storageReadString",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.storageWriteInt",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.storageWriteString",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.timerAfter",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.vibesCancel",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.vibesCustomPattern",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.vibesDoublePulse",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.vibesLongPulse",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.vibesShortPulse",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.wakeupCancel",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Elm.Kernel.PebbleWatch.wakeupScheduleAfterSeconds",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Main.highRateAccelConfig",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Main.init",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Main.main",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Main.parseHourFromTimeString",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Main.subscriptions",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Main.update",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 1,
+      "reasons": []
     },
     {
       "function": "Main.view",
       "level": "warn",
-      "reasons": [],
-      "score": 6
+      "score": 6,
+      "reasons": []
     },
     {
       "function": "Pebble.Accel.onData",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Accel.onTap",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Accel.samplingRateToInt",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.AppFocus.onChange",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Button.buttonToInt",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Button.eventToInt",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Button.on",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Button.onLongPress",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Button.onPress",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Button.onRelease",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Cmd.getCurrentDateTime",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Cmd.none",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Cmd.timerAfter",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Compass.current",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Compass.onChange",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.DataLog.logBytes",
       "level": "warn",
+      "score": 6,
       "reasons": [
         "lambda"
-      ],
-      "score": 6
+      ]
     },
     {
       "function": "Pebble.DataLog.logInt32",
       "level": "warn",
+      "score": 6,
       "reasons": [
         "lambda"
-      ],
-      "score": 6
+      ]
     },
     {
       "function": "Pebble.DataLog.tag",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Dictation.onResult",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Dictation.onStatus",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Dictation.start",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Dictation.stop",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Events.batch",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Pebble.Events.onAnimationFinished",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Events.onDayChange",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Events.onHourChange",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Events.onMinuteChange",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Events.onMonthChange",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Events.onSecondChange",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Events.onYearChange",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Frame.atFps",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Frame.every",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Health.accessible",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Health.metricToInt",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Health.onEvent",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Health.sum",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Health.sumToday",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Health.value",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Light.disable",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Light.enable",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Light.interaction",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Pebble.Light.onChange",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Log.errorCode",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Log.infoCode",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Log.warnCode",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Platform.application",
       "level": "ok",
+      "score": 3,
       "reasons": [
         "lambda"
-      ],
-      "score": 3
+      ]
     },
     {
       "function": "Pebble.Platform.colorCapabilityDecoder",
       "level": "ok",
+      "score": 3,
       "reasons": [
         "lambda"
-      ],
-      "score": 3
+      ]
     },
     {
       "function": "Pebble.Platform.colorCapabilityFromString",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Platform.colorCapabilityIsColor",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Platform.contextObjectDecoder",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Pebble.Platform.coreContextDecoder",
       "level": "risk",
+      "score": 21,
       "reasons": [
         "lambda"
-      ],
-      "score": 21
+      ]
     },
     {
       "function": "Pebble.Platform.decodeFieldWithDefault",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Platform.decodeLaunchContext",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Platform.defaultContext",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Platform.defaultScreen",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Platform.displayShapeDecoder",
       "level": "ok",
+      "score": 3,
       "reasons": [
         "lambda"
-      ],
-      "score": 3
+      ]
     },
     {
       "function": "Pebble.Platform.displayShapeFromString",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Pebble.Platform.launchButtonDecoder",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Pebble.Platform.launchButtonFromString",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Pebble.Platform.launchButtonFromTag",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Platform.launchContextDecoder",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Pebble.Platform.launchMetadataDecoder",
+      "level": "warn",
+      "score": 6,
+      "reasons": [
+        "lambda"
+      ]
     },
     {
       "function": "Pebble.Platform.launchReasonDecoder",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Platform.launchReasonFromString",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Platform.launchReasonToInt",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Pebble.Platform.mergeLaunchMetadata",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Pebble.Platform.quickLaunchActionDecoder",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Pebble.Platform.quickLaunchActionFromString",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Pebble.Platform.quickLaunchActionFromTag",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Platform.screenDecoder",
       "level": "risk",
+      "score": 18,
       "reasons": [
         "lambda"
-      ],
-      "score": 18
+      ]
     },
     {
       "function": "Pebble.Platform.watchface",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Storage.delete",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Pebble.Storage.maxSize",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Storage.readInt",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Storage.readString",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Storage.writeInt",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Storage.writeString",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.System.batteryLevel",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.System.connectionStatus",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.System.onBatteryChange",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.System.onConnectionChange",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Time.clockStyle24h",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Time.currentDateTime",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Time.currentTimeString",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Time.timezone",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Time.timezoneIsSet",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Ui.Color.channelTo2Bit",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Ui.Color.clampInt",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Ui.Color.indexed",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Ui.Color.toInt",
       "level": "warn",
-      "reasons": [],
-      "score": 7
+      "score": 7,
+      "reasons": []
     },
     {
       "function": "Pebble.Ui.Color.white",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Ui.canvasLayer",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Ui.clear",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Ui.textInt",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Ui.window",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Ui.windowStack",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Vibes.cancel",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Vibes.doublePulse",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Vibes.longPulse",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Vibes.pattern",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Vibes.shortPulse",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Wakeup.cancel",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.Wakeup.scheduleAfterSeconds",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.WatchInfo.getColor",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.WatchInfo.getFirmwareVersion",
       "level": "ok",
-      "reasons": [],
-      "score": 0
+      "score": 0,
+      "reasons": []
     },
     {
       "function": "Pebble.WatchInfo.getModel",
       "level": "ok",
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "elmc_fn_Main_main",
+      "level": "ok",
+      "score": 0,
       "reasons": [],
-      "score": 0
+      "c_boxed_locals": 1,
+      "c_tmp_max": 1
+    },
+    {
+      "function": "elmc_fn_Main_parseHourFromTimeString_native",
+      "level": "ok",
+      "score": 0,
+      "reasons": [],
+      "c_boxed_locals": 3,
+      "c_tmp_max": 3
     }
   ],
   "code_size_indicators": {
-    "boxed_tmp_declarations": 412,
-    "closure_allocations": 0,
-    "direct_command_defs": 2,
-    "generated_c_bytes": 41366,
-    "generated_c_lines": 1476,
-    "generic_function_defs": 0,
+    "direct_command_defs": 0,
+    "boxed_tmp_declarations": 87,
+    "closure_allocations": 1,
+    "generated_c_bytes": 59238,
+    "generated_c_lines": 1744,
+    "generic_function_defs": 3,
     "linked_binary": {
       "reason": "binary size is available after platform or host linking, not during C source generation",
       "available": false
@@ -972,8 +1080,8 @@
     }
   },
   "summary": {
-    "ok": 150,
-    "warn": 4,
+    "ok": 166,
+    "warn": 5,
     "risk": 2
   }
 }

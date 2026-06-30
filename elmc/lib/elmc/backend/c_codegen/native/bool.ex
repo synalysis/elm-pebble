@@ -10,8 +10,11 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   alias Elmc.Backend.CCodegen.Native.TypedReturn
   alias Elmc.Backend.CCodegen.Patterns
   alias Elmc.Backend.CCodegen.PlatformStatic
+  alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.CCodegen.TypeParsing
   alias Elmc.Backend.CCodegen.UnionMacros
+  alias Elmc.Backend.CCodegen.ValueSlots
 
   @native_bool_c_type "bool"
   @type compile_result :: Types.native_scalar_compile_result()
@@ -19,6 +22,8 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   @spec compile_expr(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
           compile_result()
   def compile_expr(expr, env, counter) do
+    expr = normalize_bool_expr(expr)
+
     if PlatformStatic.platform_static?(expr) do
       compile_expr_uncached(expr, env, counter)
     else
@@ -115,7 +120,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
         #{before_probe}
           const #{@native_bool_c_type} #{out} = #{getter};
         #{after_probe}
-          elmc_release(#{arg_var});
+          #{ValueSlots.release_stmt(arg_var)};
         """
 
         {code, out, next}
@@ -132,8 +137,10 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
        ) do
     if bool_coercible_branch?(then_expr, env) and bool_coercible_branch?(else_expr, env) do
       {cond_code, cond_ref, counter} = compile_expr(cond_expr, env, counter)
-      {then_code, then_ref, counter} = compile_bool_branch(then_expr, env, counter)
-      {else_code, else_ref, counter} = compile_bool_branch(else_expr, env, counter)
+      then_env = RecordCompile.fresh_subexpr_cache(env)
+      else_env = RecordCompile.fresh_subexpr_cache(env)
+      {then_code, then_ref, counter} = compile_bool_branch(then_expr, then_env, counter)
+      {else_code, else_ref, counter} = compile_bool_branch(else_expr, else_env, counter)
       next = counter + 1
       out = "native_bool_if_#{next}"
 
@@ -258,6 +265,23 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
         ) :: compile_result()
   defp compile_compare(left, right, operator, env, counter) do
     cond do
+      list_int_compare_safe?(operator, left, right, env) ->
+        {left_code, left_var, counter} = Host.compile_expr(left, env, counter)
+        {right_code, right_var, counter} = Host.compile_expr(right, env, counter)
+        next = counter + 1
+        out = "native_cmp_#{next}"
+        negate = if operator == "__neq__", do: "!", else: ""
+
+        code = """
+        #{left_code}
+          #{right_code}
+          const #{@native_bool_c_type} #{out} = #{negate}elmc_list_equal_int(#{left_var}, #{right_var});
+          #{RecordCompile.release_compare_operand(env, left_var)};
+          #{RecordCompile.release_compare_operand(env, right_var)};
+        """
+
+        {code, out, next}
+
       compare_safe?(operator, left, right, env) ->
         {left_code, left_ref, counter} = compile_expr(left, env, counter)
         {right_code, right_ref, counter} = compile_expr(right, env, counter)
@@ -286,25 +310,14 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
 
         {left_code <> right_code, "(#{left_ref} #{comparison} #{right_ref})", counter}
 
-      list_int_compare_safe?(operator, left, right, env) ->
-        {left_code, left_var, counter} = Host.compile_expr(left, env, counter)
-        {right_code, right_var, counter} = Host.compile_expr(right, env, counter)
-        next = counter + 1
-        out = "native_cmp_#{next}"
-        negate = if operator == "__neq__", do: "!", else: ""
-
-        code = """
-        #{left_code}
-          #{right_code}
-          const #{@native_bool_c_type} #{out} = #{negate}elmc_list_equal_int(#{left_var}, #{right_var});
-          elmc_release(#{left_var});
-          elmc_release(#{right_var});
-        """
-
-        {code, out, next}
+      boxed_int_literal_compare_safe?(operator, left, right, env) ->
+        compile_boxed_int_literal_compare(left, right, operator, env, counter)
 
       union_tag_compare_safe?(operator, left, right, env) ->
         compile_union_tag_compare(left, right, operator, env, counter)
+
+      maybe_field_vs_nothing_compare_safe?(operator, left, right, env) ->
+        compile_maybe_field_vs_nothing_compare(left, right, operator, env, counter)
 
       true ->
         {left_code, left_var, counter} = Host.compile_expr(left, env, counter)
@@ -319,8 +332,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
               #{left_code}
                 #{right_code}
                 const #{@native_bool_c_type} #{out} = elmc_value_equal(#{left_var}, #{right_var});
-                elmc_release(#{left_var});
-                elmc_release(#{right_var});
+                #{join_compare_releases(env, [left_var, right_var])}
               """
 
             "__neq__" ->
@@ -328,8 +340,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
               #{left_code}
                 #{right_code}
                 const #{@native_bool_c_type} #{out} = !elmc_value_equal(#{left_var}, #{right_var});
-                elmc_release(#{left_var});
-                elmc_release(#{right_var});
+                #{join_compare_releases(env, [left_var, right_var])}
               """
 
             _ ->
@@ -348,9 +359,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
                 #{right_code}
                 ElmcValue *#{cmp_var} = elmc_basics_compare(#{left_var}, #{right_var});
                 const #{@native_bool_c_type} #{out} = elmc_as_int(#{cmp_var}) #{comparison} 0;
-                elmc_release(#{cmp_var});
-                elmc_release(#{left_var});
-                elmc_release(#{right_var});
+                #{join_compare_releases(env, [cmp_var, left_var, right_var])}
               """
           end
 
@@ -366,6 +375,78 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   end
 
   defp compare_safe?(_operator, _left, _right, _env), do: false
+
+  defp boxed_int_literal_compare_safe?(operator, left, %{op: :int_literal, value: _}, env)
+       when operator in ["__eq__", "__neq__", "__lt__", "__lte__", "__gt__", "__gte__"] do
+    boxed_int_compare_operand?(left, env)
+  end
+
+  defp boxed_int_literal_compare_safe?(_operator, _left, _right, _env), do: false
+
+  defp boxed_int_compare_operand?(%{op: :var, name: name}, env) when is_binary(name) or is_atom(name) do
+    cond do
+      EnvBindings.native_int_binding?(env, name) ->
+        false
+
+      EnvBindings.function_int_param?(env, name) ->
+        false
+
+      union_or_enum_var?(name, env) ->
+        false
+
+      EnvBindings.boxed_int_binding?(env, name) ->
+        true
+
+      TypedReturn.expr_type(%{op: :var, name: name}, env) == "Int" ->
+        true
+
+      true ->
+        false
+    end
+  end
+
+  defp boxed_int_compare_operand?(
+         %{op: :runtime_call, function: function, args: [_]},
+         _env
+       )
+       when function in [
+              "elmc_maybe_or_tuple_just_payload",
+              "elmc_maybe_or_tuple_just_payload_borrow"
+            ],
+       do: true
+
+  defp boxed_int_compare_operand?(_expr, _env), do: false
+
+  defp union_or_enum_var?(name, env) when is_binary(name) or is_atom(name) do
+    case TypedReturn.expr_type(%{op: :var, name: name}, env) do
+      type when is_binary(type) ->
+        TypeParsing.enum_type?(type) or String.starts_with?(type, "Union ")
+
+      _ ->
+        false
+    end
+  end
+
+  defp compile_boxed_int_literal_compare(left, %{op: :int_literal, value: right_lit}, operator, env, counter) do
+    {left_code, left_var, counter} = Host.compile_expr(left, env, counter)
+    next = counter + 1
+    out = "native_cmp_#{next}"
+
+    code = """
+    #{left_code}
+      const #{@native_bool_c_type} #{out} = elmc_as_int(#{left_var}) #{compare_operator_c(operator)} #{right_lit};
+      #{RecordCompile.release_compare_operand(env, left_var)}
+    """
+
+    {code, out, next}
+  end
+
+  defp compare_operator_c("__eq__"), do: "=="
+  defp compare_operator_c("__neq__"), do: "!="
+  defp compare_operator_c("__lt__"), do: "<"
+  defp compare_operator_c("__lte__"), do: "<="
+  defp compare_operator_c("__gt__"), do: ">"
+  defp compare_operator_c("__gte__"), do: ">="
 
   defp list_int_compare_safe?(operator, left, right, env)
        when operator in ["__eq__", "__neq__"] do
@@ -402,7 +483,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
     negate = if operator == "__neq__", do: "!", else: ""
 
     release =
-      if skip_release?, do: "", else: "  elmc_release(#{var_ref});\n"
+      if skip_release?, do: "", else: "  " <> ValueSlots.release_stmt(var_ref) <> "\n"
 
     code =
       var_code <>
@@ -446,24 +527,103 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   end
 
   @spec expr?(Types.ir_expr(), Types.compile_env()) :: boolean()
-  def expr?(%{op: :var, name: name}, env) when is_binary(name) or is_atom(name),
+  def expr?(expr, env), do: expr?(normalize_bool_expr(expr), env, :normalized)
+
+  defp expr?(%{op: :var, name: name}, env, :normalized) when is_binary(name) or is_atom(name),
     do:
       is_binary(EnvBindings.native_bool_binding(env, name)) or
         EnvBindings.boxed_bool_binding?(env, name) or
         TypedReturn.bool_expr?(%{op: :var, name: name}, env)
 
-  def expr?(%{op: :field_access, arg: arg, field: field}, env),
+  defp expr?(%{op: :field_access, arg: arg, field: field}, env, :normalized),
     do: RecordFields.bool_field?(env, arg, field)
 
-  def expr?(%{op: :if, then_expr: then_expr, else_expr: else_expr}, env),
+  defp expr?(%{op: :if, then_expr: then_expr, else_expr: else_expr}, env, :normalized),
     do: bool_coercible_branch?(then_expr, env) and bool_coercible_branch?(else_expr, env)
 
-  def expr?(%{op: :runtime_call, function: "elmc_basics_not", args: [value]}, env),
+  defp expr?(%{op: :runtime_call, function: "elmc_basics_not", args: [value]}, env, :normalized),
     do: expr?(value, env)
 
-  def expr?(%{op: :case} = expr, _env), do: union_constructor_case?(expr)
+  defp expr?(%{op: :case} = expr, _env, :normalized), do: union_constructor_case?(expr)
 
-  def expr?(expr, env), do: structural_expr?(expr) or TypedReturn.bool_expr?(expr, env)
+  defp expr?(expr, env, :normalized),
+    do: structural_expr?(expr) or TypedReturn.bool_expr?(expr, env)
+
+  defp normalize_bool_expr(%{op: :qualified_call, target: target, args: args}) do
+    case Host.special_value_from_target(Host.normalize_special_target(target), args) do
+      nil -> %{op: :qualified_call, target: target, args: args}
+      rewritten -> normalize_bool_expr(rewritten)
+    end
+  end
+
+  defp normalize_bool_expr(%{op: :call, name: name, args: args}) when is_binary(name) do
+    case Host.special_value_from_target(name, args) do
+      nil -> %{op: :call, name: name, args: args}
+      rewritten -> normalize_bool_expr(rewritten)
+    end
+  end
+
+  defp normalize_bool_expr(expr), do: expr
+
+  defp maybe_field_vs_nothing_compare_safe?(operator, left, right, env)
+       when operator in ["__eq__", "__neq__"] do
+    (maybe_nothing_literal?(right) and maybe_maybe_expr?(left, env)) or
+      (maybe_nothing_literal?(left) and maybe_maybe_expr?(right, env))
+  end
+
+  defp maybe_field_vs_nothing_compare_safe?(_operator, _left, _right, _env), do: false
+
+  defp maybe_nothing_literal?(%{op: :int_literal, union_ctor: ctor}) when is_binary(ctor),
+    do: String.ends_with?(ctor, ".Nothing") or ctor == "Nothing"
+
+  defp maybe_nothing_literal?(%{op: :constructor_call, target: target}) when is_binary(target),
+    do: String.ends_with?(target, ".Nothing") or target in ["Nothing", "::"]
+
+  defp maybe_nothing_literal?(_expr), do: false
+
+  defp maybe_maybe_expr?(%{op: :field_access, arg: arg, field: field}, env) do
+    maybe_type?(RecordFields.field_type(env, arg, field))
+  end
+
+  defp maybe_maybe_expr?(%{op: :var, name: name}, env) when is_binary(name) do
+    maybe_type?(Map.get(Map.get(env, :__var_types__, %{}), name))
+  end
+
+  defp maybe_maybe_expr?(_expr, _env), do: false
+
+  defp maybe_type?(type) when is_binary(type), do: String.starts_with?(type, "Maybe ")
+  defp maybe_type?(_), do: false
+
+  defp compile_maybe_field_vs_nothing_compare(left, right, operator, env, counter) do
+    maybe_expr =
+      cond do
+        maybe_maybe_expr?(left, env) -> left
+        maybe_maybe_expr?(right, env) -> right
+        true -> left
+      end
+
+    {left_code, left_var, counter} = Host.compile_expr(maybe_expr, env, counter)
+    next = counter + 1
+    out = "native_maybe_#{next}"
+
+    is_just =
+      "(#{left_var}) && (#{left_var})->tag == ELMC_TAG_MAYBE && (#{left_var})->payload != NULL && " <>
+        "((ElmcMaybe *)(#{left_var})->payload)->is_just"
+
+    bool_expr =
+      case operator do
+        "__eq__" -> "!#{is_just}"
+        "__neq__" -> is_just
+      end
+
+    code = """
+    #{left_code}
+      const #{@native_bool_c_type} #{out} = #{bool_expr};
+      #{ValueSlots.release_stmt(left_var)};
+    """
+
+    {code, out, next}
+  end
 
   @spec structural_expr?(Types.ir_expr()) :: boolean()
   def structural_expr?(%{op: :compare}), do: true
@@ -550,7 +710,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
       """
       #{code}
         const #{@native_bool_c_type} #{out} = #{value_expr(expr, env, var)};
-        elmc_release(#{var});
+        #{ValueSlots.release_stmt(var)};
       """,
       out,
       next
@@ -606,7 +766,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
         code = """
         #{subject_code}
           const #{@native_bool_c_type} #{out} = #{condition};
-          elmc_release(#{subject_var});
+          #{ValueSlots.release_stmt(subject_var)};
         """
 
         {code, out, next}
@@ -624,5 +784,15 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
 
   defp complex_borrow_ref?(ref) when is_binary(ref) do
     String.contains?(ref, "(") or String.contains?(ref, "->")
+  end
+
+  defp join_compare_releases(env, vars) when is_list(vars) do
+    vars
+    |> Enum.map(&RecordCompile.release_compare_operand(env, &1))
+    |> Enum.reject(&(&1 == ""))
+    |> case do
+      [] -> ""
+      lines -> Enum.map_join(lines, "\n", & &1) <> "\n"
+    end
   end
 end

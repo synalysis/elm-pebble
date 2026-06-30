@@ -19,6 +19,84 @@ defmodule Elmc.IntIfChainTest do
     }
   end
 
+  test "parses or-of-int-equalities if into int case branches" do
+    seconds = %{op: :var, name: "seconds"}
+
+    or_cond =
+      int_eq(seconds, %{op: :int_literal, value: 10})
+      |> then(fn cond ->
+        %{
+          op: :if,
+          cond: cond,
+          then_expr: %{op: :constructor_call, target: "True", args: []},
+          else_expr: %{
+            op: :if,
+            cond: int_eq(seconds, %{op: :int_literal, value: 30}),
+            then_expr: %{op: :constructor_call, target: "True", args: []},
+            else_expr: int_eq(seconds, %{op: :int_literal, value: 60})
+          }
+        }
+      end)
+
+    env =
+      %{"seconds" => "seconds", __rc_catch__: true, __rc_required__: true}
+      |> EnvBindings.put_native_int_binding("seconds", "seconds")
+
+    assert {:ok, ^seconds, branches} =
+             IntIfChain.parse_or_equality_if_chain(
+               or_cond,
+               seconds,
+               %{op: :int_literal, value: 5},
+               env
+             )
+
+    assert length(branches) == 4
+    assert Enum.at(branches, -1).pattern == %{kind: :wildcard}
+  end
+
+  test "compiles or-of-int-equalities if as compact switch on native int subject" do
+    seconds = %{op: :var, name: "seconds"}
+
+    or_cond =
+      int_eq(seconds, %{op: :int_literal, value: 10})
+      |> then(fn cond ->
+        %{
+          op: :if,
+          cond: cond,
+          then_expr: %{op: :constructor_call, target: "True", args: []},
+          else_expr: %{
+            op: :if,
+            cond: int_eq(seconds, %{op: :int_literal, value: 30}),
+            then_expr: %{op: :constructor_call, target: "True", args: []},
+            else_expr: int_eq(seconds, %{op: :int_literal, value: 60})
+          }
+        }
+      end)
+
+    env =
+      %{"seconds" => "seconds", __rc_catch__: true, __rc_required__: true}
+      |> EnvBindings.put_native_int_binding("seconds", "seconds")
+
+    if_expr = %{
+      op: :if,
+      cond: or_cond,
+      then_expr: seconds,
+      else_expr: %{op: :int_literal, value: 5}
+    }
+
+    {code, out, _counter} = IfCompile.compile(if_expr, env, 0)
+
+    assert is_binary(out)
+    assert code =~ "switch (seconds)"
+    assert code =~ "case 10:"
+    assert code =~ "case 30:"
+    assert code =~ "case 60:"
+    assert code =~ "= seconds;"
+    assert code =~ "default:"
+    refute code =~ "native_bool_if_"
+    refute code =~ "elmc_basics_compare"
+  end
+
   test "parses chained native int equality if into int case branches" do
     tag = %{op: :var, name: "tag"}
 
@@ -92,12 +170,11 @@ defmodule Elmc.IntIfChainTest do
 
     {code, out, _counter} = IfCompile.compile(if_expr, env, 0)
 
-    assert out == "tmp_1"
+    assert out =~ "native_case_"
     assert code =~ "static const elmc_int_t native_lut_"
-    assert code =~ "native_case_"
     refute code =~ "switch (tag)"
     refute code =~ "if ((tag == 0))"
-    assert Regex.scan(~r/elmc_new_int/, code) |> length() == 1
+    refute code =~ "elmc_new_int"
     assert code =~ "10"
     assert code =~ "99"
   end

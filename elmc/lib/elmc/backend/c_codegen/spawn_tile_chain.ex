@@ -164,7 +164,6 @@ defmodule Elmc.Backend.CCodegen.SpawnTileChain do
     """
     static RC #{c_prefix}_native(ElmcValue **out, #{seed_sig}) {
       RC Rc = RC_SUCCESS;
-      #define ELMC_FN_OUT (*out)
       ElmcValue *owned[2] = {0};
       CATCH_BEGIN
         elmc_int_t buf[#{count}];

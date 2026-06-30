@@ -541,6 +541,46 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.CmdCalls do
     Enum.find_value(items, &callback_constructor_from_expr(&1, bindings, seen, depth + 1))
   end
 
+  def callback_constructor_from_expr(%{op: :compose_left, f: f, g: g}, bindings, seen, depth)
+      when is_map(bindings) do
+    f_ctor = callback_constructor_from_expr(f, bindings, seen, depth + 1)
+    g_ctor = callback_constructor_from_expr(g, bindings, seen, depth + 1)
+
+    cond do
+      callback_preferred_over_result_mapper?(f_ctor) ->
+        f_ctor
+
+      is_binary(f_ctor) ->
+        f_ctor
+
+      is_binary(g_ctor) ->
+        g_ctor
+
+      true ->
+        nil
+    end
+  end
+
+  def callback_constructor_from_expr(%{op: :compose_right, f: f, g: g}, bindings, seen, depth)
+      when is_map(bindings) do
+    f_ctor = callback_constructor_from_expr(f, bindings, seen, depth + 1)
+    g_ctor = callback_constructor_from_expr(g, bindings, seen, depth + 1)
+
+    cond do
+      callback_preferred_over_result_mapper?(g_ctor) ->
+        g_ctor
+
+      is_binary(g_ctor) ->
+        g_ctor
+
+      is_binary(f_ctor) ->
+        f_ctor
+
+      true ->
+        nil
+    end
+  end
+
   def callback_constructor_from_expr(_, _bindings, _seen, _depth), do: nil
 
   @spec constructor_like_name?(String.t()) :: boolean()

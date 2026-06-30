@@ -19,6 +19,9 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime.ViewCommands.ResultFetch.
               }
               // #endregion
               if (!dedupe) {
+                if (app->stream_view_result) {
+                  elmc_release(app->stream_view_result);
+                }
                 app->stream_view_result = result;
               }
             }

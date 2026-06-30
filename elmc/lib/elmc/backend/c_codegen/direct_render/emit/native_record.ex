@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.DirectRender.Emit.Release
   alias Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions
   alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.DirectRender.UseSites
@@ -228,7 +229,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
                 {code, ref, "", c}
               else
                 {code, var, c} = Host.compile_expr(cond, env, counter)
-                {code, "elmc_as_int(#{var}) != 0", "  elmc_release(#{var});\n", c}
+                {code, "elmc_as_int(#{var}) != 0", Release.release_var(var, "  ") <> "\n", c}
               end
 
             {cond_code, cond_ref, cond_cleanup, counter, nil}

@@ -212,7 +212,15 @@ defmodule Elmc.Backend.CCodegen.Hoist do
 
   @spec stable_hoist_init?(String.t()) :: boolean()
   def stable_hoist_init?(init) when is_binary(init) do
-    not Regex.match?(~r/\b(?:native_if_|native_let_|tmp_|native_case_)\d+\b/, init)
+    not Regex.match?(
+      ~r/\b(?:native_if_|native_let_|tmp_|native_case_|native_maybe_case_|native_maybe_default_)\d+\b/,
+      init
+    )
+  end
+
+  @spec function_local_hoist_ref?(String.t()) :: boolean()
+  defp function_local_hoist_ref?(ref) when is_binary(ref) do
+    Regex.match?(~r/^native_maybe_(case|default)_\d+$/, ref)
   end
 
   @spec hoisted_native_int_branch_preamble(map(), keyword()) :: String.t()
@@ -399,7 +407,7 @@ defmodule Elmc.Backend.CCodegen.Hoist do
 
       case Map.get(hoisted, key) do
         ref when is_binary(ref) ->
-          {:ok, ref}
+          if function_local_hoist_ref?(ref), do: hoisted_minmax_lookup(hoisted, expr), else: {:ok, ref}
 
         _ ->
           hoisted_minmax_lookup(hoisted, expr)

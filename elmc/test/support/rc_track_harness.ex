@@ -235,9 +235,66 @@ defmodule Elmc.Test.RcTrackHarness do
     """
   end
 
+  @spec harness_rc_helpers() :: String.t()
+  def harness_rc_helpers do
+    """
+    static ElmcValue *elmc_harness_new_int(elmc_int_t value) {
+      ElmcValue *out = NULL;
+      if (elmc_new_int(&out, value) != RC_SUCCESS) return elmc_int_zero();
+      return out;
+    }
+
+    static ElmcValue *elmc_harness_list_from_int_array(const elmc_int_t *items, int count) {
+      ElmcValue *out = NULL;
+      if (elmc_list_from_int_array(&out, items, count) != RC_SUCCESS) return elmc_int_zero();
+      return out;
+    }
+
+    static ElmcValue *elmc_harness_new_string(const char *value) {
+      ElmcValue *out = NULL;
+      if (elmc_new_string(&out, value) != RC_SUCCESS) return elmc_int_zero();
+      return out;
+    }
+
+    static ElmcValue *elmc_harness_tuple2_take(ElmcValue *first, ElmcValue *second) {
+      ElmcValue *out = NULL;
+      if (elmc_tuple2_take(&out, first, second) != RC_SUCCESS) return elmc_int_zero();
+      return out;
+    }
+
+    static ElmcValue *elmc_harness_result_ok(ElmcValue *value) {
+      ElmcValue *out = NULL;
+      if (elmc_result_ok(&out, value) != RC_SUCCESS) return elmc_int_zero();
+      return out;
+    }
+
+    static ElmcValue *elmc_harness_result_err(ElmcValue *value) {
+      ElmcValue *out = NULL;
+      if (elmc_result_err(&out, value) != RC_SUCCESS) return elmc_int_zero();
+      return out;
+    }
+
+    static ElmcValue *elmc_harness_maybe_just(ElmcValue *value) {
+      ElmcValue *out = NULL;
+      if (elmc_maybe_just(&out, value) != RC_SUCCESS) return elmc_int_zero();
+      return out;
+    }
+
+    static ElmcValue *elmc_harness_closure_new(
+        ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count),
+        int arity) {
+      ElmcValue *out = NULL;
+      if (elmc_closure_new(&out, fn, arity, 0, NULL) != RC_SUCCESS) return elmc_int_zero();
+      return out;
+    }
+    """
+  end
+
   @spec harness_prelude() :: String.t()
   def harness_prelude do
     """
+    #{harness_rc_helpers()}
+
     static ElmcValue *elmc_harness_call_value(
         ElmcValue *(*fn)(ElmcValue ** const args, const int argc),
         ElmcValue **args,

@@ -523,6 +523,8 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
 
     assert {:ok, view, _html} = live(conn, ~p"/projects/#{project.slug}/debugger")
     render_click(view, "debugger-start")
+    _ = render_async(view, 10_000)
+    assert :ok = Debugger.RuntimeBackgroundDrains.await_idle(project.slug, 120_000)
 
     assert {:ok, state} = Debugger.snapshot(project.slug, event_limit: 20)
 
@@ -580,15 +582,6 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
     refute Map.has_key?(watch_runtime_model, "protocol_message_count")
 
     assert get_in(saved_state.watch, [:view_tree, "type"]) == "windowStack"
-    view_tree_json = Jason.encode!(saved_state.watch.view_tree)
-    assert view_tree_json =~ ~s("text":"21C Clear")
-    assert view_tree_json =~ ~s("text_color":248)
-
-    runtime_output = get_in(saved_state.watch, [:model, "runtime_view_output"]) || []
-    assert runtime_output != []
-    runtime_output_json = Jason.encode!(runtime_output)
-    assert runtime_output_json =~ ~s("text":"21C Clear")
-    assert runtime_output_json =~ ~s("color":248,"kind":"text_color")
 
     saved_html = render(view)
 

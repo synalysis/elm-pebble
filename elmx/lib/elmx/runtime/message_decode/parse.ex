@@ -68,6 +68,55 @@ defmodule Elmx.Runtime.MessageDecode.Parse do
   end
 
   defp tokenize_args(rest) when is_binary(rest) do
-    rest |> String.split(" ", trim: true) |> Enum.map(&Ctor.parse_scalar_token/1)
+    rest |> String.trim() |> tokenize_arg_tokens([]) |> Enum.map(&parse_arg_value/1)
   end
+
+  defp parse_arg_value(value) when is_binary(value), do: Ctor.parse_scalar_token(value)
+  defp parse_arg_value(value), do: value
+
+  defp tokenize_arg_tokens("", acc), do: Enum.reverse(acc)
+
+  defp tokenize_arg_tokens(rest, acc) do
+    rest = String.trim_leading(rest)
+
+    cond do
+      rest == "" ->
+        Enum.reverse(acc)
+
+      String.starts_with?(rest, "(") ->
+        {inner, remainder} = take_balanced_paren(rest)
+
+        case String.split(inner, " ", parts: 2) do
+          [single] ->
+            tokenize_arg_tokens(remainder, [single | acc])
+
+          [ctor, args_rest] ->
+            nested = Ctor.build(ctor, tokenize_args(args_rest))
+            tokenize_arg_tokens(remainder, [nested | acc])
+        end
+
+      true ->
+        case String.split(rest, ~r/\s+/, parts: 2) do
+          [token, more] -> tokenize_arg_tokens(more, [token | acc])
+          [token] -> tokenize_arg_tokens("", [token | acc])
+        end
+    end
+  end
+
+  defp take_balanced_paren("(" <> rest) do
+    do_take_balanced_paren(rest, 1, "")
+  end
+
+  defp do_take_balanced_paren("", _depth, inner), do: {inner, ""}
+
+  defp do_take_balanced_paren(<<")", rest::binary>>, 1, inner), do: {inner, rest}
+
+  defp do_take_balanced_paren(<<")", rest::binary>>, depth, inner),
+    do: do_take_balanced_paren(rest, depth - 1, inner <> ")")
+
+  defp do_take_balanced_paren(<<"(", rest::binary>>, depth, inner),
+    do: do_take_balanced_paren(rest, depth + 1, inner <> "(")
+
+  defp do_take_balanced_paren(<<char::utf8, rest::binary>>, depth, inner),
+    do: do_take_balanced_paren(rest, depth, inner <> <<char::utf8>>)
 end

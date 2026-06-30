@@ -12,17 +12,18 @@ defmodule Elmc.Backend.CCodegen.CSourceTest do
       }
     return y;
     }
-    """
+    
+      """
 
     assert CSource.format(input) == """
-           ElmcValue *foo(void) {
-             (void)0;
-             if (x) {
-               y = 1;
-             }
-             return y;
-           }
-           """
+    ElmcValue *foo(void) {
+      (void)0;
+      if (x) {
+        y = 1;
+      }
+      return y;
+    }
+    """
   end
 
   test "format indents switch cases and bodies" do
@@ -35,18 +36,19 @@ defmodule Elmc.Backend.CCodegen.CSourceTest do
         x = 0;
       break;
     }
-    """
+    
+      """
 
     assert CSource.format(input) == """
-           switch (tag) {
-             case ELMC_ONE:
-               x = 1;
-               break;
-             default:
-               x = 0;
-               break;
-           }
-           """
+    switch (tag) {
+      case ELMC_ONE:
+        x = 1;
+        break;
+      default:
+        x = 0;
+        break;
+    }
+    """
   end
 
   test "format indents switch cases when label and opening brace share a line" do
@@ -59,18 +61,19 @@ defmodule Elmc.Backend.CCodegen.CSourceTest do
         }
       }
     }
-    """
+    
+      """
 
     assert CSource.format(input) == """
-           static ElmcValue *restore(ElmcValue *direction) {
-             switch (direction) {
-               case ELMC_UNION_LEFT: {
-                 tmp = cells;
-                 break;
-               }
-             }
-           }
-           """
+    static ElmcValue *restore(ElmcValue *direction) {
+      switch (direction) {
+        case ELMC_UNION_LEFT: {
+          tmp = cells;
+          break;
+        }
+      }
+    }
+    """
   end
 
   test "format leaves preprocessor directives at column zero" do
@@ -78,13 +81,14 @@ defmodule Elmc.Backend.CCodegen.CSourceTest do
     #if defined(__GNUC__)
     #pragma GCC diagnostic ignored "-Wunused-function"
     #endif
-    """
+    
+      """
 
     assert CSource.format(input) == """
-           #if defined(__GNUC__)
-           #pragma GCC diagnostic ignored "-Wunused-function"
-           #endif
-           """
+    #if defined(__GNUC__)
+    #pragma GCC diagnostic ignored "-Wunused-function"
+    #endif
+    """
   end
 
   test "format_block normalizes relative indentation" do
@@ -105,27 +109,29 @@ defmodule Elmc.Backend.CCodegen.CSourceTest do
       native_mod_2 = seed % native_mod_base_2;
       if (native_mod_2 < 0) native_mod_2 += (native_mod_base_2 < 0 ? -native_mod_base_2 : native_mod_base_2);
     }
-    """
+    
+      """
 
     assert CSource.format(input) == """
-           if (native_mod_2 != 0) {
-             native_mod_2 = seed % native_mod_base_2;
-             if (native_mod_2 < 0)
-               native_mod_2 += (native_mod_base_2 < 0 ? -native_mod_base_2 : native_mod_base_2);
-           }
-           """
+    if (native_mod_2 != 0) {
+      native_mod_2 = seed % native_mod_base_2;
+      if (native_mod_2 < 0)
+        native_mod_2 += (native_mod_base_2 < 0 ? -native_mod_base_2 : native_mod_base_2);
+    }
+    """
   end
 
   test "format keeps compact if-break and if-return on one line" do
     input = """
     if (direct_item_i == last_ref) break;
     if (!writer) return -1;
-    """
+    
+      """
 
     assert CSource.format(input) == """
-           if (direct_item_i == last_ref) break;
-           if (!writer) return -1;
-           """
+    if (direct_item_i == last_ref) break;
+    if (!writer) return -1;
+    """
   end
 
   test "format removes adjacent retain release temp pairs" do
@@ -135,13 +141,14 @@ defmodule Elmc.Backend.CCodegen.CSourceTest do
       elmc_release(tmp_1);
       return elmc_retain(model);
     }
-    """
+    
+      """
 
     assert CSource.format(input) == """
-           ElmcValue *foo(ElmcValue *model) {
-             return elmc_retain(model);
-           }
-           """
+    ElmcValue *foo(ElmcValue *model) {
+      return elmc_retain(model);
+    }
+    """
   end
 
   test "format compacts unit increment and decrement assignments" do
@@ -151,15 +158,16 @@ defmodule Elmc.Backend.CCodegen.CSourceTest do
       list_search_index_67 += 1;
       direct_item_i += direct_step;
     }
-    """
+    
+      """
 
     assert CSource.format(input) == """
-           void step(void) {
-             list_search_target_67--;
-             list_search_index_67++;
-             direct_item_i += direct_step;
-           }
-           """
+    void step(void) {
+      list_search_target_67--;
+      list_search_index_67++;
+      direct_item_i += direct_step;
+    }
+    """
   end
 
   test "format borrows record field temps for borrow_arg wrapper calls" do
@@ -180,7 +188,8 @@ defmodule Elmc.Backend.CCodegen.CSourceTest do
       elmc_release(tmp_13);
       return tmp_14;
     }
-    """
+    
+      """
 
     formatted = CSource.format(input)
 
@@ -206,7 +215,8 @@ defmodule Elmc.Backend.CCodegen.CSourceTest do
       elmc_release(tmp_13);
       return tmp_14;
     }
-    """
+    
+      """
 
     formatted = CSource.format(input)
 
@@ -221,31 +231,29 @@ defmodule Elmc.Backend.CCodegen.CSourceTest do
     input = """
     static int foo(void) {
     int direct_rc = 0;
-
-    CATCH_BEGIN
     x = 1;
     if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0) {
     CATCH_BREAK;
     }
-    CATCH_END;
 
     return direct_rc;
+    CATCH_END;
     }
-    """
+    
+      
+      """
 
     assert CSource.format(input) == """
-           static int foo(void) {
-             int direct_rc = 0;
+    static int foo(void) {
+      int direct_rc = 0;
+      x = 1;
+      if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0) {
+        CATCH_BREAK;
+      }
 
-             CATCH_BEGIN
-               x = 1;
-               if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0) {
-                 CATCH_BREAK;
-               }
-             CATCH_END;
-
-             return direct_rc;
-           }
-           """
+      return direct_rc;
+    CATCH_END;
+    }
+    """
   end
 end

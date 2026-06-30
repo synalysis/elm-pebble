@@ -238,7 +238,7 @@ typedef enum {
 #ifndef ELMC_CATCH_MACROS
 #define ELMC_CATCH_MACROS
 #define CATCH_BEGIN     do {
-#define CATCH_END       } while (0)
+#define CATCH_END       } while (0);
 
 #ifndef DIM
 #define DIM(arr) (sizeof(arr) / sizeof((arr)[0]))
@@ -269,6 +269,14 @@ typedef enum {
       ELMC_CHECK_RC_BREAK((rc_var), __FILE__, __LINE__); \
     } \
   } while (0)
+
+#ifndef ELMC_RELEASE
+#define ELMC_RELEASE(var) \
+  do { \
+    elmc_release(var); \
+    (var) = NULL; \
+  } while (0)
+#endif
 #endif
 
 extern volatile RC elmc_last_fail_rc;
@@ -316,11 +324,15 @@ static inline const char *elmc_rc_name(RC rc) {
 const char *elmc_rc_name(RC rc);
 #endif
 
-static inline RC elmc_rc_assign_value(ElmcValue **out, ElmcValue *value) {
-  if (!value) return RC_ERR_OUT_OF_MEMORY;
-  if (out) *out = value;
-  return RC_SUCCESS;
-}
+/* Deprecated: use `Rc = expr; CHECK_RC(Rc);` inside CATCH_BEGIN bodies instead. */
+#define ELMC_TAKE_OR_RETURN(site, take_expr, on_fail) \
+  do { \
+    RC __take_rc = (take_expr); \
+    if (__take_rc != RC_SUCCESS) { \
+      (void)(site); \
+      on_fail; \
+    } \
+  } while (0)
 
 
 typedef struct ElmcClosure {
@@ -337,7 +349,7 @@ RC elmc_new_bool(ElmcValue **out, int value);
 ElmcValue *elmc_new_char(elmc_int_t value);
 ElmcValue *elmc_char_from_code(ElmcValue *code);
 ElmcValue *elmc_char_from_code_int(elmc_int_t code);
-ElmcValue *elmc_new_order(elmc_int_t value);
+RC elmc_new_order(ElmcValue **out, elmc_int_t value);
 RC elmc_new_string(ElmcValue **out, const char *value);
 RC elmc_new_string_len(ElmcValue **out, const char *value, size_t len);
 ElmcValue *elmc_int_zero(void);
@@ -348,19 +360,19 @@ ElmcValue *elmc_list_cons_take(ElmcValue *head, ElmcValue *tail);
 RC elmc_list_from_values(ElmcValue **out, ElmcValue **items, int count);
 RC elmc_list_from_values_take(ElmcValue **out, ElmcValue **items, int count);
 int elmc_int_list_is_empty(ElmcValue *list);
-ElmcValue *elmc_int_list_head_boxed(ElmcValue *list);
-ElmcValue *elmc_int_list_tail_take(ElmcValue *list);
+RC elmc_int_list_head_boxed(ElmcValue **out, ElmcValue *list);
+RC elmc_int_list_tail(ElmcValue **out, ElmcValue *list);
 int elmc_float_list_is_empty(ElmcValue *list);
-ElmcValue *elmc_float_list_head_boxed(ElmcValue *list);
-ElmcValue *elmc_float_list_tail_take(ElmcValue *list);
+RC elmc_float_list_head_boxed(ElmcValue **out, ElmcValue *list);
+RC elmc_float_list_tail(ElmcValue **out, ElmcValue *list);
 int elmc_record_seq_is_empty(ElmcValue *list);
 int elmc_record_seq_length(ElmcValue *list);
 ElmcValue *elmc_record_seq_get(ElmcValue *list, elmc_int_t index);
-ElmcValue *elmc_record_seq_head_boxed(ElmcValue *list);
-ElmcValue *elmc_record_seq_tail_take(ElmcValue *list);
+RC elmc_record_seq_head_boxed(ElmcValue **out, ElmcValue *list);
+RC elmc_record_seq_tail(ElmcValue **out, ElmcValue *list);
 int elmc_int_spine_is_empty(ElmcValue *list);
-ElmcValue *elmc_int_spine_head_boxed(ElmcValue *list);
-ElmcValue *elmc_int_spine_tail_take(ElmcValue *list);
+RC elmc_int_spine_head_boxed(ElmcValue **out, ElmcValue *list);
+RC elmc_int_spine_tail(ElmcValue **out, ElmcValue *list);
 RC elmc_list_from_int_array(ElmcValue **out, const elmc_int_t *items, int count);
 RC elmc_list_from_int_array_reuse(ElmcValue **out, ElmcValue *existing, const elmc_int_t *items, int count);
 RC elmc_int_list_to_cons(ElmcValue **out, ElmcValue *list);
@@ -403,6 +415,8 @@ ElmcValue *elmc_sub5(elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p
 elmc_int_t elmc_as_int(ElmcValue *value);
 int elmc_value_is_unit(ElmcValue *value);
 elmc_int_t elmc_int_idiv(elmc_int_t numerator, elmc_int_t denominator);
+elmc_int_t elmc_polar_point_x(elmc_int_t cx, elmc_int_t cy, elmc_int_t radius, elmc_int_t angle);
+elmc_int_t elmc_polar_point_y(elmc_int_t cx, elmc_int_t cy, elmc_int_t radius, elmc_int_t angle);
 elmc_int_t elmc_as_bool(ElmcValue *value);
 int elmc_value_equal(ElmcValue *left, ElmcValue *right);
 int elmc_list_equal_int(ElmcValue *left, ElmcValue *right);
@@ -482,7 +496,7 @@ RC elmc_list_foldr(ElmcValue **out, ElmcValue *f, ElmcValue *acc, ElmcValue *lis
 RC elmc_list_append(ElmcValue **out, ElmcValue *a, ElmcValue *b);
 RC elmc_list_concat(ElmcValue **out, ElmcValue *lists);
 RC elmc_list_concat_array(ElmcValue **out, ElmcValue * const *lists, int count);
-ElmcValue *elmc_list_concat_map(ElmcValue *f, ElmcValue *list);
+RC elmc_list_concat_map(ElmcValue **out, ElmcValue *f, ElmcValue *list);
 RC elmc_list_indexed_map(ElmcValue **out, ElmcValue *f, ElmcValue *list);
 RC elmc_list_filter_map(ElmcValue **out, ElmcValue *f, ElmcValue *list);
 RC elmc_list_sum(ElmcValue **out, ElmcValue *list);
@@ -733,6 +747,11 @@ static inline ElmcValue *elmc_new_bool_take(int value) {
   return elmc_new_bool(&out, value) == RC_SUCCESS ? out : elmc_int_zero();
 }
 
+static inline ElmcValue *elmc_new_order_take(elmc_int_t value) {
+  ElmcValue *out = NULL;
+  return elmc_new_order(&out, value) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
 static inline ElmcValue *elmc_new_string_take(const char *value) {
   ElmcValue *out = NULL;
   return elmc_new_string(&out, value) == RC_SUCCESS ? out : elmc_int_zero();
@@ -836,6 +855,46 @@ static inline ElmcValue *elmc_list_copy_take(ElmcValue *list) {
   return elmc_list_copy(&out, list) == RC_SUCCESS ? out : elmc_int_zero();
 }
 
+static inline ElmcValue *elmc_int_list_head_boxed_take(ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_int_list_head_boxed(&out, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_int_list_tail_take(ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_int_list_tail(&out, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_float_list_head_boxed_take(ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_float_list_head_boxed(&out, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_float_list_tail_take(ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_float_list_tail(&out, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_record_seq_head_boxed_take(ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_record_seq_head_boxed(&out, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_record_seq_tail_take(ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_record_seq_tail(&out, list) == RC_SUCCESS ? out : elmc_list_nil();
+}
+
+static inline ElmcValue *elmc_int_spine_head_boxed_take(ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_int_spine_head_boxed(&out, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_int_spine_tail_take(ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_int_spine_tail(&out, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
 static inline ElmcValue *elmc_list_map_take(ElmcValue *f, ElmcValue *list) {
   ElmcValue *out = NULL;
   return elmc_list_map(&out, f, list) == RC_SUCCESS ? out : elmc_int_zero();
@@ -869,6 +928,11 @@ static inline ElmcValue *elmc_list_foldr_take(ElmcValue *f, ElmcValue *acc, Elmc
 static inline ElmcValue *elmc_list_concat_take(ElmcValue *lists) {
   ElmcValue *out = NULL;
   return elmc_list_concat(&out, lists) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_concat_map_take(ElmcValue *f, ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_list_concat_map(&out, f, list) == RC_SUCCESS ? out : elmc_int_zero();
 }
 
 static inline ElmcValue *elmc_list_indexed_map_take(ElmcValue *f, ElmcValue *list) {
@@ -1314,6 +1378,52 @@ static inline ElmcValue *elmc_tuple_map_second_take(ElmcValue *f, ElmcValue *t) 
 static inline ElmcValue *elmc_tuple_map_both_take(ElmcValue *f, ElmcValue *g, ElmcValue *t) {
   ElmcValue *out = NULL;
   return elmc_tuple_map_both(&out, f, g, t) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+
+static inline bool elmc_value_is_true(ElmcValue *v) {
+  return v && ((v->tag == ELMC_TAG_BOOL && elmc_as_bool(v)) ||
+               (v->tag == ELMC_TAG_INT && elmc_as_int(v) == 1));
+}
+
+static inline bool elmc_value_is_false(ElmcValue *v) {
+  return v && ((v->tag == ELMC_TAG_BOOL && !elmc_as_bool(v)) ||
+               (v->tag == ELMC_TAG_INT && elmc_as_int(v) == 0));
+}
+
+static inline ElmcValue *elmc_maybe_just_payload(ElmcValue *v) {
+  if (v && v->tag == ELMC_TAG_MAYBE && ((ElmcMaybe *)v->payload)->is_just)
+    return ((ElmcMaybe *)v->payload)->value;
+  if (v && v->tag == ELMC_TAG_TUPLE2 && v->payload != NULL &&
+      elmc_as_int(((ElmcTuple2 *)v->payload)->first) == 1)
+    return ((ElmcTuple2 *)v->payload)->second;
+  return NULL;
+}
+
+static inline bool elmc_maybe_is_just(ElmcValue *v) {
+  return elmc_maybe_just_payload(v) != NULL;
+}
+
+static inline bool elmc_maybe_is_nothing(ElmcValue *v) {
+  if (v && v->tag == ELMC_TAG_MAYBE)
+    return !((ElmcMaybe *)v->payload)->is_just;
+  if (v && v->tag == ELMC_TAG_INT)
+    return elmc_as_int(v) == 0;
+  return false;
+}
+
+static inline bool elmc_maybe_just_true(ElmcValue *v) {
+  return elmc_value_is_true(elmc_maybe_just_payload(v));
+}
+
+static inline bool elmc_maybe_just_false(ElmcValue *v) {
+  return elmc_value_is_false(elmc_maybe_just_payload(v));
+}
+
+static inline bool elmc_union_tag_matches(ElmcValue *v, elmc_int_t tag) {
+  return v && ((v->tag == ELMC_TAG_INT && elmc_as_int(v) == tag) ||
+               (v->tag == ELMC_TAG_TUPLE2 && v->payload != NULL &&
+                elmc_as_int(((ElmcTuple2 *)v->payload)->first) == tag));
 }
 
 

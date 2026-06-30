@@ -134,6 +134,26 @@ defmodule Elmx.CompanionSpecialValuesTest do
     end
   end
 
+  test "companion weather current preserves GotWeather through compose callback" do
+    callback =
+      %{
+        op: :compose_left,
+        f: %{op: :var, name: "GotWeather"},
+        g: %{op: :qualified_call, target: "Result.map", args: [%{op: :union_ctor, name: "Weather.Current"}]}
+      }
+
+    assert {:ok,
+            %{
+              op: :runtime_call,
+              function: "elmx_companion_bridge_cmd",
+              args: [
+                %{op: :string_literal, value: "weather"},
+                %{op: :string_literal, value: "current"},
+                %{op: :string_literal, value: "GotWeather"}
+              ]
+            }} = SpecialValues.rewrite("Pebble.Companion.Weather.current", [callback])
+  end
+
   test "companion platform current commands rewrite to bridge commands" do
     callback = %{"ctor" => "GotBattery", "args" => []}
 

@@ -336,7 +336,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
 
     return_kind(decl, module_name, decl_map) == :boxed and
       not match?(%{op: :list_literal}, expr) and
-      not match?({:ok, _, _}, Tuple2CaseTable.try_emit(module_name, decl.name, expr))
+      not Tuple2CaseTable.recognized?(module_name, decl.name, expr)
   end
 
   @spec native_def_signature(
@@ -482,16 +482,17 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
 
   defp native_rc_out_slot(env, next) do
     case Map.get(env, :__into_out__) do
-      "ELMC_FN_OUT" ->
-        {RcRuntimeEmit.function_out_ref(), next}
-
       into_out when is_binary(into_out) ->
-        if ValueSlots.owned_ref?(into_out) do
-          ValueSlots.track(into_out)
-          index = ValueSlots.owned_index(into_out) || 0
-          {into_out, max(next, index + 1)}
-        else
+        if RcRuntimeEmit.function_out_ref?(into_out) do
           alloc_native_rc_out(next)
+        else
+          if ValueSlots.owned_ref?(into_out) do
+            ValueSlots.track(into_out)
+            index = ValueSlots.owned_index(into_out) || 0
+            {into_out, max(next, index + 1)}
+          else
+            alloc_native_rc_out(next)
+          end
         end
 
       _ ->

@@ -28,18 +28,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Draw do
     do: Helpers.encoded_draw_cmd_expr(Helpers.draw_kind(:pixel), args, 3)
 
   def special_value_from_target("Pebble.Ui.line", [start_pos, end_pos, color]),
-    do:
-      Helpers.encoded_draw_field_cmd_expr(
-        Helpers.draw_kind(:line),
-        [
-          Helpers.field_access_expr(start_pos, "x"),
-          Helpers.field_access_expr(start_pos, "y"),
-          Helpers.field_access_expr(end_pos, "x"),
-          Helpers.field_access_expr(end_pos, "y"),
-          color
-        ],
-        5
-      )
+    do: Helpers.encoded_draw_line_cmd_expr(Helpers.draw_kind(:line), start_pos, end_pos, color)
 
   def special_value_from_target("Pebble.Ui.line", args),
     do: Helpers.encoded_draw_cmd_expr(Helpers.draw_kind(:line), args, 5)
@@ -79,23 +68,13 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Draw do
     do: Helpers.encoded_draw_cmd_expr(Helpers.draw_kind(:fill_rect), args, 5)
 
   def special_value_from_target("Pebble.Ui.circle", [center, radius, color]),
-    do:
-      Helpers.encoded_draw_field_cmd_expr(
-        Helpers.draw_kind(:circle),
-        [Helpers.field_access_expr(center, "x"), Helpers.field_access_expr(center, "y"), radius, color],
-        4
-      )
+    do: Helpers.encoded_draw_center_cmd_expr(Helpers.draw_kind(:circle), center, [radius, color], 4)
 
   def special_value_from_target("Pebble.Ui.circle", args),
     do: Helpers.encoded_draw_cmd_expr(Helpers.draw_kind(:circle), args, 4)
 
   def special_value_from_target("Pebble.Ui.fillCircle", [center, radius, color]),
-    do:
-      Helpers.encoded_draw_field_cmd_expr(
-        Helpers.draw_kind(:fill_circle),
-        [Helpers.field_access_expr(center, "x"), Helpers.field_access_expr(center, "y"), radius, color],
-        4
-      )
+    do: Helpers.encoded_draw_center_cmd_expr(Helpers.draw_kind(:fill_circle), center, [radius, color], 4)
 
   def special_value_from_target("Pebble.Ui.fillCircle", args),
     do: Helpers.encoded_draw_cmd_expr(Helpers.draw_kind(:fill_circle), args, 4)

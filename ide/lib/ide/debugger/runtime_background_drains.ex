@@ -22,21 +22,23 @@ defmodule Ide.Debugger.RuntimeBackgroundDrains do
 
   @spec await_idle(String.t(), timeout()) :: :ok | :timeout
   def await_idle(project_slug, timeout \\ 120_000) do
-  unless PendingProtocolDelivery.async?() do
-      AgentSession.with_hosts(fn hosts ->
-        contexts = AgentHosts.contexts(hosts)
-        protocol_rx = Map.fetch!(contexts, :protocol_rx)
-        bridge_ctx = Map.fetch!(contexts, :companion_bridge)
+    AgentSession.with_hosts(fn hosts ->
+      contexts = AgentHosts.contexts(hosts)
+      protocol_rx = Map.fetch!(contexts, :protocol_rx)
+      bridge_ctx = Map.fetch!(contexts, :companion_bridge)
 
+      unless PendingProtocolDelivery.async?() do
         PendingProtocolDelivery.drain_pending_sync(project_slug, protocol_rx)
+      end
 
-        AgentSession.mutate(project_slug, fn state ->
-          state
-          |> CompanionBridgeRuntime.flush_deferred_steps(bridge_ctx)
-          |> ProtocolRx.flush_inline_protocol_deliveries(protocol_rx)
-        end)
+      AgentSession.mutate(project_slug, fn state ->
+        state
+        |> CompanionBridgeRuntime.flush_deferred_steps(bridge_ctx)
+        |> ProtocolRx.flush_inline_protocol_deliveries(protocol_rx)
+        |> ProtocolRx.drain_message_queue(:watch, protocol_rx)
+        |> ProtocolRx.drain_message_queue(:companion, protocol_rx)
       end)
-    end
+    end)
 
     RuntimeBackgroundWork.await_idle(project_slug, timeout)
   end

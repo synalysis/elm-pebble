@@ -41,11 +41,11 @@ defmodule Elmc.Backend.CCodegen.OwnershipTransfer do
         body
       ) or
       Regex.match?(
-        ~r/elmc_tuple2_take(?:_value)?\s*\([^)]*\b#{escaped}\b/,
+        ~r/\belmc_tuple2_take(?:_value)?\s*\([^;]*\b#{escaped}\b/,
         body
       ) or
       Regex.match?(
-        ~r/elmc_list_from_values_take(?:_value)?\s*\([^)]*\b#{escaped}\b/,
+        ~r/\belmc_list_from_values_take(?:_value)?\s*\([^;]*\b#{escaped}\b/,
         body
       ) or
       Regex.match?(
@@ -61,6 +61,23 @@ defmodule Elmc.Backend.CCodegen.OwnershipTransfer do
   end
 
   def transferred_in_c_source?(_var, _body), do: false
+
+  @doc """
+  RHS temporaries assigned into a case/switch merge slot (`out = rhs`).
+  Ownership moves to `out`; the source must not be released in branch cleanup.
+  """
+  @spec assignment_rhs_to_out(String.t(), String.t()) :: MapSet.t(String.t())
+  def assignment_rhs_to_out(body, out)
+      when is_binary(body) and body != "" and is_binary(out) and out != "" do
+    escaped_out = Regex.escape(out)
+
+    ~r/(?:#{escaped_out}|\*out)\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\s*;/
+    |> Regex.scan(body)
+    |> Enum.map(fn [_, rhs] -> rhs end)
+    |> MapSet.new()
+  end
+
+  def assignment_rhs_to_out(_body, _out), do: MapSet.new()
 
   defp cow_drop_edges(body) do
     decl_edges =

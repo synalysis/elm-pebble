@@ -89,7 +89,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.MaybeResult do
     }
 
   def special_value_from_target("Maybe.withDefault", [
-        %{op: default_op} = default_val,
+        default_val,
         %{
           op: :qualified_call,
           target: head_target,
@@ -102,26 +102,53 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.MaybeResult do
           ]
         }
       ])
-      when default_op in [:int_literal, :c_int_expr, :char_literal] and
-             head_target in ["List.head", "head"] and
+      when head_target in ["List.head", "head"] and
              drop_target in ["List.drop", "drop"] do
-    %{
+    list_nth_maybe = %{
       op: :runtime_call,
-      function: "elmc_list_nth_int_default_boxed",
-      args: [list, index, default_val]
+      function: "elmc_list_nth_maybe",
+      args: [list, index]
     }
+
+    if int_list_with_default_fusion?(default_val) do
+      %{
+        op: :runtime_call,
+        function: "elmc_list_nth_int_default_boxed",
+        args: [list, index, default_val]
+      }
+    else
+      %{
+        op: :runtime_call,
+        function: "elmc_maybe_with_default",
+        args: [default_val, list_nth_maybe]
+      }
+    end
   end
 
   def special_value_from_target("Maybe.withDefault", [
-        %{op: default_op} = default_val,
-        %{op: :runtime_call, function: "elmc_list_nth_maybe", args: [list, index]}
-      ])
-      when default_op in [:int_literal, :c_int_expr, :char_literal] do
-    %{
-      op: :runtime_call,
-      function: "elmc_list_nth_int_default_boxed",
-      args: [list, index, default_val]
-    }
+        default_val,
+        %{op: :runtime_call, function: "elmc_list_nth_maybe", args: [list, index]} = list_nth_maybe
+      ]) do
+    if int_list_with_default_fusion?(default_val) do
+      %{
+        op: :runtime_call,
+        function: "elmc_list_nth_int_default_boxed",
+        args: [list, index, default_val]
+      }
+    else
+      %{
+        op: :runtime_call,
+        function: "elmc_maybe_with_default",
+        args: [default_val, list_nth_maybe]
+      }
+    end
+  end
+
+  def special_value_from_target("Maybe.withDefault", [
+        _default_val,
+        %{op: :runtime_call, function: "elmc_list_nth_int_default_boxed"} = list_nth
+      ]) do
+    list_nth
   end
 
   def special_value_from_target("Maybe.withDefault", [default_val, maybe]),
@@ -157,4 +184,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.MaybeResult do
 
 
   def special_value_from_target(_target, _args), do: nil
+
+  defp int_list_with_default_fusion?(%{op: :int_literal}), do: true
+  defp int_list_with_default_fusion?(_), do: false
 end

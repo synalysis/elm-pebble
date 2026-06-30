@@ -2,6 +2,7 @@ defmodule ElmEx.Frontend.GeneratedContractBuilderTest do
   use ExUnit.Case, async: true
 
   alias ElmEx.Frontend.GeneratedContractBuilder
+  alias ElmEx.Frontend.GeneratedExpressionParser
 
   test "unindented line comments inside a function body do not truncate the definition" do
     source = """
@@ -57,5 +58,10 @@ defmodule ElmEx.Frontend.GeneratedContractBuilderTest do
     assert "pow2Loop" in names
     assert "main" in names
     refute "at" in names
+  end
+
+  test "compose with qualified RHS parses as compose_left" do
+    assert {:ok, %{op: :compose_left, f: %{target: "GotWeather"}, g: %{op: :qualified_call}}} =
+             GeneratedExpressionParser.parse("GotWeather << Result.map Weather.Current")
   end
 end

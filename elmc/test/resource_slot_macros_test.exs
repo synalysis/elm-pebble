@@ -8,6 +8,8 @@ defmodule Elmc.ResourceSlotMacrosTest do
   alias ElmEx.IR
 
   setup do
+    Elmc.Backend.CCodegen.ValueSlots.reset()
+
     Process.put(:elmc_vector_resource_slots, %{
       "VectorAnimatedTransitionClearToCloudy" => 10,
       "VectorStaticWeatherClear" => 1
@@ -130,14 +132,14 @@ defmodule Elmc.ResourceSlotMacrosTest do
     {code, out, _counter} =
       ConstructorTagCase.compile_boxed_subject("weather", branches, env, 0)
 
-    assert out == "tmp_2"
+    assert out == "owned[0]"
     assert code =~ "case_int_2"
     refute code =~ "case_box_"
     assert code =~ "case_int_2 = -1"
     assert code =~ "if (case_int_2 >= 0)"
     assert code =~ "ELMC_RESOURCE_SLOT_VECTORSTATICWEATHERCLEAR"
     assert code =~ "ELMC_RESOURCE_SLOT_VECTORANIMATEDTRANSITIONCLEARTOCLOUDY"
-    assert Regex.scan(~r/elmc_new_int\(&#{out},/, code) |> length() == 1
+    assert Regex.scan(~r/elmc_new_int\(&#{Regex.escape(out)},/, code) |> length() == 1
     refute code =~ "case ELMC_UNION"
     assert code =~ "default:"
     assert code =~ "case_int_2 = 0"
@@ -188,7 +190,7 @@ defmodule Elmc.ResourceSlotMacrosTest do
     {code, out, _counter} =
       ConstructorTagCase.compile_boxed_subject("weather", branches, env, 0)
 
-    assert out == "tmp_2"
+    assert out == "owned[0]"
     refute code =~ "default:"
     refute code =~ "case_box_"
     refute code =~ "if (case_int_2"
@@ -225,7 +227,7 @@ defmodule Elmc.ResourceSlotMacrosTest do
     {code, out, _counter} =
       ConstructorTagCase.compile_boxed_subject("metric", branches, env, 0)
 
-    assert out == "tmp_2"
+    assert out == "owned[0]"
     refute code =~ ~r/elmc_int_t case_int_2 =/
     refute code =~ "elmc_int_zero()"
     assert code =~ "case_int_2 = 0"
@@ -263,14 +265,13 @@ defmodule Elmc.ResourceSlotMacrosTest do
     {code, out, _counter} =
       ConstructorTagCase.compile_boxed_subject("weather", branches, env, 0)
 
-    assert out == "tmp_2"
-    assert code =~ "case_str_2"
+    assert out == "owned[0]"
     refute code =~ "case_box_"
-    assert code =~ ~s(case_str_2 = "Clear")
-    assert code =~ ~s(case_str_2 = "Rain")
-    assert code =~ "if (case_str_2)"
-    assert Regex.scan(~r/elmc_new_string\(&#{out},/, code) |> length() == 1
-    refute code =~ ~r/elmc_new_string\(&#{out}, "Clear"\)/
+    assert code =~ "native_str_immortal_"
+    assert code =~ "(void *)\"Clear\""
+    assert code =~ "(void *)\"Rain\""
+    assert Regex.scan(~r/\*&#{Regex.escape(out)} = /, code) |> length() == 4
+    refute code =~ "elmc_new_string("
     assert code =~ "default:"
     assert code =~ "elmc_int_zero()"
   end
@@ -304,10 +305,11 @@ defmodule Elmc.ResourceSlotMacrosTest do
     {code, out, _counter} =
       ConstructorTagCase.compile_boxed_subject("weather", branches, env, 0)
 
-    assert out == "tmp_2"
+    assert out == "owned[0]"
     refute code =~ "default:"
     refute code =~ "case_box_"
     refute code =~ "if (case_str_2)"
-    assert code =~ "Rc = elmc_new_string(&#{out}, case_str_2);"
+    assert Regex.scan(~r/\*&#{Regex.escape(out)} = /, code) |> length() == 4
+    refute code =~ "elmc_new_string("
   end
 end

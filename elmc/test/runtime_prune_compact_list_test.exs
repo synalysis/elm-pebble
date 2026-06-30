@@ -26,8 +26,8 @@ defmodule Elmc.RuntimePruneCompactListTest do
 
     refute runtime =~ "elmc_float_list_alloc_copy"
     refute runtime =~ "elmc_record_seq_alloc_copy"
-    refute runtime =~ "ELMC_TAG_FLOAT_LIST"
-    refute runtime =~ "ELMC_TAG_RECORD_SEQ"
+    assert runtime =~ "elmc_float_list_cell_release"
+    assert runtime =~ "elmc_record_seq_cell_release"
     refute runtime =~ "elmc_int_spine_head_native"
 
     count_empty =

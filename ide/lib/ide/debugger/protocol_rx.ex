@@ -3,6 +3,7 @@ defmodule Ide.Debugger.ProtocolRx do
 
   alias Ide.Debugger.AppMessageQueue
   alias Ide.Debugger.PendingProtocolDelivery
+  alias Ide.Debugger.StepDepth
   alias Ide.Debugger.ProtocolEvents
   alias Ide.Debugger.ProtocolEvents.CmdCall.Core, as: ProtocolCmdCallCore
   alias Ide.Debugger.RuntimeArtifacts
@@ -58,7 +59,9 @@ defmodule Ide.Debugger.ProtocolRx do
     surface = Map.get(state, target, %{})
     model = Map.get(surface, :model) || Map.get(surface, "model") || %{}
 
-    is_map(RuntimeArtifacts.introspect(surface)) and Map.get(model, @init_complete_key) == true
+    is_map(RuntimeArtifacts.introspect(surface)) and
+      Map.get(model, @init_complete_key) == true and
+      Map.get(model, "runtime_execution_mode") == "runtime_executed"
   end
 
   def runtime_ready_for_delivery?(_state, _target), do: false
@@ -141,16 +144,20 @@ defmodule Ide.Debugger.ProtocolRx do
 
   @spec flush_inline_protocol_deliveries(Types.runtime_state(), ctx()) :: Types.runtime_state()
   def flush_inline_protocol_deliveries(state, rx_ctx) when is_map(state) and is_map(rx_ctx) do
-    state
-    |> Map.get(@inline_deliveries_key, [])
-    |> case do
-      deliveries when is_list(deliveries) and deliveries != [] ->
-        state
-        |> Map.delete(@inline_deliveries_key)
-        |> deliver_inline_protocol_payloads(Enum.reverse(deliveries), rx_ctx)
+    if StepDepth.nested?() do
+      state
+    else
+      state
+      |> Map.get(@inline_deliveries_key, [])
+      |> case do
+        deliveries when is_list(deliveries) and deliveries != [] ->
+          state
+          |> Map.delete(@inline_deliveries_key)
+          |> deliver_inline_protocol_payloads(Enum.reverse(deliveries), rx_ctx)
 
-      _ ->
-        Map.delete(state, @inline_deliveries_key)
+        _ ->
+          Map.delete(state, @inline_deliveries_key)
+      end
     end
   end
 
@@ -179,9 +186,15 @@ defmodule Ide.Debugger.ProtocolRx do
     from = Map.get(payload, :from) || Map.get(payload, "from")
     to = Map.get(payload, :to) || Map.get(payload, "to")
 
-    (trigger == "runtime_cmd" or source == "runtime_cmd") and
-      ((from in ["companion", "phone"] and to == "watch") or
-         (from == "watch" and to in ["companion", "phone"]))
+    runtime_cmd? = trigger == "runtime_cmd" or source == "runtime_cmd"
+
+    phone_to_watch? =
+      from in ["companion", "phone"] and to == "watch"
+
+    watch_to_phone? =
+      from == "watch" and to in ["companion", "phone"]
+
+    phone_to_watch? or (runtime_cmd? and watch_to_phone?)
   end
 
   @spec deliver_inline_protocol_payloads(
@@ -194,7 +207,7 @@ defmodule Ide.Debugger.ProtocolRx do
     deliveries
     |> Enum.uniq_by(&inline_delivery_key/1)
     |> Enum.reduce(state, fn payload, acc ->
-      deliver_payload(acc, payload, rx_ctx)
+      handle_protocol_rx_event(acc, payload, rx_ctx)
     end)
   end
 
@@ -569,10 +582,16 @@ defmodule Ide.Debugger.ProtocolRx do
           }
 
         true ->
-          {
-            "#{callback} #{message}",
-            wrap_protocol_callback_value(callback, message_value)
-          }
+          inner_display = ProtocolEvents.inbound_display_message(message, message_value)
+
+          display =
+            if inner_display != message and String.contains?(inner_display, " ") do
+              "#{callback} (#{inner_display})"
+            else
+              "#{callback} #{inner_display}"
+            end
+
+          {display, wrap_protocol_callback_value(callback, message_value)}
       end
 
     if is_map(value) do
@@ -583,6 +602,17 @@ defmodule Ide.Debugger.ProtocolRx do
   end
 
   defp protocol_callback_message(_callback, _message, _message_value, _wrap_result?), do: nil
+
+  @doc false
+  @spec inbound_app_message(String.t(), String.t(), Types.subscription_payload()) ::
+          {String.t(), Types.protocol_message_wire_value()} | nil
+  def inbound_app_message(callback, inner_message, message_value)
+      when is_binary(callback) and is_binary(inner_message) do
+    case protocol_callback_message(callback, inner_message, message_value, false) do
+      {display, value} when is_binary(display) and is_map(value) -> {display, value}
+      _ -> nil
+    end
+  end
 
   @spec wrap_protocol_callback_value(String.t(), Types.subscription_payload()) ::
           Types.protocol_ctor_value() | nil

@@ -2,11 +2,12 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.ImmortalStringLiteral
+  alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.IntLiteralRef
   alias Elmc.Backend.CCodegen.OwnershipTransfer
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
-  alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.CCodegen.ValueSlots
   alias Elmc.Backend.CCodegen.PebbleMsgTag
   alias Elmc.Backend.CCodegen.RecordCompile
@@ -76,19 +77,15 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
         ) :: Types.compile_result()
   def compile_native_subject(subject_expr, branches, env, counter) do
     {subject_code, subject_ref, counter} = NativeInt.compile_expr(subject_expr, env, counter)
-    next = counter + 1
-    out = "tmp_#{next}"
+    {out, next, declare_out?} = CaseCompile.result_out_binding(env, counter)
+    next = CaseCompile.advance_counter_past_out(next, out, declare_out?)
 
     has_default? =
       Enum.any?(branches, fn branch -> match?(%{kind: :wildcard}, branch.pattern) end)
 
     {branch_code, final_counter} =
       Enum.reduce(branches, {"", next}, fn branch, {acc, c} ->
-        branch_env =
-          env
-          |> RecordCompile.fresh_subexpr_cache()
-          |> Map.put(:__into_out__, out)
-          |> Map.put(:__rc_catch__, false)
+        branch_env = switch_branch_env(env, out, branch.pattern, subject_ref)
 
         {expr_code, assignment_code, c2} =
           Host.compile_case_branch_assignment(branch.expr, out, branch_env, c)
@@ -105,7 +102,7 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
       else
         """
         default:
-          #{out} = elmc_int_zero();
+          #{RcRuntimeEmit.assignment_lhs(out)} = elmc_int_zero();
           break;
         """
         |> CSource.indent(2)
@@ -115,7 +112,7 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
 
     code = """
     #{subject_code}
-      ElmcValue *#{out} = NULL;
+      #{CaseCompile.result_out_decl(out, declare_out?)}
       switch (#{subject_ref}) {
     #{switch_body}
       }
@@ -157,8 +154,9 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
   defp compile_boxed_subject_switch(subject, branches, env, counter) do
     {subject_setup, subject_ref, counter} = compile_subject_ref(subject, env, counter)
     tag_ref = "case_msg_tag_#{counter + 1}"
-    next = counter + 1
-    out = "tmp_#{next}"
+    counter = counter + 1
+    {out, branch_counter, declare_out?} = CaseCompile.result_out_binding(env, counter)
+    branch_counter = CaseCompile.advance_counter_past_out(branch_counter, out, declare_out?)
 
     has_default? =
       Enum.any?(branches, fn branch -> match?(%{kind: :wildcard}, branch.pattern) end)
@@ -166,13 +164,8 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     exhaustive? = deferred_box_exhaustive?(branches)
 
     {branch_code, final_counter} =
-      Enum.reduce(branches, {"", next}, fn branch, {acc, c} ->
-        branch_env =
-          env
-          |> Patterns.bind_pattern(branch.pattern, subject_ref)
-          |> RecordCompile.fresh_subexpr_cache()
-          |> Map.put(:__into_out__, out)
-          |> Map.put(:__rc_catch__, false)
+      Enum.reduce(branches, {"", branch_counter}, fn branch, {acc, c} ->
+        branch_env = switch_branch_env(env, out, branch.pattern, subject_ref)
 
         {expr_code, assignment_code, c2} =
           Host.compile_case_branch_assignment(branch.expr, out, branch_env, c)
@@ -189,7 +182,7 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
       else
         """
         default:
-          #{out} = elmc_int_zero();
+          #{RcRuntimeEmit.assignment_lhs(out)} = elmc_int_zero();
           break;
         """
         |> CSource.indent(2)
@@ -200,7 +193,7 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     code = """
     #{subject_setup}
       const int #{tag_ref} = #{message_tag_expr(subject_ref)};
-      ElmcValue *#{out} = NULL;
+      #{CaseCompile.result_out_decl(out, declare_out?)}
       switch (#{tag_ref}) {
     #{switch_body}
       }
@@ -209,16 +202,41 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     {code, out, final_counter}
   end
 
+  defp switch_branch_env(env, out, pattern, subject_ref) do
+    env =
+      env
+      |> Patterns.bind_pattern(pattern, subject_ref)
+      |> RecordCompile.fresh_subexpr_cache()
+      |> Map.update(:__declared_outs__, MapSet.new([out]), &MapSet.put(&1, out))
+
+    env =
+      if RcRuntimeEmit.function_out_ref?(out),
+        do: RcRuntimeEmit.strip_function_tail_scope(env),
+        else: env
+
+    cond do
+      RcRuntimeEmit.function_out_ref?(out) ->
+        Map.put(env, :__branch_out__, out)
+
+      ValueSlots.owned_ref?(out) ->
+        Map.put(env, :__into_out__, out)
+
+      true ->
+        env
+    end
+  end
+
   defp compile_deferred_int_box_subject(subject, branches, env, counter) do
     {subject_setup, subject_ref, counter} = compile_subject_ref(subject, env, counter)
     tag_ref = "case_msg_tag_#{counter + 1}"
-    next = counter + 1
-    out = "tmp_#{next + 1}"
-    int_scratch = "case_int_#{next + 1}"
+    counter = counter + 1
+    {out, branch_counter, declare_out?} = CaseCompile.result_out_binding(env, counter)
+    branch_counter = CaseCompile.advance_counter_past_out(branch_counter, out, declare_out?)
+    int_scratch = "case_int_#{branch_counter + 1}"
     exhaustive? = deferred_box_exhaustive?(branches)
 
     {branch_code, final_counter} =
-      Enum.reduce(branches, {"", next + 1}, fn branch, {acc, c} ->
+      Enum.reduce(branches, {"", branch_counter}, fn branch, {acc, c} ->
         spec = branch_int_box_spec(branch, env)
 
         snippet =
@@ -235,18 +253,19 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
 
     switch_body = CSource.indent(branch_code <> default_case, 2)
 
-    int_decl =
+    {int_decl, int_init} =
       if exhaustive? do
-        "elmc_int_t #{int_scratch};"
+        {"elmc_int_t #{int_scratch};", "  #{int_scratch} = 0;"}
       else
-        "elmc_int_t #{int_scratch} = -1;"
+        {"elmc_int_t #{int_scratch} = -1;", ""}
       end
 
     code = """
     #{subject_setup}
       const int #{tag_ref} = #{message_tag_expr(subject_ref)};
-      ElmcValue *#{out} = NULL;
+      #{deferred_box_out_decl(out, declare_out?)}
       #{int_decl}
+    #{int_init}
       switch (#{tag_ref}) {
     #{switch_body}
       }
@@ -259,48 +278,68 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
   defp compile_deferred_string_box_subject(subject, branches, env, counter) do
     {subject_setup, subject_ref, counter} = compile_subject_ref(subject, env, counter)
     tag_ref = "case_msg_tag_#{counter + 1}"
-    next = counter + 1
-    out = "tmp_#{next + 1}"
-    str_scratch = "case_str_#{next + 1}"
+    counter = counter + 1
+    {out, branch_counter, declare_out?} = CaseCompile.result_out_binding(env, counter)
+    branch_counter = CaseCompile.advance_counter_past_out(branch_counter, out, declare_out?)
     exhaustive? = deferred_box_exhaustive?(branches)
 
-    {branch_code, final_counter} =
-      Enum.reduce(branches, {"", next + 1}, fn branch, {acc, _c} ->
+    {branch_code, immortal_decls, final_counter} =
+      Enum.reduce(branches, {"", [], branch_counter}, fn branch, {acc, decls, c} ->
         spec = branch_string_box_spec(branch)
 
-        snippet =
-          case spec do
-            {:string, literal} ->
-              deferred_string_box_slot_snippet(
-                case_label(branch.pattern, env),
-                literal,
-                str_scratch
-              )
+        case spec do
+          {:string, value} ->
+            lit_name = "native_str_immortal_#{c + 1}"
+            next = c + 1
+            decl = ImmortalStringLiteral.static_decl(lit_name, value)
+            assign = ImmortalStringLiteral.assign_ref(env, out, "&#{lit_name}") |> CSource.indent(2)
 
-            :zero ->
-              deferred_int_box_zero_snippet(case_label(branch.pattern, env), out)
-          end
+            snippet = """
+            #{case_label(branch.pattern, env)}: {
+            #{assign}
+              break;
+            }
+            """
 
-        {acc <> snippet <> "\n", next + 1}
+            {acc <> snippet <> "\n", [decl | decls], next}
+
+          :zero ->
+            snippet = deferred_int_box_zero_snippet(case_label(branch.pattern, env), out)
+            {acc <> snippet <> "\n", decls, c}
+        end
       end)
 
     default_case = deferred_box_switch_default(branches, out, exhaustive?)
-    post_box = deferred_string_box_post_box(env, out, str_scratch, exhaustive?)
-
+    immortal_preamble = immortal_decls |> Enum.reverse() |> Enum.join("\n  ")
     switch_body = CSource.indent(branch_code <> default_case, 2)
 
     code = """
     #{subject_setup}
       const int #{tag_ref} = #{message_tag_expr(subject_ref)};
-      ElmcValue *#{out} = NULL;
-      const char *#{str_scratch} = NULL;
+      #{deferred_box_out_decl(out, declare_out?)}
+      #{immortal_preamble}
       switch (#{tag_ref}) {
     #{switch_body}
       }
-    #{post_box}
     """
 
     {code, out, final_counter}
+  end
+
+  defp deferred_box_out_decl(out, declare_out?) do
+    cond do
+      RcRuntimeEmit.function_out_ref?(out) ->
+        ""
+
+      ValueSlots.owned_ref?(out) ->
+        ""
+
+      declare_out? ->
+        CaseCompile.result_out_decl(out, true)
+
+      true ->
+        "ElmcValue *#{out} = NULL;"
+    end
   end
 
   defp deferred_box_exhaustive?(branches) when is_list(branches) do
@@ -337,32 +376,6 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     |> CSource.indent(2)
   end
 
-  defp deferred_string_box_post_box(env, out, str_scratch, true) do
-    RcRuntimeEmit.assign_into(env, out, "elmc_new_string", str_scratch)
-    |> CSource.indent(2)
-  end
-
-  defp deferred_string_box_post_box(env, out, str_scratch, false) do
-    """
-    if (#{str_scratch}) {
-      #{RcRuntimeEmit.assign_into(env, out, "elmc_new_string", str_scratch)}
-    }
-    """
-    |> String.trim()
-    |> CSource.indent(2)
-  end
-
-  defp deferred_string_box_slot_snippet(label, literal, str_scratch) do
-    """
-    #{label}: {
-      #{str_scratch} = #{literal};
-      break;
-    }
-    """
-    |> String.trim_trailing()
-    |> CSource.indent(2)
-  end
-
   defp deferred_string_box_eligible?(branches) when is_list(branches) do
     specs = Enum.map(branches, &branch_string_box_spec/1)
     string_count = Enum.count(specs, &match?({:string, _}, &1))
@@ -384,7 +397,7 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     if String.contains?(value, <<0>>) do
       :complex
     else
-      {:string, "\"#{Util.escape_c_string(value)}\""}
+      {:string, value}
     end
   end
 
@@ -404,7 +417,7 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
   defp deferred_int_box_zero_snippet(label, out) do
     """
     #{label}:
-      #{out} = elmc_int_zero();
+      #{RcRuntimeEmit.assignment_lhs(out)} = elmc_int_zero();
       break;
     """
     |> CSource.indent(2)
@@ -497,6 +510,7 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
   end
 
   @foldl_borrowed_var ~r/^list_foldl_(cursor|head|node)_\d+$/
+  @list_case_suffix_var ~r/^list_case_suffix_\d+$/
 
   defp switch_branch_cleanup(expr_code, assignment_code, out) do
     body =
@@ -517,22 +531,22 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
       |> MapSet.new()
 
     cow_drop_skip = OwnershipTransfer.cow_drop_chain_sources_to_skip(body, out)
+    out_transfer_rhs = OwnershipTransfer.assignment_rhs_to_out(body, out)
 
     assigned
     |> Enum.reject(fn name ->
       name == out or
         String.starts_with?(name, "__") or
         Regex.match?(@foldl_borrowed_var, name) or
+        Regex.match?(@list_case_suffix_var, name) or
         MapSet.member?(released, name) or
         MapSet.member?(cow_drop_skip, name) or
         MapSet.member?(block_scoped, name) or
+        MapSet.member?(out_transfer_rhs, name) or
         ValueSlots.transferred?(name, body) or
         OwnershipTransfer.transferred_in_c_source?(name, body)
     end)
-    |> Enum.map_join("\n", fn name ->
-      ValueSlots.release(name)
-      "elmc_release(#{name});"
-    end)
+    |> Enum.map_join("\n", &ValueSlots.release_stmt/1)
   end
 
   defp block_scoped_assignments(body) when is_binary(body) do

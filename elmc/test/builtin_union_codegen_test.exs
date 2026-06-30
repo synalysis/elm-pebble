@@ -78,4 +78,50 @@ defmodule Elmc.BuiltinUnionCodegenTest do
     assert generated_c =~ "elmc_maybe_just("
     assert generated_c =~ "elmc_result_ok("
   end
+
+  test "tail if with Just/Nothing writes directly to function out" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/builtin_union_tail_if_project", __DIR__)
+    out_dir = Path.expand("tmp/builtin_union_tail_if_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+
+    main = """
+    module Main exposing (maybePiece)
+
+    maybePiece : Bool -> Maybe Int
+    maybePiece flag =
+        if flag then
+            Just 1
+        else
+            Nothing
+    """
+
+    File.write!(Path.join(project_dir, "src/Main.elm"), main)
+
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: false
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    fn_body =
+      case Regex.run(
+             ~r/static RC elmc_fn_Main_maybePiece_native\(ElmcValue \*\*out,[^)]*\) \{([\s\S]*?)\n\}/,
+             generated_c
+           ) do
+        [_, body] -> body
+        _ -> flunk("missing maybePiece RC function")
+      end
+
+    assert fn_body =~ ~r/if \(flag\) \{[\s\S]*Rc = elmc_maybe_just\(&(owned\[[0-9]+\]|tmp_[0-9]+|out),/
+    refute fn_body =~ "elmc_maybe_just(out,"
+    assert fn_body =~ ~r/\} else \{[\s\S]*elmc_maybe_nothing\(\)/
+    refute fn_body =~ "*out = owned["
+  end
 end

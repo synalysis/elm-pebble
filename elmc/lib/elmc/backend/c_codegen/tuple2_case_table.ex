@@ -5,16 +5,25 @@ defmodule Elmc.Backend.CCodegen.Tuple2CaseTable do
   alias Elmc.Backend.CCodegen.Util
 
   @spec try_emit(String.t(), String.t(), map() | nil) ::
-          {:ok, String.t(), [FusionSupport.callee_key()]} | :error
+          {:ok, String.t(), [FusionSupport.callee_key()]} | {:ok, String.t(), [FusionSupport.callee_key()], :rc_native} | :error
   def try_emit(_module_name, _name, nil), do: :error
 
   def try_emit(module_name, name, expr) do
     with {:ok, outer_mod, outer_branches} <- parse_outer_case(expr),
          {:ok, rows} <- parse_rows(outer_branches),
          true <- length(rows) > 0 do
-      FusionSupport.ok(emit(module_name, name, outer_mod, rows))
+      FusionSupport.ok_rc(emit(module_name, name, outer_mod, rows), ["elmc_list_from_tuple2_int_array"])
     else
       _ -> :error
+    end
+  end
+
+  @spec recognized?(String.t(), String.t(), map() | nil) :: boolean()
+  def recognized?(module_name, name, expr) do
+    case try_emit(module_name, name, expr) do
+      {:ok, _, _, _} -> true
+      {:ok, _, _} -> true
+      _ -> false
     end
   end
 
@@ -211,13 +220,18 @@ defmodule Elmc.Backend.CCodegen.Tuple2CaseTable do
     #{table_rows}
     };
 
-    static ElmcValue *#{c_prefix}_native(const elmc_int_t kind, const elmc_int_t rot) {
-      elmc_int_t k = kind % #{outer_mod};
-      if (k < 0) k += #{outer_mod};
-      elmc_int_t r = rot % 4;
-      if (r < 0) r += 4;
-      const #{table_type} *entry = &#{safe}_table[k][r];
-      return elmc_list_from_tuple2_int_array_take(entry->cells, entry->count);
+    static RC #{c_prefix}_native(ElmcValue **out, const elmc_int_t kind, const elmc_int_t rot) {
+      RC rc = RC_SUCCESS;
+      CATCH_BEGIN
+        elmc_int_t k = kind % #{outer_mod};
+        if (k < 0) k += #{outer_mod};
+        elmc_int_t r = rot % 4;
+        if (r < 0) r += 4;
+        const #{table_type} *entry = &#{safe}_table[k][r];
+        rc = elmc_list_from_tuple2_int_array(out, entry->cells, entry->count);
+        CHECK_RC(rc);
+      CATCH_END
+      return rc;
     }
     """
   end

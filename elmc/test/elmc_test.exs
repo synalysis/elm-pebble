@@ -54,6 +54,69 @@ defmodule ElmcTest do
     refute generated =~ "generated_trig_cos_double"
   end
 
+  test "pebble watch builds emit sin_lookup trig without platform ifdef" do
+    source = """
+    module Main exposing (main)
+
+    import Basics
+    import Pebble.Platform as Platform
+
+    type alias Model = ()
+
+    type Msg = Noop
+
+    init _ = ( trigLen 0 10, Platform.Cmd.none )
+    update _ m = ( m, Platform.Cmd.none )
+    subscriptions _ = Platform.Sub.none
+
+    trigLen : Int -> Int -> Int
+    trigLen angle radius =
+        let
+            theta =
+                toFloat angle * 2 * Basics.pi / 65536
+        in
+        Basics.round (Basics.sin theta * Basics.toFloat radius)
+
+    view _ = Platform.Cmd.none
+
+    main = Platform.application { init = init, update = update, view = \\_ -> Platform.Cmd.none, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/pebble_trig_sin_lookup", __DIR__)
+    out_dir = Path.expand("tmp/pebble_trig_sin_lookup_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+    File.cp!(Path.expand("fixtures/simple_project/elm.json", __DIR__), Path.join(project_dir, "elm.json"))
+
+    assert {:ok, result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               pebble_int32: true,
+               strip_dead_code: false
+             })
+
+    decl =
+      result.ir.modules
+      |> Enum.flat_map(& &1.declarations)
+      |> Enum.find(&(&1.name == "trigLen"))
+
+    decl_map = Elmc.Backend.CCodegen.IRQueries.function_decl_map(result.ir)
+
+    assert Elmc.Backend.CCodegen.Native.FunctionCall.return_kind(decl, "Main", decl_map) ==
+             :native_int
+
+    generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    trig_body = Elmc.Test.CCodegenExtract.fn_impl_body(generated, "elmc_fn_Main_trigLen")
+
+    assert trig_body =~ "sin_lookup((int32_t)"
+    refute trig_body =~ "generated_trig_sin_double"
+    refute trig_body =~ "#if defined(PBL_PLATFORM_APLITE)"
+  end
+
   test "runtime pruning keeps macro-derived accessors referenced by generated code" do
     out_dir = Path.expand("tmp/runtime_pruned_record_macros", __DIR__)
     refs_dir = Path.join(out_dir, "refs")
@@ -272,8 +335,8 @@ defmodule ElmcTest do
     assert runtime =~ "const ElmcValue ELMC_SMALL_INTS"
     assert runtime =~ "static ElmcValue ELMC_MAYBE_NOTHING"
     assert runtime =~ "return &ELMC_MAYBE_NOTHING;"
-    assert runtime =~ "elmc_rc_assign_value(out, elmc_alloc_scalar(ELMC_TAG_INT, value))"
-    assert runtime =~ "elmc_rc_assign_value(out, value ? &ELMC_BOOL_TRUE : &ELMC_BOOL_FALSE)"
+    assert runtime =~ "rc = elmc_alloc_scalar(out, ELMC_TAG_INT, value)"
+    assert runtime =~ "*out = value ? &ELMC_BOOL_TRUE : &ELMC_BOOL_FALSE"
     assert runtime =~ "return value->scalar;"
     refute runtime =~ "malloc(sizeof(elmc_int_t))"
   end
@@ -302,7 +365,7 @@ defmodule ElmcTest do
     runtime = File.read!(Path.join(runtime_dir, "elmc_runtime.c"))
 
     assert runtime =~ "static ElmcValue ELMC_EMPTY_STRING"
-    assert runtime =~ "elmc_rc_assign_value(out, &ELMC_EMPTY_STRING)"
+    assert runtime =~ "*out = &ELMC_EMPTY_STRING"
     assert runtime =~ "static void elmc_log_alloc_failed"
     assert runtime =~ "static void *elmc_realloc_impl"
     refute runtime =~ "ELMC_ALLOC_FAILURE_LOGGED"
@@ -327,12 +390,14 @@ defmodule ElmcTest do
     assert runtime =~ "ElmcTuple2Cell"
     assert runtime =~ "ElmcRecordCell"
     assert runtime =~ "ElmcClosureCell"
-    assert runtime =~ "elmc_rc_assign_value(out, elmc_list_cell_alloc(head, tail, 0))"
-    assert runtime =~ "elmc_list_cell_alloc(head, tail, 0)"
-    assert runtime =~ "elmc_rc_assign_value(out, elmc_record_cell_alloc(field_count, field_names, field_values, 0))"
-    assert runtime =~ "elmc_rc_assign_value(out, elmc_record_cell_alloc(field_count, field_names, field_values, 1))"
-    assert runtime =~ "if (value->tag == ELMC_TAG_LIST && elmc_list_cell_release(value))"
-    assert runtime =~ "if (value->tag == ELMC_TAG_TUPLE2 && elmc_tuple2_cell_release(value))"
+    assert runtime =~ "rc = elmc_list_cell_alloc(out, head, tail, 0)"
+    assert runtime =~ "elmc_list_cell_alloc(out, head, tail, 0)"
+    assert runtime =~ "rc = elmc_record_cell_alloc(out, field_count, field_names, field_values, 0)"
+    assert runtime =~ "rc = elmc_record_cell_alloc(out, field_count, field_names, field_values, 1)"
+    assert runtime =~ "if (value->tag == ELMC_TAG_LIST)"
+    assert runtime =~ "if (elmc_list_cell_release(value))"
+    assert runtime =~ "} else if (value->tag == ELMC_TAG_TUPLE2 && value->payload != NULL)"
+    assert runtime =~ "if (elmc_tuple2_cell_release(value))"
     assert runtime =~ "if (elmc_record_cell_release(value))"
     assert runtime =~ "if (elmc_closure_cell_release(value))"
     refute runtime =~ "ELMC_LIST_POOL_CAPACITY"

@@ -68,6 +68,7 @@ defmodule Elmc.Runtime.IntList do
 
     static int elmc_int_list_cell_release(ElmcValue *value) {
       if (!value || value->tag != ELMC_TAG_INT_LIST || value->scalar != ELMC_INT_LIST_CELL_SCALAR) return 0;
+      if (value == &ELMC_EMPTY_INT_LIST) return 0;
       ElmcIntListCell *cell = (ElmcIntListCell *)value;
       if (value->payload != &cell->data) return 0;
       if (cell->data.owns_buffer && cell->data.values) elmc_free(cell->data.values);
@@ -79,9 +80,8 @@ defmodule Elmc.Runtime.IntList do
       RC rc = RC_SUCCESS;
       ElmcIntListCell *cell = NULL;
       CATCH_BEGIN
-        if (!items || count <= 0) {
-          rc = elmc_rc_assign_value(out, elmc_list_nil());
-          CHECK_RC(rc);
+        if (count <= 0) {
+          *out = elmc_retain(&ELMC_EMPTY_INT_LIST);
         } else {
           cell = (ElmcIntListCell *)elmc_malloc(sizeof(ElmcIntListCell), __func__);
           if (!cell) {
@@ -104,8 +104,7 @@ defmodule Elmc.Runtime.IntList do
           cell->value.scalar = ELMC_INT_LIST_CELL_SCALAR;
           ELMC_ALLOCATED += 1;
           ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
-          rc = elmc_rc_assign_value(out, &cell->value);
-          CHECK_RC(rc);
+          *out = &cell->value;
           cell = NULL;
         }
       CATCH_END;
@@ -121,7 +120,8 @@ defmodule Elmc.Runtime.IntList do
         ElmcIntListPayload *payload = elmc_int_list_payload(existing);
         if (payload && payload->owns_buffer && payload->length == count && payload->values && items) {
           memcpy(payload->values, items, (size_t)count * sizeof(elmc_int_t));
-          return elmc_rc_assign_value(out, elmc_retain(existing));
+          *out = elmc_retain(existing);
+          return RC_SUCCESS;
         }
       }
       return elmc_int_list_alloc_copy(out, items, count);
@@ -130,7 +130,7 @@ defmodule Elmc.Runtime.IntList do
     static RC elmc_int_list_take_int(ElmcValue **out, elmc_int_t count, ElmcValue *list) {
       ElmcIntListPayload *payload = elmc_int_list_payload(list);
       if (!payload) return RC_ERR_INVALID_ARG;
-      if (count <= 0) return elmc_rc_assign_value(out, elmc_list_nil());
+      if (count <= 0) return elmc_int_list_alloc_copy(out, NULL, 0);
       if (count > payload->length) count = payload->length;
       return elmc_int_list_alloc_copy(out, payload->values, count);
     }
@@ -138,9 +138,42 @@ defmodule Elmc.Runtime.IntList do
     static RC elmc_int_list_drop_int(ElmcValue **out, elmc_int_t count, ElmcValue *list) {
       ElmcIntListPayload *payload = elmc_int_list_payload(list);
       if (!payload) return RC_ERR_INVALID_ARG;
-      if (count <= 0) return elmc_rc_assign_value(out, elmc_retain(list));
-      if (count >= payload->length) return elmc_rc_assign_value(out, elmc_list_nil());
+      if (count <= 0) {
+        *out = elmc_retain(list);
+        return RC_SUCCESS;
+      }
+      if (count >= payload->length) return elmc_int_list_alloc_copy(out, NULL, 0);
       return elmc_int_list_alloc_copy(out, payload->values + count, payload->length - count);
+    }
+
+    static RC __attribute__((unused)) elmc_int_list_append_to_cons_tail(ElmcValue **tail_slot, ElmcValue *list) {
+      ElmcIntListPayload *payload = elmc_int_list_payload(list);
+      RC rc = RC_SUCCESS;
+      ElmcValue *cell = NULL;
+      CATCH_BEGIN
+        if (!tail_slot) {
+          rc = RC_ERR_INVALID_ARG;
+          CHECK_RC(rc);
+        }
+        if (!payload || payload->length <= 0) {
+          *tail_slot = elmc_list_nil();
+        } else {
+          for (int i = 0; i < payload->length; i++) {
+            ElmcValue *head = NULL;
+            rc = elmc_new_int(&head, payload->values[i]);
+            CHECK_RC(rc);
+            cell = NULL;
+            rc = elmc_list_cons(&cell, head, elmc_list_nil());
+            elmc_release(head);
+            CHECK_RC(rc);
+            *tail_slot = cell;
+            tail_slot = &((ElmcCons *)cell->payload)->tail;
+            cell = NULL;
+          }
+        }
+      CATCH_END;
+      elmc_release(cell);
+      return rc;
     }
 
     static RC elmc_int_list_reverse_into(ElmcValue **out, ElmcValue *list) {
@@ -149,7 +182,7 @@ defmodule Elmc.Runtime.IntList do
       elmc_int_t *reversed = NULL;
       CATCH_BEGIN
         if (!payload || payload->length <= 0) {
-          rc = elmc_rc_assign_value(out, elmc_list_nil());
+          rc = elmc_int_list_alloc_copy(out, NULL, 0);
           CHECK_RC(rc);
         } else {
           reversed = (elmc_int_t *)elmc_malloc((size_t)payload->length * sizeof(elmc_int_t), __func__);
@@ -175,18 +208,16 @@ defmodule Elmc.Runtime.IntList do
       elmc_int_t *merged = NULL;
       CATCH_BEGIN
         if (!a && !b) {
-          rc = elmc_rc_assign_value(out, elmc_list_nil());
+          rc = elmc_int_list_alloc_copy(out, NULL, 0);
           CHECK_RC(rc);
         } else if (!a) {
-          rc = elmc_rc_assign_value(out, elmc_retain(right));
-          CHECK_RC(rc);
+          *out = elmc_retain(right);
         } else if (!b) {
-          rc = elmc_rc_assign_value(out, elmc_retain(left));
-          CHECK_RC(rc);
+          *out = elmc_retain(left);
         } else {
           int total = a->length + b->length;
           if (total <= 0) {
-            rc = elmc_rc_assign_value(out, elmc_list_nil());
+            rc = elmc_int_list_alloc_copy(out, NULL, 0);
             CHECK_RC(rc);
           } else {
             merged = (elmc_int_t *)elmc_malloc((size_t)total * sizeof(elmc_int_t), __func__);
@@ -208,10 +239,6 @@ defmodule Elmc.Runtime.IntList do
     static ElmcValue *elmc_int_list_replace_nth_int(ElmcValue *list, elmc_int_t index, elmc_int_t value) {
       ElmcIntListPayload *payload = elmc_int_list_payload(list);
       if (!payload || index < 0 || index >= payload->length) return elmc_retain(list);
-      if (list->rc == 1 && payload->owns_buffer && payload->values) {
-        payload->values[index] = value;
-        return elmc_retain(list);
-      }
       ElmcValue *out = NULL;
       if (elmc_int_list_alloc_copy(&out, payload->values, payload->length) != RC_SUCCESS || !out) {
         return elmc_retain(list);
@@ -236,7 +263,7 @@ defmodule Elmc.Runtime.IntList do
           CHECK_RC(rc);
         }
         if (payload->length <= 0) {
-          rc = elmc_rc_assign_value(out, elmc_list_nil());
+          rc = elmc_int_list_alloc_copy(out, NULL, 0);
           CHECK_RC(rc);
         } else {
           kept = (elmc_int_t *)elmc_malloc((size_t)payload->length * sizeof(elmc_int_t), __func__);
@@ -290,8 +317,7 @@ defmodule Elmc.Runtime.IntList do
           result = cell;
           cell = NULL;
         }
-        rc = elmc_rc_assign_value(out, result);
-        CHECK_RC(rc);
+        *out = result;
         result = NULL;
       CATCH_END;
       elmc_release(cell);
@@ -309,7 +335,7 @@ defmodule Elmc.Runtime.IntList do
           CHECK_RC(rc);
         }
         if (payload->length <= 0) {
-          rc = elmc_rc_assign_value(out, elmc_list_nil());
+          rc = elmc_int_list_alloc_copy(out, NULL, 0);
           CHECK_RC(rc);
         } else {
           mapped = (elmc_int_t *)elmc_malloc((size_t)payload->length * sizeof(elmc_int_t), __func__);
@@ -378,8 +404,7 @@ defmodule Elmc.Runtime.IntList do
           }
           result = next;
         }
-        rc = elmc_rc_assign_value(out, result);
-        CHECK_RC(rc);
+        *out = result;
         result = NULL;
       CATCH_END;
       elmc_release(result);
@@ -396,7 +421,7 @@ defmodule Elmc.Runtime.IntList do
           CHECK_RC(rc);
         }
         if (payload->length <= 0) {
-          rc = elmc_rc_assign_value(out, elmc_list_nil());
+          rc = elmc_int_list_alloc_copy(out, NULL, 0);
           CHECK_RC(rc);
         } else {
           mapped = (elmc_int_t *)elmc_malloc((size_t)payload->length * sizeof(elmc_int_t), __func__);
@@ -444,41 +469,41 @@ defmodule Elmc.Runtime.IntList do
       return !payload || payload->length <= 0;
     }
 
-    ElmcValue *elmc_int_list_head_boxed(ElmcValue *list) {
-      if (list && list->tag == ELMC_TAG_LIST && list->payload != NULL) {
-        ElmcCons *node = (ElmcCons *)list->payload;
-        ElmcValue *out = NULL;
-        if (elmc_rc_assign_value(&out, node->head ? elmc_retain(node->head) : elmc_int_zero()) != RC_SUCCESS) {
-          return elmc_int_zero();
+    RC elmc_int_list_head_boxed(ElmcValue **out, ElmcValue *list) {
+      RC rc = RC_SUCCESS;
+      CATCH_BEGIN
+        if (list && list->tag == ELMC_TAG_LIST && list->payload != NULL) {
+          ElmcCons *node = (ElmcCons *)list->payload;
+          *out = node->head ? elmc_retain(node->head) : elmc_int_zero();
+        } else {
+          ElmcIntListPayload *payload = elmc_int_list_payload(list);
+          if (!payload || payload->length <= 0) {
+            *out = elmc_int_zero();
+          } else {
+            rc = elmc_new_int(out, payload->values[0]);
+            CHECK_RC(rc);
+          }
         }
-        return out;
-      }
-      ElmcIntListPayload *payload = elmc_int_list_payload(list);
-      if (!payload || payload->length <= 0) return elmc_int_zero();
-      {
-        ElmcValue *out = NULL;
-        if (elmc_new_int(&out, payload->values[0]) != RC_SUCCESS) return elmc_int_zero();
-        return out;
-      }
+      CATCH_END;
+      return rc;
     }
 
-    ElmcValue *elmc_int_list_tail_take(ElmcValue *list) {
-      if (list && list->tag == ELMC_TAG_LIST) {
-        if (list->payload == NULL) {
-          ElmcValue *out = NULL;
-          if (elmc_rc_assign_value(&out, elmc_list_nil()) != RC_SUCCESS) return elmc_int_zero();
-          return out;
+    RC elmc_int_list_tail(ElmcValue **out, ElmcValue *list) {
+      RC rc = RC_SUCCESS;
+      CATCH_BEGIN
+        if (list && list->tag == ELMC_TAG_LIST) {
+          if (list->payload == NULL) {
+            *out = elmc_list_nil();
+          } else {
+            ElmcCons *node = (ElmcCons *)list->payload;
+            *out = node->tail ? elmc_retain(node->tail) : elmc_list_nil();
+          }
+        } else {
+          rc = elmc_int_list_drop_int(out, 1, list);
+          CHECK_RC(rc);
         }
-        ElmcCons *node = (ElmcCons *)list->payload;
-        ElmcValue *out = NULL;
-        if (elmc_rc_assign_value(&out, node->tail ? elmc_retain(node->tail) : elmc_list_nil()) != RC_SUCCESS) {
-          return elmc_int_zero();
-        }
-        return out;
-      }
-      ElmcValue *out = NULL;
-      if (elmc_int_list_drop_int(&out, 1, list) != RC_SUCCESS) return elmc_int_zero();
-      return out;
+      CATCH_END;
+      return rc;
     }
     """
   end
@@ -497,8 +522,7 @@ defmodule Elmc.Runtime.IntList do
           CHECK_RC(rc);
         }
         if (payload->length <= 0) {
-          rc = elmc_rc_assign_value(out, result);
-          CHECK_RC(rc);
+          *out = result;
           result = NULL;
         } else {
           for (int i = payload->length - 1; i >= 0; i--) {
@@ -519,8 +543,7 @@ defmodule Elmc.Runtime.IntList do
             result = &cell->value;
             cell = NULL;
           }
-          rc = elmc_rc_assign_value(out, result);
-          CHECK_RC(rc);
+          *out = result;
           result = NULL;
         }
       CATCH_END;
@@ -542,18 +565,29 @@ defmodule Elmc.Runtime.IntList do
       return !list || list->tag != ELMC_TAG_INT_SPINE || list->payload == NULL;
     }
 
-    ElmcValue *elmc_int_spine_head_boxed(ElmcValue *list) {
-      if (!list || list->tag != ELMC_TAG_INT_SPINE || !list->payload) return elmc_int_zero();
-      {
-        ElmcValue *out = NULL;
-        if (elmc_new_int(&out, ((ElmcIntSpine *)list->payload)->head) != RC_SUCCESS) return elmc_int_zero();
-        return out;
-      }
+    RC elmc_int_spine_head_boxed(ElmcValue **out, ElmcValue *list) {
+      RC rc = RC_SUCCESS;
+      CATCH_BEGIN
+        if (!list || list->tag != ELMC_TAG_INT_SPINE || !list->payload) {
+          *out = elmc_int_zero();
+        } else {
+          rc = elmc_new_int(out, ((ElmcIntSpine *)list->payload)->head);
+          CHECK_RC(rc);
+        }
+      CATCH_END;
+      return rc;
     }
 
-    ElmcValue *elmc_int_spine_tail_take(ElmcValue *list) {
-      if (!list || list->tag != ELMC_TAG_INT_SPINE || !list->payload) return elmc_int_zero();
-      return elmc_retain(((ElmcIntSpine *)list->payload)->tail);
+    RC elmc_int_spine_tail(ElmcValue **out, ElmcValue *list) {
+      RC rc = RC_SUCCESS;
+      CATCH_BEGIN
+        if (!list || list->tag != ELMC_TAG_INT_SPINE || !list->payload) {
+          *out = elmc_int_zero();
+        } else {
+          *out = elmc_retain(((ElmcIntSpine *)list->payload)->tail);
+        }
+      CATCH_END;
+      return rc;
     }
     """
   end

@@ -210,7 +210,7 @@ defmodule Elmc.Backend.CCodegen.FoldlOffsetPatch do
 
     case Map.get(decl_map, {module_name, offsets_name}) do
       %{expr: expr} ->
-        match?({:ok, _, _}, Tuple2CaseTable.try_emit(module_name, offsets_name, expr))
+        Tuple2CaseTable.recognized?(module_name, offsets_name, expr)
 
       _ ->
         false
@@ -258,6 +258,25 @@ defmodule Elmc.Backend.CCodegen.FoldlOffsetPatch do
         if (x >= 0 && x < cols && y >= 0 && y < rows) {
           patches[patch_count++] = (y * cols) + x;
         }
+      }
+      const elmc_int_t total = cols * rows;
+      if (board && board->tag == ELMC_TAG_INT_LIST) {
+        ElmcIntListPayload *ilp = (ElmcIntListPayload *)board->payload;
+        const int len = ilp ? ilp->length : 0;
+        if (len != total) return elmc_retain(board);
+        elmc_int_t buf[#{cols * rows}];
+        for (int i = 0; i < len; i++) {
+          buf[i] = ilp->values[i];
+        }
+        for (int p = 0; p < patch_count; p++) {
+          const elmc_int_t patch = patches[p];
+          if (patch >= 0 && patch < len) buf[patch] = value;
+        }
+        ElmcValue *out = NULL;
+        if (elmc_list_from_int_array(&out, buf, len) != RC_SUCCESS || !out) {
+          return elmc_retain(board);
+        }
+        return out;
       }
       ElmcValue *out = NULL;
       ElmcValue **tail_slot = NULL;

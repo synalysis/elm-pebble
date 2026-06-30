@@ -22,7 +22,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompileTest do
 
     assert var == "tmp_11"
     assert next == 12
-    assert code =~ "elmc_record_new_values_ints_take(4"
+    assert code =~ "elmc_record_new_values_ints_take(4, rec_values_1)"
     refute code =~ "rec_field_ids_"
     assert code =~ "direct_native_record_layout_x_1"
     refute code =~ "\"x\""
@@ -45,7 +45,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompileTest do
       {code, var, _} = FunctionCallCompile.compile_var("layout", env, 0)
 
       assert var == "tmp_1"
-      assert code =~ "elmc_record_new_values_take(2"
+      assert code =~ "elmc_record_new_values_take_value(2, rec_values_1)"
       assert code =~ "elmc_new_string_take(direct_label)"
       refute code =~ "\"label\""
     after
@@ -74,7 +74,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompileTest do
       {code, var, _} = FunctionCallCompile.compile_var("layout", env, 0)
 
       assert var == "tmp_1"
-      assert code =~ "elmc_record_new_values_take(2"
+      assert code =~ "elmc_record_new_values_take_value(2, rec_values_1)"
       assert code =~ "elmc_new_int_take(direct_x)"
       assert code =~ "elmc_new_string_take(direct_label)"
       refute code =~ "\"label\""

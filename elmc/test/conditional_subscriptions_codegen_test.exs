@@ -74,6 +74,12 @@ defmodule Elmc.ConditionalSubscriptionsCodegenTest do
     assert current_page_native =~ "elmc_immortal_list_Main_pages_values"
     refute current_page_native =~ "elmc_new_int(native_mod_"
     refute current_page_native =~ "elmc_as_int(tmp_"
+    refute current_page_native =~ "ElmcValue *tmp_"
+    assert current_page_native =~ "elmc_immortal_list_Main_pages_values[native_mod_1]"
+    assert current_page_native =~ "*out ="
+
+    assert generated_c =~ "elmc_immortal_list_Main_pages_values"
+    assert generated_c =~ "ELMC_RC_IMMORTAL"
 
     pages_fn =
       generated_c
@@ -81,10 +87,9 @@ defmodule Elmc.ConditionalSubscriptionsCodegenTest do
       |> Enum.at(1)
       |> case do
         nil -> flunk("expected immortal static list prelude for Main.pages")
-        rest -> String.split(rest, "static ElmcValue *elmc_fn_Main_pages(", parts: 2) |> hd()
+        rest -> String.split(rest, "static RC elmc_fn_Main_pages(", parts: 2) |> hd()
       end
 
-    assert pages_fn =~ "ELMC_RC_IMMORTAL"
     refute pages_fn =~ "elmc_list_from_int_array"
 
     pages_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_pages")

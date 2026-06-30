@@ -4,6 +4,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinUnion do
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.CCodegen.ValueSlots
 
   @maybe_nothing "Nothing"
   @maybe_just "Just"
@@ -30,11 +31,19 @@ defmodule Elmc.Backend.CCodegen.BuiltinUnion do
 
   def maybe_nothing_literal?(_expr), do: false
 
-  @spec compile_maybe_nothing(Types.compile_counter()) :: Types.compile_result()
-  def compile_maybe_nothing(counter) do
-    next = counter + 1
-    var = "tmp_#{next}"
-    {"ElmcValue *#{var} = elmc_maybe_nothing();", var, next}
+  @spec compile_maybe_nothing(Types.compile_env(), Types.compile_counter()) ::
+          Types.compile_result()
+  def compile_maybe_nothing(env, counter) do
+    {out, counter, declare?} = union_out_target(env, counter)
+
+    code =
+      if declare? do
+        "ElmcValue *#{out} = elmc_maybe_nothing();"
+      else
+        "#{RcRuntimeEmit.assignment_lhs(out)} = elmc_maybe_nothing();"
+      end
+
+    {code, out, counter}
   end
 
   @spec try_compile_tuple2(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
@@ -44,22 +53,51 @@ defmodule Elmc.Backend.CCodegen.BuiltinUnion do
          short when is_map_key(@payload_ctors, short) <- union_ctor_short_name(ctor),
          c_name <- Map.fetch!(@payload_ctors, short) do
       {payload_code, payload_var, counter} = Host.compile_expr(right, env, counter)
-      next = counter + 1
-      out = "tmp_#{next}"
+      {out, counter, _} = union_out_target(env, counter)
 
-      assign = RcRuntimeEmit.assign_call(env, out, c_name, payload_var)
+      assign = RcRuntimeEmit.assign_call(env, out, c_name, RcRuntimeEmit.value_expr(payload_var))
+
+      payload_release =
+        cond do
+          payload_var == out ->
+            ""
+
+          ValueSlots.owned_ref?(payload_var) ->
+            ValueSlots.abandon_stmt(payload_var)
+
+          true ->
+            ValueSlots.release_stmt(payload_var)
+        end
 
       code = """
       #{payload_code}
         #{assign}
-        elmc_release(#{payload_var});
+        #{payload_release}
       """
 
-      {:ok, {code, out, next}}
+      {:ok, {code, out, counter}}
     else
       _ -> :error
     end
   end
 
   def try_compile_tuple2(_expr, _env, _counter), do: :error
+
+  defp union_out_target(env, counter) do
+    case Map.get(env, :__branch_out__) ||
+           Map.get(env, :__into_out__) ||
+           RcRuntimeEmit.nested_out_target(env) do
+      target when is_binary(target) ->
+        if RcRuntimeEmit.function_out_ref?(target) do
+          next = counter + 1
+          {"tmp_#{next}", next, true}
+        else
+          {target, counter, false}
+        end
+
+      _ ->
+        next = counter + 1
+        {"tmp_#{next}", next, true}
+    end
+  end
 end

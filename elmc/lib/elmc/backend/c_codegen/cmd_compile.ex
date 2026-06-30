@@ -5,6 +5,7 @@ defmodule Elmc.Backend.CCodegen.CmdCompile do
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.Native.String, as: NativeString
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.SpecialValues
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.Pebble.Util
@@ -132,10 +133,12 @@ defmodule Elmc.Backend.CCodegen.CmdCompile do
     do: {"", value, counter}
 
   defp compile_param_ref(expr, env, counter) do
-    if NativeInt.expr?(expr, env) do
-      Host.compile_native_int_expr(expr, env, counter)
+    param_env = RcRuntimeEmit.strip_function_tail_scope(env)
+
+    if NativeInt.expr?(expr, param_env) do
+      Host.compile_native_int_expr(expr, param_env, counter)
     else
-      {code, var, counter} = Host.compile_expr(expr, env, counter)
+      {code, var, counter} = Host.compile_expr(expr, param_env, counter)
       {code, "elmc_as_int(#{var})", counter}
     end
   end

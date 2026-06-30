@@ -10,7 +10,14 @@ defmodule Elmx.Runtime.Core do
   defdelegate maybe_map(f, maybe), to: Elmx.Runtime.Core.MaybeResult
   defdelegate maybe_and_then(f, maybe), to: Elmx.Runtime.Core.MaybeResult
   defdelegate maybe_map2(a, b, f), to: Elmx.Runtime.Core.MaybeResult
+  defdelegate maybe_map3(f, a, b, c), to: Elmx.Runtime.Core.MaybeResult
+  defdelegate maybe_map4(f, a, b, c, d), to: Elmx.Runtime.Core.MaybeResult
+  defdelegate maybe_map5(f, a, b, c, d, e), to: Elmx.Runtime.Core.MaybeResult
   defdelegate result_map(f, result), to: Elmx.Runtime.Core.MaybeResult
+  defdelegate result_map2(f, a, b), to: Elmx.Runtime.Core.MaybeResult
+  defdelegate result_map3(f, a, b, c), to: Elmx.Runtime.Core.MaybeResult
+  defdelegate result_map4(f, a, b, c, d), to: Elmx.Runtime.Core.MaybeResult
+  defdelegate result_map5(f, a, b, c, d, e), to: Elmx.Runtime.Core.MaybeResult
   defdelegate result_and_then(f, result), to: Elmx.Runtime.Core.MaybeResult
   defdelegate result_map_error(f, result), to: Elmx.Runtime.Core.MaybeResult
   defdelegate result_with_default(default, result), to: Elmx.Runtime.Core.MaybeResult

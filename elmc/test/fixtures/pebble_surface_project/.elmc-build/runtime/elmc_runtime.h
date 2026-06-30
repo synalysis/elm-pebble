@@ -3,7 +3,15 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 
+
+#if defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_CHALK) || defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_FLINT) || defined(PBL_PLATFORM_GABBRO)
+#ifndef ELMC_PEBBLE_PLATFORM
+#define ELMC_PEBBLE_PLATFORM 1
+#endif
+#include <pebble.h>
+#endif
 
 #if defined(ELMC_PEBBLE_INT32) || defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_CHALK) || defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_FLINT) || defined(PBL_PLATFORM_GABBRO)
 typedef int32_t elmc_int_t;
@@ -19,11 +27,19 @@ typedef enum {
   ELMC_TAG_RESULT = 5,
   ELMC_TAG_MAYBE = 6,
   ELMC_TAG_TUPLE2 = 7,
+  ELMC_TAG_CHAR = 8,
   ELMC_TAG_PORT_PAYLOAD = 9,
   ELMC_TAG_FLOAT = 10,
   ELMC_TAG_RECORD = 11,
   ELMC_TAG_CLOSURE = 12,
-  ELMC_TAG_FORWARD_REF = 13
+  ELMC_TAG_FORWARD_REF = 13,
+  ELMC_TAG_CMD = 14,
+  ELMC_TAG_SUB = 15,
+  ELMC_TAG_ORDER = 16,
+  ELMC_TAG_INT_LIST = 17,
+  ELMC_TAG_INT_SPINE = 18,
+  ELMC_TAG_RECORD_SEQ = 19,
+  ELMC_TAG_FLOAT_LIST = 20
 } ElmcTag;
 
 typedef struct ElmcValue {
@@ -38,10 +54,110 @@ typedef struct ElmcCons {
   ElmcValue *tail;
 } ElmcCons;
 
+#ifndef ELMC_INT_LIST_CELL_SCALAR
+#define ELMC_INT_LIST_CELL_SCALAR ((elmc_int_t)0x1EC013)
+#endif
+
+#ifndef ELMC_INT_SPINE_CELL_SCALAR
+#define ELMC_INT_SPINE_CELL_SCALAR ((elmc_int_t)0x1EC01A)
+#endif
+
+#ifndef ELMC_RECORD_SEQ_CELL_SCALAR
+#define ELMC_RECORD_SEQ_CELL_SCALAR ((elmc_int_t)0x1EC01B)
+#endif
+
+typedef struct ElmcIntListPayload {
+  elmc_int_t *values;
+  int length;
+  unsigned char owns_buffer;
+} ElmcIntListPayload;
+
+typedef struct ElmcIntListCell {
+  ElmcValue value;
+  ElmcIntListPayload data;
+} ElmcIntListCell;
+
+typedef struct ElmcIntSpine {
+  elmc_int_t head;
+  struct ElmcValue *tail;
+} ElmcIntSpine;
+
+typedef struct ElmcIntSpineCell {
+  ElmcValue value;
+  ElmcIntSpine spine;
+} ElmcIntSpineCell;
+
+typedef struct ElmcRecordSeqPayload {
+  struct ElmcValue **items;
+  int length;
+  unsigned char owns_buffer;
+} ElmcRecordSeqPayload;
+
+typedef struct ElmcRecordSeqCell {
+  ElmcValue value;
+  ElmcRecordSeqPayload data;
+} ElmcRecordSeqCell;
+
+#ifndef ELMC_FLOAT_LIST_CELL_SCALAR
+#define ELMC_FLOAT_LIST_CELL_SCALAR ((elmc_int_t)0x1EC014)
+#endif
+
+typedef struct ElmcFloatListPayload {
+  double *values;
+  int length;
+  unsigned char owns_buffer;
+} ElmcFloatListPayload;
+
+typedef struct ElmcFloatListCell {
+  ElmcValue value;
+  ElmcFloatListPayload data;
+} ElmcFloatListCell;
+
+
+#ifndef ELMC_RC_IMMORTAL
+#define ELMC_RC_IMMORTAL UINT16_MAX
+#endif
+#ifndef ELMC_LIST_CELL_SCALAR
+#define ELMC_LIST_CELL_SCALAR ((elmc_int_t)0x1EC011)
+#endif
+#ifndef ELMC_DICT_SCALAR
+#define ELMC_DICT_SCALAR ((elmc_int_t)0x1EC012)
+#endif
+
+#define ELMC_SMALL_INT_MIN (-1)
+#define ELMC_SMALL_INT_MAX 64
+extern const ElmcValue ELMC_SMALL_INTS[ELMC_SMALL_INT_MAX - ELMC_SMALL_INT_MIN + 1];
+extern ElmcValue ELMC_LIST_NIL;
+#define ELMC_STATIC_INT(n) ((ElmcValue *)&ELMC_SMALL_INTS[(n) - ELMC_SMALL_INT_MIN])
+#define ELMC_STATIC_LIST_NIL (&ELMC_LIST_NIL)
+
 typedef struct ElmcTuple2 {
   ElmcValue *first;
   ElmcValue *second;
 } ElmcTuple2;
+
+typedef struct ElmcCmdPayload {
+  uint8_t arity;
+  elmc_int_t kind;
+  elmc_int_t p0;
+  elmc_int_t p1;
+  elmc_int_t p2;
+  elmc_int_t p3;
+  elmc_int_t p4;
+  elmc_int_t p5;
+  ElmcValue *text;
+} ElmcCmdPayload;
+
+typedef struct ElmcSubPayload {
+  uint8_t arity;
+  elmc_int_t mask;
+  elmc_int_t p0;
+  elmc_int_t p1;
+  elmc_int_t p2;
+  elmc_int_t p3;
+  elmc_int_t p4;
+  elmc_int_t p5;
+} ElmcSubPayload;
 
 typedef struct ElmcResult {
   int is_ok;
@@ -55,7 +171,6 @@ typedef struct ElmcMaybe {
 
 typedef struct ElmcRecord {
   int field_count;
-  const char **field_names;
   ElmcValue **field_values;
 } ElmcRecord;
 
@@ -79,40 +194,232 @@ typedef struct ElmcRecord {
     (index) >= 0 && (index) < ((ElmcRecord *)(record)->payload)->field_count) ? \
    elmc_as_bool(((ElmcRecord *)(record)->payload)->field_values[(index)]) : 0)
 
+typedef void (*ElmcPortCallback)(ElmcValue *value, void *context);
+
+/* Return codes (RC) — distinct from ElmcValue.rc reference counts. */
+typedef enum {
+  RC_SUCCESS,
+  RC_ERR_OUT_OF_MEMORY,
+  RC_ERR_INVALID_ARG,
+  RC_ERR_UNSUPPORTED,
+  RC_ERR_MISSING_CALLBACK,
+  RC_ERR_MALFORMED_TUPLE,
+  RC_ERR_MALFORMED_CMD,
+  RC_ERR_MALFORMED_VIEW,
+  RC_ERR_MALFORMED_SUB,
+  RC_ERR_SCENE_BUFFER_OVERFLOW,
+  RC_ERR_SCENE_DECODE,
+  RC_ERR_SCENE_DEPTH_LIMIT,
+  RC_ERR_RENDER_ABORT,
+  RC_ERR_PERSIST_WRITE_INT,
+  RC_ERR_PERSIST_READ_INT,
+  RC_ERR_PERSIST_WRITE_STRING,
+  RC_ERR_PERSIST_READ_STRING,
+  RC_ERR_PERSIST_DELETE,
+  RC_ERR_APP_MESSAGE_OPEN,
+  RC_ERR_APP_MESSAGE_OUTBOX_BEGIN,
+  RC_ERR_APP_MESSAGE_OUTBOX_SEND,
+  RC_ERR_APP_TIMER_REGISTER,
+  RC_ERR_APP_TIMER_RESCHEDULE,
+  RC_ERR_WAKEUP_SCHEDULE,
+  RC_ERR_WAKEUP_CANCEL,
+  RC_ERR_DATA_LOGGING_CREATE,
+  RC_ERR_DATA_LOGGING_LOG,
+  RC_ERR_DICTATION_SESSION_CREATE,
+  RC_ERR_GDRAW_SEQUENCE_CREATE,
+  RC_ERR_GDRAW_IMAGE_CREATE
+} RC;
+
+
+#ifndef ELMC_PEBBLE_PLATFORM
+#include <stdio.h>
+#endif
+
+#ifndef ELMC_CATCH_MACROS
+#define ELMC_CATCH_MACROS
+#define CATCH_BEGIN     do {
+#define CATCH_END       } while (0);
+
+#ifndef DIM
+#define DIM(arr) (sizeof(arr) / sizeof((arr)[0]))
+#endif
+
+#ifndef ELMC_CHECK_RC_BREAK
+/* break must target CATCH_BEGIN's loop — never wrap it in do/while. */
+#define ELMC_CHECK_RC_BREAK(rc, file, line) \
+  if (1) { \
+    (void)(rc); \
+    (void)(file); \
+    (void)(line); \
+    break; \
+  }
+#endif
+
+#define CHECK_RC(rc_var) \
+  if ((rc_var) != RC_SUCCESS) { \
+    elmc_rc_record_fail((rc_var), __LINE__); \
+    ELMC_CHECK_RC_BREAK((rc_var), __FILE__, __LINE__); \
+  }
+
+#define CHECK_RC_TO(rc_var, expr) \
+  do { \
+    (rc_var) = (expr); \
+    if ((rc_var) != RC_SUCCESS) { \
+      elmc_rc_record_fail((rc_var), __LINE__); \
+      ELMC_CHECK_RC_BREAK((rc_var), __FILE__, __LINE__); \
+    } \
+  } while (0)
+
+#ifndef ELMC_RELEASE
+#define ELMC_RELEASE(var) \
+  do { \
+    elmc_release(var); \
+    (var) = NULL; \
+  } while (0)
+#endif
+#endif
+
+extern volatile RC elmc_last_fail_rc;
+extern volatile uint16_t elmc_last_fail_line;
+
+static inline void elmc_rc_record_fail(RC rc, int line) {
+  if (rc != RC_SUCCESS) {
+    elmc_last_fail_rc = rc;
+    elmc_last_fail_line = (uint16_t)line;
+  }
+}
+
+static inline RC elmc_rc_fail_code(void) {
+  return elmc_last_fail_rc;
+}
+
+#ifdef ELMC_PEBBLE_PLATFORM
+#if defined(ELMC_DEBUG_RC)
+#define ELMC_RC_LOG_FAIL(rc, site, ...) \
+  do { \
+    elmc_rc_record_fail((rc), __LINE__); \
+    APP_LOG(APP_LOG_LEVEL_ERROR, "ELMC RC %u at %s", (unsigned)(rc), site); \
+  } while (0)
+#else
+#define ELMC_RC_LOG_FAIL(rc, site, ...) \
+  do { \
+    elmc_rc_record_fail((rc), __LINE__); \
+    (void)(site); \
+  } while (0)
+#endif
+#else
+#define ELMC_RC_LOG_FAIL(rc, site, ...) \
+  do { \
+    elmc_rc_record_fail((rc), __LINE__); \
+    fprintf(stderr, "ELMC RC %s at %s: " __VA_ARGS__ "\n", elmc_rc_name(rc), site); \
+  } while (0)
+#endif
+
+#ifdef ELMC_PEBBLE_PLATFORM
+static inline const char *elmc_rc_name(RC rc) {
+  (void)rc;
+  return "RC";
+}
+#else
+const char *elmc_rc_name(RC rc);
+#endif
+
+/* Deprecated: use `Rc = expr; CHECK_RC(Rc);` inside CATCH_BEGIN bodies instead. */
+#define ELMC_TAKE_OR_RETURN(site, take_expr, on_fail) \
+  do { \
+    RC __take_rc = (take_expr); \
+    if (__take_rc != RC_SUCCESS) { \
+      (void)(site); \
+      on_fail; \
+    } \
+  } while (0)
+
+
 typedef struct ElmcClosure {
   ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count);
+  RC (*rc_fn)(ElmcValue **out, ElmcValue **args, int argc, ElmcValue **captures, int capture_count);
   int arity;
   int capture_count;
+  int is_rc;
   ElmcValue **captures;
 } ElmcClosure;
 
-typedef void (*ElmcPortCallback)(ElmcValue *value, void *context);
-
-ElmcValue *elmc_new_int(elmc_int_t value);
-ElmcValue *elmc_new_bool(int value);
+RC elmc_new_int(ElmcValue **out, elmc_int_t value);
+RC elmc_new_bool(ElmcValue **out, int value);
 ElmcValue *elmc_new_char(elmc_int_t value);
-ElmcValue *elmc_new_string(const char *value);
+ElmcValue *elmc_char_from_code(ElmcValue *code);
+ElmcValue *elmc_char_from_code_int(elmc_int_t code);
+RC elmc_new_order(ElmcValue **out, elmc_int_t value);
+RC elmc_new_string(ElmcValue **out, const char *value);
+RC elmc_new_string_len(ElmcValue **out, const char *value, size_t len);
 ElmcValue *elmc_int_zero(void);
+ElmcValue *elmc_unit(void);
 ElmcValue *elmc_list_nil(void);
-ElmcValue *elmc_list_cons(ElmcValue *head, ElmcValue *tail);
-ElmcValue *elmc_list_from_values(ElmcValue **items, int count);
-ElmcValue *elmc_list_from_values_take(ElmcValue **items, int count);
-ElmcValue *elmc_list_from_int_array(const elmc_int_t *items, int count);
-ElmcValue *elmc_list_from_tuple2_int_array(const elmc_int_t items[][2], int count);
+RC elmc_list_cons(ElmcValue **out, ElmcValue *head, ElmcValue *tail);
+ElmcValue *elmc_list_cons_take(ElmcValue *head, ElmcValue *tail);
+RC elmc_list_from_values(ElmcValue **out, ElmcValue **items, int count);
+RC elmc_list_from_values_take(ElmcValue **out, ElmcValue **items, int count);
+int elmc_int_list_is_empty(ElmcValue *list);
+RC elmc_int_list_head_boxed(ElmcValue **out, ElmcValue *list);
+RC elmc_int_list_tail(ElmcValue **out, ElmcValue *list);
+int elmc_float_list_is_empty(ElmcValue *list);
+RC elmc_float_list_head_boxed(ElmcValue **out, ElmcValue *list);
+RC elmc_float_list_tail(ElmcValue **out, ElmcValue *list);
+int elmc_record_seq_is_empty(ElmcValue *list);
+int elmc_record_seq_length(ElmcValue *list);
+ElmcValue *elmc_record_seq_get(ElmcValue *list, elmc_int_t index);
+RC elmc_record_seq_head_boxed(ElmcValue **out, ElmcValue *list);
+RC elmc_record_seq_tail(ElmcValue **out, ElmcValue *list);
+int elmc_int_spine_is_empty(ElmcValue *list);
+RC elmc_int_spine_head_boxed(ElmcValue **out, ElmcValue *list);
+RC elmc_int_spine_tail(ElmcValue **out, ElmcValue *list);
+RC elmc_list_from_int_array(ElmcValue **out, const elmc_int_t *items, int count);
+RC elmc_list_from_int_array_reuse(ElmcValue **out, ElmcValue *existing, const elmc_int_t *items, int count);
+RC elmc_int_list_to_cons(ElmcValue **out, ElmcValue *list);
+RC elmc_int_list_to_spine(ElmcValue **out, ElmcValue *list);
+RC elmc_list_from_float_array(ElmcValue **out, const double *items, int count);
+RC elmc_list_from_record_array(ElmcValue **out, ElmcValue **items, int count);
+RC elmc_record_seq_to_cons(ElmcValue **out, ElmcValue *list);
+RC elmc_list_from_tuple2_int_array(ElmcValue **out, const elmc_int_t items[][2], int count);
 ElmcValue *elmc_list_replace_nth_int(ElmcValue *list, elmc_int_t index, elmc_int_t value);
 ElmcValue *elmc_maybe_nothing(void);
-ElmcValue *elmc_maybe_just(ElmcValue *value);
+RC elmc_maybe_just(ElmcValue **out, ElmcValue *value);
 ElmcValue *elmc_maybe_or_tuple_just_payload(ElmcValue *maybe);
 ElmcValue *elmc_maybe_or_tuple_just_payload_borrow(ElmcValue *maybe);
-ElmcValue *elmc_result_ok(ElmcValue *value);
-ElmcValue *elmc_result_err(ElmcValue *value);
-ElmcValue *elmc_tuple2(ElmcValue *first, ElmcValue *second);
-ElmcValue *elmc_tuple2_take(ElmcValue *first, ElmcValue *second);
-ElmcValue *elmc_tuple2_ints(elmc_int_t first, elmc_int_t second);
+RC elmc_result_ok(ElmcValue **out, ElmcValue *value);
+RC elmc_result_err(ElmcValue **out, ElmcValue *value);
+RC elmc_tuple2(ElmcValue **out, ElmcValue *first, ElmcValue *second);
+RC elmc_tuple2_take(ElmcValue **out, ElmcValue *first, ElmcValue *second);
+ElmcValue *elmc_build_constructor_payload(ElmcValue **values, int count);
+RC elmc_tuple2_ints(ElmcValue **out, elmc_int_t first, elmc_int_t second);
+ElmcValue *elmc_cmd0(elmc_int_t kind);
+ElmcValue *elmc_cmd_batch(ElmcValue *commands);
+ElmcValue *elmc_cmd_map(ElmcValue *f, ElmcValue *cmd);
+ElmcValue *elmc_sub_batch(ElmcValue *subs);
+ElmcValue *elmc_sub_map(ElmcValue *f, ElmcValue *sub);
+ElmcValue *elmc_port_outgoing(ElmcValue *port_name, ElmcValue *payload);
+ElmcValue *elmc_port_incoming_sub(ElmcValue *port_name, ElmcValue *callback);
+ElmcValue *elmc_cmd1(elmc_int_t kind, elmc_int_t p0);
+ElmcValue *elmc_cmd1_string(elmc_int_t kind, elmc_int_t p0, const char *text);
+ElmcValue *elmc_cmd2(elmc_int_t kind, elmc_int_t p0, elmc_int_t p1);
+ElmcValue *elmc_cmd3(elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2);
+ElmcValue *elmc_cmd4(elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3);
+ElmcValue *elmc_cmd5(elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3, elmc_int_t p4);
+ElmcValue *elmc_sub0(elmc_int_t mask);
+ElmcValue *elmc_sub1(elmc_int_t mask, elmc_int_t p0);
+ElmcValue *elmc_sub2(elmc_int_t mask, elmc_int_t p0, elmc_int_t p1);
+ElmcValue *elmc_sub3(elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2);
+ElmcValue *elmc_sub4(elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3);
+ElmcValue *elmc_sub5(elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3, elmc_int_t p4);
 
 elmc_int_t elmc_as_int(ElmcValue *value);
+int elmc_value_is_unit(ElmcValue *value);
+elmc_int_t elmc_int_idiv(elmc_int_t numerator, elmc_int_t denominator);
+elmc_int_t elmc_polar_point_x(elmc_int_t cx, elmc_int_t cy, elmc_int_t radius, elmc_int_t angle);
+elmc_int_t elmc_polar_point_y(elmc_int_t cx, elmc_int_t cy, elmc_int_t radius, elmc_int_t angle);
 elmc_int_t elmc_as_bool(ElmcValue *value);
 int elmc_value_equal(ElmcValue *left, ElmcValue *right);
+int elmc_list_equal_int(ElmcValue *left, ElmcValue *right);
 int elmc_string_length(ElmcValue *value);
 ElmcValue *elmc_list_head(ElmcValue *list);
 ElmcValue *elmc_list_nth_maybe(ElmcValue *list, ElmcValue *index);
@@ -137,19 +444,20 @@ ElmcValue *elmc_char_to_code(ElmcValue *value);
 ElmcValue *elmc_debug_log(ElmcValue *label, ElmcValue *value);
 ElmcValue *elmc_debug_todo(ElmcValue *label);
 ElmcValue *elmc_debug_to_string(ElmcValue *value);
+ElmcValue *elmc_debug_set_to_string(ElmcValue *set);
 ElmcValue *elmc_append(ElmcValue *left, ElmcValue *right);
-ElmcValue *elmc_string_append(ElmcValue *left, ElmcValue *right);
-ElmcValue *elmc_string_append_native(const char *left, const char *right);
+RC elmc_string_append(ElmcValue **out, ElmcValue *left, ElmcValue *right);
+RC elmc_string_append_native(ElmcValue **out, const char *left, const char *right);
 ElmcValue *elmc_string_is_empty(ElmcValue *value);
-ElmcValue *elmc_dict_from_list(ElmcValue *items);
-ElmcValue *elmc_dict_insert(ElmcValue *key, ElmcValue *value, ElmcValue *dict);
-ElmcValue *elmc_dict_get(ElmcValue *key, ElmcValue *dict);
+RC elmc_dict_from_list(ElmcValue **out, ElmcValue *items);
+RC elmc_dict_insert(ElmcValue **out, ElmcValue *key, ElmcValue *value, ElmcValue *dict);
+RC elmc_dict_get(ElmcValue **out, ElmcValue *key, ElmcValue *dict);
 elmc_int_t elmc_dict_get_with_default_int(elmc_int_t default_val, elmc_int_t key, ElmcValue *dict);
 elmc_int_t elmc_dict_get_with_default_int_value(elmc_int_t default_val, ElmcValue *key, ElmcValue *dict);
 ElmcValue *elmc_dict_member(ElmcValue *key, ElmcValue *dict);
 ElmcValue *elmc_dict_size(ElmcValue *dict);
-ElmcValue *elmc_set_from_list(ElmcValue *items);
-ElmcValue *elmc_set_insert(ElmcValue *value, ElmcValue *set);
+RC elmc_set_from_list(ElmcValue **out, ElmcValue *items);
+RC elmc_set_insert(ElmcValue **out, ElmcValue *value, ElmcValue *set);
 ElmcValue *elmc_set_member(ElmcValue *value, ElmcValue *set);
 ElmcValue *elmc_set_size(ElmcValue *set);
 ElmcValue *elmc_array_empty(void);
@@ -164,7 +472,10 @@ ElmcValue *elmc_task_fail(ElmcValue *value);
 ElmcValue *elmc_task_map(ElmcValue *f, ElmcValue *task);
 ElmcValue *elmc_task_map2(ElmcValue *f, ElmcValue *a, ElmcValue *b);
 ElmcValue *elmc_task_and_then(ElmcValue *f, ElmcValue *task);
+ElmcValue *elmc_task_perform(ElmcValue *to_msg, ElmcValue *task);
+ElmcValue *elmc_task_force(ElmcValue *task);
 ElmcValue *elmc_process_spawn(ElmcValue *task);
+void elmc_process_release_all_slots(void);
 ElmcValue *elmc_process_sleep(ElmcValue *milliseconds);
 ElmcValue *elmc_process_kill(ElmcValue *pid);
 ElmcValue *elmc_time_now_millis(void);
@@ -175,99 +486,106 @@ ElmcValue *elmc_cmd_backlight_from_maybe(ElmcValue *maybe_mode);
 ElmcValue *elmc_list_tail(ElmcValue *list);
 ElmcValue *elmc_list_is_empty(ElmcValue *list);
 ElmcValue *elmc_list_length(ElmcValue *list);
-ElmcValue *elmc_list_reverse(ElmcValue *list);
+RC elmc_list_reverse(ElmcValue **out, ElmcValue *list);
+RC elmc_list_copy(ElmcValue **out, ElmcValue *list);
 ElmcValue *elmc_list_member(ElmcValue *value, ElmcValue *list);
-ElmcValue *elmc_list_map(ElmcValue *f, ElmcValue *list);
-ElmcValue *elmc_list_filter(ElmcValue *f, ElmcValue *list);
-ElmcValue *elmc_list_foldl(ElmcValue *f, ElmcValue *acc, ElmcValue *list);
-ElmcValue *elmc_list_foldr(ElmcValue *f, ElmcValue *acc, ElmcValue *list);
-ElmcValue *elmc_list_append(ElmcValue *a, ElmcValue *b);
-ElmcValue *elmc_list_concat(ElmcValue *lists);
-ElmcValue *elmc_list_concat_map(ElmcValue *f, ElmcValue *list);
-ElmcValue *elmc_list_indexed_map(ElmcValue *f, ElmcValue *list);
-ElmcValue *elmc_list_filter_map(ElmcValue *f, ElmcValue *list);
-ElmcValue *elmc_list_sum(ElmcValue *list);
-ElmcValue *elmc_list_product(ElmcValue *list);
-ElmcValue *elmc_list_maximum(ElmcValue *list);
-ElmcValue *elmc_list_minimum(ElmcValue *list);
-ElmcValue *elmc_list_any(ElmcValue *f, ElmcValue *list);
-ElmcValue *elmc_list_all(ElmcValue *f, ElmcValue *list);
-ElmcValue *elmc_list_sort(ElmcValue *list);
-ElmcValue *elmc_list_sort_by(ElmcValue *f, ElmcValue *list);
-ElmcValue *elmc_list_sort_with(ElmcValue *f, ElmcValue *list);
-ElmcValue *elmc_list_singleton(ElmcValue *value);
-ElmcValue *elmc_list_range(ElmcValue *lo, ElmcValue *hi);
-ElmcValue *elmc_list_repeat(ElmcValue *n, ElmcValue *value);
-ElmcValue *elmc_list_take(ElmcValue *n, ElmcValue *list);
-ElmcValue *elmc_list_drop(ElmcValue *n, ElmcValue *list);
-ElmcValue *elmc_list_partition(ElmcValue *f, ElmcValue *list);
-ElmcValue *elmc_list_unzip(ElmcValue *list);
-ElmcValue *elmc_list_intersperse(ElmcValue *sep, ElmcValue *list);
-ElmcValue *elmc_list_map2(ElmcValue *f, ElmcValue *a, ElmcValue *b);
-ElmcValue *elmc_list_map3(ElmcValue *f, ElmcValue *a, ElmcValue *b, ElmcValue *c);
+RC elmc_list_map(ElmcValue **out, ElmcValue *f, ElmcValue *list);
+RC elmc_list_filter(ElmcValue **out, ElmcValue *f, ElmcValue *list);
+RC elmc_list_foldl(ElmcValue **out, ElmcValue *f, ElmcValue *acc, ElmcValue *list);
+RC elmc_list_foldr(ElmcValue **out, ElmcValue *f, ElmcValue *acc, ElmcValue *list);
+RC elmc_list_append(ElmcValue **out, ElmcValue *a, ElmcValue *b);
+RC elmc_list_concat(ElmcValue **out, ElmcValue *lists);
+RC elmc_list_concat_array(ElmcValue **out, ElmcValue * const *lists, int count);
+RC elmc_list_concat_map(ElmcValue **out, ElmcValue *f, ElmcValue *list);
+RC elmc_list_indexed_map(ElmcValue **out, ElmcValue *f, ElmcValue *list);
+RC elmc_list_filter_map(ElmcValue **out, ElmcValue *f, ElmcValue *list);
+RC elmc_list_sum(ElmcValue **out, ElmcValue *list);
+RC elmc_list_product(ElmcValue **out, ElmcValue *list);
+RC elmc_list_maximum(ElmcValue **out, ElmcValue *list);
+RC elmc_list_minimum(ElmcValue **out, ElmcValue *list);
+RC elmc_list_any(ElmcValue **out, ElmcValue *f, ElmcValue *list);
+RC elmc_list_all(ElmcValue **out, ElmcValue *f, ElmcValue *list);
+RC elmc_list_sort(ElmcValue **out, ElmcValue *list);
+RC elmc_list_sort_by(ElmcValue **out, ElmcValue *f, ElmcValue *list);
+RC elmc_list_sort_with(ElmcValue **out, ElmcValue *f, ElmcValue *list);
+RC elmc_list_singleton(ElmcValue **out, ElmcValue *value);
+RC elmc_list_range(ElmcValue **out, ElmcValue *lo, ElmcValue *hi);
+RC elmc_list_repeat(ElmcValue **out, ElmcValue *n, ElmcValue *value);
+RC elmc_list_take(ElmcValue **out, ElmcValue *n, ElmcValue *list);
+RC elmc_list_take_int(ElmcValue **out, elmc_int_t count, ElmcValue *list);
+RC elmc_list_drop(ElmcValue **out, ElmcValue *n, ElmcValue *list);
+RC elmc_list_drop_int(ElmcValue **out, elmc_int_t count, ElmcValue *list);
+RC elmc_list_partition(ElmcValue **out, ElmcValue *f, ElmcValue *list);
+RC elmc_list_unzip(ElmcValue **out, ElmcValue *list);
+RC elmc_list_intersperse(ElmcValue **out, ElmcValue *sep, ElmcValue *list);
+RC elmc_list_map2(ElmcValue **out, ElmcValue *f, ElmcValue *a, ElmcValue *b);
+RC elmc_list_map3(ElmcValue **out, ElmcValue *f, ElmcValue *a, ElmcValue *b, ElmcValue *c);
+RC elmc_list_map4(ElmcValue **out, ElmcValue *f, ElmcValue *a, ElmcValue *b, ElmcValue *c, ElmcValue *d);
+RC elmc_list_map5(ElmcValue **out, ElmcValue *f, ElmcValue *a, ElmcValue *b, ElmcValue *c, ElmcValue *d, ElmcValue *e);
 
 /* --- Maybe operations --- */
 ElmcValue *elmc_maybe_with_default(ElmcValue *default_val, ElmcValue *maybe);
 elmc_int_t elmc_maybe_with_default_int(elmc_int_t default_val, ElmcValue *maybe);
-ElmcValue *elmc_maybe_map(ElmcValue *f, ElmcValue *maybe);
-ElmcValue *elmc_maybe_map2(ElmcValue *f, ElmcValue *a, ElmcValue *b);
-ElmcValue *elmc_maybe_and_then(ElmcValue *f, ElmcValue *maybe);
+RC elmc_maybe_map(ElmcValue **out, ElmcValue *f, ElmcValue *maybe);
+RC elmc_maybe_map2(ElmcValue **out, ElmcValue *f, ElmcValue *a, ElmcValue *b);
+RC elmc_maybe_and_then(ElmcValue **out, ElmcValue *f, ElmcValue *maybe);
 
 /* --- Result operations --- */
-ElmcValue *elmc_result_map(ElmcValue *f, ElmcValue *result);
-ElmcValue *elmc_result_map_error(ElmcValue *f, ElmcValue *result);
-ElmcValue *elmc_result_and_then(ElmcValue *f, ElmcValue *result);
+RC elmc_result_map(ElmcValue **out, ElmcValue *f, ElmcValue *result);
+RC elmc_result_map_error(ElmcValue **out, ElmcValue *f, ElmcValue *result);
+RC elmc_result_and_then(ElmcValue **out, ElmcValue *f, ElmcValue *result);
 ElmcValue *elmc_result_with_default(ElmcValue *default_val, ElmcValue *result);
 ElmcValue *elmc_result_to_maybe(ElmcValue *result);
 ElmcValue *elmc_result_from_maybe(ElmcValue *err, ElmcValue *maybe);
 
 /* --- String operations (extended) --- */
 ElmcValue *elmc_string_length_val(ElmcValue *s);
-ElmcValue *elmc_string_reverse(ElmcValue *s);
-ElmcValue *elmc_string_repeat(ElmcValue *n, ElmcValue *s);
-ElmcValue *elmc_string_replace(ElmcValue *old_s, ElmcValue *new_s, ElmcValue *s);
+RC elmc_string_reverse(ElmcValue **out, ElmcValue *s);
+RC elmc_string_repeat(ElmcValue **out, ElmcValue *n, ElmcValue *s);
+RC elmc_string_replace(ElmcValue **out, ElmcValue *old_s, ElmcValue *new_s, ElmcValue *s);
 ElmcValue *elmc_string_from_int(ElmcValue *n);
-ElmcValue *elmc_string_from_native_int(elmc_int_t n);
+RC elmc_string_from_native_int(ElmcValue **out, elmc_int_t n);
 ElmcValue *elmc_string_to_int(ElmcValue *s);
-ElmcValue *elmc_string_from_float(ElmcValue *f);
+RC elmc_string_from_float(ElmcValue **out, ElmcValue *f);
 ElmcValue *elmc_string_to_float(ElmcValue *s);
-ElmcValue *elmc_string_to_upper(ElmcValue *s);
-ElmcValue *elmc_string_to_lower(ElmcValue *s);
-ElmcValue *elmc_string_trim(ElmcValue *s);
-ElmcValue *elmc_string_trim_left(ElmcValue *s);
-ElmcValue *elmc_string_trim_right(ElmcValue *s);
+RC elmc_string_to_upper(ElmcValue **out, ElmcValue *s);
+RC elmc_string_to_lower(ElmcValue **out, ElmcValue *s);
+RC elmc_string_trim(ElmcValue **out, ElmcValue *s);
+RC elmc_string_trim_left(ElmcValue **out, ElmcValue *s);
+RC elmc_string_trim_right(ElmcValue **out, ElmcValue *s);
 ElmcValue *elmc_string_contains(ElmcValue *sub, ElmcValue *s);
+int elmc_string_equals_cstr(ElmcValue *value, const char *literal);
 ElmcValue *elmc_string_starts_with(ElmcValue *prefix, ElmcValue *s);
 ElmcValue *elmc_string_ends_with(ElmcValue *suffix, ElmcValue *s);
-ElmcValue *elmc_string_split(ElmcValue *sep, ElmcValue *s);
-ElmcValue *elmc_string_join(ElmcValue *sep, ElmcValue *list);
+RC elmc_string_split(ElmcValue **out, ElmcValue *sep, ElmcValue *s);
+RC elmc_string_join(ElmcValue **out, ElmcValue *sep, ElmcValue *list);
 ElmcValue *elmc_string_words(ElmcValue *s);
 ElmcValue *elmc_string_lines(ElmcValue *s);
-ElmcValue *elmc_string_slice(ElmcValue *start, ElmcValue *end_idx, ElmcValue *s);
+RC elmc_string_slice(ElmcValue **out, ElmcValue *start, ElmcValue *end_idx, ElmcValue *s);
 ElmcValue *elmc_string_left(ElmcValue *n, ElmcValue *s);
 ElmcValue *elmc_string_right(ElmcValue *n, ElmcValue *s);
 ElmcValue *elmc_string_drop_left(ElmcValue *n, ElmcValue *s);
 ElmcValue *elmc_string_drop_right(ElmcValue *n, ElmcValue *s);
 ElmcValue *elmc_string_cons(ElmcValue *ch, ElmcValue *s);
-ElmcValue *elmc_string_uncons(ElmcValue *s);
-ElmcValue *elmc_string_to_list(ElmcValue *s);
-ElmcValue *elmc_string_from_list(ElmcValue *list);
-ElmcValue *elmc_string_from_char(ElmcValue *ch);
+RC elmc_string_uncons(ElmcValue **out, ElmcValue *s);
+RC elmc_string_to_list(ElmcValue **out, ElmcValue *s);
+RC elmc_string_from_list(ElmcValue **out, ElmcValue *list);
+RC elmc_string_from_char(ElmcValue **out, ElmcValue *ch);
 ElmcValue *elmc_string_pad(ElmcValue *n, ElmcValue *ch, ElmcValue *s);
-ElmcValue *elmc_string_pad_left(ElmcValue *n, ElmcValue *ch, ElmcValue *s);
-ElmcValue *elmc_string_pad_right(ElmcValue *n, ElmcValue *ch, ElmcValue *s);
-ElmcValue *elmc_string_map(ElmcValue *f, ElmcValue *s);
-ElmcValue *elmc_string_filter(ElmcValue *f, ElmcValue *s);
-ElmcValue *elmc_string_foldl(ElmcValue *f, ElmcValue *acc, ElmcValue *s);
-ElmcValue *elmc_string_foldr(ElmcValue *f, ElmcValue *acc, ElmcValue *s);
-ElmcValue *elmc_string_any(ElmcValue *f, ElmcValue *s);
-ElmcValue *elmc_string_all(ElmcValue *f, ElmcValue *s);
-ElmcValue *elmc_string_indexes(ElmcValue *sub, ElmcValue *s);
+RC elmc_string_pad_left(ElmcValue **out, ElmcValue *n, ElmcValue *ch, ElmcValue *s);
+RC elmc_string_pad_right(ElmcValue **out, ElmcValue *n, ElmcValue *ch, ElmcValue *s);
+RC elmc_string_map(ElmcValue **out, ElmcValue *f, ElmcValue *s);
+RC elmc_string_filter(ElmcValue **out, ElmcValue *f, ElmcValue *s);
+RC elmc_string_foldl(ElmcValue **out, ElmcValue *f, ElmcValue *acc, ElmcValue *s);
+RC elmc_string_foldr(ElmcValue **out, ElmcValue *f, ElmcValue *acc, ElmcValue *s);
+RC elmc_string_any(ElmcValue **out, ElmcValue *f, ElmcValue *s);
+RC elmc_string_all(ElmcValue **out, ElmcValue *f, ElmcValue *s);
+RC elmc_string_indexes(ElmcValue **out, ElmcValue *sub, ElmcValue *s);
 
 /* --- Tuple operations (extended) --- */
-ElmcValue *elmc_tuple_map_first(ElmcValue *f, ElmcValue *t);
-ElmcValue *elmc_tuple_map_second(ElmcValue *f, ElmcValue *t);
-ElmcValue *elmc_tuple_map_both(ElmcValue *f, ElmcValue *g, ElmcValue *t);
+RC elmc_tuple_map_first(ElmcValue **out, ElmcValue *f, ElmcValue *t);
+RC elmc_tuple_map_second(ElmcValue **out, ElmcValue *f, ElmcValue *t);
+RC elmc_tuple_map_both(ElmcValue **out, ElmcValue *f, ElmcValue *g, ElmcValue *t);
 
 /* --- Basics (extended) --- */
 ElmcValue *elmc_basics_not(ElmcValue *x);
@@ -311,36 +629,36 @@ ElmcValue *elmc_char_to_upper(ElmcValue *ch);
 ElmcValue *elmc_char_to_lower(ElmcValue *ch);
 
 /* --- Dict (extended) --- */
-ElmcValue *elmc_dict_remove(ElmcValue *key, ElmcValue *dict);
+RC elmc_dict_remove(ElmcValue **out, ElmcValue *key, ElmcValue *dict);
 ElmcValue *elmc_dict_is_empty(ElmcValue *dict);
-ElmcValue *elmc_dict_keys(ElmcValue *dict);
-ElmcValue *elmc_dict_values(ElmcValue *dict);
+RC elmc_dict_keys(ElmcValue **out, ElmcValue *dict);
+RC elmc_dict_values(ElmcValue **out, ElmcValue *dict);
 ElmcValue *elmc_dict_to_list(ElmcValue *dict);
-ElmcValue *elmc_dict_map(ElmcValue *f, ElmcValue *dict);
-ElmcValue *elmc_dict_foldl(ElmcValue *f, ElmcValue *acc, ElmcValue *dict);
-ElmcValue *elmc_dict_foldr(ElmcValue *f, ElmcValue *acc, ElmcValue *dict);
-ElmcValue *elmc_dict_filter(ElmcValue *f, ElmcValue *dict);
-ElmcValue *elmc_dict_partition(ElmcValue *f, ElmcValue *dict);
-ElmcValue *elmc_dict_union(ElmcValue *a, ElmcValue *b);
-ElmcValue *elmc_dict_intersect(ElmcValue *a, ElmcValue *b);
-ElmcValue *elmc_dict_diff(ElmcValue *a, ElmcValue *b);
-ElmcValue *elmc_dict_merge(ElmcValue *lf, ElmcValue *bf, ElmcValue *rf, ElmcValue *a, ElmcValue *b, ElmcValue *result);
-ElmcValue *elmc_dict_update(ElmcValue *key, ElmcValue *f, ElmcValue *dict);
+RC elmc_dict_map(ElmcValue **out, ElmcValue *f, ElmcValue *dict);
+RC elmc_dict_foldl(ElmcValue **out, ElmcValue *f, ElmcValue *acc, ElmcValue *dict);
+RC elmc_dict_foldr(ElmcValue **out, ElmcValue *f, ElmcValue *acc, ElmcValue *dict);
+RC elmc_dict_filter(ElmcValue **out, ElmcValue *f, ElmcValue *dict);
+RC elmc_dict_partition(ElmcValue **out, ElmcValue *f, ElmcValue *dict);
+RC elmc_dict_union(ElmcValue **out, ElmcValue *a, ElmcValue *b);
+RC elmc_dict_intersect(ElmcValue **out, ElmcValue *a, ElmcValue *b);
+RC elmc_dict_diff(ElmcValue **out, ElmcValue *a, ElmcValue *b);
+RC elmc_dict_merge(ElmcValue **out, ElmcValue *lf, ElmcValue *bf, ElmcValue *rf, ElmcValue *a, ElmcValue *b, ElmcValue *result);
+RC elmc_dict_update(ElmcValue **out, ElmcValue *key, ElmcValue *f, ElmcValue *dict);
 ElmcValue *elmc_dict_singleton(ElmcValue *key, ElmcValue *value);
 
 /* --- Set (extended) --- */
 ElmcValue *elmc_set_singleton(ElmcValue *value);
-ElmcValue *elmc_set_remove(ElmcValue *value, ElmcValue *set);
+RC elmc_set_remove(ElmcValue **out, ElmcValue *value, ElmcValue *set);
 ElmcValue *elmc_set_is_empty(ElmcValue *set);
 ElmcValue *elmc_set_to_list(ElmcValue *set);
-ElmcValue *elmc_set_union(ElmcValue *a, ElmcValue *b);
-ElmcValue *elmc_set_intersect(ElmcValue *a, ElmcValue *b);
-ElmcValue *elmc_set_diff(ElmcValue *a, ElmcValue *b);
-ElmcValue *elmc_set_map(ElmcValue *f, ElmcValue *set);
-ElmcValue *elmc_set_foldl(ElmcValue *f, ElmcValue *acc, ElmcValue *set);
-ElmcValue *elmc_set_foldr(ElmcValue *f, ElmcValue *acc, ElmcValue *set);
-ElmcValue *elmc_set_filter(ElmcValue *f, ElmcValue *set);
-ElmcValue *elmc_set_partition(ElmcValue *f, ElmcValue *set);
+RC elmc_set_union(ElmcValue **out, ElmcValue *a, ElmcValue *b);
+RC elmc_set_intersect(ElmcValue **out, ElmcValue *a, ElmcValue *b);
+RC elmc_set_diff(ElmcValue **out, ElmcValue *a, ElmcValue *b);
+RC elmc_set_map(ElmcValue **out, ElmcValue *f, ElmcValue *set);
+RC elmc_set_foldl(ElmcValue **out, ElmcValue *f, ElmcValue *acc, ElmcValue *set);
+RC elmc_set_foldr(ElmcValue **out, ElmcValue *f, ElmcValue *acc, ElmcValue *set);
+RC elmc_set_filter(ElmcValue **out, ElmcValue *f, ElmcValue *set);
+RC elmc_set_partition(ElmcValue **out, ElmcValue *f, ElmcValue *set);
 
 /* --- Array (extended) --- */
 ElmcValue *elmc_array_initialize(ElmcValue *n, ElmcValue *f);
@@ -402,16 +720,713 @@ ElmcValue *elmc_json_encode_dict(ElmcValue *key_fn, ElmcValue *val_fn, ElmcValue
 ElmcValue *elmc_json_encode_encode(ElmcValue *indent, ElmcValue *value);
 
 
-ElmcValue *elmc_new_float(double value);
+RC elmc_new_float(ElmcValue **out, double value);
 double elmc_as_float(ElmcValue *value);
 double elmc_basics_sqrt_double(double x);
 double elmc_basics_sin_double(double x);
 double elmc_basics_cos_double(double x);
 double elmc_basics_tan_double(double x);
 
-ElmcValue *elmc_record_new(int field_count, const char **field_names, ElmcValue **field_values);
-ElmcValue *elmc_record_new_take(int field_count, const char **field_names, ElmcValue **field_values);
-ElmcValue *elmc_record_new_ints(int field_count, const char **field_names, const elmc_int_t *field_values);
+RC elmc_record_new(ElmcValue **out, int field_count, const char **field_names, ElmcValue **field_values);
+RC elmc_record_new_take(ElmcValue **out, int field_count, const char **field_names, ElmcValue **field_values);
+RC elmc_record_new_ints(ElmcValue **out, int field_count, const char **field_names, const elmc_int_t *field_values);
+RC elmc_record_new_static(ElmcValue **out, int field_count, const char * const *field_names, ElmcValue **field_values);
+RC elmc_record_new_static_take(ElmcValue **out, int field_count, const char * const *field_names, ElmcValue **field_values);
+RC elmc_record_new_static_ints(ElmcValue **out, int field_count, const char * const *field_names, const elmc_int_t *field_values);
+RC elmc_record_new_values(ElmcValue **out, int field_count, ElmcValue **field_values);
+RC elmc_record_new_values_take(ElmcValue **out, int field_count, ElmcValue **field_values);
+RC elmc_record_new_values_ints(ElmcValue **out, int field_count, const elmc_int_t *field_values);
+
+static inline ElmcValue *elmc_new_int_take(elmc_int_t value) {
+  ElmcValue *out = NULL;
+  return elmc_new_int(&out, value) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_new_bool_take(int value) {
+  ElmcValue *out = NULL;
+  return elmc_new_bool(&out, value) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_new_order_take(elmc_int_t value) {
+  ElmcValue *out = NULL;
+  return elmc_new_order(&out, value) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_new_string_take(const char *value) {
+  ElmcValue *out = NULL;
+  return elmc_new_string(&out, value) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_new_string_len_take(const char *value, size_t len) {
+  ElmcValue *out = NULL;
+  return elmc_new_string_len(&out, value, len) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_new_float_take(double value) {
+  ElmcValue *out = NULL;
+  return elmc_new_float(&out, value) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_from_int_array_take(const elmc_int_t *items, int count) {
+  ElmcValue *out = NULL;
+  return elmc_list_from_int_array(&out, items, count) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_from_float_array_take(const double *items, int count) {
+  ElmcValue *out = NULL;
+  return elmc_list_from_float_array(&out, items, count) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_from_record_array_take(ElmcValue **items, int count) {
+  ElmcValue *out = NULL;
+  return elmc_list_from_record_array(&out, items, count) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_from_values_take_value(ElmcValue **items, int count) {
+  ElmcValue *out = NULL;
+  return elmc_list_from_values_take(&out, items, count) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_from_tuple2_int_array_take(const elmc_int_t items[][2], int count) {
+  ElmcValue *out = NULL;
+  return elmc_list_from_tuple2_int_array(&out, items, count) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_tuple2_take_value(ElmcValue *first, ElmcValue *second) {
+  ElmcValue *out = NULL;
+  return elmc_tuple2_take(&out, first, second) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_record_new_take_value(
+    int field_count, const char **field_names, ElmcValue **field_values) {
+  ElmcValue *out = NULL;
+  return elmc_record_new_take(&out, field_count, field_names, field_values) == RC_SUCCESS
+      ? out
+      : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_record_new_static_take_value(
+    int field_count, const char * const *field_names, ElmcValue **field_values) {
+  ElmcValue *out = NULL;
+  return elmc_record_new_static_take(&out, field_count, field_names, field_values) ==
+             RC_SUCCESS
+      ? out
+      : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_record_new_values_take_value(
+    int field_count, ElmcValue **field_values) {
+  ElmcValue *out = NULL;
+  return elmc_record_new_values_take(&out, field_count, field_values) == RC_SUCCESS
+      ? out
+      : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_record_new_values_ints_take(
+    int field_count, const elmc_int_t *field_values) {
+  ElmcValue *out = NULL;
+  return elmc_record_new_values_ints(&out, field_count, field_values) == RC_SUCCESS
+      ? out
+      : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_maybe_just_take(ElmcValue *value) {
+  ElmcValue *out = NULL;
+  return elmc_maybe_just(&out, value) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_result_ok_take(ElmcValue *value) {
+  ElmcValue *out = NULL;
+  return elmc_result_ok(&out, value) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_result_err_take(ElmcValue *value) {
+  ElmcValue *out = NULL;
+  return elmc_result_err(&out, value) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_reverse_take(ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_list_reverse(&out, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_copy_take(ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_list_copy(&out, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_int_list_head_boxed_take(ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_int_list_head_boxed(&out, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_int_list_tail_take(ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_int_list_tail(&out, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_float_list_head_boxed_take(ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_float_list_head_boxed(&out, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_float_list_tail_take(ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_float_list_tail(&out, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_record_seq_head_boxed_take(ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_record_seq_head_boxed(&out, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_record_seq_tail_take(ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_record_seq_tail(&out, list) == RC_SUCCESS ? out : elmc_list_nil();
+}
+
+static inline ElmcValue *elmc_int_spine_head_boxed_take(ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_int_spine_head_boxed(&out, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_int_spine_tail_take(ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_int_spine_tail(&out, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_map_take(ElmcValue *f, ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_list_map(&out, f, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_filter_take(ElmcValue *f, ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_list_filter(&out, f, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_foldl_take(ElmcValue *f, ElmcValue *acc, ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_list_foldl(&out, f, acc, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_append_take(ElmcValue *a, ElmcValue *b) {
+  ElmcValue *out = NULL;
+  return elmc_list_append(&out, a, b) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_concat_array_take(ElmcValue * const *lists, int count) {
+  ElmcValue *out = NULL;
+  return elmc_list_concat_array(&out, lists, count) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_foldr_take(ElmcValue *f, ElmcValue *acc, ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_list_foldr(&out, f, acc, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_concat_take(ElmcValue *lists) {
+  ElmcValue *out = NULL;
+  return elmc_list_concat(&out, lists) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_concat_map_take(ElmcValue *f, ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_list_concat_map(&out, f, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_indexed_map_take(ElmcValue *f, ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_list_indexed_map(&out, f, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_filter_map_take(ElmcValue *f, ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_list_filter_map(&out, f, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_singleton_take(ElmcValue *value) {
+  ElmcValue *out = NULL;
+  return elmc_list_singleton(&out, value) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_range_take(ElmcValue *lo, ElmcValue *hi) {
+  ElmcValue *out = NULL;
+  return elmc_list_range(&out, lo, hi) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_repeat_take(ElmcValue *n, ElmcValue *value) {
+  ElmcValue *out = NULL;
+  return elmc_list_repeat(&out, n, value) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_take_take(ElmcValue *n, ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_list_take(&out, n, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_take_int_take(elmc_int_t count, ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_list_take_int(&out, count, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_drop_take(ElmcValue *n, ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_list_drop(&out, n, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_drop_int_take(elmc_int_t count, ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_list_drop_int(&out, count, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_partition_take(ElmcValue *f, ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_list_partition(&out, f, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_unzip_take(ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_list_unzip(&out, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_intersperse_take(ElmcValue *sep, ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_list_intersperse(&out, sep, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_map2_take(ElmcValue *f, ElmcValue *a, ElmcValue *b) {
+  ElmcValue *out = NULL;
+  return elmc_list_map2(&out, f, a, b) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_map3_take(ElmcValue *f, ElmcValue *a, ElmcValue *b, ElmcValue *c) {
+  ElmcValue *out = NULL;
+  return elmc_list_map3(&out, f, a, b, c) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_map4_take(ElmcValue *f, ElmcValue *a, ElmcValue *b, ElmcValue *c, ElmcValue *d) {
+  ElmcValue *out = NULL;
+  return elmc_list_map4(&out, f, a, b, c, d) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_map5_take(ElmcValue *f, ElmcValue *a, ElmcValue *b, ElmcValue *c, ElmcValue *d, ElmcValue *e) {
+  ElmcValue *out = NULL;
+  return elmc_list_map5(&out, f, a, b, c, d, e) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_sum_take(ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_list_sum(&out, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_product_take(ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_list_product(&out, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_maximum_take(ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_list_maximum(&out, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_minimum_take(ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_list_minimum(&out, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_any_take(ElmcValue *f, ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_list_any(&out, f, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_all_take(ElmcValue *f, ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_list_all(&out, f, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_sort_take(ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_list_sort(&out, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_sort_by_take(ElmcValue *f, ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_list_sort_by(&out, f, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_list_sort_with_take(ElmcValue *f, ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_list_sort_with(&out, f, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_string_append_take(ElmcValue *left, ElmcValue *right) {
+  ElmcValue *out = NULL;
+  return elmc_string_append(&out, left, right) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_string_append_native_take(const char *left, const char *right) {
+  ElmcValue *out = NULL;
+  return elmc_string_append_native(&out, left, right) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_string_replace_take(ElmcValue *old_s, ElmcValue *new_s, ElmcValue *s) {
+  ElmcValue *out = NULL;
+  return elmc_string_replace(&out, old_s, new_s, s) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_string_reverse_take(ElmcValue *s) {
+  ElmcValue *out = NULL;
+  return elmc_string_reverse(&out, s) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_string_repeat_take(ElmcValue *n, ElmcValue *s) {
+  ElmcValue *out = NULL;
+  return elmc_string_repeat(&out, n, s) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_string_from_float_take(ElmcValue *f) {
+  ElmcValue *out = NULL;
+  return elmc_string_from_float(&out, f) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_string_to_upper_take(ElmcValue *s) {
+  ElmcValue *out = NULL;
+  return elmc_string_to_upper(&out, s) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_string_to_lower_take(ElmcValue *s) {
+  ElmcValue *out = NULL;
+  return elmc_string_to_lower(&out, s) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_string_trim_take(ElmcValue *s) {
+  ElmcValue *out = NULL;
+  return elmc_string_trim(&out, s) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_string_trim_left_take(ElmcValue *s) {
+  ElmcValue *out = NULL;
+  return elmc_string_trim_left(&out, s) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_string_trim_right_take(ElmcValue *s) {
+  ElmcValue *out = NULL;
+  return elmc_string_trim_right(&out, s) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_string_split_take(ElmcValue *sep, ElmcValue *s) {
+  ElmcValue *out = NULL;
+  return elmc_string_split(&out, sep, s) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_string_join_take(ElmcValue *sep, ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_string_join(&out, sep, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_string_slice_take(ElmcValue *start, ElmcValue *end_idx, ElmcValue *s) {
+  ElmcValue *out = NULL;
+  return elmc_string_slice(&out, start, end_idx, s) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_string_from_list_take(ElmcValue *list) {
+  ElmcValue *out = NULL;
+  return elmc_string_from_list(&out, list) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_string_from_char_take(ElmcValue *ch) {
+  ElmcValue *out = NULL;
+  return elmc_string_from_char(&out, ch) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_string_pad_left_take(ElmcValue *n, ElmcValue *ch, ElmcValue *s) {
+  ElmcValue *out = NULL;
+  return elmc_string_pad_left(&out, n, ch, s) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_string_pad_right_take(ElmcValue *n, ElmcValue *ch, ElmcValue *s) {
+  ElmcValue *out = NULL;
+  return elmc_string_pad_right(&out, n, ch, s) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_string_map_take(ElmcValue *f, ElmcValue *s) {
+  ElmcValue *out = NULL;
+  return elmc_string_map(&out, f, s) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_string_filter_take(ElmcValue *f, ElmcValue *s) {
+  ElmcValue *out = NULL;
+  return elmc_string_filter(&out, f, s) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_string_foldl_take(ElmcValue *f, ElmcValue *acc, ElmcValue *s) {
+  ElmcValue *out = NULL;
+  return elmc_string_foldl(&out, f, acc, s) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_string_foldr_take(ElmcValue *f, ElmcValue *acc, ElmcValue *s) {
+  ElmcValue *out = NULL;
+  return elmc_string_foldr(&out, f, acc, s) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_string_any_take(ElmcValue *f, ElmcValue *s) {
+  ElmcValue *out = NULL;
+  return elmc_string_any(&out, f, s) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_string_all_take(ElmcValue *f, ElmcValue *s) {
+  ElmcValue *out = NULL;
+  return elmc_string_all(&out, f, s) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_string_indexes_take(ElmcValue *sub, ElmcValue *s) {
+  ElmcValue *out = NULL;
+  return elmc_string_indexes(&out, sub, s) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_string_uncons_take(ElmcValue *s) {
+  ElmcValue *out = NULL;
+  return elmc_string_uncons(&out, s) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_string_to_list_take(ElmcValue *s) {
+  ElmcValue *out = NULL;
+  return elmc_string_to_list(&out, s) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_dict_from_list_take(ElmcValue *items) {
+  ElmcValue *out = NULL;
+  return elmc_dict_from_list(&out, items) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_dict_insert_take(ElmcValue *key, ElmcValue *value, ElmcValue *dict) {
+  ElmcValue *out = NULL;
+  return elmc_dict_insert(&out, key, value, dict) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_dict_get_take(ElmcValue *key, ElmcValue *dict) {
+  ElmcValue *out = NULL;
+  return elmc_dict_get(&out, key, dict) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_dict_remove_take(ElmcValue *key, ElmcValue *dict) {
+  ElmcValue *out = NULL;
+  return elmc_dict_remove(&out, key, dict) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_dict_keys_take(ElmcValue *dict) {
+  ElmcValue *out = NULL;
+  return elmc_dict_keys(&out, dict) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_dict_values_take(ElmcValue *dict) {
+  ElmcValue *out = NULL;
+  return elmc_dict_values(&out, dict) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_dict_map_take(ElmcValue *f, ElmcValue *dict) {
+  ElmcValue *out = NULL;
+  return elmc_dict_map(&out, f, dict) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_dict_foldl_take(ElmcValue *f, ElmcValue *acc, ElmcValue *dict) {
+  ElmcValue *out = NULL;
+  return elmc_dict_foldl(&out, f, acc, dict) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_dict_foldr_take(ElmcValue *f, ElmcValue *acc, ElmcValue *dict) {
+  ElmcValue *out = NULL;
+  return elmc_dict_foldr(&out, f, acc, dict) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_dict_filter_take(ElmcValue *f, ElmcValue *dict) {
+  ElmcValue *out = NULL;
+  return elmc_dict_filter(&out, f, dict) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_dict_partition_take(ElmcValue *f, ElmcValue *dict) {
+  ElmcValue *out = NULL;
+  return elmc_dict_partition(&out, f, dict) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_dict_intersect_take(ElmcValue *a, ElmcValue *b) {
+  ElmcValue *out = NULL;
+  return elmc_dict_intersect(&out, a, b) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_dict_diff_take(ElmcValue *a, ElmcValue *b) {
+  ElmcValue *out = NULL;
+  return elmc_dict_diff(&out, a, b) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_dict_union_take(ElmcValue *a, ElmcValue *b) {
+  ElmcValue *out = NULL;
+  return elmc_dict_union(&out, a, b) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_dict_merge_take(ElmcValue *lf, ElmcValue *bf, ElmcValue *rf, ElmcValue *a, ElmcValue *b, ElmcValue *result) {
+  ElmcValue *out = NULL;
+  return elmc_dict_merge(&out, lf, bf, rf, a, b, result) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_dict_update_take(ElmcValue *key, ElmcValue *f, ElmcValue *dict) {
+  ElmcValue *out = NULL;
+  return elmc_dict_update(&out, key, f, dict) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_set_from_list_take(ElmcValue *items) {
+  ElmcValue *out = NULL;
+  return elmc_set_from_list(&out, items) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_set_insert_take(ElmcValue *value, ElmcValue *set) {
+  ElmcValue *out = NULL;
+  return elmc_set_insert(&out, value, set) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_set_remove_take(ElmcValue *value, ElmcValue *set) {
+  ElmcValue *out = NULL;
+  return elmc_set_remove(&out, value, set) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_set_foldl_take(ElmcValue *f, ElmcValue *acc, ElmcValue *set) {
+  ElmcValue *out = NULL;
+  return elmc_set_foldl(&out, f, acc, set) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_set_foldr_take(ElmcValue *f, ElmcValue *acc, ElmcValue *set) {
+  ElmcValue *out = NULL;
+  return elmc_set_foldr(&out, f, acc, set) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_set_filter_take(ElmcValue *f, ElmcValue *set) {
+  ElmcValue *out = NULL;
+  return elmc_set_filter(&out, f, set) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_set_partition_take(ElmcValue *f, ElmcValue *set) {
+  ElmcValue *out = NULL;
+  return elmc_set_partition(&out, f, set) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_set_union_take(ElmcValue *a, ElmcValue *b) {
+  ElmcValue *out = NULL;
+  return elmc_set_union(&out, a, b) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_set_intersect_take(ElmcValue *a, ElmcValue *b) {
+  ElmcValue *out = NULL;
+  return elmc_set_intersect(&out, a, b) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_set_diff_take(ElmcValue *a, ElmcValue *b) {
+  ElmcValue *out = NULL;
+  return elmc_set_diff(&out, a, b) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_set_map_take(ElmcValue *f, ElmcValue *set) {
+  ElmcValue *out = NULL;
+  return elmc_set_map(&out, f, set) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_string_from_native_int_take(elmc_int_t n) {
+  ElmcValue *out = NULL;
+  return elmc_string_from_native_int(&out, n) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_maybe_map_take(ElmcValue *f, ElmcValue *maybe) {
+  ElmcValue *out = NULL;
+  return elmc_maybe_map(&out, f, maybe) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_maybe_map2_take(ElmcValue *f, ElmcValue *a, ElmcValue *b) {
+  ElmcValue *out = NULL;
+  return elmc_maybe_map2(&out, f, a, b) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_maybe_and_then_take(ElmcValue *f, ElmcValue *maybe) {
+  ElmcValue *out = NULL;
+  return elmc_maybe_and_then(&out, f, maybe) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_result_map_take(ElmcValue *f, ElmcValue *result) {
+  ElmcValue *out = NULL;
+  return elmc_result_map(&out, f, result) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_result_map_error_take(ElmcValue *f, ElmcValue *result) {
+  ElmcValue *out = NULL;
+  return elmc_result_map_error(&out, f, result) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_result_and_then_take(ElmcValue *f, ElmcValue *result) {
+  ElmcValue *out = NULL;
+  return elmc_result_and_then(&out, f, result) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_tuple_map_first_take(ElmcValue *f, ElmcValue *t) {
+  ElmcValue *out = NULL;
+  return elmc_tuple_map_first(&out, f, t) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_tuple_map_second_take(ElmcValue *f, ElmcValue *t) {
+  ElmcValue *out = NULL;
+  return elmc_tuple_map_second(&out, f, t) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_tuple_map_both_take(ElmcValue *f, ElmcValue *g, ElmcValue *t) {
+  ElmcValue *out = NULL;
+  return elmc_tuple_map_both(&out, f, g, t) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+
+static inline bool elmc_value_is_true(ElmcValue *v) {
+  return v && ((v->tag == ELMC_TAG_BOOL && elmc_as_bool(v)) ||
+               (v->tag == ELMC_TAG_INT && elmc_as_int(v) == 1));
+}
+
+static inline bool elmc_value_is_false(ElmcValue *v) {
+  return v && ((v->tag == ELMC_TAG_BOOL && !elmc_as_bool(v)) ||
+               (v->tag == ELMC_TAG_INT && elmc_as_int(v) == 0));
+}
+
+static inline ElmcValue *elmc_maybe_just_payload(ElmcValue *v) {
+  if (v && v->tag == ELMC_TAG_MAYBE && ((ElmcMaybe *)v->payload)->is_just)
+    return ((ElmcMaybe *)v->payload)->value;
+  if (v && v->tag == ELMC_TAG_TUPLE2 && v->payload != NULL &&
+      elmc_as_int(((ElmcTuple2 *)v->payload)->first) == 1)
+    return ((ElmcTuple2 *)v->payload)->second;
+  return NULL;
+}
+
+static inline bool elmc_maybe_is_just(ElmcValue *v) {
+  return elmc_maybe_just_payload(v) != NULL;
+}
+
+static inline bool elmc_maybe_is_nothing(ElmcValue *v) {
+  if (v && v->tag == ELMC_TAG_MAYBE)
+    return !((ElmcMaybe *)v->payload)->is_just;
+  if (v && v->tag == ELMC_TAG_INT)
+    return elmc_as_int(v) == 0;
+  return false;
+}
+
+static inline bool elmc_maybe_just_true(ElmcValue *v) {
+  return elmc_value_is_true(elmc_maybe_just_payload(v));
+}
+
+static inline bool elmc_maybe_just_false(ElmcValue *v) {
+  return elmc_value_is_false(elmc_maybe_just_payload(v));
+}
+
+static inline bool elmc_union_tag_matches(ElmcValue *v, elmc_int_t tag) {
+  return v && ((v->tag == ELMC_TAG_INT && elmc_as_int(v) == tag) ||
+               (v->tag == ELMC_TAG_TUPLE2 && v->payload != NULL &&
+                elmc_as_int(((ElmcTuple2 *)v->payload)->first) == tag));
+}
+
+
 ElmcValue *elmc_record_get(ElmcValue *record, const char *field_name);
 ElmcValue *elmc_record_get_at(ElmcValue *record, int index, const char *field_name);
 ElmcValue *elmc_record_get_index(ElmcValue *record, int index);
@@ -425,9 +1440,38 @@ elmc_int_t elmc_record_get_bool(ElmcValue *record, const char *field_name);
 elmc_int_t elmc_record_get_at_bool(ElmcValue *record, int index, const char *field_name);
 elmc_int_t elmc_record_get_index_bool(ElmcValue *record, int index);
 ElmcValue *elmc_record_update(ElmcValue *record, const char *field_name, ElmcValue *new_value);
+ElmcValue *elmc_record_update_index(ElmcValue *record, int index, ElmcValue *new_value);
+ElmcValue *elmc_record_update_index_cow(ElmcValue *record, int index, ElmcValue *new_value);
+ElmcValue *elmc_record_update_index_cow_drop(ElmcValue *record, int index, ElmcValue *new_value);
+ElmcValue *elmc_record_update_index_int_cow(ElmcValue *record, int index, elmc_int_t new_value);
+ElmcValue *elmc_record_update_index_int_cow_drop(ElmcValue *record, int index, elmc_int_t new_value);
 
-ElmcValue *elmc_closure_new(ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count), int arity, int capture_count, ElmcValue **captures);
+RC elmc_closure_new(ElmcValue **out, ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count), int arity, int capture_count, ElmcValue **captures);
+RC elmc_closure_new_rc(ElmcValue **out, RC (*rc_fn)(ElmcValue **out, ElmcValue **args, int argc, ElmcValue **captures, int capture_count), int arity, int capture_count, ElmcValue **captures);
+static inline ElmcValue *elmc_closure_new_take(
+    ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count),
+    int arity,
+    int capture_count,
+    ElmcValue **captures) {
+  ElmcValue *out = NULL;
+  return elmc_closure_new(&out, fn, arity, capture_count, captures) == RC_SUCCESS
+      ? out
+      : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_closure_new_rc_take(
+    RC (*rc_fn)(ElmcValue **out, ElmcValue **args, int argc, ElmcValue **captures, int capture_count),
+    int arity,
+    int capture_count,
+    ElmcValue **captures) {
+  ElmcValue *out = NULL;
+  return elmc_closure_new_rc(&out, rc_fn, arity, capture_count, captures) == RC_SUCCESS
+      ? out
+      : elmc_int_zero();
+}
+
 ElmcValue *elmc_closure_call(ElmcValue *closure, ElmcValue **args, int argc);
+RC elmc_closure_call_rc(ElmcValue **out, ElmcValue *closure, ElmcValue **args, int argc);
 ElmcValue *elmc_apply_extra(ElmcValue *value, ElmcValue **args, int argc);
 
 typedef struct ElmcForwardRef {
@@ -443,8 +1487,102 @@ ElmcValue *elmc_forward_ref_capture(ElmcForwardRef *ref);
 uint64_t elmc_rc_allocated_count(void);
 uint64_t elmc_rc_released_count(void);
 
+#ifndef ELMC_RC_TRACK
+#define ELMC_RC_TRACK 0
+#endif
+
+#if ELMC_RC_TRACK
+#include <stdio.h>
+void elmc_rc_track_reset(void);
+uint32_t elmc_rc_track_live_count(void);
+int elmc_rc_track_check_balanced(void);
+void elmc_rc_track_dump_live(FILE *out);
+void elmc_rc_track_dump_since(uint32_t min_id, FILE *out);
+uint32_t elmc_rc_track_next_alloc_id(void);
+ElmcValue *elmc_rc_track_retain(ElmcValue *value, const char *file, int line);
+void elmc_rc_track_release(ElmcValue *value, const char *file, int line);
+#define elmc_retain(value) elmc_rc_track_retain((value), __FILE__, __LINE__)
+#define elmc_release(value) elmc_rc_track_release((value), __FILE__, __LINE__)
+#else
 ElmcValue *elmc_retain(ElmcValue *value);
 void elmc_release(ElmcValue *value);
+#endif
 void elmc_release_deep(ElmcValue *value);
+
+
+static inline void elmc_release_array_lifo(ElmcValue **slots, size_t count) {
+  while (count-- > 0) {
+    ElmcValue *value = slots[count];
+    if (value) {
+      elmc_release(value);
+      slots[count] = NULL;
+    }
+  }
+}
+
+
+#ifndef ELMC_ALLOC_TRACK
+#define ELMC_ALLOC_TRACK 0
+#endif
+
+#if ELMC_ALLOC_TRACK
+#include <stdio.h>
+void elmc_alloc_track_reset(void);
+uint32_t elmc_alloc_track_live_count(void);
+int elmc_alloc_track_check_balanced(void);
+void elmc_alloc_track_dump_live(FILE *out);
+void elmc_alloc_track_dump_since(uint32_t min_id, FILE *out);
+uint32_t elmc_alloc_track_next_alloc_id(void);
+#endif
+
+#ifndef ELMC_ALLOC_TRACE
+#define ELMC_ALLOC_TRACE 0
+#endif
+
+#if ELMC_ALLOC_TRACK && !ELMC_ALLOC_TRACE
+#undef ELMC_ALLOC_TRACE
+#define ELMC_ALLOC_TRACE 1
+#endif
+
+#if ELMC_ALLOC_TRACK
+#define elmc_free(ptr) elmc_free_impl((ptr), __func__, __FILE__, __LINE__)
+#else
+#define elmc_free(ptr) free(ptr)
+#endif
+
+
+#ifndef ELMC_ALLOC_PROBE
+#define ELMC_ALLOC_PROBE 0
+#endif
+
+#if ELMC_ALLOC_PROBE && !ELMC_RC_TRACK
+#undef ELMC_RC_TRACK
+#define ELMC_RC_TRACK 1
+#endif
+
+#if ELMC_ALLOC_PROBE && !ELMC_ALLOC_TRACK
+#undef ELMC_ALLOC_TRACK
+#define ELMC_ALLOC_TRACK 1
+#endif
+
+#if ELMC_ALLOC_PROBE
+#include <stdio.h>
+
+typedef struct ElmcAllocProbeSnap {
+  uint32_t rc_live;
+  uint64_t rc_allocated;
+  uint64_t rc_released;
+  uint32_t rc_next_id;
+#if ELMC_ALLOC_TRACK
+  uint32_t malloc_live;
+  uint32_t malloc_next_id;
+#endif
+} ElmcAllocProbeSnap;
+
+void elmc_alloc_probe_snap(ElmcAllocProbeSnap *snap);
+void elmc_alloc_probe_diff(const ElmcAllocProbeSnap *before, const char *label, FILE *out);
+int elmc_alloc_probe_diff_balanced(const ElmcAllocProbeSnap *before, const char *label, FILE *out);
+#endif
+
 
 #endif

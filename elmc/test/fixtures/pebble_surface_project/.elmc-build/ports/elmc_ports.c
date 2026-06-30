@@ -18,7 +18,7 @@ int register_incoming_port(const char *port_name, ElmcPortCallback callback, voi
   ELMC_PORTS[ELMC_PORT_COUNT].name = port_name;
   ELMC_PORTS[ELMC_PORT_COUNT].callback = callback;
   ELMC_PORTS[ELMC_PORT_COUNT].context = context;
-  ELMC_PORT_COUNT += 1;
+  ELMC_PORT_COUNT++;
   return 0;
 }
 

@@ -72,55 +72,67 @@ defmodule Elmc.RcRequiredAllocAnalysisTest do
     File.mkdir_p!(Path.dirname(project_dir))
     File.cp_r!(source_fixture, project_dir)
 
-    File.write!(
-      Path.join(project_dir, "src/Main.elm"),
-      File.read!(Path.join(project_dir, "src/Main.elm")) <>
+    piece_helpers = """
+
+
+    type alias Point =
+        { x : Int
+        , y : Int
+        }
+
+    type alias PendingPiece =
+        { x1 : Int
+        , y1 : Int
+        , x2 : Int
+        , y2 : Int
+        }
+
+    type alias DownloadedPiece =
+        { p1 : Point
+        , p2 : Point
+        }
+
+    type alias PieceScratch =
+        { downloaded : DownloadedPiece
+        }
+
+    o : Int -> Int -> Point
+    o x y =
+        { x = x, y = y }
+
+
+    toDownloadedPiece : PendingPiece -> DownloadedPiece
+    toDownloadedPiece piece =
+        { p1 = o piece.x1 piece.y1
+        , p2 = o piece.x2 piece.y2
+        }
+
+
+    finishPiece : PendingPiece -> PieceScratch -> PieceScratch
+    finishPiece piece model =
+        { model | downloaded = toDownloadedPiece piece }
+
+    """
+
+    main_source = File.read!(Path.join(project_dir, "src/Main.elm"))
+
+    patched_main =
+      (main_source <> piece_helpers)
+      |> String.replace(
+        "subscriptions _ =\n    PebbleEvents.batch",
         """
+        subscriptions _ =
+            let
+                _ =
+                    finishPiece { x1 = 0, y1 = 0, x2 = 1, y2 = 1 }
+                        { downloaded = { p1 = o 0 0, p2 = o 1 1 } }
+            in
+            PebbleEvents.batch
+        """,
+        global: false
+      )
 
-
-        type alias Point =
-            { x : Int
-            , y : Int
-            }
-
-        type alias PendingPiece =
-            { x1 : Int
-            , y1 : Int
-            , x2 : Int
-            , y2 : Int
-            }
-
-        type alias DownloadedPiece =
-            { p1 : Point
-            , p2 : Point
-            }
-
-        type alias Model =
-            { downloaded : DownloadedPiece
-            }
-
-        o : Int -> Int -> Point
-        o x y =
-            { x = x, y = y }
-
-
-        toDownloadedPiece : PendingPiece -> DownloadedPiece
-        toDownloadedPiece piece =
-            { p1 = o piece.x1 piece.y1
-            , p2 = o piece.x2 piece.y2
-            }
-
-
-        finishPiece : PendingPiece -> Model -> Model
-        finishPiece piece model =
-            { model | downloaded = toDownloadedPiece piece }
-
-
-        update : Int -> Model -> Model
-        update _ model =
-            finishPiece { x1 = 0, y1 = 0, x2 = 1, y2 = 1 } model
-        """
-    )
+    File.write!(Path.join(project_dir, "src/Main.elm"), patched_main)
 
     assert {:ok, %{ir: ir}} =
              Elmc.compile(project_dir, %{

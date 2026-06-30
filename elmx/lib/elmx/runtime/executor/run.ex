@@ -34,8 +34,9 @@ defmodule Elmx.Runtime.Executor.Run do
 
     if function_exported?(module, :update, 2) do
       {model, cmd} = apply(module, :update, [msg, Model.runtime_model_from_elm(runtime_model)])
-      {runtime_model, _} = Values.tuple_result_to_model_cmd({model, cmd})
-      {runtime_model, "step_message", cmd}
+      {next_runtime_model, _} = Values.tuple_result_to_model_cmd({model, cmd})
+
+      {Model.merge_runtime_model(runtime_model, next_runtime_model), "step_message", cmd}
     else
       {runtime_model, "unmapped_message", Values.cmd_none()}
     end

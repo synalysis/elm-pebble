@@ -29,7 +29,8 @@ defmodule Elmc.Backend.CCodegen.SequenceLoopCodegen do
     repr = loop_repr_option(env, list_arg, opts)
 
     ListLoopCodegen.emit_boxed_head_list_walk(list_ref, loop_id, head_var, inner_body,
-      repr: repr
+      repr: repr,
+      env: env
     )
   end
 

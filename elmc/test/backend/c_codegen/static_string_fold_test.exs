@@ -1,5 +1,5 @@
 defmodule Elmc.Backend.CCodegen.StaticStringFoldTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Elmc.Backend.CCodegen.StaticString
   alias Elmc.Test.CCodegenExtract

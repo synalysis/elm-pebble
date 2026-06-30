@@ -26,6 +26,15 @@ defmodule Elmx.Backend.QualifiedRewrite do
       {"Maybe.map2", [fun, a, b]} ->
         runtime3("elmx_core_maybe_map2", [fun, a, b])
 
+      {"Maybe.map3", [fun, a, b, c]} ->
+        runtime4("elmx_core_maybe_map3", [fun, a, b, c])
+
+      {"Maybe.map4", [fun, a, b, c, d]} ->
+        runtime5("elmx_core_maybe_map4", [fun, a, b, c, d])
+
+      {"Maybe.map5", [fun, a, b, c, d, e]} ->
+        runtime6("elmx_core_maybe_map5", [fun, a, b, c, d, e])
+
       {"Maybe.andThen", [fun]} ->
         curried("elmx_core_maybe_and_then", [fun], "__m")
 
@@ -37,6 +46,18 @@ defmodule Elmx.Backend.QualifiedRewrite do
 
       {"Result.map", [fun, result]} ->
         runtime2("elmx_core_result_map", [fun, result])
+
+      {"Result.map2", [fun, a, b]} ->
+        runtime3("elmx_core_result_map2", [fun, a, b])
+
+      {"Result.map3", [fun, a, b, c]} ->
+        runtime4("elmx_core_result_map3", [fun, a, b, c])
+
+      {"Result.map4", [fun, a, b, c, d]} ->
+        runtime5("elmx_core_result_map4", [fun, a, b, c, d])
+
+      {"Result.map5", [fun, a, b, c, d, e]} ->
+        runtime6("elmx_core_result_map5", [fun, a, b, c, d, e])
 
       {"Result.withDefault", [default]} ->
         curried("elmx_core_result_with_default", [default], "__r")
@@ -64,6 +85,27 @@ defmodule Elmx.Backend.QualifiedRewrite do
 
       {"Task.map2", [fun, a, b]} ->
         runtime3("elmx_core_task_map2", [fun, a, b])
+
+      {"Task.map3", [fun, a, b, c]} ->
+        runtime4("elmx_core_task_map3", [fun, a, b, c])
+
+      {"Task.map4", [fun, a, b, c, d]} ->
+        runtime5("elmx_core_task_map4", [fun, a, b, c, d])
+
+      {"Task.map5", [fun, a, b, c, d, e]} ->
+        runtime6("elmx_core_task_map5", [fun, a, b, c, d, e])
+
+      {"Task.sequence", [tasks]} ->
+        runtime2("elmx_core_task_sequence", [tasks])
+
+      {"Task.onError", [recover, task]} ->
+        runtime2("elmx_core_task_on_error", [recover, task])
+
+      {"Task.mapError", [convert, task]} ->
+        runtime2("elmx_core_task_map_error", [convert, task])
+
+      {"Task.attempt", [to_msg, task]} ->
+        runtime2("elmx_core_task_attempt", [to_msg, task])
 
       {"Task.andThen", [fun]} ->
         curried("elmx_core_task_and_then", [fun], "__t")
@@ -195,6 +237,18 @@ defmodule Elmx.Backend.QualifiedRewrite do
   end
 
   defp runtime3(function, args) do
+    {:ok, %{op: :runtime_call, function: function, args: args}}
+  end
+
+  defp runtime4(function, args) do
+    {:ok, %{op: :runtime_call, function: function, args: args}}
+  end
+
+  defp runtime5(function, args) do
+    {:ok, %{op: :runtime_call, function: function, args: args}}
+  end
+
+  defp runtime6(function, args) do
     {:ok, %{op: :runtime_call, function: function, args: args}}
   end
 

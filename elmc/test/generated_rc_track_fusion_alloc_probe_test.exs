@@ -136,6 +136,8 @@ defmodule Elmc.GeneratedRcTrackFusionAllocProbeTest do
         printf("alloc_probe_done moves=%d leaks=%d\\n", #{@move_count}, leaks);
         return 0;
       }
+      
+      
       """
     )
 

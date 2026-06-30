@@ -72,7 +72,26 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
   end
 
   def compile(%{op: :string_length_expr, arg: arg_expr}, env, counter) do
-    compile_expr_unary(arg_expr, "elmc_new_int_take(elmc_string_length", env, counter)
+    {arg_code, arg_var, counter} = Host.compile_expr(arg_expr, env, counter)
+    {var, next} = CaseCompile.fresh_var(counter, env)
+
+    alloc_code =
+      if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
+        """
+        #{ValueSlots.boxed_null_decl(var)}
+        #{RcRuntimeEmit.check_rc_take(var, "elmc_new_int", "elmc_string_length(#{arg_var})")}
+        """
+      else
+        RcRuntimeEmit.check_rc_take(var, "elmc_new_int", "elmc_string_length(#{arg_var})")
+      end
+
+    code = """
+    #{arg_code}
+      #{alloc_code}
+      #{ValueSlots.release_stmt(arg_var)};
+    """
+
+    {code, var, next}
   end
 
   def compile(%{op: :char_from_code, arg: arg}, env, counter) when is_binary(arg) do
@@ -85,8 +104,8 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
 
     code = """
     #{arg_code}
-      #{boxed_slot_assign(var, "elmc_char_from_code(#{arg_var})")}
-      elmc_release(#{arg_var});
+      #{RcRuntimeEmit.assign_call(env, var, "elmc_char_from_code", arg_var)}
+      #{ValueSlots.release_stmt(arg_var)};
     """
 
     {code, var, next}
@@ -108,15 +127,20 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
 
       {code, out, next}
     else
-      {left_code, left_var, counter} = Host.compile_expr(left, child_env, counter)
-      {right_code, right_var, counter} = Host.compile_expr(right, child_env, counter)
+      left_env = Map.put(child_env, :__transfer_operand__, true)
+      right_env = Map.put(child_env, :__transfer_operand__, true)
+
+      {left_code, left_var, counter} = Host.compile_expr(left, left_env, counter)
+      {right_code, right_var, counter} = Host.compile_expr(right, right_env, counter)
       {out, next, _} = CaseCompile.result_out_binding(env, counter)
+      ValueSlots.register_tuple_projection(left_var, out, :first)
+      ValueSlots.register_tuple_projection(right_var, out, :second)
       nulls = ValueSlots.transfer_and_null_refs([left_var, right_var])
 
       code = """
       #{left_code}
       #{right_code}
-      #{RcRuntimeEmit.assign_call(env, out, "elmc_tuple2_take", "#{left_var}, #{right_var}")}
+      #{RcRuntimeEmit.assign_call(env, out, "elmc_tuple2_take", "#{RcRuntimeEmit.value_expr(left_var)}, #{RcRuntimeEmit.value_expr(right_var)}")}
       #{nulls}
       """
 
@@ -146,18 +170,19 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
   end
 
   defp compile_generic_list_literal(items, item_env, env, counter) do
+    nested_item_env = Map.delete(item_env, :__branch_out__)
 
     {item_code, item_vars, counter} =
       Enum.reduce(items, {"", [], counter}, fn item, {acc_code, vars, c} ->
-        {code, var, c1} = Host.compile_expr(item, item_env, c)
+        {code, var, c1} = Host.compile_expr(item, nested_item_env, c)
         {acc_code <> "\n  " <> code, vars ++ [var], c1}
       end)
 
-    {out, next, _} = CaseCompile.result_out_binding(env, counter)
+    {out, next, _} = CaseCompile.result_out_binding(item_env, counter)
     list_items_id = counter + 1
     count = length(item_vars)
     array_name = "list_items_#{list_items_id}"
-    item_list = Enum.join(item_vars, ", ")
+    item_list = item_vars |> Enum.map(&RcRuntimeEmit.value_expr/1) |> Enum.join(", ")
     list_probe = DebugProbes.list_literal_probe(env, out, list_items_id)
     nulls = if count == 0, do: "", else: ValueSlots.transfer_and_null_refs(Enum.uniq(item_vars))
 
@@ -191,17 +216,19 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
   defp static_record_list_literal(_items, _env, _counter), do: :error
 
   defp compile_record_array_list_literal(items, item_env, env, counter) do
+    nested_item_env = Map.delete(item_env, :__branch_out__)
+
     {item_code, item_vars, counter} =
       Enum.reduce(items, {"", [], counter}, fn item, {acc_code, vars, c} ->
-        {code, var, c1} = Host.compile_expr(item, item_env, c)
+        {code, var, c1} = Host.compile_expr(item, nested_item_env, c)
         {acc_code <> "\n  " <> code, vars ++ [var], c1}
       end)
 
-    {out, next, _} = CaseCompile.result_out_binding(env, counter)
+    {out, next, _} = CaseCompile.result_out_binding(item_env, counter)
     list_items_id = counter + 1
     count = length(item_vars)
     array_name = "list_record_items_#{list_items_id}"
-    item_list = Enum.join(item_vars, ", ")
+    item_list = item_vars |> Enum.map(&RcRuntimeEmit.value_expr/1) |> Enum.join(", ")
     list_probe = DebugProbes.list_literal_probe(env, out, list_items_id)
     nulls = ValueSlots.transfer_and_null_refs(Enum.uniq(item_vars))
 
@@ -253,6 +280,7 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
   defp static_list_literal(_items, _env, _counter), do: :error
 
   defp compile_static_int_list(items, env, counter) do
+    env = RcRuntimeEmit.strip_function_tail_scope(env)
     {out, next, _} = CaseCompile.result_out_binding(env, counter)
     values_id = counter + 1
     count = length(items)
@@ -274,6 +302,7 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
   end
 
   defp compile_static_tuple2_int_list(items, env, counter) do
+    env = RcRuntimeEmit.strip_function_tail_scope(env)
     {out, next, _} = CaseCompile.result_out_binding(env, counter)
     values_id = counter + 1
     count = length(items)
@@ -368,14 +397,17 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
     {source_code, source, counter} = resolve_env_source(env, name, counter)
     {var, next} = CaseCompile.fresh_var(counter, env)
 
-    char_expr =
+    char_call =
       case EnvBindings.native_int_binding(env, name) do
-        ref when is_binary(ref) -> "elmc_char_from_code_int(#{ref})"
-        _ -> "elmc_char_from_code(#{source})"
+        ref when is_binary(ref) ->
+          RcRuntimeEmit.assign_call(env, var, "elmc_char_from_code_int", ref)
+
+        _ ->
+          RcRuntimeEmit.assign_call(env, var, "elmc_char_from_code", source)
       end
 
     code = """
-    #{source_code}  #{boxed_slot_assign(var, char_expr)}
+    #{source_code}  #{char_call}
     """
 
     {code, var, next}
@@ -391,14 +423,26 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
     {arg_code, arg_var, counter} = Host.compile_expr(arg_expr, env, counter)
     {var, next} = CaseCompile.fresh_var(counter, env)
 
+    arg_cleanup =
+      cond do
+        EnvBindings.tuple_projection_ref?(env, arg_var) ->
+          ValueSlots.abandon_stmt(arg_var)
+
+        ValueSlots.owned_ref?(arg_var) ->
+          ""
+
+        true ->
+          ValueSlots.release_stmt(arg_var)
+      end
+
     code = """
     #{arg_code}
       #{boxed_slot_assign(var, "#{c_fn}(#{arg_var})")}
-      elmc_release(#{arg_var});
+      #{arg_cleanup}
     """
 
     if RcRuntimeEmit.rc_allocator_emit_mode?(env), do: ValueSlots.track(var)
-    if RcRuntimeEmit.rc_allocator_emit_mode?(env), do: ValueSlots.release(arg_var)
+    if EnvBindings.tuple_projection_ref?(env, arg_var), do: ValueSlots.release(arg_var)
 
     {code, var, next}
   end
@@ -416,7 +460,7 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
     code = """
     #{arg_code}
       #{boxed_slot_assign(var, "#{c_expr_prefix}(#{arg_var}))")}
-      elmc_release(#{arg_var});
+      #{ValueSlots.release_stmt(arg_var)};
     """
 
     {code, var, next}

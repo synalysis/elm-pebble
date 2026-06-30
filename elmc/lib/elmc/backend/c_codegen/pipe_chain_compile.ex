@@ -1,7 +1,7 @@
 defmodule Elmc.Backend.CCodegen.PipeChainCompile do
   @moduledoc false
 
-  alias Elmc.Backend.CCodegen.{Host, Types, Util}
+  alias Elmc.Backend.CCodegen.{Host, Types, Util, ValueSlots}
   alias ElmEx.IR.PipeChain
 
   @pipeline_flatten_threshold 16
@@ -35,7 +35,7 @@ defmodule Elmc.Backend.CCodegen.PipeChainCompile do
       step_expr = PipeChain.append_pipe_arg(step, %{op: :var, name: @pipe_acc})
       step_env = Map.put(env, @pipe_acc, acc_var)
       {step_code, next_var, c2} = Host.compile_expr(step_expr, step_env, c)
-      release = "  elmc_release(#{acc_var});\n"
+      release = "  " <> ValueSlots.release_stmt(acc_var) <> "\n"
       {code_acc <> step_code <> release, next_var, c2}
     end)
   end
@@ -54,7 +54,7 @@ defmodule Elmc.Backend.CCodegen.PipeChainCompile do
               "  for (elmc_int_t pipe_i_#{loop_id} = 0; pipe_i_#{loop_id} < #{count}; pipe_i_#{loop_id}++) {\n",
               "    ElmcValue *pipe_args_#{loop_id}[1] = { #{acc_var} };\n",
               "    ElmcValue *pipe_next_#{loop_id} = #{fn_name}(pipe_args_#{loop_id}, 1);\n",
-              "    elmc_release(#{acc_var});\n",
+              "    " <> ValueSlots.release_stmt(acc_var) <> "\n",
               "    #{acc_var} = pipe_next_#{loop_id};\n",
               "  }\n"
             ])
@@ -77,7 +77,7 @@ defmodule Elmc.Backend.CCodegen.PipeChainCompile do
             step_expr = PipeChain.append_pipe_arg(step, %{op: :var, name: @pipe_acc})
             step_env = Map.put(env, @pipe_acc, acc_var)
             {step_code, next_var, c2} = Host.compile_expr(step_expr, step_env, c)
-            release = "  elmc_release(#{acc_var});\n"
+            release = "  " <> ValueSlots.release_stmt(acc_var) <> "\n"
             {code_acc <> step_code <> release, next_var, c2}
           end)
 
@@ -94,7 +94,7 @@ defmodule Elmc.Backend.CCodegen.PipeChainCompile do
       "  for (elmc_int_t pipe_i_#{loop_id} = 0; pipe_i_#{loop_id} < #{count}; pipe_i_#{loop_id}++) {\n",
       "    ElmcValue *pipe_args_#{loop_id}[1] = { #{acc_var} };\n",
       "    ElmcValue *pipe_next_#{loop_id} = elmc_closure_call(#{fun_var}, pipe_args_#{loop_id}, 1);\n",
-      "    elmc_release(#{acc_var});\n",
+      "    " <> ValueSlots.release_stmt(acc_var) <> "\n",
       "    #{acc_var} = pipe_next_#{loop_id};\n",
       "  }\n"
     ])

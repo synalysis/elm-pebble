@@ -5,6 +5,7 @@ defmodule Elmc.Backend.CCodegen.Native.Float do
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.RecordFields
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.CCodegen.ValueSlots
 
   @type compile_result :: Types.native_scalar_compile_result()
 
@@ -124,7 +125,7 @@ defmodule Elmc.Backend.CCodegen.Native.Float do
     {
       """
       #{code}
-        ElmcValue *#{out} = elmc_new_float_take(#{value_ref});
+        #{ValueSlots.boxed_decl(out, "elmc_new_float((double)#{value_ref})", env)}
       """,
       out,
       next
