@@ -14,6 +14,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   alias Ide.Debugger.StepExecution
   alias Ide.Debugger.SubscriptionTriggerWire
   alias Ide.Debugger.TriggerCandidates
+  alias Ide.Debugger.Surface
   alias Ide.Debugger.SurfaceCompileArtifacts
   alias Ide.Mcp.ToolSupport
   alias Ide.Mcp.ToolTypes
@@ -28,6 +29,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   @capabilities [:read, :edit]
 
   @phone_first_templates ~w(
+    starter
     watchface-yes
     watchface-tangram-time
     watchface-weather-animated
@@ -1147,9 +1149,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   defp refresh_watch_preview_if_unavailable!(slug) when is_binary(slug) do
     {:ok, _} =
       Ide.Debugger.AgentSession.mutate(slug, fn state ->
-        type = get_in(state, [:watch, :view_tree, "type"]) || get_in(state, [:watch, :view_tree, :type])
-
-        if type == "previewUnavailable" do
+        if watch_preview_unavailable?(state) do
           Ide.Debugger.RuntimeExecutorConfig.refresh_for_target(state, :watch)
         else
           state
@@ -1158,6 +1158,16 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
 
     :ok
   end
+
+  @spec watch_preview_unavailable?(DebuggerTypes.execution_model()) :: boolean()
+  defp watch_preview_unavailable?(state) when is_map(state) do
+    type =
+      get_in(state, [:watch, :view_tree, "type"]) || get_in(state, [:watch, :view_tree, :type])
+
+    type == "previewUnavailable"
+  end
+
+  defp watch_preview_unavailable?(_state), do: false
 
   @spec await_background_idle!(String.t()) :: :ok | {:error, CorpusTypes.background_drain_error()}
   defp await_background_idle!(slug) when is_binary(slug) do
@@ -1185,10 +1195,12 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     previous_http = Application.get_env(:ide, :debugger_async_http_followups)
     previous_protocol = Application.get_env(:ide, :debugger_async_protocol_delivery)
     previous_companion = Application.get_env(:ide, :debugger_async_companion_bootstrap)
+    previous_skip_schedule = Application.get_env(:ide, :debugger_skip_companion_bootstrap_schedule)
     previous_http_executor = Application.get_env(:ide, HttpExecutor)
     Application.put_env(:ide, :debugger_async_http_followups, false)
     Application.put_env(:ide, :debugger_async_protocol_delivery, false)
     Application.put_env(:ide, :debugger_async_companion_bootstrap, false)
+    Application.put_env(:ide, :debugger_skip_companion_bootstrap_schedule, true)
     install_corpus_http_executor!(previous_http_executor)
 
     try do
@@ -1197,6 +1209,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
       restore_corpus_debugger_async_env!(:debugger_async_http_followups, previous_http)
       restore_corpus_debugger_async_env!(:debugger_async_protocol_delivery, previous_protocol)
       restore_corpus_debugger_async_env!(:debugger_async_companion_bootstrap, previous_companion)
+      restore_corpus_debugger_async_env!(:debugger_skip_companion_bootstrap_schedule, previous_skip_schedule)
       restore_corpus_http_executor!(previous_http_executor)
     end
   end

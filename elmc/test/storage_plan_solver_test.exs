@@ -257,6 +257,21 @@ defmodule Elmc.StoragePlanSolverTest do
     assert plan.elem == {:record, "Main", "Cell"}
   end
 
+  test "mixed record list params analyze as boxed cons not dual int-list" do
+    assert StoragePlan.from_record_repr(:mixed, {"Main", "Point"}) ==
+             %StoragePlan{
+               elem: {:record, "Main", "Point"},
+               layout: :boxed_cons,
+               length: :unknown,
+               access: :sequential
+             }
+
+    assert LayoutSolver.codegen_loop_repr(StoragePlan.from_record_repr(:mixed, {"Main", "Point"})) ==
+             :cons
+
+    refute StoragePlan.int_list_dual_eligible?(StoragePlan.from_record_repr(:mixed, {"Main", "Point"}))
+  end
+
   test "binding plans mark native int lets" do
     source = """
     module Main exposing (main)

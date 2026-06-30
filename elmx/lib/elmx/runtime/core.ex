@@ -109,10 +109,17 @@ defmodule Elmx.Runtime.Core do
 
   @doc """
   Elm `++` for strings and lists (debugger runtime).
+
+  Partial `(++)` sections compile to unary functions; nested right-associative
+  `++` can pass those functions as operands. Apply them like Elm would.
   """
-  @spec append(Types.elm_list() | String.t(), Types.elm_list() | String.t()) ::
-          Types.elm_list() | String.t()
+  @spec append(
+          Types.elm_list() | String.t() | Types.elm_hof(),
+          Types.elm_list() | String.t() | Types.elm_hof()
+        ) :: Types.elm_list() | String.t()
   def append(left, right) when is_list(left) and is_list(right), do: left ++ right
+  def append(left, right) when is_function(left, 1), do: left.(right)
+  def append(left, right) when is_function(right, 1), do: right.(left)
   def append(left, right), do: to_string(left) <> to_string(right)
 
   @spec apply1(Types.elm_hof(), Types.elm_value()) :: Types.elm_value()

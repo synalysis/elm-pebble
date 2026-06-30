@@ -2018,11 +2018,29 @@ defmodule Ide.Mcp.Handlers.Debugger do
 
   @spec schedule_companion_bootstrap_if_present(Project.t()) :: :ok
   defp schedule_companion_bootstrap_if_present(%Project{} = project) do
-    if Projects.companion_app_present?(project) and not companion_session_bootstrapped?(project) do
-      Task.start(fn -> run_companion_bootstrap_session(project) end)
-    end
+    if skip_companion_bootstrap_schedule?() do
+      :ok
+    else
+      if Projects.companion_app_present?(project) and not companion_session_bootstrapped?(project) do
+        if companion_bootstrap_async?() do
+          Task.start(fn -> run_companion_bootstrap_session(project) end)
+        else
+          run_companion_bootstrap_session(project)
+        end
+      end
 
-    :ok
+      :ok
+    end
+  end
+
+  @spec skip_companion_bootstrap_schedule?() :: boolean()
+  defp skip_companion_bootstrap_schedule? do
+    Application.get_env(:ide, :debugger_skip_companion_bootstrap_schedule, false)
+  end
+
+  @spec companion_bootstrap_async?() :: boolean()
+  defp companion_bootstrap_async? do
+    Application.get_env(:ide, :debugger_async_companion_bootstrap, true)
   end
 
   @spec companion_session_bootstrapped?(Project.t()) :: boolean()

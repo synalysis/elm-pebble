@@ -131,10 +131,18 @@ defmodule Ide.Debugger.ProtocolRx do
       when is_list(protocol_events) and is_map(rx_ctx) do
     Enum.reduce(protocol_events, state, fn event, acc ->
       if event.type == "debugger.protocol_rx" and is_map(event.payload) do
-        if inline_step_delivery?(event.payload) do
-          enqueue_inline_protocol_delivery(acc, event.payload)
-        else
-          handle_protocol_rx_event(acc, event.payload, rx_ctx)
+        payload = event.payload
+
+        cond do
+          defer_init_cmd_delivery?(payload) ->
+            recipient = protocol_surface_key(Map.get(payload, :to) || Map.get(payload, "to"))
+            PendingProtocolDelivery.enqueue(acc, recipient, payload)
+
+          inline_step_delivery?(payload) ->
+            enqueue_inline_protocol_delivery(acc, payload)
+
+          true ->
+            handle_protocol_rx_event(acc, payload, rx_ctx)
         end
       else
         acc
@@ -249,8 +257,8 @@ defmodule Ide.Debugger.ProtocolRx do
     from = Map.get(payload, :from) || Map.get(payload, "from")
     to = Map.get(payload, :to) || Map.get(payload, "to")
 
-    trigger in ["init_cmd", "init_companion_bridge"] and from == "watch" and
-      to in ["companion", "phone"]
+    from == "watch" and to in ["companion", "phone"] and
+      trigger in ["init_cmd", "init_companion_bridge", "runtime_cmd"]
   end
 
   defp defer_init_cmd_delivery?(_payload), do: false

@@ -138,4 +138,37 @@ defmodule Elmc.StoragePlanCodegenTest do
     assert loop =~ "ELMC_TAG_INT_SPINE"
     refute loop =~ "ELMC_TAG_LIST"
   end
+
+  test "List.map over record list emits single cons walk without int-list dual branch" do
+    generated_c =
+      compile_main!(
+        """
+        module Main exposing (main)
+
+        type alias Point =
+            { x : Int, y : Int }
+
+        tupleCoords : List Point -> List ( Int, Int )
+        tupleCoords points =
+            List.map (\\p -> ( p.x, p.y )) points
+
+        main =
+            tupleCoords [ { x = 0, y = 1 }, { x = 2, y = 3 } ]
+        """,
+        "storage_plan_codegen_record_map"
+      )
+
+    body =
+      generated_c
+      |> String.split("elmc_fn_Main_tupleCoords(", parts: 2)
+      |> Enum.at(1, "")
+      |> String.split("\n}\n", parts: 2)
+      |> List.first()
+
+    assert body =~ "list_map_head_"
+    refute body =~ "ELMC_TAG_INT_LIST"
+    refute body =~ "_ilp_"
+    assert body =~ "ELMC_TAG_RECORD_SEQ" or body =~ "list_walk_cursor_"
+    refute Regex.match?(~r/ELMC_TAG_INT_LIST[\s\S]*\} else \{/, body)
+  end
 end

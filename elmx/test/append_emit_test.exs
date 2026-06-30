@@ -30,4 +30,12 @@ defmodule Elmx.AppendEmitTest do
     assert Core.append([1], [2]) == [1, 2]
     assert Core.append(1, 2) == "12"
   end
+
+  test "Core.append applies partial ++ sections when codegen nests them as operands" do
+    prefix = fn rhs -> Core.append([:a], rhs) end
+
+    assert Core.append(prefix, [:b]) == [:a, :b]
+    assert Core.append([:c], prefix) == [:a, :c]
+    assert Core.append([:x], Core.append(prefix, [:y])) == [:x, :a, :y]
+  end
 end

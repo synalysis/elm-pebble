@@ -11,6 +11,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.ImmortalStaticList
+  alias Elmc.Backend.CCodegen.LayoutSolver
   alias Elmc.Backend.CCodegen.Native.Bool, as: NativeBool
   alias Elmc.Backend.CCodegen.Native.Float, as: NativeFloat
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
@@ -1238,8 +1239,6 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
 
     {list_code, list_var, counter} = Host.compile_expr(list, RcRuntimeEmit.strip_function_tail_scope(env), counter)
     loop_id = counter + 1
-    cursor = "list_filter_cursor_#{loop_id}"
-    node = "list_filter_node_#{loop_id}"
     head = "list_filter_head_#{loop_id}"
     {forward_init, _forward_head} = ListLoopCodegen.emit_forward_list_init(loop_id)
 
@@ -1290,9 +1289,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
             }
         """
 
-      int_list_branch = """
-      ElmcValue *#{out} = NULL;
-      if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
+      int_list_only_body = """
         ElmcIntListPayload *_ilp_#{loop_id} = (ElmcIntListPayload *)#{list_var}->payload;
         int _ilen_#{loop_id} = _ilp_#{loop_id} ? _ilp_#{loop_id}->length : 0;
         if (_ilen_#{loop_id} <= 0) {
@@ -1305,18 +1302,22 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
           }
           #{RcRuntimeEmit.assign_into(env, out, "elmc_list_from_int_array", "#{map_buf}, #{map_i}")}
         }
-      } else {
-      #{forward_init}
-        ElmcValue *#{cursor} = #{list_var};
-        while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
-          ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
-          ElmcValue *#{head} = #{node}->head;
-      #{boxed_loop}
-          #{cursor} = #{node}->tail;
-        }
-        #{out} = #{ListLoopCodegen.forward_head_name(loop_id)};
-      }
       """
+
+      boxed_only_body = """
+      #{forward_init}
+      #{ListLoopCodegen.emit_boxed_head_list_walk(list_var, loop_id, head, boxed_loop,
+        repr: list_loop_repr(list, env),
+        env: env
+      )}
+        #{out} = #{ListLoopCodegen.forward_head_name(loop_id)};
+      """
+
+      int_list_branch =
+        emit_list_hof_int_or_boxed_branch(list, env, list_var, out,
+          int_list_body: int_list_only_body,
+          boxed_body: boxed_only_body
+        )
 
       code = """
       #{list_code}
@@ -2021,9 +2022,9 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
       boxed_loop =
         boxed_map_loop_body(body_code, body_ref, item_value, next, env)
 
-      int_list_branch = """
-      ElmcValue *#{out} = NULL;
-      if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
+      walk_repr = list_loop_repr(list, env)
+
+      int_list_only_body = """
         ElmcIntListPayload *_ilp_#{next} = (ElmcIntListPayload *)#{list_var}->payload;
         int _ilen_#{next} = _ilp_#{next} ? _ilp_#{next}->length : 0;
         if (_ilen_#{next} <= 0) {
@@ -2038,12 +2039,19 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
           #{RcRuntimeEmit.loop_exit_check_rc(env)}
           #{RcRuntimeEmit.assign_into(env, out, "elmc_list_from_int_array", "#{map_buf}, #{map_i}")}
         }
-      } else {
-      #{forward_init}
-      #{ListLoopCodegen.emit_boxed_head_list_walk(list_var, next, head, boxed_loop, repr: :dual, env: env)}
-        #{out} = #{forward_head_name(next)};
-      }
       """
+
+      boxed_only_body = """
+      #{forward_init}
+      #{ListLoopCodegen.emit_boxed_head_list_walk(list_var, next, head, boxed_loop, repr: walk_repr, env: env)}
+        #{out} = #{forward_head_name(next)};
+      """
+
+      int_list_branch =
+        emit_list_hof_int_or_boxed_branch(list, env, list_var, out,
+          int_list_body: int_list_only_body,
+          boxed_body: boxed_only_body
+        )
 
       code = """
       #{list_code}
@@ -2108,7 +2116,13 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     #{ListLoopCodegen.emit_forward_list_append(loop_id, item_value, owned: true, env: env)}
     """
 
-    walk = ListLoopCodegen.emit_boxed_head_list_walk(list_var, loop_id, head, loop_body, env: env)
+    walk_repr = list_loop_repr(list, env)
+
+    walk =
+      ListLoopCodegen.emit_boxed_head_list_walk(list_var, loop_id, head, loop_body,
+        repr: walk_repr,
+        env: env
+      )
 
     code = """
     #{list_code}
@@ -3540,5 +3554,42 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
 
   defp rc_worker_body?(env) do
     Map.get(env, :__function_name__) in ~w(init update subscriptions)
+  end
+
+  defp list_loop_repr(list, env), do: LayoutSolver.list_loop_repr_from_expr(list, env)
+
+  defp int_list_branch_eligible?(repr) when repr in [:int_list, :dual], do: true
+  defp int_list_branch_eligible?(_repr), do: false
+
+  defp emit_list_hof_int_or_boxed_branch(list, env, list_var, out, opts) do
+    repr = list_loop_repr(list, env)
+    int_list_body = Keyword.fetch!(opts, :int_list_body)
+    boxed_body = Keyword.fetch!(opts, :boxed_body)
+
+    cond do
+      repr == :int_list ->
+        """
+        ElmcValue *#{out} = NULL;
+        if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
+        #{int_list_body}
+        }
+        """
+
+      int_list_branch_eligible?(repr) ->
+        """
+        ElmcValue *#{out} = NULL;
+        if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
+        #{int_list_body}
+        } else {
+        #{boxed_body}
+        }
+        """
+
+      true ->
+        """
+        ElmcValue *#{out} = NULL;
+        #{boxed_body}
+        """
+    end
   end
 end

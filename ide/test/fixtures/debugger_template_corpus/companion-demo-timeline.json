@@ -106,14 +106,9 @@
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
-    "elmc_compile_cached": "false",
-    "elmc_compile_error_count": 0,
-    "elmc_compile_status": "ok",
-    "elmc_compile_warning_count": 0,
-    "elmc_diagnostic_preview": [],
     "protocol_last_inbound_from": "companion",
     "protocol_last_inbound_message": "ProvideTimelineToken \"demo-timeline-token\"",
-    "protocol_last_trigger": "timeline",
+    "protocol_last_trigger": "companion_bridge_command",
     "protocol_last_view_message": "ProvideTimelineToken \"demo-timeline-token\"",
     "runtime_model": {
       "pinStatus": {

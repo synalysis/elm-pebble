@@ -6,7 +6,7 @@
       "clear",
       "circle",
       "fill_circle",
-      "vector_at",
+      "line",
       "text_color",
       "text"
     ],
@@ -77,67 +77,508 @@
       "stroke_width": 1
     },
     {
-      "fill_color": 199,
-      "kind": "path_filled",
-      "offset_x": 0,
-      "offset_y": 0,
-      "rotation": 0,
-      "stroke_color": 0,
-      "stroke_width": 1
+      "antialiased": true,
+      "color": 203,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 203,
+      "stroke_width": 1,
+      "x1": 77,
+      "x2": 45,
+      "y1": 61,
+      "y2": 38
     },
     {
-      "fill_color": 203,
-      "kind": "path_filled",
-      "offset_x": 0,
-      "offset_y": 0,
-      "rotation": 0,
-      "stroke_color": 0,
-      "stroke_width": 1
+      "antialiased": true,
+      "color": 203,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 203,
+      "stroke_width": 1,
+      "x1": 45,
+      "x2": 37,
+      "y1": 38,
+      "y2": 69
     },
     {
-      "fill_color": 223,
-      "kind": "path_filled",
-      "offset_x": 0,
-      "offset_y": 0,
-      "rotation": 0,
-      "stroke_color": 0,
-      "stroke_width": 1
+      "antialiased": true,
+      "color": 203,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 203,
+      "stroke_width": 1,
+      "x1": 37,
+      "x2": 77,
+      "y1": 69,
+      "y2": 61
     },
     {
-      "fill_color": 207,
-      "kind": "path_filled",
-      "offset_x": 0,
-      "offset_y": 0,
-      "rotation": 0,
-      "stroke_color": 0,
-      "stroke_width": 1
+      "antialiased": true,
+      "color": 203,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 203,
+      "stroke_width": 1,
+      "x1": 61,
+      "x2": 57,
+      "y1": 49,
+      "y2": 65
     },
     {
-      "fill_color": 192,
-      "kind": "path_filled",
-      "offset_x": 0,
-      "offset_y": 0,
-      "rotation": 0,
-      "stroke_color": 0,
-      "stroke_width": 1
+      "antialiased": true,
+      "color": 203,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 203,
+      "stroke_width": 1,
+      "x1": 61,
+      "x2": 41,
+      "y1": 49,
+      "y2": 53
     },
     {
-      "fill_color": 199,
-      "kind": "path_filled",
-      "offset_x": 0,
-      "offset_y": 0,
-      "rotation": 0,
-      "stroke_color": 0,
-      "stroke_width": 1
+      "antialiased": true,
+      "color": 203,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 203,
+      "stroke_width": 1,
+      "x1": 57,
+      "x2": 41,
+      "y1": 65,
+      "y2": 53
     },
     {
-      "fill_color": 239,
-      "kind": "path_filled",
-      "offset_x": 0,
-      "offset_y": 0,
-      "rotation": 0,
-      "stroke_color": 0,
-      "stroke_width": 1
+      "antialiased": true,
+      "color": 219,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 219,
+      "stroke_width": 1,
+      "x1": 89,
+      "x2": 115,
+      "y1": 61,
+      "y2": 38
+    },
+    {
+      "antialiased": true,
+      "color": 219,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 219,
+      "stroke_width": 1,
+      "x1": 115,
+      "x2": 123,
+      "y1": 38,
+      "y2": 69
+    },
+    {
+      "antialiased": true,
+      "color": 219,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 219,
+      "stroke_width": 1,
+      "x1": 123,
+      "x2": 89,
+      "y1": 69,
+      "y2": 61
+    },
+    {
+      "antialiased": true,
+      "color": 219,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 219,
+      "stroke_width": 1,
+      "x1": 102,
+      "x2": 106,
+      "y1": 49,
+      "y2": 65
+    },
+    {
+      "antialiased": true,
+      "color": 219,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 219,
+      "stroke_width": 1,
+      "x1": 102,
+      "x2": 119,
+      "y1": 49,
+      "y2": 53
+    },
+    {
+      "antialiased": true,
+      "color": 219,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 219,
+      "stroke_width": 1,
+      "x1": 106,
+      "x2": 119,
+      "y1": 65,
+      "y2": 53
+    },
+    {
+      "antialiased": true,
+      "color": 202,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 202,
+      "stroke_width": 1,
+      "x1": 69,
+      "x2": 83,
+      "y1": 68,
+      "y2": 57
+    },
+    {
+      "antialiased": true,
+      "color": 202,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 202,
+      "stroke_width": 1,
+      "x1": 83,
+      "x2": 97,
+      "y1": 57,
+      "y2": 68
+    },
+    {
+      "antialiased": true,
+      "color": 202,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 202,
+      "stroke_width": 1,
+      "x1": 97,
+      "x2": 83,
+      "y1": 68,
+      "y2": 80
+    },
+    {
+      "antialiased": true,
+      "color": 202,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 202,
+      "stroke_width": 1,
+      "x1": 83,
+      "x2": 69,
+      "y1": 80,
+      "y2": 68
+    },
+    {
+      "antialiased": true,
+      "color": 202,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 202,
+      "stroke_width": 1,
+      "x1": 76,
+      "x2": 90,
+      "y1": 62,
+      "y2": 74
+    },
+    {
+      "antialiased": true,
+      "color": 202,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 202,
+      "stroke_width": 1,
+      "x1": 76,
+      "x2": 90,
+      "y1": 74,
+      "y2": 62
+    },
+    {
+      "antialiased": true,
+      "color": 207,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 207,
+      "stroke_width": 1,
+      "x1": 97,
+      "x2": 111,
+      "y1": 63,
+      "y2": 57
+    },
+    {
+      "antialiased": true,
+      "color": 207,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 207,
+      "stroke_width": 1,
+      "x1": 111,
+      "x2": 108,
+      "y1": 57,
+      "y2": 72
+    },
+    {
+      "antialiased": true,
+      "color": 207,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 207,
+      "stroke_width": 1,
+      "x1": 108,
+      "x2": 97,
+      "y1": 72,
+      "y2": 63
+    },
+    {
+      "antialiased": true,
+      "color": 207,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 207,
+      "stroke_width": 1,
+      "x1": 104,
+      "x2": 102,
+      "y1": 60,
+      "y2": 67
+    },
+    {
+      "antialiased": true,
+      "color": 207,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 207,
+      "stroke_width": 1,
+      "x1": 104,
+      "x2": 109,
+      "y1": 60,
+      "y2": 64
+    },
+    {
+      "antialiased": true,
+      "color": 207,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 207,
+      "stroke_width": 1,
+      "x1": 102,
+      "x2": 109,
+      "y1": 67,
+      "y2": 64
+    },
+    {
+      "antialiased": true,
+      "color": 199,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 199,
+      "stroke_width": 1,
+      "x1": 69,
+      "x2": 52,
+      "y1": 72,
+      "y2": 66
+    },
+    {
+      "antialiased": true,
+      "color": 199,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 199,
+      "stroke_width": 1,
+      "x1": 52,
+      "x2": 48,
+      "y1": 66,
+      "y2": 78
+    },
+    {
+      "antialiased": true,
+      "color": 199,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 199,
+      "stroke_width": 1,
+      "x1": 48,
+      "x2": 65,
+      "y1": 78,
+      "y2": 84
+    },
+    {
+      "antialiased": true,
+      "color": 199,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 199,
+      "stroke_width": 1,
+      "x1": 65,
+      "x2": 69,
+      "y1": 84,
+      "y2": 72
+    },
+    {
+      "antialiased": true,
+      "color": 199,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 199,
+      "stroke_width": 1,
+      "x1": 60,
+      "x2": 56,
+      "y1": 69,
+      "y2": 81
+    },
+    {
+      "antialiased": true,
+      "color": 199,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 199,
+      "stroke_width": 1,
+      "x1": 67,
+      "x2": 50,
+      "y1": 78,
+      "y2": 72
+    },
+    {
+      "antialiased": true,
+      "color": 223,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 223,
+      "stroke_width": 1,
+      "x1": 79,
+      "x2": 62,
+      "y1": 80,
+      "y2": 92
+    },
+    {
+      "antialiased": true,
+      "color": 223,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 223,
+      "stroke_width": 1,
+      "x1": 62,
+      "x2": 86,
+      "y1": 92,
+      "y2": 91
+    },
+    {
+      "antialiased": true,
+      "color": 223,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 223,
+      "stroke_width": 1,
+      "x1": 86,
+      "x2": 79,
+      "y1": 91,
+      "y2": 80
+    },
+    {
+      "antialiased": true,
+      "color": 223,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 223,
+      "stroke_width": 1,
+      "x1": 70,
+      "x2": 82,
+      "y1": 86,
+      "y2": 85
+    },
+    {
+      "antialiased": true,
+      "color": 223,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 223,
+      "stroke_width": 1,
+      "x1": 70,
+      "x2": 74,
+      "y1": 86,
+      "y2": 91
+    },
+    {
+      "antialiased": true,
+      "color": 223,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 223,
+      "stroke_width": 1,
+      "x1": 82,
+      "x2": 74,
+      "y1": 85,
+      "y2": 91
+    },
+    {
+      "antialiased": true,
+      "color": 215,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 215,
+      "stroke_width": 1,
+      "x1": 88,
+      "x2": 109,
+      "y1": 80,
+      "y2": 91
+    },
+    {
+      "antialiased": true,
+      "color": 215,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 215,
+      "stroke_width": 1,
+      "x1": 109,
+      "x2": 92,
+      "y1": 91,
+      "y2": 94
+    },
+    {
+      "antialiased": true,
+      "color": 215,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 215,
+      "stroke_width": 1,
+      "x1": 92,
+      "x2": 88,
+      "y1": 94,
+      "y2": 80
+    },
+    {
+      "antialiased": true,
+      "color": 215,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 215,
+      "stroke_width": 1,
+      "x1": 98,
+      "x2": 90,
+      "y1": 85,
+      "y2": 87
+    },
+    {
+      "antialiased": true,
+      "color": 215,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 215,
+      "stroke_width": 1,
+      "x1": 98,
+      "x2": 100,
+      "y1": 85,
+      "y2": 92
+    },
+    {
+      "antialiased": true,
+      "color": 215,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 215,
+      "stroke_width": 1,
+      "x1": 90,
+      "x2": 100,
+      "y1": 87,
+      "y2": 92
     },
     {
       "antialiased": true,
@@ -178,14 +619,13 @@
       "y": 108
     }
   ],
-  "preview_ops_sha256": "544ef1583af73f54662e449c13aebba7082194a93e3eeb97ccb6e9a3e42069b2",
+  "preview_ops_sha256": "0c8e904b6c507c31b74c8f95095a23a3400d4d0e203970749f085e5be0021cec",
   "render_tree": {
-    "node_count": 15,
+    "node_count": 56,
     "node_types": [
       "canvasLayer",
       "circle",
       "clear",
-      "drawVectorAt",
       "fillCircle",
       "fillCircle",
       "fillCircle",
@@ -194,6 +634,48 @@
       "fillCircle",
       "group",
       "group",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
       "text",
       "window",
       "windowStack"
@@ -211,7 +693,148 @@
       ],
       "ctor": "Just"
     },
-    "downloadedPieces": [],
+    "downloadedPieces": [
+      {
+        "index": 6,
+        "p1": {
+          "x": 8,
+          "y": 14
+        },
+        "p2": {
+          "x": 29,
+          "y": 25
+        },
+        "p3": {
+          "x": 12,
+          "y": 28
+        },
+        "p4": {
+          "x": 12,
+          "y": 28
+        },
+        "vertexCount": 3
+      },
+      {
+        "index": 5,
+        "p1": {
+          "x": -1,
+          "y": 14
+        },
+        "p2": {
+          "x": -18,
+          "y": 26
+        },
+        "p3": {
+          "x": 6,
+          "y": 25
+        },
+        "p4": {
+          "x": 6,
+          "y": 25
+        },
+        "vertexCount": 3
+      },
+      {
+        "index": 4,
+        "p1": {
+          "x": -11,
+          "y": 6
+        },
+        "p2": {
+          "x": -28,
+          "y": 0
+        },
+        "p3": {
+          "x": -32,
+          "y": 12
+        },
+        "p4": {
+          "x": -15,
+          "y": 18
+        },
+        "vertexCount": 4
+      },
+      {
+        "index": 3,
+        "p1": {
+          "x": 17,
+          "y": -3
+        },
+        "p2": {
+          "x": 31,
+          "y": -9
+        },
+        "p3": {
+          "x": 28,
+          "y": 6
+        },
+        "p4": {
+          "x": 28,
+          "y": 6
+        },
+        "vertexCount": 3
+      },
+      {
+        "index": 2,
+        "p1": {
+          "x": -11,
+          "y": 2
+        },
+        "p2": {
+          "x": 3,
+          "y": -9
+        },
+        "p3": {
+          "x": 17,
+          "y": 2
+        },
+        "p4": {
+          "x": 3,
+          "y": 14
+        },
+        "vertexCount": 4
+      },
+      {
+        "index": 1,
+        "p1": {
+          "x": 9,
+          "y": -5
+        },
+        "p2": {
+          "x": 35,
+          "y": -28
+        },
+        "p3": {
+          "x": 43,
+          "y": 3
+        },
+        "p4": {
+          "x": 43,
+          "y": 3
+        },
+        "vertexCount": 3
+      },
+      {
+        "index": 0,
+        "p1": {
+          "x": -3,
+          "y": -5
+        },
+        "p2": {
+          "x": -35,
+          "y": -28
+        },
+        "p3": {
+          "x": -43,
+          "y": 3
+        },
+        "p4": {
+          "x": -43,
+          "y": 3
+        },
+        "vertexCount": 3
+      }
+    ],
     "now": {
       "args": [
         {
@@ -257,15 +880,10 @@
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
-    "elmc_compile_cached": "false",
-    "elmc_compile_error_count": 0,
-    "elmc_compile_status": "ok",
-    "elmc_compile_warning_count": 0,
-    "elmc_diagnostic_preview": [],
     "protocol_last_inbound_from": "companion",
-    "protocol_last_inbound_message": "ProvideFigure 0",
-    "protocol_last_trigger": "runtime_cmd",
-    "protocol_last_view_message": "ProvideFigure",
+    "protocol_last_inbound_message": "EndFigure 0",
+    "protocol_last_trigger": "runtime_followup",
+    "protocol_last_view_message": "EndFigure 0",
     "runtime_model": {
       "colorMode": {
         "args": [],
@@ -277,7 +895,148 @@
         ],
         "ctor": "Just"
       },
-      "downloadedPieces": [],
+      "downloadedPieces": [
+        {
+          "index": 6,
+          "p1": {
+            "x": 8,
+            "y": 14
+          },
+          "p2": {
+            "x": 29,
+            "y": 25
+          },
+          "p3": {
+            "x": 12,
+            "y": 28
+          },
+          "p4": {
+            "x": 12,
+            "y": 28
+          },
+          "vertexCount": 3
+        },
+        {
+          "index": 5,
+          "p1": {
+            "x": -1,
+            "y": 14
+          },
+          "p2": {
+            "x": -18,
+            "y": 26
+          },
+          "p3": {
+            "x": 6,
+            "y": 25
+          },
+          "p4": {
+            "x": 6,
+            "y": 25
+          },
+          "vertexCount": 3
+        },
+        {
+          "index": 4,
+          "p1": {
+            "x": -11,
+            "y": 6
+          },
+          "p2": {
+            "x": -28,
+            "y": 0
+          },
+          "p3": {
+            "x": -32,
+            "y": 12
+          },
+          "p4": {
+            "x": -15,
+            "y": 18
+          },
+          "vertexCount": 4
+        },
+        {
+          "index": 3,
+          "p1": {
+            "x": 17,
+            "y": -3
+          },
+          "p2": {
+            "x": 31,
+            "y": -9
+          },
+          "p3": {
+            "x": 28,
+            "y": 6
+          },
+          "p4": {
+            "x": 28,
+            "y": 6
+          },
+          "vertexCount": 3
+        },
+        {
+          "index": 2,
+          "p1": {
+            "x": -11,
+            "y": 2
+          },
+          "p2": {
+            "x": 3,
+            "y": -9
+          },
+          "p3": {
+            "x": 17,
+            "y": 2
+          },
+          "p4": {
+            "x": 3,
+            "y": 14
+          },
+          "vertexCount": 4
+        },
+        {
+          "index": 1,
+          "p1": {
+            "x": 9,
+            "y": -5
+          },
+          "p2": {
+            "x": 35,
+            "y": -28
+          },
+          "p3": {
+            "x": 43,
+            "y": 3
+          },
+          "p4": {
+            "x": 43,
+            "y": 3
+          },
+          "vertexCount": 3
+        },
+        {
+          "index": 0,
+          "p1": {
+            "x": -3,
+            "y": -5
+          },
+          "p2": {
+            "x": -35,
+            "y": -28
+          },
+          "p3": {
+            "x": -43,
+            "y": 3
+          },
+          "p4": {
+            "x": -43,
+            "y": 3
+          },
+          "vertexCount": 3
+        }
+      ],
       "now": {
         "args": [
           {

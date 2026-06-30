@@ -1,8 +1,8 @@
 defmodule Elmc.Backend.CCodegen.SequenceLoopCodegen do
   @moduledoc false
 
-  alias Elmc.Backend.CCodegen.ListLoopCodegen
   alias Elmc.Backend.CCodegen.LayoutSolver
+  alias Elmc.Backend.CCodegen.ListLoopCodegen
   alias Elmc.Backend.CCodegen.Types
 
   @spec emit_native_head_loop(String.t(), pos_integer(), String.t(), String.t(), Types.compile_env(), String.t(), keyword()) ::
@@ -48,18 +48,11 @@ defmodule Elmc.Backend.CCodegen.SequenceLoopCodegen do
         fun = Map.get(env, :__function_name__, "")
 
         module
-        |> LayoutSolver.loop_repr(fun, list_arg)
-        |> storage_plan_to_loop_repr()
+        |> LayoutSolver.param_plan(fun, list_arg)
+        |> LayoutSolver.codegen_loop_repr()
 
       repr ->
         repr
     end
   end
-
-  defp storage_plan_to_loop_repr(:compact), do: :int_list
-  defp storage_plan_to_loop_repr(:float_list), do: :float_list
-  defp storage_plan_to_loop_repr(:record_seq), do: :record_seq
-  defp storage_plan_to_loop_repr(:native_linked), do: :native_linked
-  defp storage_plan_to_loop_repr(:cons), do: :cons
-  defp storage_plan_to_loop_repr(_), do: :dual
 end

@@ -433,6 +433,9 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
       :native_linked ->
         emit_boxed_head_native_linked_walk(list_ref, loop_id, head_var, inner_body, opts)
 
+      :record_seq ->
+        emit_boxed_head_record_seq_walk_only(list_ref, loop_id, head_var, inner_body)
+
       _ ->
         emit_boxed_head_list_walk_dual(list_ref, loop_id, head_var, inner_body, opts)
     end
@@ -501,6 +504,19 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     #{inner_body}
         #{ValueSlots.release_stmt(head_var)};
         #{cursor} = ((ElmcIntSpine *)#{cursor}->payload)->tail;
+      }
+    }
+    """
+  end
+
+  defp emit_boxed_head_record_seq_walk_only(list_ref, loop_id, head_var, inner_body) do
+    """
+    if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_RECORD_SEQ) {
+      ElmcRecordSeqPayload *_rsp_#{loop_id} = (ElmcRecordSeqPayload *)#{list_ref}->payload;
+      int _rlen_#{loop_id} = _rsp_#{loop_id} ? _rsp_#{loop_id}->length : 0;
+      for (int _ri_#{loop_id} = 0; _ri_#{loop_id} < _rlen_#{loop_id}; _ri_#{loop_id}++) {
+        ElmcValue *#{head_var} = _rsp_#{loop_id}->items[_ri_#{loop_id}];
+    #{inner_body}
       }
     }
     """

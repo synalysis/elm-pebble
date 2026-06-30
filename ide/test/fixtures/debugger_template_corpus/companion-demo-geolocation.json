@@ -33,7 +33,7 @@
       "font_size": 18,
       "h": 18,
       "kind": "text_label",
-      "text": "Lat 0.00",
+      "text": "Lat 48.13",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -47,7 +47,7 @@
       "font_size": 18,
       "h": 18,
       "kind": "text_label",
-      "text": "Lon 0.00",
+      "text": "Lon 11.57",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -61,7 +61,7 @@
       "font_size": 18,
       "h": 18,
       "kind": "text_label",
-      "text": "±0m",
+      "text": "±25m",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -70,7 +70,7 @@
       "y": 90
     }
   ],
-  "preview_ops_sha256": "bf1b138ccf8ee954d78f397d8583a82e6dedae6ecab1d0dc2a7e94f83d7cac7c",
+  "preview_ops_sha256": "cbfae3d076373f49ed7eb4c3870f94f328de98248e3bbf8f63452ecb729707f3",
   "render_tree": {
     "node_count": 8,
     "node_types": [
@@ -86,9 +86,9 @@
     "root_type": "windowStack"
   },
   "runtime_model": {
-    "accuracyM": 0,
-    "latitudeE6": 0,
-    "longitudeE6": 0,
+    "accuracyM": 25,
+    "latitudeE6": 48137154,
+    "longitudeE6": 11576124,
     "runtime_view_output": [],
     "screenH": 168,
     "screenW": 144,
@@ -105,19 +105,14 @@
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
-    "elmc_compile_cached": "false",
-    "elmc_compile_error_count": 0,
-    "elmc_compile_status": "ok",
-    "elmc_compile_warning_count": 0,
-    "elmc_diagnostic_preview": [],
     "protocol_last_inbound_from": "companion",
     "protocol_last_inbound_message": "ProvidePosition 48137154 11576124 25",
-    "protocol_last_trigger": "init_companion_bridge",
+    "protocol_last_trigger": "companion_bridge_command",
     "protocol_last_view_message": "ProvidePosition 48137154 11576124 25",
     "runtime_model": {
-      "accuracyM": 0,
-      "latitudeE6": 0,
-      "longitudeE6": 0,
+      "accuracyM": 25,
+      "latitudeE6": 48137154,
+      "longitudeE6": 11576124,
       "screenH": 168,
       "screenW": 144,
       "timeString": "08:53"

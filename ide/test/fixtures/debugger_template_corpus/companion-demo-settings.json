@@ -103,11 +103,6 @@
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
-    "elmc_compile_cached": "false",
-    "elmc_compile_error_count": 0,
-    "elmc_compile_status": "ok",
-    "elmc_compile_warning_count": 0,
-    "elmc_diagnostic_preview": [],
     "runtime_model": {
       "configOutcome": {
         "args": [],

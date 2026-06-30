@@ -131,11 +131,6 @@
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
-    "elmc_compile_cached": "false",
-    "elmc_compile_error_count": 0,
-    "elmc_compile_status": "ok",
-    "elmc_compile_warning_count": 0,
-    "elmc_diagnostic_preview": [],
     "protocol_last_inbound_from": "companion",
     "protocol_last_inbound_message": "FromPhone (ProvideNotifications true false)",
     "protocol_last_trigger": "phone_to_watch",

@@ -100,6 +100,16 @@ defmodule Elmc.Backend.CCodegen.StoragePlan do
   @spec from_record_repr(:record_seq | :mixed, {String.t(), String.t()} | nil) :: t()
   def from_record_repr(:record_seq, {mod, name}), do: record_compact(mod, name)
   def from_record_repr(:record_seq, _), do: %__MODULE__{layout: :compact, access: :sequential}
+
+  def from_record_repr(:mixed, {mod, name}) when is_binary(mod) and is_binary(name) do
+    %__MODULE__{
+      elem: {:record, mod, name},
+      layout: :boxed_cons,
+      length: :unknown,
+      access: :sequential
+    }
+  end
+
   def from_record_repr(:mixed, _), do: mixed()
   def from_record_repr(_, _), do: mixed()
 
@@ -116,6 +126,16 @@ defmodule Elmc.Backend.CCodegen.StoragePlan do
   @spec dual_path?(t()) :: boolean()
   def dual_path?(%__MODULE__{layout: :mixed}), do: true
   def dual_path?(_), do: false
+
+  @doc """
+  True when a list may use compact int-list storage and needs INT_LIST/cons dual loops.
+  Record and generic boxed lists use cons (or record_seq) only.
+  """
+  @spec int_list_dual_eligible?(t()) :: boolean()
+  def int_list_dual_eligible?(%__MODULE__{elem: {:primitive, :int}}), do: true
+  def int_list_dual_eligible?(%__MODULE__{elem: {:primitive, :float}}), do: true
+  def int_list_dual_eligible?(%__MODULE__{layout: :mixed, elem: nil}), do: true
+  def int_list_dual_eligible?(_), do: false
 
   @spec loop_repr(t()) :: :compact | :native_linked | :cons | :dual | :float_list | :record_seq
   def loop_repr(%__MODULE__{layout: :compact, elem: {:primitive, :int}}), do: :compact

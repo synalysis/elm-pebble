@@ -371,4 +371,47 @@ defmodule Ide.Debugger.ProtocolDeliveryOrderTest do
     assert AppMessageQueue.pending?(queued, :watch)
     refute ProtocolRx.runtime_ready_for_delivery?(queued, :watch)
   end
+
+  test "init runtime_cmd watch_to_phone is deferred to pending protocol instead of inline queue" do
+    alias Ide.Debugger.PendingProtocolDelivery
+
+    payload = %{
+      "from" => "watch",
+      "to" => "companion",
+      "message" => "RequestWeather Berlin",
+      "message_value" => %{
+        "ctor" => "RequestWeather",
+        "args" => [%{"ctor" => "Berlin", "args" => []}]
+      },
+      "trigger" => "runtime_cmd",
+      "message_source" => "runtime_cmd"
+    }
+
+    state = %{companion: %{model: %{}, shell: %{}}}
+
+    rx_ctx = %{
+      append_event: fn st, _type, _payload -> st end,
+      append_debugger_event: fn st, _type, _target, _msg, _src -> st end,
+      append_runtime_exec_event_for_target: fn st, _target, _meta -> st end,
+      source_root_for_target: fn :companion -> "phone" end,
+      introspect_for: fn st, target ->
+        st |> Map.get(target, %{}) |> RuntimeArtifacts.introspect()
+      end,
+      introspect_cmd_calls: fn _ei, _key -> [] end,
+      apply_step_once: fn st, _t, _m, _v, _s, _tr -> st end,
+      refresh_runtime_fingerprints: fn model, _rm, _vt -> model end,
+      protocol_events_ctx: fn -> %{} end,
+      runtime_ready_for_delivery?: &ProtocolRx.runtime_ready_for_delivery?/2
+    }
+
+    next =
+      ProtocolRx.apply_state_effects(
+        state,
+        [%{type: "debugger.protocol_rx", payload: payload}],
+        rx_ctx
+      )
+
+    assert PendingProtocolDelivery.pending(next) != []
+    assert ProtocolRx.inline_protocol_deliveries(next) == []
+  end
 end

@@ -152,6 +152,41 @@ defmodule Elmc.Backend.CCodegen.LayoutSolver do
     |> StoragePlan.loop_repr()
   end
 
+  @doc """
+  Loop representation for boxed list walks from IR (params, literals, call results).
+  """
+  @spec list_loop_repr_from_expr(Types.ir_expr(), map()) ::
+          :int_list | :float_list | :record_seq | :native_linked | :cons | :dual
+  def list_loop_repr_from_expr(expr, env) do
+    decl_map = Map.get(env, :__program_decls__, %{})
+    module = Map.get(env, :__module__, "Main")
+    fun = Map.get(env, :__function_name__, "")
+
+    plan =
+      case expr do
+        %{op: :var, name: name} when is_binary(name) ->
+          param_plan(module, fun, name)
+
+        _ ->
+          expr_plan(expr, decl_map)
+      end
+
+    codegen_loop_repr(plan)
+  end
+
+  @spec codegen_loop_repr(StoragePlan.t()) ::
+          :int_list | :float_list | :record_seq | :native_linked | :cons | :dual
+  def codegen_loop_repr(plan) do
+    case StoragePlan.loop_repr(plan) do
+      :compact -> :int_list
+      :float_list -> :float_list
+      :record_seq -> :record_seq
+      :native_linked -> :native_linked
+      :cons -> :cons
+      :dual -> if StoragePlan.int_list_dual_eligible?(plan), do: :dual, else: :cons
+    end
+  end
+
   @spec legacy_param_repr(String.t(), String.t(), String.t()) :: ListIntRepr.repr()
   def legacy_param_repr(module, fun, arg_name) do
     module
