@@ -13,6 +13,7 @@ type alias Model =
     , progress : Maybe Int
     , phase : String
     , events : Int
+    , screenW : Int
     }
 
 
@@ -24,8 +25,8 @@ type Msg
 
 
 init : Platform.LaunchContext -> ( Model, Cmd Msg )
-init _ =
-    ( { bounds = Nothing, progress = Nothing, phase = "Starting", events = 0 }
+init context =
+    ( { bounds = Nothing, progress = Nothing, phase = "Starting", events = 0, screenW = context.screen.width }
     , UnobstructedArea.currentBounds GotBounds
     )
 
@@ -61,13 +62,20 @@ subscriptions _ =
 
 view : Model -> Ui.UiNode
 view model =
+    let
+        textOpts =
+            Ui.alignLeft Ui.defaultTextOptions
+
+        textW =
+            model.screenW - 8
+    in
     Ui.toUiNode
         [ Ui.clear Color.white
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 8, w = 136, h = 20 } "Unobstructed area"
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 32, w = 136, h = 20 } model.phase
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 56, w = 136, h = 20 } (rectLabel model.bounds)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 80, w = 136, h = 20 } ("Progress: " ++ maybeInt model.progress)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 104, w = 136, h = 40 } ("Events: " ++ String.fromInt model.events)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 8, w = textW, h = 18 } "Unobstructed"
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 32, w = textW, h = 18 } model.phase
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 56, w = textW, h = 18 } (rectLabel model.bounds)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 80, w = textW, h = 18 } ("Prog: " ++ maybeInt model.progress)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 104, w = textW, h = 18 } ("Ev: " ++ String.fromInt model.events)
         ]
 
 
@@ -75,11 +83,10 @@ rectLabel : Maybe Ui.Rect -> String
 rectLabel maybeRect =
     case maybeRect of
         Nothing ->
-            "Bounds: --"
+            "--"
 
         Just rect ->
-            "Bounds: "
-                ++ String.fromInt rect.x
+            String.fromInt rect.x
                 ++ ","
                 ++ String.fromInt rect.y
                 ++ " "

@@ -16,6 +16,11 @@ defmodule Ide.ProjectTemplatePreviews do
 
   @previews_relative "static/images/template-previews"
 
+  # Preview-only watch profiles (corpus bootstrap may pick a round default).
+  @preview_watch_profiles %{
+    "watch-demo-unobstructed" => "aplite"
+  }
+
   @doc """
   Directory under `priv/static` where template preview PNGs are stored.
   """
@@ -68,10 +73,28 @@ defmodule Ide.ProjectTemplatePreviews do
 
     case DebuggerTemplateCorpus.bootstrap_template(template_key, cleanup: false) do
       {:ok, %{project: project}} ->
+        :ok = maybe_apply_preview_watch_profile!(project.slug, template_key)
         write_preview_for_project!(template_key, project)
 
       {:error, reason} ->
         raise "could not bootstrap template #{template_key}: #{inspect(reason)}"
+    end
+  end
+
+  @spec maybe_apply_preview_watch_profile!(String.t(), String.t()) :: :ok
+  defp maybe_apply_preview_watch_profile!(slug, template_key) when is_binary(slug) do
+    case Map.get(@preview_watch_profiles, template_key) do
+      profile_id when is_binary(profile_id) ->
+        case Debugger.set_watch_profile(slug, %{watch_profile_id: profile_id}) do
+          {:ok, _} ->
+            :ok
+
+          {:error, reason} ->
+            raise "could not set preview watch profile #{profile_id} for #{template_key}: #{inspect(reason)}"
+        end
+
+      _ ->
+        :ok
     end
   end
 

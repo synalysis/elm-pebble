@@ -121,6 +121,7 @@ defmodule Ide.Debugger.RuntimeContexts do
       step_followup
       |> StepFollowupContexts.runtime_followups()
       |> Map.put(:companion_bridge, companion_bridge)
+      |> Map.put(:protocol_rx_ctx, protocol_rx_fn)
 
     geolocation = StepFollowupContexts.geolocation(step_followup)
     subscription_responses = StepFollowupContexts.subscription_responses(step_followup)

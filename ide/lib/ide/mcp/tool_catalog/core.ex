@@ -50,7 +50,8 @@ defmodule Ide.Mcp.ToolCatalog.Core do
           temperatureC: %{type: "number"},
           humidityPercent: %{type: "number"},
           pressureHpa: %{type: "number"},
-          windKph: %{type: "number"}
+          windKph: %{type: "number"},
+          windDirectionDeg: %{type: "number"}
         }
       }
     }

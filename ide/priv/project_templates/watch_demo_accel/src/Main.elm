@@ -55,12 +55,12 @@ view : Model -> Ui.UiNode
 view model =
     Ui.toUiNode
         [ Ui.clear Color.white
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 8, w = 136, h = 20 } "Accel demo"
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 32, w = 136, h = 20 } (String.fromInt model.x)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 52, w = 136, h = 20 } (String.fromInt model.y)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 72, w = 136, h = 20 } (String.fromInt model.z)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 96, w = 136, h = 20 } (String.fromInt model.taps)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 120, w = 136, h = 20 } "Tap to count"
+        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 8, w = 136, h = 18 } "Accel demo"
+        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 32, w = 136, h = 18 } (String.fromInt model.x)
+        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 52, w = 136, h = 18 } (String.fromInt model.y)
+        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 72, w = 136, h = 18 } (String.fromInt model.z)
+        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 96, w = 136, h = 18 } (String.fromInt model.taps)
+        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 120, w = 136, h = 18 } "Tap to count"
         ]
 
 

@@ -168,13 +168,18 @@ view model =
         ( label, _ ) =
             currentMode model.modeIndex
     in
+    let
+        textOpts =
+            Ui.alignLeft Ui.defaultTextOptions
+    in
     Ui.toUiNode
         [ Ui.clear Color.white
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 8, w = 136, h = 20 } "Speaker demo"
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 32, w = 136, h = 20 } label
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 56, w = 136, h = 20 } (String.fromInt model.plays)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 80, w = 136, h = 20 } model.lastFinish
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 104, w = 136, h = 40 } "Up/Down: mode Select: play"
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 8, w = 136, h = 18 } "Speaker"
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 32, w = 136, h = 18 } label
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 56, w = 136, h = 18 } (String.fromInt model.plays)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 80, w = 136, h = 18 } model.lastFinish
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 104, w = 136, h = 18 } "Up/Dn: mode"
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 122, w = 136, h = 18 } "Sel: play"
         ]
 
 

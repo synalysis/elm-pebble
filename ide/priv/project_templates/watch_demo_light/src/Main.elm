@@ -95,13 +95,13 @@ lightLabel : Maybe Light.State -> String
 lightLabel maybeState =
     case maybeState of
         Nothing ->
-            "Backlight: --"
+            "Light: --"
 
         Just Light.On ->
-            "Backlight: on"
+            "Light: on"
 
         Just Light.Off ->
-            "Backlight: off"
+            "Light: off"
 
 
 subscriptions : Model -> Sub Msg
@@ -116,13 +116,18 @@ subscriptions _ =
 
 view : Model -> Ui.UiNode
 view model =
+    let
+        textOpts =
+            Ui.alignLeft Ui.defaultTextOptions
+    in
     Ui.toUiNode
         [ Ui.clear Color.white
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 8, w = 136, h = 20 } "Light demo"
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 36, w = 136, h = 20 } (modeLabel model)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 64, w = 136, h = 20 } (lightLabel model.backlight)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 88, w = 136, h = 20 } (String.fromInt model.lightChanges)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 112, w = 136, h = 40 } "Up/Down: mode Select: apply"
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 8, w = 136, h = 18 } "Backlight"
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 32, w = 136, h = 18 } (modeLabel model)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 56, w = 136, h = 18 } (lightLabel model.backlight)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 80, w = 136, h = 18 } (String.fromInt model.lightChanges)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 104, w = 136, h = 18 } "Up/Dn: mode"
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 122, w = 136, h = 18 } "Sel: apply"
         ]
 
 

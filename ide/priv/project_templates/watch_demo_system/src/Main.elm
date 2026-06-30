@@ -77,13 +77,18 @@ subscriptions _ =
 
 view : Model -> Ui.UiNode
 view model =
+    let
+        textOpts =
+            Ui.alignLeft Ui.defaultTextOptions
+    in
     Ui.toUiNode
         [ Ui.clear Color.white
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 8, w = 136, h = 20 } "System demo"
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 32, w = 136, h = 20 } ("Battery: " ++ maybePercent model.battery)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 56, w = 136, h = 20 } ("Phone: " ++ maybeBool model.connected)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 80, w = 136, h = 20 } ("Batt Δ: " ++ String.fromInt model.batteryEvents)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 104, w = 136, h = 40 } ("Conn Δ: " ++ String.fromInt model.connectionEvents ++ " Select: poll")
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 8, w = 136, h = 18 } "System"
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 32, w = 136, h = 18 } ("Batt: " ++ maybePercent model.battery)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 56, w = 136, h = 18 } ("Phone: " ++ maybeBool model.connected)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 80, w = 136, h = 18 } ("Batt Δ: " ++ String.fromInt model.batteryEvents)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 104, w = 136, h = 18 } ("Conn Δ: " ++ String.fromInt model.connectionEvents)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 128, w = 136, h = 18 } "Sel: poll"
         ]
 
 

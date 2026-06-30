@@ -1,4 +1,4 @@
-module Companion.Types exposing (AltitudeUnit(..), InternetMode(..), PhoneToWatch(..), SunMode(..), TemperatureUnit(..), TideKind(..), WatchToPhone(..), WeatherCondition(..), WindUnit(..))
+module Companion.Types exposing (Altitude(..), PhoneToWatch(..), SunMode(..), Temperature(..), TideKind(..), WatchToPhone(..), WeatherCondition(..), WindDirection(..), WindSpeed(..))
 
 {-| Shared YES watchface messages.
 -}
@@ -19,16 +19,32 @@ type WeatherCondition
 type SunMode
     = SunCycle
     | PolarDay
+    | PolarNight
 
 
-type TemperatureUnit
-    = Celsius
-    | Fahrenheit
+{-| Temperature in tenths of a degree in the tagged unit.
+-}
+type Temperature
+    = Celsius Int
+    | Fahrenheit Int
 
 
-type WindUnit
-    = MetersPerSecond
-    | MilesPerHour
+{-| Wind speed in the tagged unit.
+-}
+type WindSpeed
+    = MetersPerSecond Int
+    | MilesPerHour Int
+
+
+type WindDirection
+    = North
+    | NorthEast
+    | East
+    | SouthEast
+    | South
+    | SouthWest
+    | West
+    | NorthWest
 
 
 type TideKind
@@ -36,14 +52,9 @@ type TideKind
     | LowTide
 
 
-type AltitudeUnit
-    = Meters
-    | Feet
-
-
-type InternetMode
-    = InternetEnabled
-    | InternetDisabled
+type Altitude
+    = Meters Int
+    | Feet Int
 
 
 type WatchToPhone
@@ -51,14 +62,13 @@ type WatchToPhone
 
 
 type PhoneToWatch
-    = ProvideLocation Int Int Int
+    = ProvideTimezone Int
     | ProvideSun Int Int SunMode
     | ProvideMoon Int Int Int
     | ProvideMoonPhase Int
-    | ProvideWeather Int WeatherCondition Int Int Int TemperatureUnit
-    | ProvideWind Int Int WindUnit
+    | ProvideWeather Temperature WeatherCondition Int Int Int
+    | ProvideWind WindDirection WindSpeed
     | ProvideTide Int Int Int TideKind
     | ClearTide
-    | ProvideAltitude Int AltitudeUnit
-    | SetUseInternet InternetMode
-    | SetUnits TemperatureUnit WindUnit
+    | ProvideAltitude Altitude
+    | SetCornerUpdateInterval Int

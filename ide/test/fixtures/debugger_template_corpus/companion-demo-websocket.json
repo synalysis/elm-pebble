@@ -95,10 +95,8 @@
   "template": "companion-demo-websocket",
   "timeline_init_messages": [
     "init:init",
-    "update:FromPhone (ProvideWebSocketStatus \"idle\" ())",
     "update:FromPhone (ProvideWebSocketStatus Closed \"connecting\")",
-    "update:FromWatch (Ok RequestWebSocketStatus)",
-    "update:RequestWebSocketStatus"
+    "update:FromWatch (Ok RequestWebSocketStatus)"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {

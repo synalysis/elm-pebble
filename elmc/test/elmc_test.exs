@@ -199,6 +199,21 @@ defmodule ElmcTest do
     assert runtime_c =~ "elmc_alloc_probe_diff"
   end
 
+  test "runtime always includes math.h for polar point helpers on Pebble" do
+    out_dir = Path.expand("tmp/runtime_math_include", __DIR__)
+    runtime_dir = Path.join(out_dir, "runtime")
+    File.rm_rf!(out_dir)
+
+    assert :ok = Elmc.Runtime.Generator.write_runtime(runtime_dir)
+
+    runtime_c = File.read!(Path.join(runtime_dir, "elmc_runtime.c"))
+
+    assert runtime_c =~ "#include <math.h>"
+    refute runtime_c =~ "#ifndef ELMC_PEBBLE_PLATFORM\n#include <math.h>"
+    assert runtime_c =~ "elmc_polar_point_x("
+    assert runtime_c =~ "lround(sin(theta)"
+  end
+
   test "runtime pruning keeps elmc_cmd_alloc when generated code uses elmc_cmd1" do
     out_dir = Path.expand("tmp/runtime_pruned_cmd", __DIR__)
     refs_dir = Path.join(out_dir, "refs")

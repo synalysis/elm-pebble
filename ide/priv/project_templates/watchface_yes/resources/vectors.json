@@ -1,0 +1,94 @@
+{
+  "entries": [
+    {
+      "base_name": "WeatherClear",
+      "bytes": 165,
+      "ctor": "VectorStaticWeatherClear",
+      "filename": "VectorStaticWeatherClear.pdc",
+      "id": "vector_vectorstaticweatherclear",
+      "kind": "image",
+      "mime": "application/octet-stream",
+      "source": "pdc"
+    },
+    {
+      "base_name": "WeatherCloudy",
+      "bytes": 55,
+      "ctor": "VectorStaticWeatherCloudy",
+      "filename": "VectorStaticWeatherCloudy.pdc",
+      "id": "vector_vectorstaticweathercloudy",
+      "kind": "image",
+      "mime": "application/octet-stream",
+      "source": "pdc"
+    },
+    {
+      "base_name": "WeatherFog",
+      "bytes": 91,
+      "ctor": "VectorStaticWeatherFog",
+      "filename": "VectorStaticWeatherFog.pdc",
+      "id": "vector_vectorstaticweatherfog",
+      "kind": "image",
+      "mime": "application/octet-stream",
+      "source": "pdc"
+    },
+    {
+      "base_name": "WeatherDrizzle",
+      "bytes": 106,
+      "ctor": "VectorStaticWeatherDrizzle",
+      "filename": "VectorStaticWeatherDrizzle.pdc",
+      "id": "vector_vectorstaticweatherdrizzle",
+      "kind": "image",
+      "mime": "application/octet-stream",
+      "source": "pdc"
+    },
+    {
+      "base_name": "WeatherRain",
+      "bytes": 123,
+      "ctor": "VectorStaticWeatherRain",
+      "filename": "VectorStaticWeatherRain.pdc",
+      "id": "vector_vectorstaticweatherrain",
+      "kind": "image",
+      "mime": "application/octet-stream",
+      "source": "pdc"
+    },
+    {
+      "base_name": "WeatherSnow",
+      "bytes": 157,
+      "ctor": "VectorStaticWeatherSnow",
+      "filename": "VectorStaticWeatherSnow.pdc",
+      "id": "vector_vectorstaticweathersnow",
+      "kind": "image",
+      "mime": "application/octet-stream",
+      "source": "pdc"
+    },
+    {
+      "base_name": "WeatherShowers",
+      "bytes": 123,
+      "ctor": "VectorStaticWeatherShowers",
+      "filename": "VectorStaticWeatherShowers.pdc",
+      "id": "vector_vectorstaticweathershowers",
+      "kind": "image",
+      "mime": "application/octet-stream",
+      "source": "pdc"
+    },
+    {
+      "base_name": "WeatherStorm",
+      "bytes": 157,
+      "ctor": "VectorStaticWeatherStorm",
+      "filename": "VectorStaticWeatherStorm.pdc",
+      "id": "vector_vectorstaticweatherstorm",
+      "kind": "image",
+      "mime": "application/octet-stream",
+      "source": "pdc"
+    },
+    {
+      "base_name": "WeatherUnknown",
+      "bytes": 98,
+      "ctor": "VectorStaticWeatherUnknown",
+      "filename": "VectorStaticWeatherUnknown.pdc",
+      "id": "vector_vectorstaticweatherunknown",
+      "kind": "image",
+      "mime": "application/octet-stream",
+      "source": "pdc"
+    }
+  ]
+}

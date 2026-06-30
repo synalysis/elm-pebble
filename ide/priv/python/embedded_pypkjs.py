@@ -600,6 +600,7 @@ def simulator_weather_from_settings(settings):
         "humidityPercent": weather.get("humidityPercent", settings.get("weather_humidityPercent")),
         "pressureHpa": weather.get("pressureHpa", settings.get("weather_pressureHpa")),
         "windKph": weather.get("windKph", settings.get("weather_windKph")),
+        "windDirectionDeg": weather.get("windDirectionDeg", settings.get("weather_windDirectionDeg")),
     }
 
 

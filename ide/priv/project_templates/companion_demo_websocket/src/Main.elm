@@ -61,20 +61,32 @@ view model =
         startY =
             36
 
+        textOpts =
+            Ui.alignLeft Ui.defaultTextOptions
+
         label x y text_ =
-            Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = x, y = y, w = model.screenW - 16, h = lineH } text_
+            Ui.text Resources.DefaultFont textOpts { x = x, y = y, w = model.screenW - 16, h = lineH } text_
     in
     Ui.windowStack
         [ Ui.window 1
             [ Ui.canvasLayer 1
                 [ Ui.clear Color.white
-                , label 8 startY "WebSocket demo"
+                , label 8 startY "WebSocket"
                 , label 8 (startY + lineH) (statusLabel model.status)
-                , label 8 (startY + lineH * 2) model.statusDetail
-                , label 8 (startY + lineH * 3) "Select = ping"
+                , label 8 (startY + lineH * 2) (truncate model.statusDetail 16)
+                , label 8 (startY + lineH * 3) "Sel: ping"
                 ]
             ]
         ]
+
+
+truncate : String -> Int -> String
+truncate text_ maxLen =
+    if String.length text_ <= maxLen then
+        text_
+
+    else
+        String.left maxLen text_
 
 
 statusLabel : WebSocketStatus -> String

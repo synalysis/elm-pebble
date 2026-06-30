@@ -879,23 +879,29 @@ defmodule Ide.ProjectsTest do
     assert String.contains?(watch_main, "ProvideTide")
     assert String.contains?(watch_main, "Button.onRelease Button.Down RequestRefresh")
     assert String.contains?(watch_main, "(min model.screenW model.screenH // 2) - 22")
-    assert String.contains?(watch_main, "pointAt cx cy (radius + 16) angle")
+    assert String.contains?(watch_main, "pointAt cx cy handLen handAngle")
 
     assert {:ok, protocol_types} =
              Projects.read_source_file(project, "protocol", "src/Companion/Types.elm")
 
     assert String.contains?(protocol_types, "type WeatherCondition")
-    assert String.contains?(protocol_types, "ProvideLocation Int Int Int")
-    assert String.contains?(protocol_types, "type InternetMode")
+    assert String.contains?(protocol_types, "ProvideTimezone Int")
+    assert String.contains?(protocol_types, "PolarNight")
+    assert String.contains?(protocol_types, "type Temperature")
+    assert String.contains?(protocol_types, "type WindSpeed")
+    assert String.contains?(protocol_types, "type Altitude")
 
     assert String.contains?(
              protocol_types,
-             "ProvideWeather Int WeatherCondition Int Int Int TemperatureUnit"
+             "ProvideWeather Temperature WeatherCondition Int Int Int"
            )
 
-    assert String.contains?(protocol_types, "ProvideWind Int Int WindUnit")
-    assert String.contains?(protocol_types, "SetUseInternet InternetMode")
-    assert String.contains?(protocol_types, "SetUnits TemperatureUnit WindUnit")
+    assert String.contains?(protocol_types, "ProvideWind WindDirection WindSpeed")
+    assert String.contains?(protocol_types, "ProvideAltitude Altitude")
+    assert String.contains?(protocol_types, "SetCornerUpdateInterval Int")
+    refute String.contains?(protocol_types, "SetUseInternet")
+    refute String.contains?(protocol_types, "SetUnits")
+    refute String.contains?(protocol_types, "InternetMode")
 
     assert {:ok, companion_app} =
              Projects.read_source_file(project, "phone", "src/CompanionApp.elm")
@@ -909,14 +915,18 @@ defmodule Ide.ProjectsTest do
 
     assert String.contains?(companion_app, "Geolocation.currentPosition")
     assert String.contains?(companion_app, "Geolocation.onCurrentPosition CurrentPosition")
-    assert String.contains?(companion_app, "sunriseMinute location tzOffsetMin")
-    assert String.contains?(companion_app, "sunsetMinute location tzOffsetMin")
+    assert String.contains?(companion_app, "sunSnapshot location tzOffsetMin now")
+    assert String.contains?(companion_app, "moonSnapshot location tzOffsetMin now")
+    assert String.contains?(companion_app, "Weather.current")
+    assert String.contains?(companion_app, "Environment.current")
+    assert String.contains?(companion_app, "SetCornerUpdateInterval")
     refute String.contains?(companion_app, "ProvideAltitude")
 
     assert {:ok, companion_preferences} =
              Projects.read_source_file(project, "phone", "src/CompanionPreferences.elm")
 
     assert String.contains?(companion_preferences, "Preferences.schema \"YES Watchface\"")
+    assert String.contains?(companion_preferences, "cornerUpdateInterval")
     refute String.contains?(companion_preferences, "Preferences.field \"homeLatitude\"")
     refute String.contains?(companion_preferences, "Preferences.field \"showTide\"")
     refute String.contains?(companion_preferences, "Preferences.choiceOption Fahrenheit")
@@ -924,7 +934,13 @@ defmodule Ide.ProjectsTest do
 
     assert {:ok, preferences_schema} = Ide.PebblePreferences.extract(Path.join(base, "phone"))
 
-    assert Enum.flat_map(preferences_schema.sections, & &1.fields) |> Enum.map(& &1.id) == []
+    assert Enum.flat_map(preferences_schema.sections, & &1.fields) |> Enum.map(& &1.id) ==
+             ["cornerUpdateInterval"]
+
+    assert String.contains?(watch_main, "drawCorners")
+    assert String.contains?(watch_main, "pickSlot")
+    assert String.contains?(watch_main, "SetCornerUpdateInterval")
+    assert String.contains?(watch_main, "Pebble.Health")
   end
 
   test "tangram time watchface template seeds watch protocol and phone" do

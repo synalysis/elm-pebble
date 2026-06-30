@@ -1516,9 +1516,7 @@ defmodule Elmc.Runtime.Generator do
     #include <string.h>
     #include <stdio.h>
     #include <time.h>
-    #ifndef ELMC_PEBBLE_PLATFORM
     #include <math.h>
-    #endif
     #{JsonSections.runtime_source_includes()}
     #if defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_CHALK) || defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_FLINT) || defined(PBL_PLATFORM_GABBRO)
     #define ELMC_PEBBLE_PLATFORM 1

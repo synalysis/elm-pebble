@@ -111,7 +111,7 @@ view : Model -> Ui.UiNode
 view model =
     Ui.toUiNode
         (Ui.clear Color.white
-            :: Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 8, w = 136, h = 20 } "Health demo"
+            :: Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 8, w = 136, h = 18 } "Health demo"
             :: bodyLines model
         )
 
@@ -120,16 +120,16 @@ bodyLines : Model -> List Ui.RenderOp
 bodyLines model =
     case model.supported of
         Just False ->
-            [ Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 40, w = 136, h = 40 } "Health API not supported on this watch"
-            , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 120, w = 136, h = 20 } "Select: recheck"
+            [ Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 40, w = 136, h = 18 } "Health API not supported on this watch"
+            , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 120, w = 136, h = 18 } "Select: recheck"
             ]
 
         _ ->
-            [ Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 32, w = 136, h = 20 } ("Now: " ++ intLabel model.stepsNow)
-            , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 52, w = 136, h = 20 } ("Today: " ++ intLabel model.stepsToday)
-            , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 76, w = 136, h = 20 } model.lastEvent
-            , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 96, w = 136, h = 20 } (String.fromInt model.events)
-            , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 120, w = 136, h = 20 } "Select: refresh"
+            [ Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 32, w = 136, h = 18 } ("Now: " ++ intLabel model.stepsNow)
+            , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 52, w = 136, h = 18 } ("Today: " ++ intLabel model.stepsToday)
+            , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 76, w = 136, h = 18 } model.lastEvent
+            , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 96, w = 136, h = 18 } (String.fromInt model.events)
+            , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 120, w = 136, h = 18 } "Select: refresh"
             ]
 
 

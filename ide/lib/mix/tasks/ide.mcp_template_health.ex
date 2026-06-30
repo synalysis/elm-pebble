@@ -295,7 +295,8 @@ defmodule Mix.Tasks.Ide.McpTemplateHealth do
              "temperatureC" => 4,
              "humidityPercent" => 88,
              "pressureHpa" => 995,
-             "windKph" => 22
+             "windKph" => 22,
+             "windDirectionDeg" => 90
            }
          })}
 

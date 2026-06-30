@@ -852,8 +852,8 @@ defmodule Ide.PebbleToolchainTest do
       source_path
       |> File.read!()
       |> String.replace(
-        "Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 96, w = 136, h = 20 } (String.fromInt model.events)",
-        "Ui.textInt Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 96, w = 136, h = 20 } model.events"
+        "Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 96, w = 136, h = 18 } (String.fromInt model.events)",
+        "Ui.textInt Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 96, w = 136, h = 18 } model.events"
       )
 
     File.write!(source_path, source)

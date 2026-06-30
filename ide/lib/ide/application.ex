@@ -31,6 +31,7 @@ defmodule Ide.Application do
       Ide.Debugger,
       {Registry, keys: :unique, name: Ide.Emulator.Registry},
       Ide.Emulator.SlotLimiter,
+      Ide.Auth.LoginRateLimit,
       {DynamicSupervisor, strategy: :one_for_one, name: Ide.Emulator.SessionSupervisor},
       {DNSCluster, query: Application.get_env(:ide, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Ide.PubSub},

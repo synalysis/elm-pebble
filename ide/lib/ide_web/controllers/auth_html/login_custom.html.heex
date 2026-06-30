@@ -33,6 +33,19 @@
             data-submit-once
           >
             <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+            <div
+              aria-hidden="true"
+              class="pointer-events-none absolute left-[-9999px] h-0 w-0 overflow-hidden opacity-0"
+            >
+              <label for={"login-#{@login_honeypot_field}"}>Organization</label>
+              <input
+                type="text"
+                id={"login-#{@login_honeypot_field}"}
+                name={@login_honeypot_field}
+                tabindex="-1"
+                autocomplete="off"
+              />
+            </div>
             <label class="block text-sm">
               <span class="mb-1 block font-medium text-zinc-700">Email</span>
               <input
@@ -45,6 +58,8 @@
                 class="w-full rounded-lg border border-zinc-300 px-3 py-2"
               />
             </label>
+            <div :if={@turnstile_site_key} class="cf-turnstile" data-sitekey={@turnstile_site_key}>
+            </div>
             <button
               type="submit"
               data-disable-with="Sending..."
@@ -53,10 +68,17 @@
               Email me a login link
             </button>
           </form>
+          <script
+            :if={@turnstile_site_key}
+            src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+            async
+            defer
+          >
+          </script>
         <% @step == :sent -> %>
           <h1 class="mt-2 text-2xl font-semibold text-zinc-900">Check your email</h1>
           <p class="mt-2 text-sm text-zinc-600">
-            We've sent a login link to <span class="font-medium text-zinc-900">{@email}</span>.
+            If <span class="font-medium text-zinc-900">{@email}</span> can receive mail, we've sent a login link there.
             Open the link on this device to sign in. The link expires in {@login_link_ttl_days} days and can only be used once.
           </p>
 

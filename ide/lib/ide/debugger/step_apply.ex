@@ -210,7 +210,7 @@ defmodule Ide.Debugger.StepApply do
     runtime_followups = Map.get(runtime_result, :followup_messages, [])
 
     runtime_followups =
-      if runtime_protocol_events != [] do
+      if runtime_protocol_events != [] or command_protocol_events != [] do
         Enum.reject(runtime_followups, &RuntimeFollowups.protocol_events_followup?/1)
       else
         runtime_followups

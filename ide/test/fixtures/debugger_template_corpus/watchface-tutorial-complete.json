@@ -64,7 +64,7 @@
       "font_size": 22,
       "h": 22,
       "kind": "text_label",
-      "text": "Loading...",
+      "text": "0C Clear",
       "text_align": "center",
       "text_color": 255,
       "text_overflow": "word_wrap",
@@ -73,7 +73,7 @@
       "y": 136
     }
   ],
-  "preview_ops_sha256": "dea99592aef77b50a3acadd3e38b14b860d0866197e88e50b9d0f100539916a6",
+  "preview_ops_sha256": "3d87f0ed59a2fdfeb18fdc1daad3ebedf89c8354280bed6a4d62003aa771def2",
   "render_tree": {
     "node_count": 14,
     "node_types": [
@@ -106,8 +106,13 @@
       "ctor": "Just"
     },
     "condition": {
-      "args": [],
-      "ctor": "Nothing"
+      "args": [
+        {
+          "args": [],
+          "ctor": "Clear"
+        }
+      ],
+      "ctor": "Just"
     },
     "connected": {
       "args": [
@@ -145,8 +150,15 @@
       "ctor": "Nothing"
     },
     "temperature": {
-      "args": [],
-      "ctor": "Nothing"
+      "args": [
+        {
+          "args": [
+            0
+          ],
+          "ctor": "Celsius"
+        }
+      ],
+      "ctor": "Just"
     },
     "textColor": {
       "args": [],
@@ -160,11 +172,17 @@
     "update:BatteryLevelChanged 88",
     "update:ConnectionStatusChanged True",
     "update:CurrentDateTime { day = 27, dayOfWeek = Wednesday, hour = 8, minute = 53, month = 5, second = 0, utcOffsetMinutes = 0, year = 2026 }",
-    "update:RequestWeather CurrentLocation"
+    "update:FromPhone (ProvideCondition Clear)",
+    "update:FromPhone (ProvideTemperature (Celsius 0))",
+    "update:FromWatch (Ok (RequestWeather CurrentLocation))"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
+    "protocol_last_inbound_from": "companion",
+    "protocol_last_inbound_message": "ProvideCondition Clear",
+    "protocol_last_trigger": "protocol_rx",
+    "protocol_last_view_message": "ProvideCondition Clear",
     "runtime_model": {
       "backgroundColor": {
         "args": [],
@@ -177,8 +195,13 @@
         "ctor": "Just"
       },
       "condition": {
-        "args": [],
-        "ctor": "Nothing"
+        "args": [
+          {
+            "args": [],
+            "ctor": "Clear"
+          }
+        ],
+        "ctor": "Just"
       },
       "connected": {
         "args": [
@@ -215,8 +238,15 @@
         "ctor": "Nothing"
       },
       "temperature": {
-        "args": [],
-        "ctor": "Nothing"
+        "args": [
+          {
+            "args": [
+              0
+            ],
+            "ctor": "Celsius"
+          }
+        ],
+        "ctor": "Just"
       },
       "textColor": {
         "args": [],

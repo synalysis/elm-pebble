@@ -126,8 +126,7 @@
     "update:GotConnectivity (Ok Online)",
     "update:GotConnectivity (Ok True)",
     "update:GotLocale (Ok {language=en,locale=en-US,region=US,uses24h=true})",
-    "update:GotNotifications (Ok {notificationsenabled=true,quiethours=false})",
-    "update:RequestPhoneStatus"
+    "update:GotNotifications (Ok {notificationsenabled=true,quiethours=false})"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
@@ -154,6 +153,6 @@
     },
     "runtime_view_output": [],
     "timeString": null,
-    "watch_profile_id": "aplite"
+    "watch_profile_id": "basalt"
   }
 }

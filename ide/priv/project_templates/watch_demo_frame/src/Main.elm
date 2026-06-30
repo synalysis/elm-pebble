@@ -38,13 +38,18 @@ subscriptions _ =
 
 view : Model -> Ui.UiNode
 view model =
+    let
+        textOpts =
+            Ui.alignLeft Ui.defaultTextOptions
+    in
     Ui.toUiNode
         [ Ui.clear Color.white
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 8, w = 136, h = 20 } "Frame demo"
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 36, w = 136, h = 20 } ("Frame: " ++ String.fromInt model.frame)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 64, w = 136, h = 20 } ("Elapsed: " ++ String.fromInt model.elapsedMs)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 92, w = 136, h = 20 } ("dt: " ++ String.fromInt model.dtMs ++ "ms")
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 120, w = 136, h = 20 } "10 fps via Frame.atFps"
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 8, w = 136, h = 18 } "Frame"
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 32, w = 136, h = 18 } ("Frm: " ++ String.fromInt model.frame)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 56, w = 136, h = 18 } ("Ms: " ++ String.fromInt model.elapsedMs)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 80, w = 136, h = 18 } ("dt: " ++ String.fromInt model.dtMs)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 104, w = 136, h = 18 } "10 fps"
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 122, w = 136, h = 18 } "Frame.atFps"
         ]
 
 

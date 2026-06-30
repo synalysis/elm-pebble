@@ -614,6 +614,35 @@ defmodule Ide.Debugger.ProtocolRx do
     end
   end
 
+  @doc false
+  @spec inbound_watch_message(String.t(), String.t(), Types.subscription_payload() | nil) ::
+          {String.t(), Types.protocol_message_wire_value()} | nil
+  def inbound_watch_message(callback, inner_message, message_value)
+      when is_binary(callback) and is_binary(inner_message) do
+    case protocol_callback_message(callback, inner_message, message_value, true) do
+      {display, value} when is_binary(display) and is_map(value) -> {display, value}
+      _ -> nil
+    end
+  end
+
+  @doc false
+  @spec watch_to_phone_step_message(
+          Types.runtime_state(),
+          Types.surface_target(),
+          String.t(),
+          Types.subscription_payload() | nil,
+          ctx()
+        ) :: {String.t(), Types.subscription_payload() | nil}
+  def watch_to_phone_step_message(state, recipient, message, message_value, rx_ctx)
+      when is_map(state) and recipient in [:companion, :phone] and is_binary(message) and
+             is_map(rx_ctx) do
+    callback =
+      protocol_rx_subscription_callback(state, recipient, "on_watch_to_phone", rx_ctx) ||
+        "FromWatch"
+
+    inbound_watch_message(callback, message, message_value) || {message, message_value}
+  end
+
   @spec wrap_protocol_callback_value(String.t(), Types.subscription_payload()) ::
           Types.protocol_ctor_value() | nil
   defp wrap_protocol_callback_value(callback, %{"ctor" => ctor, "args" => _} = value)

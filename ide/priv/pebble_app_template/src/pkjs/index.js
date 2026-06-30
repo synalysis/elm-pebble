@@ -39,7 +39,8 @@ function defaultCompanionSimulatorSettings() {
             condition: "clear",
             humidityPercent: 50,
             pressureHpa: 1013,
-            windKph: 8
+            windKph: 8,
+            windDirectionDeg: 0
         }
     };
 }
@@ -187,7 +188,8 @@ function weatherFromSettingsObject(settings) {
             condition: settings.weather_condition,
             humidityPercent: settings.weather_humidityPercent,
             pressureHpa: settings.weather_pressureHpa,
-            windKph: settings.weather_windKph
+            windKph: settings.weather_windKph,
+            windDirectionDeg: settings.weather_windDirectionDeg
         };
     }
 
@@ -196,7 +198,9 @@ function weatherFromSettingsObject(settings) {
         condition: String(weather.condition || "clear"),
         humidityPercent: Number(weather.humidityPercent != null ? weather.humidityPercent : 0),
         pressureHpa: Number(weather.pressureHpa != null ? weather.pressureHpa : 0),
-        windKph: Number(weather.windKph != null ? weather.windKph : 0)
+        windKph: Number(weather.windKph != null ? weather.windKph : 0),
+        windDirectionDeg:
+            weather.windDirectionDeg != null ? Number(weather.windDirectionDeg) : undefined
     };
 }
 
@@ -1087,7 +1091,8 @@ function normalizeCompanionSimulatorSettings(settings) {
                 condition: settings.weather_condition,
                 humidityPercent: settings.weather_humidityPercent,
                 pressureHpa: settings.weather_pressureHpa,
-                windKph: settings.weather_windKph
+                windKph: settings.weather_windKph,
+                windDirectionDeg: settings.weather_windDirectionDeg
             };
         }
     }
@@ -1098,7 +1103,8 @@ function normalizeCompanionSimulatorSettings(settings) {
             condition: String(weather.condition || "clear"),
             humidityPercent: Number(weather.humidityPercent != null ? weather.humidityPercent : 50),
             pressureHpa: Number(weather.pressureHpa != null ? weather.pressureHpa : 1013),
-            windKph: Number(weather.windKph != null ? weather.windKph : 8)
+            windKph: Number(weather.windKph != null ? weather.windKph : 8),
+            windDirectionDeg: Number(weather.windDirectionDeg != null ? weather.windDirectionDeg : 0)
         };
     }
 
@@ -1173,7 +1179,9 @@ function openMeteoJsonFromSettings() {
     return JSON.stringify({
         current: {
             temperature_2m: weather.temperatureC,
-            weather_code: conditionToWeatherCode(weather.condition)
+            weather_code: conditionToWeatherCode(weather.condition),
+            wind_direction_10m:
+                weather.windDirectionDeg != null ? weather.windDirectionDeg : undefined
         }
     });
 }
@@ -1281,6 +1289,10 @@ function weatherInfoFromOpenMeteoBody(bodyText) {
         windKph:
             typeof current.wind_speed_10m === "number"
                 ? Math.round(current.wind_speed_10m)
+                : undefined,
+        windDirectionDeg:
+            typeof current.wind_direction_10m === "number"
+                ? Math.round(current.wind_direction_10m) % 360
                 : undefined
     };
 }
@@ -1291,7 +1303,7 @@ function fetchOpenMeteoWeather(latitude, longitude, callback) {
         encodeURIComponent(latitude) +
         "&longitude=" +
         encodeURIComponent(longitude) +
-        "&current=temperature_2m,weather_code,relative_humidity_2m,surface_pressure,wind_speed_10m&forecast_days=1";
+        "&current=temperature_2m,weather_code,relative_humidity_2m,surface_pressure,wind_speed_10m,wind_direction_10m&forecast_days=1";
     var xhr = new XMLHttpRequest();
     xhr.timeout = 15000;
 
@@ -1538,7 +1550,19 @@ function companionSimulatorWeatherKey(info) {
         return null;
     }
 
-    return String(info.temperatureC) + ":" + String(info.condition || "clear");
+    return (
+        String(info.temperatureC) +
+        ":" +
+        String(info.condition || "clear") +
+        ":" +
+        String(info.humidityPercent != null ? info.humidityPercent : "") +
+        ":" +
+        String(info.pressureHpa != null ? info.pressureHpa : "") +
+        ":" +
+        String(info.windKph != null ? info.windKph : "") +
+        ":" +
+        String(info.windDirectionDeg != null ? info.windDirectionDeg : "")
+    );
 }
 
 function maybeDeliverWeatherToWatchFromSettings(source) {

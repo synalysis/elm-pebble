@@ -37,12 +37,17 @@ subscriptions _ =
 
 view : Model -> Ui.UiNode
 view model =
+    let
+        textOpts =
+            Ui.alignLeft Ui.defaultTextOptions
+    in
     Ui.toUiNode
         [ Ui.clear Color.white
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 8, w = 136, h = 20 } "App focus"
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 40, w = 136, h = 20 } (focusLabel model.focus)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 72, w = 136, h = 20 } (String.fromInt model.changes)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 100, w = 136, h = 40 } "Toggle focus in simulator"
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 8, w = 136, h = 18 } "App focus"
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 32, w = 136, h = 18 } (focusLabel model.focus)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 56, w = 136, h = 18 } (String.fromInt model.changes)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 80, w = 136, h = 18 } "Toggle focus"
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 98, w = 136, h = 18 } "in simulator"
         ]
 
 

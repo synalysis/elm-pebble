@@ -1,11 +1,12 @@
 {
   "preview_diagnostics": {
     "render_source": "runtime_view_output",
-    "root_type": "previewUnavailable",
+    "root_type": "windowStack",
     "runtime_view_output_kinds": [
       "clear",
       "text_color",
-      "text"
+      "text",
+      "vector_at"
     ],
     "status": "ok"
   },
@@ -22,7 +23,7 @@
       "kind": "text_label",
       "text": "08:53",
       "text_align": "center",
-      "text_color": null,
+      "text_color": 192,
       "text_overflow": "word_wrap",
       "w": 144,
       "x": 0,
@@ -34,22 +35,59 @@
       "font_size": 18,
       "h": 18,
       "kind": "text_label",
-      "text": "Loading...",
+      "text": "18C Fog",
       "text_align": "center",
-      "text_color": null,
+      "text_color": 192,
       "text_overflow": "word_wrap",
       "w": 144,
       "x": 0,
       "y": 92
+    },
+    {
+      "fill_color": 192,
+      "kind": "path_filled",
+      "offset_x": 0,
+      "offset_y": 0,
+      "rotation": 0,
+      "stroke_color": 0,
+      "stroke_width": 1
+    },
+    {
+      "fill_color": 192,
+      "kind": "path_filled",
+      "offset_x": 0,
+      "offset_y": 0,
+      "rotation": 0,
+      "stroke_color": 0,
+      "stroke_width": 1
+    },
+    {
+      "fill_color": 192,
+      "kind": "path_filled",
+      "offset_x": 0,
+      "offset_y": 0,
+      "rotation": 0,
+      "stroke_color": 0,
+      "stroke_width": 1
     }
   ],
-  "preview_ops_sha256": "b1c465b5d5d231252c228eea3f973d8e0aca4b653dfef2d91f16787c7647b9c8",
+  "preview_ops_sha256": "eab81f2b6a75bab7cea1128308cd1888dad98673fe11531e826adce9879322e9",
   "render_tree": {
-    "node_count": 1,
+    "node_count": 11,
     "node_types": [
-      "previewUnavailable"
+      "canvasLayer",
+      "clear",
+      "drawVectorAt",
+      "group",
+      "group",
+      "group",
+      "group",
+      "text",
+      "text",
+      "window",
+      "windowStack"
     ],
-    "root_type": "previewUnavailable"
+    "root_type": "windowStack"
   },
   "runtime_model": {
     "activeAnimation": {
@@ -57,30 +95,52 @@
       "ctor": "Nothing"
     },
     "condition": {
-      "args": [],
-      "ctor": "Nothing"
+      "args": [
+        {
+          "args": [],
+          "ctor": "Fog"
+        }
+      ],
+      "ctor": "Just"
     },
     "displayedCondition": {
-      "args": [],
-      "ctor": "Nothing"
+      "args": [
+        {
+          "args": [],
+          "ctor": "Fog"
+        }
+      ],
+      "ctor": "Just"
     },
     "nextAnimationId": 1,
     "now": {
-      "day": 27,
-      "dayOfWeek": "Wednesday",
-      "hour": 8,
-      "minute": 53,
-      "month": 5,
-      "second": 0,
-      "utcOffsetMinutes": 0,
-      "year": 2026
+      "args": [
+        {
+          "day": 27,
+          "dayOfWeek": "Wednesday",
+          "hour": 8,
+          "minute": 53,
+          "month": 5,
+          "second": 0,
+          "utcOffsetMinutes": 0,
+          "year": 2026
+        }
+      ],
+      "ctor": "Just"
     },
     "runtime_view_output": [],
     "screenH": 168,
     "screenW": 144,
     "temperature": {
-      "args": [],
-      "ctor": "Nothing"
+      "args": [
+        {
+          "args": [
+            18
+          ],
+          "ctor": "Celsius"
+        }
+      ],
+      "ctor": "Just"
     },
     "timeString": null
   },
@@ -90,8 +150,8 @@
     "update:CurrentDateTime { day = 27, dayOfWeek = Wednesday, hour = 8, minute = 53, month = 5, second = 0, utcOffsetMinutes = 0, year = 2026 }",
     "update:FromPhone (ProvideCondition Fog)",
     "update:FromPhone (ProvideTemperature (Celsius 18))",
-    "update:GotWeather (Ok (Current { condition = Fog, temperatureC = 18 }))",
-    "update:RequestWeather CurrentLocation"
+    "update:FromWatch (Ok (RequestWeather CurrentLocation))",
+    "update:GotWeather (Ok (Current { condition = Fog, temperatureC = 18 }))"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
@@ -103,7 +163,7 @@
     "elmc_diagnostic_preview": [],
     "protocol_last_inbound_from": "companion",
     "protocol_last_inbound_message": "ProvideCondition Fog",
-    "protocol_last_trigger": "init_companion_bridge",
+    "protocol_last_trigger": "protocol_rx",
     "protocol_last_view_message": "ProvideCondition Fog",
     "runtime_model": {
       "activeAnimation": {
@@ -111,29 +171,51 @@
         "ctor": "Nothing"
       },
       "condition": {
-        "args": [],
-        "ctor": "Nothing"
+        "args": [
+          {
+            "args": [],
+            "ctor": "Fog"
+          }
+        ],
+        "ctor": "Just"
       },
       "displayedCondition": {
-        "args": [],
-        "ctor": "Nothing"
+        "args": [
+          {
+            "args": [],
+            "ctor": "Fog"
+          }
+        ],
+        "ctor": "Just"
       },
       "nextAnimationId": 1,
       "now": {
-        "day": 27,
-        "dayOfWeek": "Wednesday",
-        "hour": 8,
-        "minute": 53,
-        "month": 5,
-        "second": 0,
-        "utcOffsetMinutes": 0,
-        "year": 2026
+        "args": [
+          {
+            "day": 27,
+            "dayOfWeek": "Wednesday",
+            "hour": 8,
+            "minute": 53,
+            "month": 5,
+            "second": 0,
+            "utcOffsetMinutes": 0,
+            "year": 2026
+          }
+        ],
+        "ctor": "Just"
       },
       "screenH": 168,
       "screenW": 144,
       "temperature": {
-        "args": [],
-        "ctor": "Nothing"
+        "args": [
+          {
+            "args": [
+              18
+            ],
+            "ctor": "Celsius"
+          }
+        ],
+        "ctor": "Just"
       }
     },
     "runtime_view_output": [],

@@ -33,7 +33,7 @@
       "font_size": 16,
       "h": 16,
       "kind": "text_label",
-      "text": "1/6 PASS",
+      "text": "0/6 PASS",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -47,7 +47,7 @@
       "font_size": 16,
       "h": 16,
       "kind": "text_label",
-      "text": "Ping OK",
+      "text": "Ping --",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -70,7 +70,7 @@
       "y": 44
     }
   ],
-  "preview_ops_sha256": "89e4b17021a95c8a02be8429d42b1ddba8ba580cd5f44bee559edf24e93a1dbb",
+  "preview_ops_sha256": "02fd138d110a4881d519f50042f0847d75f6c5c504a5051b300411cd50f96e3a",
   "render_tree": {
     "node_count": 8,
     "node_types": [
@@ -95,7 +95,7 @@
         "name": "Ping",
         "status": {
           "args": [],
-          "ctor": "Pass"
+          "ctor": "Pending"
         }
       },
       {
@@ -148,11 +148,9 @@
   },
   "template": "companion-demo-protocol-matrix",
   "timeline_init_messages": [
-    "init:init",
-    "update:FromPhone (Pong)",
-    "update:FromWatch (Ok Ping)"
+    "init:init"
   ],
-  "view_tree_type": "Window",
+  "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
     "elmc_compile_cached": "false",
@@ -160,10 +158,6 @@
     "elmc_compile_status": "ok",
     "elmc_compile_warning_count": 0,
     "elmc_diagnostic_preview": [],
-    "protocol_last_inbound_from": "companion",
-    "protocol_last_inbound_message": "Pong",
-    "protocol_last_trigger": "protocol_rx",
-    "protocol_last_view_message": "Pong",
     "runtime_model": {
       "active": {
         "args": [],
@@ -174,7 +168,7 @@
           "name": "Ping",
           "status": {
             "args": [],
-            "ctor": "Pass"
+            "ctor": "Pending"
           }
         },
         {

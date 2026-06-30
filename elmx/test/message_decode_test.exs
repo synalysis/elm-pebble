@@ -99,6 +99,26 @@ defmodule Elmx.MessageDecodeTest do
              {:FromWatch, {:Ok, {:RequestWeather, :CurrentLocation}}}
   end
 
+  test "decode FromWatch RequestWeather with standard wire location ctor" do
+    wire = %{
+      "ctor" => "FromWatch",
+      "args" => [
+        %{
+          "ctor" => "Ok",
+          "args" => [
+            %{
+              "ctor" => "RequestWeather",
+              "args" => [%{"ctor" => "CurrentLocation", "args" => []}]
+            }
+          ]
+        }
+      ]
+    }
+
+    assert MessageDecode.decode("FromWatch (Ok (RequestWeather CurrentLocation))", wire) ==
+             {:FromWatch, {:Ok, {:RequestWeather, :CurrentLocation}}}
+  end
+
   test "decode FromWatch Ok RequestUpdate with full subscription wire" do
     wire = %{
       "ctor" => "FromWatch",

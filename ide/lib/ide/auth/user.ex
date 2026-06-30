@@ -59,6 +59,14 @@ defmodule Ide.Auth.User do
     |> unique_constraint(:email_hash, name: :users_email_hash_index)
   end
 
+  @spec email_hash_changeset(t(), String.t()) :: Ecto.Changeset.t()
+  def email_hash_changeset(user, email_hash) when is_binary(email_hash) do
+    user
+    |> change(%{email_hash: email_hash})
+    |> validate_required([:email_hash])
+    |> unique_constraint(:email_hash, name: :users_email_hash_index)
+  end
+
   @spec normalize_email(String.t()) :: String.t()
   def normalize_email(email) when is_binary(email), do: String.downcase(String.trim(email))
 

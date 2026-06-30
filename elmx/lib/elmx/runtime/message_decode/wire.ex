@@ -115,13 +115,18 @@ defmodule Elmx.Runtime.MessageDecode.Wire do
   defp flatten_nullary_union_sibling_args(%{"ctor" => outer, "args" => inner_args}, needed)
        when is_binary(outer) and outer not in @result_wrapper_ctors and is_list(inner_args) and
               needed > 1 do
-    siblings =
-      [%{"ctor" => outer, "args" => []}] ++ Enum.filter(inner_args, &nullary_union_ctor_wire?/1)
+    nullary_inners = Enum.filter(inner_args, &nullary_union_ctor_wire?/1)
 
-    if length(siblings) >= needed do
-      {:ok, Enum.take(siblings, needed)}
-    else
+    if length(inner_args) == 1 and length(nullary_inners) == 1 do
       :error
+    else
+      siblings = [%{"ctor" => outer, "args" => []}] ++ nullary_inners
+
+      if length(siblings) >= needed do
+        {:ok, Enum.take(siblings, needed)}
+      else
+        :error
+      end
     end
   end
 

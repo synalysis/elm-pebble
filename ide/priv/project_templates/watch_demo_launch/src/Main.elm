@@ -45,12 +45,12 @@ view : Model -> Ui.UiNode
 view model =
     Ui.toUiNode
         [ Ui.clear Color.white
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 8, w = 136, h = 20 } "Launch context"
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 28, w = 136, h = 20 } (launchReasonLabel model.launchReason)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 48, w = 136, h = 20 } model.watchModel
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 68, w = 136, h = 20 } (buttonLabel model.launchButton)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 88, w = 136, h = 20 } (quickLaunchLabel model.quickLaunchAction)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 112, w = 136, h = 40 } "Read LaunchContext in init"
+        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 8, w = 136, h = 18 } "Launch context"
+        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 28, w = 136, h = 18 } (launchReasonLabel model.launchReason)
+        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 48, w = 136, h = 18 } model.watchModel
+        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 68, w = 136, h = 18 } (buttonLabel model.launchButton)
+        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 88, w = 136, h = 18 } (quickLaunchLabel model.quickLaunchAction)
+        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 112, w = 136, h = 18 } "Read LaunchContext in init"
         ]
 
 

@@ -56,6 +56,43 @@ defmodule Ide.Debugger.RuntimeFollowupsTest do
       assert [%{"message" => "ProvideTimezone", "to" => "watch"}] =
                ProtocolRx.inline_protocol_deliveries(updated)
     end
+
+    test "queues watch_to_phone companion-protocol followups for inline protocol delivery" do
+      state = RuntimeSurfaces.default_companion()
+
+      ctx = %{
+        append_event: fn st, _, _ -> st end,
+        append_debugger_event: fn st, _, _, _, _, _ -> st end,
+        apply_step_once: fn st, _target, _message, _message_value, _source, _trigger ->
+          flunk("watch_to_phone protocol followups should queue inline delivery")
+          st
+        end,
+        source_root_for_target: fn
+          :watch -> "watch"
+          :companion -> "companion"
+        end,
+        track_http_command: fn st, _cmd -> st end,
+        simulator_settings: fn _st -> %{} end
+      }
+
+      followups = [
+        %{
+          "package" => "companion-protocol",
+          "message" => "RequestWeather CurrentLocation",
+          "message_value" => %{
+            "ctor" => "RequestWeather",
+            "args" => [%{"ctor" => "CurrentLocation", "args" => []}]
+          },
+          "command" => %{"to" => "companion", "direction" => "watch_to_phone", "from" => "watch"}
+        }
+      ]
+
+      updated =
+        RuntimeFollowups.apply_after_step(state, :watch, "init", "init", followups, ctx)
+
+      assert [%{"message" => "RequestWeather CurrentLocation", "to" => "companion", "from" => "watch"}] =
+               ProtocolRx.inline_protocol_deliveries(updated)
+    end
   end
 
   describe "async http enqueue" do

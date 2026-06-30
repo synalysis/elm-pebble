@@ -49,7 +49,9 @@ config :ide, Ide.Auth,
   login_link_ttl_days:
     (System.get_env("IDE_LOGIN_LINK_TTL_DAYS") || "30")
     |> String.to_integer(),
-  email_hash_pepper: System.get_env("IDE_EMAIL_HASH_PEPPER")
+  email_hash_pepper: System.get_env("IDE_EMAIL_HASH_PEPPER"),
+  turnstile_site_key: System.get_env("IDE_TURNSTILE_SITE_KEY"),
+  turnstile_secret_key: System.get_env("IDE_TURNSTILE_SECRET_KEY")
 
 config :ide, Ide.Emulator.SlotLimiter,
   max_slots:

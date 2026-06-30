@@ -80,13 +80,18 @@ subscriptions _ =
 
 view : Model -> Ui.UiNode
 view model =
+    let
+        textOpts =
+            Ui.alignLeft Ui.defaultTextOptions
+    in
     Ui.toUiNode
         [ Ui.clear Color.white
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 8, w = 136, h = 20 } "Time demo"
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 32, w = 136, h = 20 } (timeLabel model.clock)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 56, w = 136, h = 20 } (boolLabel "24h" model.clock24h)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 80, w = 136, h = 20 } (boolLabel "TZ set" model.timezoneSet)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 104, w = 136, h = 40 } (timezoneLabel model.timezoneName ++ " Select: refresh")
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 8, w = 136, h = 18 } "Time"
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 32, w = 136, h = 18 } (timeLabel model.clock)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 56, w = 136, h = 18 } (boolLabel "24h" model.clock24h)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 80, w = 136, h = 18 } (boolLabel "TZ" model.timezoneSet)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 104, w = 136, h = 18 } (timezoneLabel model.timezoneName)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 128, w = 136, h = 18 } "Sel: refresh"
         ]
 
 
@@ -111,7 +116,16 @@ timezoneLabel maybeName =
             "TZ: --"
 
         Just name ->
-            "TZ: " ++ name
+            truncateTz name 14
+
+
+truncateTz : String -> Int -> String
+truncateTz text_ maxLen =
+    if String.length text_ <= maxLen then
+        text_
+
+    else
+        String.left maxLen text_
 
 
 boolLabel : String -> Maybe Bool -> String

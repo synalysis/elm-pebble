@@ -24,6 +24,10 @@ config :ide, Ide.Auth,
   login_link_ttl_days: 30,
   email_hash_pepper: "test-email-hash-pepper"
 
+config :ide, Ide.Auth.LoginRateLimit,
+  ip: [limit: 1000, period_ms: 3_600_000],
+  email: [limit: 1000, period_ms: 3_600_000]
+
 # In test we don't send emails
 config :ide, Ide.Mailer, adapter: Swoosh.Adapters.Test
 

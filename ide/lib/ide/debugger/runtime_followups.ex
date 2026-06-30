@@ -42,7 +42,8 @@ defmodule Ide.Debugger.RuntimeFollowups do
           required(:track_http_command) => (Types.runtime_state(), Types.tracked_http_command() ->
                                               Types.runtime_state()),
           required(:simulator_settings) => (Types.runtime_state() -> Types.simulator_settings()),
-          optional(:companion_bridge) => CompanionBridgeRuntime.ctx()
+          optional(:companion_bridge) => CompanionBridgeRuntime.ctx(),
+          optional(:protocol_rx_ctx) => (-> ProtocolRx.ctx())
         }
 
   @spec apply_after_step(
@@ -316,6 +317,23 @@ defmodule Ide.Debugger.RuntimeFollowups do
           ProtocolRx.inbound_app_message("FromPhone", message, message_value) ||
             {message, message_value}
 
+        target in [:companion, :phone] and direction in ["watch_to_phone", :watch_to_phone] and
+            is_binary(message) and message != "" ->
+          case Map.get(ctx, :protocol_rx_ctx) do
+            rx_ctx when is_function(rx_ctx, 0) ->
+              ProtocolRx.watch_to_phone_step_message(
+                state,
+                target,
+                message,
+                message_value,
+                rx_ctx.()
+              )
+
+            _ ->
+              ProtocolRx.inbound_watch_message("FromWatch", message, message_value) ||
+                {message, message_value}
+          end
+
         is_binary(message) and message != "" ->
           {message, message_value}
 
@@ -347,7 +365,22 @@ defmodule Ide.Debugger.RuntimeFollowups do
         "message_source" => "runtime_followup"
       })
     else
-      maybe_apply_runtime_followup_step(state, target, step_message, step_value, ctx)
+      if target in [:companion, :phone] and direction in ["watch_to_phone", :watch_to_phone] and
+           is_binary(message) and message != "" do
+        from = Map.get(command, "from") || Map.get(command, :from) || "watch"
+        to = Map.get(command, "to") || Map.get(command, :to) || Atom.to_string(target)
+
+        ProtocolRx.enqueue_inline_protocol_delivery(state, %{
+          "from" => from,
+          "to" => to,
+          "message" => message,
+          "message_value" => message_value,
+          "trigger" => "runtime_followup",
+          "message_source" => "runtime_followup"
+        })
+      else
+        maybe_apply_runtime_followup_step(state, target, step_message, step_value, ctx)
+      end
     end
   end
 

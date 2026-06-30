@@ -100,8 +100,7 @@
     "update:CurrentTimeString \"08:53\"",
     "update:FromPhone (ProvidePosition 48137154 11576124 25)",
     "update:FromWatch (Ok RequestPosition)",
-    "update:GotPosition (Ok {accuracy=25,latitude=48.137154,longitude=11.576124})",
-    "update:RequestPosition"
+    "update:GotPosition (Ok {accuracy=25,latitude=48.137154,longitude=11.576124})"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {

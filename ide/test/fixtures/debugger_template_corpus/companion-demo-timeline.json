@@ -101,8 +101,7 @@
     "init:init",
     "update:FromPhone (ProvideTimelineToken \"demo-timeline-token\")",
     "update:FromWatch (Ok RequestTimelineToken)",
-    "update:GotToken (Ok \"demo-timeline-token\")",
-    "update:RequestTimelineToken"
+    "update:GotToken (Ok \"demo-timeline-token\")"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {

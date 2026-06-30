@@ -76,13 +76,17 @@ subscriptions model =
 
 view : Model -> Ui.UiNode
 view model =
+    let
+        textOpts =
+            Ui.alignLeft Ui.defaultTextOptions
+    in
     Ui.toUiNode
         [ Ui.clear Color.white
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 8, w = 136, h = 20 } "Compass demo"
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 36, w = 136, h = 20 } (headingLabel model.heading model.hasCompass)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 60, w = 136, h = 20 } (validLabel model.heading)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 84, w = 136, h = 20 } (String.fromInt model.refreshes)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 108, w = 136, h = 24 } "Select: peek heading"
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 8, w = 136, h = 18 } "Compass"
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 32, w = 136, h = 18 } (headingLabel model.heading model.hasCompass)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 56, w = 136, h = 18 } (validLabel model.heading)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 80, w = 136, h = 18 } (String.fromInt model.refreshes)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 104, w = 136, h = 18 } "Sel: peek"
         ]
 
 

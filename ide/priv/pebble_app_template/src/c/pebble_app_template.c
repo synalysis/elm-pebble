@@ -627,7 +627,7 @@ static bool dictation_has_microphone(void) {
 }
 #endif
 
-#if ELMC_PEBBLE_FEATURE_CMD_VIBES_CUSTOM_PATTERN || ELMC_PEBBLE_FEATURE_CMD_DATA_LOG_BYTES || ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_NOTES || ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_TRACKS || ELMC_PEBBLE_FEATURE_CMD_SPEAKER_STREAM_WRITE
+#if ELMC_PEBBLE_FEATURE_CMD_VIBES_CUSTOM_PATTERN || ELMC_PEBBLE_FEATURE_CMD_DATA_LOG_BYTES || (defined(PBL_SPEAKER) && (ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_NOTES || ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_TRACKS || ELMC_PEBBLE_FEATURE_CMD_SPEAKER_STREAM_WRITE))
 static int parse_int_list(const char *text, int32_t *out_values, int max_values) {
   if (!text || !out_values || max_values <= 0) {
     return 0;
@@ -652,7 +652,7 @@ static int parse_int_list(const char *text, int32_t *out_values, int max_values)
 }
 #endif
 
-#if ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_TONE || ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_NOTES || ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_TRACKS
+#if defined(PBL_SPEAKER) && (ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_TONE || ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_NOTES || ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_TRACKS)
 static SpeakerWaveform speaker_waveform_from_int(int32_t value) {
   if (value < 0 || value >= SpeakerWaveformCount) {
     return SpeakerWaveformSine;
@@ -661,7 +661,7 @@ static SpeakerWaveform speaker_waveform_from_int(int32_t value) {
 }
 #endif
 
-#if ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_NOTES || ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_TRACKS
+#if defined(PBL_SPEAKER) && (ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_NOTES || ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_TRACKS)
 #ifndef SPEAKER_MAX_NOTES
 #define SPEAKER_MAX_NOTES 16
 #endif
@@ -670,7 +670,7 @@ static SpeakerWaveform speaker_waveform_from_int(int32_t value) {
 #endif
 #endif
 
-#if ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_NOTES || ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_TRACKS
+#if defined(PBL_SPEAKER) && (ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_NOTES || ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_TRACKS)
 static void speaker_note_from_values(const int32_t *values, SpeakerNote *out_note) {
   out_note->midi_note = (uint8_t)values[0];
   out_note->waveform = speaker_waveform_from_int(values[1]);
@@ -679,7 +679,7 @@ static void speaker_note_from_values(const int32_t *values, SpeakerNote *out_not
 }
 #endif
 
-#if ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_TRACKS
+#if defined(PBL_SPEAKER) && ELMC_PEBBLE_FEATURE_CMD_SPEAKER_PLAY_TRACKS
 static int8_t s_speaker_sample_bytes[16384];
 static SpeakerSample s_speaker_track_samples[SPEAKER_MAX_TRACKS];
 static size_t s_speaker_sample_bytes_used = 0;
@@ -1015,8 +1015,8 @@ static void apply_pending_cmd(void) {
       uint32_t hz = (uint32_t)cmd.p0;
       uint32_t duration_ms = (uint32_t)cmd.p1;
       uint8_t volume = (uint8_t)cmd.p2;
-      SpeakerWaveform waveform = speaker_waveform_from_int((int32_t)cmd.p3);
 #ifdef PBL_SPEAKER
+      SpeakerWaveform waveform = speaker_waveform_from_int((int32_t)cmd.p3);
       bool ok = speaker_play_tone(hz, duration_ms, volume, waveform);
 #else
       bool ok = false;

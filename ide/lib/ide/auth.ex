@@ -96,6 +96,9 @@ defmodule Ide.Auth do
   @spec mail_delivery_configured?() :: boolean()
   def mail_delivery_configured?, do: Email.mail_delivery_configured?()
 
+  @spec turnstile_site_key() :: String.t() | nil
+  def turnstile_site_key, do: Ide.Auth.LoginBotDefense.turnstile_site_key()
+
   @spec verify_login_token(String.t()) ::
           {:ok, User.t()} | {:error, :invalid_token | :expired_token | :used_token}
   def verify_login_token(token), do: Email.verify_login_token(token)

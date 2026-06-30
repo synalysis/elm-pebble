@@ -64,8 +64,11 @@ view model =
         startY =
             36
 
+        textOpts =
+            Ui.alignLeft Ui.defaultTextOptions
+
         label x y text_ =
-            Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = x, y = y, w = model.screenW - 16, h = lineH } text_
+            Ui.text Resources.DefaultFont textOpts { x = x, y = y, w = model.screenW - 16, h = lineH } text_
 
         readyLabel =
             if model.ready then
@@ -89,10 +92,10 @@ view model =
         [ Ui.window 1
             [ Ui.canvasLayer 1
                 [ Ui.clear Color.white
-                , label 8 startY "Settings demo"
-                , label 8 (startY + lineH) ("Lifecycle " ++ readyLabel)
-                , label 8 (startY + lineH * 2) ("Config " ++ configLabel)
-                , label 8 (startY + lineH * 3) "Select = open"
+                , label 8 startY "Settings"
+                , label 8 (startY + lineH) ("Life: " ++ readyLabel)
+                , label 8 (startY + lineH * 2) ("Cfg: " ++ configLabel)
+                , label 8 (startY + lineH * 3) "Sel: settings"
                 ]
             ]
         ]

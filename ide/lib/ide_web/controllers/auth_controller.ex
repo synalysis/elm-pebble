@@ -2,6 +2,9 @@ defmodule IdeWeb.AuthController do
   use IdeWeb, :controller
 
   alias Ide.Auth
+  alias Ide.Auth.EmailHash
+  alias Ide.Auth.LoginBotDefense
+  alias Ide.Auth.LoginRateLimit
   alias IdeWeb.Types
 
   @spec login(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
@@ -21,7 +24,9 @@ defmodule IdeWeb.AuthController do
         firebase_config: Auth.firebase_config(),
         step: custom_login_step(conn.params),
         email: custom_login_email(conn.params),
-        login_link_ttl_days: Auth.login_link_ttl_days()
+        login_link_ttl_days: Auth.login_link_ttl_days(),
+        turnstile_site_key: Auth.turnstile_site_key(),
+        login_honeypot_field: LoginBotDefense.honeypot_field()
       )
     end
   end
@@ -72,38 +77,50 @@ defmodule IdeWeb.AuthController do
   end
 
   @spec email_continue(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
-  def email_continue(conn, %{"email" => email}) when is_binary(email) do
+  def email_continue(conn, params) when is_map(params) do
     if Auth.public_custom_mode?() do
-      email = Ide.Auth.User.normalize_email(email)
+      case Map.get(params, "email") do
+        email when is_binary(email) ->
+          email = Ide.Auth.User.normalize_email(email)
 
-      case Auth.send_login_link(email) do
-        :ok ->
-          render(conn, :login_custom,
-            page_title: "Check your email",
-            auth_mode: Auth.mode(),
-            firebase_config: Auth.firebase_config(),
-            step: :sent,
-            email: email,
-            login_link_ttl_days: Auth.login_link_ttl_days()
-          )
+          cond do
+            LoginBotDefense.bot_request?(params) ->
+              render_login_sent(conn, email)
 
-        {:error, :invalid_email} ->
-          conn
-          |> put_flash(:error, "Enter a valid email address.")
-          |> redirect(to: ~p"/login")
+            not LoginBotDefense.turnstile_ok?(conn, params) ->
+              render_login_sent(conn, email)
 
-        {:error, :mailer_not_configured} ->
-          conn
-          |> put_flash(
-            :error,
-            "Email login is not configured on this server. Contact the site administrator."
-          )
-          |> redirect(to: ~p"/login")
+            login_rate_limited?(conn, email) ->
+              render_login_sent(conn, email)
 
-        {:error, :delivery_failed} ->
-          conn
-          |> put_flash(:error, "Could not send the login email. Try again in a moment.")
-          |> redirect(to: ~p"/login")
+            true ->
+              case Auth.send_login_link(email) do
+                :ok ->
+                  record_login_attempt(conn, email)
+                  render_login_sent(conn, email)
+
+                {:error, :invalid_email} ->
+                  conn
+                  |> put_flash(:error, "Enter a valid email address.")
+                  |> redirect(to: ~p"/login")
+
+                {:error, :mailer_not_configured} ->
+                  conn
+                  |> put_flash(
+                    :error,
+                    "Email login is not configured on this server. Contact the site administrator."
+                  )
+                  |> redirect(to: ~p"/login")
+
+                {:error, :delivery_failed} ->
+                  conn
+                  |> put_flash(:error, "Could not send the login email. Try again in a moment.")
+                  |> redirect(to: ~p"/login")
+              end
+          end
+
+        _ ->
+          conn |> put_flash(:error, "Email is required.") |> redirect(to: ~p"/login")
       end
     else
       conn |> put_status(:not_found) |> text("Not found")
@@ -219,6 +236,41 @@ defmodule IdeWeb.AuthController do
   end
 
   defp custom_login_email(_), do: nil
+
+  @spec render_login_sent(Plug.Conn.t(), String.t()) :: Plug.Conn.t()
+  defp render_login_sent(conn, email) do
+    render(conn, :login_custom,
+      page_title: "Check your email",
+      auth_mode: Auth.mode(),
+      firebase_config: Auth.firebase_config(),
+      step: :sent,
+      email: email,
+      login_link_ttl_days: Auth.login_link_ttl_days(),
+      turnstile_site_key: Auth.turnstile_site_key(),
+      login_honeypot_field: LoginBotDefense.honeypot_field()
+    )
+  end
+
+  @spec login_rate_limited?(Plug.Conn.t(), String.t()) :: boolean()
+  defp login_rate_limited?(conn, email) do
+    not LoginRateLimit.allowed?(:ip, client_ip(conn)) or
+      not LoginRateLimit.allowed?(:email, EmailHash.hash(email))
+  end
+
+  @spec record_login_attempt(Plug.Conn.t(), String.t()) :: :ok
+  defp record_login_attempt(conn, email) do
+    LoginRateLimit.record(:ip, client_ip(conn))
+    LoginRateLimit.record(:email, EmailHash.hash(email))
+  end
+
+  @spec client_ip(Plug.Conn.t()) :: String.t()
+  defp client_ip(conn) do
+    conn.remote_ip
+    |> :inet.ntoa()
+    |> to_string()
+  rescue
+    _ -> "0.0.0.0"
+  end
 
   defp renew_session(conn) do
     conn

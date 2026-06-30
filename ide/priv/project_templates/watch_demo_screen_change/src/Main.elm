@@ -36,14 +36,18 @@ subscriptions _ =
 
 view : Model -> Ui.UiNode
 view model =
+    let
+        textOpts =
+            Ui.alignLeft Ui.defaultTextOptions
+    in
     Ui.toUiNode
         [ Ui.clear Color.white
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 8, w = 136, h = 20 } "Screen change"
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 32, w = 136, h = 20 } (String.fromInt model.screen.width ++ "x" ++ String.fromInt model.screen.height)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 56, w = 136, h = 20 } (shapeLabel model.screen.shape)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 80, w = 136, h = 20 } (colorLabel model.screen.colorMode)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 104, w = 136, h = 20 } ("Changes: " ++ String.fromInt model.changes)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 128, w = 136, h = 20 } "Switch emulator model"
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 8, w = 136, h = 18 } "Screen"
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 28, w = 136, h = 18 } (String.fromInt model.screen.width ++ "x" ++ String.fromInt model.screen.height)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 48, w = 136, h = 18 } (shapeLabel model.screen.shape)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 68, w = 136, h = 18 } (colorLabel model.screen.colorMode)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 88, w = 136, h = 18 } ("Chg: " ++ String.fromInt model.changes)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 108, w = 136, h = 18 } "Switch model"
         ]
 
 
@@ -51,20 +55,20 @@ shapeLabel : DisplayShape -> String
 shapeLabel shape =
     case shape of
         Round ->
-            "Shape: round"
+            "Round"
 
         Rectangular ->
-            "Shape: rect"
+            "Rect"
 
 
 colorLabel : ColorCapability -> String
 colorLabel capability =
     case capability of
         Color ->
-            "Color display"
+            "Color"
 
         BlackWhite ->
-            "Monochrome"
+            "Mono"
 
 
 main : Program Decode.Value Model Msg

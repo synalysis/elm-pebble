@@ -76,12 +76,17 @@ subscriptions _ =
 
 view : Model -> Ui.UiNode
 view model =
+    let
+        textOpts =
+            Ui.alignLeft Ui.defaultTextOptions
+    in
     Ui.toUiNode
         [ Ui.clear Color.white
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 8, w = 136, h = 20 } "DataLog demo"
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 36, w = 136, h = 20 } (String.fromInt model.events)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 56, w = 136, h = 20 } (String.fromInt model.lastValue)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 84, w = 136, h = 40 } "Up: int32 Select: int32 Down: bytes"
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 8, w = 136, h = 18 } "DataLog"
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 32, w = 136, h = 18 } ("Ev: " ++ String.fromInt model.events)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 52, w = 136, h = 18 } ("Last: " ++ String.fromInt model.lastValue)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 76, w = 136, h = 18 } "Up/Sel: int32"
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 94, w = 136, h = 18 } "Down: bytes"
         ]
 
 

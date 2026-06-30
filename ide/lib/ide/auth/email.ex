@@ -20,8 +20,7 @@ defmodule Ide.Auth.Email do
 
     if valid_email?(email) do
       with :ok <- ensure_mailer_ready(),
-           {:ok, user} <- ensure_user(email),
-           {:ok, raw_token} <- issue_token(user),
+           {:ok, raw_token} <- issue_token(email),
            {:ok, _} <- LoginLinkEmail.deliver(email, raw_token) do
         :ok
       else
@@ -99,11 +98,12 @@ defmodule Ide.Auth.Email do
     with %LoginToken{} = token <- Repo.get_by(LoginToken, token_hash: hash),
          :ok <- check_used(token),
          :ok <- check_expired(token, now),
-         %User{} = user <- Repo.get(User, token.user_id) do
+         %User{} = user <- resolve_user(token) do
       mark_used(token, now)
       {:ok, user}
     else
       nil -> {:error, :invalid_token}
+      {:error, %Ecto.Changeset{}} -> {:error, :invalid_token}
       {:error, reason} -> {:error, reason}
     end
   end
@@ -118,33 +118,29 @@ defmodule Ide.Auth.Email do
 
   def user_exists?(_), do: false
 
-  defp ensure_user(email) do
-    hash = EmailHash.hash(email)
-
-    case Repo.get_by(User, email_hash: hash) do
-      %User{} = user ->
-        {:ok, user}
-
-      nil ->
-        %User{}
-        |> User.email_changeset(%{email: email})
-        |> Repo.insert()
-    end
-  end
-
-  defp issue_token(%User{} = user) do
+  @spec issue_token(String.t()) :: {:ok, String.t()} | {:error, term()}
+  defp issue_token(email) when is_binary(email) do
+    email_hash = EmailHash.hash(email)
     {raw, hash} = LoginLink.generate()
     expires_at = expires_at()
 
     Repo.transaction(fn ->
       from(t in LoginToken,
-        where: t.user_id == ^user.id and is_nil(t.used_at)
+        where: t.email_hash == ^email_hash and is_nil(t.used_at)
+      )
+      |> Repo.delete_all()
+
+      legacy_user_ids =
+        from(u in User, where: u.email_hash == ^email_hash, select: u.id)
+
+      from(t in LoginToken,
+        where: t.user_id in subquery(legacy_user_ids) and is_nil(t.used_at)
       )
       |> Repo.delete_all()
 
       %LoginToken{}
-      |> LoginToken.changeset(%{
-        user_id: user.id,
+      |> LoginToken.pending_changeset(%{
+        email_hash: email_hash,
         token_hash: hash,
         expires_at: expires_at
       })
@@ -157,6 +153,26 @@ defmodule Ide.Auth.Email do
       {:error, reason} -> {:error, reason}
     end
   end
+
+  @spec resolve_user(LoginToken.t()) :: User.t() | nil | {:error, Ecto.Changeset.t()}
+  defp resolve_user(%LoginToken{user_id: user_id}) when is_integer(user_id) do
+    Repo.get(User, user_id)
+  end
+
+  defp resolve_user(%LoginToken{email_hash: email_hash}) when is_binary(email_hash) do
+    case Repo.get_by(User, email_hash: email_hash) do
+      %User{} = user ->
+        user
+
+      nil ->
+        case %User{} |> User.email_hash_changeset(email_hash) |> Repo.insert() do
+          {:ok, user} -> user
+          {:error, changeset} -> {:error, changeset}
+        end
+    end
+  end
+
+  defp resolve_user(_), do: nil
 
   defp expires_at do
     days = Ide.Auth.login_link_ttl_days()

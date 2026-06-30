@@ -84,19 +84,24 @@ subscriptions model =
 
 view : Model -> Ui.UiNode
 view model =
+    let
+        textOpts =
+            Ui.alignLeft Ui.defaultTextOptions
+    in
     Ui.toUiNode
         [ Ui.clear Color.white
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 8, w = 136, h = 20 } "Dictation demo"
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 32, w = 136, h = 20 } (statusLabel model.status model.hasMicrophone)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 56, w = 136, h = 40 } (resultLabel model.result)
-        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 100, w = 136, h = 40 } "Select: start Down: stop"
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 8, w = 136, h = 18 } "Dictation"
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 32, w = 136, h = 18 } (statusLabel model.status model.hasMicrophone)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 56, w = 136, h = 18 } (truncateText (resultLabel model.result) 16)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 92, w = 136, h = 18 } "Sel: start"
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 110, w = 136, h = 18 } "Down: stop"
         ]
 
 
 statusLabel : Maybe Dictation.Status -> Bool -> String
 statusLabel maybeStatus hasMicrophone =
     if not hasMicrophone then
-        "No microphone"
+        "No mic"
 
     else
         case maybeStatus of
@@ -107,10 +112,19 @@ statusLabel maybeStatus hasMicrophone =
                 "Starting"
 
             Just Dictation.Recognizing ->
-                "Recognizing"
+                "Listening"
 
             Just Dictation.Finished ->
                 "Finished"
+
+
+truncateText : String -> Int -> String
+truncateText text_ maxLen =
+    if String.length text_ <= maxLen then
+        text_
+
+    else
+        String.left maxLen text_
 
 
 resultLabel : Result Dictation.Error String -> String
@@ -120,10 +134,10 @@ resultLabel result =
             transcript
 
         Err Dictation.NoMicrophone ->
-            "No microphone"
+            "No mic"
 
         Err Dictation.PhoneDisconnected ->
-            "Phone disconnected"
+            "No phone"
 
         Err Dictation.Cancelled ->
             "Cancelled"
