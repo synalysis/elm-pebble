@@ -46,7 +46,8 @@ defmodule Elmc.TopLevelConstantCodegenTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     refute generated_c =~ ~r/elmc_as_int\(contentTop\)/
-    assert generated_c =~ "ElmcValue *elmc_fn_Main_contentTop"
+    assert generated_c =~ "elmc_fn_Main_contentTop_native"
+    assert generated_c =~ "static RC elmc_fn_Main_contentTop("
     assert generated_c =~ "path_point_count = 3"
     assert generated_c =~ "ELMC_RENDER_OP_PATH_FILLED"
   end

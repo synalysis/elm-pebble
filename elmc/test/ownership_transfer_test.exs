@@ -16,13 +16,15 @@ defmodule OwnershipTransferTest do
     refute MapSet.member?(skip, "tmp_33")
   end
 
-  test "transferred_in_c_source? matches tuple2_take operands with nested parens" do
+  test "retain_in_place_cow_bump_sources_to_skip avoids double release of aliased record" do
     body = """
-    ElmcValue *tmp_6 = elmc_cmd1(ELMC_PEBBLE_CMD_TIMER_AFTER_MS, 1000);
-    Rc = elmc_tuple2_take(out, (*out), tmp_6);
-    elmc_release(tmp_6);
+    ElmcValue *tmp_12 = elmc_record_update_index_cow_drop(model, ELMC_FIELD_MAIN_MODEL_BEST, owned[10]);
+    ElmcValue *tmp_13 = (tmp_12 == model) ? elmc_retain(tmp_12) : tmp_12;
+    Rc = elmc_tuple2_take(out, tmp_13, owned[11]);
     """
 
-    assert OwnershipTransfer.transferred_in_c_source?("tmp_6", body)
+    skip = OwnershipTransfer.cow_drop_chain_sources_to_skip(body, "out")
+    assert MapSet.member?(skip, "model")
+    assert MapSet.member?(skip, "tmp_12")
   end
 end

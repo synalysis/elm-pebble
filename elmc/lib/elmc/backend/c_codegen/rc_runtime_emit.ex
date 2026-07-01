@@ -564,7 +564,8 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   def rc_allocator_emit_mode?(env),
     do:
       Map.get(env, :__rc_required__, false) or Map.get(env, :__rc_catch__, false) or
-        Map.get(env, :__native_rc_out__, false)
+        Map.get(env, :__native_rc_out__, false) or
+        Process.get(:elmc_hoisted_native_ints_scope, false)
 
   @spec rc_catch_env(map()) :: map()
   def rc_catch_env(env), do: Map.put(env, :__rc_catch__, true)
@@ -793,7 +794,8 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
 
   def failure_return(env) do
     cond do
-      Map.get(env, :__rc_catch__) || Map.get(env, :__rc_required__) ->
+      Map.get(env, :__rc_catch__) || Map.get(env, :__rc_required__) ||
+          Process.get(:elmc_hoisted_native_ints_scope, false) ->
         "Rc = __alloc_rc;\nreturn Rc;"
 
       Map.get(env, :__native_rc_out__) ->

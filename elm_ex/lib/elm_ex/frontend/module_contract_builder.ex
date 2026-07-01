@@ -36,6 +36,7 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
   def build(path, source, module_name, imports) do
     scanned_lines =
       source
+      |> dedent_uniform_leading_whitespace()
       |> GeneratedDeclarationParser.scan_lines()
       |> hydrate_multiline_non_function_decls()
 
@@ -54,6 +55,42 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
       imports: imports,
       declarations: declarations
     }
+  end
+
+  @spec dedent_uniform_leading_whitespace(String.t()) :: String.t()
+  defp dedent_uniform_leading_whitespace(source) when is_binary(source) do
+    lines = String.split(source, "\n")
+
+    min_indent =
+      lines
+      |> Enum.reject(&(String.trim(&1) == ""))
+      |> Enum.map(&leading_whitespace_count/1)
+      |> case do
+        [] -> 0
+        counts -> Enum.min(counts)
+      end
+
+    if min_indent > 0 do
+      lines
+      |> Enum.map(fn line ->
+        if String.trim(line) == "" do
+          line
+        else
+          String.slice(line, min_indent..-1//1) || ""
+        end
+      end)
+      |> Enum.join("\n")
+    else
+      source
+    end
+  end
+
+  @spec leading_whitespace_count(String.t()) :: non_neg_integer()
+  defp leading_whitespace_count(line) do
+    line
+    |> String.graphemes()
+    |> Enum.take_while(&(&1 in [" ", "\t"]))
+    |> length()
   end
 
   @spec hydrate_multiline_non_function_decls([scanned_line()]) :: [scanned_line()]

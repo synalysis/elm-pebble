@@ -1316,13 +1316,25 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
     """
   end
 
-  defp direct_list_walk_lambda_body(list_var, next, _item_boxed, cons_body, int_body) do
+  defp direct_list_walk_lambda_body(list_var, next, item_boxed, cons_body, int_body) do
+    int_item_decl =
+      RcRuntimeEmit.check_rc_take(
+        item_boxed,
+        "elmc_new_int",
+        "direct_ilp_#{next}->values[direct_ii_#{next}]",
+        RcRuntimeEmit.rc_catch_env(%{})
+      )
+
+    int_item_release = Release.release_var(item_boxed, "        ")
+
     """
     if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
       ElmcIntListPayload *direct_ilp_#{next} = (ElmcIntListPayload *)#{list_var}->payload;
       int direct_ilen_#{next} = direct_ilp_#{next} ? direct_ilp_#{next}->length : 0;
       for (int direct_ii_#{next} = 0; Rc == RC_SUCCESS && direct_ii_#{next} < direct_ilen_#{next}; direct_ii_#{next}++) {
+        #{int_item_decl}
     #{CSource.indent(int_body, 4)}
+        #{int_item_release}
       }
     } else {
       ElmcValue *direct_cursor_#{next} = #{list_var};

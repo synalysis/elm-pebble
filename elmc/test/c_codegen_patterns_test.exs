@@ -483,9 +483,9 @@ defmodule Elmc.CCodegenPatternsTest do
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert generated_c =~ "list_filter_cursor_"
+    assert generated_c =~ "list_filter_int_buf_"
     assert generated_c =~ "elmc_fn_Main_nonzero"
-    assert generated_c =~ "elmc_as_int(list_filter_head_"
+    assert generated_c =~ "list_filter_native_head_"
     refute generated_c =~ "elmc_value_equal(tmp_"
     refute generated_c =~ "elmc_list_filter("
     refute generated_c =~ "elmc_closure_new(elmc_lambda_"
@@ -3541,7 +3541,9 @@ defmodule Elmc.CCodegenPatternsTest do
       generated_c
       |> String.split(rc_direct_fn_def_marker("spawnTile"), parts: 2)
       |> Enum.at(1, "")
-      |> String.split(~r/static (?:RC|ElmcValue \*) *elmc_fn_Main_setCell/, parts: 2)
+      |> String.split(rc_direct_fn_def_marker("setCell"), parts: 2)
+      |> hd()
+      |> String.split("RC elmc_fn_Main_init", parts: 2)
       |> hd()
 
     assert spawn_body =~ "elmc_fn_Main_setCell(out,"
@@ -4261,7 +4263,7 @@ defmodule Elmc.CCodegenPatternsTest do
       |> hd()
 
     assert update_body =~
-             ~r/elmc_record_update_index\(model, ELMC_FIELD_MAIN_MODEL_TIMESTRING, (tmp_|owned\[)/
+             ~r/elmc_record_update_index_cow_drop\(model, ELMC_FIELD_MAIN_MODEL_TIMESTRING, (tmp_|owned\[)/
     refute update_body =~ "elmc_retain(model)"
     refute update_body =~ ~s/elmc_record_update(tmp_2, "timeString"/
   end
@@ -4324,13 +4326,13 @@ defmodule Elmc.CCodegenPatternsTest do
       |> hd()
 
     assert update_body =~
-             "elmc_record_update_index(model, ELMC_FIELD_MAIN_MODEL_TIDE, elmc_maybe_nothing())"
+             "elmc_record_update_index_cow_drop(model, ELMC_FIELD_MAIN_MODEL_TIDE, elmc_maybe_nothing())"
 
     refute update_body =~
-             ~r/elmc_maybe_nothing\(\);\s*\n\s*\*out = elmc_record_update_index/
+             ~r/elmc_maybe_nothing\(\);\s*\n\s*\*out = elmc_record_update_index_cow_drop/
 
     refute update_body =~
-             ~r/elmc_maybe_nothing\(\);\s*\n\s*ElmcValue \*tmp_\d+ = elmc_record_update_index/
+             ~r/elmc_maybe_nothing\(\);\s*\n\s*ElmcValue \*tmp_\d+ = elmc_record_update_index_cow_drop/
   end
 
   test "case branch Cmd.none assigns immortal cmd directly to function out" do

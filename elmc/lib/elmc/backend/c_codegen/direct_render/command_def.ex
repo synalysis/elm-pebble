@@ -106,6 +106,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
       )
       |> Host.put_typed_arg_bindings(c_arg_bindings, decl.type)
       |> Map.put(:__rc_catch__, true)
+      |> Map.put(:__rc_required__, true)
 
     Process.delete(:elmc_hoisted_native_ints)
     Process.delete(:elmc_hoisted_native_int_inits)
@@ -211,6 +212,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
       )
       |> Host.put_typed_arg_bindings(c_arg_bindings, decl.type)
       |> Map.put(:__rc_catch__, true)
+      |> Map.put(:__rc_required__, true)
 
     Process.delete(:elmc_hoisted_native_ints)
     Process.delete(:elmc_hoisted_native_int_inits)

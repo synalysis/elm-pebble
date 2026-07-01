@@ -5,6 +5,7 @@ defmodule Elmc.Backend.CCodegen.OwnershipTransfer do
 
   @cow_drop_decl ~r/ElmcValue \*([A-Za-z_][A-Za-z0-9_]*) = elmc_record_update_index_cow_drop\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,/
   @cow_drop_reassign ~r/^([A-Za-z_][A-Za-z0-9_]*) = elmc_record_update_index_cow_drop\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,/m
+  @retain_in_place_bump ~r/ElmcValue \*([A-Za-z_][A-Za-z0-9_]*) = \(([A-Za-z_][A-Za-z0-9_]*) == ([A-Za-z_][A-Za-z0-9_]*)\) \? elmc_retain\(\2\) : \2;/
 
   @doc """
   Record-update chains that end in `cow_drop` hand ownership to the result var.
@@ -23,9 +24,33 @@ defmodule Elmc.Backend.CCodegen.OwnershipTransfer do
       |> Enum.filter(&kept_binding?(&1, out, body))
 
     propagate_cow_drop_sources(edges, kept_results)
+    |> MapSet.union(retain_in_place_cow_bump_sources_to_skip(body, out))
   end
 
   def cow_drop_chain_sources_to_skip(_body, _out), do: MapSet.new()
+
+  @doc """
+  When an in-place `cow_drop` chain ends with `(result == base) ? elmc_retain(result) : result`
+  and the bumped var is transferred to `out`, skip releasing the aliased chain.
+  """
+  @spec retain_in_place_cow_bump_sources_to_skip(String.t(), String.t()) :: MapSet.t(String.t())
+  def retain_in_place_cow_bump_sources_to_skip(body, out)
+      when is_binary(body) and body != "" and is_binary(out) do
+    edges = cow_drop_edges(body)
+
+    Regex.scan(@retain_in_place_bump, body)
+    |> Enum.reduce(MapSet.new(), fn [_full, bump_result, aliased_result, _base], skip ->
+      if kept_binding?(bump_result, out, body) do
+        skip
+        |> MapSet.put(aliased_result)
+        |> MapSet.union(propagate_cow_drop_sources(edges, [aliased_result]))
+      else
+        skip
+      end
+    end)
+  end
+
+  def retain_in_place_cow_bump_sources_to_skip(_body, _out), do: MapSet.new()
 
   @spec transferred_in_c_source?(String.t(), String.t()) :: boolean()
   def transferred_in_c_source?(var, body)

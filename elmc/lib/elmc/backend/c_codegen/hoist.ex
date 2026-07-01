@@ -493,21 +493,42 @@ defmodule Elmc.Backend.CCodegen.Hoist do
     if hoisted_native_ints_enabled?(env) do
       case hoisted_native_int_lookup(env, expr) do
         {:ok, hoisted} ->
-          {"", hoisted, counter}
+          case Map.get(Process.get(:elmc_hoisted_native_int_inits, %{}), hoisted) do
+            init when is_binary(init) and init != "" ->
+              if stable_hoist_init?(init) or String.starts_with?(init, "ELMC_") do
+                decl =
+                  if String.contains?(code, "const elmc_int_t #{hoisted} =") do
+                    ""
+                  else
+                    "  const elmc_int_t #{hoisted} = #{init};\n"
+                  end
 
-        :error ->
-          next = counter + 1
-          hoisted = "direct_hoisted_int_#{next}"
-          register_hoisted_native_int(expr, hoisted)
+                {code <> decl, hoisted, counter}
+              else
+                promote_fresh_hoisted_native_int(expr, env, code, ref, counter)
+              end
 
-          if stable_hoist_init?(ref) do
-            register_hoisted_native_int_init(hoisted, ref)
+            _ ->
+              promote_fresh_hoisted_native_int(expr, env, code, ref, counter)
           end
 
-          {code <> "  const elmc_int_t #{hoisted} = #{ref};\n", hoisted, next}
+        :error ->
+          promote_fresh_hoisted_native_int(expr, env, code, ref, counter)
       end
     else
       {code, ref, counter}
     end
+  end
+
+  defp promote_fresh_hoisted_native_int(expr, _env, code, ref, counter) do
+    next = counter + 1
+    hoisted = "direct_hoisted_int_#{next}"
+    register_hoisted_native_int(expr, hoisted)
+
+    if stable_hoist_init?(ref) do
+      register_hoisted_native_int_init(hoisted, ref)
+    end
+
+    {code <> "  const elmc_int_t #{hoisted} = #{ref};\n", hoisted, next}
   end
 end

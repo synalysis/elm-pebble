@@ -600,9 +600,10 @@ defmodule Elmc.ParseAllScorecardTest do
             row.module in fixture_elm_excluded_modules(fixture_configs, row.fixture)
           end)
 
-        failures =
+        {failures, oom_skipped?} =
           modules
-          |> Enum.flat_map(fn %{fixture: fixture, module: module} ->
+          |> Enum.reduce_while({[], false}, fn %{fixture: fixture, module: module},
+                                               {acc, _oom?} ->
             path = absolute_module_path(module)
             fixture_dir = elm_make_fixture_dir(fixture)
             rel_module = Path.relative_to(path, fixture_dir)
@@ -613,20 +614,37 @@ defmodule Elmc.ParseAllScorecardTest do
                    stderr_to_stdout: true
                  ) do
               {_output, 0} ->
-                []
+                {:cont, {acc, false}}
 
               {output, _exit} ->
-                [%{module: module, error: first_non_empty_line(output)}]
+                error = first_non_empty_line(output)
+
+                if elm_make_out_of_memory?(error) do
+                  {:halt, {acc ++ [%{module: module, error: error}], true}}
+                else
+                  {:cont, {acc ++ [%{module: module, error: error}], false}}
+                end
             end
           end)
 
-        %{
-          available: true,
-          version: version,
-          modules_checked: length(modules),
-          excluded_modules: excluded_modules,
-          module_make_failures: failures
-        }
+        if oom_skipped? do
+          %{
+            available: false,
+            skipped: :out_of_memory,
+            version: version,
+            modules_checked: 0,
+            excluded_modules: excluded_modules,
+            module_make_failures: []
+          }
+        else
+          %{
+            available: true,
+            version: version,
+            modules_checked: length(modules),
+            excluded_modules: excluded_modules,
+            module_make_failures: failures
+          }
+        end
     end
   end
 
@@ -640,6 +658,10 @@ defmodule Elmc.ParseAllScorecardTest do
     fixture_configs
     |> Map.get(fixture, %{elm_make_enabled: true, elm_make_excluded_modules: []})
     |> Map.get(:elm_make_enabled, true)
+  end
+
+  defp elm_make_out_of_memory?(error) when is_binary(error) do
+    String.contains?(error, "out of memory")
   end
 
   defp first_non_empty_line(output) when is_binary(output) do

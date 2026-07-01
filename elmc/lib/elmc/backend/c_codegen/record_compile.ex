@@ -537,12 +537,12 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     record_type = Expr.record_container_type_for_expr(base, env)
     multi_use_names = record_update_multi_use_names(fields)
 
-    {update_code, current_var, counter, deferred_field_vars} =
+    {update_code, current_var, counter, deferred_field_vars, used_cow_drop?} =
       Enum.reduce(
         fields,
-        {base_code, base_var, counter, base_passthrough?, false, []},
+        {base_code, base_var, counter, base_passthrough?, false, [], false},
         fn field,
-           {code_acc, current, c, current_passthrough?, current_unique?, deferred} ->
+           {code_acc, current, c, current_passthrough?, current_unique?, deferred, used_cow_drop?} ->
           {field_code, field_var, c2, field_passthrough?} =
             compile_update_operand(field.expr, RcRuntimeEmit.strip_function_tail_scope(env), c)
 
@@ -555,8 +555,10 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
           borrowed_record_operand? =
             is_binary(current) and EnvBindings.borrowed_arg_ref?(env, current)
 
+          use_cow_drop? = current_unique? or borrowed_record_operand?
+
           update_call =
-            if current_unique? or borrowed_record_operand? do
+            if use_cow_drop? do
               index_ref =
                 Expr.record_field_index_ref(field.name, record_shape, record_type, env)
 
@@ -598,10 +600,13 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
           #{release_code}
           """
 
-          {code_acc <> "\n" <> code, out, next, false, true, deferred_field_vars}
+          {code_acc <> "\n" <> code, out, next, false, true, deferred_field_vars,
+           used_cow_drop? or use_cow_drop?}
         end
       )
-      |> then(fn {code, var, c, _, _, deferred} -> {code, var, c, deferred} end)
+      |> then(fn {code, var, c, _, _, deferred, used_cow_drop?} ->
+        {code, var, c, deferred, used_cow_drop?}
+      end)
 
     deferred_release =
       deferred_field_vars
@@ -615,10 +620,37 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
         update_code <> "\n" <> deferred_release
       end
 
+    {full_code, current_var, counter} =
+      retain_in_place_cow_result(full_code, base_var, current_var, env, counter, used_cow_drop?)
+
     case maybe_extract_chained_update_helper(base, fields, env, full_code, current_var, counter) do
       {:ok, code, out, counter} -> {code, out, counter}
       :error -> {full_code, current_var, counter}
     end
+  end
+
+  defp retain_in_place_cow_result(code, base_var, result_var, env, counter, true)
+       when is_binary(code) and is_binary(base_var) and is_binary(result_var) do
+    if in_place_cow_record_base?(env, base_var) do
+      next = counter + 1
+      out = "tmp_#{next}"
+
+      bump = """
+      ElmcValue *#{out} = (#{result_var} == #{base_var}) ? elmc_retain(#{result_var}) : #{result_var};
+      """
+
+      {code <> "\n" <> bump, out, next}
+    else
+      {code, result_var, counter}
+    end
+  end
+
+  defp retain_in_place_cow_result(code, _base_var, result_var, _env, counter, _used_cow_drop?) do
+    {code, result_var, counter}
+  end
+
+  defp in_place_cow_record_base?(env, base_var) do
+    EnvBindings.borrowed_arg_ref?(env, base_var) or EnvBindings.direct_param_ref?(env, base_var)
   end
 
   defp record_update_multi_use_names(fields) when is_list(fields) do

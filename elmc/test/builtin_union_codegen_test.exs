@@ -119,7 +119,8 @@ defmodule Elmc.BuiltinUnionCodegenTest do
         _ -> flunk("missing maybePiece RC function")
       end
 
-    assert fn_body =~ ~r/if \(flag\) \{[\s\S]*Rc = elmc_maybe_just\(&(owned\[[0-9]+\]|tmp_[0-9]+|out),/
+    assert fn_body =~
+             ~r/if \(flag\) \{[\s\S]*Rc = elmc_maybe_just_own\(&(owned\[[0-9]+\]|tmp_[0-9]+|out),/
     refute fn_body =~ "elmc_maybe_just(out,"
     assert fn_body =~ ~r/\} else \{[\s\S]*elmc_maybe_nothing\(\)/
     refute fn_body =~ "*out = owned["
