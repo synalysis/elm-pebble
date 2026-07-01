@@ -8,6 +8,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.CommandCall do
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
+  alias Elmc.Backend.CCodegen.VarAnalysis
 
   @spec emit_command_call(
           Types.function_decl_key(),
@@ -46,9 +47,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.CommandCall do
     decl = Map.get(decl_map, target_key)
 
     with %{args: arg_names, expr: body_expr} when is_list(arg_names) <- decl,
-         true <- length(arg_names) == length(args),
+         {:ok, bind_names, bind_kinds} <- inline_bind_params(arg_names, args, body_expr, decl),
          {:ok, arg_code, inline_env, release_refs, counter} <-
-           inline_command_env(target_key, args, arg_names, env, counter),
+           inline_command_env(target_key, args, bind_names, bind_kinds, env, counter),
          {:ok, body_code, counter} <- Host.direct_emit_expr(body_expr, inline_env, counter) do
       releases = Release.release_vars(release_refs, "  ")
 
@@ -63,11 +64,38 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.CommandCall do
     end
   end
 
-  defp inline_command_env(target_key, args, arg_names, env, counter) do
+  defp inline_bind_params(arg_names, args, body_expr, decl) do
+    used = VarAnalysis.used_vars(body_expr)
+    kinds = CommandDef.arg_kinds(decl)
+
+    cond do
+      length(args) > length(arg_names) ->
+        :error
+
+      length(args) == length(arg_names) ->
+        {:ok, arg_names, kinds}
+
+      trailing_unused?(arg_names, args, used) ->
+        n = length(args)
+        {:ok, Enum.take(arg_names, n), Enum.take(kinds, n)}
+
+      true ->
+        :error
+    end
+  end
+
+  defp trailing_unused?(arg_names, args, used) do
+    provided = length(args)
+
+    Enum.drop(arg_names, provided)
+    |> Enum.all?(fn name -> not MapSet.member?(used, name) end)
+  end
+
+  defp inline_command_env(target_key, args, arg_names, arg_kinds, env, counter) do
     decl_map = Map.get(env, :__program_decls__, %{})
     decl = Map.get(decl_map, target_key)
-    arg_kinds = CommandDef.arg_kinds(decl)
     {module_name, _} = target_key
+    used = VarAnalysis.used_vars(decl.expr)
 
     {arg_code, inline_env, release_refs, counter} =
       args
@@ -76,21 +104,25 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.CommandCall do
       |> Enum.reduce(
         {"", env, [], counter},
         fn {{arg_expr, arg_name}, kind}, {code_acc, env_acc, releases_acc, c} ->
-          case kind do
-            :native_int ->
-              {code, ref, c2} = Host.compile_native_int_expr(arg_expr, env, c)
-              env_acc = EnvBindings.put_native_int_binding(env_acc, arg_name, ref)
-              {code_acc <> "\n  " <> code, env_acc, releases_acc, c2}
+          if MapSet.member?(used, arg_name) do
+            case kind do
+              :native_int ->
+                {code, ref, c2} = Host.compile_native_int_expr(arg_expr, env, c)
+                env_acc = EnvBindings.put_native_int_binding(env_acc, arg_name, ref)
+                {code_acc <> "\n  " <> code, env_acc, releases_acc, c2}
 
-            :native_string ->
-              {code, ref, cleanup, c2} = Host.compile_native_string_expr(arg_expr, env, c)
-              env_acc = EnvBindings.put_native_string_binding(env_acc, arg_name, ref)
-              {code_acc <> "\n  " <> code, env_acc, releases_acc ++ cleanup, c2}
+              :native_string ->
+                {code, ref, cleanup, c2} = Host.compile_native_string_expr(arg_expr, env, c)
+                env_acc = EnvBindings.put_native_string_binding(env_acc, arg_name, ref)
+                {code_acc <> "\n  " <> code, env_acc, releases_acc ++ cleanup, c2}
 
-            :boxed ->
-              {code, ref, c2} = Host.compile_expr(arg_expr, env, c)
-              env_acc = Map.put(env_acc, arg_name, ref)
-              {code_acc <> "\n  " <> code, env_acc, releases_acc ++ [ref], c2}
+              :boxed ->
+                {code, ref, c2} = Host.compile_expr(arg_expr, env, c)
+                env_acc = Map.put(env_acc, arg_name, ref)
+                {code_acc <> "\n  " <> code, env_acc, releases_acc ++ [ref], c2}
+            end
+          else
+            {code_acc, env_acc, releases_acc, c}
           end
         end
       )

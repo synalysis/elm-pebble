@@ -209,17 +209,16 @@ function isCompanionWeatherAppMessage(payload) {
         return false;
     }
 
-    // Phone-to-watch wire tags start at 201 for every companion protocol; only
-    // weather payloads use the provide_temperature / provide_condition field keys.
-    var temperatureTag = appMessageValue(payload, "provide_temperature_field1_tag");
-    var temperatureValue = appMessageValue(payload, "provide_temperature_field1_value");
-    var conditionField = appMessageValue(payload, "provide_condition_field1");
+    var tag = typeof payload.message_tag === "number"
+        ? payload.message_tag
+        : payload[wireAppMessageKey(protocol.KEY_MESSAGE_TAG)];
 
-    if (typeof temperatureTag === "number" && typeof temperatureValue === "number") {
+    if (tag === 205) {
         return true;
     }
 
-    return typeof conditionField === "number";
+    return typeof appMessageValue(payload, "provide_weather_field1_tag") === "number" ||
+        typeof appMessageValue(payload, "provide_weather_field2") === "number";
 }
 
 function readStoredConfigurationResponse() {
@@ -344,25 +343,6 @@ function companionPhoneToWatchWirePayload(payload) {
     var tag = typeof payload.message_tag === "number"
         ? payload.message_tag
         : payload[wireAppMessageKey(protocol.KEY_MESSAGE_TAG)];
-
-    if (tag === 201 &&
-        typeof payload.provide_temperature_field1_tag === "number" &&
-        typeof payload.provide_temperature_field1_value === "number" &&
-        typeof protocol.encodePhoneToWatchPayload === "function") {
-        return wirePayloadFromObject(protocol.encodePhoneToWatchPayload("ProvideTemperature", {
-            tag: payload.provide_temperature_field1_tag,
-            value: payload.provide_temperature_field1_value
-        }));
-    }
-
-    if (tag === 202 &&
-        typeof payload.provide_condition_field1 === "number" &&
-        typeof protocol.encodePhoneToWatchPayload === "function") {
-        return wirePayloadFromObject(protocol.encodePhoneToWatchPayload(
-            "ProvideCondition",
-            payload.provide_condition_field1
-        ));
-    }
 
     if (typeof protocol.wirePhoneToWatchFromElmPayload === "function") {
         var encoded = protocol.wirePhoneToWatchFromElmPayload(payload);
@@ -1133,19 +1113,25 @@ function weatherConditionWireCode(condition) {
 }
 
 function deliverWeatherToWatchFromInfo(info) {
-    if (!info) {
+    if (!info || typeof protocol.encodePhoneToWatchPayload !== "function") {
         return false;
     }
 
-    sendImmediateAppMessage({
-        message_tag: 201,
-        provide_temperature_field1_tag: 1,
-        provide_temperature_field1_value: info.temperatureC
-    }, 0);
-    sendImmediateAppMessage({
-        message_tag: 202,
-        provide_condition_field1: weatherConditionWireCode(info.condition)
-    }, 350);
+    var encoded = protocol.encodePhoneToWatchPayload(
+        "ProvideWeather",
+        {
+            tag: 1,
+            value: Math.round(Number(info.temperatureC != null ? info.temperatureC : 0) * 10)
+        },
+        {
+            field2: weatherConditionWireCode(info.condition),
+            field3: 0,
+            field4: 0,
+            field5: Number(info.pressureHpa != null ? info.pressureHpa : 0)
+        }
+    );
+
+    sendImmediateAppMessage(wirePayloadFromObject(encoded), 0);
     return true;
 }
 

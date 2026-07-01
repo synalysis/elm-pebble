@@ -526,12 +526,12 @@ def wire_appmessage_plain_dict(runtime, message):
     if isinstance(message, dict):
         return {str(key): _plain_wire_value(val) for key, val in message.items()}
 
+    plain = {}
     try:
         keys = list(message.keys())
     except Exception:
-        return None
+        keys = []
 
-    plain = {}
     for key in keys:
         key_str = str(key)
         try:
@@ -542,6 +542,24 @@ def wire_appmessage_plain_dict(runtime, message):
             except (KeyError, TypeError, AttributeError):
                 continue
         plain[key_str] = _plain_wire_value(value)
+
+    if plain:
+        return plain
+
+    if runtime is not None:
+        try:
+            text = runtime.eval(
+                "(function(m){ try { return JSON.stringify(m); } catch (_e) { return ''; } })(message)",
+                message=message,
+            )
+            if isinstance(text, str) and text:
+                parsed = json.loads(text)
+                if isinstance(parsed, dict) and parsed:
+                    return {
+                        str(key): _plain_wire_value(val) for key, val in parsed.items()
+                    }
+        except Exception:
+            pass
 
     return plain
 

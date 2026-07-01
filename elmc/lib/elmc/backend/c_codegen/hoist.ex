@@ -212,10 +212,13 @@ defmodule Elmc.Backend.CCodegen.Hoist do
 
   @spec stable_hoist_init?(String.t()) :: boolean()
   def stable_hoist_init?(init) when is_binary(init) do
-    not Regex.match?(
-      ~r/\b(?:native_if_|native_let_|tmp_|native_case_|native_maybe_case_|native_maybe_default_)\d+\b/,
-      init
-    )
+    trimmed = String.trim(init)
+
+    not (Regex.match?(~r/^native_(?:min|max)_\d+$/, trimmed) or
+           Regex.match?(
+             ~r/\b(?:native_if_|native_let_|tmp_|native_case_|native_maybe_case_|native_maybe_default_)\d+\b/,
+             init
+           ))
   end
 
   @spec function_local_hoist_ref?(String.t()) :: boolean()

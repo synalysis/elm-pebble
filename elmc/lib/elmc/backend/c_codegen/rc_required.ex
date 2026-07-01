@@ -63,15 +63,55 @@ defmodule Elmc.Backend.CCodegen.RcRequired do
 
   @spec analyze(Types.function_decl_map(), run_opts()) :: MapSet.t(Types.function_decl_key())
   def analyze(decl_map, opts \\ []) do
-    seeds =
+    seeds = initial_seeds(decl_map, opts)
+
+    decl_map
+    |> then(&callee_closure(seeds, &1))
+    |> expand_native_boxed_rc_callers(decl_map)
+    |> expand_scalar_boxing_wrappers(decl_map)
+  end
+
+  defp initial_seeds(decl_map, opts) do
+    worker_seeds =
       decl_map
       |> Map.keys()
       |> Enum.filter(fn {_module, name} -> name in seed_entry_names(opts) end)
       |> MapSet.new()
 
-    decl_map
-    |> then(&callee_closure(seeds, &1))
-    |> expand_native_boxed_rc_callers(decl_map)
+    MapSet.union(worker_seeds, direct_command_target_seeds(opts))
+  end
+
+  # Direct-render scene helpers (for example drawDial) are not always reachable from
+  # init/update/subscriptions, but their allocating callees must use the RC ABI.
+  defp direct_command_target_seeds(opts) do
+    if direct_render_only?(opts) do
+      direct_command_targets_from_opts(opts)
+    else
+      MapSet.new()
+    end
+  end
+
+  defp direct_command_targets_from_opts(opts) when is_list(opts),
+    do: Keyword.get(opts, :direct_command_targets, MapSet.new())
+
+  defp direct_command_targets_from_opts(%{} = opts),
+    do: Map.get(opts, :direct_command_targets, MapSet.new())
+
+  # Int/Bool native helpers still box through elmc_new_int/bool in their argc wrapper;
+  # that allocation can fail and must propagate RC to callers/runtime logging.
+  defp expand_scalar_boxing_wrappers(required, decl_map) do
+    Enum.reduce(decl_map, required, fn {key = {mod, _name}, decl}, acc ->
+      if MapSet.member?(acc, key) or not scalar_boxing_rc_required?(decl, mod, decl_map) do
+        acc
+      else
+        MapSet.put(acc, key)
+      end
+    end)
+  end
+
+  defp scalar_boxing_rc_required?(decl, module_name, decl_map) do
+    NativeFunctionCall.native_scalar_fn?(decl, module_name, decl_map) and
+      NativeFunctionCall.return_kind(decl, module_name, decl_map) in [:native_int, :native_bool]
   end
 
   @spec rc_required?(String.t(), String.t()) :: boolean()

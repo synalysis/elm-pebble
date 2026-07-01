@@ -7,6 +7,7 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
   alias Elmc.Backend.CCodegen.DebugProbes
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.ListLoopCodegen
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.Types
@@ -187,19 +188,42 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
     nulls = if count == 0, do: "", else: ValueSlots.transfer_and_null_refs(Enum.uniq(item_vars))
 
     code =
-      if count == 0 do
-        """
-        #{boxed_slot_assign(out, "elmc_list_nil()")}
-          #{list_probe}
-        """
-      else
-        """
-        #{item_code}
-          ElmcValue *#{array_name}[#{count}] = { #{item_list} };
-          #{RcRuntimeEmit.assign_call(env, out, "elmc_list_from_values_take", "#{array_name}, #{count}")}
-          #{nulls}
-          #{list_probe}
-        """
+      cond do
+        count == 0 ->
+          """
+          #{boxed_slot_assign(out, "elmc_list_nil()")}
+            #{list_probe}
+          """
+
+        Map.get(env, :__concat_map_forward_loop_id__) != nil and count <= 8 ->
+          forward_loop_id = Map.get(env, :__concat_map_forward_loop_id__)
+          append_code =
+            item_vars
+            |> Enum.with_index()
+            |> Enum.map_join("", fn {var, index} ->
+              ListLoopCodegen.emit_forward_list_append(
+                forward_loop_id,
+                var,
+                env: env,
+                append_id: forward_loop_id * 100 + index
+              )
+            end)
+
+          """
+          #{item_code}
+          #{append_code}
+          #{boxed_slot_assign(out, "elmc_list_nil()")}
+            #{list_probe}
+          """
+
+        true ->
+          """
+          #{item_code}
+            ElmcValue *#{array_name}[#{count}] = { #{item_list} };
+            #{RcRuntimeEmit.assign_call(env, out, "elmc_list_from_values_take", "#{array_name}, #{count}")}
+            #{nulls}
+            #{list_probe}
+          """
       end
 
     {code, out, max(next, list_items_id + 1)}

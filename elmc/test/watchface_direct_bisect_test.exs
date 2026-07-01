@@ -192,4 +192,56 @@ defmodule Elmc.WatchfaceDirectBisectTest do
     )
   end
 
+  test "direct Ui.group with bare command list" do
+    out_dir =
+      compile_direct!(
+        header() <>
+          """
+          view model =
+              Ui.toUiNode (mountLines model)
+
+
+          mountLines model =
+              Ui.group
+                  [ Ui.line { x = 4, y = 20 } { x = 14, y = 6 } Color.white
+                  , Ui.line { x = 14, y = 6 } { x = 22, y = 20 } Color.white
+                  ]
+          """
+      )
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    view_body = generated_c |> String.split("elmc_fn_Main_view_commands_append", parts: 2) |> Enum.at(1, "")
+
+    assert view_body =~ "elmc_scene_writer_push_cmd"
+    refute view_body =~ "elmc_fn_Pebble_Ui_toUiNode"
+  end
+
+  test "direct inline skips unused trailing render helper params" do
+    out_dir =
+      compile_direct!(
+        header() <>
+          """
+          view model =
+              Ui.toUiNode (drawBadge model)
+
+
+          drawBadge model =
+              case model.moonPhaseE6 of
+                  Just phase ->
+                      badge 10 10 8 phase
+
+                  Nothing ->
+                      []
+
+
+          badge cx cy radius _ _unusedPhase =
+              [ Ui.fillCircle { x = cx, y = cy } radius Color.lightGray ]
+          """
+      )
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    assert generated_c =~ "elmc_fn_Main_view_commands_append"
+    refute generated_c =~ "direct Pebble command inline generation failed"
+  end
+
 end

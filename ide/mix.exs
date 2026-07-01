@@ -76,12 +76,15 @@ defmodule Ide.MixProject do
       {:finch, "~> 0.13"},
       {:req, "~> 0.5"},
       {:muontrap, "~> 1.7"},
-      {:websockex, "~> 0.5"},
+      # Vendored: decode_response handles {:http_error, _} from malformed WS handshakes
+      # (QEMU/pypkjs noise during PBW install) instead of raising CaseClauseError.
+      {:websockex, path: "vendor/websockex"},
       {:telemetry_metrics, "~> 1.0"},
       {:telemetry_poller, "~> 1.0"},
       {:gettext, "~> 0.26"},
       {:jason, "~> 1.2"},
-      {:earmark, "~> 1.4"},
+      {:mdex, "~> 0.13"},
+      {:mdex_gfm, "~> 0.2"},
       {:html_sanitize_ex, "~> 1.4"},
       {:dns_cluster, "~> 0.1.1"},
       {:bandit, "~> 1.5"},

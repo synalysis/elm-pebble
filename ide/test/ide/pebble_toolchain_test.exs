@@ -367,9 +367,8 @@ defmodule Ide.PebbleToolchainTest do
     source = File.read!("priv/pebble_app_template/src/pkjs/index.js")
 
     assert source =~ "function isCompanionWeatherAppMessage(payload)"
-    assert source =~ "provide_temperature_field1_tag"
-    assert source =~ "provide_temperature_field1_value"
-    assert source =~ "provide_condition_field1"
+    assert source =~ "provide_weather_field1_tag"
+    assert source =~ "provide_weather_field2"
     refute source =~ "return tag === 201 || tag === 202;"
   end
 
@@ -486,7 +485,10 @@ defmodule Ide.PebbleToolchainTest do
     refute draw_body =~ "elmc_pebble_ensure_scene(&s_elm_app);"
     assert template =~ "schedule_scene_prep"
     assert template =~ "scene_prep_timer_callback"
-    assert template =~ "app_timer_register(100, scene_prep_timer_callback, NULL)"
+    assert template =~ "ELMC_SCENE_PREP_DELAY_MS"
+    assert template =~ "ELMC_SCENE_PREP_BOOT_DELAY_MS"
+    assert template =~ "ELMC_SCENE_PREP_COMPANION_DELAY_MS"
+    assert template =~ "app_timer_register(delay_ms, scene_prep_timer_callback, NULL)"
     assert template =~ "if (s_elm_app.scene.dirty)"
 
     assert draw_body =~ "bounds.size.w < compile.size.w || bounds.size.h < compile.size.h"
@@ -500,6 +502,19 @@ defmodule Ide.PebbleToolchainTest do
 
     assert complete_elm_init_body =~ "startup_cmd_callback(NULL);"
     refute complete_elm_init_body =~ "app_timer_register(1, startup_cmd_callback, NULL);"
+  end
+
+  test "watchface template always defers elm init off init stack" do
+    template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
+
+    schedule_body =
+      case Regex.run(~r/static void schedule_elm_init\(void\) \{(.*?)^\}/ms, template) do
+        [_, body] -> body
+        _ -> flunk("schedule_elm_init body not found")
+      end
+
+    refute schedule_body =~ "complete_elm_init();"
+    assert schedule_body =~ "deferred_elm_init_callback"
   end
 
   test "pebble app template applies antialiased style and disables mono stroke dither" do

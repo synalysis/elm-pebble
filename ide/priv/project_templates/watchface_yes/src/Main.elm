@@ -684,7 +684,7 @@ drawBottomRight model =
         AltitudeCorner ->
             case model.altitude of
                 Just altitude ->
-                    [ mountainIcon (x + 3) (bottom - 38)
+                    [ Ui.drawVectorAt Resources.VectorStaticMountain { x = x + 3, y = bottom - 38 }
                     , textAt Color.white { x = x, y = bottom - 14, w = 60, h = 14 } (altitudeString altitude)
                     ]
 
@@ -834,16 +834,6 @@ conditionVector condition =
 
         UnknownWeather ->
             Resources.VectorStaticWeatherUnknown
-
-
-mountainIcon : Int -> Int -> Ui.RenderOp
-mountainIcon x y =
-    Ui.group
-        [ Ui.line { x = x, y = y + 18 } { x = x + 10, y = y + 4 } Color.white
-        , Ui.line { x = x + 10, y = y + 4 } { x = x + 18, y = y + 18 } Color.white
-        , Ui.line { x = x + 18, y = y + 18 } { x = x + 26, y = y + 7 } Color.white
-        , Ui.line { x = x + 26, y = y + 7 } { x = x + 34, y = y + 18 } Color.white
-        ]
 
 
 textAt : Color.Color -> Ui.Rect -> String -> Ui.RenderOp

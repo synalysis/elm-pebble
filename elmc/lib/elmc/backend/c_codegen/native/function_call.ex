@@ -520,10 +520,18 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
       unless RcRuntimeEmit.function_out_ref?(out), do: ValueSlots.track(out)
 
       prelude =
-        if ValueSlots.owned_ref?(out) or Map.get(env, :__into_out__) == out or
-             RcRuntimeEmit.function_out_ref?(out),
-           do: "",
-           else: ValueSlots.boxed_decl(out, "NULL") <> "\n"
+        cond do
+          ValueSlots.owned_ref?(out) ->
+            ValueSlots.owned_reassign_prefix(out)
+
+          Map.get(env, :__into_out__) == out or RcRuntimeEmit.function_out_ref?(out) ->
+            ""
+
+          true ->
+            ValueSlots.boxed_decl(out, "NULL") <> "\n"
+        end
+
+      if ValueSlots.owned_ref?(out), do: ValueSlots.mark_written(out)
 
       prelude <> "Rc = #{call};\nCHECK_RC(Rc);"
     else

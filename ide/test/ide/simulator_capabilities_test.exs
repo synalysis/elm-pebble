@@ -290,6 +290,8 @@ defmodule Ide.SimulatorCapabilitiesTest do
     assert source =~ "emulator_feedback_installation_json"
     assert source =~ "emulator_simulator_capabilities_json"
     assert embedded_js =~ "copyFeedbackReport"
+    assert embedded_js =~ "downloadFeedbackReport"
+    assert embedded_js =~ "writeClipboardText"
     assert embedded_js =~ "simulatorWeatherEnabled()"
     assert delivery_js =~ "emulatorSimulatorCapabilities"
     assert embedded_js =~ "readVncFramebufferSize"

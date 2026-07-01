@@ -1202,13 +1202,9 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
          exit_probe,
          collect_generic_helpers?
        ) do
-    rc_abi? =
-      return_kind == :boxed and
-        NativeFunctionCall.native_boxed_rc_candidate?(decl, module_name, decl_map)
-
     RecordCompile.reset_deferred_call_operand_releases()
     RecordCompile.reset_borrowed_field_refs()
-    if return_kind == :boxed, do: ValueSlots.reset(epilogue_lifo: rc_abi?)
+    if return_kind == :boxed, do: ValueSlots.reset(epilogue_lifo: true)
 
     {body_code, body_var, _counter} =
       compile_native_body(decl, module_name, decl_map, native_env, return_kind, arg_kinds)
@@ -1339,15 +1335,17 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           """
 
         needs_catch? ->
-          failure_block =
-            if failure_cleanup == "",
-              do: "if (Rc != RC_SUCCESS)\n    return NULL;\n",
-              else: "if (Rc != RC_SUCCESS) {\n#{failure_cleanup}\n  return NULL;\n}\n"
-
-          failure_block <> "return #{body_var};"
+          ValueSlots.catch_return_epilogue(body_var, failure_cleanup)
 
         rc_abi? ->
-          "*out = #{body_var};\n  return RC_SUCCESS;"
+          owned_transfer =
+            if ValueSlots.owned_ref?(body_var), do: ValueSlots.transfer_and_null(body_var), else: ""
+
+          """
+          *out = #{body_var};
+          #{owned_transfer}#{failure_cleanup}
+          return RC_SUCCESS;
+          """
 
         true ->
           ""
@@ -1955,26 +1953,16 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
   defp wrapper_return_scalar(c_name, native_args, :native_int) do
     """
-    ElmcValue *out = NULL;
-    RC Rc = RC_SUCCESS;
-    CATCH_BEGIN
-      Rc = elmc_new_int(&out, #{c_name}_native(#{native_args}));
-      CHECK_RC(Rc);
-    CATCH_END
-    return out;
+    RC Rc = elmc_new_int(#{RcRuntimeEmit.function_out_param()}, #{c_name}_native(#{native_args}));
+    return Rc;
     """
     |> String.trim()
   end
 
   defp wrapper_return_scalar(c_name, native_args, :native_bool) do
     """
-    ElmcValue *out = NULL;
-    RC Rc = RC_SUCCESS;
-    CATCH_BEGIN
-      Rc = elmc_new_bool(&out, #{c_name}_native(#{native_args}));
-      CHECK_RC(Rc);
-    CATCH_END
-    return out;
+    RC Rc = elmc_new_bool(#{RcRuntimeEmit.function_out_param()}, #{c_name}_native(#{native_args}));
+    return Rc;
     """
     |> String.trim()
   end
@@ -2014,16 +2002,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
     case ConstantInt.literal_value(decl.expr || %{op: :int_literal, value: 0}, env) do
       {:ok, value} ->
-        """
-        ElmcValue *out = NULL;
-        RC Rc = RC_SUCCESS;
-        CATCH_BEGIN
-          Rc = elmc_new_int(&out, #{value});
-          CHECK_RC(Rc);
-        CATCH_END
-        return out;
-        """
-        |> String.trim()
+        "return elmc_new_int(#{RcRuntimeEmit.function_out_param()}, #{value});"
 
       :error ->
         nil
@@ -2039,16 +2018,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   defp skipped_native_boxed_literal(%{expr: %{op: :bool_literal, value: value}}, _module, _decl_map, :native_bool, false) do
     c_value = if value, do: "true", else: "false"
 
-    """
-    ElmcValue *out = NULL;
-    RC Rc = RC_SUCCESS;
-    CATCH_BEGIN
-      Rc = elmc_new_bool(&out, #{c_value});
-      CHECK_RC(Rc);
-    CATCH_END
-    return out;
-    """
-    |> String.trim()
+    "return elmc_new_bool(#{RcRuntimeEmit.function_out_param()}, #{c_value});"
   end
 
   defp skipped_native_boxed_literal(_decl, _module, _decl_map, _return_kind, _rc_required?), do: nil

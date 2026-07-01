@@ -3799,6 +3799,36 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute generated_c =~ "ELMC_TAG_LIST"
   end
 
+  test "direct render supports drawVectorAt in weather icon helper" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_draw_vector_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_draw_vector_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), direct_draw_vector_weather_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               prune_runtime: true,
+               prune_native_wrappers: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    assert generated_c =~ "view_commands_append"
+    assert generated_c =~ "elmc_scene_writer_push_cmd"
+    refute generated_c =~ "elmc_fn_Main_view(ElmcValue"
+
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+    assert view_body =~ "elmc_release_array_lifo(owned, DIM(owned));"
+    refute view_body =~ "ELMC_RELEASE(owned"
+    refute view_body =~ ~r/if \(Rc != RC_SUCCESS\) \{\s*elmc_release_array_lifo/
+  end
+
   test "direct List.concatMap over range inlines tick lines from lambda" do
     source_fixture = Path.expand("fixtures/simple_project", __DIR__)
     project_dir = Path.expand("tmp/direct_concatmap_range_project", __DIR__)
@@ -5522,6 +5552,50 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
         minute * 6 // 60
     
       """
+  end
+
+  defp direct_draw_vector_weather_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        {}
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init, update = update, subscriptions = subscriptions, view = view }
+
+
+    init _ =
+        ( {}, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view _ =
+        Ui.toUiNode (drawWeatherIcon 8 8 Resources.VectorStaticWeatherClear)
+
+
+    drawWeatherIcon x y _condition =
+        [ Ui.drawVectorAt Resources.VectorStaticWeatherClear { x = x, y = y } ]
+    """
   end
 
   defp direct_concatmap_range_source do

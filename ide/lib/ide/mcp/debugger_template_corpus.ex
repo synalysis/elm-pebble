@@ -14,7 +14,6 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   alias Ide.Debugger.StepExecution
   alias Ide.Debugger.SubscriptionTriggerWire
   alias Ide.Debugger.TriggerCandidates
-  alias Ide.Debugger.Surface
   alias Ide.Debugger.SurfaceCompileArtifacts
   alias Ide.Mcp.ToolSupport
   alias Ide.Mcp.ToolTypes

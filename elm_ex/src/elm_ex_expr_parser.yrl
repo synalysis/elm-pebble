@@ -25,8 +25,7 @@ Left 225 field_accessor.
 
 Rootsymbol pipe_right_expr.
 %% Shift/reduce ambiguities (pipes, composition, field access, case) are resolved
-%% by the precedence declarations above. Expect matches the current conflict count.
-Expect 25.
+%% by the precedence declarations above.
 
 pipe_right_expr -> let_expr : '$1'.
 pipe_right_expr -> if_expr : '$1'.

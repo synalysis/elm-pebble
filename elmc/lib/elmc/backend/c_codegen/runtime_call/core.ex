@@ -3,18 +3,22 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
 
   alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.CodegenListHelpers
+  alias Elmc.Backend.CCodegen.ConcatMapBodyPlan
   alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.ConstantInt
   alias Elmc.Backend.CCodegen.DebugProbes
   alias Elmc.Backend.CCodegen.FunctionCallCompile
   alias Elmc.Backend.CCodegen.ListLoopCodegen
   alias Elmc.Backend.CCodegen.EnvBindings
+  alias Elmc.Backend.CCodegen.Expr
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.ImmortalStaticList
   alias Elmc.Backend.CCodegen.LayoutSolver
+  alias Elmc.Backend.CCodegen.ListHofResolve
   alias Elmc.Backend.CCodegen.Native.Bool, as: NativeBool
   alias Elmc.Backend.CCodegen.Native.Float, as: NativeFloat
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
+  alias Elmc.Backend.CCodegen.Native.RecordFields
   alias Elmc.Backend.CCodegen.Native.String, as: NativeString
   alias Elmc.Backend.CCodegen.Native.TypedReturn, as: NativeTypedReturn
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
@@ -105,6 +109,8 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
         env,
         counter
       ) do
+    list = ListHofResolve.resolve_list_expr(list, env)
+
     case two_arg_lambda(lambda) do
       {:ok, left, right, body} ->
         case compile_list_map_tuple2_native_int_cursor_loop(left, right, body, list, env, counter) do
@@ -115,7 +121,12 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
       :error ->
         case lambda do
           %{op: :lambda, args: [arg], body: body} when is_binary(arg) ->
-            case unwrap_tuple2_lambda_body(body, arg) do
+            case compile_list_map_filter_field_accessors(arg, body, list, env, counter) do
+              {:ok, code, out, counter} ->
+                {code, out, counter}
+
+              :error ->
+                case unwrap_tuple2_lambda_body(body, arg) do
               {:ok, left, right, inner} ->
                 case compile_list_map_tuple2_native_int_cursor_loop(
                        left,
@@ -146,6 +157,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
                         {code, out, counter}
                     end
                 end
+            end
             end
 
           _ ->
@@ -233,6 +245,44 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
   def compile(
         %{
           op: :runtime_call,
+          function: "elmc_list_find_first",
+          args: [predicate, list]
+        } = expr,
+        env,
+        counter
+      ) do
+    case compile_list_find_first_expr(predicate, list, env, counter) do
+      {:ok, code, out, counter} -> {code, out, counter}
+      :error -> compile_generic(expr, env, counter)
+    end
+  end
+
+  def compile(
+        %{
+          op: :runtime_call,
+          function: "elmc_list_head",
+          args: [list]
+        } = expr,
+        env,
+        counter
+      ) do
+    list = ListHofResolve.resolve_list_expr(list, env)
+
+    case unwrap_list_filter_expr(list) do
+      {:ok, predicate, inner_list} ->
+        case compile_list_find_first_expr(predicate, inner_list, env, counter) do
+          {:ok, code, out, counter} -> {code, out, counter}
+          :error -> compile_generic(expr, env, counter)
+        end
+
+      :error ->
+        compile_generic(expr, env, counter)
+    end
+  end
+
+  def compile(
+        %{
+          op: :runtime_call,
           function: "elmc_list_filter",
           args: [predicate, list]
         } = expr,
@@ -254,7 +304,39 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
         env,
         counter
       ) do
+    lambda = ListHofResolve.normalize_filter_map_fn(lambda)
+
     case compile_list_filter_map_expr(lambda, list, env, counter) do
+      {:ok, code, out, counter} -> {code, out, counter}
+      :error -> compile_generic(expr, env, counter)
+    end
+  end
+
+  def compile(
+        %{
+          op: :runtime_call,
+          function: "elmc_list_concat_map",
+          args: [lambda, list]
+        } = expr,
+        env,
+        counter
+      ) do
+    case compile_list_concat_map_expr(lambda, list, env, counter) do
+      {:ok, code, out, counter} -> {code, out, counter}
+      :error -> compile_generic(expr, env, counter)
+    end
+  end
+
+  def compile(
+        %{
+          op: :runtime_call,
+          function: "elmc_maybe_map",
+          args: [lambda, maybe]
+        } = expr,
+        env,
+        counter
+      ) do
+    case compile_maybe_map_expr(lambda, maybe, env, counter) do
       {:ok, code, out, counter} -> {code, out, counter}
       :error -> compile_generic(expr, env, counter)
     end
@@ -1237,6 +1319,8 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
         body
       end
 
+    body = normalize_bool_predicate_body(body)
+
     {list_code, list_var, counter} = Host.compile_expr(list, RcRuntimeEmit.strip_function_tail_scope(env), counter)
     loop_id = counter + 1
     head = "list_filter_head_#{loop_id}"
@@ -1245,6 +1329,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     body_env =
       env
       |> RcRuntimeEmit.strip_function_tail_scope()
+      |> augment_list_hof_record_arg(arg, list)
       |> augment_zero_arg_int_constants(body)
 
     head_native = "list_filter_native_head_#{loop_id}"
@@ -1258,7 +1343,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
       |> Map.put(arg, head)
       |> maybe_put_native_int_arg(arg, body, head)
 
-    if NativeBool.expr?(body, int_body_env) do
+    if NativeBool.expr?(body, boxed_body_env) do
       {int_body_code, int_body_ref, counter} = NativeBool.compile_expr(body, int_body_env, loop_id)
       {boxed_body_code, boxed_body_ref, counter} =
         NativeBool.compile_expr(body, boxed_body_env, counter)
@@ -1659,6 +1744,129 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     {:ok, code, out, counter}
   end
 
+  @spec compile_list_concat_map_expr(
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
+  defp compile_list_concat_map_expr(%{op: :lambda, args: [arg], body: body}, list, env, counter)
+       when is_binary(arg) do
+    case range_bounds(list, env, counter) do
+      {:ok, _range_code, _first_ref, _last_ref, _counter} ->
+        compile_list_concat_map_range_loop(arg, body, list, env, counter)
+
+      :error ->
+        compile_list_concat_map_list_loop(arg, body, list, env, counter)
+    end
+  end
+
+  defp compile_list_concat_map_expr(_lambda, _list, _env, _counter), do: :error
+
+  @spec compile_list_concat_map_range_loop(
+          String.t(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
+  defp compile_list_concat_map_range_loop(arg, body, list, env, counter) do
+    direct_append? = match?({:ok, _, _}, ConcatMapBodyPlan.plan(body))
+
+    with {:ok, range_code, first_ref, last_ref, counter} <- range_bounds(list, env, counter) do
+      loop_id = counter + 1
+      item_var = "list_concat_map_i_#{loop_id}"
+      step_var = "list_concat_map_step_#{loop_id}"
+      {forward_init, _forward_head} = ListLoopCodegen.emit_forward_list_init(loop_id)
+
+      body_env =
+        env
+        |> RcRuntimeEmit.strip_function_tail_scope()
+        |> EnvBindings.put_native_int_binding(arg, item_var)
+        |> EnvBindings.put_boxed_int_binding(arg, false)
+        |> maybe_put_concat_map_forward_loop_id(loop_id, direct_append?)
+
+      {body_code, sublist_var, counter} = Host.compile_expr(body, body_env, loop_id)
+      counter = counter + 1
+      out = "tmp_#{counter}"
+
+      append_in_loop =
+        if direct_append? do
+          ValueSlots.release_stmt(sublist_var)
+        else
+          """
+          #{ListLoopCodegen.emit_forward_list_append_sublist(loop_id, sublist_var, env: env)}
+          #{ValueSlots.release_stmt(sublist_var)};
+          """
+        end
+
+      loop_body = """
+      #{indent_loop_body(body_code)}
+            #{append_in_loop}
+      """
+
+      code = """
+      #{range_code}
+      #{forward_init}
+        #{ListLoopCodegen.runtime_source_comment_line("elmc_list_concat_map")}
+      #{ListLoopCodegen.emit_ascending_int_range_loop(first_ref, last_ref, item_var, step_var, loop_body)}
+      #{ListLoopCodegen.finalize_forward_cursor_list(loop_id, out)}
+      """
+
+      {:ok, code, out, counter}
+    end
+  end
+
+  defp maybe_put_concat_map_forward_loop_id(env, _loop_id, false), do: env
+
+  defp maybe_put_concat_map_forward_loop_id(env, loop_id, true),
+    do: Map.put(env, :__concat_map_forward_loop_id__, loop_id)
+
+  @spec compile_list_concat_map_list_loop(
+          String.t(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
+  defp compile_list_concat_map_list_loop(arg, body, list, env, counter) do
+    {list_code, list_var, counter} = Host.compile_expr(list, RcRuntimeEmit.strip_function_tail_scope(env), counter)
+    loop_id = counter + 1
+    cursor = "list_concat_map_cursor_#{loop_id}"
+    node = "list_concat_map_node_#{loop_id}"
+    head = "list_concat_map_head_#{loop_id}"
+    {forward_init, _forward_head} = ListLoopCodegen.emit_forward_list_init(loop_id)
+
+    body_env =
+      env
+      |> RcRuntimeEmit.strip_function_tail_scope()
+      |> Map.put(arg, head)
+      |> maybe_put_native_int_arg(arg, body, head)
+
+    {body_code, sublist_var, counter} = Host.compile_expr(body, body_env, loop_id)
+    counter = counter + 1
+    out = "tmp_#{counter}"
+
+    code = """
+    #{list_code}
+    #{forward_init}
+      #{ListLoopCodegen.runtime_source_comment_line("elmc_list_concat_map", 6)}
+      ElmcValue *#{cursor} = #{list_var};
+      while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
+        ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
+        ElmcValue *#{head} = #{node}->head;
+    #{indent_loop_body(body_code)}
+        #{ListLoopCodegen.emit_forward_list_append_sublist(loop_id, sublist_var, env: env)}
+        #{ValueSlots.release_stmt(sublist_var)};
+        #{cursor} = #{node}->tail;
+      }
+    #{ListLoopCodegen.finalize_forward_cursor_list(loop_id, out)}
+      #{ValueSlots.release_stmt(list_var)}
+    """
+
+    {:ok, code, out, counter}
+  end
+
   @spec compile_list_indexed_map_boxed_cursor_loop(
           String.t(),
           String.t(),
@@ -1760,6 +1968,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
       env
       |> RcRuntimeEmit.strip_function_tail_scope()
       |> Map.put(arg, head)
+      |> augment_list_hof_record_arg(arg, list)
       |> maybe_put_native_int_arg(arg, body, head)
 
     if NativeBool.expr?(body, body_env) do
@@ -2135,6 +2344,66 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
 
     {:ok, code, out, counter}
   end
+
+  @spec augment_list_hof_record_arg(Types.compile_env(), String.t(), Types.ir_expr()) ::
+          Types.compile_env()
+  defp augment_list_hof_record_arg(env, arg, list) when is_binary(arg) do
+    case list_element_type(list, env) do
+      element_type when is_binary(element_type) ->
+        env
+        |> Map.update(:__var_types__, %{arg => element_type}, &Map.put(&1, arg, element_type))
+        |> put_record_shape_for_arg(arg, element_type)
+
+      _ ->
+        case Expr.record_shape(list, env) do
+          fields when is_list(fields) ->
+            Map.update(env, :__record_shapes__, %{arg => fields}, &Map.put(&1, arg, fields))
+
+          _ ->
+            env
+        end
+    end
+  end
+
+  defp put_record_shape_for_arg(env, arg, element_type) do
+    case Expr.record_shape_for_type(element_type, env) do
+      fields when is_list(fields) ->
+        Map.update(env, :__record_shapes__, %{arg => fields}, &Map.put(&1, arg, fields))
+
+      _ ->
+        env
+    end
+  end
+
+  @spec list_element_type(Types.ir_expr(), Types.compile_env()) :: String.t() | nil
+  defp list_element_type(list, env) do
+    list_type =
+      case list do
+        %{op: :var, name: name} ->
+          Map.get(Map.get(env, :__var_types__, %{}), name)
+
+        _ ->
+          NativeTypedReturn.expr_type(list, env)
+      end
+
+    case list_type do
+      "List " <> element -> Host.normalize_type_name(element)
+      _ -> nil
+    end
+  end
+
+  @spec normalize_bool_predicate_body(Types.ir_expr()) :: Types.ir_expr()
+  defp normalize_bool_predicate_body(%{op: :call, name: op, args: [left, right]})
+       when op in ["&&", "Basics.and", "and"] do
+    %{
+      op: :if,
+      cond: left,
+      then_expr: right,
+      else_expr: %{op: :bool_literal, value: false}
+    }
+  end
+
+  defp normalize_bool_predicate_body(body), do: body
 
   @spec augment_zero_arg_int_constants(Types.compile_env(), Types.ir_expr()) :: Types.compile_env()
   defp augment_zero_arg_int_constants(env, body) do
@@ -3554,6 +3823,497 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
 
   defp rc_worker_body?(env) do
     Map.get(env, :__function_name__) in ~w(init update subscriptions)
+  end
+
+  defp unwrap_list_filter_expr(%{op: :qualified_call, target: "List.filter", args: [pred, list]}),
+    do: {:ok, pred, list}
+
+  defp unwrap_list_filter_expr(%{op: :runtime_call, function: "elmc_list_filter", args: [pred, list]}),
+    do: {:ok, pred, list}
+
+  defp unwrap_list_filter_expr(_), do: :error
+
+  @spec compile_list_find_first_expr(
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
+  defp compile_list_find_first_expr(predicate, list, env, counter) do
+    case compile_list_find_first_record_fields(predicate, list, env, counter) do
+      {:ok, code, out, counter} ->
+        {:ok, code, out, counter}
+
+      :error ->
+        with {:ok, arg, body} <- normalize_list_bool_predicate(predicate),
+             {:ok, code, out, counter} <-
+               compile_list_find_first_body_loop(arg, body, list, env, counter) do
+          {:ok, code, out, counter}
+        else
+          :error ->
+            case two_arg_lambda(predicate) do
+              {:ok, left, right, body} ->
+                compile_list_find_first_tuple2_loop(left, right, body, list, env, counter)
+
+              :error ->
+                :error
+            end
+        end
+    end
+  end
+
+  defp compile_list_find_first_record_fields(predicate, list, env, counter) do
+    with {:ok, left_field, right_field} <- record_bool_and_fields(predicate),
+         inner_list <- ListHofResolve.resolve_list_expr(list, env),
+         shape = Expr.record_shape(inner_list, env),
+         left_index = Expr.record_field_index_ref(left_field, shape, nil, env),
+         right_index = Expr.record_field_index_ref(right_field, shape, nil, env),
+         true <- is_binary(left_index) and left_index != "",
+         true <- is_binary(right_index) and right_index != "" do
+      {list_code, list_var, counter} =
+        Host.compile_expr(inner_list, RcRuntimeEmit.strip_function_tail_scope(env), counter)
+
+      loop_id = counter + 1
+      head = "list_find_first_head_#{loop_id}"
+      found = "list_find_first_found_#{loop_id}"
+      counter = counter + 1
+      out = "tmp_#{counter}"
+
+      loop_body = """
+          if (elmc_record_get_index_bool(#{head}, #{left_index}) &&
+              elmc_record_get_index_bool(#{head}, #{right_index})) {
+            #{RcRuntimeEmit.assign_into(env, out, "elmc_maybe_just", head)}
+            #{found} = 1;
+            break;
+          }
+      """
+
+      walk = """
+        ElmcValue *#{out} = NULL;
+        int #{found} = 0;
+      #{ListLoopCodegen.emit_boxed_head_list_walk(list_var, loop_id, head, loop_body,
+        repr: list_loop_repr(inner_list, env),
+        env: env
+      )}
+        if (!#{found}) {
+          #{RcRuntimeEmit.assign_into(env, out, "elmc_maybe_nothing", "")}
+        }
+      """
+
+      code = """
+      #{list_code}
+        #{ListLoopCodegen.runtime_source_comment_line("elmc_list_find_first")}
+      #{walk}
+        #{ValueSlots.release_stmt(list_var)}
+      """
+
+      {:ok, code, out, counter}
+    else
+      _ -> :error
+    end
+  end
+
+  defp record_bool_and_fields(%{op: :lambda, args: [arg], body: body}) when is_binary(arg) do
+    body = normalize_bool_predicate_body(body)
+
+    case body do
+      %{
+        op: :if,
+        cond: left,
+        then_expr: right,
+        else_expr: else_expr
+      } ->
+        if false_branch?(else_expr) do
+          with {:ok, left_field} <- field_on_lambda_arg(left, arg),
+               {:ok, right_field} <- field_on_lambda_arg(right, arg) do
+            {:ok, left_field, right_field}
+          end
+        else
+          :error
+        end
+
+      %{op: :call, name: name, args: [left, right]} when name in ["&&", "Basics.and", "and"] ->
+        with {:ok, left_field} <- field_on_lambda_arg(left, arg),
+             {:ok, right_field} <- field_on_lambda_arg(right, arg) do
+          {:ok, left_field, right_field}
+        end
+
+      _ ->
+        :error
+    end
+  end
+
+  defp record_bool_and_fields(_predicate), do: :error
+
+  defp false_branch?(%{op: :bool_literal, value: false}), do: true
+
+  defp false_branch?(%{op: :int_literal, value: 0}), do: true
+
+  defp false_branch?(%{op: :constructor_call, target: target, args: []})
+       when target in ["False", "Basics.False"],
+       do: true
+
+  defp false_branch?(_expr), do: false
+
+  defp field_on_lambda_arg(%{op: :field_access, arg: arg_name, field: field}, arg)
+       when is_binary(field) and arg_name == arg,
+       do: {:ok, field}
+
+  defp field_on_lambda_arg(%{op: :field_access, arg: %{op: :var, name: arg_name}, field: field}, arg)
+       when is_binary(field) and arg_name == arg,
+       do: {:ok, field}
+
+  defp field_on_lambda_arg(_expr, _arg), do: :error
+
+  defp compile_list_find_first_body_loop(arg, body, list, env, counter) do
+    case unwrap_tuple2_lambda_body(body, arg) do
+      {:ok, left, right, inner} ->
+        compile_list_find_first_tuple2_loop(left, right, inner, list, env, counter)
+
+      :error ->
+        compile_list_find_first_loop(arg, body, list, env, counter)
+    end
+  end
+
+  defp compile_list_find_first_loop(arg, body, list, env, counter) do
+    {body, substitutions} = Host.unwrap_let_chain(body, %{})
+
+    body =
+      if map_size(substitutions) > 0 do
+        Host.substitute_expr(body, substitutions)
+      else
+        body
+      end
+
+    body = normalize_bool_predicate_body(body)
+
+    {list_code, list_var, counter} = Host.compile_expr(list, RcRuntimeEmit.strip_function_tail_scope(env), counter)
+    loop_id = counter + 1
+    head = "list_find_first_head_#{loop_id}"
+    found = "list_find_first_found_#{loop_id}"
+    head_native = "list_find_first_native_head_#{loop_id}"
+
+    body_env =
+      env
+      |> RcRuntimeEmit.strip_function_tail_scope()
+      |> augment_list_hof_record_arg(arg, list)
+      |> augment_zero_arg_int_constants(body)
+
+    int_body_env =
+      body_env
+      |> EnvBindings.put_native_int_binding(arg, head_native)
+
+    boxed_body_env =
+      body_env
+      |> Map.put(arg, head)
+      |> maybe_put_native_int_arg(arg, body, head)
+
+    if NativeBool.expr?(body, boxed_body_env) do
+      {int_body_code, int_body_ref, _} = NativeBool.compile_expr(body, int_body_env, loop_id)
+      {boxed_body_code, boxed_body_ref, counter} =
+        NativeBool.compile_expr(body, boxed_body_env, counter)
+
+      counter = counter + 1
+      out = "tmp_#{counter}"
+
+      int_list_match = """
+          if (#{int_body_ref}) {
+            ElmcValue *#{head} = NULL;
+            #{RcRuntimeEmit.assign_call(env, head, "elmc_new_int", head_native)}
+            #{RcRuntimeEmit.assign_into(env, out, "elmc_maybe_just", head)}
+            #{ValueSlots.release_stmt(head)};
+            #{found} = 1;
+            break;
+          }
+      """
+
+      int_list_loop = """
+          const elmc_int_t #{head_native} = _ilp_#{loop_id}->values[_ii_#{loop_id}];
+      #{indent_loop_body(int_body_code)}
+      #{int_list_match}
+      """
+
+      int_list_only_body = """
+        int #{found} = 0;
+        ElmcIntListPayload *_ilp_#{loop_id} = (ElmcIntListPayload *)#{list_var}->payload;
+        int _ilen_#{loop_id} = _ilp_#{loop_id} ? _ilp_#{loop_id}->length : 0;
+        for (int _ii_#{loop_id} = 0; _ii_#{loop_id} < _ilen_#{loop_id}; _ii_#{loop_id}++) {
+      #{int_list_loop}
+        }
+        if (!#{found}) {
+          #{RcRuntimeEmit.assign_into(env, out, "elmc_maybe_nothing", "")}
+        }
+      """
+
+      boxed_match = """
+        #{indent_loop_body(boxed_body_code)}
+            if (#{boxed_body_ref}) {
+              #{RcRuntimeEmit.assign_into(env, out, "elmc_maybe_just", head)}
+              #{found} = 1;
+              break;
+            }
+      """
+
+      boxed_only_body = """
+        int #{found} = 0;
+      #{ListLoopCodegen.emit_boxed_head_list_walk(list_var, loop_id, head, boxed_match,
+        repr: list_loop_repr(list, env),
+        env: env
+      )}
+        if (!#{found}) {
+          #{RcRuntimeEmit.assign_into(env, out, "elmc_maybe_nothing", "")}
+        }
+      """
+
+      int_list_branch =
+        emit_list_hof_int_or_boxed_branch(list, env, list_var, out,
+          int_list_body: int_list_only_body,
+          boxed_body: boxed_only_body
+        )
+
+      code = """
+      #{list_code}
+        #{ListLoopCodegen.runtime_source_comment_line("elmc_list_find_first")}
+      #{int_list_branch}
+        #{ValueSlots.release_stmt(list_var)}
+      """
+
+      {:ok, code, out, counter}
+    else
+      :error
+    end
+  end
+
+  defp compile_list_find_first_tuple2_loop(left, right, body, list, env, counter) do
+    {body, substitutions} = Host.unwrap_let_chain(body, %{})
+
+    body =
+      if map_size(substitutions) > 0, do: Host.substitute_expr(body, substitutions), else: body
+
+    {list_code, list_var, counter} = Host.compile_expr(list, RcRuntimeEmit.strip_function_tail_scope(env), counter)
+    loop_id = counter + 1
+    head = "list_find_first_head_#{loop_id}"
+    found = "list_find_first_found_#{loop_id}"
+    dx = "list_find_first_dx_#{loop_id}"
+    dy = "list_find_first_dy_#{loop_id}"
+
+    body_env =
+      env
+      |> RcRuntimeEmit.strip_function_tail_scope()
+      |> augment_zero_arg_int_constants(body)
+      |> EnvBindings.put_native_int_binding(left, dx)
+      |> EnvBindings.put_native_int_binding(right, dy)
+
+    if NativeBool.expr?(body, body_env) do
+      {body_code, body_ref, counter} = NativeBool.compile_expr(body, body_env, loop_id)
+      counter = counter + 1
+      out = "tmp_#{counter}"
+
+      loop_body = """
+      #{indent_loop_body(body_code)}
+          if (#{body_ref}) {
+            #{RcRuntimeEmit.assign_into(env, out, "elmc_maybe_just", head)}
+            #{found} = 1;
+            break;
+          }
+      """
+
+      walk = """
+        int #{found} = 0;
+      #{ListLoopCodegen.emit_boxed_head_list_walk(list_var, loop_id, head, loop_body,
+        repr: list_loop_repr(list, env),
+        env: env
+      )}
+        if (!#{found}) {
+          #{RcRuntimeEmit.assign_into(env, out, "elmc_maybe_nothing", "")}
+        }
+      """
+
+      code = """
+      #{list_code}
+        #{ListLoopCodegen.runtime_source_comment_line("elmc_list_find_first")}
+        ElmcValue *#{out} = NULL;
+      #{walk}
+        #{ValueSlots.release_stmt(list_var)}
+      """
+
+      {:ok, code, out, counter}
+    else
+      :error
+    end
+  end
+
+  defp compile_list_map_filter_field_accessors(arg, body, list, env, counter) do
+    with {:ok, filter_pred, inner_list} <- unwrap_list_filter_expr(list),
+         {:ok, filter_field} <- field_accessor_lambda(filter_pred),
+         {:ok, map_field} <- field_accessor_lambda(%{op: :lambda, args: [arg], body: body}) do
+      shape = Expr.record_shape(inner_list, env)
+      filter_index = Expr.record_field_index_ref(filter_field, shape, nil, env)
+      map_index = Expr.record_field_index_ref(map_field, shape, nil, env)
+
+      if is_binary(filter_index) and is_binary(map_index) and filter_index != "" and map_index != "" do
+        {list_code, list_var, counter} =
+          Host.compile_expr(inner_list, RcRuntimeEmit.strip_function_tail_scope(env), counter)
+
+        loop_id = counter + 1
+        head = "list_filter_map_field_head_#{loop_id}"
+        {forward_init, _forward_head} = ListLoopCodegen.emit_forward_list_init(loop_id)
+        counter = counter + 1
+        out = "tmp_#{counter}"
+
+        loop_body = """
+            if (elmc_record_get_index_bool(#{head}, #{filter_index})) {
+              ElmcValue *list_filter_map_field_item_#{loop_id} = elmc_record_get_index(#{head}, #{map_index});
+        #{ListLoopCodegen.emit_forward_list_append(loop_id, "list_filter_map_field_item_#{loop_id}", env: env)}
+            }
+        """
+
+        walk = """
+        #{forward_init}
+        #{ListLoopCodegen.emit_boxed_head_list_walk(list_var, loop_id, head, loop_body,
+          repr: list_loop_repr(inner_list, env),
+          env: env
+        )}
+          #{ListLoopCodegen.finalize_forward_cursor_list(loop_id, out)}
+        """
+
+        code = """
+        #{list_code}
+          #{ListLoopCodegen.runtime_source_comment_line("elmc_list_filter_map_fields")}
+        #{walk}
+          #{ValueSlots.release_stmt(list_var)}
+        """
+
+        {:ok, code, out, counter}
+      else
+        :error
+      end
+    else
+      _ -> :error
+    end
+  end
+
+  defp field_accessor_lambda(%{op: :lambda, args: [arg], body: %{op: :field_access, arg: arg_name, field: field}})
+       when is_binary(arg) and is_binary(field) and arg == arg_name,
+       do: {:ok, field}
+
+  defp field_accessor_lambda(%{
+         op: :lambda,
+         args: [arg],
+         body: %{op: :field_access, arg: %{op: :var, name: arg_name}, field: field}
+       })
+       when is_binary(arg) and is_binary(field) and arg == arg_name,
+       do: {:ok, field}
+
+  defp field_accessor_lambda(_), do: :error
+
+  @spec compile_maybe_map_expr(
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
+  defp compile_maybe_map_expr(%{op: :lambda, args: [arg], body: body}, maybe, env, counter)
+       when is_binary(arg) do
+    with {:ok, field} <- field_accessor_lambda(%{op: :lambda, args: [arg], body: body}),
+         shape when is_list(shape) <- maybe_payload_record_shape(maybe, env),
+         index when is_binary(index) and index != "" <-
+           Expr.record_field_index_ref(field, shape, nil, env) do
+      compile_maybe_map_field(maybe, index, env, counter)
+    else
+      _ -> :error
+    end
+  end
+
+  defp compile_maybe_map_expr(_lambda, _maybe, _env, _counter), do: :error
+
+  @spec compile_maybe_map_field(
+          Types.ir_expr(),
+          String.t(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
+  defp compile_maybe_map_field(maybe, field_index, env, counter) do
+    {maybe_code, maybe_var, counter} = Host.compile_expr(maybe, env, counter)
+    loop_id = counter + 1
+    maybe_inner = "maybe_map_inner_#{loop_id}"
+    payload = "maybe_map_payload_#{loop_id}"
+    {out, counter} = RcRuntimeEmit.compile_result_slot(env, counter)
+
+    out_decl =
+      cond do
+        ValueSlots.owned_ref?(out) -> ""
+        RcRuntimeEmit.predeclared_out_slot?(env, out) -> ""
+        RcRuntimeEmit.function_out_ref?(out) -> ""
+        true -> "#{ValueSlots.boxed_null_decl(out)}\n"
+      end
+
+    nothing_assign = "#{RcRuntimeEmit.assignment_lhs(out)} = elmc_maybe_nothing();"
+
+    just_assign =
+      if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
+        """
+        {
+          RC __alloc_rc = elmc_maybe_just(#{RcRuntimeEmit.allocator_out_arg(out)}, #{payload});
+          CHECK_RC(__alloc_rc);
+        }
+        """
+      else
+        RcRuntimeEmit.fusion_assign(out, "elmc_maybe_just", payload, env, declare_out?: false)
+      end
+
+    code = """
+    #{maybe_code}
+    #{out_decl}  #{ListLoopCodegen.runtime_source_comment_line("elmc_maybe_map")}
+      if (!#{maybe_var} || #{maybe_var}->tag != ELMC_TAG_MAYBE || !#{maybe_var}->payload) {
+        #{nothing_assign}
+      } else {
+        ElmcMaybe *#{maybe_inner} = (ElmcMaybe *)#{maybe_var}->payload;
+        if (!#{maybe_inner}->is_just || !#{maybe_inner}->value) {
+          #{nothing_assign}
+        } else {
+          ElmcValue *#{payload} = elmc_record_get_index(#{maybe_inner}->value, #{field_index});
+          #{just_assign}
+        }
+      }
+      #{ValueSlots.release_stmt(maybe_var)}
+    """
+
+    {:ok, code, out, counter}
+  end
+
+  @spec maybe_payload_record_shape(Types.ir_expr(), Types.compile_env()) :: Types.record_shape()
+  defp maybe_payload_record_shape(maybe, env) do
+    case maybe_inner_type_from_expr(maybe, env) do
+      inner when is_binary(inner) -> Expr.record_shape_from_type(inner, env)
+      _ -> nil
+    end
+  end
+
+  @spec maybe_inner_type_from_expr(Types.ir_expr(), Types.compile_env()) :: String.t() | nil
+  defp maybe_inner_type_from_expr(%{op: :var, name: name}, env) when is_binary(name) do
+    case Map.get(env, :__var_types__, %{}) |> Map.get(name) do
+      type when is_binary(type) -> unwrap_maybe_type(type)
+      _ -> nil
+    end
+  end
+
+  defp maybe_inner_type_from_expr(%{op: :field_access, arg: arg, field: field}, env)
+       when is_binary(field) do
+    case RecordFields.field_type(env, arg, field) do
+      type when is_binary(type) -> unwrap_maybe_type(type)
+      _ -> nil
+    end
+  end
+
+  defp maybe_inner_type_from_expr(_maybe, _env), do: nil
+
+  @spec unwrap_maybe_type(String.t()) :: String.t() | nil
+  defp unwrap_maybe_type(type) when is_binary(type) do
+    case Regex.run(~r/^Maybe\s+(.+)$/s, String.trim(type)) do
+      [_, inner] -> String.trim(inner)
+      _ -> nil
+    end
   end
 
   defp list_loop_repr(list, env), do: LayoutSolver.list_loop_repr_from_expr(list, env)

@@ -311,19 +311,51 @@ defmodule Elmc.Backend.CCodegen.Patterns do
 
   def bind_pattern(
         env,
-        %{kind: :constructor, tag: tag, bind: bind, arg_pattern: arg},
+        %{kind: :constructor, bind: bind, arg_pattern: arg} = pattern,
         subject_ref
-      )
-      when is_integer(tag) do
-    subject_ref = pattern_subject_ref(subject_ref)
-    value_ref = "((ElmcTuple2 *)#{subject_ref}->payload)->second"
-    env = if is_binary(bind), do: Map.put(env, bind, value_ref), else: env
-    if arg, do: bind_pattern(env, arg, value_ref), else: env
+      ) do
+    case constructor_pattern_tag(pattern) do
+      tag when is_integer(tag) -> bind_constructor_tag_pattern(env, bind, arg, subject_ref)
+      _ -> bind_pattern_fallback(env, pattern, subject_ref)
+    end
   end
 
   def bind_pattern(env, _pattern, _subject_ref), do: env
 
-  @doc false
+  defp bind_constructor_tag_pattern(env, bind, arg, subject_ref) do
+    subject_ref = pattern_subject_ref(subject_ref)
+    tuple_payload_ref = "((ElmcTuple2 *)#{subject_ref}->payload)->second"
+
+    env =
+      if is_binary(bind) do
+        case Map.get(env, :__var_types__, %{}) |> Map.get(bind) do
+          "Int" ->
+            payload_ref = union_payload_ref(subject_ref)
+
+            env
+            |> EnvBindings.put_native_int_binding(bind, payload_ref)
+            |> Map.put(bind, payload_ref)
+
+          _ ->
+            Map.put(env, bind, tuple_payload_ref)
+        end
+      else
+        env
+      end
+
+    if arg, do: bind_union_ctor_arg(env, arg, subject_ref), else: env
+  end
+
+  defp constructor_pattern_tag(%{tag: tag}) when is_integer(tag), do: tag
+  defp constructor_pattern_tag(%{union_tag: tag}) when is_integer(tag), do: tag
+  defp constructor_pattern_tag(_), do: nil
+
+  defp bind_pattern_fallback(env, %{arg_pattern: arg}, subject_ref) when not is_nil(arg) do
+    bind_union_ctor_arg(env, arg, subject_ref)
+  end
+
+  defp bind_pattern_fallback(env, _pattern, _subject_ref), do: env
+
   @spec maybe_unwrap_just_case?(list()) :: boolean()
   def maybe_unwrap_just_case?(branches) when is_list(branches) do
     Enum.any?(branches, &nothing_branch?/1) and
@@ -458,6 +490,26 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   defp pattern_subject_ref(%{name: name}) when is_binary(name), do: name
   defp pattern_subject_ref(%{"name" => name}) when is_binary(name), do: name
   defp pattern_subject_ref(subject_ref), do: inspect(subject_ref)
+
+  defp union_payload_ref(subject_ref) when is_binary(subject_ref) do
+    "elmc_union_payload_int(#{subject_ref})"
+  end
+
+  # Union constructors store their fields in the tuple2 payload (tag is ->first).
+  defp union_constructor_payload_ref(subject_ref) when is_binary(subject_ref) do
+    "((ElmcTuple2 *)#{subject_ref}->payload)->second"
+  end
+
+  defp bind_union_ctor_arg(env, %{kind: :var, name: name}, subject_ref) when is_binary(name) do
+    payload_ref = union_payload_ref(subject_ref)
+
+    env
+    |> EnvBindings.put_native_int_binding(name, payload_ref)
+    |> Map.put(name, payload_ref)
+  end
+
+  defp bind_union_ctor_arg(env, arg, subject_ref),
+    do: bind_pattern(env, arg, union_constructor_payload_ref(subject_ref))
 
   @spec list_int_subject?(Types.compile_env(), String.t()) :: boolean()
   defp list_int_subject?(env, subject_ref) when is_binary(subject_ref) do

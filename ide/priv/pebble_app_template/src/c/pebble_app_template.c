@@ -274,6 +274,9 @@ static bool s_draw_update_active = false;
 #define ELMC_DEFERRED_INIT_RETRY_MS 50
 static int s_elm_init_attempts = 0;
 #endif
+#if ELMC_PEBBLE_SCENE_CACHE_ENABLED
+static bool s_first_scene_prep = true;
+#endif
 static AppTimer *s_render_coalesce_timer = NULL;
 #if ELMC_PEBBLE_SCENE_CACHE_ENABLED
 static AppTimer *s_scene_prep_timer = NULL;
@@ -2667,18 +2670,48 @@ static void scene_prep_timer_callback(void *data) {
     }
 #endif
   } else if (scene_rc != 0) {
-    APP_LOG(APP_LOG_LEVEL_WARNING, "elmc scene prep failed rc=%d", scene_rc);
+    APP_LOG(APP_LOG_LEVEL_ERROR, "elmc scene prep failed rc=%d", scene_rc);
+    ELMC_RC_LOG_FAIL(RC_ERR_RENDER_ABORT, "elmc_scene_prep", "scene prep failed");
   }
   ELMC_PEBBLE_TRACE_EXIT("scene_prep_timer_callback");
 }
 
+#ifndef ELMC_SCENE_PREP_DELAY_MS
+#define ELMC_SCENE_PREP_DELAY_MS 100
+#endif
+#ifndef ELMC_SCENE_PREP_BOOT_DELAY_MS
+#define ELMC_SCENE_PREP_BOOT_DELAY_MS 300
+#endif
+#if ELMC_PEBBLE_FEATURE_INBOX_EVENTS
+#ifndef ELMC_SCENE_PREP_COMPANION_DELAY_MS
+#define ELMC_SCENE_PREP_COMPANION_DELAY_MS 200
+#endif
+#endif
+
 static void schedule_scene_prep(void) {
+  int delay_ms = ELMC_SCENE_PREP_DELAY_MS;
+#if ELMC_PEBBLE_SCENE_CACHE_ENABLED
+  if (s_first_scene_prep) {
+    delay_ms = ELMC_SCENE_PREP_BOOT_DELAY_MS;
+    s_first_scene_prep = false;
+  }
+#endif
+#if ELMC_PEBBLE_FEATURE_INBOX_EVENTS
+  /* Companion boot delivers many phone→watch updates a few hundred ms apart.
+     Rebuilding the scene after each one stacks view encoding on the timer stack
+     and can fault on heavy watchfaces; debounce until the burst pauses. */
+  if (s_agent_after_companion_dispatch) {
+    delay_ms = ELMC_SCENE_PREP_COMPANION_DELAY_MS;
+    s_agent_after_companion_dispatch = false;
+  }
+#endif
   if (s_scene_prep_timer) {
-    return;
+    app_timer_cancel(s_scene_prep_timer);
+    s_scene_prep_timer = NULL;
   }
   /* Defer past the current callback stack (init, inbox, tick). 0 ms still runs
      on the same event-loop turn and can fault on stack-heavy watchfaces. */
-  s_scene_prep_timer = app_timer_register(100, scene_prep_timer_callback, NULL);
+  s_scene_prep_timer = app_timer_register(delay_ms, scene_prep_timer_callback, NULL);
 }
 #endif
 
@@ -3165,7 +3198,12 @@ static bool companion_simulator_weather_tuple(const Tuple *tuple) {
   }
 
   message.kind = COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_PROVIDE_WEATHER;
+#if ELMC_COMPANION_PROTOCOL_HAS_UNION_PAYLOADS
+  message.int_fields[0] = 1;
+  message.union_value_fields[0] = s_pending_temp_c * 10;
+#else
   message.int_fields[0] = s_pending_temp_c;
+#endif
   message.int_fields[1] = s_pending_condition_wire;
   s_has_pending_temp = false;
   s_has_pending_condition = false;
@@ -4345,12 +4383,9 @@ static void deferred_elm_init_callback(void *data) {
 }
 
 static void schedule_elm_init(void) {
-  if (display_bounds_ready()) {
-    ensure_draw_layer_size();
-    complete_elm_init();
-    return;
-  }
-
+  /* Always defer Elm init off the window_stack_push/init stack. Synchronous
+     init plus startup cmd dispatch nests worker update and cmd draining on the
+     same stack frame as window load; heavy watchfaces fault before scene prep. */
   s_elm_init_attempts = 0;
   app_timer_register(ELMC_DEFERRED_INIT_RETRY_MS, deferred_elm_init_callback, NULL);
 }

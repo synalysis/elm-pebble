@@ -13,6 +13,13 @@ defmodule Ide.PebbleToolchainElmcCompileTest do
     assert opts[:direct_render_only] == false
   end
 
+  test "watch_compile_opts enables direct render for color-only multi-platform apps" do
+    opts = Elmc.watch_compile_opts("/tmp/out", ["basalt", "chalk", "gabbro"])
+
+    assert opts[:direct_render_only] == true
+    refute opts[:prune_direct_generic]
+  end
+
   test "target_platforms_for_project_dir reads release_defaults from workspace config" do
     tmp = Path.join(System.tmp_dir!(), "pebble-elmc-opts-#{System.unique_integer([:positive])}")
     watch = Path.join(tmp, "watch")

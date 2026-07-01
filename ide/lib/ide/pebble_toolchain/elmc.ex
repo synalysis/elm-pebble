@@ -107,8 +107,9 @@ defmodule Ide.PebbleToolchain.Elmc do
     end
   end
 
+  # Color watches share direct-scene rendering; aplite needs the streaming/boxed path.
   defp direct_render_only?(target_platforms) when is_list(target_platforms) do
-    length(target_platforms) <= 1
+    target_platforms != [] and not Enum.member?(target_platforms, "aplite")
   end
 
   # Multi-platform PBWs include aplite (streaming view) and newer watches (direct scene).

@@ -777,20 +777,17 @@ defmodule Ide.CompanionProtocolGenerator do
     Enum.all?(msg.fields, fn field ->
       case field.wire_type do
         :int -> true
+        :bool -> true
         {:enum, _} -> true
         {:list, :int} -> true
+        {:union, _} -> true
         _ -> false
       end
     end)
   end
 
   defp js_wire_phone_to_watch_from_elm_case(msg) do
-    required =
-      msg.fields
-      |> Enum.reject(fn field -> match?({:list, _}, field.wire_type) end)
-      |> Enum.map_join("\n", fn field ->
-        "      if (elmPayloadWireInt(payload, \"#{field.key}\") === null) return null;"
-      end)
+    required = js_wire_from_elm_required_checks(msg.fields)
 
     encode_call = js_wire_phone_to_watch_encode_call(msg)
 
@@ -817,8 +814,27 @@ defmodule Ide.CompanionProtocolGenerator do
     "encodePhoneToWatchPayload(\"#{msg.name}\", #{js_elm_payload_field_arg(first)}, { #{rest_args} })"
   end
 
+  defp js_wire_from_elm_required_checks(fields) do
+    fields
+    |> Enum.reject(fn field -> match?({:list, _}, field.wire_type) end)
+    |> Enum.map_join("\n", fn field ->
+      case field.wire_type do
+        {:union, _} ->
+          "      if (elmPayloadWireInt(payload, \"#{field.key}_tag\") === null) return null;\n" <>
+            "      if (elmPayloadWireInt(payload, \"#{field.key}_value\") === null) return null;"
+
+        _ ->
+          "      if (elmPayloadWireInt(payload, \"#{field.key}\") === null) return null;"
+      end
+    end)
+  end
+
   defp js_elm_payload_field_arg(%{wire_type: {:list, :int}, key: key}),
     do: "elmPayloadListInt(payload, \"#{key}\")"
+
+  defp js_elm_payload_field_arg(%{wire_type: {:union, _}, key: key}) do
+    "{ tag: elmPayloadWireInt(payload, \"#{key}_tag\"), value: elmPayloadWireInt(payload, \"#{key}_value\") }"
+  end
 
   defp js_elm_payload_field_arg(%{key: key}),
     do: "elmPayloadWireInt(payload, \"#{key}\")"

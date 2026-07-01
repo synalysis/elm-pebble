@@ -264,7 +264,8 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
 
   @spec emit_forward_list_append(pos_integer(), String.t(), keyword()) :: String.t()
   def emit_forward_list_append(loop_id, item_expr, opts \\ []) do
-    cell = forward_cell(loop_id)
+    append_id = Keyword.get(opts, :append_id, loop_id)
+    cell = forward_cell(append_id)
     tail = forward_tail(loop_id)
     owned? = Keyword.get(opts, :owned, false)
     env = Keyword.get(opts, :env, %{})
@@ -296,6 +297,22 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
   @spec finalize_forward_cursor_list(pos_integer(), String.t()) :: String.t()
   def finalize_forward_cursor_list(loop_id, out_var) do
     "ElmcValue *#{out_var} = #{forward_head(loop_id)};\n"
+  end
+
+  @spec emit_forward_list_append_sublist(pos_integer(), String.t(), keyword()) :: String.t()
+  def emit_forward_list_append_sublist(loop_id, sublist_expr, opts \\ []) when is_binary(sublist_expr) do
+    env = Keyword.get(opts, :env, %{})
+    sub_cursor = "list_concat_map_sub_cursor_#{loop_id}"
+    sub_node = "list_concat_map_sub_node_#{loop_id}"
+
+    """
+    ElmcValue *#{sub_cursor} = #{sublist_expr};
+    while (#{sub_cursor} && #{sub_cursor}->tag == ELMC_TAG_LIST && #{sub_cursor}->payload != NULL) {
+      ElmcCons *#{sub_node} = (ElmcCons *)#{sub_cursor}->payload;
+      #{emit_forward_list_append(loop_id, "#{sub_node}->head", env: env)}
+      #{sub_cursor} = #{sub_node}->tail;
+    }
+    """
   end
 
   @spec forward_head(pos_integer()) :: String.t()
@@ -442,14 +459,7 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
   end
 
   defp int_list_head_take(head_var, list_expr, env) do
-    if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
-      """
-      ElmcValue *#{head_var} = NULL;
-      #{RcRuntimeEmit.check_rc_take(head_var, "elmc_new_int", list_expr, env)}
-      """
-    else
-      RcRuntimeEmit.check_rc_take(head_var, "elmc_new_int", list_expr, env)
-    end
+    RcRuntimeEmit.check_rc_take(head_var, "elmc_new_int", list_expr, env)
   end
 
   defp emit_boxed_head_int_list_walk_only(list_ref, loop_id, head_var, inner_body, opts) do

@@ -6,7 +6,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.Prologue.DirectView do
   @spec body(Types.c_macro_name()) :: Types.c_source()
   def body(direct_view_macro) do
     """
-    #if defined(#{direct_view_macro})
+    #if defined(ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE) && defined(#{direct_view_macro})
     #define ELMC_PEBBLE_DIRECT_VIEW_SCENE 1
     #endif
 

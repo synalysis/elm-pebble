@@ -37,25 +37,19 @@ defmodule Elmc do
          ir0 = PipeChain.desugar_project(ir0),
          ir <- maybe_strip_dead_code(ir0, entry_module, opts[:strip_dead_code]),
          {:ok, ir, debug_usage_diagnostics} <- check_debug_usage(ir, opts),
-         :ok <- Ports.write_port_headers(ir, opts[:out_dir] || "build"),
+         out_dir = opts[:out_dir] || "build",
+         :ok <- Ports.write_port_headers(ir, out_dir),
+         :ok <- Worker.write_worker_adapter(ir, out_dir, entry_module),
+         :ok <- CCodegen.write_project(ir, out_dir, opts),
+         generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c")),
+         {:ok, {opts, generated_c}} <-
+           maybe_recompile_stream_view_fallback(ir, out_dir, entry_module, opts, generated_c),
          :ok <-
            Pebble.write_pebble_shim(
              ir,
-             opts[:out_dir] || "build",
+             out_dir,
              entry_module,
-             opts
-           ),
-         :ok <-
-           Worker.write_worker_adapter(
-             ir,
-             opts[:out_dir] || "build",
-             entry_module
-           ),
-         :ok <-
-           CCodegen.write_project(
-             ir,
-             opts[:out_dir] || "build",
-             opts
+             Map.put(opts, :generated_c, generated_c)
            ),
          :ok <-
            Generator.write_runtime(
@@ -102,4 +96,23 @@ defmodule Elmc do
   @spec maybe_strip_dead_code(ElmEx.IR.t(), String.t(), boolean() | nil) :: ElmEx.IR.t()
   defp maybe_strip_dead_code(ir, _entry_module, false), do: ir
   defp maybe_strip_dead_code(ir, entry_module, _), do: DeadCode.strip(ir, entry_module)
+
+  @spec maybe_recompile_stream_view_fallback(
+          ElmEx.IR.t(),
+          String.t(),
+          String.t(),
+          compile_options(),
+          String.t()
+        ) :: {:ok, {compile_options(), String.t()}} | {:error, term()}
+  defp maybe_recompile_stream_view_fallback(ir, out_dir, entry_module, opts, generated_c) do
+    if Pebble.stream_view_fallback_needed?(ir, generated_c, entry_module, opts) do
+      fallback_opts = Map.put(opts, :stream_view_fallback, true)
+
+      with :ok <- CCodegen.write_project(ir, out_dir, fallback_opts) do
+        {:ok, {fallback_opts, File.read!(Path.join(out_dir, "c/elmc_generated.c"))}}
+      end
+    else
+      {:ok, {opts, generated_c}}
+    end
+  end
 end

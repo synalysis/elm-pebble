@@ -2050,15 +2050,59 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
     const text = lines.join("\n")
 
     try {
-      await navigator.clipboard.writeText(text)
+      await this.writeClipboardText(text)
       if (this.status) this.status.textContent = "Copied emulator feedback report to clipboard"
       this.appendLog("Copied emulator feedback report to clipboard", {
         flushTransfers: false,
         flushSystemLogs: false
       })
     } catch (error) {
-      this.setStatus(`Could not copy feedback report: ${errMessage(error)}`)
+      this.downloadFeedbackReport(text)
+      this.setStatus(
+        `Clipboard blocked; downloaded feedback report (${errMessage(error)})`
+      )
+      this.appendLog(`Downloaded emulator feedback report (${errMessage(error)})`, {
+        flushTransfers: false,
+        flushSystemLogs: false
+      })
     }
+  }
+
+  async writeClipboardText(text: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch (error) {
+      if (!window.isSecureContext) throw error
+
+      const target = document.createElement("textarea")
+      target.setAttribute("readonly", "")
+      target.style.cssText = "position: fixed; left: -10000px; top: 10px"
+      target.value = text
+      document.body.appendChild(target)
+      target.focus()
+      target.select()
+
+      try {
+        if (!document.execCommand("copy")) throw error
+      } finally {
+        target.remove()
+      }
+    }
+  }
+
+  downloadFeedbackReport(text: string): void {
+    const slug = this.el.dataset.projectSlug || "emulator"
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-")
+    const blob = new Blob([text], {type: "text/plain;charset=utf-8"})
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = `${slug}-emulator-feedback-${stamp}.txt`
+    link.style.display = "none"
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 0)
   }
 
   formatInstallationStatus(): string {

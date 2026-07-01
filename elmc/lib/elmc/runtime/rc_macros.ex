@@ -162,6 +162,16 @@ defmodule Elmc.Runtime.RcMacros do
                    (v->tag == ELMC_TAG_TUPLE2 && v->payload != NULL &&
                     elmc_as_int(((ElmcTuple2 *)v->payload)->first) == tag));
     }
+
+    static inline elmc_int_t elmc_union_payload_int(ElmcValue *v) {
+      if (!v) return 0;
+      if (v->tag == ELMC_TAG_INT) return elmc_as_int(v);
+      if (v->tag == ELMC_TAG_TUPLE2 && v->payload != NULL) {
+        ElmcTuple2 *tuple = (ElmcTuple2 *)v->payload;
+        return tuple->second ? elmc_as_int(tuple->second) : 0;
+      }
+      return 0;
+    }
     """
   end
 
@@ -278,7 +288,7 @@ defmodule Elmc.Runtime.RcMacros do
 
     static inline ElmcValue *elmc_maybe_just_take(ElmcValue *value) {
       ElmcValue *out = NULL;
-      return elmc_maybe_just(&out, value) == RC_SUCCESS ? out : elmc_int_zero();
+      return elmc_maybe_just_own(&out, value) == RC_SUCCESS ? out : elmc_int_zero();
     }
 
     static inline ElmcValue *elmc_result_ok_take(ElmcValue *value) {

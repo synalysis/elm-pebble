@@ -360,6 +360,20 @@ defmodule Ide.Emulator.SessionTest do
     assert source =~ ~s/"split": False/
   end
 
+  test "simulator unified weather encodes union temperature in pebble app template" do
+    template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
+
+    unified =
+      template
+      |> String.split("#if defined(ELMC_COMPANION_SIMULATOR_WEATHER_MODE_UNIFIED)", parts: 2)
+      |> Enum.at(1, "")
+      |> String.split("#elif defined(ELMC_COMPANION_SIMULATOR_WEATHER_MODE_LEGACY_SPLIT)", parts: 2)
+      |> hd()
+
+    assert unified =~ "#if ELMC_COMPANION_PROTOCOL_HAS_UNION_PAYLOADS\n  message.int_fields[0] = 1;"
+    assert unified =~ "message.union_value_fields[0] = s_pending_temp_c * 10;"
+  end
+
   test "phone websocket proxy waits long enough for pypkjs cold start" do
     startup = File.read!("lib/ide/emulator/session/startup.ex")
     pypkjs = File.read!("lib/ide/emulator/session/pypkjs.ex")

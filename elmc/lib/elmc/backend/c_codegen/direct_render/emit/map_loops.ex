@@ -9,6 +9,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
+  alias Elmc.Backend.CCodegen.ValueSlots
 
   @spec emit_indexed_map_loop(
           Types.ir_expr(),
@@ -197,21 +198,17 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
       |> EnvBindings.put_native_int_binding(arg_name, item_var)
       |> EnvBindings.put_boxed_int_binding(arg_name, false)
 
-    case Host.direct_emit_expr(body, body_env, next) do
-      {:ok, body_code, counter} ->
-        {:ok,
-         """
-         #{range_code}
-           elmc_int_t direct_step_#{next} = (#{first_ref} <= #{last_ref}) ? 1 : -1;
-           for (elmc_int_t #{item_var} = #{first_ref}; Rc == RC_SUCCESS; #{item_var} += direct_step_#{next}) {
-         #{CSource.indent(body_code, 2)}
-             if (#{item_var} == #{last_ref}) break;
-           }
-         """, counter}
-
-      :error ->
-        :error
-    end
+    emit_loop_body(body, body_env, next, fn body_code, counter ->
+      {:ok,
+       """
+       #{range_code}
+         elmc_int_t direct_step_#{next} = (#{first_ref} <= #{last_ref}) ? 1 : -1;
+         for (elmc_int_t #{item_var} = #{first_ref}; Rc == RC_SUCCESS; #{item_var} += direct_step_#{next}) {
+       #{CSource.indent(body_code, 2)}
+           if (#{item_var} == #{last_ref}) break;
+         }
+       """, counter}
+    end)
   end
 
   defp transparent_lambda_map_range_loop(_fun_expr, _range_code, _first_ref, _last_ref, _env, _counter),
@@ -238,21 +235,17 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
       |> EnvBindings.put_boxed_int_binding(index_name, false)
       |> EnvBindings.put_boxed_int_binding(item_name, false)
 
-    case Host.direct_emit_expr(body, body_env, next) do
-      {:ok, body_code, counter} ->
-        {:ok,
-         """
-         #{range_code}
-           elmc_int_t direct_step_#{next} = (#{first_ref} <= #{last_ref}) ? 1 : -1;
-           for (elmc_int_t #{item_var} = #{first_ref}, #{index_var} = 0; Rc == RC_SUCCESS; #{item_var} += direct_step_#{next}, #{index_var} += 1) {
-         #{CSource.indent(body_code, 2)}
-             if (#{item_var} == #{last_ref}) break;
-           }
-         """, counter}
-
-      :error ->
-        :error
-    end
+    emit_loop_body(body, body_env, next, fn body_code, counter ->
+      {:ok,
+       """
+       #{range_code}
+         elmc_int_t direct_step_#{next} = (#{first_ref} <= #{last_ref}) ? 1 : -1;
+         for (elmc_int_t #{item_var} = #{first_ref}, #{index_var} = 0; Rc == RC_SUCCESS; #{item_var} += direct_step_#{next}, #{index_var} += 1) {
+       #{CSource.indent(body_code, 2)}
+           if (#{item_var} == #{last_ref}) break;
+         }
+       """, counter}
+    end)
   end
 
   defp transparent_lambda_indexed_map_range_loop(
@@ -483,9 +476,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
       elmc_int_t direct_index_#{next} = 0;
       elmc_int_t direct_step_#{next} = (#{first_ref} <= #{last_ref}) ? 1 : -1;
       for (elmc_int_t direct_item_i_#{next} = #{first_ref}; Rc == RC_SUCCESS; direct_item_i_#{next} += direct_step_#{next}) {
-        ElmcValue *direct_index_value_#{next} = NULL;
         #{RcRuntimeEmit.check_rc_take("direct_index_value_#{next}", "elmc_new_int", "direct_index_#{next}", RcRuntimeEmit.rc_catch_env(%{}))}
-        ElmcValue *direct_item_value_#{next} = NULL;
         #{RcRuntimeEmit.check_rc_take("direct_item_value_#{next}", "elmc_new_int", "direct_item_i_#{next}", RcRuntimeEmit.rc_catch_env(%{}))}
          ElmcValue *direct_call_args_#{next}[#{max(prefix_count + 2, 1)}] = {0};
      #{prefix_bindings}
@@ -767,7 +758,6 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
      #{range_code}
       elmc_int_t direct_step_#{next} = (#{first_ref} <= #{last_ref}) ? 1 : -1;
       for (elmc_int_t direct_item_i_#{next} = #{first_ref}; Rc == RC_SUCCESS; direct_item_i_#{next} += direct_step_#{next}) {
-         ElmcValue *direct_item_value_#{next} = NULL;
          #{RcRuntimeEmit.check_rc_take("direct_item_value_#{next}", "elmc_new_int", "direct_item_i_#{next}", RcRuntimeEmit.rc_catch_env(%{}))}
          ElmcValue *direct_call_args_#{next}[#{max(prefix_count + 1, 1)}] = {0};
      #{prefix_bindings}
@@ -1036,7 +1026,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
           |> EnvBindings.put_native_int_binding(arg, item_ref)
           |> EnvBindings.put_boxed_int_binding(arg, false)
 
-        with {:ok, body_code, counter} <- Host.direct_emit_expr(body, body_env, counter) do
+        emit_loop_body(body, body_env, counter, fn body_code, counter ->
           {:ok,
            """
            #{range_code}
@@ -1046,16 +1036,14 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
                if (direct_item_i_#{next} == #{last_ref}) break;
              }
            """, counter}
-        else
-          _ -> :error
-        end
+        end)
 
       :error ->
         {list_code, list_var, counter} = Host.compile_expr(list_expr, env, counter)
         item_var = "direct_node_#{next}->head"
         body_env = Map.put(env, arg, item_var)
 
-        with {:ok, body_code, counter} <- Host.direct_emit_expr(body, body_env, counter) do
+        emit_loop_body(body, body_env, counter, fn body_code, counter ->
           item_boxed = "direct_il_item_#{next}"
 
           body_env_int =
@@ -1063,17 +1051,28 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
             |> Map.delete(arg)
             |> Map.put(arg, item_boxed)
 
-          with {:ok, body_code_int, counter} <- Host.direct_emit_expr(body, body_env_int, counter) do
+          emit_loop_body(body, body_env_int, counter, fn body_code_int, counter ->
             {:ok,
              """
              #{list_code}
              #{direct_list_walk_lambda_body(list_var, next, item_boxed, body_code, body_code_int)}
              #{Release.release_var(list_var, "             ")}
              """, counter}
-          end
-        else
-          _ -> :error
-        end
+          end)
+        end)
+    end
+  end
+
+  defp emit_loop_body(body, body_env, counter, builder) when is_function(builder, 2) do
+    ValueSlots.push_loop()
+
+    try do
+      case Host.direct_emit_expr(body, body_env, counter) do
+        {:ok, body_code, counter} -> builder.(body_code, counter)
+        :error -> :error
+      end
+    after
+      ValueSlots.pop_loop()
     end
   end
 
@@ -1088,7 +1087,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
 
         setup =
           setup_acc <>
-            "  ElmcValue *#{boxed} = NULL;\n  #{RcRuntimeEmit.check_rc_take(boxed, "elmc_new_int", var, catch_env)};\n"
+            "  #{RcRuntimeEmit.check_rc_take(boxed, "elmc_new_int", var, catch_env)};\n"
 
         release =
           release_acc <> Release.release_vars([boxed], "        ")
@@ -1164,9 +1163,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
       int direct_ilen_#{next} = direct_ilp_#{next} ? direct_ilp_#{next}->length : 0;
       elmc_int_t direct_index_#{next} = 0;
       for (int direct_ii_#{next} = 0; Rc == RC_SUCCESS && direct_ii_#{next} < direct_ilen_#{next}; direct_ii_#{next}++) {
-        ElmcValue *direct_index_value_#{next} = NULL;
         #{RcRuntimeEmit.check_rc_take("direct_index_value_#{next}", "elmc_new_int", "direct_index_#{next}", RcRuntimeEmit.rc_catch_env(%{}))}
-        ElmcValue *direct_item_value_#{next} = NULL;
         #{RcRuntimeEmit.check_rc_take("direct_item_value_#{next}", "elmc_new_int", "direct_ilp_#{next}->values[direct_ii_#{next}]", RcRuntimeEmit.rc_catch_env(%{}))}
         ElmcValue *direct_call_args_#{next}[#{max(arg_count, 1)}] = {0};
     #{prefix_bindings}
@@ -1188,7 +1185,6 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
       elmc_int_t direct_index_#{next} = 0;
       while (Rc == RC_SUCCESS && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
         ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
-        ElmcValue *direct_index_value_#{next} = NULL;
         #{RcRuntimeEmit.check_rc_take("direct_index_value_#{next}", "elmc_new_int", "direct_index_#{next}", RcRuntimeEmit.rc_catch_env(%{}))}
         ElmcValue *direct_call_args_#{next}[#{max(arg_count, 1)}] = {0};
     #{prefix_bindings}
@@ -1223,7 +1219,6 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
     index_arg =
       if indexed? do
         """
-              ElmcValue *direct_index_value_#{next} = NULL;
               #{RcRuntimeEmit.check_rc_take("direct_index_value_#{next}", "elmc_new_int", "direct_index_#{next}", RcRuntimeEmit.rc_catch_env(%{}))}
         """
       else
@@ -1288,7 +1283,6 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
       ElmcIntListPayload *direct_ilp_#{next} = (ElmcIntListPayload *)#{list_var}->payload;
       int direct_ilen_#{next} = direct_ilp_#{next} ? direct_ilp_#{next}->length : 0;
       for (int direct_ii_#{next} = 0; Rc == RC_SUCCESS && direct_ii_#{next} < direct_ilen_#{next}; direct_ii_#{next}++) {
-        ElmcValue *direct_item_value_#{next} = NULL;
         #{RcRuntimeEmit.check_rc_take("direct_item_value_#{next}", "elmc_new_int", "direct_ilp_#{next}->values[direct_ii_#{next}]", RcRuntimeEmit.rc_catch_env(%{}))}
         ElmcValue *direct_call_args_#{next}[#{max(arg_count, 1)}] = {0};
     #{prefix_bindings}
@@ -1322,16 +1316,13 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
     """
   end
 
-  defp direct_list_walk_lambda_body(list_var, next, item_boxed, cons_body, int_body) do
+  defp direct_list_walk_lambda_body(list_var, next, _item_boxed, cons_body, int_body) do
     """
     if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
       ElmcIntListPayload *direct_ilp_#{next} = (ElmcIntListPayload *)#{list_var}->payload;
       int direct_ilen_#{next} = direct_ilp_#{next} ? direct_ilp_#{next}->length : 0;
       for (int direct_ii_#{next} = 0; Rc == RC_SUCCESS && direct_ii_#{next} < direct_ilen_#{next}; direct_ii_#{next}++) {
-        ElmcValue *#{item_boxed} = NULL;
-        #{RcRuntimeEmit.check_rc_take(item_boxed, "elmc_new_int", "direct_ilp_#{next}->values[direct_ii_#{next}]", RcRuntimeEmit.rc_catch_env(%{}))}
     #{CSource.indent(int_body, 4)}
-        #{Release.release_var(item_boxed, "        ")}
       }
     } else {
       ElmcValue *direct_cursor_#{next} = #{list_var};

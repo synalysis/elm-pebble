@@ -17,6 +17,10 @@ defmodule Elmc.Backend.CCodegen.BuiltinUnion do
     @result_err => "elmc_result_err"
   }
 
+  @payload_take_ctors %{
+    @maybe_just => "elmc_maybe_just_own"
+  }
+
   @spec union_ctor_short_name(String.t()) :: String.t()
   def union_ctor_short_name(qualified) when is_binary(qualified) do
     qualified
@@ -50,12 +54,18 @@ defmodule Elmc.Backend.CCodegen.BuiltinUnion do
           {:ok, Types.compile_result()} | :error
   def try_compile_tuple2(%{op: :tuple2, left: left, right: right}, env, counter) do
     with %{op: :int_literal, union_ctor: ctor} <- left,
-         short when is_map_key(@payload_ctors, short) <- union_ctor_short_name(ctor),
-         c_name <- Map.fetch!(@payload_ctors, short) do
+         short when is_map_key(@payload_ctors, short) <- union_ctor_short_name(ctor) do
       {payload_code, payload_var, counter} = Host.compile_expr(right, env, counter)
       {out, counter, _} = union_out_target(env, counter)
 
-      assign = RcRuntimeEmit.assign_call(env, out, c_name, RcRuntimeEmit.value_expr(payload_var))
+      ctor =
+        if Map.has_key?(@payload_take_ctors, short) and ValueSlots.owned_ref?(payload_var) do
+          Map.fetch!(@payload_take_ctors, short)
+        else
+          Map.fetch!(@payload_ctors, short)
+        end
+
+      assign = RcRuntimeEmit.assign_call(env, out, ctor, RcRuntimeEmit.value_expr(payload_var))
 
       payload_release =
         cond do

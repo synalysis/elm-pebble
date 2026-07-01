@@ -152,6 +152,79 @@ defmodule Elmc.RuntimeRCTest do
     assert String.to_integer(rel) >= 1
   end
 
+  test "maybe_just_own transfers owned payloads without leaking nested records" do
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available for runtime C test")
+
+    project_dir = Path.expand("fixtures/simple_project", __DIR__)
+    out_dir = Path.expand("tmp/maybe_just_own_runtime", __DIR__)
+    File.rm_rf!(out_dir)
+    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
+
+    harness_path = Path.join(out_dir, "c/maybe_just_own_harness.c")
+
+    File.write!(
+      harness_path,
+      """
+      #include "elmc_runtime.h"
+      #include <stdio.h>
+
+      static uint64_t rc_delta(void) {
+        return elmc_rc_allocated_count() - elmc_rc_released_count();
+      }
+
+      static void set_sun_field(ElmcValue *model, int index, int i) {
+        ElmcValue *a = elmc_new_int_take(360 + i);
+        ElmcValue *b = elmc_new_int_take(1080 + i);
+        ElmcValue *c = elmc_new_int_take(1);
+        ElmcValue *vals[] = {a, b, c};
+        ElmcValue *sun = elmc_record_new_values_take_value(3, vals);
+        ElmcValue *just = NULL;
+        if (elmc_maybe_just_own(&just, sun) != RC_SUCCESS) return;
+        ElmcValue *next = elmc_record_update_index_cow_drop(model, index, just);
+        elmc_release(just);
+        (void)next;
+      }
+
+      int main(void) {
+        uint64_t baseline = rc_delta();
+        ElmcValue *fields[2] = {elmc_maybe_nothing(), elmc_maybe_nothing()};
+        ElmcValue *model = elmc_record_new_values_take_value(2, fields);
+
+        for (int i = 0; i < 40; i++) {
+          set_sun_field(model, 1, i);
+        }
+
+        elmc_release(model);
+        return rc_delta() == baseline ? 0 : 2;
+      }
+      """
+    )
+
+    binary_path = Path.join(out_dir, "maybe_just_own_harness")
+
+    runtime_dir = Path.join(out_dir, "runtime")
+
+    {compile_out, compile_code} =
+      System.cmd(cc, [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-I#{runtime_dir}",
+        Path.join(runtime_dir, "elmc_runtime.c"),
+        RcTrackHarness.runtime_link_stub(),
+        harness_path,
+        "-lm",
+        "-o",
+        binary_path
+      ])
+
+    assert compile_code == 0, compile_out
+
+    {_run_out, run_code} = System.cmd(binary_path, [])
+    assert run_code == 0
+  end
+
   test "branch tuple outputs from nested matches keep rc balanced" do
     cc = System.find_executable("cc")
     if is_nil(cc), do: flunk("cc not available for runtime C test")

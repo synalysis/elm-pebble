@@ -611,7 +611,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
             if EnvBindings.boxed_int_binding?(env, name) do
               {"", "elmc_as_int(#{source})", counter}
             else
-              {"", "(#{source} ? elmc_as_int(#{source}) : 0)", counter}
+              {"", coerce_union_payload_int_ref("(#{source} ? elmc_as_int(#{source}) : 0)"), counter}
             end
 
           _ ->
@@ -682,6 +682,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
   defp dispatch(%{op: :call, name: "__idiv__", args: [left, right]}, env, counter) do
     {left_code, left_ref, counter} = compile_expr(left, env, counter)
+    left_ref = coerce_union_payload_int_ref(left_ref)
 
     case static_nonzero_int_value(right, env) do
       value when is_integer(value) ->
@@ -1386,6 +1387,8 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
       :error ->
         {left_code, left_ref, counter} = compile_expr(left, env, counter)
         {right_code, right_ref, counter} = compile_expr(right, env, counter)
+        left_ref = coerce_union_payload_int_ref(left_ref)
+        right_ref = coerce_union_payload_int_ref(right_ref)
         {left_code <> right_code, "(#{left_ref} #{op} #{right_ref})", counter}
     end
   end
@@ -1798,4 +1801,14 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   defp release_maybe_var(var) when is_binary(var) do
     ValueSlots.release_consumed(var)
   end
+
+  @tuple_union_payload_int_ref ~r/\(\(\(ElmcTuple2 \*\)(.+?)->payload\)->second \? elmc_as_int\(\(\(ElmcTuple2 \*\)\1->payload\)->second\) : 0\)/
+
+  defp coerce_union_payload_int_ref(ref) when is_binary(ref) do
+    Regex.replace(@tuple_union_payload_int_ref, ref, fn _, union_ref ->
+      "elmc_union_payload_int(#{union_ref})"
+    end)
+  end
+
+  defp coerce_union_payload_int_ref(ref), do: ref
 end

@@ -28,6 +28,12 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
   defp finalize_source(source), do: CSource.format(source)
 
+  defp rc_required_opts(opts, direct_command_targets) when is_list(opts),
+    do: Keyword.put(opts, :direct_command_targets, direct_command_targets)
+
+  defp rc_required_opts(%{} = opts, direct_command_targets),
+    do: Map.put(opts, :direct_command_targets, direct_command_targets)
+
   # Direct scene helpers are linked for every Pebble platform, including aplite.
   defp direct_scene_guard(content, _opts, _ir) when is_binary(content) do
     String.trim_trailing(content)
@@ -37,9 +43,9 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
   def header(ir, opts) do
     direct_cmd_decls = DirectRenderRegistry.decls(ir, opts)
     decl_map = IRQueries.function_decl_map(ir)
-    _ = RcRequired.run!(decl_map, opts)
-    wrapper_targets = GenericTargets.wrapper_targets(ir, opts)
     direct_command_targets = Host.direct_command_targets(ir, opts, decl_map)
+    _ = RcRequired.run!(decl_map, rc_required_opts(opts, direct_command_targets))
+    wrapper_targets = GenericTargets.wrapper_targets(ir, opts)
     exported_targets = Analysis.exported_function_targets(decl_map, opts, direct_command_targets)
 
     function_decls =
@@ -199,7 +205,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
     Process.put(:elmc_codegen_opts, opts)
     DefRegistry.reset()
-    _ = RcRequired.run!(decl_map, opts)
+    _ = RcRequired.run!(decl_map, rc_required_opts(opts, direct_command_targets))
 
     generic_native_prototypes =
       FunctionEmit.generic_native_function_prototypes(ir, generic_targets, decl_map)

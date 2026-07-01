@@ -2211,6 +2211,60 @@ defmodule Elmc.PebbleShimTest do
     end
   end
 
+  test "yes watchface disables direct view scene when stack analysis marks render helpers risky" do
+    source_template = Path.expand("../../ide/priv/project_templates/watchface_yes", __DIR__)
+    project_dir = Path.expand("tmp/watchface_yes_stack_project", __DIR__)
+    out_dir = Path.expand("tmp/watchface_yes_stack_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(source_template, project_dir)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      Jason.encode!(%{
+        "type" => "application",
+        "source-directories" => [
+          "src",
+          "protocol/src",
+          "../../../../packages/elm-pebble/elm-watch/src"
+        ],
+        "elm-version" => "0.19.1",
+        "dependencies" => %{
+          "direct" => %{"elm/core" => "1.0.5", "elm/json" => "1.1.3", "elm/time" => "1.0.0"},
+          "indirect" => %{}
+        },
+        "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
+      })
+    )
+
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               prune_runtime: true,
+               pebble_int32: true,
+               strip_dead_code: true
+             })
+
+    pebble_h = File.read!(Path.join(out_dir, "c/elmc_pebble.h"))
+    pebble_c = File.read!(Path.join(out_dir, "c/elmc_pebble.c"))
+    generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    refute pebble_h =~ "ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE"
+    assert pebble_c =~
+             "#if defined(ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE) && defined(ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW)"
+    assert pebble_c =~ "#if !defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)"
+    assert generated =~ "elmc_fn_Main_view("
+    assert generated =~ "elmc_malloc(ELMC_OWNED_SLOT_COUNT * sizeof(ElmcValue *)"
+
+    report = File.read!(Path.join(out_dir, "elmc_stack_report.json")) |> Jason.decode!()
+
+    assert Enum.any?(report["functions"], fn entry ->
+             entry["function"] == "Main.drawDial" and entry["level"] == "risk"
+           end)
+  end
+
   test "generated feature flags include Pebble.Light commands" do
     source_fixture = Path.expand("fixtures/simple_project", __DIR__)
     project_dir = Path.expand("tmp/pebble_light_feature_project", __DIR__)

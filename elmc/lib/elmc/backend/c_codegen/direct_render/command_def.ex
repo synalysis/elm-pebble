@@ -111,7 +111,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
     Process.delete(:elmc_hoisted_native_int_inits)
     Process.put(:elmc_hoisted_native_ints_scope, true)
     Process.put(:elmc_direct_helper_defs, [])
-    ValueSlots.reset()
+    ValueSlots.reset(epilogue_lifo: true)
 
     try do
       {field_hoist_preamble, start_counter} = DuplicateFieldHoists.preamble(decl.expr, env, 0)
@@ -216,7 +216,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
     Process.delete(:elmc_hoisted_native_int_inits)
     Process.put(:elmc_hoisted_native_ints_scope, true)
     Process.put(:elmc_direct_helper_defs, [])
-    ValueSlots.reset()
+    ValueSlots.reset(epilogue_lifo: true)
 
     try do
       {field_hoist_preamble, start_counter} = DuplicateFieldHoists.preamble(decl.expr, native_env, 0)

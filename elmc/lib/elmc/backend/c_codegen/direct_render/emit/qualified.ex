@@ -162,6 +162,10 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Qualified do
        ),
        do: Host.direct_emit_expr(%{op: :list_literal, items: items}, env, counter)
 
+  def emit_qualified("Pebble.Ui.group", [%{op: :list_literal, items: commands}], env, counter) do
+    Host.direct_emit_expr(%{op: :list_literal, items: commands}, env, counter)
+  end
+
   def emit_qualified("Pebble.Ui.group", [context_expr], env, counter) do
     context_expr =
       case context_expr do

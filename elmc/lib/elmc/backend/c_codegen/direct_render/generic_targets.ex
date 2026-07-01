@@ -19,7 +19,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
     entry_module = opts[:entry_module] || "Main"
     view_target = {entry_module, "view"}
 
-    opts[:prune_direct_generic] == true and Map.has_key?(decl_map, view_target) and
+    opts[:stream_view_fallback] != true and opts[:prune_direct_generic] == true and
+      Map.has_key?(decl_map, view_target) and
       MapSet.member?(direct_targets, view_target)
   end
 
@@ -232,20 +233,24 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
 
     case Map.fetch(decl_map, view_target) do
       {:ok, _} ->
-        intersection =
-          GenericReachability.reachable_targets(
-            [view_target],
-            decl_map,
-            MapSet.new(),
-            MapSet.new()
-          )
-          |> MapSet.delete(view_target)
-          |> MapSet.intersection(direct_targets)
-
-        if opts[:direct_render_only] == false and MapSet.member?(direct_targets, view_target) do
-          MapSet.put(intersection, view_target)
+        if opts[:stream_view_fallback] == true do
+          MapSet.new([view_target])
         else
-          intersection
+          intersection =
+            GenericReachability.reachable_targets(
+              [view_target],
+              decl_map,
+              MapSet.new(),
+              MapSet.new()
+            )
+            |> MapSet.delete(view_target)
+            |> MapSet.intersection(direct_targets)
+
+          if opts[:direct_render_only] == false and MapSet.member?(direct_targets, view_target) do
+            MapSet.put(intersection, view_target)
+          else
+            intersection
+          end
         end
 
       :error ->

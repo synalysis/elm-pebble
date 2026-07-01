@@ -129,6 +129,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     "elmc_list_from_tuple2_int_array",
     "elmc_list_from_values_take",
     "elmc_maybe_just",
+    "elmc_maybe_just_own",
     "elmc_result_ok",
     "elmc_result_err",
     "elmc_tuple2",
@@ -145,6 +146,10 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     "elmc_record_new_values_ints",
     "elmc_closure_new",
     "elmc_closure_new_rc"
+  ])
+
+  @own_transfer_allocators MapSet.new([
+    "elmc_maybe_just_own"
   ])
 
   @take_wrappers %{
@@ -324,7 +329,13 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   @doc "C assignment statement for a boxed value slot (never emits the internal out marker raw)."
   @spec assign_stmt(String.t(), String.t()) :: String.t()
   def assign_stmt(out, rhs) when is_binary(out) and is_binary(rhs) do
-    "#{assignment_lhs(out)} = #{rhs};"
+    stmt = ValueSlots.owned_reassign_prefix(out) <> "#{assignment_lhs(out)} = #{rhs};"
+
+    if ValueSlots.owned_ref?(out) and rhs != "NULL" do
+      ValueSlots.mark_written(out)
+    end
+
+    stmt
   end
 
   @doc "C null assignment for a boxed value slot."
@@ -687,7 +698,9 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
 
       Map.has_key?(@take_wrappers, function) and predeclared_out_slot?(env, out) ->
         take_fn = Map.fetch!(@take_wrappers, function)
-        "#{out} = #{take_fn}(#{call_args});"
+        stmt = ValueSlots.owned_reassign_prefix(out) <> "#{out} = #{take_fn}(#{call_args});"
+        ValueSlots.mark_written(out)
+        stmt
 
       Map.has_key?(@take_wrappers, function) ->
         take_fn = Map.fetch!(@take_wrappers, function)
@@ -801,11 +814,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   @spec check_rc_take(String.t(), String.t(), String.t(), map()) :: String.t()
   def check_rc_take(out, function, call_args, env \\ %{}) do
     if rc_allocator_emit_mode?(env) do
-      """
-      Rc = #{function}(#{allocator_out_arg(out)}, #{call_args});
-      CHECK_RC(Rc);
-      """
-      |> String.trim()
+      rc_allocator_stmt(env, out, function, call_args)
     else
       fusion_assign(out, function, call_args, env)
     end
@@ -880,11 +889,26 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
         ""
       end
 
+    preempt =
+      if rc_owned_slot?(out) and not allocator_same_slot_transfer?(out, function, call_args) do
+        ValueSlots.owned_reassign_prefix(out)
+      else
+        ""
+      end
+
+    if rc_owned_slot?(out), do: ValueSlots.mark_written(out)
+
     """
-    #{init}Rc = #{function}(#{allocator_out_arg(out)}, #{call_args});
+    #{preempt}#{init}Rc = #{function}(#{allocator_out_arg(out)}, #{call_args});
     CHECK_RC(Rc);
     """
     |> String.trim()
+  end
+
+  defp allocator_same_slot_transfer?(out, function, call_args)
+       when is_binary(out) and is_binary(function) and is_binary(call_args) do
+    MapSet.member?(@own_transfer_allocators, function) and
+      String.trim(call_args) == out
   end
 
   defp function_out_assign(_env, out, rhs) when is_binary(out) and is_binary(rhs) do

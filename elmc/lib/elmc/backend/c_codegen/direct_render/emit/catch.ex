@@ -30,26 +30,17 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Catch do
 
   @spec function_body_suffix() :: String.t()
   def function_body_suffix do
-    cleanup = ValueSlots.failure_cleanup()
+    cleanup = ValueSlots.epilogue_cleanup()
 
     cleanup_block =
       case cleanup do
-        "" ->
-          ""
-
-        code ->
-          """
-
-          if (Rc != RC_SUCCESS) {
-            #{code}
-          }
-          """
+        "" -> ""
+        code -> "\n#{code}\n"
       end
 
     """
 
     CATCH_END;#{cleanup_block}
-
     return Rc;
     """
   end

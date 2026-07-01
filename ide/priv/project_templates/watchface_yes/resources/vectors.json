@@ -1,6 +1,16 @@
 {
   "entries": [
     {
+      "base_name": "Mountain",
+      "bytes": 45,
+      "ctor": "VectorStaticMountain",
+      "filename": "VectorStaticMountain.pdc",
+      "id": "vector_vectorstaticmountain",
+      "kind": "image",
+      "mime": "application/octet-stream",
+      "source": "pdc"
+    },
+    {
       "base_name": "WeatherClear",
       "bytes": 165,
       "ctor": "VectorStaticWeatherClear",

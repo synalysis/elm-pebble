@@ -5,6 +5,7 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
 
   @owned_ref ~r/^owned\[(\d+)\]$/
+  @heap_owned_slot_threshold 24
 
   @spec reset(keyword()) :: :ok
   def reset(opts \\ []) do
@@ -13,7 +14,10 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
       live: MapSet.new(),
       transferred: MapSet.new(),
       tuple_projections: %{},
-      epilogue_lifo: Keyword.get(opts, :epilogue_lifo, false)
+      written: MapSet.new(),
+      loop_depth: 0,
+      epilogue_lifo: Keyword.get(opts, :epilogue_lifo, false),
+      heap_owned_count: 0
     })
 
     :ok
@@ -27,7 +31,8 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
   @type snapshot :: %{
           transferred: MapSet.t(),
           tuple_projections: map(),
-          live: MapSet.t()
+          live: MapSet.t(),
+          written: MapSet.t()
         }
 
   @doc "Capture transfer/projection marks before a divergent branch (not slot indices)."
@@ -38,20 +43,22 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
     %{
       transferred: slots.transferred,
       tuple_projections: slots.tuple_projections,
-      live: slots.live
+      live: slots.live,
+      written: slots.written
     }
   end
 
   @doc "Restore transfer/projection marks so sibling branches start with a clean slate."
   @spec restore(snapshot()) :: :ok
-  def restore(%{transferred: transferred, tuple_projections: tuple_projections, live: live}) do
+  def restore(%{transferred: transferred, tuple_projections: tuple_projections, live: live, written: written}) do
     slots = slots_state()
 
     Process.put(:elmc_value_slots, %{
       slots
       | transferred: transferred,
         tuple_projections: tuple_projections,
-        live: live
+        live: live,
+        written: written
     })
 
     :ok
@@ -227,7 +234,9 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
             RcRuntimeEmit.assign_stmt(var, rhs)
 
           owned_ref?(var) ->
-            "#{var} = #{rhs};"
+            stmt = owned_reassign_prefix(var) <> "#{var} = #{rhs};"
+            mark_written(var)
+            stmt
 
           true ->
             "ElmcValue *#{var} = #{rhs};"
@@ -270,10 +279,40 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
 
   @spec owned_declaration() :: String.t()
   def owned_declaration do
-    case slot_count() do
-      0 -> ""
-      n -> "ElmcValue *owned[#{n}] = {0};"
+    n = slot_count()
+
+    cond do
+      n == 0 -> ""
+      heap_owned?(n) -> heap_owned_declaration(n)
+      true -> "ElmcValue *owned[#{n}] = {0};"
     end
+  end
+
+  defp heap_owned?(slot_count) do
+    slot_count >= @heap_owned_slot_threshold and pebble_int32_build?() and epilogue_lifo?()
+  end
+
+  defp pebble_int32_build? do
+    Process.get(:elmc_codegen_opts, %{})[:pebble_int32] == true
+  end
+
+  defp heap_owned_declaration(slot_count) do
+    slots = slots_state()
+    Process.put(:elmc_value_slots, Map.put(slots, :heap_owned_count, slot_count))
+
+    """
+    enum { ELMC_OWNED_SLOT_COUNT = #{slot_count} };
+    ElmcValue **owned = (ElmcValue **)elmc_malloc(ELMC_OWNED_SLOT_COUNT * sizeof(ElmcValue *), "owned_slots");
+    if (!owned) return RC_ERR_OUT_OF_MEMORY;
+    for (size_t elmc_owned_i = 0; elmc_owned_i < ELMC_OWNED_SLOT_COUNT; elmc_owned_i++) {
+      owned[elmc_owned_i] = NULL;
+    }
+    """
+    |> String.trim()
+  end
+
+  defp heap_owned_active? do
+    Map.get(slots_state(), :heap_owned_count, 0) > 0
   end
 
   @spec failure_cleanup() :: String.t()
@@ -287,9 +326,15 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
   """
   @spec epilogue_cleanup() :: String.t()
   def epilogue_cleanup do
-    case slot_count() do
-      0 -> ""
-      _ -> "elmc_release_array_lifo(owned, DIM(owned));"
+    cond do
+      slot_count() == 0 ->
+        ""
+
+      heap_owned_active?() ->
+        "elmc_release_array_lifo(owned, ELMC_OWNED_SLOT_COUNT);\nelmc_free(owned);"
+
+      true ->
+        "elmc_release_array_lifo(owned, DIM(owned));"
     end
   end
 
@@ -327,17 +372,122 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
   end
 
   @doc """
-  Release a value consumed mid-body. Owned slots are always released eagerly so loop
-  reuse cannot leak; temps use `elmc_release`. Compare operands and let epilogues that
-  should defer to `elmc_release_array_lifo` use `release_owned_and_null/1` instead.
+  Before writing a new value into an owned slot under epilogue lifo, release any
+  prior value still held in that slot (for example when a loop reuses `owned[n]`).
+  Omits release on the first assignment to the slot in the current branch path,
+  except inside loops where every assignment may overwrite a prior iteration value.
+  """
+  @spec owned_reassign_prefix(String.t()) :: String.t()
+  def owned_reassign_prefix(var) when is_binary(var) do
+    with true <- owned_ref?(var),
+         true <- epilogue_lifo?(),
+         index when is_integer(index) <- owned_index(var) do
+      slots = slots_state()
+      loop_depth = Map.get(slots, :loop_depth, 0)
+
+      if loop_depth > 0 or MapSet.member?(slots.written, index) do
+        release_owned_eager(var) <> "\n"
+      else
+        ""
+      end
+    else
+      _ -> ""
+    end
+  end
+
+  @doc "Mark codegen entering a C loop whose body may reassign owned slots each iteration."
+  @spec push_loop() :: :ok
+  def push_loop do
+    slots = slots_state()
+    Process.put(:elmc_value_slots, Map.put(slots, :loop_depth, Map.get(slots, :loop_depth, 0) + 1))
+    :ok
+  end
+
+  @doc "Mark codegen leaving a C loop started with `push_loop/0`."
+  @spec pop_loop() :: :ok
+  def pop_loop do
+    slots = slots_state()
+    depth = max(Map.get(slots, :loop_depth, 0) - 1, 0)
+    Process.put(:elmc_value_slots, Map.put(slots, :loop_depth, depth))
+    :ok
+  end
+
+  @doc "Record that an owned slot now holds a value (for reassign-prefix tracking)."
+  @spec mark_written(String.t()) :: :ok
+  def mark_written(var) when is_binary(var) do
+    case owned_index(var) do
+      index when is_integer(index) ->
+        slots = slots_state()
+        Process.put(:elmc_value_slots, %{slots | written: MapSet.put(slots.written, index)})
+
+      _ ->
+        :ok
+    end
+
+    :ok
+  end
+
+  @spec unmark_written(String.t()) :: :ok
+  defp unmark_written(var) when is_binary(var) do
+    case owned_index(var) do
+      index when is_integer(index) ->
+        slots = slots_state()
+
+        Process.put(:elmc_value_slots, %{
+          slots
+          | written: MapSet.delete(slots.written, index)
+        })
+
+      _ ->
+        :ok
+    end
+
+    :ok
+  end
+
+  @doc """
+  Release a value consumed mid-body. With epilogue lifo, owned scratch is left for
+  `elmc_release_array_lifo`; loops that reuse a slot should call `release_owned_eager/1`.
   """
   @spec release_consumed(String.t()) :: String.t()
   def release_consumed(var) when is_binary(var) do
     if owned_ref?(var) do
-      release_owned_eager(var)
+      release_owned_and_null(var)
     else
       release_stmt(var)
     end
+  end
+
+  @doc """
+  Emit epilogue cleanup plus a safe return when `body_var` may still live in `owned[]`.
+  """
+  @spec catch_return_epilogue(String.t(), String.t()) :: String.t()
+  def catch_return_epilogue(body_var, cleanup) when is_binary(body_var) and is_binary(cleanup) do
+    return_var =
+      if owned_ref?(body_var) do
+        "elmc_return_val"
+      else
+        body_var
+      end
+
+    save =
+      if owned_ref?(body_var) do
+        """
+        ElmcValue *#{return_var} = #{body_var};
+        #{null_assignment(body_var)}
+        """
+      else
+        ""
+      end
+
+    cleanup_line = if cleanup == "", do: "", else: "#{cleanup}\n"
+
+    """
+    #{save}#{cleanup_line}if (Rc != RC_SUCCESS)
+      return NULL;
+    return #{return_var};
+    """
+    |> String.trim_trailing()
   end
 
   @spec failure_cleanup_for_vars_list([String.t()]) :: String.t()
@@ -346,6 +496,7 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
   @spec transfer_and_null(String.t()) :: String.t()
   def transfer_and_null(var) when is_binary(var) do
     transfer(var)
+    unmark_written(var)
 
     cond do
       RcRuntimeEmit.function_out_ref?(var) -> ""
@@ -372,6 +523,8 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
       live: MapSet.new(),
       transferred: MapSet.new(),
       tuple_projections: %{},
+      written: MapSet.new(),
+      loop_depth: 0,
       epilogue_lifo: false
     })
   end

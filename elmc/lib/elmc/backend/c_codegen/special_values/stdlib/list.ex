@@ -118,6 +118,16 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.List do
       do: %{op: :runtime_call, function: "elmc_list_nth_maybe", args: [list, index]}
 
   def special_value_from_target("List.head", [
+        %{op: :qualified_call, target: "List.filter", args: [pred, list]}
+      ]),
+      do: %{op: :runtime_call, function: "elmc_list_find_first", args: [pred, list]}
+
+  def special_value_from_target("List.head", [
+        %{op: :runtime_call, function: "elmc_list_filter", args: [pred, list]}
+      ]),
+      do: %{op: :runtime_call, function: "elmc_list_find_first", args: [pred, list]}
+
+  def special_value_from_target("List.head", [
         %{op: :qualified_call, target: target, args: [index, list]}
       ])
       when target in ["List.drop", "drop"],
@@ -240,8 +250,11 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.List do
   def special_value_from_target("List.indexedMap", [f, list]),
     do: %{op: :runtime_call, function: "elmc_list_indexed_map", args: [f, list]}
 
-  def special_value_from_target("List.filterMap", [f, list]),
-    do: %{op: :runtime_call, function: "elmc_list_filter_map", args: [f, list]}
+  def special_value_from_target("List.filterMap", [f, list]) do
+    f = Elmc.Backend.CCodegen.ListHofResolve.normalize_filter_map_fn(f)
+
+    %{op: :runtime_call, function: "elmc_list_filter_map", args: [f, list]}
+  end
 
   def special_value_from_target("List.sum", [list]),
     do: %{op: :runtime_call, function: "elmc_list_sum", args: [list]}

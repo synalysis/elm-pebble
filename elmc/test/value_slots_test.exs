@@ -33,12 +33,11 @@ defmodule Elmc.Backend.CCodegen.ValueSlotsTest do
     assert ValueSlots.release_stmt(ref) == ""
   end
 
-  test "release_consumed eagerly releases owned slots even with epilogue lifo" do
+  test "release_consumed defers owned cleanup to epilogue lifo" do
     ValueSlots.reset(epilogue_lifo: true)
     {ref, _} = ValueSlots.alloc()
 
-    assert ValueSlots.release_consumed(ref) ==
-             "ELMC_RELEASE(#{ref});\n#{ref} = NULL;"
+    assert ValueSlots.release_consumed(ref) == ""
   end
 
   test "release_consumed eagerly releases owned slots without epilogue lifo" do
@@ -107,10 +106,59 @@ defmodule Elmc.Backend.CCodegen.ValueSlotsTest do
     assert ValueSlots.post_call_operand_release(ref) == ""
   end
 
+  test "catch_return_epilogue saves owned return value before array lifo cleanup" do
+    ValueSlots.reset(epilogue_lifo: true)
+    {_ref, _} = ValueSlots.alloc()
+
+    assert ValueSlots.catch_return_epilogue("owned[0]", "elmc_release_array_lifo(owned, DIM(owned));") ==
+             """
+             ElmcValue *elmc_return_val = owned[0];
+             owned[0] = NULL;
+             elmc_release_array_lifo(owned, DIM(owned));
+             if (Rc != RC_SUCCESS)
+               return NULL;
+             return elmc_return_val;
+             """
+             |> String.trim_trailing()
+  end
+
   test "post_call_operand_release still emits owned release without epilogue lifo" do
     {ref, _} = ValueSlots.alloc()
 
     assert ValueSlots.post_call_operand_release(ref) ==
              "ELMC_RELEASE(owned[0]);\nowned[0] = NULL;"
+  end
+
+  test "owned_reassign_prefix is empty on first assign and releases on reassign under epilogue lifo" do
+    ValueSlots.reset(epilogue_lifo: true)
+    {ref, _} = ValueSlots.alloc()
+
+    assert ValueSlots.owned_reassign_prefix(ref) == ""
+
+    ValueSlots.mark_written(ref)
+
+    assert ValueSlots.owned_reassign_prefix(ref) ==
+             "ELMC_RELEASE(owned[0]);\nowned[0] = NULL;\n"
+  end
+
+  test "owned_reassign_prefix releases on every assign inside loops under epilogue lifo" do
+    ValueSlots.reset(epilogue_lifo: true)
+    {ref, _} = ValueSlots.alloc()
+
+    ValueSlots.push_loop()
+    assert ValueSlots.owned_reassign_prefix(ref) ==
+             "ELMC_RELEASE(owned[0]);\nowned[0] = NULL;\n"
+    ValueSlots.pop_loop()
+  end
+
+  test "boxed_decl owned assignment skips reassign prefix on first assign under epilogue lifo" do
+    ValueSlots.reset(epilogue_lifo: true)
+    {ref, _} = ValueSlots.alloc()
+
+    assert ValueSlots.boxed_decl(ref, "elmc_record_get_index(model, 0)") ==
+             "owned[0] = elmc_record_get_index(model, 0);"
+
+    assert ValueSlots.boxed_decl(ref, "elmc_record_get_index(model, 1)") ==
+             "ELMC_RELEASE(owned[0]);\nowned[0] = NULL;\nowned[0] = elmc_record_get_index(model, 1);"
   end
 end

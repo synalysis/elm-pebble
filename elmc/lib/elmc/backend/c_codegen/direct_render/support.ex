@@ -88,6 +88,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Support do
       {"Pebble.Ui.canvasLayer", [_id, %{op: :list_literal, items: items}]} ->
         Enum.all?(items, &supported?(&1, module_name, decl_map, seen))
 
+      {"Pebble.Ui.group", [%{op: :list_literal, items: items}]} ->
+        Enum.all?(items, &supported?(&1, module_name, decl_map, seen))
+
       {"Pebble.Ui.group", [context_expr]} ->
         direct_group_context_supported?(context_expr, module_name, decl_map, seen)
 
@@ -136,7 +139,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Support do
              "Pebble.Ui.arc",
              "Pebble.Ui.fillRadial",
              "Pebble.Ui.drawBitmapInRect",
-             "Pebble.Ui.drawRotatedBitmap"
+             "Pebble.Ui.drawRotatedBitmap",
+             "Pebble.Ui.drawVectorAt",
+             "Pebble.Ui.drawVectorSequenceAt"
            ] ->
         true
 

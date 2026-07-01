@@ -552,8 +552,11 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
           next = c2 + 1
           out = "tmp_#{next}"
 
+          borrowed_record_operand? =
+            is_binary(current) and EnvBindings.borrowed_arg_ref?(env, current)
+
           update_call =
-            if current_unique? do
+            if current_unique? or borrowed_record_operand? do
               index_ref =
                 Expr.record_field_index_ref(field.name, record_shape, record_type, env)
 
@@ -583,9 +586,10 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
           {release_code, deferred_field_vars} = field_release
 
           current_release =
-            if current_unique? or borrowed_projection_operand?(current, code_acc),
-              do: "",
-              else: update_operand_release(current, current_passthrough?)
+            if current_unique? or borrowed_projection_operand?(current, code_acc) or
+                 borrowed_record_operand?,
+               do: "",
+               else: update_operand_release(current, current_passthrough?)
 
           code = """
           #{field_code}
@@ -1065,16 +1069,14 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   end
 
   defp compile_boxed_field_value_expr(%{op: :char_literal, value: value}, env, counter) do
-    next = counter + 1
-    var = Util.temp_var(next, "boxed_char")
+    {var, next} = CaseCompile.fresh_var(counter, env)
     {RcRuntimeEmit.assign_call(env, var, "elmc_new_char", "#{value}") <> "\n", var, next}
   end
 
   defp compile_boxed_field_value_expr(expr, env, counter) do
     if Host.native_int_expr?(expr, env) and not BuiltinUnion.maybe_nothing_literal?(expr) do
       {code, native_ref, c2} = Host.compile_native_int_expr(expr, env, counter)
-      next = c2 + 1
-      var = Util.temp_var(next, "boxed_int")
+      {var, next} = CaseCompile.fresh_var(c2, env)
 
       {code <> "  " <> RcRuntimeEmit.assign_call(env, var, "elmc_new_int", native_ref) <> "\n", var, next}
     else
@@ -1442,8 +1444,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     record_type = Expr.record_container_type_for_expr(arg_expr, env)
     getter = Host.record_get_int_expr(arg_var, field, shape, env, record_type)
 
-    next = counter + 1
-    var = Util.temp_var(next, "boxed_int")
+    {var, next} = CaseCompile.fresh_var(counter, env)
 
     release_line =
       if release_arg?, do: ValueSlots.release_stmt(arg_var) <> "\n", else: ""

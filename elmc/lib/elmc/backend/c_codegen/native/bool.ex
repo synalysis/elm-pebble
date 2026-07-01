@@ -612,7 +612,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
 
     bool_expr =
       case operator do
-        "__eq__" -> "!#{is_just}"
+        "__eq__" -> "!(#{is_just})"
         "__neq__" -> is_just
       end
 

@@ -1114,6 +1114,7 @@ defmodule Elmc.Runtime.Generator do
     ElmcValue *elmc_list_replace_nth_int(ElmcValue *list, elmc_int_t index, elmc_int_t value);
     ElmcValue *elmc_maybe_nothing(void);
     RC elmc_maybe_just(ElmcValue **out, ElmcValue *value);
+    RC elmc_maybe_just_own(ElmcValue **out, ElmcValue *value);
     ElmcValue *elmc_maybe_or_tuple_just_payload(ElmcValue *maybe);
     ElmcValue *elmc_maybe_or_tuple_just_payload_borrow(ElmcValue *maybe);
     RC elmc_result_ok(ElmcValue **out, ElmcValue *value);
@@ -2354,6 +2355,33 @@ defmodule Elmc.Runtime.Generator do
         cell = NULL;
       CATCH_END;
       if (cell) elmc_release(&cell->value);
+      return rc;
+    }
+
+    RC elmc_maybe_just_own(ElmcValue **out, ElmcValue *value) {
+      RC rc = RC_SUCCESS;
+      ElmcMaybeCell *cell = NULL;
+      CATCH_BEGIN
+        cell = (ElmcMaybeCell *)elmc_malloc(sizeof(ElmcMaybeCell), __func__);
+        if (!cell) {
+          rc = RC_ERR_OUT_OF_MEMORY;
+          CHECK_RC(rc);
+        }
+        cell->maybe.is_just = 1;
+        cell->maybe.value = value;
+        cell->value.rc = 1;
+        cell->value.tag = ELMC_TAG_MAYBE;
+        cell->value.payload = &cell->maybe;
+        cell->value.scalar = ELMC_MAYBE_CELL_SCALAR;
+        ELMC_ALLOCATED += 1;
+        ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
+        *out = &cell->value;
+        cell = NULL;
+      CATCH_END;
+      if (cell) {
+        elmc_release(value);
+        elmc_release(&cell->value);
+      }
       return rc;
     }
 

@@ -4,6 +4,7 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
   alias Elmc.Backend.CCodegen.BuiltinOperators
   alias Elmc.Backend.CCodegen.FunctionCallCompile
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.ListHofResolve
   alias Elmc.Backend.CCodegen.Native.TypedReturn
   alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.ResourceUnion
@@ -99,6 +100,8 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
   end
 
   defp compile_qualified_call(target, args, env, counter) do
+    args = ListHofResolve.resolve_list_hof_call_args(target, args, env)
+
     result =
       case SpecialValues.special_value_from_target(target, args) do
         nil ->

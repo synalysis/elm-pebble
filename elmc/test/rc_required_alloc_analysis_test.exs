@@ -1,11 +1,12 @@
 defmodule Elmc.RcRequiredAllocAnalysisTest do
   use ExUnit.Case, async: false
 
-  alias Elmc.Backend.CCodegen.{IRQueries, RcRequired}
+  alias Elmc.Backend.CCodegen.{Host, IRQueries, RcRequired}
   alias Elmc.Test.CCodegenExtract
 
   @fixture_elm_json Path.expand("fixtures/simple_project/elm.json", __DIR__)
   @game_2048_main Path.expand("../../ide/priv/project_templates/game_2048/src/Main.elm", __DIR__)
+  @watchface_yes_main Path.expand("../../ide/priv/project_templates/watchface_yes/src/Main.elm", __DIR__)
 
   defp compile_2048_generated!(opts \\ []) do
     defaults = [
@@ -50,17 +51,47 @@ defmodule Elmc.RcRequiredAllocAnalysisTest do
              })
 
     decl_map = IRQueries.function_decl_map(ir)
-    required = RcRequired.analyze(decl_map, direct_render_only: true)
+    direct_command_targets = Host.direct_command_targets(ir, %{direct_render_only: true}, decl_map)
+
+    required =
+      RcRequired.analyze(
+        decl_map,
+        direct_render_only: true,
+        direct_command_targets: direct_command_targets
+      )
 
     for name <- ["merge", "collapseRow", "collapseRows", "moveBoard", "update", "init"] do
       assert MapSet.member?(required, {"Main", name}),
              "expected Main.#{name} to be rc_required"
     end
 
-    for name <- ["main", "view", "boardLayout", "drawCell"] do
+    for name <- ["main"] do
       refute MapSet.member?(required, {"Main", name}),
              "expected Main.#{name} to stay legacy ABI under direct-render-only"
     end
+
+    assert MapSet.member?(required, {"Main", "view"}),
+           "direct-render view entry must use RC ABI"
+  end
+
+  test "native Int boxing wrappers are rc_required" do
+    project_dir = Path.expand("tmp/rc_required_yes_ir", __DIR__)
+    File.rm_rf!(project_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(@watchface_yes_main))
+    File.write!(Path.join(project_dir, "elm.json"), File.read!(@fixture_elm_json))
+
+    assert {:ok, %{ir: ir}} =
+             Elmc.compile(project_dir, %{
+               entry_module: "Main",
+               out_dir: Path.expand("tmp/rc_required_yes_ir_out", __DIR__)
+             })
+
+    decl_map = IRQueries.function_decl_map(ir)
+    required = RcRequired.analyze(decl_map, direct_render_only: true)
+
+    assert MapSet.member?(required, {"Main", "angleFromMinute"})
+    assert MapSet.member?(required, {"Main", "homeMinuteOfDay"})
   end
 
   test "helpers that call native boxed RC constructors are rc_required" do
@@ -154,6 +185,96 @@ defmodule Elmc.RcRequiredAllocAnalysisTest do
     assert body =~ "CHECK_RC(Rc)"
     assert body =~ "Rc = elmc_fn_Main_o_native("
     refute body =~ "ELMC_RC_LOG_FAIL(__call_rc, \"elmc_fn_Main_o_native\""
+  end
+
+  test "watchface-yes defaultSunWindow uses RC ABI with CHECK_RC allocators" do
+    project_dir = Path.expand("tmp/rc_required_yes_project", __DIR__)
+    out_dir = Path.expand("tmp/rc_required_yes_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(@watchface_yes_main))
+    File.write!(Path.join(project_dir, "elm.json"), File.read!(@fixture_elm_json))
+
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               strip_dead_code: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_defaultSunWindow")
+
+    assert generated_c =~ "RC elmc_fn_Main_defaultSunWindow("
+    assert body =~ "CATCH_BEGIN"
+    assert body =~ "CHECK_RC(Rc)"
+    assert body =~ "Rc = elmc_new_int(&"
+    assert body =~ "Rc = elmc_record_new_values_take(out,"
+    refute body =~ "_take_value"
+    refute body =~ "elmc_new_int_take"
+
+    assert generated_c =~ "RC elmc_fn_Main_angleFromMinute("
+    refute generated_c =~ "static ElmcValue *elmc_fn_Main_angleFromMinute("
+
+    angle_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_angleFromMinute")
+    assert angle_body =~ "Rc = elmc_new_int(out,"
+    assert angle_body =~ "return Rc;"
+    refute angle_body =~ "CATCH_BEGIN"
+    refute angle_body =~ "return out;"
+
+    square_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_square_native")
+    assert square_body =~ "ElmcValue *owned["
+    assert square_body =~ "Rc = elmc_new_int(&owned["
+    assert square_body =~ "elmc_release_array_lifo(owned, DIM(owned));"
+    refute square_body =~ "tmp_1_boxed_int"
+    refute square_body =~ "if (owned[0])"
+    refute square_body =~ "if (owned[1])"
+    refute square_body =~ "if (owned[2])"
+
+    draw_dial_body =
+      CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_drawDial_commands_append_native")
+
+    assert draw_dial_body =~ "elmc_fn_Main_pointAt_native(&owned["
+    assert draw_dial_body =~ "ELMC_RELEASE(owned["
+    assert draw_dial_body =~
+             ~r/ELMC_RELEASE\(owned\[\d+\]\);\s*\n\s*owned\[\d+\] = NULL;\s*\n\s*Rc = elmc_fn_Main_pointAt_native\(&owned\[\d+\]/
+
+    assert draw_dial_body =~
+             ~r/ELMC_RELEASE\(owned\[\d+\]\);\s*\n\s*owned\[\d+\] = NULL;\s*\n\s*owned\[\d+\] = elmc_record_get_index\(owned\[\d+\], 0/
+
+    show_corners_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_showCorners_native")
+
+    refute show_corners_body =~ "!(tmp_"
+    assert show_corners_body =~ "!((tmp_"
+  end
+
+  test "watchface-yes int-list loop heads are declared once per iteration" do
+    project_dir = Path.expand("tmp/list_map_head_decl_project", __DIR__)
+    out_dir = Path.expand("tmp/list_map_head_decl_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(@watchface_yes_main))
+    File.write!(Path.join(project_dir, "elm.json"), File.read!(@fixture_elm_json))
+
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               strip_dead_code: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    draw_outer = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_drawOuterScale")
+
+    refute Regex.match?(~r/ElmcValue \*list_map_head_\d+ = NULL;\s+ElmcValue \*list_map_head_\d+ = NULL;/, draw_outer)
+
+    pick_slot = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_pickSlot")
+    refute Regex.match?(~r/ElmcValue \*list_find_first_head_\d+ = NULL;\s+ElmcValue \*list_find_first_head_\d+ = NULL;/, pick_slot)
+    refute Regex.match?(~r/ElmcValue \*list_filter_map_field_head_\d+ = NULL;\s+ElmcValue \*list_filter_map_field_head_\d+ = NULL;/, pick_slot)
   end
 
   test "game-2048 emptyBoard uses direct zero-arity RC call without argc wrapper" do

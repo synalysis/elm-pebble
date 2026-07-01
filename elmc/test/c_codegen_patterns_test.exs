@@ -199,7 +199,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/list_all_neq_zero", __DIR__)
     out_dir = Path.expand("tmp/list_all_neq_zero_codegen", __DIR__)
@@ -258,7 +258,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/list_int_eq", __DIR__)
     out_dir = Path.expand("tmp/list_int_eq_codegen", __DIR__)
@@ -303,7 +303,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     suffix = System.unique_integer([:positive])
     project_dir = Path.expand("tmp/list_concat_segments_no_nil_fallback_#{suffix}", __DIR__)
@@ -399,7 +399,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/list_foldl_range_list_acc", __DIR__)
     out_dir = Path.expand("tmp/list_foldl_range_list_acc_codegen", __DIR__)
@@ -466,7 +466,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/list_filter_neq_zero", __DIR__)
     out_dir = Path.expand("tmp/list_filter_neq_zero_codegen", __DIR__)
@@ -489,6 +489,168 @@ defmodule Elmc.CCodegenPatternsTest do
     refute generated_c =~ "elmc_value_equal(tmp_"
     refute generated_c =~ "elmc_list_filter("
     refute generated_c =~ "elmc_closure_new(elmc_lambda_"
+  end
+
+  test "List.filter then List.head uses find-first loop without building filtered list" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    type alias Slot =
+        { id : Int, available : Bool, exclusive : Bool }
+
+    pickExclusive : List Slot -> Maybe Slot
+    pickExclusive slots =
+        List.filter (\\slot -> slot.exclusive && slot.available) slots |> List.head
+
+    init _ =
+        ( { picked = pickExclusive [ { id = 1, available = True, exclusive = False }, { id = 2, available = True, exclusive = True } ] }
+        , Platform.Cmd.none
+        )
+
+    update _ m = ( m, Platform.Cmd.none )
+    view _ = Ui.toUiNode [ Ui.clear Color.white ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/list_find_first", __DIR__)
+    out_dir = Path.expand("tmp/list_find_first_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(Path.expand("fixtures/simple_project", __DIR__), project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    body =
+      generated_c
+      |> String.split("pickExclusive(ElmcValue **out, ElmcValue ** const args, const int argc) {", parts: 2)
+      |> Enum.at(1, "")
+      |> String.split("\n}\n\n", parts: 2)
+      |> List.first()
+
+    assert body =~ "list_find_first_found_"
+    assert body =~ "elmc_maybe_just"
+    refute body =~ "elmc_list_find_first("
+    refute body =~ "elmc_list_filter("
+    refute body =~ "elmc_closure_new_rc"
+    refute body =~ "elmc_lambda_"
+    refute body =~ "list_filter_int_buf_"
+  end
+
+  test "pickSlot-style case on filter head and filter map field fuse through let bindings" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    type alias SlotSpec id =
+        { id : id, available : Bool, exclusive : Bool }
+
+    pickSlot : List (SlotSpec Int) -> Maybe Int
+    pickSlot slots =
+        case List.filter (\\slot -> slot.exclusive && slot.available) slots |> List.head of
+            Just slot ->
+                Just slot.id
+
+            Nothing ->
+                case List.filter .available slots |> List.map .id |> List.head of
+                    Nothing ->
+                        Nothing
+
+                    Just id ->
+                        Just id
+
+    init _ =
+        ( { picked = pickSlot [ { id = 1, available = True, exclusive = True } ] }
+        , Platform.Cmd.none
+        )
+
+    update _ m = ( m, Platform.Cmd.none )
+    view _ = Ui.toUiNode [ Ui.clear Color.white ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/pick_slot_fusion", __DIR__)
+    out_dir = Path.expand("tmp/pick_slot_fusion_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(Path.expand("fixtures/simple_project", __DIR__), project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    body =
+      generated_c
+      |> String.split("pickSlot(ElmcValue **out, ElmcValue ** const args, const int argc) {", parts: 2)
+      |> Enum.at(1, "")
+      |> String.split("\n}\n\n", parts: 2)
+      |> List.first()
+
+    assert body =~ "list_find_first_found_"
+    assert body =~ "list_filter_map_field_head_"
+    refute body =~ "elmc_list_filter("
+    refute body =~ "elmc_closure_new_rc"
+  end
+
+  test "List.filter field then List.map field uses indexed record loop" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    type alias Slot =
+        { id : Int, available : Bool }
+
+    pickIds : List Slot -> List Int
+    pickIds slots =
+        List.filter .available slots |> List.map .id
+
+    init _ =
+        ( { ids = pickIds [ { id = 1, available = True }, { id = 2, available = False } ] }
+        , Platform.Cmd.none
+        )
+
+    update _ m = ( m, Platform.Cmd.none )
+    view _ = Ui.toUiNode [ Ui.clear Color.white ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/list_filter_map_fields", __DIR__)
+    out_dir = Path.expand("tmp/list_filter_map_fields_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(Path.expand("fixtures/simple_project", __DIR__), project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    body =
+      generated_c
+      |> String.split("pickIds(ElmcValue **out, ElmcValue ** const args, const int argc) {", parts: 2)
+      |> Enum.at(1, "")
+      |> String.split("\n}\n\n", parts: 2)
+      |> List.first()
+
+    assert body =~ "list_filter_map_field_head_"
+    assert body =~ "elmc_record_get_index_bool"
+    assert body =~ "elmc_record_get_index"
+    refute body =~ "elmc_list_filter("
+    refute body =~ "elmc_list_map("
+    refute body =~ "elmc_closure_new"
   end
 
   test "List.filterMap over range with if then Nothing else Just uses cursor loop" do
@@ -518,7 +680,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/list_filter_map_range", __DIR__)
     out_dir = Path.expand("tmp/list_filter_map_range_codegen", __DIR__)
@@ -560,7 +722,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/list_repeat_inline", __DIR__)
     out_dir = Path.expand("tmp/list_repeat_inline_codegen", __DIR__)
@@ -608,7 +770,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/list_repeat_zero_hoist", __DIR__)
     out_dir = Path.expand("tmp/list_repeat_zero_hoist_codegen", __DIR__)
@@ -653,7 +815,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/list_repeat_static_int", __DIR__)
     out_dir = Path.expand("tmp/list_repeat_static_int_codegen", __DIR__)
@@ -697,7 +859,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/list_length_inline", __DIR__)
     out_dir = Path.expand("tmp/list_length_inline_codegen", __DIR__)
@@ -747,7 +909,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/list_repeat_boxed_count", __DIR__)
     out_dir = Path.expand("tmp/list_repeat_boxed_count_codegen", __DIR__)
@@ -799,7 +961,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/hybrid_int_let_repeat", __DIR__)
     out_dir = Path.expand("tmp/hybrid_int_let_repeat_codegen", __DIR__)
@@ -852,7 +1014,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/list_foldl_reverse", __DIR__)
     out_dir = Path.expand("tmp/list_foldl_reverse_codegen", __DIR__)
@@ -906,7 +1068,7 @@ defmodule Elmc.CCodegenPatternsTest do
             |> add1
             |> add1
     
-      """
+    """
 
     project_dir = Path.expand("tmp/homogeneous_pipe_chain", __DIR__)
     out_dir = Path.expand("tmp/homogeneous_pipe_chain_codegen", __DIR__)
@@ -951,7 +1113,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/native_int_sub_length", __DIR__)
     out_dir = Path.expand("tmp/native_int_sub_length_codegen", __DIR__)
@@ -1061,7 +1223,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/list_concat_row_order", __DIR__)
     out_dir = Path.expand("tmp/list_concat_row_order_codegen", __DIR__)
@@ -1134,7 +1296,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/list_concat_literal_segments", __DIR__)
     out_dir = Path.expand("tmp/list_concat_literal_segments_codegen", __DIR__)
@@ -1175,7 +1337,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     suffix = System.unique_integer([:positive])
     project_dir = Path.expand("tmp/string_concat_segments_#{suffix}", __DIR__)
@@ -1219,7 +1381,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/list_concat_flatten", __DIR__)
     out_dir = Path.expand("tmp/list_concat_flatten_codegen", __DIR__)
@@ -1265,7 +1427,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/list_map_captured_env", __DIR__)
     out_dir = Path.expand("tmp/list_map_captured_env_codegen", __DIR__)
@@ -1318,7 +1480,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/tuple_map_cursor", __DIR__)
     out_dir = Path.expand("tmp/tuple_map_cursor_codegen", __DIR__)
@@ -1368,7 +1530,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/constant_int_fold", __DIR__)
     out_dir = Path.expand("tmp/constant_int_fold_codegen", __DIR__)
@@ -1392,7 +1554,8 @@ defmodule Elmc.CCodegenPatternsTest do
     refute area_body =~ "elmc_fn_Main_width("
 
     assert init_body =~ "elmc_record_new_values_take"
-    assert init_body =~ "elmc_new_int(&tmp_1_boxed_int, 140)"
+    assert init_body =~ "elmc_new_int(&owned["
+    refute init_body =~ "elmc_new_int(&tmp_1_boxed_int"
   end
 
   test "top-level int constants compile natively in List.range without boxing" do
@@ -1419,7 +1582,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/native_const_range", __DIR__)
     out_dir = Path.expand("tmp/native_const_range_codegen", __DIR__)
@@ -1479,7 +1642,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/annotated_int_constants", __DIR__)
     out_dir = Path.expand("tmp/annotated_int_constants_codegen", __DIR__)
@@ -1580,7 +1743,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/list_map_inline_reverse", __DIR__)
     out_dir = Path.expand("tmp/list_map_inline_reverse_codegen", __DIR__)
@@ -1599,13 +1762,223 @@ defmodule Elmc.CCodegenPatternsTest do
 
     assert generated_c =~ "// List.map"
     assert generated_c =~ "list_map_head_"
-    assert generated_c =~ "list_fwd_head_"
-    assert generated_c =~ "list_fwd_tail_"
     assert generated_c =~ "elmc_fn_Main_double"
+    assert generated_c =~ "list_map_int_buf_" or generated_c =~ "list_fwd_head_"
     refute generated_c =~ "elmc_list_cons(list_map_item_"
     refute generated_c =~ "list_rev_cursor_"
     refute generated_c =~ "elmc_list_reverse("
     refute generated_c =~ "elmc_list_map("
+  end
+
+  test "List.filterMap identity unwraps Just without closure or runtime filterMap" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    modes : List Int
+    modes =
+        List.filterMap identity [ Just 1, Nothing, Just 2 ]
+
+    init _ = ( { n = List.length modes }, Platform.Cmd.none )
+    update _ m = ( m, Platform.Cmd.none )
+    view m = Ui.toUiNode [ Ui.clear Color.white, Ui.text (String.fromInt m.n) ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/list_filter_map_identity", __DIR__)
+    out_dir = Path.expand("tmp/list_filter_map_identity_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    body =
+      generated_c
+      |> String.split("modes(ElmcValue **out, ElmcValue ** const args, const int argc) {", parts: 2)
+      |> Enum.at(1, "")
+      |> String.split("\n}\n\n", parts: 2)
+      |> List.first()
+
+    assert body =~ "list_filter_map_cursor_"
+    assert body =~ "list_filter_map_keep_"
+    refute body =~ "elmc_list_filter_map("
+    refute body =~ "elmc_closure_new"
+    refute body =~ "elmc_lambda_"
+  end
+
+  test "List.concatMap over range inlines loop without closure or runtime concatMap" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    pairs : List Int
+    pairs =
+        List.concatMap (\\n -> [ n, n * 10 ]) (List.range 0 3)
+
+    init _ = ( { n = List.length pairs }, Platform.Cmd.none )
+    update _ m = ( m, Platform.Cmd.none )
+    view m = Ui.toUiNode [ Ui.clear Color.white, Ui.text (String.fromInt m.n) ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/list_concat_map_range", __DIR__)
+    out_dir = Path.expand("tmp/list_concat_map_range_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    body =
+      generated_c
+      |> String.split("pairs(ElmcValue **out, ElmcValue ** const args, const int argc) {", parts: 2)
+      |> Enum.at(1, "")
+      |> String.split("\n}\n\n", parts: 2)
+      |> List.first()
+
+    assert body =~ "list_concat_map_i_"
+    assert body =~ "list_fwd_cell_"
+    refute body =~ "list_concat_map_sub_cursor_"
+    refute body =~ "elmc_list_from_values_take"
+    refute body =~ "elmc_list_concat_map("
+    refute body =~ "elmc_closure_new"
+  end
+
+  test "List.concatMap over range with if branches appends items directly without sublist walk" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    ticks : List Ui.RenderOp
+    ticks =
+        List.concatMap
+            (\\hour ->
+                if modBy 2 hour == 0 then
+                    [ Ui.line { x = hour, y = 0 } { x = hour, y = 5 } Color.white
+                    , Ui.line { x = hour, y = 6 } { x = hour, y = 10 } Color.lightGray
+                    ]
+
+                else
+                    [ Ui.line { x = hour, y = 0 } { x = hour, y = 5 } Color.lightGray ]
+            )
+            (List.range 0 3)
+
+    init _ = ( {}, Platform.Cmd.none )
+    update _ m = ( m, Platform.Cmd.none )
+    view _ = Ui.toUiNode (Ui.clear Color.black :: ticks)
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/list_concat_map_if_render", __DIR__)
+    out_dir = Path.expand("tmp/list_concat_map_if_render_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    body =
+      generated_c
+      |> String.split("ticks(ElmcValue **out, ElmcValue ** const args, const int argc) {", parts: 2)
+      |> Enum.at(1, "")
+      |> String.split("\n}\n\n", parts: 2)
+      |> List.first()
+
+    assert body =~ "list_concat_map_i_"
+    assert body =~ "ELMC_RENDER_OP_LINE"
+    assert body =~ "list_fwd_cell_"
+    refute body =~ "list_concat_map_sub_cursor_"
+    refute body =~ "elmc_list_from_values_take"
+    refute body =~ "elmc_list_concat_map("
+  end
+
+  test "Maybe.map record field accessor inlines without closure or runtime maybe_map" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    type alias Weather =
+        { condition : Int, temp : Int }
+
+    pick : Maybe Weather -> Maybe Int
+    pick w =
+        Maybe.map .condition w
+
+    init _ =
+        ( { n = Maybe.withDefault 0 (pick (Just { condition = 42, temp = 2 })) }
+        , Platform.Cmd.none
+        )
+
+    update _ m = ( m, Platform.Cmd.none )
+    view m = Ui.toUiNode [ Ui.clear Color.white, Ui.text (String.fromInt m.n) ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/maybe_map_field", __DIR__)
+    out_dir = Path.expand("tmp/maybe_map_field_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    body =
+      generated_c
+      |> String.split("pick(ElmcValue **out, ElmcValue ** const args, const int argc) {", parts: 2)
+      |> Enum.at(1, "")
+      |> String.split("\n}\n\n", parts: 2)
+      |> List.first()
+
+    assert body =~ "elmc_record_get_index"
+    assert body =~ "elmc_maybe_just"
+    refute body =~ "elmc_maybe_map("
+    refute body =~ "elmc_closure_new"
+    refute body =~ "elmc_lambda_"
   end
 
   test "json andThen lambda keeps string parameters boxed for literal equality" do
@@ -1783,7 +2156,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/filter_map_row_drop_renamed", __DIR__)
     out_dir = Path.expand("tmp/filter_map_row_drop_renamed_codegen", __DIR__)
@@ -1877,7 +2250,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/reverse_foldl_occupied_renamed", __DIR__)
     out_dir = Path.expand("tmp/reverse_foldl_occupied_renamed_codegen", __DIR__)
@@ -1929,7 +2302,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/list_map_static_index_at_renamed", __DIR__)
     out_dir = Path.expand("tmp/list_map_static_index_at_renamed_codegen", __DIR__)
@@ -2031,7 +2404,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/row_slice_adjacent_merge_renamed", __DIR__)
     out_dir = Path.expand("tmp/row_slice_adjacent_merge_renamed_codegen", __DIR__)
@@ -2082,7 +2455,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/list_concat_reversed_row_slices_renamed", __DIR__)
     out_dir = Path.expand("tmp/list_concat_reversed_row_slices_renamed_codegen", __DIR__)
@@ -2166,7 +2539,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/union_case_four_perm_renamed", __DIR__)
     out_dir = Path.expand("tmp/union_case_four_perm_renamed_codegen", __DIR__)
@@ -2390,7 +2763,7 @@ defmodule Elmc.CCodegenPatternsTest do
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/permute_merge_inverse_pipeline_renamed", __DIR__)
     out_dir = Path.expand("tmp/permute_merge_inverse_pipeline_renamed_codegen", __DIR__)
@@ -2488,7 +2861,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     File.write!(
       harness_path,
-      """
+    """
       #include "elmc_pebble.h"
       #include <stdio.h>
 
@@ -2618,7 +2991,7 @@ defmodule Elmc.CCodegenPatternsTest do
       }
       
       
-      """
+    """
     )
 
     binary_path = Path.join(out_dir, "elmtris_host_harness")
@@ -2700,7 +3073,7 @@ defmodule Elmc.CCodegenPatternsTest do
             , subscriptions = subscriptions
             }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/watchface_init_codegen", __DIR__)
     out_dir = Path.expand("tmp/watchface_init_codegen_out", __DIR__)
@@ -2789,7 +3162,7 @@ defmodule Elmc.CCodegenPatternsTest do
         Platform.application
             { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/record_zero_cse_codegen", __DIR__)
     out_dir = Path.expand("tmp/record_zero_cse_codegen_out", __DIR__)
@@ -2863,7 +3236,7 @@ defmodule Elmc.CCodegenPatternsTest do
         Platform.application
             { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/record_screen_cse_codegen", __DIR__)
     out_dir = Path.expand("tmp/record_screen_cse_codegen_out", __DIR__)
@@ -2959,7 +3332,7 @@ defmodule Elmc.CCodegenPatternsTest do
         Platform.application
             { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/direct_boxed_helper_codegen", __DIR__)
     out_dir = Path.expand("tmp/direct_boxed_helper_codegen_out", __DIR__)
@@ -3050,7 +3423,7 @@ defmodule Elmc.CCodegenPatternsTest do
         Platform.application
             { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/borrowed_call_operand_codegen", __DIR__)
     out_dir = Path.expand("tmp/borrowed_call_operand_codegen_out", __DIR__)
@@ -3141,7 +3514,7 @@ defmodule Elmc.CCodegenPatternsTest do
         Platform.application
             { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/borrow_local_call_operand_codegen", __DIR__)
     out_dir = Path.expand("tmp/borrow_local_call_operand_codegen_out", __DIR__)
@@ -3244,7 +3617,7 @@ defmodule Elmc.CCodegenPatternsTest do
         Platform.application
             { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/if_branch_direct_assign_codegen", __DIR__)
     out_dir = Path.expand("tmp/if_branch_direct_assign_codegen_out", __DIR__)
@@ -3372,7 +3745,7 @@ defmodule Elmc.CCodegenPatternsTest do
         PebblePlatform.watchface
             { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/watchface_custom_msg_cmd", __DIR__)
     out_dir = Path.expand("tmp/watchface_custom_msg_cmd_out", __DIR__)
@@ -3453,7 +3826,7 @@ defmodule Elmc.CCodegenPatternsTest do
         Platform.application
             { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/union_constructor_macro_codegen", __DIR__)
     out_dir = Path.expand("tmp/union_constructor_macro_codegen_out", __DIR__)
@@ -3513,7 +3886,7 @@ defmodule Elmc.CCodegenPatternsTest do
         Platform.application
             { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/storage_write_string_cmd_codegen", __DIR__)
     out_dir = Path.expand("tmp/storage_write_string_cmd_codegen_out", __DIR__)
@@ -3577,7 +3950,7 @@ defmodule Elmc.CCodegenPatternsTest do
         Platform.application
             { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/direct_text_literal_prefix_append", __DIR__)
     out_dir = Path.expand("tmp/direct_text_literal_prefix_append_out", __DIR__)
@@ -3653,7 +4026,7 @@ defmodule Elmc.CCodegenPatternsTest do
         Platform.application
             { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/direct_render_known_inverse_cond", __DIR__)
     out_dir = Path.expand("tmp/direct_render_known_inverse_cond_out", __DIR__)
@@ -3737,7 +4110,7 @@ defmodule Elmc.CCodegenPatternsTest do
         Platform.application
             { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/direct_affine_text_nonzero_guard", __DIR__)
     out_dir = Path.expand("tmp/direct_affine_text_nonzero_guard_out", __DIR__)
@@ -3805,7 +4178,7 @@ defmodule Elmc.CCodegenPatternsTest do
         PebblePlatform.watchApp
             { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/maybe_case_record_field_indices", __DIR__)
     out_dir = Path.expand("tmp/maybe_case_record_field_indices_out", __DIR__)
@@ -3863,7 +4236,7 @@ defmodule Elmc.CCodegenPatternsTest do
         PebblePlatform.watchface
             { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/record_update_index_codegen", __DIR__)
     out_dir = Path.expand("tmp/record_update_index_codegen_out", __DIR__)
@@ -3926,7 +4299,7 @@ defmodule Elmc.CCodegenPatternsTest do
         PebblePlatform.watchface
             { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/record_update_nothing_inline", __DIR__)
     out_dir = Path.expand("tmp/record_update_nothing_inline_out", __DIR__)
@@ -3988,7 +4361,7 @@ defmodule Elmc.CCodegenPatternsTest do
             , view = \\_ -> PebblePlatform.Cmd.none
             }
     
-      """
+    """
 
     generated_c = compile_generated_c!("case_cmd_none_function_out", source, %{strip_dead_code: false})
 
@@ -4033,7 +4406,7 @@ defmodule Elmc.CCodegenPatternsTest do
             , view = \\_ -> PebblePlatform.Cmd.none
             }
     
-      """
+    """
 
     generated_c = compile_generated_c!("update_from_phone_owned_temps", source, %{strip_dead_code: false})
 
@@ -4043,6 +4416,239 @@ defmodule Elmc.CCodegenPatternsTest do
     refute fn_body =~ "ELMC_FN_OUT"
     refute fn_body =~ "elmc_maybe_just(out,"
     assert fn_body =~ ~r/elmc_maybe_just\(&(owned\[[0-9]+\]|tmp_[0-9]+),/
+  end
+
+  test "union constructor multi-arg case binds fields from payload not tag" do
+    source = """
+    module Main exposing (main, updateFromPhone)
+
+    import Pebble.Platform as PebblePlatform
+    import Pebble.Cmd as Cmd
+
+    type Temperature
+        = Celsius Int
+        | Fahrenheit Int
+
+    type WeatherCondition
+        = Clear
+        | Rain
+
+    type PhoneToWatch
+        = ProvideWeather Temperature WeatherCondition Int Int Int
+
+    type alias Model =
+        { weather : Maybe { temperature : Temperature, condition : WeatherCondition, precipMm10 : Int, uv10 : Int, pressureHpa : Int } }
+
+    updateFromPhone : PhoneToWatch -> Model -> Model
+    updateFromPhone message model =
+        case message of
+            ProvideWeather temperature condition precip uv pressure ->
+                { model
+                    | weather =
+                        Just
+                            { temperature = temperature
+                            , condition = condition
+                            , precipMm10 = precip
+                            , uv10 = uv
+                            , pressureHpa = pressure
+                            }
+                }
+
+            _ ->
+                model
+
+    main =
+        PebblePlatform.worker
+            { init = \\_ -> ( { weather = Nothing }, Cmd.none )
+            , update = \\_ model -> ( model, Cmd.none )
+            , subscriptions = \\_ -> PebblePlatform.Sub.none
+            , view = \\_ -> PebblePlatform.Cmd.none
+            }
+    """
+
+    generated_c =
+      compile_generated_c!("union_ctor_multi_arg_payload_bind", source, %{strip_dead_code: false})
+
+    fn_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_updateFromPhone")
+
+    refute fn_body == ""
+    assert fn_body =~ "elmc_union_tag_matches(message, 1)"
+    assert fn_body =~ "ELMC_FIELD_MAIN_MODEL_WEATHER"
+
+    refute fn_body =~
+             ~r/owned\[\d+\] = \(\(ElmcTuple2 \*\)message->payload\)->first \? elmc_retain\(\(\(ElmcTuple2 \*\)message->payload\)->first\)/,
+           "first constructor field must not bind union tag (->first)"
+
+    assert fn_body =~
+             "((ElmcTuple2 *)((ElmcTuple2 *)message->payload)->second->payload)->first",
+           "first constructor field must bind from union payload tuple"
+  end
+
+  test "maybe_just_own into same owned slot skips preempt release" do
+    source = """
+    module Main exposing (main, justWind)
+
+    import Pebble.Platform as PebblePlatform
+    import Pebble.Cmd as Cmd
+
+    type Corner
+        = TempCorner
+        | WindCorner
+
+    justWind : Maybe Corner
+    justWind =
+        Just WindCorner
+
+    main =
+        PebblePlatform.worker
+            { init = \\_ -> ( {}, Cmd.none )
+            , update = \\_ model -> ( model, Cmd.none )
+            , subscriptions = \\_ -> PebblePlatform.Sub.none
+            , view = \\_ -> Cmd.none
+            }
+    """
+
+    generated_c = compile_generated_c!("maybe_just_own_same_slot", source, %{strip_dead_code: false})
+    fn_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_justWind")
+
+    refute fn_body =~ ~r/ELMC_RELEASE\(owned\[[0-9]+\]\);\s*\n\s*owned\[[0-9]+\] = NULL;\s*\n\s*Rc = elmc_maybe_just_own\(&owned\[[0-9]+\], owned\[[0-9]+\]\)/
+
+    if fn_body =~ "elmc_maybe_just_own" do
+      assert fn_body =~ ~r/Rc = elmc_maybe_just_own\(&owned\[[0-9]+\], owned\[[0-9]+\]\)/,
+             "expected same-slot maybe_just_own without preempt release"
+    end
+  end
+
+  test "union constructor case binds payload via elmc_union_payload_int" do
+    source = """
+    module Main exposing (main, temperatureString)
+
+    import Pebble.Platform as PebblePlatform
+    import Pebble.Cmd as Cmd
+
+    type Temperature
+        = Celsius Int
+        | Fahrenheit Int
+
+    type alias Model =
+        { weather : Maybe { temperature : Temperature } }
+
+    temperatureString : Model -> String
+    temperatureString model =
+        case Maybe.map .temperature model.weather of
+            Nothing ->
+                "--"
+
+            Just (Celsius c10) ->
+                String.fromInt ((c10 + 5) // 10) ++ "C"
+
+            Just (Fahrenheit f10) ->
+                String.fromInt ((f10 + 5) // 10) ++ "F"
+
+    main =
+        PebblePlatform.worker
+            { init = \\_ -> ( { weather = Nothing }, Cmd.none )
+            , update = \\_ model -> ( model, Cmd.none )
+            , subscriptions = \\_ -> PebblePlatform.Sub.none
+            , view = \\_ -> Cmd.none
+            }
+    """
+
+    generated_c = compile_generated_c!("union_payload_int_case", source, %{strip_dead_code: false})
+    fn_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_temperatureString")
+
+    assert fn_body =~ "elmc_union_payload_int("
+    refute fn_body =~ "((ElmcTuple2 *)elmc_maybe_or_tuple_just_payload_borrow"
+    refute_unsafe_union_int_tuple_second_cast!(generated_c)
+  end
+
+  test "union int case codegen never casts maybe payload borrow to Tuple2 second" do
+    source_a = """
+    module Main exposing (main, readingString)
+
+    import Pebble.Platform as PebblePlatform
+    import Pebble.Cmd as Cmd
+
+    type Scale
+        = Celsius Int
+        | Fahrenheit Int
+
+    type alias Model =
+        { reading : Maybe Scale }
+
+    readingString : Model -> String
+    readingString model =
+        case model.reading of
+            Nothing ->
+                "--"
+
+            Just (Celsius c10) ->
+                String.fromInt ((c10 + 5) // 10) ++ "C"
+
+            Just (Fahrenheit f10) ->
+                String.fromInt ((f10 + 5) // 10) ++ "F"
+
+    main =
+        PebblePlatform.worker
+            { init = \\_ -> ( { reading = Nothing }, Cmd.none )
+            , update = \\_ model -> ( model, Cmd.none )
+            , subscriptions = \\_ -> PebblePlatform.Sub.none
+            , view = \\_ -> Cmd.none
+            }
+    """
+
+    source_b = """
+    module Main exposing (main, levelLabel)
+
+    import Pebble.Platform as PebblePlatform
+    import Pebble.Cmd as Cmd
+
+    type Units
+        = Metric Int
+        | Imperial Int
+
+    type alias Model =
+        { level : Maybe Units }
+
+    levelLabel : Model -> String
+    levelLabel model =
+        case model.level of
+            Nothing ->
+                "--"
+
+            Just (Metric mm) ->
+                String.fromInt ((mm + 5) // 10) ++ "mm"
+
+            Just (Imperial inches) ->
+                String.fromInt ((inches + 5) // 10) ++ "in"
+
+    main =
+        PebblePlatform.worker
+            { init = \\_ -> ( { level = Nothing }, Cmd.none )
+            , update = \\_ model -> ( model, Cmd.none )
+            , subscriptions = \\_ -> PebblePlatform.Sub.none
+            , view = \\_ -> Cmd.none
+            }
+    """
+
+    for {name, source, fn_name} <- [
+          {"scale_reading", source_a, "readingString"},
+          {"units_level", source_b, "levelLabel"}
+        ] do
+      generated_c = compile_generated_c!("union_int_scan_#{name}", source, %{strip_dead_code: false})
+      fn_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_#{fn_name}")
+
+      assert fn_body =~ "elmc_union_payload_int(",
+             "expected union int helper in #{fn_name} for #{name}"
+
+      refute_unsafe_union_int_tuple_second_cast!(generated_c)
+    end
+  end
+
+  defp refute_unsafe_union_int_tuple_second_cast!(generated_c) when is_binary(generated_c) do
+    refute generated_c =~
+             ~r/\(\(ElmcTuple2 \*\)elmc_maybe_or_tuple_just_payload_borrow\([^)]+\)\)->second/,
+           "union int extraction must use elmc_union_payload_int, not Tuple2->second"
   end
 
   test "update case on Msg uses ELMC_PEBBLE_MSG macros without redundant payload guards" do
@@ -4083,7 +4689,7 @@ defmodule Elmc.CCodegenPatternsTest do
         PebblePlatform.watchface
             { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/msg_case_macro_codegen", __DIR__)
     out_dir = Path.expand("tmp/msg_case_macro_codegen_out", __DIR__)
@@ -4146,7 +4752,7 @@ defmodule Elmc.CCodegenPatternsTest do
         PebblePlatform.watchface
             { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/subscription_macro_codegen", __DIR__)
     out_dir = Path.expand("tmp/subscription_macro_codegen_out", __DIR__)
@@ -4213,7 +4819,7 @@ defmodule Elmc.CCodegenPatternsTest do
         Platform.application
             { init = init, update = update, view = view, subscriptions = subscriptions }
     
-      """
+    """
 
     project_dir = Path.expand("tmp/button_sub_codegen", __DIR__)
     out_dir = Path.expand("tmp/button_sub_codegen_out", __DIR__)
@@ -4270,7 +4876,7 @@ defmodule Elmc.CCodegenPatternsTest do
     next =
         \\seed -> ( seed, seed )
     
-      """
+    """
 
     main_source = """
     module Main exposing (main)
@@ -4280,7 +4886,7 @@ defmodule Elmc.CCodegenPatternsTest do
     main =
         Random.int 0 1
     
-      """
+    """
 
     project_dir = Path.expand("tmp/random_zero_arity_wrapper_targets", __DIR__)
     File.rm_rf!(project_dir)
@@ -4315,7 +4921,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     File.write!(
       Path.join(project_dir, "src/Main.elm"),
-      """
+    """
       module Main exposing (main)
 
       countEmpty : List Int -> Int
@@ -4356,7 +4962,7 @@ defmodule Elmc.CCodegenPatternsTest do
       main =
           useCounts []
       
-      """
+    """
     )
 
     assert {:ok, _result} =
@@ -4397,7 +5003,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     File.write!(
       Path.join(project_dir, "src/Main.elm"),
-      """
+    """
       module Main exposing (main)
 
       nthEmptyIndex : Int -> List Int -> Int
@@ -4426,7 +5032,7 @@ defmodule Elmc.CCodegenPatternsTest do
       main =
           useIndex 0 []
       
-      """
+    """
     )
 
     assert {:ok, _result} =
@@ -4496,7 +5102,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     File.write!(
       harness_path,
-      """
+    """
       #include "elmc_pebble.h"
       #include <stdio.h>
 
@@ -4579,7 +5185,7 @@ defmodule Elmc.CCodegenPatternsTest do
       }
       
       
-      """
+    """
     )
 
     cc = System.get_env("CC") || "cc"
@@ -4638,7 +5244,7 @@ defmodule Elmc.CCodegenPatternsTest do
     main =
         Platform.worker { init = init, update = update, subscriptions = subscriptions, view = view }
     
-      """
+    """
 
     generated_c = compile_generated_c!("special_random_prune", source, direct_render_only: true)
 
@@ -4676,7 +5282,7 @@ defmodule Elmc.CCodegenPatternsTest do
     main =
         Platform.worker { init = init, update = update, subscriptions = subscriptions, view = view }
     
-      """
+    """
 
     generated_c = compile_generated_c!("direct_literal_div_mod", source, direct_render_only: true)
 
@@ -4722,7 +5328,7 @@ defmodule Elmc.CCodegenPatternsTest do
     main =
         Platform.worker { init = init, update = update, subscriptions = subscriptions, view = view }
     
-      """
+    """
 
     generated_c = compile_generated_c!("native_record_bool_helper", source, %{})
 
@@ -4778,7 +5384,7 @@ defmodule Elmc.CCodegenPatternsTest do
     main =
         Platform.worker { init = init, update = update, subscriptions = subscriptions, view = view }
     
-      """
+    """
 
     generated_c = compile_generated_c!("native_record_bool_maybe_helper", source, %{})
 
@@ -4813,7 +5419,7 @@ defmodule Elmc.CCodegenPatternsTest do
     main =
         fib 40
     
-      """
+    """
 
     generated_c = compile_generated_c!("tail_rec_qualified_call", source, %{})
 

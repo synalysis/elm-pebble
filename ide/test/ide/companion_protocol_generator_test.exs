@@ -667,4 +667,36 @@ defmodule Ide.CompanionProtocolGeneratorTest do
       File.rm_rf(tmp)
     end
   end
+
+  test "wirePhoneToWatchFromElmPayload includes tagged union phone-to-watch messages" do
+    tmp =
+      Path.join(
+        System.tmp_dir!(),
+        "elm-pebble-protocol-yes-js-#{System.unique_integer([:positive])}"
+      )
+
+    types =
+      Path.expand("../../priv/project_templates/watchface_yes/protocol/src/Companion/Types.elm", __DIR__)
+
+    header = Path.join(tmp, "companion_protocol.h")
+    source = Path.join(tmp, "companion_protocol.c")
+    js = Path.join(tmp, "companion-protocol.js")
+
+    try do
+      File.mkdir_p!(tmp)
+      assert :ok = CompanionProtocolGenerator.generate(types, header, source, js)
+      generated_js = File.read!(js)
+
+      assert generated_js =~ "case 205:"
+      assert generated_js =~ "case 206:"
+      assert generated_js =~ "case 209:"
+      assert generated_js =~ "provide_weather_field1_tag"
+      assert generated_js =~ "provide_weather_field1_value"
+      assert generated_js =~ "provide_wind_field2_tag"
+      assert generated_js =~ "encodePhoneToWatchPayload(\"ProvideWeather\""
+      assert generated_js =~ "encodePhoneToWatchPayload(\"ProvideWind\""
+    after
+      File.rm_rf(tmp)
+    end
+  end
 end

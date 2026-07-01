@@ -60,7 +60,8 @@ defmodule Elmc.LaunchContextInitCodegenTest do
 
     init_body = CCodegenExtract.fn_impl_body(File.read!(Path.join(out_dir, "c/elmc_generated.c")), "elmc_fn_Main_init")
 
-    assert init_body =~ "elmc_new_int(&tmp_3_boxed_int, ELMC_RECORD_GET_INDEX_INT("
+    assert init_body =~ "elmc_new_int(&owned["
+    refute init_body =~ "elmc_new_int(&tmp_3_boxed_int"
 
     assert length(
              Regex.scan(

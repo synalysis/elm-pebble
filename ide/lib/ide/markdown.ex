@@ -1,6 +1,11 @@
 defmodule Ide.Markdown do
   @moduledoc false
 
+  @mdex_opts [
+    plugins: [MDExGFM],
+    syntax_highlight: nil
+  ]
+
   @doc """
   Converts Markdown (e.g. package README) to HTML and sanitizes it for safe embedding.
   """
@@ -11,11 +16,9 @@ defmodule Ide.Markdown do
     if markdown == "" do
       ""
     else
-      opts = %Earmark.Options{code_class_prefix: "language-"}
-
       html =
-        case Earmark.as_html(markdown, opts) do
-          {:ok, body, _} when is_binary(body) and body != "" ->
+        case MDEx.to_html(markdown, @mdex_opts) do
+          {:ok, body} when is_binary(body) and body != "" ->
             body
 
           _ ->

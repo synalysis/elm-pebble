@@ -19,6 +19,7 @@ defmodule Elmc.Types do
           optional(:prune_native_wrappers) => boolean(),
           optional(:direct_render_only) => boolean(),
           optional(:prune_direct_generic) => boolean(),
+          optional(:stream_view_fallback) => boolean(),
           optional(:pebble_int32) => boolean(),
           optional(:linked_binary_map) => String.t(),
           optional(:prod) => boolean(),
