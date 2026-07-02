@@ -15,7 +15,8 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     "elmc_list_indexed_map" => "List.indexedMap",
     "elmc_list_length" => "List.length",
     "elmc_list_repeat" => "List.repeat",
-    "elmc_list_range" => "List.range"
+    "elmc_list_range" => "List.range",
+    "elmc_list_find_first" => "List.head"
   }
 
   @spec runtime_source_comment(String.t()) :: String.t() | nil

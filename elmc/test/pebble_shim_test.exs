@@ -1324,7 +1324,7 @@ defmodule Elmc.PebbleShimTest do
 
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     assert String.contains?(generated, "elmc_partial_ref_")
-    assert String.contains?(generated, "elmc_list_head(")
+    assert String.contains?(generated, "elmc_apply_extra(")
 
     harness_path = Path.join(out_dir, "c/partial_collision_harness.c")
 
@@ -2488,7 +2488,7 @@ defmodule Elmc.PebbleShimTest do
             , view = view
             }
     
-      """)
+    """)
   end
 
   defp write_fill_radial_feature_app!(project_dir) do
@@ -2542,7 +2542,7 @@ defmodule Elmc.PebbleShimTest do
                 ]
             ]
     
-      """)
+    """)
   end
 
   defp write_minimal_watchface!(project_dir) do
@@ -2591,7 +2591,7 @@ defmodule Elmc.PebbleShimTest do
                 ]
             ]
     
-      """)
+    """)
   end
 
   defp write_unreachable_feature_app!(project_dir) do
@@ -2644,7 +2644,7 @@ defmodule Elmc.PebbleShimTest do
     unusedArc =
         Ui.arc { x = 0, y = 0, w = 20, h = 20 } 0 180
     
-      """)
+    """)
   end
 
   defp write_indexed_map_view!(project_dir) do
@@ -2697,7 +2697,7 @@ defmodule Elmc.PebbleShimTest do
     cell index value =
         Ui.textInt Resources.DefaultFont { x = index * 8, y = 0 } value
     
-      """)
+    """)
   end
 
   defp write_partial_collision_view!(project_dir) do
@@ -2819,7 +2819,7 @@ defmodule Elmc.PebbleShimTest do
             , subscriptions = subscriptions
             }
     
-      """)
+    """)
   end
 
   defp write_frame_subscription_app!(project_dir) do
@@ -2869,7 +2869,7 @@ defmodule Elmc.PebbleShimTest do
     view _ =
         Ui.toUiNode [ Ui.clear Color.white ]
     
-      """)
+    """)
   end
 
   defp write_light_command_app!(project_dir) do
@@ -2916,7 +2916,7 @@ defmodule Elmc.PebbleShimTest do
     view _ =
         Ui.toUiNode [ Ui.clear Color.white ]
     
-      """)
+    """)
   end
 
   defp write_storage_read_string_app!(project_dir) do
@@ -2961,7 +2961,7 @@ defmodule Elmc.PebbleShimTest do
     view _ =
         Ui.toUiNode [ Ui.clear Color.white ]
     
-      """)
+    """)
   end
 
   defp write_grid_scene_app!(project_dir) do
@@ -3045,7 +3045,7 @@ defmodule Elmc.PebbleShimTest do
             ]
             |> Ui.group
     
-      """)
+    """)
   end
 
   defp write_non_direct_multi_command_view_app!(project_dir) do
@@ -3091,7 +3091,7 @@ defmodule Elmc.PebbleShimTest do
                     (\\_ -> Ui.fillRect { x = 4, y = 4, w = 8, h = 8 } Color.black)
                     (List.repeat model 3)
     
-      """)
+    """)
   end
 
   defp write_many_draw_commands_app!(project_dir, count) do
@@ -3143,7 +3143,7 @@ defmodule Elmc.PebbleShimTest do
             [ #{commands}
             ]
     
-      """)
+    """)
   end
 
   defp write_moving_rect_app!(project_dir) do
@@ -3189,7 +3189,7 @@ defmodule Elmc.PebbleShimTest do
             [ Ui.fillRect { x = 10 + model, y = 20, w = 8, h = 6 } Color.black
             ]
     
-      """)
+    """)
   end
 
   defp write_midpoint_view_app!(project_dir) do
@@ -3254,7 +3254,7 @@ defmodule Elmc.PebbleShimTest do
         , y = (a.y + b.y) // 2
         }
     
-      """)
+    """)
   end
 
   defp write_digital_watch_multi_clear_scene_app!(project_dir, clear_count)
@@ -3345,7 +3345,7 @@ defmodule Elmc.PebbleShimTest do
             , Ui.roundRect { x = cardX, y = cardY, w = cardW, h = cardH } cornerRadius Color.black
             ]
     
-      """)
+    """)
   end
 
   defp write_digital_watchface_scene_app!(project_dir) do
@@ -3421,7 +3421,7 @@ defmodule Elmc.PebbleShimTest do
             , Ui.text Resources.DefaultFont (Ui.alignCenter Ui.defaultTextOptions) { x = cardX, y = textY, w = cardW, h = timeH } model.timeString
             ]
     
-      """)
+    """)
   end
 
   defp write_centered_text_view_app!(project_dir) do
@@ -3465,7 +3465,7 @@ defmodule Elmc.PebbleShimTest do
             [ Ui.text Resources.DefaultFont (Ui.alignCenter Ui.defaultTextOptions) { x = 10, y = 20, w = 30, h = 18 } "2"
             ]
     
-      """)
+    """)
   end
 
   defp write_context_group_text_view_app!(project_dir) do
@@ -3519,7 +3519,7 @@ defmodule Elmc.PebbleShimTest do
             , label
             ]
     
-      """)
+    """)
   end
 
   test "elmc_pebble.c includes elmc_pebble.h after heap log build flags" do

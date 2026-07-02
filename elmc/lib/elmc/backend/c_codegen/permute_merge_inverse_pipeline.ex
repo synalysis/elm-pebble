@@ -545,7 +545,8 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
       if (unchanged) {
         ElmcValue *no_cmd = elmc_int_zero();
         ElmcValue *same_out = NULL;
-        Rc = elmc_tuple2_take(&same_out, model, no_cmd);
+        ElmcValue *same_model = elmc_retain(model);
+        Rc = elmc_tuple2_take(&same_out, same_model, no_cmd);
         CHECK_RC(Rc);
         *out = same_out;
       } else {
@@ -576,8 +577,9 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
         elmc_release(next_seed);
         elmc_release(next_best_val);
         ElmcValue *cmd_copy = save_cmd ? elmc_retain(save_cmd) : elmc_int_zero();
+        ElmcValue *next_model_for_tuple = (next_model == model) ? elmc_retain(next_model) : next_model;
         ElmcValue *result = NULL;
-        Rc = elmc_tuple2_take(&result, next_model, cmd_copy);
+        Rc = elmc_tuple2_take(&result, next_model_for_tuple, cmd_copy);
         CHECK_RC(Rc);
         elmc_release(save_cmd);
         *out = result;

@@ -388,6 +388,7 @@ defmodule Elmc.Runtime.Generator do
       |> maybe_seed_rc_ref(joined, "elmc_rc_allocated_count(", "elmc_rc_allocated_count")
       |> maybe_seed_rc_ref(joined, "elmc_rc_released_count(", "elmc_rc_released_count")
       |> maybe_seed_rc_ref(joined, "ELMC_WORKER_LOG_RC_FAIL", "elmc_rc_name")
+      |> maybe_seed_rc_ref(joined, "elmc_malloc(", "elmc_malloc_impl")
 
     (expanded ++ extras) |> Enum.uniq()
   end
@@ -928,6 +929,7 @@ defmodule Elmc.Runtime.Generator do
     #include <stdint.h>
     #include <stddef.h>
     #include <stdbool.h>
+    #include <stdlib.h>
     #{int32_define}
 
     #if defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_CHALK) || defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_FLINT) || defined(PBL_PLATFORM_GABBRO)
@@ -1639,7 +1641,7 @@ defmodule Elmc.Runtime.Generator do
 
     static ElmcProcessSlot ELMC_PROCESS_SLOTS[ELMC_PROCESS_MAX_SLOTS];
 
-    static void *elmc_malloc_impl(size_t size, const char *context, const char *file, int line);
+    void *elmc_malloc_impl(size_t size, const char *context, const char *file, int line);
     static ElmcValue *elmc_alloc_impl(ElmcTag tag, void *payload, const char *file, int line);
     static ElmcValue *elmc_small_int(elmc_int_t value);
     static RC elmc_list_cell_alloc(ElmcValue **out, ElmcValue *head, ElmcValue *tail, int take);
@@ -1751,7 +1753,7 @@ defmodule Elmc.Runtime.Generator do
     #endif
     }
 
-    static void *elmc_malloc_impl(size_t size, const char *context, const char *file, int line) {
+    void *elmc_malloc_impl(size_t size, const char *context, const char *file, int line) {
       void *ptr = malloc(size);
       if (!ptr) {
         elmc_log_alloc_failed(context, size, file, line);

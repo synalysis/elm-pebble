@@ -152,6 +152,19 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     "elmc_maybe_just_own"
   ])
 
+  # Allocators that read source values from a separate array/local; do not
+  # eagerly release the out slot first — rec_values[] may still reference it.
+  @array_source_transfer_allocators MapSet.new([
+    "elmc_record_new_values_take",
+    "elmc_record_new_values",
+    "elmc_record_new_static_take",
+    "elmc_record_new_take",
+    "elmc_record_new",
+    "elmc_record_new_values_ints",
+    "elmc_list_from_values_take",
+    "elmc_list_from_int_array_take"
+  ])
+
   @take_wrappers %{
     "elmc_new_int" => "elmc_new_int_take",
     "elmc_new_bool" => "elmc_new_bool_take",
@@ -892,7 +905,8 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
       end
 
     preempt =
-      if rc_owned_slot?(out) and not allocator_same_slot_transfer?(out, function, call_args) do
+      if rc_owned_slot?(out) and not allocator_same_slot_transfer?(out, function, call_args) and
+           not MapSet.member?(@array_source_transfer_allocators, function) do
         ValueSlots.owned_reassign_prefix(out)
       else
         ""

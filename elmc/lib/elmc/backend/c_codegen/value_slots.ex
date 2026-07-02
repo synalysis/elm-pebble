@@ -354,10 +354,15 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
 
   @spec release_owned_and_null(String.t()) :: String.t()
   def release_owned_and_null(var) when is_binary(var) do
-    if epilogue_lifo?() do
-      ""
-    else
-      release_owned_eager(var)
+    cond do
+      not epilogue_lifo?() ->
+        release_owned_eager(var)
+
+      Map.get(slots_state(), :loop_depth, 0) > 0 ->
+        release_owned_eager(var)
+
+      true ->
+        ""
     end
   end
 

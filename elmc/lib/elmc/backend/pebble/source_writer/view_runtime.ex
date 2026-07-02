@@ -12,12 +12,14 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime do
   @spec body(Types.source_bindings()) :: Types.c_source()
   def body(%{} = bindings) do
     scene_build_bindings = %{
-      entry_view_scene_append: bindings.entry_view_scene_append
+      entry_view_scene_append: bindings.entry_view_scene_append,
+      direct_view_macro: bindings.direct_view_macro
     }
 
     view_command_bindings = %{
       entry_view_fn: bindings.entry_view_fn,
-      has_view: bindings.has_view
+      has_view: bindings.has_view,
+      direct_view_macro: bindings.direct_view_macro
     }
 
     [

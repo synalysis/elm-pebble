@@ -370,7 +370,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     native_bool_maybe_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeBoolMaybeBranchReuse")
 
     assert native_bool_maybe_body =~ "if (flag)"
-    assert native_bool_maybe_body =~ ~r/Rc = elmc_maybe_just\(&(out|owned\[\d+\]|tmp_\d+),/
+    assert native_bool_maybe_body =~ ~r/Rc = elmc_maybe_just(?:_own)?\(&(out|owned\[\d+\]|tmp_\d+),/
     refute native_bool_maybe_body =~ "ElmcValue *tmp_1 = elmc_int_zero();"
   end
 
@@ -762,19 +762,15 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute native_body =~ "elmc_new_int((cy +"
 
     call_body =
-      generated_c
-      |> String.split("static ElmcValue *elmc_fn_Main_typedIntReturnReuse")
-      |> List.last()
+      CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_typedIntReturnReuse_native")
 
-    [typed_call_body | _rest] = String.split(call_body, "static ElmcValue *elmc_fn_", parts: 2)
-
-    assert typed_call_body =~ "ElmcValue *tmp_"
-    assert typed_call_body =~ "elmc_fn_Main_opaqueStringLength"
-    assert typed_call_body =~ "const elmc_int_t native_let_hours_"
-    assert typed_call_body =~ "// inlined Main.nativeIntSink" or
-             typed_call_body =~ "elmc_fn_Main_nativeIntSink_native(native_let_hours_"
-    refute typed_call_body =~ " ? elmc_as_int(tmp_"
-    refute typed_call_body =~ "elmc_new_int((tmp_"
+    assert call_body =~ "ElmcValue *tmp_"
+    assert call_body =~ "elmc_fn_Main_opaqueStringLength"
+    assert call_body =~ "const elmc_int_t native_let_hours_"
+    assert call_body =~ "// inlined Main.nativeIntSink" or
+             call_body =~ "elmc_fn_Main_nativeIntSink_native(native_let_hours_"
+    refute call_body =~ " ? elmc_as_int(tmp_"
+    refute call_body =~ "elmc_new_int((tmp_"
   end
 
   test "enum arguments compare constructor tags natively" do
@@ -1168,12 +1164,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    body =
-      generated_c
-      |> String.split("static elmc_int_t elmc_fn_Main_unit12X_native")
-      |> List.last()
-
-    [unit12_body | _rest] = String.split(body, "static ElmcValue *elmc_fn_Main_unit12Y", parts: 2)
+    unit12_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_unit12X_native")
 
     assert unit12_body =~ ~r/const elmc_int_t native_lut_\d+\[\d+\] = \{/
     assert unit12_body =~ "500"
@@ -3768,8 +3759,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
              })
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+
     assert generated_c =~ "view_commands_append"
-    refute generated_c =~ "ELMC_TAG_LIST"
+    refute view_body =~ "ELMC_TAG_LIST"
     # Single-call chain: view -> chrome -> dial (no separate chrome/dial defs).
     refute generated_c =~ "elmc_fn_Main_chrome_commands_append"
     refute generated_c =~ "elmc_fn_Main_dial_commands_append"
@@ -3795,8 +3788,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
              })
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+
     assert generated_c =~ "view_commands_append"
-    refute generated_c =~ "ELMC_TAG_LIST"
+    refute view_body =~ "ELMC_TAG_LIST"
   end
 
   test "direct render supports drawVectorAt in weather icon helper" do

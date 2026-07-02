@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.CCodegen.DirectAffine do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.DirectRender.Emit.Release
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.LayoutSolver
@@ -1318,7 +1319,7 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
        #{context_prelude}
        #{hoist_before_loop}
        #{emit_affine_indexed_list_walk(list_var, next, loop_body, list_expr, env)}
-       elmc_release(#{list_var});
+       #{Release.release_var(list_var, "       ")}
        #{context_epilogue}
        #{prefix_release_code}
        """, counter}
@@ -1446,7 +1447,7 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
        #{prefix_code}
        #{context_prelude}
        #{emit_affine_map_list_walk(list_var, next, loop_body, list_expr, env)}
-       elmc_release(#{list_var});
+       #{Release.release_var(list_var, "       ")}
        #{context_epilogue}
        #{prefix_release_code}
        """, counter}

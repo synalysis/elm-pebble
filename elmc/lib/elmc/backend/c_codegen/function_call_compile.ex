@@ -1120,15 +1120,19 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
         RcRuntimeEmit.take_wrapper_assign(out, take_fn, call_args, env)
 
       :error ->
-        if predeclared_out?(env, out) or ValueSlots.owned_ref?(out) or
-             RcRuntimeEmit.function_out_ref?(out) do
-          if RcRuntimeEmit.function_out_ref?(out) and ValueSlots.owned_ref?(rhs) do
-            RcRuntimeEmit.transfer_assignment(out, rhs)
-          else
-            "#{RcRuntimeEmit.assignment_lhs(out)} = #{rhs};"
-          end
-        else
-          "ElmcValue *#{out} = #{rhs};"
+        cond do
+          ValueSlots.owned_ref?(out) ->
+            ValueSlots.boxed_decl(out, rhs, env)
+
+          predeclared_out?(env, out) or RcRuntimeEmit.function_out_ref?(out) ->
+            if RcRuntimeEmit.function_out_ref?(out) and ValueSlots.owned_ref?(rhs) do
+              RcRuntimeEmit.transfer_assignment(out, rhs)
+            else
+              "#{RcRuntimeEmit.assignment_lhs(out)} = #{rhs};"
+            end
+
+          true ->
+            "ElmcValue *#{out} = #{rhs};"
         end
     end
   end

@@ -247,13 +247,19 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
           op: :runtime_call,
           function: "elmc_list_find_first",
           args: [predicate, list]
-        } = expr,
+        } = _expr,
         env,
         counter
       ) do
     case compile_list_find_first_expr(predicate, list, env, counter) do
-      {:ok, code, out, counter} -> {code, out, counter}
-      :error -> compile_generic(expr, env, counter)
+      {:ok, code, out, counter} ->
+        {code, out, counter}
+
+      :error ->
+        {:ok, code, out, counter} =
+          compile_list_find_first_apply_loop(predicate, list, env, counter)
+
+        {code, out, counter}
     end
   end
 
@@ -271,8 +277,14 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     case unwrap_list_filter_expr(list) do
       {:ok, predicate, inner_list} ->
         case compile_list_find_first_expr(predicate, inner_list, env, counter) do
-          {:ok, code, out, counter} -> {code, out, counter}
-          :error -> compile_generic(expr, env, counter)
+          {:ok, code, out, counter} ->
+            {code, out, counter}
+
+          :error ->
+            {:ok, code, out, counter} =
+              compile_list_find_first_apply_loop(predicate, inner_list, env, counter)
+
+            {code, out, counter}
         end
 
       :error ->
@@ -2031,6 +2043,26 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
   @spec indent_loop_body(String.t()) :: String.t()
   defp indent_loop_body(code), do: CSource.indent(code, 4)
 
+  defp compile_native_int_loop_body(body, env, counter) do
+    ValueSlots.push_loop()
+
+    try do
+      NativeInt.compile_expr(body, env, counter)
+    after
+      ValueSlots.pop_loop()
+    end
+  end
+
+  defp compile_boxed_loop_body(body, env, counter) do
+    ValueSlots.push_loop()
+
+    try do
+      Host.compile_expr(body, env, counter)
+    after
+      ValueSlots.pop_loop()
+    end
+  end
+
   @spec two_arg_lambda(Types.ir_expr()) :: Types.ir_two_arg_lambda()
   defp two_arg_lambda(%{args: [left, right], body: body})
        when is_binary(left) and is_binary(right),
@@ -2077,7 +2109,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
       |> augment_zero_arg_int_constants(body)
 
     if NativeInt.expr?(body, body_env) do
-      {body_code, body_ref, counter} = NativeInt.compile_expr(body, body_env, next)
+      {body_code, body_ref, counter} = compile_native_int_loop_body(body, body_env, next)
 
       code = """
       #{list_code}
@@ -2214,7 +2246,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
       |> augment_zero_arg_int_constants(body)
 
     if NativeInt.expr?(body, body_env) do
-      {body_code, body_ref, counter} = NativeInt.compile_expr(body, body_env, next)
+      {body_code, body_ref, counter} = compile_native_int_loop_body(body, body_env, next)
 
       int_list_store = """
           #{map_buf}[#{map_i}] = #{body_ref};
@@ -2314,7 +2346,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
       |> Map.put(arg, head)
       |> maybe_put_native_int_arg(arg, body, head)
 
-    {body_code, body_var, counter} = Host.compile_expr(body, body_env, loop_id)
+    {body_code, body_var, counter} = compile_boxed_loop_body(body, body_env, loop_id)
     counter = counter + 1
     out = "tmp_#{counter}"
 
@@ -2455,7 +2487,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
           else: Map.put(env, :__rc_catch__, false)
 
       if NativeInt.expr?(body, body_env) do
-        {body_code, body_ref, counter} = NativeInt.compile_expr(body, body_env, loop_id)
+        {body_code, body_ref, counter} = compile_native_int_loop_body(body, body_env, loop_id)
         counter = counter + 1
         out = "tmp_#{counter}"
 
@@ -4141,6 +4173,89 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     else
       :error
     end
+  end
+
+  defp compile_list_find_first_apply_loop(predicate, list, env, counter) do
+    operand_env = RcRuntimeEmit.strip_function_tail_scope(env)
+    {pred_code, pred_var, counter} = Host.compile_expr(predicate, operand_env, counter)
+    {list_code, list_var, counter} = Host.compile_expr(list, operand_env, counter)
+    loop_id = counter + 1
+    head = "list_find_first_head_#{loop_id}"
+    found = "list_find_first_found_#{loop_id}"
+    apply_result = "list_find_first_apply_#{loop_id}"
+    counter = counter + 1
+    out = "tmp_#{counter}"
+
+    loop_body = """
+            ElmcValue *#{apply_result} = elmc_apply_extra(#{pred_var}, &#{head}, 1);
+            if (#{apply_result} && elmc_as_bool(#{apply_result})) {
+              #{RcRuntimeEmit.assign_into(env, out, "elmc_maybe_just", head)}
+              #{ValueSlots.release_stmt(apply_result)}
+              #{found} = 1;
+              break;
+            }
+            #{ValueSlots.release_stmt(apply_result)}
+    """
+
+    record_seq_walk = """
+          if (#{list_var} && #{list_var}->tag == ELMC_TAG_RECORD_SEQ) {
+            int _rlen_#{loop_id} = elmc_record_seq_length(#{list_var});
+            for (int _ri_#{loop_id} = 0; _ri_#{loop_id} < _rlen_#{loop_id}; _ri_#{loop_id}++) {
+              ElmcValue *#{head} = elmc_record_seq_get(#{list_var}, _ri_#{loop_id});
+        #{loop_body}
+              elmc_release(#{head});
+            }
+          } else
+    """
+
+    int_list_walk = """
+          if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
+            ElmcIntListPayload *_ilp_#{loop_id} = (ElmcIntListPayload *)#{list_var}->payload;
+            int _ilen_#{loop_id} = _ilp_#{loop_id} ? _ilp_#{loop_id}->length : 0;
+            for (int _ii_#{loop_id} = 0; _ii_#{loop_id} < _ilen_#{loop_id}; _ii_#{loop_id}++) {
+              ElmcValue *#{head} = NULL;
+              Rc = elmc_new_int(&#{head}, _ilp_#{loop_id}->values[_ii_#{loop_id}]);
+              CHECK_RC(Rc);
+        #{loop_body}
+              elmc_release(#{head});
+            }
+          } else
+    """
+
+    cons_walk = """
+          {
+            ElmcValue *list_walk_cursor_#{loop_id} = #{list_var};
+            while (list_walk_cursor_#{loop_id} && list_walk_cursor_#{loop_id}->tag == ELMC_TAG_LIST &&
+                   list_walk_cursor_#{loop_id}->payload != NULL) {
+              ElmcCons *list_walk_node_#{loop_id} = (ElmcCons *)list_walk_cursor_#{loop_id}->payload;
+              ElmcValue *#{head} = list_walk_node_#{loop_id}->head;
+        #{loop_body}
+              list_walk_cursor_#{loop_id} = list_walk_node_#{loop_id}->tail;
+            }
+          }
+    """
+
+    walk = """
+          ElmcValue *#{out} = NULL;
+          int #{found} = 0;
+        #{record_seq_walk}
+        #{int_list_walk}
+        #{cons_walk}
+          if (!#{found}) {
+            #{RcRuntimeEmit.assign_into(env, out, "elmc_maybe_nothing", "")}
+          }
+    """
+
+    code = """
+    #{pred_code}
+    #{list_code}
+      #{ListLoopCodegen.runtime_source_comment_line("elmc_list_find_first")}
+    #{walk}
+      #{ValueSlots.release_stmt(list_var)}
+      #{ValueSlots.release_stmt(pred_var)}
+    """
+
+    {:ok, code, out, counter}
   end
 
   defp compile_list_map_filter_field_accessors(arg, body, list, env, counter) do

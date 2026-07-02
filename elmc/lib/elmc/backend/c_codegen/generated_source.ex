@@ -311,6 +311,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     #include "elmc_pebble.h"
     #include <stdbool.h>
     #include <stdio.h>
+    #include <stdlib.h>
 
     #if defined(__GNUC__)
     #pragma GCC diagnostic ignored "-Wunused-function"
