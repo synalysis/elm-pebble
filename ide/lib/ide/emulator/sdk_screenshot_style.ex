@@ -346,9 +346,15 @@ defmodule Ide.Emulator.SdkScreenshotStyle do
   @spec correct_colours(binary()) :: binary()
   def correct_colours(rgb) do
     for <<r, g, b <- rgb>>, into: <<>> do
-      {nr, ng, nb} = Map.get(@colour_map, {r, g, b}, {r, g, b})
+      {nr, ng, nb} = correct_rgb_tuple({r, g, b})
       <<nr, ng, nb>>
     end
+  end
+
+  @spec correct_rgb_tuple({non_neg_integer(), non_neg_integer(), non_neg_integer()}) ::
+          {non_neg_integer(), non_neg_integer(), non_neg_integer()}
+  def correct_rgb_tuple({r, g, b}) when is_integer(r) and is_integer(g) and is_integer(b) do
+    Map.get(@colour_map, {r, g, b}, {r, g, b})
   end
 
   defp rgb_to_rgba(rgb) do

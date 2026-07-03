@@ -633,9 +633,7 @@ defmodule Ide.CompanionProtocolGenerator do
           if (ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET <= 0) return -7;
           ElmcValue *payload = elmc_new_int_take(#{phone_to_watch_tag});
           if (!payload) return -2;
-          int rc = elmc_pebble_dispatch_tag_payload(app, ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET, payload);
-          elmc_release(payload);
-          return rc;
+          return elmc_pebble_dispatch_tag_payload(app, ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET, payload);
         }
     """
   end
@@ -664,11 +662,11 @@ defmodule Ide.CompanionProtocolGenerator do
       #{payload}
             if (!payload) return -2;
             ElmcValue *phone_to_watch = companion_protocol_new_phone_to_watch_message(#{phone_to_watch_tag}, payload);
-            elmc_release(payload);
-            if (!phone_to_watch) return -2;
-            int rc = elmc_pebble_dispatch_tag_payload(app, ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET, phone_to_watch);
-            elmc_release(phone_to_watch);
-            return rc;
+            if (!phone_to_watch) {
+              elmc_release(payload);
+              return -2;
+            }
+            return elmc_pebble_dispatch_tag_payload(app, ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET, phone_to_watch);
           }
       """
     end

@@ -18,12 +18,14 @@ defmodule Elmc.Backend.Pebble.Types.Bindings.Runtime do
           required(:random_generate_tag) => Core.msg_tag(),
           required(:has_view) => boolean(),
           required(:compass_dispatch_source) => Core.c_source(),
-          required(:scene_writer_source) => Core.c_source()
+          required(:scene_writer_source) => Core.c_source(),
+          optional(:append_fallback_enabled?) => boolean()
         }
 
   @type scene_build_bindings :: %{
           required(:entry_view_scene_append) => Core.c_symbol(),
-          required(:direct_view_macro) => Core.c_macro_name()
+          required(:direct_view_macro) => Core.c_macro_name(),
+          optional(:append_fallback_enabled?) => boolean()
         }
 
   @type view_command_bindings :: %{

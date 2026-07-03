@@ -16,7 +16,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime.SceneStream.ViewCommandsI
       if (rc != 0) return rc;
       if (skip == 0 && dedupe && app->scene.command_count < max_cmds) {
         if (app->has_prev_ui && app->prev_ops_hash == app->scene.hash) {
-          return 0;
+          return elmc_pebble_scene_commands_from(app, out_cmds, max_cmds, skip);
         }
         app->has_prev_ui = 1;
         app->prev_window_id = 0;

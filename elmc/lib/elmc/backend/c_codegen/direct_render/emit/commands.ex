@@ -281,22 +281,12 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
          counter
        ) do
     if Host.native_bool_expr?(cond_expr, env) do
-      case PlatformStatic.platform_static_macro(cond_expr) do
-        macro when is_binary(macro) ->
+      case PlatformStatic.platform_static_branch(cond_expr) do
+        {macro, polarity} ->
           {then_code, copy_code, cleanup_code, counter} = text_copy_code(then_expr, env, counter)
           {else_code, else_copy, else_cleanup, counter} = text_copy_code(else_expr, env, counter)
 
-          code =
-            Enum.join(
-              [
-                "#if defined(#{macro})",
-                then_code,
-                "#else",
-                else_code,
-                "#endif"
-              ],
-              "\n"
-            )
+          code = PlatformStatic.wrap_branches(macro, polarity, then_code, else_code)
 
           {code, copy_code <> else_copy, cleanup_code <> else_cleanup, counter}
 

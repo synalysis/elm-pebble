@@ -217,10 +217,10 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
           record_type_for_entries(field_entries, env) ||
           helper_record_type(value_expr, env)
 
-      {cond_code, cond_ref, cond_cleanup, counter, platform_macro} =
-        case PlatformStatic.platform_static_macro(cond) do
-          macro when is_binary(macro) ->
-            {"", nil, "", counter, macro}
+      {cond_code, cond_ref, cond_cleanup, counter, platform_branch} =
+        case PlatformStatic.platform_static_branch(cond) do
+          {macro, polarity} ->
+            {"", nil, "", counter, {macro, polarity}}
 
           nil ->
             {cond_code, cond_ref, cond_cleanup, counter} =
@@ -264,10 +264,12 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
               kind = Map.fetch!(then_kinds, field)
 
               merge_code =
-                if is_binary(platform_macro) do
-                  platform_branch_merge_decl(kind, var, platform_macro, then_ref, else_ref)
-                else
-                  branch_merge_decl(kind, var, cond_ref, then_ref, else_ref)
+                case platform_branch do
+                  {macro, polarity} ->
+                    platform_branch_merge_decl(kind, var, macro, polarity, then_ref, else_ref)
+
+                  nil ->
+                    branch_merge_decl(kind, var, cond_ref, then_ref, else_ref)
                 end
               {code_acc <> merge_code, Map.put(map_acc, field, var), next}
           end)
@@ -275,7 +277,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
         body_env =
           env
           |> put_native_record_binding(name, field_map, value_expr, then_entries ++ else_entries)
-          |> maybe_put_hoisted_native_bool(cond, cond_ref, platform_macro)
+          |> maybe_put_hoisted_native_bool(cond, cond_ref, platform_branch)
           |> Hoist.merge_process_hoisted_native_ints()
 
         {:ok, minmax_preamble <> cond_code <> cond_cleanup <> then_code <> else_code <> field_code, body_env, counter}
@@ -412,9 +414,11 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
     "  const elmc_int_t #{var} = (#{cond_ref}) ? #{then_ref} : #{else_ref};\n"
   end
 
-  defp platform_branch_merge_decl("String", var, macro, then_ref, else_ref) do
+  defp platform_branch_merge_decl("String", var, macro, polarity, then_ref, else_ref) do
+    guard = PlatformStatic.ifdef_guard(macro, polarity)
+
     """
-      #if defined(#{macro})
+      #if #{guard}
       const char *#{var} = #{then_ref};
       #else
       const char *#{var} = #{else_ref};
@@ -422,9 +426,11 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
     """
   end
 
-  defp platform_branch_merge_decl("Float", var, macro, then_ref, else_ref) do
+  defp platform_branch_merge_decl("Float", var, macro, polarity, then_ref, else_ref) do
+    guard = PlatformStatic.ifdef_guard(macro, polarity)
+
     """
-      #if defined(#{macro})
+      #if #{guard}
       const double #{var} = #{then_ref};
       #else
       const double #{var} = #{else_ref};
@@ -432,20 +438,14 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
     """
   end
 
-  defp platform_branch_merge_decl(_kind, var, macro, then_ref, else_ref) do
-    """
-      #if defined(#{macro})
-      const elmc_int_t #{var} = #{then_ref};
-      #else
-      const elmc_int_t #{var} = #{else_ref};
-      #endif
-    """
+  defp platform_branch_merge_decl(_kind, var, macro, polarity, then_ref, else_ref) do
+    PlatformStatic.merge_refs(macro, polarity, var, then_ref, else_ref)
   end
 
   defp maybe_put_hoisted_native_bool(env, cond, cond_ref, nil),
     do: Hoist.put_hoisted_native_bool(env, cond, cond_ref)
 
-  defp maybe_put_hoisted_native_bool(env, _cond, _cond_ref, _macro), do: env
+  defp maybe_put_hoisted_native_bool(env, _cond, _cond_ref, {_macro, _polarity}), do: env
 
   defp sort_branch_field_entries(field_entries) do
     names = MapSet.new(Enum.map(field_entries, &elem(&1, 0)))

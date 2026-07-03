@@ -417,6 +417,10 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
     :ok
   end
 
+  @doc false
+  @spec in_c_loop?() :: boolean()
+  def in_c_loop?, do: Map.get(slots_state(), :loop_depth, 0) > 0
+
   @doc "Record that an owned slot now holds a value (for reassign-prefix tracking)."
   @spec mark_written(String.t()) :: :ok
   def mark_written(var) when is_binary(var) do
@@ -506,6 +510,7 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
     cond do
       RcRuntimeEmit.function_out_ref?(var) -> ""
       owned_ref?(var) -> null_assignment(var)
+      RcRuntimeEmit.fresh_owned_slot?(var) -> null_assignment(var)
       true -> ""
     end
   end

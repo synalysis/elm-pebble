@@ -191,6 +191,25 @@ defmodule Ide.ProjectTemplatesTest do
     refute File.read!(main_path) =~ "getCurrentTimeString"
   end
 
+  test "watchface-color-shapes seeds colour diagnostic Main.elm" do
+    workspace =
+      Path.join(
+        System.tmp_dir!(),
+        "color-shapes-template-#{System.unique_integer([:positive])}"
+      )
+
+    assert :ok = ProjectTemplates.apply_template("watchface-color-shapes", workspace)
+
+    main_path = Path.join(workspace, "watch/src/Main.elm")
+    assert File.read!(main_path) =~ "fillRadial"
+    assert File.read!(main_path) =~ "Color.chromeYellow"
+    assert File.read!(main_path) =~ "Color.blueMoon"
+
+    platforms = ProjectTemplates.target_platforms_for_template("watchface-color-shapes")
+    refute "aplite" in platforms
+    assert "gabbro" in platforms
+  end
+
   test "watchface-tangram-time template excludes aplite" do
     platforms = ProjectTemplates.target_platforms_for_template("watchface-tangram-time")
 

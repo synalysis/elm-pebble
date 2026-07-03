@@ -13,7 +13,8 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime do
   def body(%{} = bindings) do
     scene_build_bindings = %{
       entry_view_scene_append: bindings.entry_view_scene_append,
-      direct_view_macro: bindings.direct_view_macro
+      direct_view_macro: bindings.direct_view_macro,
+      append_fallback_enabled?: Map.get(bindings, :append_fallback_enabled?, false)
     }
 
     view_command_bindings = %{

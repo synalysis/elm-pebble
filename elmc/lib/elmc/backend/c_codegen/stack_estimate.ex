@@ -14,6 +14,7 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
 
   alias Elmc.Backend.CCodegen.Types.LinkedBinary, as: LinkedBinaryTypes
   alias Elmc.Backend.CCodegen.Types.StackEstimate, as: StackEstimateTypes
+  alias Elmc.Backend.CCodegen.Types
 
   @spec report(ElmEx.IR.t(), String.t()) :: StackEstimateTypes.t()
   def report(ir, c_source) do
@@ -230,6 +231,15 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
   defp level(score) when score >= 10, do: :risk
   defp level(score) when score >= 5, do: :warn
   defp level(_score), do: :ok
+
+  @doc false
+  @spec ir_function_score(Types.function_declaration()) :: non_neg_integer()
+  def ir_function_score(%{expr: expr, name: name}) when is_map(expr) do
+    {score, _} = score_expr(expr, name)
+    score
+  end
+
+  def ir_function_score(_decl), do: 0
 
   defp base_entry(name), do: %{function: name, score: 0, reasons: []}
 

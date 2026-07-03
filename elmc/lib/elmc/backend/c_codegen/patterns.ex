@@ -4,7 +4,6 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Expr
   alias Elmc.Backend.CCodegen.Native.RecordFields
-  alias Elmc.Backend.CCodegen.PebbleMsgTag
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.StoragePlan
   alias Elmc.Backend.CCodegen.Types
@@ -130,26 +129,31 @@ defmodule Elmc.Backend.CCodegen.Patterns do
     "#{subject_ref} && elmc_string_equals_cstr(#{subject_ref}, \"#{escaped}\")"
   end
 
-  def pattern_condition(
-        subject_ref,
-        %{kind: :constructor, tag: tag, arg_pattern: arg_pattern} = pattern,
-        env
-      )
-      when is_integer(tag) and is_map(arg_pattern) do
-    tag_ref = PebbleMsgTag.tag_expr(pattern)
-    value_ref = "((ElmcTuple2 *)#{subject_ref}->payload)->second"
-    arg_cond = constructor_arg_condition(value_ref, arg_pattern, env)
+  def pattern_condition(subject_ref, %{kind: :constructor, arg_pattern: arg_pattern} = pattern, env)
+      when is_map(arg_pattern) do
+    case constructor_pattern_tag(pattern) do
+      tag when is_integer(tag) ->
+        value_ref = union_constructor_payload_ref(subject_ref)
+        arg_cond = constructor_arg_condition(value_ref, arg_pattern, env)
 
-    "elmc_union_tag_matches(#{subject_ref}, #{tag_ref})#{arg_cond}"
+        "elmc_union_tag_matches(#{subject_ref}, #{tag})#{arg_cond}"
+
+      _ ->
+        pattern_condition_fallback_constructor(subject_ref, pattern, env)
+    end
   end
 
-  def pattern_condition(subject_ref, %{kind: :constructor, tag: tag} = pattern, _env)
-      when is_integer(tag) do
-    tag_ref = PebbleMsgTag.tag_expr(pattern)
-    "elmc_union_tag_matches(#{subject_ref}, #{tag_ref})"
+  def pattern_condition(subject_ref, %{kind: :constructor} = pattern, env) do
+    case constructor_pattern_tag(pattern) do
+      tag when is_integer(tag) ->
+        "elmc_union_tag_matches(#{subject_ref}, #{tag})"
+
+      _ ->
+        pattern_condition_fallback_constructor(subject_ref, pattern, env)
+    end
   end
 
-  def pattern_condition(subject_ref, %{kind: :constructor} = pattern, _env) do
+  defp pattern_condition_fallback_constructor(subject_ref, pattern, _env) do
     case order_constructor_name(pattern) do
       name when name in ["LT", "EQ", "GT"] ->
         order_constructor_condition(subject_ref, order_scalar(name))
@@ -348,7 +352,43 @@ defmodule Elmc.Backend.CCodegen.Patterns do
 
   defp constructor_pattern_tag(%{tag: tag}) when is_integer(tag), do: tag
   defp constructor_pattern_tag(%{union_tag: tag}) when is_integer(tag), do: tag
-  defp constructor_pattern_tag(_), do: nil
+
+  defp constructor_pattern_tag(%{kind: :constructor} = pattern) do
+    lookup_ir_constructor_tag(pattern)
+  end
+
+  defp lookup_ir_constructor_tag(%{resolved_name: name}) when is_binary(name),
+    do: lookup_ir_constructor_tag_by_name(name)
+
+  defp lookup_ir_constructor_tag(%{name: name}) when is_binary(name),
+    do: lookup_ir_constructor_tag_by_name(name)
+
+  defp lookup_ir_constructor_tag(_), do: nil
+
+  defp lookup_ir_constructor_tag_by_name(name) when is_binary(name) do
+    tags = Process.get(:elmc_constructor_tags, %{})
+
+    cond do
+      Map.has_key?(tags, name) ->
+        Map.get(tags, name)
+
+      true ->
+        short = name |> String.split(".") |> List.last()
+
+        case Map.get(tags, short) do
+          tag when is_integer(tag) ->
+            tag
+
+          _ ->
+            tags
+            |> Enum.filter(fn {key, _tag} -> String.ends_with?(key, "." <> short) end)
+            |> case do
+              [{_key, tag}] -> tag
+              _ -> nil
+            end
+        end
+    end
+  end
 
   defp bind_pattern_fallback(env, %{arg_pattern: arg}, subject_ref) when not is_nil(arg) do
     bind_union_ctor_arg(env, arg, subject_ref)

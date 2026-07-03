@@ -13,12 +13,17 @@ defmodule Elmc.Backend.Pebble.SourceWriter do
     ViewRuntime
   }
 
-  @spec generate(Types.shim_analysis(), Types.entry_module()) :: Types.c_source()
-  def generate(analysis, entry_module) do
-    bindings = Bindings.from_analysis(analysis, entry_module)
+  @spec generate(Types.shim_analysis(), Types.entry_module(), keyword()) :: Types.c_source()
+  def generate(analysis, entry_module, opts \\ []) do
+    bindings =
+      analysis
+      |> Bindings.from_analysis(entry_module)
+      |> Map.put(:append_fallback_enabled?, Keyword.get(opts, :append_fallback_enabled?, false))
 
     [
-      Prologue.body(bindings.direct_view_macro),
+      Prologue.body(bindings.direct_view_macro,
+        append_fallback_enabled?: Map.get(bindings, :append_fallback_enabled?, false)
+      ),
       bindings.msg.current_second_helper,
       DrawRuntime.body(),
       bindings.scene_writer_source,

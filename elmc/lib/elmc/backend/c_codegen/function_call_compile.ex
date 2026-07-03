@@ -436,22 +436,34 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
             end
 
           :error ->
-            case BuiltinOperators.call(name, [], env, next) do
+            case EnvBindings.pebble_angle_binding(env, name) do
+              angle_expr when is_map(angle_expr) ->
+                compile_pebble_angle_boxed_var(var, angle_expr, env, next)
+
               nil ->
-                module_name = Map.get(env, :__module__, "Main")
-                arity = EnvBindings.function_arity(env, module_name, name, [])
+                case BuiltinOperators.call(name, [], env, next) do
+                  nil ->
+                    module_name = Map.get(env, :__module__, "Main")
+                    arity = EnvBindings.function_arity(env, module_name, name, [])
 
-                if arity > 0 do
-                  top_level_closure(module_name, name, arity, env, next)
-                else
-                  compile_zero_arg_constant(module_name, name, env, next, var, next)
+                    if arity > 0 do
+                      top_level_closure(module_name, name, arity, env, next)
+                    else
+                      compile_zero_arg_constant(module_name, name, env, next, var, next)
+                    end
+
+                  result ->
+                    result
                 end
-
-              result ->
-                result
             end
         end
     end
+  end
+
+  defp compile_pebble_angle_boxed_var(var, angle_expr, env, counter) do
+    {angle_code, angle_ref, counter} = Host.compile_native_int_expr(angle_expr, env, counter)
+    code = RcRuntimeEmit.assign_call(env, var, "elmc_new_int", angle_ref) <> "\n" <> angle_code
+    {code, var, counter}
   end
 
   @spec compile_zero_arg_constant(
@@ -1052,8 +1064,10 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
 
       if predeclared_out?(env, out) or ValueSlots.owned_ref?(out) or
            RcRuntimeEmit.function_out_ref?(out) do
+        if ValueSlots.owned_ref?(out), do: ValueSlots.mark_written(out)
+
         """
-        Rc = #{call_expr};
+        #{ValueSlots.owned_reassign_prefix(out)}Rc = #{call_expr};
         CHECK_RC(Rc);
         """
         |> String.trim()

@@ -13,6 +13,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Native.RecordFields
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.CCodegen.UnionMacros
   alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.CCodegen.ValueSlots
   alias Elmc.Backend.CCodegen.VarAnalysis
@@ -231,6 +232,11 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
     {field_code, field_refs, counter, post_release} =
       compile_field_exprs(ordered_fields, env, counter, &compile_boxed_field_value_expr/3)
+
+    counter =
+      Enum.reduce(field_refs, counter, fn ref, c ->
+        CaseCompile.advance_counter_past_out(c, ref, Regex.match?(~r/^tmp_\d+$/, ref))
+      end)
 
     rec_suffix = fresh_rec_values_suffix()
     {out, counter2, _} = CaseCompile.result_out_binding(env, counter)
@@ -1106,6 +1112,16 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   end
 
   defp compile_boxed_field_value_expr(expr, env, counter) do
+    case compile_boxed_union_field_value(expr, env, counter) do
+      {:ok, code, var, next} ->
+        {code, var, next}
+
+      :error ->
+        compile_boxed_non_union_field_value(expr, env, counter)
+    end
+  end
+
+  defp compile_boxed_non_union_field_value(expr, env, counter) do
     if Host.native_int_expr?(expr, env) and not BuiltinUnion.maybe_nothing_literal?(expr) do
       {code, native_ref, c2} = Host.compile_native_int_expr(expr, env, counter)
       {var, next} = CaseCompile.fresh_var(c2, env)
@@ -1113,6 +1129,90 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
       {code <> "  " <> RcRuntimeEmit.assign_call(env, var, "elmc_new_int", native_ref) <> "\n", var, next}
     else
       Host.compile_expr(expr, env, counter)
+    end
+  end
+
+  defp compile_boxed_union_field_value(%{op: :int_literal, union_ctor: _} = expr, env, counter) do
+    compile_boxed_union_tag_int(expr, env, counter)
+  end
+
+  defp compile_boxed_union_field_value(%{op: :constructor_call, target: target, args: args}, env, counter)
+       when args in [[], nil] do
+    with tag when is_integer(tag) <- lookup_ir_constructor_tag_by_name(target) do
+      compile_boxed_union_tag_int(
+        %{op: :int_literal, value: tag, union_ctor: target},
+        env,
+        counter
+      )
+    else
+      _ -> :error
+    end
+  end
+
+  defp compile_boxed_union_field_value(%{op: :qualified_call, target: target, args: args}, env, counter)
+       when args in [[], nil] do
+    with tag when is_integer(tag) <- lookup_ir_constructor_tag_by_name(target) do
+      compile_boxed_union_tag_int(
+        %{op: :int_literal, value: tag, union_ctor: target},
+        env,
+        counter
+      )
+    else
+      _ -> :error
+    end
+  end
+
+  defp compile_boxed_union_field_value(_expr, _env, _counter), do: :error
+
+  defp compile_boxed_union_tag_int(expr, env, counter) do
+    tag_ref =
+      UnionMacros.literal_ref(expr, env) ||
+        case union_ctor_tag_ref(expr) do
+          nil -> nil
+          tag -> Integer.to_string(tag)
+        end
+
+    case tag_ref do
+      nil ->
+        :error
+
+      ref ->
+        {var, next} = CaseCompile.fresh_var(counter, env)
+
+        {:ok, RcRuntimeEmit.assign_call(env, var, "elmc_new_int", ref) <> "\n", var, next}
+    end
+  end
+
+  defp union_ctor_tag_ref(%{union_ctor: ctor}) when is_binary(ctor),
+    do: lookup_ir_constructor_tag_by_name(ctor)
+
+  defp union_ctor_tag_ref(%{op: :int_literal, union_ctor: ctor}) when is_binary(ctor),
+    do: lookup_ir_constructor_tag_by_name(ctor)
+
+  defp union_ctor_tag_ref(_), do: nil
+
+  defp lookup_ir_constructor_tag_by_name(name) when is_binary(name) do
+    tags = Process.get(:elmc_constructor_tags, %{})
+
+    cond do
+      Map.has_key?(tags, name) ->
+        Map.get(tags, name)
+
+      true ->
+        short = name |> String.split(".") |> List.last()
+
+        case Map.get(tags, short) do
+          tag when is_integer(tag) ->
+            tag
+
+          _ ->
+            tags
+            |> Enum.filter(fn {key, _tag} -> String.ends_with?(key, "." <> short) end)
+            |> case do
+              [{_key, tag}] -> tag
+              _ -> nil
+            end
+        end
     end
   end
 
@@ -1250,7 +1350,10 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
   defp release_compare_operand_var(var) do
     cond do
-      ValueSlots.owned_ref?(var) -> ValueSlots.release_owned_and_null(var)
+      # Compare temps in owned[] must not survive to epilogue lifo: a retained
+      # maybe/record payload released again at function exit can drop shared
+      # model field refs before the caller releases its Just wrapper.
+      ValueSlots.owned_ref?(var) -> ValueSlots.release_owned_eager(var)
       true -> ValueSlots.release_stmt(var)
     end
   end

@@ -100,6 +100,16 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
   end
 
   defp compile_branches_fallback(cond_expr, then_expr, else_expr, env, counter) do
+    case PlatformStatic.platform_static_branch(cond_expr) do
+      {macro, polarity} ->
+        compile_platform_static_branches(macro, polarity, then_expr, else_expr, env, counter)
+
+      nil ->
+        compile_branches_fallback_runtime(cond_expr, then_expr, else_expr, env, counter)
+    end
+  end
+
+  defp compile_branches_fallback_runtime(cond_expr, then_expr, else_expr, env, counter) do
     cond do
       identical_branch_exprs?(then_expr, else_expr) ->
         Host.compile_expr(then_expr, env, counter)
@@ -132,9 +142,9 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
           Types.compile_counter()
         ) :: Types.compile_result()
   defp compile_native_bool_branches(cond_expr, then_expr, else_expr, env, counter) do
-    case PlatformStatic.platform_static_macro(cond_expr) do
-      macro when is_binary(macro) ->
-        compile_platform_static_branches(macro, then_expr, else_expr, env, counter)
+    case PlatformStatic.platform_static_branch(cond_expr) do
+      {macro, polarity} ->
+        compile_platform_static_branches(macro, polarity, then_expr, else_expr, env, counter)
 
       nil ->
         compile_runtime_native_bool_branches(cond_expr, then_expr, else_expr, env, counter)
@@ -198,7 +208,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
     end
   end
 
-  defp compile_platform_static_branches(macro, then_expr, else_expr, env, counter) do
+  defp compile_platform_static_branches(macro, polarity, then_expr, else_expr, env, counter) do
     {out, branch_counter, declare_out?} = CaseCompile.result_out_binding(env, counter)
     branch_counter = CaseCompile.advance_counter_past_out(branch_counter, out, declare_out?)
 
@@ -220,11 +230,13 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
     else_body =
       maybe_extract_if_branch_helper(else_expr, else_env, out, else_code, else_assignment)
 
+    guard = PlatformStatic.ifdef_guard(macro, polarity)
+
     code =
       Enum.join(
         [
           CaseCompile.result_out_decl(out, declare_out?),
-          "#if defined(#{macro})",
+          "#if #{guard}",
           format_if_branch_body(then_body),
           "#else",
           format_if_branch_body(else_body),

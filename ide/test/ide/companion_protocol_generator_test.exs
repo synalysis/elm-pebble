@@ -686,6 +686,7 @@ defmodule Ide.CompanionProtocolGeneratorTest do
       File.mkdir_p!(tmp)
       assert :ok = CompanionProtocolGenerator.generate(types, header, source, js)
       generated_js = File.read!(js)
+      generated_c = File.read!(source)
 
       assert generated_js =~ "case 205:"
       assert generated_js =~ "case 206:"
@@ -695,6 +696,10 @@ defmodule Ide.CompanionProtocolGeneratorTest do
       assert generated_js =~ "provide_wind_field2_tag"
       assert generated_js =~ "encodePhoneToWatchPayload(\"ProvideWeather\""
       assert generated_js =~ "encodePhoneToWatchPayload(\"ProvideWind\""
+
+      refute generated_c =~ "elmc_release(phone_to_watch);"
+      refute generated_c =~
+               "companion_protocol_new_phone_to_watch_message(6, payload);\n            elmc_release(payload);"
     after
       File.rm_rf(tmp)
     end

@@ -21,6 +21,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   defdelegate svg_path_d(op, close_shape?), to: Geometry
   defdelegate arc_path(op), to: Geometry
   defdelegate pebble_color_to_svg(value, fallback \\ "#111111"), to: Geometry
+  defdelegate pie_sector_path(op), to: Geometry
+  defdelegate pie_sector_paths(op), to: Geometry
 
   defdelegate compact_scene(runtime), to: CompactScene
   defdelegate compact_scene(runtime, target), to: CompactScene

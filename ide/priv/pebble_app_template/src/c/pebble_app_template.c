@@ -1652,17 +1652,8 @@ static void startup_cmd_callback(void *data) {
 
 #if ELMC_PEBBLE_NEEDS_COLOR_FROM_CODE
 static GColor color_from_code(int64_t value) {
-  int code = (int)(value & 0xff);
-  int red = ((code >> 4) & 0x3) * 85;
-  int green = ((code >> 2) & 0x3) * 85;
-  int blue = (code & 0x3) * 85;
-#ifdef PBL_COLOR
-  return GColorFromRGB(red, green, blue);
-#else
-  /* ELMC color codes are not GColor8 ordinals (e.g. ELMC_COLOR_BLACK is 192). */
-  int luminance = (red * 30 + green * 59 + blue * 11) / 100;
-  return luminance >= 128 ? GColorWhite : GColorBlack;
-#endif
+  /* ELMC Color.* values are Pebble GColor8 .argb indices (e.g. chromeYellow = 0xF8). */
+  return (GColor8){ .argb = (uint8_t)(value & 0xff) };
 }
 #endif
 
@@ -1739,6 +1730,84 @@ static void apply_draw_style(GContext *ctx, const DrawStyleState *style) {
     ELMC_PEBBLE_FEATURE_DRAW_BITMAP_IN_RECT
 static bool rect_params_are_valid(int64_t w, int64_t h) {
   return w > 0 && h > 0;
+}
+#endif
+
+#if ELMC_PEBBLE_FEATURE_DRAW_FILL_RADIAL
+static void elmc_fill_radial_sector_gpath(GContext *ctx, GRect rect, int32_t angle_start, int32_t angle_end) {
+  if (angle_start == angle_end) {
+    return;
+  }
+  const int16_t r = (int16_t)(rect.size.w < rect.size.h ? rect.size.w / 2 : rect.size.h / 2);
+  if (r <= 0) {
+    return;
+  }
+
+  int32_t span = angle_end - angle_start;
+  if (span <= 0) {
+    return;
+  }
+
+  GPoint center = grect_center_point(&rect);
+  if (span >= TRIG_MAX_ANGLE) {
+    graphics_fill_circle(ctx, center, r);
+    return;
+  }
+
+  enum { kArcSteps = 24 };
+  GPoint points[kArcSteps + 2];
+  int count = 0;
+  points[count++] = center;
+  points[count++] = gpoint_from_polar(rect, GOvalScaleModeFitCircle, angle_start);
+  for (int step = 1; step < kArcSteps; step++) {
+    int32_t angle = angle_start + (int32_t)((int64_t)span * step / kArcSteps);
+    points[count++] = gpoint_from_polar(rect, GOvalScaleModeFitCircle, angle);
+  }
+  points[count++] = gpoint_from_polar(rect, GOvalScaleModeFitCircle, angle_end);
+
+  GPathInfo path_info = {
+      .num_points = (uint32_t)count,
+      .points = points,
+  };
+  GPath *path = gpath_create(&path_info);
+  if (!path) {
+    return;
+  }
+  gpath_draw_filled(ctx, path);
+  gpath_destroy(path);
+}
+
+/* Solid pie wedges via gpath; graphics_fill_radial only draws ring bands from the outer edge. */
+static void elmc_fill_radial_wedge(GContext *ctx, GRect rect, int32_t angle_start, int32_t angle_end) {
+  if (angle_start == angle_end) {
+    return;
+  }
+  const int16_t r = (int16_t)(rect.size.w < rect.size.h ? rect.size.w / 2 : rect.size.h / 2);
+  if (r <= 0) {
+    return;
+  }
+
+  int32_t s = angle_start % TRIG_MAX_ANGLE;
+  int32_t e = angle_end % TRIG_MAX_ANGLE;
+  if (s < 0) {
+    s += TRIG_MAX_ANGLE;
+  }
+  if (e < 0) {
+    e += TRIG_MAX_ANGLE;
+  }
+
+  graphics_context_set_fill_color(ctx, s_draw_style_stack[s_draw_style_top].fill_color);
+
+  if (angle_end >= TRIG_MAX_ANGLE) {
+    elmc_fill_radial_sector_gpath(ctx, rect, s, TRIG_MAX_ANGLE);
+    return;
+  }
+  if (s < e) {
+    elmc_fill_radial_sector_gpath(ctx, rect, s, e);
+  } else if (s > e) {
+    elmc_fill_radial_sector_gpath(ctx, rect, s, TRIG_MAX_ANGLE);
+    elmc_fill_radial_sector_gpath(ctx, rect, 0, e);
+  }
 }
 #endif
 
@@ -2076,7 +2145,11 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
     ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "draw style applied");
   }
 
-  enum { DRAW_COMMAND_GUARD = 256 };
+  enum { DRAW_COMMAND_HARD_CAP = 2048 };
+  int draw_limit = s_elm_app.scene.command_count;
+  if (draw_limit <= 0 || draw_limit > DRAW_COMMAND_HARD_CAP) {
+    draw_limit = DRAW_COMMAND_HARD_CAP;
+  }
   // #region agent log
   ELMC_AGENT_INIT_PROBE(0xED993040);
   // #endregion
@@ -2114,7 +2187,7 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
           s_elm_app.scene.command_count,
           s_elm_app.scene.byte_count);
 
-  for (int cmd_index = 0; cmd_index < DRAW_COMMAND_GUARD; cmd_index++) {
+  for (int cmd_index = 0; cmd_index < draw_limit; cmd_index++) {
     // #region agent log
     ELMC_AGENT_INIT_PROBE(0xED993050);
     // #endregion
@@ -2337,7 +2410,6 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
 #endif
 #if ELMC_PEBBLE_FEATURE_DRAW_FILL_RADIAL
       case ELMC_PEBBLE_DRAW_FILL_RADIAL: {
-#if ELMC_PEBBLE_NATIVE_FILL_RADIAL_ENABLED
         int16_t x = (int16_t)cmd->p0;
         int16_t y = (int16_t)cmd->p1;
         int16_t w = (int16_t)cmd->p2;
@@ -2345,10 +2417,8 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         int32_t angle_start = (int32_t)cmd->p4;
         int32_t angle_end = (int32_t)cmd->p5;
         if (rect_params_are_valid(w, h)) {
-          uint16_t thickness = (uint16_t)((w < h ? w : h) / 2);
-          graphics_fill_radial(ctx, GRect(x, y, w, h), GOvalScaleModeFitCircle, thickness, angle_start, angle_end);
+          elmc_fill_radial_wedge(ctx, GRect(x, y, w, h), angle_start, angle_end);
         }
-#endif
         break;
       }
 #endif

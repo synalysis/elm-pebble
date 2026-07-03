@@ -16,8 +16,12 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.CmdValue.Decode.Helpers.U
             out[i] = elmc_as_int(tuple->first);
             current = tuple->second;
           }
-          if (!current) return -4;
-          out[5] = elmc_as_int(current);
+          if (!current || current->tag != ELMC_TAG_TUPLE2 || current->payload == NULL) return -4;
+          {
+            ElmcTuple2 *tail = (ElmcTuple2 *)current->payload;
+            if (!tail->first) return -5;
+            out[5] = elmc_as_int(tail->first);
+          }
           return 0;
         }
 

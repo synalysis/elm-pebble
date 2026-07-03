@@ -343,13 +343,13 @@ drawDial model cx cy radius =
             sunWindow.sunsetMin
 
         timeTextColor =
-            Color.black
+            Color.white
 
         moonPhaseY =
             cy + (min model.screenW model.screenH // 5)
 
         timeTextY =
-            cy - (radius // 2) - 9
+            cy - (radius // 2) - 14
 
         sunriseAngle =
             angleFromMinute sunrise
@@ -414,7 +414,7 @@ drawDial model cx cy radius =
                     []
            )
         ++ draw24HourHand cx cy radius nowMin moonPhaseY
-        ++ [ textAt timeTextColor { x = cx - 31, y = timeTextY, w = 64, h = 18 } (timeString model)
+        ++ [ textAt timeTextColor { x = 0, y = timeTextY, w = model.screenW, h = 28 } (timeString model)
            ]
 
 
@@ -446,25 +446,70 @@ draw24HourHand cx cy radius nowMin moonCy =
 
 drawOuterScale : Int -> Int -> Int -> List Ui.RenderOp
 drawOuterScale cx cy radius =
-    List.map
+    drawOuterScaleOddHours cx cy radius
+        ++ drawOuterScaleEvenHours cx cy radius
+
+
+drawOuterScaleOddHours : Int -> Int -> Int -> List Ui.RenderOp
+drawOuterScaleOddHours cx cy radius =
+    List.concatMap
         (\hour ->
             let
-                angle =
+                tickAngle =
+                    angleFromMinute (hour * 60)
+
+                inner =
+                    pointAt cx cy radius tickAngle
+
+                outer =
+                    pointAt cx cy (radius + 10) tickAngle
+            in
+            [ Ui.line outer inner Color.white ]
+        )
+        (List.range 1 23 |> List.filter (\h -> modBy 2 h == 1))
+
+
+drawOuterScaleEvenHours : Int -> Int -> Int -> List Ui.RenderOp
+drawOuterScaleEvenHours cx cy radius =
+    List.concatMap
+        (\hour ->
+            let
+                tickAngle =
                     angleFromMinute (hour * 120)
 
                 inner =
-                    pointAt cx cy radius angle
+                    pointAt cx cy radius tickAngle
 
                 outer =
-                    pointAt cx cy (radius + 6) angle
+                    pointAt cx cy (radius + 6) tickAngle
+
+                labelPoint =
+                    pointAt cx cy (radius + 14) tickAngle
             in
-            Ui.line outer inner Color.white
+            [ Ui.line outer inner Color.white
+            , textAt Color.white
+                { x = labelPoint.x - 9
+                , y = labelPoint.y - 14
+                , w = 18
+                , h = 12
+                }
+                (String.fromInt (hour * 2))
+            ]
         )
         (List.range 0 11)
 
 
 drawSunWindow : Ui.Point -> Int -> Ui.Rect -> Int -> Int -> SunWindow -> List Ui.RenderOp
 drawSunWindow center radius bounds sunriseAngle sunsetAngle sunWindow =
+    let
+        chromeSunRadial start end =
+            [ Ui.group
+                (Ui.context
+                    [ Ui.fillColor Color.chromeYellow, Ui.strokeColor Color.chromeYellow ]
+                    [ Ui.fillRadial bounds start end ]
+                )
+            ]
+    in
     case sunWindow.mode of
         PolarNight ->
             []
@@ -473,7 +518,19 @@ drawSunWindow center radius bounds sunriseAngle sunsetAngle sunWindow =
             [ Ui.fillCircle center radius Color.chromeYellow ]
 
         SunCycle ->
-            [ Ui.fillRadial bounds sunriseAngle sunsetAngle ]
+            chromeSunRadial sunriseAngle
+                (if sunsetAngle < sunriseAngle then
+                    65536
+
+                 else
+                    sunsetAngle
+                )
+                ++ (if sunsetAngle < sunriseAngle then
+                        chromeSunRadial 0 sunsetAngle
+
+                    else
+                        []
+                   )
 
 
 drawMoonPhase : Int -> Int -> Int -> Int -> List Ui.RenderOp

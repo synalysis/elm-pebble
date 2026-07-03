@@ -10,17 +10,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.SvgRender do
   def arc_path(op), do: DebuggerPreview.arc_path(op)
 
   @spec arc_sector_path(svg_op()) :: String.t()
-  def arc_sector_path(op) when is_map(op) do
-    arc = DebuggerPreview.arc_path(op)
-
-    if arc == "" do
-      ""
-    else
-      cx = (op.x || 0) + max(op.w || 1, 1) / 2.0
-      cy = (op.y || 0) + max(op.h || 1, 1) / 2.0
-      arc <> " L #{Float.round(cx, 2)} #{Float.round(cy, 2)} Z"
-    end
-  end
+  def arc_sector_path(op) when is_map(op), do: DebuggerPreview.pie_sector_path(op)
 
   def arc_sector_path(_op), do: ""
 

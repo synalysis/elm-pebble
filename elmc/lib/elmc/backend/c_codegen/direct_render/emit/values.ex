@@ -57,20 +57,17 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
         env,
         counter
       ) do
-    case PlatformStatic.platform_static_macro(cond) do
-      macro when is_binary(macro) ->
+    case PlatformStatic.platform_static_branch(cond) do
+      {macro, polarity} ->
         {then_code, then_ref, counter} = int_value(then_expr, env, counter)
         {else_code, else_ref, counter} = int_value(else_expr, env, counter)
         next = counter + 1
         value_ref = "direct_native_if_#{next}"
 
-        code = """
-        #{then_code}#{else_code}  #if defined(#{macro})
-          const elmc_int_t #{value_ref} = #{then_ref};
-          #else
-          const elmc_int_t #{value_ref} = #{else_ref};
-          #endif
-        """
+        code =
+          then_code <>
+            else_code <>
+            PlatformStatic.merge_refs(macro, polarity, value_ref, then_ref, else_ref)
 
         {code, value_ref, next}
 

@@ -1798,7 +1798,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
         |> EnvBindings.put_boxed_int_binding(arg, false)
         |> maybe_put_concat_map_forward_loop_id(loop_id, direct_append?)
 
-      {body_code, sublist_var, counter} = Host.compile_expr(body, body_env, loop_id)
+      {body_code, sublist_var, counter} = compile_boxed_loop_body(body, body_env, loop_id)
       counter = counter + 1
       out = "tmp_#{counter}"
 
@@ -1855,7 +1855,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
       |> Map.put(arg, head)
       |> maybe_put_native_int_arg(arg, body, head)
 
-    {body_code, sublist_var, counter} = Host.compile_expr(body, body_env, loop_id)
+    {body_code, sublist_var, counter} = compile_boxed_loop_body(body, body_env, loop_id)
     counter = counter + 1
     out = "tmp_#{counter}"
 

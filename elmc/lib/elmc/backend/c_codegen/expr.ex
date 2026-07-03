@@ -1164,51 +1164,69 @@ defmodule Elmc.Backend.CCodegen.Expr do
 
   @spec record_type_for_field_names([String.t()], Types.compile_env()) :: String.t() | nil
   def record_type_for_field_names(field_names, env) when is_list(field_names) do
-    normalized_fields = field_names |> Enum.map(&to_string/1) |> Enum.sort()
-
     alias_shapes =
       Map.get(env, :__record_alias_shapes__) || Process.get(:elmc_record_alias_shapes, %{})
 
     current_module = Map.get(env, :__module__, "Main")
 
-    matches =
-      alias_shapes
-      |> Enum.filter(fn
-        {{mod, _name}, shape} ->
-          mod == current_module and Enum.sort(Enum.map(shape, &to_string/1)) == normalized_fields
+    case record_alias_matches(field_names, alias_shapes) do
+      [] ->
+        nil
 
-        _ ->
-          false
-      end)
-      |> Enum.map(fn {{_mod, name}, _shape} -> name end)
+      matches ->
+        local_matches =
+          matches
+          |> Enum.filter(fn {{mod, _name}, _shape} -> mod == current_module end)
+          |> Enum.map(fn {{_mod, name}, _shape} -> name end)
 
-    case matches do
-      [single] -> single
-      _ -> nil
+        case local_matches do
+          [single] -> single
+          [_ | _] = many -> List.first(many)
+          [] -> pick_global_record_type(matches)
+        end
     end
   end
 
   @spec record_type_for_shape(Types.record_shape(), Types.compile_env()) :: String.t() | nil
   def record_type_for_shape(fields, env) when is_list(fields) do
-    normalized_fields = fields |> Enum.map(&to_string/1) |> Enum.sort()
-
     alias_shapes =
       Map.get(env, :__record_alias_shapes__) || Process.get(:elmc_record_alias_shapes, %{})
 
-    matches =
-      alias_shapes
-      |> Enum.filter(fn {{_mod, _name}, shape} ->
-        Enum.sort(Enum.map(shape, &to_string/1)) == normalized_fields
-      end)
-      |> Enum.map(fn {{mod, name}, _shape} -> "#{mod}.#{name}" end)
+    case record_alias_matches(fields, alias_shapes) do
+      [] ->
+        nil
 
-    case matches do
-      [single] -> single
-      _ -> record_type_for_field_names(fields, env)
+      matches ->
+        case Enum.map(matches, fn {{mod, name}, _shape} -> "#{mod}.#{name}" end) do
+          [single] -> single
+          many -> pick_global_record_type(matches) || List.first(Enum.sort(many))
+        end
     end
   end
 
   def record_type_for_shape(_fields, _env), do: nil
+
+  defp record_alias_matches(field_names, alias_shapes) when is_list(field_names) do
+    normalized_fields = field_names |> Enum.map(&to_string/1) |> Enum.sort()
+
+    alias_shapes
+    |> Enum.filter(fn {{_mod, _name}, shape} ->
+      Enum.sort(Enum.map(shape, &to_string/1)) == normalized_fields
+    end)
+    |> Enum.sort_by(fn {{mod, name}, _shape} -> {mod, name} end)
+  end
+
+  defp pick_global_record_type(matches) do
+    matches
+    |> Enum.map(fn {{mod, name}, shape} -> {"#{mod}.#{name}", shape} end)
+    |> Enum.group_by(fn {_type, shape} -> shape end)
+    |> Enum.sort_by(fn {shape, _entries} -> shape end)
+    |> List.first()
+    |> case do
+      {_shape, [{type, _shape} | _]} -> type
+      _ -> nil
+    end
+  end
 
   @spec split_qualified_type_name(String.t()) :: Types.qualified_type_target()
   def split_qualified_type_name(type_name) when is_binary(type_name) do

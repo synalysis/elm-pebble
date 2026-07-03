@@ -58,7 +58,9 @@ defmodule Elmc.Backend.Pebble do
          :ok <-
            File.write(
              Path.join(c_dir, "elmc_pebble.c"),
-             SourceWriter.generate(analysis, entry_module)
+             SourceWriter.generate(analysis, entry_module,
+               append_fallback_enabled?: aplite_direct_view_scene?
+             )
            ) do
       :ok
     end

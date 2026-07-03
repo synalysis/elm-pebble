@@ -6,9 +6,8 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DispatchCore.Lifecycle.DispatchHooks 
   @spec body() :: Types.c_source()
   def body do
     """
-    static void elmc_pebble_prepare_dispatch(ElmcPebbleApp *app) {
+    static void elmc_pebble_invalidate_scene_for_dispatch(ElmcPebbleApp *app) {
       if (!app) return;
-      elmc_pebble_heap_log("dispatch:prepare:before");
       elmc_pebble_clear_view_cache(app);
     #if !ELMC_PEBBLE_DIRTY_REGION_ENABLED
       /* Invalidate encoded scene; retain materialized bytes to avoid heap churn on Aplite.
@@ -28,14 +27,19 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DispatchCore.Lifecycle.DispatchHooks 
     #if ELMC_PEBBLE_SCENE_CACHE_ENABLED
       app->scene_draw_byte_offset = 0;
     #endif
+    }
+
+    static void elmc_pebble_prepare_dispatch(ElmcPebbleApp *app) {
+      if (!app) return;
+      elmc_pebble_heap_log("dispatch:prepare:before");
       elmc_pebble_heap_log("dispatch:prepare:after");
     }
 
     static int elmc_pebble_finish_dispatch(ElmcPebbleApp *app, int rc) {
-      if (rc == 0) {
+      if (rc == 0 && elmc_worker_dispatch_needs_render(&app->worker)) {
         app->has_prev_ui = 0;
         app->prev_ops_hash = 0;
-        elmc_pebble_mark_scene_dirty(app);
+        elmc_pebble_invalidate_scene_for_dispatch(app);
       }
       elmc_pebble_heap_log("dispatch:after");
       return rc;

@@ -307,6 +307,10 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   def function_out_ref?(ref) when is_binary(ref), do: ref == @function_out_marker
   def function_out_ref?(_), do: false
 
+  @spec fresh_owned_slot?(String.t()) :: boolean()
+  def fresh_owned_slot?(ref) when is_binary(ref), do: Regex.match?(@fresh_owned_slot, ref)
+  def fresh_owned_slot?(_), do: false
+
   @spec function_out_param() :: String.t()
   def function_out_param, do: "out"
 
@@ -906,7 +910,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
 
     preempt =
       if rc_owned_slot?(out) and not allocator_same_slot_transfer?(out, function, call_args) and
-           not MapSet.member?(@array_source_transfer_allocators, function) do
+           not array_source_transfer_skip_preempt?(function) do
         ValueSlots.owned_reassign_prefix(out)
       else
         ""
@@ -925,6 +929,12 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
        when is_binary(out) and is_binary(function) and is_binary(call_args) do
     MapSet.member?(@own_transfer_allocators, function) and
       String.trim(call_args) == out
+  end
+
+  # Array-source record/list allocators skip eager out-slot release on the first
+  # assignment in a branch, but loop iterations still overwrite prior out values.
+  defp array_source_transfer_skip_preempt?(function) when is_binary(function) do
+    MapSet.member?(@array_source_transfer_allocators, function) and not ValueSlots.in_c_loop?()
   end
 
   defp function_out_assign(_env, out, rhs) when is_binary(out) and is_binary(rhs) do

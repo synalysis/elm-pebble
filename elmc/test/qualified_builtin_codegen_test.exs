@@ -489,6 +489,39 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     assert body =~ "ELMC_RECORD_GET_INDEX_INT(model, ELMC_FIELD_MAIN_WATCHMODEL_SCREENH)"
   end
 
+  test "Pebble.Ui.Rect literals in Main use canonical x y w h codegen order" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/ui_rect_field_order_project", __DIR__)
+    out_dir = Path.expand("tmp/ui_rect_field_order_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), ui_rect_field_order_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: false
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_drawOuterScale")
+
+    assert body =~ "elmc_new_int(&owned[1], (native_polar_x_"
+    assert body =~ "elmc_new_int(&owned[2], (native_polar_y_"
+    assert body =~ "elmc_new_int(&owned[3], 18)"
+    assert body =~ "elmc_new_int(&owned[4], 12)"
+    assert body =~ "ElmcValue *rec_values_"
+    assert body =~ "elmc_record_new_values_take(&owned[5], 4, rec_values_"
+    assert body =~ "ELMC_RELEASE(owned[0]);"
+    assert body =~ "ELMC_RELEASE(owned[5]);"
+    assert body =~ "ELMC_RELEASE(owned[6]);"
+    refute body =~ "elmc_new_int(&owned[1], 12)"
+    refute body =~ "elmc_new_int(&owned[2], 18)"
+  end
+
   test "String.fromInt over native Int avoids temporary boxed integer" do
     source_fixture = Path.expand("fixtures/simple_project", __DIR__)
     project_dir = Path.expand("tmp/native_string_from_int_project", __DIR__)
@@ -2540,6 +2573,95 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
             }
     
       """
+  end
+
+  defp ui_rect_field_order_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        {}
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init, update = update, subscriptions = subscriptions, view = view }
+
+
+    init _ =
+        ( {}, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view _ =
+        Ui.toUiNode (drawOuterScale 72 84 60)
+
+
+    drawOuterScale : Int -> Int -> Int -> List Ui.RenderOp
+    drawOuterScale cx cy radius =
+        List.concatMap
+            (\\hour ->
+                let
+                    tickAngle =
+                        angleFromMinute (hour * 120)
+
+                    inner =
+                        pointAt cx cy radius tickAngle
+
+                    outer =
+                        pointAt cx cy (radius + 6) tickAngle
+
+                    labelPoint =
+                        pointAt cx cy (radius + 16) tickAngle
+                in
+                [ Ui.line outer inner Color.white
+                , textAt Color.white
+                { x = labelPoint.x - 9
+                , y = labelPoint.y - 8
+                , w = 18
+                , h = 12
+                }
+                    (String.fromInt (hour * 2))
+                ]
+            )
+            (List.range 0 11)
+
+
+    textAt : Color.Color -> Ui.Rect -> String -> Ui.RenderOp
+    textAt color bounds value =
+        Ui.group
+            (Ui.context
+                [ Ui.textColor color ]
+                [ Ui.text Resources.DefaultFont Ui.defaultTextOptions bounds value ]
+            )
+
+
+    pointAt : Int -> Int -> Int -> Int -> Ui.Point
+    pointAt cx cy radius angle =
+        { x = cx + radius, y = cy + radius }
+
+
+    angleFromMinute : Int -> Int
+    angleFromMinute minute =
+        minute * 65536 // 1440
+    """
   end
 
   defp native_string_from_int_source do

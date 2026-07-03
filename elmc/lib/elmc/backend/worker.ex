@@ -197,10 +197,12 @@ defmodule Elmc.Backend.Worker do
       elmc_int_t sub_msg_tags[ELMC_WORKER_SUB_TAG_SLOTS];
       ElmcButtonRawSub button_raw_subs[ELMC_WORKER_MAX_BUTTON_RAW_SUBS];
       int button_raw_sub_count;
+      int dispatch_needs_render;
     } ElmcWorkerState;
 
     int elmc_worker_init(ElmcWorkerState *state, ElmcValue *flags);
     int elmc_worker_dispatch(ElmcWorkerState *state, ElmcValue *msg);
+    int elmc_worker_dispatch_needs_render(ElmcWorkerState *state);
     ElmcValue *elmc_worker_model(ElmcWorkerState *state);
     ElmcValue *elmc_worker_take_cmd(ElmcWorkerState *state);
     int64_t elmc_worker_subscriptions(ElmcWorkerState *state);
@@ -316,7 +318,7 @@ defmodule Elmc.Backend.Worker do
 
     dispatch_subscriptions_refresh =
       if has_subscriptions and Map.get(analysis, :model_dependent?, true) do
-        "  state->subscriptions = compute_subscriptions(state);\n"
+        "  if (state->dispatch_needs_render) {\n    state->subscriptions = compute_subscriptions(state);\n  }\n"
       else
         ""
       end
@@ -687,6 +689,7 @@ defmodule Elmc.Backend.Worker do
         return -2;
       }
       state->model = next_model;
+      state->dispatch_needs_render = 1;
       {
         ElmcValue *pending = NULL;
         RC pending_rc = elmc_cmd_queue_normalize(&pending, extract_cmd_take(result));
@@ -705,15 +708,18 @@ defmodule Elmc.Backend.Worker do
 
     int elmc_worker_dispatch(ElmcWorkerState *state, ElmcValue *msg) {
       if (!state || !state->model) return -1;
+      state->dispatch_needs_render = 0;
       elmc_worker_heap_log("update:start");
+      ElmcValue *prev_model = state->model;
     #{update_missing_guard}#{update_call}
       ElmcValue *next_model = extract_model_take(result);
       if (!next_model) {
         elmc_release(result);
         return -2;
       }
-      if (next_model != state->model) {
+      if (next_model != prev_model) {
         elmc_release(state->model);
+        state->dispatch_needs_render = 1;
       } else if (next_model->rc > 1) {
         elmc_release(next_model);
       }
@@ -725,6 +731,9 @@ defmodule Elmc.Backend.Worker do
           ELMC_WORKER_LOG_RC_FAIL("worker update pending cmd", next_rc);
           elmc_release(result);
           return -2;
+        }
+        if (!elmc_cmd_is_none(next_cmd)) {
+          state->dispatch_needs_render = 1;
         }
         ElmcValue *merged = NULL;
         RC merge_rc = elmc_cmd_queue_concat_take(&merged, state->pending_cmd, next_cmd);
@@ -739,6 +748,11 @@ defmodule Elmc.Backend.Worker do
       elmc_release(result);
     #{dispatch_subscriptions_refresh}  elmc_worker_heap_log("update:end");
       return 0;
+    }
+
+    int elmc_worker_dispatch_needs_render(ElmcWorkerState *state) {
+      if (!state) return 0;
+      return state->dispatch_needs_render;
     }
 
     ElmcValue *elmc_worker_model(ElmcWorkerState *state) {

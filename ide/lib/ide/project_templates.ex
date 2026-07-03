@@ -23,7 +23,7 @@ defmodule Ide.ProjectTemplates do
           | File.posix()
           | Jason.EncodeError.t()
 
-  @template_keys ~w(starter app-minimal watchface-minimal watchface-digital watchface-smoke-screen watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time watchface-weather-animated watchface-poke-battle companion-demo-phone-status companion-demo-protocol-matrix companion-demo-weather-env companion-demo-calendar companion-demo-geolocation companion-demo-storage companion-demo-settings companion-demo-websocket companion-demo-timeline watch-demo-accel watch-demo-vibes watch-demo-data-log watch-demo-app-focus watch-demo-compass watch-demo-dictation watch-demo-health watch-demo-light watch-demo-watch-info watch-demo-drawing-showcase watch-demo-speaker watch-demo-storage watch-demo-launch watch-demo-screen-change watch-demo-system watch-demo-unobstructed watch-demo-wakeup watch-demo-frame watch-demo-time watch-demo-log game-basic game-tiny-bird game-jump-n-run game-2048 game-elmtris)
+  @template_keys ~w(starter app-minimal watchface-minimal watchface-digital watchface-smoke-screen watchface-color-shapes watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time watchface-weather-animated watchface-poke-battle companion-demo-phone-status companion-demo-protocol-matrix companion-demo-weather-env companion-demo-calendar companion-demo-geolocation companion-demo-storage companion-demo-settings companion-demo-websocket companion-demo-timeline watch-demo-accel watch-demo-vibes watch-demo-data-log watch-demo-app-focus watch-demo-compass watch-demo-dictation watch-demo-health watch-demo-light watch-demo-watch-info watch-demo-drawing-showcase watch-demo-speaker watch-demo-storage watch-demo-launch watch-demo-screen-change watch-demo-system watch-demo-unobstructed watch-demo-wakeup watch-demo-frame watch-demo-time watch-demo-log game-basic game-tiny-bird game-jump-n-run game-2048 game-elmtris)
 
   @template_dirs %{
     "starter" => "starter_watch",
@@ -31,6 +31,7 @@ defmodule Ide.ProjectTemplates do
     "watchface-minimal" => "watchface_minimal",
     "watchface-digital" => "watchface_digital",
     "watchface-smoke-screen" => "watchface_smoke_screen",
+    "watchface-color-shapes" => "watchface_color_shapes",
     "watchface-analog" => "watchface_analog",
     "watchface-tutorial-complete" => "watchface_tutorial_complete",
     "watchface-yes" => "watchface_yes",
@@ -103,6 +104,7 @@ defmodule Ide.ProjectTemplates do
              "watchface-minimal",
              "watchface-digital",
              "watchface-smoke-screen",
+             "watchface-color-shapes",
              "watchface-analog",
              "watchface-tutorial-complete",
              "watchface-yes",
@@ -260,6 +262,7 @@ defmodule Ide.ProjectTemplates do
       {"Watchface: Minimal (watch-only)", "watchface-minimal"},
       {"Watchface: Digital (watch-only)", "watchface-digital"},
       {"Watchface: Smoke screen (checkerboard, emulator debug)", "watchface-smoke-screen"},
+      {"Watchface: Color shapes (radial fill debug)", "watchface-color-shapes"},
       {"Watchface: Analog (watch-only)", "watchface-analog"},
       {"Watchface tutorial: Complete", "watchface-tutorial-complete"},
       {"Watchface: YES (watch, protocol, phone)", "watchface-yes"},
@@ -337,6 +340,9 @@ defmodule Ide.ProjectTemplates do
 
       "watchface-smoke-screen" ->
         seed_watch_only_workspace(workspace_path, "watchface_smoke_screen")
+
+      "watchface-color-shapes" ->
+        seed_watch_only_workspace(workspace_path, "watchface_color_shapes")
 
       "watchface-analog" ->
         seed_watch_only_workspace(workspace_path, "watchface_analog")

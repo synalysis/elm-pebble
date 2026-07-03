@@ -13,6 +13,31 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert DebuggerPreview.pebble_color_to_svg(1, "#111111") == "#111111"
   end
 
+  test "pebble_color_to_svg matches emulator screenshot palette for gcolor8" do
+    assert DebuggerPreview.pebble_color_to_svg(0xF8, "#111111") == "#F1AA86"
+    assert DebuggerPreview.pebble_color_to_svg(0xF0, "#111111") == "#E35462"
+    assert DebuggerPreview.pebble_color_to_svg(0xC7, "#111111") == "#007DCE"
+  end
+
+  test "fill_radial pie sector path uses center wedge like runtime gpath" do
+    op = %{x: 0, y: 0, w: 100, h: 100, start_angle: 0, end_angle: 32_768}
+
+    path = DebuggerPreview.pie_sector_path(op)
+
+    assert path =~ "M 50.0"
+    assert path =~ "L "
+    assert String.ends_with?(path, " Z")
+  end
+
+  test "fill_radial pie sector splits wrapped angles" do
+    op = %{x: 0, y: 0, w: 100, h: 100, start_angle: 49_152, end_angle: 16_384}
+
+    paths = DebuggerPreview.pie_sector_paths(op)
+
+    assert length(paths) == 2
+    assert Enum.all?(paths, &String.ends_with?(&1, " Z"))
+  end
+
   test "view_tree_outline renders nested watch view_tree" do
     runtime = %{
       view_tree: %{

@@ -131,10 +131,34 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   end
 
   defp compile_expr_uncached(
-         %{op: :if, cond: cond_expr, then_expr: then_expr, else_expr: else_expr},
+         %{op: :if, cond: cond_expr, then_expr: then_expr, else_expr: else_expr} = expr,
          env,
          counter
        ) do
+    case PlatformStatic.platform_static_and_if(expr) do
+      {:and, macro, polarity, inner_then} ->
+        compile_platform_static_and_if(
+          macro,
+          polarity,
+          inner_then,
+          %{op: :bool_literal, value: true},
+          else_expr,
+          env,
+          counter
+        )
+
+      nil ->
+        case PlatformStatic.platform_static_branch(cond_expr) do
+          {macro, polarity} ->
+            compile_platform_static_if(macro, polarity, then_expr, else_expr, env, counter)
+
+          nil ->
+            compile_runtime_bool_if_expr(cond_expr, then_expr, else_expr, env, counter)
+        end
+    end
+  end
+
+  defp compile_runtime_bool_if_expr(cond_expr, then_expr, else_expr, env, counter) do
     if bool_coercible_branch?(then_expr, env) and bool_coercible_branch?(else_expr, env) do
       {cond_code, cond_ref, counter} = compile_expr(cond_expr, env, counter)
       then_env = RecordCompile.fresh_subexpr_cache(env)
@@ -188,11 +212,23 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
 
   defp compile_expr_uncached(%{op: :call, name: name, args: args} = expr, env, counter)
        when is_binary(name) do
-    module_name = Map.get(env, :__module__, "Main")
+    cond do
+      name in ["&&", "Basics.and", "and"] and match?([_left, _right], args) ->
+        [left, right] = args
 
-    case NativeFunctionCall.compile_scalar(module_name, name, args, env, counter, :native_bool) do
-      {code, value_ref, counter} -> {code, value_ref, counter}
-      :error -> compile_fallback(expr, env, counter)
+        compile_expr(
+          %{op: :if, cond: left, then_expr: right, else_expr: %{op: :bool_literal, value: false}},
+          env,
+          counter
+        )
+
+      true ->
+        module_name = Map.get(env, :__module__, "Main")
+
+        case NativeFunctionCall.compile_scalar(module_name, name, args, env, counter, :native_bool) do
+          {code, value_ref, counter} -> {code, value_ref, counter}
+          :error -> compile_fallback(expr, env, counter)
+        end
     end
   end
 
@@ -238,8 +274,14 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
          env,
          counter
        ) do
-    {code, ref, counter} = compile_expr(value, env, counter)
-    {code, "!(#{ref})", counter}
+    case PlatformStatic.platform_static_branch(value) do
+      {macro, polarity} ->
+        PlatformStatic.compile_native_bool(macro, PlatformStatic.invert_polarity(polarity), counter)
+
+      nil ->
+        {code, ref, counter} = compile_expr(value, env, counter)
+        {code, "!(#{ref})", counter}
+    end
   end
 
   defp compile_expr_uncached(
@@ -247,10 +289,15 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
          env,
          counter
        ) do
-    if union_constructor_case?(expr) do
-      compile_union_constructor_case(subject, branches, env, counter)
-    else
-      compile_fallback(expr, env, counter)
+    case {union_constructor_case?(expr), PlatformStatic.platform_static_branch(expr)} do
+      {true, {macro, polarity}} ->
+        PlatformStatic.compile_native_bool(macro, polarity, counter)
+
+      {true, nil} ->
+        compile_union_constructor_case(subject, branches, env, counter)
+
+      {false, _} ->
+        compile_fallback(expr, env, counter)
     end
   end
 
@@ -739,6 +786,59 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   end
 
   defp union_constructor_case?(_expr), do: false
+
+  defp compile_platform_static_and_if(macro, polarity, inner_then, then_expr, else_expr, env, counter) do
+    then_env = RecordCompile.fresh_subexpr_cache(env)
+    else_env = RecordCompile.fresh_subexpr_cache(env)
+    {then_code, then_ref, counter} = compile_bool_branch(then_expr, then_env, counter)
+    {else_code, else_ref, counter} = compile_bool_branch(else_expr, else_env, counter)
+
+    {round_guard, _} =
+      case polarity do
+        :when_defined -> {"!defined(#{macro})", "defined(#{macro})"}
+        :when_not_defined -> {"defined(#{macro})", "!defined(#{macro})"}
+      end
+
+    {inner_code, inner_ref, counter} = compile_expr(inner_then, env, counter)
+    next = counter + 1
+    out = "native_bool_if_#{next}"
+
+    code = """
+    #{then_code}#{else_code}  #if #{round_guard}
+      const #{@native_bool_c_type} #{out} = #{else_ref};
+    #else
+    #{inner_code}    const #{@native_bool_c_type} #{out} = (#{inner_ref}) ? #{then_ref} : #{else_ref};
+    #endif
+    """
+
+    {code, out, next}
+  end
+
+  defp compile_platform_static_if(macro, polarity, then_expr, else_expr, env, counter) do
+    then_env = RecordCompile.fresh_subexpr_cache(env)
+    else_env = RecordCompile.fresh_subexpr_cache(env)
+    {then_code, then_ref, counter} = compile_bool_branch(then_expr, then_env, counter)
+    {else_code, else_ref, counter} = compile_bool_branch(else_expr, else_env, counter)
+
+    {round_guard, _} =
+      case polarity do
+        :when_defined -> {"!defined(#{macro})", "defined(#{macro})"}
+        :when_not_defined -> {"defined(#{macro})", "!defined(#{macro})"}
+      end
+
+    next = counter + 1
+    out = "native_bool_if_#{next}"
+
+    code = """
+    #{else_code}  #if #{round_guard}
+      const #{@native_bool_c_type} #{out} = #{else_ref};
+    #else
+    #{then_code}    const #{@native_bool_c_type} #{out} = #{then_ref};
+    #endif
+    """
+
+    {code, out, next}
+  end
 
   defp compile_union_constructor_case(subject, branches, env, counter) do
     [%{pattern: pattern} | _] = branches

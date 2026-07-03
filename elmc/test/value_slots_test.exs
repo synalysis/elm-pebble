@@ -91,6 +91,10 @@ defmodule Elmc.Backend.CCodegen.ValueSlotsTest do
     assert ValueSlots.transferred?(ref)
   end
 
+  test "transfer_and_null emits tmp null assignment after ownership transfer" do
+    assert ValueSlots.transfer_and_null("tmp_5") == "tmp_5 = NULL;"
+  end
+
   test "track registers pre-allocated owned ref" do
     ValueSlots.track("owned[3]")
 

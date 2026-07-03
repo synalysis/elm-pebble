@@ -7,7 +7,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime.SceneBuild.ChunkBuild do
   def body do
     """
     #else
-      enum { BUILD_CHUNK_GUARD = 256 };
+      enum { BUILD_CHUNK_GUARD = 1024 };
       ElmcPebbleDrawCmd cmd;
       ElmcSceneWriter writer;
       int skip = 0;

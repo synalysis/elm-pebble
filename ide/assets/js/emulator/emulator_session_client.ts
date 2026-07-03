@@ -96,7 +96,7 @@ export class EmulatorSessionClient {
     }
   }
 
-  async stop() {
+  async stop(reason = "Embedded emulator stopped") {
     if (!this.host.session || this.host.stopping) return
     const session = this.host.session
     this.host.stopping = true
@@ -104,7 +104,7 @@ export class EmulatorSessionClient {
 
     try {
       await postJSON(session.kill_path)
-      this.host.endSession("Embedded emulator stopped")
+      this.host.endSession(reason)
     } catch (error) {
       this.host.setStatus(`Could not stop embedded emulator: ${errMessage(error)}`)
     } finally {

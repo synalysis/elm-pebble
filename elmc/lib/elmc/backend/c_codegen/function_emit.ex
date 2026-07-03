@@ -18,6 +18,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.TypeParsing
   alias Elmc.Backend.CCodegen.Fusion
+  alias Elmc.Backend.CCodegen.FunctionSplit
   alias Elmc.Backend.CCodegen.FunctionCallCompile
   alias Elmc.Backend.CCodegen.ValueSlots
   alias Elmc.Backend.CCodegen.ImmortalStaticList
@@ -1206,6 +1207,76 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     RecordCompile.reset_borrowed_field_refs()
     if return_kind == :boxed, do: ValueSlots.reset(epilogue_lifo: true)
 
+    case_helpers =
+      if collect_generic_helpers? do
+        generic_helper_defs_and_clear()
+      else
+        ""
+      end
+
+    unused_casts =
+      unused_arg_casts(c_arg_bindings, [entry_probe, exit_probe])
+
+    if return_kind == :boxed do
+      case FunctionSplit.try_emit_native_split(
+             decl,
+             module_name,
+             decl_map,
+             native_env,
+             arg_kinds,
+             c_name,
+             entry_probe,
+             exit_probe,
+             unused_casts
+           ) do
+        {:ok, native_def} ->
+          {"", case_helpers <> native_def}
+
+        :error ->
+          compile_native_function_body_unsplit(
+            decl,
+            module_name,
+            c_name,
+            decl_map,
+            native_env,
+            return_kind,
+            arg_kinds,
+            c_arg_bindings,
+            entry_probe,
+            exit_probe,
+            case_helpers
+          )
+      end
+    else
+      compile_native_function_body_unsplit(
+        decl,
+        module_name,
+        c_name,
+        decl_map,
+        native_env,
+        return_kind,
+        arg_kinds,
+        c_arg_bindings,
+        entry_probe,
+        exit_probe,
+        case_helpers
+      )
+    end
+  end
+
+  defp compile_native_function_body_unsplit(
+         decl,
+         module_name,
+         c_name,
+         decl_map,
+         native_env,
+         return_kind,
+         arg_kinds,
+         c_arg_bindings,
+         entry_probe,
+         exit_probe,
+         case_helpers
+       ) do
     {body_code, body_var, _counter} =
       compile_native_body(decl, module_name, decl_map, native_env, return_kind, arg_kinds)
 
@@ -1216,13 +1287,6 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
     unused_casts =
       unused_arg_casts(c_arg_bindings, [body_code, deferred_release_code, entry_probe, exit_probe, "return #{body_var};"])
-
-    case_helpers =
-      if collect_generic_helpers? do
-        generic_helper_defs_and_clear()
-      else
-        ""
-      end
 
     native_def =
       if return_kind == :boxed do

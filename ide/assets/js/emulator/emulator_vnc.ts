@@ -10,6 +10,7 @@ import {
   vncViewportConfigKey,
   vncViewportMode
 } from "./vnc_viewport_crop"
+import {correctVncCanvasColours, platformNeedsVncColourCorrection} from "./pebble_vnc_colours"
 
 export type {EmulatorVncHost}
 
@@ -105,6 +106,8 @@ function vncWebSocketReadyStateLabel(readyState: number | null | undefined): str
 }
 
 export class EmulatorVnc {
+  private colourCorrectionRaf = 0
+
   constructor(host: EmulatorVncHost) {
     this.host = host
   }
@@ -137,6 +140,7 @@ export class EmulatorVnc {
   }
 
   disconnectRfb(rfb: RFB | null | undefined, {reconnecting = false}: {reconnecting?: boolean} = {}): void {
+    this.stopColourCorrection()
     if (reconnecting) this.host.reconnectingVnc = true
     if (rfb) {
       try {
@@ -147,6 +151,28 @@ export class EmulatorVnc {
     }
     this.closeVncChannel()
     this.closeVncSocket()
+  }
+
+  stopColourCorrection(): void {
+    if (this.colourCorrectionRaf) window.cancelAnimationFrame(this.colourCorrectionRaf)
+    this.colourCorrectionRaf = 0
+  }
+
+  startColourCorrection(): void {
+    this.stopColourCorrection()
+    const platform = this.host.session?.platform || this.host.el.dataset.emulatorTarget
+    if (!platformNeedsVncColourCorrection(platform)) return
+
+    const tick = () => {
+      if (this.host.destroyed) return
+      const innerCanvas = this.host.canvas?.querySelector("canvas")
+      if (innerCanvas instanceof HTMLCanvasElement && innerCanvas.width > 0) {
+        correctVncCanvasColours(innerCanvas)
+      }
+      this.colourCorrectionRaf = window.requestAnimationFrame(tick)
+    }
+
+    this.colourCorrectionRaf = window.requestAnimationFrame(tick)
   }
 
   ensurePhoenixSocket(): ReturnType<typeof getUserSocket> {
@@ -760,6 +786,7 @@ export class EmulatorVnc {
       window.clearTimeout(connectTimeout)
       this.stopVncReconnect()
       this.host.vncReconnectAttempts = 0
+      this.startColourCorrection()
     
       this.scheduleVncViewportConfig(rfb, "connect", 100)
       this.scheduleVncViewportConfig(rfb, "connect_1s", 1000)
@@ -912,6 +939,13 @@ export class EmulatorVnc {
     if (refreshFramebuffer) {
       this.requestVncFramebufferRefresh(rfb, fbWidth, fbHeight, reason)
     }
+
+    if (platformNeedsVncColourCorrection(this.host.session?.platform || this.host.el.dataset.emulatorTarget)) {
+      const innerCanvas = this.host.canvas?.querySelector("canvas")
+      if (innerCanvas instanceof HTMLCanvasElement) {
+        correctVncCanvasColours(innerCanvas)
+      }
+    }
   }
 
   shouldRequestVncFramebufferRefresh(reason: string): boolean {
@@ -984,6 +1018,9 @@ export class EmulatorVnc {
     }
 
     if (innerCanvas?.width && innerCanvas?.height) {
+      if (platformNeedsVncColourCorrection(this.host.session?.platform || this.host.el.dataset.emulatorTarget)) {
+        correctVncCanvasColours(innerCanvas)
+      }
       try {
         const context = innerCanvas.getContext("2d")
         if (!context) throw new Error("2d canvas context unavailable")

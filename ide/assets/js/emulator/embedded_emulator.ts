@@ -216,6 +216,7 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
   phoneBridgeReconnectAttempts = 0
   phoneBridgeReconnectWindowStartedAt = 0
   phoneBridgeLastReconnectedAt = 0
+  targetChangeStopInFlight = false
   logFlushScheduled = false
   simulatorDelivery: EmulatorSimulatorDelivery
   sessionClient: EmulatorSessionClient
@@ -461,6 +462,7 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
     this.updateControlButtons()
     this.applyCanvasSize()
     this.syncSimulatorSettingsFromDataset()
+    void this.reconcileSessionWithSelectedTarget()
     if (this.session?.backend_enabled && this.rfb && previousCanvas && previousCanvas !== this.canvas) {
     
       this.reconnectVncAfterDomPatch()
@@ -476,6 +478,12 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
 
     await this.validatePersistedSession()
     if (!this.session) {
+      this.updateControlButtons()
+      return
+    }
+
+    if (this.sessionTargetMismatch()) {
+      await this.stopSessionForTargetChange()
       this.updateControlButtons()
       return
     }
@@ -577,8 +585,8 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
     return this.sessionClient.launch()
   }
 
-  async stop(): ReturnType<InstanceType<typeof EmulatorSessionClient>["stop"]> {
-    return this.sessionClient.stop()
+  async stop(reason?: string): ReturnType<InstanceType<typeof EmulatorSessionClient>["stop"]> {
+    return this.sessionClient.stop(reason)
   }
 
   resolveCanvas(): ReturnType<InstanceType<typeof EmulatorVnc>["resolveCanvas"]> {
@@ -732,6 +740,12 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
     if (this.installing || !this.installReady()) return
     const session = this.session
     if (!session) return
+    if (this.sessionTargetMismatch()) {
+      this.setStatus(
+        `Cannot install: emulator is running ${session.platform} but ${this.selectedEmulatorTarget()} is selected. Launch again.`
+      )
+      return
+    }
     const installSessionId = session.id
     this.installing = true
     this.updateControlButtons()
@@ -2304,7 +2318,49 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
     return crop.toDataURL("image/png")
   }
 
+  selectedEmulatorTarget(): string | undefined {
+    const target = this.el.dataset.emulatorTarget?.trim()
+    return target || undefined
+  }
+
+  sessionTargetMismatch(): boolean {
+    const selected = this.selectedEmulatorTarget()
+    const sessionPlatform = this.session?.platform
+    return !!(selected && sessionPlatform && sessionPlatform !== selected)
+  }
+
+  reconcileSessionWithSelectedTarget(): Promise<void> | undefined {
+    if (!this.session || this.stopping || this.targetChangeStopInFlight || this.sessionEnded) return
+    if (!this.sessionTargetMismatch()) return
+    this.targetChangeStopInFlight = true
+    return this.stopSessionForTargetChange().finally(() => {
+      this.targetChangeStopInFlight = false
+    })
+  }
+
+  async stopSessionForTargetChange(): Promise<void> {
+    const previousPlatform = this.session?.platform
+    const selected = this.selectedEmulatorTarget()
+    if (!previousPlatform || !selected || previousPlatform === selected) return
+
+    const message = `Watch model changed to ${selected}; stopped previous ${previousPlatform} session. Launch again to run on the selected model.`
+    if (this.session) {
+      await this.stop(message)
+      return
+    }
+
+    this.endSession(message)
+  }
+
   warnSessionScreenMismatch(): void {
+    if (this.sessionTargetMismatch()) {
+      const selected = this.selectedEmulatorTarget()
+      this.appendLog(
+        `emulator session platform ${this.session?.platform} differs from selected target ${selected}; relaunch required`
+      )
+      return
+    }
+
     const target = this.targetScreenSize()
     const sessionScreen = this.session?.screen
     if (!sessionScreen?.width || !sessionScreen?.height) return
@@ -2513,7 +2569,8 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
       !this.sessionEnded &&
       this.sessionAlive &&
       !this.launching &&
-      !this.stopping
+      !this.stopping &&
+      !this.sessionTargetMismatch()
     )
   }
 

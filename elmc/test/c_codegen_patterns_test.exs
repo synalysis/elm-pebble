@@ -1818,6 +1818,57 @@ defmodule Elmc.CCodegenPatternsTest do
     refute body =~ "elmc_lambda_"
   end
 
+  test "list literal ownership transfer nulls tmp refs after take" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+  type Corner = Temp | Wind
+
+    modes : Bool -> List Corner
+    modes hasWind =
+        List.filterMap identity
+            [ Just Temp
+            , if hasWind then Just Wind else Nothing
+            ]
+
+    init _ = ( { n = List.length (modes True) }, Platform.Cmd.none )
+    update _ m = ( m, Platform.Cmd.none )
+    view m = Ui.toUiNode [ Ui.clear Color.white, Ui.text (String.fromInt m.n) ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/list_filter_map_identity_tmp_null", __DIR__)
+    out_dir = Path.expand("tmp/list_filter_map_identity_tmp_null_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    body =
+      generated_c
+      |> String.split("elmc_fn_Main_modes_native(ElmcValue **out, const bool hasWind) {", parts: 2)
+      |> Enum.at(1, "")
+      |> String.split("\n}\n\n", parts: 2)
+      |> List.first()
+
+    assert body =~ "elmc_list_from_values_take"
+    assert body =~ "tmp_"
+    assert body =~ ~r/tmp_\d+ = NULL;/
+  end
+
   test "List.concatMap over range inlines loop without closure or runtime concatMap" do
     source = """
     module Main exposing (main)

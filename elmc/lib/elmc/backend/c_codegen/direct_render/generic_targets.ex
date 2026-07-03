@@ -13,6 +13,13 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
 
   @platform_wrapper_entries ~w(init update subscriptions main view)
 
+  @stream_view_ui_helpers [
+    {"Pebble.Ui", "toUiNode"},
+    {"Pebble.Ui", "windowStack"},
+    {"Pebble.Ui", "window"},
+    {"Pebble.Ui", "canvasLayer"}
+  ]
+
   @spec prune_generic_view?(Types.codegen_opts(), Types.function_decl_map(), target_set()) ::
           boolean()
   def prune_generic_view?(opts, decl_map, direct_targets) do
@@ -234,7 +241,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
     case Map.fetch(decl_map, view_target) do
       {:ok, _} ->
         if opts[:stream_view_fallback] == true do
-          MapSet.new([view_target])
+          MapSet.new([view_target | @stream_view_ui_helpers])
         else
           intersection =
             GenericReachability.reachable_targets(

@@ -48,6 +48,29 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.Geometry do
 
   def svg_path_d(_op, _close_shape?), do: ""
 
+  @trig_max_angle 65_536
+  @pie_arc_steps 24
+
+  @spec pie_sector_path(svg_op()) :: String.t()
+  def pie_sector_path(op) when is_map(op) do
+    op |> pie_sector_paths() |> Enum.join(" ")
+  end
+
+  def pie_sector_path(_), do: ""
+
+  @spec pie_sector_paths(svg_op()) :: [String.t()]
+  def pie_sector_paths(op) when is_map(op) do
+    start_angle = op.start_angle || 0
+    end_angle = op.end_angle || 0
+    metrics = oval_metrics(op)
+
+    angle_sectors(start_angle, end_angle)
+    |> Enum.map(&single_pie_sector_path(metrics, &1.start, &1.end))
+    |> Enum.reject(&(&1 == ""))
+  end
+
+  def pie_sector_paths(_), do: []
+
   @spec arc_path(svg_op()) :: String.t()
   def arc_path(op) when is_map(op) do
     x = op.x || 0
@@ -110,17 +133,92 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.Geometry do
   end
 
   def pebble_color_to_svg(value, _fallback) when is_integer(value) do
-    gcolor8_to_svg(value)
+    value |> Ide.Emulator.GColor8.display_rgb() |> hex_rgb_from_tuple()
   end
 
   def pebble_color_to_svg(_value, fallback), do: fallback
 
-  @spec pebble_angle_to_rad(integer()) :: float()
-  defp pebble_angle_to_rad(angle) when is_integer(angle) do
-    angle * 2.0 * :math.pi() / 65_536.0 - :math.pi() / 2.0
+  @spec angle_sectors(integer(), integer()) :: [%{start: integer(), end: integer()}]
+  defp angle_sectors(start_angle, end_angle) do
+    start = normalize_pebble_angle(start_angle)
+    finish = normalize_pebble_angle(end_angle)
+
+    cond do
+      start == finish ->
+        []
+
+      end_angle >= @trig_max_angle ->
+        [%{start: start, end: @trig_max_angle}]
+
+      finish > start ->
+        [%{start: start, end: finish}]
+
+      true ->
+        [%{start: start, end: @trig_max_angle}, %{start: 0, end: finish}]
+    end
   end
 
-  defp pebble_angle_to_rad(_), do: -:math.pi() / 2.0
+  @spec normalize_pebble_angle(integer()) :: integer()
+  defp normalize_pebble_angle(angle) when is_integer(angle) do
+    rem(rem(angle, @trig_max_angle) + @trig_max_angle, @trig_max_angle)
+  end
+
+  @spec oval_metrics(svg_op()) :: %{cx: float(), cy: float(), rx: float(), ry: float()}
+  defp oval_metrics(op) do
+    x = op.x || 0
+    y = op.y || 0
+    w = max(op.w || 1, 1)
+    h = max(op.h || 1, 1)
+
+    %{
+      cx: x + w / 2.0,
+      cy: y + h / 2.0,
+      rx: w / 2.0,
+      ry: h / 2.0
+    }
+  end
+
+  @spec single_pie_sector_path(%{cx: float(), cy: float(), rx: float(), ry: float()}, integer(), integer()) ::
+          String.t()
+  defp single_pie_sector_path(_metrics, _start, finish) when finish <= 0, do: ""
+
+  defp single_pie_sector_path(_metrics, start_angle, end_angle) when end_angle <= start_angle,
+    do: ""
+
+  defp single_pie_sector_path(%{cx: cx, cy: cy, rx: rx, ry: ry}, start_angle, end_angle) do
+    span = end_angle - start_angle
+
+    arc_points =
+      for step <- 0..@pie_arc_steps do
+        angle = start_angle + div(span * step, @pie_arc_steps)
+        point_on_oval(cx, cy, rx, ry, angle)
+      end
+
+    {sx, sy} = hd(arc_points)
+
+    rest =
+      arc_points
+      |> tl()
+      |> Enum.map_join(" ", fn {x, y} ->
+        "L #{Float.round(x, 2)} #{Float.round(y, 2)}"
+      end)
+
+    "M #{Float.round(cx, 2)} #{Float.round(cy, 2)} L #{Float.round(sx, 2)} #{Float.round(sy, 2)} " <>
+      rest <> " Z"
+  end
+
+  @spec point_on_oval(float(), float(), float(), float(), integer()) :: {float(), float()}
+  defp point_on_oval(cx, cy, rx, ry, angle) do
+    rad = pebble_angle_to_rad(angle)
+    {cx + rx * :math.cos(rad), cy + ry * :math.sin(rad)}
+  end
+
+  @spec pebble_angle_to_rad(integer()) :: float()
+  def pebble_angle_to_rad(angle) when is_integer(angle) do
+    angle * 2.0 * :math.pi() / @trig_max_angle - :math.pi() / 2.0
+  end
+
+  def pebble_angle_to_rad(_), do: -:math.pi() / 2.0
 
   @spec argb8_to_svg(integer()) :: String.t()
   defp argb8_to_svg(argb) when is_integer(argb) do
@@ -130,34 +228,16 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.Geometry do
     blue = Bitwise.band(argb, 0xFF)
 
     if alpha >= 255 do
-      hex_rgb(red, green, blue)
+      {red, green, blue} |> Ide.Emulator.SdkScreenshotStyle.correct_rgb_tuple() |> hex_rgb_from_tuple()
     else
       a = Float.round(alpha / 255.0, 2)
+      {red, green, blue} = Ide.Emulator.SdkScreenshotStyle.correct_rgb_tuple({red, green, blue})
       "rgba(#{red}, #{green}, #{blue}, #{a})"
     end
   end
 
-  @spec gcolor8_to_svg(integer()) :: String.t()
-  defp gcolor8_to_svg(packed) when is_integer(packed) do
-    alpha = Bitwise.band(Bitwise.bsr(packed, 6), 0x03)
-    red = Bitwise.band(Bitwise.bsr(packed, 4), 0x03)
-    green = Bitwise.band(Bitwise.bsr(packed, 2), 0x03)
-    blue = Bitwise.band(packed, 0x03)
-
-    gcolor8_rgba_float(red, green, blue, alpha)
-  end
-
-  @spec gcolor8_rgba_float(integer(), integer(), integer(), integer()) :: String.t()
-  defp gcolor8_rgba_float(red2, green2, blue2, alpha2) do
-    red = gcolor8_channel_to_8bit(red2)
-    green = gcolor8_channel_to_8bit(green2)
-    blue = gcolor8_channel_to_8bit(blue2)
-    alpha = Float.round(gcolor8_channel_to_8bit(alpha2) / 255.0, 2)
-    "rgba(#{red}, #{green}, #{blue}, #{alpha})"
-  end
-
-  @spec gcolor8_channel_to_8bit(integer()) :: integer()
-  defp gcolor8_channel_to_8bit(value) when is_integer(value), do: max(0, min(3, value)) * 85
+  @spec hex_rgb_from_tuple({integer(), integer(), integer()}) :: String.t()
+  defp hex_rgb_from_tuple({red, green, blue}), do: hex_rgb(red, green, blue)
 
   @spec hex_rgb(integer(), integer(), integer()) :: String.t()
   defp hex_rgb(red, green, blue)

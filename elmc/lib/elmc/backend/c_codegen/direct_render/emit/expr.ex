@@ -232,16 +232,28 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
   end
 
   def emit_expr(
-        %{op: :if, cond: cond_expr, then_expr: then_expr, else_expr: else_expr},
+        %{op: :if, cond: cond_expr, then_expr: then_expr, else_expr: else_expr} = expr,
         env,
         counter
       ) do
-    case PlatformStatic.platform_static_macro(cond_expr) do
-      macro when is_binary(macro) ->
-        emit_platform_static_expr(macro, then_expr, else_expr, env, counter)
+    case PlatformStatic.platform_static_and_if(expr) do
+      {:and, macro, polarity, inner_then} ->
+        emit_platform_static_and_if(macro, polarity, inner_then, then_expr, else_expr, env, counter)
 
       nil ->
-        emit_runtime_if_expr(cond_expr, then_expr, else_expr, env, counter)
+        case PlatformStatic.platform_static_and_if(cond_expr) do
+          {:and, macro, polarity, inner_then} ->
+            emit_platform_static_and_if(macro, polarity, inner_then, then_expr, else_expr, env, counter)
+
+          nil ->
+            case PlatformStatic.platform_static_branch(cond_expr) do
+              {macro, polarity} ->
+                emit_platform_static_expr(macro, polarity, then_expr, else_expr, env, counter)
+
+              nil ->
+                emit_runtime_if_expr(cond_expr, then_expr, else_expr, env, counter)
+            end
+        end
     end
   end
 
@@ -947,7 +959,47 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
     end
   end
 
-  defp emit_platform_static_expr(macro, then_expr, else_expr, env, counter) do
+  defp emit_platform_static_and_if(macro, polarity, inner_then, then_expr, else_expr, env, counter) do
+    hoisted_before = Process.get(:elmc_hoisted_native_int_inits, %{})
+
+    with {:ok, else_code, counter} <- emit_expr(else_expr, env, counter),
+         {:ok, then_code, counter} <- emit_expr(then_expr, env, counter) do
+      {inner_cond_code, inner_cond_ref, inner_cond_release, counter} =
+        if Host.native_bool_expr?(inner_then, env) do
+          {code, ref, c} = Host.compile_native_bool_expr(inner_then, env, counter)
+          {code, ref, "", c}
+        else
+          {code, var, c} = Host.compile_expr(inner_then, env, counter)
+          {code, "elmc_as_int(#{var}) != 0", Release.release_var(var, "  "), c}
+        end
+
+      active_branch =
+        If.if_code(inner_cond_code, inner_cond_ref, then_code, else_code, inner_cond_release)
+
+      {round_guard, _active_guard} =
+        case polarity do
+          :when_defined -> {"!defined(#{macro})", "defined(#{macro})"}
+          :when_not_defined -> {"defined(#{macro})", "!defined(#{macro})"}
+        end
+
+      code = """
+      #if #{round_guard}
+      #{else_code}#else
+      #{active_branch}#endif
+      """
+
+      branch_hoists =
+        hoisted_before
+        |> Hoist.hoisted_native_int_branch_preamble()
+        |> Hoist.drop_branch_only_redeclared_hoists(active_branch, else_code)
+
+      {:ok, branch_hoists <> code, counter}
+    else
+      _ -> :error
+    end
+  end
+
+  defp emit_platform_static_expr(macro, polarity, then_expr, else_expr, env, counter) do
     hoisted_before = Process.get(:elmc_hoisted_native_int_inits, %{})
 
     with {:ok, then_code, counter} <- emit_expr(then_expr, env, counter),
@@ -959,11 +1011,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
 
       code =
         branch_hoists <>
-          """
-          #if defined(#{macro})
-          #{then_code}#else
-          #{else_code}#endif
-          """
+          PlatformStatic.wrap_branches(macro, polarity, then_code, else_code)
 
       {:ok, code, counter}
     else
