@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.CCodegen.ValueSlotsTest do
   use ExUnit.Case, async: true
 
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.ValueSlots
 
   setup do
@@ -56,6 +57,10 @@ defmodule Elmc.Backend.CCodegen.ValueSlotsTest do
 
   test "release_stmt uses elmc_release for temps" do
     assert ValueSlots.release_stmt("tmp_1") == "elmc_release(tmp_1);"
+  end
+
+  test "release_stmt_line does not double semicolon for temp release" do
+    assert ValueSlots.release_stmt_line("tmp_1") == "elmc_release(tmp_1);"
   end
 
   test "owned_declaration and epilogue cleanup release owned slots via array lifo" do
@@ -133,7 +138,24 @@ defmodule Elmc.Backend.CCodegen.ValueSlotsTest do
              "ELMC_RELEASE(owned[0]);\nowned[0] = NULL;"
   end
 
-  test "owned_reassign_prefix is empty on first assign and releases on reassign under epilogue lifo" do
+  test "ensure_fresh_assign_target allocates a new owned slot on reassignment under epilogue lifo" do
+    ValueSlots.reset(epilogue_lifo: true)
+    {ref0, _} = ValueSlots.alloc()
+    ValueSlots.mark_written(ref0)
+
+    assert ValueSlots.ensure_fresh_assign_target(ref0) == "owned[1]"
+    assert ValueSlots.slot_count() == 2
+  end
+
+  test "ensure_fresh_assign_target allocates owned slot after function out was written" do
+    ValueSlots.reset(epilogue_lifo: true)
+    ValueSlots.mark_function_out_written()
+
+    assert ValueSlots.ensure_fresh_assign_target(RcRuntimeEmit.function_out_ref()) == "owned[0]"
+    assert ValueSlots.slot_count() == 1
+  end
+
+  test "owned_reassign_prefix is empty outside loops even after a prior assign under epilogue lifo" do
     ValueSlots.reset(epilogue_lifo: true)
     {ref, _} = ValueSlots.alloc()
 
@@ -141,21 +163,25 @@ defmodule Elmc.Backend.CCodegen.ValueSlotsTest do
 
     ValueSlots.mark_written(ref)
 
-    assert ValueSlots.owned_reassign_prefix(ref) ==
-             "ELMC_RELEASE(owned[0]);\nowned[0] = NULL;\n"
+    assert ValueSlots.owned_reassign_prefix(ref) == ""
   end
 
-  test "owned_reassign_prefix releases on every assign inside loops under epilogue lifo" do
+  test "owned_reassign_prefix releases on loop iteration reassign under epilogue lifo" do
     ValueSlots.reset(epilogue_lifo: true)
     {ref, _} = ValueSlots.alloc()
 
     ValueSlots.push_loop()
+    assert ValueSlots.owned_reassign_prefix(ref) == ""
+
+    ValueSlots.mark_written(ref)
+
     assert ValueSlots.owned_reassign_prefix(ref) ==
              "ELMC_RELEASE(owned[0]);\nowned[0] = NULL;\n"
+
     ValueSlots.pop_loop()
   end
 
-  test "boxed_decl owned assignment skips reassign prefix on first assign under epilogue lifo" do
+  test "boxed_decl owned reassignment uses a fresh slot under epilogue lifo" do
     ValueSlots.reset(epilogue_lifo: true)
     {ref, _} = ValueSlots.alloc()
 
@@ -163,6 +189,6 @@ defmodule Elmc.Backend.CCodegen.ValueSlotsTest do
              "owned[0] = elmc_record_get_index(model, 0);"
 
     assert ValueSlots.boxed_decl(ref, "elmc_record_get_index(model, 1)") ==
-             "ELMC_RELEASE(owned[0]);\nowned[0] = NULL;\nowned[0] = elmc_record_get_index(model, 1);"
+             "owned[1] = elmc_record_get_index(model, 1);"
   end
 end

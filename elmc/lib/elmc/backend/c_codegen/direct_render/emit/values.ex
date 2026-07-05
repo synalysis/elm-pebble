@@ -481,7 +481,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
             {
               """
               #{expr_code}
-                int64_t #{int_var} = elmc_as_int(#{expr_var});
+                int64_t #{int_var} = elmc_as_int_number(#{expr_var});
                 #{Release.release_var(expr_var, "                ")}
               """,
               int_var,

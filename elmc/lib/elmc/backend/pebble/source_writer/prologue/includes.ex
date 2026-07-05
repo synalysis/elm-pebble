@@ -30,6 +30,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.Prologue.Includes do
     #define ELMC_PEBBLE_HEAP_LOG 0
     #endif
     #include "elmc_pebble.h"
+    #include "elmc_generated.h"
 
     """
   end

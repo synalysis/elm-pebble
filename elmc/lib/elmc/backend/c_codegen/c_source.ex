@@ -189,6 +189,9 @@ defmodule Elmc.Backend.CCodegen.CSource do
           content == "" ->
             {["" | acc], depth, switch_depth, pending_if_body}
 
+          content == ";" ->
+            {acc, depth, switch_depth, pending_if_body}
+
           preprocessor_line?(content) ->
             {[content | acc], depth, switch_depth, false}
 
@@ -260,7 +263,7 @@ defmodule Elmc.Backend.CCodegen.CSource do
         switch_depth
 
       is_integer(switch_depth) and not String.starts_with?(content, "}") and not case_label?(content) ->
-        switch_depth + 1
+        max(switch_depth + 1, depth)
 
       true ->
         depth

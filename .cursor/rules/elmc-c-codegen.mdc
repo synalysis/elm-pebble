@@ -1,0 +1,183 @@
+---
+description: How elmc should emit RC-style C — CATCH, single return, *out tail writes, owned slots
+alwaysApply: true
+---
+
+# elmc C Code Generation (RC ABI)
+
+Generated C for **RC-required** Elm functions must follow a consistent control-flow and ownership shape. Codegen lives in `elmc/lib/elmc/backend/c_codegen/` (`function_emit.ex`, `rc_runtime_emit.ex`, `value_slots.ex`, `if_compile.ex`, `case_compile.ex`, `constructor_tag_case.ex`, `cmd_compile.ex`, `function_call_compile.ex`).
+
+These rules apply to **boxed RC functions** (`static RC fn(ElmcValue **out, …)`), **native RC helpers** (`*_native(ElmcValue **out, …)` / `bool *out`), and **RC closure wrappers** that call them.
+
+## Function shell
+
+RC functions use **one exit path** for the status code:
+
+```c
+static RC elmc_fn_Module_name(ElmcValue **out, …) {
+  RC Rc = RC_SUCCESS;
+  ElmcValue *owned[N] = {0};   /* omit entirely when N == 0 */
+
+  CATCH_BEGIN
+    /* body */
+  CATCH_END
+
+  elmc_release_array_lifo(owned, DIM(owned));   /* omit when no owned slots */
+  return Rc;
+}
+```
+
+**Required**
+
+- Declare `RC Rc = RC_SUCCESS;` once at the top.
+- Wrap the fallible body in `CATCH_BEGIN` / `CATCH_END` whenever the body uses `CHECK_RC`, `CHECK_RC_TO`, or `switch`/`case` with `break;` (see `function_emit.wrap_rc_function_body/4`).
+- End with **exactly one** `return Rc;` (or `return Rc;` after epilogue cleanup). Do **not** scatter `return RC_ERR_*` / `return NULL` inside the body when `__rc_catch__` is active — use `CHECK_RC` so control falls through to epilogue cleanup and the single return.
+
+**Forbidden in RC bodies**
+
+- Multiple `return` statements for error paths (`if (Rc != RC_SUCCESS) return Rc;`, `return NULL`, `ELMC_RC_LOG_FAIL` + early return).
+- Legacy blocks: `RC __call_rc = fn(…); if (__call_rc != RC_SUCCESS) { … return …; }` — use `Rc = fn(…); CHECK_RC(Rc);` inside `CATCH_BEGIN` instead.
+- Value-returning `_take` shims or direct `ElmcValue *x = elmc_*()` assignments for **allocating** runtime calls in RC mode.
+
+## Allocating calls
+
+Every allocating runtime function returns `RC` and writes through an out-pointer:
+
+```c
+Rc = elmc_new_int(out, 42);
+CHECK_RC(Rc);
+
+Rc = elmc_list_append(out, left, right);
+CHECK_RC(Rc);
+
+Rc = elmc_cmd2(out, ELMC_PEBBLE_CMD_COMPANION_SEND, tag, value);
+CHECK_RC(Rc);
+
+Rc = elmc_fn_Other_callee(out, arg1, arg2);
+CHECK_RC(Rc);
+```
+
+**Pattern:** `Rc = callee(out_slot, …);` then `CHECK_RC(Rc);` — never `callee_take(…)` or assign the return value of an allocator.
+
+**Out slot argument**
+
+- Function result: `out` (parameter name; codegen marker `ELMC_FN_OUT` → `*out` in assignments).
+- Owned scratch: `&owned[i]`.
+- Never pass `out` to **intermediate** subexpression calls when a scratch slot is enough — only the **tail** result should target `out` (see below).
+
+## Function tail: write `*out` in the last statement
+
+When an expression is the **last** thing a function (or mutually exclusive branch) produces, assign **directly into `out`**, not into an owned slot followed by publish.
+
+**Good — if/else is the tail; each branch finishes in `*out`:**
+
+```c
+if (endAngle < startAngle) {
+  Rc = elmc_fn_…_coloredRadial_native(&owned[0], …);
+  CHECK_RC(Rc);
+  Rc = elmc_fn_…_coloredRadial_native(&owned[1], …);
+  CHECK_RC(Rc);
+  Rc = elmc_list_append(out, owned[0], owned[1]);
+  CHECK_RC(Rc);
+} else {
+  Rc = elmc_fn_…_coloredRadial_native(out, …);
+  CHECK_RC(Rc);
+}
+/* no *out = owned[0]; owned[0] = NULL; after the if */
+```
+
+**Good — switch/case branch with constant zero; no owned array needed:**
+
+```c
+if (elmc_union_tag_matches(message, ELMC_UNION_…)) {
+  *out = elmc_int_zero();
+} else {
+  *out = elmc_int_zero();
+}
+```
+
+**Good — case branch tail call:**
+
+```c
+Rc = elmc_fn_Main_scheduleCompanionFetches(out, model, owned[13]);
+CHECK_RC(Rc);
+```
+
+**Bad — redundant owned root + publish:**
+
+```c
+Rc = elmc_list_append(&owned[0], …);
+…
+*out = owned[0];
+owned[0] = NULL;
+```
+
+**Bad — final cmd into owned then publish:**
+
+```c
+Rc = elmc_cmd2(&owned[2], …);
+CHECK_RC(Rc);
+*out = owned[2];
+owned[2] = NULL;
+```
+
+Codegen enables this via `RcRuntimeEmit.function_tail_env/1`, `compile_call_result_slot/2`, and branch env `__branch_out__` → `ELMC_FN_OUT` in `if_compile`, `case_compile`, and `constructor_tag_case`. After a branch writes `*out`, `ValueSlots.normalize_branch_result_slot/1` must emit **nothing** (no second publish).
+
+**When not to use `out` mid-branch**
+
+If a branch already wrote `*out` for an earlier statement, a **later** statement in the same branch must use `&owned[i]`, then publish once at the branch end — only one value can be the branch result.
+
+## Owned scratch slots (`owned[]`)
+
+- Declare `ElmcValue *owned[N] = {0};` only when `ValueSlots.slot_count() > 0`. **Do not** emit a one-element array used only to hop through `*out`.
+- Use owned slots for **intermediate** values, operands, and subexpressions.
+- After `_take` / transfer into `out` or another owned slot, null the source: `owned[i] = NULL;`.
+- Release at epilogue: `elmc_release_array_lifo(owned, DIM(owned));` (or heap-owned variant on large Pebble builds).
+- Do not emit per-statement `elmc_release(owned[i])` in epilogue-LIFO functions except loop reuse (`owned_reassign_prefix`).
+
+## Non-RC closures returning `ElmcValue *`
+
+Partial applications and legacy wrappers that return a boxed value (not `RC`) still use CATCH for callee errors:
+
+```c
+static ElmcValue *elmc_partial_ref_N(ElmcValue **args, int argc, …) {
+  ElmcValue *out = NULL;
+  RC Rc = RC_SUCCESS;
+  CATCH_BEGIN
+    Rc = elmc_fn_Module_callee(&out, call_args, arity);
+    CHECK_RC(Rc);
+  CATCH_END
+  return out;
+}
+```
+
+Single return of `out`; no nested `if (__call_rc != RC_SUCCESS) return NULL;`.
+
+## Switch / case in RC functions
+
+- Prefer constructor-tag `switch` when patterns allow.
+- Each case body ends with `break;` (inside `CATCH_BEGIN`, `CHECK_RC` failures break to `CATCH_END`).
+- Branch-final results target `out` when the case expression is the tail of the enclosing function.
+
+## Native scalar RC (`bool *out`, etc.)
+
+Same CATCH + single-`return Rc` shell. Final native bool/int is written with `*out = …` inside CATCH (see `wrap_native_bool_rc_function_body/…` in `function_emit.ex`).
+
+## Tests
+
+When changing codegen shape, add or update tests under `elmc/test/` that assert **generated C text** (not only “compiles”):
+
+- `constructor_tag_case_fn_out_test.exs` — tail `out`, no double publish.
+- `companion_cmd_param_slots_test.exs` — intermediates in `owned[]`, final cmd into `out`.
+- Focused RC tests for list append, patterns, cmds.
+
+Rebuild a template (for example yes watchface) and spot-check `elmc_generated.c` for the patterns above.
+
+## Quick checklist (code review)
+
+1. One `return Rc` (or one `return out` for `ElmcValue *` closures)?
+2. Body wrapped in `CATCH_BEGIN` / `CATCH_END` when using `CHECK_RC`?
+3. All allocators use `Rc = fn(&slot, …); CHECK_RC(Rc);`?
+4. Tail result written directly to `out` / `*out`, not `owned[0]` + publish?
+5. `owned[]` omitted when empty?
+6. No `_take`, no `__call_rc` early returns, no `tmp_` releases in RC epilogue-LIFO paths?

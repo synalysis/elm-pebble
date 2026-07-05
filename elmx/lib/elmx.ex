@@ -64,7 +64,7 @@ defmodule Elmx do
 
     source_overrides = Map.get(opts, :source_overrides, %{})
 
-    with {:ok, project} <- Bridge.load_project_from_sources(project_dir, source_overrides),
+    with {:ok, project} <- project_for_compile(project_dir, source_overrides, opts),
          {:ok, ir0} <- Lowerer.lower_project(project),
          ir <- maybe_strip_dead_code(ir0, entry_module, opts[:strip_dead_code]),
          ir_sha256 <- IRDigest.sha256(ir),
@@ -150,4 +150,15 @@ defmodule Elmx do
 
   defp ir_revision_key(_project_dir, %{revision: rev}) when is_binary(rev) and rev != "", do: rev
   defp ir_revision_key(project_dir, _opts), do: "project:" <> project_dir
+
+  @spec project_for_compile(String.t(), map(), compile_options()) ::
+          {:ok, ElmEx.Frontend.Project.t()} | {:error, term()}
+  defp project_for_compile(_project_dir, _source_overrides, %{project: %ElmEx.Frontend.Project{} = project}),
+    do: {:ok, project}
+
+  defp project_for_compile(_project_dir, _source_overrides, %{"project" => %ElmEx.Frontend.Project{} = project}),
+    do: {:ok, project}
+
+  defp project_for_compile(project_dir, source_overrides, _opts),
+    do: Bridge.load_project_from_sources(project_dir, source_overrides)
 end

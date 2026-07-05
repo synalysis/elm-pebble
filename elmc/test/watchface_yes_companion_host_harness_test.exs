@@ -7,7 +7,7 @@ defmodule Elmc.WatchfaceYesCompanionHostHarnessTest do
   @ide_dir Path.expand("../../ide", __DIR__)
 
   @compile_opts [
-    direct_render_only: false,
+    direct_render_only: true,
     prune_runtime: true,
     prune_native_wrappers: true,
     pebble_int32: true,
@@ -79,6 +79,8 @@ defmodule Elmc.WatchfaceYesCompanionHostHarnessTest do
     refute out =~ "scene_radial=0"
     assert out =~ "scene_cmds="
     refute out =~ "scene_cmds=0"
+    refute out =~ "scene_text_origin=1"
+    assert out =~ "scene_text_origin=0"
     refute out =~ "repeat_view=0"
   end
 
@@ -248,15 +250,18 @@ defmodule Elmc.WatchfaceYesCompanionHostHarnessTest do
       {
         int radial = 0;
         int fill_color = 0;
+        int text_at_origin = 0;
         int byte_offset = 0;
         while (byte_offset < app.scene.byte_count) {
           ElmcPebbleDrawCmd cmd;
           if (elmc_pebble_scene_decode_record(app.scene.bytes, app.scene.byte_count, &byte_offset, &cmd) != 0) return 18;
           if (cmd.kind == ELMC_PEBBLE_DRAW_FILL_RADIAL) radial++;
           if (cmd.kind == ELMC_PEBBLE_DRAW_FILL_COLOR) fill_color++;
+          if (cmd.kind == ELMC_PEBBLE_DRAW_TEXT && cmd.p3 > 0 && cmd.p1 == 0 && cmd.p2 == 0) text_at_origin++;
         }
-        printf("scene_radial=%d scene_fill_color=%d scene_cmds=%d\\n", radial, fill_color, app.scene.command_count);
+        printf("scene_radial=%d scene_fill_color=%d scene_cmds=%d scene_text_origin=%d\\n", radial, fill_color, app.scene.command_count, text_at_origin);
         if (radial < 2) return 19;
+        if (text_at_origin > 0) return 21;
       }
 
       for (int i = 0; i < 16; i++) {

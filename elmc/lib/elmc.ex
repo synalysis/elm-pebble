@@ -32,7 +32,7 @@ defmodule Elmc do
     opts = normalize_compile_opts(opts)
     entry_module = opts[:entry_module] || "Main"
 
-    with {:ok, project} <- Bridge.load_project(project_dir),
+    with {:ok, project} <- project_for_compile(project_dir, opts),
          {:ok, ir0} <- Lowerer.lower_project(project),
          ir0 = PipeChain.desugar_project(ir0),
          ir <- maybe_strip_dead_code(ir0, entry_module, opts[:strip_dead_code]),
@@ -115,4 +115,14 @@ defmodule Elmc do
       {:ok, {opts, generated_c}}
     end
   end
+
+  @spec project_for_compile(String.t(), compile_options()) ::
+          {:ok, ElmEx.Frontend.Project.t()} | {:error, term()}
+  defp project_for_compile(_project_dir, %{project: %ElmEx.Frontend.Project{} = project}),
+    do: {:ok, project}
+
+  defp project_for_compile(_project_dir, %{"project" => %ElmEx.Frontend.Project{} = project}),
+    do: {:ok, project}
+
+  defp project_for_compile(project_dir, _opts), do: Bridge.load_project(project_dir)
 end

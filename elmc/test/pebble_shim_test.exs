@@ -2022,6 +2022,8 @@ defmodule Elmc.PebbleShimTest do
     |> File.read!()
     |> String.replace("import Companion.Watch as CompanionWatch\n", "")
     |> String.replace("CompanionWatch.sendWatchToPhone RequestUpdate", "Cmd.none")
+    |> String.replace("CompanionWatch.sendWatchToPhone RequestSunData", "Cmd.none")
+    |> String.replace("CompanionWatch.sendWatchToPhone RequestWeather", "Cmd.none")
     |> String.replace("CompanionWatch.onPhoneToWatch FromPhone", "Sub.none")
     |> then(&File.write!(main_path, &1))
 
@@ -2046,14 +2048,9 @@ defmodule Elmc.PebbleShimTest do
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
-    assert String.contains?(generated, "static RC elmc_fn_Main_pointAt_native")
+    assert String.contains?(generated, "static RC elmc_fn_Yes_Render_pointAt_native")
 
-    point_at_body =
-      generated
-      |> String.split("static RC elmc_fn_Main_pointAt_native")
-      |> List.last()
-      |> String.split("ElmcValue *elmc_fn_Main_", parts: 2)
-      |> hd()
+    point_at_body = Elmc.Test.CCodegenExtract.fn_body(generated, "elmc_fn_Yes_Render_pointAt_native")
 
     assert point_at_body =~ "native_trig_theta_"
     assert point_at_body =~ "generated_trig_sin_double(native_trig_theta_"
@@ -2124,35 +2121,15 @@ defmodule Elmc.PebbleShimTest do
         if (elmc_fn_Main_faceOps(&face_ops, face_args, 1) != RC_SUCCESS) return 7;
         if (!face_ops || face_ops->tag != ELMC_TAG_LIST || list_length(face_ops) <= 0) return 7;
 
-        ElmcValue *dial_w = elmc_new_int_take(72);
-        ElmcValue *dial_h = elmc_new_int_take(84);
-        ElmcValue *dial_r = elmc_new_int_take(64);
-        ElmcValue *dial_args[4] = { model, dial_w, dial_h, dial_r };
-        ElmcValue *dial = NULL;
-        if (elmc_fn_Main_drawDial(&dial, dial_args, 4) != RC_SUCCESS) return 8;
-        if (!dial || dial->tag != ELMC_TAG_LIST || list_length(dial) <= 0) return 9;
-        elmc_release(dial_args[1]);
-        elmc_release(dial_args[2]);
-        elmc_release(dial_args[3]);
-
-        ElmcValue *point_cx = elmc_new_int_take(72);
-        ElmcValue *point_cy = elmc_new_int_take(84);
-        ElmcValue *point_r = elmc_new_int_take(64);
-        ElmcValue *point_a = elmc_new_int_take(0);
-        ElmcValue *point_args[4] = { point_cx, point_cy, point_r, point_a };
-        ElmcValue *point = elmc_fn_Main_pointAt(point_args, 4);
+        ElmcValue *point = NULL;
+        if (elmc_fn_Yes_Render_pointAt_native(&point, 72, 84, 32, 0) != RC_SUCCESS) return 11;
         ElmcValue *point_x = elmc_record_get_index(point, 0);
         ElmcValue *point_y = elmc_record_get_index(point, 1);
-        if (!point_x || !point_y || elmc_as_int(point_x) != 72 || elmc_as_int(point_y) != 20) return 12;
+        if (!point_x || !point_y || elmc_as_int(point_x) != 72 || elmc_as_int(point_y) != 52) return 12;
         elmc_release(point_x);
         elmc_release(point_y);
         elmc_release(point);
-        elmc_release(point_args[0]);
-        elmc_release(point_args[1]);
-        elmc_release(point_args[2]);
-        elmc_release(point_args[3]);
 
-        elmc_release(dial);
         elmc_release(face_ops);
         elmc_release(model);
 
@@ -2253,23 +2230,26 @@ defmodule Elmc.PebbleShimTest do
 
     refute pebble_h =~ "ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE"
     assert pebble_c =~
-             "#if defined(ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE) && defined(ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW)"
+             "#if defined(ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW) && \\\n        (defined(ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE) || !defined(ELMC_PEBBLE_PLATFORM))"
     assert pebble_c =~ "#if !defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)"
-    refute pebble_c =~
+    assert pebble_c =~
              "#elif defined(ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW) && !defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)"
     assert pebble_c =~ "BUILD_CHUNK_GUARD"
-    assert generated =~ "elmc_fn_Main_view("
+    assert generated =~ "elmc_fn_Main_view_commands_append"
+    assert pebble_c =~ "#define ELMC_PEBBLE_APPEND_FALLBACK_SCENE 1"
+    refute generated =~ "elmc_fn_Main_faceOps("
+    refute generated =~ "RC elmc_fn_Main_view("
     assert generated =~ "elmc_malloc(ELMC_OWNED_SLOT_COUNT * sizeof(ElmcValue *)"
 
     report = File.read!(Path.join(out_dir, "elmc_stack_report.json")) |> Jason.decode!()
 
     assert Enum.any?(report["functions"], fn entry ->
-             entry["function"] == "Main.drawDial" and entry["level"] == "risk"
+             entry["function"] == "Yes.Render.drawDial" and entry["level"] == "risk"
            end)
 
-    assert generated =~ "elmc_fn_Main_drawDial_part0_native"
-    refute generated =~ "elmc_fn_Main_sunsetAngle(NULL"
-    refute generated =~ "elmc_fn_Main_sunWindow(NULL"
+    assert generated =~ "elmc_fn_Yes_Render_drawDial_commands_append"
+    refute generated =~ "elmc_fn_Yes_Render_sunsetAngle(NULL"
+    refute generated =~ "elmc_fn_Yes_Render_sunWindow(NULL"
     refute generated =~ "enum { ELMC_OWNED_SLOT_COUNT = 56 }"
   end
 

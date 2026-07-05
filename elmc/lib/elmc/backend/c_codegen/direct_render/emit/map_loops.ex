@@ -3,7 +3,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
 
   alias Elmc.Backend.CCodegen.DirectRender.CommandDef
   alias Elmc.Backend.CCodegen.CSource
+  alias Elmc.Backend.CCodegen.DirectRender.Emit.Catch
   alias Elmc.Backend.CCodegen.DirectRender.Emit.Release
+  alias Elmc.Backend.CCodegen.DirectRender.ListLoopPlans
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
@@ -307,40 +309,125 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
 
     prefix_release_code = Release.release_vars(prefix_releases, "        ")
 
-    case Host.direct_static_list_items(list_expr) do
-      {:ok, static_items} ->
-        if transparent? do
-          case Host.direct_emit_static_render_items(static_items, env, counter) do
-            {:ok, code, counter} -> {:ok, prefix_code <> code <> prefix_release_code, counter}
-            :error -> :error
-          end
-        else
-          case Host.direct_static_draw_table_loop(static_items, env, counter) do
-            {:ok, table_code, counter} ->
-              {:ok, prefix_code <> table_code <> prefix_release_code, counter}
+    cond do
+      transparent? ->
+        emit_map_loop_transparent(
+          fun_expr,
+          list_expr,
+          prefix_code,
+          prefix_release_code,
+          env,
+          counter
+        )
 
-            :error ->
-              map_static_list_loop(
-                native_append?,
+      true ->
+        case ListLoopPlans.analyze(list_expr, env) do
+          {:ok, plans} ->
+            if ListLoopPlans.fusion_plans?(plans) do
+              ListLoopPlans.emit_map_loops(
+                plans,
+                {target_module, target_name, prefix_args},
                 prefix_code,
                 prefix_refs,
                 prefix_release_code,
-                static_items,
-                c_name,
-                next,
                 env,
                 counter
               )
-          end
+            else
+              emit_map_loop_default(
+                fun_expr,
+                list_expr,
+                {target_module, target_name, prefix_args},
+                prefix_code,
+                prefix_refs,
+                prefix_release_code,
+                native_append?,
+                c_name,
+                next,
+                env,
+                counter,
+                decl_map
+              )
+            end
+
+          :error ->
+            emit_map_loop_default(
+              fun_expr,
+              list_expr,
+              {target_module, target_name, prefix_args},
+              prefix_code,
+              prefix_refs,
+              prefix_release_code,
+              native_append?,
+              c_name,
+              next,
+              env,
+              counter,
+              decl_map
+            )
+        end
+    end
+  end
+
+  defp emit_map_loop_transparent(fun_expr, list_expr, prefix_code, prefix_release_code, env, counter) do
+    case Host.direct_static_list_items(list_expr) do
+      {:ok, static_items} ->
+        case Host.direct_emit_static_render_items(static_items, env, counter) do
+          {:ok, code, counter} -> {:ok, prefix_code <> code <> prefix_release_code, counter}
+          :error -> :error
         end
 
-      :error when transparent? ->
+      :error ->
         case Host.direct_range_bounds(list_expr, env, counter) do
           {:ok, range_code, first_ref, last_ref, counter} ->
-            transparent_lambda_map_range_loop(fun_expr, range_code, first_ref, last_ref, env, counter)
+            case transparent_lambda_map_range_loop(fun_expr, range_code, first_ref, last_ref, env, counter) do
+              {:ok, body_code, counter} ->
+                {:ok, prefix_code <> body_code <> prefix_release_code, counter}
+
+              :error ->
+                :error
+            end
 
           :error ->
             :error
+        end
+    end
+  end
+
+  defp emit_map_loop_default(
+         _fun_expr,
+         list_expr,
+         target,
+         prefix_code,
+         prefix_refs,
+         prefix_release_code,
+         native_append?,
+         c_name,
+         next,
+         env,
+         counter,
+         decl_map
+       ) do
+    {target_module, target_name, prefix_args} = target
+
+    case Host.direct_static_list_items(list_expr) do
+      {:ok, static_items} ->
+        case Host.direct_static_draw_table_loop(static_items, env, counter) do
+          {:ok, table_code, counter} ->
+            {:ok, prefix_code <> table_code <> prefix_release_code, counter}
+
+          :error ->
+            map_static_list_loop(
+              native_append?,
+              prefix_code,
+              prefix_refs,
+              prefix_release_code,
+              static_items,
+              c_name,
+              next,
+              env,
+              counter
+            )
         end
 
       :error ->
@@ -435,12 +522,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
       elmc_int_t direct_index_#{next} = 0;
       elmc_int_t direct_step_#{next} = (#{first_ref} <= #{last_ref}) ? 1 : -1;
       for (elmc_int_t direct_item_i_#{next} = #{first_ref}; Rc == RC_SUCCESS; direct_item_i_#{next} += direct_step_#{next}) {
-         RC direct_rc_#{next} = #{c_name}_commands_append_native(#{arg_list}, writer);
-         if (direct_rc_#{next} != RC_SUCCESS) {
-           Rc = direct_rc_#{next};
-     #{prefix_release_code}
-           break;
-         }
+         #{Catch.assign_command_append("#{c_name}_commands_append_native(#{arg_list}, writer)", prefix_release_code)}
          if (direct_item_i_#{next} == #{last_ref}) break;
          direct_index_#{next} += 1;
        }
@@ -482,14 +564,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
      #{prefix_bindings}
          direct_call_args_#{next}[#{prefix_count}] = direct_index_value_#{next};
          direct_call_args_#{next}[#{prefix_count + 1}] = direct_item_value_#{next};
-         RC direct_rc_#{next} = #{c_name}_commands_append(direct_call_args_#{next}, #{prefix_count + 2}, writer);
          elmc_release(direct_index_value_#{next});
          elmc_release(direct_item_value_#{next});
-         if (direct_rc_#{next} != RC_SUCCESS) {
-           Rc = direct_rc_#{next};
-     #{prefix_release_code}
-           break;
-         }
+         #{Catch.assign_command_append("#{c_name}_commands_append(direct_call_args_#{next}, #{prefix_count + 2}, writer)", prefix_release_code)}
          if (direct_item_i_#{next} == #{last_ref}) break;
          direct_index_#{next} += 1;
        }
@@ -520,13 +597,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
       )
 
     loop_body = """
-           RC direct_rc_#{next} = #{c_name}_commands_append_native(#{arg_list}, writer);
-           if (direct_rc_#{next} != RC_SUCCESS) {
-             Rc = direct_rc_#{next};
-             #{Release.release_var(list_var, "             ")}
-     #{prefix_release_code}
-             break;
-           }
+           #{Catch.assign_command_append("#{c_name}_commands_append_native(#{arg_list}, writer)", "#{Release.release_var(list_var, "             ")}\n#{prefix_release_code}")}
     """
 
     {:ok,
@@ -719,12 +790,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
      #{range_code}
       elmc_int_t direct_step_#{next} = (#{first_ref} <= #{last_ref}) ? 1 : -1;
       for (elmc_int_t direct_item_i_#{next} = #{first_ref}; Rc == RC_SUCCESS; direct_item_i_#{next} += direct_step_#{next}) {
-         RC direct_rc_#{next} = #{c_name}_commands_append_native(#{arg_list}, writer);
-         if (direct_rc_#{next} != RC_SUCCESS) {
-           Rc = direct_rc_#{next};
-     #{prefix_release_code}
-           break;
-         }
+         #{Catch.assign_command_append("#{c_name}_commands_append_native(#{arg_list}, writer)", prefix_release_code)}
          if (direct_item_i_#{next} == #{last_ref}) break;
        }
      #{prefix_release_code}
@@ -762,13 +828,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
          ElmcValue *direct_call_args_#{next}[#{max(prefix_count + 1, 1)}] = {0};
      #{prefix_bindings}
          direct_call_args_#{next}[#{prefix_count}] = direct_item_value_#{next};
-         RC direct_rc_#{next} = #{c_name}_commands_append(direct_call_args_#{next}, #{prefix_count + 1}, writer);
          elmc_release(direct_item_value_#{next});
-         if (direct_rc_#{next} != RC_SUCCESS) {
-           Rc = direct_rc_#{next};
-     #{prefix_release_code}
-           break;
-         }
+         #{Catch.assign_command_append("#{c_name}_commands_append(direct_call_args_#{next}, #{prefix_count + 1}, writer)", prefix_release_code)}
          if (direct_item_i_#{next} == #{last_ref}) break;
        }
      #{prefix_release_code}
@@ -794,13 +855,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
       Enum.join(prefix_refs ++ [head_native], ", ")
 
     loop_body = """
-           RC direct_rc_#{next} = #{c_name}_commands_append_native(#{arg_list}, writer);
-           if (direct_rc_#{next} != RC_SUCCESS) {
-             Rc = direct_rc_#{next};
-             #{Release.release_var(list_var, "             ")}
-     #{prefix_release_code}
-             break;
-           }
+           #{Catch.assign_command_append("#{c_name}_commands_append_native(#{arg_list}, writer)", "#{Release.release_var(list_var, "             ")}\n#{prefix_release_code}")}
     """
 
     {:ok,
@@ -869,12 +924,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
         arg_list = Enum.join(prefix_refs ++ ["#{index}"], ", ")
 
         """
-          RC direct_rc_static_#{index} = #{c_name}_commands_append_native(#{arg_list}, writer);
-          if (direct_rc_static_#{index} != RC_SUCCESS) {
-            Rc = direct_rc_static_#{index};
-            #{prefix_release_code}
-            break;
-          }
+          #{Catch.assign_command_append("#{c_name}_commands_append_native(#{arg_list}, writer)", prefix_release_code)}
         """
       end)
 
@@ -910,13 +960,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
           ElmcValue *direct_call_args_#{next}[#{max(prefix_count + 1, 1)}] = {0};
         #{prefix_bindings}
           direct_call_args_#{next}[#{prefix_count}] = #{item_var};
-          RC direct_rc_#{next} = #{c_name}_commands_append(direct_call_args_#{next}, #{prefix_count + 1}, writer);
+          Rc = #{c_name}_commands_append(direct_call_args_#{next}, #{prefix_count + 1}, writer);
           #{Release.release_var(item_var, "          ")}
-          if (direct_rc_#{next} != RC_SUCCESS) {
-            Rc = direct_rc_#{next};
-            #{prefix_release_code}
-            break;
-          }
+          #{Catch.check_rc(prefix_release_code)}
         """
 
         {acc <> snippet, c2}
@@ -943,12 +989,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
         arg_list = Enum.join(prefix_refs ++ ["#{index}", "#{index}"], ", ")
 
         """
-          RC direct_rc_static_#{index} = #{c_name}_commands_append_native(#{arg_list}, writer);
-          if (direct_rc_static_#{index} != RC_SUCCESS) {
-            Rc = direct_rc_static_#{index};
-            #{prefix_release_code}
-            break;
-          }
+          #{Catch.assign_command_append("#{c_name}_commands_append_native(#{arg_list}, writer)", prefix_release_code)}
         """
       end)
 
@@ -989,14 +1030,10 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
         #{prefix_bindings}
           direct_call_args_#{next}[#{prefix_count}] = #{index_var};
           direct_call_args_#{next}[#{prefix_count + 1}] = #{item_var};
-          RC direct_rc_#{next} = #{c_name}_commands_append(direct_call_args_#{next}, #{prefix_count + 2}, writer);
+          Rc = #{c_name}_commands_append(direct_call_args_#{next}, #{prefix_count + 2}, writer);
           #{Release.release_var(index_var, "          ")}
           #{Release.release_var(item_var, "          ")}
-          if (direct_rc_#{next} != RC_SUCCESS) {
-            Rc = direct_rc_#{next};
-            #{prefix_release_code}
-            break;
-          }
+          #{Catch.check_rc(prefix_release_code)}
         """
 
         {acc <> snippet, next_c}
@@ -1169,15 +1206,10 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
     #{prefix_bindings}
         direct_call_args_#{next}[#{prefix_count}] = direct_index_value_#{next};
         direct_call_args_#{next}[#{prefix_count + 1}] = direct_item_value_#{next};
-        RC direct_rc_#{next} = #{c_name}_commands_append(direct_call_args_#{next}, #{arg_count}, writer);
         elmc_release(direct_index_value_#{next});
         elmc_release(direct_item_value_#{next});
-        if (direct_rc_#{next} != RC_SUCCESS) {
-          Rc = direct_rc_#{next};
-          #{Release.release_var(list_var, "     ")}
-    #{loop_prefix_release_code}
-          break;
-        }
+        Rc = #{c_name}_commands_append(direct_call_args_#{next}, #{arg_count}, writer);
+        #{Catch.check_rc("#{Release.release_var(list_var, "     ")}\n#{loop_prefix_release_code}")}
         direct_index_#{next} += 1;
       }
     } else {
@@ -1190,14 +1222,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
     #{prefix_bindings}
         direct_call_args_#{next}[#{prefix_count}] = direct_index_value_#{next};
         direct_call_args_#{next}[#{prefix_count + 1}] = direct_node_#{next}->head;
-        RC direct_rc_#{next} = #{c_name}_commands_append(direct_call_args_#{next}, #{arg_count}, writer);
         elmc_release(direct_index_value_#{next});
-        if (direct_rc_#{next} != RC_SUCCESS) {
-          Rc = direct_rc_#{next};
-          #{Release.release_var(list_var, "     ")}
-    #{loop_prefix_release_code}
-          break;
-        }
+        Rc = #{c_name}_commands_append(direct_call_args_#{next}, #{arg_count}, writer);
+        #{Catch.check_rc("#{Release.release_var(list_var, "     ")}\n#{loop_prefix_release_code}")}
         direct_index_#{next} += 1;
         direct_cursor_#{next} = direct_node_#{next}->tail;
       }
@@ -1244,14 +1271,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
         ElmcValue *direct_call_args_#{next}[#{max(arg_count, 1)}] = {0};
     #{prefix_bindings}
     #{index_binding}        direct_call_args_#{next}[#{item_arg_index}] = direct_item_value_#{next};
-        RC direct_rc_#{next} = #{c_name}_commands_append(direct_call_args_#{next}, #{arg_count}, writer);
+        Rc = #{c_name}_commands_append(direct_call_args_#{next}, #{arg_count}, writer);
     #{index_release}        elmc_release(direct_item_value_#{next});
-        if (direct_rc_#{next} != RC_SUCCESS) {
-          Rc = direct_rc_#{next};
-          #{Release.release_var(list_var, "     ")}
-    #{loop_prefix_release_code}
-          break;
-        }
+        #{Catch.check_rc("#{Release.release_var(list_var, "     ")}\n#{loop_prefix_release_code}")}
     #{index_inc}      }
     } else
     """
@@ -1287,14 +1309,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
         ElmcValue *direct_call_args_#{next}[#{max(arg_count, 1)}] = {0};
     #{prefix_bindings}
         direct_call_args_#{next}[#{prefix_count}] = direct_item_value_#{next};
-        RC direct_rc_#{next} = #{c_name}_commands_append(direct_call_args_#{next}, #{arg_count}, writer);
         elmc_release(direct_item_value_#{next});
-        if (direct_rc_#{next} != RC_SUCCESS) {
-          Rc = direct_rc_#{next};
-          #{Release.release_var(list_var, "     ")}
-    #{loop_prefix_release_code}
-          break;
-        }
+        Rc = #{c_name}_commands_append(direct_call_args_#{next}, #{arg_count}, writer);
+        #{Catch.check_rc("#{Release.release_var(list_var, "     ")}\n#{loop_prefix_release_code}")}
       }
     } else {
       ElmcValue *direct_cursor_#{next} = #{list_var};
@@ -1303,13 +1320,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
         ElmcValue *direct_call_args_#{next}[#{max(arg_count, 1)}] = {0};
     #{prefix_bindings}
         direct_call_args_#{next}[#{prefix_count}] = direct_node_#{next}->head;
-        RC direct_rc_#{next} = #{c_name}_commands_append(direct_call_args_#{next}, #{arg_count}, writer);
-        if (direct_rc_#{next} != RC_SUCCESS) {
-          Rc = direct_rc_#{next};
-          #{Release.release_var(list_var, "     ")}
-    #{loop_prefix_release_code}
-          break;
-        }
+        Rc = #{c_name}_commands_append(direct_call_args_#{next}, #{arg_count}, writer);
+        #{Catch.check_rc("#{Release.release_var(list_var, "     ")}\n#{loop_prefix_release_code}")}
         direct_cursor_#{next} = direct_node_#{next}->tail;
       }
     }

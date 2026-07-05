@@ -5,6 +5,8 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.ValueSlots
 
+  defp val_expr(ref) when is_binary(ref), do: RcRuntimeEmit.value_expr(ref)
+
   @runtime_source_comments %{
     "elmc_list_all" => "List.all",
     "elmc_list_any" => "List.any",
@@ -44,8 +46,8 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
         :int_list ->
           """
             #{runtime_source_comment_line("elmc_list_length", 6)}elmc_int_t #{count} = 0;
-            if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
-              ElmcIntListPayload *_int_list_payload_#{loop_id} = (ElmcIntListPayload *)#{list_var}->payload;
+            if (#{val_expr(list_var)} && #{val_expr(list_var)}->tag == ELMC_TAG_INT_LIST) {
+              ElmcIntListPayload *_int_list_payload_#{loop_id} = (ElmcIntListPayload *)#{val_expr(list_var)}->payload;
               #{count} = _int_list_payload_#{loop_id} ? _int_list_payload_#{loop_id}->length : 0;
             }
           """
@@ -53,7 +55,7 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
         :cons ->
           """
             #{runtime_source_comment_line("elmc_list_length", 6)}elmc_int_t #{count} = 0;
-            ElmcValue *#{cursor} = #{list_var};
+            ElmcValue *#{cursor} = #{val_expr(list_var)};
             while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
               ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
               #{count} += 1;
@@ -64,11 +66,11 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
         :native_linked ->
           """
             #{runtime_source_comment_line("elmc_list_length", 6)}elmc_int_t #{count} = 0;
-            if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
-              ElmcIntListPayload *_int_list_payload_#{loop_id} = (ElmcIntListPayload *)#{list_var}->payload;
+            if (#{val_expr(list_var)} && #{val_expr(list_var)}->tag == ELMC_TAG_INT_LIST) {
+              ElmcIntListPayload *_int_list_payload_#{loop_id} = (ElmcIntListPayload *)#{val_expr(list_var)}->payload;
               #{count} = _int_list_payload_#{loop_id} ? _int_list_payload_#{loop_id}->length : 0;
             } else {
-              ElmcValue *#{cursor} = #{list_var};
+              ElmcValue *#{cursor} = #{val_expr(list_var)};
               while (#{cursor} && #{cursor}->tag == ELMC_TAG_INT_SPINE && #{cursor}->payload != NULL) {
                 #{count} += 1;
                 #{cursor} = ((ElmcIntSpine *)#{cursor}->payload)->tail;
@@ -79,11 +81,11 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
         _ ->
           """
             #{runtime_source_comment_line("elmc_list_length", 6)}elmc_int_t #{count} = 0;
-            if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
-              ElmcIntListPayload *_int_list_payload_#{loop_id} = (ElmcIntListPayload *)#{list_var}->payload;
+            if (#{val_expr(list_var)} && #{val_expr(list_var)}->tag == ELMC_TAG_INT_LIST) {
+              ElmcIntListPayload *_int_list_payload_#{loop_id} = (ElmcIntListPayload *)#{val_expr(list_var)}->payload;
               #{count} = _int_list_payload_#{loop_id} ? _int_list_payload_#{loop_id}->length : 0;
             } else {
-              ElmcValue *#{cursor} = #{list_var};
+              ElmcValue *#{cursor} = #{val_expr(list_var)};
               while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
                 ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
                 #{count} += 1;
@@ -183,6 +185,8 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
           pos_integer()
         ) :: String.t()
   def emit_int_list_cons_assign(env, out, head, tail, loop_id, opts \\ []) do
+    head = val_expr(head)
+    tail = val_expr(tail)
     buf = "int_list_cons_buf_#{loop_id}"
     len = "int_list_cons_tail_len_#{loop_id}"
 
@@ -211,6 +215,25 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
         ""
       end
 
+    fast_path_assign =
+      RcRuntimeEmit.mutually_exclusive_assign_into(
+        env,
+        out,
+        "elmc_list_from_int_array",
+        "#{buf}, #{len} + 1"
+      )
+
+    slow_path_assign =
+      RcRuntimeEmit.mutually_exclusive_allocator_assign(
+        env,
+        out,
+        "elmc_list_cons",
+        "#{head}, #{tail}",
+        declare_out?: false
+      )
+
+    if ValueSlots.owned_ref?(out), do: ValueSlots.mark_written(out)
+
     """
     #{init}if (#{tail} && #{tail}->tag == ELMC_TAG_INT_LIST && #{head} && (#{head}->tag == ELMC_TAG_INT || #{head}->tag == ELMC_TAG_CHAR)) {
       ElmcIntListPayload *_ilp_#{loop_id} = (ElmcIntListPayload *)#{tail}->payload;
@@ -220,10 +243,10 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
       for (int _ii_#{loop_id} = 0; _ii_#{loop_id} < #{len}; _ii_#{loop_id}++) {
         #{buf}[_ii_#{loop_id} + 1] = _ilp_#{loop_id}->values[_ii_#{loop_id}];
       }
-      #{RcRuntimeEmit.assign_into(env, out, "elmc_list_from_int_array", "#{buf}, #{len} + 1")}
+      #{fast_path_assign}
     #{fast_path_releases}
     } else {
-      #{RcRuntimeEmit.allocator_assign(env, out, "elmc_list_cons", "#{head}, #{tail}", declare_out?: false)}
+      #{slow_path_assign}
     #{fast_path_releases}
     }
     """
@@ -250,30 +273,49 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
   @spec forward_head_name(pos_integer()) :: String.t()
   def forward_head_name(loop_id), do: forward_head(loop_id)
 
-  @spec emit_forward_list_init(pos_integer()) :: {String.t(), String.t()}
-  def emit_forward_list_init(loop_id) do
-    head = forward_head(loop_id)
-    tail = forward_tail(loop_id)
+  @spec emit_forward_list_init(pos_integer(), map()) :: {String.t(), String.t()}
+  def emit_forward_list_init(loop_id, env \\ %{}) do
+    if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
+      {head_ref, _} = ValueSlots.alloc()
+      tail = forward_tail(loop_id)
 
-    code = """
-      ElmcValue *#{head} = elmc_list_nil();
-      ElmcValue **#{tail} = &#{head};
-    """
+      code = """
+        #{head_ref} = elmc_list_nil();
+        ElmcValue **#{tail} = &#{head_ref};
+      """
 
-    {code, head}
+      {code, head_ref}
+    else
+      head = forward_head(loop_id)
+      tail = forward_tail(loop_id)
+
+      code = """
+        ElmcValue *#{head} = elmc_list_nil();
+        ElmcValue **#{tail} = &#{head};
+      """
+
+      {code, head}
+    end
   end
 
   @spec emit_forward_list_append(pos_integer(), String.t(), keyword()) :: String.t()
   def emit_forward_list_append(loop_id, item_expr, opts \\ []) do
     append_id = Keyword.get(opts, :append_id, loop_id)
-    cell = forward_cell(append_id)
     tail = forward_tail(loop_id)
     owned? = Keyword.get(opts, :owned, false)
     env = Keyword.get(opts, :env, %{})
 
     cons =
+      if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
+        {cell_ref, _} = ValueSlots.alloc()
+        cell_ref
+      else
+        forward_cell(append_id)
+      end
+
+    cons_body =
       RcRuntimeEmit.list_cons_retain_assign(
-        cell,
+        cons,
         "#{item_expr}, elmc_list_nil()",
         env,
         return_on_fail?: false
@@ -286,18 +328,39 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
         ""
       end
 
+    abandon_cons =
+      if RcRuntimeEmit.rc_allocator_emit_mode?(env) and ValueSlots.owned_ref?(cons) do
+        ValueSlots.abandon_stmt(cons) <> "\n        "
+      else
+        ""
+      end
+
     """
-        #{cons}
-        #{release_owned}if (#{cell}) {
-          *#{tail} = #{cell};
-          #{tail} = &((ElmcCons *)#{cell}->payload)->tail;
+        #{cons_body}
+        #{release_owned}if (#{cons}) {
+          *#{tail} = #{cons};
+          #{tail} = &((ElmcCons *)#{cons}->payload)->tail;
         }
+        #{abandon_cons}
     """
   end
 
-  @spec finalize_forward_cursor_list(pos_integer(), String.t()) :: String.t()
-  def finalize_forward_cursor_list(loop_id, out_var) do
-    "ElmcValue *#{out_var} = #{forward_head(loop_id)};\n"
+  @spec finalize_forward_cursor_list(pos_integer(), String.t(), keyword()) :: String.t()
+  def finalize_forward_cursor_list(_loop_id, out_var, opts \\ []) do
+    env = Keyword.get(opts, :env, %{})
+    head = Keyword.fetch!(opts, :head)
+
+    cond do
+      RcRuntimeEmit.rc_allocator_emit_mode?(env) and ValueSlots.owned_ref?(out_var) and
+          ValueSlots.owned_ref?(head) ->
+        RcRuntimeEmit.transfer_assignment(out_var, head)
+
+      RcRuntimeEmit.rc_allocator_emit_mode?(env) and ValueSlots.owned_ref?(out_var) ->
+        RcRuntimeEmit.assign_stmt(out_var, head)
+
+      true ->
+        "ElmcValue *#{out_var} = #{head};\n"
+    end
   end
 
   @spec emit_forward_list_append_sublist(pos_integer(), String.t(), keyword()) :: String.t()
@@ -307,7 +370,7 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     sub_node = "list_concat_map_sub_node_#{loop_id}"
 
     """
-    ElmcValue *#{sub_cursor} = #{sublist_expr};
+    ElmcValue *#{sub_cursor} = #{val_expr(sublist_expr)};
     while (#{sub_cursor} && #{sub_cursor}->tag == ELMC_TAG_LIST && #{sub_cursor}->payload != NULL) {
       ElmcCons *#{sub_node} = (ElmcCons *)#{sub_cursor}->payload;
       #{emit_forward_list_append(loop_id, "#{sub_node}->head", env: env)}
@@ -366,15 +429,15 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     cursor = "list_spine_cursor_#{loop_id}"
 
     """
-    if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_INT_LIST) {
-      ElmcIntListPayload *_ilp_#{loop_id} = (ElmcIntListPayload *)#{list_ref}->payload;
+    if (#{val_expr(list_ref)} && #{val_expr(list_ref)}->tag == ELMC_TAG_INT_LIST) {
+      ElmcIntListPayload *_ilp_#{loop_id} = (ElmcIntListPayload *)#{val_expr(list_ref)}->payload;
       int _ilen_#{loop_id} = _ilp_#{loop_id} ? _ilp_#{loop_id}->length : 0;
       for (int _ii_#{loop_id} = 0; _ii_#{loop_id} < _ilen_#{loop_id}; _ii_#{loop_id}++) {
         const elmc_int_t #{head_native_var} = _ilp_#{loop_id}->values[_ii_#{loop_id}];
     #{inner_body}
       }
     } else {
-      ElmcValue *#{cursor} = #{list_ref};
+      ElmcValue *#{cursor} = #{val_expr(list_ref)};
       while (#{cursor} && #{cursor}->tag == ELMC_TAG_INT_SPINE && #{cursor}->payload != NULL) {
         const elmc_int_t #{head_native_var} = ((ElmcIntSpine *)#{cursor}->payload)->head;
     #{inner_body}
@@ -386,8 +449,8 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
 
   defp emit_native_list_int_head_loop_only(list_ref, loop_id, head_native_var, inner_body) do
     """
-    if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_INT_LIST) {
-      ElmcIntListPayload *_ilp_#{loop_id} = (ElmcIntListPayload *)#{list_ref}->payload;
+    if (#{val_expr(list_ref)} && #{val_expr(list_ref)}->tag == ELMC_TAG_INT_LIST) {
+      ElmcIntListPayload *_ilp_#{loop_id} = (ElmcIntListPayload *)#{val_expr(list_ref)}->payload;
       int _ilen_#{loop_id} = _ilp_#{loop_id} ? _ilp_#{loop_id}->length : 0;
       for (int _ii_#{loop_id} = 0; _ii_#{loop_id} < _ilen_#{loop_id}; _ii_#{loop_id}++) {
         const elmc_int_t #{head_native_var} = _ilp_#{loop_id}->values[_ii_#{loop_id}];
@@ -402,7 +465,7 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     node = "list_walk_node_#{loop_id}"
 
     """
-    ElmcValue *#{cursor} = #{list_ref};
+    ElmcValue *#{cursor} = #{val_expr(list_ref)};
     while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
       ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
       const elmc_int_t #{head_native_var} = elmc_as_int(#{node}->head);
@@ -417,15 +480,15 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     node = "list_walk_node_#{loop_id}"
 
     """
-    if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_INT_LIST) {
-      ElmcIntListPayload *_ilp_#{loop_id} = (ElmcIntListPayload *)#{list_ref}->payload;
+    if (#{val_expr(list_ref)} && #{val_expr(list_ref)}->tag == ELMC_TAG_INT_LIST) {
+      ElmcIntListPayload *_ilp_#{loop_id} = (ElmcIntListPayload *)#{val_expr(list_ref)}->payload;
       int _ilen_#{loop_id} = _ilp_#{loop_id} ? _ilp_#{loop_id}->length : 0;
       for (int _ii_#{loop_id} = 0; _ii_#{loop_id} < _ilen_#{loop_id}; _ii_#{loop_id}++) {
         const elmc_int_t #{head_native_var} = _ilp_#{loop_id}->values[_ii_#{loop_id}];
     #{inner_body}
       }
     } else {
-      ElmcValue *#{cursor} = #{list_ref};
+      ElmcValue *#{cursor} = #{val_expr(list_ref)};
       while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
         ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
         const elmc_int_t #{head_native_var} = elmc_as_int(#{node}->head);
@@ -463,11 +526,19 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     RcRuntimeEmit.check_rc_take(head_var, "elmc_new_int", list_expr, env)
   end
 
+  defp int_spine_head_take(head_var, list_expr, env) do
+    if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
+      RcRuntimeEmit.check_rc_take(head_var, "elmc_int_spine_head_boxed", list_expr, env)
+    else
+      "ElmcValue *#{head_var} = elmc_int_spine_head_boxed_take(#{list_expr});"
+    end
+  end
+
   defp emit_boxed_head_int_list_walk_only(list_ref, loop_id, head_var, inner_body, opts) do
     env = Keyword.get(opts, :env, %{})
     """
-    if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_INT_LIST) {
-      ElmcIntListPayload *_ilp_#{loop_id} = (ElmcIntListPayload *)#{list_ref}->payload;
+    if (#{val_expr(list_ref)} && #{val_expr(list_ref)}->tag == ELMC_TAG_INT_LIST) {
+      ElmcIntListPayload *_ilp_#{loop_id} = (ElmcIntListPayload *)#{val_expr(list_ref)}->payload;
       int _ilen_#{loop_id} = _ilp_#{loop_id} ? _ilp_#{loop_id}->length : 0;
       for (int _ii_#{loop_id} = 0; _ii_#{loop_id} < _ilen_#{loop_id}; _ii_#{loop_id}++) {
         #{int_list_head_take(head_var, "_ilp_#{loop_id}->values[_ii_#{loop_id}]", env)}
@@ -484,7 +555,7 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     node = "list_walk_node_#{loop_id}"
 
     """
-    ElmcValue *#{cursor} = #{list_ref};
+    ElmcValue *#{cursor} = #{val_expr(list_ref)};
     while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
       ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
       ElmcValue *#{head_var} = #{node}->head;
@@ -499,8 +570,8 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     cursor = "list_spine_cursor_#{loop_id}"
 
     """
-    if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_INT_LIST) {
-      ElmcIntListPayload *_ilp_#{loop_id} = (ElmcIntListPayload *)#{list_ref}->payload;
+    if (#{val_expr(list_ref)} && #{val_expr(list_ref)}->tag == ELMC_TAG_INT_LIST) {
+      ElmcIntListPayload *_ilp_#{loop_id} = (ElmcIntListPayload *)#{val_expr(list_ref)}->payload;
       int _ilen_#{loop_id} = _ilp_#{loop_id} ? _ilp_#{loop_id}->length : 0;
       for (int _ii_#{loop_id} = 0; _ii_#{loop_id} < _ilen_#{loop_id}; _ii_#{loop_id}++) {
         #{int_list_head_take(head_var, "_ilp_#{loop_id}->values[_ii_#{loop_id}]", env)}
@@ -509,9 +580,9 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
       }
       #{RcRuntimeEmit.loop_exit_check_rc(env)}
     } else {
-      ElmcValue *#{cursor} = #{list_ref};
+      ElmcValue *#{cursor} = #{val_expr(list_ref)};
       while (#{cursor} && #{cursor}->tag == ELMC_TAG_INT_SPINE && #{cursor}->payload != NULL) {
-        ElmcValue *#{head_var} = elmc_int_spine_head_boxed_take(#{cursor});
+        #{int_spine_head_take(head_var, cursor, env)}
     #{inner_body}
         #{ValueSlots.release_stmt(head_var)};
         #{cursor} = ((ElmcIntSpine *)#{cursor}->payload)->tail;
@@ -522,8 +593,8 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
 
   defp emit_boxed_head_record_seq_walk_only(list_ref, loop_id, head_var, inner_body) do
     """
-    if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_RECORD_SEQ) {
-      ElmcRecordSeqPayload *_rsp_#{loop_id} = (ElmcRecordSeqPayload *)#{list_ref}->payload;
+    if (#{val_expr(list_ref)} && #{val_expr(list_ref)}->tag == ELMC_TAG_RECORD_SEQ) {
+      ElmcRecordSeqPayload *_rsp_#{loop_id} = (ElmcRecordSeqPayload *)#{val_expr(list_ref)}->payload;
       int _rlen_#{loop_id} = _rsp_#{loop_id} ? _rsp_#{loop_id}->length : 0;
       for (int _ri_#{loop_id} = 0; _ri_#{loop_id} < _rlen_#{loop_id}; _ri_#{loop_id}++) {
         ElmcValue *#{head_var} = _rsp_#{loop_id}->items[_ri_#{loop_id}];
@@ -539,8 +610,8 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     node = "list_walk_node_#{loop_id}"
 
     """
-    if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_INT_LIST) {
-      ElmcIntListPayload *_ilp_#{loop_id} = (ElmcIntListPayload *)#{list_ref}->payload;
+    if (#{val_expr(list_ref)} && #{val_expr(list_ref)}->tag == ELMC_TAG_INT_LIST) {
+      ElmcIntListPayload *_ilp_#{loop_id} = (ElmcIntListPayload *)#{val_expr(list_ref)}->payload;
       int _ilen_#{loop_id} = _ilp_#{loop_id} ? _ilp_#{loop_id}->length : 0;
       for (int _ii_#{loop_id} = 0; _ii_#{loop_id} < _ilen_#{loop_id}; _ii_#{loop_id}++) {
         #{int_list_head_take(head_var, "_ilp_#{loop_id}->values[_ii_#{loop_id}]", env)}
@@ -549,7 +620,7 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
       }
       #{RcRuntimeEmit.loop_exit_check_rc(env)}
     } else {
-      ElmcValue *#{cursor} = #{list_ref};
+      ElmcValue *#{cursor} = #{val_expr(list_ref)};
       while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
         ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
         ElmcValue *#{head_var} = #{node}->head;
@@ -593,8 +664,8 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
 
   defp emit_native_float_list_head_loop_only(list_ref, loop_id, head_native_var, inner_body) do
     """
-    if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_FLOAT_LIST) {
-      ElmcFloatListPayload *_flp_#{loop_id} = (ElmcFloatListPayload *)#{list_ref}->payload;
+    if (#{val_expr(list_ref)} && #{val_expr(list_ref)}->tag == ELMC_TAG_FLOAT_LIST) {
+      ElmcFloatListPayload *_flp_#{loop_id} = (ElmcFloatListPayload *)#{val_expr(list_ref)}->payload;
       int _flen_#{loop_id} = _flp_#{loop_id} ? _flp_#{loop_id}->length : 0;
       for (int _fi_#{loop_id} = 0; _fi_#{loop_id} < _flen_#{loop_id}; _fi_#{loop_id}++) {
         const double #{head_native_var} = _flp_#{loop_id}->values[_fi_#{loop_id}];
@@ -606,8 +677,8 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
 
   defp emit_native_record_seq_head_loop_only(list_ref, loop_id, head_var, inner_body) do
     """
-    if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_RECORD_SEQ) {
-      ElmcRecordSeqPayload *_rsp_#{loop_id} = (ElmcRecordSeqPayload *)#{list_ref}->payload;
+    if (#{val_expr(list_ref)} && #{val_expr(list_ref)}->tag == ELMC_TAG_RECORD_SEQ) {
+      ElmcRecordSeqPayload *_rsp_#{loop_id} = (ElmcRecordSeqPayload *)#{val_expr(list_ref)}->payload;
       int _rlen_#{loop_id} = _rsp_#{loop_id} ? _rsp_#{loop_id}->length : 0;
       for (int _ri_#{loop_id} = 0; _ri_#{loop_id} < _rlen_#{loop_id}; _ri_#{loop_id}++) {
         ElmcValue *#{head_var} = _rsp_#{loop_id}->items[_ri_#{loop_id}];

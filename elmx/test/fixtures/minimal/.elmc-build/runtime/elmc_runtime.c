@@ -190,7 +190,7 @@ typedef struct {
 
 static ElmcProcessSlot ELMC_PROCESS_SLOTS[ELMC_PROCESS_MAX_SLOTS];
 
-static void *elmc_malloc_impl(size_t size, const char *context, const char *file, int line);
+void *elmc_malloc_impl(size_t size, const char *context, const char *file, int line);
 static ElmcValue *elmc_alloc_impl(ElmcTag tag, void *payload, const char *file, int line);
 static ElmcValue *elmc_small_int(elmc_int_t value);
 static RC elmc_list_cell_alloc(ElmcValue **out, ElmcValue *head, ElmcValue *tail, int take);
@@ -318,7 +318,7 @@ static void elmc_log_alloc_failed(const char *context, size_t size, const char *
 #endif
 }
 
-static void *elmc_malloc_impl(size_t size, const char *context, const char *file, int line) {
+void *elmc_malloc_impl(size_t size, const char *context, const char *file, int line) {
   void *ptr = malloc(size);
   if (!ptr) {
     elmc_log_alloc_failed(context, size, file, line);
@@ -1693,6 +1693,33 @@ RC elmc_maybe_just(ElmcValue **out, ElmcValue *value) {
   return rc;
 }
 
+RC elmc_maybe_just_own(ElmcValue **out, ElmcValue *value) {
+  RC rc = RC_SUCCESS;
+  ElmcMaybeCell *cell = NULL;
+  CATCH_BEGIN
+    cell = (ElmcMaybeCell *)elmc_malloc(sizeof(ElmcMaybeCell), __func__);
+    if (!cell) {
+      rc = RC_ERR_OUT_OF_MEMORY;
+      CHECK_RC(rc);
+    }
+    cell->maybe.is_just = 1;
+    cell->maybe.value = value;
+    cell->value.rc = 1;
+    cell->value.tag = ELMC_TAG_MAYBE;
+    cell->value.payload = &cell->maybe;
+    cell->value.scalar = ELMC_MAYBE_CELL_SCALAR;
+    ELMC_ALLOCATED += 1;
+    ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
+    *out = &cell->value;
+    cell = NULL;
+  CATCH_END;
+  if (cell) {
+    elmc_release(value);
+    elmc_release(&cell->value);
+  }
+  return rc;
+}
+
 ElmcValue *elmc_maybe_or_tuple_just_payload_borrow(ElmcValue *maybe) {
   if (!maybe || !maybe->payload) return elmc_int_zero();
   if (maybe->tag == ELMC_TAG_MAYBE) {
@@ -1846,29 +1873,39 @@ RC elmc_tuple2_ints(ElmcValue **out, elmc_int_t first, elmc_int_t second) {
   return rc;
 }
 
-static ElmcValue *elmc_cmd_alloc(uint8_t arity, elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3, elmc_int_t p4, elmc_int_t p5) {
-  ElmcCmdCell *cell = (ElmcCmdCell *)elmc_malloc(sizeof(ElmcCmdCell), __func__);
-  if (!cell) return NULL;
-  cell->cmd.arity = arity;
-  cell->cmd.kind = kind;
-  cell->cmd.p0 = p0;
-  cell->cmd.p1 = p1;
-  cell->cmd.p2 = p2;
-  cell->cmd.p3 = p3;
-  cell->cmd.p4 = p4;
-  cell->cmd.p5 = p5;
-  cell->cmd.text = NULL;
-  cell->value.rc = 1;
-  cell->value.tag = ELMC_TAG_CMD;
-  cell->value.payload = &cell->cmd;
-  cell->value.scalar = ELMC_CMD_CELL_SCALAR;
-  ELMC_ALLOCATED += 1;
-  ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
-  return &cell->value;
+static RC elmc_cmd_alloc(ElmcValue **out, uint8_t arity, elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3, elmc_int_t p4, elmc_int_t p5) {
+  RC rc = RC_SUCCESS;
+  ElmcCmdCell *cell = NULL;
+  CATCH_BEGIN
+    cell = (ElmcCmdCell *)elmc_malloc(sizeof(ElmcCmdCell), __func__);
+    if (!cell) {
+      rc = RC_ERR_OUT_OF_MEMORY;
+      CHECK_RC(rc);
+    }
+    cell->cmd.arity = arity;
+    cell->cmd.kind = kind;
+    cell->cmd.p0 = p0;
+    cell->cmd.p1 = p1;
+    cell->cmd.p2 = p2;
+    cell->cmd.p3 = p3;
+    cell->cmd.p4 = p4;
+    cell->cmd.p5 = p5;
+    cell->cmd.text = NULL;
+    cell->value.rc = 1;
+    cell->value.tag = ELMC_TAG_CMD;
+    cell->value.payload = &cell->cmd;
+    cell->value.scalar = ELMC_CMD_CELL_SCALAR;
+    ELMC_ALLOCATED += 1;
+    ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
+    *out = &cell->value;
+    cell = NULL;
+  CATCH_END
+  if (cell) elmc_free(cell);
+  return rc;
 }
 
-ElmcValue *elmc_cmd0(elmc_int_t kind) {
-  return elmc_cmd_alloc(0, kind, 0, 0, 0, 0, 0, 0);
+RC elmc_cmd0(ElmcValue **out, elmc_int_t kind) {
+  return elmc_cmd_alloc(out, 0, kind, 0, 0, 0, 0, 0, 0);
 }
 
 static ElmcValue *elmc_platform_manager_tag(elmc_int_t tag_num) {
@@ -2012,85 +2049,110 @@ ElmcValue *elmc_port_incoming_sub(ElmcValue *port_name, ElmcValue *callback) {
   return elmc_platform_manager_port(port_name, callback);
 }
 
-ElmcValue *elmc_cmd1(elmc_int_t kind, elmc_int_t p0) {
-  return elmc_cmd_alloc(1, kind, p0, 0, 0, 0, 0, 0);
+RC elmc_cmd1(ElmcValue **out, elmc_int_t kind, elmc_int_t p0) {
+  return elmc_cmd_alloc(out, 1, kind, p0, 0, 0, 0, 0, 0);
 }
 
-ElmcValue *elmc_cmd1_string(elmc_int_t kind, elmc_int_t p0, const char *text) {
-  ElmcValue *cmd_value = elmc_cmd_alloc(1, kind, p0, 0, 0, 0, 0, 0);
-  if (!cmd_value || cmd_value->tag != ELMC_TAG_CMD || !cmd_value->payload) return cmd_value;
-  ElmcCmdPayload *cmd = (ElmcCmdPayload *)cmd_value->payload;
-  if (elmc_new_string(&cmd->text, text ? text : "") != RC_SUCCESS) {
-    elmc_release(cmd_value);
-    return NULL;
+RC elmc_cmd1_string(ElmcValue **out, elmc_int_t kind, elmc_int_t p0, const char *text) {
+  RC rc = RC_SUCCESS;
+  CATCH_BEGIN
+    rc = elmc_cmd_alloc(out, 1, kind, p0, 0, 0, 0, 0, 0);
+    CHECK_RC(rc);
+    if (!*out || (*out)->tag != ELMC_TAG_CMD || !(*out)->payload) {
+      rc = RC_ERR_INVALID_ARG;
+      CHECK_RC(rc);
+    }
+    ElmcCmdPayload *cmd = (ElmcCmdPayload *)(*out)->payload;
+    rc = elmc_new_string(&cmd->text, text ? text : "");
+    CHECK_RC(rc);
+  CATCH_END
+  if (rc != RC_SUCCESS && out && *out) {
+    elmc_release(*out);
+    *out = NULL;
   }
-  return cmd_value;
+  return rc;
 }
 
-ElmcValue *elmc_cmd2(elmc_int_t kind, elmc_int_t p0, elmc_int_t p1) {
-  return elmc_cmd_alloc(2, kind, p0, p1, 0, 0, 0, 0);
+RC elmc_cmd2(ElmcValue **out, elmc_int_t kind, elmc_int_t p0, elmc_int_t p1) {
+  return elmc_cmd_alloc(out, 2, kind, p0, p1, 0, 0, 0, 0);
 }
 
-ElmcValue *elmc_cmd3(elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2) {
-  return elmc_cmd_alloc(3, kind, p0, p1, p2, 0, 0, 0);
+RC elmc_cmd3(ElmcValue **out, elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2) {
+  return elmc_cmd_alloc(out, 3, kind, p0, p1, p2, 0, 0, 0);
 }
 
-ElmcValue *elmc_cmd4(elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3) {
-  return elmc_cmd_alloc(4, kind, p0, p1, p2, p3, 0, 0);
+RC elmc_cmd4(ElmcValue **out, elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3) {
+  return elmc_cmd_alloc(out, 4, kind, p0, p1, p2, p3, 0, 0);
 }
 
-ElmcValue *elmc_cmd5(elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3, elmc_int_t p4) {
-  return elmc_cmd_alloc(5, kind, p0, p1, p2, p3, p4, 0);
+RC elmc_cmd5(ElmcValue **out, elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3, elmc_int_t p4) {
+  return elmc_cmd_alloc(out, 5, kind, p0, p1, p2, p3, p4, 0);
 }
 
-static ElmcValue *elmc_sub_alloc(uint8_t arity, elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3, elmc_int_t p4, elmc_int_t p5) {
-  ElmcSubCell *cell = (ElmcSubCell *)elmc_malloc(sizeof(ElmcSubCell), __func__);
-  if (!cell) return NULL;
-  cell->sub.arity = arity;
-  cell->sub.mask = mask;
-  cell->sub.p0 = p0;
-  cell->sub.p1 = p1;
-  cell->sub.p2 = p2;
-  cell->sub.p3 = p3;
-  cell->sub.p4 = p4;
-  cell->sub.p5 = p5;
-  cell->value.rc = 1;
-  cell->value.tag = ELMC_TAG_SUB;
-  cell->value.payload = &cell->sub;
-  cell->value.scalar = ELMC_SUB_CELL_SCALAR;
-  ELMC_ALLOCATED += 1;
-  ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
-  return &cell->value;
+static RC elmc_sub_alloc(ElmcValue **out, uint8_t arity, elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3, elmc_int_t p4, elmc_int_t p5) {
+  RC rc = RC_SUCCESS;
+  ElmcSubCell *cell = NULL;
+  CATCH_BEGIN
+    cell = (ElmcSubCell *)elmc_malloc(sizeof(ElmcSubCell), __func__);
+    if (!cell) {
+      rc = RC_ERR_OUT_OF_MEMORY;
+      CHECK_RC(rc);
+    }
+    cell->sub.arity = arity;
+    cell->sub.mask = mask;
+    cell->sub.p0 = p0;
+    cell->sub.p1 = p1;
+    cell->sub.p2 = p2;
+    cell->sub.p3 = p3;
+    cell->sub.p4 = p4;
+    cell->sub.p5 = p5;
+    cell->value.rc = 1;
+    cell->value.tag = ELMC_TAG_SUB;
+    cell->value.payload = &cell->sub;
+    cell->value.scalar = ELMC_SUB_CELL_SCALAR;
+    ELMC_ALLOCATED += 1;
+    ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
+    *out = &cell->value;
+    cell = NULL;
+  CATCH_END
+  if (cell) elmc_free(cell);
+  return rc;
 }
 
-ElmcValue *elmc_sub0(elmc_int_t mask) {
-  return elmc_sub_alloc(0, mask, 0, 0, 0, 0, 0, 0);
+RC elmc_sub0(ElmcValue **out, elmc_int_t mask) {
+  return elmc_sub_alloc(out, 0, mask, 0, 0, 0, 0, 0, 0);
 }
 
-ElmcValue *elmc_sub1(elmc_int_t mask, elmc_int_t p0) {
-  return elmc_sub_alloc(1, mask, p0, 0, 0, 0, 0, 0);
+RC elmc_sub1(ElmcValue **out, elmc_int_t mask, elmc_int_t p0) {
+  return elmc_sub_alloc(out, 1, mask, p0, 0, 0, 0, 0, 0);
 }
 
-ElmcValue *elmc_sub2(elmc_int_t mask, elmc_int_t p0, elmc_int_t p1) {
-  return elmc_sub_alloc(2, mask, p0, p1, 0, 0, 0, 0);
+RC elmc_sub2(ElmcValue **out, elmc_int_t mask, elmc_int_t p0, elmc_int_t p1) {
+  return elmc_sub_alloc(out, 2, mask, p0, p1, 0, 0, 0, 0);
 }
 
-ElmcValue *elmc_sub3(elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2) {
-  return elmc_sub_alloc(3, mask, p0, p1, p2, 0, 0, 0);
+RC elmc_sub3(ElmcValue **out, elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2) {
+  return elmc_sub_alloc(out, 3, mask, p0, p1, p2, 0, 0, 0);
 }
 
-ElmcValue *elmc_sub4(elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3) {
-  return elmc_sub_alloc(4, mask, p0, p1, p2, p3, 0, 0);
+RC elmc_sub4(ElmcValue **out, elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3) {
+  return elmc_sub_alloc(out, 4, mask, p0, p1, p2, p3, 0, 0);
 }
 
-ElmcValue *elmc_sub5(elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3, elmc_int_t p4) {
-  return elmc_sub_alloc(5, mask, p0, p1, p2, p3, p4, 0);
+RC elmc_sub5(ElmcValue **out, elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3, elmc_int_t p4) {
+  return elmc_sub_alloc(out, 5, mask, p0, p1, p2, p3, p4, 0);
 }
 
 elmc_int_t elmc_as_int(ElmcValue *value) {
   if (!value || (value->tag != ELMC_TAG_INT && value->tag != ELMC_TAG_BOOL && value->tag != ELMC_TAG_CHAR && value->tag != ELMC_TAG_ORDER)) return 0;
   if (value->tag == ELMC_TAG_INT && value->scalar == ELMC_UNIT_SCALAR) return 0;
   return value->scalar;
+}
+
+elmc_int_t elmc_as_int_number(ElmcValue *value) {
+  if (!value) return 0;
+  if (value->tag == ELMC_TAG_FLOAT) return (elmc_int_t)elmc_as_float(value);
+  return elmc_as_int(value);
 }
 
 int elmc_value_is_unit(ElmcValue *value) {
@@ -2435,28 +2497,28 @@ ElmcValue *elmc_result_inc_or_zero(ElmcValue *result) {
 }
 
 ElmcValue *elmc_basics_max(ElmcValue *left, ElmcValue *right) {
-  ElmcValue *cmp = elmc_basics_compare(left, right);
+  ElmcValue *cmp = elmc_basics_compare_take(left, right);
   int take_left = elmc_as_int(cmp) >= 0;
   elmc_release(cmp);
   return take_left ? elmc_retain(left) : elmc_retain(right);
 }
 
 ElmcValue *elmc_basics_min(ElmcValue *left, ElmcValue *right) {
-  ElmcValue *cmp = elmc_basics_compare(left, right);
+  ElmcValue *cmp = elmc_basics_compare_take(left, right);
   int take_left = elmc_as_int(cmp) <= 0;
   elmc_release(cmp);
   return take_left ? elmc_retain(left) : elmc_retain(right);
 }
 
 ElmcValue *elmc_basics_clamp(ElmcValue *low, ElmcValue *high, ElmcValue *value) {
-  ElmcValue *below = elmc_basics_compare(value, low);
+  ElmcValue *below = elmc_basics_compare_take(value, low);
   if (elmc_as_int(below) < 0) {
     elmc_release(below);
     return elmc_retain(low);
   }
   elmc_release(below);
 
-  ElmcValue *above = elmc_basics_compare(value, high);
+  ElmcValue *above = elmc_basics_compare_take(value, high);
   if (elmc_as_int(above) > 0) {
     elmc_release(above);
     return elmc_retain(high);
@@ -3367,7 +3429,7 @@ RC elmc_dict_insert(ElmcValue **out, ElmcValue *key, ElmcValue *value, ElmcValue
             skip = 1;
           }
         } else if (!inserted && tp->first) {
-          order = elmc_basics_compare(key, tp->first);
+          order = elmc_basics_compare_take(key, tp->first);
           if (!order) {
             rc = RC_ERR_INVALID_ARG;
             CHECK_RC(rc);
@@ -3573,7 +3635,7 @@ RC elmc_set_insert(ElmcValue **out, ElmcValue *value, ElmcValue *set) {
       while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
         ElmcCons *node = (ElmcCons *)cursor->payload;
         if (!inserted) {
-          order = elmc_basics_compare(value, node->head);
+          order = elmc_basics_compare_take(value, node->head);
           if (!order) {
             rc = RC_ERR_INVALID_ARG;
             CHECK_RC(rc);
@@ -5267,7 +5329,7 @@ static RC elmc_list_sort_compare(int *cmp_out, ElmcValue *left, ElmcValue *right
       CHECK_RC(rc);
       rc = elmc_closure_call_rc(&key_right, f, args_right, 1);
       CHECK_RC(rc);
-      order = elmc_basics_compare(key_left, key_right);
+      order = elmc_basics_compare_take(key_left, key_right);
       *cmp_out = elmc_order_cmp(order);
       elmc_release(order);
       order = NULL;
@@ -7914,35 +7976,66 @@ ElmcValue *elmc_basics_xor(ElmcValue *a, ElmcValue *b) {
   }
 }
 
-ElmcValue *elmc_basics_compare(ElmcValue *a, ElmcValue *b) {
-  /* Returns LT (-1), EQ (0), or GT (1) as ORDER-tagged values */
-  if (a && b && (a->tag == ELMC_TAG_FLOAT || b->tag == ELMC_TAG_FLOAT)) {
-    double fa = elmc_as_float(a);
-    double fb = elmc_as_float(b);
-    if (fa < fb) return elmc_new_order_take(-1);
-    if (fa > fb) return elmc_new_order_take(1);
-    return elmc_new_order_take(0);
-  }
-  if (a && b && a->tag == ELMC_TAG_STRING && b->tag == ELMC_TAG_STRING) {
-    const char *sa = (const char *)a->payload;
-    const char *sb = (const char *)b->payload;
-    int cmp = strcmp(sa ? sa : "", sb ? sb : "");
-    if (cmp < 0) return elmc_new_order_take(-1);
-    if (cmp > 0) return elmc_new_order_take(1);
-    return elmc_new_order_take(0);
-  }
-  if (a && b && a->tag == ELMC_TAG_CHAR && b->tag == ELMC_TAG_CHAR) {
-    elmc_int_t ia = elmc_as_int(a);
-    elmc_int_t ib = elmc_as_int(b);
-    if (ia < ib) return elmc_new_order_take(-1);
-    if (ia > ib) return elmc_new_order_take(1);
-    return elmc_new_order_take(0);
-  }
-  elmc_int_t ia = elmc_as_int(a);
-  elmc_int_t ib = elmc_as_int(b);
-  if (ia < ib) return elmc_new_order_take(-1);
-  if (ia > ib) return elmc_new_order_take(1);
-  return elmc_new_order_take(0);
+RC elmc_basics_compare(ElmcValue **out, ElmcValue *a, ElmcValue *b) {
+  RC rc = RC_SUCCESS;
+  CATCH_BEGIN
+    /* Returns LT (-1), EQ (0), or GT (1) as ORDER-tagged values */
+    if (a && b && (a->tag == ELMC_TAG_FLOAT || b->tag == ELMC_TAG_FLOAT)) {
+      double fa = elmc_as_float(a);
+      double fb = elmc_as_float(b);
+      if (fa < fb) {
+        rc = elmc_new_order(out, -1);
+        CHECK_RC(rc);
+      } else if (fa > fb) {
+        rc = elmc_new_order(out, 1);
+        CHECK_RC(rc);
+      } else {
+        rc = elmc_new_order(out, 0);
+        CHECK_RC(rc);
+      }
+    } else if (a && b && a->tag == ELMC_TAG_STRING && b->tag == ELMC_TAG_STRING) {
+      const char *sa = (const char *)a->payload;
+      const char *sb = (const char *)b->payload;
+      int cmp = strcmp(sa ? sa : "", sb ? sb : "");
+      if (cmp < 0) {
+        rc = elmc_new_order(out, -1);
+        CHECK_RC(rc);
+      } else if (cmp > 0) {
+        rc = elmc_new_order(out, 1);
+        CHECK_RC(rc);
+      } else {
+        rc = elmc_new_order(out, 0);
+        CHECK_RC(rc);
+      }
+    } else if (a && b && a->tag == ELMC_TAG_CHAR && b->tag == ELMC_TAG_CHAR) {
+      elmc_int_t ia = elmc_as_int(a);
+      elmc_int_t ib = elmc_as_int(b);
+      if (ia < ib) {
+        rc = elmc_new_order(out, -1);
+        CHECK_RC(rc);
+      } else if (ia > ib) {
+        rc = elmc_new_order(out, 1);
+        CHECK_RC(rc);
+      } else {
+        rc = elmc_new_order(out, 0);
+        CHECK_RC(rc);
+      }
+    } else {
+      elmc_int_t ia = elmc_as_int(a);
+      elmc_int_t ib = elmc_as_int(b);
+      if (ia < ib) {
+        rc = elmc_new_order(out, -1);
+        CHECK_RC(rc);
+      } else if (ia > ib) {
+        rc = elmc_new_order(out, 1);
+        CHECK_RC(rc);
+      } else {
+        rc = elmc_new_order(out, 0);
+        CHECK_RC(rc);
+      }
+    }
+  CATCH_END
+  return rc;
 }
 
 /* ================================================================
@@ -8430,7 +8523,7 @@ static ElmcValue *elmc_dict_pair_value(ElmcValue *pair) {
 }
 
 static int elmc_dict_key_cmp(ElmcValue *left_key, ElmcValue *right_key) {
-  ElmcValue *order = elmc_basics_compare(left_key, right_key);
+  ElmcValue *order = elmc_basics_compare_take(left_key, right_key);
   int cmp = (int)elmc_as_int(order);
   elmc_release(order);
   return cmp;

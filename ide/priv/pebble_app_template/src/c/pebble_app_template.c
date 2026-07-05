@@ -2209,6 +2209,12 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
       // #region agent log
       ELMC_AGENT_INIT_PROBE(s_agent_after_companion_dispatch ? 0xED993152 : 0xED993052);
       // #endregion
+#if ELMC_PEBBLE_SCENE_CACHE_ENABLED
+      if (decoded < 0) {
+        elmc_pebble_scene_report_decode_failure(&s_elm_app, decoded, s_elm_app.scene_draw_byte_offset);
+        schedule_scene_prep();
+      }
+#endif
       ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO,
               "elmc-draw stream end seq=%d drawn=%d decoded=%d offset=%d",
               s_render_sequence,
@@ -2742,6 +2748,12 @@ static void scene_prep_timer_callback(void *data) {
   } else if (scene_rc != 0) {
     APP_LOG(APP_LOG_LEVEL_ERROR, "elmc scene prep failed rc=%d", scene_rc);
     ELMC_RC_LOG_FAIL(RC_ERR_RENDER_ABORT, "elmc_scene_prep", "scene prep failed");
+#if ELMC_PEBBLE_SCENE_CACHE_ENABLED
+    schedule_scene_prep();
+#endif
+    if (s_draw_layer) {
+      layer_mark_dirty(s_draw_layer);
+    }
   }
   ELMC_PEBBLE_TRACE_EXIT("scene_prep_timer_callback");
 }
@@ -2775,9 +2787,12 @@ static void schedule_scene_prep(void) {
     s_agent_after_companion_dispatch = false;
   }
 #endif
+  /* Do not cancel an already-queued prep timer. render_model runs once per model
+     change; companion boot can trigger many back-to-back invalidations. Resetting
+     the timer on each one never lets ensure_scene run, leaving the draw layer on
+     the white base fill until traffic stops. */
   if (s_scene_prep_timer) {
-    app_timer_cancel(s_scene_prep_timer);
-    s_scene_prep_timer = NULL;
+    return;
   }
   /* Defer past the current callback stack (init, inbox, tick). 0 ms still runs
      on the same event-loop turn and can fault on stack-heavy watchfaces. */
@@ -2814,6 +2829,9 @@ static void render_model(void) {
 #if ELMC_PEBBLE_SCENE_CACHE_ENABLED
   if (s_elm_app.scene.dirty || s_elm_app.scene.byte_count <= 0) {
     schedule_scene_prep();
+    if (s_draw_layer) {
+      layer_mark_dirty(s_draw_layer);
+    }
     ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_RENDER_MODEL_EXIT);
     ELMC_PEBBLE_TRACE_EXIT("render_model");
     return;

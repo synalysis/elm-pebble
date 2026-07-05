@@ -1,9 +1,11 @@
 defmodule Elmc.Backend.CCodegen.Expr do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.DirectRender.RecordViewPeel
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.RecordFields
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.RecordFieldMacros
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
@@ -180,6 +182,19 @@ defmodule Elmc.Backend.CCodegen.Expr do
   def inline_record_field_expr(arg_expr, field, env) do
     arg_expr = arg_expr |> Host.unwrap_affine_bindings() |> normalize_field_access_arg()
 
+    case arg_expr do
+      %{op: :var, name: name} when is_binary(name) or is_atom(name) ->
+        case RecordViewPeel.field_expr(env, name, field) do
+          field_expr when is_map(field_expr) -> field_expr
+          _ -> inline_record_field_expr_var(arg_expr, field, env)
+        end
+
+      _ ->
+        inline_record_field_expr_var(arg_expr, field, env)
+    end
+  end
+
+  defp inline_record_field_expr_var(arg_expr, field, env) do
     case inline_from_let_binding(arg_expr, field, env) do
       field_expr when is_map(field_expr) ->
         field_expr
@@ -454,24 +469,42 @@ defmodule Elmc.Backend.CCodegen.Expr do
   end
 
   def record_shape(%{op: :runtime_call, function: "elmc_maybe_or_tuple_just_payload", args: [arg | _]}, env) do
-    record_shape(arg, env)
+    maybe_payload_record_shape(arg, env)
   end
 
   def record_shape(
         %{op: :runtime_call, function: "elmc_maybe_or_tuple_just_payload_borrow", args: [arg | _]},
         env
       ) do
-    record_shape(arg, env)
+    maybe_payload_record_shape(arg, env)
   end
 
   def record_shape(%{op: :field_access, arg: arg, field: field}, env) do
     case RecordFields.field_type(env, arg, field) do
-      type when is_binary(type) -> record_shape_for_type(type, env)
+      type when is_binary(type) -> record_shape_from_type(type, env)
       _ -> nil
     end
   end
 
   def record_shape(_expr, _env), do: nil
+
+  defp maybe_payload_record_shape(arg, env) do
+    synthetic = %{op: :runtime_call, function: "elmc_maybe_or_tuple_just_payload_borrow", args: [arg]}
+
+    payload_type =
+      case record_container_type_for_expr(synthetic, env) do
+        type when is_binary(type) -> type
+        _ -> Map.get(env, :__case_subject_payload_type__)
+      end
+
+    case payload_type do
+      type when is_binary(type) ->
+        record_shape_from_type(type, env) || record_shape(arg, env)
+
+      _ ->
+        record_shape(arg, env)
+    end
+  end
 
   defp common_record_shape([]), do: nil
 
@@ -601,13 +634,43 @@ defmodule Elmc.Backend.CCodegen.Expr do
 
   @spec record_get_borrow_expr(Types.ir_expr(), Types.compile_env()) :: String.t() | nil
   def record_get_borrow_expr(%{op: :field_access, arg: arg, field: field}, env) do
-    case nested_field_access_path(arg, field) do
-      {source, path} -> borrow_record_field_ref(source, path, env)
-      nil -> nil
+    case peeled_record_get_borrow_expr(arg, field, env) do
+      ref when is_binary(ref) ->
+        ref
+
+      nil ->
+        case nested_field_access_path(arg, field) do
+          {source, path} -> borrow_record_field_ref(source, path, env)
+          nil -> nil
+        end
     end
   end
 
   def record_get_borrow_expr(_expr, _env), do: nil
+
+  defp peeled_record_get_borrow_expr(arg, field, env) do
+    with source_name when is_binary(source_name) <- field_access_source_name(arg),
+         field_expr when is_map(field_expr) <- RecordViewPeel.field_expr(env, source_name, field),
+         {:record_peel, source_ref, helper_key, helper_call} <-
+           Map.get(env, source_name) || EnvBindings.lookup_binding(env, source_name) do
+      peel_env = RecordViewPeel.peel_compile_env(env, helper_key, helper_call, source_ref)
+
+      record_get_borrow_expr(normalize_field_access_expr(field_expr), peel_env)
+    else
+      _ -> nil
+    end
+  end
+
+  defp field_access_source_name(%{op: :var, name: name}) when is_binary(name), do: name
+  defp field_access_source_name(name) when is_binary(name), do: name
+  defp field_access_source_name(_), do: nil
+
+  defp normalize_field_access_expr(%{op: :field_access} = expr), do: expr
+
+  defp normalize_field_access_expr(%{op: :var, name: name}) when is_binary(name),
+    do: %{op: :var, name: name}
+
+  defp normalize_field_access_expr(expr) when is_map(expr), do: expr
 
   defp borrow_record_field_ref(source_name, path, env) do
     with source_ref when is_binary(source_ref) <- borrow_record_source_ref(source_name, env) do
@@ -756,7 +819,7 @@ defmodule Elmc.Backend.CCodegen.Expr do
         do: "elmc_record_update_index_cow",
         else: "elmc_record_update_index"
 
-    "#{update_fn}(#{record_var}, #{index_ref}, #{value_var})"
+    "#{update_fn}(#{RcRuntimeEmit.value_expr(record_var)}, #{index_ref}, #{RcRuntimeEmit.value_expr(value_var)})"
   end
 
   @spec record_get_int_expr(String.t(), String.t(), Types.record_shape(), Types.compile_env(), String.t() | nil) ::
@@ -769,10 +832,15 @@ defmodule Elmc.Backend.CCodegen.Expr do
   @spec record_field_index_ref(String.t(), Types.record_shape(), String.t() | nil, Types.compile_env()) ::
           String.t()
   def record_field_index_ref(field, shape, type, env) do
-    resolved_shape =
-      shape || record_shape_from_type(type, env) || infer_record_shape_from_field(field, env)
+    payload_type = Map.get(env, :__case_subject_payload_type__)
 
-    resolved_type = type || record_type_for_shape(resolved_shape, env)
+    resolved_shape =
+      shape ||
+        record_shape_from_type(type, env) ||
+        record_shape_from_type(payload_type, env) ||
+        infer_record_shape_from_field(field, env)
+
+    resolved_type = type || payload_type || record_type_for_shape(resolved_shape, env)
 
     RecordFieldMacros.index_ref(field, shape: resolved_shape, type: resolved_type, env: env) ||
       fallback_record_field_index(field, resolved_shape, resolved_type, env)
@@ -790,8 +858,11 @@ defmodule Elmc.Backend.CCodegen.Expr do
   def record_shape_from_type(_type, _env), do: nil
 
   defp fallback_record_field_index(field, shape, type, env) do
+    payload_type = Map.get(env, :__case_subject_payload_type__)
+
     fields =
       shape ||
+        (if is_binary(payload_type), do: record_shape_from_type(payload_type, env), else: nil) ||
         if(is_binary(type), do: record_shape_from_type(type, env), else: nil) ||
         infer_record_shape_from_field(field, env)
 
@@ -835,8 +906,8 @@ defmodule Elmc.Backend.CCodegen.Expr do
   @spec maybe_unwrapped_record_type(Types.ir_expr(), Types.compile_env()) :: String.t() | nil
   def maybe_unwrapped_record_type(expr, env) do
     with type when is_binary(type) <- decl_return_type(expr, env) || record_type_for_expr(expr, env),
-         inner when is_binary(inner) <- maybe_inner_type(type),
-         fields when is_list(fields) <- record_shape_for_type(inner, env) do
+         inner when is_binary(inner) <- maybe_inner_type(type) || type,
+         fields when is_list(fields) <- record_shape_from_type(inner, env) do
       inner
     else
       _ -> nil
@@ -866,6 +937,14 @@ defmodule Elmc.Backend.CCodegen.Expr do
 
       _ ->
         nil
+    end
+  end
+
+  @spec unwrap_container_record_type(String.t()) :: String.t()
+  def unwrap_container_record_type(type) when is_binary(type) do
+    case maybe_inner_type(type) do
+      inner when is_binary(inner) -> inner
+      _ -> type
     end
   end
 
@@ -1095,8 +1174,9 @@ defmodule Elmc.Backend.CCodegen.Expr do
   def record_container_type_for_expr(%{op: :record_update, base: base}, env),
     do: record_container_type_for_expr(base, env)
 
-  def record_container_type_for_expr(%{op: :var, name: name}, env),
-    do: record_payload_type_for_var(env, name)
+  def record_container_type_for_expr(%{op: :var, name: name}, env) do
+    record_payload_type_for_var(env, name) || Map.get(env, :__case_subject_payload_type__)
+  end
 
   def record_container_type_for_expr(
         %{op: :runtime_call, function: function, args: [arg | _]},
@@ -1106,7 +1186,10 @@ defmodule Elmc.Backend.CCodegen.Expr do
              "elmc_maybe_or_tuple_just_payload",
              "elmc_maybe_or_tuple_just_payload_borrow"
            ] do
-    record_container_type_for_expr(arg, env)
+    case record_container_type_for_expr(arg, env) do
+      type when is_binary(type) -> maybe_inner_type(type) || type
+      _ -> Map.get(env, :__case_subject_payload_type__)
+    end
   end
 
   def record_container_type_for_expr(%{op: :field_access, arg: arg, field: field}, env) do
@@ -1223,7 +1306,7 @@ defmodule Elmc.Backend.CCodegen.Expr do
     |> Enum.sort_by(fn {shape, _entries} -> shape end)
     |> List.first()
     |> case do
-      {_shape, [{type, _shape} | _]} -> type
+      {shape, [{type, shape} | _]} -> type
       _ -> nil
     end
   end

@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.CCodegen.Native.Bool do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.DirectRender.RecordViewPeel
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.Hoist
@@ -11,6 +12,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   alias Elmc.Backend.CCodegen.Patterns
   alias Elmc.Backend.CCodegen.PlatformStatic
   alias Elmc.Backend.CCodegen.RecordCompile
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.TypeParsing
   alias Elmc.Backend.CCodegen.UnionMacros
@@ -56,6 +58,16 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   defp compile_expr_uncached(%{op: :field_access, arg: arg, field: field}, env, counter)
        when is_binary(arg) do
     case Map.fetch(env, arg) do
+      {:ok, {:record_peel, source_ref, helper_key, helper_call}} ->
+        case RecordViewPeel.field_expr(env, arg, field) do
+          field_expr when is_map(field_expr) ->
+            peel_env = RecordViewPeel.peel_compile_env(env, helper_key, helper_call, source_ref)
+            compile_expr(field_expr, peel_env, counter)
+
+          _ ->
+            compile_fallback(%{op: :field_access, arg: arg, field: field}, env, counter)
+        end
+
       {:ok, source} when is_binary(source) ->
         shape = Host.record_shape_for_var(env, arg)
 
@@ -126,7 +138,8 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
         {code, out, next}
 
       field_expr ->
-        compile_expr(field_expr, env, counter)
+        compile_env = RecordViewPeel.peel_env_for_field_access(env, arg_expr)
+        compile_expr(field_expr, compile_env, counter)
     end
   end
 
@@ -155,38 +168,6 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
           nil ->
             compile_runtime_bool_if_expr(cond_expr, then_expr, else_expr, env, counter)
         end
-    end
-  end
-
-  defp compile_runtime_bool_if_expr(cond_expr, then_expr, else_expr, env, counter) do
-    if bool_coercible_branch?(then_expr, env) and bool_coercible_branch?(else_expr, env) do
-      {cond_code, cond_ref, counter} = compile_expr(cond_expr, env, counter)
-      then_env = RecordCompile.fresh_subexpr_cache(env)
-      else_env = RecordCompile.fresh_subexpr_cache(env)
-      {then_code, then_ref, counter} = compile_bool_branch(then_expr, then_env, counter)
-      {else_code, else_ref, counter} = compile_bool_branch(else_expr, else_env, counter)
-      next = counter + 1
-      out = "native_bool_if_#{next}"
-
-      code = """
-      #{cond_code}
-        #{@native_bool_c_type} #{out};
-        if (#{cond_ref}) {
-      #{CSource.indent(then_code, 4)}
-          #{out} = #{then_ref};
-        } else {
-      #{CSource.indent(else_code, 4)}
-          #{out} = #{else_ref};
-        }
-      """
-
-      {code, out, next}
-    else
-      compile_fallback(
-        %{op: :if, cond: cond_expr, then_expr: then_expr, else_expr: else_expr},
-        env,
-        counter
-      )
     end
   end
 
@@ -303,6 +284,38 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
 
   defp compile_expr_uncached(expr, env, counter), do: compile_fallback(expr, env, counter)
 
+  defp compile_runtime_bool_if_expr(cond_expr, then_expr, else_expr, env, counter) do
+    if bool_coercible_branch?(then_expr, env) and bool_coercible_branch?(else_expr, env) do
+      {cond_code, cond_ref, counter} = compile_expr(cond_expr, env, counter)
+      then_env = RecordCompile.fresh_subexpr_cache(env)
+      else_env = RecordCompile.fresh_subexpr_cache(env)
+      {then_code, then_ref, counter} = compile_bool_branch(then_expr, then_env, counter)
+      {else_code, else_ref, counter} = compile_bool_branch(else_expr, else_env, counter)
+      next = counter + 1
+      out = "native_bool_if_#{next}"
+
+      code = """
+      #{cond_code}
+        #{@native_bool_c_type} #{out};
+        if (#{cond_ref}) {
+      #{CSource.indent(then_code, 4)}
+          #{out} = #{then_ref};
+        } else {
+      #{CSource.indent(else_code, 4)}
+          #{out} = #{else_ref};
+        }
+      """
+
+      {code, out, next}
+    else
+      compile_fallback(
+        %{op: :if, cond: cond_expr, then_expr: then_expr, else_expr: else_expr},
+        env,
+        counter
+      )
+    end
+  end
+
   @spec compile_compare(
           Types.ir_expr(),
           Types.ir_expr(),
@@ -367,31 +380,35 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
         compile_maybe_field_vs_nothing_compare(left, right, operator, env, counter)
 
       true ->
-        {left_code, left_var, counter} = Host.compile_expr(left, env, counter)
-        {right_code, right_var, counter} = Host.compile_expr(right, env, counter)
+        operand_env = RcRuntimeEmit.operand_env(env)
+
+        {left_code, left_var, counter} = compile_compare_operand(left, operand_env, env, counter)
+        {right_code, right_var, counter} = compile_compare_operand(right, operand_env, env, counter)
+        left_ref = RcRuntimeEmit.value_expr(left_var)
+        right_ref = RcRuntimeEmit.value_expr(right_var)
         next = counter + 1
         out = "native_cmp_#{next}"
 
-        code =
+        {code, final_counter} =
           case operator do
             "__eq__" ->
-              """
+              {"""
               #{left_code}
                 #{right_code}
-                const #{@native_bool_c_type} #{out} = elmc_value_equal(#{left_var}, #{right_var});
+                const #{@native_bool_c_type} #{out} = elmc_value_equal(#{left_ref}, #{right_ref});
                 #{join_compare_releases(env, [left_var, right_var])}
-              """
+              """, next}
 
             "__neq__" ->
-              """
+              {"""
               #{left_code}
                 #{right_code}
-                const #{@native_bool_c_type} #{out} = !elmc_value_equal(#{left_var}, #{right_var});
+                const #{@native_bool_c_type} #{out} = !elmc_value_equal(#{left_ref}, #{right_ref});
                 #{join_compare_releases(env, [left_var, right_var])}
-              """
+              """, next}
 
             _ ->
-              cmp_var = "__cmp_bool_#{next}"
+              {cmp_var, cmp_counter} = RcRuntimeEmit.compare_order_slot(env, next)
 
               comparison =
                 case operator do
@@ -401,16 +418,28 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
                   "__gte__" -> ">="
                 end
 
-              """
+              compare_code =
+                if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
+                  """
+                  #{RcRuntimeEmit.assign_call(env, cmp_var, "elmc_basics_compare", RcRuntimeEmit.call_arg_list([left_var, right_var]))}
+                  const #{@native_bool_c_type} #{out} = elmc_as_int(#{cmp_var}) #{comparison} 0;
+                  """
+                else
+                  """
+                  ElmcValue *#{cmp_var} = elmc_basics_compare_take(#{RcRuntimeEmit.call_arg_list([left_var, right_var])});
+                  const #{@native_bool_c_type} #{out} = elmc_as_int(#{cmp_var}) #{comparison} 0;
+                  """
+                end
+
+              {"""
               #{left_code}
                 #{right_code}
-                ElmcValue *#{cmp_var} = elmc_basics_compare(#{left_var}, #{right_var});
-                const #{@native_bool_c_type} #{out} = elmc_as_int(#{cmp_var}) #{comparison} 0;
+                #{compare_code}\
                 #{join_compare_releases(env, [cmp_var, left_var, right_var])}
-              """
+              """, cmp_counter}
           end
 
-        {code, out, next}
+        {code, out, final_counter}
     end
   end
 
@@ -666,7 +695,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
     code = """
     #{left_code}
       const #{@native_bool_c_type} #{out} = #{bool_expr};
-      #{ValueSlots.release_stmt(left_var)};
+      #{ValueSlots.release_stmt_line(left_var)}
     """
 
     {code, out, next}
@@ -749,7 +778,23 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   @spec compile_fallback(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
           compile_result()
   defp compile_fallback(expr, env, counter) do
-    {code, var, counter} = Host.compile_expr(expr, env, counter)
+    operand_env = RcRuntimeEmit.operand_env(env)
+
+    {compile_env, counter} =
+      if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
+        {out, next} = RcRuntimeEmit.compile_result_slot(operand_env, counter)
+
+        branch_env =
+          operand_env
+          |> Map.put(:__branch_out__, out)
+          |> Map.put(:__declared_outs__, MapSet.new([out]))
+
+        {branch_env, next}
+      else
+        {operand_env, counter}
+      end
+
+    {code, var, counter} = Host.compile_expr(expr, compile_env, counter)
     next = counter + 1
     out = "native_b_#{next}"
 
@@ -757,7 +802,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
       """
       #{code}
         const #{@native_bool_c_type} #{out} = #{value_expr(expr, env, var)};
-        #{ValueSlots.release_stmt(var)};
+        #{ValueSlots.release_stmt_line(var)}
       """,
       out,
       next
@@ -866,7 +911,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
         code = """
         #{subject_code}
           const #{@native_bool_c_type} #{out} = #{condition};
-          #{ValueSlots.release_stmt(subject_var)};
+          #{ValueSlots.release_stmt_line(subject_var)}
         """
 
         {code, out, next}
@@ -893,6 +938,38 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
     |> case do
       [] -> ""
       lines -> Enum.map_join(lines, "\n", & &1) <> "\n"
+    end
+  end
+
+  defp compile_compare_operand(expr, operand_env, env, counter) do
+    if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
+      {slot, next} = RcRuntimeEmit.compile_result_slot(operand_env, counter)
+
+      branch_env =
+        operand_env
+        |> Map.put(:__branch_out__, slot)
+        |> Map.put(:__declared_outs__, MapSet.new([slot]))
+
+      {code, ref, final_counter} = Host.compile_expr(expr, branch_env, next)
+      ref = ValueSlots.resolve_result_slot(ref)
+
+      {code, var, final_counter} =
+        cond do
+          ref == slot ->
+            {code, slot, final_counter}
+
+          ValueSlots.owned_ref?(ref) ->
+            {code, ref, final_counter}
+
+          true ->
+            transfer = RcRuntimeEmit.transfer_assignment(slot, ref)
+
+            {code <> "\n  " <> transfer, slot, final_counter}
+        end
+
+      {code, var, final_counter}
+    else
+      Host.compile_expr(expr, operand_env, counter)
     end
   end
 end

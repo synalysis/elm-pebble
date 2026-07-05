@@ -34,7 +34,8 @@ defmodule Elmc.Backend.CCodegen.PlatformStaticBoolFoldTest do
     body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_showCorners_native")
 
     assert body =~ "#if defined(PBL_ROUND)"
-    assert body =~ "const bool native_bool_if_3 = false"
+    assert body =~ "bool native_bool_if_3"
+    assert body =~ "#if defined(PBL_ROUND)\n    native_bool_if_3 = false;"
     assert body =~ "#else"
     assert body =~ "ELMC_TAG_MAYBE"
     refute body =~ ~r/#if defined\(PBL_ROUND\)\s*\n\s*const bool native_bool_if_3 = false;\s*\n#else[\s\S]*#else/

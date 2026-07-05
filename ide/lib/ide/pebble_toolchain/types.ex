@@ -154,6 +154,7 @@ defmodule Ide.PebbleToolchain.Types do
           | {:read_companion_index_template_failed, file_posix()}
           | {:phone_companion_elm_make_failed, phone_companion_elm_make_result()}
           | {:runtime_reprune_failed, runtime_reprune_failure()}
+          | {:invalid_emulator_target, String.t()}
 
   @type pebble_package :: %{optional(String.t()) => pebble_package_value()}
   @type pebble_package_value ::

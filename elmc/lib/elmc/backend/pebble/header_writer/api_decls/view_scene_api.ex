@@ -13,6 +13,10 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.ApiDecls.ViewSceneApi do
     typedef struct GContext GContext;
 
     int elmc_pebble_take_cmd(ElmcPebbleApp *app, ElmcPebbleCmd *out_cmd);
+    int elmc_pebble_pending_cmd_count(ElmcPebbleApp *app);
+    int elmc_pebble_pending_cmd_at(ElmcPebbleApp *app, int index, ElmcPebbleCmd *out_cmd);
+    int elmc_pebble_last_dispatch_cmd_count(ElmcPebbleApp *app);
+    int elmc_pebble_last_dispatch_cmd_at(ElmcPebbleApp *app, int index, ElmcPebbleCmd *out_cmd);
     int elmc_pebble_view_command(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmd);
     int elmc_pebble_view_commands(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds);
     int elmc_pebble_view_commands_from(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip);
@@ -23,6 +27,7 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.ApiDecls.ViewSceneApi do
     int elmc_pebble_scene_command_count(ElmcPebbleApp *app);
     int elmc_pebble_scene_dirty_rect(ElmcPebbleApp *app, ElmcPebbleRect *out_rect, int *out_full);
     void elmc_pebble_invalidate_scene(ElmcPebbleApp *app);
+    void elmc_pebble_scene_report_decode_failure(ElmcPebbleApp *app, int rc, int offset);
     #{VectorSequenceInstances.header_decls()}
     #{BitmapSequenceInstances.header_decls()}
 """

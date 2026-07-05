@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include <stdlib.h>
 
 
 #if defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_CHALK) || defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_FLINT) || defined(PBL_PLATFORM_GABBRO)
@@ -182,7 +183,7 @@ typedef struct ElmcRecord {
 #define ELMC_RECORD_GET_INDEX_INT(record, index) \
   (((record) && (record)->tag == ELMC_TAG_RECORD && (record)->payload && \
     (index) >= 0 && (index) < ((ElmcRecord *)(record)->payload)->field_count) ? \
-   elmc_as_int(((ElmcRecord *)(record)->payload)->field_values[(index)]) : 0)
+   elmc_as_int_number(((ElmcRecord *)(record)->payload)->field_values[(index)]) : 0)
 
 #define ELMC_RECORD_GET_INDEX_FLOAT(record, index) \
   (((record) && (record)->tag == ELMC_TAG_RECORD && (record)->payload && \
@@ -384,6 +385,7 @@ RC elmc_list_from_tuple2_int_array(ElmcValue **out, const elmc_int_t items[][2],
 ElmcValue *elmc_list_replace_nth_int(ElmcValue *list, elmc_int_t index, elmc_int_t value);
 ElmcValue *elmc_maybe_nothing(void);
 RC elmc_maybe_just(ElmcValue **out, ElmcValue *value);
+RC elmc_maybe_just_own(ElmcValue **out, ElmcValue *value);
 ElmcValue *elmc_maybe_or_tuple_just_payload(ElmcValue *maybe);
 ElmcValue *elmc_maybe_or_tuple_just_payload_borrow(ElmcValue *maybe);
 RC elmc_result_ok(ElmcValue **out, ElmcValue *value);
@@ -392,27 +394,28 @@ RC elmc_tuple2(ElmcValue **out, ElmcValue *first, ElmcValue *second);
 RC elmc_tuple2_take(ElmcValue **out, ElmcValue *first, ElmcValue *second);
 ElmcValue *elmc_build_constructor_payload(ElmcValue **values, int count);
 RC elmc_tuple2_ints(ElmcValue **out, elmc_int_t first, elmc_int_t second);
-ElmcValue *elmc_cmd0(elmc_int_t kind);
+RC elmc_cmd0(ElmcValue **out, elmc_int_t kind);
 ElmcValue *elmc_cmd_batch(ElmcValue *commands);
 ElmcValue *elmc_cmd_map(ElmcValue *f, ElmcValue *cmd);
 ElmcValue *elmc_sub_batch(ElmcValue *subs);
 ElmcValue *elmc_sub_map(ElmcValue *f, ElmcValue *sub);
 ElmcValue *elmc_port_outgoing(ElmcValue *port_name, ElmcValue *payload);
 ElmcValue *elmc_port_incoming_sub(ElmcValue *port_name, ElmcValue *callback);
-ElmcValue *elmc_cmd1(elmc_int_t kind, elmc_int_t p0);
-ElmcValue *elmc_cmd1_string(elmc_int_t kind, elmc_int_t p0, const char *text);
-ElmcValue *elmc_cmd2(elmc_int_t kind, elmc_int_t p0, elmc_int_t p1);
-ElmcValue *elmc_cmd3(elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2);
-ElmcValue *elmc_cmd4(elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3);
-ElmcValue *elmc_cmd5(elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3, elmc_int_t p4);
-ElmcValue *elmc_sub0(elmc_int_t mask);
-ElmcValue *elmc_sub1(elmc_int_t mask, elmc_int_t p0);
-ElmcValue *elmc_sub2(elmc_int_t mask, elmc_int_t p0, elmc_int_t p1);
-ElmcValue *elmc_sub3(elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2);
-ElmcValue *elmc_sub4(elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3);
-ElmcValue *elmc_sub5(elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3, elmc_int_t p4);
+RC elmc_cmd1(ElmcValue **out, elmc_int_t kind, elmc_int_t p0);
+RC elmc_cmd1_string(ElmcValue **out, elmc_int_t kind, elmc_int_t p0, const char *text);
+RC elmc_cmd2(ElmcValue **out, elmc_int_t kind, elmc_int_t p0, elmc_int_t p1);
+RC elmc_cmd3(ElmcValue **out, elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2);
+RC elmc_cmd4(ElmcValue **out, elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3);
+RC elmc_cmd5(ElmcValue **out, elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3, elmc_int_t p4);
+RC elmc_sub0(ElmcValue **out, elmc_int_t mask);
+RC elmc_sub1(ElmcValue **out, elmc_int_t mask, elmc_int_t p0);
+RC elmc_sub2(ElmcValue **out, elmc_int_t mask, elmc_int_t p0, elmc_int_t p1);
+RC elmc_sub3(ElmcValue **out, elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2);
+RC elmc_sub4(ElmcValue **out, elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3);
+RC elmc_sub5(ElmcValue **out, elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3, elmc_int_t p4);
 
 elmc_int_t elmc_as_int(ElmcValue *value);
+elmc_int_t elmc_as_int_number(ElmcValue *value);
 int elmc_value_is_unit(ElmcValue *value);
 elmc_int_t elmc_int_idiv(elmc_int_t numerator, elmc_int_t denominator);
 elmc_int_t elmc_polar_point_x(elmc_int_t cx, elmc_int_t cy, elmc_int_t radius, elmc_int_t angle);
@@ -615,7 +618,7 @@ ElmcValue *elmc_basics_truncate(ElmcValue *x);
 ElmcValue *elmc_basics_remainder_by(ElmcValue *base, ElmcValue *value);
 ElmcValue *elmc_basics_pow(ElmcValue *base, ElmcValue *exponent);
 ElmcValue *elmc_basics_xor(ElmcValue *a, ElmcValue *b);
-ElmcValue *elmc_basics_compare(ElmcValue *a, ElmcValue *b);
+RC elmc_basics_compare(ElmcValue **out, ElmcValue *a, ElmcValue *b);
 
 /* --- Char (extended) --- */
 ElmcValue *elmc_char_is_upper(ElmcValue *ch);
@@ -752,6 +755,76 @@ static inline ElmcValue *elmc_new_order_take(elmc_int_t value) {
   return elmc_new_order(&out, value) == RC_SUCCESS ? out : elmc_int_zero();
 }
 
+static inline ElmcValue *elmc_basics_compare_take(ElmcValue *a, ElmcValue *b) {
+  ElmcValue *out = NULL;
+  return elmc_basics_compare(&out, a, b) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_cmd0_take(elmc_int_t kind) {
+  ElmcValue *out = NULL;
+  return elmc_cmd0(&out, kind) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_cmd1_take(elmc_int_t kind, elmc_int_t p0) {
+  ElmcValue *out = NULL;
+  return elmc_cmd1(&out, kind, p0) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_cmd1_string_take(elmc_int_t kind, elmc_int_t p0, const char *text) {
+  ElmcValue *out = NULL;
+  return elmc_cmd1_string(&out, kind, p0, text) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_cmd2_take(elmc_int_t kind, elmc_int_t p0, elmc_int_t p1) {
+  ElmcValue *out = NULL;
+  return elmc_cmd2(&out, kind, p0, p1) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_cmd3_take(elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2) {
+  ElmcValue *out = NULL;
+  return elmc_cmd3(&out, kind, p0, p1, p2) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_cmd4_take(elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3) {
+  ElmcValue *out = NULL;
+  return elmc_cmd4(&out, kind, p0, p1, p2, p3) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_cmd5_take(elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3, elmc_int_t p4) {
+  ElmcValue *out = NULL;
+  return elmc_cmd5(&out, kind, p0, p1, p2, p3, p4) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_sub0_take(elmc_int_t mask) {
+  ElmcValue *out = NULL;
+  return elmc_sub0(&out, mask) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_sub1_take(elmc_int_t mask, elmc_int_t p0) {
+  ElmcValue *out = NULL;
+  return elmc_sub1(&out, mask, p0) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_sub2_take(elmc_int_t mask, elmc_int_t p0, elmc_int_t p1) {
+  ElmcValue *out = NULL;
+  return elmc_sub2(&out, mask, p0, p1) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_sub3_take(elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2) {
+  ElmcValue *out = NULL;
+  return elmc_sub3(&out, mask, p0, p1, p2) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_sub4_take(elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3) {
+  ElmcValue *out = NULL;
+  return elmc_sub4(&out, mask, p0, p1, p2, p3) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
+static inline ElmcValue *elmc_sub5_take(elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3, elmc_int_t p4) {
+  ElmcValue *out = NULL;
+  return elmc_sub5(&out, mask, p0, p1, p2, p3, p4) == RC_SUCCESS ? out : elmc_int_zero();
+}
+
 static inline ElmcValue *elmc_new_string_take(const char *value) {
   ElmcValue *out = NULL;
   return elmc_new_string(&out, value) == RC_SUCCESS ? out : elmc_int_zero();
@@ -832,7 +905,7 @@ static inline ElmcValue *elmc_record_new_values_ints_take(
 
 static inline ElmcValue *elmc_maybe_just_take(ElmcValue *value) {
   ElmcValue *out = NULL;
-  return elmc_maybe_just(&out, value) == RC_SUCCESS ? out : elmc_int_zero();
+  return elmc_maybe_just_own(&out, value) == RC_SUCCESS ? out : elmc_int_zero();
 }
 
 static inline ElmcValue *elmc_result_ok_take(ElmcValue *value) {
@@ -1426,6 +1499,16 @@ static inline bool elmc_union_tag_matches(ElmcValue *v, elmc_int_t tag) {
                 elmc_as_int(((ElmcTuple2 *)v->payload)->first) == tag));
 }
 
+static inline elmc_int_t elmc_union_payload_int(ElmcValue *v) {
+  if (!v) return 0;
+  if (v->tag == ELMC_TAG_INT) return elmc_as_int(v);
+  if (v->tag == ELMC_TAG_TUPLE2 && v->payload != NULL) {
+    ElmcTuple2 *tuple = (ElmcTuple2 *)v->payload;
+    return tuple->second ? elmc_as_int(tuple->second) : 0;
+  }
+  return 0;
+}
+
 
 ElmcValue *elmc_record_get(ElmcValue *record, const char *field_name);
 ElmcValue *elmc_record_get_at(ElmcValue *record, int index, const char *field_name);
@@ -1548,6 +1631,13 @@ uint32_t elmc_alloc_track_next_alloc_id(void);
 #define elmc_free(ptr) elmc_free_impl((ptr), __func__, __FILE__, __LINE__)
 #else
 #define elmc_free(ptr) free(ptr)
+#endif
+
+void *elmc_malloc_impl(size_t size, const char *context, const char *file, int line);
+#if ELMC_ALLOC_TRACE
+#define elmc_malloc(size, context) elmc_malloc_impl((size), (context), __FILE__, __LINE__)
+#else
+#define elmc_malloc(size, context) elmc_malloc_impl((size), (context), NULL, 0)
 #endif
 
 

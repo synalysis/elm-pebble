@@ -28,9 +28,10 @@ defmodule Elmc.ConstructorTagCaseDeferredStringOutTest do
       )
 
     assert code =~ "*out = &native_str_immortal_"
+    assert code =~ "&native_str_immortal_"
     refute code =~ "ELMC_FN_OUT"
     refute code =~ "elmc_new_string(out, case_str_"
     refute code =~ "ElmcValue *tmp_"
-    refute code =~ "*out = tmp_"
+    refute String.match?(code, ~r/\*out = tmp_/)
   end
 end

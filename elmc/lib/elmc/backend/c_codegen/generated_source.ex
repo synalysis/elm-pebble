@@ -28,6 +28,108 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
   defp finalize_source(source), do: CSource.format(source)
 
+  @spec reset_process_state!() :: :ok
+  def reset_process_state! do
+    reset_emit_probe_state!()
+
+    for {key, _} <- Process.get(), delete_codegen_process_key?(key) do
+      Process.delete(key)
+    end
+
+    :ok
+  end
+
+  @spec reset_emit_probe_state!() :: :ok
+  def reset_emit_probe_state! do
+    ValueSlots.reset()
+    Elmc.Backend.CCodegen.DirectRender.RecordViewPeel.reset_cache!()
+    DefRegistry.reset()
+    RecordCompile.reset_rec_values_suffix()
+
+    for {key, _} <- Process.get(), delete_emit_probe_process_key?(key) do
+      Process.delete(key)
+    end
+
+    :ok
+  end
+
+  @spec capture_lambda_emit_state!() :: map()
+  def capture_lambda_emit_state! do
+    %{
+      lambdas: Process.get(:elmc_lambdas, []),
+      defs: Process.get(:elmc_lambda_defs, %{}),
+      counter: Process.get(:elmc_lambda_counter, 0),
+      emitted: Process.get(:elmc_lambda_emitted_names, MapSet.new())
+    }
+  end
+
+  @spec restore_lambda_emit_state!(map()) :: :ok
+  def restore_lambda_emit_state!(state) do
+    Process.put(:elmc_lambdas, Map.get(state, :lambdas, []))
+    Process.put(:elmc_lambda_defs, Map.get(state, :defs, %{}))
+    Process.put(:elmc_lambda_counter, Map.get(state, :counter, 0))
+    Process.put(:elmc_lambda_emitted_names, Map.get(state, :emitted, MapSet.new()))
+    :ok
+  end
+
+  @compile_session_process_keys ~w(
+    elmc_lambdas
+    elmc_lambda_counter
+    elmc_lambda_defs
+    elmc_lambda_emitted_names
+    elmc_rc_required
+    elmc_program_decls
+    elmc_codegen_opts
+    elmc_exported_targets
+    elmc_wrapper_targets
+    elmc_direct_call_targets
+    elmc_function_arities
+    elmc_storage_plans
+    elmc_schema_registry
+    elmc_layout_coercion_diagnostics
+    elmc_record_field_types
+    elmc_record_alias_shapes
+    elmc_record_field_macros
+    elmc_union_type_names
+    elmc_union_constructor_macros
+    elmc_constructor_tags
+    elmc_enum_types
+    elmc_pebble_msg_names
+    elmc_msg_constructor_payload_specs
+    elmc_named_record_literals
+    elmc_native_boxed_rc_abi
+    elmc_native_bool_rc_abi
+    elmc_vector_resource_slots
+    elmc_bitmap_resource_slots
+    elmc_animation_resource_slots
+    elmc_font_resource_slots
+    elmc_speaker_sample_resource_slots
+  )a
+
+  defp delete_emit_probe_process_key?(key) when key in @compile_session_process_keys, do: false
+
+  defp delete_emit_probe_process_key?(key) when is_atom(key) do
+    key
+    |> Atom.to_string()
+    |> String.starts_with?("elmc_")
+  end
+
+  defp delete_emit_probe_process_key?({:record_view_peel, _, _, _}), do: true
+  defp delete_emit_probe_process_key?({:elmc_subexpr_cache, _}), do: true
+  defp delete_emit_probe_process_key?({:elmc_subexpr_shared, _}), do: true
+  defp delete_emit_probe_process_key?(_), do: false
+
+  defp delete_codegen_process_key?(key) when is_atom(key) do
+    key
+    |> Atom.to_string()
+    |> String.starts_with?("elmc_")
+  end
+
+  defp delete_codegen_process_key?({:record_view_peel, _, _, _}), do: true
+  defp delete_codegen_process_key?({:elmc_subexpr_cache, _}), do: true
+  defp delete_codegen_process_key?({:elmc_subexpr_shared, _}), do: true
+  defp delete_codegen_process_key?(_), do: false
+
   defp rc_required_opts(opts, direct_command_targets) when is_list(opts),
     do: Keyword.put(opts, :direct_command_targets, direct_command_targets)
 
@@ -41,12 +143,13 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
   @spec header(ElmEx.IR.t(), Types.codegen_opts()) :: String.t()
   def header(ir, opts) do
+    reset_process_state!()
     direct_cmd_decls = DirectRenderRegistry.decls(ir, opts)
     decl_map = IRQueries.function_decl_map(ir)
     direct_command_targets = Host.direct_command_targets(ir, opts, decl_map)
-    _ = RcRequired.run!(decl_map, rc_required_opts(opts, direct_command_targets))
     wrapper_targets = GenericTargets.wrapper_targets(ir, opts)
     exported_targets = Analysis.exported_function_targets(decl_map, opts, direct_command_targets)
+    _ = RcRequired.run!(decl_map, rc_required_opts(opts, direct_command_targets))
 
     function_decls =
       ir.modules
@@ -91,10 +194,11 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
   @spec source(ElmEx.IR.t(), Types.codegen_opts()) :: String.t()
   def source(ir, opts) do
-    ValueSlots.reset()
+    reset_process_state!()
     Process.put(:elmc_lambdas, [])
     Process.put(:elmc_lambda_counter, 0)
     Process.put(:elmc_lambda_defs, %{})
+    Process.put(:elmc_lambda_emitted_names, MapSet.new())
     Process.put(:elmc_borrowed_field_refs, MapSet.new())
     RecordCompile.reset_rec_values_suffix()
 
@@ -135,6 +239,11 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
     Process.put(:elmc_pebble_msg_names, msg_names)
 
+    Process.put(
+      :elmc_msg_constructor_payload_specs,
+      IRAnalysis.msg_constructor_payload_specs(ir, entry_module)
+    )
+
     decl_map = IRQueries.function_decl_map(ir)
     generic_targets = GenericTargets.function_targets(ir, opts)
 
@@ -149,10 +258,13 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     direct_call_targets =
       generic_targets
       |> Enum.filter(fn target ->
+        {mod, name} = target
+
         case Map.fetch(decl_map, target) do
           {:ok, decl} ->
             not MapSet.member?(wrapper_targets, target) and
-              not NativeFunctionCall.native_scalar_fn?(decl, elem(target, 0), decl_map)
+              not NativeFunctionCall.native_scalar_fn?(decl, mod, decl_map) and
+              not RcRequired.platform_worker_rc_abi?(mod, name, decl_map)
 
           :error ->
             false
@@ -162,13 +274,23 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
     direct_command_targets = Host.direct_command_targets(ir, opts, decl_map)
 
+    direct_emit_targets =
+      if opts[:direct_render_only] == true do
+        {_def_targets, emit_targets, _pruned} = DirectRenderAnalysis.target_sets(decl_map, opts)
+        emit_targets
+      else
+        MapSet.new()
+      end
+
     used_union_ctors =
       if opts[:strip_dead_code] == false do
         nil
       else
         MacroReachability.used_union_ctors(
           decl_map,
-          MapSet.union(generic_targets, direct_command_targets)
+          generic_targets
+          |> MapSet.union(direct_command_targets)
+          |> MapSet.union(direct_emit_targets)
         )
         |> MapSet.union(SpecialValues.compiler_folded_union_constructors())
       end
@@ -189,6 +311,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     Process.put(:elmc_wrapper_targets, wrapper_targets)
     Process.put(:elmc_direct_call_targets, direct_call_targets)
     Process.put(:elmc_native_boxed_rc_abi, %{})
+    Process.put(:elmc_native_bool_rc_abi, %{})
     Process.put(:elmc_exported_targets, exported_targets)
     Process.put(:elmc_function_arities, function_arities)
     Process.put(:elmc_program_decls, decl_map)
@@ -257,6 +380,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
     lambda_defs =
       lambda_def_items
+      |> dedupe_lambda_defs_by_name()
       |> prune_unreferenced_lambda_defs([function_defs, direct_command_defs])
       |> Enum.join("\n")
 
@@ -264,6 +388,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     Process.delete(:elmc_wrapper_targets)
     Process.delete(:elmc_direct_call_targets)
     Process.delete(:elmc_native_boxed_rc_abi)
+    Process.delete(:elmc_native_bool_rc_abi)
     Process.delete(:elmc_exported_targets)
     Process.delete(:elmc_function_arities)
     Process.delete(:elmc_program_decls)
@@ -273,6 +398,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     Process.delete(:elmc_rc_required)
     Process.delete(:elmc_lambda_counter)
     Process.delete(:elmc_lambda_defs)
+    Process.delete(:elmc_lambda_emitted_names)
     Process.delete(:elmc_constructor_tags)
     Process.delete(:elmc_union_constructor_macros)
     Process.delete(:elmc_record_field_macros)
@@ -345,6 +471,25 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     #{direct_scene_guard(direct_command_defs, opts, ir)}
     """
     |> finalize_source()
+  end
+
+  defp dedupe_lambda_defs_by_name(lambda_defs) when is_list(lambda_defs) do
+    {deduped, _seen} =
+      Enum.reduce(lambda_defs, {[], MapSet.new()}, fn defn, {acc, seen} ->
+        case lambda_definition_name(defn) do
+          name when is_binary(name) ->
+            if MapSet.member?(seen, name) do
+              {acc, seen}
+            else
+              {[defn | acc], MapSet.put(seen, name)}
+            end
+
+          _ ->
+            {[defn | acc], seen}
+        end
+      end)
+
+    Enum.reverse(deduped)
   end
 
   defp prune_unreferenced_lambda_defs([], _root_chunks), do: []

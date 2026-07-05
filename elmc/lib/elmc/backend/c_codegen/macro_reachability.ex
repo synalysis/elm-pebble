@@ -17,10 +17,22 @@ defmodule Elmc.Backend.CCodegen.MacroReachability do
 
   defp union_ctors_in_expr(%{op: :int_literal, union_ctor: ctor}) when is_binary(ctor), do: [ctor]
 
-  defp union_ctors_in_expr(%{kind: :constructor, name: name}) when is_binary(name), do: [name]
+  defp union_ctors_in_expr(%{kind: :constructor} = pattern) do
+    ctor_names =
+      [Map.get(pattern, :resolved_name), Map.get(pattern, :name)]
+      |> Enum.filter(&is_binary/1)
+      |> Enum.flat_map(fn name ->
+        short = name |> String.split(".") |> List.last()
+        Enum.uniq([name, short])
+      end)
 
-  defp union_ctors_in_expr(%{kind: :constructor, resolved_name: name}) when is_binary(name) do
-    [name |> String.split(".") |> List.last()]
+    arg_names =
+      case Map.get(pattern, :arg_pattern) do
+        nil -> []
+        arg -> union_ctors_in_expr(arg)
+      end
+
+    ctor_names ++ arg_names
   end
 
   defp union_ctors_in_expr(%{op: :case, branches: branches}) when is_list(branches) do

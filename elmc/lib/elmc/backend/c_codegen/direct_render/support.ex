@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Support do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.DirectRender.ListLoopPlans
   alias Elmc.Backend.CCodegen.Types
 
   @type seen_set :: MapSet.t(Types.function_decl_key())
@@ -116,6 +117,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Support do
 
       {"List.indexedMap", [fun_expr, list_expr]} ->
         direct_map_fun_supported?(fun_expr, list_expr, module_name, decl_map, seen)
+
+      {"List.filter", [pred_expr, list_expr]} ->
+        direct_map_fun_supported?(pred_expr, list_expr, module_name, decl_map, seen)
 
       {"List.concatMap", [fun_expr, list_expr]} ->
         direct_map_fun_supported?(fun_expr, list_expr, module_name, decl_map, seen)
@@ -313,7 +317,15 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Support do
     direct_function_target(fun_expr, module_name, decl_map, seen) != nil or
       direct_lambda_supported?(fun_expr, module_name, decl_map, seen) or
       direct_map_fun_static_transparent?(fun_expr, list_expr, module_name, decl_map, seen) or
-      direct_dynamic_list_expr?(list_expr)
+      direct_dynamic_list_expr?(list_expr) or
+      direct_list_pipeline_expr?(list_expr, module_name, decl_map)
+  end
+
+  defp direct_list_pipeline_expr?(list_expr, module_name, decl_map) do
+    ListLoopPlans.pipeline_fragment?(
+      list_expr,
+      %{__module__: module_name, __program_decls__: decl_map}
+    )
   end
 
   defp direct_dynamic_list_expr?(%{op: :var}), do: true

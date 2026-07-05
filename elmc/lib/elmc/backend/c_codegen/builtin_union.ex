@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.CCodegen.BuiltinUnion do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Types
@@ -33,6 +34,16 @@ defmodule Elmc.Backend.CCodegen.BuiltinUnion do
     union_ctor_short_name(ctor) == @maybe_nothing
   end
 
+  def maybe_nothing_literal?(%{op: :constructor_call, target: target, args: args})
+      when args in [[], nil] and is_binary(target) do
+    union_ctor_short_name(target) == @maybe_nothing
+  end
+
+  def maybe_nothing_literal?(%{op: :qualified_call, target: target, args: args})
+      when args in [[], nil] and is_binary(target) do
+    union_ctor_short_name(target) == @maybe_nothing
+  end
+
   def maybe_nothing_literal?(_expr), do: false
 
   @spec compile_maybe_nothing(Types.compile_env(), Types.compile_counter()) ::
@@ -57,6 +68,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinUnion do
          short when is_map_key(@payload_ctors, short) <- union_ctor_short_name(ctor) do
       {payload_code, payload_var, counter} = Host.compile_expr(right, env, counter)
       {out, counter, _} = union_out_target(env, counter)
+      payload_var = ValueSlots.resolve_result_slot(payload_var)
 
       ctor =
         if Map.has_key?(@payload_take_ctors, short) and ValueSlots.owned_ref?(payload_var) do
@@ -94,20 +106,34 @@ defmodule Elmc.Backend.CCodegen.BuiltinUnion do
   def try_compile_tuple2(_expr, _env, _counter), do: :error
 
   defp union_out_target(env, counter) do
-    case Map.get(env, :__branch_out__) ||
-           Map.get(env, :__into_out__) ||
-           RcRuntimeEmit.nested_out_target(env) do
-      target when is_binary(target) ->
-        if RcRuntimeEmit.function_out_ref?(target) do
-          next = counter + 1
-          {"tmp_#{next}", next, true}
+    branch_out = Map.get(env, :__branch_out__) || RcRuntimeEmit.nested_out_target(env)
+
+    cond do
+      out = RcRuntimeEmit.fn_out_alloc_target(env) ->
+        {out, counter, false}
+
+      is_binary(branch_out) ->
+        if RcRuntimeEmit.function_out_ref?(branch_out) do
+          fresh_union_out_target(env, counter)
         else
-          {target, counter, false}
+          {branch_out, counter, false}
         end
 
-      _ ->
+      RcRuntimeEmit.rc_allocator_emit_mode?(env) ->
+        fresh_union_out_target(env, counter)
+
+      true ->
         next = counter + 1
         {"tmp_#{next}", next, true}
     end
+  end
+
+  defp fresh_union_out_target(env, counter) do
+    {out, next} = CaseCompile.fresh_var(counter, env)
+
+    declare? =
+      not ValueSlots.owned_ref?(out) and not RcRuntimeEmit.function_out_ref?(out)
+
+    {out, next, declare?}
   end
 end

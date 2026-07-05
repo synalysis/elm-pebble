@@ -3,6 +3,7 @@ defmodule Elmc.FunctionSplitTest do
 
   alias Elmc.Backend.CCodegen.FunctionSplit
   alias Elmc.Backend.CCodegen.IRQueries
+  alias Elmc.Test.CCodegenExtract
 
   @source_template Path.expand("../../ide/priv/project_templates/watchface_yes", __DIR__)
 
@@ -40,23 +41,23 @@ defmodule Elmc.FunctionSplitTest do
         strip_dead_code: true
       })
 
-    Map.fetch!(IRQueries.function_decl_map(ir), {"Main", "drawDial"})
+    Map.fetch!(IRQueries.function_decl_map(ir), {"Yes.Render", "drawDial"})
   end
 
-  test "drawDial split part0 nests sunWindow as outermost let" do
+  test "drawDial split part0 keeps sunWindow in the first chunk" do
     project_dir = Path.expand("tmp/function_split_yes_plan_project", __DIR__)
     prepare_yes_project!(project_dir)
     decl = yes_draw_dial_decl!(project_dir)
 
     {:ok, parts} = FunctionSplit.plan_parts_for_test(decl.expr, decl.args || [])
-    {part0_names, part0} = hd(parts)
+    {part0_names, _part0} = hd(parts)
 
-    assert hd(part0_names) == "moonBounds"
-    assert List.last(part0_names) == "sunWindow"
-    assert match?(%{op: :let_in, name: "sunWindow"}, part0)
+    assert "sunWindow" in part0_names
+    assert "moonBounds" in part0_names
+    assert "center" in part0_names
   end
 
-  test "drawDial split parts compile without phantom zero-arg let calls" do
+  test "drawDial direct render compiles without phantom zero-arg let calls" do
     project_dir = Path.expand("tmp/function_split_yes_project", __DIR__)
     out_dir = Path.expand("tmp/function_split_yes_codegen", __DIR__)
     prepare_yes_project!(project_dir)
@@ -74,22 +75,20 @@ defmodule Elmc.FunctionSplitTest do
 
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert generated =~ "elmc_fn_Main_drawDial_part0_native"
-    refute generated =~ "elmc_fn_Main_sunsetAngle(NULL"
-    refute generated =~ "elmc_fn_Main_sunriseAngle(NULL"
-    refute generated =~ "elmc_fn_Main_sunset(NULL"
-    refute generated =~ "elmc_fn_Main_sunrise(NULL"
-    refute generated =~ "elmc_fn_Main_sunWindow(NULL"
+    assert generated =~ "elmc_fn_Yes_Render_drawDial_commands_append"
+    refute generated =~ "elmc_fn_Yes_Render_sunsetAngle(NULL"
+    refute generated =~ "elmc_fn_Yes_Render_sunriseAngle(NULL"
+    refute generated =~ "elmc_fn_Yes_Render_sunset(NULL"
+    refute generated =~ "elmc_fn_Yes_Render_sunrise(NULL"
+    refute generated =~ "elmc_fn_Yes_Render_sunWindow(NULL"
 
-    part0_body =
-      generated
-      |> String.split("static RC elmc_fn_Main_drawDial_part0_native")
-      |> tl()
-      |> hd()
-      |> String.split("static RC elmc_fn_Main_drawDial_part1_native")
-      |> hd()
+    draw_dial_body =
+      CCodegenExtract.fn_body(generated, "elmc_fn_Yes_Render_drawDial_commands_append")
 
-    assert part0_body =~ "elmc_maybe_with_default"
-    assert part0_body =~ "elmc_fn_Main_square_native"
+    assert draw_dial_body =~ "elmc_maybe_with_default"
+    assert draw_dial_body =~ "elmc_fn_Yes_Layout_centerSquare"
+    assert draw_dial_body =~ "ELMC_FIELD_MAIN_MODEL_SUN"
+    refute draw_dial_body =~ "ELMC_FIELD_YES_RENDER_FACEDISPLAY_SUN"
+    refute generated =~ "elmc_fn_Yes_Render_model"
   end
 end

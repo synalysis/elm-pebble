@@ -4,6 +4,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.SceneBuffer.Arena.Lifecyc
   alias Elmc.Backend.Pebble.Types
 
   alias Elmc.Backend.Pebble.SourceWriter.DrawRuntime.SceneBuffer.Arena.Lifecycle.RebuildInvalidate.{
+    DecodeFailure,
     FullDirtyMark,
     InvalidateScene,
     MarkDirty,
@@ -16,7 +17,8 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.SceneBuffer.Arena.Lifecyc
       MarkDirty.body(),
       PrepareRebuild.body(),
       FullDirtyMark.body(),
-      InvalidateScene.body()
+      InvalidateScene.body(),
+      DecodeFailure.body()
     ]
     |> IO.iodata_to_binary()
   end

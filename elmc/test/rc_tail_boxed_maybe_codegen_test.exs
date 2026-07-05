@@ -101,6 +101,7 @@ defmodule Elmc.RcTailBoxedMaybeCodegenTest do
     probe_list_head = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_probeListHeadAt")
 
     assert probe_list_head =~ "elmc_maybe_with_default"
-    assert probe_list_head =~ "return tmp_"
+    assert probe_list_head =~ "*out ="
+    refute probe_list_head =~ "return tmp_"
   end
 end

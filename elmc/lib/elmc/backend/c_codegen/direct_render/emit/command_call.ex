@@ -4,6 +4,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.CommandCall do
   alias Elmc.Backend.CCodegen.DirectRender.CommandDef
   alias Elmc.Backend.CCodegen.DirectRender.Emit.Catch
   alias Elmc.Backend.CCodegen.DirectRender.Emit.Release
+  alias Elmc.Backend.CCodegen.DirectRender.RecordViewPeel
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Types
@@ -117,9 +118,15 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.CommandCall do
                 {code_acc <> "\n  " <> code, env_acc, releases_acc ++ cleanup, c2}
 
               :boxed ->
-                {code, ref, c2} = Host.compile_expr(arg_expr, env, c)
-                env_acc = Map.put(env_acc, arg_name, ref)
-                {code_acc <> "\n  " <> code, env_acc, releases_acc ++ [ref], c2}
+                case RecordViewPeel.inline_arg_binding(arg_name, arg_expr, env_acc) do
+                  {:record_peel, _source_ref, _helper_key, _helper_call} = peel_binding ->
+                    {code_acc, Map.put(env_acc, arg_name, peel_binding), releases_acc, c}
+
+                  nil ->
+                    {code, ref, c2} = Host.compile_expr(arg_expr, env, c)
+                    env_acc = Map.put(env_acc, arg_name, ref)
+                    {code_acc <> "\n  " <> code, env_acc, releases_acc ++ [ref], c2}
+                end
             end
           else
             {code_acc, env_acc, releases_acc, c}
@@ -159,8 +166,10 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.CommandCall do
             {code_acc <> "\n  " <> code, refs_acc ++ [ref], releases_acc ++ cleanup, c2}
 
           :boxed ->
-            {code, ref, c2} = Host.compile_expr(arg_expr, env, c)
-            {code_acc <> "\n  " <> code, refs_acc ++ [ref], releases_acc ++ [ref], c2}
+            case compile_outlined_boxed_arg(arg_expr, env, c) do
+              {code, ref, releases, c2} ->
+                {code_acc <> "\n  " <> code, refs_acc ++ [ref], releases_acc ++ releases, c2}
+            end
         end
       end)
 
@@ -174,19 +183,36 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.CommandCall do
       {:ok,
        """
        #{arg_code}
-         RC direct_rc_#{next} = #{c_name}_commands_append_native(#{arg_list}, writer);
+         #{Catch.assign_command_append("#{c_name}_commands_append_native(#{arg_list}, writer)")}
        #{releases}
-         #{Catch.handle_child_rc("direct_rc_#{next}")}
        """, next}
     else
       {:ok,
        """
        #{arg_code}
          ElmcValue *direct_call_args_#{next}[#{max(argc, 1)}] = { #{arg_list} };
-         RC direct_rc_#{next} = #{c_name}_commands_append(direct_call_args_#{next}, #{argc}, writer);
+         #{Catch.assign_command_append("#{c_name}_commands_append(direct_call_args_#{next}, #{argc}, writer)")}
        #{releases}
-         #{Catch.handle_child_rc("direct_rc_#{next}")}
        """, next}
     end
+  end
+
+  defp compile_outlined_boxed_arg(%{op: :var, name: name}, env, counter) do
+    case EnvBindings.lookup_binding(env, name) do
+      {:record_peel, source_ref, _helper_key, _helper_call} when is_binary(source_ref) ->
+        {"", source_ref, [], counter}
+
+      source when is_binary(source) ->
+        {"", source, [], counter}
+
+      _ ->
+        {code, ref, counter} = Host.compile_expr(%{op: :var, name: name}, env, counter)
+        {code, ref, [ref], counter}
+    end
+  end
+
+  defp compile_outlined_boxed_arg(arg_expr, env, counter) do
+    {code, ref, counter} = Host.compile_expr(arg_expr, env, counter)
+    {code, ref, [ref], counter}
   end
 end

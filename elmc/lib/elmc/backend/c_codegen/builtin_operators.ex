@@ -514,11 +514,18 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
           counter
         )
 
+      both_known_int_binop_operands?(left, right, env) ->
+        compile_known_int_boxed_binop(left, right, operator, env, counter)
+
       true ->
-        {left_code, left_var, counter} = Host.compile_expr(left, env, counter)
-        {right_code, right_var, counter} = Host.compile_expr(right, env, counter)
+        operand_env = RcRuntimeEmit.operand_env(env)
+
+        {left_code, left_var, counter} = Host.compile_expr(left, operand_env, counter)
+        {right_code, right_var, counter} = Host.compile_expr(right, operand_env, counter)
         {left_code, left_var, counter} = retain_declared_out_operand(left_code, left_var, env, counter)
         {right_code, right_var, counter} = retain_declared_out_operand(right_code, right_var, env, counter)
+        left_ref = RcRuntimeEmit.value_expr(left_var)
+        right_ref = RcRuntimeEmit.value_expr(right_var)
         {out, next} = CaseCompile.fresh_var(counter, env)
 
         {assign_prefix, env} =
@@ -534,10 +541,10 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
         code = """
         #{left_code}
           #{right_code}
-          #{assign_prefix}if ((#{left_var} && #{left_var}->tag == ELMC_TAG_FLOAT) || (#{right_var} && #{right_var}->tag == ELMC_TAG_FLOAT)) {
-            #{RcRuntimeEmit.fusion_assign(out, "elmc_new_float", "elmc_as_float(#{left_var}) #{operator} elmc_as_float(#{right_var})", env)}
+          #{assign_prefix}if ((#{left_ref} && #{left_ref}->tag == ELMC_TAG_FLOAT) || (#{right_ref} && #{right_ref}->tag == ELMC_TAG_FLOAT)) {
+            #{RcRuntimeEmit.fusion_assign(out, "elmc_new_float", "elmc_as_float(#{left_ref}) #{operator} elmc_as_float(#{right_ref})", env)}
           } else {
-            #{RcRuntimeEmit.fusion_assign(out, "elmc_new_int", "elmc_as_int(#{left_var}) #{operator} elmc_as_int(#{right_var})", env)}
+            #{RcRuntimeEmit.fusion_assign(out, "elmc_new_int", "elmc_as_int(#{left_ref}) #{operator} elmc_as_int(#{right_ref})", env)}
           }
           #{binop_operand_release(left_var, out)}
           #{binop_operand_release(right_var, out)}
@@ -565,6 +572,57 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
 
   defp native_int_operand_available?(expr, env),
     do: Host.native_int_expr?(expr, env) or ConstantInt.native_let_value?(expr, env)
+
+  @spec both_known_int_binop_operands?(Types.ir_expr(), Types.ir_expr(), Types.compile_env()) ::
+          boolean()
+  defp both_known_int_binop_operands?(left, right, env) do
+    known_int_binop_operand?(left, env) and known_int_binop_operand?(right, env)
+  end
+
+  @spec known_int_binop_operand?(Types.ir_expr(), Types.compile_env()) :: boolean()
+  defp known_int_binop_operand?(expr, env) do
+    case TypedReturn.expr_type(expr, env) do
+      "Int" -> true
+      "Float" -> false
+      type when is_binary(type) -> false
+      nil -> known_int_binop_operand_fallback?(expr, env)
+    end
+  end
+
+  defp known_int_binop_operand_fallback?(expr, env) do
+    case expr do
+      %{op: :int_literal, union_ctor: ctor} when is_binary(ctor) -> false
+      %{op: :int_literal} -> true
+      _ -> Host.native_int_expr?(expr, env) or ConstantInt.native_let_value?(expr, env)
+    end
+  end
+
+  @spec compile_known_int_boxed_binop(
+          Types.ir_expr(),
+          Types.ir_expr(),
+          String.t(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
+  defp compile_known_int_boxed_binop(left, right, operator, env, counter) do
+    operand_env = RcRuntimeEmit.operand_env(env)
+
+    {left_code, left_var, counter} = Host.compile_expr(left, operand_env, counter)
+    {right_code, right_var, counter} = Host.compile_expr(right, operand_env, counter)
+    left_ref = RcRuntimeEmit.value_expr(left_var)
+    right_ref = RcRuntimeEmit.value_expr(right_var)
+    {out, next} = CaseCompile.fresh_var(counter, env)
+
+    code = """
+    #{left_code}
+      #{right_code}
+      #{RcRuntimeEmit.assign_call(env, out, "elmc_new_int", "elmc_as_int(#{left_ref}) #{operator} elmc_as_int(#{right_ref})")}
+      #{binop_operand_release(left_var, out)}
+      #{binop_operand_release(right_var, out)}
+    """
+
+    {code, out, next}
+  end
 
   @spec compile_native_int_operand(
           Types.ir_expr(),
@@ -613,8 +671,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
     {code, out, counter} =
       case NativeInt.static_nonzero_int_value(right, env) do
         value when is_integer(value) ->
-          next = counter + 1
-          out = "tmp_#{next}"
+          {out, next} = CaseCompile.fresh_var(counter, env)
 
           code =
             """
@@ -626,15 +683,15 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
 
         nil ->
           {right_code, right_var, counter} = Host.compile_native_int_expr(right, env, counter)
-          next = counter + 1
-          out = "tmp_#{next}"
+          {out, next} = CaseCompile.fresh_var(counter, env)
+          denom = "native_idiv_den_#{next}"
 
           code =
             """
             #{left_code}
               #{right_code}
-              const elmc_int_t __den_#{next} = #{right_var};
-              #{RcRuntimeEmit.assign_call(env, out, "elmc_new_int", "elmc_int_idiv(#{left_var}, __den_#{next})")}
+              const elmc_int_t #{denom} = #{right_var};
+              #{RcRuntimeEmit.assign_call(env, out, "elmc_new_int", "elmc_int_idiv(#{left_var}, #{denom})")}
             """
 
           {code, out, next}
@@ -658,19 +715,23 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
         counter
       )
     else
-      {left_code, left_var, counter} = Host.compile_expr(left, env, counter)
-      {right_code, right_var, counter} = Host.compile_expr(right, env, counter)
+      operand_env = RcRuntimeEmit.operand_env(env)
+
+      {left_code, left_var, counter} = Host.compile_expr(left, operand_env, counter)
+      {right_code, right_var, counter} = Host.compile_expr(right, operand_env, counter)
+      left_ref = RcRuntimeEmit.value_expr(left_var)
+      right_ref = RcRuntimeEmit.value_expr(right_var)
       next = counter + 1
       out = "tmp_#{next}"
 
       code = """
       #{left_code}
         #{right_code}
-          const double __denf_#{next} = elmc_as_float(#{right_var});
-          const double __numf_#{next} = elmc_as_float(#{left_var});
+          const double __denf_#{next} = elmc_as_float(#{right_ref});
+          const double __numf_#{next} = elmc_as_float(#{left_ref});
         #{ValueSlots.boxed_decl(out, "elmc_new_float(__numf_#{next} / __denf_#{next})", env)}
-        elmc_release(#{left_var});
-        elmc_release(#{right_var});
+        #{ValueSlots.release_stmt(left_var)}
+        #{ValueSlots.release_stmt(right_var)}
       """
 
       {code, out, next}
@@ -699,30 +760,31 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
         {right_code, right_var, counter, right_borrowed?} =
           compile_compare_operand(right, env, counter)
 
-        next = counter + 1
-        out = "tmp_#{next}"
+        {out, next} = compare_bool_out_slot(env, counter)
         left_release = compare_operand_release(env, left_var, left_borrowed?)
         right_release = compare_operand_release(env, right_var, right_borrowed?)
 
-        code =
+        {code, final_counter} =
           case operator do
             "__eq__" ->
-              """
+              {"""
               #{left_code}
                 #{right_code}
                 #{RcRuntimeEmit.assign_call(env, out, "elmc_new_bool", "elmc_value_equal(#{left_var}, #{right_var})")}
                 #{left_release}#{right_release}\
-              """
+              """, next}
 
             "__neq__" ->
-              """
+              {"""
               #{left_code}
                 #{right_code}
                 #{RcRuntimeEmit.assign_call(env, out, "elmc_new_bool", "!elmc_value_equal(#{left_var}, #{right_var})")}
                 #{left_release}#{right_release}\
-              """
+              """, next}
 
             _ ->
+              {cmp_var, cmp_counter} = RcRuntimeEmit.compare_order_slot(env, next)
+
               comparison =
                 case operator do
                   "__lt__" -> "<"
@@ -731,17 +793,17 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
                   "__gte__" -> ">="
                 end
 
-              """
+              {"""
               #{left_code}
                 #{right_code}
-                ElmcValue *__cmp_#{next} = elmc_basics_compare(#{left_var}, #{right_var});
-                #{RcRuntimeEmit.assign_call(env, out, "elmc_new_bool", "elmc_as_int(__cmp_#{next}) #{comparison} 0")}
-                elmc_release(__cmp_#{next});
+                #{RcRuntimeEmit.assign_call(env, cmp_var, "elmc_basics_compare", "#{left_var}, #{right_var}")}
+                #{RcRuntimeEmit.assign_call(env, out, "elmc_new_bool", "elmc_as_int(#{cmp_var}) #{comparison} 0")}
+                #{ValueSlots.release_consumed(cmp_var)}
                 #{left_release}#{right_release}\
-              """
+              """, cmp_counter}
           end
 
-        {code, out, next}
+        {code, out, final_counter}
     end
   end
 
@@ -809,7 +871,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
   end
 
   defp compile_compare_operand(expr, env, counter) do
-    {code, var, counter} = Host.compile_expr(expr, env, counter)
+    {code, var, counter} = Host.compile_expr(expr, RcRuntimeEmit.operand_env(env), counter)
     {code, var, counter, false}
   end
 
@@ -818,6 +880,19 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
 
   defp compare_operand_release(env, var, false) do
     OwnershipCompile.release_if_owned(env, var, :compare)
+  end
+
+  @spec compare_bool_out_slot(Types.compile_env(), Types.compile_counter()) ::
+          {String.t(), Types.compile_counter()}
+  defp compare_bool_out_slot(env, counter) do
+    case Map.get(env, :__branch_out__) || RcRuntimeEmit.nested_out_target(env) do
+      slot when is_binary(slot) ->
+        {slot, counter + 1}
+
+      _ ->
+        next = counter + 1
+        {"tmp_#{next}", next}
+    end
   end
 
   @spec c_identifier?(String.t()) :: boolean()

@@ -16,6 +16,10 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
   alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.CCodegen.ValueSlots
 
+  defp if_result_out_binding(env, counter) do
+    CaseCompile.result_out_binding(env, counter)
+  end
+
   @spec compile(Types.ir_if_expr(), Types.compile_env(), Types.compile_counter()) ::
           Types.compile_result()
   def compile(
@@ -169,7 +173,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
         {cond_code <> branch_code, branch_ref, counter}
 
       _ ->
-        {out, branch_counter, declare_out?} = CaseCompile.result_out_binding(env, counter)
+        {out, branch_counter, declare_out?} = if_result_out_binding(env, counter)
         branch_counter = CaseCompile.advance_counter_past_out(branch_counter, out, declare_out?)
 
         then_env = branch_env(env, out)
@@ -185,10 +189,12 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
           CaseCompile.branch_assignment(else_expr, out, else_env, counter)
 
         then_body =
-          maybe_extract_if_branch_helper(then_expr, then_env, out, then_code, then_assignment)
+          maybe_extract_if_branch_helper(then_expr, then_env, out, then_code, then_assignment) <>
+            "\n" <> ValueSlots.normalize_branch_result_slot(out)
 
         else_body =
-          maybe_extract_if_branch_helper(else_expr, else_env, out, else_code, else_assignment)
+          maybe_extract_if_branch_helper(else_expr, else_env, out, else_code, else_assignment) <>
+            "\n" <> ValueSlots.normalize_branch_result_slot(out)
 
         code =
           Enum.join(
@@ -209,7 +215,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
   end
 
   defp compile_platform_static_branches(macro, polarity, then_expr, else_expr, env, counter) do
-    {out, branch_counter, declare_out?} = CaseCompile.result_out_binding(env, counter)
+    {out, branch_counter, declare_out?} = if_result_out_binding(env, counter)
     branch_counter = CaseCompile.advance_counter_past_out(branch_counter, out, declare_out?)
 
     then_env = branch_env(env, out)
@@ -273,7 +279,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
 
     case complementary_bool_branches(then_expr, else_expr) do
       polarity when polarity in [:cond_true, :cond_false] ->
-        {out, counter, _declare?} = CaseCompile.result_out_binding(env, counter)
+        {out, counter, _declare?} = if_result_out_binding(env, counter)
         flag = if(polarity == :cond_true, do: "elmc_as_int(#{cond_var})", else: "(elmc_as_int(#{cond_var}) == 0)")
 
         assign =
@@ -295,20 +301,32 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
   end
 
   defp compile_boxed_cond_branches(cond_code, cond_var, then_expr, else_expr, env, counter) do
-    {out, branch_counter, declare_out?} = CaseCompile.result_out_binding(env, counter)
+    {out, branch_counter, declare_out?} = if_result_out_binding(env, counter)
     branch_counter = CaseCompile.advance_counter_past_out(branch_counter, out, declare_out?)
 
     then_env = branch_env(env, out)
     else_env = branch_env(env, out)
+    parent_slots = ValueSlots.snapshot()
 
     {then_code, then_assignment, _counter} =
-      CaseCompile.branch_assignment(then_expr, out, then_env, branch_counter)
+      with :ok <- ValueSlots.restore(parent_slots) do
+        CaseCompile.branch_assignment(then_expr, out, then_env, branch_counter)
+      end
 
     {else_code, else_assignment, counter} =
-      CaseCompile.branch_assignment(else_expr, out, else_env, branch_counter)
+      with :ok <- ValueSlots.restore(parent_slots) do
+        CaseCompile.branch_assignment(else_expr, out, else_env, branch_counter)
+      end
 
-    then_body = maybe_extract_if_branch_helper(then_expr, then_env, out, then_code, then_assignment)
-    else_body = maybe_extract_if_branch_helper(else_expr, else_env, out, else_code, else_assignment)
+    then_body =
+      format_if_branch_body(
+        Enum.join([then_code, then_assignment, ValueSlots.normalize_branch_result_slot(out)], "\n")
+      )
+
+    else_body =
+      format_if_branch_body(
+        Enum.join([else_code, else_assignment, ValueSlots.normalize_branch_result_slot(out)], "\n")
+      )
 
     code =
       Enum.join(
@@ -316,9 +334,9 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
           cond_code,
           CaseCompile.result_out_decl(out, declare_out?),
           "if (elmc_as_int(#{cond_var}) != 0) {",
-          format_if_branch_body(then_body),
+          then_body,
           "} else {",
-          format_if_branch_body(else_body),
+          else_body,
           "}",
           if(cond_var != out, do: ValueSlots.release_stmt(cond_var), else: "")
         ],
@@ -375,22 +393,27 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
   defp normalize_branch_expr(other), do: other
 
   defp branch_env(env, out) do
+    ValueSlots.reset_function_out_written()
+
     env =
       env
       |> RecordCompile.fresh_subexpr_cache()
       |> Map.update(:__declared_outs__, MapSet.new([out]), &MapSet.put(&1, out))
-
-    env =
-      if RcRuntimeEmit.function_out_ref?(out),
-        do: RcRuntimeEmit.strip_function_tail_scope(env),
-        else: env
 
     cond do
       RcRuntimeEmit.function_out_ref?(out) ->
         Map.put(env, :__branch_out__, out)
 
       ValueSlots.owned_ref?(out) ->
-        Map.put(env, :__into_out__, out)
+        env
+        |> RcRuntimeEmit.strip_function_tail_scope()
+        |> then(fn branch_env ->
+          ValueSlots.set_result_slot_root(out)
+          Map.put(branch_env, :__branch_out__, out)
+        end)
+
+      RcRuntimeEmit.function_tail_compile?(env) ->
+        RcRuntimeEmit.strip_function_tail_scope(env)
 
       true ->
         env

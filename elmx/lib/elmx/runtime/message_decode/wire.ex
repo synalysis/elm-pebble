@@ -21,6 +21,19 @@ defmodule Elmx.Runtime.MessageDecode.Wire do
 
   def decode(wire, "FromWatch") when is_map(wire), do: {:FromWatch, to_runtime(wire)}
 
+  def decode(wire, message)
+      when is_binary(message) and message != "" and not is_map(wire) do
+    ctor = message_ctor(message)
+
+    cond do
+      is_binary(wire) -> {String.to_atom(ctor), wire}
+      is_integer(wire) -> {String.to_atom(ctor), wire}
+      is_boolean(wire) -> {String.to_atom(ctor), wire}
+      is_float(wire) -> {String.to_atom(ctor), wire}
+      true -> wire
+    end
+  end
+
   def decode(wire, message) when is_map(wire) do
     ctor = Map.get(wire, "ctor") || Map.get(wire, :ctor)
     msg_ctor = if(is_binary(message), do: message_ctor(message), else: nil)

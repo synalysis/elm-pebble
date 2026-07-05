@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Catch do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.ValueSlots
 
   @spec header_macros() :: String.t()
@@ -47,13 +48,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Catch do
 
   @spec push_cmd_check() :: String.t()
   def push_cmd_check do
-    """
-    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0) {
-      Rc = RC_ERR_SCENE_BUFFER_OVERFLOW;
-      break;
-    }
-    """
-    |> String.trim()
+    assign_command_append("elmc_scene_writer_push_cmd(writer, &scene_cmd)")
   end
 
   @spec soft_stop_if(String.t()) :: String.t()
@@ -67,13 +62,28 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Catch do
     |> String.trim()
   end
 
-  @spec handle_child_rc(String.t()) :: String.t()
-  def handle_child_rc(rc_var) do
+  @spec check_rc(String.t()) :: String.t()
+  def check_rc(on_failure_code \\ "") do
+    on_failure = String.trim_trailing(on_failure_code)
+
+    if on_failure == "" do
+      "CHECK_RC(Rc);"
+    else
+      """
+      if (Rc != RC_SUCCESS) {
+      #{CSource.indent(on_failure, 2)}
+      }
+      CHECK_RC(Rc);
+      """
+      |> String.trim()
+    end
+  end
+
+  @spec assign_command_append(String.t(), String.t()) :: String.t()
+  def assign_command_append(call_expr, on_failure_code \\ "") when is_binary(call_expr) do
     """
-    if (#{rc_var} != RC_SUCCESS) {
-      Rc = #{rc_var};
-      break;
-    }
+    Rc = #{call_expr};
+    #{check_rc(on_failure_code)}
     """
     |> String.trim()
   end

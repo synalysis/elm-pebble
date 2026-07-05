@@ -684,26 +684,42 @@
       "c_tmp_max": 0
     },
     {
-      "function": "elmc_fn_Main_main",
+      "function": "elmc_fn_Pebble_Ui_canvasLayer",
       "level": "ok",
       "score": 0,
       "reasons": [],
-      "c_boxed_locals": 1,
-      "c_tmp_max": 1
+      "c_boxed_locals": 7,
+      "c_tmp_max": 5
+    },
+    {
+      "function": "elmc_fn_Pebble_Ui_window",
+      "level": "ok",
+      "score": 0,
+      "reasons": [],
+      "c_boxed_locals": 7,
+      "c_tmp_max": 5
+    },
+    {
+      "function": "elmc_fn_Pebble_Ui_windowStack",
+      "level": "ok",
+      "score": 0,
+      "reasons": [],
+      "c_boxed_locals": 4,
+      "c_tmp_max": 3
     }
   ],
   "summary": {
-    "ok": 105,
+    "ok": 107,
     "warn": 3,
     "risk": 3
   },
   "code_size_indicators": {
-    "boxed_tmp_declarations": 29,
-    "closure_allocations": 0,
     "direct_command_defs": 0,
-    "generated_c_bytes": 49582,
-    "generated_c_lines": 1553,
-    "generic_function_defs": 7,
+    "boxed_tmp_declarations": 21,
+    "closure_allocations": 1,
+    "generated_c_bytes": 67688,
+    "generated_c_lines": 2134,
+    "generic_function_defs": 9,
     "linked_binary": {
       "reason": "binary size is available after platform or host linking, not during C source generation",
       "available": false

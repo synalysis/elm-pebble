@@ -371,6 +371,7 @@ int elmc_worker_init(ElmcWorkerState *state, ElmcValue *flags) {
     return -2;
   }
   state->model = next_model;
+  state->dispatch_needs_render = 1;
   {
     ElmcValue *pending = NULL;
     RC pending_rc = elmc_cmd_queue_normalize(&pending, extract_cmd_take(result));
@@ -389,7 +390,9 @@ int elmc_worker_init(ElmcWorkerState *state, ElmcValue *flags) {
 
 int elmc_worker_dispatch(ElmcWorkerState *state, ElmcValue *msg) {
   if (!state || !state->model) return -1;
+  state->dispatch_needs_render = 0;
   elmc_worker_heap_log("update:start");
+  ElmcValue *prev_model = state->model;
   return -4;
   (void)msg;
   ElmcValue *result = elmc_int_zero();
@@ -399,8 +402,9 @@ int elmc_worker_dispatch(ElmcWorkerState *state, ElmcValue *msg) {
     elmc_release(result);
     return -2;
   }
-  if (next_model != state->model) {
+  if (next_model != prev_model) {
     elmc_release(state->model);
+    state->dispatch_needs_render = 1;
   } else if (next_model->rc > 1) {
     elmc_release(next_model);
   }
@@ -412,6 +416,9 @@ int elmc_worker_dispatch(ElmcWorkerState *state, ElmcValue *msg) {
       ELMC_WORKER_LOG_RC_FAIL("worker update pending cmd", next_rc);
       elmc_release(result);
       return -2;
+    }
+    if (!elmc_cmd_is_none(next_cmd)) {
+      state->dispatch_needs_render = 1;
     }
     ElmcValue *merged = NULL;
     RC merge_rc = elmc_cmd_queue_concat_take(&merged, state->pending_cmd, next_cmd);
@@ -426,6 +433,11 @@ int elmc_worker_dispatch(ElmcWorkerState *state, ElmcValue *msg) {
   elmc_release(result);
   elmc_worker_heap_log("update:end");
   return 0;
+}
+
+int elmc_worker_dispatch_needs_render(ElmcWorkerState *state) {
+  if (!state) return 0;
+  return state->dispatch_needs_render;
 }
 
 ElmcValue *elmc_worker_model(ElmcWorkerState *state) {

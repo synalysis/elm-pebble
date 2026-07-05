@@ -545,14 +545,14 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     native_string_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeStringFromInt_native")
 
-    assert native_string_body =~ "Rc = elmc_string_from_native_int(&tmp_1, (value + 1));"
+    assert native_string_body =~ "Rc = elmc_string_from_native_int(out, (value + 1));"
     refute native_string_body =~ "elmc_new_int((value + 1))"
     refute native_string_body =~ "elmc_string_from_int"
 
     native_append_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeStringAppend_native")
 
     assert native_append_body =~
-             ~r/snprintf\(native_string_buf_\d+, sizeof\(native_string_buf_\d+\), "0%lld", \(long long\)value\);\s+Rc = elmc_new_string\(&(tmp_\d+|out), native_string_buf_\d+\)/
+             ~r/snprintf\(native_string_buf_\d+, sizeof\(native_string_buf_\d+\), "0%lld", \(long long\)value\);\s+Rc = elmc_new_string\(out, native_string_buf_\d+\)/
     refute native_append_body =~ "elmc_string_append_native"
     refute native_append_body =~ "elmc_new_string(\"0\")"
     refute native_append_body =~ "elmc_string_from_native_int(value)"
@@ -583,7 +583,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     duration_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_durationString_native")
 
     assert duration_body =~
-             ~r/snprintf\(native_string_buf_\d+, sizeof\(native_string_buf_\d+\), "%lld:%s", \(long long\)elmc_int_idiv\(minutes, 60\), native_string_\d+\);\s+Rc = elmc_new_string\(&(tmp_\d+|out), native_string_buf_\d+\)/
+             ~r/snprintf\(native_string_buf_\d+, sizeof\(native_string_buf_\d+\), "%lld:%s", \(long long\)elmc_int_idiv\(minutes, 60\), native_string_\d+\);\s+Rc = elmc_new_string\(out, native_string_buf_\d+\)/
     refute duration_body =~ "elmc_string_append_native"
     refute duration_body =~ "native_string_buf_5_i"
     refute duration_body =~ "elmc_string_append("

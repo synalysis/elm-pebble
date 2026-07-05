@@ -5,6 +5,7 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
   alias Elmc.Backend.CCodegen.ImmortalStringLiteral
   alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.CSource
+  alias Elmc.Backend.CCodegen.FunctionCallCompile
   alias Elmc.Backend.CCodegen.IntLiteralRef
   alias Elmc.Backend.CCodegen.OwnershipTransfer
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
@@ -77,7 +78,7 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
         ) :: Types.compile_result()
   def compile_native_subject(subject_expr, branches, env, counter) do
     {subject_code, subject_ref, counter} = NativeInt.compile_expr(subject_expr, env, counter)
-    {out, next, declare_out?} = CaseCompile.result_out_binding(env, counter)
+    {out, next, declare_out?} = switch_result_out(env, counter)
     next = CaseCompile.advance_counter_past_out(next, out, declare_out?)
 
     has_default? =
@@ -85,28 +86,30 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
 
     {branch_code, final_counter} =
       Enum.reduce(branches, {"", next}, fn branch, {acc, c} ->
-        branch_env = switch_branch_env(env, out, branch.pattern, subject_ref)
+        FunctionCallCompile.reset_call_args_cache!()
+
+        branch_env = branch_out_env(env, out)
+
+        {branch_env, unwrap_setup, unwrap_release, c} =
+          Patterns.case_branch_bindings(branch_env, branch, subject_ref, c)
 
         {expr_code, assignment_code, c2} =
           Host.compile_case_branch_assignment(branch.expr, out, branch_env, c)
 
         snippet =
-          switch_branch_snippet(case_label(branch.pattern, env), expr_code, assignment_code, out)
+          switch_branch_snippet(
+            case_label(branch.pattern, env),
+            unwrap_setup,
+            expr_code,
+            assignment_code,
+            unwrap_release,
+            out
+          )
 
         {acc <> snippet <> "\n", c2}
       end)
 
-    default_case =
-      if has_default? do
-        ""
-      else
-        """
-        default:
-          #{RcRuntimeEmit.assignment_lhs(out)} = elmc_int_zero();
-          break;
-        """
-        |> CSource.indent(2)
-      end
+    default_case = switch_default_case(out, has_default?)
 
     switch_body = CSource.indent(branch_code <> default_case, 2)
 
@@ -155,7 +158,7 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     {subject_setup, subject_ref, counter} = compile_subject_ref(subject, env, counter)
     tag_ref = "case_msg_tag_#{counter + 1}"
     counter = counter + 1
-    {out, branch_counter, declare_out?} = CaseCompile.result_out_binding(env, counter)
+    {out, branch_counter, declare_out?} = switch_result_out(env, counter)
     branch_counter = CaseCompile.advance_counter_past_out(branch_counter, out, declare_out?)
 
     has_default? =
@@ -165,28 +168,30 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
 
     {branch_code, final_counter} =
       Enum.reduce(branches, {"", branch_counter}, fn branch, {acc, c} ->
-        branch_env = switch_branch_env(env, out, branch.pattern, subject_ref)
+        FunctionCallCompile.reset_call_args_cache!()
+
+        branch_env = branch_out_env(env, out)
+
+        {branch_env, unwrap_setup, unwrap_release, c} =
+          Patterns.case_branch_bindings(branch_env, branch, subject_ref, c)
 
         {expr_code, assignment_code, c2} =
           Host.compile_case_branch_assignment(branch.expr, out, branch_env, c)
 
         snippet =
-          switch_branch_snippet(case_label(branch.pattern, env), expr_code, assignment_code, out)
+          switch_branch_snippet(
+            case_label(branch.pattern, env),
+            unwrap_setup,
+            expr_code,
+            assignment_code,
+            unwrap_release,
+            out
+          )
 
         {acc <> snippet <> "\n", c2}
       end)
 
-    default_case =
-      if has_default? or exhaustive? do
-        ""
-      else
-        """
-        default:
-          #{RcRuntimeEmit.assignment_lhs(out)} = elmc_int_zero();
-          break;
-        """
-        |> CSource.indent(2)
-      end
+    default_case = switch_default_case(out, has_default? or exhaustive?)
 
     switch_body = CSource.indent(branch_code <> default_case, 2)
 
@@ -202,24 +207,28 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     {code, out, final_counter}
   end
 
-  defp switch_branch_env(env, out, pattern, subject_ref) do
-    env =
-      env
-      |> Patterns.bind_pattern(pattern, subject_ref)
-      |> RecordCompile.fresh_subexpr_cache()
-      |> Map.update(:__declared_outs__, MapSet.new([out]), &MapSet.put(&1, out))
+  defp branch_out_env(env, out) do
+    ValueSlots.reset_function_out_written()
 
     env =
-      if RcRuntimeEmit.function_out_ref?(out),
-        do: RcRuntimeEmit.strip_function_tail_scope(env),
-        else: env
+      env
+      |> RecordCompile.fresh_subexpr_cache()
+      |> Map.update(:__declared_outs__, MapSet.new([out]), &MapSet.put(&1, out))
 
     cond do
       RcRuntimeEmit.function_out_ref?(out) ->
         Map.put(env, :__branch_out__, out)
 
       ValueSlots.owned_ref?(out) ->
-        Map.put(env, :__into_out__, out)
+        env
+        |> RcRuntimeEmit.strip_function_tail_scope()
+        |> then(fn branch_env ->
+          ValueSlots.set_result_slot_root(out)
+          Map.put(branch_env, :__branch_out__, out)
+        end)
+
+      RcRuntimeEmit.function_tail_compile?(env) ->
+        RcRuntimeEmit.strip_function_tail_scope(env)
 
       true ->
         env
@@ -230,13 +239,15 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     {subject_setup, subject_ref, counter} = compile_subject_ref(subject, env, counter)
     tag_ref = "case_msg_tag_#{counter + 1}"
     counter = counter + 1
-    {out, branch_counter, declare_out?} = CaseCompile.result_out_binding(env, counter)
+    {out, branch_counter, declare_out?} = switch_result_out(env, counter)
     branch_counter = CaseCompile.advance_counter_past_out(branch_counter, out, declare_out?)
     int_scratch = "case_int_#{branch_counter + 1}"
     exhaustive? = deferred_box_exhaustive?(branches)
 
     {branch_code, final_counter} =
       Enum.reduce(branches, {"", branch_counter}, fn branch, {acc, c} ->
+        FunctionCallCompile.reset_call_args_cache!()
+
         spec = branch_int_box_spec(branch, env)
 
         snippet =
@@ -279,12 +290,14 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     {subject_setup, subject_ref, counter} = compile_subject_ref(subject, env, counter)
     tag_ref = "case_msg_tag_#{counter + 1}"
     counter = counter + 1
-    {out, branch_counter, declare_out?} = CaseCompile.result_out_binding(env, counter)
+    {out, branch_counter, declare_out?} = switch_result_out(env, counter)
     branch_counter = CaseCompile.advance_counter_past_out(branch_counter, out, declare_out?)
     exhaustive? = deferred_box_exhaustive?(branches)
 
     {branch_code, immortal_decls, final_counter} =
       Enum.reduce(branches, {"", [], branch_counter}, fn branch, {acc, decls, c} ->
+        FunctionCallCompile.reset_call_args_cache!()
+
         spec = branch_string_box_spec(branch)
 
         case spec do
@@ -348,9 +361,9 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     end)
   end
 
-  defp deferred_box_switch_default(branches, out, exhaustive?) do
+  defp deferred_box_switch_default(branches, out, skip_default?) do
     cond do
-      exhaustive? ->
+      skip_default? ->
         ""
 
       Enum.any?(branches, fn branch -> match?(%{kind: :wildcard}, branch.pattern) end) ->
@@ -367,9 +380,11 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
   end
 
   defp deferred_int_box_post_box(env, out, int_scratch, false) do
+    assign = RcRuntimeEmit.assign_into(env, out, "elmc_new_int", int_scratch)
+
     """
     if (#{int_scratch} >= 0) {
-      #{RcRuntimeEmit.assign_into(env, out, "elmc_new_int", int_scratch)}
+      #{assign}
     }
     """
     |> String.trim()
@@ -420,6 +435,7 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
       #{RcRuntimeEmit.assignment_lhs(out)} = elmc_int_zero();
       break;
     """
+    |> String.trim()
     |> CSource.indent(2)
   end
 
@@ -492,11 +508,37 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     Host.compile_expr(subject_expr, env, counter)
   end
 
-  defp switch_branch_snippet(label, expr_code, assignment_code, out) do
+  defp switch_result_out(env, counter) do
+    publish_fn_out? =
+      RcRuntimeEmit.function_tail_compile?(env) and
+        Map.get(env, :__into_out__) == RcRuntimeEmit.function_out_ref()
+
+    if publish_fn_out? do
+      {RcRuntimeEmit.function_out_ref(), counter, false}
+    else
+      branch_env = RcRuntimeEmit.strip_function_tail_scope(env)
+      CaseCompile.result_out_binding(branch_env, counter)
+    end
+  end
+
+  defp switch_default_case(_out, true), do: ""
+
+  defp switch_default_case(out, false) do
+    """
+    default:
+      #{RcRuntimeEmit.assignment_lhs(out)} = elmc_int_zero();
+      break;
+    """
+    |> String.trim()
+    |> CSource.indent(2)
+  end
+
+  defp switch_branch_snippet(label, setup, expr_code, assignment_code, release, out) do
     cleanup = switch_branch_cleanup(expr_code, assignment_code, out)
+    normalize = ValueSlots.normalize_branch_result_slot(out)
 
     body =
-      [expr_code, assignment_code, cleanup, "break;"]
+      [setup, expr_code, assignment_code, normalize, release, cleanup, "break;"]
       |> Enum.reject(&(String.trim(&1) == ""))
       |> Enum.join("\n")
 

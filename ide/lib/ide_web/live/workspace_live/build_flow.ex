@@ -745,24 +745,44 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
   def package_for_emulator_session(project, workspace_root, emulator_target, opts \\ []) do
     production_build? = IdeWeb.WorkspaceLive.EmulatorFlow.project_emulator_production_build(project)
 
-    package_opts =
-      [
-        workspace_root: workspace_root,
-        target_type: project.target_type,
-        project_name: project.name,
-        target_platforms: [emulator_target],
-        source_roots: project.source_roots,
-        emulator_storage_logs: Keyword.get(opts, :emulator_storage_logs, false),
-        emulator_heap_log: Keyword.get(opts, :emulator_heap_log, false),
-        prod: production_build?,
-        debug_usage_policy: :error
-      ]
-
-    with :ok <- Projects.ensure_packagable_workspace(project),
-         {:ok, packaged} <- PebbleToolchain.package(project.slug, package_opts) do
+    with {:ok, platform} <- normalize_emulator_package_platform(emulator_target),
+         :ok <- Projects.ensure_packagable_workspace(project),
+         {:ok, packaged} <-
+           PebbleToolchain.package(project.slug,
+             workspace_root: workspace_root,
+             target_type: project.target_type,
+             project_name: project.name,
+             target_platforms: [platform],
+             single_platform_only: true,
+             source_roots: project.source_roots,
+             emulator_storage_logs: Keyword.get(opts, :emulator_storage_logs, false),
+             emulator_heap_log: Keyword.get(opts, :emulator_heap_log, false),
+             prod: production_build?,
+             debug_usage_policy: :error
+           ) do
       {:ok, packaged}
     end
   end
+
+  @spec normalize_emulator_package_platform(String.t()) ::
+          {:ok, String.t()} | {:error, {:invalid_emulator_target, String.t()}}
+  defp normalize_emulator_package_platform(target) when is_binary(target) do
+    allowed = MapSet.new(PebbleToolchain.supported_emulator_targets())
+
+    normalized =
+      target
+      |> String.trim()
+      |> String.downcase()
+
+    if MapSet.member?(allowed, normalized) do
+      {:ok, normalized}
+    else
+      {:error, {:invalid_emulator_target, target}}
+    end
+  end
+
+  defp normalize_emulator_package_platform(_target),
+    do: {:error, {:invalid_emulator_target, ""}}
 
   @spec build_roots(String.t(), [String.t()]) :: [root_pair()]
   def build_roots(workspace_root, source_roots) do

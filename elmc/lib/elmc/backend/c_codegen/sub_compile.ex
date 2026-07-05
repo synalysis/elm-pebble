@@ -4,6 +4,7 @@ defmodule Elmc.Backend.CCodegen.SubCompile do
   alias Elmc.Backend.CCodegen.CollectionCompile
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.SpecialValues
   alias Elmc.Backend.CCodegen.Types
 
@@ -47,8 +48,7 @@ defmodule Elmc.Backend.CCodegen.SubCompile do
     arity = length(params)
     fn_name = "elmc_sub#{arity}"
     args = Enum.join([mask_ref | param_refs], ", ")
-    next = counter + 1
-    out = "tmp_#{next}"
+    {out, next} = RcRuntimeEmit.compile_result_slot(env, counter)
 
     prefix =
       [mask_code, params_code]
@@ -57,7 +57,7 @@ defmodule Elmc.Backend.CCodegen.SubCompile do
 
     code = """
     #{prefix}
-    ElmcValue *#{out} = #{fn_name}(#{args});
+      #{RcRuntimeEmit.assign_call(env, out, fn_name, args)}
     """
 
     {code, out, next}

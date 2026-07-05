@@ -7,6 +7,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
   alias Elmc.Backend.CCodegen.DirectRender.Emit.Release
   alias Elmc.Backend.CCodegen.DirectRender.Emit.If
   alias Elmc.Backend.CCodegen.DirectRender.Emit.Qualified.Draws, as: QualifiedDraws
+  alias Elmc.Backend.CCodegen.DirectRender.ListLoopPlans
   alias Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
@@ -194,6 +195,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
           :error ->
             :error
         end
+
+      ListLoopPlans.pipeline_fragment?(value_expr, env) and not pattern_bind_let_name?(name) ->
+        emit_expr(in_expr, Map.put(env, name, {:direct_fragment, value_expr}), counter)
 
       fragment_expr?(value_expr, env) and not pattern_bind_let_name?(name) ->
         emit_expr(in_expr, Map.put(env, name, {:direct_fragment, value_expr}), counter)
@@ -950,12 +954,23 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
       %{op: :call, name: "__append__", args: [left, right]} ->
         render_list_expr?(left, env) and render_list_expr?(right, env)
 
-      %{op: :qualified_call, target: target, args: [head, tail]} ->
-        Host.normalize_special_target(target) == "List.cons" and
-          render_list_expr?(head, env) and render_list_expr?(tail, env)
+      %{op: :qualified_call, target: target, args: args} ->
+        normalized = Host.normalize_special_target(target)
+
+        cond do
+          normalized == "List.cons" and length(args) == 2 ->
+            [head, tail] = args
+            render_list_expr?(head, env) and render_list_expr?(tail, env)
+
+          ListLoopPlans.pipeline_fragment?(expr, env) ->
+            true
+
+          true ->
+            false
+        end
 
       _ ->
-        false
+        ListLoopPlans.pipeline_fragment?(expr, env) or false
     end
   end
 

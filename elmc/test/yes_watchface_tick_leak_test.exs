@@ -69,13 +69,18 @@ defmodule Elmc.YesWatchfaceTickLeakTest do
     refute temp_body =~ "elmc_fn_Main_c10"
     refute temp_body =~ "elmc_fn_Main_f10"
 
-    sun_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_defaultSunWindow")
+    sun_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Yes_Render_defaultSunWindow")
     refute sun_body =~ "elmc_fn_Main_SunCycle"
     assert sun_body =~ "elmc_record_new_values_take"
 
+    top_left_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_topLeftSlots")
+    refute top_left_body =~ "elmc_new_bool(&tmp_"
+    assert top_left_body =~ "elmc_new_bool(&owned["
+
     next_event_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nextEventParts_native")
-    assert next_event_body =~ "ELMC_RELEASE(owned[5])"
-    assert next_event_body =~ "elmc_release(__cmp_bool_"
+    refute next_event_body =~ "ELMC_RELEASE(owned["
+    refute next_event_body =~ "__cmp_bool_"
+    assert next_event_body =~ "Rc = elmc_basics_compare(&owned["
 
     write_trig_stubs!(@out_dir)
     harness_path = Path.join(@out_dir, "c/yes_watchface_tick_leak_harness.c")

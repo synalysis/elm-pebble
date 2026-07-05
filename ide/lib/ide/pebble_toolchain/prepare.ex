@@ -42,12 +42,14 @@ defmodule Ide.PebbleToolchain.Prepare do
          {:ok, preferences_schema} <- Companion.extract_phone_preferences(workspace_root),
          protocol_elm <- Companion.protocol_types_path(workspace_root, has_phone_companion),
          {:ok, app_message_keys} <- Companion.protocol_message_keys(protocol_elm),
+         {:ok, target_platforms} <- resolve_target_platforms(resolved_target_type, opts),
          :ok <-
            write_package_json(
              app_root,
              project_slug,
              resolved_target_type,
              project_name,
+             target_platforms,
              opts,
              media_entries,
              app_message_keys,
@@ -57,7 +59,7 @@ defmodule Ide.PebbleToolchain.Prepare do
          :ok <- Companion.generate_protocol_elm_internal(protocol_elm),
          :ok <-
            ToolchainElmc.generate_sources(compile_project_root, app_root, workspace_root,
-             target_platforms: target_platforms_for_target_type(resolved_target_type, opts)
+             target_platforms: target_platforms
            ),
          :ok <- Companion.generate_protocol(protocol_elm, app_root, compile_project_root),
          :ok <- ToolchainElmc.reprune_staged_runtime(app_root),
@@ -176,7 +178,7 @@ defmodule Ide.PebbleToolchain.Prepare do
       if watchface?, do: "#define ELMC_WATCHFACE_MODE 1\n", else: ""
 
     storage_log_defines =
-      if Keyword.get(opts, :emulator_storage_logs, false) do
+      if Keyword.get(opts, :emulator_storage_logs, true) do
         "#define ELMC_PEBBLE_EMULATOR_STORAGE_LOGS 1\n"
       else
         ""
@@ -197,7 +199,7 @@ defmodule Ide.PebbleToolchain.Prepare do
       end
 
     debug_log_defines =
-      if Keyword.get(opts, :emulator_debug_logs, false) do
+      if Keyword.get(opts, :emulator_debug_logs, true) do
         "#define ELMC_PEBBLE_DEBUG_LOGS 1\n"
       else
         ""
@@ -219,6 +221,7 @@ defmodule Ide.PebbleToolchain.Prepare do
           project_slug(),
           String.t(),
           String.t(),
+          [String.t()],
           opts(),
           [pebble_media_entry()],
           WireSchema.key_ids(),
@@ -231,13 +234,14 @@ defmodule Ide.PebbleToolchain.Prepare do
          project_slug,
          target_type,
          project_name,
+         target_platforms,
          opts,
          media_entries,
          app_message_keys,
          preferences_schema,
          has_phone_companion
-       ) do
-    target_platforms = target_platforms_for_target_type(target_type, opts)
+       )
+       when is_list(target_platforms) do
     version = package_version(Keyword.get(opts, :version))
 
     package =
@@ -882,26 +886,51 @@ defmodule Ide.PebbleToolchain.Prepare do
   defp maybe_put_nonempty_list(map, _key, []), do: map
   defp maybe_put_nonempty_list(map, key, value), do: Map.put(map, key, value)
 
-  @spec target_platforms_for_target_type(String.t(), opts()) :: [String.t()]
-  defp target_platforms_for_target_type(_target_type, opts) do
+  @doc false
+  @spec resolve_target_platforms(String.t(), opts()) ::
+          {:ok, [String.t()]} | {:error, {:invalid_emulator_target, String.t()}}
+  def resolve_target_platforms(_target_type, opts) do
+    single? = Keyword.get(opts, :single_platform_only, false)
     requested = Keyword.get(opts, :target_platforms)
+    allowed = MapSet.new(Emulator.supported_emulator_targets())
+
+    normalize = fn targets ->
+      targets
+      |> Enum.filter(&is_binary/1)
+      |> Enum.map(fn target -> target |> String.trim() |> String.downcase() end)
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.filter(&MapSet.member?(allowed, &1))
+      |> Enum.uniq()
+    end
 
     case requested do
       targets when is_list(targets) ->
-        allowed = MapSet.new(Emulator.supported_emulator_targets())
+        normalized = normalize.(targets)
 
-        normalized =
-          targets
-          |> Enum.filter(&is_binary/1)
-          |> Enum.map(&String.trim/1)
-          |> Enum.reject(&(&1 == ""))
-          |> Enum.filter(&MapSet.member?(allowed, &1))
-          |> Enum.uniq()
+        cond do
+          normalized != [] ->
+            {:ok, normalized}
 
-        if normalized == [], do: Emulator.supported_emulator_targets(), else: normalized
+          single? ->
+            invalid =
+              targets
+              |> Enum.filter(&is_binary/1)
+              |> Enum.map(&String.trim/1)
+              |> Enum.reject(&(&1 == ""))
+              |> Enum.join(", ")
+
+            {:error, {:invalid_emulator_target, invalid}}
+
+          true ->
+            {:ok, Emulator.supported_emulator_targets()}
+        end
 
       _ ->
-        Emulator.supported_emulator_targets()
+        if single? do
+          {:error, {:invalid_emulator_target, ""}}
+        else
+          {:ok, Emulator.supported_emulator_targets()}
+        end
     end
   end
 

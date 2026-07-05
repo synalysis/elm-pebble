@@ -112,16 +112,11 @@ defmodule Elmc.Backend.CCodegen.LiteralCompile do
   end
 
   defp literal_out_slot(env, counter) do
-    case Map.get(env, :__into_out__) || Map.get(env, :__branch_out__) ||
-           RcRuntimeEmit.nested_out_target(env) do
-      into_out when is_binary(into_out) ->
-        if RcRuntimeEmit.function_out_ref?(into_out) do
-          CaseCompile.fresh_var(counter, env)
-        else
-          {into_out, counter}
-        end
+    cond do
+      out = RcRuntimeEmit.fn_out_alloc_target(env) ->
+        {out, counter}
 
-      _ ->
+      true ->
         CaseCompile.fresh_var(counter, env)
     end
   end

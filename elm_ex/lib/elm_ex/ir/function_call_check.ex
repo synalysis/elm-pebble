@@ -629,6 +629,8 @@ defmodule ElmEx.IR.FunctionCallCheck do
                    type_alias_lookup,
                    binding_types
                  ),
+               expected_type when is_binary(expected_type) <-
+                 resolve_record_field_expected_type(resolved, expected_type, import_lookup),
                true <-
                  incompatible_types?(
                    expected_type,
@@ -651,6 +653,35 @@ defmodule ElmEx.IR.FunctionCallCheck do
       end
     else
       _ -> []
+    end
+  end
+
+  @spec resolve_record_field_expected_type(String.t(), String.t(), FCC.import_lookup()) ::
+          String.t()
+  defp resolve_record_field_expected_type(resolved_parent_type, expected_type, import_lookup)
+       when is_binary(resolved_parent_type) and is_binary(expected_type) do
+    if primitive_type?(expected_type) or TypeSignature.type_variable?(expected_type) do
+      expected_type
+    else
+      declaring_module = type_declaring_module(resolved_parent_type)
+
+      expected_type
+      |> resolve_type_reference(type_context(import_lookup, declaring_module))
+    end
+  end
+
+  @spec type_context(FCC.import_lookup(), String.t() | nil) :: FCC.type_resolution_context()
+  defp type_context(import_lookup, declaring_module) do
+    import_lookup
+    |> Map.take([:alias_map, :type_unqualified_map, :current_module])
+    |> Map.put(:declaring_module, declaring_module)
+  end
+
+  @spec type_declaring_module(String.t()) :: String.t() | nil
+  defp type_declaring_module(resolved_type) when is_binary(resolved_type) do
+    case String.split(resolved_type, ".") do
+      [_single] -> nil
+      parts -> parts |> Enum.drop(-1) |> Enum.join(".")
     end
   end
 

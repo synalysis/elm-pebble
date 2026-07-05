@@ -873,13 +873,23 @@ defmodule Ide.ProjectsTest do
 
     assert {:ok, watch_main} = Projects.read_source_file(project, "watch", "src/Main.elm")
     assert String.contains?(watch_main, "RequestUpdate")
+    assert String.contains?(watch_main, "RequestSunData")
+    assert String.contains?(watch_main, "RequestWeather")
+    assert String.contains?(watch_main, "scheduleCompanionFetches")
+    assert String.contains?(watch_main, "Render.face model.layout")
     assert String.contains?(watch_main, "ProvideSun")
     assert String.contains?(watch_main, "ProvideWeather")
     assert String.contains?(watch_main, "ProvideWind")
     assert String.contains?(watch_main, "ProvideTide")
     assert String.contains?(watch_main, "Button.onRelease Button.Down RequestRefresh")
-    assert String.contains?(watch_main, "(min model.screenW model.screenH // 2) - 22")
-    assert String.contains?(watch_main, "pointAt cx cy handLen handAngle")
+
+    assert {:ok, yes_layout} = Projects.read_source_file(project, "watch", "src/Yes/Layout.elm")
+    assert String.contains?(yes_layout, "fromScreen")
+    assert String.contains?(yes_layout, "minDim // 2 - 22")
+
+    assert {:ok, yes_render} = Projects.read_source_file(project, "watch", "src/Yes/Render.elm")
+    assert String.contains?(yes_render, "pointAt layout.cx layout.cy layout.handLen handAngle")
+    assert String.contains?(yes_render, "coloredRadialWedge")
 
     assert {:ok, protocol_types} =
              Projects.read_source_file(project, "protocol", "src/Companion/Types.elm")
@@ -899,6 +909,8 @@ defmodule Ide.ProjectsTest do
     assert String.contains?(protocol_types, "ProvideWind WindDirection WindSpeed")
     assert String.contains?(protocol_types, "ProvideAltitude Altitude")
     assert String.contains?(protocol_types, "SetCornerUpdateInterval Int")
+    assert String.contains?(protocol_types, "RequestSunData")
+    assert String.contains?(protocol_types, "RequestWeather")
     refute String.contains?(protocol_types, "SetUseInternet")
     refute String.contains?(protocol_types, "SetUnits")
     refute String.contains?(protocol_types, "InternetMode")
@@ -907,6 +919,8 @@ defmodule Ide.ProjectsTest do
              Projects.read_source_file(project, "phone", "src/CompanionApp.elm")
 
     assert String.contains?(companion_app, "CompanionPhone.onWatchToPhone FromWatch")
+    assert String.contains?(companion_app, "FromWatch (Ok RequestSunData)")
+    assert String.contains?(companion_app, "FromWatch (Ok RequestWeather)")
 
     assert String.contains?(
              companion_app,
@@ -937,7 +951,7 @@ defmodule Ide.ProjectsTest do
     assert Enum.flat_map(preferences_schema.sections, & &1.fields) |> Enum.map(& &1.id) ==
              ["cornerUpdateInterval"]
 
-    assert String.contains?(watch_main, "drawCorners")
+    assert String.contains?(yes_render, "drawCorners")
     assert String.contains?(watch_main, "pickSlot")
     assert String.contains?(watch_main, "SetCornerUpdateInterval")
     assert String.contains?(watch_main, "Pebble.Health")
@@ -1434,7 +1448,7 @@ defmodule Ide.ProjectsTest do
              Projects.import_from_github(%{}, %{"repo_url" => "", "owner" => "", "repo" => ""})
   end
 
-  test "debugger lazily boots phone companion when watch sends protocol message" do
+  test "debugger queues companion protocol until phone reload delivers init" do
     slug = "lazy-companion-#{System.unique_integer([:positive])}"
 
     assert {:ok, project} =
@@ -1460,16 +1474,11 @@ defmodule Ide.ProjectsTest do
                source_root: "watch"
              })
 
-    assert Enum.any?(after_watch.debugger_timeline, fn row ->
+    refute Enum.any?(after_watch.debugger_timeline, fn row ->
              row.type == "init" and row.target == "phone"
            end)
 
-    assert Enum.any?(after_watch.debugger_timeline, fn row ->
-             row.target == "phone" and row.type == "update" and
-               String.contains?(to_string(row.message || ""), "FromWatch")
-           end)
-
-    refute AppMessageQueue.pending?(after_watch, :companion)
+    assert AppMessageQueue.pending?(after_watch, :companion)
 
     assert {:ok, reloaded} =
              Debugger.reload(slug, %{
@@ -1478,6 +1487,17 @@ defmodule Ide.ProjectsTest do
                reason: "lazy_companion_boot_companion",
                source_root: "phone"
              })
+
+    assert Enum.any?(reloaded.debugger_timeline, fn row ->
+             row.type == "init" and row.target == "phone"
+           end)
+
+    assert Enum.any?(reloaded.debugger_timeline, fn row ->
+             row.target == "phone" and row.type == "update" and
+               String.contains?(to_string(row.message || ""), "FromWatch")
+           end)
+
+    refute AppMessageQueue.pending?(reloaded, :companion)
 
     companion_shell = get_in(reloaded, [:companion, :shell]) || %{}
     companion_model = get_in(reloaded, [:companion, :model]) || %{}

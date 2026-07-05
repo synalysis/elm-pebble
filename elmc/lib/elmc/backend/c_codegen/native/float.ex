@@ -1,11 +1,12 @@
 defmodule Elmc.Backend.CCodegen.Native.Float do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.RecordFields
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Types
-  alias Elmc.Backend.CCodegen.ValueSlots
 
   @type compile_result :: Types.native_scalar_compile_result()
 
@@ -119,13 +120,12 @@ defmodule Elmc.Backend.CCodegen.Native.Float do
           {String.t(), String.t(), Types.compile_counter()}
   def compile_boxed(expr, env, counter) do
     {code, value_ref, counter} = compile_expr(expr, env, counter)
-    next = counter + 1
-    out = "tmp_#{next}"
+    {out, next} = CaseCompile.fresh_var(counter, env)
 
     {
       """
       #{code}
-        #{ValueSlots.boxed_decl(out, "elmc_new_float((double)#{value_ref})", env)}
+        #{RcRuntimeEmit.assign_call(env, out, "elmc_new_float", "(double)#{value_ref}")}
       """,
       out,
       next

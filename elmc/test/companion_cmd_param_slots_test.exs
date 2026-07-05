@@ -74,13 +74,14 @@ defmodule Elmc.CompanionCmdParamSlotsTest do
 
     {code, _out, _counter} = CmdCompile.compile(companion_send_expr(), tail_env(decl_map), 0)
 
-    refute code =~ "(out,"
-    refute code =~ "ELMC_FN_OUT"
+    refute code =~ "watchToPhoneTag(out,"
+    refute code =~ "watchToPhoneValue(out,"
     assert code =~ "watchToPhoneTag"
     assert code =~ "watchToPhoneValue"
     assert code =~ "owned[0]"
     assert code =~ "owned[1]"
-    assert code =~ "elmc_cmd2(ELMC_PEBBLE_CMD_COMPANION_SEND"
+    assert code =~ "Rc = elmc_cmd2(out,"
+    assert code =~ "CHECK_RC(Rc)"
   end
 
   test "sendWatchToPhone body keeps intermediate tag/value out of function out slot" do
@@ -98,7 +99,8 @@ defmodule Elmc.CompanionCmdParamSlotsTest do
     refute code =~ "watchToPhoneValue(out,"
     assert code =~ "owned[0]"
     assert code =~ "owned[1]"
-    assert code =~ "elmc_cmd2(ELMC_PEBBLE_CMD_COMPANION_SEND"
-    assert out == "tmp_7"
+    assert code =~ "Rc = elmc_cmd2(out,"
+    assert code =~ "CHECK_RC(Rc)"
+    assert out == RcRuntimeEmit.function_out_ref()
   end
 end

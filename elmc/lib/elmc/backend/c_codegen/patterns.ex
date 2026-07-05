@@ -7,6 +7,7 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.StoragePlan
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.CCodegen.UnionMacros
   alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.CCodegen.ValueSlots
 
@@ -131,8 +132,8 @@ defmodule Elmc.Backend.CCodegen.Patterns do
 
   def pattern_condition(subject_ref, %{kind: :constructor, arg_pattern: arg_pattern} = pattern, env)
       when is_map(arg_pattern) do
-    case constructor_pattern_tag(pattern) do
-      tag when is_integer(tag) ->
+    case pattern_tag_expr(pattern, env) do
+      tag when is_binary(tag) ->
         value_ref = union_constructor_payload_ref(subject_ref)
         arg_cond = constructor_arg_condition(value_ref, arg_pattern, env)
 
@@ -144,14 +145,16 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   end
 
   def pattern_condition(subject_ref, %{kind: :constructor} = pattern, env) do
-    case constructor_pattern_tag(pattern) do
-      tag when is_integer(tag) ->
+    case pattern_tag_expr(pattern, env) do
+      tag when is_binary(tag) ->
         "elmc_union_tag_matches(#{subject_ref}, #{tag})"
 
       _ ->
         pattern_condition_fallback_constructor(subject_ref, pattern, env)
     end
   end
+
+  def pattern_condition(_subject_ref, _pattern, _env), do: "0"
 
   defp pattern_condition_fallback_constructor(subject_ref, pattern, _env) do
     case order_constructor_name(pattern) do
@@ -166,8 +169,6 @@ defmodule Elmc.Backend.CCodegen.Patterns do
         end
     end
   end
-
-  def pattern_condition(_subject_ref, _pattern, _env), do: "0"
 
   @spec bind_pattern(Types.compile_env(), Types.pattern(), Types.subject_ref()) ::
           Types.compile_env()
@@ -186,6 +187,9 @@ defmodule Elmc.Backend.CCodegen.Patterns do
     |> Map.put(bind, ref)
     |> then(fn e ->
       if Map.get(env, :maybe_unwrap_just), do: EnvBindings.put_tuple_projection_ref(e, ref), else: e
+    end)
+    |> then(fn e ->
+      if Map.get(env, :maybe_unwrap_just), do: put_just_bind_var_type(e, subject_ref, bind), else: e
     end)
   end
 
@@ -255,22 +259,43 @@ defmodule Elmc.Backend.CCodegen.Patterns do
         %{
           kind: :constructor,
           name: "::",
-          bind: bind,
           arg_pattern: %{kind: :tuple, elements: [head, tail]}
-        },
+        } = pattern,
         subject_ref
       ) do
+    bind = Map.get(pattern, :bind)
     subject_ref = pattern_subject_ref(subject_ref)
     list_int? = list_int_subject?(env, subject_ref)
     env = if is_binary(bind), do: Map.put(env, bind, subject_ref), else: env
 
-    {head_ref, tail_ref} = list_cons_binding_refs(subject_ref, list_int?)
+    if list_int? and RcRuntimeEmit.rc_allocator_emit_mode?(env) do
+      counter = Map.get(env, :__bind_counter__, 0)
 
-    env
-    |> bind_pattern(head, head_ref)
-    |> bind_pattern(tail, tail_ref)
-    |> EnvBindings.put_list_suffix_ref(tail_ref)
-    |> maybe_mark_list_int_cons(head, tail, list_int?)
+      branch = %{
+        pattern: %{
+          kind: :constructor,
+          name: "::",
+          bind: bind,
+          arg_pattern: %{kind: :tuple, elements: [head, tail]}
+        }
+      }
+
+      {branch_env, setup, cleanup, counter} =
+        hoist_int_list_cons_branch(env, branch, subject_ref, counter)
+
+      branch_env
+      |> Map.put(:__bind_counter__, counter)
+      |> put_pattern_bind_setup(setup)
+      |> put_pattern_bind_cleanup(cleanup)
+    else
+      {head_ref, tail_ref} = list_cons_binding_refs(subject_ref, list_int?)
+
+      env
+      |> bind_pattern(head, head_ref)
+      |> bind_pattern(tail, tail_ref)
+      |> EnvBindings.put_list_suffix_ref(tail_ref)
+      |> maybe_mark_list_int_cons(head, tail, list_int?)
+    end
   end
 
   def bind_pattern(env, %{kind: :record, fields: fields, bind: bind}, subject_ref)
@@ -319,14 +344,14 @@ defmodule Elmc.Backend.CCodegen.Patterns do
         subject_ref
       ) do
     case constructor_pattern_tag(pattern) do
-      tag when is_integer(tag) -> bind_constructor_tag_pattern(env, bind, arg, subject_ref)
+      tag when is_integer(tag) -> bind_constructor_tag_pattern(env, pattern, bind, arg, subject_ref)
       _ -> bind_pattern_fallback(env, pattern, subject_ref)
     end
   end
 
   def bind_pattern(env, _pattern, _subject_ref), do: env
 
-  defp bind_constructor_tag_pattern(env, bind, arg, subject_ref) do
+  defp bind_constructor_tag_pattern(env, pattern, bind, arg, subject_ref) do
     subject_ref = pattern_subject_ref(subject_ref)
     tuple_payload_ref = "((ElmcTuple2 *)#{subject_ref}->payload)->second"
 
@@ -341,13 +366,54 @@ defmodule Elmc.Backend.CCodegen.Patterns do
             |> Map.put(bind, payload_ref)
 
           _ ->
-            Map.put(env, bind, tuple_payload_ref)
+            env
+            |> Map.put(bind, tuple_payload_ref)
+            |> put_constructor_payload_record_type(pattern, bind)
         end
       else
         env
       end
 
-    if arg, do: bind_union_ctor_arg(env, arg, subject_ref), else: env
+    if arg, do: bind_union_ctor_arg(env, pattern, arg, subject_ref), else: env
+  end
+
+  defp put_constructor_payload_record_type(env, pattern, bind) do
+    case constructor_payload_record_type(pattern) |> normalize_payload_record_type() do
+      type when is_binary(type) and type != "" ->
+        env
+        |> EnvBindings.put_var_type(bind, type)
+        |> EnvBindings.put_record_shape(bind, Expr.record_shape_from_type(type, env))
+
+      _ ->
+        env
+    end
+  end
+
+  defp normalize_payload_record_type(type) when is_binary(type) do
+    case type do
+      "PebbleCmd." <> rest -> "Pebble.Cmd." <> rest
+      other -> other
+    end
+  end
+
+  defp normalize_payload_record_type(_), do: nil
+
+  defp constructor_payload_record_type(pattern) do
+    names =
+      [
+        Map.get(pattern, :resolved_name),
+        Map.get(pattern, :name)
+      ]
+      |> Enum.filter(&is_binary/1)
+      |> Enum.flat_map(fn name ->
+        short = name |> String.split(".") |> List.last()
+        [name, short]
+      end)
+      |> Enum.uniq()
+
+    payload_specs = Process.get(:elmc_msg_constructor_payload_specs, %{})
+
+    Enum.find_value(names, fn name -> Map.get(payload_specs, name) end)
   end
 
   defp constructor_pattern_tag(%{tag: tag}) when is_integer(tag), do: tag
@@ -355,6 +421,66 @@ defmodule Elmc.Backend.CCodegen.Patterns do
 
   defp constructor_pattern_tag(%{kind: :constructor} = pattern) do
     lookup_ir_constructor_tag(pattern)
+  end
+
+  defp pattern_tag_expr(pattern, env) do
+    case constructor_pattern_tag(pattern) do
+      tag when is_integer(tag) ->
+        case union_ctor_tag_ref(pattern, tag, env) do
+          ref when is_binary(ref) -> ref
+          _ -> Integer.to_string(tag)
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp union_ctor_tag_ref(pattern, tag, env) do
+    macros = Process.get(:elmc_union_constructor_macros, %{})
+
+    [Map.get(pattern, :resolved_name), union_pattern_ctor_name(pattern, env)]
+    |> Enum.filter(&is_binary/1)
+    |> Enum.uniq()
+    |> Enum.find_value(fn ctor ->
+      UnionMacros.literal_ref(%{op: :int_literal, value: tag, union_ctor: ctor}, env) ||
+        Map.get(macros, ctor)
+    end)
+  end
+
+  defp union_pattern_ctor_name(pattern, env) do
+    name =
+      cond do
+        is_binary(Map.get(pattern, :resolved_name)) -> Map.get(pattern, :resolved_name)
+        is_binary(Map.get(pattern, :name)) -> Map.get(pattern, :name)
+        true -> nil
+      end
+
+    qualify_union_ctor_name(name, env)
+  end
+
+  defp qualify_union_ctor_name(name, _env) when is_binary(name) do
+    if String.contains?(name, ".") do
+      name
+    else
+      unique_qualified_union_ctor(name) || name
+    end
+  end
+
+  defp qualify_union_ctor_name(_name, _env), do: nil
+
+  defp unique_qualified_union_ctor(short_name) when is_binary(short_name) do
+    tags = Process.get(:elmc_constructor_tags, %{})
+
+    matches =
+      tags
+      |> Map.keys()
+      |> Enum.filter(fn key -> String.ends_with?(key, "." <> short_name) end)
+
+    case matches do
+      [qualified] -> qualified
+      _ -> nil
+    end
   end
 
   defp lookup_ir_constructor_tag(%{resolved_name: name}) when is_binary(name),
@@ -390,8 +516,8 @@ defmodule Elmc.Backend.CCodegen.Patterns do
     end
   end
 
-  defp bind_pattern_fallback(env, %{arg_pattern: arg}, subject_ref) when not is_nil(arg) do
-    bind_union_ctor_arg(env, arg, subject_ref)
+  defp bind_pattern_fallback(env, %{arg_pattern: arg} = pattern, subject_ref) when not is_nil(arg) do
+    bind_union_ctor_arg(env, pattern, arg, subject_ref)
   end
 
   defp bind_pattern_fallback(env, _pattern, _subject_ref), do: env
@@ -474,7 +600,14 @@ defmodule Elmc.Backend.CCodegen.Patterns do
         expr -> expr
       end
 
-    case Expr.maybe_unwrapped_record_type(subject_expr, env) do
+    payload_type =
+      Map.get(env, :__case_subject_payload_type__) ||
+        case Expr.maybe_unwrapped_record_type(subject_expr, env) do
+          type when is_binary(type) -> type
+          _ -> nil
+        end
+
+    case payload_type do
       type when is_binary(type) -> EnvBindings.put_var_type(env, bind, type)
       _ -> env
     end
@@ -488,8 +621,8 @@ defmodule Elmc.Backend.CCodegen.Patterns do
 
   defp put_just_bind_var_type(env, subject_ref, bind) when is_binary(bind) and is_binary(subject_ref) do
     payload_type =
-      Expr.record_payload_type_for_var(env, subject_ref) ||
-        Map.get(env, :__case_subject_payload_type__)
+      Map.get(env, :__case_subject_payload_type__) ||
+        Expr.record_payload_type_for_var(env, subject_ref)
 
     case payload_type do
       type when is_binary(type) ->
@@ -540,15 +673,35 @@ defmodule Elmc.Backend.CCodegen.Patterns do
     "((ElmcTuple2 *)#{subject_ref}->payload)->second"
   end
 
-  defp bind_union_ctor_arg(env, %{kind: :var, name: name}, subject_ref) when is_binary(name) do
-    payload_ref = union_payload_ref(subject_ref)
+  defp bind_union_ctor_arg(env, pattern, %{kind: :var, name: name}, subject_ref)
+       when is_binary(name) do
+    case constructor_payload_record_type(pattern) do
+      "Int" ->
+        payload_ref = union_payload_ref(subject_ref)
 
-    env
-    |> EnvBindings.put_native_int_binding(name, payload_ref)
-    |> Map.put(name, payload_ref)
+        env
+        |> EnvBindings.put_native_int_binding(name, payload_ref)
+        |> Map.put(name, payload_ref)
+
+      type when is_binary(type) ->
+        payload_ref = union_constructor_payload_ref(subject_ref)
+        type = normalize_payload_record_type(type)
+
+        env
+        |> Map.put(name, payload_ref)
+        |> EnvBindings.put_var_type(name, type)
+        |> EnvBindings.put_record_shape(name, Expr.record_shape_from_type(type, env))
+
+      _ ->
+        payload_ref = union_payload_ref(subject_ref)
+
+        env
+        |> EnvBindings.put_native_int_binding(name, payload_ref)
+        |> Map.put(name, payload_ref)
+    end
   end
 
-  defp bind_union_ctor_arg(env, arg, subject_ref),
+  defp bind_union_ctor_arg(env, _pattern, arg, subject_ref),
     do: bind_pattern(env, arg, union_constructor_payload_ref(subject_ref))
 
   @spec list_int_subject?(Types.compile_env(), String.t()) :: boolean()
@@ -668,6 +821,22 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   end
 
   defp list_cons_condition(mode, subject_ref, head_pattern, tail_pattern, env) do
+    cond do
+      mode == :int_spine and RcRuntimeEmit.rc_allocator_emit_mode?(env) ->
+        int_spine_cons_condition(subject_ref, head_pattern, tail_pattern, env)
+
+      mode == :float_list and RcRuntimeEmit.rc_allocator_emit_mode?(env) ->
+        float_list_cons_condition(subject_ref, head_pattern, tail_pattern, 0, env)
+
+      mode == :record_seq and RcRuntimeEmit.rc_allocator_emit_mode?(env) ->
+        record_seq_cons_condition(subject_ref, head_pattern, tail_pattern, 0, env)
+
+      true ->
+        legacy_list_cons_condition(mode, subject_ref, head_pattern, tail_pattern, env)
+    end
+  end
+
+  defp legacy_list_cons_condition(mode, subject_ref, head_pattern, tail_pattern, env) do
     {head_ref, tail_ref} = list_head_tail_refs(mode, subject_ref)
 
     "#{list_nonempty_condition(mode, subject_ref)} && (#{pattern_condition(head_ref, head_pattern, env)}) && (#{pattern_condition(tail_ref, tail_pattern, env)})"
@@ -824,6 +993,26 @@ defmodule Elmc.Backend.CCodegen.Patterns do
     %{kind: :tuple, elements: [left, nest_tuple_pattern(rest)]}
   end
 
+  @doc false
+  @spec pattern_bind_setup(Types.compile_env()) :: String.t()
+  def pattern_bind_setup(env), do: Map.get(env, :__pattern_bind_setup__, "")
+
+  @doc false
+  @spec pattern_bind_cleanup(Types.compile_env()) :: String.t()
+  def pattern_bind_cleanup(env), do: Map.get(env, :__pattern_bind_cleanup__, "")
+
+  defp put_pattern_bind_setup(env, ""), do: env
+
+  defp put_pattern_bind_setup(env, setup) when is_binary(setup) do
+    Map.put(env, :__pattern_bind_setup__, setup)
+  end
+
+  defp put_pattern_bind_cleanup(env, ""), do: env
+
+  defp put_pattern_bind_cleanup(env, cleanup) when is_binary(cleanup) do
+    Map.put(env, :__pattern_bind_cleanup__, cleanup)
+  end
+
   @list_case_suffix_var ~r/^list_case_suffix_\d+$/
 
   defp int_list_cons_branch?(env, subject_ref, %{pattern: pattern}) do
@@ -968,6 +1157,175 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   defp int_list_tail_suffix_check(_subject, %{kind: :var}, _index, _env), do: "1"
   defp int_list_tail_suffix_check(_subject, %{kind: :wildcard}, _index, _env), do: "1"
   defp int_list_tail_suffix_check(_subject, _pattern, _index, _env), do: "1"
+
+  defp int_spine_cons_condition(subject, head_pat, tail_pat, env) do
+    parts =
+      [
+        int_spine_nonempty(subject),
+        int_spine_head_pattern_check(subject, head_pat, env),
+        int_spine_tail_pattern_check(subject, tail_pat, env)
+      ]
+      |> Enum.reject(&(&1 == "1"))
+
+    case parts do
+      [] -> "1"
+      _ -> Enum.join(parts, " && ")
+    end
+  end
+
+  defp int_spine_nonempty(subject) do
+    "#{subject} && #{subject}->tag == ELMC_TAG_INT_SPINE && !elmc_int_spine_is_empty(#{subject})"
+  end
+
+  defp int_spine_payload_head(subject) do
+    "((ElmcIntSpine *)(#{subject})->payload)->head"
+  end
+
+  defp int_spine_payload_tail(subject) do
+    "((ElmcIntSpine *)(#{subject})->payload)->tail"
+  end
+
+  defp int_spine_head_pattern_check(_subject, %{kind: :var}, _env), do: "1"
+  defp int_spine_head_pattern_check(_subject, %{kind: :wildcard}, _env), do: "1"
+
+  defp int_spine_head_pattern_check(subject, %{kind: :int, value: value}, _env)
+       when is_integer(value) do
+    "(#{int_spine_payload_head(subject)} == #{value})"
+  end
+
+  defp int_spine_head_pattern_check(subject, %{kind: :char, value: value}, _env)
+       when is_integer(value) do
+    "(#{int_spine_payload_head(subject)} == #{value})"
+  end
+
+  defp int_spine_head_pattern_check(subject, head_pat, env) do
+    head_ref = "elmc_small_int(#{int_spine_payload_head(subject)})"
+    "(#{pattern_condition(head_ref, head_pat, env)})"
+  end
+
+  defp int_spine_tail_pattern_check(subject, %{kind: :constructor, name: "[]"}, _env) do
+    tail = int_spine_payload_tail(subject)
+    "(#{tail} == NULL || elmc_int_spine_is_empty(#{tail}))"
+  end
+
+  defp int_spine_tail_pattern_check(
+         subject,
+         %{kind: :constructor, name: "::", arg_pattern: %{kind: :tuple, elements: [head, tail]}},
+         env
+       ) do
+    int_spine_cons_condition(int_spine_payload_tail(subject), head, tail, env)
+  end
+
+  defp int_spine_tail_pattern_check(_subject, %{kind: :var}, _env), do: "1"
+  defp int_spine_tail_pattern_check(_subject, %{kind: :wildcard}, _env), do: "1"
+  defp int_spine_tail_pattern_check(_subject, _pattern, _env), do: "1"
+
+  defp float_list_cons_condition(subject, head_pat, tail_pat, index, env) do
+    parts =
+      [
+        float_list_nonempty_at(subject, index),
+        float_list_head_pattern_check(subject, head_pat, index, env),
+        float_list_tail_suffix_check(subject, tail_pat, index + 1, env)
+      ]
+      |> Enum.reject(&(&1 == "1"))
+
+    case parts do
+      [] -> "1"
+      _ -> Enum.join(parts, " && ")
+    end
+  end
+
+  defp float_list_nonempty_at(subject, 0) do
+    "#{subject} && #{subject}->tag == ELMC_TAG_FLOAT_LIST && !elmc_float_list_is_empty(#{subject})"
+  end
+
+  defp float_list_nonempty_at(subject, index) do
+    "(#{float_list_length_expr(subject)} > #{index})"
+  end
+
+  defp float_list_length_expr(subject) do
+    "((#{subject})->tag == ELMC_TAG_FLOAT_LIST && (#{subject})->payload ? ((ElmcFloatListPayload *)(#{subject})->payload)->length : 0)"
+  end
+
+  defp float_list_head_pattern_check(_subject, %{kind: :var}, _index, _env), do: "1"
+  defp float_list_head_pattern_check(_subject, %{kind: :wildcard}, _index, _env), do: "1"
+
+  defp float_list_head_pattern_check(subject, %{kind: :int, value: value}, index, _env)
+       when is_integer(value) do
+    "((#{float_list_length_expr(subject)}) > #{index}) && ((ElmcFloatListPayload *)(#{subject})->payload)->values[#{index}] == #{:erlang.float(value)}"
+  end
+
+  defp float_list_head_pattern_check(_subject, _pattern, _index, _env), do: "1"
+
+  defp float_list_tail_suffix_check(subject, %{kind: :constructor, name: "[]"}, index, _env) do
+    "#{float_list_length_expr(subject)} == #{index}"
+  end
+
+  defp float_list_tail_suffix_check(
+         subject,
+         %{kind: :constructor, name: "::", arg_pattern: %{kind: :tuple, elements: [head, tail]}},
+         index,
+         env
+       ) do
+    float_list_cons_condition(subject, head, tail, index, env)
+  end
+
+  defp float_list_tail_suffix_check(_subject, %{kind: :var}, _index, _env), do: "1"
+  defp float_list_tail_suffix_check(_subject, %{kind: :wildcard}, _index, _env), do: "1"
+  defp float_list_tail_suffix_check(_subject, _pattern, _index, _env), do: "1"
+
+  defp record_seq_cons_condition(subject, head_pat, tail_pat, index, env) do
+    parts =
+      [
+        record_seq_nonempty_at(subject, index),
+        record_seq_head_pattern_check(subject, head_pat, index, env),
+        record_seq_tail_suffix_check(subject, tail_pat, index + 1, env)
+      ]
+      |> Enum.reject(&(&1 == "1"))
+
+    case parts do
+      [] -> "1"
+      _ -> Enum.join(parts, " && ")
+    end
+  end
+
+  defp record_seq_nonempty_at(subject, 0) do
+    "#{subject} && #{subject}->tag == ELMC_TAG_RECORD_SEQ && !elmc_record_seq_is_empty(#{subject})"
+  end
+
+  defp record_seq_nonempty_at(subject, index) do
+    "(#{record_seq_length_expr(subject)} > #{index})"
+  end
+
+  defp record_seq_length_expr(subject) do
+    "((#{subject})->tag == ELMC_TAG_RECORD_SEQ && (#{subject})->payload ? ((ElmcRecordSeqPayload *)(#{subject})->payload)->length : 0)"
+  end
+
+  defp record_seq_head_pattern_check(_subject, %{kind: :var}, _index, _env), do: "1"
+  defp record_seq_head_pattern_check(_subject, %{kind: :wildcard}, _index, _env), do: "1"
+
+  defp record_seq_head_pattern_check(subject, head_pat, index, env) do
+    head_ref = "elmc_record_seq_get(#{subject}, #{index})"
+
+    "((#{record_seq_length_expr(subject)}) > #{index}) && (#{pattern_condition(head_ref, head_pat, env)})"
+  end
+
+  defp record_seq_tail_suffix_check(subject, %{kind: :constructor, name: "[]"}, index, _env) do
+    "#{record_seq_length_expr(subject)} == #{index}"
+  end
+
+  defp record_seq_tail_suffix_check(
+         subject,
+         %{kind: :constructor, name: "::", arg_pattern: %{kind: :tuple, elements: [head, tail]}},
+         index,
+         env
+       ) do
+    record_seq_cons_condition(subject, head, tail, index, env)
+  end
+
+  defp record_seq_tail_suffix_check(_subject, %{kind: :var}, _index, _env), do: "1"
+  defp record_seq_tail_suffix_check(_subject, %{kind: :wildcard}, _index, _env), do: "1"
+  defp record_seq_tail_suffix_check(_subject, _pattern, _index, _env), do: "1"
 
   @doc false
   @spec list_case_suffix_var?(String.t()) :: boolean()

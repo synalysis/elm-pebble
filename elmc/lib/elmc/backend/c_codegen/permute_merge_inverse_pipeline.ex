@@ -564,7 +564,8 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
         if (next_best > model_best) {
           char best_buf[32];
           snprintf(best_buf, sizeof(best_buf), "%lld", (long long)next_best);
-          save_cmd = elmc_cmd1_string(ELMC_PEBBLE_CMD_STORAGE_WRITE_STRING, #{else_info.storage_key}, best_buf);
+          Rc = elmc_cmd1_string(&save_cmd, ELMC_PEBBLE_CMD_STORAGE_WRITE_STRING, #{else_info.storage_key}, best_buf);
+          CHECK_RC(Rc);
         } else {
           save_cmd = elmc_int_zero();
         }

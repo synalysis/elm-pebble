@@ -258,6 +258,24 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
 
   @spec text_copy_code(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
           text_copy_result()
+  defp text_copy_code(%{op: :int_literal, union_ctor: ctor}, _env, counter) do
+    case ui_label_literal(ctor) do
+      text when is_binary(text) -> {"", text_copy_literal(text), "", counter}
+      _ -> {"", "", "", counter}
+    end
+  end
+
+  defp text_copy_code(%{op: :constructor_call, target: target, args: args}, env, counter)
+       when args in [[], nil] do
+    case ui_label_literal(target) do
+      text when is_binary(text) ->
+        text_copy_code(%{op: :string_literal, value: text}, env, counter)
+
+      _ ->
+        text_copy_boxed_code(%{op: :constructor_call, target: target, args: args}, env, counter)
+    end
+  end
+
   defp text_copy_code(%{op: :string_literal, value: value}, _env, counter) do
     {"", text_copy_literal(value), "", counter}
   end
@@ -612,6 +630,16 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
   def scene_emit_guard_close, do: ""
 
   defp draw_kind(kind), do: Elmc.Backend.Pebble.draw_kind_id!(kind)
+
+  defp ui_label_literal(ctor) when is_binary(ctor) do
+    case ctor do
+      "Pebble.Ui.WaitingForCompanion" -> "Waiting for companion app"
+      "WaitingForCompanion" -> "Waiting for companion app"
+      _ -> nil
+    end
+  end
+
+  defp ui_label_literal(_), do: nil
 
   defp native_int_append_operand(
          %{op: :runtime_call, function: "elmc_string_from_int", args: [value]},

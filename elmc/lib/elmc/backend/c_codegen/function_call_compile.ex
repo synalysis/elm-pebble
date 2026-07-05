@@ -25,6 +25,42 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
           | {:partial_ref, String.t(), String.t(), non_neg_integer(), non_neg_integer()}
           | {:partial_union, String.t(), integer(), non_neg_integer(), non_neg_integer()}
 
+  @call_args_cache_key :elmc_call_args_cache
+
+  @doc false
+  @spec reset_call_args_cache!() :: :ok
+  def reset_call_args_cache!, do: Process.put(@call_args_cache_key, %{})
+
+  @doc false
+  @spec shared_call_args_array(String.t(), String.t(), non_neg_integer()) ::
+          {String.t(), String.t()}
+  def shared_call_args_array(args_var, arg_list, argc)
+      when is_binary(args_var) and is_binary(arg_list) and is_integer(argc) do
+    if argc == 1 do
+      {"(ElmcValue *[]){ #{arg_list} }", ""}
+    else
+      shared_call_args_array_cached(args_var, arg_list, argc)
+    end
+  end
+
+  defp shared_call_args_array_cached(args_var, arg_list, argc) do
+    key = {argc, arg_list}
+    cache = Process.get(@call_args_cache_key, %{})
+
+    case Map.get(cache, key) do
+      existing when is_binary(existing) ->
+        {existing, ""}
+
+      nil ->
+        Process.put(@call_args_cache_key, Map.put(cache, key, args_var))
+
+        {
+          args_var,
+          "ElmcValue *#{args_var}[#{max(argc, 1)}] = { #{arg_list} };"
+        }
+    end
+  end
+
   @spec partial_union_constructor(
           String.t(),
           integer(),
@@ -53,7 +89,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     signature = {:partial_union, target, tag, full_arity, bound_count}
     {closure_fn_name, new?} = closure_function_name(signature, "elmc_partial_union")
 
-    if new? do
+    if new? or not closure_reference_emitted?(closure_fn_name) do
       merge_lines =
         if bound_count > 0 do
           Enum.map_join(0..(bound_count - 1), "\n    ", fn index ->
@@ -92,6 +128,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
 
       existing_lambdas = Process.get(:elmc_lambdas, [])
       Process.put(:elmc_lambdas, [closure_fn | existing_lambdas])
+      mark_closure_emitted!(closure_fn_name)
     end
 
     capture_list =
@@ -502,7 +539,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     signature = {:top_level_ref, module_name, name, arity}
     {closure_fn_name, new?} = closure_function_name(signature, "elmc_top_level_ref")
 
-    if new? do
+    if new? or not closure_reference_emitted?(closure_fn_name) do
       closure_fn = """
       static ElmcValue *#{closure_fn_name}(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
         (void)captures;
@@ -513,6 +550,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
 
       existing_lambdas = Process.get(:elmc_lambdas, [])
       Process.put(:elmc_lambdas, [closure_fn | existing_lambdas])
+      mark_closure_emitted!(closure_fn_name)
     end
 
     code = """
@@ -545,7 +583,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
         end
       end)
 
-    if new? do
+    if new? or not closure_reference_emitted?(closure_fn_name) do
       closure_fn = """
       static ElmcValue *#{closure_fn_name}(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
         (void)args;
@@ -560,6 +598,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
 
       existing_lambdas = Process.get(:elmc_lambdas, [])
       Process.put(:elmc_lambdas, [closure_fn | existing_lambdas])
+      mark_closure_emitted!(closure_fn_name)
     end
 
     capture_list =
@@ -871,14 +910,8 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
         operand_opts
       )
 
-    {default_out, next} = CaseCompile.fresh_var(counter, env)
+    {out, next} = RcRuntimeEmit.compile_call_result_slot(env, counter)
     call_args_id = counter + 1
-
-    out =
-      case RcRuntimeEmit.tail_call_out_target(env) || RcRuntimeEmit.nested_out_target(env) do
-        into_out when is_binary(into_out) -> into_out
-        _ -> default_out
-      end
 
     if caller_rc? and not RcRuntimeEmit.function_out_ref?(out), do: ValueSlots.track(out)
     argc = length(arg_vars)
@@ -1035,6 +1068,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
           else
             args_var = "call_args_#{call_args_id}"
             arg_list = call_arg_list(arg_vars)
+            {args_var, call_args_decl} = shared_call_args_array(args_var, arg_list, argc)
 
             call_expr =
               if rc_callee? do
@@ -1047,7 +1081,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
             #{before_args_probe}
             #{arg_code}
               #{after_args_probe}
-              ElmcValue *#{args_var}[#{max(argc, 1)}] = { #{arg_list} };
+              #{call_args_decl}
               #{rc_call_assignment(env, out, call_expr, rc_callee?, caller_rc?)}
               #{after_call_probe}
               #{releases}
@@ -1060,17 +1094,22 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
 
   defp rc_call_assignment(env, out, call_expr, true, _caller_rc_flag) do
     if caller_rc?(env) do
+      out = ValueSlots.ensure_fresh_assign_target(out)
       unless RcRuntimeEmit.function_out_ref?(out), do: ValueSlots.track(out)
 
       if predeclared_out?(env, out) or ValueSlots.owned_ref?(out) or
            RcRuntimeEmit.function_out_ref?(out) do
-        if ValueSlots.owned_ref?(out), do: ValueSlots.mark_written(out)
+        stmt =
+          """
+          #{ValueSlots.owned_reassign_prefix(out)}Rc = #{call_expr};
+          CHECK_RC(Rc);
+          """
+          |> String.trim()
 
-        """
-        #{ValueSlots.owned_reassign_prefix(out)}Rc = #{call_expr};
-        CHECK_RC(Rc);
-        """
-        |> String.trim()
+        if ValueSlots.owned_ref?(out), do: ValueSlots.mark_written(out)
+        if RcRuntimeEmit.function_out_ref?(out), do: ValueSlots.mark_function_out_written()
+
+        stmt
       else
         """
         ElmcValue *#{out} = NULL;
@@ -1295,20 +1334,19 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
   defp rc_boxed_wrapper_closure_return_body(c_name, call_args_spec) do
     """
     ElmcValue *out = NULL;
-    {
-      RC __call_rc = #{c_name}(&out, #{call_args_spec});
-      if (__call_rc != RC_SUCCESS) {
-        ELMC_RC_LOG_FAIL(__call_rc, "#{c_name}", "closure call failed");
-        return NULL;
-      }
-    }
+    RC Rc = RC_SUCCESS;
+    CATCH_BEGIN
+      Rc = #{c_name}(&out, #{call_args_spec});
+      CHECK_RC(Rc);
+    CATCH_END
     return out;
     """
     |> String.trim()
   end
 
   defp wrapper_abi_target?(module_name, name) do
-    MapSet.member?(Process.get(:elmc_wrapper_targets, MapSet.new()), {module_name, name})
+    MapSet.member?(Process.get(:elmc_wrapper_targets, MapSet.new()), {module_name, name}) or
+      RcRequired.platform_worker_rc_abi?(module_name, name)
   end
 
   defp emit_wrapper_for_closure?(module_name, name, env) do
@@ -1426,13 +1464,11 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
       if rc_callee? do
         """
         ElmcValue *out = NULL;
-        {
-          RC __call_rc = #{c_name}(&out, #{call_args});
-          if (__call_rc != RC_SUCCESS) {
-            ELMC_RC_LOG_FAIL(__call_rc, "#{c_name}", "closure call failed");
-            return NULL;
-          }
-        }
+        RC Rc = RC_SUCCESS;
+        CATCH_BEGIN
+          Rc = #{c_name}(&out, #{call_args});
+          CHECK_RC(Rc);
+        CATCH_END
         return out;
         """
       else
@@ -1527,5 +1563,19 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
       {module_name, name} -> compile(module_name, name, args, env, counter)
       nil -> compile(target, "", args, env, counter)
     end
+  end
+
+  defp closure_reference_emitted?(closure_fn_name) when is_binary(closure_fn_name) do
+    MapSet.member?(Process.get(:elmc_lambda_emitted_names, MapSet.new()), closure_fn_name) or
+      Process.get(:elmc_lambdas, [])
+      |> Enum.any?(fn defn -> String.contains?(defn, " #{closure_fn_name}(") end)
+  end
+
+  defp mark_closure_emitted!(closure_fn_name) when is_binary(closure_fn_name) do
+    emitted =
+      Process.get(:elmc_lambda_emitted_names, MapSet.new())
+      |> MapSet.put(closure_fn_name)
+
+    Process.put(:elmc_lambda_emitted_names, emitted)
   end
 end

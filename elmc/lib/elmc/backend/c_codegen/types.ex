@@ -325,6 +325,9 @@ defmodule Elmc.Backend.CCodegen.Types do
           optional(atom()) => term()
         }
   @type native_record_binding :: {:native_record, %{String.t() => native_ref()}}
+
+  @type record_peel_binding ::
+          {:record_peel, String.t(), function_decl_key(), ir_expr()}
   @type env_source_ref :: String.t()
   @type function_declaration :: ElmEx.IR.Declaration.t()
 

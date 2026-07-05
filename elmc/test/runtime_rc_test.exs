@@ -440,4 +440,66 @@ defmodule Elmc.RuntimeRCTest do
     assert String.to_integer(alloc_delta) > 0
     assert String.to_integer(alloc_delta) == String.to_integer(rel_delta)
   end
+
+  test "elmc_as_int_number coerces float record fields for draw coordinate reads" do
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available for runtime C test")
+
+    out_dir = Path.expand("tmp/runtime_as_int_number", __DIR__)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(out_dir, "runtime"))
+
+    project_dir = Path.expand("fixtures/simple_project", __DIR__)
+    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
+
+    harness_path = Path.join(out_dir, "c/as_int_number_harness.c")
+
+    File.write!(
+      harness_path,
+      """
+      #include "../runtime/elmc_runtime.h"
+      #include <stdio.h>
+
+      int main(void) {
+        ElmcValue *fx = elmc_new_float_take(121.9);
+        ElmcValue *fy = elmc_new_float_take(-14.2);
+        ElmcValue *fields[2] = { fx, fy };
+        ElmcValue *rect = NULL;
+        if (elmc_record_new_values(&rect, 2, fields) != RC_SUCCESS) return 1;
+
+        elmc_int_t x = ELMC_RECORD_GET_INDEX_INT(rect, 0);
+        elmc_int_t y = ELMC_RECORD_GET_INDEX_INT(rect, 1);
+        elmc_int_t direct = elmc_as_int_number(fx);
+        elmc_release(rect);
+        elmc_release(fx);
+        elmc_release(fy);
+
+        printf("rect_xy=%lld,%lld direct=%lld\\n", (long long)x, (long long)y, (long long)direct);
+        return (x == 121 && y == -14 && direct == 121) ? 0 : 2;
+      }
+      """
+    )
+
+    binary_path = Path.join(out_dir, "as_int_number_harness")
+
+    {compile_out, compile_code} =
+      System.cmd(cc, [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-I#{Path.join(out_dir, "runtime")}",
+        Path.join(out_dir, "runtime/elmc_runtime.c"),
+        RcTrackHarness.runtime_link_stub(),
+        harness_path,
+        "-lm",
+        "-o",
+        binary_path
+      ])
+
+    assert compile_code == 0, compile_out
+
+    {run_out, run_code} = System.cmd(binary_path, [], stderr_to_stdout: true)
+    assert run_code == 0, run_out
+    assert run_out =~ "rect_xy=121,-14 direct=121"
+  end
 end

@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.CCodegen.Native.Int do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.DirectRender.RecordViewPeel
   alias Elmc.Backend.CCodegen.ConstantInt
   alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.EnvBindings
@@ -377,8 +378,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
           Types.native_scalar_compile_result()
   def compile_boxed(expr, env, counter) do
     {code, value_ref, counter} = compile_expr(expr, env, counter)
-    next = counter + 1
-    out = "tmp_#{next}"
+    {out, next} = CaseCompile.fresh_var(counter, env)
 
     {
       """
@@ -451,6 +451,16 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
           :error -> {"", "0", counter}
         end
 
+      {:ok, {:record_peel, source_ref, helper_key, helper_call}} ->
+        case RecordViewPeel.field_expr(env, arg, field) do
+          field_expr when is_map(field_expr) ->
+            peel_env = RecordViewPeel.peel_compile_env(env, helper_key, helper_call, source_ref)
+            compile_expr(field_expr, peel_env, counter)
+
+          _ ->
+            {"", "0", counter}
+        end
+
       {:ok, source} when is_binary(source) ->
         RecordCompile.mark_record_field_container(source)
 
@@ -501,6 +511,16 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
           :error -> {"", "0", counter}
         end
 
+      {:record_peel, source_ref, helper_key, helper_call} ->
+        case RecordViewPeel.field_expr(env, name, field) do
+          field_expr when is_map(field_expr) ->
+            peel_env = RecordViewPeel.peel_compile_env(env, helper_key, helper_call, source_ref)
+            compile_expr(field_expr, peel_env, counter)
+
+          _ ->
+            {"", "0", counter}
+        end
+
       _ ->
         compile_expr(%{op: :field_access, arg: name, field: field}, env, counter)
     end
@@ -549,7 +569,8 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
         end
 
       field_expr ->
-        compile_expr(field_expr, env, counter)
+        compile_env = RecordViewPeel.peel_env_for_field_access(env, arg_expr)
+        compile_expr(field_expr, compile_env, counter)
     end
   end
 
@@ -608,10 +629,12 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
       nil ->
         case Map.fetch(env, name) do
           {:ok, source} when is_binary(source) ->
+            source_expr = RcRuntimeEmit.value_expr(source)
+
             if EnvBindings.boxed_int_binding?(env, name) do
-              {"", "elmc_as_int(#{source})", counter}
+              {"", "elmc_as_int(#{source_expr})", counter}
             else
-              {"", coerce_union_payload_int_ref("(#{source} ? elmc_as_int(#{source}) : 0)"), counter}
+              {"", coerce_union_payload_int_ref("(#{source} ? elmc_as_int(#{source_expr}) : 0)"), counter}
             end
 
           _ ->
@@ -1104,7 +1127,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
             :error ->
               {code, var, counter} = Host.compile_expr(maybe, env, counter)
-              {code, "elmc_maybe_with_default_int(#{default_ref}, #{var})", var, counter}
+              {code, "elmc_maybe_with_default_int(#{default_ref}, #{RcRuntimeEmit.value_expr(var)})", var, counter}
           end
 
         %{op: :field_access, arg: %{op: :var, name: name}, field: field} when is_binary(name) ->
@@ -1122,12 +1145,12 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
             :error ->
               {code, var, counter} = Host.compile_expr(maybe, env, counter)
-              {code, "elmc_maybe_with_default_int(#{default_ref}, #{var})", var, counter}
+              {code, "elmc_maybe_with_default_int(#{default_ref}, #{RcRuntimeEmit.value_expr(var)})", var, counter}
           end
 
         _ ->
           {code, var, counter} = Host.compile_expr(maybe, env, counter)
-          {code, "elmc_maybe_with_default_int(#{default_ref}, #{var})", var, counter}
+          {code, "elmc_maybe_with_default_int(#{default_ref}, #{RcRuntimeEmit.value_expr(var)})", var, counter}
       end
 
     next = counter + 1
@@ -1751,7 +1774,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     result =
       {"""
        #{code}
-         const elmc_int_t #{out} = elmc_as_int(#{var});
+         const elmc_int_t #{out} = elmc_as_int(#{RcRuntimeEmit.value_expr(var)});
          #{ValueSlots.release_stmt(var)};
        """, out, next}
 

@@ -61,7 +61,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     else
       Process.put(:elmc_generic_helper_defs, [])
       Process.put(:elmc_generic_helper_counter, 0)
-      direct_args? = not emit_wrapper?
+      direct_args? = not worker_rc_abi?(emit_wrapper?, module_name, decl.name, decl_map)
       {immortal_prelude, body} = emit_body(decl, module_name, function_arities, decl_map, direct_args?)
       helper_defs = generic_helper_defs()
       Process.delete(:elmc_generic_helper_defs)
@@ -233,20 +233,33 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           Types.function_decl_map()
         ) :: String.t()
   def boxed_function_prototype(decl, module_name, c_name, emit_wrapper?, decl_map) do
+    worker_abi? = worker_rc_abi?(emit_wrapper?, module_name, decl.name, decl_map)
+
     cond do
+      worker_abi? and not NativeFunctionCall.native_scalar_fn?(decl, module_name, decl_map) ->
+        if RcRequired.rc_required?(module_name, decl.name) do
+          "RC #{c_name}(ElmcValue **out, ElmcValue ** const args, const int argc);"
+        else
+          "ElmcValue *#{c_name}(ElmcValue ** const args, const int argc);"
+        end
+
       RcRequired.rc_required?(module_name, decl.name) ->
-        if emit_wrapper? or NativeFunctionCall.native_scalar_fn?(decl, module_name, decl_map) do
+        if worker_abi? or NativeFunctionCall.native_scalar_fn?(decl, module_name, decl_map) do
           "RC #{c_name}(ElmcValue **out, ElmcValue ** const args, const int argc);"
         else
           boxed_direct_prototype(decl, c_name, module_name, decl.name, decl_map)
         end
 
-      emit_wrapper? or NativeFunctionCall.native_scalar_fn?(decl, module_name, decl_map) ->
+      worker_abi? or NativeFunctionCall.native_scalar_fn?(decl, module_name, decl_map) ->
         "ElmcValue *#{c_name}(ElmcValue ** const args, const int argc);"
 
       true ->
         boxed_direct_prototype(decl, c_name, module_name, decl.name, decl_map)
     end
+  end
+
+  defp worker_rc_abi?(emit_wrapper?, module_name, decl_name, decl_map) do
+    emit_wrapper? or RcRequired.platform_worker_rc_abi?(module_name, decl_name, decl_map)
   end
 
   defp generic_helper_defs do
@@ -371,6 +384,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
         root_env =
           if rc_required?, do: RcRuntimeEmit.function_tail_env(compile_env), else: compile_env
+
+        FunctionCallCompile.reset_call_args_cache!()
 
         {code, result_var, _counter} =
           case compile_tail_recursive(
@@ -1090,17 +1105,9 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
             rc_required? and return_kind == :boxed ->
               if NativeFunctionCall.native_boxed_rc_abi?(decl, module_name, decl_map) do
-                """
-                RC Rc = RC_SUCCESS;
-                Rc = #{c_name}_native(out, #{native_args});
-                return Rc;
-                """
+                rc_native_boxed_delegate(c_name, native_args)
               else
-                """
-                ElmcValue *tmp_result = #{c_name}_native(#{native_args});
-                *out = tmp_result;
-                return RC_SUCCESS;
-                """
+                rc_legacy_boxed_native_delegate(c_name, native_args)
               end
 
             rc_required? and return_kind == :native_int ->
@@ -1110,10 +1117,14 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
               """
 
             rc_required? and return_kind == :native_bool ->
-              """
-              RC Rc = elmc_new_bool(#{RcRuntimeEmit.function_out_param()}, #{c_name}_native(#{native_args}));
-              return Rc;
-              """
+              if NativeFunctionCall.native_bool_rc_abi?(decl, module_name, decl_map) do
+                rc_native_bool_delegate(c_name, native_args)
+              else
+                """
+                RC Rc = elmc_new_bool(out, #{c_name}_native(#{native_args}));
+                return Rc;
+                """
+              end
 
             true ->
               wrapper_return(c_name, native_args, return_kind, decl, module_name, decl_map)
@@ -1205,7 +1216,10 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
        ) do
     RecordCompile.reset_deferred_call_operand_releases()
     RecordCompile.reset_borrowed_field_refs()
-    if return_kind == :boxed, do: ValueSlots.reset(epilogue_lifo: true)
+
+    if native_function_owned_slots?(decl, module_name, decl_map, return_kind) do
+      ValueSlots.reset(epilogue_lifo: true)
+    end
 
     case_helpers =
       if collect_generic_helpers? do
@@ -1277,6 +1291,10 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
          exit_probe,
          case_helpers
        ) do
+    if NativeFunctionCall.native_bool_rc_candidate?(decl, module_name, decl_map) do
+      FunctionCallCompile.reset_call_args_cache!()
+    end
+
     {body_code, body_var, _counter} =
       compile_native_body(decl, module_name, decl_map, native_env, return_kind, arg_kinds)
 
@@ -1289,30 +1307,48 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       unused_arg_casts(c_arg_bindings, [body_code, deferred_release_code, entry_probe, exit_probe, "return #{body_var};"])
 
     native_def =
-      if return_kind == :boxed do
-        wrap_native_boxed_function_body(
-          c_name,
-          decl,
-          module_name,
-          decl_map,
-          body_code,
-          deferred_release_code,
-          body_var,
-          entry_probe,
-          exit_probe,
-          unused_casts,
-          case_helpers
-        )
-      else
-        """
-        #{case_helpers}static #{native_return_prefix(return_kind)}#{c_name}_native(#{NativeFunctionCall.params(decl, module_name, decl_map)}) {
-          #{unused_casts}
-          #{entry_probe}
-          #{body_code}#{deferred_release_code}
-          #{exit_probe}
-          return #{body_var};
-        }
-        """
+      cond do
+        return_kind == :boxed ->
+          wrap_native_boxed_function_body(
+            c_name,
+            decl,
+            module_name,
+            decl_map,
+            body_code,
+            deferred_release_code,
+            body_var,
+            entry_probe,
+            exit_probe,
+            unused_casts,
+            case_helpers
+          )
+
+        return_kind == :native_bool and
+            NativeFunctionCall.native_bool_rc_candidate?(decl, module_name, decl_map) ->
+          wrap_native_bool_rc_function_body(
+            c_name,
+            decl,
+            module_name,
+            decl_map,
+            body_code,
+            deferred_release_code,
+            body_var,
+            entry_probe,
+            exit_probe,
+            unused_casts,
+            case_helpers
+          )
+
+        true ->
+          """
+          #{case_helpers}static #{native_return_prefix(return_kind)}#{c_name}_native(#{NativeFunctionCall.params(decl, module_name, decl_map)}) {
+            #{unused_casts}
+            #{entry_probe}
+            #{body_code}#{deferred_release_code}
+            #{exit_probe}
+            return #{body_var};
+          }
+          """
       end
 
     {"", native_def}
@@ -1402,6 +1438,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           ValueSlots.catch_return_epilogue(body_var, failure_cleanup)
 
         rc_abi? ->
+          body_var = ValueSlots.resolve_result_slot(body_var)
+
           owned_transfer =
             if ValueSlots.owned_ref?(body_var), do: ValueSlots.transfer_and_null(body_var), else: ""
 
@@ -1423,6 +1461,124 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     }
     """
   end
+
+  defp wrap_native_bool_rc_function_body(
+         c_name,
+         decl,
+         module_name,
+         decl_map,
+         body_code,
+         deferred_release_code,
+         body_var,
+         entry_probe,
+         exit_probe,
+         unused_casts,
+         case_helpers
+       ) do
+    body_text =
+      [entry_probe, body_code, deferred_release_code, exit_probe]
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.join("\n")
+
+    owned_decls = ValueSlots.owned_declaration()
+    failure_cleanup = ValueSlots.failure_cleanup()
+
+    rc_abi? = NativeFunctionCall.native_bool_rc_candidate?(decl, module_name, decl_map)
+    register_native_bool_rc_abi!(module_name, decl.name, rc_abi?)
+
+    needs_catch? = rc_body_needs_catch?(body_text) or owned_decls != "" or rc_abi?
+
+    signature_params = "bool *out, #{NativeFunctionCall.params(decl, module_name, decl_map)}"
+
+    {hoisted_decl, catch_body} =
+      if needs_catch? do
+        prepare_native_bool_catch_body(body_text, body_var)
+      else
+        {"", body_text <> "\n*out = #{body_var};\nreturn RC_SUCCESS;"}
+      end
+
+    prefix =
+      (if needs_catch? do
+         ["RC Rc = RC_SUCCESS;"]
+       else
+         []
+       end) ++
+        List.wrap(hoisted_decl) ++
+        List.wrap(owned_decls) ++
+        List.wrap(unused_casts)
+
+    catch_body_with_out =
+      if needs_catch? and rc_abi? do
+        catch_body <> "\n    *out = #{body_var};"
+      else
+        catch_body
+      end
+
+    core =
+      if needs_catch? do
+        """
+        CATCH_BEGIN
+        #{catch_body_with_out}
+        CATCH_END;
+        """
+      else
+        catch_body
+      end
+
+    suffix =
+      if needs_catch? and rc_abi? do
+        """
+        #{Enum.join(epilogue_suffix(failure_cleanup, catch_body_with_out, true), "\n")}
+        return Rc;
+        """
+      else
+        ""
+      end
+
+    """
+    #{case_helpers}static RC #{c_name}_native(#{signature_params}) {
+      #{Enum.join(prefix, "\n")}
+      #{core}
+      #{suffix}
+    }
+    """
+  end
+
+  defp prepare_native_bool_catch_body(body_text, body_var) do
+    body_text =
+      body_text
+      |> String.replace("return #{body_var};", "")
+      |> String.trim_trailing()
+
+    if native_bool_result_var?(body_var) do
+      bool_decl = "bool #{body_var};"
+      const_assign = ~r/const\s+bool\s+#{Regex.escape(body_var)}\s*=/
+
+      has_const_assign? = Regex.match?(const_assign, body_text)
+
+      body_text =
+        if has_const_assign? do
+          Regex.replace(const_assign, body_text, "#{body_var} =")
+        else
+          body_text
+        end
+
+      cond do
+        String.contains?(body_text, bool_decl) ->
+          {bool_decl, String.replace(body_text, bool_decl, "", global: false) |> String.trim_trailing()}
+
+        true ->
+          {bool_decl, body_text}
+      end
+    else
+      {"", body_text}
+    end
+  end
+
+  defp native_bool_result_var?(ref) when is_binary(ref),
+    do: Regex.match?(~r/^[A-Za-z_][A-Za-z0-9_]*$/, ref)
+
+  defp native_bool_result_var?(_), do: false
 
   defp prepare_native_boxed_catch_body(body_text, body_var) do
     body_text =
@@ -1500,13 +1656,20 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     )
     |> Map.put(:__native_return_kind__, return_kind)
     |> then(fn env ->
-      if return_kind == :boxed and
-           NativeFunctionCall.native_boxed_rc_candidate?(decl, module_name, decl_map) do
-        env
-        |> Map.put(:__native_rc_out__, true)
-        |> RcRuntimeEmit.rc_catch_env()
-      else
-        env
+      cond do
+        return_kind == :boxed and NativeFunctionCall.native_boxed_rc_candidate?(decl, module_name, decl_map) ->
+          env
+          |> Map.put(:__native_rc_out__, true)
+          |> RcRuntimeEmit.rc_catch_env()
+
+        return_kind == :native_bool and
+            NativeFunctionCall.native_bool_rc_candidate?(decl, module_name, decl_map) ->
+          env
+          |> Map.put(:__native_rc_out__, true)
+          |> RcRuntimeEmit.rc_catch_env()
+
+        true ->
+          env
       end
     end)
   end
@@ -1529,11 +1692,18 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
               {:ok, code, result_var} ->
                 {code, result_var, 0}
 
-              :error ->
-                compile_scalar_native_expr(expr, env, return_kind, 0)
-            end
+          :error ->
+            expr_env =
+              if Map.get(env, :__native_rc_out__) do
+                env |> RecordCompile.with_subexpr_cache()
+              else
+                env
+              end
+
+            compile_scalar_native_expr(expr, expr_env, return_kind, 0)
         end
     end
+  end
   end
 
   defp compile_native_body(decl, module_name, _decl_map, env, :boxed, arg_kinds) do
@@ -1998,21 +2168,93 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     Process.put(:elmc_native_boxed_rc_abi, Map.put(table, {module_name, name}, rc_abi?))
   end
 
+  defp register_native_bool_rc_abi!(module_name, name, rc_abi?) do
+    table = Process.get(:elmc_native_bool_rc_abi, %{})
+    Process.put(:elmc_native_bool_rc_abi, Map.put(table, {module_name, name}, rc_abi?))
+  end
+
   defp wrapper_return(c_name, native_args, :boxed, decl, module_name, decl_map) do
     if NativeFunctionCall.native_boxed_rc_abi?(decl, module_name, decl_map) do
-      """
-      ElmcValue *tmp_result = NULL;
-      if (#{c_name}_native(&tmp_result, #{native_args}) != RC_SUCCESS) return NULL;
-      return tmp_result;
-      """
-      |> String.trim()
+      non_rc_wrapper_boxed_rc_native_delegate(c_name, native_args)
     else
       "return #{c_name}_native(#{native_args});"
     end
   end
 
+  defp wrapper_return(c_name, native_args, :native_bool, decl, module_name, decl_map) do
+    if NativeFunctionCall.native_bool_rc_abi?(decl, module_name, decl_map) do
+      rc_native_bool_delegate(c_name, native_args)
+    else
+      wrapper_return_scalar(c_name, native_args, :native_bool)
+    end
+  end
+
   defp wrapper_return(c_name, native_args, return_kind, _decl, _module_name, _decl_map) do
     wrapper_return_scalar(c_name, native_args, return_kind)
+  end
+
+  defp native_function_owned_slots?(decl, module_name, decl_map, return_kind) do
+    case return_kind do
+      :boxed ->
+        NativeFunctionCall.native_boxed_rc_candidate?(decl, module_name, decl_map)
+
+      :native_bool ->
+        NativeFunctionCall.native_bool_rc_candidate?(decl, module_name, decl_map)
+
+      _ ->
+        false
+    end
+  end
+
+  defp rc_native_bool_delegate(c_name, native_args) do
+    """
+    RC Rc = RC_SUCCESS;
+    bool native_result = false;
+    CATCH_BEGIN
+      Rc = #{c_name}_native(&native_result, #{native_args});
+      CHECK_RC(Rc);
+      Rc = elmc_new_bool(out, native_result);
+      CHECK_RC(Rc);
+    CATCH_END;
+    return Rc;
+    """
+    |> String.trim()
+  end
+
+  defp rc_native_boxed_delegate(c_name, native_args) do
+    """
+    RC Rc = RC_SUCCESS;
+    CATCH_BEGIN
+      Rc = #{c_name}_native(out, #{native_args});
+      CHECK_RC(Rc);
+    CATCH_END;
+    return Rc;
+    """
+    |> String.trim()
+  end
+
+  defp rc_legacy_boxed_native_delegate(c_name, native_args) do
+    """
+    RC Rc = RC_SUCCESS;
+    CATCH_BEGIN
+      *out = #{c_name}_native(#{native_args});
+    CATCH_END;
+    return Rc;
+    """
+    |> String.trim()
+  end
+
+  defp non_rc_wrapper_boxed_rc_native_delegate(c_name, native_args) do
+    """
+    RC Rc = RC_SUCCESS;
+    ElmcValue *result = NULL;
+    CATCH_BEGIN
+      Rc = #{c_name}_native(&result, #{native_args});
+      CHECK_RC(Rc);
+    CATCH_END;
+    return (Rc == RC_SUCCESS) ? result : NULL;
+    """
+    |> String.trim()
   end
 
   defp wrapper_return_scalar(c_name, native_args, :native_int) do

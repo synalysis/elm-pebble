@@ -447,6 +447,24 @@ defmodule Elmc.CCodegenPatternsTest do
     refute code =~ "elmc_int_zero();  ElmcValue *tmp_"
   end
 
+  test "record literal Maybe.Nothing field emits elmc_maybe_nothing not float zero" do
+    fields = [
+      %{name: "value", expr: %{op: :int_literal, value: 1}},
+      %{
+        name: "temperature",
+        expr: %{op: :int_literal, value: 0, union_ctor: "Maybe.Nothing"}
+      }
+    ]
+
+    env = %{:__module__ => "Main", :__program_decls__ => %{}}
+
+    {code, _out, _counter} =
+      RecordCompile.compile(%{op: :record_literal, fields: fields}, env, 0)
+
+    assert code =~ "elmc_maybe_nothing()"
+    refute code =~ "elmc_new_float"
+  end
+
   test "List.filter with (/=) 0 uses cursor loop instead of elmc_list_filter closure" do
     source = """
     module Main exposing (main)
@@ -3183,6 +3201,102 @@ defmodule Elmc.CCodegenPatternsTest do
              "ElmcValue *tmp_1_screen = elmc_record_get_index(context, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHCONTEXT_SCREEN)"
   end
 
+  test "update reads union record payload fields with payload record macros, not model field indices" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as PebblePlatform
+    import Pebble.Ui as PebbleUi
+    import Pebble.Cmd as PebbleCmd
+
+    type alias Model =
+        { hour : Int
+        , minute : Int
+        , screenW : Int
+        , screenH : Int
+        }
+
+    type Msg
+        = CurrentDateTime PebbleCmd.CurrentDateTime
+        | HourChanged Int
+        | MinuteChanged Int
+
+    init : PebblePlatform.LaunchContext -> ( Model, Cmd Msg )
+    init context =
+        ( { hour = 12
+          , minute = 0
+          , screenW = context.screen.width
+          , screenH = context.screen.height
+          }
+        , PebbleCmd.getCurrentDateTime CurrentDateTime
+        )
+
+    update : Msg -> Model -> ( Model, Cmd Msg )
+    update msg model =
+        case msg of
+            CurrentDateTime value ->
+                ( { model
+                    | hour = value.hour
+                    , minute = value.minute
+                  }
+                , Cmd.none
+                )
+
+            HourChanged hour ->
+                ( { model | hour = hour }, Cmd.none )
+
+            MinuteChanged minute ->
+                ( { model | minute = minute }, Cmd.none )
+
+    subscriptions : Model -> Sub Msg
+    subscriptions _ =
+        Sub.none
+
+    view : Model -> PebbleUi.UiNode
+    view _ =
+        PebbleUi.windowStack []
+
+    main : Program Decode.Value Model Msg
+    main =
+        PebblePlatform.watchface
+            { init = init
+            , update = update
+            , view = view
+            , subscriptions = subscriptions
+            }
+    """
+
+    project_dir = Path.expand("tmp/watchface_analog_update_payload", __DIR__)
+    out_dir = Path.expand("tmp/watchface_analog_update_payload_out", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    update_body =
+      generated_c
+      |> String.split(worker_fn_open("update"), parts: 2)
+      |> Enum.at(1, "")
+      |> String.split(worker_fn_marker("subscriptions"), parts: 2)
+      |> hd()
+
+    assert update_body =~ "ELMC_FIELD_PEBBLE_CMD_CURRENTDATETIME_HOUR"
+    assert update_body =~ "ELMC_FIELD_PEBBLE_CMD_CURRENTDATETIME_MINUTE"
+    refute update_body =~
+             "elmc_record_get_index(((ElmcTuple2 *)msg->payload)->second, ELMC_FIELD_MAIN_MODEL_HOUR)"
+    refute update_body =~
+             "elmc_record_get_index(((ElmcTuple2 *)msg->payload)->second, ELMC_FIELD_MAIN_MODEL_MINUTE)"
+  end
+
   test "record literal reuses shared zero subexpression without duplicate tmp vars" do
     source = """
     module Main exposing (main)
@@ -3964,7 +4078,9 @@ defmodule Elmc.CCodegenPatternsTest do
       |> hd()
 
     assert init_body =~
-             "elmc_cmd1_string(ELMC_PEBBLE_CMD_STORAGE_WRITE_STRING, 2048, native_string_"
+             "Rc = elmc_cmd1_string(&owned[1], ELMC_PEBBLE_CMD_STORAGE_WRITE_STRING, 2048, native_string_"
+
+    assert init_body =~ "CHECK_RC(Rc)"
 
     refute init_body =~ "elmc_new_int(ELMC_PEBBLE_CMD_STORAGE_WRITE_STRING)"
     refute init_body =~ "elmc_tuple2_ints(0, 0)"
@@ -4386,6 +4502,74 @@ defmodule Elmc.CCodegenPatternsTest do
              ~r/elmc_maybe_nothing\(\);\s*\n\s*ElmcValue \*tmp_\d+ = elmc_record_update_index_cow_drop/
   end
 
+  test "tuple2 record update reads pre-update field before cow_drop mutates model" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as PebblePlatform
+    import Pebble.Ui as PebbleUi
+    import Pebble.Cmd as Cmd
+
+    type alias Model =
+        { flag : Maybe Int }
+
+    type Msg
+        = Set Int
+
+    init _ =
+        ( { flag = Nothing }, Cmd.none )
+
+    update : Msg -> Model -> ( Model, Cmd Msg )
+    update msg model =
+        case msg of
+            Set n ->
+                ( { model | flag = Just n }
+                , case model.flag of
+                    Nothing ->
+                        Cmd.none
+
+                    Just _ ->
+                        Cmd.none
+                )
+
+    subscriptions _ =
+        Sub.none
+
+    view _ =
+        PebbleUi.windowStack []
+
+    main =
+        PebblePlatform.watchface
+            { init = init, update = update, view = view, subscriptions = subscriptions }
+    
+    """
+
+    project_dir = Path.expand("tmp/tuple2_pre_update_field_read", __DIR__)
+    out_dir = Path.expand("tmp/tuple2_pre_update_field_read_out", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    field_read = "elmc_record_get_index(model, ELMC_FIELD_MAIN_MODEL_FLAG)"
+    record_update = "elmc_record_update_index_cow_drop(model, ELMC_FIELD_MAIN_MODEL_FLAG"
+
+    assert generated_c =~ field_read
+    assert generated_c =~ record_update
+
+    {read_pos, _} = :binary.match(generated_c, field_read)
+    {update_pos, _} = :binary.match(generated_c, record_update)
+    assert read_pos < update_pos
+  end
+
   test "case branch Cmd.none assigns immortal cmd directly to function out" do
     source = """
     module Main exposing (main, refreshStepsIfSupported)
@@ -4468,7 +4652,7 @@ defmodule Elmc.CCodegenPatternsTest do
     refute fn_body == ""
     refute fn_body =~ "ELMC_FN_OUT"
     refute fn_body =~ "elmc_maybe_just(out,"
-    assert fn_body =~ ~r/elmc_maybe_just\(&(owned\[[0-9]+\]|tmp_[0-9]+),/
+    assert fn_body =~ ~r/elmc_maybe_just_own\(&owned\[[0-9]+\],/
   end
 
   test "union constructor multi-arg case binds fields from payload not tag" do
@@ -5479,6 +5663,57 @@ defmodule Elmc.CCodegenPatternsTest do
     assert generated_c =~ "while (1)"
     refute generated_c =~ "// inlined Main.fibHelper"
     assert generated_c =~ "elmc_fn_Main_fibHelper_native"
+  end
+
+  test "Maybe CurrentDateTime field access in timeString uses hour and minute indices not year" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as PebblePlatform
+    import Pebble.Time as PebbleTime
+    import Pebble.Ui as PebbleUi
+
+    type alias Model =
+        { currentDateTime : Maybe PebbleTime.CurrentDateTime }
+
+    type Msg
+        = NoOp
+
+    pad2 : Int -> String
+    pad2 value =
+        if value < 10 then
+            "0" ++ String.fromInt value
+
+        else
+            String.fromInt value
+
+    timeString : Model -> String
+    timeString model =
+        case model.currentDateTime of
+            Nothing ->
+                "--:--"
+
+            Just currentDateTime ->
+                pad2 currentDateTime.hour ++ ":" ++ pad2 currentDateTime.minute
+
+    init _ = ( { currentDateTime = Nothing }, Cmd.none )
+    update _ model = ( model, Cmd.none )
+    subscriptions _ = Sub.none
+    view model = PebbleUi.toUiNode [ PebbleUi.textLabel 0 { x = 0, y = 0 } (timeString model) ]
+
+    main : Program Decode.Value Model Msg
+    main =
+        PebblePlatform.watchface
+            { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    generated_c = compile_generated_c!("maybe_current_datetime_time_string", source, %{})
+
+    assert generated_c =~ "ELMC_FIELD_PEBBLE_TIME_CURRENTDATETIME_HOUR"
+    assert generated_c =~ "ELMC_FIELD_PEBBLE_TIME_CURRENTDATETIME_MINUTE"
+    refute generated_c =~ ~r/ELMC_RECORD_GET_INDEX_INT\([^,]+, 0 \/\* hour \*\)/
+    refute generated_c =~ ~r/ELMC_RECORD_GET_INDEX_INT\([^,]+, 0 \/\* minute \*\)/
   end
 
   defp compile_generated_c!(name, source, opts) do

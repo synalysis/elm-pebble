@@ -9,9 +9,9 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DispatchCore.Lifecycle.DispatchHooks 
     static void elmc_pebble_invalidate_scene_for_dispatch(ElmcPebbleApp *app) {
       if (!app) return;
       elmc_pebble_clear_view_cache(app);
-    #if !ELMC_PEBBLE_DIRTY_REGION_ENABLED
-      /* Invalidate encoded scene; retain materialized bytes to avoid heap churn on Aplite.
-         Chunked rebuild uses scene.chunks; stale bytes are not read while dirty. */
+    #if !ELMC_PEBBLE_DIRTY_REGION_ENABLED && !ELMC_PEBBLE_SCENE_CACHE_ENABLED
+      /* Streaming/chunked rebuild drops cached bytes immediately. Scene-cache watchfaces
+         keep the last encoded scene visible until deferred ensure_scene finishes. */
       app->scene.byte_count = 0;
       app->scene.command_count = 0;
       app->scene.hash = 0;

@@ -9,6 +9,20 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     "elmc_new_int",
     "elmc_new_bool",
     "elmc_new_order",
+    "elmc_basics_compare",
+    "elmc_cmd0",
+    "elmc_cmd1",
+    "elmc_cmd1_string",
+    "elmc_cmd2",
+    "elmc_cmd3",
+    "elmc_cmd4",
+    "elmc_cmd5",
+    "elmc_sub0",
+    "elmc_sub1",
+    "elmc_sub2",
+    "elmc_sub3",
+    "elmc_sub4",
+    "elmc_sub5",
     "elmc_new_string",
     "elmc_new_string_len",
     "elmc_new_float",
@@ -169,6 +183,20 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     "elmc_new_int" => "elmc_new_int_take",
     "elmc_new_bool" => "elmc_new_bool_take",
     "elmc_new_order" => "elmc_new_order_take",
+    "elmc_basics_compare" => "elmc_basics_compare_take",
+    "elmc_cmd0" => "elmc_cmd0_take",
+    "elmc_cmd1" => "elmc_cmd1_take",
+    "elmc_cmd1_string" => "elmc_cmd1_string_take",
+    "elmc_cmd2" => "elmc_cmd2_take",
+    "elmc_cmd3" => "elmc_cmd3_take",
+    "elmc_cmd4" => "elmc_cmd4_take",
+    "elmc_cmd5" => "elmc_cmd5_take",
+    "elmc_sub0" => "elmc_sub0_take",
+    "elmc_sub1" => "elmc_sub1_take",
+    "elmc_sub2" => "elmc_sub2_take",
+    "elmc_sub3" => "elmc_sub3_take",
+    "elmc_sub4" => "elmc_sub4_take",
+    "elmc_sub5" => "elmc_sub5_take",
     "elmc_new_string" => "elmc_new_string_take",
     "elmc_new_string_len" => "elmc_new_string_len_take",
     "elmc_new_float" => "elmc_new_float_take",
@@ -317,10 +345,6 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   @spec function_out_deref() :: String.t()
   def function_out_deref, do: "*out"
 
-  @doc "C preprocessor define so `ELMC_FN_OUT` aliases the function result slot."
-  @spec function_out_define() :: String.t()
-  def function_out_define, do: "#define ELMC_FN_OUT (*out)"
-
   @doc "C expression for reading fields from a boxed value slot."
   @spec value_expr(String.t()) :: String.t()
   def value_expr(ref) when is_binary(ref) do
@@ -346,11 +370,14 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   @doc "C assignment statement for a boxed value slot (never emits the internal out marker raw)."
   @spec assign_stmt(String.t(), String.t()) :: String.t()
   def assign_stmt(out, rhs) when is_binary(out) and is_binary(rhs) do
+    out = ValueSlots.ensure_fresh_assign_target(out)
     stmt = ValueSlots.owned_reassign_prefix(out) <> "#{assignment_lhs(out)} = #{rhs};"
 
     if ValueSlots.owned_ref?(out) and rhs != "NULL" do
       ValueSlots.mark_written(out)
     end
+
+    if function_out_ref?(out), do: ValueSlots.mark_function_out_written()
 
     stmt
   end
@@ -360,17 +387,30 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   def null_assign_stmt(out) when is_binary(out), do: assign_stmt(out, "NULL")
   @spec transfer_assignment(String.t(), String.t()) :: String.t()
   def transfer_assignment(out, ref) when is_binary(out) and is_binary(ref) do
-    stmt = "#{assignment_lhs(out)} = #{value_expr(ref)};"
+    ref = ValueSlots.resolve_result_slot(ref)
+    lhs = out
 
-    cond do
-      function_out_ref?(out) and ValueSlots.owned_ref?(ref) ->
-        abandon_owned_source(ref, stmt)
+    if lhs == ref do
+      ""
+    else
+      stmt = "#{assignment_lhs(lhs)} = #{value_expr(ref)};"
 
-      ValueSlots.owned_ref?(out) and ValueSlots.owned_ref?(ref) and out != ref ->
-        abandon_owned_source(ref, stmt)
+      stmt =
+        cond do
+          function_out_ref?(lhs) and ValueSlots.owned_ref?(ref) ->
+            abandon_owned_source(ref, stmt)
 
-      true ->
-        stmt
+          ValueSlots.owned_ref?(lhs) and ValueSlots.owned_ref?(ref) ->
+            abandon_owned_source(ref, stmt)
+
+          true ->
+            stmt
+        end
+
+      if function_out_ref?(lhs), do: ValueSlots.mark_function_out_written()
+
+      ValueSlots.sync_result_slot_current!(lhs)
+      stmt
     end
   end
 
@@ -397,6 +437,8 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   @doc "Move a boxed tail result into `*out`. Caller owns the out slot; no read of uninitialized `*out`."
   @spec publish_function_out_from(String.t()) :: String.t()
   def publish_function_out_from(result_var) when is_binary(result_var) do
+    result_var = ValueSlots.resolve_result_slot(result_var)
+
     if ValueSlots.owned_ref?(result_var) do
       "#{function_out_deref()} = #{result_var};\n#{ValueSlots.null_assignment(result_var)}"
     else
@@ -404,22 +446,65 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     end
   end
 
+  @spec compare_order_slot(map(), non_neg_integer()) :: {String.t(), non_neg_integer()}
+  def compare_order_slot(env, counter), do: CaseCompile.fresh_var(counter, env)
+
+  @doc false
+  @spec fn_out_alloc_target(map()) :: String.t() | nil
+  def fn_out_alloc_target(env) do
+    cond do
+      function_tail_compile?(env) and
+          Map.get(env, :__allow_fn_out_slot__, false) and
+          Map.get(env, :__branch_out__) == function_out_ref() ->
+        function_out_ref()
+
+      function_tail_compile?(env) and Map.get(env, :__allow_fn_out_slot__, false) ->
+        tail_call_out_target(env)
+
+      true ->
+        nil
+    end
+  end
+
+  @doc """
+  Compile env for binop/call/compare operands. Never allocate into `*out` mid-body.
+  """
+  @spec operand_env(map()) :: map()
+  def operand_env(env), do: Map.delete(env, :__allow_fn_out_slot__)
+
   @doc "Result slot for a runtime-call expression: branch/owned out, or a fresh owned slot."
   @spec compile_result_slot(map(), non_neg_integer()) :: {String.t(), non_neg_integer()}
   def compile_result_slot(env, counter) do
-    case nested_out_target(env) do
-      out when is_binary(out) ->
-        if function_out_ref?(out), do: CaseCompile.fresh_var(counter, env), else: {out, counter}
+    branch_out = Map.get(env, :__branch_out__)
 
-      _ ->
+    cond do
+      out = fn_out_alloc_target(env) ->
+        {ValueSlots.ensure_fresh_assign_target(out), counter}
+
+      out = nested_out_target(env) ->
+        {ValueSlots.ensure_fresh_assign_target(out), counter}
+
+      is_binary(branch_out) and branch_out_slot?(env, branch_out) ->
+        {ValueSlots.ensure_fresh_assign_target(branch_out), counter}
+
+      true ->
         CaseCompile.fresh_var(counter, env)
     end
+  end
+
+  @doc "Out slot for RC function calls."
+  @spec compile_call_result_slot(map(), non_neg_integer()) :: {String.t(), non_neg_integer()}
+  def compile_call_result_slot(env, counter), do: compile_result_slot(env, counter)
+
+  defp branch_out_slot?(env, out) do
+    (function_out_ref?(out) and function_tail_compile?(env)) or ValueSlots.owned_ref?(out) or
+      predeclared_out_slot?(env, out)
   end
 
   @doc "Out slot for string/append fusion: branch out or nested into_out."
   @spec append_out_target(map()) :: String.t() | nil
   def append_out_target(env) do
-    Map.get(env, :__branch_out__) || nested_out_target(env)
+    fn_out_alloc_target(env) || Map.get(env, :__branch_out__) || nested_out_target(env)
   end
 
   @spec with_function_out_target(map()) :: map()
@@ -431,6 +516,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     env
     |> Map.put(:__function_tail_compile__, true)
     |> with_function_out_target()
+    |> Map.put(:__allow_fn_out_slot__, true)
   end
 
   @spec function_tail_compile?(map()) :: boolean()
@@ -442,6 +528,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     env
     |> Map.delete(:__function_tail_compile__)
     |> Map.delete(:__into_out__)
+    |> Map.delete(:__allow_fn_out_slot__)
   end
 
   @doc """
@@ -451,7 +538,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   def nested_out_target(env) do
     case Map.get(env, :__into_out__) do
       @function_out_marker -> nil
-      into_out when is_binary(into_out) -> into_out
+      into_out when is_binary(into_out) -> ValueSlots.resolve_result_slot(into_out)
       _ -> nil
     end
   end
@@ -616,6 +703,9 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   @spec assign_call(map(), String.t(), String.t(), String.t()) :: String.t()
   def assign_call(env, out, function, call_args) do
     cond do
+      function == "elmc_append" and rc_allocator_emit_mode?(env) ->
+        assign_call(env, out, "elmc_list_append", call_args)
+
       not rc_allocator?(function) and
           (predeclared_out_slot?(env, out) or rc_owned_slot?(out) or function_out_ref?(out)) ->
         function_out_assign(env, out, "#{function}(#{call_args})")
@@ -641,11 +731,55 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   end
 
   @doc """
+  Like `assign_into/4`, but safe inside mutually exclusive branches that share one
+  `out` slot. Restores ValueSlots marks between codegen passes so
+  `ensure_fresh_assign_target/1` does not drift to a different owned index per branch.
+  """
+  @spec mutually_exclusive_assign_into(map(), String.t(), String.t(), String.t()) :: String.t()
+  def mutually_exclusive_assign_into(env, out, function, call_args) do
+    parent = ValueSlots.snapshot()
+    ValueSlots.restore(parent)
+    stmt = assign_into(env, out, function, call_args)
+    ValueSlots.restore(parent)
+    stmt
+  end
+
+  @doc """
+  Like `allocator_assign/5`, but safe when emitting mutually exclusive branches to one out slot.
+  """
+  @spec mutually_exclusive_allocator_assign(map(), String.t(), String.t(), String.t(), keyword()) ::
+          String.t()
+  def mutually_exclusive_allocator_assign(env, out, function, call_args, opts \\ []) do
+    parent = ValueSlots.snapshot()
+    ValueSlots.restore(parent)
+    stmt = allocator_assign(env, out, function, call_args, opts)
+    ValueSlots.restore(parent)
+    stmt
+  end
+
+  @doc """
   Assign into a pre-declared slot (for example `owned[3]` in if-branches).
   """
   @spec assign_into(map(), String.t(), String.t(), String.t()) :: String.t()
   def assign_into(env, out, function, call_args) do
+    branch_final_assign_into(env, out, function, call_args, fresh_out?: true)
+  end
+
+  @doc """
+  Assign a branch-final RC allocator into `out`.
+
+  When `out` is the function tail slot (`ELMC_FN_OUT`), never reroute through a fresh
+  owned slot — only the branch's last statement may publish to `*out`.
+  """
+  @spec branch_final_assign_into(map(), String.t(), String.t(), String.t(), keyword()) :: String.t()
+  def branch_final_assign_into(env, out, function, call_args, opts \\ []) do
+    fresh_out? = Keyword.get(opts, :fresh_out?, false)
+
     cond do
+      not rc_allocator?(function) and rc_allocator_emit_mode?(env) and
+          function_out_ref?(out) ->
+        rc_function_out_stmt(env, out, function, call_args, fresh_out?: fresh_out?)
+
       not rc_allocator?(function) ->
         function_out_assign(env, out, "#{function}(#{call_args})")
 
@@ -653,11 +787,37 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
         int_list_cons_assign(env, out, call_args)
 
       rc_allocator_emit_mode?(env) ->
-        allocator_assign(env, out, function, call_args, declare_out?: false)
+        allocator_assign(env, out, function, call_args,
+          declare_out?: false,
+          fresh_out?: fresh_out?
+        )
 
       true ->
         legacy_rc_allocator_stmt(out, function, call_args, declare_out?: false, env: env)
     end
+  end
+
+  defp rc_function_out_stmt(_env, out, function, call_args, opts) do
+    fresh_out? = Keyword.get(opts, :fresh_out?, false)
+
+    out =
+      if function_out_ref?(out) or not fresh_out? do
+        out
+      else
+        ValueSlots.ensure_fresh_assign_target(out)
+      end
+
+    stmt =
+      """
+      Rc = #{function}(#{allocator_out_arg(out)}, #{call_args});
+      CHECK_RC(Rc);
+      """
+      |> String.trim()
+
+    if function_out_ref?(out), do: ValueSlots.mark_function_out_written()
+    if ValueSlots.owned_ref?(out), do: ValueSlots.mark_written(out)
+
+    stmt
   end
 
   @doc "List.cons with retain semantics for borrowed head/tail operands."
@@ -715,6 +875,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
         allocator_assign(env, out, function, call_args, opts)
 
       Map.has_key?(@take_wrappers, function) and predeclared_out_slot?(env, out) ->
+        out = ValueSlots.ensure_fresh_assign_target(out)
         take_fn = Map.fetch!(@take_wrappers, function)
         stmt = ValueSlots.owned_reassign_prefix(out) <> "#{out} = #{take_fn}(#{call_args});"
         ValueSlots.mark_written(out)
@@ -887,6 +1048,13 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   @doc false
   @spec rc_allocator_stmt(map(), String.t(), String.t(), String.t(), keyword()) :: String.t()
   def rc_allocator_stmt(env, out, function, call_args, opts \\ []) do
+    out =
+      if function_out_ref?(out) or not Keyword.get(opts, :fresh_out?, true) do
+        out
+      else
+        ValueSlots.ensure_fresh_assign_target(out)
+      end
+
     unless function_out_ref?(out), do: ValueSlots.track(out)
 
     declare? =
@@ -916,13 +1084,17 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
         ""
       end
 
-    if rc_owned_slot?(out), do: ValueSlots.mark_written(out)
+    stmt =
+      """
+      #{preempt}#{init}Rc = #{function}(#{allocator_out_arg(out)}, #{call_args});
+      CHECK_RC(Rc);
+      """
+      |> String.trim()
 
-    """
-    #{preempt}#{init}Rc = #{function}(#{allocator_out_arg(out)}, #{call_args});
-    CHECK_RC(Rc);
-    """
-    |> String.trim()
+    if rc_owned_slot?(out), do: ValueSlots.mark_written(out)
+    if function_out_ref?(out), do: ValueSlots.mark_function_out_written()
+
+    stmt
   end
 
   defp allocator_same_slot_transfer?(out, function, call_args)
@@ -938,6 +1110,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   end
 
   defp function_out_assign(_env, out, rhs) when is_binary(out) and is_binary(rhs) do
+    if function_out_ref?(out), do: ValueSlots.mark_function_out_written()
     "#{assignment_lhs(out)} = #{rhs};"
   end
 end

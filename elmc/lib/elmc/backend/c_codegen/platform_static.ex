@@ -48,14 +48,6 @@ defmodule Elmc.Backend.CCodegen.PlatformStatic do
     end
   end
 
-  defp false_else?(%{op: :bool_literal, value: false}), do: true
-  defp false_else?(%{op: :int_literal, value: 0}), do: true
-
-  defp false_else?(%{op: :constructor_call, target: target, args: []}) when is_binary(target),
-    do: String.ends_with?(target, ".False") or target in ["False", "Basics.False"]
-
-  defp false_else?(_expr), do: false
-
   defp platform_static_and_if_form(%{
         op: :call,
         name: op,
@@ -79,6 +71,14 @@ defmodule Elmc.Backend.CCodegen.PlatformStatic do
   end
 
   defp platform_static_and_if_form(_expr), do: nil
+
+  defp false_else?(%{op: :bool_literal, value: false}), do: true
+  defp false_else?(%{op: :int_literal, value: 0}), do: true
+
+  defp false_else?(%{op: :constructor_call, target: target, args: []}) when is_binary(target),
+    do: String.ends_with?(target, ".False") or target in ["False", "Basics.False"]
+
+  defp false_else?(_expr), do: false
 
   defp normalize_platform_static_expr(%{op: :runtime_call, function: "elmc_basics_not", args: [inner]}) do
     %{op: :runtime_call, function: "elmc_basics_not", args: [normalize_platform_static_expr(inner)]}

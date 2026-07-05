@@ -62,8 +62,7 @@ defmodule Elmc.Backend.CCodegen.CmdCompile do
     arity = length(params)
     fn_name = "elmc_cmd#{arity}"
     args = Enum.join([kind_ref | param_refs], ", ")
-    next = counter + 1
-    out = "tmp_#{next}"
+    {out, next} = RcRuntimeEmit.compile_call_result_slot(env, counter)
 
     prefix =
       [kind_code, params_code]
@@ -72,7 +71,7 @@ defmodule Elmc.Backend.CCodegen.CmdCompile do
 
     code = """
     #{prefix}
-      ElmcValue *#{out} = #{fn_name}(#{args});
+      #{RcRuntimeEmit.assign_call(env, out, fn_name, args)}
     """
 
     {code, out, next}
@@ -88,8 +87,7 @@ defmodule Elmc.Backend.CCodegen.CmdCompile do
       {kind_code, kind_ref, counter} = compile_kind_ref(kind, env, counter)
       {key_code, key_ref, counter} = compile_param_ref(key, env, counter)
       {text_code, text_ref, cleanup, counter} = NativeString.compile_expr(text, env, counter)
-      next = counter + 1
-      out = "tmp_#{next}"
+      {out, next} = RcRuntimeEmit.compile_call_result_slot(env, counter)
 
       cleanup_code =
         cleanup
@@ -102,7 +100,7 @@ defmodule Elmc.Backend.CCodegen.CmdCompile do
 
       code = """
       #{prefix}
-        ElmcValue *#{out} = elmc_cmd1_string(#{kind_ref}, #{key_ref}, #{text_ref});
+        #{RcRuntimeEmit.assign_call(env, out, "elmc_cmd1_string", "#{kind_ref}, #{key_ref}, #{text_ref}")}
         #{cleanup_code}
       """
 

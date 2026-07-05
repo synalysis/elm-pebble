@@ -193,6 +193,7 @@ defmodule Elmc.Backend.Worker do
     typedef struct {
       ElmcValue *model;
       ElmcValue *pending_cmd;
+      ElmcValue *last_dispatch_cmd;
       int64_t subscriptions;
       elmc_int_t sub_msg_tags[ELMC_WORKER_SUB_TAG_SLOTS];
       ElmcButtonRawSub button_raw_subs[ELMC_WORKER_MAX_BUTTON_RAW_SUBS];
@@ -204,6 +205,8 @@ defmodule Elmc.Backend.Worker do
     int elmc_worker_dispatch(ElmcWorkerState *state, ElmcValue *msg);
     int elmc_worker_dispatch_needs_render(ElmcWorkerState *state);
     ElmcValue *elmc_worker_model(ElmcWorkerState *state);
+    ElmcValue *elmc_worker_pending_cmds_borrow(ElmcWorkerState *state);
+    ElmcValue *elmc_worker_last_dispatch_cmd_borrow(ElmcWorkerState *state);
     ElmcValue *elmc_worker_take_cmd(ElmcWorkerState *state);
     int64_t elmc_worker_subscriptions(ElmcWorkerState *state);
     elmc_int_t elmc_worker_sub_msg_tag(ElmcWorkerState *state, int64_t flag);
@@ -692,7 +695,14 @@ defmodule Elmc.Backend.Worker do
       state->dispatch_needs_render = 1;
       {
         ElmcValue *pending = NULL;
-        RC pending_rc = elmc_cmd_queue_normalize(&pending, extract_cmd_take(result));
+        ElmcValue *raw_cmd = extract_cmd_take(result);
+        if (state->last_dispatch_cmd) {
+          elmc_release(state->last_dispatch_cmd);
+          state->last_dispatch_cmd = NULL;
+        }
+        state->last_dispatch_cmd =
+            (raw_cmd && !elmc_cmd_is_none(raw_cmd)) ? elmc_retain(raw_cmd) : elmc_cmd_none();
+        RC pending_rc = elmc_cmd_queue_normalize(&pending, raw_cmd);
         if (pending_rc != RC_SUCCESS) {
           ELMC_WORKER_LOG_RC_FAIL("worker init pending cmd", pending_rc);
           elmc_release(result);
@@ -719,14 +729,21 @@ defmodule Elmc.Backend.Worker do
       }
       if (next_model != prev_model) {
         elmc_release(state->model);
-        state->dispatch_needs_render = 1;
       } else if (next_model->rc > 1) {
         elmc_release(next_model);
       }
       state->model = next_model;
+      state->dispatch_needs_render = 1;
       {
         ElmcValue *next_cmd = NULL;
-        RC next_rc = elmc_cmd_queue_normalize(&next_cmd, extract_cmd_take(result));
+        ElmcValue *raw_cmd = extract_cmd_take(result);
+        if (state->last_dispatch_cmd) {
+          elmc_release(state->last_dispatch_cmd);
+          state->last_dispatch_cmd = NULL;
+        }
+        state->last_dispatch_cmd =
+            (raw_cmd && !elmc_cmd_is_none(raw_cmd)) ? elmc_retain(raw_cmd) : elmc_cmd_none();
+        RC next_rc = elmc_cmd_queue_normalize(&next_cmd, raw_cmd);
         if (next_rc != RC_SUCCESS) {
           ELMC_WORKER_LOG_RC_FAIL("worker update pending cmd", next_rc);
           elmc_release(result);
@@ -758,6 +775,16 @@ defmodule Elmc.Backend.Worker do
     ElmcValue *elmc_worker_model(ElmcWorkerState *state) {
       if (!state || !state->model) return NULL;
       return elmc_retain(state->model);
+    }
+
+    ElmcValue *elmc_worker_pending_cmds_borrow(ElmcWorkerState *state) {
+      if (!state || !state->pending_cmd) return elmc_cmd_none();
+      return elmc_retain(state->pending_cmd);
+    }
+
+    ElmcValue *elmc_worker_last_dispatch_cmd_borrow(ElmcWorkerState *state) {
+      if (!state || !state->last_dispatch_cmd) return elmc_cmd_none();
+      return elmc_retain(state->last_dispatch_cmd);
     }
 
     ElmcValue *elmc_worker_take_cmd(ElmcWorkerState *state) {
@@ -824,6 +851,10 @@ defmodule Elmc.Backend.Worker do
       if (state->pending_cmd) {
         elmc_release(state->pending_cmd);
         state->pending_cmd = NULL;
+      }
+      if (state->last_dispatch_cmd) {
+        elmc_release(state->last_dispatch_cmd);
+        state->last_dispatch_cmd = NULL;
       }
       state->subscriptions = 0;
     }

@@ -1,7 +1,6 @@
 #ifndef ELMC_PEBBLE_H
 #define ELMC_PEBBLE_H
 
-#define ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE 1
 typedef struct ElmcPebbleApp ElmcPebbleApp;
 
 enum {
@@ -338,7 +337,7 @@ typedef struct {
   };
 } ElmcPebbleDrawCmd;
 
-int elmc_scene_writer_push_cmd(ElmcSceneWriter *writer, const ElmcPebbleDrawCmd *cmd);
+RC elmc_scene_writer_push_cmd(ElmcSceneWriter *writer, const ElmcPebbleDrawCmd *cmd);
 void elmc_draw_cmd_init(ElmcPebbleDrawCmd *cmd, int32_t kind);
 
 #if ELMC_PEBBLE_FEATURE_DRAW_TEXT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
@@ -647,6 +646,7 @@ typedef enum {
     int elmc_pebble_scene_command_count(ElmcPebbleApp *app);
     int elmc_pebble_scene_dirty_rect(ElmcPebbleApp *app, ElmcPebbleRect *out_rect, int *out_full);
     void elmc_pebble_invalidate_scene(ElmcPebbleApp *app);
+    void elmc_pebble_scene_report_decode_failure(ElmcPebbleApp *app, int rc, int offset);
     void elmc_vector_sequence_frame_begin(void);
 void elmc_vector_sequence_draw_at(GContext *ctx, ElmcPebbleApp *app, int32_t animation_id, uint32_t resource_id, int16_t x, int16_t y);
 void elmc_vector_sequence_frame_end(ElmcPebbleApp *app);

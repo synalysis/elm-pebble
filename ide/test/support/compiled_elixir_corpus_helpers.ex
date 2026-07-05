@@ -80,6 +80,7 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   defp companion_wire_arg(value) when is_binary(value), do: value
   defp companion_wire_arg(value) when is_integer(value), do: value
   defp companion_wire_arg(value) when is_boolean(value), do: value
+  defp companion_wire_arg(values) when is_list(values), do: values
 
   defp companion_wire_arg(ctor) when is_atom(ctor),
     do: %{"ctor" => Atom.to_string(ctor), "args" => []}

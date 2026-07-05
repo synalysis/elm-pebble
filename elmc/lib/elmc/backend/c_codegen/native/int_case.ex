@@ -7,6 +7,7 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.ImmortalStringLiteral
+  alias Elmc.Backend.CCodegen.FunctionCallCompile
   alias Elmc.Backend.CCodegen.IntLiteralRef
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
@@ -109,6 +110,8 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
 
     {branch_code, final_counter} =
       Enum.reduce(branches, {"", next}, fn branch, {acc, c} ->
+        FunctionCallCompile.reset_call_args_cache!()
+
         branch_env =
           env
           |> RecordCompile.fresh_subexpr_cache()
@@ -287,6 +290,8 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
 
     {branch_code, final_counter} =
       Enum.reduce(branches, {"", next}, fn branch, {acc, c} ->
+        FunctionCallCompile.reset_call_args_cache!()
+
         branch_env = RecordCompile.fresh_subexpr_cache(env)
 
         {expr_code, assignment_code, c2} =

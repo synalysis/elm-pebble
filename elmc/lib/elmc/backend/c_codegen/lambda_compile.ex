@@ -35,22 +35,24 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
     next = counter + 1
     lambda_arg_names = lambda_args || []
 
-    lambda_signature =
-      if free_vars == [] do
-        {:lambda, lambda_arg_names, body}
-      else
-        nil
-      end
+    lambda_signature = {:lambda, lambda_arg_names, body, free_vars}
 
     closure_fn_name =
-      case lambda_signature && Map.get(Process.get(:elmc_lambda_defs, %{}), lambda_signature) do
+      case Map.get(Process.get(:elmc_lambda_defs, %{}), lambda_signature) do
         name when is_binary(name) ->
           name
 
         _ ->
           lambda_id = Process.get(:elmc_lambda_counter, 0) + 1
           Process.put(:elmc_lambda_counter, lambda_id)
-          "elmc_lambda_#{lambda_id}"
+          name = "elmc_lambda_#{lambda_id}"
+
+          Process.put(
+            :elmc_lambda_defs,
+            Map.put(Process.get(:elmc_lambda_defs, %{}), lambda_signature, name)
+          )
+
+          name
       end
 
     lambda_arg_bindings = Host.c_arg_bindings(lambda_arg_names)
@@ -201,7 +203,7 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
         {"", body_code, ""}
       end
 
-    unless lambda_signature && Map.has_key?(Process.get(:elmc_lambda_defs, %{}), lambda_signature) do
+    if not lambda_closure_emitted?(closure_fn_name) do
       closure_body = Enum.join([arg_bindings, capture_bindings, body_code], "\n  ")
 
       closure_void_casts =
@@ -261,10 +263,11 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
       existing_lambdas = Process.get(:elmc_lambdas, [])
       Process.put(:elmc_lambdas, [closure_fn | existing_lambdas])
 
-      if lambda_signature do
-        lambda_defs = Process.get(:elmc_lambda_defs, %{})
-        Process.put(:elmc_lambda_defs, Map.put(lambda_defs, lambda_signature, closure_fn_name))
-      end
+      emitted =
+        Process.get(:elmc_lambda_emitted_names, MapSet.new())
+        |> MapSet.put(closure_fn_name)
+
+      Process.put(:elmc_lambda_emitted_names, emitted)
     end
 
     # Build the capture array and closure allocation at the call site
@@ -281,7 +284,8 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
 
             stmt =
               RcRuntimeEmit.take_wrapper_assign(cap_var, take_fn, call_args, env,
-                return_on_fail?: not rc_lambda?
+                return_on_fail?: not rc_lambda?,
+                declare_out?: true
               )
 
             {[stmt | stmts], [cap_var | refs], counter + 1}
@@ -328,6 +332,12 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
     """
 
     {code, out, next}
+  end
+
+  defp lambda_closure_emitted?(closure_fn_name) when is_binary(closure_fn_name) do
+    MapSet.member?(Process.get(:elmc_lambda_emitted_names, MapSet.new()), closure_fn_name) or
+      Process.get(:elmc_lambdas, [])
+      |> Enum.any?(fn defn -> String.contains?(defn, " #{closure_fn_name}(") end)
   end
 
   defp closure_param_used?(param, body) when is_binary(param) and is_binary(body) do

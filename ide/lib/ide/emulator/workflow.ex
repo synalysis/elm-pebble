@@ -125,6 +125,16 @@ defmodule Ide.Emulator.Workflow do
   def launch_error_message(:display_ready_timeout),
     do: "Embedded emulator display was not ready before the timeout."
 
+  def launch_error_message({:invalid_emulator_target, target}) when is_binary(target) do
+    trimmed = String.trim(target)
+
+    if trimmed == "" do
+      "Emulator launch requires a supported watch model. Choose a model on the emulator page and try again."
+    else
+      "Emulator launch watch model #{inspect(trimmed)} is not supported. Choose a model from the emulator page list."
+    end
+  end
+
   def launch_error_message({:pebble_build_failed, %{output: output}}) when is_binary(output) do
     case Ide.PebbleToolchain.BuildDiagnostics.launch_message(output) do
       message when is_binary(message) ->

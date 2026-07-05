@@ -32,6 +32,11 @@ defmodule Elmx.MessageDecodeTest do
     assert MessageDecode.decode("StorageStringLoaded saved") == {:StorageStringLoaded, "saved"}
   end
 
+  test "decode wire string payload with parent message label" do
+    assert MessageDecode.decode("CurrentTimeString", "12:34") == {:CurrentTimeString, "12:34"}
+    assert MessageDecode.decode("MinuteChanged", 6) == {:MinuteChanged, 6}
+  end
+
   test "decode message with nested union constructor payload" do
     assert MessageDecode.decode("SpeakerFinished FinishedDone") ==
              {:SpeakerFinished, :FinishedDone}

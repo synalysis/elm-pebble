@@ -43,9 +43,15 @@ defmodule Elmc.Backend.Pebble do
 
     generated_c = Map.get(opts, :generated_c, "")
 
-    aplite_direct_view_scene? =
-      MapSet.member?(direct_targets, {entry_module, "view"}) and
-        direct_view_scene_stack_safe?(ir, generated_c, entry_module)
+    direct_view_commands? = MapSet.member?(direct_targets, {entry_module, "view"})
+
+    stack_safe? = direct_view_scene_stack_safe?(ir, generated_c, entry_module)
+
+    aplite_direct_view_scene? = direct_view_commands? and stack_safe?
+
+    append_fallback_enabled? =
+      direct_view_commands? and
+        (opts[:direct_render_only] == true or aplite_direct_view_scene?)
 
     with :ok <- File.mkdir_p(c_dir),
          :ok <-
@@ -59,7 +65,7 @@ defmodule Elmc.Backend.Pebble do
            File.write(
              Path.join(c_dir, "elmc_pebble.c"),
              SourceWriter.generate(analysis, entry_module,
-               append_fallback_enabled?: aplite_direct_view_scene?
+               append_fallback_enabled?: append_fallback_enabled?
              )
            ) do
       :ok
@@ -70,6 +76,16 @@ defmodule Elmc.Backend.Pebble do
   @spec stream_view_fallback_needed?(IR.t(), String.t(), PebbleTypes.entry_module(), map()) ::
           boolean()
   def stream_view_fallback_needed?(ir, generated_c, entry_module, opts) do
+    # Color-only releases already commit to direct scene encoding. Recompiling with
+    # stream_view_fallback pulls generic Main.view/faceOps back in and overflows flash.
+    if opts[:direct_render_only] == true do
+      false
+    else
+      stream_view_fallback_needed_for_dual_codegen?(ir, generated_c, entry_module, opts)
+    end
+  end
+
+  defp stream_view_fallback_needed_for_dual_codegen?(ir, generated_c, entry_module, opts) do
     decl_map = IRQueries.function_decl_map(ir)
     direct_targets = Host.direct_command_targets(ir, opts, decl_map)
     view_target = {entry_module, "view"}

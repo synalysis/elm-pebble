@@ -27,6 +27,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Filter do
       decl = Map.fetch!(decl_map, target)
 
       if Host.direct_supported?(decl.expr, module_name, decl_map, MapSet.new()) do
+        Elmc.Backend.CCodegen.GeneratedSource.reset_emit_probe_state!()
+
         # Use the full candidate set (not just targets validated earlier in this pass)
         # so mutually dependent direct helpers (e.g. drawDial calling drawOuterScale)
         # can be checked in one fixed-point round.

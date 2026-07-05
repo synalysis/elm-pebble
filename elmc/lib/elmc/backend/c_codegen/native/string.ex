@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.CCodegen.Native.String do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.TypedReturn
@@ -209,9 +210,7 @@ defmodule Elmc.Backend.CCodegen.Native.String do
       {out, counter} =
         case RcRuntimeEmit.append_out_target(env) do
           slot when is_binary(slot) -> {slot, counter}
-          _ ->
-            next = counter + 1
-            {"tmp_#{next}", next}
+          _ -> CaseCompile.fresh_var(counter, env)
         end
 
       buffer_counter = counter + 1
@@ -338,12 +337,12 @@ defmodule Elmc.Backend.CCodegen.Native.String do
 
         extract =
           if native_string_call_expr?(expr, env) do
-            "const char *#{cstr_ref} = (const char *)#{boxed_ref}->payload;"
+            "const char *#{cstr_ref} = (const char *)#{RcRuntimeEmit.value_expr(boxed_ref)}->payload;"
           else
             """
             const char *#{cstr_ref} =
-              (#{boxed_ref} && #{boxed_ref}->tag == ELMC_TAG_STRING && #{boxed_ref}->payload)
-                ? (const char *)#{boxed_ref}->payload
+              (#{RcRuntimeEmit.value_expr(boxed_ref)} && #{RcRuntimeEmit.value_expr(boxed_ref)}->tag == ELMC_TAG_STRING && #{RcRuntimeEmit.value_expr(boxed_ref)}->payload)
+                ? (const char *)#{RcRuntimeEmit.value_expr(boxed_ref)}->payload
                 : "";
             """
           end
@@ -556,7 +555,7 @@ defmodule Elmc.Backend.CCodegen.Native.String do
       native_string_call_expr?(expr, env) ->
         {
           """
-            const char *#{out} = (const char *)#{var}->payload;
+            const char *#{out} = (const char *)#{RcRuntimeEmit.value_expr(var)}->payload;
           """,
           []
         }
@@ -568,10 +567,10 @@ defmodule Elmc.Backend.CCodegen.Native.String do
           """
             ElmcValue *#{boxed} = NULL;
             const char *#{out} = "";
-            if (#{var} && #{var}->tag == ELMC_TAG_STRING && #{var}->payload) {
-              #{out} = (const char *)#{var}->payload;
-            } else if (#{var} && #{var}->tag == ELMC_TAG_LIST) {
-              #{RcRuntimeEmit.check_rc_take(boxed, "elmc_string_from_list", var)}
+            if (#{RcRuntimeEmit.value_expr(var)} && #{RcRuntimeEmit.value_expr(var)}->tag == ELMC_TAG_STRING && #{RcRuntimeEmit.value_expr(var)}->payload) {
+              #{out} = (const char *)#{RcRuntimeEmit.value_expr(var)}->payload;
+            } else if (#{RcRuntimeEmit.value_expr(var)} && #{RcRuntimeEmit.value_expr(var)}->tag == ELMC_TAG_LIST) {
+              #{RcRuntimeEmit.check_rc_take(boxed, "elmc_string_from_list", RcRuntimeEmit.value_expr(var))}
               #{out} = (#{boxed} && #{boxed}->payload) ? (const char *)#{boxed}->payload : "";
             }
           """,
@@ -582,8 +581,8 @@ defmodule Elmc.Backend.CCodegen.Native.String do
         {
           """
             const char *#{out} =
-              (#{var} && #{var}->tag == ELMC_TAG_STRING && #{var}->payload)
-                ? (const char *)#{var}->payload
+              (#{RcRuntimeEmit.value_expr(var)} && #{RcRuntimeEmit.value_expr(var)}->tag == ELMC_TAG_STRING && #{RcRuntimeEmit.value_expr(var)}->payload)
+                ? (const char *)#{RcRuntimeEmit.value_expr(var)}->payload
                 : "";
           """,
           []

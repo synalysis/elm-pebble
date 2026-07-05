@@ -265,12 +265,17 @@ defmodule Ide.Debugger.YesWatchfaceReloadTest do
     assert provide_weather_row.message =~ "Celsius"
     public_watch_model = ModelMetadata.public_model(Map.get(state, :watch))
 
-    assert is_integer(watch_model["screenW"]) and watch_model["screenW"] > 0
-    assert is_integer(watch_model["screenH"]) and watch_model["screenH"] > 0
+    assert is_integer(get_in(watch_model, ["layout", "screenW"])) and
+             get_in(watch_model, ["layout", "screenW"]) > 0
+
+    assert is_integer(get_in(watch_model, ["layout", "screenH"])) and
+             get_in(watch_model, ["layout", "screenH"]) > 0
     assert get_in(watch_model, ["now", "ctor"]) == "Just"
     assert get_in(watch_model, ["batteryLevel", "ctor"]) == "Just"
     assert get_in(watch_model, ["connected", "ctor"]) == "Just"
-    assert is_integer(public_watch_model["screenW"]) and public_watch_model["screenW"] > 0
+
+    assert is_integer(get_in(public_watch_model, ["layout", "screenW"])) and
+             get_in(public_watch_model, ["layout", "screenW"]) > 0
     assert get_in(public_watch_model, ["now", "ctor"]) == "Just"
 
     case get_in(watch_model, ["weather", "ctor"]) do

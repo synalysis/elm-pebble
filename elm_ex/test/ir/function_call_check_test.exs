@@ -855,6 +855,140 @@ defmodule ElmEx.IR.FunctionCallCheckTest do
     end)
   end
 
+  test "accepts qualified nested record types when building cross-module record literals" do
+    project = %Project{
+      project_dir: "/tmp",
+      elm_json: %{"source-directories" => ["src"]},
+      modules: [yes_render_module(), yes_main_face_display_module()]
+    }
+
+    assert {:ok, ir} = Lowerer.lower_project(project)
+
+    refute Enum.any?(ir.diagnostics, &(&1.code == "function_return_type"))
+  end
+
+  defp yes_main_face_display_module do
+    %FrontendModule{
+      name: "Main",
+      path: "/tmp/src/Main.elm",
+      imports: ["Yes.Render"],
+      import_entries: [
+        %{"module" => "Yes.Render", "as" => "Render", "exposing" => ["FaceDisplay", "CornerSlots"]}
+      ],
+      module_exposing: "main",
+      declarations: [
+        %{
+          kind: :function_definition,
+          name: "cornerSlots",
+          args: ["model"],
+          type: "Model -> Render.CornerSlots",
+          expr: %{
+            op: :record_literal,
+            fields: [
+              %{
+                name: "topLeft",
+                expr: %{
+                  op: :record_literal,
+                  fields: [
+                    %{name: "value", expr: %{op: :string_literal, value: "1"}},
+                    %{name: "caption", expr: %{op: :string_literal, value: "Battery"}}
+                  ]
+                }
+              },
+              %{name: "date", expr: %{op: :qualified_call1, target: "Maybe.Nothing"}},
+              %{name: "weather", expr: %{op: :qualified_call1, target: "Maybe.Nothing"}},
+              %{
+                name: "bottomRight",
+                expr: %{
+                  op: :constructor_call,
+                  target: "SimpleLine",
+                  args: [%{op: :string_literal, value: "--"}]
+                }
+              }
+            ]
+          },
+          span: %{start_line: 20, end_line: 24}
+        },
+        %{
+          kind: :function_definition,
+          name: "faceDisplay",
+          args: ["model"],
+          type: "Model -> Render.FaceDisplay",
+          expr: %{
+            op: :record_literal,
+            fields: [
+              %{name: "showCorners", expr: %{op: :bool_literal, value: false}},
+              %{name: "homeMinute", expr: %{op: :int_literal, value: 0}},
+              %{name: "timeText", expr: %{op: :string_literal, value: "12:00"}},
+              %{name: "sun", expr: %{op: :qualified_call1, target: "Maybe.Nothing"}},
+              %{name: "moonPhaseE6", expr: %{op: :qualified_call1, target: "Maybe.Nothing"}},
+              %{name: "corners", expr: %{op: :call, name: "cornerSlots", args: [%{op: :var, name: "model"}]}}
+            ]
+          },
+          span: %{start_line: 26, end_line: 34}
+        }
+      ]
+    }
+  end
+
+  defp yes_render_module do
+    %FrontendModule{
+      name: "Yes.Render",
+      path: "/tmp/src/Yes/Render.elm",
+      imports: [],
+      module_exposing: "FaceDisplay, CornerSlots",
+      declarations: [
+        %{
+          kind: :type_alias,
+          name: "FaceDisplay",
+          fields: ["showCorners", "homeMinute", "timeText", "sun", "moonPhaseE6", "corners"],
+          field_types: %{
+            "showCorners" => "Bool",
+            "homeMinute" => "Int",
+            "timeText" => "String",
+            "sun" => "Maybe SunWindow",
+            "moonPhaseE6" => "Maybe Int",
+            "corners" => "CornerSlots"
+          },
+          span: %{start_line: 5, end_line: 12}
+        },
+        %{
+          kind: :type_alias,
+          name: "CornerSlots",
+          fields: ["topLeft", "date", "weather", "bottomRight"],
+          field_types: %{
+            "topLeft" => "{ value : String, caption : String }",
+            "date" => "Maybe String",
+            "weather" => "Maybe String",
+            "bottomRight" => "BottomRightSlot"
+          },
+          span: %{start_line: 14, end_line: 19}
+        },
+        %{
+          kind: :union,
+          name: "BottomRightSlot",
+          constructors: [
+            %{name: "SimpleLine", arg: "String"},
+            %{name: "AltitudeSlot", arg: "String"},
+            %{name: "CountdownSlot", arg: "( String, String )"}
+          ],
+          span: %{start_line: 21, end_line: 24}
+        },
+        %{
+          kind: :type_alias,
+          name: "SunWindow",
+          fields: ["sunriseMin", "sunsetMin", "mode"],
+          field_types: %{
+            "sunriseMin" => "Int",
+            "sunsetMin" => "Int",
+            "mode" => "SunMode"
+          },
+          span: %{start_line: 26, end_line: 30}
+        }
+      ]
+    }
+  end
+
   defp ui_module do
     %FrontendModule{
       name: "Pebble.Ui",

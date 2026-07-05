@@ -9,6 +9,8 @@ defmodule Elmc.Backend.CCodegen.RcRequired do
   # Pebble scene glue calls `view` with the RC ABI when not using direct-render-only.
   @platform_view_entry ~w(view)
 
+  @platform_worker_rc_abi @worker_entry_points ++ @platform_view_entry
+
   @non_allocating_qualified MapSet.new([
     "List.length",
     "Elm.Kernel.List.length",
@@ -42,10 +44,14 @@ defmodule Elmc.Backend.CCodegen.RcRequired do
     "elmc_string_concat_parts",
     "elmc_string_from_int",
     "elmc_string_from_native_int",
+    "elmc_cmd0",
     "elmc_cmd1",
+    "elmc_cmd1_string",
     "elmc_cmd2",
     "elmc_cmd3",
     "elmc_cmd4",
+    "elmc_cmd5",
+    "elmc_basics_compare",
     "elmc_cmd_queue_append",
     "elmc_render_cmd6",
     "elmc_apply_extra",
@@ -66,9 +72,27 @@ defmodule Elmc.Backend.CCodegen.RcRequired do
     seeds = initial_seeds(decl_map, opts)
 
     decl_map
-    |> then(&callee_closure(seeds, &1))
+    |> then(&expand_rc_required(seeds, &1))
     |> expand_native_boxed_rc_callers(decl_map)
     |> expand_scalar_boxing_wrappers(decl_map)
+  end
+
+  defp expand_rc_required(required, decl_map) do
+    expanded =
+      Enum.reduce(decl_map, required, fn {key, decl}, acc ->
+        if is_map(decl) and body_allocates?(decl.expr) do
+          MapSet.put(acc, key)
+        else
+          acc
+        end
+      end)
+      |> then(&callee_closure(&1, decl_map))
+
+    if MapSet.equal?(expanded, required) do
+      expanded
+    else
+      expand_rc_required(expanded, decl_map)
+    end
   end
 
   defp initial_seeds(decl_map, opts) do
@@ -128,6 +152,19 @@ defmodule Elmc.Backend.CCodegen.RcRequired do
   @spec worker_entry_point?(String.t()) :: boolean()
   def worker_entry_point?(name) when is_binary(name), do: name in @worker_entry_points
   def worker_entry_point?(_), do: false
+
+  @doc false
+  @spec platform_worker_rc_abi?(String.t(), String.t(), Types.function_decl_map() | nil) ::
+          boolean()
+  def platform_worker_rc_abi?(module_name, name, decl_map \\ nil)
+
+  def platform_worker_rc_abi?(module_name, name, nil) do
+    platform_worker_rc_abi?(module_name, name, Process.get(:elmc_program_decls, %{}))
+  end
+
+  def platform_worker_rc_abi?(module_name, name, decl_map) when is_map(decl_map) do
+    name in @platform_worker_rc_abi and Map.has_key?(decl_map, {module_name, name})
+  end
 
   @spec worker_callback?(String.t()) :: boolean()
   def worker_callback?(name), do: worker_entry_point?(name)

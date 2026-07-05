@@ -59,6 +59,8 @@ type Altitude
 
 type WatchToPhone
     = RequestUpdate
+    | RequestSunData
+    | RequestWeather
 
 
 type PhoneToWatch

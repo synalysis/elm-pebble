@@ -3,6 +3,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
 
   alias Elmc.Backend.CCodegen.DirectRender.Emit.Catch
   alias Elmc.Backend.CCodegen.DirectRender.Emit.DuplicateFieldHoists
+  alias Elmc.Backend.CCodegen.DirectRender.RecordViewPeel
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.FunctionEmit
   alias Elmc.Backend.CCodegen.Hoist
@@ -101,7 +102,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
         },
         fn arg, acc ->
           {source_arg, c_arg, _index} = arg
-          Map.put(acc, source_arg, c_arg)
+          put_boxed_param_binding(acc, mod.name, decl, source_arg, c_arg, decl_map)
         end
       )
       |> Host.put_typed_arg_bindings(c_arg_bindings, decl.type)
@@ -206,7 +207,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
           case kind do
             :native_int -> EnvBindings.put_native_int_binding(acc, source_arg, c_arg)
             :native_string -> EnvBindings.put_native_string_binding(acc, source_arg, c_arg)
-            :boxed -> Map.put(acc, source_arg, c_arg)
+            :boxed -> put_boxed_param_binding(acc, mod.name, decl, source_arg, c_arg, decl_map)
           end
         end
       )
@@ -304,5 +305,12 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
       return #{c_name}_commands_append(args, argc, writer);
     }
     """
+  end
+
+  defp put_boxed_param_binding(env, module_name, decl, source_arg, c_arg, decl_map) do
+    case RecordViewPeel.param_env_binding({module_name, decl.name}, source_arg, c_arg, decl_map) do
+      nil -> Map.put(env, source_arg, c_arg)
+      peel_binding -> Map.put(env, source_arg, peel_binding)
+    end
   end
 end

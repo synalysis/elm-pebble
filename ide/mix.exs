@@ -13,7 +13,8 @@ defmodule Ide.MixProject do
         ignore_warnings: ".dialyzer_ignore.exs"
       ],
       aliases: aliases(),
-      deps: deps()
+      deps: deps(),
+      listeners: [Phoenix.CodeReloader]
     ]
   end
 
@@ -51,14 +52,15 @@ defmodule Ide.MixProject do
   # Type `mix help deps` for examples and options.
   defp deps do
     [
-      {:phoenix, "~> 1.7.20"},
-      {:phoenix_ecto, "~> 4.5"},
-      {:ecto_sql, "~> 3.10"},
-      {:ecto_sqlite3, "~> 0.21"},
+      {:phoenix, "~> 1.8"},
+      {:phoenix_ecto, "~> 4.7"},
+      {:ecto_sql, "~> 3.14"},
+      {:ecto_sqlite3, "~> 0.24"},
       {:postgrex, ">= 0.0.0"},
       {:phoenix_html, "~> 4.1"},
+      {:plug, "~> 1.19.3"},
       {:phoenix_live_reload, "~> 1.2", only: :dev},
-      {:phoenix_live_view, "~> 1.0.0"},
+      {:phoenix_live_view, "~> 1.2"},
       {:floki, ">= 0.30.0"},
       {:phoenix_live_dashboard, "~> 0.8.3"},
       {:esbuild, "~> 0.8", runtime: Mix.env() == :dev},
@@ -73,9 +75,11 @@ defmodule Ide.MixProject do
       {:swoosh, "~> 1.5"},
       # SMTP adapter (runtime when SMTP_RELAY is set) needs gen_smtp for :gen_smtp_client and :mimemail
       {:gen_smtp, "~> 1.0"},
-      {:finch, "~> 0.13"},
-      {:req, "~> 0.5"},
+      {:finch, "~> 0.23"},
+      {:req, "~> 0.6.2"},
       {:muontrap, "~> 1.7"},
+      {:lazy_html, ">= 0.1.0", only: :test},
+      {:elixir_make, "~> 0.10", override: true},
       # Vendored: decode_response handles {:http_error, _} from malformed WS handshakes
       # (QEMU/pypkjs noise during PBW install) instead of raising CaseClauseError.
       {:websockex, path: "vendor/websockex"},
@@ -87,7 +91,7 @@ defmodule Ide.MixProject do
       {:mdex_gfm, "~> 0.2"},
       {:html_sanitize_ex, "~> 1.4"},
       {:dns_cluster, "~> 0.1.1"},
-      {:bandit, "~> 1.5"},
+      {:bandit, "~> 1.11"},
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
       {:elmc, path: "../elmc"},
       {:elm_ex, path: "../elm_ex"},

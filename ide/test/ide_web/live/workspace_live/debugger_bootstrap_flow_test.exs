@@ -195,7 +195,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlowTest do
     runtime_model = get_in(state, [:watch, :model, "runtime_model"]) || %{}
 
     refute Map.get(runtime_model, "runtime_execution_error")
-    assert Map.get(runtime_model, "screenW") == 144
+    assert get_in(runtime_model, ["layout", "screenW"]) == 144
     assert Map.has_key?(runtime_model, "displayShape")
     assert Map.has_key?(runtime_model, "wind") or Map.has_key?(runtime_model, "weather")
   end

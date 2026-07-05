@@ -16,6 +16,32 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime.SceneBuild.EnsureFinish d
         }
       }
     #endif
+    #if ELMC_PEBBLE_SCENE_CACHE_ENABLED
+      {
+        int verify_offset = 0;
+        int verify_cmds = 0;
+        while (verify_offset < app->scene.byte_count) {
+          ElmcPebbleDrawCmd tmp;
+          int dec_rc = elmc_pebble_scene_decode_record(
+              app->scene.bytes, app->scene.byte_count, &verify_offset, &tmp);
+          if (dec_rc != 0) {
+            ELMC_PEBBLE_SCENE_LOG("elmc-scene verify decode failed rc=%d offset=%d cmds=%d bytes=%d",
+                    dec_rc, verify_offset, app->scene.command_count, app->scene.byte_count);
+            elmc_pebble_scene_abort_build(app);
+            ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_ENSURE_SCENE_EXIT);
+            ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", -4);
+          }
+          verify_cmds += 1;
+        }
+        if (verify_cmds != app->scene.command_count) {
+          ELMC_PEBBLE_SCENE_LOG("elmc-scene verify cmd mismatch decoded=%d recorded=%d bytes=%d",
+                  verify_cmds, app->scene.command_count, app->scene.byte_count);
+          elmc_pebble_scene_abort_build(app);
+          ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_ENSURE_SCENE_EXIT);
+          ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", -5);
+        }
+      }
+    #endif
       elmc_pebble_clear_view_cache(app);
       app->scene.dirty = 0;
     #if ELMC_PEBBLE_SCENE_CACHE_ENABLED

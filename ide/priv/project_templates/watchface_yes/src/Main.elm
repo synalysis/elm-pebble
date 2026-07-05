@@ -11,15 +11,12 @@ import Pebble.Platform as Platform
 import Pebble.System as System
 import Pebble.Time as Time
 import Pebble.Ui as Ui
-import Pebble.Ui.Color as Color
-import Pebble.Ui.Resources as Resources
+import Yes.Layout as Layout
+import Yes.Render as Render
 
 
 type alias SunWindow =
-    { sunriseMin : Int
-    , sunsetMin : Int
-    , mode : SunMode
-    }
+    Render.SunWindow
 
 
 type alias Weather =
@@ -46,8 +43,7 @@ type alias Tide =
 
 
 type alias Model =
-    { screenW : Int
-    , screenH : Int
+    { layout : Layout.Layout
     , displayShape : Platform.DisplayShape
     , now : Maybe Time.CurrentDateTime
     , cornerCycle : Int
@@ -65,6 +61,8 @@ type alias Model =
     , cornerUpdateIntervalSec : Int
     , healthSupported : Maybe Bool
     , stepsToday : Maybe Int
+    , lastSunFetchDayKey : Maybe Int
+    , lastWeatherFetchHourKey : Maybe Int
     }
 
 
@@ -86,8 +84,7 @@ init : Platform.LaunchContext -> ( Model, Cmd Msg )
 init context =
     let
         model =
-            { screenW = context.screen.width
-            , screenH = context.screen.height
+            { layout = Layout.fromScreen context.screen.width context.screen.height
             , displayShape = context.screen.shape
             , now = Nothing
             , cornerCycle = 0
@@ -105,6 +102,8 @@ init context =
             , cornerUpdateIntervalSec = 5
             , healthSupported = Nothing
             , stepsToday = Nothing
+            , lastSunFetchDayKey = Nothing
+            , lastWeatherFetchHourKey = Nothing
             }
     in
     ( model
@@ -113,7 +112,8 @@ init context =
         , System.batteryLevel BatteryLevelChanged
         , System.connectionStatus ConnectionChanged
         , Health.supported GotHealthSupported
-        , CompanionWatch.sendWatchToPhone RequestUpdate
+        , CompanionWatch.sendWatchToPhone RequestSunData
+        , CompanionWatch.sendWatchToPhone RequestWeather
         ]
     )
 
@@ -122,7 +122,26 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         CurrentDateTime value ->
-            ( { model | now = Just value }, Cmd.none )
+            let
+                modelWithTime =
+                    { model | now = Just value }
+
+                dayKey =
+                    calendarDayKey value
+
+                hourKey =
+                    calendarHourKey value
+            in
+            if model.lastSunFetchDayKey == Nothing && model.lastWeatherFetchHourKey == Nothing then
+                ( { modelWithTime
+                    | lastSunFetchDayKey = Just dayKey
+                    , lastWeatherFetchHourKey = Just hourKey
+                  }
+                , Cmd.none
+                )
+
+            else
+                scheduleCompanionFetches modelWithTime Cmd.none
 
         MinuteChanged minute ->
             case model.now of
@@ -130,15 +149,12 @@ update msg model =
                     ( model, Time.currentDateTime CurrentDateTime )
 
                 Just now ->
-                    ( { model | now = Just { now | minute = minute } }
-                    , Cmd.batch
-                        [ CompanionWatch.sendWatchToPhone RequestUpdate
-                        , refreshStepsIfSupported model
-                        ]
-                    )
+                    scheduleCompanionFetches
+                        { model | now = Just { now | minute = minute } }
+                        (refreshStepsIfSupported model)
 
         HourChanged _ ->
-            ( model, Time.currentDateTime CurrentDateTime )
+            scheduleCompanionFetches model (Time.currentDateTime CurrentDateTime)
 
         SecondChanged second ->
             if shouldRefreshCorners model second then
@@ -244,6 +260,69 @@ updateFromPhone message model =
             { model | cornerUpdateIntervalSec = normalizeCycleSec seconds }
 
 
+scheduleCompanionFetches : Model -> Cmd Msg -> ( Model, Cmd Msg )
+scheduleCompanionFetches model extraCmd =
+    case model.now of
+        Nothing ->
+            ( model, extraCmd )
+
+        Just now ->
+            let
+                dayKey =
+                    calendarDayKey now
+
+                hourKey =
+                    calendarHourKey now
+
+                needsSun =
+                    model.lastSunFetchDayKey /= Just dayKey
+
+                needsWeather =
+                    model.lastWeatherFetchHourKey /= Just hourKey
+
+                sunCmd =
+                    if needsSun then
+                        CompanionWatch.sendWatchToPhone RequestSunData
+
+                    else
+                        Cmd.none
+
+                weatherCmd =
+                    if needsWeather then
+                        CompanionWatch.sendWatchToPhone RequestWeather
+
+                    else
+                        Cmd.none
+
+                nextModel =
+                    { model
+                        | lastSunFetchDayKey =
+                            if needsSun then
+                                Just dayKey
+
+                            else
+                                model.lastSunFetchDayKey
+                        , lastWeatherFetchHourKey =
+                            if needsWeather then
+                                Just hourKey
+
+                            else
+                                model.lastWeatherFetchHourKey
+                    }
+            in
+            ( nextModel, Cmd.batch [ extraCmd, sunCmd, weatherCmd ] )
+
+
+calendarDayKey : Time.CurrentDateTime -> Int
+calendarDayKey now =
+    now.year * 10000 + now.month * 100 + now.day
+
+
+calendarHourKey : Time.CurrentDateTime -> Int
+calendarHourKey now =
+    calendarDayKey now * 100 + now.hour
+
+
 refreshStepsIfSupported : Model -> Cmd Msg
 refreshStepsIfSupported model =
     case model.healthSupported of
@@ -296,273 +375,103 @@ view model =
 
 faceOps : Model -> List Ui.RenderOp
 faceOps model =
-    let
-        cx =
-            model.screenW // 2
-
-        cy =
-            model.screenH // 2
-
-        radius =
-            (min model.screenW model.screenH // 2) - 22
-
-        dial =
-            drawDial model cx cy radius
-    in
-    [ Ui.clear Color.black ]
-        ++ dial
-        ++ (if showCorners model then
-                drawCorners model
-
-            else
-                []
-           )
+    Render.face model.layout (faceDisplay model)
 
 
-drawDial : Model -> Int -> Int -> Int -> List Ui.RenderOp
-drawDial model cx cy radius =
-    let
-        nowMin =
-            homeMinuteOfDay model
-
-        sunWindow =
-            Maybe.withDefault defaultSunWindow model.sun
-
-        hasSunData =
-            case model.sun of
-                Just _ ->
-                    True
-
-                Nothing ->
-                    False
-
-        sunrise =
-            sunWindow.sunriseMin
-
-        sunset =
-            sunWindow.sunsetMin
-
-        timeTextColor =
-            Color.white
-
-        moonPhaseY =
-            cy + (min model.screenW model.screenH // 5)
-
-        timeTextY =
-            cy - (radius // 2) - 14
-
-        sunriseAngle =
-            angleFromMinute sunrise
-
-        sunsetAngle =
-            angleFromMinute sunset
-
-        moonStart =
-            sunriseAngle
-
-        moonEnd =
-            sunsetAngle
-
-        moonBounds =
-            square cx cy radius
-
-        sunBounds =
-            square cx cy (radius - 5)
-    in
-    [ Ui.fillCircle { x = cx, y = cy } radius Color.oxfordBlue ]
-        ++ (if hasSunData then
-                [ Ui.group
-                    (Ui.context
-                        [ Ui.fillColor Color.blueMoon, Ui.strokeColor Color.blueMoon ]
-                        [ Ui.fillRadial moonBounds
-                            moonStart
-                            (if moonEnd < moonStart then
-                                65536
-
-                             else
-                                moonEnd
-                            )
-                        ]
-                    )
-                ]
-                    ++ (if moonEnd < moonStart then
-                            [ Ui.group
-                                (Ui.context
-                                    [ Ui.fillColor Color.blueMoon, Ui.strokeColor Color.blueMoon ]
-                                    [ Ui.fillRadial moonBounds 0 moonEnd ]
-                                )
-                            ]
-
-                        else
-                            []
-                       )
-
-            else
-                []
-           )
-        ++ [ Ui.fillCircle { x = cx, y = cy } (radius - 5) Color.black ]
-        ++ drawSunWindow { x = cx, y = cy } (radius - 5) sunBounds sunriseAngle sunsetAngle sunWindow
-        ++ [ Ui.circle { x = cx, y = cy } radius Color.white
-           , Ui.circle { x = cx, y = cy } (radius - 5) Color.darkGray
-           ]
-        ++ drawOuterScale cx cy radius
-        ++ (case model.moonPhaseE6 of
-                Just phase ->
-                    drawMoonPhase cx moonPhaseY (max 10 (radius // 5)) phase
-
-                Nothing ->
-                    []
-           )
-        ++ draw24HourHand cx cy radius nowMin moonPhaseY
-        ++ [ textAt timeTextColor { x = 0, y = timeTextY, w = model.screenW, h = 28 } (timeString model)
-           ]
+faceDisplay : Model -> Render.FaceDisplay
+faceDisplay model =
+    { showCorners = showCorners model
+    , homeMinute = homeMinuteOfDay model
+    , timeText = timeString model
+    , sun = model.sun
+    , moonPhaseE6 = model.moonPhaseE6
+    , corners = cornerSlots model
+    }
 
 
-draw24HourHand : Int -> Int -> Int -> Int -> Int -> List Ui.RenderOp
-draw24HourHand cx cy radius nowMin moonCy =
-    let
-        handAngle =
-            angleFromMinute nowMin
-
-        hubR =
-            max 4 (radius * 6 // 50)
-
-        moonRingR =
-            max 8 (radius * 10 // 50)
-
-        handLen =
-            radius - max 10 (radius * 18 // 50)
-
-        tip =
-            pointAt cx cy handLen handAngle
-    in
-    [ Ui.fillCircle { x = cx, y = moonCy } moonRingR Color.black
-    , Ui.circle { x = cx, y = moonCy } moonRingR Color.white
-    , Ui.line { x = cx, y = cy } tip Color.white
-    , Ui.fillCircle { x = cx, y = cy } hubR Color.black
-    , Ui.circle { x = cx, y = cy } hubR Color.white
-    ]
+cornerSlots : Model -> Render.CornerSlots
+cornerSlots model =
+    { topLeft = topLeftSlot model
+    , date = dateSlot model
+    , weather = weatherSlot model
+    , bottomRight = bottomRightSlot model
+    }
 
 
-drawOuterScale : Int -> Int -> Int -> List Ui.RenderOp
-drawOuterScale cx cy radius =
-    drawOuterScaleOddHours cx cy radius
-        ++ drawOuterScaleEvenHours cx cy radius
+topLeftSlot : Model -> { value : String, caption : String }
+topLeftSlot model =
+    case pickTopLeft model of
+        BatteryCorner ->
+            { value = batteryPercentString model, caption = "Battery" }
+
+        StepsCorner ->
+            { value = stepsString model, caption = "Steps" }
 
 
-drawOuterScaleOddHours : Int -> Int -> Int -> List Ui.RenderOp
-drawOuterScaleOddHours cx cy radius =
-    List.concatMap
-        (\hour ->
-            let
-                tickAngle =
-                    angleFromMinute (hour * 60)
-
-                inner =
-                    pointAt cx cy radius tickAngle
-
-                outer =
-                    pointAt cx cy (radius + 10) tickAngle
-            in
-            [ Ui.line outer inner Color.white ]
-        )
-        (List.range 1 23 |> List.filter (\h -> modBy 2 h == 1))
-
-
-drawOuterScaleEvenHours : Int -> Int -> Int -> List Ui.RenderOp
-drawOuterScaleEvenHours cx cy radius =
-    List.concatMap
-        (\hour ->
-            let
-                tickAngle =
-                    angleFromMinute (hour * 120)
-
-                inner =
-                    pointAt cx cy radius tickAngle
-
-                outer =
-                    pointAt cx cy (radius + 6) tickAngle
-
-                labelPoint =
-                    pointAt cx cy (radius + 14) tickAngle
-            in
-            [ Ui.line outer inner Color.white
-            , textAt Color.white
-                { x = labelPoint.x - 9
-                , y = labelPoint.y - 14
-                , w = 18
-                , h = 12
-                }
-                (String.fromInt (hour * 2))
-            ]
-        )
-        (List.range 0 11)
-
-
-drawSunWindow : Ui.Point -> Int -> Ui.Rect -> Int -> Int -> SunWindow -> List Ui.RenderOp
-drawSunWindow center radius bounds sunriseAngle sunsetAngle sunWindow =
-    let
-        chromeSunRadial start end =
-            [ Ui.group
-                (Ui.context
-                    [ Ui.fillColor Color.chromeYellow, Ui.strokeColor Color.chromeYellow ]
-                    [ Ui.fillRadial bounds start end ]
-                )
-            ]
-    in
-    case sunWindow.mode of
-        PolarNight ->
-            []
-
-        PolarDay ->
-            [ Ui.fillCircle center radius Color.chromeYellow ]
-
-        SunCycle ->
-            chromeSunRadial sunriseAngle
-                (if sunsetAngle < sunriseAngle then
-                    65536
-
-                 else
-                    sunsetAngle
-                )
-                ++ (if sunsetAngle < sunriseAngle then
-                        chromeSunRadial 0 sunsetAngle
-
-                    else
-                        []
-                   )
-
-
-drawMoonPhase : Int -> Int -> Int -> Int -> List Ui.RenderOp
-drawMoonPhase cx cy radius _ phaseE6 =
-    [ Ui.fillCircle { x = cx, y = cy } radius Color.lightGray
-    , Ui.circle { x = cx, y = cy } radius Color.white
-    ]
-
-
-drawDate : Model -> List Ui.RenderOp
-drawDate model =
+dateSlot : Model -> Maybe String
+dateSlot model =
     case model.now of
         Nothing ->
-            []
+            Nothing
 
         Just now ->
-            let
-                pad =
-                    cornerPad model
-            in
-            [ textAt Color.white { x = model.screenW - 52, y = pad, w = 48, h = 14 } (monthString now.month ++ " " ++ String.fromInt now.day)
-            ]
+            Just (monthString now.month ++ " " ++ String.fromInt now.day)
 
 
-drawCorners : Model -> List Ui.RenderOp
-drawCorners model =
-    [ drawTopLeft model
-    , drawDate model
-    , drawWeatherCorner model
-    , drawBottomRight model
-    ]
-        |> List.concat
+weatherSlot : Model -> Maybe String
+weatherSlot model =
+    Maybe.map (weatherLabel model) (pickWeatherMode model)
+
+
+bottomRightSlot : Model -> Render.BottomRightSlot
+bottomRightSlot model =
+    case pickBottomRight model of
+        AltitudeCorner ->
+            case model.altitude of
+                Just altitude ->
+                    Render.AltitudeSlot (altitudeString altitude)
+
+                Nothing ->
+                    Render.SimpleLine "--"
+
+        SunCorner ->
+            sunBottomRightSlot model
+
+        MoonCorner ->
+            moonBottomRightSlot model
+
+
+sunBottomRightSlot : Model -> Render.BottomRightSlot
+sunBottomRightSlot model =
+    case Maybe.map .mode model.sun of
+        Just PolarDay ->
+            Render.SimpleLine "Sun day"
+
+        Just PolarNight ->
+            Render.SimpleLine "Sun night"
+
+        _ ->
+            case nextSunCountdown (homeMinuteOfDay model) model.sun of
+                Nothing ->
+                    Render.SimpleLine "--"
+
+                Just ( label, timeLine ) ->
+                    Render.CountdownSlot label timeLine
+
+
+moonBottomRightSlot : Model -> Render.BottomRightSlot
+moonBottomRightSlot model =
+    case ( model.moonriseMin, model.moonsetMin ) of
+        ( Nothing, Nothing ) ->
+            Render.SimpleLine "--"
+
+        _ ->
+            case nextMoonCountdown (homeMinuteOfDay model) model.moonriseMin model.moonsetMin of
+                Nothing ->
+                    Render.SimpleLine "--"
+
+                Just ( label, timeLine ) ->
+                    Render.CountdownSlot label timeLine
 
 
 type alias SlotSpec id =
@@ -610,24 +519,6 @@ type BottomRightCorner
     | MoonCorner
 
 
-drawTopLeft : Model -> List Ui.RenderOp
-drawTopLeft model =
-    let
-        pad =
-            cornerPad model
-    in
-    case pickTopLeft model of
-        BatteryCorner ->
-            [ textAt Color.white { x = pad, y = pad, w = 40, h = 16 } (batteryPercentString model)
-            , textAt Color.darkGray { x = pad, y = pad + 16, w = 44, h = 12 } "Battery"
-            ]
-
-        StepsCorner ->
-            [ textAt Color.white { x = pad, y = pad, w = 40, h = 16 } (stepsString model)
-            , textAt Color.darkGray { x = pad, y = pad + 16, w = 44, h = 12 } "Steps"
-            ]
-
-
 pickTopLeft : Model -> TopLeftCorner
 pickTopLeft model =
     case pickSlot model (topLeftSlots model) of
@@ -653,32 +544,6 @@ topLeftBatteryAvailable model =
 topLeftStepsAvailable : Model -> Bool
 topLeftStepsAvailable model =
     model.connected == Just True && haveSteps model
-
-
-drawWeatherCorner : Model -> List Ui.RenderOp
-drawWeatherCorner model =
-    case pickWeatherMode model of
-        Nothing ->
-            []
-
-        Just mode ->
-            let
-                pad =
-                    cornerPad model
-
-                cornerBottom =
-                    model.screenH - pad
-
-                textH =
-                    14
-
-                textTop =
-                    cornerBottom - textH
-
-                label =
-                    weatherLabel model mode
-            in
-            [ textAt Color.white { x = pad, y = textTop, w = model.screenW // 2 - pad, h = textH } label ]
 
 
 pickWeatherMode : Model -> Maybe WeatherCornerMode
@@ -723,39 +588,9 @@ hasWind model =
             wind.speed /= 0
 
 
-                drawBottomRight : Model -> List Ui.RenderOp
+                pickBottomRight : Model -> BottomRightCorner
 
 
-drawBottomRight model =
-    let
-        pad =
-            cornerPad model
-
-        x =
-            model.screenW - 64
-
-        bottom =
-            model.screenH - pad
-    in
-    case pickBottomRight model of
-        AltitudeCorner ->
-            case model.altitude of
-                Just altitude ->
-                    [ Ui.drawVectorAt Resources.VectorStaticMountain { x = x + 3, y = bottom - 38 }
-                    , textAt Color.white { x = x, y = bottom - 14, w = 60, h = 14 } (altitudeString altitude)
-                    ]
-
-                Nothing ->
-                    []
-
-        SunCorner ->
-            drawSunCountdown x bottom model
-
-        MoonCorner ->
-            drawMoonCountdown x bottom model
-
-
-pickBottomRight : Model -> BottomRightCorner
 pickBottomRight model =
     Maybe.withDefault SunCorner (pickSlot model (bottomRightSlots model))
 
@@ -773,156 +608,6 @@ hasMoonTimes model =
     model.moonriseMin /= Nothing || model.moonsetMin /= Nothing
 
 
-drawSunCountdown : Int -> Int -> Model -> List Ui.RenderOp
-drawSunCountdown x bottom model =
-    case Maybe.map .mode model.sun of
-        Just PolarDay ->
-            [ textAt Color.white { x = x, y = bottom - 14, w = 62, h = 14 } "Sun day" ]
-
-        Just PolarNight ->
-            [ textAt Color.white { x = x, y = bottom - 14, w = 62, h = 14 } "Sun night" ]
-
-        _ ->
-            case nextSunCountdown (homeMinuteOfDay model) model.sun of
-                Nothing ->
-                    [ textAt Color.white { x = x, y = bottom - 14, w = 62, h = 14 } "--" ]
-
-                Just ( label, timeLine ) ->
-                    drawBottomRightCountdown x bottom label timeLine
-
-
-drawMoonCountdown : Int -> Int -> Model -> List Ui.RenderOp
-drawMoonCountdown x bottom model =
-    case ( model.moonriseMin, model.moonsetMin ) of
-        ( Nothing, Nothing ) ->
-            [ textAt Color.white { x = x, y = bottom - 14, w = 62, h = 14 } "--" ]
-
-        _ ->
-            case nextMoonCountdown (homeMinuteOfDay model) model.moonriseMin model.moonsetMin of
-                Nothing ->
-                    [ textAt Color.white { x = x, y = bottom - 14, w = 62, h = 14 } "--" ]
-
-                Just ( label, timeLine ) ->
-                    drawBottomRightCountdown x bottom label timeLine
-
-
-drawBottomRightCountdown : Int -> Int -> String -> String -> List Ui.RenderOp
-drawBottomRightCountdown x bottom label timeLine =
-    let
-        labelH =
-            12
-
-        timeH =
-            14
-
-        topY =
-            bottom - labelH - timeH
-
-        labelY =
-            topY - 2
-    in
-    [ textAt Color.lightGray { x = x, y = labelY, w = 62, h = labelH } label
-    , textAt Color.white { x = x, y = topY + labelH - 1, w = 62, h = timeH } timeLine
-    ]
-
-
-cornerPad : Model -> Int
-cornerPad model =
-    max 4 (min model.screenW model.screenH // 36)
-
-
-nextMoonEventString : Int -> Maybe Int -> Maybe Int -> String
-nextMoonEventString nowMin maybeRise maybeSet =
-    case ( maybeRise, maybeSet ) of
-        ( Just rise, Just set ) ->
-            let
-                toRise =
-                    minutesUntilCircular nowMin rise
-
-                toSet =
-                    minutesUntilCircular nowMin set
-            in
-            if toRise <= toSet then
-                "MR " ++ durationString toRise
-
-            else
-                "MS " ++ durationString toSet
-
-        _ ->
-            "--"
-
-
-minutesUntilCircular : Int -> Int -> Int
-minutesUntilCircular fromMinute toMinute =
-    modBy 1440 (toMinute - fromMinute + 1440)
-
-
-drawWeatherIcon : Int -> Int -> WeatherCondition -> List Ui.RenderOp
-drawWeatherIcon x y condition =
-    [ Ui.drawVectorAt (conditionVector condition) { x = x, y = y } ]
-
-
-conditionVector : WeatherCondition -> Resources.StaticVector
-conditionVector condition =
-    case condition of
-        Clear ->
-            Resources.VectorStaticWeatherClear
-
-        Cloudy ->
-            Resources.VectorStaticWeatherCloudy
-
-        Fog ->
-            Resources.VectorStaticWeatherFog
-
-        Drizzle ->
-            Resources.VectorStaticWeatherDrizzle
-
-        Rain ->
-            Resources.VectorStaticWeatherRain
-
-        Snow ->
-            Resources.VectorStaticWeatherSnow
-
-        Showers ->
-            Resources.VectorStaticWeatherShowers
-
-        Storm ->
-            Resources.VectorStaticWeatherStorm
-
-        UnknownWeather ->
-            Resources.VectorStaticWeatherUnknown
-
-
-textAt : Color.Color -> Ui.Rect -> String -> Ui.RenderOp
-textAt color bounds value =
-    Ui.group
-        (Ui.context
-            [ Ui.textColor color ]
-            [ Ui.text Resources.DefaultFont Ui.defaultTextOptions bounds value ]
-        )
-
-
-pointAt : Int -> Int -> Int -> Int -> Ui.Point
-pointAt cx cy radius angle =
-    let
-        theta =
-            toFloat angle * 2 * Basics.pi / 65536
-    in
-    { x = cx + round (sin theta * toFloat radius)
-    , y = cy - round (cos theta * toFloat radius)
-    }
-
-
-square : Int -> Int -> Int -> Ui.Rect
-square cx cy radius =
-    { x = cx - radius, y = cy - radius, w = radius * 2, h = radius * 2 }
-
-
-angleFromMinute : Int -> Int
-angleFromMinute minute =
-    modBy 65536 (((minute - 720) * 65536) // 1440)
-
-
 homeMinuteOfDay : Model -> Int
 homeMinuteOfDay model =
     case model.now of
@@ -931,14 +616,6 @@ homeMinuteOfDay model =
 
         Just now ->
             modBy 1440 ((now.hour * 60) + now.minute + model.homeTzOffsetMin - now.utcOffsetMinutes)
-
-
-defaultSunWindow : SunWindow
-defaultSunWindow =
-    { sunriseMin = 360
-    , sunsetMin = 1080
-    , mode = SunCycle
-    }
 
 
 eventMinuteFromPayload : Int -> Int -> Int -> Maybe Int
@@ -1007,16 +684,6 @@ altitudeString altitude =
             String.fromInt feet ++ "ft"
 
 
-nextEventString : Int -> String -> String -> Maybe Int -> Maybe Int -> String
-nextEventString nowMin riseLabel setLabel maybeRise maybeSet =
-    case nextEventParts nowMin riseLabel setLabel maybeRise maybeSet of
-        Nothing ->
-            "--"
-
-        Just ( label, timeLine ) ->
-            label ++ " " ++ timeLine
-
-
 nextSunCountdown : Int -> Maybe SunWindow -> Maybe ( String, String )
 nextSunCountdown nowMin maybeSun =
     case maybeSun of
@@ -1063,6 +730,11 @@ nextEventParts nowMin riseLabel setLabel maybeRise maybeSet =
 
         _ ->
             Nothing
+
+
+minutesUntilCircular : Int -> Int -> Int
+minutesUntilCircular fromMinute toMinute =
+    modBy 1440 (toMinute - fromMinute + 1440)
 
 
 durationString : Int -> String
@@ -1189,22 +861,6 @@ monthString month =
 
         _ ->
             "Dec"
-
-
-decimal1 : Int -> String
-decimal1 value =
-    let
-        sign =
-            if value < 0 then
-                "-"
-
-            else
-                ""
-
-        absolute =
-            abs value
-    in
-    sign ++ String.fromInt (absolute // 10) ++ "." ++ String.fromInt (modBy 10 absolute)
 
 
 pad2 : Int -> String

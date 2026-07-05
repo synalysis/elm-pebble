@@ -489,7 +489,30 @@ defmodule Ide.PebbleToolchainTest do
     assert template =~ "ELMC_SCENE_PREP_BOOT_DELAY_MS"
     assert template =~ "ELMC_SCENE_PREP_COMPANION_DELAY_MS"
     assert template =~ "app_timer_register(delay_ms, scene_prep_timer_callback, NULL)"
+    assert template =~ "Do not cancel an already-queued prep timer"
     assert template =~ "if (s_elm_app.scene.dirty)"
+    assert template =~ "schedule_scene_prep();"
+
+    render_model_body =
+      case Regex.run(~r/static void render_model\(void\) \{(.*?)^\}/ms, template) do
+        [_, body] -> body
+        _ -> flunk("render_model body not found")
+      end
+
+    assert render_model_body =~ "schedule_scene_prep();"
+    assert render_model_body =~ "layer_mark_dirty(s_draw_layer);"
+
+    assert template =~ "elmc_pebble_scene_report_decode_failure"
+    assert draw_body =~ "if (decoded < 0)"
+
+    scene_prep_body =
+      case Regex.run(~r/static void scene_prep_timer_callback\(void \*data\) \{(.*?)^\}/ms, template) do
+        [_, body] -> body
+        _ -> flunk("scene_prep_timer_callback body not found")
+      end
+
+    assert scene_prep_body =~ "schedule_scene_prep();"
+    assert scene_prep_body =~ "layer_mark_dirty(s_draw_layer);"
 
     assert draw_body =~ "bounds.size.w < compile.size.w || bounds.size.h < compile.size.h"
     assert template =~ "startup_cmd_callback(NULL);"
@@ -529,10 +552,11 @@ defmodule Ide.PebbleToolchainTest do
              "#ifndef PBL_COLOR\n        graphics_context_set_antialiased(ctx, false);\n#endif\n        graphics_draw_text(ctx, cmd->text, font, text_rect, overflow, align, NULL);"
   end
 
-  test "pebble app template mono color_from_code uses luminance not GColor8 ordinals" do
+  test "pebble app template mono color_from_code uses GColor8 argb indices" do
     template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
 
-    assert template =~ "int luminance = (red * 30 + green * 59 + blue * 11) / 100;"
+    assert template =~ "(GColor8){ .argb = (uint8_t)(value & 0xff) };"
+    refute template =~ "int luminance = (red * 30 + green * 59 + blue * 11) / 100;"
     refute template =~ "GColor8DarkGray"
     refute template =~ "code <= 0x55"
   end

@@ -35,7 +35,10 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Registry do
   @spec defs(IR.t(), Types.codegen_opts()) :: String.t()
   def defs(%IR{} = ir, opts) do
     decl_map = IRQueries.function_decl_map(ir)
+    saved_lambda_state = Elmc.Backend.CCodegen.GeneratedSource.capture_lambda_emit_state!()
     {def_targets, emit_targets, pruned} = Host.direct_command_target_sets(decl_map, opts)
+    Elmc.Backend.CCodegen.GeneratedSource.reset_emit_probe_state!()
+    Elmc.Backend.CCodegen.GeneratedSource.restore_lambda_emit_state!(saved_lambda_state)
 
     if MapSet.size(def_targets) == 0 do
       ""

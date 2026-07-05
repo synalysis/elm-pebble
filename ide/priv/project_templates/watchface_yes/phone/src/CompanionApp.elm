@@ -41,17 +41,17 @@ init : Flags -> ( Model, Cmd Msg )
 init flags =
     case GeneratedPreferences.decodeConfigurationFlags flags of
         Ok (Just settings) ->
-            ( initialModel (Just settings), sendSnapshot settings )
+            ( initialModel (Just settings), sendCompanionDefaults settings )
 
         Ok Nothing ->
             ( initialModel (Just CompanionPreferences.preferencesDefaults)
-            , sendSnapshot CompanionPreferences.preferencesDefaults
+            , sendCompanionDefaults CompanionPreferences.preferencesDefaults
             )
 
         Err error ->
             ( initialModel (Just CompanionPreferences.preferencesDefaults)
                 |> addError ("Initial configuration error: " ++ error)
-            , sendSnapshot CompanionPreferences.preferencesDefaults
+            , sendCompanionDefaults CompanionPreferences.preferencesDefaults
             )
 
 
@@ -68,6 +68,12 @@ update msg model =
     case msg of
         FromWatch (Ok RequestUpdate) ->
             ( model, sendSnapshot (currentSettings model) )
+
+        FromWatch (Ok RequestSunData) ->
+            ( model, sendSunData )
+
+        FromWatch (Ok RequestWeather) ->
+            ( model, sendWeatherData )
 
         FromWatch (Err error) ->
             ( addError ("Watch message error: " ++ error) model, Cmd.none )
@@ -119,10 +125,19 @@ sendSnapshot : CompanionPreferences.Settings -> Cmd Msg
 sendSnapshot settings =
     Cmd.batch
         [ sendCompanionDefaults settings
-        , requestCurrentLocation
-        , refreshWeather
-        , refreshEnvironment
+        , sendSunData
+        , sendWeatherData
         ]
+
+
+sendSunData : Cmd Msg
+sendSunData =
+    requestCurrentLocation
+
+
+sendWeatherData : Cmd Msg
+sendWeatherData =
+    refreshWeather
 
 
 sendCompanionDefaults : CompanionPreferences.Settings -> Cmd Msg
