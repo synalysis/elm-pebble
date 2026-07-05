@@ -696,18 +696,18 @@ defmodule Elmc.Backend.Worker do
       {
         ElmcValue *pending = NULL;
         ElmcValue *raw_cmd = extract_cmd_take(result);
-        if (state->last_dispatch_cmd) {
-          elmc_release(state->last_dispatch_cmd);
-          state->last_dispatch_cmd = NULL;
-        }
-        state->last_dispatch_cmd =
-            (raw_cmd && !elmc_cmd_is_none(raw_cmd)) ? elmc_retain(raw_cmd) : elmc_cmd_none();
         RC pending_rc = elmc_cmd_queue_normalize(&pending, raw_cmd);
         if (pending_rc != RC_SUCCESS) {
           ELMC_WORKER_LOG_RC_FAIL("worker init pending cmd", pending_rc);
           elmc_release(result);
           return -2;
         }
+        if (state->last_dispatch_cmd) {
+          elmc_release(state->last_dispatch_cmd);
+          state->last_dispatch_cmd = NULL;
+        }
+        state->last_dispatch_cmd =
+            (pending && !elmc_cmd_is_none(pending)) ? elmc_retain(pending) : elmc_cmd_none();
         state->pending_cmd = pending;
       }
       elmc_release(result);
@@ -737,18 +737,18 @@ defmodule Elmc.Backend.Worker do
       {
         ElmcValue *next_cmd = NULL;
         ElmcValue *raw_cmd = extract_cmd_take(result);
-        if (state->last_dispatch_cmd) {
-          elmc_release(state->last_dispatch_cmd);
-          state->last_dispatch_cmd = NULL;
-        }
-        state->last_dispatch_cmd =
-            (raw_cmd && !elmc_cmd_is_none(raw_cmd)) ? elmc_retain(raw_cmd) : elmc_cmd_none();
         RC next_rc = elmc_cmd_queue_normalize(&next_cmd, raw_cmd);
         if (next_rc != RC_SUCCESS) {
           ELMC_WORKER_LOG_RC_FAIL("worker update pending cmd", next_rc);
           elmc_release(result);
           return -2;
         }
+        if (state->last_dispatch_cmd) {
+          elmc_release(state->last_dispatch_cmd);
+          state->last_dispatch_cmd = NULL;
+        }
+        state->last_dispatch_cmd =
+            (next_cmd && !elmc_cmd_is_none(next_cmd)) ? elmc_retain(next_cmd) : elmc_cmd_none();
         if (!elmc_cmd_is_none(next_cmd)) {
           state->dispatch_needs_render = 1;
         }

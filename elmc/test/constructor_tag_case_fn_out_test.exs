@@ -60,8 +60,8 @@ defmodule Elmc.ConstructorTagCaseFnOutTest do
       |> Enum.at(1)
       |> then(fn rest -> rest |> String.split("case ") |> hd() end)
 
-    assert battery_changed =~ "*out = elmc_basics_clamp("
-    assert battery_changed =~ "elmc_maybe_just(&owned["
+    assert battery_changed =~ ~r/owned\[\d+\] = elmc_basics_clamp\(/
+    assert battery_changed =~ "elmc_maybe_just_own(&owned["
     assert battery_changed =~ "Rc = elmc_tuple2_take(out,"
     refute battery_changed =~ ~r/\*out = owned\[\d+\];\n\s*owned\[\d+\] = NULL;/
     refute second_changed =~ "ElmcValue *tmp_"
@@ -73,9 +73,8 @@ defmodule Elmc.ConstructorTagCaseFnOutTest do
       |> Enum.at(1)
       |> then(fn rest -> rest |> String.split("case ") |> hd() end)
 
-    assert hour_changed =~ "Rc = elmc_cmd1(out, ELMC_PEBBLE_CMD_GET_CURRENT_DATE_TIME"
-    assert hour_changed =~ "Rc = elmc_fn_Main_scheduleCompanionFetches(&owned["
-    assert hour_changed =~ "*out = owned["
+    assert hour_changed =~ "Rc = elmc_cmd1(&owned["
+    assert hour_changed =~ "Rc = elmc_fn_Main_scheduleCompanionFetches(out,"
     refute hour_changed =~ "elmc_release(owned["
 
     minute_changed =
@@ -159,8 +158,8 @@ defmodule Elmc.ConstructorTagCaseFnOutTest do
     assert top_left_slot =~ "(ElmcValue *[]){ model }"
     refute top_left_slot =~ "owned[4] = owned[4]"
     refute top_left_slot =~ "owned[7] = owned[7]"
-    assert top_left_slot =~ "Rc = elmc_fn_Main_batteryPercentString(out,"
-    assert top_left_slot =~ "Rc = elmc_fn_Main_stepsString(out,"
+    assert top_left_slot =~ "Rc = elmc_fn_Main_batteryPercentString(&owned["
+    assert top_left_slot =~ "Rc = elmc_fn_Main_stepsString(&owned["
     assert top_left_slot =~ "elmc_record_new_values_take(out,"
 
     assert generated =~ "#define ELMC_UNION_COMPANION_TYPES_POLARDAY"

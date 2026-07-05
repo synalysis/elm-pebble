@@ -217,7 +217,9 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
 
     cond do
       RcRuntimeEmit.function_out_ref?(out) ->
-        Map.put(env, :__branch_out__, out)
+        env
+        |> RcRuntimeEmit.strip_function_tail_scope()
+        |> Map.delete(:__branch_out__)
 
       ValueSlots.owned_ref?(out) ->
         env

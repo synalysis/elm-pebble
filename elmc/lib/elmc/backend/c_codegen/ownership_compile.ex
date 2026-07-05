@@ -3,6 +3,7 @@ defmodule Elmc.Backend.CCodegen.OwnershipCompile do
 
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.ValueSlots
 
@@ -68,8 +69,11 @@ defmodule Elmc.Backend.CCodegen.OwnershipCompile do
   @spec owned_projection_retain_expr(String.t()) :: String.t() | nil
   def owned_projection_retain_expr(source) when is_binary(source) do
     case Regex.run(~r/^elmc_maybe_or_tuple_just_payload_borrow\((.+)\)$/s, source) do
-      [_, maybe_ref] -> "elmc_maybe_or_tuple_just_payload(#{maybe_ref})"
-      _ -> nil
+      [_, maybe_ref] ->
+        "elmc_maybe_or_tuple_just_payload(#{RcRuntimeEmit.value_expr(String.trim(maybe_ref))})"
+
+      _ ->
+        nil
     end
   end
 

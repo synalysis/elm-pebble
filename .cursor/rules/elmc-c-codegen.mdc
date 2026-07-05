@@ -1,5 +1,5 @@
 ---
-description: How elmc should emit RC-style C — CATCH, single return, *out tail writes, owned slots
+description: How elmc should emit RC-style C — CATCH, single return, *out only on RC_SUCCESS at branch tail, owned slots for intermediates
 alwaysApply: true
 ---
 
@@ -65,7 +65,47 @@ CHECK_RC(Rc);
 - Owned scratch: `&owned[i]`.
 - Never pass `out` to **intermediate** subexpression calls when a scratch slot is enough — only the **tail** result should target `out` (see below).
 
-## Function tail: write `*out` in the last statement
+## Function tail: write `*out` only on success, only at the end
+
+**RC success contract.** In an RC function, `*out` is the **function result slot**. It may be written **only** when control will reach `CATCH_END` with `Rc == RC_SUCCESS` and then `return Rc`. Equivalently:
+
+- **Do not** pass `out` to a callee unless that callee’s result is the **final** value of the current branch (or the whole function).
+- **Do not** read `*out` (or `(*out)`) after a mid-branch callee wrote it — the slot is not a scratch register for intermediate `Maybe` / union / tuple results.
+- If a subexpression’s value is consumed by later statements (`case … of`, `if`, record update, second call, tuple second element, etc.), compile it into `&owned[i]` (or another scratch slot), not `out`.
+
+On `CHECK_RC` failure, control jumps to `CATCH_END`; any value previously written to `*out` is **invalid**. Mid-function `*out` writes therefore violate the ABI even when the failing call “usually” succeeds.
+
+**Bad — callee into `out`, then read `*out` for a nested `case` (same branch continues):**
+
+```c
+Rc = elmc_fn_Main_transitionVector(out, from, to);
+CHECK_RC(Rc);
+
+if (elmc_maybe_is_nothing((*out))) {   /* forbidden: *out used mid-branch */
+  …
+} else {
+  …
+  Rc = elmc_tuple2_take(out, …);       /* second overwrite of *out in one branch */
+  CHECK_RC(Rc);
+}
+```
+
+**Good — intermediate `Maybe` in owned; `*out` only for the branch tail `(Model, Cmd)` tuple:**
+
+```c
+Rc = elmc_fn_Main_transitionVector(&owned[4], from, to);
+CHECK_RC(Rc);
+
+if (elmc_maybe_is_nothing(owned[4])) {
+  …
+  Rc = elmc_tuple2_take(out, owned[26], owned[27]);
+  CHECK_RC(Rc);
+} else {
+  …
+  Rc = elmc_tuple2_take(out, owned[35], owned[36]);
+  CHECK_RC(Rc);
+}
+```
 
 When an expression is the **last** thing a function (or mutually exclusive branch) produces, assign **directly into `out`**, not into an owned slot followed by publish.
 
@@ -127,6 +167,8 @@ Codegen enables this via `RcRuntimeEmit.function_tail_env/1`, `compile_call_resu
 
 If a branch already wrote `*out` for an earlier statement, a **later** statement in the same branch must use `&owned[i]`, then publish once at the branch end — only one value can be the branch result.
 
+If a callee’s return value is **inspected** before the branch finishes (pattern match, field access, compare, passed to another call), that callee must **not** use `out` as its destination — use `&owned[i]` instead. This is the same rule as the RC success contract above; codegen must not treat `ELMC_FN_OUT` / `*out` as a temporary for nested `case` subjects or multi-step branch bodies.
+
 ## Owned scratch slots (`owned[]`)
 
 - Declare `ElmcValue *owned[N] = {0};` only when `ValueSlots.slot_count() > 0`. **Do not** emit a one-element array used only to hop through `*out`.
@@ -179,5 +221,7 @@ Rebuild a template (for example yes watchface) and spot-check `elmc_generated.c`
 2. Body wrapped in `CATCH_BEGIN` / `CATCH_END` when using `CHECK_RC`?
 3. All allocators use `Rc = fn(&slot, …); CHECK_RC(Rc);`?
 4. Tail result written directly to `out` / `*out`, not `owned[0]` + publish?
-5. `owned[]` omitted when empty?
-6. No `_take`, no `__call_rc` early returns, no `tmp_` releases in RC epilogue-LIFO paths?
+5. **No mid-branch `Rc = callee(out, …)` when `*out` is read or overwritten later in that branch?**
+6. **Nested `case` / `if` on a callee result uses `&owned[i]`, not `out` / `(*out)`?**
+7. `owned[]` omitted when empty?
+8. No `_take`, no `__call_rc` early returns, no `tmp_` releases in RC epilogue-LIFO paths?

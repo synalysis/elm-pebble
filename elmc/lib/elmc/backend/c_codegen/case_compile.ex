@@ -127,6 +127,8 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
       cond do
         RcRuntimeEmit.function_out_ref?(out) ->
           env
+          |> RcRuntimeEmit.strip_function_tail_scope()
+          |> Map.delete(:__branch_out__)
 
         ValueSlots.owned_ref?(out) or RcRuntimeEmit.function_tail_compile?(env) ->
           RcRuntimeEmit.strip_function_tail_scope(env)
@@ -135,16 +137,15 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
           env
       end
 
-    cond do
-      RcRuntimeEmit.function_out_ref?(out) ->
-        Map.put(env, :__branch_out__, out)
-
-      ValueSlots.owned_ref?(out) ->
+    if ValueSlots.owned_ref?(out) do
+      env
+      |> then(fn branch_env ->
         ValueSlots.set_result_slot_root(out)
-        Map.put(env, :__branch_out__, out)
-
-      true ->
-        env
+        branch_env
+      end)
+      |> Map.put(:__branch_out__, out)
+    else
+      env
     end
   end
 

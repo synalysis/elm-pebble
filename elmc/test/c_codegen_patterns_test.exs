@@ -4655,6 +4655,75 @@ defmodule Elmc.CCodegenPatternsTest do
     assert fn_body =~ ~r/elmc_maybe_just_own\(&owned\[[0-9]+\],/
   end
 
+  test "nested maybe case on callee uses owned slot not function out mid-branch" do
+    source = """
+    module Main exposing (main, updateFromPhone)
+
+    import Pebble.Platform as PebblePlatform
+    import Pebble.Cmd as Cmd
+
+    type PhoneToWatch
+        = ProvideCondition Int
+
+    type alias Model =
+        { displayed : Maybe Int }
+
+    lookupVector : Int -> Int -> Maybe Int
+    lookupVector from to =
+        if from == to then
+            Nothing
+
+        else
+            Just to
+
+    updateFromPhone : PhoneToWatch -> Model -> ( Model, Cmd Msg )
+    updateFromPhone message model =
+        case message of
+            ProvideCondition newCondition ->
+                case model.displayed of
+                    Nothing ->
+                        ( { model | displayed = Just newCondition }, Cmd.none )
+
+                    Just displayed ->
+                        case lookupVector displayed newCondition of
+                            Nothing ->
+                                ( { model | displayed = Just newCondition }, Cmd.none )
+
+                            Just _ ->
+                                ( model, Cmd.none )
+
+            _ ->
+                ( model, Cmd.none )
+
+    type Msg
+        = NoOp
+
+    main =
+        PebblePlatform.worker
+            { init = \\_ -> ( { displayed = Nothing }, Cmd.none )
+            , update = \\_ model -> updateFromPhone (ProvideCondition 0) model
+            , subscriptions = \\_ -> PebblePlatform.Sub.none
+            , view = \\_ -> PebblePlatform.Cmd.none
+            }
+    """
+
+    generated_c =
+      compile_generated_c!("nested_maybe_case_owned_subject", source, %{
+        strip_dead_code: true,
+        direct_render_only: true,
+        pebble_int32: true,
+        prune_runtime: true
+      })
+
+    fn_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_updateFromPhone")
+
+    refute fn_body == ""
+    assert fn_body =~ ~r/elmc_fn_Main_lookupVector(?:_native)?\(&owned\[\d+\],/
+    refute fn_body =~ ~r/elmc_fn_Main_lookupVector(?:_native)?\(out,/
+    refute fn_body =~ "elmc_maybe_is_nothing((*out))"
+    assert fn_body =~ ~r/elmc_maybe_is_nothing\(owned\[\d+\]\)/
+  end
+
   test "union constructor multi-arg case binds fields from payload not tag" do
     source = """
     module Main exposing (main, updateFromPhone)

@@ -16,58 +16,61 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   @spec pattern_condition(String.t(), Types.pattern(), Types.compile_env()) :: String.t()
   def pattern_condition(subject_ref, pattern, env \\ %{})
 
-  def pattern_condition(_subject_ref, %{kind: :wildcard}, _env), do: "1"
-  def pattern_condition(_subject_ref, %{kind: :var}, _env), do: "1"
-
-  def pattern_condition(subject_ref, pattern, env)
-      when is_map(pattern) and not is_binary(subject_ref) do
-    pattern_condition(pattern_subject_ref(subject_ref), pattern, env)
+  def pattern_condition(subject_ref, pattern, env) when is_binary(subject_ref) do
+    pattern_condition_for(RcRuntimeEmit.value_expr(subject_ref), pattern, env)
   end
 
-  def pattern_condition(subject_ref, %{kind: :int, value: value}, _env) when is_integer(value) do
+  def pattern_condition(subject_ref, pattern, env) do
+    pattern_condition_for(pattern_subject_ref(subject_ref), pattern, env)
+  end
+
+  defp pattern_condition_for(_subject_ref, %{kind: :wildcard}, _env), do: "1"
+  defp pattern_condition_for(_subject_ref, %{kind: :var}, _env), do: "1"
+
+  defp pattern_condition_for(subject_ref, %{kind: :int, value: value}, _env) when is_integer(value) do
     "#{subject_ref} && (#{subject_ref}->tag == ELMC_TAG_INT || #{subject_ref}->tag == ELMC_TAG_CHAR) && elmc_as_int(#{subject_ref}) == #{value}"
   end
 
-  def pattern_condition(subject_ref, %{kind: :char, value: value}, _env) when is_integer(value) do
+  defp pattern_condition_for(subject_ref, %{kind: :char, value: value}, _env) when is_integer(value) do
     "#{subject_ref} && #{subject_ref}->tag == ELMC_TAG_CHAR && elmc_as_int(#{subject_ref}) == #{value}"
   end
 
-  def pattern_condition(subject_ref, %{kind: :tuple, elements: elements}, env)
+  defp pattern_condition_for(subject_ref, %{kind: :tuple, elements: elements}, env)
       when is_list(elements) and length(elements) > 2 do
     pattern_condition(subject_ref, nest_tuple_pattern(elements), env)
   end
 
-  def pattern_condition(subject_ref, %{kind: :tuple, elements: [left, right]}, env) do
+  defp pattern_condition_for(subject_ref, %{kind: :tuple, elements: [left, right]}, env) do
     left_ref = "((ElmcTuple2 *)#{subject_ref}->payload)->first"
     right_ref = "((ElmcTuple2 *)#{subject_ref}->payload)->second"
 
     "#{subject_ref} && #{subject_ref}->tag == ELMC_TAG_TUPLE2 && (#{pattern_condition(left_ref, left, env)}) && (#{pattern_condition(right_ref, right, env)})"
   end
 
-  def pattern_condition(subject_ref, %{kind: :constructor, name: "()", arg_pattern: nil}, _env) do
+  defp pattern_condition_for(subject_ref, %{kind: :constructor, name: "()", arg_pattern: nil}, _env) do
     "#{subject_ref} && elmc_value_is_unit(#{subject_ref})"
   end
 
-  def pattern_condition(subject_ref, %{kind: :constructor, name: "()", arg_pattern: pattern}, env)
+  defp pattern_condition_for(subject_ref, %{kind: :constructor, name: "()", arg_pattern: pattern}, env)
       when not is_nil(pattern) do
     pattern_condition(subject_ref, pattern, env)
   end
 
-  def pattern_condition(subject_ref, %{kind: :constructor, name: "Ok", arg_pattern: arg_pattern}, env) do
+  defp pattern_condition_for(subject_ref, %{kind: :constructor, name: "Ok", arg_pattern: arg_pattern}, env) do
     value_ref = "((ElmcResult *)#{subject_ref}->payload)->value"
     arg_cond = if arg_pattern, do: " && (#{pattern_condition(value_ref, arg_pattern, env)})", else: ""
 
     "#{subject_ref} && #{subject_ref}->tag == ELMC_TAG_RESULT && ((ElmcResult *)#{subject_ref}->payload)->is_ok == 1#{arg_cond}"
   end
 
-  def pattern_condition(subject_ref, %{kind: :constructor, name: "Err", arg_pattern: arg_pattern}, env) do
+  defp pattern_condition_for(subject_ref, %{kind: :constructor, name: "Err", arg_pattern: arg_pattern}, env) do
     value_ref = "((ElmcResult *)#{subject_ref}->payload)->value"
     arg_cond = if arg_pattern, do: " && (#{pattern_condition(value_ref, arg_pattern, env)})", else: ""
 
     "#{subject_ref} && #{subject_ref}->tag == ELMC_TAG_RESULT && ((ElmcResult *)#{subject_ref}->payload)->is_ok == 0#{arg_cond}"
   end
 
-  def pattern_condition(subject_ref, %{
+  defp pattern_condition_for(subject_ref, %{
         kind: :constructor,
         name: "Just",
         arg_pattern: arg_pattern
@@ -89,18 +92,18 @@ defmodule Elmc.Backend.CCodegen.Patterns do
     end
   end
 
-  def pattern_condition(subject_ref, %{kind: :constructor, name: "Nothing"}, _env) do
+  defp pattern_condition_for(subject_ref, %{kind: :constructor, name: "Nothing"}, _env) do
     "elmc_maybe_is_nothing(#{subject_ref})"
   end
 
-  def pattern_condition(subject_ref, %{kind: :constructor, name: "[]"}, env) do
+  defp pattern_condition_for(subject_ref, %{kind: :constructor, name: "[]"}, env) do
     env
     |> list_pattern_modes(subject_ref)
     |> Enum.map(&list_empty_condition(&1, subject_ref))
     |> or_join()
   end
 
-  def pattern_condition(subject_ref, %{
+  defp pattern_condition_for(subject_ref, %{
         kind: :constructor,
         name: "::",
         arg_pattern: %{kind: :tuple, elements: [head_pattern, tail_pattern]}
@@ -113,24 +116,24 @@ defmodule Elmc.Backend.CCodegen.Patterns do
     |> or_join()
   end
 
-  def pattern_condition(subject_ref, %{kind: :constructor, name: "::"}, env) do
+  defp pattern_condition_for(subject_ref, %{kind: :constructor, name: "::"}, env) do
     env
     |> list_pattern_modes(subject_ref)
     |> Enum.map(&list_nonempty_condition(&1, subject_ref))
     |> or_join()
   end
 
-  def pattern_condition(_subject_ref, %{kind: :record}, _env) do
+  defp pattern_condition_for(_subject_ref, %{kind: :record}, _env) do
     "1"
   end
 
-  def pattern_condition(subject_ref, %{kind: :string, value: value}, _env) when is_binary(value) do
+  defp pattern_condition_for(subject_ref, %{kind: :string, value: value}, _env) when is_binary(value) do
     escaped = Util.escape_c_string(value)
 
     "#{subject_ref} && elmc_string_equals_cstr(#{subject_ref}, \"#{escaped}\")"
   end
 
-  def pattern_condition(subject_ref, %{kind: :constructor, arg_pattern: arg_pattern} = pattern, env)
+  defp pattern_condition_for(subject_ref, %{kind: :constructor, arg_pattern: arg_pattern} = pattern, env)
       when is_map(arg_pattern) do
     case pattern_tag_expr(pattern, env) do
       tag when is_binary(tag) ->
@@ -144,7 +147,7 @@ defmodule Elmc.Backend.CCodegen.Patterns do
     end
   end
 
-  def pattern_condition(subject_ref, %{kind: :constructor} = pattern, env) do
+  defp pattern_condition_for(subject_ref, %{kind: :constructor} = pattern, env) do
     case pattern_tag_expr(pattern, env) do
       tag when is_binary(tag) ->
         "elmc_union_tag_matches(#{subject_ref}, #{tag})"
@@ -154,7 +157,7 @@ defmodule Elmc.Backend.CCodegen.Patterns do
     end
   end
 
-  def pattern_condition(_subject_ref, _pattern, _env), do: "0"
+  defp pattern_condition_for(_subject_ref, _pattern, _env), do: "0"
 
   defp pattern_condition_fallback_constructor(subject_ref, pattern, _env) do
     case order_constructor_name(pattern) do
@@ -657,7 +660,8 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   end
 
   @spec pattern_subject_ref(Types.subject_ref()) :: String.t()
-  defp pattern_subject_ref(subject_ref) when is_binary(subject_ref), do: subject_ref
+  defp pattern_subject_ref(subject_ref) when is_binary(subject_ref),
+    do: RcRuntimeEmit.value_expr(subject_ref)
   defp pattern_subject_ref(%{op: :var, name: name}) when is_binary(name), do: name
   defp pattern_subject_ref(%{"op" => :var, "name" => name}) when is_binary(name), do: name
   defp pattern_subject_ref(%{name: name}) when is_binary(name), do: name
@@ -665,12 +669,12 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   defp pattern_subject_ref(subject_ref), do: inspect(subject_ref)
 
   defp union_payload_ref(subject_ref) when is_binary(subject_ref) do
-    "elmc_union_payload_int(#{subject_ref})"
+    "elmc_union_payload_int(#{pattern_subject_ref(subject_ref)})"
   end
 
   # Union constructors store their fields in the tuple2 payload (tag is ->first).
   defp union_constructor_payload_ref(subject_ref) when is_binary(subject_ref) do
-    "((ElmcTuple2 *)#{subject_ref}->payload)->second"
+    "((ElmcTuple2 *)#{pattern_subject_ref(subject_ref)}->payload)->second"
   end
 
   defp bind_union_ctor_arg(env, pattern, %{kind: :var, name: name}, subject_ref)

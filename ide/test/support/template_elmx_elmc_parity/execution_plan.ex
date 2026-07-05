@@ -321,6 +321,7 @@ defmodule Ide.Test.TemplateElmxElmcParity.ExecutionPlan.TimelineMessageValue do
   def sample_for_ctor("CurrentTime"), do: %{"hour" => 10, "min" => 30}
   def sample_for_ctor("CurrentTimeString"), do: "10:30"
   def sample_for_ctor("MinuteChanged"), do: 0
+  def sample_for_ctor("AnimationFinished"), do: 1
   def sample_for_ctor("HourChanged"), do: 10
   def sample_for_ctor("SecondChanged"), do: 0
   def sample_for_ctor("BatteryLevelChanged"), do: 80
