@@ -185,6 +185,11 @@ defmodule Elmc.Runtime.RcMacros do
         if (value) {
           elmc_release(value);
           slots[count] = NULL;
+          for (size_t i = 0; i < count; i++) {
+            if (slots[i] == value) {
+              slots[i] = NULL;
+            }
+          }
         }
       }
     }

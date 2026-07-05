@@ -78,8 +78,8 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     branch_assignment_rc(env, out, "elmc_new_bool", if(value, do: "1", else: "0"), counter)
   end
 
-  def branch_assignment(%{op: :cmd_none}, out, _env, counter) do
-    {"", RcRuntimeEmit.assign_stmt(out, "elmc_int_zero()"), counter}
+  def branch_assignment(%{op: :cmd_none}, out, env, counter) do
+    {"", RcRuntimeEmit.assign_stmt(rc_zero_assignment_target(out, env), "elmc_int_zero()"), counter}
   end
 
   def branch_assignment(%{op: :int_literal, value: value} = expr, out, env, counter)
@@ -767,8 +767,18 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     apply_pattern_bind_wrapper({"", RcRuntimeEmit.assign_into(env, out, function, call_args), counter}, env)
   end
 
-  defp branch_assignment_int_literal(%{op: :int_literal, value: 0}, out, _env, counter),
-    do: {"", RcRuntimeEmit.assign_stmt(out, "elmc_int_zero()"), counter}
+  defp branch_assignment_int_literal(%{op: :int_literal, value: 0}, out, env, counter) do
+    {"", RcRuntimeEmit.assign_stmt(rc_zero_assignment_target(out, env), "elmc_int_zero()"), counter}
+  end
+
+  defp rc_zero_assignment_target(out, env) do
+    if is_binary(Map.get(env, :__function_rc_out_param__)) &&
+         RcRuntimeEmit.function_out_ref?(out) do
+      RcRuntimeEmit.function_out_param()
+    else
+      out
+    end
+  end
 
   defp branch_assignment_int_literal(%{op: :int_literal} = expr, out, env, counter) do
     ref = IntLiteralRef.ref(expr, env)

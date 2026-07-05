@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Catch do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.CSource
+  alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.ValueSlots
 
   @spec header_macros() :: String.t()
@@ -11,7 +12,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Catch do
 
   @spec function_body_prefix() :: String.t()
   def function_body_prefix do
+    RecordCompile.reset_borrowed_field_refs()
     owned = ValueSlots.owned_declaration()
+    ValueSlots.set_emit_owned_epilogue(owned != "")
 
     owned_line =
       case owned do

@@ -9,6 +9,8 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
 
   @spec reset(keyword()) :: :ok
   def reset(opts \\ []) do
+    epilogue_lifo? = Keyword.get(opts, :epilogue_lifo, false)
+
     Process.put(:elmc_value_slots, %{
       next: 0,
       live: MapSet.new(),
@@ -16,11 +18,13 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
       tuple_projections: %{},
       written: MapSet.new(),
       loop_depth: 0,
-      epilogue_lifo: Keyword.get(opts, :epilogue_lifo, false),
+      epilogue_lifo: epilogue_lifo?,
       heap_owned_count: 0,
       result_slot_root: nil,
       result_slot_current: nil,
-      function_out_written: false
+      function_out_written: false,
+      deferred_nulls: [],
+      emit_owned_epilogue: epilogue_lifo?
     })
 
     Process.delete(:elmc_result_slot_root)
@@ -64,7 +68,8 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
       | transferred: transferred,
         tuple_projections: tuple_projections,
         live: live,
-        written: written
+        written: written,
+        deferred_nulls: []
     })
 
     :ok
@@ -164,7 +169,7 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
       src ->
         case Map.get(slots_state().tuple_projections, src) do
           {dest, which} ->
-            if MapSet.member?(slots_state().transferred, dest) do
+            if not MapSet.member?(slots_state().transferred, dest) do
               case which do
                 :first -> "elmc_retain(elmc_tuple_first(#{ref(dest)}))"
                 :second -> "elmc_retain(elmc_tuple_second(#{ref(dest)}))"
@@ -347,18 +352,44 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
   Release still-live owned scratch slots in LIFO index order at function epilogue.
   Transferred slots are already nulled; untracked direct assignments are untouched.
   """
+  @doc false
+  @spec set_emit_owned_epilogue(boolean()) :: :ok
+  def set_emit_owned_epilogue(enabled) when is_boolean(enabled) do
+    Process.put(:elmc_value_slots, Map.put(slots_state(), :emit_owned_epilogue, enabled))
+    :ok
+  end
+
   @spec epilogue_cleanup() :: String.t()
   def epilogue_cleanup do
-    cond do
-      slot_count() == 0 ->
+    flush =
+      if Map.get(slots_state(), :emit_owned_epilogue, false) do
+        flush_deferred_nulls()
+      else
+        Process.put(:elmc_value_slots, Map.put(slots_state(), :deferred_nulls, []))
         ""
+      end
+    null_borrowed = null_borrowed_field_refs_stmt()
 
-      heap_owned_active?() ->
-        "elmc_release_array_lifo(owned, ELMC_OWNED_SLOT_COUNT);\nelmc_free(owned);"
+    lifo =
+      cond do
+        slot_count() == 0 ->
+          ""
 
-      true ->
-        "elmc_release_array_lifo(owned, DIM(owned));"
-    end
+        heap_owned_active?() ->
+          "elmc_release_array_lifo(owned, ELMC_OWNED_SLOT_COUNT);\nelmc_free(owned);"
+
+        true ->
+          "elmc_release_array_lifo(owned, DIM(owned));"
+      end
+
+    join_stmts([flush, null_borrowed, lifo])
+  end
+
+  defp null_borrowed_field_refs_stmt do
+    Process.get(:elmc_borrowed_field_refs, MapSet.new())
+    |> Enum.filter(&owned_ref?/1)
+    |> Enum.map(fn ref -> "#{RcRuntimeEmit.assignment_lhs(ref)} = NULL;" end)
+    |> Enum.join("\n")
   end
 
   @doc """
@@ -405,8 +436,15 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
     slots = slots_state()
     root = Map.get(slots, :result_slot_root)
 
-    if is_binary(root) and out == root do
-      Process.put(:elmc_value_slots, Map.put(slots, :result_slot_current, root))
+    cond do
+      is_binary(root) and owned_ref?(out) ->
+        Process.put(:elmc_value_slots, Map.put(slots, :result_slot_current, out))
+
+      is_binary(root) and out == root ->
+        Process.put(:elmc_value_slots, Map.put(slots, :result_slot_current, root))
+
+      true ->
+        :ok
     end
 
     :ok
@@ -499,28 +537,43 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
   @doc false
   @spec normalize_branch_result_slot(String.t()) :: String.t()
   def normalize_branch_result_slot(out) when is_binary(out) do
+    flush = flush_deferred_nulls()
+
     slots = slots_state()
     root = Map.get(slots, :result_slot_root)
     current = Map.get(slots, :result_slot_current)
 
-    cond do
-      RcRuntimeEmit.function_out_ref?(out) and function_out_written?() ->
-        ""
+    final_normalize =
+      cond do
+        RcRuntimeEmit.function_out_ref?(out) and function_out_written?() ->
+          ""
 
-      RcRuntimeEmit.function_out_ref?(out) and is_binary(current) and
-          not RcRuntimeEmit.function_out_ref?(current) ->
-        stmt = RcRuntimeEmit.publish_function_out_from(current)
-        Process.put(:elmc_value_slots, Map.put(slots, :result_slot_current, out))
-        stmt
+        RcRuntimeEmit.function_out_ref?(out) and is_binary(current) and
+            not RcRuntimeEmit.function_out_ref?(current) ->
+          stmt = RcRuntimeEmit.publish_function_out_from(current)
+          Process.put(:elmc_value_slots, Map.put(slots, :result_slot_current, out))
+          stmt
 
-      not is_binary(root) or root != out or not is_binary(current) or current == root ->
-        ""
+        not is_binary(root) or root != out or not is_binary(current) or current == root ->
+          ""
 
-      true ->
-        stmt = RcRuntimeEmit.transfer_assignment(root, current)
-        Process.put(:elmc_value_slots, Map.put(slots, :result_slot_current, root))
-        stmt
+        true ->
+          stmt = RcRuntimeEmit.transfer_assignment(root, current)
+          Process.put(:elmc_value_slots, Map.put(slots, :result_slot_current, root))
+          stmt
+      end
+
+    if is_binary(root) and root == out do
+      slots = slots_state()
+
+      Process.put(:elmc_value_slots, %{
+        slots
+        | result_slot_root: nil,
+          result_slot_current: nil
+      })
     end
+
+    join_stmts([flush, final_normalize])
   end
 
   @doc """
@@ -660,11 +713,146 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
     unmark_written(var)
 
     cond do
-      RcRuntimeEmit.function_out_ref?(var) -> ""
-      owned_ref?(var) -> null_assignment(var)
-      RcRuntimeEmit.fresh_owned_slot?(var) -> null_assignment(var)
-      true -> ""
+      RcRuntimeEmit.function_out_ref?(var) ->
+        ""
+
+      defer_nulls?() and owned_ref?(var) ->
+        queue_deferred_null(var)
+        ""
+
+      true ->
+        finalize_transferred_null(var)
     end
+  end
+
+  @doc false
+  @spec flush_deferred_nulls() :: String.t()
+  def flush_deferred_nulls do
+    slots = slots_state()
+    max_slot = slot_count()
+
+    vars =
+      Map.get(slots, :deferred_nulls, [])
+      |> Enum.filter(fn var ->
+        case owned_index(var) do
+          index when is_integer(index) -> index < max_slot
+          _ -> false
+        end
+      end)
+
+    {code, _} =
+      Enum.reduce(vars, {"", slots}, fn var, {acc, _slots} ->
+        stmt = finalize_transferred_null(var)
+        {join_stmts([acc, stmt]), slots_state()}
+      end)
+
+    Process.put(:elmc_value_slots, Map.put(slots_state(), :deferred_nulls, []))
+    code
+  end
+
+  @doc false
+  @spec materialize_tuple_projections_of_dest(String.t()) :: String.t()
+  def materialize_tuple_projections_of_dest(dest_var) when is_binary(dest_var) do
+    case owned_index(dest_var) do
+      dest_index when is_integer(dest_index) ->
+        slots = slots_state()
+
+        {stmts, projections} =
+          Enum.reduce(slots.tuple_projections, {[], slots.tuple_projections}, fn
+            {src, {^dest_index, which}}, {acc, proj} ->
+              tuple_fn =
+                case which do
+                  :first -> "elmc_tuple_first"
+                  :second -> "elmc_tuple_second"
+                end
+
+              stmt = "#{ref(src)} = elmc_retain(#{tuple_fn}(#{ref(dest_index)}));"
+              slots = slots_state()
+
+              slots = %{
+                slots
+                | live: MapSet.put(slots.live, src),
+                  transferred: MapSet.delete(slots.transferred, src),
+                  deferred_nulls: List.delete(Map.get(slots, :deferred_nulls, []), ref(src))
+              }
+
+              Process.put(:elmc_value_slots, slots)
+              {acc ++ [stmt], Map.delete(proj, src)}
+
+            _, acc_proj ->
+              acc_proj
+          end)
+
+        Process.put(:elmc_value_slots, Map.put(slots_state(), :tuple_projections, projections))
+        join_stmts(stmts)
+
+      _ ->
+        ""
+    end
+  end
+
+  defp finalize_transferred_null(var) when is_binary(var) do
+    cond do
+      RcRuntimeEmit.function_out_ref?(var) ->
+        ""
+
+      owned_ref?(var) or RcRuntimeEmit.fresh_owned_slot?(var) ->
+        normalize = maybe_normalize_result_slot_before_null(var)
+
+        null =
+          if normalize != "" do
+            ""
+          else
+            null_assignment(var)
+          end
+
+        join_stmts([
+          normalize,
+          null
+        ])
+
+      true ->
+        ""
+    end
+  end
+
+  defp maybe_normalize_result_slot_before_null(var) when is_binary(var) do
+    slots = slots_state()
+    root = Map.get(slots, :result_slot_root)
+    current = Map.get(slots, :result_slot_current)
+
+    if owned_ref?(var) and is_binary(root) and is_binary(current) and var == current and
+         root != current do
+      stmt = RcRuntimeEmit.transfer_assignment(root, current)
+      Process.put(:elmc_value_slots, Map.put(slots_state(), :result_slot_current, root))
+      stmt
+    else
+      ""
+    end
+  end
+
+  defp defer_nulls? do
+    epilogue_lifo?() and is_binary(Map.get(slots_state(), :result_slot_root))
+  end
+
+  defp queue_deferred_null(var) when is_binary(var) do
+    slots = slots_state()
+    deferred = Map.get(slots, :deferred_nulls, [])
+
+    if var in deferred do
+      :ok
+    else
+      Process.put(:elmc_value_slots, Map.put(slots, :deferred_nulls, deferred ++ [var]))
+    end
+
+    :ok
+  end
+
+  defp join_stmts(stmts) when is_list(stmts) do
+    stmts
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join("\n")
   end
 
   @spec transfer_and_null_refs([String.t()]) :: String.t()
@@ -689,7 +877,8 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
       loop_depth: 0,
       epilogue_lifo: false,
       result_slot_root: nil,
-      result_slot_current: nil
+      result_slot_current: nil,
+      deferred_nulls: []
     })
   end
 end

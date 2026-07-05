@@ -183,18 +183,22 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
         {then_code, then_assignment, counter} =
           CaseCompile.branch_assignment(then_expr, out, then_env, branch_counter)
 
+        then_normalize = ValueSlots.normalize_branch_result_slot(out)
+
         ValueSlots.restore(slots_before)
 
         {else_code, else_assignment, counter} =
           CaseCompile.branch_assignment(else_expr, out, else_env, counter)
 
+        else_normalize = ValueSlots.normalize_branch_result_slot(out)
+
         then_body =
           maybe_extract_if_branch_helper(then_expr, then_env, out, then_code, then_assignment) <>
-            "\n" <> ValueSlots.normalize_branch_result_slot(out)
+            "\n" <> then_normalize
 
         else_body =
           maybe_extract_if_branch_helper(else_expr, else_env, out, else_code, else_assignment) <>
-            "\n" <> ValueSlots.normalize_branch_result_slot(out)
+            "\n" <> else_normalize
 
         code =
           Enum.join(
@@ -313,19 +317,23 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
         CaseCompile.branch_assignment(then_expr, out, then_env, branch_counter)
       end
 
+    then_normalize = ValueSlots.normalize_branch_result_slot(out)
+
     {else_code, else_assignment, counter} =
       with :ok <- ValueSlots.restore(parent_slots) do
         CaseCompile.branch_assignment(else_expr, out, else_env, branch_counter)
       end
 
+    else_normalize = ValueSlots.normalize_branch_result_slot(out)
+
     then_body =
       format_if_branch_body(
-        Enum.join([then_code, then_assignment, ValueSlots.normalize_branch_result_slot(out)], "\n")
+        Enum.join([then_code, then_assignment, then_normalize], "\n")
       )
 
     else_body =
       format_if_branch_body(
-        Enum.join([else_code, else_assignment, ValueSlots.normalize_branch_result_slot(out)], "\n")
+        Enum.join([else_code, else_assignment, else_normalize], "\n")
       )
 
     code =

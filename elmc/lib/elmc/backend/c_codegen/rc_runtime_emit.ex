@@ -475,6 +475,14 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   @doc "Result slot for a runtime-call expression: branch/owned out, or a fresh owned slot."
   @spec compile_result_slot(map(), non_neg_integer()) :: {String.t(), non_neg_integer()}
   def compile_result_slot(env, counter) do
+    if Map.get(env, :__transfer_operand__, false) do
+      CaseCompile.fresh_var(counter, env)
+    else
+      compile_result_slot_branch(env, counter)
+    end
+  end
+
+  defp compile_result_slot_branch(env, counter) do
     branch_out = Map.get(env, :__branch_out__)
 
     cond do
@@ -1093,6 +1101,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
 
     if rc_owned_slot?(out), do: ValueSlots.mark_written(out)
     if function_out_ref?(out), do: ValueSlots.mark_function_out_written()
+    ValueSlots.sync_result_slot_current!(out)
 
     stmt
   end

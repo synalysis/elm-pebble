@@ -1078,7 +1078,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   defp mark_borrowed_record_field_ref(_var, _getter), do: :ok
 
   defp borrowed_record_field_getter?(getter) do
-    String.starts_with?(getter, "ELMC_RECORD_GET_INDEX(")
+    String.starts_with?(getter, "ELMC_RECORD_GET_INDEX(") or
+      String.starts_with?(getter, "elmc_record_get_index(")
   end
 
   @spec compile_field_call_var(

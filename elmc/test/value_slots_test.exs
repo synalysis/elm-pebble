@@ -78,6 +78,15 @@ defmodule Elmc.Backend.CCodegen.ValueSlotsTest do
     assert ValueSlots.epilogue_cleanup() == "elmc_release_array_lifo(owned, DIM(owned));"
   end
 
+  test "epilogue cleanup nulls borrowed record field refs before array lifo" do
+    ValueSlots.reset(epilogue_lifo: true)
+    {ref, _} = ValueSlots.alloc()
+    Process.put(:elmc_borrowed_field_refs, MapSet.new([ref]))
+
+    assert ValueSlots.epilogue_cleanup() ==
+             "#{ref} = NULL;\nelmc_release_array_lifo(owned, DIM(owned));"
+  end
+
   test "empty slot count emits no declaration or cleanup" do
     assert ValueSlots.owned_declaration() == ""
     assert ValueSlots.failure_cleanup() == ""
@@ -94,6 +103,40 @@ defmodule Elmc.Backend.CCodegen.ValueSlotsTest do
 
     assert ValueSlots.transfer_and_null(ref) == "owned[0] = NULL;"
     assert ValueSlots.transferred?(ref)
+  end
+
+  test "transfer_and_null defers owned null assignment inside branch result slots" do
+    ValueSlots.reset(epilogue_lifo: true)
+    {root, _} = ValueSlots.alloc()
+    {current, _} = ValueSlots.alloc()
+    ValueSlots.set_result_slot_root(root)
+
+    slots = Process.get(:elmc_value_slots)
+    Process.put(:elmc_value_slots, Map.put(slots, :result_slot_current, current))
+
+    assert ValueSlots.transfer_and_null(current) == ""
+
+    assert ValueSlots.flush_deferred_nulls() == """
+           #{root} = #{current};
+           #{current} = NULL;
+           """
+           |> String.trim()
+  end
+
+  test "tuple projection retain reads through live tuple dest" do
+    ValueSlots.reset(epilogue_lifo: true)
+    {_left, _} = ValueSlots.alloc()
+    {right, _} = ValueSlots.alloc()
+    {dest, _} = ValueSlots.alloc()
+    ValueSlots.register_tuple_projection(right, dest, :second)
+    ValueSlots.transfer(right)
+
+    assert ValueSlots.tuple_projection_retain_c_expr(right) ==
+             "elmc_retain(elmc_tuple_second(owned[2]))"
+
+    ValueSlots.transfer(dest)
+
+    refute ValueSlots.tuple_projection_retain_c_expr(right)
   end
 
   test "transfer_and_null emits tmp null assignment after ownership transfer" do

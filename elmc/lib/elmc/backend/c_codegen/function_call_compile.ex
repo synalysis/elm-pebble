@@ -245,8 +245,9 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
   end
 
   def compile_call_operand_inner(expr, env, counter, _opts) do
-    {code, var, next} = Host.compile_expr(expr, env, counter)
-    {code, var, next, false}
+    operand_env = Map.put(env, :__transfer_operand__, true)
+    {code, var, next} = Host.compile_expr(expr, operand_env, counter)
+    {code, var, next, true}
   end
 
   @spec compile_retaining_call_operand(
@@ -923,10 +924,15 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
       DebugProbes.call_probe(env, module_name, name, :after_call) |> DebugProbes.region()
 
     releases =
-      if borrow_args? do
-        release_borrowed_call_operands(env, arg_vars, arg_passthrough)
-      else
-        release_call_operands(env, arg_vars, arg_passthrough)
+      cond do
+        Map.get(env, :__transfer_operand__, false) ->
+          release_call_operands(env, arg_vars, arg_passthrough, out)
+
+        borrow_args? ->
+          release_borrowed_call_operands(env, arg_vars, arg_passthrough, out)
+
+        true ->
+          release_call_operands(env, arg_vars, arg_passthrough, out)
       end
 
     code =
@@ -1515,12 +1521,12 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     {"call_args", String.to_integer(String.trim(arity_str))}
   end
 
-  defp release_call_operands(env, arg_vars, arg_passthrough) do
+  defp release_call_operands(env, arg_vars, arg_passthrough, out \\ nil) do
     arg_vars
     |> Enum.with_index()
     |> Enum.reject(fn {var, index} ->
-      passthrough?(arg_passthrough, index) or EnvBindings.borrowed_arg_ref?(env, var) or
-        RcRuntimeEmit.function_out_ref?(var)
+      var == out or passthrough?(arg_passthrough, index) or
+        EnvBindings.borrowed_arg_ref?(env, var) or RcRuntimeEmit.function_out_ref?(var)
     end)
     |> Enum.map(fn {var, _index} -> var end)
     |> Enum.map_join("\n  ", &ValueSlots.post_call_operand_release/1)
@@ -1533,11 +1539,11 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
   defp passthrough?(nil, _index), do: false
   defp passthrough?(arg_passthrough, index), do: Enum.at(arg_passthrough, index, false)
 
-  defp release_borrowed_call_operands(env, arg_vars, arg_passthrough) do
+  defp release_borrowed_call_operands(env, arg_vars, arg_passthrough, out \\ nil) do
     arg_vars
     |> Enum.zip(arg_passthrough)
     |> Enum.reject(fn {var, passthrough?} ->
-      passthrough? or EnvBindings.borrowed_arg_ref?(env, var)
+      var == out or passthrough? or EnvBindings.borrowed_arg_ref?(env, var)
     end)
     |> Enum.map_join("\n  ", fn {var, _} -> ValueSlots.post_call_operand_release(var) end)
     |> case do

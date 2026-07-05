@@ -7,6 +7,7 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
   alias Elmc.Backend.CCodegen.ListHofResolve
   alias Elmc.Backend.CCodegen.Native.TypedReturn
   alias Elmc.Backend.CCodegen.RecordCompile
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.ResourceUnion
   alias Elmc.Backend.CCodegen.SpecialValues
   alias Elmc.Backend.CCodegen.SpecialValues.ElmCore
@@ -212,31 +213,49 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
         ) :: Types.compile_result()
   defp compile_constructor_call(target, args, env, counter) do
     c_name = Util.qualified_to_c_name(target)
+    operand_env = RcRuntimeEmit.operand_env(env)
 
-    {arg_code, arg_vars, counter} =
-      Enum.reduce(args, {"", [], counter}, fn arg_expr, {code_acc, vars_acc, c} ->
-        {code, var, c2} = Host.compile_expr(arg_expr, env, c)
-        {code_acc <> "\n  " <> code, vars_acc ++ [var], c2}
+    {arg_code, arg_vars, _arg_passthrough, counter} =
+      Enum.reduce(args, {"", [], [], counter}, fn arg_expr, {code_acc, vars_acc, passthrough_acc, c} ->
+        {code, var, c2, passthrough?} =
+          FunctionCallCompile.compile_call_operand_inner(arg_expr, operand_env, c, [])
+
+        {code_acc <> code, vars_acc ++ [var], passthrough_acc ++ [passthrough?], c2}
       end)
 
-    next = counter + 1
-    out = "tmp_#{next}"
-    args_var = "call_args_#{next}"
+    {out, next} = RcRuntimeEmit.compile_result_slot(env, counter)
+    call_args_id = counter + 1
+    args_var = "call_args_#{call_args_id}"
     argc = length(arg_vars)
     arg_list = Enum.join(arg_vars, ", ")
+    call_expr = "#{c_name}(#{args_var}, #{argc})"
+
+    out_decl =
+      cond do
+        ValueSlots.owned_ref?(out) ->
+          ValueSlots.boxed_decl(out, call_expr, env)
+
+        true ->
+          "ElmcValue *#{out} = #{call_expr};"
+      end
 
     releases =
-      arg_vars
-      |> Enum.map_join("\n  ", &ValueSlots.release_stmt/1)
+      if Map.get(env, :__transfer_operand__, false) do
+        ""
+      else
+        arg_vars
+        |> Enum.reject(&(&1 == out))
+        |> Enum.map_join("\n  ", &ValueSlots.post_call_operand_release/1)
+      end
 
     code = """
     #{arg_code}
       ElmcValue *#{args_var}[#{max(argc, 1)}] = { #{arg_list} };
-      ElmcValue *#{out} = #{c_name}(#{args_var}, #{argc});
+      #{out_decl}
       #{releases}
     """
 
-    {code, out, counter}
+    {code, out, max(next, call_args_id + 1)}
   end
 
   defp forward_ref_call(name, args, env, counter) do

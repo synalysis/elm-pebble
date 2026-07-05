@@ -146,10 +146,25 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
       emit_code =
         if compile_right_first?, do: right_code <> left_code, else: left_code <> right_code
 
-      {out, next, _} = CaseCompile.result_out_binding(env, counter)
+      {out, next, _declare_out?} =
+        if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
+          {slot, c} = RcRuntimeEmit.compile_result_slot(env, counter)
+          {slot, c, false}
+        else
+          CaseCompile.result_out_binding(env, counter)
+        end
+
       ValueSlots.register_tuple_projection(left_var, out, :first)
       ValueSlots.register_tuple_projection(right_var, out, :second)
-      nulls = ValueSlots.transfer_and_null_refs([left_var, right_var])
+
+      out_ref = ValueSlots.resolve_result_slot(out)
+
+      null_refs =
+        [left_var, right_var]
+        |> Enum.uniq()
+        |> Enum.reject(fn var -> ValueSlots.resolve_result_slot(var) == out_ref end)
+
+      nulls = ValueSlots.transfer_and_null_refs(null_refs)
 
       tuple2_assign =
         if RcRuntimeEmit.function_out_ref?(out) and RcRuntimeEmit.function_out_ref?(right_var) do
@@ -261,6 +276,16 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
     array_name = "list_items_#{list_items_id}"
     item_list = item_vars |> Enum.map(&RcRuntimeEmit.value_expr/1) |> Enum.join(", ")
     list_probe = DebugProbes.list_literal_probe(env, out, list_items_id)
+
+    pre_materialize =
+      item_vars
+      |> Enum.uniq()
+      |> Enum.map(&ValueSlots.materialize_tuple_projections_of_dest/1)
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.join("\n")
+
+    pre_materialize_block = if pre_materialize == "", do: "", else: pre_materialize <> "\n"
+
     nulls = if count == 0, do: "", else: ValueSlots.transfer_and_null_refs(Enum.uniq(item_vars))
 
     code =
@@ -295,7 +320,7 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
         true ->
           """
           #{item_code}
-            ElmcValue *#{array_name}[#{count}] = { #{item_list} };
+            #{pre_materialize_block}ElmcValue *#{array_name}[#{count}] = { #{item_list} };
             #{RcRuntimeEmit.assign_call(env, out, "elmc_list_from_values_take", "#{array_name}, #{count}")}
             #{nulls}
             #{list_probe}
@@ -333,11 +358,21 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
     array_name = "list_record_items_#{list_items_id}"
     item_list = item_vars |> Enum.map(&RcRuntimeEmit.value_expr/1) |> Enum.join(", ")
     list_probe = DebugProbes.list_literal_probe(env, out, list_items_id)
+
+    pre_materialize =
+      item_vars
+      |> Enum.uniq()
+      |> Enum.map(&ValueSlots.materialize_tuple_projections_of_dest/1)
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.join("\n")
+
+    pre_materialize_block = if pre_materialize == "", do: "", else: pre_materialize <> "\n"
+
     nulls = ValueSlots.transfer_and_null_refs(Enum.uniq(item_vars))
 
     code = """
     #{item_code}
-      ElmcValue *#{array_name}[#{count}] = { #{item_list} };
+      #{pre_materialize_block}ElmcValue *#{array_name}[#{count}] = { #{item_list} };
       #{RcRuntimeEmit.assign_call(env, out, "elmc_list_from_record_array", "#{array_name}, #{count}")}
       #{nulls}
       #{list_probe}

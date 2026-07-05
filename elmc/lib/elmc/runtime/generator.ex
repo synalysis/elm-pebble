@@ -2404,7 +2404,7 @@ defmodule Elmc.Runtime.Generator do
 
     ElmcValue *elmc_maybe_or_tuple_just_payload(ElmcValue *maybe) {
       ElmcValue *borrowed = elmc_maybe_or_tuple_just_payload_borrow(maybe);
-      if (!borrowed || borrowed->tag == ELMC_TAG_INT) return borrowed;
+      if (!borrowed) return elmc_int_zero();
       return elmc_retain(borrowed);
     }
 
@@ -2626,8 +2626,13 @@ defmodule Elmc.Runtime.Generator do
       return saw_any;
     }
 
+    static int elmc_cmd_cell_is_none(ElmcValue *value) {
+      return !value || ((value->tag == ELMC_TAG_INT || value->tag == ELMC_TAG_BOOL) && elmc_as_int(value) == 0);
+    }
+
     static ElmcValue *elmc_cmd_batch_push_back(ElmcValue *flat, ElmcValue *entry) {
       if (!entry) return flat;
+      if (elmc_cmd_cell_is_none(entry)) return flat;
       ElmcValue *cell = NULL;
       if (elmc_list_cons(&cell, entry, elmc_list_nil()) != RC_SUCCESS) return flat;
       if (!flat || (flat->tag == ELMC_TAG_LIST && flat->payload == NULL)) {
@@ -2651,6 +2656,7 @@ defmodule Elmc.Runtime.Generator do
 
     static ElmcValue *elmc_cmd_batch_append_entry(ElmcValue *flat, ElmcValue *entry) {
       if (!entry) return flat;
+      if (elmc_cmd_cell_is_none(entry)) return flat;
       if (entry->tag == ELMC_TAG_CMD) {
         return elmc_cmd_batch_push_back(flat, entry);
       }

@@ -380,7 +380,12 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
       :error ->
         compile_env =
-          if rc_required?, do: Map.put(env, :__rc_catch__, true), else: env
+          if rc_required?,
+            do:
+              env
+              |> Map.put(:__rc_catch__, true)
+              |> Map.put(:__function_rc_out_param__, RcRuntimeEmit.function_out_param()),
+            else: env
 
         root_env =
           if rc_required?, do: RcRuntimeEmit.function_tail_env(compile_env), else: compile_env
