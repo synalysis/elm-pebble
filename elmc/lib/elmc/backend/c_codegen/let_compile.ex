@@ -652,7 +652,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
   defp tuple_first_second_release(var) when is_binary(var) do
     if ValueSlots.owned_ref?(var) do
       ValueSlots.transfer(var)
-      "elmc_release(#{var});\n#{ValueSlots.null_assignment(var)}"
+      ValueSlots.release_owned_eager(var)
     else
       ValueSlots.release_stmt(var)
     end

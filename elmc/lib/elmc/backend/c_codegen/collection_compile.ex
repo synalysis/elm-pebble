@@ -12,6 +12,7 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.ValueSlots
+  alias Elmc.Backend.CCodegen.VarAnalysis
 
   @spec compile(Types.ir_collection_expr(), Types.compile_env(), Types.compile_counter()) ::
           Types.compile_result()
@@ -264,10 +265,27 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
       |> Map.delete(:__branch_out__)
       |> Map.put(:__transfer_operand__, true)
 
-    {item_code, item_vars, counter} =
-      Enum.reduce(items, {"", [], counter}, fn item, {acc_code, vars, c} ->
-        {code, var, c1} = Host.compile_expr(item, nested_item_env, c)
-        {acc_code <> "\n  " <> code, vars ++ [var], c1}
+    multi_use = multi_use_elm_var_names(items)
+
+    {pre_retain_code, copy_map, counter} =
+      emit_multi_use_owned_copies(multi_use, nested_item_env, counter)
+
+    {item_code, item_vars, counter, _consumed} =
+      Enum.reduce(items, {pre_retain_code, [], counter, MapSet.new()}, fn item,
+                                                                          {acc_code, vars, c,
+                                                                           consumed} ->
+        item_env =
+          nested_item_env
+          |> item_env_for_multi_use(consumed, copy_map)
+
+        {code, var, c1} = Host.compile_expr(item, item_env, c)
+
+        used =
+          item
+          |> VarAnalysis.used_vars()
+          |> MapSet.intersection(multi_use)
+
+        {acc_code <> "\n  " <> code, vars ++ [var], c1, MapSet.union(consumed, used)}
       end)
 
     {out, next, _} = CaseCompile.result_out_binding(env, counter)
@@ -276,15 +294,6 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
     array_name = "list_items_#{list_items_id}"
     item_list = item_vars |> Enum.map(&RcRuntimeEmit.value_expr/1) |> Enum.join(", ")
     list_probe = DebugProbes.list_literal_probe(env, out, list_items_id)
-
-    pre_materialize =
-      item_vars
-      |> Enum.uniq()
-      |> Enum.map(&ValueSlots.materialize_tuple_projections_of_dest/1)
-      |> Enum.reject(&(&1 == ""))
-      |> Enum.join("\n")
-
-    pre_materialize_block = if pre_materialize == "", do: "", else: pre_materialize <> "\n"
 
     nulls = if count == 0, do: "", else: ValueSlots.transfer_and_null_refs(Enum.uniq(item_vars))
 
@@ -320,7 +329,7 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
         true ->
           """
           #{item_code}
-            #{pre_materialize_block}ElmcValue *#{array_name}[#{count}] = { #{item_list} };
+            ElmcValue *#{array_name}[#{count}] = { #{item_list} };
             #{RcRuntimeEmit.assign_call(env, out, "elmc_list_from_values_take", "#{array_name}, #{count}")}
             #{nulls}
             #{list_probe}
@@ -359,20 +368,11 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
     item_list = item_vars |> Enum.map(&RcRuntimeEmit.value_expr/1) |> Enum.join(", ")
     list_probe = DebugProbes.list_literal_probe(env, out, list_items_id)
 
-    pre_materialize =
-      item_vars
-      |> Enum.uniq()
-      |> Enum.map(&ValueSlots.materialize_tuple_projections_of_dest/1)
-      |> Enum.reject(&(&1 == ""))
-      |> Enum.join("\n")
-
-    pre_materialize_block = if pre_materialize == "", do: "", else: pre_materialize <> "\n"
-
     nulls = ValueSlots.transfer_and_null_refs(Enum.uniq(item_vars))
 
     code = """
     #{item_code}
-      #{pre_materialize_block}ElmcValue *#{array_name}[#{count}] = { #{item_list} };
+      ElmcValue *#{array_name}[#{count}] = { #{item_list} };
       #{RcRuntimeEmit.assign_call(env, out, "elmc_list_from_record_array", "#{array_name}, #{count}")}
       #{nulls}
       #{list_probe}
@@ -588,4 +588,47 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
   end
 
   defp boxed_slot_assign(var, rhs), do: ValueSlots.boxed_decl(var, rhs)
+
+  defp multi_use_elm_var_names(items) when is_list(items) do
+    items
+    |> Enum.flat_map(&MapSet.to_list(VarAnalysis.used_vars(&1)))
+    |> Enum.frequencies()
+    |> Enum.flat_map(fn
+      {name, count} when count > 1 -> [name]
+      _ -> []
+    end)
+    |> MapSet.new()
+  end
+
+  defp emit_multi_use_owned_copies(multi_use, env, counter) when is_map(env) do
+    Enum.reduce(multi_use, {"", %{}, counter}, fn name, {code, copy_map, c} ->
+      case Map.get(env, name) do
+        c_var when is_binary(c_var) ->
+          if ValueSlots.owned_ref?(c_var) do
+            {copy_var, c1} = RcRuntimeEmit.compile_result_slot(env, c)
+
+            retain =
+              "#{ValueSlots.boxed_decl(copy_var, "elmc_retain(#{RcRuntimeEmit.value_expr(c_var)})", env)}\n"
+
+            {code <> retain, Map.put(copy_map, name, copy_var), c1}
+          else
+            {code, copy_map, c}
+          end
+
+        _ ->
+          {code, copy_map, c}
+      end
+    end)
+  end
+
+  defp item_env_for_multi_use(env, consumed, copy_map)
+       when is_map(env) and is_map(copy_map) do
+    Enum.reduce(copy_map, env, fn {name, copy_var}, acc ->
+      if MapSet.member?(consumed, name) do
+        Map.put(acc, name, copy_var)
+      else
+        acc
+      end
+    end)
+  end
 end

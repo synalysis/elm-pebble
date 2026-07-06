@@ -52,8 +52,7 @@ defmodule Elmc.Backend.CCodegen.RenderCmdCompile do
 
     param_refs = Enum.map(param_parts, fn {_, ref} -> ref end)
     args = Enum.join([kind_ref | param_refs], ", ")
-    next = counter + 1
-    out = "tmp_#{next}"
+    {out, next} = RcRuntimeEmit.compile_result_slot(env, counter)
 
     prefix =
       [kind_code, params_code]
@@ -62,7 +61,7 @@ defmodule Elmc.Backend.CCodegen.RenderCmdCompile do
 
     code = """
     #{prefix}
-      ElmcValue *#{out} = elmc_render_cmd6(#{args});
+      #{RcRuntimeEmit.assign_call(env, out, "elmc_render_cmd6", args)}
     """
 
     {code, out, next}

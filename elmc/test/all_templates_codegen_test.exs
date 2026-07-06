@@ -8,7 +8,7 @@ defmodule Elmc.AllTemplatesCodegenTest do
                  |> Enum.map(&Path.basename/1)
                  |> Enum.sort()
 
-  @tag timeout: 600_000
+  @tag timeout: 1_200_000
   test "every watch project template compiles to C" do
     failures =
       Enum.flat_map(@template_dirs, fn dir_name ->

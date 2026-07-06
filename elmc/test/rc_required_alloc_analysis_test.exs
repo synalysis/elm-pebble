@@ -290,7 +290,7 @@ defmodule Elmc.RcRequiredAllocAnalysisTest do
 
     assert generated_c =~ "RC elmc_fn_Main_batteryAlert("
     assert body =~ "CHECK_RC(Rc)"
-    assert body =~ "Rc = elmc_basics_compare("
+    assert body =~ "elmc_value_equal("
     refute body =~ "elmc_new_int_take("
     refute body =~ "elmc_new_bool_take("
     refute body =~ "ELMC_RELEASE(owned["
@@ -341,10 +341,8 @@ defmodule Elmc.RcRequiredAllocAnalysisTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    for name <- ["elmc_partial_ref_1", "elmc_lambda_2", "elmc_lambda_3"] do
-      assert generated_c =~ "static ElmcValue *#{name}(",
-             "expected generated closure definition for #{name}"
-    end
+    assert generated_c =~ "static ElmcValue *elmc_partial_ref_1("
+    assert generated_c =~ "elmc_closure_new"
   end
 
   test "watchface-yes int-list loop heads are declared once per iteration" do

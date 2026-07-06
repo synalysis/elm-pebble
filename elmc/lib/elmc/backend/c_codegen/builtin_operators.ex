@@ -527,6 +527,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
         left_ref = RcRuntimeEmit.value_expr(left_var)
         right_ref = RcRuntimeEmit.value_expr(right_var)
         {out, next} = CaseCompile.fresh_var(counter, env)
+        ValueSlots.set_result_slot_root(out)
 
         {assign_prefix, env} =
           if ValueSlots.owned_ref?(out) do
@@ -538,14 +539,33 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
             {"ElmcValue *#{out} = NULL;\n      ", env}
           end
 
+        float_stmt =
+          RcRuntimeEmit.fusion_assign(
+            out,
+            "elmc_new_float",
+            "elmc_as_float(#{left_ref}) #{operator} elmc_as_float(#{right_ref})",
+            env
+          )
+
+        int_stmt =
+          RcRuntimeEmit.fusion_assign(
+            out,
+            "elmc_new_int",
+            "elmc_as_int(#{left_ref}) #{operator} elmc_as_int(#{right_ref})",
+            env
+          )
+
+        converge = ValueSlots.normalize_branch_result_slot(out)
+
         code = """
         #{left_code}
           #{right_code}
           #{assign_prefix}if ((#{left_ref} && #{left_ref}->tag == ELMC_TAG_FLOAT) || (#{right_ref} && #{right_ref}->tag == ELMC_TAG_FLOAT)) {
-            #{RcRuntimeEmit.fusion_assign(out, "elmc_new_float", "elmc_as_float(#{left_ref}) #{operator} elmc_as_float(#{right_ref})", env)}
+            #{float_stmt}
           } else {
-            #{RcRuntimeEmit.fusion_assign(out, "elmc_new_int", "elmc_as_int(#{left_ref}) #{operator} elmc_as_int(#{right_ref})", env)}
+            #{int_stmt}
           }
+          #{converge}
           #{binop_operand_release(left_var, out)}
           #{binop_operand_release(right_var, out)}
         """
@@ -833,8 +853,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
     {right_code, right_var, counter, right_borrowed?} =
       compile_compare_operand(right, env, counter)
 
-    next = counter + 1
-    out = "tmp_#{next}"
+    {out, next} = compare_bool_out_slot(env, counter)
     left_release = compare_operand_release(env, left_var, left_borrowed?)
     right_release = compare_operand_release(env, right_var, right_borrowed?)
     negate = if operator == "__neq__", do: "!", else: ""
@@ -890,8 +909,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
         {slot, counter + 1}
 
       _ ->
-        next = counter + 1
-        {"tmp_#{next}", next}
+        CaseCompile.fresh_var(counter, env)
     end
   end
 
@@ -923,8 +941,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
         "__gte__" -> left >= right
       end
 
-    next = counter + 1
-    out = "tmp_#{next}"
+    {out, next} = compare_bool_out_slot(env, counter)
 
     {RcRuntimeEmit.assign_call(env, out, "elmc_new_bool", if(result, do: "1", else: "0")), out,
      next}
@@ -933,8 +950,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
   defp int_compare_operator(left, right, operator, env, counter) do
     {left_code, left_var, counter} = Host.compile_native_int_expr(left, env, counter)
     {right_code, right_var, counter} = Host.compile_native_int_expr(right, env, counter)
-    next = counter + 1
-    out = "tmp_#{next}"
+    {out, next} = compare_bool_out_slot(env, counter)
 
     comparison =
       case operator do
@@ -957,7 +973,14 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
 
   @spec binop_operand_release(String.t(), String.t()) :: String.t()
   defp binop_operand_release(var, out) when var == out, do: ""
-  defp binop_operand_release(var, _out), do: ValueSlots.release_stmt(var)
+
+  defp binop_operand_release(var, _out) do
+    if ValueSlots.owned_ref?(var) and ValueSlots.epilogue_lifo?() do
+      ValueSlots.release_owned_eager(var)
+    else
+      ValueSlots.release_stmt(var)
+    end
+  end
 
   @spec retain_declared_out_operand(
           String.t(),
@@ -969,9 +992,15 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
     if MapSet.member?(Map.get(env, :__declared_outs__, MapSet.new()), var) do
       {retain_var, next} = CaseCompile.fresh_var(counter, env)
 
-      retain_code =
-        code <>
-          "\n  " <> ValueSlots.boxed_decl(retain_var, "elmc_retain(#{var})") <> "\n"
+      transfer =
+        if ValueSlots.owned_ref?(var) and ValueSlots.owned_ref?(retain_var) do
+          ValueSlots.owned_reassign_prefix(retain_var) <>
+            RcRuntimeEmit.transfer_assignment(retain_var, var)
+        else
+          ValueSlots.boxed_decl(retain_var, "elmc_retain(#{var})")
+        end
+
+      retain_code = code <> "\n  " <> transfer <> "\n"
 
       {retain_code, retain_var, next}
     else

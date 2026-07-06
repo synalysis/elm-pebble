@@ -147,11 +147,26 @@ defmodule Elmc.Backend.CCodegen.ImmortalStaticList do
 
     cond do
       Keyword.get(opts, :fn_out?, false) and RcRuntimeEmit.function_out_ref?(out) ->
+        env = Keyword.get(opts, :env, %{})
+
+        success =
+          if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
+            """
+            #{RcRuntimeEmit.rc_allocator_stmt(env, out, "elmc_new_int", "#{spec.sym}_values[#{index_use}]")}
+            """
+            |> String.trim()
+          else
+            """
+            #{RcRuntimeEmit.assign_call(env, out, "elmc_new_int_take", "#{spec.sym}_values[#{index_use}]")}
+            """
+            |> String.trim()
+          end
+
         """
         #{index_code}#{default_code}
           #{table_comment}
           if (#{index_use} >= 0 && #{index_use} < #{count}) {
-            #{RcRuntimeEmit.check_rc_take(out, "elmc_new_int", "#{spec.sym}_values[#{index_use}]")}
+            #{success}
           } else {
             #{RcRuntimeEmit.function_out_deref()} = elmc_retain(#{default_ref});
           }

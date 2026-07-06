@@ -10,10 +10,11 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
           [Types.function_decl_key()],
           Types.function_decl_map(),
           MapSet.t(Types.function_decl_key()),
+          MapSet.t(Types.function_decl_key()),
           MapSet.t(Types.function_decl_key())
         ) :: MapSet.t(Types.function_decl_key())
-  def reachable_targets(roots, decl_map, excluded_targets, seen \\ MapSet.new()) do
-    do_reachable(roots, decl_map, excluded_targets, seen)
+  def reachable_targets(roots, decl_map, excluded_targets, seen \\ MapSet.new(), excluded_skip_callees \\ MapSet.new()) do
+    do_reachable(roots, decl_map, excluded_targets, seen, excluded_skip_callees)
   end
 
   @spec wrapper_reachable_targets(
@@ -26,24 +27,28 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
     do_wrapper_reachable(roots, decl_map, excluded_targets, seen)
   end
 
-  defp do_reachable([], _decl_map, _excluded_targets, seen), do: seen
+  defp do_reachable([], _decl_map, _excluded_targets, seen, _excluded_skip_callees), do: seen
 
-  defp do_reachable([target | rest], decl_map, excluded_targets, seen) do
+  defp do_reachable([target | rest], decl_map, excluded_targets, seen, excluded_skip_callees) do
     cond do
       MapSet.member?(excluded_targets, target) ->
         callees =
-          case Map.fetch(decl_map, target) do
-            {:ok, decl} -> merged_callees(target, decl.expr, decl_map)
-            :error -> []
+          if MapSet.member?(excluded_skip_callees, target) do
+            []
+          else
+            case Map.fetch(decl_map, target) do
+              {:ok, decl} -> merged_callees(target, decl.expr, decl_map)
+              :error -> []
+            end
           end
 
-        do_reachable(rest ++ callees, decl_map, excluded_targets, seen)
+        do_reachable(rest ++ callees, decl_map, excluded_targets, seen, excluded_skip_callees)
 
       MapSet.member?(seen, target) ->
-        do_reachable(rest, decl_map, excluded_targets, seen)
+        do_reachable(rest, decl_map, excluded_targets, seen, excluded_skip_callees)
 
       not Map.has_key?(decl_map, target) ->
-        do_reachable(rest, decl_map, excluded_targets, seen)
+        do_reachable(rest, decl_map, excluded_targets, seen, excluded_skip_callees)
 
       true ->
         decl = Map.fetch!(decl_map, target)
@@ -53,7 +58,8 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
           rest ++ callees,
           decl_map,
           excluded_targets,
-          MapSet.put(seen, target)
+          MapSet.put(seen, target),
+          excluded_skip_callees
         )
     end
   end

@@ -88,13 +88,13 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
         roots,
         decl_map,
         direct_render_excluded_targets(opts, direct_targets, decl_map, view_fallback),
-        MapSet.new()
+        MapSet.new(),
+        pruned_generic_view_skip_callees(pruned_view?, entry_module)
       )
       |> MapSet.difference(direct_targets)
       |> MapSet.union(view_fallback)
       |> MapSet.union(MapSet.new(direct_helper_seeds))
-      |> MapSet.difference(view_peeled_helper_set(opts, decl_map, direct_targets, entry_module))
-      |> then(fn targets -> if pruned_view?, do: MapSet.delete(targets, view_target), else: targets end)
+      |> MapSet.difference(droppable_view_peeled_helpers(opts, decl_map, direct_targets, entry_module))
 
     MapSet.union(
       reachable_core,
@@ -253,6 +253,21 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
 
   defp direct_render_only?(opts), do: opts[:direct_render_only] == true
 
+  defp direct_targets_for_helper_analysis(direct_targets, opts, decl_map, entry_module) do
+    view_target = {entry_module, "view"}
+
+    if prune_generic_view?(opts, decl_map, direct_targets) and direct_render_only?(opts) do
+      MapSet.delete(direct_targets, view_target)
+    else
+      direct_targets
+    end
+  end
+
+  defp pruned_generic_view_skip_callees(false, _entry_module), do: MapSet.new()
+
+  defp pruned_generic_view_skip_callees(true, entry_module),
+    do: MapSet.new([{entry_module, "view"}])
+
   # Aplite dual-codegen drops generic `view` but still needs its helper subgraph.
   defp pruned_streaming_view?(opts, decl_map, direct_targets) do
     prune_generic_view?(opts, decl_map, direct_targets) and not direct_render_only?(opts)
@@ -366,7 +381,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
         []
       end
 
-    view_peeled_helpers = view_peeled_helper_set(opts, decl_map, direct_targets, entry_module)
+    view_peeled_helpers = droppable_view_peeled_helpers(opts, decl_map, direct_targets, entry_module)
 
     mixed_abi_helpers = mixed_abi_outline_helpers(direct_targets, decl_map)
 
@@ -391,6 +406,56 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
     else
       _ -> MapSet.new()
     end
+  end
+
+  # Record-view peel marks helpers whose bodies are record literals, but direct command
+  # emit may still call them with the boxed ABI (for example `midpoint` inside `Ui.line`).
+  defp droppable_view_peeled_helpers(opts, decl_map, direct_targets, entry_module) do
+    peeled = view_peeled_helper_set(opts, decl_map, direct_targets, entry_module)
+    view_target = {entry_module, "view"}
+
+    view_callees =
+      if prune_generic_view?(opts, decl_map, direct_targets) and Map.has_key?(decl_map, view_target) do
+        if direct_render_only?(opts) do
+          generic_helper_callees_from_direct_targets(direct_targets, decl_map, opts, entry_module)
+        else
+          case Map.fetch(decl_map, view_target) do
+            {:ok, %{expr: expr}} ->
+              generic_callees_under_ui_node(
+                expr,
+                entry_module,
+                direct_targets,
+                decl_map,
+                MapSet.new([view_target])
+              )
+
+            :error ->
+              []
+          end
+        end
+      else
+        []
+      end
+
+    required =
+      peeled
+      |> MapSet.intersection(MapSet.new(view_callees))
+      |> MapSet.union(direct_command_boxed_callees(direct_targets, decl_map, opts, entry_module))
+
+    MapSet.difference(peeled, required)
+  end
+
+  defp direct_command_boxed_callees(direct_targets, decl_map, opts \\ %{}, entry_module \\ "Main") do
+    direct_targets = direct_targets_for_helper_analysis(direct_targets, opts, decl_map, entry_module)
+
+    direct_targets
+    |> Enum.flat_map(fn {module_name, _name} = target ->
+      case Map.fetch(decl_map, target) do
+        {:ok, decl} -> GenericReachability.expr_callees(decl.expr, module_name, decl_map)
+        :error -> []
+      end
+    end)
+    |> MapSet.new()
   end
 
   defp mixed_abi_outline_helpers(direct_targets, decl_map) do
@@ -486,6 +551,61 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
        do: inner
 
   defp ui_node_inner_expr(_expr), do: nil
+
+  defp generic_helper_callees_from_direct_targets(direct_targets, decl_map, opts \\ %{}, entry_module \\ "Main") do
+    direct_targets = direct_targets_for_helper_analysis(direct_targets, opts, decl_map, entry_module)
+
+    direct_targets
+    |> MapSet.to_list()
+    |> Enum.flat_map(fn {module_name, _decl_name} = target ->
+      case Map.fetch(decl_map, target) do
+        {:ok, %{expr: expr}} ->
+          collect_generic_helper_callees(
+            expr,
+            module_name,
+            direct_targets,
+            decl_map,
+            MapSet.new([target])
+          )
+
+        :error ->
+          []
+      end
+    end)
+    |> Enum.reject(&render_helper_target?/1)
+    |> Enum.uniq()
+  end
+
+  defp collect_generic_helper_callees(expr, module_name, direct_targets, decl_map, seen) do
+    GenericReachability.expr_callees(expr, module_name, decl_map)
+    |> Enum.flat_map(fn callee ->
+      cond do
+        MapSet.member?(direct_targets, callee) ->
+          []
+
+        MapSet.member?(seen, callee) ->
+          []
+
+        true ->
+          case Map.fetch(decl_map, callee) do
+            {:ok, %{expr: callee_expr}} ->
+              nested =
+                collect_generic_helper_callees(
+                  callee_expr,
+                  elem(callee, 0),
+                  direct_targets,
+                  decl_map,
+                  MapSet.put(seen, callee)
+                )
+
+              [callee | nested]
+
+            :error ->
+              [callee]
+          end
+      end
+    end)
+  end
 
   defp generic_callees_from_direct_targets(direct_targets, decl_map) do
     inlined_record_helpers = inlined_record_helpers(direct_targets, decl_map)

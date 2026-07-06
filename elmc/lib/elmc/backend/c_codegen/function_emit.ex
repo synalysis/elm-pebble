@@ -572,6 +572,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
          emit_rc_tuple2_table_function(
            decl,
            module_name,
+           decl_map,
            arg_bindings,
            direct_args?,
            helper_c,
@@ -600,6 +601,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
          emit_tuple2_table_function(
            decl,
            module_name,
+           decl_map,
            arg_bindings,
            direct_args?,
            helper_c,
@@ -649,14 +651,15 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       [helper_c | Process.get(:elmc_generic_helper_defs, [])]
     )
 
-    native_args = fused_native_call_args(decl, arg_bindings)
-    if rc_required?, do: ValueSlots.track("tmp_result")
+    native_args = fused_native_call_args(decl, arg_bindings, direct_args?)
 
     core_body = [
       entry_probe,
-      "ElmcValue *tmp_result = #{native}(#{native_args});",
-      exit_probe,
-      if(rc_required?, do: "*out = tmp_result;", else: "return tmp_result;")
+      if(rc_required?,
+        do: "*out = #{native}(#{native_args});",
+        else: "return #{native}(#{native_args});"
+      ),
+      exit_probe
     ]
 
     if rc_required? do
@@ -734,29 +737,49 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     )
   end
 
-  defp fused_native_call_args(%{type: type}, arg_bindings) when is_binary(type) do
+  defp fused_native_call_args(%{type: type}, arg_bindings, direct_args?) when is_binary(type) do
     arg_types = Host.function_arg_types(type)
 
     arg_bindings
     |> Enum.zip(arg_types)
     |> Enum.map_join(", ", fn {{_arg, c_arg, _index}, arg_type} ->
-      case Host.normalize_type_name(arg_type) do
-        "Int" -> "elmc_as_int(#{c_arg})"
-        "Bool" -> "elmc_as_bool(#{c_arg})"
-        _other -> c_arg
-      end
+      kind =
+        case Host.normalize_type_name(arg_type) do
+          "Int" -> :native_int
+          "Bool" -> :native_bool
+          _ -> :boxed
+        end
+
+      native_scalar_call_arg(c_arg, kind, direct_args?)
     end)
   end
 
-  defp fused_native_call_args(_decl, arg_bindings) do
+  defp fused_native_call_args(_decl, arg_bindings, _direct_args?) do
     arg_bindings
     |> Enum.map(fn {_arg, c_arg, _index} -> c_arg end)
     |> Enum.join(", ")
   end
 
+  defp tuple2_table_native_args(decl, module_name, decl_map, arg_bindings, direct_args?) do
+    kinds = NativeFunctionCall.arg_kinds(decl, module_name, decl_map)
+
+    arg_bindings
+    |> Enum.zip(kinds)
+    |> Enum.map_join(", ", fn {{_arg, c_arg, _index}, kind} ->
+      native_scalar_call_arg(c_arg, kind, direct_args?)
+    end)
+  end
+
+  defp native_scalar_call_arg(c_arg, :native_int, true), do: c_arg
+  defp native_scalar_call_arg(c_arg, :native_bool, true), do: c_arg
+  defp native_scalar_call_arg(c_arg, :native_int, false), do: "elmc_as_int(#{c_arg})"
+  defp native_scalar_call_arg(c_arg, :native_bool, false), do: "elmc_as_bool(#{c_arg})"
+  defp native_scalar_call_arg(c_arg, _kind, _direct_args?), do: c_arg
+
   defp emit_rc_tuple2_table_function(
          decl,
          module_name,
+         decl_map,
          arg_bindings,
          direct_args?,
          helper_c,
@@ -773,10 +796,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       [helper_c | Process.get(:elmc_generic_helper_defs, [])]
     )
 
-    native_int_args =
-      arg_bindings
-      |> Enum.map(fn {_arg, c_arg, _index} -> "elmc_as_int(#{c_arg})" end)
-      |> Enum.join(", ")
+    native_int_args = tuple2_table_native_args(decl, module_name, decl_map, arg_bindings, direct_args?)
 
     core_body =
       cond do
@@ -817,6 +837,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   defp emit_tuple2_table_function(
          decl,
          module_name,
+         decl_map,
          arg_bindings,
          direct_args?,
          helper_c,
@@ -833,18 +854,15 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       [helper_c | Process.get(:elmc_generic_helper_defs, [])]
     )
 
-    native_args =
-      arg_bindings
-      |> Enum.map(fn {_arg, c_arg, _index} -> "elmc_as_int(#{c_arg})" end)
-      |> Enum.join(", ")
-
-    if rc_required?, do: ValueSlots.track("tmp_result")
+    native_args = tuple2_table_native_args(decl, module_name, decl_map, arg_bindings, direct_args?)
 
     core_body = [
       entry_probe,
-      "ElmcValue *tmp_result = #{native}(#{native_args});",
-      exit_probe,
-      if(rc_required?, do: "*out = tmp_result;", else: "return tmp_result;")
+      if(rc_required?,
+        do: "*out = #{native}(#{native_args});",
+        else: "return #{native}(#{native_args});"
+      ),
+      exit_probe
     ]
 
     if rc_required? do

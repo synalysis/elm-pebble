@@ -48,7 +48,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
         {code, ref, counter}
 
       {code, ref, counter, :native_int} ->
-        {out, next} = CaseCompile.fresh_var(counter, env)
+        {out, next} = RcRuntimeEmit.compile_result_slot(env, counter)
 
         {
           """
@@ -60,7 +60,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
         }
 
       {code, ref, counter, :native_bool} ->
-        {out, next} = CaseCompile.fresh_var(counter, env)
+        {out, next} = RcRuntimeEmit.compile_result_slot(env, counter)
 
         {
           """

@@ -24,6 +24,7 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
       result_slot_current: nil,
       function_out_written: false,
       deferred_nulls: [],
+      direct_param_owned: %{},
       emit_owned_epilogue: epilogue_lifo?
     })
 
@@ -38,11 +39,36 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
     Map.get(slots_state(), :epilogue_lifo, false)
   end
 
+  @doc """
+  Track the first owned slot that retains a direct-render parameter.
+
+  When the same parameter is retained into multiple owned slots, alias later slots
+  to the first instead of introducing duplicate pointer entries.
+  """
+  @spec track_direct_param_owned(String.t(), String.t()) :: :ok
+  def track_direct_param_owned(source, owned_var)
+      when is_binary(source) and is_binary(owned_var) do
+    slots = slots_state()
+
+    Process.put(:elmc_value_slots, %{
+      slots
+      | direct_param_owned: Map.put(slots.direct_param_owned, source, owned_var)
+    })
+
+    :ok
+  end
+
+  @spec direct_param_owned_slot(String.t()) :: String.t() | nil
+  def direct_param_owned_slot(source) when is_binary(source) do
+    Map.get(slots_state().direct_param_owned, source)
+  end
+
   @type snapshot :: %{
           transferred: MapSet.t(),
           tuple_projections: map(),
           live: MapSet.t(),
-          written: MapSet.t()
+          written: MapSet.t(),
+          direct_param_owned: map()
         }
 
   @doc "Capture transfer/projection marks before a divergent branch (not slot indices)."
@@ -54,13 +80,20 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
       transferred: slots.transferred,
       tuple_projections: slots.tuple_projections,
       live: slots.live,
-      written: slots.written
+      written: slots.written,
+      direct_param_owned: slots.direct_param_owned
     }
   end
 
   @doc "Restore transfer/projection marks so sibling branches start with a clean slate."
   @spec restore(snapshot()) :: :ok
-  def restore(%{transferred: transferred, tuple_projections: tuple_projections, live: live, written: written}) do
+  def restore(%{
+        transferred: transferred,
+        tuple_projections: tuple_projections,
+        live: live,
+        written: written,
+        direct_param_owned: direct_param_owned
+      }) do
     slots = slots_state()
 
     Process.put(:elmc_value_slots, %{
@@ -69,6 +102,7 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
         tuple_projections: tuple_projections,
         live: live,
         written: written,
+        direct_param_owned: direct_param_owned,
         deferred_nulls: []
     })
 
@@ -348,10 +382,6 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
     epilogue_cleanup()
   end
 
-  @doc """
-  Release still-live owned scratch slots in LIFO index order at function epilogue.
-  Transferred slots are already nulled; untracked direct assignments are untouched.
-  """
   @doc false
   @spec set_emit_owned_epilogue(boolean()) :: :ok
   def set_emit_owned_epilogue(enabled) when is_boolean(enabled) do
@@ -386,16 +416,69 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
   end
 
   defp null_borrowed_field_refs_stmt do
+    max_slot = slot_count()
+
     Process.get(:elmc_borrowed_field_refs, MapSet.new())
-    |> Enum.filter(&owned_ref?/1)
+    |> Enum.filter(fn ref ->
+      owned_ref?(ref) and
+        case owned_index(ref) do
+          index when is_integer(index) -> index < max_slot
+          _ -> false
+        end
+    end)
     |> Enum.map(fn ref -> "#{RcRuntimeEmit.assignment_lhs(ref)} = NULL;" end)
     |> Enum.join("\n")
   end
 
   @doc """
-  Release a call operand after the callee returns. Owned scratch in epilogue-lifo
-  functions is left for `elmc_release_array_lifo`; transfers null the slot.
+  After a direct call writes through an owned out-slot, clear owned operands that alias
+  the same pointer so epilogue lifo does not release the returned value twice.
   """
+  @spec null_call_operands_aliasing_out(String.t(), [String.t()]) :: String.t()
+  def null_call_operands_aliasing_out(out, arg_vars)
+      when is_binary(out) and is_list(arg_vars) do
+    if epilogue_lifo?() and owned_ref?(out) do
+      arg_vars
+      |> Enum.filter(fn arg -> owned_ref?(arg) and arg != out end)
+      |> Enum.map(fn arg ->
+        """
+        if (#{RcRuntimeEmit.value_expr(out)} == #{RcRuntimeEmit.value_expr(arg)}) {
+          #{null_assignment(arg)}
+        }
+        """
+      end)
+      |> Enum.join("\n")
+      |> case do
+        "" -> ""
+        code -> code <> "\n"
+      end
+    else
+      ""
+    end
+  end
+
+  @doc """
+  After a self-recursive call, abandon owned argument slots without releasing them.
+  The result in `out` retains shared record fields; releasing the arg would drop refs
+  still reachable through the result (for example `withPiece` COW on the model param).
+  """
+  @spec abandon_owned_call_args_after_recursive(String.t(), [String.t()]) :: String.t()
+  def abandon_owned_call_args_after_recursive(out, arg_vars)
+      when is_binary(out) and is_list(arg_vars) do
+    if epilogue_lifo?() do
+      arg_vars
+      |> Enum.filter(fn arg -> owned_ref?(arg) and arg != out end)
+      |> Enum.map(&null_assignment/1)
+      |> Enum.join("\n")
+      |> case do
+        "" -> ""
+        code -> code <> "\n"
+      end
+    else
+      ""
+    end
+  end
+
   @spec post_call_operand_release(String.t()) :: String.t()
   def post_call_operand_release(var) when is_binary(var) do
     cond do
@@ -876,6 +959,7 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
       written: MapSet.new(),
       loop_depth: 0,
       epilogue_lifo: false,
+      direct_param_owned: %{},
       result_slot_root: nil,
       result_slot_current: nil,
       deferred_nulls: []

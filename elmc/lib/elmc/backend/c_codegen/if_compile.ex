@@ -4,6 +4,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
   alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.EnvBindings
+  alias Elmc.Backend.CCodegen.FunctionCallCompile
   alias Elmc.Backend.CCodegen.HelperParams
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.IntIfChain
@@ -180,12 +181,15 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
         else_env = branch_env(env, out)
         slots_before = ValueSlots.snapshot()
 
+        FunctionCallCompile.reset_call_args_cache!()
+
         {then_code, then_assignment, counter} =
           CaseCompile.branch_assignment(then_expr, out, then_env, branch_counter)
 
         then_normalize = ValueSlots.normalize_branch_result_slot(out)
 
         ValueSlots.restore(slots_before)
+        FunctionCallCompile.reset_call_args_cache!()
 
         {else_code, else_assignment, counter} =
           CaseCompile.branch_assignment(else_expr, out, else_env, counter)
@@ -226,19 +230,28 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
     else_env = branch_env(env, out)
     slots_before = ValueSlots.snapshot()
 
+    FunctionCallCompile.reset_call_args_cache!()
+
     {then_code, then_assignment, counter} =
       CaseCompile.branch_assignment(then_expr, out, then_env, branch_counter)
 
+    then_normalize = ValueSlots.normalize_branch_result_slot(out)
+
     ValueSlots.restore(slots_before)
+    FunctionCallCompile.reset_call_args_cache!()
 
     {else_code, else_assignment, counter} =
       CaseCompile.branch_assignment(else_expr, out, else_env, counter)
 
+    else_normalize = ValueSlots.normalize_branch_result_slot(out)
+
     then_body =
-      maybe_extract_if_branch_helper(then_expr, then_env, out, then_code, then_assignment)
+      maybe_extract_if_branch_helper(then_expr, then_env, out, then_code, then_assignment) <>
+        "\n" <> then_normalize
 
     else_body =
-      maybe_extract_if_branch_helper(else_expr, else_env, out, else_code, else_assignment)
+      maybe_extract_if_branch_helper(else_expr, else_env, out, else_code, else_assignment) <>
+        "\n" <> else_normalize
 
     guard = PlatformStatic.ifdef_guard(macro, polarity)
 
@@ -314,6 +327,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
 
     {then_code, then_assignment, _counter} =
       with :ok <- ValueSlots.restore(parent_slots) do
+        FunctionCallCompile.reset_call_args_cache!()
         CaseCompile.branch_assignment(then_expr, out, then_env, branch_counter)
       end
 
@@ -321,6 +335,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
 
     {else_code, else_assignment, counter} =
       with :ok <- ValueSlots.restore(parent_slots) do
+        FunctionCallCompile.reset_call_args_cache!()
         CaseCompile.branch_assignment(else_expr, out, else_env, branch_counter)
       end
 

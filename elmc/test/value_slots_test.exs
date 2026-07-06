@@ -224,6 +224,29 @@ defmodule Elmc.Backend.CCodegen.ValueSlotsTest do
     ValueSlots.pop_loop()
   end
 
+  test "null_call_operands_aliasing_out clears owned args that alias the call out slot" do
+    ValueSlots.reset(epilogue_lifo: true)
+
+    assert ValueSlots.null_call_operands_aliasing_out("owned[2]", ["owned[1]", "owned[2]", "model"]) ==
+             """
+             if (owned[2] == owned[1]) {
+               owned[1] = NULL;
+             }
+
+             """
+  end
+
+  test "abandon_owned_call_args_after_recursive nulls owned args without releasing them" do
+    ValueSlots.reset(epilogue_lifo: true)
+
+    assert ValueSlots.abandon_owned_call_args_after_recursive("owned[12]", ["owned[11]", "model"]) ==
+             "owned[11] = NULL;\n"
+  end
+
+  test "abandon_owned_call_args_after_recursive is a no-op outside epilogue lifo mode" do
+    assert ValueSlots.abandon_owned_call_args_after_recursive("owned[12]", ["owned[11]"]) == ""
+  end
+
   test "boxed_decl owned reassignment uses a fresh slot under epilogue lifo" do
     ValueSlots.reset(epilogue_lifo: true)
     {ref, _} = ValueSlots.alloc()

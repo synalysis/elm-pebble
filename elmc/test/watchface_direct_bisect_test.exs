@@ -179,11 +179,7 @@ defmodule Elmc.WatchfaceDirectBisectTest do
 
 
         drawDial model cx cy radius =
-            let
-                hand =
-                    pointAt cx cy (radius - 10) 0
-            in
-            [ Ui.line { x = cx, y = cy } hand Color.white ]
+            [ Ui.line { x = cx, y = cy } (pointAt cx cy (radius - 10) 0) Color.white ]
 
 
         pointAt cx cy radius angle =

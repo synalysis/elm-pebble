@@ -370,7 +370,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     native_bool_maybe_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeBoolMaybeBranchReuse")
 
     assert native_bool_maybe_body =~ "if (flag)"
-    assert native_bool_maybe_body =~ ~r/Rc = elmc_maybe_just(?:_own)?\(&(out|owned\[\d+\]|tmp_\d+),/
+    assert native_bool_maybe_body =~ "*out = owned[0];"
+    assert native_bool_maybe_body =~ ~r/Rc = elmc_maybe_just_own\(out, owned\[\d+\]\)/
     refute native_bool_maybe_body =~ "ElmcValue *tmp_1 = elmc_int_zero();"
   end
 
@@ -509,17 +510,14 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_drawOuterScale")
 
-    assert body =~ "elmc_new_int(&owned[1], (native_polar_x_"
-    assert body =~ "elmc_new_int(&owned[2], (native_polar_y_"
-    assert body =~ "elmc_new_int(&owned[3], 18)"
-    assert body =~ "elmc_new_int(&owned[4], 12)"
-    assert body =~ "ElmcValue *rec_values_"
-    assert body =~ "elmc_record_new_values_take(&owned[5], 4, rec_values_"
-    assert body =~ "ELMC_RELEASE(owned[0]);"
-    assert body =~ "ELMC_RELEASE(owned[5]);"
-    assert body =~ "ELMC_RELEASE(owned[6]);"
-    refute body =~ "elmc_new_int(&owned[1], 12)"
-    refute body =~ "elmc_new_int(&owned[2], 18)"
+    assert body =~
+             ~r/elmc_new_int\(&owned\[\d+\], \(native_polar_x_\d+ - 9\)\);\s*\n\s*CHECK_RC\(Rc\);\s*\n\s*Rc = elmc_new_int\(&owned\[\d+\], \(native_polar_y_\d+ - 8\)\);\s*\n\s*CHECK_RC\(Rc\);\s*\n\s*Rc = elmc_new_int\(&owned\[\d+\], 18\);\s*\n\s*CHECK_RC\(Rc\);\s*\n\s*Rc = elmc_new_int\(&owned\[\d+\], 12\);/,
+             "expected Rect literal fields in x, y, w, h codegen order"
+
+    assert body =~ ~r/ElmcValue \*rec_values_\d+\[4\] = \{ owned\[\d+\], owned\[\d+\], owned\[\d+\], owned\[\d+\] \};/
+    assert body =~ ~r/elmc_record_new_values_take\(&owned\[\d+\], 4, rec_values_/
+    assert body =~ "owned[0] = elmc_list_nil();"
+    refute body =~ ~r/elmc_new_int\(&owned\[\d+\], 12\);\s*\n\s*CHECK_RC\(Rc\);\s*\n\s*Rc = elmc_new_int\(&owned\[\d+\], 18\);/
   end
 
   test "String.fromInt over native Int avoids temporary boxed integer" do
@@ -627,7 +625,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute boxed_string_if_body =~ "&& tmp_"
 
     assert boxed_string_if_body =~
-             ~r/snprintf\(native_string_buf_\d+, sizeof\(native_string_buf_\d+\), .+\);\s+Rc = elmc_new_string\(&(tmp_\d+|out), native_string_buf_\d+\)/
+             ~r/snprintf\(native_string_buf_\d+, sizeof\(native_string_buf_\d+\), .+\);\s+Rc = elmc_new_string\(out, native_string_buf_\d+\)/
     refute boxed_string_if_body =~ "elmc_string_append_native"
   end
 
@@ -665,7 +663,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     assert maybe_string_body =~ "native_maybe_default_"
     assert maybe_string_body =~ "elmc_record_get_index_maybe_int(model, 0 /* batteryLevel */, 0)"
-    assert maybe_string_body =~ "elmc_string_from_native_int_take("
+    assert maybe_string_body =~ ~r/elmc_string_from_native_int\((?:out|&owned\[\d+\]), native_maybe_default_/
     refute maybe_string_body =~ "elmc_record_get(model, \"batteryLevel\")"
     refute maybe_string_body =~ "elmc_int_zero()"
     refute maybe_string_body =~ "elmc_maybe_with_default("
@@ -676,7 +674,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     assert maybe_arg_body =~ "native_maybe_default_"
     assert maybe_arg_body =~ "elmc_record_get_index_maybe_int(model, 0 /* batteryLevel */, 0)"
-    assert maybe_arg_body =~ "elmc_string_from_native_int_take("
+    assert maybe_arg_body =~ ~r/elmc_string_from_native_int\((?:out|&owned\[\d+\]), native_maybe_default_/
     refute maybe_arg_body =~ "elmc_record_get(model, \"batteryLevel\")"
     refute maybe_arg_body =~ "elmc_int_zero()"
     refute maybe_arg_body =~ "elmc_maybe_with_default("
@@ -686,7 +684,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeMaybeDefaultHeadString")
 
     assert maybe_head_body =~ "elmc_list_head_with_default_int(0,"
-    assert maybe_head_body =~ "elmc_string_from_native_int_take("
+    assert maybe_head_body =~ "elmc_string_from_native_int(out,"
     refute maybe_head_body =~ "elmc_list_head("
     refute maybe_head_body =~ "elmc_maybe_with_default_int("
 
@@ -695,7 +693,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     assert maybe_dict_body =~ "elmc_dict_get_with_default_int(0, key,"
     assert maybe_dict_body =~
-             ~r/elmc_string_from_native_int(?:_take)?\((?:&tmp_\d+, )?native_maybe_default_/
+             ~r/elmc_string_from_native_int(?:_take)?\((?:out|&owned\[\d+\]|&tmp_\d+), native_maybe_default_/
     refute maybe_dict_body =~ "elmc_dict_get("
     refute maybe_dict_body =~ "elmc_maybe_with_default_int("
   end
@@ -889,7 +887,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     native_div_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nativeLiteralDivision_native")
 
-    assert native_div_body =~ "Rc = elmc_string_from_native_int(&tmp_1, elmc_int_idiv((value * 328), 100));"
+    assert native_div_body =~ "Rc = elmc_string_from_native_int(out, elmc_int_idiv((value * 328), 100));"
     refute native_div_body =~ "native_den_"
     refute native_div_body =~ "== 0 ? 0"
   end
@@ -1140,7 +1138,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     [use_body | _rest] = String.split(body, "int elmc_fn_", parts: 2)
 
     assert use_body =~ ~r/native_max_\d+/
-    assert use_body =~ ~r/scene_cmd\.p2 = elmc_as_int\(tmp_/
+    assert use_body =~ ~r/scene_cmd\.p2 = elmc_as_int\(owned\[2\]\)/
     refute use_body =~ "elmc_basics_max("
   end
 
@@ -5830,8 +5828,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     row : Int -> Ui.RenderOp
     row n =
         Ui.textInt Resources.DefaultFont { x = n * 8, y = 0 } n
-    
-      """
+
+    """
   end
 
   defp direct_concat_literal_source do
@@ -5882,8 +5880,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
                   ]
                 ]
             )
-    
-      """
+
+    """
   end
 
   defp constructor_switch_threshold_source do
@@ -5926,8 +5924,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
             LargeD ->
                 4
-    
-      """
+
+    """
   end
 
   test "game elmtris template compiles displayShapeIsRound case subjects to valid C" do

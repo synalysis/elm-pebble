@@ -89,7 +89,8 @@ defmodule Elmc.CCodegenPatternsTest do
     assert Regex.scan(~r/elmc_maybe_or_tuple_just_payload_borrow\(tmp_subject\)/, source)
            |> length() == 1
 
-    assert source =~ "elmc_record_get_index(tmp_"
+    assert source =~
+             "elmc_record_get_index(elmc_maybe_or_tuple_just_payload_borrow(tmp_subject)"
     refute source =~ ~r/elmc_release\(tmp_\d+\);\s*\n\s*\}\s*\n\s*elmc_release\(tmp_2\)/
   end
 
@@ -134,12 +135,12 @@ defmodule Elmc.CCodegenPatternsTest do
     assert generated_c =~ @just_payload_borrow
 
     assert generated_c =~
-             ~r/ELMC_RECORD_GET_INDEX(?:_INT)?\((tmp_\d+|owned\[\d+\]), ELMC_FIELD_MAIN_ACTIVEPIECE_KIND\)/
+             ~r/ELMC_RECORD_GET_INDEX(?:_INT)?\((?:tmp_\d+|owned\[\d+\]|elmc_maybe_or_tuple_just_payload_borrow\([^)]+\)), ELMC_FIELD_MAIN_ACTIVEPIECE_KIND\)/
 
     assert generated_c =~
-             ~r/ELMC_RECORD_GET_INDEX(?:_INT)?\((tmp_\d+|owned\[\d+\]), ELMC_FIELD_MAIN_ACTIVEPIECE_ROT\)/
+             ~r/ELMC_RECORD_GET_INDEX(?:_INT)?\((?:tmp_\d+|owned\[\d+\]|elmc_maybe_or_tuple_just_payload_borrow\([^)]+\)), ELMC_FIELD_MAIN_ACTIVEPIECE_ROT\)/
     assert generated_c =~
-             ~r/ELMC_RECORD_GET_INDEX(?:_INT)?\((tmp_\d+|owned\[\d+\]), ELMC_FIELD_MAIN_ACTIVEPIECE_X\)/
+             ~r/ELMC_RECORD_GET_INDEX(?:_INT)?\((?:tmp_\d+|owned\[\d+\]|elmc_maybe_or_tuple_just_payload_borrow\([^)]+\)), ELMC_FIELD_MAIN_ACTIVEPIECE_X\)/
 
     assert generated_c =~
              ~r/elmc_record_update_index\((tmp_5|tmp_\d+|owned\[\d+\]), ELMC_FIELD_MAIN_ACTIVEPIECE_Y, (tmp_|owned\[)/
@@ -161,6 +162,20 @@ defmodule Elmc.CCodegenPatternsTest do
     refute generated_c =~ ~r/elmc_record_get\(tmp_2, "y"\)/
     refute generated_c =~ ~r/elmc_record_get\(tmp_2, "kind"\)/
     refute generated_c =~ ~r/rec_names_\d+\[5\] = \{ "cell", "gap", "pieceKind"/
+
+    assert generated_c =~ "elmc_fn_Main_softDrop"
+
+    assert generated_c =~
+             ~r/Rc = elmc_fn_Main_softDrop\(&owned\[\d+\], \(ElmcValue \*\[\]\)\{ owned\[\d+\] \}, 1\);\n\s*CHECK_RC\(Rc\);\n(?:\s*if \(owned\[\d+\] == owned\[\d+\]\) \{\n\s*owned\[\d+\] = NULL;\n\s*\}\n)?\s*owned\[\d+\] = NULL;/,
+             "expected recursive softDrop to abandon the withPiece model arg without releasing it"
+
+    assert generated_c =~
+             ~r/owned\[\d+\] = elmc_maybe_or_tuple_just_payload\(owned\[\d+\]\);\n\s*\n\s*owned\[\d+\] = elmc_record_update_index\(owned\[\d+\], ELMC_FIELD_MAIN_ACTIVEPIECE_Y/,
+             "expected owned Just payload projection before piece record update"
+
+    assert generated_c =~
+             ~r/ELMC_RELEASE\(owned\[\d+\]\);\n\s*owned\[\d+\] = NULL;\n\n\s*Rc = elmc_maybe_just_own\(&owned\[\d+\], owned\[\d+\]\);/,
+             "expected eager release of projection source after non-COW piece update"
 
     stack_report = File.read!(Path.join(out_dir, "elmc_stack_report.json"))
     assert stack_report =~ "\"functions\""
@@ -333,8 +348,8 @@ defmodule Elmc.CCodegenPatternsTest do
       |> hd()
 
     assert body =~ "elmc_list_reverse("
-    assert body =~ ~r/elmc_list_take_int\(&tmp_\d+, 2, cells\)/
-    assert body =~ ~r/elmc_list_drop_int\(&tmp_\d+, 2, cells\)/
+    assert body =~ ~r/elmc_list_take_int\(&owned\[\d+\], 2, cells\)/
+    assert body =~ ~r/elmc_list_drop_int\(&owned\[\d+\], 2, cells\)/
     refute body =~ "elmc_list_take("
     refute body =~ "elmc_list_drop("
     assert body =~ "list_concat_segments_"
@@ -1883,8 +1898,7 @@ defmodule Elmc.CCodegenPatternsTest do
       |> List.first()
 
     assert body =~ "elmc_list_from_values_take"
-    assert body =~ "tmp_"
-    assert body =~ ~r/tmp_\d+ = NULL;/
+    assert body =~ ~r/owned\[\d+\] = NULL;/
   end
 
   test "List.concatMap over range inlines loop without closure or runtime concatMap" do
@@ -1929,7 +1943,7 @@ defmodule Elmc.CCodegenPatternsTest do
       |> List.first()
 
     assert body =~ "list_concat_map_i_"
-    assert body =~ "list_fwd_cell_"
+    assert body =~ "list_fwd_tail_"
     refute body =~ "list_concat_map_sub_cursor_"
     refute body =~ "elmc_list_from_values_take"
     refute body =~ "elmc_list_concat_map("
@@ -1989,7 +2003,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     assert body =~ "list_concat_map_i_"
     assert body =~ "ELMC_RENDER_OP_LINE"
-    assert body =~ "list_fwd_cell_"
+    assert body =~ "list_fwd_tail_"
     refute body =~ "list_concat_map_sub_cursor_"
     refute body =~ "elmc_list_from_values_take"
     refute body =~ "elmc_list_concat_map("
@@ -2243,6 +2257,7 @@ defmodule Elmc.CCodegenPatternsTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "elmc_fn_Main_dropFullRows_native"
+    assert generated_c =~ "static RC elmc_fn_Main_dropFullRows_native(ElmcValue **out, ElmcValue *board)"
     assert generated_c =~ "if (cleared == 0)"
     refute generated_c =~ "elmc_let_body_helper_Main_dropFullRows"
     refute generated_c =~ "elmc_fn_Main_rowFull"
@@ -2884,6 +2899,20 @@ defmodule Elmc.CCodegenPatternsTest do
                strip_dead_code: true
              })
 
+    pebble_out_dir = Path.join(out_dir, "pebble_int32")
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: pebble_out_dir,
+               entry_module: "Main",
+               strip_dead_code: true,
+               pebble_int32: true
+             })
+
+    pebble_generated_c = File.read!(Path.join(pebble_out_dir, "c/elmc_generated.c"))
+
+    assert pebble_generated_c =~
+             "return elmc_fn_Main_pieceOffsets_native(out, kind, rot);"
+
     makefile = File.read!(Path.join(out_dir, "Makefile"))
     assert makefile =~ "-ffunction-sections"
     assert makefile =~ "-fdata-sections"
@@ -2917,8 +2946,10 @@ defmodule Elmc.CCodegenPatternsTest do
     refute generated_c =~ "elmc_record_update_helper_Main_lockPiece"
     refute generated_c =~ "list_concat_repeat_lists_"
     assert generated_c =~ "elmc_fn_Main_clearLines_native"
+    assert generated_c =~ "static RC elmc_fn_Main_clearLines_native(ElmcValue **out, ElmcValue *board)"
     assert generated_c =~ "if (cleared == 0)"
     refute generated_c =~ "elmc_let_body_helper_Main_clearLines"
+    refute generated_c =~ ~r/elmc_fn_Main_clearLines_native[\s\S]*?return NULL/
 
     assert generated_c =~
              ~r/elmc_int_t rec_values_\d+\[4\] = \{ direct_native_record_layout_x_\d+, direct_native_record_layout_y_\d+, direct_native_record_layout_cell_\d+, direct_native_record_layout_gap_\d+ \}/
@@ -3186,19 +3217,19 @@ defmodule Elmc.CCodegenPatternsTest do
            ) == 1
 
     assert init_body =~
-             "ELMC_RECORD_GET_INDEX_INT(tmp_1_screen, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_HEIGHT)"
+             "ELMC_RECORD_GET_INDEX_INT(owned[0], ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_HEIGHT)"
 
     assert init_body =~
-             "ELMC_RECORD_GET_INDEX_INT(tmp_1_screen, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_WIDTH)"
+             "ELMC_RECORD_GET_INDEX_INT(owned[0], ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_WIDTH)"
 
     assert init_body =~
-             "elmc_cmd1(ELMC_PEBBLE_CMD_GET_CURRENT_DATE_TIME, ELMC_PEBBLE_MSG_CURRENTDATETIME)"
+             "elmc_cmd1(&owned[2], ELMC_PEBBLE_CMD_GET_CURRENT_DATE_TIME, ELMC_PEBBLE_MSG_CURRENTDATETIME)"
 
     refute init_body =~ "elmc_new_int(ELMC_PEBBLE_CMD_GET_CURRENT_DATE_TIME)"
     refute init_body =~ "elmc_new_int(23)"
     refute init_body =~ "ELMC_PEBBLE_MSG_CURRENT_DATE_TIME_TARGET"
     assert init_body =~
-             "ElmcValue *tmp_1_screen = elmc_record_get_index(context, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHCONTEXT_SCREEN)"
+             "owned[0] = elmc_record_get_index(context, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHCONTEXT_SCREEN)"
   end
 
   test "update reads union record payload fields with payload record macros, not model field indices" do
@@ -3436,16 +3467,16 @@ defmodule Elmc.CCodegenPatternsTest do
     refute init_body =~ ~s/elmc_record_get(tmp_1_screen, "shape")/
 
     assert init_body =~
-             "ElmcValue *tmp_1_screen = elmc_record_get_index(context, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHCONTEXT_SCREEN)"
+             "owned[0] = elmc_record_get_index(context, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHCONTEXT_SCREEN)"
 
     assert init_body =~
-             "ELMC_RECORD_GET_INDEX_INT(tmp_1_screen, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_SHAPE)"
+             "ELMC_RECORD_GET_INDEX_INT(owned[0], ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_SHAPE)"
 
     assert init_body =~
-             "ELMC_RECORD_GET_INDEX_INT(tmp_1_screen, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_HEIGHT)"
+             "ELMC_RECORD_GET_INDEX_INT(owned[0], ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_HEIGHT)"
 
     assert init_body =~
-             "ELMC_RECORD_GET_INDEX_INT(tmp_1_screen, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_WIDTH)"
+             "ELMC_RECORD_GET_INDEX_INT(owned[0], ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_WIDTH)"
 
     assert init_body =~ "elmc_record_new_values_ints" or
              init_body =~ "elmc_record_new_values_take"
@@ -3938,7 +3969,7 @@ defmodule Elmc.CCodegenPatternsTest do
       |> hd()
 
     assert init_body =~
-             "elmc_cmd1(ELMC_PEBBLE_CMD_GET_CURRENT_DATE_TIME, ELMC_PEBBLE_MSG_TIMEUPDATE)"
+             ~r/elmc_cmd1\(&owned\[\d+\], ELMC_PEBBLE_CMD_GET_CURRENT_DATE_TIME, ELMC_PEBBLE_MSG_TIMEUPDATE\)/
 
     refute init_body =~ "elmc_new_int(ELMC_PEBBLE_CMD_GET_CURRENT_DATE_TIME)"
     refute init_body =~ "ELMC_PEBBLE_MSG_CURRENT_DATE_TIME_TARGET"
@@ -4778,7 +4809,7 @@ defmodule Elmc.CCodegenPatternsTest do
     fn_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_updateFromPhone")
 
     refute fn_body == ""
-    assert fn_body =~ "elmc_union_tag_matches(message, 1)"
+    assert fn_body =~ "elmc_union_tag_matches(message, ELMC_UNION_PROVIDEWEATHER)"
     assert fn_body =~ "ELMC_FIELD_MAIN_MODEL_WEATHER"
 
     refute fn_body =~
@@ -5019,13 +5050,13 @@ defmodule Elmc.CCodegenPatternsTest do
       |> String.split("}\n", parts: 2)
       |> hd()
 
-    assert update_body =~ "ELMC_PEBBLE_MSG_MINUTECHANGED"
+    assert update_body =~ "ELMC_UNION_MINUTECHANGED"
     refute update_body =~ "== 1 && (1)"
     refute update_body =~ "&& (1)"
     refute update_body =~ ~r/first\) == 1\)/
 
     assert generated_c =~
-             "elmc_cmd1(ELMC_PEBBLE_CMD_GET_CURRENT_TIME_STRING, ELMC_PEBBLE_MSG_CURRENTTIMESTRING)"
+             ~r/elmc_cmd1\(&owned\[\d+\], ELMC_PEBBLE_CMD_GET_CURRENT_TIME_STRING, ELMC_PEBBLE_MSG_CURRENTTIMESTRING\)/
   end
 
   test "single subscription uses ELMC_SUBSCRIPTION macros instead of raw ints" do
@@ -5086,7 +5117,7 @@ defmodule Elmc.CCodegenPatternsTest do
       |> hd()
 
     assert subscriptions_body =~
-             "elmc_sub1(ELMC_SUBSCRIPTION_MINUTE_CHANGE, ELMC_PEBBLE_MSG_MINUTECHANGED)"
+             "elmc_sub1(out, ELMC_SUBSCRIPTION_MINUTE_CHANGE, ELMC_PEBBLE_MSG_MINUTECHANGED)"
 
     refute subscriptions_body =~ "elmc_new_int(ELMC_SUBSCRIPTION_MINUTE_CHANGE)"
     refute subscriptions_body =~ "elmc_new_int(2048)"
@@ -5153,7 +5184,7 @@ defmodule Elmc.CCodegenPatternsTest do
       |> hd()
 
     assert subscriptions_body =~
-             "elmc_sub3(ELMC_SUBSCRIPTION_BUTTON_RAW, ELMC_BUTTON_UP, ELMC_BUTTON_EVENT_PRESSED, ELMC_PEBBLE_MSG_UPPRESSED)"
+             "elmc_sub3(out, ELMC_SUBSCRIPTION_BUTTON_RAW, ELMC_BUTTON_UP, ELMC_BUTTON_EVENT_PRESSED, ELMC_PEBBLE_MSG_UPPRESSED)"
   end
 
   test "zero-arity direct helpers stay direct when only closure-applied from lambdas" do
@@ -5636,17 +5667,15 @@ defmodule Elmc.CCodegenPatternsTest do
     
     """
 
-    generated_c = compile_generated_c!("native_record_bool_helper", source, %{})
+    generated_c = compile_generated_c!("native_record_bool_helper", source, %{strip_dead_code: false})
 
     has_piece_native = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_hasPiece_native")
 
     assert has_piece_native != ""
-    assert generated_c =~ "static bool elmc_fn_Main_hasPiece_native(ElmcValue * const model)"
-    assert generated_c =~ "elmc_fn_Main_hasPiece_native(model)"
-    refute generated_c =~ "RC elmc_fn_Main_hasPiece(ElmcValue **out"
+    assert generated_c =~ "static RC elmc_fn_Main_hasPiece_native(bool *out, ElmcValue * const model)"
+    assert generated_c =~ "elmc_fn_Main_hasPiece_native(&native_result, model)"
     refute has_piece_native =~ "elmc_new_bool"
     refute has_piece_native =~ "elmc_new_int"
-    refute has_piece_native =~ "CATCH_BEGIN"
     refute Regex.match?(~r/bool native_bool_if_\d+ = false;/, has_piece_native)
     assert has_piece_native =~ "ELMC_RECORD_GET_INDEX_INT(model, ELMC_FIELD_MAIN_MODEL_PIECEKIND)"
   end
@@ -5692,13 +5721,13 @@ defmodule Elmc.CCodegenPatternsTest do
     
     """
 
-    generated_c = compile_generated_c!("native_record_bool_maybe_helper", source, %{})
+    generated_c = compile_generated_c!("native_record_bool_maybe_helper", source, %{strip_dead_code: false})
 
     show_corners_native =
       CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_showCorners_native")
 
     assert show_corners_native != ""
-    assert generated_c =~ "static bool elmc_fn_Main_showCorners_native(ElmcValue * const model)"
+    assert generated_c =~ "static RC elmc_fn_Main_showCorners_native(bool *out, ElmcValue * const model)"
     refute show_corners_native =~ "elmc_new_bool"
     refute show_corners_native =~ "elmc_basics_not"
     refute show_corners_native =~ "elmc_value_equal"

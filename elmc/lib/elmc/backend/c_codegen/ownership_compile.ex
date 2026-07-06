@@ -79,6 +79,56 @@ defmodule Elmc.Backend.CCodegen.OwnershipCompile do
 
   def owned_projection_retain_expr(_source), do: nil
 
+  @doc """
+  When a Maybe Just payload is materialized into an owned slot, rebind pattern vars
+  that still point at `just_payload_borrow(wrapper)` so later field reads use the
+  owned record instead of the emptied wrapper.
+  """
+  @spec rebind_materialized_projection(Types.compile_env(), String.t(), String.t()) ::
+          Types.compile_env()
+  def rebind_materialized_projection(env, materialized_var, source)
+      when is_binary(materialized_var) and is_binary(source) do
+    case owned_projection_borrow_source(source) do
+      nil ->
+        env
+
+      _borrow_wrapper ->
+        env
+        |> rebind_env_refs(source, materialized_var)
+        |> rebind_tuple_projection_refs(source, materialized_var)
+    end
+  end
+
+  def rebind_materialized_projection(env, _materialized_var, _source), do: env
+
+  @spec owned_projection_borrow_source(String.t()) :: String.t() | nil
+  defp owned_projection_borrow_source(source) when is_binary(source) do
+    case Regex.run(~r/^elmc_maybe_or_tuple_just_payload_borrow\((.+)\)$/s, source) do
+      [_, maybe_ref] -> String.trim(maybe_ref)
+      _ -> nil
+    end
+  end
+
+  defp rebind_env_refs(env, borrow_expr, materialized_var) do
+    Enum.reduce(env, env, fn
+      {key, ^borrow_expr}, acc when is_binary(key) ->
+        Map.put(acc, key, materialized_var)
+
+      _, acc ->
+        acc
+    end)
+  end
+
+  defp rebind_tuple_projection_refs(env, borrow_expr, materialized_var) do
+    refs =
+      env
+      |> Map.get(:__tuple_projection_refs__, MapSet.new())
+      |> MapSet.delete(borrow_expr)
+      |> MapSet.put(materialized_var)
+
+    Map.put(env, :__tuple_projection_refs__, refs)
+  end
+
   @spec copy_borrowed_list_for_result?(Types.compile_env(), Types.binding_name(), String.t()) ::
           boolean()
   defp copy_borrowed_list_for_result?(env, name, source) do

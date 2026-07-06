@@ -20,7 +20,7 @@ defmodule Elmc.GeneratedRcTrackConcatTest do
       #include "elmc_generated.c"
       #include <stdio.h>
 
-      #{RcTrackHarness.harness_rc_helpers()}
+      #{RcTrackHarness.harness_prelude()}
 
       int main(void) {
         static const elmc_int_t row0[2] = { 1, 2 };
@@ -35,7 +35,7 @@ defmodule Elmc.GeneratedRcTrackConcatTest do
 
         elmc_rc_track_reset();
         ElmcValue *args[] = { outer };
-        ElmcValue *out = elmc_fn_RcTrackProbe_concatRows(args, 1);
+        ElmcValue *out = elmc_harness_call_rc(elmc_fn_RcTrackProbe_concatRows, args, 1);
         elmc_release(outer);
         elmc_release(out);
 

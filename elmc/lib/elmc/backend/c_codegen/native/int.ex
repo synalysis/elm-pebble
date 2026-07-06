@@ -378,7 +378,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
           Types.native_scalar_compile_result()
   def compile_boxed(expr, env, counter) do
     {code, value_ref, counter} = compile_expr(expr, env, counter)
-    {out, next} = CaseCompile.fresh_var(counter, env)
+    {out, next} = RcRuntimeEmit.compile_result_slot(env, counter)
 
     {
       """
@@ -1771,11 +1771,18 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     next = counter + 1
     out = "native_i_#{next}"
 
+    operand_release =
+      if ValueSlots.owned_ref?(var) and ValueSlots.epilogue_lifo?() do
+        ValueSlots.release_owned_eager(var)
+      else
+        ValueSlots.release_stmt(var)
+      end
+
     result =
       {"""
        #{code}
          const elmc_int_t #{out} = elmc_as_int(#{RcRuntimeEmit.value_expr(var)});
-         #{ValueSlots.release_stmt(var)};
+         #{operand_release}
        """, out, next}
 
     case expr do

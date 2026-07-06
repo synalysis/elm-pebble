@@ -571,21 +571,16 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   defp maybe_unwrap_just_var_branch(env, branch, subject_ref, counter, case_subject) do
     if Map.get(env, :maybe_unwrap_just, false) and var_branch?(branch) do
       %{pattern: %{kind: :var, name: bind}} = branch
-      next = counter + 1
-      temp = "tmp_#{next}"
-      subject = pattern_subject_ref(subject_ref)
-
-      setup = "ElmcValue *#{temp} = elmc_maybe_or_tuple_just_payload_borrow(#{subject});"
-      release = ""
+      payload_ref = just_payload_ref(subject_ref)
 
       branch_env =
         env
-        |> Map.put(bind, temp)
-        |> EnvBindings.put_tuple_projection_ref(temp)
+        |> Map.put(bind, payload_ref)
+        |> EnvBindings.put_tuple_projection_ref(payload_ref)
         |> Map.delete(:maybe_unwrap_just)
         |> put_maybe_unwrapped_var_type(case_subject, bind)
 
-      {branch_env, setup, release, next}
+      {branch_env, "", "", counter}
     else
       {bind_pattern(env, branch.pattern, subject_ref), "", "", counter}
     end

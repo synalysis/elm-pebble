@@ -11,6 +11,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.OwnershipTransfer
+  alias Elmc.Backend.CCodegen.OwnershipCompile
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Native.RecordFields
   alias Elmc.Backend.CCodegen.Types
@@ -553,6 +554,15 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     end
   end
 
+  defp record_update_result_slot(env, counter, last_field?) do
+    if last_field? and RcRuntimeEmit.function_tail_compile?(env) and
+         RcRuntimeEmit.tail_call_out_target(env) == RcRuntimeEmit.function_out_ref() do
+      {RcRuntimeEmit.function_out_ref(), counter}
+    else
+      CaseCompile.fresh_var(counter, env)
+    end
+  end
+
   @spec compile_update(
           Types.ir_expr(),
           Types.ir_record_fields(),
@@ -561,25 +571,49 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
         ) :: Types.compile_result()
   defp compile_update(base, fields, env, counter) do
     {base_code, base_var, counter, base_passthrough?} =
-      compile_update_operand(base, env, counter)
+      compile_update_operand(base, Map.delete(env, :__branch_out__), counter)
+
+    env =
+      case base do
+        %{op: :var, name: name} ->
+          case EnvBindings.lookup_binding(env, name) do
+            source when is_binary(source) ->
+              OwnershipCompile.rebind_materialized_projection(env, base_var, source)
+
+            _ ->
+              env
+          end
+
+        _ ->
+          env
+      end
 
     record_shape = Expr.record_shape(base, env)
     record_type = Expr.record_container_type_for_expr(base, env)
     multi_use_names = record_update_multi_use_names(fields)
+    field_count = length(fields)
 
-    {update_code, current_var, counter, deferred_field_vars, used_cow_drop?} =
+    base_update_inplace? = base_fresh_owned?(base, base_var, base_passthrough?, env)
+
+    {update_code, current_var, counter, deferred_field_vars, used_cow_drop?, base_released?} =
       Enum.reduce(
-        fields,
-        {base_code, base_var, counter, base_passthrough?, false, [], false},
-        fn field,
-           {code_acc, current, c, current_passthrough?, current_unique?, deferred, used_cow_drop?} ->
+        Enum.with_index(fields),
+        {base_code, base_var, counter, base_passthrough?, base_update_inplace?, [], false, false},
+        fn {field, field_index},
+           {code_acc, current, c, current_passthrough?, current_unique?, deferred, used_cow_drop?,
+            base_released?} ->
           {field_code, field_var, c, field_passthrough?} =
-            compile_update_operand(field.expr, RcRuntimeEmit.strip_function_tail_scope(env), c)
+            compile_update_operand(
+              field.expr,
+              env |> RcRuntimeEmit.strip_function_tail_scope() |> Map.delete(:__branch_out__),
+              c
+            )
 
           {field_code, field_var} =
             inline_immortal_record_field_operand(field_code, field_var)
 
-          {out, c} = CaseCompile.fresh_var(c, env)
+          last_field? = field_index == field_count - 1
+          {out, c} = record_update_result_slot(env, c, last_field?)
           field_ref = ValueSlots.resolve_result_slot(field_var)
 
           borrowed_record_operand? =
@@ -605,12 +639,17 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
             if defer_record_update_field_release?(field.expr, field_var, multi_use_names) do
               {"", [field_var | deferred]}
             else
-              release_code =
-                if ValueSlots.owned_ref?(field_var) do
-                  ValueSlots.release_owned_and_null(field_var) <> "\n"
-                else
-                  update_operand_release(field_var, field_passthrough?)
-                end
+          release_code =
+            cond do
+              ValueSlots.owned_ref?(field_var) and use_cow_drop? ->
+                ValueSlots.release_owned_eager(field_var) <> "\n"
+
+              ValueSlots.owned_ref?(field_var) ->
+                ValueSlots.release_owned_and_null(field_var) <> "\n"
+
+              true ->
+                update_operand_release(field_var, field_passthrough?)
+            end
 
               {release_code, deferred}
             end
@@ -618,20 +657,37 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
           {release_code, deferred_field_vars} = field_release
 
           current_release =
-            if current_unique? or borrowed_projection_operand?(current, code_acc) or
-                 borrowed_record_operand?,
-               do: "",
-               else: update_operand_release(current, current_passthrough?)
+            cond do
+              current_unique? or borrowed_record_operand? ->
+                ""
+
+              borrowed_projection_operand?(current, code_acc) and not use_cow_drop? ->
+                ValueSlots.release_owned_eager(current) <> "\n"
+
+              borrowed_projection_operand?(current, code_acc) ->
+                ""
+
+              true ->
+                update_operand_release(current, current_passthrough?)
+            end
 
           dedupe_owned_alias =
             if use_cow_drop? and ValueSlots.owned_ref?(current) do
               """
-              if (#{out} == #{current}) {
+              if (#{RcRuntimeEmit.value_expr(out)} == #{current}) {
                 #{ValueSlots.null_assignment(current)}
               }
               """
             else
               ""
+            end
+
+          {immediate_base_release, base_released?} =
+            if field_index == 0 and not use_cow_drop? and not base_released? and
+                 base_owned_copy_release?(env, base_var, out) do
+              {ValueSlots.release_owned_eager(base_var) <> "\n", true}
+            else
+              {"", base_released?}
             end
 
           code = """
@@ -640,14 +696,16 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
           #{dedupe_owned_alias}
           #{current_release}
           #{release_code}
+          #{flush_field_expr_owned_temps([field_var, out])}
+          #{immediate_base_release}
           """
 
           {code_acc <> "\n" <> code, out, c, false, true, deferred_field_vars,
-           used_cow_drop? or use_cow_drop?}
+           used_cow_drop? or use_cow_drop?, base_released?}
         end
       )
-      |> then(fn {code, var, c, _, _, deferred, used_cow_drop?} ->
-        {code, var, c, deferred, used_cow_drop?}
+      |> then(fn {code, var, c, _, _, deferred, used_cow_drop?, base_released?} ->
+        {code, var, c, deferred, used_cow_drop?, base_released?}
       end)
 
     deferred_release =
@@ -655,11 +713,18 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
       |> Enum.uniq()
       |> Enum.map_join("\n", &ValueSlots.release_owned_and_null/1)
 
+    base_copy_release =
+      if not base_released? and base_owned_copy_release?(env, base_var, current_var) do
+        ValueSlots.release_owned_eager(base_var) <> "\n"
+      else
+        ""
+      end
+
     full_code =
-      if deferred_release == "" do
+      if deferred_release == "" and base_copy_release == "" do
         update_code
       else
-        update_code <> "\n" <> deferred_release
+        update_code <> "\n" <> base_copy_release <> deferred_release
       end
 
     {full_code, current_var, counter} =
@@ -675,9 +740,12 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
        when is_binary(code) and is_binary(base_var) and is_binary(result_var) do
     if in_place_cow_record_base?(env, base_var) do
       {out, next} = CaseCompile.fresh_var(counter, env)
+      result_ref = RcRuntimeEmit.value_expr(result_var)
+      base_ref = RcRuntimeEmit.value_expr(base_var)
 
       bump = """
-      #{ValueSlots.boxed_decl(out, "(#{result_var} == #{base_var}) ? elmc_retain(#{result_var}) : #{result_var}", env)}
+      #{ValueSlots.boxed_decl(out, "(#{result_ref} == #{base_ref}) ? elmc_retain(#{result_ref}) : #{result_ref}", env)}
+      #{ValueSlots.transfer_and_null(result_var)}
       """
 
       {code <> "\n" <> bump, out, next}
@@ -693,6 +761,30 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   defp in_place_cow_record_base?(env, base_var) do
     EnvBindings.borrowed_arg_ref?(env, base_var) or EnvBindings.direct_param_ref?(env, base_var)
   end
+
+  defp base_owned_copy_release?(env, base_var, current_var)
+       when is_binary(base_var) and is_binary(current_var) do
+    ValueSlots.owned_ref?(base_var) and current_var != base_var and
+      not EnvBindings.borrowed_arg_ref?(env, base_var)
+  end
+
+  defp base_owned_copy_release?(_env, _base_var, _current_var), do: false
+
+  defp base_fresh_owned?(base, base_var, base_passthrough?, env) do
+    ValueSlots.owned_ref?(base_var) and not base_passthrough? and
+      not EnvBindings.borrowed_arg_ref?(env, base_var) and base_fresh_expr?(base, env)
+  end
+
+  defp base_fresh_expr?(%{op: :call, args: args}, _env) when args in [[], nil], do: true
+
+  defp base_fresh_expr?(%{op: :qualified_call, args: args}, _env) when args in [[], nil], do: true
+
+  defp base_fresh_expr?(%{op: :record_literal}, _env), do: true
+
+  defp base_fresh_expr?(%{op: :var, name: name}, env) when is_binary(name) or is_atom(name),
+    do: zero_arg_function_var?(env, name)
+
+  defp base_fresh_expr?(_base, _env), do: false
 
   defp record_update_multi_use_names(fields) when is_list(fields) do
     fields
@@ -815,9 +907,56 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   end
 
   defp compile_update_operand(expr, env, counter) do
-    operand_env = Map.put(env, :__transfer_operand__, true)
+    begin_field_expr_owned_temps()
+    operand_env =
+      env
+      |> Map.put(:__transfer_operand__, true)
+      |> Map.put(:__record_update_field_expr__, true)
+
     {code, ref, counter} = Host.compile_expr(expr, operand_env, counter)
     {code, ref, counter, false}
+  end
+
+  @spec begin_field_expr_owned_temps() :: :ok
+  def begin_field_expr_owned_temps do
+    Process.put(:elmc_field_expr_owned_temps, {true, []})
+    :ok
+  end
+
+  @spec track_field_expr_owned_temp(String.t()) :: :ok
+  def track_field_expr_owned_temp(var) when is_binary(var) do
+    case Process.get(:elmc_field_expr_owned_temps) do
+      {true, temps} when is_list(temps) ->
+        if ValueSlots.owned_ref?(var) and var not in temps do
+          Process.put(:elmc_field_expr_owned_temps, {true, temps ++ [var]})
+        end
+
+      _ ->
+        :ok
+    end
+
+    :ok
+  end
+
+  @spec flush_field_expr_owned_temps([String.t()]) :: String.t()
+  def flush_field_expr_owned_temps(except \\ []) do
+    case Process.get(:elmc_field_expr_owned_temps) do
+      {true, temps} when is_list(temps) ->
+        Process.put(:elmc_field_expr_owned_temps, {false, []})
+
+        temps
+        |> Enum.reject(&(&1 in except))
+        |> Enum.reverse()
+        |> Enum.uniq()
+        |> Enum.map_join("\n", &ValueSlots.release_owned_eager/1)
+        |> case do
+          "" -> ""
+          releases -> releases <> "\n"
+        end
+
+      _ ->
+        ""
+    end
   end
 
   defp inline_immortal_record_field_operand(field_code, field_var) do
@@ -856,7 +995,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   defp borrowed_projection_operand?(var, code)
        when is_binary(var) and is_binary(code) do
     Regex.match?(
-      ~r/ElmcValue \*#{Regex.escape(var)} = elmc_maybe_or_tuple_just_payload_borrow\(/,
+      ~r/(?:ElmcValue \*)?#{Regex.escape(var)} = elmc_maybe_or_tuple_just_payload(?:_borrow)?\(/,
       code
     )
   end
@@ -938,6 +1077,10 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
           #{ValueSlots.boxed_decl(var, getter)}
           #{ValueSlots.release_stmt_line(arg_var)}
         """
+
+        if Map.get(env, :__record_update_field_expr__, false) and ValueSlots.owned_ref?(arg_var) do
+          track_field_expr_owned_temp(arg_var)
+        end
 
         {code, var, next}
     end
@@ -1062,6 +1205,14 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
     mark_borrowed_record_field_ref(var, getter)
 
+    if Map.get(env, :__record_update_field_expr__, false) do
+      track_field_expr_owned_temp(var)
+
+      if ValueSlots.owned_ref?(source) do
+        track_field_expr_owned_temp(source)
+      end
+    end
+
     {code, var, next}
   end
 
@@ -1078,8 +1229,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   defp mark_borrowed_record_field_ref(_var, _getter), do: :ok
 
   defp borrowed_record_field_getter?(getter) do
-    String.starts_with?(getter, "ELMC_RECORD_GET_INDEX(") or
-      String.starts_with?(getter, "elmc_record_get_index(")
+    String.starts_with?(getter, "ELMC_RECORD_GET_INDEX(")
   end
 
   @spec compile_field_call_var(

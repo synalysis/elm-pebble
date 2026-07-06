@@ -225,6 +225,128 @@ defmodule Elmc.RuntimeRCTest do
     assert run_code == 0
   end
 
+  test "record_update_index retains shared fields when old record is released" do
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available for runtime C test")
+
+    project_dir = Path.expand("fixtures/simple_project", __DIR__)
+    out_dir = Path.expand("tmp/record_update_index_runtime", __DIR__)
+    File.rm_rf!(out_dir)
+    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
+
+    harness_path = Path.join(out_dir, "c/record_update_index_harness.c")
+
+    File.write!(
+      harness_path,
+      """
+      #include "elmc_runtime.h"
+      #include <stdio.h>
+
+      int main(void) {
+        ElmcValue *kind = elmc_new_int_take(7);
+        ElmcValue *x = elmc_new_int_take(3);
+        ElmcValue *y = elmc_new_int_take(10);
+        ElmcValue *fields[] = {kind, x, y};
+        ElmcValue *piece = elmc_record_new_values_take_value(3, fields);
+
+        ElmcValue *next_y = elmc_new_int_take(11);
+        ElmcValue *updated = elmc_record_update_index(piece, 2, next_y);
+        elmc_release(next_y);
+        elmc_release(piece);
+
+        if (!updated) return 1;
+        if (elmc_as_int(elmc_record_get_index(updated, 0)) != 7) return 2;
+        if (elmc_as_int(elmc_record_get_index(updated, 1)) != 3) return 3;
+        if (elmc_as_int(elmc_record_get_index(updated, 2)) != 11) return 4;
+
+        elmc_release(updated);
+        return 0;
+      }
+      """
+    )
+
+    binary_path = Path.join(out_dir, "record_update_index_harness")
+    runtime_dir = Path.join(out_dir, "runtime")
+
+    {compile_out, compile_code} =
+      System.cmd(cc, [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-I#{runtime_dir}",
+        Path.join(runtime_dir, "elmc_runtime.c"),
+        RcTrackHarness.runtime_link_stub(),
+        harness_path,
+        "-lm",
+        "-o",
+        binary_path
+      ])
+
+    assert compile_code == 0, compile_out
+
+    {_run_out, run_code} = System.cmd(binary_path, [])
+    assert run_code == 0
+  end
+
+  test "maybe_or_tuple_just_payload retains inner value and keeps wrapper borrowable" do
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available for runtime C test")
+
+    project_dir = Path.expand("fixtures/simple_project", __DIR__)
+    out_dir = Path.expand("tmp/maybe_payload_detach_runtime", __DIR__)
+    File.rm_rf!(out_dir)
+    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
+
+    harness_path = Path.join(out_dir, "c/maybe_payload_detach_harness.c")
+
+    File.write!(
+      harness_path,
+      """
+      #include "elmc_runtime.h"
+      #include <stdio.h>
+
+      int main(void) {
+        ElmcValue *inner = elmc_new_int_take(42);
+        ElmcValue *just = NULL;
+        if (elmc_maybe_just_own(&just, inner) != RC_SUCCESS) return 1;
+        elmc_release(inner);
+
+        ElmcValue *owned = elmc_maybe_or_tuple_just_payload(just);
+        if (elmc_as_int(elmc_maybe_or_tuple_just_payload_borrow(just)) != 42) return 4;
+        elmc_release(just);
+
+        if (!owned) return 2;
+        if (elmc_as_int(owned) != 42) return 3;
+
+        elmc_release(owned);
+        return 0;
+      }
+      """
+    )
+
+    binary_path = Path.join(out_dir, "maybe_payload_detach_harness")
+    runtime_dir = Path.join(out_dir, "runtime")
+
+    {compile_out, compile_code} =
+      System.cmd(cc, [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-I#{runtime_dir}",
+        Path.join(runtime_dir, "elmc_runtime.c"),
+        RcTrackHarness.runtime_link_stub(),
+        harness_path,
+        "-lm",
+        "-o",
+        binary_path
+      ])
+
+    assert compile_code == 0, compile_out
+
+    {_run_out, run_code} = System.cmd(binary_path, [])
+    assert run_code == 0
+  end
+
   test "branch tuple outputs from nested matches keep rc balanced" do
     cc = System.find_executable("cc")
     if is_nil(cc), do: flunk("cc not available for runtime C test")

@@ -37,9 +37,9 @@ defmodule Elmc.BuiltinUnionCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert generated_c =~ "elmc_cmd1(ELMC_PEBBLE_CMD_BACKLIGHT, 0)"
-    assert generated_c =~ "elmc_cmd1(ELMC_PEBBLE_CMD_BACKLIGHT, 1)"
-    assert generated_c =~ "elmc_cmd1(ELMC_PEBBLE_CMD_BACKLIGHT, 2)"
+    assert generated_c =~ ~r/elmc_cmd1\(&owned\[\d+\], ELMC_PEBBLE_CMD_BACKLIGHT, 0\)/
+    assert generated_c =~ ~r/elmc_cmd1\(&owned\[\d+\], ELMC_PEBBLE_CMD_BACKLIGHT, 1\)/
+    assert generated_c =~ ~r/elmc_cmd1\(&owned\[\d+\], ELMC_PEBBLE_CMD_BACKLIGHT, 2\)/
     refute generated_c =~ "elmc_cmd_backlight_from_maybe("
     refute generated_c =~ "elmc_maybe_nothing()"
     refute generated_c =~ "elmc_maybe_just("
@@ -120,7 +120,7 @@ defmodule Elmc.BuiltinUnionCodegenTest do
       end
 
     assert fn_body =~
-             ~r/if \(flag\) \{[\s\S]*Rc = elmc_maybe_just_own\(&owned\[[0-9]+\], owned\[[0-9]+\]\)/
+             ~r/if \(flag\) \{[\s\S]*Rc = elmc_maybe_just_own\(out, owned\[[0-9]+\]\)/
     refute fn_body =~ "*out = elmc_maybe_just("
     assert fn_body =~ ~r/\} else \{[\s\S]*elmc_maybe_nothing\(\)/
   end

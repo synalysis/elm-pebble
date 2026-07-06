@@ -1,7 +1,6 @@
 defmodule Elmc.Backend.CCodegen.Native.Float do
   @moduledoc false
 
-  alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.RecordFields
@@ -120,7 +119,7 @@ defmodule Elmc.Backend.CCodegen.Native.Float do
           {String.t(), String.t(), Types.compile_counter()}
   def compile_boxed(expr, env, counter) do
     {code, value_ref, counter} = compile_expr(expr, env, counter)
-    {out, next} = CaseCompile.fresh_var(counter, env)
+    {out, next} = RcRuntimeEmit.compile_result_slot(env, counter)
 
     {
       """

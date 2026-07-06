@@ -1167,9 +1167,9 @@ defmodule Elmc.PebbleShimTest do
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     refute String.contains?(generated, "141733928960")
 
-    assert String.contains?(
-             generated,
-             "elmc_sub1((ELMC_SUBSCRIPTION_FRAME_BASE + (33 << 16)), ELMC_PEBBLE_MSG_FRAMETICK)"
+    assert Regex.match?(
+             ~r/elmc_sub1\(&(?:out|owned\[\d+\]), \(ELMC_SUBSCRIPTION_FRAME_BASE \+ \(33 << 16\)\), ELMC_PEBBLE_MSG_FRAMETICK\)/,
+             generated
            )
 
     harness_path = Path.join(out_dir, "c/frame_harness.c")
@@ -2230,7 +2230,7 @@ defmodule Elmc.PebbleShimTest do
 
     refute pebble_h =~ "ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE"
     assert pebble_c =~
-             "#if defined(ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW) && \\\n        (defined(ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE) || !defined(ELMC_PEBBLE_PLATFORM))"
+             ~r/#if defined\(ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW\) && \\\s+\(defined\(ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE\) \|\| !defined\(ELMC_PEBBLE_PLATFORM\)\)/
     assert pebble_c =~ "#if !defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)"
     assert pebble_c =~
              "#elif defined(ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW) && !defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)"
@@ -3541,6 +3541,7 @@ defmodule Elmc.PebbleShimTest do
     pebble_c = File.read!(Path.join(out_dir, "c/elmc_pebble.c"))
 
     assert worker_c =~ "dispatch_needs_render"
+    assert worker_c =~ "if (model_changed)"
     assert worker_c =~ "if (!elmc_cmd_is_none(next_cmd))"
     assert pebble_c =~ "elmc_worker_dispatch_needs_render"
     assert pebble_c =~ "elmc_pebble_invalidate_scene_for_dispatch"

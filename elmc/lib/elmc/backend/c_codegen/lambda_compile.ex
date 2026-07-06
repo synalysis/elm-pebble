@@ -5,6 +5,7 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.RcRequired
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
+  alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.ValueSlots
   alias Elmc.Backend.CCodegen.VarAnalysis
@@ -178,9 +179,11 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
       end
 
     parent_slots = Process.get(:elmc_value_slots, %{live: MapSet.new(), transferred: MapSet.new()})
+    parent_borrowed = Process.get(:elmc_borrowed_field_refs, MapSet.new())
 
     if rc_lambda? do
       ValueSlots.reset(epilogue_lifo: true)
+      RecordCompile.reset_borrowed_field_refs()
     end
 
     {body_code, body_var, _body_counter} = Host.compile_expr(body, body_env, 0)
@@ -196,8 +199,12 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
         end
 
         decls = ValueSlots.owned_declaration()
-        cleanup = ValueSlots.failure_cleanup()
+        ValueSlots.set_emit_owned_epilogue(decls != "")
+
+        cleanup = if decls != "", do: ValueSlots.failure_cleanup(), else: ""
+
         Process.put(:elmc_value_slots, parent_slots)
+        Process.put(:elmc_borrowed_field_refs, parent_borrowed)
         {decls, body_code, cleanup}
       else
         {"", body_code, ""}

@@ -727,13 +727,16 @@ defmodule Elmc.Backend.Worker do
         elmc_release(result);
         return -2;
       }
-      if (next_model != prev_model) {
+      int model_changed = (next_model != prev_model);
+      if (model_changed) {
         elmc_release(state->model);
       } else if (next_model->rc > 1) {
         elmc_release(next_model);
       }
       state->model = next_model;
-      state->dispatch_needs_render = 1;
+      if (model_changed) {
+        state->dispatch_needs_render = 1;
+      }
       {
         ElmcValue *next_cmd = NULL;
         ElmcValue *raw_cmd = extract_cmd_take(result);

@@ -673,11 +673,13 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     do: Map.get(env, :__rc_required__, false) and Map.get(env, :__rc_catch__, false)
 
   @spec rc_allocator_emit_mode?(map()) :: boolean()
-  def rc_allocator_emit_mode?(env),
-    do:
-      Map.get(env, :__rc_required__, false) or Map.get(env, :__rc_catch__, false) or
-        Map.get(env, :__native_rc_out__, false) or
-        Process.get(:elmc_hoisted_native_ints_scope, false)
+  def rc_allocator_emit_mode?(env) when is_map(env) do
+    Map.get(env, :__rc_required__, false) or Map.get(env, :__rc_catch__, false) or
+      Map.get(env, :__native_rc_out__, false) or
+      Process.get(:elmc_hoisted_native_ints_scope, false)
+  end
+
+  def rc_allocator_emit_mode?(_), do: false
 
   @spec rc_catch_env(map()) :: map()
   def rc_catch_env(env), do: Map.put(env, :__rc_catch__, true)
@@ -1014,32 +1016,61 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     if rc_allocator_emit_mode?(env), do: "CHECK_RC(Rc);", else: ""
   end
 
-  @doc "Fused `elmc_tuple2_take(left, new_int(rhs))` return."
-  @spec fusion_tuple2_take_int_return(String.t(), String.t(), String.t(), map()) :: String.t()
-  def fusion_tuple2_take_int_return(_out, left, int_expr, env \\ %{}) do
+  @doc """
+  Assign `(*out, left, new_int(rhs))` inside a `CATCH_BEGIN` body.
+
+  Uses `owned_slot` (default `owned[0]`) so `CATCH_END` + `elmc_release_array_lifo`
+  can clean up on failure. Caller must declare the owned array and run LIFO release
+  before returning from the fusion function.
+  """
+  @spec fusion_tuple2_take_int_out(String.t(), String.t(), String.t(), String.t()) :: String.t()
+  def fusion_tuple2_take_int_out(out, left, int_expr, owned_slot \\ "owned[0]") do
+    """
+    Rc = elmc_new_int(#{fusion_owned_slot_addr(owned_slot)}, #{int_expr});
+    CHECK_RC(Rc);
+    Rc = elmc_tuple2_take(#{out}, #{left}, #{owned_slot});
+    CHECK_RC(Rc);
+    #{owned_slot} = NULL;
+    """
+    |> String.trim()
+  end
+
+  @doc """
+  Fused `elmc_tuple2_take(left, new_int(rhs))` with early return.
+
+  Uses the same owned-slot convention as `fusion_tuple2_take_int_out/4`.
+  """
+  @spec fusion_tuple2_take_int_return(String.t(), String.t(), String.t(), map(), String.t()) ::
+          String.t()
+  def fusion_tuple2_take_int_return(_out, left, int_expr, env \\ %{}, owned_slot \\ "owned[0]") do
     failure = failure_return(env)
 
     """
     {
-      ElmcValue *__rhs = NULL;
+      ElmcValue *owned[1] = {0};
       ElmcValue *__pair = NULL;
-      RC __rhs_rc = elmc_new_int(&__rhs, #{int_expr});
-      if (__rhs_rc != RC_SUCCESS) {
-        ELMC_RC_LOG_FAIL(__rhs_rc, "elmc_new_int", "allocation failed");
+      Rc = elmc_new_int(#{fusion_owned_slot_addr(owned_slot)}, #{int_expr});
+      if (Rc != RC_SUCCESS) {
+        ELMC_RC_LOG_FAIL(Rc, "elmc_new_int", "allocation failed");
+        elmc_release_array_lifo(owned, DIM(owned));
         #{failure}
       }
-      RC __pair_rc = elmc_tuple2_take(&__pair, #{left}, __rhs);
-      if (__pair_rc != RC_SUCCESS) {
-        elmc_release(__rhs);
-        ELMC_RC_LOG_FAIL(__pair_rc, "elmc_tuple2_take", "allocation failed");
+      Rc = elmc_tuple2_take(&__pair, #{left}, #{owned_slot});
+      #{owned_slot} = NULL;
+      if (Rc != RC_SUCCESS) {
+        ELMC_RC_LOG_FAIL(Rc, "elmc_tuple2_take", "allocation failed");
+        elmc_release_array_lifo(owned, DIM(owned));
         #{failure}
       }
-      elmc_release(__rhs);
+      elmc_release_array_lifo(owned, DIM(owned));
       return __pair;
     }
     """
     |> String.trim()
   end
+
+  defp fusion_owned_slot_addr("owned[" <> _ = slot), do: "&#{slot}"
+  defp fusion_owned_slot_addr(slot) when is_binary(slot), do: "&#{slot}"
 
   defp declared_out_slot?(env, out) do
     MapSet.member?(Map.get(env, :__declared_outs__, MapSet.new()), out)
@@ -1098,6 +1129,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
       CHECK_RC(Rc);
       """
       |> String.trim()
+      |> then(&(&1 <> result_payload_owned_release(function, call_args)))
 
     if rc_owned_slot?(out), do: ValueSlots.mark_written(out)
     if function_out_ref?(out), do: ValueSlots.mark_function_out_written()
@@ -1122,4 +1154,17 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     if function_out_ref?(out), do: ValueSlots.mark_function_out_written()
     "#{assignment_lhs(out)} = #{rhs};"
   end
+
+  defp result_payload_owned_release(function, call_args)
+       when function in ["elmc_result_ok", "elmc_result_err"] and is_binary(call_args) do
+    arg = String.trim(call_args)
+
+    if ValueSlots.owned_ref?(arg) do
+      "\n" <> ValueSlots.release_owned_eager(arg)
+    else
+      ""
+    end
+  end
+
+  defp result_payload_owned_release(_function, _call_args), do: ""
 end

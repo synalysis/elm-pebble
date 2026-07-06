@@ -103,6 +103,39 @@ defmodule Ide.Test.TemplateElmxElmcParity.ExecutionPlan do
     %{plan | watch_profile_id: watch_profile_id}
   end
 
+  @doc """
+  Init plus repeated `DownPressed` updates without walking the full update-branch catalog.
+
+  Simulates pressing the Down button in the emulator/debugger on a fresh Elmtris game.
+  """
+  @spec game_elmtris_down_button_scenario!(String.t(), keyword()) :: t()
+  def game_elmtris_down_button_scenario!(project_dir, opts \\ [])
+      when is_binary(project_dir) do
+    template_key = Keyword.get(opts, :template_key, "game-elmtris")
+    presses = Keyword.get(opts, :down_presses, 8)
+    base = build!(project_dir, template_key, opts)
+
+    down_steps =
+      1..presses
+      |> Enum.map(fn index ->
+        %{
+          id: "update:DownPressed:#{index}",
+          op: :update,
+          message: "DownPressed",
+          message_value: nil,
+          source: "down_button_scenario"
+        }
+      end)
+
+    init_block = [
+      %{id: "init", op: :init},
+      %{id: "view:init", op: :view},
+      %{id: "subscriptions:init", op: :subscriptions}
+    ]
+
+    %{base | steps: init_block ++ expand_update_block(down_steps)}
+  end
+
   defp expand_update_block(steps) when is_list(steps) do
     Enum.flat_map(steps, fn step ->
       [

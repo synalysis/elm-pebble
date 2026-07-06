@@ -49,7 +49,8 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
 
     case Map.get(cache, key) do
       existing when is_binary(existing) ->
-        {existing, ""}
+        # Reuse the arg shape, not a prior block-scoped array name (if/else branches).
+        {"(ElmcValue *[]){ #{arg_list} }", ""}
 
       nil ->
         Process.put(@call_args_cache_key, Map.put(cache, key, args_var))
@@ -244,10 +245,13 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     end
   end
 
-  def compile_call_operand_inner(expr, env, counter, _opts) do
-    operand_env = Map.put(env, :__transfer_operand__, true)
+  def compile_call_operand_inner(expr, env, counter, opts) do
+    borrow_args? = Keyword.get(opts, :borrow_args?, false)
+    operand_env = Map.put(env, :__transfer_operand__, not borrow_args?)
     {code, var, next} = Host.compile_expr(expr, operand_env, counter)
-    {code, var, next, true}
+    # Materialized temps always belong to the caller after the call, even when the
+    # callee uses retain_arg semantics on its parameter.
+    {code, var, next, false}
   end
 
   @spec compile_retaining_call_operand(
@@ -397,8 +401,9 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
       nil ->
         case Map.fetch(env, name) do
           {:ok, source} when is_binary(source) ->
-            if Map.get(env, :__transfer_operand__, false) and ValueSlots.owned_ref?(source) and
-                 not ValueSlots.transferred?(source) do
+            # Re-read a let-bound owned slot in place. Avoid retain+duplicate pointer in
+            # owned[] — epilogue lifo dedup would skip releasing the canonical slot.
+            if ValueSlots.owned_ref?(source) and not ValueSlots.transferred?(source) do
               {"", source, counter}
             else
               {var, next} = CaseCompile.fresh_var(counter, env)
@@ -452,25 +457,49 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
                 {copy_code, var, next}
 
               retain_expr ->
-                expr =
-                  if is_binary(retain_expr) do
-                    retain_expr
-                  else
-                    cond do
-                      ValueSlots.owned_ref?(source) ->
-                        "elmc_retain(#{c_source})"
+                case duplicate_direct_param_owned_slot(source, env) do
+                  {:alias, existing_owned} ->
+                    {ValueSlots.boxed_decl(var, existing_owned), var, next}
 
-                      EnvBindings.boxed_int_binding?(env, name) or
-                          EnvBindings.boxed_string_binding?(env, name) or
-                          EnvBindings.direct_param_ref?(env, source) ->
-                        "elmc_retain(#{c_source})"
+                  :retain ->
+                    cond do
+                      ValueSlots.owned_ref?(source) and ValueSlots.owned_ref?(var) and
+                          Map.get(env, name) != source ->
+                        stmt =
+                          ValueSlots.owned_reassign_prefix(var) <>
+                            RcRuntimeEmit.transfer_assignment(var, source)
+
+                        {stmt, var, next}
+
+                      ValueSlots.owned_ref?(source) and ValueSlots.owned_ref?(var) ->
+                        {ValueSlots.boxed_decl(var, "elmc_retain(#{c_source})"), var, next}
 
                       true ->
-                        "#{c_source} ? elmc_retain(#{c_source}) : elmc_int_zero()"
-                    end
-                  end
+                        expr =
+                          if is_binary(retain_expr) do
+                            retain_expr
+                          else
+                            cond do
+                              ValueSlots.owned_ref?(source) ->
+                                "elmc_retain(#{c_source})"
 
-                {ValueSlots.boxed_decl(var, expr), var, next}
+                              EnvBindings.boxed_int_binding?(env, name) or
+                                  EnvBindings.boxed_string_binding?(env, name) or
+                                  EnvBindings.direct_param_ref?(env, source) ->
+                                "elmc_retain(#{c_source})"
+
+                              true ->
+                                "#{c_source} ? elmc_retain(#{c_source}) : elmc_int_zero()"
+                            end
+                          end
+
+                        if EnvBindings.direct_param_ref?(env, source) and ValueSlots.epilogue_lifo?() do
+                          ValueSlots.track_direct_param_owned(source, var)
+                        end
+
+                        {ValueSlots.boxed_decl(var, expr), var, next}
+                    end
+                end
             end
 
           :error ->
@@ -917,6 +946,10 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     if caller_rc? and not RcRuntimeEmit.function_out_ref?(out), do: ValueSlots.track(out)
     argc = length(arg_vars)
 
+    if Map.get(env, :__record_update_field_expr__, false) and ValueSlots.owned_ref?(out) do
+      RecordCompile.track_field_expr_owned_temp(out)
+    end
+
     after_args_probe =
       DebugProbes.call_probe(env, module_name, name, :after_args) |> DebugProbes.region()
 
@@ -934,6 +967,10 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
         true ->
           release_call_operands(env, arg_vars, arg_passthrough, out)
       end
+
+    recursive? =
+      module_name == Map.get(env, :__module__) and
+        name == Map.get(env, :__function_name__)
 
     code =
       cond do
@@ -1068,6 +1105,8 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
             #{arg_code}
               #{after_args_probe}
               #{rc_call_assignment(env, out, direct_call, rc_callee?, caller_rc?)}
+              #{ValueSlots.null_call_operands_aliasing_out(out, arg_vars)}
+              #{if recursive?, do: ValueSlots.abandon_owned_call_args_after_recursive(out, arg_vars), else: ""}
               #{after_call_probe}
               #{releases}
             """
@@ -1089,6 +1128,8 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
               #{after_args_probe}
               #{call_args_decl}
               #{rc_call_assignment(env, out, call_expr, rc_callee?, caller_rc?)}
+              #{ValueSlots.null_call_operands_aliasing_out(out, arg_vars)}
+              #{if recursive?, do: ValueSlots.abandon_owned_call_args_after_recursive(out, arg_vars), else: ""}
               #{after_call_probe}
               #{releases}
             """
@@ -1403,15 +1444,32 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
           """
 
         :native_bool ->
-          """
-          ElmcValue *out = NULL;
-          RC Rc = RC_SUCCESS;
-          CATCH_BEGIN
-            Rc = elmc_new_bool(&out, #{c_name}_native(#{native_args}));
-            CHECK_RC(Rc);
-          CATCH_END
-          return out;
-          """
+          if NativeFunctionCall.native_bool_rc_abi?(decl, module_name, decl_map) do
+            """
+            ElmcValue *out = NULL;
+            RC Rc = RC_SUCCESS;
+            CATCH_BEGIN
+              bool native_result = false;
+              Rc = #{c_name}_native(&native_result, #{native_args});
+              CHECK_RC(Rc);
+              Rc = elmc_new_bool(&out, native_result);
+              CHECK_RC(Rc);
+            CATCH_END
+            return out;
+            """
+            |> String.trim()
+          else
+            """
+            ElmcValue *out = NULL;
+            RC Rc = RC_SUCCESS;
+            CATCH_BEGIN
+              Rc = elmc_new_bool(&out, #{c_name}_native(#{native_args}));
+              CHECK_RC(Rc);
+            CATCH_END
+            return out;
+            """
+            |> String.trim()
+          end
         :boxed ->
           if NativeFunctionCall.native_boxed_rc_abi?(decl, module_name, decl_map) do
             """
@@ -1521,7 +1579,18 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     {"call_args", String.to_integer(String.trim(arity_str))}
   end
 
-  defp release_call_operands(env, arg_vars, arg_passthrough, out \\ nil) do
+  defp duplicate_direct_param_owned_slot(source, env) when is_binary(source) do
+    if ValueSlots.epilogue_lifo?() and EnvBindings.direct_param_ref?(env, source) do
+      case ValueSlots.direct_param_owned_slot(source) do
+        existing when is_binary(existing) -> {:alias, existing}
+        nil -> :retain
+      end
+    else
+      :retain
+    end
+  end
+
+  defp release_call_operands(env, arg_vars, arg_passthrough, out) do
     arg_vars
     |> Enum.with_index()
     |> Enum.reject(fn {var, index} ->

@@ -206,13 +206,22 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.CommandCall do
         {"", source, [], counter}
 
       _ ->
-        {code, ref, counter} = Host.compile_expr(%{op: :var, name: name}, env, counter)
-        {code, ref, [ref], counter}
+        compile_outlined_boxed_expr(%{op: :var, name: name}, env, counter)
     end
   end
 
-  defp compile_outlined_boxed_arg(arg_expr, env, counter) do
-    {code, ref, counter} = Host.compile_expr(arg_expr, env, counter)
-    {code, ref, [ref], counter}
+  defp compile_outlined_boxed_arg(arg_expr, env, counter),
+    do: compile_outlined_boxed_expr(arg_expr, env, counter)
+
+  defp compile_outlined_boxed_expr(arg_expr, env, counter) do
+    hoisted_scope? = Process.get(:elmc_hoisted_native_ints_scope, false)
+    if hoisted_scope?, do: Process.delete(:elmc_hoisted_native_ints_scope)
+
+    try do
+      {code, ref, counter} = Host.compile_expr(arg_expr, env, counter)
+      {code, ref, [ref], counter}
+    after
+      if hoisted_scope?, do: Process.put(:elmc_hoisted_native_ints_scope, true)
+    end
   end
 end

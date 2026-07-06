@@ -187,6 +187,8 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
   def emit_int_list_cons_assign(env, out, head, tail, loop_id, opts \\ []) do
     head = val_expr(head)
     tail = val_expr(tail)
+    head_ref = "(#{head})"
+    tail_ref = "(#{tail})"
     buf = "int_list_cons_buf_#{loop_id}"
     len = "int_list_cons_tail_len_#{loop_id}"
 
@@ -235,11 +237,11 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     if ValueSlots.owned_ref?(out), do: ValueSlots.mark_written(out)
 
     """
-    #{init}if (#{tail} && #{tail}->tag == ELMC_TAG_INT_LIST && #{head} && (#{head}->tag == ELMC_TAG_INT || #{head}->tag == ELMC_TAG_CHAR)) {
-      ElmcIntListPayload *_ilp_#{loop_id} = (ElmcIntListPayload *)#{tail}->payload;
+    #{init}if (#{tail_ref} && #{tail_ref}->tag == ELMC_TAG_INT_LIST && #{head_ref} && (#{head_ref}->tag == ELMC_TAG_INT || #{head_ref}->tag == ELMC_TAG_CHAR)) {
+      ElmcIntListPayload *_ilp_#{loop_id} = (ElmcIntListPayload *)#{tail_ref}->payload;
       int #{len} = _ilp_#{loop_id} ? _ilp_#{loop_id}->length : 0;
       elmc_int_t #{buf}[1 + #{len}];
-      #{buf}[0] = elmc_as_int(#{head});
+      #{buf}[0] = elmc_as_int(#{head_ref});
       for (int _ii_#{loop_id} = 0; _ii_#{loop_id} < #{len}; _ii_#{loop_id}++) {
         #{buf}[_ii_#{loop_id} + 1] = _ilp_#{loop_id}->values[_ii_#{loop_id}];
       }
@@ -303,6 +305,7 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     append_id = Keyword.get(opts, :append_id, loop_id)
     tail = forward_tail(loop_id)
     owned? = Keyword.get(opts, :owned, false)
+    transfer_owned_head? = Keyword.get(opts, :transfer_owned_head, false)
     env = Keyword.get(opts, :env, %{})
 
     cons =
@@ -313,19 +316,31 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
         forward_cell(append_id)
       end
 
-    cons_body =
-      RcRuntimeEmit.list_cons_retain_assign(
-        cons,
-        "#{item_expr}, elmc_list_nil()",
-        env,
-        return_on_fail?: false
-      )
+    {cons_body, release_owned} =
+      if transfer_owned_head? and ValueSlots.owned_ref?(item_expr) do
+        take_body = """
+        #{cons} = elmc_list_cons_take(#{item_expr}, elmc_list_nil());
+        #{ValueSlots.transfer_and_null(item_expr)}
+        """
 
-    release_owned =
-      if owned? and owned_forward_item_expr?(item_expr) do
-        ValueSlots.release_stmt(item_expr) <> "\n        "
+        {take_body, ""}
       else
-        ""
+        retain_body =
+          RcRuntimeEmit.list_cons_retain_assign(
+            cons,
+            "#{item_expr}, elmc_list_nil()",
+            env,
+            return_on_fail?: false
+          )
+
+        release =
+          if owned? and owned_forward_item_expr?(item_expr) do
+            ValueSlots.release_stmt(item_expr) <> "\n        "
+          else
+            ""
+          end
+
+        {retain_body, release}
       end
 
     abandon_cons =
@@ -335,9 +350,11 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
         ""
       end
 
+    link_guard = "#{cons} && #{cons}->tag == ELMC_TAG_LIST && #{cons}->payload != NULL"
+
     """
         #{cons_body}
-        #{release_owned}if (#{cons}) {
+        #{release_owned}if (#{link_guard}) {
           *#{tail} = #{cons};
           #{tail} = &((ElmcCons *)#{cons}->payload)->tail;
         }
@@ -351,12 +368,24 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     head = Keyword.fetch!(opts, :head)
 
     cond do
+      RcRuntimeEmit.function_out_ref?(out_var) and ValueSlots.owned_ref?(head) ->
+        RcRuntimeEmit.transfer_assignment(out_var, head)
+
+      RcRuntimeEmit.function_out_ref?(out_var) ->
+        RcRuntimeEmit.publish_function_out_from(head)
+
       RcRuntimeEmit.rc_allocator_emit_mode?(env) and ValueSlots.owned_ref?(out_var) and
           ValueSlots.owned_ref?(head) ->
         RcRuntimeEmit.transfer_assignment(out_var, head)
 
       RcRuntimeEmit.rc_allocator_emit_mode?(env) and ValueSlots.owned_ref?(out_var) ->
         RcRuntimeEmit.assign_stmt(out_var, head)
+
+      ValueSlots.owned_ref?(head) ->
+        """
+        ElmcValue *#{out_var} = #{head};
+        #{ValueSlots.transfer_and_null(head)}
+        """
 
       true ->
         "ElmcValue *#{out_var} = #{head};\n"

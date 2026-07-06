@@ -5091,7 +5091,11 @@ defmodule Elmc.Runtime.Generator do
       ElmcValue **values = (ElmcValue **)elmc_malloc(sizeof(ElmcValue *) * old->field_count, __func__);
       if (!values) return elmc_retain(record);
       for (int i = 0; i < old->field_count; i++) {
-        values[i] = i == index ? new_value : old->field_values[i];
+        if (i == index) {
+          values[i] = new_value ? elmc_retain(new_value) : NULL;
+        } else {
+          values[i] = old->field_values[i] ? elmc_retain(old->field_values[i]) : NULL;
+        }
       }
       const char **field_names = elmc_record_field_names(record);
       ElmcValue *result = NULL;
@@ -6733,7 +6737,7 @@ defmodule Elmc.Runtime.Generator do
         } else {
           ElmcResult *r = (ElmcResult *)result->payload;
           if (!r->is_ok) {
-            *out = elmc_retain(result);
+            *out = result;
           } else {
             ElmcValue *args[1] = { r->value };
             rc = elmc_closure_call_rc(&mapped, f, args, 1);
@@ -6753,11 +6757,11 @@ defmodule Elmc.Runtime.Generator do
       ElmcValue *mapped = NULL;
       CATCH_BEGIN
         if (!result || result->tag != ELMC_TAG_RESULT || !result->payload) {
-          *out = elmc_retain(result);
+          *out = result;
         } else {
           ElmcResult *r = (ElmcResult *)result->payload;
           if (r->is_ok) {
-            *out = elmc_retain(result);
+            *out = result;
           } else {
             ElmcValue *args[1] = { r->value };
             rc = elmc_closure_call_rc(&mapped, f, args, 1);
@@ -6783,7 +6787,7 @@ defmodule Elmc.Runtime.Generator do
         } else {
           ElmcResult *r = (ElmcResult *)result->payload;
           if (!r->is_ok) {
-            *out = elmc_retain(result);
+            *out = result;
           } else {
             ElmcValue *args[1] = { r->value };
             rc = elmc_closure_call_rc(out, f, args, 1);

@@ -74,7 +74,7 @@ defmodule Elmc.ConstructorTagCaseFnOutTest do
       |> then(fn rest -> rest |> String.split("case ") |> hd() end)
 
     assert hour_changed =~ "Rc = elmc_cmd1(&owned["
-    assert hour_changed =~ "Rc = elmc_fn_Main_scheduleCompanionFetches(out,"
+    assert hour_changed =~ ~r/Rc = elmc_fn_Main_scheduleCompanionFetches\((?:out|&owned\[\d+\])/
     refute hour_changed =~ "elmc_release(owned["
 
     minute_changed =
@@ -84,7 +84,7 @@ defmodule Elmc.ConstructorTagCaseFnOutTest do
       |> then(fn rest -> rest |> String.split("case ") |> hd() end)
 
     refute minute_changed =~ ~r/owned\[0\] = owned\[\d+\];\n\s*owned\[0\] = owned\[\d+\];/
-    assert minute_changed =~ "Rc = elmc_fn_Main_scheduleCompanionFetches(&owned["
+    assert minute_changed =~ ~r/Rc = elmc_fn_Main_scheduleCompanionFetches\(&owned\[\d+\],/
     assert minute_changed =~ "*out = owned["
 
     subs_body = CCodegenExtract.fn_body(generated, "elmc_fn_Main_subscriptions")

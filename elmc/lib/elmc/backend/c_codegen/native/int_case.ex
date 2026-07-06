@@ -230,34 +230,34 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
 
   defp compile_boxed_lookup_table(subject_expr, branches, env, counter) do
     {literal_entries, size, int_count, has_wildcard?} = lookup_table_boxed_entries(branches)
+    {out, out_counter, declare_out?} = CaseCompile.result_out_binding(env, counter)
+
     refs =
       Enum.map(literal_entries, fn expr ->
         {:ok, ref} = lookup_table_branch_ref(expr, env)
         ref
       end)
+
     case_expr = %{op: :case, subject: subject_expr, branches: branches}
+    out_decl_prefix = if declare_out?, do: CaseCompile.result_out_decl(out, true) <> "\n  ", else: ""
 
     case ConstantInt.literal_value(case_expr, env) do
       {:ok, subject_value} ->
         index = bounded_lookup_index_value(subject_value, int_count, has_wildcard?)
         ref = Enum.at(refs, index)
-        next = counter + 1
-        out = "tmp_#{next}"
+        next = max(out_counter, counter + 1)
 
-        code =
-          """
-            ElmcValue *#{out} = NULL;
-            #{RcRuntimeEmit.assign_into(RcRuntimeEmit.rc_catch_env(env), out, "elmc_new_int", ref)}
-          """
+        code = """
+          #{out_decl_prefix}#{RcRuntimeEmit.assign_into(RcRuntimeEmit.rc_catch_env(env), out, "elmc_new_int", ref)}
+        """
 
         {code, out, next}
 
       :error ->
         {subject_code, subject_ref, counter} = NativeInt.compile_expr(subject_expr, env, counter)
-        next = counter + 1
+        next = max(out_counter, counter) + 1
         lut = "native_lut_#{next}"
         scratch = "native_case_#{next}"
-        out = "tmp_#{next}"
         values = format_lut_initializer(refs)
         index = bounded_lookup_index(subject_ref, int_count, has_wildcard?)
 
@@ -265,8 +265,7 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
         #{subject_code}
           #{lut_array_decl(lut, size, values)}
           elmc_int_t #{scratch} = #{lut}[#{index}];
-          ElmcValue *#{out} = NULL;
-          #{RcRuntimeEmit.assign_into(RcRuntimeEmit.rc_catch_env(env), out, "elmc_new_int", scratch)}
+          #{out_decl_prefix}#{RcRuntimeEmit.assign_into(RcRuntimeEmit.rc_catch_env(env), out, "elmc_new_int", scratch)}
         """
 
         {code, out, next}

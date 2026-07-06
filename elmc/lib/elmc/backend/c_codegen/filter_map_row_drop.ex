@@ -10,7 +10,9 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
   alias Elmc.Backend.CCodegen.Util
 
   @spec try_emit(String.t(), String.t(), map() | nil, map()) ::
-          {:ok, String.t(), [FusionSupport.callee_key()]} | :error
+          {:ok, String.t(), [FusionSupport.callee_key()]}
+          | {:ok, String.t(), [FusionSupport.callee_key()], :rc_native}
+          | :error
   def try_emit(_module_name, _name, nil, _decl_map), do: :error
 
   def try_emit(module_name, name, expr, decl_map) do
@@ -20,7 +22,7 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
          true <- row_full_matches?(decl_map, module_name, row_full, row_cells),
          {:ok, cell_reader} <- row_cells_matches?(decl_map, module_name, row_cells, cols_var),
          true <- FusionSupport.flat_list_cell_reader?(decl_map, module_name, cell_reader, cols_var) do
-      FusionSupport.ok(
+      FusionSupport.ok_rc(
         emit(module_name, name, rows, cols),
         [
           {module_name, FusionSupport.local_name(row_full)},
@@ -235,78 +237,86 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
 
   defp emit(module_name, name, rows, cols) do
     c_prefix = Util.module_fn_name(module_name, name)
+    bail = &RcRuntimeEmit.fusion_tuple2_take_int_out("out", &1, "cleared")
 
     """
-    static ElmcValue *#{c_prefix}_native(ElmcValue *board) {
-      const elmc_int_t rows = #{rows};
-      const elmc_int_t cols = #{cols};
-      elmc_int_t cleared = 0;
-      for (elmc_int_t row = 0; row < rows; row++) {
-        bool row_full = true;
-        for (elmc_int_t col = 0; col < cols; col++) {
-          if (elmc_list_nth_int_default(board, (row * cols) + col, 0) == 0) {
-            row_full = false;
-            break;
-          }
-        }
-        if (row_full) cleared++;
-      }
-      if (cleared == 0) {
-        #{RcRuntimeEmit.fusion_tuple2_take_int_return("tmp_ret", "elmc_retain(board)", "0")}
-      }
-      ElmcValue *out = NULL;
-      ElmcValue **tail_slot = NULL;
-      for (elmc_int_t z = 0; z < (cleared * cols); z++) {
-        ElmcValue *cell = NULL;
-        if (elmc_list_cons(&cell, elmc_int_zero(), elmc_list_nil()) != RC_SUCCESS) cell = elmc_list_nil();
-        if (!cell) {
-          elmc_release(out);
-          #{RcRuntimeEmit.fusion_tuple2_take_int_return("tmp_ret", "elmc_list_nil()", "cleared")}
-        }
-        if (tail_slot) {
-          elmc_release(*tail_slot);
-          *tail_slot = cell;
-        } else {
-          out = cell;
-        }
-        tail_slot = &((ElmcCons *)cell->payload)->tail;
-      }
-      for (elmc_int_t row = 0; row < rows; row++) {
-        bool row_full = true;
-        for (elmc_int_t col = 0; col < cols; col++) {
-          if (elmc_list_nth_int_default(board, (row * cols) + col, 0) == 0) {
-            row_full = false;
-            break;
-          }
-        }
-        if (!row_full) {
+    static RC #{c_prefix}_native(ElmcValue **out, ElmcValue *board) {
+      RC Rc = RC_SUCCESS;
+      ElmcValue *owned[1] = {0};
+      CATCH_BEGIN
+        const elmc_int_t rows = #{rows};
+        const elmc_int_t cols = #{cols};
+        elmc_int_t cleared = 0;
+        for (elmc_int_t row = 0; row < rows; row++) {
+          bool row_full = true;
           for (elmc_int_t col = 0; col < cols; col++) {
-            const elmc_int_t cell_value = elmc_list_nth_int_default(board, (row * cols) + col, 0);
-            ElmcValue *head = NULL;
-            if (elmc_new_int(&head, cell_value) != RC_SUCCESS) head = elmc_int_zero();
-            if (!head) {
-              elmc_release(out);
-              #{RcRuntimeEmit.fusion_tuple2_take_int_return("tmp_ret", "elmc_list_nil()", "cleared")}
+            if (elmc_list_nth_int_default(board, (row * cols) + col, 0) == 0) {
+              row_full = false;
+              break;
             }
+          }
+          if (row_full) cleared++;
+        }
+        if (cleared == 0) {
+          #{RcRuntimeEmit.fusion_tuple2_take_int_out("out", "elmc_retain(board)", "0")}
+        } else {
+          ElmcValue *built = NULL;
+          ElmcValue **tail_slot = NULL;
+          for (elmc_int_t z = 0; z < (cleared * cols); z++) {
             ElmcValue *cell = NULL;
-            if (elmc_list_cons(&cell, head, elmc_list_nil()) != RC_SUCCESS) cell = elmc_list_nil();
-            elmc_release(head);
+            if (elmc_list_cons(&cell, elmc_int_zero(), elmc_list_nil()) != RC_SUCCESS) cell = elmc_list_nil();
             if (!cell) {
-              elmc_release(out);
-              #{RcRuntimeEmit.fusion_tuple2_take_int_return("tmp_ret", "elmc_list_nil()", "cleared")}
+              elmc_release(built);
+              #{bail.("elmc_list_nil()")}
             }
             if (tail_slot) {
               elmc_release(*tail_slot);
               *tail_slot = cell;
             } else {
-              out = cell;
+              built = cell;
             }
             tail_slot = &((ElmcCons *)cell->payload)->tail;
           }
+          for (elmc_int_t row = 0; row < rows; row++) {
+            bool row_full = true;
+            for (elmc_int_t col = 0; col < cols; col++) {
+              if (elmc_list_nth_int_default(board, (row * cols) + col, 0) == 0) {
+                row_full = false;
+                break;
+              }
+            }
+            if (!row_full) {
+              for (elmc_int_t col = 0; col < cols; col++) {
+                const elmc_int_t cell_value = elmc_list_nth_int_default(board, (row * cols) + col, 0);
+                ElmcValue *head = NULL;
+                if (elmc_new_int(&head, cell_value) != RC_SUCCESS) head = elmc_int_zero();
+                if (!head) {
+                  elmc_release(built);
+                  #{bail.("elmc_list_nil()")}
+                }
+                ElmcValue *cell = NULL;
+                if (elmc_list_cons(&cell, head, elmc_list_nil()) != RC_SUCCESS) cell = elmc_list_nil();
+                elmc_release(head);
+                if (!cell) {
+                  elmc_release(built);
+                  #{bail.("elmc_list_nil()")}
+                }
+                if (tail_slot) {
+                  elmc_release(*tail_slot);
+                  *tail_slot = cell;
+                } else {
+                  built = cell;
+                }
+                tail_slot = &((ElmcCons *)cell->payload)->tail;
+              }
+            }
+          }
+          if (!built) built = elmc_list_nil();
+          #{RcRuntimeEmit.fusion_tuple2_take_int_out("out", "built", "cleared")}
         }
-      }
-      if (!out) out = elmc_list_nil();
-      #{RcRuntimeEmit.fusion_tuple2_take_int_return("tmp_ret", "out", "cleared")}
+      CATCH_END;
+      elmc_release_array_lifo(owned, DIM(owned));
+      return Rc;
     }
     """
   end

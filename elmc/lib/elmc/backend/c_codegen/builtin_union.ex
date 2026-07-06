@@ -1,7 +1,6 @@
 defmodule Elmc.Backend.CCodegen.BuiltinUnion do
   @moduledoc false
 
-  alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Types
@@ -84,12 +83,17 @@ defmodule Elmc.Backend.CCodegen.BuiltinUnion do
           payload_var == out ->
             ""
 
+          ValueSlots.owned_ref?(payload_var) and short in [@result_ok, @result_err] ->
+            ValueSlots.release_owned_eager(payload_var)
+
           ValueSlots.owned_ref?(payload_var) ->
             ValueSlots.abandon_stmt(payload_var)
 
           true ->
             ValueSlots.release_stmt(payload_var)
         end
+
+      out = ValueSlots.resolve_result_slot(out)
 
       code = """
       #{payload_code}
@@ -106,34 +110,11 @@ defmodule Elmc.Backend.CCodegen.BuiltinUnion do
   def try_compile_tuple2(_expr, _env, _counter), do: :error
 
   defp union_out_target(env, counter) do
-    branch_out = Map.get(env, :__branch_out__) || RcRuntimeEmit.nested_out_target(env)
-
-    cond do
-      out = RcRuntimeEmit.fn_out_alloc_target(env) ->
-        {out, counter, false}
-
-      is_binary(branch_out) ->
-        if RcRuntimeEmit.function_out_ref?(branch_out) do
-          fresh_union_out_target(env, counter)
-        else
-          {branch_out, counter, false}
-        end
-
-      RcRuntimeEmit.rc_allocator_emit_mode?(env) ->
-        fresh_union_out_target(env, counter)
-
-      true ->
-        next = counter + 1
-        {"tmp_#{next}", next, true}
-    end
-  end
-
-  defp fresh_union_out_target(env, counter) do
-    {out, next} = CaseCompile.fresh_var(counter, env)
+    {out, counter} = RcRuntimeEmit.compile_result_slot(env, counter)
 
     declare? =
       not ValueSlots.owned_ref?(out) and not RcRuntimeEmit.function_out_ref?(out)
 
-    {out, next, declare?}
+    {out, counter, declare?}
   end
 end

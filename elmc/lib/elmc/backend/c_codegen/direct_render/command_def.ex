@@ -106,6 +106,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
         end
       )
       |> Host.put_typed_arg_bindings(c_arg_bindings, decl.type)
+      |> EnvBindings.put_direct_param_refs(c_arg_bindings)
       |> Map.put(:__rc_catch__, true)
       |> Map.put(:__rc_required__, true)
 
@@ -212,6 +213,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
         end
       )
       |> Host.put_typed_arg_bindings(c_arg_bindings, decl.type)
+      |> EnvBindings.put_direct_param_refs(c_arg_bindings)
       |> Map.put(:__rc_catch__, true)
       |> Map.put(:__rc_required__, true)
 
