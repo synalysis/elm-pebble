@@ -32,7 +32,7 @@ defmodule Elmc.Backend.CCodegen.ProjectWriter do
 
     with :ok <- File.mkdir_p(c_dir),
          :ok <- PerModuleArtifacts.write_headers(ir, c_dir),
-         :ok <- PerModuleArtifacts.write_sources(ir, c_dir),
+         :ok <- PerModuleArtifacts.write_sources(ir, c_dir, opts),
          :ok <- File.write(Path.join(c_dir, "elmc_generated.h"), GeneratedSource.header(ir, opts)),
          generated_source <- GeneratedSource.source(ir, opts),
          :ok <- File.write(Path.join(c_dir, "elmc_generated.c"), generated_source),

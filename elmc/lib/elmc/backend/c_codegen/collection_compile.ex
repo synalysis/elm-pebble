@@ -74,7 +74,8 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
   end
 
   def compile(%{op: :string_length_expr, arg: arg_expr}, env, counter) do
-    {arg_code, arg_var, counter} = Host.compile_expr(arg_expr, env, counter)
+    child_env = RcRuntimeEmit.strip_function_tail_scope(env)
+    {arg_code, arg_var, counter} = Host.compile_expr(arg_expr, child_env, counter)
     {var, next} = CaseCompile.fresh_var(counter, env)
 
     alloc_code =
@@ -101,7 +102,8 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
   end
 
   def compile(%{op: :char_from_code_expr, arg: arg_expr}, env, counter) do
-    {arg_code, arg_var, counter} = Host.compile_expr(arg_expr, env, counter)
+    child_env = RcRuntimeEmit.strip_function_tail_scope(env)
+    {arg_code, arg_var, counter} = Host.compile_expr(arg_expr, child_env, counter)
     {var, next} = CaseCompile.fresh_var(counter, env)
 
     code = """
@@ -120,7 +122,14 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
     if tuple2_native_int_operands?(left, right, env) do
       {left_code, left_ref, counter} = Host.compile_native_int_expr(left, child_env, counter)
       {right_code, right_ref, counter} = Host.compile_native_int_expr(right, child_env, counter)
-      {out, next, _} = CaseCompile.result_out_binding(env, counter)
+
+      {out, next, _declare?} =
+        if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
+          {slot, c} = RcRuntimeEmit.compile_result_slot(child_env, counter)
+          {slot, c, false}
+        else
+          CaseCompile.result_out_binding(env, counter)
+        end
 
       code = """
       #{left_code}
@@ -128,6 +137,7 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
       #{RcRuntimeEmit.assign_call(env, out, "elmc_tuple2_ints", "#{left_ref}, #{right_ref}")}
       """
 
+      if RcRuntimeEmit.rc_allocator_emit_mode?(env), do: ValueSlots.track(out)
       {code, out, next}
     else
       left_env = Map.put(child_env, :__transfer_operand__, true)
@@ -558,7 +568,8 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
           Types.compile_counter()
         ) :: Types.compile_result()
   defp compile_expr_tuple_access(arg_expr, c_fn, env, counter) do
-    {arg_code, arg_var, counter} = Host.compile_expr(arg_expr, env, counter)
+    child_env = RcRuntimeEmit.strip_function_tail_scope(env)
+    {arg_code, arg_var, counter} = Host.compile_expr(arg_expr, child_env, counter)
     {var, next} = CaseCompile.fresh_var(counter, env)
 
     arg_cleanup =
@@ -567,7 +578,7 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
           ValueSlots.abandon_stmt(arg_var)
 
         ValueSlots.owned_ref?(arg_var) ->
-          ""
+          ValueSlots.release_owned_and_null(arg_var)
 
         true ->
           ValueSlots.release_stmt(arg_var)

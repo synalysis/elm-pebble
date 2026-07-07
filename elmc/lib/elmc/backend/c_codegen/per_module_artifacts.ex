@@ -4,6 +4,7 @@ defmodule Elmc.Backend.CCodegen.PerModuleArtifacts do
   alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.Emit
   alias Elmc.Backend.CCodegen.FunctionEmit
+  alias Elmc.Backend.CCodegen.GeneratedSource
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
 
@@ -21,17 +22,23 @@ defmodule Elmc.Backend.CCodegen.PerModuleArtifacts do
     end)
   end
 
-  @spec write_sources(ElmEx.IR.t(), String.t()) :: :ok | {:error, Types.file_error()}
-  def write_sources(ir, c_dir) do
-    Enum.reduce_while(ir.modules, :ok, fn mod, :ok ->
-      safe_name = mod.name |> String.replace(".", "_")
-      filename = "elmc_#{safe_name}.c"
-      content = module_source(mod)
+  @spec write_sources(ElmEx.IR.t(), String.t(), Types.codegen_opts()) ::
+          :ok | {:error, Types.file_error()}
+  def write_sources(ir, c_dir, opts \\ %{}) do
+    GeneratedSource.with_emit_session(ir, opts, fn ->
+      function_arities = Process.get(:elmc_function_arities, %{})
+      decl_map = Process.get(:elmc_program_decls, %{})
 
-      case File.write(Path.join(c_dir, filename), content) do
-        :ok -> {:cont, :ok}
-        error -> {:halt, error}
-      end
+      Enum.reduce_while(ir.modules, :ok, fn mod, :ok ->
+        safe_name = mod.name |> String.replace(".", "_")
+        filename = "elmc_#{safe_name}.c"
+        content = module_source(mod, function_arities, decl_map, opts)
+
+        case File.write(Path.join(c_dir, filename), content) do
+          :ok -> {:cont, :ok}
+          error -> {:halt, error}
+        end
+      end)
     end)
   end
 
@@ -90,8 +97,13 @@ defmodule Elmc.Backend.CCodegen.PerModuleArtifacts do
     """
   end
 
-  @spec module_source(ElmEx.IR.Module.t()) :: String.t()
-  defp module_source(mod) do
+  @spec module_source(
+          ElmEx.IR.Module.t(),
+          %{optional({String.t(), String.t()}) => non_neg_integer()},
+          Types.function_decl_map(),
+          Types.codegen_opts()
+        ) :: String.t()
+  defp module_source(mod, function_arities, decl_map, opts) do
     safe_name = mod.name |> String.replace(".", "_")
 
     function_defs =
@@ -99,7 +111,9 @@ defmodule Elmc.Backend.CCodegen.PerModuleArtifacts do
       |> Enum.filter(&(&1.kind == :function))
       |> Enum.map(fn decl ->
         c_name = Util.module_fn_name(mod.name, decl.name)
-        {prelude, body} = FunctionEmit.emit_body(decl, mod.name)
+
+        {prelude, body} =
+          FunctionEmit.emit_body(decl, mod.name, function_arities, decl_map, false)
 
         """
         #{prelude}#{if prelude == "", do: "", else: "\n"}
@@ -115,7 +129,7 @@ defmodule Elmc.Backend.CCodegen.PerModuleArtifacts do
     #include "elmc_#{safe_name}.h"
     #include "elmc_generated.h"
 
-    #{Emit.pebble_debug_probe_prelude(Process.get(:elmc_codegen_opts, %{}))}
+    #{Emit.pebble_debug_probe_prelude(opts)}
 
     #{function_defs}
     """

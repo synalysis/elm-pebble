@@ -77,14 +77,16 @@ defmodule Elmc.GoldenSnapshotTest do
     assert String.contains?(generated, "elmc_maybe_with_default")
     assert String.contains?(generated, "elmc_tuple_second")
     assert String.contains?(generated, "elmc_tuple_first")
+    assert String.contains?(generated, "elmc_tuple_second_borrow")
+    assert String.contains?(generated, "elmc_tuple_first_borrow")
     assert String.contains?(generated, "elmc_string_length")
     assert String.contains?(generated, "ELMC_TAG_RESULT")
     assert String.contains?(generated, "ELMC_TAG_TUPLE2")
-    assert String.contains?(generated, "((ElmcTuple2 *)pair->payload)->first")
+    assert String.contains?(generated, "elmc_tuple_first_borrow(pair)")
 
     assert String.contains?(
              generated,
-             "((ElmcTuple2 *)((ElmcTuple2 *)value->payload)->first->payload)->first"
+             "elmc_tuple_first_borrow(elmc_tuple_first_borrow(value))"
            )
 
     refute String.contains?(generated, "elmc_result_inc_or_zero")
@@ -93,12 +95,12 @@ defmodule Elmc.GoldenSnapshotTest do
 
     assert String.contains?(
              generated,
-             "((ElmcResult *)((ElmcTuple2 *)value->payload)->first->payload)->value"
+             "((ElmcResult *)elmc_tuple_first_borrow(value)->payload)->value"
            )
 
     assert String.contains?(
              generated,
-             "elmc_maybe_or_tuple_just_payload_borrow(((ElmcTuple2 *)pair->payload)->second)"
+             "elmc_maybe_or_tuple_just_payload_borrow(elmc_tuple_second_borrow(pair))"
            )
 
     assert String.contains?(generated, "switch (case_msg_tag_")

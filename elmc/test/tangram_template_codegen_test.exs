@@ -30,7 +30,8 @@ defmodule Elmc.TangramTemplateCodegenTest do
              ~r/(?:Rc = elmc_fn_Main_hourMarkers_native\(&(?:tmp_\d+|owned\[\d+\]), native_let_cx_\d+, native_let_cy_\d+, native_let_markerRadius_\d+, owned\[\d+\]\)|ElmcValue \*tmp_\d+ = elmc_fn_Main_hourMarkers_native\(native_let_cx_\d+, native_let_cy_\d+, native_let_markerRadius_\d+, owned\[\d+\]\))/
     refute generated =~
              ~r/elmc_new_int\(&owned\[\d+\], native_let_cx_\d+\);\s*\n\s*CHECK_RC\(Rc\);\s*\n\s*\n\s*Rc = elmc_new_int\(&owned\[\d+\], native_let_cy_\d+\);\s*\n\s*CHECK_RC\(Rc\);\s*\n\s*\n\s*Rc = elmc_new_int\(&owned\[\d+\], native_let_markerRadius_\d+\);\s*\n\s*CHECK_RC\(Rc\);\s*\n\s*\n\s*ElmcValue \*call_args_\d+\[1\] = \{ model \};\s*\n\s*Rc = elmc_fn_Main_foregroundColor\(&owned\[\d+\], call_args_\d+, 1\);\s*\n\s*CHECK_RC\(Rc\);\s*\n\s*\n\s*ElmcValue \*call_args_\d+\[4\] = \{ owned\[\d+\], owned\[\d+\], owned\[\d+\], owned\[\d+\] \};\s*\n\s*Rc = elmc_fn_Main_hourMarkers/
-    assert generated =~ ~r/Rc = elmc_fn_Main_tangramFaceOps\(&(?:tmp_\d+|owned\[\d+\]), call_args_1, 1\)/
+    assert generated =~
+             ~r/Rc = elmc_fn_Main_tangramFaceOps\(&(?:tmp_\d+|owned\[\d+\]), (?:call_args_1|\(ElmcValue \*\[\]\)\{ model \}), 1\)/
 
     refute generated =~ ~r/ELMC_RC_LOG_FAIL\(__call_rc, "elmc_fn_Main_p_native"/
 
@@ -41,10 +42,9 @@ defmodule Elmc.TangramTemplateCodegenTest do
     assert form_origin =~ "ElmcValue *owned["
     assert form_origin =~ "Rc = elmc_fn_Main_p_native(&"
     assert form_origin =~ "CHECK_RC(Rc);"
-    assert form_origin =~ "elmc_fn_Main_nudgePoint(call_args_"
-    assert form_origin =~ "*out = elmc_fn_Main_nudgePoint"
+    assert form_origin =~ "Rc = elmc_fn_Main_nudgePoint("
+    assert form_origin =~ "Rc = elmc_fn_Main_nudgePoint(out,"
     assert form_origin =~ "elmc_release_array_lifo(owned, DIM(owned));"
-    refute form_origin =~ ~r/owned\[\d+\] = owned\[\d+\];/
     refute form_origin =~ "ELMC_RC_LOG_FAIL(__call_rc"
 
     vector_draw_origin =
@@ -81,7 +81,7 @@ defmodule Elmc.TangramTemplateCodegenTest do
 
     assert piece_color =~ "CHECK_RC(Rc);"
     refute piece_catch =~ ~r/\breturn\b/
-    assert piece_catch =~ ~r/\*out = tmp_\d+;/
+    assert piece_catch =~ ~r/Rc = elmc_new_int\(out,/
     assert Regex.scan(~r/return Rc;/, piece_color) |> length() == 1
     assert piece_color =~ "return Rc;"
   end

@@ -4817,7 +4817,7 @@ defmodule Elmc.CCodegenPatternsTest do
            "first constructor field must not bind union tag (->first)"
 
     assert fn_body =~
-             "((ElmcTuple2 *)((ElmcTuple2 *)message->payload)->second->payload)->first",
+             ~r/elmc_tuple_first_borrow\(elmc_tuple_second_borrow\(\(\(ElmcTuple2 \*\)message->payload\)->second\)\)/,
            "first constructor field must bind from union payload tuple"
   end
 
@@ -5733,6 +5733,34 @@ defmodule Elmc.CCodegenPatternsTest do
     refute show_corners_native =~ "elmc_value_equal"
     assert show_corners_native =~ "ELMC_TAG_MAYBE"
     assert show_corners_native =~ "is_just"
+  end
+
+  test "RC tail-recursive loop transfers owned base result before epilogue release" do
+    source = """
+    module Main exposing (main)
+
+    buildList : Int -> List Int -> List Int
+    buildList n acc =
+        if n <= 0 then
+            acc
+        else
+            buildList (n - 1) (n :: acc)
+
+    main : Int
+    main =
+        List.length (buildList 100 [])
+    """
+
+    generated_c = compile_generated_c!("rc_tail_rec_owned_base", source, %{})
+
+    build_list_fn =
+      CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_buildList")
+
+    assert build_list_fn =~ "tail_result = owned["
+    assert build_list_fn =~ "owned[0] = NULL;"
+    assert build_list_fn =~ "acc_loop = owned["
+    assert build_list_fn =~ ~r/acc_loop = owned\[\d+\];\n\s+owned\[\d+\] = NULL;/
+    refute build_list_fn =~ "tail_result = owned[0];\n        break;"
   end
 
   test "tail-recursive qualified self calls emit loop instead of broken native inline" do

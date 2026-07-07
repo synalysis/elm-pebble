@@ -27,4 +27,15 @@ defmodule OwnershipTransferTest do
     assert MapSet.member?(skip, "model")
     assert MapSet.member?(skip, "tmp_12")
   end
+
+  test "transferred_in_c_source detects passthrough closure call operands" do
+    body = """
+    ElmcValue *call_args_7[1] = { tmp_1 };
+    ElmcValue *tmp_7 = elmc_closure_call(decorate, call_args_7, 1);
+    elmc_release(tmp_1);
+    """
+
+    assert OwnershipTransfer.transferred_in_c_source?("tmp_1", body)
+    refute OwnershipTransfer.transferred_in_c_source?("tmp_7", body)
+  end
 end

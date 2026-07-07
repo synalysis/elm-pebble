@@ -658,6 +658,9 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
           current_release =
             cond do
+              current == base_var and field_index < field_count - 1 ->
+                ""
+
               current_unique? or borrowed_record_operand? ->
                 ""
 
@@ -1840,7 +1843,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
       {var, next} =
         cond do
           RcRuntimeEmit.rc_allocator_emit_mode?(env) and ValueSlots.owned_ref?(branch_out) ->
-            {branch_out, counter}
+            {ValueSlots.ensure_fresh_assign_target(branch_out), counter}
 
           RcRuntimeEmit.rc_allocator_emit_mode?(env) ->
             CaseCompile.fresh_var(counter, env)
@@ -1852,15 +1855,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
       getter = record_field_get_expr(arg_var, field, arg_expr, env)
       :ok = Expr.put_subexpr_record_meta(var, subexpr_record_meta_for_field_access(env, arg_expr, field))
 
-      field_assign =
-        if ValueSlots.owned_ref?(var) do
-          "#{var} = #{getter};"
-        else
-          "ElmcValue *#{var} = #{getter};"
-        end
-
       code = """
-      #{arg_code}  #{field_assign}
+      #{arg_code}  #{ValueSlots.boxed_decl(var, getter, env)}
       #{release_line}
       """
 

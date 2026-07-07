@@ -49,7 +49,7 @@ defmodule Elmc.RuntimeStdlibGapsTest do
       static ElmcValue *compare_ints(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
         (void)captures; (void)capture_count;
         if (argc < 2) return elmc_int_zero();
-        return elmc_basics_compare(args[0], args[1]);
+        return elmc_basics_compare_take(args[0], args[1]);
       }
 
       int main(void) {

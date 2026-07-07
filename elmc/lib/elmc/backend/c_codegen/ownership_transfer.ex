@@ -82,10 +82,20 @@ defmodule Elmc.Backend.CCodegen.OwnershipTransfer do
         body
       ) or
       Regex.match?(~r/elmc_list_cons(?:_take)?\s*\(\s*#{escaped}\s*,/, body) or
-      Regex.match?(~r/elmc_cmd_batch\s*\(\s*#{escaped}\s*\)/, body)
+      Regex.match?(~r/elmc_cmd_batch\s*\(\s*#{escaped}\s*\)/, body) or
+      closure_passthrough_arg?(escaped, body)
   end
 
   def transferred_in_c_source?(_var, _body), do: false
+
+  # Non-RC closure calls pass let-bound operands by pointer (passthrough). The callee
+  # may release them (for example append on a lambda parameter); skip let epilogue release.
+  defp closure_passthrough_arg?(escaped, body) do
+    Regex.match?(
+      ~r/(?:call_args|apply_args|pipe_args|direct_call_args)_\d+\[[^\]]*\]\s*=\s*\{[^}]*\b#{escaped}\b[^}]*\}[\s\S]*?elmc_closure_call\s*\(/,
+      body
+    )
+  end
 
   @doc """
   RHS temporaries assigned into a case/switch merge slot (`out = rhs`).

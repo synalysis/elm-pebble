@@ -169,6 +169,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.ListLoopPlans do
     end
   end
 
+  defp analyze_map(_args, _env), do: :error
+
   defp analyze_filter([pred, list], env) do
     with {:ok, [base | _] = plans} <- analyze_resolved(list, env),
          true <- length(plans) == 1,
@@ -179,6 +181,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.ListLoopPlans do
       _ -> :error
     end
   end
+
+  defp analyze_filter(_args, _env), do: :error
 
   defp analyze_range([first, last]) do
     range = %{op: :qualified_call, target: "List.range", args: [first, last]}

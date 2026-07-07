@@ -190,10 +190,24 @@ defmodule Elmc.Backend.Worker do
       elmc_int_t msg_tag;
     } ElmcButtonRawSub;
 
+    #define ELMC_WORKER_LAST_DISPATCH_CMD_CAP 8
+
+    typedef struct {
+      int64_t kind;
+      int64_t p0;
+      int64_t p1;
+      int64_t p2;
+      int64_t p3;
+      int64_t p4;
+      int64_t p5;
+      char text[128];
+    } ElmcWorkerDispatchCmd;
+
     typedef struct {
       ElmcValue *model;
       ElmcValue *pending_cmd;
-      ElmcValue *last_dispatch_cmd;
+      ElmcWorkerDispatchCmd last_dispatch_cmds[ELMC_WORKER_LAST_DISPATCH_CMD_CAP];
+      int last_dispatch_cmd_count;
       int64_t subscriptions;
       elmc_int_t sub_msg_tags[ELMC_WORKER_SUB_TAG_SLOTS];
       ElmcButtonRawSub button_raw_subs[ELMC_WORKER_MAX_BUTTON_RAW_SUBS];
@@ -206,7 +220,8 @@ defmodule Elmc.Backend.Worker do
     int elmc_worker_dispatch_needs_render(ElmcWorkerState *state);
     ElmcValue *elmc_worker_model(ElmcWorkerState *state);
     ElmcValue *elmc_worker_pending_cmds_borrow(ElmcWorkerState *state);
-    ElmcValue *elmc_worker_last_dispatch_cmd_borrow(ElmcWorkerState *state);
+    int elmc_worker_last_dispatch_cmd_count(ElmcWorkerState *state);
+    int elmc_worker_last_dispatch_cmd_at(ElmcWorkerState *state, int index, ElmcWorkerDispatchCmd *out_cmd);
     ElmcValue *elmc_worker_take_cmd(ElmcWorkerState *state);
     int64_t elmc_worker_subscriptions(ElmcWorkerState *state);
     elmc_int_t elmc_worker_sub_msg_tag(ElmcWorkerState *state, int64_t flag);
@@ -328,6 +343,7 @@ defmodule Elmc.Backend.Worker do
 
     """
     #include "elmc_worker.h"
+    #include <string.h>
     #if defined(__has_include)
     #if __has_include("../../elmc_emulator_build_flags.h")
     #include "../../elmc_emulator_build_flags.h"
@@ -387,6 +403,70 @@ defmodule Elmc.Backend.Worker do
 
     static ElmcValue *elmc_cmd_none(void) {
       return elmc_int_zero();
+    }
+
+    static void elmc_worker_dispatch_cmd_clear(ElmcWorkerDispatchCmd *out) {
+      if (!out) return;
+      out->kind = 0;
+      out->p0 = 0;
+      out->p1 = 0;
+      out->p2 = 0;
+      out->p3 = 0;
+      out->p4 = 0;
+      out->p5 = 0;
+      out->text[0] = '\\0';
+    }
+
+    static int elmc_worker_dispatch_cmd_from_value(ElmcValue *value, ElmcWorkerDispatchCmd *out_cmd) {
+      if (!out_cmd) return -1;
+      elmc_worker_dispatch_cmd_clear(out_cmd);
+      if (!value) return -2;
+      if (value->tag == ELMC_TAG_INT || value->tag == ELMC_TAG_BOOL) {
+        out_cmd->kind = elmc_as_int(value);
+        return 0;
+      }
+      if (value->tag == ELMC_TAG_CMD && value->payload != NULL) {
+        ElmcCmdPayload *cmd = (ElmcCmdPayload *)value->payload;
+        out_cmd->kind = cmd->kind;
+        if (cmd->arity > 0) out_cmd->p0 = cmd->p0;
+        if (cmd->arity > 1) out_cmd->p1 = cmd->p1;
+        if (cmd->arity > 2) out_cmd->p2 = cmd->p2;
+        if (cmd->arity > 3) out_cmd->p3 = cmd->p3;
+        if (cmd->arity > 4) out_cmd->p4 = cmd->p4;
+        if (cmd->arity > 5) out_cmd->p5 = cmd->p5;
+        if (cmd->text && cmd->text->tag == ELMC_TAG_STRING && cmd->text->payload) {
+          strncpy(out_cmd->text, (const char *)cmd->text->payload, sizeof(out_cmd->text) - 1);
+          out_cmd->text[sizeof(out_cmd->text) - 1] = '\\0';
+        }
+        return 0;
+      }
+      return -3;
+    }
+
+    static void elmc_worker_snapshot_last_dispatch_cmds(ElmcWorkerState *state, ElmcValue *queue) {
+      if (!state) return;
+      state->last_dispatch_cmd_count = 0;
+      if (!queue || elmc_cmd_is_none(queue)) return;
+
+      ElmcValue *cursor = queue;
+      while (cursor && state->last_dispatch_cmd_count < ELMC_WORKER_LAST_DISPATCH_CMD_CAP) {
+        if (cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
+          ElmcCons *node = (ElmcCons *)cursor->payload;
+          if (node->head && !elmc_cmd_is_none(node->head)) {
+            if (elmc_worker_dispatch_cmd_from_value(node->head, &state->last_dispatch_cmds[state->last_dispatch_cmd_count]) == 0) {
+              state->last_dispatch_cmd_count += 1;
+            }
+          }
+          cursor = node->tail;
+          continue;
+        }
+        if (!elmc_cmd_is_none(cursor)) {
+          if (elmc_worker_dispatch_cmd_from_value(cursor, &state->last_dispatch_cmds[state->last_dispatch_cmd_count]) == 0) {
+            state->last_dispatch_cmd_count += 1;
+          }
+        }
+        break;
+      }
     }
 
     static RC elmc_cmd_queue_cons_take(ElmcValue **out, ElmcValue *head, ElmcValue *tail) {
@@ -702,12 +782,7 @@ defmodule Elmc.Backend.Worker do
           elmc_release(result);
           return -2;
         }
-        if (state->last_dispatch_cmd) {
-          elmc_release(state->last_dispatch_cmd);
-          state->last_dispatch_cmd = NULL;
-        }
-        state->last_dispatch_cmd =
-            (pending && !elmc_cmd_is_none(pending)) ? elmc_retain(pending) : elmc_cmd_none();
+        elmc_worker_snapshot_last_dispatch_cmds(state, pending);
         state->pending_cmd = pending;
       }
       elmc_release(result);
@@ -721,6 +796,7 @@ defmodule Elmc.Backend.Worker do
       state->dispatch_needs_render = 0;
       elmc_worker_heap_log("update:start");
       ElmcValue *prev_model = state->model;
+      uint32_t prev_mut_gen = elmc_record_mutation_gen(prev_model);
     #{update_missing_guard}#{update_call}
       ElmcValue *next_model = extract_model_take(result);
       if (!next_model) {
@@ -734,7 +810,7 @@ defmodule Elmc.Backend.Worker do
         elmc_release(next_model);
       }
       state->model = next_model;
-      if (model_changed) {
+      if (model_changed || elmc_record_mutation_gen(next_model) != prev_mut_gen) {
         state->dispatch_needs_render = 1;
       }
       {
@@ -746,12 +822,7 @@ defmodule Elmc.Backend.Worker do
           elmc_release(result);
           return -2;
         }
-        if (state->last_dispatch_cmd) {
-          elmc_release(state->last_dispatch_cmd);
-          state->last_dispatch_cmd = NULL;
-        }
-        state->last_dispatch_cmd =
-            (next_cmd && !elmc_cmd_is_none(next_cmd)) ? elmc_retain(next_cmd) : elmc_cmd_none();
+        elmc_worker_snapshot_last_dispatch_cmds(state, next_cmd);
         if (!elmc_cmd_is_none(next_cmd)) {
           state->dispatch_needs_render = 1;
         }
@@ -785,9 +856,15 @@ defmodule Elmc.Backend.Worker do
       return elmc_retain(state->pending_cmd);
     }
 
-    ElmcValue *elmc_worker_last_dispatch_cmd_borrow(ElmcWorkerState *state) {
-      if (!state || !state->last_dispatch_cmd) return elmc_cmd_none();
-      return elmc_retain(state->last_dispatch_cmd);
+    int elmc_worker_last_dispatch_cmd_count(ElmcWorkerState *state) {
+      if (!state) return 0;
+      return state->last_dispatch_cmd_count;
+    }
+
+    int elmc_worker_last_dispatch_cmd_at(ElmcWorkerState *state, int index, ElmcWorkerDispatchCmd *out_cmd) {
+      if (!state || !out_cmd || index < 0 || index >= state->last_dispatch_cmd_count) return -1;
+      *out_cmd = state->last_dispatch_cmds[index];
+      return 0;
     }
 
     ElmcValue *elmc_worker_take_cmd(ElmcWorkerState *state) {
@@ -855,10 +932,7 @@ defmodule Elmc.Backend.Worker do
         elmc_release(state->pending_cmd);
         state->pending_cmd = NULL;
       }
-      if (state->last_dispatch_cmd) {
-        elmc_release(state->last_dispatch_cmd);
-        state->last_dispatch_cmd = NULL;
-      }
+      state->last_dispatch_cmd_count = 0;
       state->subscriptions = 0;
     }
     """

@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.CCodegen.ValueSlots do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.OwnershipTransfer
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
 
@@ -166,6 +167,35 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
     end
   end
 
+  @closure_call_arg_consumed_key :elmc_closure_call_arg_consumed
+
+  @doc false
+  @spec reset_closure_call_arg_consumed!() :: :ok
+  def reset_closure_call_arg_consumed! do
+    Process.put(@closure_call_arg_consumed_key, MapSet.new())
+    :ok
+  end
+
+  @doc false
+  @spec mark_closure_call_arg_consumed(String.t()) :: :ok
+  def mark_closure_call_arg_consumed(var) when is_binary(var) do
+    consumed =
+      Process.get(@closure_call_arg_consumed_key, MapSet.new())
+      |> MapSet.put(var)
+
+    Process.put(@closure_call_arg_consumed_key, consumed)
+    transfer(var)
+    :ok
+  end
+
+  @doc false
+  @spec closure_call_arg_consumed?(String.t()) :: boolean()
+  def closure_call_arg_consumed?(var) when is_binary(var) do
+    MapSet.member?(Process.get(@closure_call_arg_consumed_key, MapSet.new()), var)
+  end
+
+  def closure_call_arg_consumed?(_var), do: false
+
   def transfer(index) when is_integer(index) and index >= 0 do
     slots = slots_state()
     live = MapSet.delete(slots.live, index)
@@ -246,6 +276,20 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
     end
   end
 
+  @doc """
+  Release a written owned slot before overwriting it with a transfer/publish.
+  Epilogue lifo does not run until function exit, so mid-body overwrites need eager release.
+  """
+  @spec release_if_owned_written(String.t()) :: String.t()
+  def release_if_owned_written(var) when is_binary(var) do
+    if owned_ref?(var) and slot_written?(var) and not transferred?(var) do
+      unmark_written(var)
+      release_owned_eager(var)
+    else
+      ""
+    end
+  end
+
   @spec release_stmt(String.t()) :: String.t()
   def release_stmt(var) when is_binary(var) do
     cond do
@@ -320,12 +364,16 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
   def transferred?(var, body \\ nil)
 
   def transferred?(var, body) when is_binary(var) do
-    case owned_index(var) do
-      nil ->
-        is_binary(body) and OwnershipTransfer.transferred_in_c_source?(var, body)
+    if closure_call_arg_consumed?(var) do
+      true
+    else
+      case owned_index(var) do
+        nil ->
+          is_binary(body) and OwnershipTransfer.transferred_in_c_source?(var, body)
 
-      index ->
-        transferred?(index, body)
+        index ->
+          transferred?(index, body)
+      end
     end
   end
 
@@ -462,12 +510,14 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
   The result in `out` retains shared record fields; releasing the arg would drop refs
   still reachable through the result (for example `withPiece` COW on the model param).
   """
-  @spec abandon_owned_call_args_after_recursive(String.t(), [String.t()]) :: String.t()
-  def abandon_owned_call_args_after_recursive(out, arg_vars)
-      when is_binary(out) and is_list(arg_vars) do
+  @spec abandon_owned_call_args_after_recursive(map(), String.t(), [String.t()]) :: String.t()
+  def abandon_owned_call_args_after_recursive(env, out, arg_vars)
+      when is_map(env) and is_binary(out) and is_list(arg_vars) do
     if epilogue_lifo?() do
       arg_vars
-      |> Enum.filter(fn arg -> owned_ref?(arg) and arg != out end)
+      |> Enum.filter(fn arg ->
+        owned_ref?(arg) and arg != out and recursive_param_operand?(env, arg)
+      end)
       |> Enum.map(&null_assignment/1)
       |> Enum.join("\n")
       |> case do
@@ -479,9 +529,22 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
     end
   end
 
+  defp recursive_param_operand?(env, arg) when is_map(env) and is_binary(arg) do
+    EnvBindings.borrowed_arg_ref?(env, arg) or
+      EnvBindings.direct_param_ref?(env, arg) or
+      direct_param_owned_alias?(arg)
+  end
+
+  defp direct_param_owned_alias?(arg) when is_binary(arg) do
+    slots_state().direct_param_owned
+    |> Map.values()
+    |> Enum.member?(arg)
+  end
+
   @spec post_call_operand_release(String.t()) :: String.t()
   def post_call_operand_release(var) when is_binary(var) do
     cond do
+      closure_call_arg_consumed?(var) -> ""
       RcRuntimeEmit.function_out_ref?(var) -> ""
       owned_ref?(var) and epilogue_lifo?() -> ""
       owned_ref?(var) -> release_owned_and_null(var)
@@ -725,7 +788,7 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
   end
 
   @spec unmark_written(String.t()) :: :ok
-  defp unmark_written(var) when is_binary(var) do
+  def unmark_written(var) when is_binary(var) do
     case owned_index(var) do
       index when is_integer(index) ->
         slots = slots_state()

@@ -56,6 +56,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     "elmc_list_take_int",
     "elmc_list_drop",
     "elmc_list_drop_int",
+    "elmc_list_slice_int",
     "elmc_list_partition",
     "elmc_list_unzip",
     "elmc_list_intersperse",
@@ -393,6 +394,8 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     if lhs == ref do
       ""
     else
+      overwrite_prefix = ValueSlots.release_if_owned_written(lhs)
+
       stmt = "#{assignment_lhs(lhs)} = #{value_expr(ref)};"
 
       stmt =
@@ -410,7 +413,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
       if function_out_ref?(lhs), do: ValueSlots.mark_function_out_written()
 
       ValueSlots.sync_result_slot_current!(lhs)
-      stmt
+      overwrite_prefix <> stmt
     end
   end
 

@@ -119,6 +119,8 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
   defp delete_emit_probe_process_key?({:elmc_subexpr_shared, _}), do: true
   defp delete_emit_probe_process_key?(_), do: false
 
+  defp delete_codegen_process_key?(:elmc_layout_coercion_diagnostics), do: false
+
   defp delete_codegen_process_key?(key) when is_atom(key) do
     key
     |> Atom.to_string()
@@ -192,8 +194,12 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     |> tap(fn _ -> Process.delete(:elmc_rc_required) end)
   end
 
-  @spec source(ElmEx.IR.t(), Types.codegen_opts()) :: String.t()
-  def source(ir, opts) do
+  @doc """
+  Install Process-backed codegen state shared by monolithic and per-module emit paths.
+  Caller must invoke `reset_process_state!/0` when the session ends (see `with_emit_session/3`).
+  """
+  @spec prepare_emit_session!(ElmEx.IR.t(), Types.codegen_opts()) :: :ok
+  def prepare_emit_session!(ir, opts) do
     reset_process_state!()
     Process.put(:elmc_lambdas, [])
     Process.put(:elmc_lambda_counter, 0)
@@ -212,7 +218,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
       |> Map.new()
 
     constructor_tags = IRQueries.constructor_tag_map(ir)
-    {record_field_defines, record_field_macros} = RecordFieldMacros.definitions(ir)
+    {_record_field_defines, record_field_macros} = RecordFieldMacros.definitions(ir)
     Process.put(:elmc_constructor_tags, constructor_tags)
     Process.put(:elmc_record_field_macros, record_field_macros)
     Process.put(:elmc_vector_resource_slots, IRQueries.pebble_vector_resource_slot_map(ir))
@@ -295,10 +301,10 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
         |> MapSet.union(SpecialValues.compiler_folded_union_constructors())
       end
 
-    {union_constructor_defines, union_constructor_macros} =
+    {_union_constructor_defines, union_constructor_macros} =
       UnionMacros.definitions(ir, used_union_ctors: used_union_ctors)
 
-    union_debug_ctor_fn =
+    _union_debug_ctor_fn =
       UnionMacros.debug_ctor_name_fn(ir,
         used_union_ctors: used_union_ctors,
         prod: Map.get(opts, :prod, false)
@@ -329,6 +335,71 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     Process.put(:elmc_codegen_opts, opts)
     DefRegistry.reset()
     _ = RcRequired.run!(decl_map, rc_required_opts(opts, direct_command_targets))
+    :ok
+  end
+
+  @spec with_emit_session(ElmEx.IR.t(), Types.codegen_opts(), (-> term())) :: term()
+  def with_emit_session(ir, opts, fun) when is_function(fun, 0) do
+    prepare_emit_session!(ir, opts)
+
+    try do
+      fun.()
+    after
+      reset_process_state!()
+    end
+  end
+
+  @spec source(ElmEx.IR.t(), Types.codegen_opts()) :: String.t()
+  def source(ir, opts) do
+    prepare_emit_session!(ir, opts)
+
+    try do
+      source_without_session_setup(ir, opts)
+    after
+      reset_process_state!()
+    end
+  end
+
+  defp source_without_session_setup(ir, opts) do
+    generic_targets = GenericTargets.function_targets(ir, opts)
+    decl_map = IRQueries.function_decl_map(ir)
+    function_arities = Process.get(:elmc_function_arities)
+    wrapper_targets = Process.get(:elmc_wrapper_targets)
+    exported_targets = Process.get(:elmc_exported_targets)
+
+    direct_command_targets = Host.direct_command_targets(ir, opts, decl_map)
+
+    used_union_ctors =
+      if opts[:strip_dead_code] == false do
+        nil
+      else
+        direct_emit_targets =
+          if opts[:direct_render_only] == true do
+            {_def_targets, emit_targets, _pruned} = DirectRenderAnalysis.target_sets(decl_map, opts)
+            emit_targets
+          else
+            MapSet.new()
+          end
+
+        MacroReachability.used_union_ctors(
+          decl_map,
+          generic_targets
+          |> MapSet.union(direct_command_targets)
+          |> MapSet.union(direct_emit_targets)
+        )
+        |> MapSet.union(SpecialValues.compiler_folded_union_constructors())
+      end
+
+    {record_field_defines, _record_field_macros} = RecordFieldMacros.definitions(ir)
+
+    {union_constructor_defines, _union_constructor_macros} =
+      UnionMacros.definitions(ir, used_union_ctors: used_union_ctors)
+
+    union_debug_ctor_fn =
+      UnionMacros.debug_ctor_name_fn(ir,
+        used_union_ctors: used_union_ctors,
+        prod: Map.get(opts, :prod, false)
+      )
 
     generic_native_prototypes =
       FunctionEmit.generic_native_function_prototypes(ir, generic_targets, decl_map)
@@ -383,35 +454,6 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
       |> dedupe_lambda_defs_by_name()
       |> prune_unreferenced_lambda_defs([function_defs, direct_command_defs])
       |> Enum.join("\n")
-
-    Process.delete(:elmc_lambdas)
-    Process.delete(:elmc_wrapper_targets)
-    Process.delete(:elmc_direct_call_targets)
-    Process.delete(:elmc_native_boxed_rc_abi)
-    Process.delete(:elmc_native_bool_rc_abi)
-    Process.delete(:elmc_exported_targets)
-    Process.delete(:elmc_function_arities)
-    Process.delete(:elmc_program_decls)
-    Process.delete(:elmc_storage_plans)
-    Process.delete(:elmc_schema_registry)
-    Process.delete(:elmc_codegen_opts)
-    Process.delete(:elmc_rc_required)
-    Process.delete(:elmc_lambda_counter)
-    Process.delete(:elmc_lambda_defs)
-    Process.delete(:elmc_lambda_emitted_names)
-    Process.delete(:elmc_constructor_tags)
-    Process.delete(:elmc_union_constructor_macros)
-    Process.delete(:elmc_record_field_macros)
-    Process.delete(:elmc_subexpr_record_meta)
-    Process.delete(:elmc_borrowed_field_refs)
-    Process.delete(:elmc_pebble_msg_names)
-    Process.delete(:elmc_vector_resource_slots)
-    Process.delete(:elmc_bitmap_resource_slots)
-    Process.delete(:elmc_animation_resource_slots)
-    Process.delete(:elmc_font_resource_slots)
-    Process.delete(:elmc_speaker_sample_resource_slots)
-    Process.delete(:elmc_enum_types)
-    Process.delete(:elmc_named_record_literals)
 
     trig_fallback_prelude =
       Emit.generated_trig_fallback_prelude([lambda_defs, function_defs, direct_command_defs])

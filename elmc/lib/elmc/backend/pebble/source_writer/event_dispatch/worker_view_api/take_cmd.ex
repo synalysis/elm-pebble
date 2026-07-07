@@ -76,20 +76,23 @@ defmodule Elmc.Backend.Pebble.SourceWriter.EventDispatch.WorkerViewApi.TakeCmd d
 
     int elmc_pebble_last_dispatch_cmd_count(ElmcPebbleApp *app) {
       if (!app || !app->initialized) return 0;
-      ElmcValue *queue = elmc_worker_last_dispatch_cmd_borrow(&app->worker);
-      if (!queue) return 0;
-      int count = elmc_pebble_cmd_queue_count_value(queue);
-      elmc_release(queue);
-      return count;
+      return elmc_worker_last_dispatch_cmd_count(&app->worker);
     }
 
     int elmc_pebble_last_dispatch_cmd_at(ElmcPebbleApp *app, int index, ElmcPebbleCmd *out_cmd) {
       if (!app || !app->initialized || !out_cmd) return -1;
-      ElmcValue *queue = elmc_worker_last_dispatch_cmd_borrow(&app->worker);
-      if (!queue) return -2;
-      int rc = elmc_pebble_cmd_queue_index(queue, index, out_cmd);
-      elmc_release(queue);
-      return rc;
+      ElmcWorkerDispatchCmd snap = {0};
+      if (elmc_worker_last_dispatch_cmd_at(&app->worker, index, &snap) != 0) return -2;
+      out_cmd->kind = snap.kind;
+      out_cmd->p0 = snap.p0;
+      out_cmd->p1 = snap.p1;
+      out_cmd->p2 = snap.p2;
+      out_cmd->p3 = snap.p3;
+      out_cmd->p4 = snap.p4;
+      out_cmd->p5 = snap.p5;
+      strncpy(out_cmd->text, snap.text, sizeof(out_cmd->text) - 1);
+      out_cmd->text[sizeof(out_cmd->text) - 1] = '\\0';
+      return 0;
     }
 
     int elmc_pebble_pending_cmd_at(ElmcPebbleApp *app, int index, ElmcPebbleCmd *out_cmd) {

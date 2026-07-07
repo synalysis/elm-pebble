@@ -41,8 +41,8 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   end
 
   defp pattern_condition_for(subject_ref, %{kind: :tuple, elements: [left, right]}, env) do
-    left_ref = "((ElmcTuple2 *)#{subject_ref}->payload)->first"
-    right_ref = "((ElmcTuple2 *)#{subject_ref}->payload)->second"
+    left_ref = "elmc_tuple_first_borrow(#{subject_ref})"
+    right_ref = "elmc_tuple_second_borrow(#{subject_ref})"
 
     "#{subject_ref} && #{subject_ref}->tag == ELMC_TAG_TUPLE2 && (#{pattern_condition(left_ref, left, env)}) && (#{pattern_condition(right_ref, right, env)})"
   end
@@ -209,8 +209,8 @@ defmodule Elmc.Backend.CCodegen.Patterns do
     subject_ref = pattern_subject_ref(subject_ref)
 
     env
-    |> bind_pattern(left, "((ElmcTuple2 *)#{subject_ref}->payload)->first")
-    |> bind_pattern(right, "((ElmcTuple2 *)#{subject_ref}->payload)->second")
+    |> bind_pattern(left, "elmc_tuple_first_borrow(#{subject_ref})")
+    |> bind_pattern(right, "elmc_tuple_second_borrow(#{subject_ref})")
   end
 
   def bind_pattern(

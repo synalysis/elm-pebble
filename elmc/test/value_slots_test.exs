@@ -236,15 +236,23 @@ defmodule Elmc.Backend.CCodegen.ValueSlotsTest do
              """
   end
 
-  test "abandon_owned_call_args_after_recursive nulls owned args without releasing them" do
+  test "abandon_owned_call_args_after_recursive nulls owned param aliases without releasing them" do
     ValueSlots.reset(epilogue_lifo: true)
+    :ok = ValueSlots.track_direct_param_owned("model", "owned[11]")
 
-    assert ValueSlots.abandon_owned_call_args_after_recursive("owned[12]", ["owned[11]", "model"]) ==
+    assert ValueSlots.abandon_owned_call_args_after_recursive(%{}, "owned[12]", ["owned[11]", "model"]) ==
              "owned[11] = NULL;\n"
   end
 
+  test "abandon_owned_call_args_after_recursive keeps owned scratch operands for epilogue release" do
+    ValueSlots.reset(epilogue_lifo: true)
+
+    assert ValueSlots.abandon_owned_call_args_after_recursive(%{}, "owned[12]", ["owned[11]", "model"]) ==
+             ""
+  end
+
   test "abandon_owned_call_args_after_recursive is a no-op outside epilogue lifo mode" do
-    assert ValueSlots.abandon_owned_call_args_after_recursive("owned[12]", ["owned[11]"]) == ""
+    assert ValueSlots.abandon_owned_call_args_after_recursive(%{}, "owned[12]", ["owned[11]"]) == ""
   end
 
   test "boxed_decl owned reassignment uses a fresh slot under epilogue lifo" do

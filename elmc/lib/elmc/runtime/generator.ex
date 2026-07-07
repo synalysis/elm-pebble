@@ -1040,6 +1040,7 @@ defmodule Elmc.Runtime.Generator do
 
     typedef struct ElmcRecord {
       int field_count;
+      uint32_t mutation_gen;
       ElmcValue **field_values;
     } ElmcRecord;
 
@@ -1162,6 +1163,8 @@ defmodule Elmc.Runtime.Generator do
     elmc_int_t elmc_list_head_with_default_int(elmc_int_t default_val, ElmcValue *list);
     ElmcValue *elmc_tuple_first(ElmcValue *tuple);
     ElmcValue *elmc_tuple_second(ElmcValue *tuple);
+    ElmcValue *elmc_tuple_first_borrow(ElmcValue *tuple);
+    ElmcValue *elmc_tuple_second_borrow(ElmcValue *tuple);
     ElmcValue *elmc_result_inc_or_zero(ElmcValue *result);
     ElmcValue *elmc_basics_max(ElmcValue *left, ElmcValue *right);
     ElmcValue *elmc_basics_min(ElmcValue *left, ElmcValue *right);
@@ -1249,6 +1252,7 @@ defmodule Elmc.Runtime.Generator do
     RC elmc_list_take_int(ElmcValue **out, elmc_int_t count, ElmcValue *list);
     RC elmc_list_drop(ElmcValue **out, ElmcValue *n, ElmcValue *list);
     RC elmc_list_drop_int(ElmcValue **out, elmc_int_t count, ElmcValue *list);
+    RC elmc_list_slice_int(ElmcValue **out, elmc_int_t drop, elmc_int_t take, ElmcValue *list);
     RC elmc_list_partition(ElmcValue **out, ElmcValue *f, ElmcValue *list);
     RC elmc_list_unzip(ElmcValue **out, ElmcValue *list);
     RC elmc_list_intersperse(ElmcValue **out, ElmcValue *sep, ElmcValue *list);
@@ -1443,6 +1447,7 @@ defmodule Elmc.Runtime.Generator do
     elmc_int_t elmc_record_get_bool(ElmcValue *record, const char *field_name);
     elmc_int_t elmc_record_get_at_bool(ElmcValue *record, int index, const char *field_name);
     elmc_int_t elmc_record_get_index_bool(ElmcValue *record, int index);
+    uint32_t elmc_record_mutation_gen(ElmcValue *record);
     ElmcValue *elmc_record_update(ElmcValue *record, const char *field_name, ElmcValue *new_value);
     ElmcValue *elmc_record_update_index(ElmcValue *record, int index, ElmcValue *new_value);
     ElmcValue *elmc_record_update_index_cow(ElmcValue *record, int index, ElmcValue *new_value);
@@ -1931,6 +1936,7 @@ defmodule Elmc.Runtime.Generator do
 
       char *cursor = (char *)(cell + 1);
       cell->record.field_count = field_count;
+      cell->record.mutation_gen = 0;
       cell->field_names = (const char **)cursor;
       cursor += names_size;
       cell->record.field_values = (ElmcValue **)cursor;
@@ -1968,6 +1974,7 @@ defmodule Elmc.Runtime.Generator do
       }
 
       cell->record.field_count = field_count;
+      cell->record.mutation_gen = 0;
       cell->record.field_values = (ElmcValue **)(cell + 1);
 
       for (int i = 0; i < field_count; i++) {
@@ -3157,6 +3164,18 @@ defmodule Elmc.Runtime.Generator do
       if (!tuple || tuple->tag != ELMC_TAG_TUPLE2 || tuple->payload == NULL) return elmc_int_zero();
       ElmcTuple2 *data = (ElmcTuple2 *)tuple->payload;
       return elmc_retain(data->first);
+    }
+
+    ElmcValue *elmc_tuple_second_borrow(ElmcValue *tuple) {
+      if (!tuple || tuple->tag != ELMC_TAG_TUPLE2 || tuple->payload == NULL) return elmc_int_zero();
+      ElmcTuple2 *data = (ElmcTuple2 *)tuple->payload;
+      return data->second ? data->second : elmc_int_zero();
+    }
+
+    ElmcValue *elmc_tuple_first_borrow(ElmcValue *tuple) {
+      if (!tuple || tuple->tag != ELMC_TAG_TUPLE2 || tuple->payload == NULL) return elmc_int_zero();
+      ElmcTuple2 *data = (ElmcTuple2 *)tuple->payload;
+      return data->first ? data->first : elmc_int_zero();
     }
 
     ElmcValue *elmc_result_inc_or_zero(ElmcValue *result) {
@@ -5071,6 +5090,11 @@ defmodule Elmc.Runtime.Generator do
       return elmc_record_get_index_int(record, index) != 0;
     }
 
+    uint32_t elmc_record_mutation_gen(ElmcValue *record) {
+      if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return 0;
+      return ((ElmcRecord *)record->payload)->mutation_gen;
+    }
+
     ElmcValue *elmc_record_update(ElmcValue *record, const char *field_name, ElmcValue *new_value) {
       if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return elmc_retain(record);
       ElmcRecord *old = (ElmcRecord *)record->payload;
@@ -5100,8 +5124,8 @@ defmodule Elmc.Runtime.Generator do
       const char **field_names = elmc_record_field_names(record);
       ElmcValue *result = NULL;
       if (field_names) {
-        if (elmc_record_new(&result, old->field_count, field_names, values) != RC_SUCCESS) result = NULL;
-      } else if (elmc_record_new_values(&result, old->field_count, values) != RC_SUCCESS) {
+        if (elmc_record_new_take(&result, old->field_count, field_names, values) != RC_SUCCESS) result = NULL;
+      } else if (elmc_record_new_values_take(&result, old->field_count, values) != RC_SUCCESS) {
         result = NULL;
       }
       elmc_free(values);
@@ -5116,6 +5140,7 @@ defmodule Elmc.Runtime.Generator do
         ElmcValue *old_value = rec->field_values[index];
         rec->field_values[index] = elmc_retain(new_value);
         elmc_release(old_value);
+        rec->mutation_gen += 1;
         return record;
       }
       return elmc_record_update_index(record, index, new_value);
@@ -6247,6 +6272,22 @@ defmodule Elmc.Runtime.Generator do
 
     RC elmc_list_drop(ElmcValue **out, ElmcValue *n, ElmcValue *list) {
       return elmc_list_drop_int(out, elmc_as_int(n), list);
+    }
+
+    RC elmc_list_slice_int(ElmcValue **out, elmc_int_t drop, elmc_int_t take, ElmcValue *list) {
+      if (list && list->tag == ELMC_TAG_INT_LIST) {
+        return elmc_int_list_slice_int(out, drop, take, list);
+      }
+      RC rc = RC_SUCCESS;
+      ElmcValue *dropped = NULL;
+      CATCH_BEGIN
+        rc = elmc_list_drop_int(&dropped, drop, list);
+        CHECK_RC(rc);
+        rc = elmc_list_take_int(out, take, dropped);
+        CHECK_RC(rc);
+      CATCH_END;
+      elmc_release(dropped);
+      return rc;
     }
 
     RC elmc_list_drop_int(ElmcValue **out, elmc_int_t count, ElmcValue *list) {
@@ -9474,8 +9515,10 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_set_to_list(ElmcValue *set) {
+      ElmcValue *out = NULL;
       if (!set) return elmc_list_nil();
-      return elmc_retain(set);
+      if (elmc_list_copy(&out, set) != RC_SUCCESS) return elmc_list_nil();
+      return out;
     }
 
     RC elmc_set_union(ElmcValue **out, ElmcValue *a, ElmcValue *b) {

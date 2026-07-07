@@ -256,12 +256,15 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
           }
           """
         else
+          identity_release = identity_arg_release_stmts(lambda_arg_bindings, body)
+
           """
           static ElmcValue *#{closure_fn_name}(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
             #{closure_void_casts}
             #{arg_bindings}
             #{capture_bindings}
             #{body_code}
+            #{identity_release}
             return #{body_var};
           }
           """
@@ -390,6 +393,36 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
         not EnvBindings.native_int_binding?(env, name) and
           not is_binary(EnvBindings.native_bool_binding(env, name)) and
           not is_binary(EnvBindings.native_float_binding(env, name))
+
+      _ ->
+        false
+    end
+  end
+
+  defp identity_arg_release_stmts(lambda_arg_bindings, body) do
+    case lambda_arg_bindings do
+      [{arg, c_arg, 0}] ->
+        if single_arg_identity_return?(body, arg) do
+          "if (argc > 0 && #{c_arg}) elmc_release(#{c_arg});"
+        else
+          ""
+        end
+
+      _ ->
+        ""
+    end
+  end
+
+  defp single_arg_identity_return?(body, arg) do
+    case body do
+      %{op: :var, name: ^arg} ->
+        true
+
+      %{op: :call, name: name, args: [%{op: :var, name: ^arg}]} when name in ["identity"] ->
+        true
+
+      %{op: :qualified_call, target: "Basics.identity", args: [%{op: :var, name: ^arg}]} ->
+        true
 
       _ ->
         false

@@ -353,6 +353,17 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
 
   defp render_helper_target?(_target), do: false
 
+  # When generic `view` is peeled to direct `_commands_append`, drop only the
+  # Elm glue that direct emit replaces — not helpers like `cornerSlots` that the
+  # fused command body still calls generically.
+  defp pruned_view_glue_targets(entry_module) when is_binary(entry_module) do
+    MapSet.new([
+      {entry_module, "faceOps"},
+      {entry_module, "faceDisplay"},
+      {"Yes.Render", "face"}
+    ])
+  end
+
   # Direct `_commands_append` bodies call generic helpers that generic reachability
   # would otherwise drop: boxed callees under a pruned `view`'s peeled `toUiNode`
   # wrapper, and mixed-ABI direct targets invoked via `_native` from other direct
@@ -366,13 +377,19 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
            Map.has_key?(decl_map, view_target) do
         case Map.fetch(decl_map, view_target) do
           {:ok, %{expr: expr}} ->
-            generic_callees_under_ui_node(
-              expr,
-              entry_module,
-              direct_targets,
-              decl_map,
-              MapSet.new([view_target])
-            )
+            view_ui_callees =
+              generic_callees_under_ui_node(
+                expr,
+                entry_module,
+                direct_targets,
+                decl_map,
+                MapSet.new([view_target])
+              )
+
+            view_ui_callees
+            |> MapSet.new()
+            |> MapSet.difference(pruned_view_glue_targets(entry_module))
+            |> MapSet.to_list()
 
           :error ->
             []
@@ -416,22 +433,18 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
 
     view_callees =
       if prune_generic_view?(opts, decl_map, direct_targets) and Map.has_key?(decl_map, view_target) do
-        if direct_render_only?(opts) do
-          generic_helper_callees_from_direct_targets(direct_targets, decl_map, opts, entry_module)
-        else
-          case Map.fetch(decl_map, view_target) do
-            {:ok, %{expr: expr}} ->
-              generic_callees_under_ui_node(
-                expr,
-                entry_module,
-                direct_targets,
-                decl_map,
-                MapSet.new([view_target])
-              )
+        case Map.fetch(decl_map, view_target) do
+          {:ok, %{expr: expr}} ->
+            generic_callees_under_ui_node(
+              expr,
+              entry_module,
+              direct_targets,
+              decl_map,
+              MapSet.new([view_target])
+            )
 
-            :error ->
-              []
-          end
+          :error ->
+            []
         end
       else
         []

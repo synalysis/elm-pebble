@@ -387,6 +387,22 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
   def compile(
         %{
           op: :runtime_call,
+          function: "elmc_list_slice_int",
+          args: [drop, take, list]
+        },
+        env,
+        counter
+      ) do
+    if NativeInt.expr?(drop, env) and NativeInt.expr?(take, env) do
+      compile_list_slice_range_int(drop, take, list, env, counter)
+    else
+      compile_generic(%{op: :runtime_call, function: "elmc_list_slice_int", args: [drop, take, list]}, env, counter)
+    end
+  end
+
+  def compile(
+        %{
+          op: :runtime_call,
           function: function,
           args: [count, list]
         } = expr,
@@ -3660,6 +3676,48 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
       #{assign}
       #{release}
       #{Host.face_ops_append_probe(env, native_function, out, next)}
+    """
+
+    {code, out, next}
+  end
+
+  @spec compile_list_slice_range_int(
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
+  defp compile_list_slice_range_int(drop, take, list, env, counter) do
+    {drop_code, drop_ref, counter} = Host.compile_native_int_expr(drop, env, counter)
+    {take_code, take_ref, counter} = Host.compile_native_int_expr(take, env, counter)
+
+    {list_code, list_ref, counter, borrowed?} =
+      FunctionCallCompile.compile_call_operand_inner(list, env, counter, borrow_args?: true)
+
+    {out, next} = owned_inline_out(counter, env)
+
+    release =
+      if borrowed? do
+        ""
+      else
+        ValueSlots.release_stmt(list_ref)
+      end
+
+    assign =
+      RcRuntimeEmit.assign_or_fusion(
+        env,
+        out,
+        "elmc_list_slice_int",
+        "#{drop_ref}, #{take_ref}, #{RcRuntimeEmit.value_expr(list_ref)}"
+      )
+
+    code = """
+    #{drop_code}
+    #{take_code}
+    #{list_code}
+      #{assign}
+      #{release}
     """
 
     {code, out, next}

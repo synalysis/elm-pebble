@@ -146,6 +146,17 @@ defmodule Elmc.Runtime.IntList do
       return elmc_int_list_alloc_copy(out, payload->values + count, payload->length - count);
     }
 
+    static RC elmc_int_list_slice_int(ElmcValue **out, elmc_int_t drop, elmc_int_t take, ElmcValue *list) {
+      ElmcIntListPayload *payload = elmc_int_list_payload(list);
+      if (!payload) return RC_ERR_INVALID_ARG;
+      if (drop < 0) drop = 0;
+      if (drop >= payload->length) return elmc_int_list_alloc_copy(out, NULL, 0);
+      elmc_int_t avail = payload->length - drop;
+      if (take < 0) take = 0;
+      if (take > avail) take = avail;
+      return elmc_int_list_alloc_copy(out, payload->values + drop, take);
+    }
+
     static RC __attribute__((unused)) elmc_int_list_append_to_cons_tail(ElmcValue **tail_slot, ElmcValue *list) {
       ElmcIntListPayload *payload = elmc_int_list_payload(list);
       RC rc = RC_SUCCESS;

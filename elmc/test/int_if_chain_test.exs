@@ -239,7 +239,7 @@ defmodule Elmc.IntIfChainTest do
 
     {code, out, _counter} = NativeIntCase.compile(slot, branches, env, 0)
 
-    assert out == "tmp_1"
+    assert out == "owned[0]"
     assert code =~ "static const elmc_int_t native_lut_"
     assert code =~ "ELMC_COLOR_VIVID_CERULEAN"
     assert code =~ "ELMC_COLOR_VERY_LIGHT_BLUE"

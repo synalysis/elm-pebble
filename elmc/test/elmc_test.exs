@@ -164,7 +164,7 @@ defmodule ElmcTest do
 
     runtime = File.read!(Path.join(runtime_dir, "elmc_runtime.c"))
 
-    assert runtime =~ "ElmcValue *elmc_sub1"
+    assert runtime =~ "RC elmc_sub1"
     assert runtime =~ "elmc_sub_alloc"
   end
 
@@ -234,7 +234,7 @@ defmodule ElmcTest do
 
     runtime = File.read!(Path.join(runtime_dir, "elmc_runtime.c"))
 
-    assert runtime =~ "ElmcValue *elmc_cmd1"
+    assert runtime =~ "RC elmc_cmd1"
     assert runtime =~ "elmc_cmd_alloc"
     refute runtime =~ "implicit declaration"
   end
@@ -259,7 +259,7 @@ defmodule ElmcTest do
 
     runtime = File.read!(Path.join(runtime_dir, "elmc_runtime.c"))
 
-    assert runtime =~ "ElmcValue *elmc_cmd1_string"
+    assert runtime =~ "RC elmc_cmd1_string"
     assert runtime =~ "elmc_cmd_alloc"
     assert runtime =~ "elmc_new_string"
     refute runtime =~ "implicit declaration"
@@ -385,7 +385,7 @@ defmodule ElmcTest do
     assert runtime =~ "static void *elmc_realloc_impl"
     refute runtime =~ "ELMC_ALLOC_FAILURE_LOGGED"
     assert runtime =~ "ELMC malloc failed %s"
-    assert runtime =~ "static void *elmc_malloc_impl(size_t size, const char *context"
+    assert runtime =~ "void *elmc_malloc_impl(size_t size, const char *context, const char *file, int line)"
     assert runtime =~ "elmc_malloc_impl(sizeof(ElmcValue), __func__"
     refute runtime =~ "if (!out) return elmc_new_string(\"\");"
   end

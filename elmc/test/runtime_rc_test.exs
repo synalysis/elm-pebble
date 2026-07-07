@@ -243,6 +243,7 @@ defmodule Elmc.RuntimeRCTest do
       #include <stdio.h>
 
       int main(void) {
+        elmc_rc_track_reset();
         ElmcValue *kind = elmc_new_int_take(7);
         ElmcValue *x = elmc_new_int_take(3);
         ElmcValue *y = elmc_new_int_take(10);
@@ -260,6 +261,7 @@ defmodule Elmc.RuntimeRCTest do
         if (elmc_as_int(elmc_record_get_index(updated, 2)) != 11) return 4;
 
         elmc_release(updated);
+        if (!elmc_rc_track_check_balanced()) return 5;
         return 0;
       }
       """
@@ -273,6 +275,7 @@ defmodule Elmc.RuntimeRCTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
+        "-DELMC_RC_TRACK=1",
         "-I#{runtime_dir}",
         Path.join(runtime_dir, "elmc_runtime.c"),
         RcTrackHarness.runtime_link_stub(),

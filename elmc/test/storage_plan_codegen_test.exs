@@ -1,6 +1,8 @@
 defmodule Elmc.StoragePlanCodegenTest do
   use ExUnit.Case, async: true
 
+  alias Elmc.Test.CCodegenExtract
+
   defp compile_main!(source, project_name) do
     source_fixture = Path.expand("fixtures/simple_project", __DIR__)
     project_dir = Path.expand("tmp/#{project_name}", __DIR__)
@@ -105,22 +107,10 @@ defmodule Elmc.StoragePlanCodegenTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     assert generated_c =~ "elmc_fn_Main_sumRows"
 
-    grid_body =
-      generated_c
-      |> String.split("static ElmcValue * elmc_fn_Main_grid(ElmcValue ** const args, const int argc) {", parts: 2)
-      |> Enum.at(1, "")
-      |> String.split("\n}\n", parts: 2)
-      |> List.first()
-
+    grid_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_grid")
     assert grid_body =~ "elmc_list_from_record_array"
 
-    sum_rows_body =
-      generated_c
-      |> String.split("static ElmcValue * elmc_fn_Main_sumRows(ElmcValue ** const args, const int argc) {", parts: 2)
-      |> Enum.at(1, "")
-      |> String.split("\n}\n", parts: 2)
-      |> List.first()
-
+    sum_rows_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_sumRows")
     assert sum_rows_body =~ "ELMC_TAG_RECORD_SEQ"
   end
 

@@ -391,6 +391,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           if rc_required?, do: RcRuntimeEmit.function_tail_env(compile_env), else: compile_env
 
         FunctionCallCompile.reset_call_args_cache!()
+        ValueSlots.reset_closure_call_arg_consumed!()
 
         {code, result_var, _counter} =
           case compile_tail_recursive(
@@ -2138,7 +2139,16 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
     boxed_assignments =
       boxed_update_refs
-      |> Enum.map_join("\n      ", fn {loop, ref} -> "#{loop} = #{ref};" end)
+      |> Enum.map_join("\n      ", fn {loop, ref} ->
+        if ValueSlots.owned_ref?(ref) do
+          """
+          #{loop} = #{ref};
+          #{ValueSlots.transfer_and_null(ref)}
+          """
+        else
+          "#{loop} = #{ref};"
+        end
+      end)
 
     """
     #{update_code}
@@ -2170,9 +2180,19 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       end)
       |> Enum.join("\n      ")
 
+    result_assign =
+      if ValueSlots.owned_ref?(base_ref) do
+        """
+        #{result_var} = #{base_ref};
+        #{ValueSlots.transfer_and_null(base_ref)}
+        """
+      else
+        "#{result_var} = #{base_ref};"
+      end
+
     """
     #{base_code}
-      #{result_var} = #{base_ref};
+      #{result_assign}
       #{releases}
       break;
     """

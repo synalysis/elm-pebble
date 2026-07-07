@@ -376,6 +376,14 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     args_array = "call_args_#{next}"
     arg_list = call_arg_list(arg_vars)
 
+    Enum.each(arg_vars, &ValueSlots.mark_closure_call_arg_consumed/1)
+
+    arg_vars
+    |> Enum.zip(arg_passthrough)
+    |> Enum.each(fn {var, passthrough?} ->
+      if passthrough?, do: ValueSlots.transfer(var)
+    end)
+
     releases = release_borrowed_call_operands(env, arg_vars, arg_passthrough)
 
     code = """
@@ -1106,7 +1114,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
               #{after_args_probe}
               #{rc_call_assignment(env, out, direct_call, rc_callee?, caller_rc?)}
               #{ValueSlots.null_call_operands_aliasing_out(out, arg_vars)}
-              #{if recursive?, do: ValueSlots.abandon_owned_call_args_after_recursive(out, arg_vars), else: ""}
+              #{if recursive?, do: ValueSlots.abandon_owned_call_args_after_recursive(env, out, arg_vars), else: ""}
               #{after_call_probe}
               #{releases}
             """
@@ -1129,7 +1137,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
               #{call_args_decl}
               #{rc_call_assignment(env, out, call_expr, rc_callee?, caller_rc?)}
               #{ValueSlots.null_call_operands_aliasing_out(out, arg_vars)}
-              #{if recursive?, do: ValueSlots.abandon_owned_call_args_after_recursive(out, arg_vars), else: ""}
+              #{if recursive?, do: ValueSlots.abandon_owned_call_args_after_recursive(env, out, arg_vars), else: ""}
               #{after_call_probe}
               #{releases}
             """

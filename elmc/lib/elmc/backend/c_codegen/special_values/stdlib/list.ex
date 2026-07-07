@@ -292,6 +292,16 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.List do
   def special_value_from_target("List.repeat", [n, value]),
     do: %{op: :runtime_call, function: "elmc_list_repeat", args: [n, value]}
 
+  def special_value_from_target("List.take", [take_n, %{op: :runtime_call, function: drop_fn, args: [drop_n, list]}])
+      when drop_fn in ["elmc_list_drop", "elmc_list_drop_int"] do
+    %{op: :runtime_call, function: "elmc_list_slice_int", args: [drop_n, take_n, list]}
+  end
+
+  def special_value_from_target("List.take", [take_n, %{op: :qualified_call, target: drop_target, args: [drop_n, list]}])
+      when drop_target in ["List.drop", "drop"] do
+    %{op: :runtime_call, function: "elmc_list_slice_int", args: [drop_n, take_n, list]}
+  end
+
   def special_value_from_target("List.take", [n, list]),
     do: %{op: :runtime_call, function: "elmc_list_take", args: [n, list]}
 

@@ -11,6 +11,18 @@ defmodule Elmc.GeneratedRcTrackTest do
 
     RcTrackHarness.compile!(project_dir, out_dir, entry_module: "RcTrackProbe")
 
+    fold_sum_call =
+      RcTrackHarness.generated_fn_call(out_dir, "RcTrackProbe", "foldSum", "args", 1)
+
+    concat_rows_call =
+      RcTrackHarness.generated_fn_call(out_dir, "RcTrackProbe", "concatRows", "args", 1)
+
+    branch_tuple_out_call =
+      RcTrackHarness.generated_fn_call(out_dir, "RcTrackProbe", "branchTupleOut", "args", 1)
+
+    string_append_length_call =
+      RcTrackHarness.generated_fn_call(out_dir, "RcTrackProbe", "stringAppendLength", "args", 2)
+
     harness_path = Path.join(out_dir, "c/rc_track_harness.c")
 
     File.write!(
@@ -37,7 +49,7 @@ defmodule Elmc.GeneratedRcTrackTest do
         static const elmc_int_t items[3] = { 1, 2, 3 };
         ElmcValue *list = elmc_harness_list_from_int_array(items, 3);
         ElmcValue *args[] = { list };
-        ElmcValue *out = elmc_harness_call_value(elmc_fn_RcTrackProbe_foldSum, args, 1);
+        ElmcValue *out = #{fold_sum_call};
         elmc_release(list);
         return out;
       }
@@ -50,7 +62,7 @@ defmodule Elmc.GeneratedRcTrackTest do
         ElmcValue *inner = elmc_list_cons_take(r1, elmc_list_nil());
         ElmcValue *outer = elmc_list_cons_take(r0, inner);
         ElmcValue *args[] = { outer };
-        ElmcValue *out = elmc_harness_call_value(elmc_fn_RcTrackProbe_concatRows, args, 1);
+        ElmcValue *out = #{concat_rows_call};
         elmc_release(outer);
         return out;
       }
@@ -62,7 +74,7 @@ defmodule Elmc.GeneratedRcTrackTest do
         ElmcValue *just = elmc_harness_maybe_just(m);
         ElmcValue *pair = elmc_harness_tuple2_take(ok, just);
         ElmcValue *args[] = { pair };
-        ElmcValue *out = elmc_harness_call_value(elmc_fn_RcTrackProbe_branchTupleOut, args, 1);
+        ElmcValue *out = #{branch_tuple_out_call};
         elmc_release(pair);
         return out;
       }
@@ -71,7 +83,7 @@ defmodule Elmc.GeneratedRcTrackTest do
         ElmcValue *left = elmc_harness_new_string("ab");
         ElmcValue *right = elmc_harness_new_string("cd");
         ElmcValue *args[] = { left, right };
-        ElmcValue *out = elmc_harness_call_value(elmc_fn_RcTrackProbe_stringAppendLength, args, 2);
+        ElmcValue *out = #{string_append_length_call};
         elmc_release(left);
         elmc_release(right);
         return out;

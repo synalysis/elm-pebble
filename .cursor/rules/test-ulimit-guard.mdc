@@ -1,0 +1,65 @@
+---
+description: Run all tests under ulimit so runaway suites cannot OOM the host
+alwaysApply: true
+---
+
+# Test Runs Must Use ulimit (No Host OOM)
+
+Runaway Elixir test suites (codegen, corpus, multi-module writes, template harnesses) can allocate gigabytes and **kill the IDE or shell**. Every test invocation in this repo must be guarded by a **virtual-memory ulimit** and conservative Erlang heap settings.
+
+## Required
+
+- **Never** run bare `mix test` for `elmc`, `elmx`, `ide`, or other packages in this monorepo when executing tests as part of agent/CI work.
+- **Always** use the repo helper:
+
+```bash
+export TEST_ULIMIT_V_KB=6291456 ELIXIR_ERL_OPTIONS="+S 1:1 +MMscs 256"
+./scripts/mix-test-limited.sh <pkg> [mix test args…]
+```
+
+- `<pkg>` is the package directory name: `elmc`, `ide`, `elmx`, etc.
+- The script sets `ulimit -v` (default **10 GiB** virtual; override with `TEST_ULIMIT_V_KB`) and `ELIXIR_ERL_OPTIONS` (default `+S 1:1 +MMscs 256`).
+- For heavy local/agent runs, prefer **`TEST_ULIMIT_V_KB=6291456`** (6 GiB) unless a specific test needs more headroom.
+
+## Large or Full Suites
+
+- Do **not** run the entire `elmc/test/` tree in one unbounded process if the host has been OOM-killed before.
+- Split by file, tag, or batch; still use `mix-test-limited.sh` for **each** batch.
+- Exclude known-heavy tags when doing broad sweeps: `--exclude corpus --exclude corpus_run --exclude corpus_elmx --exclude corpus_index --exclude fixture_codegen --exclude slow --exclude rc_track_2048`
+- If a run hits the ulimit (non-zero exit, `Cannot allocate`, BEAM crash), treat it as a **test-harness or codegen memory bug** to bisect — not a signal to drop the guard.
+
+## Forbidden
+
+- `cd elmc && mix test …` without ulimit
+- Raising ulimit to “make OOM go away” instead of batching or fixing the leaking test/codegen path
+- Parallel `mix test --max-cases` > 1 during broad codegen/corpus runs (the script already forces `--max-cases 1`)
+
+## Examples
+
+**Good — single file:**
+
+```bash
+export TEST_ULIMIT_V_KB=6291456 ELIXIR_ERL_OPTIONS="+S 1:1 +MMscs 256"
+./scripts/mix-test-limited.sh elmc test/pebble_shim_test.exs
+```
+
+**Good — tagged smoke gate:**
+
+```bash
+export TEST_ULIMIT_V_KB=6291456 ELIXIR_ERL_OPTIONS="+S 1:1 +MMscs 256"
+./scripts/mix-test-limited.sh elmc test/elm_run_corpus_execution_test.exs --include corpus_run_smoke
+```
+
+**Bad:**
+
+```bash
+cd elmc && mix test
+mix test --max-cases 8
+```
+
+## Quick Checklist
+
+1. Used `./scripts/mix-test-limited.sh` (not raw `mix test`)?
+2. Set `TEST_ULIMIT_V_KB` and `ELIXIR_ERL_OPTIONS` for heavy suites?
+3. Batched or excluded corpus/slow tags when running many files?
+4. On failure, bisected the batch instead of removing ulimit?

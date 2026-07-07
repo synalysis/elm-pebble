@@ -83,8 +83,10 @@ defmodule Elmc.Backend.CCodegen.BuiltinUnion do
           payload_var == out ->
             ""
 
+          # Ok/Err payload release is emitted by RcRuntimeEmit.assign_call/4
+          # (result_payload_owned_release); do not release twice here.
           ValueSlots.owned_ref?(payload_var) and short in [@result_ok, @result_err] ->
-            ValueSlots.release_owned_eager(payload_var)
+            ValueSlots.abandon_stmt(payload_var)
 
           ValueSlots.owned_ref?(payload_var) ->
             ValueSlots.abandon_stmt(payload_var)
